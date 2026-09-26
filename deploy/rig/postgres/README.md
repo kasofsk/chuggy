@@ -491,11 +491,12 @@ below runs against it.
 `CHUG_SCHEDULER_WORKER_DATABASE` carries `{"image": ..., "resources": ...}`:
 the PostgreSQL image the sidecar runs and what that container may use. Every
 worker pod then gets `CHUG_WORKER_DATABASE_URL` as a plain value naming the
-sidecar's superuser on loopback, and `images/worker/postgres.mjs` hands that to
-the gates as `CHUG_PG_URL`. A site that names no image places workers with no
-sidecar that are told of no server, and work that then needs one fails in the
-container. A pool's site document takes the same object as its `database`, and
-every workload the pool places gets the same sidecar and the same address.
+sidecar's superuser on loopback, and the worker core's `postgres.mjs`
+(kasofsk/chuggy-common) hands that to the gates as `CHUG_PG_URL`. A site that
+names no image places workers with no sidecar that are told of no server, and
+work that then needs one fails in the container. A pool's site document takes
+the same object as its `database`, and every workload the pool places gets the
+same sidecar and the same address.
 
 **The worker never waits for it.** The sidecar carries a startup probe, and the
 pod starts the worker container only once that probe has seen the server

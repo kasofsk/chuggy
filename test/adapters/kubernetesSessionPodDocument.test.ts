@@ -3,9 +3,10 @@
  * against a committed golden.
  *
  * `CHUG_SESSION_TASK` IS A CONTRACT WITH THE HARNESS. The task document a
- * session pod carries is read by `images/worker/`, which nothing type-checks
- * against this renderer, so a field renamed on the way through a refactor is a
- * pod the harness reads differently, and only the golden shows it.
+ * session pod carries is read by the worker core in kasofsk/chuggy-common,
+ * which nothing type-checks against this renderer, so a field renamed on the
+ * way through a refactor is a pod the harness reads differently, and only the
+ * golden shows it.
  *
  * IT PINS THE ORDER AS WELL AS THE VALUES, for the same reason the worker
  * golden does: the wire body is `JSON.stringify(pod)`, so the golden is read

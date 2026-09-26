@@ -6,7 +6,7 @@
  * because a suite that names a ceiling passes when the module and the suite
  * agree on the wrong one. The load-bearing case is not in this file: that a
  * roster of reads leaves every write tool in `disallowedTools` is a fact about
- * the module the pod actually runs, and `images/worker/contract.test.mjs`
+ * the module the pod actually runs, and the worker core's `contract.test.mjs`
  * holds that module over every roster.
  */
 

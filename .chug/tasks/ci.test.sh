@@ -175,24 +175,24 @@ set -e
 refute "a change to the pack's tsconfig runs the suites" 0 "$RC" "check-source unit: SKIPPED"
 check "a change to the pack's tsconfig still skips Quint" 0 "$RC" "check-model: SKIPPED"
 
-# The harness is cruised and its comments name paths, so a change to it alone
-# must select both gates, or its boundary rules go unasked on a changed run.
+# The worker image's pin is read by a unit suite that holds it to the planes'
+# accepted range, and a bump moves that file and nothing else, so a change to
+# it alone must select the unit stage.
 stub_repo 0
 mkdir -p "$R/images/worker"
-printf 'export const before = 1;\n' > "$R/images/worker/run.mjs"
+printf '{ "contractRelease": "1.0.0" }\n' > "$R/images/worker/core.json"
 git -C "$R" add -A
 git -C "$R" commit -qm baseline
-printf 'export const after = 2;\n' > "$R/images/worker/run.mjs"
+printf '{ "contractRelease": "1.1.0" }\n' > "$R/images/worker/core.json"
 git -C "$R" add -A
-git -C "$R" commit -qm harness
+git -C "$R" commit -qm bump
 OUT="$WORK/.out"
 set +e
 (cd "$R" && CHUG_CI_BASE=HEAD^ CHUG_CI_SHELL_SUITES=0 \
 	./.chug/tasks/ci.sh) >"$OUT" 2>&1
 RC=$?
 set -e
-check "a harness-only change selects the boundary gate" 0 "$RC" "stub check-boundaries"
-check "a harness-only change selects the path gate" 0 "$RC" "stub check-paths"
+refute "a bump of the worker image's pin runs the suites" 0 "$RC" "check-source unit: SKIPPED"
 
 # `check-keto`'s end-to-end suite composes the boundary over the postgres
 # harnesses, so a cone naming only the Keto adapter leaves the one suite that

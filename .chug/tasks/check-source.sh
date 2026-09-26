@@ -133,15 +133,12 @@ fi
 # list would send it back to whole-tree discovery; the glob is checked first
 # and separately.
 if [ "$run_unit" -eq 1 ]; then
-	suites="$(git ls-files '*.test.ts' '*.test.mjs' 2>/dev/null || true)"
+	suites="$(git ls-files '*.test.ts' 2>/dev/null || true)"
 	if [ -z "$suites" ]; then
 		echo "check-source: LINTER ERROR — no tracked suite; the suite glob matched nothing"
 		exit 2
 	fi
 
-# A suite an image ships is discovered here for the same reason: it is a suite
-# no other gate owns, and one this stage does not run is one nothing runs.
-#
 # The server-side arms mirror how those gates find their own work — the
 # directory itself, not below it — so a suite nested deeper than they look is
 # this stage's, which is what keeps the two halves a partition. The `ui/` arm
@@ -156,18 +153,6 @@ if [ "$run_unit" -eq 1 ]; then
 	fi
 	unit_count="$(printf '%s\n' "$unit_suites" | grep -c '' || true)"
 	owned_count="$(printf '%s\n' "$suites" | grep -Ec "$owned" || true)"
-
-# A suite reaches the contract's workspace package by name, through the link
-# `npm ci` makes. A link to anywhere but this tree's own `src/contract` is an
-# install from another tree, and those suites would run against its contract.
-	if [ -f src/contract/package.json ]; then
-		contract="$(node -p 'require("./src/contract/package.json").name' 2>/dev/null || true)"
-		linked="$(cd "node_modules/$contract" 2>/dev/null && pwd -P || true)"
-		if [ -z "$contract" ] || [ "$linked" != "$(cd src/contract && pwd -P)" ]; then
-			echo "check-source: LINTER ERROR — node_modules/$contract is not this tree's src/contract. Install with \`npm ci\`."
-			exit 2
-		fi
-	fi
 
 	set -f
 	IFS='

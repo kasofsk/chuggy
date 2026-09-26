@@ -97,10 +97,10 @@ export function currentReport(verdict: string, report: unknown): string {
 }
 
 /**
- * The document `images/worker/entrypoint.mjs` builds, whose `source` key is
+ * The document the worker core's `entrypoint.mjs` builds, whose `source` key is
  * absent rather than null whenever there is no source handoff. The shape is
- * restated rather than imported: that module runs its own entrypoint on import
- * and carries no types this suite could be checked against.
+ * restated rather than imported: that module is in kasofsk/chuggy-common and
+ * carries no types this suite could be checked against.
  */
 export function workerReport(verdict: string, source?: unknown): string {
   return JSON.stringify({

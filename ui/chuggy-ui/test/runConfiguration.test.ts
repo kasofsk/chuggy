@@ -175,10 +175,11 @@ test("what the runtime could reach is counted, and none of it is said as that", 
 });
 
 /**
- * `snapshot.mjs` builds its frame as `JSON.parse(scrub(JSON.stringify(init ??
- * null)))`, so a run taken with no init event writes `init: null` — and a
- * schema that refused it would lose the argv, the files and the dropped list
- * with it, which is everything the pane exists to show.
+ * The worker core's `snapshot.mjs` builds its frame as
+ * `JSON.parse(scrub(JSON.stringify(init ?? null)))`, so a run taken with no
+ * init event writes `init: null` — and a schema that refused it would lose the
+ * argv, the files and the dropped list with it, which is everything the pane
+ * exists to show.
  */
 test("a snapshot whose init the worker wrote as null still draws the rest", () => {
   const snapshot = read(

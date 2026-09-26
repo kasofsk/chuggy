@@ -493,8 +493,8 @@ function suppliedValue(pod: KubernetesPod, name: string): string {
 /**
  * The pair a pod resolves its repository from, each as the contract states it:
  * the site's map, carried as the site wrote it, and every credential the pod's
- * own grant names at the path it is mounted. `images/worker/repository.test.mjs`
- * resolves a repository against the same two schemas.
+ * own grant names at the path it is mounted. The worker core's
+ * `repository.test.mjs` resolves a repository against the same two schemas.
  */
 test("the pod carries the site's repository map and the path each credential it names is mounted at", () => {
   const requested = kubernetesWorkerPodRequest(config, placement);

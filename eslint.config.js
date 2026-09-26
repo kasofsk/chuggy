@@ -365,11 +365,11 @@ export default tseslint.config(
         },
       ]
     : []),
-  // The configs themselves, and the worker image's modules. Both sit outside
-  // tsconfig.json's include, so the type-aware rules have no program to ask and
-  // are turned off rather than left to fail on every run.
+  // The configs themselves. They sit outside tsconfig.json's include, so the
+  // type-aware rules have no program to ask and are turned off rather than
+  // left to fail on every run.
   {
-    files: ["**/*.js", "**/*.mjs"],
+    files: ["**/*.js"],
     extends: [tseslint.configs.disableTypeChecked],
     languageOptions: {
       globals: { process: "readonly" },
