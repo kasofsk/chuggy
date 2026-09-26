@@ -14,17 +14,18 @@ the registration token and the Kubernetes backend — the seam a second fabric i
 added at — and the slice that routes work to a pool (kasofsk/chuggy#687) is
 what turns them on.
 
-Two things that slice brings with it, each filed rather than found later:
+One thing that slice brings with it is filed rather than found later: **a
+pool's attempt needs its invocation recorded.** A pool is handed a placement
+and nothing about the work, so its harness fetches the task from the worker
+plane under the attempt bearer, as it fetches its inputs and its credentials
+(`GET /v1/task`, `src/adapters/http/workerPlaneServer.ts`). The scheduler
+records that task only for an attempt it places itself, and a pool claims no
+attempt without one (kasofsk/chuggy#706).
 
-- **A pool's attempt needs its invocation recorded.** A pool is handed a
-  placement and nothing about the work, so its harness fetches the task from
-  the worker plane under the attempt bearer, as it fetches its inputs and its
-  credentials (`GET /v1/task`, `src/adapters/http/workerPlaneServer.ts`). The
-  scheduler records that task only for an attempt it places itself, and a pool
-  claims no attempt without one (kasofsk/chuggy#706).
-- **A pool's refusal is not yet a terminal.** `pool_refusal` is a column a pool
-  writes, and nothing reads it: turning it into the attempt's outcome belongs
-  where every other terminal is decided (kasofsk/chuggy#707).
+**A pool's refusal is final.** The scheduler withdraws the refused attempt
+without spending the retry budget and blocks the execution; it does not offer
+the work to another pool. A pool that cannot take work only for now answers
+`Unavailable` instead.
 
 ## What a pool is trusted with
 

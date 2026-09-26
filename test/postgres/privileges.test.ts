@@ -1033,6 +1033,16 @@ test("the scheduler reads execution and capacity, of the project only its lifecy
   );
 });
 
+test("the scheduler reads the refusal a pool writes on an attempt", async () => {
+  assert.deepEqual(
+    await harness.query(
+      `SELECT has_column_privilege($1, 'public.execution_attempt', 'pool_refusal', 'SELECT') AS reads`,
+      [schedulerRole],
+    ),
+    [{ reads: true }],
+  );
+});
+
 test("the scheduler is non-login and non-escalating", async () => {
   assert.deepEqual(
     await harness.query(

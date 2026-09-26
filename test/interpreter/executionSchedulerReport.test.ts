@@ -108,6 +108,7 @@ function recordingStore(
     },
     blockExecution: unreached,
     execution: unreached,
+    refusedAttempts: unreached,
     reapLapsedAttempts: unreached,
     attemptsAwaitingCleanup: unreached,
     attemptCleanupCompleted: unreached,

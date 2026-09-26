@@ -50,6 +50,11 @@
  * and withdraws it as `PlacementUnavailable` without spending the budget. One
  * a pool holds ran, and is lost like any other.
  *
+ * AN ATTEMPT A POOL REFUSED IS NEVER REAPED. Its lease lapses because the
+ * refusal stops the pool renewing it, so the lapse says nothing the refusal
+ * did not. The reaper passes over a row whose `pool_refusal` is set, whatever
+ * its lease, and `refusedAttempts` is the read that finds it.
+ *
  * ROWS ARE TAKEN IN ONE ORDER: REQUEST, THEN EXECUTION, THEN PROJECT, THEN
  * ATTEMPT — AND WITHIN EACH OF THOSE, IN KEY ORDER. A worker reporting on a
  * task while the same pass cancels its ticket is two transactions over the same
@@ -958,11 +963,43 @@ async function schedulerAttemptEnded(
 }
 
 /**
- * Ends at most `attemptsMax` live attempts whose lease has run out, charging the
- * budget an attempt that ran spends to exactly the registrations whose attempt
- * this pass ends and ran. The registrations are locked before their attempts
- * and both in key order, and the bound is applied to the registrations — one of
- * which can hold only one live attempt, so it bounds the attempts too.
+ * At most `attemptsMax` live attempts of this epoch that the pool holding them
+ * refused, in key order and whatever their lease, each with the generation
+ * ending it is fenced by.
+ */
+async function schedulerRefusedAttempts(
+  client: pg.PoolClient,
+  epoch: RecoveryEpoch,
+  attemptsMax: number,
+): Promise<readonly FencedAttempt[]> {
+  schedulerRequirePositive(attemptsMax, "attemptsMax");
+  if ((await postgresOwnershipEpoch(client)) !== epoch) return [];
+  const refused = await client.query<
+    SchedulerRowKey & { attempt: string; generation: string }
+  >(
+    sql`SELECT a.tenant, a.project, a.execution, a.attempt,
+               a.generation::text AS generation
+          FROM execution_attempt a
+         WHERE a.state IN ('Placing', 'Running') AND a.pool_refusal IS NOT NULL
+           AND a.recovery_epoch = ${epoch}
+         ORDER BY a.tenant, a.project, a.execution, a.attempt
+         LIMIT ${attemptsMax}`,
+  );
+  return refused.rows.map((row) => ({
+    partition: schedulerRowPartition(row),
+    execution: asExecutionId(row.execution),
+    attempt: asAttemptId(row.attempt),
+    generation: projectRowCounter(row.generation, "attempt generation"),
+  }));
+}
+
+/**
+ * Ends at most `attemptsMax` live attempts whose lease has run out and that no
+ * pool refused, charging the budget an attempt that ran spends to exactly the
+ * registrations whose attempt this pass ends and ran. The registrations are
+ * locked before their attempts and both in key order, and the bound is applied
+ * to the registrations — one of which can hold only one live attempt, so it
+ * bounds the attempts too.
  */
 async function schedulerReapLapsedAttempts(
   client: pg.PoolClient,
@@ -977,7 +1014,8 @@ async function schedulerReapLapsedAttempts(
                      WHERE a.tenant = e.tenant AND a.project = e.project
                        AND a.execution = e.execution
                        AND a.state IN ('Placing', 'Running')
-                       AND a.lease_expires_at <= now())
+                       AND a.lease_expires_at <= now()
+                       AND a.pool_refusal IS NULL)
       ORDER BY e.tenant, e.project, e.execution
       LIMIT ${attemptsMax} FOR UPDATE`,
   );
@@ -985,6 +1023,7 @@ async function schedulerReapLapsedAttempts(
   const [heldTenants, heldProjects, heldExecutions] = schedulerRowKeys(
     held.rows,
   );
+  /** Passes over a refusal again, because one can commit after the lock above and no suite can order that. */
   const lapsed = await client.query<
     SchedulerRowKey & { attempt: string; unclaimed: boolean }
   >(
@@ -997,6 +1036,7 @@ async function schedulerReapLapsedAttempts(
           JOIN execution e
             ON e.tenant = a.tenant AND e.project = a.project AND e.execution = a.execution
          WHERE a.state IN ('Placing', 'Running') AND a.lease_expires_at <= now()
+           AND a.pool_refusal IS NULL
          ORDER BY a.tenant, a.project, a.execution, a.attempt FOR UPDATE OF a`,
   );
   if (lapsed.rows.length === 0) return 0;
@@ -1241,6 +1281,10 @@ export function postgresExecutionScheduler(
       ),
     execution: (partition, execution) =>
       schedulerExecution(pool, partition, execution),
+    refusedAttempts: (epoch, attemptsMax) =>
+      postgresTransaction(pool, (client) =>
+        schedulerRefusedAttempts(client, epoch, attemptsMax),
+      ),
     reapLapsedAttempts: (epoch, attemptsMax) =>
       postgresTransaction(pool, (client) =>
         schedulerReapLapsedAttempts(client, epoch, attemptsMax),

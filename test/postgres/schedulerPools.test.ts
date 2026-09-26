@@ -1,8 +1,8 @@
 /**
  * The scheduler's half of work routed to pools, against a real PostgreSQL and
  * under the scheduler's own role: what a pass asks the registry before an
- * attempt waits for a pool, and what the reaper does with one whose lease ran
- * out.
+ * attempt waits for a pool, what the reaper does with one whose lease ran out,
+ * and what a pass does with one a pool refused.
  *
  * Everything but the authority is the role a deployment runs: the store and
  * the registry read are the scheduler's, a registration is the API's and a
@@ -19,6 +19,7 @@ import { randomUUID } from "node:crypto";
 import { after, test } from "node:test";
 
 import { apiRole, poolPlaneRole } from "../../src/adapters/postgres/schema.ts";
+import { workerPoolEvidenceCharsMax } from "../../src/contract/workerPool.ts";
 import {
   postgresWorkerPoolAssignments,
   postgresWorkerPoolRegistry,
@@ -278,4 +279,127 @@ test("the scheduler reads its own project's pools in name order, and says when t
     cut.pools.map(({ pool }) => pool),
     names.slice(0, workerPoolsAnsweredMax),
   );
+});
+
+/** Registers a pool for a routed execution, opens and invokes its attempt, and has the pool claim it, answering the pool and the assignment it claimed under. */
+async function poolClaimed(routed: PoolRouted, name: string) {
+  await poolRegistered(routed.project.partition, name, [
+    "Platform:Linux:Amd64",
+  ]);
+  const attempt = await routedAttempt(routed);
+  assert.equal(
+    await rig.store.attemptInvoked(attempt, schedulerInvocation),
+    true,
+  );
+  const [pool] = (await roster.registered(routed.project.partition)).pools;
+  assert.ok(pool !== undefined);
+  const assignment = `assignment-${randomUUID()}`;
+  assert.notEqual(
+    await assignments.claim(
+      pool,
+      { leaseSecs: service.config.attemptLeaseSecs, heldMax: 1 },
+      assignment,
+      `bearer-${randomUUID()}`,
+    ),
+    undefined,
+  );
+  return { pool, assignment };
+}
+
+/** Has a pool claim a routed execution's attempt, as `poolClaimed` does, and refuse it. */
+async function poolRefused(routed: PoolRouted, refusal: string): Promise<void> {
+  const { pool, assignment } = await poolClaimed(routed, "refusing");
+  assert.equal(await assignments.refuse(pool, assignment, refusal), true);
+}
+
+/** The refusal each of an execution's attempts carries, read as the owner. */
+async function poolRefusals(
+  routed: PoolRouted,
+): Promise<readonly (string | null)[]> {
+  const rows = (await rig.harness.query(
+    `SELECT pool_refusal FROM execution_attempt
+      WHERE tenant=$1 AND project=$2 AND execution=$3
+      ORDER BY opened_at, attempt`,
+    poolRoutedKey(routed),
+  )) as readonly { pool_refusal: string | null }[];
+  return rows.map((row) => row.pool_refusal);
+}
+
+/** Where an execution a pool refused stands once a pass has read the refusal. */
+const refusedStanding = {
+  execution: {
+    status: "Terminal",
+    outcome: "Blocked",
+    blocked_reason: "RequiredCapabilityUnavailable",
+    retries_spent: 0,
+    backed_off: true,
+  },
+  attempts: [
+    { state: "Withdrawn", evidence: "PlacementRefused", pool: "refusing" },
+  ],
+};
+
+test("an attempt a pool refused is withdrawn without spending, its execution blocked, and the longest refusal kept whole", async () => {
+  const routed = await poolRoutedExecution(rig, "pools-refused");
+  const refusal = "r".repeat(workerPoolEvidenceCharsMax);
+  await poolRefused(routed, refusal);
+  await executionSchedulerLaunch(service, routed.project.epoch);
+  assert.deepEqual(await poolRoutedStanding(rig, routed), refusedStanding);
+  assert.deepEqual(await poolRefusals(routed), [refusal]);
+});
+
+test("a refused attempt whose lease has also run out is not the reaper's, and the pass blocks it as refused", async () => {
+  const routed = await poolRoutedExecution(rig, "pools-refused-lapsed");
+  await poolRefused(routed, "no node takes this image");
+  await leaseLapsed(routed);
+  await rig.store.reapLapsedAttempts(
+    routed.project.epoch,
+    service.config.attemptsPerPassMax,
+  );
+  assert.deepEqual(await poolRoutedStanding(rig, routed), {
+    execution: {
+      status: "Launching",
+      ...poolRoutedUnsettled,
+      backed_off: false,
+    },
+    attempts: [{ state: "Placing", evidence: null, pool: "refusing" }],
+  });
+  await executionSchedulerLaunch(service, routed.project.epoch);
+  assert.deepEqual(await poolRoutedStanding(rig, routed), refusedStanding);
+  assert.deepEqual(await poolRefusals(routed), ["no node takes this image"]);
+});
+
+test("attempts refused past what one pass takes do not hold the reaper off an attempt that lapsed unrefused", async () => {
+  const one = {
+    ...service,
+    config: { ...service.config, attemptsPerPassMax: 1 },
+  };
+  const first = await poolRoutedExecution(rig, "pools-bound-a");
+  const second = await poolRoutedExecution(rig, "pools-bound-b");
+  const held = await poolRoutedExecution(rig, "pools-bound-c");
+  await poolRefused(first, "no node takes this image");
+  await poolRefused(second, "no node takes this image");
+  await poolClaimed(held, "claiming");
+  for (const routed of [first, second, held]) await leaseLapsed(routed);
+  await executionSchedulerLaunch(one, held.project.epoch);
+  assert.deepEqual(await poolRoutedStanding(rig, first), refusedStanding);
+  assert.deepEqual(await poolRoutedStanding(rig, second), {
+    execution: {
+      status: "Launching",
+      ...poolRoutedUnsettled,
+      backed_off: false,
+    },
+    attempts: [{ state: "Placing", evidence: null, pool: "refusing" }],
+  });
+  assert.deepEqual(await poolRoutedStanding(rig, held), {
+    execution: {
+      status: "Launching",
+      ...poolRoutedUnsettled,
+      retries_spent: 1,
+      backed_off: true,
+    },
+    attempts: [{ state: "Lost", evidence: "LeaseExpired", pool: "claiming" }],
+  });
+  await executionSchedulerLaunch(one, held.project.epoch);
+  assert.deepEqual(await poolRoutedStanding(rig, second), refusedStanding);
 });
