@@ -86,9 +86,10 @@
  * `runner.qnt`'s `placementOutcome` asked of the pools its project registered,
  * each revoked where the project authority withholds its `Execute`. That is
  * the two inabilities again: no pool configured to run it blocks, and one that
- * could is a hold, as is an authority that could not answer. A held attempt
- * waits on its own lease, and one no pool holds when that lapses is withdrawn
- * without spending the budget.
+ * could is a hold, as is an authority that could not answer. A held attempt,
+ * prepared and invoked as a placed one is where a pool could run it, waits on
+ * its own lease, and one no pool holds when that lapses is withdrawn without
+ * spending the budget.
  *
  * A POOL'S REFUSAL IS THE DEFINITIVE INABILITY. A pool that says it cannot run
  * what it claimed blocks the execution rather than holding it for another pool,
