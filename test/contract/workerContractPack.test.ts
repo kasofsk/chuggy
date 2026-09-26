@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
+  appendFileSync,
+  cpSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -20,6 +22,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   type PublishedManifest,
   publishedManifest,
+  workerContractFilesDigest,
   workspaceManifest,
   workspaceManifestOf,
 } from "../../scripts/pack-worker-contract.ts";
@@ -70,11 +73,31 @@ after(() => {
   rmSync(work, { recursive: true, force: true });
 });
 
-test("the printed digest is the tarball's own", () => {
+test("the printed digests are the tarball's own and its extracted files'", () => {
   const sha256 = createHash("sha256")
     .update(readFileSync(tarball))
     .digest("hex");
-  assert.equal(printed, `${sha256}  ${tarball}\n`);
+  const files = workerContractFilesDigest(
+    join(consumer, "node_modules", manifest.name),
+  );
+  assert.equal(printed, `${sha256}  ${tarball}\nfiles ${files}\n`);
+});
+
+test("the files digest moves with a file's bytes or its path, and refuses a link and a package that is not a directory", () => {
+  const copy = join(work, "copy");
+  cpSync(join(consumer, "node_modules", manifest.name), copy, {
+    recursive: true,
+  });
+  const files = workerContractFilesDigest(copy);
+  appendFileSync(join(copy, "workerPlane.js"), " ");
+  assert.notEqual(workerContractFilesDigest(copy), files);
+  renameSync(join(copy, "workerPlane.js"), join(copy, "workerPlanes.js"));
+  const renamed = workerContractFilesDigest(copy);
+  renameSync(join(copy, "workerPlanes.js"), join(copy, "workerPlane.js"));
+  assert.notEqual(renamed, workerContractFilesDigest(copy));
+  assert.throws(() => workerContractFilesDigest(join(copy, "package.json")));
+  symlinkSync(join(copy, "package.json"), join(copy, "linked.json"));
+  assert.throws(() => workerContractFilesDigest(copy), /linked\.json/u);
 });
 
 test("the tarball's manifest is the workspace's, versioned by the release and pointed at the emit", () => {
