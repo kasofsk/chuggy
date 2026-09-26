@@ -269,7 +269,7 @@ test("the scheduler root reads the binding its session pass places on", async ()
  * The same question of the registry, which is what a launch pass asks of work
  * routed to pools and what migration 021 granted the scheduler.
  */
-test("the scheduler root reads the pools a project registered, and asks the authority it was given about them", async () => {
+test("the scheduler root reads the pools a project registered, and asks a Keto adapter rather than a stand-in about them", async () => {
   const partition = await postgresHarnessProject(
     harness.store,
     "scheduler-root-pools",

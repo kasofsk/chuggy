@@ -732,8 +732,8 @@ export interface ExecutionSchedulerStore {
   /**
    * Ends at most `attemptsMax` attempts whose lease has run out, backing their
    * executions off. One that ran and vanished is `Lost` and spends the safe
-   * retry budget, and one offered to pools that no pool holds is `runner.qnt`'s
-   * `Unavailable`, withdrawn as `PlacementUnavailable` without spending it.
+   * retry budget, and one offered to pools that no pool took is withdrawn as
+   * `PlacementUnavailable` without spending it.
    */
   reapLapsedAttempts(
     epoch: RecoveryEpoch,
