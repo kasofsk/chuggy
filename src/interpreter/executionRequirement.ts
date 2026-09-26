@@ -1,5 +1,9 @@
-export type OperatingSystem = "Linux" | "MacOS";
-export type Architecture = "Amd64" | "Arm64";
+/** Every operating system a platform names, so a suite iterates rather than restates. */
+export const allOperatingSystems = ["Linux", "MacOS"] as const;
+export type OperatingSystem = (typeof allOperatingSystems)[number];
+/** Every architecture a platform names, so a suite iterates rather than restates. */
+export const allArchitectures = ["Amd64", "Arm64"] as const;
+export type Architecture = (typeof allArchitectures)[number];
 export type ExecutionTaskKind = "Work" | "Evaluation";
 export type ExecutionTaskKindKey = ExecutionTaskKind | `Evaluation:${number}`;
 export interface Platform {
@@ -8,7 +12,12 @@ export interface Platform {
 }
 export type NativeDriver =
   "XcodeBuild" | "XcodeTesting" | "IosSimulatorTesting";
-export type ExecutionCapability = "Agent:Claude" | "Agent:Codex";
+/** Every execution capability, so a suite iterates rather than restates. */
+export const allExecutionCapabilities = [
+  "Agent:Claude",
+  "Agent:Codex",
+] as const;
+export type ExecutionCapability = (typeof allExecutionCapabilities)[number];
 
 export type ContainerExecutionRequirement = Readonly<
   Platform & { readonly mode: "Container"; readonly image: string }
