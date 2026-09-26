@@ -20,12 +20,12 @@ import {
   runModelCharsMax,
   runTurnSeriesMax,
 } from "./http.ts";
+import {
+  workerPlaneAnswersRefusingVersions,
+  type WorkerPlaneAnswers,
+} from "./planeAnswers.ts";
 import { runModelUsageSchema, runTotalsSchema } from "./responses.ts";
 import { artifactRoles, runEndedEvidences } from "./rosters.ts";
-import {
-  contractVersionRefusalSchema,
-  contractVersionRefusalStatus,
-} from "./workerContract.ts";
 import {
   artifactFailures,
   resultManifestRejections,
@@ -74,6 +74,7 @@ export {
   workerPlaneUploadBytesMax,
 } from "./http.ts";
 export { runEndedEvidences } from "./rosters.ts";
+export type { WorkerPlaneAnswer } from "./planeAnswers.ts";
 
 /** One turn as a worker offers it; the server is what dates the stored row. */
 export const workerRunTurnsSchema = z.strictObject({
@@ -162,46 +163,6 @@ export const workerCredentialAbsentSchema = z.object({
 export type WorkerCredentialAbsent = z.infer<
   typeof workerCredentialAbsentSchema
 >;
-
-/** What one status answers with: a body its schema reads, or no body at all. */
-export type WorkerPlaneAnswer = z.ZodType | "empty";
-
-/** Every status each route of one plane answers with, and what it answers. */
-export type WorkerPlaneAnswers<Name extends string> = Readonly<
-  Record<Name, Readonly<Record<number, WorkerPlaneAnswer>>>
->;
-
-/**
- * A plane's answers with the refusal every route gives a release the plane
- * does not serve, beside whatever the route's own status answers. The refusal
- * is read first, because a route's own stop would drop the range it names.
- */
-export function workerPlaneAnswersRefusingVersions<Name extends string>(
-  answers: WorkerPlaneAnswers<Name>,
-): WorkerPlaneAnswers<Name> {
-  return Object.fromEntries(
-    Object.entries<Readonly<Record<number, WorkerPlaneAnswer>>>(answers).map(
-      ([route, statuses]): [
-        string,
-        Readonly<Record<number, WorkerPlaneAnswer>>,
-      ] => {
-        const own = statuses[contractVersionRefusalStatus];
-        if (own === "empty")
-          throw new Error(`${route} answers the refusal's status with no body`);
-        return [
-          route,
-          {
-            ...statuses,
-            [contractVersionRefusalStatus]:
-              own === undefined
-                ? contractVersionRefusalSchema
-                : z.union([contractVersionRefusalSchema, own]),
-          },
-        ];
-      },
-    ),
-  ) as WorkerPlaneAnswers<Name>;
-}
 
 /** The refusals every write keeping a run's bytes answers with, whichever run object it keeps. */
 const workerRunObjectAnswers = {

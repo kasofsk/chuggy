@@ -5,6 +5,7 @@ import {
   workerContractHistory,
   workerContractHistoryRefusal,
   workerContractWire,
+  workerContractWireSourceText,
 } from "../../scripts/worker-contract-wire.ts";
 import { workerContractRelease } from "../../src/contract/workerContract.ts";
 
@@ -83,4 +84,37 @@ test("a patch that leaves the wire alone is a release like any other", () => {
     ),
     undefined,
   );
+});
+
+test("a comment, a re-wrap or a trailing comma moves no source, and a literal, an operator or a name does", () => {
+  const read = (source: string) =>
+    workerContractWireSourceText(source, new Set());
+  const written = read(
+    "(value) => { const bounded = isBoundedText(value, sessionIdentityCharsMax); return bounded && value.length > 1; }",
+  );
+  for (const formatted of [
+    "(value) => {\n  /** why */\n  const bounded = isBoundedText(value, sessionIdentityCharsMax); return bounded && value.length > 1; }",
+    "(value) => { const bounded = /* why */ isBoundedText(value, sessionIdentityCharsMax); // and\n return bounded && value.length > 1; }",
+    "(value) => {\n  const bounded = isBoundedText(\n    value,\n    sessionIdentityCharsMax,\n  );\n  return bounded && value.length > 1;\n}",
+  ])
+    assert.equal(read(formatted), written);
+  for (const changed of [
+    "(value) => { const bounded = isBoundedText(value, sessionIdentityCharsMax); return bounded && value.length > 2; }",
+    "(value) => { const bounded = isBoundedText(value, sessionIdentityCharsMax); return bounded && value.length >= 1; }",
+    "(value) => { const bounded = isBoundedText(value, repositoryIdentityCharsMax); return bounded && value.length > 1; }",
+  ])
+    assert.notEqual(read(changed), written);
+});
+
+test("the names a source reads are the ones the digest follows into the contract", () => {
+  const reads = new Set<string>();
+  workerContractWireSourceText(
+    "(value) => isBoundedText(value, sessionIdentityCharsMax)",
+    reads,
+  );
+  assert.deepEqual([...reads].sort(), [
+    "isBoundedText",
+    "sessionIdentityCharsMax",
+    "value",
+  ]);
 });

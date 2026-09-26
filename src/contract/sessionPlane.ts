@@ -31,6 +31,10 @@ import {
   sessionTurnToolNameCharsMax,
   sessionTurnToolsMax,
 } from "./http.ts";
+import {
+  workerPlaneAnswersRefusingVersions,
+  type WorkerPlaneAnswers,
+} from "./planeAnswers.ts";
 import { leadStoreStreamResponseSchema } from "./responses.ts";
 import {
   agentReportedTurnFailures,
@@ -41,16 +45,16 @@ import {
 import {
   workerCredentialAbsentSchema,
   workerCredentialAnswerSchema,
-  workerPlaneAnswersRefusingVersions,
   workerPlaneRefusalSchema,
   workerPlaneRetrySchema,
   workerPlaneStopSchema,
-  type WorkerPlaneAnswers,
   type WorkerPlaneRoute,
 } from "./workerPlane.ts";
 
-/** The bounds a session pod's turns and store are written against, the failures a turn may name, and the capabilities a session may hold. */
+/** The bounds a session pod's identities, turns and store are written against, the failures a turn may name, and the capabilities a session may hold. */
 export {
+  repositoryIdentityCharsMax,
+  sessionIdentityCharsMax,
   sessionStoreBatchBytesMax,
   sessionStoreBatchesMax,
   sessionStorePageBatchesMax,
