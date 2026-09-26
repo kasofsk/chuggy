@@ -16,12 +16,12 @@ what turns them on.
 
 Two things that slice brings with it, each filed rather than found later:
 
-- **A harness placed by a pool is handed no briefing.** An in-cluster attempt
-  is given its invocation in the pod the scheduler writes; a pool is handed a
-  placement and nothing about the work, so the harness has to fetch its task from
-  the worker plane under the attempt bearer the way it already fetches its
-  inputs and its credentials (`src/adapters/http/workerPlaneServer.ts`). There
-  is no such route today (kasofsk/chuggy#706).
+- **A pool's attempt needs its invocation recorded.** A pool is handed a
+  placement and nothing about the work, so its harness fetches the task from
+  the worker plane under the attempt bearer, as it fetches its inputs and its
+  credentials (`GET /v1/task`, `src/adapters/http/workerPlaneServer.ts`). The
+  scheduler records that task only for an attempt it places itself, and a pool
+  claims no attempt without one (kasofsk/chuggy#706).
 - **A pool's refusal is not yet a terminal.** `pool_refusal` is a column a pool
   writes, and nothing reads it: turning it into the attempt's outcome belongs
   where every other terminal is decided (kasofsk/chuggy#707).

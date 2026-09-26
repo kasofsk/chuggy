@@ -86,6 +86,7 @@ test("the worker role can execute its boundaries and read forge installations", 
     "record_worker_run_transcript_batch",
     "record_worker_run_turns",
     "record_worker_run_total",
+    "read_worker_task",
   ])
     assert.ok(
       grants.some((grant) => grant.includes("public." + name + "(")),

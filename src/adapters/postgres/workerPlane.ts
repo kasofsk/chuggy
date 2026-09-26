@@ -2,6 +2,8 @@ import { createHash, randomUUID } from "node:crypto";
 import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
 
+import { workTaskDocumentSchema } from "../../contract/workerTask.ts";
+import { asTaskId, asTicketId } from "../../domain/ids.ts";
 import {
   asAttemptId,
   asExecutionId,
@@ -34,9 +36,11 @@ import type {
   WorkerArtifactReservationPort,
   WorkerInputReference,
   WorkerPlaneAuthority,
+  WorkerTaskPort,
+  WorkerTaskRead,
 } from "../../interpreter/workerPlane.ts";
 import { projectRowCounter } from "./rows.ts";
-import { executionRowTaskKind } from "./schedulerRows.ts";
+import { executionRowTaskKind, taskRowStage } from "./schedulerRows.ts";
 import { postgresTransaction } from "./pool.ts";
 
 /** The digest an attempt's bearer is keyed by, which is all the database holds of it. */
@@ -146,6 +150,97 @@ export function postgresWorkerPlaneAuthority(
   pool: pg.Pool,
 ): WorkerPlaneAuthority {
   return { authenticate: (secret) => workerAuthenticate(pool, secret) };
+}
+
+interface WorkerTaskRow {
+  readonly tenant: string | null;
+  readonly project: string | null;
+  readonly execution: string | null;
+  readonly attempt: string | null;
+  readonly generation: string | null;
+  readonly ticket: string | null;
+  readonly task: string | null;
+  readonly task_kind: string | null;
+  readonly stage: string | null;
+  readonly source_request: string | null;
+  readonly input_bundle: string | null;
+  readonly input_bundle_digest: string | null;
+  readonly configuration_revision: string | null;
+  readonly configuration_digest: string | null;
+  readonly requirement_identity: string | null;
+  readonly requirement_digest: string | null;
+  readonly live: boolean | null;
+  readonly invocation: unknown;
+}
+
+/** A recorded invocation, which the scheduler wrote in the shape of the pod document it came from. */
+const workerTaskInvocationSchema = workTaskDocumentSchema
+  .pick({ profile: true, briefing: true, authority: true, worker: true })
+  .strict();
+
+async function workerTask(
+  pool: pg.Pool,
+  secret: AttemptCapabilitySecret,
+): Promise<WorkerTaskRead | undefined> {
+  const found = await pool.query<WorkerTaskRow>(
+    sql`SELECT tenant,project,execution,attempt,generation::text AS generation,
+               ticket::text AS ticket,task::text AS task,task_kind,
+               stage::text AS stage,source_request,input_bundle,input_bundle_digest,
+               configuration_revision,configuration_digest,
+               requirement_identity,requirement_digest,live,invocation
+          FROM read_worker_task(${workerSecretDigest(secret)})`,
+  );
+  const row = found.rows[0];
+  if (row === undefined) return undefined;
+  if (
+    row.tenant === null ||
+    row.project === null ||
+    row.execution === null ||
+    row.attempt === null ||
+    row.generation === null ||
+    row.ticket === null ||
+    row.task === null ||
+    row.task_kind === null ||
+    row.source_request === null ||
+    row.input_bundle === null ||
+    row.input_bundle_digest === null ||
+    row.configuration_revision === null ||
+    row.configuration_digest === null ||
+    row.requirement_identity === null ||
+    row.requirement_digest === null ||
+    row.live === null
+  )
+    throw new Error("postgres worker plane: task has an invalid shape");
+  return {
+    live: row.live,
+    identity: {
+      partition: {
+        tenant: asTenantId(row.tenant),
+        project: asProjectId(row.project),
+      },
+      execution: asExecutionId(row.execution),
+      attempt: asAttemptId(row.attempt),
+      generation: projectRowCounter(row.generation, "attempt generation"),
+      ticket: asTicketId(projectRowCounter(row.ticket, "execution ticket")),
+      task: asTaskId(projectRowCounter(row.task, "execution task")),
+      taskKind: executionRowTaskKind(row.task_kind),
+      ...taskRowStage(row.stage),
+      sourceRequest: row.source_request,
+      inputBundle: row.input_bundle,
+      inputBundleDigest: row.input_bundle_digest,
+      configurationRevision: row.configuration_revision,
+      configurationDigest: row.configuration_digest,
+      requirementIdentity: row.requirement_identity,
+      requirementDigest: row.requirement_digest,
+    },
+    ...(row.invocation === null
+      ? {}
+      : { invocation: workerTaskInvocationSchema.parse(row.invocation) }),
+  };
+}
+
+export function postgresWorkerTasks(pool: pg.Pool): WorkerTaskPort {
+  return { task: (secret) => workerTask(pool, secret) };
 }
 
 export function postgresWorkerAttemptHeartbeats(

@@ -11,6 +11,7 @@ import type {
   WorkerRunEvidencePorts,
 } from "../../src/adapters/http/workerPlaneServer.ts";
 import type { SessionPlaneAuthority } from "../../src/interpreter/sessionPlane.ts";
+import type { WorkerTaskPort } from "../../src/interpreter/workerPlane.ts";
 
 /** A lease no fixture case renews and none is about. */
 const workerPlaneFixtureLeaseSecs = 300;
@@ -41,6 +42,11 @@ export const inertRunEvidence: WorkerRunEvidencePorts = {
   endings: { end: () => Promise.resolve(true) },
 };
 
+/** A task port that finds no attempt, for a case that never fetches one. */
+export const inertTasks: WorkerTaskPort = {
+  task: () => Promise.resolve(undefined),
+};
+
 /**
  * The attempt half of a whole plane, inert throughout, for a case that is about
  * the session half or about nothing this plane holds. The upload bound is the
@@ -51,6 +57,7 @@ export function inertWorkerPlane(
 ): Omit<WorkerPlaneServerService, "sessions"> {
   return {
     authority: { authenticate: () => Promise.resolve(undefined) },
+    tasks: inertTasks,
     heartbeats: { heartbeat: () => Promise.resolve(true) },
     heartbeatLeaseSecs: workerPlaneFixtureLeaseSecs,
     artifacts: { store: () => Promise.resolve({ stored: "Stored" }) },

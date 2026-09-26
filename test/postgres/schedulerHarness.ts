@@ -62,6 +62,7 @@ import {
   type PhysicalAttempt,
   type RequestClaim,
   type SchedulerOwnerId,
+  type WorkTaskInvocation,
 } from "../../src/interpreter/executionScheduler.ts";
 import {
   acceptResultManifest,
@@ -602,6 +603,19 @@ export async function schedulerPlacedAttempt(
     throw new Error(`scheduler harness: ${label} could not place its attempt`);
   return { execution: admitted.execution, attempt: opened.attempt };
 }
+
+/** An invocation as the scheduler records one, for a case that only needs one recorded. */
+export const schedulerInvocation: WorkTaskInvocation = {
+  profile: { profile: "standard", runtimeVersion: "1" },
+  briefing: { templateVersion: 1, purpose: "Work", text: "Do the work." },
+  authority: {
+    tools: [],
+    credentials: [],
+    network: false,
+    filesystem: "WriteWorkspace",
+    mayCompleteTask: false,
+  },
+};
 
 /** How long a placed attempt's lease runs for, past any case's own duration. */
 const schedulerPlacedLeaseSecs = 300;

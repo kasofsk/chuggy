@@ -126,6 +126,7 @@ import {
 } from "./taskBriefing.ts";
 import type { PolicyAuthorityGrant } from "./taskAuthority.ts";
 import type { TicketBriefPort } from "./ticketBrief.ts";
+import { workTaskInvocation } from "./workerTask.ts";
 
 /** Everything a scheduler pass calls out through, and the bounds it works within. */
 export interface ExecutionSchedulerService {
@@ -579,6 +580,10 @@ async function schedulerPlace(
 ): Promise<boolean> {
   const launch = await schedulerPrepare(service, execution, attempt);
   if (launch === undefined) return false;
+  if (
+    !(await service.store.attemptInvoked(attempt, workTaskInvocation(launch)))
+  )
+    return false;
   const placed = await service.placement.place({
     partition: execution.partition,
     execution: execution.execution,

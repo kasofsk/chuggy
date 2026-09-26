@@ -51,6 +51,7 @@ import {
   type WorkerPlaneRoute,
   type WorkerPlaneRouteName,
 } from "../../src/contract/workerPlane.ts";
+import { asTaskId, asTicketId } from "../../src/domain/ids.ts";
 import {
   allSessionTurnInputKinds,
   asSessionAttemptId,
@@ -61,6 +62,7 @@ import {
 import {
   asAttemptId,
   asExecutionId,
+  type WorkTaskInvocation,
 } from "../../src/interpreter/executionScheduler.ts";
 import type { ReportIngested } from "../../src/interpreter/executionSchedulerReport.ts";
 import { asForgeInstallationToken } from "../../src/interpreter/forgeInstallation.ts";
@@ -93,6 +95,7 @@ import type {
   WorkerArtifactReserved,
   WorkerArtifactStored,
   WorkerAttemptAuthority,
+  WorkerTaskRead,
 } from "../../src/interpreter/workerPlane.ts";
 import type { WorkerPlaneCredentialMinted } from "../../src/interpreter/workerPlaneCredentials.ts";
 import { fixtureForgeShapedToken } from "./forgeFixtures.ts";
@@ -127,6 +130,40 @@ const liveAuthority: WorkerAttemptAuthority = {
   ],
 };
 
+const liveInvocation: WorkTaskInvocation = {
+  profile: { profile: "default", runtimeVersion: "1" },
+  briefing: { templateVersion: 1, purpose: "Work", text: "Do the work." },
+  authority: {
+    tools: [],
+    credentials: [],
+    network: false,
+    filesystem: "WriteWorkspace",
+    mayCompleteTask: true,
+  },
+};
+
+/** A work task's recorded identity and invocation, carrying neither a stage nor a worker configuration. */
+const liveTask: WorkerTaskRead = {
+  live: true,
+  identity: {
+    partition: liveAuthority.partition,
+    execution: liveAuthority.execution,
+    attempt: liveAuthority.attempt,
+    generation: liveAuthority.generation,
+    ticket: asTicketId(1),
+    task: asTaskId(1),
+    taskKind: "Work",
+    sourceRequest: "1:0:ExecuteTask",
+    inputBundle: liveAuthority.inputBundle,
+    inputBundleDigest: liveAuthority.inputBundleDigest,
+    configurationRevision: "revision",
+    configurationDigest: "c".repeat(64),
+    requirementIdentity: "requirement",
+    requirementDigest: "d".repeat(64),
+  },
+  invocation: liveInvocation,
+};
+
 /** One call a route is driven with; `rest` fills the route's trailing `*` and `query` follows the path. */
 interface WorkerPlaneCall {
   readonly rest?: string;
@@ -151,6 +188,7 @@ const workerPlaneCalls: Readonly<
   Record<WorkerPlaneRouteName, WorkerPlaneCall>
 > = {
   input: {},
+  task: {},
   heartbeat: {},
   artifact: { rest: "out.txt", headers: octets, payload: Buffer.from("x") },
   report: {
@@ -183,6 +221,12 @@ function workerPlaneAuthority(
   authority: WorkerAttemptAuthority | undefined,
 ): Pick<WorkerPlaneServerService, "authority"> {
   return { authority: { authenticate: () => Promise.resolve(authority) } };
+}
+
+function workerPlaneTask(
+  found: WorkerTaskRead | undefined,
+): Pick<WorkerPlaneServerService, "tasks"> {
+  return { tasks: { task: () => Promise.resolve(found) } };
 }
 
 /** The callers every route refuses before its own ports are reached. */
@@ -342,6 +386,34 @@ const workerPlaneCases: Readonly<
   Record<WorkerPlaneRouteName, readonly WorkerPlaneCase[]>
 > = {
   input: [...workerPlaneStrangers, { name: "a live attempt" }],
+  task: [
+    { name: "no bearer", anonymous: true },
+    { name: "an unknown bearer", service: workerPlaneTask(undefined) },
+    {
+      name: "an attempt no longer live",
+      service: workerPlaneTask({ ...liveTask, live: false }),
+    },
+    {
+      name: "an attempt not yet invoked",
+      service: workerPlaneTask({ live: true, identity: liveTask.identity }),
+    },
+    { name: "a work task", service: workerPlaneTask(liveTask) },
+    {
+      name: "an evaluation stage's commands",
+      service: workerPlaneTask({
+        ...liveTask,
+        identity: { ...liveTask.identity, taskKind: "Evaluation", stage: 0 },
+        invocation: {
+          ...liveInvocation,
+          worker: {
+            mode: { type: "Commands", commands: ["just check"] },
+            setup: [],
+            files: [],
+          },
+        },
+      }),
+    },
+  ],
   heartbeat: [
     ...workerPlaneStrangers,
     ...bothAnswers.map((renewed) => ({

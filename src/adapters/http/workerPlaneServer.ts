@@ -98,7 +98,9 @@ import type {
   WorkerAttemptAuthority,
   WorkerPlaneAuthority,
   WorkerReportPort,
+  WorkerTaskPort,
 } from "../../interpreter/workerPlane.ts";
+import { workTask } from "../../interpreter/workerTask.ts";
 
 /** The probes the cluster sends, which no worker calls and so the worker contract does not name. */
 export const workerPlaneHealthRoutes = {
@@ -159,6 +161,7 @@ export interface SessionPlaneService {
 
 export interface WorkerPlaneServerService {
   readonly authority: WorkerPlaneAuthority;
+  readonly tasks: WorkerTaskPort;
   readonly heartbeats: WorkerAttemptHeartbeatPort;
   readonly heartbeatLeaseSecs: number;
   readonly artifacts: WorkerArtifactUploadPort;
@@ -270,6 +273,25 @@ function workerBearer(request: FastifyRequest) {
     !sessionBearerPattern.test(token)
     ? asAttemptCapabilitySecret(token)
     : undefined;
+}
+
+/** The task an attempt was invoked with, built as its pod's document is less the plane it was fetched from. */
+function workerTaskRoute(
+  register: WorkerPlaneRegistrar,
+  service: WorkerPlaneServerService,
+): void {
+  register(workerPlaneRoutes.task, async (request, reply) => {
+    const secret = workerBearer(request);
+    const found =
+      secret === undefined ? undefined : await service.tasks.task(secret);
+    if (found === undefined || !found.live)
+      return reply.code(401).send({ action: "stop" });
+    if (found.invocation === undefined)
+      return reply
+        .code(409)
+        .send({ action: "stop", reason: "TaskNotRecorded" });
+    return { kind: "Work", ...workTask(found.identity, found.invocation) };
+  });
 }
 
 function workerInputRoute(
@@ -1145,6 +1167,7 @@ export function createWorkerPlaneApp(
   const register = workerPlaneRegistrar(app);
   workerHealthRoutes(register, service);
   workerInputRoute(register, service);
+  workerTaskRoute(register, service);
   workerHeartbeatRoute(register, service);
   workerUploadRoute(register, service);
   workerReportRoute(register, service);

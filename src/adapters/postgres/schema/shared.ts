@@ -69,6 +69,7 @@ export const workerPlaneRole = "chuggy_worker_plane";
 export const poolPlaneRole = "chuggy_pool_plane";
 export const configurationImporterRole = "chuggy_configuration_importer";
 export const workerAttemptReadFunction = "read_worker_attempt";
+export const workerTaskReadFunction = "read_worker_task";
 export const workerAttemptHeartbeatFunction = "heartbeat_worker_attempt";
 export const workerAttemptLostFunction = "lose_worker_attempt";
 export const workerAttemptWithdrawFunction = "withdraw_worker_attempt";

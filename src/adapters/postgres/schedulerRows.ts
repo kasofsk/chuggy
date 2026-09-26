@@ -33,7 +33,12 @@
  * likely.
  */
 
-import { asStageIndex, asTaskId, asTicketId } from "../../domain/ids.ts";
+import {
+  asStageIndex,
+  asTaskId,
+  asTicketId,
+  type StageIndex,
+} from "../../domain/ids.ts";
 import {
   allAttemptStates,
   allExecutionOutcomes,
@@ -206,6 +211,15 @@ function executionRowAgentCapability(row: ExecutionRow) {
   return capability === undefined ? {} : { agentCapability: capability };
 }
 
+/** A task row's stage key as the index a port carries, which a work task has none of. */
+export function taskRowStage(stage: string | null): {
+  readonly stage?: StageIndex;
+} {
+  return stage === null
+    ? {}
+    : { stage: asStageIndex(projectRowCounter(stage, "task stage") - 1) };
+}
+
 /** What one joined execution row says about itself. */
 export function executionRowLogical(row: ExecutionRow): LogicalExecution {
   if (row.input_bundle === null || row.input_bundle_digest === null)
@@ -216,11 +230,7 @@ export function executionRowLogical(row: ExecutionRow): LogicalExecution {
     ticket: asTicketId(projectRowCounter(row.ticket, "execution ticket")),
     task: asTaskId(projectRowCounter(row.task, "execution task")),
     taskKind: executionRowTaskKind(row.task_kind),
-    ...(row.stage === null
-      ? {}
-      : {
-          stage: asStageIndex(projectRowCounter(row.stage, "task stage") - 1),
-        }),
+    ...taskRowStage(row.stage),
     sourceRequest: row.source_request,
     inputBundle: row.input_bundle,
     inputBundleDigest: row.input_bundle_digest,
