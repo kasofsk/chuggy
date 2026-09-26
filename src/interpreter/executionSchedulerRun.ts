@@ -90,12 +90,18 @@
  * waits on its own lease, and one no pool holds when that lapses is withdrawn
  * without spending the budget.
  *
- * A POOL'S REFUSAL IS THE DEFINITIVE INABILITY. `runner.qnt` names no refusal:
- * an assignment there is offered, reported, verified or cancelled. A pool that
- * says it cannot run what it claimed blocks the execution rather than holding
- * it for another pool, which is the task contract's `TaskExecutionUnavailable`.
- * The reaper passes over a refused attempt whatever its lease, so a refusal is
- * never ended as a lapse.
+ * A POOL'S REFUSAL IS THE DEFINITIVE INABILITY. A pool that says it cannot run
+ * what it claimed blocks the execution rather than holding it for another pool,
+ * which is the task contract's `TaskExecutionUnavailable`. The reaper passes
+ * over a refused attempt whatever its lease, so a refusal is never ended as a
+ * lapse. One a pool claimed and lost spends the pool route's whole budget: no
+ * attempt is opened again inside the execution, and recovery is the ticket's.
+ *
+ * A BLOCK, A REFUSAL AND A LOST CLAIM ARE THE MODEL'S `Cancelled`:
+ * `runner.qnt`'s `cancel` of the assignment where one was made, and the
+ * ledger's own move where none was. Which it was is evidence rather than a
+ * model term, and `test/interpreter/runner.test.ts` states the mapping and
+ * holds it to the model.
  *
  * NOTHING HERE READS A CLOCK. Claim leases, placement backoff and attempt
  * leases are durations handed to the store, which asks the database what time
