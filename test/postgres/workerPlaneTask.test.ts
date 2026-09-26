@@ -24,6 +24,7 @@ import { attemptInvocationBytesMax } from "../../src/adapters/postgres/schema/mi
 import { postgresTicketBrief } from "../../src/adapters/postgres/ticketBrief.ts";
 import {
   postgresWorkerPlaneAuthority,
+  postgresWorkerReportStore,
   postgresWorkerTasks,
 } from "../../src/adapters/postgres/workerPlane.ts";
 import {
@@ -63,13 +64,16 @@ import { inertWorkerPlane } from "../adapters/workerPlaneFixtures.ts";
 import { goldenConfig } from "../adapters/workerPodDocumentFixture.ts";
 import {
   postgresHarnessConfiguration,
+  postgresHarnessNewEpoch,
   postgresHarnessRolePool,
 } from "./harness.ts";
 import {
   schedulerClaimFor,
+  schedulerEvaluationRequest,
   schedulerInvocation,
   schedulerOwner,
   schedulerProject,
+  schedulerReport,
   schedulerRigOpen,
   type SchedulerProject,
 } from "./schedulerHarness.ts";
@@ -107,10 +111,13 @@ function canonical(value: unknown): string {
 }
 
 /** The harness configuration with a worker configured, so a task carries every field one can. */
-function workerConfiguration(): CanonicalConfiguration {
+function workerConfiguration(
+  further: Readonly<Record<string, unknown>> = {},
+): CanonicalConfiguration {
   return asCanonicalConfiguration(
     canonical({
       ...(JSON.parse(String(postgresHarnessConfiguration)) as object),
+      ...further,
       worker: {
         setup: ["npm ci"],
         files: [{ path: "notes.md", content: "Read the notes." }],
@@ -132,18 +139,21 @@ function workerConfiguration(): CanonicalConfiguration {
 /** A project whose one spawned task is admitted, which leaves one execution to launch. */
 async function admittedProject(
   label: string,
+  configuration: CanonicalConfiguration = workerConfiguration(),
+  spawned: (project: SchedulerProject) => Promise<string> = (project) =>
+    Promise.resolve(project.request),
 ): Promise<{ project: SchedulerProject; execution: ExecutionId }> {
   const project = await schedulerProject(
     rig,
     label,
     { tasks: 1 },
-    workerConfiguration(),
+    configuration,
   );
   await rig.store.registerSpawn(
     await schedulerClaimFor(
       rig,
       project.partition,
-      project.request,
+      await spawned(project),
       schedulerOwner(label),
     ),
     200,
@@ -292,6 +302,51 @@ test("a worker fetches the task its pod is launched with, less the plane", async
     briefing: document.briefing,
     authority: document.authority,
     worker: document.worker,
+  });
+});
+
+test("an evaluator fetches the task its pod is launched with, its kind and stage included", async () => {
+  const { project } = await admittedProject(
+    "task-evaluation",
+    workerConfiguration({
+      evaluations: [{ instructions: ["Review it."], practices: [] }],
+    }),
+    (spawning) =>
+      schedulerEvaluationRequest(rig, spawning, "task-evaluation", {
+        cycle: 1,
+        stage: 1,
+        generation: 1,
+        evaluator: 1,
+      }),
+  );
+  const placement = await launched(project);
+  assert.equal(placement.taskKind, "Evaluation");
+  assert.equal(placement.stage, 0);
+  assert.deepEqual(await fetchedTask(placement.capability.secret), {
+    status: 200,
+    body: pushedTask(placement),
+  });
+});
+
+test("a reported attempt's bearer is answered as stopped, though the read still finds its task", async () => {
+  const { project } = await admittedProject("task-reported");
+  const placement = await launched(project);
+  const secret = placement.capability.secret;
+  assert.equal(
+    (
+      await postgresWorkerReportStore(planePool, secret).terminalize(
+        schedulerReport(placement, "Pass"),
+      )
+    ).terminalized,
+    "Terminalized",
+  );
+  const read = await postgresWorkerTasks(planePool).task(secret);
+  assert.ok(read !== undefined);
+  assert.equal(read.live, false);
+  assert.notEqual(read.invocation, undefined);
+  assert.deepEqual(await fetchedTask(secret), {
+    status: 401,
+    body: { action: "stop" },
   });
 });
 
@@ -450,4 +505,17 @@ test("the worker plane reads an invocation only through its function, and the po
       pool.query("UPDATE execution_attempt SET invocation=NULL"),
       /permission denied/u,
     );
+});
+
+/** Last, because a restore moves the epoch every later attempt in this database is opened under. */
+test("an attempt issued under an epoch since restored away is answered as stopped", async () => {
+  const { project } = await admittedProject("task-epoch");
+  const placement = await launched(project);
+  const secret = placement.capability.secret;
+  assert.equal((await fetchedTask(secret)).status, 200);
+  await rig.harness.store.establishRecoveryEpoch(postgresHarnessNewEpoch());
+  assert.deepEqual(await fetchedTask(secret), {
+    status: 401,
+    body: { action: "stop" },
+  });
 });
