@@ -41,9 +41,9 @@ FROM node:26.7.0-trixie@sha256:40fd8249a701dab7431d15074ac4cf4f1c18eecd713807599
 # below reads both versions off the built image and fails the build when they
 # differ. `just bump-claude-code` moves the two ARGs together.
 #
-# THE SDK'S `zod` PEER IS INSTALLED HERE FOR THE SAME REASON. A global install
-# resolves no peers, so the SDK alone leaves `zod` absent and the session mode
-# fails every turn it takes; `sdkProbe.mjs` reads the SDK's own declared range
+# THE SDK'S `zod` PEER IS INSTALLED HERE FOR THE SAME REASON. The SDK's global
+# install leaves its `zod` peer absent, and the session mode then fails every
+# turn it takes; `sdkProbe.mjs` reads the SDK's own declared range
 # and fails the build where this pin no longer satisfies it. The version is the
 # one `package-lock.json` resolves, so the tool shapes the suites validate are
 # validated by the same zod the image runs.
@@ -76,9 +76,9 @@ ENV DISABLE_AUTOUPDATER=1 \
     NODE_PATH=/usr/local/lib/node_modules \
     TMPDIR=/tmp
 
-# The contract's `zod` is a peer, and npm places a peer inside the package it
-# installs unless told to leave peers alone: that would be a second `zod` beside
-# the one above, which `contractProbe.mjs` below fails the build on.
+# The contract's global install nests its own copy of its `zod` peer unless told
+# to leave peers alone: that would be a second `zod` beside the one above, which
+# `contractProbe.mjs` below fails the build on.
 RUN --mount=type=bind,from=contract,source=/contract,target=/tmp/contract \
   npm install --global --legacy-peer-deps /tmp/contract/*.tgz
 

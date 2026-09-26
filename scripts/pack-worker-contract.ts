@@ -9,6 +9,7 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
+  copyFileSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -30,6 +31,7 @@ const tsc = fileURLToPath(import.meta.resolve("typescript/bin/tsc"));
 const workspaceManifestSchema = z.strictObject({
   name: z.string().min(1),
   private: z.literal(true),
+  license: z.string().min(1),
   type: z.literal("module"),
   exports: z.record(z.string(), z.string().regex(/^\.\/\w+\.ts$/)),
   peerDependencies: z.record(z.string(), z.string()),
@@ -40,6 +42,7 @@ export type WorkspaceManifest = z.infer<typeof workspaceManifestSchema>;
 export interface PublishedManifest {
   readonly name: string;
   readonly version: string;
+  readonly license: string;
   readonly type: "module";
   readonly exports: Readonly<
     Record<string, { readonly types: string; readonly default: string }>
@@ -72,6 +75,7 @@ export function publishedManifest(
   return {
     name: manifest.name,
     version: release,
+    license: manifest.license,
     type: manifest.type,
     exports: Object.fromEntries(
       Object.entries(manifest.exports).map(([entry, source]) => {
@@ -83,7 +87,7 @@ export function publishedManifest(
   };
 }
 
-/** Emits the workspace's entries and what they import, then packs them under the published manifest into `outDirectory`. */
+/** Emits the workspace's entries and what they import, then packs them with the workspace's licence under the published manifest into `outDirectory`. */
 export function packWorkerContract(outDirectory: string): PackedWorkerContract {
   const manifest = workspaceManifest();
   const work = mkdtempSync(join(tmpdir(), "worker-contract-"));
@@ -101,6 +105,7 @@ export function packWorkerContract(outDirectory: string): PackedWorkerContract {
       }),
     );
     packWorkerContractCommand(process.execPath, [tsc, "-p", project]);
+    copyFileSync(join(workspace, "LICENSE"), join(staged, "LICENSE"));
     writeFileSync(
       join(staged, "package.json"),
       `${JSON.stringify(publishedManifest(manifest, workerContractRelease), null, 2)}\n`,

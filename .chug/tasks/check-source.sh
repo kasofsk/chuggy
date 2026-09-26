@@ -159,7 +159,7 @@ if [ "$run_unit" -eq 1 ]; then
 
 # A suite reaches the contract's workspace package by name, through the link
 # `npm ci` makes. A link to anywhere but this tree's own `src/contract` is an
-# install from another tree, and the suites would pass against its contract.
+# install from another tree, and those suites would run against its contract.
 	if [ -f src/contract/package.json ]; then
 		contract="$(node -p 'require("./src/contract/package.json").name' 2>/dev/null || true)"
 		linked="$(cd "node_modules/$contract" 2>/dev/null && pwd -P || true)"

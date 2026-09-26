@@ -1,6 +1,7 @@
 {
   "name": "@chuggy/worker-contract",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "exports": {
     "./sessionPlane": "./sessionPlane.ts",

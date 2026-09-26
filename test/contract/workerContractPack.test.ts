@@ -87,6 +87,17 @@ test("the tarball's manifest is the workspace's, versioned by the release and po
   assert.deepEqual(packed, publishedManifest(manifest, workerContractRelease));
   assert.deepEqual(Object.keys(packed.exports), entries);
   assert.equal(packed.version, workerContractRelease);
+  assert.equal(packed.license, "MIT");
+});
+
+test("the tarball carries the workspace's licence", () => {
+  assert.equal(
+    readFileSync(
+      join(consumer, "node_modules", manifest.name, "LICENSE"),
+      "utf8",
+    ),
+    readFileSync(join(root, "src/contract/LICENSE"), "utf8"),
+  );
 });
 
 test("every entry imports by its package name from the emitted JavaScript, exporting what its source does", async () => {
@@ -158,7 +169,7 @@ test("a consumer typechecks against every entry's declarations, the declarations
 test("a workspace field the published manifest has no rule for is refused, and so is an entry that is not a module", () => {
   for (const refused of [
     { ...manifest, dependencies: { zod: "^4.4.3" } },
-    { ...manifest, license: "MIT" },
+    { ...manifest, main: "./workerPlane.ts" },
     { ...manifest, exports: { "./workerPlane": "./workerPlane.js" } },
     { ...manifest, private: false },
   ])

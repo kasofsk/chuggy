@@ -174,6 +174,7 @@ set +e
 RC=$?
 set -e
 refute "a change to the pack's tsconfig runs the suites" 0 "$RC" "check-source unit: SKIPPED"
+check "a change to the pack's tsconfig still skips Quint" 0 "$RC" "check-model: SKIPPED"
 
 # `check-keto`'s end-to-end suite composes the boundary over the postgres
 # harnesses, so a cone naming only the Keto adapter leaves the one suite that
