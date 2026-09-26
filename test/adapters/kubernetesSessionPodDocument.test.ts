@@ -1,13 +1,11 @@
 /**
- * The exact document one session placement submits to the cluster API, pinned
+ * The exact documents session placements submit to the cluster API, pinned
  * against a committed golden.
  *
- * THIS SUITE EXISTS FOR THE EXTRACTION AND OUTLIVES IT, the same claim as the
- * worker pod's: lifting the value types and the HTTP half out of `sessionPod.ts`
- * must change no session pod, and that claim is about bytes. The golden was
- * rendered before the lift and is compared after it, so the claim is checked
- * rather than inspected. It also proves the byte shape of `CHUG_SESSION_TASK`
- * before PR6 moves that document's schema into the contract.
+ * `CHUG_SESSION_TASK` IS A CONTRACT WITH THE HARNESS. The task document a
+ * session pod carries is read by `images/worker/`, which nothing type-checks
+ * against this renderer, so a field renamed on the way through a refactor is a
+ * pod the harness reads differently, and only the golden shows it.
  *
  * IT PINS THE ORDER AS WELL AS THE VALUES, for the same reason the worker
  * golden does: the wire body is `JSON.stringify(pod)`, so the golden is read
