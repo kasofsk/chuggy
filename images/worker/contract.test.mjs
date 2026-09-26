@@ -12,6 +12,9 @@
 
 import assert from "node:assert/strict";
 import { Buffer } from "node:buffer";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import process from "node:process";
 import test, { mock } from "node:test";
 import { URL } from "node:url";
@@ -37,6 +40,12 @@ import {
 } from "@chuggy/worker-contract/workerDocuments";
 import { contractVersionRefusalStatus } from "@chuggy/worker-contract/workerContract";
 import { workerWorkspaceVariable } from "@chuggy/worker-contract/workerEnvironment";
+import { workerPlaneAnswers } from "@chuggy/worker-contract/workerPlane";
+import {
+  poolEnvelopeSchema,
+  sessionTaskAnswerSchema,
+  workTaskDocumentSchema,
+} from "@chuggy/worker-contract/workerTask";
 import { z } from "zod";
 
 import {
@@ -47,7 +56,18 @@ import {
   sessionAllowedTools,
   sessionBuiltInTools,
 } from "./chuggyTools.mjs";
-import { publishWorkerResult, workerWorkspace } from "./entrypoint.mjs";
+import { claudeAgent } from "./claude.mjs";
+import { codexAgent } from "./codex.mjs";
+import {
+  envelopeCredentialFiles,
+  envelopeLaunch,
+  envelopeTask,
+  publishWorkerResult,
+  workerRun,
+  workerTaskCarrier,
+  workerWorkspace,
+} from "./entrypoint.mjs";
+import { envelope, fetchedAnswer, pushed } from "./envelope.fixture.mjs";
 import { heartbeatIntervalMilliseconds, keepWorkerLease } from "./lease.mjs";
 import { leadDecisionStaging } from "./leadDecision.mjs";
 import {
@@ -60,6 +80,7 @@ import {
   planeFetch,
   planes,
   refusalBodies,
+  routeOf,
   versionRefusal,
 } from "./plane.fixture.mjs";
 import { runEvidenceRecorder } from "./runEvidence.mjs";
@@ -68,11 +89,13 @@ import {
   bearer,
   facts,
   mintedCredential,
+  leadRoster,
   queryOf,
   rejection,
   result,
   run,
   task as sessionTask,
+  token,
   turnOne,
 } from "./sessionHarness.fixture.mjs";
 import { sessionMailbox } from "./sessionMailbox.mjs";
@@ -96,6 +119,8 @@ const base = "0".repeat(40);
 /** What each job route answers when it is not the one a case is about. */
 function jobSuccess(route) {
   switch (route) {
+    case "task":
+      return { status: 200, body: fetchedAnswer };
     case "input":
       return {
         status: 200,
@@ -179,6 +204,7 @@ function published(request, verdict = "Pass", summary = "the checks passed") {
  * the plane through `workerRequest`, the transport a job pod is given.
  */
 const jobCallers = {
+  task: (request) => envelopeTask(envelope, request),
   input: async (request) => {
     process.env[workerWorkspaceVariable] = "/workspace";
     await workerWorkspace(jobTask, repositories, {}, bearer, () => undefined, {
@@ -309,6 +335,7 @@ async function reaction(wire, success, transport, caller, route, answer) {
 
 /** Every status of every job route the pod calls. */
 const jobReactions = {
+  task: { 200: "reads", 401: "stops", 409: "stops" },
   input: { 200: "reads", 401: "stops", 409: "stops" },
   heartbeat: { 204: "reads", 401: "stops", 409: "stops" },
   artifact: {
@@ -362,9 +389,6 @@ const jobReactions = {
     503: "retries",
   },
 };
-
-/** The job routes a pod does not call. */
-const jobRoutesUncalled = ["task"];
 
 /** Every status of every session route the pod calls. */
 const sessionReactions = {
@@ -457,7 +481,7 @@ test("every status a job route the pod calls may answer is one the pod has a nam
   await heldToMap(
     planes.job,
     jobReactions,
-    jobRoutesUncalled,
+    [],
     jobCallers,
     jobSuccess,
     workerRequest,
@@ -498,6 +522,220 @@ test("a plane refusing the pod's release is asked once per route, and the pod st
       assert.deepEqual(asked, [...new Set(asked)], `${route} asked again`);
       if (route === first) assert.equal(carried, false, `${route} carried on`);
     }
+});
+
+/**
+ * The task an envelope's pod runs is the document a pushed pod is launched
+ * with, less the plane fields no step after admission reads. Catches the
+ * answer's kind left on the task, a field the lenient read dropped, and the
+ * plane not joined back on.
+ */
+test("the task an envelope's pod fetches is the pushed document, less what nothing after admission reads", async () => {
+  const plane = planeFetch(planes.job, (route) => jobSuccess(route));
+
+  const fetched = await envelopeTask(
+    envelope,
+    overPlane(workerRequest, plane.fetch),
+  );
+
+  assert.deepEqual(
+    Object.keys(pushed).sort(),
+    Object.keys(workTaskDocumentSchema.shape).sort(),
+    "the pushed document leaves a field out, which the read could drop unseen",
+  );
+  assert.deepEqual(fetched, {
+    ...pushed,
+    workerPlane: { url: envelope.callbackUrl },
+  });
+  assert.deepEqual(
+    plane.asked.map(({ route }) => route),
+    ["task"],
+  );
+});
+
+/** Catches one carrier read as the other, and a launcher's mistake read as whichever it resembles more. */
+test("a pushed document and a pool's envelope are told apart, and both at once or neither is refused", () => {
+  assert.equal(workerTaskCarrier(pushed), "Document");
+  assert.equal(workerTaskCarrier(envelope), "Envelope");
+  assert.throws(
+    () => workerTaskCarrier({ ...pushed, ...envelope }),
+    /a task document and a pool envelope at once/u,
+  );
+  for (const neither of [{}, { namedByNeither: true }, [], null, "task"])
+    assert.throws(
+      () => workerTaskCarrier(neither),
+      /neither a task document nor a pool envelope/u,
+    );
+});
+
+/** What makes the carrier decidable by its fields at all. */
+test("no field a task document names is one a pool envelope names", () => {
+  const documentFields = Object.keys(workTaskDocumentSchema.shape);
+
+  assert.deepEqual(
+    Object.keys(poolEnvelopeSchema.shape).filter((field) =>
+      documentFields.includes(field),
+    ),
+    [],
+  );
+});
+
+/**
+ * Each way the task route may refuse an envelope's pod, and whether the plane
+ * can still take the attempt's end: not where it refuses this pod's release,
+ * which it refuses on every route, nor for a session's bearer.
+ */
+const taskRefusals = [
+  { what: "a plane older than the task route", status: 404, settles: true },
+  {
+    what: "a plane refusing this pod's release",
+    status: contractVersionRefusalStatus,
+    body: versionRefusal,
+    settles: false,
+  },
+  {
+    what: "an attempt whose task was never recorded",
+    status: contractVersionRefusalStatus,
+    body: workerPlaneAnswers.task[contractVersionRefusalStatus].parse({
+      action: "stop",
+      reason: "TaskNotRecorded",
+    }),
+    settles: true,
+  },
+  {
+    what: "a session's task",
+    status: 200,
+    body: sessionTaskAnswerSchema.parse({
+      ...sessionTask,
+      capabilities: leadRoster,
+      credentialSlot: claudeAgent.credential,
+      authority: fetchedAnswer.authority,
+    }),
+    settles: false,
+  },
+  {
+    what: "a task this pod cannot read",
+    status: 200,
+    body: { ...fetchedAnswer, authority: null },
+    settles: true,
+  },
+];
+
+/**
+ * A plane answering the task route with `refusal`, which its map need not
+ * describe, and every other route as it does on success. `routes` is every
+ * route asked, in order.
+ */
+function refusingTask(refusal) {
+  const routes = [];
+  const plane = planeFetch(planes.job, (route) => jobSuccess(route));
+  return {
+    routes,
+    plane,
+    fetch: async (url, init = {}) => {
+      const route = routeOf(
+        planes.job,
+        init.method ?? "GET",
+        new URL(url).pathname,
+      );
+      routes.push(route);
+      if (route !== "task") return plane.fetch(url, init);
+      return new globalThis.Response(
+        refusal.body === undefined ? null : JSON.stringify(refusal.body),
+        { status: refusal.status },
+      );
+    },
+  };
+}
+
+/**
+ * Catches a refusal the pod asks again after, and one it leaves for the reaper
+ * where the plane could have taken the attempt's end: the task route is asked
+ * once, and wherever the plane can end the attempt it is ended as a crashed
+ * run's is, with the refusal as its error text.
+ */
+test("each refusal of an envelope's task ends the attempt at once, where the plane can take its end", async () => {
+  for (const refusal of taskRefusals) {
+    const asked = refusingTask(refusal);
+
+    const refused = await envelopeTask(
+      envelope,
+      overPlane(workerRequest, asked.fetch),
+    ).then(
+      () => undefined,
+      (error) => error.message,
+    );
+
+    assert.equal(typeof refused, "string", `${refusal.what} was run`);
+    assert.deepEqual(
+      asked.routes,
+      refusal.settles
+        ? ["task", "runTotals", "artifact", "runEnded"]
+        : ["task"],
+      refusal.what,
+    );
+    if (refusal.settles)
+      assert.equal(
+        String(
+          asked.plane.asked.find(({ route }) => route === "artifact")?.body,
+        ),
+        `${refused}\n`,
+        refusal.what,
+      );
+  }
+});
+
+/**
+ * Catches the provider credential put in a slot its agent does not read, and a
+ * credential the pool mounted reaching an upload unscrubbed because no agent
+ * asked for it.
+ */
+test("an envelope's provider credential is its agent's, and is scrubbed as a mounted one is", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "chuggy-envelope-"));
+  try {
+    const providerCredentialFile = join(directory, "provider-credential");
+    await writeFile(providerCredentialFile, `${token}\n`);
+    const mounted = { ...envelope, providerCredentialFile };
+    for (const agent of [claudeAgent, codexAgent])
+      assert.deepEqual(envelopeCredentialFiles(mounted, agent), {
+        [agent.credential]: providerCredentialFile,
+      });
+
+    for (const agent of [claudeAgent, undefined]) {
+      const given = await envelopeLaunch(mounted).given(agent);
+      const run = await workerRun({ task: jobTask, ...given, agent });
+      run.evidence.stop();
+
+      assert.equal(run.scrub(`saw ${token}`).includes(token), false);
+      assert.deepEqual(
+        run.agentEnvironment,
+        agent === undefined ? {} : agent.prepareCredential(token).environment,
+      );
+    }
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+/** Catches an envelope with no provider credential running its agent on something else, or failing otherwise than a pushed pod with none mounted. */
+test("an envelope with no provider credential leaves its agent unmounted, as a pushed pod with none is", async () => {
+  const failure = (given) =>
+    workerRun({
+      task: jobTask,
+      bearer: envelope.bearer,
+      ...given,
+      agent: claudeAgent,
+    }).then(
+      () => undefined,
+      (error) => error.message,
+    );
+
+  assert.deepEqual(envelopeCredentialFiles(envelope, claudeAgent), {});
+  const enveloped = await failure(
+    await envelopeLaunch(envelope).given(claudeAgent),
+  );
+  assert.equal(enveloped, await failure({ credentialFiles: {}, mounted: [] }));
+  assert.match(enveloped, /is not mounted/u);
 });
 
 /** The manifest one finished attempt reported, as the plane was offered it. */

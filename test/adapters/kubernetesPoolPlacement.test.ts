@@ -4,7 +4,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 
-import { workerTaskVariable } from "../../src/contract/workerEnvironment.ts";
+import {
+  mintedCredentialDirectory,
+  workerTaskVariable,
+} from "../../src/contract/workerEnvironment.ts";
 import {
   workerPoolRetryAfterSecsMax,
   type WorkerPoolAssignment,
@@ -57,7 +60,7 @@ const config: KubernetesPoolPlacementConfig = {
     memoryLimit: "512Mi",
     ephemeralStorageLimit: "4Gi",
   },
-  timeoutSecsMax: 30,
+  timeoutSecsMax: 1_800,
   outputBytesMax: 4_096,
   environment: { POOL_SITE: "configured" },
   capabilities: {
@@ -171,6 +174,60 @@ test("a placed pod is named for its assignment and asks for the box it was offer
   assert.equal(pod.spec.containers[0]?.env[0]?.name, workerTaskVariable);
 });
 
+/** The pod one site places for `assignment`, as the cluster was asked to create it. */
+async function placedPod(site: KubernetesPoolPlacementConfig): Promise<{
+  spec: {
+    activeDeadlineSeconds: number;
+    containers: readonly {
+      volumeMounts: readonly {
+        name: string;
+        mountPath: string;
+        readOnly: boolean;
+      }[];
+    }[];
+    volumes: readonly { name: string; emptyDir?: unknown }[];
+  };
+}> {
+  const name = kubernetesPoolPodName(site, assignment.assignment);
+  const { reached, fetcher } = cluster((made) =>
+    made.path.startsWith("/api/v1/namespaces/pool/pods")
+      ? created(name)
+      : new Response("{}", { status: 201 }),
+  );
+  await kubernetesPoolBackend(site, fetcher).place(assignment);
+  return reached[0]?.body as Awaited<ReturnType<typeof placedPod>>;
+}
+
+/** Catches a pool whose own bound on its workloads is enforced nowhere. */
+test("a pod runs no longer than the pool's own bound where the plane would let it run longer", async () => {
+  assert.equal(
+    (await placedPod({ ...config, timeoutSecsMax: 30 })).spec
+      .activeDeadlineSeconds,
+    30,
+  );
+  assert.equal(
+    (await placedPod(config)).spec.activeDeadlineSeconds,
+    assignment.deadlineSecs,
+  );
+});
+
+/**
+ * A pool-placed attempt asks the plane for its forge credential as a pushed one
+ * does, and the image writes what it is minted to a path only this mount makes
+ * writable, and only a memory volume keeps off the node's disk.
+ */
+test("a pool pod mounts memory where the image writes a minted credential", async () => {
+  const pod = await placedPod(config);
+  const mount = pod.spec.containers[0]?.volumeMounts.find(
+    ({ mountPath }) => mountPath === mintedCredentialDirectory,
+  );
+  assert.equal(mount?.readOnly, false);
+  assert.deepEqual(
+    pod.spec.volumes.find(({ name }) => name === mount?.name)?.emptyDir,
+    { medium: "Memory", sizeLimit: "1Mi" },
+  );
+});
+
 test("a mapped capability moves the pod and an unmapped one does not", async () => {
   const name = kubernetesPoolPodName(config, assignment.assignment);
   const { reached, fetcher } = cluster((made) =>
@@ -208,7 +265,7 @@ test("the envelope carries the callback and the bearer and no material at all", 
     callbackUrl: assignment.callbackUrl,
     bearer: assignment.bearer,
     workspace: "/workspace",
-    timeoutSecsMax: 30,
+    timeoutSecsMax: 1_800,
     outputBytesMax: 4_096,
     providerCredentialFile: "/var/run/chuggy/codex/auth.json",
   });

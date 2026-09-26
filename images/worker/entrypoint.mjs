@@ -17,6 +17,12 @@
  * declares the commit anyway. That is this worker's rule and not a property of
  * the platform, so a configuration read across to another runner cannot assume
  * it; a repository that wants an empty attempt to fail says so in a command.
+ *
+ * A POOL HANDS ITS POD AN ENVELOPE, AND THE TASK IS FETCHED. Where a launcher
+ * writes the task document itself, a pool writes only the plane to fetch it
+ * from, the bearer to fetch it under, and what the pool itself mounted. What
+ * the plane answers is the document less that plane, so the plane is joined
+ * back on and the attempt runs from admission onwards exactly as a pushed one.
  */
 
 import { execFile, spawn } from "node:child_process";
@@ -36,10 +42,22 @@ import {
   workerWorkspaceVariable,
 } from "@chuggy/worker-contract/workerEnvironment";
 import {
+  contractVersionRefusalSchema,
+  contractVersionRefusalStatus,
+  workerContractRelease,
+} from "@chuggy/worker-contract/workerContract";
+import {
+  workerPlaneAnswers,
   workerPlaneBytesMediaType,
   workerPlaneRoutes,
 } from "@chuggy/worker-contract/workerPlane";
-import { filesystemAccesses } from "@chuggy/worker-contract/workerTask";
+import {
+  filesystemAccesses,
+  poolEnvelopeSchema,
+  workTaskAnswerSchema,
+  workTaskDocumentSchema,
+  workerTaskAnswerSchema,
+} from "@chuggy/worker-contract/workerTask";
 
 import { workerAgent } from "./agent.mjs";
 import {
@@ -55,12 +73,16 @@ import {
   workerRepository,
   workerRepositoryUrl,
 } from "./repository.mjs";
-import { credentialScrubbing, runEvidenceRecorder } from "./runEvidence.mjs";
+import {
+  credentialScrub,
+  credentialScrubbing,
+  runEvidenceRecorder,
+} from "./runEvidence.mjs";
 import { runConfigurationSnapshot } from "./snapshot.mjs";
 import { commitAndPushSource, resultDocument } from "./source.mjs";
 import { workerRequest } from "./transport.mjs";
 import { agentResultSchema } from "./result.mjs";
-import { rosterLabel, routePath } from "./wire.mjs";
+import { answeredWith, rosterLabel, routePath } from "./wire.mjs";
 
 const executeFile = promisify(execFile);
 const agentResultSchemaFile = "/tmp/chuggy-agent-result-schema.json";
@@ -305,8 +327,9 @@ export async function workerCredential(asked) {
 /**
  * What one attempt works in: the repository its own bundle pinned, cloned with
  * the credential this pod resolved, and that credential's `refresh` where the
- * plane minted it. `seams` names the plane, the clone and the file the password
- * is written to, this module's own where it names none.
+ * plane minted it. `seams` names the plane, the clone, the file the password
+ * is written to and the directory cloned into, this module's own and the
+ * image's `CHUG_WORKER_WORKSPACE` where it names none.
  */
 export async function workerWorkspace(
   task,
@@ -316,7 +339,12 @@ export async function workerWorkspace(
   keepSecret,
   seams = {},
 ) {
-  const { request = workerRequest, clone = cloneRepository, write } = seams;
+  const {
+    request = workerRequest,
+    clone = cloneRepository,
+    write,
+    workspace,
+  } = seams;
   const input = await (
     await request(task, bearer, workerPlaneRoutes.input.path)
   ).json();
@@ -335,7 +363,7 @@ export async function workerWorkspace(
   const directory = await clone(
     repository,
     base,
-    required(workerWorkspaceVariable),
+    workspace ?? required(workerWorkspaceVariable),
     environment,
   );
   return {
@@ -372,12 +400,9 @@ function reportSummary(summary) {
   return summary.replace(/\s+/gu, " ").trim();
 }
 
-async function credentialValues(credentialFiles) {
+async function credentialValues(mounted) {
   const values = [];
-  for (const path of Object.values(credentialFiles).slice(
-    0,
-    workerCredentialFilesMax,
-  )) {
+  for (const path of mounted.slice(0, workerCredentialFilesMax)) {
     if (typeof path !== "string" || !path.startsWith("/")) continue;
     try {
       values.push((await readFile(path, "utf8")).trim());
@@ -396,7 +421,19 @@ async function agentCredential(credentialFiles, agent) {
   return agent.prepareCredential(token);
 }
 
-async function workerRun(task, bearer, credentialFiles, agent) {
+/**
+ * What a run is set up with: the agent's environment, the evidence recorder,
+ * and the scrub over every secret this pod holds — the agent's own, the bearer,
+ * and each file in `mounted`, which is every credential this pod's launcher
+ * mounted whether or not the map names it.
+ */
+export async function workerRun({
+  task,
+  bearer,
+  credentialFiles,
+  mounted,
+  agent,
+}) {
   const prepared =
     agent === undefined
       ? { environment: {}, secrets: [] }
@@ -404,7 +441,7 @@ async function workerRun(task, bearer, credentialFiles, agent) {
   const { scrub, keepSecret } = credentialScrubbing([
     ...prepared.secrets,
     bearer,
-    ...(await credentialValues(credentialFiles)),
+    ...(await credentialValues(mounted)),
   ]);
   activeScrub = scrub;
   const evidence = runEvidenceRecorder(task, bearer, scrub);
@@ -445,26 +482,190 @@ export async function runWorkerTask(context, commands) {
   return { ...run, diagnosticPath: checkDiagnosticPath };
 }
 
-async function main() {
-  const task = parsed(workerTaskVariable);
+/** What a plane older than the task route answers it with: the framework's own, which no answer map describes. */
+const taskRouteAbsent = 404;
+
+/** The status the task route answers a task with, and the kind a work task is told from a session's by. */
+const [taskAnswered] = answeredWith(
+  workerPlaneAnswers.task,
+  workerTaskAnswerSchema,
+);
+const workKind = workTaskAnswerSchema.shape.kind.value;
+
+/** A reason there is no task to run, and whether the plane can still take this attempt's end. */
+function envelopeTaskRefused(refused, settles) {
+  return { refused, settles };
+}
+
+/**
+ * The task the task route answered, less its kind, or why there is none to
+ * run. The plane cannot take the end where it refuses this pod's release, since
+ * it then refuses every route alike, nor where the bearer is a session's, which
+ * the job plane never takes; the task route's own stop shares the status the
+ * release refusal comes on.
+ */
+async function envelopeTaskRead(response) {
+  if (response.status === taskRouteAbsent)
+    return envelopeTaskRefused(
+      "the worker plane predates the task route",
+      true,
+    );
+  const body = await response.json().catch(() => undefined);
+  if (response.status === contractVersionRefusalStatus) {
+    const version = contractVersionRefusalSchema.safeParse(body);
+    if (version.success)
+      return envelopeTaskRefused(
+        `the worker plane serves contract ${version.data.accepted.min} to ${version.data.accepted.max}, and this pod speaks ${workerContractRelease}`,
+        false,
+      );
+    const stopped =
+      workerPlaneAnswers.task[contractVersionRefusalStatus].safeParse(body);
+    return envelopeTaskRefused(
+      `the worker plane holds no task for this attempt${stopped.success ? `: ${stopped.data.reason}` : ""}`,
+      true,
+    );
+  }
+  const answer = workerTaskAnswerSchema.safeParse(body);
+  if (response.status !== taskAnswered || !answer.success)
+    return envelopeTaskRefused(
+      "the worker plane answered a task this pod cannot read",
+      true,
+    );
+  const { kind, ...task } = answer.data;
+  if (kind !== workKind)
+    return envelopeTaskRefused(
+      `the worker plane answered a ${kind} session's task, which an envelope's pod does not run`,
+      false,
+    );
+  return { task };
+}
+
+/** One refused attempt ended as a crashed run's is, with the refusal as its error text. */
+async function envelopeTaskSettled(plane, bearer, request, message) {
+  const scrub = credentialScrub([bearer]);
+  try {
+    await reportWorkerFailure(
+      {
+        task: plane,
+        bearer,
+        evidence: runEvidenceRecorder(plane, bearer, scrub, { request }),
+        request,
+        scrub,
+      },
+      message,
+    );
+  } catch {
+    process.stderr.write("the refused attempt could not be ended\n");
+  }
+}
+
+/**
+ * The task a pool's envelope stands for: fetched from the plane it names under
+ * the bearer it carries, with that plane joined back on as the one field a
+ * pushed document carries and the answer does not.
+ *
+ * A REFUSAL ENDS THE ATTEMPT NOW RATHER THAN AT ITS LEASE. A pod that only
+ * exited would leave the attempt running until its lease lapsed and the reaper
+ * lost it; so where the plane can still take the end, it is settled here.
+ */
+export async function envelopeTask(envelope, request = workerRequest) {
+  const plane = { workerPlane: { url: envelope.callbackUrl } };
+  const read = await envelopeTaskRead(
+    await request(
+      plane,
+      envelope.bearer,
+      workerPlaneRoutes.task.path,
+      {},
+      { settled: [taskRouteAbsent, contractVersionRefusalStatus] },
+    ),
+  );
+  if (read.task !== undefined) return { ...read.task, ...plane };
+  if (read.settles)
+    await envelopeTaskSettled(plane, envelope.bearer, request, read.refused);
+  throw new Error(read.refused);
+}
+
+/**
+ * The credential map an envelope stands for: the provider credential the pool
+ * mounted, in the slot the task's agent reads it from. With no file, or no
+ * agent, it is empty, and an agent then finds its credential unmounted exactly
+ * as a pushed pod's does.
+ */
+export function envelopeCredentialFiles(envelope, agent) {
+  return envelope.providerCredentialFile === undefined || agent === undefined
+    ? {}
+    : { [agent.credential]: envelope.providerCredentialFile };
+}
+
+/**
+ * What the push path's launcher hands a pod beside its task document: the
+ * credential map in its own variable and the bearer in the file the document
+ * names, each read only once the attempt has been admitted.
+ */
+function documentLaunch(document) {
+  return {
+    task: async () => document,
+    given: async () => {
+      const credentialFiles = workerRepositories(
+        required(workerCredentialFilesVariable),
+      );
+      return {
+        credentialFiles,
+        mounted: Object.values(credentialFiles),
+        bearer: (
+          await readFile(document.workerPlane.capabilityFile, "utf8")
+        ).trim(),
+      };
+    },
+  };
+}
+
+/**
+ * What a pool's envelope stands for in their place. Its `timeoutSecsMax` is
+ * the pool's to enforce, as a Kubernetes pool does at its pod's deadline, and
+ * its `outputBytesMax` names no channel, every one this pod writes to the
+ * plane being bounded by the contract already; so neither is read here.
+ */
+export function envelopeLaunch(envelope) {
+  return {
+    task: () => envelopeTask(envelope),
+    given: async (agent) => ({
+      credentialFiles: envelopeCredentialFiles(envelope, agent),
+      mounted:
+        envelope.providerCredentialFile === undefined
+          ? []
+          : [envelope.providerCredentialFile],
+      bearer: envelope.bearer,
+      workspace: envelope.workspace,
+    }),
+  };
+}
+
+/**
+ * One attempt, run from its task onwards the same whichever carrier brought it.
+ * `seams` are `workerWorkspace`'s, less the directory, which is the launch's.
+ */
+export async function workerAttempt(launch, seams = {}) {
+  const task = await launch.task();
   activeTask = task;
   const commands = workerCheckCommands(task);
   const agent = commands === undefined ? workerAgent(task) : undefined;
   await admitWorkerTask(task, agent);
   const repositories = optionalRepositories(workerRepositoriesVariable);
-  const credentialFiles = workerRepositories(
-    required(workerCredentialFilesVariable),
-  );
-  const bearer = (
-    await readFile(task.workerPlane.capabilityFile, "utf8")
-  ).trim();
+  const {
+    credentialFiles,
+    mounted,
+    bearer,
+    workspace: into,
+  } = await launch.given(agent);
   activeBearer = bearer;
-  const { agentEnvironment, scrub, keepSecret, evidence } = await workerRun(
+  const { agentEnvironment, scrub, keepSecret, evidence } = await workerRun({
     task,
     bearer,
     credentialFiles,
+    mounted,
     agent,
-  );
+  });
   const stopLease = keepWorkerLease(task, bearer);
   try {
     const workspace = await workerWorkspace(
@@ -473,6 +674,7 @@ async function main() {
       credentialFiles,
       bearer,
       keepSecret,
+      { ...seams, workspace: into },
     );
     attemptDatabase(process.env);
     await prepareWorker(task, workspace.directory);
@@ -572,6 +774,50 @@ export function workerMode(environment) {
   if (session) return "Session";
   throw new Error(
     `a pod needs one of ${workerTaskVariable} and ${sessionTaskVariable}`,
+  );
+}
+
+/**
+ * What `CHUG_WORKER_TASK` carries: a task document, which is what the push
+ * path's launcher writes, or a pool's envelope naming where to fetch one. It is
+ * told by the fields each schema names, so a value naming fields of both, or of
+ * neither, is refused rather than read as whichever it resembles more.
+ */
+export function workerTaskCarrier(value) {
+  const names = (schema) =>
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    Object.keys(schema.shape).some((field) => Object.hasOwn(value, field));
+  const document = names(workTaskDocumentSchema);
+  const envelope = names(poolEnvelopeSchema);
+  if (document && envelope)
+    throw new Error(
+      `${workerTaskVariable} carries a task document and a pool envelope at once`,
+    );
+  if (document) return "Document";
+  if (envelope) return "Envelope";
+  throw new Error(
+    `${workerTaskVariable} carries neither a task document nor a pool envelope`,
+  );
+}
+
+/** The envelope a pool launched this pod with, refused naming the fields this pod cannot read. */
+function envelopeRead(value) {
+  const envelope = poolEnvelopeSchema.safeParse(value);
+  if (!envelope.success)
+    throw new Error(
+      `${workerTaskVariable} carries a pool envelope this pod cannot read: ${envelope.error.issues.map((issue) => issue.path.join(".")).join(", ")}`,
+    );
+  return envelope.data;
+}
+
+async function main() {
+  const carried = parsed(workerTaskVariable);
+  await workerAttempt(
+    workerTaskCarrier(carried) === "Document"
+      ? documentLaunch(carried)
+      : envelopeLaunch(envelopeRead(carried)),
   );
 }
 

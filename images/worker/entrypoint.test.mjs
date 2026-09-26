@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
+import { Buffer } from "node:buffer";
 import { spawn } from "node:child_process";
 import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, URL } from "node:url";
 
 import {
   sessionTaskVariable,
@@ -13,17 +15,23 @@ import {
   workerTaskVariable,
   workerWorkspaceVariable,
 } from "@chuggy/worker-contract/workerEnvironment";
+import { workerPlaneBytesMediaType } from "@chuggy/worker-contract/workerPlane";
+import { workTaskAnswerSchema } from "@chuggy/worker-contract/workerTask";
 
 import { workerCheckCommands } from "./checks.mjs";
 import {
+  envelopeLaunch,
   prepareWorker,
   publishWorkerResult,
   reportWorkerFailure,
   runWorkerTask,
+  workerAttempt,
   workerCredential,
   workerMode,
   workerWorkspace,
 } from "./entrypoint.mjs";
+import { envelope, fetchedAnswer } from "./envelope.fixture.mjs";
+import { planeFetch, planes } from "./plane.fixture.mjs";
 import { workerCredentialPath } from "./planeCredential.mjs";
 import { credentialScrub, runEvidenceRecorder } from "./runEvidence.mjs";
 import { ticketBranch } from "./source.mjs";
@@ -274,6 +282,179 @@ test("a commanded work task without network or workspace write is refused", asyn
     assert.equal(ran.code, 1);
     assert.match(ran.stderr, /requires network and workspace write authority/u);
   }
+});
+
+/**
+ * A worker plane a launched pod reaches over HTTP, answering through the
+ * contract's own tables: `answer(route)` is what each route answers, and
+ * `asked` is every route in order with the bearer it was asked under.
+ */
+async function servedPlane(answer) {
+  const plane = planeFetch(planes.job, answer);
+  const asked = [];
+  const server = createServer(async (request, response) => {
+    const chunks = [];
+    for await (const chunk of request) chunks.push(chunk);
+    const body = Buffer.concat(chunks);
+    let answered;
+    try {
+      answered = await plane.fetch(
+        new URL(request.url ?? "/", "http://worker-plane.test"),
+        {
+          method: request.method,
+          headers: request.headers,
+          ...(body.length === 0
+            ? {}
+            : {
+                body:
+                  request.headers["content-type"] === workerPlaneBytesMediaType
+                    ? body
+                    : body.toString("utf8"),
+              }),
+        },
+      );
+      asked.push({
+        route: plane.asked.at(-1)?.route,
+        authorization: request.headers.authorization,
+      });
+    } catch {
+      answered = new globalThis.Response(null, { status: 400 });
+    }
+    response.writeHead(answered.status, Object.fromEntries(answered.headers));
+    response.end(Buffer.from(await answered.arrayBuffer()));
+  });
+  await new Promise((listening) => {
+    server.listen(0, "127.0.0.1", () => listening(undefined));
+  });
+  return {
+    url: `http://127.0.0.1:${String(server.address().port)}`,
+    asked,
+    close: () => new Promise((closed) => server.close(() => closed(undefined))),
+  };
+}
+
+/**
+ * A pod launched as a pool launches it: an envelope, carrying a field a later
+ * release might add, and no credential map. Catches an envelope read as a
+ * document, a pod that fetched its task anywhere but the envelope's plane or
+ * under anything but its bearer, and an attempt that did not run on from
+ * there as a pushed one does, to the credential its repository needs and the
+ * crashed run's report when there is none.
+ */
+test("a pod launched with an envelope fetches its task and runs it under the envelope's bearer", async () => {
+  const commanded = workTaskAnswerSchema.parse({
+    ...fetchedAnswer,
+    worker: {
+      mode: { type: "Commands", commands: ["true"] },
+      setup: [],
+      files: [],
+    },
+  });
+  const plane = await servedPlane((route) => {
+    switch (route) {
+      case "task":
+        return { status: 200, body: commanded };
+      case "input":
+        return {
+          status: 200,
+          body: {
+            bundle: "bundle-1",
+            digest: "0".repeat(64),
+            references: [
+              { ordinal: 1, kind: "Repository", reference: "repository-1" },
+              { ordinal: 2, kind: "TargetCommit", reference: "0".repeat(40) },
+            ],
+          },
+        };
+      case "credential":
+        return { status: 404 };
+      default:
+        return { status: 204 };
+    }
+  });
+  try {
+    const ran = await launched({
+      [workerTaskVariable]: JSON.stringify({
+        ...envelope,
+        callbackUrl: plane.url,
+        namedByALaterRelease: true,
+      }),
+    });
+
+    assert.equal(ran.code, 1);
+    assert.match(
+      ran.stderr,
+      /^no repository configuration for repository-1$/mu,
+    );
+    assert.deepEqual(
+      plane.asked,
+      ["task", "input", "credential", "runTotals", "artifact", "runEnded"].map(
+        (route) => ({ route, authorization: `Bearer ${envelope.bearer}` }),
+      ),
+    );
+  } finally {
+    await plane.close();
+  }
+});
+
+/**
+ * Catches an envelope's pod cloning into the directory the image names rather
+ * than the one its pool mounted, whether the launch or the attempt drops it.
+ */
+test("an envelope's pod clones into the workspace its envelope names", async () => {
+  process.env[workerWorkspaceVariable] = "/not-the-envelopes";
+  const plane = await servedPlane((route) => {
+    switch (route) {
+      case "task":
+        return {
+          status: 200,
+          body: workTaskAnswerSchema.parse({
+            ...fetchedAnswer,
+            worker: {
+              mode: { type: "Commands", commands: ["true"] },
+              setup: [],
+              files: [],
+            },
+          }),
+        };
+      case "input":
+        return {
+          status: 200,
+          body: {
+            bundle: "bundle-1",
+            digest: "0".repeat(64),
+            references: [
+              { ordinal: 1, kind: "Repository", reference: "repository-1" },
+              { ordinal: 2, kind: "TargetCommit", reference: "0".repeat(40) },
+            ],
+          },
+        };
+      case "credential":
+        return {
+          status: 200,
+          body: { ...minted, expiresAtMs: 1_900_000_000_000 },
+        };
+      default:
+        return { status: 204 };
+    }
+  });
+  const cloned = [];
+  try {
+    await assert.rejects(
+      workerAttempt(envelopeLaunch({ ...envelope, callbackUrl: plane.url }), {
+        write: async () => undefined,
+        clone: async (_repository, _base, into) => {
+          cloned.push(into);
+          throw new Error("cloned");
+        },
+      }),
+      /^Error: cloned$/u,
+    );
+  } finally {
+    await plane.close();
+  }
+
+  assert.deepEqual(cloned, [envelope.workspace]);
 });
 
 /**

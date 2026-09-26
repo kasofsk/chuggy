@@ -50,6 +50,7 @@ import {
   kubernetesContainerResources,
   kubernetesCredentials,
   kubernetesIdentityDigest,
+  kubernetesMintedCredentialVolumes,
   kubernetesPodNamePrefix,
   kubernetesPodSecret,
   kubernetesPositive,
@@ -182,6 +183,19 @@ function poolPlacementResources(
   });
 }
 
+/**
+ * How long the pod may run: the sooner of the plane's deadline for the
+ * assignment and the pool's own bound on every workload it places. The pod
+ * keeps the pool's bound rather than the harness the envelope hands it to,
+ * because the kubelet's kill holds even where the harness stopped answering.
+ */
+function poolPlacementDeadlineSecs(
+  config: KubernetesPoolPlacementConfig,
+  assignment: WorkerPoolAssignment,
+): number {
+  return Math.min(assignment.deadlineSecs, config.timeoutSecsMax);
+}
+
 function poolPlacementPod(
   config: KubernetesPoolPlacementConfig,
   assignment: WorkerPoolAssignment,
@@ -200,7 +214,7 @@ function poolPlacementPod(
       ...config.podAnnotations,
       [kubernetesPoolAssignmentAnnotation]: assignment.assignment,
     },
-    activeDeadlineSecs: assignment.deadlineSecs,
+    activeDeadlineSecs: poolPlacementDeadlineSecs(config, assignment),
     nodeSelector: constraints.nodeSelector,
     tolerations: constraints.tolerations,
     initContainers: [],
@@ -227,6 +241,7 @@ function poolPlacementPod(
             readOnly: false,
           },
           { name: "control", mountPath: "/tmp", readOnly: false },
+          kubernetesMintedCredentialVolumes().mount,
           ...credentials.mounts,
         ],
       },
@@ -237,6 +252,7 @@ function poolPlacementPod(
         emptyDir: { sizeLimit: config.resources.ephemeralStorageLimit },
       },
       { name: "control", emptyDir: { sizeLimit: "16Mi" } },
+      kubernetesMintedCredentialVolumes().volume,
       ...credentials.volumes,
     ],
   });
