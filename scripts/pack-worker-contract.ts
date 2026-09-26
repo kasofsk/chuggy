@@ -3,21 +3,24 @@
 /**
  * Packs the worker contract for publishing: the workspace's entries emitted as
  * JavaScript and declarations, under a manifest derived from the workspace's
- * own, printed as the tarball's sha256 and path.
+ * own, printed as the tarball's sha256 and path and the digest of the files it
+ * holds.
  */
 
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   copyFileSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { z } from "zod";
@@ -53,6 +56,35 @@ export interface PublishedManifest {
 export interface PackedWorkerContract {
   readonly tarball: string;
   readonly sha256: string;
+  /** The files the tarball holds as `workerContractFilesDigest` reads them, which a release's history entry records. */
+  readonly files: string;
+}
+
+/**
+ * A package's files as one sha256: each file's path under the package beside
+ * the sha256 of its bytes, in code-unit order of path. A link or any other
+ * entry that is not a file or a directory is refused, so a linked install is
+ * never read as the release it points at.
+ */
+export function workerContractFilesDigest(directory: string): string {
+  if (!lstatSync(directory).isDirectory())
+    throw new Error(`${directory} is not a directory`);
+  const files: (readonly [string, string])[] = [];
+  for (const entry of readdirSync(directory, {
+    recursive: true,
+    withFileTypes: true,
+  })) {
+    const path = join(entry.parentPath, entry.name);
+    if (entry.isDirectory()) continue;
+    if (!entry.isFile())
+      throw new Error(`${path} is neither a file nor a directory`);
+    files.push([
+      relative(directory, path),
+      createHash("sha256").update(readFileSync(path)).digest("hex"),
+    ]);
+  }
+  files.sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0));
+  return createHash("sha256").update(JSON.stringify(files)).digest("hex");
 }
 
 /** A workspace manifest, refused unless every field it carries has a rule in `publishedManifest`. */
@@ -110,6 +142,7 @@ export function packWorkerContract(outDirectory: string): PackedWorkerContract {
       join(staged, "package.json"),
       `${JSON.stringify(publishedManifest(manifest, workerContractRelease), null, 2)}\n`,
     );
+    const files = workerContractFilesDigest(staged);
     mkdirSync(outDirectory, { recursive: true });
     const packed = z
       .tuple([z.object({ filename: z.string().min(1) })])
@@ -129,7 +162,7 @@ export function packWorkerContract(outDirectory: string): PackedWorkerContract {
     const sha256 = createHash("sha256")
       .update(readFileSync(tarball))
       .digest("hex");
-    return { tarball, sha256 };
+    return { tarball, sha256, files };
   } finally {
     rmSync(work, { recursive: true, force: true });
   }
@@ -157,6 +190,6 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     throw new Error(
       "usage: node scripts/pack-worker-contract.ts --out <directory>",
     );
-  const { tarball, sha256 } = packWorkerContract(resolve(values.out));
-  process.stdout.write(`${sha256}  ${tarball}\n`);
+  const { tarball, sha256, files } = packWorkerContract(resolve(values.out));
+  process.stdout.write(`${sha256}  ${tarball}\nfiles ${files}\n`);
 }

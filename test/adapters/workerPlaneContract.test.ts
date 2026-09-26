@@ -17,6 +17,12 @@
  * one a server could stop sending with every parse still passing, so each
  * optional field a status's schema names must be present in some case of that
  * route and absent in another.
+ *
+ * AN OLDER RELEASE A PLANE STILL SERVES IS DRIVEN THE SAME WAY. Every case is
+ * driven again naming that release, and read by that release's own answer map,
+ * which is how a pod built with it reads the answer. Every body that release's
+ * request schemas build, each roster value in turn, is offered at its route and
+ * must not be refused. The releases are `workerContractReleases.ts`'s.
  */
 
 import assert from "node:assert/strict";
@@ -44,6 +50,8 @@ import {
   type SessionPlaneRouteName,
 } from "../../src/contract/sessionPlane.ts";
 import {
+  contractVersionRefusalSchema,
+  contractVersionRefusalStatus,
   workerContractHeader,
   workerContractRelease,
 } from "../../src/contract/workerContract.ts";
@@ -57,6 +65,8 @@ import {
 } from "../../src/contract/workerPlane.ts";
 import { asTaskId, asTicketId } from "../../src/domain/ids.ts";
 import {
+  allSessionCapabilities,
+  allSessionKinds,
   allSessionTurnInputKinds,
   asSessionAttemptId,
   asSessionId,
@@ -95,6 +105,11 @@ import type {
   SessionStoreRecorded,
   SessionStoreStored,
 } from "../../src/interpreter/sessionStore.ts";
+import { filesystemAccessOrder } from "../../src/interpreter/taskAuthority.ts";
+import type {
+  WorkerConfiguration,
+  WorkerMode,
+} from "../../src/interpreter/taskConfiguration.ts";
 import {
   workerContractAccepted,
   type SessionTaskRead,
@@ -104,6 +119,11 @@ import {
   type WorkerTaskRead,
 } from "../../src/interpreter/workerPlane.ts";
 import type { WorkerPlaneCredentialMinted } from "../../src/interpreter/workerPlaneCredentials.ts";
+import {
+  workerContractReleasePlane,
+  workerContractReplayed,
+  type WorkerContractReleasePlane,
+} from "../contract/workerContractReleases.ts";
 import { fixtureForgeShapedToken } from "./forgeFixtures.ts";
 import {
   inertRunEvidence,
@@ -234,6 +254,50 @@ const workerPlaneCalls: Readonly<
   credential: {},
 };
 
+/**
+ * What a harness sends a route as JSON: the name its release exports the
+ * body's schema under, and bodies beside the route's call that between them
+ * offer each optional field and leave it out. A route whose body no schema
+ * reads, being bytes, the manifest's text or nothing, is `Unparsed`.
+ */
+type WorkerPlaneRequest =
+  "Unparsed" | { readonly schema: string; readonly bodies: readonly object[] };
+
+const workerPlaneRequests: Readonly<
+  Record<WorkerPlaneRouteName, WorkerPlaneRequest>
+> = {
+  input: "Unparsed",
+  task: "Unparsed",
+  heartbeat: "Unparsed",
+  artifact: "Unparsed",
+  report: "Unparsed",
+  runConfiguration: "Unparsed",
+  runTranscript: "Unparsed",
+  runTurns: { schema: "workerRunTurnsSchema", bodies: [] },
+  runTotals: {
+    schema: "workerRunTotalsSchema",
+    bodies: [
+      {
+        ...runTotalsBody,
+        models: [
+          {
+            model: "model",
+            tokensInput: 1,
+            tokensOutput: 2,
+            tokensCacheCreation: 3,
+            tokensCacheRead: 4,
+            costUsdMicros: 7,
+          },
+        ],
+        resultSubtype: "success",
+        stopReason: "end_turn",
+      },
+    ],
+  },
+  runEnded: { schema: "workerRunEndedSchema", bodies: [] },
+  credential: "Unparsed",
+};
+
 function workerPlaneAuthority(
   authority: WorkerAttemptAuthority | undefined,
 ): Pick<WorkerPlaneServerService, "authority"> {
@@ -245,6 +309,52 @@ function workerPlaneTask(
 ): Pick<WorkerPlaneServerService, "tasks"> {
   return { tasks: { ...inertTasks, work: () => Promise.resolve(found) } };
 }
+
+/** A member of the worker mode union by name: its agent where it runs one, and otherwise its type. */
+type WorkerModeMember<Mode extends WorkerMode = WorkerMode> = Mode extends {
+  readonly agent: infer Agent extends string;
+}
+  ? Agent
+  : Mode["type"];
+
+/** One mode of each member, which fails to compile when the union gains one. */
+const workerModes: {
+  readonly [Member in WorkerModeMember]: Extract<
+    WorkerMode,
+    { readonly agent: Member } | { readonly type: Member }
+  >;
+} = {
+  Claude: { type: "SingleAgent", agent: "Claude", arguments: [] },
+  Codex: { type: "SingleAgent", agent: "Codex", arguments: [], model: "model" },
+  Commands: { type: "Commands", commands: ["just check"] },
+};
+
+/** Every worker configuration a task carries: each mode, and the bare arguments that predate modes. */
+const workerConfigurations: readonly WorkerConfiguration[] = [
+  ...Object.values(workerModes).map((mode) => ({ mode, setup: [], files: [] })),
+  { arguments: ["--verbose"], setup: [], files: [] },
+];
+
+/** A work task granting each filesystem reach, and one carrying each worker configuration. */
+const workTaskRosterCases: readonly WorkerPlaneCase[] = [
+  ...filesystemAccessOrder.map((filesystem) => ({
+    name: `a work task granting ${filesystem}`,
+    service: workerPlaneTask({
+      ...liveTask,
+      invocation: {
+        ...liveInvocation,
+        authority: { ...liveInvocation.authority, filesystem },
+      },
+    }),
+  })),
+  ...workerConfigurations.map((worker) => ({
+    name: `a work task carrying ${JSON.stringify(worker)}`,
+    service: workerPlaneTask({
+      ...liveTask,
+      invocation: { ...liveInvocation, worker },
+    }),
+  })),
+];
 
 /** The callers every route refuses before its own ports are reached. */
 const workerPlaneStrangers: readonly WorkerPlaneCase[] = [
@@ -507,6 +617,27 @@ function sessionTaskCases(): readonly WorkerPlaneCase[] {
         },
       }),
     },
+    ...allSessionKinds.map((kind) => ({
+      name: `a ${kind} session's task holding every capability`,
+      service: sessionTaskPorts({
+        ...liveSessionTask,
+        identity: { ...liveSessionTask.identity, kind },
+        invocation: {
+          capabilities: allSessionCapabilities,
+          authority: liveInvocation.authority,
+        },
+      }),
+    })),
+    ...filesystemAccessOrder.map((filesystem) => ({
+      name: `a session's task granting ${filesystem}`,
+      service: sessionTaskPorts({
+        ...liveSessionTask,
+        invocation: {
+          capabilities: liveSession.capabilities,
+          authority: { ...liveInvocation.authority, filesystem },
+        },
+      }),
+    })),
   ].map((driven) => ({ ...driven, bearer }));
 }
 
@@ -527,6 +658,7 @@ const workerPlaneCases: Readonly<
       service: workerPlaneTask({ live: true, identity: liveTask.identity }),
     },
     { name: "a work task", service: workerPlaneTask(liveTask) },
+    ...workTaskRosterCases,
     {
       name: "an evaluation stage's commands",
       service: workerPlaneTask({
@@ -657,6 +789,39 @@ const sessionPlaneCalls: Readonly<
   },
 };
 
+const sessionPlaneRequests: Readonly<
+  Record<SessionPlaneRouteName, WorkerPlaneRequest>
+> = {
+  facts: "Unparsed",
+  heartbeat: "Unparsed",
+  reference: { schema: "sessionReferenceSchema", bodies: [] },
+  turn: "Unparsed",
+  turnAnswer: {
+    schema: "sessionTurnAnswerSchema",
+    bodies: [
+      {
+        turn: "turn",
+        result: "result",
+        measured: {
+          model: "model",
+          tokens: 1,
+          costMicros: 1,
+          durationMs: 1,
+          tools: ["Read"],
+        },
+        batchFirst: 1,
+        batchLast: 2,
+      },
+    ],
+  },
+  turnFailure: { schema: "sessionTurnFailureSchema", bodies: [] },
+  held: "Unparsed",
+  storeStreams: "Unparsed",
+  storeBatch: "Unparsed",
+  storePage: "Unparsed",
+  credential: { schema: "sessionCredentialSchema", bodies: [] },
+};
+
 /** The callers every session route refuses before its own ports are reached. */
 const sessionPlaneStrangers: readonly WorkerPlaneCase[] = [
   workerContractStranger,
@@ -764,6 +929,14 @@ const sessionPlaneCases: Readonly<
         forkFrom: "parent",
       }),
     },
+    ...allSessionKinds.map((kind) => ({
+      name: `a ${kind} session holding every capability`,
+      service: sessionAuthority({
+        ...liveSession,
+        kind,
+        capabilities: allSessionCapabilities,
+      }),
+    })),
   ],
   heartbeat: [
     ...sessionPlaneStrangers,
@@ -899,10 +1072,11 @@ const sessionPlaneCases: Readonly<
   ],
 };
 
-/** One plane as this suite drives it: its routes, their calls, its answer map and cases, and the bearer it reads. */
+/** One plane as this suite drives it: its routes, their calls and requests, its answer map and cases, and the bearer it reads. */
 interface WorkerPlaneDriven<Name extends string> {
   readonly routes: Readonly<Record<Name, WorkerPlaneRoute>>;
   readonly calls: Readonly<Record<Name, WorkerPlaneCall>>;
+  readonly requests: Readonly<Record<Name, WorkerPlaneRequest>>;
   readonly answers: Readonly<
     Record<Name, Readonly<Record<number, WorkerPlaneAnswer>>>
   >;
@@ -911,19 +1085,22 @@ interface WorkerPlaneDriven<Name extends string> {
   readonly service: WorkerPlaneServerService;
 }
 
-/** One case driven through a plane of its own, answered as the pod would read it. */
+/** What one driven case was answered with. */
+interface WorkerPlaneAnswered {
+  readonly status: number;
+  readonly body: string;
+  readonly retryAfter: unknown;
+  readonly release: unknown;
+}
+
+/** One case driven through a plane of its own at `route`, the plane's own unless a release names it elsewhere. */
 async function workerPlaneDriven<Name extends string>(
   plane: WorkerPlaneDriven<Name>,
   name: Name,
   driven: WorkerPlaneCase,
-): Promise<{
-  status: number;
-  body: string;
-  retryAfter: unknown;
-  release: unknown;
-}> {
+  route: WorkerPlaneRoute = plane.routes[name],
+): Promise<WorkerPlaneAnswered> {
   const app = createWorkerPlaneApp({ ...plane.service, ...driven.service });
-  const route = plane.routes[name];
   const call = { ...plane.calls[name], ...driven.call };
   const path = route.path.replace("*", call.rest ?? "");
   const response = await app.inject({
@@ -1077,9 +1254,173 @@ function workerPlaneAnswersHeld<Name extends string>(
   }
 }
 
-workerPlaneAnswersHeld({
+/** Whether an answer is the refusal of the release a request named. */
+function workerPlaneVersionRefused(answered: WorkerPlaneAnswered): boolean {
+  return (
+    answered.status === contractVersionRefusalStatus &&
+    answered.body !== "" &&
+    contractVersionRefusalSchema.safeParse(JSON.parse(answered.body)).success
+  );
+}
+
+/** Asserts `older`'s pod reads the answer: a status its map lists for the route, with a body that status's schema parses. */
+function workerPlaneReadBy(
+  older: WorkerContractReleasePlane,
+  name: string,
+  what: string,
+  answered: WorkerPlaneAnswered,
+): void {
+  const answer = older.answers[name]?.[answered.status];
+  assert.ok(
+    answer !== undefined,
+    `${what} answered ${String(answered.status)}, which ${older.release} does not list`,
+  );
+  if (answer === "empty") assert.equal(answered.body, "", what);
+  else
+    assert.doesNotThrow(() => {
+      answer.parse(JSON.parse(answered.body));
+    }, `${what} answered ${answered.body}, which ${older.release} cannot read`);
+}
+
+/**
+ * `body` first, then again for each other value of each enum `schema` reads in
+ * it, the rest held, so a roster is offered whole wherever the body offers one
+ * member. A union is followed down the member that reads the body.
+ */
+function workerPlaneEnumsWalked(
+  schema: z.ZodType,
+  body: unknown,
+): readonly unknown[] {
+  if (schema instanceof z.ZodEnum)
+    return [body, ...schema.options.filter((value) => value !== body)];
+  if (schema instanceof z.ZodOptional || schema instanceof z.ZodExactOptional)
+    return body === undefined
+      ? [body]
+      : workerPlaneEnumsWalked(schema.unwrap() as z.ZodType, body);
+  if (schema instanceof z.ZodUnion) {
+    const member = (schema.options as readonly z.ZodType[]).find(
+      (option) => option.safeParse(body).success,
+    );
+    return member === undefined ? [body] : workerPlaneEnumsWalked(member, body);
+  }
+  if (schema instanceof z.ZodObject) {
+    const held = body as Readonly<Record<string, unknown>>;
+    const shape = schema.shape as Readonly<Record<string, z.ZodType>>;
+    return [
+      held,
+      ...Object.entries(shape).flatMap(([key, field]) =>
+        workerPlaneEnumsWalked(field, held[key])
+          .slice(1)
+          .map((value) => ({ ...held, [key]: value })),
+      ),
+    ];
+  }
+  if (schema instanceof z.ZodArray) {
+    const items = body as readonly unknown[];
+    return [
+      items,
+      ...items.flatMap((item, index) =>
+        workerPlaneEnumsWalked(schema.element as z.ZodType, item)
+          .slice(1)
+          .map((value) =>
+            items.map((each, at) => (at === index ? value : each)),
+          ),
+      ),
+    ];
+  }
+  return [body];
+}
+
+/**
+ * Drives every case of `plane` as a pod built with `older` sends it, naming
+ * that release, and offers every JSON body that release builds. A route the
+ * release calls must be one this plane names.
+ */
+function workerPlaneReplayed<Name extends string>(
+  plane: WorkerPlaneDriven<Name>,
+  older: WorkerContractReleasePlane,
+): void {
+  for (const [called, route] of Object.entries(older.routes)) {
+    const name = called as Name;
+    test(`a ${older.release} pod reads every outcome ${route.method} ${route.path} answers`, async () => {
+      assert.ok(
+        Object.hasOwn(plane.cases, name),
+        `${older.release} calls ${called}, which this plane does not name`,
+      );
+      for (const driven of plane.cases[name]) {
+        const answered = await workerPlaneDriven(
+          plane,
+          name,
+          { ...driven, release: driven.release ?? older.release },
+          route,
+        );
+        workerPlaneReadBy(older, called, driven.name, answered);
+        assert.ok(
+          driven.release !== undefined || !workerPlaneVersionRefused(answered),
+          `${driven.name} was refused for naming ${older.release}`,
+        );
+      }
+    });
+    const request = Object.hasOwn(plane.requests, name)
+      ? plane.requests[name]
+      : "Unparsed";
+    if (request !== "Unparsed")
+      test(`${route.method} ${route.path} takes every body a ${older.release} pod builds`, () =>
+        workerPlaneBodiesTaken(plane, name, route, older, request));
+  }
+}
+
+/**
+ * Offers one JSON route every body `older` builds of those `request` names, each
+ * roster value in turn, and asserts none is refused. The bodies it builds must
+ * between them offer each optional field its schema names and leave it out.
+ */
+async function workerPlaneBodiesTaken<Name extends string>(
+  plane: WorkerPlaneDriven<Name>,
+  name: Name,
+  route: WorkerPlaneRoute,
+  older: WorkerContractReleasePlane,
+  request: Exclude<WorkerPlaneRequest, "Unparsed">,
+): Promise<void> {
+  const schema = older.schemas[request.schema];
+  assert.ok(schema !== undefined, `${older.release} has no ${request.schema}`);
+  const built = [plane.calls[name].payload, ...request.bodies].filter(
+    (body) => schema.safeParse(body).success,
+  );
+  assert.ok(built.length > 0, `${older.release} builds no body offered`);
+  const seen = new Map<string, Set<boolean>>();
+  for (const body of built) {
+    workerPlaneOptionalsSeen(schema, body, request.schema, seen);
+    for (const offered of workerPlaneEnumsWalked(schema, body)) {
+      const what = JSON.stringify(offered);
+      assert.ok(schema.safeParse(offered).success, what);
+      const answered = await workerPlaneDriven(
+        plane,
+        name,
+        {
+          name: what,
+          call: { headers: json, payload: offered as object },
+          release: older.release,
+        },
+        route,
+      );
+      assert.notEqual(answered.status, 400, `${what} was refused`);
+      assert.ok(!workerPlaneVersionRefused(answered), what);
+      workerPlaneReadBy(older, name, what, answered);
+    }
+  }
+  for (const [field, held] of seen)
+    assert.equal(
+      held.size,
+      2,
+      `${field} is ${held.has(true) ? "present" : "absent"} in every body offered`,
+    );
+}
+
+const jobPlane: WorkerPlaneDriven<WorkerPlaneRouteName> = {
   routes: workerPlaneRoutes,
   calls: workerPlaneCalls,
+  requests: workerPlaneRequests,
   answers: workerPlaneAnswers,
   cases: workerPlaneCases,
   bearer: "held",
@@ -1087,11 +1428,12 @@ workerPlaneAnswersHeld({
     ...inertWorkerPlane(workerPlaneContractUploadBytesMax),
     ...workerPlaneAuthority(liveAuthority),
   },
-});
+};
 
-workerPlaneAnswersHeld({
+const sessionPlane: WorkerPlaneDriven<SessionPlaneRouteName> = {
   routes: sessionPlaneRoutes,
   calls: sessionPlaneCalls,
+  requests: sessionPlaneRequests,
   answers: sessionPlaneAnswers,
   cases: sessionPlaneCases,
   bearer: `chgs_${"a".repeat(32)}`,
@@ -1099,7 +1441,22 @@ workerPlaneAnswersHeld({
     ...inertWorkerPlane(workerPlaneContractUploadBytesMax),
     ...sessionPorts({}),
   },
-});
+};
+
+workerPlaneAnswersHeld(jobPlane);
+workerPlaneAnswersHeld(sessionPlane);
+
+for (const release of workerContractReplayed("job"))
+  workerPlaneReplayed(
+    jobPlane,
+    await workerContractReleasePlane(release, "job"),
+  );
+
+for (const release of workerContractReplayed("session"))
+  workerPlaneReplayed(
+    sessionPlane,
+    await workerContractReleasePlane(release, "session"),
+  );
 
 /**
  * Every method and path an app serves, read off its own router rather than the

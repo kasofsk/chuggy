@@ -10,6 +10,10 @@
  * tag would name; a history that does not name this release as the wire this
  * tree holds is a release that was never moved; and a release already made or
  * already tagged is one GitHub or git would refuse halfway through.
+ *
+ * AND IT REFUSES BEFORE IT RELEASES a pack whose files are not the ones the
+ * history records for this release, naming the pack's: that record is what an
+ * installed copy of the asset is held to once a later release is served.
  * `--dry-run` does everything but the release and the tag.
  */
 
@@ -80,8 +84,9 @@ export async function publishWorkerContract(
       published: "Refused",
       why: "the working tree has changes the tag would not name",
     };
+  const history = ports.history();
   const unheld = workerContractHistoryRefusal(
-    ports.history(),
+    history,
     release,
     await ports.wire(),
   );
@@ -92,6 +97,12 @@ export async function publishWorkerContract(
     return { published: "Refused", why: `${tag} is already released` };
   const commit = ports.commit();
   const packed = ports.pack(outDirectory);
+  const recorded = history.at(-1)?.files;
+  if (packed.files !== recorded)
+    return {
+      published: "Refused",
+      why: `the history records ${String(recorded)} as ${release}'s files, and the pack's are ${packed.files}: record the pack's`,
+    };
   if (dryRun) return { published: "Packed", packed, commit, tag };
   ports.release(
     tag,

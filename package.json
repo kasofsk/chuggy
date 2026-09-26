@@ -2,6 +2,7 @@
   "name": "chuggy",
   "private": true,
   "devDependencies": {
+    "@chuggy/worker-contract-1.0.0": "https://github.com/kasofsk/chuggy/releases/download/worker-contract-v1.0.0/chuggy-worker-contract-1.0.0.tgz",
     "@eslint/js": "^10.0.1",
     "@informalsystems/quint": "0.32.0",
     "@ts-safeql/eslint-plugin": "^5.4.1",
