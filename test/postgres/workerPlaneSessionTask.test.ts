@@ -113,18 +113,35 @@ const schedulerConfig = {
 const passesMax = 40;
 const passIntervalMs = 100;
 
-/** The session scheduler over the real store and binding read, placing through a fake that keeps what it was asked. */
-function scheduling(captured: SessionPlacement[]): SessionSchedulerService {
+/** One placement the fake was asked for, and what its pod read before the placement was recorded. */
+interface SessionPlacementAsked {
+  readonly placement: SessionPlacement;
+  readonly state: unknown;
+  readonly fetched: unknown;
+}
+
+/** The session scheduler over the real store and binding read, placing through a fake that fetches its pod's task as a pod that starts at once would. */
+function scheduling(
+  captured: SessionPlacementAsked[],
+): SessionSchedulerService {
   return {
     store: rig.scheduler,
     bindings: postgresProjectRepositoryBinding(schedulerPool),
     placement: {
-      place: (placement) => {
-        captured.push(placement);
-        return Promise.resolve({
+      place: async (placement) => {
+        const [row] = (await rig.harness.query(
+          "SELECT state FROM session_attempt WHERE attempt=$1",
+          [placement.attempt],
+        )) as readonly { state: unknown }[];
+        captured.push({
+          placement,
+          state: row?.state,
+          fetched: await fetchedTask(placement.bearer.secret),
+        });
+        return {
           placed: "Placed",
           placement: asPlacementId(`placement-${placement.attempt}`),
-        });
+        };
       },
       cancel: () => Promise.resolve({ cancelled: "Accepted" }),
       observe: () => Promise.resolve({ observed: "Unended" }),
@@ -135,19 +152,28 @@ function scheduling(captured: SessionPlacement[]): SessionSchedulerService {
   };
 }
 
-/** Runs placement passes under the epoch that stands until this session is placed, and hands back what it was placed with. */
+/**
+ * Runs placement passes under the epoch that stands until this session is
+ * placed, and hands back what it was placed with. Its pod's fetch while the
+ * attempt was still Placing answered the task the pod is launched with.
+ */
 async function placed(session: SessionId): Promise<SessionPlacement> {
   const epoch = await rig.harness.store.currentRecoveryEpoch();
-  const captured: SessionPlacement[] = [];
+  const captured: SessionPlacementAsked[] = [];
   const service = scheduling(captured);
   for (let pass = 0; pass < passesMax; pass += 1) {
     await sessionSchedulerPlace(service, epoch);
-    const [placement, ...more] = captured.filter(
-      (asked) => asked.session === session,
+    const [asked, ...more] = captured.filter(
+      ({ placement }) => placement.session === session,
     );
-    if (placement !== undefined) {
+    if (asked !== undefined) {
       assert.deepEqual(more, []);
-      return placement;
+      assert.deepEqual(asked, {
+        placement: asked.placement,
+        state: "Placing",
+        fetched: { status: 200, body: pushedTask(asked.placement) },
+      });
+      return asked.placement;
     }
     await delay(passIntervalMs);
   }
