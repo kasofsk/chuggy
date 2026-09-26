@@ -114,7 +114,10 @@ export const workerPlaneHealthRoutes = {
 } as const satisfies Readonly<Record<string, WorkerPlaneRoute>>;
 
 /** Where a store route's own segments begin, which is what the raw url is cut at. */
-const sessionStorePrefix = `${sessionPlaneRoutes.storeStreams.path}/`;
+const sessionStorePrefix = sessionPlaneRoutes.storeBatch.path.replace(
+  /\*$/u,
+  "",
+);
 
 /** Registers one handler at the method and path its route names, which is the only way a handler here is served. */
 type WorkerPlaneRegistrar = (

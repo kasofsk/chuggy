@@ -5,8 +5,9 @@
  * An answer schema drops a field it does not name, so an older pod survives a
  * newer plane; a request body refuses one instead, because a field the plane
  * dropped in silence is a figure the pod believes it put on record. A request
- * the framework refuses before any handler runs is answered in the framework's
- * own body, which no map here describes.
+ * the framework refuses before any handler runs, and a handler whose port
+ * throws, are answered in the framework's own body, which no map here
+ * describes.
  */
 
 import { z } from "zod";

@@ -17,7 +17,6 @@ export const sessionPlaneRoutes = {
   storePage: { method: "GET", path: "/v1/session/store/*" },
   credential: { method: "POST", path: "/v1/session/credential" },
 } as const satisfies Readonly<Record<string, WorkerPlaneRoute>>;
-export type SessionPlaneRouteName = keyof typeof sessionPlaneRoutes;
 
 /** What marks a token as a session bearer rather than an OIDC one, so the API never probes. */
 export const sessionBearerPrefix = "chgs_";
