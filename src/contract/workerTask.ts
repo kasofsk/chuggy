@@ -1,7 +1,8 @@
 /**
  * The documents a pod is launched with, and the bounds on the task one carries.
- * The grant and the worker configuration are the interpreter's, restated here
- * and held against it by `test/contract/workerTask.test.ts`.
+ * The grant, the worker configuration and the execution profile are the
+ * interpreter's, restated here and held against it by
+ * `test/contract/workerTask.test.ts`.
  */
 
 import { z } from "zod";
@@ -67,7 +68,7 @@ export const workTaskDocumentSchema = z.object({
   ticket: z.number(),
   task: z.number(),
   taskKind: z.string(),
-  stage: z.number().optional(),
+  stage: z.number().exactOptional(),
   sourceRequest: z.string(),
   inputBundle: z.string(),
   inputBundleDigest: z.string(),
@@ -82,7 +83,7 @@ export const workTaskDocumentSchema = z.object({
     text: z.string(),
   }),
   authority: policyAuthorityGrantSchema,
-  worker: workerConfigurationSchema.optional(),
+  worker: workerConfigurationSchema.exactOptional(),
   workerPlane: z.object({
     url: z.string(),
     capabilityFile: z.string(),
@@ -111,13 +112,13 @@ export const sessionTaskDocumentSchema = z.object({
   generation: z.number(),
   capabilities: z.array(z.string()),
   credentialSlot: z.string(),
-  agentReference: z.string().optional(),
+  agentReference: z.string().exactOptional(),
   authority: policyAuthorityGrantSchema,
   workerPlane: z.object({ url: z.string(), capabilityFile: z.string() }),
   /** Where the pod's own tools reach the API, an origin the client appends the versioned path to. */
   api: z.object({ url: z.string() }),
   /** The repository reference the pod resolves against the site's own map, absent where the project binds none. */
-  repository: z.object({ reference: z.string() }).optional(),
+  repository: z.object({ reference: z.string() }).exactOptional(),
   bounds: sessionBoundsSchema,
 });
 
@@ -128,7 +129,7 @@ export const poolEnvelopeSchema = z.object({
   workspace: z.string(),
   timeoutSecsMax: z.number(),
   outputBytesMax: z.number(),
-  providerCredentialFile: z.string().optional(),
+  providerCredentialFile: z.string().exactOptional(),
 });
 
 /** A document as its launcher builds it, which nothing after the launcher writes to. */

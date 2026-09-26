@@ -20,9 +20,23 @@ import {
   filesystemAccessOrder,
   type PolicyAuthorityGrant,
 } from "../../src/interpreter/taskAuthority.ts";
-import type { WorkerConfiguration } from "../../src/interpreter/taskConfiguration.ts";
+import type { ExecutionProfile } from "../../src/interpreter/executionScheduler.ts";
+import type {
+  WorkerConfiguration,
+  WorkerMode,
+} from "../../src/interpreter/taskConfiguration.ts";
 import { sessionPodDocuments } from "../adapters/sessionPodDocumentFixture.ts";
 import { workerPodDocuments } from "../adapters/workerPodDocumentFixture.ts";
+
+/** Every key any member of a union names, the optional ones included. */
+type KeysOf<Value> = Value extends unknown ? keyof Value : never;
+
+/** Whether both sides name the same keys, which assignability misses for a key one side adds as optional. */
+type SameKeys<Wire, Interpreter> = [KeysOf<Wire>] extends [KeysOf<Interpreter>]
+  ? [KeysOf<Interpreter>] extends [KeysOf<Wire>]
+    ? true
+    : false
+  : false;
 
 interface RenderedPod {
   readonly spec: {
@@ -77,6 +91,11 @@ test("the grant the wire names is the interpreter's", () => {
   const asTheWires = (
     grant: PolicyAuthorityGrant,
   ): WorkTaskDocument["authority"] => grant;
+  const sameKeys: SameKeys<
+    WorkTaskDocument["authority"],
+    PolicyAuthorityGrant
+  > = true;
+  assert.ok(sameKeys);
   const grant: PolicyAuthorityGrant = {
     tools: ["editor"],
     credentials: ["workspace"],
@@ -97,6 +116,13 @@ test("the worker configuration the wire names is the interpreter's", () => {
   const asTheWires = (
     worker: WorkerConfiguration,
   ): NonNullable<WorkTaskDocument["worker"]> => worker;
+  type WireWorker = NonNullable<WorkTaskDocument["worker"]>;
+  const sameKeys: [
+    SameKeys<WireWorker, WorkerConfiguration>,
+    SameKeys<Extract<WireWorker, { mode: unknown }>["mode"], WorkerMode>,
+    SameKeys<WireWorker["files"][number], WorkerConfiguration["files"][number]>,
+  ] = [true, true, true];
+  assert.ok(sameKeys.every(Boolean));
   const worker: WorkerConfiguration = {
     mode: { type: "Commands", commands: ["just check"] },
     setup: ["npm ci"],
@@ -107,5 +133,22 @@ test("the worker configuration the wire names is the interpreter's", () => {
       workTaskDocumentSchema.shape.worker.unwrap().parse(worker),
     ),
     asTheWires(worker),
+  );
+});
+
+test("the execution profile the wire names is the interpreter's", () => {
+  const sameKeys: SameKeys<WorkTaskDocument["profile"], ExecutionProfile> =
+    true;
+  assert.ok(sameKeys);
+  const profile: ExecutionProfile = {
+    profile: "standard",
+    runtimeVersion: "1",
+  };
+  const asTheInterpreters = (
+    wire: WorkTaskDocument["profile"],
+  ): ExecutionProfile => wire;
+  assert.deepEqual(
+    asTheInterpreters(workTaskDocumentSchema.shape.profile.parse(profile)),
+    profile,
   );
 });
