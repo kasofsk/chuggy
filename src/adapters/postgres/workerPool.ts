@@ -58,7 +58,8 @@
  * claim again, and nothing here extends a lease a pool did not renew — so the
  * reaper, which ends any placing attempt whose lease has lapsed, cannot reach
  * the row before a pool may claim it and still bounds a row no pool comes back
- * for.
+ * for. The row loses its bearer as a fenced one does, so a harness the pool
+ * launched before answering that it could not is refused on every route.
  *
  * A REGISTRATION IS THE GENERATION AN ASSIGNMENT IS CURRENT UNDER. Each one
  * mints a new principal and a claim records it beside the pool's name.
@@ -380,7 +381,7 @@ function workerPoolClaimTermsChecked(terms: WorkerPoolClaimTerms): void {
     throw new RangeError("invalid worker pool held bound");
 }
 
-/** One assignment given back: the row parked under the attempt's own lease, and the backoff written beside it. */
+/** One assignment given back: the row parked under the attempt's own lease with no bearer, and the backoff written beside it. */
 function workerPoolReleased(
   pool: pg.Pool,
   identity: WorkerPoolIdentity,
@@ -393,7 +394,7 @@ function workerPoolReleased(
       project: string;
       execution: string;
     }>(sql`UPDATE execution_attempt a SET pool=NULL,pool_principal=NULL,assignment=NULL,
-            pool_refusal=NULL,lease_owner=a.attempt,
+            pool_refusal=NULL,capability_secret_digest=NULL,lease_owner=a.attempt,
             lease_expires_at=a.lease_expires_at+make_interval(secs=>${retryAfterSecs}::double precision)
           WHERE a.tenant=${identity.partition.tenant} AND a.project=${identity.partition.project}
             AND a.assignment=${assignment} AND a.pool=${identity.pool}
