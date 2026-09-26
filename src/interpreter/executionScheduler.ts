@@ -99,7 +99,12 @@ import type { FinalizerConfig } from "./finalizer.ts";
 import type { OperationId } from "./operationInbox.ts";
 import { mailboxCompletionRoom, observe } from "./ticketService.ts";
 import type { TicketServiceConfig } from "./ticketService.ts";
-import type { Partition, RecoveryEpoch } from "./projectStore.ts";
+import type {
+  Partition,
+  ProjectId,
+  RecoveryEpoch,
+  TenantId,
+} from "./projectStore.ts";
 import type { ResultManifest, ResultManifestId } from "./resultManifest.ts";
 import type {
   BriefingFault,
@@ -356,6 +361,41 @@ export function executionCapacitySafe(
 /** The model's `ExecutionRoute` in the words `execution.placement` stores, `InCluster` for `Kubernetes` and `Pool` for `RegisteredRunner`. */
 export const allExecutionRoutes = ["InCluster", "Pool"] as const;
 export type ExecutionRoute = (typeof allExecutionRoutes)[number];
+
+/** The route each task kind registers with. */
+export type ExecutionRoutes = Readonly<
+  Record<ExecutionTaskKind, ExecutionRoute>
+>;
+
+/**
+ * Where a deployment routes each task kind, and the projects it routes
+ * otherwise. An override names only the kinds it changes.
+ */
+export interface ExecutionRouting {
+  readonly routes: ExecutionRoutes;
+  readonly projectRoutes: ReadonlyMap<
+    TenantId,
+    ReadonlyMap<ProjectId, Partial<ExecutionRoutes>>
+  >;
+}
+
+/**
+ * The routes one project's executions register with. The route is written with
+ * the execution, so a policy that moves later moves only the executions
+ * registered after it.
+ */
+export function executionRoutes(
+  routing: ExecutionRouting,
+  partition: Partition,
+): ExecutionRoutes {
+  const override = routing.projectRoutes
+    .get(partition.tenant)
+    ?.get(partition.project);
+  return {
+    Work: override?.Work ?? routing.routes.Work,
+    Evaluation: override?.Evaluation ?? routing.routes.Evaluation,
+  };
+}
 
 /** One durable logical execution as the scheduler holds it, provenance included. */
 export interface LogicalExecution {
@@ -668,10 +708,11 @@ export interface ExecutionSchedulerStore {
     leaseSecs: number,
   ): Promise<readonly RequestClaim[]>;
 
-  /** Creates or finds the exact logical executions one spawn request authorized. */
+  /** Creates or finds the exact logical executions one spawn request authorized, each created on its kind's route. */
   registerSpawn(
     claim: RequestClaim,
     tasksMax: DomainConfig["nTasks"],
+    routes: ExecutionRoutes,
   ): Promise<SpawnRegistered>;
 
   /** Fences every task a cancellation request names, then fulfills the request. */
@@ -844,6 +885,8 @@ export type AttemptPlacementOutcome =
  * policy is a hold that leaves the execution exactly as it was.
  */
 export interface ExecutionPolicy {
+  /** Read when an execution registers, and never again. */
+  readonly routing: ExecutionRouting;
   profileFor(execution: LogicalExecution): Promise<ProfileResolved>;
 }
 
@@ -990,6 +1033,7 @@ export interface ExecutionSchedulerMetrics {
   reaping(attempts: number): void;
   admission(outcome: Admitted["admitted"]): void;
   attemptOpened(outcome: AttemptOpened["opened"]): void;
+  attemptOffered(): void;
   briefing(fault: BriefingFault | TaskConfigurationReadFault): void;
   placement(outcome: AttemptPlacementOutcome["placed"]): void;
   attemptEnded(loss: AttemptLoss, evidence: AttemptEvidenceRecord): void;
@@ -1023,6 +1067,7 @@ export const silentExecutionSchedulerMetrics: ExecutionSchedulerMetrics = {
   reaping: () => undefined,
   admission: () => undefined,
   attemptOpened: () => undefined,
+  attemptOffered: () => undefined,
   briefing: () => undefined,
   placement: () => undefined,
   attemptEnded: () => undefined,

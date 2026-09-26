@@ -106,6 +106,7 @@ import {
   type CancellationRegistered,
   type ClusterId,
   type ExecutionId,
+  type ExecutionRoutes,
   type ExecutionSchedulerStore,
   type FencedAttempt,
   type LogicalExecution,
@@ -378,6 +379,7 @@ async function schedulerCreateExecutions(
   client: pg.PoolClient,
   claim: RequestClaim,
   tasksMax: number,
+  routes: ExecutionRoutes,
 ): Promise<number | undefined> {
   const inputs = await client.query<{
     task: string;
@@ -408,10 +410,11 @@ async function schedulerCreateExecutions(
   const executionStem = `execution-${randomUUID()}`;
   for (const input of inputs.rows) {
     const task = projectRowCounter(input.task, "execution task");
+    const kind = executionRowTaskKind(input.kind);
     const materialized = ticketTaskRequirement(
       JSON.parse(input.definition) as unknown,
       ticketTaskKey(
-        executionRowTaskKind(input.kind),
+        kind,
         input.stage === null
           ? undefined
           : projectRowCounter(input.stage, "task stage"),
@@ -424,12 +427,12 @@ async function schedulerCreateExecutions(
     const inserted = await client.query(sql`INSERT INTO execution
        (tenant,project,execution,ticket,task,source_request,account,cluster,
         configuration_revision,configuration_digest,requirement_identity,requirement_value,
-        requirement_digest,requirement_source,platform_default_version)
+        requirement_digest,requirement_source,platform_default_version,placement)
        VALUES (${claim.partition.tenant},${claim.partition.project},${execution},${claim.ticket},
         ${task},${claim.request},${input.capacity_account},${input.cluster},
         ${input.configuration_revision},${input.configuration_digest},${requirementIdentity},
         ${requirementValue}::jsonb,${requirementDigest},${materialized.source},
-        ${materialized.platformDefaultVersion})
+        ${materialized.platformDefaultVersion},${routes[kind]})
        ON CONFLICT (tenant,project,ticket,task) DO NOTHING`);
     created += inserted.rowCount ?? 0;
   }
@@ -484,6 +487,7 @@ async function schedulerRegisterSpawn(
   client: pg.PoolClient,
   claim: RequestClaim,
   tasksMax: number,
+  routes: ExecutionRoutes,
 ): Promise<SpawnRegistered> {
   schedulerRequirePositive(tasksMax, "tasksMax");
   const request = await schedulerLockRequest(client, claim);
@@ -505,7 +509,12 @@ async function schedulerRegisterSpawn(
       { execution: conflict },
     );
   }
-  const created = await schedulerCreateExecutions(client, claim, tasksMax);
+  const created = await schedulerCreateExecutions(
+    client,
+    claim,
+    tasksMax,
+    routes,
+  );
   if (created === undefined) {
     return schedulerContradicted(
       client,
@@ -1253,9 +1262,9 @@ export function postgresExecutionScheduler(
   return {
     claimRequests: (owner, kinds, requestsMax, leaseSecs) =>
       schedulerClaimRequests(pool, owner, kinds, requestsMax, leaseSecs),
-    registerSpawn: (claim, tasksMax) =>
+    registerSpawn: (claim, tasksMax, routes) =>
       postgresTransaction(pool, (client) =>
-        schedulerRegisterSpawn(client, claim, tasksMax),
+        schedulerRegisterSpawn(client, claim, tasksMax, routes),
       ),
     registerCancellation: (claim) =>
       postgresTransaction(pool, (client) =>

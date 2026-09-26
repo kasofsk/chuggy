@@ -26,6 +26,7 @@ import {
   schedulerOwner,
   schedulerProject,
   schedulerRigOpen,
+  schedulerInCluster,
   type SchedulerProject,
   type SchedulerRig,
 } from "./schedulerHarness.ts";
@@ -120,6 +121,7 @@ test("the scheduler role reads the work reports its execution's bundle pinned", 
       schedulerOwner("prior-work"),
     ),
     executionSchedulerDefaults.nTasks,
+    schedulerInCluster,
   );
   assert.equal(registered.registered, "Registered");
   const worked = await admittedAttempt(project);
@@ -214,6 +216,7 @@ async function registered(
       schedulerOwner(label),
     ),
     executionSchedulerDefaults.nTasks,
+    schedulerInCluster,
   );
   assert.equal(outcome.registered, "Registered");
 }

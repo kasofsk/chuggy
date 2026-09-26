@@ -58,6 +58,7 @@ import {
   schedulerOwner,
   schedulerProject,
   schedulerRigOpen,
+  schedulerInCluster,
   type SchedulerRig,
 } from "./schedulerHarness.ts";
 
@@ -260,6 +261,7 @@ async function schedulerRegistration(label: string) {
       schedulerOwner(label),
     ),
     1,
+    schedulerInCluster,
   );
   assert.equal(registered.registered, "Registered");
   const found = await rig.pool.query<{ execution: string }>(

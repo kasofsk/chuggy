@@ -42,6 +42,10 @@ export const schedulerRootService: Omit<
     cancel: () => Promise.resolve({ cancelled: "Accepted" }),
   },
   policy: {
+    routing: {
+      routes: { Work: "InCluster", Evaluation: "InCluster" },
+      projectRoutes: new Map(),
+    },
     profileFor: () =>
       Promise.resolve({
         resolved: "Denied",

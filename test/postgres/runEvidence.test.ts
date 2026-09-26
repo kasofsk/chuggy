@@ -52,6 +52,7 @@ import {
   schedulerPlacedAttempt,
   schedulerProject,
   schedulerRigOpen,
+  schedulerInCluster,
   type SchedulerProject,
 } from "./schedulerHarness.ts";
 
@@ -87,6 +88,7 @@ async function placedAttempt(label: string, project?: SchedulerProject) {
         schedulerOwner(label),
       ),
       200,
+      schedulerInCluster,
     );
   const placed = await schedulerPlacedAttempt(rig, drawn, label);
   return { attempt: placed.attempt, project: drawn };
@@ -801,6 +803,7 @@ test("a ticket's run totals sum every execution past the page bound", async () =
       schedulerOwner("run-ticket-rollup"),
     ),
     200,
+    schedulerInCluster,
   );
   for (let run = 0; run < spread; run += 1) {
     const { attempt } = await placedAttempt("run-ticket-rollup", project);

@@ -80,6 +80,8 @@ import {
   schedulerProject,
   schedulerReport,
   schedulerRigOpen,
+  schedulerInCluster,
+  schedulerRouting,
   type SchedulerProject,
 } from "./schedulerHarness.ts";
 
@@ -162,6 +164,7 @@ async function admittedProject(
       schedulerOwner(label),
     ),
     200,
+    schedulerInCluster,
   );
   const admitted = await rig.store.admit(project.cluster);
   if (admitted.admitted !== "Admitted")
@@ -231,6 +234,7 @@ function launching(
     workerPools: postgresWorkerPoolRoster(rig.pool),
     access: memoryProjectAccess(),
     policy: {
+      routing: schedulerRouting(),
       profileFor: () =>
         Promise.resolve({
           resolved: "Profile",

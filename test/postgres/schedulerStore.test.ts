@@ -61,6 +61,7 @@ import {
   schedulerRevoke,
   schedulerRivalRequest,
   schedulerRigOpen,
+  schedulerInCluster,
   type SchedulerProject,
   type SchedulerRig,
 } from "./schedulerHarness.ts";
@@ -111,6 +112,7 @@ async function registerAll(project: SchedulerProject, label: string) {
       schedulerOwner(label),
     ),
     executionSchedulerDefaults.nTasks,
+    schedulerInCluster,
   );
 }
 
@@ -444,6 +446,7 @@ test("an evaluation registration copies its own stage's requirement, not the wor
       schedulerOwner("staged-requirement"),
     ),
     executionSchedulerDefaults.nTasks,
+    schedulerInCluster,
   );
   assert.deepEqual(
     await rig.harness.query(
@@ -492,7 +495,11 @@ test("a registration retry creates only the tasks that are missing", async () =>
   );
   const before = await schedulerExecutions(rig, project.partition);
   assert.deepEqual(
-    await rig.store.registerSpawn(claim, executionSchedulerDefaults.nTasks),
+    await rig.store.registerSpawn(
+      claim,
+      executionSchedulerDefaults.nTasks,
+      schedulerInCluster,
+    ),
     {
       registered: "Registered",
       created: project.tasks - 2,
@@ -515,7 +522,11 @@ test("registration refuses above its explicit task query bound", async () => {
     schedulerOwner("task-bound-allowed"),
   );
   assert.deepEqual(
-    await rig.store.registerSpawn(allowedClaim, configuredTasksMax),
+    await rig.store.registerSpawn(
+      allowedClaim,
+      configuredTasksMax,
+      schedulerInCluster,
+    ),
     {
       registered: "Registered",
       created: configuredTasksMax,
@@ -530,7 +541,11 @@ test("registration refuses above its explicit task query bound", async () => {
     project.request,
     schedulerOwner("task-bound"),
   );
-  const result = await rig.store.registerSpawn(claim, configuredTasksMax);
+  const result = await rig.store.registerSpawn(
+    claim,
+    configuredTasksMax,
+    schedulerInCluster,
+  );
   assert.equal(result.registered, "Conflicting");
   assert.deepEqual(await schedulerExecutions(rig, project.partition), []);
   assert.deepEqual(
@@ -885,6 +900,7 @@ test("an evaluator whose budget ran out reports a dead process, not a verdict", 
       schedulerOwner("exhausted-eval"),
     ),
     executionSchedulerDefaults.nTasks,
+    schedulerInCluster,
   );
   const attempt = await placedAttempt(project, "exhausted-eval");
   assert.equal(await rig.store.attemptEnded(attempt, "Lost", "Vanished"), true);
@@ -1158,7 +1174,11 @@ test("a spawn whose ticket a later cancellation retired is superseded", async ()
     ),
   );
   assert.deepEqual(
-    await rig.store.registerSpawn(claim, executionSchedulerDefaults.nTasks),
+    await rig.store.registerSpawn(
+      claim,
+      executionSchedulerDefaults.nTasks,
+      schedulerInCluster,
+    ),
     {
       registered: "Superseded",
     },
@@ -1284,6 +1304,7 @@ test("an evaluator answering for a cycle that recorded no work result names that
       schedulerOwner("unjudgeable"),
     ),
     executionSchedulerDefaults.nTasks,
+    schedulerInCluster,
   );
   const attempt = await placedAttempt(project, "unjudgeable");
   assert.equal(

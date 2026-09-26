@@ -5,9 +5,9 @@
  *
  * EVERY CASE STARTS FROM AN OPENED, UNPLACED ATTEMPT. That is the row a pool
  * claims, and it is what the scheduler leaves behind when it opens an attempt
- * for an execution marked for a pool. Nothing in this tree marks one yet, so
- * each case writes `placement` itself through the owner's harness, which is
- * exactly the one fact the slice that routes work will supply.
+ * for an execution registered on the pool route. Each case writes `placement`
+ * itself through the owner's harness, so it routes each execution rather than
+ * each project.
  */
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
@@ -57,6 +57,7 @@ import {
   schedulerInvocation,
   schedulerReport,
   schedulerRigOpen,
+  schedulerInCluster,
   type SchedulerProject,
 } from "./schedulerHarness.ts";
 
@@ -157,6 +158,7 @@ async function poolProject(
       schedulerOwner(label),
     ),
     200,
+    schedulerInCluster,
   );
   return project;
 }

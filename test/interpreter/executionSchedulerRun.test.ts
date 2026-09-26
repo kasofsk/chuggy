@@ -27,6 +27,7 @@ import {
   silentSchedulerTelemetry,
   type CancellationRegistered,
   type ExecutionPolicy,
+  type ExecutionRouting,
   type ExecutionSchedulerStore,
   type LogicalExecution,
   type PhysicalAttempt,
@@ -261,6 +262,10 @@ function serviceWith(
   brief?: DraftBrief,
 ): ExecutionSchedulerService {
   const policy: ExecutionPolicy = {
+    routing: {
+      routes: { Work: "InCluster", Evaluation: "InCluster" },
+      projectRoutes: new Map(),
+    },
     profileFor: () => Promise.resolve(resolved),
   };
   const placement: AttemptPlacementPort = {
@@ -901,6 +906,64 @@ test("registration claims only spawn kinds and counts what it created", async ()
     1,
   );
   assert.deepEqual(kinds, [["SpawnWork", "SpawnEvaluation"]]);
+});
+
+test("registration writes each project the routes the policy resolves for it, and no other project's", async () => {
+  const service = serviceWith([], runnable, placedOk);
+  const elsewhere = { ...partition, project: asProjectId("project-two") };
+  const otherTenant = { ...partition, tenant: asTenantId("tenant-two") };
+  const unnamed = {
+    tenant: asTenantId("tenant-three"),
+    project: asProjectId("project-three"),
+  };
+  const routing: ExecutionRouting = {
+    routes: { Work: "InCluster", Evaluation: "Pool" },
+    projectRoutes: new Map([
+      [
+        partition.tenant,
+        new Map([
+          [partition.project, { Work: "Pool" as const }],
+          [elsewhere.project, { Evaluation: "InCluster" as const }],
+        ]),
+      ],
+      [otherTenant.tenant, new Map([[partition.project, {}]])],
+    ]),
+  };
+  const written: string[] = [];
+  const store: ExecutionSchedulerStore = {
+    ...service.store,
+    claimRequests: () =>
+      Promise.resolve(
+        [partition, elsewhere, otherTenant, unnamed].map((claimed) => ({
+          partition: claimed,
+          request: "1:0:ExecuteTask",
+          kind: "SpawnWork" as const,
+          ticket: asTicketId(1),
+          authorizingSeq: 1,
+          generation: 1,
+          owner,
+        })),
+      ),
+    registerSpawn: (claim, _tasksMax, routes) => {
+      written.push(
+        `${claim.partition.tenant}/${claim.partition.project}:${routes.Work}:${routes.Evaluation}`,
+      );
+      return Promise.resolve({ registered: "Registered", created: 1 });
+    },
+  };
+  assert.equal(
+    await executionSchedulerRegister(
+      { ...service, store, policy: { ...service.policy, routing } },
+      owner,
+    ),
+    4,
+  );
+  assert.deepEqual(written, [
+    "tenant/project:Pool:Pool",
+    "tenant/project-two:InCluster:InCluster",
+    "tenant-two/project:InCluster:Pool",
+    "tenant-three/project-three:InCluster:Pool",
+  ]);
 });
 
 /** A service that keeps every placement it was asked for, so a briefing can be read back. */
@@ -1576,4 +1639,92 @@ test("a refused attempt something else ended first is not counted as ended", asy
     "blocking:AlreadyTerminal:RequiredCapabilityUnavailable",
     "reaping:0",
   ]);
+});
+
+/** A pass over the fixture execution routed to pools, one of which is configured to run it, noting each invocation recorded and each placement asked for. */
+function poolOffer(
+  calls: string[],
+  seen: string[],
+  resolved: ProfileResolved = runnable,
+  page: WorkerPoolRosterPage = {
+    pools: [registeredPool(["Platform:Linux:Amd64"])],
+    truncated: false,
+  },
+  access: ProjectAccess = poolAccess(),
+): Promise<number> {
+  const service = serviceWith(calls, resolved, placedOk);
+  return executionSchedulerLaunch(
+    {
+      ...service,
+      store: {
+        ...service.store,
+        unlaunched: () =>
+          Promise.resolve([{ ...execution, route: "Pool" as const }]),
+        attemptInvoked: (invoked) => {
+          calls.push(`invoked:${invoked.attempt}`);
+          return Promise.resolve(true);
+        },
+      },
+      placement: {
+        ...service.placement,
+        place: () => {
+          calls.push("place");
+          return Promise.resolve(placedOk);
+        },
+      },
+      workerPools: { registered: () => Promise.resolve(page) },
+      access,
+      metrics: schedulerTelemetry(recordingMetrics(seen)),
+    },
+    epoch,
+  );
+}
+
+test("an attempt routed to pools is invoked for a pool to claim and observed as offered, and never placed", async () => {
+  for (const page of [
+    { pools: [registeredPool(["Platform:Linux:Amd64"])], truncated: false },
+    { pools: [], truncated: true },
+  ]) {
+    const calls: string[] = [];
+    const seen: string[] = [];
+    assert.equal(await poolOffer(calls, seen, runnable, page), 0);
+    assert.deepEqual(calls, ["invoked:attempt-one"]);
+    assert.deepEqual(seen, [
+      "reaping:0",
+      "attemptOpened:Opened",
+      "attemptOffered",
+    ]);
+  }
+});
+
+test("a policy denial blocks an attempt routed to pools before any pool is offered it", async () => {
+  const calls: string[] = [];
+  const seen: string[] = [];
+  assert.equal(
+    await poolOffer(calls, seen, {
+      resolved: "Denied",
+      reason: "ExecutionPolicyDenied",
+    }),
+    0,
+  );
+  assert.deepEqual(calls, [
+    "ended:Withdrawn:PolicyDenied",
+    "blocked:ExecutionPolicyDenied",
+  ]);
+  assert.equal(seen.includes("attemptOffered"), false);
+});
+
+test("an attempt routed to pools is offered to none while the authority cannot answer", async () => {
+  const calls: string[] = [];
+  const seen: string[] = [];
+  const failure = new ProjectAccessUnavailable("the authority did not answer");
+  assert.equal(
+    await poolOffer(calls, seen, runnable, undefined, {
+      authorize: () => Promise.reject(failure),
+      authorizeTenant: () => Promise.reject(failure),
+    }),
+    0,
+  );
+  assert.deepEqual(calls, []);
+  assert.deepEqual(seen, ["reaping:0", "attemptOpened:Opened"]);
 });

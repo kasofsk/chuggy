@@ -6,9 +6,10 @@
  * THE AUTHORITY IS A PARAMETER because two suites ask it: one holds grants in
  * memory beside the database, and the other asks the Keto a deployment runs.
  *
- * NOTHING IN THIS TREE ROUTES WORK TO A POOL YET, so an execution is marked
- * through the owner's harness. The first port the in-cluster arm asks refuses,
- * so a pass that placed one fails the case that ran it.
+ * AN EXECUTION IS ROUTED BY ITS REGISTRATION, written under the scheduler's
+ * own role. A pool is offered the attempt through every port the in-cluster
+ * arm asks but placement, and placement refuses, so a pass that placed one
+ * fails the case that ran it.
  */
 
 import assert from "node:assert/strict";
@@ -20,19 +21,26 @@ import {
 import { postgresPinnedConfigurations } from "../../src/adapters/postgres/pinnedConfigurations.ts";
 import { postgresTicketBrief } from "../../src/adapters/postgres/ticketBrief.ts";
 import { postgresWorkerPoolRoster } from "../../src/adapters/postgres/workerPool.ts";
-import type { ExecutionId } from "../../src/interpreter/executionScheduler.ts";
+import type {
+  ExecutionId,
+  ExecutionRoutes,
+} from "../../src/interpreter/executionScheduler.ts";
 import type { ExecutionSchedulerService } from "../../src/interpreter/executionSchedulerRun.ts";
 import type { ProjectAccess } from "../../src/interpreter/projectAccess.ts";
 import {
   schedulerClaimFor,
   schedulerOwner,
   schedulerProject,
+  schedulerRouting,
   type SchedulerProject,
   type SchedulerRig,
 } from "./schedulerHarness.ts";
 import { schedulerRootService } from "./schedulerRootPorts.ts";
 
-/** A scheduler over the real store and registry, asking `access` of each pool, whose in-cluster arm refuses at its first port. */
+/** The routes a routed execution registers with. */
+export const poolRoutes: ExecutionRoutes = { Work: "Pool", Evaluation: "Pool" };
+
+/** A scheduler over the real store and registry, asking `access` of each pool, whose placement refuses. */
 export function poolRoutedService(
   rig: SchedulerRig,
   access: ProjectAccess,
@@ -40,15 +48,38 @@ export function poolRoutedService(
   return {
     ...schedulerRootService,
     store: rig.store,
+    placement: {
+      ...schedulerRootService.placement,
+      place: (placement) =>
+        Promise.reject(
+          new Error(
+            `scheduler pools suite: ${placement.execution} was placed in the cluster`,
+          ),
+        ),
+    },
     workerPools: postgresWorkerPoolRoster(rig.pool),
     access,
     policy: {
-      profileFor: (execution) =>
-        Promise.reject(
-          new Error(
-            `scheduler pools suite: ${execution.execution} was placed in the cluster`,
-          ),
-        ),
+      routing: schedulerRouting(poolRoutes),
+      profileFor: () =>
+        Promise.resolve({
+          resolved: "Profile",
+          profile: { profile: "standard", runtimeVersion: "1" },
+          grant: {
+            tools: [],
+            credentials: [],
+            network: false,
+            filesystem: "WriteWorkspace",
+            mayCompleteTask: false,
+          },
+        }),
+    },
+    runtimeFacts: {
+      facts: () =>
+        Promise.resolve({
+          read: "Facts",
+          facts: { changedFiles: [], handoff: [] },
+        }),
     },
     configurations: postgresPinnedConfigurations(rig.pool),
     priorWorkReports: postgresPriorWorkReports(rig.pool),
@@ -69,7 +100,7 @@ export function poolRoutedKey(routed: PoolRouted): readonly string[] {
   return [tenant, project, routed.execution];
 }
 
-/** The one execution of a fresh project, admitted under the platform default and marked for the project's pools. */
+/** The one execution of a fresh project, registered on the pool route and admitted under the platform default. */
 export async function poolRoutedExecution(
   rig: SchedulerRig,
   label: string,
@@ -79,17 +110,12 @@ export async function poolRoutedExecution(
   await rig.store.registerSpawn(
     await schedulerClaimFor(rig, project.partition, project.request, owner),
     1,
+    poolRoutes,
   );
   const admitted = await rig.store.admit(project.cluster);
   if (admitted.admitted !== "Admitted")
     throw new Error(`scheduler pools suite: ${label} admitted no execution`);
-  const routed = { project, execution: admitted.execution };
-  await rig.harness.query(
-    `UPDATE execution SET placement='Pool'
-      WHERE tenant=$1 AND project=$2 AND execution=$3`,
-    poolRoutedKey(routed),
-  );
-  return routed;
+  return { project, execution: admitted.execution };
 }
 
 /** What the scheduler has made of one execution so far, read as the owner. */

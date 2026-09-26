@@ -85,6 +85,7 @@ import {
   schedulerOwner,
   schedulerProject,
   schedulerRigOpen,
+  schedulerInCluster,
   type SchedulerProject,
 } from "./schedulerHarness.ts";
 
@@ -199,6 +200,7 @@ async function releasedUnder(
       schedulerOwner(label),
     ),
     200,
+    schedulerInCluster,
   );
   return project;
 }
