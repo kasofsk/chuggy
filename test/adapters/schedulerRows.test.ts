@@ -28,6 +28,7 @@ function rowOf(configuration: unknown): ExecutionRow {
     tenant: "tenant",
     project: "project",
     execution: "execution-one",
+    placement: "InCluster",
     ticket: "22",
     task: "1",
     task_kind: "Work",
@@ -85,4 +86,17 @@ test("an evaluation row's positive stage becomes the port's zero-based index", (
     stage: "1",
   });
   assert.equal(execution.stage, 0);
+});
+
+test("the placement a row stores is the route its execution carries, and one no migration writes is refused", () => {
+  const row = rowOf({ version: 1 });
+  assert.equal(executionRowLogical(row).route, "InCluster");
+  assert.equal(
+    executionRowLogical({ ...row, placement: "Pool" }).route,
+    "Pool",
+  );
+  assert.throws(
+    () => executionRowLogical({ ...row, placement: "Spillover" }),
+    /Spillover is not a route/,
+  );
 });

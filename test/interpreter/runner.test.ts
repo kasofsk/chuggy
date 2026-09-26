@@ -33,6 +33,9 @@ import {
 } from "../../src/interpreter/executionRequirement.ts";
 import {
   allExecutionRoutes,
+  type ExecutionRoute,
+} from "../../src/interpreter/executionScheduler.ts";
+import {
   allWorkerPoolClasses,
   allWorkerPoolPlacementOutcomes,
   allWorkerPoolPlacementPhases,
@@ -42,7 +45,6 @@ import {
   workerPoolPlatformToken,
   workerPoolPolicyRegistered,
   workerPoolSessionHasSlot,
-  type ExecutionRoute,
   type WorkerPoolDemand,
   type WorkerPoolPolicy,
 } from "../../src/interpreter/workerPoolAssignment.ts";

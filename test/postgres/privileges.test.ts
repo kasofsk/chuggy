@@ -989,7 +989,7 @@ test("the scheduler's write surface is exactly the columns execution and capacit
   );
 });
 
-test("the scheduler reads execution and capacity, and of the project only its lifecycle", async () => {
+test("the scheduler reads execution and capacity, of the project only its lifecycle, and of a pool what it declared", async () => {
   const read = (await harness.query(
     `SELECT table_name AS relation,
             string_agg(column_name, ',' ORDER BY column_name) AS columns
@@ -1020,11 +1020,16 @@ test("the scheduler reads execution and capacity, and of the project only its li
       "schema_migration",
       "ticket_definition",
       "ticket_source",
+      "worker_pool",
     ],
   );
   assert.equal(
     read.find((row) => row.relation === "project")?.columns,
     "lifecycle,lifecycle_generation,manifest_next,project,tenant",
+  );
+  assert.equal(
+    read.find((row) => row.relation === "worker_pool")?.columns,
+    "capabilities,class,pool,principal,project,tenant",
   );
 });
 

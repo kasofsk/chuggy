@@ -188,6 +188,7 @@ export const attemptEvidences = [
   "PolicyUnavailable",
   "PlacementDenied",
   "PlacementUnavailable",
+  "PlacementIncompatible",
   "Evicted",
   "Vanished",
   "LeaseExpired",

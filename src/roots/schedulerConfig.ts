@@ -67,6 +67,11 @@ import {
   type SessionSchedulerConfig,
 } from "../interpreter/sessionScheduler.ts";
 import {
+  checkedProjectAccessSettings,
+  projectAccessTimeoutMsDefault,
+  type ProjectAccessSettings,
+} from "../interpreter/projectAccess.ts";
+import {
   asRecoveryEpoch,
   type RecoveryEpoch,
 } from "../interpreter/projectStore.ts";
@@ -106,6 +111,7 @@ export interface SchedulerCommandConfig {
   readonly sessions: KubernetesSessionLaunchConfig;
   readonly sessionScheduler: SessionSchedulerConfig;
   readonly sessionPolicy: SessionPolicy;
+  readonly access: ProjectAccessSettings;
 }
 
 /** The one prefix every variable this command reads is spelled with. */
@@ -784,5 +790,13 @@ export function schedulerCommandConfig(
       sessionSchedulerDefaults,
     ),
     sessionPolicy: schedulerSessionPolicy(environment),
+    access: checkedProjectAccessSettings({
+      readUrl: schedulerRequired(environment, "KETO_READ_URL"),
+      requestTimeoutMs: schedulerPositive(
+        environment,
+        "KETO_TIMEOUT_MS",
+        projectAccessTimeoutMsDefault,
+      ),
+    }),
   };
 }

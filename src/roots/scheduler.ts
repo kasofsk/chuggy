@@ -34,6 +34,7 @@ function schedulerRuntime(config: SchedulerCommandConfig): ServiceRuntime {
       finalizer: config.finalizer,
       metrics: silentSchedulerTelemetry,
     },
+    access: config.access,
     sessions: {
       placement: kubernetesSessionLaunch(config.sessions),
       bearers: sessionAttemptMint(),

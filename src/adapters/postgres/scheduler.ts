@@ -39,10 +39,16 @@
  * ITS OWN CALL. An attempt whose lease has run out is no longer live, but its
  * row still says it is, and the partial unique index that makes one unfenced
  * reporter would refuse the replacement. So reaping is a durable move the pass
- * asks for by name, spending the safe retry budget the way any attempt that ran
- * and vanished does, and the launch read that follows it writes nothing. Both
- * refuse to do anything at all under a superseded recovery epoch, because a
- * restore withdraws the authority a scheduler was holding before it.
+ * asks for by name, spending the safe retry budget for an attempt that ran and
+ * vanished and none for one no pool took, and the launch read that follows it
+ * writes nothing. Both refuse to do anything at all under a superseded recovery
+ * epoch, because a restore withdraws the authority a scheduler was holding
+ * before it.
+ *
+ * AN ATTEMPT OFFERED TO POOLS THAT NO POOL HOLDS NEVER RAN. The reaper reads
+ * one whose execution is placed with pools and whose `pool` is null as that,
+ * and withdraws it as `PlacementUnavailable` without spending the budget. One
+ * a pool holds ran, and is lost like any other.
  *
  * ROWS ARE TAKEN IN ONE ORDER: REQUEST, THEN EXECUTION, THEN PROJECT, THEN
  * ATTEMPT — AND WITHIN EACH OF THOSE, IN KEY ORDER. A worker reporting on a
@@ -85,6 +91,7 @@ import {
   asExecutionId,
   executionOwnsSlot,
   type Admitted,
+  type AttemptEvidence,
   type AttemptEvidenceRecord,
   type AttemptLoss,
   type AttemptOpened,
@@ -747,7 +754,7 @@ async function schedulerLockForLaunch(
   opening: AttemptOpening,
 ): Promise<LaunchRow> {
   const found = await client.query<LaunchRow>(
-    sql`SELECT e.tenant, e.project, e.execution, e.ticket::text AS ticket, e.task::text AS task,
+    sql`SELECT e.tenant, e.project, e.execution, e.placement, e.ticket::text AS ticket, e.task::text AS task,
             t.kind AS task_kind, t.stage::text AS stage, e.source_request,
             q.input_bundle, q.input_bundle_digest,
             q.authorizing_seq::text AS source_seq, q.effect_position::text AS source_effect,
@@ -953,9 +960,9 @@ async function schedulerAttemptEnded(
 /**
  * Ends at most `attemptsMax` live attempts whose lease has run out, charging the
  * budget an attempt that ran spends to exactly the registrations whose attempt
- * this pass ends. The registrations are locked before their attempts and both in
- * key order, and the bound is applied to the registrations — one of which can
- * hold only one live attempt, so it bounds the attempts too.
+ * this pass ends and ran. The registrations are locked before their attempts
+ * and both in key order, and the bound is applied to the registrations — one of
+ * which can hold only one live attempt, so it bounds the attempts too.
  */
 async function schedulerReapLapsedAttempts(
   client: pg.PoolClient,
@@ -978,41 +985,57 @@ async function schedulerReapLapsedAttempts(
   const [heldTenants, heldProjects, heldExecutions] = schedulerRowKeys(
     held.rows,
   );
-  const lapsed = await client.query<SchedulerRowKey & { attempt: string }>(
-    sql`SELECT a.tenant, a.project, a.execution, a.attempt FROM execution_attempt a
-       JOIN unnest(${heldTenants}::text[], ${heldProjects}::text[], ${heldExecutions}::text[])
-         AS h(tenant, project, execution)
-         ON a.tenant = h.tenant AND a.project = h.project AND a.execution = h.execution
-      WHERE a.state IN ('Placing', 'Running') AND a.lease_expires_at <= now()
-      ORDER BY a.tenant, a.project, a.execution, a.attempt FOR UPDATE OF a`,
+  const lapsed = await client.query<
+    SchedulerRowKey & { attempt: string; unclaimed: boolean }
+  >(
+    sql`SELECT a.tenant, a.project, a.execution, a.attempt,
+               (e.placement = 'Pool' AND a.pool IS NULL) AS unclaimed
+          FROM execution_attempt a
+          JOIN unnest(${heldTenants}::text[], ${heldProjects}::text[], ${heldExecutions}::text[])
+            AS h(tenant, project, execution)
+            ON a.tenant = h.tenant AND a.project = h.project AND a.execution = h.execution
+          JOIN execution e
+            ON e.tenant = a.tenant AND e.project = a.project AND e.execution = a.execution
+         WHERE a.state IN ('Placing', 'Running') AND a.lease_expires_at <= now()
+         ORDER BY a.tenant, a.project, a.execution, a.attempt FOR UPDATE OF a`,
   );
   if (lapsed.rows.length === 0) return 0;
   const [tenants, projects, executions] = schedulerRowKeys(lapsed.rows);
+  const spent = lapsed.rows.map((row) => (row.unclaimed ? 0 : 1));
   await client.query(
     sql`UPDATE execution e
-        SET retries_spent = e.retries_spent + 1, placement_backoff_from = now()
-       FROM unnest(${tenants}::text[], ${projects}::text[], ${executions}::text[])
-         AS h(tenant, project, execution)
+        SET retries_spent = e.retries_spent + h.spent, placement_backoff_from = now()
+       FROM unnest(${tenants}::text[], ${projects}::text[], ${executions}::text[], ${spent}::int[])
+         AS h(tenant, project, execution, spent)
       WHERE e.tenant = h.tenant AND e.project = h.project AND e.execution = h.execution
         AND e.status NOT IN ('Terminal', 'Cancelled')`,
   );
-  return schedulerEndLapsed(
-    client,
-    lapsed.rows.map((row) => row.attempt),
+  const withdrawn = lapsed.rows.filter((row) => row.unclaimed);
+  const lost = lapsed.rows.filter((row) => !row.unclaimed);
+  return (
+    (await schedulerEndLapsed(client, lost, "Lost", "LeaseExpired")) +
+    (await schedulerEndLapsed(
+      client,
+      withdrawn,
+      "Withdrawn",
+      "PlacementUnavailable",
+    ))
   );
 }
 
 /** Ends the attempts named, which the caller has already locked in key order. */
 async function schedulerEndLapsed(
   client: pg.PoolClient,
-  attempts: readonly string[],
+  lapsed: readonly { readonly attempt: string }[],
+  loss: AttemptLoss,
+  evidence: AttemptEvidence,
 ): Promise<number> {
-  if (attempts.length === 0) return 0;
+  if (lapsed.length === 0) return 0;
   const ended = await client.query(
     sql`UPDATE execution_attempt
-        SET state = 'Lost', evidence = 'LeaseExpired', ended_at = now(),
+        SET state = ${loss}, evidence = ${evidence}, ended_at = now(),
             lease_owner = NULL, lease_expires_at = NULL
-      WHERE attempt = ANY(${[...attempts]}::text[])`,
+      WHERE attempt = ANY(${lapsed.map((row) => row.attempt)}::text[])`,
   );
   return ended.rowCount ?? 0;
 }
@@ -1026,7 +1049,7 @@ async function schedulerUnlaunched(
   schedulerRequirePositive(executionsMax, "executionsMax");
   if ((await postgresOwnershipEpoch(client)) !== epoch) return [];
   const waiting = await client.query<ExecutionRow>(
-    sql`SELECT e.tenant, e.project, e.execution, e.ticket::text AS ticket, e.task::text AS task,
+    sql`SELECT e.tenant, e.project, e.execution, e.placement, e.ticket::text AS ticket, e.task::text AS task,
             t.kind AS task_kind, t.stage::text AS stage, e.source_request,
             q.input_bundle, q.input_bundle_digest,
             q.authorizing_seq::text AS source_seq, q.effect_position::text AS source_effect,
@@ -1048,7 +1071,6 @@ async function schedulerUnlaunched(
          ON c.tenant = e.tenant AND c.project = e.project
         AND c.revision = e.configuration_revision AND c.digest = e.configuration_digest
       WHERE e.status IN ('Admitted', 'Launching', 'Running')
-        AND e.placement = 'InCluster'
         AND NOT EXISTS (SELECT 1 FROM execution_attempt a
                          WHERE a.tenant = e.tenant AND a.project = e.project
                            AND a.execution = e.execution
@@ -1142,7 +1164,7 @@ async function schedulerExecution(
   execution: ExecutionId,
 ): Promise<LogicalExecution | undefined> {
   const found = await pool.query<ExecutionRow>(
-    sql`SELECT e.tenant, e.project, e.execution, e.ticket::text AS ticket,
+    sql`SELECT e.tenant, e.project, e.execution, e.placement, e.ticket::text AS ticket,
                e.task::text AS task, t.kind AS task_kind, t.stage::text AS stage,
                e.source_request, q.input_bundle, q.input_bundle_digest,
                q.authorizing_seq::text AS source_seq,

@@ -37,14 +37,24 @@
  * THE POLICY THE REGISTRY HAS NO COLUMN FOR IS DATA, NOT AN OMISSION. Class,
  * drain, trust, the allowance of secrets and source, and a dedicated owner are
  * the model's administrator-owned authority, and the route and a demand on
- * each of them are the model's `ExecutionProfile`. Every pool holds
- * `workerPoolPolicyRegistered` and every execution routed to one is pinned
+ * each of them are the model's `ExecutionProfile`. The registry carries a
+ * pool's class, every other term of its policy is
+ * `workerPoolPolicyRegistered`'s, and every execution routed to one is pinned
  * with `workerPoolDemandRouted`; the guard reads both as it reads any other
- * field, so a registry that carries them per pool changes values and not
- * terms.
+ * field, so a registry that carries more of them per pool changes values and
+ * not terms.
+ *
+ * THE SCHEDULER ASKS THE OUTCOME OF THE REGISTRY AND THE AUTHORITY. A poll is
+ * not durable, so the scheduler sees no session and no pool is placeable to
+ * it. A registered pool is enabled, and revoked where the authority withholds
+ * the `Execute` its polls are admitted by.
  */
 
-import type { ExecutionStatus } from "./executionScheduler.ts";
+import type {
+  ExecutionRoute,
+  ExecutionStatus,
+  LogicalExecution,
+} from "./executionScheduler.ts";
 import type { ExecutionRequirement, Platform } from "./executionRequirement.ts";
 import type { Principal } from "./principal.ts";
 import type { Partition } from "./projectStore.ts";
@@ -57,9 +67,13 @@ export const allWorkerPoolClasses = [
 ] as const;
 export type WorkerPoolClass = (typeof allWorkerPoolClasses)[number];
 
-/** The model's `ExecutionRoute` in the words `execution.placement` stores, `InCluster` for `Kubernetes` and `Pool` for `RegisteredRunner`. */
-export const allExecutionRoutes = ["InCluster", "Pool"] as const;
-export type ExecutionRoute = (typeof allExecutionRoutes)[number];
+/** Narrows text to the class it names, refusing one the model does not know. */
+export function asWorkerPoolClass(value: string): WorkerPoolClass {
+  const known = allWorkerPoolClasses.find((named) => named === value);
+  if (known === undefined)
+    throw new RangeError(`worker pool class: ${value} is not a known class`);
+  return known;
+}
 
 /** The model's `PlacementPhase`: an execution's placement waits, is assigned, has a result pending, or was cancelled. */
 export const allWorkerPoolPlacementPhases = [
@@ -100,7 +114,7 @@ export interface WorkerPoolDemand {
   readonly dedicatedOwnerRequired: number;
 }
 
-/** The policy every registered pool holds, since the registry carries none of it per pool. */
+/** The policy a pool is registered with; the registry carries its class per pool and none of the rest. */
 export const workerPoolPolicyRegistered: WorkerPoolPolicy = {
   class: "Dedicated",
   draining: false,
@@ -285,4 +299,47 @@ export function workerPoolPlacementOutcome(
   )
     return "Placeable";
   return configured.length > 0 ? "Unavailable" : "DefinitiveIncompatibility";
+}
+
+/** A registered pool as the registry and the authority answer it: the runner's identity, inventory and class, and whether it is revoked. */
+export type WorkerPoolAnswered = Pick<
+  WorkerPoolRunner,
+  "partition" | "pool" | "principal" | "capabilities" | "class" | "revoked"
+>;
+
+/** A registered pool as the scheduler reads it: the class it registered, the registered policy otherwise, enabled, and revoked as the authority answered. */
+function workerPoolOutcomeRegisteredRunner(
+  registered: WorkerPoolAnswered,
+): WorkerPoolRunner {
+  return {
+    ...workerPoolPolicyRegistered,
+    class: registered.class,
+    partition: registered.partition,
+    pool: registered.pool,
+    principal: registered.principal,
+    enabled: true,
+    revoked: registered.revoked,
+    capabilities: registered.capabilities,
+  };
+}
+
+/** What `workerPoolPlacementOutcome` says of an execution no pool has taken, asked of its project's registered pools. */
+export function workerPoolOutcomeRegistered(
+  execution: LogicalExecution,
+  registered: readonly WorkerPoolAnswered[],
+): WorkerPoolPlacementOutcome {
+  return workerPoolPlacementOutcome(
+    {
+      partition: execution.partition,
+      status: execution.status,
+      phase: "Waiting",
+      requirement: execution.requirement,
+      route: execution.route,
+      demand: workerPoolDemandRouted,
+    },
+    registered.map((pool) => ({
+      pool: workerPoolOutcomeRegisteredRunner(pool),
+      session: undefined,
+    })),
+  );
 }

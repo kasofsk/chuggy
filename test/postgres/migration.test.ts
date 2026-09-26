@@ -29,6 +29,7 @@ import { migration017 } from "../../src/adapters/postgres/schema/migrations/017-
 import { migration018 } from "../../src/adapters/postgres/schema/migrations/018-attempt-invocation.ts";
 import { migration019 } from "../../src/adapters/postgres/schema/migrations/019-session-invocation.ts";
 import { migration020 } from "../../src/adapters/postgres/schema/migrations/020-worker-pool-class.ts";
+import { migration021 } from "../../src/adapters/postgres/schema/migrations/021-scheduler-reads-pools.ts";
 import { leadDispatchesPerDecision } from "../../src/adapters/postgres/schema/migrations/baseline/seed.ts";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
@@ -8857,6 +8858,38 @@ test("020 records a pool's class, the one class there is for each pool already r
     assert.deepEqual(await poolClassPrivileges(subject), [
       { role: apiRole, read: true, insert: true, update: false },
       { role: poolPlaneRole, read: true, insert: false, update: false },
+      { role: schedulerRole, read: true, insert: false, update: false },
+    ]);
+  });
+});
+
+/** The registry columns the scheduler may read, in the table's own order. */
+async function schedulerPoolColumns(
+  subject: pg.Pool,
+): Promise<readonly string[]> {
+  const found = await subject.query<{ attname: string }>(
+    `SELECT a.attname FROM pg_attribute a
+      WHERE a.attrelid='public.worker_pool'::regclass AND a.attnum>0
+        AND NOT a.attisdropped
+        AND has_column_privilege($1,a.attrelid,a.attnum,'SELECT')
+      ORDER BY a.attnum`,
+    [schedulerRole],
+  );
+  return found.rows.map((row) => row.attname);
+}
+
+test("021 lets the scheduler read a registered pool's project, name, declaration, principal and class, and no other column", async () => {
+  await migrationDatabase("scheduler_pools", async (subject) => {
+    await installationBefore(subject, migration021.version);
+    assert.deepEqual(await schedulerPoolColumns(subject), []);
+    assert.ok((await postgresMigrate(subject)).includes(migration021.version));
+    assert.deepEqual(await schedulerPoolColumns(subject), [
+      "tenant",
+      "project",
+      "pool",
+      "capabilities",
+      "principal",
+      "class",
     ]);
   });
 });

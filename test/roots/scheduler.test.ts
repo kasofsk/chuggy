@@ -31,6 +31,7 @@ import {
 import { sessionTaskVariable } from "../../src/contract/workerEnvironment.ts";
 import type { SessionBounds } from "../../src/contract/workerTask.ts";
 import { executionSchedulerDefaults } from "../../src/interpreter/executionScheduler.ts";
+import { projectAccessTimeoutMsDefault } from "../../src/interpreter/projectAccess.ts";
 import { sessionSchedulerDefaults } from "../../src/interpreter/sessionScheduler.ts";
 import {
   finalizerDefaults,
@@ -119,6 +120,7 @@ const environment: Readonly<Record<string, string>> = {
   CHUG_SCHEDULER_SESSION_POLICY: JSON.stringify(sessionPolicy),
   CHUG_SCHEDULER_SESSION_MODEL: "claude-opus-4-5",
   CHUG_SCHEDULER_SESSION_API_URL: "http://chuggy-api.invalid:3000",
+  CHUG_SCHEDULER_KETO_READ_URL: "http://keto-read.invalid:4466/",
 };
 
 /** Every variable the command refuses to start without. */
@@ -230,6 +232,10 @@ const parsed = {
     profile: { profile: "session", runtimeVersion: "1" },
     grant,
     mirrors: {},
+  },
+  access: {
+    readUrl: "http://keto-read.invalid:4466/",
+    requestTimeoutMs: projectAccessTimeoutMsDefault,
   },
 };
 
@@ -681,6 +687,18 @@ test("a stated bound is taken and the rest stay the published defaults", async (
   });
 });
 
+test("a stated project authority timeout is taken", async () => {
+  const found = JSON.parse(
+    await schedulerProgram(
+      parseProgram({ ...environment, CHUG_SCHEDULER_KETO_TIMEOUT_MS: "250" }),
+    ),
+  ) as { readonly parsed: { readonly access: unknown } };
+  assert.deepEqual(found.parsed.access, {
+    readUrl: "http://keto-read.invalid:4466/",
+    requestTimeoutMs: 250,
+  });
+});
+
 /**
  * The cluster a case answers for, reachable or not, and the site each half
  * stands on. Both halves place against that one site, so what is recorded is
@@ -754,7 +772,7 @@ function processExecutionFakes(): string {
   return `
     const partition = { tenant: 'tenant', project: 'project' };
     const execution = {
-      partition, execution: 'execution-one', ticket: 1, task: 1, taskKind: 'Work',
+      partition, execution: 'execution-one', route: 'InCluster', ticket: 1, task: 1, taskKind: 'Work',
       sourceRequest: '1:0:ExecuteTask', sourceSeq: 1, sourceEffect: 0, ticketVersion: 1,
       account: 'project', cluster: 'cluster',
       configurationRevision: 'revision', configurationDigest: 'digest',

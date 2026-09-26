@@ -30,6 +30,7 @@ import {
 import {
   postgresWorkerPoolAssignments,
   postgresWorkerPoolRegistry,
+  postgresWorkerPoolRoster,
 } from "../../src/adapters/postgres/workerPool.ts";
 import type { WorkTaskDocument } from "../../src/contract/workerTask.ts";
 import {
@@ -70,6 +71,7 @@ import {
   postgresHarnessNewEpoch,
   postgresHarnessRolePool,
 } from "./harness.ts";
+import { memoryProjectAccess } from "./projectAccessMemory.ts";
 import {
   schedulerClaimFor,
   schedulerEvaluationRequest,
@@ -226,6 +228,8 @@ function launching(
       place,
       cancel: () => Promise.resolve({ cancelled: "Accepted" }),
     },
+    workerPools: postgresWorkerPoolRoster(rig.pool),
+    access: memoryProjectAccess(),
     policy: {
       profileFor: () =>
         Promise.resolve({

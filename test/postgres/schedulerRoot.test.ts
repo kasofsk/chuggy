@@ -95,13 +95,32 @@ function schedulerRootBindingProgram(partition: Partition): string {
   `;
 }
 
+/** The registry read a launch pass asks of work routed to pools, made by the composition root itself. */
+function schedulerRootPoolsProgram(partition: Partition): string {
+  return `
+    const roots = await import('./src/roots/controlPlane.ts');
+    const pools = await import('./src/adapters/postgres/pool.ts');
+    const ports = await import('./test/postgres/schedulerRootPorts.ts');
+    const pool = pools.postgresPool(${JSON.stringify(schedulerRootUrl())});
+    const service = roots.schedulerProcessRootService(pool, ports.schedulerRootService, ports.schedulerRootAccess);
+    const page = await service.workerPools
+      .registered(${JSON.stringify(partition)})
+      .finally(() => pool.end());
+    const [registered] = page.pools;
+    const asked = await service.access
+      .authorize(registered.principal, registered.partition, 'Execute')
+      .then(() => 'answered', (failure) => failure.name);
+    process.stdout.write(JSON.stringify({ page, asked }));
+  `;
+}
+
 function schedulerRootConfigurationProgram(): string {
   return `
     const roots = await import('./src/roots/controlPlane.ts');
     const pools = await import('./src/adapters/postgres/pool.ts');
     const ports = await import('./test/postgres/schedulerRootPorts.ts');
     const pool = pools.postgresPool(${JSON.stringify(schedulerRootUrl())});
-    const service = roots.schedulerProcessRootService(pool, ports.schedulerRootService);
+    const service = roots.schedulerProcessRootService(pool, ports.schedulerRootService, ports.schedulerRootAccess);
     const read = await service.configurations.configuration(
       ${JSON.stringify(configurationPartition)},
       {
@@ -150,6 +169,7 @@ function schedulerRootProgram(): string {
         cluster: 'cluster',
       },
       service: ports.schedulerRootService,
+      access: ports.schedulerRootAccess,
       workerCatalog: ${JSON.stringify([schedulerRootWorker])},
       additional: supplied,
     });
@@ -243,4 +263,54 @@ test("the scheduler root reads the binding its session pass places on", async ()
     "slice 3's migration 061 has not granted the scheduler this read",
   );
   assert.equal(read.binding?.repository, repository);
+});
+
+/**
+ * The same question of the registry, which is what a launch pass asks of work
+ * routed to pools and what migration 021 granted the scheduler.
+ */
+test("the scheduler root reads the pools a project registered, and asks a Keto adapter rather than a stand-in about them", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "scheduler-root-pools",
+  );
+  const principal = `https://issuer.invalid#scheduler-root-pool-${randomUUID()}`;
+  await harness.query(
+    `INSERT INTO worker_pool(tenant,project,pool,capabilities,class,principal,client_id)
+     VALUES($1,$2,'root-pool',$3,'Dedicated',$4,$5)`,
+    [
+      partition.tenant,
+      partition.project,
+      ["Platform:Linux:Amd64"],
+      principal,
+      `chuggy-pool-${randomUUID()}`,
+    ],
+  );
+
+  const result = await execute(
+    process.execPath,
+    [
+      "--experimental-strip-types",
+      "--input-type=module",
+      "--eval",
+      schedulerRootPoolsProgram(partition),
+    ],
+    { cwd: process.cwd() },
+  );
+
+  assert.deepEqual(JSON.parse(result.stdout), {
+    page: {
+      pools: [
+        {
+          partition,
+          pool: "root-pool",
+          capabilities: ["Platform:Linux:Amd64"],
+          class: "Dedicated",
+          principal,
+        },
+      ],
+      truncated: false,
+    },
+    asked: "ProjectAccessUnavailable",
+  });
 });
