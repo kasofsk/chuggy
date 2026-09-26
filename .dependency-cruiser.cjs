@@ -340,6 +340,78 @@ module.exports = {
       },
     },
     {
+      name: "harness-reaches-only-the-contract",
+      comment:
+        "images/worker/ is the pod's own program, and its image carries none " +
+        "of this tree but the packed contract. So it reaches Node's own " +
+        "modules, a package and src/contract/, and nothing else here: a " +
+        "module it reached anywhere else is one the image does not hold, and " +
+        "a suite of it that read the server would be pinning the pod to the " +
+        "server rather than to the contract both read. Not reachability, for " +
+        "contract-reaches-only-zod's reason: the `to` is everything but the " +
+        "exits, so a relay is caught at its first edge.",
+      severity: "error",
+      from: { path: "^images/worker/" },
+      to: {
+        path: "^(?!images/worker/)",
+        pathNot: "node_modules/|^src/contract/",
+        dependencyTypesNot: ["core"],
+      },
+    },
+    {
+      name: "harness-names-the-contract-by-package",
+      comment:
+        "The image installs the contract as `@chuggy/worker-contract` and " +
+        "has no src/, so a relative path into src/contract/ resolves in this " +
+        "checkout and nowhere the pod runs. dependency-cruiser labels an " +
+        "import through the workspace link `aliased-workspace`, which a " +
+        "relative import never is.",
+      severity: "error",
+      from: { path: "^images/" },
+      to: {
+        path: "^src/contract/",
+        dependencyTypesNot: ["aliased-workspace"],
+      },
+    },
+    {
+      name: "source-names-the-contract-by-path",
+      comment:
+        "The package name is the pod's. The server's and the console's " +
+        "images install their packages before src/contract/ is copied in, so " +
+        "whether the workspace link exists there is the installer's " +
+        "business; the relative path is the file both builds copy.",
+      severity: "error",
+      from: { path: "^(src|ui)/" },
+      to: {
+        path: "^src/contract/",
+        dependencyTypes: ["aliased-workspace"],
+      },
+    },
+    {
+      name: "no-source-reaches-the-harness",
+      comment:
+        "The harness ships in its own image and nothing else here is built " +
+        "with it, so a module outside images/ that imported one inside would " +
+        "be depending on the pod's code rather than on the contract both " +
+        "read. A plain import rule is complete, for " +
+        "nothing-imports-a-process-root's reason: every path in ends at a " +
+        "module outside importing one inside.",
+      severity: "error",
+      from: { pathNot: "^images/" },
+      to: { path: "^images/" },
+    },
+    {
+      name: "harness-resolves-every-import",
+      comment:
+        "An import the resolver cannot follow is an edge dropped from the " +
+        "graph, and the rules above then judge the harness without it: a " +
+        "missing workspace link would drop every contract import at once. " +
+        "So an unresolved import under images/ is itself a finding.",
+      severity: "error",
+      from: { path: "^images/" },
+      to: { couldNotResolve: true },
+    },
+    {
       name: "no-circular-dependency",
       comment: "A cycle makes the layer a module belongs to unanswerable.",
       severity: "error",
@@ -373,7 +445,7 @@ module.exports = {
     enhancedResolveOptions: {
       exportsFields: ["exports"],
       conditionNames: ["import", "require", "node", "default", "types"],
-      extensions: [".ts", ".js"],
+      extensions: [".ts", ".js", ".mjs"],
     },
     reporterOptions: {
       text: { highlightFocused: true },

@@ -65,10 +65,13 @@ work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
 set +e
-# `ui` is named only when the tree has one: depcruise fails on a root that
-# does not exist, and that would be a could-not-run rather than a verdict.
+# The other roots are named only when the tree has them: depcruise fails on a
+# root that does not exist, and that would be a could-not-run rather than a
+# verdict.
 roots="src test"
-[ -d ui ] && roots="$roots ui"
+for optional in ui images scripts; do
+	[ -d "$optional" ] && roots="$roots $optional"
+done
 # shellcheck disable=SC2086 # the root list is space-separated by construction
 "$DEPCRUISE" --config .dependency-cruiser.cjs --output-type err $roots >"$work/out" 2>"$work/err"
 rc=$?

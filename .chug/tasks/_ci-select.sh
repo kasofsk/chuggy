@@ -71,7 +71,7 @@ ci_gate_selected() { # <gate id>
 	case "$gate" in
 	doc-lint) ci_changed '*.md' .chug/tasks/doc-lint.sh ;;
 	check-figures) ci_changed '*.md' '*.svg' '*.png' '*.jpg' '*.jpeg' .chug/tasks/check-figures.sh ;;
-	check-paths) ci_changed '*.md' '*.ts' '*.tsx' '*.js' '*.sh' .chug/tasks/check-paths.sh ;;
+	check-paths) ci_changed '*.md' '*.ts' '*.tsx' '*.js' '*.mjs' '*.cjs' '*.json' '*.sh' .chug/tasks/check-paths.sh ;;
 	check-shell-quoting) ci_changed '*.sh' .githooks/pre-commit .chug/tasks/check-shell-quoting.sh ;;
 	check-duplication) ci_changed '*.ts' '*.tsx' '*.js' '*.sh' '*.qnt' .jscpd.json .chug/tasks/check-duplication.sh || ci_toolchain_changed ;;
 	check-console-sheets) ci_changed 'ui/chuggy-ui/app/*.css' .chug/tasks/check-console-sheets.sh ;;
@@ -80,7 +80,7 @@ ci_gate_selected() { # <gate id>
 	check-knowledge) ci_changed '.chug/**' 'docs/design/*.md' CLAUDE.md .chug/tasks/check-knowledge.sh ;;
 	check-roster) ci_changed CLAUDE.md '.agents/**' '.codex/**' .chug/tasks/check-roster.sh ;;
 	check-vendored) ci_changed 'model/task-contract/**' 'model/ticket-domain/**' model/vendored.sha256 .chug/tasks/check-vendored.sh ;;
-	check-boundaries) ci_changed 'src/*.ts' 'src/**/*.ts' 'test/*.ts' 'test/**/*.ts' 'ui/*.js' 'ui/**/*.js' 'ui/**/*.ts' 'ui/**/*.tsx' .dependency-cruiser.cjs .chug/tasks/check-boundaries.sh || ci_toolchain_changed ;;
+	check-boundaries) ci_changed 'src/*.ts' 'src/**/*.ts' 'test/*.ts' 'test/**/*.ts' 'images/*.mjs' 'images/**/*.mjs' 'scripts/*.ts' 'scripts/**/*.ts' 'ui/*.js' 'ui/**/*.js' 'ui/**/*.ts' 'ui/**/*.tsx' .dependency-cruiser.cjs .chug/tasks/check-boundaries.sh || ci_toolchain_changed ;;
 	source-static) ci_changed '*.ts' '*.tsx' '*.js' '*.json' '*.cjs' '*.mjs' '*.yaml' '*.yml' .chug/tasks/check-source.sh || ci_toolchain_changed ;;
 	source-unit) ci_changed 'src/**' 'test/**' 'ui/**' 'images/**' 'scripts/**' tsconfig.contract.json tsconfig.contract-pack.json .chug/tasks/check-source.sh || ci_toolchain_changed ;;
 	check-console) ci_changed 'ui/**' 'src/contract/**' 'scripts/console-policy.ts' 'scripts/check-console-policy.ts' .chug/tasks/check-console.sh ;;
