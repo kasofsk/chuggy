@@ -13,9 +13,10 @@
  *
  * AN OLDER RELEASE A PLANE STILL SERVES WRITES DOCUMENTS THIS TREE READS. Each
  * example written at that release's version that its schema accepts is offered
- * again with every value of each roster the schema names. Lifted as the reader
- * lifts it, every one is accepted by this tree's schema, and the reader reads
- * each value in some example.
+ * again with every value of each roster the schema names. Lifted to the version
+ * the harness writes, every one is accepted by this tree's schema. The reader
+ * reads each value in some example, and refuses none whose example it reads
+ * but for the refusals this suite names as allowed.
  */
 
 import assert from "node:assert/strict";
@@ -659,13 +660,16 @@ const leadBuilt: readonly Built[] = [
   ...leadBuiltChoices,
 ];
 
-/** Whether the reader accepts the decision against the view, which it answers by returning rather than raising. */
-function leadParserAccepts(text: string, view: SelectorObservation): boolean {
+/** Why the reader refuses the decision against the view, which it answers by raising, or nothing where it reads it. */
+function leadParserRefusal(
+  text: string,
+  view: SelectorObservation,
+): string | undefined {
   try {
     parseLeadDecision(text, view);
-    return true;
-  } catch {
-    return false;
+    return undefined;
+  } catch (error) {
+    return error instanceof Error ? error.message : typeof error;
   }
 }
 
@@ -686,21 +690,32 @@ test("the reader accepts no decision the schema refuses", () => {
   assertParserAcceptsNothingSchemaRefuses(
     bodies.map(([text, view]) => ({
       text,
-      parser: leadParserAccepts(text, view),
+      parser: leadParserRefusal(text, view) === undefined,
       schema: schemaAccepts(contract.leadDecisionDocumentSchema, text),
     })),
   );
 });
 
-/** Whether the reader accepts the manifest, which it answers by returning rather than raising. */
-function manifestParserAccepts(text: string): boolean {
-  return accept(text).accepted === "Accepted";
+/** The code the reader refuses the manifest with, or nothing where it reads it. */
+function manifestParserRefusal(text: string): string | undefined {
+  const answer = accept(text);
+  return answer.accepted === "Accepted" ? undefined : answer.code;
 }
 
-/** An example's text, and the reader's answer to a text under the view the example is read against. */
-type Example = readonly [string, (text: string) => boolean];
+/**
+ * The refusals a manifest whose example the reader reads may meet once a roster
+ * value in it is walked: a failed verdict carrying handoffs or a source. Adding
+ * one decides that a manifest an older release writes may be refused.
+ */
+const manifestWalkedRefusalsAllowed: readonly reader.ManifestRejection[] = [
+  "HandoffsOnFailedVerdict",
+  "SourceOnFailedVerdict",
+];
 
-/** A document a harness writes: the plane it is written on, the names a release exports it under, and how this tree reads it. */
+/** An example's text, and the reader's refusal of a text under the view the example is read against. */
+type Example = readonly [string, (text: string) => string | undefined];
+
+/** A document a harness writes: the plane it is written on, the names a release exports it under, how this tree reads it, and the refusals a walk may meet. */
 interface Replayed {
   readonly plane: WorkerContractPlane;
   readonly version: string;
@@ -709,6 +724,7 @@ interface Replayed {
   readonly schema: ZodType;
   readonly lifted: (text: string) => string;
   readonly examples: readonly Example[];
+  readonly refusalsAllowed: readonly string[];
 }
 
 const replayed: readonly Replayed[] = [
@@ -722,7 +738,8 @@ const replayed: readonly Replayed[] = [
     examples: [
       ...manifestBodiesFromReaderSuite(),
       ...manifestBuilt.map(([, value]) => JSON.stringify(value)),
-    ].map((text): Example => [text, manifestParserAccepts]),
+    ].map((text): Example => [text, manifestParserRefusal]),
+    refusalsAllowed: manifestWalkedRefusalsAllowed,
   },
   {
     plane: "session",
@@ -738,8 +755,9 @@ const replayed: readonly Replayed[] = [
       ),
     ].map(([text, view]): Example => [
       text,
-      (body) => leadParserAccepts(body, view),
+      (body) => leadParserRefusal(body, view),
     ]),
+    refusalsAllowed: [],
   },
 ];
 
@@ -749,12 +767,14 @@ function replayExamples(
   version: number,
   examples: readonly Example[],
 ): readonly (readonly [unknown, Example[1]])[] {
-  return examples.flatMap(([text, reads]) => {
+  return examples.flatMap(([text, refusal]) => {
     const value: unknown = textIsJson(text) ? JSON.parse(text) : undefined;
     if (typeof value !== "object" || value === null || Array.isArray(value))
       return [];
     const example = { ...value, version };
-    return older.safeParse(example).success ? [[example, reads] as const] : [];
+    return older.safeParse(example).success
+      ? [[example, refusal] as const]
+      : [];
   });
 }
 
@@ -791,8 +811,9 @@ for (const document of replayed)
       const optionals = new Map<string, Set<boolean>>();
       const offered = new Map<string, Set<unknown>>();
       const read = new Map<string, Set<unknown>>();
-      for (const [example, reads] of examples) {
+      for (const [example, refusal] of examples) {
         workerContractOptionalsSeen(older, example, document.name, optionals);
+        const exampleRead = refusal(JSON.stringify(example)) === undefined;
         for (const walked of workerContractEnumsWalked(older, example)) {
           const text = JSON.stringify(walked);
           assert.ok(older.safeParse(walked).success, text.slice(0, 200));
@@ -801,8 +822,14 @@ for (const document of replayed)
             `this tree's ${document.name} refuses ${text.slice(0, 200)}`,
           );
           workerContractEnumsSeen(older, walked, document.name, offered);
-          if (reads(text))
+          const refused = refusal(text);
+          if (refused === undefined)
             workerContractEnumsSeen(older, walked, document.name, read);
+          else
+            assert.ok(
+              !exampleRead || document.refusalsAllowed.includes(refused),
+              `the reader refuses ${text.slice(0, 200)}: ${refused}`,
+            );
         }
       }
       assert.deepEqual(

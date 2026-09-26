@@ -253,7 +253,7 @@ export function workerContractOptionalsSeen(
   });
 }
 
-/** Marks the value each roster `schema` reads along `value` holds, under its path. */
+/** Marks each roster value `value` holds where `schema` reads a roster, under that roster's path. */
 export function workerContractEnumsSeen(
   schema: z.ZodType,
   value: unknown,
