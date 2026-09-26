@@ -166,6 +166,33 @@ test("a decision names what it chose, refused and lifted", () => {
   assert.equal(parsed.attention, "Attention");
 });
 
+test("a candidate standing refused at an earlier version may be lifted, and dispatched beside the lift", () => {
+  const superseded: SelectorObservation = {
+    ...observation,
+    refusals: [
+      ...standing,
+      {
+        ...standingRefusal,
+        ticket: candidate.ticket,
+        ticketVersion: candidate.ticketVersion - 1,
+      },
+    ],
+  };
+  const lifts = [{ ticket: candidate.ticket }];
+  assert.deepEqual(
+    parseLeadDecision(decision({ lifts }), superseded).lifts,
+    lifts,
+  );
+  const both = parseLeadDecision(
+    decision({ dispatches: [{ ticket: 41, expectedTicketVersion: 3 }], lifts }),
+    superseded,
+  );
+  assert.deepEqual(both.dispatches, [
+    { ticket: candidate.ticket, expectedTicketVersion: 3 },
+  ]);
+  assert.deepEqual(both.lifts, lifts);
+});
+
 test("a decision that chose nothing is the free one and parses", () => {
   const parsed = parseLeadDecision(decision({}), observation);
   assert.deepEqual(parsed.dispatches, []);

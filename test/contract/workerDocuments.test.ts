@@ -502,17 +502,28 @@ const leadRefusedFirst = leadDispatchesMax + 1;
 /** The first ticket the built lifts name, which stands refused and is no candidate. */
 const leadStandingFirst = leadTicketsOffered + 1;
 
-/** A view holding a candidate for every dispatch and refusal, and a standing refusal for every lift. */
+/**
+ * A view holding a candidate for every dispatch and refusal, and a standing
+ * refusal for every lift. The first candidate also stands refused at an earlier
+ * version, as a ticket authored again after its refusal does.
+ */
 const leadWideObservation: SelectorObservation = {
   ...observation,
   candidates: Array.from({ length: leadTicketsOffered }, (_, at) => ({
     ...candidate,
     ticket: asTicketId(at + 1),
   })),
-  refusals: Array.from({ length: leadRefusalsPerDecisionMax + 1 }, (_, at) => ({
-    ...standingRefusal,
-    ticket: asTicketId(leadStandingFirst + at),
-  })),
+  refusals: [
+    ...Array.from({ length: leadRefusalsPerDecisionMax + 1 }, (_, at) => ({
+      ...standingRefusal,
+      ticket: asTicketId(leadStandingFirst + at),
+    })),
+    {
+      ...standingRefusal,
+      ticket: asTicketId(1),
+      ticketVersion: candidate.ticketVersion - 1,
+    },
+  ],
 };
 
 function leadDispatchOf(ticket: number): Readonly<Record<string, unknown>> {
@@ -633,6 +644,16 @@ const leadBuiltChoices: readonly Built[] = [
     true,
   ],
   [
+    "a lift of a superseded refusal",
+    leadWith({ lifts: [{ ticket: 1 }] }),
+    true,
+  ],
+  [
+    "a dispatch beside the lift of its superseded refusal",
+    leadWith({ dispatches: [leadDispatchOf(1)], lifts: [{ ticket: 1 }] }),
+    true,
+  ],
+  [
     "a negative version",
     leadWith({ dispatches: [{ ticket: 1, expectedTicketVersion: -1 }] }),
     false,
@@ -716,8 +737,8 @@ const manifestWalkedRefusalsAllowed: readonly reader.ManifestRejection[] = [
 /**
  * An example's text, the reader's refusal of a text under the view the example
  * is read against, and whether the example was built from what the harness
- * writes. A reader suite's own body may be refused for its view or its ledger,
- * which that suite judges, so only a built one must be read.
+ * writes. Only a built one must be read, since the reader suite that owns each
+ * of the others judges it.
  */
 type Example = readonly [string, (text: string) => string | undefined, boolean];
 
