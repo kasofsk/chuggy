@@ -90,6 +90,13 @@
  * waits on its own lease, and one no pool holds when that lapses is withdrawn
  * without spending the budget.
  *
+ * A POOL'S REFUSAL IS THE DEFINITIVE INABILITY. `runner.qnt` names no refusal:
+ * an assignment there is offered, reported, verified or cancelled. A pool that
+ * says it cannot run what it claimed blocks the execution rather than holding
+ * it for another pool, which is the task contract's `TaskExecutionUnavailable`.
+ * The reaper passes over a refused attempt whatever its lease, so a refusal is
+ * never ended as a lapse.
+ *
  * NOTHING HERE READS A CLOCK. Claim leases, placement backoff and attempt
  * leases are durations handed to the store, which asks the database what time
  * it is; `eslint.config.js` says so for this directory.
@@ -197,7 +204,11 @@ export async function executionSchedulerCleanup(
   return cleaned;
 }
 
-/** Ends one attempt without a result, which is the one place this module records that. */
+/**
+ * Ends one attempt without a result, which is the one place this module records
+ * that, and records it only where the fenced move ended it rather than finding
+ * it already ended.
+ */
 async function schedulerEndAttempt(
   service: ExecutionSchedulerService,
   attempt: FencedAttempt,
@@ -205,9 +216,11 @@ async function schedulerEndAttempt(
   evidence: AttemptEvidenceRecord,
 ): Promise<boolean> {
   const ended = await service.store.attemptEnded(attempt, loss, evidence);
-  recordScheduler(service.metrics, (metrics) => {
-    metrics.attemptEnded(loss, evidence);
-  });
+  if (ended) {
+    recordScheduler(service.metrics, (metrics) => {
+      metrics.attemptEnded(loss, evidence);
+    });
+  }
   return ended;
 }
 
@@ -317,18 +330,17 @@ export async function executionSchedulerAdmit(
   return admitted;
 }
 
-/** Withdraws the attempt and retires the execution, which is what a definitive inability earns. */
+/** Withdraws the attempt and retires the execution it names, which is what a definitive inability earns. */
 async function schedulerBlock(
   service: ExecutionSchedulerService,
-  execution: LogicalExecution,
-  attempt: PhysicalAttempt,
+  attempt: FencedAttempt,
   evidence: AttemptEvidenceRecord,
   reason: BlockedReason,
 ): Promise<void> {
   await schedulerEndAttempt(service, attempt, "Withdrawn", evidence);
   const blocked = await service.store.blockExecution(
-    execution.partition,
-    execution.execution,
+    attempt.partition,
+    attempt.execution,
     reason,
   );
   recordScheduler(service.metrics, (metrics) => {
@@ -361,13 +373,7 @@ async function schedulerPolicyFor(
         ...(resolved.image === undefined ? {} : { image: resolved.image }),
       };
     case "Denied":
-      await schedulerBlock(
-        service,
-        execution,
-        attempt,
-        "PolicyDenied",
-        resolved.reason,
-      );
+      await schedulerBlock(service, attempt, "PolicyDenied", resolved.reason);
       return undefined;
     case "Unavailable":
       await schedulerEndAttempt(
@@ -430,15 +436,13 @@ async function schedulerRuntimeFacts(
 /** The durable move an ungatherable briefing input earns, one arm each. */
 async function schedulerUnready(
   service: ExecutionSchedulerService,
-  execution: LogicalExecution,
-  attempt: PhysicalAttempt,
+  attempt: FencedAttempt,
   unready: BriefingUnready,
 ): Promise<void> {
   switch (unready.gathered) {
     case "Missing":
       await schedulerBlock(
         service,
-        execution,
         attempt,
         "PolicyDenied",
         "TicketConfigIncompatible",
@@ -450,7 +454,6 @@ async function schedulerUnready(
       });
       await schedulerBlock(
         service,
-        execution,
         attempt,
         `PolicyDenied: ${unready.fault}`,
         "TicketConfigIncompatible",
@@ -534,17 +537,17 @@ async function schedulerPrepare(
   if (policy === undefined) return undefined;
   const configuration = await schedulerConfiguration(service, execution);
   if ("gathered" in configuration) {
-    await schedulerUnready(service, execution, attempt, configuration);
+    await schedulerUnready(service, attempt, configuration);
     return undefined;
   }
   const runtime = await schedulerRuntimeFacts(service, execution);
   if ("gathered" in runtime) {
-    await schedulerUnready(service, execution, attempt, runtime);
+    await schedulerUnready(service, attempt, runtime);
     return undefined;
   }
   const priorWorkReports = await schedulerPriorWorkReports(service, execution);
   if ("gathered" in priorWorkReports) {
-    await schedulerUnready(service, execution, attempt, priorWorkReports);
+    await schedulerUnready(service, attempt, priorWorkReports);
     return undefined;
   }
   const priorEvaluationReports = await schedulerPriorEvaluationReports(
@@ -552,7 +555,7 @@ async function schedulerPrepare(
     execution,
   );
   if ("gathered" in priorEvaluationReports) {
-    await schedulerUnready(service, execution, attempt, priorEvaluationReports);
+    await schedulerUnready(service, attempt, priorEvaluationReports);
     return undefined;
   }
   const brief = await service.ticketBriefs.brief(
@@ -583,7 +586,6 @@ async function schedulerPrepare(
       });
       await schedulerBlock(
         service,
-        execution,
         attempt,
         `PolicyDenied: ${composed.fault}`,
         "TicketConfigIncompatible",
@@ -641,13 +643,7 @@ async function schedulerPlace(
       return recorded;
     }
     case "Denied":
-      await schedulerBlock(
-        service,
-        execution,
-        attempt,
-        "PlacementDenied",
-        placed.reason,
-      );
+      await schedulerBlock(service, attempt, "PlacementDenied", placed.reason);
       return false;
     case "Unavailable":
       await schedulerEndAttempt(
@@ -704,7 +700,6 @@ async function schedulerHoldForPools(
       if (registered.truncated) return;
       await schedulerBlock(
         service,
-        execution,
         attempt,
         "PlacementIncompatible",
         "RequiredCapabilityUnavailable",
@@ -777,6 +772,23 @@ async function schedulerLaunchOne(
   }
 }
 
+/** Blocks the execution of each attempt a pool refused, before any lapsed lease is reaped. */
+async function schedulerBlockRefused(
+  service: ExecutionSchedulerService,
+  epoch: RecoveryEpoch,
+  attemptsMax: number,
+): Promise<void> {
+  const refused = await service.store.refusedAttempts(epoch, attemptsMax);
+  for (const attempt of refused) {
+    await schedulerBlock(
+      service,
+      attempt,
+      "PlacementRefused",
+      "RequiredCapabilityUnavailable",
+    );
+  }
+}
+
 /** Places attempts for the executions that hold a slot and have no live attempt. */
 export async function executionSchedulerLaunch(
   service: ExecutionSchedulerService,
@@ -787,6 +799,7 @@ export async function executionSchedulerLaunch(
     service.ticketService,
     service.finalizer,
   );
+  await schedulerBlockRefused(service, epoch, config.attemptsPerPassMax);
   const reaped = await service.store.reapLapsedAttempts(
     epoch,
     config.attemptsPerPassMax,

@@ -202,6 +202,7 @@ function recordingStore(calls: string[]): ExecutionSchedulerStore {
       });
     },
     execution: () => Promise.resolve(undefined),
+    refusedAttempts: () => Promise.resolve([]),
     reapLapsedAttempts: () => Promise.resolve(0),
     attemptsAwaitingCleanup: () => Promise.resolve([]),
     attemptCleanupCompleted: () => Promise.resolve(true),
@@ -1485,4 +1486,75 @@ test("an authority that cannot answer decides nothing, so the execution is held 
     );
     assert.deepEqual(calls, ["registered:project"]);
   }
+});
+
+test("an attempt a pool refused is withdrawn and its execution blocked before any lease is reaped, and the refusal is counted", async () => {
+  const calls: string[] = [];
+  const seen: string[] = [];
+  const service = serviceWith(calls, runnable, placedOk);
+  const store: ExecutionSchedulerStore = {
+    ...service.store,
+    refusedAttempts: (_epoch, attemptsMax) => {
+      calls.push(`refused:${String(attemptsMax)}`);
+      return Promise.resolve([attempt]);
+    },
+    reapLapsedAttempts: () => {
+      calls.push("reaped");
+      return Promise.resolve(0);
+    },
+    unlaunched: () => Promise.resolve([]),
+  };
+  assert.equal(
+    await executionSchedulerLaunch(
+      {
+        ...service,
+        store,
+        metrics: schedulerTelemetry(recordingMetrics(seen)),
+      },
+      epoch,
+    ),
+    0,
+  );
+  assert.deepEqual(calls, [
+    `refused:${String(executionSchedulerDefaults.attemptsPerPassMax)}`,
+    "ended:Withdrawn:PlacementRefused",
+    "blocked:RequiredCapabilityUnavailable",
+    "reaped",
+  ]);
+  assert.deepEqual(seen, [
+    "attemptEnded:Withdrawn:PlacementRefused",
+    "blocking:Blocked:RequiredCapabilityUnavailable",
+    "reaping:0",
+  ]);
+});
+
+test("a refused attempt something else ended first is not counted as ended", async () => {
+  const calls: string[] = [];
+  const seen: string[] = [];
+  const service = serviceWith(calls, runnable, placedOk);
+  const store: ExecutionSchedulerStore = {
+    ...service.store,
+    refusedAttempts: () => Promise.resolve([attempt]),
+    attemptEnded: (_attempt, loss, evidence) => {
+      calls.push(`ended:${loss}:${evidence}`);
+      return Promise.resolve(false);
+    },
+    blockExecution: (_partition, _execution, reason) => {
+      calls.push(`blocked:${reason}`);
+      return Promise.resolve({ blocked: "AlreadyTerminal", outcome: "Failed" });
+    },
+    unlaunched: () => Promise.resolve([]),
+  };
+  await executionSchedulerLaunch(
+    { ...service, store, metrics: schedulerTelemetry(recordingMetrics(seen)) },
+    epoch,
+  );
+  assert.deepEqual(calls, [
+    "ended:Withdrawn:PlacementRefused",
+    "blocked:RequiredCapabilityUnavailable",
+  ]);
+  assert.deepEqual(seen, [
+    "blocking:AlreadyTerminal:RequiredCapabilityUnavailable",
+    "reaping:0",
+  ]);
 });

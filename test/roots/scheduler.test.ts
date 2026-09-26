@@ -792,6 +792,7 @@ function processExecutionFakes(): string {
       fenceOldEpochAttempts: async () => 0,
       claimRequests: async () => [],
       admit: async () => ({ admitted: 'NoCandidate' }),
+      refusedAttempts: async () => [],
       reapLapsedAttempts: async () => 0,
       attemptsAwaitingCleanup: async () => [],
       attemptCleanupCompleted: async () => true,

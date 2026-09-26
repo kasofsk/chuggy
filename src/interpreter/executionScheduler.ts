@@ -480,6 +480,7 @@ export type AttemptEvidence =
   | "PlacementDenied"
   | "PlacementUnavailable"
   | "PlacementIncompatible"
+  | "PlacementRefused"
   | "Evicted"
   | "Vanished"
   | "LeaseExpired"
@@ -497,6 +498,7 @@ export const allAttemptEvidence: readonly AttemptEvidence[] = [
   "PlacementDenied",
   "PlacementUnavailable",
   "PlacementIncompatible",
+  "PlacementRefused",
   "Evicted",
   "Vanished",
   "LeaseExpired",
@@ -730,10 +732,19 @@ export interface ExecutionSchedulerStore {
   ): Promise<LogicalExecution | undefined>;
 
   /**
-   * Ends at most `attemptsMax` attempts whose lease has run out, backing their
-   * executions off. One that ran and vanished is `Lost` and spends the safe
-   * retry budget, and one offered to pools that no pool took is withdrawn as
-   * `PlacementUnavailable` without spending it.
+   * At most `attemptsMax` live attempts of this epoch that the pool holding
+   * them refused, and nothing under a superseded epoch.
+   */
+  refusedAttempts(
+    epoch: RecoveryEpoch,
+    attemptsMax: number,
+  ): Promise<readonly FencedAttempt[]>;
+
+  /**
+   * Ends at most `attemptsMax` attempts whose lease has run out and that no
+   * pool refused, backing their executions off. One that ran and vanished is
+   * `Lost` and spends the safe retry budget, and one offered to pools that no
+   * pool took is withdrawn as `PlacementUnavailable` without spending it.
    */
   reapLapsedAttempts(
     epoch: RecoveryEpoch,
