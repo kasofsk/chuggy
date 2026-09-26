@@ -1,0 +1,328 @@
+{
+  "withDatabase": {
+    "apiVersion": "v1",
+    "kind": "Pod",
+    "metadata": {
+      "name": "golden-pool-8a9994b3b8158e87b3beae14d2f9d685369b59da2e03e1de2f3a90e010658486",
+      "namespace": "golden-pool",
+      "labels": {
+        "chuggy.dev/worker": "true",
+        "chuggy.internal/pool": "golden-pool"
+      },
+      "annotations": {
+        "site.invalid/tier": "golden",
+        "chuggy.internal/assignment": "golden-assignment"
+      }
+    },
+    "spec": {
+      "restartPolicy": "Never",
+      "serviceAccountName": "golden-pool-worker",
+      "automountServiceAccountToken": false,
+      "activeDeadlineSeconds": 3600,
+      "nodeSelector": {
+        "kubernetes.io/arch": "arm64"
+      },
+      "tolerations": [
+        {
+          "key": "golden.invalid/arm64",
+          "operator": "Equal",
+          "value": "reserved",
+          "effect": "NoSchedule"
+        }
+      ],
+      "securityContext": {
+        "runAsNonRoot": true,
+        "fsGroup": 2000
+      },
+      "initContainers": [
+        {
+          "name": "postgres",
+          "image": "registry.invalid/golden-postgres:18",
+          "args": ["-c", "listen_addresses=127.0.0.1"],
+          "restartPolicy": "Always",
+          "startupProbe": {
+            "exec": {
+              "command": ["pg_isready", "-h", "127.0.0.1", "-U", "postgres"]
+            },
+            "periodSeconds": 1,
+            "failureThreshold": 120
+          },
+          "env": [
+            {
+              "name": "POSTGRES_HOST_AUTH_METHOD",
+              "value": "trust"
+            }
+          ],
+          "resources": {
+            "requests": {
+              "cpu": "250m",
+              "memory": "256Mi",
+              "ephemeral-storage": "4Gi"
+            },
+            "limits": {
+              "cpu": "1",
+              "memory": "1Gi",
+              "ephemeral-storage": "4Gi"
+            }
+          },
+          "securityContext": {
+            "allowPrivilegeEscalation": false,
+            "readOnlyRootFilesystem": true
+          },
+          "volumeMounts": [
+            {
+              "name": "worker-database",
+              "mountPath": "/var/lib/postgresql",
+              "readOnly": false
+            }
+          ]
+        }
+      ],
+      "containers": [
+        {
+          "name": "pool-worker",
+          "image": "registry.invalid/golden-worker:1",
+          "env": [
+            {
+              "name": "CHUG_WORKER_TASK",
+              "valueFrom": {
+                "secretKeyRef": {
+                  "name": "golden-pool-8a9994b3b8158e87b3beae14d2f9d685369b59da2e03e1de2f3a90e010658486",
+                  "key": "task"
+                }
+              }
+            },
+            {
+              "name": "CHUG_WORKER_DATABASE_URL",
+              "value": "postgres://postgres@127.0.0.1:5432/postgres"
+            },
+            {
+              "name": "CHUG_WORKER_REPOSITORIES",
+              "value": "{\"repository\":{}}"
+            }
+          ],
+          "resources": {
+            "requests": {
+              "cpu": "1500m",
+              "memory": "3072Mi",
+              "ephemeral-storage": "20Gi"
+            },
+            "limits": {
+              "cpu": "1500m",
+              "memory": "3072Mi",
+              "ephemeral-storage": "20Gi"
+            }
+          },
+          "securityContext": {
+            "allowPrivilegeEscalation": false,
+            "readOnlyRootFilesystem": true
+          },
+          "volumeMounts": [
+            {
+              "name": "workspace",
+              "mountPath": "/workspace",
+              "readOnly": false
+            },
+            {
+              "name": "control",
+              "mountPath": "/tmp",
+              "readOnly": false
+            },
+            {
+              "name": "minted-credential",
+              "mountPath": "/var/run/chuggy/minted",
+              "readOnly": false
+            },
+            {
+              "name": "pool-worker-credential-0",
+              "mountPath": "/var/run/golden/claude-code",
+              "readOnly": true
+            }
+          ]
+        }
+      ],
+      "volumes": [
+        {
+          "name": "workspace",
+          "emptyDir": {
+            "sizeLimit": "20Gi"
+          }
+        },
+        {
+          "name": "control",
+          "emptyDir": {
+            "sizeLimit": "16Mi"
+          }
+        },
+        {
+          "name": "minted-credential",
+          "emptyDir": {
+            "medium": "Memory",
+            "sizeLimit": "1Mi"
+          }
+        },
+        {
+          "name": "worker-database",
+          "emptyDir": {
+            "sizeLimit": "4Gi"
+          }
+        },
+        {
+          "name": "pool-worker-credential-0",
+          "projected": {
+            "defaultMode": 256,
+            "sources": [
+              {
+                "secret": {
+                  "name": "golden-claude-code",
+                  "items": [
+                    {
+                      "key": "credentials.json",
+                      "path": "credentials.json"
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  },
+  "withoutDatabase": {
+    "apiVersion": "v1",
+    "kind": "Pod",
+    "metadata": {
+      "name": "golden-pool-8a9994b3b8158e87b3beae14d2f9d685369b59da2e03e1de2f3a90e010658486",
+      "namespace": "golden-pool",
+      "labels": {
+        "chuggy.dev/worker": "true",
+        "chuggy.internal/pool": "golden-pool"
+      },
+      "annotations": {
+        "site.invalid/tier": "golden",
+        "chuggy.internal/assignment": "golden-assignment"
+      }
+    },
+    "spec": {
+      "restartPolicy": "Never",
+      "serviceAccountName": "golden-pool-worker",
+      "automountServiceAccountToken": false,
+      "activeDeadlineSeconds": 3600,
+      "nodeSelector": {
+        "kubernetes.io/arch": "arm64"
+      },
+      "tolerations": [
+        {
+          "key": "golden.invalid/arm64",
+          "operator": "Equal",
+          "value": "reserved",
+          "effect": "NoSchedule"
+        }
+      ],
+      "securityContext": {
+        "runAsNonRoot": true,
+        "fsGroup": 2000
+      },
+      "containers": [
+        {
+          "name": "pool-worker",
+          "image": "registry.invalid/golden-worker:1",
+          "env": [
+            {
+              "name": "CHUG_WORKER_TASK",
+              "valueFrom": {
+                "secretKeyRef": {
+                  "name": "golden-pool-8a9994b3b8158e87b3beae14d2f9d685369b59da2e03e1de2f3a90e010658486",
+                  "key": "task"
+                }
+              }
+            },
+            {
+              "name": "CHUG_WORKER_REPOSITORIES",
+              "value": "{\"repository\":{}}"
+            }
+          ],
+          "resources": {
+            "requests": {
+              "cpu": "1500m",
+              "memory": "3072Mi",
+              "ephemeral-storage": "20Gi"
+            },
+            "limits": {
+              "cpu": "1500m",
+              "memory": "3072Mi",
+              "ephemeral-storage": "20Gi"
+            }
+          },
+          "securityContext": {
+            "allowPrivilegeEscalation": false,
+            "readOnlyRootFilesystem": true
+          },
+          "volumeMounts": [
+            {
+              "name": "workspace",
+              "mountPath": "/workspace",
+              "readOnly": false
+            },
+            {
+              "name": "control",
+              "mountPath": "/tmp",
+              "readOnly": false
+            },
+            {
+              "name": "minted-credential",
+              "mountPath": "/var/run/chuggy/minted",
+              "readOnly": false
+            },
+            {
+              "name": "pool-worker-credential-0",
+              "mountPath": "/var/run/golden/claude-code",
+              "readOnly": true
+            }
+          ]
+        }
+      ],
+      "volumes": [
+        {
+          "name": "workspace",
+          "emptyDir": {
+            "sizeLimit": "20Gi"
+          }
+        },
+        {
+          "name": "control",
+          "emptyDir": {
+            "sizeLimit": "16Mi"
+          }
+        },
+        {
+          "name": "minted-credential",
+          "emptyDir": {
+            "medium": "Memory",
+            "sizeLimit": "1Mi"
+          }
+        },
+        {
+          "name": "pool-worker-credential-0",
+          "projected": {
+            "defaultMode": 256,
+            "sources": [
+              {
+                "secret": {
+                  "name": "golden-claude-code",
+                  "items": [
+                    {
+                      "key": "credentials.json",
+                      "path": "credentials.json"
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

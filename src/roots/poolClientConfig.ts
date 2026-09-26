@@ -69,6 +69,12 @@ const poolClientTolerationSchema = z.strictObject({
   effect: z.enum(["NoSchedule", "PreferNoSchedule", "NoExecute"]),
 });
 
+/** The PostgreSQL a site runs beside every workload, shaped as the launcher's own. */
+const poolClientDatabaseSchema = z.strictObject({
+  image: poolClientTextSchema,
+  resources: poolClientResourcesSchema,
+});
+
 /** Where one capability token's work belongs, which is a site's answer and not a pool's. */
 const poolClientCapabilitySchema = z.strictObject({
   nodeSelector: z.record(poolClientTextSchema, z.string()),
@@ -112,6 +118,7 @@ const poolClientKubernetesSiteSchema = z.strictObject({
     .record(poolClientTextSchema, poolClientCapabilitySchema)
     .default({}),
   providerCredential: poolClientTextSchema.optional(),
+  database: poolClientDatabaseSchema.optional(),
   resources: poolClientResourcesSchema,
   timeoutSecsMax: poolClientBoundSchema,
   outputBytesMax: poolClientBoundSchema,

@@ -494,7 +494,8 @@ worker pod then gets `CHUG_WORKER_DATABASE_URL` as a plain value naming the
 sidecar's superuser on loopback, and `images/worker/postgres.mjs` hands that to
 the gates as `CHUG_PG_URL`. A site that names no image places workers with no
 sidecar that are told of no server, and work that then needs one fails in the
-container.
+container. A pool's site document takes the same object as its `database`, and
+every workload the pool places gets the same sidecar and the same address.
 
 **The worker never waits for it.** The sidecar carries a startup probe, and the
 pod starts the worker container only once that probe has seen the server
