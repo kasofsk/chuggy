@@ -6,12 +6,10 @@
  * THIS IS A REFINEMENT AND NOT A SECOND OPINION. Every predicate below has a
  * counterpart in `model/runner.qnt` of the same name, the paragraphs below say
  * where a pool reads a term differently, and `test/interpreter/runner.test.ts`
- * reads the model at run time to hold them together: the rosters, the terms
- * each guard conjoins, and the runs of `model/tests/runner_test.qnt` that
- * exercise them. Nothing here takes a row.
- * The claim that binds an assignment is a PostgreSQL predicate, because only
- * under the row lock is it exclusive, and this states what that predicate
- * must decide.
+ * reads the model at run time to hold the two together; its header names what
+ * it reads. Nothing here takes a row. The claim that binds an assignment is a
+ * PostgreSQL predicate, because only under the row lock is it exclusive, and
+ * this states what that predicate must decide.
  *
  * A POOL IS THE MODEL'S RUNNER, SCOPED BY PROJECT. An execution draws on its
  * project's capacity account, which names no other project, so a pool's
@@ -24,20 +22,12 @@
  * against the plane's bound.
  *
  * ONE INVENTORY, BECAUSE A POLL ADVERTISES NONE. What a pool runs is what its
- * registration declares: platforms and agent capabilities among its capability
- * tokens, and the images it runs. The model matches a session's observed
- * inventory in `canAssign` and a retained one in `placementOutcome`, and here
- * both are the registration's, which is `inventoryObservationSafe` holding by
- * there being one copy.
- *
- * A POOL RUNS ITS SITE'S IMAGE, SO IT MUST DECLARE THE ONE A CONTAINER PINS.
- * The model's container arm reads the platform alone, because a runner there
- * runs whatever image it is handed; a pool runs the image its site names, and
- * `model/execution_requirement.qnt` holds that the image a configuration
- * selected is what runs. That term is the one the model does not have, so
- * this guard is stronger than `canAssign` there and every assignment it
- * permits the model permits. A requirement stated as capabilities names
- * workers rather than an image, and carries no such term.
+ * registration declares among its capability tokens: platforms and agent
+ * capabilities. The model matches a session's observed inventory in
+ * `canAssign` and a retained one in `placementOutcome`, and here both are the
+ * registration's, which is `inventoryObservationSafe` holding by there being
+ * one copy. So a configured pool's inventory is already its poll's, and
+ * `placementOutcome` does not match it again for a pool it would place.
  *
  * NO POOL OFFERS A NATIVE SURFACE. The native arm asks for a macOS platform,
  * an installed driver and toolchain minima that no pool declares, so it is
@@ -137,7 +127,6 @@ export interface WorkerPoolRunner extends WorkerPoolPolicy {
   readonly enabled: boolean;
   readonly revoked: boolean;
   readonly capabilities: readonly string[];
-  readonly images: readonly string[];
 }
 
 /** One poll as the model's `RunnerSession`: the pool it resolved to, the principal it authenticated as, whether its token is live, and its slots. */
@@ -175,17 +164,14 @@ function workerPoolSamePartition(left: Partition, right: Partition): boolean {
   return left.tenant === right.tenant && left.project === right.project;
 }
 
-/** Whether a pool's registration declares what the requirement runs on, which is the model's `inventoryMatches` with the image term a pool adds. */
+/** Whether a pool's registration declares what the requirement runs on, which is the model's `inventoryMatches`. */
 export function workerPoolInventoryMatches(
   requirement: ExecutionRequirement,
   pool: WorkerPoolRunner,
 ): boolean {
   switch (requirement.mode) {
     case "Container":
-      return (
-        pool.capabilities.includes(workerPoolPlatformToken(requirement)) &&
-        pool.images.includes(requirement.image)
-      );
+      return pool.capabilities.includes(workerPoolPlatformToken(requirement));
     case "ContainerCapability":
       return (
         pool.capabilities.includes(workerPoolPlatformToken(requirement)) &&

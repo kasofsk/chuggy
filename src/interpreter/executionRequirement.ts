@@ -83,6 +83,13 @@ function hasOnlyKeys(
   return Object.keys(value).every((key) => allowed.includes(key));
 }
 
+function memberOf<Member extends string>(
+  roster: readonly Member[],
+  value: unknown,
+): Member | undefined {
+  return roster.find((known) => known === value);
+}
+
 function capabilityRequirement(
   item: Record<string, unknown>,
 ): CapabilityExecutionRequirement | undefined {
@@ -95,17 +102,20 @@ function capabilityRequirement(
     ])
   )
     return undefined;
-  const operatingSystem = item["operatingSystem"];
-  const architecture = item["architecture"];
+  const operatingSystem = memberOf(
+    allOperatingSystems,
+    item["operatingSystem"],
+  );
+  const architecture = memberOf(allArchitectures, item["architecture"]);
   const capabilities = item["capabilities"];
   if (
-    (operatingSystem !== "Linux" && operatingSystem !== "MacOS") ||
-    (architecture !== "Amd64" && architecture !== "Arm64") ||
+    operatingSystem === undefined ||
+    architecture === undefined ||
     !Array.isArray(capabilities) ||
     capabilities.length === 0 ||
     !capabilities.every(
       (capability) =>
-        capability === "Agent:Claude" || capability === "Agent:Codex",
+        memberOf(allExecutionCapabilities, capability) !== undefined,
     ) ||
     new Set(capabilities).size !== capabilities.length
   )
@@ -125,12 +135,15 @@ function requirement(value: unknown): ExecutionRequirement | undefined {
       !hasOnlyKeys(item, ["mode", "operatingSystem", "architecture", "image"])
     )
       return undefined;
-    const operatingSystem = item["operatingSystem"];
-    const architecture = item["architecture"];
+    const operatingSystem = memberOf(
+      allOperatingSystems,
+      item["operatingSystem"],
+    );
+    const architecture = memberOf(allArchitectures, item["architecture"]);
     const image = item["image"];
     if (
-      (operatingSystem === "Linux" || operatingSystem === "MacOS") &&
-      (architecture === "Amd64" || architecture === "Arm64") &&
+      operatingSystem !== undefined &&
+      architecture !== undefined &&
       typeof image === "string" &&
       image.length > 0
     )
@@ -149,12 +162,12 @@ function requirement(value: unknown): ExecutionRequirement | undefined {
       ])
     )
       return undefined;
-    const architecture = item["architecture"];
+    const architecture = memberOf(allArchitectures, item["architecture"]);
     const driver = item["driver"];
     const xcodeVersionMin = item["xcodeVersionMin"];
     const sdkVersionMin = item["sdkVersionMin"];
     if (
-      (architecture === "Amd64" || architecture === "Arm64") &&
+      architecture !== undefined &&
       (driver === "XcodeBuild" ||
         driver === "XcodeTesting" ||
         driver === "IosSimulatorTesting") &&

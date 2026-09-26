@@ -13,8 +13,7 @@
  *
  * EVERY CASE NAMES THE TERMS IT MAKES FALSE, in the model's own words, so a
  * statement with no column for some term — the policy the registry does not
- * carry — can select the cases it can express rather than skip the table. The
- * image term is the one the model has no words for, and it is named here.
+ * carry — can select the cases it can express rather than skip the table.
  *
  * TWO REQUIREMENTS MATCH A CAPABILITY SUBSET VACUOUSLY: a container carries no
  * capabilities, and neither does a native one. So the table refuses a
@@ -89,7 +88,6 @@ export const runnerTerm = {
   nativeXcode: "NativeRequirement: i.xcodeVersion >= n.xcodeVersionMin",
   nativeSdk:
     "NativeRequirement: i.sdkVersions.exists(v => v >= n.sdkVersionMin)",
-  image: "ContainerRequirement: the pool declares the pinned image",
 } as const;
 
 const native = [
@@ -104,13 +102,11 @@ const partition: Partition = {
   project: asProjectId("project-one"),
 };
 
-const image = `registry.invalid/worker@sha256:${"a".repeat(64)}`;
-
 const container: ContainerExecutionRequirement = {
   mode: "Container",
   operatingSystem: "Linux",
   architecture: "Amd64",
-  image,
+  image: `registry.invalid/worker@sha256:${"a".repeat(64)}`,
 };
 
 const placement: WorkerPoolPlacement = {
@@ -130,7 +126,6 @@ const pool: WorkerPoolRunner = {
   revoked: false,
   ...workerPoolPolicyRegistered,
   capabilities: ["Platform:Linux:Amd64", "Agent:Claude", "Agent:Codex"],
-  images: [image],
 };
 
 const session: WorkerPoolSession = {
@@ -142,7 +137,7 @@ const session: WorkerPoolSession = {
   heldMax: 1,
 };
 
-/** What every case is a variation on: a registered pool polling with room, and a container it declares, pinned the way every routed execution is. */
+/** What every case is a variation on: a registered pool polling with room, and a container on a platform it declares, pinned the way every routed execution is. */
 const assignable: Omit<RunnerCase, "name"> = {
   falsifies: [],
   placement,
@@ -176,7 +171,7 @@ function demanding(demand: Partial<WorkerPoolDemand>): WorkerPoolPlacement {
 const assigned: readonly RunnerCase[] = [
   {
     ...assignable,
-    name: "an ordinary container is assigned to a pool that declares its platform and image",
+    name: "an ordinary container is assigned to a pool that declares its platform",
     model: "ordinaryContainerUsesRunnerModelTest",
   },
   {
@@ -205,7 +200,6 @@ const assigned: readonly RunnerCase[] = [
         capabilities: ["Agent:Codex"],
       },
     },
-    pool: { ...pool, images: [] },
   },
   {
     ...assignable,
@@ -433,15 +427,9 @@ const refusedByInventory: readonly RunnerCase[] = [
   ),
   refused(
     "a pool declaring nothing runs no container",
-    [runnerTerm.containerPlatform, runnerTerm.image],
+    [runnerTerm.containerPlatform],
     "DefinitiveIncompatibility",
-    { pool: { ...pool, capabilities: [], images: [] } },
-  ),
-  refused(
-    "a pool that does not declare the pinned image does not run it",
-    [runnerTerm.image],
-    "DefinitiveIncompatibility",
-    { pool: { ...pool, images: ["registry.invalid/worker:other"] } },
+    { pool: { ...pool, capabilities: [] } },
   ),
   refused(
     "a capability requirement is refused a pool lacking one it names",

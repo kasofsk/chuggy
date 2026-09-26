@@ -6,10 +6,12 @@
  *
  * A HAND-MAINTAINED COPY OF A PROVED DEFINITION GOES STALE SILENTLY, which is
  * the failure this exists to prevent. The runner machine emits no golden, so
- * nothing replays against it; instead its rosters, the terms its guard
- * conjoins and the runs of `model/tests/runner_test.qnt` that exercise the
- * guard are read out of the model's own source, and a constructor, a term or
- * a run added there becomes a failure here until the refinement answers it.
+ * nothing replays against it. Instead this reads out of the model's own
+ * source its rosters, the terms `canAssign` conjoins with each predicate it
+ * calls opened, `policyConfigures` as `policyAllows` without drain, the arms
+ * of `placementOutcome` and the terms of each block they test, and the runs of
+ * `model/tests/runner_test.qnt` that call a guard. A constructor, term, arm or
+ * run changed there is a failure here until the refinement answers it.
  *
  * WHAT IT DOES NOT PROVE. It holds the decider to the model over the rows of
  * `test/interpreter/runnerCases.ts`, and says nothing of the claim a pool
@@ -124,9 +126,31 @@ function runnerDefinition(name: string): string {
   const rest = source.slice(start + 1);
   const end = rest.search(/\n {2}[^\s}]/);
   const text = runnerFlattened(end < 0 ? rest : rest.slice(0, end));
-  const signature = text.indexOf("): bool =");
-  assert.ok(signature > 0, `model/runner.qnt: ${name} is not a predicate`);
-  return text.slice(signature + "): bool =".length).trim();
+  const signature = /^pure def \w+\([^)]*\): \w+ = /.exec(text);
+  assert.ok(signature, `model/runner.qnt: ${name} has no signature to read`);
+  return text.slice(signature[0].length).trim();
+}
+
+/** A definition with each `and { }` block it holds emptied, beside the terms each conjoins. */
+function runnerBlocks(body: string): {
+  readonly skeleton: string;
+  readonly blocks: readonly (readonly string[])[];
+} {
+  const blocks: (readonly string[])[] = [];
+  let skeleton = "";
+  let from = 0;
+  for (
+    let at = body.indexOf("and {", from);
+    at >= 0;
+    at = body.indexOf("and {", from)
+  ) {
+    const open = at + "and ".length;
+    const inside = runnerBracketed(body, open);
+    blocks.push(runnerTopLevel(inside, ","));
+    skeleton += `${body.slice(from, open)}{ }`;
+    from = open + inside.length + 2;
+  }
+  return { skeleton: skeleton + body.slice(from), blocks };
 }
 
 /** The terms a predicate conjoins: an `and { }` block's members, or an infix chain's. */
@@ -171,7 +195,38 @@ const runnerGuards = [
   "placementOutcome",
   "inventoryMatches",
   "policyAllows",
+  "policyConfigures",
+  "sessionIsCurrent",
+  "sessionHasSlot",
 ];
+
+/**
+ * `placementOutcome` as `workerPoolPlacementOutcome` restates it, in the
+ * model's words: its arms in the order they are taken, with each block they
+ * test emptied, and then the terms that configure a runner and the terms that
+ * place a configured one.
+ */
+const runnerOutcome = {
+  skeleton: [
+    "val e = executionById(s, id)",
+    "val p = s.placements.get(id)",
+    "val configured = s.runners.keys().filter(rid => and { })",
+    "if (p.profile.route != RegisteredRunner) NotApplicable",
+    "else if (configured.exists(rid => if (s.sessions.keys().contains(rid)) and { } else false)) Placeable",
+    "else if (configured.size() > 0) Unavailable",
+    "else DefinitiveIncompatibility",
+  ].join(" "),
+  configured: [
+    "policyConfigures(s.runners.get(rid), e, p.profile)",
+    "inventoryMatches(p.requirement, s.runners.get(rid).retainedInventory)",
+  ],
+  placeable: [
+    "policyAllows(s.runners.get(rid), e, p.profile)",
+    "sessionIsCurrent(s.runners.get(rid), s.sessions.get(rid))",
+    "sessionHasSlot(s.sessions.get(rid))",
+    "inventoryMatches(p.requirement, s.sessions.get(rid).inventory)",
+  ],
+};
 
 /** The runs of `model/tests/runner_test.qnt` that call one of the guards this restates. */
 function runnerGuardRuns(): readonly string[] {
@@ -240,9 +295,8 @@ test("a platform is the model's record, and every one is a token a pool can decl
 });
 
 test("every term canAssign conjoins is made false by some case, and no case names another", () => {
-  const terms = runnerCanAssignTerms();
   assert.deepEqual(
-    [...terms, runnerTerm.image].sort(),
+    [...runnerCanAssignTerms()].sort(),
     Object.values(runnerTerm).sort(),
     "the terms this table names are not the ones model/runner.qnt conjoins",
   );
@@ -252,6 +306,26 @@ test("every term canAssign conjoins is made false by some case, and no case name
     assert.ok(falsified.has(term), `no case makes ${term} false`);
   for (const term of falsified)
     assert.ok(named.has(term), `${term} is not a term of canAssign`);
+});
+
+test("policyConfigures is policyAllows without drain, which is posture and not incompatibility", () => {
+  const allows = runnerConjuncts(runnerDefinition("policyAllows"));
+  assert.ok(allows.includes(runnerTerm.draining));
+  assert.deepEqual(
+    [...runnerConjuncts(runnerDefinition("policyConfigures"))].sort(),
+    allows.filter((term) => term !== runnerTerm.draining).sort(),
+  );
+});
+
+test("placementOutcome takes the arms, and tests the terms, the decider restates", () => {
+  const { skeleton, blocks } = runnerBlocks(
+    runnerDefinition("placementOutcome"),
+  );
+  assert.equal(skeleton, runnerOutcome.skeleton);
+  assert.deepEqual(
+    blocks.map((block) => [...block].sort()),
+    [[...runnerOutcome.configured].sort(), [...runnerOutcome.placeable].sort()],
+  );
 });
 
 test("every run of model/tests/runner_test.qnt that exercises a guard is restated, and no case names another", () => {
