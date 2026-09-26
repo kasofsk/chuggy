@@ -8,13 +8,16 @@
  * the two the writer journals first — and that is not the order they were
  * accepted in. A revocation is `Safety` and the completion that enters the
  * phase is `Completion`, so a revocation accepted second is still decided
- * first, and the cases here accept it second on purpose.
+ * first, and the cases here accept it second on purpose, or race it in both
+ * orders.
  *
- * THE RACE IS STAGED AND NOT HOPED FOR. Both acceptances take the project row,
- * so a third connection holds that row and the case waits until both backends
- * are queued on it and hold the relation in the mode the acceptance takes,
- * before letting either through. Without that guard a case whose two calls
- * never overlapped would pass exactly like one whose calls did.
+ * THE RACE IS STAGED AND NOT HOPED FOR. Both writes take the project row, so a
+ * third connection holds that row and the case queues one call on it and then
+ * the other, waiting until each backend is queued and the acceptance holds the
+ * relation in the mode it takes, before letting either through. The row lets
+ * its first waiter through first, so the race runs once in each order. Without
+ * that guard a case whose two calls never overlapped, or only ever queued one
+ * way, would pass exactly like one that covered both.
  *
  * A CLOSURE IS PROVED BY WHAT WAS NOT DONE. The abort's whole claim is that it
  * is reversible, so its cases read the remote's ref and the permit table after
@@ -205,61 +208,73 @@ test("a revocation offered after entry is refused and the finalizer's request st
   assert.deepEqual(await requestsOf(partition), standing);
 });
 
-test("a boundary write and an acceptance racing on the project row are still resolved by mailbox order", async () => {
-  const { partition, memory } = await finalizerEntering(rig, "revoke-race");
-  const blockade = await schedulerBlockade(
-    "SELECT lifecycle FROM project WHERE tenant=$1 AND project=$2 FOR UPDATE",
-    [partition.tenant, partition.project],
-  );
-  let accepted: readonly string[] | string;
-  try {
-    const racing = schedulerOutcome(
-      Promise.all([
+/** The two orders the project-row race queues in, each racer named by its command tag. */
+const projectRowQueueOrders = [
+  ["ReportTaskTerminal", "RevokeTicket"],
+  ["RevokeTicket", "ReportTaskTerminal"],
+] as const;
+
+for (const [first, second] of projectRowQueueOrders) {
+  test(`a boundary write and an acceptance racing on the project row are still resolved by mailbox order, ${first} queued first`, async () => {
+    const { partition, memory } = await finalizerEntering(
+      rig,
+      `revoke-race-${first}`,
+    );
+    const racers = {
+      ReportTaskTerminal: () =>
         finalizerAccept(
           rig.harness,
           partition,
           "race-done",
           finalizerTaskDone(memory.graph, finalizerEvaluation(1)),
         ),
+      RevokeTicket: () =>
         finalizerAccept(
           rig.harness,
           partition,
           "race-revoke",
           revokeTicketCommand(subjectTicket),
         ),
-      ]),
+    };
+    const blockade = await schedulerBlockade(
+      "SELECT lifecycle FROM project WHERE tenant=$1 AND project=$2 FOR UPDATE",
+      [partition.tenant, partition.project],
     );
-    await blockade.stalled(2);
-    /**
-     * Only the revoke is an acceptance now: a completion is no command a
-     * principal may offer, so its half of this race is the boundary write that
-     * takes the same project row under a mode of its own.
-     */
-    assert.equal(
-      await blockade.stalledHolds("project", acceptanceRowMode),
-      true,
-      "a stalled acceptance had not reached the project row",
+    let accepted: readonly string[];
+    try {
+      const queued = schedulerOutcome(racers[first]());
+      await blockade.stalled(1);
+      const behind = schedulerOutcome(racers[second]());
+      await blockade.stalled(2);
+      /**
+       * Only the revoke is an acceptance now: a completion is no command a
+       * principal may offer, so its half of this race is the boundary write that
+       * takes the same project row under a mode of its own.
+       */
+      assert.equal(
+        await blockade.stalledHolds("project", acceptanceRowMode),
+        true,
+        "a stalled acceptance had not reached the project row",
+      );
+      await blockade.release();
+      accepted = await Promise.all([queued, behind]);
+    } finally {
+      await blockade.release();
+    }
+    assert.deepEqual(accepted, ["Accepted", "Accepted"]);
+    const ordinals = await ordinalsOf(partition);
+    const raced = `revoke at ${String(ordinals["RevokeTicket"])}, done at ${String(ordinals["ReportTaskTerminal"])}`;
+    assert.equal(Object.keys(ordinals).length, 2, raced);
+    assert.ok(
+      (ordinals[first] ?? Infinity) < (ordinals[second] ?? -Infinity),
+      `the row let ${second} through first: ${raced}`,
     );
-    await blockade.release();
-    accepted = await racing;
-  } finally {
-    await blockade.release();
-  }
-  if (typeof accepted === "string") assert.fail(accepted);
-  assert.deepEqual([...accepted], ["Accepted", "Accepted"]);
-  const ordinals = await ordinalsOf(partition);
-  const raced = `revoke at ${String(ordinals["RevokeTicket"])}, done at ${String(ordinals["ReportTaskTerminal"])}`;
-  assert.equal(Object.keys(ordinals).length, 2, raced);
-  assert.notEqual(
-    ordinals["RevokeTicket"],
-    ordinals["ReportTaskTerminal"],
-    raced,
-  );
-  const drained = await finalizerDrain(rig.harness, partition, memory);
-  assert.deepEqual(drained.decided, ["Committed", "Refused"], raced);
-  assert.equal(await finalizerPhase(rig, partition), "Revoked", raced);
-  assert.deepEqual(await requestsOf(partition), []);
-});
+    const drained = await finalizerDrain(rig.harness, partition, memory);
+    assert.deepEqual(drained.decided, ["Committed", "Refused"], raced);
+    assert.equal(await finalizerPhase(rig, partition), "Revoked", raced);
+    assert.deepEqual(await requestsOf(partition), []);
+  });
+}
 
 test("a closing project aborts an unpermitted attempt without touching the remote", async () => {
   const { project, remote } = await finalizerSubject(rig, "abort", [

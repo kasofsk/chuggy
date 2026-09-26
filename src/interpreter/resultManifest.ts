@@ -53,11 +53,11 @@
 import {
   artifactDigestChars,
   resultReportCharsMax,
+  resultReportSchemaVersionMin,
   textCodePointsCount,
 } from "../contract/http.ts";
 import type { ResultVerdict } from "../contract/rosters.ts";
 import {
-  resultManifestSchemaVersion,
   resultManifestSchemaVersionsAccepted,
   resultManifestTextCharsMax,
   type ResultManifestSchemaVersion,
@@ -396,6 +396,11 @@ function resultManifestRowParts(rows: readonly ArtifactRow[]): string[] {
   ];
 }
 
+/** Whether a manifest at this version carries a report, which every version from the one that introduced it does. */
+function manifestCarriesReport(version: unknown): boolean {
+  return typeof version === "number" && version >= resultReportSchemaVersionMin;
+}
+
 /** The exact bytes one manifest's digest is taken over, re-derivable by an auditor. */
 export function canonicalResultManifest(
   manifest: ResultManifest,
@@ -414,7 +419,9 @@ export function canonicalResultManifest(
     manifest.manifest,
     String(manifest.schemaVersion),
     manifest.verdict,
-    ...(manifest.schemaVersion === 3 ? [manifest.report ?? ""] : []),
+    ...(manifestCarriesReport(manifest.schemaVersion)
+      ? [manifest.report ?? ""]
+      : []),
     ...resultManifestRowParts(manifest.handoffs),
     ...resultManifestRowParts(manifest.diagnostics),
     ...(manifest.schemaVersion === 1
@@ -567,10 +574,9 @@ function manifestEnvelope(
   const version = record["version"];
   if (!resultManifestSchemaVersionsAccepted.some((known) => known === version))
     return manifestRejected("UnsupportedSchemaVersion");
-  const required =
-    version === resultManifestSchemaVersion
-      ? ["version", "verdict", "report", "handoffs", "diagnostics"]
-      : ["version", "verdict", "handoffs", "diagnostics"];
+  const required = manifestCarriesReport(version)
+    ? ["version", "verdict", "report", "handoffs", "diagnostics"]
+    : ["version", "verdict", "handoffs", "diagnostics"];
   const optional = version === 1 ? [] : ["source"];
   const refusal = manifestEnvelopeKeysRejection(record, required, optional);
   if (refusal !== undefined) return manifestRejected(refusal);
@@ -583,7 +589,7 @@ function manifestEnvelope(
 function manifestReport(
   record: Record<string, unknown>,
 ): string | undefined | ManifestAccepted {
-  if (record["version"] !== 3) return undefined;
+  if (!manifestCarriesReport(record["version"])) return undefined;
   const report = record["report"];
   if (
     typeof report !== "string" ||

@@ -74,7 +74,6 @@ import {
   nativeHttpBodyBytesMax,
   nativeHttpPageItemsMax,
   repositoryIdentityCharsMax,
-  resultReportSchemaVersionMin,
   runConfigurationBytesMax,
   sessionCapabilitiesMax,
   sessionKindCharsMax,
@@ -85,7 +84,6 @@ import {
 import {
   artifactFailures,
   resultManifestRejections,
-  resultManifestSchemaVersion,
 } from "../../src/contract/workerDocuments.ts";
 import {
   repositoryCredentialCharsMax,
@@ -402,14 +400,6 @@ test("the cost basis roster is exhaustive over the union it induces", () => {
 test("a run's read bounds are the ones the layers beneath them hold", () => {
   assert.equal(runConfigurationBytesMax, outputPreviewBytesMax);
   assert.equal(nativeHttpPageItemsMax, runTurnsPageLimitMax);
-});
-
-/**
- * Held in both directions: too high draws "too old" over every run there is,
- * and too low draws nothing at all for the versions #363 is about.
- */
-test("the version a summary begins at is the one the manifest reader requires it at", () => {
-  assert.equal(resultReportSchemaVersionMin, resultManifestSchemaVersion);
 });
 
 test("one page bound serves every collection route", () => {

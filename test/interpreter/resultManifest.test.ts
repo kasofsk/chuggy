@@ -9,7 +9,6 @@
  */
 
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import { test } from "node:test";
 
 import { resultReportSchemaVersionMin } from "../../src/contract/http.ts";
@@ -17,8 +16,6 @@ import {
   acceptResultManifest,
   allManifestRejections,
   artifactBytesMax,
-  artifactPathCharsMax,
-  artifactPathSegmentCharsMax,
   artifactPathSegmentsMax,
   asArtifactDigest,
   asArtifactPath,
@@ -30,9 +27,6 @@ import {
   manifestsAgree,
   digestFold,
   digestFoldHexChars,
-  type CanonicalManifest,
-  type ManifestAccepted,
-  type ManifestAttemptBinding,
   type ManifestRejection,
   type ResultManifest,
 } from "../../src/interpreter/resultManifest.ts";
@@ -45,85 +39,22 @@ import {
   asExecutionId,
 } from "../../src/interpreter/schedulerIdentity.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
-
-const binding: ManifestAttemptBinding = {
-  partition: {
-    tenant: asTenantId("tenant-one"),
-    project: asProjectId("project-one"),
-  },
-  execution: asExecutionId("execution-one"),
-  attempt: asAttemptId("attempt-one"),
-};
-
-const manifestId = asResultManifestId("manifest-one");
-
-/** The digest this suite hands the boundary, which is the one a deployment hands it too. */
-function digestOf(canonical: CanonicalManifest): string {
-  return createHash("sha256").update(canonical).digest("hex");
-}
-
-/** One artifact digest that differs per label, so two rows are never accidentally equal. */
-function digestFor(label: string): string {
-  return createHash("sha256").update(label).digest("hex");
-}
-
-/** One row of the wire form, which is what a worker actually sends. */
-function row(path: string, bytes = 1): Record<string, unknown> {
-  return { path, digest: digestFor(path), bytes };
-}
-
-/** One report body with the named lists, so a case varies one thing. */
-function report(
-  verdict: string,
-  handoffs: readonly Record<string, unknown>[],
-  diagnostics: readonly Record<string, unknown>[] = [],
-): string {
-  return JSON.stringify({ version: 1, verdict, handoffs, diagnostics });
-}
-
-/** One version-two report carrying the candidate branch instead of changed files. */
-function sourceReport(
-  verdict: string,
-  source: unknown,
-  handoffs: readonly Record<string, unknown>[] = [],
-): string {
-  return JSON.stringify({
-    version: 2,
-    verdict,
-    handoffs,
-    diagnostics: [],
-    source,
-  });
-}
-
-/** One current report carrying the summary later evaluations receive. */
-function currentReport(verdict: string, report: unknown): string {
-  return JSON.stringify({
-    version: 3,
-    verdict,
-    report,
-    handoffs: [],
-    diagnostics: [],
-    source: null,
-  });
-}
-
-/**
- * The document `images/worker/entrypoint.mjs` builds, whose `source` key is
- * absent rather than null whenever there is no source handoff. The shape is
- * restated rather than imported: that module runs its own entrypoint on import
- * and carries no types this suite could be checked against.
- */
-function workerReport(verdict: string, source?: unknown): string {
-  return JSON.stringify({
-    version: 3,
-    verdict,
-    report: "the review the evaluator wrote",
-    handoffs: [],
-    ...(source === undefined ? {} : { source }),
-    diagnostics: [row("log/session.json")],
-  });
-}
+import {
+  accept,
+  binding,
+  digestFor,
+  digestOf,
+  manifestBodiesMistyped,
+  manifestBodiesRefused,
+  manifestId,
+  pathCases,
+  pathReport,
+  report,
+  row,
+  source,
+  sourceReport,
+  workerReport,
+} from "./resultManifestFixture.ts";
 
 /** A body at one retained version with no summary in it, which is what the
  * required-key list decides about. */
@@ -153,18 +84,6 @@ test("the contract's summary version is where this reader begins requiring one",
   );
   assert.deepEqual(requiring, [resultReportSchemaVersionMin]);
 });
-
-const source = {
-  repository: "repository-one",
-  ref: "refs/heads/chuggy/tickets/ticket-one/attempts/attempt-one",
-  commit: "a".repeat(40),
-  base: "b".repeat(40),
-};
-
-/** Accepts the body under the shared binding, which every case starts from. */
-function accept(text: string): ManifestAccepted {
-  return acceptResultManifest(binding, manifestId, text, digestOf);
-}
 
 /** The code a body is refused with, failing loudly when it was accepted instead. */
 function rejection(text: string): ManifestRejection {
@@ -427,30 +346,9 @@ test("a digest is refused unless it is lower-case hexadecimal of fixed width", (
   }
 });
 
-/** One path per path rejection, which is what makes both roster claims below decidable. */
-const pathCases: readonly (readonly [string, ManifestRejection])[] = [
-  ["out/\ud800", "PathNotWellFormed"],
-  ["", "PathEmpty"],
-  ["o".repeat(artifactPathCharsMax + 1), "PathTooLong"],
-  [`out/e${String.fromCharCode(0x301)}`, "PathNotNormalForm"],
-  [`out/a${String.fromCharCode(1)}b`, "PathHasControlCharacter"],
-  ["out\\a", "PathHasBackslash"],
-  ["/out/a", "PathAbsolute"],
-  ["out//a", "PathEmptySegment"],
-  ["out/../a", "PathDotSegment"],
-  [
-    Array.from({ length: artifactPathSegmentsMax + 1 }, () => "a").join("/"),
-    "PathTooDeep",
-  ],
-  [`out/${"a".repeat(artifactPathSegmentCharsMax + 1)}`, "PathSegmentTooLong"],
-  ["out/ a", "PathHasEdgeWhitespace"],
-];
-
 /** The code one path is refused with, which is how a path case reaches the boundary. */
 function pathRejection(path: string): ManifestRejection {
-  return rejection(
-    report("Pass", [{ path, digest: digestFor(path), bytes: 1 }]),
-  );
+  return rejection(pathReport(path));
 }
 
 test("every path rejection is reachable and is reported in the checker's order", () => {
@@ -540,87 +438,14 @@ test("a row that is not a row of the schema is missing its fields", () => {
   );
 });
 
-/** The rejections the envelope alone earns, which is where a version and a key set are read. */
-function everyRejectionReachedInEnvelope(): readonly ManifestRejection[] {
-  return [
-    rejection("x".repeat(resultManifestTextCharsMax + 1)),
-    rejection("not json"),
-    rejection(
-      JSON.stringify({
-        version: 2,
-        verdict: "Pass",
-        handoffs: [],
-        diagnostics: [],
-        source: null,
-        extra: 1,
-      }),
-    ),
-    rejection(
-      JSON.stringify({
-        version: 3,
-        verdict: "Pass",
-        handoffs: [],
-        diagnostics: [],
-      }),
-    ),
-    rejection(
-      JSON.stringify({
-        version: 4,
-        verdict: "Pass",
-        handoffs: [],
-        diagnostics: [],
-      }),
-    ),
-    rejection(report("Skip", [])),
-  ];
-}
+test("a source or a list of the wrong type is refused rather than read as absent", () => {
+  for (const [text, refused] of manifestBodiesMistyped)
+    assert.equal(rejection(text), refused, text);
+});
 
 /** Every rejection a body of the wire form can be refused with, gathered from bodies. */
 function everyRejectionReached(): ReadonlySet<ManifestRejection> {
-  const handoffs = Array.from({ length: manifestHandoffsMax }, (_unused, at) =>
-    row(`out/${String(at)}`),
-  );
-  const large = Array.from(
-    { length: Math.floor(manifestBytesMax / artifactBytesMax) + 1 },
-    (_unused, at) => row(`out/${String(at)}`, artifactBytesMax),
-  );
-  return new Set<ManifestRejection>([
-    ...pathCases.map(([path]) => pathRejection(path)),
-    ...everyRejectionReachedInEnvelope(),
-    rejection(report("Pass", [{ ...row("out/a"), extra: 1 }])),
-    rejection(
-      JSON.stringify({
-        version: 1,
-        verdict: "Pass",
-        handoffs: ["out/a"],
-        diagnostics: [],
-      }),
-    ),
-    rejection(currentReport("Pass", "")),
-    rejection(sourceReport("Pass", { ...source, commit: "not-an-object" })),
-    rejection(sourceReport("Fail", source)),
-    rejection(sourceReport("Pass", source, [row("out/a")])),
-    rejection(report("Pass", [...handoffs, row("out/extra")])),
-    rejection(
-      report(
-        "Pass",
-        [],
-        Array.from({ length: manifestDiagnosticsMax + 1 }, (_unused, at) =>
-          row(`log/${String(at)}`),
-        ),
-      ),
-    ),
-    rejection(report("Fail", [row("out/a")])),
-    rejection(report("Pass", [row("out/a", -1)])),
-    rejection(report("Pass", [row("out/a", artifactBytesMax + 1)])),
-    rejection(report("Pass", large)),
-    rejection(
-      report("Pass", [
-        { path: "out/a", digest: digestFor("out/a").toUpperCase(), bytes: 1 },
-      ]),
-    ),
-    rejection(report("Pass", [row("out/a"), row("out/a")])),
-  ]);
+  return new Set(manifestBodiesRefused().map(rejection));
 }
 
 test("every rejection the roster names is reachable from an untrusted report", () => {
