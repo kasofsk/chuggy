@@ -33,6 +33,7 @@ import {
 import { asCanonicalConfiguration } from "../../src/interpreter/authoring.ts";
 import {
   asAttemptCapabilitySecret,
+  type AttemptCapabilitySecret,
   type PhysicalAttempt,
 } from "../../src/interpreter/executionScheduler.ts";
 import {
@@ -709,6 +710,27 @@ test("a pool registered again holds nothing an older registration of its name cl
 });
 
 /**
+ * What the worker plane answers a harness offering this bearer for `opened`,
+ * wherever a harness asks: the authority each attempt route but the task
+ * consults, the task route's read and the report route's write.
+ */
+async function poolBearerAnswered(
+  bearer: AttemptCapabilitySecret,
+  opened: PhysicalAttempt,
+): Promise<Record<string, unknown>> {
+  return {
+    authenticated:
+      await postgresWorkerPlaneAuthority(harnessPlanePool).authenticate(bearer),
+    task: await postgresWorkerTasks(harnessPlanePool).work(bearer),
+    report: (
+      await postgresWorkerReportStore(harnessPlanePool, bearer).terminalize(
+        schedulerReport(opened, "Pass"),
+      )
+    ).terminalized,
+  };
+}
+
+/**
  * The fenced attempt keeps its lease and loses its bearer, so the harness the
  * older registration launched is refused everywhere it asks and the lapse ends
  * the attempt as lost.
@@ -719,22 +741,11 @@ test("the harness an older registration launched is refused, and its attempt end
   const authority = postgresWorkerPlaneAuthority(harnessPlanePool);
   assert.notEqual(await authority.authenticate(bearer), undefined);
   await poolRegisteredAgain(project, "fenced");
-  assert.deepEqual(
-    {
-      authenticated: await authority.authenticate(bearer),
-      task: await postgresWorkerTasks(harnessPlanePool).work(bearer),
-      report: (
-        await postgresWorkerReportStore(harnessPlanePool, bearer).terminalize(
-          schedulerReport(claimed.opened, "Pass"),
-        )
-      ).terminalized,
-    },
-    {
-      authenticated: undefined,
-      task: undefined,
-      report: "Fenced",
-    },
-  );
+  assert.deepEqual(await poolBearerAnswered(bearer, claimed.opened), {
+    authenticated: undefined,
+    task: undefined,
+    report: "Fenced",
+  });
   await rig.harness.query(
     `UPDATE execution_attempt SET lease_expires_at=now()-interval '1 second'
       WHERE tenant=$1 AND project=$2 AND attempt=$3`,
@@ -749,6 +760,28 @@ test("the harness an older registration launched is refused, and its attempt end
     [project.partition.tenant, project.partition.project, claimed.attempt],
   )) as readonly { state: string; retries_spent: number }[];
   assert.deepEqual(ended, [{ state: "Lost", retries_spent: 1 }]);
+});
+
+/**
+ * A pool that answers Unavailable launched nothing, and releasing the
+ * assignment, as the pool plane's own role does, takes its bearer back: a
+ * harness launched under it anyway is answered as a bearer never issued is.
+ */
+test("a released attempt's bearer is answered as one never issued", async () => {
+  const { identity, claimed, drawn } = await poolClaimed("released-bearer");
+  const bearer = asAttemptCapabilitySecret(drawn.bearer);
+  assert.notEqual(
+    await postgresWorkerPlaneAuthority(harnessPlanePool).authenticate(bearer),
+    undefined,
+  );
+  assert.equal(await assignments.release(identity, drawn.assignment, 30), true);
+  assert.deepEqual(
+    await poolBearerAnswered(bearer, claimed.opened),
+    await poolBearerAnswered(
+      asAttemptCapabilitySecret(handles("never-issued").bearer),
+      claimed.opened,
+    ),
+  );
 });
 
 /**
