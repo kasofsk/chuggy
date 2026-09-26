@@ -162,3 +162,29 @@ test("a site names its own fabric, and a document under another name is refused"
     assert.match(String(refused.refused), /CHUG_POOL_CLIENT_SITE:/u);
   }
 });
+
+test("a site's database is read as the launcher's is, and one it does not describe is refused", async () => {
+  const database = {
+    image: "registry.invalid/postgres:18",
+    resources: site.resources,
+  };
+  const found = (
+    await parsed({
+      ...environment,
+      CHUG_POOL_CLIENT_SITE: JSON.stringify({ ...site, database }),
+    })
+  ).parsed as { site: { database?: unknown } };
+  assert.deepEqual(found.site.database, database);
+  for (const refused of [
+    { ...database, image: "" },
+    { image: database.image },
+    { ...database, port: 5432 },
+  ]) {
+    const answer = await parsed({
+      ...environment,
+      CHUG_POOL_CLIENT_SITE: JSON.stringify({ ...site, database: refused }),
+    });
+    assert.equal(answer.parsed, undefined, JSON.stringify(refused));
+    assert.match(String(answer.refused), /CHUG_POOL_CLIENT_SITE: database/u);
+  }
+});

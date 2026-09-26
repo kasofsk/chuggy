@@ -27,14 +27,16 @@ import {
 import {
   checkedKubernetesWorkerLaunchConfig,
   kubernetesWorkerContainerName,
-  kubernetesWorkerDatabaseContainerName,
-  kubernetesWorkerDatabaseUrl,
   kubernetesWorkerPodName,
   kubernetesWorkerPodRequest,
   kubernetesWorkerReservedVariables,
   kubernetesWorkerTask,
   type KubernetesWorkerLaunchConfig,
 } from "../../src/adapters/kubernetes/workerPod.ts";
+import {
+  kubernetesWorkerDatabaseContainerName,
+  kubernetesWorkerDatabaseUrl,
+} from "../../src/adapters/kubernetes/workerDatabase.ts";
 import {
   kubernetesNameCharsMax,
   type KubernetesPod,

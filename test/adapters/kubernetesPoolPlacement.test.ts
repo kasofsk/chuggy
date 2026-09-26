@@ -6,6 +6,7 @@ import { after, test } from "node:test";
 
 import {
   mintedCredentialDirectory,
+  workerDatabaseUrlVariable,
   workerTaskVariable,
 } from "../../src/contract/workerEnvironment.ts";
 import {
@@ -72,6 +73,17 @@ const config: KubernetesPoolPlacementConfig = {
     },
   },
   providerCredential: "codex-auth",
+};
+
+const database = {
+  image: "registry.invalid/postgres:18",
+  resources: {
+    cpuRequest: "100m",
+    cpuLimit: "1",
+    memoryRequest: "128Mi",
+    memoryLimit: "512Mi",
+    ephemeralStorageLimit: "1Gi",
+  },
 };
 
 const assignment: WorkerPoolAssignment = {
@@ -477,6 +489,40 @@ test("a site is refused where it reserves the variable the envelope is read from
         environment: { [workerTaskVariable]: "hijacked" },
       }),
     RangeError,
+  );
+});
+
+/**
+ * Catches a site handing its workloads a server they would share, and whose
+ * roles a gate's migration alters. It is refused whether or not the site runs
+ * a sidecar, as the launcher refuses it.
+ */
+test("a site is refused where its environment names the database a worker reaches", () => {
+  for (const site of [config, { ...config, database }])
+    assert.throws(
+      () =>
+        checkedKubernetesPoolPlacementConfig({
+          ...site,
+          environment: {
+            [workerDatabaseUrlVariable]: "postgres://shared.invalid/postgres",
+          },
+        }),
+      new RegExp(workerDatabaseUrlVariable, "u"),
+    );
+});
+
+test("a site is refused where its database names no image", () => {
+  assert.throws(
+    () =>
+      checkedKubernetesPoolPlacementConfig({
+        ...config,
+        database: { ...database, image: "" },
+      }),
+    /pool worker database image is empty/u,
+  );
+  assert.deepEqual(
+    checkedKubernetesPoolPlacementConfig({ ...config, database }).database,
+    database,
   );
 });
 
