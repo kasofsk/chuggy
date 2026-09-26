@@ -81,6 +81,7 @@ import {
 } from "../adapters/postgres/evaluationReports.ts";
 import { postgresTicketBrief } from "../adapters/postgres/ticketBrief.ts";
 import { postgresPinnedConfigurations } from "../adapters/postgres/pinnedConfigurations.ts";
+import { postgresWorkerPoolRoster } from "../adapters/postgres/workerPool.ts";
 import {
   finalizerRole,
   schedulerRole,
@@ -510,6 +511,7 @@ export interface SchedulerProcessRootConfig {
     | "priorWorkReports"
     | "priorEvaluationReports"
     | "ticketBriefs"
+    | "workerPools"
   >;
   /**
    * The session half of the same process; its own store and its binding read
@@ -532,6 +534,7 @@ export function schedulerProcessRootService(
     priorWorkReports: postgresPriorWorkReports(pool),
     priorEvaluationReports: postgresPriorEvaluationReports(pool),
     ticketBriefs: postgresTicketBrief(pool),
+    workerPools: postgresWorkerPoolRoster(pool),
   };
 }
 

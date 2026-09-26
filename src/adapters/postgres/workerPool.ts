@@ -50,9 +50,9 @@
  * `placement_backoff_from` holds the instant a claim may next take the
  * execution — the pool's own `retryAfterSecs` from now — and the claim
  * predicate offers nothing before it. The scheduler writes the same column as
- * the instant its own interval counts from and reads it on the path that
- * places work itself, which is the other value of `placement`. A released row
- * is put back as the scheduler opened it: the lease is the attempt's own
+ * the instant its own interval counts from, and reads it before it opens an
+ * attempt for either value of `placement`. A released row is put back as the
+ * scheduler opened it: the lease is the attempt's own
  * again, and it ends past the backoff by what remained of the pool's lease at
  * the release — a pool that took most of its lease to answer has the rest to
  * claim again, and nothing here extends a lease a pool did not renew — so the
@@ -72,13 +72,15 @@ import { workerPoolRetryAfterSecsMax } from "../../contract/workerPool.ts";
 import { asExecutionRequirement } from "../../interpreter/executionRequirement.ts";
 import { asPrincipal } from "../../interpreter/principal.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
-import type {
-  WorkerPoolAssignments,
-  WorkerPoolClaimed,
-  WorkerPoolClaimTerms,
-  WorkerPoolIdentity,
-  WorkerPoolRegistration,
-  WorkerPoolRegistry,
+import {
+  workerPoolsAnsweredMax,
+  type WorkerPoolAssignments,
+  type WorkerPoolClaimed,
+  type WorkerPoolClaimTerms,
+  type WorkerPoolIdentity,
+  type WorkerPoolRegistration,
+  type WorkerPoolRegistry,
+  type WorkerPoolRoster,
 } from "../../interpreter/workerPool.ts";
 import {
   workerPoolTokensLiveMax,
@@ -249,6 +251,34 @@ export function postgresWorkerPoolRegistry(pool: pg.Pool): WorkerPoolRegistry {
             pool: row.pool,
             principal: asPrincipal(row.principal),
           };
+    },
+  };
+}
+
+/**
+ * A project's registered pools over a scheduler-role pool, in name order and
+ * read one past the page, so a project registering more than one read answers
+ * is told the page is partial rather than handed a short one.
+ */
+export function postgresWorkerPoolRoster(pool: pg.Pool): WorkerPoolRoster {
+  return {
+    registered: async (partition) => {
+      const found = await pool.query<{
+        pool: string;
+        capabilities: string[];
+        principal: string;
+      }>(sql`SELECT w.pool,w.capabilities,w.principal FROM worker_pool w
+        WHERE w.tenant=${partition.tenant} AND w.project=${partition.project}
+        ORDER BY w.pool LIMIT ${workerPoolsAnsweredMax + 1}`);
+      return {
+        pools: found.rows.slice(0, workerPoolsAnsweredMax).map((row) => ({
+          partition,
+          pool: row.pool,
+          capabilities: row.capabilities,
+          principal: asPrincipal(row.principal),
+        })),
+        truncated: found.rows.length > workerPoolsAnsweredMax,
+      };
     },
   };
 }

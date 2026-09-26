@@ -50,6 +50,7 @@ function executionOf(taskKind: ExecutionTaskKind): LogicalExecution {
   return {
     partition,
     execution: asExecutionId("execution-one"),
+    route: "InCluster",
     ticket: asTicketId(1),
     task: asTaskId(1),
     taskKind,

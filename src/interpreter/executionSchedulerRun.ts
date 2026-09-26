@@ -82,6 +82,12 @@
  * exhausted-safe-retry outcome, and not a verdict fabricated for an evaluator
  * that never reached one.
  *
+ * AN EXECUTION ROUTED TO POOLS IS NEVER PLACED HERE. Its attempt is opened and
+ * the registry asked `runner.qnt`'s `placementOutcome`, which is the two
+ * inabilities again: no registered pool configured to run it blocks, and one
+ * that could is a hold. A held attempt waits on its own lease, and one no pool
+ * holds when that lapses is withdrawn without spending the budget.
+ *
  * NOTHING HERE READS A CLOCK. Claim leases, placement backoff and attempt
  * leases are durations handed to the store, which asks the database what time
  * it is; `eslint.config.js` says so for this directory.
@@ -126,12 +132,15 @@ import {
 } from "./taskBriefing.ts";
 import type { PolicyAuthorityGrant } from "./taskAuthority.ts";
 import type { TicketBriefPort } from "./ticketBrief.ts";
+import type { WorkerPoolRoster } from "./workerPool.ts";
+import { workerPoolOutcomeRegistered } from "./workerPoolAssignment.ts";
 import { workTaskInvocation } from "./workerTask.ts";
 
 /** Everything a scheduler pass calls out through, and the bounds it works within. */
 export interface ExecutionSchedulerService {
   readonly store: ExecutionSchedulerStore;
   readonly placement: AttemptPlacementPort;
+  readonly workerPools: WorkerPoolRoster;
   readonly policy: ExecutionPolicy;
   readonly configurations: PinnedConfigurationPort;
   readonly runtimeFacts: RuntimeFactsPort;
@@ -640,6 +649,54 @@ async function schedulerPlace(
   }
 }
 
+/**
+ * Asks what can be said of an execution routed to pools against the pools its
+ * project registered, and blocks the one no pool is configured to run. A page
+ * the registry cut short never blocks, since a pool past it may be.
+ */
+async function schedulerHoldForPools(
+  service: ExecutionSchedulerService,
+  execution: LogicalExecution,
+  attempt: PhysicalAttempt,
+): Promise<void> {
+  const registered = await service.workerPools.registered(execution.partition);
+  const outcome = workerPoolOutcomeRegistered(execution, registered.pools);
+  switch (outcome) {
+    case "DefinitiveIncompatibility":
+      if (registered.truncated) return;
+      await schedulerBlock(
+        service,
+        execution,
+        attempt,
+        "PlacementIncompatible",
+        "RequiredCapabilityUnavailable",
+      );
+      return;
+    case "Placeable":
+    case "Unavailable":
+      return;
+    case "NotApplicable":
+      throw new Error(
+        `execution scheduler: ${execution.execution} is routed to pools and no pool outcome applies to it`,
+      );
+  }
+}
+
+/** Places an opened attempt, or holds it for the pools its execution is routed to. */
+async function schedulerLaunchOpened(
+  service: ExecutionSchedulerService,
+  execution: LogicalExecution,
+  attempt: PhysicalAttempt,
+): Promise<boolean> {
+  switch (execution.route) {
+    case "InCluster":
+      return schedulerPlace(service, execution, attempt);
+    case "Pool":
+      await schedulerHoldForPools(service, execution, attempt);
+      return false;
+  }
+}
+
 /** Opens and places the next attempt for one execution that owns a slot. */
 async function schedulerLaunchOne(
   service: ExecutionSchedulerService,
@@ -665,7 +722,7 @@ async function schedulerLaunchOne(
   });
   switch (opened.opened) {
     case "Opened":
-      return schedulerPlace(service, execution, opened.attempt);
+      return schedulerLaunchOpened(service, execution, opened.attempt);
     case "NotLaunchable":
     case "BackingOff":
       return false;

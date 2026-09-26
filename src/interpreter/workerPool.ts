@@ -91,6 +91,25 @@ export interface WorkerPoolRegistry {
   identify(principal: Principal): Promise<WorkerPoolIdentity | undefined>;
 }
 
+/** One registered pool as the scheduler reads it: its identity, and what it declared. */
+export interface WorkerPoolRegistered extends WorkerPoolIdentity {
+  readonly capabilities: readonly string[];
+}
+
+/** The most registered pools one read answers for a project. */
+export const workerPoolsAnsweredMax = 64;
+
+/** One project's registered pools, `truncated` saying it holds more than this answers. */
+export interface WorkerPoolRosterPage {
+  readonly pools: readonly WorkerPoolRegistered[];
+  readonly truncated: boolean;
+}
+
+/** The registry as the scheduler reads it, which is a project's pools and nothing a registration or a poll writes. */
+export interface WorkerPoolRoster {
+  registered(partition: Partition): Promise<WorkerPoolRosterPage>;
+}
+
 /**
  * The pool one authenticated principal acts as, and nothing where the authority
  * says it may not: `Execute` on the project is the permit, and revoking a pool

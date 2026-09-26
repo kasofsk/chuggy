@@ -27,10 +27,10 @@
  * read writes it itself, in full, and a change to the provenance is made at
  * every read.
  *
- * A NARROWING IS A REFUSAL AND NEVER A DEFAULT. A status, outcome or attempt
- * state outside the closed set is a row no migration can have written, so it
- * raises rather than resolving to whichever member the reader thought most
- * likely.
+ * A NARROWING IS A REFUSAL AND NEVER A DEFAULT. A status, outcome, route or
+ * attempt state outside the closed set is a row no migration can have written,
+ * so it raises rather than resolving to whichever member the reader thought
+ * most likely.
  */
 
 import {
@@ -42,6 +42,7 @@ import {
 import {
   allAttemptStates,
   allExecutionOutcomes,
+  allExecutionRoutes,
   allExecutionStatuses,
   asAttemptId,
   asAttemptCapabilityId,
@@ -52,6 +53,7 @@ import {
   asPlacementId,
   type AttemptState,
   type ExecutionOutcome,
+  type ExecutionRoute,
   type ExecutionStatus,
   type ExecutionTaskKind,
   type LogicalExecution,
@@ -77,6 +79,7 @@ export interface ExecutionRow {
   readonly tenant: string;
   readonly project: string;
   readonly execution: string;
+  readonly placement: string;
   readonly ticket: string;
   readonly task: string;
   readonly task_kind: string;
@@ -148,6 +151,15 @@ function executionRowOutcome(value: string): ExecutionOutcome {
     throw new Error(
       `execution row: ${value} is not a terminal outcome this code knows`,
     );
+  }
+  return found;
+}
+
+/** Narrows a placement column to the route it stores. */
+function executionRowRoute(value: string): ExecutionRoute {
+  const found = allExecutionRoutes.find((route) => route === value);
+  if (found === undefined) {
+    throw new Error(`execution row: ${value} is not a route this code knows`);
   }
   return found;
 }
@@ -227,6 +239,7 @@ export function executionRowLogical(row: ExecutionRow): LogicalExecution {
   return {
     partition: schedulerRowPartition(row),
     execution: asExecutionId(row.execution),
+    route: executionRowRoute(row.placement),
     ticket: asTicketId(projectRowCounter(row.ticket, "execution ticket")),
     task: asTaskId(projectRowCounter(row.task, "execution task")),
     taskKind: executionRowTaskKind(row.task_kind),

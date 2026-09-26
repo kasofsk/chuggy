@@ -353,10 +353,16 @@ export function executionCapacitySafe(
   );
 }
 
+/** The model's `ExecutionRoute` in the words `execution.placement` stores, `InCluster` for `Kubernetes` and `Pool` for `RegisteredRunner`. */
+export const allExecutionRoutes = ["InCluster", "Pool"] as const;
+export type ExecutionRoute = (typeof allExecutionRoutes)[number];
+
 /** One durable logical execution as the scheduler holds it, provenance included. */
 export interface LogicalExecution {
   readonly partition: Partition;
   readonly execution: ExecutionId;
+  /** Where its attempts run: placed by this scheduler, or offered to the project's pools. */
+  readonly route: ExecutionRoute;
   readonly ticket: TicketId;
   readonly task: TaskId;
   readonly taskKind: ExecutionTaskKind;
@@ -473,6 +479,7 @@ export type AttemptEvidence =
   | "PolicyUnavailable"
   | "PlacementDenied"
   | "PlacementUnavailable"
+  | "PlacementIncompatible"
   | "Evicted"
   | "Vanished"
   | "LeaseExpired"
@@ -489,6 +496,7 @@ export const allAttemptEvidence: readonly AttemptEvidence[] = [
   "PolicyUnavailable",
   "PlacementDenied",
   "PlacementUnavailable",
+  "PlacementIncompatible",
   "Evicted",
   "Vanished",
   "LeaseExpired",
@@ -722,8 +730,10 @@ export interface ExecutionSchedulerStore {
   ): Promise<LogicalExecution | undefined>;
 
   /**
-   * Ends at most `attemptsMax` attempts whose lease has run out, spending the
-   * safe retry budget the way any attempt that ran and vanished does.
+   * Ends at most `attemptsMax` attempts whose lease has run out, backing their
+   * executions off. One that ran and vanished is `Lost` and spends the safe
+   * retry budget, and one offered to pools that no pool holds is `runner.qnt`'s
+   * `Unavailable`, withdrawn as `PlacementUnavailable` without spending it.
    */
   reapLapsedAttempts(
     epoch: RecoveryEpoch,

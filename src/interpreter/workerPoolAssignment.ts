@@ -42,12 +42,24 @@
  * with `workerPoolDemandRouted`; the guard reads both as it reads any other
  * field, so a registry that carries them per pool changes values and not
  * terms.
+ *
+ * THE SCHEDULER ASKS THE OUTCOME OF THE REGISTRY ALONE. A poll is not durable,
+ * so the scheduler sees no session and no pool is placeable to it; and
+ * revocation is `Execute` withheld at the authority, which the registry does
+ * not record, so a registered pool is enabled and not revoked as the scheduler
+ * reads it. A revoked pool still registered therefore leaves an execution
+ * unavailable, which holds it, rather than incompatible, which blocks it.
  */
 
-import type { ExecutionStatus } from "./executionScheduler.ts";
+import type {
+  ExecutionRoute,
+  ExecutionStatus,
+  LogicalExecution,
+} from "./executionScheduler.ts";
 import type { ExecutionRequirement, Platform } from "./executionRequirement.ts";
 import type { Principal } from "./principal.ts";
 import type { Partition } from "./projectStore.ts";
+import type { WorkerPoolRegistered } from "./workerPool.ts";
 
 /** The model's `RunnerClass`, and the roster the type derives from. */
 export const allWorkerPoolClasses = [
@@ -56,10 +68,6 @@ export const allWorkerPoolClasses = [
   "Shared",
 ] as const;
 export type WorkerPoolClass = (typeof allWorkerPoolClasses)[number];
-
-/** The model's `ExecutionRoute` in the words `execution.placement` stores, `InCluster` for `Kubernetes` and `Pool` for `RegisteredRunner`. */
-export const allExecutionRoutes = ["InCluster", "Pool"] as const;
-export type ExecutionRoute = (typeof allExecutionRoutes)[number];
 
 /** The model's `PlacementPhase`: an execution's placement waits, is assigned, has a result pending, or was cancelled. */
 export const allWorkerPoolPlacementPhases = [
@@ -285,4 +293,40 @@ export function workerPoolPlacementOutcome(
   )
     return "Placeable";
   return configured.length > 0 ? "Unavailable" : "DefinitiveIncompatibility";
+}
+
+/** A registered pool as the scheduler reads it: the registered policy, enabled, and not revoked. */
+function workerPoolOutcomeRegisteredRunner(
+  registered: WorkerPoolRegistered,
+): WorkerPoolRunner {
+  return {
+    ...workerPoolPolicyRegistered,
+    partition: registered.partition,
+    pool: registered.pool,
+    principal: registered.principal,
+    enabled: true,
+    revoked: false,
+    capabilities: registered.capabilities,
+  };
+}
+
+/** What `workerPoolPlacementOutcome` says of an execution no pool has taken, asked of its project's registered pools. */
+export function workerPoolOutcomeRegistered(
+  execution: LogicalExecution,
+  registered: readonly WorkerPoolRegistered[],
+): WorkerPoolPlacementOutcome {
+  return workerPoolPlacementOutcome(
+    {
+      partition: execution.partition,
+      status: execution.status,
+      phase: "Waiting",
+      requirement: execution.requirement,
+      route: execution.route,
+      demand: workerPoolDemandRouted,
+    },
+    registered.map((pool) => ({
+      pool: workerPoolOutcomeRegisteredRunner(pool),
+      session: undefined,
+    })),
+  );
 }

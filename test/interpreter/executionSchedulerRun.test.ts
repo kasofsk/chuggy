@@ -74,6 +74,11 @@ import {
   asDraftBrief,
   type DraftBrief,
 } from "../../src/interpreter/ticketBrief.ts";
+import { asPrincipal } from "../../src/interpreter/principal.ts";
+import type {
+  WorkerPoolRegistered,
+  WorkerPoolRosterPage,
+} from "../../src/interpreter/workerPool.ts";
 
 const partition = {
   tenant: asTenantId("tenant"),
@@ -86,6 +91,7 @@ const owner = asSchedulerOwnerId("scheduler-one");
 const execution: LogicalExecution = {
   partition,
   execution: asExecutionId("execution-one"),
+  route: "InCluster",
   ticket: asTicketId(1),
   task: asTaskId(1),
   taskKind: "Work",
@@ -235,6 +241,12 @@ function serviceWith(
   return {
     store: recordingStore(calls),
     placement,
+    workerPools: {
+      registered: () => {
+        calls.push("registered");
+        return Promise.resolve({ pools: [], truncated: false });
+      },
+    },
     policy,
     configurations: { configuration: () => Promise.resolve(read) },
     runtimeFacts: { facts: () => Promise.resolve(facts) },
@@ -1284,4 +1296,95 @@ test("a ticket with no brief is briefed without the sections one would fill", as
     ),
     false,
   );
+});
+
+/** One of the project's registered pools, declaring what a case gives it. */
+function registeredPool(
+  capabilities: readonly string[],
+  project = partition.project,
+): WorkerPoolRegistered {
+  return {
+    partition: { ...partition, project },
+    pool: "pool-one",
+    capabilities,
+    principal: asPrincipal("principal-one"),
+  };
+}
+
+/** A pass over the fixture execution routed to pools, against the registry page a case supplies. */
+function poolLaunch(
+  calls: string[],
+  page: WorkerPoolRosterPage,
+  seen: string[] = [],
+): Promise<number> {
+  const service = serviceWith(calls, runnable, placedOk);
+  return executionSchedulerLaunch(
+    {
+      ...service,
+      store: {
+        ...service.store,
+        unlaunched: () =>
+          Promise.resolve([{ ...execution, route: "Pool" as const }]),
+      },
+      placement: {
+        ...service.placement,
+        place: () => {
+          calls.push("place");
+          return Promise.resolve(placedOk);
+        },
+      },
+      workerPools: {
+        registered: (asked) => {
+          calls.push(`registered:${asked.project}`);
+          return Promise.resolve(page);
+        },
+      },
+      metrics: schedulerTelemetry(recordingMetrics(seen)),
+    },
+    epoch,
+  );
+}
+
+test("an execution routed to pools that none is configured to run is blocked, and never placed", async () => {
+  for (const pools of [
+    [],
+    [registeredPool(["Platform:Linux:Arm64", "Agent:Claude"])],
+    [registeredPool(["Platform:Linux:Amd64"], asProjectId("project-two"))],
+  ]) {
+    const calls: string[] = [];
+    const seen: string[] = [];
+    assert.equal(await poolLaunch(calls, { pools, truncated: false }, seen), 0);
+    assert.deepEqual(calls, [
+      "registered:project",
+      "ended:Withdrawn:PlacementIncompatible",
+      "blocked:RequiredCapabilityUnavailable",
+    ]);
+    assert.deepEqual(seen, [
+      "reaping:0",
+      "attemptOpened:Opened",
+      "attemptEnded:Withdrawn:PlacementIncompatible",
+      "blocking:Blocked:RequiredCapabilityUnavailable",
+    ]);
+  }
+});
+
+test("an execution routed to pools that one is configured to run is held on its attempt, neither placed nor blocked", async () => {
+  const calls: string[] = [];
+  assert.equal(
+    await poolLaunch(calls, {
+      pools: [
+        registeredPool(["Platform:Linux:Arm64"]),
+        registeredPool(["Platform:Linux:Amd64"]),
+      ],
+      truncated: false,
+    }),
+    0,
+  );
+  assert.deepEqual(calls, ["registered:project"]);
+});
+
+test("a registry page cut short never blocks, since a pool past it may be configured", async () => {
+  const calls: string[] = [];
+  assert.equal(await poolLaunch(calls, { pools: [], truncated: true }), 0);
+  assert.deepEqual(calls, ["registered:project"]);
 });

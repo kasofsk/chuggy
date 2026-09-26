@@ -32,6 +32,7 @@ export const schedulerRootService: Omit<
   | "priorWorkReports"
   | "priorEvaluationReports"
   | "ticketBriefs"
+  | "workerPools"
 > = {
   placement: {
     place: () =>

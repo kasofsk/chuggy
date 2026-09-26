@@ -146,8 +146,8 @@ async function poolProject(
 
 /**
  * One execution of this project opened as an attempt, invoked and marked for a
- * pool, which is the row a claim takes. The scheduler's own launch read is
- * guarded by the same column, so nothing here is work it would also place.
+ * pool, which is the row a claim takes. The scheduler routes its launch by the
+ * same column, so nothing here is work it would also place.
  */
 async function poolAttempt(
   project: SchedulerProject,

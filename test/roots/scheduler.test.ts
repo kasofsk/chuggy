@@ -754,7 +754,7 @@ function processExecutionFakes(): string {
   return `
     const partition = { tenant: 'tenant', project: 'project' };
     const execution = {
-      partition, execution: 'execution-one', ticket: 1, task: 1, taskKind: 'Work',
+      partition, execution: 'execution-one', route: 'InCluster', ticket: 1, task: 1, taskKind: 'Work',
       sourceRequest: '1:0:ExecuteTask', sourceSeq: 1, sourceEffect: 0, ticketVersion: 1,
       account: 'project', cluster: 'cluster',
       configurationRevision: 'revision', configurationDigest: 'digest',
