@@ -33,8 +33,8 @@ import {
   chuggyToolCapabilities,
   chuggyToolNames,
   chuggyToolPrefix,
-  sessionSystemPromptCharsMax,
-} from "../../src/interpreter/leadTools.ts";
+} from "../../src/contract/sessionTools.ts";
+import { sessionSystemPromptCharsMax } from "../../src/interpreter/leadTools.ts";
 
 const asked = { question: "what stopped ticket 14?", asker: "geoff" };
 const door = { session: "inq-one", turn: "inq-turn-one" };
