@@ -24,9 +24,9 @@
 # WHAT IT CANNOT SEE. A capability reached without an import — a global, a
 # dynamic `import()` built from a computed string, a value injected at run time
 # — is invisible to a static graph. The first is eslint's half; the second is
-# how the harness imports the agent SDK, zod and the contract's entries, which
-# the image build's probes load instead; the third is what the ports exist to
-# make legible, and the reviewer's.
+# how `session.mjs` imports the agent SDK and zod and `contractProbe.mjs` the
+# contract's entries, which the image build's probes load instead; the third is
+# what the ports exist to make legible, and the reviewer's.
 #
 # Usage:
 #   .chug/tasks/check-boundaries.sh
