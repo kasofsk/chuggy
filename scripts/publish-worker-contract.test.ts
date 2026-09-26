@@ -33,8 +33,8 @@ function faked(over: Partial<WorkerContractPublishPorts> = {}): {
         made.push(`pack ${outDirectory}`);
         return { tarball: `${outDirectory}/contract.tgz`, sha256: "c" };
       },
-      publish: (tarball) => {
-        made.push(`publish ${tarball}`);
+      stage: (tarball) => {
+        made.push(`stage ${tarball}`);
       },
       tag: (tag, commit) => {
         made.push(`tag ${tag} ${commit}`);
@@ -44,7 +44,7 @@ function faked(over: Partial<WorkerContractPublishPorts> = {}): {
   };
 }
 
-test("a release the history names is packed, published, and its commit tagged", async () => {
+test("a release the history names is packed, staged, and its commit tagged", async () => {
   const { made, ports } = faked();
   const published = await publishWorkerContract(
     ports,
@@ -53,15 +53,15 @@ test("a release the history names is packed, published, and its commit tagged", 
     "/out",
     false,
   );
-  assert.equal(published.published, "Published");
+  assert.equal(published.published, "Staged");
   assert.deepEqual(made, [
     "pack /out",
-    "publish /out/contract.tgz",
+    "stage /out/contract.tgz",
     "tag worker-contract-v1.2.0 packed-commit",
   ]);
 });
 
-test("a dry run packs and neither publishes nor tags", async () => {
+test("a dry run packs and neither stages nor tags", async () => {
   const { made, ports } = faked();
   const published = await publishWorkerContract(
     ports,
@@ -74,15 +74,15 @@ test("a dry run packs and neither publishes nor tags", async () => {
   assert.deepEqual(made, ["pack /out"]);
 });
 
-test("a publish npm refuses tags nothing", async () => {
+test("a stage npm refuses tags nothing", async () => {
   const { made, ports } = faked({
-    publish: () => {
-      throw new Error("npm publish exited 1");
+    stage: () => {
+      throw new Error("npm stage publish exited 1");
     },
   });
   await assert.rejects(
     publishWorkerContract(ports, name, release, "/out", false),
-    /npm publish/u,
+    /npm stage publish/u,
   );
   assert.deepEqual(made, ["pack /out"]);
 });
@@ -135,7 +135,7 @@ for (const [why, over, refusal] of [
       assert.deepEqual(made, []);
     });
 
-test("a registry that cannot say whether the release exists stops the publish", async () => {
+test("a registry that cannot say whether the release exists stops the stage", async () => {
   const { made, ports } = faked({
     published: () => {
       throw new Error("npm could not say");
