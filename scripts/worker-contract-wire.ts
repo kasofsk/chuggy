@@ -41,8 +41,9 @@
  * and empty statements; an import that is not type-only names its members,
  * zod's namespace aside, and no export re-exports a namespace. Everything else
  * is refused, as is an assignment, an update or a delete in code that runs
- * while it loads. What the digest does not see is a declaration written by a
- * call the module makes while it loads.
+ * while it loads. What the digest does not see is a write made while the
+ * module loads by code this check does not enter, such as a call's body or a
+ * computed member name.
  */
 
 import { createHash } from "node:crypto";
