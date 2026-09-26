@@ -31,6 +31,7 @@ import { migration019 } from "../../src/adapters/postgres/schema/migrations/019-
 import { migration020 } from "../../src/adapters/postgres/schema/migrations/020-worker-pool-class.ts";
 import { migration021 } from "../../src/adapters/postgres/schema/migrations/021-scheduler-reads-pools.ts";
 import { migration022 } from "../../src/adapters/postgres/schema/migrations/022-worker-pool-fencing.ts";
+import { migration023 } from "../../src/adapters/postgres/schema/migrations/023-worker-pool-release-ends.ts";
 import { leadDispatchesPerDecision } from "../../src/adapters/postgres/schema/migrations/baseline/seed.ts";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
@@ -61,9 +62,11 @@ import {
   schedulerRole,
   selectorServiceRole,
   sessionTaskReadFunction,
+  statusMoveFunction,
   ticketServiceRole,
   workerPlaneRole,
   workerPoolFenceFunction,
+  workerPoolReleaseFunction,
   workerTaskReadFunction,
 } from "../../src/adapters/postgres/schema.ts";
 import {
@@ -8964,6 +8967,57 @@ test("022 records the registration a pool's attempt was claimed under, and refus
                           WHERE entry.grantee=0) AS world
              FROM pg_proc WHERE oid=$1::regprocedure`,
           [fence],
+        )
+      ).rows,
+      [{ settings: "search_path=pg_catalog, public, pg_temp", world: false }],
+    );
+  });
+});
+
+/** What the plane serving pools may do to an execution's backoff and status. */
+async function poolPlaneExecutionPrivileges(
+  subject: pg.Pool,
+): Promise<readonly unknown[]> {
+  const found = await subject.query<Record<string, unknown>>(
+    `SELECT has_column_privilege($1,'public.execution','placement_backoff_from','SELECT') AS reads_backoff,
+            has_column_privilege($1,'public.execution','placement_backoff_from','UPDATE') AS locks,
+            has_function_privilege($1,'${statusMoveFunction}(text,text)','EXECUTE') AS moves_status`,
+    [poolPlaneRole],
+  );
+  return found.rows;
+}
+
+test("023 gives the plane serving pools the release and takes back its reading of the backoff", async () => {
+  await migrationDatabase("worker_pool_release", async (subject) => {
+    const release = `${workerPoolReleaseFunction}(text,text,text,text,text)`;
+    await installationBefore(subject, migration023.version);
+    assert.deepEqual(await sessionInvocationBoundaries(subject, [release]), []);
+    assert.deepEqual(await poolPlaneExecutionPrivileges(subject), [
+      { reads_backoff: true, locks: true, moves_status: true },
+    ]);
+    assert.ok((await postgresMigrate(subject)).includes(migration023.version));
+    assert.deepEqual(await poolPlaneExecutionPrivileges(subject), [
+      { reads_backoff: false, locks: true, moves_status: false },
+    ]);
+    assert.deepEqual(await sessionInvocationBoundaries(subject, [release]), [
+      {
+        signature: release,
+        owner: boundaryOwnerRole,
+        definer: true,
+        scheduler: false,
+        plane: false,
+        pool: true,
+        api: false,
+      },
+    ]);
+    assert.deepEqual(
+      (
+        await subject.query(
+          `SELECT array_to_string(proconfig,',') AS settings,
+                  EXISTS(SELECT 1 FROM aclexplode(proacl) entry
+                          WHERE entry.grantee=0) AS world
+             FROM pg_proc WHERE oid=$1::regprocedure`,
+          [release],
         )
       ).rows,
       [{ settings: "search_path=pg_catalog, public, pg_temp", world: false }],

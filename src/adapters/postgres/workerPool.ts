@@ -46,20 +46,13 @@
  * after `schedulerPrepare` resolved the execution's profile, which refuses a
  * pinned image the site does not admit as `ExecutionPolicyDenied`.
  *
- * A RELEASE IS A BACKOFF THE NEXT CLAIM READS. On the pool path
- * `placement_backoff_from` holds the instant a claim may next take the
- * execution — the pool's own `retryAfterSecs` from now — and the claim
- * predicate offers nothing before it. The scheduler writes the same column as
- * the instant its own interval counts from, and reads it before it opens an
- * attempt for either value of `placement`. A released row is put back as the
- * scheduler opened it: the lease is the attempt's own
- * again, and it ends past the backoff by what remained of the pool's lease at
- * the release — a pool that took most of its lease to answer has the rest to
- * claim again, and nothing here extends a lease a pool did not renew — so the
- * reaper, which ends any placing attempt whose lease has lapsed, cannot reach
- * the row before a pool may claim it and still bounds a row no pool comes back
- * for. The row loses its bearer as a fenced one does, so a harness the pool
- * launched before answering that it could not is refused on every route.
+ * A RELEASE ENDS THE ATTEMPT, AND NO CLAIM IS MADE OF IT AGAIN. A pool that
+ * answers that it cannot run what it claimed withdraws the attempt through
+ * `release_worker_pool_assignment`, which keeps the pool's name on the row and
+ * takes its bearer, so a harness the pool launched before answering is refused
+ * on every route. The scheduler opens no attempt for an execution a pool has
+ * claimed one of, and so concludes it; the `retryAfterSecs` the pool answered
+ * with paces nothing. Nothing here clears `pool` once a claim has set it.
  *
  * A REGISTRATION IS THE GENERATION AN ASSIGNMENT IS CURRENT UNDER. Each one
  * mints a new principal and a claim records it beside the pool's name.
@@ -80,7 +73,6 @@ import { sql } from "@ts-safeql/sql-tag";
 import { createHash } from "node:crypto";
 import type pg from "pg";
 
-import { workerPoolRetryAfterSecsMax } from "../../contract/workerPool.ts";
 import { asExecutionRequirement } from "../../interpreter/executionRequirement.ts";
 import { asPrincipal } from "../../interpreter/principal.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
@@ -346,7 +338,6 @@ async function workerPoolClaimed(
           AND w.pool=${identity.pool} AND w.principal=${identity.principal}
           AND q.state='Placing' AND q.pool IS NULL AND q.invoked
           AND x.placement='Pool' AND x.status='Launching'
-          AND (x.placement_backoff_from IS NULL OR x.placement_backoff_from<=now())
           AND q.recovery_epoch=(SELECT r.epoch FROM recovery_epoch r ORDER BY r.ordinal DESC LIMIT 1)
           AND w.class<>'Personal'
           AND CASE x.requirement_value->>'mode'
@@ -381,36 +372,17 @@ function workerPoolClaimTermsChecked(terms: WorkerPoolClaimTerms): void {
     throw new RangeError("invalid worker pool held bound");
 }
 
-/** One assignment given back: the row parked under the attempt's own lease with no bearer, and the backoff written beside it. */
-function workerPoolReleased(
+/** One assignment given back, ended through the function that keeps the pool's name on it. */
+async function workerPoolReleased(
   pool: pg.Pool,
   identity: WorkerPoolIdentity,
   assignment: string,
-  retryAfterSecs: number,
 ): Promise<boolean> {
-  return postgresTransaction(pool, async (client) => {
-    const released = await client.query<{
-      tenant: string;
-      project: string;
-      execution: string;
-    }>(sql`UPDATE execution_attempt a SET pool=NULL,pool_principal=NULL,assignment=NULL,
-            pool_refusal=NULL,capability_secret_digest=NULL,lease_owner=a.attempt,
-            lease_expires_at=a.lease_expires_at+make_interval(secs=>${retryAfterSecs}::double precision)
-          WHERE a.tenant=${identity.partition.tenant} AND a.project=${identity.partition.project}
-            AND a.assignment=${assignment} AND a.pool=${identity.pool}
-            AND a.pool_principal=${identity.principal} AND a.state='Placing'
-            AND EXISTS(SELECT 1 FROM worker_pool w
-              WHERE w.tenant=a.tenant AND w.project=a.project AND w.pool=a.pool AND w.principal=${identity.principal})
-            AND a.lease_expires_at>now() AND a.pool_refusal IS NULL
-            AND a.recovery_epoch=(SELECT r.epoch FROM recovery_epoch r ORDER BY r.ordinal DESC LIMIT 1)
-          RETURNING a.tenant,a.project,a.execution`);
-    const row = released.rows[0];
-    if (row === undefined) return false;
-    await client.query(sql`UPDATE execution e
-          SET placement_backoff_from=now()+make_interval(secs=>${retryAfterSecs}::double precision)
-          WHERE e.tenant=${row.tenant} AND e.project=${row.project} AND e.execution=${row.execution}`);
-    return true;
-  });
+  const released = await pool.query<{ released: boolean | null }>(
+    sql`SELECT release_worker_pool_assignment(${identity.partition.tenant},${identity.partition.project},
+          ${identity.pool},${identity.principal},${assignment})::boolean AS released`,
+  );
+  return released.rows[0]?.released === true;
 }
 
 export function postgresWorkerPoolAssignments(
@@ -453,15 +425,8 @@ export function postgresWorkerPoolAssignments(
           AND a.recovery_epoch=(SELECT r.epoch FROM recovery_epoch r ORDER BY r.ordinal DESC LIMIT 1)`);
       return (updated.rowCount ?? 0) === 1;
     },
-    release: async (identity, assignment, retryAfterSecs) => {
-      if (
-        !Number.isSafeInteger(retryAfterSecs) ||
-        retryAfterSecs < 1 ||
-        retryAfterSecs > workerPoolRetryAfterSecsMax
-      )
-        throw new RangeError("invalid worker pool retry interval");
-      return workerPoolReleased(pool, identity, assignment, retryAfterSecs);
-    },
+    release: (identity, assignment) =>
+      workerPoolReleased(pool, identity, assignment),
     held: async (identity, assignment) => {
       const found = await pool.query<{ held: number }>(sql`SELECT 1 AS held
         FROM execution_attempt a

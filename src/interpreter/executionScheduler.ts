@@ -571,12 +571,17 @@ export interface AttemptOpening {
   readonly placementBackoffSecs: number;
 }
 
-/** What a placement reservation produced: the fenced physical attempt. */
+/**
+ * What a placement reservation produced: the fenced physical attempt, or why
+ * none was opened. `AssignmentEnded` is an execution a pool has claimed an
+ * attempt of, for which no other is opened.
+ */
 export type AttemptOpened =
   | { readonly opened: "Opened"; readonly attempt: PhysicalAttempt }
   | { readonly opened: "NotLaunchable"; readonly status: ExecutionStatus }
   | { readonly opened: "BackingOff" }
-  | { readonly opened: "RetriesExhausted" };
+  | { readonly opened: "RetriesExhausted" }
+  | { readonly opened: "AssignmentEnded" };
 
 /** What the scheduler reports of one attempt, which the terminal transaction reduces. */
 export interface AttemptReport extends FencedAttempt {
@@ -705,6 +710,15 @@ export interface ExecutionSchedulerStore {
    * explicit empty manifest that says it produced no handoffs.
    */
   retriesExhausted(
+    partition: Partition,
+    execution: ExecutionId,
+  ): Promise<Terminalized>;
+
+  /**
+   * Terminalizes an execution whose attempt a pool claimed and that ended
+   * without a verified report, as `retriesExhausted` settles a spent budget.
+   */
+  assignmentEnded(
     partition: Partition,
     execution: ExecutionId,
   ): Promise<Terminalized>;

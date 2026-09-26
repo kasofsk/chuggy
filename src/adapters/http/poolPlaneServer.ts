@@ -241,11 +241,7 @@ async function poolOutcomeSettled(
     case "Refused":
       return service.assignments.refuse(identity, assignment, offered.evidence);
     case "Unavailable":
-      return service.assignments.release(
-        identity,
-        assignment,
-        offered.retryAfterSecs,
-      );
+      return service.assignments.release(identity, assignment);
   }
 }
 

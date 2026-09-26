@@ -94,14 +94,15 @@
  * what it claimed blocks the execution rather than holding it for another pool,
  * which is the task contract's `TaskExecutionUnavailable`. The reaper passes
  * over a refused attempt whatever its lease, so a refusal is never ended as a
- * lapse. One a pool claimed and lost spends the pool route's whole budget: no
- * attempt is opened again inside the execution, and recovery is the ticket's.
+ * lapse.
  *
- * A BLOCK, A REFUSAL AND A LOST CLAIM ARE THE MODEL'S `Cancelled`:
- * `runner.qnt`'s `cancel` of the assignment where one was made, and the
- * ledger's own move where none was. Which it was is evidence rather than a
- * model term, and `test/interpreter/runner.test.ts` states the mapping and
- * holds it to the model.
+ * ONCE A POOL HAS CLAIMED AN ATTEMPT, ITS EXECUTION OPENS NO OTHER. Any other
+ * end of that attempt without a verified report concludes the execution as the
+ * process that died, and recovery is the ticket's. A block, a refusal and that
+ * conclusion are `runner.qnt`'s `cancel` of the assignment where one was made,
+ * and the ledger's own move to `Cancelled` where none was. Which it was is
+ * evidence rather than a model term, and `test/interpreter/runner.test.ts`
+ * states the mapping and holds it to the model.
  *
  * NOTHING HERE READS A CLOCK. Claim leases, placement backoff and attempt
  * leases are durations handed to the store, which asks the database what time
@@ -117,7 +118,6 @@ import {
   type BlockedReason,
   type ExecutionPolicy,
   type ExecutionProfile,
-  type ExecutionRoute,
   type ExecutionSchedulerConfig,
   type ExecutionSchedulerStore,
   type FencedAttempt,
@@ -737,19 +737,6 @@ async function schedulerLaunchOpened(
   }
 }
 
-/** How many lost attempts spend an execution's budget: the configured count in the cluster, and on the pool route the first, since `runner.qnt` places nothing again once an assignment is lost. */
-function schedulerRetriesMax(
-  route: ExecutionRoute,
-  config: ExecutionSchedulerConfig,
-): number {
-  switch (route) {
-    case "InCluster":
-      return config.attemptRetriesMax;
-    case "Pool":
-      return 1;
-  }
-}
-
 /** Opens and places the next attempt for one execution that owns a slot. */
 async function schedulerLaunchOne(
   service: ExecutionSchedulerService,
@@ -766,7 +753,7 @@ async function schedulerLaunchOne(
     execution: execution.execution,
     epoch,
     leaseSecs: config.attemptLeaseSecs,
-    retriesMax: schedulerRetriesMax(execution.route, config),
+    retriesMax: config.attemptRetriesMax,
     placementBackoffSecs: config.placementBackoffSecs,
   };
   const opened = await service.store.openAttempt(opening);
@@ -781,6 +768,16 @@ async function schedulerLaunchOne(
       return false;
     case "RetriesExhausted": {
       const outcome = await service.store.retriesExhausted(
+        execution.partition,
+        execution.execution,
+      );
+      recordScheduler(service.metrics, (metrics) => {
+        metrics.terminalization(outcome.terminalized);
+      });
+      return false;
+    }
+    case "AssignmentEnded": {
+      const outcome = await service.store.assignmentEnded(
         execution.partition,
         execution.execution,
       );

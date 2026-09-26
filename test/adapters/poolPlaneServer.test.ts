@@ -95,10 +95,8 @@ function calls(): {
         ),
       refuse: (_identity, assignment, evidence) =>
         Promise.resolve((made.push(["refuse", assignment, evidence]), true)),
-      release: (_identity, assignment, retryAfterSecs) =>
-        Promise.resolve(
-          (made.push(["release", assignment, retryAfterSecs]), true),
-        ),
+      release: (_identity, assignment) =>
+        Promise.resolve((made.push(["release", assignment]), true)),
       held: (_identity, assignment) =>
         Promise.resolve((made.push(["held", assignment]), true)),
     },
@@ -339,7 +337,7 @@ test("each settlement route reaches the one port its own path names", async () =
   assert.deepEqual(recorded.made, [
     ["held", "one"],
     ["refuse", "one", "no runner"],
-    ["release", "one", 30],
+    ["release", "one"],
   ]);
 });
 

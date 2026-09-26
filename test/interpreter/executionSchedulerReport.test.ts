@@ -100,6 +100,7 @@ function recordingStore(
       return Promise.resolve(true);
     },
     retriesExhausted: unreached,
+    assignmentEnded: unreached,
     terminalize: (submitted) => {
       calls.push(
         `terminalize:${String(submitted.generation)}:${submitted.manifest.verdict}`,

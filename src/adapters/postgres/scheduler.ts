@@ -48,7 +48,9 @@
  * AN ATTEMPT OFFERED TO POOLS THAT NO POOL HOLDS NEVER RAN. The reaper reads
  * one whose execution is placed with pools and whose `pool` is null as that,
  * and withdraws it as `PlacementUnavailable` without spending the budget. One
- * a pool holds ran, and is lost like any other.
+ * a pool holds ran, and is lost. Once an attempt names a pool, a launch opens
+ * no other for its execution and answers `AssignmentEnded`, which the pass
+ * concludes.
  *
  * AN ATTEMPT A POOL REFUSED IS NEVER REAPED. Its lease lapses because the
  * refusal stops the pool renewing it, so the lapse says nothing the refusal
@@ -128,6 +130,7 @@ import {
   schedulerEvidence,
   schedulerFulfilRequest,
   schedulerRecordIncident,
+  schedulerAssignmentEnded,
   schedulerRetriesExhausted,
   schedulerTerminalize,
 } from "./schedulerCompletion.ts";
@@ -723,6 +726,7 @@ async function schedulerNoCandidate(
 interface LaunchRow extends ExecutionRow {
   readonly backing_off: boolean | null;
   readonly attempt_live: boolean;
+  readonly assignment_made: boolean;
 }
 
 /** The insert-returning shape PostgreSQL reports before table constraints are applied. */
@@ -778,7 +782,11 @@ async function schedulerLockForLaunch(
             EXISTS (SELECT 1 FROM execution_attempt a
                      WHERE a.tenant = e.tenant AND a.project = e.project
                        AND a.execution = e.execution
-                       AND a.state IN ('Placing', 'Running')) AS attempt_live
+                       AND a.state IN ('Placing', 'Running')) AS attempt_live,
+            EXISTS (SELECT 1 FROM execution_attempt a
+                     WHERE a.tenant = e.tenant AND a.project = e.project
+                       AND a.execution = e.execution
+                       AND a.pool IS NOT NULL) AS assignment_made
        FROM execution e
        JOIN execution_request q
          ON q.tenant = e.tenant AND q.project = e.project AND q.request = e.source_request
@@ -844,6 +852,7 @@ async function schedulerOpenAttempt(
   if (!executionOwnsSlot(execution.status) || row.attempt_live) {
     return { opened: "NotLaunchable", status: execution.status };
   }
+  if (row.assignment_made) return { opened: "AssignmentEnded" };
   if (execution.retriesSpent >= opening.retriesMax) {
     return { opened: "RetriesExhausted" };
   }
@@ -1124,6 +1133,8 @@ async function schedulerUnlaunched(
  * Marks at most `attemptsMax` attempts issued under an older recovery epoch
  * unable to report, taking them in key order so a concurrent sweep over the same
  * pair reaches them the same way round, and leaving the rest to a later pass.
+ * An attempt a pool claimed is lost rather than superseded, because its
+ * execution opens no other to supersede it.
  */
 async function schedulerFenceOldEpochs(
   client: pg.PoolClient,
@@ -1141,7 +1152,8 @@ async function schedulerFenceOldEpochs(
   const attempts = superseded.rows.map((row) => row.attempt);
   const fenced = await client.query(
     sql`UPDATE execution_attempt
-        SET state = 'Superseded', generation = generation + 1,
+        SET state = CASE WHEN pool IS NULL THEN 'Superseded' ELSE 'Lost' END,
+            generation = generation + 1,
             evidence = 'Fenced', ended_at = now(),
             lease_owner = NULL, lease_expires_at = NULL
       WHERE attempt = ANY(${attempts}::text[])`,
@@ -1271,6 +1283,10 @@ export function postgresExecutionScheduler(
       postgresTransaction(pool, (client) =>
         schedulerRetriesExhausted(client, partition, execution),
       ),
+    assignmentEnded: (partition, execution) =>
+      postgresTransaction(pool, (client) =>
+        schedulerAssignmentEnded(client, partition, execution),
+      ),
     terminalize: (report) =>
       postgresTransaction(pool, (client) =>
         schedulerTerminalize(client, report),
@@ -1281,6 +1297,23 @@ export function postgresExecutionScheduler(
       ),
     execution: (partition, execution) =>
       schedulerExecution(pool, partition, execution),
+    ...postgresExecutionSchedulerSweeps(pool),
+  };
+}
+
+/** The installation-wide passes of `postgresExecutionScheduler`, over attempts and executions of every project. */
+function postgresExecutionSchedulerSweeps(
+  pool: pg.Pool,
+): Pick<
+  ExecutionSchedulerStore,
+  | "refusedAttempts"
+  | "reapLapsedAttempts"
+  | "attemptsAwaitingCleanup"
+  | "attemptCleanupCompleted"
+  | "unlaunched"
+  | "fenceOldEpochAttempts"
+> {
+  return {
     refusedAttempts: (epoch, attemptsMax) =>
       postgresTransaction(pool, (client) =>
         schedulerRefusedAttempts(client, epoch, attemptsMax),

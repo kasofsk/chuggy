@@ -12,14 +12,14 @@
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
 import { after, test } from "node:test";
-import { setTimeout as delay } from "node:timers/promises";
 
-import { workerPoolRetryAfterSecsMax } from "../../src/contract/workerPool.ts";
 import {
   apiRole,
   poolPlaneRole,
+  statusMoveFunction,
   workerPlaneRole,
   workerPoolFenceFunction,
+  workerPoolReleaseFunction,
 } from "../../src/adapters/postgres/schema.ts";
 import {
   postgresWorkerPoolAssignments,
@@ -399,7 +399,7 @@ test("an assignment is renewed, refused and released by the pool holding it", as
   );
 });
 
-test("a released attempt backs off for as long as the pool said before it is offered again", async () => {
+test("a released attempt ends withdrawn under the pool that claimed it, spending and pacing nothing, and no pool claims it again", async () => {
   const project = await poolProject("pool-releases");
   const mine = await registered(project.partition, "releasing", [platform]);
   const released = await poolAttempt(project, "released");
@@ -408,37 +408,34 @@ test("a released attempt backs off for as long as the pool said before it is off
     await assignments.claim(mine, terms, handle.assignment, handle.bearer),
     undefined,
   );
-  assert.equal(await assignments.release(mine, handle.assignment, 30), true);
-  const after = (await rig.harness.query(
-    `SELECT a.pool, a.assignment, e.placement_backoff_from > now() AS backing_off
+  assert.equal(await assignments.release(mine, handle.assignment), true);
+  const after = await rig.harness.query(
+    `SELECT a.state, a.evidence, a.pool, a.assignment, a.capability_secret_digest,
+            a.lease_expires_at, e.retries_spent::int AS retries_spent,
+            e.placement_backoff_from
        FROM execution_attempt a
        JOIN execution e ON e.tenant=a.tenant AND e.project=a.project AND e.execution=a.execution
       WHERE a.tenant=$1 AND a.project=$2 AND a.attempt=$3`,
     [project.partition.tenant, project.partition.project, released.attempt],
-  )) as readonly {
-    pool: string | null;
-    assignment: string | null;
-    backing_off: boolean;
-  }[];
+  );
   assert.deepEqual(after, [
-    { pool: null, assignment: null, backing_off: true },
+    {
+      state: "Withdrawn",
+      evidence: "PlacementUnavailable",
+      pool: "releasing",
+      assignment: handle.assignment,
+      capability_secret_digest: null,
+      lease_expires_at: null,
+      retries_spent: 0,
+      placement_backoff_from: null,
+    },
   ]);
-  assert.equal(await assignments.release(mine, handle.assignment, 30), false);
+  assert.equal(await assignments.release(mine, handle.assignment), false);
   const again = handles("again");
   assert.equal(
     await assignments.claim(mine, terms, again.assignment, again.bearer),
     undefined,
-    "a released attempt is offered to no pool before its backoff elapses",
-  );
-  await rig.harness.query(
-    `UPDATE execution SET placement_backoff_from=now()-interval '1 second'
-      WHERE tenant=$1 AND project=$2 AND execution=$3`,
-    [project.partition.tenant, project.partition.project, released.execution],
-  );
-  assert.notEqual(
-    await assignments.claim(mine, terms, again.assignment, again.bearer),
-    undefined,
-    "a backoff that has elapsed offers the attempt again",
+    "a released attempt is offered to no pool",
   );
 });
 
@@ -454,6 +451,20 @@ test("the plane serving pools cannot write an attempt's outcome", async () => {
     planePool.query("UPDATE execution_attempt SET state='Reported'"),
     /permission denied/u,
   );
+});
+
+/**
+ * A release ends an attempt, which the plane does through the one function it
+ * is granted for it; nothing it runs moves an execution's status.
+ */
+test("the plane serving pools ends an attempt only by releasing it, and moves no execution", async () => {
+  const [granted] = (
+    await planePool.query(
+      `SELECT has_function_privilege('${workerPoolReleaseFunction}(text,text,text,text,text)', 'EXECUTE') AS releases,
+              has_function_privilege('${statusMoveFunction}(text,text)', 'EXECUTE') AS moves_status`,
+    )
+  ).rows as { releases: boolean; moves_status: boolean }[];
+  assert.deepEqual(granted, { releases: true, moves_status: false });
 });
 
 /**
@@ -476,7 +487,7 @@ test("the plane serving pools reads and writes these columns and no others", asy
       [
         "execution",
         "SELECT",
-        "execution,placement,placement_backoff_from,project,requirement_value,status,tenant",
+        "execution,placement,project,requirement_value,status,tenant",
       ],
       ["execution", "UPDATE", "placement_backoff_from"],
       [
@@ -549,62 +560,6 @@ test("deregistration names the client the row holds, goes with that client alone
     [project.partition.tenant, project.partition.project, attempt.attempt],
   )) as readonly { pool: string | null }[];
   assert.deepEqual(left, [{ pool: "gone" }]);
-});
-
-test("a release past the bound on a pool's retry-after is refused before it is written", async () => {
-  const project = await poolProject("pool-retry-bound");
-  const mine = await registered(project.partition, "bounded", [platform]);
-  await assert.rejects(
-    assignments.release(mine, "never-claimed", workerPoolRetryAfterSecsMax + 1),
-    RangeError,
-  );
-});
-
-test("a released attempt outlives the reaper for the backoff it was given", async () => {
-  const project = await poolProject("pool-parked");
-  const mine = await registered(project.partition, "parking", [platform]);
-  const parked = await poolAttempt(project, "parked");
-  const handle = handles("parked");
-  assert.notEqual(
-    await assignments.claim(
-      mine,
-      { ...terms, leaseSecs: 1 },
-      handle.assignment,
-      handle.bearer,
-    ),
-    undefined,
-  );
-  assert.equal(await assignments.release(mine, handle.assignment, 3), true);
-  await delay(1_500);
-  assert.equal(
-    await rig.store.reapLapsedAttempts(project.epoch, 10),
-    0,
-    "the parked row is not the reaper's",
-  );
-  const after = (await rig.harness.query(
-    `SELECT a.state, a.lease_owner, e.retries_spent::int AS retries_spent
-       FROM execution_attempt a
-       JOIN execution e ON e.tenant=a.tenant AND e.project=a.project AND e.execution=a.execution
-      WHERE a.tenant=$1 AND a.project=$2 AND a.attempt=$3`,
-    [project.partition.tenant, project.partition.project, parked.attempt],
-  )) as readonly {
-    state: string;
-    lease_owner: string | null;
-    retries_spent: number;
-  }[];
-  assert.deepEqual(after, [
-    { state: "Placing", lease_owner: parked.attempt, retries_spent: 0 },
-  ]);
-  await rig.harness.query(
-    `UPDATE execution SET placement_backoff_from=now()-interval '1 second'
-      WHERE tenant=$1 AND project=$2 AND execution=$3`,
-    [project.partition.tenant, project.partition.project, parked.execution],
-  );
-  const again = handles("parked-again");
-  assert.notEqual(
-    await assignments.claim(mine, terms, again.assignment, again.bearer),
-    undefined,
-  );
 });
 
 /** What a claim left on one attempt, which a call holding nothing leaves as it was. */
@@ -698,7 +653,7 @@ test("a pool registered again holds nothing an older registration of its name cl
       `the ${registration} registration refuses nothing`,
     );
     assert.equal(
-      await assignments.release(caller, drawn.assignment, 30),
+      await assignments.release(caller, drawn.assignment),
       false,
       `the ${registration} registration releases nothing`,
     );
@@ -774,7 +729,7 @@ test("a released attempt's bearer is answered as one never issued", async () => 
     await postgresWorkerPlaneAuthority(harnessPlanePool).authenticate(bearer),
     undefined,
   );
-  assert.equal(await assignments.release(identity, drawn.assignment, 30), true);
+  assert.equal(await assignments.release(identity, drawn.assignment), true);
   assert.deepEqual(
     await poolBearerAnswered(bearer, claimed.opened),
     await poolBearerAnswered(
