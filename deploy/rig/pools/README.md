@@ -25,7 +25,7 @@ attempt without one (kasofsk/chuggy#706).
 **A pool's refusal is final.** The scheduler withdraws the refused attempt
 without spending the retry budget and blocks the execution; it does not offer
 the work to another pool. `Unavailable` for an assignment a pool claimed is
-as final: the execution concludes as a failed process and the ticket escalates.
+as final: the execution concludes as a failed process.
 
 ## What a pool is trusted with
 
