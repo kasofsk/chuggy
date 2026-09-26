@@ -196,6 +196,13 @@ test("a version-two passing manifest carries one bounded source handoff", () => 
   assert.equal(manifest.schemaVersion, 2);
 });
 
+test("a current passing manifest carries a source handoff beside its diagnostics", () => {
+  const manifest = accepted(workerReport("Pass", source));
+  assert.deepEqual(manifest.source, source);
+  assert.equal(manifest.diagnostics.length, 1);
+  assert.equal(manifest.schemaVersion, resultManifestSchemaVersion);
+});
+
 test("a source handoff is exclusive with artifact handoffs and a failed verdict", () => {
   assert.equal(
     rejection(sourceReport("Pass", source, [row("out/a")])),

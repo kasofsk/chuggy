@@ -15,8 +15,9 @@
  * example written at that release's version that its schema accepts is offered
  * again with every value of each roster the schema names. Lifted to the version
  * the harness writes, every one is accepted by this tree's schema. The reader
- * reads each value in some example, and refuses none whose example it reads
- * but for the refusals this suite names as allowed.
+ * reads every example built from what the harness writes and each value in some
+ * example, and refuses none whose example it reads but for the refusals this
+ * suite names as allowed.
  */
 
 import assert from "node:assert/strict";
@@ -705,15 +706,20 @@ function manifestParserRefusal(text: string): string | undefined {
 /**
  * The refusals a manifest whose example the reader reads may meet once a roster
  * value in it is walked: a failed verdict carrying handoffs or a source. Adding
- * one decides that a manifest an older release writes may be refused.
+ * one decides that a manifest an older release's schema admits may be refused.
  */
 const manifestWalkedRefusalsAllowed: readonly reader.ManifestRejection[] = [
   "HandoffsOnFailedVerdict",
   "SourceOnFailedVerdict",
 ];
 
-/** An example's text, and the reader's refusal of a text under the view the example is read against. */
-type Example = readonly [string, (text: string) => string | undefined];
+/**
+ * An example's text, the reader's refusal of a text under the view the example
+ * is read against, and whether the example was built from what the harness
+ * writes. A reader suite's own body may be refused for its view or its ledger,
+ * which that suite judges, so only a built one must be read.
+ */
+type Example = readonly [string, (text: string) => string | undefined, boolean];
 
 /** A document a harness writes: the plane it is written on, the names a release exports it under, how this tree reads it, and the refusals a walk may meet. */
 interface Replayed {
@@ -736,9 +742,17 @@ const replayed: readonly Replayed[] = [
     schema: contract.resultManifestDocumentSchema,
     lifted: manifestLifted,
     examples: [
-      ...manifestBodiesFromReaderSuite(),
-      ...manifestBuilt.map(([, value]) => JSON.stringify(value)),
-    ].map((text): Example => [text, manifestParserRefusal]),
+      ...manifestBodiesFromReaderSuite().map((text): Example => [
+        text,
+        manifestParserRefusal,
+        false,
+      ]),
+      ...manifestBuilt.map(([, value]): Example => [
+        JSON.stringify(value),
+        manifestParserRefusal,
+        true,
+      ]),
+    ],
     refusalsAllowed: manifestWalkedRefusalsAllowed,
   },
   {
@@ -749,14 +763,17 @@ const replayed: readonly Replayed[] = [
     schema: contract.leadDecisionDocumentSchema,
     lifted: (text) => text,
     examples: [
-      ...leadBodiesFromReaderSuite,
-      ...leadBuilt.map(
-        ([, value]) => [JSON.stringify(value), leadWideObservation] as const,
-      ),
-    ].map(([text, view]): Example => [
-      text,
-      (body) => leadParserRefusal(body, view),
-    ]),
+      ...leadBodiesFromReaderSuite.map(([text, view]): Example => [
+        text,
+        (body) => leadParserRefusal(body, view),
+        false,
+      ]),
+      ...leadBuilt.map(([, value]): Example => [
+        JSON.stringify(value),
+        (body) => leadParserRefusal(body, leadWideObservation),
+        true,
+      ]),
+    ],
     refusalsAllowed: [],
   },
 ];
@@ -766,14 +783,14 @@ function replayExamples(
   older: ZodType,
   version: number,
   examples: readonly Example[],
-): readonly (readonly [unknown, Example[1]])[] {
-  return examples.flatMap(([text, refusal]) => {
+): readonly (readonly [unknown, Example[1], Example[2]])[] {
+  return examples.flatMap(([text, refusal, built]) => {
     const value: unknown = textIsJson(text) ? JSON.parse(text) : undefined;
     if (typeof value !== "object" || value === null || Array.isArray(value))
       return [];
     const example = { ...value, version };
     return older.safeParse(example).success
-      ? [[example, refusal] as const]
+      ? [[example, refusal, built] as const]
       : [];
   });
 }
@@ -811,9 +828,14 @@ for (const document of replayed)
       const optionals = new Map<string, Set<boolean>>();
       const offered = new Map<string, Set<unknown>>();
       const read = new Map<string, Set<unknown>>();
-      for (const [example, refusal] of examples) {
+      for (const [example, refusal, built] of examples) {
         workerContractOptionalsSeen(older, example, document.name, optionals);
-        const exampleRead = refusal(JSON.stringify(example)) === undefined;
+        const exampleRefused = refusal(JSON.stringify(example));
+        assert.ok(
+          !built || exampleRefused === undefined,
+          `the reader refuses what the harness writes, ${JSON.stringify(example).slice(0, 200)}: ${String(exampleRefused)}`,
+        );
+        const exampleRead = exampleRefused === undefined;
         for (const walked of workerContractEnumsWalked(older, example)) {
           const text = JSON.stringify(walked);
           assert.ok(older.safeParse(walked).success, text.slice(0, 200));

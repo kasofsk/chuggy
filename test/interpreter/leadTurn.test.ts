@@ -173,6 +173,15 @@ test("a decision that chose nothing is the free one and parses", () => {
   assert.deepEqual(parsed.lifts, []);
 });
 
+test("a decision that spells every choice list out empty is the free one too", () => {
+  const empty = { dispatches: [], refusals: [], lifts: [] };
+  for (const attention of ["Monitoring", "Attention", "Stopped"])
+    assert.deepEqual(
+      parseLeadDecision(decision({ ...empty, attention }), observation),
+      parseLeadDecision(decision({ attention }), observation),
+    );
+});
+
 test("a decision the pod truncated is refused rather than half-accepted", () => {
   const whole = decision({
     dispatches: [{ ticket: 41, expectedTicketVersion: 3 }],
