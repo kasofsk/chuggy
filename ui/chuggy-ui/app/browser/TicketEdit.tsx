@@ -10,7 +10,7 @@
 
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "@tanstack/react-router";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
@@ -44,11 +44,16 @@ import type { CreationContext } from "../core/ticketCreationRun.ts";
 import { editFormFrom, editRevisionFrom } from "../core/ticketEdit.ts";
 import { useApiPorts, usePanelList, usePanelResource } from "./api.ts";
 import { DataPanel, PanelUnready } from "./DataPanel.tsx";
+import {
+  ticketYamlForgotten,
+  ticketYamlStoreKey,
+  useAuthoringGuards,
+} from "./editor/authoringGuards.tsx";
+import { TicketAuthoring } from "./editor/TicketAuthoring.tsx";
 import { drawBytes } from "./ports.ts";
 import { TopBarSlot } from "./shell/slots.tsx";
 import { AttemptNote, CreationFields, useMounted } from "./TicketCreation.tsx";
 import type { Attempt } from "./TicketCreation.tsx";
-import { Button } from "./ui/Button.tsx";
 
 /** What the edit is written against: the ticket as read, and its draft. */
 interface EditSubject {
@@ -144,12 +149,18 @@ export function EditForm(props: {
   readonly subject: EditSubject;
   readonly context: Extract<CreationContext, { context: "Ready" }>;
   readonly onUpdated: () => void;
+  readonly onDirty?: (dirty: boolean) => void;
 }): ReactNode {
   const [edited, setEdited] = useState<TicketCreationForm | undefined>(
     undefined,
   );
   const [faults, setFaults] = useState<readonly CreationFault[]>([]);
-  const repositories = creationRepositories(props.context.repositories);
+  const bound = props.context.repositories;
+  const repositories = useMemo(() => creationRepositories(bound), [bound]);
+  const draft = props.subject.draft;
+  const initialization = props.context.initialization;
+  const storeKey = ticketYamlStoreKey(props.partition, draft.ticket);
+  const onUpdated = props.onUpdated;
   const running = useEditSubmit({
     ports: props.ports,
     partition: props.partition,
@@ -157,29 +168,47 @@ export function EditForm(props: {
     context: props.context,
     repositories,
     onFaults: setFaults,
-    onUpdated: props.onUpdated,
+    onUpdated: () => {
+      ticketYamlForgotten(storeKey);
+      onUpdated();
+    },
   });
-  const form = edited ?? editFormFrom(props.subject.draft, repositories);
+  const initial = useMemo(
+    () => editFormFrom(draft, repositories),
+    [draft, repositories],
+  );
+  const form = edited ?? initial;
   return (
     <div className="creation">
-      <CreationFields
+      <TicketAuthoring
+        initial={initial}
         form={form}
-        onChange={setEdited}
-        faults={faults}
-        configuration={props.context.configuration}
-        initialization={props.context.initialization}
+        onForm={setEdited}
+        initialization={initialization}
         repositories={repositories}
         dependenciesLocked
-      />
-      <Button
-        variant="primary"
-        disabled={running.attempt.attempt === "Running"}
-        onClick={() => {
-          void running.submit(form);
+        assemble={(held) =>
+          editRevisionFrom(draft, initialization, held, repositories)
+        }
+        storeKey={storeKey}
+        submitLabel="revise and release"
+        busy={running.attempt.attempt === "Running"}
+        onSubmit={(held) => {
+          void running.submit(held);
         }}
-      >
-        revise and release
-      </Button>
+        onDirty={props.onDirty}
+        fields={
+          <CreationFields
+            form={form}
+            onChange={setEdited}
+            faults={faults}
+            configuration={props.context.configuration}
+            initialization={initialization}
+            repositories={repositories}
+            dependenciesLocked
+          />
+        }
+      />
       <AttemptNote attempt={running.attempt} motion="Update" />
     </div>
   );
@@ -217,6 +246,8 @@ export function TicketEdit(): ReactNode {
     project: params.project,
   };
   const ticket = Number(params.ticket);
+  const [dirty, setDirty] = useState(false);
+  const guard = useAuthoringGuards(dirty);
   const ticketState = usePanelResource(
     partition,
     "Ticket",
@@ -250,7 +281,9 @@ export function TicketEdit(): ReactNode {
                   partition={partition}
                   subject={subject}
                   context={context}
+                  onDirty={setDirty}
                   onUpdated={() => {
+                    guard.release();
                     void navigate({
                       to: "/$tenant/$project/tickets/$ticket",
                       params: { ...partition, ticket: String(ticket) },

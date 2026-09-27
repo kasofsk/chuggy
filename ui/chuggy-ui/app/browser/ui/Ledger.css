@@ -157,7 +157,7 @@
     }
   }
 
-  @media (max-width: 60em) {
+  @container (max-width: 60em) {
     .ledger-row {
       grid-template-columns: 1fr 1fr;
     }

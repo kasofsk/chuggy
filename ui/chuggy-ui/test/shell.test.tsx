@@ -302,13 +302,11 @@ function composerDrawn(): HTMLElement {
  * A thread just opened is not in the listing yet: the `Session` frame that
  * stales it has not arrived. So the pane holds what the open answered rather
  * than waiting to be told, which is the difference between a reader typing
- * straight away and a reader looking at `No thread`.
+ * straight away and a reader looking at an empty pane.
  */
 test("starting a thread holds it at once, and the box takes the caret", async () => {
   await mounted(viewportDeskEm, threadServed([]));
-  expect(screen.getByText("No thread")).toBeDefined();
   await pressed("New");
-  expect(screen.queryByText("No thread")).toBeNull();
   expect(screen.getByRole("region", { name: "Conversation" })).toBeDefined();
   expect(
     document.activeElement,
@@ -329,6 +327,35 @@ test("a thread the reader arrived at leaves the caret where it was", async () =>
   );
   expect(composerDrawn()).toBeDefined();
   expect(document.activeElement).toBe(document.body);
+  styleless();
+});
+
+/** A first message the door refused leaves the reader where they typed it,
+ * and New is still theirs to press: the thread it opens is the one drawn. */
+test("New after a refused first message holds the thread it opens", async () => {
+  const read: string[] = [];
+  const served = threadServed([]);
+  await mounted(viewportDeskEm, ((
+    url: string,
+    init?: { readonly method?: string },
+  ) => {
+    if (init?.method === "POST" && url.endsWith("/messages"))
+      return Promise.resolve(answer({ error: { code: "Invalid" } }, 400));
+    if (init?.method !== "POST") read.push(url);
+    return served(url, init);
+  }) as unknown as typeof fetch);
+  fireEvent.change(composerDrawn(), { target: { value: "hello" } });
+  await turned(() => {
+    screen.getByRole("button", { name: "Send" }).click();
+  });
+  await settled();
+  expect(read.some((url) => url.includes(`/threads/${openedSession}`))).toBe(
+    false,
+  );
+  await pressed("New");
+  expect(read.some((url) => url.includes(`/threads/${openedSession}`))).toBe(
+    true,
+  );
   styleless();
 });
 

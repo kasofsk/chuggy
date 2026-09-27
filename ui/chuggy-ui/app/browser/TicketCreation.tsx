@@ -14,7 +14,7 @@
 
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
 import {
@@ -61,6 +61,12 @@ import { operationSubmitting } from "../core/operationFollow.ts";
 import type { OperationStep } from "../core/operationFollow.ts";
 import { usePanelList, useApiPorts } from "./api.ts";
 import { DataPanel } from "./DataPanel.tsx";
+import {
+  ticketYamlForgotten,
+  ticketYamlStoreKey,
+  useAuthoringGuards,
+} from "./editor/authoringGuards.tsx";
+import { TicketAuthoring } from "./editor/TicketAuthoring.tsx";
 import { drawBytes } from "./ports.ts";
 import { operationIdBytesCount } from "../core/operationFollow.ts";
 import { TopBarSlot } from "./shell/slots.tsx";
@@ -542,7 +548,7 @@ function useCreationSubmit(props: {
 /**
  * The form itself, which reaches the network and the address bar through its
  * caller: the route component below owns the session and the router, and this
- * owns what one screenful of typing becomes.
+ * owns what one screenful of typing becomes, as fields or as YAML.
  */
 export function CreationForm(props: {
   readonly ports: ApiPorts;
@@ -550,13 +556,17 @@ export function CreationForm(props: {
   readonly queryKey: ProjectQueryKey;
   readonly context: Extract<CreationContext, { context: "Ready" }>;
   readonly onCreated: (ticket: number) => void;
+  readonly onDirty?: (dirty: boolean) => void;
 }): ReactNode {
   const [edited, setEdited] = useState<TicketCreationForm | undefined>(
     undefined,
   );
   const [faults, setFaults] = useState<readonly CreationFault[]>([]);
   const initialization = props.context.initialization;
-  const repositories = creationRepositories(props.context.repositories);
+  const bound = props.context.repositories;
+  const repositories = useMemo(() => creationRepositories(bound), [bound]);
+  const storeKey = ticketYamlStoreKey(props.partition, undefined);
+  const onCreated = props.onCreated;
   const running = useCreationSubmit({
     ports: props.ports,
     partition: props.partition,
@@ -564,28 +574,46 @@ export function CreationForm(props: {
     initialization,
     repositories,
     onFaults: setFaults,
-    onCreated: props.onCreated,
+    onCreated: (ticket) => {
+      ticketYamlForgotten(storeKey);
+      onCreated(ticket);
+    },
   });
-  const form = edited ?? creationFormFrom(initialization, repositories);
+  const initial = useMemo(
+    () => creationFormFrom(initialization, repositories),
+    [initialization, repositories],
+  );
+  const form = edited ?? initial;
   return (
     <div className="creation">
-      <CreationFields
+      <TicketAuthoring
+        initial={initial}
         form={form}
-        onChange={setEdited}
-        faults={faults}
-        configuration={props.context.configuration}
+        onForm={setEdited}
         initialization={initialization}
         repositories={repositories}
-      />
-      <Button
-        variant="primary"
-        disabled={running.attempt.attempt === "Running"}
-        onClick={() => {
-          void running.submit(form);
+        dependenciesLocked={false}
+        assemble={(held) =>
+          creationBodyFrom(initialization, held, repositories)
+        }
+        storeKey={storeKey}
+        submitLabel="create and release"
+        busy={running.attempt.attempt === "Running"}
+        onSubmit={(held) => {
+          void running.submit(held);
         }}
-      >
-        create and release
-      </Button>
+        onDirty={props.onDirty}
+        fields={
+          <CreationFields
+            form={form}
+            onChange={setEdited}
+            faults={faults}
+            configuration={props.context.configuration}
+            initialization={initialization}
+            repositories={repositories}
+          />
+        }
+      />
       <AttemptNote attempt={running.attempt} />
     </div>
   );
@@ -599,6 +627,8 @@ export function TicketCreation(): ReactNode {
     tenant: params.tenant,
     project: params.project,
   };
+  const [dirty, setDirty] = useState(false);
+  const guard = useAuthoringGuards(dirty);
   const list = creationContextList(partition);
   const queryKey = list.key;
   const state = usePanelList(list, (readPorts) =>
@@ -617,7 +647,9 @@ export function TicketCreation(): ReactNode {
               partition={partition}
               queryKey={queryKey}
               context={context}
+              onDirty={setDirty}
               onCreated={(ticket) => {
+                guard.release();
                 void navigate({
                   to: "/$tenant/$project/tickets/$ticket",
                   params: { ...partition, ticket: String(ticket) },

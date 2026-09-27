@@ -23,7 +23,10 @@ import {
   threadPartition,
 } from "./threadFixture.ts";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 const threads = [
   threadEntry({ session: threadOtherSession, owner: "ada", title: "theirs" }),
@@ -52,20 +55,45 @@ async function historyOpened(
   await screen.findByRole("menu");
 }
 
-/** The reader's own thread is the one they are most likely to want, so it
- * leads whatever order the server answered in. */
-test("the reader's own threads are offered first", async () => {
-  await historyOpened(vi.fn());
+/** The reader's own threads lead, a divider stands between them and everyone
+ * else's, and within each part an open thread comes before a closed one
+ * whatever order the server answered in. */
+test("the reader's own threads come first, divided from everyone else's", async () => {
+  await historyOpened(vi.fn(), [
+    threadEntry({ session: "ended", title: "ended", state: "Closed" }),
+    threadEntry({
+      session: "shut",
+      title: "shut",
+      mine: true,
+      state: "Closed",
+    }),
+    ...threads,
+  ]);
+  const menu = screen.getByRole("menu");
   expect(
-    screen.getAllByRole("menuitemradio").map((item) => item.textContent),
-  ).toStrictEqual(["mine", "theirs"]);
+    [
+      ...menu.querySelectorAll('[role="menuitemradio"], [role="separator"]'),
+    ].map((item) =>
+      item.getAttribute("role") === "separator"
+        ? "—"
+        : /mine|shut|theirs|ended/.exec(item.textContent ?? "")?.[0],
+    ),
+  ).toStrictEqual(["mine", "shut", "—", "theirs", "ended"]);
+});
+
+test("no divider is drawn where only one part has threads", async () => {
+  await historyOpened(
+    vi.fn(),
+    threads.filter((thread) => thread.mine),
+  );
+  expect(screen.queryByRole("separator")).toBeNull();
 });
 
 test("the thread the pane holds is the one checked", async () => {
   await historyOpened(vi.fn());
   expect(
     screen
-      .getByRole("menuitemradio", { name: "mine" })
+      .getByRole("menuitemradio", { name: /^mine,/ })
       .getAttribute("aria-checked"),
   ).toBe("true");
 });
@@ -73,7 +101,7 @@ test("the thread the pane holds is the one checked", async () => {
 test("choosing a thread hands its session back", async () => {
   const onChoose = vi.fn();
   await historyOpened(onChoose);
-  fireEvent.click(screen.getByRole("menuitemradio", { name: "theirs" }));
+  fireEvent.click(screen.getByRole("menuitemradio", { name: /^theirs,/ }));
   expect(onChoose).toHaveBeenCalledWith(threadOtherSession);
 });
 
@@ -85,8 +113,25 @@ test("a hidden thread is offered like any other", async () => {
     ...threads,
     threadEntry({ session: "gone", title: "hidden", hidden: true }),
   ]);
-  const row = screen.getByRole("menuitemradio", { name: "hidden" });
-  expect(row.textContent).toBe("hidden");
+  const row = screen.getByRole("menuitemradio", { name: /^hidden,/ });
+  expect(row.textContent).toContain("hidden");
+});
+
+/** A row says whether its thread still takes messages and when it last moved,
+ * so a reader can tell a live thread from one that ended without opening it. */
+test("each row names its standing and how long ago it moved", async () => {
+  await historyOpened(vi.fn(), [
+    threadEntry({ session: threadMineSession, mine: true, title: "live" }),
+    threadEntry({ session: "ended", title: "ended", state: "Closed" }),
+  ]);
+  expect(
+    screen.getByRole("menuitemradio", { name: /^live, Open, \d+[smhd] ago$/ }),
+  ).toBeDefined();
+  expect(
+    screen.getByRole("menuitemradio", {
+      name: /^ended, Closed, \d+[smhd] ago$/,
+    }),
+  ).toBeDefined();
 });
 
 test("a listing with nothing to offer draws no control", () => {
@@ -130,4 +175,31 @@ test("a stranger's thread offers Close alone", () => {
   renderedActions({ session: threadOtherSession, mine: false });
   expect(screen.getByRole("button", { name: "Close" }).tagName).toBe("BUTTON");
   expect(screen.queryByRole("button", { name: "Rename" })).toBeNull();
+});
+
+/** Closing cannot be undone, so Close asks first and Cancel sends nothing. */
+test("Close asks what closing does before it closes", () => {
+  const fetched = vi.fn();
+  vi.stubGlobal("fetch", fetched);
+  renderedActions({ session: threadOtherSession, mine: false });
+  fireEvent.click(screen.getByRole("button", { name: "Close" }));
+  const asked = screen.getByRole("group", { name: "Close this thread?" });
+  expect(asked.textContent).toContain("cannot be undone");
+  expect(asked.textContent).toContain("not yours");
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(
+    screen.queryByRole("group", { name: "Close this thread?" }),
+  ).toBeNull();
+  expect(fetched).not.toHaveBeenCalled();
+});
+
+/** A rename the reader walked away from is one they did not mean to save. */
+test("leaving the title editor abandons the rename", () => {
+  renderedActions({ session: threadMineSession, mine: true });
+  fireEvent.click(screen.getByRole("button", { name: "Rename" }));
+  const editor = screen.getByRole("textbox", { name: "Thread title" });
+  fireEvent.change(editor, { target: { value: "never saved" } });
+  fireEvent.blur(editor);
+  expect(screen.queryByRole("textbox", { name: "Thread title" })).toBeNull();
+  expect(screen.getByRole("button", { name: "Rename" })).toBeDefined();
 });

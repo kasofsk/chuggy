@@ -29,7 +29,7 @@ import {
   threadTurnMinted,
   threadTurnRetained,
   threadWakeDrawn,
-  threadsMineFirst,
+  threadsByStanding,
 } from "../app/core/threads.ts";
 import { threadEntry, threadWakeInput } from "./threadFixture.ts";
 
@@ -97,17 +97,47 @@ describe("the listing's order", () => {
     threadEntry({ session: "thread-lee" }),
   ];
 
-  test("mine comes first and the rest keep the order the server gave", () => {
-    expect(threadsMineFirst(listed).map((thread) => thread.session)).toEqual([
-      "thread-geoff",
-      "thread-ada",
-      "thread-lee",
+  test("open threads come first, each standing most recent first", () => {
+    const moved = [
+      threadEntry({
+        session: "closed-late",
+        state: "Closed",
+        lastActivityAt: "2026-09-03T10:00:00Z",
+      }),
+      threadEntry({
+        session: "open-early",
+        lastActivityAt: "2026-09-01T10:00:00Z",
+      }),
+      threadEntry({
+        session: "orphaned",
+        state: "Orphaned",
+        lastActivityAt: "2026-09-04T10:00:00Z",
+      }),
+      threadEntry({
+        session: "open-late",
+        lastActivityAt: "2026-09-02T10:00:00Z",
+      }),
+      threadEntry({
+        session: "closed-early",
+        state: "Closed",
+        lastActivityAt: "2026-08-30T10:00:00Z",
+      }),
+    ];
+    expect(threadsByStanding(moved).map((thread) => thread.session)).toEqual([
+      "open-late",
+      "open-early",
+      "orphaned",
+      "closed-late",
+      "closed-early",
     ]);
   });
 
-  test("a listing with none of mine is left as it stands", () => {
+  test("threads that tie keep the order the server gave", () => {
+    expect(threadsByStanding(listed)).toEqual(listed);
+  });
+
+  test("a listing with none of mine has no thread of mine", () => {
     const others = listed.filter((thread) => !thread.mine);
-    expect(threadsMineFirst(others)).toEqual(others);
     expect(threadMine(others)).toBeUndefined();
   });
 

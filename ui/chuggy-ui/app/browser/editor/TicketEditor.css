@@ -1,0 +1,77 @@
+@layer ui {
+  .ticket-editor {
+    display: grid;
+    gap: var(--space-2);
+    min-width: 0;
+  }
+
+  .ticket-editor-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+    font-size: var(--text-sm);
+  }
+
+  .ticket-editor-actions label {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    color: var(--ink-3);
+  }
+
+  /* An editor is a place to work, so it takes a pane and keeps it whatever
+     the document's length; the author resizes it if the default is wrong. */
+  .ticket-editor-host,
+  .ticket-editor-fallback {
+    block-size: clamp(24em, 60vh, 48em);
+    min-width: 0;
+    overflow: auto;
+    resize: vertical;
+    border: var(--hairline) solid var(--edge);
+    border-radius: var(--radius-2);
+  }
+
+  .ticket-editor-fallback {
+    width: 100%;
+    padding: var(--space-2);
+    background: var(--surface-2);
+    color: var(--ink-1);
+    font: var(--text-md) / var(--leading-prose) var(--font-mono);
+  }
+
+  .ticket-yaml-problems {
+    display: grid;
+    gap: var(--space-1);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font-size: var(--text-sm);
+    color: var(--tone-fail);
+  }
+
+  .ticket-yaml-confirm-source {
+    max-height: var(--height-clip);
+    overflow: auto;
+    margin: 0;
+    padding: var(--space-2);
+    border: var(--hairline) solid var(--edge);
+    border-radius: var(--radius-2);
+    background: var(--surface-2);
+    font: var(--text-sm) / var(--leading-dense) var(--font-mono);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  /* A phone zooms into any field typed smaller than this, so a narrow screen
+     is given the size it would zoom to. */
+  @media (max-width: 40em) {
+    .ticket-editor-fallback {
+      font-size: var(--text-unzoomed);
+    }
+
+    .ticket-editor-actions label {
+      min-block-size: var(--height-touch);
+    }
+  }
+}

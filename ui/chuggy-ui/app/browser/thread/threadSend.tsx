@@ -13,6 +13,10 @@
  * answers with the turn — so this refreshes nothing itself. A second refresh
  * path here would be a second account of what the mailbox holds, and the one
  * that mattered would be the one that went wrong quietly.
+ *
+ * A READER WITH NO THREAD STILL HAS A COMPOSER. Their first press opens one and
+ * sends to it, and a press after a failed send reaches the thread that press
+ * opened rather than opening another.
  */
 
 import { useState } from "react";
@@ -20,6 +24,8 @@ import type { ReactNode } from "react";
 
 import { threadMessageCharsMax } from "../../../../../src/contract/http.ts";
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
+import { apiOpenThread } from "../../core/apiRoutes.ts";
+import { panelReason } from "../../core/freshness.ts";
 import { threadMessageSent } from "../../core/threadSendRun.ts";
 import {
   threadTurnIdBytesCount,
@@ -70,13 +76,17 @@ function ThreadSendNote(props: { readonly send: ThreadSend }): ReactNode {
  */
 export function useThreadSend(input: {
   readonly partition: PartitionIdentity;
-  readonly session: string;
+  /** Absent where the reader has no thread, which the first press opens. */
+  readonly session: string | undefined;
   readonly takes: boolean;
+  /** The thread a first press opened, once its message is sent. */
+  readonly onStarted?: (session: string) => void;
 }): ConversationComposerProps {
   const ports = useApiPorts();
-  const { partition, session } = input;
+  const { partition } = input;
   const [held, setHeld] = useState<ThreadHeld | undefined>(undefined);
   const [send, setSend] = useState<ThreadSend>({ send: "Idle" });
+  const [opened, setOpened] = useState<string | undefined>(undefined);
   return {
     takes: input.takes && send.send !== "Ended",
     charsMax: threadMessageCharsMax,
@@ -85,6 +95,16 @@ export function useThreadSend(input: {
         threadTurnRetained(held, text) ??
         threadTurnMinted(drawBytes(threadTurnIdBytesCount));
       setSend({ send: "Sending" });
+      let session = input.session ?? opened;
+      if (session === undefined) {
+        const open = await apiOpenThread(ports, partition);
+        if (open.outcome !== "Ok") {
+          setSend({ send: "Refused", reason: panelReason(open) });
+          return "Kept";
+        }
+        session = open.value.session;
+        setOpened(session);
+      }
       const answered = await threadMessageSent(ports, partition, session, {
         turn,
         message: text,
@@ -92,6 +112,7 @@ export function useThreadSend(input: {
       setSend(answered);
       if (answered.send === "Sent") {
         setHeld(undefined);
+        if (input.session === undefined) input.onStarted?.(session);
         return "Sent";
       }
       setHeld({ text, turn });

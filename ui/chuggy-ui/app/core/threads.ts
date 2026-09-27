@@ -75,6 +75,7 @@ import { threadMessageRefusalCodes } from "../../../../src/contract/rosters.ts";
 import type {
   SessionTurnInputKind,
   ThreadMessageRefusalCode,
+  ThreadStanding,
 } from "../../../../src/contract/rosters.ts";
 import type { ApiResult } from "./apiRequest.ts";
 import { base64urlFromBytes } from "./base64url.ts";
@@ -138,15 +139,30 @@ export function threadTurnKindWord(kind: SessionTurnInputKind): string {
   }
 }
 
-/** The reader's own thread first and the rest in the order the listing gave
- * them, which is a stable partition rather than a re-ordering of the page. */
-export function threadsMineFirst(
+/** Where each standing sorts: a thread that still takes messages before one
+ * that no longer does. */
+const threadStandingRanks: Readonly<Record<ThreadStanding, number>> = {
+  Open: 0,
+  Orphaned: 1,
+  Closed: 2,
+};
+
+/** An instant that does not read sorts as the oldest there is. */
+function threadMovedMs(thread: Pick<ThreadEntryResponse, "lastActivityAt">) {
+  const at = Date.parse(thread.lastActivityAt);
+  return Number.isFinite(at) ? at : Number.NEGATIVE_INFINITY;
+}
+
+/** Open threads first, then orphaned, then closed, each the most recently
+ * moved first; ties keep the order the listing gave them. */
+export function threadsByStanding(
   threads: readonly ThreadEntryResponse[],
 ): readonly ThreadEntryResponse[] {
-  return [
-    ...threads.filter((thread) => thread.mine),
-    ...threads.filter((thread) => !thread.mine),
-  ];
+  return threads.toSorted(
+    (a, b) =>
+      threadStandingRanks[a.state] - threadStandingRanks[b.state] ||
+      threadMovedMs(b) - threadMovedMs(a),
+  );
 }
 
 /** The reader's own thread that still stands, where the listing carried one:
