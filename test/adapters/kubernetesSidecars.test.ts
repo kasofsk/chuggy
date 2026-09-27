@@ -4,8 +4,9 @@
  *
  * THE RIG'S OWN SIDECAR IS PINNED WHOLE. The site document the rig writes is
  * rendered into a worker pod and compared with the server container and scratch
- * volume the rig's worker pods run, written out in full. The volume's name is
- * the one thing the comparison leaves out, since nothing reads it.
+ * volume the database adapter it replaces rendered for the same site, written
+ * out in full. The volume's name is the one thing the comparison leaves out,
+ * since nothing reads it.
  */
 
 import assert from "node:assert/strict";

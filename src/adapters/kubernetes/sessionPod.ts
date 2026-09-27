@@ -27,7 +27,7 @@
  *
  * NO DATABASE. A slice-1 session runs no gates, so no PostgreSQL is placed
  * beside it; a session that later needs one gets it the way a worker does — a
- * sidecar of its own pod — rather than by this module inventing an address.
+ * sidecar its site names — rather than by this module inventing an address.
  */
 
 import { join } from "node:path";

@@ -104,8 +104,8 @@ export type KubernetesStartupProbe = (
 /**
  * One container of a placed pod, as the cluster API is given it. A container
  * that carries `restartPolicy` is a sidecar: it is listed among the init
- * containers, is started before the pod's own and, once its startup probe
- * answers, runs beside them until they have exited.
+ * containers, is started before the pod's own, which wait for its startup probe
+ * where it has one, and runs beside them until they have exited.
  */
 export interface KubernetesContainer {
   readonly name: string;
