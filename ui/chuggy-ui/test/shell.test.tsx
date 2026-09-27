@@ -133,6 +133,15 @@ async function pressed(name: string): Promise<void> {
   await settled();
 }
 
+async function tooltipNamed(name: string): Promise<void> {
+  const button = screen.getByRole("button", { name });
+  const trigger = button.closest('[tabindex="0"]');
+  if (trigger === null) throw new Error(`no tooltip trigger around ${name}`);
+  fireEvent.focus(trigger);
+  expect((await screen.findByRole("tooltip")).textContent).toBe(name);
+  fireEvent.blur(trigger);
+}
+
 test("the chat pane sits beside the pages at the two-column width", async () => {
   await mounted(viewportTwoColumnEm);
   expect(chatDrawn()).not.toBeNull();
@@ -168,6 +177,22 @@ test("under that width it stacks under the pages rather than dividing them", asy
   expect(frameTracks()).toContain(
     "grid-rows-[minmax(0,1fr)_var(--height-chat)]",
   );
+  styleless();
+});
+
+/** Each icon control's hidden name is also what a pointer or a keyboard focus
+ * reveals, so a reader who does not use a screen reader learns what New, Full
+ * screen, Exit full screen, Collapse and Expand chat do before pressing them. */
+test("the pane's icon controls name themselves again on focus", async () => {
+  await mounted(viewportDeskEm);
+  await tooltipNamed("New");
+  await tooltipNamed("Full screen");
+  await tooltipNamed("Collapse");
+  await pressed("Full screen");
+  await tooltipNamed("Exit full screen");
+  await pressed("Exit full screen");
+  await pressed("Collapse");
+  await tooltipNamed("Expand chat");
   styleless();
 });
 

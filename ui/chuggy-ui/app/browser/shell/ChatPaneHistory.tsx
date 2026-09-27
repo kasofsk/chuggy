@@ -23,7 +23,8 @@ import { useNowMs } from "../Freshness.tsx";
 import { Button, buttonLookClassName } from "../ui/Button.tsx";
 import { MenuContent, menuItemClassName } from "../ui/Menu.tsx";
 import { Notice } from "../ui/Notice.tsx";
-import { ChatPaneIcon } from "./chatPaneIcons.tsx";
+import { Tooltip } from "../ui/Tooltip.tsx";
+import { ChatPaneIcon, ChatPaneIconButton } from "./chatPaneIcons.tsx";
 import type { ChatPaneGlyphName } from "./chatPaneIcons.tsx";
 import {
   ThreadEntryRename,
@@ -112,11 +113,13 @@ export function ChatPaneHistory(props: {
   );
   return (
     <DropdownMenu.Root modal={false}>
-      <DropdownMenu.Trigger
-        className={buttonLookClassName({ size: "sm", variant: "quiet" })}
-      >
-        <ChatPaneIcon glyph="history" label="History" />
-      </DropdownMenu.Trigger>
+      <Tooltip text="History">
+        <DropdownMenu.Trigger
+          className={buttonLookClassName({ size: "sm", variant: "quiet" })}
+        >
+          <ChatPaneIcon glyph="history" label="History" />
+        </DropdownMenu.Trigger>
+      </Tooltip>
       <DropdownMenu.Portal>
         <MenuContent sideOffset={4} align="end">
           <DropdownMenu.RadioGroup
@@ -204,22 +207,22 @@ export function ChatPaneThreadActions(props: {
               {threadLabel(props.thread)}
             </h2>
             {actions.renameable ? (
-              <Button variant="quiet" size="sm" onClick={actions.startRename}>
-                <ChatPaneIcon glyph="rename" label="Rename" />
-              </Button>
+              <ChatPaneIconButton
+                glyph="rename"
+                label="Rename"
+                onClick={actions.startRename}
+              />
             ) : null}
             {actions.closable ? (
               <span className="ml-auto">
-                <Button
-                  variant="quiet"
-                  size="sm"
+                <ChatPaneIconButton
+                  glyph="close"
+                  label="Close"
                   pressed={confirming}
                   onClick={() => {
                     setConfirming(!confirming);
                   }}
-                >
-                  <ChatPaneIcon glyph="close" label="Close" />
-                </Button>
+                />
               </span>
             ) : null}
           </>

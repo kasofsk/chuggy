@@ -52,7 +52,7 @@ import { threadsListName, useThread } from "../thread/threadRead.ts";
 import { Button } from "../ui/Button.tsx";
 import { Notice } from "../ui/Notice.tsx";
 import { useChatPane } from "./chatPaneHeld.tsx";
-import { ChatPaneIcon } from "./chatPaneIcons.tsx";
+import { ChatPaneIconButton } from "./chatPaneIcons.tsx";
 import { ChatPaneHistory, ChatPaneThreadActions } from "./ChatPaneHistory.tsx";
 
 /** The list entry the pane keeps its answering read under, distinct from the
@@ -121,9 +121,9 @@ function ChatPaneStartControl(props: {
   if (start.start === "Unknown") return null;
   return (
     <>
-      <Button
-        variant="quiet"
-        size="sm"
+      <ChatPaneIconButton
+        glyph="new"
+        label={start.start === "Answering" ? "Answering" : "New"}
         busy={busy}
         disabled={start.start === "Answering" || busy}
         onClick={() => {
@@ -147,12 +147,7 @@ function ChatPaneStartControl(props: {
             props.onOpened(result.value.session);
           });
         }}
-      >
-        <ChatPaneIcon
-          glyph="new"
-          label={start.start === "Answering" ? "Answering" : "New"}
-        />
-      </Button>
+      />
       {refused === undefined ? null : (
         <Notice tone="danger" inline detail={`Refused · ${refused}`} />
       )}
@@ -169,35 +164,29 @@ function ChatPaneControls(): ReactNode {
   return (
     <>
       {state.presentation === "Full" ? (
-        <Button
-          variant="quiet"
-          size="sm"
+        <ChatPaneIconButton
+          glyph="restore"
+          label="Exit full screen"
           onClick={() => {
             held.moveTo(chatPaneRestored(state));
           }}
-        >
-          <ChatPaneIcon glyph="restore" label="Exit full screen" />
-        </Button>
+        />
       ) : (
-        <Button
-          variant="quiet"
-          size="sm"
+        <ChatPaneIconButton
+          glyph="fill"
+          label="Full screen"
           onClick={() => {
             held.moveTo(chatPaneFilled(state));
           }}
-        >
-          <ChatPaneIcon glyph="fill" label="Full screen" />
-        </Button>
+        />
       )}
-      <Button
-        variant="quiet"
-        size="sm"
+      <ChatPaneIconButton
+        glyph="collapse"
+        label="Collapse"
         onClick={() => {
           held.moveTo(chatPaneToggled(state));
         }}
-      >
-        <ChatPaneIcon glyph="collapse" label="Collapse" />
-      </Button>
+      />
     </>
   );
 }
@@ -263,15 +252,13 @@ function ChatPaneStrip(): ReactNode {
   const held = useChatPane();
   return (
     <div className="grid content-start justify-center bg-surface-1 py-2">
-      <Button
-        variant="quiet"
-        size="sm"
+      <ChatPaneIconButton
+        glyph="chat"
+        label="Expand chat"
         onClick={() => {
           held.moveTo(chatPaneToggled(held.state));
         }}
-      >
-        <ChatPaneIcon glyph="chat" label="Expand chat" />
-      </Button>
+      />
     </div>
   );
 }

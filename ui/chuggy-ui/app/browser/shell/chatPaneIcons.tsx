@@ -1,9 +1,13 @@
 /**
  * The chat pane's controls are drawn as glyphs, each beside its name for a
- * reader who does not see it.
+ * reader who does not see it and, for the icon buttons among them, beside the
+ * same name again as hover-and-focus text for a reader who does.
  */
 
 import type { ReactNode } from "react";
+
+import { Button } from "../ui/Button.tsx";
+import { Tooltip } from "../ui/Tooltip.tsx";
 
 function ChatPaneGlyph(props: { readonly children: ReactNode }): ReactNode {
   return (
@@ -62,5 +66,41 @@ export function ChatPaneIcon(props: {
       <ChatPaneGlyph>{chatPaneGlyphPaths[props.glyph]}</ChatPaneGlyph>
       <span className="visually-hidden">{props.label}</span>
     </>
+  );
+}
+
+/**
+ * An icon button of the pane's own quiet, small look, its name spoken once and
+ * read twice: as the hidden label that stays its accessible name, and as the
+ * tooltip a pointer or a keyboard focus reveals. The tooltip wraps the button
+ * rather than sitting on it, so it still opens on focus even where the button
+ * itself is disabled and so cannot take focus directly — New, while the
+ * reader's own thread is answering.
+ */
+export function ChatPaneIconButton(props: {
+  readonly glyph: ChatPaneGlyphName;
+  readonly label: string;
+  readonly onClick: () => void;
+  readonly pressed?: boolean;
+  readonly busy?: boolean;
+  readonly disabled?: boolean;
+}): ReactNode {
+  return (
+    <Tooltip text={props.label}>
+      <span>
+        <Button
+          variant="quiet"
+          size="sm"
+          {...(props.pressed === undefined ? {} : { pressed: props.pressed })}
+          {...(props.busy === undefined ? {} : { busy: props.busy })}
+          {...(props.disabled === undefined
+            ? {}
+            : { disabled: props.disabled })}
+          onClick={props.onClick}
+        >
+          <ChatPaneIcon glyph={props.glyph} label={props.label} />
+        </Button>
+      </span>
+    </Tooltip>
   );
 }
