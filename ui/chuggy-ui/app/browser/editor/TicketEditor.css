@@ -67,11 +67,11 @@
      is given the size it would zoom to. */
   @media (max-width: 40em) {
     .ticket-editor-fallback {
-      font-size: 16px;
+      font-size: var(--text-unzoomed);
     }
 
     .ticket-editor-actions label {
-      min-block-size: 44px;
+      min-block-size: var(--height-touch);
     }
   }
 }

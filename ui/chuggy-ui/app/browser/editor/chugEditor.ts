@@ -299,12 +299,12 @@ const editorTheme = EditorView.theme({
     fontSize: "var(--text-sm)",
   },
   "@media (max-width: 40em)": {
-    ".cm-content": { fontSize: "16px" },
+    ".cm-content": { fontSize: "var(--text-unzoomed)" },
   },
   "@media (pointer: coarse)": {
     ".cm-foldGutter .cm-gutterElement, .cm-lint-marker": {
-      minWidth: "44px",
-      minHeight: "44px",
+      minWidth: "var(--height-touch)",
+      minHeight: "var(--height-touch)",
     },
   },
   /**

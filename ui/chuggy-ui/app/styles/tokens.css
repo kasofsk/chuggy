@@ -99,6 +99,7 @@
     --text-lg: 1rem; /* a panel title that leads a region */
     --text-xl: 1.25rem; /* the page title */
     --text-2xl: 1.625rem; /* one figure a page is about */
+    --text-unzoomed: 16px; /* the least a phone types a field in without zooming */
     --weight-regular: 400;
     --weight-medium: 500;
     --weight-strong: 600;
@@ -126,6 +127,7 @@
     --rail: 2px; /* the standing rail of a ledger group */
     --height-clip: 24em; /* the tallest a quoted block stands before it scrolls */
     --height-run-conversation: 70vh; /* a run's conversation, which scrolls itself */
+    --height-touch: 44px; /* the least a finger is given to press */
 
     /* rings */
     --ring-focus: 0 0 0 2px var(--surface-1), 0 0 0 4px var(--focus);
