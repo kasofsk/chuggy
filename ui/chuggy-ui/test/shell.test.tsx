@@ -23,10 +23,13 @@ import {
 } from "../app/browser/shell/viewport.ts";
 import { chatPaneStoreKey } from "../app/core/chatPane.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
+import { elementScrollToStubbed } from "./scrolling.ts";
 import {
   threadBody,
   threadEntry,
+  threadMineSession,
   threadTranscriptPage,
+  threadTurn,
 } from "./threadFixture.ts";
 import { viewportAtEm } from "./viewport.ts";
 import {
@@ -73,7 +76,10 @@ beforeAll(() => {
   Element.prototype.releasePointerCapture = () => undefined;
 });
 
-beforeEach(resizeObserverStubbed);
+beforeEach(() => {
+  resizeObserverStubbed();
+  elementScrollToStubbed();
+});
 
 afterEach(() => {
   cleanup();
@@ -322,6 +328,49 @@ function threadServed(listed: readonly unknown[]): typeof fetch {
 function composerDrawn(): HTMLElement {
   return screen.getByRole("textbox", { name: "Message" });
 }
+
+/** A server holding the reader's own thread with a turn the mailbox has not
+ * settled, which is what withholds New and renames it Answering. */
+function answeringThreadServed(): typeof fetch {
+  return ((url: string) => {
+    if (url.includes(`/threads/${threadMineSession}/transcript`))
+      return Promise.resolve(answer(threadTranscriptPage(0)));
+    if (url.includes(`/threads/${threadMineSession}`))
+      return Promise.resolve(
+        answer(
+          threadBody({
+            session: threadMineSession,
+            turns: [threadTurn({ turn: "thread-turn-1", state: "Queued" })],
+          }),
+        ),
+      );
+    if (url.includes("/threads"))
+      return Promise.resolve(
+        answer({
+          threads: [
+            threadEntry({
+              session: threadMineSession,
+              owner: "geoff",
+              mine: true,
+            }),
+          ],
+        }),
+      );
+    return Promise.resolve(shellRoute(url));
+  }) as unknown as typeof fetch;
+}
+
+/** New is withheld and renamed Answering while the reader's own thread has not
+ * settled, which is exactly where a reader most needs its tooltip: the control
+ * cannot be pressed to learn what it does, so the tooltip has to open on focus
+ * regardless. */
+test("Answering's tooltip still opens on focus while New is disabled", async () => {
+  await mounted(viewportDeskEm, answeringThreadServed());
+  const button = screen.getByRole("button", { name: "Answering" });
+  expect(button.hasAttribute("disabled")).toBe(true);
+  await tooltipNamed("Answering");
+  styleless();
+});
 
 /**
  * A thread just opened is not in the listing yet: the `Session` frame that

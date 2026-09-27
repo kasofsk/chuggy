@@ -170,9 +170,10 @@ function renderedActions(thread: Parameters<typeof threadEntry>[0]) {
   );
 }
 
-/** The header draws Rename and Close as plain buttons, so a reader with no
- * pointer reaches them without a hover or a focus landing on a hidden
- * trigger first. */
+/** The header draws Rename and Close as plain buttons rather than behind a
+ * menu that has to be opened first, so a reader with no pointer reaches them
+ * by role and name alone — each now sits inside its own tooltip trigger too,
+ * which is a focus stop of its own before the button, asserted below. */
 test("the header offers Rename and Close with no hover", () => {
   renderedActions({ session: threadMineSession, mine: true });
   const rename = screen.getByRole("button", { name: "Rename" });
