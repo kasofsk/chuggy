@@ -330,6 +330,35 @@ test("a thread the reader arrived at leaves the caret where it was", async () =>
   styleless();
 });
 
+/** A first message the door refused leaves the reader where they typed it,
+ * and New is still theirs to press: the thread it opens is the one drawn. */
+test("New after a refused first message holds the thread it opens", async () => {
+  const read: string[] = [];
+  const served = threadServed([]);
+  await mounted(viewportDeskEm, ((
+    url: string,
+    init?: { readonly method?: string },
+  ) => {
+    if (init?.method === "POST" && url.endsWith("/messages"))
+      return Promise.resolve(answer({ error: { code: "Invalid" } }, 400));
+    if (init?.method !== "POST") read.push(url);
+    return served(url, init);
+  }) as unknown as typeof fetch);
+  fireEvent.change(composerDrawn(), { target: { value: "hello" } });
+  await turned(() => {
+    screen.getByRole("button", { name: "Send" }).click();
+  });
+  await settled();
+  expect(read.some((url) => url.includes(`/threads/${openedSession}`))).toBe(
+    false,
+  );
+  await pressed("New");
+  expect(read.some((url) => url.includes(`/threads/${openedSession}`))).toBe(
+    true,
+  );
+  styleless();
+});
+
 test("a page's own bar content is drawn in a row of its own", async () => {
   pageDrawn = () => (
     <TopBarSlot>

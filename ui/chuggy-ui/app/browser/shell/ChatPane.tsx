@@ -296,7 +296,10 @@ function ChatPaneOpen(props: {
           <ChatPaneStartControl
             partition={props.partition}
             start={holding.start}
-            onOpened={setChosen}
+            onOpened={(session) => {
+              setChosen(session);
+              setStarting(false);
+            }}
           />
           {threads === undefined ? null : (
             <ChatPaneHistory
