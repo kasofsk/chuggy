@@ -103,7 +103,9 @@ check "an object that peels to a commit is refused, since the checkout is not it
 
 rm -rf "$FETCHED"
 pin "$FIRST" 1.0.0 >"$PIN"
-REPOSITORY="$WORK/nowhere" run fetch "$FETCHED"
+REPOSITORY="$WORK/nowhere"
+run fetch "$FETCHED"
+unset REPOSITORY
 check "a repository that does not answer is a could-not-run" 2 "$RC" "could not run — could not fetch main"
 
 for name in main "$(printf '%s' "$FIRST" | cut -c1-12)" "$(printf '%s' "$FIRST" | tr a-f A-F)"; do
