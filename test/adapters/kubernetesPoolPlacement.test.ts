@@ -8,10 +8,7 @@ import {
   mintedCredentialDirectory,
   workerTaskVariable,
 } from "../../src/contract/workerEnvironment.ts";
-import {
-  workerPoolRetryAfterSecsMax,
-  type WorkerPoolAssignment,
-} from "../../src/contract/workerPool.ts";
+import type { WorkerPoolAssignment } from "../../src/contract/workerPool.ts";
 import { poolEnvelopeSchema } from "../../src/contract/workerTask.ts";
 import type { KubernetesPod } from "../../src/adapters/kubernetes/kubernetesSite.ts";
 import {
@@ -40,7 +37,6 @@ const config: KubernetesPoolPlacementConfig = {
   podSecurityContext: { runAsNonRoot: true },
   containerSecurityContext: { allowPrivilegeEscalation: false },
   requestTimeoutSecsMax: 2,
-  unavailableRetryAfterSecs: 11,
   workerPlaneUrl: "https://worker-plane.invalid",
   capabilityFile: "/run/chuggy/capability",
   workspacePath: "/workspace",
@@ -335,11 +331,11 @@ test("a cluster that refused the document itself is a settled no", async () => {
   assert.equal(placement.placed, "Refused");
 });
 
-test("a cluster that could not be reached is backpressure with the site's own interval", async () => {
+test("a cluster that could not be reached is unavailable", async () => {
   const placement = await kubernetesPoolBackend(config, () =>
     Promise.reject(new Error("connection refused")),
   ).place(assignment);
-  assert.deepEqual(placement, { placed: "Unavailable", retryAfterSecs: 11 });
+  assert.deepEqual(placement, { placed: "Unavailable" });
 });
 
 test("what the pool holds is its own labelled pods, read off their annotation", async () => {
@@ -483,24 +479,6 @@ test("a site is refused where its provider credential is served by no mount", ()
         providerCredential: "claude-code",
       }),
     RangeError,
-  );
-});
-
-test("a site is refused where its retry-after is more than the plane accepts", () => {
-  assert.throws(
-    () =>
-      checkedKubernetesPoolPlacementConfig({
-        ...config,
-        unavailableRetryAfterSecs: workerPoolRetryAfterSecsMax + 1,
-      }),
-    RangeError,
-  );
-  assert.equal(
-    checkedKubernetesPoolPlacementConfig({
-      ...config,
-      unavailableRetryAfterSecs: workerPoolRetryAfterSecsMax,
-    }).unavailableRetryAfterSecs,
-    workerPoolRetryAfterSecsMax,
   );
 });
 

@@ -189,7 +189,7 @@ function poolAssignmentsRoute(
  * body: an accepted assignment is already leased and needs no write, a refusal
  * is evidence the orchestrator turns into the attempt's terminal, and an
  * unavailable releases the assignment, which concludes its execution as a
- * failed process. The `retryAfterSecs` it carries is accepted and unused.
+ * failed process.
  */
 function poolOutcomeRoutes(
   app: FastifyInstance,

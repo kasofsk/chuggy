@@ -37,7 +37,6 @@ const site = {
   timeoutSecsMax: 30,
   outputBytesMax: 4096,
   requestTimeoutSecsMax: 5,
-  unavailableRetryAfterSecs: 11,
 };
 
 const environment: Readonly<Record<string, string>> = {

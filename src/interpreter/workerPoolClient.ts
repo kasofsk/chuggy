@@ -26,17 +26,16 @@
  * is what renews its lease. Nothing here retries a settlement, because the
  * lease is the retry.
  */
-import {
-  workerPoolRetryAfterSecsMax,
-  type AssignmentOutcome,
-  type WorkerPoolAssignment,
+import type {
+  AssignmentOutcome,
+  WorkerPoolAssignment,
 } from "../contract/workerPool.ts";
 
 /** What placing one assignment came to, which is the contract's outcome before it is posted. */
 export type WorkerPoolPlacement =
   | { readonly placed: "Placed" }
   | { readonly placed: "Refused"; readonly evidence: string }
-  | { readonly placed: "Unavailable"; readonly retryAfterSecs: number };
+  | { readonly placed: "Unavailable" };
 
 /**
  * What stopping one assignment came to, which parts the same two inabilities a
@@ -119,8 +118,6 @@ export interface WorkerPoolTokens {
 export interface WorkerPoolClientSettings {
   /** How many assignments this pool holds at once, which every poll's `wanted` is measured from. */
   readonly concurrencyMax: number;
-  /** The wait this client names when it answers `Unavailable` for an assignment offered past its room, which the orchestrator accepts and does not use. */
-  readonly retryAfterSecs: number;
   /** How long a pass waits after an outage before the next one. */
   readonly outageBackoffMs: number;
   /** How many passes one run makes, so the loop is bounded like every other. */
@@ -151,7 +148,6 @@ export function checkedWorkerPoolClientSettings(
 ): WorkerPoolClientSettings {
   for (const [name, bound] of [
     ["concurrencyMax", settings.concurrencyMax],
-    ["retryAfterSecs", settings.retryAfterSecs],
     ["outageBackoffMs", settings.outageBackoffMs],
     ["passesMax", settings.passesMax],
   ] as const)
@@ -159,10 +155,6 @@ export function checkedWorkerPoolClientSettings(
       throw new RangeError(
         `worker pool client ${name} must be a positive safe integer`,
       );
-  if (settings.retryAfterSecs > workerPoolRetryAfterSecsMax)
-    throw new RangeError(
-      "worker pool client retryAfterSecs is past what the wire accepts",
-    );
   return settings;
 }
 
@@ -220,10 +212,7 @@ function workerPoolClientOutcome(
     case "Refused":
       return { outcome: "Refused", evidence: placement.evidence };
     case "Unavailable":
-      return {
-        outcome: "Unavailable",
-        retryAfterSecs: placement.retryAfterSecs,
-      };
+      return { outcome: "Unavailable" };
   }
 }
 
@@ -234,10 +223,10 @@ interface WorkerPoolTally {
 }
 
 /**
- * Places what there is room for and answers backpressure for the rest. The poll
- * asked for no more than the room there was, so the rest is a plane that offered
- * past what it was asked, and room is measured against what the backend held at
- * the top of the pass plus what this pass has placed since.
+ * Places what there is room for and answers `Unavailable` for the rest. The
+ * poll asked for no more than the room there was, so the rest is a plane that
+ * offered past what it was asked, and room is measured against what the backend
+ * held at the top of the pass plus what this pass has placed since.
  */
 async function workerPoolClientPlaced(
   client: WorkerPoolClient,
@@ -250,10 +239,7 @@ async function workerPoolClientPlaced(
     const placement: WorkerPoolPlacement =
       running + tally.placed < client.settings.concurrencyMax
         ? await client.backend.place(assignment)
-        : {
-            placed: "Unavailable",
-            retryAfterSecs: client.settings.retryAfterSecs,
-          };
+        : { placed: "Unavailable" };
     if (placement.placed === "Placed") tally.placed += 1;
     if (placement.placed === "Refused") tally.refused += 1;
     const settled = await client.plane.settle(

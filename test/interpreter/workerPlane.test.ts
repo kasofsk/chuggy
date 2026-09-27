@@ -52,10 +52,10 @@ test("a later minor, a later major and a release before the first are refused", 
   }
 });
 
-test("the pool plane refuses a pool naming no release or the first, whose assignment names no image", () => {
-  for (const offered of [undefined, "1.0.0", "1.0.9"])
+test("the pool plane refuses a pool naming no release or one whose unavailable names a wait", () => {
+  for (const offered of [undefined, "1.0.0", "1.0.9", "1.1.0", "1.1.4"])
     assert.ok(!poolAccepted(offered), String(offered));
-  assert.ok(poolAccepted("1.1.0"));
+  assert.ok(poolAccepted("1.2.0"));
 });
 
 test("text that is no release is refused rather than read as the nearest one", () => {
@@ -78,7 +78,7 @@ test("text that is no release is refused rather than read as the nearest one", (
 test("each plane's refusal is the contract's own and names the range that plane serves", () => {
   for (const [range, min] of [
     [workerContractAccepted, "1.0"],
-    [workerPoolContractAccepted, "1.1"],
+    [workerPoolContractAccepted, "1.2"],
   ] as const) {
     const refusal = contractVersionRefusal(range);
     assert.deepEqual(contractVersionRefusalSchema.parse(refusal), refusal);

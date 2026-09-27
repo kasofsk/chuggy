@@ -18,20 +18,12 @@
 
 import { z } from "zod";
 
-import { retryAfterSecondsMax } from "./outcomes.ts";
-
 export const workerPoolTokenCharsMax = 63;
 export const workerPoolIdentityCharsMax = 256;
 export const workerPoolCapabilitiesMax = 64;
 export const workerPoolEvidenceCharsMax = 4_096;
 /** The longest image reference an assignment names. */
 export const workerImageCharsMax = 512;
-/**
- * The longest wait an `Unavailable` answer may name, which is the same ceiling
- * a `retry-after` header is held to. The orchestrator accepts it and waits on
- * nothing, because that answer concludes the assignment's execution.
- */
-export const workerPoolRetryAfterSecsMax = retryAfterSecondsMax;
 
 /**
  * A capability token, free-form and per-project: a claim rather than a proof,
@@ -96,15 +88,7 @@ export const assignmentOutcomeSchema = z.discriminatedUnion("outcome", [
     outcome: z.literal("Refused"),
     evidence: z.string().min(1).max(workerPoolEvidenceCharsMax),
   }),
-  z.strictObject({
-    outcome: z.literal("Unavailable"),
-    retryAfterSecs: z
-      .number()
-      .int()
-      .positive()
-      .safe()
-      .max(workerPoolRetryAfterSecsMax),
-  }),
+  z.strictObject({ outcome: z.literal("Unavailable") }),
 ]);
 
 /**

@@ -29,7 +29,6 @@ const goldenConfig: Omit<KubernetesPoolPlacementConfig, "tokenFile"> = {
     readOnlyRootFilesystem: true,
   },
   requestTimeoutSecsMax: 30,
-  unavailableRetryAfterSecs: 15,
   workerPlaneUrl: "http://golden-plane.invalid:3001",
   capabilityFile: "/var/run/golden/capability/bearer",
   workspacePath: "/workspace",

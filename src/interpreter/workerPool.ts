@@ -44,12 +44,13 @@ import {
 } from "./workerPlane.ts";
 
 /**
- * The worker contract versions the pool plane serves. They start at the one
- * whose assignment names the pinned image, because a pool speaking an earlier
- * one would run its own image in that image's place.
+ * The worker contract versions the pool plane serves, from the one whose
+ * `Unavailable` carries nothing. An earlier pool names a wait on it, which the
+ * strict outcome schema refuses, so its unavailable would be answered 400 and
+ * its attempt would wait out its lease rather than conclude.
  */
 export const workerPoolContractAccepted: WorkerContractRange = {
-  min: { major: 1, minor: 1 },
+  min: { major: 1, minor: 2 },
   max: workerContractAccepted.max,
 };
 
