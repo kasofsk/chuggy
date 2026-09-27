@@ -31,7 +31,7 @@ import {
   postgresLimitsDefault,
   type PostgresLimits,
 } from "../adapters/postgres/pool.ts";
-import type { KubernetesPodSite } from "../adapters/kubernetes/kubernetesSite.ts";
+import type { KubernetesLaunchSite } from "../adapters/kubernetes/kubernetesSite.ts";
 import {
   kubernetesSessionBoundsDefaults,
   kubernetesSessionBudgetUsdMin,
@@ -693,7 +693,7 @@ function schedulerWorkers(
  */
 function schedulerSessions(
   environment: SchedulerEnvironment,
-  site: KubernetesPodSite,
+  site: KubernetesLaunchSite,
 ): KubernetesSessionLaunchConfig {
   return {
     ...site,
@@ -771,7 +771,7 @@ function schedulerSessionPolicy(
 /** Only the cluster half of a worker configuration, which is the site both halves share. */
 function schedulerPodSite(
   workers: KubernetesWorkerLaunchConfig,
-): KubernetesPodSite {
+): KubernetesLaunchSite {
   return {
     apiBaseUrl: workers.apiBaseUrl,
     namespace: workers.namespace,

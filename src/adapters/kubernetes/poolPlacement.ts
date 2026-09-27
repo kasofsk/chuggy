@@ -48,7 +48,7 @@ import {
   kubernetesPlacePod,
 } from "./clusterReach.ts";
 import {
-  checkedKubernetesPodSite,
+  checkedKubernetesLaunchSite,
   kubernetesAnnotationPrefix,
   kubernetesContainerResources,
   kubernetesCredentials,
@@ -59,8 +59,8 @@ import {
   kubernetesPositive,
   kubernetesReservedVariables,
   kubernetesWorkloadPod,
+  type KubernetesLaunchSite,
   type KubernetesPod,
-  type KubernetesPodSite,
   type KubernetesResourceBudget,
   type KubernetesToleration,
 } from "./kubernetesSite.ts";
@@ -83,7 +83,7 @@ export interface KubernetesCapabilityPlacement {
   readonly tolerations: readonly KubernetesToleration[];
 }
 
-export interface KubernetesPoolPlacementConfig extends KubernetesPodSite {
+export interface KubernetesPoolPlacementConfig extends KubernetesLaunchSite {
   readonly podNamePrefix: string;
   readonly image: string;
   readonly poolLabel: { readonly name: string; readonly value: string };
@@ -105,7 +105,7 @@ export interface KubernetesPoolPlacementConfig extends KubernetesPodSite {
 export function checkedKubernetesPoolPlacementConfig(
   config: KubernetesPoolPlacementConfig,
 ): KubernetesPoolPlacementConfig {
-  checkedKubernetesPodSite(config, "pool placement");
+  checkedKubernetesLaunchSite(config, "pool placement");
   kubernetesPodNamePrefix(config.podNamePrefix, "pool placement pod prefix");
   kubernetesPositive(config.timeoutSecsMax, "pool workload timeout");
   kubernetesPositive(config.outputBytesMax, "pool workload output bound");
@@ -334,7 +334,7 @@ async function poolPlacementPlaced(
     case "Unavailable":
       return {
         placed: "Unavailable",
-        retryAfterSecs: outcome.retryAfterSeconds,
+        retryAfterSecs: config.unavailableRetryAfterSecs,
       };
   }
 }

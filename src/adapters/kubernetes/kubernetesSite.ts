@@ -64,13 +64,21 @@ export interface KubernetesPodSite {
   readonly podSecurityContext: Readonly<Record<string, unknown>>;
   readonly containerSecurityContext: Readonly<Record<string, unknown>>;
   readonly requestTimeoutSecsMax: number;
-  readonly unavailableRetryAfterSecs: number;
   readonly workerPlaneUrl: string;
   readonly capabilityFile: string;
   readonly workspacePath: string;
   readonly credentialMounts: Readonly<
     Record<string, KubernetesWorkerCredentialMount>
   >;
+}
+
+/**
+ * A site whose launcher answers an inability to place with a wait: the
+ * cluster, and how long a placement it could not take is held before it is
+ * asked for again.
+ */
+export interface KubernetesLaunchSite extends KubernetesPodSite {
+  readonly unavailableRetryAfterSecs: number;
 }
 
 /**
@@ -364,6 +372,15 @@ export function checkedKubernetesPodSite<Site extends KubernetesPodSite>(
     credentialPaths.add(mount.mountPath);
   }
   kubernetesPositive(site.requestTimeoutSecsMax, "cluster request timeout");
+  return site;
+}
+
+/** Refuses a launcher's site as `checkedKubernetesPodSite` does, and a retry interval that is not a positive whole number of seconds. */
+export function checkedKubernetesLaunchSite<Site extends KubernetesLaunchSite>(
+  site: Site,
+  what: string,
+): Site {
+  checkedKubernetesPodSite(site, what);
   kubernetesPositive(site.unavailableRetryAfterSecs, "cluster retry interval");
   return site;
 }
