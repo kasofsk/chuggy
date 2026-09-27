@@ -54,7 +54,7 @@ import type { Partition } from "../../interpreter/projectStore.ts";
 import { taskAuthorityGrant } from "../../interpreter/taskAuthority.ts";
 import { workTask, workTaskInvocation } from "../../interpreter/workerTask.ts";
 import {
-  checkedKubernetesLaunchSite,
+  checkedKubernetesPodSite,
   kubernetesAnnotationPrefix,
   kubernetesAttemptDigest,
   kubernetesContainerResources,
@@ -65,9 +65,9 @@ import {
   kubernetesReservedVariables,
   type KubernetesContainer,
   type KubernetesCredentialSelection,
-  type KubernetesLaunchSite,
   type KubernetesPod,
   type KubernetesPodRequested,
+  type KubernetesPodSite,
   type KubernetesResourceBudget,
   type KubernetesSecret,
 } from "./kubernetesSite.ts";
@@ -82,7 +82,7 @@ import {
  * Everything a deployment supplies the worker-launch adapter beyond the site
  * every pod of it shares, and the bounds it works within.
  */
-export interface KubernetesWorkerLaunchConfig extends KubernetesLaunchSite {
+export interface KubernetesWorkerLaunchConfig extends KubernetesPodSite {
   readonly podNamePrefix: string;
   readonly resources: KubernetesResourceBudget;
   readonly podLabels: Readonly<Record<string, string>>;
@@ -112,7 +112,7 @@ export const kubernetesWorkerReservedVariables = [
 export function checkedKubernetesWorkerLaunchConfig(
   config: KubernetesWorkerLaunchConfig,
 ): KubernetesWorkerLaunchConfig {
-  checkedKubernetesLaunchSite(config, "worker");
+  checkedKubernetesPodSite(config, "worker");
   kubernetesPodNamePrefix(config.podNamePrefix, "worker pod name prefix");
   kubernetesReservedVariables(
     config.environment,

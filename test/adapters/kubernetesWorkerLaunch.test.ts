@@ -153,7 +153,6 @@ const config: KubernetesWorkerLaunchConfig = {
   containerSecurityContext: { allowPrivilegeEscalation: false },
   activeDeadlineSecs: 3_600,
   requestTimeoutSecsMax: 5,
-  unavailableRetryAfterSecs: 15,
 };
 
 const partition = {
@@ -941,7 +940,7 @@ test("only a refusal of the document is definitive and every other answer holds"
     placed: "Placed",
     placement: kubernetesWorkerPodName(config, partition, placement.attempt),
   };
-  const held = { placed: "Unavailable", retryAfterSeconds: 15 };
+  const held = { placed: "Unavailable" };
   const denied = { placed: "Denied", reason: "ExecutionPolicyDenied" };
   const outcomes: readonly (readonly [number, unknown])[] = [
     [200, placed],
@@ -976,10 +975,7 @@ test("a cluster that cannot be reached is a hold and never a denial", async () =
   const workers = kubernetesWorkerLaunch(config, () =>
     Promise.reject(new Error("connection refused")),
   );
-  assert.deepEqual(await workers.place(placement), {
-    placed: "Unavailable",
-    retryAfterSeconds: 15,
-  });
+  assert.deepEqual(await workers.place(placement), { placed: "Unavailable" });
 });
 
 test("a credential that cannot be read is a hold like an unreachable cluster", async () => {
@@ -988,10 +984,7 @@ test("a credential that cannot be read is a hold like an unreachable cluster", a
     { ...config, tokenFile: join(root, "absent") },
     recordingCluster(reached, answering(201)),
   );
-  assert.deepEqual(await workers.place(placement), {
-    placed: "Unavailable",
-    retryAfterSeconds: 15,
-  });
+  assert.deepEqual(await workers.place(placement), { placed: "Unavailable" });
   assert.deepEqual(reached, []);
 });
 
@@ -1049,7 +1042,6 @@ test("a deployment that cannot address a cluster is refused where it is composed
     { sidecars: [{ ...workerSidecar, name: kubernetesWorkerContainerName }] },
     { activeDeadlineSecs: 0 },
     { requestTimeoutSecsMax: 0 },
-    { unavailableRetryAfterSecs: 0 },
   ];
   for (const refused of refusals) {
     assert.throws(

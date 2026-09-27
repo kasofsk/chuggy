@@ -20,7 +20,6 @@ import type {
 } from "../../interpreter/sessionScheduler.ts";
 import {
   kubernetesCancelPod,
-  kubernetesLaunchPlaced,
   kubernetesPlacePod,
   kubernetesPodEnd,
   kubernetesReadPod,
@@ -44,11 +43,8 @@ export function kubernetesSessionLaunch(
       const requested = kubernetesSessionPodRequest(config, placement);
       if (requested.requested === "Denied")
         return { placed: "Denied", reason: requested.reason };
-      return kubernetesLaunchPlaced(
-        config,
-        await kubernetesPlacePod(config, fetcher, requested.pod, (podUid) =>
-          kubernetesSessionSecret(config, placement, podUid),
-        ),
+      return kubernetesPlacePod(config, fetcher, requested.pod, (podUid) =>
+        kubernetesSessionSecret(config, placement, podUid),
       );
     },
     cancel: async (attempt) =>

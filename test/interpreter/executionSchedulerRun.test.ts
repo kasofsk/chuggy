@@ -484,10 +484,7 @@ test("a definitive placement denial blocks the execution", async () => {
 
 test("an unavailable fabric is a hold rather than a domain failure", async () => {
   const calls: string[] = [];
-  const service = serviceWith(calls, runnable, {
-    placed: "Unavailable",
-    retryAfterSeconds: 5,
-  });
+  const service = serviceWith(calls, runnable, { placed: "Unavailable" });
   assert.equal(await executionSchedulerLaunch(service, epoch), 0);
   assert.deepEqual(calls, ["ended:Withdrawn:PlacementUnavailable"]);
 });

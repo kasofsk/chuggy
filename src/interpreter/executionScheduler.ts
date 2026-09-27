@@ -877,7 +877,7 @@ export interface AttemptPlacement extends FencedAttempt {
 export type AttemptPlacementOutcome =
   | { readonly placed: "Placed"; readonly placement: PlacementId }
   | { readonly placed: "Denied"; readonly reason: BlockedReason }
-  | { readonly placed: "Unavailable"; readonly retryAfterSeconds: number };
+  | { readonly placed: "Unavailable" };
 
 /**
  * The mandatory execution policy, evaluated separately from the pinned release

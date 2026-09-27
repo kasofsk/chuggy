@@ -73,15 +73,6 @@ export interface KubernetesPodSite {
 }
 
 /**
- * A site whose launcher answers an inability to place with a wait: the
- * cluster, and how long a placement it could not take is held before it is
- * asked for again.
- */
-export interface KubernetesLaunchSite extends KubernetesPodSite {
-  readonly unavailableRetryAfterSecs: number;
-}
-
-/**
  * One variable a container is given, which is a value or a reference to one. A
  * site's secret is the second kind: the pod spec names the Secret and the
  * kubelet is what reads it, so the value is in no document this adapter writes
@@ -372,16 +363,6 @@ export function checkedKubernetesPodSite<Site extends KubernetesPodSite>(
     credentialPaths.add(mount.mountPath);
   }
   kubernetesPositive(site.requestTimeoutSecsMax, "cluster request timeout");
-  return site;
-}
-
-/** Refuses a launcher's site as `checkedKubernetesPodSite` does, and a retry interval that is not a positive whole number of seconds. */
-export function checkedKubernetesLaunchSite<Site extends KubernetesLaunchSite>(
-  site: Site,
-  what: string,
-): Site {
-  checkedKubernetesPodSite(site, what);
-  kubernetesPositive(site.unavailableRetryAfterSecs, "cluster retry interval");
   return site;
 }
 

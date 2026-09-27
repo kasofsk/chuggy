@@ -31,7 +31,7 @@ import {
   postgresLimitsDefault,
   type PostgresLimits,
 } from "../adapters/postgres/pool.ts";
-import type { KubernetesLaunchSite } from "../adapters/kubernetes/kubernetesSite.ts";
+import type { KubernetesPodSite } from "../adapters/kubernetes/kubernetesSite.ts";
 import {
   kubernetesSessionBoundsDefaults,
   kubernetesSessionBudgetUsdMin,
@@ -126,7 +126,6 @@ const schedulerCommandDefaults = {
   idleIntervalMilliseconds: 1_000,
   shutdownDrainMilliseconds: 15_000,
   clusterTimeoutSecsMax: 30,
-  clusterRetryAfterSecs: 15,
   workerDeadlineSecs: 3_600,
   workerPodNamePrefix: "chuggy-worker",
   sessionDeadlineSecs: 86_400,
@@ -674,11 +673,6 @@ function schedulerWorkers(
       "CLUSTER_TIMEOUT_SECS",
       schedulerCommandDefaults.clusterTimeoutSecsMax,
     ),
-    unavailableRetryAfterSecs: schedulerPositive(
-      environment,
-      "CLUSTER_RETRY_AFTER_SECS",
-      schedulerCommandDefaults.clusterRetryAfterSecs,
-    ),
   };
 }
 
@@ -693,7 +687,7 @@ function schedulerWorkers(
  */
 function schedulerSessions(
   environment: SchedulerEnvironment,
-  site: KubernetesLaunchSite,
+  site: KubernetesPodSite,
 ): KubernetesSessionLaunchConfig {
   return {
     ...site,
@@ -771,7 +765,7 @@ function schedulerSessionPolicy(
 /** Only the cluster half of a worker configuration, which is the site both halves share. */
 function schedulerPodSite(
   workers: KubernetesWorkerLaunchConfig,
-): KubernetesLaunchSite {
+): KubernetesPodSite {
   return {
     apiBaseUrl: workers.apiBaseUrl,
     namespace: workers.namespace,
@@ -781,7 +775,6 @@ function schedulerPodSite(
     podSecurityContext: workers.podSecurityContext,
     containerSecurityContext: workers.containerSecurityContext,
     requestTimeoutSecsMax: workers.requestTimeoutSecsMax,
-    unavailableRetryAfterSecs: workers.unavailableRetryAfterSecs,
     workerPlaneUrl: workers.workerPlaneUrl,
     capabilityFile: workers.capabilityFile,
     workspacePath: workers.workspacePath,

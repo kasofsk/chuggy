@@ -37,8 +37,7 @@ export const schedulerRootService: Omit<
   | "access"
 > = {
   placement: {
-    place: () =>
-      Promise.resolve({ placed: "Unavailable", retryAfterSeconds: 1 }),
+    place: () => Promise.resolve({ placed: "Unavailable" }),
     cancel: () => Promise.resolve({ cancelled: "Accepted" }),
   },
   policy: {
@@ -66,8 +65,7 @@ export const schedulerRootSessions: Omit<
   "store" | "bindings"
 > = {
   placement: {
-    place: () =>
-      Promise.resolve({ placed: "Unavailable", retryAfterSeconds: 1 }),
+    place: () => Promise.resolve({ placed: "Unavailable" }),
     cancel: () => Promise.resolve({ cancelled: "Accepted" }),
     observe: () => Promise.resolve({ observed: "Unended" }),
   },
