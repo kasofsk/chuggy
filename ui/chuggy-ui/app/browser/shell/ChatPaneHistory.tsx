@@ -100,6 +100,8 @@ function ChatPaneHistoryRow(props: {
   );
 }
 
+const chatPaneHistoryLabel = "History";
+
 export function ChatPaneHistory(props: {
   readonly threads: readonly ThreadEntryResponse[];
   readonly session: string | undefined;
@@ -113,11 +115,11 @@ export function ChatPaneHistory(props: {
   );
   return (
     <DropdownMenu.Root modal={false}>
-      <Tooltip text="History">
+      <Tooltip text={chatPaneHistoryLabel}>
         <DropdownMenu.Trigger
           className={buttonLookClassName({ size: "sm", variant: "quiet" })}
         >
-          <ChatPaneIcon glyph="history" label="History" />
+          <ChatPaneIcon glyph="history" label={chatPaneHistoryLabel} />
         </DropdownMenu.Trigger>
       </Tooltip>
       <DropdownMenu.Portal>
