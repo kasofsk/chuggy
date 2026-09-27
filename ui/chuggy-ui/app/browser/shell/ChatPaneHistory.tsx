@@ -126,11 +126,25 @@ export function ChatPaneHistory(props: {
             value={props.session ?? ""}
             onValueChange={props.onChoose}
           >
-            {rows.mine.map(drawn)}
+            {rows.mine.length === 0 ? null : (
+              <DropdownMenu.Group>
+                <DropdownMenu.Label className="text-ink-3 px-2 py-1 text-xs">
+                  Yours
+                </DropdownMenu.Label>
+                {rows.mine.map(drawn)}
+              </DropdownMenu.Group>
+            )}
             {rows.mine.length === 0 || rows.others.length === 0 ? null : (
               <DropdownMenu.Separator className="bg-edge my-1 h-px" />
             )}
-            {rows.others.map(drawn)}
+            {rows.others.length === 0 ? null : (
+              <DropdownMenu.Group>
+                <DropdownMenu.Label className="text-ink-3 px-2 py-1 text-xs">
+                  Everyone else's
+                </DropdownMenu.Label>
+                {rows.others.map(drawn)}
+              </DropdownMenu.Group>
+            )}
           </DropdownMenu.RadioGroup>
         </MenuContent>
       </DropdownMenu.Portal>
