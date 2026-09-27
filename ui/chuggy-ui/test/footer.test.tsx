@@ -6,13 +6,14 @@
 // jscpd:ignore-start -- the imports and vi.mock factories a case cannot hoist out
 import { QueryClient } from "@tanstack/react-query";
 import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import { Landing } from "../app/browser/routes.tsx";
 import { Shell } from "../app/browser/Shell.tsx";
 import { viewportDeskEm } from "../app/browser/shell/viewport.ts";
+import { resizeObserverStubbed } from "./resizeObserver.ts";
 import { viewportAtEm } from "./viewport.ts";
 import {
   answer,
@@ -42,6 +43,8 @@ vi.mock("@tanstack/react-router", async (importOriginal) => ({
   useParams: () => atlas,
 }));
 // jscpd:ignore-end -- the case's own doubles resume here
+
+beforeEach(resizeObserverStubbed);
 
 afterEach(() => {
   cleanup();

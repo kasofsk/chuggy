@@ -23,7 +23,7 @@
     border-top: var(--hairline) solid var(--edge);
   }
 
-  @media (min-width: 60em) {
+  @container (min-width: 60em) {
     .selector-strip {
       grid-template-columns: 1fr 1fr;
     }
@@ -82,7 +82,7 @@
     column-gap: var(--space-6);
   }
 
-  @media (min-width: 60em) {
+  @container (min-width: 60em) {
     .selector-limits {
       grid-template-columns: 1fr 1fr;
     }
@@ -144,7 +144,7 @@
     border-bottom: var(--hairline) solid var(--edge);
   }
 
-  @media (max-width: 60em) {
+  @container (max-width: 60em) {
     .selector-revision {
       grid-template-columns: 4em minmax(0, 1fr) auto;
     }

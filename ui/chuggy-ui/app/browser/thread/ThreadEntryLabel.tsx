@@ -84,7 +84,9 @@ export function useThreadEntryActions(
   };
 }
 
-/** The rename editor: Enter saves, Escape restores the title it opened with. */
+/** The rename editor: Enter saves, and Escape or leaving it restores the title
+ * it opened with — except while a save is in flight, whose disabling the input
+ * is what took the focus. */
 export function ThreadEntryRename(props: {
   readonly initial: string;
   readonly actions: ThreadEntryActions;
@@ -104,6 +106,9 @@ export function ThreadEntryRename(props: {
       onKeyDown={(event) => {
         if (event.key === "Enter") props.actions.submitRename(title);
         if (event.key === "Escape") props.actions.cancelRename();
+      }}
+      onBlur={() => {
+        if (!props.actions.busy) props.actions.cancelRename();
       }}
     />
   );

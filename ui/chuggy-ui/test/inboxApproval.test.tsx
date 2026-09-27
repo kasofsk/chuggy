@@ -12,13 +12,14 @@
 // jscpd:ignore-start -- the imports and vi.mock factories a case cannot hoist out
 import { QueryClient } from "@tanstack/react-query";
 import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import { InboxScreen } from "../app/browser/Inbox.tsx";
 import { Shell } from "../app/browser/Shell.tsx";
 import { viewportDeskEm } from "../app/browser/shell/viewport.ts";
+import { resizeObserverStubbed } from "./resizeObserver.ts";
 import { viewportAtEm } from "./viewport.ts";
 import {
   answer,
@@ -52,6 +53,8 @@ vi.mock("@tanstack/react-router", () => ({
 
 /** The runner has no globals, so a case's tree is torn down here rather than by
  * the library's own hook — a second case would otherwise read the first's. */
+beforeEach(resizeObserverStubbed);
+
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();

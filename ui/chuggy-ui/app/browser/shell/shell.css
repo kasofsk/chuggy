@@ -1,10 +1,30 @@
 /* The banner spans the frame rather than a reading measure, which is the one
    thing about the shell a utility on the shell cannot state: the width and the
-   corners belong to the notice inside it. */
+   corners belong to the notice inside it. The thread the chat pane holds is
+   marked in its history by a slow wash and an outline rather than a mark
+   beside it; with motion reduced the wash holds still. */
 
 @layer page {
   .shell-banner > .notice {
     max-width: none;
     border-radius: 0;
+  }
+
+  .chat-history-row[data-state="checked"] {
+    outline: var(--hairline) solid var(--tone-live);
+    outline-offset: calc(-1 * var(--hairline));
+    animation: chat-history-held calc(2 * var(--duration-pulse)) ease-in-out
+      infinite;
+  }
+
+  @keyframes chat-history-held {
+    0%,
+    100% {
+      background: var(--wash-live);
+    }
+
+    50% {
+      background: transparent;
+    }
   }
 }

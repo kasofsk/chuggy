@@ -3,6 +3,11 @@
  * page says about itself beside it. At the desk width the details are an aside
  * with the page still beside them; under it there is room for one, so the
  * toggle swaps the middle rather than squeezing it.
+ *
+ * The page's region is the container a page's sheets query, not the viewport,
+ * so a page the chat pane narrows lays itself out as narrow. A page that takes
+ * the page width marks itself `data-fills-width`: centred at its content's
+ * width, a page whose content is the page width could never be narrower.
  */
 
 import { Separator } from "radix-ui";
@@ -52,10 +57,10 @@ export function DetailsPane(props: {
         className={
           scrollerHidden
             ? undefined
-            : "grid min-h-0 grid-rows-[minmax(0,1fr)] overflow-y-auto"
+            : "@container grid min-h-0 grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)] overflow-y-auto"
         }
       >
-        <div className="mx-auto flex max-w-page flex-col gap-4 self-start p-4 has-[[data-fills-page]]:w-full has-[[data-fills-page]]:max-w-none has-[[data-fills-page]]:p-0 has-[[data-fills-page]]:self-stretch">
+        <div className="mx-auto flex max-w-page flex-col gap-4 self-start p-4 has-[[data-fills-width]]:w-full has-[[data-fills-page]]:w-full has-[[data-fills-page]]:max-w-none has-[[data-fills-page]]:p-0 has-[[data-fills-page]]:self-stretch">
           {props.children}
         </div>
       </div>

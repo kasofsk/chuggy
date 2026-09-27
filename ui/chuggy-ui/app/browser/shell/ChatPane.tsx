@@ -45,12 +45,14 @@ import {
 import { threadAnswering, threadMine } from "../../core/threads.ts";
 import { useApiPorts, usePanelList } from "../api.ts";
 import { PanelUnready } from "../DataPanel.tsx";
+import { Conversation } from "../conversation/Conversation.tsx";
 import { ThreadConversation } from "../thread/ThreadConversation.tsx";
+import { useThreadSend } from "../thread/threadSend.tsx";
 import { threadsListName, useThread } from "../thread/threadRead.ts";
 import { Button } from "../ui/Button.tsx";
-import { EmptyState } from "../ui/EmptyState.tsx";
 import { Notice } from "../ui/Notice.tsx";
 import { useChatPane } from "./chatPaneHeld.tsx";
+import { ChatPaneIcon } from "./chatPaneIcons.tsx";
 import { ChatPaneHistory, ChatPaneThreadActions } from "./ChatPaneHistory.tsx";
 
 /** The list entry the pane keeps its answering read under, distinct from the
@@ -146,7 +148,10 @@ function ChatPaneStartControl(props: {
           });
         }}
       >
-        {start.start === "Answering" ? "Answering" : "New"}
+        <ChatPaneIcon
+          glyph="new"
+          label={start.start === "Answering" ? "Answering" : "New"}
+        />
       </Button>
       {refused === undefined ? null : (
         <Notice tone="danger" inline detail={`Refused · ${refused}`} />
@@ -171,7 +176,7 @@ function ChatPaneControls(): ReactNode {
             held.moveTo(chatPaneRestored(state));
           }}
         >
-          Exit full screen
+          <ChatPaneIcon glyph="restore" label="Exit full screen" />
         </Button>
       ) : (
         <Button
@@ -181,7 +186,7 @@ function ChatPaneControls(): ReactNode {
             held.moveTo(chatPaneFilled(state));
           }}
         >
-          Full screen
+          <ChatPaneIcon glyph="fill" label="Full screen" />
         </Button>
       )}
       <Button
@@ -191,7 +196,7 @@ function ChatPaneControls(): ReactNode {
           held.moveTo(chatPaneToggled(state));
         }}
       >
-        Collapse
+        <ChatPaneIcon glyph="collapse" label="Collapse" />
       </Button>
     </>
   );
@@ -215,6 +220,43 @@ function ChatPaneThread(props: {
   );
 }
 
+/**
+ * The composer a reader with no thread types in, whose first press opens one.
+ * It stays drawn until that message is sent, so the thread it opened arriving
+ * in the listing mid-send does not take the text away with it.
+ */
+function ChatPaneFirst(props: {
+  readonly partition: PartitionIdentity;
+  readonly onStarting: () => void;
+  readonly onStarted: (session: string) => void;
+}): ReactNode {
+  const composer = useThreadSend({
+    partition: props.partition,
+    session: undefined,
+    takes: true,
+    onStarted: props.onStarted,
+  });
+  return (
+    <div
+      role="region"
+      aria-label="Conversation"
+      className="min-h-0 min-w-0 flex-1"
+    >
+      <Conversation
+        exchanges={[]}
+        composer={{
+          ...composer,
+          onSend: (text) => {
+            props.onStarting();
+            return composer.onSend(text);
+          },
+        }}
+        pane
+      />
+    </div>
+  );
+}
+
 /** The collapsed pane: the one control that brings it back, and nothing that
  * reads. */
 function ChatPaneStrip(): ReactNode {
@@ -228,19 +270,7 @@ function ChatPaneStrip(): ReactNode {
           held.moveTo(chatPaneToggled(held.state));
         }}
       >
-        <svg
-          aria-hidden="true"
-          className="size-4"
-          viewBox="0 0 16 16"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          <path d="M2.5 4h11v6.5h-6L4.5 13v-2.5h-2z" />
-        </svg>
-        <span className="visually-hidden">Expand chat</span>
+        <ChatPaneIcon glyph="chat" label="Expand chat" />
       </Button>
     </div>
   );
@@ -253,6 +283,7 @@ function ChatPaneOpen(props: {
   const mine = threads === undefined ? undefined : threadMine(threads);
   const answering = useChatPaneAnswering(props.partition, mine?.session);
   const [chosen, setChosen] = useState<string | undefined>(undefined);
+  const [starting, setStarting] = useState(false);
   const holding = chatPaneHolding(threads, answering, chosen);
   const held = threads?.find((thread) => thread.session === holding.session);
   return (
@@ -260,40 +291,52 @@ function ChatPaneOpen(props: {
       aria-label="Chat"
       className="bg-surface-1 relative grid min-h-0 min-w-0 grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] overflow-hidden"
     >
-      <header className="flex min-w-0 flex-wrap items-center gap-2 px-3 py-2">
-        {held === undefined ? (
-          <div className="flex w-full min-w-0 items-center gap-2">
-            <h2 className="text-ink-2 font-strong min-w-0 flex-1 truncate text-sm">
-              Chat
-            </h2>
+      <header className="border-edge grid min-w-0 border-b">
+        <div className="flex min-w-0 flex-wrap items-center justify-evenly gap-1 px-3 py-2">
+          <ChatPaneStartControl
+            partition={props.partition}
+            start={holding.start}
+            onOpened={setChosen}
+          />
+          {threads === undefined ? null : (
+            <ChatPaneHistory
+              threads={threads}
+              session={holding.session}
+              onChoose={(session) => {
+                setChosen(session);
+                setStarting(false);
+              }}
+            />
+          )}
+          <ChatPaneControls />
+        </div>
+        {held === undefined ? null : (
+          <div className="border-edge grid min-w-0 gap-1 border-t px-3 py-2">
+            <ChatPaneThreadActions partition={props.partition} thread={held} />
           </div>
-        ) : (
-          <ChatPaneThreadActions partition={props.partition} thread={held} />
         )}
-        <ChatPaneStartControl
-          partition={props.partition}
-          start={holding.start}
-          onOpened={setChosen}
-        />
-        {threads === undefined ? null : (
-          <ChatPaneHistory
-            threads={threads}
+      </header>
+      <div className="bg-surface-0 grid min-h-0 min-w-0 grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)]">
+        {holding.session === undefined || starting ? (
+          <ChatPaneFirst
+            partition={props.partition}
+            onStarting={() => {
+              setStarting(true);
+            }}
+            onStarted={(session) => {
+              setChosen(session);
+              setStarting(false);
+            }}
+          />
+        ) : (
+          <ChatPaneThread
+            key={holding.session}
+            partition={props.partition}
             session={holding.session}
-            onChoose={setChosen}
+            named={chosen !== undefined}
           />
         )}
-        <ChatPaneControls />
-      </header>
-      {holding.session === undefined ? (
-        <EmptyState label="No thread" />
-      ) : (
-        <ChatPaneThread
-          key={holding.session}
-          partition={props.partition}
-          session={holding.session}
-          named={chosen !== undefined}
-        />
-      )}
+      </div>
     </section>
   );
 }

@@ -302,13 +302,11 @@ function composerDrawn(): HTMLElement {
  * A thread just opened is not in the listing yet: the `Session` frame that
  * stales it has not arrived. So the pane holds what the open answered rather
  * than waiting to be told, which is the difference between a reader typing
- * straight away and a reader looking at `No thread`.
+ * straight away and a reader looking at an empty pane.
  */
 test("starting a thread holds it at once, and the box takes the caret", async () => {
   await mounted(viewportDeskEm, threadServed([]));
-  expect(screen.getByText("No thread")).toBeDefined();
   await pressed("New");
-  expect(screen.queryByText("No thread")).toBeNull();
   expect(screen.getByRole("region", { name: "Conversation" })).toBeDefined();
   expect(
     document.activeElement,
