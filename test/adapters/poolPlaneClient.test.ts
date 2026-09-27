@@ -137,10 +137,7 @@ test("each settlement is the path it is said on and the body it needs", async ()
     outcome: "Refused",
     evidence: "refused",
   });
-  await plane.settle("pool-token", "three", {
-    outcome: "Unavailable",
-    retryAfterSecs: 9,
-  });
+  await plane.settle("pool-token", "three", { outcome: "Unavailable" });
   assert.deepEqual(
     sent.map((request) => request.url),
     [
@@ -151,7 +148,7 @@ test("each settlement is the path it is said on and the body it needs", async ()
   );
   assert.deepEqual(
     sent.map((request) => request.body),
-    ["{}", '{"evidence":"refused"}', '{"retryAfterSecs":9}'],
+    ["{}", '{"evidence":"refused"}', "{}"],
   );
 });
 

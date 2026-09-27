@@ -31,10 +31,7 @@
  */
 
 import { workerTaskVariable } from "../../contract/workerEnvironment.ts";
-import {
-  workerPoolRetryAfterSecsMax,
-  type WorkerPoolAssignment,
-} from "../../contract/workerPool.ts";
+import type { WorkerPoolAssignment } from "../../contract/workerPool.ts";
 import type { PoolEnvelope } from "../../contract/workerTask.ts";
 import type {
   WorkerPoolBackend,
@@ -109,8 +106,6 @@ export function checkedKubernetesPoolPlacementConfig(
   kubernetesPodNamePrefix(config.podNamePrefix, "pool placement pod prefix");
   kubernetesPositive(config.timeoutSecsMax, "pool workload timeout");
   kubernetesPositive(config.outputBytesMax, "pool workload output bound");
-  if (config.unavailableRetryAfterSecs > workerPoolRetryAfterSecsMax)
-    throw new RangeError("pool retry-after is more than the plane accepts");
   if (config.image.length === 0)
     throw new RangeError("pool worker image is empty");
   if (config.poolLabel.name.length === 0 || config.poolLabel.value.length === 0)
@@ -332,10 +327,7 @@ async function poolPlacementPlaced(
         evidence: `the cluster refused this workload: ${outcome.reason}`,
       };
     case "Unavailable":
-      return {
-        placed: "Unavailable",
-        retryAfterSecs: outcome.retryAfterSeconds,
-      };
+      return { placed: "Unavailable" };
   }
 }
 

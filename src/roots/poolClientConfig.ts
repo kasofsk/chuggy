@@ -144,7 +144,6 @@ const poolClientKubernetesSiteSchema = z.strictObject({
   timeoutSecsMax: poolClientBoundSchema,
   outputBytesMax: poolClientBoundSchema,
   requestTimeoutSecsMax: poolClientBoundSchema,
-  unavailableRetryAfterSecs: poolClientBoundSchema,
 });
 
 const poolClientSiteSchema = z.discriminatedUnion("fabric", [
@@ -245,7 +244,6 @@ export function poolClientConfig(
     site: poolClientSite(environment),
     client: {
       concurrencyMax: poolClientPositive(environment, "CONCURRENCY_MAX", 4),
-      retryAfterSecs: poolClientPositive(environment, "RETRY_AFTER_SECS", 30),
       outageBackoffMs: poolClientPositive(
         environment,
         "OUTAGE_BACKOFF_MS",

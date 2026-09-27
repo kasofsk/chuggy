@@ -51,8 +51,8 @@
  * `release_worker_pool_assignment`, which keeps the pool's name on the row and
  * takes its bearer, so a harness the pool launched before answering is refused
  * on every route. The scheduler opens no attempt for an execution a pool has
- * claimed one of, and so concludes it; the `retryAfterSecs` the pool answered
- * with paces nothing. Nothing here clears `pool` once a claim has set it.
+ * claimed one of, and so concludes it. Nothing here clears `pool` once a claim
+ * has set it.
  *
  * A REGISTRATION IS THE GENERATION AN ASSIGNMENT IS CURRENT UNDER. Each one
  * mints a new principal and a claim records it beside the pool's name.

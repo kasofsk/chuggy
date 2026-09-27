@@ -669,7 +669,6 @@ const site: KubernetesPoolPlacementConfig = {
   podSecurityContext: {},
   containerSecurityContext: {},
   requestTimeoutSecsMax: 2,
-  unavailableRetryAfterSecs: 11,
   workerPlaneUrl: "https://worker-plane.invalid",
   capabilityFile: "/run/chuggy/capability",
   workspacePath: "/workspace",

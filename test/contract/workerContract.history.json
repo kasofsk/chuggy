@@ -8,5 +8,10 @@
     "release": "1.1.0",
     "wire": "50cbceb92c14d230fa5732de1829336c31fec7cca0e14cf5265311a8e3d42c72",
     "files": "27f06beacd6b992edfba4c9b2778655d0eb11f007166dac45668567d4e871159"
+  },
+  {
+    "release": "1.2.0",
+    "wire": "02a90d37640551d72c478e8c51e13e8ab57a316df2c2a60ffb3c34a8794c4b4a",
+    "files": "473969a1e74108c8c3abd5111e86050e45fddf702e30baae2788a318291d9566"
   }
 ]

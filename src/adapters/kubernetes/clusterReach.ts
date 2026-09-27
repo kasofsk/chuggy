@@ -44,6 +44,7 @@ import {
   type PlacementId,
 } from "../../interpreter/schedulerIdentity.ts";
 import type {
+  KubernetesLaunchSite,
   KubernetesPod,
   KubernetesPodSite,
   KubernetesSecret,
@@ -338,16 +339,20 @@ export const kubernetesManifestRefusals: ReadonlySet<number> = new Set([
   400, 413, 415, 422,
 ]);
 
-/** What one create answer means for the attempt it was made for. */
+/**
+ * What placing one pod came to, which is a placement's three arms with no wait
+ * on the inability: how long one holds is the launcher's to say.
+ */
+export type KubernetesPodPlaced =
+  | Exclude<AttemptPlacementOutcome, { readonly placed: "Unavailable" }>
+  | { readonly placed: "Unavailable" };
+
+/** What one create answer means for the pod it was made for. */
 export function kubernetesPlaced(
-  site: KubernetesPodSite,
   reached: KubernetesReached,
   placement: PlacementId,
-): AttemptPlacementOutcome {
-  const held: AttemptPlacementOutcome = {
-    placed: "Unavailable",
-    retryAfterSeconds: site.unavailableRetryAfterSecs,
-  };
+): KubernetesPodPlaced {
+  const held: KubernetesPodPlaced = { placed: "Unavailable" };
   if (reached.reached === "Unreachable") return held;
   if (
     reached.status === 200 ||
@@ -370,28 +375,38 @@ export async function kubernetesPlacePod(
   fetcher: typeof fetch,
   pod: KubernetesPod,
   secretFor: (podUid: string) => KubernetesSecret,
-): Promise<AttemptPlacementOutcome> {
+): Promise<KubernetesPodPlaced> {
   const placement = asPlacementId(pod.metadata.name);
   const reached = await kubernetesCreatePod(site, fetcher, pod);
-  const outcome = kubernetesPlaced(site, reached, placement);
+  const outcome = kubernetesPlaced(reached, placement);
   if (outcome.placed !== "Placed") return outcome;
   const podUid = kubernetesPodUid(reached, pod);
-  let failed: AttemptPlacementOutcome = {
-    placed: "Unavailable",
-    retryAfterSeconds: site.unavailableRetryAfterSecs,
-  };
+  let failed: KubernetesPodPlaced = { placed: "Unavailable" };
   if (podUid !== undefined) {
     const secret = await kubernetesEnsureSecret(
       site,
       fetcher,
       secretFor(podUid),
     );
-    const secretOutcome = kubernetesPlaced(site, secret, placement);
+    const secretOutcome = kubernetesPlaced(secret, placement);
     if (secretOutcome.placed === "Placed") return secretOutcome;
     failed = secretOutcome;
   }
   await kubernetesDeletePod(site, fetcher, pod.metadata.name);
   return failed;
+}
+
+/** A pod's placement as a launcher answers the scheduler: an inability held for the site's retry interval. */
+export function kubernetesLaunchPlaced(
+  site: KubernetesLaunchSite,
+  placed: KubernetesPodPlaced,
+): AttemptPlacementOutcome {
+  return placed.placed === "Unavailable"
+    ? {
+        placed: "Unavailable",
+        retryAfterSeconds: site.unavailableRetryAfterSecs,
+      }
+    : placed;
 }
 
 /**

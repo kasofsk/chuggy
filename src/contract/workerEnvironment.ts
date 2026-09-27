@@ -45,12 +45,6 @@ export const workerRepositoriesSchema = z.record(
   }),
 );
 
-/**
- * A variable nothing places and nothing reads, kept only because the published
- * contract still exports it until its next release.
- */
-export const workerDatabaseUrlVariable = "CHUG_WORKER_DATABASE_URL";
-
 /** The environment variable naming the model a session's runtime is opened against. */
 export const sessionModelVariable = "CHUG_SESSION_MODEL";
 

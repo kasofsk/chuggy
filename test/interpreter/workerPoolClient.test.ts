@@ -1,12 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import type { WorkerPoolAssignment } from "../../src/contract/workerPool.ts";
 import {
-  workerPoolRetryAfterSecsMax,
-  type WorkerPoolAssignment,
-} from "../../src/contract/workerPool.ts";
-import {
-  checkedWorkerPoolClientSettings,
   workerPoolClientPass,
   workerPoolClientRun,
   type WorkerPoolBackend,
@@ -23,7 +19,6 @@ import {
 
 const settings: WorkerPoolClientSettings = {
   concurrencyMax: 1,
-  retryAfterSecs: 7,
   outageBackoffMs: 1,
   passesMax: 1,
 };
@@ -190,11 +185,7 @@ test("a pool at its own ceiling polls for none, and places nothing it is offered
           });
         },
         settle: (_token, _assignment, outcome) => {
-          posted.push(
-            outcome.outcome === "Unavailable"
-              ? `Unavailable:${String(outcome.retryAfterSecs)}`
-              : outcome.outcome,
-          );
+          posted.push(outcome.outcome);
           return Promise.resolve<WorkerPoolSettled>("Settled");
         },
       },
@@ -202,7 +193,7 @@ test("a pool at its own ceiling polls for none, and places nothing it is offered
   );
   assert.deepEqual(asked, [0]);
   assert.equal(placed, 0);
-  assert.deepEqual(posted, ["Unavailable:7"]);
+  assert.deepEqual(posted, ["Unavailable"]);
   assert.deepEqual(passed, {
     passed: "Reconciled",
     placed: 0,
@@ -344,7 +335,7 @@ test("a placement the plane never acknowledged is still placed", async () => {
   });
 });
 
-test("a refused placement is reported as evidence rather than as backpressure", async () => {
+test("a refused placement is reported as evidence rather than as unavailable", async () => {
   const posted: string[] = [];
   const passed = await workerPoolClientPass(
     client({
@@ -476,24 +467,6 @@ test("an issuer that refused the grant stops the run and one that faltered does 
   );
   assert.equal(outage.passed, "Unavailable");
   assert.equal(waited, 2);
-});
-
-test("the retry-after a client answers with is bounded as the wire bounds it", () => {
-  assert.equal(
-    checkedWorkerPoolClientSettings({
-      ...settings,
-      retryAfterSecs: workerPoolRetryAfterSecsMax,
-    }).retryAfterSecs,
-    workerPoolRetryAfterSecsMax,
-  );
-  assert.throws(
-    () =>
-      checkedWorkerPoolClientSettings({
-        ...settings,
-        retryAfterSecs: workerPoolRetryAfterSecsMax + 1,
-      }),
-    RangeError,
-  );
 });
 
 test("a run refuses a bound that is not a positive whole number", async () => {

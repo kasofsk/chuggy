@@ -9,7 +9,6 @@ import test from "node:test";
 
 import {
   assignmentOutcomeSchema,
-  workerPoolRetryAfterSecsMax,
   workerPoolAssignmentSchema,
   workerPoolCapabilitiesMax,
   workerPoolIdentityCharsMax,
@@ -68,7 +67,7 @@ test("an assignment is bounded in every member a pool could grow", () => {
     assert.equal(workerPoolAssignmentSchema.safeParse(invalid).success, false);
 });
 
-test("an outcome tells a settled no from the pool's own backpressure", () => {
+test("an outcome tells a settled no from an unavailable one, which carries nothing", () => {
   assert.deepEqual(assignmentOutcomeSchema.parse({ outcome: "Accepted" }), {
     outcome: "Accepted",
   });
@@ -76,35 +75,16 @@ test("an outcome tells a settled no from the pool's own backpressure", () => {
     assignmentOutcomeSchema.safeParse({ outcome: "Refused" }).success,
     false,
   );
-  assert.equal(
-    assignmentOutcomeSchema.safeParse({
-      outcome: "Unavailable",
-      retryAfterSecs: 30,
-    }).success,
-    true,
-  );
-  assert.equal(
-    assignmentOutcomeSchema.safeParse({
-      outcome: "Unavailable",
-      evidence: "busy",
-    }).success,
-    false,
-  );
-  assert.equal(
-    assignmentOutcomeSchema.safeParse({
-      outcome: "Unavailable",
-      retryAfterSecs: workerPoolRetryAfterSecsMax,
-    }).success,
-    true,
-  );
-  assert.equal(
-    assignmentOutcomeSchema.safeParse({
-      outcome: "Unavailable",
-      retryAfterSecs: workerPoolRetryAfterSecsMax + 1,
-    }).success,
-    false,
-    "a pool's word on how long to wait is bounded",
-  );
+  assert.deepEqual(assignmentOutcomeSchema.parse({ outcome: "Unavailable" }), {
+    outcome: "Unavailable",
+  });
+  for (const extra of [{ evidence: "busy" }, { retryAfterSecs: 30 }])
+    assert.equal(
+      assignmentOutcomeSchema.safeParse({ outcome: "Unavailable", ...extra })
+        .success,
+      false,
+      JSON.stringify(extra),
+    );
 });
 
 test("a reconciliation carries what to place and what to stop, each name bounded", () => {

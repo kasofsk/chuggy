@@ -323,7 +323,7 @@ test("each settlement route reaches the one port its own path names", async () =
   for (const [outcome, payload] of [
     ["Accepted", {}],
     ["Refused", { evidence: "no runner" }],
-    ["Unavailable", { retryAfterSecs: 30 }],
+    ["Unavailable", {}],
   ] as const) {
     const url = workerPoolSettlementPath(outcome, "one");
     const answered = await app.inject({
@@ -347,7 +347,7 @@ test("a settlement whose body does not carry what its path needs is refused", as
     method: "POST",
     url: workerPoolSettlementPath("Refused", "one"),
     headers: speaking,
-    payload: { retryAfterSecs: 30 },
+    payload: {},
   });
   assert.equal(answered.statusCode, 400);
   assert.equal(answered.body, "");
@@ -357,10 +357,10 @@ test("a settlement whose body does not carry what its path needs is refused", as
 /** A later minor than the one this plane was built with, which it cannot serve. */
 const unreleased = `${String(workerContractAccepted.max.major)}.${String(workerContractAccepted.max.minor + 1)}.0`;
 
-test("a pool naming no release, the first release or one later than the plane's is refused at the poll and at every settlement, before any port", async () => {
+test("a pool naming no release, one below the plane's floor or one later than the plane's is refused at the poll and at every settlement, before any port", async () => {
   const recorded = calls();
   const app = createPoolPlaneApp(plane(recorded.ports));
-  for (const offered of [undefined, "1.0.0", unreleased]) {
+  for (const offered of [undefined, "1.0.0", "1.1.0", unreleased]) {
     const headers = {
       authorization: `Bearer ${poolToken}`,
       ...(offered === undefined ? {} : { [workerContractHeader]: offered }),
@@ -381,7 +381,7 @@ test("a pool naming no release, the first release or one later than the plane's 
         action: "stop",
         reason: "UnsupportedContractVersion",
         accepted: {
-          min: "1.1",
+          min: "1.2",
           max: workerContractVersionText(workerContractAccepted.max),
         },
       });
