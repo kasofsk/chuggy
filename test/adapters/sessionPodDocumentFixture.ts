@@ -68,7 +68,6 @@ export const goldenConfig: KubernetesSessionLaunchConfig = {
   },
   activeDeadlineSecs: 3_600,
   requestTimeoutSecsMax: 5,
-  unavailableRetryAfterSecs: 15,
   bounds: {
     mailboxPollMs: 1_000,
     idleMs: 300_000,

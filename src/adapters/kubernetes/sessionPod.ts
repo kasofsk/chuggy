@@ -52,7 +52,7 @@ import {
   sessionTaskInvocation,
 } from "../../interpreter/workerTask.ts";
 import {
-  checkedKubernetesLaunchSite,
+  checkedKubernetesPodSite,
   kubernetesAnnotationPrefix,
   kubernetesAttemptDigest,
   kubernetesContainerResources,
@@ -63,9 +63,9 @@ import {
   kubernetesPositiveNumber,
   kubernetesReservedVariables,
   type KubernetesCredentialSelection,
-  type KubernetesLaunchSite,
   type KubernetesPod,
   type KubernetesPodRequested,
+  type KubernetesPodSite,
   type KubernetesResourceBudget,
   type KubernetesSecret,
 } from "./kubernetesSite.ts";
@@ -133,7 +133,7 @@ const kubernetesSessionBoundNames = Object.keys(
 ) as readonly (keyof SessionBounds)[];
 
 /** Everything a deployment supplies the session-launch adapter beyond the shared site. */
-export interface KubernetesSessionLaunchConfig extends KubernetesLaunchSite {
+export interface KubernetesSessionLaunchConfig extends KubernetesPodSite {
   readonly podNamePrefix: string;
   readonly podLabels: Readonly<Record<string, string>>;
   readonly podAnnotations: Readonly<Record<string, string>>;
@@ -183,7 +183,7 @@ const kubernetesSessionWorkspaceVolume = "session-workspace";
 export function checkedKubernetesSessionLaunchConfig(
   config: KubernetesSessionLaunchConfig,
 ): KubernetesSessionLaunchConfig {
-  checkedKubernetesLaunchSite(config, "session");
+  checkedKubernetesPodSite(config, "session");
   kubernetesPodNamePrefix(config.podNamePrefix, "session pod name prefix");
   kubernetesReservedVariables(
     config.environment,

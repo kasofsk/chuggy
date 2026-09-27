@@ -199,7 +199,6 @@ const parsed = {
     resources,
     activeDeadlineSecs: 3_600,
     requestTimeoutSecsMax: 30,
-    unavailableRetryAfterSecs: 15,
   },
   policy: {
     profiles: {
@@ -225,7 +224,6 @@ const parsed = {
     podSecurityContext: {},
     containerSecurityContext: {},
     requestTimeoutSecsMax: 30,
-    unavailableRetryAfterSecs: 15,
     workerPlaneUrl: "https://worker-plane.invalid",
     capabilityFile: "/run/chuggy/capability",
     workspacePath: "/workspace",
@@ -278,7 +276,6 @@ test("a session stands on the site the worker half of one deployment already nam
     "podSecurityContext",
     "containerSecurityContext",
     "requestTimeoutSecsMax",
-    "unavailableRetryAfterSecs",
     "workerPlaneUrl",
     "capabilityFile",
     "workspacePath",
@@ -846,7 +843,6 @@ function processCluster(reachable: boolean): string {
       podSecurityContext: {}, containerSecurityContext: {},
       activeDeadlineSecs: 3600,
       requestTimeoutSecsMax: 5,
-      unavailableRetryAfterSecs: 15,
     };
     const sessionSite = {
       ...cluster,

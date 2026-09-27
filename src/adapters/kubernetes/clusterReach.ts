@@ -1,28 +1,30 @@
 /**
  * How this deployment reaches its cluster: one bounded request, the two object
  * collections it creates in, the placement flow a pod and its bearer Secret
- * share, and what each answer means for the attempt it was made for.
+ * share, and what each answer means for the pod it was made for.
  *
  * EVERY REACH IS BOUNDED AND EVERY OUTCOME IS A VALUE. One request carries one
- * deadline, nothing retries in place — a withdrawn attempt is a durable row and
- * the pass above decides when to try again — and a cluster that refuses, that
- * cannot be reached, or that answers something this module does not recognise
- * is an arm of the placement outcome rather than a raised failure.
+ * deadline, nothing retries in place, and a cluster that refuses, that cannot
+ * be reached, or that answers something this module does not recognise is an
+ * arm of the placement outcome rather than a raised failure.
  *
  * THE TWO INABILITIES PART AT THE STATUS LINE, AND AN ANSWER THIS MODULE DOES
- * NOT RECOGNISE IS A HOLD. Only a refusal of the submitted document itself —
- * malformed, too large, a media type the API does not take, or one it validated
- * and rejected — is the site declining to run this contract. A forbidden answer
- * is not: one status line cannot tell an exhausted quota, a terminating
- * namespace or a service account short of the create verb apart from an
- * admission refusal, and every one of those but the last resolves without
- * anyone touching the durable row. So every other answer describes the
- * cluster's own state at this moment and holds.
+ * NOT RECOGNISE IS UNAVAILABLE. Only a refusal of the submitted document
+ * itself — malformed, too large, a media type the API does not take, or one it
+ * validated and rejected — is the site declining to run this contract. A
+ * forbidden answer is not: one status line cannot tell an exhausted quota, a
+ * terminating namespace or a service account short of the create verb apart
+ * from an admission refusal, and every one of those but the last resolves
+ * without anyone touching the durable row. So every other answer describes the
+ * cluster's own state at this moment, and the placement is unavailable. The
+ * attempt it was made for is ended, and what follows is the caller's: the
+ * scheduler's launchers leave the execution or session held and try again after
+ * the scheduler's placement backoff, and a pool answers that it cannot run it.
  *
  * A CREDENTIAL IS READ PER ACT AND NEVER HELD. The token file is what the site
  * carries, so a rotated token is picked up without a restart and no credential
  * is ever an argument, a diagnostic or a stored value; a token that cannot be
- * read is a hold like an unreachable cluster.
+ * read is unavailable like an unreachable cluster.
  *
  * A POD IS CREATED BEFORE ITS SECRET BECAUSE THE SECRET IS OWNED BY THE POD.
  * The owner reference needs the pod's uid, which only the created pod has, so
@@ -44,7 +46,6 @@ import {
   type PlacementId,
 } from "../../interpreter/schedulerIdentity.ts";
 import type {
-  KubernetesLaunchSite,
   KubernetesPod,
   KubernetesPodSite,
   KubernetesSecret,
@@ -339,21 +340,13 @@ export const kubernetesManifestRefusals: ReadonlySet<number> = new Set([
   400, 413, 415, 422,
 ]);
 
-/**
- * What placing one pod came to, which is a placement's three arms with no wait
- * on the inability: how long one holds is the launcher's to say.
- */
-export type KubernetesPodPlaced =
-  | Exclude<AttemptPlacementOutcome, { readonly placed: "Unavailable" }>
-  | { readonly placed: "Unavailable" };
-
 /** What one create answer means for the pod it was made for. */
 export function kubernetesPlaced(
   reached: KubernetesReached,
   placement: PlacementId,
-): KubernetesPodPlaced {
-  const held: KubernetesPodPlaced = { placed: "Unavailable" };
-  if (reached.reached === "Unreachable") return held;
+): AttemptPlacementOutcome {
+  const unavailable: AttemptPlacementOutcome = { placed: "Unavailable" };
+  if (reached.reached === "Unreachable") return unavailable;
   if (
     reached.status === 200 ||
     reached.status === 201 ||
@@ -362,7 +355,7 @@ export function kubernetesPlaced(
     return { placed: "Placed", placement };
   return kubernetesManifestRefusals.has(reached.status)
     ? { placed: "Denied", reason: "ExecutionPolicyDenied" }
-    : held;
+    : unavailable;
 }
 
 /**
@@ -375,13 +368,13 @@ export async function kubernetesPlacePod(
   fetcher: typeof fetch,
   pod: KubernetesPod,
   secretFor: (podUid: string) => KubernetesSecret,
-): Promise<KubernetesPodPlaced> {
+): Promise<AttemptPlacementOutcome> {
   const placement = asPlacementId(pod.metadata.name);
   const reached = await kubernetesCreatePod(site, fetcher, pod);
   const outcome = kubernetesPlaced(reached, placement);
   if (outcome.placed !== "Placed") return outcome;
   const podUid = kubernetesPodUid(reached, pod);
-  let failed: KubernetesPodPlaced = { placed: "Unavailable" };
+  let failed: AttemptPlacementOutcome = { placed: "Unavailable" };
   if (podUid !== undefined) {
     const secret = await kubernetesEnsureSecret(
       site,
@@ -394,19 +387,6 @@ export async function kubernetesPlacePod(
   }
   await kubernetesDeletePod(site, fetcher, pod.metadata.name);
   return failed;
-}
-
-/** A pod's placement as a launcher answers the scheduler: an inability held for the site's retry interval. */
-export function kubernetesLaunchPlaced(
-  site: KubernetesLaunchSite,
-  placed: KubernetesPodPlaced,
-): AttemptPlacementOutcome {
-  return placed.placed === "Unavailable"
-    ? {
-        placed: "Unavailable",
-        retryAfterSeconds: site.unavailableRetryAfterSecs,
-      }
-    : placed;
 }
 
 /**

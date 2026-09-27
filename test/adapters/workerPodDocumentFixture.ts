@@ -100,7 +100,6 @@ export const goldenConfig: KubernetesWorkerLaunchConfig = {
   },
   activeDeadlineSecs: 7_200,
   requestTimeoutSecsMax: 30,
-  unavailableRetryAfterSecs: 15,
   sidecars: [],
 };
 

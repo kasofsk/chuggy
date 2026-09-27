@@ -22,7 +22,6 @@ import {
 } from "../../interpreter/serviceRuntime.ts";
 import {
   kubernetesCancelPod,
-  kubernetesLaunchPlaced,
   kubernetesPlacePod,
   kubernetesReach,
 } from "./clusterReach.ts";
@@ -45,11 +44,8 @@ export function kubernetesWorkerLaunch(
       const requested = kubernetesWorkerPodRequest(config, placement);
       if (requested.requested === "Denied")
         return { placed: "Denied", reason: requested.reason };
-      return kubernetesLaunchPlaced(
-        config,
-        await kubernetesPlacePod(config, fetcher, requested.pod, (podUid) =>
-          kubernetesWorkerSecret(config, placement, podUid),
-        ),
+      return kubernetesPlacePod(config, fetcher, requested.pod, (podUid) =>
+        kubernetesWorkerSecret(config, placement, podUid),
       );
     },
     cancel: async (attempt) =>

@@ -83,7 +83,6 @@ const config: KubernetesSessionLaunchConfig = {
   containerSecurityContext: {},
   activeDeadlineSecs: 3_600,
   requestTimeoutSecsMax: 5,
-  unavailableRetryAfterSecs: 17,
   bounds: {
     mailboxPollMs: 1_000,
     idleMs: 300_000,
@@ -202,7 +201,7 @@ test("a refused document is the site declining, and every other answer holds", a
       await kubernetesSessionLaunch(config, cluster([], { pod: status })).place(
         placement,
       ),
-      { placed: "Unavailable", retryAfterSeconds: 17 },
+      { placed: "Unavailable" },
     );
   }
 });
@@ -211,7 +210,7 @@ test("a cluster that does not answer holds rather than denies", async () => {
   const placed = await kubernetesSessionLaunch(config, () =>
     Promise.reject(new Error("no route to host")),
   ).place(placement);
-  assert.deepEqual(placed, { placed: "Unavailable", retryAfterSeconds: 17 });
+  assert.deepEqual(placed, { placed: "Unavailable" });
 });
 
 test("a pod whose bearer Secret could not be made is deleted rather than left running", async () => {
@@ -220,7 +219,7 @@ test("a pod whose bearer Secret could not be made is deleted rather than left ru
     config,
     cluster(acts, { pod: 201, secret: 500 }),
   ).place(placement);
-  assert.deepEqual(placed, { placed: "Unavailable", retryAfterSeconds: 17 });
+  assert.deepEqual(placed, { placed: "Unavailable" });
   assert.deepEqual(acts, [
     "POST /api/v1/namespaces/chuggy-work/pods",
     "POST /api/v1/namespaces/chuggy-work/secrets",

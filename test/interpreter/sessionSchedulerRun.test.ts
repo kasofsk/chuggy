@@ -278,7 +278,7 @@ function service(
 test("every step of one pass is asked for at most the bound this deployment named", async () => {
   const calls: StoreCall[] = [];
   const report = await sessionSchedulerPass(
-    service(calls, {}, { placed: "Unavailable", retryAfterSeconds: 1 }),
+    service(calls, {}, { placed: "Unavailable" }),
     epoch,
   );
   assert.deepEqual(calls, [
@@ -331,7 +331,7 @@ for (const [observed, turnFailure, evidence] of podEndings) {
           observed,
           ...(turnFailure === undefined ? {} : { turnFailure }),
         },
-        { placed: "Unavailable", retryAfterSeconds: 1 },
+        { placed: "Unavailable" },
       ),
       epoch,
     );
@@ -363,7 +363,7 @@ test("a turn failed while the pass worked the rows ahead is still the attempt's 
         turnFailure: "StoreRefused",
         turnFailureFrom: "AfterTheObservation",
       },
-      { placed: "Unavailable", retryAfterSeconds: 1 },
+      { placed: "Unavailable" },
     ),
     epoch,
   );
@@ -380,7 +380,7 @@ test("a pod the plane could not observe is left to the lease and ends nothing", 
         turnFailure: "StoreRefused",
         observed: { observed: "Unended" },
       },
-      { placed: "Unavailable", retryAfterSeconds: 1 },
+      { placed: "Unavailable" },
     ),
     epoch,
   );
@@ -452,7 +452,7 @@ test("a session that has never run is placed with no reference to resume", async
 
 test("an unavailable placement withdraws the attempt and a denied one records the denial", async () => {
   for (const [outcome, evidence] of [
-    [{ placed: "Unavailable", retryAfterSeconds: 15 }, "PlacementUnavailable"],
+    [{ placed: "Unavailable" }, "PlacementUnavailable"],
     [
       { placed: "Denied", reason: "RequiredCapabilityUnavailable" },
       "PlacementDenied",
@@ -510,11 +510,7 @@ test("a pod the durable row would not take is cancelled where it was placed", as
 test("cleanup deletes each ended pod before it acknowledges the row", async () => {
   const calls: StoreCall[] = [];
   const report = await sessionSchedulerPass(
-    service(
-      calls,
-      { cleanup: [attempt] },
-      { placed: "Unavailable", retryAfterSeconds: 1 },
-    ),
+    service(calls, { cleanup: [attempt] }, { placed: "Unavailable" }),
     epoch,
   );
   assert.equal(report.cleaned, 1);
@@ -531,7 +527,7 @@ test("a cleanup the cluster cannot accept stops the pass rather than acknowledgi
       service(
         [],
         { cleanup: [attempt], cancelled: "Unavailable" },
-        { placed: "Unavailable", retryAfterSeconds: 1 },
+        { placed: "Unavailable" },
       ),
       epoch,
     ),
