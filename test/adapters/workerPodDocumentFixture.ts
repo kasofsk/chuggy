@@ -6,6 +6,7 @@
  * so the document exercises every part of the renderer a lift could disturb.
  */
 
+import type { KubernetesSidecar } from "../../src/adapters/kubernetes/sidecars.ts";
 import {
   kubernetesWorkerPodRequest,
   type KubernetesWorkerLaunchConfig,
@@ -100,9 +101,39 @@ export const goldenConfig: KubernetesWorkerLaunchConfig = {
   activeDeadlineSecs: 7_200,
   requestTimeoutSecsMax: 30,
   unavailableRetryAfterSecs: 15,
+  sidecars: [],
 };
 
-const goldenPlacement: AttemptPlacement = {
+/** The rig's `CHUG_SCHEDULER_WORKER_SIDECARS`, exactly as its site writes it. */
+export const rigSidecars: readonly KubernetesSidecar[] = [
+  {
+    name: "postgres",
+    image:
+      "docker.io/library/postgres:18-alpine@sha256:d3e1620b530c944afa6e887d22eb899824da68e19c52024bf98f5220c88a65b2",
+    args: ["-c", "listen_addresses=127.0.0.1"],
+    environment: { POSTGRES_HOST_AUTH_METHOD: "trust" },
+    startupProbe: {
+      exec: { command: ["pg_isready", "-h", "127.0.0.1", "-U", "postgres"] },
+      periodSeconds: 1,
+      failureThreshold: 120,
+    },
+    resources: {
+      cpuRequest: "250m",
+      cpuLimit: "1",
+      memoryRequest: "256Mi",
+      memoryLimit: "1Gi",
+      ephemeralStorageLimit: "4Gi",
+    },
+    scratch: { mountPath: "/var/lib/postgresql" },
+  },
+];
+
+/** The rig's sidecars under an image no registry serves, which is what the golden pins. */
+export const goldenSidecars: readonly KubernetesSidecar[] = rigSidecars.map(
+  (sidecar) => ({ ...sidecar, image: "registry.invalid/golden-postgres:18" }),
+);
+
+export const goldenPlacement: AttemptPlacement = {
   partition: {
     tenant: asTenantId("golden-tenant"),
     project: asProjectId("golden-project"),
@@ -136,25 +167,13 @@ const goldenPlacement: AttemptPlacement = {
   },
 };
 
-/** Both database arms, since a site that runs no database renders a pod with no sidecar. */
+/** Both sidecar arms, since a site that names none renders a pod with no init containers. */
 export function workerPodDocuments(): unknown {
   return {
-    withDatabase: kubernetesWorkerPodRequest(
-      {
-        ...goldenConfig,
-        database: {
-          image: "registry.invalid/golden-postgres:18",
-          resources: {
-            cpuRequest: "250m",
-            cpuLimit: "1",
-            memoryRequest: "256Mi",
-            memoryLimit: "1Gi",
-            ephemeralStorageLimit: "4Gi",
-          },
-        },
-      },
+    withSidecars: kubernetesWorkerPodRequest(
+      { ...goldenConfig, sidecars: goldenSidecars },
       goldenPlacement,
     ),
-    withoutDatabase: kubernetesWorkerPodRequest(goldenConfig, goldenPlacement),
+    withoutSidecars: kubernetesWorkerPodRequest(goldenConfig, goldenPlacement),
   };
 }

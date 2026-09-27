@@ -33,10 +33,7 @@ import {
   kubernetesWorkerTask,
   type KubernetesWorkerLaunchConfig,
 } from "../../src/adapters/kubernetes/workerPod.ts";
-import {
-  kubernetesWorkerDatabaseContainerName,
-  kubernetesWorkerDatabaseUrl,
-} from "../../src/adapters/kubernetes/workerDatabase.ts";
+import type { KubernetesSidecar } from "../../src/adapters/kubernetes/sidecars.ts";
 import {
   kubernetesNameCharsMax,
   type KubernetesPod,
@@ -46,7 +43,6 @@ import {
   sessionTaskVariable,
   workerCredentialFilesSchema,
   workerCredentialFilesVariable,
-  workerDatabaseUrlVariable,
   workerRepositoriesSchema,
   workerRepositoriesVariable,
   workerTaskVariable,
@@ -100,8 +96,17 @@ const workspaceCredentialMount = {
   mountPath: "/run/chuggy/credentials/workspace",
 } as const;
 
-const workerDatabase = {
-  image: "registry.invalid/postgres:18",
+/** A sidecar unlike the golden's: a port for its probe and no arguments. */
+const workerSidecar: KubernetesSidecar = {
+  name: "cache",
+  image: "registry.invalid/cache:7",
+  args: [],
+  environment: { CACHE_BIND: "127.0.0.1" },
+  startupProbe: {
+    tcpSocket: { port: 6379 },
+    periodSeconds: 2,
+    failureThreshold: 30,
+  },
   resources: {
     cpuRequest: "250m",
     cpuLimit: "1",
@@ -109,7 +114,8 @@ const workerDatabase = {
     memoryLimit: "1Gi",
     ephemeralStorageLimit: "4Gi",
   },
-} as const;
+  scratch: { mountPath: "/data" },
+};
 
 const workerRepositoriesValue = JSON.stringify({
   repository: {
@@ -130,7 +136,7 @@ const config: KubernetesWorkerLaunchConfig = {
     workspace: workspaceCredentialMount,
   },
   environment: { [workerRepositoriesVariable]: workerRepositoriesValue },
-  database: workerDatabase,
+  sidecars: [workerSidecar],
   serviceAccountName: "chuggy-worker",
   podNamePrefix: "chuggy-worker",
   resources: {
@@ -324,10 +330,6 @@ function expectedContainer(): unknown {
         }),
       },
       {
-        name: workerDatabaseUrlVariable,
-        value: kubernetesWorkerDatabaseUrl,
-      },
-      {
         name: workerRepositoriesVariable,
         value: workerRepositoriesValue,
       },
@@ -367,19 +369,18 @@ function expectedContainer(): unknown {
   };
 }
 
-/** The attempt's PostgreSQL, started before the worker and gone with it. */
-function expectedDatabaseContainer(): unknown {
+/** The site's sidecar, started before the worker and gone with it, and with no arguments to write. */
+function expectedSidecarContainer(): unknown {
   return {
-    name: kubernetesWorkerDatabaseContainerName,
-    image: "registry.invalid/postgres:18",
-    args: ["-c", "listen_addresses=127.0.0.1"],
+    name: "cache",
+    image: "registry.invalid/cache:7",
     restartPolicy: "Always",
     startupProbe: {
-      exec: { command: ["pg_isready", "-h", "127.0.0.1", "-U", "postgres"] },
-      periodSeconds: 1,
-      failureThreshold: 120,
+      tcpSocket: { port: 6379 },
+      periodSeconds: 2,
+      failureThreshold: 30,
     },
-    env: [{ name: "POSTGRES_HOST_AUTH_METHOD", value: "trust" }],
+    env: [{ name: "CACHE_BIND", value: "127.0.0.1" }],
     resources: {
       requests: {
         cpu: "250m",
@@ -394,11 +395,7 @@ function expectedDatabaseContainer(): unknown {
     },
     securityContext: { allowPrivilegeEscalation: false },
     volumeMounts: [
-      {
-        name: "worker-database",
-        mountPath: "/var/lib/postgresql",
-        readOnly: false,
-      },
+      { name: "sidecar-cache", mountPath: "/data", readOnly: false },
     ],
   };
 }
@@ -419,7 +416,7 @@ function expectedVolumes(name: string): unknown {
       name: "minted-credential",
       emptyDir: { medium: "Memory", sizeLimit: "1Mi" },
     },
-    { name: "worker-database", emptyDir: { sizeLimit: "4Gi" } },
+    { name: "sidecar-cache", emptyDir: { sizeLimit: "4Gi" } },
     {
       name: "worker-credential-0",
       projected: {
@@ -474,7 +471,7 @@ function expectedPod(name: string): unknown {
       activeDeadlineSeconds: 3_600,
       nodeSelector: { "kubernetes.io/os": "linux" },
       securityContext: { runAsNonRoot: true },
-      initContainers: [expectedDatabaseContainer()],
+      initContainers: [expectedSidecarContainer()],
       containers: [expectedContainer()],
       volumes: expectedVolumes(name),
     },
@@ -1048,7 +1045,8 @@ test("a deployment that cannot address a cluster is refused where it is composed
     { podNamePrefix: "worker-" },
     { podNamePrefix: "w".repeat(kubernetesNameCharsMax) },
     { tokenFile: "" },
-    { database: { ...workerDatabase, image: "" } },
+    { sidecars: [{ ...workerSidecar, image: "" }] },
+    { sidecars: [{ ...workerSidecar, name: kubernetesWorkerContainerName }] },
     { activeDeadlineSecs: 0 },
     { requestTimeoutSecsMax: 0 },
     { unavailableRetryAfterSecs: 0 },
@@ -1072,7 +1070,6 @@ test("site environment cannot replace any worker-owned document", () => {
     workerTaskVariable,
     sessionTaskVariable,
     workerCredentialFilesVariable,
-    workerDatabaseUrlVariable,
   ]);
   for (const variable of populated(
     kubernetesWorkerReservedVariables,
@@ -1090,23 +1087,20 @@ test("site environment cannot replace any worker-owned document", () => {
   }
 });
 
-test("a site that runs no database places a pod with no sidecar and tells its worker of none", () => {
-  const siteless: KubernetesWorkerLaunchConfig = { ...config };
-  delete (siteless as { database?: unknown }).database;
-  const requested = kubernetesWorkerPodRequest(siteless, placement);
-  assert.equal(requested.requested, "Pod");
-  if (requested.requested !== "Pod") return;
-  assert.equal(requested.pod.spec.initContainers, undefined);
+test("a site that names no sidecar places a pod with none, and its worker's container is the same either way", () => {
+  const without = kubernetesWorkerPodRequest(
+    { ...config, sidecars: [] },
+    placement,
+  );
+  const within = kubernetesWorkerPodRequest(config, placement);
+  assert.ok(without.requested === "Pod" && within.requested === "Pod");
+  assert.equal("initContainers" in without.pod.spec, false);
   assert.deepEqual(
-    requested.pod.spec.containers[0]?.env.filter(({ name }) =>
-      name.startsWith("CHUG_WORKER_DATABASE"),
-    ),
+    without.pod.spec.volumes.filter(({ name }) => name.startsWith("sidecar-")),
     [],
   );
-  assert.deepEqual(
-    requested.pod.spec.volumes.filter(({ name }) => name === "worker-database"),
-    [],
-  );
+  assert.equal(within.pod.spec.initContainers?.length, 1);
+  assert.deepEqual(without.pod.spec.containers, within.pod.spec.containers);
 });
 
 test("credential directory mounts cannot replace workspace or capability mounts", () => {

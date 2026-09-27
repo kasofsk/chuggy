@@ -69,10 +69,31 @@ const poolClientTolerationSchema = z.strictObject({
   effect: z.enum(["NoSchedule", "PreferNoSchedule", "NoExecute"]),
 });
 
-/** The PostgreSQL a site runs beside every workload, shaped as the launcher's own. */
-const poolClientDatabaseSchema = z.strictObject({
+const poolClientStartupProbeTimingShape = {
+  periodSeconds: poolClientBoundSchema,
+  failureThreshold: poolClientBoundSchema,
+};
+
+const poolClientStartupProbeSchema = z.union([
+  z.strictObject({
+    exec: z.strictObject({ command: z.array(poolClientTextSchema).min(1) }),
+    ...poolClientStartupProbeTimingShape,
+  }),
+  z.strictObject({
+    tcpSocket: z.strictObject({ port: poolClientBoundSchema }),
+    ...poolClientStartupProbeTimingShape,
+  }),
+]);
+
+/** One container a site runs beside every workload, shaped as the launcher's own. */
+const poolClientSidecarSchema = z.strictObject({
+  name: poolClientTextSchema,
   image: poolClientTextSchema,
+  args: z.array(z.string()).default([]),
+  environment: z.record(poolClientTextSchema, z.string()).default({}),
+  startupProbe: poolClientStartupProbeSchema.exactOptional(),
   resources: poolClientResourcesSchema,
+  scratch: z.strictObject({ mountPath: poolClientTextSchema }).exactOptional(),
 });
 
 /** Where one capability token's work belongs, which is a site's answer and not a pool's. */
@@ -118,7 +139,7 @@ const poolClientKubernetesSiteSchema = z.strictObject({
     .record(poolClientTextSchema, poolClientCapabilitySchema)
     .default({}),
   providerCredential: poolClientTextSchema.optional(),
-  database: poolClientDatabaseSchema.optional(),
+  sidecars: z.array(poolClientSidecarSchema).default([]),
   resources: poolClientResourcesSchema,
   timeoutSecsMax: poolClientBoundSchema,
   outputBytesMax: poolClientBoundSchema,

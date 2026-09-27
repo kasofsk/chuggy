@@ -1,5 +1,5 @@
 {
-  "withDatabase": {
+  "withSidecars": {
     "apiVersion": "v1",
     "kind": "Pod",
     "metadata": {
@@ -71,7 +71,7 @@
           },
           "volumeMounts": [
             {
-              "name": "worker-database",
+              "name": "sidecar-postgres",
               "mountPath": "/var/lib/postgresql",
               "readOnly": false
             }
@@ -91,10 +91,6 @@
                   "key": "task"
                 }
               }
-            },
-            {
-              "name": "CHUG_WORKER_DATABASE_URL",
-              "value": "postgres://postgres@127.0.0.1:5432/postgres"
             },
             {
               "name": "CHUG_WORKER_REPOSITORIES",
@@ -162,7 +158,7 @@
           }
         },
         {
-          "name": "worker-database",
+          "name": "sidecar-postgres",
           "emptyDir": {
             "sizeLimit": "4Gi"
           }
@@ -189,7 +185,7 @@
       ]
     }
   },
-  "withoutDatabase": {
+  "withoutSidecars": {
     "apiVersion": "v1",
     "kind": "Pod",
     "metadata": {

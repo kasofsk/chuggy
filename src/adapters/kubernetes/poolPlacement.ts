@@ -6,8 +6,8 @@
  * pod named for its identity, an `activeDeadlineSeconds`, a resource budget and
  * an envelope projected through a pod-owned Secret are assembled by
  * `kubernetesSite.ts`, whose pod and Secret helpers this backend is the one
- * caller of, and a site's database is the sidecar `workerDatabase.ts` renders
- * for a pushed worker too; what differs is that a pool is handed an assignment
+ * caller of, and a site's sidecars are the ones `sidecars.ts` renders for a
+ * pushed worker too; what differs is that a pool is handed an assignment
  * rather than a briefed placement, so nothing here reads a requirement, a
  * configuration or an invocation. The image is the one the assignment names,
  * which is the requirement's pinned image, and the pool's own where it names
@@ -30,10 +30,7 @@
  * rather than by a node.
  */
 
-import {
-  workerDatabaseUrlVariable,
-  workerTaskVariable,
-} from "../../contract/workerEnvironment.ts";
+import { workerTaskVariable } from "../../contract/workerEnvironment.ts";
 import {
   workerPoolRetryAfterSecsMax,
   type WorkerPoolAssignment,
@@ -68,12 +65,11 @@ import {
   type KubernetesToleration,
 } from "./kubernetesSite.ts";
 import {
-  checkedKubernetesWorkerDatabase,
-  kubernetesWorkerDatabaseContainers,
-  kubernetesWorkerDatabaseVariables,
-  kubernetesWorkerDatabaseVolumes,
-  type KubernetesWorkerDatabase,
-} from "./workerDatabase.ts";
+  checkedKubernetesSidecars,
+  kubernetesSidecarContainers,
+  kubernetesSidecarVolumes,
+  type KubernetesSidecar,
+} from "./sidecars.ts";
 
 /** The annotation one pod carries its assignment in, which is what `held` reads back. */
 export const kubernetesPoolAssignmentAnnotation = `${kubernetesAnnotationPrefix}assignment`;
@@ -102,8 +98,8 @@ export interface KubernetesPoolPlacementConfig extends KubernetesPodSite {
   >;
   /** The pool's own provider credential, named among the site's mounts and mounted into every workload. */
   readonly providerCredential?: string | undefined;
-  /** The PostgreSQL every workload runs beside it, as a pushed worker's pod does. */
-  readonly database?: KubernetesWorkerDatabase | undefined;
+  /** The containers every workload runs beside it, as a pushed worker's pod does. */
+  readonly sidecars: readonly KubernetesSidecar[];
 }
 
 export function checkedKubernetesPoolPlacementConfig(
@@ -121,10 +117,14 @@ export function checkedKubernetesPoolPlacementConfig(
     throw new RangeError("pool placement label is empty");
   kubernetesReservedVariables(
     config.environment,
-    [workerTaskVariable, workerDatabaseUrlVariable],
+    [workerTaskVariable],
     "pool worker environment",
   );
-  checkedKubernetesWorkerDatabase(config.database, "pool worker");
+  checkedKubernetesSidecars(
+    config.sidecars,
+    kubernetesPoolContainerName,
+    "pool worker",
+  );
   if (
     config.providerCredential !== undefined &&
     config.credentialMounts[config.providerCredential] === undefined
@@ -233,7 +233,7 @@ function poolPlacementPod(
     activeDeadlineSecs: poolPlacementDeadlineSecs(config, assignment),
     nodeSelector: constraints.nodeSelector,
     tolerations: constraints.tolerations,
-    initContainers: kubernetesWorkerDatabaseContainers(config, config.database),
+    initContainers: kubernetesSidecarContainers(config, config.sidecars),
     containers: [
       {
         name: kubernetesPoolContainerName,
@@ -243,7 +243,6 @@ function poolPlacementPod(
             name: workerTaskVariable,
             valueFrom: { secretKeyRef: { name, key: "task" } },
           },
-          ...kubernetesWorkerDatabaseVariables(config.database),
           ...Object.entries(config.environment).map(([variable, value]) => ({
             name: variable,
             value,
@@ -270,7 +269,7 @@ function poolPlacementPod(
       },
       { name: "control", emptyDir: { sizeLimit: "16Mi" } },
       kubernetesMintedCredentialVolumes().volume,
-      ...kubernetesWorkerDatabaseVolumes(config.database),
+      ...kubernetesSidecarVolumes(config.sidecars),
       ...credentials.volumes,
     ],
   });

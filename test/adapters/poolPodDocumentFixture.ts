@@ -16,6 +16,7 @@ import {
   kubernetesPoolBackend,
   type KubernetesPoolPlacementConfig,
 } from "../../src/adapters/kubernetes/poolPlacement.ts";
+import { goldenSidecars } from "./workerPodDocumentFixture.ts";
 
 const goldenConfig: Omit<KubernetesPoolPlacementConfig, "tokenFile"> = {
   apiBaseUrl: "https://golden-cluster.invalid:6443",
@@ -68,17 +69,7 @@ const goldenConfig: Omit<KubernetesPoolPlacementConfig, "tokenFile"> = {
     },
   },
   providerCredential: "claude-code",
-};
-
-const goldenDatabase = {
-  image: "registry.invalid/golden-postgres:18",
-  resources: {
-    cpuRequest: "250m",
-    cpuLimit: "1",
-    memoryRequest: "256Mi",
-    memoryLimit: "1Gi",
-    ephemeralStorageLimit: "4Gi",
-  },
+  sidecars: [],
 };
 
 const goldenAssignment: WorkerPoolAssignment = {
@@ -119,14 +110,14 @@ async function poolPodSubmitted(
   return submitted[0];
 }
 
-/** Both database arms, since a site that runs no database renders a pod with no sidecar. */
+/** Both sidecar arms, the worker golden's own sidecars in the first, so the two pods can be compared. */
 export async function poolPodDocuments(tokenFile: string): Promise<unknown> {
   const config: KubernetesPoolPlacementConfig = { ...goldenConfig, tokenFile };
   return {
-    withDatabase: await poolPodSubmitted({
+    withSidecars: await poolPodSubmitted({
       ...config,
-      database: goldenDatabase,
+      sidecars: goldenSidecars,
     }),
-    withoutDatabase: await poolPodSubmitted(config),
+    withoutSidecars: await poolPodSubmitted(config),
   };
 }

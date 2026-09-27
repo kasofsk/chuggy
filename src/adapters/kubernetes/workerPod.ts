@@ -35,14 +35,13 @@
  * configuration identity, every one of them taken from the placement; no
  * credential, no cluster fact and no value this module reached for itself.
  *
- * A WORKER'S POSTGRESQL IS THE SIDECAR `workerDatabase.ts` RENDERS, where the
- * site runs one.
+ * A WORKER'S SIDECARS ARE THE SITE'S. `sidecars.ts` renders them, and the
+ * worker's own container takes nothing from them.
  */
 
 import {
   sessionTaskVariable,
   workerCredentialFilesVariable,
-  workerDatabaseUrlVariable,
   workerTaskVariable,
 } from "../../contract/workerEnvironment.ts";
 import type { WorkTaskDocument } from "../../contract/workerTask.ts";
@@ -73,12 +72,11 @@ import {
   type KubernetesSecret,
 } from "./kubernetesSite.ts";
 import {
-  checkedKubernetesWorkerDatabase,
-  kubernetesWorkerDatabaseContainers,
-  kubernetesWorkerDatabaseVariables,
-  kubernetesWorkerDatabaseVolumes,
-  type KubernetesWorkerDatabase,
-} from "./workerDatabase.ts";
+  checkedKubernetesSidecars,
+  kubernetesSidecarContainers,
+  kubernetesSidecarVolumes,
+  type KubernetesSidecar,
+} from "./sidecars.ts";
 
 /**
  * Everything a deployment supplies the worker-launch adapter beyond the site
@@ -91,7 +89,7 @@ export interface KubernetesWorkerLaunchConfig extends KubernetesPodSite {
   readonly podAnnotations: Readonly<Record<string, string>>;
   readonly activeDeadlineSecs: number;
   readonly environment: Readonly<Record<string, string>>;
-  readonly database?: KubernetesWorkerDatabase;
+  readonly sidecars: readonly KubernetesSidecar[];
 }
 
 /** The name the worker's own container carries, so a reader of the cluster needs no lookup. */
@@ -105,7 +103,6 @@ export const kubernetesWorkerReservedVariables = [
   workerTaskVariable,
   sessionTaskVariable,
   workerCredentialFilesVariable,
-  workerDatabaseUrlVariable,
 ] as const;
 
 /**
@@ -122,7 +119,11 @@ export function checkedKubernetesWorkerLaunchConfig(
     kubernetesWorkerReservedVariables,
     "worker environment",
   );
-  checkedKubernetesWorkerDatabase(config.database, "worker");
+  checkedKubernetesSidecars(
+    config.sidecars,
+    kubernetesWorkerContainerName,
+    "worker",
+  );
   kubernetesPositive(config.activeDeadlineSecs, "worker active deadline");
   return config;
 }
@@ -286,7 +287,6 @@ function kubernetesWorkerContainer(
         name: workerCredentialFilesVariable,
         value: JSON.stringify(credentials.files),
       },
-      ...kubernetesWorkerDatabaseVariables(config.database),
       ...Object.entries(config.environment).map(([name, value]) => ({
         name,
         value,
@@ -312,7 +312,7 @@ function kubernetesWorkerContainer(
   };
 }
 
-/** Every volume the pod mounts: the bearer, the workspace, the sidecar's data, the mint and the credentials. */
+/** Every volume the pod mounts: the bearer, the workspace, the mint, the sidecars' scratch and the credentials. */
 function kubernetesWorkerVolumes(
   config: KubernetesWorkerLaunchConfig,
   placement: AttemptPlacement,
@@ -325,7 +325,7 @@ function kubernetesWorkerVolumes(
       emptyDir: { sizeLimit: config.resources.ephemeralStorageLimit },
     },
     kubernetesMintedCredentialVolumes().volume,
-    ...kubernetesWorkerDatabaseVolumes(config.database),
+    ...kubernetesSidecarVolumes(config.sidecars),
     ...credentials.volumes,
   ];
 }
@@ -345,10 +345,7 @@ export function kubernetesWorkerPodRequest(
   );
   if (credentials === undefined)
     return { requested: "Denied", reason: "RequiredCapabilityUnavailable" };
-  const initContainers = kubernetesWorkerDatabaseContainers(
-    config,
-    config.database,
-  );
+  const initContainers = kubernetesSidecarContainers(config, config.sidecars);
   return {
     requested: "Pod",
     pod: {

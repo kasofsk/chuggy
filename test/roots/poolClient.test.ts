@@ -163,28 +163,53 @@ test("a site names its own fabric, and a document under another name is refused"
   }
 });
 
-test("a site's database is read as the launcher's is, and one it does not describe is refused", async () => {
-  const database = {
+test("a site's sidecars are read as the launcher's are, none where it names none, and one it does not describe is refused", async () => {
+  const sidecar = {
+    name: "postgres",
     image: "registry.invalid/postgres:18",
+    args: ["-c", "listen_addresses=127.0.0.1"],
+    environment: { POSTGRES_HOST_AUTH_METHOD: "trust" },
+    startupProbe: {
+      tcpSocket: { port: 5432 },
+      periodSeconds: 1,
+      failureThreshold: 120,
+    },
+    resources: site.resources,
+    scratch: { mountPath: "/var/lib/postgresql" },
+  };
+  const bare = {
+    name: "cache",
+    image: sidecar.image,
     resources: site.resources,
   };
   const found = (
     await parsed({
       ...environment,
-      CHUG_POOL_CLIENT_SITE: JSON.stringify({ ...site, database }),
+      CHUG_POOL_CLIENT_SITE: JSON.stringify({
+        ...site,
+        sidecars: [sidecar, bare],
+      }),
     })
-  ).parsed as { site: { database?: unknown } };
-  assert.deepEqual(found.site.database, database);
+  ).parsed as { site: { sidecars?: unknown } };
+  assert.deepEqual(found.site.sidecars, [
+    sidecar,
+    { ...bare, args: [], environment: {} },
+  ]);
+  const unnamed = (await parsed(environment)).parsed as {
+    site: { sidecars?: unknown };
+  };
+  assert.deepEqual(unnamed.site.sidecars, []);
   for (const refused of [
-    { ...database, image: "" },
-    { image: database.image },
-    { ...database, port: 5432 },
+    { ...sidecar, image: "" },
+    { image: sidecar.image, resources: site.resources },
+    { ...sidecar, port: 5432 },
+    { ...sidecar, startupProbe: { tcpSocket: { port: 5432 } } },
   ]) {
     const answer = await parsed({
       ...environment,
-      CHUG_POOL_CLIENT_SITE: JSON.stringify({ ...site, database: refused }),
+      CHUG_POOL_CLIENT_SITE: JSON.stringify({ ...site, sidecars: [refused] }),
     });
     assert.equal(answer.parsed, undefined, JSON.stringify(refused));
-    assert.match(String(answer.refused), /CHUG_POOL_CLIENT_SITE: database/u);
+    assert.match(String(answer.refused), /CHUG_POOL_CLIENT_SITE: sidecars/u);
   }
 });

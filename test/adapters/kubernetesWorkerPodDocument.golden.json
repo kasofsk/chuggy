@@ -1,5 +1,5 @@
 {
-  "withDatabase": {
+  "withSidecars": {
     "requested": "Pod",
     "pod": {
       "apiVersion": "v1",
@@ -81,7 +81,7 @@
             },
             "volumeMounts": [
               {
-                "name": "worker-database",
+                "name": "sidecar-postgres",
                 "mountPath": "/var/lib/postgresql",
                 "readOnly": false
               }
@@ -100,10 +100,6 @@
               {
                 "name": "CHUG_WORKER_CREDENTIAL_FILES",
                 "value": "{\"forge\":\"/var/run/golden/forge/token\",\"workspace\":\"/var/run/golden/workspace/token\"}"
-              },
-              {
-                "name": "CHUG_WORKER_DATABASE_URL",
-                "value": "postgres://postgres@127.0.0.1:5432/postgres"
               },
               {
                 "name": "CHUG_WORKER_REPOSITORIES",
@@ -184,7 +180,7 @@
             }
           },
           {
-            "name": "worker-database",
+            "name": "sidecar-postgres",
             "emptyDir": {
               "sizeLimit": "4Gi"
             }
@@ -231,7 +227,7 @@
       }
     }
   },
-  "withoutDatabase": {
+  "withoutSidecars": {
     "requested": "Pod",
     "pod": {
       "apiVersion": "v1",

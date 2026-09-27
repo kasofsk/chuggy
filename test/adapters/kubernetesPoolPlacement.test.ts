@@ -6,7 +6,6 @@ import { after, test } from "node:test";
 
 import {
   mintedCredentialDirectory,
-  workerDatabaseUrlVariable,
   workerTaskVariable,
 } from "../../src/contract/workerEnvironment.ts";
 import {
@@ -14,13 +13,16 @@ import {
   type WorkerPoolAssignment,
 } from "../../src/contract/workerPool.ts";
 import { poolEnvelopeSchema } from "../../src/contract/workerTask.ts";
+import type { KubernetesPod } from "../../src/adapters/kubernetes/kubernetesSite.ts";
 import {
   checkedKubernetesPoolPlacementConfig,
   kubernetesPoolAssignmentAnnotation,
   kubernetesPoolBackend,
+  kubernetesPoolContainerName,
   kubernetesPoolPodName,
   type KubernetesPoolPlacementConfig,
 } from "../../src/adapters/kubernetes/poolPlacement.ts";
+import type { KubernetesSidecar } from "../../src/adapters/kubernetes/sidecars.ts";
 
 const root = mkdtempSync(join(tmpdir(), "chuggy-pool-kube-"));
 after(() => {
@@ -73,10 +75,14 @@ const config: KubernetesPoolPlacementConfig = {
     },
   },
   providerCredential: "codex-auth",
+  sidecars: [],
 };
 
-const database = {
-  image: "registry.invalid/postgres:18",
+const sidecar: KubernetesSidecar = {
+  name: "cache",
+  image: "registry.invalid/cache:7",
+  args: [],
+  environment: {},
   resources: {
     cpuRequest: "100m",
     cpuLimit: "1",
@@ -509,38 +515,42 @@ test("a site is refused where it reserves the variable the envelope is read from
   );
 });
 
-/**
- * Catches a site handing its workloads a server they would share, and whose
- * roles a gate's migration alters. It is refused whether or not the site runs
- * a sidecar, as the launcher refuses it.
- */
-test("a site is refused where its environment names the database a worker reaches", () => {
-  for (const site of [config, { ...config, database }])
-    assert.throws(
-      () =>
-        checkedKubernetesPoolPlacementConfig({
-          ...site,
-          environment: {
-            [workerDatabaseUrlVariable]: "postgres://shared.invalid/postgres",
-          },
-        }),
-      new RegExp(workerDatabaseUrlVariable, "u"),
-    );
-});
-
-test("a site is refused where its database names no image", () => {
+test("a site is refused where a sidecar names no image or takes the workload's own name", () => {
   assert.throws(
     () =>
       checkedKubernetesPoolPlacementConfig({
         ...config,
-        database: { ...database, image: "" },
+        sidecars: [{ ...sidecar, image: "" }],
       }),
-    /pool worker database image is empty/u,
+    /pool worker sidecar cache image is empty/u,
+  );
+  assert.throws(
+    () =>
+      checkedKubernetesPoolPlacementConfig({
+        ...config,
+        sidecars: [{ ...sidecar, name: kubernetesPoolContainerName }],
+      }),
+    /named like the worker's own container/u,
   );
   assert.deepEqual(
-    checkedKubernetesPoolPlacementConfig({ ...config, database }).database,
-    database,
+    checkedKubernetesPoolPlacementConfig({ ...config, sidecars: [sidecar] })
+      .sidecars,
+    [sidecar],
   );
+});
+
+test("a site's sidecars run beside its workload, and the workload's container is the same either way", async () => {
+  const within = (await placedPod({
+    ...config,
+    sidecars: [sidecar],
+  })) as unknown as KubernetesPod;
+  const without = (await placedPod(config)) as unknown as KubernetesPod;
+  assert.deepEqual(
+    within.spec.initContainers?.map(({ name }) => name),
+    [sidecar.name],
+  );
+  assert.equal("initContainers" in without.spec, false);
+  assert.deepEqual(within.spec.containers, without.spec.containers);
 });
 
 test("a pod name is a function of the assignment and of nothing else", () => {
