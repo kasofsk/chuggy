@@ -89,6 +89,40 @@ test("no divider is drawn where only one part has threads", async () => {
   expect(screen.queryByRole("separator")).toBeNull();
 });
 
+/** Each part is headed so a reader can tell whose threads they are looking
+ * at, whether or not both parts are present. */
+test("both headings are drawn where both parts have threads", async () => {
+  await historyOpened(vi.fn());
+  expect(screen.getByText("Yours")).toBeDefined();
+  expect(screen.getByText("Everyone else's")).toBeDefined();
+});
+
+test("only the present part's heading is drawn where the reader has only their own threads", async () => {
+  await historyOpened(
+    vi.fn(),
+    threads.filter((thread) => thread.mine),
+  );
+  expect(screen.getByText("Yours")).toBeDefined();
+  expect(screen.queryByText("Everyone else's")).toBeNull();
+});
+
+test("only the present part's heading is drawn where the reader has only everyone else's threads", async () => {
+  await historyOpened(
+    vi.fn(),
+    threads.filter((thread) => !thread.mine),
+  );
+  expect(screen.queryByText("Yours")).toBeNull();
+  expect(screen.getByText("Everyone else's")).toBeDefined();
+});
+
+/** A heading is not a row: it carries neither role the menu's rows are read
+ * by, so it never appears in the sequence the first test asserts. */
+test("a heading carries neither role a row or a divider is read by", async () => {
+  await historyOpened(vi.fn());
+  const heading = screen.getByText("Yours");
+  expect(heading.getAttribute("role")).toBeNull();
+});
+
 test("the thread the pane holds is the one checked", async () => {
   await historyOpened(vi.fn());
   expect(
