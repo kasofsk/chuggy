@@ -11,7 +11,11 @@
 import type { ReactNode } from "react";
 
 import type { DraftInitializationResponse } from "../../../../src/contract/responses.ts";
-import { creationOffered, creationStageLabel } from "../core/ticketCreation.ts";
+import {
+  creationOffered,
+  creationStageLabel,
+  creationStageOf,
+} from "../core/ticketCreation.ts";
 import type {
   CreationStage,
   TicketCreationForm,
@@ -98,16 +102,6 @@ function evaluatorCountsOffered(evaluatorsMax: number): readonly number[] {
   return Array.from({ length: evaluatorsMax }, (_, index) => index + 1);
 }
 
-/** A stage of the given width, its evaluators keyed densely from one. */
-function stageOfCount(count: number): CreationStage {
-  return {
-    key: 1,
-    evaluators: Array.from({ length: count }, (_, index) => ({
-      key: index + 1,
-    })),
-  };
-}
-
 /** A program with every stage's key set to its position, the rule the wire holds it to. */
 function programPositioned(program: readonly CreationStage[]): CreationStage[] {
   return program.map((stage, index) => ({ ...stage, key: index + 1 }));
@@ -119,7 +113,7 @@ function stageAdded(
 ): CreationStage[] {
   const last = form.program[form.program.length - 1];
   const count = Math.min(last?.evaluators.length ?? 1, evaluatorsMax);
-  return programPositioned([...form.program, stageOfCount(count)]);
+  return programPositioned([...form.program, creationStageOf(count, 1)]);
 }
 
 function Program(
@@ -148,7 +142,7 @@ function Program(
                 ...form,
                 program: programPositioned(
                   form.program.map((held, at) =>
-                    at === index ? stageOfCount(count) : held,
+                    at === index ? creationStageOf(count, 1) : held,
                   ),
                 ),
               });

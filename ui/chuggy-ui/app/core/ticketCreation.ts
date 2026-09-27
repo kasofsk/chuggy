@@ -564,6 +564,17 @@ export function creationStepSentence(
   }
 }
 
+/** A stage of the given width, its evaluators keyed densely from one, under
+ * the key its position in the program gives it. */
+export function creationStageOf(count: number, key: number): CreationStage {
+  return {
+    key,
+    evaluators: Array.from({ length: count }, (_, index) => ({
+      key: index + 1,
+    })),
+  };
+}
+
 export function creationStageLabel(stage: CreationStage): string {
   return String(stage.evaluators.length);
 }
