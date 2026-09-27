@@ -233,8 +233,8 @@ RUN cd /usr/local/lib/chuggy-core \
 # `.chug/tasks/keto/keto.yml` is an in-memory sqlite, and the release's own
 # container image carries a binary linked against musl. The URLs are the ones
 # `_postgres.sh` and `_keto.sh` accept in place of a container. In a pod the
-# servers are the fabric's: its PostgreSQL sidecar reaches the gates as
-# `CHUG_PG_URL` through `postgres.mjs`, and nothing hands them a Keto yet
+# servers are the site's: it names its PostgreSQL to the gates as `CHUG_PG_URL`
+# in its own environment, and nothing hands them a Keto yet
 # (kasofsk/chuggy#681), which a green build here does not say otherwise.
 #
 # THE SERVERS' LOGS ARE PRINTED ON THE WAY OUT. A server that does not come up
