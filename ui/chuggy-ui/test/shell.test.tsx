@@ -23,10 +23,13 @@ import {
 } from "../app/browser/shell/viewport.ts";
 import { chatPaneStoreKey } from "../app/core/chatPane.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
+import { elementScrollToStubbed } from "./scrolling.ts";
 import {
   threadBody,
   threadEntry,
+  threadMineSession,
   threadTranscriptPage,
+  threadTurn,
 } from "./threadFixture.ts";
 import { viewportAtEm } from "./viewport.ts";
 import {
@@ -73,7 +76,10 @@ beforeAll(() => {
   Element.prototype.releasePointerCapture = () => undefined;
 });
 
-beforeEach(resizeObserverStubbed);
+beforeEach(() => {
+  resizeObserverStubbed();
+  elementScrollToStubbed();
+});
 
 afterEach(() => {
   cleanup();
@@ -133,6 +139,15 @@ async function pressed(name: string): Promise<void> {
   await settled();
 }
 
+async function tooltipNamed(name: string): Promise<void> {
+  const button = screen.getByRole("button", { name });
+  const trigger = button.closest('[tabindex="0"]');
+  if (trigger === null) throw new Error(`no tooltip trigger around ${name}`);
+  fireEvent.focus(trigger);
+  expect((await screen.findByRole("tooltip")).textContent).toBe(name);
+  fireEvent.blur(trigger);
+}
+
 test("the chat pane sits beside the pages at the two-column width", async () => {
   await mounted(viewportTwoColumnEm);
   expect(chatDrawn()).not.toBeNull();
@@ -168,6 +183,22 @@ test("under that width it stacks under the pages rather than dividing them", asy
   expect(frameTracks()).toContain(
     "grid-rows-[minmax(0,1fr)_var(--height-chat)]",
   );
+  styleless();
+});
+
+/** Each icon control's hidden name is also what a pointer or a keyboard focus
+ * reveals, so a reader who does not use a screen reader learns what New, Full
+ * screen, Exit full screen, Collapse and Expand chat do before pressing them. */
+test("the pane's icon controls name themselves again on focus", async () => {
+  await mounted(viewportDeskEm);
+  await tooltipNamed("New");
+  await tooltipNamed("Full screen");
+  await tooltipNamed("Collapse");
+  await pressed("Full screen");
+  await tooltipNamed("Exit full screen");
+  await pressed("Exit full screen");
+  await pressed("Collapse");
+  await tooltipNamed("Expand chat");
   styleless();
 });
 
@@ -297,6 +328,49 @@ function threadServed(listed: readonly unknown[]): typeof fetch {
 function composerDrawn(): HTMLElement {
   return screen.getByRole("textbox", { name: "Message" });
 }
+
+/** A server holding the reader's own thread with a turn the mailbox has not
+ * settled, which is what withholds New and renames it Answering. */
+function answeringThreadServed(): typeof fetch {
+  return ((url: string) => {
+    if (url.includes(`/threads/${threadMineSession}/transcript`))
+      return Promise.resolve(answer(threadTranscriptPage(0)));
+    if (url.includes(`/threads/${threadMineSession}`))
+      return Promise.resolve(
+        answer(
+          threadBody({
+            session: threadMineSession,
+            turns: [threadTurn({ turn: "thread-turn-1", state: "Queued" })],
+          }),
+        ),
+      );
+    if (url.includes("/threads"))
+      return Promise.resolve(
+        answer({
+          threads: [
+            threadEntry({
+              session: threadMineSession,
+              owner: "geoff",
+              mine: true,
+            }),
+          ],
+        }),
+      );
+    return Promise.resolve(shellRoute(url));
+  }) as unknown as typeof fetch;
+}
+
+/** New is withheld and renamed Answering while the reader's own thread has not
+ * settled, which is exactly where a reader most needs its tooltip: the control
+ * cannot be pressed to learn what it does, so the tooltip has to open on focus
+ * regardless. */
+test("Answering's tooltip still opens on focus while New is disabled", async () => {
+  await mounted(viewportDeskEm, answeringThreadServed());
+  const button = screen.getByRole("button", { name: "Answering" });
+  expect(button.hasAttribute("disabled")).toBe(true);
+  await tooltipNamed("Answering");
+  styleless();
+});
 
 /**
  * A thread just opened is not in the listing yet: the `Session` frame that

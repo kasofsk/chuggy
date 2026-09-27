@@ -141,6 +141,24 @@ test("a listing with nothing to offer draws no control", () => {
   expect(screen.queryByRole("button", { name: "History" })).toBeNull();
 });
 
+/** The trigger's hidden name is also the tooltip a pointer or a keyboard focus
+ * reveals, so a reader who does not use a screen reader learns what History
+ * means before ever opening the menu. */
+test("the History trigger names itself again as a tooltip on focus", async () => {
+  render(
+    <ChatPaneHistory
+      threads={threads}
+      session={threadMineSession}
+      onChoose={vi.fn()}
+    />,
+  );
+  const button = screen.getByRole("button", { name: "History" });
+  const trigger = button.closest('[tabindex="0"]');
+  if (trigger === null) throw new Error("no tooltip trigger around History");
+  fireEvent.focus(trigger);
+  expect((await screen.findByRole("tooltip")).textContent).toBe("History");
+});
+
 function renderedActions(thread: Parameters<typeof threadEntry>[0]) {
   return render(
     <SessionProvider holder={holderDouble()}>
@@ -152,15 +170,30 @@ function renderedActions(thread: Parameters<typeof threadEntry>[0]) {
   );
 }
 
-/** The header draws Rename and Close as plain buttons, so a reader with no
- * pointer reaches them without a hover or a focus landing on a hidden
- * trigger first. */
+/** The header draws Rename and Close as plain buttons rather than behind a
+ * menu that has to be opened first, so a reader with no pointer reaches them
+ * by role and name alone — each now sits inside its own tooltip trigger too,
+ * which is a focus stop of its own before the button, asserted below. */
 test("the header offers Rename and Close with no hover", () => {
   renderedActions({ session: threadMineSession, mine: true });
   const rename = screen.getByRole("button", { name: "Rename" });
   const close = screen.getByRole("button", { name: "Close" });
   expect(rename.tagName).toBe("BUTTON");
   expect(close.tagName).toBe("BUTTON");
+});
+
+/** Rename and Close double their hidden name as a tooltip on focus — the same
+ * string spoken once, not stated a second way under a second word. */
+test("Rename and Close name themselves again as a tooltip on focus", async () => {
+  renderedActions({ session: threadMineSession, mine: true });
+  for (const name of ["Rename", "Close"]) {
+    const button = screen.getByRole("button", { name });
+    const trigger = button.closest('[tabindex="0"]');
+    if (trigger === null) throw new Error(`no tooltip trigger around ${name}`);
+    fireEvent.focus(trigger);
+    expect((await screen.findByRole("tooltip")).textContent).toBe(name);
+    fireEvent.blur(trigger);
+  }
 });
 
 test("neither Hide nor Show is offered anywhere", () => {
