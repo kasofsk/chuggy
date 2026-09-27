@@ -481,22 +481,45 @@ agent-authored code and needs PostgreSQL to run a repository's own gates
 against, and those gates migrate whatever server they are pointed at: they make
 and alter cluster-wide roles, which is an authority over the whole server that
 nothing agent-authored can be given on a server shared with this deployment.
-So the scheduler places the server with the worker, as a sidecar of the
-attempt's pod that listens on the pod's loopback alone, trusts what connects
-there, holds nothing before the attempt and is gone with it. This server keeps
-no login for workers, no worker namespace needs a route to it, and nothing
-below runs against it.
+So the rig names the server as a sidecar of every attempt's pod, one that
+listens on the pod's loopback alone, trusts what connects there, holds nothing
+before the attempt and is gone with it. This server keeps no login for workers,
+no worker namespace needs a route to it, and nothing below runs against it.
 
-**The scheduler names the image, and the worker is told a fixed address.**
-`CHUG_SCHEDULER_WORKER_DATABASE` carries `{"image": ..., "resources": ...}`:
-the PostgreSQL image the sidecar runs and what that container may use. Every
-worker pod then gets `CHUG_WORKER_DATABASE_URL` as a plain value naming the
-sidecar's superuser on loopback, and the worker core's `postgres.mjs`
-(kasofsk/chuggy-common) hands that to the gates as `CHUG_PG_URL`. A site that
-names no image places workers with no sidecar that are told of no server, and
-work that then needs one fails in the container. A pool's site document takes
-the same object as its `database`, and every workload the pool places gets the
-same sidecar and the same address.
+**The rig names the sidecar, and names its address to the worker.**
+`CHUG_SCHEDULER_WORKER_SIDECARS` is the list of containers the scheduler places
+beside every worker, and nothing in chuggy knows what they run. The rig's is
+this one:
+
+```json
+[
+  {
+    "name": "postgres",
+    "image": "docker.io/library/postgres:18-alpine@sha256:d3e1620b530c944afa6e887d22eb899824da68e19c52024bf98f5220c88a65b2",
+    "args": ["-c", "listen_addresses=127.0.0.1"],
+    "environment": { "POSTGRES_HOST_AUTH_METHOD": "trust" },
+    "startupProbe": {
+      "exec": { "command": ["pg_isready", "-h", "127.0.0.1", "-U", "postgres"] },
+      "periodSeconds": 1,
+      "failureThreshold": 120
+    },
+    "resources": {
+      "cpuRequest": "250m", "cpuLimit": "1",
+      "memoryRequest": "256Mi", "memoryLimit": "1Gi",
+      "ephemeralStorageLimit": "4Gi"
+    },
+    "scratch": { "mountPath": "/var/lib/postgresql" }
+  }
+]
+```
+
+The gates reach it through `CHUG_PG_URL`, which the rig's
+`CHUG_SCHEDULER_WORKER_ENVIRONMENT` sets to
+`postgres://postgres@127.0.0.1:5432/postgres`, the sidecar's superuser on
+loopback. A site that names no sidecar places workers with none, and work that
+then needs a server fails in the container. A pool's site document takes the
+same list as its `sidecars`, and every workload the pool places gets the same
+sidecars.
 
 **The worker never waits for it.** The sidecar carries a startup probe, and the
 pod starts the worker container only once that probe has seen the server

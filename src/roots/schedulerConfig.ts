@@ -330,10 +330,34 @@ const schedulerResourcesSchema = z.strictObject({
   ephemeralStorageLimit: schedulerTextSchema,
 });
 
-const schedulerWorkerDatabaseSchema = z.strictObject({
-  image: schedulerTextSchema,
-  resources: schedulerResourcesSchema,
-});
+const schedulerStartupProbeTimingShape = {
+  periodSeconds: schedulerBoundSchema,
+  failureThreshold: schedulerBoundSchema,
+};
+
+const schedulerStartupProbeSchema = z.union([
+  z.strictObject({
+    exec: z.strictObject({ command: z.array(schedulerTextSchema).min(1) }),
+    ...schedulerStartupProbeTimingShape,
+  }),
+  z.strictObject({
+    tcpSocket: z.strictObject({ port: schedulerBoundSchema }),
+    ...schedulerStartupProbeTimingShape,
+  }),
+]);
+
+/** The containers a site runs beside every worker, and none where it names none. */
+const schedulerWorkerSidecarsSchema = z.array(
+  z.strictObject({
+    name: schedulerTextSchema,
+    image: schedulerTextSchema,
+    args: z.array(z.string()).default([]),
+    environment: schedulerTextMapSchema.default({}),
+    startupProbe: schedulerStartupProbeSchema.exactOptional(),
+    resources: schedulerResourcesSchema,
+    scratch: z.strictObject({ mountPath: schedulerTextSchema }).exactOptional(),
+  }),
+);
 
 const schedulerCredentialMountsSchema = z.record(
   schedulerTextSchema,
@@ -603,18 +627,14 @@ function schedulerWorkerSite(
 function schedulerWorkers(
   environment: SchedulerEnvironment,
 ): KubernetesWorkerLaunchConfig {
-  const database = schedulerOptional(environment, "WORKER_DATABASE");
   return {
     ...schedulerWorkerSite(environment),
-    ...(database === undefined
-      ? {}
-      : {
-          database: schedulerDocument(
-            "WORKER_DATABASE",
-            schedulerWorkerDatabaseSchema,
-            database,
-          ),
-        }),
+    sidecars: schedulerJsonOr(
+      environment,
+      "WORKER_SIDECARS",
+      schedulerWorkerSidecarsSchema,
+      [],
+    ),
     apiBaseUrl: schedulerRequired(environment, "CLUSTER_API_URL"),
     namespace: schedulerRequired(environment, "CLUSTER_NAMESPACE"),
     tokenFile: schedulerRequired(environment, "CLUSTER_TOKEN_FILE"),

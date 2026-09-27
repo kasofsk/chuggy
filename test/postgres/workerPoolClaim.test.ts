@@ -690,6 +690,7 @@ const site: KubernetesPoolPlacementConfig = {
   outputBytesMax: 4_096,
   environment: {},
   capabilities: {},
+  sidecars: [],
 };
 
 /** The image of the pod a site places for one assignment, as the cluster was asked to create it. */

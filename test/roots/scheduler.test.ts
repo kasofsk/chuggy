@@ -191,6 +191,7 @@ const parsed = {
     workerPlaneUrl: "https://worker-plane.invalid",
     capabilityFile: "/run/chuggy/capability",
     workspacePath: "/workspace",
+    sidecars: [],
     credentialMounts: {},
     environment: {},
     serviceAccountName: "chuggy-worker",
@@ -666,36 +667,92 @@ test("an admitted-images list longer than its bound is refused", async () => {
   assert.equal(found.parsed, undefined);
 });
 
-test("a worker's database sidecar is site data a placement carries, and is optional", async () => {
-  const database = {
+/** What one worker-sidecars document parses into, or the refusal naming it. */
+async function parsedWorkerSidecars(written: unknown): Promise<{
+  readonly parsed?: { readonly workers?: Record<string, unknown> };
+  readonly refused?: string;
+}> {
+  return JSON.parse(
+    await schedulerProgram(
+      parseProgram({
+        ...environment,
+        CHUG_SCHEDULER_WORKER_SIDECARS: JSON.stringify(written),
+      }),
+    ),
+  ) as {
+    readonly parsed?: { readonly workers?: Record<string, unknown> };
+    readonly refused?: string;
+  };
+}
+
+test("a worker's sidecars are site data a placement carries, each part the site may leave out filled in", async () => {
+  const probed = {
+    name: "postgres",
     image: "registry.invalid/postgres:18",
-    resources: {
-      cpuRequest: "250m",
-      cpuLimit: "1",
-      memoryRequest: "256Mi",
-      memoryLimit: "1Gi",
-      ephemeralStorageLimit: "4Gi",
+    args: ["-c", "listen_addresses=127.0.0.1"],
+    environment: { POSTGRES_HOST_AUTH_METHOD: "trust" },
+    startupProbe: {
+      exec: { command: ["pg_isready", "-h", "127.0.0.1"] },
+      periodSeconds: 1,
+      failureThreshold: 120,
+    },
+    resources,
+    scratch: { mountPath: "/var/lib/postgresql" },
+  };
+  const bare = { name: "cache", image: "registry.invalid/cache:7", resources };
+  const tcp = {
+    ...bare,
+    name: "queue",
+    startupProbe: {
+      tcpSocket: { port: 5672 },
+      periodSeconds: 2,
+      failureThreshold: 30,
     },
   };
-  const found = JSON.parse(
-    await schedulerProgram(
-      parseProgram({
-        ...environment,
-        CHUG_SCHEDULER_WORKER_DATABASE: JSON.stringify(database),
-      }),
-    ),
-  ) as { readonly parsed?: { readonly workers?: Record<string, unknown> } };
-  assert.deepEqual(found.parsed?.workers?.["database"], database);
+  const found = await parsedWorkerSidecars([probed, bare, tcp]);
+  assert.deepEqual(found.parsed?.workers?.["sidecars"], [
+    probed,
+    { ...bare, args: [], environment: {} },
+    { ...tcp, args: [], environment: {} },
+  ]);
+});
 
-  const refused = JSON.parse(
-    await schedulerProgram(
-      parseProgram({
-        ...environment,
-        CHUG_SCHEDULER_WORKER_DATABASE: JSON.stringify({ image: "i" }),
-      }),
-    ),
-  ) as { readonly refused?: string };
-  assert.match(refused.refused ?? "", /CHUG_SCHEDULER_WORKER_DATABASE/u);
+test("a worker sidecar the document does not describe is refused by the variable's name", async () => {
+  const bare = { name: "cache", image: "registry.invalid/cache:7", resources };
+  const probe = { periodSeconds: 1, failureThreshold: 1 };
+  for (const written of [
+    { image: "i" },
+    [{ image: "i", resources }],
+    [{ ...bare, image: "" }],
+    [{ ...bare, port: 6379 }],
+    [{ ...bare, startupProbe: { exec: { command: [] }, ...probe } }],
+    [{ ...bare, startupProbe: { tcpSocket: { port: 6379 } } }],
+    [
+      {
+        ...bare,
+        startupProbe: {
+          exec: { command: ["ready"] },
+          tcpSocket: { port: 6379 },
+          ...probe,
+        },
+      },
+    ],
+    [
+      {
+        ...bare,
+        startupProbe: { tcpSocket: { port: 6379 }, ...probe, periodSeconds: 0 },
+      },
+    ],
+    [{ ...bare, scratch: {} }],
+  ]) {
+    const found = await parsedWorkerSidecars(written);
+    assert.equal(found.parsed, undefined, JSON.stringify(written));
+    assert.match(
+      found.refused ?? "",
+      /CHUG_SCHEDULER_WORKER_SIDECARS/u,
+      JSON.stringify(written),
+    );
+  }
 });
 
 test("every prerequisite variable is refused by its own name", async () => {
@@ -781,6 +838,7 @@ function processCluster(reachable: boolean): string {
       workspacePath: '/workspace',
       credentialMounts: {},
       environment: {},
+      sidecars: [],
       serviceAccountName: 'chuggy-worker',
       podNamePrefix: 'chuggy-worker',
       resources: ${JSON.stringify(resources)},

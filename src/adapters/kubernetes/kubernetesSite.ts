@@ -29,6 +29,7 @@
 import { createHash } from "node:crypto";
 import { basename, dirname, isAbsolute, resolve } from "node:path";
 
+import { textCodePointsCount } from "../../contract/http.ts";
 import { mintedCredentialDirectory } from "../../contract/workerEnvironment.ts";
 import type { BlockedReason } from "../../interpreter/executionScheduler.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
@@ -88,21 +89,30 @@ export type KubernetesContainerVariable =
     };
 
 /**
+ * What the cluster asks before it counts a container as started: a command
+ * that exits cleanly or a port that accepts a connection, asked at the interval
+ * and up to the count the site names.
+ */
+export type KubernetesStartupProbe = (
+  | { readonly exec: { readonly command: readonly string[] } }
+  | { readonly tcpSocket: { readonly port: number } }
+) & {
+  readonly periodSeconds: number;
+  readonly failureThreshold: number;
+};
+
+/**
  * One container of a placed pod, as the cluster API is given it. A container
  * that carries `restartPolicy` is a sidecar: it is listed among the init
- * containers, is started before the pod's own and, once its startup probe
- * answers, runs beside them until they have exited.
+ * containers, is started before the pod's own, which wait for its startup probe
+ * where it has one, and runs beside them until they have exited.
  */
 export interface KubernetesContainer {
   readonly name: string;
   readonly image: string;
   readonly args?: readonly string[];
   readonly restartPolicy?: "Always";
-  readonly startupProbe?: {
-    readonly exec: { readonly command: readonly string[] };
-    readonly periodSeconds: number;
-    readonly failureThreshold: number;
-  };
+  readonly startupProbe?: KubernetesStartupProbe;
   readonly env: readonly KubernetesContainerVariable[];
   readonly resources: {
     readonly requests: Readonly<Record<string, string>>;
@@ -216,9 +226,24 @@ export const kubernetesNameCharsMax = 253;
 /** How much of an object name an attempt digest takes, measured from the digest itself. */
 export const kubernetesDigestChars = createHash("sha256").digest("hex").length;
 
+/** The longest name the cluster API accepts for a container or a volume. */
+export const kubernetesDnsLabelCharsMax = 63;
+
 export function kubernetesName(value: string, what: string): string {
   if (!kubernetesNamePattern.test(value))
     throw new RangeError(`${what} is not a Kubernetes object name`);
+  return value;
+}
+
+/** Refuses a name the cluster API would refuse for a container or a volume. */
+export function kubernetesDnsLabel(value: string, what: string): string {
+  if (
+    !kubernetesNamePattern.test(value) ||
+    textCodePointsCount(value) > kubernetesDnsLabelCharsMax
+  )
+    throw new RangeError(
+      `${what} is not a Kubernetes name of at most ${String(kubernetesDnsLabelCharsMax)} characters`,
+    );
   return value;
 }
 
