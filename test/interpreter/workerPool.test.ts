@@ -36,6 +36,9 @@ const settings: WorkerPoolPollSettings = {
   callbackUrl: "https://plane.invalid/v1/ticket-execution",
   pollIntervalMs: 1,
   pollsMax: 3,
+  imageHosts: new Map([
+    ["registry.chuggy.internal", "registry.public.invalid"],
+  ]),
 };
 
 /** A durable side holding nothing, which is what a pool with no work to take meets. */
@@ -45,6 +48,7 @@ const idle: WorkerPoolAssignments = {
   refuse: () => Promise.resolve(false),
   release: () => Promise.resolve(false),
   held: () => Promise.resolve(false),
+  heldImages: () => Promise.resolve([]),
 };
 
 test("a claim is asked for only as far as the pool's remaining room", async () => {
@@ -124,7 +128,10 @@ test("a pool wanting more than the plane allows is claimed the plane's bound", a
 });
 
 /** The one assignment a poll hands out when the durable side claims `requirement`, and the terms the claim was held to. */
-async function reconciledOne(requirement: ExecutionRequirement): Promise<{
+async function reconciledOne(
+  requirement: ExecutionRequirement,
+  polled: WorkerPoolPollSettings = settings,
+): Promise<{
   readonly assignment: Record<string, unknown>;
   readonly terms: WorkerPoolClaimTerms[];
 }> {
@@ -142,7 +149,7 @@ async function reconciledOne(requirement: ExecutionRequirement): Promise<{
     identity,
     [],
     1,
-    settings,
+    polled,
     () => "minted",
   );
   assert.equal(answered.assignments.length, 1);
@@ -163,6 +170,24 @@ test("a container is handed out with its platform and the image its requirement 
     terms.map(({ leaseSecs, heldMax }) => ({ leaseSecs, heldMax })),
     [{ leaseSecs: settings.leaseSecs, heldMax: settings.heldMax }],
   );
+});
+
+test("an image pinned on a published host is handed out under the public host, its path and digest unchanged", async () => {
+  const digest = `sha256:${"b".repeat(64)}`;
+  const internal = {
+    ...container,
+    image: `registry.chuggy.internal/chuggy/worker@${digest}`,
+  };
+  const { assignment } = await reconciledOne(internal);
+  assert.equal(
+    assignment["image"],
+    `registry.public.invalid/chuggy/worker@${digest}`,
+  );
+  const unpublished = await reconciledOne(internal, {
+    ...settings,
+    imageHosts: new Map(),
+  });
+  assert.equal(unpublished.assignment["image"], internal.image);
 });
 
 test("a capability requirement is handed out with its platform and capabilities and no image", async () => {

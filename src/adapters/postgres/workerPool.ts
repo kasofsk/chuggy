@@ -385,6 +385,38 @@ async function workerPoolReleased(
   return released.rows[0]?.released === true;
 }
 
+/**
+ * The images pinned by every attempt a renewal would extend, which is what a
+ * pool holds: its registration's, live, leased, unrefused, current and in an
+ * active project.
+ */
+async function workerPoolHeldImages(
+  pool: pg.Pool,
+  identity: WorkerPoolIdentity,
+  heldMax: number,
+): Promise<string[]> {
+  if (!Number.isSafeInteger(heldMax) || heldMax < 1)
+    throw new RangeError("invalid worker pool held bound");
+  const found = await pool.query<{ image: string | null }>(
+    sql`SELECT DISTINCT e.requirement_value->>'image' AS image
+      FROM execution_attempt a
+      JOIN execution e
+        ON e.tenant=a.tenant AND e.project=a.project AND e.execution=a.execution
+      WHERE a.tenant=${identity.partition.tenant} AND a.project=${identity.partition.project}
+        AND a.pool=${identity.pool} AND a.pool_principal=${identity.principal}
+        AND EXISTS(SELECT 1 FROM worker_pool w
+          WHERE w.tenant=a.tenant AND w.project=a.project AND w.pool=a.pool AND w.principal=${identity.principal})
+        AND a.state IN ('Placing','Running')
+        AND a.lease_expires_at>now() AND a.pool_refusal IS NULL
+        AND a.recovery_epoch=(SELECT r.epoch FROM recovery_epoch r ORDER BY r.ordinal DESC LIMIT 1)
+        AND EXISTS(SELECT 1 FROM project p
+          WHERE p.tenant=a.tenant AND p.project=a.project AND p.lifecycle='Active')
+        AND e.requirement_value->>'image' IS NOT NULL
+      ORDER BY image LIMIT ${heldMax}`,
+  );
+  return found.rows.flatMap((row) => (row.image === null ? [] : [row.image]));
+}
+
 export function postgresWorkerPoolAssignments(
   pool: pg.Pool,
 ): WorkerPoolAssignments {
@@ -440,5 +472,7 @@ export function postgresWorkerPoolAssignments(
           AND a.recovery_epoch=(SELECT r.epoch FROM recovery_epoch r ORDER BY r.ordinal DESC LIMIT 1)`);
       return found.rows.length === 1;
     },
+    heldImages: (identity, heldMax) =>
+      workerPoolHeldImages(pool, identity, heldMax),
   };
 }

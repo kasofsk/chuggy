@@ -468,6 +468,7 @@ const settings: WorkerPoolPollSettings = {
   callbackUrl: "https://plane.invalid/v1/ticket-execution",
   pollIntervalMs: 1,
   pollsMax: 1,
+  imageHosts: new Map(),
 };
 
 /** A pool registered in this project declaring everything, as it polls. */

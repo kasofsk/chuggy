@@ -19,9 +19,9 @@
  * issuer's published keys and a question for the authority — never the admin
  * privilege that made the client. Four answers come out of that pair and each
  * one says something different: a token this side read and rejected is 401, a
- * caller no registration names or the authority refuses is 404, an issuer or
- * authority that could not answer is 503 and asks for a retry, and only the
- * last of those is a pool that should come back unchanged.
+ * caller no registration names or the authority refuses is 404 on a contract
+ * route, an issuer or authority that could not answer is 503 and asks for a
+ * retry, and only the last of those is a pool that should come back unchanged.
  */
 import fastify, {
   type FastifyInstance,
@@ -41,6 +41,10 @@ import {
 } from "../../contract/workerPool.ts";
 import { ProjectAccessUnavailable } from "../../interpreter/projectAccess.ts";
 import type { ProjectAccess } from "../../interpreter/projectAccess.ts";
+import {
+  workerPoolImagePullAllowed,
+  workerPoolImagePullRequested,
+} from "../../interpreter/workerPoolImagePull.ts";
 import {
   workerPoolAdmitted,
   workerPoolContractAccepted,
@@ -101,12 +105,11 @@ function poolBearer(request: FastifyRequest): string | undefined {
     : undefined;
 }
 
-/** The pool one call acts for, or which of the three refusals it met. */
+/** The pool whose token `token` is, or which of the three refusals it met. */
 async function poolCaller(
   service: PoolPlaneService,
-  request: FastifyRequest,
+  token: string | undefined,
 ): Promise<PoolCaller> {
-  const token = poolBearer(request);
   if (token === undefined) return { caller: "InvalidToken" };
   const authenticated = await service.authentication.authenticateBearer(token);
   if (authenticated.authenticated === "InvalidToken")
@@ -163,7 +166,7 @@ function poolPlaneRoute(
     app,
     { ...route, released: poolPlaneContractChecked },
     async (request, reply) => {
-      const caller = await poolCaller(service, request);
+      const caller = await poolCaller(service, poolBearer(request));
       if (caller.caller === "Pool") return caller.identity;
       void poolRefused(reply, caller.caller);
       return undefined;
@@ -289,11 +292,89 @@ async function poolOutcomeSettled(
   }
 }
 
+/** Where the image registry's front asks whether one request may pass, outside `/v1` so the pool plane's public address never serves it. */
+const poolPullAuthorizeRoute = "/registry/authorize";
+
+/** The challenge that makes a registry client send its credential at all. */
+const poolPullChallenge = 'Basic realm="chuggy-registry"';
+
+const poolPullBase64 =
+  /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u;
+
+/** The password a Basic credential carries, which is the pool's own token, whatever user it names. */
+function poolPullPassword(request: FastifyRequest): string | undefined {
+  const header = request.headers.authorization;
+  if (header?.startsWith("Basic ") !== true) return undefined;
+  const encoded = header.slice("Basic ".length);
+  if (!poolPullBase64.test(encoded)) return undefined;
+  const decoded = Buffer.from(encoded, "base64").toString("utf8");
+  const colon = decoded.indexOf(":");
+  return colon === -1 ? undefined : decoded.slice(colon + 1);
+}
+
+function poolPullForwarded(
+  request: FastifyRequest,
+  name: "x-forwarded-method" | "x-forwarded-uri",
+): string | undefined {
+  const value = request.headers[name];
+  return typeof value === "string" ? value : undefined;
+}
+
+/** The status the front is answered with, which is the whole of what it passes on. */
+type PoolPullAnswer = 200 | 401 | 403 | 503;
+
+/** A caller no registration names is 403 here, because a registry client reports that as denied where a 404 reads as an image that is not there. */
+const poolPullRefused = {
+  InvalidToken: 401,
+  Unknown: 403,
+  Unavailable: 503,
+} as const satisfies Record<
+  Exclude<PoolCaller["caller"], "Pool">,
+  PoolPullAnswer
+>;
+
+async function poolPullAnswered(
+  service: PoolPlaneService,
+  request: FastifyRequest,
+): Promise<PoolPullAnswer> {
+  const caller = await poolCaller(service, poolPullPassword(request));
+  if (caller.caller !== "Pool") return poolPullRefused[caller.caller];
+  const pull = workerPoolImagePullRequested(
+    poolPullForwarded(request, "x-forwarded-method"),
+    poolPullForwarded(request, "x-forwarded-uri"),
+  );
+  if (pull === undefined) return 403;
+  const held = await service.assignments.heldImages(
+    caller.identity,
+    service.settings.heldMax,
+  );
+  return workerPoolImagePullAllowed(pull, held, service.settings.imageHosts)
+    ? 200
+    : 403;
+}
+
+/**
+ * The image registry front's question, which names no release and, being a
+ * GET, has no body read. A store that could not answer is an outage like the
+ * issuer's or the authority's, and the front is told to have the client retry.
+ */
+function poolPullRoute(app: FastifyInstance, service: PoolPlaneService): void {
+  app.get(poolPullAuthorizeRoute, async (request, reply) => {
+    const answer = await poolPullAnswered(service, request).catch(
+      () => 503 as const,
+    );
+    if (answer === 401)
+      void reply.header("www-authenticate", poolPullChallenge);
+    return reply.code(answer).send();
+  });
+}
+
 export function createPoolPlaneApp(service: PoolPlaneService): FastifyInstance {
   const app = fastify({ logger: false, bodyLimit: planeBodyBytesDefault });
   workerContractNamed(app);
   poolHealthRoutes(app, service);
   poolAssignmentsRoute(app, service);
   poolOutcomeRoutes(app, service);
+  poolPullRoute(app, service);
   return app;
 }
