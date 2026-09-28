@@ -2,9 +2,11 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import test from "node:test";
 
+import { planeBodyBytesDefault } from "../../src/adapters/http/planeRoutes.ts";
 import {
   createWorkerPlaneApp,
   workerPlaneHealthRoutes,
+  workerPlaneServed,
   type WorkerRunEvidencePorts,
 } from "../../src/adapters/http/workerPlaneServer.ts";
 import { sessionPlaneRoutes } from "../../src/contract/sessionPlane.ts";
@@ -15,12 +17,21 @@ import {
   workerContractRelease,
   workerContractVersionText,
 } from "../../src/contract/workerContract.ts";
-import { workerPlaneRoutes } from "../../src/contract/workerPlane.ts";
 import {
+  runEndedEvidences,
+  workerPlaneRoutes,
+  type WorkerPlaneRouteName,
+} from "../../src/contract/workerPlane.ts";
+import { resultManifestTextCharsMax } from "../../src/contract/workerDocuments.ts";
+import {
+  nativeHttpPageItemsMax,
   runConfigurationBytesMax,
   runTranscriptBatchBytesMax,
   runTranscriptBatchesMax,
+  runModelCharsMax,
+  runOutcomeLabelCharsMax,
   runTurnSeriesMax,
+  workerPlaneUploadBytesMax,
 } from "../../src/contract/http.ts";
 import { asTaskId, asTicketId } from "../../src/domain/ids.ts";
 import {
@@ -59,6 +70,12 @@ import {
   inertWorkerPlane,
   runTotalsBody,
 } from "./workerPlaneFixtures.ts";
+import {
+  planeHeaviestTaken,
+  planeJsonHeaviest,
+  planeTextHeaviest,
+  type PlaneHeaviest,
+} from "./planeBodies.ts";
 
 const authority = {
   live: true,
@@ -644,9 +661,6 @@ function runEvidencePlane(
   });
 }
 
-/** The transport's own body ceiling, above every bound a run's own route holds. */
-const workerPlaneUploadBytesMax = runConfigurationBytesMax * 2;
-
 const octets = { "content-type": "application/octet-stream" };
 const held = { authorization: "Bearer held" };
 
@@ -941,6 +955,125 @@ test("a body past the bound its own route holds is refused before it is stored",
   }
   assert.equal(reached, 0);
   assert.deepEqual(stored, []);
+  await app.close();
+});
+
+const json = { "content-type": "application/json" };
+
+/** The four token figures of a turn or a model, each the largest a count may be. */
+const workerRunTokensHeaviest = {
+  tokensInput: Number.MAX_SAFE_INTEGER,
+  tokensOutput: Number.MAX_SAFE_INTEGER,
+  tokensCacheCreation: Number.MAX_SAFE_INTEGER,
+  tokensCacheRead: Number.MAX_SAFE_INTEGER,
+};
+
+/** A page of turns or of model usages, as full as a page may be. */
+function workerRunPageHeaviest(item: object): readonly object[] {
+  return Array.from({ length: nativeHttpPageItemsMax }, () => item);
+}
+
+/** The heaviest body each job route is sent, or nothing where the route reads none. */
+const workerPlaneHeaviest: Readonly<
+  Record<WorkerPlaneRouteName, PlaneHeaviest | undefined>
+> = {
+  input: undefined,
+  task: undefined,
+  heartbeat: { headers: json, payload: "{}", status: 204 },
+  artifact: {
+    rest: "out.txt",
+    headers: octets,
+    payload: Buffer.alloc(workerPlaneUploadBytesMax),
+    status: 204,
+  },
+  report: {
+    headers: { "content-type": "text/plain; charset=utf-8" },
+    payload: planeTextHeaviest(resultManifestTextCharsMax),
+    status: 409,
+  },
+  runConfiguration: {
+    headers: octets,
+    payload: Buffer.alloc(runConfigurationBytesMax),
+    status: 204,
+  },
+  runTranscript: {
+    rest: "1",
+    headers: octets,
+    payload: Buffer.alloc(runTranscriptBatchBytesMax, "\n"),
+    status: 204,
+  },
+  runTurns: {
+    headers: json,
+    payload: planeJsonHeaviest({
+      turns: workerRunPageHeaviest({
+        ordinal: runTurnSeriesMax,
+        model: planeTextHeaviest(runModelCharsMax),
+        ...workerRunTokensHeaviest,
+      }),
+    }),
+    status: 200,
+  },
+  runTotals: {
+    headers: json,
+    payload: planeJsonHeaviest({
+      ...workerRunTokensHeaviest,
+      turns: Number.MAX_SAFE_INTEGER,
+      durationMs: Number.MAX_SAFE_INTEGER,
+      durationApiMs: Number.MAX_SAFE_INTEGER,
+      costUsdMicros: Number.MAX_SAFE_INTEGER,
+      costBasis: "List",
+      models: workerRunPageHeaviest({
+        model: planeTextHeaviest(runModelCharsMax),
+        ...workerRunTokensHeaviest,
+        costUsdMicros: Number.MAX_SAFE_INTEGER,
+      }),
+      permissionDenials: Number.MAX_SAFE_INTEGER,
+      resultSubtype: planeTextHeaviest(runOutcomeLabelCharsMax),
+      stopReason: planeTextHeaviest(runOutcomeLabelCharsMax),
+    }),
+    status: 204,
+  },
+  runEnded: {
+    headers: json,
+    payload: planeJsonHeaviest({
+      evidence: runEndedEvidences.reduce((longest, evidence) =>
+        evidence.length > longest.length ? evidence : longest,
+      ),
+    }),
+    status: 204,
+  },
+  credential: { headers: json, payload: "{}", status: 404 },
+};
+
+test("every job route takes the heaviest body its caller may send, and refuses a byte past its bound", async () => {
+  const app = createWorkerPlaneApp({
+    ...inertWorkerPlane(workerPlaneUploadBytesMax),
+    authority: { authenticate: () => Promise.resolve(authority) },
+  });
+  await planeHeaviestTaken(
+    app,
+    workerPlaneRoutes,
+    workerPlaneServed(workerPlaneUploadBytesMax),
+    workerPlaneHeaviest,
+    held,
+  );
+  await app.close();
+});
+
+test("a request no route names is read no further than the plane's own bound", async () => {
+  const app = createWorkerPlaneApp(inertWorkerPlane(workerPlaneUploadBytesMax));
+  for (const [bytes, status] of [
+    [planeBodyBytesDefault, 404],
+    [planeBodyBytesDefault + 1, 413],
+  ] as const) {
+    const answered = await app.inject({
+      method: "POST",
+      url: "/v1/nothing",
+      headers: json,
+      payload: JSON.stringify("x".repeat(bytes - '""'.length)),
+    });
+    assert.equal(answered.statusCode, status, String(bytes));
+  }
   await app.close();
 });
 
@@ -1283,7 +1416,12 @@ test("a release the plane does not serve is refused before any bearer is read, a
 test("every answer names the plane's release, the probes' and the framework's own among them", async () => {
   const app = createWorkerPlaneApp({
     ...inertWorkerPlane(64),
-    authority: { authenticate: () => Promise.reject(new Error("down")) },
+    authority: {
+      authenticate: (secret) =>
+        secret === "held"
+          ? Promise.resolve(authority)
+          : Promise.reject(new Error("down")),
+    },
     ready: () => Promise.resolve(false),
   });
   for (const [method, url, headers, status] of [
@@ -1296,7 +1434,12 @@ test("every answer names the plane's release, the probes' and the framework's ow
     ],
     ["GET", workerPlaneHealthRoutes.ready.path, {}, 503],
     ["GET", "/v1/nothing", {}, 404],
-    ["POST", workerPlaneRoutes.heartbeat.path, held, 500],
+    [
+      "POST",
+      workerPlaneRoutes.heartbeat.path,
+      { authorization: "Bearer down" },
+      500,
+    ],
     [
       "POST",
       workerPlaneRoutes.report.path,

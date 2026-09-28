@@ -4,18 +4,25 @@ import fastify, {
   type FastifyInstance,
   type FastifyReply,
   type FastifyRequest,
-  type RouteHandlerMethod,
 } from "fastify";
 import type { z } from "zod";
 
 import {
   nativeHttpPageItemsMax,
+  repositoryIdentityCharsMax,
   runConfigurationBytesMax,
+  runModelCharsMax,
+  runOutcomeLabelCharsMax,
   runTranscriptBatchBytesMax,
   runTranscriptBatchesMax,
+  sessionIdentityCharsMax,
   sessionStoreBatchBytesMax,
   sessionStoreBatchesMax,
   sessionStorePageBatchesMax,
+  sessionTurnModelCharsMax,
+  sessionTurnResultCharsMax,
+  sessionTurnToolNameCharsMax,
+  sessionTurnToolsMax,
   textCodePointsCount,
 } from "../../contract/http.ts";
 import {
@@ -26,6 +33,7 @@ import {
   sessionReferenceSchema,
   sessionTurnAnswerSchema,
   sessionTurnFailureSchema,
+  type SessionPlaneRouteName,
 } from "../../contract/sessionPlane.ts";
 import { resultManifestTextCharsMax } from "../../contract/workerDocuments.ts";
 import type { WorkTaskAnswer } from "../../contract/workerTask.ts";
@@ -37,6 +45,7 @@ import {
   workerRunTurnsSchema,
   type WorkerCredentialAbsent,
   type WorkerPlaneRoute,
+  type WorkerPlaneRouteName,
 } from "../../contract/workerPlane.ts";
 import {
   asSessionBearerSecret,
@@ -108,6 +117,12 @@ import {
   type SessionTask,
 } from "../../interpreter/workerTask.ts";
 import {
+  planeBodyBytesDefault,
+  planeJsonObjectBytesMax,
+  planeJsonTextBytesMax,
+  planeRouteServed,
+} from "./planeRoutes.ts";
+import {
   workerContractChecked,
   workerContractNamed,
 } from "./workerContractVersion.ts";
@@ -124,31 +139,252 @@ const sessionStorePrefix = sessionPlaneRoutes.storeBatch.path.replace(
   "",
 );
 
-/** Registers one handler at the method and path its route names, which is the only way a handler here is served. */
-type WorkerPlaneRegistrar = (
-  route: WorkerPlaneRoute,
-  handler: RouteHandlerMethod,
+/** An attempt its bearer was found by, and that bearer. */
+interface WorkerAttemptCaller {
+  readonly authority: WorkerAttemptAuthority;
+  readonly secret: AttemptCapabilitySecret;
+}
+
+/** A live session its bearer was found by, and that bearer. */
+interface SessionCaller {
+  readonly identity: SessionPlaneIdentity;
+  readonly secret: SessionBearerSecret;
+}
+
+/**
+ * The task route's caller, in either bearer language: a session found live as
+ * every session route finds one, or an attempt's bearer, whose task read is at
+ * once the route's work and its authentication.
+ */
+type WorkerTaskCaller =
+  | { readonly bearer: "Attempt"; readonly secret: AttemptCapabilitySecret }
+  | ({ readonly bearer: "Session" } & SessionCaller);
+
+/** Who each kind of route answers, found from its bearer before any byte of its body is read. */
+interface WorkerPlaneCallers {
+  /** An attempt the authority knows, live or not, because a report from a fenced one is the ingest's to refuse. */
+  readonly Attempt: WorkerAttemptCaller;
+  readonly LiveAttempt: WorkerAttemptCaller;
+  readonly Session: SessionCaller;
+  readonly Task: WorkerTaskCaller;
+}
+
+/**
+ * What one route is served with: who it answers, and the most of a body it
+ * takes. A `stored` body is bytes kept as they came, whose excess the route's
+ * own answers name as a spent quota rather than the framework's refusal.
+ */
+interface WorkerPlaneServed {
+  readonly caller: keyof WorkerPlaneCallers;
+  readonly stored: boolean;
+  readonly bodyBytesMax: number;
+}
+
+/** A route that reads no body, bounded by the empty object a client may send it anyway. */
+const workerPlaneBodyless = {
+  stored: false,
+  bodyBytesMax: planeJsonObjectBytesMax(),
+} as const;
+
+/** The widest code point UTF-8 writes, which is what a text bounded in code points weighs per code point. */
+const utf8CodePointBytesMax = 4;
+
+/** A page of turns or of model usages, each one object naming its model. */
+const workerRunPageBytesMax =
+  nativeHttpPageItemsMax * planeJsonObjectBytesMax(runModelCharsMax);
+
+/** Every job route as it is served, an artifact bounded by the upload bound its deployment chose. */
+export function workerPlaneServed(uploadBytesMax: number) {
+  return {
+    input: { caller: "LiveAttempt", ...workerPlaneBodyless },
+    task: { caller: "Task", ...workerPlaneBodyless },
+    heartbeat: { caller: "LiveAttempt", ...workerPlaneBodyless },
+    artifact: {
+      caller: "LiveAttempt",
+      stored: true,
+      bodyBytesMax: uploadBytesMax,
+    },
+    report: {
+      caller: "Attempt",
+      stored: false,
+      bodyBytesMax: resultManifestTextCharsMax * utf8CodePointBytesMax,
+    },
+    runConfiguration: {
+      caller: "LiveAttempt",
+      stored: true,
+      bodyBytesMax: runConfigurationBytesMax,
+    },
+    runTranscript: {
+      caller: "LiveAttempt",
+      stored: true,
+      bodyBytesMax: runTranscriptBatchBytesMax,
+    },
+    runTurns: {
+      caller: "LiveAttempt",
+      stored: false,
+      bodyBytesMax: planeJsonObjectBytesMax() + workerRunPageBytesMax,
+    },
+    runTotals: {
+      caller: "LiveAttempt",
+      stored: false,
+      bodyBytesMax:
+        planeJsonObjectBytesMax(
+          runOutcomeLabelCharsMax,
+          runOutcomeLabelCharsMax,
+        ) + workerRunPageBytesMax,
+    },
+    runEnded: {
+      caller: "LiveAttempt",
+      stored: false,
+      bodyBytesMax: planeJsonObjectBytesMax(),
+    },
+    credential: { caller: "LiveAttempt", ...workerPlaneBodyless },
+  } as const satisfies Readonly<
+    Record<WorkerPlaneRouteName, WorkerPlaneServed>
+  >;
+}
+
+/** One answered turn: its identity and its result, and a measurement naming its model and each of its tools. */
+const sessionTurnAnswerBytesMax =
+  planeJsonObjectBytesMax(sessionIdentityCharsMax, sessionTurnResultCharsMax) +
+  planeJsonObjectBytesMax(sessionTurnModelCharsMax) +
+  sessionTurnToolsMax * planeJsonTextBytesMax(sessionTurnToolNameCharsMax);
+
+/** Every session route as it is served. */
+export const sessionPlaneServed = {
+  facts: { caller: "Session", ...workerPlaneBodyless },
+  heartbeat: { caller: "Session", ...workerPlaneBodyless },
+  reference: {
+    caller: "Session",
+    stored: false,
+    bodyBytesMax: planeJsonObjectBytesMax(sessionIdentityCharsMax),
+  },
+  turn: { caller: "Session", ...workerPlaneBodyless },
+  turnAnswer: {
+    caller: "Session",
+    stored: false,
+    bodyBytesMax: sessionTurnAnswerBytesMax,
+  },
+  turnFailure: {
+    caller: "Session",
+    stored: false,
+    bodyBytesMax: planeJsonObjectBytesMax(sessionIdentityCharsMax),
+  },
+  held: { caller: "Session", ...workerPlaneBodyless },
+  storeStreams: { caller: "Session", ...workerPlaneBodyless },
+  storeBatch: {
+    caller: "Session",
+    stored: true,
+    bodyBytesMax: sessionStoreBatchBytesMax,
+  },
+  storePage: { caller: "Session", ...workerPlaneBodyless },
+  credential: {
+    caller: "Session",
+    stored: false,
+    bodyBytesMax: planeJsonObjectBytesMax(repositoryIdentityCharsMax),
+  },
+} as const satisfies Readonly<Record<SessionPlaneRouteName, WorkerPlaneServed>>;
+
+/** One route's handler, handed the caller its hook admitted. */
+type WorkerPlaneHandler<Kind extends keyof WorkerPlaneCallers> = (
+  request: FastifyRequest,
+  reply: FastifyReply,
+  caller: WorkerPlaneCallers[Kind],
+) => Promise<unknown>;
+
+/** Registers the route `name` names, its handler handed the caller that route's entry says it answers. */
+type WorkerPlaneRegistrar<
+  Served extends Readonly<Record<keyof Served, WorkerPlaneServed>>,
+> = <Name extends keyof Served>(
+  name: Name,
+  handler: WorkerPlaneHandler<Served[Name]["caller"]>,
 ) => void;
+
+type WorkerJobRegistrar = WorkerPlaneRegistrar<
+  ReturnType<typeof workerPlaneServed>
+>;
+type SessionRegistrar = WorkerPlaneRegistrar<typeof sessionPlaneServed>;
 
 /** A contract route's refusal of a release outside the range the job and session planes serve. */
 const workerPlaneContractChecked = workerContractChecked(
   workerContractAccepted,
 );
 
-/** A registrar for the contract's routes, each refusing a release this plane does not serve, or for the probes, which none is. */
-function workerPlaneRegistrar(
+/** A stored body past its route's bound, answered as that route's own answers name it. */
+function workerPlaneOverQuota(reply: FastifyReply): FastifyReply {
+  return reply.code(413).send({ action: "stop", reason: "QuotaExceeded" });
+}
+
+/** How each kind of caller is found from a request's bearer. */
+type WorkerPlaneCallerFinders = {
+  readonly [Kind in keyof WorkerPlaneCallers]: (
+    request: FastifyRequest,
+  ) => Promise<WorkerPlaneCallers[Kind] | undefined>;
+};
+
+function workerPlaneCallerFinders(
+  service: WorkerPlaneServerService,
+): WorkerPlaneCallerFinders {
+  const sessions = service.sessions;
+  return {
+    Attempt: (request) => workerAttemptCaller(service, request),
+    LiveAttempt: async (request) => {
+      const caller = await workerAttemptCaller(service, request);
+      return caller?.authority.live === true ? caller : undefined;
+    },
+    Session: (request) =>
+      sessions === undefined
+        ? Promise.resolve(undefined)
+        : sessionCaller(sessions, request),
+    Task: (request) => workerTaskCaller(sessions, request),
+  };
+}
+
+/** Admits the caller `kind` names, answering every request it does not find alike. */
+function workerPlaneAdmitted<Kind extends keyof WorkerPlaneCallers>(
+  finders: WorkerPlaneCallerFinders,
+  kind: Kind,
+): (
+  request: FastifyRequest,
+  reply: FastifyReply,
+) => Promise<WorkerPlaneCallers[Kind] | undefined> {
+  const found: (
+    request: FastifyRequest,
+  ) => Promise<WorkerPlaneCallers[Kind] | undefined> = finders[kind];
+  return async (request, reply) => {
+    const caller = await found(request);
+    if (caller === undefined) void reply.code(401).send({ action: "stop" });
+    return caller;
+  };
+}
+
+/** A registrar for one route table, each route refusing a release this plane does not serve and then any caller it does not answer. */
+function workerPlaneRegistrar<
+  Served extends Readonly<Record<keyof Served, WorkerPlaneServed>>,
+>(
   app: FastifyInstance,
-  routes: "Contract" | "Probes",
-): WorkerPlaneRegistrar {
-  return (route, handler) => {
-    app.route({
-      method: route.method,
-      url: route.path,
+  service: WorkerPlaneServerService,
+  routes: { readonly [Name in keyof Served]: WorkerPlaneRoute },
+  served: Served,
+): WorkerPlaneRegistrar<Served> {
+  const finders = workerPlaneCallerFinders(service);
+  return <Name extends keyof Served>(
+    name: Name,
+    handler: WorkerPlaneHandler<Served[Name]["caller"]>,
+  ) => {
+    const route = served[name];
+    planeRouteServed(
+      app,
+      {
+        method: routes[name].method,
+        url: routes[name].path,
+        bodyBytesMax: route.bodyBytesMax,
+        released: workerPlaneContractChecked,
+        ...(route.stored ? { oversized: workerPlaneOverQuota } : {}),
+      },
+      workerPlaneAdmitted<Served[Name]["caller"]>(finders, route.caller),
       handler,
-      ...(routes === "Contract"
-        ? { onRequest: workerPlaneContractChecked }
-        : {}),
-    });
+    );
   };
 }
 
@@ -241,47 +477,50 @@ function workerRunEvents(content: Uint8Array): number {
 }
 
 function workerHeartbeatRoute(
-  register: WorkerPlaneRegistrar,
+  register: WorkerJobRegistrar,
   service: WorkerPlaneServerService,
 ): void {
-  register(workerPlaneRoutes.heartbeat, async (request, reply) => {
-    const secret = workerBearer(request);
-    if (secret === undefined) return reply.code(401).send({ action: "stop" });
-    const authority = await workerAuthority(service, request);
-    if (authority === undefined || !authority.live)
-      return reply.code(401).send({ action: "stop" });
-    return (await service.heartbeats.heartbeat(
+  register("heartbeat", async (_request, reply, { authority, secret }) =>
+    (await service.heartbeats.heartbeat(
       secret,
       authority.generation,
       service.heartbeatLeaseSecs,
     ))
       ? reply.code(204).send()
-      : reply.code(409).send({ action: "stop" });
-  });
-}
-
-function workerHealthRoutes(
-  register: WorkerPlaneRegistrar,
-  service: WorkerPlaneServerService,
-): void {
-  register(workerPlaneHealthRoutes.live, () => ({
-    status: "live",
-  }));
-  register(workerPlaneHealthRoutes.ready, async (_request, reply) =>
-    (await service.ready())
-      ? { status: "ready" }
-      : reply.code(503).send({ status: "unready" }),
+      : reply.code(409).send({ action: "stop" }),
   );
 }
 
-async function workerAuthority(
+/** The probes, which name no release and no caller and read no body. */
+function workerHealthRoutes(
+  app: FastifyInstance,
+  service: WorkerPlaneServerService,
+): void {
+  const { live, ready } = workerPlaneHealthRoutes;
+  app.route({
+    method: live.method,
+    url: live.path,
+    handler: () => ({ status: "live" }),
+  });
+  app.route({
+    method: ready.method,
+    url: ready.path,
+    handler: async (_request, reply) =>
+      (await service.ready())
+        ? { status: "ready" }
+        : reply.code(503).send({ status: "unready" }),
+  });
+}
+
+/** An attempt the authority knows by the request's bearer, live or not, or nothing. */
+async function workerAttemptCaller(
   service: WorkerPlaneServerService,
   request: FastifyRequest,
-): Promise<WorkerAttemptAuthority | undefined> {
+): Promise<WorkerAttemptCaller | undefined> {
   const secret = workerBearer(request);
-  return secret === undefined
-    ? undefined
-    : service.authority.authenticate(secret);
+  if (secret === undefined) return undefined;
+  const authority = await service.authority.authenticate(secret);
+  return authority === undefined ? undefined : { authority, secret };
 }
 
 /**
@@ -301,32 +540,38 @@ function workerBearer(request: FastifyRequest) {
     : undefined;
 }
 
+/** The task route's caller: a live session where the bearer is written in the session language, and otherwise an attempt's bearer. */
+async function workerTaskCaller(
+  sessions: SessionPlaneService | undefined,
+  request: FastifyRequest,
+): Promise<WorkerTaskCaller | undefined> {
+  if (sessionBearer(request) === undefined) {
+    const secret = workerBearer(request);
+    return secret === undefined ? undefined : { bearer: "Attempt", secret };
+  }
+  const caller =
+    sessions === undefined ? undefined : await sessionCaller(sessions, request);
+  return caller === undefined ? undefined : { bearer: "Session", ...caller };
+}
+
 /** An attempt bearer's task, or nothing where the attempt is not live, or why a live one has none. */
 async function workerTaskOf(
   service: WorkerPlaneServerService,
-  request: FastifyRequest,
+  secret: AttemptCapabilitySecret,
 ): Promise<WorkTaskAnswer | "TaskNotRecorded" | undefined> {
-  const secret = workerBearer(request);
-  const found =
-    secret === undefined ? undefined : await service.tasks.work(secret);
+  const found = await service.tasks.work(secret);
   if (found === undefined || !found.live) return undefined;
   return found.invocation === undefined
     ? "TaskNotRecorded"
     : { kind: "Work", ...workTask(found.identity, found.invocation) };
 }
 
-/** A session bearer's task, read only once the session authority has found its caller live. */
+/** A session's task, read only once the session authority has found it live. */
 async function sessionTaskOf(
   service: WorkerPlaneServerService,
-  request: FastifyRequest,
+  secret: SessionBearerSecret,
 ): Promise<SessionTask | "TaskNotRecorded" | undefined> {
-  const sessions = service.sessions;
-  const caller =
-    sessions === undefined ? undefined : await sessionCaller(sessions, request);
-  const found =
-    caller === undefined
-      ? undefined
-      : await service.tasks.session(caller.secret);
+  const found = await service.tasks.session(secret);
   if (found === undefined || !found.live) return undefined;
   return found.invocation === undefined
     ? "TaskNotRecorded"
@@ -339,14 +584,14 @@ async function sessionTaskOf(
  * task by its own kind.
  */
 function workerTaskRoute(
-  register: WorkerPlaneRegistrar,
+  register: WorkerJobRegistrar,
   service: WorkerPlaneServerService,
 ): void {
-  register(workerPlaneRoutes.task, async (request, reply) => {
+  register("task", async (_request, reply, caller) => {
     const found =
-      sessionBearer(request) === undefined
-        ? await workerTaskOf(service, request)
-        : await sessionTaskOf(service, request);
+      caller.bearer === "Attempt"
+        ? await workerTaskOf(service, caller.secret)
+        : await sessionTaskOf(service, caller.secret);
     if (found === undefined) return reply.code(401).send({ action: "stop" });
     if (found === "TaskNotRecorded")
       return reply
@@ -356,37 +601,26 @@ function workerTaskRoute(
   });
 }
 
-function workerInputRoute(
-  register: WorkerPlaneRegistrar,
-  service: WorkerPlaneServerService,
-): void {
-  register(workerPlaneRoutes.input, async (request, reply) => {
-    const authority = await workerAuthority(service, request);
-    if (authority === undefined || !authority.live)
-      return reply.code(401).send({ action: "stop" });
-    return {
+function workerInputRoute(register: WorkerJobRegistrar): void {
+  register("input", (_request, _reply, { authority }) =>
+    Promise.resolve({
       bundle: authority.inputBundle,
       digest: authority.inputBundleDigest,
       references: authority.inputs,
-    };
-  });
+    }),
+  );
 }
 
 function workerUploadRoute(
-  register: WorkerPlaneRegistrar,
+  register: WorkerJobRegistrar,
   service: WorkerPlaneServerService,
 ): void {
-  register(workerPlaneRoutes.artifact, async (request, reply) => {
-    const authority = await workerAuthority(service, request);
-    if (authority === undefined || !authority.live)
-      return reply.code(401).send({ action: "stop" });
+  register("artifact", async (request, reply, { authority, secret }) => {
     const path = (request.params as { "*": string })["*"];
     if (!(request.body instanceof Uint8Array))
       return reply.code(415).send({ action: "stop" });
     if (artifactPathRejection(path) !== undefined)
       return reply.code(400).send({ action: "stop", reason: "InvalidPath" });
-    const secret = workerBearer(request);
-    if (secret === undefined) return reply.code(401).send({ action: "stop" });
     const digest = createHash("sha256").update(request.body).digest("hex");
     const reserved = await service.reservations.reserve({
       secret,
@@ -419,24 +653,6 @@ function workerUploadRoute(
           .send({ action: "retry" });
     }
   });
-}
-
-/** The live attempt one run-evidence write is keyed by, or nothing at all. */
-async function workerRunWriter(
-  service: WorkerPlaneServerService,
-  request: FastifyRequest,
-): Promise<
-  | {
-      readonly authority: WorkerAttemptAuthority;
-      readonly secret: AttemptCapabilitySecret;
-    }
-  | undefined
-> {
-  const authority = await workerAuthority(service, request);
-  const secret = workerBearer(request);
-  return authority === undefined || !authority.live || secret === undefined
-    ? undefined
-    : { authority, secret };
 }
 
 /**
@@ -508,16 +724,12 @@ function workerRunDigest(content: Uint8Array) {
 }
 
 function workerRunConfigurationRoute(
-  register: WorkerPlaneRegistrar,
+  register: WorkerJobRegistrar,
   service: WorkerPlaneServerService,
 ): void {
-  register(workerPlaneRoutes.runConfiguration, async (request, reply) => {
-    const writer = await workerRunWriter(service, request);
-    if (writer === undefined) return reply.code(401).send({ action: "stop" });
+  register("runConfiguration", async (request, reply, writer) => {
     if (!(request.body instanceof Uint8Array))
       return reply.code(415).send({ action: "stop" });
-    if (request.body.byteLength > runConfigurationBytesMax)
-      return reply.code(413).send({ action: "stop", reason: "QuotaExceeded" });
     const refusal = await workerRunObjectKept(
       service,
       writer.authority,
@@ -540,20 +752,16 @@ function workerRunConfigurationRoute(
 }
 
 function workerRunTranscriptRoute(
-  register: WorkerPlaneRegistrar,
+  register: WorkerJobRegistrar,
   service: WorkerPlaneServerService,
 ): void {
-  register(workerPlaneRoutes.runTranscript, async (request, reply) => {
-    const writer = await workerRunWriter(service, request);
-    if (writer === undefined) return reply.code(401).send({ action: "stop" });
+  register("runTranscript", async (request, reply, writer) => {
     if (!(request.body instanceof Uint8Array))
       return reply.code(415).send({ action: "stop" });
     const named = (request.params as { "*": string })["*"];
     const batch = /^[1-9][0-9]*$/u.test(named) ? Number(named) : 0;
     if (batch < 1 || batch > runTranscriptBatchesMax)
       return reply.code(400).send({ action: "stop", reason: "InvalidBatch" });
-    if (request.body.byteLength > runTranscriptBatchBytesMax)
-      return reply.code(413).send({ action: "stop", reason: "QuotaExceeded" });
     const refusal = await workerRunObjectKept(
       service,
       writer.authority,
@@ -578,12 +786,10 @@ function workerRunTranscriptRoute(
 }
 
 function workerRunFigureRoutes(
-  register: WorkerPlaneRegistrar,
+  register: WorkerJobRegistrar,
   service: WorkerPlaneServerService,
 ): void {
-  register(workerPlaneRoutes.runTurns, async (request, reply) => {
-    const writer = await workerRunWriter(service, request);
-    if (writer === undefined) return reply.code(401).send({ action: "stop" });
+  register("runTurns", async (request, reply, writer) => {
     const offered = workerRunTurnsSchema.safeParse(request.body);
     if (!offered.success) return reply.code(400).send({ action: "stop" });
     const recorded = await service.runEvidence.turns.record({
@@ -595,9 +801,7 @@ function workerRunFigureRoutes(
       ? reply.code(200).send({ turnsRecorded: recorded.turnsRecorded })
       : reply.code(409).send({ action: "stop", reason: recorded.recorded });
   });
-  register(workerPlaneRoutes.runTotals, async (request, reply) => {
-    const writer = await workerRunWriter(service, request);
-    if (writer === undefined) return reply.code(401).send({ action: "stop" });
+  register("runTotals", async (request, reply, writer) => {
     const offered = workerRunTotalsSchema.safeParse(request.body);
     if (!offered.success) return reply.code(400).send({ action: "stop" });
     const stored = await service.runEvidence.totals.record({
@@ -611,9 +815,7 @@ function workerRunFigureRoutes(
           .code(workerRunStatus(stored))
           .send({ action: "stop", reason: stored });
   });
-  register(workerPlaneRoutes.runEnded, async (request, reply) => {
-    const writer = await workerRunWriter(service, request);
-    if (writer === undefined) return reply.code(401).send({ action: "stop" });
+  register("runEnded", async (request, reply, writer) => {
     const offered = workerRunEndedSchema.safeParse(request.body);
     if (!offered.success) return reply.code(400).send({ action: "stop" });
     return (await service.runEvidence.endings.end({
@@ -645,15 +847,10 @@ function workerReportRefused(
 }
 
 function workerReportRoute(
-  register: WorkerPlaneRegistrar,
+  register: WorkerJobRegistrar,
   service: WorkerPlaneServerService,
 ): void {
-  register(workerPlaneRoutes.report, async (request, reply) => {
-    const secret = workerBearer(request);
-    if (secret === undefined) return reply.code(401).send({ action: "stop" });
-    const authority = await workerAuthority(service, request);
-    if (authority === undefined)
-      return reply.code(401).send({ action: "stop" });
+  register("report", async (request, reply, { authority, secret }) => {
     if (
       typeof request.body !== "string" ||
       textCodePointsCount(request.body) > resultManifestTextCharsMax
@@ -737,13 +934,10 @@ function workerCredentialAnswered(
  * pod to name and nothing for it to widen.
  */
 function workerCredentialRoute(
-  register: WorkerPlaneRegistrar,
+  register: WorkerJobRegistrar,
   service: WorkerPlaneServerService,
 ): void {
-  register(workerPlaneRoutes.credential, async (request, reply) => {
-    const authority = await workerAuthority(service, request);
-    if (authority === undefined || !authority.live)
-      return reply.code(401).send({ action: "stop" });
+  register("credential", async (_request, reply, { authority }) => {
     const credentials = service.credentials;
     return credentials === undefined
       ? reply.code(404).send(workerCredentialNotConfigured)
@@ -758,13 +952,10 @@ function workerCredentialRoute(
  * own bindings, and a session is never minted more than a read.
  */
 function sessionCredentialRoute(
-  register: WorkerPlaneRegistrar,
+  register: SessionRegistrar,
   service: WorkerPlaneServerService,
-  sessions: SessionPlaneService,
 ): void {
-  register(sessionPlaneRoutes.credential, async (request, reply) => {
-    const caller = await sessionCaller(sessions, request);
-    if (caller === undefined) return reply.code(401).send({ action: "stop" });
+  register("credential", async (request, reply, caller) => {
     const offered = sessionCredentialSchema.safeParse(request.body);
     if (!offered.success) return reply.code(400).send({ action: "stop" });
     const credentials = service.credentials;
@@ -800,13 +991,7 @@ function sessionBearer(
 async function sessionCaller(
   sessions: SessionPlaneService,
   request: FastifyRequest,
-): Promise<
-  | {
-      readonly identity: SessionPlaneIdentity;
-      readonly secret: SessionBearerSecret;
-    }
-  | undefined
-> {
+): Promise<SessionCaller | undefined> {
   const secret = sessionBearer(request);
   if (secret === undefined) return undefined;
   const identity = await sessions.authority.authenticate(secret);
@@ -860,15 +1045,9 @@ function sessionSettled(
     : reply.code(204).send();
 }
 
-function sessionFactsRoute(
-  register: WorkerPlaneRegistrar,
-  sessions: SessionPlaneService,
-): void {
-  register(sessionPlaneRoutes.facts, async (request, reply) => {
-    const caller = await sessionCaller(sessions, request);
-    if (caller === undefined) return reply.code(401).send({ action: "stop" });
-    const identity = caller.identity;
-    return {
+function sessionFactsRoute(register: SessionRegistrar): void {
+  register("facts", (_request, _reply, { identity }) =>
+    Promise.resolve({
       tenant: identity.partition.tenant,
       project: identity.partition.project,
       session: identity.session,
@@ -884,17 +1063,15 @@ function sessionFactsRoute(
       ...(identity.forkFrom === undefined
         ? {}
         : { forkFrom: identity.forkFrom }),
-    };
-  });
+    }),
+  );
 }
 
 function sessionHeartbeatRoute(
-  register: WorkerPlaneRegistrar,
+  register: SessionRegistrar,
   sessions: SessionPlaneService,
 ): void {
-  register(sessionPlaneRoutes.heartbeat, async (request, reply) => {
-    const caller = await sessionCaller(sessions, request);
-    if (caller === undefined) return reply.code(401).send({ action: "stop" });
+  register("heartbeat", async (_request, reply, caller) => {
     return (await sessions.heartbeats.heartbeat(
       caller.secret,
       caller.identity.generation,
@@ -906,12 +1083,10 @@ function sessionHeartbeatRoute(
 }
 
 function sessionReferenceRoute(
-  register: WorkerPlaneRegistrar,
+  register: SessionRegistrar,
   sessions: SessionPlaneService,
 ): void {
-  register(sessionPlaneRoutes.reference, async (request, reply) => {
-    const caller = await sessionCaller(sessions, request);
-    if (caller === undefined) return reply.code(401).send({ action: "stop" });
+  register("reference", async (request, reply, caller) => {
     const offered = sessionReferenceSchema.safeParse(request.body);
     if (!offered.success) return reply.code(400).send({ action: "stop" });
     return sessionSettled(
@@ -932,7 +1107,7 @@ function sessionReferenceRoute(
  * cannot hold every connection this plane has.
  */
 function sessionTurnRoute(
-  register: WorkerPlaneRegistrar,
+  register: SessionRegistrar,
   sessions: SessionPlaneService,
 ): void {
   const polls = Math.max(
@@ -940,9 +1115,7 @@ function sessionTurnRoute(
     Math.ceil((sessions.turnPollSecsMax * 1_000) / sessions.turnPollIntervalMs),
   );
   let waiting = 0;
-  register(sessionPlaneRoutes.turn, async (request, reply) => {
-    const caller = await sessionCaller(sessions, request);
-    if (caller === undefined) return reply.code(401).send({ action: "stop" });
+  register("turn", async (_request, reply, caller) => {
     if (waiting >= sessions.pollsMax) return reply.code(204).send();
     waiting += 1;
     try {
@@ -962,12 +1135,10 @@ function sessionTurnRoute(
 }
 
 function sessionSettleRoutes(
-  register: WorkerPlaneRegistrar,
+  register: SessionRegistrar,
   sessions: SessionPlaneService,
 ): void {
-  register(sessionPlaneRoutes.turnAnswer, async (request, reply) => {
-    const caller = await sessionCaller(sessions, request);
-    if (caller === undefined) return reply.code(401).send({ action: "stop" });
+  register("turnAnswer", async (request, reply, caller) => {
     const offered = sessionTurnAnswerSchema.safeParse(request.body);
     if (!offered.success) return reply.code(400).send({ action: "stop" });
     const { turn, result, batchFirst, batchLast, measured } = offered.data;
@@ -984,9 +1155,7 @@ function sessionSettleRoutes(
       }),
     );
   });
-  register(sessionPlaneRoutes.turnFailure, async (request, reply) => {
-    const caller = await sessionCaller(sessions, request);
-    if (caller === undefined) return reply.code(401).send({ action: "stop" });
+  register("turnFailure", async (request, reply, caller) => {
     const offered = sessionTurnFailureSchema.safeParse(request.body);
     if (!offered.success) return reply.code(400).send({ action: "stop" });
     return sessionSettled(
@@ -999,9 +1168,7 @@ function sessionSettleRoutes(
       }),
     );
   });
-  register(sessionPlaneRoutes.held, async (request, reply) => {
-    const caller = await sessionCaller(sessions, request);
-    if (caller === undefined) return reply.code(401).send({ action: "stop" });
+  register("held", async (_request, reply, caller) => {
     const held = await sessions.holds.hold(
       caller.secret,
       caller.identity.generation,
@@ -1033,12 +1200,10 @@ function sessionStoreObjectRefusal(
 }
 
 function sessionStoreWriteRoute(
-  register: WorkerPlaneRegistrar,
+  register: SessionRegistrar,
   sessions: SessionPlaneService,
 ): void {
-  register(sessionPlaneRoutes.storeBatch, async (request, reply) => {
-    const caller = await sessionCaller(sessions, request);
-    if (caller === undefined) return reply.code(401).send({ action: "stop" });
+  register("storeBatch", async (request, reply, caller) => {
     if (!(request.body instanceof Uint8Array))
       return reply.code(415).send({ action: "stop" });
     const segments = sessionStoreSegments(request);
@@ -1051,8 +1216,6 @@ function sessionStoreWriteRoute(
     const batch = /^[1-9][0-9]*$/u.test(numbered) ? Number(numbered) : 0;
     if (batch < 1 || batch > sessionStoreBatchesMax)
       return reply.code(400).send({ action: "stop", reason: "InvalidBatch" });
-    if (request.body.byteLength > sessionStoreBatchBytesMax)
-      return reply.code(413).send({ action: "stop", reason: "QuotaExceeded" });
     const stream = asSessionStoreStream(named);
     const refusal = sessionStoreObjectRefusal(
       await sessions.store.storeBatch({
@@ -1092,12 +1255,10 @@ function sessionStoreWriteRoute(
  * thing to do about it, and the batches beside it are what the caller came for.
  */
 function sessionStoreReadRoute(
-  register: WorkerPlaneRegistrar,
+  register: SessionRegistrar,
   sessions: SessionPlaneService,
 ): void {
-  register(sessionPlaneRoutes.storePage, async (request, reply) => {
-    const caller = await sessionCaller(sessions, request);
-    if (caller === undefined) return reply.code(401).send({ action: "stop" });
+  register("storePage", async (request, reply, caller) => {
     const segments = sessionStoreSegments(request);
     if (segments === undefined || segments.length !== 1)
       return reply.code(400).send({ action: "stop", reason: "InvalidPath" });
@@ -1169,12 +1330,10 @@ function sessionStoreReadRoute(
  * to prevent.
  */
 function sessionStoreStreamsRoute(
-  register: WorkerPlaneRegistrar,
+  register: SessionRegistrar,
   sessions: SessionPlaneService,
 ): void {
-  register(sessionPlaneRoutes.storeStreams, async (request, reply) => {
-    const caller = await sessionCaller(sessions, request);
-    if (caller === undefined) return reply.code(401).send({ action: "stop" });
+  register("storeStreams", async (request, reply, caller) => {
     const asked = (request.query as Record<string, unknown>)["stream"];
     if (asked !== undefined && typeof asked !== "string")
       return reply.code(400).send({ action: "stop", reason: "InvalidQuery" });
@@ -1218,7 +1377,7 @@ function sessionBoundsChecked(sessions: SessionPlaneService): void {
 export function createWorkerPlaneApp(
   service: WorkerPlaneServerService,
 ): FastifyInstance {
-  const app = fastify({ logger: false, bodyLimit: service.uploadBytesMax });
+  const app = fastify({ logger: false, bodyLimit: planeBodyBytesDefault });
   app.addContentTypeParser(
     workerPlaneBytesMediaType,
     { parseAs: "buffer" },
@@ -1227,9 +1386,14 @@ export function createWorkerPlaneApp(
     },
   );
   workerContractNamed(app);
-  workerHealthRoutes(workerPlaneRegistrar(app, "Probes"), service);
-  const register = workerPlaneRegistrar(app, "Contract");
-  workerInputRoute(register, service);
+  workerHealthRoutes(app, service);
+  const register = workerPlaneRegistrar(
+    app,
+    service,
+    workerPlaneRoutes,
+    workerPlaneServed(service.uploadBytesMax),
+  );
+  workerInputRoute(register);
   workerTaskRoute(register, service);
   workerHeartbeatRoute(register, service);
   workerUploadRoute(register, service);
@@ -1241,15 +1405,21 @@ export function createWorkerPlaneApp(
   const sessions = service.sessions;
   if (sessions !== undefined) {
     sessionBoundsChecked(sessions);
-    sessionCredentialRoute(register, service, sessions);
-    sessionFactsRoute(register, sessions);
-    sessionHeartbeatRoute(register, sessions);
-    sessionReferenceRoute(register, sessions);
-    sessionTurnRoute(register, sessions);
-    sessionSettleRoutes(register, sessions);
-    sessionStoreWriteRoute(register, sessions);
-    sessionStoreReadRoute(register, sessions);
-    sessionStoreStreamsRoute(register, sessions);
+    const registerSession = workerPlaneRegistrar(
+      app,
+      service,
+      sessionPlaneRoutes,
+      sessionPlaneServed,
+    );
+    sessionCredentialRoute(registerSession, service);
+    sessionFactsRoute(registerSession);
+    sessionHeartbeatRoute(registerSession, sessions);
+    sessionReferenceRoute(registerSession, sessions);
+    sessionTurnRoute(registerSession, sessions);
+    sessionSettleRoutes(registerSession, sessions);
+    sessionStoreWriteRoute(registerSession, sessions);
+    sessionStoreReadRoute(registerSession, sessions);
+    sessionStoreStreamsRoute(registerSession, sessions);
   }
   return app;
 }
