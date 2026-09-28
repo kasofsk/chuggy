@@ -441,6 +441,64 @@ test("a released attempt ends withdrawn under the pool that claimed it, spending
   );
 });
 
+/** One more attempt of this project opened and claimed by `pool`, and the assignment the claim drew. */
+async function poolHeldBy(
+  project: SchedulerProject,
+  pool: WorkerPoolIdentity,
+  label: string,
+): Promise<string> {
+  await poolAttempt(project, label);
+  const drawn = handles(label);
+  assert.notEqual(
+    await assignments.claim(pool, terms, drawn.assignment, drawn.bearer),
+    undefined,
+  );
+  return drawn.assignment;
+}
+
+test("a pool holds the images of the attempts it may still renew, and none of another pool's, another project's, or one it refused or released", async () => {
+  const project = await poolProject("pool-held-images", 4);
+  const mine = await registered(project.partition, "held-mine", [platform]);
+  const theirs = await registered(project.partition, "held-theirs", [platform]);
+  const elsewhere = await poolProject("pool-held-elsewhere");
+  const yonder = await registered(
+    elsewhere.partition,
+    "held-mine",
+    [platform],
+    poolPrincipalFresh("held-mine"),
+  );
+  assert.deepEqual(await assignments.heldImages(mine, terms.heldMax), []);
+  await poolHeldBy(project, theirs, "held-theirs");
+  await poolHeldBy(elsewhere, yonder, "held-yonder");
+  assert.deepEqual(await assignments.heldImages(theirs, terms.heldMax), [
+    "worker:v1",
+  ]);
+  assert.deepEqual(await assignments.heldImages(yonder, terms.heldMax), [
+    "worker:v1",
+  ]);
+  assert.deepEqual(
+    await assignments.heldImages(mine, terms.heldMax),
+    [],
+    "another pool's attempt, or the same name's in another project, is not this pool's",
+  );
+  const refused = await poolHeldBy(project, mine, "held-refused");
+  assert.deepEqual(await assignments.heldImages(mine, terms.heldMax), [
+    "worker:v1",
+  ]);
+  assert.equal(await assignments.refuse(mine, refused, "no node"), true);
+  assert.deepEqual(await assignments.heldImages(mine, terms.heldMax), []);
+  const released = await poolHeldBy(project, mine, "held-released");
+  assert.deepEqual(await assignments.heldImages(mine, terms.heldMax), [
+    "worker:v1",
+  ]);
+  assert.equal(await assignments.release(mine, released), true);
+  assert.deepEqual(await assignments.heldImages(mine, terms.heldMax), []);
+  await assert.rejects(
+    assignments.heldImages(mine, 0),
+    /invalid worker pool held bound/u,
+  );
+});
+
 test("the plane serving harnesses cannot read the relation a pool is registered in", async () => {
   await assert.rejects(
     harnessPlanePool.query("SELECT pool FROM worker_pool"),

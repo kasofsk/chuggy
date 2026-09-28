@@ -56,8 +56,9 @@ const identity: WorkerPoolIdentity = {
   principal: poolPrincipal,
 };
 
-/** The image the one claimed execution pinned. */
+/** The image the one claimed execution pinned, and the name a pool is handed it by. */
 const pinned = `registry.invalid/worker@sha256:${"a".repeat(64)}`;
+const published = `registry.public.invalid/worker@sha256:${"a".repeat(64)}`;
 
 /** A pool's token and the release it speaks, which is this plane's own. */
 const speaking = {
@@ -74,8 +75,8 @@ function polling(held: readonly string[], wanted = 1): string {
   return `${workerPoolPollRoute}?${query}`;
 }
 
-/** Records every call a route made, so the route's mapping is what the case reads. */
-function calls(): {
+/** Records every call a route made, so the route's mapping is what the case reads, the pool holding `pinning`. */
+function calls(pinning: readonly string[] = []): {
   readonly made: unknown[];
   readonly ports: WorkerPoolAssignments;
 } {
@@ -110,6 +111,8 @@ function calls(): {
         Promise.resolve((made.push(["release", assignment]), true)),
       held: (_identity, assignment) =>
         Promise.resolve((made.push(["held", assignment]), true)),
+      heldImages: (_identity, heldMax) =>
+        Promise.resolve((made.push(["heldImages", heldMax]), pinning)),
     },
   };
 }
@@ -170,6 +173,7 @@ function plane(
       callbackUrl: "https://plane.invalid/v1/ticket-execution",
       pollIntervalMs: 1,
       pollsMax: 1,
+      imageHosts: new Map([["registry.invalid", "registry.public.invalid"]]),
     },
     ready: () => Promise.resolve(true),
   };
@@ -188,7 +192,7 @@ test("one poll renews what is held, says what must stop and hands over what it c
       {
         assignment: "minted-1",
         capabilities: ["Platform:Linux:Amd64"],
-        image: pinned,
+        image: published,
         cpuMillis: 500,
         memoryMib: 256,
         deadlineSecs: 600,
@@ -568,5 +572,210 @@ test("a request no route names is read no further than the plane's own bound", a
       payload: JSON.stringify("x".repeat(bytes - '""'.length)),
     });
     assert.equal(answered.statusCode, status, String(bytes));
+  }
+});
+
+/** The address the registry's front asks at, which the fabric names exactly. */
+const authorizing = "/registry/authorize";
+
+/** A Basic credential whose password is `token`, under any user. */
+function basic(token: string, user = "anyone"): string {
+  return `Basic ${Buffer.from(`${user}:${token}`, "utf8").toString("base64")}`;
+}
+
+/** What the front forwards of one registry request, under the pool's own token unless the case names another credential or none. */
+function forwarded(
+  method: string,
+  address: string,
+  authorization: string | null = basic(poolToken),
+): Record<string, string> {
+  return {
+    ...(authorization === null ? {} : { authorization }),
+    "x-forwarded-method": method,
+    "x-forwarded-uri": address,
+  };
+}
+
+const heldDigest = `sha256:${"a".repeat(64)}`;
+
+test("a pool is allowed the base, the manifest it holds by digest and that repository's blobs, naming no release", async () => {
+  const recorded = calls([pinned]);
+  const app = createPoolPlaneApp(plane(recorded.ports));
+  for (const [method, address] of [
+    ["GET", "/v2/"],
+    ["GET", `/v2/worker/manifests/${heldDigest}`],
+    ["HEAD", `/v2/worker/manifests/${heldDigest}`],
+    ["GET", `/v2/worker/blobs/sha256:${"b".repeat(64)}`],
+  ] as const) {
+    const answered = await app.inject({
+      method: "GET",
+      url: authorizing,
+      headers: forwarded(method, address),
+    });
+    assert.equal(answered.statusCode, 200, `${method} ${address}`);
+    assert.equal(answered.body, "");
+    assert.equal(answered.headers["www-authenticate"], undefined);
+  }
+  assert.deepEqual(recorded.made, Array(4).fill(["heldImages", 3]));
+});
+
+test("a Basic credential names any user, and only its password is the pool's token", async () => {
+  const app = createPoolPlaneApp(plane(calls([pinned]).ports));
+  for (const user of ["", "pool-one", "someone else"]) {
+    const answered = await app.inject({
+      method: "GET",
+      url: authorizing,
+      headers: forwarded("GET", "/v2/", basic(poolToken, user)),
+    });
+    assert.equal(answered.statusCode, 200, JSON.stringify(user));
+  }
+});
+
+for (const [why, authorization] of [
+  ["no credential", null],
+  ["the pool's token as a bearer", `Bearer ${poolToken}`],
+  ["a scheme and nothing else", "Basic "],
+  ["a credential that is not base64", "Basic !!!!"],
+  [
+    "base64 cut short of its padding",
+    `Basic ${Buffer.from(`anyone:${poolToken}`).toString("base64").replace(/=+$/u, "")}`,
+  ],
+  [
+    "a credential with no password",
+    `Basic ${Buffer.from("anyone").toString("base64")}`,
+  ],
+  ["an empty password", basic("")],
+  ["a token the issuer does not vouch for", basic("stranger")],
+] as const)
+  test(`a registry request carrying ${why} is challenged for a Basic credential`, async () => {
+    const recorded = calls([pinned]);
+    const answered = await createPoolPlaneApp(plane(recorded.ports)).inject({
+      method: "GET",
+      url: authorizing,
+      headers: forwarded("GET", "/v2/", authorization),
+    });
+    assert.equal(answered.statusCode, 401);
+    assert.equal(
+      answered.headers["www-authenticate"],
+      'Basic realm="chuggy-registry"',
+    );
+    assert.equal(answered.body, "");
+    assert.deepEqual(recorded.made, []);
+  });
+
+test("a request the grammar refuses is 403 before anything held is read", async () => {
+  const recorded = calls([pinned]);
+  const app = createPoolPlaneApp(plane(recorded.ports));
+  for (const [method, address] of [
+    ["GET", "/v2/_catalog"],
+    ["GET", "/v2/worker/tags/list"],
+    ["GET", "/v2/worker/manifests/latest"],
+    ["PUT", `/v2/worker/manifests/${heldDigest}`],
+    ["POST", "/v2/worker/blobs/uploads/"],
+    ["DELETE", `/v2/worker/blobs/${heldDigest}`],
+    ["GET", `/v2/worker/manifests/${heldDigest}?digest=x`],
+    ["GET", `/v2/%2e%2e/worker/blobs/${heldDigest}`],
+  ] as const) {
+    const answered = await app.inject({
+      method: "GET",
+      url: authorizing,
+      headers: forwarded(method, address),
+    });
+    assert.equal(answered.statusCode, 403, `${method} ${address}`);
+    assert.equal(answered.body, "");
+    assert.equal(answered.headers["www-authenticate"], undefined);
+  }
+  const unforwarded = await app.inject({
+    method: "GET",
+    url: authorizing,
+    headers: { authorization: basic(poolToken) },
+  });
+  assert.equal(unforwarded.statusCode, 403);
+  assert.deepEqual(recorded.made, []);
+});
+
+test("a pull of an image the pool holds no assignment for is 403", async () => {
+  const app = createPoolPlaneApp(plane(calls([pinned]).ports));
+  for (const address of [
+    `/v2/worker/manifests/sha256:${"b".repeat(64)}`,
+    `/v2/api/manifests/${heldDigest}`,
+    `/v2/api/blobs/${heldDigest}`,
+  ]) {
+    const answered = await app.inject({
+      method: "GET",
+      url: authorizing,
+      headers: forwarded("GET", address),
+    });
+    assert.equal(answered.statusCode, 403, address);
+  }
+  const holdingNothing = await createPoolPlaneApp(plane(calls().ports)).inject({
+    method: "GET",
+    url: authorizing,
+    headers: forwarded("GET", `/v2/worker/manifests/${heldDigest}`),
+  });
+  assert.equal(holdingNothing.statusCode, 403);
+});
+
+test("a caller that is no admitted pool is 403, and an outage of the issuer, the authority or the store is 503", async () => {
+  const ports = calls([pinned]).ports;
+  const served = plane(ports);
+  for (const [why, service, token, status] of [
+    [
+      "a pool the authority refuses",
+      plane(ports, authority("Refuse")),
+      poolToken,
+      403,
+    ],
+    [
+      "a principal no registration names",
+      {
+        ...served,
+        registry: {
+          ...served.registry,
+          identify: () => Promise.resolve(undefined),
+        },
+      },
+      poolToken,
+      403,
+    ],
+    ["an issuer that cannot answer", served, "issuer-down", 503],
+    ["an authority outage", plane(ports, authority("Outage")), poolToken, 503],
+    [
+      "a registry that cannot be read",
+      {
+        ...served,
+        registry: {
+          ...served.registry,
+          identify: () => Promise.reject(new Error("down")),
+        },
+      },
+      poolToken,
+      503,
+    ],
+    [
+      "held assignments that cannot be read",
+      {
+        ...served,
+        assignments: {
+          ...ports,
+          heldImages: () => Promise.reject(new Error("down")),
+        },
+      },
+      poolToken,
+      503,
+    ],
+  ] as const) {
+    const answered = await createPoolPlaneApp(service).inject({
+      method: "GET",
+      url: authorizing,
+      headers: forwarded(
+        "GET",
+        `/v2/worker/manifests/${heldDigest}`,
+        basic(token),
+      ),
+    });
+    assert.equal(answered.statusCode, status, why);
+    assert.equal(answered.body, "");
+    assert.equal(answered.headers["www-authenticate"], undefined, why);
   }
 });

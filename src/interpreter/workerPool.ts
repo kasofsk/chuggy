@@ -35,6 +35,10 @@ import type { Principal } from "./principal.ts";
 import type { ProjectAccess } from "./projectAccess.ts";
 import type { Partition } from "./projectStore.ts";
 import {
+  workerPoolImageHosted,
+  type WorkerPoolImageHosts,
+} from "./workerPoolImagePull.ts";
+import {
   workerPoolPlatformToken,
   type WorkerPoolClass,
 } from "./workerPoolAssignment.ts";
@@ -205,6 +209,11 @@ export interface WorkerPoolAssignments {
   ): Promise<boolean>;
   release(identity: WorkerPoolIdentity, assignment: string): Promise<boolean>;
   held(identity: WorkerPoolIdentity, assignment: string): Promise<boolean>;
+  /** The images pinned by the assignments this registration may still renew, at most `heldMax` of them. */
+  heldImages(
+    identity: WorkerPoolIdentity,
+    heldMax: number,
+  ): Promise<readonly string[]>;
 }
 
 export interface WorkerPoolPollSettings {
@@ -218,6 +227,8 @@ export interface WorkerPoolPollSettings {
   readonly callbackUrl: string;
   readonly pollIntervalMs: number;
   readonly pollsMax: number;
+  /** The public host each internal registry host is published as, which an assignment names its image by. */
+  readonly imageHosts: WorkerPoolImageHosts;
 }
 
 /** Draws an assignment's identity and the one-shot bearer its harness answers under. */
@@ -264,16 +275,18 @@ async function workerPoolHeldReconciled(
 /**
  * What a pool is told of the requirement it was assigned: the platform and the
  * capabilities it places the workload by, as the tokens it declared them in,
- * and the image where the requirement pinned one.
+ * and the image where the requirement pinned one, named by the host a pool
+ * pulls it from.
  */
 function workerPoolClaimedPlacement(
   requirement: ExecutionRequirement,
+  imageHosts: WorkerPoolImageHosts,
 ): Pick<WorkerPoolAssignment, "capabilities" | "image"> {
   switch (requirement.mode) {
     case "Container":
       return {
         capabilities: [workerPoolPlatformToken(requirement)],
-        image: requirement.image,
+        image: workerPoolImageHosted(requirement.image, imageHosts),
       };
     case "ContainerCapability":
       return {
@@ -307,7 +320,7 @@ async function workerPoolClaims(
     if (row === undefined) break;
     claimed.push({
       assignment,
-      ...workerPoolClaimedPlacement(row.requirement),
+      ...workerPoolClaimedPlacement(row.requirement, settings.imageHosts),
       cpuMillis: settings.cpuMillis,
       memoryMib: settings.memoryMib,
       deadlineSecs: settings.deadlineSecs,

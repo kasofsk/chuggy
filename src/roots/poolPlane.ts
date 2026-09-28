@@ -27,6 +27,10 @@ import {
   projectAccessTimeoutMsDefault,
 } from "../interpreter/projectAccess.ts";
 import {
+  workerPoolImageHostsRead,
+  type WorkerPoolImageHosts,
+} from "../interpreter/workerPoolImagePull.ts";
+import {
   planeEnvironmentPositive,
   planeEnvironmentRequired,
 } from "./planeEnvironment.ts";
@@ -43,6 +47,16 @@ import {
  * holding a door its credential was deliberately given no key to.
  */
 const callbackUrlVariable = "CHUG_POOL_PLANE_CALLBACK_URL";
+
+const imageHostsVariable = "CHUG_POOL_PLANE_IMAGE_HOSTS";
+
+/** The public host each internal registry host is published as, where a malformed setting refuses the start rather than publishing nothing. */
+function poolPlaneImageHosts(): WorkerPoolImageHosts {
+  const read = workerPoolImageHostsRead(process.env[imageHostsVariable]);
+  if (read.read === "Refused")
+    throw new Error(`${imageHostsVariable} ${read.why}`);
+  return read.hosts;
+}
 
 /** The issuer a pool's token is verified against, read the way every other bound is. */
 function poolPlaneIssuer() {
@@ -64,6 +78,7 @@ function poolPlaneIssuer() {
 }
 
 async function main(): Promise<void> {
+  const imageHosts = poolPlaneImageHosts();
   const pool = postgresPool(
     planeEnvironmentRequired("CHUG_POOL_PLANE_DATABASE_URL"),
   );
@@ -106,6 +121,7 @@ async function main(): Promise<void> {
         1_000,
       ),
       pollsMax: planeEnvironmentPositive("CHUG_POOL_PLANE_POLLS_MAX", 25),
+      imageHosts,
     },
     ready: async () => {
       try {
