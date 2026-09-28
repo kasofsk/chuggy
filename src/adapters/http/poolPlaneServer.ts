@@ -32,6 +32,7 @@ import fastify, {
 import {
   assignmentOutcomeSchema,
   workerPoolAssignmentIdentitySchema,
+  workerPoolEvidenceCharsMax,
   workerPoolPollQuery,
   workerPoolPollQuerySchema,
   workerPoolPollRoute,
@@ -50,6 +51,12 @@ import {
   type WorkerPoolPollSettings,
   type WorkerPoolRegistry,
 } from "../../interpreter/workerPool.ts";
+import {
+  planeBodyBytesDefault,
+  planeJsonObjectBytesMax,
+  planeRouteServed,
+  type PlaneRoute,
+} from "./planeRoutes.ts";
 import type { PrincipalAuthentication } from "./server.ts";
 import {
   workerContractChecked,
@@ -59,6 +66,11 @@ import {
 /** A contract route's refusal of a release outside the range the pool plane serves. */
 const poolPlaneContractChecked = workerContractChecked(
   workerPoolContractAccepted,
+);
+
+/** The most a settlement is sent: a refusal's evidence at its bound, and nothing else. */
+export const poolPlaneSettlementBytesMax = planeJsonObjectBytesMax(
+  workerPoolEvidenceCharsMax,
 );
 
 export interface PoolPlaneService {
@@ -136,6 +148,30 @@ function poolRefused(
   }
 }
 
+/** Serves `handler` at one route for the pool its bearer names, every other caller refused before any of its body is read. */
+function poolPlaneRoute(
+  app: FastifyInstance,
+  service: PoolPlaneService,
+  route: Omit<PlaneRoute, "released">,
+  handler: (
+    request: FastifyRequest,
+    reply: FastifyReply,
+    identity: WorkerPoolIdentity,
+  ) => Promise<unknown>,
+): void {
+  planeRouteServed(
+    app,
+    { ...route, released: poolPlaneContractChecked },
+    async (request, reply) => {
+      const caller = await poolCaller(service, request);
+      if (caller.caller === "Pool") return caller.identity;
+      void poolRefused(reply, caller.caller);
+      return undefined;
+    },
+    handler,
+  );
+}
+
 /** The assignment a settlement's path names, held to the same bound as everywhere else on the wire. */
 function poolAssignmentNamed(request: FastifyRequest): string | undefined {
   const named = workerPoolAssignmentIdentitySchema.safeParse(
@@ -161,19 +197,22 @@ function poolAssignmentsRoute(
   app: FastifyInstance,
   service: PoolPlaneService,
 ): void {
-  app.get(
-    workerPoolPollRoute,
-    { onRequest: poolPlaneContractChecked },
-    async (request, reply) => {
-      const caller = await poolCaller(service, request);
-      if (caller.caller !== "Pool") return poolRefused(reply, caller.caller);
+  poolPlaneRoute(
+    app,
+    service,
+    {
+      method: "GET",
+      url: workerPoolPollRoute,
+      bodyBytesMax: planeJsonObjectBytesMax(),
+    },
+    async (request, reply, identity) => {
       const query = workerPoolPollQuerySchema(
         service.settings.heldMax,
       ).safeParse(request.query);
       if (!query.success) return reply.code(400).send();
       const answered = await workerPoolPoll(
         service.assignments,
-        caller.identity,
+        identity,
         query.data[workerPoolPollQuery.held],
         query.data[workerPoolPollQuery.wanted],
         service.settings,
@@ -196,11 +235,16 @@ function poolOutcomeRoutes(
   service: PoolPlaneService,
 ): void {
   for (const outcome of ["Accepted", "Refused", "Unavailable"] as const)
-    app.post(
-      workerPoolSettlementRoutes[outcome],
-      { onRequest: poolPlaneContractChecked },
-      async (request, reply) =>
-        poolOutcomeAnswered(service, request, reply, outcome),
+    poolPlaneRoute(
+      app,
+      service,
+      {
+        method: "POST",
+        url: workerPoolSettlementRoutes[outcome],
+        bodyBytesMax: poolPlaneSettlementBytesMax,
+      },
+      async (request, reply, identity) =>
+        poolOutcomeAnswered(service, request, reply, identity, outcome),
     );
 }
 
@@ -208,10 +252,9 @@ async function poolOutcomeAnswered(
   service: PoolPlaneService,
   request: FastifyRequest,
   reply: FastifyReply,
+  identity: WorkerPoolIdentity,
   outcome: AssignmentOutcome["outcome"],
 ): Promise<unknown> {
-  const caller = await poolCaller(service, request);
-  if (caller.caller !== "Pool") return poolRefused(reply, caller.caller);
   const assignment = poolAssignmentNamed(request);
   if (assignment === undefined) return reply.code(400).send();
   const body =
@@ -223,7 +266,7 @@ async function poolOutcomeAnswered(
   if (!offered.success) return reply.code(400).send();
   const settled = await poolOutcomeSettled(
     service,
-    caller.identity,
+    identity,
     assignment,
     offered.data,
   );
@@ -247,7 +290,7 @@ async function poolOutcomeSettled(
 }
 
 export function createPoolPlaneApp(service: PoolPlaneService): FastifyInstance {
-  const app = fastify({ logger: false });
+  const app = fastify({ logger: false, bodyLimit: planeBodyBytesDefault });
   workerContractNamed(app);
   poolHealthRoutes(app, service);
   poolAssignmentsRoute(app, service);

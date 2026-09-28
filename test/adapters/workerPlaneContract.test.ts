@@ -43,6 +43,7 @@ import {
   runTranscriptBatchBytesMax,
   runTranscriptBatchesMax,
   sessionStoreBatchBytesMax,
+  workerPlaneUploadBytesMax,
 } from "../../src/contract/http.ts";
 import {
   sessionPlaneAnswers,
@@ -127,6 +128,7 @@ import {
   type WorkerContractReleasePlane,
 } from "../contract/workerContractReleases.ts";
 import { fixtureForgeShapedToken } from "./forgeFixtures.ts";
+import { planeListening, planeUnendingAnswered } from "./planeBodies.ts";
 import {
   inertRunEvidence,
   inertSessionPlane,
@@ -134,9 +136,6 @@ import {
   inertWorkerPlane,
   runTotalsBody,
 } from "./workerPlaneFixtures.ts";
-
-/** Room for the largest body a route refuses by its own bound rather than the framework's. */
-const workerPlaneContractUploadBytesMax = runConfigurationBytesMax * 2;
 
 const liveAuthority: WorkerAttemptAuthority = {
   live: true,
@@ -1363,7 +1362,7 @@ const jobPlane: WorkerPlaneDriven<WorkerPlaneRouteName> = {
   cases: workerPlaneCases,
   bearer: "held",
   service: {
-    ...inertWorkerPlane(workerPlaneContractUploadBytesMax),
+    ...inertWorkerPlane(workerPlaneUploadBytesMax),
     ...workerPlaneAuthority(liveAuthority),
   },
 };
@@ -1376,7 +1375,7 @@ const sessionPlane: WorkerPlaneDriven<SessionPlaneRouteName> = {
   cases: sessionPlaneCases,
   bearer: `chgs_${"a".repeat(32)}`,
   service: {
-    ...inertWorkerPlane(workerPlaneContractUploadBytesMax),
+    ...inertWorkerPlane(workerPlaneUploadBytesMax),
     ...sessionPorts({}),
   },
 };
@@ -1395,6 +1394,113 @@ for (const release of workerContractReplayed("session"))
     sessionPlane,
     await workerContractReleasePlane(release, "session"),
   );
+
+/**
+ * Offers every route of `plane` that reads a body one that never ends, from a
+ * caller naming no bearer and from one whose bearer `unknown`'s authority does
+ * not know, and asserts each is refused as it is today while the body arrives.
+ */
+function workerPlaneStrangersUnread<Name extends string>(
+  what: string,
+  plane: WorkerPlaneDriven<Name>,
+  unknown: Partial<WorkerPlaneServerService>,
+): void {
+  test(`every body route of the ${what} plane refuses a stranger before its body ends`, async () => {
+    for (const [stranger, service, bearer] of [
+      ["no bearer", {}, {}],
+      [
+        "an unknown bearer",
+        unknown,
+        { authorization: `Bearer ${plane.bearer}` },
+      ],
+    ] as const) {
+      await using app = createWorkerPlaneApp({ ...plane.service, ...service });
+      const port = await planeListening(app);
+      for (const name of Object.keys(plane.routes) as Name[]) {
+        const route = plane.routes[name];
+        if (route.method === "GET") continue;
+        const call = plane.calls[name];
+        const answered = await planeUnendingAnswered(
+          port,
+          route.method,
+          route.path.replace("*", call.rest ?? ""),
+          { ...bearer, ...call.headers },
+        );
+        assert.equal(answered.status, 401, `${stranger} at ${route.path}`);
+        assert.equal(answered.body, JSON.stringify({ action: "stop" }));
+      }
+    }
+  });
+}
+
+workerPlaneStrangersUnread("job", jobPlane, workerPlaneAuthority(undefined));
+workerPlaneStrangersUnread(
+  "session",
+  sessionPlane,
+  sessionAuthority(undefined),
+);
+
+/** `service` with every question that authenticates a bearer counted in `asked`. */
+function workerPlaneAuthenticationsCounted(
+  service: WorkerPlaneServerService,
+  asked: { count: number },
+): WorkerPlaneServerService {
+  const { authority, tasks, sessions } = service;
+  return {
+    ...service,
+    authority: {
+      authenticate: (secret) => {
+        asked.count += 1;
+        return authority.authenticate(secret);
+      },
+    },
+    tasks: {
+      ...tasks,
+      work: (secret) => {
+        asked.count += 1;
+        return tasks.work(secret);
+      },
+    },
+    ...(sessions === undefined
+      ? {}
+      : {
+          sessions: {
+            ...sessions,
+            authority: {
+              authenticate: (secret) => {
+                asked.count += 1;
+                return sessions.authority.authenticate(secret);
+              },
+            },
+          },
+        }),
+  };
+}
+
+/** Drives every route of `plane` as its own caller, the attempt's task read counted too because it is that route's authentication. */
+function workerPlaneAuthenticatedOnce<Name extends string>(
+  what: string,
+  plane: WorkerPlaneDriven<Name>,
+  over: Partial<WorkerPlaneServerService>,
+): void {
+  test(`every route of the ${what} plane authenticates its caller once`, async () => {
+    for (const name of Object.keys(plane.routes) as Name[]) {
+      const asked = { count: 0 };
+      const answered = await workerPlaneDriven(plane, name, {
+        name,
+        service: workerPlaneAuthenticationsCounted(
+          { ...plane.service, ...over },
+          asked,
+        ),
+      });
+      assert.notEqual(answered.status, 401, `${name} admitted no caller`);
+      assert.equal(asked.count, 1, name);
+    }
+  });
+}
+
+workerPlaneAuthenticatedOnce("job", jobPlane, workerPlaneTask(liveTask));
+workerPlaneAuthenticatedOnce("session", sessionPlane, {});
 
 /**
  * Every method and path an app serves, read off its own router rather than the
@@ -1432,7 +1538,7 @@ function workerPlaneRoster(
 }
 
 test("the plane serves the contract's routes and its probes, and nothing else", async () => {
-  const attempts = inertWorkerPlane(workerPlaneContractUploadBytesMax);
+  const attempts = inertWorkerPlane(workerPlaneUploadBytesMax);
   const jobs = [
     ...Object.values(workerPlaneRoutes),
     ...Object.values(workerPlaneHealthRoutes),

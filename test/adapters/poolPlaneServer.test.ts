@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { createPoolPlaneApp } from "../../src/adapters/http/poolPlaneServer.ts";
+import { planeBodyBytesDefault } from "../../src/adapters/http/planeRoutes.ts";
+import {
+  createPoolPlaneApp,
+  poolPlaneSettlementBytesMax,
+} from "../../src/adapters/http/poolPlaneServer.ts";
 import type { PoolPlaneService } from "../../src/adapters/http/poolPlaneServer.ts";
 import {
   contractVersionRefusalSchema,
@@ -11,6 +15,7 @@ import {
   workerContractVersionText,
 } from "../../src/contract/workerContract.ts";
 import {
+  workerPoolEvidenceCharsMax,
   workerPoolPollQuery,
   workerPoolPollRoute,
   workerPoolReconciliationSchema,
@@ -31,6 +36,12 @@ import {
   type ProjectAccess,
 } from "../../src/interpreter/projectAccess.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
+import {
+  planeJsonHeaviest,
+  planeListening,
+  planeTextHeaviest,
+  planeUnendingAnswered,
+} from "./planeBodies.ts";
 
 const issuer = "https://issuer.invalid";
 
@@ -444,5 +455,118 @@ test("every answer names the plane's release, the probes' and the framework's ow
       workerContractRelease,
       `${method} ${url} answered ${String(status)} naming no release`,
     );
+  }
+});
+
+test("every settlement refuses a caller it does not serve before the body it sent ends", async () => {
+  const recorded = calls();
+  for (const [caller, service, token, status] of [
+    ["no bearer", plane(recorded.ports), undefined, 401],
+    ["a token the issuer rejects", plane(recorded.ports), "stranger", 401],
+    [
+      "a pool the authority refuses",
+      plane(recorded.ports, authority("Refuse")),
+      poolToken,
+      404,
+    ],
+    ["an issuer that cannot answer", plane(recorded.ports), "issuer-down", 503],
+  ] as const) {
+    await using app = createPoolPlaneApp(service);
+    const port = await planeListening(app);
+    for (const outcome of ["Accepted", "Refused", "Unavailable"] as const) {
+      const answered = await planeUnendingAnswered(
+        port,
+        "POST",
+        workerPoolSettlementPath(outcome, "one"),
+        {
+          ...(token === undefined ? {} : { authorization: `Bearer ${token}` }),
+          [workerContractHeader]: workerContractRelease,
+          "content-type": "application/json",
+        },
+      );
+      assert.equal(answered.status, status, `${caller} at ${outcome}`);
+      assert.equal(answered.body, "");
+    }
+  }
+  assert.deepEqual(recorded.made, []);
+});
+
+test("each call a pool makes is authenticated once", async () => {
+  const asked = { tokens: 0, pools: 0 };
+  const served = plane(calls().ports);
+  const app = createPoolPlaneApp({
+    ...served,
+    authentication: {
+      authenticateBearer: (token) => {
+        asked.tokens += 1;
+        return served.authentication.authenticateBearer(token);
+      },
+    },
+    registry: {
+      ...served.registry,
+      identify: (principal) => {
+        asked.pools += 1;
+        return served.registry.identify(principal);
+      },
+    },
+  });
+  const made = [
+    ["GET", polling(["live"]), undefined],
+    ["POST", workerPoolSettlementPath("Accepted", "one"), {}],
+    [
+      "POST",
+      workerPoolSettlementPath("Refused", "one"),
+      { evidence: "no runner" },
+    ],
+    ["POST", workerPoolSettlementPath("Unavailable", "one"), {}],
+  ] as const;
+  for (const [method, url, payload] of made) {
+    const answered = await app.inject({
+      method,
+      url,
+      headers: speaking,
+      ...(payload === undefined ? {} : { payload }),
+    });
+    assert.ok(answered.statusCode < 300, `${url} ${answered.body}`);
+  }
+  assert.deepEqual(asked, { tokens: made.length, pools: made.length });
+});
+
+test("a refusal carrying the heaviest evidence a pool may send is taken, and a byte past the bound is refused", async () => {
+  const recorded = calls();
+  const app = createPoolPlaneApp(plane(recorded.ports));
+  const url = workerPoolSettlementPath("Refused", "one");
+  const headers = { ...speaking, "content-type": "application/json" };
+  const evidence = planeTextHeaviest(workerPoolEvidenceCharsMax);
+  const taken = await app.inject({
+    method: "POST",
+    url,
+    headers,
+    payload: planeJsonHeaviest({ evidence }),
+  });
+  assert.equal(taken.statusCode, 204);
+  const past = await app.inject({
+    method: "POST",
+    url,
+    headers,
+    payload: Buffer.alloc(poolPlaneSettlementBytesMax + 1, " "),
+  });
+  assert.equal(past.statusCode, 413);
+  assert.deepEqual(recorded.made, [["refuse", "one", evidence]]);
+});
+
+test("a request no route names is read no further than the plane's own bound", async () => {
+  const app = createPoolPlaneApp(plane(calls().ports));
+  for (const [bytes, status] of [
+    [planeBodyBytesDefault, 404],
+    [planeBodyBytesDefault + 1, 413],
+  ] as const) {
+    const answered = await app.inject({
+      method: "POST",
+      url: "/v1/nothing",
+      headers: { "content-type": "application/json" },
+      payload: JSON.stringify("x".repeat(bytes - '""'.length)),
+    });
+    assert.equal(answered.statusCode, status, String(bytes));
   }
 });

@@ -23,10 +23,13 @@ import { setTimeout as delay } from "node:timers/promises";
 
 import {
   createWorkerPlaneApp,
+  sessionPlaneServed,
   type SessionPlaneService,
 } from "../../src/adapters/http/workerPlaneServer.ts";
 import {
   nativeHttpPageItemsMax,
+  repositoryIdentityCharsMax,
+  sessionIdentityCharsMax,
   sessionStoreBatchBytesMax,
   sessionStoreBatchesMax,
   sessionStorePageBatchesMax,
@@ -35,6 +38,11 @@ import {
   sessionTurnToolNameCharsMax,
   sessionTurnToolsMax,
 } from "../../src/contract/http.ts";
+import { agentReportedTurnFailures } from "../../src/contract/rosters.ts";
+import {
+  sessionPlaneRoutes,
+  type SessionPlaneRouteName,
+} from "../../src/contract/sessionPlane.ts";
 import {
   allPlatformTurnFailures,
   asSessionAttemptId,
@@ -45,6 +53,12 @@ import {
 import type { SessionPlaneIdentity } from "../../src/interpreter/sessionPlane.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import type { WorkerPlaneCredentialMinted } from "../../src/interpreter/workerPlaneCredentials.ts";
+import {
+  planeHeaviestTaken,
+  planeJsonHeaviest,
+  planeTextHeaviest,
+  type PlaneHeaviest,
+} from "./planeBodies.ts";
 import { inertSessionPlane, inertWorkerPlane } from "./workerPlaneFixtures.ts";
 
 /** One bearer in the session language, which is the only token these routes read. */
@@ -1259,6 +1273,81 @@ test("more streams than one answer holds is refused, never quietly cut", async (
  * ceiling of zero is a mailbox that answers empty forever. Neither is anything
  * a later call could work around.
  */
+const json = { "content-type": "application/json" };
+
+/** The heaviest body each session route is sent, or nothing where the route reads none. */
+const sessionHeaviest: Readonly<
+  Record<SessionPlaneRouteName, PlaneHeaviest | undefined>
+> = {
+  facts: undefined,
+  heartbeat: { headers: json, payload: "{}", status: 204 },
+  reference: {
+    headers: json,
+    payload: planeJsonHeaviest({
+      reference: planeTextHeaviest(sessionIdentityCharsMax),
+    }),
+    status: 204,
+  },
+  turn: undefined,
+  turnAnswer: {
+    headers: json,
+    payload: planeJsonHeaviest({
+      turn: planeTextHeaviest(sessionIdentityCharsMax),
+      result: planeTextHeaviest(sessionTurnResultCharsMax),
+      measured: {
+        model: planeTextHeaviest(sessionTurnModelCharsMax),
+        tokens: Number.MAX_SAFE_INTEGER,
+        costMicros: Number.MAX_SAFE_INTEGER,
+        durationMs: Number.MAX_SAFE_INTEGER,
+        tools: Array.from({ length: sessionTurnToolsMax }, () =>
+          planeTextHeaviest(sessionTurnToolNameCharsMax),
+        ),
+      },
+      batchFirst: sessionStoreBatchesMax,
+      batchLast: sessionStoreBatchesMax,
+    }),
+    status: 204,
+  },
+  turnFailure: {
+    headers: json,
+    payload: planeJsonHeaviest({
+      turn: planeTextHeaviest(sessionIdentityCharsMax),
+      failure: agentReportedTurnFailures.reduce((longest, failure) =>
+        failure.length > longest.length ? failure : longest,
+      ),
+    }),
+    status: 204,
+  },
+  held: { headers: json, payload: "{}", status: 204 },
+  storeStreams: undefined,
+  storeBatch: {
+    rest: "1a2b/1",
+    headers: octets,
+    payload: Buffer.alloc(sessionStoreBatchBytesMax, "\n"),
+    status: 204,
+  },
+  storePage: undefined,
+  credential: {
+    headers: json,
+    payload: planeJsonHeaviest({
+      repository: planeTextHeaviest(repositoryIdentityCharsMax),
+    }),
+    status: 404,
+  },
+};
+
+test("every session route takes the heaviest body a session may send, and refuses a byte past its bound", async () => {
+  const app = sessionPlane();
+  await planeHeaviestTaken(
+    app,
+    sessionPlaneRoutes,
+    sessionPlaneServed,
+    sessionHeaviest,
+    held,
+  );
+  await app.close();
+});
+
 test("a session bound no loop could work around is refused at construction", () => {
   for (const bound of [
     { turnPollIntervalMs: 0 },
@@ -1362,7 +1451,7 @@ test("a body that does not name exactly one repository reaches no minting", asyn
     { repository: "" },
     { repository: 1 },
     { repository: "a", permissions: "write" },
-    { repository: "r".repeat(4_096) },
+    { repository: "r".repeat(repositoryIdentityCharsMax + 1) },
   ]) {
     const refused = await app.inject({
       method: "POST",
