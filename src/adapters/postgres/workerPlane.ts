@@ -322,11 +322,11 @@ export function postgresWorkerAttemptHeartbeats(
   return {
     heartbeat: async (secret, generation, leaseSecs) => {
       const digest = createHash("sha256").update(secret, "utf8").digest("hex");
-      const renewed = await pool.query<{ renewed: boolean | null }>(
+      const answered = await pool.query<{ live: boolean | null }>(
         sql`SELECT heartbeat_worker_attempt(
-          ${digest},${generation},${leaseSecs})::boolean AS renewed`,
+          ${digest},${generation},${leaseSecs})::boolean AS live`,
       );
-      return renewed.rows[0]?.renewed === true;
+      return answered.rows[0]?.live === true;
     },
   };
 }

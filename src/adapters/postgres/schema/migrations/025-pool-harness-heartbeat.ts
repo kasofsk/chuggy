@@ -4,13 +4,12 @@ import { workerAttemptHeartbeatFunction, type Migration } from "../shared.ts";
  * A harness a pool launched is answered live by its heartbeat, and the
  * heartbeat renews nothing of its attempt. A claim leaves the attempt placing
  * under a launching execution and leases it to the pool, whose polls renew it,
- * so the heartbeat that renews only a running attempt refused every pool's
- * harness a minute in, and the harness ended work it was still doing.
+ * so the heartbeat, which renewed only a running attempt, refused every pool's
+ * harness at its first beat, and the harness ended work it was still doing.
  *
  * THE POOL'S LEASE STAYS THE POOL'S. A harness that renewed it would keep an
  * attempt alive under a pool that stopped polling, so its heartbeat answers
- * only whether that lease still holds it, and `model/runner.qnt` lets
- * heartbeat freshness hold placement but never conclude work.
+ * only whether that lease still holds it: a pool's liveness is its poll.
  */
 export const migration025: Migration = {
   version: 25,
