@@ -26,6 +26,7 @@ import {
   postgresWorkerPoolRegistry,
 } from "../../src/adapters/postgres/workerPool.ts";
 import {
+  postgresWorkerAttemptHeartbeats,
   postgresWorkerPlaneAuthority,
   postgresWorkerReportStore,
   postgresWorkerTasks,
@@ -47,6 +48,7 @@ import type {
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 import {
   postgresHarnessConfiguration,
+  postgresHarnessNewEpoch,
   postgresHarnessPartition,
   postgresHarnessRolePool,
 } from "./harness.ts";
@@ -796,6 +798,91 @@ test("a released attempt's bearer is answered as one never issued", async () => 
       asAttemptCapabilitySecret(handles("never-issued").bearer),
       claimed.opened,
     ),
+  );
+});
+
+/**
+ * A pool's polls lease the attempt it claimed, so the heartbeat of the harness
+ * it launched answers whether that lease holds the attempt live and writes
+ * nothing, however short a lease the harness asks for.
+ */
+test("a harness a pool launched is answered live by its heartbeat, which renews nothing", async () => {
+  const heartbeats = postgresWorkerAttemptHeartbeats(harnessPlanePool);
+  const beat = (bearer: string, generation: number) =>
+    heartbeats.heartbeat(asAttemptCapabilitySecret(bearer), generation, 1);
+  const live = await poolClaimed("heartbeat-live");
+  const before = await poolClaimRow(live.project, live.claimed.attempt);
+  assert.equal(
+    await beat(live.drawn.bearer, live.claimed.opened.generation),
+    true,
+  );
+  assert.deepEqual(
+    await poolClaimRow(live.project, live.claimed.attempt),
+    before,
+  );
+  assert.equal(
+    await beat(live.drawn.bearer, live.claimed.opened.generation + 1),
+    false,
+    "another generation is not this attempt",
+  );
+  await rig.harness.query(
+    `UPDATE execution_attempt SET lease_expires_at=now()-interval '1 second'
+      WHERE tenant=$1 AND project=$2 AND attempt=$3`,
+    [
+      live.project.partition.tenant,
+      live.project.partition.project,
+      live.claimed.attempt,
+    ],
+  );
+  assert.equal(
+    await beat(live.drawn.bearer, live.claimed.opened.generation),
+    false,
+    "a lapsed lease holds nothing",
+  );
+  const refused = await poolClaimed("heartbeat-refused");
+  assert.equal(
+    await assignments.refuse(
+      refused.identity,
+      refused.drawn.assignment,
+      "no node takes this",
+    ),
+    true,
+  );
+  assert.equal(
+    await beat(refused.drawn.bearer, refused.claimed.opened.generation),
+    false,
+    "a refused assignment is not live",
+  );
+  const reported = await poolClaimed("heartbeat-reported");
+  assert.equal(
+    (
+      await postgresWorkerReportStore(
+        harnessPlanePool,
+        asAttemptCapabilitySecret(reported.drawn.bearer),
+      ).terminalize(schedulerReport(reported.claimed.opened, "Pass"))
+    ).terminalized,
+    "Terminalized",
+  );
+  assert.equal(
+    await beat(reported.drawn.bearer, reported.claimed.opened.generation),
+    false,
+    "a reported attempt is not live",
+  );
+  const unclaimed = await poolAttempt(
+    await poolProject("pool-heartbeat-unclaimed"),
+    "heartbeat-unclaimed",
+  );
+  assert.equal(
+    await beat(unclaimed.opened.capability.secret, unclaimed.opened.generation),
+    false,
+    "an attempt no pool claimed is not a pool's",
+  );
+  const recovered = await poolClaimed("heartbeat-recovered");
+  await rig.harness.store.establishRecoveryEpoch(postgresHarnessNewEpoch());
+  assert.equal(
+    await beat(recovered.drawn.bearer, recovered.claimed.opened.generation),
+    false,
+    "a recovery fences what the last epoch's pool claimed",
   );
 });
 
