@@ -23,11 +23,7 @@
  * route, an issuer or authority that could not answer is 503 and asks for a
  * retry, and only the last of those is a pool that should come back unchanged.
  */
-import type {
-  FastifyInstance,
-  FastifyReply,
-  FastifyRequest,
-} from "fastify";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
 import {
   assignmentOutcomeSchema,
