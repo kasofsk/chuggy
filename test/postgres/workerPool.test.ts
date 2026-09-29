@@ -802,26 +802,34 @@ test("a released attempt's bearer is answered as one never issued", async () => 
 });
 
 /**
+ * The heartbeat a harness sends for this bearer and generation, asking for a
+ * lease shorter than any a pool is given.
+ */
+function poolHeartbeat(bearer: string, generation: number): Promise<boolean> {
+  return postgresWorkerAttemptHeartbeats(harnessPlanePool).heartbeat(
+    asAttemptCapabilitySecret(bearer),
+    generation,
+    1,
+  );
+}
+
+/**
  * A pool's polls lease the attempt it claimed, so the heartbeat of the harness
  * it launched answers whether that lease holds the attempt live and writes
  * nothing, however short a lease the harness asks for.
  */
 test("a harness a pool launched is answered live by its heartbeat, which renews nothing", async () => {
-  const heartbeats = postgresWorkerAttemptHeartbeats(harnessPlanePool);
-  const beat = (bearer: string, generation: number) =>
-    heartbeats.heartbeat(asAttemptCapabilitySecret(bearer), generation, 1);
   const live = await poolClaimed("heartbeat-live");
+  const { bearer } = live.drawn;
+  const { generation } = live.claimed.opened;
   const before = await poolClaimRow(live.project, live.claimed.attempt);
-  assert.equal(
-    await beat(live.drawn.bearer, live.claimed.opened.generation),
-    true,
-  );
+  assert.equal(await poolHeartbeat(bearer, generation), true);
   assert.deepEqual(
     await poolClaimRow(live.project, live.claimed.attempt),
     before,
   );
   assert.equal(
-    await beat(live.drawn.bearer, live.claimed.opened.generation + 1),
+    await poolHeartbeat(bearer, generation + 1),
     false,
     "another generation is not this attempt",
   );
@@ -835,10 +843,13 @@ test("a harness a pool launched is answered live by its heartbeat, which renews 
     ],
   );
   assert.equal(
-    await beat(live.drawn.bearer, live.claimed.opened.generation),
+    await poolHeartbeat(bearer, generation),
     false,
     "a lapsed lease holds nothing",
   );
+});
+
+test("a pool's harness is answered stop once its attempt is refused, reported, never claimed, or recovered from", async () => {
   const refused = await poolClaimed("heartbeat-refused");
   assert.equal(
     await assignments.refuse(
@@ -849,7 +860,10 @@ test("a harness a pool launched is answered live by its heartbeat, which renews 
     true,
   );
   assert.equal(
-    await beat(refused.drawn.bearer, refused.claimed.opened.generation),
+    await poolHeartbeat(
+      refused.drawn.bearer,
+      refused.claimed.opened.generation,
+    ),
     false,
     "a refused assignment is not live",
   );
@@ -864,7 +878,10 @@ test("a harness a pool launched is answered live by its heartbeat, which renews 
     "Terminalized",
   );
   assert.equal(
-    await beat(reported.drawn.bearer, reported.claimed.opened.generation),
+    await poolHeartbeat(
+      reported.drawn.bearer,
+      reported.claimed.opened.generation,
+    ),
     false,
     "a reported attempt is not live",
   );
@@ -873,14 +890,20 @@ test("a harness a pool launched is answered live by its heartbeat, which renews 
     "heartbeat-unclaimed",
   );
   assert.equal(
-    await beat(unclaimed.opened.capability.secret, unclaimed.opened.generation),
+    await poolHeartbeat(
+      unclaimed.opened.capability.secret,
+      unclaimed.opened.generation,
+    ),
     false,
     "an attempt no pool claimed is not a pool's",
   );
   const recovered = await poolClaimed("heartbeat-recovered");
   await rig.harness.store.establishRecoveryEpoch(postgresHarnessNewEpoch());
   assert.equal(
-    await beat(recovered.drawn.bearer, recovered.claimed.opened.generation),
+    await poolHeartbeat(
+      recovered.drawn.bearer,
+      recovered.claimed.opened.generation,
+    ),
     false,
     "a recovery fences what the last epoch's pool claimed",
   );
