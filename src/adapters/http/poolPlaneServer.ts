@@ -23,11 +23,7 @@
  * route, an issuer or authority that could not answer is 503 and asks for a
  * retry, and only the last of those is a pool that should come back unchanged.
  */
-import fastify, {
-  type FastifyInstance,
-  type FastifyReply,
-  type FastifyRequest,
-} from "fastify";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
 import {
   assignmentOutcomeSchema,
@@ -56,7 +52,7 @@ import {
   type WorkerPoolRegistry,
 } from "../../interpreter/workerPool.ts";
 import {
-  planeBodyBytesDefault,
+  planeApp,
   planeJsonObjectBytesMax,
   planeRouteServed,
   type PlaneRoute,
@@ -370,7 +366,7 @@ function poolPullRoute(app: FastifyInstance, service: PoolPlaneService): void {
 }
 
 export function createPoolPlaneApp(service: PoolPlaneService): FastifyInstance {
-  const app = fastify({ logger: false, bodyLimit: planeBodyBytesDefault });
+  const app = planeApp();
   workerContractNamed(app);
   poolHealthRoutes(app, service);
   poolAssignmentsRoute(app, service);

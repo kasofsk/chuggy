@@ -37,6 +37,7 @@ import {
 } from "../../src/interpreter/projectAccess.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 import {
+  planeChunkedAnswered,
   planeJsonHeaviest,
   planeListening,
   planeTextHeaviest,
@@ -493,6 +494,31 @@ test("every settlement refuses a caller it does not serve before the body it sen
     }
   }
   assert.deepEqual(recorded.made, []);
+});
+
+test("a settlement's empty body sent chunked with no media type is answered as none", async () => {
+  const service = plane(calls().ports);
+  const path = workerPoolSettlementPath("Accepted", "one");
+  const headers = {
+    authorization: `Bearer ${poolToken}`,
+    [workerContractHeader]: workerContractRelease,
+  };
+  const bodyless = await createPoolPlaneApp(service).inject({
+    method: "POST",
+    url: path,
+    headers,
+  });
+  await using app = createPoolPlaneApp(service);
+  const chunked = await planeChunkedAnswered(
+    await planeListening(app),
+    "POST",
+    path,
+    headers,
+  );
+  assert.deepEqual(chunked, {
+    status: bodyless.statusCode,
+    body: bodyless.body,
+  });
 });
 
 test("each call a pool makes is authenticated once", async () => {

@@ -1,7 +1,8 @@
 /**
  * Bodies the job, session and pool plane suites send to ask how a route reads
  * one: a body that never ends, which only a route answering before it reads
- * the body can answer at all, and the heaviest JSON a bounded body can be.
+ * the body can answer at all, one sent chunked with no media type, and the
+ * heaviest JSON a bounded body can be.
  */
 
 import assert from "node:assert/strict";
@@ -11,8 +12,8 @@ import type { FastifyInstance } from "fastify";
 
 import type { WorkerPlaneRoute } from "../../src/contract/workerPlane.ts";
 
-/** How long a route is waited on while its body keeps arriving: a cap on a hang, not a measure of speed. */
-const planeUnendingWaitMs = 10_000;
+/** How long a route's answer is waited on: a cap on a hang, not a measure of speed. */
+const planeAnswerWaitMs = 10_000;
 
 /** How often the body that never ends is written another chunk. */
 const planeUnendingChunkMs = 10;
@@ -58,7 +59,7 @@ export function planeUnendingAnswered(
       method,
       path,
       headers: { ...headers, "transfer-encoding": "chunked" },
-      signal: AbortSignal.timeout(planeUnendingWaitMs),
+      signal: AbortSignal.timeout(planeAnswerWaitMs),
     });
     const writing = setInterval(
       () => request.write(planeUnendingChunk),
@@ -85,6 +86,38 @@ export function planeUnendingAnswered(
         request.destroy();
       });
     });
+  });
+}
+
+/** What the plane listening at `port` answers a request with no media type whose body, empty unless `body` names one, is sent chunked, as a proxy may re-send one it was given with a length. */
+export function planeChunkedAnswered(
+  port: number,
+  method: string,
+  path: string,
+  headers: Readonly<Record<string, string>>,
+  body = "",
+): Promise<PlaneAnswered> {
+  return new Promise((resolve, reject) => {
+    const request = http.request({
+      host: "127.0.0.1",
+      port,
+      method,
+      path,
+      headers: { ...headers, "transfer-encoding": "chunked" },
+      signal: AbortSignal.timeout(planeAnswerWaitMs),
+    });
+    request.on("error", reject);
+    request.on("response", (response) => {
+      const chunks: Buffer[] = [];
+      response.on("data", (chunk: Buffer) => chunks.push(chunk));
+      response.on("end", () => {
+        resolve({
+          status: response.statusCode ?? 0,
+          body: Buffer.concat(chunks).toString(),
+        });
+      });
+    });
+    request.end(body);
   });
 }
 

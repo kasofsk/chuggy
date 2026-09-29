@@ -1,10 +1,6 @@
 import { createHash } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
-import fastify, {
-  type FastifyInstance,
-  type FastifyReply,
-  type FastifyRequest,
-} from "fastify";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { z } from "zod";
 
 import {
@@ -117,7 +113,7 @@ import {
   type SessionTask,
 } from "../../interpreter/workerTask.ts";
 import {
-  planeBodyBytesDefault,
+  planeApp,
   planeJsonObjectBytesMax,
   planeJsonTextBytesMax,
   planeRouteServed,
@@ -1377,7 +1373,7 @@ function sessionBoundsChecked(sessions: SessionPlaneService): void {
 export function createWorkerPlaneApp(
   service: WorkerPlaneServerService,
 ): FastifyInstance {
-  const app = fastify({ logger: false, bodyLimit: planeBodyBytesDefault });
+  const app = planeApp();
   app.addContentTypeParser(
     workerPlaneBytesMediaType,
     { parseAs: "buffer" },
