@@ -7,7 +7,7 @@
  * handler is handed the caller its hook resolved rather than resolving it again.
  */
 
-import {
+import fastify, {
   errorCodes,
   type FastifyInstance,
   type FastifyReply,
@@ -18,6 +18,26 @@ import { nativeHttpBodyBytesMax } from "../../contract/http.ts";
 
 /** The most of a body a plane reads where no route names its own bound, which is what an unrouted request is read under. */
 export const planeBodyBytesDefault = nativeHttpBodyBytesMax;
+
+/**
+ * A plane's server, which takes an empty body with no media type as none
+ * however it was framed and refuses any other body no parser takes. A proxy may
+ * re-send a bodyless POST chunked, as the public tunnel does, and Fastify
+ * refuses an untyped chunked body it has no parser for.
+ */
+export function planeApp(): FastifyInstance {
+  const app = fastify({ logger: false, bodyLimit: planeBodyBytesDefault });
+  app.addContentTypeParser(
+    "*",
+    { parseAs: "buffer" },
+    (request, body, done) => {
+      if (request.headers["content-type"] === undefined && body.length === 0)
+        done(null, undefined);
+      else done(new errorCodes.FST_ERR_CTP_INVALID_MEDIA_TYPE());
+    },
+  );
+  return app;
+}
 
 /** The most one character weighs once JSON escapes it: past the basic plane, a surrogate pair written as two `\u` escapes. */
 const jsonEscapedCharBytesMax = 12;

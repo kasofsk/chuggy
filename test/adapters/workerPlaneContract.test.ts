@@ -128,7 +128,11 @@ import {
   type WorkerContractReleasePlane,
 } from "../contract/workerContractReleases.ts";
 import { fixtureForgeShapedToken } from "./forgeFixtures.ts";
-import { planeListening, planeUnendingAnswered } from "./planeBodies.ts";
+import {
+  planeChunkedAnswered,
+  planeListening,
+  planeUnendingAnswered,
+} from "./planeBodies.ts";
 import {
   inertRunEvidence,
   inertSessionPlane,
@@ -1439,6 +1443,50 @@ workerPlaneStrangersUnread(
   sessionPlane,
   sessionAuthority(undefined),
 );
+
+/**
+ * Offers every route of `plane` that is called with no body an empty one sent
+ * chunked with no media type, as the public tunnel re-sends it, and asserts it
+ * is answered as the same call with no body, while one with bytes is still
+ * refused as a body no parser takes.
+ */
+function workerPlaneEmptyChunkedTaken<Name extends string>(
+  what: string,
+  plane: WorkerPlaneDriven<Name>,
+): void {
+  test(`every bodyless route of the ${what} plane answers an empty chunked body as it answers none`, async () => {
+    for (const name of Object.keys(plane.routes) as Name[]) {
+      const route = plane.routes[name];
+      const call = plane.calls[name];
+      if (route.method === "GET" || call.payload !== undefined) continue;
+      const path = route.path.replace("*", call.rest ?? "");
+      const url = call.query === undefined ? path : `${path}?${call.query}`;
+      const headers = {
+        authorization: `Bearer ${plane.bearer}`,
+        ...call.headers,
+      };
+      const bodyless = await workerPlaneDriven(plane, name, { name });
+      await using app = createWorkerPlaneApp(plane.service);
+      const port = await planeListening(app);
+      assert.deepEqual(
+        await planeChunkedAnswered(port, route.method, url, headers),
+        { status: bodyless.status, body: bodyless.body },
+        route.path,
+      );
+      const untyped = await planeChunkedAnswered(
+        port,
+        route.method,
+        url,
+        headers,
+        "{}",
+      );
+      assert.equal(untyped.status, 415, route.path);
+    }
+  });
+}
+
+workerPlaneEmptyChunkedTaken("job", jobPlane);
+workerPlaneEmptyChunkedTaken("session", sessionPlane);
 
 /** `service` with every question that authenticates a bearer counted in `asked`. */
 function workerPlaneAuthenticationsCounted(
