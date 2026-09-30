@@ -1,27 +1,37 @@
 /**
  * What creating a project grants, asked of the authority the API authorizes
  * with: the creator of a new tenant reaches every kind on the project and
- * administers the tenant, and a project added later is reached through the
- * tenant alone.
+ * administers the tenant, a project added later is reached through the tenant
+ * alone, and a replay writes the grants only until the door records them.
  */
 
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { test } from "node:test";
+import { after, test } from "node:test";
 
+import { postgresProjectCreation } from "../../src/adapters/postgres/projectCreation.ts";
+import { apiRole } from "../../src/adapters/postgres/schema.ts";
+import { asOperationId } from "../../src/interpreter/operationInbox.ts";
 import {
   allProjectAccessKinds,
+  memberAuthority,
   type ProjectAccessKind,
 } from "../../src/interpreter/projectAccess.ts";
-import { projectCreationGrants } from "../../src/interpreter/projectCreation.ts";
+import {
+  projectCreation,
+  projectCreationGrants,
+} from "../../src/interpreter/projectCreation.ts";
+import { tenantAdministratorGrant } from "../../src/interpreter/projectGrant.ts";
 import {
   oidcPrincipal,
   type Principal,
 } from "../../src/interpreter/principal.ts";
 import {
   asProjectId,
+  asTenantId,
   type Partition,
 } from "../../src/interpreter/projectStore.ts";
+import { postgresHarnessRolePool } from "../postgres/harness.ts";
 import {
   ketoHarnessAccess,
   ketoHarnessGrants,
@@ -31,6 +41,33 @@ import {
 
 const access = ketoHarnessAccess();
 const grants = ketoHarnessGrants();
+const apiPool = postgresHarnessRolePool(apiRole);
+after(() => apiPool.end());
+const store = postgresProjectCreation(apiPool);
+const service = projectCreation({ access, store, grants });
+
+/** A creation the name rule takes, which the harness's partitions are not. */
+function namedCreation(label: string) {
+  const suffix = randomUUID().replaceAll("-", "").slice(0, 24);
+  return {
+    tenant: asTenantId(`${label}-${suffix}`),
+    project: asProjectId("chuggy"),
+    operation: asOperationId(`operation-${randomUUID()}`),
+  };
+}
+
+async function administers(
+  principal: Principal,
+  partition: Partition,
+): Promise<boolean> {
+  return (
+    (await access.authorizeTenant(
+      principal,
+      partition.tenant,
+      "AdministerTenant",
+    )) !== undefined
+  );
+}
 
 async function held(
   principal: Principal,
@@ -84,4 +121,36 @@ test("a project added to a tenant that stands is reached through the tenant's ad
   await created(creator, first, true);
   await created(creator, second, false);
   assert.deepEqual(await held(creator, second), allProjectAccessKinds);
+});
+
+test("a replay of a creation whose grants were never written writes them", async () => {
+  const creator = oidcPrincipal(ketoHarnessIssuer, `creator-${randomUUID()}`);
+  const request = namedCreation("unwritten");
+  await store.create({
+    partition: request,
+    tenantNew: true,
+    operation: request.operation,
+    authority: memberAuthority(creator),
+  });
+  assert.equal(await administers(creator, request), false);
+  assert.equal(
+    (await service.create(creator, request)).result,
+    "AlreadyCreated",
+  );
+  assert.equal(await administers(creator, request), true);
+  assert.deepEqual(await held(creator, request), allProjectAccessKinds);
+});
+
+test("a replay after the grants are recorded restores no grant an operator revoked", async () => {
+  const creator = oidcPrincipal(ketoHarnessIssuer, `creator-${randomUUID()}`);
+  const request = namedCreation("revoked");
+  assert.equal((await service.create(creator, request)).result, "Created");
+  await grants.remove(tenantAdministratorGrant(creator, request.tenant));
+  assert.equal(await administers(creator, request), false);
+  assert.equal(
+    (await service.create(creator, request)).result,
+    "AlreadyCreated",
+  );
+  assert.equal(await administers(creator, request), false);
+  assert.deepEqual(await held(creator, request), []);
 });

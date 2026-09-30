@@ -63,6 +63,14 @@ test("each refusal is one short line of its own", () => {
     expect(
       status({ outcome: "Rejected", code, status: 422, body: undefined }),
     ).toBe(projectNameCharsFault);
+  expect(
+    status({
+      outcome: "Rejected",
+      code: "TenantNameReserved",
+      status: 422,
+      body: undefined,
+    }),
+  ).toBe("Reserved");
   expect(status({ outcome: "Absent" })).toBe("Unavailable");
   expect(
     status({

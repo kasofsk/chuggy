@@ -64,6 +64,8 @@ function projectCreationRejected(code: string): string {
     case "TenantNameInvalid":
     case "ProjectNameInvalid":
       return projectNameCharsFault;
+    case "TenantNameReserved":
+      return "Reserved";
     default:
       return "Refused";
   }

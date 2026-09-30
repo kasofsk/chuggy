@@ -7,10 +7,16 @@
 import assert from "node:assert/strict";
 import test, { type TestContext } from "node:test";
 
+import { createNativeHttpApp } from "../../src/adapters/http/server.ts";
 import {
   nativeHttpMediaType,
   type HttpErrorEnvelope,
 } from "../../src/contract/http.ts";
+import {
+  reservedTenantNames,
+  tenantNameReserved,
+} from "../../src/contract/requests.ts";
+import { asPrincipal } from "../../src/interpreter/principal.ts";
 import { ProjectAccessUnavailable } from "../../src/interpreter/projectAccess.ts";
 import {
   projectCreation,
@@ -18,6 +24,7 @@ import {
   type ProjectCreationWrite,
 } from "../../src/interpreter/projectCreation.ts";
 import type { ProjectGrant } from "../../src/interpreter/projectGrant.ts";
+import { asTenantId } from "../../src/interpreter/projectStore.ts";
 import { memoryProjectAccess } from "../postgres/projectAccessMemory.ts";
 import { servedNativeHttpApp, unservedNativeWeb } from "./threadFixtures.ts";
 
@@ -36,7 +43,11 @@ interface CreationCase {
 
 function creationCase(
   t: TestContext,
-  answer: ProjectCreationAnswer = { outcome: "Created", tenantCreated: true },
+  answer: ProjectCreationAnswer = {
+    outcome: "Created",
+    tenantCreated: true,
+    grantsWritten: false,
+  },
   options: {
     readonly configured?: boolean;
     readonly grantFails?: boolean;
@@ -55,6 +66,7 @@ function creationCase(
           writes.push(write);
           return Promise.resolve(answer);
         },
+        recordGrants: () => Promise.resolve(),
       },
       ...(options.configured === false
         ? {}
@@ -108,7 +120,11 @@ test("a project is created at its own address, under the identity the caller key
 
 test("a replay answers the project it already created", async (t) => {
   const served = await created(
-    creationCase(t, { outcome: "AlreadyCreated", tenantCreated: true }),
+    creationCase(t, {
+      outcome: "AlreadyCreated",
+      tenantCreated: true,
+      grantsWritten: false,
+    }),
   );
   assert.equal(served.statusCode, 200);
   assert.deepEqual(served.json(), body);
@@ -120,7 +136,11 @@ test("each refusal the door answers reaches the wire as its own conflict", async
     "TenantTaken",
     "OperationConflict",
   ] as const) {
-    const one = creationCase(t, { outcome, tenantCreated: false });
+    const one = creationCase(t, {
+      outcome,
+      tenantCreated: false,
+      grantsWritten: false,
+    });
     const served = await created(one);
     assert.equal(served.statusCode, 409, outcome);
     assert.equal(code(served), outcome);
@@ -139,6 +159,65 @@ test("a name the rule refuses is the request's own fault and names its field", a
     assert.equal(code(served), expected);
     assert.deepEqual(one.writes, [], expected);
   }
+});
+
+test("a new tenant named for a path the service answers is the request's own fault", async (t) => {
+  for (const tenant of reservedTenantNames) {
+    const one = creationCase(t);
+    const served = await created(one, { tenant, project: "chuggy" });
+    assert.equal(served.statusCode, 422, tenant);
+    assert.equal(code(served), "TenantNameReserved");
+    assert.deepEqual(one.writes, [], tenant);
+  }
+});
+
+test("a reserved tenant that already stands takes a project from its administrator", async (t) => {
+  const one = creationCase(t, {
+    outcome: "Created",
+    tenantCreated: false,
+    grantsWritten: false,
+  });
+  one.access.grantTenant({
+    tenant: asTenantId("projects"),
+    principal: asPrincipal("issuer geoff"),
+    access: new Set(["AdministerTenant"]),
+  });
+  const served = await created(one, { tenant: "projects", project: "chuggy" });
+  assert.equal(served.statusCode, 201);
+  assert.equal(one.writes[0]?.tenantNew, false);
+});
+
+test("every path the API answers begins with a name no new tenant may take", async (t) => {
+  const unreached = new Proxy(
+    {},
+    {
+      get: () => () => {
+        throw new Error("listing the routes reaches no port");
+      },
+    },
+  ) as never;
+  const app = createNativeHttpApp(
+    unservedNativeWeb,
+    unreached,
+    unreached,
+    unreached,
+    undefined,
+    unreached,
+    unreached,
+    unreached,
+    unreached,
+    unreached,
+    unreached,
+  );
+  t.after(() => app.close());
+  await app.ready();
+  const segments = app
+    .printRoutes({ commonPrefix: false })
+    .split("\n")
+    .flatMap((line) => /^[├└]── \/([^/ ]+)/u.exec(line)?.[1] ?? []);
+  assert.ok(segments.includes("api"), segments.join(", "));
+  for (const segment of segments)
+    assert.ok(tenantNameReserved(segment), segment);
 });
 
 test("a deployment naming no authority to write to answers that it creates nothing", async (t) => {

@@ -135,6 +135,23 @@ export const projectNameSchema = z
   .regex(/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/u);
 
 /**
+ * Names a path outside the tenant routes already begins with: the API's base
+ * and probes, the console's own pages and the sign-in's return. A new tenant
+ * may not take one, because its pages would share an address with that path.
+ */
+export const reservedTenantNames = [
+  "api",
+  "auth",
+  "forge",
+  "health",
+  "projects",
+] as const;
+
+export function tenantNameReserved(name: string): boolean {
+  return reservedTenantNames.some((reserved) => reserved === name);
+}
+
+/**
  * One project to create, and the tenant it is created under. The server holds
  * each name to `projectNameSchema` and refuses one by naming its field.
  */

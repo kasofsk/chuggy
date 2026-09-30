@@ -54,6 +54,7 @@ import {
   poolPlaneRole,
   projectChangeAppendFunction,
   projectCreateFunction,
+  projectCreationGrantsFunction,
   projectChangeRetainedFunction,
   projectChangeSweepFunction,
   repositoryBindingListFunction,
@@ -6167,6 +6168,7 @@ const wipeKept = [
   "forge_installation",
   "installation_authority",
   "project",
+  "project_creation_grant",
   "project_creation_operation",
   "project_repository",
   "project_repository_bind_operation",
@@ -9043,7 +9045,10 @@ test("023 gives the plane serving pools the release and takes back its reading o
 
 test("026 gives every tenant a project stands in a row of its own, and a project no tenant row holds is refused", async () => {
   await migrationDatabase("project_creation", async (subject) => {
-    const door = `${projectCreateFunction}(text,text,boolean,text,text,text)`;
+    const doors = [
+      `${projectCreateFunction}(text,text,boolean,text,text,text)`,
+      `${projectCreationGrantsFunction}(text)`,
+    ];
     await installationBefore(subject, migration026.version);
     await subject.query(
       `INSERT INTO project(tenant,project,lifecycle) VALUES
@@ -9068,16 +9073,17 @@ test("026 gives every tenant a project stands in a row of its own, and a project
       ),
       /project_names_a_tenant/u,
     );
-    assert.deepEqual(await sessionInvocationBoundaries(subject, [door]), [
-      {
-        signature: door,
+    assert.deepEqual(
+      await sessionInvocationBoundaries(subject, doors),
+      doors.map((signature) => ({
+        signature,
         owner: boundaryOwnerRole,
         definer: true,
         scheduler: false,
         plane: false,
         pool: false,
         api: true,
-      },
-    ]);
+      })),
+    );
   });
 });

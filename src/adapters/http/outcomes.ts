@@ -95,7 +95,10 @@ import type {
   ProjectCreationField,
   ProjectCreationResult,
 } from "../../interpreter/projectCreation.ts";
-import { projectNameCharsMax } from "../../contract/requests.ts";
+import {
+  projectNameCharsMax,
+  reservedTenantNames,
+} from "../../contract/requests.ts";
 import type { DraftBrief } from "../../interpreter/ticketBrief.ts";
 import type { RepositoryConfigurationImportOutcome } from "../../interpreter/repositoryConfiguration.ts";
 import { nativeHttpError, nativeHttpMediaType } from "../../contract/http.ts";
@@ -1032,6 +1035,14 @@ export function projectCreationResponse(
         nativeHttpError(
           projectNameInvalidCodes[result.field],
           `A ${result.field} name is at most ${String(projectNameCharsMax)} lowercase letters, digits and hyphens, beginning and ending with a letter or digit.`,
+        ),
+      );
+    case "TenantReserved":
+      return response(
+        422,
+        nativeHttpError(
+          "TenantNameReserved",
+          `A new tenant may not be named ${reservedTenantNames.join(", ")}.`,
         ),
       );
     case "NotConfigured":

@@ -7,15 +7,19 @@
  * a principal the authority says administers it, and anyone else is told the
  * name is taken rather than that it was not found, because a tenant name is not
  * a secret. The door decides the race between two creators of one new tenant,
- * so the loser is `TenantTaken` and never a project in the winner's tenant.
+ * so the loser is `TenantTaken` and never a project in the winner's tenant. A
+ * name another path begins with is refused only to a caller who would make the
+ * tenant, so a tenant that already stands keeps taking projects.
  *
- * ACCESS IS WRITTEN AFTER THE ROW COMMITS, AND A REPLAY WRITES IT AGAIN. Both
- * grants are idempotent, so an authority that failed after the commit is
- * repaired by sending the same request under the same idempotency key.
+ * ACCESS IS WRITTEN AFTER THE ROW COMMITS, AND A REPLAY WRITES IT AGAIN UNTIL
+ * THE WRITES ARE RECORDED. Both grants are idempotent, so an authority that
+ * failed after the commit is repaired by sending the same request under the
+ * same idempotency key; once recorded, a replay writes nothing, so it cannot
+ * restore a grant an operator has since revoked.
  */
 
 import { assertNever } from "../domain/assertNever.ts";
-import { projectNameSchema } from "../contract/requests.ts";
+import { projectNameSchema, tenantNameReserved } from "../contract/requests.ts";
 import type { OperationId, Authority } from "./operationInbox.ts";
 import { memberAuthority, type ProjectAccess } from "./projectAccess.ts";
 import {
@@ -49,10 +53,11 @@ export const allProjectCreationOutcomes = [
 export type ProjectCreationOutcome =
   (typeof allProjectCreationOutcomes)[number];
 
-/** What the door answered, and whether the operation it accepted made the tenant. */
+/** What the door answered, whether the operation it accepted made the tenant, and whether its grants are recorded as written. */
 export interface ProjectCreationAnswer {
   readonly outcome: ProjectCreationOutcome;
   readonly tenantCreated: boolean;
+  readonly grantsWritten: boolean;
 }
 
 /** One creation as the door takes it: whether the caller expects the tenant to be new is the caller's standing. */
@@ -63,9 +68,10 @@ export interface ProjectCreationWrite {
   readonly authority: Authority;
 }
 
-/** The durable side: the tenant, the project and the operation, in one transaction. */
+/** The durable side: the tenant, the project and the operation in one transaction, and later the record that its grants were written. */
 export interface ProjectCreationStore {
   create(write: ProjectCreationWrite): Promise<ProjectCreationAnswer>;
+  recordGrants(operation: OperationId): Promise<void>;
 }
 
 /** What creation reaches, with no grant writer on a deployment that names no authority to write to. */
@@ -82,6 +88,7 @@ export type ProjectCreationResult =
   | { readonly result: "TenantTaken" }
   | { readonly result: "OperationConflict" }
   | { readonly result: "NameInvalid"; readonly field: ProjectCreationField }
+  | { readonly result: "TenantReserved" }
   | { readonly result: "NotConfigured" };
 
 export interface ProjectCreation {
@@ -129,6 +136,8 @@ async function projectCreationCreate(
     partition.tenant,
     "AdministerTenant",
   );
+  if (administers === undefined && tenantNameReserved(partition.tenant))
+    return { result: "TenantReserved" };
   const answer = await ports.store.create({
     partition,
     tenantNew: administers === undefined,
@@ -138,12 +147,15 @@ async function projectCreationCreate(
   switch (answer.outcome) {
     case "Created":
     case "AlreadyCreated":
-      for (const grant of projectCreationGrants(
-        principal,
-        partition,
-        answer.tenantCreated,
-      ))
-        await grants.write(grant);
+      if (!answer.grantsWritten) {
+        for (const grant of projectCreationGrants(
+          principal,
+          partition,
+          answer.tenantCreated,
+        ))
+          await grants.write(grant);
+        await ports.store.recordGrants(request.operation);
+      }
       return { result: answer.outcome, partition };
     case "ProjectExists":
     case "TenantTaken":

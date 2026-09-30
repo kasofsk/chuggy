@@ -1,5 +1,5 @@
 /**
- * The creation door against a real server: every outcome it answers, the race
+ * The creation doors against a real server: every outcome they answer, the race
  * between two creators of one new tenant, what the triggers refuse even from the
  * owner, and which role may reach any of it.
  */
@@ -15,6 +15,7 @@ import {
   finalizerRole,
   poolPlaneRole,
   projectCreateFunction,
+  projectCreationGrantsFunction,
   schedulerRole,
   selectorServiceRole,
   ticketServiceRole,
@@ -96,6 +97,7 @@ test("a new tenant is made with its project, its capacity account and the operat
   assert.deepEqual(await creator().create(write), {
     outcome: "Created",
     tenantCreated: true,
+    grantsWritten: false,
   });
   assert.deepEqual(await projectsIn(partition.tenant), [
     { project: partition.project, lifecycle: "Active" },
@@ -136,8 +138,43 @@ test("a replay answers the creation it repeats, whatever the caller now expects 
     assert.deepEqual(await creator().create({ ...write, tenantNew }), {
       outcome: "AlreadyCreated",
       tenantCreated: true,
+      grantsWritten: false,
     });
   assert.equal((await projectsIn(partition.tenant)).length, 1);
+});
+
+test("a replay after its own grants are recorded is told so, and recording again changes nothing", async () => {
+  const partition = freshPartition("recorded");
+  const write = creation(partition);
+  const beside = creation(freshPartition("unrecorded"));
+  await creator().create(write);
+  await creator().create(beside);
+  await creator().recordGrants(write.operation);
+  assert.equal((await creator().create(beside)).grantsWritten, false);
+  const first = await harness.query(
+    "SELECT recorded_at FROM project_creation_grant WHERE operation=$1",
+    [write.operation],
+  );
+  await creator().recordGrants(write.operation);
+  assert.deepEqual(await creator().create(write), {
+    outcome: "AlreadyCreated",
+    tenantCreated: true,
+    grantsWritten: true,
+  });
+  assert.deepEqual(
+    await harness.query(
+      "SELECT recorded_at FROM project_creation_grant WHERE operation=$1",
+      [write.operation],
+    ),
+    first,
+  );
+});
+
+test("grants are recorded only for an operation that created a project", async () => {
+  await assert.rejects(
+    creator().recordGrants(asOperationId(`operation-${randomUUID()}`)),
+    /project_creation_grant_operation_fkey/u,
+  );
 });
 
 test("an identity spent on one creation is a conflict for any other and writes nothing", async () => {
@@ -159,6 +196,7 @@ test("an identity spent on one creation is a conflict for any other and writes n
     assert.deepEqual(await creator().create(changed), {
       outcome: "OperationConflict",
       tenantCreated: false,
+      grantsWritten: false,
     });
   assert.equal((await projectsIn(partition.tenant)).length, 1);
 });
@@ -178,6 +216,7 @@ test("a tenant that stands is taken from a caller expecting a new one, and nothi
   assert.deepEqual(await creator().create(later), {
     outcome: "TenantTaken",
     tenantCreated: false,
+    grantsWritten: false,
   });
   assert.equal((await projectsIn(partition.tenant)).length, 1);
   assert.deepEqual(
@@ -195,7 +234,7 @@ test("a caller administering a tenant that stands adds a project to it without m
   const second = { ...partition, project: asProjectId("second") };
   assert.deepEqual(
     await creator().create(creation(second, { tenantNew: false })),
-    { outcome: "Created", tenantCreated: false },
+    { outcome: "Created", tenantCreated: false, grantsWritten: false },
   );
   assert.equal((await projectsIn(partition.tenant)).length, 2);
 });
@@ -204,7 +243,7 @@ test("a caller administering a tenant no row holds makes the row", async () => {
   const partition = freshPartition("unrecorded");
   assert.deepEqual(
     await creator().create(creation(partition, { tenantNew: false })),
-    { outcome: "Created", tenantCreated: true },
+    { outcome: "Created", tenantCreated: true, grantsWritten: false },
   );
 });
 
@@ -213,7 +252,7 @@ test("a project the tenant already has is not made twice", async () => {
   await creator().create(creation(partition));
   assert.deepEqual(
     await creator().create(creation(partition, { tenantNew: false })),
-    { outcome: "ProjectExists", tenantCreated: false },
+    { outcome: "ProjectExists", tenantCreated: false, grantsWritten: false },
   );
   assert.equal((await projectsIn(partition.tenant)).length, 1);
 });
@@ -248,20 +287,27 @@ test("of two creators racing for one new tenant, the one that waited is told it 
   assert.deepEqual(await second, {
     outcome: "TenantTaken",
     tenantCreated: false,
+    grantsWritten: false,
   });
   assert.deepEqual(await projectsIn(partition.tenant), [
     { project: partition.project, lifecycle: "Active" },
   ]);
 });
 
-test("a tenant and a creation stand as written, even for the owner", async () => {
+test("a tenant, a creation and its recorded grants stand as written, even for the owner", async () => {
   const partition = freshPartition("immutable");
-  await creator().create(creation(partition));
+  const write = creation(partition);
+  await creator().create(write);
+  await creator().recordGrants(write.operation);
   for (const statement of [
     "UPDATE tenant SET created_at=now() WHERE tenant=$1",
     "DELETE FROM tenant WHERE tenant=$1",
     "UPDATE project_creation_operation SET tenant_created=false WHERE tenant=$1",
     "DELETE FROM project_creation_operation WHERE tenant=$1",
+    `UPDATE project_creation_grant SET recorded_at=now() WHERE operation IN (
+       SELECT operation FROM project_creation_operation WHERE tenant=$1)`,
+    `DELETE FROM project_creation_grant WHERE operation IN (
+       SELECT operation FROM project_creation_operation WHERE tenant=$1)`,
   ])
     await assert.rejects(
       harness.query(statement, [partition.tenant]),
@@ -301,10 +347,19 @@ test("a project naming no tenant row is refused", async () => {
   );
 });
 
-test("the API executes the creation door and reaches neither relation behind it", async () => {
-  const call = `SELECT * FROM ${projectCreateFunction}('tenant-${randomUUID()}','project','t','operation-${randomUUID()}','Member','alice')`;
-  assert.equal(await harness.attemptAs(apiRole, call), undefined);
-  for (const relation of ["tenant", "project_creation_operation"])
+test("the API executes the creation doors and reaches no relation behind them", async () => {
+  const write = creation(freshPartition("api"));
+  await creator().create(write);
+  for (const call of [
+    `SELECT * FROM ${projectCreateFunction}('tenant-${randomUUID()}','project','t','operation-${randomUUID()}','Member','alice')`,
+    `SELECT ${projectCreationGrantsFunction}('${write.operation}')`,
+  ])
+    assert.equal(await harness.attemptAs(apiRole, call), undefined, call);
+  for (const relation of [
+    "tenant",
+    "project_creation_operation",
+    "project_creation_grant",
+  ])
     for (const statement of [
       `SELECT * FROM ${relation}`,
       `INSERT INTO ${relation} DEFAULT VALUES`,
@@ -316,20 +371,29 @@ test("the API executes the creation door and reaches neither relation behind it"
       );
 });
 
-test("no runtime role but the API creates a project", async () => {
-  const call = `SELECT * FROM ${projectCreateFunction}('tenant','project','t','operation','Member','alice')`;
-  for (const role of [
-    ticketServiceRole,
-    selectorServiceRole,
-    schedulerRole,
-    finalizerRole,
-    workerPlaneRole,
-    poolPlaneRole,
-    configurationImporterRole,
-  ])
-    assert.match(
-      (await harness.attemptAs(role, call)) ?? "",
-      postgresHarnessDenial(projectCreateFunction),
-      role,
-    );
+test("no runtime role but the API creates a project or records its grants", async () => {
+  for (const [door, call] of [
+    [
+      projectCreateFunction,
+      `SELECT * FROM ${projectCreateFunction}('tenant','project','t','operation','Member','alice')`,
+    ],
+    [
+      projectCreationGrantsFunction,
+      `SELECT ${projectCreationGrantsFunction}('operation')`,
+    ],
+  ] as const)
+    for (const role of [
+      ticketServiceRole,
+      selectorServiceRole,
+      schedulerRole,
+      finalizerRole,
+      workerPlaneRole,
+      poolPlaneRole,
+      configurationImporterRole,
+    ])
+      assert.match(
+        (await harness.attemptAs(role, call)) ?? "",
+        postgresHarnessDenial(door),
+        role,
+      );
 });

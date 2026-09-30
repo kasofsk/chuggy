@@ -349,6 +349,14 @@ identity are the operation, it is written by that door alone, and
 `project_creation_operation_is_immutable` refuses every change and delete. It
 has no unfinished work: a refusal writes no row, so a retry is decided again.
 
+`project_creation_grant` — that an accepted creation's grants were written to
+the authority, so a replay stops re-asserting them. Owned by the boundary
+owner, and the API role reaches it through `create_project`, which reads it,
+and `record_project_creation_grants`, which inserts it once. Its key and
+identity are the operation, and `project_creation_grant_is_immutable` refuses
+every change and delete. Its unfinished work is an operation row with no row
+here, which a replay of that operation finishes.
+
 `forge_installation` — one forge app installed on one account, the tenant that
 claimed it and the audited authority of the claim. Owned by the boundary owner,
 which is what `record_forge_installation` runs as and which is the only role
