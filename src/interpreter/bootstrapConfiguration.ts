@@ -12,8 +12,13 @@
  * it is told where it is before it is told what to do, and what it is told to do
  * is to write the repository's own declarations and stop running on this one.
  *
+ * IT TELLS ITS WORKER THE SHAPE OF WHAT IT ASKS FOR. The worker is handed a
+ * rendered briefing and never a configuration document, so without the shape
+ * the one thing it must write is a guess the import refuses after it lands.
+ *
  * EVERY BRIEFING LINE IS BOUNDED BY WHAT IS PUT INTO IT. A repository identity
- * and a reference name are bounded where each is branded and the rest of every
+ * and a reference name are bounded where each is branded, the image by
+ * `bootstrapImageCharsMax` where a deployment names it, and the rest of every
  * line is this file's own, so no input composes a line past the bound release
  * refuses one at — which the generated document is checked against before it is
  * returned, rather than at the authoring door that would already have taken it.
@@ -24,6 +29,8 @@ import {
   releaseConfigurationReadiness,
   type CanonicalConfiguration,
 } from "./authoring.ts";
+import { textCodePointsCount } from "../contract/http.ts";
+import { briefingLineCharsMax } from "../contract/workerTask.ts";
 import type { GitRefName, RepositoryId } from "./finalizer.ts";
 import { repositoryConfigurationRoot } from "./repositoryConfigurationIdentity.ts";
 
@@ -48,6 +55,26 @@ export const bootstrapConfigurationPath = `${repositoryConfigurationRoot}${boots
 /** What the commit that writes that file says it is. */
 export const bootstrapConfigurationCommitMessage =
   "Add the bootstrap chuggy configuration";
+
+/** The line naming the image, which is what bounds the image. */
+function bootstrapImageLine(image: string): string {
+  return `Name ${image} as I: it is the image this ticket runs on, and the checks you command run in it.`;
+}
+
+/** The longest image a bootstrap configuration can name. */
+export const bootstrapImageCharsMax =
+  briefingLineCharsMax - textCodePointsCount(bootstrapImageLine(""));
+
+/** The shape of a declaration, in the letters `C`, `I`, `S`, `E` and `L` stand for. */
+function bootstrapFormatInstructions(image: string): readonly string[] {
+  return [
+    `Each file there is one JSON object and nothing more: {"version":1,"name":N,"configuration":C}, N a name of letters and digits with ".", "_" or "-" only between them.`,
+    `C is {"version":1,"image":I,"brief":{"motivation":S,"acceptanceCriteria":S,"constraints":S},"practices":[],"work":{"instructions":S},"review":{"instructions":S},"evaluations":[E]}, each S a list of sentences and motivation or acceptanceCriteria not empty.`,
+    `Each E is a stage every change is held to: {"purpose":"Check","checks":[L]} runs each shell line L at the repository root and fails the change on a nonzero exit; {"purpose":"Review","practices":[],"instructions":S} briefs a reviewer.`,
+    "Command the checks the repository already runs.",
+    bootstrapImageLine(image),
+  ];
+}
 
 /** What the worker and the reviewer are each told, which is the same sentence. */
 const bootstrapReviewInstructions: readonly string[] = [
@@ -75,6 +102,7 @@ function bootstrapConfigurationValue(
       instructions: [
         "Read the repository before changing anything in it.",
         `Write ${repositoryConfigurationRoot}, so that what later tickets run under is the repository's own.`,
+        ...bootstrapFormatInstructions(input.image),
       ],
     },
     review: { instructions: bootstrapReviewInstructions },

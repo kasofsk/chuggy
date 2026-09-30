@@ -25,6 +25,7 @@ import {
   bootstrapConfigurationFile,
   bootstrapConfigurationName,
   bootstrapConfigurationPath,
+  bootstrapImageCharsMax,
 } from "../../src/interpreter/bootstrapConfiguration.ts";
 import {
   asGitObjectId,
@@ -115,4 +116,96 @@ test("a ticket carrying check lines is not releasable against it", () => {
     readiness: "Incomplete",
     fault: "BriefChecksUncommanded",
   });
+});
+
+/**
+ * The JSON skeletons one line spells out, each a balanced `{…}` span, with its
+ * placeholder letters left bare.
+ */
+function skeletons(line: string): string[] {
+  const found: string[] = [];
+  let depth = 0;
+  let start = 0;
+  for (const [index, character] of [...line].entries()) {
+    if (character === "{" && depth++ === 0) start = index;
+    if (character === "}" && --depth === 0)
+      found.push([...line].slice(start, index + 1).join(""));
+  }
+  return found;
+}
+
+/** A skeleton with each bare placeholder letter replaced by a JSON value. */
+function filled(skeleton: string, values: Record<string, string>): string {
+  return skeleton.replace(
+    /(?<=[[:,])([A-Z])(?=[\],}])/gu,
+    (letter) => values[letter] ?? letter,
+  );
+}
+
+test("a declaration written to the shape its worker is told imports, and commands its checks", () => {
+  const canonical = bootstrapConfiguration({
+    repository,
+    defaultBranch,
+    image,
+  });
+  const readiness = releaseConfigurationReadiness(canonical);
+  assert.equal(readiness.readiness, "Ready");
+  if (readiness.readiness !== "Ready") return;
+  const work = readiness.configuration.work;
+  const told = ("instructions" in work ? work.instructions : undefined) ?? [];
+  const [envelope, configuration, ...stages] = told.flatMap(skeletons);
+  assert.ok(envelope !== undefined && configuration !== undefined);
+  assert.equal(stages.length, 2);
+  assert.ok(told.some((line) => line.includes(image)));
+  const sentences = JSON.stringify(["One sentence."]);
+  const stage = (skeleton: string | undefined): string =>
+    filled(skeleton ?? "", { S: sentences, L: JSON.stringify("true") });
+  const file = filled(envelope, {
+    N: JSON.stringify("default"),
+    C: filled(configuration, {
+      I: JSON.stringify(image),
+      S: sentences,
+      E: stages.map(stage).join(","),
+    }),
+  });
+  const imported = repositoryConfigurationImportReadiness({
+    repository,
+    commit,
+    files: [
+      {
+        path: `${repositoryConfigurationRoot}default.json`,
+        kind: "File",
+        content: file,
+      },
+    ],
+  });
+  assert.equal(imported.readiness, "Ready");
+  if (imported.readiness !== "Ready") return;
+  const [declaration] = imported.declarations;
+  assert.ok(declaration !== undefined);
+  assert.equal(
+    releaseConfigurationReadiness(declaration.canonical, {
+      checks: [asBriefCheckLine("npm test")],
+    }).readiness,
+    "Ready",
+  );
+});
+
+test("an image as long as the bound composes, and one longer does not", () => {
+  const longest = "r/".concat("i".repeat(bootstrapImageCharsMax - 2));
+  assert.equal(
+    releaseConfigurationReadiness(
+      bootstrapConfiguration({ repository, defaultBranch, image: longest }),
+    ).readiness,
+    "Ready",
+  );
+  assert.throws(
+    () =>
+      bootstrapConfiguration({
+        repository,
+        defaultBranch,
+        image: longest.concat("i"),
+      }),
+    RangeError,
+  );
 });
