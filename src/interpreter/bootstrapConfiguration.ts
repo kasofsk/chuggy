@@ -18,7 +18,7 @@
  *
  * EVERY BRIEFING LINE IS BOUNDED BY WHAT IS PUT INTO IT. A repository identity
  * and a reference name are bounded where each is branded, the image by
- * `bootstrapImageCharsMax` where a deployment names it, and the rest of every
+ * `bootstrapImageFault` where a deployment names it, and the rest of every
  * line is this file's own, so no input composes a line past the bound release
  * refuses one at — which the generated document is checked against before it is
  * returned, rather than at the authoring door that would already have taken it.
@@ -30,9 +30,16 @@ import {
   type CanonicalConfiguration,
 } from "./authoring.ts";
 import { textCodePointsCount } from "../contract/http.ts";
-import { briefingLineCharsMax } from "../contract/workerTask.ts";
+import {
+  briefingLineCharsMax,
+  commandLinesMax,
+} from "../contract/workerTask.ts";
 import type { GitRefName, RepositoryId } from "./finalizer.ts";
 import { repositoryConfigurationRoot } from "./repositoryConfigurationIdentity.ts";
+import {
+  briefingLinesMax,
+  taskConfigurationLineFault,
+} from "./taskConfiguration.ts";
 
 /** What one bootstrap configuration is generated from. */
 export interface BootstrapConfigurationInput {
@@ -65,12 +72,23 @@ function bootstrapImageLine(image: string): string {
 export const bootstrapImageCharsMax =
   briefingLineCharsMax - textCodePointsCount(bootstrapImageLine(""));
 
-/** The shape of a declaration, in the letters `C`, `I`, `S`, `E` and `L` stand for. */
+/** Why a bootstrap configuration cannot name this image, if it cannot. */
+export function bootstrapImageFault(
+  image: string,
+): ReturnType<typeof taskConfigurationLineFault> {
+  return taskConfigurationLineFault(bootstrapImageLine(image));
+}
+
+/**
+ * The shape of a declaration, in the letters `N`, `C`, `I`, `S`, `E` and `L`
+ * stand for, and the bounds its import refuses past.
+ */
 function bootstrapFormatInstructions(image: string): readonly string[] {
   return [
-    `Each file there is one JSON object and nothing more: {"version":1,"name":N,"configuration":C}, N a name of letters and digits with ".", "_" or "-" only between them.`,
-    `C is {"version":1,"image":I,"brief":{"motivation":S,"acceptanceCriteria":S,"constraints":S},"practices":[],"work":{"instructions":S},"review":{"instructions":S},"evaluations":[E]}, each S a list of sentences and motivation or acceptanceCriteria not empty.`,
-    `Each E is a stage every change is held to: {"purpose":"Check","checks":[L]} runs each shell line L at the repository root and fails the change on a nonzero exit; {"purpose":"Review","practices":[],"instructions":S} briefs a reviewer.`,
+    `Each file there is one JSON object and nothing more: {"version":1,"name":N,"configuration":C}, N a name of letters and digits with ".", "_" or "-" only between them; every object here takes exactly the keys shown and no others.`,
+    `C is {"version":1,"image":I,"brief":{"motivation":S,"acceptanceCriteria":S,"constraints":S},"practices":[],"work":{"instructions":S},"review":{"instructions":S},"evaluations":[E]}, each S a list of at most ${String(briefingLinesMax)} sentences and motivation or acceptanceCriteria not empty.`,
+    `Each E is a stage every change is held to: {"purpose":"Check","checks":[L]} runs from 1 to ${String(commandLinesMax)} shell lines L at the repository root and fails the change on a nonzero exit; {"purpose":"Review","practices":[],"instructions":S} briefs a reviewer.`,
+    `Each sentence and each line L is one line of at most ${String(briefingLineCharsMax)} characters, with no tab or line break in it.`,
     "Command the checks the repository already runs.",
     bootstrapImageLine(image),
   ];

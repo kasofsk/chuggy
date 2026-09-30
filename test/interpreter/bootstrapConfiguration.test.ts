@@ -26,7 +26,12 @@ import {
   bootstrapConfigurationName,
   bootstrapConfigurationPath,
   bootstrapImageCharsMax,
+  bootstrapImageFault,
 } from "../../src/interpreter/bootstrapConfiguration.ts";
+import {
+  briefingLineCharsMax,
+  commandLinesMax,
+} from "../../src/contract/workerTask.ts";
 import {
   asGitObjectId,
   asGitRefName,
@@ -36,6 +41,7 @@ import {
   repositoryConfigurationImportReadiness,
   repositoryConfigurationRoot,
 } from "../../src/interpreter/repositoryConfiguration.ts";
+import { briefingLinesMax } from "../../src/interpreter/taskConfiguration.ts";
 import { asBriefCheckLine } from "../../src/interpreter/ticketBrief.ts";
 
 const repository = asRepositoryId("https://github.com/kasofsk/chuggy.git");
@@ -142,7 +148,15 @@ function filled(skeleton: string, values: Record<string, string>): string {
   );
 }
 
-test("a declaration written to the shape its worker is told imports, and commands its checks", () => {
+/** What the shape's lists are filled with: how many entries, each how long. */
+interface Filling {
+  readonly sentences: number;
+  readonly sentenceChars: number;
+  readonly lines: number;
+}
+
+/** The skeletons the worker is told, filled to `filling` and put to an import. */
+function declaredTo(filling: Filling) {
   const canonical = bootstrapConfiguration({
     repository,
     defaultBranch,
@@ -150,16 +164,23 @@ test("a declaration written to the shape its worker is told imports, and command
   });
   const readiness = releaseConfigurationReadiness(canonical);
   assert.equal(readiness.readiness, "Ready");
-  if (readiness.readiness !== "Ready") return;
+  if (readiness.readiness !== "Ready") throw new Error("unreleasable");
   const work = readiness.configuration.work;
   const told = ("instructions" in work ? work.instructions : undefined) ?? [];
   const [envelope, configuration, ...stages] = told.flatMap(skeletons);
   assert.ok(envelope !== undefined && configuration !== undefined);
   assert.equal(stages.length, 2);
   assert.ok(told.some((line) => line.includes(image)));
-  const sentences = JSON.stringify(["One sentence."]);
-  const stage = (skeleton: string | undefined): string =>
-    filled(skeleton ?? "", { S: sentences, L: JSON.stringify("true") });
+  const sentences = JSON.stringify(
+    Array.from({ length: filling.sentences }, () =>
+      "s".repeat(filling.sentenceChars),
+    ),
+  );
+  const lines = Array.from({ length: filling.lines }, () =>
+    JSON.stringify("true"),
+  ).join(",");
+  const stage = (skeleton: string): string =>
+    filled(skeleton, { S: sentences, L: lines });
   const file = filled(envelope, {
     N: JSON.stringify("default"),
     C: filled(configuration, {
@@ -168,7 +189,7 @@ test("a declaration written to the shape its worker is told imports, and command
       E: stages.map(stage).join(","),
     }),
   });
-  const imported = repositoryConfigurationImportReadiness({
+  return repositoryConfigurationImportReadiness({
     repository,
     commit,
     files: [
@@ -179,6 +200,16 @@ test("a declaration written to the shape its worker is told imports, and command
       },
     ],
   });
+}
+
+const atEveryBound: Filling = {
+  sentences: briefingLinesMax,
+  sentenceChars: briefingLineCharsMax,
+  lines: commandLinesMax,
+};
+
+test("a declaration written to the shape its worker is told, at every bound it is told, imports and commands its checks", () => {
+  const imported = declaredTo(atEveryBound);
   assert.equal(imported.readiness, "Ready");
   if (imported.readiness !== "Ready") return;
   const [declaration] = imported.declarations;
@@ -189,6 +220,27 @@ test("a declaration written to the shape its worker is told imports, and command
     }).readiness,
     "Ready",
   );
+});
+
+test("one past any bound its worker is told is refused for that bound", () => {
+  for (const [past, fault] of [
+    [{ ...atEveryBound, sentences: briefingLinesMax + 1 }, "TooManyLines"],
+    [
+      { ...atEveryBound, sentenceChars: briefingLineCharsMax + 1 },
+      "TextTooLong",
+    ],
+    [{ ...atEveryBound, lines: commandLinesMax + 1 }, "ChecksInvalid"],
+    [{ ...atEveryBound, lines: 0 }, "ChecksInvalid"],
+  ] as const) {
+    const imported = declaredTo(past);
+    assert.equal(imported.readiness, "Refused", JSON.stringify(past));
+    if (imported.readiness !== "Refused") continue;
+    assert.deepEqual(
+      imported.faults.map((refusal) => refusal.configurationFault),
+      [fault],
+      JSON.stringify(past),
+    );
+  }
 });
 
 test("an image as long as the bound composes, and one longer does not", () => {
@@ -205,6 +257,24 @@ test("an image as long as the bound composes, and one longer does not", () => {
         repository,
         defaultBranch,
         image: longest.concat("i"),
+      }),
+    RangeError,
+  );
+});
+
+test("an image a briefing line cannot carry is a fault before it is a configuration", () => {
+  assert.equal(bootstrapImageFault(image), undefined);
+  assert.equal(
+    bootstrapImageFault("r/".concat("i".repeat(bootstrapImageCharsMax - 1))),
+    "TextTooLong",
+  );
+  assert.equal(bootstrapImageFault(image.concat("\n")), "TextUnreadable");
+  assert.throws(
+    () =>
+      bootstrapConfiguration({
+        repository,
+        defaultBranch,
+        image: image.concat("\n"),
       }),
     RangeError,
   );
