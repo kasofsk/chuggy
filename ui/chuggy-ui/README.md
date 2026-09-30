@@ -131,18 +131,24 @@ publishes an endpoint for it.
 
 ## Connecting a forge account
 
-The console mints the install state, not the api. Before following an App's
-install link it draws one, the way the authorization state above is drawn,
-stores the transaction — the state, the App, the tenant, the project and where
-the person was — in `sessionStorage` under one key, and appends the state to
-the link. The forge sends the person
-back to `/forge/github/setup`, which takes that transaction once and claims the
-installation only when the state it was sent matches. An identity alone claims
-nothing, so a landing reached without a matching transaction says "Not
-expected" and posts nothing.
+`Connect GitHub` sends the person to authorize the portal App, with a state and
+a PKCE challenge the console draws the way the sign-in's are drawn. The state,
+the verifier, the tenant, the project and where the person was are stored in
+`sessionStorage` under one key. The forge returns to `/forge/github/callback`,
+which takes that transaction once and posts the code only when the state it was
+sent matches; a callback reached without a matching transaction says "Not
+expected" and posts nothing. The api claims each account the authorization
+proves the person owns, and the page draws one line per account, with an
+install link for an App the account is missing.
 
-Both Apps' Setup URL must be that route on the console's own host, and neither
-is set yet: an operator sets it on each App in the forge.
+`Install` offers each App's install link with a state of its own, stored the
+same way. The forge sends the person back to `/forge/github/setup`, which takes
+that transaction once and, when the state matches, goes on to the
+authorization; an install an owner has to approve says "Requested".
+
+Both Apps' Setup URL must be that route on the console's own host, and the
+portal App's callback URL the callback route; an operator sets each on the App
+in the forge.
 
 ## The ticket page
 

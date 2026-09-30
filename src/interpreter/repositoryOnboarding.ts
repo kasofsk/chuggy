@@ -15,25 +15,22 @@
  * exists.
  *
  * THE FORGE DECIDES WHAT AN INSTALLATION HOLDS, AND A ROW DECIDES WHOSE IT IS.
- * Claiming reads the installation as the app before recording it, so a tenant
- * cannot claim an identity that is not an installation of that app; binding
- * mints against the claim the repository's own owner is covered by, so a
- * repository no claimed installation grants is refused without this tree
- * holding a roster of what an installation contains.
+ * A tenant claims only the accounts a person's own authorization proves they
+ * own; binding mints against the claim the repository's own owner is covered
+ * by, so a repository no claimed installation grants is refused without this
+ * tree holding a roster of what an installation contains.
  *
  * BINDING IS NOT CREATING. The project is the door's to find, and a project
  * that is not there is `NotFound` rather than a project this route makes: what
  * a project is and who may make one is 083's question, and a route that created
  * one on the way past would answer it a second way.
  *
- * A TENANT INSTALLS TWO APPS AND A CLAIM NAMES WHICH. The portal app is what
- * this deployment reads and mints through and the worker app is the plane's, so
- * a claim carries the app it is of: an installation identity is the forge's and
- * says nothing about which app it belongs to, and the api verifies one as the
- * app it is claimed for or not at all.
+ * A TENANT INSTALLS TWO APPS AND A CLAIM NAMES WHICH. The portal app is what a
+ * person authorizes and what this deployment mints through, and the worker app
+ * is the plane's, found on each proven account under the worker's own key.
  *
  * A DEPLOYMENT HOLDING NO APP STILL BINDS. Only the three questions that are
- * the forge's — what the app is, what an installation is, and what one grants —
+ * the forge's — what the app is, where it is installed, and what one grants —
  * need an app key, and each of them is `NotConfigured` without one. Binding
  * proves a repository through the composed credential source, so a deployment
  * whose credentials come from files binds exactly as it always did, and one
@@ -106,6 +103,15 @@ import type {
   ForgeInstallationClaims,
   ForgeInstallationRecording,
 } from "./forgeInstallationClaim.ts";
+import {
+  forgeAccountProof,
+  type ForgeAccountProof,
+  type ForgeAppClaim,
+  type ForgeAuthorizationGrant,
+  type ForgeUser,
+  type ForgeUserAuthorization,
+  type ForgeUserInstallation,
+} from "./forgeAuthorization.ts";
 import { allForgeApps } from "./forgeInstallation.ts";
 import type { Authority, OperationId } from "./operationInbox.ts";
 import type { Principal } from "./principal.ts";
@@ -125,37 +131,49 @@ export interface ForgeAppSummary extends ForgeAppDescription {
   readonly app: ForgeApp;
 }
 
+/** The client a person authorizes to prove what they own, and where they are sent to do it. */
+export interface ForgeAuthorizationClient {
+  readonly clientId: string;
+  readonly authorizeUrl: string;
+}
+
 /**
- * What describing this deployment's apps came to. A deployment holding none is
- * its own answer, and one app this side could not read makes the whole listing
- * a wait: a partial roster would read as an app the deployment does not hold.
+ * What describing this deployment's apps came to: one app this side could not
+ * read makes the whole listing a wait, since a partial roster would read as an
+ * app the deployment does not hold. `authorization` is present only where this
+ * deployment can redeem one.
  */
 export type ForgeAppsResult =
-  | { readonly result: "Apps"; readonly apps: readonly ForgeAppSummary[] }
+  | {
+      readonly result: "Apps";
+      readonly apps: readonly ForgeAppSummary[];
+      readonly authorization?: ForgeAuthorizationClient;
+    }
   | { readonly result: "NotConfigured" }
   | { readonly result: "Unavailable" };
 
-/** One installation this tenant holds, which is the claim without the moment it was made. */
-export interface ForgeInstallationSummary {
-  readonly forge: ForgeId;
+/** What claiming one app on a proven account came to. */
+export interface ForgeAuthorizedApp {
   readonly app: ForgeApp;
-  readonly account: ForgeAccount;
-  readonly accountKind: ForgeAccountKind;
-  readonly installationId: ForgeInstallationId;
+  readonly claim: ForgeAppClaim;
 }
 
-/** What claiming one installation for a tenant came to. */
-export type ForgeInstallationClaimResult =
+/** One account a person's authorization reaches, whether it is theirs, and each app claimed on it where it is. */
+export interface ForgeAuthorizedAccount {
+  readonly account: ForgeAccount;
+  readonly accountKind: ForgeAccountKind;
+  readonly proof: ForgeAccountProof;
+  readonly apps: readonly ForgeAuthorizedApp[];
+}
+
+/** What redeeming one person's authorization for a tenant came to. */
+export type ForgeAuthorizationResult =
   | {
-      readonly result: "Claimed";
-      readonly installation: ForgeInstallationSummary;
+      readonly result: "Authorized";
+      readonly accounts: readonly ForgeAuthorizedAccount[];
+      readonly truncated: boolean;
     }
-  | {
-      readonly result: "AlreadyClaimed";
-      readonly installation: ForgeInstallationSummary;
-    }
-  | { readonly result: "ClaimedElsewhere" }
-  | { readonly result: "InstallationUnknown" }
+  | { readonly result: "Refused" }
   | { readonly result: "NotConfigured" }
   | { readonly result: "NotFound" }
   | { readonly result: "Unavailable" };
@@ -328,11 +346,9 @@ export type ProjectRepositoryRetirementResult =
   | { readonly result: "NotFound" }
   | { readonly result: "Unavailable" };
 
-/** One claim as a caller sends it: which forge, which app, and which installation of it. */
-export interface ForgeInstallationClaimRequest {
+/** One authorization as a caller sends it: which forge, and what the person's authorization came back with. */
+export interface ForgeAuthorizationRequest extends ForgeAuthorizationGrant {
   readonly forge: ForgeId;
-  readonly app: ForgeApp;
-  readonly installationId: ForgeInstallationId;
 }
 
 /** One binding as a caller sends it, under the identity that makes a retry one attempt. */
@@ -360,6 +376,13 @@ export interface RepositoryOnboardingForgeApp {
   readonly apps: ForgeApps;
   readonly directory: ForgeInstallationDirectory;
   readonly installationRepositories: ForgeInstallationRepositories;
+}
+
+/** The app a person authorizes, and the port that redeems what their authorization came back with. */
+export interface RepositoryOnboardingAuthorization {
+  readonly forge: ForgeId;
+  readonly app: ForgeApp;
+  readonly user: ForgeUserAuthorization;
 }
 
 /**
@@ -400,17 +423,18 @@ export interface RepositoryOnboardingPorts {
   readonly retirement: ProjectRepositoryRetirementStore;
   readonly configurations?: RepositoryConfigurationsPorts;
   readonly creation?: RepositoryCreationPorts;
+  readonly authorization?: RepositoryOnboardingAuthorization;
 }
 
 /** The nine questions the onboarding routes ask, each behind the permit it needs. */
 export interface RepositoryOnboarding {
   forgeApps(): Promise<ForgeAppsResult>;
 
-  claimInstallation(
+  authorizeForge(
     principal: Principal,
     tenant: TenantId,
-    request: ForgeInstallationClaimRequest,
-  ): Promise<ForgeInstallationClaimResult>;
+    request: ForgeAuthorizationRequest,
+  ): Promise<ForgeAuthorizationResult>;
 
   installations(
     principal: Principal,
@@ -472,22 +496,25 @@ async function describedForgeApps(
 ): Promise<ForgeAppsResult> {
   if (ports.forgeApps.length === 0) return { result: "NotConfigured" };
   const apps: ForgeAppSummary[] = [];
+  let authorization: ForgeAuthorizationClient | undefined;
   for (const held of ports.forgeApps) {
     const described = await held.apps.app();
     if (described.described !== "App") return { result: "Unavailable" };
     apps.push({ app: held.app, ...described.app });
+    if (
+      held.forge === ports.authorization?.forge &&
+      held.app === ports.authorization.app
+    )
+      authorization = {
+        clientId: described.app.clientId,
+        authorizeUrl: described.app.authorizeUrl,
+      };
   }
-  return { result: "Apps", apps };
-}
-
-/** What a recorded claim answers with, the outcome deciding only whether it is new. */
-function claimResult(
-  recorded: "Recorded" | "AlreadyRecorded" | "Reinstalled",
-  installation: ForgeInstallationSummary,
-): ForgeInstallationClaimResult {
-  return recorded === "AlreadyRecorded"
-    ? { result: "AlreadyClaimed", installation }
-    : { result: "Claimed", installation };
+  return {
+    result: "Apps",
+    apps,
+    ...(authorization === undefined ? {} : { authorization }),
+  };
 }
 
 /** Whether this principal administers the tenant, which every claim question asks first. */
@@ -499,38 +526,105 @@ function administersTenant(
   return ports.access.authorizeTenant(principal, tenant, "AdministerTenant");
 }
 
-/** One claim, read as the app before it is recorded as the tenant's. */
-async function claimInstallation(
+/** Everything one authorization's claims are recorded under. */
+interface ForgeAuthorizationContext {
+  readonly authorization: RepositoryOnboardingAuthorization;
+  readonly tenant: TenantId;
+  readonly authority: Authority;
+}
+
+/**
+ * One app claimed on a proven account. The authorized app's installation is the
+ * one the person reached; any other app's is found under its own key, and is
+ * claimed only where it stands on the same account number.
+ */
+async function authorizedAppClaim(
+  ports: RepositoryOnboardingPorts,
+  context: ForgeAuthorizationContext,
+  held: RepositoryOnboardingForgeApp,
+  installation: ForgeUserInstallation,
+): Promise<ForgeAppClaim> {
+  const found =
+    held.app === context.authorization.app
+      ? {
+          read: "Installation" as const,
+          installationId: installation.installationId,
+          accountId: installation.accountId,
+        }
+      : await held.directory.accountInstallation({
+          account: installation.account,
+          accountKind: installation.accountKind,
+        });
+  if (found.read === "Missing") return "Missing";
+  if (found.read === "Unavailable") return "Unavailable";
+  if (found.accountId !== installation.accountId) return "Missing";
+  const recorded = await ports.recording.record({
+    forge: held.forge,
+    app: held.app,
+    account: installation.account,
+    accountKind: installation.accountKind,
+    installationId: found.installationId,
+    tenant: context.tenant,
+    authority: context.authority,
+  });
+  return recorded === "AlreadyRecorded" ? "AlreadyClaimed" : "Claimed";
+}
+
+/** One account the person reaches: whether it is theirs, and each app claimed on it where it is. */
+async function authorizedAccount(
+  ports: RepositoryOnboardingPorts,
+  context: ForgeAuthorizationContext,
+  user: ForgeUser,
+  installation: ForgeUserInstallation,
+): Promise<ForgeAuthorizedAccount> {
+  const proof = forgeAccountProof(user, installation);
+  const apps: ForgeAuthorizedApp[] = [];
+  if (proof === "Proven")
+    for (const held of ports.forgeApps)
+      if (held.forge === context.authorization.forge)
+        apps.push({
+          app: held.app,
+          claim: await authorizedAppClaim(ports, context, held, installation),
+        });
+  return {
+    account: installation.account,
+    accountKind: installation.accountKind,
+    proof,
+    apps,
+  };
+}
+
+/**
+ * A person's authorization redeemed for a tenant, which claims every account it
+ * proves they own and nothing else. The permit is asked before the forge is, so
+ * a caller who may not administer the tenant spends no request of this
+ * deployment's.
+ */
+async function authorizeForge(
   ports: RepositoryOnboardingPorts,
   principal: Principal,
   tenant: TenantId,
-  request: ForgeInstallationClaimRequest,
-): Promise<ForgeInstallationClaimResult> {
+  request: ForgeAuthorizationRequest,
+): Promise<ForgeAuthorizationResult> {
   const authority = await administersTenant(ports, principal, tenant);
   if (authority === undefined) return { result: "NotFound" };
-  if (ports.forgeApps.length === 0) return { result: "NotConfigured" };
-  if (!ports.forgeApps.some((held) => held.forge === request.forge))
-    return { result: "InstallationUnknown" };
-  const forge = heldForgeApp(ports, request.forge, request.app);
-  if (forge === undefined) return { result: "NotConfigured" };
-  const read = await forge.directory.installation(request.installationId);
-  if (read.read === "Unavailable") return { result: "Unavailable" };
-  if (read.read === "Unknown") return { result: "InstallationUnknown" };
-  const installation: ForgeInstallationSummary = {
-    forge: forge.forge,
-    app: forge.app,
-    account: read.installation.account,
-    accountKind: read.installation.accountKind,
-    installationId: request.installationId,
-  };
-  const recorded = await ports.recording.record({
-    ...installation,
-    tenant,
-    authority,
+  const authorization = ports.authorization;
+  if (authorization === undefined || authorization.forge !== request.forge)
+    return { result: "NotConfigured" };
+  const read = await authorization.user.authorized({
+    code: request.code,
+    redirectUri: request.redirectUri,
+    codeVerifier: request.codeVerifier,
   });
-  return recorded === "ClaimedElsewhere"
-    ? { result: "ClaimedElsewhere" }
-    : claimResult(recorded, installation);
+  if (read.authorized === "Refused") return { result: "Refused" };
+  if (read.authorized === "Unavailable") return { result: "Unavailable" };
+  const context = { authorization, tenant, authority };
+  const accounts: ForgeAuthorizedAccount[] = [];
+  for (const installation of read.installations)
+    accounts.push(
+      await authorizedAccount(ports, context, read.user, installation),
+    );
+  return { result: "Authorized", accounts, truncated: read.truncated };
 }
 
 /**
@@ -1098,8 +1192,8 @@ export function repositoryOnboarding(
   return {
     forgeApps: () => describedForgeApps(ports),
 
-    claimInstallation: (principal, tenant, request) =>
-      claimInstallation(ports, principal, tenant, request),
+    authorizeForge: (principal, tenant, request) =>
+      authorizeForge(ports, principal, tenant, request),
 
     installations: async (principal, tenant) => {
       if ((await administersTenant(ports, principal, tenant)) === undefined)

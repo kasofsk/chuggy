@@ -65,6 +65,7 @@ import {
   type RepositoryConfigurationsPorts,
   type RepositoryCreationPorts,
   type RepositoryOnboarding,
+  type RepositoryOnboardingAuthorization,
   type RepositoryOnboardingForgeApp,
 } from "./interpreter/repositoryOnboarding.ts";
 import {
@@ -423,6 +424,7 @@ export interface RepositoryOnboardingComposition {
     RepositoryDefaultBranchPort;
   readonly bootstrapImage?: string;
   readonly creation?: RepositoryCreationPorts;
+  readonly authorization?: RepositoryOnboardingAuthorization;
 }
 
 /** The configuration step's own half, over the one adapter that reads a repository. */
@@ -470,6 +472,9 @@ export function composeRepositoryOnboarding(
     ...(composition.creation === undefined
       ? {}
       : { creation: composition.creation }),
+    ...(composition.authorization === undefined
+      ? {}
+      : { authorization: composition.authorization }),
   });
 }
 

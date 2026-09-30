@@ -1,11 +1,7 @@
 /**
  * What the setup landing decides from what the forge sent and what this tab
- * stored.
- *
- * THE STATE IS THE WHOLE OF THE PROOF. A return carrying somebody else's state,
- * or none, or one this tab has already spent, claims nothing — an installation
- * identity is a fact about an account the caller may not administer, and a
- * landing that claimed on the identity alone would let a link claim for them.
+ * stored. A return carrying somebody else's state, or none, or one this tab has
+ * already spent, starts nothing.
  */
 
 import { expect, test } from "vitest";
@@ -14,9 +10,7 @@ import type { ForgeInstallTransaction } from "../app/core/forgeInstallation.ts";
 import {
   forgeSetupDecision,
   forgeSetupQueryOf,
-  forgeSetupReturn,
   forgeSetupRoutePath,
-  forgeSetupStatusParam,
 } from "../app/core/forgeSetup.ts";
 
 const transaction: ForgeInstallTransaction = {
@@ -34,72 +28,46 @@ const arrived = forgeSetupQueryOf({
 });
 
 test("the forge's own parameter names are what is read", () => {
-  expect(arrived).toStrictEqual({
-    installationId: "42",
-    action: "install",
-    state: "a-state",
-  });
+  expect(arrived).toStrictEqual({ action: "install", state: "a-state" });
   expect(
     forgeSetupQueryOf({ setup_action: "elsewhere" }).action,
   ).toBeUndefined();
-  expect(
-    forgeSetupQueryOf({ installation_id: "" }).installationId,
-  ).toBeUndefined();
+  expect(forgeSetupQueryOf({ state: "" }).state).toBeUndefined();
 });
 
-test("a matching state claims the installation for the app that was installed", () => {
+test("a matching state goes on to the authorization", () => {
   expect(forgeSetupDecision(arrived, transaction)).toStrictEqual({
-    decision: "Claim",
+    decision: "Authorize",
     transaction,
-    installationId: "42",
   });
 });
 
-test("a state that does not match this tab claims nothing", () => {
+test("a state that does not match this tab starts nothing", () => {
   expect(
     forgeSetupDecision({ ...arrived, state: "someone-else" }, transaction)
       .decision,
   ).toBe("Unexpected");
 });
 
-test("a landing with nothing stored claims nothing", () => {
+test("a landing with nothing stored starts nothing", () => {
   expect(forgeSetupDecision(arrived, undefined).decision).toBe("Unexpected");
 });
 
-test("a return carrying no state claims nothing", () => {
+test("a return carrying no state starts nothing", () => {
   expect(
     forgeSetupDecision({ ...arrived, state: undefined }, transaction).decision,
   ).toBe("Unexpected");
 });
 
-/** An `update` is an installation whose repositories changed, and the claim is
- * the same claim; only a `request` has nothing to claim yet. */
-test("an update claims and a request does not", () => {
+/** An `update` is an installation whose repositories changed; only a
+ * `request` has nothing installed to authorize for yet. */
+test("an update authorizes and a request does not", () => {
   expect(
     forgeSetupDecision({ ...arrived, action: "update" }, transaction).decision,
-  ).toBe("Claim");
+  ).toBe("Authorize");
   expect(
     forgeSetupDecision({ ...arrived, action: "request" }, transaction),
   ).toStrictEqual({ decision: "Requested", transaction });
-});
-
-test("a matching state with no installation claims nothing", () => {
-  expect(
-    forgeSetupDecision({ ...arrived, installationId: undefined }, transaction)
-      .decision,
-  ).toBe("Unexpected");
-});
-
-test("the way back carries the outcome and neither the state nor the identity", () => {
-  const url = new URL(
-    forgeSetupReturn(transaction.returnPath, "Claimed by another tenant"),
-    "https://console.test",
-  );
-  expect(url.pathname).toBe(transaction.returnPath);
-  expect([...url.searchParams.keys()]).toEqual([forgeSetupStatusParam]);
-  expect(url.searchParams.get(forgeSetupStatusParam)).toBe(
-    "Claimed by another tenant",
-  );
 });
 
 /**
@@ -109,13 +77,4 @@ test("the way back carries the outcome and neither the state nor the identity", 
  */
 test("the landing's address is the one the README tells an operator to set", () => {
   expect(forgeSetupRoutePath).toBe("/forge/github/setup");
-});
-
-test("a way back that already has a query keeps it", () => {
-  const url = new URL(
-    forgeSetupReturn("/vteng/chuggy/repositories?open=add", "Connected"),
-    "https://console.test",
-  );
-  expect(url.searchParams.get("open")).toBe("add");
-  expect(url.searchParams.get(forgeSetupStatusParam)).toBe("Connected");
 });

@@ -72,8 +72,8 @@ import {
   parseNativeActionCursor,
   parseTicketActivityCursor,
   parseConfigurationCreation,
+  parseForgeAuthorization,
   parseForgeCredentialRequest,
-  parseForgeInstallationClaim,
   parseForgeInstallationId,
   parseProjectRepositoryBind,
   parseProjectRepositoryCreate,
@@ -107,8 +107,8 @@ import {
   draftsResponse,
   failureResponse,
   forgeAppsResponse,
+  forgeAuthorizationResponse,
   forgeCredentialResponse,
-  forgeInstallationClaimResponse,
   forgeInstallationsResponse,
   forgeRepositoriesResponse,
   projectRepositoriesResponse,
@@ -910,8 +910,8 @@ function tenantOf(request: FastifyRequest): TenantId {
 }
 
 /**
- * The apps a tenant installs, the installations it has claimed, and what each of
- * them grants. THE APPS ROUTE IS AUTHENTICATED AND NOTHING ELSE: it says nothing
+ * The apps a tenant installs, the accounts a person's authorization claims, the
+ * installations claimed, and what each of them grants. THE APPS ROUTE IS AUTHENTICATED AND NOTHING ELSE: it says nothing
  * about any tenant, so every bearer reads it, and it is not public because an
  * unauthenticated route would make this deployment's forge rate limit spendable
  * by anyone who can reach the port.
@@ -924,18 +924,16 @@ function registerForgeInstallations(
     send(reply, forgeAppsResponse(await onboarding.forgeApps()));
   });
   app.post(
-    "/api/v1/tenants/:tenant/forge-installations",
+    "/api/v1/tenants/:tenant/forge-authorizations",
     { preValidation: requireVersionedJson },
     async (request, reply) => {
-      const tenant = tenantOf(request);
       send(
         reply,
-        forgeInstallationClaimResponse(
-          tenant,
-          await onboarding.claimInstallation(
+        forgeAuthorizationResponse(
+          await onboarding.authorizeForge(
             principalOf(request),
-            tenant,
-            parseForgeInstallationClaim(request.body),
+            tenantOf(request),
+            parseForgeAuthorization(request.body),
           ),
         ),
       );

@@ -1,6 +1,6 @@
 /**
- * What GitHub tells this app about itself, about one installation, and about
- * what an installation grants.
+ * What GitHub tells this app about itself, about its installation on one
+ * account, and about what an installation grants.
  *
  * THE SECOND READ OF THE APP MAKES NO REQUEST, which is the whole point of
  * holding it: a route every authenticated reader may call would otherwise spend
@@ -15,6 +15,8 @@
  * THE INSTALLATION OF ANOTHER APP IS THE ONE THAT LOOKS FINE. The forge answers
  * 200 with a complete installation whose `app_id` is somebody else's, which is
  * the only way the second term of that comparison can be shown to matter.
+ * Which account it stands on is the interpreter's to compare, so the account's
+ * number is read and answered rather than judged here.
  *
  * THE PAGING IS DRIVEN BY WHAT THE FORGE SAYS AND BY THE BOUND, and the two are
  * asserted apart: a listing that ends because a short page arrived, one that
@@ -36,6 +38,7 @@ import {
 import { githubInstallationRepositories } from "../../src/adapters/forge/githubInstallationRepositories.ts";
 import {
   asForgeAccount,
+  asForgeAccountId,
   asForgeApp,
   asForgeId,
   asForgeInstallationId,
@@ -94,16 +97,23 @@ function fixtureApp(htmlUrl: string): Response {
     id: Number(fixtureAppId),
     slug: "chuggy-portal",
     html_url: htmlUrl,
+    client_id: "Iv1.portal",
   });
 }
 
-/** One installation as the forge describes it, under whichever app the case is about. */
+/** One account's installation as the forge describes it, under whichever app the case is about. */
 function fixtureInstallationAnswer(appId: string): Response {
   return fixtureAnswer(200, {
+    id: Number(fixtureInstallationId),
     app_id: Number(appId),
-    account: { login: "kasofsk", type: "Organization" },
+    account: { login: "kasofsk", id: 500, type: "Organization" },
   });
 }
+
+const fixtureOrganization = {
+  account: asForgeAccount("kasofsk"),
+  accountKind: "Organization",
+} as const;
 
 /**
  * How many rows a full page holds, which is what tells the adapter to ask for
@@ -156,7 +166,9 @@ test("the app is read once and then answered from memory", async (t) => {
     app: {
       id: fixtureAppId,
       slug: "chuggy-portal",
+      clientId: "Iv1.portal",
       installUrl: "https://github.com/apps/chuggy-portal/installations/new",
+      authorizeUrl: "https://github.com/login/oauth/authorize",
     },
   });
   assert.deepEqual(await apps.app(), first);
@@ -182,61 +194,83 @@ test("an app address the install path cannot be built on is an outage", async (t
   assert.deepEqual(await apps.app(), { described: "Unavailable" });
 });
 
-test("one installation of this app is read, and one of another is unknown", async (t) => {
+test("an app without a client to authorize is an outage", async (t) => {
+  const recorder = fixtureForge([
+    fixtureAnswer(200, {
+      id: Number(fixtureAppId),
+      slug: "chuggy-portal",
+      html_url: "https://github.com/apps/chuggy-portal",
+    }),
+  ]);
+  const apps = githubApps(fixtureAppOptions(t, recorder));
+  assert.deepEqual(await apps.app(), { described: "Unavailable" });
+});
+
+test("an account's installation of this app is read, and one of another is missing", async (t) => {
   const ours = fixtureForge([fixtureInstallationAnswer(fixtureAppId)]);
   assert.deepEqual(
-    await githubInstallationDirectory(fixtureAppOptions(t, ours)).installation(
-      fixtureInstallationId,
-    ),
+    await githubInstallationDirectory(
+      fixtureAppOptions(t, ours),
+    ).accountInstallation(fixtureOrganization),
     {
       read: "Installation",
-      installation: {
-        account: asForgeAccount("kasofsk"),
-        accountKind: "Organization",
-      },
+      installationId: fixtureInstallationId,
+      accountId: asForgeAccountId("500"),
     },
   );
   assert.equal(
     ours.calls[0]?.url,
-    `${fixtureApiUrl}/app/installations/${fixtureInstallationId}`,
+    `${fixtureApiUrl}/orgs/kasofsk/installation`,
   );
   const theirs = fixtureForge([fixtureInstallationAnswer("999999")]);
   assert.deepEqual(
     await githubInstallationDirectory(
       fixtureAppOptions(t, theirs),
-    ).installation(fixtureInstallationId),
-    { read: "Unknown" },
+    ).accountInstallation(fixtureOrganization),
+    { read: "Missing" },
   );
 });
 
-test("an installation the forge does not hold is unknown and an outage is not", async (t) => {
+test("a personal account's installation is asked for among users", async (t) => {
+  const personal = fixtureForge([fixtureInstallationAnswer(fixtureAppId)]);
+  await githubInstallationDirectory(
+    fixtureAppOptions(t, personal),
+  ).accountInstallation({
+    account: asForgeAccount("geoff"),
+    accountKind: "User",
+  });
+  assert.equal(
+    personal.calls[0]?.url,
+    `${fixtureApiUrl}/users/geoff/installation`,
+  );
+  assert.match(
+    personal.calls[0]?.headers["authorization"] ?? "",
+    /^Bearer [^.]+\.[^.]+\.[^.]+$/u,
+  );
+});
+
+test("an account without the app is missing and an outage is not", async (t) => {
   const absent = fixtureForge([fixtureAnswer(404, {})]);
   assert.deepEqual(
     await githubInstallationDirectory(
       fixtureAppOptions(t, absent),
-    ).installation(fixtureInstallationId),
-    { read: "Unknown" },
+    ).accountInstallation(fixtureOrganization),
+    { read: "Missing" },
   );
   const down = fixtureForge([fixtureAnswer(503, {})]);
   assert.deepEqual(
-    await githubInstallationDirectory(fixtureAppOptions(t, down)).installation(
-      fixtureInstallationId,
-    ),
+    await githubInstallationDirectory(
+      fixtureAppOptions(t, down),
+    ).accountInstallation(fixtureOrganization),
     { read: "Unavailable" },
   );
-});
-
-test("an account kind this tree does not declare is an outage and never a claim", async (t) => {
-  const strange = fixtureForge([
-    fixtureAnswer(200, {
-      app_id: Number(fixtureAppId),
-      account: { login: "kasofsk", type: "Enterprise" },
-    }),
+  const unreadable = fixtureForge([
+    fixtureAnswer(200, { app_id: Number(fixtureAppId) }),
   ]);
   assert.deepEqual(
     await githubInstallationDirectory(
-      fixtureAppOptions(t, strange),
-    ).installation(fixtureInstallationId),
+      fixtureAppOptions(t, unreadable),
+    ).accountInstallation(fixtureOrganization),
     { read: "Unavailable" },
   );
 });

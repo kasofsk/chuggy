@@ -134,6 +134,11 @@ export function redirect(url: string): void {
   location.assign(url);
 }
 
+/** This console's own origin, which a forge is told to return an authorization to. */
+export function currentOrigin(): string {
+  return location.origin;
+}
+
 /** Where this tab is, as the path something that leaves it returns to. */
 export function currentPath(): string {
   return `${location.pathname}${location.search}`;

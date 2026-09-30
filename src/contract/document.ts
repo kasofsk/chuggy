@@ -18,7 +18,7 @@ import {
   draftCreationSchema,
   draftRevisionSchema,
   forgeCredentialRequestSchema,
-  forgeInstallationClaimSchema,
+  forgeAuthorizationSchema,
   projectRepositoryBindSchema,
   projectRepositoryCreateSchema,
   projectRepositoryLandingSchema,
@@ -39,7 +39,7 @@ function nativeHttpContractDocumentSchemas(): unknown {
     draftCreation: z.toJSONSchema(draftCreationSchema),
     draftRevision: z.toJSONSchema(draftRevisionSchema),
     forgeCredential: z.toJSONSchema(forgeCredentialRequestSchema),
-    forgeInstallationClaim: z.toJSONSchema(forgeInstallationClaimSchema),
+    forgeAuthorization: z.toJSONSchema(forgeAuthorizationSchema),
     projectRepositoryBind: z.toJSONSchema(projectRepositoryBindSchema),
     projectRepositoryCreate: z.toJSONSchema(projectRepositoryCreateSchema),
     projectRepositoryLanding: z.toJSONSchema(projectRepositoryLandingSchema),
@@ -95,7 +95,7 @@ export function nativeHttpContractDocument(): unknown {
     selectorProjectSettings:
       "installation settings are defaults; an absent override inherits one, and a write replaces the whole set under the revision it was read at",
     forgeInstallations:
-      "a tenant's administrator claims an installation of this deployment's app; an installation another tenant holds is a conflict, and a claim is never released",
+      "a tenant's administrator claims an account by authorizing this deployment's app on the forge, which claims each account the forge says they own and nothing else; each tenant holds its own claim, and a claim is never released",
     repositoryBinding:
       "binding a repository to a project creates no project: a project that does not exist is not found, and the repository must be one this deployment holds a credential for — on a host it mints for, that means an installation this tenant has claimed",
     repositoryLanding:

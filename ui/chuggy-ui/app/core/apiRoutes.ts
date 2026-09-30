@@ -18,7 +18,7 @@ import {
   draftResponseSchema,
   executionsResponseSchema,
   forgeAppsResponseSchema,
-  forgeInstallationClaimedSchema,
+  forgeAuthorizationResponseSchema,
   forgeInstallationsResponseSchema,
   forgeRepositoriesResponseSchema,
   installationResponseSchema,
@@ -50,7 +50,7 @@ import type {
   DraftResponse,
   ExecutionsResponse,
   ForgeAppsResponse,
-  ForgeInstallationClaimedResponse,
+  ForgeAuthorizationResponse,
   ForgeInstallationsResponse,
   ForgeRepositoriesResponse,
   InstallationResponse,
@@ -76,7 +76,7 @@ import type {
   configurationCreationSchema,
   draftCreationSchema,
   draftRevisionSchema,
-  forgeInstallationClaimSchema,
+  forgeAuthorizationSchema,
   leadInquirySchema,
   projectRepositoryBindSchema,
   projectRepositoryCreateSchema,
@@ -226,20 +226,20 @@ export function apiForgeInstallations(
   );
 }
 
-/** The claim a setup landing makes for the app the person went to install. */
-export function apiClaimForgeInstallation(
+/** The forge's authorization, redeemed for the claims on each account it proves the person owns. */
+export function apiForgeAuthorization(
   ports: ApiPorts,
   tenant: string,
-  claim: z.infer<typeof forgeInstallationClaimSchema>,
-): Promise<ApiResult<ForgeInstallationClaimedResponse>> {
+  grant: z.infer<typeof forgeAuthorizationSchema>,
+): Promise<ApiResult<ForgeAuthorizationResponse>> {
   return apiRead(
     ports,
     {
       method: "POST",
-      path: apiFilled(nativeHttpRoutes.forgeInstallations, { tenant }),
-      body: claim,
+      path: apiFilled(nativeHttpRoutes.forgeAuthorizations, { tenant }),
+      body: grant,
     },
-    (value) => forgeInstallationClaimedSchema.parse(value),
+    (value) => forgeAuthorizationResponseSchema.parse(value),
   );
 }
 

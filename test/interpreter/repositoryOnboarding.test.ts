@@ -1,12 +1,12 @@
 /**
- * Claiming an installation and binding a repository: which permit each question
- * is asked behind, and what each answer comes to.
+ * Claiming an account and binding a repository: which permit each question is
+ * asked behind, and what each answer comes to.
  *
- * EVERY REFUSAL IS ASSERTED AS ITS OWN ANSWER. A refused permit, an
- * installation this app does not hold, a repository no source can reach and a
- * project that is not there are four different answers to four different
- * questions, and a suite that asserted only "not the happy one" would pass
- * while any of them collapsed into another.
+ * EVERY REFUSAL IS ASSERTED AS ITS OWN ANSWER. A refused permit, an account the
+ * person does not own, a repository no source can reach and a project that is
+ * not there are different answers to different questions, and a suite that
+ * asserted only "not the happy one" would pass while any of them collapsed into
+ * another.
  *
  * THE PERMIT ASKED IS RECORDED RATHER THAN ASSUMED. Each case reads back the
  * kind the service asked for, so an implementation that asked `Read` where it
@@ -33,13 +33,20 @@ import {
   type RepositoryCredentialPort,
 } from "../../src/interpreter/finalizer.ts";
 import type {
+  ForgeAccountInstallationRead,
   ForgeAppDescribed,
-  ForgeInstallationRead,
+  ForgeInstallationAccount,
   ForgeRepositoriesRead,
   ForgeRepositorySummary,
 } from "../../src/interpreter/forgeDirectory.ts";
+import type {
+  ForgeAuthorizationGrant,
+  ForgeUserAuthorized,
+  ForgeUserInstallation,
+} from "../../src/interpreter/forgeAuthorization.ts";
 import {
   asForgeAccount,
+  asForgeAccountId,
   asForgeApp,
   asForgeId,
   asForgeInstallationId,
@@ -227,7 +234,8 @@ interface FixtureCreation {
 /** Everything the service is composed with, each port answering one fixed thing. */
 interface FixturePorts {
   readonly described?: ForgeAppDescribed;
-  readonly read?: ForgeInstallationRead;
+  readonly found?: ForgeAccountInstallationRead;
+  readonly authorized?: ForgeUserAuthorized;
   readonly repositories?: ForgeRepositoriesRead;
   readonly recorded?: ForgeInstallationRecorded;
   readonly held?: readonly ForgeInstallationClaimed[];
@@ -237,6 +245,8 @@ interface FixturePorts {
   readonly landingOutcome?: ProjectRepositoryLandingOutcome;
   readonly retirementOutcome?: ProjectRepositoryRetirementOutcome;
   readonly apps?: readonly ForgeApp[];
+  /** Apps held under a forge other than the one authorized. */
+  readonly elsewhere?: readonly ForgeApp[];
   readonly configurations?: FixtureConfigurations;
   readonly creation?: FixtureCreation;
 }
@@ -251,6 +261,8 @@ interface FixtureWrites {
   readonly claims: ForgeInstallationClaim[];
   readonly commands: RepositoryBindingCommand[];
   readonly asked: ForgeApp[];
+  readonly accounts: ForgeInstallationAccount[];
+  readonly grants: ForgeAuthorizationGrant[];
   readonly listed: ForgeApp[];
   readonly heads: RepositoryBinding[];
   readonly snapshots: RepositoryConfigurationSnapshotRequest[];
@@ -414,9 +426,10 @@ function fixturePortsForgeHalf(
         ),
     },
     directory: {
-      installation: () => {
+      accountInstallation: (account) => {
         wrote.asked.push(held);
-        return Promise.resolve(given.read ?? { read: "Unknown" as const });
+        wrote.accounts.push(account);
+        return Promise.resolve(given.found ?? { read: "Missing" as const });
       },
     },
     installationRepositories: {
@@ -428,6 +441,22 @@ function fixturePortsForgeHalf(
       },
     },
   };
+}
+
+/** The case's apps under the forge it authorizes, then any it holds elsewhere. */
+function fixturePortsForgeApps(
+  given: FixturePorts,
+  wrote: FixtureWrites,
+): readonly RepositoryOnboardingForgeApp[] {
+  return [
+    ...(given.apps ?? [app]).map((held) =>
+      fixturePortsForgeHalf(given, wrote, held),
+    ),
+    ...(given.elsewhere ?? []).map((held) => ({
+      ...fixturePortsForgeHalf(given, wrote, held),
+      forge: asForgeId("gitlab"),
+    })),
+  ];
 }
 
 /** The instant the fixture retires at, so a case can assert the row it reads back. */
@@ -479,6 +508,27 @@ function fixturePortsRetirement(
   };
 }
 
+/** The authorization port where a case scripts what the forge authorized. */
+function fixturePortsAuthorization(
+  given: FixturePorts,
+  wrote: FixtureWrites,
+): Pick<RepositoryOnboardingPorts, "authorization"> {
+  const authorized = given.authorized;
+  if (authorized === undefined) return {};
+  return {
+    authorization: {
+      forge,
+      app,
+      user: {
+        authorized: (grant) => {
+          wrote.grants.push(grant);
+          return Promise.resolve(authorized);
+        },
+      },
+    },
+  };
+}
+
 function fixturePorts(
   access: ProjectAccess,
   given: FixturePorts,
@@ -490,6 +540,8 @@ function fixturePorts(
     claims: [],
     commands: [],
     asked: [],
+    accounts: [],
+    grants: [],
     listed: [],
     heads: [],
     snapshots: [],
@@ -509,9 +561,7 @@ function fixturePorts(
     wrote,
     ports: {
       access,
-      forgeApps: (given.apps ?? [app]).map((held) =>
-        fixturePortsForgeHalf(given, wrote, held),
-      ),
+      forgeApps: fixturePortsForgeApps(given, wrote),
       credentials,
       recording: {
         record: (claim) => {
@@ -540,6 +590,7 @@ function fixturePorts(
       ...(given.creation === undefined
         ? {}
         : { creation: fixtureCreationPorts(given.creation, wrote) }),
+      ...fixturePortsAuthorization(given, wrote),
     },
   };
 }
@@ -561,7 +612,61 @@ const description = {
   id: "1",
   slug: "chuggy",
   installUrl: "https://forge/new",
+  clientId: "Iv1.portal",
+  authorizeUrl: "https://forge/login/oauth/authorize",
 } as const;
+
+/** A redemption the forge refused, which is what an authorization port answers unless a case says otherwise. */
+const fixtureRefused: ForgeUserAuthorized = { authorized: "Refused" };
+
+/** What the console sends: a forge, and what the person's authorization came back with. */
+const authorizing = {
+  forge,
+  code: "code-from-the-forge",
+  redirectUri: "https://console.example/forge/github/callback",
+  codeVerifier: "v".repeat(43),
+};
+
+/** The person the forge authorized, whose number is what proves an account theirs. */
+const person = { id: asForgeAccountId("7"), login: asForgeAccount("geoff") };
+
+/** The person's own account, carrying the portal app. */
+const ownAccount: ForgeUserInstallation = {
+  accountKind: "User",
+  installationId: asForgeInstallationId("8001"),
+  account: person.login,
+  accountId: person.id,
+};
+
+/** An organization the person reaches, with their membership of it as the case gives it. */
+function organizationOf(
+  membership: Extract<
+    ForgeUserInstallation,
+    { accountKind: "Organization" }
+  >["membership"],
+): ForgeUserInstallation {
+  return {
+    accountKind: "Organization",
+    installationId: asForgeInstallationId("8101"),
+    account: asForgeAccount("kasofsk"),
+    accountId: asForgeAccountId("500"),
+    membership,
+  };
+}
+
+/** What the forge answers the person reaches, the given installations and nothing past them. */
+function reaching(
+  ...installations: readonly ForgeUserInstallation[]
+): Extract<ForgeUserAuthorized, { authorized: "User" }> {
+  return { authorized: "User", user: person, installations, truncated: false };
+}
+
+/** The worker app's installation on the person's own account, as its own key finds it. */
+const workerOnOwn: ForgeAccountInstallationRead = {
+  read: "Installation",
+  installationId: asForgeInstallationId("9001"),
+  accountId: person.id,
+};
 
 test("every app this deployment holds is described, and holding none says so", async () => {
   const described = fixtureService([], {
@@ -581,165 +686,303 @@ test("every app this deployment holds is described, and holding none says so", a
   assert.deepEqual(await down.service.forgeApps(), { result: "Unavailable" });
 });
 
-test("a claim is the tenant administrator's and nobody else's", async () => {
-  const refused = fixtureService([]);
+test("the client a person authorizes is answered only where one can be redeemed", async () => {
+  const redeeming = fixtureService([], {
+    described: { described: "App", app: description },
+    apps: [app, worker],
+    authorized: fixtureRefused,
+  });
+  assert.deepEqual(await redeeming.service.forgeApps(), {
+    result: "Apps",
+    apps: [
+      { app, ...description },
+      { app: worker, ...description },
+    ],
+    authorization: {
+      clientId: description.clientId,
+      authorizeUrl: description.authorizeUrl,
+    },
+  });
+});
+
+test("an authorization is the tenant administrator's, and the forge is not asked otherwise", async () => {
+  const refused = fixtureService([], { authorized: reaching(ownAccount) });
   assert.deepEqual(
-    await refused.service.claimInstallation(principal, tenant, {
-      forge,
-      app,
-      installationId,
-    }),
+    await refused.service.authorizeForge(principal, tenant, authorizing),
     { result: "NotFound" },
   );
   assert.deepEqual(refused.asked.askedTenant, ["AdministerTenant"]);
+  assert.deepEqual(refused.wrote.grants, []);
   assert.deepEqual(refused.wrote.claims, []);
 });
 
-test("a claim is read as the app before it is recorded as the tenant's", async () => {
-  const claiming = fixtureService(["AdministerTenant"], {
-    apps: [app, worker],
-    read: {
-      read: "Installation",
-      installation: {
-        account: claimed.account,
-        accountKind: claimed.accountKind,
-      },
-    },
-  });
+test("a deployment that cannot redeem an authorization says so", async () => {
+  const none = fixtureService(["AdministerTenant"]);
   assert.deepEqual(
-    await claiming.service.claimInstallation(principal, tenant, {
-      forge,
-      app,
-      installationId,
-    }),
-    {
-      result: "Claimed",
-      installation: {
-        forge,
-        app,
-        account: claimed.account,
-        accountKind: claimed.accountKind,
-        installationId,
-      },
-    },
+    await none.service.authorizeForge(principal, tenant, authorizing),
+    { result: "NotConfigured" },
   );
-  assert.deepEqual(claiming.wrote.asked, [app]);
-  const [recorded] = claiming.wrote.claims;
-  assert.equal(recorded?.tenant, tenant);
-  assert.equal(recorded?.authority.subject, memberAuthority(principal).subject);
-});
-
-test("an installation this app does not hold is unknown, and so is another forge", async () => {
-  const unknown = fixtureService(["AdministerTenant"], {
-    read: { read: "Unknown" },
-  });
-  assert.deepEqual(
-    await unknown.service.claimInstallation(principal, tenant, {
-      forge,
-      app,
-      installationId,
-    }),
-    { result: "InstallationUnknown" },
-  );
-  assert.deepEqual(unknown.wrote.claims, []);
   const elsewhere = fixtureService(["AdministerTenant"], {
-    read: {
-      read: "Installation",
-      installation: {
-        account: claimed.account,
-        accountKind: claimed.accountKind,
-      },
-    },
+    authorized: reaching(ownAccount),
   });
   assert.deepEqual(
-    await elsewhere.service.claimInstallation(principal, tenant, {
+    await elsewhere.service.authorizeForge(principal, tenant, {
+      ...authorizing,
       forge: asForgeId("gitlab"),
-      app,
-      installationId,
     }),
-    { result: "InstallationUnknown" },
+    { result: "NotConfigured" },
   );
+  assert.deepEqual(elsewhere.wrote.grants, []);
   assert.deepEqual(elsewhere.wrote.claims, []);
 });
 
-test("a replay is already claimed and another tenant's account is a conflict", async () => {
-  const read: ForgeInstallationRead = {
-    read: "Installation",
-    installation: {
-      account: claimed.account,
-      accountKind: claimed.accountKind,
-    },
-  };
-  const replay = fixtureService(["AdministerTenant"], {
-    read,
-    recorded: "AlreadyRecorded",
+test("a proven account is claimed for the authorized forge's apps and no other forge's", async () => {
+  const claiming = fixtureService(["AdministerTenant"], {
+    apps: [app],
+    elsewhere: [worker],
+    authorized: reaching(ownAccount),
+    found: workerOnOwn,
   });
-  assert.equal(
-    (
-      await replay.service.claimInstallation(principal, tenant, {
-        forge,
-        app,
-        installationId,
-      })
-    ).result,
-    "AlreadyClaimed",
+  const answered = await claiming.service.authorizeForge(
+    principal,
+    tenant,
+    authorizing,
   );
-  const moved = fixtureService(["AdministerTenant"], {
-    read,
-    recorded: "Reinstalled",
-  });
-  assert.equal(
-    (
-      await moved.service.claimInstallation(principal, tenant, {
-        forge,
-        app,
-        installationId,
-      })
-    ).result,
-    "Claimed",
+  assert.equal(answered.result, "Authorized");
+  assert.deepEqual(
+    answered.result === "Authorized" ? answered.accounts[0]?.apps : undefined,
+    [{ app, claim: "Claimed" }],
   );
-  const taken = fixtureService(["AdministerTenant"], {
-    read,
-    recorded: "ClaimedElsewhere",
+  assert.deepEqual(
+    claiming.wrote.claims.map((claim) => [claim.forge, claim.app]),
+    [[forge, app]],
+  );
+  assert.deepEqual(claiming.wrote.asked, []);
+});
+
+test("the person's own account is claimed for both apps, the worker's found under its own key", async () => {
+  const claiming = fixtureService(["AdministerTenant"], {
+    apps: [app, worker],
+    authorized: reaching(ownAccount),
+    found: workerOnOwn,
   });
   assert.deepEqual(
-    await taken.service.claimInstallation(principal, tenant, {
-      forge,
-      app,
-      installationId,
-    }),
-    { result: "ClaimedElsewhere" },
+    await claiming.service.authorizeForge(principal, tenant, authorizing),
+    {
+      result: "Authorized",
+      accounts: [
+        {
+          account: person.login,
+          accountKind: "User",
+          proof: "Proven",
+          apps: [
+            { app, claim: "Claimed" },
+            { app: worker, claim: "Claimed" },
+          ],
+        },
+      ],
+      truncated: false,
+    },
+  );
+  assert.deepEqual(claiming.wrote.grants, [
+    {
+      code: authorizing.code,
+      redirectUri: authorizing.redirectUri,
+      codeVerifier: authorizing.codeVerifier,
+    },
+  ]);
+  assert.deepEqual(claiming.wrote.asked, [worker]);
+  assert.deepEqual(claiming.wrote.accounts, [
+    { account: person.login, accountKind: "User" },
+  ]);
+  assert.deepEqual(
+    claiming.wrote.claims.map((claim) => [
+      claim.app,
+      claim.account,
+      claim.accountKind,
+      claim.installationId,
+      claim.tenant,
+      claim.authority.subject,
+    ]),
+    [
+      [
+        app,
+        person.login,
+        "User",
+        ownAccount.installationId,
+        tenant,
+        memberAuthority(principal).subject,
+      ],
+      [
+        worker,
+        person.login,
+        "User",
+        asForgeInstallationId("9001"),
+        tenant,
+        memberAuthority(principal).subject,
+      ],
+    ],
   );
 });
 
-test("a forge that could not be reached is a wait rather than a refusal", async () => {
-  const down = fixtureService(["AdministerTenant"], {
-    read: { read: "Unavailable" },
+test("an account whose number is not the person's is not theirs, whatever its login", async () => {
+  const renamed = fixtureService(["AdministerTenant"], {
+    apps: [app, worker],
+    authorized: reaching({ ...ownAccount, accountId: asForgeAccountId("8") }),
+    found: workerOnOwn,
   });
   assert.deepEqual(
-    await down.service.claimInstallation(principal, tenant, {
-      forge,
-      app,
-      installationId,
-    }),
+    await renamed.service.authorizeForge(principal, tenant, authorizing),
+    {
+      result: "Authorized",
+      accounts: [
+        {
+          account: person.login,
+          accountKind: "User",
+          proof: "NotOwner",
+          apps: [],
+        },
+      ],
+      truncated: false,
+    },
+  );
+  assert.deepEqual(renamed.wrote.claims, []);
+  assert.deepEqual(renamed.wrote.asked, []);
+});
+
+test("an organization is claimed only for an active owner of it", async () => {
+  const owner = fixtureService(["AdministerTenant"], {
+    authorized: reaching(
+      organizationOf({
+        read: "Membership",
+        organizationId: asForgeAccountId("500"),
+        active: true,
+        owner: true,
+      }),
+      organizationOf({
+        read: "Membership",
+        organizationId: asForgeAccountId("500"),
+        active: true,
+        owner: false,
+      }),
+    ),
+  });
+  const answered = await owner.service.authorizeForge(
+    principal,
+    tenant,
+    authorizing,
+  );
+  assert.equal(answered.result, "Authorized");
+  assert.deepEqual(
+    answered.result === "Authorized"
+      ? answered.accounts.map((account) => [
+          account.accountKind,
+          account.proof,
+          account.apps,
+        ])
+      : [],
+    [
+      ["Organization", "Proven", [{ app, claim: "Claimed" }]],
+      ["Organization", "NotOwner", []],
+    ],
+  );
+  assert.deepEqual(
+    owner.wrote.claims.map((claim) => [claim.account, claim.accountKind]),
+    [[asForgeAccount("kasofsk"), "Organization"]],
+  );
+});
+
+test("a worker installation missing, unreadable or on another account is not claimed", async () => {
+  const cases: readonly (readonly [ForgeAccountInstallationRead, string])[] = [
+    [{ read: "Missing" }, "Missing"],
+    [{ read: "Unavailable" }, "Unavailable"],
+    [{ ...workerOnOwn, accountId: asForgeAccountId("8") }, "Missing"],
+  ];
+  for (const [found, claim] of cases) {
+    const claiming = fixtureService(["AdministerTenant"], {
+      apps: [app, worker],
+      authorized: reaching(ownAccount),
+      found,
+    });
+    const answered = await claiming.service.authorizeForge(
+      principal,
+      tenant,
+      authorizing,
+    );
+    assert.deepEqual(
+      answered.result === "Authorized" ? answered.accounts[0]?.apps : [],
+      [
+        { app, claim: "Claimed" },
+        { app: worker, claim },
+      ],
+    );
+    assert.deepEqual(
+      claiming.wrote.claims.map((recorded) => recorded.app),
+      [app],
+    );
+  }
+});
+
+test("a replay is already claimed and a reinstall is claimed again", async () => {
+  const replay = fixtureService(["AdministerTenant"], {
+    authorized: reaching(ownAccount),
+    recorded: "AlreadyRecorded",
+  });
+  const replayed = await replay.service.authorizeForge(
+    principal,
+    tenant,
+    authorizing,
+  );
+  assert.deepEqual(
+    replayed.result === "Authorized" ? replayed.accounts[0]?.apps : [],
+    [{ app, claim: "AlreadyClaimed" }],
+  );
+  const moved = fixtureService(["AdministerTenant"], {
+    authorized: reaching(ownAccount),
+    recorded: "Reinstalled",
+  });
+  const reinstalled = await moved.service.authorizeForge(
+    principal,
+    tenant,
+    authorizing,
+  );
+  assert.deepEqual(
+    reinstalled.result === "Authorized" ? reinstalled.accounts[0]?.apps : [],
+    [{ app, claim: "Claimed" }],
+  );
+});
+
+test("a refused or unreachable authorization claims nothing, and a partial one says so", async () => {
+  const refused = fixtureService(["AdministerTenant"], {
+    authorized: fixtureRefused,
+  });
+  assert.deepEqual(
+    await refused.service.authorizeForge(principal, tenant, authorizing),
+    { result: "Refused" },
+  );
+  assert.deepEqual(refused.wrote.claims, []);
+  const down = fixtureService(["AdministerTenant"], {
+    authorized: { authorized: "Unavailable" },
+  });
+  assert.deepEqual(
+    await down.service.authorizeForge(principal, tenant, authorizing),
     { result: "Unavailable" },
   );
   assert.deepEqual(down.wrote.claims, []);
+  const partial = fixtureService(["AdministerTenant"], {
+    authorized: { ...reaching(), truncated: true },
+  });
+  assert.deepEqual(
+    await partial.service.authorizeForge(principal, tenant, authorizing),
+    { result: "Authorized", accounts: [], truncated: true },
+  );
 });
 
-test("a deployment holding no app claims nothing and lists what it holds", async () => {
+test("a deployment holding no app lists what it holds and reads none of it", async () => {
   const none = fixtureService(["AdministerTenant"], {
     apps: [],
     held: [claimed],
   });
-  assert.deepEqual(
-    await none.service.claimInstallation(principal, tenant, {
-      forge,
-      app,
-      installationId,
-    }),
-    { result: "NotConfigured" },
-  );
   assert.deepEqual(await none.service.installations(principal, tenant), {
     result: "Installations",
     installations: [claimed],
@@ -753,48 +996,6 @@ test("a deployment holding no app claims nothing and lists what it holds", async
     ),
     { result: "NotConfigured" },
   );
-});
-
-test("a worker claim is the worker app's, and holding no worker key says so", async () => {
-  const read: ForgeInstallationRead = {
-    read: "Installation",
-    installation: {
-      account: claimed.account,
-      accountKind: claimed.accountKind,
-    },
-  };
-  const both = fixtureService(["AdministerTenant"], {
-    read,
-    apps: [app, worker],
-  });
-  assert.deepEqual(
-    await both.service.claimInstallation(principal, tenant, {
-      forge,
-      app: worker,
-      installationId,
-    }),
-    {
-      result: "Claimed",
-      installation: {
-        forge,
-        app: worker,
-        account: claimed.account,
-        accountKind: claimed.accountKind,
-        installationId,
-      },
-    },
-  );
-  assert.deepEqual(both.wrote.asked, [worker]);
-  const portalOnly = fixtureService(["AdministerTenant"], { read });
-  assert.deepEqual(
-    await portalOnly.service.claimInstallation(principal, tenant, {
-      forge,
-      app: worker,
-      installationId,
-    }),
-    { result: "NotConfigured" },
-  );
-  assert.deepEqual(portalOnly.wrote.claims, []);
 });
 
 test("what a worker installation grants is read as the worker app", async () => {

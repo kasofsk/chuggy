@@ -318,13 +318,30 @@ export type ForgeCredentialPermission =
 export const forgeIds = ["github"] as const;
 export type ForgeIdentity = (typeof forgeIds)[number];
 
-/** Every app a tenant installs, the api holding a key for each it answers a claim on. */
+/** Every app a tenant installs, the api holding a key for each it claims. */
 export const forgeApps = ["portal", "worker"] as const;
 export type ForgeAppName = (typeof forgeApps)[number];
 
 /** Every kind of account a forge installs an app on. */
 export const forgeAccountKinds = ["User", "Organization"] as const;
 export type ForgeAccountKindName = (typeof forgeAccountKinds)[number];
+
+/** Whether a person's authorization proved an account is theirs. */
+export const forgeAccountProofs = [
+  "Proven",
+  "NotOwner",
+  "Unavailable",
+] as const;
+export type ForgeAccountProofName = (typeof forgeAccountProofs)[number];
+
+/** What claiming one app on a proven account came to, `Missing` being an account that has not installed it. */
+export const forgeAppClaims = [
+  "Claimed",
+  "AlreadyClaimed",
+  "Missing",
+  "Unavailable",
+] as const;
+export type ForgeAppClaimName = (typeof forgeAppClaims)[number];
 
 /** Whether a repository this tree creates is its account's alone to read. */
 export const forgeRepositoryVisibilities = ["private", "public"] as const;

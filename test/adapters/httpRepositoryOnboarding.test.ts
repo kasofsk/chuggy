@@ -5,7 +5,7 @@
  * IT IS COMPOSED AND NOT FAKED AT THE BOUNDARY. A suite that handed the routes
  * a stub service would prove the status codes and nothing about which permit
  * each route asks for, which forge request each makes, or that the claim a
- * listing answers is the one the claim route recorded.
+ * listing answers is the one an authorization recorded.
  *
  * EVERY REFUSED PERMIT IS 404 AND NOT 403. A caller who may not administer a
  * tenant is not told which accounts it has claimed, and one who may not
@@ -17,8 +17,12 @@
  * `retry-after`, never a refusal, because a refusal would be this deployment
  * deciding a question the relation store never answered.
  *
- * THE CLAIM AND THE BIND ARE VERSIONED WRITES like every other, and the bind
- * carries the operation identity in the header, so a retry is one attempt.
+ * THE AUTHORIZATION AND THE BIND ARE VERSIONED WRITES like every other, and the
+ * bind carries the operation identity in the header, so a retry is one attempt.
+ *
+ * A PERSON'S TOKEN IS A SENTINEL, and every place it could leak is read for it:
+ * the answer, the rows recorded, what the process wrote to its own streams, and
+ * every forge request but the ones made to the API host under it.
  *
  * A CREATION IS THREE FORGE REQUESTS AND THE CASES ASSERT ALL OF THEM. Which
  * addresses were asked, in what order, is what tells a repository that was made
@@ -38,6 +42,7 @@ import {
   githubInstallationDirectory,
 } from "../../src/adapters/forge/githubApp.ts";
 import { githubInstallationRepositories } from "../../src/adapters/forge/githubInstallationRepositories.ts";
+import { githubUserAuthorization } from "../../src/adapters/forge/githubUserAuthorization.ts";
 import { githubRepositoryCreation } from "../../src/adapters/forge/githubRepositoryCreation.ts";
 import {
   nativeHttpMediaType,
@@ -59,12 +64,17 @@ import {
   type ForgeInstallationTokens,
 } from "../../src/interpreter/forgeInstallation.ts";
 import type {
+  ForgeInstallationClaim,
   ForgeInstallationClaimed,
   ForgeInstallationClaims,
   ForgeInstallationRecorded,
 } from "../../src/interpreter/forgeInstallationClaim.ts";
 import { asPrincipal } from "../../src/interpreter/principal.ts";
-import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
+import {
+  asProjectId,
+  asTenantId,
+  type TenantId,
+} from "../../src/interpreter/projectStore.ts";
 import { asRecoveryEpoch } from "../../src/interpreter/projectStore.ts";
 import type {
   ProjectRepositoryBindingWrite,
@@ -97,6 +107,7 @@ const epoch = asRecoveryEpoch("epoch-1");
 
 const tenantRoot = `/api/v1/tenants/${tenant}`;
 const installationsRoot = `${tenantRoot}/forge-installations`;
+const authorizationsRoot = `${tenantRoot}/forge-authorizations`;
 const repositoriesRoot = `${tenantRoot}/projects/${partition.project}/repositories`;
 const authorized = { authorization: "Bearer valid" };
 const versioned = { ...authorized, "content-type": nativeHttpMediaType };
@@ -157,13 +168,7 @@ function appAnswer(held: ForgeApp = app): Response {
     id: Number(fixtureAppIds[held]),
     slug: fixtureSlugs[held],
     html_url: `https://github.com/apps/${fixtureSlugs[held]}`,
-  });
-}
-
-function installationAnswer(held: ForgeApp = app): Response {
-  return answer(200, {
-    app_id: Number(fixtureAppIds[held]),
-    account: { login: "acme", type: "Organization" },
+    client_id: `Iv1.${fixtureSlugs[held]}`,
   });
 }
 
@@ -190,6 +195,7 @@ function repositoriesAnswer(): Response {
  */
 interface OnboardingStore {
   readonly held: ForgeInstallationClaimed[];
+  readonly recordedClaims: ForgeInstallationClaim[];
   readonly bound: ProjectRepositoryBound[];
   readonly commands: RepositoryBindingCommand[];
   recorded: ForgeInstallationRecorded;
@@ -205,6 +211,7 @@ const fixtureRetiredAt = "2026-09-14T02:00:00Z";
 function fixtureStore(): OnboardingStore {
   return {
     held: [],
+    recordedClaims: [],
     bound: [],
     commands: [],
     recorded: "Recorded",
@@ -255,6 +262,17 @@ const listingTokens: ForgeInstallationTokens = {
       expiresAtMs: 4_102_444_800_000,
     }),
 };
+
+/** The portal app's client secret, as the deployment mounts it. */
+function secretFile(t: TestContext): string {
+  const root = mkdtempSync(join(tmpdir(), "chuggy-onboarding-secret-"));
+  t.after(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+  const path = join(root, "client-secret");
+  writeFileSync(path, "client-secret-sentinel\n");
+  return path;
+}
 
 /** One app's half of the service, composed over the recorder's own fetch. */
 function fixtureServiceHalf(
@@ -325,28 +343,60 @@ function fixtureServiceCreation(
   };
 }
 
+/** What a case composes beyond the durable side: which apps it holds, and which halves it adds. */
+interface FixtureComposition {
+  readonly apps: readonly ForgeApp[];
+  readonly creating: boolean;
+  readonly image: string | undefined;
+  readonly authorizing: boolean;
+}
+
+/** The redemption of a person's authorization, through the portal half's own description. */
+function fixtureServiceAuthorization(
+  t: TestContext,
+  recorder: ForgeRecorder,
+  halves: readonly ReturnType<typeof fixtureServiceHalf>[],
+) {
+  const portal = halves.find((half) => half.app === app);
+  if (portal === undefined) return {};
+  return {
+    authorization: {
+      forge,
+      app,
+      user: githubUserAuthorization({
+        fetch: recorder.requestFetch,
+        apiUrl: fixtureApiUrl,
+        app: portal.apps,
+        appId: fixtureAppIds[app],
+        clientSecretPath: secretFile(t),
+      }),
+    },
+  };
+}
+
 function fixtureService(
   t: TestContext,
   store: OnboardingStore,
   recorder: ForgeRecorder,
   access: ReturnType<typeof memoryProjectAccess>,
-  apps: readonly ForgeApp[],
-  creating: boolean,
-  image: string | undefined,
+  composition: FixtureComposition,
 ): RepositoryOnboarding {
   const privateKeyPath = keyFile(t);
   const credentials: RepositoryCredentialPort = {
     credential: () => Promise.resolve(store.resolved),
   };
+  const halves = composition.apps.map((held) =>
+    fixtureServiceHalf(recorder, privateKeyPath, held),
+  );
+  const image = composition.image;
   return repositoryOnboarding({
     access,
     credentials,
-    forgeApps: apps.map((held) =>
-      fixtureServiceHalf(recorder, privateKeyPath, held),
-    ),
+    forgeApps: halves,
     recording: {
       record: (claim) => {
-        if (store.recorded !== "ClaimedElsewhere")
+        store.recordedClaims.push(claim);
+        if (claim.tenant === tenant)
           store.held.push({
             forge: claim.forge,
             app: claim.app,
@@ -366,10 +416,13 @@ function fixtureService(
     ...(image === undefined
       ? {}
       : { configurations: fixtureServiceConfigurations(image) }),
-    ...(creating
+    ...(composition.creating
       ? {
           creation: fixtureServiceCreation(recorder),
         }
+      : {}),
+    ...(composition.authorizing
+      ? fixtureServiceAuthorization(t, recorder, halves)
       : {}),
   });
 }
@@ -472,6 +525,8 @@ function fixtureCase(
     readonly apps?: readonly ForgeApp[];
     readonly creating?: boolean;
     readonly image?: string;
+    readonly authorizing?: boolean;
+    readonly tenants?: readonly TenantId[];
   } = {},
 ) {
   const store = given.store ?? fixtureStore();
@@ -480,24 +535,22 @@ function fixtureCase(
   const granted = given.granted ?? [];
   const project = granted.filter((kind) => kind !== "AdministerTenant");
   if (granted.includes("AdministerTenant"))
-    access.grantTenant({
-      tenant,
-      principal,
-      access: new Set(["AdministerTenant"]),
-    });
+    for (const administered of given.tenants ?? [tenant])
+      access.grantTenant({
+        tenant: administered,
+        principal,
+        access: new Set(["AdministerTenant"]),
+      });
   if (project.length > 0)
     access.grant({ partition, principal, access: new Set(project) });
   const app = servedNativeHttpApp(
     unservedNativeWeb,
-    fixtureService(
-      t,
-      store,
-      recorder,
-      access,
-      given.apps ?? bothApps,
-      given.creating ?? false,
-      given.image,
-    ),
+    fixtureService(t, store, recorder, access, {
+      apps: given.apps ?? bothApps,
+      creating: given.creating ?? false,
+      image: given.image,
+      authorizing: given.authorizing ?? false,
+    }),
   );
   t.after(() => app.close());
   return { app, store, recorder, access };
@@ -534,63 +587,6 @@ test("the apps route answers every bearer and asks each forge once", async (t) =
   assert.equal(one.recorder.calls.length, 2);
 });
 
-test("a claim for an app this deployment holds no key for is not configured", async (t) => {
-  const portalOnly = fixtureCase(t, {
-    answers: [installationAnswer(worker)],
-    granted: ["AdministerTenant"],
-    apps: [app],
-  });
-  const served = await portalOnly.app.inject({
-    method: "POST",
-    url: installationsRoot,
-    headers: versioned,
-    payload: { forge: "github", app: "worker", installationId },
-  });
-  assert.equal(served.statusCode, 404);
-  assert.equal(
-    served.json<HttpErrorEnvelope>().error.code,
-    "ForgeNotConfigured",
-  );
-  assert.deepEqual(portalOnly.recorder.calls, []);
-  assert.deepEqual(portalOnly.store.held, []);
-});
-
-test("a worker installation is claimed through the worker's own app", async (t) => {
-  const both = fixtureCase(t, {
-    answers: [installationAnswer(worker)],
-    granted: ["AdministerTenant"],
-    apps: [app, worker],
-  });
-  const served = await both.app.inject({
-    method: "POST",
-    url: installationsRoot,
-    headers: versioned,
-    payload: { forge: "github", app: "worker", installationId },
-  });
-  assert.equal(served.statusCode, 201);
-  assert.equal(both.store.held[0]?.app, worker);
-});
-
-test("a worker installation read through the portal's app is not the worker's", async (t) => {
-  const both = fixtureCase(t, {
-    answers: [installationAnswer(app)],
-    granted: ["AdministerTenant"],
-    apps: [app, worker],
-  });
-  const served = await both.app.inject({
-    method: "POST",
-    url: installationsRoot,
-    headers: versioned,
-    payload: { forge: "github", app: "worker", installationId },
-  });
-  assert.equal(served.statusCode, 404);
-  assert.equal(
-    served.json<HttpErrorEnvelope>().error.code,
-    "InstallationUnknown",
-  );
-  assert.deepEqual(both.store.held, []);
-});
-
 test("a forge that could not be reached is a wait and not an app", async (t) => {
   const down = fixtureCase(t, { answers: [answer(503, {})] });
   const served = await down.app.inject({
@@ -602,134 +598,418 @@ test("a forge that could not be reached is a wait and not an app", async (t) => 
   assert.equal(served.json<HttpErrorEnvelope>().error.code, "ForgeUnavailable");
 });
 
-test("a claim without the tenant permit is not found and asks no forge", async (t) => {
-  const refused = fixtureCase(t, { answers: [installationAnswer()] });
+/** What the console posts once the person has authorized the portal app. */
+const authorizing = {
+  forge: "github",
+  code: "code-from-the-forge",
+  redirectUri: "https://console.invalid/forge/github/callback",
+  codeVerifier: "v".repeat(43),
+};
+
+/** The person's token, which nothing but a request to the API host may carry. */
+const personToken = "ghu_http-person-token-sentinel-z1x2c3";
+
+/** GitHub's own words about a refusal, which the answer must not carry. */
+const forgeRefusalWords = "the code sentinel-refusal-v8b9 is spent";
+
+function redeemedAnswer(): Response {
+  return answer(200, { access_token: personToken, token_type: "bearer" });
+}
+
+function personAnswer(): Response {
+  return answer(200, { id: 7, login: "geoff" });
+}
+
+/** The installations the person reaches, each on the account the case names. */
+function reachedAnswer(
+  ...accounts: readonly {
+    readonly login: string;
+    readonly id: number;
+    readonly type: string;
+  }[]
+): Response {
+  return answer(200, {
+    total_count: accounts.length,
+    installations: accounts.map((account, index) => ({
+      id: 8001 + index,
+      app_id: Number(fixtureAppIds[app]),
+      account,
+    })),
+  });
+}
+
+/** The worker app's installation on an account, as the worker's own key finds it. */
+function workerFoundAnswer(accountId: number): Response {
+  return answer(200, {
+    id: 9001,
+    app_id: Number(fixtureAppIds[worker]),
+    account: { id: accountId },
+  });
+}
+
+const ownAccount = { login: "geoff", id: 7, type: "User" };
+
+/**
+ * The person's token reached the forge on the person's own reads and on nothing
+ * else, and appears in no answer, row or line the service wrote.
+ */
+function assertTokenContained(
+  claiming: ReturnType<typeof fixtureCase>,
+  body: string,
+  streams: string,
+): void {
+  assert.equal(body.includes(personToken), false);
+  assert.equal(
+    JSON.stringify(claiming.store.recordedClaims).includes(personToken),
+    false,
+  );
+  assert.equal(streams.includes(personToken), false);
+  assert.deepEqual(
+    claiming.recorder.calls
+      .filter((call) => JSON.stringify(call).includes(personToken))
+      .map((call) => call.url),
+    [
+      `${fixtureApiUrl}/user`,
+      `${fixtureApiUrl}/user/installations?per_page=64&page=1`,
+    ],
+  );
+}
+
+/** Everything the process writes to its own streams while `run` runs. */
+async function streamsDuring(run: () => Promise<unknown>): Promise<string> {
+  const written: string[] = [];
+  const keep =
+    (stream: NodeJS.WriteStream) =>
+    (chunk: unknown): boolean => {
+      written.push(String(chunk));
+      return stream === process.stdout || stream === process.stderr;
+    };
+  const stdout = process.stdout.write.bind(process.stdout);
+  const stderr = process.stderr.write.bind(process.stderr);
+  process.stdout.write = keep(process.stdout);
+  process.stderr.write = keep(process.stderr);
+  try {
+    await run();
+  } finally {
+    process.stdout.write = stdout;
+    process.stderr.write = stderr;
+  }
+  return written.join("");
+}
+
+test("the apps route answers the client a person authorizes where one can be redeemed", async (t) => {
+  const redeeming = fixtureCase(t, {
+    answers: [appAnswer(app), appAnswer(worker)],
+    authorizing: true,
+  });
+  const served = await redeeming.app.inject({
+    url: "/api/v1/forge/github",
+    headers: authorized,
+  });
+  assert.equal(served.statusCode, 200);
+  assert.deepEqual(served.json(), {
+    apps: [describedApp(app), describedApp(worker)],
+    authorization: {
+      clientId: `Iv1.${fixtureSlugs[app]}`,
+      authorizeUrl: "https://github.com/login/oauth/authorize",
+    },
+  });
+});
+
+test("an authorization without the tenant permit is not found and asks no forge", async (t) => {
+  const refused = fixtureCase(t, {
+    answers: [appAnswer(), redeemedAnswer()],
+    authorizing: true,
+  });
   const served = await refused.app.inject({
     method: "POST",
-    url: installationsRoot,
+    url: authorizationsRoot,
     headers: versioned,
-    payload: { forge: "github", app: "portal", installationId },
+    payload: authorizing,
   });
   assert.equal(served.statusCode, 404);
   assert.deepEqual(served.json(), {
     error: { code: "NotFound", message: "Resource not found." },
   });
   assert.deepEqual(refused.recorder.calls, []);
-  assert.deepEqual(refused.store.held, []);
+  assert.deepEqual(refused.store.recordedClaims, []);
 });
 
-test("a claim is created at its own address and read back by the listing", async (t) => {
-  const claiming = fixtureCase(t, {
-    answers: [installationAnswer()],
+test("a deployment naming no client secret answers an authorization not configured", async (t) => {
+  const unconfigured = fixtureCase(t, {
+    answers: [appAnswer(), redeemedAnswer()],
     granted: ["AdministerTenant"],
   });
-  const served = await claiming.app.inject({
+  const served = await unconfigured.app.inject({
     method: "POST",
-    url: installationsRoot,
+    url: authorizationsRoot,
     headers: versioned,
-    payload: { forge: "github", app: "portal", installationId },
-  });
-  assert.equal(served.statusCode, 201);
-  assert.equal(
-    served.headers["location"],
-    `${installationsRoot}/${installationId}`,
-  );
-  assert.deepEqual(served.json(), {
-    forge,
-    app,
-    account: "acme",
-    accountKind: "Organization",
-    installationId,
-  });
-  const listed = await claiming.app.inject({
-    url: installationsRoot,
-    headers: authorized,
-  });
-  assert.equal(listed.statusCode, 200);
-  assert.deepEqual(listed.json(), {
-    truncated: false,
-    installations: [
-      {
-        forge,
-        app,
-        account: "acme",
-        accountKind: "Organization",
-        installationId,
-        claimedAt: claimed.claimedAt,
-      },
-    ],
-  });
-});
-
-test("a replayed claim is the claim as it stands and a taken one is a conflict", async (t) => {
-  const store = fixtureStore();
-  store.recorded = "AlreadyRecorded";
-  const replay = fixtureCase(t, {
-    answers: [installationAnswer()],
-    granted: ["AdministerTenant"],
-    store,
-  });
-  const replayed = await replay.app.inject({
-    method: "POST",
-    url: installationsRoot,
-    headers: versioned,
-    payload: { forge: "github", app: "portal", installationId },
-  });
-  assert.equal(replayed.statusCode, 200);
-  assert.equal(replayed.headers["location"], undefined);
-
-  const taken = fixtureStore();
-  taken.recorded = "ClaimedElsewhere";
-  const conflict = fixtureCase(t, {
-    answers: [installationAnswer()],
-    granted: ["AdministerTenant"],
-    store: taken,
-  });
-  const refused = await conflict.app.inject({
-    method: "POST",
-    url: installationsRoot,
-    headers: versioned,
-    payload: { forge: "github", app: "portal", installationId },
-  });
-  assert.equal(refused.statusCode, 409);
-  assert.equal(
-    refused.json<HttpErrorEnvelope>().error.code,
-    "InstallationClaimed",
-  );
-});
-
-test("an installation this app does not hold is unknown", async (t) => {
-  const unknown = fixtureCase(t, {
-    answers: [answer(404, {})],
-    granted: ["AdministerTenant"],
-  });
-  const served = await unknown.app.inject({
-    method: "POST",
-    url: installationsRoot,
-    headers: versioned,
-    payload: { forge: "github", app: "portal", installationId },
+    payload: authorizing,
   });
   assert.equal(served.statusCode, 404);
   assert.equal(
     served.json<HttpErrorEnvelope>().error.code,
-    "InstallationUnknown",
+    "ForgeNotConfigured",
   );
-  assert.deepEqual(unknown.store.held, []);
+  assert.deepEqual(unconfigured.recorder.calls, []);
 });
 
-test("a claim sent as unversioned json is refused before it reaches the forge", async (t) => {
-  const plain = fixtureCase(t, {
-    answers: [installationAnswer()],
+test("the person's own account is claimed for both apps and the token goes nowhere else", async (t) => {
+  const claiming = fixtureCase(t, {
+    answers: [
+      appAnswer(),
+      redeemedAnswer(),
+      personAnswer(),
+      reachedAnswer(ownAccount),
+      workerFoundAnswer(7),
+    ],
     granted: ["AdministerTenant"],
+    authorizing: true,
   });
-  const served = await plain.app.inject({
-    method: "POST",
+  let served: Awaited<ReturnType<typeof claiming.app.inject>> | undefined;
+  const streams = await streamsDuring(async () => {
+    served = await claiming.app.inject({
+      method: "POST",
+      url: authorizationsRoot,
+      headers: versioned,
+      payload: authorizing,
+    });
+  });
+  assert.equal(served?.statusCode, 200);
+  assert.deepEqual(served.json(), {
+    accounts: [
+      {
+        account: "geoff",
+        accountKind: "User",
+        proof: "Proven",
+        apps: [
+          { app: "portal", claim: "Claimed" },
+          { app: "worker", claim: "Claimed" },
+        ],
+      },
+    ],
+    truncated: false,
+  });
+  assert.deepEqual(
+    claiming.store.recordedClaims.map((claim) => [
+      claim.tenant,
+      claim.app,
+      claim.account,
+      claim.installationId,
+    ]),
+    [
+      [tenant, app, "geoff", "8001"],
+      [tenant, worker, "geoff", "9001"],
+    ],
+  );
+  assert.equal(
+    claiming.recorder.calls.at(-1)?.url,
+    `${fixtureApiUrl}/users/geoff/installation`,
+  );
+  assertTokenContained(claiming, served.body, streams);
+  const listed = await claiming.app.inject({
     url: installationsRoot,
-    headers: { ...authorized, "content-type": "application/json" },
-    payload: { forge: "github", app: "portal", installationId },
+    headers: authorized,
   });
-  assert.equal(served.statusCode, 415);
-  assert.deepEqual(plain.recorder.calls, []);
+  assert.deepEqual(
+    listed
+      .json<{ installations: { app: string }[] }>()
+      .installations.map((row) => row.app),
+    [app, worker],
+  );
+});
+
+test("an organization is claimed for its active owner, and nothing for a member", async (t) => {
+  const claiming = fixtureCase(t, {
+    answers: [
+      appAnswer(),
+      redeemedAnswer(),
+      personAnswer(),
+      reachedAnswer(
+        { login: "acme", id: 500, type: "Organization" },
+        { login: "globex", id: 600, type: "Organization" },
+      ),
+      answer(200, {
+        state: "active",
+        role: "admin",
+        organization: { id: 500 },
+      }),
+      answer(200, {
+        state: "active",
+        role: "member",
+        organization: { id: 600 },
+      }),
+      answer(404, { message: "Not Found" }),
+    ],
+    granted: ["AdministerTenant"],
+    authorizing: true,
+  });
+  const served = await claiming.app.inject({
+    method: "POST",
+    url: authorizationsRoot,
+    headers: versioned,
+    payload: authorizing,
+  });
+  assert.equal(served.statusCode, 200);
+  assert.deepEqual(served.json(), {
+    accounts: [
+      {
+        account: "acme",
+        accountKind: "Organization",
+        proof: "Proven",
+        apps: [
+          { app: "portal", claim: "Claimed" },
+          { app: "worker", claim: "Missing" },
+        ],
+      },
+      {
+        account: "globex",
+        accountKind: "Organization",
+        proof: "NotOwner",
+        apps: [],
+      },
+    ],
+    truncated: false,
+  });
+  assert.deepEqual(
+    claiming.store.recordedClaims.map((claim) => [claim.app, claim.account]),
+    [[app, "acme"]],
+  );
+});
+
+test("an installation on another person's account is not claimed", async (t) => {
+  const refusing = fixtureCase(t, {
+    answers: [
+      appAnswer(),
+      redeemedAnswer(),
+      personAnswer(),
+      reachedAnswer({ login: "someone", id: 8, type: "User" }),
+    ],
+    granted: ["AdministerTenant"],
+    authorizing: true,
+  });
+  const served = await refusing.app.inject({
+    method: "POST",
+    url: authorizationsRoot,
+    headers: versioned,
+    payload: authorizing,
+  });
+  assert.equal(served.statusCode, 200);
+  assert.deepEqual(served.json(), {
+    accounts: [
+      { account: "someone", accountKind: "User", proof: "NotOwner", apps: [] },
+    ],
+    truncated: false,
+  });
+  assert.deepEqual(refusing.store.recordedClaims, []);
+  assert.equal(refusing.recorder.calls.length, 4);
+});
+
+test("two tenants each claim the account a person proves in each", async (t) => {
+  const other = asTenantId("globex");
+  const proving = () => [
+    redeemedAnswer(),
+    personAnswer(),
+    reachedAnswer(ownAccount),
+    workerFoundAnswer(7),
+  ];
+  const both = fixtureCase(t, {
+    answers: [appAnswer(), ...proving(), ...proving()],
+    granted: ["AdministerTenant"],
+    tenants: [tenant, other],
+    authorizing: true,
+  });
+  for (const claimedFor of [tenant, other]) {
+    const served = await both.app.inject({
+      method: "POST",
+      url: `/api/v1/tenants/${claimedFor}/forge-authorizations`,
+      headers: versioned,
+      payload: authorizing,
+    });
+    assert.equal(served.statusCode, 200, claimedFor);
+  }
+  assert.deepEqual(
+    both.store.recordedClaims.map((claim) => [claim.tenant, claim.app]),
+    [
+      [tenant, app],
+      [tenant, worker],
+      [other, app],
+      [other, worker],
+    ],
+  );
+});
+
+test("a code the forge will not redeem is refused without the forge's words", async (t) => {
+  const refused = fixtureCase(t, {
+    answers: [
+      appAnswer(),
+      answer(200, {
+        error: "bad_verification_code",
+        error_description: forgeRefusalWords,
+      }),
+    ],
+    granted: ["AdministerTenant"],
+    authorizing: true,
+  });
+  const served = await refused.app.inject({
+    method: "POST",
+    url: authorizationsRoot,
+    headers: versioned,
+    payload: authorizing,
+  });
+  assert.equal(served.statusCode, 422);
+  assert.equal(
+    served.json<HttpErrorEnvelope>().error.code,
+    "AuthorizationRefused",
+  );
+  assert.equal(served.body.includes("sentinel-refusal"), false);
+  assert.deepEqual(refused.store.recordedClaims, []);
+});
+
+test("a forge that cannot redeem an authorization is a wait", async (t) => {
+  const down = fixtureCase(t, {
+    answers: [appAnswer(), answer(503, {})],
+    granted: ["AdministerTenant"],
+    authorizing: true,
+  });
+  const served = await down.app.inject({
+    method: "POST",
+    url: authorizationsRoot,
+    headers: versioned,
+    payload: authorizing,
+  });
+  assert.equal(served.statusCode, 503);
+  assert.equal(typeof served.headers["retry-after"], "string");
+  assert.equal(served.json<HttpErrorEnvelope>().error.code, "ForgeUnavailable");
+});
+
+test("an authorization unversioned or malformed is refused before it reaches the forge", async (t) => {
+  const refusing = fixtureCase(t, {
+    answers: [appAnswer(), redeemedAnswer()],
+    granted: ["AdministerTenant"],
+    authorizing: true,
+  });
+  const plain = await refusing.app.inject({
+    method: "POST",
+    url: authorizationsRoot,
+    headers: { ...authorized, "content-type": "application/json" },
+    payload: authorizing,
+  });
+  assert.equal(plain.statusCode, 415);
+  for (const payload of [
+    { ...authorizing, codeVerifier: "short" },
+    { ...authorizing, account: "acme" },
+    { ...authorizing, forge: "gitlab" },
+  ]) {
+    const malformed = await refusing.app.inject({
+      method: "POST",
+      url: authorizationsRoot,
+      headers: versioned,
+      payload,
+    });
+    assert.equal(malformed.statusCode, 400, JSON.stringify(payload));
+  }
+  assert.deepEqual(refusing.recorder.calls, []);
 });
 
 test("an authority that cannot answer is a wait at every onboarding route", async (t) => {
@@ -947,9 +1227,9 @@ const unauthenticatedRequests = [
   { method: "GET" as const, url: installationsRoot },
   {
     method: "POST" as const,
-    url: installationsRoot,
+    url: authorizationsRoot,
     headers: { "content-type": nativeHttpMediaType },
-    payload: { forge: "github", app: "portal", installationId },
+    payload: authorizing,
   },
   {
     method: "GET" as const,
@@ -994,8 +1274,9 @@ const unauthenticatedRequests = [
 
 test("every route this slice adds answers an unauthenticated caller with 401", async (t) => {
   const served = fixtureCase(t, {
-    answers: [appAnswer(), installationAnswer(), repositoriesAnswer()],
+    answers: [appAnswer(), repositoriesAnswer()],
     granted: ["AdministerTenant", "Administer", "Read"],
+    authorizing: true,
   });
   for (const request of unauthenticatedRequests) {
     const refused = await served.app.inject(request);

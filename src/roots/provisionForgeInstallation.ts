@@ -2,10 +2,10 @@
  * The administrative command that records which tenant claimed a forge app on
  * an account.
  *
- * IT CONNECTS AS THE BOUNDARY OWNER. The claim door is the owner's alone in
- * this slice, so an operator runs this against the owner's URL; no route holds
- * `EXECUTE` on it, which is what keeps an account from being claimed by
- * anything but a deliberate act.
+ * IT CONNECTS AS THE BOUNDARY OWNER, and nothing proves the account is the
+ * tenant's but the operator running it: the route that claims over the API
+ * claims only what a person's own authorization proves they own, and this
+ * command is for a tenant with no administrator to authorize.
  *
  * THE ISSUER VARIABLE IS THE SERVER'S OWN, for the reason
  * `provisionProjectAccess.ts` names: the audited authority is derived by the
@@ -13,8 +13,8 @@
  *
  * IT IS REPLAYABLE AND IT NEVER TAKES AN ACCOUNT AWAY. Running it twice on the
  * same claim reports `AlreadyRecorded`, a reinstall moves the claim onto the
- * new installation, and an account another tenant holds is reported rather than
- * taken — every one of them an outcome the door answers with.
+ * new installation, and another tenant's claim on the same account is its own
+ * row and is left as it stands.
  */
 
 import { postgresPool } from "../adapters/postgres/pool.ts";
@@ -80,7 +80,6 @@ async function main(): Promise<void> {
     const recorded =
       await postgresForgeInstallationRecording(pool).record(claim);
     process.stdout.write(`${recorded} ${provisionClaimText(claim)}\n`);
-    if (recorded === "ClaimedElsewhere") process.exitCode = 1;
   } finally {
     await pool.end();
   }

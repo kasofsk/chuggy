@@ -28,75 +28,35 @@ import {
   settled,
 } from "./screenHarness.tsx";
 import { leadPartition } from "./leadFixture.ts";
+import { forgeAuthorizeTransactionKey } from "../app/core/forgeAuthorization.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
+
+const redirects = vi.hoisted((): string[] => []);
 
 vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof BrowserPorts>()),
   sleepMs: () => Promise.resolve(),
+  redirect: (url: string) => {
+    redirects.push(url);
+  },
 }));
 
-/**
- * The address, as a router actually behaves: navigating rewrites the search
- * and the subscribers are told, so a page that reads the search live redraws
- * without it.
- *
- * A DOUBLE THAT LEFT THE SEARCH STANDING WOULD HIDE THE GUARD UNDER TEST: the
- * outcome word is taken once precisely so it survives the clearing, and a
- * search that never changed would make taking it and reading it live look the
- * same.
- */
-const routed = vi.hoisted(() => {
-  const listeners = new Set<() => void>();
-  const went: unknown[] = [];
-  let search: { readonly connected: string | undefined } = {
-    connected: undefined,
-  };
-  const settle = (next: string | undefined): void => {
-    search = { connected: next };
-    for (const listener of listeners) listener();
-  };
-  return {
-    went,
-    reset: (next: string | undefined): void => {
-      went.length = 0;
-      listeners.clear();
-      search = { connected: next };
-    },
-    snapshot: () => search,
-    subscribe: (listener: () => void): (() => void) => {
-      listeners.add(listener);
-      return () => {
-        listeners.delete(listener);
-      };
-    },
-    navigate: (to: unknown): Promise<void> => {
-      went.push(to);
-      settle(undefined);
-      return Promise.resolve();
-    },
-  };
-});
-
-vi.mock("@tanstack/react-router", async () => {
-  const { useSyncExternalStore } = await import("react");
-  return {
-    createLink: (component: unknown) => component,
-    Link: (props: { readonly to?: string; readonly children?: ReactNode }) => (
-      <a href={props.to ?? "/"}>{props.children}</a>
-    ),
-    useParams: () => ({ ...leadPartition }),
-    useSearch: () => useSyncExternalStore(routed.subscribe, routed.snapshot),
-    useNavigate: () => routed.navigate,
-  };
-});
+vi.mock("@tanstack/react-router", () => ({
+  createLink: (component: unknown) => component,
+  Link: (props: { readonly to?: string; readonly children?: ReactNode }) => (
+    <a href={props.to ?? "/"}>{props.children}</a>
+  ),
+  useParams: () => ({ ...leadPartition }),
+}));
 // jscpd:ignore-end -- the case's own doubles resume here
 
 beforeEach(() => {
-  routed.reset(undefined);
+  redirects.length = 0;
 });
 
 afterEach(() => {
   cleanup();
+  sessionStorage.clear();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
@@ -233,6 +193,8 @@ interface Drawing {
   readonly granting?: (url: string) => Response;
   /** The bindings this project holds, where a case is about how one is drawn. */
   readonly bound?: unknown;
+  /** What this deployment answers about its apps. */
+  readonly described?: unknown;
 }
 
 async function drawPage(drawing: Drawing = {}): Promise<readonly Sent[]> {
@@ -240,6 +202,7 @@ async function drawPage(drawing: Drawing = {}): Promise<readonly Sent[]> {
   const posted = drawing.posted ?? deferred;
   const granting = drawing.granting ?? ((url) => answer(grantedBy(url)));
   const bound: unknown = drawing.bound ?? bindings;
+  const described: unknown = drawing.described ?? { apps: [] };
   const sent: Sent[] = [];
   const fetching = ((url: string, init?: Init) => {
     sent.push({
@@ -249,6 +212,8 @@ async function drawPage(drawing: Drawing = {}): Promise<readonly Sent[]> {
       body: init?.body === undefined ? undefined : JSON.parse(init.body),
     });
     if (init?.method === "POST") return Promise.resolve(posted(url));
+    if (url.endsWith("/forge/github"))
+      return Promise.resolve(answer(described));
     if (url.includes("/forge-installations/"))
       return Promise.resolve(granting(url));
     if (url.includes("/forge-installations"))
@@ -438,19 +403,30 @@ test("a tenant holding no portal claim cannot open the picker", async () => {
   ).toBe(true);
 });
 
-test("the landing's word is drawn once, and the address it came on is cleared", async () => {
-  routed.reset("Connected");
+test("connecting is offered only where this deployment answers a client to authorize", async () => {
   await drawPage();
-  expect(screen.getAllByText("Connected")).toHaveLength(1);
-  expect(routed.went).toStrictEqual([
-    { search: { connected: undefined }, replace: true },
-  ]);
+  expect(
+    screen.getByRole<HTMLButtonElement>("button", { name: "Connect GitHub" })
+      .disabled,
+  ).toBe(true);
 });
 
-test("an address carrying no outcome draws no line and clears nothing", async () => {
-  await drawPage();
-  expect(screen.queryByText("Connected")).toBeNull();
-  expect(routed.went).toStrictEqual([]);
+test("connecting stores this tab's transaction and sends the person to authorize", async () => {
+  const client = {
+    clientId: "Iv1.portal",
+    authorizeUrl: "https://forge.test/login/oauth/authorize",
+  };
+  await drawPage({ described: { apps: [], authorization: client } });
+  fireEvent.click(screen.getByRole("button", { name: "Connect GitHub" }));
+  await settled();
+  expect(redirects).toHaveLength(1);
+  const url = new URL(redirects[0] ?? "");
+  expect(url.searchParams.get("client_id")).toBe(client.clientId);
+  const stored = JSON.parse(
+    sessionStorage.getItem(forgeAuthorizeTransactionKey) ?? "{}",
+  ) as Record<string, unknown>;
+  expect(stored["state"]).toBe(url.searchParams.get("state"));
+  expect(stored).toMatchObject({ ...leadPartition });
 });
 
 function statusesOf(): readonly (string | null)[] {

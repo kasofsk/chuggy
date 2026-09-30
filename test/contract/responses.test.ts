@@ -21,7 +21,7 @@ import {
   executionResponse,
   executionsResponse,
   forgeAppsResponse,
-  forgeInstallationClaimResponse,
+  forgeAuthorizationResponse,
   forgeInstallationsResponse,
   forgeRepositoriesResponse,
   inventoryResponse,
@@ -58,7 +58,7 @@ import {
   executionResponseSchema,
   executionsResponseSchema,
   forgeAppsResponseSchema,
-  forgeInstallationClaimedSchema,
+  forgeAuthorizationResponseSchema,
   forgeInstallationsResponseSchema,
   forgeRepositoriesResponseSchema,
   notificationsResponseSchema,
@@ -1583,7 +1583,7 @@ const onboardingRepository = asRepositoryId(
   "https://github.com/kasofsk/chuggy.git",
 );
 
-/** One installation as the claim route names it, which the listing dates as well. */
+/** One installation as a claim names it, which the listing dates. */
 const onboardingClaim = {
   forge: onboardingForge,
   app: onboardingApp,
@@ -1593,36 +1593,97 @@ const onboardingClaim = {
 };
 
 test("what onboarding answers about a forge parses as the contract names it", () => {
-  const apps = forgeAppsResponseSchema.parse(
-    forgeAppsResponse({
-      result: "Apps",
-      apps: [
-        {
-          app: onboardingApp,
-          id: "4708055",
-          slug: "chuggy-portal",
-          installUrl: "https://github.com/apps/chuggy-portal/installations/new",
-        },
-      ],
-    }).body,
-  );
-  assert.deepEqual(apps.apps[0], {
-    app: "portal",
+  const described = {
+    app: onboardingApp,
     id: "4708055",
     slug: "chuggy-portal",
     installUrl: "https://github.com/apps/chuggy-portal/installations/new",
+    clientId: "Iv1.portal",
+    authorizeUrl: "https://github.com/login/oauth/authorize",
+  };
+  const apps = forgeAppsResponseSchema.parse(
+    forgeAppsResponse({ result: "Apps", apps: [described] }).body,
+  );
+  assert.deepEqual(apps, {
+    apps: [
+      {
+        app: "portal",
+        id: "4708055",
+        slug: "chuggy-portal",
+        installUrl: "https://github.com/apps/chuggy-portal/installations/new",
+      },
+    ],
   });
-  for (const result of ["Claimed", "AlreadyClaimed"] as const)
-    assert.deepEqual(
-      forgeInstallationClaimedSchema.parse(
-        forgeInstallationClaimResponse(partition.tenant, {
-          result,
-          installation: onboardingClaim,
-        }).body,
-      ),
-      { ...onboardingClaim, installationId: "4242" },
-      result,
-    );
+  const redeeming = forgeAppsResponseSchema.parse(
+    forgeAppsResponse({
+      result: "Apps",
+      apps: [described],
+      authorization: {
+        clientId: described.clientId,
+        authorizeUrl: described.authorizeUrl,
+      },
+    }).body,
+  );
+  assert.deepEqual(redeeming.authorization, {
+    clientId: "Iv1.portal",
+    authorizeUrl: "https://github.com/login/oauth/authorize",
+  });
+});
+
+test("what an authorization answers names each account, its proof, and each app's claim", () => {
+  const answered = forgeAuthorizationResponse({
+    result: "Authorized",
+    accounts: [
+      {
+        account: asForgeAccount("kasofsk"),
+        accountKind: "Organization",
+        proof: "Proven",
+        apps: [
+          { app: onboardingApp, claim: "Claimed" },
+          { app: asForgeApp("worker"), claim: "Missing" },
+        ],
+      },
+      {
+        account: asForgeAccount("globex"),
+        accountKind: "Organization",
+        proof: "NotOwner",
+        apps: [],
+      },
+    ],
+    truncated: false,
+  });
+  assert.equal(answered.status, 200);
+  assert.deepEqual(forgeAuthorizationResponseSchema.parse(answered.body), {
+    accounts: [
+      {
+        account: "kasofsk",
+        accountKind: "Organization",
+        proof: "Proven",
+        apps: [
+          { app: "portal", claim: "Claimed" },
+          { app: "worker", claim: "Missing" },
+        ],
+      },
+      {
+        account: "globex",
+        accountKind: "Organization",
+        proof: "NotOwner",
+        apps: [],
+      },
+    ],
+    truncated: false,
+  });
+  const refused = forgeAuthorizationResponse({ result: "Refused" });
+  assert.equal(refused.status, 422);
+  assert.equal(
+    errorEnvelopeSchema.parse(refused.body).error.code,
+    "AuthorizationRefused",
+  );
+  assert.equal(forgeAuthorizationResponse({ result: "NotFound" }).status, 404);
+  assert.equal(
+    forgeAuthorizationResponse({ result: "Unavailable" }).status,
+    503,
+  );
 });
 
 test("a tenant's installations and what one grants say whether they are all of it", () => {

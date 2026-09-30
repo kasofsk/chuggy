@@ -81,7 +81,7 @@ import { ProjectAccessUnavailable } from "../../interpreter/projectAccess.ts";
 import type { ForgeCredentialMinted } from "../../interpreter/forgeCredentials.ts";
 import type {
   ForgeAppsResult,
-  ForgeInstallationClaimResult,
+  ForgeAuthorizationResult,
   ForgeInstallationsResult,
   ForgeRepositoriesResult,
   ProjectRepositoriesResult,
@@ -90,7 +90,7 @@ import type {
   ProjectRepositoryLandingResult,
   ProjectRepositoryRetirementResult,
 } from "../../interpreter/repositoryOnboarding.ts";
-import type { Partition, TenantId } from "../../interpreter/projectStore.ts";
+import type { Partition } from "../../interpreter/projectStore.ts";
 import type { DraftBrief } from "../../interpreter/ticketBrief.ts";
 import type { RepositoryConfigurationImportOutcome } from "../../interpreter/repositoryConfiguration.ts";
 import { nativeHttpError, nativeHttpMediaType } from "../../contract/http.ts";
@@ -847,20 +847,6 @@ export function workerPoolRedemptionResponse(
   }
 }
 
-/** The path one tenant-scoped resource is addressed by, beside `resourcePath`'s. */
-function tenantResourcePath(
-  tenant: TenantId,
-  collection: string,
-  identity: string,
-): string {
-  return [
-    "/api/v1/tenants",
-    encodeURIComponent(tenant),
-    collection,
-    encodeURIComponent(identity),
-  ].join("/");
-}
-
 /** A resource that is not found, which every refused permit in this file answers with. */
 function notFound(): NativeHttpResponse {
   return response(404, nativeHttpError("NotFound", "Resource not found."));
@@ -885,7 +871,22 @@ function forgeNotConfigured(): NativeHttpResponse {
 export function forgeAppsResponse(result: ForgeAppsResult): NativeHttpResponse {
   switch (result.result) {
     case "Apps":
-      return response(200, { apps: result.apps });
+      return response(200, {
+        apps: result.apps.map((app) => ({
+          app: app.app,
+          id: app.id,
+          slug: app.slug,
+          installUrl: app.installUrl,
+        })),
+        ...(result.authorization === undefined
+          ? {}
+          : {
+              authorization: {
+                clientId: result.authorization.clientId,
+                authorizeUrl: result.authorization.authorizeUrl,
+              },
+            }),
+      });
     case "NotConfigured":
       return forgeNotConfigured();
     case "Unavailable":
@@ -896,39 +897,30 @@ export function forgeAppsResponse(result: ForgeAppsResult): NativeHttpResponse {
 }
 
 /**
- * A claim. The first one is created at its own address; a claim of the same
- * installation replays as it stands; an account another tenant holds is a
- * conflict, because the claim exists and is not this caller's to move.
+ * One person's authorization redeemed for a tenant. A code the forge would not
+ * redeem is refused as the caller's, because only the caller can begin another;
+ * what the forge said about why is not passed on.
  */
-export function forgeInstallationClaimResponse(
-  tenant: TenantId,
-  result: ForgeInstallationClaimResult,
+export function forgeAuthorizationResponse(
+  result: ForgeAuthorizationResult,
 ): NativeHttpResponse {
   switch (result.result) {
-    case "Claimed":
-      return response(201, result.installation, {
-        location: tenantResourcePath(
-          tenant,
-          "forge-installations",
-          result.installation.installationId,
-        ),
+    case "Authorized":
+      return response(200, {
+        accounts: result.accounts.map((account) => ({
+          account: account.account,
+          accountKind: account.accountKind,
+          proof: account.proof,
+          apps: account.apps.map((app) => ({ app: app.app, claim: app.claim })),
+        })),
+        truncated: result.truncated,
       });
-    case "AlreadyClaimed":
-      return response(200, result.installation);
-    case "ClaimedElsewhere":
+    case "Refused":
       return response(
-        409,
+        422,
         nativeHttpError(
-          "InstallationClaimed",
-          "The installation is claimed by another tenant.",
-        ),
-      );
-    case "InstallationUnknown":
-      return response(
-        404,
-        nativeHttpError(
-          "InstallationUnknown",
-          "The installation is not one of this app's.",
+          "AuthorizationRefused",
+          "The forge did not accept the authorization.",
         ),
       );
     case "NotConfigured":

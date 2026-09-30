@@ -38,7 +38,6 @@ export const allForgeInstallationRecorded = [
   "Recorded",
   "AlreadyRecorded",
   "Reinstalled",
-  "ClaimedElsewhere",
 ] as const;
 
 export type ForgeInstallationRecorded =
