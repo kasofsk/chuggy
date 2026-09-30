@@ -29,7 +29,7 @@ import { asPrincipal } from "../../src/interpreter/principal.ts";
 import {
   asProjectId,
   asTenantId,
-  type TenantId,
+  type Partition,
 } from "../../src/interpreter/projectStore.ts";
 import { memoryProjectAccess } from "../postgres/projectAccessMemory.ts";
 
@@ -56,14 +56,14 @@ function creationWith(
   const writes: ProjectCreationWrite[] = [];
   const grants: ProjectGrant[] = [];
   const recorded: OperationId[] = [];
-  const asked: string[] = [];
+  const asked: Partition[] = [];
   const claims = {
     broken: false,
-    claimed: (tenant: TenantId) => {
-      asked.push(tenant);
+    claimed: (asking: Partition) => {
+      asked.push(asking);
       if (claims.broken)
         return Promise.reject(new ProjectAccessUnavailable("keto down"));
-      return Promise.resolve(options.claimed?.includes(tenant) === true);
+      return Promise.resolve(options.claimed?.includes(asking.tenant) === true);
     },
   };
   const service = projectCreation({
@@ -160,7 +160,7 @@ test("a refused name asks neither the authority nor the door", async () => {
   assert.deepEqual(grants, []);
 });
 
-test("the door is told the caller administers the tenant, or else whether any tuple names it", async () => {
+test("the door is told the caller administers the tenant, or else whether any tuple holds it", async () => {
   const administering = creationWith(created, {
     claimed: [partition.tenant],
   });
@@ -175,7 +175,7 @@ test("the door is told the caller administers the tenant, or else whether any tu
   const claimed = creationWith(created, { claimed: [partition.tenant] });
   await claimed.service.create(principal, request);
   assert.equal(claimed.writes[0]?.standing, "Claimed");
-  assert.deepEqual(claimed.asked, [partition.tenant]);
+  assert.deepEqual(claimed.asked, [partition]);
   const unclaimed = creationWith(created);
   await unclaimed.service.create(principal, request);
   assert.equal(unclaimed.writes[0]?.standing, "Unclaimed");

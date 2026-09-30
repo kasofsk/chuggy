@@ -2,7 +2,7 @@
  * What creating a project grants, asked of the authority the API authorizes
  * with: the creator of a new tenant reaches every kind on the project and
  * administers the tenant, a project added later is reached through the tenant
- * alone, a tenant any tuple names is nobody else's to make, and a repeat by the
+ * alone, a tenant tuples hold is nobody else's to make, and a repeat by the
  * creator writes the grants only until the door records them.
  */
 
@@ -24,6 +24,7 @@ import {
   type TenantStanding,
 } from "../../src/interpreter/projectCreation.ts";
 import {
+  projectPrincipalGrant,
   projectTenantGrant,
   tenantAdministratorGrant,
 } from "../../src/interpreter/projectGrant.ts";
@@ -198,6 +199,36 @@ test("a tenant a project already names as its tenant is not a stranger's to make
   );
   assert.equal((await service.create(mallory, request)).result, "TenantTaken");
   assert.equal(await administers(mallory, request), false);
+});
+
+test("a project an operator granted a person on, with no link to its tenant, holds the tenant against a stranger creating it", async () => {
+  for (const relation of ["developers", "admins"]) {
+    const bob = `bob-${randomUUID()}`;
+    const mallory = oidcPrincipal(ketoHarnessIssuer, `mallory-${randomUUID()}`);
+    const request = namedCreation(relation);
+    await grants.write(
+      projectPrincipalGrant({
+        issuer: ketoHarnessIssuer,
+        subject: bob,
+        tenant: request.tenant,
+        project: request.project,
+        relation,
+      }),
+    );
+    const before = await held(oidcPrincipal(ketoHarnessIssuer, bob), request);
+    assert.equal(
+      (await service.create(mallory, request)).result,
+      "TenantTaken",
+      relation,
+    );
+    assert.equal(await administers(mallory, request), false, relation);
+    assert.deepEqual(await held(mallory, request), [], relation);
+    assert.deepEqual(
+      await held(oidcPrincipal(ketoHarnessIssuer, bob), request),
+      before,
+      relation,
+    );
+  }
 });
 
 test("a creator whose grants never landed is answered its own tenant under a new identity, and granted it", async () => {

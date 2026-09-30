@@ -52,19 +52,31 @@ into the permits a route asks for: `admins`, `developers`, `dispatchers`,
 `agents` and `pools` are the project's, and `admins`, `members` and
 `hosted_execution` are the tenant's. A grant with `CHUG_PROVISION_PROJECT` absent is a tenant grant,
 and one whose relation is `tenant` names the tenant the project inherits from
-rather than a person — the one arm that reads no issuer or subject.
+rather than a person — the one arm that reads no issuer or subject. A person's
+project grant writes that `tenant` link beside it, so the tenant's
+administrators administer the project, as they do every project the API
+creates.
 
-A grant is a PUT and writes one tuple, so re-running it changes nothing and
-granting a second relation adds to what the principal holds rather than
-replacing it. Narrowing access is a revocation of the relation to be taken
+A grant is a PUT, so re-running it changes nothing and granting a second
+relation adds to what the principal holds rather than replacing it. Narrowing access is a revocation of the relation to be taken
 back.
 
 **The project need not exist.** A tuple names an object rather than referencing
 a row, so access written before the project is created starts answering when
 the project does — which is what lets an operator write every member's access
-before the release that reads it. A tenant any tuple names is taken, so the
-creation route gives it only to a principal that administers it, never to
-whoever asks first.
+before the release that reads it.
+
+**Tuples hold a tenant.** The creation route gives a tenant only to a principal
+that administers it once anything holds it: its row, a tuple on the tenant, a
+project whose `tenant` it is, or a tuple on the project being created. A
+project granted to a person before the command wrote the link holds its tenant
+only for itself, so give each such project its link once:
+
+```sh
+CHUG_PROVISION_TENANT="tenant" CHUG_PROVISION_PROJECT="project" \
+  CHUG_PROVISION_RELATION=tenant CHUG_PROVISION_ACTION=grant \
+  npm run provision:project-access
+```
 
 ### Reversing it
 
@@ -73,4 +85,5 @@ CHUG_PROVISION_ACTION=revoke npm run provision:project-access
 ```
 
 One relation, taken back. A revocation names the same tuple as the grant and
-is idempotent: a tuple that was never there is not an error.
+is idempotent: a tuple that was never there is not an error. Revoking a
+person's project grant leaves the project's `tenant` link.

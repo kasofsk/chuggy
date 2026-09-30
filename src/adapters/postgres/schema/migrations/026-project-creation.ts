@@ -18,7 +18,7 @@ const grantsSignature = `public.${projectCreationGrantsFunction}(in_operation te
  *
  * THE CALLER'S STANDING IS THE AUTHORITY'S, AND THE ROW IS THE DOOR'S. The
  * caller says whether it administers the tenant, and otherwise whether any
- * tuple names it; a tenant some tuple names is taken even with no row, and a
+ * tuple holds it; a tenant a tuple holds is taken even with no row, and a
  * reserved name is refused only for a tenant that is new on both counts.
  *
  * WHO CREATED A TENANT IS THE OPERATION THAT DID. The operation row records

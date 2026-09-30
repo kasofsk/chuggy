@@ -2,16 +2,17 @@
  * A signed-in principal creating a project: the service the API's creation
  * route answers from.
  *
- * A TENANT NAME IS FIRST-COME. Any principal may create a tenant that neither a
- * row nor any tuple names, and becomes its administrator; a tenant that stands
- * takes a project only from a principal the authority says administers it, and
- * anyone else is told the name is taken rather than that it was not found,
- * because a tenant name is not a secret. A tuple counts as standing because an
- * operator may grant a tenant before its rows exist, and a wiped database
- * leaves tuples behind. The door decides the race between two creators of one
- * new tenant, so the loser is `TenantTaken` and never a project in the winner's
- * tenant, and it refuses a name another path begins with only for a tenant
- * that is new.
+ * A TENANT NAME IS FIRST-COME. A tenant is held by its row, by any tuple on its
+ * own object, by any project whose `tenant` it is, and by any tuple on the
+ * object of the project being created. Any principal may create a tenant
+ * nothing holds and becomes its administrator; a held tenant takes a project
+ * only from a principal the authority says administers it, and anyone else is
+ * told the name is taken rather than that it was not found, because a tenant
+ * name is not a secret. Tuples hold it because an operator may grant access
+ * before any row exists, and a wiped database leaves tuples behind. The door
+ * decides the race between two creators of one new tenant, so the loser is
+ * `TenantTaken` and never a project in the winner's tenant, and it refuses a
+ * name another path begins with only for a tenant that is new.
  *
  * ACCESS IS WRITTEN AFTER THE ROW COMMITS, AND A REPEAT WRITES IT AGAIN UNTIL
  * THE WRITES ARE RECORDED. Both grants are idempotent, so an authority that
@@ -31,12 +32,7 @@ import {
   type ProjectGrantWriter,
 } from "./projectGrant.ts";
 import type { Principal } from "./principal.ts";
-import {
-  asProjectId,
-  asTenantId,
-  type Partition,
-  type TenantId,
-} from "./projectStore.ts";
+import { asProjectId, asTenantId, type Partition } from "./projectStore.ts";
 
 /** One creation as the wire names it, before either name is held to the rule. */
 export interface ProjectCreationRequest {
@@ -69,7 +65,7 @@ export interface ProjectCreationAnswer {
   readonly operation: OperationId;
 }
 
-/** Whether the caller administers the tenant, and otherwise whether any tuple names it. */
+/** Whether the caller administers the tenant, and otherwise whether any tuple holds it. */
 export type TenantStanding = "Administers" | "Claimed" | "Unclaimed";
 
 /** One creation as the door takes it, with what the authority says of the tenant. */
@@ -81,9 +77,9 @@ export interface ProjectCreationWrite {
   readonly authority: Authority;
 }
 
-/** Whether any tuple names a tenant: as the object of a relation, or as the tenant a project inherits from. */
+/** Whether any tuple holds a creation's tenant: on the tenant's object, as the tenant a project inherits from, or on the requested project's object. */
 export interface TenantClaims {
-  claimed(tenant: TenantId): Promise<boolean>;
+  claimed(partition: Partition): Promise<boolean>;
 }
 
 /** The durable side: the tenant, the project and the operation in one transaction, and later the record that its grants were written. */
@@ -150,9 +146,7 @@ async function projectCreationStanding(
     "AdministerTenant",
   );
   if (administers !== undefined) return "Administers";
-  return (await ports.claims.claimed(partition.tenant))
-    ? "Claimed"
-    : "Unclaimed";
+  return (await ports.claims.claimed(partition)) ? "Claimed" : "Unclaimed";
 }
 
 async function projectCreationCreate(

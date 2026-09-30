@@ -11,8 +11,10 @@ import { promisify } from "node:util";
 
 import { allProjectAccessKinds } from "../../src/interpreter/projectAccess.ts";
 import { oidcPrincipal } from "../../src/interpreter/principal.ts";
+import { asProjectId } from "../../src/interpreter/projectStore.ts";
 import {
   ketoHarnessAccess,
+  ketoHarnessClaims,
   ketoHarnessIssuer,
   ketoHarnessPartition,
   ketoHarnessWriteUrl,
@@ -104,6 +106,47 @@ test("a tenant grant and the project's tenant relation compose to project access
       undefined,
       kind,
     );
+});
+
+test("a person's project grant links the project to its tenant, which then holds the tenant for any project, and a revocation leaves the link", async () => {
+  const partition = ketoHarnessPartition("provision-link");
+  const person = {
+    CHUG_PROVISION_SUBJECT: "linked",
+    CHUG_PROVISION_TENANT: partition.tenant,
+    CHUG_PROVISION_PROJECT: partition.project,
+    CHUG_PROVISION_RELATION: "developers",
+  };
+  const elsewhere = { ...partition, project: asProjectId("elsewhere") };
+  const claims = ketoHarnessClaims();
+  assert.equal(await claims.claimed(elsewhere), false);
+  const granted = await provision({
+    ...person,
+    CHUG_PROVISION_ACTION: "grant",
+  });
+  assert.equal(granted.code, 0, granted.output);
+  assert.equal(await claims.claimed(elsewhere), true, granted.output);
+  const onTenant = await provision({
+    CHUG_PROVISION_ACTION: "grant",
+    CHUG_PROVISION_SUBJECT: "linked-admin",
+    CHUG_PROVISION_TENANT: partition.tenant,
+    CHUG_PROVISION_RELATION: "admins",
+  });
+  assert.equal(onTenant.code, 0, onTenant.output);
+  const tenantAdmin = oidcPrincipal(ketoHarnessIssuer, "linked-admin");
+  assert.notEqual(
+    await access.authorize(tenantAdmin, partition, "ManageProjectSelector"),
+    undefined,
+  );
+  const revoked = await provision({
+    ...person,
+    CHUG_PROVISION_ACTION: "revoke",
+  });
+  assert.equal(revoked.code, 0, revoked.output);
+  assert.notEqual(
+    await access.authorize(tenantAdmin, partition, "ManageProjectSelector"),
+    undefined,
+    revoked.output,
+  );
 });
 
 test("a project nothing created is granted access anyway", async () => {

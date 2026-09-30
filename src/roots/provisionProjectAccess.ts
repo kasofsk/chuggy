@@ -13,6 +13,11 @@
  * referencing a row, so a grant written before its project exists is one that
  * starts answering when the project does — which is what lets an operator
  * write every member's access before the release that reads it.
+ *
+ * A PERSON'S PROJECT GRANT LINKS THE PROJECT TO ITS TENANT. The link is written
+ * beside the grant because it is what holds the tenant against anyone creating
+ * it, for every project in it and not only the one granted. A revocation leaves
+ * the link, which is the project's rather than the person's.
  */
 
 import { ketoProjectGrants } from "../adapters/keto/projectGrants.ts";
@@ -59,30 +64,33 @@ function provisionAction(): "Grant" | "Revoke" {
 }
 
 /**
- * The tuple the variables name. A project is what decides which namespace the
- * relation is looked for in, and the project's own `tenant` relation is the one
- * arm naming no person.
+ * The tuples the variables name, with the project's `tenant` link beside a
+ * person's project grant. A project is what decides which namespace the
+ * relation is looked for in, and the link is the one arm naming no person.
  */
-function provisionGrant(): ProjectGrant {
+function provisionGrants(action: "Grant" | "Revoke"): readonly ProjectGrant[] {
   const tenant = requiredEnvironment(tenantVariable);
   const relation = requiredEnvironment(relationVariable);
   const project = optionalEnvironment(projectVariable);
   if (project === undefined)
-    return tenantPrincipalGrant({
-      issuer: requiredEnvironment(issuerVariable),
-      subject: requiredEnvironment(subjectVariable),
-      tenant,
-      relation,
-    });
-  if (relation === projectTenantRelation)
-    return projectTenantGrant({ tenant, project });
-  return projectPrincipalGrant({
+    return [
+      tenantPrincipalGrant({
+        issuer: requiredEnvironment(issuerVariable),
+        subject: requiredEnvironment(subjectVariable),
+        tenant,
+        relation,
+      }),
+    ];
+  const link = projectTenantGrant({ tenant, project });
+  if (relation === projectTenantRelation) return [link];
+  const granted = projectPrincipalGrant({
     issuer: requiredEnvironment(issuerVariable),
     subject: requiredEnvironment(subjectVariable),
     tenant,
     project,
     relation,
   });
+  return action === "Grant" ? [granted, link] : [granted];
 }
 
 /** What one tuple is reported as, naming the holder the authority will answer for. */
@@ -96,19 +104,21 @@ function provisionGrantText(grant: ProjectGrant): string {
 
 async function main(): Promise<void> {
   const action = provisionAction();
-  const grant = provisionGrant();
+  const named = provisionGrants(action);
   const grants = ketoProjectGrants(
     checkedProjectGrantSettings({
       writeUrl: requiredEnvironment(writeUrlVariable),
     }),
   );
-  if (action === "Grant") {
-    await grants.write(grant);
-    process.stdout.write(`granted ${provisionGrantText(grant)}\n`);
-    return;
+  for (const grant of named) {
+    if (action === "Grant") {
+      await grants.write(grant);
+      process.stdout.write(`granted ${provisionGrantText(grant)}\n`);
+    } else {
+      await grants.remove(grant);
+      process.stdout.write(`revoked ${provisionGrantText(grant)}\n`);
+    }
   }
-  await grants.remove(grant);
-  process.stdout.write(`revoked ${provisionGrantText(grant)}\n`);
 }
 
 await main().catch((failure: unknown) => {
