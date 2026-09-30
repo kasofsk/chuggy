@@ -29,10 +29,6 @@ import {
   bootstrapImageFault,
 } from "../../src/interpreter/bootstrapConfiguration.ts";
 import {
-  briefingLineCharsMax,
-  commandLinesMax,
-} from "../../src/contract/workerTask.ts";
-import {
   asGitObjectId,
   asGitRefName,
   asRepositoryId,
@@ -41,7 +37,6 @@ import {
   repositoryConfigurationImportReadiness,
   repositoryConfigurationRoot,
 } from "../../src/interpreter/repositoryConfiguration.ts";
-import { briefingLinesMax } from "../../src/interpreter/taskConfiguration.ts";
 import { asBriefCheckLine } from "../../src/interpreter/ticketBrief.ts";
 
 const repository = asRepositoryId("https://github.com/kasofsk/chuggy.git");
@@ -155,18 +150,30 @@ interface Filling {
   readonly lines: number;
 }
 
-/** The skeletons the worker is told, filled to `filling` and put to an import. */
-function declaredTo(filling: Filling) {
-  const canonical = bootstrapConfiguration({
-    repository,
-    defaultBranch,
-    image,
-  });
-  const readiness = releaseConfigurationReadiness(canonical);
+/** The instruction lines the bootstrap configuration's worker is told. */
+function toldLines(): readonly string[] {
+  const readiness = releaseConfigurationReadiness(
+    bootstrapConfiguration({ repository, defaultBranch, image }),
+  );
   assert.equal(readiness.readiness, "Ready");
   if (readiness.readiness !== "Ready") throw new Error("unreleasable");
   const work = readiness.configuration.work;
-  const told = ("instructions" in work ? work.instructions : undefined) ?? [];
+  return ("instructions" in work ? work.instructions : undefined) ?? [];
+}
+
+/** The one number the told lines put where `pattern`'s group is. */
+function toldBound(pattern: RegExp): number {
+  const found = toldLines().flatMap((line) => {
+    const match = pattern.exec(line);
+    return match?.[1] === undefined ? [] : [Number(match[1])];
+  });
+  assert.equal(found.length, 1, String(pattern));
+  return found[0] ?? Number.NaN;
+}
+
+/** The skeletons the worker is told, filled to `filling` and put to an import. */
+function declaredTo(filling: Filling) {
+  const told = toldLines();
   const [envelope, configuration, ...stages] = told.flatMap(skeletons);
   assert.ok(envelope !== undefined && configuration !== undefined);
   assert.equal(stages.length, 2);
@@ -202,10 +209,11 @@ function declaredTo(filling: Filling) {
   });
 }
 
+/** Each list and line filled to the most its worker is told it may hold. */
 const atEveryBound: Filling = {
-  sentences: briefingLinesMax,
-  sentenceChars: briefingLineCharsMax,
-  lines: commandLinesMax,
+  sentences: toldBound(/each S a list of at most (\d+) sentences/u),
+  sentenceChars: toldBound(/one line of 1 to (\d+) characters/u),
+  lines: toldBound(/runs from 1 to (\d+) shell lines/u),
 };
 
 test("a declaration written to the shape its worker is told, at every bound it is told, imports and commands its checks", () => {
@@ -224,12 +232,16 @@ test("a declaration written to the shape its worker is told, at every bound it i
 
 test("one past any bound its worker is told is refused for that bound", () => {
   for (const [past, fault] of [
-    [{ ...atEveryBound, sentences: briefingLinesMax + 1 }, "TooManyLines"],
     [
-      { ...atEveryBound, sentenceChars: briefingLineCharsMax + 1 },
+      { ...atEveryBound, sentences: atEveryBound.sentences + 1 },
+      "TooManyLines",
+    ],
+    [
+      { ...atEveryBound, sentenceChars: atEveryBound.sentenceChars + 1 },
       "TextTooLong",
     ],
-    [{ ...atEveryBound, lines: commandLinesMax + 1 }, "ChecksInvalid"],
+    [{ ...atEveryBound, sentenceChars: 0 }, "EmptyLine"],
+    [{ ...atEveryBound, lines: atEveryBound.lines + 1 }, "ChecksInvalid"],
     [{ ...atEveryBound, lines: 0 }, "ChecksInvalid"],
   ] as const) {
     const imported = declaredTo(past);

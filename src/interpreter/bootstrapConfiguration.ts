@@ -85,10 +85,10 @@ export function bootstrapImageFault(
  */
 function bootstrapFormatInstructions(image: string): readonly string[] {
   return [
-    `Each file there is one JSON object and nothing more: {"version":1,"name":N,"configuration":C}, N a name of letters and digits with ".", "_" or "-" only between them; every object here takes exactly the keys shown and no others.`,
+    `Each file there is one JSON object and nothing more: {"version":1,"name":N,"configuration":C}, N a name no other file there uses, of letters and digits with ".", "_" or "-" only between them; every object here takes exactly the keys shown and no others.`,
     `C is {"version":1,"image":I,"brief":{"motivation":S,"acceptanceCriteria":S,"constraints":S},"practices":[],"work":{"instructions":S},"review":{"instructions":S},"evaluations":[E]}, each S a list of at most ${String(briefingLinesMax)} sentences and motivation or acceptanceCriteria not empty.`,
     `Each E is a stage every change is held to: {"purpose":"Check","checks":[L]} runs from 1 to ${String(commandLinesMax)} shell lines L at the repository root and fails the change on a nonzero exit; {"purpose":"Review","practices":[],"instructions":S} briefs a reviewer.`,
-    `Each sentence and each line L is one line of at most ${String(briefingLineCharsMax)} characters, with no tab or line break in it.`,
+    `Each sentence and each line L is one line of 1 to ${String(briefingLineCharsMax)} characters, with no tab or line break in it.`,
     "Command the checks the repository already runs.",
     bootstrapImageLine(image),
   ];
