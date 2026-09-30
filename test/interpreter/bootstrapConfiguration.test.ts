@@ -148,6 +148,7 @@ interface Filling {
   readonly sentences: number;
   readonly sentenceChars: number;
   readonly lines: number;
+  readonly lineChars: number;
 }
 
 /** The instruction lines the bootstrap configuration's worker is told. */
@@ -184,7 +185,7 @@ function declaredTo(filling: Filling) {
     ),
   );
   const lines = Array.from({ length: filling.lines }, () =>
-    JSON.stringify("true"),
+    JSON.stringify("true #".concat("l".repeat(filling.lineChars - 6))),
   ).join(",");
   const stage = (skeleton: string): string =>
     filled(skeleton, { S: sentences, L: lines });
@@ -209,11 +210,16 @@ function declaredTo(filling: Filling) {
   });
 }
 
+/** The sentence telling one bound to a sentence and a check line alike, whole. */
+const toldLineChars =
+  /^Each sentence and each line L is one line of 1 to (\d+) characters, with no tab or line break in it\.$/u;
+
 /** Each list and line filled to the most its worker is told it may hold. */
 const atEveryBound: Filling = {
   sentences: toldBound(/each S a list of at most (\d+) sentences/u),
-  sentenceChars: toldBound(/one line of 1 to (\d+) characters/u),
+  sentenceChars: toldBound(toldLineChars),
   lines: toldBound(/runs from 1 to (\d+) shell lines/u),
+  lineChars: toldBound(toldLineChars),
 };
 
 test("a declaration written to the shape its worker is told, at every bound it is told, imports and commands its checks", () => {
@@ -243,6 +249,7 @@ test("one past any bound its worker is told is refused for that bound", () => {
     [{ ...atEveryBound, sentenceChars: 0 }, "EmptyLine"],
     [{ ...atEveryBound, lines: atEveryBound.lines + 1 }, "ChecksInvalid"],
     [{ ...atEveryBound, lines: 0 }, "ChecksInvalid"],
+    [{ ...atEveryBound, lineChars: atEveryBound.lineChars + 1 }, "TextTooLong"],
   ] as const) {
     const imported = declaredTo(past);
     assert.equal(imported.readiness, "Refused", JSON.stringify(past));
