@@ -28,6 +28,7 @@ import { postgresWorkerRunEnded } from "../../src/adapters/postgres/workerPlane.
 import { workerPoolEvidenceCharsMax } from "../../src/contract/workerPool.ts";
 import {
   postgresWorkerPoolAssignments,
+  postgresWorkerPoolDirectory,
   postgresWorkerPoolRegistry,
   postgresWorkerPoolRoster,
 } from "../../src/adapters/postgres/workerPool.ts";
@@ -40,9 +41,10 @@ import {
   executionSchedulerLaunch,
 } from "../../src/interpreter/executionSchedulerRun.ts";
 import { asPrincipal } from "../../src/interpreter/principal.ts";
-import type {
-  Partition,
-  RecoveryEpoch,
+import {
+  asProjectId,
+  type Partition,
+  type RecoveryEpoch,
 } from "../../src/interpreter/projectStore.ts";
 import type { WorkerPoolRegistered } from "../../src/interpreter/workerPool.ts";
 import { workerPoolsAnsweredMax } from "../../src/interpreter/workerPool.ts";
@@ -73,6 +75,7 @@ after(async () => {
 });
 
 const registry = postgresWorkerPoolRegistry(apiPool);
+const directory = postgresWorkerPoolDirectory(apiPool);
 const assignments = postgresWorkerPoolAssignments(planePool);
 const roster = postgresWorkerPoolRoster(rig.pool);
 const access = memoryProjectAccess();
@@ -270,7 +273,7 @@ test("an execution whose attempt no pool took is opened again once the placement
   });
 });
 
-test("the scheduler reads its own project's pools in name order, and says when there are more than one read answers", async () => {
+test("the scheduler and a member each read the project's own pools in name order, and say when there are more than one read answers", async () => {
   const partition = await postgresHarnessProject(
     rig.harness.store,
     "pools-roster",
@@ -280,6 +283,12 @@ test("the scheduler reads its own project's pools in name order, and says when t
     "elsewhere",
     [],
   );
+  const sibling = {
+    tenant: partition.tenant,
+    project: asProjectId(`project-pools-roster-sibling-${randomUUID()}`),
+  };
+  await rig.harness.store.createProject(sibling);
+  await poolRegistered(sibling, "sibling", []);
   const names = Array.from(
     { length: workerPoolsAnsweredMax + 1 },
     (_, index) => `pool-${String(index).padStart(4, "0")}`,
@@ -288,17 +297,42 @@ test("the scheduler reads its own project's pools in name order, and says when t
     await poolRegistered(partition, name, [name]);
   const whole = await roster.registered(partition);
   assert.equal(whole.truncated, false);
+  const answered = names
+    .slice(0, workerPoolsAnsweredMax)
+    .map((name) => ({ pool: name, capabilities: [name] }));
   assert.deepEqual(
     whole.pools.map(({ pool, capabilities }) => ({ pool, capabilities })),
-    names
-      .slice(0, workerPoolsAnsweredMax)
-      .map((name) => ({ pool: name, capabilities: [name] })),
+    answered,
+  );
+  const listed = await directory.listed(partition);
+  assert.equal(listed.truncated, false);
+  assert.deepEqual(
+    listed.pools.map(({ pool, capabilities }) => ({ pool, capabilities })),
+    answered,
+  );
+  const stamped = (await rig.harness.query(
+    `SELECT pool, registered_at FROM worker_pool
+      WHERE tenant=$1 AND project=$2 ORDER BY pool`,
+    [partition.tenant, partition.project],
+  )) as readonly { pool: string; registered_at: Date }[];
+  assert.deepEqual(
+    listed.pools.map(({ pool, registeredAt }) => ({ pool, registeredAt })),
+    stamped.map((row) => ({
+      pool: row.pool,
+      registeredAt: row.registered_at.toISOString(),
+    })),
   );
   await poolRegistered(partition, names[workerPoolsAnsweredMax] ?? "", []);
   const cut = await roster.registered(partition);
   assert.equal(cut.truncated, true);
   assert.deepEqual(
     cut.pools.map(({ pool }) => pool),
+    names.slice(0, workerPoolsAnsweredMax),
+  );
+  const listedCut = await directory.listed(partition);
+  assert.equal(listedCut.truncated, true);
+  assert.deepEqual(
+    listedCut.pools.map(({ pool }) => pool),
     names.slice(0, workerPoolsAnsweredMax),
   );
 });

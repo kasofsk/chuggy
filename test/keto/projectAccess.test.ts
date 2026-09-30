@@ -202,6 +202,35 @@ test("administering a tenant is the tenant's own relation and not a project's", 
   );
 });
 
+test("hosted runs are the tenant's own grant, which administering the tenant does not carry", async () => {
+  const partition = ketoHarnessPartition("tenant-hosted");
+  const principal = oidcPrincipal(ketoHarnessIssuer, "tenant-hosted-admin");
+  const hosted = () =>
+    access.authorizeTenant(principal, partition.tenant, "ExecuteHosted");
+  await grants.write(
+    tenantPrincipalGrant({
+      issuer: ketoHarnessIssuer,
+      subject: "tenant-hosted-admin",
+      tenant: partition.tenant,
+      relation: "admins",
+    }),
+  );
+  assert.equal(
+    await hosted(),
+    undefined,
+    "administering a tenant answered for its hosted runs",
+  );
+  await grants.write(
+    tenantPrincipalGrant({
+      issuer: ketoHarnessIssuer,
+      subject: "tenant-hosted-admin",
+      tenant: partition.tenant,
+      relation: "hosted_execution",
+    }),
+  );
+  assert.deepEqual(await hosted(), memberAuthority(principal));
+});
+
 /**
  * The object encoding is what keeps two partitions apart, and both halves are
  * arbitrary text that may carry any separator. A joined encoding would let one

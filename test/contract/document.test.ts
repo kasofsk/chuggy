@@ -43,6 +43,7 @@ test("the golden names every route and not an empty stand-in", () => {
     "drafts",
     "events",
     "execution",
+    "executionPlacement",
     "executions",
     "forgeApps",
     "forgeCredentials",
@@ -83,6 +84,9 @@ test("the golden names every route and not an empty stand-in", () => {
     "ticketAgenticRefusals",
     "ticketNativeActions",
     "tickets",
+    "workerPoolRegistrationTokens",
+    "workerPoolRegistrations",
+    "workerPools",
   ]);
 });
 
@@ -91,6 +95,7 @@ test("the golden names every request schema", () => {
     "configurationCreation",
     "draftCreation",
     "draftRevision",
+    "executionPlacement",
     "forgeCredential",
     "forgeInstallationClaim",
     "leadInquiry",
@@ -105,5 +110,7 @@ test("the golden names every request schema", () => {
     "threadHide",
     "threadMessage",
     "threadRename",
+    "workerPoolRedemption",
+    "workerPoolRegistrationToken",
   ]);
 });

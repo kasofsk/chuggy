@@ -506,6 +506,27 @@ export const threadMessageRefusalCodes = [
 export type ThreadMessageRefusalCode =
   (typeof threadMessageRefusalCodes)[number];
 
+/**
+ * Where a project's executions run, and what decided it: the deployment's
+ * override for the project, the project's own placement, or the deployment's
+ * default. `src/interpreter/executionScheduler.ts` takes both.
+ */
+export const placementRoutes = ["InCluster", "Pool"] as const;
+export type PlacementRoute = (typeof placementRoutes)[number];
+export const placementRouteSources = [
+  "Override",
+  "Project",
+  "Default",
+] as const;
+export type PlacementRouteSource = (typeof placementRouteSources)[number];
+
+/**
+ * What a door answers a caller holding no hosted-runs grant on the project's
+ * tenant with. A console shows its own words in place of the control refused,
+ * so the code is shared rather than spelled at each end.
+ */
+export const hostedRunsNotGrantedCode = "HostedRunsNotGranted";
+
 /** Who or what put a turn in a session's mailbox. */
 export const sessionTurnInputKinds = [
   "Observation",

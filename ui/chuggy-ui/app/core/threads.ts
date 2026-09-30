@@ -71,7 +71,10 @@ import type {
   ThreadResponse,
   ThreadTurnResponse,
 } from "../../../../src/contract/responses.ts";
-import { threadMessageRefusalCodes } from "../../../../src/contract/rosters.ts";
+import {
+  hostedRunsNotGrantedCode,
+  threadMessageRefusalCodes,
+} from "../../../../src/contract/rosters.ts";
 import type {
   SessionTurnInputKind,
   ThreadMessageRefusalCode,
@@ -86,6 +89,14 @@ export function threadTakesMessages(
   thread: Pick<ThreadEntryResponse, "state">,
 ): boolean {
   return thread.state === "Open";
+}
+
+/** Whether an open was refused because the tenant has not granted this reader
+ * hosted runs, which no retry of the open answers. */
+export function threadOpenUnhosted(result: ApiResult<unknown>): boolean {
+  return (
+    result.outcome === "Rejected" && result.code === hostedRunsNotGrantedCode
+  );
 }
 
 /** Whether a thread can still be closed, which every standing but `Closed` can:

@@ -135,6 +135,21 @@ export function redirect(url: string): void {
 }
 
 /** Where this tab is, as the path something that leaves it returns to. */
+/** The origin this console is served from, which is where its API answers. */
+export function currentOrigin(): string {
+  return location.origin;
+}
+
+/** Puts text on the clipboard, answering whether the browser allowed it. */
+export async function clipboardWritten(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function currentPath(): string {
   return `${location.pathname}${location.search}`;
 }

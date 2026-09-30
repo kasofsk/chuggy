@@ -17,6 +17,7 @@ export const navRoutes = {
   lead: "/$tenant/$project/lead",
   selector: "/$tenant/$project/selector",
   repositories: "/$tenant/$project/repositories",
+  runners: "/$tenant/$project/runners",
   ticketNew: "/$tenant/$project/tickets/new",
 } as const;
 
@@ -78,6 +79,7 @@ export function shellNav(input: ShellNavInput): readonly NavEntry[] {
       to: navRoutes.repositories,
       params,
     },
+    { id: "runners", label: "Runners", to: navRoutes.runners, params },
     { id: "ticket-new", label: "New ticket", to: navRoutes.ticketNew, params },
   ];
 }

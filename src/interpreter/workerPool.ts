@@ -30,6 +30,7 @@ import type {
   WorkerPoolAssignment,
   WorkerPoolReconciliation,
 } from "../contract/workerPool.ts";
+export { workerPoolsAnsweredMax } from "../contract/http.ts";
 import type { ExecutionRequirement } from "./executionRequirement.ts";
 import type { Principal } from "./principal.ts";
 import type { ProjectAccess } from "./projectAccess.ts";
@@ -103,13 +104,28 @@ export interface WorkerPoolRegistered extends WorkerPoolIdentity {
   readonly class: WorkerPoolClass;
 }
 
-/** The most registered pools one read answers for a project. */
-export const workerPoolsAnsweredMax = 64;
-
 /** One project's registered pools, `truncated` saying it holds more than this answers. */
 export interface WorkerPoolRosterPage {
   readonly pools: readonly WorkerPoolRegistered[];
   readonly truncated: boolean;
+}
+
+/** One registered pool as a project's members read it. */
+export interface WorkerPoolListed {
+  readonly pool: string;
+  readonly capabilities: readonly string[];
+  readonly registeredAt: string;
+}
+
+/** One project's registered pools as its members read them, `truncated` as the roster's. */
+export interface WorkerPoolListing {
+  readonly pools: readonly WorkerPoolListed[];
+  readonly truncated: boolean;
+}
+
+/** The registry as the API reads it for a project's members. */
+export interface WorkerPoolDirectory {
+  listed(partition: Partition): Promise<WorkerPoolListing>;
 }
 
 /** The registry as the scheduler reads it, which is a project's pools and nothing a registration or a poll writes. */

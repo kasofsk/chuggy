@@ -28,6 +28,7 @@ import { apiOpenThread } from "../../core/apiRoutes.ts";
 import { panelReason } from "../../core/freshness.ts";
 import { threadMessageSent } from "../../core/threadSendRun.ts";
 import {
+  threadOpenUnhosted,
   threadTurnIdBytesCount,
   threadTurnMinted,
   threadTurnRetained,
@@ -81,6 +82,8 @@ export function useThreadSend(input: {
   readonly takes: boolean;
   /** The thread a first press opened, once its message is sent. */
   readonly onStarted?: (session: string) => void;
+  /** An open the tenant's hosted grant refused, which the text is kept through. */
+  readonly onUnhosted?: () => void;
 }): ConversationComposerProps {
   const ports = useApiPorts();
   const { partition } = input;
@@ -98,6 +101,11 @@ export function useThreadSend(input: {
       let session = input.session ?? opened;
       if (session === undefined) {
         const open = await apiOpenThread(ports, partition);
+        if (threadOpenUnhosted(open)) {
+          setSend({ send: "Idle" });
+          input.onUnhosted?.();
+          return "Kept";
+        }
         if (open.outcome !== "Ok") {
           setSend({ send: "Refused", reason: panelReason(open) });
           return "Kept";

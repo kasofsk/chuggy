@@ -80,6 +80,11 @@ import {
 import { postgresNotifications } from "./adapters/postgres/notifications.ts";
 import { postgresDispatchViews } from "./adapters/postgres/dispatchViews.ts";
 import { postgresProjectInventory } from "./adapters/postgres/projectInventory.ts";
+import { postgresExecutionPlacement } from "./adapters/postgres/executionPlacement.ts";
+import {
+  executionPlacementAdministration,
+  type ExecutionPlacementAdministration,
+} from "./interpreter/executionPlacement.ts";
 import { postgresProjectCreation } from "./adapters/postgres/projectCreation.ts";
 import {
   projectCreation,
@@ -247,6 +252,17 @@ export function composeProjectCreation(
     store: postgresProjectCreation(apiPool),
     ...(grants === undefined ? {} : { grants }),
   });
+}
+
+/** Wires where a project's executions run to API-role credentials and the access that gates choosing it. */
+export function composeExecutionPlacement(
+  apiPool: pg.Pool,
+  access: ProjectAccess,
+): ExecutionPlacementAdministration {
+  return executionPlacementAdministration(
+    access,
+    postgresExecutionPlacement(apiPool),
+  );
 }
 
 /**

@@ -14,7 +14,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { HttpErrorEnvelope } from "../../src/contract/http.ts";
-import { threadMessageRefusalCodes } from "../../src/contract/rosters.ts";
+import {
+  hostedRunsNotGrantedCode,
+  threadMessageRefusalCodes,
+} from "../../src/contract/rosters.ts";
 import {
   nativeHttpMediaType,
   nativeHttpRoutes,
@@ -47,6 +50,7 @@ import { checkedLeadTranscriptQuery } from "../../src/interpreter/leadRead.ts";
 import type {
   ThreadClosing,
   ThreadHiding,
+  ThreadOpening,
   ThreadMessageSent,
   ThreadRenaming,
 } from "../../src/interpreter/threadRead.ts";
@@ -125,6 +129,7 @@ interface ThreadCase {
   readonly renamed?: ThreadRenaming;
   readonly hid?: ThreadHiding;
   readonly found?: boolean;
+  readonly opening?: ThreadOpening;
 }
 
 function threadWeb(held: ThreadCase): NativeThreadWeb {
@@ -168,9 +173,10 @@ function threadWeb(held: ThreadCase): NativeThreadWeb {
     openThread: () => {
       held.calls.push("open");
       return Promise.resolve(
-        found
-          ? { result: "Opened", thread: entry }
-          : { result: "AlreadyOpen", thread: entry },
+        held.opening ??
+          (found
+            ? { result: "Opened", thread: entry }
+            : { result: "AlreadyOpen", thread: entry }),
       );
     },
     sendThreadMessage: (_principal, _partition, input) => {
@@ -447,6 +453,27 @@ test("opening my thread is created once and answered again after that", async ()
   assert.deepEqual(opened.calls, ["open"]);
   for (const answer of [created, again])
     assert.equal(answer.headers["location"], `${root}/${mine}`);
+});
+
+test("a caller the tenant has not granted hosted runs is refused a thread by that code", async () => {
+  const held: ThreadCase = {
+    calls: [],
+    opening: { result: "HostedRunsNotGranted" },
+  };
+  await using app = appOf(held);
+
+  const refused = await app.inject({
+    method: "POST",
+    url: root,
+    headers: versioned,
+    payload: {},
+  });
+
+  assert.equal(refused.statusCode, 403);
+  assert.equal(
+    refused.json<HttpErrorEnvelope>().error.code,
+    hostedRunsNotGrantedCode,
+  );
 });
 
 /**

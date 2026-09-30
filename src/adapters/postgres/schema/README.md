@@ -372,3 +372,20 @@ every delete and every change to the forge, the app, the account or the tenant.
 It has no unfinished work: a claim is committed or it was rolled back, and a
 repository whose owner carries no row has no credential rather than a partial
 one.
+
+`project_execution_placement` — where one project's work and evaluations run,
+and who set it. Owned by the boundary owner, which is what
+`set_project_execution_placement` runs as; the API role reaches it through that
+door alone, and it and the scheduler read it. Its key and identity are
+`(tenant, project)` and it points at `project`. It is changed by that door
+alone, which answers `Unchanged` and keeps the setter where nothing moved; a
+row backfilled for a project that ran before it names no setter. It has no
+unfinished work: a project with no row runs where the deployment's default
+sends it.
+
+`execution_routing` — the routing the scheduler registers executions under, as
+it last published it: the default per kind and each project's override. It is
+a single row, keyed `singleton` and held to it by a CHECK, owned by the
+scheduler, which writes it at boot, and read by the API, which answers a
+project's placement from it. It has no unfinished work: the scheduler decides
+from its own routing, so a row older than the process only misreports.

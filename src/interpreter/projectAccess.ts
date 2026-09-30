@@ -67,7 +67,10 @@ export function asProjectAccessKind(value: string): ProjectAccessKind {
  * single roster would let a caller ask the project namespace for a permit only
  * a tenant declares.
  */
-export const allTenantAccessKinds = ["AdministerTenant"] as const;
+export const allTenantAccessKinds = [
+  "AdministerTenant",
+  "ExecuteHosted",
+] as const;
 
 export type TenantAccessKind = (typeof allTenantAccessKinds)[number];
 
@@ -99,6 +102,7 @@ export const projectAccessPermits: Readonly<Record<ProjectAccessKind, string>> =
  */
 export const tenantAccessPermits: Readonly<Record<TenantAccessKind, string>> = {
   AdministerTenant: "administer",
+  ExecuteHosted: "execute_hosted",
 };
 
 /**

@@ -17,7 +17,8 @@
 -- repositories and the operations that bound them, forge installations and
 -- the authority that claimed them, the deployment authoring policy, the
 -- selector's project and runtime settings with their histories, worker pools
--- and their registration tokens, the execution cluster, the capacity
+-- and their registration tokens, where each project's executions run and the
+-- routing the scheduler published, the execution cluster, the capacity
 -- entitlements drawn on it, admitted workers and the recovery epochs.
 -- Re-onboarding a project is not part of the release, so none of that is in
 -- the list below.

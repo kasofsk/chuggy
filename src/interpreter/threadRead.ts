@@ -320,6 +320,7 @@ export type ThreadRead =
 /** What opening my thread answered, and which of the two the wire reports as created. */
 export type ThreadOpening =
   | { readonly result: "NotFound" }
+  | { readonly result: "HostedRunsNotGranted" }
   | {
       readonly result: "Opened" | "AlreadyOpen";
       readonly thread: ThreadEntry;

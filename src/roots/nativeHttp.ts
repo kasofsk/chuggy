@@ -40,6 +40,7 @@ import {
   composeForgeCredentialMinting,
   composeForgeRepositoryMinting,
   composeNativeWeb,
+  composeExecutionPlacement,
   composeProjectCreation,
   composeRepositoryOnboarding,
   composeSelectorProjectSettings,
@@ -130,6 +131,7 @@ import {
   type ProjectGrantWriter,
 } from "../interpreter/projectGrant.ts";
 import {
+  postgresWorkerPoolDirectory,
   postgresWorkerPoolRegistrationTokens,
   postgresWorkerPoolRegistry,
 } from "../adapters/postgres/workerPool.ts";
@@ -154,6 +156,14 @@ const ketoReadUrlVariable = "CHUG_API_KETO_READ_URL";
 const ketoWriteUrlVariable = "CHUG_API_KETO_WRITE_URL";
 const hydraAdminUrlVariable = "CHUG_API_HYDRA_ADMIN_URL";
 const ketoTimeoutVariable = "CHUG_API_KETO_TIMEOUT_MS";
+/**
+ * Where a registered pool reaches this deployment, which a redemption answers
+ * so a runner's file is written whole: required wherever pools are registered,
+ * the registry host only where the deployment names one of its own.
+ */
+const poolTokenUrlVariable = "CHUG_API_POOL_TOKEN_URL";
+const poolPlaneUrlVariable = "CHUG_API_POOL_PLANE_URL";
+const poolRegistryHostVariable = "CHUG_API_POOL_REGISTRY_HOST";
 /**
  * The named credential mount a member's thread speaks through. It is REQUIRED
  * rather than defaulted: the slot is what a per-user Anthropic credential
@@ -205,9 +215,19 @@ function nativeWorkerPools(
   if (process.env[hydraAdminUrlVariable] === undefined) return undefined;
   if (grants === undefined)
     throw new Error(`${ketoWriteUrlVariable} is required`);
+  const registryHost = process.env[poolRegistryHostVariable];
   return workerPoolRegistrationService({
     access,
-    issuer: requiredEnvironment(oidcIssuerVariable),
+    site: {
+      issuer: requiredEnvironment(oidcIssuerVariable),
+      tokenUrl: new URL(requiredEnvironment(poolTokenUrlVariable)).toString(),
+      audience: requiredEnvironment(oidcAudienceVariable),
+      planeUrl: new URL(requiredEnvironment(poolPlaneUrlVariable)).toString(),
+      ...(registryHost === undefined || registryHost.length === 0
+        ? {}
+        : { registryHost }),
+    },
+    directory: postgresWorkerPoolDirectory(pool),
     minting: {
       tokens: postgresWorkerPoolRegistrationTokens(pool),
       draw: () => randomBytes(32).toString("base64url"),
@@ -956,6 +976,7 @@ async function main(): Promise<void> {
     forge.onboarding,
     nativeWorkerPools(pool, access, grants),
     composeProjectCreation(pool, access, grants),
+    composeExecutionPlacement(pool, access),
   );
   app.addHook("onClose", async () => {
     await hub.close();

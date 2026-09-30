@@ -29,7 +29,11 @@ import { assertNever } from "../domain/assertNever.ts";
 import type { Principal } from "./principal.ts";
 import type { ProjectAccess } from "./projectAccess.ts";
 import type { Partition } from "./projectStore.ts";
-import type { WorkerPoolClientSecret } from "./workerPool.ts";
+import type {
+  WorkerPoolClientSecret,
+  WorkerPoolDirectory,
+  WorkerPoolListing,
+} from "./workerPool.ts";
 import {
   workerPoolRegisteredAt,
   type RegisterPoolPorts,
@@ -83,11 +87,32 @@ export type WorkerPoolTokenMinted =
       readonly value: { readonly token: string; readonly expiresAtMs: number };
     };
 
+/**
+ * Where a registered pool meets this deployment: the issuer its client is
+ * minted at, the endpoint and audience it asks tokens of, the plane it polls,
+ * and the registry it pulls from where the deployment names one of its own.
+ */
+export interface WorkerPoolSite {
+  readonly issuer: string;
+  readonly tokenUrl: string;
+  readonly audience: string;
+  readonly planeUrl: string;
+  readonly registryHost?: string;
+}
+
+/** Everything a runner needs to serve the pool it registered, its secret included, answered once. */
+export interface WorkerPoolCredentials
+  extends Omit<WorkerPoolSite, "issuer">, WorkerPoolClientSecret {
+  readonly partition: Partition;
+  readonly pool: string;
+  readonly capabilities: readonly string[];
+}
+
 /** What redeeming came to, with the capability refusal named rather than hidden. */
 export type WorkerPoolTokenRedeemed =
   | { readonly result: "NotFound" }
   | { readonly result: "CapabilityNotPermitted" }
-  | { readonly result: "Registered"; readonly value: WorkerPoolClientSecret };
+  | { readonly result: "Registered"; readonly value: WorkerPoolCredentials };
 
 /** What one mint asks for: what the machine will be allowed to claim, and for how long. */
 export interface WorkerPoolTokenRequest {
@@ -169,7 +194,7 @@ export interface WorkerPoolRedemption {
 export async function workerPoolTokenRedeem(
   minting: WorkerPoolTokenMinting,
   ports: RegisterPoolPorts,
-  issuer: string,
+  site: WorkerPoolSite,
   offered: WorkerPoolRedemption,
 ): Promise<WorkerPoolTokenRedeemed> {
   const digest = minting.digest(offered.token);
@@ -190,7 +215,7 @@ export async function workerPoolTokenRedeem(
         partition: spent.partition,
         pool: offered.pool,
         capabilities: offered.capabilities,
-        issuer,
+        issuer: site.issuer,
       },
       ports,
     );
@@ -198,18 +223,52 @@ export async function workerPoolTokenRedeem(
     await minting.tokens.restore(digest);
     throw failure;
   }
-  return registered === undefined
-    ? { result: "NotFound" }
-    : { result: "Registered", value: registered };
+  if (registered === undefined) return { result: "NotFound" };
+  return {
+    result: "Registered",
+    value: {
+      partition: spent.partition,
+      pool: offered.pool,
+      capabilities: offered.capabilities,
+      tokenUrl: site.tokenUrl,
+      audience: site.audience,
+      planeUrl: site.planeUrl,
+      ...(site.registryHost === undefined
+        ? {}
+        : { registryHost: site.registryHost }),
+      clientId: registered.clientId,
+      clientSecret: registered.clientSecret,
+    },
+  };
+}
+
+/** A project's registered pools, or nothing for a caller who may not read the project. */
+export type WorkerPoolsListed =
+  | { readonly result: "NotFound" }
+  | { readonly result: "Found"; readonly value: WorkerPoolListing };
+
+async function workerPoolsListed(
+  access: ProjectAccess,
+  directory: WorkerPoolDirectory,
+  principal: Principal,
+  partition: Partition,
+): Promise<WorkerPoolsListed> {
+  if ((await access.authorize(principal, partition, "Read")) === undefined)
+    return { result: "NotFound" };
+  return { result: "Found", value: await directory.listed(partition) };
 }
 
 /**
- * The two calls the boundary makes, composed once so that no route holds the
+ * The calls the boundary makes, composed once so that no route holds the
  * issuer's name or the ports registration is three writes at. A pool is
  * registered by redeeming a token and by an owner's own command, and this is
- * what the first of those runs.
+ * what the first of those runs; the pools either registered are listed here.
  */
 export interface WorkerPoolRegistrationService {
+  registered(
+    principal: Principal,
+    partition: Partition,
+  ): Promise<WorkerPoolsListed>;
   mint(
     principal: Principal,
     partition: Partition,
@@ -222,9 +281,12 @@ export function workerPoolRegistrationService(input: {
   readonly access: ProjectAccess;
   readonly minting: WorkerPoolTokenMinting;
   readonly ports: RegisterPoolPorts;
-  readonly issuer: string;
+  readonly site: WorkerPoolSite;
+  readonly directory: WorkerPoolDirectory;
 }): WorkerPoolRegistrationService {
   return {
+    registered: (principal, partition) =>
+      workerPoolsListed(input.access, input.directory, principal, partition),
     mint: (principal, partition, request) =>
       workerPoolTokenMint(
         input.access,
@@ -234,6 +296,6 @@ export function workerPoolRegistrationService(input: {
         request,
       ),
     redeem: (offered) =>
-      workerPoolTokenRedeem(input.minting, input.ports, input.issuer, offered),
+      workerPoolTokenRedeem(input.minting, input.ports, input.site, offered),
   };
 }

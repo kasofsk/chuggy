@@ -21,6 +21,7 @@ import {
   threadAnswering,
   threadHeldTurn,
   threadMine,
+  threadOpenUnhosted,
   threadRefusalCode,
   threadRefusalWord,
   threadSendFrom,
@@ -366,4 +367,30 @@ describe("whether a thread is still answering", () => {
     );
     expect(threadAnswering({ turns: [] })).toBe(false);
   });
+});
+
+test("only an open rejected for the hosted grant is one no retry answers", () => {
+  expect(
+    threadOpenUnhosted({
+      outcome: "Rejected",
+      code: "HostedRunsNotGranted",
+      status: 403,
+      body: undefined,
+    }),
+  ).toBe(true);
+  expect(
+    threadOpenUnhosted({
+      outcome: "Rejected",
+      code: "InvalidRequest",
+      status: 400,
+      body: undefined,
+    }),
+  ).toBe(false);
+  expect(
+    threadOpenUnhosted({
+      outcome: "Conflict",
+      code: "HostedRunsNotGranted",
+      body: undefined,
+    }),
+  ).toBe(false);
 });

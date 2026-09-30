@@ -12,6 +12,7 @@ import {
   ProjectAccessUnavailable,
   projectAccessObject,
   projectAccessPermits,
+  tenantAccessPermits,
 } from "../../src/interpreter/projectAccess.ts";
 import { asPrincipal } from "../../src/interpreter/principal.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
@@ -126,7 +127,10 @@ test("nothing the authority could not decide is answered as a refusal", async ()
 
 const checkPath = "relation-tuples/check/openapi";
 const wholeModel = new Set(["Project", "Tenant"]);
-const everyPermit = new Set(Object.values(projectAccessPermits));
+const everyPermit = new Set([
+  ...Object.values(projectAccessPermits),
+  ...Object.values(tenantAccessPermits),
+]);
 
 /**
  * An authority carrying a model: the namespaces it knows and the permits it

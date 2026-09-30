@@ -48,6 +48,7 @@ import {
   threadTurnRecordedCharsMax,
   threadTurnsAnsweredMax,
   threadsAnsweredMax,
+  workerPoolsAnsweredMax,
   ticketNumberSchema,
 } from "./http.ts";
 import { authoringResponseSchema, programStageSchema } from "./authoring.ts";
@@ -83,6 +84,8 @@ import {
   operationStates,
   outputRenderers,
   phaseRoster,
+  placementRouteSources,
+  placementRoutes,
   repositoryConfigurationFaults,
   requirementSources,
   resultVerdicts,
@@ -1536,3 +1539,66 @@ export const projectRepositoriesResponseSchema = z.object({
 export type ProjectRepositoriesResponse = z.infer<
   typeof projectRepositoriesResponseSchema
 >;
+
+const placementRouteResolvedSchema = z.object({
+  route: z.enum(placementRoutes),
+  source: z.enum(placementRouteSources),
+});
+
+/**
+ * Where a project's work and evaluations run and what decided each, and the
+ * routes this caller may choose, which are none where it cannot administer.
+ */
+export const executionPlacementResponseSchema = z.object({
+  work: placementRouteResolvedSchema,
+  evaluation: placementRouteResolvedSchema,
+  choices: z.array(z.enum(placementRoutes)).max(placementRoutes.length),
+});
+export type ExecutionPlacementResponse = z.infer<
+  typeof executionPlacementResponseSchema
+>;
+
+/** What a registration-token mint answers: the token, once, and the instant it stops being redeemable. */
+export const workerPoolTokenResponseSchema = z.object({
+  token: z.string().min(1),
+  expiresAtMs: z.number().int().nonnegative().safe(),
+});
+export type WorkerPoolTokenResponse = z.infer<
+  typeof workerPoolTokenResponseSchema
+>;
+
+/**
+ * What a redemption answers, once: everything a runner needs to serve the pool
+ * it registered, which is the file it keeps. `registryHost` is absent where the
+ * deployment names no registry of its own.
+ */
+export const workerPoolCredentialsSchema = z.strictObject({
+  tenant: identitySchema,
+  project: identitySchema,
+  pool: identitySchema,
+  capabilities: z.array(z.string().min(1)),
+  tokenUrl: z.url(),
+  audience: z.string().min(1),
+  planeUrl: z.url(),
+  registryHost: z.string().min(1).optional(),
+  clientId: z.string().min(1),
+  clientSecret: z.string().min(1),
+});
+export type WorkerPoolCredentialsResponse = z.infer<
+  typeof workerPoolCredentialsSchema
+>;
+
+/** A project's registered pools in name order, `truncated` where it holds more than one read answers. */
+export const workerPoolsResponseSchema = z.object({
+  pools: z
+    .array(
+      z.object({
+        pool: identitySchema,
+        capabilities: z.array(z.string().min(1)),
+        registeredAt: instantSchema,
+      }),
+    )
+    .max(workerPoolsAnsweredMax),
+  truncated: z.boolean(),
+});
+export type WorkerPoolsResponse = z.infer<typeof workerPoolsResponseSchema>;

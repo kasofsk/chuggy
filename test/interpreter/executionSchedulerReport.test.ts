@@ -89,6 +89,7 @@ function recordingStore(
   };
   return {
     claimRequests: unreached,
+    projectPlacement: unreached,
     registerSpawn: unreached,
     registerCancellation: unreached,
     admit: unreached,

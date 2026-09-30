@@ -25,6 +25,7 @@ import {
   configurationCreationSchema,
   draftCreationSchema,
   draftRevisionSchema,
+  executionPlacementSchema,
   publicMutationSchema,
   forgeCredentialRequestSchema,
   forgeInstallationClaimSchema,
@@ -43,6 +44,7 @@ import {
   type SessionId,
   type SessionTurnId,
 } from "../../interpreter/agentSession.ts";
+import type { ExecutionRoutes } from "../../interpreter/executionScheduler.ts";
 import type {
   SelectorProjectLimitOverrides,
   SelectorProjectOverrides,
@@ -251,6 +253,12 @@ export function parseProjectRepositoryLanding(body: unknown): {
     expected: asRepositoryLanding(parsed.expected.mode),
     landing: asRepositoryLanding(parsed.landing.mode),
   };
+}
+
+/** One placement as the wire carries it, keyed by the task kind each route is for. */
+export function parseExecutionPlacement(body: unknown): ExecutionRoutes {
+  const parsed = executionPlacementSchema.parse(body);
+  return { Work: parsed.work, Evaluation: parsed.evaluation };
 }
 
 /** One retirement as the wire carries it, which is the binding and nothing else. */

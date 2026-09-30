@@ -107,6 +107,9 @@ to start without the required ones.
 | `CHUG_API_KETO_READ_URL` | required | the read API of the authority that answers project access, HTTP or HTTPS and carrying no credentials |
 | `CHUG_API_KETO_WRITE_URL` | optional | the write API of that authority, where a created project's grants and a registered pool's tuple are written; without it, creating a project answers `ProjectCreationNotConfigured` and no pool registers |
 | `CHUG_API_HYDRA_ADMIN_URL` | optional | the issuer's admin API, where a registered pool's OAuth2 client is minted; naming it without the write URL refuses the start |
+| `CHUG_API_POOL_TOKEN_URL` | with the admin URL | the token endpoint a registered pool's client asks for its bearer, written into the file a redemption answers |
+| `CHUG_API_POOL_PLANE_URL` | with the admin URL | the pool plane's address, written into that file |
+| `CHUG_API_POOL_REGISTRY_HOST` | optional | the registry a runner pulls worker images from, written into that file only where it is named |
 | `CHUG_API_ARTIFACT_ROOT` | required | see below |
 | `CHUG_API_GIT_SCRATCH_ROOT` | required | writable scratch for exact-commit configuration reads |
 | `CHUG_API_THREAD_CREDENTIAL_SLOT` | required | the named credential mount a member's thread speaks through |

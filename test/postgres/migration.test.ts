@@ -33,6 +33,7 @@ import { migration021 } from "../../src/adapters/postgres/schema/migrations/021-
 import { migration022 } from "../../src/adapters/postgres/schema/migrations/022-worker-pool-fencing.ts";
 import { migration023 } from "../../src/adapters/postgres/schema/migrations/023-worker-pool-release-ends.ts";
 import { migration026 } from "../../src/adapters/postgres/schema/migrations/026-project-creation.ts";
+import { migration027 } from "../../src/adapters/postgres/schema/migrations/027-project-execution-placement.ts";
 import { leadDispatchesPerDecision } from "../../src/adapters/postgres/schema/migrations/baseline/seed.ts";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
@@ -47,6 +48,7 @@ import {
   draftCreateFunction,
   draftReleaseFunction,
   draftReviseFunction,
+  executionPlacementSetFunction,
   finalizationFunction,
   finalizerRole,
   migrations,
@@ -6165,11 +6167,13 @@ const wipeKept = [
   "configuration_revision",
   "deployment_authoring_policy",
   "execution_cluster",
+  "execution_routing",
   "forge_installation",
   "installation_authority",
   "project",
   "project_creation_grant",
   "project_creation_operation",
+  "project_execution_placement",
   "project_repository",
   "project_repository_bind_operation",
   "recovery_epoch",
@@ -9085,5 +9089,83 @@ test("026 gives every tenant a project stands in a row of its own, and a project
         api: true,
       })),
     );
+  });
+});
+
+/** The placement rows 027 leaves, in project order, and whether each names who set it. */
+async function placementRows(subject: pg.Pool): Promise<readonly unknown[]> {
+  const found = await subject.query<Record<string, unknown>>(
+    `SELECT project, work_route, evaluation_route, set_by_kind, set_at
+       FROM project_execution_placement ORDER BY project`,
+  );
+  return found.rows;
+}
+
+/** What 027's constraints refuse: a second routing row, and a setter named in part. */
+async function placementRefusals(subject: pg.Pool): Promise<void> {
+  await assert.rejects(
+    subject.query(`INSERT INTO execution_routing
+      (singleton,work_route,evaluation_route,project_routes)
+      VALUES (2,'Pool','Pool','{}')`),
+    /execution_routing_is_one_row/u,
+  );
+  await assert.rejects(
+    subject.query(
+      `UPDATE project_execution_placement SET set_by_kind='Member'`,
+    ),
+    /project_execution_placement_setter_is_whole/u,
+  );
+}
+
+test("027 places every project that runs today in cluster, naming no setter, and seeds the routing a scheduler naming none runs", async () => {
+  await migrationDatabase("execution_placement", async (subject) => {
+    const door = `${executionPlacementSetFunction}(text,text,text,text,text,text)`;
+    await installationBefore(subject, migration027.version);
+    await subject.query(
+      `${tenantSeed("tenant-27")}
+       INSERT INTO project(tenant,project,lifecycle) VALUES
+         ('tenant-27','project-a','Active'),('tenant-27','project-b','Active')`,
+    );
+    assert.ok((await postgresMigrate(subject)).includes(migration027.version));
+    await subject.query(
+      `INSERT INTO project(tenant,project,lifecycle) VALUES('tenant-27','project-c','Active')`,
+    );
+    assert.deepEqual(
+      await placementRows(subject),
+      ["project-a", "project-b"].map((project) => ({
+        project,
+        work_route: "InCluster",
+        evaluation_route: "InCluster",
+        set_by_kind: null,
+        set_at: null,
+      })),
+      "a project created after the backfill was placed by somebody",
+    );
+    assert.deepEqual(
+      (
+        await subject.query(
+          `SELECT work_route, evaluation_route, project_routes FROM execution_routing`,
+        )
+      ).rows,
+      [
+        {
+          work_route: "InCluster",
+          evaluation_route: "InCluster",
+          project_routes: {},
+        },
+      ],
+    );
+    await placementRefusals(subject);
+    assert.deepEqual(await sessionInvocationBoundaries(subject, [door]), [
+      {
+        signature: door,
+        owner: boundaryOwnerRole,
+        definer: true,
+        scheduler: false,
+        plane: false,
+        pool: false,
+        api: true,
+      },
+    ]);
   });
 });

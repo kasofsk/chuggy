@@ -1423,7 +1423,8 @@ async function nativeInquiryEntries(
 /**
  * Opening the caller's own thread, which is `Mutate` and takes no session: a
  * member has one thread per project, the definer is idempotent on that, and the
- * roster it is opened with is the definer's own.
+ * roster it is opened with is the definer's own. A thread runs on this
+ * deployment's hosted sessions, so it also needs the tenant's hosted grant.
  */
 function nativeOpenThreadMethod(
   access: ProjectAccess,
@@ -1432,6 +1433,12 @@ function nativeOpenThreadMethod(
   return async (principal, partition) => {
     const authority = await access.authorize(principal, partition, "Mutate");
     if (authority === undefined) return { result: "NotFound" };
+    const hosted = await access.authorizeTenant(
+      principal,
+      partition.tenant,
+      "ExecuteHosted",
+    );
+    if (hosted === undefined) return { result: "HostedRunsNotGranted" };
     const ports = composedThreadPorts(threads);
     const texts = await ports.seeding.projectTexts(partition);
     const opened = await ports.threads.open({

@@ -10,7 +10,13 @@
 
 // jscpd:ignore-start -- the imports and vi.mock factories a case cannot hoist out
 import { QueryClient } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
 import { afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
@@ -430,6 +436,43 @@ test("New after a refused first message holds the thread it opens", async () => 
   expect(read.some((url) => url.includes(`/threads/${openedSession}`))).toBe(
     true,
   );
+  styleless();
+});
+
+/** A server whose thread door refuses every open for the hosted grant. */
+function unhostedServed(): typeof fetch {
+  const served = threadServed([]);
+  return ((url: string, init?: { readonly method?: string }) =>
+    init?.method === "POST" && url.endsWith("/threads")
+      ? Promise.resolve(
+          answer({ error: { code: "HostedRunsNotGranted" } }, 403),
+        )
+      : served(url, init)) as unknown as typeof fetch;
+}
+
+/** No thread the reader opens could run, so the box they would type in is
+ * replaced by what refused it rather than left to refuse every press. */
+test("a first message the hosted grant refuses puts the refusal where the composer was", async () => {
+  await mounted(viewportDeskEm, unhostedServed());
+  fireEvent.change(composerDrawn(), { target: { value: "hello" } });
+  await turned(() => {
+    screen.getByRole("button", { name: "Send" }).click();
+  });
+  await settled();
+  expect(screen.queryByRole("textbox", { name: "Message" })).toBeNull();
+  expect(
+    within(screen.getByRole("region", { name: "Conversation" })).getByText(
+      "Needs hosted runs",
+    ),
+  ).toBeTruthy();
+  styleless();
+});
+
+test("New the hosted grant refuses puts the refusal where the composer was", async () => {
+  await mounted(viewportDeskEm, unhostedServed());
+  await pressed("New");
+  expect(screen.queryByRole("textbox", { name: "Message" })).toBeNull();
+  expect(screen.getByText("Needs hosted runs")).toBeTruthy();
   styleless();
 });
 

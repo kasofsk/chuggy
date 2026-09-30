@@ -64,6 +64,13 @@ import { asSessionId } from "../../src/interpreter/agentSession.ts";
 import { sessionBearerPrefix } from "../../src/contract/sessionPlane.ts";
 import { unservedLeadInquiries, unservedThreads } from "./threadFixtures.ts";
 import type { WorkerPoolRegistrationService } from "../../src/interpreter/workerPoolRegistrationToken.ts";
+import type { ExecutionPlacementAdministration } from "../../src/interpreter/executionPlacement.ts";
+import {
+  executionPlacementResponseSchema,
+  workerPoolCredentialsSchema,
+  workerPoolsResponseSchema,
+} from "../../src/contract/responses.ts";
+import { hostedRunsNotGrantedCode } from "../../src/contract/rosters.ts";
 
 const authority = {
   installationAuthority: () =>
@@ -461,6 +468,26 @@ function fakeForgeCredentials(calls: string[]): ForgeCredentialMinting {
  */
 function fakeWorkerPools(calls: string[]): WorkerPoolRegistrationService {
   return {
+    registered: (_principal, partition) => {
+      calls.push(`worker-pools:${partition.project}`);
+      return Promise.resolve(
+        partition.project === "atlas"
+          ? {
+              result: "Found",
+              value: {
+                pools: [
+                  {
+                    pool: "shame",
+                    capabilities: ["Platform:Linux:Amd64"],
+                    registeredAt: "2026-09-30T12:00:00.000Z",
+                  },
+                ],
+                truncated: false,
+              },
+            }
+          : { result: "NotFound" },
+      );
+    },
     mint: (_principal, partition, request) => {
       calls.push(
         `worker-pool-token:${partition.project}:${request.capabilities.join("+")}:${String(request.lifetimeSecs)}`,
@@ -484,8 +511,58 @@ function fakeWorkerPools(calls: string[]): WorkerPoolRegistrationService {
         return Promise.resolve({ result: "NotFound" });
       return Promise.resolve({
         result: "Registered",
-        value: { clientId: "chuggy-pool-one", clientSecret: "a-secret" },
+        value: {
+          partition: {
+            tenant: asTenantId("acme"),
+            project: asProjectId("atlas"),
+          },
+          pool: offered.pool,
+          capabilities: offered.capabilities,
+          tokenUrl: "https://issuer.invalid/oauth2/token",
+          audience: "https://api.invalid",
+          planeUrl: "https://plane.invalid/",
+          clientId: "chuggy-pool-one",
+          clientSecret: "a-secret",
+        },
       });
+    },
+  };
+}
+
+/**
+ * Placement as the routes see it: `atlas` is administered under the hosted
+ * grant, `pooled` without it, and every other project is not found.
+ */
+function fakeExecutionPlacement(
+  calls: string[],
+): ExecutionPlacementAdministration {
+  const view = {
+    routes: {
+      Work: { route: "Pool", source: "Default" },
+      Evaluation: { route: "InCluster", source: "Project" },
+    },
+    choices: ["InCluster", "Pool"],
+  } as const;
+  return {
+    read: (_principal, partition) => {
+      calls.push(`placement-read:${partition.project}`);
+      return Promise.resolve(
+        partition.project === "atlas"
+          ? { result: "Found", view }
+          : { result: "NotFound" },
+      );
+    },
+    write: (_principal, partition, placement) => {
+      calls.push(
+        `placement-write:${partition.project}:${placement.Work}:${placement.Evaluation}`,
+      );
+      if (partition.project === "pooled")
+        return Promise.resolve({ result: "HostedRunsNotGranted" });
+      return Promise.resolve(
+        partition.project === "atlas"
+          ? { result: "Written", view }
+          : { result: "NotFound" },
+      );
     },
   };
 }
@@ -517,6 +594,8 @@ function appOf(
     minting ?? fakeForgeCredentials(calls),
     undefined,
     fakeWorkerPools(calls),
+    undefined,
+    fakeExecutionPlacement(calls),
   );
 }
 
@@ -1647,6 +1726,95 @@ const workerPoolTokenPath =
 const workerPoolRedemptionPath = "/api/v1/worker-pool-registrations";
 const workerPoolJson = { "content-type": "application/vnd.chuggy.v1+json" };
 
+const placementPath = (project: string) =>
+  `/api/v1/tenants/acme/projects/${project}/execution-placement`;
+
+test("a project's placement is read with each kind's source and the routes the caller may choose", async () => {
+  const calls: string[] = [];
+  await using app = appOf(calls);
+  const found = await app.inject({
+    url: placementPath("atlas"),
+    headers: { authorization: "Bearer valid" },
+  });
+  assert.equal(found.statusCode, 200);
+  assert.deepEqual(executionPlacementResponseSchema.parse(found.json()), {
+    work: { route: "Pool", source: "Default" },
+    evaluation: { route: "InCluster", source: "Project" },
+    choices: ["InCluster", "Pool"],
+  });
+  const absent = await app.inject({
+    url: placementPath("other"),
+    headers: { authorization: "Bearer valid" },
+  });
+  assert.equal(absent.statusCode, 404);
+});
+
+test("a placement is written whole, and a hosted route the tenant has not granted is refused by its code", async () => {
+  const calls: string[] = [];
+  await using app = appOf(calls);
+  const put = (project: string, payload: unknown) =>
+    app.inject({
+      method: "PUT",
+      url: placementPath(project),
+      headers: { authorization: "Bearer valid", ...workerPoolJson },
+      payload: JSON.stringify(payload),
+    });
+  const written = await put("atlas", { work: "Pool", evaluation: "InCluster" });
+  assert.equal(written.statusCode, 200);
+  executionPlacementResponseSchema.parse(written.json());
+  const refused = await put("pooled", {
+    work: "InCluster",
+    evaluation: "Pool",
+  });
+  assert.equal(refused.statusCode, 403);
+  assert.equal(
+    refused.json<HttpErrorEnvelope>().error.code,
+    hostedRunsNotGrantedCode,
+  );
+  assert.equal(
+    (await put("other", { work: "Pool", evaluation: "Pool" })).statusCode,
+    404,
+  );
+  assert.equal((await put("atlas", { work: "Pool" })).statusCode, 400);
+  assert.equal(
+    (await put("atlas", { work: "Elsewhere", evaluation: "Pool" })).statusCode,
+    400,
+  );
+  assert.deepEqual(
+    calls.filter((call) => call.startsWith("placement-")),
+    [
+      "placement-write:atlas:Pool:InCluster",
+      "placement-write:pooled:InCluster:Pool",
+      "placement-write:other:Pool:Pool",
+    ],
+  );
+});
+
+test("a project's registered pools are listed to a reader, and another project's are not found", async () => {
+  const calls: string[] = [];
+  await using app = appOf(calls);
+  const listed = await app.inject({
+    url: "/api/v1/tenants/acme/projects/atlas/worker-pools",
+    headers: { authorization: "Bearer valid" },
+  });
+  assert.equal(listed.statusCode, 200);
+  assert.deepEqual(workerPoolsResponseSchema.parse(listed.json()), {
+    pools: [
+      {
+        pool: "shame",
+        capabilities: ["Platform:Linux:Amd64"],
+        registeredAt: "2026-09-30T12:00:00.000Z",
+      },
+    ],
+    truncated: false,
+  });
+  const absent = await app.inject({
+    url: "/api/v1/tenants/acme/projects/other/worker-pools",
+    headers: { authorization: "Bearer valid" },
+  });
+  assert.equal(absent.statusCode, 404);
+});
+
 test("an owner mints a registration token and a project they may not administer is not found", async () => {
   const calls: string[] = [];
   await using app = appOf(calls);
@@ -1717,9 +1885,17 @@ test("minting a registration token needs a bearer, and redeeming one needs none"
   });
   assert.equal(redeemed.statusCode, 201);
   assert.deepEqual(redeemed.json(), {
+    tenant: "acme",
+    project: "atlas",
+    pool: "pool-one",
+    capabilities: ["linux-containers"],
+    tokenUrl: "https://issuer.invalid/oauth2/token",
+    audience: "https://api.invalid",
+    planeUrl: "https://plane.invalid/",
     clientId: "chuggy-pool-one",
     clientSecret: "a-secret",
   });
+  workerPoolCredentialsSchema.parse(redeemed.json());
   assert.deepEqual(
     calls.filter((call) => call.startsWith("worker-pool-")),
     ["worker-pool-redeem:pool-one"],

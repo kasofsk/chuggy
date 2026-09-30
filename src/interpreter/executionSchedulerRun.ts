@@ -274,7 +274,11 @@ export async function executionSchedulerRegister(
     const outcome = await service.store.registerSpawn(
       claim,
       config.nTasks,
-      executionRoutes(service.policy.routing, claim.partition),
+      executionRoutes(
+        service.policy.routing,
+        claim.partition,
+        await service.store.projectPlacement(claim.partition),
+      ),
     );
     recordScheduler(service.metrics, (metrics) => {
       metrics.registration(outcome.registered);
