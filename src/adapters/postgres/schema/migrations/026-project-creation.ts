@@ -6,7 +6,7 @@ import {
   type Migration,
 } from "../shared.ts";
 
-const signature = `public.${projectCreateFunction}(in_tenant text, in_project text, in_tenant_new boolean, in_operation text, in_authority_kind text, in_authority_subject text)`;
+const signature = `public.${projectCreateFunction}(in_tenant text, in_project text, in_standing text, in_tenant_reserved boolean, in_operation text, in_authority_kind text, in_authority_subject text)`;
 const grantsSignature = `public.${projectCreationGrantsFunction}(in_operation text)`;
 
 /**
@@ -16,14 +16,21 @@ const grantsSignature = `public.${projectCreationGrantsFunction}(in_operation te
  * the caller's expectation that the tenant is new is answered `TenantTaken`
  * rather than a project in a tenant somebody else just made.
  *
+ * THE CALLER'S STANDING IS THE AUTHORITY'S, AND THE ROW IS THE DOOR'S. The
+ * caller says whether it administers the tenant, and otherwise whether any
+ * tuple names it; a tenant some tuple names is taken even with no row, and a
+ * reserved name is refused only for a tenant that is new on both counts.
+ *
  * WHO CREATED A TENANT IS THE OPERATION THAT DID. The operation row records
  * whether it made the tenant, and at most one may, so the creator is read from
- * there rather than stored twice. Rows backfilled from existing projects carry
- * no creation instant, because none was ever recorded.
+ * there rather than stored twice.
  *
  * ONLY A CREATION IS RECORDED. A refusal writes nothing, so a retry under the
  * same identity is decided again; a replay answers `AlreadyCreated` with
  * whether the tenant was made, which is what the caller re-asserts access from.
+ * So does any request by the authority that created that tenant and project,
+ * under whatever identity, because a creator whose grants never landed would
+ * otherwise be refused its own tenant and project.
  *
  * ACCESS IS RE-ASSERTED ONLY UNTIL IT IS RECORDED AS WRITTEN. The caller records
  * an operation's grants once the authority has taken them, in a table of their
@@ -35,11 +42,8 @@ export const migration026: Migration = {
   version: 26,
   name: "a principal creates a project, and a tenant is a row",
   statements: [
-    `CREATE TABLE public.tenant (
-       tenant text PRIMARY KEY,
-       created_at timestamp with time zone DEFAULT now())`,
-    `INSERT INTO public.tenant(tenant,created_at)
-       SELECT DISTINCT tenant, NULL::timestamp with time zone FROM public.project`,
+    `CREATE TABLE public.tenant (tenant text PRIMARY KEY)`,
+    `INSERT INTO public.tenant(tenant) SELECT DISTINCT tenant FROM public.project`,
     `ALTER TABLE public.project ADD CONSTRAINT project_names_a_tenant
        FOREIGN KEY (tenant) REFERENCES public.tenant(tenant)`,
     `CREATE TABLE public.project_creation_operation (
@@ -77,12 +81,19 @@ export const migration026: Migration = {
     `GRANT SELECT,INSERT ON TABLE public.tenant TO ${boundaryOwnerRole}`,
     `GRANT SELECT,INSERT ON TABLE public.project_creation_operation TO ${boundaryOwnerRole}`,
     `GRANT SELECT,INSERT ON TABLE public.project_creation_grant TO ${boundaryOwnerRole}`,
-    `CREATE FUNCTION ${signature} RETURNS TABLE(outcome text, tenant_created boolean, grants_written boolean)
+    `CREATE FUNCTION ${signature}
+    RETURNS TABLE(outcome text, tenant_created boolean, grants_written boolean, operation text)
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'public', 'pg_temp'
     AS $$
      DECLARE existing project_creation_operation%ROWTYPE;
+             refusal text;
      BEGIN
+       IF in_standing IS NULL
+          OR in_standing NOT IN ('Administers','Claimed','Unclaimed') THEN
+         RAISE EXCEPTION 'create_project: unknown standing %', in_standing
+           USING ERRCODE='invalid_parameter_value';
+       END IF;
        PERFORM pg_advisory_xact_lock(hashtextextended('project-creation:'||in_operation,0));
        SELECT * INTO existing FROM project_creation_operation o
         WHERE o.operation=in_operation;
@@ -92,28 +103,48 @@ export const migration026: Migration = {
             AND existing.authority_subject=in_authority_subject
            THEN RETURN QUERY SELECT 'AlreadyCreated', existing.tenant_created,
              EXISTS(SELECT 1 FROM project_creation_grant g
-                     WHERE g.operation=in_operation);
-           ELSE RETURN QUERY VALUES ('OperationConflict', false, false);
+                     WHERE g.operation=in_operation), in_operation;
+           ELSE RETURN QUERY VALUES ('OperationConflict', false, false, in_operation);
          END IF;
          RETURN;
        END IF;
-       INSERT INTO tenant(tenant) VALUES(in_tenant) ON CONFLICT DO NOTHING;
-       tenant_created := FOUND;
-       IF in_tenant_new AND NOT tenant_created THEN
-         RETURN QUERY VALUES ('TenantTaken', false, false);
+       IF in_standing='Claimed' THEN
+         refusal := 'TenantTaken';
+       ELSIF in_standing='Unclaimed' AND in_tenant_reserved
+             AND NOT EXISTS(SELECT 1 FROM tenant t WHERE t.tenant=in_tenant) THEN
+         RETURN QUERY VALUES ('TenantReserved', false, false, in_operation);
          RETURN;
+       ELSE
+         INSERT INTO tenant(tenant) VALUES(in_tenant) ON CONFLICT DO NOTHING;
+         tenant_created := FOUND;
+         IF in_standing='Unclaimed' AND NOT tenant_created THEN
+           refusal := 'TenantTaken';
+         ELSE
+           INSERT INTO project(tenant,project,lifecycle)
+             VALUES(in_tenant,in_project,'Active') ON CONFLICT DO NOTHING;
+           IF NOT FOUND THEN
+             refusal := 'ProjectExists';
+           ELSE
+             INSERT INTO project_creation_operation
+               (operation,tenant,project,tenant_created,authority_kind,authority_subject)
+               VALUES(in_operation,in_tenant,in_project,tenant_created,
+                      in_authority_kind,in_authority_subject);
+             RETURN QUERY VALUES ('Created', tenant_created, false, in_operation);
+             RETURN;
+           END IF;
+         END IF;
        END IF;
-       INSERT INTO project(tenant,project,lifecycle)
-         VALUES(in_tenant,in_project,'Active') ON CONFLICT DO NOTHING;
-       IF NOT FOUND THEN
-         RETURN QUERY VALUES ('ProjectExists', false, false);
-         RETURN;
+       SELECT * INTO existing FROM project_creation_operation o
+        WHERE o.tenant=in_tenant AND o.project=in_project
+          AND o.authority_kind=in_authority_kind
+          AND o.authority_subject=in_authority_subject;
+       IF FOUND THEN
+         RETURN QUERY SELECT 'AlreadyCreated', existing.tenant_created,
+           EXISTS(SELECT 1 FROM project_creation_grant g
+                   WHERE g.operation=existing.operation), existing.operation;
+       ELSE
+         RETURN QUERY VALUES (refusal, false, false, in_operation);
        END IF;
-       INSERT INTO project_creation_operation
-         (operation,tenant,project,tenant_created,authority_kind,authority_subject)
-         VALUES(in_operation,in_tenant,in_project,tenant_created,
-                in_authority_kind,in_authority_subject);
-       RETURN QUERY VALUES ('Created', tenant_created, false);
      END $$`,
     `ALTER FUNCTION ${signature} OWNER TO ${boundaryOwnerRole}`,
     `REVOKE ALL ON FUNCTION ${signature} FROM PUBLIC`,

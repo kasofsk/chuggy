@@ -9046,7 +9046,7 @@ test("023 gives the plane serving pools the release and takes back its reading o
 test("026 gives every tenant a project stands in a row of its own, and a project no tenant row holds is refused", async () => {
   await migrationDatabase("project_creation", async (subject) => {
     const doors = [
-      `${projectCreateFunction}(text,text,boolean,text,text,text)`,
+      `${projectCreateFunction}(text,text,text,boolean,text,text,text)`,
       `${projectCreationGrantsFunction}(text)`,
     ];
     await installationBefore(subject, migration026.version);
@@ -9057,15 +9057,8 @@ test("026 gives every tenant a project stands in a row of its own, and a project
     );
     assert.ok((await postgresMigrate(subject)).includes(migration026.version));
     assert.deepEqual(
-      (
-        await subject.query(
-          "SELECT tenant, created_at FROM tenant ORDER BY tenant",
-        )
-      ).rows,
-      [
-        { tenant: "other-26", created_at: null },
-        { tenant: "tenant-26", created_at: null },
-      ],
+      (await subject.query("SELECT tenant FROM tenant ORDER BY tenant")).rows,
+      [{ tenant: "other-26" }, { tenant: "tenant-26" }],
     );
     await assert.rejects(
       subject.query(

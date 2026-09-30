@@ -20,10 +20,7 @@ import {
   projectSwitcherCreateText,
 } from "../app/browser/shell/ProjectSwitcher.tsx";
 import { lastProjectRead } from "../app/core/lastProject.ts";
-import {
-  projectCreationRoutePath,
-  projectNameCharsFault,
-} from "../app/core/projectCreation.ts";
+import { projectCreationRoutePath } from "../app/core/projectCreation.ts";
 import { persistentStore } from "../app/browser/ports.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import { answer, holderDouble, settled, turned } from "./screenHarness.tsx";
@@ -141,7 +138,7 @@ test("a reader with no project meets the form, under a bar that signs out and se
   served([], () => Promise.resolve(answer(partition, 201)));
   await drawn(<Landing />);
   expect(screen.getByText("No projects")).toBeDefined();
-  expect(screen.getByRole("textbox", { name: "Workspace" })).toBeDefined();
+  expect(screen.getByRole("textbox", { name: "Tenant" })).toBeDefined();
   expect(screen.getByRole("textbox", { name: "Project" })).toBeDefined();
   expect(screen.getByRole("button", { name: "Sign out" })).toBeDefined();
   expect(screen.queryByRole("navigation", { name: "Console" })).toBeNull();
@@ -157,9 +154,9 @@ test("a reader with no project meets the form, under a bar that signs out and se
 test("a name the wire refuses is one line under its field, and nothing is sent", async () => {
   const posted = served([], () => Promise.resolve(answer(partition, 201)));
   await drawn(<Landing />);
-  typed("Workspace", "Vteng");
+  typed("Tenant", "Vteng");
   typed("Project", "chuggy");
-  expect(screen.getByText(projectNameCharsFault)).toBeDefined();
+  expect(screen.getByText("Lowercase, digits, inner hyphens")).toBeDefined();
   expect(submit()).toHaveProperty("disabled", true);
   fireEvent.click(submit());
   await settled();
@@ -169,7 +166,7 @@ test("a name the wire refuses is one line under its field, and nothing is sent",
 test("a created project is opened at its repositories and remembered", async () => {
   const posted = served([], () => Promise.resolve(answer(partition, 201)));
   await drawn(<Landing />);
-  typed("Workspace", partition.tenant);
+  typed("Tenant", partition.tenant);
   typed("Project", partition.project);
   await pressed();
   expect(posted.map((one) => one.body)).toEqual([partition]);
@@ -187,17 +184,17 @@ test("a refusal is one short line, and the form stays where it was", async () =>
     ),
   );
   await drawn(<Landing />);
-  typed("Workspace", partition.tenant);
+  typed("Tenant", partition.tenant);
   typed("Project", partition.project);
   await pressed();
-  expect(screen.getByRole("status").textContent).toBe("Name taken");
+  expect(screen.getByRole("status").textContent).toBe("Taken");
   expect(held.went).toEqual([]);
 });
 
 test("a press repeated after no answer spends the same identity, and an edit draws a new one", async () => {
   const posted = served([], () => Promise.reject(new Error("offline")));
   await drawn(<Landing />);
-  typed("Workspace", partition.tenant);
+  typed("Tenant", partition.tenant);
   typed("Project", partition.project);
   await pressed();
   expect(screen.getByRole("status").textContent).toBe("Unreachable");

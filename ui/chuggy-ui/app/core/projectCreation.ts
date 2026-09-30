@@ -23,7 +23,7 @@ export type ProjectCreationForm = z.infer<typeof projectCreationSchema>;
 /** The form's own address, outside every partition because it makes one. */
 export const projectCreationRoutePath = "/projects/new";
 
-export const projectNameCharsFault = "Letters, digits and -";
+export const projectNameCharsFault = "Lowercase, digits, inner hyphens";
 export const projectNameLengthFault = "Too long";
 
 /** Why one name cannot be sent, or nothing while it is empty, which the submit
@@ -51,9 +51,9 @@ export type ProjectCreationOutcome =
 function projectCreationConflict(code: string): string {
   switch (code) {
     case "TenantTaken":
-      return "Name taken";
+      return "Taken";
     case "ProjectExists":
-      return "Project exists";
+      return "Exists";
     default:
       return "Conflict";
   }

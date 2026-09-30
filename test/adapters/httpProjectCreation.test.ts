@@ -12,11 +12,8 @@ import {
   nativeHttpMediaType,
   type HttpErrorEnvelope,
 } from "../../src/contract/http.ts";
-import {
-  reservedTenantNames,
-  tenantNameReserved,
-} from "../../src/contract/requests.ts";
-import { asPrincipal } from "../../src/interpreter/principal.ts";
+import { tenantNameReserved } from "../../src/contract/requests.ts";
+import { asOperationId } from "../../src/interpreter/operationInbox.ts";
 import { ProjectAccessUnavailable } from "../../src/interpreter/projectAccess.ts";
 import {
   projectCreation,
@@ -24,7 +21,6 @@ import {
   type ProjectCreationWrite,
 } from "../../src/interpreter/projectCreation.ts";
 import type { ProjectGrant } from "../../src/interpreter/projectGrant.ts";
-import { asTenantId } from "../../src/interpreter/projectStore.ts";
 import { memoryProjectAccess } from "../postgres/projectAccessMemory.ts";
 import { servedNativeHttpApp, unservedNativeWeb } from "./threadFixtures.ts";
 
@@ -33,6 +29,13 @@ const authorized = { authorization: "Bearer valid" };
 const versioned = { ...authorized, "content-type": nativeHttpMediaType };
 const keyed = { ...versioned, "idempotency-key": "create-chuggy-1" };
 const body = { tenant: "vteng", project: "chuggy" };
+
+const createdAnswer: ProjectCreationAnswer = {
+  outcome: "Created",
+  tenantCreated: true,
+  grantsWritten: false,
+  operation: asOperationId("create-chuggy-1"),
+};
 
 interface CreationCase {
   readonly app: ReturnType<typeof servedNativeHttpApp>;
@@ -43,11 +46,7 @@ interface CreationCase {
 
 function creationCase(
   t: TestContext,
-  answer: ProjectCreationAnswer = {
-    outcome: "Created",
-    tenantCreated: true,
-    grantsWritten: false,
-  },
+  answer: ProjectCreationAnswer = createdAnswer,
   options: {
     readonly configured?: boolean;
     readonly grantFails?: boolean;
@@ -61,6 +60,7 @@ function creationCase(
     undefined,
     projectCreation({
       access,
+      claims: { claimed: () => Promise.resolve(false) },
       store: {
         create: (write) => {
           writes.push(write);
@@ -120,11 +120,7 @@ test("a project is created at its own address, under the identity the caller key
 
 test("a replay answers the project it already created", async (t) => {
   const served = await created(
-    creationCase(t, {
-      outcome: "AlreadyCreated",
-      tenantCreated: true,
-      grantsWritten: false,
-    }),
+    creationCase(t, { ...createdAnswer, outcome: "AlreadyCreated" }),
   );
   assert.equal(served.statusCode, 200);
   assert.deepEqual(served.json(), body);
@@ -137,9 +133,9 @@ test("each refusal the door answers reaches the wire as its own conflict", async
     "OperationConflict",
   ] as const) {
     const one = creationCase(t, {
+      ...createdAnswer,
       outcome,
       tenantCreated: false,
-      grantsWritten: false,
     });
     const served = await created(one);
     assert.equal(served.statusCode, 409, outcome);
@@ -162,29 +158,16 @@ test("a name the rule refuses is the request's own fault and names its field", a
 });
 
 test("a new tenant named for a path the service answers is the request's own fault", async (t) => {
-  for (const tenant of reservedTenantNames) {
-    const one = creationCase(t);
-    const served = await created(one, { tenant, project: "chuggy" });
-    assert.equal(served.statusCode, 422, tenant);
-    assert.equal(code(served), "TenantNameReserved");
-    assert.deepEqual(one.writes, [], tenant);
-  }
-});
-
-test("a reserved tenant that already stands takes a project from its administrator", async (t) => {
   const one = creationCase(t, {
-    outcome: "Created",
+    ...createdAnswer,
+    outcome: "TenantReserved",
     tenantCreated: false,
-    grantsWritten: false,
-  });
-  one.access.grantTenant({
-    tenant: asTenantId("projects"),
-    principal: asPrincipal("issuer geoff"),
-    access: new Set(["AdministerTenant"]),
   });
   const served = await created(one, { tenant: "projects", project: "chuggy" });
-  assert.equal(served.statusCode, 201);
-  assert.equal(one.writes[0]?.tenantNew, false);
+  assert.equal(served.statusCode, 422);
+  assert.equal(code(served), "TenantNameReserved");
+  assert.equal(one.writes[0]?.reserved, true);
+  assert.deepEqual(one.grants, []);
 });
 
 test("every path the API answers begins with a name no new tenant may take", async (t) => {

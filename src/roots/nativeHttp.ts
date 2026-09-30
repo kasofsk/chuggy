@@ -7,6 +7,7 @@ import { postgresInstallationAuthority } from "../adapters/postgres/installation
 import {
   ketoProjectAccess,
   ketoReadiness,
+  ketoTenantClaims,
 } from "../adapters/keto/projectAccess.ts";
 import { postgresExecutionBacklogGuard } from "../adapters/postgres/schedulerContext.ts";
 import {
@@ -955,7 +956,12 @@ async function main(): Promise<void> {
     forge.minting,
     forge.onboarding,
     nativeWorkerPools(pool, access, grants),
-    composeProjectCreation(pool, access, grants),
+    composeProjectCreation(
+      pool,
+      access,
+      ketoTenantClaims(accessSettings),
+      grants,
+    ),
   );
   app.addHook("onClose", async () => {
     await hub.close();

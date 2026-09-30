@@ -62,7 +62,9 @@ back.
 **The project need not exist.** A tuple names an object rather than referencing
 a row, so access written before the project is created starts answering when
 the project does — which is what lets an operator write every member's access
-before the release that reads it.
+before the release that reads it. A tenant any tuple names is taken, so the
+creation route gives it only to a principal that administers it, never to
+whoever asks first.
 
 ### Reversing it
 

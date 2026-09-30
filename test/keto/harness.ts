@@ -1,5 +1,5 @@
 /**
- * What every case in this directory needs of a real Ory Keto: the port over
+ * What every case in this directory needs of a real Ory Keto: the ports over
  * its read API, the writer over its write API, and objects no other case is
  * using.
  *
@@ -19,12 +19,14 @@ import { randomUUID } from "node:crypto";
 import {
   ketoProjectAccess,
   ketoReadiness,
+  ketoTenantClaims,
 } from "../../src/adapters/keto/projectAccess.ts";
 import { ketoProjectGrants } from "../../src/adapters/keto/projectGrants.ts";
 import {
   checkedProjectAccessSettings,
   type ProjectAccess,
 } from "../../src/interpreter/projectAccess.ts";
+import type { TenantClaims } from "../../src/interpreter/projectCreation.ts";
 import {
   checkedProjectGrantSettings,
   type ProjectGrantWriter,
@@ -65,6 +67,16 @@ export function ketoHarnessAccess(): ProjectAccess {
 export function ketoHarnessAccessAt(readUrl: string): ProjectAccess {
   return ketoProjectAccess(
     checkedProjectAccessSettings({ readUrl, requestTimeoutMs: 2_000 }),
+  );
+}
+
+/** The tenant claims a creation asks, over the same read API. */
+export function ketoHarnessClaims(): TenantClaims {
+  return ketoTenantClaims(
+    checkedProjectAccessSettings({
+      readUrl: ketoHarnessReadUrl(),
+      requestTimeoutMs: 2_000,
+    }),
   );
 }
 
