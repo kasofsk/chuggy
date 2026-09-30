@@ -100,6 +100,7 @@ import type {
   RepositoryOnboardingForgeApp,
 } from "../interpreter/repositoryOnboarding.ts";
 import { forgeRepositoriesAnsweredMax } from "../contract/http.ts";
+import { bootstrapImageFault } from "../interpreter/bootstrapConfiguration.ts";
 import type { ForgeCredentialMinting } from "../interpreter/forgeCredentials.ts";
 import type { RepositoryCredentialPort } from "../interpreter/finalizer.ts";
 import {
@@ -594,10 +595,19 @@ function forgeRepositoriesMax(): number {
   return asked;
 }
 
-/** The image a bootstrap configuration commands, or nothing where this deployment names none. */
+/**
+ * The image a bootstrap configuration commands, or nothing where this
+ * deployment names none; one its briefing cannot name is refused here.
+ */
 function bootstrapWorkerImage(): string | undefined {
   const image = process.env[bootstrapWorkerImageVariable];
-  return image === undefined || image.length === 0 ? undefined : image;
+  if (image === undefined || image.length === 0) return undefined;
+  const fault = bootstrapImageFault(image);
+  if (fault !== undefined)
+    throw new Error(
+      `${bootstrapWorkerImageVariable} cannot be named in a briefing: ${fault}`,
+    );
+  return image;
 }
 
 /**
