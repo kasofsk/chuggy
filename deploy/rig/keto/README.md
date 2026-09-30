@@ -28,10 +28,11 @@ loss is accepted rather than repaired.
 
 ## Grant a project access
 
-`src/roots/provisionProjectAccess.ts` is the only way a tuple is written from
-this tree. It reaches Keto's **write** port and nothing else: the API holds no
-credential for that port, so the API process cannot widen its own
-authorization, and this command needs no database at all.
+The API writes the tuples its own routes create — a new tenant's `admins`, a
+created project's `tenant` and a registered pool's `pools` — when
+`CHUG_API_KETO_WRITE_URL` names Keto's **write** port. A grant to anyone else is
+the operator's, through `src/roots/provisionProjectAccess.ts`, which reaches
+that port and nothing else and needs no database at all.
 
 Supply the issuer and the subject the token carries; the command derives the
 principal with the same function the API derives it from, so neither side has

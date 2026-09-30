@@ -22,13 +22,18 @@ import { apiProjectInventoryAll } from "../core/apiRoutes.ts";
 import { forgeSetupQueryOf, forgeSetupRoutePath } from "../core/forgeSetup.ts";
 import type { ForgeSetupQuery } from "../core/forgeSetup.ts";
 import { lastProjectOrFirst, lastProjectRead } from "../core/lastProject.ts";
+import { projectCreationRoutePath } from "../core/projectCreation.ts";
 import { usePanelInventory } from "./api.ts";
 import { DataPanel } from "./DataPanel.tsx";
-import { Footer } from "./Footer.tsx";
 import { ForgeSetupPage } from "./ForgeSetupPage.tsx";
 import { Inbox } from "./Inbox.tsx";
 import { LeadPage } from "./LeadPage.tsx";
 import { persistentStore } from "./ports.ts";
+import {
+  ProjectCreationForm,
+  ProjectCreationPage,
+  ProjectlessFrame,
+} from "./ProjectCreation.tsx";
 import { ProjectTable } from "./ProjectTable.tsx";
 import { RepositoriesPage } from "./RepositoriesPage.tsx";
 import { RepositoryPage } from "./repositories/RepositoryPage.tsx";
@@ -38,6 +43,7 @@ import { ProjectStreamProvider } from "./stream.tsx";
 import { TicketCreation } from "./TicketCreation.tsx";
 import { TicketEdit } from "./TicketEdit.tsx";
 import { TicketPage } from "./TicketPage.tsx";
+import { EmptyState } from "./ui/EmptyState.tsx";
 
 export function Landing(): ReactNode {
   const navigate = useNavigate();
@@ -54,25 +60,27 @@ export function Landing(): ReactNode {
       replace: true,
     });
   }, [navigate, chosen]);
+  if (state.state === "Ready" && state.value.length === 0)
+    return (
+      <ProjectlessFrame>
+        <div className="grid justify-items-center gap-4">
+          <EmptyState
+            variant="page"
+            label="No projects"
+            detail="Create one to start"
+          />
+          <ProjectCreationForm />
+        </div>
+      </ProjectlessFrame>
+    );
   return (
-    <div className="grid min-h-dvh content-start gap-4 p-4">
-      <main>
-        <DataPanel title="projects" state={state}>
-          {(projects) =>
-            projects.length === 0 ? (
-              <p className="panel-absent">
-                this installation has no project you may read
-              </p>
-            ) : (
-              <p className="panel-note">
-                opening {projects.length} project(s)…
-              </p>
-            )
-          }
-        </DataPanel>
-      </main>
-      <Footer />
-    </div>
+    <ProjectlessFrame>
+      <DataPanel title="projects" state={state}>
+        {(projects) => (
+          <p className="panel-note">opening {projects.length} project(s)…</p>
+        )}
+      </DataPanel>
+    </ProjectlessFrame>
   );
 }
 
@@ -163,6 +171,14 @@ const forgeSetupRoute = createRoute({
   ): ForgeSetupQuery => forgeSetupQueryOf(search),
 });
 
+/** Outside the partition because it makes one. A static segment outranks a
+ * parameter, so this address is never read as a tenant and a project. */
+const projectCreationRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: projectCreationRoutePath,
+  component: ProjectCreationPage,
+});
+
 const ticketCreationRoute = createRoute({
   getParentRoute: () => partitionRoute,
   path: "/tickets/new",
@@ -184,6 +200,7 @@ const ticketEditRoute = createRoute({
 const routeTree = rootRoute.addChildren([
   landingRoute,
   forgeSetupRoute,
+  projectCreationRoute,
   partitionRoute.addChildren([
     projectRoute,
     inboxRoute,

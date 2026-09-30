@@ -122,6 +122,27 @@ export const forgeInstallationClaimSchema = z.strictObject({
   installationId: bodyIdentitySchema,
 });
 
+/** The longest tenant or project name a principal may create. */
+export const projectNameCharsMax = 39;
+
+/**
+ * A tenant or project name a principal creates: lowercase ASCII letters, digits
+ * and hyphens, beginning and ending with a letter or digit.
+ */
+export const projectNameSchema = z
+  .string()
+  .max(projectNameCharsMax)
+  .regex(/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/u);
+
+/**
+ * One project to create, and the tenant it is created under. The server holds
+ * each name to `projectNameSchema` and refuses one by naming its field.
+ */
+export const projectCreationSchema = z.strictObject({
+  tenant: bodyIdentitySchema,
+  project: bodyIdentitySchema,
+});
+
 /**
  * One binding. The project is the path's and is not repeated here, and nothing
  * else is chosen: a binding privileges no repository and elects none.

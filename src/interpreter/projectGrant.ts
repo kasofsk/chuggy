@@ -29,7 +29,7 @@ import {
   projectAccessTenantObject,
 } from "./projectAccess.ts";
 import { oidcPrincipal, type Principal } from "./principal.ts";
-import { asProjectId, asTenantId } from "./projectStore.ts";
+import { asProjectId, asTenantId, type TenantId } from "./projectStore.ts";
 
 /** The relations a principal may be written into on a project. */
 export const allProjectGrantRelations = [
@@ -130,6 +130,22 @@ export function tenantPrincipalGrant(
     object: projectAccessTenantObject(asTenantId(request.tenant)),
     relation: asTenantGrantRelation(request.relation),
     holder: projectGrantHolder(request),
+  };
+}
+
+/** The tenant relation that holds the permit to administer it. */
+export const tenantAdministratorRelation: TenantGrantRelation = "admins";
+
+/** The tuple making an authenticated principal one tenant's administrator. */
+export function tenantAdministratorGrant(
+  principal: Principal,
+  tenant: TenantId,
+): ProjectGrant {
+  return {
+    namespace: projectAccessTenantNamespace,
+    object: projectAccessTenantObject(tenant),
+    relation: tenantAdministratorRelation,
+    holder: { subject: "Principal", principal },
   };
 }
 

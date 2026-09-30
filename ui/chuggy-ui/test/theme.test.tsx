@@ -81,7 +81,7 @@ async function themeMenuOpened(): Promise<void> {
   cleanup();
   render(
     <ChatPaneProvider>
-      <SettingsMenu />
+      <SettingsMenu chat />
     </ChatPaneProvider>,
   );
   fireEvent.keyDown(screen.getByRole("button", { name: "Settings" }), {

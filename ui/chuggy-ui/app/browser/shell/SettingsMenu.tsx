@@ -1,6 +1,6 @@
 /**
  * The frame's own settings, behind one gear in the bar: how the console looks,
- * and where the chat pane sits.
+ * and where the chat pane sits where the frame has one.
  *
  * These are the controls that belong to the frame rather than to any page, and
  * a reader sets them once and forgets them — so the bar carries the gear and
@@ -125,7 +125,7 @@ function SettingsChatPlacement(): ReactNode {
   );
 }
 
-export function SettingsMenu(): ReactNode {
+export function SettingsMenu(props: { readonly chat: boolean }): ReactNode {
   return (
     <DropdownMenu.Root modal={false}>
       <DropdownMenu.Trigger
@@ -137,8 +137,12 @@ export function SettingsMenu(): ReactNode {
       <DropdownMenu.Portal>
         <MenuContent sideOffset={4} align="end">
           <SettingsTheme />
-          <DropdownMenu.Separator className="bg-edge my-1 h-px" />
-          <SettingsChatPlacement />
+          {props.chat ? (
+            <>
+              <DropdownMenu.Separator className="bg-edge my-1 h-px" />
+              <SettingsChatPlacement />
+            </>
+          ) : null}
         </MenuContent>
       </DropdownMenu.Portal>
     </DropdownMenu.Root>

@@ -80,6 +80,12 @@ import {
 import { postgresNotifications } from "./adapters/postgres/notifications.ts";
 import { postgresDispatchViews } from "./adapters/postgres/dispatchViews.ts";
 import { postgresProjectInventory } from "./adapters/postgres/projectInventory.ts";
+import { postgresProjectCreation } from "./adapters/postgres/projectCreation.ts";
+import {
+  projectCreation,
+  type ProjectCreation,
+} from "./interpreter/projectCreation.ts";
+import type { ProjectGrantWriter } from "./interpreter/projectGrant.ts";
 import {
   postgresSelectorProjectSettings,
   postgresSelectorRuntimeControl,
@@ -228,6 +234,19 @@ export interface SelectorLeadRuntime {
   readonly deadline: SelectorHostDeadline;
   readonly policy: LeadPolicyConfig;
   readonly controlDeadlineMs: number;
+}
+
+/** Project creation over the API role's door, answering `NotConfigured` where no grant writer is composed. */
+export function composeProjectCreation(
+  apiPool: pg.Pool,
+  access: ProjectAccess,
+  grants: ProjectGrantWriter | undefined,
+): ProjectCreation {
+  return projectCreation({
+    access,
+    store: postgresProjectCreation(apiPool),
+    ...(grants === undefined ? {} : { grants }),
+  });
 }
 
 /**
