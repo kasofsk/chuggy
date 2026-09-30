@@ -29,7 +29,7 @@ import { asPrincipal } from "../../src/interpreter/principal.ts";
 import {
   asProjectId,
   asTenantId,
-  type Partition,
+  type TenantId,
 } from "../../src/interpreter/projectStore.ts";
 import { memoryProjectAccess } from "../postgres/projectAccessMemory.ts";
 
@@ -56,14 +56,14 @@ function creationWith(
   const writes: ProjectCreationWrite[] = [];
   const grants: ProjectGrant[] = [];
   const recorded: OperationId[] = [];
-  const asked: Partition[] = [];
+  const asked: TenantId[] = [];
   const claims = {
     broken: false,
-    claimed: (asking: Partition) => {
-      asked.push(asking);
+    claimed: (tenant: TenantId) => {
+      asked.push(tenant);
       if (claims.broken)
         return Promise.reject(new ProjectAccessUnavailable("keto down"));
-      return Promise.resolve(options.claimed?.includes(asking.tenant) === true);
+      return Promise.resolve(options.claimed?.includes(tenant) === true);
     },
   };
   const service = projectCreation({
@@ -175,7 +175,7 @@ test("the door is told the caller administers the tenant, or else whether any tu
   const claimed = creationWith(created, { claimed: [partition.tenant] });
   await claimed.service.create(principal, request);
   assert.equal(claimed.writes[0]?.standing, "Claimed");
-  assert.deepEqual(claimed.asked, [partition]);
+  assert.deepEqual(claimed.asked, [partition.tenant]);
   const unclaimed = creationWith(created);
   await unclaimed.service.create(principal, request);
   assert.equal(unclaimed.writes[0]?.standing, "Unclaimed");

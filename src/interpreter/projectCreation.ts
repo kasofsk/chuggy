@@ -3,9 +3,8 @@
  * route answers from.
  *
  * A TENANT NAME IS FIRST-COME. A tenant is held by its row, by any tuple on its
- * own object, by any project whose `tenant` it is, and by any tuple on the
- * object of the project being created. Any principal may create a tenant
- * nothing holds and becomes its administrator; a held tenant takes a project
+ * own object and by any project whose `tenant` it is. Any principal may create a
+ * tenant nothing holds and becomes its administrator; a held tenant takes a project
  * only from a principal the authority says administers it, and anyone else is
  * told the name is taken rather than that it was not found, because a tenant
  * name is not a secret. Tuples hold it because an operator may grant access
@@ -32,7 +31,12 @@ import {
   type ProjectGrantWriter,
 } from "./projectGrant.ts";
 import type { Principal } from "./principal.ts";
-import { asProjectId, asTenantId, type Partition } from "./projectStore.ts";
+import {
+  asProjectId,
+  asTenantId,
+  type Partition,
+  type TenantId,
+} from "./projectStore.ts";
 
 /** One creation as the wire names it, before either name is held to the rule. */
 export interface ProjectCreationRequest {
@@ -77,9 +81,9 @@ export interface ProjectCreationWrite {
   readonly authority: Authority;
 }
 
-/** Whether any tuple holds a creation's tenant: on the tenant's object, as the tenant a project inherits from, or on the requested project's object. */
+/** Whether any tuple holds a tenant: on the tenant's object, or as the tenant a project inherits from. */
 export interface TenantClaims {
-  claimed(partition: Partition): Promise<boolean>;
+  claimed(tenant: TenantId): Promise<boolean>;
 }
 
 /** The durable side: the tenant, the project and the operation in one transaction, and later the record that its grants were written. */
@@ -134,7 +138,7 @@ export function projectCreationGrants(
     : [placed];
 }
 
-/** The caller's standing on the tenant, asking whether any tuple names it only of a caller that does not administer it. */
+/** The caller's standing on the tenant, asking whether any tuple holds it only of a caller that does not administer it. */
 async function projectCreationStanding(
   ports: ProjectCreationPorts,
   principal: Principal,
@@ -146,7 +150,9 @@ async function projectCreationStanding(
     "AdministerTenant",
   );
   if (administers !== undefined) return "Administers";
-  return (await ports.claims.claimed(partition)) ? "Claimed" : "Unclaimed";
+  return (await ports.claims.claimed(partition.tenant))
+    ? "Claimed"
+    : "Unclaimed";
 }
 
 async function projectCreationCreate(

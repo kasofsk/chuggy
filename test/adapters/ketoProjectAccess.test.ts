@@ -126,7 +126,7 @@ test("nothing the authority could not decide is answered as a refusal", async ()
   }
 });
 
-test("a tenant is claimed by a tuple on its own object, a project naming it as its tenant, or the project requested", async () => {
+test("a tenant is claimed by a tuple on its own object, else by a project naming it as its tenant", async () => {
   const object = projectAccessTenantObject(partition.tenant);
   const listings = [
     [
@@ -142,11 +142,6 @@ test("a tenant is claimed by a tuple on its own object, a project naming it as i
       ["subject_set.relation", ""],
       ["page_size", "1"],
     ],
-    [
-      ["namespace", "Project"],
-      ["object", projectAccessObject(partition)],
-      ["page_size", "1"],
-    ],
   ];
   for (const held of listings.keys()) {
     let asked = 0;
@@ -154,7 +149,9 @@ test("a tenant is claimed by a tuple on its own object, a project naming it as i
       json({ relation_tuples: asked++ === held ? [{}] : [] }),
     );
     assert.equal(
-      await ketoTenantClaims(settings, answering.fetch).claimed(partition),
+      await ketoTenantClaims(settings, answering.fetch).claimed(
+        partition.tenant,
+      ),
       true,
       String(held),
     );
@@ -166,25 +163,34 @@ test("a tenant is claimed by a tuple on its own object, a project naming it as i
   }
   const neither = fetcherOf(() => json({ relation_tuples: [] }));
   assert.equal(
-    await ketoTenantClaims(settings, neither.fetch).claimed(partition),
+    await ketoTenantClaims(settings, neither.fetch).claimed(partition.tenant),
     false,
   );
   assert.equal(neither.asked.length, listings.length);
 });
 
-test("no listing the authority could not answer is taken for an unclaimed tenant", async () => {
-  for (const [index, answer] of [
+test("no listing the authority could not answer is taken for an unclaimed tenant, whichever listing it is", async () => {
+  const faults: readonly (() => Response)[] = [
+    () => json({ relation_tuples: [] }, 503),
     () => json({ error: { code: 404 } }, 404),
     () => json({ relation_tuples: {} }),
     () => json({ tuples: [] }),
     () => json(null),
-  ].entries())
-    await assert.rejects(
-      () =>
-        ketoTenantClaims(settings, fetcherOf(answer).fetch).claimed(partition),
-      ProjectAccessUnavailable,
-      `answer ${String(index)} was not treated as undecided`,
-    );
+  ];
+  for (const faulted of [0, 1])
+    for (const [index, fault] of faults.entries()) {
+      let asked = 0;
+      const answering = fetcherOf(() =>
+        asked++ === faulted ? fault() : json({ relation_tuples: [] }),
+      );
+      await assert.rejects(
+        () =>
+          ketoTenantClaims(settings, answering.fetch).claimed(partition.tenant),
+        ProjectAccessUnavailable,
+        `listing ${String(faulted)} answer ${String(index)} was not treated as undecided`,
+      );
+      assert.equal(answering.asked.length, faulted + 1);
+    }
 });
 
 const checkPath = "relation-tuples/check/openapi";

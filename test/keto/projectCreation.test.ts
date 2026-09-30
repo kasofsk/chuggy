@@ -191,43 +191,38 @@ test("a tenant an operator granted before its rows exist is not a stranger's to 
   assert.deepEqual(await held(alice, real), allProjectAccessKinds);
 });
 
-test("a tenant a project already names as its tenant is not a stranger's to make", async () => {
-  const mallory = oidcPrincipal(ketoHarnessIssuer, `mallory-${randomUUID()}`);
-  const request = namedCreation("placed");
-  await grants.write(
-    projectTenantGrant({ tenant: request.tenant, project: asProjectId("web") }),
-  );
-  assert.equal((await service.create(mallory, request)).result, "TenantTaken");
-  assert.equal(await administers(mallory, request), false);
-});
-
-test("a project an operator granted a person on, with no link to its tenant, holds the tenant against a stranger creating it", async () => {
+test("a project a person was provisioned on holds its tenant against a stranger asking for it or any other project in it", async () => {
   for (const relation of ["developers", "admins"]) {
-    const bob = `bob-${randomUUID()}`;
+    const subject = `bob-${randomUUID()}`;
+    const bob = oidcPrincipal(ketoHarnessIssuer, subject);
     const mallory = oidcPrincipal(ketoHarnessIssuer, `mallory-${randomUUID()}`);
-    const request = namedCreation(relation);
-    await grants.write(
+    const provisioned = namedCreation(relation);
+    for (const grant of [
       projectPrincipalGrant({
         issuer: ketoHarnessIssuer,
-        subject: bob,
-        tenant: request.tenant,
-        project: request.project,
+        subject,
+        tenant: provisioned.tenant,
+        project: provisioned.project,
         relation,
       }),
-    );
-    const before = await held(oidcPrincipal(ketoHarnessIssuer, bob), request);
-    assert.equal(
-      (await service.create(mallory, request)).result,
-      "TenantTaken",
-      relation,
-    );
-    assert.equal(await administers(mallory, request), false, relation);
-    assert.deepEqual(await held(mallory, request), [], relation);
-    assert.deepEqual(
-      await held(oidcPrincipal(ketoHarnessIssuer, bob), request),
-      before,
-      relation,
-    );
+      projectTenantGrant(provisioned),
+    ])
+      await grants.write(grant);
+    const before = await held(bob, provisioned);
+    const other = {
+      ...namedCreation(relation),
+      tenant: provisioned.tenant,
+      project: asProjectId("other"),
+    };
+    for (const request of [provisioned, other, provisioned])
+      assert.equal(
+        (await service.create(mallory, request)).result,
+        "TenantTaken",
+        relation,
+      );
+    assert.equal(await administers(mallory, provisioned), false, relation);
+    assert.deepEqual(await held(mallory, provisioned), [], relation);
+    assert.deepEqual(await held(bob, provisioned), before, relation);
   }
 });
 

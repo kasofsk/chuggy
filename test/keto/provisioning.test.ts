@@ -9,14 +9,17 @@ import { execFile } from "node:child_process";
 import { test } from "node:test";
 import { promisify } from "node:util";
 
-import { allProjectAccessKinds } from "../../src/interpreter/projectAccess.ts";
+import {
+  allProjectAccessKinds,
+  projectAccessObject,
+} from "../../src/interpreter/projectAccess.ts";
 import { oidcPrincipal } from "../../src/interpreter/principal.ts";
-import { asProjectId } from "../../src/interpreter/projectStore.ts";
 import {
   ketoHarnessAccess,
   ketoHarnessClaims,
   ketoHarnessIssuer,
   ketoHarnessPartition,
+  ketoHarnessReadUrl,
   ketoHarnessWriteUrl,
 } from "./harness.ts";
 
@@ -108,7 +111,7 @@ test("a tenant grant and the project's tenant relation compose to project access
     );
 });
 
-test("a person's project grant links the project to its tenant, which then holds the tenant for any project, and a revocation leaves the link", async () => {
+test("a person's project grant links the project to its tenant, which then holds the tenant, and a revocation leaves the link", async () => {
   const partition = ketoHarnessPartition("provision-link");
   const person = {
     CHUG_PROVISION_SUBJECT: "linked",
@@ -116,15 +119,14 @@ test("a person's project grant links the project to its tenant, which then holds
     CHUG_PROVISION_PROJECT: partition.project,
     CHUG_PROVISION_RELATION: "developers",
   };
-  const elsewhere = { ...partition, project: asProjectId("elsewhere") };
   const claims = ketoHarnessClaims();
-  assert.equal(await claims.claimed(elsewhere), false);
+  assert.equal(await claims.claimed(partition.tenant), false);
   const granted = await provision({
     ...person,
     CHUG_PROVISION_ACTION: "grant",
   });
   assert.equal(granted.code, 0, granted.output);
-  assert.equal(await claims.claimed(elsewhere), true, granted.output);
+  assert.equal(await claims.claimed(partition.tenant), true, granted.output);
   const onTenant = await provision({
     CHUG_PROVISION_ACTION: "grant",
     CHUG_PROVISION_SUBJECT: "linked-admin",
@@ -180,4 +182,12 @@ test("a relation the model does not declare is refused before anything is writte
   });
   assert.equal(refused.code, 1);
   assert.match(refused.output, /is not a project relation/u);
+  const listing = new URL("relation-tuples", ketoHarnessReadUrl());
+  listing.searchParams.set("namespace", "Project");
+  listing.searchParams.set("object", projectAccessObject(partition));
+  const onProject = (await (await fetch(listing)).json()) as {
+    relation_tuples: unknown[];
+  };
+  assert.deepEqual(onProject.relation_tuples, []);
+  assert.equal(await ketoHarnessClaims().claimed(partition.tenant), false);
 });

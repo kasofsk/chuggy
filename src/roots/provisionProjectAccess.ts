@@ -15,8 +15,8 @@
  * write every member's access before the release that reads it.
  *
  * A PERSON'S PROJECT GRANT LINKS THE PROJECT TO ITS TENANT. The link is written
- * beside the grant because it is what holds the tenant against anyone creating
- * it, for every project in it and not only the one granted. A revocation leaves
+ * beside the grant because a project with no link does not hold its tenant,
+ * which would then go to the first principal to ask for it. A revocation leaves
  * the link, which is the project's rather than the person's.
  */
 

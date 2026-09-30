@@ -122,7 +122,7 @@ export function ketoProjectAccess(
   };
 }
 
-/** A tenant is claimed by a tuple on its own object, by a project naming it as its tenant, or by a tuple on the project being created. */
+/** A tenant is claimed by a tuple on its own object or by a project naming it as its tenant. */
 export function ketoTenantClaims(
   settings: ProjectAccessSettings,
   fetcher: typeof fetch = fetch,
@@ -144,8 +144,8 @@ export function ketoTenantClaims(
     );
   };
   return {
-    claimed: async (partition) => {
-      const object = projectAccessTenantObject(partition.tenant);
+    claimed: async (tenant) => {
+      const object = projectAccessTenantObject(tenant);
       return (
         (await listed({ namespace: projectAccessTenantNamespace, object })) ||
         (await listed({
@@ -154,10 +154,6 @@ export function ketoTenantClaims(
           "subject_set.namespace": projectAccessTenantNamespace,
           "subject_set.object": object,
           "subject_set.relation": ketoSubjectSetRelation,
-        })) ||
-        (await listed({
-          namespace: projectAccessNamespace,
-          object: projectAccessObject(partition),
         }))
       );
     },
