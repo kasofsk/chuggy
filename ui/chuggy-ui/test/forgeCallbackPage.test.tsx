@@ -10,23 +10,34 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { ForgeCallbackPage } from "../app/browser/ForgeCallbackPage.tsx";
 import { forgeAuthorizeTransactionKey } from "../app/core/forgeAuthorization.ts";
-import { answer, drawnStrict, settled } from "./screenHarness.tsx";
+import { answer, drawnStrict, settled, turned } from "./screenHarness.tsx";
 import type { DrawnStrict, SentRequest } from "./screenHarness.tsx";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 
-const held = vi.hoisted((): { arrived: Record<string, unknown> } => ({
-  arrived: {},
-}));
+const held = vi.hoisted(
+  (): {
+    arrived: Record<string, unknown>;
+    navigated: unknown[];
+    redirects: string[];
+  } => ({ arrived: {}, navigated: [], redirects: [] }),
+);
 
 vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof BrowserPorts>()),
   sleepMs: () => Promise.resolve(),
   currentOrigin: () => "https://console.test",
+  redirect: (url: string) => {
+    held.redirects.push(url);
+  },
 }));
 
 vi.mock("@tanstack/react-router", () => ({
   createLink: (component: unknown) => component,
   useSearch: () => held.arrived,
+  useNavigate: () => (to: unknown) => {
+    held.navigated.push(to);
+    return Promise.resolve();
+  },
 }));
 // jscpd:ignore-end -- the case's own doubles resume here
 
@@ -74,10 +85,16 @@ const apps = {
       installUrl: "https://forge.test/apps/chuggy-worker/installations/new",
     },
   ],
+  authorization: {
+    clientId: "Iv1.portal",
+    authorizeUrl: "https://forge.test/login/oauth/authorize",
+  },
 };
 
 beforeEach(() => {
   held.arrived = { code: "a-code", state: "a-state" };
+  held.navigated.length = 0;
+  held.redirects.length = 0;
   sessionStorage.setItem(
     forgeAuthorizeTransactionKey,
     JSON.stringify(transaction),
@@ -129,6 +146,55 @@ test("each account is one line, and a missing app is offered its install", async
     screen.getByRole<HTMLAnchorElement>("link", { name: "Repositories" })
       .pathname,
   ).toBe(transaction.returnPath);
+  expect(screen.queryByRole("button", { name: "Connect GitHub" })).toBeNull();
+});
+
+test("the code and state leave the address once they are taken", async () => {
+  await drawCallback();
+  expect(held.navigated.length).toBeGreaterThan(0);
+  for (const navigated of held.navigated)
+    expect(navigated).toStrictEqual({
+      to: "/forge/github/callback",
+      search: { code: undefined, state: undefined, error: undefined },
+      replace: true,
+    });
+});
+
+test("a code the forge spent before it could be read offers connecting again", async () => {
+  const { sent } = await drawCallback(() =>
+    answer(
+      {
+        error: {
+          code: "AuthorizationSpent",
+          message:
+            "The forge redeemed the authorization but could not be read.",
+        },
+      },
+      502,
+    ),
+  );
+  expect(posts(sent)).toHaveLength(1);
+  expect(screen.getByText("Start again")).toBeTruthy();
+  expect(screen.queryByText("Connected")).toBeNull();
+  const again = screen.getByRole<HTMLButtonElement>("button", {
+    name: "Connect GitHub",
+  });
+  expect(again.disabled).toBe(false);
+  await turned(() => {
+    again.click();
+  });
+  await settled();
+  expect(held.redirects).toHaveLength(1);
+  const url = new URL(held.redirects[0] ?? "");
+  expect(`${url.origin}${url.pathname}`).toBe(apps.authorization.authorizeUrl);
+  expect(
+    JSON.parse(sessionStorage.getItem(forgeAuthorizeTransactionKey) ?? "{}"),
+  ).toMatchObject({
+    tenant: transaction.tenant,
+    project: transaction.project,
+    returnPath: transaction.returnPath,
+    state: url.searchParams.get("state"),
+  });
 });
 
 test("a state that is not this tab's redeems nothing", async () => {
@@ -174,6 +240,7 @@ test("a code the forge would not redeem is one word, with no account drawn", asy
   );
   expect(screen.getByText("Refused")).toBeTruthy();
   expect(screen.queryByText("Connected")).toBeNull();
+  expect(screen.getByRole("button", { name: "Connect GitHub" })).toBeTruthy();
 });
 
 test("the code is posted once however often the page is drawn", async () => {

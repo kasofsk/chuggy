@@ -170,10 +170,10 @@ const repositoryCredentialSourcesVariable =
   "CHUG_API_REPOSITORY_CREDENTIAL_SOURCES";
 /**
  * The portal app this process acts under and the key it signs with, and the
- * worker app it finds on a proven account and enumerates an installation of. Each
- * pair is named together or not at all: one alone is a deployment that meant to
- * hold an app and cannot, which is a refusal to start rather than an outage per
- * request.
+ * worker app it finds on a proven account and enumerates an installation of.
+ * Each pair is named together or not at all: one alone is a deployment that
+ * meant to hold an app and cannot, which is a refusal to start rather than an
+ * outage per request.
  */
 const forgeAppIdVariable = "CHUG_API_FORGE_APP_ID";
 const forgeAppKeyFileVariable = "CHUG_API_FORGE_APP_KEY_FILE";

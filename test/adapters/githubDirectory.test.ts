@@ -264,6 +264,18 @@ test("an account without the app is missing and an outage is not", async (t) => 
     ).accountInstallation(fixtureOrganization),
     { read: "Unavailable" },
   );
+  const throttled = fixtureForge([
+    new Response(JSON.stringify({ message: "API rate limit exceeded" }), {
+      status: 403,
+      headers: { "x-ratelimit-remaining": "0" },
+    }),
+  ]);
+  assert.deepEqual(
+    await githubInstallationDirectory(
+      fixtureAppOptions(t, throttled),
+    ).accountInstallation(fixtureOrganization),
+    { read: "Unavailable" },
+  );
   const unreadable = fixtureForge([
     fixtureAnswer(200, { app_id: Number(fixtureAppId) }),
   ]);

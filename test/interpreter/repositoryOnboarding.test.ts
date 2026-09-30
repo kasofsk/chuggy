@@ -892,6 +892,31 @@ test("an organization is claimed only for an active owner of it", async () => {
   );
 });
 
+test("an organization whose membership the forge could not answer is not claimed", async () => {
+  const waiting = fixtureService(["AdministerTenant"], {
+    apps: [app, worker],
+    authorized: reaching(organizationOf({ read: "Unavailable" })),
+    found: workerOnOwn,
+  });
+  assert.deepEqual(
+    await waiting.service.authorizeForge(principal, tenant, authorizing),
+    {
+      result: "Authorized",
+      accounts: [
+        {
+          account: asForgeAccount("kasofsk"),
+          accountKind: "Organization",
+          proof: "Unavailable",
+          apps: [],
+        },
+      ],
+      truncated: false,
+    },
+  );
+  assert.deepEqual(waiting.wrote.claims, []);
+  assert.deepEqual(waiting.wrote.asked, []);
+});
+
 test("a worker installation missing, unreadable or on another account is not claimed", async () => {
   const cases: readonly (readonly [ForgeAccountInstallationRead, string])[] = [
     [{ read: "Missing" }, "Missing"],
@@ -952,7 +977,7 @@ test("a replay is already claimed and a reinstall is claimed again", async () =>
   );
 });
 
-test("a refused or unreachable authorization claims nothing, and a partial one says so", async () => {
+test("a refused, spent or unreachable authorization claims nothing, and a partial one says so", async () => {
   const refused = fixtureService(["AdministerTenant"], {
     authorized: fixtureRefused,
   });
@@ -969,6 +994,14 @@ test("a refused or unreachable authorization claims nothing, and a partial one s
     { result: "Unavailable" },
   );
   assert.deepEqual(down.wrote.claims, []);
+  const spent = fixtureService(["AdministerTenant"], {
+    authorized: { authorized: "Spent" },
+  });
+  assert.deepEqual(
+    await spent.service.authorizeForge(principal, tenant, authorizing),
+    { result: "Spent" },
+  );
+  assert.deepEqual(spent.wrote.claims, []);
   const partial = fixtureService(["AdministerTenant"], {
     authorized: { ...reaching(), truncated: true },
   });

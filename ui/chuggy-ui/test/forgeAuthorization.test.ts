@@ -220,12 +220,14 @@ test("each account is one line, with the apps left to install", () => {
   expect(forgeAccountProofTone("Unavailable")).not.toBe("pass");
 });
 
-test("a refusal is one word in place of the lines", () => {
+test("a refusal is one word in place of the lines, and a dead code asks for another", () => {
   const status = (
     result: Parameters<typeof forgeAuthorizationOutcome>[0],
-  ): string | undefined => {
+  ): readonly [string, string] | undefined => {
     const outcome = forgeAuthorizationOutcome(result);
-    return outcome.outcome === "Refused" ? outcome.status : undefined;
+    return outcome.outcome === "Authorized"
+      ? undefined
+      : [outcome.outcome, outcome.status];
   };
   expect(
     status({
@@ -234,13 +236,27 @@ test("a refusal is one word in place of the lines", () => {
       status: 422,
       body: undefined,
     }),
-  ).toBe("Refused");
-  expect(status({ outcome: "Absent" })).toBe("Not found");
+  ).toStrictEqual(["Again", "Refused"]);
+  expect(
+    status({
+      outcome: "Rejected",
+      code: "InvalidRequest",
+      status: 400,
+      body: undefined,
+    }),
+  ).toStrictEqual(["Refused", "Refused"]);
+  expect(
+    status({ outcome: "Fault", code: "AuthorizationSpent", status: 502 }),
+  ).toStrictEqual(["Again", "Start again"]);
+  expect(
+    status({ outcome: "Fault", code: "InternalError", status: 500 }),
+  ).toStrictEqual(["Refused", "Failed"]);
+  expect(status({ outcome: "Absent" })).toStrictEqual(["Refused", "Not found"]);
   expect(
     status({
       outcome: "Retryable",
       code: "ForgeUnavailable",
       retryAfterSeconds: 5,
     }),
-  ).toBe("Unavailable");
+  ).toStrictEqual(["Refused", "Unavailable"]);
 });

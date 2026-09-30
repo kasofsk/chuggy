@@ -911,10 +911,11 @@ function tenantOf(request: FastifyRequest): TenantId {
 
 /**
  * The apps a tenant installs, the accounts a person's authorization claims, the
- * installations claimed, and what each of them grants. THE APPS ROUTE IS AUTHENTICATED AND NOTHING ELSE: it says nothing
- * about any tenant, so every bearer reads it, and it is not public because an
- * unauthenticated route would make this deployment's forge rate limit spendable
- * by anyone who can reach the port.
+ * installations claimed, and what each of them grants. THE APPS ROUTE IS
+ * AUTHENTICATED AND NOTHING ELSE: it says nothing about any tenant, so every
+ * bearer reads it, and it is not public because an unauthenticated route would
+ * make this deployment's forge rate limit spendable by anyone who can reach the
+ * port.
  */
 function registerForgeInstallations(
   app: FastifyInstance,

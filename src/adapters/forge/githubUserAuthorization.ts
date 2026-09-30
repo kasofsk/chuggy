@@ -43,6 +43,15 @@ export interface GithubUserAuthorizationOptions extends GithubRequestOptions {
   readonly clientSecretPath: string;
   readonly clientSecretBytesMax?: number;
   readonly installationsMax?: number;
+  /** Told when the forge refuses this deployment's own client id and secret, which only an operator can put right. */
+  readonly credentialsRefused?: () => void;
+}
+
+/** Says the deployment's credentials were refused on the process's own error stream, naming the cause and never the secret. */
+export function githubCredentialsRefusedDefault(): void {
+  process.stderr.write(
+    "github user authorization: the forge refused the portal app's client id and secret\n",
+  );
 }
 
 /** The bounds a deployment gets when it names none. */
@@ -54,6 +63,9 @@ export const githubUserAuthorizationDefaults = {
 
 /** The status every answer read here arrives with, a redemption's refusal included. */
 const githubAnsweredStatus = 200;
+
+/** The refusal the web host answers for a client id and secret that are not the app's, which is the deployment's fault and never the person's. */
+const githubCredentialsRefusedError = "incorrect_client_credentials";
 
 /** What the web host redeems a code as: a token, or its refusal to issue one. */
 const githubRedemptionSchema = z.object({
@@ -103,6 +115,7 @@ interface GithubUserAuthorizationState {
   readonly clientSecretBytesMax: number;
   readonly installationsMax: number;
   readonly pageSize: number;
+  readonly credentialsRefused: () => void;
 }
 
 /** What one read came to, a refusal kept apart from an outage. */
@@ -200,6 +213,10 @@ async function githubRedeemed(
   if (read.read !== "Answer") return read;
   if (read.value.access_token !== undefined)
     return { read: "Answer", value: read.value.access_token };
+  if (read.value.error === githubCredentialsRefusedError) {
+    own.credentialsRefused();
+    return { read: "Unavailable" };
+  }
   return read.value.error === undefined
     ? { read: "Unavailable" }
     : { read: "Refused" };
@@ -295,7 +312,7 @@ async function githubUserInstallation(
       };
 }
 
-/** Everything the token reaches, read under it and answered without it. */
+/** Everything the token reaches, read under it and answered without it; the code is spent by now, so any failure is `Spent`. */
 async function githubReached(
   own: GithubUserAuthorizationState,
   token: string,
@@ -306,9 +323,9 @@ async function githubReached(
     token,
     githubUserSchema,
   );
-  if (user.read !== "Answer") return { authorized: user.read };
+  if (user.read !== "Answer") return { authorized: "Spent" };
   const listed = await githubUserInstallationRows(own, token);
-  if (listed.read !== "Answer") return { authorized: listed.read };
+  if (listed.read !== "Answer") return { authorized: "Spent" };
   try {
     const person: ForgeUser = {
       id: asForgeAccountId(String(user.value.id)),
@@ -324,7 +341,7 @@ async function githubReached(
       truncated: listed.value.truncated,
     };
   } catch {
-    return { authorized: "Unavailable" };
+    return { authorized: "Spent" };
   }
 }
 
@@ -356,6 +373,8 @@ export function githubUserAuthorization(
       installationsMax,
       githubUserAuthorizationDefaults.pageSize,
     ),
+    credentialsRefused:
+      options.credentialsRefused ?? githubCredentialsRefusedDefault,
   };
   return {
     authorized: async (grant) => {

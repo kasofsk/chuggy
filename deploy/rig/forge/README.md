@@ -6,10 +6,10 @@ procedure for who may ask; this is the procedure for what the API asks with.
 
 Two Apps are installed on each account. The **portal** App is the API's, and it
 is the one every act here mints under; the **worker** App is the plane's, and the
-API holds its key to verify a worker claim and to enumerate what one grants —
-never for an act on a repository, which is the plane's own mint. Which tenants
-may mint under an account is a row per tenant in the rig's PostgreSQL, written
-by a route or by the command below.
+API holds its key to find its installation on an account a person has proven
+and to enumerate what one grants — never for an act on a repository, which is
+the plane's own mint. Which tenants may mint under an account is a row per
+tenant in the rig's PostgreSQL, written by a route or by the command below.
 
 ## Mount the Apps' keys
 
@@ -148,7 +148,9 @@ CHUG_API_FORGE_APP_CLIENT_SECRET_FILE=/var/run/chuggy/forge-app-client/client-se
 
 Whether the file is there is decided at start; its contents are read, trimmed,
 for each authorization and not held. A file that is there and cannot be read,
-or one named without `CHUG_API_FORGE_APP_ID`, refuses the start.
+or one named without `CHUG_API_FORGE_APP_ID`, refuses the start. A secret
+GitHub refuses is answered `ForgeUnavailable`, and the API writes one line to
+its error stream saying the portal App's client id and secret were refused.
 
 **The portal App needs `Members: read` on organizations**, which is what lets it
 read a person's membership of one, and its callback URL must be the console's

@@ -898,8 +898,9 @@ export function forgeAppsResponse(result: ForgeAppsResult): NativeHttpResponse {
 
 /**
  * One person's authorization redeemed for a tenant. A code the forge would not
- * redeem is refused as the caller's, because only the caller can begin another;
- * what the forge said about why is not passed on.
+ * redeem, or redeemed before what it reaches could be read, is answered with no
+ * retry, because only the caller can begin another; the forge's words are not
+ * passed on.
  */
 export function forgeAuthorizationResponse(
   result: ForgeAuthorizationResult,
@@ -921,6 +922,14 @@ export function forgeAuthorizationResponse(
         nativeHttpError(
           "AuthorizationRefused",
           "The forge did not accept the authorization.",
+        ),
+      );
+    case "Spent":
+      return response(
+        502,
+        nativeHttpError(
+          "AuthorizationSpent",
+          "The forge redeemed the authorization but could not be read.",
         ),
       );
     case "NotConfigured":

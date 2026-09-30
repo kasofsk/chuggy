@@ -174,6 +174,7 @@ export type ForgeAuthorizationResult =
       readonly truncated: boolean;
     }
   | { readonly result: "Refused" }
+  | { readonly result: "Spent" }
   | { readonly result: "NotConfigured" }
   | { readonly result: "NotFound" }
   | { readonly result: "Unavailable" };
@@ -616,8 +617,7 @@ async function authorizeForge(
     redirectUri: request.redirectUri,
     codeVerifier: request.codeVerifier,
   });
-  if (read.authorized === "Refused") return { result: "Refused" };
-  if (read.authorized === "Unavailable") return { result: "Unavailable" };
+  if (read.authorized !== "User") return { result: read.authorized };
   const context = { authorization, tenant, authority };
   const accounts: ForgeAuthorizedAccount[] = [];
   for (const installation of read.installations)

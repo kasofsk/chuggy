@@ -1679,6 +1679,13 @@ test("what an authorization answers names each account, its proof, and each app'
     errorEnvelopeSchema.parse(refused.body).error.code,
     "AuthorizationRefused",
   );
+  const spent = forgeAuthorizationResponse({ result: "Spent" });
+  assert.equal(spent.status, 502);
+  assert.equal(spent.headers["retry-after"], undefined);
+  assert.equal(
+    errorEnvelopeSchema.parse(spent.body).error.code,
+    "AuthorizationSpent",
+  );
   assert.equal(forgeAuthorizationResponse({ result: "NotFound" }).status, 404);
   assert.equal(
     forgeAuthorizationResponse({ result: "Unavailable" }).status,

@@ -4,10 +4,10 @@
  *
  * An account is a row per account and not per installation, because what
  * onboarding needs to know is whether both of this deployment's apps are on it;
- * a missing one is what Install is for, and Connect GitHub is what claims one. The bindings below are what
- * a ticket may name, except a retired one, which is drawn as retired because it
- * is still bound and no longer read; a binding is added from what those
- * installations grant rather than from a typed address.
+ * a missing one is what Install is for, and Connect GitHub is what claims one.
+ * The bindings below are what a ticket may name, except a retired one, which is
+ * drawn as retired because it is still bound and no longer read; a binding is
+ * added from what those installations grant rather than from a typed address.
  */
 
 import { Link, useParams } from "@tanstack/react-router";

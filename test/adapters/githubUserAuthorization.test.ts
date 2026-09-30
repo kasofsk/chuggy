@@ -79,6 +79,14 @@ function fixtureAnswer(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status });
 }
 
+/** A rate limit as GitHub answers one, a `403` told apart only by its headers. */
+function fixtureThrottled(headers: Record<string, string>): Response {
+  return new Response(JSON.stringify({ message: "API rate limit exceeded" }), {
+    status: 403,
+    headers,
+  });
+}
+
 /** A fresh answer per call, because a body is read once. */
 function fixtureRedeemed(): Response {
   return fixtureAnswer(200, {
@@ -217,6 +225,49 @@ test("a redemption the web host refuses is refused, and one it cannot read is an
   }
 });
 
+test("a client secret the web host refuses is the deployment's outage, said once to the operator", async (t) => {
+  let told = 0;
+  const refusing = fixtureForge([
+    fixtureAnswer(200, { error: "incorrect_client_credentials" }),
+  ]);
+  assert.deepEqual(
+    await githubUserAuthorization(
+      fixtureOptions(t, refusing, {
+        credentialsRefused: () => {
+          told += 1;
+        },
+      }),
+    ).authorized(fixtureGrant),
+    { authorized: "Unavailable" },
+  );
+  assert.equal(told, 1);
+  const spent = fixtureForge([
+    fixtureAnswer(200, { error: "bad_verification_code" }),
+  ]);
+  await githubUserAuthorization(
+    fixtureOptions(t, spent, {
+      credentialsRefused: () => {
+        told += 1;
+      },
+    }),
+  ).authorized(fixtureGrant);
+  assert.equal(told, 1);
+  const written = t.mock.method(process.stderr, "write", () => true);
+  await githubUserAuthorization(
+    fixtureOptions(
+      t,
+      fixtureForge([
+        fixtureAnswer(200, { error: "incorrect_client_credentials" }),
+      ]),
+    ),
+  ).authorized(fixtureGrant);
+  const lines = written.mock.calls.map((call) => String(call.arguments[0]));
+  written.mock.restore();
+  assert.equal(lines.length, 1);
+  assert.match(lines[0] ?? "", /client id and secret/u);
+  assert.equal(lines[0]?.includes(fixtureSecret), false);
+});
+
 test("a client secret that cannot be read is an outage and nothing is sent", async (t) => {
   const paths = [
     join(tmpdir(), "chuggy-client-secret-absent", "client-secret"),
@@ -238,31 +289,26 @@ test("a client secret that cannot be read is an outage and nothing is sent", asy
   }
 });
 
-test("a person or listing the forge refuses is refused, and a wait is not", async (t) => {
-  const refusedPerson = fixtureForge([
-    fixtureRedeemed(),
-    fixtureAnswer(401, {}),
-  ]);
-  assert.deepEqual(
-    await githubUserAuthorization(fixtureOptions(t, refusedPerson)).authorized(
-      fixtureGrant,
-    ),
-    { authorized: "Refused" },
-  );
-  const downListing = fixtureForge([
-    fixtureRedeemed(),
-    fixturePerson(),
-    fixtureAnswer(502, {}),
-  ]);
-  assert.deepEqual(
-    await githubUserAuthorization(fixtureOptions(t, downListing)).authorized(
-      fixtureGrant,
-    ),
-    { authorized: "Unavailable" },
-  );
+test("a person or listing not read once the code is redeemed spends it, a rate limit included", async (t) => {
+  const cases: readonly (readonly Response[])[] = [
+    [fixtureAnswer(401, {})],
+    [fixtureThrottled({ "x-ratelimit-remaining": "0" })],
+    [fixturePerson(), fixtureAnswer(502, {})],
+    [fixturePerson(), fixtureThrottled({ "retry-after": "60" })],
+  ];
+  for (const unread of cases) {
+    const recorder = fixtureForge([fixtureRedeemed(), ...unread]);
+    assert.deepEqual(
+      await githubUserAuthorization(fixtureOptions(t, recorder)).authorized(
+        fixtureGrant,
+      ),
+      { authorized: "Spent" },
+    );
+    assert.equal(recorder.calls.length, 1 + unread.length);
+  }
 });
 
-test("another app's installation is dropped and an undeclared account kind is an outage", async (t) => {
+test("another app's installation is dropped, and an account this side cannot read spends the code", async (t) => {
   const mixed = fixtureForge([
     fixtureRedeemed(),
     fixturePerson(),
@@ -277,17 +323,23 @@ test("another app's installation is dropped and an undeclared account kind is an
       : [],
     [asForgeInstallationId("8001")],
   );
-  const strange = fixtureForge([
-    fixtureRedeemed(),
-    fixturePerson(),
-    fixtureInstallations([{ ...organizationRow, type: "Enterprise" }]),
-  ]);
-  assert.deepEqual(
-    await githubUserAuthorization(fixtureOptions(t, strange)).authorized(
-      fixtureGrant,
-    ),
-    { authorized: "Unavailable" },
-  );
+  for (const unreadable of [
+    { ...organizationRow, type: "Enterprise" },
+    { ...organizationRow, login: "not a segment" },
+  ]) {
+    const strange = fixtureForge([
+      fixtureRedeemed(),
+      fixturePerson(),
+      fixtureInstallations([unreadable]),
+    ]);
+    assert.deepEqual(
+      await githubUserAuthorization(fixtureOptions(t, strange)).authorized(
+        fixtureGrant,
+      ),
+      { authorized: "Spent" },
+    );
+    assert.equal(strange.calls.length, 3);
+  }
 });
 
 test("the listing pages to its bound and says when the person reaches more", async (t) => {
@@ -333,7 +385,22 @@ test("the listing pages to its bound and says when the person reaches more", asy
 test("a membership the forge refuses, cannot answer, or holds pending is carried as such", async (t) => {
   const cases = [
     [fixtureAnswer(404, {}), { read: "Refused" }],
+    [fixtureAnswer(403, { message: "Forbidden" }), { read: "Refused" }],
+    [
+      new Response("{}", {
+        status: 404,
+        headers: { "x-ratelimit-remaining": "0" },
+      }),
+      { read: "Refused" },
+    ],
     [fixtureAnswer(503, {}), { read: "Unavailable" }],
+    [fixtureAnswer(502, {}), { read: "Unavailable" }],
+    [fixtureAnswer(429, {}), { read: "Unavailable" }],
+    [
+      fixtureThrottled({ "x-ratelimit-remaining": "0" }),
+      { read: "Unavailable" },
+    ],
+    [fixtureThrottled({ "retry-after": "60" }), { read: "Unavailable" }],
     [
       fixtureAnswer(200, {
         state: "pending",

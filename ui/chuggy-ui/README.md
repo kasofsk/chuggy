@@ -137,9 +137,12 @@ the verifier, the tenant, the project and where the person was are stored in
 `sessionStorage` under one key. The forge returns to `/forge/github/callback`,
 which takes that transaction once and posts the code only when the state it was
 sent matches; a callback reached without a matching transaction says "Not
-expected" and posts nothing. The api claims each account the authorization
-proves the person owns, and the page draws one line per account, with an
-install link for an App the account is missing.
+expected" and posts nothing. The page then drops the code and state from the
+address. The api claims each account the authorization proves the person owns,
+and the page draws one line per account, with an install link for an App the
+account is missing. A code GitHub refused, or redeemed before the api could
+read what it reaches, cannot be offered again, so the page offers `Connect
+GitHub` in its place.
 
 `Install` offers each App's install link with a state of its own, stored the
 same way. The forge sends the person back to `/forge/github/setup`, which takes

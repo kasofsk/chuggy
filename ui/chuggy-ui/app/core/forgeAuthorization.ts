@@ -185,13 +185,21 @@ export function forgeAuthorizedLines(
   }));
 }
 
-/** What redeeming came to, as the lines drawn or the one word in their place. */
+/** What this console says where the forge spent the code before the api could read what it reaches. */
+export const forgeAuthorizationSpent = "Start again";
+
+/**
+ * What redeeming came to, as the lines drawn or the one word in their place.
+ * `Again` is a code no retry can redeem, which only a new authorization puts
+ * right.
+ */
 export type ForgeAuthorizationOutcome =
   | {
       readonly outcome: "Authorized";
       readonly lines: readonly ForgeAuthorizedLine[];
       readonly truncated: boolean;
     }
+  | { readonly outcome: "Again"; readonly status: string }
   | { readonly outcome: "Refused"; readonly status: string };
 
 /**
@@ -209,7 +217,9 @@ export function forgeAuthorizationOutcome(
         truncated: result.value.truncated,
       };
     case "Rejected":
-      return { outcome: "Refused", status: "Refused" };
+      return result.code === "AuthorizationRefused"
+        ? { outcome: "Again", status: "Refused" }
+        : { outcome: "Refused", status: "Refused" };
     case "Absent":
       return { outcome: "Refused", status: "Not found" };
     case "Retryable":
@@ -219,7 +229,9 @@ export function forgeAuthorizationOutcome(
     case "Unauthenticated":
       return { outcome: "Refused", status: "Not signed in" };
     case "Fault":
-      return { outcome: "Refused", status: "Failed" };
+      return result.code === "AuthorizationSpent"
+        ? { outcome: "Again", status: forgeAuthorizationSpent }
+        : { outcome: "Refused", status: "Failed" };
     case "Unreachable":
       return { outcome: "Refused", status: "Unreachable" };
     case "Unreadable":

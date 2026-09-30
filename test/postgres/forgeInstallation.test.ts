@@ -1,7 +1,8 @@
 /**
  * The claimed-installation row against a real server: the door's outcomes, what
  * the trigger refuses even from the owner, and which role may reach any of it.
- * The tenant is part of the key, so every reader is asked for each tenant apart.
+ * The tenant is part of the key, so every reader is asked for each tenant
+ * apart.
  */
 
 import assert from "node:assert/strict";

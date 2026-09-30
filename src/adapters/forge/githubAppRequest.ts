@@ -103,6 +103,15 @@ const githubAppJwtLifetimeSecs = 540;
 /** The statuses that are the forge refusing this caller rather than failing. */
 const githubDeniedStatuses: readonly number[] = [401, 403, 404, 422];
 
+/** A `403` the forge answers for a rate limit, which its documented headers tell apart from a refusal. */
+function githubThrottled(response: Response): boolean {
+  return (
+    response.status === 403 &&
+    (response.headers.get("x-ratelimit-remaining") === "0" ||
+      response.headers.has("retry-after"))
+  );
+}
+
 const millisecondsPerSecond = 1_000;
 
 /** Where the forge is and what one call may spend, checked once at construction. */
@@ -305,7 +314,10 @@ async function githubSend(
   }
   if (response.status === request.okStatus)
     return { answered: "Answer", response };
-  if (!githubDeniedStatuses.includes(response.status)) {
+  if (
+    !githubDeniedStatuses.includes(response.status) ||
+    githubThrottled(response)
+  ) {
     await response.body?.cancel().catch(() => undefined);
     return { answered: "Unavailable" };
   }

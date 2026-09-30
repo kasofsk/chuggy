@@ -1,10 +1,10 @@
 /**
  * Where the forge returns a person's authorization of the portal app, outside
  * the partition because the stored transaction names the tenant. The
- * transaction is taken and the code posted once, however often the page draws.
+ * transaction is taken, the code posted once and then cleared from the address.
  */
 
-import { useSearch } from "@tanstack/react-router";
+import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
@@ -13,6 +13,7 @@ import {
   forgeAuthorizationOutcome,
   forgeAuthorizeTake,
   forgeCallbackDecision,
+  forgeCallbackQueryOf,
   forgeCallbackRedirectUri,
   forgeCallbackRoutePath,
 } from "../core/forgeAuthorization.ts";
@@ -27,6 +28,7 @@ import { useApiPorts } from "./api.ts";
 import { Footer } from "./Footer.tsx";
 import { currentOrigin, transientStore } from "./ports.ts";
 import { InstallLinks } from "./repositories/ConnectAccount.tsx";
+import { ConnectGithub } from "./repositories/ConnectGithub.tsx";
 import { Notice } from "./ui/Notice.tsx";
 import { Pill } from "./ui/Pill.tsx";
 
@@ -112,6 +114,15 @@ function ForgeCallbackRedeem(props: {
       ) : (
         <Notice tone="danger" inline detail={outcome.status} />
       )}
+      {outcome.outcome === "Again" ? (
+        <ConnectGithub
+          partition={{
+            tenant: transaction.tenant,
+            project: transaction.project,
+          }}
+          returnPath={transaction.returnPath}
+        />
+      ) : null}
       <a href={transaction.returnPath}>Repositories</a>
     </>
   );
@@ -138,9 +149,17 @@ function ForgeCallbackAnswer(props: {
 
 export function ForgeCallbackPage(): ReactNode {
   const query = useSearch({ from: forgeCallbackRoutePath });
+  const navigate = useNavigate();
   const [decision] = useState<ForgeCallbackDecision>(() =>
     forgeCallbackDecision(query, forgeAuthorizeTake(transientStore)),
   );
+  useEffect(() => {
+    void navigate({
+      to: forgeCallbackRoutePath,
+      search: forgeCallbackQueryOf({}),
+      replace: true,
+    });
+  }, [navigate]);
   return (
     <div className="grid min-h-dvh content-start gap-4 p-4">
       <main className="grid gap-3">

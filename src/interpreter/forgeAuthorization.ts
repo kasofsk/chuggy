@@ -49,7 +49,12 @@ export type ForgeUserInstallation =
       readonly membership: ForgeMembershipRead;
     });
 
-/** What redeeming one grant came to, `truncated` saying the person reaches more installations than were read. */
+/**
+ * What redeeming one grant came to, `truncated` saying the person reaches more
+ * installations than were read. `Unavailable` leaves the grant unredeemed, so
+ * it may be offered again; `Spent` redeemed it and then could not read what it
+ * reaches, so only a new authorization can.
+ */
 export type ForgeUserAuthorized =
   | {
       readonly authorized: "User";
@@ -58,7 +63,8 @@ export type ForgeUserAuthorized =
       readonly truncated: boolean;
     }
   | { readonly authorized: "Refused" }
-  | { readonly authorized: "Unavailable" };
+  | { readonly authorized: "Unavailable" }
+  | { readonly authorized: "Spent" };
 
 /** Redeems one grant and reads what it reaches, dropping the token it was redeemed for. */
 export interface ForgeUserAuthorization {

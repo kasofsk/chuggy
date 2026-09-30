@@ -264,13 +264,16 @@ const listingTokens: ForgeInstallationTokens = {
 };
 
 /** The portal app's client secret, as the deployment mounts it. */
+/** The portal app's client secret, a sentinel nothing else contains. */
+const clientSecret = "client-secret-sentinel-m3n4b5";
+
 function secretFile(t: TestContext): string {
   const root = mkdtempSync(join(tmpdir(), "chuggy-onboarding-secret-"));
   t.after(() => {
     rmSync(root, { recursive: true, force: true });
   });
   const path = join(root, "client-secret");
-  writeFileSync(path, "client-secret-sentinel\n");
+  writeFileSync(path, `${clientSecret}\n`);
   return path;
 }
 
@@ -877,6 +880,50 @@ test("an organization is claimed for its active owner, and nothing for a member"
   );
 });
 
+test("an organization whose membership the forge cannot answer is not claimed", async (t) => {
+  const waiting = fixtureCase(t, {
+    answers: [
+      appAnswer(),
+      redeemedAnswer(),
+      personAnswer(),
+      reachedAnswer(
+        { login: "acme", id: 500, type: "Organization" },
+        { login: "globex", id: 600, type: "Organization" },
+      ),
+      answer(429, { message: "Too Many Requests" }),
+      answer(502, {}),
+    ],
+    granted: ["AdministerTenant"],
+    authorizing: true,
+  });
+  const served = await waiting.app.inject({
+    method: "POST",
+    url: authorizationsRoot,
+    headers: versioned,
+    payload: authorizing,
+  });
+  assert.equal(served.statusCode, 200);
+  assert.deepEqual(served.json(), {
+    accounts: [
+      {
+        account: "acme",
+        accountKind: "Organization",
+        proof: "Unavailable",
+        apps: [],
+      },
+      {
+        account: "globex",
+        accountKind: "Organization",
+        proof: "Unavailable",
+        apps: [],
+      },
+    ],
+    truncated: false,
+  });
+  assert.deepEqual(waiting.store.recordedClaims, []);
+  assert.equal(waiting.recorder.calls.length, 6);
+});
+
 test("an installation on another person's account is not claimed", async (t) => {
   const refusing = fixtureCase(t, {
     answers: [
@@ -964,6 +1011,59 @@ test("a code the forge will not redeem is refused without the forge's words", as
   );
   assert.equal(served.body.includes("sentinel-refusal"), false);
   assert.deepEqual(refused.store.recordedClaims, []);
+});
+
+test("a client secret the forge refuses is a wait, told to the operator without the secret", async (t) => {
+  const misconfigured = fixtureCase(t, {
+    answers: [
+      appAnswer(),
+      answer(200, { error: "incorrect_client_credentials" }),
+    ],
+    granted: ["AdministerTenant"],
+    authorizing: true,
+  });
+  let served: Awaited<ReturnType<typeof misconfigured.app.inject>> | undefined;
+  const streams = await streamsDuring(async () => {
+    served = await misconfigured.app.inject({
+      method: "POST",
+      url: authorizationsRoot,
+      headers: versioned,
+      payload: authorizing,
+    });
+  });
+  assert.equal(served?.statusCode, 503);
+  assert.equal(served.json<HttpErrorEnvelope>().error.code, "ForgeUnavailable");
+  assert.deepEqual(streams.match(/github user authorization: [^\n]*/gu), [
+    "github user authorization: the forge refused the portal app's client id and secret",
+  ]);
+  assert.equal(streams.includes(clientSecret), false);
+  assert.equal(served.body.includes(clientSecret), false);
+  assert.deepEqual(misconfigured.store.recordedClaims, []);
+});
+
+test("a code redeemed before what it reaches could be read is spent, and no retry is offered", async (t) => {
+  const spent = fixtureCase(t, {
+    answers: [
+      appAnswer(),
+      redeemedAnswer(),
+      answer(403, { message: "API rate limit exceeded" }),
+    ],
+    granted: ["AdministerTenant"],
+    authorizing: true,
+  });
+  const served = await spent.app.inject({
+    method: "POST",
+    url: authorizationsRoot,
+    headers: versioned,
+    payload: authorizing,
+  });
+  assert.equal(served.statusCode, 502);
+  assert.equal(served.headers["retry-after"], undefined);
+  assert.equal(
+    served.json<HttpErrorEnvelope>().error.code,
+    "AuthorizationSpent",
+  );
+  assert.deepEqual(spent.store.recordedClaims, []);
 });
 
 test("a forge that cannot redeem an authorization is a wait", async (t) => {
