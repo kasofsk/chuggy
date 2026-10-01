@@ -51,7 +51,12 @@ import {
   selectorDispatchModes,
   selectorModes,
   agenticRefusalEvents,
+  forgeAccountKinds,
+  forgeAccountProofs,
+  forgeAppClaims,
+  forgeApps,
   forgeCredentialPermissions,
+  forgeIds,
   sessionStates,
   threadStandings,
   sessionTurnFailures,
@@ -63,7 +68,16 @@ import {
   agentReportedTurnFailures,
   runEndedEvidences,
 } from "../../src/contract/rosters.ts";
-import { allForgeCredentialPermissionSets } from "../../src/interpreter/forgeInstallation.ts";
+import {
+  allForgeAccountKinds,
+  allForgeApps,
+  allForgeCredentialPermissionSets,
+  allForgeIds,
+} from "../../src/interpreter/forgeInstallation.ts";
+import {
+  allForgeAccountProofs,
+  allForgeAppClaims,
+} from "../../src/interpreter/forgeAuthorization.ts";
 import { allProjectRepositoryConfigurationsDeferrals } from "../../src/interpreter/repositoryOnboarding.ts";
 import {
   agenticRefusalLedgerAnsweredMax,
@@ -556,6 +570,15 @@ test("every session and refusal roster restates the interpreter's own", () => {
     allForgeCredentialPermissionSets,
     "a credential request never names the set that makes repositories",
   );
+  assert.deepEqual(forgeIds, allForgeIds);
+  assert.deepEqual(forgeApps, allForgeApps);
+  assert.deepEqual(forgeAccountKinds, allForgeAccountKinds);
+  assert.deepEqual(
+    forgeAccountProofs,
+    allForgeAccountProofs,
+    "a proof the wire schema does not name is an authorization answer nothing can parse",
+  );
+  assert.deepEqual(forgeAppClaims, allForgeAppClaims);
   assert.deepEqual(
     projectRepositoryConfigurationDeferrals,
     allProjectRepositoryConfigurationsDeferrals,

@@ -10,10 +10,11 @@
  * and the bodies each route answers with.
  */
 
-import { QueryClientProvider } from "@tanstack/react-query";
-import type { QueryClient } from "@tanstack/react-query";
-import { act } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { act, render } from "@testing-library/react";
+import { StrictMode } from "react";
 import type { ReactNode } from "react";
+import { vi } from "vitest";
 
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import type { SessionHolder } from "../app/core/sessionHolder.ts";
@@ -99,6 +100,59 @@ export function apiDouble(served: {
     submitted: () => submitted,
     fetch: ((url: string, init?: ApiDoubleInit) =>
       Promise.resolve(respond(url, init))) as unknown as typeof fetch,
+  };
+}
+
+/** A request a page sent, its body parsed. */
+export interface SentRequest {
+  readonly method: string;
+  readonly url: string;
+  readonly body: unknown;
+}
+
+export interface DrawnStrict {
+  readonly sent: readonly SentRequest[];
+  /** The page drawn again with nothing about it changed, which is what a
+   * re-render is: a decision it already took has to survive one. */
+  readonly redraw: () => void;
+}
+
+/** A page outside the partition drawn under `StrictMode`, as the console's
+ * root draws it, which runs each effect twice as the page mounts. */
+export async function drawnStrict(
+  page: ReactNode,
+  answered: (request: SentRequest) => Response,
+): Promise<DrawnStrict> {
+  const sent: SentRequest[] = [];
+  const fetching = ((url: string, init?: ApiDoubleInit) => {
+    const request: SentRequest = {
+      method: init?.method ?? "GET",
+      url,
+      body: init?.body === undefined ? undefined : JSON.parse(init.body),
+    };
+    sent.push(request);
+    return Promise.resolve(answered(request));
+  }) as unknown as typeof fetch;
+  vi.stubGlobal("fetch", fetching);
+  const client = new QueryClient();
+  const holder = holderDouble();
+  const drawn = (nudge: number): ReactNode => (
+    <StrictMode>
+      <SessionProvider holder={holder}>
+        <QueryClientProvider client={client}>
+          <span>{nudge}</span>
+          {page}
+        </QueryClientProvider>
+      </SessionProvider>
+    </StrictMode>
+  );
+  const view = render(drawn(0));
+  await settled();
+  return {
+    sent,
+    redraw: () => {
+      view.rerender(drawn(1));
+    },
   };
 }
 

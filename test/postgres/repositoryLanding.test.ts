@@ -91,8 +91,32 @@ function landingStore() {
   return postgresProjectRepositoryLanding(pool);
 }
 
-test("a repository binds landing where its work happened until a write moves it", async () => {
+test("a repository binds landing by pull request until a write moves it", async () => {
   const bound = await fixture("landing-default");
+  assert.deepEqual(
+    (
+      await landingStore().landing(
+        bound.partition,
+        asRepositoryId(bound.repository),
+      )
+    )?.landing,
+    { mode: "PullRequest" },
+  );
+});
+
+test("a write against the landing that stands moves it and answers the row", async () => {
+  const bound = await fixture("landing-written");
+  const written = await landingStore().setLanding({
+    partition: bound.partition,
+    repository: asRepositoryId(bound.repository),
+    expected: { mode: "PullRequest" },
+    landing: { mode: "Push" },
+  });
+  assert.equal(written.outcome, "Written");
+  assert.deepEqual(
+    written.outcome === "Written" ? written.binding.landing : undefined,
+    { mode: "Push" },
+  );
   assert.deepEqual(
     (
       await landingStore().landing(
@@ -104,37 +128,13 @@ test("a repository binds landing where its work happened until a write moves it"
   );
 });
 
-test("a write against the landing that stands moves it and answers the row", async () => {
-  const bound = await fixture("landing-written");
-  const written = await landingStore().setLanding({
-    partition: bound.partition,
-    repository: asRepositoryId(bound.repository),
-    expected: { mode: "Push" },
-    landing: { mode: "PullRequest" },
-  });
-  assert.equal(written.outcome, "Written");
-  assert.deepEqual(
-    written.outcome === "Written" ? written.binding.landing : undefined,
-    { mode: "PullRequest" },
-  );
-  assert.deepEqual(
-    (
-      await landingStore().landing(
-        bound.partition,
-        asRepositoryId(bound.repository),
-      )
-    )?.landing,
-    { mode: "PullRequest" },
-  );
-});
-
 test("a repeat of a write that already landed is not a crossing", async () => {
   const bound = await fixture("landing-idempotent");
   const command = {
     partition: bound.partition,
     repository: asRepositoryId(bound.repository),
-    expected: { mode: "Push" } as const,
-    landing: { mode: "PullRequest" } as const,
+    expected: { mode: "PullRequest" } as const,
+    landing: { mode: "Push" } as const,
   };
   assert.equal((await landingStore().setLanding(command)).outcome, "Written");
   assert.equal((await landingStore().setLanding(command)).outcome, "Written");
@@ -147,8 +147,8 @@ test("a write against a landing that moved answers the row that stands", async (
       await landingStore().setLanding({
         partition: bound.partition,
         repository: asRepositoryId(bound.repository),
-        expected: { mode: "Push" },
-        landing: { mode: "PullRequest" },
+        expected: { mode: "PullRequest" },
+        landing: { mode: "Push" },
       })
     ).outcome,
     "Written",
@@ -156,20 +156,20 @@ test("a write against a landing that moved answers the row that stands", async (
   const crossed = await landingStore().setLanding({
     partition: bound.partition,
     repository: asRepositoryId(bound.repository),
-    expected: { mode: "PullRequest" },
-    landing: { mode: "Push" },
+    expected: { mode: "Push" },
+    landing: { mode: "PullRequest" },
   });
   assert.equal(crossed.outcome, "Written");
   const stale = await landingStore().setLanding({
     partition: bound.partition,
     repository: asRepositoryId(bound.repository),
-    expected: { mode: "PullRequest" },
-    landing: { mode: "PullRequest" },
+    expected: { mode: "Push" },
+    landing: { mode: "Push" },
   });
   assert.equal(stale.outcome, "LandingMoved");
   assert.deepEqual(
     stale.outcome === "LandingMoved" ? stale.binding.landing : undefined,
-    { mode: "Push" },
+    { mode: "PullRequest" },
   );
 });
 
@@ -179,8 +179,8 @@ test("a repository this project does not bind is not bound", async () => {
     await landingStore().setLanding({
       partition: bound.partition,
       repository: asRepositoryId(`repository-absent-${randomUUID()}`),
-      expected: { mode: "Push" },
-      landing: { mode: "PullRequest" },
+      expected: { mode: "PullRequest" },
+      landing: { mode: "Push" },
     }),
     { outcome: "NotBound" },
   );
@@ -212,8 +212,8 @@ test("a binding another project holds is not this project's to move", async () =
     await landingStore().setLanding({
       partition: mine.partition,
       repository: asRepositoryId(theirs.repository),
-      expected: { mode: "Push" },
-      landing: { mode: "PullRequest" },
+      expected: { mode: "PullRequest" },
+      landing: { mode: "Push" },
     }),
     { outcome: "NotBound" },
   );
@@ -235,8 +235,8 @@ test("moving one binding's landing leaves the project's others where they were",
       await landingStore().setLanding({
         partition: moved.partition,
         repository: asRepositoryId(moved.repository),
-        expected: { mode: "Push" },
-        landing: { mode: "PullRequest" },
+        expected: { mode: "PullRequest" },
+        landing: { mode: "Push" },
       })
     ).outcome,
     "Written",
@@ -248,7 +248,7 @@ test("moving one binding's landing leaves the project's others where they were",
         asRepositoryId(stands.repository),
       )
     )?.landing,
-    { mode: "Push" },
+    { mode: "PullRequest" },
   );
 });
 
@@ -259,8 +259,8 @@ test("the listing answers what each of a project's bindings lands by", async () 
       await landingStore().setLanding({
         partition: bound.partition,
         repository: asRepositoryId(bound.repository),
-        expected: { mode: "Push" },
-        landing: { mode: "PullRequest" },
+        expected: { mode: "PullRequest" },
+        landing: { mode: "Push" },
       })
     ).outcome,
     "Written",
@@ -270,7 +270,7 @@ test("the listing answers what each of a project's bindings lands by", async () 
   );
   assert.deepEqual(
     listed.map((row) => [String(row.repository), row.landing.mode]),
-    [[bound.repository, "PullRequest"]],
+    [[bound.repository, "Push"]],
   );
 });
 
@@ -295,7 +295,7 @@ test("a binding's landing is the one column an update may move", async () => {
     /repository bindings are immutable/u,
   );
   await harness.query(
-    `UPDATE project_repository SET landing_mode='PullRequest'
+    `UPDATE project_repository SET landing_mode='Push'
       WHERE tenant=$1 AND project=$2 AND repository=$3`,
     [bound.partition.tenant, bound.partition.project, bound.repository],
   );
@@ -306,7 +306,7 @@ test("a binding's landing is the one column an update may move", async () => {
         asRepositoryId(bound.repository),
       )
     )?.landing,
-    { mode: "PullRequest" },
+    { mode: "Push" },
   );
 });
 
@@ -339,8 +339,8 @@ test("a second writer decides against the landing the first left, not the one it
         await postgresProjectRepositoryLanding(clientPool(holder)).setLanding({
           partition: bound.partition,
           repository: asRepositoryId(bound.repository),
-          expected: { mode: "Push" },
-          landing: { mode: "PullRequest" },
+          expected: { mode: "PullRequest" },
+          landing: { mode: "Push" },
         })
       ).outcome,
       "Written",
@@ -350,8 +350,8 @@ test("a second writer decides against the landing the first left, not the one it
       .setLanding({
         partition: bound.partition,
         repository: asRepositoryId(bound.repository),
-        expected: { mode: "Push" },
-        landing: { mode: "Push" },
+        expected: { mode: "PullRequest" },
+        landing: { mode: "PullRequest" },
       })
       .then((outcome) => {
         settled = true;
@@ -378,16 +378,16 @@ test("a write that gives up waiting says so rather than reading as a fault", asy
     await postgresProjectRepositoryLanding(clientPool(holder)).setLanding({
       partition: bound.partition,
       repository: asRepositoryId(bound.repository),
-      expected: { mode: "Push" },
-      landing: { mode: "PullRequest" },
+      expected: { mode: "PullRequest" },
+      landing: { mode: "Push" },
     });
     await impatient.query("SET statement_timeout='200ms'");
     assert.deepEqual(
       await postgresProjectRepositoryLanding(clientPool(impatient)).setLanding({
         partition: bound.partition,
         repository: asRepositoryId(bound.repository),
-        expected: { mode: "Push" },
-        landing: { mode: "Push" },
+        expected: { mode: "PullRequest" },
+        landing: { mode: "PullRequest" },
       }),
       { outcome: "Unavailable" },
     );

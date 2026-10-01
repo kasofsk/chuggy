@@ -63,7 +63,7 @@ const holder = createSessionHolder({
 /** A refused sign-in is drawn with its reason, not as a browser holding none. */
 async function begin(session: SessionHolder): Promise<void> {
   await session.load();
-  const callback = await session.completeCallback(location.search);
+  const callback = await session.completeCallback(location);
   if (callback.result === "None") return;
   if (callback.result === "Denied") session.refuse(callback.reason);
   history.replaceState(null, "", sessionCallbackPath(callback));

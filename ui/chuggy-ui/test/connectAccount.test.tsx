@@ -1,11 +1,11 @@
 /**
- * The first half of connecting an account: the two addresses the dialog offers,
- * and what following one leaves behind.
+ * Installing an app: the two addresses the dialog offers, and what following
+ * one leaves behind.
  *
- * THE EQUALITY IS THE WHOLE DESIGN. The landing claims only for a state it can
+ * THE EQUALITY IS THE WHOLE DESIGN. The landing goes on only for a state it can
  * match against the transaction this tab stored, so a link carrying one state
- * while the store holds another claims nothing, and a link followed with
- * nothing stored at all claims nothing either — either way every install in the
+ * while the store holds another starts nothing, and a link followed with
+ * nothing stored at all starts nothing either — either way every install in the
  * deployment reads as unexpected. What is asserted is therefore that the state
  * on the address is the state in the store.
  */
@@ -61,7 +61,7 @@ async function drawDialog(): Promise<void> {
     </ScreenHarness>,
   );
   await settled();
-  fireEvent.click(screen.getByRole("button", { name: "Connect" }));
+  fireEvent.click(screen.getByRole("button", { name: "Install" }));
   await settled();
 }
 

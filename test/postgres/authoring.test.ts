@@ -100,8 +100,8 @@ async function repositoryBinding(partition: Partition, label = "sole") {
     `repository-${label}-${partition.tenant}-${partition.project}`,
   );
   await harness.query(
-    `INSERT INTO project_repository (tenant,project,repository,recovery_epoch)
-       VALUES ($1,$2,$3,$4)`,
+    `INSERT INTO project_repository (tenant,project,repository,recovery_epoch,landing_mode)
+       VALUES ($1,$2,$3,$4,'Push')`,
     [partition.tenant, partition.project, repository, recoveryEpoch],
   );
   return {

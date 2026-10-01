@@ -503,8 +503,8 @@ test("a project binds multiple repositories while each repository keeps one owne
   );
   const second = finalizerIdentity("repository-second");
   await rig.harness.query(
-    `INSERT INTO project_repository (tenant, project, repository, recovery_epoch)
-     VALUES ($1,$2,$3,$4)`,
+    `INSERT INTO project_repository (tenant, project, repository, recovery_epoch, landing_mode)
+     VALUES ($1,$2,$3,$4,'Push')`,
     keys(second, project.epoch),
   );
   assert.match(
