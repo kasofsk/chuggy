@@ -151,6 +151,7 @@ const bindings = {
       repository: boundUrl,
       boundAt: "2026-09-11T00:00:00Z",
       landing: { mode: "Push" },
+      configured: true,
     },
   ],
 };
@@ -235,7 +236,8 @@ async function drawPage(drawing: Drawing = {}): Promise<readonly Sent[]> {
       key: init?.headers?.["idempotency-key"],
       body: init?.body === undefined ? undefined : JSON.parse(init.body),
     });
-    if (init?.method === "POST") return Promise.resolve(posted(url));
+    if (init?.method === "POST" || init?.method === "PUT")
+      return Promise.resolve(posted(url));
     if (url.endsWith("/forge/github"))
       return Promise.resolve(answer(described));
     if (url.includes("/forge-installations/"))
@@ -768,4 +770,101 @@ test("the account chosen is the account the create is asked under", async () => 
     name: "scratch",
     visibility: "private",
   });
+});
+
+const retiredUrl = "https://forge.test/kasofsk/old";
+
+/** A live binding the project holds nothing for, beside one it holds and one retired. */
+const unconfigured = {
+  repositories: [
+    { ...bindings.repositories[0], configured: false },
+    {
+      repository: freeUrl,
+      boundAt: "2026-09-11T00:00:00Z",
+      landing: { mode: "Push" },
+      configured: true,
+    },
+    {
+      repository: retiredUrl,
+      boundAt: "2026-09-11T00:00:00Z",
+      landing: { mode: "Push" },
+      configured: false,
+      retiredAt: "2026-09-14T00:00:00Z",
+    },
+  ],
+};
+
+function bindingRowsText(): readonly (string | null)[] {
+  return within(sectionOf("Repositories"))
+    .getAllByRole("rowheader")
+    .map((row) => row.textContent);
+}
+
+/** The step asked for again from the one row that offers it. */
+async function retryFirst(): Promise<void> {
+  fireEvent.click(
+    within(sectionOf("Repositories")).getByRole("button", { name: "Retry" }),
+  );
+  await settled();
+}
+
+/** The listing answers nothing on why a step deferred, so a row says only that it did. */
+test("only a live binding the project holds nothing for draws Deferred and offers Retry", async () => {
+  await drawPage({ bound: unconfigured });
+  expect(bindingRowsText()).toStrictEqual([
+    "kasofsk/chuggyDeferredRetry",
+    "gdoteof/scratch",
+    "kasofsk/oldRetired",
+  ]);
+});
+
+test("a retry asks for the step again by address and stales the bindings the page drew", async () => {
+  const sent = await drawPage({
+    bound: unconfigured,
+    posted: () =>
+      answer({
+        repository: boundUrl,
+        configurations: { result: "Bootstrapped", revision: "bootstrap" },
+      }),
+  });
+  const raised = invalidationsAfterDraw();
+  await retryFirst();
+  expect(
+    sent
+      .filter((one) => one.method === "PUT")
+      .map(({ url, body }) => ({ url, body })),
+  ).toStrictEqual([
+    {
+      url: `/api/v1/tenants/${leadPartition.tenant}/projects/${leadPartition.project}/repositories/configurations`,
+      body: { repository: boundUrl },
+    },
+  ]);
+  expect(raised).toStrictEqual([bindingsKey]);
+});
+
+/** The reason is what says whether retrying again can help, so the row takes it in place of the bare word. */
+test("a retry that defers again names its reason on the row", async () => {
+  await drawPage({
+    bound: unconfigured,
+    posted: () =>
+      answer({
+        repository: boundUrl,
+        configurations: {
+          result: "Deferred",
+          reason: "DefaultBranchUnavailable",
+        },
+      }),
+  });
+  await retryFirst();
+  expect(bindingRowsText()[0]).toBe(
+    "kasofsk/chuggyDeferred · DefaultBranchUnavailableRetry",
+  );
+});
+
+test("a refused retry draws its refusal and stales nothing", async () => {
+  await drawPage({ bound: unconfigured });
+  const raised = invalidationsAfterDraw();
+  await retryFirst();
+  expect(bindingRowsText()[0]).toBe("kasofsk/chuggyDeferringRetry");
+  expect(raised).toStrictEqual([]);
 });

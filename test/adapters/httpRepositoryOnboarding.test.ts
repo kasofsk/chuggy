@@ -86,6 +86,7 @@ import type {
 } from "../../src/interpreter/repositoryBinding.ts";
 import {
   repositoryOnboarding,
+  type RepositoryConfigurationsHeld,
   type RepositoryConfigurationsPorts,
   type RepositoryCreationPorts,
   type RepositoryOnboarding,
@@ -203,6 +204,8 @@ interface OnboardingStore {
   resolved: CredentialResolved;
   landingUnavailable: boolean;
   retirementUnavailable: boolean;
+  stepHeld: RepositoryConfigurationsHeld;
+  heldReads: number;
 }
 
 /** The instant the fixture retires at, so a case can assert the row it reads back. */
@@ -218,6 +221,8 @@ function fixtureStore(): OnboardingStore {
     outcome: "Bound",
     landingUnavailable: false,
     retirementUnavailable: false,
+    stepHeld: { declared: new Map(), bootstrapped: false },
+    heldReads: 0,
     resolved: {
       resolved: "Credential",
       credential: asRepositoryCredential("ghs-proof"),
@@ -415,6 +420,12 @@ function fixtureService(
     binding: fixtureBinding(store),
     landing: fixtureLanding(store),
     retirement: fixtureRetirement(store),
+    configurationsHeld: {
+      held: () => {
+        store.heldReads += 1;
+        return Promise.resolve(store.stepHeld);
+      },
+    },
     ...(image === undefined
       ? {}
       : { configurations: fixtureServiceConfigurations(image) }),
@@ -1222,6 +1233,7 @@ test("a bind is created at its own address and read back by the listing", async 
         repository,
         boundAt: "2026-09-11T01:00:00Z",
         landing: { mode: "Push" },
+        configured: false,
       },
     ],
   });
@@ -1361,6 +1373,12 @@ const unauthenticatedRequests = [
     payload: { repository },
   },
   {
+    method: "PUT" as const,
+    url: `${repositoriesRoot}/configurations`,
+    headers: { "content-type": nativeHttpMediaType },
+    payload: { repository },
+  },
+  {
     method: "POST" as const,
     url: `${repositoriesRoot}/new`,
     headers: {
@@ -1386,6 +1404,7 @@ test("every route this slice adds answers an unauthenticated caller with 401", a
   assert.deepEqual(served.recorder.calls, []);
   assert.deepEqual(served.store.commands, []);
   assert.deepEqual(served.store.held, []);
+  assert.equal(served.store.heldReads, 0);
 });
 
 const createRoot = `${repositoriesRoot}/new`;
@@ -1655,12 +1674,20 @@ function landingRequest(body: Record<string, unknown>) {
   };
 }
 
-/** A project holding one binding, made through the bind route the console uses. */
+/**
+ * A project holding one binding, made through the bind route the console uses,
+ * and composed with a configuration step where a case names its image.
+ */
 async function fixtureLanded(
   t: TestContext,
   granted: readonly ("Administer" | "Read")[] = ["Administer", "Read"],
+  image?: string,
 ) {
-  const landed = fixtureCase(t, { granted, store: fixtureStore() });
+  const landed = fixtureCase(t, {
+    granted,
+    store: fixtureStore(),
+    ...(image === undefined ? {} : { image }),
+  });
   assert.equal(
     (
       await landed.app.inject({
@@ -1702,6 +1729,7 @@ test("moving where a repository lands answers the row and the listing agrees", a
         repository,
         boundAt: "2026-09-11T01:00:00Z",
         landing: { mode: "PullRequest" },
+        configured: false,
       },
     ],
   });
@@ -1817,7 +1845,9 @@ test("retiring a binding answers the row it left and the listing agrees", async 
     url: repositoriesRoot,
     headers: authorized,
   });
-  assert.deepEqual(listed.json(), { repositories: [retired] });
+  assert.deepEqual(listed.json(), {
+    repositories: [{ ...retired, configured: false }],
+  });
 });
 
 test("a repeat of a retirement answers the instant the first one wrote", async (t) => {
@@ -1866,6 +1896,7 @@ test("binding a retired repository again reinstates it and answers as a bind", a
           repository,
           boundAt: "2026-09-11T01:00:00Z",
           landing: { mode: "Push" },
+          configured: false,
         },
       ],
     },
@@ -1922,4 +1953,97 @@ test("a retirement sent as unversioned json is refused before the door is asked"
   });
   assert.equal(served.statusCode, 415);
   assert.equal(landed.store.bound[0]?.retiredAt, undefined);
+});
+
+function configureRequest(body: Record<string, unknown>) {
+  return {
+    method: "PUT" as const,
+    url: `${repositoriesRoot}/configurations`,
+    headers: versioned,
+    payload: body,
+  };
+}
+
+/** What the listing says of the one binding, which is what the console offers a retry from. */
+async function listedConfigured(
+  landed: Awaited<ReturnType<typeof fixtureLanded>>,
+): Promise<readonly boolean[]> {
+  const listed = await landed.app.inject({
+    url: repositoriesRoot,
+    headers: authorized,
+  });
+  return listed
+    .json<{ repositories: { configured: boolean }[] }>()
+    .repositories.map((row) => row.configured);
+}
+
+test("asking for a binding's configuration step again answers the step and the listing agrees", async (t) => {
+  const landed = await fixtureLanded(t, undefined, bootstrapImage);
+  assert.deepEqual(await listedConfigured(landed), [false]);
+  const served = await landed.app.inject(configureRequest({ repository }));
+  assert.equal(served.statusCode, 200);
+  assert.deepEqual(served.json(), {
+    repository,
+    configurations: { result: "Deferred", reason: "DefaultBranchAbsent" },
+  });
+  assert.deepEqual(await listedConfigured(landed), [false]);
+});
+
+test("a binding the project holds a bootstrap for is answered it and listed as configured", async (t) => {
+  const landed = await fixtureLanded(t, undefined, bootstrapImage);
+  landed.store.stepHeld = { declared: new Map(), bootstrapped: true };
+  const served = await landed.app.inject(configureRequest({ repository }));
+  assert.equal(served.statusCode, 200);
+  assert.deepEqual(served.json(), {
+    repository,
+    configurations: { result: "Bootstrapped", revision: "bootstrap" },
+  });
+  assert.deepEqual(await listedConfigured(landed), [true]);
+});
+
+test("a configuration step without the project permit is not found and reads nothing", async (t) => {
+  const landed = await fixtureLanded(t, ["Administer", "Read"], bootstrapImage);
+  const reader = fixtureCase(t, {
+    granted: ["Read"],
+    store: landed.store,
+    image: bootstrapImage,
+  });
+  const reads = landed.store.heldReads;
+  const served = await reader.app.inject(configureRequest({ repository }));
+  assert.equal(served.statusCode, 404);
+  assert.equal(served.json<HttpErrorEnvelope>().error.code, "NotFound");
+  assert.equal(landed.store.heldReads, reads);
+});
+
+test("a retired binding is a conflict and one this project does not bind is not found", async (t) => {
+  const landed = await fixtureLanded(t, undefined, bootstrapImage);
+  const unbound = await landed.app.inject(
+    configureRequest({ repository: "https://github.com/acme/unbound.git" }),
+  );
+  assert.equal(unbound.statusCode, 404);
+  await landed.app.inject(retirementRequest({ repository }));
+  const retired = await landed.app.inject(configureRequest({ repository }));
+  assert.equal(retired.statusCode, 409);
+  assert.equal(
+    retired.json<HttpErrorEnvelope>().error.code,
+    "RepositoryRetired",
+  );
+  assert.equal(landed.store.heldReads, 0);
+});
+
+test("a configuration body the schema does not name, or unversioned, is refused before the step", async (t) => {
+  const landed = await fixtureLanded(t, undefined, bootstrapImage);
+  for (const body of [{ repository, landing: { mode: "Push" } }, {}] as Record<
+    string,
+    unknown
+  >[]) {
+    const served = await landed.app.inject(configureRequest(body));
+    assert.equal(served.statusCode, 400, JSON.stringify(body));
+  }
+  const unversioned = await landed.app.inject({
+    ...configureRequest({ repository }),
+    headers: { ...authorized, "content-type": "application/json" },
+  });
+  assert.equal(unversioned.statusCode, 415);
+  assert.equal(landed.store.heldReads, 0);
 });

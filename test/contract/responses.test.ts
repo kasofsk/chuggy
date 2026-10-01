@@ -31,6 +31,7 @@ import {
   outputContentResponse,
   projectRepositoriesResponse,
   projectRepositoryBindResponse,
+  projectRepositoryConfigureResponse,
   projectRepositoryLandingResponse,
   projectRepositoryRetirementResponse,
   projectRepositoryCreateResponse,
@@ -75,6 +76,7 @@ import {
   projectRepositoryCreatedSchema,
   projectRepositoryLandingConflictSchema,
   projectRepositoryRetiredSchema,
+  projectRepositoryConfiguredSchema,
   projectRepositoryResponseSchema,
   projectResponseSchema,
   repositoryConfigurationRefusalsSchema,
@@ -1767,6 +1769,7 @@ test("a binding and a project's bindings name the repository and its moment", ()
           repository: onboardingRepository,
           boundAt: instant,
           landing: { mode: "Push" },
+          configured: true,
         },
       ],
     }).body,
@@ -1775,7 +1778,43 @@ test("a binding and a project's bindings name the repository and its moment", ()
     repository: onboardingRepository,
     boundAt: instant,
     landing: { mode: "Push" },
+    configured: true,
   });
+  assert.throws(() =>
+    projectRepositoriesResponseSchema.parse({
+      repositories: [
+        {
+          repository: onboardingRepository,
+          boundAt: instant,
+          landing: { mode: "Push" },
+        },
+      ],
+    }),
+  );
+});
+
+test("a configuration step asked for again answers its outcome beside the repository", () => {
+  assert.deepEqual(
+    projectRepositoryConfiguredSchema.parse(
+      projectRepositoryConfigureResponse({
+        result: "Configurations",
+        repository: onboardingRepository,
+        configurations: { result: "Deferred", reason: "SnapshotUnavailable" },
+      }).body,
+    ),
+    {
+      repository: onboardingRepository,
+      configurations: { result: "Deferred", reason: "SnapshotUnavailable" },
+    },
+  );
+  const retired = projectRepositoryConfigureResponse({ result: "Retired" });
+  assert.equal(retired.status, 409);
+  assert.equal(
+    errorEnvelopeSchema.parse(retired.body).error.code,
+    "RepositoryRetired",
+  );
+  for (const result of ["NotBound", "NotFound"] as const)
+    assert.equal(projectRepositoryConfigureResponse({ result }).status, 404);
 });
 
 test("a binding names a landing, and both answers carry the row that stands", () => {

@@ -8,6 +8,7 @@
 import type {
   ForgeRepositoryResponse,
   ProjectRepositoryConfigurationsResponse,
+  ProjectRepositoryConfiguredResponse,
   ProjectRepositoryResponse,
 } from "../../../../src/contract/responses.ts";
 
@@ -88,6 +89,18 @@ export function repositoryConfigurationsStatus(
     case "Deferred":
       return `Deferred · ${configurations.reason}`;
   }
+}
+
+/** What a configuration step asked for again came to, as the one status its row draws. */
+export function repositoryConfigureStatus(
+  result: ApiResult<ProjectRepositoryConfiguredResponse>,
+): string {
+  if (result.outcome === "Ok")
+    return repositoryConfigurationsStatus(result.value.configurations);
+  if (result.outcome === "Conflict")
+    return result.code === "RepositoryRetired" ? "Retired" : "Conflict";
+  if (result.outcome === "Rejected") return "Refused";
+  return repositoryRefusalStatus(result);
 }
 
 export type RepositoryBindOutcome =

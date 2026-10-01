@@ -18,6 +18,7 @@ import {
   apiBindProjectRepository,
   apiForgeAuthorization,
   apiConfiguration,
+  apiConfigureProjectRepository,
   apiCreateProjectRepository,
   apiDispatchView,
   apiExecutions,
@@ -589,4 +590,24 @@ test("a landing is written by PUT at the bindings' own landing path", async () =
   ]);
   expect(held.requests[0]?.init.method).toBe("PUT");
   expect(answered).toStrictEqual({ outcome: "Ok", value: row });
+});
+
+/** The step is asked for again at its own address under the bindings, naming the repository by its address. */
+test("a configuration step is asked for again by PUT at the bindings' own configurations path", async () => {
+  const configured = {
+    repository: madeRepository,
+    configurations: { result: "Deferred", reason: "SnapshotUnavailable" },
+  };
+  const held = recordingRequests(() => configured);
+  const answered = await apiConfigureProjectRepository(held.ports, partition, {
+    repository: madeRepository,
+  });
+  expect(held.requests.map((request) => request.url)).toStrictEqual([
+    `${partitionPath}/repositories/configurations`,
+  ]);
+  expect(held.requests[0]?.init.method).toBe("PUT");
+  expect(JSON.parse(String(held.requests[0]?.init.body))).toStrictEqual({
+    repository: madeRepository,
+  });
+  expect(answered).toStrictEqual({ outcome: "Ok", value: configured });
 });

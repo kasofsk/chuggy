@@ -67,6 +67,7 @@ function binding(mode: string, repository = chuggy): unknown {
     repository,
     boundAt: "2026-09-11T00:00:00Z",
     landing: { mode },
+    configured: true,
   };
 }
 

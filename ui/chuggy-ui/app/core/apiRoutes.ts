@@ -33,6 +33,7 @@ import {
   projectRepositoriesResponseSchema,
   projectRepositoryAlreadyBoundSchema,
   projectRepositoryBoundSchema,
+  projectRepositoryConfiguredSchema,
   projectRepositoryCreatedSchema,
   projectRepositoryLandingWrittenSchema,
   projectResponseSchema,
@@ -69,6 +70,7 @@ import type {
   ProjectRepositoriesResponse,
   ProjectRepositoryAlreadyBoundResponse,
   ProjectRepositoryBoundResponse,
+  ProjectRepositoryConfiguredResponse,
   ProjectRepositoryCreatedResponse,
   ProjectRepositoryResponse,
   ProjectResponse,
@@ -89,6 +91,7 @@ import type {
   leadInquirySchema,
   projectCreationSchema,
   projectRepositoryBindSchema,
+  projectRepositoryConfigureSchema,
   projectRepositoryCreateSchema,
   projectRepositoryLandingSchema,
   repositoryConfigurationImportSchema,
@@ -353,6 +356,23 @@ export function apiWriteProjectRepositoryLanding(
       body: written,
     },
     (value) => projectRepositoryLandingWrittenSchema.parse(value).repository,
+  );
+}
+
+/** One bound repository's configuration step, run where the project holds nothing for it. */
+export function apiConfigureProjectRepository(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+  request: z.infer<typeof projectRepositoryConfigureSchema>,
+): Promise<ApiResult<ProjectRepositoryConfiguredResponse>> {
+  return apiRead(
+    ports,
+    {
+      method: "PUT",
+      path: apiSegments(partition, "repositories", "configurations"),
+      body: request,
+    },
+    (value) => projectRepositoryConfiguredSchema.parse(value),
   );
 }
 

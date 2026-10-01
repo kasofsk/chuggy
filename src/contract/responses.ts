@@ -1442,10 +1442,10 @@ export type ForgeRepositoriesResponse = z.infer<
 >;
 
 /**
- * What a newly bound repository's own configurations came to. It is beside the
+ * What a bound repository's own configurations came to. It is beside the
  * binding and not part of it: the binding is durable whatever this says, so a
- * `Deferred` is a step to run again through the import and authoring routes
- * rather than a repository that is not bound.
+ * `Deferred` is a step to run again through the configuration route rather than
+ * a repository that is not bound.
  */
 export const projectRepositoryConfigurationsSchema = z.discriminatedUnion(
   "result",
@@ -1539,6 +1539,26 @@ export type ProjectRepositoryResponse = z.infer<
   typeof projectRepositoryResponseSchema
 >;
 
+/**
+ * One binding as the listing answers it. `configured` is whether the project
+ * holds a configuration the repository declared into it, or its bootstrap; one
+ * holding neither is what the configuration route runs the step again for.
+ */
+export const projectRepositoryListedSchema =
+  projectRepositoryResponseSchema.extend({ configured: z.boolean() });
+export type ProjectRepositoryListedResponse = z.infer<
+  typeof projectRepositoryListedSchema
+>;
+
+/** What asking for one binding's configuration step came to, beside the repository it was asked for. */
+export const projectRepositoryConfiguredSchema = z.object({
+  repository: z.string().min(1),
+  configurations: projectRepositoryConfigurationsSchema,
+});
+export type ProjectRepositoryConfiguredResponse = z.infer<
+  typeof projectRepositoryConfiguredSchema
+>;
+
 /** The row the write left, which is the newest read of it a writer holds. */
 export const projectRepositoryLandingWrittenSchema = z.object({
   repository: projectRepositoryResponseSchema,
@@ -1566,7 +1586,7 @@ export type ProjectRepositoryRetiredResponse = z.infer<
 /** Every repository one project binds, oldest first, which privileges none of them. */
 export const projectRepositoriesResponseSchema = z.object({
   repositories: z
-    .array(projectRepositoryResponseSchema)
+    .array(projectRepositoryListedSchema)
     .max(projectRepositoriesAnsweredMax),
 });
 export type ProjectRepositoriesResponse = z.infer<

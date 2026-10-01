@@ -134,19 +134,27 @@ test("only the moved code with a readable body is a conflict", () => {
 });
 
 /** The listing is what every other screen reads the landing from, so the row
- * the write answered replaces the stale one and no other row moves. */
+ * the write answered replaces the stale one, keeps what only the listing says
+ * of it, and no other row moves. */
 test("a written row replaces its own, and the page finds the row it is about", () => {
   const held = {
-    repositories: [binding(chuggy, "Push"), binding(scratch, "Push")],
+    repositories: [
+      { ...binding(chuggy, "Push"), configured: false },
+      { ...binding(scratch, "Push"), configured: true },
+    ],
   };
   expect(
     projectRepositoriesWith(held, binding(chuggy, "PullRequest")),
   ).toStrictEqual({
-    repositories: [binding(chuggy, "PullRequest"), binding(scratch, "Push")],
+    repositories: [
+      { ...binding(chuggy, "PullRequest"), configured: false },
+      { ...binding(scratch, "Push"), configured: true },
+    ],
   });
-  expect(projectRepositoryBound(held, scratch)).toStrictEqual(
-    binding(scratch, "Push"),
-  );
+  expect(projectRepositoryBound(held, scratch)).toStrictEqual({
+    ...binding(scratch, "Push"),
+    configured: true,
+  });
   expect(projectRepositoryBound(held, "https://forge.test/kasofsk/none")).toBe(
     undefined,
   );

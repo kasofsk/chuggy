@@ -20,6 +20,7 @@ import {
   repositoryBindOutcome,
   repositoryBindStatus,
   repositoryChoices,
+  repositoryConfigureStatus,
   repositoryLabel,
 } from "../app/core/projectRepositories.ts";
 import { repositoryRefusalsDrawn } from "./repositoryRefusals.ts";
@@ -129,4 +130,48 @@ test("each refusal is the one line the picker draws under itself", () => {
     }),
   ).toBe("Not installed");
   repositoryRefusalsDrawn(status);
+});
+
+/** A retired binding is the one refusal that says what to do, so it alone gets its own word. */
+test("a configuration step asked for again draws its outcome, or the refusal it met", () => {
+  const configured = (
+    configurations: ProjectRepositoryConfigurationsResponse,
+  ): string =>
+    repositoryConfigureStatus({
+      outcome: "Ok",
+      value: {
+        repository: "https://forge.test/kasofsk/chuggy",
+        configurations,
+      },
+    });
+  expect(configured({ result: "Imported", count: 1 })).toBe("Imported");
+  expect(configured({ result: "Bootstrapped", revision: "bootstrap" })).toBe(
+    "Bootstrapped",
+  );
+  expect(
+    configured({ result: "Deferred", reason: "DefaultBranchUnavailable" }),
+  ).toBe("Deferred · DefaultBranchUnavailable");
+  expect(
+    repositoryConfigureStatus({
+      outcome: "Conflict",
+      code: "RepositoryRetired",
+      body: undefined,
+    }),
+  ).toBe("Retired");
+  expect(
+    repositoryConfigureStatus({
+      outcome: "Conflict",
+      code: "SomethingElse",
+      body: undefined,
+    }),
+  ).toBe("Conflict");
+  expect(
+    repositoryConfigureStatus({
+      outcome: "Rejected",
+      code: "InvalidRequest",
+      status: 400,
+      body: undefined,
+    }),
+  ).toBe("Refused");
+  expect(repositoryConfigureStatus({ outcome: "Absent" })).toBe("Not found");
 });

@@ -110,9 +110,10 @@ export function repositoryLandingAnswered(
 }
 
 /**
- * The bindings this page holds with one row replaced. A write that landed IS the
- * newest read of that row, and the route raises no frame, so the listing takes
- * it rather than waiting for a refetch nothing schedules.
+ * The bindings this page holds with one row's binding replaced and what only
+ * the listing says of it kept. A write that landed IS the newest read of that
+ * binding, and the route raises no frame, so the listing takes it rather than
+ * waiting for a refetch nothing schedules.
  */
 export function projectRepositoriesWith(
   held: ProjectRepositoriesResponse,
@@ -121,7 +122,9 @@ export function projectRepositoriesWith(
   return {
     ...held,
     repositories: held.repositories.map((row) =>
-      row.repository === binding.repository ? binding : row,
+      row.repository === binding.repository
+        ? { ...binding, configured: row.configured }
+        : row,
     ),
   };
 }

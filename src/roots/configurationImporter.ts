@@ -12,9 +12,9 @@
  *
  * A SKIP IS NOT A FAILURE AND A FAILURE IS NOT THE RUN'S END. A repository
  * holding no commit, or no configuration directory at its head, is passed over
- * — seeding one belongs to the bind and happens once. Everything else is
- * reported on its own line, every other binding is still attempted, and the run
- * exits non-zero if any failed.
+ * — seeding one belongs to the bind and to the configuration route. Everything
+ * else is reported on its own line, every other binding is still attempted, and
+ * the run exits non-zero if any failed.
  *
  * A RUN THAT FILLED ITS BOUND DID NOT IMPORT THE ESTATE, and leaves non-zero
  * saying so. The listing is ordered by age, so a deployment holding more

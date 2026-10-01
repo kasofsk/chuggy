@@ -113,6 +113,7 @@ test("the context carries what the project binds", async () => {
               repository: "https://forge.test/kasofsk/chuggy",
               boundAt: "2026-08-26T00:00:00Z",
               landing: { mode: "Push" },
+              configured: true,
             },
           ],
         })
@@ -128,6 +129,7 @@ test("the context carries what the project binds", async () => {
       repository: "https://forge.test/kasofsk/chuggy",
       boundAt: "2026-08-26T00:00:00Z",
       landing: { mode: "Push" },
+      configured: true,
     },
   ]);
 });
@@ -141,6 +143,7 @@ test("a project with a repository and no ready revision says exactly that", asyn
               repository: "https://forge.test/kasofsk/chuggy",
               boundAt: "2026-08-26T00:00:00Z",
               landing: { mode: "Push" },
+              configured: true,
             },
           ],
         })

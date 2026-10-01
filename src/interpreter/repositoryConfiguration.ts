@@ -332,7 +332,7 @@ export type BoundRepositoryImportFailure =
  * What one bound repository came to. A skip is not a failure: a repository
  * holding no commit, or holding no configuration directory at its head, is a
  * repository this run has nothing to do with, and the bootstrap that seeds one
- * belongs to the bind and happens once.
+ * belongs to the bind and to the configuration route that runs its step again.
  */
 export type BoundRepositoryImportResult =
   | {

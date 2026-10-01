@@ -31,6 +31,7 @@ import {
   forgeAuthorizationSchema,
   projectCreationSchema,
   projectRepositoryBindSchema,
+  projectRepositoryConfigureSchema,
   projectRepositoryCreateSchema,
   projectRepositoryLandingSchema,
   projectRepositoryRetirementSchema,
@@ -265,6 +266,13 @@ export function parseExecutionPlacement(body: unknown): ExecutionRoutes {
 export function parseProjectRepositoryRetirement(body: unknown): RepositoryId {
   return asRepositoryId(
     projectRepositoryRetirementSchema.parse(body).repository,
+  );
+}
+
+/** One configuration step asked for as the wire carries it, which is the binding and nothing else. */
+export function parseProjectRepositoryConfigure(body: unknown): RepositoryId {
+  return asRepositoryId(
+    projectRepositoryConfigureSchema.parse(body).repository,
   );
 }
 

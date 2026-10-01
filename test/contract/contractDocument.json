@@ -39,7 +39,7 @@
   "repositoryBinding": "binding a repository to a project creates no project: a project that does not exist is not found, and the repository must be one this deployment holds a credential for — on a host it mints for, that means an installation this tenant has claimed",
   "repositoryLanding": "a repository's landing default is the mode a ticket in it lands by unless its brief names one; it is written against the value the writer read, and a ticket whose landing is None names no reference to land on",
   "repositoryRetirement": "a retired repository stays bound and stays readable by name, and stops being the one a session is placed against, the importer reads or a brief may name; this route only retires and repeating it changes nothing, and binding the repository again reinstates it",
-  "repositoryConfigurations": "a newly bound repository is imported at its own default-branch head, and one declaring no configurations is authored a bootstrap; the step is reported beside the binding and never refuses it",
+  "repositoryConfigurations": "a newly bound repository is imported at its own default-branch head, and one declaring no configurations is authored a bootstrap; the step is reported beside the binding and never refuses it, and is asked for again through its own route, which runs it for a live binding the project holds no configuration from and no bootstrap for and otherwise answers what the project holds; the bootstrap is one revision per project, so two requests racing author it once",
   "repositoryCreation": "creating a repository requires this tenant's claims of both apps on the account; the repository is the forge's from the moment it answers, so a later refusal is reported beside one that stands and a name already taken is bound rather than created",
   "executionPlacement": "where a project's work and evaluations run is decided per kind by the deployment's override for the project, else the project's own placement, else the deployment's default; an administrator writes both routes whole, and choosing InCluster needs the tenant's hosted grant, as opening a thread does",
   "workerPoolRegistration": "an administrator mints a single-use token for one project; redeeming it registers the pool and answers once with the file a runner keeps, its secret included",
@@ -85,6 +85,7 @@
     "projectRepositoriesNew": "/api/v1/tenants/:tenant/projects/:project/repositories/new",
     "projectRepositoryLanding": "/api/v1/tenants/:tenant/projects/:project/repositories/landing",
     "projectRepositoryRetirement": "/api/v1/tenants/:tenant/projects/:project/repositories/retirement",
+    "projectRepositoryConfigurations": "/api/v1/tenants/:tenant/projects/:project/repositories/configurations",
     "executionPlacement": "/api/v1/tenants/:tenant/projects/:project/execution-placement",
     "workerPools": "/api/v1/tenants/:tenant/projects/:project/worker-pools",
     "workerPoolRegistrationTokens": "/api/v1/tenants/:tenant/projects/:project/worker-pool-registration-tokens",
@@ -860,6 +861,18 @@
       "additionalProperties": false
     },
     "projectRepositoryRetirement": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "repository": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": ["repository"],
+      "additionalProperties": false
+    },
+    "projectRepositoryConfigure": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
       "properties": {

@@ -89,6 +89,7 @@ import type {
   ForgeRepositoriesResult,
   ProjectRepositoriesResult,
   ProjectRepositoryBindResult,
+  ProjectRepositoryConfigureResult,
   ProjectRepositoryCreateResult,
   ProjectRepositoryLandingResult,
   ProjectRepositoryRetirementResult,
@@ -1378,6 +1379,36 @@ export function projectRepositoryRetirementResponse(
         authorityRetryAfterSeconds,
         "RepositoryRetirementContended",
       );
+    default:
+      return assertNever(result);
+  }
+}
+
+/**
+ * What asking for one binding's configuration step came to. The step's own
+ * outcome is the body of a `200` whatever it says, because the binding stands
+ * either way, and a retired binding is a conflict rather than a miss.
+ */
+export function projectRepositoryConfigureResponse(
+  result: ProjectRepositoryConfigureResult,
+): NativeHttpResponse {
+  switch (result.result) {
+    case "Configurations":
+      return response(200, {
+        repository: result.repository,
+        configurations: result.configurations,
+      });
+    case "Retired":
+      return response(
+        409,
+        nativeHttpError(
+          "RepositoryRetired",
+          "The repository's binding is retired; bind it again to configure it.",
+        ),
+      );
+    case "NotBound":
+    case "NotFound":
+      return notFound();
     default:
       return assertNever(result);
   }

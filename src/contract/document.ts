@@ -23,6 +23,7 @@ import {
   projectCreationSchema,
   projectNameCharsMax,
   projectRepositoryBindSchema,
+  projectRepositoryConfigureSchema,
   projectRepositoryCreateSchema,
   projectRepositoryLandingSchema,
   projectRepositoryRetirementSchema,
@@ -55,6 +56,9 @@ function nativeHttpContractDocumentSchemas(): unknown {
     projectRepositoryLanding: z.toJSONSchema(projectRepositoryLandingSchema),
     projectRepositoryRetirement: z.toJSONSchema(
       projectRepositoryRetirementSchema,
+    ),
+    projectRepositoryConfigure: z.toJSONSchema(
+      projectRepositoryConfigureSchema,
     ),
     leadInquiry: z.toJSONSchema(nativeHttpEndpoints.askLead.body),
     selectorProjectSettings: z.toJSONSchema(selectorProjectSettingsSchema),
@@ -118,7 +122,7 @@ export function nativeHttpContractDocument(): unknown {
     repositoryRetirement:
       "a retired repository stays bound and stays readable by name, and stops being the one a session is placed against, the importer reads or a brief may name; this route only retires and repeating it changes nothing, and binding the repository again reinstates it",
     repositoryConfigurations:
-      "a newly bound repository is imported at its own default-branch head, and one declaring no configurations is authored a bootstrap; the step is reported beside the binding and never refuses it",
+      "a newly bound repository is imported at its own default-branch head, and one declaring no configurations is authored a bootstrap; the step is reported beside the binding and never refuses it, and is asked for again through its own route, which runs it for a live binding the project holds no configuration from and no bootstrap for and otherwise answers what the project holds; the bootstrap is one revision per project, so two requests racing author it once",
     repositoryCreation:
       "creating a repository requires this tenant's claims of both apps on the account; the repository is the forge's from the moment it answers, so a later refusal is reported beside one that stands and a name already taken is bound rather than created",
     executionPlacement:

@@ -37,18 +37,22 @@
  * that mints is refused by the same `Denied` the minting source already
  * answers an unclaimed owner with.
  *
- * A NEWLY BOUND REPOSITORY IS READ ONCE AND LEFT CONFIGURED EITHER WAY. A
- * project that binds a repository declaring configurations wanted them, and one
- * that binds a repository declaring none still needs something to run its first
- * ticket on — so the bind imports what is there and authors the bootstrap where
- * there is nothing, at the repository's own head because the caller holds no
- * ticket to take a commit from.
+ * A NEWLY BOUND REPOSITORY IS LEFT CONFIGURED EITHER WAY. A project that binds
+ * a repository declaring configurations wanted them, and one that binds a
+ * repository declaring none still needs something to run its first ticket on —
+ * so the bind imports what is there and authors the bootstrap where there is
+ * nothing, at the repository's own head because the caller holds no ticket to
+ * take a commit from.
  *
  * THAT STEP IS BEST EFFORT AND THE BIND IS NOT. The binding is already durable
  * when it runs, so every way it can fail is a reason reported beside a
- * repository that is bound rather than a refusal that would claim it is not;
- * `AlreadyBound` runs nothing, a project having had its one chance at the
- * moment the repository became its own.
+ * repository that is bound rather than a refusal that would claim it is not.
+ * `AlreadyBound` runs nothing; a step that did not take is asked for again by
+ * the configuration route, which runs it for a repository the project holds
+ * nothing for and answers what the project holds for any other.
+ *
+ * THE BOOTSTRAP'S REVISION IS ITS NAME, so two steps racing to author it author
+ * one row: the second meets the first's revision as the one it already is.
  */
 
 import { assertNever } from "../domain/assertNever.ts";
@@ -200,9 +204,10 @@ export type ForgeRepositoriesResult =
   | { readonly result: "Unavailable" };
 
 /**
- * Why a newly bound repository came away with no configurations of its own.
- * Every one of them is a step that did not run or did not take, and none of
- * them says anything about whether the repository is bound.
+ * Why a bound repository came away from the configuration step with no
+ * configurations of its own. Every one of them is a step that did not run or
+ * did not take, and none of them says anything about whether the repository is
+ * bound.
  */
 export const allProjectRepositoryConfigurationsDeferrals = [
   "NotConfigured",
@@ -224,7 +229,7 @@ export const allProjectRepositoryConfigurationsDeferrals = [
 export type ProjectRepositoryConfigurationsDeferral =
   (typeof allProjectRepositoryConfigurationsDeferrals)[number];
 
-/** What configuring one newly bound repository came to. */
+/** What configuring one bound repository came to, or what the project already held for it. */
 export type ProjectRepositoryConfigurationsResult =
   | { readonly result: "Imported"; readonly count: number }
   | {
@@ -312,12 +317,36 @@ export type ProjectRepositoryCreateResult =
   | { readonly result: "NotFound" }
   | { readonly result: "Unavailable" };
 
+/**
+ * One binding as the listing answers it. `configured` is whether the project
+ * holds anything from the configuration step for it, which is what the
+ * configuration route runs the step again for when it does not.
+ */
+export interface ProjectRepositoryListed extends ProjectRepositoryBound {
+  readonly configured: boolean;
+}
+
 /** What reading a project's bindings came to. */
 export type ProjectRepositoriesResult =
   | {
       readonly result: "Repositories";
-      readonly repositories: readonly ProjectRepositoryBound[];
+      readonly repositories: readonly ProjectRepositoryListed[];
     }
+  | { readonly result: "NotFound" };
+
+/**
+ * What asking for one binding's configuration step came to. A retired binding
+ * is refused rather than configured, because no ticket names it and binding it
+ * again runs the step anyway.
+ */
+export type ProjectRepositoryConfigureResult =
+  | {
+      readonly result: "Configurations";
+      readonly repository: RepositoryId;
+      readonly configurations: ProjectRepositoryConfigurationsResult;
+    }
+  | { readonly result: "Retired" }
+  | { readonly result: "NotBound" }
   | { readonly result: "NotFound" };
 
 /**
@@ -387,6 +416,25 @@ export interface RepositoryOnboardingAuthorization {
 }
 
 /**
+ * What a project already holds from the configuration step: how many names
+ * each repository asked about declared into it, a repository that declared none
+ * absent, and whether the project holds the bootstrap revision asked about.
+ */
+export interface RepositoryConfigurationsHeld {
+  readonly declared: ReadonlyMap<RepositoryId, number>;
+  readonly bootstrapped: boolean;
+}
+
+/** Reads what a project holds from the configuration step, for the repositories it binds. */
+export interface RepositoryConfigurationsHeldRead {
+  held(query: {
+    readonly partition: Partition;
+    readonly repositories: readonly RepositoryId[];
+    readonly bootstrap: ConfigurationRevisionId;
+  }): Promise<RepositoryConfigurationsHeld>;
+}
+
+/**
  * The half a bind's configuration step is composed with. `bootstrapImage` is
  * the worker image a bootstrap configuration commands, and a deployment naming
  * none imports what a repository declares and defers the rest: a configuration
@@ -422,12 +470,13 @@ export interface RepositoryOnboardingPorts {
   readonly binding: ProjectRepositoryBindingWrite;
   readonly landing: ProjectRepositoryLandingStore;
   readonly retirement: ProjectRepositoryRetirementStore;
+  readonly configurationsHeld: RepositoryConfigurationsHeldRead;
   readonly configurations?: RepositoryConfigurationsPorts;
   readonly creation?: RepositoryCreationPorts;
   readonly authorization?: RepositoryOnboardingAuthorization;
 }
 
-/** The nine questions the onboarding routes ask, each behind the permit it needs. */
+/** The ten questions the onboarding routes ask, each behind the permit it needs. */
 export interface RepositoryOnboarding {
   forgeApps(): Promise<ForgeAppsResult>;
 
@@ -478,6 +527,12 @@ export interface RepositoryOnboarding {
     partition: Partition,
     repository: RepositoryId,
   ): Promise<ProjectRepositoryRetirementResult>;
+
+  configureRepository(
+    principal: Principal,
+    partition: Partition,
+    repository: RepositoryId,
+  ): Promise<ProjectRepositoryConfigureResult>;
 }
 
 /** The half composed for one app on one forge, and nothing where this deployment holds no key for it. */
@@ -666,6 +721,11 @@ async function installationRepositories(
   }
 }
 
+/** The one revision a project's bootstrap is authored at, which is its name. */
+const bootstrapConfigurationRevision = asConfigurationRevisionId(
+  bootstrapConfigurationName,
+);
+
 /**
  * The bootstrap configuration authored as this project's own, at the revision
  * the name itself is. A second repository in one project needing a bootstrap
@@ -681,11 +741,10 @@ async function bindRepositoryBootstrapped(
 ): Promise<ProjectRepositoryConfigurationsResult> {
   if (configurations.bootstrapImage === undefined)
     return { result: "Deferred", reason: "NoBootstrapImage" };
-  const revision = asConfigurationRevisionId(bootstrapConfigurationName);
   const created = await configurations.authoring.createConfiguration({
     partition: binding.partition,
     authority,
-    revision,
+    revision: bootstrapConfigurationRevision,
     canonical: bootstrapConfiguration({
       repository: binding.repository,
       defaultBranch,
@@ -1186,6 +1245,104 @@ async function retireRepository(
   }
 }
 
+/** What a project holds from the configuration step for the repositories named. */
+function heldConfigurations(
+  ports: RepositoryOnboardingPorts,
+  partition: Partition,
+  repositories: readonly RepositoryId[],
+): Promise<RepositoryConfigurationsHeld> {
+  return ports.configurationsHeld.held({
+    partition,
+    repositories,
+    bootstrap: bootstrapConfigurationRevision,
+  });
+}
+
+/**
+ * What the step has already left one repository, or nothing: the names it
+ * declared where it declared any, and otherwise the project's bootstrap, which
+ * a repository declaring none releases its tickets under whichever repository
+ * it was authored for.
+ */
+function heldRepositoryConfigurations(
+  held: RepositoryConfigurationsHeld,
+  repository: RepositoryId,
+): ProjectRepositoryConfigurationsResult | undefined {
+  const declared = held.declared.get(repository) ?? 0;
+  if (declared > 0) return { result: "Imported", count: declared };
+  if (held.bootstrapped)
+    return { result: "Bootstrapped", revision: bootstrapConfigurationRevision };
+  return undefined;
+}
+
+/** Every binding a reader may see, each with whether the step has left the project anything for it. */
+async function projectRepositories(
+  ports: RepositoryOnboardingPorts,
+  principal: Principal,
+  partition: Partition,
+): Promise<ProjectRepositoriesResult> {
+  if (
+    (await ports.access.authorize(principal, partition, "Read")) === undefined
+  )
+    return { result: "NotFound" };
+  const bound = await ports.bindings.bindings(partition);
+  const held = await heldConfigurations(
+    ports,
+    partition,
+    bound.map((row) => row.repository),
+  );
+  return {
+    result: "Repositories",
+    repositories: bound.map((row) => ({
+      ...row,
+      configured:
+        heldRepositoryConfigurations(held, row.repository) !== undefined,
+    })),
+  };
+}
+
+/**
+ * One binding's configuration step asked for again, behind the permit that
+ * binds. What the project already holds for the repository is answered without
+ * reading it; otherwise the step runs under a binding shaped as the bind's own.
+ */
+async function configureRepository(
+  ports: RepositoryOnboardingPorts,
+  principal: Principal,
+  partition: Partition,
+  repository: RepositoryId,
+): Promise<ProjectRepositoryConfigureResult> {
+  const authority = await ports.access.authorize(
+    principal,
+    partition,
+    "Administer",
+  );
+  if (authority === undefined) return { result: "NotFound" };
+  const bound = await ports.landing.landing(partition, repository);
+  if (bound === undefined) return { result: "NotBound" };
+  if (bound.retiredAt !== undefined) return { result: "Retired" };
+  const held = heldRepositoryConfigurations(
+    await heldConfigurations(ports, partition, [repository]),
+    repository,
+  );
+  if (held !== undefined)
+    return { result: "Configurations", repository, configurations: held };
+  const binding: RepositoryBinding = {
+    partition,
+    repository,
+    recoveryEpoch: await ports.binding.currentRecoveryEpoch(),
+  };
+  return {
+    result: "Configurations",
+    repository,
+    configurations: await boundRepositoryConfigurations(
+      ports,
+      binding,
+      authority,
+    ),
+  };
+}
+
 export function repositoryOnboarding(
   ports: RepositoryOnboardingPorts,
 ): RepositoryOnboarding {
@@ -1215,22 +1372,16 @@ export function repositoryOnboarding(
     createRepository: (principal, partition, request) =>
       createRepository(ports, principal, partition, request),
 
-    projectRepositories: async (principal, partition) => {
-      if (
-        (await ports.access.authorize(principal, partition, "Read")) ===
-        undefined
-      )
-        return { result: "NotFound" };
-      return {
-        result: "Repositories",
-        repositories: await ports.bindings.bindings(partition),
-      };
-    },
+    projectRepositories: (principal, partition) =>
+      projectRepositories(ports, principal, partition),
 
     setLanding: (principal, partition, repository, expected, landing) =>
       setLanding(ports, principal, partition, repository, expected, landing),
 
     retireRepository: (principal, partition, repository) =>
       retireRepository(ports, principal, partition, repository),
+
+    configureRepository: (principal, partition, repository) =>
+      configureRepository(ports, principal, partition, repository),
   };
 }
