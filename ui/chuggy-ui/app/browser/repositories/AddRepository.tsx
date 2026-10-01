@@ -8,7 +8,6 @@
  */
 
 import { useQueryClient } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import type { ReactNode } from "react";
 
@@ -33,8 +32,8 @@ import {
   repositoryChoices,
 } from "../../core/projectRepositories.ts";
 import type {
-  RepositoryBindNote,
   RepositoryChoice,
+  RepositoryNote,
 } from "../../core/projectRepositories.ts";
 import { useApiPorts, usePanelResource } from "../api.ts";
 import { PanelUnready } from "../DataPanel.tsx";
@@ -43,6 +42,7 @@ import { Button } from "../ui/Button.tsx";
 import { Dialog } from "../ui/Dialog.tsx";
 import { Notice } from "../ui/Notice.tsx";
 import { SearchableRoster } from "../ui/SearchableRoster.tsx";
+import { NewTicketOffer } from "./NewTicketOffer.tsx";
 
 /** No frame names either read, so the partition's own refetch is what reaches
  * them: a bind raises none, so the bindings key is invalidated by the bind. */
@@ -107,13 +107,13 @@ function RepositoryChoiceRow(props: {
 
 /** One bind, from the identity it spends to the line it leaves behind. */
 function useRepositoryBind(partition: PartitionIdentity): {
-  readonly note: RepositoryBindNote | undefined;
+  readonly note: RepositoryNote | undefined;
   readonly busy: boolean;
   readonly bind: (choice: RepositoryChoice) => void;
 } {
   const ports = useApiPorts();
   const client = useQueryClient();
-  const [note, setNote] = useState<RepositoryBindNote | undefined>(undefined);
+  const [note, setNote] = useState<RepositoryNote | undefined>(undefined);
   const [busy, setBusy] = useState(false);
   return {
     note,
@@ -182,14 +182,10 @@ function AddRepositoryBody(props: {
       ) : null}
       {binding.note === undefined ? null : (
         <Notice tone="info" inline detail={binding.note.status} role="status">
-          {binding.note.ticketOffered ? (
-            <>
-              {" · "}
-              <Link to="/$tenant/$project/tickets/new" params={partition}>
-                New ticket
-              </Link>
-            </>
-          ) : null}
+          <NewTicketOffer
+            partition={partition}
+            offered={binding.note.ticketOffered}
+          />
         </Notice>
       )}
     </>

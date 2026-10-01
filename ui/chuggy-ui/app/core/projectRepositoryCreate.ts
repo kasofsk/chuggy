@@ -22,7 +22,7 @@ import type {
 
 import type { ApiResult } from "./apiRequest.ts";
 import {
-  repositoryConfigurationsStatus,
+  repositoryConfigurationsNote,
   repositoryRefusalStatus,
 } from "./projectRepositories.ts";
 
@@ -145,22 +145,34 @@ export function repositoryCreateOutcome(
   return { outcome: "Refused", status: repositoryRefusalStatus(result) };
 }
 
-/** One thing a create did, and what it came to. */
+/** One thing a create did, what it came to, and whether it offers a first
+ * ticket as the next step. */
 export interface RepositoryCreatedRow {
   readonly label: string;
   readonly detail: string;
+  readonly ticketOffered: boolean;
 }
 
 /** Every step the create took, in the order it took them. */
 export function repositoryCreatedRows(
   created: ProjectRepositoryCreatedResponse,
 ): readonly RepositoryCreatedRow[] {
+  const configurations = repositoryConfigurationsNote(created.configurations);
   return [
-    { label: "Seed", detail: created.seeded ? "Seeded" : "Not seeded" },
-    { label: "Ruleset", detail: repositoryRulesetStatus(created.ruleset) },
+    {
+      label: "Seed",
+      detail: created.seeded ? "Seeded" : "Not seeded",
+      ticketOffered: false,
+    },
+    {
+      label: "Ruleset",
+      detail: repositoryRulesetStatus(created.ruleset),
+      ticketOffered: false,
+    },
     {
       label: "Configurations",
-      detail: repositoryConfigurationsStatus(created.configurations),
+      detail: configurations.status,
+      ticketOffered: configurations.ticketOffered,
     },
   ];
 }

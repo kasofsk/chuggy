@@ -200,7 +200,8 @@ export const repositoryDeferrals: Readonly<
   StepFailed: { status: "Step failed", retry: true },
 };
 
-/** What a repository's configuration step came to, as the one line drawn beside it. */
+/** What a repository's configuration step came to, as the one word a retried
+ * row's pill holds, or the phrase its deferral is drawn as. */
 export function repositoryConfigurationsStatus(
   configurations: ProjectRepositoryConfigurationsResponse,
 ): string {
@@ -208,9 +209,34 @@ export function repositoryConfigurationsStatus(
     case "Imported":
       return "Imported";
     case "Bootstrapped":
-      return "Bootstrapped";
+      return "Added";
     case "Deferred":
       return repositoryDeferrals[configurations.reason].status;
+  }
+}
+
+/** The one line a bind or a create leaves, and whether it offers a first
+ * ticket as the next step. */
+export interface RepositoryNote {
+  readonly status: string;
+  readonly ticketOffered: boolean;
+}
+
+/** What a repository's configuration step came to as a line, which offers a
+ * ticket once the project holds a configuration to file it against. */
+export function repositoryConfigurationsNote(
+  configurations: ProjectRepositoryConfigurationsResponse,
+): RepositoryNote {
+  switch (configurations.result) {
+    case "Imported":
+      return { status: "Configurations imported", ticketOffered: true };
+    case "Bootstrapped":
+      return { status: "Default configuration added", ticketOffered: true };
+    case "Deferred":
+      return {
+        status: repositoryDeferrals[configurations.reason].status,
+        ticketOffered: false,
+      };
   }
 }
 
@@ -279,40 +305,14 @@ export function repositoryBindOutcome(
   return { outcome: "Refused", status: repositoryRefusalStatus(result) };
 }
 
-/** The one line a bind leaves under the picker, and whether it offers a first
- * ticket as the next step. */
-export interface RepositoryBindNote {
-  readonly status: string;
-  readonly ticketOffered: boolean;
-}
-
-/**
- * A new binding's line is what its configurations came to, because the
- * picker's row already marks it Bound and it stands whatever that line says.
- * Once the project holds a configuration for it, a ticket is what comes next.
- */
-function repositoryBindNoteBound(
-  configurations: ProjectRepositoryConfigurationsResponse,
-): RepositoryBindNote {
-  switch (configurations.result) {
-    case "Imported":
-      return { status: "Configurations imported", ticketOffered: true };
-    case "Bootstrapped":
-      return { status: "Default configuration added", ticketOffered: true };
-    case "Deferred":
-      return {
-        status: repositoryDeferrals[configurations.reason].status,
-        ticketOffered: false,
-      };
-  }
-}
-
+/** A new binding's line is what its configurations came to, because the
+ * picker's row already marks it Bound and it stands whatever that line says. */
 export function repositoryBindNote(
   outcome: RepositoryBindOutcome,
-): RepositoryBindNote {
+): RepositoryNote {
   switch (outcome.outcome) {
     case "Bound":
-      return repositoryBindNoteBound(outcome.configurations);
+      return repositoryConfigurationsNote(outcome.configurations);
     case "AlreadyBound":
       return { status: "Already bound", ticketOffered: false };
     case "Refused":

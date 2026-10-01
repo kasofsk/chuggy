@@ -76,12 +76,27 @@ test("the ruleset is the one line it came to, a refusal carrying its own", () =>
   );
 });
 
+/** The configurations row is the one that can leave something to file a
+ * ticket against, so it alone offers one, and only when it did. */
 test("every step the create took is a row of its own", () => {
   expect(repositoryCreatedRows(created({}))).toEqual([
-    { label: "Seed", detail: "Seeded" },
-    { label: "Ruleset", detail: "Created" },
-    { label: "Configurations", detail: "Bootstrapped" },
+    { label: "Seed", detail: "Seeded", ticketOffered: false },
+    { label: "Ruleset", detail: "Created", ticketOffered: false },
+    {
+      label: "Configurations",
+      detail: "Default configuration added",
+      ticketOffered: true,
+    },
   ]);
+  expect(
+    repositoryCreatedRows(
+      created({ configurations: { result: "Imported", count: 2 } }),
+    )[2],
+  ).toEqual({
+    label: "Configurations",
+    detail: "Configurations imported",
+    ticketOffered: true,
+  });
   expect(
     repositoryCreatedRows(
       created({
@@ -91,9 +106,9 @@ test("every step the create took is a row of its own", () => {
       }),
     ),
   ).toEqual([
-    { label: "Seed", detail: "Not seeded" },
-    { label: "Ruleset", detail: "Skipped" },
-    { label: "Configurations", detail: "Step failed" },
+    { label: "Seed", detail: "Not seeded", ticketOffered: false },
+    { label: "Ruleset", detail: "Skipped", ticketOffered: false },
+    { label: "Configurations", detail: "Step failed", ticketOffered: false },
   ]);
 });
 

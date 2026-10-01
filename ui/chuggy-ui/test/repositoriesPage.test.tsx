@@ -46,10 +46,23 @@ vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
   },
 }));
 
+/** A link's path is filled from its params, so a link into the wrong project
+ * is a wrong href rather than the same one. */
 vi.mock("@tanstack/react-router", () => ({
   createLink: (component: unknown) => component,
-  Link: (props: { readonly to?: string; readonly children?: ReactNode }) => (
-    <a href={props.to ?? "/"}>{props.children}</a>
+  Link: (props: {
+    readonly to?: string;
+    readonly params?: Readonly<Record<string, string>>;
+    readonly children?: ReactNode;
+  }) => (
+    <a
+      href={(props.to ?? "/").replace(
+        /\$(\w+)/gu,
+        (named: string, key: string) => props.params?.[key] ?? named,
+      )}
+    >
+      {props.children}
+    </a>
   ),
   useParams: () => ({ ...leadPartition }),
 }));
@@ -502,7 +515,9 @@ test("a binding's name is the link to its own page", async () => {
     within(sectionOf("Repositories"))
       .getByRole("link", { name: "kasofsk/chuggy" })
       .getAttribute("href"),
-  ).toBe("/$tenant/$project/repositories/$repository");
+  ).toBe(
+    `/${leadPartition.tenant}/${leadPartition.project}/repositories/${boundUrl}`,
+  );
 });
 
 /**
@@ -715,7 +730,7 @@ test("a bind that bootstrapped draws Bound once and links a new ticket", async (
   ]);
   expect(
     picker.getByRole("link", { name: "New ticket" }).getAttribute("href"),
-  ).toBe("/$tenant/$project/tickets/new");
+  ).toBe(`/${leadPartition.tenant}/${leadPartition.project}/tickets/new`);
 });
 
 test("a binding that already stood draws the one word and no more", async () => {
@@ -794,6 +809,29 @@ test("a create names what it asked for and draws every step it took", async () =
   expect(
     within(rows).getByRole<HTMLAnchorElement>("link", { name: "scratch" }).href,
   ).toBe(madeUrl);
+});
+
+/** A create that left a configuration offers the first ticket from its row, as
+ * a bind that did offers it from the picker. */
+test("a create that configured its repository says so and links a new ticket", async () => {
+  const sent = await drawPage({
+    posted: () =>
+      answer(
+        {
+          ...made,
+          configurations: { result: "Bootstrapped", revision: "bootstrap" },
+        },
+        201,
+      ),
+  });
+  await typeCreate(sent);
+  const rows = within(screen.getByRole("dialog")).getByRole("status");
+  expect(rows.textContent).toContain(
+    "ConfigurationsDefault configuration added · New ticket",
+  );
+  expect(
+    within(rows).getByRole("link", { name: "New ticket" }).getAttribute("href"),
+  ).toBe(`/${leadPartition.tenant}/${leadPartition.project}/tickets/new`);
 });
 
 test("a create the route refuses is the one line it refused with", async () => {

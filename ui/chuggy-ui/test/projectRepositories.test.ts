@@ -29,7 +29,7 @@ import {
   repositoryDeferrals,
   repositoryLabel,
   repositoryOffersWithheld,
-  type RepositoryBindNote,
+  type RepositoryNote,
   type RepositoryStepStatus,
 } from "../app/core/projectRepositories.ts";
 import { repositoryRefusalsDrawn } from "./repositoryRefusals.ts";
@@ -113,7 +113,7 @@ test("a bind of a repository already bound says so, and offers nothing further",
 
 function boundNote(
   configurations: ProjectRepositoryConfigurationsResponse,
-): RepositoryBindNote {
+): RepositoryNote {
   return repositoryBindNote(repositoryBindOutcome(answered(configurations)));
 }
 
@@ -165,7 +165,7 @@ test("a configuration step asked for again draws its outcome, or the refusal it 
   });
   expect(
     configured({ result: "Bootstrapped", revision: "bootstrap" }),
-  ).toStrictEqual({ status: "Bootstrapped", retry: false });
+  ).toStrictEqual({ status: "Added", retry: false });
   expect(
     configured({ result: "Deferred", reason: "DefaultBranchUnavailable" }),
   ).toStrictEqual({ status: "GitHub unavailable", retry: true });
