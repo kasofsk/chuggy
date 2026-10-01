@@ -5,19 +5,23 @@
  * An account is a row per account and not per installation, because what
  * onboarding needs to know is whether both of this deployment's apps are on it.
  * Connect GitHub claims both where they are, and is the panel's one action
- * until an account is connected; then Add account installs the portal app on
- * another, and an account without the worker app offers its install on its own
- * row. The bindings below are what a ticket may name, except a retired one,
- * which is drawn as retired because it is still bound and no longer read; a
- * binding is added from what those installations grant rather than from a
- * typed address. A live binding the project holds no configuration for is
- * drawn as deferred, with its configuration step offered again on its row.
+ * until an account is connected or the person comes back from the forge owning
+ * none that holds the portal app; then Add account installs the portal app, and
+ * an account without the worker app offers its install on its own row. A return
+ * from the forge that did not simply connect says so in one line on the panel,
+ * until the person leaves. The bindings below are what a ticket may name,
+ * except a retired one, which is drawn as retired because it is still bound and
+ * no longer read; a binding is added from what those installations grant rather
+ * than from a typed address. A live binding the project holds no configuration
+ * for is drawn as deferred, with its configuration step offered again on its
+ * row.
  * Where Add or Create is withheld the line under them says why, and a reader
  * the accounts are not shown to is told who connects them and offered nothing
  * to connect with.
  */
 
 import { Link, useParams } from "@tanstack/react-router";
+import { useState } from "react";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
@@ -38,6 +42,11 @@ import {
   forgePortalInstallations,
 } from "../core/forgeInstallation.ts";
 import type { ForgeAccountRow } from "../core/forgeInstallation.ts";
+import { forgeReturnTake } from "../core/forgeReturn.ts";
+import type {
+  ForgeReturnStanding,
+  ForgeReturnWord,
+} from "../core/forgeReturn.ts";
 import {
   forgeAccountsWithheld,
   repositoryLabel,
@@ -47,7 +56,7 @@ import { forgeAppStandingTone } from "../core/tones.ts";
 import { usePanelResource } from "./api.ts";
 import { PanelUnready } from "./DataPanel.tsx";
 import { useNowMs } from "./Freshness.tsx";
-import { currentPath } from "./ports.ts";
+import { currentPath, transientStore } from "./ports.ts";
 import {
   AddRepository,
   projectRepositoriesResource,
@@ -61,6 +70,7 @@ import { TopBarSlot } from "./shell/slots.tsx";
 import { EmptyState } from "./ui/EmptyState.tsx";
 import { Figure } from "./ui/Figure.tsx";
 import { Notice } from "./ui/Notice.tsx";
+import type { NoticeTone } from "./ui/Notice.tsx";
 import { Panel } from "./ui/Panel.tsx";
 import { Pill } from "./ui/Pill.tsx";
 import { Table } from "./ui/Table.tsx";
@@ -190,16 +200,31 @@ function BindingTable(props: {
   );
 }
 
+function accountsSectionReturnTone(standing: ForgeReturnStanding): NoticeTone {
+  switch (standing) {
+    case "Failed":
+      return "danger";
+    case "Unfinished":
+    case "Uninstalled":
+      return "parked";
+  }
+}
+
 /** The listing answers only a workspace admin, so its absence is this reader's
  * standing rather than a fault, and a claim they started would be refused. */
 function AccountsSection(props: {
   readonly partition: PartitionIdentity;
   readonly accounts: PanelState<ForgeInstallationsResponse>;
+  readonly returned: ForgeReturnWord | undefined;
 }): ReactNode {
   const accounts = props.accounts;
+  const returned = props.returned;
   const installations =
     accounts.state === "Ready" ? accounts.value.installations : undefined;
   const withheld = accounts.state === "Absent";
+  const adding =
+    (installations !== undefined && installations.length > 0) ||
+    returned?.standing === "Uninstalled";
   return (
     <Panel
       variant="section"
@@ -213,17 +238,24 @@ function AccountsSection(props: {
               returnPath={currentPath()}
             />
           )}
-          {installations === undefined || installations.length === 0 ? null : (
+          {adding ? (
             <InstallLink
               partition={props.partition}
               returnPath={currentPath()}
               app="portal"
               label="Add account"
             />
-          )}
+          ) : null}
         </span>
       }
     >
+      {returned === undefined ? null : (
+        <Notice
+          tone={accountsSectionReturnTone(returned.standing)}
+          inline
+          detail={returned.status}
+        />
+      )}
       {withheld ? (
         <Notice tone="parked" inline detail={forgeAccountsWithheld} />
       ) : (
@@ -283,6 +315,7 @@ export function RepositoriesPage(): ReactNode {
     tenant: params.tenant,
     project: params.project,
   };
+  const [returned] = useState(() => forgeReturnTake(transientStore, partition));
   const accounts = usePanelResource(
     partition,
     "Project",
@@ -308,7 +341,11 @@ export function RepositoriesPage(): ReactNode {
           Repositories
         </h1>
       </TopBarSlot>
-      <AccountsSection partition={partition} accounts={accounts} />
+      <AccountsSection
+        partition={partition}
+        accounts={accounts}
+        returned={returned}
+      />
       <RepositoriesSection
         partition={partition}
         installations={

@@ -1,13 +1,9 @@
 /**
  * Connecting forge accounts by proof: the authorization this console sends a
- * person to the forge for, and what the api said each account came to. The
- * state and verifier are held in tab storage and taken once by the callback.
+ * person to the forge for, and the word they come back with. The state and
+ * verifier are held in tab storage and taken once by the callback.
  */
 
-import type {
-  ForgeAppName,
-  ForgeAccountProofName,
-} from "../../../../src/contract/rosters.ts";
 import type {
   ForgeAuthorizationClientResponse,
   ForgeAuthorizationResponse,
@@ -15,6 +11,7 @@ import type {
 
 import type { ApiResult } from "./apiRequest.ts";
 import { base64urlFromBytes } from "./base64url.ts";
+import type { ForgeReturnWord } from "./forgeReturn.ts";
 import {
   pkceChallengeFromVerifier,
   pkceChallengeMethod,
@@ -153,98 +150,68 @@ export function forgeCallbackDecision(
   return { decision: "Redeem", transaction: taken, code: query.code };
 }
 
-/** One account as the callback draws it: its proof, that proof's word, and the apps left to install. */
-export interface ForgeAuthorizedLine {
-  readonly account: string;
-  readonly proof: ForgeAccountProofName;
-  readonly status: string;
-  readonly install: readonly ForgeAppName[];
-}
-
-function forgeProofStatus(proof: ForgeAccountProofName): string {
-  switch (proof) {
-    case "Proven":
-      return "Connected";
-    case "NotOwner":
-      return "Not owner";
-    case "Unavailable":
-      return "Unavailable";
-  }
-}
-
-export function forgeAuthorizedLines(
-  answered: ForgeAuthorizationResponse,
-): readonly ForgeAuthorizedLine[] {
-  return answered.accounts.map((account) => ({
-    account: account.account,
-    proof: account.proof,
-    status: forgeProofStatus(account.proof),
-    install: account.apps
-      .filter((app) => app.claim === "Missing")
-      .map((app) => app.app),
-  }));
-}
-
-/**
- * Whether an authorization left the person nothing to connect but an install of
- * the portal app: no account reached, or none they could prove by asking again.
- */
-export function forgePortalInstallOffered(
-  lines: readonly ForgeAuthorizedLine[],
-): boolean {
-  return lines.every((line) => line.proof === "NotOwner");
-}
+/** What this console says where the person declined at the forge. */
+export const forgeAuthorizationDeclined: ForgeReturnWord = {
+  standing: "Unfinished",
+  status: "Declined",
+};
 
 /** What this console says where the forge spent the code before the api could read what it reaches. */
 export const forgeAuthorizationSpent = "Start again";
 
-/**
- * What redeeming came to, as the lines drawn or the one word in their place.
- * `Again` is a code no retry can redeem, which only a new authorization puts
- * right.
- */
-export type ForgeAuthorizationOutcome =
-  | {
-      readonly outcome: "Authorized";
-      readonly lines: readonly ForgeAuthorizedLine[];
-      readonly truncated: boolean;
-    }
-  | { readonly outcome: "Again"; readonly status: string }
-  | { readonly outcome: "Refused"; readonly status: string };
+function forgeAuthorizationWordFailed(status: string): ForgeReturnWord {
+  return { standing: "Failed", status };
+}
 
 /**
+ * What an answered authorization says, which is nothing where it connected an
+ * account and read every one it reaches. An account the forge could not answer
+ * for may be proven by asking again, so it is not a reason to install anything.
+ */
+function forgeAuthorizationWordAnswered(
+  answered: ForgeAuthorizationResponse,
+): ForgeReturnWord | undefined {
+  const uninstalled = answered.accounts.every(
+    (account) => account.proof === "NotOwner",
+  );
+  const standing = uninstalled ? "Uninstalled" : "Unfinished";
+  if (answered.truncated) return { standing, status: "Partial" };
+  if (uninstalled) return { standing, status: "Not installed" };
+  if (answered.accounts.some((account) => account.proof === "Unavailable"))
+    return { standing, status: "Unavailable" };
+  return undefined;
+}
+
+/**
+ * What redeeming came to, as the word the person returns with.
  * `ForgeNotConfigured` and a tenant the caller does not administer are both a
  * `404`, which the console reads without its code, so both are one word.
  */
-export function forgeAuthorizationOutcome(
+export function forgeAuthorizationWord(
   result: ApiResult<ForgeAuthorizationResponse>,
-): ForgeAuthorizationOutcome {
+): ForgeReturnWord | undefined {
   switch (result.outcome) {
     case "Ok":
-      return {
-        outcome: "Authorized",
-        lines: forgeAuthorizedLines(result.value),
-        truncated: result.value.truncated,
-      };
+      return forgeAuthorizationWordAnswered(result.value);
     case "Rejected":
-      return result.code === "AuthorizationRefused"
-        ? { outcome: "Again", status: "Refused" }
-        : { outcome: "Refused", status: "Refused" };
+      return forgeAuthorizationWordFailed("Refused");
     case "Absent":
-      return { outcome: "Refused", status: "Not found" };
+      return forgeAuthorizationWordFailed("Not found");
     case "Retryable":
-      return { outcome: "Refused", status: "Unavailable" };
+      return forgeAuthorizationWordFailed("Unavailable");
     case "Conflict":
-      return { outcome: "Refused", status: "Conflict" };
+      return forgeAuthorizationWordFailed("Conflict");
     case "Unauthenticated":
-      return { outcome: "Refused", status: "Not signed in" };
+      return forgeAuthorizationWordFailed("Not signed in");
     case "Fault":
-      return result.code === "AuthorizationSpent"
-        ? { outcome: "Again", status: forgeAuthorizationSpent }
-        : { outcome: "Refused", status: "Failed" };
+      return forgeAuthorizationWordFailed(
+        result.code === "AuthorizationSpent"
+          ? forgeAuthorizationSpent
+          : "Failed",
+      );
     case "Unreachable":
-      return { outcome: "Refused", status: "Unreachable" };
+      return forgeAuthorizationWordFailed("Unreachable");
     case "Unreadable":
-      return { outcome: "Refused", status: "Unreadable" };
+      return forgeAuthorizationWordFailed("Unreadable");
   }
 }

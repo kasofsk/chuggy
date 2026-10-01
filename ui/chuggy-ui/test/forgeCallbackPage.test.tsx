@@ -1,17 +1,18 @@
 /**
  * The page the forge returns an authorization to, mounted. What is asserted is
  * the traffic, because a code posted from a return this tab did not start
- * would claim someone else's accounts.
+ * would claim someone else's accounts, and where the person is put back.
  */
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
 import { cleanup, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import type { ReactNode } from "react";
 
 import { ForgeCallbackPage } from "../app/browser/ForgeCallbackPage.tsx";
 import { forgeAuthorizeTransactionKey } from "../app/core/forgeAuthorization.ts";
-import { forgeInstallTransactionKey } from "../app/core/forgeInstallation.ts";
-import { answer, drawnStrict, settled, turned } from "./screenHarness.tsx";
+import { forgeReturnKey } from "../app/core/forgeReturn.ts";
+import { answer, drawnStrict, settled } from "./screenHarness.tsx";
 import type { DrawnStrict, SentRequest } from "./screenHarness.tsx";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 
@@ -19,21 +20,20 @@ const held = vi.hoisted(
   (): {
     arrived: Record<string, unknown>;
     navigated: unknown[];
-    redirects: string[];
-  } => ({ arrived: {}, navigated: [], redirects: [] }),
+  } => ({ arrived: {}, navigated: [] }),
 );
 
 vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof BrowserPorts>()),
   sleepMs: () => Promise.resolve(),
   currentOrigin: () => "https://console.test",
-  redirect: (url: string) => {
-    held.redirects.push(url);
-  },
 }));
 
 vi.mock("@tanstack/react-router", () => ({
   createLink: (component: unknown) => component,
+  Link: (props: { readonly to: string; readonly children?: ReactNode }) => (
+    <a href={props.to}>{props.children}</a>
+  ),
   useSearch: () => held.arrived,
   useNavigate: () => (to: unknown) => {
     held.navigated.push(to);
@@ -71,31 +71,9 @@ const authorized = {
   truncated: false,
 };
 
-const apps = {
-  apps: [
-    {
-      app: "portal",
-      id: "1",
-      slug: "chuggy-portal",
-      installUrl: "https://forge.test/apps/chuggy-portal/installations/new",
-    },
-    {
-      app: "worker",
-      id: "2",
-      slug: "chuggy-worker",
-      installUrl: "https://forge.test/apps/chuggy-worker/installations/new",
-    },
-  ],
-  authorization: {
-    clientId: "Iv1.portal",
-    authorizeUrl: "https://forge.test/login/oauth/authorize",
-  },
-};
-
 beforeEach(() => {
   held.arrived = { code: "a-code", state: "a-state" };
   held.navigated.length = 0;
-  held.redirects.length = 0;
   sessionStorage.setItem(
     forgeAuthorizeTransactionKey,
     JSON.stringify(transaction),
@@ -111,13 +89,24 @@ afterEach(() => {
 function drawCallback(
   redeemed: () => Response = () => answer(authorized),
 ): Promise<DrawnStrict> {
-  return drawnStrict(<ForgeCallbackPage />, (request) =>
-    request.method === "POST" ? redeemed() : answer(apps),
-  );
+  return drawnStrict(<ForgeCallbackPage />, () => redeemed());
 }
 
 function posts(sent: readonly SentRequest[]): readonly SentRequest[] {
   return sent.filter((request) => request.method === "POST");
+}
+
+/** The navigation that puts the person back where they pressed Connect GitHub. */
+const returned = { href: transaction.returnPath, replace: true };
+
+/** The word held for the page returned to, or `null` where none is. */
+function heldWord(): unknown {
+  return JSON.parse(sessionStorage.getItem(forgeReturnKey) ?? "null");
+}
+
+function refusedWith(code: string, status: number): () => Response {
+  return () =>
+    answer({ error: { code, message: "The forge said no." } }, status);
 }
 
 test("a matching state redeems the code once, for the stored tenant, with the stored verifier", async () => {
@@ -132,114 +121,74 @@ test("a matching state redeems the code once, for the stored tenant, with the st
   });
 });
 
-test("each account is one line, and a missing app is offered its install", async () => {
+/** The Accounts panel returned to is what says an account connected, so this
+ * page says Connecting and nothing else. */
+test("a redeemed authorization replaces this address with where it started, drawing no account and holding no word", async () => {
   await drawCallback();
-  expect(screen.getByText("kasofsk")).toBeTruthy();
-  expect(screen.getByText("Connected")).toBeTruthy();
-  expect(screen.getByText("globex")).toBeTruthy();
-  expect(screen.getByText("Not owner")).toBeTruthy();
-  const install = screen.getByRole<HTMLAnchorElement>("link", {
-    name: "Install worker",
-  });
-  expect(install.href).toContain(apps.apps[1]?.installUrl ?? "");
-  expect(screen.queryByRole("link", { name: "Install portal" })).toBeNull();
-  expect(screen.queryByText("Not installed")).toBeNull();
-  expect(
-    screen.getByRole<HTMLAnchorElement>("link", { name: "Repositories" })
-      .pathname,
-  ).toBe(transaction.returnPath);
-  expect(screen.queryByRole("button", { name: "Connect GitHub" })).toBeNull();
+  expect(held.navigated.at(-1)).toStrictEqual(returned);
+  expect(heldWord()).toBeNull();
+  expect(screen.getByRole("main").textContent).toBe("GitHubConnecting");
 });
 
-/** The install comes back through the setup landing, which goes on only for the
- * transaction this link stored, so the stored state is the one on the address. */
-test("an authorization reaching no installation offers the portal's install", async () => {
+test("an authorization reaching no installation returns with Not installed, for its own project", async () => {
   await drawCallback(() => answer({ accounts: [], truncated: false }));
-  expect(screen.getByText("Not installed")).toBeTruthy();
-  const install = screen.getByRole<HTMLAnchorElement>("link", {
-    name: "Install portal",
-  });
-  expect(install.href.startsWith(`${apps.apps[0]?.installUrl}?state=`)).toBe(
-    true,
-  );
-  expect(install.parentElement?.tagName).not.toBe("MAIN");
-  expect(screen.queryByRole("link", { name: "Install worker" })).toBeNull();
-  await turned(() => {
-    install.click();
-  });
-  expect(
-    JSON.parse(sessionStorage.getItem(forgeInstallTransactionKey) ?? "{}"),
-  ).toStrictEqual({
-    state: new URL(install.href).searchParams.get("state"),
-    app: "portal",
+  expect(held.navigated.at(-1)).toStrictEqual(returned);
+  expect(heldWord()).toStrictEqual({
     tenant: transaction.tenant,
     project: transaction.project,
-    returnPath: transaction.returnPath,
+    standing: "Uninstalled",
+    status: "Not installed",
   });
 });
 
-test("an authorization proving no account offers the portal's install beside its lines", async () => {
-  await drawCallback(() =>
-    answer({ accounts: authorized.accounts.slice(1), truncated: false }),
-  );
-  expect(screen.getByText("Not owner")).toBeTruthy();
-  expect(screen.queryByText("Not installed")).toBeNull();
-  expect(screen.getByRole("link", { name: "Install portal" })).toBeTruthy();
-});
-
-test("the code and state leave the address once they are taken", async () => {
+test("the code and state leave the address while it is redeemed", async () => {
   await drawCallback();
-  expect(held.navigated.length).toBeGreaterThan(0);
-  for (const navigated of held.navigated)
-    expect(navigated).toStrictEqual({
+  expect(held.navigated).toStrictEqual([
+    {
       to: "/forge/github/callback",
       search: { code: undefined, state: undefined, error: undefined },
       replace: true,
-    });
+    },
+    returned,
+  ]);
 });
 
-test("a code the forge spent before it could be read offers connecting again", async () => {
-  const { sent } = await drawCallback(() =>
-    answer(
-      {
-        error: {
-          code: "AuthorizationSpent",
-          message:
-            "The forge redeemed the authorization but could not be read.",
-        },
-      },
-      502,
-    ),
-  );
+test("a code the forge would not redeem returns with Refused", async () => {
+  await drawCallback(refusedWith("AuthorizationRefused", 422));
+  expect(held.navigated.at(-1)).toStrictEqual(returned);
+  expect(heldWord()).toMatchObject({ standing: "Failed", status: "Refused" });
+});
+
+test("a code the forge spent before it could be read returns with Start again", async () => {
+  const { sent } = await drawCallback(refusedWith("AuthorizationSpent", 502));
   expect(posts(sent)).toHaveLength(1);
-  expect(screen.getByText("Start again")).toBeTruthy();
-  expect(screen.queryByText("Connected")).toBeNull();
-  const again = screen.getByRole<HTMLButtonElement>("button", {
-    name: "Connect GitHub",
-  });
-  expect(again.disabled).toBe(false);
-  await turned(() => {
-    again.click();
-  });
-  await settled();
-  expect(held.redirects).toHaveLength(1);
-  const url = new URL(held.redirects[0] ?? "");
-  expect(`${url.origin}${url.pathname}`).toBe(apps.authorization.authorizeUrl);
-  expect(
-    JSON.parse(sessionStorage.getItem(forgeAuthorizeTransactionKey) ?? "{}"),
-  ).toMatchObject({
-    tenant: transaction.tenant,
-    project: transaction.project,
-    returnPath: transaction.returnPath,
-    state: url.searchParams.get("state"),
+  expect(held.navigated.at(-1)).toStrictEqual(returned);
+  expect(heldWord()).toMatchObject({
+    standing: "Failed",
+    status: "Start again",
   });
 });
 
-test("a state that is not this tab's redeems nothing", async () => {
+test("a person who declined at the forge returns with Declined and nothing is posted", async () => {
+  held.arrived = { error: "access_denied", state: "a-state" };
+  expect((await drawCallback()).sent).toStrictEqual([]);
+  expect(held.navigated).toStrictEqual([returned]);
+  expect(heldWord()).toMatchObject({
+    standing: "Unfinished",
+    status: "Declined",
+  });
+});
+
+test("a state that is not this tab's redeems nothing, stays and links home", async () => {
   held.arrived = { ...held.arrived, state: "someone-else" };
   const { sent } = await drawCallback();
   expect(sent).toStrictEqual([]);
   expect(screen.getByText("Not expected")).toBeTruthy();
+  expect(
+    screen.getByRole<HTMLAnchorElement>("link", { name: "Home" }).pathname,
+  ).toBe("/");
+  expect(held.navigated).not.toContainEqual(returned);
+  expect(heldWord()).toBeNull();
 });
 
 test("a callback carrying no state redeems nothing", async () => {
@@ -256,29 +205,6 @@ test("the transaction is spent, and the callback opened again redeems nothing", 
   cleanup();
   expect((await drawCallback()).sent).toStrictEqual([]);
   expect(screen.getByText("Not expected")).toBeTruthy();
-});
-
-test("a person who declined at the forge is told so and nothing is posted", async () => {
-  held.arrived = { error: "access_denied", state: "a-state" };
-  expect((await drawCallback()).sent).toStrictEqual([]);
-  expect(screen.getByText("Declined")).toBeTruthy();
-});
-
-test("a code the forge would not redeem is one word, with no account drawn", async () => {
-  await drawCallback(() =>
-    answer(
-      {
-        error: {
-          code: "AuthorizationRefused",
-          message: "The forge did not accept the authorization.",
-        },
-      },
-      422,
-    ),
-  );
-  expect(screen.getByText("Refused")).toBeTruthy();
-  expect(screen.queryByText("Connected")).toBeNull();
-  expect(screen.getByRole("button", { name: "Connect GitHub" })).toBeTruthy();
 });
 
 test("the code is posted once however often the page is drawn", async () => {
