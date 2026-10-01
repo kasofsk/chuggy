@@ -541,15 +541,19 @@ function leadlessServed(): {
   };
 }
 
-test("a project with no lead is a page saying so, not five empty panels", async () => {
+test("a project with no lead is a page saying so and how its tickets run, not five empty panels", async () => {
   leadlessServed();
   await mountLead();
-  expect(screen.getByRole("heading", { name: "No lead" })).toBeDefined();
+  const heading = screen.getByRole("heading", { name: "No lead" });
+  expect(heading.nextElementSibling?.textContent).toBe(
+    "Tickets are dispatched by hand",
+  );
 });
 
-/** A project this reader is not shown says the same, since either way there is
- * no lead here for them to read. */
-test("a project the API will not show is the same page", async () => {
+/** A project this reader is not shown says there is no lead here for them to
+ * read, and nothing about how its tickets run: it may have a lead dispatching
+ * them. */
+test("a project the API will not show is the same page without the line", async () => {
   const api = apiDouble({
     operation: { operation: "op-one", state: "Pending" },
     route: (url) =>
@@ -559,7 +563,9 @@ test("a project the API will not show is the same page", async () => {
   });
   vi.stubGlobal("fetch", api.fetch);
   await mountLead();
-  expect(screen.getByRole("heading", { name: "No lead" })).toBeDefined();
+  const heading = screen.getByRole("heading", { name: "No lead" });
+  expect(heading.nextElementSibling).toBeNull();
+  expect(screen.queryByText("Tickets are dispatched by hand")).toBeNull();
 });
 
 /**

@@ -41,6 +41,7 @@ import {
 import {
   projectLeadFound,
   projectLeadPanelState,
+  projectLeadPresent,
   projectLeadSessionKind,
 } from "../core/projectLead.ts";
 import { projectListRereadNamed } from "../core/projectQueryKeys.ts";
@@ -280,10 +281,19 @@ export function LeadPage(): ReactNode {
     project: params.project,
   };
   const nowMs = useNowMs();
-  const state = projectLeadPanelState(useLead(partition));
+  const read = useLead(partition);
+  const state = projectLeadPanelState(read);
   const inquiries = useInquiryBoxes();
   if (state.state === "Absent")
-    return <EmptyState label="No lead" variant="page" />;
+    return projectLeadPresent(read) === false ? (
+      <EmptyState
+        label="No lead"
+        variant="page"
+        detail="Tickets are dispatched by hand"
+      />
+    ) : (
+      <EmptyState label="No lead" variant="page" />
+    );
   return (
     <LeadBody
       partition={partition}
