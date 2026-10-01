@@ -229,8 +229,7 @@ function RunReasonLine(props: {
   );
 }
 
-/** The execution is read under the key the details read it by, so opening
- * them costs nothing further. */
+/** The execution is read under the key the details read it by. */
 function SetRowRan(
   props: SetRowProps & { readonly first: ExecutionSummary },
 ): ReactNode {

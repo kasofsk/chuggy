@@ -360,6 +360,14 @@ test("a reason longer than a row's line is drawn whole in the run's details", as
   ).toContain(pullFailed);
 });
 
+test("the attempts table scrolls itself rather than widening the run's details", async () => {
+  const rendered = await ticketPage(lostRun(pullFailed));
+  const table = rendered.container.querySelector("table.attempts");
+  expect(table).not.toBeNull();
+  expect(table?.parentElement?.classList).toContain("overflow-x-auto");
+  expect(table?.parentElement?.classList).toContain("max-w-full");
+});
+
 function styleRules(list: CSSRuleList): readonly CSSStyleRule[] {
   return Array.from(list).flatMap((rule) =>
     rule instanceof CSSStyleRule
