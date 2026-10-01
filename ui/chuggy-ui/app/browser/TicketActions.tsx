@@ -15,6 +15,14 @@
  * approval settles without journalling anything, so no `Ticket` frame follows
  * it; the open actions are read again once the follow ends, and the live
  * `NativeAction` frame empties them wherever the stream is carrying changes.
+ *
+ * AN ATTEMPT OUTLIVES THE PANEL THAT MADE IT. Its identity is held before the
+ * submission is made and not after it is accepted, because a page that
+ * unmounts with the submission in flight — which a reader who leaves and comes
+ * back does — abandons the request without unmaking whatever the API did with
+ * it. So the record is what a mount picks up, and a press reaches it by the
+ * same path, `attemptPressed`; the pick-up polls, because only the API can say
+ * whether the identity it names ever arrived.
  */
 
 import { useQueryClient } from "@tanstack/react-query";
@@ -69,6 +77,10 @@ import {
 import { PanelUnready } from "./DataPanel.tsx";
 import { drawBytes } from "./ports.ts";
 import { TicketEditOffer } from "./ticket/TicketEditOffer.tsx";
+import {
+  TicketRevokeConfirm,
+  useTicketRevokeAsk,
+} from "./ticket/TicketRevoke.tsx";
 import { OfferedAction } from "./ui/OfferedAction.tsx";
 import { Button } from "./ui/Button.tsx";
 import { Notice } from "./ui/Notice.tsx";
@@ -120,7 +132,7 @@ async function cancelOperation(
 const attemptCancelledReason = "this attempt was cancelled";
 
 /**
- * Why a request threw, so that a throw is drawn where a returned failure is.
+ * Why a request threw, so that a throw is drawn where a returned failure is:
  * `apiSend` answers most transport failures as an `Unreachable` outcome, but
  * the wait it takes between a server's retries is outside that, so both a
  * follow and a cancellation can reject — and a rejection nobody reads is a
@@ -240,18 +252,25 @@ async function followInto(
   }
 }
 
-/** What the machine charges for and what it undoes, said before it is pressed.
- * A resume's effect names the exits it leaves, which are every action offered
- * and not only the ones drawn beside it. */
+/** What the machine charges for and what it undoes, said before it is pressed,
+ * with Revoke asking before it submits. A resume's effect names the exits it
+ * leaves, which are every action offered and not only the ones drawn beside
+ * it. */
 function ActionButtons(props: {
   readonly actions: readonly TicketAction[];
   readonly exits: readonly TicketActionName[];
+  readonly attempt: Attempt | undefined;
   readonly busy: boolean;
   readonly resume: ResumeOffer;
   readonly onChoose: (action: TicketAction) => void;
 }): ReactNode {
+  const revoke = useTicketRevokeAsk(props.attempt);
   return props.actions.map((action) => {
     const effect = ticketActionEffect(action.action, props.resume, props.exits);
+    const asks = action.action === "Revoke";
+    const chosen = (): void => {
+      props.onChoose(action);
+    };
     return (
       <OfferedAction
         key={action.action}
@@ -263,11 +282,14 @@ function ActionButtons(props: {
           : { refusedBecause: effect.refusedBecause })}
         offered={effect.offered}
         busy={props.busy}
-        danger={action.action === "Revoke"}
-        onChoose={() => {
-          props.onChoose(action);
-        }}
-      />
+        danger={asks}
+        {...(asks ? { expanded: revoke.open } : {})}
+        onChoose={asks ? revoke.toggle : chosen}
+      >
+        {asks && revoke.open ? (
+          <TicketRevokeConfirm ask={revoke} onRevoke={chosen} />
+        ) : null}
+      </OfferedAction>
     );
   });
 }
@@ -352,16 +374,6 @@ interface Submitting {
  * already have written a later one, and the open actions are invalidated rather
  * than written because what the follow learned is that the question was
  * answered and not what is open now.
- *
- * AN ATTEMPT OUTLIVES THE PANEL THAT MADE IT. The identity is held before the
- * submission is made and not after it is accepted, because a page that
- * unmounts with the submission in flight — which a reader who leaves and comes
- * back does — abandons the request without unmaking whatever the API did with
- * it. So the record is what a mount
- * picks up, and the pick-up polls, because only the API can say whether the
- * identity it names ever arrived.
- *
- * A press reaches a held record by the same path, which `attemptPressed` is.
  */
 function useSubmitting(
   partition: PartitionIdentity,
@@ -411,11 +423,11 @@ function useSubmitting(
   /**
    * WHAT A CANCELLATION ANSWERS ABOUT IS ONE OPERATION, AND WHAT IT IS APPLIED
    * TO IS WHAT THE PANEL IS RUNNING WHEN THE ANSWER ARRIVES — so it is applied
-   * only where those are the same operation. A cancelled attempt that settles
-   * on its own before the answer comes, and a second attempt started after it,
-   * are the case that reads as one panel and is two: the answer names the
-   * first, and applying it to the second would abort a live follow, name the
-   * wrong operation on screen, and drop the record that is the only thing
+   * only where those are the same operation, because a cancelled attempt that
+   * settles on its own before the answer comes, and a second attempt started
+   * after it, are the case that reads as one panel and is two: the answer names
+   * the first, and applying it to the second would abort a live follow, name
+   * the wrong operation on screen, and drop the record that is the only thing
    * holding the second one's identity.
    *
    * The signal is taken when the request is made and the abort is aimed when it
@@ -572,6 +584,7 @@ export function TicketBarActions(props: TicketActionsProps): ReactNode {
                 ),
             )}
             exits={offers.actions.map((offered) => offered.action)}
+            attempt={props.acting.submitting.attempt}
             busy={props.acting.busy}
             resume={props.resume}
             onChoose={props.acting.submitting.submit}
@@ -612,6 +625,7 @@ export function TicketAnswerActions(props: {
     <ActionButtons
       actions={props.answered}
       exits={props.offers.actions.map((offered) => offered.action)}
+      attempt={props.acting.submitting.attempt}
       busy={props.acting.busy}
       resume={props.resume}
       onChoose={props.acting.submitting.submit}

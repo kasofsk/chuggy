@@ -48,7 +48,7 @@ import {
   inboxAnswersEmpty,
   inboxAnswersWith,
 } from "../core/inboxAnswers.ts";
-import type { InboxAnswers } from "../core/inboxAnswers.ts";
+import type { InboxAnswer, InboxAnswers } from "../core/inboxAnswers.ts";
 import {
   inboxActionsPage,
   inboxCountLabel,
@@ -110,6 +110,10 @@ import { useProjectExecutionIndex } from "./executionIndex.ts";
 import { useNowMs } from "./Freshness.tsx";
 import { drawBytes } from "./ports.ts";
 import { TopBarSlot } from "./shell/slots.tsx";
+import {
+  TicketRevokeConfirm,
+  useTicketRevokeAsk,
+} from "./ticket/TicketRevoke.tsx";
 import {
   cellAbsent,
   cellExecutionUnread,
@@ -298,40 +302,58 @@ function inboxEntryActions(entry: InboxEntry): readonly TicketAction[] {
   return entry.held === undefined ? [] : actionsFor(entry.held);
 }
 
+/** The answers a row offers, Revoke asking under them before it submits. */
 function InboxActions(props: {
   readonly entry: InboxEntry;
-  readonly step: OperationStep | undefined;
+  readonly answer: InboxAnswer | undefined;
   readonly onAnswer: (action: TicketAction) => void;
 }): ReactNode {
   const actions = inboxEntryActions(props.entry);
+  const revoke = useTicketRevokeAsk(props.answer);
+  const revoking = actions.find((action) => action.action === "Revoke");
   if (actions.length === 0)
     return (
       <span className="text-ink-3">no action can be sent from here yet</span>
     );
   return (
-    <>
-      {actions.map((action) => (
-        <Tooltip
-          key={action.action}
-          text={ticketActionSentence(action.action, {
-            kind: props.entry.held?.escalation?.kind,
-          })}
-        >
-          <span>
-            <Button
-              variant="quiet"
-              size="sm"
-              disabled={inboxAnswerInFlight(props.step)}
-              onClick={() => {
-                props.onAnswer(action);
-              }}
-            >
-              {action.action.toLowerCase()}
-            </Button>
-          </span>
-        </Tooltip>
-      ))}
-    </>
+    <div className="grid gap-2">
+      <div className="flex gap-2 items-baseline">
+        {actions.map((action) => (
+          <Tooltip
+            key={action.action}
+            text={ticketActionSentence(action.action, {
+              kind: props.entry.held?.escalation?.kind,
+            })}
+          >
+            <span>
+              <Button
+                variant="quiet"
+                size="sm"
+                disabled={inboxAnswerInFlight(props.answer?.step)}
+                {...(action === revoking ? { expanded: revoke.open } : {})}
+                onClick={
+                  action === revoking
+                    ? revoke.toggle
+                    : () => {
+                        props.onAnswer(action);
+                      }
+                }
+              >
+                {action.action.toLowerCase()}
+              </Button>
+            </span>
+          </Tooltip>
+        ))}
+      </div>
+      {revoking === undefined || !revoke.open ? null : (
+        <TicketRevokeConfirm
+          ask={revoke}
+          onRevoke={() => {
+            props.onAnswer(revoking);
+          }}
+        />
+      )}
+    </div>
   );
 }
 
@@ -390,7 +412,7 @@ function InboxRow(props: {
   readonly known: ProjectExecutionKnown | undefined;
   readonly truncated: boolean;
   readonly partition: PartitionIdentity;
-  readonly step: OperationStep | undefined;
+  readonly answer: InboxAnswer | undefined;
   readonly nowMs: number;
   readonly onAnswer: (action: TicketAction) => void;
 }): ReactNode {
@@ -419,16 +441,16 @@ function InboxRow(props: {
       </td>
       <TicketActivityCell activityAt={row?.activityAt} nowMs={props.nowMs} />
       <td>
-        <div className="flex gap-2 items-baseline">
-          <InboxActions
-            entry={props.entry}
-            step={props.step}
-            onAnswer={props.onAnswer}
-          />
-        </div>
+        <InboxActions
+          entry={props.entry}
+          answer={props.answer}
+          onAnswer={props.onAnswer}
+        />
       </td>
       <td className="text-ink-3">
-        {props.step === undefined ? cellAbsent : inboxStepSentence(props.step)}
+        {props.answer === undefined
+          ? cellAbsent
+          : inboxStepSentence(props.answer.step)}
       </td>
     </tr>
   );
@@ -438,7 +460,7 @@ function InboxTable(props: {
   readonly entries: readonly InboxEntry[];
   readonly index: ProjectExecutionIndex;
   readonly partition: PartitionIdentity;
-  readonly steps: InboxAnswers;
+  readonly answers: InboxAnswers;
   readonly nowMs: number;
   readonly onAnswer: (ticket: number, action: TicketAction) => void;
 }): ReactNode {
@@ -462,7 +484,7 @@ function InboxTable(props: {
             known={projectExecutionIndexAt(props.index, entry.ticket)}
             truncated={props.index.truncated}
             partition={props.partition}
-            step={props.steps[String(entry.ticket)]}
+            answer={props.answers[String(entry.ticket)]}
             nowMs={props.nowMs}
             onAnswer={(action) => {
               props.onAnswer(entry.ticket, action);
@@ -480,12 +502,12 @@ function InboxTable(props: {
  * would be this screen's opinion rather than the project's.
  */
 function useInboxAnswers(partition: PartitionIdentity): {
-  readonly steps: InboxAnswers;
+  readonly answers: InboxAnswers;
   readonly answer: (ticket: number, action: TicketAction) => void;
 } {
   const ports = useApiPorts();
   const living = useLiving();
-  const [steps, setSteps] = useState<InboxAnswers>(inboxAnswersEmpty);
+  const [answers, setAnswers] = useState<InboxAnswers>(inboxAnswersEmpty);
   const answer = (ticket: number, action: TicketAction) => {
     void followOperation(
       ports,
@@ -497,11 +519,13 @@ function useInboxAnswers(partition: PartitionIdentity): {
       ticket,
       (step) => {
         if (living.current)
-          setSteps((held) => inboxAnswersWith(held, ticket, step));
+          setAnswers((held) =>
+            inboxAnswersWith(held, ticket, { action, step }),
+          );
       },
     );
   };
-  return { steps, answer };
+  return { answers, answer };
 }
 
 /**
@@ -573,7 +597,7 @@ export function InboxScreen(props: {
     executions.state === "Ready"
       ? executions.value
       : projectExecutionIndexUnread;
-  const answers = useInboxAnswers(partition);
+  const answering = useInboxAnswers(partition);
   const nowMs = useNowMs();
   const count = inboxCountLabel(inbox.union);
   return (
@@ -594,9 +618,9 @@ export function InboxScreen(props: {
               entries={union.entries}
               index={index}
               partition={partition}
-              steps={answers.steps}
+              answers={answering.answers}
               nowMs={nowMs}
-              onAnswer={answers.answer}
+              onAnswer={answering.answer}
             />
           )
         }

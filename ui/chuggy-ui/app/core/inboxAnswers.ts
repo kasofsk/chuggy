@@ -2,11 +2,11 @@
  * The answers a reader has submitted from the inbox, kept by the ticket each
  * one is about.
  *
- * A follow reports its steps into the row it came from, so the row needs the
- * latest step and nothing before it. What accumulates is one entry per ticket
- * answered, which is bounded by clicks rather than by anything the project
- * does — so the retained finished ones are capped, and shedding is the price of
- * writing the entry that went over.
+ * A follow reports its steps into the row it came from, so the row needs what
+ * was answered and its latest step, and nothing before it. What accumulates is
+ * one entry per ticket answered, which is bounded by clicks rather than by
+ * anything the project does — so the retained finished ones are capped, and
+ * shedding is the price of writing the entry that went over.
  *
  * ONLY A FINISHED ANSWER IS SHED. An answer still in flight is the screen's one
  * account of a submission the actor may still act on, and dropping it would
@@ -15,10 +15,16 @@
  */
 
 import type { OperationStep } from "./operationFollow.ts";
+import type { TicketAction } from "./ticketActions.ts";
 
 export const inboxAnswersFinishedMax = 20;
 
-export type InboxAnswers = Readonly<Record<string, OperationStep>>;
+export interface InboxAnswer {
+  readonly action: TicketAction;
+  readonly step: OperationStep;
+}
+
+export type InboxAnswers = Readonly<Record<string, InboxAnswer>>;
 
 export const inboxAnswersEmpty: InboxAnswers = {};
 
@@ -34,23 +40,23 @@ export function inboxAnswerInFlight(step: OperationStep | undefined): boolean {
 /** The written entry, then the finished ones in key order until the cap holds. */
 function inboxAnswersShed(held: InboxAnswers, wrote: string): InboxAnswers {
   const finished = Object.entries(held)
-    .filter(([at, step]) => at !== wrote && inboxAnswerFinished(step))
+    .filter(([at, answer]) => at !== wrote && inboxAnswerFinished(answer.step))
     .map(([at]) => at);
   if (finished.length <= inboxAnswersFinishedMax) return held;
   const shed = new Set(
     finished.slice(0, finished.length - inboxAnswersFinishedMax),
   );
-  const kept: Record<string, OperationStep> = {};
-  for (const [at, step] of Object.entries(held))
-    if (!shed.has(at)) kept[at] = step;
+  const kept: Record<string, InboxAnswer> = {};
+  for (const [at, answer] of Object.entries(held))
+    if (!shed.has(at)) kept[at] = answer;
   return kept;
 }
 
 export function inboxAnswersWith(
   held: InboxAnswers,
   ticket: number,
-  step: OperationStep,
+  answer: InboxAnswer,
 ): InboxAnswers {
   const at = String(ticket);
-  return inboxAnswersShed({ ...held, [at]: step }, at);
+  return inboxAnswersShed({ ...held, [at]: answer }, at);
 }
