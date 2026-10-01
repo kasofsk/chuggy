@@ -513,7 +513,7 @@ test("a Session frame with a resource this console cannot read is ignored", asyn
   expect(screen.queryByText(/^Failed · /u)).toBeNull();
 });
 
-test("a project with no lead is a page saying so and what a lead is, not five empty panels", async () => {
+test("a project with no lead is a page saying so and how its tickets run, not five empty panels", async () => {
   const api = apiDouble({
     operation: { operation: "op-one", state: "Pending" },
     route: (url) =>
@@ -525,7 +525,7 @@ test("a project with no lead is a page saying so and what a lead is, not five em
   await mountLead();
   const heading = screen.getByRole("heading", { name: "No lead" });
   expect(heading.nextElementSibling?.textContent).toBe(
-    "Picks which tickets run next. Needs hosted runs.",
+    "Tickets are dispatched by hand",
   );
 });
 

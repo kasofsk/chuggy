@@ -274,7 +274,7 @@ export function LeadPage(): ReactNode {
       <EmptyState
         label="No lead"
         variant="page"
-        detail="Picks which tickets run next. Needs hosted runs."
+        detail="Tickets are dispatched by hand"
       />
     );
   return (
