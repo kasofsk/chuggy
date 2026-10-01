@@ -30,7 +30,7 @@ export interface ForgeInstallTransaction {
   readonly app: ForgeAppName;
   readonly tenant: string;
   readonly project: string;
-  /** Where the person pressed Connect, which the landing sends them back to. */
+  /** Where the person followed the install, which the landing sends them back to. */
   readonly returnPath: string;
 }
 
