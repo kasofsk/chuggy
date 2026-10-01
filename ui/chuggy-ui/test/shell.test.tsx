@@ -483,6 +483,63 @@ test("New the hosted grant refuses puts the refusal where the composer was", asy
   styleless();
 });
 
+/** The thread posts a server saw, in order, each named by what it asked for. */
+function postsNamed(posts: readonly string[]): readonly string[] {
+  return posts.map((url) => (url.endsWith("/close") ? "close" : "open"));
+}
+
+/** A server holding the reader's own idle thread, recording every thread post
+ * and answering an open as `open` names. */
+function heldThreadServed(
+  posts: string[],
+  open: () => Promise<unknown>,
+): typeof fetch {
+  const served = threadServed([
+    threadEntry({ session: openedSession, owner: "geoff", mine: true }),
+  ]);
+  return ((url: string, init?: { readonly method?: string }) => {
+    if (init?.method !== "POST") return served(url, init);
+    posts.push(url);
+    return url.endsWith("/threads") ? open() : served(url, init);
+  }) as unknown as typeof fetch;
+}
+
+test("New with a thread the grant allows closes it and opens another", async () => {
+  const posts: string[] = [];
+  await mounted(
+    viewportDeskEm,
+    heldThreadServed(posts, () =>
+      Promise.resolve(
+        answer(
+          threadEntry({ session: openedSession, owner: "geoff", mine: true }),
+        ),
+      ),
+    ),
+  );
+  await pressed("New");
+  expect(postsNamed(posts)).toStrictEqual(["open", "close", "open"]);
+  styleless();
+});
+
+/** The open is asked before the close, so a reader the hosted grant refuses
+ * keeps the thread they had rather than losing it to one that cannot open. */
+test("New the hosted grant refuses closes nothing, and the refusal is drawn", async () => {
+  const posts: string[] = [];
+  await mounted(
+    viewportDeskEm,
+    heldThreadServed(posts, () =>
+      Promise.resolve(answer({ error: { code: "HostedRunsNotGranted" } }, 403)),
+    ),
+  );
+  await pressed("New");
+  expect(
+    postsNamed(posts),
+    "a thread was closed for one that could not open",
+  ).toStrictEqual(["open"]);
+  expect(screen.getByText("Needs hosted runs")).toBeTruthy();
+  styleless();
+});
+
 /** A grant withdrawn after the thread opened refuses its next message, and the
  * box keeps that message while taking no more. */
 test("a message to a held thread the hosted grant refuses stays in the box, read-only, over the refusal", async () => {
