@@ -10,6 +10,7 @@
  */
 
 import type { ForgeInstallTransaction } from "./forgeInstallation.ts";
+import type { ForgeReturnWord } from "./forgeReturn.ts";
 
 /** What the forge says the person did, which `request` alone has nothing to authorize for. */
 export const forgeSetupActions = ["install", "update", "request"] as const;
@@ -54,8 +55,11 @@ export type ForgeSetupDecision =
 /** The landing's one line for a return it cannot place. */
 export const forgeSetupUnexpected = "Not expected";
 
-/** The landing's one line for an install an organization's owner has to approve. */
-export const forgeSetupRequested = "Requested";
+/** What the landing returns with for an install an organization's owner has to approve. */
+export const forgeSetupRequested: ForgeReturnWord = {
+  standing: "Unfinished",
+  status: "Requested",
+};
 
 /**
  * What the landing does with what it was handed. The state is compared against
