@@ -242,14 +242,20 @@ test("the bar is tinted by the phase, and a blocked ticket is parked whatever it
   expect(ticketStatusTone(ticket({ revokedDependencies: [3] }))).toBe("parked");
 });
 
-test("a running ticket is dated from its release, anything else from when it last moved", () => {
+/** Released hours before anyone dispatched it, as a ticket in a project with
+ * no lead is. */
+test("a running ticket is dated from its first run, anything else from when it last moved", () => {
   const nowMs = Date.parse("2026-08-26T00:10:34Z");
   const running = ticketStatusFigure(
-    ticket({ phase: "Work", changedAt: "2026-08-26T00:05:00Z" }),
+    ticket({
+      phase: "Work",
+      releasedAt: "2026-08-25T18:00:00Z",
+      changedAt: "2026-08-26T00:05:00Z",
+    }),
     ledgerPage(ticket21Parked).executions,
     nowMs,
   );
-  expect(running).toMatchObject({ kind: "Ago", text: "started 10m 34s ago" });
+  expect(running).toMatchObject({ kind: "Ago", text: "started 34s ago" });
   const pending = ticketStatusFigure(
     ticket({ changedAt: "2026-08-25T23:54:00Z" }),
     [],
@@ -258,7 +264,16 @@ test("a running ticket is dated from its release, anything else from when it las
   expect(pending).toMatchObject({ kind: "Span", parts: ["16m 34s ago"] });
 });
 
-test("a settled ticket says how long it ran, from its release to its last run", () => {
+test("a running ticket with no run yet is dated from its release", () => {
+  const waiting = ticketStatusFigure(
+    ticket({ phase: "Work", changedAt: "2026-08-26T00:05:00Z" }),
+    [],
+    Date.parse("2026-08-26T00:10:34Z"),
+  );
+  expect(waiting).toMatchObject({ kind: "Ago", text: "started 10m 34s ago" });
+});
+
+test("a settled ticket says how long it ran, from its first run to its last", () => {
   const page = ledgerPage([
     {
       execution: "execution-aa-1",
@@ -273,7 +288,7 @@ test("a settled ticket says how long it ran, from its release to its last run", 
     page.executions,
     Date.parse("2026-08-26T01:00:00Z"),
   );
-  expect(parked).toMatchObject({ kind: "Span", parts: ["23m ago", "ran 37m"] });
+  expect(parked).toMatchObject({ kind: "Span", parts: ["23m ago", "ran 27m"] });
 });
 
 const resume: TicketAction = {

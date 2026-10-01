@@ -66,9 +66,10 @@ export function ticketStatusTone(ticket: TicketResponse): Tone {
 }
 
 /**
- * A running ticket from the release the journal dated, or its first run where
- * it dated none; anything else from the instant it last moved, with how long
- * it ran where this page holds its runs.
+ * A running ticket from its first run, or from its release while it has none;
+ * anything else from the instant it last moved, with how long it ran from its
+ * first run where this page holds its runs. A release is not a run: a ticket
+ * nobody dispatches can wait hours between the two.
  */
 export function ticketStatusFigure(
   ticket: TicketResponse,
@@ -76,11 +77,9 @@ export function ticketStatusFigure(
   nowMs: number,
 ): Figure {
   const span = runSpanOf(executions);
-  const from =
-    span.from === undefined ? undefined : (ticket.releasedAt ?? span.from);
   if (!phaseIsRunning(ticket.phase))
-    return settledFigure(ticket.changedAt, { from, to: span.to }, nowMs);
-  const started = ticket.releasedAt ?? span.from;
+    return settledFigure(ticket.changedAt, span, nowMs);
+  const started = span.from ?? ticket.releasedAt;
   return started === undefined
     ? sinceFigure(ticket.changedAt, nowMs)
     : sinceFigure(started, nowMs, "started");

@@ -813,10 +813,11 @@ test("the status says when the ticket last moved, hovering the journal's own ins
 });
 
 /**
- * A running ticket is dated from the release the journal dates, not from
- * whatever ran first — the fixture releases well before its first execution.
+ * A running ticket is dated from its first run, not from its release — the
+ * fixture releases well before its first execution, as a ticket nobody
+ * dispatches at once is.
  */
-test("a running ticket says when it started, from its release", async () => {
+test("a running ticket says when it started, from its first run", async () => {
   const { container } = await drawTicket({
     shapes: ticket21Resumed,
     ticket: resumedTicket,
@@ -824,9 +825,13 @@ test("a running ticket says when it started, from its release", async () => {
   const when = statusBar(container).querySelector(".fig");
   if (when === null) throw new Error("no status figure drawn");
   expect(when.textContent).toMatch(/^started .+ ago$/u);
+  const first = ledgerPage(ticket21Resumed).executions.find(
+    (row) => row.task === 1,
+  );
+  if (first === undefined) throw new Error("no first run in the fixture");
   fireEvent.focus(when);
   expect((await screen.findByRole("tooltip")).textContent).toBe(
-    instantExactText(new Date(ticketInstants.releasedAt)),
+    instantExactText(new Date(first.registeredAt)),
   );
 });
 
