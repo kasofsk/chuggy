@@ -108,6 +108,21 @@ export function firstCommandedCheckStage(
   return at === -1 ? undefined : at;
 }
 
+/**
+ * Whether any stage the configuration runs briefs an agent: the work stage, and
+ * each evaluation stage or, where it indexes none, the shared review block. A
+ * worker runs such a stage only where the configuration names its agent, and a
+ * commanded stage is handed its own lines instead.
+ */
+export function briefsAnyAgent(
+  configuration: AuthoredTaskConfiguration,
+): boolean {
+  return [
+    configuration.work,
+    ...(configuration.evaluations ?? [configuration.review]),
+  ].some((block) => blockCommandLines(block) === undefined);
+}
+
 /** One agent invocation, the only worker execution mode currently admitted. */
 export type SingleAgentWorkerMode = TaskConfigurationReadonly<
   z.output<typeof taskConfigurationWorkerModeSchema>

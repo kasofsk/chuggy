@@ -213,6 +213,26 @@ RC=$?
 set -e
 refute "a bump of the worker image's pin runs the suites" 0 "$RC" "check-source unit: SKIPPED"
 
+# The repository's own declarations are read as files by the console's view
+# suites and by unit suites alike, and a declaration changes with nothing else
+# beside it, so a change to one alone must select both.
+stub_repo 0
+mkdir -p "$R/.chug/configurations"
+printf '{}\n' > "$R/.chug/configurations/basic.json"
+git -C "$R" add -A
+git -C "$R" commit -qm baseline
+printf '{ "version": 1 }\n' > "$R/.chug/configurations/basic.json"
+git -C "$R" add -A
+git -C "$R" commit -qm declaration
+OUT="$WORK/.out"
+set +e
+(cd "$R" && CHUG_CI_BASE=HEAD^ CHUG_CI_SHELL_SUITES=0 \
+	./.chug/tasks/ci.sh) >"$OUT" 2>&1
+RC=$?
+set -e
+check "a change to a declared configuration runs the console suites" 0 "$RC" "stub check-console"
+refute "a change to a declared configuration runs the unit suites" 0 "$RC" "check-source unit: SKIPPED"
+
 # `check-keto`'s end-to-end suite composes the boundary over the postgres
 # harnesses, so a cone naming only the Keto adapter leaves the one suite that
 # proves a derived owner against a real authority unrun on a changed run.

@@ -74,6 +74,11 @@ test("the scheduler role reads an authored pinned task configuration", async () 
           practices: [],
           work: { instructions: [] },
           review: { instructions: [] },
+          worker: {
+            mode: { type: "SingleAgent", agent: "Claude", arguments: [] },
+            setup: [],
+            files: [],
+          },
         },
       },
     );

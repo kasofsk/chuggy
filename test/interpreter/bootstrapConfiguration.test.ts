@@ -19,6 +19,7 @@ import test from "node:test";
 import {
   asCanonicalConfiguration,
   releaseConfigurationReadiness,
+  type ReleaseConfiguration,
 } from "../../src/interpreter/authoring.ts";
 import {
   bootstrapConfiguration,
@@ -76,6 +77,18 @@ test("it commands one review evaluation and no practices", () => {
   const evaluations = readiness.configuration.evaluations ?? [];
   assert.equal(evaluations.length, 1);
   assert.equal(evaluations[0]?.purpose, "Review");
+});
+
+test("its briefed stages run as one Claude agent, with no setup and no files", () => {
+  assert.deepEqual(bootstrapReady().worker, {
+    mode: {
+      type: "SingleAgent",
+      agent: "Claude",
+      arguments: ["--allowedTools=Bash,Edit,Read,Write,Glob,Grep"],
+    },
+    setup: [],
+    files: [],
+  });
 });
 
 test("the seeded file is a declaration an import reads back under its name", () => {
@@ -151,14 +164,19 @@ interface Filling {
   readonly lineChars: number;
 }
 
-/** The instruction lines the bootstrap configuration's worker is told. */
-function toldLines(): readonly string[] {
+/** The bootstrap configuration, as a release reads it. */
+function bootstrapReady(): ReleaseConfiguration {
   const readiness = releaseConfigurationReadiness(
     bootstrapConfiguration({ repository, defaultBranch, image }),
   );
   assert.equal(readiness.readiness, "Ready");
   if (readiness.readiness !== "Ready") throw new Error("unreleasable");
-  const work = readiness.configuration.work;
+  return readiness.configuration;
+}
+
+/** The instruction lines the bootstrap configuration's worker is told. */
+function toldLines(): readonly string[] {
+  const work = bootstrapReady().work;
   return ("instructions" in work ? work.instructions : undefined) ?? [];
 }
 
@@ -194,6 +212,7 @@ function declaredTo(filling: Filling) {
     C: filled(configuration, {
       I: JSON.stringify(image),
       S: sentences,
+      L: lines,
       E: stages.map(stage).join(","),
     }),
   });
@@ -233,6 +252,13 @@ test("a declaration written to the shape its worker is told, at every bound it i
       checks: [asBriefCheckLine("npm test")],
     }).readiness,
     "Ready",
+  );
+  const declared = declaration.configuration.worker;
+  assert.equal(declared?.setup.length, atEveryBound.lines);
+  assert.deepEqual(
+    { ...declared, setup: [] },
+    bootstrapReady().worker,
+    "the worker it declares runs as the agent the bootstrap ran as",
   );
 });
 
