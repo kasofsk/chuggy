@@ -1,7 +1,9 @@
 /**
  * Installing one of this deployment's apps, drawn as the address it is
- * installed from. Nothing is drawn until the deployment has answered, or where
- * it holds no key for the app named.
+ * installed from. Nothing is drawn until the deployment has answered, where it
+ * holds no key for the app named, or where it answers no client to authorize:
+ * the setup landing claims an install only through that authorization, so
+ * without one the person would install the app and land on Not configured.
  *
  * The state is minted once per drawn link and written to the transaction store
  * as the link is followed, so what comes back to the setup landing carries a
@@ -43,7 +45,7 @@ export function InstallLink(props: {
   );
   const [installState] = useState(() => forgeInstallState(drawBytes));
   const held =
-    state.state === "Ready"
+    state.state === "Ready" && state.value.authorization !== undefined
       ? state.value.apps.find((app) => app.app === props.app)
       : undefined;
   if (held === undefined) return null;
