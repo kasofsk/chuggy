@@ -9,7 +9,7 @@ import {
   projectCreationNameFault,
   projectCreationOutcome,
   projectCreationSendable,
-  projectNameCharsFault,
+  projectNameRule,
   projectNameLengthFault,
 } from "../app/core/projectCreation.ts";
 
@@ -25,7 +25,7 @@ test("a name the wire refuses is refused before it is sent, and an empty one say
   expect(projectCreationNameFault("chuggy")).toBeUndefined();
   expect(projectCreationNameFault("a-1")).toBeUndefined();
   for (const name of ["Chuggy", "-a", "a-", "a_b", "a b"])
-    expect(projectCreationNameFault(name), name).toBe(projectNameCharsFault);
+    expect(projectCreationNameFault(name), name).toBe(projectNameRule);
   expect(projectCreationNameFault("a".repeat(projectNameCharsMax))).toBe(
     undefined,
   );
@@ -62,7 +62,7 @@ test("each refusal is one short line of its own", () => {
   for (const code of ["TenantNameInvalid", "ProjectNameInvalid"])
     expect(
       status({ outcome: "Rejected", code, status: 422, body: undefined }),
-    ).toBe(projectNameCharsFault);
+    ).toBe(projectNameRule);
   expect(
     status({
       outcome: "Rejected",

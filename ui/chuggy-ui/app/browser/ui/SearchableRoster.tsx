@@ -4,6 +4,11 @@
  * one retired line rather than an empty list.
  *
  * Rows are kept by the text the caller says each one draws, and nothing else.
+ * The box takes the caret when it mounts and shows its label until something
+ * is typed. In a parent of bounded height the roster gives way and its rows
+ * scroll under the box, so the box stays in view however long the roster is;
+ * their scroller is inset as the dialog's is so a focused row's ring is not
+ * clipped.
  */
 
 import { useState } from "react";
@@ -23,12 +28,18 @@ export function SearchableRoster<Row>(props: {
   const [query, setQuery] = useState("");
   const kept = rosterSearchFilter(props.rows, query, props.textOf);
   return (
-    <div className="grid gap-2">
-      <Input label={props.label} value={query} onChange={setQuery} />
+    <div className="grid min-h-0 shrink grid-rows-[auto_minmax(0,1fr)] gap-2">
+      <Input
+        label={props.label}
+        placeholder={props.label}
+        value={query}
+        onChange={setQuery}
+        autoFocus
+      />
       {kept.length === 0 && props.rows.length > 0 ? (
         <EmptyState variant="inline" label="No match" />
       ) : (
-        <ul className="grid gap-1">
+        <ul className="-m-1 grid content-start gap-1 overflow-y-auto p-1">
           {kept.map((row) => (
             <li key={props.keyOf(row)}>{props.renderRow(row)}</li>
           ))}

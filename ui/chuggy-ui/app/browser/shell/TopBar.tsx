@@ -24,7 +24,6 @@ import type { NavEntry } from "../../core/shellNav.ts";
 import { sessionStateTone } from "../../core/tones.ts";
 import type { Tone } from "../../core/tones.ts";
 import { chatPaneRestored } from "../../core/chatPane.ts";
-import { Footer } from "../Footer.tsx";
 import { useInboxRows } from "../Inbox.tsx";
 import { useLead } from "../LeadPage.tsx";
 import { useSessionHolder } from "../session.tsx";
@@ -169,7 +168,6 @@ export function TopBar(props: {
           {partition === undefined ? null : <ChatPaneToggle />}
           <SettingsMenu chat={partition !== undefined} />
           <TopBarSignOut />
-          <Footer />
         </div>
       </header>
       {partition === undefined ? null : <TopBarPage />}

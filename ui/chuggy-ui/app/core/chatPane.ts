@@ -9,10 +9,14 @@
  *
  * The placement and the presentation are what a reader chose and what a reload
  * has to keep, so they are read from and written to a key-value store here
- * rather than held only in a component. What the pane holds is derived from the
- * reader's own thread listing, and a listing that has not answered holds
- * nothing and offers nothing — an offer to open a thread before the listing
- * says whether one stands would race the door that answers idempotently on it.
+ * rather than held only in a component. A reader who has chosen nothing is
+ * drawn a default the viewport decides: docked where it divides, and the strip
+ * where it does not, since docked there the pane takes a share of every page.
+ *
+ * What the pane holds is derived from the reader's own thread listing, and a
+ * listing that has not answered holds nothing and offers nothing — an offer to
+ * open a thread before the listing says whether one stands would race the door
+ * that answers idempotently on it.
  */
 
 import { z } from "zod";
@@ -46,11 +50,22 @@ const chatPaneSchema = z.object({
   presentation: z.enum(chatPanePresentations),
 });
 
-/** The stored state, or the default where nothing was stored and where what
- * was stored no longer parses. */
-export function chatPaneRead(store: KeyValuePort): ChatPaneState {
+const chatPaneDefaultNarrow: ChatPaneState = {
+  placement: chatPaneDefault.placement,
+  presentation: "Collapsed",
+};
+
+/** Where a pane the reader has never moved is drawn from, which is the strip
+ * on a viewport too narrow to divide. */
+export function chatPaneDefaultAt(twoColumn: boolean): ChatPaneState {
+  return twoColumn ? chatPaneDefault : chatPaneDefaultNarrow;
+}
+
+/** The stored state, or nothing where nothing was stored and where what was
+ * stored no longer parses. */
+export function chatPaneRead(store: KeyValuePort): ChatPaneState | undefined {
   const stored = store.read(chatPaneStoreKey);
-  if (stored === null) return chatPaneDefault;
+  if (stored === null) return undefined;
   const held = chatPaneSchema.safeParse(
     ((): unknown => {
       try {
@@ -60,7 +75,7 @@ export function chatPaneRead(store: KeyValuePort): ChatPaneState {
       }
     })(),
   );
-  return held.success ? held.data : chatPaneDefault;
+  return held.success ? held.data : undefined;
 }
 
 export function chatPaneWrite(store: KeyValuePort, state: ChatPaneState): void {
@@ -81,16 +96,17 @@ export function chatPaneStripped(state: ChatPaneState): boolean {
 
 /**
  * The pane as a viewport too narrow to divide can draw it: docked beside the
- * pages there would leave neither of them a usable width, so it stacks under
- * them instead. What the reader stored is untouched, and a viewport that widens
- * again draws it where they put it.
+ * pages it would leave neither a usable width, and its strip beside them takes
+ * width the pages cannot spare, so either stacks under them instead. What the
+ * reader stored is untouched, and a viewport that widens again draws it where
+ * they put it.
  */
 export function chatPaneNarrowed(
   state: ChatPaneState,
   twoColumn: boolean,
 ): ChatPaneState {
-  if (twoColumn || state.presentation !== "Docked") return state;
-  return { placement: "Bottom", presentation: "Docked" };
+  if (twoColumn || state.presentation === "Full") return state;
+  return { placement: "Bottom", presentation: state.presentation };
 }
 
 /** The pane moved to a placement the reader picked, keeping how it takes the

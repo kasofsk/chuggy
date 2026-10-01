@@ -23,7 +23,9 @@ export type ProjectCreationForm = z.infer<typeof projectCreationSchema>;
 /** The form's own address, outside every partition because it makes one. */
 export const projectCreationRoutePath = "/projects/new";
 
-export const projectNameCharsFault = "Lowercase, digits, inner hyphens";
+/** The name rule as the form states it under each field before anything is
+ * typed, and as it states a name that breaks it. */
+export const projectNameRule = "Lowercase letters, digits, inner hyphens";
 export const projectNameLengthFault = "Too long";
 
 /** Why one name cannot be sent, or nothing while it is empty, which the submit
@@ -33,7 +35,7 @@ export function projectCreationNameFault(name: string): string | undefined {
   if (name.length > projectNameCharsMax) return projectNameLengthFault;
   return projectNameSchema.safeParse(name).success
     ? undefined
-    : projectNameCharsFault;
+    : projectNameRule;
 }
 
 /** Whether both names are ones the api takes. */
@@ -63,7 +65,7 @@ function projectCreationRejected(code: string): string {
   switch (code) {
     case "TenantNameInvalid":
     case "ProjectNameInvalid":
-      return projectNameCharsFault;
+      return projectNameRule;
     case "TenantNameReserved":
       return "Reserved";
     default:

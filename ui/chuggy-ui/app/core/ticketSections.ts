@@ -32,11 +32,11 @@ export const ticketSectionRoster = [
 export type TicketSection = (typeof ticketSectionRoster)[number];
 
 export const ticketSectionTitles: Readonly<Record<TicketSection, string>> = {
-  NeedsYou: "needs you",
-  InProgress: "in progress",
-  UpNext: "up next",
-  Done: "done",
-  Stopped: "failed or revoked",
+  NeedsYou: "Needs you",
+  InProgress: "In progress",
+  UpNext: "Up next",
+  Done: "Done",
+  Stopped: "Failed or revoked",
 };
 
 export function ticketSectionOf(phase: TicketPhase): TicketSection {

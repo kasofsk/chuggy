@@ -6,7 +6,8 @@
  * frame moves a row between sections and an `Execution` frame changes one row's
  * status column without either disturbing the other. Each section is its own
  * panel over the same read, so the five captions state one instant — the one
- * the rows were observed at — rather than five.
+ * the rows were observed at — rather than five. A project holding no ticket at
+ * all draws none of them, and offers the first instead.
  *
  * A read gathers as many pages as the reader had asked for, because the entry
  * it writes is under the partition prefix that the degraded stream's fallback
@@ -34,6 +35,7 @@ import {
   ticketFilterList,
   ticketFilterMoreCursor,
   ticketFilterPage,
+  ticketFilterProjectEmpty,
 } from "../core/projectTableFilters.ts";
 import type { TicketFilter } from "../core/projectTableFilters.ts";
 import {
@@ -65,6 +67,7 @@ import {
   TicketTitleWords,
 } from "./TicketCells.tsx";
 import { Button, ButtonLink } from "./ui/Button.tsx";
+import { EmptyState } from "./ui/EmptyState.tsx";
 import { Pill } from "./ui/Pill.tsx";
 import { Tooltip } from "./ui/Tooltip.tsx";
 
@@ -244,10 +247,45 @@ function TicketFilters(props: {
             props.onChange(filter);
           }}
         >
-          {filter === ticketFilterAll ? "all" : ticketSectionTitles[filter]}
+          {filter === ticketFilterAll ? "All" : ticketSectionTitles[filter]}
         </Button>
       ))}
     </div>
+  );
+}
+
+function ProjectTableTitle(): ReactNode {
+  return (
+    <TopBarSlot>
+      <h1 className="text-md font-strong text-ink-1 truncate">Overview</h1>
+    </TopBarSlot>
+  );
+}
+
+function ProjectTableNewTicket(props: {
+  readonly partition: PartitionIdentity;
+}): ReactNode {
+  return (
+    <ButtonLink to="/$tenant/$project/tickets/new" params={props.partition}>
+      New ticket
+    </ButtonLink>
+  );
+}
+
+/** What a project holding no ticket at all draws in place of the five
+ * sections: the one way to make the first. */
+function ProjectTableEmpty(props: {
+  readonly partition: PartitionIdentity;
+}): ReactNode {
+  return (
+    <>
+      <ProjectTableTitle />
+      <EmptyState
+        variant="page"
+        label="No tickets"
+        action={<ProjectTableNewTicket partition={props.partition} />}
+      />
+    </>
   );
 }
 
@@ -261,20 +299,21 @@ export function ProjectTable(): ReactNode {
     executions.state === "Ready"
       ? executions.value
       : projectExecutionIndexUnread;
+  if (
+    tickets.state.state === "Ready" &&
+    ticketFilterProjectEmpty(filter, tickets.state.value)
+  )
+    return <ProjectTableEmpty partition={partition} />;
   const sections: readonly TicketSection[] =
     filter === ticketFilterAll ? ticketSectionRoster : [filter];
   const partialFailure =
     tickets.state.state === "Ready" ? tickets.state.value.failure : undefined;
   return (
     <>
-      <TopBarSlot>
-        <h1 className="text-md font-strong text-ink-1 truncate">Overview</h1>
-      </TopBarSlot>
+      <ProjectTableTitle />
       <div className="flex items-center gap-4">
         <TicketFilters filter={filter} onChange={setFilter} />
-        <ButtonLink to="/$tenant/$project/tickets/new" params={partition}>
-          New ticket
-        </ButtonLink>
+        <ProjectTableNewTicket partition={partition} />
       </div>
       {executions.state === "Failed" ? (
         <p className="panel-failed">

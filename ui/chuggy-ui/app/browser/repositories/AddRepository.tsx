@@ -160,7 +160,7 @@ function AddRepositoryBody(props: {
       <PanelUnready state={state} />
       {state.state === "Ready" ? (
         <SearchableRoster
-          label="Search"
+          label="Filter"
           rows={repositoryChoices(state.value.repositories, props.bound)}
           textOf={(choice) => choice.repository.fullName}
           keyOf={(choice) => choice.repository.url}

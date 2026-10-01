@@ -12,6 +12,7 @@ import { expect, test } from "vitest";
 import {
   chatPaneContentDrawn,
   chatPaneDefault,
+  chatPaneDefaultAt,
   chatPaneFilled,
   chatPaneHeaderUnhosted,
   chatPaneHolding,
@@ -45,18 +46,18 @@ const bottomFull: ChatPaneState = {
   presentation: "Full",
 };
 
-test("a written state is read back, and an empty store is the default", () => {
+test("a written state is read back, and an empty store reads as nothing chosen", () => {
   const held: Record<string, string> = {};
   const store = storeDouble(held);
-  expect(chatPaneRead(store)).toStrictEqual(chatPaneDefault);
+  expect(chatPaneRead(store)).toBeUndefined();
   chatPaneWrite(store, bottomFull);
   expect(chatPaneRead(store)).toStrictEqual(bottomFull);
 });
 
-test("a stored value this console cannot parse is read as the default", () => {
+test("a stored value this console cannot parse is read as nothing chosen", () => {
   expect(
     chatPaneRead(storeDouble({ [chatPaneStoreKey]: "not json" })),
-  ).toStrictEqual(chatPaneDefault);
+  ).toBeUndefined();
   expect(
     chatPaneRead(
       storeDouble({
@@ -66,7 +67,21 @@ test("a stored value this console cannot parse is read as the default", () => {
         }),
       }),
     ),
-  ).toStrictEqual(chatPaneDefault);
+  ).toBeUndefined();
+});
+
+test("a pane nobody moved is docked where the viewport divides and a strip under the pages where it does not", () => {
+  expect(chatPaneDefaultAt(true)).toStrictEqual(chatPaneDefault);
+  const narrow = chatPaneDefaultAt(false);
+  expect(narrow).toStrictEqual(chatPaneToggled(chatPaneDefault));
+  expect(chatPaneNarrowed(narrow, false)).toStrictEqual({
+    placement: "Bottom",
+    presentation: "Collapsed",
+  });
+  expect(chatPaneNarrowed(chatPaneToggled(narrow), false)).toStrictEqual({
+    placement: "Bottom",
+    presentation: "Docked",
+  });
 });
 
 /** How wide the pane is was once the reader's and is now the token's, so a
@@ -95,10 +110,19 @@ test("a viewport too narrow to divide stacks a docked pane under the pages", () 
   );
 });
 
-test("a pane that is not docked is left where the reader put it", () => {
+test("a full pane is left where the reader put it, and a strip stacks under the pages", () => {
   expect(chatPaneNarrowed(bottomFull, false)).toStrictEqual(bottomFull);
-  const collapsed = chatPaneToggled(chatPaneDefault);
-  expect(chatPaneNarrowed(collapsed, false)).toStrictEqual(collapsed);
+  const left = chatPaneRepositioned(chatPaneDefault, "Left");
+  expect(chatPaneNarrowed(chatPaneFilled(left), false)).toStrictEqual(
+    chatPaneFilled(left),
+  );
+  expect(chatPaneNarrowed(chatPaneToggled(left), false)).toStrictEqual({
+    placement: "Bottom",
+    presentation: "Collapsed",
+  });
+  expect(chatPaneNarrowed(chatPaneToggled(left), true)).toStrictEqual(
+    chatPaneToggled(left),
+  );
 });
 
 test("the three ways the pane takes the frame, and what each control moves it to", () => {

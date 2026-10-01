@@ -1,6 +1,7 @@
 /**
  * Making a project: the workspace it belongs to, its own name, and one submit,
- * on the landing a reader with no project meets and at its own address.
+ * on the landing a reader with no project meets and at its own address. The
+ * rule both names are held to stands under each field before anything is typed.
  *
  * One operation identity is held while both names stand, so pressing again
  * after an answer that never arrived repeats that creation rather than asking
@@ -20,10 +21,12 @@ import {
   projectCreationNameFault,
   projectCreationOutcome,
   projectCreationSendable,
+  projectNameRule,
 } from "../core/projectCreation.ts";
 import type { ProjectCreationForm as ProjectCreationFields } from "../core/projectCreation.ts";
 import { projectsInventoryKey } from "../core/projectQueryKeys.ts";
 import { useApiPorts } from "./api.ts";
+import { Footer } from "./Footer.tsx";
 import { drawBytes, persistentStore } from "./ports.ts";
 import { TopBar } from "./shell/TopBar.tsx";
 import { Button } from "./ui/Button.tsx";
@@ -39,7 +42,7 @@ function ProjectCreationName(props: {
   readonly value: string;
   readonly onChange: (value: string) => void;
 }): ReactNode {
-  const faultId = useId();
+  const ruleId = useId();
   const fault = projectCreationNameFault(props.value);
   return (
     <label className="grid gap-1 text-sm text-ink-2">
@@ -49,13 +52,14 @@ function ProjectCreationName(props: {
         value={props.value}
         onChange={props.onChange}
         invalid={fault !== undefined}
-        {...(fault === undefined ? {} : { describedBy: faultId })}
+        describedBy={ruleId}
       />
-      {fault === undefined ? null : (
-        <span id={faultId} className="text-xs text-tone-fail">
-          {fault}
-        </span>
-      )}
+      <span
+        id={ruleId}
+        className={`text-xs ${fault === undefined ? "text-ink-3" : "text-tone-fail"}`}
+      >
+        {fault ?? projectNameRule}
+      </span>
     </label>
   );
 }
@@ -99,7 +103,7 @@ export function ProjectCreationForm(): ReactNode {
   return (
     <div className="grid w-full max-w-aside gap-3">
       <ProjectCreationName
-        label="Tenant"
+        label="Workspace"
         value={fields.tenant}
         onChange={(tenant) => {
           edit({ ...fields, tenant });
@@ -129,14 +133,18 @@ export function ProjectCreationForm(): ReactNode {
   );
 }
 
-/** A screen outside every project: the bar, and the page under it. */
+/** A screen outside every project: the bar, the page under it, and the footer
+ * at the foot of the viewport. */
 export function ProjectlessFrame(props: {
   readonly children: ReactNode;
 }): ReactNode {
   return (
-    <div className="grid min-h-dvh content-start">
+    <div className="grid min-h-dvh grid-rows-[auto_minmax(0,1fr)_auto]">
       <TopBar partition={undefined} />
-      <main className="grid gap-4 p-4">{props.children}</main>
+      <main className="grid content-start gap-4 p-4">{props.children}</main>
+      <div className="px-4 pb-4">
+        <Footer />
+      </div>
     </div>
   );
 }
