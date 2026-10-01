@@ -22,15 +22,16 @@ Link every project a person was granted on before
 `src/roots/provisionProjectAccess.ts` wrote the link, then apply the migration
 and roll out the images that declare it, which go out in one window
 (`deploy/rig/postgres/README.md`, Migrate). From then the
-API serves `POST /api/v1/projects`, and a project with no link holds nothing:
-the first principal to ask for its tenant is given the tenant, then creates
-that project and administers it. Keto's read API lists every project object
+API serves `POST /api/v1/projects`, and a project with neither a link nor a
+row holds nothing: the first principal to ask for its tenant is given the
+tenant, then creates that project and administers it. Keto's read API lists every project object
 that carries a tuple (`GET /relation-tuples?namespace=Project`, following
 `next_page_token`); each one with no `tenant` tuple is linked once, with the
 command below and its write URL exported. An object is the tenant's length, a
 colon, then the tenant and the project run together: `5:vtengchuggy` is tenant
 `vteng`, project `chuggy`. The command writes whatever it is named, so a wrong
-split links a project nothing reads and leaves this one unlinked.
+split links some other project, holding its tenant, and leaves this one
+unlinked; that link is revoked as under [Reversing it](#reversing-it).
 
 ```sh
 CHUG_PROVISION_TENANT="tenant" CHUG_PROVISION_PROJECT="project" \
@@ -95,8 +96,9 @@ CHUG_PROVISION_ACTION=revoke npm run provision:project-access
 One relation, taken back. A revocation names the same tuple as the grant and
 is idempotent: a tuple that was never there is not an error. Revoking a
 person's project grant leaves the project's `tenant` link; a link written by
-mistake is revoked on its own, after the project's person grants, with
-`CHUG_PROVISION_TENANT` and `CHUG_PROVISION_PROJECT` naming the project:
+mistake is revoked on its own, once every person's grant on the project is
+revoked, with `CHUG_PROVISION_TENANT` and `CHUG_PROVISION_PROJECT` naming the
+project:
 
 ```sh
 CHUG_PROVISION_RELATION=tenant CHUG_PROVISION_ACTION=revoke \
