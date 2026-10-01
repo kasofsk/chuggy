@@ -14,7 +14,8 @@
  * guessed at. Inline marks are read in one
  * pass rather than nested, so `**a *b* c**` reads as bold text naming its own
  * asterisks instead of a tree — the same plain-over-wrong choice at the
- * inline grain.
+ * inline grain. An underscore marks only at a word's edge, so a name such as
+ * `count_words` or `__init__.py` reads as the characters it is.
  *
  * A ticket named in the prose is one more inline node, read by the grammar the
  * contract owns rather than by a mark of this scanner's own — the console and
@@ -63,7 +64,7 @@ export const markdownTableColumnsMax = 32;
 export const markdownTableRowsMax = 100;
 
 const markdownInlineTokenPattern =
-  /`([^`]+)`|\*\*([^*]+)\*\*|\*([^*]+)\*|_([^_]+)_|\[([^[\]]+)\]\((https?:\/\/[^)\s]+)\)/g;
+  /`([^`]+)`|\*\*([^*]+)\*\*|\*([^*]+)\*|(?<![\p{L}\p{N}_])_([^_]+)_(?![\p{L}\p{N}_])|\[([^[\]]+)\]\((https?:\/\/[^)\s]+)\)/gu;
 
 /**
  * The ticket references inside the runs of plain text, drawn out after the
