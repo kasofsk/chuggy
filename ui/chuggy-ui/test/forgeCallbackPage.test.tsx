@@ -162,6 +162,7 @@ test("an authorization reaching no installation offers the portal's install", as
   expect(install.href.startsWith(`${apps.apps[0]?.installUrl}?state=`)).toBe(
     true,
   );
+  expect(install.parentElement?.tagName).not.toBe("MAIN");
   expect(screen.queryByRole("link", { name: "Install worker" })).toBeNull();
   await turned(() => {
     install.click();

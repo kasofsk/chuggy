@@ -87,7 +87,7 @@ function ForgeCallbackLines(props: {
         <Notice tone="parked" inline detail="Partial" />
       ) : null}
       {forgePortalInstallOffered(outcome.lines) ? (
-        <span className="flex items-center gap-2">
+        <span className="flex items-center gap-2 empty:hidden">
           <InstallLink
             partition={partition}
             returnPath={transaction.returnPath}
