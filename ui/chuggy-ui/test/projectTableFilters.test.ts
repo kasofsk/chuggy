@@ -6,6 +6,7 @@
 import { expect, test } from "vitest";
 
 import { nativeHttpPageItemsMax } from "../../../src/contract/http.ts";
+import { projectExecutionIndexUnread } from "../app/core/projectExecutionIndex.ts";
 import {
   ticketFilterAll,
   ticketFilterList,
@@ -13,8 +14,10 @@ import {
   ticketFilterPage,
   ticketFilterPhases,
   ticketFilterProjectEmpty,
+  ticketFilterSections,
 } from "../app/core/projectTableFilters.ts";
 import type { TicketFilter } from "../app/core/projectTableFilters.ts";
+import { projectTableRows } from "../app/core/projectTableRows.ts";
 import {
   projectTicketPagesMax,
   projectTicketRowsEmpty,
@@ -135,4 +138,17 @@ test("only the unfiltered read, holding nothing and with nothing left to read, s
       ],
     }),
   ).toBe(false);
+});
+
+test("the unfiltered view draws the sections holding a row, and a filter always its own", () => {
+  const rows = projectTableRows(
+    [{ ticket: 1, phase: "Work", sequence: 1, ...ticketInstants }],
+    projectExecutionIndexUnread,
+  );
+  expect(ticketFilterSections(ticketFilterAll, rows)).toStrictEqual([
+    "InProgress",
+  ]);
+  expect(ticketFilterSections(ticketFilterAll, [])).toStrictEqual([]);
+  for (const section of ticketSectionRoster)
+    expect(ticketFilterSections(section, [])).toStrictEqual([section]);
 });

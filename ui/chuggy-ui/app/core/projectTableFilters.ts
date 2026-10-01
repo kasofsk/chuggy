@@ -1,7 +1,8 @@
 /**
- * What a chosen filter is on the wire, in the cache and to the fold.
+ * What a chosen filter is on the wire, in the cache, to the fold and on the
+ * screen.
  *
- * All four are decisions about one filter and none of them touches a browser,
+ * Each is a decision about one filter and none of them touches a browser,
  * so they are proved beside the accumulation they parametrise rather than
  * written into the component that calls them: a filter asking the wire for the
  * wrong phases, or two filters sharing one cache entry, looks exactly like a
@@ -19,8 +20,9 @@ import {
   projectTicketRowsFold,
   projectTicketRowsHaveMore,
 } from "./projectTicketPages.ts";
+import type { ProjectTableRow } from "./projectTableRows.ts";
 import type { ProjectTicketRows } from "./projectTicketPages.ts";
-import { ticketSectionPhases } from "./ticketSections.ts";
+import { ticketSectionPhases, ticketSectionRoster } from "./ticketSections.ts";
 import type { TicketSection } from "./ticketSections.ts";
 
 export const ticketFilterAll = "All";
@@ -93,5 +95,17 @@ export function ticketFilterProjectEmpty(
     rows.tickets.length === 0 &&
     rows.nextCursor === undefined &&
     rows.failure === undefined
+  );
+}
+
+/** The sections a filter draws: the one it names, or on the unfiltered view
+ * each section holding a row, since an empty one there would say only that. */
+export function ticketFilterSections(
+  filter: TicketFilter,
+  rows: readonly ProjectTableRow[],
+): readonly TicketSection[] {
+  if (filter !== ticketFilterAll) return [filter];
+  return ticketSectionRoster.filter((section) =>
+    rows.some((row) => row.section === section),
   );
 }

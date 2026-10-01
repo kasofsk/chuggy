@@ -9,6 +9,10 @@ import type {
   ExecutionSummary,
   TicketResponse,
 } from "../../../src/contract/responses.ts";
+import {
+  executionOutcomes,
+  executionStatuses,
+} from "../../../src/contract/rosters.ts";
 import { projectExecutionIndexOf } from "../app/core/projectExecutionIndex.ts";
 import type { ProjectExecutionKnown } from "../app/core/projectExecutionIndex.ts";
 import {
@@ -265,19 +269,35 @@ test("the rows of one section are that section's and in the order read", () => {
   expect(projectTableRowsIn(rows, "Done")).toStrictEqual([]);
 });
 
-test("the execution cell is the status, refined only where an outcome exists", () => {
+test("the execution cell is the outcome where one exists, and the status where none does", () => {
   const running = projectTableRow(working, known(container), false);
   expect(projectTableExecutionPhrase(running)).toBe("Running");
+  const finished = { ...running, executionStatus: "Terminal" } as const;
   expect(
-    projectTableExecutionPhrase({ ...running, executionOutcome: "Failed" }),
-  ).toBe("Running \u00b7 Failed");
+    projectTableExecutionPhrase({ ...finished, executionOutcome: "Passed" }),
+  ).toBe("Passed");
   expect(
     projectTableExecutionPhrase({
-      ...running,
+      ...finished,
       executionOutcome: "ProcessFailed",
     }),
-  ).toBe("Running \u00b7 Stopped");
+  ).toBe("Stopped");
   expect(
     projectTableExecutionPhrase({ ...running, executionStatus: undefined }),
   ).toBeUndefined();
+});
+
+/** Derived from both rosters, so a status or an outcome the wire grows is a
+ * pair this case asks about. */
+test("no execution cell says Terminal", () => {
+  const running = projectTableRow(working, known(container), false);
+  for (const executionStatus of executionStatuses)
+    for (const executionOutcome of [undefined, ...executionOutcomes])
+      expect(
+        projectTableExecutionPhrase({
+          ...running,
+          executionStatus,
+          executionOutcome,
+        }),
+      ).not.toContain("Terminal");
 });

@@ -41,6 +41,7 @@ import { Notice } from "../ui/Notice.tsx";
 import { Picker } from "../ui/Picker.tsx";
 import { RadioGroup } from "../ui/RadioGroup.tsx";
 import { projectRepositoriesResource } from "./AddRepository.tsx";
+import { NewTicketOffer } from "./NewTicketOffer.tsx";
 
 const visibilityOptions = forgeRepositoryVisibilities.map((visibility) => ({
   value: visibility,
@@ -91,6 +92,7 @@ function useRepositoryCreate(partition: PartitionIdentity): {
 
 /** What the create came to: one line for a refusal, a row per step otherwise. */
 function CreateOutcome(props: {
+  readonly partition: PartitionIdentity;
   readonly outcome: RepositoryCreateOutcome;
 }): ReactNode {
   if (props.outcome.outcome === "Refused")
@@ -113,6 +115,10 @@ function CreateOutcome(props: {
         {repositoryCreatedRows(created).map((row) => (
           <Field key={row.label} name={row.label}>
             {row.detail}
+            <NewTicketOffer
+              partition={props.partition}
+              offered={row.ticketOffered}
+            />
           </Field>
         ))}
       </Fields>
@@ -165,7 +171,7 @@ function CreateRepositoryBody(props: {
         Create
       </Button>
       {creating.outcome === undefined ? null : (
-        <CreateOutcome outcome={creating.outcome} />
+        <CreateOutcome partition={props.partition} outcome={creating.outcome} />
       )}
     </>
   );

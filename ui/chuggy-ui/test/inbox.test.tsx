@@ -246,3 +246,40 @@ test("nothing the inbox screen draws is a runtime style element", async () => {
   await screen.findByRole("tooltip");
   expect(document.querySelectorAll("style").length).toBe(0);
 });
+
+/** The run the escalated ticket last held, which has ended in a failure. */
+const failedRun = {
+  execution: "e4",
+  ticket: 4,
+  task: 1,
+  taskKind: "Work",
+  identity: { type: "WorkTask", value: { ticket: 4, cycle: 1 } },
+  cluster: "rig",
+  configurationRevision: "r1",
+  requirementIdentity: "requirement-a",
+  requirement: {
+    mode: "Container",
+    operatingSystem: "Linux",
+    architecture: "Amd64",
+    image: "chuggy/worker",
+  },
+  requirementDigest: "b".repeat(64),
+  requirementSource: "TicketDefault",
+  platformDefaultVersion: 1,
+  status: "Terminal",
+  outcome: "Failed",
+  retriesSpent: 0,
+  registeredAt: "2026-08-26T10:00:00.000Z",
+  terminalAt: "2026-08-26T10:30:00.000Z",
+};
+
+test("a row says how its last run ended, and never Terminal", async () => {
+  drawInbox((url) =>
+    url.includes("/executions")
+      ? answer({ executions: [failedRun] })
+      : served(url),
+  );
+  await settled();
+  expect(screen.getByText("Failed").className).toContain("pill-fail");
+  expect(document.body.textContent).not.toContain("Terminal");
+});

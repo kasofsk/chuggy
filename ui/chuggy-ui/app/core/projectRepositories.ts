@@ -200,17 +200,28 @@ export const repositoryDeferrals: Readonly<
   StepFailed: { status: "Step failed", retry: true },
 };
 
-/** What a repository's configuration step came to, as the one line drawn beside it. */
-export function repositoryConfigurationsStatus(
+/** The one line a bind or a create leaves, and whether it offers a first
+ * ticket as the next step. */
+export interface RepositoryNote {
+  readonly status: string;
+  readonly ticketOffered: boolean;
+}
+
+/** What a repository's configuration step came to as a line, which offers a
+ * ticket once the project holds a configuration to file it against. */
+export function repositoryConfigurationsNote(
   configurations: ProjectRepositoryConfigurationsResponse,
-): string {
+): RepositoryNote {
   switch (configurations.result) {
     case "Imported":
-      return "Imported";
+      return { status: "Configurations imported", ticketOffered: true };
     case "Bootstrapped":
-      return "Bootstrapped";
+      return { status: "Default configuration added", ticketOffered: true };
     case "Deferred":
-      return repositoryDeferrals[configurations.reason].status;
+      return {
+        status: repositoryDeferrals[configurations.reason].status,
+        ticketOffered: false,
+      };
   }
 }
 
@@ -223,12 +234,14 @@ export function repositoryConfigureStatus(
 ): RepositoryStepStatus {
   if (result.outcome === "Ok") {
     const configurations = result.value.configurations;
-    return configurations.result === "Deferred"
-      ? repositoryDeferrals[configurations.reason]
-      : {
-          status: repositoryConfigurationsStatus(configurations),
-          retry: false,
-        };
+    switch (configurations.result) {
+      case "Imported":
+        return { status: "Imported", retry: false };
+      case "Bootstrapped":
+        return { status: "Added", retry: false };
+      case "Deferred":
+        return repositoryDeferrals[configurations.reason];
+    }
   }
   if (result.outcome === "Conflict")
     return result.code === "RepositoryRetired"
@@ -279,28 +292,17 @@ export function repositoryBindOutcome(
   return { outcome: "Refused", status: repositoryRefusalStatus(result) };
 }
 
-/** The one word a bind's outcome is drawn as. */
-export function repositoryBindStatus(outcome: RepositoryBindOutcome): string {
+/** A new binding's line is what its configurations came to, because the
+ * picker's row already marks it Bound and it stands whatever that line says. */
+export function repositoryBindNote(
+  outcome: RepositoryBindOutcome,
+): RepositoryNote {
   switch (outcome.outcome) {
     case "Bound":
-      return "Bound";
+      return repositoryConfigurationsNote(outcome.configurations);
     case "AlreadyBound":
-      return "Already bound";
+      return { status: "Already bound", ticketOffered: false };
     case "Refused":
-      return outcome.status;
+      return { status: outcome.status, ticketOffered: false };
   }
-}
-
-/**
- * The lines a bind is drawn as. A new binding carries a second, because its
- * configurations are beside the binding rather than part of it: the binding
- * stands whatever that line says.
- */
-export function repositoryBindLines(
-  outcome: RepositoryBindOutcome,
-): readonly string[] {
-  const status = repositoryBindStatus(outcome);
-  return outcome.outcome === "Bound"
-    ? [status, repositoryConfigurationsStatus(outcome.configurations)]
-    : [status];
 }

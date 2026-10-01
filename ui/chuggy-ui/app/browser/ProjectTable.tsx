@@ -5,9 +5,9 @@
  * The tickets and what they ran are two reads under two keys, so a `Ticket`
  * frame moves a row between sections and an `Execution` frame changes one row's
  * status column without either disturbing the other. Each section is its own
- * panel over the same read, so the five captions state one instant — the one
- * the rows were observed at — rather than five. A project holding no ticket at
- * all draws none of them, and offers the first instead.
+ * panel over the same read, so every caption states the one instant the rows
+ * were observed at. The unfiltered view draws only the sections holding a
+ * ticket, and a project holding none at all offers the first instead.
  *
  * A read gathers as many pages as the reader had asked for, because the entry
  * it writes is under the partition prefix that the degraded stream's fallback
@@ -36,6 +36,7 @@ import {
   ticketFilterMoreCursor,
   ticketFilterPage,
   ticketFilterProjectEmpty,
+  ticketFilterSections,
 } from "../core/projectTableFilters.ts";
 import type { TicketFilter } from "../core/projectTableFilters.ts";
 import {
@@ -55,9 +56,9 @@ import {
 import type { TicketSection } from "../core/ticketSections.ts";
 import { phaseTone } from "../core/tones.ts";
 import { useApiPorts, usePanelList } from "./api.ts";
-import { DataPanel } from "./DataPanel.tsx";
+import { PanelUnready } from "./DataPanel.tsx";
 import { useProjectExecutionIndex } from "./executionIndex.ts";
-import { useNowMs } from "./Freshness.tsx";
+import { Freshness, useNowMs } from "./Freshness.tsx";
 import { TopBarSlot } from "./shell/slots.tsx";
 import {
   ticketRowExecutionCell,
@@ -68,6 +69,7 @@ import {
 } from "./TicketCells.tsx";
 import { Button, ButtonLink } from "./ui/Button.tsx";
 import { EmptyState } from "./ui/EmptyState.tsx";
+import { Panel } from "./ui/Panel.tsx";
 import { Pill } from "./ui/Pill.tsx";
 import { Tooltip } from "./ui/Tooltip.tsx";
 
@@ -199,33 +201,62 @@ function TicketCards(props: {
   );
 }
 
+/** One section of the rows. An empty one, which only a filtered view draws,
+ * says None and carries no caption, there being no row it dates. */
 function TicketSectionPanel(props: {
   readonly section: TicketSection;
+  readonly rows: readonly ProjectTableRow[];
+  readonly observedAtMs: number | undefined;
+  readonly partition: PartitionIdentity;
+  readonly nowMs: number;
+}): ReactNode {
+  const drawn = projectTableRowsIn(props.rows, props.section);
+  return (
+    <Panel
+      title={ticketSectionTitles[props.section]}
+      meta={
+        drawn.length === 0 ? undefined : (
+          <Freshness observedAtMs={props.observedAtMs} />
+        )
+      }
+    >
+      {drawn.length === 0 ? (
+        <EmptyState label="None" />
+      ) : (
+        <TicketCards
+          rows={drawn}
+          partition={props.partition}
+          nowMs={props.nowMs}
+        />
+      )}
+    </Panel>
+  );
+}
+
+/** The sections the filter draws over one read, or the one line a read that
+ * is not ready is drawn as. */
+function TicketSectionPanels(props: {
+  readonly filter: TicketFilter;
   readonly state: PanelState<ProjectTicketRows>;
   readonly index: ProjectExecutionIndex;
   readonly partition: PartitionIdentity;
   readonly nowMs: number;
 }): ReactNode {
-  const title = ticketSectionTitles[props.section];
-  return (
-    <DataPanel title={title} state={props.state}>
-      {(rows) => {
-        const drawn = projectTableRowsIn(
-          projectTableRows(rows.tickets, props.index),
-          props.section,
-        );
-        return drawn.length === 0 ? (
-          <p className="panel-note">no ticket is here</p>
-        ) : (
-          <TicketCards
-            rows={drawn}
-            partition={props.partition}
-            nowMs={props.nowMs}
-          />
-        );
-      }}
-    </DataPanel>
-  );
+  const state = props.state;
+  if (state.state !== "Ready") return <PanelUnready state={state} />;
+  const rows = projectTableRows(state.value.tickets, props.index);
+  const sections = ticketFilterSections(props.filter, rows);
+  if (sections.length === 0) return <EmptyState label="None" />;
+  return sections.map((section) => (
+    <TicketSectionPanel
+      key={section}
+      section={section}
+      rows={rows}
+      observedAtMs={state.observedAtMs}
+      partition={props.partition}
+      nowMs={props.nowMs}
+    />
+  ));
 }
 
 function TicketFilters(props: {
@@ -272,8 +303,8 @@ function ProjectTableNewTicket(props: {
   );
 }
 
-/** What a project holding no ticket at all draws in place of the five
- * sections: the one way to make the first. */
+/** What a project holding no ticket at all draws in place of the sections:
+ * the one way to make the first. */
 function ProjectTableEmpty(props: {
   readonly partition: PartitionIdentity;
 }): ReactNode {
@@ -304,8 +335,6 @@ export function ProjectTable(): ReactNode {
     ticketFilterProjectEmpty(filter, tickets.state.value)
   )
     return <ProjectTableEmpty partition={partition} />;
-  const sections: readonly TicketSection[] =
-    filter === ticketFilterAll ? ticketSectionRoster : [filter];
   const partialFailure =
     tickets.state.state === "Ready" ? tickets.state.value.failure : undefined;
   return (
@@ -331,16 +360,13 @@ export function ProjectTable(): ReactNode {
           a further page could not be read — {partialFailure}
         </p>
       )}
-      {sections.map((section) => (
-        <TicketSectionPanel
-          key={section}
-          section={section}
-          state={tickets.state}
-          index={index}
-          partition={partition}
-          nowMs={nowMs}
-        />
-      ))}
+      <TicketSectionPanels
+        filter={filter}
+        state={tickets.state}
+        index={index}
+        partition={partition}
+        nowMs={nowMs}
+      />
       {tickets.readMore === undefined ? null : (
         <div>
           <Button size="sm" onClick={tickets.readMore}>

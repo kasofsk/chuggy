@@ -46,10 +46,23 @@ vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
   },
 }));
 
+/** A link's path is filled from its params, so a link into the wrong project
+ * is a wrong href rather than the same one. */
 vi.mock("@tanstack/react-router", () => ({
   createLink: (component: unknown) => component,
-  Link: (props: { readonly to?: string; readonly children?: ReactNode }) => (
-    <a href={props.to ?? "/"}>{props.children}</a>
+  Link: (props: {
+    readonly to?: string;
+    readonly params?: Readonly<Record<string, string>>;
+    readonly children?: ReactNode;
+  }) => (
+    <a
+      href={(props.to ?? "/").replace(
+        /\$(\w+)/gu,
+        (named: string, key: string) => props.params?.[key] ?? named,
+      )}
+    >
+      {props.children}
+    </a>
   ),
   useParams: () => ({ ...leadPartition }),
 }));
@@ -225,6 +238,9 @@ interface Drawing {
   readonly granting?: (url: string) => Response;
   /** The bindings this project holds, where a case is about how one is drawn. */
   readonly bound?: unknown;
+  /** The bindings it holds once a bind has been answered, where a case is
+   * about what the picker draws after one. */
+  readonly rebound?: unknown;
   /** What this deployment answers about its apps. */
   readonly described?: unknown;
   /** Drawn under `StrictMode`, as the console's root draws it. */
@@ -237,6 +253,7 @@ async function drawPage(drawing: Drawing = {}): Promise<readonly Sent[]> {
   const posted = drawing.posted ?? deferred;
   const granting = drawing.granting ?? ((url) => answer(grantedBy(url)));
   const bound: unknown = drawing.bound ?? bindings;
+  const rebound: unknown = drawing.rebound ?? bound;
   const described: unknown = drawing.described ?? { apps: [] };
   const sent: Sent[] = [];
   const fetching = ((url: string, init?: Init) => {
@@ -253,7 +270,8 @@ async function drawPage(drawing: Drawing = {}): Promise<readonly Sent[]> {
     if (url.includes("/forge-installations/"))
       return Promise.resolve(granting(url));
     if (url.includes("/forge-installations")) return Promise.resolve(listing());
-    return Promise.resolve(answer(bound));
+    const written = sent.some((one) => one.method === "POST");
+    return Promise.resolve(answer(written ? rebound : bound));
   }) as unknown as typeof fetch;
   vi.stubGlobal("fetch", fetching);
   const page = (
@@ -497,7 +515,9 @@ test("a binding's name is the link to its own page", async () => {
     within(sectionOf("Repositories"))
       .getByRole("link", { name: "kasofsk/chuggy" })
       .getAttribute("href"),
-  ).toBe("/$tenant/$project/repositories/$repository");
+  ).toBe(
+    `/${leadPartition.tenant}/${leadPartition.project}/repositories/${boundUrl}`,
+  );
 });
 
 /**
@@ -673,7 +693,44 @@ test("a new binding draws what its own configurations came to", async () => {
       ),
   });
   await chooseFree();
-  expect(statusesOf()).toStrictEqual(["Bound", "Imported"]);
+  expect(statusesOf()).toStrictEqual(["Configurations imported · New ticket"]);
+});
+
+/** The row is what says Bound, once the bindings it is marked against are read
+ * again; the one line under the roster says what came of it and what is next. */
+test("a bind that bootstrapped draws Bound once and links a new ticket", async () => {
+  await drawPage({
+    posted: () =>
+      answer(
+        {
+          repository: freeUrl,
+          landing: { mode: "Push" },
+          configurations: { result: "Bootstrapped", revision: "bootstrap" },
+        },
+        201,
+      ),
+    rebound: {
+      repositories: [
+        ...bindings.repositories,
+        {
+          repository: freeUrl,
+          boundAt: "2026-10-01T00:00:00Z",
+          landing: { mode: "Push" },
+          configured: true,
+        },
+      ],
+    },
+  });
+  await chooseFree();
+  const picker = within(screen.getByRole("dialog"));
+  const row = picker.getByRole("button", { name: "gdoteof/scratch" });
+  expect(row.parentElement?.textContent).toBe("gdoteof/scratchBound");
+  expect(statusesOf()).toStrictEqual([
+    "Default configuration added · New ticket",
+  ]);
+  expect(
+    picker.getByRole("link", { name: "New ticket" }).getAttribute("href"),
+  ).toBe(`/${leadPartition.tenant}/${leadPartition.project}/tickets/new`);
 });
 
 test("a binding that already stood draws the one word and no more", async () => {
@@ -752,6 +809,29 @@ test("a create names what it asked for and draws every step it took", async () =
   expect(
     within(rows).getByRole<HTMLAnchorElement>("link", { name: "scratch" }).href,
   ).toBe(madeUrl);
+});
+
+/** A create that left a configuration offers the first ticket from its row, as
+ * a bind that did offers it from the picker. */
+test("a create that configured its repository says so and links a new ticket", async () => {
+  const sent = await drawPage({
+    posted: () =>
+      answer(
+        {
+          ...made,
+          configurations: { result: "Bootstrapped", revision: "bootstrap" },
+        },
+        201,
+      ),
+  });
+  await typeCreate(sent);
+  const rows = within(screen.getByRole("dialog")).getByRole("status");
+  expect(rows.textContent).toContain(
+    "ConfigurationsDefault configuration added · New ticket",
+  );
+  expect(
+    within(rows).getByRole("link", { name: "New ticket" }).getAttribute("href"),
+  ).toBe(`/${leadPartition.tenant}/${leadPartition.project}/tickets/new`);
 });
 
 test("a create the route refuses is the one line it refused with", async () => {
