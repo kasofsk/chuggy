@@ -45,13 +45,13 @@ import {
 import {
   threadAnswering,
   threadMine,
-  threadOpenUnhosted,
+  threadUnhosted,
 } from "../../core/threads.ts";
 import { useApiPorts, usePanelList } from "../api.ts";
 import { PanelUnready } from "../DataPanel.tsx";
 import { Conversation } from "../conversation/Conversation.tsx";
 import { ThreadConversation } from "../thread/ThreadConversation.tsx";
-import { useThreadSend } from "../thread/threadSend.tsx";
+import { ThreadUnhostedNotice, useThreadSend } from "../thread/threadSend.tsx";
 import { threadsListName, useThread } from "../thread/threadRead.ts";
 import { Button } from "../ui/Button.tsx";
 import { Notice } from "../ui/Notice.tsx";
@@ -145,7 +145,7 @@ function ChatPaneStartControl(props: {
                 );
           void opened.then((result) => {
             setBusy(false);
-            if (threadOpenUnhosted(result)) {
+            if (threadUnhosted(result)) {
               props.onUnhosted();
               return;
             }
@@ -266,7 +266,7 @@ function ChatPaneUnhosted(): ReactNode {
       aria-label="Conversation"
       className="grid min-h-0 min-w-0 flex-1 content-end px-4 pb-4"
     >
-      <Notice tone="parked" inline detail="Needs hosted runs" />
+      <ThreadUnhostedNotice />
     </div>
   );
 }

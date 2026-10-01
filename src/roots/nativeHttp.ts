@@ -138,7 +138,12 @@ import {
 import {
   workerPoolRegistrationService,
   type WorkerPoolRegistrationService,
+  type WorkerPoolSite,
 } from "../interpreter/workerPoolRegistrationToken.ts";
+import {
+  workerPoolEndpointSchema,
+  workerPoolRegistryHostSchema,
+} from "../contract/responses.ts";
 
 const databaseUrlVariable = "CHUG_API_DATABASE_URL";
 const idempotencyKeyingVariable = "CHUG_API_IDEMPOTENCY_KEYING";
@@ -201,6 +206,37 @@ const forgeRepositoriesMaxVariable = "CHUG_API_FORGE_REPOSITORIES_MAX";
 const bootstrapWorkerImageVariable = "CHUG_API_BOOTSTRAP_WORKER_IMAGE";
 const forgeTemplateRepositoryVariable = "CHUG_API_FORGE_TEMPLATE_REPOSITORY";
 
+/** One pool address, refused at start where a runner would refuse it in the pool file. */
+function poolEndpointSetting(variable: string): string {
+  const text = requiredEnvironment(variable);
+  if (!workerPoolEndpointSchema.safeParse(text).success)
+    throw new Error(
+      `${variable} must be an https URL, or an http URL on the loopback`,
+    );
+  return new URL(text).toString();
+}
+
+/**
+ * Where a registered pool reaches this deployment, refused at start where a
+ * runner would refuse the pool file: a redemption spends its token and
+ * registers the pool before the runner reads the file.
+ */
+export function workerPoolSite(): WorkerPoolSite {
+  const registryHost = process.env[poolRegistryHostVariable];
+  const named = registryHost !== undefined && registryHost.length > 0;
+  if (named && !workerPoolRegistryHostSchema.safeParse(registryHost).success)
+    throw new Error(
+      `${poolRegistryHostVariable} must be a lowercase host, and a port where it names one`,
+    );
+  return {
+    issuer: requiredEnvironment(oidcIssuerVariable),
+    tokenUrl: poolEndpointSetting(poolTokenUrlVariable),
+    audience: requiredEnvironment(oidcAudienceVariable),
+    planeUrl: poolEndpointSetting(poolPlaneUrlVariable),
+    ...(named ? { registryHost } : {}),
+  };
+}
+
 /**
  * The registration half of worker pools, composed only where an installation
  * named both addresses it needs. It is the one place in this tree that holds
@@ -215,18 +251,9 @@ function nativeWorkerPools(
   if (process.env[hydraAdminUrlVariable] === undefined) return undefined;
   if (grants === undefined)
     throw new Error(`${ketoWriteUrlVariable} is required`);
-  const registryHost = process.env[poolRegistryHostVariable];
   return workerPoolRegistrationService({
     access,
-    site: {
-      issuer: requiredEnvironment(oidcIssuerVariable),
-      tokenUrl: new URL(requiredEnvironment(poolTokenUrlVariable)).toString(),
-      audience: requiredEnvironment(oidcAudienceVariable),
-      planeUrl: new URL(requiredEnvironment(poolPlaneUrlVariable)).toString(),
-      ...(registryHost === undefined || registryHost.length === 0
-        ? {}
-        : { registryHost }),
-    },
+    site: workerPoolSite(),
     directory: postgresWorkerPoolDirectory(pool),
     minting: {
       tokens: postgresWorkerPoolRegistrationTokens(pool),

@@ -134,7 +134,6 @@ export function redirect(url: string): void {
   location.assign(url);
 }
 
-/** Where this tab is, as the path something that leaves it returns to. */
 /** The origin this console is served from, which is where its API answers. */
 export function currentOrigin(): string {
   return location.origin;
@@ -150,6 +149,7 @@ export async function clipboardWritten(text: string): Promise<boolean> {
   }
 }
 
+/** Where this tab is, as the path something that leaves it returns to. */
 export function currentPath(): string {
   return `${location.pathname}${location.search}`;
 }

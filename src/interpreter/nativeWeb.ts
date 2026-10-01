@@ -1420,6 +1420,21 @@ async function nativeInquiryEntries(
   );
 }
 
+/** Whether the tenant grants the caller hosted runs, which every turn of a thread spends. */
+async function threadHosted(
+  access: ProjectAccess,
+  principal: Principal,
+  partition: Partition,
+): Promise<boolean> {
+  return (
+    (await access.authorizeTenant(
+      principal,
+      partition.tenant,
+      "ExecuteHosted",
+    )) !== undefined
+  );
+}
+
 /**
  * Opening the caller's own thread, which is `Mutate` and takes no session: a
  * member has one thread per project, the definer is idempotent on that, and the
@@ -1433,12 +1448,8 @@ function nativeOpenThreadMethod(
   return async (principal, partition) => {
     const authority = await access.authorize(principal, partition, "Mutate");
     if (authority === undefined) return { result: "NotFound" };
-    const hosted = await access.authorizeTenant(
-      principal,
-      partition.tenant,
-      "ExecuteHosted",
-    );
-    if (hosted === undefined) return { result: "HostedRunsNotGranted" };
+    if (!(await threadHosted(access, principal, partition)))
+      return { result: "HostedRunsNotGranted" };
     const ports = composedThreadPorts(threads);
     const texts = await ports.seeding.projectTexts(partition);
     const opened = await ports.threads.open({
@@ -1466,7 +1477,8 @@ function nativeOpenThreadMethod(
  * The message door, which is `Mutate` and reaches the caller's own mailbox
  * alone: the session the URL names is checked against the one the caller's
  * principal resolves to, so the page a member is reading and the mailbox their
- * message lands in cannot come apart.
+ * message lands in cannot come apart. A turn runs on the hosted sessions, so
+ * the tenant's grant is asked at every send, not only when the thread opened.
  */
 function nativeSendThreadMessageMethod(
   access: ProjectAccess,
@@ -1475,6 +1487,8 @@ function nativeSendThreadMessageMethod(
   return async (principal, partition, input) => {
     const authority = await access.authorize(principal, partition, "Mutate");
     if (authority === undefined) return { result: "NotFound" };
+    if (!(await threadHosted(access, principal, partition)))
+      return { result: "HostedRunsNotGranted" };
     const ports = composedThreadPorts(threads);
     const message = checkedThreadMessage(input.message);
     const mine = await ports.threads.standing({

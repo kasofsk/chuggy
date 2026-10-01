@@ -330,12 +330,45 @@ type RunnerMint =
   | { readonly mint: "Minted"; readonly minted: WorkerPoolTokenResponse }
   | { readonly mint: "Failed"; readonly reason: string };
 
+/** The press that mints a registration token, which only an administrator is offered. */
+function AddRunner(props: {
+  readonly partition: PartitionIdentity;
+  readonly mint: RunnerMint;
+  readonly onMint: (mint: RunnerMint) => void;
+}): ReactNode {
+  const ports = useApiPorts();
+  return (
+    <Button
+      size="sm"
+      busy={props.mint.mint === "Minting"}
+      disabled={props.mint.mint === "Minting"}
+      onClick={() => {
+        props.onMint({ mint: "Minting" });
+        void (async () => {
+          const minted = await apiMintWorkerPoolToken(ports, props.partition, {
+            capabilities: [...runnerPlatforms],
+            lifetimeSecs: runnerTokenLifetimeSecs,
+          });
+          props.onMint(
+            minted.outcome === "Ok"
+              ? { mint: "Minted", minted: minted.value }
+              : { mint: "Failed", reason: panelReason(minted) },
+          );
+        })();
+      }}
+    >
+      Add runner
+    </Button>
+  );
+}
+
 function RunnersSection(props: {
   readonly partition: PartitionIdentity;
   readonly listed: WorkerPoolsResponse | undefined;
   readonly unready: ReactNode;
+  /** Whether the reader administers the project, which minting needs. */
+  readonly administers: boolean;
 }): ReactNode {
-  const ports = useApiPorts();
   const client = useQueryClient();
   const [mint, setMint] = useState<RunnerMint>({ mint: "Idle" });
   return (
@@ -343,33 +376,17 @@ function RunnersSection(props: {
       variant="section"
       title="Runners"
       about="Machines that run this project's tickets."
-      meta={
-        <Button
-          size="sm"
-          busy={mint.mint === "Minting"}
-          disabled={mint.mint === "Minting"}
-          onClick={() => {
-            setMint({ mint: "Minting" });
-            void (async () => {
-              const minted = await apiMintWorkerPoolToken(
-                ports,
-                props.partition,
-                {
-                  capabilities: [...runnerPlatforms],
-                  lifetimeSecs: runnerTokenLifetimeSecs,
-                },
-              );
-              setMint(
-                minted.outcome === "Ok"
-                  ? { mint: "Minted", minted: minted.value }
-                  : { mint: "Failed", reason: panelReason(minted) },
-              );
-            })();
-          }}
-        >
-          Add runner
-        </Button>
-      }
+      {...(props.administers
+        ? {
+            meta: (
+              <AddRunner
+                partition={props.partition}
+                mint={mint}
+                onMint={setMint}
+              />
+            ),
+          }
+        : {})}
     >
       {mint.mint === "Minted" ? (
         <RunnerCommand
@@ -432,6 +449,9 @@ export function RunnersPage(): ReactNode {
         partition={partition}
         listed={pools.state === "Ready" ? pools.value : undefined}
         unready={<PanelUnready state={pools} />}
+        administers={
+          placement.state === "Ready" && placement.value.choices.length > 0
+        }
       />
     </div>
   );

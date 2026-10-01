@@ -91,9 +91,9 @@ export function threadTakesMessages(
   return thread.state === "Open";
 }
 
-/** Whether an open was refused because the tenant has not granted this reader
- * hosted runs, which no retry of the open answers. */
-export function threadOpenUnhosted(result: ApiResult<unknown>): boolean {
+/** Whether a thread door refused because the tenant has not granted this
+ * reader hosted runs, which no retry answers. */
+export function threadUnhosted(result: ApiResult<unknown>): boolean {
   return (
     result.outcome === "Rejected" && result.code === hostedRunsNotGrantedCode
   );
@@ -248,6 +248,8 @@ export type ThreadSend =
   | { readonly send: "Waiting"; readonly why: string }
   | { readonly send: "Ended"; readonly why: string }
   | { readonly send: "Unsettled"; readonly why: string }
+  /** The tenant does not grant the reader hosted runs, so this thread takes nothing from them. */
+  | { readonly send: "Unhosted" }
   | { readonly send: "Refused"; readonly reason: string };
 
 /** Whether the mailbox tail a read answered already holds this turn, which is
@@ -308,6 +310,7 @@ export function threadSendFrom(
     case "Conflict":
       return { send: "Ended", why: threadRefusalWord(result.code) };
     case "Rejected":
+      if (threadUnhosted(result)) return { send: "Unhosted" };
       return threadRefusalCode(result.code) === "NotYourThread"
         ? { send: "Unsettled", why: threadRefusalWord(result.code) }
         : { send: "Refused", reason: panelReason(result) };

@@ -28,7 +28,7 @@ import { apiOpenThread } from "../../core/apiRoutes.ts";
 import { panelReason } from "../../core/freshness.ts";
 import { threadMessageSent } from "../../core/threadSendRun.ts";
 import {
-  threadOpenUnhosted,
+  threadUnhosted,
   threadTurnIdBytesCount,
   threadTurnMinted,
   threadTurnRetained,
@@ -49,6 +49,12 @@ interface ThreadHeld {
   readonly turn: string;
 }
 
+/** What a thread door refused for the tenant's hosted grant is drawn as,
+ * whether the open or a send met it. */
+export function ThreadUnhostedNotice(): ReactNode {
+  return <Notice tone="parked" inline detail="Needs hosted runs" />;
+}
+
 /** The one line a press is reported as, and nothing while it has not been
  * pressed: a composer that narrated its own idleness would be prose. */
 function ThreadSendNote(props: { readonly send: ThreadSend }): ReactNode {
@@ -56,6 +62,7 @@ function ThreadSendNote(props: { readonly send: ThreadSend }): ReactNode {
   switch (send.send) {
     case "Idle":
     case "Sending":
+    case "Unhosted":
     case "Sent":
       return null;
     case "Waiting":
@@ -82,7 +89,8 @@ export function useThreadSend(input: {
   readonly takes: boolean;
   /** The thread a first press opened, once its message is sent. */
   readonly onStarted?: (session: string) => void;
-  /** An open the tenant's hosted grant refused, which the text is kept through. */
+  /** An open the tenant's hosted grant refused, which the text is kept through
+   * and the composer stops taking messages at. */
   readonly onUnhosted?: () => void;
 }): ConversationComposerProps {
   const ports = useApiPorts();
@@ -91,7 +99,7 @@ export function useThreadSend(input: {
   const [send, setSend] = useState<ThreadSend>({ send: "Idle" });
   const [opened, setOpened] = useState<string | undefined>(undefined);
   return {
-    takes: input.takes && send.send !== "Ended",
+    takes: input.takes && send.send !== "Ended" && send.send !== "Unhosted",
     charsMax: threadMessageCharsMax,
     onSend: async (text: string): Promise<ConversationSent> => {
       const turn =
@@ -101,8 +109,8 @@ export function useThreadSend(input: {
       let session = input.session ?? opened;
       if (session === undefined) {
         const open = await apiOpenThread(ports, partition);
-        if (threadOpenUnhosted(open)) {
-          setSend({ send: "Idle" });
+        if (threadUnhosted(open)) {
+          setSend({ send: "Unhosted" });
           input.onUnhosted?.();
           return "Kept";
         }
@@ -131,5 +139,6 @@ export function useThreadSend(input: {
         setSend({ send: "Idle" });
     },
     note: <ThreadSendNote send={send} />,
+    ...(send.send === "Unhosted" ? { stopped: <ThreadUnhostedNotice /> } : {}),
   };
 }

@@ -55,7 +55,7 @@ export function runnerCapabilityLabel(capability: string): string {
 
 /** The command the console hands a reader to run on the machine being added. */
 export function runnerRegisterCommand(origin: string, token: string): string {
-  return `chuggy-linux register --api ${origin} --token ${token}`;
+  return `chuggy-linux register --api ${origin} --token=${token}`;
 }
 
 export interface RunnersPlacementDraft {

@@ -28,6 +28,9 @@ export interface ConversationComposerProps {
   readonly onSend: (text: string) => Promise<ConversationSent>;
   /** The one line the last press is reported as, worded by the page. */
   readonly note?: ReactNode;
+  /** What stands where the box was once the door takes nothing, which is
+   * `Closed` and the note where the page draws nothing of its own. */
+  readonly stopped?: ReactNode;
   /** Called when the reader changes the text, so the page can drop a note
    * about a press this text has since moved past. Fired on the box's own
    * change event, not on a programmatic restore of a kept message. */
@@ -74,8 +77,12 @@ export function ConversationComposer(
   if (!props.takes)
     return (
       <div className="text-ink-3 flex flex-wrap justify-center gap-3 text-center">
-        <span>Closed</span>
-        {props.note}
+        {props.stopped ?? (
+          <>
+            <span>Closed</span>
+            {props.note}
+          </>
+        )}
       </div>
     );
   return (

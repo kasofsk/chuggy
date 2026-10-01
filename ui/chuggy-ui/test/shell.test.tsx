@@ -476,6 +476,32 @@ test("New the hosted grant refuses puts the refusal where the composer was", asy
   styleless();
 });
 
+/** A grant withdrawn after the thread opened refuses its next message, and the
+ * thread stops offering a box every press of which would be refused. */
+test("a message to a held thread the hosted grant refuses puts the refusal where the composer was", async () => {
+  const served = threadServed([
+    threadEntry({ session: openedSession, owner: "geoff", mine: true }),
+  ]);
+  await mounted(viewportDeskEm, ((
+    url: string,
+    init?: { readonly method?: string },
+  ) =>
+    init?.method === "POST" && url.endsWith("/messages")
+      ? Promise.resolve(
+          answer({ error: { code: "HostedRunsNotGranted" } }, 403),
+        )
+      : served(url, init)) as unknown as typeof fetch);
+  fireEvent.change(composerDrawn(), { target: { value: "hello" } });
+  await turned(() => {
+    screen.getByRole("button", { name: "Send" }).click();
+  });
+  await settled();
+  expect(screen.queryByRole("textbox", { name: "Message" })).toBeNull();
+  expect(screen.getByText("Needs hosted runs")).toBeTruthy();
+  expect(screen.queryByText("Closed")).toBeNull();
+  styleless();
+});
+
 test("a page's own bar content is drawn in a row of its own", async () => {
   pageDrawn = () => (
     <TopBarSlot>

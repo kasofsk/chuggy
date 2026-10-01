@@ -905,6 +905,17 @@ export function executionPlacementReadResponse(
   }
 }
 
+/** What a door answers a caller the tenant does not grant hosted runs, whichever door it is. */
+function hostedRunsRefused(): NativeHttpResponse {
+  return response(
+    403,
+    nativeHttpError(
+      hostedRunsNotGrantedCode,
+      "The tenant has not granted this caller hosted runs.",
+    ),
+  );
+}
+
 /**
  * A placement written, answering where the project's executions now run. A
  * repeat is the same answer, and a route the tenant has not granted this caller
@@ -917,13 +928,7 @@ export function executionPlacementWriteResponse(
     case "NotFound":
       return notFound();
     case "HostedRunsNotGranted":
-      return response(
-        403,
-        nativeHttpError(
-          hostedRunsNotGrantedCode,
-          "The tenant has not granted this caller hosted runs.",
-        ),
-      );
+      return hostedRunsRefused();
     case "Written":
     case "Unchanged":
       return response(200, executionPlacementBody(result.view));
@@ -933,9 +938,9 @@ export function executionPlacementWriteResponse(
 }
 
 /**
- * A redemption, answered with the client and its secret once. A capability the
- * token does not permit is named rather than folded into `NotFound`, because it
- * is the one refusal here an operator can act on.
+ * A redemption, answered with the pool file once, the client's secret in it.
+ * A capability the token does not permit is named rather than folded into
+ * `NotFound`, because it is the one refusal here an operator can act on.
  */
 export function workerPoolRedemptionResponse(
   result: WorkerPoolTokenRedeemed,
@@ -1766,14 +1771,7 @@ export function openThreadResponse(
 ): NativeHttpResponse {
   if (result.result === "NotFound")
     return response(404, nativeHttpError("NotFound", "Resource not found."));
-  if (result.result === "HostedRunsNotGranted")
-    return response(
-      403,
-      nativeHttpError(
-        hostedRunsNotGrantedCode,
-        "The tenant has not granted this caller hosted runs.",
-      ),
-    );
+  if (result.result === "HostedRunsNotGranted") return hostedRunsRefused();
   return response(result.result === "Opened" ? 201 : 200, result.thread, {
     location: resourcePath(partition, "threads", result.thread.session),
   });
@@ -1840,7 +1838,10 @@ export function hideThreadResponse(result: ThreadHiding): NativeHttpResponse {
  */
 const threadMessageRefusalCode: Readonly<
   Record<
-    Exclude<ThreadMessageSent["result"], "NotFound" | "Sent" | "AlreadySent">,
+    Exclude<
+      ThreadMessageSent["result"],
+      "NotFound" | "HostedRunsNotGranted" | "Sent" | "AlreadySent"
+    >,
     ThreadMessageRefusalCode
   >
 > = {
@@ -1863,6 +1864,8 @@ export function threadMessageResponse(
   switch (result.result) {
     case "NotFound":
       return response(404, nativeHttpError("NotFound", "Resource not found."));
+    case "HostedRunsNotGranted":
+      return hostedRunsRefused();
     case "NotYourThread":
       return response(
         403,

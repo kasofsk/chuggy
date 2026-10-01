@@ -880,6 +880,27 @@ test("a first turn that will not fit says so, and says how much fits", async () 
   );
 });
 
+test("a message the tenant's hosted grant refuses is refused by that code", async () => {
+  const held: ThreadCase = {
+    calls: [],
+    sent: { result: "HostedRunsNotGranted" },
+  };
+  await using app = appOf(held);
+
+  const refused = await app.inject({
+    method: "POST",
+    url: `${root}/${mine}/messages`,
+    headers: versioned,
+    payload: { turn: "thread-turn-2", message: "why is 42 refused?" },
+  });
+
+  assert.equal(refused.statusCode, 403);
+  assert.equal(
+    refused.json<HttpErrorEnvelope>().error.code,
+    hostedRunsNotGrantedCode,
+  );
+});
+
 test("a retried message is accepted again rather than answered as a conflict", async () => {
   const held: ThreadCase = {
     calls: [],

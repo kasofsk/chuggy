@@ -86,3 +86,25 @@ test("a refused first message is sent again into the thread it opened", async ()
   ]);
   expect(messages[0]?.body).toStrictEqual(messages[1]?.body);
 });
+
+test("a send the hosted grant refuses keeps the text and stops the composer taking any more", async () => {
+  vi.stubGlobal("fetch", () =>
+    Promise.resolve(answer({ error: { code: "HostedRunsNotGranted" } }, 403)),
+  );
+  const { result } = renderHook(
+    () =>
+      useThreadSend({
+        partition: threadPartition,
+        session: "thread-1",
+        takes: true,
+      }),
+    { wrapper },
+  );
+  let sent: unknown;
+  await act(async () => {
+    sent = await result.current.onSend("hello");
+  });
+  expect(sent).toBe("Kept");
+  expect(result.current.takes).toBe(false);
+  expect(result.current.stopped).toBeDefined();
+});

@@ -823,6 +823,23 @@ test("a member may not put a message in another member's thread", async () => {
   );
 });
 
+test("a message needs the tenant's hosted grant at every send, and nothing is enqueued without it", async () => {
+  const { web, held } = boundary({}, ["Read", "Mutate"]);
+
+  const sent = await web.sendThreadMessage(geoff, partition, {
+    session: mine,
+    turn: asSessionTurnId("thread-turn-1"),
+    message: "have a look at 42",
+  });
+
+  assert.deepEqual(sent, { result: "HostedRunsNotGranted" });
+  assert.ok(held.calls.includes("authorizeTenant:ExecuteHosted"));
+  assert.equal(
+    held.calls.find((call) => call.startsWith("enqueue:")),
+    undefined,
+  );
+});
+
 test("a message to my own thread is enqueued and answers its ordinal", async () => {
   const { web, held } = boundary();
 

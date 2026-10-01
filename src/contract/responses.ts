@@ -53,6 +53,7 @@ import {
 } from "./http.ts";
 import { authoringResponseSchema, programStageSchema } from "./authoring.ts";
 import { briefResponseSchema, briefTitleCharsMax } from "./brief.ts";
+import { workerPoolCapabilitiesSchema } from "./workerPool.ts";
 import {
   repositoryLandingSchema,
   selectorProjectOverridesSchema,
@@ -1567,6 +1568,36 @@ export type WorkerPoolTokenResponse = z.infer<
   typeof workerPoolTokenResponseSchema
 >;
 
+/** Whether a runner sends its pool's credential to this URL: https, or http to its own loopback. */
+function workerPoolEndpointAllowed(text: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(text);
+  } catch {
+    return false;
+  }
+  if (url.protocol === "https:") return true;
+  const loopback =
+    url.hostname === "localhost" ||
+    url.hostname === "[::1]" ||
+    /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/u.test(url.hostname);
+  return url.protocol === "http:" && loopback;
+}
+
+/** A URL a runner sends its pool's credential to. */
+export const workerPoolEndpointSchema = z
+  .string()
+  .refine(workerPoolEndpointAllowed, {
+    error: "is not an https URL, or an http URL on the loopback",
+  });
+
+/** A registry a runner presents its pool's token to: a lowercase DNS name, and a port where it names one. */
+export const workerPoolRegistryHostSchema = z
+  .string()
+  .regex(
+    /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*(?::[0-9]{1,5})?$/u,
+  );
+
 /**
  * What a redemption answers, once: everything a runner needs to serve the pool
  * it registered, which is the file it keeps. `registryHost` is absent where the
@@ -1576,11 +1607,11 @@ export const workerPoolCredentialsSchema = z.strictObject({
   tenant: identitySchema,
   project: identitySchema,
   pool: identitySchema,
-  capabilities: z.array(z.string().min(1)),
-  tokenUrl: z.url(),
+  capabilities: workerPoolCapabilitiesSchema,
+  tokenUrl: workerPoolEndpointSchema,
   audience: z.string().min(1),
-  planeUrl: z.url(),
-  registryHost: z.string().min(1).optional(),
+  planeUrl: workerPoolEndpointSchema,
+  registryHost: workerPoolRegistryHostSchema.optional(),
   clientId: z.string().min(1),
   clientSecret: z.string().min(1),
 });

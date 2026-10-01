@@ -224,6 +224,14 @@ test("a reader who may choose nothing is given no Edit to press", async () => {
   ).toBe(true);
 });
 
+test("a reader who may choose nothing is offered no runner to add, and still reads the runners", async () => {
+  await drawPage({ placement: { ...granted, choices: [] } });
+  expect(screen.queryByRole("button", { name: "Add runner" })).toBeNull();
+  expect(
+    within(sectionOf("Runners")).getAllByRole("row")[1]?.textContent,
+  ).toMatch(/^shame/u);
+});
+
 test("a registered pool is a row naming its platforms", async () => {
   await drawPage();
   const rows = within(sectionOf("Runners")).getAllByRole("row");
@@ -249,7 +257,7 @@ test("adding a runner mints a token for the Linux platforms and hands over one c
     lifetimeSecs: 3600,
   });
   const command =
-    "chuggy-linux register --api https://chuggy.test --token tok-1";
+    "chuggy-linux register --api https://chuggy.test --token=tok-1";
   expect(screen.getByLabelText("Command").textContent).toBe(command);
   await press("Copy");
   expect(copied.texts).toStrictEqual([command]);
