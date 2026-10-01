@@ -12,9 +12,10 @@ import { z } from "zod";
 export const consoleConfigurationPath = "/config.json";
 export const consoleScopesMax = 32;
 
-/** Lenient, so a deployment may carry fields a later console will read. */
+/** Lenient, so a deployment may carry fields a later console will read. The
+ * issuer is an absolute address, so its host can name it when it fails. */
 export const consoleConfigurationSchema = z.object({
-  issuer: z.string().min(1),
+  issuer: z.url({ protocol: /^https?$/u }),
   clientId: z.string().min(1),
   audience: z.string().min(1),
   redirectUri: z.string().min(1),

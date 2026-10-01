@@ -1,9 +1,11 @@
 /**
  * What is drawn before there is a session, and the router once there is one.
  *
- * A console with no readable configuration says so rather than showing a blank
+ * A console with no usable configuration says so rather than showing a blank
  * page, because a mounted `/config.json` is the one thing a deployment has to
- * get right and a blank page names nothing.
+ * get right and a blank page names nothing. One that got no answer offers to
+ * ask again, since a request that never arrived says nothing about the
+ * deployment.
  *
  * The sign-in names the page it was pressed on, because the issuer redirects to
  * the one address this client is registered with: a page reached with a query
@@ -15,10 +17,10 @@ import type { QueryClient } from "@tanstack/react-query";
 import { RouterProvider } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
-import { consoleConfigurationPath } from "../core/configuration.ts";
 import { currentPath } from "./ports.ts";
 import { consoleRouter } from "./routes.tsx";
 import {
+  sessionBegin,
   useSessionHolder,
   useSessionSnapshot,
   useSilentRefresh,
@@ -54,7 +56,24 @@ export function App(props: { readonly queryClient: QueryClient }): ReactNode {
     return (
       <SessionCard
         title="Not configured"
-        detail={`${consoleConfigurationPath} could not be read: ${snapshot.reason ?? "no reason was given"}`}
+        detail={snapshot.reason ?? "No reason given"}
+      />
+    );
+  if (snapshot.phase === "Unreachable")
+    return (
+      <SessionCard
+        title="Unreachable"
+        detail={snapshot.reason ?? "No answer"}
+        action={
+          <Button
+            variant="primary"
+            onClick={() => {
+              void sessionBegin(holder);
+            }}
+          >
+            Retry
+          </Button>
+        }
       />
     );
   if (snapshot.phase === "SignedOut")

@@ -2,8 +2,9 @@
  * The session, handed to the tree and watched for changes.
  *
  * The holder is the authority and this is only how React reads it: a
- * subscription for the snapshot, and one timer that renews the token before it
- * lapses so a long-lived stream is never carrying an expired one.
+ * subscription for the snapshot, one timer that renews the token before it
+ * lapses so a long-lived stream is never carrying an expired one, and the start
+ * — the load and the callback — which runs again when the first got no answer.
  */
 
 import {
@@ -14,8 +15,9 @@ import {
 } from "react";
 import type { ReactNode } from "react";
 
+import { sessionCallbackPath } from "../core/sessionHolder.ts";
 import type { SessionHolder, SessionSnapshot } from "../core/sessionHolder.ts";
-import { nowMs, sleepMs } from "./ports.ts";
+import { currentLocation, nowMs, replacePath, sleepMs } from "./ports.ts";
 
 const SessionContext = createContext<SessionHolder | undefined>(undefined);
 
@@ -28,6 +30,18 @@ export function SessionProvider(props: {
       {props.children}
     </SessionContext.Provider>
   );
+}
+
+/**
+ * Loads the session and completes whatever the redirect brought back. A
+ * refused sign-in is drawn with its reason, not as a browser holding none.
+ */
+export async function sessionBegin(holder: SessionHolder): Promise<void> {
+  await holder.load();
+  const callback = await holder.completeCallback(currentLocation());
+  if (callback.result === "None") return;
+  if (callback.result === "Denied") holder.refuse(callback.reason);
+  replacePath(sessionCallbackPath(callback));
 }
 
 export function useSessionHolder(): SessionHolder {
