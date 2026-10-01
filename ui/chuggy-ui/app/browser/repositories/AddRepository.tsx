@@ -8,6 +8,7 @@
  */
 
 import { useQueryClient } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import type { ReactNode } from "react";
 
@@ -27,11 +28,14 @@ import { operationIdBytesCount } from "../../core/operationFollow.ts";
 import { projectResourceKey } from "../../core/projectQueryKeys.ts";
 import {
   repositoriesTruncated,
-  repositoryBindLines,
+  repositoryBindNote,
   repositoryBindOutcome,
   repositoryChoices,
 } from "../../core/projectRepositories.ts";
-import type { RepositoryChoice } from "../../core/projectRepositories.ts";
+import type {
+  RepositoryBindNote,
+  RepositoryChoice,
+} from "../../core/projectRepositories.ts";
 import { useApiPorts, usePanelResource } from "../api.ts";
 import { PanelUnready } from "../DataPanel.tsx";
 import { drawBytes } from "../ports.ts";
@@ -101,22 +105,22 @@ function RepositoryChoiceRow(props: {
   );
 }
 
-/** One bind, from the identity it spends to the lines it leaves behind. */
+/** One bind, from the identity it spends to the line it leaves behind. */
 function useRepositoryBind(partition: PartitionIdentity): {
-  readonly lines: readonly string[];
+  readonly note: RepositoryBindNote | undefined;
   readonly busy: boolean;
   readonly bind: (choice: RepositoryChoice) => void;
 } {
   const ports = useApiPorts();
   const client = useQueryClient();
-  const [lines, setLines] = useState<readonly string[]>([]);
+  const [note, setNote] = useState<RepositoryBindNote | undefined>(undefined);
   const [busy, setBusy] = useState(false);
   return {
-    lines,
+    note,
     busy,
     bind: (choice) => {
       setBusy(true);
-      setLines([]);
+      setNote(undefined);
       void (async () => {
         const outcome = repositoryBindOutcome(
           await apiBindProjectRepository(
@@ -127,7 +131,7 @@ function useRepositoryBind(partition: PartitionIdentity): {
           ),
         );
         setBusy(false);
-        setLines(repositoryBindLines(outcome));
+        setNote(repositoryBindNote(outcome));
         if (outcome.outcome === "Refused") return;
         await client.invalidateQueries({
           queryKey: projectResourceKey(
@@ -176,9 +180,18 @@ function AddRepositoryBody(props: {
       {state.state === "Ready" && state.value.truncated ? (
         <Notice tone="parked" inline detail={repositoriesTruncated} />
       ) : null}
-      {binding.lines.map((line) => (
-        <Notice key={line} tone="info" inline detail={line} role="status" />
-      ))}
+      {binding.note === undefined ? null : (
+        <Notice tone="info" inline detail={binding.note.status} role="status">
+          {binding.note.ticketOffered ? (
+            <>
+              {" · "}
+              <Link to="/$tenant/$project/tickets/new" params={partition}>
+                New ticket
+              </Link>
+            </>
+          ) : null}
+        </Notice>
+      )}
     </>
   );
 }

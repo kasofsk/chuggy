@@ -21,15 +21,15 @@ import type { ApiResult } from "../app/core/apiRequest.ts";
 import type { ProjectRepositoryBindAnswer } from "../app/core/apiRoutes.ts";
 import type { PanelState } from "../app/core/freshness.ts";
 import {
-  repositoryBindLines,
+  repositoryBindNote,
   repositoryBindOutcome,
-  repositoryBindStatus,
   repositoryChoices,
   repositoryConfigureStatus,
   repositoryConfigurationsStatus,
   repositoryDeferrals,
   repositoryLabel,
   repositoryOffersWithheld,
+  type RepositoryBindNote,
   type RepositoryStepStatus,
 } from "../app/core/projectRepositories.ts";
 import { repositoryRefusalsDrawn } from "./repositoryRefusals.ts";
@@ -78,7 +78,7 @@ test("a row is marked bound by the address the binding names", () => {
 });
 
 function status(result: ApiResult<ProjectRepositoryBindAnswer>): string {
-  return repositoryBindStatus(repositoryBindOutcome(result));
+  return repositoryBindNote(repositoryBindOutcome(result)).status;
 }
 
 function answered(
@@ -102,34 +102,37 @@ const alreadyBound: ApiResult<ProjectRepositoryBindAnswer> = {
 /** The route answers `201` carrying the configurations and `200` carrying the
  * repository alone, and the classifier keeps neither status, so the body is
  * what tells the two apart. */
-test("a bind of a repository already bound says so", () => {
-  expect(status(answered({ result: "Imported", count: 2 }))).toBe("Bound");
-  expect(status(alreadyBound)).toBe("Already bound");
+test("a bind of a repository already bound says so, and offers nothing further", () => {
+  expect(repositoryBindNote(repositoryBindOutcome(alreadyBound))).toStrictEqual(
+    { status: "Already bound", ticketOffered: false },
+  );
+  expect(status(answered({ result: "Imported", count: 2 }))).not.toBe(
+    "Already bound",
+  );
 });
 
-test("a new binding draws what its own configurations came to", () => {
-  expect(repositoryBindLines(repositoryBindOutcome(alreadyBound))).toEqual([
-    "Already bound",
-  ]);
-  expect(
-    repositoryBindLines(
-      repositoryBindOutcome(answered({ result: "Imported", count: 3 })),
-    ),
-  ).toEqual(["Bound", "Imported"]);
-  expect(
-    repositoryBindLines(
-      repositoryBindOutcome(
-        answered({ result: "Bootstrapped", revision: "r1" }),
-      ),
-    ),
-  ).toEqual(["Bound", "Bootstrapped"]);
-  expect(
-    repositoryBindLines(
-      repositoryBindOutcome(
-        answered({ result: "Deferred", reason: "StepFailed" }),
-      ),
-    ),
-  ).toEqual(["Bound", "Step failed"]);
+function boundNote(
+  configurations: ProjectRepositoryConfigurationsResponse,
+): RepositoryBindNote {
+  return repositoryBindNote(repositoryBindOutcome(answered(configurations)));
+}
+
+/** The picker's row marks a new binding Bound, so its one line says what its
+ * configurations came to instead, and offers a ticket once there is one. */
+test("a new binding says what its configurations came to, and offers a ticket where one was", () => {
+  expect(boundNote({ result: "Imported", count: 3 })).toStrictEqual({
+    status: "Configurations imported",
+    ticketOffered: true,
+  });
+  expect(boundNote({ result: "Bootstrapped", revision: "r1" })).toStrictEqual({
+    status: "Default configuration added",
+    ticketOffered: true,
+  });
+  for (const reason of projectRepositoryConfigurationDeferrals)
+    expect(boundNote({ result: "Deferred", reason })).toStrictEqual({
+      status: repositoryDeferrals[reason].status,
+      ticketOffered: false,
+    });
 });
 
 test("each refusal is the one line the picker draws under itself", () => {

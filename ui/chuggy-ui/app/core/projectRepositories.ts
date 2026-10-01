@@ -279,28 +279,43 @@ export function repositoryBindOutcome(
   return { outcome: "Refused", status: repositoryRefusalStatus(result) };
 }
 
-/** The one word a bind's outcome is drawn as. */
-export function repositoryBindStatus(outcome: RepositoryBindOutcome): string {
-  switch (outcome.outcome) {
-    case "Bound":
-      return "Bound";
-    case "AlreadyBound":
-      return "Already bound";
-    case "Refused":
-      return outcome.status;
-  }
+/** The one line a bind leaves under the picker, and whether it offers a first
+ * ticket as the next step. */
+export interface RepositoryBindNote {
+  readonly status: string;
+  readonly ticketOffered: boolean;
 }
 
 /**
- * The lines a bind is drawn as. A new binding carries a second, because its
- * configurations are beside the binding rather than part of it: the binding
- * stands whatever that line says.
+ * A new binding's line is what its configurations came to, because the
+ * picker's row already marks it Bound and it stands whatever that line says.
+ * Once the project holds a configuration for it, a ticket is what comes next.
  */
-export function repositoryBindLines(
+function repositoryBindNoteBound(
+  configurations: ProjectRepositoryConfigurationsResponse,
+): RepositoryBindNote {
+  switch (configurations.result) {
+    case "Imported":
+      return { status: "Configurations imported", ticketOffered: true };
+    case "Bootstrapped":
+      return { status: "Default configuration added", ticketOffered: true };
+    case "Deferred":
+      return {
+        status: repositoryDeferrals[configurations.reason].status,
+        ticketOffered: false,
+      };
+  }
+}
+
+export function repositoryBindNote(
   outcome: RepositoryBindOutcome,
-): readonly string[] {
-  const status = repositoryBindStatus(outcome);
-  return outcome.outcome === "Bound"
-    ? [status, repositoryConfigurationsStatus(outcome.configurations)]
-    : [status];
+): RepositoryBindNote {
+  switch (outcome.outcome) {
+    case "Bound":
+      return repositoryBindNoteBound(outcome.configurations);
+    case "AlreadyBound":
+      return { status: "Already bound", ticketOffered: false };
+    case "Refused":
+      return { status: outcome.status, ticketOffered: false };
+  }
 }
