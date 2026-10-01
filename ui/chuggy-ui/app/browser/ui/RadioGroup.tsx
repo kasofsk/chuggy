@@ -23,6 +23,8 @@ export interface RadioOption {
   readonly value: string;
   readonly text: string;
   readonly description?: string;
+  /** Drawn, and checked where it is the value, but never chosen by a press. */
+  readonly disabled?: boolean;
 }
 
 function RadioGroupOption(props: {
@@ -41,13 +43,17 @@ function RadioGroupOption(props: {
         id={props.itemId}
         value={props.option.value}
         className="radio-item"
+        disabled={props.option.disabled ?? false}
         {...(description === undefined
           ? {}
           : { "aria-describedby": props.describedBy })}
       >
         <RadioGroupPrimitive.Indicator className="radio-mark" />
       </RadioGroupPrimitive.Item>
-      <label htmlFor={props.itemId} className="text-md text-ink-2">
+      <label
+        htmlFor={props.itemId}
+        className={`text-md ${props.option.disabled === true ? "text-ink-3" : "text-ink-2"}`}
+      >
         {props.option.text}
       </label>
       {description === undefined ? null : (

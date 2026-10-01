@@ -220,6 +220,19 @@ test("each refusal the door states is drawn as one word", () => {
   ).toStrictEqual({ ask: "Refused", word: inquiryRefusalWordUnknown });
 });
 
+/** No runner of the asker's own is a refusal with a remedy, so it is an arm
+ * of its own rather than a word. */
+test("a refusal for no runner is drawn apart from the words", () => {
+  expect(
+    inquiryAskAnswered({
+      outcome: "Rejected",
+      code: "NoRunner",
+      status: 403,
+      body: undefined,
+    }),
+  ).toStrictEqual({ ask: "NoRunner" });
+});
+
 /** A `404` carries no code at all, so the word for it comes from the outcome. */
 test("a project with no lead is refused in a word of its own", () => {
   expect(inquiryAskAnswered({ outcome: "Absent" })).toStrictEqual({

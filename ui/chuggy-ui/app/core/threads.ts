@@ -76,6 +76,8 @@ import {
   threadMessageRefusalCodes,
 } from "../../../../src/contract/rosters.ts";
 import type {
+  PlacementRoute,
+  SessionRunnerStanding,
   SessionTurnInputKind,
   ThreadMessageRefusalCode,
   ThreadStanding,
@@ -83,6 +85,11 @@ import type {
 import type { ApiResult } from "./apiRequest.ts";
 import { base64urlFromBytes } from "./base64url.ts";
 import { panelReason } from "./freshness.ts";
+import {
+  sessionRefusedNoRunner,
+  sessionRunnerShort,
+} from "./sessionRunners.ts";
+import type { SessionRunnerShort } from "./sessionRunners.ts";
 
 /** Whether a thread still takes messages, which is the one standing that does. */
 export function threadTakesMessages(
@@ -97,6 +104,36 @@ export function threadUnhosted(result: ApiResult<unknown>): boolean {
   return (
     result.outcome === "Rejected" && result.code === hostedRunsNotGrantedCode
   );
+}
+
+/**
+ * What the reader's own thread door asks of them, as far as the reads have
+ * said: where its turns run, whether the tenant grants hosted runs, and the
+ * reader's own runner. Each is absent until its read answers.
+ */
+export interface ThreadDoor {
+  readonly route: PlacementRoute | undefined;
+  readonly granted: boolean | undefined;
+  readonly runner: SessionRunnerStanding | undefined;
+  /** How many times the placement has answered, which a failed read does not
+   * move. */
+  readonly reads: number;
+}
+
+/** Whether the door would refuse for the hosted grant: the grant read as not
+ * given, where the route is not read as one that needs none. */
+export function threadDoorUnhosted(door: ThreadDoor): boolean {
+  return door.route !== "Pool" && door.granted === false;
+}
+
+/** Why the reader's runner cannot take their turn now, where the route is
+ * runners' and the reader's runner has been read. */
+export function threadDoorRunnerShort(
+  door: ThreadDoor,
+): SessionRunnerShort | undefined {
+  return door.route === undefined || door.runner === undefined
+    ? undefined
+    : sessionRunnerShort(door.route, door.runner);
 }
 
 /** Whether a thread can still be closed, which every standing but `Closed` can:
@@ -240,7 +277,7 @@ export function threadTurnRetained(
   return held !== undefined && held.text === text ? held.turn : undefined;
 }
 
-/** Where one press of `Send` got to. */
+/** Where one press of `Send` got to, or before one, what its door would answer. */
 export type ThreadSend =
   | { readonly send: "Idle" }
   | { readonly send: "Sending" }
@@ -248,24 +285,49 @@ export type ThreadSend =
   | { readonly send: "Waiting"; readonly why: string }
   | { readonly send: "Ended"; readonly why: string }
   | { readonly send: "Unsettled"; readonly why: string }
-  /** The tenant does not grant the reader hosted runs, so this thread takes nothing from them. */
-  | { readonly send: "Unhosted" }
+  /** The tenant does not grant the reader hosted runs, so this thread takes
+   * nothing from them; a refusal counts the placement reads before it. */
+  | { readonly send: "Unhosted"; readonly readsAt?: number }
+  /** The thread's turns go to runners and the reader has registered none. */
+  | { readonly send: "NoRunner" }
+  /** The reader's runner has not polled lately, so a turn waits for it. */
+  | { readonly send: "RunnerOffline" }
   | { readonly send: "Refused"; readonly reason: string };
 
 /**
- * What a composer reports: a press's own answer once there is one, and before
- * any, `Unhosted` on a thread that takes messages where the tenant's grant was
- * read and is not given, so a member is told before they type rather than
- * after they send.
+ * What a composer reports: a press's own answer where it has one to say, and
+ * otherwise what its door would answer, so a member is told before they type
+ * rather than after they send — `Unhosted` before any press, on a thread that
+ * takes messages where the door asks a grant the read says is not given, and
+ * the reader's runner where the turns go to runners and it cannot take one now.
+ * A press's `Unhosted` gives way to a placement read after it that says
+ * runners, which ask no grant, and never to the read it was refused over.
  */
 export function threadSendStanding(
   send: ThreadSend,
   takes: boolean,
-  hosted: boolean | undefined,
+  door: ThreadDoor,
 ): ThreadSend {
-  return takes && hosted === false && send.send === "Idle"
-    ? { send: "Unhosted" }
-    : send;
+  if (!takes) return send;
+  const pressed: ThreadSend =
+    send.send === "Unhosted" &&
+    door.route === "Pool" &&
+    (send.readsAt === undefined || door.reads > send.readsAt)
+      ? { send: "Idle" }
+      : send;
+  if (pressed.send === "Idle" && threadDoorUnhosted(door))
+    return { send: "Unhosted" };
+  const short = threadDoorRunnerShort(door);
+  return short !== undefined &&
+    (pressed.send === "Idle" || pressed.send === "Sent")
+    ? { send: short }
+    : pressed;
+}
+
+/** Whether a queued turn of the reader's own thread waits on a runner that
+ * cannot take it now, rather than on its turn to run. */
+export function threadTurnsWait(door: ThreadDoor): boolean {
+  return threadDoorRunnerShort(door) !== undefined;
 }
 
 /** Whether the mailbox tail a read answered already holds this turn, which is
@@ -327,6 +389,7 @@ export function threadSendFrom(
       return { send: "Ended", why: threadRefusalWord(result.code) };
     case "Rejected":
       if (threadUnhosted(result)) return { send: "Unhosted" };
+      if (sessionRefusedNoRunner(result)) return { send: "NoRunner" };
       return threadRefusalCode(result.code) === "NotYourThread"
         ? { send: "Unsettled", why: threadRefusalWord(result.code) }
         : { send: "Refused", reason: panelReason(result) };

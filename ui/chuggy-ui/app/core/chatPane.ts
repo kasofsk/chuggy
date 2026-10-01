@@ -23,7 +23,15 @@ import { z } from "zod";
 
 import type { ThreadEntryResponse } from "../../../../src/contract/responses.ts";
 import type { KeyValuePort } from "./sessionHolder.ts";
-import { threadMine, threadTakesMessages } from "./threads.ts";
+import type { SessionRunnerShort } from "./sessionRunners.ts";
+import {
+  threadDoorRunnerShort,
+  threadDoorUnhosted,
+  threadMine,
+  threadSendStanding,
+  threadTakesMessages,
+} from "./threads.ts";
+import type { ThreadDoor, ThreadSend } from "./threads.ts";
 
 export const chatPanePlacements = ["Right", "Left", "Bottom"] as const;
 
@@ -190,20 +198,42 @@ export function chatPaneHolding(
   };
 }
 
+/** What the header says of the reader's thread door: whether it would refuse
+ * for the hosted grant, and why no runner of theirs can take a turn now. */
+export interface ChatPaneHeaderDoor {
+  readonly unhosted: boolean;
+  readonly runner: SessionRunnerShort | undefined;
+}
+
+/** Whether the pane's door refuses for the hosted grant: as read, or as New
+ * last met it, until a read after that says runners. */
+export function chatPaneUnhosted(
+  door: ThreadDoor,
+  refusal: ThreadSend,
+): boolean {
+  return threadSendStanding(refusal, true, door).send === "Unhosted";
+}
+
 /**
- * Whether the header says the tenant grants no hosted runs. The body says it
- * where no thread is drawn and a drawn thread's composer where it takes
- * messages, so the header says it only beside a drawn thread that takes none,
- * or one the listing has not caught up with.
+ * The body says what the door would answer where no thread is drawn, and a
+ * drawn thread's composer where it takes messages, so the header says it only
+ * beside a drawn thread that takes none, or one the listing has not caught up
+ * with. A grant New met after the read is said beside any drawn thread whose
+ * box, reading only the read, would not say it.
  */
-export function chatPaneHeaderUnhosted(
-  granted: boolean | undefined,
+export function chatPaneHeaderDoor(
+  door: ThreadDoor,
   threadDrawn: boolean,
   held: ThreadEntryResponse | undefined,
-): boolean {
-  return (
-    granted === false &&
-    threadDrawn &&
-    !(held !== undefined && threadTakesMessages(held))
-  );
+  refusal: ThreadSend = { send: "Idle" },
+): ChatPaneHeaderDoor {
+  const takes = held !== undefined && threadTakesMessages(held);
+  const says = threadDrawn && !takes;
+  return {
+    unhosted:
+      threadDrawn &&
+      chatPaneUnhosted(door, refusal) &&
+      !(takes && threadDoorUnhosted(door)),
+    runner: says ? threadDoorRunnerShort(door) : undefined,
+  };
 }

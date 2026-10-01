@@ -23,6 +23,7 @@ import {
   conversationBlockUnreadable,
   conversationExchanges,
   conversationExchangesMax,
+  conversationExchangesWaiting,
   conversationStepsMax,
   conversationWorkSummary,
 } from "../app/core/conversation.ts";
@@ -764,4 +765,26 @@ describe("a block recorded before the boundary heading was written", () => {
       context: recorded,
     });
   });
+});
+
+/** Only a queued turn waits on a runner: one a runner claimed is running on
+ * it, and a settled one waits on nothing. */
+test("a surface whose runner cannot take a turn reads its queued turns as waiting and nothing else", () => {
+  const exchanges = conversationExchanges(
+    [askOf("u1", "one"), answerOf("a1", "done")],
+    [
+      turnOf({ turn: "t1", ordinal: 1, state: "Answered" }),
+      turnOf({ turn: "t2", ordinal: 2, state: "Claimed" }),
+      turnOf({ turn: "t3", ordinal: 3, state: "Queued" }),
+    ],
+  );
+  expect(
+    conversationExchangesWaiting(exchanges).map(
+      (exchange) => exchange.standing,
+    ),
+  ).toStrictEqual([
+    { standing: "Answered" },
+    { standing: "Running", state: "Claimed" },
+    { standing: "Running", state: "Waiting" },
+  ]);
 });

@@ -128,3 +128,27 @@ test("a disabled group still says which option is chosen, and takes none", () =>
     screen.getByRole("radio", { name: "Push" }).getAttribute("aria-checked"),
   ).toBe("true");
 });
+
+/** An option the reader may not choose is still where the value stands, so
+ * it is drawn and checked, and a press on it chooses nothing. */
+test("a disabled option is drawn and checked where it is the value, and takes no press", () => {
+  const chosen: string[] = [];
+  render(
+    <RadioGroup
+      label="Chat"
+      value="InCluster"
+      options={[
+        { value: "InCluster", text: "Hosted", disabled: true },
+        { value: "Pool", text: "Runners" },
+      ]}
+      onChoose={(value) => chosen.push(value)}
+    />,
+  );
+  const kept = screen.getByRole("radio", { name: "Hosted" });
+  expect(kept.getAttribute("aria-checked")).toBe("true");
+  expect(kept.hasAttribute("disabled")).toBe(true);
+  fireEvent.click(kept);
+  fireEvent.click(screen.getByRole("radio", { name: "Runners" }));
+  expect(chosen).toStrictEqual(["Pool"]);
+  styleless();
+});

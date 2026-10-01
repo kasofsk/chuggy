@@ -90,6 +90,15 @@ export function panelStateFromQuery<T>(query: PanelQuery<T>): PanelState<T> {
   };
 }
 
+/** A polled read's state: its last answer stands across a poll that failed,
+ * since a poll is asked on a clock rather than because anything moved, so only
+ * a read that has never answered is unread. */
+export function panelStatePolled<T>(query: PanelQuery<T>): PanelState<T> {
+  return panelStateFromQuery(
+    query.data === undefined ? query : { ...query, error: null },
+  );
+}
+
 /** Whole units only, because a panel header is read at a glance. The rounding
  * itself is `figures.ts`'s `agoText`, so one elapsed time is rounded once. */
 export function freshnessLabel(

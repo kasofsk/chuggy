@@ -1,5 +1,5 @@
-/* RadioGroup: the ring an option is chosen in, the mark that fills it, and the
-   described option's two rows. */
+/* RadioGroup: the ring an option is chosen in, the mark that fills it, an
+   option drawn but not choosable, and the described option's two rows. */
 
 @layer ui {
   .radio-option {
@@ -23,6 +23,15 @@
     background: var(--surface-1);
     border: var(--hairline) solid var(--edge-control);
     border-radius: var(--radius-circle);
+  }
+
+  .radio-item:disabled {
+    border-color: var(--edge);
+    cursor: not-allowed;
+  }
+
+  .radio-item:disabled .radio-mark {
+    background: var(--ink-3);
   }
 
   .radio-mark {

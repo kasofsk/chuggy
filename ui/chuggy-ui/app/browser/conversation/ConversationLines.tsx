@@ -76,13 +76,17 @@ export function conversationMarkerWords(marker: ConversationMarker): string {
   }
 }
 
-/** The two arms a reader must not mistake for a settled turn keep their hue;
- * a settled one is as quiet as the measures beside it. */
+/** The arms a reader must not mistake for a settled turn keep their hue, a
+ * turn waiting on a runner the parked one; a settled one is as quiet as the
+ * measures beside it. */
 function conversationStandingInk(standing: ConversationStandingDrawn): string {
   switch (standing.standing) {
     case "Failed":
       return "text-tone-fail";
     case "Running":
+      return standing.state === "Waiting"
+        ? "text-tone-parked"
+        : "text-tone-live";
     case "Open":
       return "text-tone-live";
     case "Answered":

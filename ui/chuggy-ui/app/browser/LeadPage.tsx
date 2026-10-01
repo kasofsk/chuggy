@@ -5,7 +5,8 @@
  * The lead read is the `Session` change kind's own representation, so a turn
  * moving rewrites the head and raises the batch count the transcript walks to
  * and the page is live by construction. A project with no lead is a page
- * saying so rather than five empty panels.
+ * saying so rather than five empty panels. Where the lead runs on runners and
+ * none of the project's can take its turn, the page says so beside either.
  *
  * WHAT A READER HAS TYPED AT THE INQUIRY BOX IS NOT HELD HERE. This page is
  * replaced outright by a click on any sibling screen, and the pair a box holds
@@ -45,6 +46,8 @@ import {
   projectLeadSessionKind,
 } from "../core/projectLead.ts";
 import { projectListRereadNamed } from "../core/projectQueryKeys.ts";
+import { sessionRunnerShortWord } from "../core/sessionRunners.ts";
+import type { SessionRunnerShort } from "../core/sessionRunners.ts";
 import {
   sessionConversationItems,
   sessionConversationTurns,
@@ -63,6 +66,10 @@ import { LeadInquiries, useInquiryBoxes } from "./lead/LeadInquiries.tsx";
 import type { InquiryBoxesHeld } from "./lead/LeadInquiries.tsx";
 import { LeadRefusals } from "./lead/LeadRefusals.tsx";
 import { LeadNote, useLeadTranscript } from "./lead/LeadTranscript.tsx";
+import {
+  SessionRunnerNotice,
+  useSessionRunnerShort,
+} from "./sessionPlacement.tsx";
 import { DetailsSlot, TopBarSlot } from "./shell/slots.tsx";
 import { EmptyState } from "./ui/EmptyState.tsx";
 import { Figure } from "./ui/Figure.tsx";
@@ -104,9 +111,12 @@ export function useLead(
   return state;
 }
 
-/** The bar's own title, where the session stands, how closely it needs
- * watching, and the cursor its mailbox is at. */
-function LeadTopBar(props: { readonly lead: LeadResponse }): ReactNode {
+/** The bar's own title, where the session stands, why no runner can take its
+ * turn, how closely it needs watching, and the cursor its mailbox is at. */
+function LeadTopBar(props: {
+  readonly lead: LeadResponse;
+  readonly runner: SessionRunnerShort | undefined;
+}): ReactNode {
   const lead = props.lead;
   return (
     <TopBarSlot>
@@ -115,6 +125,9 @@ function LeadTopBar(props: { readonly lead: LeadResponse }): ReactNode {
         <Pill tone={sessionStateTone(lead.state)} emphasis>
           {lead.state}
         </Pill>
+        {props.runner === undefined ? null : (
+          <Pill tone="parked">{sessionRunnerShortWord(props.runner)}</Pill>
+        )}
         <Pill tone={selectorAttentionTone(lead.attention)}>
           {lead.attention}
         </Pill>
@@ -228,6 +241,7 @@ function LeadDetails(props: {
 function LeadBody(props: {
   readonly partition: PartitionIdentity;
   readonly state: PanelState<LeadResponse>;
+  readonly runner: SessionRunnerShort | undefined;
   readonly inquiries: InquiryBoxesHeld;
   readonly nowMs: number;
 }): ReactNode {
@@ -249,7 +263,9 @@ function LeadBody(props: {
   );
   return (
     <>
-      {lead === undefined ? null : <LeadTopBar lead={lead} />}
+      {lead === undefined ? null : (
+        <LeadTopBar lead={lead} runner={props.runner} />
+      )}
       <LeadDetails
         partition={props.partition}
         state={props.state}
@@ -284,20 +300,28 @@ export function LeadPage(): ReactNode {
   const read = useLead(partition);
   const state = projectLeadPanelState(read);
   const inquiries = useInquiryBoxes();
-  if (state.state === "Absent")
+  const runner = useSessionRunnerShort(partition, "lead", "project");
+  if (state.state === "Absent") {
+    const action =
+      runner === undefined ? undefined : (
+        <SessionRunnerNotice partition={partition} short={runner} />
+      );
     return projectLeadPresent(read) === false ? (
       <EmptyState
         label="No lead"
         variant="page"
         detail="Tickets are dispatched by hand"
+        action={action}
       />
     ) : (
-      <EmptyState label="No lead" variant="page" />
+      <EmptyState label="No lead" variant="page" action={action} />
     );
+  }
   return (
     <LeadBody
       partition={partition}
       state={state}
+      runner={runner}
       inquiries={inquiries}
       nowMs={nowMs}
     />

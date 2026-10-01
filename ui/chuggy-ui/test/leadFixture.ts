@@ -15,7 +15,9 @@ import type {
   LeadResponse,
   LeadTranscriptResponse,
   SelectorHistoryResponse,
+  SessionPlacementResponse,
 } from "../../../src/contract/responses.ts";
+import { sessionPlacementBody } from "./sessionPlacementFixture.ts";
 
 export const leadSession = "lead-atlas";
 export const leadStream = "1a2b3c";
@@ -354,6 +356,7 @@ export interface LeadServed {
   readonly refusals: AgenticRefusalsResponse;
   readonly note?: LeadResponse["handoffNote"];
   readonly inquiries?: LeadInquiriesResponse;
+  readonly placement?: SessionPlacementResponse;
 }
 
 /** The body and status every route the lead page reads answers with, so a case
@@ -363,6 +366,8 @@ export function leadRouteAnswer(
   served: LeadServed,
 ): { readonly body: unknown; readonly status: number } {
   const found = (body: unknown, status = 200) => ({ body, status });
+  if (url.endsWith("/session-placement"))
+    return found(served.placement ?? sessionPlacementBody());
   if (url.includes("/lead/inquiries"))
     return found(served.inquiries ?? { inquiries: [] });
   if (url.includes("/lead/transcript")) {

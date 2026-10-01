@@ -6,13 +6,20 @@
 
 import { expect, test } from "vitest";
 
-import type { ExecutionPlacementResponse } from "../../../src/contract/responses.ts";
+import type {
+  ExecutionPlacementResponse,
+  SessionPlacementResponse,
+} from "../../../src/contract/responses.ts";
+import { sessionRunnerStandings } from "../../../src/contract/rosters.ts";
 import {
   runnerCapabilityLabel,
   runnerRegisterCommand,
+  runnerStandingLabel,
   runnersPlacementAnswered,
   runnersPlacementDraft,
-  runnersPlacementSavable,
+  runnersPlacementMoved,
+  runnersPlacementOptions,
+  runnersPlacementWrites,
 } from "../app/core/runners.ts";
 
 const hosted: ExecutionPlacementResponse = {
@@ -21,29 +28,100 @@ const hosted: ExecutionPlacementResponse = {
   choices: ["InCluster", "Pool"],
 };
 
-test("a draft starts on each kind's route where the reader may choose it", () => {
-  expect(runnersPlacementDraft(hosted)).toStrictEqual({
+const sessions: SessionPlacementResponse = {
+  thread: { route: "Pool", source: "Default" },
+  lead: { route: "InCluster", source: "Override" },
+  choices: ["InCluster", "Pool"],
+  runners: { mine: "Live", project: "Live" },
+};
+
+/** A route the reader may not choose is where the kind runs until they choose
+ * another, so the draft starts there rather than on one they may. */
+test("a draft starts on each kind's route as read, whether or not the reader may choose it", () => {
+  const read = {
     work: "InCluster",
     evaluation: "Pool",
+    thread: "Pool",
+    lead: "InCluster",
+  };
+  expect(runnersPlacementDraft(hosted, sessions)).toStrictEqual(read);
+  expect(
+    runnersPlacementDraft(
+      { ...hosted, choices: ["Pool"] },
+      { ...sessions, choices: ["Pool"] },
+    ),
+  ).toStrictEqual(read);
+});
+
+/** The read is the newest one, so a kind the reader left alone follows what
+ * anyone else did to it. */
+test("a kind the reader moved is where they moved it, and every other is as read", () => {
+  const read = {
+    work: "InCluster",
+    evaluation: "Pool",
+    thread: "Pool",
+    lead: "InCluster",
+  } as const;
+  expect(runnersPlacementMoved(read, {})).toStrictEqual(read);
+  expect(runnersPlacementMoved(read, { thread: "InCluster" })).toStrictEqual({
+    ...read,
+    thread: "InCluster",
   });
 });
 
-test("a draft starts a hosted route the reader may not choose on one they may", () => {
-  expect(runnersPlacementDraft({ ...hosted, choices: ["Pool"] })).toStrictEqual(
-    { work: "Pool", evaluation: "Pool" },
-  );
+test("a kind offers the reader's choices, after its route as read where that is not one of them", () => {
+  expect(runnersPlacementOptions("InCluster", ["Pool"])).toStrictEqual([
+    { route: "InCluster", choosable: false },
+    { route: "Pool", choosable: true },
+  ]);
+  expect(runnersPlacementOptions("Pool", ["InCluster", "Pool"])).toStrictEqual([
+    { route: "InCluster", choosable: true },
+    { route: "Pool", choosable: true },
+  ]);
+  expect(runnersPlacementOptions("Pool", ["Pool"])).toStrictEqual([
+    { route: "Pool", choosable: true },
+  ]);
 });
 
-test("a draft is savable only where every route in it is one the reader may choose", () => {
-  const draft = { work: "InCluster", evaluation: "Pool" } as const;
-  expect(runnersPlacementSavable(draft, ["InCluster", "Pool"])).toBe(true);
-  expect(runnersPlacementSavable(draft, ["Pool"])).toBe(false);
+/** A write names both its kinds, so a placement is written whole where either
+ * moved and not at all where neither did. */
+test("a save writes only the placements the draft moved, each whole", () => {
+  const read = {
+    work: "InCluster",
+    evaluation: "Pool",
+    thread: "Pool",
+    lead: "InCluster",
+  } as const;
+  expect(runnersPlacementWrites(read, read)).toStrictEqual({
+    execution: undefined,
+    session: undefined,
+  });
+  expect(runnersPlacementWrites(read, { ...read, work: "Pool" })).toStrictEqual(
+    { execution: { work: "Pool", evaluation: "Pool" }, session: undefined },
+  );
   expect(
-    runnersPlacementSavable({ work: "Pool", evaluation: "InCluster" }, [
-      "Pool",
-    ]),
-  ).toBe(false);
-  expect(runnersPlacementSavable(draft, [])).toBe(false);
+    runnersPlacementWrites(read, { ...read, evaluation: "InCluster" }),
+  ).toStrictEqual({
+    execution: { work: "InCluster", evaluation: "InCluster" },
+    session: undefined,
+  });
+  expect(runnersPlacementWrites(read, { ...read, lead: "Pool" })).toStrictEqual(
+    { execution: undefined, session: { thread: "Pool", lead: "Pool" } },
+  );
+  expect(
+    runnersPlacementWrites(read, { ...read, thread: "InCluster" }),
+  ).toStrictEqual({
+    execution: undefined,
+    session: { thread: "InCluster", lead: "InCluster" },
+  });
+});
+
+test("a runner standing is one word, and no runner at all is None", () => {
+  expect(sessionRunnerStandings.map(runnerStandingLabel)).toStrictEqual([
+    "None",
+    "Offline",
+    "Live",
+  ]);
 });
 
 test("a write refused for the hosted grant is told apart from any other refusal", () => {
