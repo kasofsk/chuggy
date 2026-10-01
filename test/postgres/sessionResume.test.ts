@@ -118,6 +118,7 @@ function resumePlane(rig: SessionRig): FastifyInstance {
       turns: rig.plane,
       settlements: rig.plane,
       holds: rig.plane,
+      losses: rig.plane,
       records: rig.plane,
       queries: rig.plane,
       store: artifactStore({

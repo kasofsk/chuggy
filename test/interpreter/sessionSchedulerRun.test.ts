@@ -16,7 +16,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { sessionContainerEnds } from "../../src/contract/rosters.ts";
 import {
+  allSessionTurnFailures,
   asSessionAttemptId,
   asSessionBearerId,
   asSessionBearerSecret,
@@ -54,7 +56,9 @@ import {
   type SessionPolicy,
   type SessionSchedulerStore,
 } from "../../src/interpreter/sessionScheduler.ts";
+import { sessionContainerEnded } from "../../src/interpreter/sessionPlane.ts";
 import {
+  sessionSchedulerObserve,
   sessionSchedulerPass,
   type SessionAttemptMint,
   type SessionSchedulerService,
@@ -368,6 +372,52 @@ test("a turn failed while the pass worked the rows ahead is still the attempt's 
     epoch,
   );
   assert.ok(calls.includes("attemptEnded StoreRefused"), calls.join(", "));
+});
+
+/**
+ * A runner reports only how its container ended, and the plane charges the
+ * attempt from that and the attempt's own last turn failure. Every pair is
+ * driven through the observation too, so the two are one derivation rather
+ * than two that agree on the cases someone thought of.
+ */
+test("a runner's report of its container's end is charged as the observed end of the same pod", async () => {
+  for (const phase of sessionContainerEnds) {
+    for (const turnFailure of [undefined, ...allSessionTurnFailures]) {
+      const calls: StoreCall[] = [];
+      await sessionSchedulerObserve(
+        service(
+          calls,
+          {
+            observable: [attempt],
+            observed: { observed: "Ended", phase },
+            ...(turnFailure === undefined ? {} : { turnFailure }),
+          },
+          { placed: "Unavailable" },
+        ),
+        epoch,
+      );
+      const reported: StoreCall[] = [];
+      await sessionContainerEnded(
+        {
+          turnFailure: () => Promise.resolve(turnFailure),
+          lose: (_secret, _generation, evidence) => {
+            reported.push(`attemptEnded ${evidence}`);
+            return Promise.resolve(true);
+          },
+        },
+        bearers.mint().bearer.secret,
+        attempt.generation,
+        phase,
+      );
+      const observed = calls.filter((call) => call.startsWith("attemptEnded"));
+      assert.equal(observed.length, 1, `${phase} after ${String(turnFailure)}`);
+      assert.deepEqual(
+        reported,
+        observed,
+        `${phase} after ${String(turnFailure)}`,
+      );
+    }
+  }
 });
 
 test("a pod the plane could not observe is left to the lease and ends nothing", async () => {

@@ -74,6 +74,7 @@ function planeSessions(
     turns: sessions,
     settlements: sessions,
     holds: sessions,
+    losses: sessions,
     records: sessions,
     queries: sessions,
     store: artifacts,

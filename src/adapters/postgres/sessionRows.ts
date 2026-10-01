@@ -98,6 +98,19 @@ export function sessionRowMember<Member extends string>(
   return found;
 }
 
+/** The failure a turn read answers with, refusing a member the CHECK should have stopped. */
+export function sessionTurnFailureOf(
+  value: string | null | undefined,
+): SessionTurnFailure | undefined {
+  return value === null || value === undefined
+    ? undefined
+    : sessionRowMember<SessionTurnFailure>(
+        [...allSessionTurnFailures],
+        value,
+        "session turn failure",
+      );
+}
+
 /** Reads the row's capability roster, refusing a member the CHECK should have stopped. */
 export function sessionRowCapabilities(
   values: readonly string[] | null,

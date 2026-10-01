@@ -7,6 +7,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { sessionBearerPattern } from "../../src/contract/sessionPlane.ts";
 import {
   assignmentOutcomeSchema,
   workerPoolAssignmentSchema,
@@ -16,6 +17,7 @@ import {
   workerPoolPollRoute,
   workerPoolReconciliationSchema,
   workerPoolRegistrationSchema,
+  workerPoolSessionAssignmentSchema,
   workerPoolSettlementPath,
   workerPoolSettlementRoutes,
   workerImageCharsMax,
@@ -67,6 +69,27 @@ test("an assignment is bounded in every member a pool could grow", () => {
     assert.equal(workerPoolAssignmentSchema.safeParse(invalid).success, false);
 });
 
+test("a session assignment is an assignment that always names its image, under a session's own bearer", () => {
+  const session = {
+    ...assignment,
+    image: "registry.invalid/worker:1",
+    bearer: `chgs_${"a".repeat(240)}`,
+  };
+  assert.match(session.bearer, sessionBearerPattern);
+  assert.deepEqual(workerPoolSessionAssignmentSchema.parse(session), session);
+  assert.deepEqual(workerPoolAssignmentSchema.parse(session), session);
+  for (const invalid of [
+    { ...session, image: undefined },
+    { ...session, image: "" },
+    { ...session, lease: 30 },
+  ])
+    assert.equal(
+      workerPoolSessionAssignmentSchema.safeParse(invalid).success,
+      false,
+      JSON.stringify(invalid),
+    );
+});
+
 test("an outcome tells a settled no from an unavailable one, which carries nothing", () => {
   assert.deepEqual(assignmentOutcomeSchema.parse({ outcome: "Accepted" }), {
     outcome: "Accepted",
@@ -87,15 +110,21 @@ test("an outcome tells a settled no from an unavailable one, which carries nothi
     );
 });
 
-test("a reconciliation carries what to place and what to stop, each name bounded", () => {
-  const answer = { assignments: [assignment], stop: ["01HY"] };
+test("a reconciliation carries what to place of each kind and what to stop, each name bounded", () => {
+  const answer = {
+    assignments: [assignment],
+    sessions: [{ ...assignment, image: "registry.invalid/worker:1" }],
+    stop: ["01HY"],
+  };
   assert.deepEqual(workerPoolReconciliationSchema.parse(answer), answer);
   for (const invalid of [
     { ...answer, stop: ["x".repeat(workerPoolIdentityCharsMax + 1)] },
     { ...answer, stop: [""] },
     { ...answer, assignments: [{ ...assignment, deadlineSecs: 0 }] },
+    { ...answer, sessions: [assignment] },
     { ...answer, lease: 30 },
-    { assignments: [] },
+    { assignments: [], stop: [] },
+    { assignments: [], sessions: [] },
   ])
     assert.equal(
       workerPoolReconciliationSchema.safeParse(invalid).success,
@@ -103,17 +132,22 @@ test("a reconciliation carries what to place and what to stop, each name bounded
     );
 });
 
-test("a poll's query is the held list as a query carries one, bounded by the plane, and the room", () => {
+test("a poll's query is the held list as a query carries one, bounded by the plane, and each room", () => {
   const query = workerPoolPollQuerySchema(2);
-  assert.deepEqual(query.parse({ wanted: "0" }), { held: [], wanted: 0 });
+  assert.deepEqual(query.parse({ wanted: "0" }), {
+    held: [],
+    wanted: 0,
+    wantedSessions: 0,
+  });
   assert.deepEqual(query.parse({ held: "a", wanted: "3" }), {
     held: ["a"],
     wanted: 3,
+    wantedSessions: 0,
   });
-  assert.deepEqual(query.parse({ held: ["a", "b"], wanted: "1" }), {
-    held: ["a", "b"],
-    wanted: 1,
-  });
+  assert.deepEqual(
+    query.parse({ held: ["a", "b"], wanted: "1", wantedSessions: "2" }),
+    { held: ["a", "b"], wanted: 1, wantedSessions: 2 },
+  );
   for (const invalid of [
     { held: ["a", "b", "c"], wanted: "0" },
     { held: "x".repeat(workerPoolIdentityCharsMax + 1), wanted: "0" },
@@ -124,6 +158,9 @@ test("a poll's query is the held list as a query carries one, bounded by the pla
     { held: "a", wanted: "1.5" },
     { held: "a", wanted: ["1", "2"] },
     { held: "a", wanted: "0", capacity: "4" },
+    { held: "a", wanted: "0", wantedSessions: "-1" },
+    { held: "a", wanted: "0", wantedSessions: "01" },
+    { held: "a", wanted: "0", wantedSessions: ["1", "2"] },
   ])
     assert.equal(query.safeParse(invalid).success, false);
 });

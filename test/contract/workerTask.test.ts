@@ -13,9 +13,12 @@ import {
   sessionTaskVariable,
   workerTaskVariable,
 } from "../../src/contract/workerEnvironment.ts";
+import { sessionBearerPattern } from "../../src/contract/sessionPlane.ts";
 import {
   filesystemAccesses,
+  poolEnvelopeSchema,
   sessionTaskDocumentSchema,
+  workerTaskAnswerSchema,
   workTaskDocumentSchema,
   type WorkTaskDocument,
 } from "../../src/contract/workerTask.ts";
@@ -127,6 +130,79 @@ for (const [plane, kind, pods, variable, schema] of [
       );
       for (const pod of pods()) document.parse(carried(pod, read));
     });
+
+/** `document` less the fields `keys` names. */
+function without(document: object, keys: readonly string[]): object {
+  return Object.fromEntries(
+    Object.entries(document).filter(([key]) => !keys.includes(key)),
+  );
+}
+
+/** What each golden session pod's attempt fetches when a pod holds it, and when a pool does and the fetch is all its harness is told. */
+function sessionAnswers(): readonly {
+  readonly podPlaced: object;
+  readonly poolHeld: object;
+}[] {
+  return sessionPods().map((pod) => {
+    const document = sessionTaskDocumentSchema
+      .strict()
+      .parse(carried(pod, sessionTaskVariable));
+    const podPlaced = without(document, ["workerPlane", "api", "bounds"]);
+    return {
+      podPlaced,
+      poolHeld: {
+        ...podPlaced,
+        api: document.api,
+        bounds: document.bounds,
+        model: "m",
+      },
+    };
+  });
+}
+
+test("a pool-held session's answer names its site's API, bounds and model together, and a pod-placed one names none", () => {
+  for (const { podPlaced, poolHeld } of sessionAnswers()) {
+    assert.deepEqual(workerTaskAnswerSchema.parse(podPlaced), podPlaced);
+    assert.deepEqual(workerTaskAnswerSchema.parse(poolHeld), poolHeld);
+    for (const missing of ["api", "bounds", "model"])
+      assert.equal(
+        workerTaskAnswerSchema.safeParse(without(poolHeld, [missing])).success,
+        false,
+        missing,
+      );
+    assert.equal(
+      workerTaskAnswerSchema.safeParse({ ...poolHeld, model: "" }).success,
+      false,
+    );
+  }
+});
+
+for (const release of workerContractReplayed("session"))
+  test(`a ${release} harness reads a pod-placed session's answer as it did, and a pool-held one less what it does not name`, async () => {
+    const answer = await workerContractReleaseExport(
+      release,
+      "workerTask",
+      "workerTaskAnswerSchema",
+      workerContractReleaseSchema,
+    );
+    for (const { podPlaced, poolHeld } of sessionAnswers()) {
+      assert.deepEqual(answer.parse(podPlaced), podPlaced);
+      assert.deepEqual(answer.parse(poolHeld), podPlaced);
+    }
+  });
+
+test("a pool's envelope carries a session's bearer as it carries an attempt's", () => {
+  const bearer = `chgs_${"a".repeat(240)}`;
+  assert.match(bearer, sessionBearerPattern);
+  const envelope = {
+    callbackUrl: "https://plane.invalid",
+    bearer,
+    workspace: "/workspace",
+    timeoutSecsMax: 1,
+    outputBytesMax: 1,
+  };
+  assert.deepEqual(poolEnvelopeSchema.parse(envelope), envelope);
+});
 
 test("the grant the wire names is the interpreter's", () => {
   assert.deepEqual([...filesystemAccesses], [...filesystemAccessOrder]);

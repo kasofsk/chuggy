@@ -17,7 +17,6 @@ import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
 
 import {
-  allSessionTurnFailures,
   asSessionAttemptId,
   asSessionId,
   type AgentSession,
@@ -35,8 +34,8 @@ import type {
 } from "../../interpreter/sessionScheduler.ts";
 import {
   agentSessionRowOf,
-  sessionRowMember,
   sessionRowText,
+  sessionTurnFailureOf,
   type AgentSessionRow,
 } from "./sessionRows.ts";
 import { projectRowCounter } from "./rows.ts";
@@ -63,19 +62,6 @@ function fencedSessionAttemptOf(row: SessionAttemptRow): FencedSessionAttempt {
       "session attempt generation",
     ),
   };
-}
-
-/** The failure a turn read answers with, refusing a member the CHECK should have stopped. */
-function sessionTurnFailureOf(
-  value: string | null | undefined,
-): SessionTurnFailure | undefined {
-  return value === null || value === undefined
-    ? undefined
-    : sessionRowMember<SessionTurnFailure>(
-        [...allSessionTurnFailures],
-        value,
-        "session turn failure",
-      );
 }
 
 /** Refuses a bound no work can be handed out under, naming the argument. */
