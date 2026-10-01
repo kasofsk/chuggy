@@ -28,6 +28,7 @@ import {
   publicMutationSchema,
   forgeCredentialRequestSchema,
   forgeAuthorizationSchema,
+  projectCreationSchema,
   projectRepositoryBindSchema,
   projectRepositoryCreateSchema,
   projectRepositoryLandingSchema,
@@ -75,6 +76,7 @@ import type {
   ProjectRepositoryCreateRequest,
 } from "../../interpreter/repositoryOnboarding.ts";
 import type { ExecutionPageCursor } from "../../interpreter/operationsView.ts";
+import type { ProjectCreationRequest } from "../../interpreter/projectCreation.ts";
 import {
   asIdempotencyKey,
   asOperationId,
@@ -210,6 +212,19 @@ export function parseForgeAuthorization(
 /** One installation identity out of a path segment. */
 export function parseForgeInstallationId(value: string): ForgeInstallationId {
   return asForgeInstallationId(value);
+}
+
+/** One creation as the wire carries it, the identity coming from the header and neither name yet held to the rule. */
+export function parseProjectCreation(
+  body: unknown,
+  operation: string,
+): ProjectCreationRequest {
+  const parsed = projectCreationSchema.parse(body);
+  return {
+    tenant: parsed.tenant,
+    project: parsed.project,
+    operation: asOperationId(operation),
+  };
 }
 
 /** One binding as the wire carries it, the identity coming from the header rather than the body. */

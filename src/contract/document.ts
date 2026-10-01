@@ -19,12 +19,15 @@ import {
   draftRevisionSchema,
   forgeCredentialRequestSchema,
   forgeAuthorizationSchema,
+  projectCreationSchema,
+  projectNameCharsMax,
   projectRepositoryBindSchema,
   projectRepositoryCreateSchema,
   projectRepositoryLandingSchema,
   projectRepositoryRetirementSchema,
   publicMutationSchema,
   repositoryConfigurationImportSchema,
+  reservedTenantNames,
   selectorProjectSettingsSchema,
 } from "./requests.ts";
 
@@ -40,6 +43,7 @@ function nativeHttpContractDocumentSchemas(): unknown {
     draftRevision: z.toJSONSchema(draftRevisionSchema),
     forgeCredential: z.toJSONSchema(forgeCredentialRequestSchema),
     forgeAuthorization: z.toJSONSchema(forgeAuthorizationSchema),
+    projectCreation: z.toJSONSchema(projectCreationSchema),
     projectRepositoryBind: z.toJSONSchema(projectRepositoryBindSchema),
     projectRepositoryCreate: z.toJSONSchema(projectRepositoryCreateSchema),
     projectRepositoryLanding: z.toJSONSchema(projectRepositoryLandingSchema),
@@ -96,6 +100,7 @@ export function nativeHttpContractDocument(): unknown {
       "installation settings are defaults; an absent override inherits one, and a write replaces the whole set under the revision it was read at",
     forgeInstallations:
       "a tenant's administrator claims an account by authorizing this deployment's app on the forge, which claims each account the forge says they own and nothing else; each tenant holds its own claim, and a claim is never released",
+    projectCreation: `a principal creates a project in a tenant it administers, or in a tenant nothing holds, which it then administers; a tenant is held by its row, by any grant on it and by any project inheriting from it, and a held tenant the caller does not administer is a conflict; each name is at most ${String(projectNameCharsMax)} lowercase letters, digits and hyphens that begin and end with a letter or digit, a new tenant may not be named ${reservedTenantNames.join(", ")}, and its creator repeating the request, under any idempotency key, answers the same project`,
     repositoryBinding:
       "binding a repository to a project creates no project: a project that does not exist is not found, and the repository must be one this deployment holds a credential for — on a host it mints for, that means an installation this tenant has claimed",
     repositoryLanding:

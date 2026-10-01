@@ -127,6 +127,10 @@ export type ProjectInventoryResponse = z.infer<
   typeof projectInventoryResponseSchema
 >;
 
+/** A project created, or the one the same request already created: the partition that addresses it. */
+export const projectCreatedSchema = partitionSchema;
+export type ProjectCreatedResponse = z.infer<typeof projectCreatedSchema>;
+
 /** Tokens by kind, as the agent runtime counts them. */
 const runTokensSchema = z.object({
   tokensInput: countSchema,

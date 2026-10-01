@@ -1,6 +1,6 @@
 /**
- * The project the bar is showing, and every other project this reader may
- * read.
+ * The project the bar is showing, every other project this reader may read,
+ * and the way to make another.
  *
  * A pick is a navigation, and the picked project is remembered so the next tab
  * opens where this one left off. An inventory that has not answered says so
@@ -13,13 +13,16 @@ import type { ReactNode } from "react";
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import { apiProjectInventoryAll } from "../../core/apiRoutes.ts";
 import { lastProjectWrite } from "../../core/lastProject.ts";
+import { projectCreationRoutePath } from "../../core/projectCreation.ts";
 import { usePanelInventory } from "../api.ts";
 import { persistentStore } from "../ports.ts";
 import { Notice } from "../ui/Notice.tsx";
 import { Picker } from "../ui/Picker.tsx";
 
+export const projectSwitcherCreateText = "New project";
+
 export function ProjectSwitcher(props: {
-  readonly partition: PartitionIdentity;
+  readonly partition: PartitionIdentity | undefined;
 }): ReactNode {
   const navigate = useNavigate();
   const state = usePanelInventory((ports) => apiProjectInventoryAll(ports));
@@ -28,7 +31,12 @@ export function ProjectSwitcher(props: {
   return (
     <Picker
       label="Project"
-      value={`${props.partition.tenant}/${props.partition.project}`}
+      value={
+        props.partition === undefined
+          ? ""
+          : `${props.partition.tenant}/${props.partition.project}`
+      }
+      placeholder="Project"
       options={state.value.map((candidate) => ({
         value: `${candidate.tenant}/${candidate.project}`,
         text: `${candidate.tenant} / ${candidate.project}`,
@@ -44,6 +52,14 @@ export function ProjectSwitcher(props: {
           params: { tenant: chosen.tenant, project: chosen.project },
         });
       }}
+      actions={[
+        {
+          text: projectSwitcherCreateText,
+          onSelect: () => {
+            void navigate({ to: projectCreationRoutePath });
+          },
+        },
+      ]}
     />
   );
 }

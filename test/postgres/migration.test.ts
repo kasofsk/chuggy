@@ -32,6 +32,7 @@ import { migration020 } from "../../src/adapters/postgres/schema/migrations/020-
 import { migration021 } from "../../src/adapters/postgres/schema/migrations/021-scheduler-reads-pools.ts";
 import { migration022 } from "../../src/adapters/postgres/schema/migrations/022-worker-pool-fencing.ts";
 import { migration023 } from "../../src/adapters/postgres/schema/migrations/023-worker-pool-release-ends.ts";
+import { migration026 } from "../../src/adapters/postgres/schema/migrations/026-project-creation.ts";
 import { migration027 } from "../../src/adapters/postgres/schema/migrations/027-forge-claim-per-tenant.ts";
 import {
   postgresForgeInstallationClaims,
@@ -66,6 +67,8 @@ import {
   migrationLedger,
   poolPlaneRole,
   projectChangeAppendFunction,
+  projectCreateFunction,
+  projectCreationGrantsFunction,
   projectChangeRetainedFunction,
   projectChangeSweepFunction,
   repositoryBindingListFunction,
@@ -712,8 +715,17 @@ test("the table and the function project access was answered from are gone", asy
   });
 });
 
+/** A tenant's row where the schema has the relation, so a seed stands on either side of 026. */
+function tenantSeed(tenant: string): string {
+  return `DO $seed$ BEGIN
+    IF to_regclass('public.tenant') IS NOT NULL THEN
+      INSERT INTO tenant(tenant) VALUES('${tenant}') ON CONFLICT DO NOTHING;
+    END IF; END $seed$;`;
+}
+
 async function seedLandinglessBinding(subject: pg.Pool): Promise<void> {
   await subject.query(`INSERT INTO recovery_epoch(epoch) VALUES('epoch-90')`);
+  await subject.query(tenantSeed("tenant-90"));
   await subject.query(
     `INSERT INTO project(tenant,project,lifecycle,head,ingress_next)
      VALUES('tenant-90','project-90','Active',0,1)`,
@@ -787,6 +799,7 @@ test("a landing no roster names is refused by the column's own constraint", asyn
 
 async function seedProposingBinding(subject: pg.Pool): Promise<void> {
   await subject.query(`INSERT INTO recovery_epoch(epoch) VALUES('epoch-91')`);
+  await subject.query(tenantSeed("tenant-91"));
   await subject.query(
     `INSERT INTO project(tenant,project,lifecycle,head,ingress_next,ticket_next)
      VALUES('tenant-91','project-91','Active',0,1,1)`,
@@ -1697,6 +1710,7 @@ async function installationBefore(
 
 /** What every row below hangs from: a project and an epoch. */
 const deletionPartition = `
+  ${tenantSeed("tenant-5")}
   INSERT INTO project(tenant,project,lifecycle) VALUES('tenant-5','project-5','Active');
   INSERT INTO recovery_epoch(epoch) VALUES('epoch-5');`;
 
@@ -6168,6 +6182,8 @@ const wipeKept = [
   "forge_installation",
   "installation_authority",
   "project",
+  "project_creation_grant",
+  "project_creation_operation",
   "project_repository",
   "project_repository_bind_operation",
   "recovery_epoch",
@@ -6180,6 +6196,7 @@ const wipeKept = [
   "selector_runtime_readiness",
   "selector_runtime_settings",
   "selector_runtime_settings_history",
+  "tenant",
   "thread_wake_cursor",
   "worker_pool",
   "worker_pool_registration_token",
@@ -8176,7 +8193,8 @@ test("a journal and an inbox 015 wrote migrate to the update with every row stil
     try {
       await client.query("BEGIN");
       await client.query(
-        `INSERT INTO project(tenant,project,lifecycle) VALUES('tenant-6','project-5','Active');
+        `${tenantSeed("tenant-6")}
+         INSERT INTO project(tenant,project,lifecycle) VALUES('tenant-6','project-5','Active');
          CREATE TEMP TABLE inputs ON COMMIT DROP AS
            SELECT * FROM decision_input WHERE decided_seq IS NOT NULL;
          CREATE TEMP TABLE held ON COMMIT DROP AS SELECT * FROM journal_entry;
@@ -9035,6 +9053,44 @@ test("023 gives the plane serving pools the release and takes back its reading o
         )
       ).rows,
       [{ settings: "search_path=pg_catalog, public, pg_temp", world: false }],
+    );
+  });
+});
+
+test("026 gives every tenant a project stands in a row of its own, and a project no tenant row holds is refused", async () => {
+  await migrationDatabase("project_creation", async (subject) => {
+    const doors = [
+      `${projectCreateFunction}(text,text,text,boolean,text,text,text)`,
+      `${projectCreationGrantsFunction}(text)`,
+    ];
+    await installationBefore(subject, migration026.version);
+    await subject.query(
+      `INSERT INTO project(tenant,project,lifecycle) VALUES
+         ('tenant-26','project-a','Active'),('tenant-26','project-b','Active'),
+         ('other-26','project-a','Active')`,
+    );
+    assert.ok((await postgresMigrate(subject)).includes(migration026.version));
+    assert.deepEqual(
+      (await subject.query("SELECT tenant FROM tenant ORDER BY tenant")).rows,
+      [{ tenant: "other-26" }, { tenant: "tenant-26" }],
+    );
+    await assert.rejects(
+      subject.query(
+        `INSERT INTO project(tenant,project,lifecycle) VALUES('absent-26','project-a','Active')`,
+      ),
+      /project_names_a_tenant/u,
+    );
+    assert.deepEqual(
+      await sessionInvocationBoundaries(subject, doors),
+      doors.map((signature) => ({
+        signature,
+        owner: boundaryOwnerRole,
+        definer: true,
+        scheduler: false,
+        plane: false,
+        pool: false,
+        api: true,
+      })),
     );
   });
 });

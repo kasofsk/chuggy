@@ -51,9 +51,9 @@ export type ForgeUserInstallation =
 
 /**
  * What redeeming one grant came to, `truncated` saying the person reaches more
- * installations than were read. `Unavailable` leaves the grant unredeemed, so
- * it may be offered again; `Spent` redeemed it and then could not read what it
- * reaches, so only a new authorization can.
+ * installations than were read. `Unavailable` may leave the grant unredeemed,
+ * so it may be offered again; `Spent` redeemed it and then could not read what
+ * it reaches, so only a new authorization can.
  */
 export type ForgeUserAuthorized =
   | {

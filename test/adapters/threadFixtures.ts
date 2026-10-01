@@ -1,6 +1,7 @@
 import { createNativeHttpApp } from "../../src/adapters/http/server.ts";
 import { asInstallationId } from "../../src/domain/ids.ts";
 import type { RepositoryOnboarding } from "../../src/interpreter/repositoryOnboarding.ts";
+import type { ProjectCreation } from "../../src/interpreter/projectCreation.ts";
 import {
   asPrincipal,
   type NativeWeb,
@@ -104,6 +105,7 @@ export const unservedNativeWeb: Parameters<typeof createNativeHttpApp>[0] = {
 export function servedNativeHttpApp(
   web: Parameters<typeof createNativeHttpApp>[0],
   onboarding?: RepositoryOnboarding,
+  creation?: ProjectCreation,
 ) {
   return createNativeHttpApp(
     web,
@@ -130,5 +132,7 @@ export function servedNativeHttpApp(
     undefined,
     undefined,
     onboarding,
+    undefined,
+    creation,
   );
 }

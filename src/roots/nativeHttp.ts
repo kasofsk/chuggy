@@ -7,6 +7,7 @@ import { postgresInstallationAuthority } from "../adapters/postgres/installation
 import {
   ketoProjectAccess,
   ketoReadiness,
+  ketoTenantClaims,
 } from "../adapters/keto/projectAccess.ts";
 import { postgresExecutionBacklogGuard } from "../adapters/postgres/schedulerContext.ts";
 import {
@@ -40,6 +41,7 @@ import {
   composeForgeCredentialMinting,
   composeForgeRepositoryMinting,
   composeNativeWeb,
+  composeProjectCreation,
   composeRepositoryOnboarding,
   composeSelectorProjectSettings,
   type RepositoryCredentialMinting,
@@ -105,6 +107,7 @@ import type {
   RepositoryOnboardingForgeApp,
 } from "../interpreter/repositoryOnboarding.ts";
 import { forgeRepositoriesAnsweredMax } from "../contract/http.ts";
+import { bootstrapImageFault } from "../interpreter/bootstrapConfiguration.ts";
 import type { ForgeCredentialMinting } from "../interpreter/forgeCredentials.ts";
 import type { RepositoryCredentialPort } from "../interpreter/finalizer.ts";
 import {
@@ -129,7 +132,10 @@ import { randomBytes, createHash, randomUUID } from "node:crypto";
 import type pg from "pg";
 import { hydraWorkerPoolClients } from "../adapters/hydra/oauthClients.ts";
 import { ketoProjectGrants } from "../adapters/keto/projectGrants.ts";
-import { checkedProjectGrantSettings } from "../interpreter/projectGrant.ts";
+import {
+  checkedProjectGrantSettings,
+  type ProjectGrantWriter,
+} from "../interpreter/projectGrant.ts";
 import {
   postgresWorkerPoolRegistrationTokens,
   postgresWorkerPoolRegistry,
@@ -147,11 +153,10 @@ const oidcAlgorithmsVariable = "CHUG_API_OIDC_ALGORITHMS";
 const artifactRootVariable = "CHUG_API_ARTIFACT_ROOT";
 const ketoReadUrlVariable = "CHUG_API_KETO_READ_URL";
 /**
- * The two addresses registering a worker pool needs, and the only two this
- * process names that write rather than read. An installation naming neither
- * serves no registration route at all; naming one without the other refuses the
- * start, because a half-composed registration would mint a client the authority
- * was never told about.
+ * The only two addresses this process names that write rather than read. The
+ * authority's write port alone is what creating a project needs, and a pool's
+ * registration needs both, so naming the issuer's admin port without it refuses
+ * the start rather than minting a client the authority is never told about.
  */
 const ketoWriteUrlVariable = "CHUG_API_KETO_WRITE_URL";
 const hydraAdminUrlVariable = "CHUG_API_HYDRA_ADMIN_URL";
@@ -210,12 +215,11 @@ const forgeTemplateRepositoryVariable = "CHUG_API_FORGE_TEMPLATE_REPOSITORY";
 function nativeWorkerPools(
   pool: pg.Pool,
   access: ProjectAccess,
+  grants: ProjectGrantWriter | undefined,
 ): WorkerPoolRegistrationService | undefined {
-  if (
-    process.env[hydraAdminUrlVariable] === undefined &&
-    process.env[ketoWriteUrlVariable] === undefined
-  )
-    return undefined;
+  if (process.env[hydraAdminUrlVariable] === undefined) return undefined;
+  if (grants === undefined)
+    throw new Error(`${ketoWriteUrlVariable} is required`);
   return workerPoolRegistrationService({
     access,
     issuer: requiredEnvironment(oidcIssuerVariable),
@@ -235,14 +239,17 @@ function nativeWorkerPools(
           projectAccessTimeoutMsDefault,
         ),
       }),
-      grants: ketoProjectGrants(
-        checkedProjectGrantSettings({
-          writeUrl: requiredEnvironment(ketoWriteUrlVariable),
-        }),
-      ),
+      grants,
       clientId: () => `chuggy-pool-${randomUUID()}`,
     },
   });
+}
+
+/** What writes the authority's tuples, or nothing where this deployment names no write port. */
+function nativeProjectGrants(): ProjectGrantWriter | undefined {
+  const writeUrl = process.env[ketoWriteUrlVariable];
+  if (writeUrl === undefined) return undefined;
+  return ketoProjectGrants(checkedProjectGrantSettings({ writeUrl }));
 }
 
 function requiredEnvironment(name: string): string {
@@ -607,10 +614,19 @@ function forgeRepositoriesMax(): number {
   return asked;
 }
 
-/** The image a bootstrap configuration commands, or nothing where this deployment names none. */
+/**
+ * The image a bootstrap configuration commands, or nothing where this
+ * deployment names none; one its briefing cannot name is refused here.
+ */
 function bootstrapWorkerImage(): string | undefined {
   const image = process.env[bootstrapWorkerImageVariable];
-  return image === undefined || image.length === 0 ? undefined : image;
+  if (image === undefined || image.length === 0) return undefined;
+  const fault = bootstrapImageFault(image);
+  if (fault !== undefined)
+    throw new Error(
+      `${bootstrapWorkerImageVariable} cannot be named in a briefing: ${fault}`,
+    );
+  return image;
 }
 
 /**
@@ -1003,6 +1019,7 @@ async function main(): Promise<void> {
   );
   const accessSettings = ketoConfig();
   const access = ketoProjectAccess(accessSettings);
+  const grants = nativeProjectGrants();
   const artifacts = artifactStore({
     root: requiredEnvironment(artifactRootVariable),
   });
@@ -1032,7 +1049,13 @@ async function main(): Promise<void> {
     composeSelectorProjectSettings(pool, access),
     forge.minting,
     forge.onboarding,
-    nativeWorkerPools(pool, access),
+    nativeWorkerPools(pool, access, grants),
+    composeProjectCreation(
+      pool,
+      access,
+      ketoTenantClaims(accessSettings),
+      grants,
+    ),
   );
   app.addHook("onClose", async () => {
     await hub.close();

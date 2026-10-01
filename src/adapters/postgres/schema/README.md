@@ -20,10 +20,16 @@ replayed establish is refused rather than absorbed. It is changed by
 restore is found by comparing the current epoch to the one every live lease
 and journal entry carries.
 
+`tenant` — one row per tenant name, which is what makes a name first-come.
+Owned by the boundary owner, which `create_project` runs as, and the control
+plane for insertion. Its key and identity are the tenant name, it is the parent
+`project` points at, and `tenant_is_immutable` refuses every change and delete.
+It has no unfinished work.
+
 `project` — one authoritative lifecycle and ownership row per partition.
-Owned by the control plane for insertion and by the ticket-service role for the
-ownership columns, which is why the runtime is granted UPDATE and not
-INSERT: provisioning is not a decision. Its composite key is
+Owned by the control plane and `create_project` for insertion and by the
+ticket-service role for the ownership columns, which is why the runtime is
+granted UPDATE and not INSERT: provisioning is not a decision. Its composite key is
 `(tenant, project)` and it is the parent every other relation here points
 at. Ownership is changed by `acquire`, `renew`, `release` and `fence`, each
 locking this row; the head is changed only by the decision transaction, in
@@ -334,6 +340,23 @@ because a transcript that could be edited is not a memory. It has no unfinished
 work — a batch is committed or it was rolled back — and it carries no path,
 because a store object's path is a total function of the key above and a stored
 one would be a duplicate of a derivable fact.
+
+`project_creation_operation` — one accepted project creation, the authority it
+was made under and whether it made the tenant; the tenant's creator is read
+here, and at most one row per tenant says it made it. Owned by the boundary
+owner, and the API role reaches it only through `create_project`. Its key and
+identity are the operation, it is written by that door alone, and
+`project_creation_operation_is_immutable` refuses every change and delete. It
+has no unfinished work: a refusal writes no row, so a retry is decided again.
+
+`project_creation_grant` — that an accepted creation's grants were written to
+the authority, so a replay stops re-asserting them. Owned by the boundary
+owner, and the API role reaches it through `create_project`, which reads it,
+and `record_project_creation_grants`, which inserts it once. Its key and
+identity are the operation, and `project_creation_grant_is_immutable` refuses
+every change and delete. Its unfinished work is an operation row with no row
+here, which the creator's next request for that tenant and project finishes
+under any identity.
 
 `forge_installation` — one forge app installed on one account, the tenant that
 claimed it and the audited authority of the claim. Owned by the boundary owner,

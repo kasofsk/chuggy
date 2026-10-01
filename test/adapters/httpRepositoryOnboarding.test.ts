@@ -263,7 +263,6 @@ const listingTokens: ForgeInstallationTokens = {
     }),
 };
 
-/** The portal app's client secret, as the deployment mounts it. */
 /** The portal app's client secret, a sentinel nothing else contains. */
 const clientSecret = "client-secret-sentinel-m3n4b5";
 

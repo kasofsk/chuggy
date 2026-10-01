@@ -6,6 +6,10 @@
  * The second row is drawn only where a page filled a slot, so a screen that
  * says nothing about itself gives the height back to the page rather than
  * spending it on a heading the project switcher already carries.
+ *
+ * A screen outside every project draws the same bar without what only a
+ * project has — its screens, its chat and its page row — so signing out and
+ * the theme are reachable before there is a project to open.
  */
 
 import { Link } from "@tanstack/react-router";
@@ -141,8 +145,9 @@ function TopBarPage(): ReactNode {
 }
 
 export function TopBar(props: {
-  readonly partition: PartitionIdentity;
+  readonly partition: PartitionIdentity | undefined;
 }): ReactNode {
+  const partition = props.partition;
   return (
     <div className="grid">
       <header className="flex min-w-0 flex-wrap items-center gap-3 px-4 py-2">
@@ -152,16 +157,16 @@ export function TopBar(props: {
         >
           chuggy
         </Link>
-        <ProjectSwitcher partition={props.partition} />
-        <TopBarNav partition={props.partition} />
+        <ProjectSwitcher partition={partition} />
+        {partition === undefined ? null : <TopBarNav partition={partition} />}
         <div className="flex flex-1 items-center justify-end gap-3">
-          <ChatPaneToggle />
-          <SettingsMenu />
+          {partition === undefined ? null : <ChatPaneToggle />}
+          <SettingsMenu chat={partition !== undefined} />
           <TopBarSignOut />
           <Footer />
         </div>
       </header>
-      <TopBarPage />
+      {partition === undefined ? null : <TopBarPage />}
     </div>
   );
 }

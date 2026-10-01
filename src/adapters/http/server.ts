@@ -75,6 +75,7 @@ import {
   parseForgeAuthorization,
   parseForgeCredentialRequest,
   parseForgeInstallationId,
+  parseProjectCreation,
   parseProjectRepositoryBind,
   parseProjectRepositoryCreate,
   parseProjectRepositoryLanding,
@@ -112,6 +113,7 @@ import {
   forgeInstallationsResponse,
   forgeRepositoriesResponse,
   projectRepositoriesResponse,
+  projectCreationResponse,
   projectRepositoryBindResponse,
   projectRepositoryCreateResponse,
   projectRepositoryLandingResponse,
@@ -157,6 +159,7 @@ import {
   workerPoolTokenResponse,
 } from "./outcomes.ts";
 import type { WorkerPoolRegistrationService } from "../../interpreter/workerPoolRegistrationToken.ts";
+import type { ProjectCreation } from "../../interpreter/projectCreation.ts";
 
 /** Who the bearer is, and when it stops saying so, for a route that outlives one request. */
 export interface AuthenticatedBearer {
@@ -453,6 +456,30 @@ function registerInventory(app: FastifyInstance, web: InitialNativeWeb): void {
     );
     send(reply, inventoryResponse(page));
   });
+}
+
+function registerProjectCreation(
+  app: FastifyInstance,
+  creation: ProjectCreation,
+): void {
+  app.post(
+    "/api/v1/projects",
+    { preValidation: requireVersionedJson },
+    async (request, reply) => {
+      const key = request.headers["idempotency-key"];
+      if (typeof key !== "string")
+        throw new TypeError("idempotency key is absent");
+      send(
+        reply,
+        projectCreationResponse(
+          await creation.create(
+            principalOf(request),
+            parseProjectCreation(request.body, key),
+          ),
+        ),
+      );
+    },
+  );
 }
 
 function partitionOf(
@@ -1655,6 +1682,7 @@ export function createNativeHttpApp(
   forgeCredentials?: ForgeCredentialMinting,
   onboarding?: RepositoryOnboarding,
   workerPools?: WorkerPoolRegistrationService,
+  creation?: ProjectCreation,
 ): FastifyInstance {
   const app = fastify({
     bodyLimit: nativeHttpBodyBytesMax,
@@ -1681,6 +1709,7 @@ export function createNativeHttpApp(
   registerContract(app);
   registerInstallation(app, authority);
   registerInventory(app, web);
+  if (creation !== undefined) registerProjectCreation(app, creation);
   registerProject(app, web);
   registerLead(app, web);
   registerSelectorContext(app, web);

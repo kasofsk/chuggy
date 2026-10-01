@@ -95,6 +95,7 @@ test("the golden names every request schema", () => {
     "forgeAuthorization",
     "forgeCredential",
     "leadInquiry",
+    "projectCreation",
     "projectRepositoryBind",
     "projectRepositoryCreate",
     "projectRepositoryLanding",

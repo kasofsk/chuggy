@@ -9,6 +9,7 @@ import {
   projectPrincipalGrant,
   projectTenantGrant,
   projectTenantRelation,
+  tenantAdministratorGrant,
   tenantPrincipalGrant,
 } from "../../src/interpreter/projectGrant.ts";
 import {
@@ -63,6 +64,14 @@ test("the tenant relation names the tenant's object rather than a person", () =>
     subject: "Tenant",
     tenantObject: projectAccessTenantObject(request.tenant),
   });
+});
+
+test("a tenant's administrator is the principal an authenticated request carries, in the relation that administers", () => {
+  const principal = oidcPrincipal(request.issuer, request.subject);
+  assert.deepEqual(
+    tenantAdministratorGrant(principal, asTenantId(request.tenant)),
+    tenantPrincipalGrant({ ...request, relation: "admins" }),
+  );
 });
 
 test("a relation the namespace does not declare is refused", () => {

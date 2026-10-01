@@ -4,6 +4,7 @@ import { test } from "node:test";
 import {
   ketoProjectAccess,
   ketoReadiness,
+  ketoTenantClaims,
 } from "../../src/adapters/keto/projectAccess.ts";
 import { ketoResponseBytesMax } from "../../src/adapters/keto/request.ts";
 import {
@@ -12,6 +13,7 @@ import {
   ProjectAccessUnavailable,
   projectAccessObject,
   projectAccessPermits,
+  projectAccessTenantObject,
 } from "../../src/interpreter/projectAccess.ts";
 import { asPrincipal } from "../../src/interpreter/principal.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
@@ -122,6 +124,73 @@ test("nothing the authority could not decide is answered as a refusal", async ()
       `answer ${String(index)} was not treated as undecided`,
     );
   }
+});
+
+test("a tenant is claimed by a tuple on its own object, else by a project naming it as its tenant", async () => {
+  const object = projectAccessTenantObject(partition.tenant);
+  const listings = [
+    [
+      ["namespace", "Tenant"],
+      ["object", object],
+      ["page_size", "1"],
+    ],
+    [
+      ["namespace", "Project"],
+      ["relation", "tenant"],
+      ["subject_set.namespace", "Tenant"],
+      ["subject_set.object", object],
+      ["subject_set.relation", ""],
+      ["page_size", "1"],
+    ],
+  ];
+  for (const held of listings.keys()) {
+    let asked = 0;
+    const answering = fetcherOf(() =>
+      json({ relation_tuples: asked++ === held ? [{}] : [] }),
+    );
+    assert.equal(
+      await ketoTenantClaims(settings, answering.fetch).claimed(
+        partition.tenant,
+      ),
+      true,
+      String(held),
+    );
+    assert.deepEqual(
+      answering.asked.map((at) => [at.pathname, [...at.searchParams]]),
+      listings.slice(0, held + 1).map((params) => ["/relation-tuples", params]),
+      String(held),
+    );
+  }
+  const neither = fetcherOf(() => json({ relation_tuples: [] }));
+  assert.equal(
+    await ketoTenantClaims(settings, neither.fetch).claimed(partition.tenant),
+    false,
+  );
+  assert.equal(neither.asked.length, listings.length);
+});
+
+test("no listing the authority could not answer is taken for an unclaimed tenant, whichever listing it is", async () => {
+  const faults: readonly (() => Response)[] = [
+    () => json({ relation_tuples: [] }, 503),
+    () => json({ error: { code: 404 } }, 404),
+    () => json({ relation_tuples: {} }),
+    () => json({ tuples: [] }),
+    () => json(null),
+  ];
+  for (const faulted of [0, 1])
+    for (const [index, fault] of faults.entries()) {
+      let asked = 0;
+      const answering = fetcherOf(() =>
+        asked++ === faulted ? fault() : json({ relation_tuples: [] }),
+      );
+      await assert.rejects(
+        () =>
+          ketoTenantClaims(settings, answering.fetch).claimed(partition.tenant),
+        ProjectAccessUnavailable,
+        `listing ${String(faulted)} answer ${String(index)} was not treated as undecided`,
+      );
+      assert.equal(answering.asked.length, faulted + 1);
+    }
 });
 
 const checkPath = "relation-tuples/check/openapi";
