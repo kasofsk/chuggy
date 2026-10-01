@@ -211,6 +211,12 @@ export type ConversationStep =
     }
   | { readonly step: "Other"; readonly kind: string };
 
+/** What a running exchange's turn is doing: the mailbox's own state, or
+ * `Waiting`, a queued turn no runner can take now, which is this console's word
+ * and not the mailbox's. */
+export type ConversationRunningState =
+  Extract<SessionTurnState, "Queued" | "Claimed"> | "Waiting";
+
 /** Where one exchange stands: `Open` is a transcript exchange with no answer
  * that no turn speaks for, a run still going; `Markers` carries only the
  * markers ahead of it, with no ask, work, answer or measures. */
@@ -218,7 +224,7 @@ export type ConversationStanding =
   | { readonly standing: "Answered" }
   | {
       readonly standing: "Running";
-      readonly state: Extract<SessionTurnState, "Queued" | "Claimed">;
+      readonly state: ConversationRunningState;
     }
   | { readonly standing: "Failed"; readonly failure?: SessionTurnFailure }
   | { readonly standing: "Abandoned" }
@@ -743,4 +749,17 @@ export function conversationExchanges(
       conversationCappedMarker("Exchanges", builder.exchangesCut),
     );
   return builder.built.map(conversationDrawn);
+}
+
+/** The exchanges with every queued turn read as waiting, for a surface whose
+ * turns go to a runner that cannot take one now. */
+export function conversationExchangesWaiting(
+  exchanges: readonly ConversationExchange[],
+): readonly ConversationExchange[] {
+  return exchanges.map((exchange) =>
+    exchange.standing.standing === "Running" &&
+    exchange.standing.state === "Queued"
+      ? { ...exchange, standing: { standing: "Running", state: "Waiting" } }
+      : exchange,
+  );
 }

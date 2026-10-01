@@ -1,6 +1,6 @@
 /**
- * The project's runners: where its work runs, the machines registered to run
- * it, and the command that adds one.
+ * The project's runners: where its work and sessions run, the machines
+ * registered to run them, and the command that adds one.
  *
  * A HOSTED ROUTE IS OFFERED ONLY WHERE THE API SAYS SO. The placement read
  * answers the routes this reader may choose, so the choice is drawn from that
@@ -16,15 +16,20 @@ import type { ReactNode } from "react";
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type {
   ExecutionPlacementResponse,
+  SessionPlacementResponse,
   WorkerPoolsResponse,
   WorkerPoolTokenResponse,
 } from "../../../../src/contract/responses.ts";
-import type { PlacementRoute } from "../../../../src/contract/rosters.ts";
+import type {
+  PlacementRoute,
+  SessionRunnerStanding,
+} from "../../../../src/contract/rosters.ts";
 import {
   apiExecutionPlacement,
   apiMintWorkerPoolToken,
   apiWorkerPools,
   apiWriteExecutionPlacement,
+  apiWriteSessionPlacement,
 } from "../core/apiRoutes.ts";
 import { instantFigure } from "../core/figures.ts";
 import { panelReason } from "../core/freshness.ts";
@@ -39,6 +44,7 @@ import {
   runnersPlacementDraft,
   runnersPlacementRoute,
   runnersPlacementSavable,
+  runnerStandingLabel,
   runnerTokenLifetimeSecs,
 } from "../core/runners.ts";
 import type {
@@ -49,6 +55,10 @@ import { useApiPorts, usePanelResource } from "./api.ts";
 import { PanelUnready } from "./DataPanel.tsx";
 import { useNowMs } from "./Freshness.tsx";
 import { clipboardWritten, currentOrigin } from "./ports.ts";
+import {
+  sessionPlacementResource,
+  useSessionPlacement,
+} from "./sessionPlacement.tsx";
 import { TopBarSlot } from "./shell/slots.tsx";
 import { Button } from "./ui/Button.tsx";
 import { EmptyState } from "./ui/EmptyState.tsx";
@@ -66,13 +76,25 @@ const workerPoolsResource = "worker-pools";
 /** This page's own address, which its reads are from. */
 export const runnersRoutePath = "/$tenant/$project/runners";
 
+/** One kind's row: where it runs, what decided it, and, for a session on
+ * runners, whether the runners it would run on are there. */
+interface PlacementRow {
+  readonly kind: string;
+  readonly resolved: ExecutionPlacementResponse["work"];
+  readonly runners: SessionRunnerStanding | undefined;
+}
+
 function PlacementTable(props: {
-  readonly placement: ExecutionPlacementResponse;
+  readonly execution: ExecutionPlacementResponse;
+  readonly session: SessionPlacementResponse;
 }): ReactNode {
-  const rows = [
-    ["Work", props.placement.work],
-    ["Evaluation", props.placement.evaluation],
-  ] as const;
+  const { execution, session } = props;
+  const rows: readonly PlacementRow[] = [
+    { kind: "Work", resolved: execution.work, runners: undefined },
+    { kind: "Evaluation", resolved: execution.evaluation, runners: undefined },
+    { kind: "Chat", resolved: session.thread, runners: session.runners.mine },
+    { kind: "Lead", resolved: session.lead, runners: session.runners.project },
+  ];
   return (
     <Table caption="Placement">
       <thead>
@@ -80,14 +102,20 @@ function PlacementTable(props: {
           <th scope="col">Kind</th>
           <th scope="col">Runs on</th>
           <th scope="col">Set by</th>
+          <th scope="col">Runner</th>
         </tr>
       </thead>
       <tbody>
-        {rows.map(([kind, resolved]) => (
-          <tr key={kind}>
-            <th scope="row">{kind}</th>
-            <td>{runnerRouteLabel(resolved.route)}</td>
-            <td>{runnerRouteSourceLabel(resolved.source)}</td>
+        {rows.map((row) => (
+          <tr key={row.kind}>
+            <th scope="row">{row.kind}</th>
+            <td>{runnerRouteLabel(row.resolved.route)}</td>
+            <td>{runnerRouteSourceLabel(row.resolved.source)}</td>
+            <td>
+              {row.runners === undefined || row.resolved.route !== "Pool"
+                ? null
+                : runnerStandingLabel(row.runners)}
+            </td>
           </tr>
         ))}
       </tbody>
@@ -140,29 +168,36 @@ function PlacementNotice(props: {
   }
 }
 
+/** The draft's kinds in the order the table draws them, each with the label
+ * it is drawn under and which placement's choices it is chosen from. */
+const placementEditorKinds = [
+  ["work", "Work", "execution"],
+  ["evaluation", "Evaluation", "execution"],
+  ["thread", "Chat", "session"],
+  ["lead", "Lead", "session"],
+] as const;
+
 function PlacementEditor(props: {
   readonly draft: RunnersPlacementDraft;
-  readonly choices: readonly PlacementRoute[];
+  readonly choices: {
+    readonly execution: readonly PlacementRoute[];
+    readonly session: readonly PlacementRoute[];
+  };
   readonly onDraft: (draft: RunnersPlacementDraft) => void;
 }): ReactNode {
   return (
     <div className="grid gap-3">
-      <PlacementChoice
-        label="Work"
-        value={props.draft.work}
-        choices={props.choices}
-        onChoose={(work) => {
-          props.onDraft({ ...props.draft, work });
-        }}
-      />
-      <PlacementChoice
-        label="Evaluation"
-        value={props.draft.evaluation}
-        choices={props.choices}
-        onChoose={(evaluation) => {
-          props.onDraft({ ...props.draft, evaluation });
-        }}
-      />
+      {placementEditorKinds.map(([kind, label, placement]) => (
+        <PlacementChoice
+          key={kind}
+          label={label}
+          value={props.draft[kind]}
+          choices={props.choices[placement]}
+          onChoose={(route) => {
+            props.onDraft({ ...props.draft, [kind]: route });
+          }}
+        />
+      ))}
     </div>
   );
 }
@@ -173,12 +208,22 @@ interface PlacementWriting {
   readonly write: (draft: RunnersPlacementDraft, wrote: () => void) => void;
 }
 
-/** The one door the section writes through. A write that landed is the newest
- * read of the placement, so the page holds it rather than waiting on a refetch. */
+/**
+ * The doors the section writes through: work and evaluation, then a thread and
+ * the lead once the first has landed, each whole and answering a repeat the
+ * same, so a save the second refused is saved again whole. A write that landed
+ * is the newest read of its placement, so the page holds it.
+ */
 function usePlacementWriting(partition: PartitionIdentity): PlacementWriting {
   const ports = useApiPorts();
   const client = useQueryClient();
   const [saved, setSaved] = useState<RunnersPlacementSaved>({ saved: "Idle" });
+  const held = (resource: string, placement: unknown): void => {
+    client.setQueryData(
+      projectResourceKey(partition, "Project", resource),
+      placement,
+    );
+  };
   return {
     saved,
     reset: () => {
@@ -187,15 +232,29 @@ function usePlacementWriting(partition: PartitionIdentity): PlacementWriting {
     write: (draft, wrote) => {
       setSaved({ saved: "Writing" });
       void (async () => {
-        const answered = runnersPlacementAnswered(
-          await apiWriteExecutionPlacement(ports, partition, draft),
+        const execution = runnersPlacementAnswered(
+          await apiWriteExecutionPlacement(ports, partition, {
+            work: draft.work,
+            evaluation: draft.evaluation,
+          }),
         );
-        setSaved(answered);
-        if (answered.saved !== "Written") return;
-        client.setQueryData(
-          projectResourceKey(partition, "Project", executionPlacementResource),
-          answered.placement,
+        if (execution.saved !== "Written") {
+          setSaved(execution);
+          return;
+        }
+        held(executionPlacementResource, execution.placement);
+        const session = runnersPlacementAnswered(
+          await apiWriteSessionPlacement(ports, partition, {
+            thread: draft.thread,
+            lead: draft.lead,
+          }),
         );
+        if (session.saved !== "Written") {
+          setSaved(session);
+          return;
+        }
+        held(sessionPlacementResource, session.placement);
+        setSaved({ saved: "Written" });
         wrote();
       })();
     },
@@ -204,30 +263,35 @@ function usePlacementWriting(partition: PartitionIdentity): PlacementWriting {
 
 function PlacementSection(props: {
   readonly partition: PartitionIdentity;
-  readonly placement: ExecutionPlacementResponse;
+  readonly execution: ExecutionPlacementResponse;
+  readonly session: SessionPlacementResponse;
 }): ReactNode {
   const writing = usePlacementWriting(props.partition);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<RunnersPlacementDraft>(() =>
-    runnersPlacementDraft(props.placement),
+    runnersPlacementDraft(props.execution, props.session),
   );
   const saved = writing.saved;
-  const choices = props.placement.choices;
+  const choices = {
+    execution: props.execution.choices,
+    session: props.session.choices,
+  };
   return (
     <SettingsSection
       title="Placement"
-      about="Where this project's tickets run."
+      about="Where this project's agents run."
       editing={editing}
-      editable={choices.length > 0}
+      editable={choices.execution.length > 0 && choices.session.length > 0}
       savable={
-        runnersPlacementSavable(draft, choices) && saved.saved !== "Writing"
+        runnersPlacementSavable(draft, choices.execution, choices.session) &&
+        saved.saved !== "Writing"
       }
       footLead={null}
       {...(saved.saved === "Idle"
         ? {}
         : { notice: <PlacementNotice saved={saved} /> })}
       onEdit={() => {
-        setDraft(runnersPlacementDraft(props.placement));
+        setDraft(runnersPlacementDraft(props.execution, props.session));
         writing.reset();
         setEditing(true);
       }}
@@ -243,7 +307,7 @@ function PlacementSection(props: {
       {editing ? (
         <PlacementEditor draft={draft} choices={choices} onDraft={setDraft} />
       ) : (
-        <PlacementTable placement={props.placement} />
+        <PlacementTable execution={props.execution} session={props.session} />
       )}
     </SettingsSection>
   );
@@ -375,7 +439,7 @@ function RunnersSection(props: {
     <Panel
       variant="section"
       title="Runners"
-      about="Machines that run this project's tickets."
+      about="Machines that run this project's agents."
       {...(props.administers
         ? {
             meta: (
@@ -427,6 +491,7 @@ export function RunnersPage(): ReactNode {
     executionPlacementResource,
     (ports) => apiExecutionPlacement(ports, partition),
   );
+  const sessions = useSessionPlacement(partition);
   const pools = usePanelResource(
     partition,
     "Project",
@@ -438,11 +503,17 @@ export function RunnersPage(): ReactNode {
       <TopBarSlot>
         <h1 className="text-md font-strong text-ink-1 truncate">Runners</h1>
       </TopBarSlot>
-      {placement.state === "Ready" ? (
-        <PlacementSection partition={partition} placement={placement.value} />
+      {placement.state === "Ready" && sessions.state === "Ready" ? (
+        <PlacementSection
+          partition={partition}
+          execution={placement.value}
+          session={sessions.value}
+        />
       ) : (
         <Panel variant="section" title="Placement">
-          <PanelUnready state={placement} />
+          <PanelUnready
+            state={placement.state === "Ready" ? sessions : placement}
+          />
         </Panel>
       )}
       <RunnersSection

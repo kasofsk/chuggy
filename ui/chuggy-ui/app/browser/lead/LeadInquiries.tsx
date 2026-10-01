@@ -22,6 +22,9 @@
  * box that posted anyway would spend a reader's attention on a refusal this
  * page already knows about.
  *
+ * AN INQUIRY RUNS ON THE ASKER'S OWN RUNNER where the lead runs on runners, so
+ * the box says when theirs cannot take it, whatever the project's others do.
+ *
  * THERE IS A BOX PER PROJECT AND NONE OF THEM IS THIS PANEL'S. The question
  * typed at a box, the pair a send is outstanding under, whether a press is
  * outstanding at all and what the last press answered are all one project's, so
@@ -76,6 +79,10 @@ import { sessionTurnStateTone } from "../../core/tones.ts";
 import { useApiPorts, usePanelList } from "../api.ts";
 import { PanelUnready } from "../DataPanel.tsx";
 import { drawBytes } from "../ports.ts";
+import {
+  SessionRunnerNotice,
+  useSessionRunnerShort,
+} from "../sessionPlacement.tsx";
 import { Button } from "../ui/Button.tsx";
 import { EmptyState } from "../ui/EmptyState.tsx";
 import { Field, Fields } from "../ui/Fields.tsx";
@@ -141,6 +148,18 @@ function LeadAskNotice(props: { readonly ask: InquiryAsk }): ReactNode {
   }
 }
 
+/** Why the asker's own runner cannot take a question now, unless the last
+ * press was refused, which says why in its own word. */
+function LeadAskRunner(props: {
+  readonly partition: PartitionIdentity;
+  readonly ask: InquiryAsk;
+}): ReactNode {
+  const runner = useSessionRunnerShort(props.partition, "lead", "mine");
+  return runner === undefined || props.ask.ask === "Refused" ? null : (
+    <SessionRunnerNotice partition={props.partition} short={runner} />
+  );
+}
+
 /**
  * The box, whose control is the whole of what refuses a question past the bound
  * — a press a disabled control never dispatches is a branch nothing can reach,
@@ -188,6 +207,7 @@ function LeadAsk(props: {
   return (
     <div className="grid min-w-0 gap-2 pb-3">
       <LeadAskNotice ask={box.ask} />
+      <LeadAskRunner partition={partition} ask={box.ask} />
       <Fields>
         <Field name="Question">
           <textarea

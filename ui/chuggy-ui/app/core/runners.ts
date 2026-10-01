@@ -1,10 +1,13 @@
 /**
  * What the Runners page draws, derived: the words for where a project's work
- * runs and what decided it, the draft a placement is chosen in, what a write
- * answered, and the one command a machine registers with.
+ * and sessions run and what decided it, the draft a placement is chosen in,
+ * what a write answered, and the one command a machine registers with.
  */
 
-import type { ExecutionPlacementResponse } from "../../../../src/contract/responses.ts";
+import type {
+  ExecutionPlacementResponse,
+  SessionPlacementResponse,
+} from "../../../../src/contract/responses.ts";
 import {
   hostedRunsNotGrantedCode,
   placementRoutes,
@@ -12,6 +15,7 @@ import {
 import type {
   PlacementRoute,
   PlacementRouteSource,
+  SessionRunnerStanding,
 } from "../../../../src/contract/rosters.ts";
 import type { ApiResult } from "./apiRequest.ts";
 import { panelReason } from "./freshness.ts";
@@ -45,6 +49,18 @@ export function runnerRouteSourceLabel(source: PlacementRouteSource): string {
   }
 }
 
+/** Whether the runners a session would run on are there, in one word. */
+export function runnerStandingLabel(standing: SessionRunnerStanding): string {
+  switch (standing) {
+    case "Unregistered":
+      return "None";
+    case "Offline":
+      return "Offline";
+    case "Live":
+      return "Live";
+  }
+}
+
 /** A capability as a reader says it: a platform's parts, and anything else as it is spelled. */
 export function runnerCapabilityLabel(capability: string): string {
   const platform = /^Platform:(.+)$/u.exec(capability);
@@ -58,9 +74,13 @@ export function runnerRegisterCommand(origin: string, token: string): string {
   return `chuggy-linux register --api ${origin} --token=${token}`;
 }
 
+/** Every kind's route, written as two placements: work and evaluation, and a
+ * thread and the lead. */
 export interface RunnersPlacementDraft {
   readonly work: PlacementRoute;
   readonly evaluation: PlacementRoute;
+  readonly thread: PlacementRoute;
+  readonly lead: PlacementRoute;
 }
 
 /** A kind's route where the reader may choose it, else the first route they may. */
@@ -72,23 +92,33 @@ function runnersPlacementSeeded(
 }
 
 export function runnersPlacementDraft(
-  placement: ExecutionPlacementResponse,
+  execution: ExecutionPlacementResponse,
+  session: SessionPlacementResponse,
 ): RunnersPlacementDraft {
   return {
-    work: runnersPlacementSeeded(placement.work.route, placement.choices),
+    work: runnersPlacementSeeded(execution.work.route, execution.choices),
     evaluation: runnersPlacementSeeded(
-      placement.evaluation.route,
-      placement.choices,
+      execution.evaluation.route,
+      execution.choices,
     ),
+    thread: runnersPlacementSeeded(session.thread.route, session.choices),
+    lead: runnersPlacementSeeded(session.lead.route, session.choices),
   };
 }
 
-/** Whether a draft names only routes the reader may choose, which is all a write is refused for. */
+/** Whether a draft names only routes the reader may choose, each kind from its
+ * own placement's choices, which is all a write is refused for. */
 export function runnersPlacementSavable(
   draft: RunnersPlacementDraft,
-  choices: readonly PlacementRoute[],
+  execution: readonly PlacementRoute[],
+  session: readonly PlacementRoute[],
 ): boolean {
-  return choices.includes(draft.work) && choices.includes(draft.evaluation);
+  return (
+    execution.includes(draft.work) &&
+    execution.includes(draft.evaluation) &&
+    session.includes(draft.thread) &&
+    session.includes(draft.lead)
+  );
 }
 
 /** The route a radio group answered, where it is one this wire knows. */
@@ -98,19 +128,23 @@ export function runnersPlacementRoute(
   return placementRoutes.find((route) => route === value);
 }
 
-export type RunnersPlacementSaved =
-  | { readonly saved: "Idle" }
-  | { readonly saved: "Writing" }
-  | {
-      readonly saved: "Written";
-      readonly placement: ExecutionPlacementResponse;
-    }
+/** What one placement's write answered. */
+export type RunnersPlacementAnswer<Placement> =
+  | { readonly saved: "Written"; readonly placement: Placement }
   | { readonly saved: "Unhosted" }
   | { readonly saved: "Failed"; readonly reason: string };
 
-export function runnersPlacementAnswered(
-  result: ApiResult<ExecutionPlacementResponse>,
-): RunnersPlacementSaved {
+/** Where a save of the section got to. */
+export type RunnersPlacementSaved =
+  | { readonly saved: "Idle" }
+  | { readonly saved: "Writing" }
+  | { readonly saved: "Written" }
+  | { readonly saved: "Unhosted" }
+  | { readonly saved: "Failed"; readonly reason: string };
+
+export function runnersPlacementAnswered<Placement>(
+  result: ApiResult<Placement>,
+): RunnersPlacementAnswer<Placement> {
   if (result.outcome === "Ok")
     return { saved: "Written", placement: result.value };
   if (result.outcome === "Rejected" && result.code === hostedRunsNotGrantedCode)

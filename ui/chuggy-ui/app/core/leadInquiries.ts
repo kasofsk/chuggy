@@ -46,10 +46,14 @@ import {
 } from "../../../../src/contract/http.ts";
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type { leadInquirySchema } from "../../../../src/contract/requests.ts";
-import { hostedRunsNotGrantedCode } from "../../../../src/contract/rosters.ts";
+import {
+  hostedRunsNotGrantedCode,
+  noRunnerCode,
+} from "../../../../src/contract/rosters.ts";
 import type { LeadInquiryAccepted } from "../../../../src/contract/responses.ts";
 import type { ApiResult } from "./apiRequest.ts";
 import { panelReason } from "./freshness.ts";
+import { sessionRunnerShortWord } from "./sessionRunners.ts";
 
 /**
  * How much entropy an inquiry's pair is named with. It is its own constant
@@ -170,6 +174,7 @@ export const inquiryRefusalWords: Readonly<Record<string, string>> = {
   LeadClosed: "Closed",
   InquiriesInFlight: "In flight",
   [hostedRunsNotGrantedCode]: "Needs hosted runs",
+  [noRunnerCode]: sessionRunnerShortWord("NoRunner"),
 };
 
 export const inquiryRefusalWordUnknown = "Refused";

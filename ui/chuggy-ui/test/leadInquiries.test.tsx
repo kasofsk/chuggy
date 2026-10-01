@@ -43,7 +43,11 @@ import {
 import { apiAttemptsMax } from "../app/core/apiRequest.ts";
 import { sessionTurnStates } from "../../../src/contract/rosters.ts";
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
-import type { LeadInquiriesResponse } from "../../../src/contract/responses.ts";
+import type {
+  LeadInquiriesResponse,
+  SessionPlacementResponse,
+} from "../../../src/contract/responses.ts";
+import { sessionPlacementBody } from "./sessionPlacementFixture.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 
 vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
@@ -120,6 +124,7 @@ async function drawInquiries(served: {
   readonly head?: string | undefined;
   /** Held open so a case can read the box while a press is still in flight. */
   readonly gate?: () => Promise<void>;
+  readonly placement?: SessionPlacementResponse;
 }): Promise<InquiryServer> {
   let reads = 0;
   const posts: unknown[] = [];
@@ -137,6 +142,10 @@ async function drawInquiries(served: {
       const waited = served.gate?.() ?? Promise.resolve();
       return waited.then(() => answer(found.body, found.status));
     }
+    if (url.endsWith("/session-placement"))
+      return Promise.resolve(
+        answer(served.placement ?? sessionPlacementBody()),
+      );
     reads += 1;
     readUrls.push(url);
     return Promise.resolve(answer(served.listing()));
@@ -564,6 +573,7 @@ test("a door that refuses is drawn as a word, not as a blank panel", async () =>
     { code: "LeadNotStarted", word: "Not started", status: 409 },
     { code: "LeadClosed", word: "Closed", status: 409 },
     { code: "HostedRunsNotGranted", word: "Needs hosted runs", status: 403 },
+    { code: "NoRunner", word: "No runner", status: 403 },
   ];
   for (const refused of refusals) {
     const server = await drawInquiries({
@@ -587,6 +597,45 @@ test("a door that refuses is drawn as a word, not as a blank panel", async () =>
     ).toBe(1);
     cleanup();
   }
+});
+
+/** An inquiry runs on the asker's own runner where the lead runs on runners,
+ * so the box says theirs, whatever the project's others do. */
+test.each([
+  ["Pool", "Unregistered", "No runner"],
+  ["Pool", "Offline", "Runner offline"],
+  ["Pool", "Live", undefined],
+  ["InCluster", "Unregistered", undefined],
+] as const)(
+  "a box over a lead on %s with the asker's runner %s says %s",
+  async (lead, mine, said) => {
+    await drawInquiries({
+      listing: () => ({ inquiries: [] }),
+      placement: sessionPlacementBody({ lead, mine, project: "Live" }),
+    });
+    const words = ["No runner", "Runner offline"].filter(
+      (word) => screen.queryByText(word) !== null,
+    );
+    expect(words).toStrictEqual(said === undefined ? [] : [said]);
+  },
+);
+
+/** The refusal's word says it, so the runner line under it does not say it
+ * a second time. */
+test("a question refused for no runner says so once", async () => {
+  await drawInquiries({
+    listing: () => ({ inquiries: [] }),
+    asked: () => refusal("NoRunner", 403),
+    placement: sessionPlacementBody({ lead: "Pool", mine: "Unregistered" }),
+  });
+  expect(screen.getAllByText("No runner")).toHaveLength(1);
+  await turned(() => {
+    typed("why is ticket 41 waiting?");
+  });
+  await turned(ask);
+  await settled();
+  expect(screen.getAllByText("No runner")).toHaveLength(1);
+  expect(screen.queryByRole("link", { name: "Runners" })).toBeNull();
 });
 
 /**

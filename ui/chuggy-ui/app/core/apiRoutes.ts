@@ -41,6 +41,7 @@ import {
   selectorHistoryResponseSchema,
   selectorProjectSettingsResponseSchema,
   selectorSettingsHistoryResponseSchema,
+  sessionPlacementResponseSchema,
   ticketNativeActionsResponseSchema,
   ticketResponseSchema,
   workerPoolsResponseSchema,
@@ -77,6 +78,7 @@ import type {
   SelectorHistoryResponse,
   SelectorProjectSettingsResponse,
   SelectorSettingsHistoryResponse,
+  SessionPlacementResponse,
   TicketNativeActionsResponse,
   TicketResponse,
   WorkerPoolsResponse,
@@ -96,6 +98,7 @@ import type {
   projectRepositoryLandingSchema,
   repositoryConfigurationImportSchema,
   selectorProjectSettingsSchema,
+  sessionPlacementSchema,
   submissionSchema,
   threadMessageSchema,
 } from "../../../../src/contract/requests.ts";
@@ -400,6 +403,34 @@ export function apiWriteExecutionPlacement(
       body: written,
     },
     (value) => executionPlacementResponseSchema.parse(value),
+  );
+}
+
+/** Where one project's threads and lead run, what decided each, what the
+ * reader may choose, and the runners each would run on. */
+export function apiSessionPlacement(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+): Promise<ApiResult<SessionPlacementResponse>> {
+  return apiGet(ports, apiSegments(partition, "session-placement"), (value) =>
+    sessionPlacementResponseSchema.parse(value),
+  );
+}
+
+/** Where one project's threads and lead run, written whole; a hosted route the tenant has not granted is refused by its code. */
+export function apiWriteSessionPlacement(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+  written: z.infer<typeof sessionPlacementSchema>,
+): Promise<ApiResult<SessionPlacementResponse>> {
+  return apiRead(
+    ports,
+    {
+      method: "PUT",
+      path: apiSegments(partition, "session-placement"),
+      body: written,
+    },
+    (value) => sessionPlacementResponseSchema.parse(value),
   );
 }
 

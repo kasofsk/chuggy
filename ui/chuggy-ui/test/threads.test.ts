@@ -30,9 +30,11 @@ import {
   threadTurnKindWord,
   threadTurnMinted,
   threadTurnRetained,
+  threadTurnsWait,
   threadWakeDrawn,
   threadsByStanding,
 } from "../app/core/threads.ts";
+import type { ThreadDoor } from "../app/core/threads.ts";
 import { threadEntry, threadWakeInput } from "./threadFixture.ts";
 
 function turnOf(turn: Partial<ThreadTurnResponse>): ThreadTurnResponse {
@@ -415,19 +417,91 @@ test("only an open rejected for the hosted grant is one no retry answers", () =>
   ).toBe(false);
 });
 
+function door(
+  route: ThreadDoor["route"],
+  granted: ThreadDoor["granted"],
+  runner: ThreadDoor["runner"] = undefined,
+): ThreadDoor {
+  return { route, granted, runner };
+}
+
 /**
  * A grant read as withheld is said before a press, on a box that would take
- * one; a grant not yet read, or given, says nothing; and a press's own answer
- * is never written over by the read.
+ * one, where the route asks it; a grant not yet read, or given, or a route on
+ * runners, says nothing; and a press's own answer is never written over by the
+ * read.
  */
-test("a composer is held for the grant only before a press, where it takes messages and the read said no", () => {
+test("a composer is held for the grant only before a press, where it takes messages, the route asks it and the read said no", () => {
   const idle = { send: "Idle" } as const;
-  expect(threadSendStanding(idle, true, false)).toStrictEqual({
+  expect(
+    threadSendStanding(idle, true, door("InCluster", false)),
+  ).toStrictEqual({ send: "Unhosted" });
+  expect(threadSendStanding(idle, true, door(undefined, false))).toStrictEqual({
     send: "Unhosted",
   });
-  expect(threadSendStanding(idle, true, true)).toStrictEqual(idle);
-  expect(threadSendStanding(idle, true, undefined)).toStrictEqual(idle);
-  expect(threadSendStanding(idle, false, false)).toStrictEqual(idle);
+  expect(threadSendStanding(idle, true, door("Pool", false))).toStrictEqual(
+    idle,
+  );
+  expect(threadSendStanding(idle, true, door("InCluster", true))).toStrictEqual(
+    idle,
+  );
+  expect(
+    threadSendStanding(idle, true, door("InCluster", undefined)),
+  ).toStrictEqual(idle);
+  expect(
+    threadSendStanding(idle, false, door("InCluster", false)),
+  ).toStrictEqual(idle);
   const waiting = { send: "Waiting", why: "Backlogged" } as const;
-  expect(threadSendStanding(waiting, true, false)).toStrictEqual(waiting);
+  expect(
+    threadSendStanding(waiting, true, door("InCluster", false)),
+  ).toStrictEqual(waiting);
+});
+
+/**
+ * On runners the reader's own runner is said by its standing, before a press
+ * and after one that landed, since a sent turn waits on it too; any other
+ * press's answer stands, and a box that takes nothing says nothing.
+ */
+test("a composer on runners says the reader's runner where it cannot take a turn now", () => {
+  const idle = { send: "Idle" } as const;
+  const sent = { send: "Sent", ordinal: 2 } as const;
+  expect(
+    threadSendStanding(idle, true, door("Pool", false, "Unregistered")),
+  ).toStrictEqual({ send: "NoRunner" });
+  expect(
+    threadSendStanding(sent, true, door("Pool", true, "Offline")),
+  ).toStrictEqual({ send: "RunnerOffline" });
+  expect(
+    threadSendStanding(idle, true, door("Pool", false, "Live")),
+  ).toStrictEqual(idle);
+  expect(
+    threadSendStanding(idle, true, door("InCluster", true, "Unregistered")),
+  ).toStrictEqual(idle);
+  expect(
+    threadSendStanding(idle, false, door("Pool", true, "Unregistered")),
+  ).toStrictEqual(idle);
+  const refused = { send: "Refused", reason: "Bad" } as const;
+  expect(
+    threadSendStanding(refused, true, door("Pool", true, "Offline")),
+  ).toStrictEqual(refused);
+});
+
+test("a send refused for no runner is told apart from any other refusal", () => {
+  const rejected = (code: string) =>
+    ({ outcome: "Rejected", code, status: 403, body: undefined }) as const;
+  expect(threadSendFrom(rejected("NoRunner"))).toStrictEqual({
+    send: "NoRunner",
+  });
+  expect(threadSendFrom(rejected("HostedRunsNotGranted"))).toStrictEqual({
+    send: "Unhosted",
+  });
+});
+
+test("a queued turn waits on the runner only where the route is runners' and the reader's cannot take it", () => {
+  expect(threadTurnsWait(door("Pool", true, "Offline"))).toBe(true);
+  expect(threadTurnsWait(door("Pool", true, "Unregistered"))).toBe(true);
+  expect(threadTurnsWait(door("Pool", true, "Live"))).toBe(false);
+  expect(threadTurnsWait(door("InCluster", true, "Offline"))).toBe(false);
+  expect(threadTurnsWait(door(undefined, true, "Offline"))).toBe(false);
+  expect(threadTurnsWait(door("Pool", true, undefined))).toBe(false);
 });

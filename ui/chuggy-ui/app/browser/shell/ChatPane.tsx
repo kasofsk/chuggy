@@ -30,13 +30,17 @@ import {
 } from "../../core/apiRoutes.ts";
 import {
   chatPaneFilled,
-  chatPaneHeaderUnhosted,
+  chatPaneHeaderDoor,
   chatPaneHolding,
   chatPaneRestored,
   chatPaneStripped,
   chatPaneToggled,
 } from "../../core/chatPane.ts";
-import type { ChatPaneStart, ChatPaneState } from "../../core/chatPane.ts";
+import type {
+  ChatPaneHeaderDoor,
+  ChatPaneStart,
+  ChatPaneState,
+} from "../../core/chatPane.ts";
 import { panelReason } from "../../core/freshness.ts";
 import { leadSessionNamed } from "../../core/leadTranscript.ts";
 import {
@@ -45,16 +49,19 @@ import {
 } from "../../core/projectQueryKeys.ts";
 import {
   threadAnswering,
+  threadDoorUnhosted,
   threadMine,
   threadUnhosted,
 } from "../../core/threads.ts";
+import { sessionRefusedNoRunner } from "../../core/sessionRunners.ts";
 import { useApiPorts, usePanelList } from "../api.ts";
 import { PanelUnready } from "../DataPanel.tsx";
 import { Conversation } from "../conversation/Conversation.tsx";
 import { ThreadConversation } from "../thread/ThreadConversation.tsx";
+import { SessionRunnerNotice } from "../sessionPlacement.tsx";
 import {
   ThreadUnhostedNotice,
-  useHostedRuns,
+  useThreadDoor,
   useThreadSend,
 } from "../thread/threadSend.tsx";
 import { threadsListName, useThread } from "../thread/threadRead.ts";
@@ -111,8 +118,8 @@ function useChatPaneThreads(
 /**
  * The offer to start a thread: opened where the reader has none, closed and
  * reopened where they have one — the open asked first, which answers that
- * thread, so the hosted grant a close does not ask refuses before anything is
- * closed — and withheld while the one they have is still answering.
+ * thread, so the hosted grant or the runner a close does not ask refuses before
+ * anything is closed — and withheld while the one they have is still answering.
  *
  * IT NAVIGATES NOWHERE — the pane is where a thread is read, so opening one and
  * then going to its page would draw the same conversation twice, once under the
@@ -123,11 +130,9 @@ function ChatPaneStartControl(props: {
   readonly partition: PartitionIdentity;
   readonly start: ChatPaneStart;
   readonly onOpened: (session: string) => void;
-  readonly onUnhosted: () => void;
-  /** Whether the tenant grants no hosted runs and nothing under the header says
-   * so: the body says it where no thread is drawn, and a drawn thread's own
-   * composer where it takes messages. */
-  readonly unhosted: boolean;
+  readonly onRefused: (answer: "Unhosted" | "NoRunner") => void;
+  /** What the door would answer that nothing under the header says. */
+  readonly header: ChatPaneHeaderDoor;
 }): ReactNode {
   const start = props.start;
   const ports = useApiPorts();
@@ -157,7 +162,11 @@ function ChatPaneStartControl(props: {
           void opened.then((result) => {
             setBusy(false);
             if (threadUnhosted(result)) {
-              props.onUnhosted();
+              props.onRefused("Unhosted");
+              return;
+            }
+            if (sessionRefusedNoRunner(result)) {
+              props.onRefused("NoRunner");
               return;
             }
             if (result.outcome !== "Ok") {
@@ -171,7 +180,13 @@ function ChatPaneStartControl(props: {
       {refused === undefined ? null : (
         <Notice tone="danger" inline detail={`Refused · ${refused}`} />
       )}
-      {props.unhosted ? <ThreadUnhostedNotice /> : null}
+      {props.header.runner === undefined ? null : (
+        <SessionRunnerNotice
+          partition={props.partition}
+          short={props.header.runner}
+        />
+      )}
+      {props.header.unhosted ? <ThreadUnhostedNotice /> : null}
     </>
   );
 }
@@ -267,8 +282,8 @@ function ChatPaneFirst(props: {
   );
 }
 
-/** What stands where the composer would, for a reader the tenant does not
- * grant hosted runs: no thread they open could run. */
+/** What stands where the composer would, for a reader whose thread door asks a
+ * hosted grant the tenant does not give them: no thread they open could run. */
 function ChatPaneUnhosted(): ReactNode {
   return (
     <div
@@ -345,18 +360,19 @@ function ChatPaneOpen(props: {
   const answering = useChatPaneAnswering(props.partition, mine?.session);
   const [chosen, setChosen] = useState<string | undefined>(undefined);
   const [starting, setStarting] = useState(false);
-  const hosted = useHostedRuns(props.partition);
+  const door = useThreadDoor(props.partition);
   const holding = chatPaneHolding(threads, answering, chosen);
-  /** New refused for the grant, which is the newest word on whether it is given. */
-  const refuseUnhosted = (): void => {
-    hosted.learnt(false);
+  /** New refused, which is the newest word on what the door asks. */
+  const refuse = (answer: "Unhosted" | "NoRunner"): void => {
+    if (answer === "Unhosted") door.learnt(false);
+    door.refused();
     setStarting(false);
   };
-  /** A thread that opened, which the grant had to allow. */
+  /** A thread that opened, which the grant had to allow where the route asks it. */
   const holdOpened = (session: string): void => {
     setChosen(session);
     setStarting(false);
-    hosted.learnt(true);
+    if (door.door.route !== "Pool") door.learnt(true);
   };
   const held = threads?.find((thread) => thread.session === holding.session);
   const drawn = chatPaneThreadDrawn(holding.session, starting);
@@ -371,8 +387,8 @@ function ChatPaneOpen(props: {
             partition={props.partition}
             start={holding.start}
             onOpened={holdOpened}
-            onUnhosted={refuseUnhosted}
-            unhosted={chatPaneHeaderUnhosted(hosted.granted, drawn, held)}
+            onRefused={refuse}
+            header={chatPaneHeaderDoor(door.door, drawn, held)}
           />
           {threads === undefined ? null : (
             <ChatPaneHistory
@@ -398,7 +414,7 @@ function ChatPaneOpen(props: {
           session={holding.session}
           named={chosen !== undefined}
           starting={starting}
-          unhosted={hosted.granted === false}
+          unhosted={threadDoorUnhosted(door.door)}
           onStarting={() => {
             setStarting(true);
           }}

@@ -78,6 +78,7 @@ export function useApiPorts(): ApiPorts {
 function usePanelQuery<T>(
   key: ProjectQueryKey,
   read: PanelRead<T>,
+  polledMs?: number,
 ): PanelState<T> {
   const ports = useApiPorts();
   const query = useQuery({
@@ -85,6 +86,7 @@ function usePanelQuery<T>(
     queryFn: async ({ signal }) =>
       apiOrThrow(await read(ports, signal), panelReason),
     retry: false,
+    refetchInterval: polledMs ?? false,
   });
   return panelStateFromQuery<T>({
     data: query.data,
@@ -95,14 +97,21 @@ function usePanelQuery<T>(
 }
 
 /** One resource of one kind, written by the frame that names it — or a part
- * under one, which no frame names and the partition's refetch reaches. */
+ * under one, which no frame names and the partition's refetch reaches. One
+ * that moves where no frame says so is read again every `polledMs` while a
+ * screen draws it and the tab is in view. */
 export function usePanelResource<T>(
   partition: PartitionIdentity,
   kind: ProjectChangeKind,
   resource: string,
   read: PanelRead<T>,
+  polledMs?: number,
 ): PanelState<T> {
-  return usePanelQuery(projectResourceKey(partition, kind, resource), read);
+  return usePanelQuery(
+    projectResourceKey(partition, kind, resource),
+    read,
+    polledMs,
+  );
 }
 
 /** A list entry, whose refresh the list itself carries and this registers. */

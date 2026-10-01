@@ -13,6 +13,7 @@ import { afterEach, expect, test, vi } from "vitest";
 import { SessionProvider } from "../app/browser/session.tsx";
 import { useThreadSend } from "../app/browser/thread/threadSend.tsx";
 import { answer, holderDouble, settled } from "./screenHarness.tsx";
+import { sessionPlacementBody } from "./sessionPlacementFixture.ts";
 import { threadEntry, threadPartition } from "./threadFixture.ts";
 
 afterEach(() => {
@@ -33,6 +34,10 @@ function doorAnswering(messageStatuses: readonly number[]): Posted[] {
   vi.stubGlobal("fetch", (url: string, init: RequestInit) => {
     if (url.endsWith("/hosted-runs"))
       return Promise.resolve(answer({ granted: true }));
+    if (url.endsWith("/session-placement"))
+      return Promise.resolve(
+        answer(sessionPlacementBody({ thread: "InCluster" })),
+      );
     posted.push({
       url,
       body: typeof init.body === "string" ? JSON.parse(init.body) : undefined,

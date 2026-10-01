@@ -31,6 +31,7 @@ import { chatPaneStoreKey } from "../app/core/chatPane.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import { elementScrollToStubbed } from "./scrolling.ts";
 import { leadBody } from "./leadFixture.ts";
+import { sessionPlacementBody } from "./sessionPlacementFixture.ts";
 import {
   threadBody,
   threadEntry,
@@ -760,6 +761,213 @@ test("a held thread that takes no messages has the grant said beside New", async
   expect(screen.getAllByText("Needs hosted runs")).toHaveLength(1);
   styleless();
 });
+
+/** `served`, with the session placement read answering `placement`. */
+function placedServed(
+  served: typeof fetch,
+  placement: Parameters<typeof sessionPlacementBody>[0],
+): typeof fetch {
+  return ((url: string, init?: { readonly method?: string }) =>
+    url.endsWith("/session-placement")
+      ? Promise.resolve(answer(sessionPlacementBody(placement)))
+      : served(url, init)) as unknown as typeof fetch;
+}
+
+function conversationRegion(): HTMLElement {
+  return screen.getByRole("region", { name: "Conversation" });
+}
+
+/** On runners the door asks no grant, so a reader without one types as any. */
+test("a reader without the hosted grant is offered the composer where threads run on runners", async () => {
+  await mounted(
+    viewportDeskEm,
+    placedServed(grantReadServed(false, []), { thread: "Pool" }),
+  );
+  expect(composerDrawn()).toBeTruthy();
+  expect(screen.queryByText("Needs hosted runs")).toBeNull();
+  styleless();
+});
+
+test("a reader without the hosted grant is told so where threads run hosted", async () => {
+  await mounted(
+    viewportDeskEm,
+    placedServed(grantReadServed(false, []), { thread: "InCluster" }),
+  );
+  expect(screen.queryByRole("textbox", { name: "Message" })).toBeNull();
+  expect(
+    within(conversationRegion()).getByText("Needs hosted runs"),
+  ).toBeTruthy();
+  styleless();
+});
+
+/** The composer stays the reader's whatever their runner, and says, beneath,
+ * only what stands in a turn's way. */
+test.each([
+  ["Unregistered", "No runner"],
+  ["Offline", "Runner offline"],
+] as const)(
+  "a reader whose runner is %s is told %s under a composer that still takes text",
+  async (mine, said) => {
+    await mounted(
+      viewportDeskEm,
+      placedServed(grantReadServed(false, []), { thread: "Pool", mine }),
+    );
+    expect(heldBox().readOnly).toBe(false);
+    expect(within(conversationRegion()).getByText(said)).toBeTruthy();
+    styleless();
+  },
+);
+
+test("a reader with no runner is pointed at the Runners page", async () => {
+  await mounted(
+    viewportDeskEm,
+    placedServed(grantReadServed(true, []), {
+      thread: "Pool",
+      mine: "Unregistered",
+    }),
+  );
+  expect(
+    within(conversationRegion()).getByRole("link", { name: "Runners" }),
+  ).toBeTruthy();
+  styleless();
+});
+
+test("a reader whose runner is live is told nothing about it", async () => {
+  await mounted(
+    viewportDeskEm,
+    placedServed(grantReadServed(false, []), { thread: "Pool", mine: "Live" }),
+  );
+  expect(screen.queryByText("No runner")).toBeNull();
+  expect(screen.queryByText("Runner offline")).toBeNull();
+  styleless();
+});
+
+/** A runner withdrawn after the read refuses the send, and the box keeps the
+ * message and takes it again once the reader has one. */
+test("a message the door refuses for no runner stays in the box, which still takes text", async () => {
+  const served = threadServed([
+    threadEntry({ session: openedSession, owner: "geoff", mine: true }),
+  ]);
+  await mounted(
+    viewportDeskEm,
+    placedServed(
+      ((url: string, init?: { readonly method?: string }) =>
+        init?.method === "POST" && url.endsWith("/messages")
+          ? Promise.resolve(answer({ error: { code: "NoRunner" } }, 403))
+          : served(url, init)) as unknown as typeof fetch,
+      { thread: "Pool", mine: "Live" },
+    ),
+  );
+  fireEvent.change(composerDrawn(), { target: { value: "hello" } });
+  await turned(() => {
+    screen.getByRole("button", { name: "Send" }).click();
+  });
+  await settled();
+  expect(heldBox().value).toBe("hello");
+  expect(heldBox().readOnly).toBe(false);
+  expect(within(conversationRegion()).getByText("No runner")).toBeTruthy();
+  styleless();
+});
+
+/** The open is asked before the close, so a reader whose runner went since
+ * the pane read it keeps the thread they had, and the box under it says what
+ * New met. */
+test("New the door refuses for no runner closes nothing, and the box says so", async () => {
+  const posts: string[] = [];
+  let mine: "Live" | "Unregistered" = "Live";
+  const served = heldThreadServed(posts, () =>
+    Promise.resolve(answer({ error: { code: "NoRunner" } }, 403)),
+  );
+  await mounted(viewportDeskEm, ((
+    url: string,
+    init?: { readonly method?: string },
+  ) =>
+    url.endsWith("/session-placement")
+      ? Promise.resolve(answer(sessionPlacementBody({ thread: "Pool", mine })))
+      : served(url, init)) as unknown as typeof fetch);
+  expect(screen.queryByText("No runner")).toBeNull();
+  mine = "Unregistered";
+  await pressed("New");
+  expect(postsNamed(posts)).toStrictEqual(["open"]);
+  expect(within(conversationRegion()).getByText("No runner")).toBeTruthy();
+  expect(screen.queryByText(/^Refused/u)).toBeNull();
+  styleless();
+});
+
+/** A route moved to hosted under the reader refuses the send for the grant,
+ * and the box holds the message as it does wherever the grant is withheld. */
+test("a message the hosted grant refuses where the read said runners stays in the box, read-only", async () => {
+  const served = threadServed([
+    threadEntry({ session: openedSession, owner: "geoff", mine: true }),
+  ]);
+  await mounted(
+    viewportDeskEm,
+    placedServed(
+      ((url: string, init?: { readonly method?: string }) =>
+        init?.method === "POST" && url.endsWith("/messages")
+          ? Promise.resolve(
+              answer({ error: { code: "HostedRunsNotGranted" } }, 403),
+            )
+          : served(url, init)) as unknown as typeof fetch,
+      { thread: "Pool", mine: "Offline" },
+    ),
+  );
+  fireEvent.change(composerDrawn(), { target: { value: "hello" } });
+  await turned(() => {
+    screen.getByRole("button", { name: "Send" }).click();
+  });
+  await settled();
+  expect(heldBox().readOnly).toBe(true);
+  expect(
+    within(conversationRegion()).getByText("Needs hosted runs"),
+  ).toBeTruthy();
+  expect(screen.queryByText("Runner offline")).toBeNull();
+  styleless();
+});
+
+/** New refused for the grant is newer than the read that said runners, so the
+ * placement is read again rather than at the next poll. */
+test("New the hosted grant refuses where the read said runners reads the placement again", async () => {
+  let thread: "Pool" | "InCluster" = "Pool";
+  const served = heldThreadServed([], () =>
+    Promise.resolve(answer({ error: { code: "HostedRunsNotGranted" } }, 403)),
+  );
+  await mounted(viewportDeskEm, ((
+    url: string,
+    init?: { readonly method?: string },
+  ) => {
+    if (url.endsWith("/hosted-runs"))
+      return Promise.resolve(answer({ granted: false }));
+    if (url.endsWith("/session-placement"))
+      return Promise.resolve(answer(sessionPlacementBody({ thread })));
+    return served(url, init);
+  }) as unknown as typeof fetch);
+  expect(heldBox().readOnly).toBe(false);
+  thread = "InCluster";
+  await pressed("New");
+  expect(heldBox().readOnly).toBe(true);
+  expect(screen.getAllByText("Needs hosted runs")).toHaveLength(1);
+  styleless();
+});
+
+/** The reader's own queued turn on runners their runner cannot take now says
+ * it is waiting rather than queued; the train still runs above the box. */
+test.each([
+  ["Offline", "Pool", "Waiting"],
+  ["Unregistered", "Pool", "Waiting"],
+  ["Live", "Pool", "Queued"],
+  ["Offline", "InCluster", "Queued"],
+] as const)(
+  "a queued turn with the reader's runner %s on %s reads %s",
+  async (mine, thread, word) => {
+    await mounted(
+      viewportDeskEm,
+      placedServed(answeringThreadServed(), { thread, mine }),
+    );
+    expect(within(conversationRegion()).getByText(word)).toBeTruthy();
+    styleless();
+  },
+);
 
 test("a page's own bar content is drawn in a row of its own", async () => {
   pageDrawn = () => (
