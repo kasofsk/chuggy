@@ -45,6 +45,8 @@ import {
   workerPoolAdmitted,
   workerPoolContractAccepted,
   workerPoolPoll,
+  workerPoolReconciliationUnsessioned,
+  workerPoolSessionsRead,
   type WorkerPoolAssignments,
   type WorkerPoolIdentity,
   type WorkerPoolMint,
@@ -61,6 +63,7 @@ import type { PrincipalAuthentication } from "./server.ts";
 import {
   workerContractChecked,
   workerContractNamed,
+  workerContractOffered,
 } from "./workerContractVersion.ts";
 
 /** A contract route's refusal of a release outside the range the pool plane serves. */
@@ -191,7 +194,7 @@ function poolHealthRoutes(
   );
 }
 
-/** The reconciliation poll, which is the whole of what a pool asks for. */
+/** The reconciliation poll, which is the whole of what a pool asks for, answered in the shape the release the pool names reads. */
 function poolAssignmentsRoute(
   app: FastifyInstance,
   service: PoolPlaneService,
@@ -209,15 +212,29 @@ function poolAssignmentsRoute(
         service.settings.heldMax,
       ).safeParse(request.query);
       if (!query.success) return reply.code(400).send();
+      const sessionsRead = workerPoolSessionsRead(
+        workerContractOffered(request),
+      );
       const answered = await workerPoolPoll(
         service.assignments,
         identity,
-        query.data[workerPoolPollQuery.held],
-        query.data[workerPoolPollQuery.wanted],
+        {
+          held: query.data[workerPoolPollQuery.held],
+          wanted: query.data[workerPoolPollQuery.wanted],
+          wantedSessions: sessionsRead
+            ? query.data[workerPoolPollQuery.wantedSessions]
+            : 0,
+        },
         service.settings,
         service.mint,
       );
-      return reply.code(200).send(answered);
+      return reply
+        .code(200)
+        .send(
+          sessionsRead
+            ? answered
+            : workerPoolReconciliationUnsessioned(answered),
+        );
     },
   );
 }

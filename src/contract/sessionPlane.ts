@@ -1,7 +1,7 @@
 /**
- * The session plane's wire: the routes a session pod calls, the bodies it
- * offers, every status each route's handler answers with, how a session bearer
- * is written, and what names a store stream.
+ * The session plane's wire: the routes a session pod and a runner holding one
+ * call, the bodies they offer, every status each route's handler answers with,
+ * how a session bearer is written, and what names a store stream.
  *
  * It reads as the job plane's does in `./workerPlane.ts`, whose refusal and
  * credential shapes it shares: an answer schema drops a field it does not name,
@@ -39,6 +39,7 @@ import { leadStoreStreamResponseSchema } from "./responses.ts";
 import {
   agentReportedTurnFailures,
   sessionCapabilities,
+  sessionContainerEnds,
   sessionKinds,
   sessionTurnInputKinds,
 } from "./rosters.ts";
@@ -64,9 +65,13 @@ export {
   sessionTurnToolNameCharsMax,
   sessionTurnToolsMax,
 } from "./http.ts";
-export { agentReportedTurnFailures, sessionCapabilities } from "./rosters.ts";
+export {
+  agentReportedTurnFailures,
+  sessionCapabilities,
+  sessionContainerEnds,
+} from "./rosters.ts";
 
-/** The routes a session pod calls, which a plane composed without sessions does not serve. */
+/** The routes a session pod and the runner holding it call, which a plane composed without sessions does not serve. */
 export const sessionPlaneRoutes = {
   facts: { method: "GET", path: "/v1/session" },
   heartbeat: { method: "POST", path: "/v1/session/heartbeat" },
@@ -79,6 +84,7 @@ export const sessionPlaneRoutes = {
   storeBatch: { method: "PUT", path: "/v1/session/store/*" },
   storePage: { method: "GET", path: "/v1/session/store/*" },
   credential: { method: "POST", path: "/v1/session/credential" },
+  ended: { method: "POST", path: "/v1/session/ended" },
 } as const satisfies Readonly<Record<string, WorkerPlaneRoute>>;
 export type SessionPlaneRouteName = keyof typeof sessionPlaneRoutes;
 
@@ -182,6 +188,11 @@ export const sessionTurnAnswerSchema = z
 export const sessionTurnFailureSchema = z.strictObject({
   turn: sessionIdentitySchema,
   failure: z.enum(agentReportedTurnFailures),
+});
+
+/** How a pool's runner reports that the container its session ran in has ended, under that session's bearer. */
+export const sessionEndedSchema = z.strictObject({
+  phase: z.enum(sessionContainerEnds),
 });
 
 /** What a pod is told of its own session, each optional fact absent where the session has none. */
@@ -312,5 +323,11 @@ export const sessionPlaneAnswers = workerPlaneAnswersRefusingVersions({
     401: workerPlaneStopSchema,
     404: workerCredentialAbsentSchema,
     503: workerPlaneRetrySchema,
+  },
+  ended: {
+    204: "empty",
+    400: workerPlaneStopSchema,
+    401: workerPlaneStopSchema,
+    409: workerPlaneRefusalSchema(["Fenced"]),
   },
 } as const satisfies WorkerPlaneAnswers<SessionPlaneRouteName>);

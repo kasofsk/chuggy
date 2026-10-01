@@ -37,6 +37,12 @@ import {
 } from "../../src/interpreter/projectAccess.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 import {
+  workerContractOptionalsSeen,
+  workerContractReleasePool,
+  workerContractReplayed,
+  type WorkerContractReleasePool,
+} from "../contract/workerContractReleases.ts";
+import {
   planeChunkedAnswered,
   planeJsonHeaviest,
   planeListening,
@@ -201,6 +207,7 @@ test("one poll renews what is held, says what must stop and hands over what it c
         bearer: "minted-2",
       },
     ],
+    sessions: [],
     stop: ["gone"],
   });
   assert.deepEqual(recorded.made, [
@@ -218,7 +225,11 @@ test("a pool wanting none is renewed, told what to stop and claimed nothing", as
     headers: speaking,
   });
   assert.equal(answered.statusCode, 200);
-  assert.deepEqual(answered.json(), { assignments: [], stop: ["gone"] });
+  assert.deepEqual(answered.json(), {
+    assignments: [],
+    sessions: [],
+    stop: ["gone"],
+  });
   assert.deepEqual(recorded.made, [
     ["renew", "live"],
     ["renew", "gone"],
@@ -255,6 +266,62 @@ test("a poll that does not say its room, or says it as no count, is refused", as
   assert.deepEqual(recorded.made, []);
 });
 
+test("a poll that says its room for sessions as no count is refused, and one that does not say it has none", async () => {
+  const recorded = calls();
+  const app = createPoolPlaneApp(plane(recorded.ports));
+  for (const query of [
+    "wantedSessions=-1",
+    "wantedSessions=two",
+    "wantedSessions=1&wantedSessions=2",
+  ]) {
+    const answered = await app.inject({
+      method: "GET",
+      url: `${polling([], 0)}&${query}`,
+      headers: speaking,
+    });
+    assert.equal(answered.statusCode, 400, query);
+    assert.equal(answered.body, "");
+  }
+  assert.deepEqual(recorded.made, []);
+  for (const url of [polling([], 0), `${polling([], 0)}&wantedSessions=2`]) {
+    const answered = await app.inject({
+      method: "GET",
+      url,
+      headers: speaking,
+    });
+    assert.deepEqual(
+      answered.json(),
+      { assignments: [], sessions: [], stop: [] },
+      url,
+    );
+  }
+});
+
+test("a pool naming a release from before sessions is answered without a list of them, whatever room it says it has", async () => {
+  const recorded = calls();
+  const answered = await createPoolPlaneApp(plane(recorded.ports)).inject({
+    method: "GET",
+    url: `${polling(["live", "gone"])}&wantedSessions=2`,
+    headers: { ...speaking, [workerContractHeader]: "1.2.0" },
+  });
+  assert.equal(answered.statusCode, 200);
+  assert.deepEqual(answered.json(), {
+    assignments: [
+      {
+        assignment: "minted-1",
+        capabilities: ["Platform:Linux:Amd64"],
+        image: published,
+        cpuMillis: 500,
+        memoryMib: 256,
+        deadlineSecs: 600,
+        callbackUrl: "https://plane.invalid/v1/ticket-execution",
+        bearer: "minted-2",
+      },
+    ],
+    stop: ["gone"],
+  });
+});
+
 test("a pool already at its bound still polls and is answered with control alone", async () => {
   const recorded = calls();
   const answered = await createPoolPlaneApp(plane(recorded.ports)).inject({
@@ -262,7 +329,11 @@ test("a pool already at its bound still polls and is answered with control alone
     url: polling(["live", "live", "live"]),
     headers: speaking,
   });
-  assert.deepEqual(answered.json(), { assignments: [], stop: [] });
+  assert.deepEqual(answered.json(), {
+    assignments: [],
+    sessions: [],
+    stop: [],
+  });
   assert.deepEqual(recorded.made, [
     ["renew", "live"],
     ["renew", "live"],
@@ -405,6 +476,104 @@ test("a pool naming no release, one below the plane's floor or one later than th
   }
   assert.deepEqual(recorded.made, []);
 });
+
+/** What a claim returns: an image pinned on a published host, and a capability requirement, which is handed out with no image. */
+const claims = {
+  pinned: {
+    requirement: {
+      mode: "Container",
+      operatingSystem: "Linux",
+      architecture: "Amd64",
+      image: pinned,
+    },
+  },
+  capable: {
+    requirement: {
+      mode: "ContainerCapability",
+      operatingSystem: "Linux",
+      architecture: "Amd64",
+      capabilities: ["Agent:Codex"],
+    },
+  },
+} as const;
+
+/**
+ * Every poll a pool built with `older` makes, through the names its own
+ * release exports, read by its own reconciliation schema. That schema is
+ * strict, so an answer naming a field it does not, `sessions` among them, is
+ * one such a pool refuses whole.
+ */
+function poolReplayPolled(older: WorkerContractReleasePool): void {
+  test(`a ${older.release} pool reads every reconciliation a poll answers it with, and is handed no session`, async () => {
+    const seen = new Map<string, Set<boolean>>();
+    for (const [what, held, wanted, claimed] of [
+      ["a pinned image", ["live", "gone"], 1, claims.pinned],
+      ["a capability requirement", [], 1, claims.capable],
+      ["no room", ["live"], 0, claims.pinned],
+      ["nothing to claim", [], 1, undefined],
+    ] as const) {
+      const recorded = calls();
+      const ports = {
+        ...recorded.ports,
+        claim: () => Promise.resolve(claimed),
+      };
+      const query = new URLSearchParams([
+        ...held.map((assignment) => [older.pollQuery.held, assignment]),
+        [older.pollQuery.wanted, String(wanted)],
+      ]);
+      const answered = await createPoolPlaneApp(plane(ports)).inject({
+        method: "GET",
+        url: `${older.pollRoute}?${query.toString()}`,
+        headers: {
+          authorization: `Bearer ${poolToken}`,
+          [workerContractHeader]: older.release,
+        },
+      });
+      assert.equal(answered.statusCode, 200, what);
+      const body: unknown = answered.json();
+      assert.deepEqual(older.reconciliation.parse(body), body, what);
+      assert.equal(Object.hasOwn(body as object, "sessions"), false, what);
+      workerContractOptionalsSeen(older.reconciliation, body, "answer", seen);
+    }
+    for (const [field, held] of seen)
+      assert.equal(held.size, 2, `${field} is seen only one way`);
+  });
+}
+
+/** Every settlement a pool built with `older` makes, at the paths and with the bodies its own release builds, each reaching its port. */
+function poolReplaySettled(older: WorkerContractReleasePool): void {
+  test(`a ${older.release} pool settles an assignment with every outcome its release names`, async () => {
+    const recorded = calls();
+    const app = createPoolPlaneApp(plane(recorded.ports));
+    for (const outcome of Object.keys(older.settlementRoutes)) {
+      const [body, ...more] = [{}, { evidence: "no runner" }].filter(
+        (offered) => older.outcome.safeParse({ outcome, ...offered }).success,
+      );
+      assert.ok(body !== undefined && more.length === 0, outcome);
+      const answered = await app.inject({
+        method: "POST",
+        url: older.settlementPath(outcome, "one"),
+        headers: {
+          authorization: `Bearer ${poolToken}`,
+          [workerContractHeader]: older.release,
+        },
+        payload: body,
+      });
+      assert.equal(answered.statusCode, 204, outcome);
+    }
+    assert.deepEqual(recorded.made, [
+      ["held", "one"],
+      ["refuse", "one", "no runner"],
+      ["release", "one"],
+    ]);
+  });
+}
+
+for (const release of workerContractReplayed("pool")) {
+  const older = await workerContractReleasePool(release);
+  poolReplayPolled(older);
+  poolReplaySettled(older);
+}
 
 test("every answer names the plane's release, the probes' and the framework's own among them", async () => {
   const ports = calls().ports;

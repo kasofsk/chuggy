@@ -38,7 +38,10 @@ import {
   sessionTurnToolNameCharsMax,
   sessionTurnToolsMax,
 } from "../../src/contract/http.ts";
-import { agentReportedTurnFailures } from "../../src/contract/rosters.ts";
+import {
+  agentReportedTurnFailures,
+  sessionContainerEnds,
+} from "../../src/contract/rosters.ts";
 import {
   sessionPlaneRoutes,
   type SessionPlaneRouteName,
@@ -49,6 +52,7 @@ import {
   asSessionId,
   asSessionStoreStream,
   asSessionTurnId,
+  type SessionTurnFailure,
 } from "../../src/interpreter/agentSession.ts";
 import type { SessionPlaneIdentity } from "../../src/interpreter/sessionPlane.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
@@ -119,6 +123,7 @@ const sessionCalls = [
   ["GET", "/v1/session/store/1a2b", undefined, {}],
   ["GET", "/v1/session/store", undefined, {}],
   ["POST", "/v1/session/credential", { repository: "github.com/a/b" }, {}],
+  ["POST", "/v1/session/ended", { phase: "Succeeded" }, {}],
 ] as const;
 
 test("a session pod is told what its own session is, and nothing it has not got", async () => {
@@ -212,21 +217,16 @@ test("no session route answers a bearer that is not a live session", async () =>
       reached += 1;
       return Promise.resolve(undefined);
     };
+    const taken = () => {
+      reached += 1;
+      return Promise.resolve(true);
+    };
     const app = sessionPlane({
       authority,
       turns: { claim: counted },
-      heartbeats: {
-        heartbeat: () => {
-          reached += 1;
-          return Promise.resolve(true);
-        },
-      },
-      holds: {
-        hold: () => {
-          reached += 1;
-          return Promise.resolve(true);
-        },
-      },
+      heartbeats: { heartbeat: taken },
+      holds: { hold: taken },
+      losses: { lose: taken, turnFailure: counted },
       store: {
         storeBatch: () => {
           reached += 1;
@@ -622,6 +622,92 @@ test("a hold reaches the boundary under its own generation, and a fenced one is 
   });
   assert.equal(fenced.statusCode, 409);
   assert.deepEqual(fenced.json(), { action: "stop", reason: "Fenced" });
+  await app.close();
+});
+
+test("a container's end is charged from its phase and its attempt's own last turn failure, under its own generation, and a fenced one is told to stop", async () => {
+  const asked: unknown[] = [];
+  let failure: SessionTurnFailure | undefined;
+  let lost = 0;
+  const app = sessionPlane({
+    losses: {
+      turnFailure: (read, generation) => {
+        asked.push({ read, generation });
+        return Promise.resolve(failure);
+      },
+      lose: (offered, generation, evidence) => {
+        asked.push({ offered, generation, evidence });
+        lost += 1;
+        return Promise.resolve(lost <= 3);
+      },
+    },
+  });
+  for (const [phase, failed] of [
+    ["Succeeded", undefined],
+    ["Failed", undefined],
+    ["Succeeded", "StoreRefused"],
+  ] as const) {
+    failure = failed;
+    const ended = await app.inject({
+      method: "POST",
+      url: "/v1/session/ended",
+      headers: held,
+      payload: { phase },
+    });
+    assert.equal(ended.statusCode, 204, phase);
+  }
+  const read = { read: secret, generation: 3 };
+  assert.deepEqual(asked, [
+    read,
+    { offered: secret, generation: 3, evidence: "SessionIdle" },
+    read,
+    { offered: secret, generation: 3, evidence: "TurnFailed" },
+    read,
+    { offered: secret, generation: 3, evidence: "StoreRefused" },
+  ]);
+  const fenced = await app.inject({
+    method: "POST",
+    url: "/v1/session/ended",
+    headers: held,
+    payload: { phase: "Succeeded" },
+  });
+  assert.equal(fenced.statusCode, 409);
+  assert.deepEqual(fenced.json(), { action: "stop", reason: "Fenced" });
+  await app.close();
+});
+
+test("a container's end naming anything but its phase reaches no boundary", async () => {
+  let reached = 0;
+  const app = sessionPlane({
+    losses: {
+      turnFailure: () => {
+        reached += 1;
+        return Promise.resolve(undefined);
+      },
+      lose: () => {
+        reached += 1;
+        return Promise.resolve(true);
+      },
+    },
+  });
+  for (const payload of [
+    { evidence: "SessionIdle" },
+    { phase: "Succeeded", evidence: "SessionIdle" },
+    { phase: "Running" },
+    { phase: "succeeded" },
+    { phase: "Succeeded", extra: 1 },
+    {},
+  ]) {
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/session/ended",
+      headers: held,
+      payload,
+    });
+    assert.equal(response.statusCode, 400, JSON.stringify(payload));
+    assert.deepEqual(response.json(), { action: "stop" });
+  }
+  assert.equal(reached, 0);
   await app.close();
 });
 
@@ -1333,6 +1419,15 @@ const sessionHeaviest: Readonly<
       repository: planeTextHeaviest(repositoryIdentityCharsMax),
     }),
     status: 404,
+  },
+  ended: {
+    headers: json,
+    payload: planeJsonHeaviest({
+      phase: sessionContainerEnds.reduce((longest, phase) =>
+        phase.length > longest.length ? phase : longest,
+      ),
+    }),
+    status: 204,
   },
 };
 

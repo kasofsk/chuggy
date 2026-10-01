@@ -74,7 +74,14 @@ test("a poll names what the pool holds and wants, and carries its own token", as
     seen.url = sentUrl(input);
     seen.authorization = sentHeader(init, "authorization");
     return Promise.resolve(
-      answered(200, JSON.stringify({ assignments: [assignment], stop: ["a"] })),
+      answered(
+        200,
+        JSON.stringify({
+          assignments: [assignment],
+          sessions: [],
+          stop: ["a"],
+        }),
+      ),
     );
   });
   const polled = await plane.poll("pool-token", ["one", "two"], 3);
@@ -294,7 +301,10 @@ test("a poll and every settlement name the release this client was built with", 
   const plane = poolPlaneClient(planeSettings, (_input, init) => {
     named.push(sentHeader(init, workerContractHeader));
     return Promise.resolve(
-      answered(200, JSON.stringify({ assignments: [], stop: [] })),
+      answered(
+        200,
+        JSON.stringify({ assignments: [], sessions: [], stop: [] }),
+      ),
     );
   });
   await plane.poll("pool-token", [], 1);

@@ -19,7 +19,11 @@ import type {
 import type { ExecutionTaskKind } from "./executionRequirement.ts";
 import type { ResultManifestId } from "./resultManifest.ts";
 import type { SessionTaskInvocation } from "./sessionScheduler.ts";
-import type { SessionTaskIdentity, WorkTaskIdentity } from "./workerTask.ts";
+import type {
+  SessionTaskIdentity,
+  SessionTaskLaunch,
+  WorkTaskIdentity,
+} from "./workerTask.ts";
 
 /** A range of worker contract versions, both ends served. */
 export interface WorkerContractRange {
@@ -108,11 +112,12 @@ export interface WorkerTaskRead {
   readonly invocation?: WorkTaskInvocation;
 }
 
-/** What a session attempt's bearer finds of its task, the invocation absent where the attempt opened before one was recorded. */
+/** What a session attempt's bearer finds of its task, the invocation absent where the attempt opened before one was recorded and the launch present only where a pool holds it. */
 export interface SessionTaskRead {
   readonly live: boolean;
   readonly identity: SessionTaskIdentity;
   readonly invocation?: SessionTaskInvocation;
+  readonly launch?: SessionTaskLaunch;
 }
 
 /** The task either kind of bearer fetches, each read through its own bearer's digest. */

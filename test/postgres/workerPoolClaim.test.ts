@@ -512,8 +512,7 @@ test("a pool that reports holding nothing is held to what the database says it h
   const underReported = await workerPoolReconcile(
     assignments,
     pool,
-    [],
-    1,
+    { held: [], wanted: 1, wantedSessions: 0 },
     settings,
     mint,
   );
@@ -521,8 +520,7 @@ test("a pool that reports holding nothing is held to what the database says it h
   const roomier = await workerPoolReconcile(
     assignments,
     pool,
-    [],
-    1,
+    { held: [], wanted: 1, wantedSessions: 0 },
     { ...settings, heldMax: 2 },
     mint,
   );
@@ -732,8 +730,7 @@ async function handedOut(
   const answered = await workerPoolReconcile(
     assignments,
     pool,
-    [],
-    1,
+    { held: [], wanted: 1, wantedSessions: 0 },
     settings,
     () => randomUUID(),
   );

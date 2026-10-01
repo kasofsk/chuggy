@@ -26,6 +26,14 @@ export function workerContractNamed(app: FastifyInstance): void {
   });
 }
 
+/** The release a request names, a header sent more than once joined into text no release matches. */
+export function workerContractOffered(
+  request: FastifyRequest,
+): string | undefined {
+  const offered = request.headers[workerContractHeader];
+  return Array.isArray(offered) ? offered.join(", ") : offered;
+}
+
 /** A contract route's first hook on a plane serving `range`, answering the refusal where the request's release is outside it. */
 export function workerContractChecked(
   range: WorkerContractRange,
@@ -34,13 +42,8 @@ export function workerContractChecked(
   reply: FastifyReply,
 ) => Promise<FastifyReply | undefined> {
   const refusal = contractVersionRefusal(range);
-  return async (request, reply) => {
-    const offered = request.headers[workerContractHeader];
-    return contractVersionAccepted(
-      range,
-      Array.isArray(offered) ? offered.join(", ") : offered,
-    )
+  return async (request, reply) =>
+    contractVersionAccepted(range, workerContractOffered(request))
       ? undefined
       : reply.code(contractVersionRefusalStatus).send(refusal);
-  };
 }

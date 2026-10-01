@@ -1,3 +1,8 @@
+import { sessionCapabilities } from "../../src/contract/rosters.ts";
+import {
+  builtInToolCapabilities,
+  chuggyToolNames,
+} from "../../src/contract/sessionTools.ts";
 import { leadToolAllowlist } from "../../src/interpreter/leadTools.ts";
 import { migration003 } from "../../src/adapters/postgres/schema/migrations/003-no-handoff.ts";
 import {
@@ -36,7 +41,7 @@ import { migration026 } from "../../src/adapters/postgres/schema/migrations/026-
 import { migration027 } from "../../src/adapters/postgres/schema/migrations/027-forge-claim-per-tenant.ts";
 import { migration028 } from "../../src/adapters/postgres/schema/migrations/028-binding-lands-by-pull-request.ts";
 import { migration029 } from "../../src/adapters/postgres/schema/migrations/029-project-execution-placement.ts";
-import { migration031 } from "../../src/adapters/postgres/schema/migrations/031-session-placement.ts";
+import { migration032 } from "../../src/adapters/postgres/schema/migrations/032-session-placement.ts";
 import {
   postgresForgeInstallationClaims,
   postgresForgeInstallations,
@@ -1119,7 +1124,17 @@ test("fresh selector settings carry current controls and only their initial hist
       toolAllowlist: readonly string[];
       limits: { tokensPerDecision: number; dispatchesPerDecision: number };
     };
-    assert.deepEqual(controls.toolAllowlist, leadToolAllowlist);
+    const held = new Set([
+      ...sessionCapabilities.flatMap(
+        (capability) => builtInToolCapabilities[capability],
+      ),
+      ...chuggyToolNames(sessionCapabilities),
+    ]);
+    assert.deepEqual(
+      controls.toolAllowlist.filter((tool) => held.has(tool)),
+      leadToolAllowlist,
+      "the seeded allowlist is the lead's own beside tools no session holds",
+    );
     assert.equal(
       controls.limits.tokensPerDecision,
       leadObservationTokensPerDecisionAt011,
@@ -9370,7 +9385,7 @@ test("029 places every project that runs today in cluster, naming no setter, and
   });
 });
 
-/** Where each of 031's projects routes its threads and its lead, and from where. */
+/** Where each of 032's projects routes its threads and its lead, and from where. */
 async function sessionRoutes(subject: pg.Pool): Promise<readonly string[]> {
   const found = await subject.query<{ routed: string }>(
     `SELECT p.project || ' ' || thread.route || '/' || lead.route || ' '
@@ -9383,7 +9398,7 @@ async function sessionRoutes(subject: pg.Pool): Promise<readonly string[]> {
   return found.rows.map((row) => row.routed);
 }
 
-/** What 031's constraints refuse: a second routing row, and a setter named in part. */
+/** What 032's constraints refuse: a second routing row, and a setter named in part. */
 async function sessionPlacementRefusals(subject: pg.Pool): Promise<void> {
   await assert.rejects(
     subject.query(`INSERT INTO session_routing
@@ -9397,45 +9412,45 @@ async function sessionPlacementRefusals(subject: pg.Pool): Promise<void> {
   );
 }
 
-test("031 places every project's sessions and queued turns in cluster, publishes no routing, and leaves a later project to the default", async () => {
+test("032 places every project's sessions and queued turns in cluster, publishes no routing, and leaves a later project to the default", async () => {
   await migrationDatabase("session_placement", async (subject) => {
     const doors = [
       `${sessionRouteFunction}(text,text,text)`,
       `${sessionRunnerStandingFunction}(text,text,text,bigint)`,
       `${sessionPlacementSetFunction}(text,text,text,text,text,text)`,
     ];
-    await installationBefore(subject, migration031.version);
+    await installationBefore(subject, migration032.version);
     await subject.query(
-      `${tenantSeed("tenant-31")}
+      `${tenantSeed("tenant-32")}
        INSERT INTO project(tenant,project,lifecycle) VALUES
-         ('tenant-31','project-a','Active'),('tenant-31','project-b','Active');
+         ('tenant-32','project-a','Active'),('tenant-32','project-b','Active');
        INSERT INTO execution_cluster(cluster,slots_max,policy_revision)
-       VALUES('cluster-31',1,1);
+       VALUES('cluster-32',1,1);
        INSERT INTO capacity_account(account,cluster,reserved,maximum,policy_revision)
-       VALUES('account-31','cluster-31',0,1,1);
+       VALUES('account-32','cluster-32',0,1,1);
        INSERT INTO agent_session
          (tenant,project,session,kind,principal,capabilities,credential_slot,account,cluster)
-       VALUES('tenant-31','project-a','session-31','Lead','principal-31','{}',
-              'slot-31','account-31','cluster-31');
+       VALUES('tenant-32','project-a','session-32','Lead','principal-32','{}',
+              'slot-32','account-32','cluster-32');
        INSERT INTO session_turn(tenant,project,session,turn,ordinal,input_kind,input)
-       VALUES('tenant-31','project-a','session-31','turn-31',1,'Observation','{}')`,
+       VALUES('tenant-32','project-a','session-32','turn-32',1,'Observation','{}')`,
     );
-    assert.ok((await postgresMigrate(subject)).includes(migration031.version));
+    assert.ok((await postgresMigrate(subject)).includes(migration032.version));
     assert.deepEqual(
       (await subject.query(`SELECT turn, route FROM session_turn`)).rows,
-      [{ turn: "turn-31", route: "InCluster" }],
+      [{ turn: "turn-32", route: "InCluster" }],
       "a turn queued before the routes ran in cluster",
     );
     await assert.rejects(
       subject.query(
         `INSERT INTO session_turn(tenant,project,session,turn,ordinal,input_kind,input)
-         VALUES('tenant-31','project-a','session-31','turn-31-b',2,'Observation','{}')`,
+         VALUES('tenant-32','project-a','session-32','turn-32-b',2,'Observation','{}')`,
       ),
       /null value in column "route"/u,
       "a turn no door stamped was queued",
     );
     await subject.query(
-      `INSERT INTO project(tenant,project,lifecycle) VALUES('tenant-31','project-c','Active')`,
+      `INSERT INTO project(tenant,project,lifecycle) VALUES('tenant-32','project-c','Active')`,
     );
     assert.deepEqual(
       (

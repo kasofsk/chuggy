@@ -48,6 +48,9 @@ export const workerPoolAssignmentIdentitySchema = z
   .min(1)
   .max(workerPoolIdentityCharsMax);
 
+/** The image an assignment names, by the host a pool pulls it from. */
+const workerPoolImageSchema = z.string().min(1).max(workerImageCharsMax);
+
 export const workerPoolAssignmentSchema = z.strictObject({
   /** The idempotency key and the cancel handle in one. */
   assignment: workerPoolAssignmentIdentitySchema,
@@ -57,7 +60,7 @@ export const workerPoolAssignmentSchema = z.strictObject({
    * workload runs. It is absent where the requirement names capabilities
    * rather than an image, and the pool runs its own.
    */
-  image: z.string().min(1).max(workerImageCharsMax).optional(),
+  image: workerPoolImageSchema.optional(),
   /**
    * The size of the box, which no capability token expresses. Omit them and
    * large work lands on a small machine and dies as a process failure rather
@@ -76,6 +79,15 @@ export const workerPoolAssignmentSchema = z.strictObject({
    */
   bearer: z.string().min(1).max(workerPoolIdentityCharsMax),
 });
+
+/**
+ * An assignment that runs one of a project's agent sessions: the same shape,
+ * its image always named, because a session runs its site's session image and
+ * never one a pool chooses. Its bearer is the session's own, which the same
+ * bound admits.
+ */
+export const workerPoolSessionAssignmentSchema =
+  workerPoolAssignmentSchema.extend({ image: workerPoolImageSchema });
 
 /**
  * Both kinds of no are final for the assignment: a refusal becomes the attempt's
@@ -121,8 +133,12 @@ export function workerPoolSettlementPath(
   );
 }
 
-/** The poll's query parameters by name, `held` repeated once per assignment and `wanted` once. */
-export const workerPoolPollQuery = { held: "held", wanted: "wanted" } as const;
+/** The poll's query parameters by name, `held` repeated once per assignment and each room named at most once. */
+export const workerPoolPollQuery = {
+  held: "held",
+  wanted: "wanted",
+  wantedSessions: "wantedSessions",
+} as const;
 
 /** A count as a query string carries one: decimal, canonical, and within what a number can hold. */
 const workerPoolQueryCountSchema = z
@@ -132,14 +148,15 @@ const workerPoolQueryCountSchema = z
   .pipe(z.number().int().nonnegative().safe());
 
 /**
- * The poll's query as the plane reads it: `held`, the assignments the pool is
- * still running, repeated or single or absent as a query carries a list, and
- * `wanted`, how many more it has room for now. The held list's length is the
- * plane's own setting rather than a figure written here, and a list longer
- * than that is refused whole rather than cut, because a cut list reads as a
- * pool that let go of work it is still running; the plane bounds `wanted` by
- * its own settings and never exceeds it, and a pool sending zero is still
- * answered with what it must stop.
+ * The poll's query as the plane reads it: `held`, the assignments of either
+ * kind the pool is still running, repeated or single or absent as a query
+ * carries a list, `wanted`, how many more executions it has room for now, and
+ * `wantedSessions`, how many more sessions, which is none where it is absent.
+ * The held list's length is the plane's own setting rather than a figure
+ * written here, and a list longer than that is refused whole rather than cut,
+ * because a cut list reads as a pool that let go of work it is still running;
+ * the plane bounds each room by its own settings and never exceeds it, and a
+ * pool sending zero is still answered with what it must stop.
  */
 export function workerPoolPollQuerySchema(heldMax: number) {
   return z.strictObject({
@@ -153,16 +170,19 @@ export function workerPoolPollQuerySchema(heldMax: number) {
       z.array(workerPoolAssignmentIdentitySchema).max(heldMax),
     ),
     [workerPoolPollQuery.wanted]: workerPoolQueryCountSchema,
+    [workerPoolPollQuery.wantedSessions]: workerPoolQueryCountSchema.default(0),
   });
 }
 
 /**
- * What a poll is answered with: the assignments the pool may now place, and
- * the ones it must stop. Each list is as long as the plane's own bounds allow
- * and no longer, so a reader bounds the body it takes in.
+ * What a poll is answered with: the executions and the sessions the pool may
+ * now place, and the assignments of either kind it must stop. Each list is as
+ * long as the plane's own bounds allow and no longer, so a reader bounds the
+ * body it takes in.
  */
 export const workerPoolReconciliationSchema = z.strictObject({
   assignments: z.array(workerPoolAssignmentSchema),
+  sessions: z.array(workerPoolSessionAssignmentSchema),
   stop: z.array(workerPoolAssignmentIdentitySchema),
 });
 
@@ -191,6 +211,9 @@ export const workerPoolRedemptionSchema = z.strictObject({
 });
 
 export type WorkerPoolAssignment = z.infer<typeof workerPoolAssignmentSchema>;
+export type WorkerPoolSessionAssignment = z.infer<
+  typeof workerPoolSessionAssignmentSchema
+>;
 export type AssignmentOutcome = z.infer<typeof assignmentOutcomeSchema>;
 export type WorkerPoolReconciliation = z.infer<
   typeof workerPoolReconciliationSchema

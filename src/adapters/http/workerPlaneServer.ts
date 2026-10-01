@@ -25,6 +25,7 @@ import {
   isSessionStoreStream,
   sessionBearerPattern,
   sessionCredentialSchema,
+  sessionEndedSchema,
   sessionPlaneRoutes,
   sessionReferenceSchema,
   sessionTurnAnswerSchema,
@@ -50,19 +51,21 @@ import {
   type SessionBearerSecret,
   type SessionStoreStream,
 } from "../../interpreter/agentSession.ts";
-import type {
-  SessionAttemptHoldPort,
-  SessionHeartbeatPort,
-  SessionPlaneAuthority,
-  SessionPlaneIdentity,
-  SessionReferenceBound,
-  SessionReferencePort,
-  SessionStoreQueryPort,
-  SessionStoreRecordPort,
-  SessionTurnAnswered,
-  SessionTurnClaimPort,
-  SessionTurnFailed,
-  SessionTurnSettlePort,
+import {
+  sessionContainerEnded,
+  type SessionAttemptHoldPort,
+  type SessionAttemptLossPort,
+  type SessionHeartbeatPort,
+  type SessionPlaneAuthority,
+  type SessionPlaneIdentity,
+  type SessionReferenceBound,
+  type SessionReferencePort,
+  type SessionStoreQueryPort,
+  type SessionStoreRecordPort,
+  type SessionTurnAnswered,
+  type SessionTurnClaimPort,
+  type SessionTurnFailed,
+  type SessionTurnSettlePort,
 } from "../../interpreter/sessionPlane.ts";
 import type {
   SessionStoreReadPort,
@@ -111,6 +114,7 @@ import {
   sessionTask,
   workTask,
   type SessionTask,
+  type SessionTaskLaunch,
 } from "../../interpreter/workerTask.ts";
 import {
   planeApp,
@@ -279,6 +283,11 @@ export const sessionPlaneServed = {
     stored: false,
     bodyBytesMax: planeJsonObjectBytesMax(repositoryIdentityCharsMax),
   },
+  ended: {
+    caller: "Session",
+    stored: false,
+    bodyBytesMax: planeJsonObjectBytesMax(),
+  },
 } as const satisfies Readonly<Record<SessionPlaneRouteName, WorkerPlaneServed>>;
 
 /** One route's handler, handed the caller its hook admitted. */
@@ -407,6 +416,7 @@ export interface SessionPlaneService {
   readonly turns: SessionTurnClaimPort;
   readonly settlements: SessionTurnSettlePort;
   readonly holds: SessionAttemptHoldPort;
+  readonly losses: SessionAttemptLossPort;
   readonly records: SessionStoreRecordPort;
   readonly queries: SessionStoreQueryPort;
   readonly store: SessionStoreWritePort & SessionStoreReadPort;
@@ -566,12 +576,14 @@ async function workerTaskOf(
 async function sessionTaskOf(
   service: WorkerPlaneServerService,
   secret: SessionBearerSecret,
-): Promise<SessionTask | "TaskNotRecorded" | undefined> {
+): Promise<
+  (SessionTask & Partial<SessionTaskLaunch>) | "TaskNotRecorded" | undefined
+> {
   const found = await service.tasks.session(secret);
   if (found === undefined || !found.live) return undefined;
   return found.invocation === undefined
     ? "TaskNotRecorded"
-    : sessionTask(found.identity, found.invocation);
+    : { ...sessionTask(found.identity, found.invocation), ...found.launch };
 }
 
 /**
@@ -1175,6 +1187,25 @@ function sessionSettleRoutes(
   });
 }
 
+/** A runner's report that its session's container ended, which loses the attempt as the observation of a pod's end would. */
+function sessionEndedRoute(
+  register: SessionRegistrar,
+  sessions: SessionPlaneService,
+): void {
+  register("ended", async (request, reply, caller) => {
+    const offered = sessionEndedSchema.safeParse(request.body);
+    if (!offered.success) return reply.code(400).send({ action: "stop" });
+    return (await sessionContainerEnded(
+      sessions.losses,
+      caller.secret,
+      caller.identity.generation,
+      offered.data.phase,
+    ))
+      ? reply.code(204).send()
+      : reply.code(409).send({ action: "stop", reason: "Fenced" });
+  });
+}
+
 /** The refusal keeping one batch's bytes earned, or nothing where they are kept. */
 function sessionStoreObjectRefusal(
   kept: Awaited<ReturnType<SessionStoreWritePort["storeBatch"]>>,
@@ -1413,6 +1444,7 @@ export function createWorkerPlaneApp(
     sessionReferenceRoute(registerSession, sessions);
     sessionTurnRoute(registerSession, sessions);
     sessionSettleRoutes(registerSession, sessions);
+    sessionEndedRoute(registerSession, sessions);
     sessionStoreWriteRoute(registerSession, sessions);
     sessionStoreReadRoute(registerSession, sessions);
     sessionStoreStreamsRoute(registerSession, sessions);

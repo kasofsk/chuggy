@@ -130,12 +130,24 @@ export const sessionTaskDocumentSchema = z.object({
 
 /**
  * What a session fetches of its task: the document it is launched with, less
- * what its site adds. It is told from a work task by its own session kind,
- * which is already the document's `kind`.
+ * its plane, and less what its site adds unless a pool holds the attempt, in
+ * which case the site's API, bounds and model are all present, because a pool's
+ * harness is launched with nothing else that names them. It is told from a work
+ * task by its own session kind, which is already the document's `kind`.
  */
 export const sessionTaskAnswerSchema = sessionTaskDocumentSchema
   .omit({ workerPlane: true, api: true, bounds: true })
-  .extend({ kind: z.enum(sessionKinds) });
+  .extend({
+    kind: z.enum(sessionKinds),
+    api: sessionTaskDocumentSchema.shape.api.exactOptional(),
+    bounds: sessionBoundsSchema.exactOptional(),
+    model: z.string().min(1).exactOptional(),
+  })
+  .refine(
+    (task) =>
+      (task.api === undefined) === (task.bounds === undefined) &&
+      (task.api === undefined) === (task.model === undefined),
+  );
 
 /** What `GET /v1/task` answers, whichever kind of bearer asked. */
 export const workerTaskAnswerSchema = z.discriminatedUnion("kind", [

@@ -7,9 +7,9 @@
  * A ROSTER IS ALSO AN ALLOWLIST, AND THE TWO ARE ONE LIST. What the pod may
  * reach for is enforced inside the pod; what a finished decision may have used
  * is `toolAllowlist`, which the installation is seeded with and which admitted
- * everything until a lead held tools. The seeded list is therefore derived from
- * the roster a lead is opened with rather than written beside it, built-ins and
- * chuggy tools alike.
+ * everything until a lead held tools. The seeded list therefore holds every
+ * tool of the roster a lead is opened with and no other tool a session can
+ * hold, built-ins and chuggy tools alike.
  *
  * DERIVED WORK ONLY IS THE LEAD'S RULE. `DraftOriginate` is the one capability
  * that admits a bare create, and it is one a thread is opened with

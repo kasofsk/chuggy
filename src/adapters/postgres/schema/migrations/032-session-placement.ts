@@ -60,8 +60,8 @@ const opened = `public.${sessionAttemptOpenFunction}(in_tenant text, in_project 
  * leave such an attempt out. A pool records who minted the token it was
  * registered with and when it last polled.
  */
-export const migration031: Migration = {
-  version: 31,
+export const migration032: Migration = {
+  version: 32,
   name: "where a project's sessions run is the project's own row",
   statements: [
     `CREATE TABLE public.project_session_placement (

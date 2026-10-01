@@ -5,6 +5,7 @@
  */
 
 import type {
+  SessionTaskAnswer,
   SessionTaskDocument,
   WorkTaskDocument,
 } from "../contract/workerTask.ts";
@@ -103,6 +104,11 @@ export type SessionTaskIdentity = Pick<
 export type SessionTask = Omit<
   SessionTaskDocument,
   "workerPlane" | "api" | "bounds"
+>;
+
+/** What a pool's harness is told of its site, which a pod is launched with beside its task instead. */
+export type SessionTaskLaunch = Required<
+  Pick<SessionTaskAnswer, "api" | "bounds" | "model">
 >;
 
 /** What a session placement is invoked with, in the shape it is recorded and handed over in. */

@@ -119,6 +119,7 @@ export const sessionAttemptReadFunction = "read_session_attempt";
 export const sessionTaskReadFunction = "read_session_task";
 export const sessionAttemptHeartbeatFunction = "heartbeat_session_attempt";
 export const sessionAttemptLoseFunction = "lose_session_attempt";
+export const sessionBearerTurnFailureFunction = "session_bearer_turn_failure";
 export const sessionAttemptWithdrawFunction = "withdraw_session_attempt";
 export const sessionReferenceBindFunction = "bind_session_reference";
 export const sessionTurnClaimFunction = "claim_session_turn";

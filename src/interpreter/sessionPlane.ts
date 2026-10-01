@@ -30,8 +30,12 @@ import type {
   SessionTurnInputKind,
   SessionTurnMeasured,
 } from "./agentSession.ts";
+import type { SessionContainerEnd } from "../contract/rosters.ts";
 import type { Partition } from "./projectStore.ts";
-import type { SessionAttemptEvidence } from "./sessionScheduler.ts";
+import {
+  sessionPodEvidence,
+  type SessionAttemptEvidence,
+} from "./sessionScheduler.ts";
 import type { SessionStoreRecorded } from "./sessionStore.ts";
 
 /** Everything a session bearer recovers, which is the whole of what a pod may be told. */
@@ -77,13 +81,35 @@ export interface SessionAttemptBindingPort {
   }): Promise<SessionBearerIdentity | undefined>;
 }
 
-/** Ending the attempt a bearer names, which is how a pod gives up its own. */
+/**
+ * Ending the attempt a live bearer names, and reading how the last turn to end
+ * under it failed, if one did: the two halves of recording its container's end.
+ */
 export interface SessionAttemptLossPort {
   lose(
     secret: SessionBearerSecret,
     generation: number,
     evidence: SessionAttemptEvidence,
   ): Promise<boolean>;
+  turnFailure(
+    secret: SessionBearerSecret,
+    generation: number,
+  ): Promise<SessionTurnFailure | undefined>;
+}
+
+/**
+ * Ends the attempt a bearer names on its container's end, recorded as the
+ * scheduler records the same pod seen to end. The runner reports only the
+ * phase, so what the attempt is charged is never the caller's to choose.
+ */
+export async function sessionContainerEnded(
+  losses: SessionAttemptLossPort,
+  secret: SessionBearerSecret,
+  generation: number,
+  phase: SessionContainerEnd,
+): Promise<boolean> {
+  const failure = await losses.turnFailure(secret, generation);
+  return losses.lose(secret, generation, sessionPodEvidence(phase, failure));
 }
 
 /**

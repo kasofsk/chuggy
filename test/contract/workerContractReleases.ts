@@ -197,6 +197,48 @@ export async function workerContractReleasePlane(
   };
 }
 
+/** The pool plane as an older release's pool speaks it: where it polls and under which names, where it settles, and the schemas it reads and builds with. */
+export interface WorkerContractReleasePool {
+  readonly release: string;
+  readonly pollRoute: string;
+  readonly pollQuery: { readonly held: string; readonly wanted: string };
+  readonly settlementRoutes: Readonly<Record<string, string>>;
+  readonly settlementPath: (outcome: string, assignment: string) => string;
+  readonly reconciliation: z.ZodType;
+  readonly outcome: z.ZodType;
+}
+
+/** The pool plane as `release` speaks it. */
+export async function workerContractReleasePool(
+  release: string,
+): Promise<WorkerContractReleasePool> {
+  const read = <Value>(name: string, schema: z.ZodType<Value>) =>
+    workerContractReleaseExport(release, "workerPool", name, schema);
+  return {
+    release,
+    pollRoute: await read("workerPoolPollRoute", z.string()),
+    pollQuery: await read(
+      "workerPoolPollQuery",
+      z.object({ held: z.string(), wanted: z.string() }),
+    ),
+    settlementRoutes: await read(
+      "workerPoolSettlementRoutes",
+      z.record(z.string(), z.string()),
+    ),
+    settlementPath: await read(
+      "workerPoolSettlementPath",
+      z.custom<(outcome: string, assignment: string) => string>(
+        (value) => typeof value === "function",
+      ),
+    ),
+    reconciliation: await read(
+      "workerPoolReconciliationSchema",
+      workerContractReleaseSchema,
+    ),
+    outcome: await read("assignmentOutcomeSchema", workerContractReleaseSchema),
+  };
+}
+
 /**
  * Hands `visit` every schema that reads `value` along the way, with the path to
  * it and what the value holds there, a field left out included. A union is
