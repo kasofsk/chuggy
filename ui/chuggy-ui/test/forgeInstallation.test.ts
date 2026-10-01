@@ -13,14 +13,15 @@ import type { ForgeInstallationResponse } from "../../../src/contract/responses.
 import {
   forgeAccountRows,
   forgeCreatingAccounts,
-  forgeAppLabel,
   forgeInstallBegin,
+  forgeInstallLabel,
   forgeInstallState,
   forgeInstallStateBytesCount,
   forgeInstallTake,
   forgeInstallTransactionKey,
   forgeInstallUrl,
   forgePortalInstallations,
+  forgeWorkerInstallOffered,
 } from "../app/core/forgeInstallation.ts";
 import type { ForgeInstallTransaction } from "../app/core/forgeInstallation.ts";
 import { keyValueDouble } from "./keyValueDouble.ts";
@@ -139,7 +140,23 @@ test("the repositories are read under the portal claims alone", () => {
   ).toEqual(["1"]);
 });
 
-test("each app is named as a person reads it", () => {
-  expect(forgeAppLabel("portal")).toBe("Portal");
-  expect(forgeAppLabel("worker")).toBe("Worker");
+test("each app's install is named as a person reads it", () => {
+  expect(forgeInstallLabel("portal")).toBe("Install portal");
+  expect(forgeInstallLabel("worker")).toBe("Install worker");
+});
+
+/** Connect GitHub claims the worker app beside the portal's, so the worker's
+ * install is the one thing a connected account can still be missing. */
+test("only an account connected without the worker is offered the worker's install", () => {
+  const row = {
+    account: "kasofsk",
+    kind: "Organization",
+    portal: "Installed",
+    worker: "Missing",
+  } as const;
+  expect(forgeWorkerInstallOffered(row)).toBe(true);
+  expect(forgeWorkerInstallOffered({ ...row, worker: "Installed" })).toBe(
+    false,
+  );
+  expect(forgeWorkerInstallOffered({ ...row, portal: "Missing" })).toBe(false);
 });

@@ -15,8 +15,12 @@ import {
   forgeCallbackQueryOf,
   forgeCallbackRedirectUri,
   forgeCallbackRoutePath,
+  forgePortalInstallOffered,
 } from "../app/core/forgeAuthorization.ts";
-import type { ForgeAuthorizeTransaction } from "../app/core/forgeAuthorization.ts";
+import type {
+  ForgeAuthorizedLine,
+  ForgeAuthorizeTransaction,
+} from "../app/core/forgeAuthorization.ts";
 import { pkceChallengeFromVerifier } from "../app/core/pkce.ts";
 import { forgeAccountProofTone } from "../app/core/tones.ts";
 import { keyValueDouble } from "./keyValueDouble.ts";
@@ -218,6 +222,23 @@ test("each account is one line, with the apps left to install", () => {
   expect(forgeAccountProofTone("Proven")).toBe("pass");
   expect(forgeAccountProofTone("NotOwner")).not.toBe("pass");
   expect(forgeAccountProofTone("Unavailable")).not.toBe("pass");
+});
+
+/** An account the forge could not answer for may be proven by asking again, so
+ * it is not a reason to send the person to install anything. */
+test("the portal's install is offered only where no account is or could be proven", () => {
+  const line = (proof: ForgeAuthorizedLine["proof"]): ForgeAuthorizedLine => ({
+    account: proof,
+    proof,
+    status: proof,
+    install: [],
+  });
+  expect(forgePortalInstallOffered([])).toBe(true);
+  expect(forgePortalInstallOffered([line("NotOwner")])).toBe(true);
+  expect(forgePortalInstallOffered([line("NotOwner"), line("Proven")])).toBe(
+    false,
+  );
+  expect(forgePortalInstallOffered([line("Unavailable")])).toBe(false);
 });
 
 test("a refusal is one word in place of the lines, and a dead code asks for another", () => {

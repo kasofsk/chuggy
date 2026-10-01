@@ -10,6 +10,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { ForgeCallbackPage } from "../app/browser/ForgeCallbackPage.tsx";
 import { forgeAuthorizeTransactionKey } from "../app/core/forgeAuthorization.ts";
+import { forgeInstallTransactionKey } from "../app/core/forgeInstallation.ts";
 import { answer, drawnStrict, settled, turned } from "./screenHarness.tsx";
 import type { DrawnStrict, SentRequest } from "./screenHarness.tsx";
 import type * as BrowserPorts from "../app/browser/ports.ts";
@@ -138,15 +139,51 @@ test("each account is one line, and a missing app is offered its install", async
   expect(screen.getByText("globex")).toBeTruthy();
   expect(screen.getByText("Not owner")).toBeTruthy();
   const install = screen.getByRole<HTMLAnchorElement>("link", {
-    name: "Worker",
+    name: "Install worker",
   });
   expect(install.href).toContain(apps.apps[1]?.installUrl ?? "");
-  expect(screen.queryByRole("link", { name: "Portal" })).toBeNull();
+  expect(screen.queryByRole("link", { name: "Install portal" })).toBeNull();
+  expect(screen.queryByText("Not installed")).toBeNull();
   expect(
     screen.getByRole<HTMLAnchorElement>("link", { name: "Repositories" })
       .pathname,
   ).toBe(transaction.returnPath);
   expect(screen.queryByRole("button", { name: "Connect GitHub" })).toBeNull();
+});
+
+/** The install comes back through the setup landing, which goes on only for the
+ * transaction this link stored, so the stored state is the one on the address. */
+test("an authorization reaching no installation offers the portal's install", async () => {
+  await drawCallback(() => answer({ accounts: [], truncated: false }));
+  expect(screen.getByText("Not installed")).toBeTruthy();
+  const install = screen.getByRole<HTMLAnchorElement>("link", {
+    name: "Install portal",
+  });
+  expect(install.href.startsWith(`${apps.apps[0]?.installUrl}?state=`)).toBe(
+    true,
+  );
+  expect(screen.queryByRole("link", { name: "Install worker" })).toBeNull();
+  await turned(() => {
+    install.click();
+  });
+  expect(
+    JSON.parse(sessionStorage.getItem(forgeInstallTransactionKey) ?? "{}"),
+  ).toStrictEqual({
+    state: new URL(install.href).searchParams.get("state"),
+    app: "portal",
+    tenant: transaction.tenant,
+    project: transaction.project,
+    returnPath: transaction.returnPath,
+  });
+});
+
+test("an authorization proving no account offers the portal's install beside its lines", async () => {
+  await drawCallback(() =>
+    answer({ accounts: authorized.accounts.slice(1), truncated: false }),
+  );
+  expect(screen.getByText("Not owner")).toBeTruthy();
+  expect(screen.queryByText("Not installed")).toBeNull();
+  expect(screen.getByRole("link", { name: "Install portal" })).toBeTruthy();
 });
 
 test("the code and state leave the address once they are taken", async () => {

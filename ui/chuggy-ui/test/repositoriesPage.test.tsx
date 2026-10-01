@@ -29,6 +29,7 @@ import {
 } from "./screenHarness.tsx";
 import { leadPartition } from "./leadFixture.ts";
 import { forgeAuthorizeTransactionKey } from "../app/core/forgeAuthorization.ts";
+import { forgeInstallTransactionKey } from "../app/core/forgeInstallation.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 
 const redirects = vi.hoisted((): string[] => []);
@@ -117,6 +118,28 @@ const twoAccounts: typeof installations = {
     },
   ],
 };
+
+/** The client this deployment answers for authorizing the portal app. */
+const client = {
+  clientId: "Iv1.portal",
+  authorizeUrl: "https://forge.test/login/oauth/authorize",
+};
+
+/** Both apps this deployment holds, each with the address it is installed from. */
+const forgeApps = [
+  {
+    app: "portal",
+    id: "1",
+    slug: "chuggy-portal",
+    installUrl: "https://forge.test/apps/chuggy-portal/installations/new",
+  },
+  {
+    app: "worker",
+    id: "2",
+    slug: "chuggy-worker",
+    installUrl: "https://forge.test/apps/chuggy-worker/installations/new",
+  },
+];
 
 const boundUrl = "https://forge.test/kasofsk/chuggy";
 const freeUrl = "https://forge.test/gdoteof/scratch";
@@ -283,6 +306,52 @@ test("an account is one row saying which of the two apps it holds", async () => 
   ]);
 });
 
+test("the accounts panel's one action is Connect GitHub", async () => {
+  await drawPage({ described: { apps: forgeApps, authorization: client } });
+  expect(
+    within(sectionOf("Accounts"))
+      .getAllByRole("button")
+      .map((one) => one.textContent),
+  ).toStrictEqual(["Connect GitHub"]);
+  expect(screen.queryByRole("button", { name: "Install" })).toBeNull();
+});
+
+/** Connect GitHub claims the worker app where it is installed, so the worker's
+ * install is the one thing a connected account can still be missing. */
+test("an account connected without the worker offers the worker's install on its own row", async () => {
+  await drawPage({ described: { apps: forgeApps, authorization: client } });
+  const rows = within(sectionOf("Accounts")).getAllByRole("row");
+  expect(rows.map((row) => within(row).queryAllByRole("link").length)).toEqual([
+    0, 0, 1,
+  ]);
+  const install = within(rows[2] ?? document.body).getByRole<HTMLAnchorElement>(
+    "link",
+    { name: "Install worker" },
+  );
+  expect(install.href.startsWith(`${forgeApps[1]?.installUrl}?state=`)).toBe(
+    true,
+  );
+  fireEvent.click(install);
+  await settled();
+  expect(
+    JSON.parse(sessionStorage.getItem(forgeInstallTransactionKey) ?? "{}"),
+  ).toStrictEqual({
+    state: new URL(install.href).searchParams.get("state"),
+    app: "worker",
+    tenant: leadPartition.tenant,
+    project: leadPartition.project,
+    returnPath: `${window.location.pathname}${window.location.search}`,
+  });
+});
+
+test("an account holding no portal claim is offered no install of its own", async () => {
+  await drawPage({
+    claimed: without("portal"),
+    described: { apps: forgeApps, authorization: client },
+  });
+  expect(within(sectionOf("Accounts")).queryAllByRole("link")).toEqual([]);
+});
+
 test("the bindings are drawn by the account and name they are under", async () => {
   await drawPage();
   const repositories = sectionOf("Repositories");
@@ -426,10 +495,6 @@ test("a deployment that answers a client says nothing against connecting", async
 });
 
 test("connecting stores this tab's transaction and sends the person to authorize", async () => {
-  const client = {
-    clientId: "Iv1.portal",
-    authorizeUrl: "https://forge.test/login/oauth/authorize",
-  };
   await drawPage({ described: { apps: [], authorization: client } });
   fireEvent.click(screen.getByRole("button", { name: "Connect GitHub" }));
   await settled();

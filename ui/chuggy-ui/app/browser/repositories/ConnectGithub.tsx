@@ -14,7 +14,7 @@ import { usePanelResource } from "../api.ts";
 import { forgeAuthorizeRedirect } from "../forgeAuthorizeRedirect.ts";
 import { forgeSetupNotConfigured } from "../ForgeSetupPage.tsx";
 import { Button } from "../ui/Button.tsx";
-import { forgeAppsResource } from "./ConnectAccount.tsx";
+import { forgeAppsResource } from "./InstallLink.tsx";
 
 export function ConnectGithub(props: {
   readonly partition: PartitionIdentity;

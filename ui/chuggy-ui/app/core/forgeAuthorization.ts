@@ -185,6 +185,16 @@ export function forgeAuthorizedLines(
   }));
 }
 
+/**
+ * Whether an authorization left the person nothing to connect but an install of
+ * the portal app: no account reached, or none they could prove by asking again.
+ */
+export function forgePortalInstallOffered(
+  lines: readonly ForgeAuthorizedLine[],
+): boolean {
+  return lines.every((line) => line.proof === "NotOwner");
+}
+
 /** What this console says where the forge spent the code before the api could read what it reaches. */
 export const forgeAuthorizationSpent = "Start again";
 
