@@ -5,7 +5,7 @@
  * The lead read is the `Session` change kind's own representation, so a turn
  * moving rewrites the head and raises the batch count the transcript walks to
  * and the page is live by construction. A project with no lead answers `404`,
- * which is a page saying so rather than five empty panels.
+ * which is a page saying so and what a lead is, rather than five empty panels.
  *
  * WHAT A READER HAS TYPED AT THE INQUIRY BOX IS NOT HELD HERE. This page is
  * replaced outright by a click on any sibling screen, and the pair a box holds
@@ -270,7 +270,13 @@ export function LeadPage(): ReactNode {
   const state = useLead(partition);
   const inquiries = useInquiryBoxes();
   if (state.state === "Absent")
-    return <EmptyState label="No lead" variant="page" />;
+    return (
+      <EmptyState
+        label="No lead"
+        variant="page"
+        detail="Picks which tickets run next. Needs hosted runs."
+      />
+    );
   return (
     <LeadBody
       partition={partition}

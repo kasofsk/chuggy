@@ -1,6 +1,6 @@
 /**
- * The footer, drawn at the foot of the rail — and on the landing route, which
- * builds its own markup and never mounts `Shell`.
+ * The footer: at the foot of a page outside every project, under its bar rather
+ * than among the bar's controls, and nowhere in the shell around a project.
  */
 
 // jscpd:ignore-start -- the imports and vi.mock factories a case cannot hoist out
@@ -77,14 +77,21 @@ function mount(children: ReactNode): void {
   );
 }
 
-test("the footer is drawn in the bar above every page", async () => {
+test("the shell around a project draws no footer, in its bar or anywhere", async () => {
   mount(<Shell partition={atlas} />);
   await settled();
-  expect(screen.getByText(footerText)).toBeDefined();
+  expect(screen.getByRole("button", { name: "Sign out" })).toBeDefined();
+  expect(screen.queryByText(footerText)).toBeNull();
 });
 
-test("the footer is drawn on the landing page, which never mounts Shell", async () => {
+test("the landing ends on the footer, outside the bar", async () => {
   mount(<Landing />);
   await settled();
-  expect(screen.getByText(footerText)).toBeDefined();
+  const footer = screen.getByRole("contentinfo");
+  expect(footer.textContent).toBe(footerText);
+  expect(footer.closest("header")).toBeNull();
+  expect(
+    screen.getByRole("main").compareDocumentPosition(footer) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
 });

@@ -12,6 +12,7 @@ import {
   ticketFilterMoreCursor,
   ticketFilterPage,
   ticketFilterPhases,
+  ticketFilterProjectEmpty,
 } from "../app/core/projectTableFilters.ts";
 import type { TicketFilter } from "../app/core/projectTableFilters.ts";
 import {
@@ -103,4 +104,35 @@ test("more is not offered past a bound or without a cursor", () => {
       })),
     }),
   ).toBeUndefined();
+});
+
+test("only the unfiltered read, holding nothing and with nothing left to read, says the project is empty", () => {
+  expect(
+    ticketFilterProjectEmpty(ticketFilterAll, projectTicketRowsEmpty),
+  ).toBe(true);
+  for (const section of ticketSectionRoster)
+    expect(
+      ticketFilterProjectEmpty(section, projectTicketRowsEmpty),
+      section,
+    ).toBe(false);
+  expect(
+    ticketFilterProjectEmpty(ticketFilterAll, {
+      ...projectTicketRowsEmpty,
+      nextCursor: "after",
+    }),
+  ).toBe(false);
+  expect(
+    ticketFilterProjectEmpty(ticketFilterAll, {
+      ...projectTicketRowsEmpty,
+      failure: "Unreachable",
+    }),
+  ).toBe(false);
+  expect(
+    ticketFilterProjectEmpty(ticketFilterAll, {
+      ...projectTicketRowsEmpty,
+      tickets: [
+        { ticket: 1, phase: "Pending", sequence: 1, ...ticketInstants },
+      ],
+    }),
+  ).toBe(false);
 });

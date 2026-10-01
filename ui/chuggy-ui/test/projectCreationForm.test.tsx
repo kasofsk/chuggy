@@ -20,7 +20,10 @@ import {
   projectSwitcherCreateText,
 } from "../app/browser/shell/ProjectSwitcher.tsx";
 import { lastProjectRead } from "../app/core/lastProject.ts";
-import { projectCreationRoutePath } from "../app/core/projectCreation.ts";
+import {
+  projectCreationRoutePath,
+  projectNameRule,
+} from "../app/core/projectCreation.ts";
 import { persistentStore } from "../app/browser/ports.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import { answer, holderDouble, settled, turned } from "./screenHarness.tsx";
@@ -138,7 +141,7 @@ test("a reader with no project meets the form, under a bar that signs out and se
   served([], () => Promise.resolve(answer(partition, 201)));
   await drawn(<Landing />);
   expect(screen.getByText("No projects")).toBeDefined();
-  expect(screen.getByRole("textbox", { name: "Tenant" })).toBeDefined();
+  expect(screen.getByRole("textbox", { name: "Workspace" })).toBeDefined();
   expect(screen.getByRole("textbox", { name: "Project" })).toBeDefined();
   expect(screen.getByRole("button", { name: "Sign out" })).toBeDefined();
   expect(screen.queryByRole("navigation", { name: "Console" })).toBeNull();
@@ -151,12 +154,40 @@ test("a reader with no project meets the form, under a bar that signs out and se
   expect(screen.queryByText("Chat position")).toBeNull();
 });
 
-test("a name the wire refuses is one line under its field, and nothing is sent", async () => {
+/** The line a box is described by, which is where the rule stands. */
+function ruleUnder(label: string): HTMLElement {
+  const box = screen.getByRole("textbox", { name: label });
+  const line = document.getElementById(
+    box.getAttribute("aria-describedby") ?? "",
+  );
+  if (line === null) throw new Error(`nothing describes ${label}`);
+  return line;
+}
+
+test("the rule both names are held to stands under each field before anything is typed", async () => {
+  served([], () => Promise.resolve(answer(partition, 201)));
+  await drawn(<Landing />);
+  expect(projectNameRule).toBe("Lowercase letters, digits, inner hyphens");
+  for (const label of ["Workspace", "Project"]) {
+    expect(ruleUnder(label).textContent, label).toBe(projectNameRule);
+    expect(ruleUnder(label).className, label).not.toContain("text-tone-fail");
+  }
+  expect(screen.queryByText("Tenant")).toBeNull();
+});
+
+test("a name the wire refuses turns its own rule line, and nothing is sent", async () => {
   const posted = served([], () => Promise.resolve(answer(partition, 201)));
   await drawn(<Landing />);
-  typed("Tenant", "Vteng");
+  typed("Workspace", "Vteng");
   typed("Project", "chuggy");
-  expect(screen.getByText("Lowercase, digits, inner hyphens")).toBeDefined();
+  expect(ruleUnder("Workspace").textContent).toBe(projectNameRule);
+  expect(ruleUnder("Workspace").className).toContain("text-tone-fail");
+  expect(ruleUnder("Project").className).not.toContain("text-tone-fail");
+  expect(
+    screen
+      .getByRole("textbox", { name: "Workspace" })
+      .getAttribute("aria-invalid"),
+  ).toBe("true");
   expect(submit()).toHaveProperty("disabled", true);
   fireEvent.click(submit());
   await settled();
@@ -166,7 +197,7 @@ test("a name the wire refuses is one line under its field, and nothing is sent",
 test("a created project is opened at its repositories and remembered", async () => {
   const posted = served([], () => Promise.resolve(answer(partition, 201)));
   await drawn(<Landing />);
-  typed("Tenant", partition.tenant);
+  typed("Workspace", partition.tenant);
   typed("Project", partition.project);
   await pressed();
   expect(posted.map((one) => one.body)).toEqual([partition]);
@@ -184,7 +215,7 @@ test("a refusal is one short line, and the form stays where it was", async () =>
     ),
   );
   await drawn(<Landing />);
-  typed("Tenant", partition.tenant);
+  typed("Workspace", partition.tenant);
   typed("Project", partition.project);
   await pressed();
   expect(screen.getByRole("status").textContent).toBe("Taken");
@@ -194,7 +225,7 @@ test("a refusal is one short line, and the form stays where it was", async () =>
 test("a press repeated after no answer spends the same identity, and an edit draws a new one", async () => {
   const posted = served([], () => Promise.reject(new Error("offline")));
   await drawn(<Landing />);
-  typed("Tenant", partition.tenant);
+  typed("Workspace", partition.tenant);
   typed("Project", partition.project);
   await pressed();
   expect(screen.getByRole("status").textContent).toBe("Unreachable");

@@ -187,10 +187,34 @@ test("the bar spans the frame rather than sharing the row with the pane", async 
   styleless();
 });
 
-test("under that width it stacks under the pages rather than dividing them", async () => {
+/** A docked pane under the pages takes a share of every page's height, which
+ * a narrow viewport cannot spare until the reader asks for the chat. */
+test("under that width it starts as a strip under the pages, and expands there", async () => {
+  await mounted(viewportTwoColumnEm - 1);
+  expect(chatDrawn()).toBeNull();
+  expect(navDrawn()).not.toBeNull();
+  expect(frameTracks()).toContain(
+    "grid-rows-[minmax(0,1fr)_var(--width-chat-strip)]",
+  );
+  expect(localStorage.getItem(chatPaneStoreKey)).toBeNull();
+  styleless();
+  await pressed("Expand chat");
+  expect(chatDrawn()).not.toBeNull();
+  expect(frameTracks()).toContain(
+    "grid-rows-[minmax(0,1fr)_var(--height-chat)]",
+  );
+  styleless();
+});
+
+/** What the reader chose is theirs at every width: a pane they expanded is
+ * not put away again because the viewport is narrow. */
+test("under that width a pane the reader expanded starts expanded", async () => {
+  localStorage.setItem(
+    chatPaneStoreKey,
+    JSON.stringify({ placement: "Right", presentation: "Docked" }),
+  );
   await mounted(viewportTwoColumnEm - 1);
   expect(chatDrawn()).not.toBeNull();
-  expect(navDrawn()).not.toBeNull();
   expect(frameTracks()).toContain(
     "grid-rows-[minmax(0,1fr)_var(--height-chat)]",
   );
