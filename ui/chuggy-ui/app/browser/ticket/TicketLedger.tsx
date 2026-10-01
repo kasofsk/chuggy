@@ -212,7 +212,11 @@ function setRowExpands(
     expand(
       "Details",
       "Hide",
-      <ExecutionDetail partition={partition} execution={execution} />,
+      <ExecutionDetail
+        partition={partition}
+        execution={execution}
+        nowMs={chrome.nowMs}
+      />,
     ),
   ];
 }
