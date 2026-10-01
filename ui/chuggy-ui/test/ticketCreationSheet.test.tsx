@@ -34,9 +34,10 @@ const narrowCondition = "(max-width: 40em)";
  * floor, or one sized by content that can itself narrow. */
 const tracksShrinkable = ["minmax(0, 1fr)", "auto"];
 
-/** Every style rule in the sheet that holds under the narrow width, in source
- * order: those outside any container query and those inside the narrow one. */
-function sheetRulesNarrow(): readonly CSSStyleRule[] {
+/** Every style rule in the sheet that holds at one width, in source order:
+ * those outside any container query, and under the narrow width those inside
+ * the narrow one as well. */
+function sheetRules(narrow: boolean): readonly CSSStyleRule[] {
   const sheet = new CSSStyleSheet();
   sheet.replaceSync(sheetText);
   const rules: CSSStyleRule[] = [];
@@ -44,7 +45,8 @@ function sheetRulesNarrow(): readonly CSSStyleRule[] {
     for (const rule of Array.from(list)) {
       if (rule instanceof CSSStyleRule) rules.push(rule);
       else if (rule instanceof CSSContainerRule) {
-        if (rule.conditionText === narrowCondition) walk(rule.cssRules);
+        if (narrow && rule.conditionText === narrowCondition)
+          walk(rule.cssRules);
       } else if (rule instanceof CSSGroupingRule) walk(rule.cssRules);
     }
   };
@@ -52,20 +54,29 @@ function sheetRulesNarrow(): readonly CSSStyleRule[] {
   return rules;
 }
 
-const narrowRules = sheetRulesNarrow();
+const rulesWide = sheetRules(false);
+const rulesNarrow = sheetRules(true);
 
 /**
- * What the sheet declares for one element at the narrow width: the last
- * matching declaration in source order. Every rule here that competes for a
- * property is one class against one class, so their order is the cascade.
+ * What the sheet declares for one element at one width: the last matching
+ * declaration in source order. Every rule here that competes for a property is
+ * one class against one class, so their order is the cascade.
  */
-function narrowDeclared(element: Element, property: string): string {
+function declaredAt(
+  rules: readonly CSSStyleRule[],
+  element: Element,
+  property: string,
+): string {
   let declared = "";
-  for (const rule of narrowRules) {
+  for (const rule of rules) {
     const value = rule.style.getPropertyValue(property);
     if (value !== "" && element.matches(rule.selectorText)) declared = value;
   }
   return declared;
+}
+
+function narrowDeclared(element: Element, property: string): string {
+  return declaredAt(rulesNarrow, element, property);
 }
 
 /** Tracks split at the spaces outside any brackets. */
@@ -158,5 +169,24 @@ test.each([false, true])(
       expect(narrowDeclared(hint, "grid-column"), hint.textContent).toBe(
         "1 / -1",
       );
+  },
+);
+
+test.each([
+  { width: "wide", rules: rulesWide },
+  { width: "narrow", rules: rulesNarrow },
+])(
+  "a link or a check is its box and its Remove alone ($width)",
+  ({ rules }) => {
+    drawEveryRow(false);
+    for (const name of ["Link 1", "Check 1"]) {
+      const line = screen.getByRole("textbox", { name }).parentElement;
+      expect(line).not.toBeNull();
+      if (line === null) continue;
+      expect(
+        tracks(declaredAt(rules, line, "grid-template-columns")),
+        name,
+      ).toEqual(["minmax(0, 1fr)", "auto"]);
+    }
   },
 );

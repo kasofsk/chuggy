@@ -82,13 +82,15 @@
       grid-column: 1 / -1;
     }
 
-    /* A link or a check has no label of its own, so its Remove stays beside it. */
-    .creation-line {
-      grid-template-columns: minmax(0, 1fr) auto;
-    }
-
     .creation-stage {
       align-items: end;
     }
+  }
+
+  /* A link or a check has no label of its own: at every width its box takes
+     the whole field and its Remove stays beside it, so it follows the rules
+     above that it overrides. */
+  .creation-line {
+    grid-template-columns: minmax(0, 1fr) auto;
   }
 }

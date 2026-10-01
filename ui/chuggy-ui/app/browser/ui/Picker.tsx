@@ -1,8 +1,8 @@
 /**
  * One choice out of a short roster, drawn as a menu of radio items, and any
- * action that belongs beside the roster under it. The trigger is as wide as
- * its place allows and clips the chosen text to that, so a hint is how a
- * caller keeps the whole of it reachable.
+ * action that belongs beside the roster under it. The trigger is no wider
+ * than its place and clips the chosen text to that, so a hint is how a caller
+ * keeps the whole of it reachable.
  *
  * `modal={false}` keeps `react-remove-scroll` out of the tree: it appends a
  * `<style>` element the served `style-src 'self'` refuses.
