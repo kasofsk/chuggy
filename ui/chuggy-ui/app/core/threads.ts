@@ -296,6 +296,8 @@ export type ThreadSend =
  * rather than after they send — `Unhosted` before any press, on a thread that
  * takes messages where the door asks a grant the read says is not given, and
  * the reader's runner where the turns go to runners and it cannot take one now.
+ * A press's `Unhosted` gives way once the route is read as runners, which asks
+ * no grant; the press reads the placement again before it says so.
  */
 export function threadSendStanding(
   send: ThreadSend,
@@ -303,12 +305,15 @@ export function threadSendStanding(
   door: ThreadDoor,
 ): ThreadSend {
   if (!takes) return send;
-  if (send.send === "Idle" && threadDoorUnhosted(door))
+  const pressed: ThreadSend =
+    send.send === "Unhosted" && door.route === "Pool" ? { send: "Idle" } : send;
+  if (pressed.send === "Idle" && threadDoorUnhosted(door))
     return { send: "Unhosted" };
   const short = threadDoorRunnerShort(door);
-  return short !== undefined && (send.send === "Idle" || send.send === "Sent")
+  return short !== undefined &&
+    (pressed.send === "Idle" || pressed.send === "Sent")
     ? { send: short }
-    : send;
+    : pressed;
 }
 
 /** Whether a queued turn of the reader's own thread waits on a runner that

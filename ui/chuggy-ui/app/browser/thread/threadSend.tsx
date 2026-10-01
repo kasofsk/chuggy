@@ -99,7 +99,7 @@ export function useHostedRuns(partition: PartitionIdentity): {
 export function useThreadDoor(partition: PartitionIdentity): {
   readonly door: ThreadDoor;
   readonly learnt: (granted: boolean) => void;
-  readonly refused: () => void;
+  readonly refused: () => Promise<void>;
 } {
   const hosted = useHostedRuns(partition);
   const placement = useSessionPlacement(partition);
@@ -161,8 +161,8 @@ function ThreadSendNote(props: {
  * message may carry, and what a press ended as. A door that answered `Ended`
  * takes nothing more whatever the read said, because the read that drew this
  * page is older than the refusal; one the hosted grant refused, at a press or
- * in its read before anything is typed, takes nothing more either, and holds
- * any text it handed back, read-only.
+ * in its read before anything is typed, takes nothing more until the route is
+ * read as runners, and holds any text it handed back, read-only.
  */
 export function useThreadSend(input: {
   readonly partition: PartitionIdentity;
@@ -177,11 +177,8 @@ export function useThreadSend(input: {
   const [held, setHeld] = useState<ThreadHeld | undefined>(undefined);
   const [send, setSend] = useState<ThreadSend>({ send: "Idle" });
   const [opened, setOpened] = useState<string | undefined>(undefined);
-  const standing = threadSendStanding(
-    send,
-    input.takes,
-    useThreadDoor(partition).door,
-  );
+  const door = useThreadDoor(partition);
+  const standing = threadSendStanding(send, input.takes, door.door);
   return {
     takes:
       input.takes && standing.send !== "Ended" && standing.send !== "Unhosted",
@@ -195,6 +192,7 @@ export function useThreadSend(input: {
       if (session === undefined) {
         const open = await apiOpenThread(ports, partition);
         if (threadUnhosted(open)) {
+          await door.refused();
           setSend({ send: "Unhosted" });
           return "Kept";
         }
@@ -213,6 +211,10 @@ export function useThreadSend(input: {
         turn,
         message: text,
       });
+      if (answered.send === "Unhosted") {
+        door.learnt(false);
+        await door.refused();
+      }
       setSend(answered);
       if (answered.send === "Sent") {
         setHeld(undefined);

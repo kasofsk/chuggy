@@ -7,10 +7,11 @@
  * list and never from the roster; a write the grant still refuses says so in
  * the section rather than retrying.
  *
- * A KIND NOBODY TOUCHED IS NEVER WRITTEN. A route the reader may not choose is
- * drawn as it stands rather than moved to one they may, and a save writes only
- * a placement the draft moved, so an administrator changing one kind leaves the
- * others where whoever set them put them.
+ * WHAT THE READER DID NOT MOVE IS WRITTEN AS LAST READ. A route they may not
+ * choose is drawn as it stands rather than moved to one they may, and a save
+ * writes only a placement one of whose kinds they moved, its other kind at the
+ * newest read, so only a move made since that read is lost, until a write
+ * carries the value it expects.
  */
 
 import { useParams } from "@tanstack/react-router";
@@ -47,6 +48,7 @@ import {
   runnerRouteSourceLabel,
   runnersPlacementAnswered,
   runnersPlacementDraft,
+  runnersPlacementMoved,
   runnersPlacementOptions,
   runnersPlacementRoute,
   runnersPlacementWrites,
@@ -55,6 +57,7 @@ import {
 } from "../core/runners.ts";
 import type {
   RunnersPlacementDraft,
+  RunnersPlacementMoves,
   RunnersPlacementOption,
   RunnersPlacementSaved,
   RunnersPlacementWrites,
@@ -208,7 +211,7 @@ function PlacementEditor(props: {
     readonly execution: readonly PlacementRoute[];
     readonly session: readonly PlacementRoute[];
   };
-  readonly onDraft: (draft: RunnersPlacementDraft) => void;
+  readonly onMove: (moves: RunnersPlacementMoves) => void;
 }): ReactNode {
   return (
     <div className="grid gap-3">
@@ -222,7 +225,7 @@ function PlacementEditor(props: {
             props.choices[placement],
           )}
           onChoose={(route) => {
-            props.onDraft({ ...props.draft, [kind]: route });
+            props.onMove({ [kind]: route });
           }}
         />
       ))}
@@ -303,10 +306,9 @@ function PlacementSection(props: {
 }): ReactNode {
   const writing = usePlacementWriting(props.partition);
   const [editing, setEditing] = useState(false);
-  const [read, setRead] = useState<RunnersPlacementDraft>(() =>
-    runnersPlacementDraft(props.execution, props.session),
-  );
-  const [draft, setDraft] = useState<RunnersPlacementDraft>(read);
+  const [moves, setMoves] = useState<RunnersPlacementMoves>({});
+  const read = runnersPlacementDraft(props.execution, props.session);
+  const draft = runnersPlacementMoved(read, moves);
   const saved = writing.saved;
   const choices = {
     execution: props.execution.choices,
@@ -324,9 +326,7 @@ function PlacementSection(props: {
         ? {}
         : { notice: <PlacementNotice saved={saved} /> })}
       onEdit={() => {
-        const now = runnersPlacementDraft(props.execution, props.session);
-        setRead(now);
-        setDraft(now);
+        setMoves({});
         writing.reset();
         setEditing(true);
       }}
@@ -344,7 +344,9 @@ function PlacementSection(props: {
           read={read}
           draft={draft}
           choices={choices}
-          onDraft={setDraft}
+          onMove={(moved) => {
+            setMoves({ ...moves, ...moved });
+          }}
         />
       ) : (
         <PlacementTable execution={props.execution} session={props.session} />

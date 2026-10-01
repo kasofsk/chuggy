@@ -53,20 +53,20 @@ export function useSessionRunnerShort(
 }
 
 /** Reads the placement again now, for a door whose refusal is newer than it:
- * the route or the reader's runner has moved since the last poll. */
+ * the route or the reader's runner has moved since the last poll. Settles once
+ * the read has answered. */
 export function useSessionPlacementStale(
   partition: PartitionIdentity,
-): () => void {
+): () => Promise<void> {
   const client = useQueryClient();
-  return () => {
-    void client.invalidateQueries({
+  return () =>
+    client.invalidateQueries({
       queryKey: projectResourceKey(
         partition,
         "Project",
         sessionPlacementResource,
       ),
     });
-  };
 }
 
 /** Why no runner can take a turn now, with where one is added where none is. */

@@ -102,6 +102,8 @@ interface Drawing {
   /** What a write answers, in the order the page makes them. */
   readonly written?: readonly Response[];
   readonly client?: QueryClient;
+  /** Whether the session placement's read fails, which a case may set too. */
+  readonly sessionsFailing?: boolean;
 }
 
 async function drawPage(drawing: Drawing = {}): Promise<readonly Sent[]> {
@@ -126,7 +128,11 @@ async function drawPage(drawing: Drawing = {}): Promise<readonly Sent[]> {
         return Promise.resolve(written.shift() ?? answer({}, 503));
       if (url.endsWith("/worker-pools")) return Promise.resolve(answer(listed));
       if (url.endsWith("/session-placement"))
-        return Promise.resolve(answer(sessions()));
+        return Promise.resolve(
+          drawing.sessionsFailing === true
+            ? answer({ error: { code: "Unavailable" } }, 500)
+            : answer(sessions()),
+        );
       return Promise.resolve(answer(placement));
     },
   );
@@ -308,34 +314,6 @@ test("a reader without the hosted grant who moves work alone writes work's place
   expect(placementRows()).toContain("ChatHostedDefault");
 });
 
-/** The session placement is polled, so it can move while the section is open;
- * what the reader left alone is told apart from the read they started on. */
-test("a session placement moved under an open editor is not written back", async () => {
-  const client = new QueryClient();
-  const drawing: { sessions: unknown } & Drawing = {
-    sessions: sessionsGranted,
-    client,
-    written: [
-      answer({ ...granted, work: { route: "Pool", source: "Project" } }),
-    ],
-  };
-  const sent = await drawPage(drawing);
-  await press("Edit");
-  drawing.sessions = {
-    ...sessionsGranted,
-    lead: { route: "Pool", source: "Project" },
-  };
-  await turned(() => {
-    void client.invalidateQueries();
-  });
-  await settled();
-  await choose("Work", "Runners");
-  await press("Save changes");
-  expect(puts(sent)).toStrictEqual([
-    ["execution-placement", { work: "Pool", evaluation: "InCluster" }],
-  ]);
-});
-
 test("a reader who moves chat alone writes the session placement alone", async () => {
   const sent = await drawPage({
     written: [
@@ -352,6 +330,116 @@ test("a reader who moves chat alone writes the session placement alone", async (
     ["session-placement", { thread: "InCluster", lead: "InCluster" }],
   ]);
   expect(screen.getByText("Written")).toBeTruthy();
+});
+
+/** A drawing a case moves under the page while its editor is open. */
+type Moving = Drawing & { sessions: unknown; sessionsFailing: boolean };
+
+/** The page with its editor open and `chosen` chosen in it, then `move` made
+ * to what the server holds and the reads taken again, as a poll would. */
+async function movedUnderEditor(
+  drawing: Drawing,
+  move: (moving: Moving) => void,
+  chosen?: readonly [kind: string, route: string],
+): Promise<readonly Sent[]> {
+  const client = new QueryClient();
+  const moving: Moving = {
+    sessionsFailing: false,
+    ...drawing,
+    sessions: drawing.sessions ?? sessionsGranted,
+    client,
+  };
+  const sent = await drawPage(moving);
+  await press("Edit");
+  if (chosen !== undefined) await choose(...chosen);
+  move(moving);
+  await turned(() => {
+    void client.invalidateQueries();
+  });
+  await settled();
+  return sent;
+}
+
+/** The session placement is polled, so it can move while the section is open,
+ * and what the reader left alone is drawn and written as the newest read. */
+test("a session placement moved under an open editor is not written back", async () => {
+  const sent = await movedUnderEditor(
+    {
+      written: [
+        answer({ ...granted, work: { route: "Pool", source: "Project" } }),
+      ],
+    },
+    (moving) => {
+      moving.sessions = {
+        ...sessionsGranted,
+        lead: { route: "Pool", source: "Project" },
+      };
+    },
+  );
+  await choose("Work", "Runners");
+  await press("Save changes");
+  expect(puts(sent)).toStrictEqual([
+    ["execution-placement", { work: "Pool", evaluation: "InCluster" }],
+  ]);
+});
+
+test("a lead moved under an open editor is drawn where it moved, and a chat move writes it there", async () => {
+  const sent = await movedUnderEditor(
+    { written: [answer(sessionsGranted)] },
+    (moving) => {
+      moving.sessions = {
+        ...sessionsGranted,
+        lead: { route: "Pool", source: "Project" },
+      };
+    },
+  );
+  expect(radio("Lead", "Runners").getAttribute("aria-checked")).toBe("true");
+  await choose("Chat", "Hosted");
+  await press("Save changes");
+  expect(puts(sent)).toStrictEqual([
+    ["session-placement", { thread: "InCluster", lead: "Pool" }],
+  ]);
+});
+
+/** A reader without the grant cannot move the lead off the cluster by moving
+ * chat: the write names the lead as an administrator who may set it left it. */
+test("a lead moved to hosted under a grantless editor is written hosted when chat moves", async () => {
+  const before = {
+    ...grantless.sessions,
+    lead: { route: "Pool", source: "Project" },
+  };
+  const sent = await movedUnderEditor(
+    {
+      placement: grantless.placement,
+      sessions: before,
+      written: [answer(before)],
+    },
+    (moving) => {
+      moving.sessions = {
+        ...before,
+        lead: { route: "InCluster", source: "Project" },
+      };
+    },
+  );
+  await choose("Chat", "Runners");
+  await press("Save changes");
+  expect(puts(sent)).toStrictEqual([
+    ["session-placement", { thread: "Pool", lead: "InCluster" }],
+  ]);
+});
+
+/** A poll is asked on a clock, so one that fails says nothing of the placement
+ * and the open editor keeps what the reader chose in it. */
+test("a session placement poll that fails leaves the open editor and the reader's moves", async () => {
+  await movedUnderEditor(
+    {},
+    (moving) => {
+      moving.sessionsFailing = true;
+    },
+    ["Chat", "Hosted"],
+  );
+  expect(radio("Chat", "Hosted").getAttribute("aria-checked")).toBe("true");
+  expect(screen.getByRole("button", { name: "Save changes" })).toBeTruthy();
 });
 
 test("a write the hosted grant refuses says so and stays open", async () => {

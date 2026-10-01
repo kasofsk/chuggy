@@ -365,7 +365,7 @@ function ChatPaneOpen(props: {
   /** New refused, which is the newest word on what the door asks. */
   const refuse = (answer: "Unhosted" | "NoRunner"): void => {
     if (answer === "Unhosted") door.learnt(false);
-    door.refused();
+    void door.refused();
     setStarting(false);
   };
   /** A thread that opened, which the grant had to allow only where the route

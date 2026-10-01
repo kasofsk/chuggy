@@ -83,8 +83,7 @@ export interface RunnersPlacementDraft {
   readonly lead: PlacementRoute;
 }
 
-/** Every kind's route as read, which a draft starts from and a save is told
- * apart from. */
+/** Every kind's route as read, which a save is told apart from. */
 export function runnersPlacementDraft(
   execution: ExecutionPlacementResponse,
   session: SessionPlacementResponse,
@@ -95,6 +94,18 @@ export function runnersPlacementDraft(
     thread: session.thread.route,
     lead: session.lead.route,
   };
+}
+
+/** The kinds the reader has chosen a route for since opening the editor. */
+export type RunnersPlacementMoves = Partial<RunnersPlacementDraft>;
+
+/** Each kind the reader moved where they moved it, and every other kind as the
+ * newest read says, so a move made since the editor opened is kept. */
+export function runnersPlacementMoved(
+  read: RunnersPlacementDraft,
+  moves: RunnersPlacementMoves,
+): RunnersPlacementDraft {
+  return { ...read, ...moves };
 }
 
 /** One route a kind's choice draws, and whether the reader may choose it. */
@@ -116,8 +127,8 @@ export function runnersPlacementOptions(
     : [{ route: read, choosable: false }, ...offered];
 }
 
-/** What a save writes: each placement only where one of its own kinds moved
- * from the read the draft started on, since a write names both its kinds. */
+/** What a save writes: each placement only where one of its own kinds differs
+ * from the read, since a write names both its kinds. */
 export interface RunnersPlacementWrites {
   readonly execution:
     | { readonly work: PlacementRoute; readonly evaluation: PlacementRoute }

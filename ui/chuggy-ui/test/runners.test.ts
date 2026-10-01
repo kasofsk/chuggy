@@ -17,6 +17,7 @@ import {
   runnerStandingLabel,
   runnersPlacementAnswered,
   runnersPlacementDraft,
+  runnersPlacementMoved,
   runnersPlacementOptions,
   runnersPlacementWrites,
 } from "../app/core/runners.ts";
@@ -50,6 +51,22 @@ test("a draft starts on each kind's route as read, whether or not the reader may
       { ...sessions, choices: ["Pool"] },
     ),
   ).toStrictEqual(read);
+});
+
+/** The read is the newest one, so a kind the reader left alone follows what
+ * anyone else did to it. */
+test("a kind the reader moved is where they moved it, and every other is as read", () => {
+  const read = {
+    work: "InCluster",
+    evaluation: "Pool",
+    thread: "Pool",
+    lead: "InCluster",
+  } as const;
+  expect(runnersPlacementMoved(read, {})).toStrictEqual(read);
+  expect(runnersPlacementMoved(read, { thread: "InCluster" })).toStrictEqual({
+    ...read,
+    thread: "InCluster",
+  });
 });
 
 test("a kind offers the reader's choices, after its route as read where that is not one of them", () => {

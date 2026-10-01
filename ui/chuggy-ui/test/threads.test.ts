@@ -486,6 +486,24 @@ test("a composer on runners says the reader's runner where it cannot take a turn
   ).toStrictEqual(refused);
 });
 
+/** A press refused for the grant reads the placement again before it says
+ * so, so a route read as runners afterwards is newer than the refusal. */
+test("a press refused for the grant gives way once the route is read as runners", () => {
+  const unhosted = { send: "Unhosted" } as const;
+  expect(
+    threadSendStanding(unhosted, true, door("Pool", false, "Live")),
+  ).toStrictEqual({ send: "Idle" });
+  expect(
+    threadSendStanding(unhosted, true, door("Pool", false, "Offline")),
+  ).toStrictEqual({ send: "RunnerOffline" });
+  expect(
+    threadSendStanding(unhosted, true, door("InCluster", true)),
+  ).toStrictEqual(unhosted);
+  expect(
+    threadSendStanding(unhosted, true, door(undefined, true)),
+  ).toStrictEqual(unhosted);
+});
+
 test("a send refused for no runner is told apart from any other refusal", () => {
   const rejected = (code: string) =>
     ({ outcome: "Rejected", code, status: 403, body: undefined }) as const;
