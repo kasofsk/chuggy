@@ -540,6 +540,50 @@ test("New the hosted grant refuses closes nothing, and the refusal is drawn", as
   styleless();
 });
 
+/** A server whose thread door refuses every open for the hosted grant until
+ * the case grants it. */
+function grantedLaterServed(listed: readonly unknown[]): {
+  readonly served: typeof fetch;
+  readonly grant: () => void;
+} {
+  const served = threadServed(listed);
+  let granted = false;
+  return {
+    served: ((url: string, init?: { readonly method?: string }) =>
+      !granted && init?.method === "POST" && url.endsWith("/threads")
+        ? Promise.resolve(
+            answer({ error: { code: "HostedRunsNotGranted" } }, 403),
+          )
+        : served(url, init)) as unknown as typeof fetch,
+    grant: () => {
+      granted = true;
+    },
+  };
+}
+
+/** A thread that opens answers the refusal New met before it, so none stands
+ * once the grant is given. */
+async function grantedAfterRefusal(listed: readonly unknown[]): Promise<void> {
+  const server = grantedLaterServed(listed);
+  await mounted(viewportDeskEm, server.served);
+  await pressed("New");
+  expect(screen.getByText("Needs hosted runs")).toBeTruthy();
+  server.grant();
+  await pressed("New");
+  expect(screen.queryAllByText("Needs hosted runs")).toStrictEqual([]);
+  styleless();
+}
+
+test("New after the grant is given leaves no refusal standing, with no thread held", async () => {
+  await grantedAfterRefusal([]);
+});
+
+test("New after the grant is given leaves no refusal standing, with a thread held", async () => {
+  await grantedAfterRefusal([
+    threadEntry({ session: openedSession, owner: "geoff", mine: true }),
+  ]);
+});
+
 /** A grant withdrawn after the thread opened refuses its next message, and the
  * box keeps that message while taking no more. */
 test("a message to a held thread the hosted grant refuses stays in the box, read-only, over the refusal", async () => {

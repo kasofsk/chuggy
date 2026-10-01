@@ -346,6 +346,12 @@ function ChatPaneOpen(props: {
     setUnhosted(true);
     setStarting(false);
   };
+  /** A thread that opened, which answers any refusal the hosted grant gave before. */
+  const holdOpened = (session: string): void => {
+    setChosen(session);
+    setStarting(false);
+    setUnhosted(false);
+  };
   const held = threads?.find((thread) => thread.session === holding.session);
   return (
     <section
@@ -357,10 +363,7 @@ function ChatPaneOpen(props: {
           <ChatPaneStartControl
             partition={props.partition}
             start={holding.start}
-            onOpened={(session) => {
-              setChosen(session);
-              setStarting(false);
-            }}
+            onOpened={holdOpened}
             onUnhosted={refuseUnhosted}
             unhosted={unhosted}
             threadDrawn={chatPaneThreadDrawn(holding.session, starting)}
@@ -393,10 +396,7 @@ function ChatPaneOpen(props: {
           onStarting={() => {
             setStarting(true);
           }}
-          onStarted={(session) => {
-            setChosen(session);
-            setStarting(false);
-          }}
+          onStarted={holdOpened}
         />
       </div>
     </section>
