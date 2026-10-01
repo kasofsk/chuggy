@@ -8,9 +8,9 @@
  * grants the asker nothing they did not already hold; gating it on `Mutate`
  * would say a reader may not ask a question about what they are already allowed
  * to read, which is a control with no failure to prevent. What asking spends is
- * the project's shared account, and that is bounded by a COUNT —
- * `inquiriesOpenPerMemberMax` — rather than by an access kind that means
- * something else.
+ * a hosted run on the shared credential, so it also needs the tenant's hosted
+ * grant, as a thread's turn does; `inquiriesOpenPerMemberMax` bounds how many a
+ * granted member holds open, beside the grant and not instead of it.
  *
  * THE LISTING IS EVERY MEMBER'S. An inquiry any member asked is an inquiry
  * every member with `Read` can see, because members cooperating is the reason
@@ -193,12 +193,13 @@ export type LeadInquiryRead =
  * What the ask door answered, every refusal one the member can act on:
  * `NotFound` a project they may not read, `NoLead` a project with no lead,
  * `LeadNotStarted` a lead with no head to fork from, `LeadClosed` a lead that
- * takes no more, `InFlight` their own unanswered questions. A question too long
+ * takes no more, `InFlight` their own unanswered questions,
+ * `HostedRunsNotGranted` a tenant that grants them no hosted runs. A question too long
  * is not an arm here: it is bounded where it is read off the wire, so it is an
  * invalid request rather than something this door met.
  */
 export type LeadInquiryAsked =
-  | { readonly result: "NotFound" }
+  | { readonly result: "NotFound" | "HostedRunsNotGranted" }
   | {
       readonly result: "NoLead" | "LeadNotStarted" | "LeadClosed" | "InFlight";
     }

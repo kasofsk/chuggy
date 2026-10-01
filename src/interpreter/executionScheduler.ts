@@ -91,6 +91,7 @@
  */
 
 import type { WorkTaskDocument } from "../contract/workerTask.ts";
+import { placementRoutes, placementRouteSources } from "../contract/rosters.ts";
 import type { Config as DomainConfig } from "../domain/config.ts";
 import type { TaskId, TicketId } from "../domain/ids.ts";
 import type { TaskPurpose } from "./briefingTemplate.ts";
@@ -359,7 +360,7 @@ export function executionCapacitySafe(
 }
 
 /** The model's `ExecutionRoute` in the words `execution.placement` stores, `InCluster` for `Kubernetes` and `Pool` for `RegisteredRunner`. */
-export const allExecutionRoutes = ["InCluster", "Pool"] as const;
+export const allExecutionRoutes = placementRoutes;
 export type ExecutionRoute = (typeof allExecutionRoutes)[number];
 
 /** The route each task kind registers with. */
@@ -379,22 +380,64 @@ export interface ExecutionRouting {
   >;
 }
 
+/** Which of the three places a kind's route came from, strongest first. */
+export const allExecutionRouteSources = placementRouteSources;
+export type ExecutionRouteSource = (typeof allExecutionRouteSources)[number];
+
+/** One kind's route and the place it came from. */
+export interface ExecutionRouteResolved {
+  readonly route: ExecutionRoute;
+  readonly source: ExecutionRouteSource;
+}
+
+export type ExecutionRoutesResolved = Readonly<
+  Record<ExecutionTaskKind, ExecutionRouteResolved>
+>;
+
+/** The kinds a deployment routes one project otherwise, absent where it names none. */
+export function executionRouteOverride(
+  routing: ExecutionRouting,
+  partition: Partition,
+): Partial<ExecutionRoutes> | undefined {
+  return routing.projectRoutes.get(partition.tenant)?.get(partition.project);
+}
+
+/**
+ * Each kind's route for one project: the deployment's override for it, else
+ * the project's own placement, else the deployment's default.
+ */
+export function executionRoutesResolved(
+  defaults: ExecutionRoutes,
+  override: Partial<ExecutionRoutes> | undefined,
+  placement: ExecutionRoutes | undefined,
+): ExecutionRoutesResolved {
+  const resolved = (kind: ExecutionTaskKind): ExecutionRouteResolved => {
+    const overridden = override?.[kind];
+    if (overridden !== undefined)
+      return { route: overridden, source: "Override" };
+    if (placement !== undefined)
+      return { route: placement[kind], source: "Project" };
+    return { route: defaults[kind], source: "Default" };
+  };
+  return { Work: resolved("Work"), Evaluation: resolved("Evaluation") };
+}
+
 /**
  * The routes one project's executions register with. The route is written with
- * the execution, so a policy that moves later moves only the executions
- * registered after it.
+ * the execution, so a policy or a placement that moves later moves only the
+ * executions registered after it.
  */
 export function executionRoutes(
   routing: ExecutionRouting,
   partition: Partition,
+  placement: ExecutionRoutes | undefined,
 ): ExecutionRoutes {
-  const override = routing.projectRoutes
-    .get(partition.tenant)
-    ?.get(partition.project);
-  return {
-    Work: override?.Work ?? routing.routes.Work,
-    Evaluation: override?.Evaluation ?? routing.routes.Evaluation,
-  };
+  const resolved = executionRoutesResolved(
+    routing.routes,
+    executionRouteOverride(routing, partition),
+    placement,
+  );
+  return { Work: resolved.Work.route, Evaluation: resolved.Evaluation.route };
 }
 
 /** One durable logical execution as the scheduler holds it, provenance included. */
@@ -707,6 +750,9 @@ export interface ExecutionSchedulerStore {
     requestsMax: number,
     leaseSecs: number,
   ): Promise<readonly RequestClaim[]>;
+
+  /** The routes a project chose for its own executions, absent where it chose none. */
+  projectPlacement(partition: Partition): Promise<ExecutionRoutes | undefined>;
 
   /** Creates or finds the exact logical executions one spawn request authorized, each created on its kind's route. */
   registerSpawn(

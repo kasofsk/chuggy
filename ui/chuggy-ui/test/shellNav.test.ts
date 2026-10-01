@@ -27,6 +27,7 @@ test("every entry names a route of the partition and carries its params", () => 
     "lead",
     "selector",
     "repositories",
+    "runners",
     "ticket-new",
   ]);
 });

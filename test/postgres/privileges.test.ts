@@ -46,6 +46,9 @@ const schedulerSourceInsertPrivilege = {
   columns: sourceInsertColumns,
 };
 const admittedWorkerColumns = "image,name,published_at,version";
+/** What a scheduler publishes of its routing at boot, and all of it. */
+const executionRoutingColumns =
+  "evaluation_route,project_routes,published_at,singleton,work_route";
 /** The five relations one run's evidence lives in, named once for every case. */
 const runEvidenceRelations = [
   "execution_run",
@@ -969,6 +972,16 @@ const schedulerWritePrivileges = [
   schedulerReportInsertPrivilege,
   schedulerSourceInsertPrivilege,
   {
+    table_name: "execution_routing",
+    privilege_type: "INSERT",
+    columns: executionRoutingColumns,
+  },
+  {
+    table_name: "execution_routing",
+    privilege_type: "UPDATE",
+    columns: executionRoutingColumns,
+  },
+  {
     table_name: "project",
     privilege_type: "UPDATE",
     columns: "manifest_next",
@@ -981,7 +994,7 @@ const schedulerWritePrivileges = [
   },
 ];
 
-test("the scheduler's write surface is exactly the columns execution and capacity need", async () => {
+test("the scheduler's write surface is exactly the columns execution and capacity need, and the routing it publishes", async () => {
   assert.deepEqual(
     await harness.query(
       `SELECT table_name, privilege_type,
@@ -997,7 +1010,7 @@ test("the scheduler's write surface is exactly the columns execution and capacit
   );
 });
 
-test("the scheduler reads execution and capacity, of the project only its lifecycle, and of a pool what it declared", async () => {
+test("the scheduler reads execution and capacity, of the project only its lifecycle, of a pool what it declared, and where each project runs", async () => {
   const read = (await harness.query(
     `SELECT table_name AS relation,
             string_agg(column_name, ',' ORDER BY column_name) AS columns
@@ -1021,8 +1034,10 @@ test("the scheduler reads execution and capacity, of the project only its lifecy
       "execution_result_artifact",
       "execution_result_report",
       "execution_result_source",
+      "execution_routing",
       "input_bundle_reference",
       "project",
+      "project_execution_placement",
       "recovery_epoch",
       "scheduler_incident",
       "schema_migration",

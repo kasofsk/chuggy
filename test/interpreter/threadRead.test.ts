@@ -239,7 +239,11 @@ function ports(doubles: ThreadDoubles): NativeThreadPorts {
 
 function boundary(
   doubles: Partial<ThreadDoubles> = {},
-  allowed: readonly ("Read" | "Mutate")[] = ["Read", "Mutate"],
+  allowed: readonly ("Read" | "Mutate" | "ExecuteHosted")[] = [
+    "Read",
+    "Mutate",
+    "ExecuteHosted",
+  ],
 ) {
   const held: ThreadDoubles = {
     calls: [],
@@ -258,7 +262,14 @@ function boundary(
           : undefined,
       );
     },
-    authorizeTenant: () => Promise.resolve(undefined),
+    authorizeTenant: (principal, _tenant, kind) => {
+      held.calls.push(`authorizeTenant:${kind}`);
+      return Promise.resolve(
+        (allowed as readonly string[]).includes(kind)
+          ? memberAuthority(principal)
+          : undefined,
+      );
+    },
   };
   const web = nativeWeb(
     access,
@@ -499,6 +510,19 @@ test("opening a thread is a mutation, and the roster is never the caller's", asy
   assert.equal(
     (await boundary({}, ["Read"]).web.openThread(geoff, partition)).result,
     "NotFound",
+  );
+});
+
+test("opening a thread needs the tenant's hosted grant, and is refused before anything opens without it", async () => {
+  const { web, held } = boundary({}, ["Read", "Mutate"]);
+
+  assert.deepEqual(await web.openThread(geoff, partition), {
+    result: "HostedRunsNotGranted",
+  });
+  assert.ok(held.calls.includes("authorizeTenant:ExecuteHosted"));
+  assert.equal(
+    held.calls.find((call) => call.startsWith("open:")),
+    undefined,
   );
 });
 
@@ -796,6 +820,23 @@ test("a member may not put a message in another member's thread", async () => {
   assert.equal(
     held.calls.filter((call) => call.startsWith("enqueue:")).length,
     0,
+  );
+});
+
+test("a message needs the tenant's hosted grant at every send, and nothing is enqueued without it", async () => {
+  const { web, held } = boundary({}, ["Read", "Mutate"]);
+
+  const sent = await web.sendThreadMessage(geoff, partition, {
+    session: mine,
+    turn: asSessionTurnId("thread-turn-1"),
+    message: "have a look at 42",
+  });
+
+  assert.deepEqual(sent, { result: "HostedRunsNotGranted" });
+  assert.ok(held.calls.includes("authorizeTenant:ExecuteHosted"));
+  assert.equal(
+    held.calls.find((call) => call.startsWith("enqueue:")),
+    undefined,
   );
 });
 

@@ -35,6 +35,7 @@ import { migration023 } from "../../src/adapters/postgres/schema/migrations/023-
 import { migration026 } from "../../src/adapters/postgres/schema/migrations/026-project-creation.ts";
 import { migration027 } from "../../src/adapters/postgres/schema/migrations/027-forge-claim-per-tenant.ts";
 import { migration028 } from "../../src/adapters/postgres/schema/migrations/028-binding-lands-by-pull-request.ts";
+import { migration029 } from "../../src/adapters/postgres/schema/migrations/029-project-execution-placement.ts";
 import {
   postgresForgeInstallationClaims,
   postgresForgeInstallations,
@@ -61,6 +62,7 @@ import {
   draftCreateFunction,
   draftReleaseFunction,
   draftReviseFunction,
+  executionPlacementSetFunction,
   finalizationFunction,
   finalizerRole,
   forgeInstallationRecordFunction,
@@ -6180,11 +6182,13 @@ const wipeKept = [
   "configuration_revision",
   "deployment_authoring_policy",
   "execution_cluster",
+  "execution_routing",
   "forge_installation",
   "installation_authority",
   "project",
   "project_creation_grant",
   "project_creation_operation",
+  "project_execution_placement",
   "project_repository",
   "project_repository_bind_operation",
   "recovery_epoch",
@@ -9278,6 +9282,84 @@ test("028 lands a repository bound from here on by pull request, leaving the bin
     assert.deepEqual(await landings(), [
       { repository: "bound-90", landing_mode: "Push" },
       { repository: "bound-90-after", landing_mode: "PullRequest" },
+    ]);
+  });
+});
+
+/** The placement rows 029 leaves, in project order, and whether each names who set it. */
+async function placementRows(subject: pg.Pool): Promise<readonly unknown[]> {
+  const found = await subject.query<Record<string, unknown>>(
+    `SELECT project, work_route, evaluation_route, set_by_kind, set_at
+       FROM project_execution_placement ORDER BY project`,
+  );
+  return found.rows;
+}
+
+/** What 029's constraints refuse: a second routing row, and a setter named in part. */
+async function placementRefusals(subject: pg.Pool): Promise<void> {
+  await assert.rejects(
+    subject.query(`INSERT INTO execution_routing
+      (singleton,work_route,evaluation_route,project_routes)
+      VALUES (2,'Pool','Pool','{}')`),
+    /execution_routing_is_one_row/u,
+  );
+  await assert.rejects(
+    subject.query(
+      `UPDATE project_execution_placement SET set_by_kind='Member'`,
+    ),
+    /project_execution_placement_setter_is_whole/u,
+  );
+}
+
+test("029 places every project that runs today in cluster, naming no setter, and seeds the routing a scheduler naming none runs", async () => {
+  await migrationDatabase("execution_placement", async (subject) => {
+    const door = `${executionPlacementSetFunction}(text,text,text,text,text,text)`;
+    await installationBefore(subject, migration029.version);
+    await subject.query(
+      `${tenantSeed("tenant-29")}
+       INSERT INTO project(tenant,project,lifecycle) VALUES
+         ('tenant-29','project-a','Active'),('tenant-29','project-b','Active')`,
+    );
+    assert.ok((await postgresMigrate(subject)).includes(migration029.version));
+    await subject.query(
+      `INSERT INTO project(tenant,project,lifecycle) VALUES('tenant-29','project-c','Active')`,
+    );
+    assert.deepEqual(
+      await placementRows(subject),
+      ["project-a", "project-b"].map((project) => ({
+        project,
+        work_route: "InCluster",
+        evaluation_route: "InCluster",
+        set_by_kind: null,
+        set_at: null,
+      })),
+      "a project created after the backfill was placed by somebody",
+    );
+    assert.deepEqual(
+      (
+        await subject.query(
+          `SELECT work_route, evaluation_route, project_routes FROM execution_routing`,
+        )
+      ).rows,
+      [
+        {
+          work_route: "InCluster",
+          evaluation_route: "InCluster",
+          project_routes: {},
+        },
+      ],
+    );
+    await placementRefusals(subject);
+    assert.deepEqual(await sessionInvocationBoundaries(subject, [door]), [
+      {
+        signature: door,
+        owner: boundaryOwnerRole,
+        definer: true,
+        scheduler: false,
+        plane: false,
+        pool: false,
+        api: true,
+      },
     ]);
   });
 });

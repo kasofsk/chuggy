@@ -67,7 +67,10 @@ export function asProjectAccessKind(value: string): ProjectAccessKind {
  * single roster would let a caller ask the project namespace for a permit only
  * a tenant declares.
  */
-export const allTenantAccessKinds = ["AdministerTenant"] as const;
+export const allTenantAccessKinds = [
+  "AdministerTenant",
+  "ExecuteHosted",
+] as const;
 
 export type TenantAccessKind = (typeof allTenantAccessKinds)[number];
 
@@ -99,6 +102,7 @@ export const projectAccessPermits: Readonly<Record<ProjectAccessKind, string>> =
  */
 export const tenantAccessPermits: Readonly<Record<TenantAccessKind, string>> = {
   AdministerTenant: "administer",
+  ExecuteHosted: "execute_hosted",
 };
 
 /**
@@ -211,6 +215,18 @@ export interface ProjectAccess {
     tenant: TenantId,
     access: TenantAccessKind,
   ): Promise<Authority | undefined>;
+}
+
+/** Whether the tenant grants a principal hosted runs, which every turn on the shared credential spends. */
+export async function hostedRunsGranted(
+  access: ProjectAccess,
+  principal: Principal,
+  tenant: TenantId,
+): Promise<boolean> {
+  return (
+    (await access.authorizeTenant(principal, tenant, "ExecuteHosted")) !==
+    undefined
+  );
 }
 
 /**

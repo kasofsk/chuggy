@@ -123,6 +123,7 @@ import type {
 } from "../../interpreter/projectStore.ts";
 import { asProjectId, asTenantId } from "../../interpreter/projectStore.ts";
 import { asTicketId } from "../../domain/ids.ts";
+import { postgresProjectPlacement } from "./executionPlacement.ts";
 import { postgresOwnershipEpoch } from "./ownership.ts";
 import { postgresTransaction } from "./pool.ts";
 import { projectRowCounter } from "./rows.ts";
@@ -1262,6 +1263,7 @@ export function postgresExecutionScheduler(
   return {
     claimRequests: (owner, kinds, requestsMax, leaseSecs) =>
       schedulerClaimRequests(pool, owner, kinds, requestsMax, leaseSecs),
+    projectPlacement: (partition) => postgresProjectPlacement(pool, partition),
     registerSpawn: (claim, tasksMax, routes) =>
       postgresTransaction(pool, (client) =>
         schedulerRegisterSpawn(client, claim, tasksMax, routes),

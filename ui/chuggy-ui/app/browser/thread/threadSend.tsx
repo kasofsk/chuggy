@@ -28,6 +28,7 @@ import { apiOpenThread } from "../../core/apiRoutes.ts";
 import { panelReason } from "../../core/freshness.ts";
 import { threadMessageSent } from "../../core/threadSendRun.ts";
 import {
+  threadUnhosted,
   threadTurnIdBytesCount,
   threadTurnMinted,
   threadTurnRetained,
@@ -48,6 +49,12 @@ interface ThreadHeld {
   readonly turn: string;
 }
 
+/** What a thread door refused for the tenant's hosted grant is drawn as,
+ * whether the open or a send met it. */
+export function ThreadUnhostedNotice(): ReactNode {
+  return <Notice tone="parked" inline detail="Needs hosted runs" />;
+}
+
 /** The one line a press is reported as, and nothing while it has not been
  * pressed: a composer that narrated its own idleness would be prose. */
 function ThreadSendNote(props: { readonly send: ThreadSend }): ReactNode {
@@ -57,6 +64,8 @@ function ThreadSendNote(props: { readonly send: ThreadSend }): ReactNode {
     case "Sending":
     case "Sent":
       return null;
+    case "Unhosted":
+      return <ThreadUnhostedNotice />;
     case "Waiting":
     case "Ended":
     case "Unsettled":
@@ -72,7 +81,8 @@ function ThreadSendNote(props: { readonly send: ThreadSend }): ReactNode {
  * The composer one thread hands the surface: what the door still takes, what a
  * message may carry, and what a press ended as. A door that answered `Ended`
  * takes nothing more whatever the read said, because the read that drew this
- * page is older than the refusal.
+ * page is older than the refusal; one the hosted grant refused takes nothing
+ * more either, and holds the text it handed back, read-only.
  */
 export function useThreadSend(input: {
   readonly partition: PartitionIdentity;
@@ -88,7 +98,7 @@ export function useThreadSend(input: {
   const [send, setSend] = useState<ThreadSend>({ send: "Idle" });
   const [opened, setOpened] = useState<string | undefined>(undefined);
   return {
-    takes: input.takes && send.send !== "Ended",
+    takes: input.takes && send.send !== "Ended" && send.send !== "Unhosted",
     charsMax: threadMessageCharsMax,
     onSend: async (text: string): Promise<ConversationSent> => {
       const turn =
@@ -98,6 +108,10 @@ export function useThreadSend(input: {
       let session = input.session ?? opened;
       if (session === undefined) {
         const open = await apiOpenThread(ports, partition);
+        if (threadUnhosted(open)) {
+          setSend({ send: "Unhosted" });
+          return "Kept";
+        }
         if (open.outcome !== "Ok") {
           setSend({ send: "Refused", reason: panelReason(open) });
           return "Kept";
@@ -123,5 +137,6 @@ export function useThreadSend(input: {
         setSend({ send: "Idle" });
     },
     note: <ThreadSendNote send={send} />,
+    holds: send.send === "Unhosted",
   };
 }

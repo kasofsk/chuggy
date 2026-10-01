@@ -33,6 +33,7 @@ import {
   forgeIds,
   forgeRepositoryVisibilities,
   nativeActionResolutions,
+  placementRoutes,
   selectorDispatchModes,
   selectorModes,
 } from "./rosters.ts";
@@ -196,6 +197,12 @@ export const projectRepositoryLandingSchema = z.strictObject({
   repository: bodyIdentitySchema,
   expected: repositoryLandingSchema,
   landing: repositoryLandingSchema,
+});
+
+/** Where a project's work and its evaluations run, both written whole. */
+export const executionPlacementSchema = z.strictObject({
+  work: z.enum(placementRoutes),
+  evaluation: z.enum(placementRoutes),
 });
 
 /**

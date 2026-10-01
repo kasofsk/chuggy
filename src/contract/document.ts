@@ -17,6 +17,7 @@ import {
   configurationCreationSchema,
   draftCreationSchema,
   draftRevisionSchema,
+  executionPlacementSchema,
   forgeCredentialRequestSchema,
   forgeAuthorizationSchema,
   projectCreationSchema,
@@ -30,6 +31,10 @@ import {
   reservedTenantNames,
   selectorProjectSettingsSchema,
 } from "./requests.ts";
+import {
+  workerPoolRedemptionSchema,
+  workerPoolRegistrationTokenRequestSchema,
+} from "./workerPool.ts";
 
 /** Every request body the document publishes, as the JSON Schema its own parser induces. */
 function nativeHttpContractDocumentSchemas(): unknown {
@@ -41,6 +46,7 @@ function nativeHttpContractDocumentSchemas(): unknown {
     ),
     draftCreation: z.toJSONSchema(draftCreationSchema),
     draftRevision: z.toJSONSchema(draftRevisionSchema),
+    executionPlacement: z.toJSONSchema(executionPlacementSchema),
     forgeCredential: z.toJSONSchema(forgeCredentialRequestSchema),
     forgeAuthorization: z.toJSONSchema(forgeAuthorizationSchema),
     projectCreation: z.toJSONSchema(projectCreationSchema),
@@ -55,6 +61,10 @@ function nativeHttpContractDocumentSchemas(): unknown {
     threadMessage: z.toJSONSchema(nativeHttpEndpoints.sendThreadMessage.body),
     threadRename: z.toJSONSchema(nativeHttpEndpoints.renameThread.body),
     threadHide: z.toJSONSchema(nativeHttpEndpoints.hideThread.body),
+    workerPoolRegistrationToken: z.toJSONSchema(
+      workerPoolRegistrationTokenRequestSchema,
+    ),
+    workerPoolRedemption: z.toJSONSchema(workerPoolRedemptionSchema),
   };
 }
 
@@ -111,6 +121,10 @@ export function nativeHttpContractDocument(): unknown {
       "a newly bound repository is imported at its own default-branch head, and one declaring no configurations is authored a bootstrap; the step is reported beside the binding and never refuses it",
     repositoryCreation:
       "creating a repository requires this tenant's claims of both apps on the account; the repository is the forge's from the moment it answers, so a later refusal is reported beside one that stands and a name already taken is bound rather than created",
+    executionPlacement:
+      "where a project's work and evaluations run is decided per kind by the deployment's override for the project, else the project's own placement, else the deployment's default; an administrator writes both routes whole, and choosing InCluster needs the tenant's hosted grant, as opening a thread does",
+    workerPoolRegistration:
+      "an administrator mints a single-use token for one project; redeeming it registers the pool and answers once with the file a runner keeps, its secret included",
     routes: nativeHttpRoutes,
     schemas: nativeHttpContractDocumentSchemas(),
   };

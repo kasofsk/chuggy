@@ -90,6 +90,7 @@ import {
 } from "../adapters/postgres/schema.ts";
 import { postgresDomainConfigurationPrecondition } from "../adapters/postgres/domainConfiguration.ts";
 import { postgresWorkerCatalogPrecondition } from "../adapters/postgres/workerCatalog.ts";
+import { postgresExecutionRoutingPrecondition } from "../adapters/postgres/executionPlacement.ts";
 import type { AdmittedWorker } from "../interpreter/workerCatalog.ts";
 import {
   currentRuntimeSchemaContract,
@@ -586,6 +587,10 @@ export function schedulerProcessRoot(
           postgresRolePrecondition(pool, schedulerRole),
           recoveryEpochPrecondition(pool, config.identity.recoveryEpoch),
           postgresWorkerCatalogPrecondition(pool, config.workerCatalog),
+          postgresExecutionRoutingPrecondition(
+            pool,
+            config.service.policy.routing,
+          ),
           ...(config.additional ?? []),
         ],
       },

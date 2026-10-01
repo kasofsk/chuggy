@@ -378,7 +378,10 @@ const truncatedWakeProgram = `
         wake: async () => ({ woken: 'Woken', ordinal: 1 }),
         advance: async (sequence) => sequence,
       },
-      access: { authorize: async (principal) => projectAccess.memberAuthority(principal) },
+      access: {
+        authorize: async (principal) => projectAccess.memberAuthority(principal),
+        authorizeTenant: async (principal) => projectAccess.memberAuthority(principal),
+      },
       clock: { nowIso: () => '2026-09-02T00:00:00.000Z' },
       wakesPerPassMax: 2,
     };

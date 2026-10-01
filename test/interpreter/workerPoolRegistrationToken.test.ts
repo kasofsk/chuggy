@@ -18,6 +18,12 @@ import {
 } from "../../src/interpreter/workerPoolRegistrationToken.ts";
 
 const issuer = "https://issuer.invalid";
+const site = {
+  issuer,
+  tokenUrl: "https://issuer.invalid/oauth2/token",
+  audience: "https://api.invalid",
+  planeUrl: "https://plane.invalid/",
+};
 const partition = { tenant: "tenant", project: "project" } as Partition;
 const principal = oidcPrincipal(issuer, "an-owner");
 
@@ -160,14 +166,23 @@ test("redeeming registers the pool for the partition the token named", async () 
   });
   const made = ports();
   assert.deepEqual(
-    await workerPoolTokenRedeem(store, made, issuer, {
+    await workerPoolTokenRedeem(store, made, site, {
       token: "a-drawn-token",
       pool: "pool-one",
       capabilities: ["amd64"],
     }),
     {
       result: "Registered",
-      value: { clientId: "chuggy-pool-fixed", clientSecret: "a-secret" },
+      value: {
+        partition,
+        pool: "pool-one",
+        capabilities: ["amd64"],
+        tokenUrl: site.tokenUrl,
+        audience: site.audience,
+        planeUrl: site.planeUrl,
+        clientId: "chuggy-pool-fixed",
+        clientSecret: "a-secret",
+      },
     },
   );
   assert.deepEqual(made.made, [
@@ -185,13 +200,41 @@ test("redeeming registers the pool for the partition the token named", async () 
   ]);
 });
 
+test("a redemption carries the registry a runner pulls from only where the deployment names one", async () => {
+  const offered = {
+    token: "a-drawn-token",
+    pool: "pool-one",
+    capabilities: ["linux"],
+  };
+  const named = await workerPoolTokenRedeem(
+    minting({ held: { partition, capabilities: ["linux"] } }),
+    ports(),
+    { ...site, registryHost: "registry.invalid" },
+    offered,
+  );
+  assert.equal(
+    named.result === "Registered" ? named.value.registryHost : undefined,
+    "registry.invalid",
+  );
+  const unnamed = await workerPoolTokenRedeem(
+    minting({ held: { partition, capabilities: ["linux"] } }),
+    ports(),
+    site,
+    offered,
+  );
+  assert.equal(
+    unnamed.result === "Registered" && "registryHost" in unnamed.value,
+    false,
+  );
+});
+
 test("a capability the token does not permit registers nothing and spends nothing", async () => {
   const store = minting({
     held: { partition, capabilities: ["linux-containers"] },
   });
   const made = ports();
   assert.deepEqual(
-    await workerPoolTokenRedeem(store, made, issuer, {
+    await workerPoolTokenRedeem(store, made, site, {
       token: "a-drawn-token",
       pool: "pool-one",
       capabilities: ["macos"],
@@ -210,19 +253,18 @@ test("a token is spent once, and the second redemption is told nothing", async (
     capabilities: ["linux"],
   };
   assert.equal(
-    (await workerPoolTokenRedeem(store, ports(), issuer, offered)).result,
+    (await workerPoolTokenRedeem(store, ports(), site, offered)).result,
     "Registered",
   );
-  assert.deepEqual(
-    await workerPoolTokenRedeem(store, ports(), issuer, offered),
-    { result: "NotFound" },
-  );
+  assert.deepEqual(await workerPoolTokenRedeem(store, ports(), site, offered), {
+    result: "NotFound",
+  });
 });
 
 test("a token no store holds registers nothing", async () => {
   const made = ports();
   assert.deepEqual(
-    await workerPoolTokenRedeem(minting(), made, issuer, {
+    await workerPoolTokenRedeem(minting(), made, site, {
       token: "a-drawn-token",
       pool: "pool-one",
       capabilities: [],
@@ -243,7 +285,7 @@ test("a registration that faulted after the spend gives the token back for the r
     capabilities: ["linux"],
   };
   await assert.rejects(
-    workerPoolTokenRedeem(store, made, issuer, offered),
+    workerPoolTokenRedeem(store, made, site, offered),
     outage,
   );
   assert.deepEqual(store.made.slice(-2), [
@@ -253,7 +295,7 @@ test("a registration that faulted after the spend gives the token back for the r
   made.clients.create = (clientId) =>
     Promise.resolve({ clientId, clientSecret: "a-secret" });
   assert.equal(
-    (await workerPoolTokenRedeem(store, made, issuer, offered)).result,
+    (await workerPoolTokenRedeem(store, made, site, offered)).result,
     "Registered",
   );
 });

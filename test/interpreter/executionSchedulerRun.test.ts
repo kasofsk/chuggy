@@ -166,6 +166,7 @@ const attempt: PhysicalAttempt = {
 function recordingStore(calls: string[]): ExecutionSchedulerStore {
   return {
     claimRequests: () => Promise.resolve([]),
+    projectPlacement: () => Promise.resolve(undefined),
     registerSpawn: () =>
       Promise.resolve({ registered: "Registered", created: 1 }),
     registerCancellation: () =>
@@ -960,6 +961,66 @@ test("registration writes each project the routes the policy resolves for it, an
     "tenant/project-two:InCluster:InCluster",
     "tenant-two/project:InCluster:Pool",
     "tenant-three/project-three:InCluster:Pool",
+  ]);
+});
+
+test("registration reads each project's own placement, which an override outranks and which outranks the default", async () => {
+  const service = serviceWith([], runnable, placedOk);
+  const placed = { ...partition, project: asProjectId("placed") };
+  const overridden = { ...partition, project: asProjectId("overridden") };
+  const unplaced = { ...partition, project: asProjectId("unplaced") };
+  const routing: ExecutionRouting = {
+    routes: { Work: "Pool", Evaluation: "Pool" },
+    projectRoutes: new Map([
+      [
+        partition.tenant,
+        new Map([[overridden.project, { Work: "Pool" as const }]]),
+      ],
+    ]),
+  };
+  const asked: string[] = [];
+  const written: string[] = [];
+  const store: ExecutionSchedulerStore = {
+    ...service.store,
+    claimRequests: () =>
+      Promise.resolve(
+        [placed, overridden, unplaced].map((claimed) => ({
+          partition: claimed,
+          request: "1:0:ExecuteTask",
+          kind: "SpawnWork" as const,
+          ticket: asTicketId(1),
+          authorizingSeq: 1,
+          generation: 1,
+          owner,
+        })),
+      ),
+    projectPlacement: (claimed) => {
+      asked.push(claimed.project);
+      return Promise.resolve(
+        claimed.project === unplaced.project
+          ? undefined
+          : { Work: "InCluster", Evaluation: "InCluster" },
+      );
+    },
+    registerSpawn: (claim, _tasksMax, routes) => {
+      written.push(
+        `${claim.partition.project}:${routes.Work}:${routes.Evaluation}`,
+      );
+      return Promise.resolve({ registered: "Registered", created: 1 });
+    },
+  };
+  assert.equal(
+    await executionSchedulerRegister(
+      { ...service, store, policy: { ...service.policy, routing } },
+      owner,
+    ),
+    3,
+  );
+  assert.deepEqual(asked, ["placed", "overridden", "unplaced"]);
+  assert.deepEqual(written, [
+    "placed:InCluster:InCluster",
+    "overridden:Pool:InCluster",
+    "unplaced:Pool:Pool",
   ]);
 });
 

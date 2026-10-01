@@ -28,6 +28,7 @@ import {
   postgresWorkerPoolAssignments,
   postgresWorkerPoolRegistry,
 } from "../../src/adapters/postgres/workerPool.ts";
+import { postgresExecutionPlacement } from "../../src/adapters/postgres/executionPlacement.ts";
 import { workerPlaneUploadBytesMax } from "../../src/contract/http.ts";
 import { workTaskAnswerSchema } from "../../src/contract/workerTask.ts";
 import {
@@ -48,6 +49,7 @@ import {
   type ExecutionSchedulerService,
 } from "../../src/interpreter/executionSchedulerRun.ts";
 import { asPrincipal } from "../../src/interpreter/principal.ts";
+import { memberAuthority } from "../../src/interpreter/projectAccess.ts";
 import {
   asProjectId,
   type Partition,
@@ -398,6 +400,59 @@ test("a project's override routes that project, and neither one beside it nor on
     "route-beside": "InCluster",
     "route-elsewhere": "InCluster",
   });
+});
+
+test("a project its administrator placed on pools registers there under an in-cluster default, and its own pool claims the work", async () => {
+  const label = "route-placed";
+  const project = await schedulerProject(rig, label, { tasks: 1 });
+  const identity = await poolRegistered(project.partition, "route-placed");
+  assert.equal(
+    await postgresExecutionPlacement(apiPool).write(
+      project.partition,
+      { Work: "Pool", Evaluation: "Pool" },
+      memberAuthority(asPrincipal("https://issuer.invalid#an-owner")),
+    ),
+    "Written",
+  );
+  const placed: string[] = [];
+  const execution = await launchedUnder(
+    project,
+    label,
+    schedulerRouting(),
+    placed,
+  );
+  assert.equal(placed.includes(execution), false);
+  assert.equal(
+    (await standing(project, execution)).execution?.["placement"],
+    "Pool",
+  );
+  assert.ok(
+    (await claimed(identity)) !== undefined,
+    "the project's own pool could not claim the offered attempt",
+  );
+});
+
+test("a project nobody placed follows a pool default, and only its own pool claims the work", async () => {
+  const label = "route-default";
+  const project = await schedulerProject(rig, label, { tasks: 1 });
+  const stranger = await schedulerProject(rig, "route-stranger", { tasks: 1 });
+  const theirs = await poolRegistered(stranger.partition, "route-stranger");
+  const identity = await poolRegistered(project.partition, "route-default");
+  const execution = await launchedUnder(
+    project,
+    label,
+    schedulerRouting({ Work: "Pool", Evaluation: "Pool" }),
+    [],
+  );
+  assert.equal(
+    (await standing(project, execution)).execution?.["placement"],
+    "Pool",
+  );
+  assert.equal(await claimed(theirs), undefined);
+  assert.ok(
+    (await claimed(identity)) !== undefined,
+    "the project's own pool could not claim the offered attempt",
+  );
 });
 
 /** Registers a work request and an evaluation request of one project as the scheduler under `routes`, and answers the route each kind's execution was written with. */

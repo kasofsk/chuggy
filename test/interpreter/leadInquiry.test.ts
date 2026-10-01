@@ -58,19 +58,20 @@ const stranger = asPrincipal("oidc:https://ory.test/:sam");
 const session = asSessionId("inq-one");
 const turn = asSessionTurnId("inq-turn-one");
 
-/** A membership that holds exactly the access a case names, and audits to one subject. */
+/** A membership that holds exactly the access a case names, the tenant's included, and audits to one subject. */
 function accessHolding(...held: readonly string[]): ProjectAccess {
+  const holding = (kind: string) =>
+    Promise.resolve(
+      held.includes(kind)
+        ? {
+            kind: asAuthorityKind("OidcUser"),
+            subject: asAuthoritySubject("geoff"),
+          }
+        : undefined,
+    );
   return {
-    authorize: (_principal, _partition, kind) =>
-      Promise.resolve(
-        held.includes(kind)
-          ? {
-              kind: asAuthorityKind("OidcUser"),
-              subject: asAuthoritySubject("geoff"),
-            }
-          : undefined,
-      ),
-    authorizeTenant: () => Promise.resolve(undefined),
+    authorize: (_principal, _partition, kind) => holding(kind),
+    authorizeTenant: (_principal, _tenant, kind) => holding(kind),
   };
 }
 
@@ -141,7 +142,7 @@ function webOver(store: LeadInquiryStore, access: ProjectAccess) {
 
 test("a member with Read reaches all three doors and one without reaches none", async () => {
   for (const [held, expected] of [
-    [["Read"], "Found"],
+    [["Read", "ExecuteHosted"], "Found"],
     [[], "NotFound"],
   ] as const) {
     const asked: unknown[] = [];
@@ -182,9 +183,33 @@ test("a member with Mutate alone cannot ask, because asking is a read", async ()
   );
 });
 
+test("a reader the tenant grants no hosted runs reads every inquiry and asks none", async () => {
+  const asked: unknown[] = [];
+  const web = webOver(
+    storeAnswering({ inquiries: [record], inquiry: record }, asked),
+    accessHolding("Read"),
+  );
+  assert.equal((await web.leadInquiries(reader, partition)).result, "Found");
+  assert.equal(
+    (await web.leadInquiry(reader, partition, session)).result,
+    "Found",
+  );
+  asked.length = 0;
+  const asking = await web.askLead(reader, partition, {
+    session,
+    turn,
+    question: "what stopped 14?",
+  });
+  assert.equal(asking.result, "HostedRunsNotGranted");
+  assert.deepEqual(asked, [], "a refused question still reached the store");
+});
+
 test("the question the door offers carries the standing rule and the asker", async () => {
   const asked: unknown[] = [];
-  const web = webOver(storeAnswering({}, asked), accessHolding("Read"));
+  const web = webOver(
+    storeAnswering({}, asked),
+    accessHolding("Read", "ExecuteHosted"),
+  );
   await web.askLead(reader, partition, {
     session,
     turn,
@@ -203,7 +228,10 @@ test("the question the door offers carries the standing rule and the asker", asy
 
 test("a question outside the door's bound is refused before a store is reached", async () => {
   const asked: unknown[] = [];
-  const web = webOver(storeAnswering({}, asked), accessHolding("Read"));
+  const web = webOver(
+    storeAnswering({}, asked),
+    accessHolding("Read", "ExecuteHosted"),
+  );
   for (const question of ["", "q".repeat(inquiryQuestionCharsMax + 1)])
     await assert.rejects(
       web.askLead(reader, partition, { session, turn, question }),
@@ -226,7 +254,7 @@ test("the listing asks for a page and never for a project's whole history", asyn
   const asked: unknown[] = [];
   const web = webOver(
     storeAnswering({ inquiries: [] }, asked),
-    accessHolding("Read"),
+    accessHolding("Read", "ExecuteHosted"),
   );
   await web.leadInquiries(reader, partition);
   assert.deepEqual(asked, [

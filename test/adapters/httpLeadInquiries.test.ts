@@ -219,6 +219,7 @@ test("each refusal reaches the wire as its own status and its own code", async (
     ["LeadNotStarted", 409, "LeadNotStarted"],
     ["LeadClosed", 409, "LeadClosed"],
     ["InFlight", 409, "InquiriesInFlight"],
+    ["HostedRunsNotGranted", 403, "HostedRunsNotGranted"],
   ];
   for (const [result, status, code] of refusals) {
     const held: InquiryCase = {

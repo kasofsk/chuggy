@@ -42,12 +42,16 @@ import {
   projectListReread,
   projectListRereadNamed,
 } from "../../core/projectQueryKeys.ts";
-import { threadAnswering, threadMine } from "../../core/threads.ts";
+import {
+  threadAnswering,
+  threadMine,
+  threadUnhosted,
+} from "../../core/threads.ts";
 import { useApiPorts, usePanelList } from "../api.ts";
 import { PanelUnready } from "../DataPanel.tsx";
 import { Conversation } from "../conversation/Conversation.tsx";
 import { ThreadConversation } from "../thread/ThreadConversation.tsx";
-import { useThreadSend } from "../thread/threadSend.tsx";
+import { ThreadUnhostedNotice, useThreadSend } from "../thread/threadSend.tsx";
 import { threadsListName, useThread } from "../thread/threadRead.ts";
 import { Button } from "../ui/Button.tsx";
 import { Notice } from "../ui/Notice.tsx";
@@ -101,8 +105,9 @@ function useChatPaneThreads(
 
 /**
  * The offer to start a thread: opened where the reader has none, closed and
- * reopened where they have one, and withheld while the one they have is still
- * answering.
+ * reopened where they have one — the open asked first, which answers that
+ * thread, so the hosted grant a close does not ask refuses before anything is
+ * closed — and withheld while the one they have is still answering.
  *
  * IT NAVIGATES NOWHERE — the pane is where a thread is read, so opening one and
  * then going to its page would draw the same conversation twice, once under the
@@ -113,6 +118,11 @@ function ChatPaneStartControl(props: {
   readonly partition: PartitionIdentity;
   readonly start: ChatPaneStart;
   readonly onOpened: (session: string) => void;
+  readonly onUnhosted: () => void;
+  /** Whether the hosted grant refused New, which is drawn here where the pane's
+   * body is a thread and in the body otherwise. */
+  readonly unhosted: boolean;
+  readonly threadDrawn: boolean;
 }): ReactNode {
   const start = props.start;
   const ports = useApiPorts();
@@ -130,16 +140,21 @@ function ChatPaneStartControl(props: {
           setBusy(true);
           setRefused(undefined);
           const closes = start.start === "Offered" ? start.closes : undefined;
-          const opened =
-            closes === undefined
-              ? apiOpenThread(ports, props.partition)
+          const opened = apiOpenThread(ports, props.partition).then((asked) =>
+            closes === undefined || asked.outcome !== "Ok"
+              ? asked
               : apiCloseThread(ports, props.partition, closes).then((closed) =>
                   closed.outcome === "Ok"
                     ? apiOpenThread(ports, props.partition)
                     : closed,
-                );
+                ),
+          );
           void opened.then((result) => {
             setBusy(false);
+            if (threadUnhosted(result)) {
+              props.onUnhosted();
+              return;
+            }
             if (result.outcome !== "Ok") {
               setRefused(panelReason(result));
               return;
@@ -151,6 +166,7 @@ function ChatPaneStartControl(props: {
       {refused === undefined ? null : (
         <Notice tone="danger" inline detail={`Refused · ${refused}`} />
       )}
+      {props.unhosted && props.threadDrawn ? <ThreadUnhostedNotice /> : null}
     </>
   );
 }
@@ -246,6 +262,20 @@ function ChatPaneFirst(props: {
   );
 }
 
+/** What stands where the composer would, for a reader the tenant has not
+ * granted hosted runs: no thread they open could run. */
+function ChatPaneUnhosted(): ReactNode {
+  return (
+    <div
+      role="region"
+      aria-label="Conversation"
+      className="grid min-h-0 min-w-0 flex-1 content-end px-4 pb-4"
+    >
+      <ThreadUnhostedNotice />
+    </div>
+  );
+}
+
 /** The collapsed pane: the one control that brings it back, and nothing that
  * reads. */
 function ChatPaneStrip(): ReactNode {
@@ -263,6 +293,45 @@ function ChatPaneStrip(): ReactNode {
   );
 }
 
+/** Whether the pane's body is a thread, rather than the composer whose first
+ * press opens one or what refused opening one. */
+function chatPaneThreadDrawn(
+  session: string | undefined,
+  starting: boolean,
+): session is string {
+  return session !== undefined && !starting;
+}
+
+/** What the pane holds under its header: the thread, the composer whose first
+ * press opens one, or what refused opening one. */
+function ChatPaneBody(props: {
+  readonly partition: PartitionIdentity;
+  readonly session: string | undefined;
+  readonly named: boolean;
+  readonly starting: boolean;
+  readonly unhosted: boolean;
+  readonly onStarting: () => void;
+  readonly onStarted: (session: string) => void;
+}): ReactNode {
+  if (chatPaneThreadDrawn(props.session, props.starting))
+    return (
+      <ChatPaneThread
+        key={props.session}
+        partition={props.partition}
+        session={props.session}
+        named={props.named}
+      />
+    );
+  if (props.unhosted) return <ChatPaneUnhosted />;
+  return (
+    <ChatPaneFirst
+      partition={props.partition}
+      onStarting={props.onStarting}
+      onStarted={props.onStarted}
+    />
+  );
+}
+
 function ChatPaneOpen(props: {
   readonly partition: PartitionIdentity;
 }): ReactNode {
@@ -271,7 +340,18 @@ function ChatPaneOpen(props: {
   const answering = useChatPaneAnswering(props.partition, mine?.session);
   const [chosen, setChosen] = useState<string | undefined>(undefined);
   const [starting, setStarting] = useState(false);
+  const [unhosted, setUnhosted] = useState(false);
   const holding = chatPaneHolding(threads, answering, chosen);
+  const refuseUnhosted = (): void => {
+    setUnhosted(true);
+    setStarting(false);
+  };
+  /** A thread that opened, which answers any refusal the hosted grant gave before. */
+  const holdOpened = (session: string): void => {
+    setChosen(session);
+    setStarting(false);
+    setUnhosted(false);
+  };
   const held = threads?.find((thread) => thread.session === holding.session);
   return (
     <section
@@ -283,10 +363,10 @@ function ChatPaneOpen(props: {
           <ChatPaneStartControl
             partition={props.partition}
             start={holding.start}
-            onOpened={(session) => {
-              setChosen(session);
-              setStarting(false);
-            }}
+            onOpened={holdOpened}
+            onUnhosted={refuseUnhosted}
+            unhosted={unhosted}
+            threadDrawn={chatPaneThreadDrawn(holding.session, starting)}
           />
           {threads === undefined ? null : (
             <ChatPaneHistory
@@ -307,25 +387,17 @@ function ChatPaneOpen(props: {
         )}
       </header>
       <div className="bg-surface-0 grid min-h-0 min-w-0 grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)]">
-        {holding.session === undefined || starting ? (
-          <ChatPaneFirst
-            partition={props.partition}
-            onStarting={() => {
-              setStarting(true);
-            }}
-            onStarted={(session) => {
-              setChosen(session);
-              setStarting(false);
-            }}
-          />
-        ) : (
-          <ChatPaneThread
-            key={holding.session}
-            partition={props.partition}
-            session={holding.session}
-            named={chosen !== undefined}
-          />
-        )}
+        <ChatPaneBody
+          partition={props.partition}
+          session={holding.session}
+          named={chosen !== undefined}
+          starting={starting}
+          unhosted={unhosted}
+          onStarting={() => {
+            setStarting(true);
+          }}
+          onStarted={holdOpened}
+        />
       </div>
     </section>
   );

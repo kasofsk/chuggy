@@ -28,6 +28,10 @@ export interface ConversationComposerProps {
   readonly onSend: (text: string) => Promise<ConversationSent>;
   /** The one line the last press is reported as, worded by the page. */
   readonly note?: ReactNode;
+  /** Whether a box the door takes nothing more from stays drawn, read-only,
+   * because a refusal handed text back into it; the note beneath says why.
+   * Otherwise such a box is `Closed` and the note. */
+  readonly holds?: boolean;
   /** Called when the reader changes the text, so the page can drop a note
    * about a press this text has since moved past. Fired on the box's own
    * change event, not on a programmatic restore of a kept message. */
@@ -71,7 +75,7 @@ export function ConversationComposer(
 ): ReactNode {
   const written = useAuiState((state) => state.composer.text);
   const count = textCodePointsCount(written);
-  if (!props.takes)
+  if (!props.takes && props.holds !== true)
     return (
       <div className="text-ink-3 flex flex-wrap justify-center gap-3 text-center">
         <span>Closed</span>
@@ -90,6 +94,7 @@ export function ConversationComposer(
             minRows={1}
             maxRows={conversationRowsMax}
             maxLength={props.charsMax}
+            readOnly={!props.takes}
             submitMode="enter"
             aria-label="Message"
             autoFocus={props.focusOnMount === true}

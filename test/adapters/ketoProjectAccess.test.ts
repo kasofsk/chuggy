@@ -14,6 +14,7 @@ import {
   projectAccessObject,
   projectAccessPermits,
   projectAccessTenantObject,
+  tenantAccessPermits,
 } from "../../src/interpreter/projectAccess.ts";
 import { asPrincipal } from "../../src/interpreter/principal.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
@@ -195,7 +196,10 @@ test("no listing the authority could not answer is taken for an unclaimed tenant
 
 const checkPath = "relation-tuples/check/openapi";
 const wholeModel = new Set(["Project", "Tenant"]);
-const everyPermit = new Set(Object.values(projectAccessPermits));
+const everyPermit = new Set([
+  ...Object.values(projectAccessPermits),
+  ...Object.values(tenantAccessPermits),
+]);
 
 /**
  * An authority carrying a model: the namespaces it knows and the permits it

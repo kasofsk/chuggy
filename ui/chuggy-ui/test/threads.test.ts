@@ -21,6 +21,7 @@ import {
   threadAnswering,
   threadHeldTurn,
   threadMine,
+  threadUnhosted,
   threadRefusalCode,
   threadRefusalWord,
   threadSendFrom,
@@ -242,6 +243,25 @@ describe("what a press ended as", () => {
     ).toStrictEqual({ send: "Waiting", why: "Unavailable" });
   });
 
+  test("a send the hosted grant refuses stops the thread taking messages, whatever its status", () => {
+    expect(
+      threadSendFrom({
+        outcome: "Rejected",
+        code: "HostedRunsNotGranted",
+        status: 403,
+        body: undefined,
+      }),
+    ).toStrictEqual({ send: "Unhosted" });
+    expect(
+      threadSendFrom({
+        outcome: "Rejected",
+        code: "NotYourThread",
+        status: 403,
+        body: undefined,
+      }),
+    ).toStrictEqual({ send: "Unsettled", why: "Elsewhere" });
+  });
+
   test("a code the console has no word for is drawn as the code", () => {
     expect(threadRefusalWord("SomethingNew")).toBe("SomethingNew");
   });
@@ -366,4 +386,30 @@ describe("whether a thread is still answering", () => {
     );
     expect(threadAnswering({ turns: [] })).toBe(false);
   });
+});
+
+test("only an open rejected for the hosted grant is one no retry answers", () => {
+  expect(
+    threadUnhosted({
+      outcome: "Rejected",
+      code: "HostedRunsNotGranted",
+      status: 403,
+      body: undefined,
+    }),
+  ).toBe(true);
+  expect(
+    threadUnhosted({
+      outcome: "Rejected",
+      code: "InvalidRequest",
+      status: 400,
+      body: undefined,
+    }),
+  ).toBe(false);
+  expect(
+    threadUnhosted({
+      outcome: "Conflict",
+      code: "HostedRunsNotGranted",
+      body: undefined,
+    }),
+  ).toBe(false);
 });

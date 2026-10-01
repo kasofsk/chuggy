@@ -26,6 +26,7 @@ import { migration025 } from "./025-pool-harness-heartbeat.ts";
 import { migration026 } from "./026-project-creation.ts";
 import { migration027 } from "./027-forge-claim-per-tenant.ts";
 import { migration028 } from "./028-binding-lands-by-pull-request.ts";
+import { migration029 } from "./029-project-execution-placement.ts";
 import type { Migration } from "../shared.ts";
 
 export const migrations: readonly Migration[] = [
@@ -57,4 +58,5 @@ export const migrations: readonly Migration[] = [
   migration026,
   migration027,
   migration028,
+  migration029,
 ];

@@ -134,9 +134,19 @@ export function redirect(url: string): void {
   location.assign(url);
 }
 
-/** This console's own origin, which a forge is told to return an authorization to. */
+/** This console's own origin, where its API answers and where a forge is told to return an authorization. */
 export function currentOrigin(): string {
   return location.origin;
+}
+
+/** Puts text on the clipboard, answering whether the browser allowed it. */
+export async function clipboardWritten(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** Where this tab is, as the path something that leaves it returns to. */

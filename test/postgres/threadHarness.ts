@@ -100,7 +100,8 @@ export const threadRigAccess = new Set(["Read", "Mutate"] as const);
 /**
  * A member with a membership on the project, derived exactly the way a
  * deployment derives one: the subject is what an operation is audited to and
- * the principal is `oidcPrincipal` of the issuer and that subject.
+ * the principal is `oidcPrincipal` of the issuer and that subject. The member
+ * holds the tenant's hosted grant, which opening a thread needs.
  */
 export function threadRigMember(
   rig: ThreadRig,
@@ -122,6 +123,11 @@ export function threadRigMember(
     partition,
     principal: member.principal,
     access,
+  });
+  rig.sessions.harness.access.grantTenant({
+    tenant: partition.tenant,
+    principal: member.principal,
+    access: new Set(["ExecuteHosted"]),
   });
   return member;
 }

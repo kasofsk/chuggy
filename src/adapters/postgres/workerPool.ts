@@ -81,6 +81,7 @@ import {
   type WorkerPoolAssignments,
   type WorkerPoolClaimed,
   type WorkerPoolClaimTerms,
+  type WorkerPoolDirectory,
   type WorkerPoolIdentity,
   type WorkerPoolRegistration,
   type WorkerPoolRegistry,
@@ -264,6 +265,31 @@ export function postgresWorkerPoolRegistry(pool: pg.Pool): WorkerPoolRegistry {
             pool: row.pool,
             principal: asPrincipal(row.principal),
           };
+    },
+  };
+}
+
+/** A project's registered pools over the API's pool, in name order and read one past the page as the roster's. */
+export function postgresWorkerPoolDirectory(
+  pool: pg.Pool,
+): WorkerPoolDirectory {
+  return {
+    listed: async (partition) => {
+      const found = await pool.query<{
+        pool: string;
+        capabilities: string[];
+        registered_at: Date;
+      }>(sql`SELECT w.pool,w.capabilities,w.registered_at FROM worker_pool w
+        WHERE w.tenant=${partition.tenant} AND w.project=${partition.project}
+        ORDER BY w.pool LIMIT ${workerPoolsAnsweredMax + 1}`);
+      return {
+        pools: found.rows.slice(0, workerPoolsAnsweredMax).map((row) => ({
+          pool: row.pool,
+          capabilities: row.capabilities,
+          registeredAt: row.registered_at.toISOString(),
+        })),
+        truncated: found.rows.length > workerPoolsAnsweredMax,
+      };
     },
   };
 }

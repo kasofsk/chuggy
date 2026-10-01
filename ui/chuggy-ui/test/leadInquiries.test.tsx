@@ -560,14 +560,15 @@ function refusal(code: string, status = 409) {
  */
 test("a door that refuses is drawn as a word, not as a blank panel", async () => {
   const refusals = [
-    { code: "InquiriesInFlight", word: "In flight" },
-    { code: "LeadNotStarted", word: "Not started" },
-    { code: "LeadClosed", word: "Closed" },
+    { code: "InquiriesInFlight", word: "In flight", status: 409 },
+    { code: "LeadNotStarted", word: "Not started", status: 409 },
+    { code: "LeadClosed", word: "Closed", status: 409 },
+    { code: "HostedRunsNotGranted", word: "Needs hosted runs", status: 403 },
   ];
   for (const refused of refusals) {
     const server = await drawInquiries({
       listing: () => ({ inquiries: [leadInquiry(1, { turnState: "Queued" })] }),
-      asked: () => refusal(refused.code),
+      asked: () => refusal(refused.code, refused.status),
     });
     await turned(() => {
       typed("why is ticket 41 waiting?");

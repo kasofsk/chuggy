@@ -292,7 +292,10 @@ const inquiryComposedProgram = `
   const web = compose.composeNativeWeb(
     pool,
     { digest: () => 'digest' },
-    { authorize: async () => ({ kind: 'OidcUser', subject: 'geoff' }) },
+    {
+      authorize: async () => ({ kind: 'OidcUser', subject: 'geoff' }),
+      authorizeTenant: async () => ({ kind: 'OidcUser', subject: 'geoff' }),
+    },
     { admits: async () => ({ admitted: 'Admitted' }) },
   );
   const principal = 'principal';
@@ -366,8 +369,8 @@ const forgePairsProgram = `
   }))));
 `;
 
-/** The root's forge composition under the variables one case names, and nothing else. */
-async function forgeOptionsRead(
+/** What a root program prints under the variables one case names, and nothing else. */
+async function rootRead(
   named: Readonly<Record<string, string>>,
   program: string = forgeOptionsProgram,
 ): Promise<{ readonly code: number; readonly out: string }> {
@@ -379,6 +382,9 @@ async function forgeOptionsRead(
     "CHUG_API_FORGE_WORKER_APP_KEY_FILE",
     "CHUG_API_FORGE_API_URL",
     "CHUG_API_FORGE_APP_CLIENT_SECRET_FILE",
+    "CHUG_API_POOL_TOKEN_URL",
+    "CHUG_API_POOL_PLANE_URL",
+    "CHUG_API_POOL_REGISTRY_HOST",
   ])
     if (named[variable] === undefined) delete environment[variable];
   try {
@@ -394,8 +400,80 @@ async function forgeOptionsRead(
   }
 }
 
+const poolSiteProgram = `
+  const root = await import('./src/roots/nativeHttp.ts');
+  process.stdout.write(JSON.stringify(root.workerPoolSite()));
+`;
+
+/** Every address a pool file carries, as a runner would read it. */
+const poolNamed = {
+  CHUG_API_OIDC_ISSUER: "https://auth.chuggy.test/",
+  CHUG_API_OIDC_AUDIENCE: "https://chuggy.test/api",
+  CHUG_API_POOL_TOKEN_URL: "https://auth.chuggy.test/oauth2/token",
+  CHUG_API_POOL_PLANE_URL: "http://127.0.0.1:4444",
+  CHUG_API_POOL_REGISTRY_HOST: "chuggy-registry.chuggy.test:5000",
+};
+
+test("a pool site a runner would read is composed as named", async () => {
+  const ran = await rootRead(poolNamed, poolSiteProgram);
+  assert.equal(ran.code, 0, ran.out);
+  assert.deepEqual(JSON.parse(ran.out), {
+    issuer: "https://auth.chuggy.test/",
+    tokenUrl: "https://auth.chuggy.test/oauth2/token",
+    audience: "https://chuggy.test/api",
+    planeUrl: "http://127.0.0.1:4444/",
+    registryHost: "chuggy-registry.chuggy.test:5000",
+  });
+});
+
+test("a pool address a runner would refuse is a refusal to start", async () => {
+  for (const [variable, value] of [
+    ["CHUG_API_POOL_TOKEN_URL", "http://auth.chuggy.test/oauth2/token"],
+    ["CHUG_API_POOL_TOKEN_URL", "not a url"],
+    ["CHUG_API_POOL_PLANE_URL", "ftp://plane.chuggy.test/"],
+    ["CHUG_API_POOL_PLANE_URL", "http://plane.chuggy.test/"],
+    ["CHUG_API_POOL_PLANE_URL", "https://op:pw-fixture@plane.chuggy.test/"],
+    ["CHUG_API_POOL_TOKEN_URL", "https://op@auth.chuggy.test/oauth2/token"],
+  ] as const) {
+    const ran = await rootRead(
+      { ...poolNamed, [variable]: value },
+      poolSiteProgram,
+    );
+    assert.equal(ran.code, 1, `${variable}=${value}`);
+    assert.match(ran.out, new RegExp(`${variable} must be an https URL`, "u"));
+    assert.doesNotMatch(ran.out, /pw-fixture/u);
+  }
+});
+
+test("a registry host a runner would refuse is a refusal to start, and none names no registry", async () => {
+  for (const host of [
+    "https://chuggy-registry.chuggy.test",
+    "Chuggy-Registry.chuggy.test",
+    "chuggy-registry.chuggy.test/path",
+  ]) {
+    const ran = await rootRead(
+      { ...poolNamed, CHUG_API_POOL_REGISTRY_HOST: host },
+      poolSiteProgram,
+    );
+    assert.equal(ran.code, 1, host);
+    assert.match(
+      ran.out,
+      /CHUG_API_POOL_REGISTRY_HOST must be a lowercase host/u,
+    );
+  }
+  const ran = await rootRead(
+    { ...poolNamed, CHUG_API_POOL_REGISTRY_HOST: "" },
+    poolSiteProgram,
+  );
+  assert.equal(ran.code, 0, ran.out);
+  assert.equal(
+    (JSON.parse(ran.out) as { registryHost?: string }).registryHost,
+    undefined,
+  );
+});
+
 test("a deployment naming no forge app mints nothing at all", async () => {
-  const ran = await forgeOptionsRead({});
+  const ran = await rootRead({});
   assert.equal(ran.code, 0, ran.out);
   assert.equal(JSON.parse(ran.out), null);
 });
@@ -405,7 +483,7 @@ test("a deployment naming one of the app and its key is refused rather than star
     { CHUG_API_FORGE_APP_ID: "4708055" },
     { CHUG_API_FORGE_APP_KEY_FILE: "/etc/chuggy/forge/portal.pem" },
   ]) {
-    const ran = await forgeOptionsRead(named);
+    const ran = await rootRead(named);
     assert.equal(ran.code, 1, ran.out);
     assert.match(ran.out, /named together or not at all/u);
   }
@@ -416,7 +494,7 @@ test("a deployment naming both reaches the forge it named, or the public one", a
     CHUG_API_FORGE_APP_ID: "4708055",
     CHUG_API_FORGE_APP_KEY_FILE: "/etc/chuggy/forge/portal.pem",
   };
-  const composed = JSON.parse((await forgeOptionsRead(named)).out) as {
+  const composed = JSON.parse((await rootRead(named)).out) as {
     appId: string;
     privateKeyPath: string;
     apiUrl: string;
@@ -426,7 +504,7 @@ test("a deployment naming both reaches the forge it named, or the public one", a
   assert.equal(composed.apiUrl, "https://api.github.com");
   const elsewhere = JSON.parse(
     (
-      await forgeOptionsRead({
+      await rootRead({
         ...named,
         CHUG_API_FORGE_API_URL: "https://forge.invalid",
       })
@@ -446,7 +524,7 @@ const workerNamed = {
 async function forgePairsRead(
   named: Readonly<Record<string, string>>,
 ): Promise<readonly { app: string; appId: string; keyFile: string }[]> {
-  const ran = await forgeOptionsRead(named, forgePairsProgram);
+  const ran = await rootRead(named, forgePairsProgram);
   assert.equal(ran.code, 0, ran.out);
   return JSON.parse(ran.out) as readonly {
     app: string;
@@ -493,7 +571,7 @@ test("a key pair this process cannot sign with is a refusal to start", async (t)
     CHUG_API_FORGE_WORKER_APP_ID: "4728465",
     CHUG_API_FORGE_WORKER_APP_KEY_FILE: keys.usable,
   };
-  const ready = await forgeOptionsRead(both, forgeKeysProgram);
+  const ready = await rootRead(both, forgeKeysProgram);
   assert.equal(ready.code, 0, ready.out);
   assert.equal(JSON.parse(ready.out), null);
   for (const [variable, named] of [
@@ -512,7 +590,7 @@ test("a key pair this process cannot sign with is a refusal to start", async (t)
       },
     ],
   ] as const) {
-    const ran = await forgeOptionsRead(named, forgeKeysProgram);
+    const ran = await rootRead(named, forgeKeysProgram);
     assert.equal(ran.code, 0, ran.out);
     assert.match(JSON.parse(ran.out) as string, new RegExp(variable, "u"));
   }
@@ -520,7 +598,7 @@ test("a key pair this process cannot sign with is a refusal to start", async (t)
 
 test("the worker app is its own pair, optional, and composed beside the portal's", async () => {
   assert.deepEqual(await forgePairsRead({}), []);
-  const half = await forgeOptionsRead(
+  const half = await rootRead(
     { CHUG_API_FORGE_WORKER_APP_ID: "4728465" },
     forgePairsProgram,
   );
@@ -560,7 +638,7 @@ const forgeSecretProgram = `
 async function forgeSecretRead(
   named: Readonly<Record<string, string>>,
 ): Promise<{ setting: string; path?: string; why?: string }> {
-  const ran = await forgeOptionsRead(named, forgeSecretProgram);
+  const ran = await rootRead(named, forgeSecretProgram);
   assert.equal(ran.code, 0, ran.out);
   return JSON.parse(ran.out) as {
     setting: string;

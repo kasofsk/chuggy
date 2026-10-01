@@ -43,6 +43,7 @@ import {
 import { ProjectTable } from "./ProjectTable.tsx";
 import { RepositoriesPage } from "./RepositoriesPage.tsx";
 import { RepositoryPage } from "./repositories/RepositoryPage.tsx";
+import { RunnersPage } from "./RunnersPage.tsx";
 import { SelectorSettingsPage } from "./SelectorSettingsPage.tsx";
 import { Shell } from "./Shell.tsx";
 import { ProjectStreamProvider } from "./stream.tsx";
@@ -143,6 +144,12 @@ const repositoriesRoute = createRoute({
   component: RepositoriesPage,
 });
 
+const runnersRoute = createRoute({
+  getParentRoute: () => partitionRoute,
+  path: "/runners",
+  component: RunnersPage,
+});
+
 /** One binding's own page. The repository is an address, which the router
  * encodes into the segment and decodes back out of it. */
 const repositoryRoute = createRoute({
@@ -216,6 +223,7 @@ const routeTree = rootRoute.addChildren([
     selectorRoute,
     repositoriesRoute,
     repositoryRoute,
+    runnersRoute,
     ticketCreationRoute,
     ticketRoute,
     ticketEditRoute,

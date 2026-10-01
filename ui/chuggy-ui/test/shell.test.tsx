@@ -10,7 +10,13 @@
 
 // jscpd:ignore-start -- the imports and vi.mock factories a case cannot hoist out
 import { QueryClient } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
 import { afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
@@ -430,6 +436,186 @@ test("New after a refused first message holds the thread it opens", async () => 
   expect(read.some((url) => url.includes(`/threads/${openedSession}`))).toBe(
     true,
   );
+  styleless();
+});
+
+/** A server whose thread door refuses every open for the hosted grant. */
+function unhostedServed(): typeof fetch {
+  const served = threadServed([]);
+  return ((url: string, init?: { readonly method?: string }) =>
+    init?.method === "POST" && url.endsWith("/threads")
+      ? Promise.resolve(
+          answer({ error: { code: "HostedRunsNotGranted" } }, 403),
+        )
+      : served(url, init)) as unknown as typeof fetch;
+}
+
+/** The box a refused message was typed in, which keeps it to be read and
+ * copied and takes nothing more. */
+function heldBox(): HTMLTextAreaElement {
+  return screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Message" });
+}
+
+/** No thread the reader opens could run, so the box takes no more presses and
+ * keeps the message it handed back, with what refused it beneath. */
+test("a first message the hosted grant refuses stays in the box, read-only, over the refusal", async () => {
+  await mounted(viewportDeskEm, unhostedServed());
+  fireEvent.change(composerDrawn(), { target: { value: "hello" } });
+  await turned(() => {
+    screen.getByRole("button", { name: "Send" }).click();
+  });
+  await settled();
+  expect(heldBox().value).toBe("hello");
+  expect(heldBox().readOnly).toBe(true);
+  expect(
+    within(screen.getByRole("region", { name: "Conversation" })).getByText(
+      "Needs hosted runs",
+    ),
+  ).toBeTruthy();
+  styleless();
+});
+
+test("New the hosted grant refuses puts the refusal where the composer was", async () => {
+  await mounted(viewportDeskEm, unhostedServed());
+  await pressed("New");
+  expect(screen.queryByRole("textbox", { name: "Message" })).toBeNull();
+  expect(screen.getByText("Needs hosted runs")).toBeTruthy();
+  styleless();
+});
+
+/** The thread posts a server saw, in order, each named by what it asked for. */
+function postsNamed(posts: readonly string[]): readonly string[] {
+  return posts.map((url) => (url.endsWith("/close") ? "close" : "open"));
+}
+
+/** A server holding the reader's own idle thread, recording every thread post
+ * and answering an open as `open` names. */
+function heldThreadServed(
+  posts: string[],
+  open: () => Promise<unknown>,
+): typeof fetch {
+  const served = threadServed([
+    threadEntry({ session: openedSession, owner: "geoff", mine: true }),
+  ]);
+  return ((url: string, init?: { readonly method?: string }) => {
+    if (init?.method !== "POST") return served(url, init);
+    posts.push(url);
+    return url.endsWith("/threads") ? open() : served(url, init);
+  }) as unknown as typeof fetch;
+}
+
+test("New with a thread the grant allows closes it and opens another", async () => {
+  const posts: string[] = [];
+  await mounted(
+    viewportDeskEm,
+    heldThreadServed(posts, () =>
+      Promise.resolve(
+        answer(
+          threadEntry({ session: openedSession, owner: "geoff", mine: true }),
+        ),
+      ),
+    ),
+  );
+  await pressed("New");
+  expect(postsNamed(posts)).toStrictEqual(["open", "close", "open"]);
+  styleless();
+});
+
+/** The open is asked before the close, so a reader the hosted grant refuses
+ * keeps the thread they had rather than losing it to one that cannot open. */
+test("New the hosted grant refuses closes nothing, and the refusal is drawn", async () => {
+  const posts: string[] = [];
+  await mounted(
+    viewportDeskEm,
+    heldThreadServed(posts, () =>
+      Promise.resolve(answer({ error: { code: "HostedRunsNotGranted" } }, 403)),
+    ),
+  );
+  await pressed("New");
+  expect(
+    postsNamed(posts),
+    "a thread was closed for one that could not open",
+  ).toStrictEqual(["open"]);
+  expect(screen.getByText("Needs hosted runs")).toBeTruthy();
+  styleless();
+});
+
+/** A server whose thread door refuses every open for the hosted grant until
+ * the case grants it. */
+function grantedLaterServed(listed: readonly unknown[]): {
+  readonly served: typeof fetch;
+  readonly grant: () => void;
+} {
+  const served = threadServed(listed);
+  let granted = false;
+  return {
+    served: ((url: string, init?: { readonly method?: string }) =>
+      !granted && init?.method === "POST" && url.endsWith("/threads")
+        ? Promise.resolve(
+            answer({ error: { code: "HostedRunsNotGranted" } }, 403),
+          )
+        : served(url, init)) as unknown as typeof fetch,
+    grant: () => {
+      granted = true;
+    },
+  };
+}
+
+/** A thread that opens answers the refusal New met before it, so none stands
+ * once the grant is given. */
+async function grantedAfterRefusal(listed: readonly unknown[]): Promise<void> {
+  const server = grantedLaterServed(listed);
+  await mounted(viewportDeskEm, server.served);
+  await pressed("New");
+  expect(screen.getByText("Needs hosted runs")).toBeTruthy();
+  server.grant();
+  await pressed("New");
+  expect(screen.queryAllByText("Needs hosted runs")).toStrictEqual([]);
+  styleless();
+}
+
+test("New after the grant is given leaves no refusal standing, with no thread held", async () => {
+  await grantedAfterRefusal([]);
+});
+
+test("New after the grant is given leaves no refusal standing, with a thread held", async () => {
+  await grantedAfterRefusal([
+    threadEntry({ session: openedSession, owner: "geoff", mine: true }),
+  ]);
+});
+
+/** A grant withdrawn after the thread opened refuses its next message, and the
+ * box keeps that message while taking no more. */
+test("a message to a held thread the hosted grant refuses stays in the box, read-only, over the refusal", async () => {
+  const served = threadServed([
+    threadEntry({ session: openedSession, owner: "geoff", mine: true }),
+  ]);
+  let sends = 0;
+  await mounted(viewportDeskEm, ((
+    url: string,
+    init?: { readonly method?: string },
+  ) => {
+    if (init?.method !== "POST" || !url.endsWith("/messages"))
+      return served(url, init);
+    sends += 1;
+    return Promise.resolve(
+      answer({ error: { code: "HostedRunsNotGranted" } }, 403),
+    );
+  }) as unknown as typeof fetch);
+  fireEvent.change(composerDrawn(), { target: { value: "hello" } });
+  await turned(() => {
+    screen.getByRole("button", { name: "Send" }).click();
+  });
+  await settled();
+  expect(heldBox().value).toBe("hello");
+  expect(heldBox().readOnly).toBe(true);
+  expect(screen.getByText("Needs hosted runs")).toBeTruthy();
+  expect(screen.queryByText("Closed")).toBeNull();
+  await turned(() => {
+    fireEvent.keyDown(heldBox(), { key: "Enter" });
+  });
+  await settled();
+  expect(sends, "a held box sent its message again").toBe(1);
   styleless();
 });
 

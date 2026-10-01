@@ -26,7 +26,10 @@ import {
   type Principal,
 } from "../../src/interpreter/principal.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
-import { projectPrincipalGrant } from "../../src/interpreter/projectGrant.ts";
+import {
+  projectPrincipalGrant,
+  tenantPrincipalGrant,
+} from "../../src/interpreter/projectGrant.ts";
 import { sessionStoreDouble } from "../postgres/storeDouble.ts";
 import {
   threadRigApp,
@@ -65,7 +68,7 @@ function pathOf(partition: Partition): string {
   return `/api/v1/tenants/${partition.tenant}/projects/${partition.project}/threads`;
 }
 
-/** A project, and one principal the authority admits to it as a developer. */
+/** A project, and one principal the authority admits to it as a developer and to its tenant's hosted runs. */
 async function admittedMember(
   label: string,
 ): Promise<{ partition: Partition; principal: Principal; subject: string }> {
@@ -78,6 +81,14 @@ async function admittedMember(
       tenant: partition.tenant,
       project: partition.project,
       relation: "developers",
+    }),
+  );
+  await grants.write(
+    tenantPrincipalGrant({
+      issuer: ketoHarnessIssuer,
+      subject,
+      tenant: partition.tenant,
+      relation: "hosted_execution",
     }),
   );
   return {

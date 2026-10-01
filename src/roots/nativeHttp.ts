@@ -41,6 +41,7 @@ import {
   composeForgeCredentialMinting,
   composeForgeRepositoryMinting,
   composeNativeWeb,
+  composeExecutionPlacement,
   composeProjectCreation,
   composeRepositoryOnboarding,
   composeSelectorProjectSettings,
@@ -137,13 +138,19 @@ import {
   type ProjectGrantWriter,
 } from "../interpreter/projectGrant.ts";
 import {
+  postgresWorkerPoolDirectory,
   postgresWorkerPoolRegistrationTokens,
   postgresWorkerPoolRegistry,
 } from "../adapters/postgres/workerPool.ts";
 import {
   workerPoolRegistrationService,
   type WorkerPoolRegistrationService,
+  type WorkerPoolSite,
 } from "../interpreter/workerPoolRegistrationToken.ts";
+import {
+  workerPoolEndpointSchema,
+  workerPoolRegistryHostSchema,
+} from "../contract/responses.ts";
 
 const databaseUrlVariable = "CHUG_API_DATABASE_URL";
 const idempotencyKeyingVariable = "CHUG_API_IDEMPOTENCY_KEYING";
@@ -161,6 +168,14 @@ const ketoReadUrlVariable = "CHUG_API_KETO_READ_URL";
 const ketoWriteUrlVariable = "CHUG_API_KETO_WRITE_URL";
 const hydraAdminUrlVariable = "CHUG_API_HYDRA_ADMIN_URL";
 const ketoTimeoutVariable = "CHUG_API_KETO_TIMEOUT_MS";
+/**
+ * Where a registered pool reaches this deployment, which a redemption answers
+ * so a runner's file is written whole: required wherever pools are registered,
+ * the registry host only where the deployment names one of its own.
+ */
+const poolTokenUrlVariable = "CHUG_API_POOL_TOKEN_URL";
+const poolPlaneUrlVariable = "CHUG_API_POOL_PLANE_URL";
+const poolRegistryHostVariable = "CHUG_API_POOL_REGISTRY_HOST";
 /**
  * The named credential mount a member's thread speaks through. It is REQUIRED
  * rather than defaulted: the slot is what a per-user Anthropic credential
@@ -206,6 +221,37 @@ const forgeClientSecretFileVariable = "CHUG_API_FORGE_APP_CLIENT_SECRET_FILE";
 const bootstrapWorkerImageVariable = "CHUG_API_BOOTSTRAP_WORKER_IMAGE";
 const forgeTemplateRepositoryVariable = "CHUG_API_FORGE_TEMPLATE_REPOSITORY";
 
+/** One pool address, refused at start where a runner would refuse it in the pool file. */
+function poolEndpointSetting(variable: string): string {
+  const text = requiredEnvironment(variable);
+  if (!workerPoolEndpointSchema.safeParse(text).success)
+    throw new Error(
+      `${variable} must be an https URL, or an http URL on the loopback, carrying no credentials`,
+    );
+  return new URL(text).toString();
+}
+
+/**
+ * Where a registered pool reaches this deployment, refused at start where a
+ * runner would refuse the pool file: a redemption spends its token and
+ * registers the pool before the runner reads the file.
+ */
+export function workerPoolSite(): WorkerPoolSite {
+  const registryHost = process.env[poolRegistryHostVariable];
+  const named = registryHost !== undefined && registryHost.length > 0;
+  if (named && !workerPoolRegistryHostSchema.safeParse(registryHost).success)
+    throw new Error(
+      `${poolRegistryHostVariable} must be a lowercase host, and a port where it names one`,
+    );
+  return {
+    issuer: requiredEnvironment(oidcIssuerVariable),
+    tokenUrl: poolEndpointSetting(poolTokenUrlVariable),
+    audience: requiredEnvironment(oidcAudienceVariable),
+    planeUrl: poolEndpointSetting(poolPlaneUrlVariable),
+    ...(named ? { registryHost } : {}),
+  };
+}
+
 /**
  * The registration half of worker pools, composed only where an installation
  * named both addresses it needs. It is the one place in this tree that holds
@@ -222,7 +268,8 @@ function nativeWorkerPools(
     throw new Error(`${ketoWriteUrlVariable} is required`);
   return workerPoolRegistrationService({
     access,
-    issuer: requiredEnvironment(oidcIssuerVariable),
+    site: workerPoolSite(),
+    directory: postgresWorkerPoolDirectory(pool),
     minting: {
       tokens: postgresWorkerPoolRegistrationTokens(pool),
       draw: () => randomBytes(32).toString("base64url"),
@@ -940,6 +987,20 @@ export function nativeAuthentication(
   );
 }
 
+/** The bearers this API accepts, leaving neither pool open where the issuer cannot be reached at start. */
+async function nativeAuthenticationStarted(
+  config: OidcAuthenticationConfig,
+  pools: NativePools,
+): Promise<PrincipalAuthentication> {
+  const oidc = await oidcAuthentication(config).catch(
+    async (failure: unknown) => {
+      await closePools(pools.pool, pools.selectorReviewPool);
+      throw failure;
+    },
+  );
+  return nativeAuthentication(oidc, pools);
+}
+
 /**
  * Refuses to start on either pool this process must have, naming which one, and
  * leaves neither open behind the refusal.
@@ -1008,13 +1069,8 @@ async function main(): Promise<void> {
   const pools = nativePools();
   const { pool, selectorReviewPool } = pools;
   await nativeDatabasesReady(pool, selectorReviewPool);
-  const authentication = nativeAuthentication(
-    await oidcAuthentication(authenticationConfig).catch(
-      async (failure: unknown) => {
-        await closePools(pool, selectorReviewPool);
-        throw failure;
-      },
-    ),
+  const authentication = await nativeAuthenticationStarted(
+    authenticationConfig,
     pools,
   );
   const accessSettings = ketoConfig();
@@ -1056,6 +1112,7 @@ async function main(): Promise<void> {
       ketoTenantClaims(accessSettings),
       grants,
     ),
+    composeExecutionPlacement(pool, access),
   );
   app.addHook("onClose", async () => {
     await hub.close();

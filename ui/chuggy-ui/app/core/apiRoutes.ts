@@ -16,6 +16,7 @@ import {
   dispatchViewResponseSchema,
   draftInitializationResponseSchema,
   draftResponseSchema,
+  executionPlacementResponseSchema,
   executionsResponseSchema,
   forgeAppsResponseSchema,
   forgeAuthorizationResponseSchema,
@@ -41,6 +42,8 @@ import {
   selectorSettingsHistoryResponseSchema,
   ticketNativeActionsResponseSchema,
   ticketResponseSchema,
+  workerPoolsResponseSchema,
+  workerPoolTokenResponseSchema,
 } from "../../../../src/contract/responses.ts";
 import type {
   AgenticRefusalsResponse,
@@ -49,6 +52,7 @@ import type {
   DispatchViewResponse,
   DraftInitializationResponse,
   DraftResponse,
+  ExecutionPlacementResponse,
   ExecutionsResponse,
   ForgeAppsResponse,
   ForgeAuthorizationResponse,
@@ -73,11 +77,14 @@ import type {
   SelectorSettingsHistoryResponse,
   TicketNativeActionsResponse,
   TicketResponse,
+  WorkerPoolsResponse,
+  WorkerPoolTokenResponse,
 } from "../../../../src/contract/responses.ts";
 import type {
   configurationCreationSchema,
   draftCreationSchema,
   draftRevisionSchema,
+  executionPlacementSchema,
   forgeAuthorizationSchema,
   leadInquirySchema,
   projectCreationSchema,
@@ -89,6 +96,7 @@ import type {
   submissionSchema,
   threadMessageSchema,
 } from "../../../../src/contract/requests.ts";
+import type { workerPoolRegistrationTokenRequestSchema } from "../../../../src/contract/workerPool.ts";
 import type { z } from "zod";
 
 import { apiRead } from "./apiRequest.ts";
@@ -345,6 +353,60 @@ export function apiWriteProjectRepositoryLanding(
       body: written,
     },
     (value) => projectRepositoryLandingWrittenSchema.parse(value).repository,
+  );
+}
+
+/** Where one project's work and evaluations run, what decided each, and what the reader may choose. */
+export function apiExecutionPlacement(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+): Promise<ApiResult<ExecutionPlacementResponse>> {
+  return apiGet(ports, apiSegments(partition, "execution-placement"), (value) =>
+    executionPlacementResponseSchema.parse(value),
+  );
+}
+
+/** One project's placement, written whole; a hosted route the tenant has not granted is refused by its code. */
+export function apiWriteExecutionPlacement(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+  written: z.infer<typeof executionPlacementSchema>,
+): Promise<ApiResult<ExecutionPlacementResponse>> {
+  return apiRead(
+    ports,
+    {
+      method: "PUT",
+      path: apiSegments(partition, "execution-placement"),
+      body: written,
+    },
+    (value) => executionPlacementResponseSchema.parse(value),
+  );
+}
+
+/** The pools registered to one project, in name order. */
+export function apiWorkerPools(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+): Promise<ApiResult<WorkerPoolsResponse>> {
+  return apiGet(ports, apiSegments(partition, "worker-pools"), (value) =>
+    workerPoolsResponseSchema.parse(value),
+  );
+}
+
+/** A single-use token a machine registers one of this project's pools with. */
+export function apiMintWorkerPoolToken(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+  request: z.infer<typeof workerPoolRegistrationTokenRequestSchema>,
+): Promise<ApiResult<WorkerPoolTokenResponse>> {
+  return apiRead(
+    ports,
+    {
+      method: "POST",
+      path: apiSegments(partition, "worker-pool-registration-tokens"),
+      body: request,
+    },
+    (value) => workerPoolTokenResponseSchema.parse(value),
   );
 }
 

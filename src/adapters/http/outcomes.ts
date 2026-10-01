@@ -61,7 +61,10 @@ import type {
   OperationId,
 } from "../../interpreter/operationInbox.ts";
 import type { NotificationBatch } from "../../interpreter/notifications.ts";
-import type { ThreadMessageRefusalCode } from "../../contract/rosters.ts";
+import {
+  hostedRunsNotGrantedCode,
+  type ThreadMessageRefusalCode,
+} from "../../contract/rosters.ts";
 import type {
   LeadInquiriesRead,
   LeadInquiryAsked,
@@ -119,9 +122,22 @@ import {
 } from "./codecs.ts";
 
 import type {
+  WorkerPoolCredentials,
+  WorkerPoolsListed,
   WorkerPoolTokenMinted,
   WorkerPoolTokenRedeemed,
 } from "../../interpreter/workerPoolRegistrationToken.ts";
+import type {
+  ExecutionPlacementRead,
+  ExecutionPlacementView,
+  ExecutionPlacementWritten,
+} from "../../interpreter/executionPlacement.ts";
+import type {
+  ExecutionPlacementResponse,
+  WorkerPoolCredentialsResponse,
+  WorkerPoolsResponse,
+} from "../../contract/responses.ts";
+
 export interface NativeHttpResponse {
   readonly status: number;
   readonly headers: Readonly<Record<string, string>>;
@@ -826,10 +842,105 @@ export function workerPoolTokenResponse(
   }
 }
 
+function workerPoolCredentialsBody(
+  credentials: WorkerPoolCredentials,
+): WorkerPoolCredentialsResponse {
+  return {
+    tenant: credentials.partition.tenant,
+    project: credentials.partition.project,
+    pool: credentials.pool,
+    capabilities: [...credentials.capabilities],
+    tokenUrl: credentials.tokenUrl,
+    audience: credentials.audience,
+    planeUrl: credentials.planeUrl,
+    ...(credentials.registryHost === undefined
+      ? {}
+      : { registryHost: credentials.registryHost }),
+    clientId: credentials.clientId,
+    clientSecret: credentials.clientSecret,
+  };
+}
+
+/** A project's registered pools, or the same miss as a project the caller may not see. */
+export function workerPoolsResponse(
+  result: WorkerPoolsListed,
+): NativeHttpResponse {
+  switch (result.result) {
+    case "NotFound":
+      return notFound();
+    case "Found":
+      return response(200, {
+        pools: result.value.pools.map((listed) => ({
+          pool: listed.pool,
+          capabilities: [...listed.capabilities],
+          registeredAt: listed.registeredAt,
+        })),
+        truncated: result.value.truncated,
+      } satisfies WorkerPoolsResponse);
+    default:
+      return assertNever(result);
+  }
+}
+
+function executionPlacementBody(
+  view: ExecutionPlacementView,
+): ExecutionPlacementResponse {
+  return {
+    work: view.routes.Work,
+    evaluation: view.routes.Evaluation,
+    choices: [...view.choices],
+  };
+}
+
+export function executionPlacementReadResponse(
+  result: ExecutionPlacementRead,
+): NativeHttpResponse {
+  switch (result.result) {
+    case "NotFound":
+      return notFound();
+    case "Found":
+      return response(200, executionPlacementBody(result.view));
+    default:
+      return assertNever(result);
+  }
+}
+
+/** What a door answers a caller the tenant does not grant hosted runs, whichever door it is. */
+function hostedRunsRefused(): NativeHttpResponse {
+  return response(
+    403,
+    nativeHttpError(
+      hostedRunsNotGrantedCode,
+      "The tenant has not granted this caller hosted runs.",
+    ),
+  );
+}
+
 /**
- * A redemption, answered with the client and its secret once. A capability the
- * token does not permit is named rather than folded into `NotFound`, because it
- * is the one refusal here an operator can act on.
+ * A placement written, answering where the project's executions now run. A
+ * repeat is the same answer, and a route the tenant has not granted this caller
+ * is named so a console can say so.
+ */
+export function executionPlacementWriteResponse(
+  result: ExecutionPlacementWritten,
+): NativeHttpResponse {
+  switch (result.result) {
+    case "NotFound":
+      return notFound();
+    case "HostedRunsNotGranted":
+      return hostedRunsRefused();
+    case "Written":
+    case "Unchanged":
+      return response(200, executionPlacementBody(result.view));
+    default:
+      return assertNever(result);
+  }
+}
+
+/**
+ * A redemption, answered with the pool file once, the client's secret in it.
+ * A capability the token does not permit is named rather than folded into
+ * `NotFound`, because it is the one refusal here an operator can act on.
  */
 export function workerPoolRedemptionResponse(
   result: WorkerPoolTokenRedeemed,
@@ -846,10 +957,7 @@ export function workerPoolRedemptionResponse(
         ),
       );
     case "Registered":
-      return response(201, {
-        clientId: result.value.clientId,
-        clientSecret: result.value.clientSecret,
-      });
+      return response(201, workerPoolCredentialsBody(result.value));
     default:
       return assertNever(result);
   }
@@ -1678,6 +1786,7 @@ export function openThreadResponse(
 ): NativeHttpResponse {
   if (result.result === "NotFound")
     return response(404, nativeHttpError("NotFound", "Resource not found."));
+  if (result.result === "HostedRunsNotGranted") return hostedRunsRefused();
   return response(result.result === "Opened" ? 201 : 200, result.thread, {
     location: resourcePath(partition, "threads", result.thread.session),
   });
@@ -1744,7 +1853,10 @@ export function hideThreadResponse(result: ThreadHiding): NativeHttpResponse {
  */
 const threadMessageRefusalCode: Readonly<
   Record<
-    Exclude<ThreadMessageSent["result"], "NotFound" | "Sent" | "AlreadySent">,
+    Exclude<
+      ThreadMessageSent["result"],
+      "NotFound" | "HostedRunsNotGranted" | "Sent" | "AlreadySent"
+    >,
     ThreadMessageRefusalCode
   >
 > = {
@@ -1767,6 +1879,8 @@ export function threadMessageResponse(
   switch (result.result) {
     case "NotFound":
       return response(404, nativeHttpError("NotFound", "Resource not found."));
+    case "HostedRunsNotGranted":
+      return hostedRunsRefused();
     case "NotYourThread":
       return response(
         403,
@@ -1840,6 +1954,8 @@ export function askLeadResponse(
     case "NotFound":
     case "NoLead":
       return response(404, nativeHttpError("NotFound", "Resource not found."));
+    case "HostedRunsNotGranted":
+      return hostedRunsRefused();
     case "LeadNotStarted":
       return response(
         409,

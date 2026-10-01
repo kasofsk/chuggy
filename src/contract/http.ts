@@ -302,6 +302,9 @@ export const forgeAuthorizationVerifierCharsMax = 128;
 /** How many bindings one project's repository listing answers with, oldest first. */
 export const projectRepositoriesAnsweredMax = 200;
 
+/** How many registered pools one project's listing answers with, in name order. */
+export const workerPoolsAnsweredMax = 64;
+
 /**
  * How many repositories one installation's listing answers with at the most,
  * whatever bound a deployment sets: a deployment naming a wider one is refused
@@ -395,6 +398,10 @@ export const nativeHttpRoutes = {
   projectRepositoriesNew: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/repositories/new`,
   projectRepositoryLanding: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/repositories/landing`,
   projectRepositoryRetirement: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/repositories/retirement`,
+  executionPlacement: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/execution-placement`,
+  workerPools: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/worker-pools`,
+  workerPoolRegistrationTokens: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/worker-pool-registration-tokens`,
+  workerPoolRegistrations: `${nativeHttpBasePath}/worker-pool-registrations`,
   drafts: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/drafts`,
   draftInitialization: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/draft-initializations/:revision`,
   draft: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/drafts/:ticket`,

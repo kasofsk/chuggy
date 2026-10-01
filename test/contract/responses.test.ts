@@ -45,6 +45,7 @@ import {
   submissionResponse,
   ticketNativeActionsResponse,
   ticketResponse,
+  workerPoolRedemptionResponse,
 } from "../../src/adapters/http/outcomes.ts";
 import { operationResponseSchema as decodedOperationResponseSchema } from "../../src/adapters/http/codecs.ts";
 import {
@@ -87,10 +88,12 @@ import {
   ticketAgenticRefusalsResponseSchema,
   ticketNativeActionsResponseSchema,
   ticketResponseSchema,
+  workerPoolCredentialsSchema,
 } from "../../src/contract/responses.ts";
 import { authoringSchema } from "../../src/contract/authoring.ts";
 import { draftRevisionSchema } from "../../src/contract/requests.ts";
 import { projectRepositoryConfigurationDeferrals } from "../../src/contract/rosters.ts";
+import { workerPoolTokenCharsMax } from "../../src/contract/workerPool.ts";
 import { asConfigurationRevisionId } from "../../src/interpreter/authoring.ts";
 import type {
   ProjectRepositoryConfigurationsResult,
@@ -2068,4 +2071,50 @@ test("a ticket is read at the revision an update is written against, and zero is
       revision: 0,
     }),
   );
+});
+
+test("a redemption's pool file parses as the file a runner keeps, and an address a runner would refuse does not", () => {
+  const redeemed = workerPoolRedemptionResponse({
+    result: "Registered",
+    value: {
+      partition,
+      pool: "shame",
+      capabilities: ["Platform:Linux:Amd64"],
+      tokenUrl: "https://auth.chuggy.test/oauth2/token",
+      audience: "https://chuggy.test/api",
+      planeUrl: "https://chuggy-pool.chuggy.test/",
+      registryHost: "chuggy-registry.chuggy.test",
+      clientId: "chuggy-pool-1",
+      clientSecret: "a-secret",
+    },
+  });
+  assert.equal(redeemed.status, 201);
+  const file = workerPoolCredentialsSchema.parse(redeemed.body);
+  for (const refused of [
+    { tokenUrl: "http://auth.chuggy.test/oauth2/token" },
+    { planeUrl: "ftp://chuggy-pool.chuggy.test/" },
+    { planeUrl: "ftp://127.0.0.1/" },
+    { tokenUrl: "https://op:pw-fixture@auth.chuggy.test/oauth2/token" },
+    { planeUrl: "https://op@chuggy-pool.chuggy.test/" },
+    { planeUrl: "https://:pw-fixture@chuggy-pool.chuggy.test/" },
+    { registryHost: "https://chuggy-registry.chuggy.test" },
+    { capabilities: [""] },
+    { capabilities: ["a b"] },
+    { capabilities: ["x".repeat(workerPoolTokenCharsMax + 1)] },
+  ])
+    assert.equal(
+      workerPoolCredentialsSchema.safeParse({ ...file, ...refused }).success,
+      false,
+      JSON.stringify(refused),
+    );
+  for (const planeUrl of [
+    "http://127.0.0.1:4444/",
+    "http://localhost:4444/",
+    "http://[::1]:4444/",
+  ])
+    assert.equal(
+      workerPoolCredentialsSchema.safeParse({ ...file, planeUrl }).success,
+      true,
+      planeUrl,
+    );
 });

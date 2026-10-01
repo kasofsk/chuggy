@@ -79,6 +79,7 @@ import {
   parseProjectRepositoryBind,
   parseProjectRepositoryCreate,
   parseProjectRepositoryLanding,
+  parseExecutionPlacement,
   parseProjectRepositoryRetirement,
   parseRepositoryConfigurationImport,
   parseDraftCreation,
@@ -157,8 +158,12 @@ import {
   authorityRetryAfterSeconds,
   workerPoolRedemptionResponse,
   workerPoolTokenResponse,
+  workerPoolsResponse,
+  executionPlacementReadResponse,
+  executionPlacementWriteResponse,
 } from "./outcomes.ts";
 import type { WorkerPoolRegistrationService } from "../../interpreter/workerPoolRegistrationToken.ts";
+import type { ExecutionPlacementAdministration } from "../../interpreter/executionPlacement.ts";
 import type { ProjectCreation } from "../../interpreter/projectCreation.ts";
 
 /** Who the bearer is, and when it stops saying so, for a route that outlives one request. */
@@ -902,6 +907,14 @@ function registerWorkerPools(
   pools: WorkerPoolRegistrationService,
   partitionRoot: string,
 ): void {
+  app.get(`${partitionRoot}/worker-pools`, async (request, reply) => {
+    send(
+      reply,
+      workerPoolsResponse(
+        await pools.registered(principalOf(request), partitionOf(request)),
+      ),
+    );
+  });
   app.post(
     `${partitionRoot}/worker-pool-registration-tokens`,
     { preValidation: requireVersionedJson },
@@ -926,6 +939,42 @@ function registerWorkerPools(
         reply,
         workerPoolRedemptionResponse(
           await pools.redeem(parseWorkerPoolRedemption(request.body)),
+        ),
+      );
+    },
+  );
+}
+
+/**
+ * Where a project's executions run: read under `Read` and written whole under
+ * `Administer`, a hosted route needing the tenant's grant besides.
+ */
+function registerExecutionPlacement(
+  app: FastifyInstance,
+  placement: ExecutionPlacementAdministration,
+  partitionRoot: string,
+): void {
+  app.get(`${partitionRoot}/execution-placement`, async (request, reply) => {
+    send(
+      reply,
+      executionPlacementReadResponse(
+        await placement.read(principalOf(request), partitionOf(request)),
+      ),
+    );
+  });
+  app.put(
+    `${partitionRoot}/execution-placement`,
+    { preValidation: requireVersionedJson },
+    async (request, reply) => {
+      const written = parseExecutionPlacement(request.body);
+      send(
+        reply,
+        executionPlacementWriteResponse(
+          await placement.write(
+            principalOf(request),
+            partitionOf(request),
+            written,
+          ),
         ),
       );
     },
@@ -1671,19 +1720,8 @@ function registerProjectEvents(
   );
 }
 
-export function createNativeHttpApp(
-  web: InitialNativeWeb,
-  authentication: PrincipalAuthentication,
-  readiness: NativeHttpReadiness,
-  authority: InstallationAuthorityRead,
-  limits: NativeHttpLimits = nativeHttpLimitsDefault,
-  hub?: ProjectStreamHub,
-  selectorSettings?: SelectorProjectSettingsAdministration,
-  forgeCredentials?: ForgeCredentialMinting,
-  onboarding?: RepositoryOnboarding,
-  workerPools?: WorkerPoolRegistrationService,
-  creation?: ProjectCreation,
-): FastifyInstance {
+/** The server every route is registered on: its bounds, its media type, and no response cached. */
+function nativeHttpServer(limits: NativeHttpLimits): FastifyInstance {
   const app = fastify({
     bodyLimit: nativeHttpBodyBytesMax,
     requestTimeout: limits.requestTimeoutMs,
@@ -1702,6 +1740,24 @@ export function createNativeHttpApp(
     }
     return Promise.resolve();
   });
+  return app;
+}
+
+export function createNativeHttpApp(
+  web: InitialNativeWeb,
+  authentication: PrincipalAuthentication,
+  readiness: NativeHttpReadiness,
+  authority: InstallationAuthorityRead,
+  limits: NativeHttpLimits = nativeHttpLimitsDefault,
+  hub?: ProjectStreamHub,
+  selectorSettings?: SelectorProjectSettingsAdministration,
+  forgeCredentials?: ForgeCredentialMinting,
+  onboarding?: RepositoryOnboarding,
+  workerPools?: WorkerPoolRegistrationService,
+  creation?: ProjectCreation,
+  placement?: ExecutionPlacementAdministration,
+): FastifyInstance {
+  const app = nativeHttpServer(limits);
   const partitionRoot = "/api/v1/tenants/:tenant/projects/:project";
   registerCapacity(app, limits.concurrentRequestsMax);
   registerAuthentication(app, authentication);
@@ -1735,6 +1791,8 @@ export function createNativeHttpApp(
   registerDispatchView(app, web);
   if (workerPools !== undefined)
     registerWorkerPools(app, workerPools, partitionRoot);
+  if (placement !== undefined)
+    registerExecutionPlacement(app, placement, partitionRoot);
   app.setErrorHandler((failure, _request, reply) => {
     send(reply, failureResponse(failure));
   });

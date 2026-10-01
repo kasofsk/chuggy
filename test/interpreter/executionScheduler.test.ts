@@ -27,6 +27,7 @@ import {
   executionEntitlementOf,
   executionMayAdmit,
   executionReservationDeficit,
+  executionRoutesResolved,
   executionSchedulerDefaults,
   schedulerEvidenceCharsMax,
   type AttemptEvidenceRecord,
@@ -234,4 +235,35 @@ test("every evidence a refusal can record fits the column that keeps it", () => 
       `${evidence} is longer than the evidence column admits`,
     );
   }
+});
+
+test("each kind's route is the deployment's override, else the project's placement, else the default", () => {
+  const defaults = { Work: "InCluster", Evaluation: "InCluster" } as const;
+  const placement = { Work: "Pool", Evaluation: "Pool" } as const;
+  assert.deepEqual(executionRoutesResolved(defaults, undefined, undefined), {
+    Work: { route: "InCluster", source: "Default" },
+    Evaluation: { route: "InCluster", source: "Default" },
+  });
+  assert.deepEqual(executionRoutesResolved(defaults, {}, placement), {
+    Work: { route: "Pool", source: "Project" },
+    Evaluation: { route: "Pool", source: "Project" },
+  });
+  assert.deepEqual(
+    executionRoutesResolved(defaults, { Evaluation: "InCluster" }, placement),
+    {
+      Work: { route: "Pool", source: "Project" },
+      Evaluation: { route: "InCluster", source: "Override" },
+    },
+  );
+  assert.deepEqual(
+    executionRoutesResolved(
+      { Work: "Pool", Evaluation: "Pool" },
+      { Work: "InCluster" },
+      undefined,
+    ),
+    {
+      Work: { route: "InCluster", source: "Override" },
+      Evaluation: { route: "Pool", source: "Default" },
+    },
+  );
 });

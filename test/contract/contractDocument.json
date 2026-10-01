@@ -41,6 +41,8 @@
   "repositoryRetirement": "a retired repository stays bound and stays readable by name, and stops being the one a session is placed against, the importer reads or a brief may name; this route only retires and repeating it changes nothing, and binding the repository again reinstates it",
   "repositoryConfigurations": "a newly bound repository is imported at its own default-branch head, and one declaring no configurations is authored a bootstrap; the step is reported beside the binding and never refuses it",
   "repositoryCreation": "creating a repository requires this tenant's claims of both apps on the account; the repository is the forge's from the moment it answers, so a later refusal is reported beside one that stands and a name already taken is bound rather than created",
+  "executionPlacement": "where a project's work and evaluations run is decided per kind by the deployment's override for the project, else the project's own placement, else the deployment's default; an administrator writes both routes whole, and choosing InCluster needs the tenant's hosted grant, as opening a thread does",
+  "workerPoolRegistration": "an administrator mints a single-use token for one project; redeeming it registers the pool and answers once with the file a runner keeps, its secret included",
   "routes": {
     "contract": "/api/v1/contract",
     "installation": "/api/v1/installation",
@@ -83,6 +85,10 @@
     "projectRepositoriesNew": "/api/v1/tenants/:tenant/projects/:project/repositories/new",
     "projectRepositoryLanding": "/api/v1/tenants/:tenant/projects/:project/repositories/landing",
     "projectRepositoryRetirement": "/api/v1/tenants/:tenant/projects/:project/repositories/retirement",
+    "executionPlacement": "/api/v1/tenants/:tenant/projects/:project/execution-placement",
+    "workerPools": "/api/v1/tenants/:tenant/projects/:project/worker-pools",
+    "workerPoolRegistrationTokens": "/api/v1/tenants/:tenant/projects/:project/worker-pool-registration-tokens",
+    "workerPoolRegistrations": "/api/v1/worker-pool-registrations",
     "drafts": "/api/v1/tenants/:tenant/projects/:project/drafts",
     "draftInitialization": "/api/v1/tenants/:tenant/projects/:project/draft-initializations/:revision",
     "draft": "/api/v1/tenants/:tenant/projects/:project/drafts/:ticket",
@@ -712,6 +718,22 @@
       ],
       "additionalProperties": false
     },
+    "executionPlacement": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "work": {
+          "type": "string",
+          "enum": ["InCluster", "Pool"]
+        },
+        "evaluation": {
+          "type": "string",
+          "enum": ["InCluster", "Pool"]
+        }
+      },
+      "required": ["work", "evaluation"],
+      "additionalProperties": false
+    },
     "forgeCredential": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
@@ -1009,6 +1031,55 @@
         }
       },
       "required": ["hidden"],
+      "additionalProperties": false
+    },
+    "workerPoolRegistrationToken": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "capabilities": {
+          "maxItems": 64,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 63,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_:-]*$"
+          }
+        },
+        "lifetimeSecs": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": ["capabilities", "lifetimeSecs"],
+      "additionalProperties": false
+    },
+    "workerPoolRedemption": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "token": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "pool": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "capabilities": {
+          "maxItems": 64,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 63,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_:-]*$"
+          }
+        }
+      },
+      "required": ["token", "pool", "capabilities"],
       "additionalProperties": false
     }
   }
