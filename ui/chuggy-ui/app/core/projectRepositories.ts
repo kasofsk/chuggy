@@ -200,21 +200,6 @@ export const repositoryDeferrals: Readonly<
   StepFailed: { status: "Step failed", retry: true },
 };
 
-/** What a repository's configuration step came to, as the one word a retried
- * row's pill holds, or the phrase its deferral is drawn as. */
-export function repositoryConfigurationsStatus(
-  configurations: ProjectRepositoryConfigurationsResponse,
-): string {
-  switch (configurations.result) {
-    case "Imported":
-      return "Imported";
-    case "Bootstrapped":
-      return "Added";
-    case "Deferred":
-      return repositoryDeferrals[configurations.reason].status;
-  }
-}
-
 /** The one line a bind or a create leaves, and whether it offers a first
  * ticket as the next step. */
 export interface RepositoryNote {
@@ -249,12 +234,14 @@ export function repositoryConfigureStatus(
 ): RepositoryStepStatus {
   if (result.outcome === "Ok") {
     const configurations = result.value.configurations;
-    return configurations.result === "Deferred"
-      ? repositoryDeferrals[configurations.reason]
-      : {
-          status: repositoryConfigurationsStatus(configurations),
-          retry: false,
-        };
+    switch (configurations.result) {
+      case "Imported":
+        return { status: "Imported", retry: false };
+      case "Bootstrapped":
+        return { status: "Added", retry: false };
+      case "Deferred":
+        return repositoryDeferrals[configurations.reason];
+    }
   }
   if (result.outcome === "Conflict")
     return result.code === "RepositoryRetired"

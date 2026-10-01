@@ -25,7 +25,6 @@ import {
   repositoryBindOutcome,
   repositoryChoices,
   repositoryConfigureStatus,
-  repositoryConfigurationsStatus,
   repositoryDeferrals,
   repositoryLabel,
   repositoryOffersWithheld,
@@ -229,9 +228,6 @@ test("every deferral has one short phrase, and only one a retry can clear offers
     expect(drawn.status.length).toBeGreaterThan(0);
     expect(drawn.status.length).toBeLessThanOrEqual(60);
     expect(drawn.status.includes(" · ")).toBe(!drawn.retry);
-    expect(repositoryConfigurationsStatus({ result: "Deferred", reason })).toBe(
-      drawn.status,
-    );
   }
   expect(
     projectRepositoryConfigurationDeferrals.filter(
