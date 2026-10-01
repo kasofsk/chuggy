@@ -252,6 +252,22 @@ export type ThreadSend =
   | { readonly send: "Unhosted" }
   | { readonly send: "Refused"; readonly reason: string };
 
+/**
+ * What a composer reports: a press's own answer once there is one, and before
+ * any, `Unhosted` on a thread that takes messages where the tenant's grant was
+ * read and is not given, so a member is told before they type rather than
+ * after they send.
+ */
+export function threadSendStanding(
+  send: ThreadSend,
+  takes: boolean,
+  hosted: boolean | undefined,
+): ThreadSend {
+  return takes && hosted === false && send.send === "Idle"
+    ? { send: "Unhosted" }
+    : send;
+}
+
 /** Whether the mailbox tail a read answered already holds this turn, which is
  * the only thing that settles a refusal the door may have raised after
  * enqueuing. */

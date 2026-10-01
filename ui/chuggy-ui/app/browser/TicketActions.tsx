@@ -550,6 +550,8 @@ export interface TicketActionsProps {
   readonly resume: ResumeOffer;
   /** The actions a card beside the bar answers, which the bar leaves out. */
   readonly answered: readonly TicketAction[];
+  /** Whether Dispatch is offered in a project no lead dispatches. */
+  readonly byHand: boolean;
 }
 
 /** Every action but the ones a card answers, the edit screen, and the follow
@@ -588,6 +590,9 @@ export function TicketBarActions(props: TicketActionsProps): ReactNode {
           inline
           detail={`Dispatch unavailable · ${props.dispatchState.reason}`}
         />
+      ) : null}
+      {props.byHand ? (
+        <Notice tone="info" inline detail="No lead · Dispatched by hand" />
       ) : null}
       <FollowNotes submitting={props.acting.submitting} />
     </>

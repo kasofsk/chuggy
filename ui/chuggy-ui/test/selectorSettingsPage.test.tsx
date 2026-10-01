@@ -35,7 +35,7 @@ import {
   settled,
   turned,
 } from "./screenHarness.tsx";
-import { leadPartition } from "./leadFixture.ts";
+import { leadBody, leadPartition } from "./leadFixture.ts";
 import { styleless } from "./styleless.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 
@@ -130,6 +130,8 @@ interface SettingsScript {
   };
   readonly read?: unknown;
   readonly history?: unknown;
+  /** What the lead route answers, a lead of its own where the case says none. */
+  readonly lead?: unknown;
 }
 
 /** The page over a server whose answer to the write the case decides, whose
@@ -151,6 +153,8 @@ async function drawSettings(
     }
     if (url.includes("/history"))
       return Promise.resolve(answer(script.history ?? { revisions: [] }));
+    if (url.endsWith("/lead"))
+      return Promise.resolve(answer(script.lead ?? leadBody(1, 1)));
     reads += 1;
     return Promise.resolve(answer(read));
   }) as unknown as typeof fetch;
@@ -195,6 +199,23 @@ function save(): void {
 function box(name: string): HTMLInputElement | HTMLTextAreaElement {
   return screen.getByRole<HTMLInputElement>("textbox", { name });
 }
+
+/**
+ * THE SETTINGS SAY HOW A LEAD WOULD DISPATCH, not whether this project has one,
+ * so a project with none reads `Running` and `Automatic` over tickets that wait
+ * for a press — and the page says that first.
+ */
+test("a project with no lead is told above the settings that its tickets are dispatched by hand", async () => {
+  await drawSettings({ lead: { lead: "None" } });
+  expect(screen.getByText("No lead")).toBeDefined();
+  expect(screen.getByText("Tickets are dispatched by hand")).toBeDefined();
+});
+
+test("a project with a lead is told nothing of the hand", async () => {
+  await drawSettings();
+  expect(screen.queryByText("No lead")).toBeNull();
+  expect(screen.queryByText("Tickets are dispatched by hand")).toBeNull();
+});
 
 test("the top bar names the revision the settings were read at", async () => {
   await drawSettings();

@@ -23,7 +23,7 @@ import { z } from "zod";
 
 import type { ThreadEntryResponse } from "../../../../src/contract/responses.ts";
 import type { KeyValuePort } from "./sessionHolder.ts";
-import { threadMine } from "./threads.ts";
+import { threadMine, threadTakesMessages } from "./threads.ts";
 
 export const chatPanePlacements = ["Right", "Left", "Bottom"] as const;
 
@@ -188,4 +188,22 @@ export function chatPaneHolding(
         ? { start: "Unknown" }
         : chatPaneStarts(mine, answering),
   };
+}
+
+/**
+ * Whether the header says the tenant grants no hosted runs. The body says it
+ * where no thread is drawn and a drawn thread's composer where it takes
+ * messages, so the header says it only beside a drawn thread that takes none,
+ * or one the listing has not caught up with.
+ */
+export function chatPaneHeaderUnhosted(
+  granted: boolean | undefined,
+  threadDrawn: boolean,
+  held: ThreadEntryResponse | undefined,
+): boolean {
+  return (
+    granted === false &&
+    threadDrawn &&
+    !(held !== undefined && threadTakesMessages(held))
+  );
 }

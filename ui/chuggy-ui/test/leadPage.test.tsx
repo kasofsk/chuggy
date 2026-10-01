@@ -513,7 +513,47 @@ test("a Session frame with a resource this console cannot read is ignored", asyn
   expect(screen.queryByText(/^Failed · /u)).toBeNull();
 });
 
-test("a project with no lead is a page saying so, not five empty panels", async () => {
+/** A server answering that the project has no lead until `opened` says one
+ * has, and every other route as the held state does; it counts the head's
+ * reads. */
+function leadlessServed(): {
+  readonly open: () => void;
+  readonly reads: () => number;
+} {
+  let opened = false;
+  let reads = 0;
+  const api = apiDouble({
+    operation: { operation: "op-one", state: "Pending" },
+    route: (url) => {
+      const head = url.endsWith("/lead");
+      if (head) reads += 1;
+      if (head && !opened) return answer({ lead: "None" });
+      const found = leadRouteAnswer(url, opening);
+      return answer(found.body, found.status);
+    },
+  });
+  vi.stubGlobal("fetch", api.fetch);
+  return {
+    open: () => {
+      opened = true;
+    },
+    reads: () => reads,
+  };
+}
+
+test("a project with no lead is a page saying so and how its tickets run, not five empty panels", async () => {
+  leadlessServed();
+  await mountLead();
+  const heading = screen.getByRole("heading", { name: "No lead" });
+  expect(heading.nextElementSibling?.textContent).toBe(
+    "Tickets are dispatched by hand",
+  );
+});
+
+/** A project this reader is not shown says there is no lead here for them to
+ * read, and nothing about how its tickets run: it may have a lead dispatching
+ * them. */
+test("a project the API will not show is the same page without the line", async () => {
   const api = apiDouble({
     operation: { operation: "op-one", state: "Pending" },
     route: (url) =>
@@ -523,7 +563,51 @@ test("a project with no lead is a page saying so, not five empty panels", async 
   });
   vi.stubGlobal("fetch", api.fetch);
   await mountLead();
+  const heading = screen.getByRole("heading", { name: "No lead" });
+  expect(heading.nextElementSibling).toBeNull();
+  expect(screen.queryByText("Tickets are dispatched by hand")).toBeNull();
+});
+
+/**
+ * NO READ HAS NAMED A SESSION YET, so the frame a lead's opening writes names
+ * one the page has never heard of — and a page that waited for its own
+ * session's frame would say `No lead` beside a lead that is running.
+ */
+test("a project with no lead draws the lead whose frame says it has opened", async () => {
+  const server = leadlessServed();
+  const stream = await mountLead();
   expect(screen.getByRole("heading", { name: "No lead" })).toBeDefined();
+  server.open();
+  await turned(() => {
+    stream.push(
+      frame("Session", "50", {
+        version: 1,
+        resource: leadSessionResource(leadSession, "turn-1"),
+        representation: null,
+      }),
+    );
+  });
+  await settled();
+  expect(screen.getByRole("heading", { name: "Lead" })).toBeDefined();
+});
+
+/** A project holds its members' threads whether or not it has a lead, and a
+ * thread moving says nothing about one. */
+test("a project with no lead is not re-read by a thread's frame", async () => {
+  const server = leadlessServed();
+  const stream = await mountLead();
+  const before = server.reads();
+  await turned(() => {
+    stream.push(
+      frame("Session", "51", {
+        version: 1,
+        resource: leadSessionResource("thread-geoff", "turn-1", "Thread"),
+        representation: null,
+      }),
+    );
+  });
+  await settled();
+  expect(server.reads(), "a thread's frame re-read the lead").toBe(before);
 });
 
 /**
