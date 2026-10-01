@@ -212,6 +212,9 @@ const deferred = (): Response => answer({}, 503);
 interface Drawing {
   /** The claims the tenant holds, which decide what either dialog offers. */
   readonly claimed?: typeof installations;
+  /** What the claims listing answers with, where a case is about a listing
+   * that does not answer them. */
+  readonly listing?: () => Response;
   /** What a write answers with. */
   readonly posted?: (url: string) => Response;
   /** What one installation's own listing answers with. */
@@ -224,6 +227,7 @@ interface Drawing {
 
 async function drawPage(drawing: Drawing = {}): Promise<readonly Sent[]> {
   const claimed = drawing.claimed ?? installations;
+  const listing = drawing.listing ?? (() => answer(claimed));
   const posted = drawing.posted ?? deferred;
   const granting = drawing.granting ?? ((url) => answer(grantedBy(url)));
   const bound: unknown = drawing.bound ?? bindings;
@@ -242,8 +246,7 @@ async function drawPage(drawing: Drawing = {}): Promise<readonly Sent[]> {
       return Promise.resolve(answer(described));
     if (url.includes("/forge-installations/"))
       return Promise.resolve(granting(url));
-    if (url.includes("/forge-installations"))
-      return Promise.resolve(answer(claimed));
+    if (url.includes("/forge-installations")) return Promise.resolve(listing());
     return Promise.resolve(answer(bound));
   }) as unknown as typeof fetch;
   vi.stubGlobal("fetch", fetching);
@@ -322,6 +325,15 @@ async function drawAtProject(claimed?: typeof installations): Promise<void> {
   history.pushState({}, "", projectPath);
   await drawPage({
     ...(claimed === undefined ? {} : { claimed }),
+    described: { apps: forgeApps, authorization: client },
+  });
+}
+
+/** The same, with the claims listing answering as the case says. */
+async function drawAtProjectListing(listing: () => Response): Promise<void> {
+  history.pushState({}, "", projectPath);
+  await drawPage({
+    listing,
     described: { apps: forgeApps, authorization: client },
   });
 }
@@ -935,4 +947,77 @@ test("a retry that meets the binding retired stales the bindings the page drew",
   await retryFirst();
   expect(bindingRowsText()[0]).toBe("kasofsk/chuggyRetired");
   expect(raised).toStrictEqual([bindingsKey]);
+});
+
+/** The line drawn under Add and Create, which is none where both are offered. */
+function offersWithheld(): string | null | undefined {
+  return sectionOf("Repositories").querySelector(".notice")?.textContent;
+}
+
+function offered(name: string): boolean {
+  return !within(sectionOf("Repositories")).getByRole<HTMLButtonElement>(
+    "button",
+    { name },
+  ).disabled;
+}
+
+/** The listing answers only a workspace admin, so a 404 is this reader's
+ * standing, and a connect they started would be refused at the claim. */
+test("a reader the accounts are withheld from is told who connects them and offered no connect", async () => {
+  await drawAtProjectListing(() => answer({}, 404));
+  const accounts = within(sectionOf("Accounts"));
+  expect(
+    accounts.getByText("A workspace admin connects GitHub accounts"),
+  ).toBeTruthy();
+  expect(accounts.queryByText(/^Not available/)).toBeNull();
+  expect(accounts.queryAllByRole("button")).toStrictEqual([]);
+  expect(accounts.queryAllByRole("link")).toStrictEqual([]);
+});
+
+test("Add and Create withheld from such a reader say who adds repositories", async () => {
+  await drawAtProjectListing(() => answer({}, 404));
+  expect([offered("Add"), offered("Create")]).toStrictEqual([false, false]);
+  expect(offersWithheld()).toBe("A workspace admin adds repositories");
+});
+
+/** Only the forbidden listing has its own line; a listing that failed still
+ * says it failed and why. */
+test("a listing that failed keeps its own line, and Add and Create say the accounts did not load", async () => {
+  await drawAtProjectListing(() => answer({}, 500));
+  expect(
+    within(sectionOf("Accounts")).getByText(
+      "Failed to load · the API failed with InternalError",
+    ),
+  ).toBeTruthy();
+  expect(offersWithheld()).toBe("Accounts failed to load");
+});
+
+test("with no account, Add and Create say to connect one", async () => {
+  await drawAtProject({ truncated: false, installations: [] });
+  expect([offered("Add"), offered("Create")]).toStrictEqual([false, false]);
+  expect(offersWithheld()).toBe("Connect a GitHub account first");
+});
+
+/** Connect GitHub is not offered there, so the line names who can change that. */
+test("with no account on a deployment that cannot authorize, Add and Create say who configures GitHub", async () => {
+  await drawPage({ claimed: { truncated: false, installations: [] } });
+  expect(offersWithheld()).toBe("GitHub not configured · ask an operator");
+});
+
+test("with no portal claim, Add and Create say no account has the portal app", async () => {
+  await drawAtProject(without("portal"));
+  expect([offered("Add"), offered("Create")]).toStrictEqual([false, false]);
+  expect(offersWithheld()).toBe("No account has the portal app");
+});
+
+test("with no account holding both apps, Add is offered and Create says why it is not", async () => {
+  await drawAtProject(without("worker"));
+  expect([offered("Add"), offered("Create")]).toStrictEqual([true, false]);
+  expect(offersWithheld()).toBe("No account has both apps");
+});
+
+test("a reader with an account holding both apps is offered Add and Create and no line", async () => {
+  await drawAtProject();
+  expect([offered("Add"), offered("Create")]).toStrictEqual([true, true]);
+  expect(offersWithheld()).toBeUndefined();
 });

@@ -6,6 +6,9 @@
  */
 
 import type {
+  ForgeAppsResponse,
+  ForgeInstallationResponse,
+  ForgeInstallationsResponse,
   ForgeRepositoryResponse,
   ProjectRepositoryConfigurationsResponse,
   ProjectRepositoryConfiguredResponse,
@@ -15,6 +18,11 @@ import type { ProjectRepositoryConfigurationDeferralName } from "../../../../src
 
 import type { ApiFailure, ApiResult } from "./apiRequest.ts";
 import type { ProjectRepositoryBindAnswer } from "./apiRoutes.ts";
+import {
+  forgeCreatingAccounts,
+  forgePortalInstallations,
+} from "./forgeInstallation.ts";
+import type { PanelState } from "./freshness.ts";
 
 /**
  * A repository as a row names it. The address is opaque to this console, so
@@ -47,6 +55,69 @@ export function repositoryChoices(
 
 /** The line the picker draws when a listing is not all of what an installation holds. */
 export const repositoriesTruncated = "More than shown";
+
+/** What the accounts panel draws for a viewer the listing is not shown to,
+ * which is anyone who does not administer the workspace. */
+export const forgeAccountsWithheld =
+  "A workspace admin connects GitHub accounts";
+
+const repositoryOffersNotConfigured = "GitHub not configured · ask an operator";
+
+/**
+ * Why Add and Create are not both offered, as the one line drawn under them;
+ * nothing where both are, or where a read the answer turns on is in flight.
+ * Each line names what is missing or who supplies it, and points at a step only
+ * where the page offers that step to this reader.
+ */
+export function repositoryOffersWithheld(
+  accounts: PanelState<ForgeInstallationsResponse>,
+  apps: PanelState<ForgeAppsResponse>,
+): string | undefined {
+  switch (accounts.state) {
+    case "Pending":
+      return undefined;
+    case "Absent":
+      return "A workspace admin adds repositories";
+    case "Failed":
+      return "Accounts failed to load";
+    case "Ready": {
+      const installations = accounts.value.installations;
+      return installations.length === 0
+        ? repositoryOffersWithheldUnconnected(apps)
+        : repositoryOffersWithheldClaimed(installations);
+    }
+  }
+}
+
+/** No account yet: connecting one is the step, where this deployment can. */
+function repositoryOffersWithheldUnconnected(
+  apps: PanelState<ForgeAppsResponse>,
+): string | undefined {
+  switch (apps.state) {
+    case "Pending":
+      return undefined;
+    case "Absent":
+      return repositoryOffersNotConfigured;
+    case "Failed":
+      return "GitHub unavailable";
+    case "Ready":
+      return apps.value.authorization === undefined
+        ? repositoryOffersNotConfigured
+        : "Connect a GitHub account first";
+  }
+}
+
+/** Add reads under a portal claim and Create needs both apps on one account,
+ * which are the tests each button is disabled by. */
+function repositoryOffersWithheldClaimed(
+  installations: readonly ForgeInstallationResponse[],
+): string | undefined {
+  if (forgePortalInstallations(installations).length === 0)
+    return "No account has the portal app";
+  if (forgeCreatingAccounts(installations).length === 0)
+    return "No account has both apps";
+  return undefined;
+}
 
 /**
  * A refusal that says nothing about the repository asked for, which every

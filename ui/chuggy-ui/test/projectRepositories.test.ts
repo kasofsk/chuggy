@@ -10,12 +10,16 @@
 import { expect, test } from "vitest";
 
 import type {
+  ForgeAppsResponse,
+  ForgeInstallationResponse,
+  ForgeInstallationsResponse,
   ForgeRepositoryResponse,
   ProjectRepositoryConfigurationsResponse,
 } from "../../../src/contract/responses.ts";
 import { projectRepositoryConfigurationDeferrals } from "../../../src/contract/rosters.ts";
 import type { ApiResult } from "../app/core/apiRequest.ts";
 import type { ProjectRepositoryBindAnswer } from "../app/core/apiRoutes.ts";
+import type { PanelState } from "../app/core/freshness.ts";
 import {
   repositoryBindLines,
   repositoryBindOutcome,
@@ -25,6 +29,7 @@ import {
   repositoryConfigurationsStatus,
   repositoryDeferrals,
   repositoryLabel,
+  repositoryOffersWithheld,
   type RepositoryStepStatus,
 } from "../app/core/projectRepositories.ts";
 import { repositoryRefusalsDrawn } from "./repositoryRefusals.ts";
@@ -236,4 +241,91 @@ test("every deferral has one short phrase, and only one a retry can clear offers
     "StaleBinding",
     "StepFailed",
   ]);
+});
+
+function ready<T>(value: T): PanelState<T> {
+  return { state: "Ready", value, observedAtMs: undefined };
+}
+
+function claim(
+  app: ForgeInstallationResponse["app"],
+  account: string,
+): ForgeInstallationResponse {
+  return {
+    forge: "github",
+    app,
+    account,
+    accountKind: "User",
+    installationId: `${app}-${account}`,
+    claimedAt: "2026-09-11T00:00:00Z",
+  };
+}
+
+function claimed(
+  ...installations: ForgeInstallationResponse[]
+): PanelState<ForgeInstallationsResponse> {
+  return ready({ installations, truncated: false });
+}
+
+const authorizing: PanelState<ForgeAppsResponse> = ready({
+  apps: [],
+  authorization: {
+    clientId: "Iv1.portal",
+    authorizeUrl: "https://forge.test/login/oauth/authorize",
+  },
+});
+
+const unauthorizing: PanelState<ForgeAppsResponse> = ready({ apps: [] });
+
+/**
+ * The listing answers only a workspace admin, and Connect GitHub is offered
+ * only where the deployment answers a client to authorize, so a line that
+ * named a step either withholds is a step the reader cannot take.
+ */
+test("Add and Create withheld say why, and name a step only where it is offered", () => {
+  const cases: readonly (readonly [
+    PanelState<ForgeInstallationsResponse>,
+    PanelState<ForgeAppsResponse>,
+    string | undefined,
+  ])[] = [
+    [{ state: "Pending" }, authorizing, undefined],
+    [
+      { state: "Absent", reason: "withheld" },
+      authorizing,
+      "A workspace admin adds repositories",
+    ],
+    [
+      { state: "Failed", reason: "down" },
+      authorizing,
+      "Accounts failed to load",
+    ],
+    [claimed(), authorizing, "Connect a GitHub account first"],
+    [claimed(), unauthorizing, "GitHub not configured · ask an operator"],
+    [
+      claimed(),
+      { state: "Absent", reason: "no app" },
+      "GitHub not configured · ask an operator",
+    ],
+    [claimed(), { state: "Failed", reason: "down" }, "GitHub unavailable"],
+    [claimed(), { state: "Pending" }, undefined],
+    [
+      claimed(claim("worker", "kasofsk")),
+      authorizing,
+      "No account has the portal app",
+    ],
+    [
+      claimed(claim("portal", "kasofsk"), claim("worker", "gdoteof")),
+      authorizing,
+      "No account has both apps",
+    ],
+    [
+      claimed(claim("portal", "kasofsk"), claim("worker", "kasofsk")),
+      unauthorizing,
+      undefined,
+    ],
+  ];
+  for (const [accounts, apps, line] of cases) {
+    expect(repositoryOffersWithheld(accounts, apps)).toBe(line);
+    expect((line ?? "").length).toBeLessThanOrEqual(60);
+  }
 });
