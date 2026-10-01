@@ -641,6 +641,38 @@ test("every encoded summary names its request, and a page without one still read
   assert.equal(older.executions[0]?.status, "Terminal");
 });
 
+/**
+ * A summary says whether its worker has started rather than leaving a reader
+ * to take an open attempt for a run, and a page from a server sending neither
+ * field still reads.
+ */
+test("an open execution names its carrier and when its run started, and a page without them still reads", () => {
+  const starting = {
+    ...executionSummary,
+    status: "Launching" as const,
+    runStartedAt: instant,
+    carrier: "Commands" as const,
+  };
+  const body = structuredClone(
+    executionsResponse(partition, {
+      result: "Authorized",
+      value: { executions: [starting] },
+    }).body,
+  ) as { readonly executions: Record<string, unknown>[] };
+  const page = executionsResponseSchema.parse(body);
+  assert.equal(page.executions[0]?.runStartedAt, instant);
+  assert.equal(page.executions[0]?.carrier, "Commands");
+  const summary = body.executions[0];
+  assert.ok(summary !== undefined);
+  summary["carrier"] = "Shell";
+  assert.throws(() => executionsResponseSchema.parse(body));
+  delete summary["carrier"];
+  delete summary["runStartedAt"];
+  const older = executionsResponseSchema.parse(body);
+  assert.equal(older.executions[0]?.carrier, undefined);
+  assert.equal(older.executions[0]?.runStartedAt, undefined);
+});
+
 test("an execution names the image or the toolchain floor it ran on", () => {
   const page = executionsResponseSchema.parse(
     executionsResponse(partition, {

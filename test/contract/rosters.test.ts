@@ -17,6 +17,7 @@ import {
   attemptEvidences,
   attemptStates,
   blockedReasons,
+  briefingCarriers,
   configurationProvenanceSources,
   configurationReadinesses,
   draftStates,
@@ -176,6 +177,7 @@ import type {
   RequirementSource as MaterializedRequirementSource,
 } from "../../src/interpreter/executionRequirement.ts";
 import { executionRequirementSchema } from "../../src/contract/responses.ts";
+import { allBriefingCarriers } from "../../src/interpreter/briefingTemplate.ts";
 import {
   allArtifactFailures,
   allArtifactRoles,
@@ -241,6 +243,10 @@ test("the blocked reasons are the interpreter's", () => {
  */
 test("the git evidences are the interpreter's", () => {
   assert.deepEqual([...gitEvidences], [...allGitEvidence]);
+});
+
+test("the briefing carriers are the interpreter's", () => {
+  assert.deepEqual([...briefingCarriers], [...allBriefingCarriers]);
 });
 
 /**

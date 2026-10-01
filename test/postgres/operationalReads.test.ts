@@ -5,16 +5,25 @@ import { postgresOperationalReads } from "../../src/adapters/postgres/operationa
 import { nativeHttpPageItemsMax } from "../../src/contract/http.ts";
 import { workerPlaneRole } from "../../src/adapters/postgres/schema.ts";
 import {
+  postgresWorkerRunConfiguration,
   postgresWorkerRunTotal,
   postgresWorkerRunTranscript,
 } from "../../src/adapters/postgres/workerPlane.ts";
+import { canonicalConfigurationOf } from "../../src/interpreter/authoring.ts";
 import { asArtifactDigest } from "../../src/interpreter/resultManifest.ts";
-import { postgresHarnessRolePool } from "./harness.ts";
+import {
+  postgresHarnessConfiguration,
+  postgresHarnessRolePool,
+} from "./harness.ts";
 import {
   asExecutionId,
+  asPlacementId,
   type ExecutionId,
 } from "../../src/interpreter/schedulerIdentity.ts";
-import { executionSchedulerDefaults } from "../../src/interpreter/executionScheduler.ts";
+import {
+  executionSchedulerDefaults,
+  type PhysicalAttempt,
+} from "../../src/interpreter/executionScheduler.ts";
 import { id } from "../domain/fixtures.ts";
 import {
   schedulerClaimFor,
@@ -611,4 +620,139 @@ test("an execution counts a relaunch where another attempt followed a lost one, 
     retriesSpent: 1,
     errors: [undefined, undefined],
   });
+});
+
+/** What both reads say of one execution's start, held to agree with each other. */
+async function operationalRunStart(
+  project: SchedulerProject,
+  execution: ExecutionId,
+) {
+  const reads = postgresOperationalReads(ingress);
+  const listed = (
+    await reads.executions(project.partition, {
+      limit: 10,
+      ticket: id(project.ticket),
+    })
+  ).executions.find((each) => each.execution === execution);
+  const detail = await reads.execution(project.partition, execution);
+  assert.equal(listed?.runStartedAt, detail?.runStartedAt);
+  return {
+    status: detail?.status,
+    runStartedAt: detail?.runStartedAt,
+    run: detail?.attempts.at(-1)?.run?.startedAt,
+  };
+}
+
+/** Records the attempt's run as its worker does once its agent starts. */
+async function operationalRunRecorded(attempt: PhysicalAttempt): Promise<void> {
+  const workerPool = postgresHarnessRolePool(workerPlaneRole);
+  try {
+    assert.equal(
+      await postgresWorkerRunConfiguration(workerPool).record({
+        secret: attempt.capability.secret,
+        generation: attempt.generation,
+        digest: asArtifactDigest("b".repeat(64)),
+        bytes: 2,
+      }),
+      "Stored",
+    );
+  } finally {
+    await workerPool.end();
+  }
+}
+
+/**
+ * An attempt opens, and a cluster places it, before its worker's image is
+ * pulled, so neither says the worker started; its run does, and only while the
+ * attempt that recorded it is the one open. A relaunch opens under an
+ * execution already Running, so the status cannot say it either.
+ */
+test("a summary says when the open attempt's run started, and not before or after", async () => {
+  const label = "operational-run-started";
+  const project = await schedulerProject(rig, label);
+  await operationalRegistered(project, project.request, label);
+  const admitted = await rig.store.admit(project.cluster);
+  assert.ok(admitted.admitted === "Admitted");
+  const read = () => operationalRunStart(project, admitted.execution);
+  const opened = await rig.store.openAttempt({
+    partition: project.partition,
+    execution: admitted.execution,
+    epoch: project.epoch,
+    leaseSecs: 300,
+    retriesMax: 3,
+    placementBackoffSecs: 1,
+  });
+  assert.ok(opened.opened === "Opened");
+  const unstarted = { runStartedAt: undefined, run: undefined };
+  assert.deepEqual(await read(), { status: "Launching", ...unstarted });
+  assert.equal(
+    await rig.store.attemptPlaced(
+      opened.attempt,
+      asPlacementId(`placement-${label}`),
+    ),
+    true,
+  );
+  assert.deepEqual(await read(), { status: "Running", ...unstarted });
+  await operationalRunRecorded(opened.attempt);
+  const started = await read();
+  assert.ok(started.run !== undefined);
+  assert.deepEqual(started, {
+    status: "Running",
+    runStartedAt: started.run,
+    run: started.run,
+  });
+  assert.equal(
+    await rig.store.attemptEnded(opened.attempt, "Lost", "Vanished"),
+    true,
+  );
+  assert.deepEqual(await read(), {
+    status: "Running",
+    runStartedAt: undefined,
+    run: started.run,
+  });
+  await operationalReopened(project, admitted.execution);
+  assert.deepEqual(await read(), { status: "Running", ...unstarted });
+});
+
+/**
+ * The carrier is the pinned stage's own, so a work task and an evaluation
+ * under one revision can differ, and the evaluation's stage key is one past
+ * the index of the block it runs.
+ */
+test("a summary names what carries out its stage, read from the revision it pinned", async () => {
+  const label = "operational-carrier";
+  const project = await schedulerProject(
+    rig,
+    label,
+    { tasks: 1 },
+    canonicalConfigurationOf({
+      ...(JSON.parse(postgresHarnessConfiguration) as object),
+      evaluations: [{ purpose: "Check", checks: ["./check"] }],
+    }),
+  );
+  await operationalRegistered(project, project.request, label);
+  const request = await schedulerEvaluationRequest(rig, project, label, {
+    cycle: 1,
+    stage: 1,
+    generation: 1,
+    evaluator: 1,
+  });
+  await operationalRegistered(project, request, label);
+  const reads = postgresOperationalReads(ingress);
+  const page = await reads.executions(project.partition, {
+    limit: 10,
+    ticket: id(project.ticket),
+  });
+  assert.deepEqual(
+    page.executions.map((each) => [each.taskKind, each.carrier]),
+    [
+      ["Work", "Agent"],
+      ["Evaluation", "Commands"],
+    ],
+  );
+  const detail = await reads.execution(
+    project.partition,
+    page.executions[1]?.execution ?? asExecutionId("absent"),
+  );
+  assert.equal(detail?.carrier, "Commands");
 });
