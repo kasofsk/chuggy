@@ -437,6 +437,18 @@ test("a limit is read in its own unit and its digits are not scaled", async () =
   expect(within(limits).getByText("MiB")).toBeDefined();
 });
 
+/** The figure and its unit are two elements, so a reading that takes the text
+ * of the row sees whether a space stands between them. */
+test("a limit's digits and unit read as two words", async () => {
+  await drawSettings();
+  const limits = sectionOf("Limits").textContent;
+  expect(limits).toContain("200,000 tokens");
+  expect(limits).toContain("40 calls");
+  expect(limits).toContain("15 min");
+  expect(limits).toContain("1 MiB");
+  expect(limits).toContain("4 pages");
+});
+
 /** EVERY ROW CARRIES ITS OWN STATE. A pill on the section would say the whole
  * of Limits is inherited when five of six rows are. */
 test("each limit row says for itself whether it is the installation's", async () => {
@@ -460,19 +472,19 @@ test("the foot counts the rows this draft would move", async () => {
     edit("Limits");
   });
   const foot = () => sectionOf("Limits").querySelector("footer.panel-foot");
-  expect(foot()?.textContent).toContain("0changes");
+  expect(foot()?.textContent).toContain("0 changes");
   await turned(() => {
     fireEvent.change(box("Dispatches"), {
       target: { value: "5" },
     });
   });
-  expect(foot()?.textContent).toContain("1change");
+  expect(foot()?.textContent).toContain("1 change");
   await turned(() => {
     fireEvent.change(box("Tokens"), {
       target: { value: "500" },
     });
   });
-  expect(foot()?.textContent).toContain("2changes");
+  expect(foot()?.textContent).toContain("2 changes");
 });
 
 /** A row this draft moved is marked, so a reader scanning six rows sees which

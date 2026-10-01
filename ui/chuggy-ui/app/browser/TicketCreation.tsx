@@ -13,7 +13,7 @@
  */
 
 import { useQueryClient } from "@tanstack/react-query";
-import { useNavigate, useParams } from "@tanstack/react-router";
+import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
@@ -72,6 +72,7 @@ import { operationIdBytesCount } from "../core/operationFollow.ts";
 import { TopBarSlot } from "./shell/slots.tsx";
 import { TicketCreationAdvanced } from "./TicketCreationAdvanced.tsx";
 import { Button } from "./ui/Button.tsx";
+import { EmptyState } from "./ui/EmptyState.tsx";
 import { Picker } from "./ui/Picker.tsx";
 import { RadioGroup } from "./ui/RadioGroup.tsx";
 import { Tooltip } from "./ui/Tooltip.tsx";
@@ -619,6 +620,30 @@ export function CreationForm(props: {
   );
 }
 
+/** What a project with nothing to shape a ticket with draws: the status, and
+ * where the way out of it is where one exists to name. */
+export function CreationContextAbsent(props: {
+  readonly partition: PartitionIdentity;
+  readonly context: Exclude<CreationContext, { context: "Ready" }>;
+}): ReactNode {
+  const { partition, context } = props;
+  if (context.context === "ReadyConfigurationUnknown")
+    return <p className="panel-absent">{creationContextSentence(context)}</p>;
+  return (
+    <EmptyState
+      variant="page"
+      label={creationContextSentence(context)}
+      action={
+        context.context === "NoRepository" ? (
+          <Link to="/$tenant/$project/repositories" params={partition}>
+            Repositories
+          </Link>
+        ) : undefined
+      }
+    />
+  );
+}
+
 export function TicketCreation(): ReactNode {
   const params = useParams({ from: "/$tenant/$project" });
   const ports = useApiPorts();
@@ -657,7 +682,7 @@ export function TicketCreation(): ReactNode {
               }}
             />
           ) : (
-            <p className="panel-absent">{creationContextSentence(context)}</p>
+            <CreationContextAbsent partition={partition} context={context} />
           )
         }
       </DataPanel>
