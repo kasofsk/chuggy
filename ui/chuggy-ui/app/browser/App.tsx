@@ -48,12 +48,12 @@ export function App(props: { readonly queryClient: QueryClient }): ReactNode {
   useSilentRefresh();
   if (snapshot.phase === "Loading")
     return (
-      <SessionCard title="chuggy" detail="Loading" media={<Locomotive />} />
+      <SessionCard title="chuggy" detail="Loading…" media={<Locomotive />} />
     );
   if (snapshot.phase === "Unconfigured")
     return (
       <SessionCard
-        title="not configured"
+        title="Not configured"
         detail={`${consoleConfigurationPath} could not be read: ${snapshot.reason ?? "no reason was given"}`}
       />
     );
