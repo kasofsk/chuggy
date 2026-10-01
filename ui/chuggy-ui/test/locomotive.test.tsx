@@ -74,7 +74,7 @@ test("a phase that is not Loading draws no locomotive", () => {
       <App queryClient={new QueryClient()} />
     </SessionProvider>,
   );
-  expect(screen.getByRole("button", { name: "sign in" })).not.toBeNull();
+  expect(screen.getByRole("button", { name: "Sign in" })).not.toBeNull();
   expect(screen.queryByRole("img")).toBeNull();
   styleless();
 });
