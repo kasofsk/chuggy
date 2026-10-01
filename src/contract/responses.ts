@@ -1541,8 +1541,9 @@ export type ProjectRepositoryResponse = z.infer<
 
 /**
  * One binding as the listing answers it. `configured` is whether the project
- * holds a configuration the repository declared into it, or its bootstrap; one
- * holding neither is what the configuration route runs the step again for.
+ * holds a configuration the repository declared into it, or a bootstrap that
+ * still releases; one holding neither is what the configuration route runs the
+ * step again for.
  */
 export const projectRepositoryListedSchema =
   projectRepositoryResponseSchema.extend({ configured: z.boolean() });

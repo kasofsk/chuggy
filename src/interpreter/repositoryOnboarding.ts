@@ -52,13 +52,18 @@
  * nothing for and answers what the project holds for any other.
  *
  * THE BOOTSTRAP'S REVISION IS ITS NAME, so two steps racing to author it author
- * one row: the second meets the first's revision as the one it already is.
+ * one row: the second meets the first's revision as the one it already is. A
+ * revision is never rewritten, so one the release rule has since outgrown is
+ * met as an `IdentityConflict` rather than replaced, and only counts as held
+ * while it still releases.
  */
 
 import { assertNever } from "../domain/assertNever.ts";
 import {
   asConfigurationRevisionId,
+  releaseConfigurationReadiness,
   type AuthoringStore,
+  type CanonicalConfiguration,
   type ConfigurationRevisionId,
 } from "./authoring.ts";
 import {
@@ -319,8 +324,8 @@ export type ProjectRepositoryCreateResult =
 
 /**
  * One binding as the listing answers it. `configured` is whether the project
- * holds anything from the configuration step for it, which is what the
- * configuration route runs the step again for when it does not.
+ * holds a configuration the step left for it that still releases, which is
+ * what the configuration route runs the step again for when it does not.
  */
 export interface ProjectRepositoryListed extends ProjectRepositoryBound {
   readonly configured: boolean;
@@ -418,11 +423,13 @@ export interface RepositoryOnboardingAuthorization {
 /**
  * What a project already holds from the configuration step: how many names
  * each repository asked about declared into it, a repository that declared none
- * absent, and whether the project holds the bootstrap revision asked about.
+ * absent, and the bootstrap revision's text where the project holds one. The
+ * text rather than a flag, because whether a stored revision still releases is
+ * the release rule's answer today and not the one it gave when authored.
  */
 export interface RepositoryConfigurationsHeld {
   readonly declared: ReadonlyMap<RepositoryId, number>;
-  readonly bootstrapped: boolean;
+  readonly bootstrap: CanonicalConfiguration | undefined;
 }
 
 /** Reads what a project holds from the configuration step, for the repositories it binds. */
@@ -1260,9 +1267,9 @@ function heldConfigurations(
 
 /**
  * What the step has already left one repository, or nothing: the names it
- * declared where it declared any, and otherwise the project's bootstrap, which
- * a repository declaring none releases its tickets under whichever repository
- * it was authored for.
+ * declared where it declared any, and otherwise the project's bootstrap while it
+ * still releases, which a repository declaring none releases its tickets under
+ * whichever repository it was authored for.
  */
 function heldRepositoryConfigurations(
   held: RepositoryConfigurationsHeld,
@@ -1270,7 +1277,10 @@ function heldRepositoryConfigurations(
 ): ProjectRepositoryConfigurationsResult | undefined {
   const declared = held.declared.get(repository) ?? 0;
   if (declared > 0) return { result: "Imported", count: declared };
-  if (held.bootstrapped)
+  if (
+    held.bootstrap !== undefined &&
+    releaseConfigurationReadiness(held.bootstrap).readiness === "Ready"
+  )
     return { result: "Bootstrapped", revision: bootstrapConfigurationRevision };
   return undefined;
 }
@@ -1304,7 +1314,9 @@ async function projectRepositories(
 /**
  * One binding's configuration step asked for again, behind the permit that
  * binds. What the project already holds for the repository is answered without
- * reading it; otherwise the step runs under a binding shaped as the bind's own.
+ * reading it; otherwise the step runs under a binding shaped as the bind's own,
+ * and meets a bootstrap that no longer releases as the revision it cannot
+ * replace.
  */
 async function configureRepository(
   ports: RepositoryOnboardingPorts,

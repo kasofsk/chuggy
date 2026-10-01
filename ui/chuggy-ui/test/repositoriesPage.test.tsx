@@ -632,7 +632,7 @@ test("a create names what it asked for and draws every step it took", async () =
     "Repositoryscratch" +
       "SeedSeeded" +
       "RulesetRefused · no branch yet" +
-      "ConfigurationsDeferred · StepFailed",
+      "ConfigurationsStep failed",
   );
   expect(
     within(rows).getByRole<HTMLAnchorElement>("link", { name: "scratch" }).href,
@@ -843,7 +843,7 @@ test("a retry asks for the step again by address and stales the bindings the pag
 });
 
 /** The reason is what says whether retrying again can help, so the row takes it in place of the bare word. */
-test("a retry that defers again names its reason on the row", async () => {
+test("a retry that defers for a reason a retry can clear names it and offers Retry again", async () => {
   await drawPage({
     bound: unconfigured,
     posted: () =>
@@ -856,8 +856,21 @@ test("a retry that defers again names its reason on the row", async () => {
       }),
   });
   await retryFirst();
+  expect(bindingRowsText()[0]).toBe("kasofsk/chuggyGitHub unavailableRetry");
+});
+
+test("a retry that defers for a reason only someone else can clear names who and offers nothing", async () => {
+  await drawPage({
+    bound: unconfigured,
+    posted: () =>
+      answer({
+        repository: boundUrl,
+        configurations: { result: "Deferred", reason: "NoBootstrapImage" },
+      }),
+  });
+  await retryFirst();
   expect(bindingRowsText()[0]).toBe(
-    "kasofsk/chuggyDeferred · DefaultBranchUnavailableRetry",
+    "kasofsk/chuggyNo worker image · ask an operator",
   );
 });
 
@@ -867,4 +880,17 @@ test("a refused retry draws its refusal and stales nothing", async () => {
   await retryFirst();
   expect(bindingRowsText()[0]).toBe("kasofsk/chuggyDeferringRetry");
   expect(raised).toStrictEqual([]);
+});
+
+/** The listing is what draws a binding retired, so the one refusal that changes it redraws it. */
+test("a retry that meets the binding retired stales the bindings the page drew", async () => {
+  await drawPage({
+    bound: unconfigured,
+    posted: () =>
+      answer({ error: { code: "RepositoryRetired", message: "retired" } }, 409),
+  });
+  const raised = invalidationsAfterDraw();
+  await retryFirst();
+  expect(bindingRowsText()[0]).toBe("kasofsk/chuggyRetired");
+  expect(raised).toStrictEqual([bindingsKey]);
 });

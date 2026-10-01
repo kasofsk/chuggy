@@ -701,9 +701,9 @@ type HeldConfigurationsQuery = Parameters<
 
 /**
  * How many names each repository asked about declared into the project, and
- * whether the project holds the bootstrap revision. Both are the tables the
- * configurations listing already reads, so this is that listing's question
- * asked of one project's rows rather than of every page of them.
+ * the bootstrap revision's text where the project holds one. Both are the
+ * tables the configurations listing already reads, so this is that listing's
+ * question asked of one project's rows rather than of every page of them.
  */
 async function readConfigurationsHeld(
   pool: pg.Pool,
@@ -716,11 +716,12 @@ async function readConfigurationsHeld(
            AND p.repository=ANY(${[...query.repositories]}::text[])
          GROUP BY p.repository`,
   );
-  const bootstrap = await pool.query<{ bootstrapped: boolean }>(
-    sql`SELECT EXISTS(SELECT 1 FROM configuration_revision c
+  const bootstrap = await pool.query<{ canonical: string }>(
+    sql`SELECT c.canonical FROM configuration_revision c
           WHERE c.tenant=${query.partition.tenant} AND c.project=${query.partition.project}
-            AND c.revision=${query.bootstrap}) AS bootstrapped`,
+            AND c.revision=${query.bootstrap}`,
   );
+  const canonical = bootstrap.rows[0]?.canonical;
   return {
     declared: new Map<RepositoryId, number>(
       declared.rows.map((row) => [
@@ -728,17 +729,9 @@ async function readConfigurationsHeld(
         projectRowCounter(row.names, "declared configuration names"),
       ]),
     ),
-    bootstrapped: readConfigurationsHeldBootstrapped(bootstrap.rows[0]),
+    bootstrap:
+      canonical === undefined ? undefined : asCanonicalConfiguration(canonical),
   };
-}
-
-/** The one row an `EXISTS` answers, which a missing row would otherwise read as absent. */
-function readConfigurationsHeldBootstrapped(
-  row: { readonly bootstrapped: boolean } | undefined,
-): boolean {
-  if (row === undefined)
-    throw new Error("configurations held: the bootstrap read answered no row");
-  return row.bootstrapped;
 }
 
 /** Answers what a project holds from the configuration step, through the API's own reads. */

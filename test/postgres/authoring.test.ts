@@ -2796,7 +2796,7 @@ test("what a project holds from the configuration step is read per repository an
   };
   assert.deepEqual(await held.held(query), {
     declared: new Map(),
-    bootstrapped: false,
+    bootstrap: undefined,
   });
   for (const commit of ["a", "b"])
     await harness.authoring.importRepositoryConfigurations({
@@ -2811,11 +2811,11 @@ test("what a project holds from the configuration step is read per repository an
   await configurationsHeldNeighbours(partition, declaring.repository);
   assert.deepEqual(await held.held(query), {
     declared: new Map([[declaring.repository, 2]]),
-    bootstrapped: false,
+    bootstrap: undefined,
   });
   assert.deepEqual(
     await held.held({ ...query, repositories: [silent.repository] }),
-    { declared: new Map(), bootstrapped: false },
+    { declared: new Map(), bootstrap: undefined },
   );
   const authoringAsApi = postgresAuthoring(asApi);
   const raced = await Promise.all(
@@ -2832,5 +2832,8 @@ test("what a project holds from the configuration step is read per repository an
     "AlreadyExists",
     "Created",
   ]);
-  assert.equal((await held.held(query)).bootstrapped, true);
+  assert.equal(
+    (await held.held(query)).bootstrap,
+    postgresHarnessConfiguration,
+  );
 });

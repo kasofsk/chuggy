@@ -49,6 +49,7 @@ import {
   type HttpErrorEnvelope,
 } from "../../src/contract/http.ts";
 import {
+  asGitRefName,
   asRepositoryCredential,
   asRepositoryId,
   type CredentialResolved,
@@ -69,6 +70,7 @@ import type {
   ForgeInstallationClaims,
   ForgeInstallationRecorded,
 } from "../../src/interpreter/forgeInstallationClaim.ts";
+import { bootstrapConfiguration } from "../../src/interpreter/bootstrapConfiguration.ts";
 import { asPrincipal } from "../../src/interpreter/principal.ts";
 import {
   asProjectId,
@@ -221,7 +223,7 @@ function fixtureStore(): OnboardingStore {
     outcome: "Bound",
     landingUnavailable: false,
     retirementUnavailable: false,
-    stepHeld: { declared: new Map(), bootstrapped: false },
+    stepHeld: { declared: new Map(), bootstrap: undefined },
     heldReads: 0,
     resolved: {
       resolved: "Credential",
@@ -1991,7 +1993,14 @@ test("asking for a binding's configuration step again answers the step and the l
 
 test("a binding the project holds a bootstrap for is answered it and listed as configured", async (t) => {
   const landed = await fixtureLanded(t, undefined, bootstrapImage);
-  landed.store.stepHeld = { declared: new Map(), bootstrapped: true };
+  landed.store.stepHeld = {
+    declared: new Map(),
+    bootstrap: bootstrapConfiguration({
+      repository,
+      defaultBranch: asGitRefName("refs/heads/main"),
+      image: bootstrapImage,
+    }),
+  };
   const served = await landed.app.inject(configureRequest({ repository }));
   assert.equal(served.statusCode, 200);
   assert.deepEqual(served.json(), {
