@@ -3,11 +3,14 @@
  * and the repositories this project binds.
  *
  * An account is a row per account and not per installation, because what
- * onboarding needs to know is whether both of this deployment's apps are on it;
- * a missing one is what Install is for, and Connect GitHub is what claims one.
- * The bindings below are what a ticket may name, except a retired one, which is
- * drawn as retired because it is still bound and no longer read; a binding is
- * added from what those installations grant rather than from a typed address.
+ * onboarding needs to know is whether both of this deployment's apps are on it.
+ * Connect GitHub claims both where they are, and is the panel's one action
+ * until an account is connected; then Add account installs the portal app on
+ * another, and an account without the worker app offers its install on its own
+ * row. The bindings below are what a ticket may name, except a retired one,
+ * which is drawn as retired because it is still bound and no longer read; a
+ * binding is added from what those installations grant rather than from a
+ * typed address.
  */
 
 import { Link, useParams } from "@tanstack/react-router";
@@ -38,9 +41,9 @@ import {
   AddRepository,
   projectRepositoriesResource,
 } from "./repositories/AddRepository.tsx";
-import { ConnectAccount } from "./repositories/ConnectAccount.tsx";
 import { ConnectGithub } from "./repositories/ConnectGithub.tsx";
 import { CreateRepository } from "./repositories/CreateRepository.tsx";
+import { InstallLink } from "./repositories/InstallLink.tsx";
 import { repositoryRoutePath } from "./repositories/RepositoryPage.tsx";
 import { TopBarSlot } from "./shell/slots.tsx";
 import { EmptyState } from "./ui/EmptyState.tsx";
@@ -56,7 +59,10 @@ export const forgeInstallationsResource = "forge-installations";
 /** This page's own address, which its parameters are read from. */
 const repositoriesRoutePath = "/$tenant/$project/repositories";
 
-function AccountRow(props: { readonly row: ForgeAccountRow }): ReactNode {
+function AccountRow(props: {
+  readonly partition: PartitionIdentity;
+  readonly row: ForgeAccountRow;
+}): ReactNode {
   const row = props.row;
   return (
     <tr>
@@ -66,13 +72,23 @@ function AccountRow(props: { readonly row: ForgeAccountRow }): ReactNode {
         <Pill tone={forgeAppStandingTone(row.portal)}>{row.portal}</Pill>
       </td>
       <td>
-        <Pill tone={forgeAppStandingTone(row.worker)}>{row.worker}</Pill>
+        <span className="flex items-center gap-2">
+          <Pill tone={forgeAppStandingTone(row.worker)}>{row.worker}</Pill>
+          {row.worker === "Missing" ? (
+            <InstallLink
+              partition={props.partition}
+              returnPath={currentPath()}
+              app="worker"
+            />
+          ) : null}
+        </span>
       </td>
     </tr>
   );
 }
 
 function AccountTable(props: {
+  readonly partition: PartitionIdentity;
   readonly rows: readonly ForgeAccountRow[];
 }): ReactNode {
   if (props.rows.length === 0)
@@ -89,7 +105,7 @@ function AccountTable(props: {
       </thead>
       <tbody>
         {props.rows.map((row) => (
-          <AccountRow key={row.account} row={row} />
+          <AccountRow key={row.account} partition={props.partition} row={row} />
         ))}
       </tbody>
     </Table>
@@ -171,16 +187,24 @@ function AccountsSection(props: {
             partition={props.partition}
             returnPath={currentPath()}
           />
-          <ConnectAccount
-            partition={props.partition}
-            returnPath={currentPath()}
-          />
+          {props.installations === undefined ||
+          props.installations.length === 0 ? null : (
+            <InstallLink
+              partition={props.partition}
+              returnPath={currentPath()}
+              app="portal"
+              label="Add account"
+            />
+          )}
         </span>
       }
     >
       {props.unready}
       {props.installations === undefined ? null : (
-        <AccountTable rows={forgeAccountRows(props.installations)} />
+        <AccountTable
+          partition={props.partition}
+          rows={forgeAccountRows(props.installations)}
+        />
       )}
     </Panel>
   );

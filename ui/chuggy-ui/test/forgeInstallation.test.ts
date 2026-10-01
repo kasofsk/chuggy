@@ -13,8 +13,8 @@ import type { ForgeInstallationResponse } from "../../../src/contract/responses.
 import {
   forgeAccountRows,
   forgeCreatingAccounts,
-  forgeAppLabel,
   forgeInstallBegin,
+  forgeInstallLabel,
   forgeInstallState,
   forgeInstallStateBytesCount,
   forgeInstallTake,
@@ -139,7 +139,7 @@ test("the repositories are read under the portal claims alone", () => {
   ).toEqual(["1"]);
 });
 
-test("each app is named as a person reads it", () => {
-  expect(forgeAppLabel("portal")).toBe("Portal");
-  expect(forgeAppLabel("worker")).toBe("Worker");
+test("each app's install is named as a person reads it", () => {
+  expect(forgeInstallLabel("portal")).toBe("Install portal");
+  expect(forgeInstallLabel("worker")).toBe("Install worker");
 });

@@ -30,7 +30,6 @@ export interface ForgeInstallTransaction {
   readonly app: ForgeAppName;
   readonly tenant: string;
   readonly project: string;
-  /** Where the person pressed Connect, which the landing sends them back to. */
   readonly returnPath: string;
 }
 
@@ -89,13 +88,13 @@ export function forgeInstallUrl(installUrl: string, state: string): string {
   return `${installUrl}?state=${encodeURIComponent(state)}`;
 }
 
-/** One of the two apps, as a person reads its name. */
-export function forgeAppLabel(app: ForgeAppName): string {
+/** The action that installs one of the two apps, as a person reads it. */
+export function forgeInstallLabel(app: ForgeAppName): string {
   switch (app) {
     case "portal":
-      return "Portal";
+      return "Install portal";
     case "worker":
-      return "Worker";
+      return "Install worker";
   }
 }
 
