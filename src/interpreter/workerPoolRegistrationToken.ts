@@ -39,10 +39,11 @@ import {
   type RegisterPoolPorts,
 } from "./workerPoolRegistration.ts";
 
-/** What a token permits, as the durable side answers a caller holding one. */
+/** What a token permits, and who minted it where the token records that, as the durable side answers a caller holding one. */
 export interface WorkerPoolRegistrationTokenTerms {
   readonly partition: Partition;
   readonly capabilities: readonly string[];
+  readonly mintedBy?: Principal;
 }
 
 /** The most tokens one project may have outstanding for redemption at once. */
@@ -64,6 +65,7 @@ export interface WorkerPoolRegistrationTokens {
     digest: string,
     capabilities: readonly string[],
     expiresAtMs: number,
+    mintedBy: Principal,
   ): Promise<WorkerPoolTokenWritten>;
   permitted(
     digest: string,
@@ -166,6 +168,7 @@ export async function workerPoolTokenMint(
     minting.digest(token),
     request.capabilities,
     expiresAtMs,
+    principal,
   );
   switch (written) {
     case "Minted":
@@ -216,6 +219,9 @@ export async function workerPoolTokenRedeem(
         pool: offered.pool,
         capabilities: offered.capabilities,
         issuer: site.issuer,
+        ...(spent.mintedBy === undefined
+          ? {}
+          : { registeredBy: spent.mintedBy }),
       },
       ports,
     );

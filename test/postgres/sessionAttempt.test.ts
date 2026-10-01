@@ -10,13 +10,20 @@
  */
 
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import { after, before, test } from "node:test";
 
+import { sessionPlacementSetFunction } from "../../src/adapters/postgres/schema.ts";
+import type { PlacementRoute } from "../../src/contract/rosters.ts";
 import type {
   AgentSession,
+  SessionId,
   SessionTurnId,
 } from "../../src/interpreter/agentSession.ts";
-import { asRecoveryEpoch } from "../../src/interpreter/projectStore.ts";
+import {
+  asRecoveryEpoch,
+  type Partition,
+} from "../../src/interpreter/projectStore.ts";
 import { asPlacementId } from "../../src/interpreter/schedulerIdentity.ts";
 import type { FencedSessionAttempt } from "../../src/interpreter/sessionScheduler.ts";
 import { postgresHarnessNewEpoch, postgresHarnessProject } from "./harness.ts";
@@ -292,6 +299,39 @@ test("the read offers only sessions with queued work and no attempt already runn
   assert.equal(await offered(), false);
 });
 
+/** Routes a project's threads and its lead, as an administrator's write would. */
+async function routedTo(
+  partition: Partition,
+  thread: PlacementRoute,
+  lead: PlacementRoute,
+): Promise<void> {
+  await rig.harness.query(
+    `SELECT ${sessionPlacementSetFunction}($1,$2,$3,$4,'Member','an-owner')`,
+    [partition.tenant, partition.project, thread, lead],
+  );
+}
+
+test("the cluster offers a session only where its kind is routed in cluster", async () => {
+  const partition = await sessionRigProject(rig, "routed");
+  const lead = await sessionRigSession(rig, partition, "routed-lead");
+  await sessionRigTurn(rig, partition, lead, "routed-lead");
+  const thread = await sessionRigSession(rig, partition, "routed-thread", {
+    kind: "Thread",
+    principal: "member-routed",
+  });
+  await sessionRigTurn(rig, partition, thread, "routed-thread");
+  const offered = async () =>
+    (await rig.scheduler.awaitingPlacement(rig.epoch, sessionRigBoundless))
+      .map((candidate: AgentSession) => candidate.session)
+      .filter((session) => session === lead || session === thread)
+      .toSorted();
+  assert.deepEqual(await offered(), [lead, thread].toSorted());
+  await routedTo(partition, "Pool", "InCluster");
+  assert.deepEqual(await offered(), [lead]);
+  await routedTo(partition, "InCluster", "Pool");
+  assert.deepEqual(await offered(), [thread]);
+});
+
 test("a per-account ceiling binds one account and leaves another project's alone", async () => {
   const first = await sessionRigProject(rig, "account-first");
   const lead = await sessionRigSession(rig, first, "account-first");
@@ -461,6 +501,74 @@ test("only a placed, live attempt of this epoch has a pod to observe", async () 
   );
   await rig.scheduler.attemptEnded(held.attempt, "TurnFailed");
   assert.equal(await observed(held.attempt), undefined);
+});
+
+/** Hands a placed attempt to a pool, as a pool's claim would. */
+async function poolHeld(held: SessionRigAttempt, label: string): Promise<void> {
+  await rig.harness.query(
+    `UPDATE session_attempt SET pool=$2,pool_principal=$3,assignment=$4
+      WHERE attempt=$1`,
+    [
+      held.attempt.attempt,
+      `pool-${label}`,
+      `principal-pool-${label}`,
+      `assignment-${label}-${randomUUID()}`,
+    ],
+  );
+}
+
+/** The live attempts sharing a session's account or cluster, a pool's among them. */
+async function liveBeside(
+  shared: "account" | "cluster",
+  session: SessionId,
+): Promise<number> {
+  const [row] = await rig.harness.query(
+    `SELECT count(*)::int AS live FROM session_attempt a
+       JOIN agent_session s USING (tenant,project,session)
+      WHERE a.state IN ('Placing','Running')
+        AND s.${shared}=(SELECT ${shared} FROM agent_session WHERE session=$1)`,
+    [session],
+  );
+  return row?.["live"] as number;
+}
+
+test("an attempt a pool holds fills no ceiling of the cluster's, and the cluster neither observes nor cleans it up", async () => {
+  const partition = await sessionRigProject(rig, "pool-held");
+  const lead = await sessionRigSession(rig, partition, "pool-held-lead");
+  await sessionRigTurn(rig, partition, lead, "pool-held-lead");
+  const held = await sessionRigAttempt(rig, partition, lead, "pool-held");
+  await rig.scheduler.attemptPlaced(
+    held.attempt,
+    asPlacementId("placement-pool-held"),
+  );
+  await poolHeld(held, "pool-held");
+  assert.equal(await observed(held.attempt), undefined);
+  for (const shared of ["account", "cluster"] as const) {
+    const thread = await sessionRigSession(rig, partition, `held-${shared}`, {
+      kind: "Thread",
+      principal: `member-held-${shared}`,
+    });
+    await sessionRigTurn(rig, partition, thread, `held-${shared}`);
+    const max = await liveBeside(shared, lead);
+    const beside = await sessionRigAttempt(
+      rig,
+      partition,
+      thread,
+      `held-${shared}`,
+      shared === "account"
+        ? { attemptsPerAccountMax: max }
+        : { clusterAttemptsMax: max },
+    );
+    await rig.scheduler.attemptEnded(beside.attempt, "Vanished");
+  }
+  await rig.scheduler.attemptEnded(held.attempt, "SessionClosed");
+  assert.equal(
+    (await rig.scheduler.attemptsAwaitingCleanup(sessionRigBoundless)).some(
+      (waiting: FencedSessionAttempt) =>
+        waiting.attempt === held.attempt.attempt,
+    ),
+    false,
+  );
 });
 
 /** Places one attempt and claims the turn its session is holding for it. */

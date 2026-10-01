@@ -21,11 +21,15 @@ import {
   type ProjectCreationWrite,
 } from "../../src/interpreter/projectCreation.ts";
 import {
+  projectRelationGrant,
   projectTenantGrant,
   tenantAdministratorGrant,
   type ProjectGrant,
 } from "../../src/interpreter/projectGrant.ts";
-import { asPrincipal } from "../../src/interpreter/principal.ts";
+import {
+  asPrincipal,
+  type Principal,
+} from "../../src/interpreter/principal.ts";
 import {
   asProjectId,
   asTenantId,
@@ -50,6 +54,7 @@ function creationWith(
   options: {
     readonly claimed?: readonly string[];
     readonly grantFails?: boolean;
+    readonly selector?: Principal;
   } = {},
 ) {
   const access = memoryProjectAccess();
@@ -88,6 +93,7 @@ function creationWith(
       },
       remove: () => Promise.reject(new Error("creation removes no grant")),
     },
+    ...(options.selector === undefined ? {} : { selector: options.selector }),
   });
   return { access, claims, asked, writes, grants, recorded, service };
 }
@@ -217,6 +223,17 @@ test("a caller nothing names the tenant to makes it and administers what it made
     projectTenantGrant(partition),
   ]);
   assert.deepEqual(recorded, [request.operation]);
+});
+
+test("a site that names its selector makes it a developer of the project, beside the creator's grants", async () => {
+  const selector = asPrincipal("issuer selector");
+  const { grants, service } = creationWith(created, { selector });
+  assert.equal((await service.create(principal, request)).result, "Created");
+  assert.deepEqual(grants, [
+    tenantAdministratorGrant(principal, partition.tenant),
+    projectTenantGrant(partition),
+    projectRelationGrant(selector, partition, "developers"),
+  ]);
 });
 
 test("a grant the authority does not take leaves the creation unrecorded", async () => {

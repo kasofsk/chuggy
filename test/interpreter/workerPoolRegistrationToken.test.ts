@@ -50,9 +50,16 @@ function minting(input?: {
     digest: (token) => `digest-of-${token}`,
     nowMs: () => 1_000,
     tokens: {
-      mint: (named, digest, capabilities, expiresAtMs) =>
+      mint: (named, digest, capabilities, expiresAtMs, mintedBy) =>
         Promise.resolve(
-          (made.push(["mint", named, digest, capabilities, expiresAtMs]),
+          (made.push([
+            "mint",
+            named,
+            digest,
+            capabilities,
+            expiresAtMs,
+            mintedBy,
+          ]),
           input?.answers ?? "Minted"),
         ),
       permitted: (digest) =>
@@ -116,6 +123,7 @@ test("an owner's mint stores only the digest and answers the token once", async 
       "digest-of-a-drawn-token",
       ["linux-containers"],
       61_000,
+      principal,
     ],
   ]);
 });
@@ -160,9 +168,13 @@ for (const lifetimeSecs of [0, -1, 1.5, workerPoolTokenLifetimeSecsMax + 1])
     );
   });
 
-test("redeeming registers the pool for the partition the token named", async () => {
+test("redeeming registers the pool for the partition the token named, by the member who minted it", async () => {
   const store = minting({
-    held: { partition, capabilities: ["linux-containers", "amd64"] },
+    held: {
+      partition,
+      capabilities: ["linux-containers", "amd64"],
+      mintedBy: principal,
+    },
   });
   const made = ports();
   assert.deepEqual(
@@ -195,6 +207,7 @@ test("redeeming registers the pool for the partition the token named", async () 
         class: "Dedicated",
         clientId: "chuggy-pool-fixed",
         principal: oidcPrincipal(issuer, "chuggy-pool-fixed"),
+        registeredBy: principal,
       },
     ],
   ]);

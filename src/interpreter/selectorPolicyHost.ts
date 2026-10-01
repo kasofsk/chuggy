@@ -11,6 +11,7 @@
  */
 
 import type { Partition } from "./projectStore.ts";
+import type { LeadAdmission } from "./sessionPlacement.ts";
 import type {
   SelectorPolicyHost,
   SelectorPolicyRequest,
@@ -19,8 +20,8 @@ import type {
 } from "./selector.ts";
 
 export interface SelectorPolicy {
-  /** What the host answers `hostedRunsGranted` with. */
-  hostedRunsGranted(partition: Partition): Promise<boolean>;
+  /** What the host answers `leadAdmission` with. */
+  leadAdmission(partition: Partition): Promise<LeadAdmission>;
   execute(
     request: SelectorPolicyRequest,
     signal: AbortSignal,
@@ -73,7 +74,7 @@ export function selectorPolicyHost(
   const runs = new Map<string, SelectorPolicyRun>();
   return {
     productionReady: true,
-    hostedRunsGranted: (partition) => policy.hostedRunsGranted(partition),
+    leadAdmission: (partition) => policy.leadAdmission(partition),
     start: (request) => {
       const retained = runs.get(request.attempt);
       if (retained !== undefined) return retained;

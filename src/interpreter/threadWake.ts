@@ -23,8 +23,8 @@
  * member's mailbox is not the pass's business to stop for.
  *
  * A THREAD WHOSE PRINCIPAL THE PROJECT NO LONGER ADMITS IS ONE OF THOSE, AND
- * SO IS ONE WHOSE TENANT NO LONGER GRANTS THEM HOSTED RUNS, WHICH THE TURN
- * WOULD SPEND; THE AUTHORITY IS ASKED HERE. `src/interpreter/projectAccess.ts`
+ * SO IS ONE ROUTED IN CLUSTER WHOSE TENANT NO LONGER GRANTS THEM THE HOSTED RUN
+ * THE TURN WOULD SPEND; THE AUTHORITY IS ASKED HERE. `src/interpreter/projectAccess.ts`
  * answers it, not the mailbox door, because access is not a row this database
  * holds. An authority that could not answer at all is neither a wake nor an
  * ownerless thread: the candidate is passed over and its sequence holds the
@@ -64,8 +64,9 @@ import { threadWakesPerPassMax } from "../contract/http.ts";
 import type { SessionId, SessionTurnId } from "./agentSession.ts";
 import { asSessionTurnId } from "./agentSession.ts";
 import type { Principal } from "./principal.ts";
+import type { PlacementRoute } from "../contract/rosters.ts";
+import { placementRouteGranted } from "./placementRoute.ts";
 import {
-  hostedRunsGranted,
   ProjectAccessUnavailable,
   type ProjectAccess,
 } from "./projectAccess.ts";
@@ -84,6 +85,8 @@ export interface ThreadWakeCandidate {
   readonly resource: string;
   readonly principal: Principal;
   readonly session: SessionId;
+  /** Where the thread's turns run as the page was read, which decides whether the wake needs the hosted grant. */
+  readonly route: PlacementRoute;
   /**
    * The project's own standing rules, absent where it takes the default. It
    * rides on the candidate because the pass composes a document that restates
@@ -201,7 +204,7 @@ function orderedPage(
   return page;
 }
 
-/** Whether the project still admits a candidate's principal and the tenant still grants them hosted runs, or nothing where the authority could not say. */
+/** Whether the project still admits a candidate's principal and the thread's route still lets them spend a turn, or nothing where the authority could not say. */
 async function threadWakeAdmitted(
   access: ProjectAccess,
   candidate: ThreadWakeCandidate,
@@ -213,10 +216,11 @@ async function threadWakeAdmitted(
         candidate.partition,
         "Read",
       )) !== undefined &&
-      (await hostedRunsGranted(
+      (await placementRouteGranted(
         access,
         candidate.principal,
-        candidate.partition.tenant,
+        candidate.partition,
+        candidate.route,
       ))
     );
   } catch (failure) {

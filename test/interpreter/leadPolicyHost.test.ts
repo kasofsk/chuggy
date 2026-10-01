@@ -50,7 +50,9 @@ import {
   type SelectorPolicyExecution,
   type SelectorPolicyRequest,
 } from "../../src/interpreter/selector.ts";
+import type { SessionRouteReads } from "../../src/interpreter/sessionPlacement.ts";
 import { selectorOperationalContext } from "./selectorFixture.ts";
+import { sessionRoutesAt } from "./sessionRoutesFixture.ts";
 import {
   agenticRefusalReasonCharsMax,
   selectorHandoffNoteBytesMax,
@@ -307,6 +309,7 @@ function policyOf(double: MailboxDouble) {
     sessionMint(),
     clock(),
     hostedEverywhere,
+    sessionRoutesAt(),
     leadPolicyConfig,
   );
 }
@@ -360,6 +363,7 @@ test("a turn that measured nothing spends the host's own wall clock", async () =
     sessionMint(),
     clock([1_788_000_000_000, 1_788_000_150_000]),
     hostedEverywhere,
+    sessionRoutesAt(),
     leadPolicyConfig,
   );
   const execution = (await policy.execute(
@@ -667,6 +671,7 @@ test("a session with no agent reference is seeded and one with a reference is no
     sessionMint(),
     clock(),
     hostedEverywhere,
+    sessionRoutesAt(),
     leadPolicyConfig,
   );
   const execution = (await policy.execute(
@@ -720,6 +725,7 @@ test("a seeding block the mailbox could not hold sheds its oldest decisions", as
     sessionMint(),
     clock(),
     hostedEverywhere,
+    sessionRoutesAt(),
     leadPolicyConfig,
   );
   await policy.execute(request, new AbortController().signal);
@@ -788,6 +794,7 @@ test("a poll interval that could never fire is refused at construction", () => {
         sessionMint(),
         clock(),
         hostedEverywhere,
+        sessionRoutesAt(),
         { ...leadPolicyConfig, pollIntervalMs: 0 },
       ),
     RangeError,
@@ -818,6 +825,7 @@ test("the turn's identity is the decision's", async () => {
     sessionMint(),
     clock(),
     hostedEverywhere,
+    sessionRoutesAt(),
     leadPolicyConfig,
   );
   await policy.execute(request, new AbortController().signal);
@@ -856,26 +864,31 @@ function hostedAuthority(answer: "Granted" | "Refused" | "Unavailable"): {
   };
 }
 
-function hostedPolicyOf(double: MailboxDouble, access: ProjectAccess) {
+function hostedPolicyOf(
+  double: MailboxDouble,
+  access: ProjectAccess,
+  routes: SessionRouteReads = sessionRoutesAt(),
+) {
   return leadSelectorPolicy(
     double.mailbox,
     decisionTail(),
     sessionMint(),
     clock(),
     access,
+    routes,
     leadPolicyConfig,
   );
 }
 
 test("the hosted grant asked is the tenant's, for the principal a lead is opened as", async () => {
-  for (const [answer, granted] of [
-    ["Granted", true],
-    ["Refused", false],
+  for (const [answer, admission] of [
+    ["Granted", "Admitted"],
+    ["Refused", "HostedRunsNotGranted"],
   ] as const) {
     const authority = hostedAuthority(answer);
     const double = mailboxDouble({ absent: true });
     const policy = hostedPolicyOf(double, authority.access);
-    assert.equal(await policy.hostedRunsGranted(partition), granted);
+    assert.equal(await policy.leadAdmission(partition), admission);
     assert.deepEqual(authority.asked, [
       {
         principal: leadPrincipal,
@@ -892,7 +905,7 @@ test("the principal whose grant is asked is the one a successor is opened as", a
   const authority = hostedAuthority("Granted");
   const double = mailboxDouble({ absent: true });
   const policy = hostedPolicyOf(double, authority.access);
-  assert.equal(await policy.hostedRunsGranted(partition), true);
+  assert.equal(await policy.leadAdmission(partition), "Admitted");
   await policy.execute(request, new AbortController().signal);
   assert.equal(double.openings.length, 1);
   assert.equal(authority.asked[0]?.principal, double.openings[0]?.principal);
@@ -904,7 +917,24 @@ test("an authority that cannot say whether the lead is hosted raises rather than
     hostedAuthority("Unavailable").access,
   );
   await assert.rejects(
-    policy.hostedRunsGranted(partition),
+    policy.leadAdmission(partition),
     ProjectAccessUnavailable,
   );
+});
+
+test("a lead routed to the project's runners is admitted by a live one and asks no grant", async () => {
+  for (const [project, admission] of [
+    ["Live", "Admitted"],
+    ["Offline", "RunnerOffline"],
+    ["Unregistered", "RunnerOffline"],
+  ] as const) {
+    const authority = hostedAuthority("Refused");
+    const policy = hostedPolicyOf(
+      mailboxDouble({ absent: true }),
+      authority.access,
+      sessionRoutesAt({ Lead: "Pool" }, { mine: "Unregistered", project }),
+    );
+    assert.equal(await policy.leadAdmission(partition), admission);
+    assert.deepEqual(authority.asked, [], "a runner route spends no grant");
+  }
 });

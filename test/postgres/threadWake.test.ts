@@ -194,6 +194,7 @@ test("a refusal against a member's own ticket becomes one Wake turn, once", asyn
       resource: String(ticket),
       principal: member.principal,
       session: thread.session,
+      route: "InCluster",
     }),
     "the turn the door holds is the identity the pass derives, or a replay is a second turn",
   );

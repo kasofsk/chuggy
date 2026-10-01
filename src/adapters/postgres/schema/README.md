@@ -390,3 +390,21 @@ a single row, keyed `singleton` and held to it by a CHECK, owned by the
 scheduler, which writes it at boot, and read by the API, which answers a
 project's placement from it. It has no unfinished work: the scheduler decides
 from its own routing, so a row older than the process only misreports.
+
+`project_session_placement` — where one project's threads and its lead run,
+and who set it; an inquiry runs where the lead does. Owned by the boundary
+owner, which is what `set_project_session_placement` runs as; the API role
+writes it through that door alone, and every reader reaches it through
+`session_route`. Its key and identity are `(tenant, project)` and it points at
+`project`. It is changed by that door alone, which answers `Unchanged` and
+keeps the setter where nothing moved; a row backfilled for a project that ran
+before it names no setter. It has no unfinished work: a project with no row
+runs where the published routing's default sends it.
+
+`session_routing` — the session routing the scheduler last published: the
+default per kind and each project's override. It is a single row, keyed
+`singleton` and held to it by a CHECK, written by the scheduler at boot and
+read through `session_route`, which resolves a session's kind against it and
+`project_session_placement` and answers in cluster where no row was ever
+published. It has no unfinished work: the resolution is read every time a
+session waits for placement, so a newer publish moves what waits after it.

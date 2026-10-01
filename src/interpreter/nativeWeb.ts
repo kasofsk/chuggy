@@ -129,6 +129,10 @@ import { hostedRunsGranted, memberAuthorities } from "./projectAccess.ts";
 import type { ProjectAccess, ProjectAccessKind } from "./projectAccess.ts";
 import type { Authority } from "./operationInbox.ts";
 import type { SelectorOperationalContext } from "./selector.ts";
+import {
+  sessionSpendGranted,
+  type SessionRouteReads,
+} from "./sessionPlacement.ts";
 import type { SelectorOperationalContextRead } from "./selectorOperationalContext.ts";
 import {
   agenticRefusalIsSuperseded,
@@ -1371,6 +1375,12 @@ function composedThreadPorts(ports?: NativeThreadPorts): NativeThreadPorts {
   return ports;
 }
 
+function composedSessionRoutes(routes?: SessionRouteReads): SessionRouteReads {
+  if (routes === undefined)
+    throw new Error("native web: no session route port was composed");
+  return routes;
+}
+
 /**
  * What the member's first turn carries, which is the seeding block and no later
  * turn's, or the ceiling it would not fit under. The overflow is a refusal
@@ -1448,17 +1458,27 @@ async function nativeInquiryEntries(
 /**
  * Opening the caller's own thread, which is `Mutate` and takes no session: a
  * member has one thread per project, the definer is idempotent on that, and the
- * roster it is opened with is the definer's own. A thread runs on this
- * deployment's hosted sessions, so it also needs the tenant's hosted grant.
+ * roster it is opened with is the definer's own. A thread routed in cluster
+ * runs on this deployment's hosted sessions, so there it also needs the
+ * tenant's hosted grant.
  */
 function nativeOpenThreadMethod(
   access: ProjectAccess,
   threads?: NativeThreadPorts,
+  routes?: SessionRouteReads,
 ): NativeWeb["openThread"] {
   return async (principal, partition) => {
     const authority = await access.authorize(principal, partition, "Mutate");
     if (authority === undefined) return { result: "NotFound" };
-    if (!(await hostedRunsGranted(access, principal, partition.tenant)))
+    if (
+      !(await sessionSpendGranted(
+        access,
+        composedSessionRoutes(routes),
+        principal,
+        partition,
+        "Thread",
+      ))
+    )
       return { result: "HostedRunsNotGranted" };
     const ports = composedThreadPorts(threads);
     const texts = await ports.seeding.projectTexts(partition);
@@ -1505,17 +1525,27 @@ function nativeHostedRunsMethod(
  * The message door, which is `Mutate` and reaches the caller's own mailbox
  * alone: the session the URL names is checked against the one the caller's
  * principal resolves to, so the page a member is reading and the mailbox their
- * message lands in cannot come apart. A turn runs on the hosted sessions, so
- * the tenant's grant is asked at every send, not only when the thread opened.
+ * message lands in cannot come apart. A turn runs wherever the thread's route
+ * resolves when it is placed, so the route and the grant it needs are asked at
+ * every send, not only when the thread opened.
  */
 function nativeSendThreadMessageMethod(
   access: ProjectAccess,
   threads?: NativeThreadPorts,
+  routes?: SessionRouteReads,
 ): NativeWeb["sendThreadMessage"] {
   return async (principal, partition, input) => {
     const authority = await access.authorize(principal, partition, "Mutate");
     if (authority === undefined) return { result: "NotFound" };
-    if (!(await hostedRunsGranted(access, principal, partition.tenant)))
+    if (
+      !(await sessionSpendGranted(
+        access,
+        composedSessionRoutes(routes),
+        principal,
+        partition,
+        "Thread",
+      ))
+    )
       return { result: "HostedRunsNotGranted" };
     const ports = composedThreadPorts(threads);
     const message = checkedThreadMessage(input.message);
@@ -1805,15 +1835,17 @@ function nativeLeadReadMethods(
 /**
  * The three ways a member reaches the lead's inquiries, every one gated on
  * `Read` because an inquiry holds a strict subset of what `Read` already
- * permits, and asking on the tenant's hosted grant too because it spends a
- * hosted run — `./leadInquiry.ts`'s header carries the whole argument. THE ASKER
- * IS THE AUTHORITY'S OWN SUBJECT and comes from the authorization this door
- * already did, never from the body: a question whose asker the caller chose
- * would name whoever they liked on a document the lead reads.
+ * permits, and asking on the tenant's hosted grant too where the inquiry's
+ * route spends a hosted run — `./leadInquiry.ts`'s header carries the whole
+ * argument. THE ASKER IS THE AUTHORITY'S OWN SUBJECT and comes from the
+ * authorization this door already did, never from the body: a question whose
+ * asker the caller chose would name whoever they liked on a document the lead
+ * reads.
  */
 function nativeLeadInquiryMethods(
   access: ProjectAccess,
   inquiries?: LeadInquiryStore,
+  routes?: SessionRouteReads,
 ): Pick<NativeWeb, "leadInquiries" | "leadInquiry" | "askLead"> {
   const composed = (): LeadInquiryStore => {
     if (inquiries === undefined)
@@ -1852,7 +1884,15 @@ function nativeLeadInquiryMethods(
     askLead: async (principal, partition, input) => {
       const authority = await access.authorize(principal, partition, "Read");
       if (authority === undefined) return { result: "NotFound" };
-      if (!(await hostedRunsGranted(access, principal, partition.tenant)))
+      if (
+        !(await sessionSpendGranted(
+          access,
+          composedSessionRoutes(routes),
+          principal,
+          partition,
+          "Inquiry",
+        ))
+      )
         return { result: "HostedRunsNotGranted" };
       return leadInquiryAsked(
         await composed().open({
@@ -1876,6 +1916,7 @@ function nativeLeadInquiryMethods(
 function nativeThreadMethods(
   access: ProjectAccess,
   threads?: NativeThreadPorts,
+  routes?: SessionRouteReads,
 ): Pick<
   NativeWeb,
   | "threads"
@@ -1890,8 +1931,8 @@ function nativeThreadMethods(
   return {
     ...nativeThreadReadMethods(access, threads),
     ...nativeThreadViewMethods(access, threads),
-    openThread: nativeOpenThreadMethod(access, threads),
-    sendThreadMessage: nativeSendThreadMessageMethod(access, threads),
+    openThread: nativeOpenThreadMethod(access, threads, routes),
+    sendThreadMessage: nativeSendThreadMessageMethod(access, threads, routes),
     closeThread: nativeCloseThreadMethod(access, threads),
   };
 }
@@ -1962,13 +2003,14 @@ export function nativeWeb(
   leads?: NativeLeadPorts,
   threads?: NativeThreadPorts,
   inquiries?: LeadInquiryStore,
+  sessionRoutes?: SessionRouteReads,
 ): NativeWeb {
   return {
     ...nativeRunEvidenceMethods(access, runEvidenceReads, runEvidenceContents),
     ...nativeLeadReadMethods(access, reads, leads),
-    ...nativeThreadMethods(access, threads),
+    ...nativeThreadMethods(access, threads, sessionRoutes),
     hostedRuns: nativeHostedRunsMethod(access),
-    ...nativeLeadInquiryMethods(access, inquiries),
+    ...nativeLeadInquiryMethods(access, inquiries, sessionRoutes),
     importRepositoryConfigurations: nativeRepositoryConfigurationImportMethod(
       access,
       repositoryConfigurationImports,

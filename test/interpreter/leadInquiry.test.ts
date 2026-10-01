@@ -15,6 +15,7 @@ import {
   inquiriesAnsweredMax,
   inquiryQuestionCharsMax,
 } from "../../src/contract/http.ts";
+import type { PlacementRoute } from "../../src/contract/rosters.ts";
 import {
   asSessionId,
   asSessionTurnId,
@@ -48,6 +49,7 @@ import {
   asAuthoritySubject,
 } from "../../src/interpreter/operationInbox.ts";
 import { unaskedNativeWebPorts } from "./nativeWebFixtures.ts";
+import { sessionRoutesAt } from "./sessionRoutesFixture.ts";
 
 const partition: Partition = {
   tenant: asTenantId("vteng"),
@@ -122,7 +124,11 @@ function storeAnswering(
  * that satisfies its type — because a case here that reached one would be a
  * case about something else.
  */
-function webOver(store: LeadInquiryStore, access: ProjectAccess) {
+function webOver(
+  store: LeadInquiryStore,
+  access: ProjectAccess,
+  lead: PlacementRoute = "InCluster",
+) {
   return nativeWeb(
     access,
     ...unaskedNativeWebPorts,
@@ -137,6 +143,7 @@ function webOver(store: LeadInquiryStore, access: ProjectAccess) {
     undefined,
     undefined,
     store,
+    sessionRoutesAt({ Lead: lead }),
   );
 }
 
@@ -202,6 +209,18 @@ test("a reader the tenant grants no hosted runs reads every inquiry and asks non
   });
   assert.equal(asking.result, "HostedRunsNotGranted");
   assert.deepEqual(asked, [], "a refused question still reached the store");
+});
+
+test("a reader the tenant grants no hosted runs asks a lead routed to the project's runners", async () => {
+  const asked: unknown[] = [];
+  const web = webOver(storeAnswering({}, asked), accessHolding("Read"), "Pool");
+  const asking = await web.askLead(reader, partition, {
+    session,
+    turn,
+    question: "what stopped 14?",
+  });
+  assert.equal(asking.result, "Asked");
+  assert.equal(asked.length, 1);
 });
 
 test("the question the door offers carries the standing rule and the asker", async () => {

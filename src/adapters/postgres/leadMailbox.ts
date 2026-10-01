@@ -47,11 +47,15 @@ import {
   interactionsReadSignature,
   leadOpenSignature,
   selectorSignatures,
+  sessionRouteSignature,
+  sessionRunnerStandingSignature,
   systemPromptSetSignature,
 } from "./schema/lead.ts";
 import {
   leadOpenFunction,
   selectorInteractionsReadFunction,
+  sessionRouteFunction,
+  sessionRunnerStandingFunction,
   sessionSystemPromptSetFunction,
 } from "./schema/shared.ts";
 import {
@@ -258,6 +262,8 @@ export const leadDoorSignatures: readonly string[] = (
     [selectorInteractionsReadFunction, interactionsReadSignature],
     [sessionSystemPromptSetFunction, systemPromptSetSignature],
     [leadOpenFunction, leadOpenSignature],
+    [sessionRouteFunction, sessionRouteSignature],
+    [sessionRunnerStandingFunction, sessionRunnerStandingSignature],
   ] as readonly (readonly [string, string])[]
 ).map(leadDoorNamed);
 

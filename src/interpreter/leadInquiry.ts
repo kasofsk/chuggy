@@ -194,9 +194,10 @@ export type LeadInquiryRead =
  * `NotFound` a project they may not read, `NoLead` a project with no lead,
  * `LeadNotStarted` a lead with no head to fork from, `LeadClosed` a lead that
  * takes no more, `InFlight` their own unanswered questions,
- * `HostedRunsNotGranted` a tenant that grants them no hosted runs. A question too long
- * is not an arm here: it is bounded where it is read off the wire, so it is an
- * invalid request rather than something this door met.
+ * `HostedRunsNotGranted` a lead run in cluster for a tenant that grants them no
+ * hosted runs. A question too long is not an arm here: it is bounded where it
+ * is read off the wire, so it is an invalid request rather than something this
+ * door met.
  */
 export type LeadInquiryAsked =
   | { readonly result: "NotFound" | "HostedRunsNotGranted" }

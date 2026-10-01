@@ -36,6 +36,7 @@ import { migration026 } from "../../src/adapters/postgres/schema/migrations/026-
 import { migration027 } from "../../src/adapters/postgres/schema/migrations/027-forge-claim-per-tenant.ts";
 import { migration028 } from "../../src/adapters/postgres/schema/migrations/028-binding-lands-by-pull-request.ts";
 import { migration029 } from "../../src/adapters/postgres/schema/migrations/029-project-execution-placement.ts";
+import { migration031 } from "../../src/adapters/postgres/schema/migrations/031-session-placement.ts";
 import {
   postgresForgeInstallationClaims,
   postgresForgeInstallations,
@@ -81,6 +82,9 @@ import {
   repositoryRetirementWriteFunction,
   schedulerRole,
   selectorServiceRole,
+  sessionPlacementSetFunction,
+  sessionRouteFunction,
+  sessionRunnerStandingFunction,
   sessionTaskReadFunction,
   statusMoveFunction,
   ticketServiceRole,
@@ -6191,6 +6195,7 @@ const wipeKept = [
   "project_execution_placement",
   "project_repository",
   "project_repository_bind_operation",
+  "project_session_placement",
   "recovery_epoch",
   "repository_configuration_provenance",
   "repository_configuration_version",
@@ -6201,6 +6206,7 @@ const wipeKept = [
   "selector_runtime_readiness",
   "selector_runtime_settings",
   "selector_runtime_settings_history",
+  "session_routing",
   "tenant",
   "thread_wake_cursor",
   "worker_pool",
@@ -9361,5 +9367,88 @@ test("029 places every project that runs today in cluster, naming no setter, and
         api: true,
       },
     ]);
+  });
+});
+
+/** Where each of 031's projects routes its threads and its lead, and from where. */
+async function sessionRoutes(subject: pg.Pool): Promise<readonly string[]> {
+  const found = await subject.query<{ routed: string }>(
+    `SELECT p.project || ' ' || thread.route || '/' || lead.route || ' '
+            || thread.source AS routed
+       FROM project p
+      CROSS JOIN LATERAL ${sessionRouteFunction}(p.tenant,p.project,'Thread') thread
+      CROSS JOIN LATERAL ${sessionRouteFunction}(p.tenant,p.project,'Lead') lead
+      ORDER BY p.project`,
+  );
+  return found.rows.map((row) => row.routed);
+}
+
+/** What 031's constraints refuse: a second routing row, and a setter named in part. */
+async function sessionPlacementRefusals(subject: pg.Pool): Promise<void> {
+  await assert.rejects(
+    subject.query(`INSERT INTO session_routing
+      (singleton,thread_route,lead_route,project_routes)
+      VALUES (2,'Pool','Pool','{}')`),
+    /session_routing_is_one_row/u,
+  );
+  await assert.rejects(
+    subject.query(`UPDATE project_session_placement SET set_by_kind='Member'`),
+    /project_session_placement_setter_is_whole/u,
+  );
+}
+
+test("031 places every project's sessions in cluster, publishes no routing, and leaves a later project to the default", async () => {
+  await migrationDatabase("session_placement", async (subject) => {
+    const doors = [
+      `${sessionRouteFunction}(text,text,text)`,
+      `${sessionRunnerStandingFunction}(text,text,text,bigint)`,
+      `${sessionPlacementSetFunction}(text,text,text,text,text,text)`,
+    ];
+    await installationBefore(subject, migration031.version);
+    await subject.query(
+      `${tenantSeed("tenant-31")}
+       INSERT INTO project(tenant,project,lifecycle) VALUES
+         ('tenant-31','project-a','Active'),('tenant-31','project-b','Active')`,
+    );
+    assert.ok((await postgresMigrate(subject)).includes(migration031.version));
+    await subject.query(
+      `INSERT INTO project(tenant,project,lifecycle) VALUES('tenant-31','project-c','Active')`,
+    );
+    assert.deepEqual(
+      (
+        await subject.query(
+          `SELECT project, set_by_kind, set_at FROM project_session_placement
+            ORDER BY project`,
+        )
+      ).rows,
+      ["project-a", "project-b"].map((project) => ({
+        project,
+        set_by_kind: null,
+        set_at: null,
+      })),
+    );
+    assert.deepEqual(
+      (await subject.query(`SELECT 1 FROM session_routing`)).rows,
+      [],
+      "a routing no scheduler published",
+    );
+    assert.deepEqual(await sessionRoutes(subject), [
+      "project-a InCluster/InCluster Project",
+      "project-b InCluster/InCluster Project",
+      "project-c InCluster/InCluster Default",
+    ]);
+    await sessionPlacementRefusals(subject);
+    assert.deepEqual(
+      await sessionInvocationBoundaries(subject, doors),
+      doors.map((signature) => ({
+        signature,
+        owner: boundaryOwnerRole,
+        definer: true,
+        scheduler: false,
+        plane: false,
+        pool: false,
+        api: true,
+      })),
+    );
   });
 });

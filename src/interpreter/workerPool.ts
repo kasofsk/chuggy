@@ -74,6 +74,8 @@ export interface WorkerPoolRegistration {
   readonly class: WorkerPoolClass;
   readonly clientId: string;
   readonly principal: Principal;
+  /** The person whose token registered the pool, which is provenance and grants nothing. */
+  readonly registeredBy?: Principal;
 }
 
 /**

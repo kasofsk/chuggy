@@ -37,6 +37,7 @@ import {
   projectRepositoryRetirementSchema,
   repositoryConfigurationImportSchema,
   selectorProjectSettingsSchema,
+  sessionPlacementSchema,
   type PublicMutation,
 } from "../../contract/requests.ts";
 import {
@@ -46,6 +47,7 @@ import {
   type SessionTurnId,
 } from "../../interpreter/agentSession.ts";
 import type { ExecutionRoutes } from "../../interpreter/executionScheduler.ts";
+import type { SessionRoutes } from "../../interpreter/sessionPlacement.ts";
 import type {
   SelectorProjectLimitOverrides,
   SelectorProjectOverrides,
@@ -260,6 +262,12 @@ export function parseProjectRepositoryLanding(body: unknown): {
 export function parseExecutionPlacement(body: unknown): ExecutionRoutes {
   const parsed = executionPlacementSchema.parse(body);
   return { Work: parsed.work, Evaluation: parsed.evaluation };
+}
+
+/** One session placement as the wire carries it, keyed by the session kind each route is for. */
+export function parseSessionPlacement(body: unknown): SessionRoutes {
+  const parsed = sessionPlacementSchema.parse(body);
+  return { Thread: parsed.thread, Lead: parsed.lead };
 }
 
 /** One retirement as the wire carries it, which is the binding and nothing else. */

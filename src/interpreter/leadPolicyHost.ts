@@ -40,10 +40,11 @@
  * nothing spent — which the model allowlist then refuses unless it admits
  * everything. A control that cannot see what it controls refuses.
  *
- * THE HOSTED GRANT IS ASKED OF THE PRINCIPAL A LEAD IS OPENED AS. Every turn is
- * spent on the shared credential, so `hostedRunsGranted` asks the project's
- * tenant about `config.principal`, the same field a successor is opened under,
- * and the runtime asks it before it takes a permit for the project.
+ * THE HOSTED GRANT IS ASKED OF THE PRINCIPAL A LEAD IS OPENED AS. A turn on
+ * the hosted route is spent on the shared credential, so `leadAdmission` asks
+ * the project's tenant about `config.principal`, the same field a successor is
+ * opened under; on a runner route it asks instead whether one of the project's
+ * runners is live. The runtime asks it before it takes a permit for the project.
  */
 
 import { leadSeedingDecisionsMax } from "../contract/http.ts";
@@ -63,7 +64,7 @@ import type {
 } from "./leadMailbox.ts";
 import { leadSystemPrompt } from "./leadTools.ts";
 import { asPrincipal } from "./principal.ts";
-import { hostedRunsGranted, type ProjectAccess } from "./projectAccess.ts";
+import type { ProjectAccess } from "./projectAccess.ts";
 import {
   leadObservationText,
   leadObservedRefusals,
@@ -82,6 +83,7 @@ import type {
   SelectorTerminationResult,
 } from "./selector.ts";
 import type { SelectorPolicy } from "./selectorPolicyHost.ts";
+import { leadAdmission, type SessionRouteReads } from "./sessionPlacement.ts";
 
 /**
  * The tail of the decision log a seeding turn carries, newest first, which is
@@ -446,6 +448,7 @@ export function leadSelectorPolicy(
   sessions: LeadSessionMint,
   clock: LeadPolicyClock,
   access: ProjectAccess,
+  routes: SessionRouteReads,
   config: LeadPolicyConfig,
 ): SelectorPolicy {
   const ports: LeadPolicyPorts = {
@@ -464,8 +467,8 @@ export function leadSelectorPolicy(
     return leadTermination(attempt, turn, await mailbox.withdraw(turn));
   };
   return {
-    hostedRunsGranted: (partition) =>
-      hostedRunsGranted(access, principal, partition.tenant),
+    leadAdmission: (partition) =>
+      leadAdmission(access, routes, principal, partition),
     execute: (request, signal) =>
       leadDecision(ports, request, pollIntervalMs, signal),
     cancel: (attempt) => withdraw(attempt),

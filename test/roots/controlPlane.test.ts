@@ -418,7 +418,7 @@ test("a change wider than one pass reads reaches an operator, and the loop lives
   );
 });
 
-const hostedRunsProgram = `
+const admissionProgram = `
     const roots = await import('./src/roots/controlPlane.ts');
     const schema = await import('./src/adapters/postgres/runtimeSchema.ts');
     const rows = schema.currentRuntimeSchemaContract.required;
@@ -426,11 +426,12 @@ const hostedRunsProgram = `
     const config = { idleIntervalMilliseconds: 1, shutdownDrainMilliseconds: 1000 };
     const web = { tenant: 'acme', project: 'web' };
     const refused = { reached: [web], failures: [{ phase: 'HostedRunsNotGranted', partition: web }] };
-    const undecided = { reached: [web], failures: [{ phase: 'HostedRunsUndecided', partition: web }] };
+    const undecided = { reached: [web], failures: [{ phase: 'AdmissionUndecided', partition: web }] };
+    const offline = { reached: [web], failures: [{ phase: 'RunnerOffline', partition: web }] };
     const elsewhere = { reached: [], failures: [] };
     const served = { reached: [web], failures: [] };
-    /** One run per pass: refused on every pass that reaches it, served, refused, then undecided twice. */
-    const passes = [refused, refused, elsewhere, refused, served, refused, undecided, undecided];
+    /** One run per pass: refused on every pass that reaches it, served, refused, undecided twice, then offline. */
+    const passes = [refused, refused, elsewhere, refused, served, refused, undecided, undecided, offline];
     let pass = 0;
     let finished;
     const scripted = new Promise((resolve) => { finished = resolve; });
@@ -458,24 +459,26 @@ const hostedRunsProgram = `
     await runtime.stop();
   `;
 
-test("a project passed over for want of hosted runs reaches an operator once per change", async () => {
+test("a project passed over because its lead may not run reaches an operator once per change", async () => {
   const result = await execute(
     process.execPath,
     [
       "--experimental-strip-types",
       "--input-type=module",
       "--eval",
-      hostedRunsProgram,
+      admissionProgram,
     ],
     { cwd: process.cwd() },
   );
   const refused =
     "selector: acme/web HostedRunsNotGranted: its tenant grants this selector no hosted runs, so its lead does not run";
   const undecided =
-    "selector: acme/web HostedRunsUndecided: the project authority could not say whether its tenant grants this selector hosted runs";
+    "selector: acme/web AdmissionUndecided: the project authority or the database could not say whether its lead may run";
+  const offline =
+    "selector: acme/web RunnerOffline: its lead runs on the project's runners and none has polled lately, so its lead does not run";
   assert.deepEqual(
     result.stderr.split("\n").filter((line) => line.startsWith("selector:")),
-    [refused, refused, undecided],
+    [refused, refused, undecided, offline],
   );
 });
 

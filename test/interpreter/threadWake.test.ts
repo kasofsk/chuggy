@@ -22,6 +22,7 @@ import {
   threadBacklogMax,
   threadWakesPerPassMax,
 } from "../../src/contract/http.ts";
+import type { PlacementRoute } from "../../src/contract/rosters.ts";
 import {
   asSessionId,
   type SessionId,
@@ -72,6 +73,7 @@ function candidateAt(
   sequence: number,
   label: string,
   reason: ThreadWakeReason = "TicketRefused",
+  route: PlacementRoute = "InCluster",
 ): ThreadWakeCandidate {
   const { principal, session } = member(label);
   return {
@@ -81,6 +83,7 @@ function candidateAt(
     resource: String(sequence * 10),
     principal,
     session,
+    route,
   };
 }
 
@@ -415,6 +418,18 @@ test("a thread whose principal the tenant grants no hosted runs is skipped unoff
     [member("here").session],
   );
   assert.deepEqual(access.refused, [member("unhosted").principal]);
+});
+
+test("a thread routed to its member's runner wakes without the hosted grant", async () => {
+  const log = [candidateAt(1, "unhosted", "TicketRefused", "Pool")];
+  const store = referenceStore({ log });
+  const access = referenceAccess({
+    unhosted: new Set([member("unhosted").principal]),
+  });
+  const report = await threadWakePass(serviceOf(store, undefined, access));
+
+  assert.deepEqual(report, { read: 1, woken: 1, skipped: 0, cursor: 1 });
+  assert.deepEqual(access.refused, []);
 });
 
 test("an authority that could not answer the hosted grant holds the cursor too", async () => {

@@ -49,6 +49,10 @@ export const repositoryLandingReadFunction = "read_project_repository_landing";
 export const repositoryLandingWriteFunction = "set_project_repository_landing";
 export const repositoryRetirementWriteFunction = "retire_project_repository";
 export const executionPlacementSetFunction = "set_project_execution_placement";
+export const sessionPlacementSetFunction = "set_project_session_placement";
+/** The one resolution of where a session kind runs for one project. */
+export const sessionRouteFunction = "session_route";
+export const sessionRunnerStandingFunction = "session_runner_standing";
 export const forgeInstallationRecordFunction = "record_forge_installation";
 export const draftCreateFunction = "create_draft";
 export const draftReviseFunction = "revise_draft";

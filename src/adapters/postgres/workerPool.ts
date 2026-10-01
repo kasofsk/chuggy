@@ -74,7 +74,7 @@ import { createHash } from "node:crypto";
 import type pg from "pg";
 
 import { asExecutionRequirement } from "../../interpreter/executionRequirement.ts";
-import { asPrincipal } from "../../interpreter/principal.ts";
+import { asPrincipal, type Principal } from "../../interpreter/principal.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
 import {
   workerPoolsAnsweredMax,
@@ -101,10 +101,12 @@ function workerPoolTokenTerms(row: {
   tenant: string;
   project: string;
   capabilities: string[];
+  minted_by: string | null;
 }): WorkerPoolRegistrationTokenTerms {
   return {
     partition: { tenant: row.tenant, project: row.project } as Partition,
     capabilities: row.capabilities,
+    ...(row.minted_by === null ? {} : { mintedBy: asPrincipal(row.minted_by) }),
   };
 }
 
@@ -122,6 +124,7 @@ async function workerPoolTokenMinted(
   digest: string,
   capabilities: readonly string[],
   expiresAtMs: number,
+  mintedBy: Principal,
 ): Promise<WorkerPoolTokenWritten> {
   await client.query<{ locked: string | null }>(
     sql`SELECT pg_advisory_xact_lock(hashtextextended(
@@ -141,8 +144,8 @@ async function workerPoolTokenMinted(
   const row = counted.rows[0];
   if (row === undefined || !row.active) return "NotFound";
   if (row.live >= workerPoolTokensLiveMax) return "LimitReached";
-  await client.query(sql`INSERT INTO worker_pool_registration_token(token_digest,tenant,project,capabilities,expires_at)
-    VALUES(${digest},${partition.tenant},${partition.project},${[...capabilities]}::text[],to_timestamp(${expiresAtMs}::double precision/1000))`);
+  await client.query(sql`INSERT INTO worker_pool_registration_token(token_digest,tenant,project,capabilities,expires_at,minted_by)
+    VALUES(${digest},${partition.tenant},${partition.project},${[...capabilities]}::text[],to_timestamp(${expiresAtMs}::double precision/1000),${mintedBy as string})`);
   return "Minted";
 }
 
@@ -155,7 +158,7 @@ export function postgresWorkerPoolRegistrationTokens(
   pool: pg.Pool,
 ): WorkerPoolRegistrationTokens {
   return {
-    mint: (partition, digest, capabilities, expiresAtMs) =>
+    mint: (partition, digest, capabilities, expiresAtMs, mintedBy) =>
       postgresTransaction(pool, (client) =>
         workerPoolTokenMinted(
           client,
@@ -163,6 +166,7 @@ export function postgresWorkerPoolRegistrationTokens(
           digest,
           capabilities,
           expiresAtMs,
+          mintedBy,
         ),
       ),
     permitted: async (digest) => {
@@ -170,7 +174,8 @@ export function postgresWorkerPoolRegistrationTokens(
         tenant: string;
         project: string;
         capabilities: string[];
-      }>(sql`SELECT t.tenant,t.project,t.capabilities
+        minted_by: string | null;
+      }>(sql`SELECT t.tenant,t.project,t.capabilities,t.minted_by
         FROM worker_pool_registration_token t
         WHERE t.token_digest=${digest} AND t.redeemed_at IS NULL AND t.expires_at>now()`);
       const row = found.rows[0];
@@ -181,9 +186,10 @@ export function postgresWorkerPoolRegistrationTokens(
         tenant: string;
         project: string;
         capabilities: string[];
+        minted_by: string | null;
       }>(sql`UPDATE worker_pool_registration_token t SET redeemed_at=now()
         WHERE t.token_digest=${digest} AND t.redeemed_at IS NULL AND t.expires_at>now()
-        RETURNING t.tenant,t.project,t.capabilities`);
+        RETURNING t.tenant,t.project,t.capabilities,t.minted_by`);
       const row = spent.rows[0];
       return row === undefined ? undefined : workerPoolTokenTerms(row);
     },
@@ -214,8 +220,8 @@ async function workerPoolRegistered(
   await client.query(sql`DELETE FROM worker_pool
     WHERE tenant=${partition.tenant} AND project=${partition.project} AND pool=${registration.pool}`);
   const inserted =
-    await client.query(sql`INSERT INTO worker_pool(tenant,project,pool,capabilities,class,principal,client_id)
-    SELECT ${partition.tenant},${partition.project},${registration.pool},${[...registration.capabilities]}::text[],${registration.class},${registration.principal as string},${registration.clientId}
+    await client.query(sql`INSERT INTO worker_pool(tenant,project,pool,capabilities,class,principal,client_id,registered_by)
+    SELECT ${partition.tenant},${partition.project},${registration.pool},${[...registration.capabilities]}::text[],${registration.class},${registration.principal as string},${registration.clientId},${(registration.registeredBy ?? null) as string | null}
     WHERE EXISTS(SELECT 1 FROM project p
       WHERE p.tenant=${partition.tenant} AND p.project=${partition.project} AND p.lifecycle='Active')`);
   if ((inserted.rowCount ?? 0) !== 1) return false;

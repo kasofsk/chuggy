@@ -529,9 +529,9 @@ export type ThreadMessageRefusalCode =
   (typeof threadMessageRefusalCodes)[number];
 
 /**
- * Where a project's executions run, and what decided it: the deployment's
- * override for the project, the project's own placement, or the deployment's
- * default. `src/interpreter/executionScheduler.ts` takes both.
+ * Where a project's executions or sessions run, and what decided it: the
+ * deployment's override for the project, the project's own placement, or the
+ * deployment's default.
  */
 export const placementRoutes = ["InCluster", "Pool"] as const;
 export type PlacementRoute = (typeof placementRoutes)[number];
@@ -541,6 +541,14 @@ export const placementRouteSources = [
   "Default",
 ] as const;
 export type PlacementRouteSource = (typeof placementRouteSources)[number];
+
+/** Whether runners are registered on a project and whether one has polled lately. */
+export const sessionRunnerStandings = [
+  "Unregistered",
+  "Offline",
+  "Live",
+] as const;
+export type SessionRunnerStanding = (typeof sessionRunnerStandings)[number];
 
 /**
  * What a door answers a caller holding no hosted-runs grant on the project's

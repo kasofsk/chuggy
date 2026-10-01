@@ -10,15 +10,17 @@ import type { Partition } from "./projectStore.ts";
  * ticket sat. `Record` is the phase a decision's own write reports under: the
  * relation took some of its dispatches and not the rest.
  *
- * A PROJECT WITHOUT HOSTED RUNS IS NAMED BY WHICH OF TWO THINGS STOPPED IT.
- * `HostedRunsNotGranted` is the tenant's answer and `HostedRunsUndecided` an
- * authority that gave none, so an outage never reads as a settled denial.
+ * A PROJECT WHOSE LEAD MAY NOT TAKE A TURN IS NAMED BY WHAT STOPPED IT.
+ * `HostedRunsNotGranted` is the tenant's answer on a hosted route,
+ * `RunnerOffline` the project's runners' on a runner route, and
+ * `AdmissionUndecided` a read that gave none, so an outage never reads as a
+ * settled denial.
  */
 export interface SelectorRunFailure {
   readonly phase:
     | "Inventory"
     | "Settings"
-    | SelectorHostedRunsPhase
+    | SelectorAdmissionPhase
     | "PermitAcquisition"
     | "Observation"
     | "Quarantine"
@@ -34,6 +36,6 @@ export interface SelectorRunFailure {
   readonly ticket?: DispatchCandidate["ticket"];
 }
 
-/** The phases a project passed over for want of hosted runs is named under. */
-export type SelectorHostedRunsPhase =
-  "HostedRunsNotGranted" | "HostedRunsUndecided";
+/** The phases a project whose lead may not take a turn is passed over under. */
+export type SelectorAdmissionPhase =
+  "HostedRunsNotGranted" | "RunnerOffline" | "AdmissionUndecided";

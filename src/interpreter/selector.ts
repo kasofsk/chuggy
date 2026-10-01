@@ -20,6 +20,7 @@ import {
   type ProjectCommand,
 } from "./operationInbox.ts";
 import type { Partition } from "./projectStore.ts";
+import type { LeadAdmission } from "./sessionPlacement.ts";
 import {
   notificationPageLimitMax,
   type NotificationBatch,
@@ -717,11 +718,11 @@ export type SelectorTerminationResult =
 export interface SelectorPolicyHost {
   readonly productionReady: boolean;
   /**
-   * Whether the project's tenant grants hosted runs to the principal the
-   * policy's turns run under, which every one of them spends. It raises where
-   * the authority could not say.
+   * Whether the project's lead may take a turn now, which a hosted route asks
+   * of the tenant's grant and a runner route of the project's runners. It
+   * raises where either could not say.
    */
-  hostedRunsGranted(partition: Partition): Promise<boolean>;
+  leadAdmission(partition: Partition): Promise<LeadAdmission>;
   start(request: SelectorPolicyRequest): SelectorPolicyRun;
   reconcileQuarantined(attempt: string): Promise<SelectorTerminationResult>;
 }

@@ -14,6 +14,7 @@ import { after, before, test } from "node:test";
 
 import { leadSessionMint } from "../../src/adapters/crypto/leadSessionMint.ts";
 import { postgresSelectorState } from "../../src/adapters/postgres/selector.ts";
+import { postgresSessionRouteReads } from "../../src/adapters/postgres/sessionPlacement.ts";
 import { threadStandingRulesDefault } from "../../src/contract/threadSeeding.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
 import {
@@ -115,6 +116,7 @@ function leadPolicy() {
       leadSessionMint(),
       clock,
       leadRigHostedAccess,
+      postgresSessionRouteReads(rig.selectorPool),
       {
         pollIntervalMs: 5,
         implementationRevision: "selector-build",

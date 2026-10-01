@@ -23,7 +23,7 @@
  */
 
 import { workerPoolCapabilitiesSchema } from "../contract/workerPool.ts";
-import { oidcPrincipal } from "./principal.ts";
+import { oidcPrincipal, type Principal } from "./principal.ts";
 import {
   projectPrincipalGrant,
   type ProjectGrant,
@@ -80,6 +80,8 @@ export interface WorkerPoolRegistrationRequest {
   readonly pool: string;
   readonly capabilities: readonly string[];
   readonly issuer: string;
+  /** Who minted the token a redemption spent; an operator's registration names nobody. */
+  readonly registeredBy?: Principal;
 }
 
 /** What the command was asked to do, refused here rather than by the registry. */
@@ -178,6 +180,9 @@ export async function workerPoolRegisteredAt(
       class: workerPoolPolicyRegistered.class,
       clientId: minted.clientId,
       principal: oidcPrincipal(request.issuer, minted.clientId),
+      ...(request.registeredBy === undefined
+        ? {}
+        : { registeredBy: request.registeredBy }),
     });
   } catch (failure) {
     await workerPoolRegistrationUndone(ports, grant, minted.clientId);

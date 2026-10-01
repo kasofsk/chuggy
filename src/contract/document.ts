@@ -31,6 +31,7 @@ import {
   repositoryConfigurationImportSchema,
   reservedTenantNames,
   selectorProjectSettingsSchema,
+  sessionPlacementSchema,
 } from "./requests.ts";
 import {
   workerPoolRedemptionSchema,
@@ -48,6 +49,7 @@ function nativeHttpContractDocumentSchemas(): unknown {
     draftCreation: z.toJSONSchema(draftCreationSchema),
     draftRevision: z.toJSONSchema(draftRevisionSchema),
     executionPlacement: z.toJSONSchema(executionPlacementSchema),
+    sessionPlacement: z.toJSONSchema(sessionPlacementSchema),
     forgeCredential: z.toJSONSchema(forgeCredentialRequestSchema),
     forgeAuthorization: z.toJSONSchema(forgeAuthorizationSchema),
     projectCreation: z.toJSONSchema(projectCreationSchema),
@@ -126,7 +128,9 @@ export function nativeHttpContractDocument(): unknown {
     repositoryCreation:
       "creating a repository requires this tenant's claims of both apps on the account; the repository is the forge's from the moment it answers, so a later refusal is reported beside one that stands and a name already taken is bound rather than created",
     executionPlacement:
-      "where a project's work and evaluations run is decided per kind by the deployment's override for the project, else the project's own placement, else the deployment's default; an administrator writes both routes whole, and choosing InCluster needs the tenant's hosted grant, as opening a thread does",
+      "where a project's work and evaluations run is decided per kind by the deployment's override for the project, else the project's own placement, else the deployment's default; an administrator writes both routes whole, and choosing InCluster needs the tenant's hosted grant, as a session on that route does",
+    sessionPlacement:
+      "where a project's threads and its lead run is decided the same way, and an inquiry runs where the lead does; a session InCluster spends the tenant's hosted grant and one on Pool runs on a runner instead, the member's own for a thread and any of the project's for the lead; the read says whether such a runner is registered and has polled lately",
     workerPoolRegistration:
       "an administrator mints a single-use token for one project; redeeming it registers the pool and answers once with the file a runner keeps, its secret included",
     routes: nativeHttpRoutes,

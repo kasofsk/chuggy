@@ -153,6 +153,11 @@ function parseProgram(named: Readonly<Record<string, string>>): string {
               [...parsed.policy.routing.projectRoutes].map(([tenant, projects]) => [tenant, Object.fromEntries(projects)]),
             ),
           },
+        }, sessionRouting: {
+          ...parsed.sessionRouting,
+          projectRoutes: Object.fromEntries(
+            [...parsed.sessionRouting.projectRoutes].map(([tenant, projects]) => [tenant, Object.fromEntries(projects)]),
+          ),
         } },
       }));
     } catch (failure) {
@@ -244,6 +249,10 @@ const parsed = {
     profile: { profile: "session", runtimeVersion: "1" },
     grant,
     mirrors: {},
+  },
+  sessionRouting: {
+    routes: { Thread: "InCluster", Lead: "InCluster" },
+    projectRoutes: {},
   },
   access: {
     readUrl: "http://keto-read.invalid:4466/",
@@ -484,6 +493,48 @@ test("a key the session policy does not publish is refused rather than ignored",
       found.parsed,
       undefined,
       `${JSON.stringify(extra)} was accepted`,
+    );
+    assert.match(found.refused ?? "", /SESSION_POLICY/u);
+  }
+});
+
+test("a session kind's route and each project's session routes are parsed as the policy states them", async () => {
+  const found = (await parsedSessionPolicy({
+    ...sessionPolicy,
+    routes: { Lead: "Pool" },
+    projectRoutes: {
+      tenant: { project: { Thread: "Pool" }, other: { Lead: "InCluster" } },
+    },
+  })) as {
+    readonly parsed?: { readonly sessionRouting: unknown };
+  };
+  assert.deepEqual(found.parsed?.sessionRouting, {
+    routes: { Thread: "InCluster", Lead: "Pool" },
+    projectRoutes: {
+      tenant: { project: { Thread: "Pool" }, other: { Lead: "InCluster" } },
+    },
+  });
+});
+
+test("a session route this tree does not name, or one for a kind it does not route, is refused", async () => {
+  for (const written of [
+    { ...sessionPolicy, routes: { Thread: "Kubernetes" } },
+    { ...sessionPolicy, routes: { Inquiry: "Pool" } },
+    {
+      ...sessionPolicy,
+      projectRoutes: { tenant: { project: { Lead: "Spill" } } },
+    },
+    { ...sessionPolicy, projectRoutes: { tenant: { project: "Pool" } } },
+    {
+      ...sessionPolicy,
+      projectRoutes: { "": { project: { Thread: "Pool" } } },
+    },
+  ]) {
+    const found = await parsedSessionPolicy(written);
+    assert.equal(
+      found.parsed,
+      undefined,
+      `${JSON.stringify(written)} was accepted`,
     );
     assert.match(found.refused ?? "", /SESSION_POLICY/u);
   }

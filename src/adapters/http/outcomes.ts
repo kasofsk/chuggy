@@ -129,13 +129,15 @@ import type {
   WorkerPoolTokenMinted,
   WorkerPoolTokenRedeemed,
 } from "../../interpreter/workerPoolRegistrationToken.ts";
+import type { ExecutionPlacementView } from "../../interpreter/executionPlacement.ts";
 import type {
-  ExecutionPlacementRead,
-  ExecutionPlacementView,
-  ExecutionPlacementWritten,
-} from "../../interpreter/executionPlacement.ts";
+  PlacementRead,
+  PlacementWritten,
+} from "../../interpreter/placementRoute.ts";
+import type { SessionPlacementView } from "../../interpreter/sessionPlacement.ts";
 import type {
   ExecutionPlacementResponse,
+  SessionPlacementResponse,
   WorkerPoolCredentialsResponse,
   WorkerPoolsResponse,
 } from "../../contract/responses.ts";
@@ -913,7 +915,7 @@ export function workerPoolsResponse(
   }
 }
 
-function executionPlacementBody(
+export function executionPlacementBody(
   view: ExecutionPlacementView,
 ): ExecutionPlacementResponse {
   return {
@@ -923,14 +925,26 @@ function executionPlacementBody(
   };
 }
 
-export function executionPlacementReadResponse(
-  result: ExecutionPlacementRead,
+export function sessionPlacementBody(
+  view: SessionPlacementView,
+): SessionPlacementResponse {
+  return {
+    thread: view.routes.Thread,
+    lead: view.routes.Lead,
+    choices: [...view.choices],
+    runners: view.runners,
+  };
+}
+
+export function placementReadResponse<View>(
+  result: PlacementRead<View>,
+  body: (view: View) => unknown,
 ): NativeHttpResponse {
   switch (result.result) {
     case "NotFound":
       return notFound();
     case "Found":
-      return response(200, executionPlacementBody(result.view));
+      return response(200, body(result.view));
     default:
       return assertNever(result);
   }
@@ -948,12 +962,13 @@ function hostedRunsRefused(): NativeHttpResponse {
 }
 
 /**
- * A placement written, answering where the project's executions now run. A
- * repeat is the same answer, and a route the tenant has not granted this caller
- * is named so a console can say so.
+ * A placement written, answering where the project's executions or sessions
+ * now run. A repeat is the same answer, and a route the tenant has not granted
+ * this caller is named so a console can say so.
  */
-export function executionPlacementWriteResponse(
-  result: ExecutionPlacementWritten,
+export function placementWriteResponse<View>(
+  result: PlacementWritten<View>,
+  body: (view: View) => unknown,
 ): NativeHttpResponse {
   switch (result.result) {
     case "NotFound":
@@ -962,7 +977,7 @@ export function executionPlacementWriteResponse(
       return hostedRunsRefused();
     case "Written":
     case "Unchanged":
-      return response(200, executionPlacementBody(result.view));
+      return response(200, body(result.view));
     default:
       return assertNever(result);
   }

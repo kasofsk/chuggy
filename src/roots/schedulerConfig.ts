@@ -77,9 +77,15 @@ import {
   asProjectId,
   asRecoveryEpoch,
   asTenantId,
+  type ProjectId,
   type RecoveryEpoch,
+  type TenantId,
 } from "../interpreter/projectStore.ts";
 import type { ServiceRuntimeConfig } from "../interpreter/serviceRuntime.ts";
+import type {
+  SessionRouteKind,
+  SessionRouting,
+} from "../interpreter/sessionPlacement.ts";
 import { repositoryConfigurationNameCharsMax } from "../interpreter/repositoryConfigurationIdentity.ts";
 import {
   admittedImagesMax,
@@ -115,6 +121,7 @@ export interface SchedulerCommandConfig {
   readonly sessions: KubernetesSessionLaunchConfig;
   readonly sessionScheduler: SessionSchedulerConfig;
   readonly sessionPolicy: SessionPolicy;
+  readonly sessionRouting: SessionRouting;
   readonly access: ProjectAccessSettings;
 }
 
@@ -186,12 +193,25 @@ const schedulerMirrorsSchema = z.record(
   schedulerRepositorySchema,
 );
 
+/** Where sessions of each kind run, naming only the kinds that run otherwise than in cluster. */
+const schedulerSessionRoutesSchema = z.strictObject({
+  Thread: schedulerRouteSchema.exactOptional(),
+  Lead: schedulerRouteSchema.exactOptional(),
+} satisfies Record<SessionRouteKind, z.ZodType>);
+
 const schedulerSessionPolicySchema = z.strictObject({
   image: schedulerTextSchema.max(workerImageCharsMax),
   profile: schedulerTextSchema,
   runtimeVersion: schedulerTextSchema,
   grant: schedulerGrantSchema,
   mirrors: schedulerMirrorsSchema.optional(),
+  routes: schedulerSessionRoutesSchema.optional(),
+  projectRoutes: z
+    .record(
+      schedulerTextSchema,
+      z.record(schedulerTextSchema, schedulerSessionRoutesSchema),
+    )
+    .optional(),
 });
 
 const schedulerPolicyShape = {
@@ -534,18 +554,25 @@ function schedulerPolicyRouting(
       Work: parsed.Work?.route ?? "InCluster",
       Evaluation: parsed.Evaluation?.route ?? "InCluster",
     },
-    projectRoutes: new Map(
-      Object.entries(parsed.projectRoutes ?? {}).map(([tenant, projects]) => [
-        asTenantId(tenant),
-        new Map(
-          Object.entries(projects).map(([project, override]) => [
-            asProjectId(project),
-            override,
-          ]),
-        ),
-      ]),
-    ),
+    projectRoutes: schedulerProjectRoutes(parsed.projectRoutes),
   };
+}
+
+/** Per-project overrides as a policy document writes them, keyed by tenant and then project. */
+function schedulerProjectRoutes<Override>(
+  named: Readonly<Record<string, Readonly<Record<string, Override>>>> = {},
+): ReadonlyMap<TenantId, ReadonlyMap<ProjectId, Override>> {
+  return new Map(
+    Object.entries(named).map(([tenant, projects]) => [
+      asTenantId(tenant),
+      new Map(
+        Object.entries(projects).map(([project, override]) => [
+          asProjectId(project),
+          override,
+        ]),
+      ),
+    ]),
+  );
 }
 
 /** The execution policy this deployment states, one profile, grant and route per task kind. */
@@ -745,20 +772,36 @@ function schedulerMirrors(
   );
 }
 
-/** The one image, profile, grant and set of mirrors every session of this site runs under. */
+/**
+ * The one image, profile, grant and set of mirrors every session of this site
+ * runs under, and where each kind runs. A kind that names no route runs in
+ * cluster, which is where every session ran before routes existed.
+ */
 function schedulerSessionPolicy(
   environment: SchedulerEnvironment,
-): SessionPolicy {
+): Pick<SchedulerCommandConfig, "sessionPolicy" | "sessionRouting"> {
   const parsed = schedulerJson(
     environment,
     "SESSION_POLICY",
     schedulerSessionPolicySchema,
   );
   return {
-    image: parsed.image,
-    profile: { profile: parsed.profile, runtimeVersion: parsed.runtimeVersion },
-    grant: parsed.grant,
-    mirrors: schedulerMirrors(parsed.mirrors),
+    sessionPolicy: {
+      image: parsed.image,
+      profile: {
+        profile: parsed.profile,
+        runtimeVersion: parsed.runtimeVersion,
+      },
+      grant: parsed.grant,
+      mirrors: schedulerMirrors(parsed.mirrors),
+    },
+    sessionRouting: {
+      routes: {
+        Thread: parsed.routes?.Thread ?? "InCluster",
+        Lead: parsed.routes?.Lead ?? "InCluster",
+      },
+      projectRoutes: schedulerProjectRoutes(parsed.projectRoutes),
+    },
   };
 }
 
@@ -856,7 +899,7 @@ export function schedulerCommandConfig(
       "SESSION_PASS_BOUNDS",
       sessionSchedulerDefaults,
     ),
-    sessionPolicy: schedulerSessionPolicy(environment),
+    ...schedulerSessionPolicy(environment),
     access: checkedProjectAccessSettings({
       readUrl: schedulerRequired(environment, "KETO_READ_URL"),
       requestTimeoutMs: schedulerPositive(

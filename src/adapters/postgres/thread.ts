@@ -26,6 +26,7 @@
 import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
 
+import { placementRoutes } from "../../contract/rosters.ts";
 import {
   allSessionStates,
   asSessionId,
@@ -588,6 +589,7 @@ function threadWakeCandidateOf(row: {
   readonly reason: string | null;
   readonly principal: string | null;
   readonly session: string | null;
+  readonly route: string | null;
   readonly thread_standing_rules: string | null;
 }): ThreadWakeCandidate {
   return {
@@ -610,14 +612,15 @@ function threadWakeCandidateOf(row: {
     ),
     principal: asPrincipal(sessionRowText(row.principal, "principal")),
     session: asSessionId(sessionRowText(row.session, "session")),
+    route: sessionRowMember(placementRoutes, row.route, "thread route"),
   };
 }
 
 /**
- * One page of candidates, with the standing rules of the project each names
- * hung off it: the settings row is keyed by the partition the page already
- * carries, so the join adds a column and no candidate. It restates the
- * definer's order, which a join over a function's rows does not preserve.
+ * One page of candidates, with the thread route and the standing rules of the
+ * project each names hung off it: both are keyed by the partition the page
+ * already carries, so neither adds a candidate. It restates the definer's
+ * order, which a join over a function's rows does not preserve.
  */
 async function threadWakeCandidates(
   pool: pg.Pool,
@@ -632,12 +635,16 @@ async function threadWakeCandidates(
     reason: string | null;
     principal: string | null;
     session: string | null;
+    route: string | null;
     thread_standing_rules: string | null;
   }>(
     sql`SELECT candidate.sequence::text AS sequence,candidate.tenant,
                candidate.project,candidate.resource,candidate.reason,
-               candidate.principal,candidate.session,settings.thread_standing_rules
+               candidate.principal,candidate.session,routed.route,
+               settings.thread_standing_rules
           FROM thread_wake_candidates(${after},${limit}) candidate
+          CROSS JOIN LATERAL session_route(candidate.tenant,candidate.project,
+                                           'Thread') routed
           LEFT JOIN selector_project_settings settings
             ON settings.tenant=candidate.tenant
            AND settings.project=candidate.project

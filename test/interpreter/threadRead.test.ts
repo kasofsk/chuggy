@@ -19,6 +19,7 @@ import {
   threadTurnsAnsweredMax,
   threadsAnsweredMax,
 } from "../../src/contract/http.ts";
+import type { PlacementRoute } from "../../src/contract/rosters.ts";
 import {
   asSessionId,
   asSessionTurnId,
@@ -37,6 +38,7 @@ import {
 } from "../../src/interpreter/principal.ts";
 import { asPublicInstant } from "../../src/interpreter/publicResource.ts";
 import { unaskedNativeWebPorts } from "./nativeWebFixtures.ts";
+import { sessionRoutesAt } from "./sessionRoutesFixture.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import {
   checkedThreadsLimit,
@@ -244,6 +246,7 @@ function boundary(
     "Mutate",
     "ExecuteHosted",
   ],
+  thread: PlacementRoute = "InCluster",
 ) {
   const held: ThreadDoubles = {
     calls: [],
@@ -284,6 +287,8 @@ function boundary(
     undefined,
     undefined,
     ports(held),
+    undefined,
+    sessionRoutesAt({ Thread: thread }),
   );
   return { web, held };
 }
@@ -838,6 +843,20 @@ test("a message needs the tenant's hosted grant at every send, and nothing is en
     held.calls.find((call) => call.startsWith("enqueue:")),
     undefined,
   );
+});
+
+test("a thread routed to the member's runner opens and takes a message without the hosted grant", async () => {
+  const { web, held } = boundary({}, ["Read", "Mutate"], "Pool");
+
+  assert.equal((await web.openThread(geoff, partition)).result, "Opened");
+  const sent = await web.sendThreadMessage(geoff, partition, {
+    session: mine,
+    turn: asSessionTurnId("thread-turn-1"),
+    message: "have a look at 42",
+  });
+
+  assert.equal(sent.result, "Sent");
+  assert.ok(!held.calls.includes("authorizeTenant:ExecuteHosted"));
 });
 
 test("a message to my own thread is enqueued and answers its ordinal", async () => {
