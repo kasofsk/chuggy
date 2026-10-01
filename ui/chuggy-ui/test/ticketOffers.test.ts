@@ -12,7 +12,10 @@ import type { TicketNativeActionsResponse } from "../../../src/contract/response
 import { phaseRoster } from "../../../src/contract/rosters.ts";
 import type { PanelState } from "../app/core/freshness.ts";
 import type { TicketAction } from "../app/core/ticketActions.ts";
-import { ticketOffers } from "../app/core/ticketOffers.ts";
+import {
+  offersDispatchByHand,
+  ticketOffers,
+} from "../app/core/ticketOffers.ts";
 import { ticketInstants } from "./ticketInstants.ts";
 
 const parked = {
@@ -83,4 +86,16 @@ test("a read that has not answered offers nothing, whatever the phase enables", 
   expect(offered(ready([]))).not.toEqual([]);
   for (const open of unread)
     expect(ticketOffers(open, parked, dispatch)).toEqual({ offers: "Unread" });
+});
+
+/** Dispatch is a press by hand only where the read has said there is no lead;
+ * a lead, a read not yet back, or no Dispatch on offer says nothing. */
+test("the bar says Dispatch is by hand only beside a Dispatch in a project with no lead", () => {
+  const withDispatch = ticketOffers(ready([]), parked, dispatch);
+  const withoutDispatch = ticketOffers(ready([]), parked, undefined);
+  expect(offersDispatchByHand(withDispatch, false)).toBe(true);
+  expect(offersDispatchByHand(withDispatch, true)).toBe(false);
+  expect(offersDispatchByHand(withDispatch, undefined)).toBe(false);
+  expect(offersDispatchByHand(withoutDispatch, false)).toBe(false);
+  expect(offersDispatchByHand({ offers: "Unread" }, false)).toBe(false);
 });

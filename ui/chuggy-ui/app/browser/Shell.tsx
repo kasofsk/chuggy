@@ -11,7 +11,8 @@
  * navigation under it: the pages change beneath the bar and the conversation
  * does not. It takes the body three ways and no fourth — a column beside the
  * pages, the whole body, or the strip its own control expands — and a viewport
- * too narrow to divide stacks that column under the pages instead.
+ * too narrow to divide stacks the column or the strip under the pages instead,
+ * starting as the strip until the reader expands it.
  *
  * The banner is not decoration — it is the only place a reader learns that what
  * the screens below are showing is no longer arriving live.
@@ -158,9 +159,9 @@ function ShellBody(props: {
 
 function ShellDrawn(props: {
   readonly partition: PartitionIdentity;
+  readonly twoColumn: boolean;
 }): ReactNode {
-  const twoColumn = useViewportAtLeastEm(viewportTwoColumnEm);
-  const chat = chatPaneNarrowed(useChatPane().state, twoColumn);
+  const chat = chatPaneNarrowed(useChatPane().state, props.twoColumn);
   const drawn = chatPaneContentDrawn(chat);
   const pages = drawn ? (
     <div className="grid min-h-0 min-w-0 grid-cols-[minmax(0,1fr)]">
@@ -201,11 +202,12 @@ function ShellDrawn(props: {
 export function Shell(props: {
   readonly partition: PartitionIdentity;
 }): ReactNode {
+  const twoColumn = useViewportAtLeastEm(viewportTwoColumnEm);
   return (
     <ShellSlots>
       <TicketReferenceWiring partition={props.partition}>
-        <ChatPaneProvider>
-          <ShellDrawn partition={props.partition} />
+        <ChatPaneProvider twoColumn={twoColumn}>
+          <ShellDrawn partition={props.partition} twoColumn={twoColumn} />
         </ChatPaneProvider>
       </TicketReferenceWiring>
     </ShellSlots>

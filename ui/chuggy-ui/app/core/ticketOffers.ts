@@ -83,3 +83,16 @@ export function offersAnswered(
   if (!asking || offers.offers === "Unread") return [];
   return offers.actions.filter((action) => ticketActionResolves(action.action));
 }
+
+/** Whether the bar offers Dispatch in a project no lead dispatches, where a
+ * press is how the ticket comes to run at all. */
+export function offersDispatchByHand(
+  offers: TicketOffers,
+  led: boolean | undefined,
+): boolean {
+  return (
+    led === false &&
+    offers.offers === "Actions" &&
+    offers.actions.some((action) => action.action === "Dispatch")
+  );
+}

@@ -1,5 +1,5 @@
-/** The line the bar above every page ends on, and the one the forge's setup
- * landing ends on, which draws no bar. */
+/** The line a page outside every project ends on: the landing, a new project
+ * and the forge's two returns. The shell around a project draws none. */
 
 import type { ReactNode } from "react";
 

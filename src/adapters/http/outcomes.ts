@@ -415,6 +415,14 @@ export function operationalStatusResponse(
     : response(200, result.value);
 }
 
+export function hostedRunsResponse(
+  result: AuthorizedResult<boolean>,
+): NativeHttpResponse {
+  return result.result === "NotFound"
+    ? response(404, nativeHttpError("NotFound", "Resource not found."))
+    : response(200, { granted: result.value });
+}
+
 export function selectorOperationalContextResponse(
   result: AuthorizedResult<SelectorOperationalContext>,
 ): NativeHttpResponse {
@@ -1636,9 +1644,13 @@ function leadTurnBody(turn: LeadTurnRecord): unknown {
 }
 
 export function leadResponse(result: LeadRead): NativeHttpResponse {
-  return result.result === "NotFound"
-    ? response(404, nativeHttpError("NotFound", "Resource not found."))
-    : response(200, {
+  switch (result.result) {
+    case "NotFound":
+      return response(404, nativeHttpError("NotFound", "Resource not found."));
+    case "None":
+      return response(200, { lead: "None" });
+    case "Found":
+      return response(200, {
         session: result.lead.session,
         state: result.lead.state,
         attention: result.lead.attention,
@@ -1650,6 +1662,7 @@ export function leadResponse(result: LeadRead): NativeHttpResponse {
         turns: result.lead.turns.map(leadTurnBody),
         streams: result.streams,
       });
+  }
 }
 
 /**

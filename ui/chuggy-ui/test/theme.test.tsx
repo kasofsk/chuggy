@@ -80,7 +80,7 @@ test("the attribute carries the choice, and System takes it off", () => {
 async function themeMenuOpened(): Promise<void> {
   cleanup();
   render(
-    <ChatPaneProvider>
+    <ChatPaneProvider twoColumn>
       <SettingsMenu chat />
     </ChatPaneProvider>,
   );

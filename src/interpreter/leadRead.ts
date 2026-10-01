@@ -144,6 +144,7 @@ export interface HandoffNotePreview {
 
 export type LeadRead =
   | { readonly result: "NotFound" }
+  | { readonly result: "None" }
   | {
       readonly result: "Found";
       readonly lead: LeadStanding;

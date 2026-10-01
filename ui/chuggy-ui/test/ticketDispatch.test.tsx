@@ -8,12 +8,14 @@ import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import { TicketPage } from "../app/browser/TicketPage.tsx";
 import { viewportDeskEm } from "../app/browser/shell/viewport.ts";
 import {
+  answer,
   apiDouble,
   openedStream,
   ScreenHarness,
   settled,
   turned,
 } from "./screenHarness.tsx";
+import { leadBody } from "./leadFixture.ts";
 import {
   ticketDispatchViewOf,
   ticketPageCandidate,
@@ -83,4 +85,48 @@ test("a dispatchable ticket submits the version from the strict view", async () 
       expectedTicketVersion: 4,
     },
   });
+});
+
+/** The page over a server whose lead route answers `lead`, with the ticket a
+ * dispatch candidate or not as `candidate` says. */
+async function drawnWithLead(lead: unknown, candidate = true): Promise<void> {
+  const routes = ticketPageRoutes(atlas, () =>
+    ticketDispatchViewOf(atlas, candidate ? [ticketPageCandidate] : []),
+  );
+  const api = apiDouble({
+    operation: { operation: "op-one", state: "Pending" },
+    route: (url) => (url.endsWith("/lead") ? answer(lead) : routes(url)),
+  });
+  vi.stubGlobal("fetch", api.fetch);
+  const server = openedStream();
+  render(
+    <ScreenHarness
+      partition={atlas}
+      client={new QueryClient()}
+      transport={server.ports.fetch}
+    >
+      <TicketPage />
+    </ScreenHarness>,
+  );
+  await settled();
+}
+
+/** No lead dispatches the project, so the press beside the line is how the
+ * ticket runs, and the page says so where the press is. */
+test("Dispatch in a project with no lead says tickets are dispatched by hand", async () => {
+  await drawnWithLead({ lead: "None" });
+  expect(screen.getByRole("button", { name: "Dispatch" })).toBeDefined();
+  expect(screen.getByText("No lead · Dispatched by hand")).toBeDefined();
+});
+
+test("Dispatch in a project with a lead says nothing of the hand", async () => {
+  await drawnWithLead(leadBody(1, 1));
+  expect(screen.getByRole("button", { name: "Dispatch" })).toBeDefined();
+  expect(screen.queryByText("No lead · Dispatched by hand")).toBeNull();
+});
+
+test("a ticket offered no Dispatch says nothing of the hand, lead or none", async () => {
+  await drawnWithLead({ lead: "None" }, false);
+  expect(screen.queryByRole("button", { name: "Dispatch" })).toBeNull();
+  expect(screen.queryByText("No lead · Dispatched by hand")).toBeNull();
 });

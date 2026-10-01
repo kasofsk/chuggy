@@ -15,7 +15,8 @@ import {
 import {
   operationalStatusResponseSchema,
   executionResponseSchema,
-  leadResponseSchema,
+  hostedRunsResponseSchema,
+  leadReadResponseSchema,
   leadTranscriptResponseSchema,
   runTurnsResponseSchema,
   runTranscriptResponseSchema,
@@ -71,10 +72,15 @@ export const nativeHttpEndpoints = {
     path: nativeHttpRoutes.execution,
     response: executionResponseSchema,
   },
+  hostedRuns: {
+    method: "GET",
+    path: nativeHttpRoutes.hostedRuns,
+    response: hostedRunsResponseSchema,
+  },
   lead: {
     method: "GET",
     path: nativeHttpRoutes.lead,
-    response: leadResponseSchema,
+    response: leadReadResponseSchema,
   },
   leadTranscript: {
     method: "GET",

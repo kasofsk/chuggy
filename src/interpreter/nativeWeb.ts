@@ -549,6 +549,10 @@ export interface NativeWeb {
     principal: Principal,
     partition: Partition,
   ): Promise<AuthorizedResult<SelectorOperationalContext>>;
+  hostedRuns(
+    principal: Principal,
+    partition: Partition,
+  ): Promise<AuthorizedResult<boolean>>;
   lead(principal: Principal, partition: Partition): Promise<LeadRead>;
   leadTranscript(
     principal: Principal,
@@ -1275,7 +1279,11 @@ type NativeLeadMethods = Pick<
   | "selectorHistory"
 >;
 
-/** The lead's own two reads, each reauthorizing before it reaches a store. */
+/**
+ * The lead's own two reads, each reauthorizing before it reaches a store. A
+ * readable project holding no lead is answered `None` by the head, which is
+ * how the project stands; its transcript has nothing to page and is not found.
+ */
 function nativeLeadSessionMethods(
   access: ProjectAccess,
   leads?: NativeLeadPorts,
@@ -1289,7 +1297,7 @@ function nativeLeadSessionMethods(
         partition,
         leadTurnsAnsweredMax,
       );
-      if (standing === undefined) return { result: "NotFound" };
+      if (standing === undefined) return { result: "None" };
       return {
         result: "Found",
         lead: standing,
@@ -1456,6 +1464,24 @@ function nativeOpenThreadMethod(
       thread: threadEntry(opened.thread, principal, authority.subject),
     };
   };
+}
+
+/**
+ * Whether the project's tenant grants the caller hosted runs, asked of the
+ * predicate every hosted refusal asks, so a member is told before they type
+ * what a send would answer. It is the caller's own grant and a reader's
+ * question, so it is `Read`.
+ */
+function nativeHostedRunsMethod(
+  access: ProjectAccess,
+): NativeWeb["hostedRuns"] {
+  return async (principal, partition) =>
+    (await access.authorize(principal, partition, "Read")) === undefined
+      ? { result: "NotFound" }
+      : {
+          result: "Authorized",
+          value: await hostedRunsGranted(access, principal, partition.tenant),
+        };
 }
 
 /**
@@ -1924,6 +1950,7 @@ export function nativeWeb(
     ...nativeRunEvidenceMethods(access, runEvidenceReads, runEvidenceContents),
     ...nativeLeadReadMethods(access, reads, leads),
     ...nativeThreadMethods(access, threads),
+    hostedRuns: nativeHostedRunsMethod(access),
     ...nativeLeadInquiryMethods(access, inquiries),
     importRepositoryConfigurations: nativeRepositoryConfigurationImportMethod(
       access,

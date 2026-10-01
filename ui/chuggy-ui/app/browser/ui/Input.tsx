@@ -21,6 +21,7 @@ export function Input(props: {
   readonly numeric?: boolean;
   readonly invalid?: boolean;
   readonly describedBy?: string;
+  readonly autoFocus?: boolean;
 }): ReactNode {
   return (
     <span
@@ -34,6 +35,7 @@ export function Input(props: {
         aria-invalid={props.invalid ?? false}
         aria-describedby={props.describedBy}
         inputMode={props.numeric === true ? "numeric" : undefined}
+        autoFocus={props.autoFocus}
         value={props.value}
         placeholder={props.placeholder}
         onChange={(event) => {
