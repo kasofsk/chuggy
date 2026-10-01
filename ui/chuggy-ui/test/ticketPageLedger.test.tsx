@@ -1160,3 +1160,17 @@ test("a ticket whose draft's program is ahead draws the stages it ran", async ()
     screen.getByRole("status", { name: "Needs you" }).textContent,
   ).toContain("Stage 1 of 2 failed");
 });
+
+/** Every run a finished ticket holds has ended, and the page says how each
+ * one did rather than the machine's word for having ended. */
+test("a finished ticket's page never says Terminal", async () => {
+  const { container } = await drawTicket({
+    shapes: ticket21Parked,
+    ticket: { ...resumedTicket, phase: "Done" },
+  });
+  await cyclesOpened(container);
+  await sectionOpened("Usage");
+  await sectionOpened("Provenance");
+  expect(container.textContent).toContain("Passed");
+  expect(container.textContent).not.toContain("Terminal");
+});

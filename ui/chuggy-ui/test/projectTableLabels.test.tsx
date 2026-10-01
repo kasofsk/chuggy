@@ -1,6 +1,12 @@
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
 import { QueryClient } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
@@ -129,7 +135,16 @@ async function drawTableWith(
     operation: { operation: "op-one", state: "Pending" },
     route: (url) => {
       if (url.includes("/executions")) return answer({ executions });
-      return answer({ partition: atlas, sequence: 8, tickets });
+      const phases = new URL(url, "http://stub").searchParams.getAll("phase");
+      return answer({
+        partition: atlas,
+        sequence: 8,
+        tickets: tickets.filter(
+          (one) =>
+            phases.length === 0 ||
+            phases.includes((one as { readonly phase: string }).phase),
+        ),
+      });
     },
   });
   vi.stubGlobal("fetch", api.fetch);
@@ -254,19 +269,69 @@ test("a project with no ticket draws one empty state that offers a new one", asy
   expect(screen.queryByRole("group", { name: "phase" })).toBeNull();
 });
 
-test("a project with a ticket draws the five sections, each heading capitalised", async () => {
+function sectionHeadings(): readonly (string | null)[] {
+  return screen
+    .getAllByRole("heading", { level: 2 })
+    .map((heading) => heading.textContent);
+}
+
+test("the unfiltered view draws only the sections holding a ticket", async () => {
+  await drawTableWith([ticket, escalated], [execution]);
+  expect(sectionHeadings()).toEqual(["Needs you", "In progress"]);
+  expect(screen.queryByText("None")).toBeNull();
+  expect(screen.queryByRole("heading", { name: "No tickets" })).toBeNull();
+});
+
+test("every filter is named with its section's capitalised heading", async () => {
   await drawTable();
   expect(
-    screen
-      .getAllByRole("heading", { level: 2 })
-      .map((heading) => heading.textContent),
+    within(screen.getByRole("group", { name: "phase" }))
+      .getAllByRole("button")
+      .map((button) => button.textContent),
   ).toEqual([
+    "All",
     "Needs you",
     "In progress",
     "Up next",
     "Done",
     "Failed or revoked",
   ]);
-  expect(screen.getByRole("button", { name: "All" })).toBeDefined();
-  expect(screen.queryByRole("heading", { name: "No tickets" })).toBeNull();
+});
+
+/** A caption dates the rows under it, so a section with none carries none. */
+test("a filtered view whose section holds no ticket says None, under no caption", async () => {
+  await drawTable();
+  const working = screen.getByRole("region", { name: "In progress" });
+  expect(working.querySelector(".freshness")).not.toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Done" }));
+  await settled();
+  expect(sectionHeadings()).toEqual(["Done"]);
+  const done = screen.getByRole("region", { name: "Done" });
+  expect(within(done).getByText("None")).toBeDefined();
+  expect(done.querySelector(".freshness")).toBeNull();
+});
+
+const finished = {
+  ticket: 13,
+  title: "Finished ticket",
+  phase: "Done",
+  sequence: 5,
+  ...ticketInstants,
+};
+
+const passed = {
+  ...execution,
+  execution: "e3",
+  ticket: 13,
+  identity: { type: "WorkTask", value: { ticket: 13, cycle: 1 } },
+  status: "Terminal",
+  outcome: "Passed",
+  terminalAt: "2026-08-26T11:00:00.000Z",
+};
+
+test("a finished row says how its run ended, and never Terminal", async () => {
+  await drawTableWith([finished], [passed]);
+  const done = screen.getByRole("region", { name: "Done" });
+  expect(within(done).getByText("Passed").className).toContain("pill-pass");
+  expect(document.body.textContent).not.toContain("Terminal");
 });

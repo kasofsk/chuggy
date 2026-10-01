@@ -137,15 +137,22 @@ function executionOutcomeWord(outcome: ExecutionOutcome): string {
   return outcome === "ProcessFailed" ? "Stopped" : outcome;
 }
 
-/** The status, refined by the outcome where the execution has reached one, and
- * nothing at all where no execution is joined to the row. */
+/** The one word a status is drawn as where no outcome refines it. A terminal
+ * execution reaches an outcome, so `Finished` is drawn only for one whose
+ * outcome did not arrive. */
+function executionStatusWord(status: ExecutionStatus): string {
+  return status === "Terminal" ? "Finished" : status;
+}
+
+/** The outcome where the execution has reached one, the status where it has
+ * not, and nothing at all where no execution is joined to the row. */
 export function projectTableExecutionPhrase(
   row: ProjectTableRow,
 ): string | undefined {
   if (row.executionStatus === undefined) return undefined;
   return row.executionOutcome === undefined
-    ? row.executionStatus
-    : `${row.executionStatus} · ${executionOutcomeWord(row.executionOutcome)}`;
+    ? executionStatusWord(row.executionStatus)
+    : executionOutcomeWord(row.executionOutcome);
 }
 
 export function projectTableRows(
