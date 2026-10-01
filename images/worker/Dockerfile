@@ -1,6 +1,6 @@
 # The zod the image installs as the agent SDK's peer. It is declared before any
 # stage because two of them read it: the `core` stage holds it to the core's
-# lock and the `worker` stage installs it.
+# lock and the `worker-base` stage installs it.
 ARG ZOD_VERSION=4.5.4
 
 # The base every stage builds from. The image one attempt runs in is built by
@@ -77,8 +77,9 @@ RUN node -e 'for (const name of require("/core/package.json").files) console.log
   && mv /shipped/entrypoint.mjs /shipped/worker.mjs \
   && chmod 0555 /shipped/git-askpass.sh
 
-# The image a pod runs.
-FROM base AS worker
+# What every image a pod runs is built from: the worker core, the contract it
+# speaks and the agents it drives.
+FROM base AS worker-base
 
 # THE IMAGE RUNS TWO CLAUDE CODES AND THEY MUST BE THE SAME ONE. A work attempt
 # spawns the global `claude`; a session's Agent SDK spawns a copy of its own,
@@ -180,6 +181,9 @@ USER 1000:1000
 WORKDIR /workspace
 ENTRYPOINT ["node", "/usr/local/lib/chuggy/worker.mjs"]
 
+# The image this tree's own tickets run on.
+FROM worker-base AS worker
+
 # THE PRACTICES THE TREE DECLARES ARE INSTALLED FOR THE IMAGE'S USER. An agent
 # here is told to invoke them by name, and `check-roster` refuses a tree whose
 # roster does not resolve, so the roster is read off the tree's own
@@ -205,13 +209,13 @@ RUN --mount=type=bind,source=.claude/settings.json,target=/tmp/practices.json \
      done < /tmp/practices.txt \
   && rm /tmp/practices.txt
 
-# THE CORE'S SUITES RUN ON THIS IMAGE'S NODE, against the contract and the zod
-# it installed. The core's own gates run them on whatever Node its developers
-# have, and nothing else would run them on the one a pod has. They sit under
-# `/usr/local/lib` so that they resolve their packages by the walk the pod's
-# modules resolve theirs by. Like the roster stage below, this is a stage FROM
-# the image and not the image, and the final stage binds its verdict.
-FROM worker AS core-suites
+# THE CORE'S SUITES RUN ON THE IMAGES' NODE, against the contract and the zod
+# the base installed. The core's own gates run them on whatever Node its
+# developers have, and nothing else would run them on the one a pod has. They
+# sit under `/usr/local/lib` so that they resolve their packages by the walk the
+# pod's modules resolve theirs by. Like the roster stage below, this is a stage
+# and not an image, and each image binds its verdict.
+FROM worker-base AS core-suites
 COPY --from=core --chown=1000:1000 /core /usr/local/lib/chuggy-core
 RUN cd /usr/local/lib/chuggy-core \
   && node --test --test-reporter=dot ./*.test.mjs \
@@ -285,10 +289,54 @@ RUN cd /workspace/tree \
   && touch /workspace/roster-clean \
   || { tail -n 50 /tmp/postgres.log /tmp/keto.log; exit 1; }
 
-# The image is the worker stage and nothing the stages FROM it added. The binds
-# are what make the build refuse to finish without the core suites' verdict and
-# the roster's, and they leave nothing behind, because a build's verdict is not
-# something a pod needs.
+# The image any other tree runs on: the base and the toolchains a Python or Rust
+# tree builds with. Rust's belongs to the image's user, so an attempt can fill
+# cargo's registry and install the toolchain a `rust-toolchain.toml` names.
+FROM worker-base AS generic
+USER 0:0
+ARG UV_VERSION=0.12.21
+ARG UV_SHA256=23f02075b652bb1df64178cfae41b5caf160822e720e2663568f3f5d63bc52c0
+ARG RUSTUP_VERSION=1.29.1
+ARG RUSTUP_SHA256=dda7234360b7f578ca8b0ddcb80145646fa61a67c1720a5abc7051b35c9fcb71
+ARG RUST_VERSION=1.98.1
+ENV RUSTUP_HOME=/usr/local/rustup \
+    CARGO_HOME=/usr/local/cargo \
+    PATH=/usr/local/cargo/bin:$PATH
+RUN apt-get update \
+  && apt-get install --yes --no-install-recommends \
+    libssl-dev pkg-config python3-pip python3-venv \
+  && apt-get clean \
+  && rm -rf /var/lib/apt/lists/*
+RUN curl --proto '=https' --tlsv1.2 --fail --silent --show-error --location \
+    "https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-x86_64-unknown-linux-gnu.tar.gz" \
+    --output /tmp/uv.tgz \
+  && echo "${UV_SHA256}  /tmp/uv.tgz" | sha256sum --check --quiet - \
+  && tar --extract --gzip --file /tmp/uv.tgz --directory /usr/local/bin \
+    --strip-components 1 uv-x86_64-unknown-linux-gnu/uv uv-x86_64-unknown-linux-gnu/uvx \
+  && rm /tmp/uv.tgz \
+  && uv --version
+RUN curl --proto '=https' --tlsv1.2 --fail --silent --show-error --location \
+    "https://static.rust-lang.org/rustup/archive/${RUSTUP_VERSION}/x86_64-unknown-linux-gnu/rustup-init" \
+    --output /tmp/rustup-init \
+  && echo "${RUSTUP_SHA256}  /tmp/rustup-init" | sha256sum --check --quiet - \
+  && chmod 0755 /tmp/rustup-init \
+  && /tmp/rustup-init -y --no-modify-path --profile minimal \
+    --default-toolchain "${RUST_VERSION}" --component clippy,rustfmt \
+  && rm /tmp/rustup-init \
+  && cargo --version \
+  && cargo clippy --version \
+  && cargo fmt --version \
+  && chown -R 1000:1000 "$RUSTUP_HOME" "$CARGO_HOME"
+# A login shell sets PATH afresh from `/etc/profile`, so cargo's is added there.
+RUN printf 'export PATH="%s/bin:$PATH"\n' "$CARGO_HOME" > /etc/profile.d/cargo.sh
+USER 1000:1000
+RUN --mount=type=bind,from=core-suites,source=/workspace/core-suites-clean,target=/tmp/core-suites-clean \
+  true
+
+# The default image is the worker stage and nothing the stages FROM it added.
+# The binds are what make the build refuse to finish without the core suites'
+# verdict and the roster's, and they leave nothing behind, because a build's
+# verdict is not something a pod needs.
 FROM worker
 RUN --mount=type=bind,from=core-suites,source=/workspace/core-suites-clean,target=/tmp/core-suites-clean \
     --mount=type=bind,from=roster,source=/workspace/roster-clean,target=/tmp/roster-clean \
