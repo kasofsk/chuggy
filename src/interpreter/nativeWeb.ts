@@ -115,6 +115,7 @@ import {
   runConfigurationPath,
   type RunConfigurationRead,
   type RunEvidenceContentPort,
+  type RunEvidenceContentRead,
   type RunEvidenceReadStore,
   type RunTotals,
   type RunTranscriptBatch,
@@ -162,6 +163,7 @@ import {
   agenticRefusalLedgerAnsweredMax,
   leadTurnsAnsweredMax,
   sessionStoreStreamsAnswered,
+  workerErrorPath,
 } from "../contract/http.ts";
 import type { GitObjectId, RepositoryId } from "./finalizer.ts";
 import {
@@ -610,6 +612,12 @@ export interface NativeWeb {
     execution: ExecutionId,
     attempt: AttemptId,
   ): Promise<RunConfigurationRead>;
+  runError(
+    principal: Principal,
+    partition: Partition,
+    execution: ExecutionId,
+    attempt: AttemptId,
+  ): Promise<RunEvidenceContentRead>;
   cancel(
     principal: Principal,
     partition: Partition,
@@ -1007,7 +1015,7 @@ function nativeOperationalMethods(
 
 type NativeRunEvidenceMethods = Pick<
   NativeWeb,
-  "runTurns" | "runTranscript" | "runConfiguration"
+  "runTurns" | "runTranscript" | "runConfiguration" | "runError"
 >;
 
 /**
@@ -1048,7 +1056,7 @@ async function nativeRunTranscriptBatches(
   };
 }
 
-/** The three run-evidence reads, each reauthorizing before it reaches a store. */
+/** The run-evidence reads, each reauthorizing before it reaches a store. */
 function nativeRunEvidenceMethods(
   access: ProjectAccess,
   evidenceReads?: RunEvidenceReadStore,
@@ -1104,6 +1112,15 @@ function nativeRunEvidenceMethods(
             content: drawn.content,
           }
         : drawn;
+    },
+    runError: async (principal, partition, execution, attempt) => {
+      if ((await access.authorize(principal, partition, "Read")) === undefined)
+        return { read: "NotFound" };
+      const stored = await reads().error(partition, execution, attempt);
+      if (stored === undefined) return { read: "NotFound" };
+      if (stored.path !== workerErrorPath)
+        throw new Error("native web: an error text is stored off its own path");
+      return contents().readEvidence(stored);
     },
   };
 }

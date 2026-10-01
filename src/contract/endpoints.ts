@@ -21,6 +21,7 @@ import {
   runTurnsResponseSchema,
   runTranscriptResponseSchema,
   runConfigurationResponseSchema,
+  runErrorResponseSchema,
   threadsResponseSchema,
   threadResponseSchema,
   threadTranscriptResponseSchema,
@@ -107,6 +108,11 @@ export const nativeHttpEndpoints = {
     method: "GET",
     path: nativeHttpRoutes.runConfiguration,
     response: runConfigurationResponseSchema,
+  },
+  runError: {
+    method: "GET",
+    path: nativeHttpRoutes.runError,
+    response: runErrorResponseSchema,
   },
   threads: {
     method: "GET",

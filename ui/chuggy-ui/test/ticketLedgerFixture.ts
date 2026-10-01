@@ -40,6 +40,7 @@ export interface ExecutionShape {
   readonly status?: ExecutionStatus;
   readonly outcome?: ExecutionOutcome;
   readonly retriesSpent?: number;
+  readonly relaunches?: number;
   readonly totals?: TotalsShape;
   readonly registeredAt?: string;
   readonly terminalAt?: string;
@@ -186,6 +187,7 @@ export const ticket21Parked: readonly ExecutionShape[] = [
     identity: evalIdentity(3, 1, 1),
     outcome: "Failed",
     retriesSpent: 3,
+    relaunches: 3,
     totals: { turns: 9, durationMs: 240_000, costUsdMicros: 350_000 },
   },
   {

@@ -26,6 +26,7 @@ import type { TicketId } from "../../domain/ids.ts";
 import {
   nativeHttpPageItemsMax,
   runTranscriptPageBatchesMax,
+  workerErrorPath,
 } from "../../contract/http.ts";
 import { runCostBases, type RunCostBasis } from "../../contract/rosters.ts";
 import { allAttemptStates } from "../../interpreter/executionScheduler.ts";
@@ -39,6 +40,7 @@ import {
   runIsComplete,
   type ExecutionRunResource,
   type RunConfigurationStored,
+  type RunEvidenceObject,
   type RunEvidenceReadStore,
   type RunModelUsage,
   type RunTotals,
@@ -573,6 +575,36 @@ async function runConfigurationStored(
   };
 }
 
+interface RunErrorRow {
+  readonly digest: string;
+  readonly bytes: string;
+}
+
+async function runErrorStored(
+  pool: pg.Pool,
+  partition: Partition,
+  execution: ExecutionId,
+  attempt: AttemptId,
+): Promise<RunEvidenceObject | undefined> {
+  const found = await pool.query<RunErrorRow>(
+    sql`SELECT digest,bytes::text AS bytes
+          FROM worker_artifact_reservation
+         WHERE tenant=${partition.tenant} AND project=${partition.project}
+           AND execution=${execution} AND attempt=${attempt}
+           AND path=${workerErrorPath}`,
+  );
+  const row = found.rows[0];
+  if (row === undefined) return undefined;
+  return {
+    partition,
+    execution,
+    attempt,
+    path: asArtifactPath(workerErrorPath),
+    digest: asArtifactDigest(row.digest),
+    bytes: projectRowCounter(row.bytes, "run error bytes"),
+  };
+}
+
 /** Reads only API-safe run-evidence columns through a pool carrying the API credential. */
 export function postgresRunEvidenceReads(pool: pg.Pool): RunEvidenceReadStore {
   return {
@@ -582,5 +614,7 @@ export function postgresRunEvidenceReads(pool: pg.Pool): RunEvidenceReadStore {
       runTranscriptStored(pool, partition, execution, attempt, after),
     configuration: (partition, execution, attempt) =>
       runConfigurationStored(pool, partition, execution, attempt),
+    error: (partition, execution, attempt) =>
+      runErrorStored(pool, partition, execution, attempt),
   };
 }

@@ -37,6 +37,8 @@ import { asOperationId } from "../../interpreter/operationInbox.ts";
 import {
   asAttemptId,
   asExecutionId,
+  type AttemptId,
+  type ExecutionId,
 } from "../../interpreter/schedulerIdentity.ts";
 import {
   asConfigurationRevisionId,
@@ -144,6 +146,7 @@ import {
   selectorSettingsHistoryResponse,
   outputContentResponse,
   runConfigurationResponse,
+  runErrorResponse,
   runTranscriptResponse,
   runTurnsResponse,
   submissionResponse,
@@ -241,6 +244,7 @@ type InitialNativeWeb = Pick<
   | "runTurns"
   | "runTranscript"
   | "runConfiguration"
+  | "runError"
   | "threads"
   | "thread"
   | "threadTranscript"
@@ -707,17 +711,36 @@ function registerRunEvidenceRoutes(
   registerEndpoint(
     app,
     nativeHttpEndpoints.runConfiguration,
-    (request, principal, partition) => {
-      const params = record(request.params);
-      return web.runConfiguration(
+    (request, principal, partition) =>
+      web.runConfiguration(
         principal,
         partition,
-        asExecutionId(textField(params, "execution")),
-        asAttemptId(textField(params, "attempt")),
-      );
-    },
+        ...registerRunEvidenceAttempt(request),
+      ),
     runConfigurationResponse,
   );
+  registerEndpoint(
+    app,
+    nativeHttpEndpoints.runError,
+    (request, principal, partition) =>
+      web.runError(
+        principal,
+        partition,
+        ...registerRunEvidenceAttempt(request),
+      ),
+    runErrorResponse,
+  );
+}
+
+/** The execution and the attempt a run-evidence route names in its path. */
+function registerRunEvidenceAttempt(
+  request: FastifyRequest,
+): [ExecutionId, AttemptId] {
+  const params = record(request.params);
+  return [
+    asExecutionId(textField(params, "execution")),
+    asAttemptId(textField(params, "attempt")),
+  ];
 }
 
 function registerNativeActions(

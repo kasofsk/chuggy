@@ -9,7 +9,10 @@ import {
 } from "../../src/adapters/postgres/workerPlane.ts";
 import { asArtifactDigest } from "../../src/interpreter/resultManifest.ts";
 import { postgresHarnessRolePool } from "./harness.ts";
-import { asExecutionId } from "../../src/interpreter/schedulerIdentity.ts";
+import {
+  asExecutionId,
+  type ExecutionId,
+} from "../../src/interpreter/schedulerIdentity.ts";
 import { executionSchedulerDefaults } from "../../src/interpreter/executionScheduler.ts";
 import { id } from "../domain/fixtures.ts";
 import {
@@ -23,6 +26,7 @@ import {
   schedulerProject,
   schedulerRigOpen,
   schedulerInCluster,
+  type SchedulerProject,
   type SchedulerRig,
 } from "./schedulerHarness.ts";
 import type {
@@ -434,6 +438,27 @@ test("an execution's attempts are read in the order they were opened", async () 
   );
 });
 
+/** Opens an execution's next attempt now, past the backoff its last loss set. */
+async function operationalReopened(
+  project: SchedulerProject,
+  execution: ExecutionId,
+): Promise<void> {
+  await rig.harness.query(
+    `UPDATE execution SET placement_backoff_from=NULL
+      WHERE tenant=$1 AND project=$2 AND execution=$3`,
+    [project.partition.tenant, project.partition.project, execution],
+  );
+  const retried = await rig.store.openAttempt({
+    partition: project.partition,
+    execution,
+    epoch: project.epoch,
+    leaseSecs: 300,
+    retriesMax: 3,
+    placementBackoffSecs: 1,
+  });
+  assert.equal(retried.opened, "Opened");
+}
+
 /**
  * Where the wait ends and the run begins, on the summary a row is drawn from.
  * It is the first attempt's opening and not the latest one's, so a retry does
@@ -484,22 +509,68 @@ test("an execution's summary starts at its first attempt and stays there", async
     await rig.store.attemptEnded(placed.attempt, "Lost", "Vanished"),
     true,
   );
-  await rig.harness.query(
-    `UPDATE execution SET placement_backoff_from=NULL
-      WHERE tenant=$1 AND project=$2 AND execution=$3`,
-    [project.partition.tenant, project.partition.project, placed.execution],
-  );
-  const retried = await rig.store.openAttempt({
-    partition: project.partition,
-    execution: placed.execution,
-    epoch: project.epoch,
-    leaseSecs: 300,
-    retriesMax: 3,
-    placementBackoffSecs: 1,
-  });
-  assert.equal(retried.opened, "Opened");
+  await operationalReopened(project, placed.execution);
   assert.equal(
     (await summaryOf(placed.execution))?.startedAt,
     opened.startedAt,
   );
+});
+
+/**
+ * A loss spends a retry whether or not anything follows it, so a relaunch is
+ * counted from the attempt that followed and never from the retry spent.
+ */
+test("an execution counts a relaunch where another attempt followed a lost one, and not before", async () => {
+  const project = await schedulerProject(rig, "operational-relaunch");
+  await rig.store.registerSpawn(
+    await schedulerClaimFor(
+      rig,
+      project.partition,
+      project.request,
+      schedulerOwner("operational-relaunch"),
+    ),
+    executionSchedulerDefaults.nTasks,
+    schedulerInCluster,
+  );
+  const reads = postgresOperationalReads(ingress);
+  const counted = async (execution: string) => {
+    const listed = (
+      await reads.executions(project.partition, {
+        limit: 10,
+        ticket: id(project.ticket),
+      })
+    ).executions.find((each) => each.execution === execution);
+    const detail = await reads.execution(
+      project.partition,
+      asExecutionId(execution),
+    );
+    return {
+      listed: listed?.relaunches,
+      detail: detail?.relaunches,
+      retriesSpent: detail?.retriesSpent,
+      errors: detail?.attempts.map((attempt) => attempt.error),
+    };
+  };
+  const placed = await schedulerPlacedAttempt(
+    rig,
+    project,
+    "operational-relaunch",
+  );
+  assert.equal(
+    await rig.store.attemptEnded(placed.attempt, "Lost", "Vanished"),
+    true,
+  );
+  assert.deepEqual(await counted(placed.execution), {
+    listed: 0,
+    detail: 0,
+    retriesSpent: 1,
+    errors: [undefined],
+  });
+  await operationalReopened(project, placed.execution);
+  assert.deepEqual(await counted(placed.execution), {
+    listed: 1,
+    detail: 1,
+    retriesSpent: 1,
+    errors: [undefined, undefined],
+  });
 });

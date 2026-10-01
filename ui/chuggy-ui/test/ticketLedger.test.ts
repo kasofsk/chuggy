@@ -16,7 +16,7 @@ import type { Cycle, StageRow, TaskSet } from "../app/core/ticketLedger.ts";
 import {
   cycleLabel,
   cycleLastSet,
-  retriesLabel,
+  relaunchesLabel,
   stageLabel,
   ticketLedger,
 } from "../app/core/ticketLedger.ts";
@@ -540,8 +540,8 @@ test("a cycle is labelled by its own ordinal", () => {
 });
 
 test("a container the fabric relaunched is labelled, and one it did not is not", () => {
-  expect(retriesLabel(3)).toBe("Relaunched 3× by fabric");
-  expect(retriesLabel(0)).toBeUndefined();
+  expect(relaunchesLabel(3)).toBe("Relaunched 3× by fabric");
+  expect(relaunchesLabel(0)).toBeUndefined();
 });
 
 test("a stage number in the millions draws rows, not that many rows", () => {

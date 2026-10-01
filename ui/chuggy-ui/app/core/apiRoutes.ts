@@ -645,6 +645,13 @@ export const apiRunConfiguration = apiProjectEndpoint(
   }),
 );
 
+export const apiRunError = apiProjectEndpoint(
+  nativeHttpEndpoints.runError,
+  (partition, execution: string, attempt: string) => ({
+    parameters: { ...partition, execution, attempt },
+  }),
+);
+
 export function apiOperation(
   ports: ApiPorts,
   partition: PartitionIdentity,

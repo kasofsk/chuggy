@@ -43,6 +43,7 @@ import {
   runTranscriptBatchBytesMax,
   runTranscriptBatchesMax,
   sessionStoreBatchBytesMax,
+  workerErrorPath,
   workerPlaneUploadBytesMax,
 } from "../../src/contract/http.ts";
 import {
@@ -220,12 +221,12 @@ const served = workerContractAccepted.max;
 /**
  * Every path the worker core's `entrypoint.mjs` uploads an artifact at: an
  * agentic attempt's result, a commands attempt's output, and a crash's error.
- * They are restated because that module is in kasofsk/chuggy-common.
+ * The first two are restated because that module is in kasofsk/chuggy-common.
  */
 const workerUploadPathsWritten = [
   ".chuggy/agent-result.json",
   ".chuggy/check-output.json",
-  ".chuggy/worker-error.txt",
+  workerErrorPath,
 ] as const;
 
 /** A caller every route refuses before it reads a bearer. */

@@ -168,6 +168,7 @@ function fakeOperations(
   | "runTurns"
   | "runTranscript"
   | "runConfiguration"
+  | "runError"
 > {
   return {
     selectorOperationalContext: () => {
@@ -207,6 +208,10 @@ function fakeOperations(
     runConfiguration: (_principal, _partition, execution, attempt) => {
       calls.push(`runConfiguration:${execution}:${attempt}`);
       return Promise.resolve({ read: "NotFound" });
+    },
+    runError: (_principal, _partition, execution, attempt) => {
+      calls.push(`runError:${execution}:${attempt}`);
+      return Promise.resolve({ read: "Content", content: "killed\n" });
     },
   };
 }
@@ -1250,6 +1255,18 @@ test("operational routes parse bounded filters and artifact identities", async (
     "execution:execution-1",
     "output:execution-1:2",
   ]);
+});
+
+test("an attempt's error text is read by the execution and attempt its route names", async () => {
+  const calls: string[] = [];
+  await using app = appOf(calls);
+  const served = await app.inject({
+    url: "/api/v1/tenants/tenant/projects/project/executions/execution-1/attempts/attempt-2/error",
+    headers: { authorization: "Bearer valid" },
+  });
+  assert.equal(served.statusCode, 200);
+  assert.deepEqual(served.json(), { read: "Content", content: "killed\n" });
+  assert.deepEqual(calls, ["runError:execution-1:attempt-2"]);
 });
 
 const publicAuthoring = {

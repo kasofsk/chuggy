@@ -377,6 +377,39 @@ test("the current cycle draws its work, its artifact, its stages and its rollup"
   );
 });
 
+/** The one work row of a ticket whose one execution a case shapes. */
+async function workRowOf(shape: Partial<ExecutionShape>): Promise<string> {
+  const { container } = await drawTicket({
+    shapes: [
+      {
+        execution: "execution-dd-1",
+        task: 1,
+        identity: workIdentity(1),
+        outcome: "ProcessFailed",
+        ...shape,
+      },
+    ],
+    ticket: parkedTicket,
+  });
+  const current = groups(container)[0];
+  if (current === undefined) throw new Error("no current cycle");
+  return rowsOf(current)[0] ?? "";
+}
+
+/** A loss spends a retry whether or not the fabric opens another attempt, and
+ * for work a runner claimed it never does, so the row counts the attempts
+ * opened again and never the retries spent. */
+test("a run a runner lost once claims no relaunch, though it spent a retry", async () => {
+  const row = await workRowOf({ retriesSpent: 1, relaunches: 0 });
+  expect(row).toContain("Failed");
+  expect(row).not.toContain("Relaunched");
+});
+
+test("a run the fabric relaunched counts the attempts it opened again", async () => {
+  const row = await workRowOf({ retriesSpent: 3, relaunches: 2 });
+  expect(row).toContain("Relaunched 2× by fabric");
+});
+
 test("a superseded cycle says which cycle replaced its artifact", async () => {
   const { container } = await drawTicket({
     shapes: ticket21Parked,
@@ -945,6 +978,7 @@ const fanoutShapes: readonly ExecutionShape[] = [
     identity: evalIdentity(1, 1, 1, 1),
     outcome: "Passed",
     retriesSpent: 1,
+    relaunches: 1,
     totals: { turns: 10, durationMs: 120_000, costUsdMicros: 400_000 },
   },
   {
@@ -953,6 +987,7 @@ const fanoutShapes: readonly ExecutionShape[] = [
     identity: evalIdentity(1, 1, 1, 2),
     outcome: "Passed",
     retriesSpent: 2,
+    relaunches: 2,
     totals: { turns: 20, durationMs: 300_000, costUsdMicros: 600_000 },
   },
   {

@@ -1166,6 +1166,31 @@ test("run evidence is written through its boundary and read by the API alone", a
   );
 });
 
+/**
+ * The API reads which artifacts an attempt's worker uploaded, which is how a
+ * run's own error text is found, and writes none: a reservation is the worker
+ * plane's, made through its boundary alone.
+ */
+test("the API reads a worker's artifact reservations and writes none", async () => {
+  assert.equal(
+    await harness.attemptAs(
+      apiRole,
+      "SELECT tenant,project,execution,attempt,path,digest,bytes FROM worker_artifact_reservation",
+    ),
+    undefined,
+  );
+  for (const write of [
+    "DELETE FROM worker_artifact_reservation",
+    "UPDATE worker_artifact_reservation SET bytes=0",
+    "INSERT INTO worker_artifact_reservation(path) VALUES('path')",
+  ])
+    assert.match(
+      (await harness.attemptAs(apiRole, write)) ?? "",
+      postgresHarnessDenial("worker_artifact_reservation"),
+      write,
+    );
+});
+
 test("the binding every evidence function opens with is nobody's to call", async () => {
   for (const role of [
     apiRole,

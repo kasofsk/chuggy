@@ -286,3 +286,60 @@ test("a run from a worker that wrote no evidence says so", async () => {
   ).toContain("—");
   expect(transcriptReads(rendered.reads)).toEqual([]);
 });
+
+/** What a runner uploads for the container it saw killed, as the worker core
+ * writes it. */
+const killed =
+  "Worker exited before reporting: its container exited with status 137";
+
+/** A run lost before it reported, its worker's text served where it left any. */
+function lostRun(content: string | undefined): RunPageServed {
+  const summary = runSummary({ outcome: "ProcessFailed" });
+  const left = content === undefined ? {} : { error: { bytes: 70 } };
+  return {
+    ticket,
+    executions: [summary],
+    execution: {
+      ...summary,
+      attempts: [
+        runAttempt("a1", {
+          state: "Lost",
+          evidence: "RunFailed",
+          run: undefined,
+          ...left,
+        }),
+      ],
+    },
+    transcripts: [],
+    ...(content === undefined
+      ? {}
+      : { error: { read: "Content", content: `${content}\n` } }),
+  };
+}
+
+function errorReads(reads: readonly string[]): readonly string[] {
+  return reads.filter((url) => url.endsWith("/error"));
+}
+
+test("a run whose worker said why it ended shows the reason on its row", async () => {
+  const rendered = await runPageDrawn(atlas, lostRun(killed));
+  const reason = rendered.container.querySelector(".ledger-row .ledger-reason");
+  expect(reason?.textContent).toBe(killed);
+  expect(reason?.getAttribute("title")).toBe(killed);
+  expect(errorReads(rendered.reads)).toHaveLength(1);
+});
+
+test("a run whose worker left no reason shows none, and asks for none", async () => {
+  const rendered = await runPageDrawn(atlas, lostRun(undefined));
+  expect(rendered.container.querySelector(".ledger-reason")).toBeNull();
+  expect(errorReads(rendered.reads)).toEqual([]);
+});
+
+/** The text is the worker's, so a reason is drawn as what it says. */
+test("a reason that reads as markup is drawn as text", async () => {
+  const written = '<img src="x" onerror="alert(1)"><b>killed</b>';
+  const rendered = await runPageDrawn(atlas, lostRun(written));
+  const reason = rendered.container.querySelector(".ledger-reason");
+  expect(reason?.textContent).toBe(written);
+  expect(reason?.querySelector("img, b")).toBeNull();
+});

@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { nativeHttpPageItemsMax } from "../../src/contract/http.ts";
+import {
+  nativeHttpPageItemsMax,
+  workerErrorPath,
+} from "../../src/contract/http.ts";
 
 import {
   asPrincipal,
@@ -60,7 +63,10 @@ import {
   asAttemptId,
   asExecutionId,
 } from "../../src/interpreter/schedulerIdentity.ts";
-import { asArtifactDigest } from "../../src/interpreter/resultManifest.ts";
+import {
+  asArtifactDigest,
+  asArtifactPath,
+} from "../../src/interpreter/resultManifest.ts";
 import {
   runTranscriptBatchPath,
   type RunEvidenceContentPort,
@@ -264,6 +270,7 @@ function transcriptBoundary(draws: readonly TranscriptDraw[]) {
     transcript: () =>
       Promise.resolve({ objects, observedAt: recordedAt, complete: true }),
     configuration: () => Promise.resolve(undefined),
+    error: () => Promise.resolve(undefined),
   };
   const contents: RunEvidenceContentPort = {
     readEvidence: (object) => {
@@ -691,11 +698,53 @@ test("every run evidence read authorizes before it reaches a store", async () =>
       web.runTranscript(principal, partition, execution, attempt, 0),
     (web: NativeWeb) =>
       web.runConfiguration(principal, partition, execution, attempt),
+    (web: NativeWeb) => web.runError(principal, partition, execution, attempt),
   ]) {
     const denied = boundary(false);
     await read(denied.web);
     assert.deepEqual(denied.calls, ["authorize:Read"]);
   }
+});
+
+test("an attempt's error text is the bytes its worker uploaded, and none where it left none", async () => {
+  const execution = asExecutionId("execution");
+  const attempt = asAttemptId("attempt");
+  const object = {
+    partition,
+    execution,
+    attempt,
+    path: asArtifactPath(workerErrorPath),
+    digest: asArtifactDigest("a".repeat(64)),
+    bytes: 7,
+  };
+  const drawn: string[] = [];
+  const read = (left: boolean) =>
+    boundary(
+      true,
+      openExecutionBacklogGuard,
+      undefined,
+      undefined,
+      {
+        turns: () => Promise.resolve(undefined),
+        transcript: () => Promise.resolve(undefined),
+        configuration: () => Promise.resolve(undefined),
+        error: (_partition, named, numbered) =>
+          Promise.resolve(
+            left && named === execution && numbered === attempt
+              ? object
+              : undefined,
+          ),
+      },
+      {
+        readEvidence: (held) => {
+          drawn.push(held.path);
+          return Promise.resolve({ read: "Content", content: "killed\n" });
+        },
+      },
+    ).web.runError(principal, partition, execution, attempt);
+  assert.deepEqual(await read(true), { read: "Content", content: "killed\n" });
+  assert.deepEqual(await read(false), { read: "NotFound" });
+  assert.deepEqual(drawn, [workerErrorPath]);
 });
 
 test("an authorized run evidence read without a store composed is a fault", async () => {

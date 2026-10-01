@@ -307,6 +307,12 @@ export interface RunEvidenceReadStore {
     execution: ExecutionId,
     attempt: AttemptId,
   ): Promise<RunConfigurationStored | undefined>;
+  /** The text the attempt's worker left saying why it ended, where it left any. */
+  error(
+    partition: Partition,
+    execution: ExecutionId,
+    attempt: AttemptId,
+  ): Promise<RunEvidenceObject | undefined>;
 }
 
 /** The rows one transcript page is assembled from, before their bytes are drawn. */

@@ -133,6 +133,7 @@ function servedWeb(
     runTurns: () => Promise.resolve(undefined),
     runTranscript: () => Promise.resolve({ read: "NotFound" }),
     runConfiguration: () => Promise.resolve({ read: "NotFound" }),
+    runError: () => Promise.resolve({ read: "NotFound" }),
   };
 }
 
