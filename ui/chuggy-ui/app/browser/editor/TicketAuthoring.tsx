@@ -12,7 +12,7 @@
  * the editor. Where the chunk cannot load, the form is still here.
  */
 
-import { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useId, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 
 import type {
@@ -62,6 +62,8 @@ export interface TicketAuthoringProps {
   readonly fields: ReactNode;
   readonly storeKey: string;
   readonly submitLabel: string;
+  /** What submitting does beyond what its label says, drawn beside it. */
+  readonly submitEffect?: string | undefined;
   readonly busy: boolean;
   readonly onSubmit: (form: TicketCreationForm) => void;
   readonly onDirty?: ((dirty: boolean) => void) | undefined;
@@ -108,6 +110,33 @@ function ModeSwitch(props: {
           fix the YAML to switch back to the form
         </span>
       ) : null}
+    </div>
+  );
+}
+
+/** The form's submit, and the line saying what it does as its description. */
+function FormSubmit(props: {
+  readonly label: string;
+  readonly effect: string | undefined;
+  readonly busy: boolean;
+  readonly onSubmit: () => void;
+}): ReactNode {
+  const effect = useId();
+  return (
+    <div className="flex flex-wrap items-center gap-3">
+      <Button
+        variant="primary"
+        disabled={props.busy}
+        {...(props.effect === undefined ? {} : { describedBy: effect })}
+        onClick={props.onSubmit}
+      >
+        {props.label}
+      </Button>
+      {props.effect === undefined ? null : (
+        <span id={effect} className="text-ink-3 text-sm">
+          {props.effect}
+        </span>
+      )}
     </div>
   );
 }
@@ -159,21 +188,21 @@ export function TicketAuthoring(props: TicketAuthoringProps): ReactNode {
           faultsOf={faultsOf}
           storeKey={storeKey}
           submitLabel={props.submitLabel}
+          submitEffect={props.submitEffect}
           busy={props.busy}
           onSubmit={props.onSubmit}
         />
       ) : (
         <>
           {props.fields}
-          <Button
-            variant="primary"
-            disabled={props.busy}
-            onClick={() => {
+          <FormSubmit
+            label={props.submitLabel}
+            effect={props.submitEffect}
+            busy={props.busy}
+            onSubmit={() => {
               props.onSubmit(props.form);
             }}
-          >
-            {props.submitLabel}
-          </Button>
+          />
         </>
       )}
     </>

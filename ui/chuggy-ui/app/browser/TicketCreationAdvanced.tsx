@@ -67,10 +67,10 @@ function Dependencies(
 ): ReactNode {
   const { form, onChange } = props;
   if (props.candidates.length === 0)
-    return <p className="panel-note">no ticket here can be depended on yet</p>;
+    return <p className="panel-note">No tickets to depend on</p>;
   return (
     <fieldset className="creation-set">
-      <legend>dependencies</legend>
+      <legend>Dependencies</legend>
       {props.candidates.map((candidate) => (
         <label key={candidate} className="creation-check">
           <input
@@ -85,13 +85,11 @@ function Dependencies(
               });
             }}
           />
-          <span>ticket {candidate}</span>
+          <span>Ticket {candidate}</span>
         </label>
       ))}
       {props.truncated ? (
-        <p className="panel-note">
-          this project has more tickets than the API offers as candidates
-        </p>
+        <p className="panel-note">Not every ticket is listed</p>
       ) : null}
     </fieldset>
   );
@@ -126,14 +124,14 @@ function Program(
   const offered = evaluatorCountsOffered(evaluatorsMax);
   return (
     <fieldset className="creation-set">
-      <legend>evaluation program</legend>
+      <legend>Evaluators per stage</legend>
       {form.program.map((stage, index) => (
         <div
           key={`${String(index)}-${creationStageLabel(stage)}`}
           className="creation-stage"
         >
           <ChoiceRow
-            label={`stage ${index + 1}`}
+            label={`Stage ${index + 1}`}
             offered={offered}
             chosen={stage.evaluators.length}
             render={(count) => String(count)}
@@ -159,7 +157,7 @@ function Program(
               });
             }}
           >
-            remove
+            Remove
           </Button>
         </div>
       ))}
@@ -170,7 +168,7 @@ function Program(
           onChange({ ...form, program: stageAdded(form, evaluatorsMax) });
         }}
       >
-        add stage
+        Add stage
       </Button>
     </fieldset>
   );

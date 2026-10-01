@@ -14,7 +14,7 @@
 
 import { useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
 import {
@@ -36,13 +36,14 @@ import { landingEffect, landingLabel } from "../core/codeLabels.ts";
 import { repositoryLabel } from "../core/projectRepositories.ts";
 import {
   creationBodyFrom,
-  creationBranchHint,
-  creationConfigurationSentence,
+  creationBootstrapLine,
+  creationBranchFieldHint,
+  creationConfigurationLabel,
   creationFormFrom,
   creationRepositories,
   creationRepositoryChosen,
   creationStepSentence,
-  creationTargetBranchHint,
+  creationTargetBranchFieldHint,
 } from "../core/ticketCreation.ts";
 import type {
   CreationFault,
@@ -73,6 +74,7 @@ import { TopBarSlot } from "./shell/slots.tsx";
 import { TicketCreationAdvanced } from "./TicketCreationAdvanced.tsx";
 import { Button } from "./ui/Button.tsx";
 import { EmptyState } from "./ui/EmptyState.tsx";
+import { Notice } from "./ui/Notice.tsx";
 import { Picker } from "./ui/Picker.tsx";
 import { RadioGroup } from "./ui/RadioGroup.tsx";
 import { Tooltip } from "./ui/Tooltip.tsx";
@@ -107,7 +109,7 @@ function Title(props: FormEdit): ReactNode {
   const { form, onChange } = props;
   return (
     <label className="creation-row">
-      <span>title</span>
+      <span>Title</span>
       <input
         type="text"
         value={form.title}
@@ -124,7 +126,7 @@ function Intent(props: FormEdit): ReactNode {
   const { form, onChange } = props;
   return (
     <label className="creation-row creation-intent">
-      <span>intent</span>
+      <span>Intent</span>
       <textarea
         rows={8}
         value={form.intent}
@@ -141,11 +143,12 @@ function Links(props: FormEdit): ReactNode {
   const { form, onChange } = props;
   return (
     <fieldset className="creation-set">
-      <legend>links</legend>
+      <legend>Links</legend>
       {form.links.map((link, index) => (
         <div key={index} className="creation-row">
           <input
             type="url"
+            aria-label={`Link ${String(index + 1)}`}
             value={link}
             placeholder="https://"
             onChange={(event) => {
@@ -166,7 +169,7 @@ function Links(props: FormEdit): ReactNode {
               });
             }}
           >
-            remove
+            Remove
           </Button>
         </div>
       ))}
@@ -177,7 +180,7 @@ function Links(props: FormEdit): ReactNode {
           onChange({ ...form, links: [...form.links, ""] });
         }}
       >
-        add link
+        Add link
       </Button>
     </fieldset>
   );
@@ -188,11 +191,12 @@ function Checks(props: FormEdit): ReactNode {
   const { form, onChange } = props;
   return (
     <fieldset className="creation-set">
-      <legend>checks</legend>
+      <legend>Checks</legend>
       {form.checks.map((check, index) => (
         <div key={index} className="creation-row">
           <input
             type="text"
+            aria-label={`Check ${String(index + 1)}`}
             value={check}
             placeholder="a command line"
             onChange={(event) => {
@@ -213,7 +217,7 @@ function Checks(props: FormEdit): ReactNode {
               });
             }}
           >
-            remove
+            Remove
           </Button>
         </div>
       ))}
@@ -224,49 +228,71 @@ function Checks(props: FormEdit): ReactNode {
           onChange({ ...form, checks: [...form.checks, ""] });
         }}
       >
-        add check
+        Add check
       </Button>
     </fieldset>
+  );
+}
+
+/** A branch box, its hint the box's description rather than part of its name. */
+function BranchRow(props: {
+  readonly label: string;
+  readonly hint: string;
+  readonly value: string;
+  readonly placeholder: string;
+  readonly onChange: (value: string) => void;
+}): ReactNode {
+  const box = useId();
+  const hint = useId();
+  return (
+    <div className="creation-row">
+      <label htmlFor={box} className="text-ink-3">
+        {props.label}
+      </label>
+      <input
+        id={box}
+        type="text"
+        value={props.value}
+        placeholder={props.placeholder}
+        aria-describedby={hint}
+        onChange={(event) => {
+          props.onChange(event.target.value);
+        }}
+      />
+      <span id={hint} className="col-start-2 -col-end-1 text-ink-3 text-xs">
+        {props.hint}
+      </span>
+    </div>
   );
 }
 
 function Branch(props: FormEdit): ReactNode {
   const { form, onChange } = props;
   return (
-    <label className="creation-row">
-      <span>branch</span>
-      <input
-        type="text"
-        value={form.branchName}
-        placeholder="the branch name"
-        onChange={(event) => {
-          onChange({ ...form, branchName: event.target.value });
-        }}
-      />
-      <span className="col-start-2 -col-end-1 text-ink-3 text-xs">
-        {creationBranchHint}
-      </span>
-    </label>
+    <BranchRow
+      label="Branch"
+      hint={creationBranchFieldHint}
+      value={form.branchName}
+      placeholder="the branch name"
+      onChange={(branchName) => {
+        onChange({ ...form, branchName });
+      }}
+    />
   );
 }
 
 function TargetBranch(props: FormEdit): ReactNode {
   const { form, onChange } = props;
   return (
-    <label className="creation-row">
-      <span>target branch</span>
-      <input
-        type="text"
-        value={form.targetBranchName}
-        placeholder="the branch to land on"
-        onChange={(event) => {
-          onChange({ ...form, targetBranchName: event.target.value });
-        }}
-      />
-      <span className="col-start-2 -col-end-1 text-ink-3 text-xs">
-        {creationTargetBranchHint(form.landingMode)}
-      </span>
-    </label>
+    <BranchRow
+      label="Target branch"
+      hint={creationTargetBranchFieldHint(form.landingMode)}
+      value={form.targetBranchName}
+      placeholder="the branch to land on"
+      onChange={(targetBranchName) => {
+        onChange({ ...form, targetBranchName });
+      }}
+    />
   );
 }
 
@@ -281,11 +307,11 @@ function Repository(
   if (repositories.length === 0) return null;
   return (
     <div className="creation-row">
-      <span>repository</span>
+      <span>Repository</span>
       <Picker
-        label="repository"
+        label="Repository"
         value={form.repository}
-        placeholder="choose"
+        placeholder="Choose"
         options={repositories.map((binding) => ({
           value: binding.repository,
           text: repositoryLabel(binding.repository),
@@ -309,9 +335,9 @@ function Landing(props: FormEdit): ReactNode {
   const { form, onChange } = props;
   return (
     <div className="creation-row">
-      <span>landing</span>
+      <span>Landing</span>
       <RadioGroup
-        label="landing"
+        label="Landing"
         value={form.landingMode}
         options={landingOptions}
         onChoose={(value) => {
@@ -384,14 +410,14 @@ function LockedDependencies(props: {
 }): ReactNode {
   return (
     <div className="creation-row">
-      <span>dependencies</span>
+      <span>Dependencies</span>
       <p>
         {props.dependencies.length === 0
-          ? "none"
+          ? "None"
           : props.dependencies.map((held) => `#${String(held)}`).join(", ")}
       </p>
       <span className="col-start-2 -col-end-1 text-ink-3 text-xs">
-        fixed once the ticket was released
+        Fixed once released
       </span>
     </div>
   );
@@ -407,12 +433,16 @@ export function CreationFields(
   },
 ): ReactNode {
   const { faults, form, initialization, onChange } = props;
-  const shaping = creationConfigurationSentence(props.configuration);
+  const shaping = creationConfigurationLabel(props.configuration);
+  const bootstrap = creationBootstrapLine(props.configuration);
   return (
     <>
       <Tooltip text={shaping.title}>
         <p className="text-ink-3">{shaping.text}</p>
       </Tooltip>
+      {bootstrap === undefined ? null : (
+        <Notice tone="info" detail={bootstrap} />
+      )}
       <Title form={form} onChange={onChange} />
       <Fault field="title" faults={faults} />
       <Intent form={form} onChange={onChange} />
@@ -598,7 +628,8 @@ export function CreationForm(props: {
           creationBodyFrom(initialization, held, repositories)
         }
         storeKey={storeKey}
-        submitLabel="create and release"
+        submitLabel="Create ticket"
+        submitEffect="Releases the ticket to run"
         busy={running.attempt.attempt === "Running"}
         onSubmit={(held) => {
           void running.submit(held);

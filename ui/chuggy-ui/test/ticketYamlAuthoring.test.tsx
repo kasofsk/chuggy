@@ -163,23 +163,22 @@ test("the submit asks first, and refuses while a problem stands", async () => {
   const created: number[] = [];
   draw(held.ports, created);
   const editor = await toYaml();
-  fireEvent.click(screen.getByRole("button", { name: "create and release" }));
+  fireEvent.click(screen.getByRole("button", { name: "Create ticket" }));
   const asked = await screen.findByRole("dialog");
   expect(asked.textContent).toMatch(/One problem must be fixed/u);
   const confirm = within(asked).getByRole("button", {
-    name: "create and release",
+    name: "Create ticket",
+    description: "Releases the ticket to run",
   });
   expect(confirm.hasAttribute("disabled")).toBe(true);
   fireEvent.click(within(asked).getByRole("button", { name: "Close" }));
 
   type(editor, editor.value.replace('intent: ""', "intent: ship it"));
-  fireEvent.click(screen.getByRole("button", { name: "create and release" }));
+  fireEvent.click(screen.getByRole("button", { name: "Create ticket" }));
   const again = await screen.findByRole("dialog");
   expect(again.textContent).toContain("intent: ship it");
   expect(again.textContent).toMatch(/Nothing is wrong/u);
-  fireEvent.click(
-    within(again).getByRole("button", { name: "create and release" }),
-  );
+  fireEvent.click(within(again).getByRole("button", { name: "Create ticket" }));
   await waitFor(() => {
     expect(created).toStrictEqual([creationDraft.ticket]);
   });
