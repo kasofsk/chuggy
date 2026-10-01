@@ -1,9 +1,10 @@
 /**
- * The ticket form under the narrow width, as far as a suite with no layout can
- * follow it: the form's own sheet, read rule by rule and matched against what
- * the form draws. What it holds is that every row, field and hint the form
- * draws is under a rule that lets it be as narrow as its pane; whether the
- * form then fits is a browser's to say, and no suite here runs one.
+ * The ticket form's sheet, as far as a suite with no layout can follow it:
+ * read rule by rule and matched against what the form draws. What it holds is
+ * that under the narrow width every row, field and hint the form draws can be
+ * as narrow as its pane, and that at either width a link or a check is its box
+ * and its Remove alone; whether the form then fits is a browser's to say, and
+ * no suite here runs one.
  */
 
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
