@@ -4,6 +4,19 @@
   "configuration": {
     "version": 1,
     "image": "worker:v1",
+    "worker": {
+      "mode": {
+        "type": "SingleAgent",
+        "agent": "Claude",
+        "arguments": [
+          "--allowedTools=Bash,Edit,Read,Write,Glob,Grep"
+        ]
+      },
+      "setup": [
+        "npm ci"
+      ],
+      "files": []
+    },
     "brief": {
       "motivation": [
         "Implement the ticket's requested repository change."

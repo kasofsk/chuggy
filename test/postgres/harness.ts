@@ -169,7 +169,7 @@ export function postgresHarnessBriefIn(repository: RepositoryId): DraftBrief {
 
 /** The smallest authored configuration a release may pin. */
 export const postgresHarnessConfiguration = asCanonicalConfiguration(
-  '{"brief":{"acceptanceCriteria":["The ticket is complete."],"constraints":[],"motivation":["The ticket should be completed."]},"image":"worker:v1","practices":[],"review":{"instructions":[]},"version":1,"work":{"instructions":[]}}',
+  '{"brief":{"acceptanceCriteria":["The ticket is complete."],"constraints":[],"motivation":["The ticket should be completed."]},"image":"worker:v1","practices":[],"review":{"instructions":[]},"version":1,"work":{"instructions":[]},"worker":{"files":[],"mode":{"agent":"Claude","arguments":[],"type":"SingleAgent"},"setup":[]}}',
 );
 
 /** The environment variable `.chug/tasks/check-postgres.sh` sets, named once. */

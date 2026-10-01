@@ -27,6 +27,7 @@ import type { CanonicalConfiguration } from "./canonicalConfiguration.ts";
 import type { DraftBrief, ReleaseBrief } from "./ticketBrief.ts";
 import {
   authoredTaskConfigurationReadiness,
+  briefsAnyAgent,
   firstCommandedCheckStage,
   type AuthoredTaskConfiguration,
   type TaskConfigurationFault,
@@ -56,6 +57,7 @@ export type ReleaseConfiguration = Readonly<Record<string, unknown>> & {
  */
 export type ReleaseConfigurationFault =
   | "ReleaseShapeInvalid"
+  | "WorkerUndeclared"
   | "BriefChecksUncommanded"
   | "BriefNamesNoRepository"
   | "ConfigurationFromAnotherRepository"
@@ -137,6 +139,11 @@ export function releaseConfigurationReadiness(
     return { readiness: "Incomplete", fault: "ReleaseShapeInvalid" };
   }
   if (authored.readiness === "Incomplete") return authored;
+  if (
+    authored.configuration.worker === undefined &&
+    briefsAnyAgent(authored.configuration)
+  )
+    return { readiness: "Incomplete", fault: "WorkerUndeclared" };
   if (
     brief !== undefined &&
     brief.checks.length > 0 &&

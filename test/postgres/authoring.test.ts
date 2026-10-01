@@ -208,6 +208,11 @@ function repositoryDeclarations(
           },
           work: { instructions: [] },
           review: { instructions: [] },
+          worker: {
+            mode: { type: "SingleAgent", agent: "Claude", arguments: [] },
+            setup: [],
+            files: [],
+          },
         },
       }),
     })),

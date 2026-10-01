@@ -292,7 +292,7 @@ function transcriptBoundary(draws: readonly TranscriptDraw[]) {
 }
 
 const readyConfiguration = asCanonicalConfiguration(
-  '{"brief":{"acceptanceCriteria":["works"],"constraints":[],"motivation":["needed"]},"image":"worker:v1","practices":[],"review":{"instructions":[]},"version":1,"work":{"instructions":[]}}',
+  '{"brief":{"acceptanceCriteria":["works"],"constraints":[],"motivation":["needed"]},"image":"worker:v1","practices":[],"review":{"instructions":[]},"version":1,"work":{"instructions":[]},"worker":{"files":[],"mode":{"agent":"Claude","arguments":[],"type":"SingleAgent"},"setup":[]}}',
 );
 
 test("draft initialization authorizes before reading and returns bounded policy", async () => {
@@ -413,6 +413,15 @@ function repositoryImportPorts(
                   },
                   work: { instructions: [] },
                   review: { instructions: [] },
+                  worker: {
+                    mode: {
+                      type: "SingleAgent",
+                      agent: "Claude",
+                      arguments: [],
+                    },
+                    setup: [],
+                    files: [],
+                  },
                 },
               }),
             },

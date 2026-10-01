@@ -16,6 +16,9 @@
  * rendered briefing and never a configuration document, so without the shape
  * the one thing it must write is a guess the import refuses after it lands.
  *
+ * ITS STAGES RUN AS THE AGENT IT TELLS ITS WORKER TO DECLARE, so the
+ * configuration a bootstrap ticket hands over runs on the worker it ran on.
+ *
  * EVERY BRIEFING LINE IS BOUNDED BY WHAT IS PUT INTO IT. A repository identity
  * and a reference name are bounded where each is branded, the image by
  * `bootstrapImageFault` where a deployment names it, and the rest of every
@@ -79,6 +82,13 @@ export function bootstrapImageFault(
   return taskConfigurationLineFault(bootstrapImageLine(image));
 }
 
+/** The agent every briefed stage runs as. */
+const bootstrapWorkerMode = {
+  type: "SingleAgent",
+  agent: "Claude",
+  arguments: ["--allowedTools=Bash,Edit,Read,Write,Glob,Grep"],
+} as const;
+
 /**
  * The shape of a declaration, in the letters `N`, `C`, `I`, `S`, `E` and `L`
  * stand for, and the bounds its import refuses past.
@@ -86,10 +96,10 @@ export function bootstrapImageFault(
 function bootstrapFormatInstructions(image: string): readonly string[] {
   return [
     `Each file there is one JSON object and nothing more: {"version":1,"name":N,"configuration":C}, N a name no other file there uses, of letters and digits with ".", "_" or "-" only between them; every object here takes exactly the keys shown and no others.`,
-    `C is {"version":1,"image":I,"brief":{"motivation":S,"acceptanceCriteria":S,"constraints":S},"practices":[],"work":{"instructions":S},"review":{"instructions":S},"evaluations":[E]}, each S a list of at most ${String(briefingLinesMax)} sentences and motivation or acceptanceCriteria not empty.`,
+    `C is {"version":1,"image":I,"worker":{"mode":${JSON.stringify(bootstrapWorkerMode)},"setup":[L],"files":[]},"brief":{"motivation":S,"acceptanceCriteria":S,"constraints":S},"practices":[],"work":{"instructions":S},"review":{"instructions":S},"evaluations":[E]}, each S a list of at most ${String(briefingLinesMax)} sentences and motivation or acceptanceCriteria not empty.`,
     `Each E is a stage every change is held to: {"purpose":"Check","checks":[L]} runs from 1 to ${String(commandLinesMax)} shell lines L at the repository root and fails the change on a nonzero exit; {"purpose":"Review","practices":[],"instructions":S} briefs a reviewer.`,
     `Each sentence and each line L is one line of 1 to ${String(briefingLineCharsMax)} characters, with no tab or line break in it.`,
-    "Command the checks the repository already runs.",
+    "Command the checks the repository already runs, and put in setup the lines L, if any, that install what they need, such as npm ci or uv sync; setup runs at the repository root before every stage.",
     bootstrapImageLine(image),
   ];
 }
@@ -106,6 +116,7 @@ function bootstrapConfigurationValue(
   return {
     version: 1,
     image: input.image,
+    worker: { mode: bootstrapWorkerMode, setup: [], files: [] },
     brief: {
       motivation: [`Bring ${input.repository} under chuggy.`],
       acceptanceCriteria: [
