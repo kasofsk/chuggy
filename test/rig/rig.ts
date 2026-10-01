@@ -345,12 +345,12 @@ export async function createTicket(
     .getByPlaceholder("what this ticket is for")
     .fill(`${acceptanceIntentPrefix}, ${intent}`, { timeout: frameTimeoutMs });
   if (dependsOn !== undefined) {
-    await page.getByText("advanced", { exact: true }).click();
+    await page.getByText("Advanced", { exact: true }).click();
     await page
-      .getByLabel(`ticket ${String(dependsOn)}`, { exact: true })
+      .getByLabel(`Ticket ${String(dependsOn)}`, { exact: true })
       .check();
   }
-  await page.getByRole("button", { name: "create and release" }).click();
+  await page.getByRole("button", { name: "Create ticket" }).click();
   await page.waitForURL(ticketPathPattern, { timeout: mutationTimeoutMs });
   const found = ticketPathPattern.exec(new URL(page.url()).pathname);
   const ticket = found?.[1];
