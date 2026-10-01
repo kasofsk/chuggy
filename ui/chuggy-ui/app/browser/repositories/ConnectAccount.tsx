@@ -1,6 +1,6 @@
 /**
- * Connecting a forge account: the two apps this deployment holds a key for,
- * each drawn as the address it is installed from.
+ * Installing this deployment's apps: the two it holds a key for, each drawn as
+ * the address it is installed from.
  *
  * The state is minted once per opened dialog and written to the transaction
  * store as the link is followed, so what comes back to the setup landing
@@ -32,9 +32,11 @@ export const forgeAppsResource = "forge-apps";
  * under the reader between drawing it and following it. */
 type ForgeInstallStates = Readonly<Record<ForgeAppName, string>>;
 
-function ConnectAppLinks(props: {
+/** The install links, for every app or for the ones named. */
+export function InstallLinks(props: {
   readonly partition: PartitionIdentity;
   readonly returnPath: string;
+  readonly only?: readonly ForgeAppName[];
 }): ReactNode {
   const partition = props.partition;
   const state = usePanelResource(
@@ -51,24 +53,26 @@ function ConnectAppLinks(props: {
     <>
       <PanelUnready state={state} />
       {state.state === "Ready"
-        ? state.value.apps.map((app) => (
-            <a
-              key={app.app}
-              href={forgeInstallUrl(app.installUrl, states[app.app])}
-              className={buttonLookClassName({ size: "sm" })}
-              onClick={() => {
-                forgeInstallBegin(transientStore, {
-                  state: states[app.app],
-                  app: app.app,
-                  tenant: partition.tenant,
-                  project: partition.project,
-                  returnPath: props.returnPath,
-                });
-              }}
-            >
-              {forgeAppLabel(app.app)}
-            </a>
-          ))
+        ? state.value.apps
+            .filter((app) => props.only?.includes(app.app) ?? true)
+            .map((app) => (
+              <a
+                key={app.app}
+                href={forgeInstallUrl(app.installUrl, states[app.app])}
+                className={buttonLookClassName({ size: "sm" })}
+                onClick={() => {
+                  forgeInstallBegin(transientStore, {
+                    state: states[app.app],
+                    app: app.app,
+                    tenant: partition.tenant,
+                    project: partition.project,
+                    returnPath: props.returnPath,
+                  });
+                }}
+              >
+                {forgeAppLabel(app.app)}
+              </a>
+            ))
         : null}
     </>
   );
@@ -81,15 +85,12 @@ export function ConnectAccount(props: {
   const [open, setOpen] = useState(false);
   return (
     <Dialog
-      title="Connect"
-      trigger="Connect"
+      title="Install"
+      trigger="Install"
       open={open}
       onOpenChange={setOpen}
     >
-      <ConnectAppLinks
-        partition={props.partition}
-        returnPath={props.returnPath}
-      />
+      <InstallLinks partition={props.partition} returnPath={props.returnPath} />
     </Dialog>
   );
 }

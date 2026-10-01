@@ -1,6 +1,6 @@
 /**
- * What a forge tells the app about itself: the app's own identity, one
- * installation of it, and the repositories an installation grants.
+ * What a forge tells the app about itself: the app's own identity, its
+ * installation on one account, and the repositories an installation grants.
  *
  * IT IS READ AS THE APP AND NEVER AS A TENANT. Every question here is asked
  * under the app's own key, so nothing a caller sends selects whose credential
@@ -14,25 +14,31 @@
  * answered something this side cannot read has settled nothing and may be asked
  * again. Nothing falls open.
  *
- * AN UNKNOWN INSTALLATION IS NOT A REFUSAL. An installation identity a caller
- * supplies may simply not exist, and one that exists may belong to a different
- * app entirely; both are `Unknown`, because the claim they would be recorded
- * under is one this deployment could never mint through.
+ * AN ACCOUNT WITHOUT THE APP IS MISSING AND NOT REFUSED. An account may simply
+ * not have installed it, and an answer naming another app's installation is
+ * the same absence, because the claim it would be recorded under is one this
+ * deployment could never mint through.
  */
 
 import type {
   ForgeAccount,
+  ForgeAccountId,
   ForgeAccountKind,
   ForgeInstallation,
   ForgeInstallationId,
   ForgeRepositoryName,
 } from "./forgeInstallation.ts";
 
-/** The app as its forge describes it, and the address a tenant installs it from. */
+/**
+ * The app as its forge describes it: the address a tenant installs it from, and
+ * the client a person authorizes it as.
+ */
 export interface ForgeAppDescription {
   readonly id: string;
   readonly slug: string;
   readonly installUrl: string;
+  readonly clientId: string;
+  readonly authorizeUrl: string;
 }
 
 /** What describing the app came to, an outage being the only thing that is not one. */
@@ -51,20 +57,21 @@ export interface ForgeInstallationAccount {
   readonly accountKind: ForgeAccountKind;
 }
 
-/** What reading one installation came to. */
-export type ForgeInstallationRead =
+/** What reading this app's installation on one account came to, the account's own number beside it. */
+export type ForgeAccountInstallationRead =
   | {
       readonly read: "Installation";
-      readonly installation: ForgeInstallationAccount;
+      readonly installationId: ForgeInstallationId;
+      readonly accountId: ForgeAccountId;
     }
-  | { readonly read: "Unknown" }
+  | { readonly read: "Missing" }
   | { readonly read: "Unavailable" };
 
-/** Reads one installation of this app by the identity the forge gave it. */
+/** Reads this app's installation on one account. */
 export interface ForgeInstallationDirectory {
-  installation(
-    installationId: ForgeInstallationId,
-  ): Promise<ForgeInstallationRead>;
+  accountInstallation(
+    account: ForgeInstallationAccount,
+  ): Promise<ForgeAccountInstallationRead>;
 }
 
 /** One repository an installation grants, in the terms a reader chooses between them by. */

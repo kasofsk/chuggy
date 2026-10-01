@@ -1,5 +1,5 @@
 /**
- * Connecting a forge account: the one-time state this console mints before it
+ * Installing a forge app: the one-time state this console mints before it
  * sends somebody to the forge, and what a tenant's claims say about each
  * account they came back with.
  *
@@ -13,12 +13,8 @@ import type {
   ForgeAccountKindName,
   ForgeAppName,
 } from "../../../../src/contract/rosters.ts";
-import type {
-  ForgeInstallationClaimedResponse,
-  ForgeInstallationResponse,
-} from "../../../../src/contract/responses.ts";
+import type { ForgeInstallationResponse } from "../../../../src/contract/responses.ts";
 
-import type { ApiResult } from "./apiRequest.ts";
 import { base64urlFromBytes } from "./base64url.ts";
 import type { KeyValuePort } from "./sessionHolder.ts";
 
@@ -165,52 +161,4 @@ export function forgePortalInstallations(
   installations: readonly ForgeInstallationResponse[],
 ): readonly ForgeInstallationResponse[] {
   return installations.filter((claim) => claim.app === "portal");
-}
-
-/** What a claim came to, as the one word the landing and the page draw. */
-export type ForgeClaimOutcome =
-  | {
-      readonly outcome: "Claimed";
-      readonly installation: ForgeInstallationClaimedResponse;
-    }
-  | { readonly outcome: "Refused"; readonly status: string };
-
-/**
- * The refusals this route answers, in the console's own words.
- *
- * `ForgeNotConfigured` and `InstallationUnknown` are both `404` and
- * `src/contract/outcomes.ts` folds every `404` into `Absent` without its code,
- * so the console cannot tell them apart and says the one thing that is true of
- * both: the installation is not one this deployment knows — a `404` read for
- * its code is the follow-up that would separate them, and is not this step's.
- */
-export function forgeClaimOutcome(
-  result: ApiResult<ForgeInstallationClaimedResponse>,
-): ForgeClaimOutcome {
-  switch (result.outcome) {
-    case "Ok":
-      return { outcome: "Claimed", installation: result.value };
-    case "Conflict":
-      return {
-        outcome: "Refused",
-        status:
-          result.code === "InstallationClaimed"
-            ? "Claimed by another tenant"
-            : "Conflict",
-      };
-    case "Absent":
-      return { outcome: "Refused", status: "Unknown" };
-    case "Retryable":
-      return { outcome: "Refused", status: "Deferring" };
-    case "Unauthenticated":
-      return { outcome: "Refused", status: "Not signed in" };
-    case "Rejected":
-      return { outcome: "Refused", status: "Refused" };
-    case "Fault":
-      return { outcome: "Refused", status: "Failed" };
-    case "Unreachable":
-      return { outcome: "Refused", status: "Unreachable" };
-    case "Unreadable":
-      return { outcome: "Refused", status: "Unreadable" };
-  }
 }

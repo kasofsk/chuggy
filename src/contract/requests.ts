@@ -13,6 +13,9 @@ import {
   countSchema,
   digestSchema,
   dispatchViewSchemaVersion,
+  forgeAuthorizationTextCharsMax,
+  forgeAuthorizationVerifierCharsMax,
+  forgeAuthorizationVerifierCharsMin,
   inquiryQuestionCharsMax,
   leadDispatchesMax,
   selectorAllowlistNameCharsMax,
@@ -27,7 +30,6 @@ import { briefSchema } from "./brief.ts";
 import {
   briefFinalizationModes,
   forgeCredentialPermissions,
-  forgeApps,
   forgeIds,
   forgeRepositoryVisibilities,
   nativeActionResolutions,
@@ -111,15 +113,18 @@ export const forgeCredentialRequestSchema = z.strictObject({
 });
 
 /**
- * One claim: which forge, which of the apps a tenant installs, and which
- * installation of that app on it. The app is the caller's to name because a
- * tenant installs two and the installation identities are the forge's, so
- * nothing in an identity says which app it belongs to.
+ * What a person's authorization of the portal app came back with, and the proof
+ * key it was begun under. Nothing names an account or an installation: which
+ * accounts are claimed is what the forge answers the person, never the caller.
  */
-export const forgeInstallationClaimSchema = z.strictObject({
+export const forgeAuthorizationSchema = z.strictObject({
   forge: z.enum(forgeIds),
-  app: z.enum(forgeApps),
-  installationId: bodyIdentitySchema,
+  code: z.string().min(1).max(forgeAuthorizationTextCharsMax),
+  redirectUri: z.string().min(1).max(forgeAuthorizationTextCharsMax),
+  codeVerifier: z
+    .string()
+    .min(forgeAuthorizationVerifierCharsMin)
+    .max(forgeAuthorizationVerifierCharsMax),
 });
 
 /** The longest tenant or project name a principal may create. */

@@ -6,10 +6,10 @@ procedure for who may ask; this is the procedure for what the API asks with.
 
 Two Apps are installed on each account. The **portal** App is the API's, and it
 is the one every act here mints under; the **worker** App is the plane's, and the
-API holds its key to verify a worker claim and to enumerate what one grants —
-never for an act on a repository, which is the plane's own mint. Which tenant
-may mint under an account is a row in the rig's PostgreSQL, written by a route
-or by the command below and read by nothing else.
+API holds its key to find its installation on an account a person has proven
+and to enumerate what one grants — never for an act on a repository, which is
+the plane's own mint. Which tenants may mint under an account is a row per
+tenant in the rig's PostgreSQL, written by a route or by the command below.
 
 ## Mount the Apps' keys
 
@@ -119,33 +119,52 @@ API's environment.
 
 ## Claim an account over the API
 
-A tenant's administrator claims an installation through the API, which is the
-path a console drives and the one that needs no operator:
+A tenant's administrator claims an account by proving they control it: the
+console sends them to GitHub to authorize the portal App, and the API redeems
+what GitHub sends back.
 
 ```
-POST /api/v1/tenants/<tenant>/forge-installations
-{"forge": "github", "app": "portal", "installationId": "<that App's installation id>"}
+POST /api/v1/tenants/<tenant>/forge-authorizations
+{"forge": "github", "code": "<the code>", "redirectUri": "<the console's callback>", "codeVerifier": "<the PKCE verifier>"}
 ```
 
-Onboarding installs **two** Apps on the account, and the claim names which: the
-portal App the API, finalizer, ticket service and importer act as, and the
-worker App the plane mints under. Each has its own installation id on the same
-account, so a claim is made twice — once per App.
+It needs `administer` on the tenant. The API redeems the code with the portal
+App's client id and client secret, reads the person and the portal App's
+installations they reach, and claims an account only where GitHub says it is
+theirs: a personal account whose id is the person's, or an organization in
+which they are an active admin. The worker App's installation on a proven
+account is found as the worker App and claimed beside it, or reported
+`Missing` for the console to offer the install. The person's token is used for
+those reads and dropped; it is never stored, logged or answered. Each tenant
+holds its own claim, so two tenants' administrators who each prove the same
+account each claim it.
 
-It needs `administer` on the tenant, and the API verifies the installation with
-GitHub as the App it is claimed for before recording it — an installation of
-another App, or one that is not there, is refused. An App the API holds no key
-for is `ForgeNotConfigured`: the worker key is `CHUG_API_FORGE_WORKER_APP_ID`
-and `CHUG_API_FORGE_WORKER_APP_KEY_FILE`.
+The client secret is a file, and a deployment naming none, or naming a file that
+is absent or empty, answers `ForgeNotConfigured`:
+
+```
+CHUG_API_FORGE_APP_CLIENT_SECRET_FILE=/var/run/chuggy/forge-app-client/client-secret
+```
+
+Whether the file is there is decided at start; its contents are read, trimmed,
+for each authorization and not held. A file that is there and cannot be read,
+or one named without `CHUG_API_FORGE_APP_ID`, refuses the start. A secret
+GitHub refuses is answered `ForgeUnavailable`, and the API writes one line to
+its error stream saying the portal App's client id and secret were refused.
+
+**The portal App needs `Members: read` on organizations**, which is what lets it
+read a person's membership of one, and its callback URL must be the console's
+`/forge/github/callback` on the console's own host. Both are the operator's to
+set on the App's settings page.
 
 `GET /api/v1/forge/github` answers one row per App this deployment holds, each
-with the address to install it from, and
+with the address to install it from, and — where the client secret is mounted —
+the client id and the address to authorize at.
 `GET /api/v1/tenants/<tenant>/forge-installations/<id>/repositories` answers
 what one claimed installation grants, read as the App the claim names.
 
-A tenant administrator can claim any unclaimed installation of these Apps whose
-id they know. The first claim wins, and there is no route that undoes one: a
-wrong claim is the operator's to remove, as below.
+There is no route that undoes a claim: a wrong claim is the operator's to
+remove, as below.
 
 Binding a repository to a project proves it against the **portal** claim,
 because the API's own reads mint under the portal App. Whether the tenant also
@@ -180,16 +199,14 @@ authorize nothing.
 
 The command reports what it did:
 
-- `Recorded` — the account was unclaimed and now belongs to this tenant.
+- `Recorded` — this tenant held no claim on the account and now does.
 - `AlreadyRecorded` — the same claim already stands, so nothing changed.
-- `Reinstalled` — the App was removed and installed again, so the standing claim
-  now points at the new installation id.
-- `ClaimedElsewhere` — another tenant holds this account. The command exits
-  non-zero and changes nothing.
+- `Reinstalled` — the App was removed and installed again, so this tenant's
+  claim now points at the new installation id.
 
 ### Reversing it
 
-There is none. An account claimed by a tenant is never released and never
-changes hands: the trigger refuses a delete and refuses a change of tenant even
-from the owner. An account claimed by the wrong tenant is a row an operator
-removes with the migration that would let them.
+There is none. A tenant's claim is never released and never changes hands: the
+trigger refuses a delete and refuses a change of tenant even from the owner. A
+claim made by the wrong tenant is a row an operator removes with the migration
+that would let them.

@@ -36,6 +36,7 @@ declare const forgeIdBrand: unique symbol;
 declare const forgeAccountBrand: unique symbol;
 declare const forgeRepositoryNameBrand: unique symbol;
 declare const forgeInstallationIdBrand: unique symbol;
+declare const forgeAccountIdBrand: unique symbol;
 declare const forgeInstallationTokenBrand: unique symbol;
 
 /** The forge a row names, which is what selects the adapter that answers for it. */
@@ -53,6 +54,9 @@ export type ForgeRepositoryName = string & {
 export type ForgeInstallationId = string & {
   readonly [forgeInstallationIdBrand]: true;
 };
+
+/** The number a forge gave one account, which a rename of the account does not change. */
+export type ForgeAccountId = string & { readonly [forgeAccountIdBrand]: true };
 
 /** A minted credential, opaque and bounded as the rows that never hold it are. */
 export type ForgeInstallationToken = string & {
@@ -145,8 +149,8 @@ export const forgePermissionSets: Readonly<
 /** The segments a forge addresses an account or a repository by. */
 const forgeSegmentPattern = /^[A-Za-z0-9._-]+$/u;
 
-/** The digits a forge writes an installation identity as. */
-const forgeInstallationIdPattern = /^[1-9][0-9]*$/u;
+/** The digits a forge writes an installation or an account identity as. */
+const forgeNumberPattern = /^[1-9][0-9]*$/u;
 
 function forgeSegment(value: string, what: string): string {
   const bounded = asBoundedText(value, what, finalizerIdentityCharsMax);
@@ -172,13 +176,24 @@ export function asForgeRepositoryName(value: string): ForgeRepositoryName {
 
 /** Brands an installation identity, which a forge writes as a positive integer. */
 export function asForgeInstallationId(value: string): ForgeInstallationId {
-  if (!forgeInstallationIdPattern.test(value))
+  if (!forgeNumberPattern.test(value))
     throw new RangeError("forge installation is not a positive integer");
   return asBoundedText(
     value,
     "forge installation",
     finalizerIdentityCharsMax,
   ) as ForgeInstallationId;
+}
+
+/** Brands the number a forge gave one account, which it writes as a positive integer. */
+export function asForgeAccountId(value: string): ForgeAccountId {
+  if (!forgeNumberPattern.test(value))
+    throw new RangeError("forge account id is not a positive integer");
+  return asBoundedText(
+    value,
+    "forge account id",
+    finalizerIdentityCharsMax,
+  ) as ForgeAccountId;
 }
 
 /**

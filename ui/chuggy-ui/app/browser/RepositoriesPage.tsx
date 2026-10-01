@@ -4,19 +4,13 @@
  *
  * An account is a row per account and not per installation, because what
  * onboarding needs to know is whether both of this deployment's apps are on it;
- * a missing one is what the Connect action is for. The bindings below are what
- * a ticket may name, except a retired one, which is drawn as retired because it
- * is still bound and no longer read; a binding is added from what those
- * installations grant rather than from a typed address.
+ * a missing one is what Install is for, and Connect GitHub is what claims one.
+ * The bindings below are what a ticket may name, except a retired one, which is
+ * drawn as retired because it is still bound and no longer read; a binding is
+ * added from what those installations grant rather than from a typed address.
  */
 
-import {
-  Link,
-  useNavigate,
-  useParams,
-  useSearch,
-} from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { Link, useParams } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
@@ -45,12 +39,12 @@ import {
   projectRepositoriesResource,
 } from "./repositories/AddRepository.tsx";
 import { ConnectAccount } from "./repositories/ConnectAccount.tsx";
+import { ConnectGithub } from "./repositories/ConnectGithub.tsx";
 import { CreateRepository } from "./repositories/CreateRepository.tsx";
 import { repositoryRoutePath } from "./repositories/RepositoryPage.tsx";
 import { TopBarSlot } from "./shell/slots.tsx";
 import { EmptyState } from "./ui/EmptyState.tsx";
 import { Figure } from "./ui/Figure.tsx";
-import { Notice } from "./ui/Notice.tsx";
 import { Panel } from "./ui/Panel.tsx";
 import { Pill } from "./ui/Pill.tsx";
 import { Table } from "./ui/Table.tsx";
@@ -59,7 +53,7 @@ import { Tooltip } from "./ui/Tooltip.tsx";
 /** No frame names this read, so the partition's own refetch is what reaches it. */
 export const forgeInstallationsResource = "forge-installations";
 
-/** This page's own address, which its reads and its one navigation are from. */
+/** This page's own address, which its parameters are read from. */
 const repositoriesRoutePath = "/$tenant/$project/repositories";
 
 function AccountRow(props: { readonly row: ForgeAccountRow }): ReactNode {
@@ -161,31 +155,8 @@ function BindingTable(props: {
   );
 }
 
-/**
- * What the setup landing came back saying: one word, and the row beside it is
- * the rest of the answer.
- *
- * THE WORD IS AN EVENT AND NOT A PROPERTY OF THE ADDRESS. It is taken on the
- * first draw and the parameter cleared behind it, so a reload — or an address
- * somebody typed — does not redraw an answer to a claim that never happened.
- */
-function ConnectedNotice(props: {
-  readonly connected: string | undefined;
-}): ReactNode {
-  const navigate = useNavigate({ from: repositoriesRoutePath });
-  const [taken] = useState(props.connected);
-  const standing = props.connected !== undefined;
-  useEffect(() => {
-    if (!standing) return;
-    void navigate({ search: { connected: undefined }, replace: true });
-  }, [standing, navigate]);
-  if (taken === undefined) return null;
-  return <Notice tone="info" inline role="status" detail={taken} />;
-}
-
 function AccountsSection(props: {
   readonly partition: PartitionIdentity;
-  readonly connected: string | undefined;
   readonly installations: readonly ForgeInstallationResponse[] | undefined;
   readonly unready: ReactNode;
 }): ReactNode {
@@ -195,13 +166,18 @@ function AccountsSection(props: {
       title="Accounts"
       about="The forge accounts this tenant has connected, and the apps each holds."
       meta={
-        <ConnectAccount
-          partition={props.partition}
-          returnPath={currentPath()}
-        />
+        <span className="flex items-center gap-2">
+          <ConnectGithub
+            partition={props.partition}
+            returnPath={currentPath()}
+          />
+          <ConnectAccount
+            partition={props.partition}
+            returnPath={currentPath()}
+          />
+        </span>
       }
     >
-      <ConnectedNotice connected={props.connected} />
       {props.unready}
       {props.installations === undefined ? null : (
         <AccountTable rows={forgeAccountRows(props.installations)} />
@@ -246,7 +222,6 @@ function RepositoriesSection(props: {
 
 export function RepositoriesPage(): ReactNode {
   const params = useParams({ from: repositoriesRoutePath });
-  const search = useSearch({ from: repositoriesRoutePath });
   const partition: PartitionIdentity = {
     tenant: params.tenant,
     project: params.project,
@@ -272,7 +247,6 @@ export function RepositoriesPage(): ReactNode {
       </TopBarSlot>
       <AccountsSection
         partition={partition}
-        connected={search.connected}
         installations={
           accounts.state === "Ready" ? accounts.value.installations : undefined
         }

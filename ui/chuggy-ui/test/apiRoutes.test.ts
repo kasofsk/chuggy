@@ -16,7 +16,7 @@ import {
   apiAgenticRefusals,
   apiAskLead,
   apiBindProjectRepository,
-  apiClaimForgeInstallation,
+  apiForgeAuthorization,
   apiConfiguration,
   apiCreateProjectRepository,
   apiDispatchView,
@@ -478,14 +478,7 @@ function forgeBody(url: string, init: ApiFetchInit): unknown {
     };
   if (init.method === "POST" && url.endsWith("/repositories"))
     return { repository: madeRepository };
-  if (init.method === "POST")
-    return {
-      forge: "github",
-      app: "worker",
-      account: "kasofsk",
-      accountKind: "Organization",
-      installationId: "42",
-    };
+  if (init.method === "POST") return { accounts: [], truncated: false };
   if (url.endsWith("/forge/github")) return { apps: [] };
   if (url.includes("/forge-installations/"))
     return { repositories: [], truncated: false };
@@ -499,10 +492,11 @@ function forgeBody(url: string, init: ApiFetchInit): unknown {
 async function askForgeRoutes(ports: ApiPorts): Promise<void> {
   await apiForgeApps(ports);
   await apiForgeInstallations(ports, "acme");
-  await apiClaimForgeInstallation(ports, "acme", {
+  await apiForgeAuthorization(ports, "acme", {
     forge: "github",
-    app: "worker",
-    installationId: "42",
+    code: "a-code",
+    redirectUri: "https://console.test/forge/github/callback",
+    codeVerifier: "v".repeat(43),
   });
   await apiForgeInstallationRepositories(ports, "acme", "42");
   await apiProjectRepositories(ports, partition);
@@ -531,7 +525,7 @@ test("each forge route is one path, and each write spends an identity", async ()
   expect(held.requests.map((request) => request.url)).toStrictEqual([
     `${nativeHttpBasePath}/forge/github`,
     `${nativeHttpBasePath}/tenants/acme/forge-installations`,
-    `${nativeHttpBasePath}/tenants/acme/forge-installations`,
+    `${nativeHttpBasePath}/tenants/acme/forge-authorizations`,
     `${nativeHttpBasePath}/tenants/acme/forge-installations/42/repositories`,
     `${partitionPath}/repositories`,
     `${partitionPath}/repositories`,

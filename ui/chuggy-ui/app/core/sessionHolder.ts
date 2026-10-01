@@ -87,9 +87,17 @@ export function sessionCallbackPath(callback: SessionCallback): string {
   return callback.result === "SignedIn" ? (callback.returnPath ?? "/") : "/";
 }
 
+/** The address a callback is read from: the path it arrived at and its query. */
+export interface SessionLocation {
+  readonly pathname: string;
+  readonly search: string;
+}
+
 export interface SessionHolder {
   readonly load: () => Promise<void>;
-  readonly completeCallback: (search: string) => Promise<SessionCallback>;
+  readonly completeCallback: (
+    location: SessionLocation,
+  ) => Promise<SessionCallback>;
   readonly signIn: (returnPath?: string) => Promise<void>;
   readonly signOut: () => Promise<void>;
   readonly bearer: () => Promise<string | undefined>;
@@ -310,15 +318,25 @@ function sessionTakeTransaction(
   }
 }
 
+/**
+ * A callback is read only at the address this client is registered with, so a
+ * forge's own authorization, which returns a code and a state to a page of its
+ * own, is that page's to redeem and spends nothing of a sign-in.
+ */
 async function sessionCompleteCallback(
   inner: SessionInner,
-  search: string,
+  location: SessionLocation,
 ): Promise<SessionCallback> {
-  const callback = parseAuthorizationCallback(search);
+  const callback = parseAuthorizationCallback(location.search);
   if (callback.result === "None") return { result: "None" };
+  const { configuration, endpoints } = inner;
+  if (
+    configuration !== undefined &&
+    new URL(configuration.redirectUri).pathname !== location.pathname
+  )
+    return { result: "None" };
   const transaction = sessionTakeTransaction(inner);
   if (callback.result === "Denied") return callback;
-  const { configuration, endpoints } = inner;
   if (configuration === undefined || endpoints === undefined)
     return { result: "Denied", reason: "the console is not configured" };
   if (transaction === undefined || transaction.state !== callback.state)
@@ -390,8 +408,8 @@ export function createSessionHolder(ports: SessionHolderPorts): SessionHolder {
   };
   return {
     load: () => sessionLoad(inner),
-    completeCallback: (search: string) =>
-      sessionCompleteCallback(inner, search),
+    completeCallback: (location: SessionLocation) =>
+      sessionCompleteCallback(inner, location),
     signIn: (returnPath?: string) => sessionSignIn(inner, returnPath),
     signOut: () => sessionSignOut(inner),
     bearer: () => sessionBearer(inner),

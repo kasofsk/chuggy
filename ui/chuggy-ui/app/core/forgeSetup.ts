@@ -1,22 +1,22 @@
 /**
- * The setup landing's decisions: what the forge sent back, whether it belongs
- * to the transaction this tab started, and where the person goes next.
+ * The setup landing's decisions: what the forge sent back after an install, and
+ * whether it belongs to the transaction this tab started.
  *
- * The landing claims nothing it cannot match. A state that does not match the
- * stored transaction — or a landing reached with nothing stored, which is what
- * a replay looks like once the transaction has been taken — is refused, and no
- * installation identity is sent anywhere.
+ * The landing claims nothing itself. An install it can match starts the
+ * authorization that proves which accounts are the person's; a state that does
+ * not match the stored transaction — or a landing reached with nothing stored,
+ * which is what a replay looks like once the transaction has been taken — is
+ * refused and sends the person nowhere.
  */
 
 import type { ForgeInstallTransaction } from "./forgeInstallation.ts";
 
-/** What the forge says the person did, which `request` alone claims nothing for. */
+/** What the forge says the person did, which `request` alone has nothing to authorize for. */
 export const forgeSetupActions = ["install", "update", "request"] as const;
 
 export type ForgeSetupAction = (typeof forgeSetupActions)[number];
 
 export interface ForgeSetupQuery {
-  readonly installationId: string | undefined;
   readonly action: ForgeSetupAction | undefined;
   readonly state: string | undefined;
 }
@@ -35,7 +35,6 @@ export function forgeSetupQueryOf(
   search: Readonly<Record<string, unknown>>,
 ): ForgeSetupQuery {
   return {
-    installationId: forgeSetupText(search["installation_id"]),
     action: forgeSetupActionOf(search["setup_action"]),
     state: forgeSetupText(search["state"]),
   };
@@ -43,9 +42,8 @@ export function forgeSetupQueryOf(
 
 export type ForgeSetupDecision =
   | {
-      readonly decision: "Claim";
+      readonly decision: "Authorize";
       readonly transaction: ForgeInstallTransaction;
-      readonly installationId: string;
     }
   | {
       readonly decision: "Requested";
@@ -62,7 +60,7 @@ export const forgeSetupRequested = "Requested";
 /**
  * What the landing does with what it was handed. The state is compared against
  * the transaction this tab stored, so a return carrying somebody else's state —
- * or none — claims nothing.
+ * or none — starts nothing.
  */
 export function forgeSetupDecision(
   query: ForgeSetupQuery,
@@ -73,16 +71,8 @@ export function forgeSetupDecision(
     return { decision: "Unexpected" };
   if (query.action === "request")
     return { decision: "Requested", transaction: taken };
-  if (query.installationId === undefined) return { decision: "Unexpected" };
-  return {
-    decision: "Claim",
-    transaction: taken,
-    installationId: query.installationId,
-  };
+  return { decision: "Authorize", transaction: taken };
 }
-
-/** The parameter the repositories page reads the landing's outcome from. */
-export const forgeSetupStatusParam = "connected";
 
 /**
  * The address the landing is served at, which is what an operator sets as both
@@ -90,13 +80,3 @@ export const forgeSetupStatusParam = "connected";
  * breaks every install in a deployment already configured against it.
  */
 export const forgeSetupRoutePath = "/forge/github/setup";
-
-/**
- * Where the landing sends the person, with the outcome on it. The state and
- * the installation identity are not: what the next page draws is one word.
- */
-export function forgeSetupReturn(returnPath: string, status: string): string {
-  const joined = returnPath.includes("?") ? "&" : "?";
-  const encoded = encodeURIComponent(status);
-  return `${returnPath}${joined}${forgeSetupStatusParam}=${encoded}`;
-}

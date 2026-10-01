@@ -40,6 +40,7 @@ test("the versioned route and media contracts move together", () => {
     "/api/v1/contract",
     "/api/v1/installation",
     "/api/v1/forge/github",
+    "/api/v1/tenants/:tenant/forge-authorizations",
     "/api/v1/tenants/:tenant/forge-installations",
     "/api/v1/tenants/:tenant/forge-installations/:installationId/repositories",
     "/api/v1/projects",
