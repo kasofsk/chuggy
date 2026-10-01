@@ -272,7 +272,7 @@ export async function inboxCount(page: Page): Promise<number> {
 export async function signIn(page: Page): Promise<void> {
   await page.goto(`${rig.consoleUrl}/`);
   await page
-    .getByRole("button", { name: "sign in" })
+    .getByRole("button", { name: "Sign in" })
     .click({ timeout: signInTimeoutMs });
   const identifier = page.locator('input[name="identifier"]');
   await identifier.waitFor({ timeout: signInTimeoutMs });
