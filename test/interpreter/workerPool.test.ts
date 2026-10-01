@@ -6,6 +6,8 @@ import { asPrincipal } from "../../src/interpreter/principal.ts";
 import {
   workerPoolPoll,
   workerPoolReconcile,
+  workerPoolReconciliationUnsessioned,
+  workerPoolSessionsRead,
   type WorkerPoolAssignments,
   type WorkerPoolClaimTerms,
   type WorkerPoolIdentity,
@@ -62,8 +64,11 @@ test("a claim is asked for only as far as the pool's remaining room", async () =
       },
     },
     identity,
-    ["one"],
-    settings.assignmentsPerPollMax,
+    {
+      held: ["one"],
+      wanted: settings.assignmentsPerPollMax,
+      wantedSessions: 0,
+    },
     settings,
     () => `minted-${String(asked)}`,
   );
@@ -87,14 +92,13 @@ test("a pool wanting none is claimed nothing and still renewed and told what to 
       },
     },
     identity,
-    ["live", "gone"],
-    0,
+    { held: ["live", "gone"], wanted: 0, wantedSessions: 0 },
     { ...settings, heldMax: 4 },
     () => "minted",
   );
   assert.equal(asked, 0);
   assert.deepEqual(renewed, ["live", "gone"]);
-  assert.deepEqual(answered, { assignments: [], stop: ["gone"] });
+  assert.deepEqual(answered, { assignments: [], sessions: [], stop: ["gone"] });
 });
 
 test("a pool wanting more than the plane allows is claimed the plane's bound", async () => {
@@ -109,8 +113,11 @@ test("a pool wanting more than the plane allows is claimed the plane's bound", a
   const perPoll = await workerPoolReconcile(
     claiming,
     identity,
-    [],
-    settings.assignmentsPerPollMax + 5,
+    {
+      held: [],
+      wanted: settings.assignmentsPerPollMax + 5,
+      wantedSessions: 0,
+    },
     { ...settings, heldMax: 10 },
     () => `minted-${String(asked)}`,
   );
@@ -119,8 +126,11 @@ test("a pool wanting more than the plane allows is claimed the plane's bound", a
   const room = await workerPoolReconcile(
     claiming,
     identity,
-    ["one"],
-    settings.assignmentsPerPollMax + 5,
+    {
+      held: ["one"],
+      wanted: settings.assignmentsPerPollMax + 5,
+      wantedSessions: 0,
+    },
     { ...settings, assignmentsPerPollMax: 10 },
     () => `minted-${String(asked)}`,
   );
@@ -147,8 +157,7 @@ async function reconciledOne(
       },
     },
     identity,
-    [],
-    1,
+    { held: [], wanted: 1, wantedSessions: 0 },
     polled,
     () => "minted",
   );
@@ -217,13 +226,51 @@ test("a native requirement a claim returned is refused rather than handed to a p
   );
 });
 
-test("a wanted that is not a whole count refuses the poll", async () => {
-  for (const wanted of [-1, 1.5, Number.NaN, Number.POSITIVE_INFINITY])
-    await assert.rejects(
-      () =>
-        workerPoolReconcile(idle, identity, [], wanted, settings, () => "m"),
-      /wanted must be a non-negative integer/u,
-    );
+test("a room that is not a whole count refuses the poll", async () => {
+  for (const room of [-1, 1.5, Number.NaN, Number.POSITIVE_INFINITY])
+    for (const [asked, refusal] of [
+      [{ held: [], wanted: room, wantedSessions: 0 }, /wanted must/u],
+      [{ held: [], wanted: 0, wantedSessions: room }, /wantedSessions must/u],
+    ] as const)
+      await assert.rejects(
+        () => workerPoolReconcile(idle, identity, asked, settings, () => "m"),
+        refusal,
+        JSON.stringify(asked),
+      );
+});
+
+test("a pool reads sessions from the release that names them, and one from before is never handed one", () => {
+  for (const [release, read] of [
+    ["1.2.0", false],
+    ["1.3.0", true],
+    ["1.3.7", true],
+    [undefined, false],
+  ] as const)
+    assert.equal(workerPoolSessionsRead(release), read, String(release));
+  const reconciled = { assignments: [], sessions: [], stop: ["gone"] };
+  assert.deepEqual(workerPoolReconciliationUnsessioned(reconciled), {
+    assignments: [],
+    stop: ["gone"],
+  });
+  assert.throws(
+    () =>
+      workerPoolReconciliationUnsessioned({
+        ...reconciled,
+        sessions: [
+          {
+            assignment: "session-1",
+            capabilities: [],
+            image: "registry.invalid/worker:1",
+            cpuMillis: 1,
+            memoryMib: 1,
+            deadlineSecs: 1,
+            callbackUrl: "https://plane.invalid",
+            bearer: "chgs_session",
+          },
+        ],
+      }),
+    /reads no sessions/u,
+  );
 });
 
 test("a held list longer than the bound is a refusal rather than a truncation", async () => {
@@ -232,8 +279,7 @@ test("a held list longer than the bound is a refusal rather than a truncation", 
       workerPoolReconcile(
         idle,
         identity,
-        ["one", "two", "three"],
-        1,
+        { held: ["one", "two", "three"], wanted: 1, wantedSessions: 0 },
         settings,
         () => "minted",
       ),
@@ -247,8 +293,7 @@ test("a bound that is not a positive whole number refuses the poll", async () =>
       workerPoolReconcile(
         idle,
         identity,
-        [],
-        1,
+        { held: [], wanted: 1, wantedSessions: 0 },
         { ...settings, pollIntervalMs: 0 },
         () => "minted",
       ),
@@ -267,12 +312,11 @@ test("a long poll reconciles to its bound and answers empty rather than waiting 
       },
     },
     identity,
-    [],
-    1,
+    { held: [], wanted: 1, wantedSessions: 0 },
     settings,
     () => "minted",
   );
-  assert.deepEqual(answered, { assignments: [], stop: [] });
+  assert.deepEqual(answered, { assignments: [], sessions: [], stop: [] });
   assert.equal(passes, settings.pollsMax);
 });
 
@@ -287,8 +331,7 @@ test("a long poll stops at the first pass with a stop flag to deliver", async ()
       },
     },
     identity,
-    ["one"],
-    1,
+    { held: ["one"], wanted: 1, wantedSessions: 0 },
     settings,
     () => "minted",
   );

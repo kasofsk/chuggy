@@ -13,5 +13,10 @@
     "release": "1.2.0",
     "wire": "02a90d37640551d72c478e8c51e13e8ab57a316df2c2a60ffb3c34a8794c4b4a",
     "files": "473969a1e74108c8c3abd5111e86050e45fddf702e30baae2788a318291d9566"
+  },
+  {
+    "release": "1.3.0",
+    "wire": "a7fe89a6996528c45c079c56aca32aeda363ff0151c1c73944405ea91a68041f",
+    "files": "c017f6b8c7e6edbfb0ed16be920a5a0a5a403a2db4a5797b1ad8c6e468b81097"
   }
 ]

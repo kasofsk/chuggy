@@ -3,7 +3,8 @@
  * installs: each is an alias of the asset its tag was published with, holding
  * the files its history entry records, and nothing else is installed. What each
  * is replayed against is the server's own suites: the planes' answers and
- * requests in `test/adapters/workerPlaneContract.test.ts`, the pod documents in
+ * requests in `test/adapters/workerPlaneContract.test.ts`, a pool's polls and
+ * settlements in `test/adapters/poolPlaneServer.test.ts`, the pod documents in
  * `test/contract/workerTask.test.ts`, and the documents a harness writes in
  * `test/contract/workerDocuments.test.ts`.
  */
@@ -106,14 +107,6 @@ test("a plane replays each release below the served one its floor accepts, so ra
       "1.3.0",
     ),
     ["1.2.0"],
-  );
-});
-
-test("the pool plane serves no release below its own, which is why nothing replays one on it", () => {
-  assert.deepEqual(
-    workerContractReplayed("pool"),
-    [],
-    "a pool release below the served one is replayed by nothing yet",
   );
 });
 

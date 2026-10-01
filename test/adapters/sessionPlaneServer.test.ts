@@ -38,7 +38,10 @@ import {
   sessionTurnToolNameCharsMax,
   sessionTurnToolsMax,
 } from "../../src/contract/http.ts";
-import { agentReportedTurnFailures } from "../../src/contract/rosters.ts";
+import {
+  agentReportedTurnFailures,
+  sessionEndedEvidences,
+} from "../../src/contract/rosters.ts";
 import {
   sessionPlaneRoutes,
   type SessionPlaneRouteName,
@@ -119,6 +122,7 @@ const sessionCalls = [
   ["GET", "/v1/session/store/1a2b", undefined, {}],
   ["GET", "/v1/session/store", undefined, {}],
   ["POST", "/v1/session/credential", { repository: "github.com/a/b" }, {}],
+  ["POST", "/v1/session/ended", { evidence: "SessionIdle" }, {}],
 ] as const;
 
 test("a session pod is told what its own session is, and nothing it has not got", async () => {
@@ -212,21 +216,16 @@ test("no session route answers a bearer that is not a live session", async () =>
       reached += 1;
       return Promise.resolve(undefined);
     };
+    const taken = () => {
+      reached += 1;
+      return Promise.resolve(true);
+    };
     const app = sessionPlane({
       authority,
       turns: { claim: counted },
-      heartbeats: {
-        heartbeat: () => {
-          reached += 1;
-          return Promise.resolve(true);
-        },
-      },
-      holds: {
-        hold: () => {
-          reached += 1;
-          return Promise.resolve(true);
-        },
-      },
+      heartbeats: { heartbeat: taken },
+      holds: { hold: taken },
+      losses: { lose: taken },
       store: {
         storeBatch: () => {
           reached += 1;
@@ -622,6 +621,70 @@ test("a hold reaches the boundary under its own generation, and a fenced one is 
   });
   assert.equal(fenced.statusCode, 409);
   assert.deepEqual(fenced.json(), { action: "stop", reason: "Fenced" });
+  await app.close();
+});
+
+test("a container's end loses the attempt under its own generation and evidence, and a fenced one is told to stop", async () => {
+  const losses: unknown[] = [];
+  const app = sessionPlane({
+    losses: {
+      lose: (offered, generation, evidence) => {
+        losses.push({ offered, generation, evidence });
+        return Promise.resolve(losses.length < 3);
+      },
+    },
+  });
+  for (const evidence of ["SessionIdle", "TurnFailed"]) {
+    const ended = await app.inject({
+      method: "POST",
+      url: "/v1/session/ended",
+      headers: held,
+      payload: { evidence },
+    });
+    assert.equal(ended.statusCode, 204, evidence);
+  }
+  assert.deepEqual(losses, [
+    { offered: secret, generation: 3, evidence: "SessionIdle" },
+    { offered: secret, generation: 3, evidence: "TurnFailed" },
+  ]);
+  const fenced = await app.inject({
+    method: "POST",
+    url: "/v1/session/ended",
+    headers: held,
+    payload: { evidence: "SessionIdle" },
+  });
+  assert.equal(fenced.statusCode, 409);
+  assert.deepEqual(fenced.json(), { action: "stop", reason: "Fenced" });
+  await app.close();
+});
+
+test("a container's end naming evidence a runner does not witness reaches no boundary", async () => {
+  let reached = 0;
+  const app = sessionPlane({
+    losses: {
+      lose: () => {
+        reached += 1;
+        return Promise.resolve(true);
+      },
+    },
+  });
+  for (const payload of [
+    { evidence: "LeaseExpired" },
+    { evidence: "Evicted" },
+    { evidence: "Idle" },
+    { evidence: "SessionIdle", extra: 1 },
+    {},
+  ]) {
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/session/ended",
+      headers: held,
+      payload,
+    });
+    assert.equal(response.statusCode, 400, JSON.stringify(payload));
+    assert.deepEqual(response.json(), { action: "stop" });
+  }
+  assert.equal(reached, 0);
   await app.close();
 });
 
@@ -1333,6 +1396,15 @@ const sessionHeaviest: Readonly<
       repository: planeTextHeaviest(repositoryIdentityCharsMax),
     }),
     status: 404,
+  },
+  ended: {
+    headers: json,
+    payload: planeJsonHeaviest({
+      evidence: sessionEndedEvidences.reduce((longest, evidence) =>
+        evidence.length > longest.length ? evidence : longest,
+      ),
+    }),
+    status: 204,
   },
 };
 

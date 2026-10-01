@@ -10,7 +10,9 @@
  * console user has: it goes over HTTP to the API presenting the pod's session
  * bearer, the API resolves that bearer to the session's principal and
  * authorizes it through the project membership exactly as it authorizes a
- * human's, and the operation row records which session issued it. A decision
+ * human's, and the operation row records which session issued it. The API
+ * also confines that bearer to its own session's tenant and project, answering
+ * another project's routes 404 and a tenant's or the site's 403. A decision
  * tool writes nothing at all: it accumulates in the pod and becomes the turn's
  * answer, which the selector runtime still reads and acts on under its own
  * fence, so the runtime remains the single writer of a dispatch and of the
@@ -18,12 +20,13 @@
  *
  * A ROSTER IS NOT A CONTROL, AND SAYING SO IS THE POINT. A roster is enforced
  * by the agent runtime inside the pod, and the pod is the thing being
- * controlled. The two controls that are not the pod's are the membership,
+ * controlled. Two controls that are not the pod's are the membership,
  * enforced by the database when it authorizes a project access, and the
  * decision controls the selector applies to a finished turn — and the second is
  * post-hoc: the tool has already run and its command has already landed, and
- * what the selector refuses is the decision that used it. A control described
- * as stronger than it is, is worse than none.
+ * what the selector refuses is the decision that used it. A third is the API's
+ * confinement of a session bearer to its own session's tenant and project. A
+ * control described as stronger than it is, is worse than none.
  *
  * THE ROSTER NAMES READS THE TREE DOES NOT YET SERVE, because a roster is what
  * a session may ask for and a route is what answers. The image's
@@ -89,7 +92,6 @@ const chuggyToolRoster = {
     "read_decision_log",
     "read_refusals",
     "read_ticket_refusals",
-    "read_projects",
     "read_lead",
     "read_lead_transcript",
     "list_executions",
@@ -197,7 +199,6 @@ export const chuggyToolRoutes = {
   selectorHistory: nativeHttpRoutes.selectorHistory,
   agenticRefusals: nativeHttpRoutes.agenticRefusals,
   ticketAgenticRefusals: nativeHttpRoutes.ticketAgenticRefusals,
-  projects: nativeHttpRoutes.projects,
   lead: nativeHttpRoutes.lead,
   leadTranscript: nativeHttpRoutes.leadTranscript,
   executions: nativeHttpRoutes.executions,

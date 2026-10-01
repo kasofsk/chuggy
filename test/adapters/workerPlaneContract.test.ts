@@ -121,6 +121,7 @@ import {
   type WorkerTaskRead,
 } from "../../src/interpreter/workerPlane.ts";
 import type { WorkerPlaneCredentialMinted } from "../../src/interpreter/workerPlaneCredentials.ts";
+import type { SessionTaskLaunch } from "../../src/interpreter/workerTask.ts";
 import {
   workerContractEnumsWalked,
   workerContractOptionalsSeen,
@@ -578,6 +579,20 @@ const liveSessionTask: SessionTaskRead = {
   },
 };
 
+/** What a pool-held session's task tells its harness of the site, which a pod is launched with instead. */
+const poolSessionLaunch: SessionTaskLaunch = {
+  api: { url: "https://api.invalid" },
+  bounds: {
+    mailboxPollMs: 1,
+    idleMs: 2,
+    resultDrainMs: 3,
+    loadTimeoutMs: 4,
+    turnsMax: 5,
+    budgetUsd: 6,
+  },
+  model: "model",
+};
+
 /** The ports a live session meets on `/v1/task`, its task read answering `found`. */
 function sessionTaskPorts(
   found: SessionTaskRead | undefined,
@@ -623,9 +638,10 @@ function sessionTaskCases(): readonly WorkerPlaneCase[] {
       service: sessionTaskPorts(liveSessionTask),
     },
     {
-      name: "a resumed session's task, bound to a repository",
+      name: "a resumed session's task, bound to a repository and held by a pool",
       service: sessionTaskPorts({
         ...liveSessionTask,
+        launch: poolSessionLaunch,
         invocation: {
           ...liveSessionTask.invocation,
           capabilities: ["RepositoryRead"],
@@ -810,6 +826,7 @@ const sessionPlaneCalls: Readonly<
     headers: json,
     payload: { repository: "github.com/owner/name" },
   },
+  ended: { headers: json, payload: { evidence: "SessionIdle" } },
 };
 
 const sessionPlaneRequests: Readonly<
@@ -843,6 +860,7 @@ const sessionPlaneRequests: Readonly<
   storeBatch: "Unparsed",
   storePage: "Unparsed",
   credential: { schema: "sessionCredentialSchema", bodies: [] },
+  ended: { schema: "sessionEndedSchema", bodies: [] },
 };
 
 /** The callers every session route refuses before its own ports are reached. */
@@ -1092,6 +1110,14 @@ const sessionPlaneCases: Readonly<
     ...sessionPlaneStrangers,
     workerPlaneMalformed,
     ...credentialCases,
+  ],
+  ended: [
+    ...sessionPlaneStrangers,
+    workerPlaneMalformed,
+    ...bothAnswers.map((lost) => ({
+      name: `a loss answering ${String(lost)}`,
+      service: sessionPorts({ losses: { lose: () => Promise.resolve(lost) } }),
+    })),
   ],
 };
 

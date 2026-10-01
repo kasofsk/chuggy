@@ -44,6 +44,7 @@ import {
   type WorkerPoolClass,
 } from "./workerPoolAssignment.ts";
 import {
+  contractVersionAccepted,
   workerContractAccepted,
   type WorkerContractRange,
 } from "./workerPlane.ts";
@@ -58,6 +59,39 @@ export const workerPoolContractAccepted: WorkerContractRange = {
   min: { major: 1, minor: 2 },
   max: workerContractAccepted.max,
 };
+
+/** The versions whose reconciliation names `sessions`, which an earlier pool's strict schema refuses. */
+const workerPoolSessionsAccepted: WorkerContractRange = {
+  min: { major: 1, minor: 3 },
+  max: workerContractAccepted.max,
+};
+
+/** What one poll asks: what the pool holds, and its room for executions and for sessions. */
+export interface WorkerPoolAsked {
+  readonly held: readonly string[];
+  readonly wanted: number;
+  readonly wantedSessions: number;
+}
+
+/** Whether a pool naming `release` reads `sessions`, which only such a pool is ever handed. */
+export function workerPoolSessionsRead(release: string | undefined): boolean {
+  return contractVersionAccepted(workerPoolSessionsAccepted, release);
+}
+
+/** A reconciliation as a pool from before sessions reads it. */
+export type WorkerPoolReconciliationUnsessioned = Omit<
+  WorkerPoolReconciliation,
+  "sessions"
+>;
+
+/** The answer to a pool that reads no sessions, which asked for none, so a session handed to it is a fault rather than a list to drop. */
+export function workerPoolReconciliationUnsessioned(
+  reconciled: WorkerPoolReconciliation,
+): WorkerPoolReconciliationUnsessioned {
+  if (reconciled.sessions.length > 0)
+    throw new Error("a pool that reads no sessions was handed one");
+  return { assignments: reconciled.assignments, stop: reconciled.stop };
+}
 
 /** One registered pool as its principal resolves it: whose it is, and the principal a claim is current under. */
 export interface WorkerPoolIdentity {
@@ -350,21 +384,28 @@ async function workerPoolClaims(
 /**
  * One reconciliation pass, which is a renewal of what is held and a claim of
  * what is not. The pool's `wanted` is its room and the plane's settings are
- * the plane's, so what is claimed is the least of the three.
+ * the plane's, so what is claimed is the least of the three; no session is
+ * claimed by any pass, so a pool with room for one is answered with none.
  */
 export async function workerPoolReconcile(
   assignments: WorkerPoolAssignments,
   identity: WorkerPoolIdentity,
-  held: readonly string[],
-  wanted: number,
+  asked: WorkerPoolAsked,
   settings: WorkerPoolPollSettings,
   mint: WorkerPoolMint,
 ): Promise<WorkerPoolReconciliation> {
   workerPoolCheckedSettings(settings);
+  const { held, wanted, wantedSessions } = asked;
   if (held.length > settings.heldMax)
     throw new RangeError("worker pool holds more than its bound");
-  if (!Number.isSafeInteger(wanted) || wanted < 0)
-    throw new RangeError("worker pool wanted must be a non-negative integer");
+  for (const [name, room] of [
+    ["wanted", wanted],
+    ["wantedSessions", wantedSessions],
+  ] as const)
+    if (!Number.isSafeInteger(room) || room < 0)
+      throw new RangeError(
+        `worker pool ${name} must be a non-negative integer`,
+      );
   const stop = await workerPoolHeldReconciled(
     assignments,
     identity,
@@ -384,6 +425,7 @@ export async function workerPoolReconcile(
       mint,
       claimable,
     ),
+    sessions: [],
     stop,
   };
 }
@@ -396,16 +438,14 @@ export async function workerPoolReconcile(
 export async function workerPoolPoll(
   assignments: WorkerPoolAssignments,
   identity: WorkerPoolIdentity,
-  held: readonly string[],
-  wanted: number,
+  asked: WorkerPoolAsked,
   settings: WorkerPoolPollSettings,
   mint: WorkerPoolMint,
 ): Promise<WorkerPoolReconciliation> {
   let answer = await workerPoolReconcile(
     assignments,
     identity,
-    held,
-    wanted,
+    asked,
     settings,
     mint,
   );
@@ -413,6 +453,7 @@ export async function workerPoolPoll(
     let polled = 1;
     polled < settings.pollsMax &&
     answer.assignments.length === 0 &&
+    answer.sessions.length === 0 &&
     answer.stop.length === 0;
     polled += 1
   ) {
@@ -420,8 +461,7 @@ export async function workerPoolPoll(
     answer = await workerPoolReconcile(
       assignments,
       identity,
-      held,
-      wanted,
+      asked,
       settings,
       mint,
     );

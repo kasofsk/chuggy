@@ -12,8 +12,14 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 
+import { createWorkerPlaneApp } from "../../src/adapters/http/workerPlaneServer.ts";
 import { sessionTurnAttemptsMax } from "../../src/contract/http.ts";
+import { sessionPlaneRoutes } from "../../src/contract/sessionPlane.ts";
 import { asPlacementId } from "../../src/interpreter/schedulerIdentity.ts";
+import {
+  inertSessionPlane,
+  inertWorkerPlane,
+} from "../adapters/workerPlaneFixtures.ts";
 import {
   sessionRigAttempt,
   sessionRigAttemptState,
@@ -287,6 +293,41 @@ test("a pod reads its own session's facts, renews its lease, and loses its attem
     true,
   );
   assert.equal((await rig.plane.authenticate(held.secret))?.live, false);
+  await rig.sessions.close(partition, session);
+});
+
+test("a runner's report that its session's container ended loses the attempt under the evidence it named, once", async () => {
+  const { partition, session, first, held } = await mailbox("ended");
+  await rig.plane.claim({
+    secret: held.secret,
+    generation: held.attempt.generation,
+  });
+  const app = createWorkerPlaneApp({
+    ...inertWorkerPlane(1),
+    sessions: { ...inertSessionPlane(rig.plane), losses: rig.plane },
+  });
+  const ended = (evidence: string) =>
+    app.inject({
+      method: sessionPlaneRoutes.ended.method,
+      url: sessionPlaneRoutes.ended.path,
+      headers: { authorization: `Bearer ${held.secret}` },
+      payload: { evidence },
+    });
+  assert.equal((await ended("TurnFailed")).statusCode, 204);
+  const lost = await sessionRigAttemptState(rig, held.attempt);
+  assert.equal(lost["state"], "Lost");
+  assert.equal(lost["evidence"], "TurnFailed");
+  assert.equal(lost["running"], false);
+  const returned = await sessionRigTurnState(rig, partition, session, first);
+  assert.equal(returned["state"], "Queued");
+  assert.equal(returned["attempts_spent"], "1");
+  const again = await ended("SessionIdle");
+  assert.equal(again.statusCode, 401);
+  assert.equal(
+    (await sessionRigAttemptState(rig, held.attempt))["evidence"],
+    "TurnFailed",
+  );
+  await app.close();
   await rig.sessions.close(partition, session);
 });
 

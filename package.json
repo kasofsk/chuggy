@@ -4,6 +4,7 @@
   "devDependencies": {
     "@chuggy/worker-contract-1.0.0": "https://github.com/kasofsk/chuggy/releases/download/worker-contract-v1.0.0/chuggy-worker-contract-1.0.0.tgz",
     "@chuggy/worker-contract-1.1.0": "https://github.com/kasofsk/chuggy/releases/download/worker-contract-v1.1.0/chuggy-worker-contract-1.1.0.tgz",
+    "@chuggy/worker-contract-1.2.0": "https://github.com/kasofsk/chuggy/releases/download/worker-contract-v1.2.0/chuggy-worker-contract-1.2.0.tgz",
     "@eslint/js": "^10.0.1",
     "@informalsystems/quint": "0.32.0",
     "@ts-safeql/eslint-plugin": "^5.4.1",

@@ -568,6 +568,14 @@ export const sessionTurnStates = [
 ] as const;
 export type SessionTurnState = (typeof sessionTurnStates)[number];
 
+/**
+ * How a runner says a session's container ended, each the attempt evidence the
+ * same end of a pod is recorded under: it stopped on its own once its mailbox
+ * stayed empty, or it failed.
+ */
+export const sessionEndedEvidences = ["SessionIdle", "TurnFailed"] as const;
+export type SessionEndedEvidence = (typeof sessionEndedEvidences)[number];
+
 /** Why one turn a pod held ended without an answer, which is the whole of what a pod may name. */
 export const agentReportedTurnFailures = [
   "AgentFailed",
