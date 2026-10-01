@@ -182,6 +182,8 @@ async function observeProject(
     return projectObservationFailure("Observation", partition);
   }
   if (observation === undefined) return emptyProjectObservation;
+  const passedOver = await observeProjectHostedRuns(partition, policy);
+  if (passedOver !== undefined) return passedOver;
   const identity = identities.next(partition);
   let allocated: boolean;
   try {
@@ -210,6 +212,28 @@ async function observeProject(
     identity,
     control,
   );
+}
+
+/**
+ * Why a project with something to decide is passed over before its permit, or
+ * nothing where its tenant grants the policy's principal the hosted runs every
+ * turn spends: a refusal, or an authority that could not say. Neither is kept,
+ * because the notification cursor moves only with a completed cycle, so the next
+ * pass that reaches the project asks again and finds its changes waiting.
+ */
+async function observeProjectHostedRuns(
+  partition: Partition,
+  policy: SelectorPolicyHost,
+): Promise<ProjectObservationResult | undefined> {
+  let granted: boolean;
+  try {
+    granted = await policy.hostedRunsGranted(partition);
+  } catch {
+    return projectObservationFailure("HostedRunsUndecided", partition);
+  }
+  return granted
+    ? undefined
+    : projectObservationFailure("HostedRunsRefused", partition);
 }
 
 /**

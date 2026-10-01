@@ -8,6 +8,7 @@ import {
   selectorSettingsTextCharsMax,
 } from "../../src/contract/http.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
+import { ProjectAccessUnavailable } from "../../src/interpreter/projectAccess.ts";
 import {
   dryRunSelectorPolicy,
   leadDispatchesMax,
@@ -218,6 +219,7 @@ function policyHost(
 ): SelectorPolicyHost {
   return {
     productionReady: true,
+    hostedRunsGranted: () => Promise.resolve(true),
     start: (request) => ({
       result: execute(request),
       terminate: async (reason) => {
@@ -923,6 +925,121 @@ test("one project's pause skips that project and the sweep carries on", async ()
   assert.equal(result.observed, 1);
   assert.deepEqual(result.failures, []);
   assert.equal(installationReads, 1);
+});
+
+test("a project whose tenant grants the lead no hosted runs takes no permit and starts no turn", async () => {
+  const unhosted = {
+    tenant: asTenantId("unhosted"),
+    project: asProjectId("unhosted"),
+  };
+  const hosted = { tenant: partition.tenant, project: asProjectId("hosted") };
+  const asked: (typeof partition)[] = [];
+  const allocated: string[] = [];
+  const started: string[] = [];
+  const result = await selectorRunOnce(
+    refusalWrites(),
+    {
+      ...stateStore(() => undefined),
+      allocateAttempt: (_attempt, scope) => {
+        allocated.push(scope.project);
+        return Promise.resolve(true);
+      },
+    },
+    {
+      ...promptObservationSource(),
+      projects: () => Promise.resolve({ projects: [unhosted, hosted] }),
+      dispatchView: (scope) =>
+        Promise.resolve(emptyDispatchPage(scope, "f".repeat(64))),
+      submit: () => Promise.reject(new Error("no delivery expected")),
+      operation: () => Promise.resolve(undefined),
+    },
+    {
+      ...policyHost((request) => {
+        started.push(request.attempt);
+        return Promise.resolve(waitingExecution());
+      }),
+      hostedRunsGranted: (of) => {
+        asked.push(of);
+        return Promise.resolve(of.tenant === hosted.tenant);
+      },
+    },
+    perProjectIdentities(),
+    settingsSource(() => Promise.resolve(runtimeSettings)),
+    { projectsMax: 2, deliveriesMax: 1, reconciliationsMax: 1 },
+  );
+  assert.deepEqual(asked, [unhosted, hosted]);
+  assert.deepEqual(allocated, [hosted.project]);
+  assert.deepEqual(started, [`decision-${hosted.project}`]);
+  assert.equal(result.observed, 1);
+  assert.deepEqual(result.failures, [
+    { phase: "HostedRunsRefused", partition: unhosted },
+  ]);
+});
+
+/** Passes over one moved project, the hosted grant answered by each pass's own answer in turn. */
+async function hostedRunsPasses(answers: readonly (() => Promise<boolean>)[]) {
+  const allocated: string[] = [];
+  const started: string[] = [];
+  const results: SelectorRunResult[] = [];
+  for (const answer of answers)
+    results.push(
+      await selectorRunOnce(
+        refusalWrites(),
+        {
+          ...stateStore(() => undefined),
+          allocateAttempt: (attempt) => {
+            allocated.push(attempt);
+            return Promise.resolve(true);
+          },
+        },
+        {
+          ...promptObservationSource(),
+          projects: () => Promise.resolve({ projects: [partition] }),
+          submit: () => Promise.reject(new Error("no delivery expected")),
+          operation: () => Promise.resolve(undefined),
+        },
+        {
+          ...policyHost((request) => {
+            started.push(request.attempt);
+            return Promise.resolve(waitingExecution());
+          }),
+          hostedRunsGranted: answer,
+        },
+        perProjectIdentities(),
+        settingsSource(() => Promise.resolve(runtimeSettings)),
+        { projectsMax: 1, deliveriesMax: 1, reconciliationsMax: 1 },
+      ),
+    );
+  return { allocated, started, results };
+}
+
+test("a refused project is asked again on the next pass and decides once its tenant grants hosted runs", async () => {
+  const passes = await hostedRunsPasses([
+    () => Promise.resolve(false),
+    () => Promise.resolve(true),
+  ]);
+  assert.deepEqual(
+    passes.results.map((result) => result.failures),
+    [[{ phase: "HostedRunsRefused", partition }], []],
+  );
+  assert.deepEqual(passes.allocated, [`decision-${partition.project}`]);
+  assert.deepEqual(passes.started, [`decision-${partition.project}`]);
+});
+
+test("an authority that cannot say skips the project this pass and serves it on a later one", async () => {
+  const passes = await hostedRunsPasses([
+    () => Promise.reject(new ProjectAccessUnavailable("no answer")),
+    () => Promise.resolve(true),
+  ]);
+  assert.deepEqual(
+    passes.results.map((result) => [result.observed, result.failures]),
+    [
+      [0, [{ phase: "HostedRunsUndecided", partition }]],
+      [1, []],
+    ],
+  );
+  assert.deepEqual(passes.allocated, [`decision-${partition.project}`]);
+  assert.deepEqual(passes.started, [`decision-${partition.project}`]);
 });
 
 /**
@@ -2050,11 +2167,33 @@ test("selector configuration changes require platform administration", async () 
   assert.equal(mutations, 1);
 });
 
+test("the selector policy host answers the hosted grant its policy answers", async () => {
+  for (const granted of [true, false]) {
+    const asked: (typeof partition)[] = [];
+    const host = selectorPolicyHost(
+      {
+        hostedRunsGranted: (of) => {
+          asked.push(of);
+          return Promise.resolve(granted);
+        },
+        execute: () => Promise.reject(new Error("no decision was expected")),
+        cancel: () => Promise.resolve({ status: "Unconfirmed" }),
+        inspect: () => Promise.resolve({ status: "Unconfirmed" }),
+      },
+      { after: () => new Promise<never>(() => undefined) },
+      { controlDeadlineMs: 1_000 },
+    );
+    assert.equal(await host.hostedRunsGranted(partition), granted);
+    assert.deepEqual(asked, [partition]);
+  }
+});
+
 test("the selector policy host starts once and bounds cancellation evidence", async () => {
   let executions = 0;
   let aborted = false;
   const host = selectorPolicyHost(
     {
+      hostedRunsGranted: () => Promise.resolve(true),
       execute: (_request, signal) => {
         executions += 1;
         signal.addEventListener("abort", () => {

@@ -347,7 +347,8 @@ export interface SelectorProcessRootConfig {
   readonly wakes: { readonly wakesPerPassMax: number };
   /**
    * Where the project authority is. The wake pass asks it whether a thread's
-   * principal may still read the project, which no row in this database says.
+   * principal may still read the project, and the runtime whether a project's
+   * tenant grants the lead hosted runs, which no row in this database says.
    */
   readonly access: ProjectAccessSettings;
 }
@@ -365,10 +366,12 @@ export function selectorProcessRoot(
   additional: readonly RuntimePrecondition[] = [],
 ): ServiceRuntime {
   const pool = processPool(config.database);
+  const access = ketoProjectAccess(config.access);
   const service = composeSelectorRuntime(
     pool,
     source,
     lead,
+    access,
     identities,
     config.selector,
   );
@@ -378,7 +381,7 @@ export function selectorProcessRoot(
       service,
       {
         store: postgresThreadWakes(pool),
-        access: ketoProjectAccess(config.access),
+        access,
         clock: { nowIso: () => new Date().toISOString() },
         wakesPerPassMax: config.wakes.wakesPerPassMax,
       },

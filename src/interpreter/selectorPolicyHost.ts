@@ -10,6 +10,7 @@
  * the protocol was trusted over a wire.
  */
 
+import type { Partition } from "./projectStore.ts";
 import type {
   SelectorPolicyHost,
   SelectorPolicyRequest,
@@ -18,6 +19,8 @@ import type {
 } from "./selector.ts";
 
 export interface SelectorPolicy {
+  /** What the host answers `hostedRunsGranted` with. */
+  hostedRunsGranted(partition: Partition): Promise<boolean>;
   execute(
     request: SelectorPolicyRequest,
     signal: AbortSignal,
@@ -70,6 +73,7 @@ export function selectorPolicyHost(
   const runs = new Map<string, SelectorPolicyRun>();
   return {
     productionReady: true,
+    hostedRunsGranted: (partition) => policy.hostedRunsGranted(partition),
     start: (request) => {
       const retained = runs.get(request.attempt);
       if (retained !== undefined) return retained;

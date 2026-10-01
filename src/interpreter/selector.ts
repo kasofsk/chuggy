@@ -716,6 +716,12 @@ export type SelectorTerminationResult =
 /** Owns the only model and tool capabilities and hard-terminates each isolated run. */
 export interface SelectorPolicyHost {
   readonly productionReady: boolean;
+  /**
+   * Whether the project's tenant grants hosted runs to the principal the
+   * policy's turns run under, which every one of them spends. It raises where
+   * the authority could not say.
+   */
+  hostedRunsGranted(partition: Partition): Promise<boolean>;
   start(request: SelectorPolicyRequest): SelectorPolicyRun;
   reconcileQuarantined(attempt: string): Promise<SelectorTerminationResult>;
 }

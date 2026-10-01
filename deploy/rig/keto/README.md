@@ -87,6 +87,18 @@ a project whose `tenant` it is. A project granted to a person before the
 command wrote the link holds nothing, and is linked under
 [Before migration 26](#before-migration-26).
 
+**The selector needs the hosted grant too.** A project's lead runs on the
+shared credential as the selector's own principal, and the selector passes over
+every project whose tenant does not grant that principal `hosted_execution`.
+Its subject is its OAuth client's id, so with the write URL and the issuer
+exported as above, tenant `vteng` is granted with:
+
+```sh
+CHUG_PROVISION_SUBJECT=chuggy-selector CHUG_PROVISION_TENANT=vteng \
+  CHUG_PROVISION_PROJECT= CHUG_PROVISION_RELATION=hosted_execution \
+  CHUG_PROVISION_ACTION=grant npm run provision:project-access
+```
+
 ### Reversing it
 
 ```sh

@@ -48,11 +48,24 @@ import type {
   SessionTurnId,
 } from "../../src/interpreter/agentSession.ts";
 import type { LeadMailbox } from "../../src/interpreter/leadMailbox.ts";
+import {
+  memberAuthority,
+  type ProjectAccess,
+} from "../../src/interpreter/projectAccess.ts";
 import type { JsonValue } from "../../src/interpreter/selector.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 import { postgresHarnessProject, postgresHarnessRolePool } from "./harness.ts";
 import { postgresHarnessSelectorContext } from "./harness.ts";
 import { sessionRigOpen, type SessionRig } from "./sessionHarness.ts";
+
+/**
+ * An authority granting every question. The runtime asks the hosted grant
+ * before it offers a turn, and these cases start at the turn.
+ */
+export const leadRigHostedAccess: ProjectAccess = {
+  authorize: (principal) => Promise.resolve(memberAuthority(principal)),
+  authorizeTenant: (principal) => Promise.resolve(memberAuthority(principal)),
+};
 
 /** One opened subject: the session rig, the two role pools and every door over them. */
 export interface LeadRig {

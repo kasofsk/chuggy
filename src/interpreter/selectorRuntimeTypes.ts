@@ -9,11 +9,17 @@ import type { Partition } from "./projectStore.ts";
  * the moment a decision has three, and an operator reading it cannot tell which
  * ticket sat. `Record` is the phase a decision's own write reports under: the
  * relation took some of its dispatches and not the rest.
+ *
+ * A PROJECT WITHOUT HOSTED RUNS IS NAMED BY WHICH OF TWO THINGS STOPPED IT.
+ * `HostedRunsRefused` is the tenant's answer and `HostedRunsUndecided` is an
+ * authority that gave none, so an outage never reads as a settled denial.
  */
 export interface SelectorRunFailure {
   readonly phase:
     | "Inventory"
     | "Settings"
+    | "HostedRunsRefused"
+    | "HostedRunsUndecided"
     | "PermitAcquisition"
     | "Observation"
     | "Quarantine"

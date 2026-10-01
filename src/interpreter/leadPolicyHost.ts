@@ -39,6 +39,11 @@
  * the model wrote, so an unmeasured turn is answered as an unknown model and
  * nothing spent — which the model allowlist then refuses unless it admits
  * everything. A control that cannot see what it controls refuses.
+ *
+ * THE HOSTED GRANT IS ASKED OF THE PRINCIPAL A LEAD IS OPENED AS. Every turn is
+ * spent on the shared credential, so `hostedRunsGranted` asks the project's
+ * tenant about `config.principal`, the same field a successor is opened under,
+ * and the runtime asks it before it takes a permit for the project.
  */
 
 import { leadSeedingDecisionsMax } from "../contract/http.ts";
@@ -57,6 +62,8 @@ import type {
   LeadTurnWithdrawn,
 } from "./leadMailbox.ts";
 import { leadSystemPrompt } from "./leadTools.ts";
+import { asPrincipal } from "./principal.ts";
+import { hostedRunsGranted, type ProjectAccess } from "./projectAccess.ts";
 import {
   leadObservationText,
   leadObservedRefusals,
@@ -438,6 +445,7 @@ export function leadSelectorPolicy(
   decisions: LeadDecisionTail,
   sessions: LeadSessionMint,
   clock: LeadPolicyClock,
+  access: ProjectAccess,
   config: LeadPolicyConfig,
 ): SelectorPolicy {
   const ports: LeadPolicyPorts = {
@@ -448,6 +456,7 @@ export function leadSelectorPolicy(
     config,
   };
   const pollIntervalMs = checkedPollInterval(config.pollIntervalMs);
+  const principal = asPrincipal(config.principal);
   const withdraw = async (
     attempt: string,
   ): Promise<SelectorTerminationResult> => {
@@ -455,6 +464,8 @@ export function leadSelectorPolicy(
     return leadTermination(attempt, turn, await mailbox.withdraw(turn));
   };
   return {
+    hostedRunsGranted: (partition) =>
+      hostedRunsGranted(access, principal, partition.tenant),
     execute: (request, signal) =>
       leadDecision(ports, request, pollIntervalMs, signal),
     cancel: (attempt) => withdraw(attempt),

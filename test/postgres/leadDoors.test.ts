@@ -193,7 +193,12 @@ const composedRootProgram = `
         wait: async () => undefined,
       },
       deadline: { after: () => new Promise(() => undefined) },
-      policy: { pollIntervalMs: 1, implementationRevision: 'test' },
+      policy: {
+        pollIntervalMs: 1,
+        implementationRevision: 'test',
+        principal: 'principal-lead-doors',
+        credentialSlot: 'claude-code',
+      },
       controlDeadlineMs: 1000,
     },
     { next: () => ({ operation: 'unused', selectorDecisionReference: 'unused' }) },
