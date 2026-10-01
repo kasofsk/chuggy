@@ -130,7 +130,7 @@ async function sessionsAmong(
   const found = await pool.query<{ assignment: string | null }>(
     sql`SELECT a AS assignment FROM pool_session_assignments(
           ${identity.partition.tenant},${identity.partition.project},
-          ${identity.pool},${[...assignments]}::text[]) AS a`,
+          ${identity.pool},${identity.principal},${[...assignments]}::text[]) AS a`,
   );
   return new Set(
     found.rows.flatMap((row) =>

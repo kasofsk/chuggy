@@ -58,7 +58,12 @@ export interface SessionLaunchFacts {
   readonly model: string;
   /** How long a runner lets one session's container run, which is the in-cluster pod's deadline. */
   readonly deadlineSecs: number;
-  /** How long after an attempt ends before its session is opened again, which is the scheduler's own. */
+  /**
+   * How long after an attempt ends before its session is opened again, which
+   * is the scheduler's own. A turn none of them claims is withdrawn once its
+   * dwell runs, so the attempts opened for it number about its dwell over this
+   * backoff.
+   */
   readonly placementBackoffSecs: number;
 }
 
@@ -96,7 +101,7 @@ export type WorkerPoolSessionOpened = "Opened" | "NotClaimable" | "PoolFull";
  */
 export interface WorkerPoolSessions {
   launch(): Promise<SessionLaunchFacts | undefined>;
-  /** Which of `assignments` are session attempts this pool's name claimed, in any state. */
+  /** Which of `assignments` are session attempts this registration claimed, in any state. */
   among(
     identity: WorkerPoolIdentity,
     assignments: readonly string[],

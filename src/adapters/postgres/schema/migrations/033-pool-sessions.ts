@@ -15,10 +15,13 @@
  * and renews nothing, as 025 answers a pool's harness. Registering the name
  * again ends what an older registration held.
  *
- * An unserved turn's dwell runs from when its turn could first be claimed —
- * its enqueue, or the later end of the turn or attempt before it — and only
- * a session no attempt holds has one, so a runner serving a session never has
- * the turn behind the one it is answering withdrawn under it.
+ * An unserved turn's dwell runs from when it could first be claimed: its
+ * enqueue, the end of the turn before it, or its return to the queue by an
+ * attempt that had claimed it. An attempt that never claimed it restarts
+ * nothing, so a turn no runner can serve is withdrawn at the first moment past
+ * its dwell that no attempt holds its session; and only a session no attempt
+ * holds is withdrawn from, so a runner serving a session never has the turn
+ * behind the one it is answering withdrawn under it.
  */
 
 import {
@@ -55,7 +58,9 @@ const awaiting = `public.${poolSessionsAwaitingFunction}(in_tenant text, in_proj
 
 const opened = `public.${poolSessionOpenFunction}(in_tenant text, in_project text, in_pool text, in_principal text, in_session text, in_capabilities text[], in_agent_reference text, in_attempt text, in_assignment text, in_bearer text, in_secret_digest text, in_lease_secs bigint, in_backoff_secs bigint, in_held_max bigint, in_invocation jsonb, in_image text, in_launch jsonb)`;
 
-const assignments = `public.${poolSessionAssignmentsFunction}(in_tenant text, in_project text, in_pool text, in_assignments text[])`;
+const assignments = `public.${poolSessionAssignmentsFunction}(in_tenant text, in_project text, in_pool text, in_principal text, in_assignments text[])`;
+
+const releaseStamped = "public.session_turn_release_stamped()";
 
 const holding = `public.${poolSessionHoldingFunction}(in_tenant text, in_project text, in_pool text, in_principal text)`;
 
@@ -132,17 +137,27 @@ export const migration033: Migration = {
     `GRANT UPDATE(pool_refusal) ON TABLE public.session_attempt TO ${boundaryOwnerRole}`,
     `GRANT UPDATE(last_polled_at) ON TABLE public.worker_pool TO ${poolPlaneRole}`,
     `GRANT EXECUTE ON FUNCTION public.${repositoryBindingReadFunction}(in_tenant text, in_project text, in_repository text) TO ${poolPlaneRole}`,
+    `ALTER TABLE public.session_turn ADD COLUMN released_at timestamp with time zone`,
+    `CREATE FUNCTION ${releaseStamped} RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'pg_catalog', 'public', 'pg_temp'
+    AS $$
+     BEGIN
+       NEW.released_at := now();
+       RETURN NEW;
+     END $$`,
+    ...owned(releaseStamped),
+    `CREATE TRIGGER session_turn_records_its_release BEFORE UPDATE OF state ON public.session_turn
+       FOR EACH ROW WHEN (OLD.state='Claimed' AND NEW.state='Queued')
+       EXECUTE FUNCTION ${releaseStamped}`,
     `CREATE FUNCTION ${claimableSince} RETURNS timestamp with time zone
     LANGUAGE sql STABLE
     SET search_path TO 'pg_catalog', 'public', 'pg_temp'
     AS $$
-       SELECT greatest(h.enqueued_at,
+       SELECT greatest(h.enqueued_at,h.released_at,
                 (SELECT max(e.ended_at) FROM session_turn e
                   WHERE e.tenant=h.tenant AND e.project=h.project
-                    AND e.session=h.session AND e.ordinal<h.ordinal),
-                (SELECT max(a.ended_at) FROM session_attempt a
-                  WHERE a.tenant=h.tenant AND a.project=h.project
-                    AND a.session=h.session))
+                    AND e.session=h.session AND e.ordinal<h.ordinal))
          FROM session_turn h
         WHERE h.tenant=in_tenant AND h.project=in_project
           AND h.session=in_session AND h.state='Queued'
@@ -241,7 +256,7 @@ export const migration033: Migration = {
     AS $$
        SELECT a.assignment FROM session_attempt a
         WHERE a.tenant=in_tenant AND a.project=in_project AND a.pool=in_pool
-          AND a.assignment=ANY(in_assignments)
+          AND a.pool_principal=in_principal AND a.assignment=ANY(in_assignments)
      $$`,
     ...owned(assignments, poolPlaneRole),
     `CREATE FUNCTION ${holding}
