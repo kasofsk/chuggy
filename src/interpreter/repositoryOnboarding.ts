@@ -325,9 +325,10 @@ export type ProjectRepositoryCreateResult =
   | { readonly result: "Unavailable" };
 
 /**
- * One binding as the listing answers it. `configured` is whether the project
- * holds a configuration the step left for it that still releases, which is
- * what the configuration route runs the step again for when it does not.
+ * One binding as the listing answers it. `configured` is whether a
+ * configuration this repository declares has been imported, or the project
+ * holds a bootstrap that still releases; where neither holds, the
+ * configuration route runs the step again.
  */
 export interface ProjectRepositoryListed extends ProjectRepositoryBound {
   readonly configured: boolean;
