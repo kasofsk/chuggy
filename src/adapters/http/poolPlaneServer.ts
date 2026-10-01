@@ -44,15 +44,20 @@ import {
 import {
   workerPoolAdmitted,
   workerPoolContractAccepted,
+  workerPoolHeldImages,
+  workerPoolHeldNamedMax,
   workerPoolPoll,
   workerPoolReconciliationUnsessioned,
   workerPoolSessionsRead,
+  workerPoolSettled,
   type WorkerPoolAssignments,
   type WorkerPoolIdentity,
   type WorkerPoolMint,
   type WorkerPoolPollSettings,
+  type WorkerPoolPorts,
   type WorkerPoolRegistry,
 } from "../../interpreter/workerPool.ts";
+import type { WorkerPoolSessionPorts } from "../../interpreter/workerPoolSessions.ts";
 import {
   planeApp,
   planeJsonObjectBytesMax,
@@ -81,9 +86,18 @@ export interface PoolPlaneService {
   readonly access: ProjectAccess;
   readonly registry: WorkerPoolRegistry;
   readonly assignments: WorkerPoolAssignments;
+  readonly sessions: WorkerPoolSessionPorts;
   readonly settings: WorkerPoolPollSettings;
   readonly mint: WorkerPoolMint;
   readonly ready: () => Promise<boolean>;
+}
+
+function poolPorts(service: PoolPlaneService): WorkerPoolPorts {
+  return {
+    assignments: service.assignments,
+    sessions: service.sessions,
+    mint: service.mint,
+  };
 }
 
 /**
@@ -208,32 +222,31 @@ function poolAssignmentsRoute(
       bodyBytesMax: planeJsonObjectBytesMax(),
     },
     async (request, reply, identity) => {
-      const query = workerPoolPollQuerySchema(
-        service.settings.heldMax,
-      ).safeParse(request.query);
-      if (!query.success) return reply.code(400).send();
       const sessionsRead = workerPoolSessionsRead(
         workerContractOffered(request),
       );
-      const answered = await workerPoolPoll(
-        service.assignments,
+      const query = workerPoolPollQuerySchema(
+        workerPoolHeldNamedMax(service.settings, sessionsRead),
+      ).safeParse(request.query);
+      if (!query.success) return reply.code(400).send();
+      const polled = await workerPoolPoll(
+        poolPorts(service),
         identity,
         {
           held: query.data[workerPoolPollQuery.held],
           wanted: query.data[workerPoolPollQuery.wanted],
-          wantedSessions: sessionsRead
-            ? query.data[workerPoolPollQuery.wantedSessions]
-            : 0,
+          wantedSessions: query.data[workerPoolPollQuery.wantedSessions],
+          readsSessions: sessionsRead,
         },
         service.settings,
-        service.mint,
       );
+      if (polled.polled === "HeldOverBound") return reply.code(400).send();
       return reply
         .code(200)
         .send(
           sessionsRead
-            ? answered
-            : workerPoolReconciliationUnsessioned(answered),
+            ? polled.answer
+            : workerPoolReconciliationUnsessioned(polled.answer),
         );
     },
   );
@@ -242,9 +255,7 @@ function poolAssignmentsRoute(
 /**
  * The three settlements a pool can report, each one the path rather than the
  * body: an accepted assignment is already leased and needs no write, a refusal
- * is evidence the orchestrator turns into the attempt's terminal, and an
- * unavailable releases the assignment, which concludes its execution as a
- * failed process.
+ * is evidence its attempt ends on, and an unavailable releases the assignment.
  */
 function poolOutcomeRoutes(
   app: FastifyInstance,
@@ -280,29 +291,13 @@ async function poolOutcomeAnswered(
     ...(body as Record<string, unknown>),
   });
   if (!offered.success) return reply.code(400).send();
-  const settled = await poolOutcomeSettled(
-    service,
+  const settled = await workerPoolSettled(
+    poolPorts(service),
     identity,
     assignment,
     offered.data,
   );
   return settled ? reply.code(204).send() : reply.code(409).send();
-}
-
-async function poolOutcomeSettled(
-  service: PoolPlaneService,
-  identity: WorkerPoolIdentity,
-  assignment: string,
-  offered: AssignmentOutcome,
-): Promise<boolean> {
-  switch (offered.outcome) {
-    case "Accepted":
-      return service.assignments.held(identity, assignment);
-    case "Refused":
-      return service.assignments.refuse(identity, assignment, offered.evidence);
-    case "Unavailable":
-      return service.assignments.release(identity, assignment);
-  }
 }
 
 /** Where the image registry's front asks whether one request may pass, outside `/v1` so the pool plane's public address never serves it. */
@@ -357,9 +352,10 @@ async function poolPullAnswered(
     poolPullForwarded(request, "x-forwarded-uri"),
   );
   if (pull === undefined) return 403;
-  const held = await service.assignments.heldImages(
+  const held = await workerPoolHeldImages(
+    poolPorts(service),
     caller.identity,
-    service.settings.heldMax,
+    service.settings,
   );
   return workerPoolImagePullAllowed(pull, held, service.settings.imageHosts)
     ? 200

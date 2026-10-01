@@ -101,9 +101,10 @@ async function poolPodSubmitted(
       ),
     );
   };
-  const placed = await kubernetesPoolBackend(config, fetcher).place(
-    goldenAssignment,
-  );
+  const placed = await kubernetesPoolBackend(config, fetcher).place({
+    kind: "Job",
+    assignment: goldenAssignment,
+  });
   if (placed.placed !== "Placed" || submitted.length !== 1)
     throw new Error("the golden placement submitted no pod");
   return submitted[0];

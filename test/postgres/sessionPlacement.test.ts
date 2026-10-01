@@ -174,6 +174,25 @@ test("a write that changes nothing is unchanged, and a project that does not exi
   );
 });
 
+test("a write that changes one kind's route is written, and that route reads back changed", async () => {
+  const partition = await postgresHarnessProject(harness.store, "one-kind");
+  const store = postgresSessionPlacement(apiPool);
+  for (const [placement, reads] of [
+    [{ Thread: "Pool", Lead: "Pool" }, ["Pool", "Pool"]],
+    [{ Thread: "Pool", Lead: "InCluster" }, ["Pool", "InCluster"]],
+    [{ Thread: "Pool", Lead: "Pool" }, ["Pool", "Pool"]],
+    [{ Thread: "InCluster", Lead: "Pool" }, ["InCluster", "Pool"]],
+  ] as const) {
+    assert.equal(await store.write(partition, placement, owner), "Written");
+    const [thread, lead] = reads;
+    assert.deepEqual(await routed(partition), {
+      Thread: `${thread}/Project`,
+      Lead: `${lead}/Project`,
+      Inquiry: `${lead}/Project`,
+    });
+  }
+});
+
 test("a runner counts as live for its member and the project only while its last poll is recent", async () => {
   const partition = await postgresHarnessProject(harness.store, "runners");
   const member = asPrincipal("https://issuer.invalid#a-member");

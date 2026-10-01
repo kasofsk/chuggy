@@ -46,11 +46,13 @@ const schedulerSourceInsertPrivilege = {
   columns: sourceInsertColumns,
 };
 const admittedWorkerColumns = "image,name,published_at,version";
-/** What a scheduler publishes of its routing at boot, and all of it. */
+/** What a scheduler publishes of its routing and its session launch at boot, and all of it. */
 const executionRoutingColumns =
   "evaluation_route,project_routes,published_at,singleton,work_route";
 const sessionRoutingColumns =
   "lead_route,project_routes,published_at,singleton,thread_route";
+const sessionLaunchColumns =
+  "authority,backoff_secs,bounds,deadline_secs,image,mirrors,model,published_at,singleton";
 /** The five relations one run's evidence lives in, named once for every case. */
 const runEvidenceRelations = [
   "execution_run",
@@ -995,6 +997,16 @@ const schedulerWritePrivileges = [
       "attempt,evidence,execution,incident,kind,observed_at,project,tenant",
   },
   {
+    table_name: "session_launch",
+    privilege_type: "INSERT",
+    columns: sessionLaunchColumns,
+  },
+  {
+    table_name: "session_launch",
+    privilege_type: "UPDATE",
+    columns: sessionLaunchColumns,
+  },
+  {
     table_name: "session_routing",
     privilege_type: "INSERT",
     columns: sessionRoutingColumns,
@@ -1006,7 +1018,7 @@ const schedulerWritePrivileges = [
   },
 ];
 
-test("the scheduler's write surface is exactly the columns execution and capacity need, and the routings it publishes", async () => {
+test("the scheduler's write surface is exactly the columns execution and capacity need, and what it publishes", async () => {
   assert.deepEqual(
     await harness.query(
       `SELECT table_name, privilege_type,
@@ -1053,6 +1065,7 @@ test("the scheduler reads execution and capacity, of the project only its lifecy
       "recovery_epoch",
       "scheduler_incident",
       "schema_migration",
+      "session_launch",
       "session_routing",
       "ticket_definition",
       "ticket_source",

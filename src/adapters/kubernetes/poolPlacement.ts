@@ -28,6 +28,10 @@
  * nothing, because a pool declared its capabilities at registration and a
  * token like a mounted provider credential is satisfied by the pool itself
  * rather than by a node.
+ *
+ * IT RUNS JOBS AND NO SESSION. Every pod it holds is a job's, a session offered
+ * to it is refused, and nothing it ends is reported, so a pool running on it
+ * names no session ceiling.
  */
 
 import { workerTaskVariable } from "../../contract/workerEnvironment.ts";
@@ -35,6 +39,7 @@ import type { WorkerPoolAssignment } from "../../contract/workerPool.ts";
 import type { PoolEnvelope } from "../../contract/workerTask.ts";
 import type {
   WorkerPoolBackend,
+  WorkerPoolHeld,
   WorkerPoolPlacement,
   WorkerPoolStopped,
 } from "../../interpreter/workerPoolClient.ts";
@@ -363,16 +368,17 @@ async function poolPlacementStopped(
 async function poolPlacementHeld(
   config: KubernetesPoolPlacementConfig,
   fetcher: typeof fetch,
-): Promise<readonly string[]> {
+): Promise<readonly WorkerPoolHeld[]> {
   const listed = await kubernetesListedPods(
     config,
     fetcher,
     `${config.poolLabel.name}=${config.poolLabel.value}`,
     kubernetesPoolAssignmentAnnotation,
   );
-  const held: string[] = [];
+  const held: WorkerPoolHeld[] = [];
   for (const pod of listed) {
-    if (pod.end === "Unended") held.push(pod.value);
+    if (pod.end === "Unended")
+      held.push({ assignment: pod.value, kind: "Job" });
     else await kubernetesDeletePod(config, fetcher, pod.name);
   }
   return held;
@@ -384,8 +390,12 @@ export function kubernetesPoolBackend(
 ): WorkerPoolBackend {
   const config = checkedKubernetesPoolPlacementConfig(input);
   return {
-    place: (assignment) => poolPlacementPlaced(config, fetcher, assignment),
+    place: async (offer) =>
+      offer.kind === "Job"
+        ? poolPlacementPlaced(config, fetcher, offer.assignment)
+        : { placed: "Refused", evidence: "this pool runs no session" },
     stop: (assignment) => poolPlacementStopped(config, fetcher, assignment),
     held: () => poolPlacementHeld(config, fetcher),
+    ended: () => Promise.resolve([]),
   };
 }

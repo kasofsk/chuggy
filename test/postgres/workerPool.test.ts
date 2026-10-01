@@ -533,7 +533,8 @@ test("the plane serving pools ends an attempt only by releasing it, and moves no
  * A claim hands out the image its execution's requirement pinned, which the
  * plane reads to do it; this is every other column the plane may touch, so an
  * attempt's invocation, the digest a bearer is checked against and a pool's
- * client are none of them.
+ * client are none of them. A session's launch is read whole, and a pool's
+ * liveness is the one column of its row the plane writes.
  */
 test("the plane serving pools reads and writes these columns and no others", async () => {
   assert.deepEqual(
@@ -566,10 +567,16 @@ test("the plane serving pools reads and writes these columns and no others", asy
       ["recovery_epoch", "SELECT", "epoch,established_at,ordinal"],
       ["schema_migration", "SELECT", "applied_at,name,version"],
       [
+        "session_launch",
+        "SELECT",
+        "authority,backoff_secs,bounds,deadline_secs,image,mirrors,model,published_at,singleton",
+      ],
+      [
         "worker_pool",
         "SELECT",
         "capabilities,class,pool,principal,project,tenant",
       ],
+      ["worker_pool", "UPDATE", "last_polled_at"],
     ].map(([table_name, privilege_type, columns]) => ({
       table_name,
       privilege_type,

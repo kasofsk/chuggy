@@ -111,7 +111,7 @@ import type { ProjectRepositoryBindingRead } from "./repositoryConfiguration.ts"
 import {
   checkedSessionSchedulerConfig,
   sessionPodEvidence,
-  sessionRepositoryRead,
+  sessionRepositoryPlaced,
   type FencedSessionAttempt,
   type SessionBearer,
   type SessionPlacementPort,
@@ -283,7 +283,11 @@ async function sessionPlaceOne(
   epoch: RecoveryEpoch,
 ): Promise<boolean> {
   const config = checkedSessionSchedulerConfig(service.config);
-  const binding = await service.bindings.binding(session.partition);
+  const repository = sessionRepositoryPlaced(
+    await service.bindings.binding(session.partition),
+    session.capabilities,
+    service.policy.mirrors,
+  );
   const minted = service.bearers.mint();
   const placing = {
     kind: session.kind,
@@ -296,16 +300,7 @@ async function sessionPlaceOne(
     image: service.policy.image,
     authority: service.policy.grant,
     bearer: minted.bearer,
-    /** A checkout nothing on the roster may read is a cost with no consequence. */
-    ...(binding === undefined ||
-    !session.capabilities.includes("RepositoryRead")
-      ? {}
-      : {
-          repository: sessionRepositoryRead(
-            service.policy.mirrors,
-            binding.repository,
-          ),
-        }),
+    ...(repository === undefined ? {} : { repository }),
   };
   const opened = await service.store.openAttempt({
     partition: session.partition,

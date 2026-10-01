@@ -44,6 +44,14 @@ const assignment = {
   bearer: "attempt-bearer",
 };
 
+const sessionAssignment = {
+  ...assignment,
+  assignment: "session-one",
+  capabilities: [],
+  image: "registry.invalid/session:1",
+  bearer: "chgs_session",
+};
+
 /** The address one request was made to, whichever way the caller spelled it. */
 function sentUrl(input: Parameters<typeof fetch>[0]): string {
   if (typeof input === "string") return input;
@@ -78,21 +86,22 @@ test("a poll names what the pool holds and wants, and carries its own token", as
         200,
         JSON.stringify({
           assignments: [assignment],
-          sessions: [],
+          sessions: [sessionAssignment],
           stop: ["a"],
         }),
       ),
     );
   });
-  const polled = await plane.poll("pool-token", ["one", "two"], 3);
+  const polled = await plane.poll("pool-token", ["one", "two"], 3, 2);
   assert.equal(
     seen.url,
-    "https://pool-plane.invalid/v1/assignments?held=one&held=two&wanted=3",
+    "https://pool-plane.invalid/v1/assignments?held=one&held=two&wanted=3&wantedSessions=2",
   );
   assert.equal(seen.authorization, "Bearer pool-token");
   assert.equal(polled.polled, "Reconciled");
   if (polled.polled !== "Reconciled") return;
   assert.deepEqual(polled.assignments, [assignment]);
+  assert.deepEqual(polled.sessions, [sessionAssignment]);
   assert.deepEqual(polled.stop, ["a"]);
 });
 
@@ -107,7 +116,7 @@ test("each refusing status is the arm the plane means by it", async () => {
     const plane = poolPlaneClient(planeSettings, () =>
       Promise.resolve(answered(status, "{}")),
     );
-    const polled = await plane.poll("pool-token", [], 1);
+    const polled = await plane.poll("pool-token", [], 1, 0);
     assert.equal(polled.polled, expected, `status ${String(status)}`);
   }
 });
@@ -117,7 +126,7 @@ test("an answer this pool cannot read is an outage rather than a refusal", async
     const plane = poolPlaneClient(planeSettings, () =>
       Promise.resolve(answered(200, body)),
     );
-    const polled = await plane.poll("pool-token", [], 1);
+    const polled = await plane.poll("pool-token", [], 1, 0);
     assert.equal(polled.polled, "Unavailable");
   }
 });
@@ -126,7 +135,7 @@ test("a plane that could not be reached is an outage and raises nothing", async 
   const plane = poolPlaneClient(planeSettings, () =>
     Promise.reject(new Error("connection refused")),
   );
-  const polled = await plane.poll("pool-token", [], 1);
+  const polled = await plane.poll("pool-token", [], 1, 0);
   assert.equal(polled.polled, "Unavailable");
 });
 
@@ -307,7 +316,7 @@ test("a poll and every settlement name the release this client was built with", 
       ),
     );
   });
-  await plane.poll("pool-token", [], 1);
+  await plane.poll("pool-token", [], 1, 0);
   await plane.settle("pool-token", "one", { outcome: "Accepted" });
   assert.deepEqual(named, [workerContractRelease, workerContractRelease]);
 });
@@ -321,7 +330,7 @@ test("a plane refusing this client's release ends the pool rather than losing an
   const refusing = poolPlaneClient(planeSettings, () =>
     Promise.resolve(answered(409, refusal)),
   );
-  const polled = await refusing.poll("pool-token", [], 1);
+  const polled = await refusing.poll("pool-token", [], 1, 0);
   assert.equal(polled.polled, "Denied");
   assert.ok(
     polled.polled === "Denied" &&

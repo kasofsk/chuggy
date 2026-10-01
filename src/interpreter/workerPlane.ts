@@ -37,6 +37,12 @@ export const workerContractAccepted: WorkerContractRange = {
   max: workerContractServed(),
 };
 
+/** The versions in which a runner launches sessions, which is where a pool is handed one and a pool-held task names what it is launched with. */
+export const workerContractRunnerSessions: WorkerContractRange = {
+  min: { major: 1, minor: 3 },
+  max: workerContractAccepted.max,
+};
+
 /** The version this plane was built with, read off its release. */
 function workerContractServed(): WorkerContractVersion {
   const served = workerContractVersionOf(workerContractRelease);

@@ -3,6 +3,7 @@ import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
 
 import {
+  sessionTaskAnswerSchema,
   sessionTaskDocumentSchema,
   workTaskDocumentSchema,
 } from "../../contract/workerTask.ts";
@@ -262,6 +263,7 @@ interface SessionTaskRow {
   readonly credential_slot: string | null;
   readonly live: boolean | null;
   readonly invocation: unknown;
+  readonly launch: unknown;
 }
 
 /** A recorded session invocation, which the scheduler wrote in the shape of the pod document it came from. */
@@ -274,13 +276,19 @@ const sessionTaskInvocationSchema = sessionTaskDocumentSchema
   })
   .strict();
 
+/** What a pool-held attempt's claim recorded beside its invocation, which its runner is launched with nothing else to name. */
+const sessionTaskLaunchSchema = sessionTaskDocumentSchema
+  .pick({ api: true, bounds: true })
+  .extend({ model: sessionTaskAnswerSchema.shape.model.unwrap() })
+  .strict();
+
 async function sessionTask(
   pool: pg.Pool,
   secret: SessionBearerSecret,
 ): Promise<SessionTaskRead | undefined> {
   const found = await pool.query<SessionTaskRow>(
     sql`SELECT tenant,project,session,attempt,generation::text AS generation,
-               kind,credential_slot,live,invocation
+               kind,credential_slot,live,invocation,launch
           FROM read_session_task(${workerSecretDigest(secret)})`,
   );
   const row = found.rows[0];
@@ -306,6 +314,9 @@ async function sessionTask(
     ...(row.invocation === null
       ? {}
       : { invocation: sessionTaskInvocationSchema.parse(row.invocation) }),
+    ...(row.launch === null
+      ? {}
+      : { launch: sessionTaskLaunchSchema.parse(row.launch) }),
   };
 }
 

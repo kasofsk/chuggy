@@ -42,6 +42,11 @@ function schedulerRuntime(config: SchedulerCommandConfig): ServiceRuntime {
       config: config.sessionScheduler,
     },
     sessionRouting: config.sessionRouting,
+    sessionLaunch: {
+      bounds: config.sessions.bounds,
+      model: config.sessions.model,
+      deadlineSecs: config.sessions.activeDeadlineSecs,
+    },
     workerCatalog: config.workerCatalog,
     additional: [kubernetesNamespacePrecondition(config.workers)],
   });

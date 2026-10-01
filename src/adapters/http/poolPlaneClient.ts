@@ -105,16 +105,21 @@ function poolPlaneUrl(settings: PoolPlaneClientSettings, route: string): URL {
   return new URL(route.replace(/^\//u, ""), settings.baseUrl);
 }
 
-/** The poll's address: the held list repeated and the room stated, as the plane reads them. */
+/** The poll's address: the held list repeated and each kind's room stated, as the plane reads them. */
 function poolPlaneAssignmentsUrl(
   settings: PoolPlaneClientSettings,
   held: readonly string[],
   wanted: number,
+  wantedSessions: number,
 ): URL {
   const url = poolPlaneUrl(settings, workerPoolPollRoute);
   for (const assignment of held)
     url.searchParams.append(workerPoolPollQuery.held, assignment);
   url.searchParams.set(workerPoolPollQuery.wanted, String(wanted));
+  url.searchParams.set(
+    workerPoolPollQuery.wantedSessions,
+    String(wantedSessions),
+  );
   return url;
 }
 
@@ -161,6 +166,7 @@ async function poolPlaneReconciled(
     ? {
         polled: "Reconciled",
         assignments: read.data.assignments,
+        sessions: read.data.sessions,
         stop: read.data.stop,
       }
     : {
@@ -175,10 +181,12 @@ async function poolPlanePolled(
   token: string,
   held: readonly string[],
   wanted: number,
+  wantedSessions: number,
 ): Promise<WorkerPoolPolled> {
   let answered: Response;
   try {
-    answered = await fetcher(poolPlaneAssignmentsUrl(settings, held, wanted), {
+    const url = poolPlaneAssignmentsUrl(settings, held, wanted, wantedSessions);
+    answered = await fetcher(url, {
       method: "GET",
       signal: AbortSignal.timeout(settings.pollTimeoutMs),
       headers: {
@@ -266,8 +274,8 @@ export function poolPlaneClient(
 ): WorkerPoolPlane {
   const settings = checkedPoolPlaneClientSettings(input);
   return {
-    poll: (token, held, wanted) =>
-      poolPlanePolled(settings, fetcher, token, held, wanted),
+    poll: (token, held, wanted, wantedSessions) =>
+      poolPlanePolled(settings, fetcher, token, held, wanted, wantedSessions),
     settle: (token, assignment, outcome) =>
       poolPlaneSettled(settings, fetcher, token, assignment, outcome),
   };

@@ -100,7 +100,9 @@ import {
   type ManifestRejection,
 } from "../../interpreter/resultManifest.ts";
 import {
+  contractVersionAccepted,
   workerContractAccepted,
+  workerContractRunnerSessions,
   type WorkerArtifactReservationPort,
   type WorkerArtifactStored,
   type WorkerArtifactUploadPort,
@@ -125,6 +127,7 @@ import {
 import {
   workerContractChecked,
   workerContractNamed,
+  workerContractOffered,
 } from "./workerContractVersion.ts";
 
 /** The probes the cluster sends, which no worker calls and so the worker contract does not name. */
@@ -572,18 +575,23 @@ async function workerTaskOf(
     : { kind: "Work", ...workTask(found.identity, found.invocation) };
 }
 
-/** A session's task, read only once the session authority has found it live. */
+/** A session's task, read only once the session authority has found it live, and naming its launch only to a release in which a runner launches it. */
 async function sessionTaskOf(
   service: WorkerPlaneServerService,
   secret: SessionBearerSecret,
+  release: string | undefined,
 ): Promise<
   (SessionTask & Partial<SessionTaskLaunch>) | "TaskNotRecorded" | undefined
 > {
   const found = await service.tasks.session(secret);
   if (found === undefined || !found.live) return undefined;
-  return found.invocation === undefined
-    ? "TaskNotRecorded"
-    : { ...sessionTask(found.identity, found.invocation), ...found.launch };
+  if (found.invocation === undefined) return "TaskNotRecorded";
+  return {
+    ...sessionTask(found.identity, found.invocation),
+    ...(contractVersionAccepted(workerContractRunnerSessions, release)
+      ? found.launch
+      : {}),
+  };
 }
 
 /**
@@ -595,11 +603,15 @@ function workerTaskRoute(
   register: WorkerJobRegistrar,
   service: WorkerPlaneServerService,
 ): void {
-  register("task", async (_request, reply, caller) => {
+  register("task", async (request, reply, caller) => {
     const found =
       caller.bearer === "Attempt"
         ? await workerTaskOf(service, caller.secret)
-        : await sessionTaskOf(service, caller.secret);
+        : await sessionTaskOf(
+            service,
+            caller.secret,
+            workerContractOffered(request),
+          );
     if (found === undefined) return reply.code(401).send({ action: "stop" });
     if (found === "TaskNotRecorded")
       return reply
