@@ -1,6 +1,7 @@
 /**
  * A mutation and what answering it does: the button, one fragment of effect,
- * and at most one more.
+ * and at most one more — and, for a press that asks before it submits, the
+ * ask it opened, drawn under them.
  *
  * Total over `actionStates` — ready, busy, refused, and offered-not-at-all —
  * each in the full form the ticket page draws and the compact form a table row
@@ -39,7 +40,10 @@ export interface OfferedActionProps {
   readonly offered?: boolean;
   readonly danger?: boolean;
   readonly variant?: ActionForm;
+  /** Whether the ask a press opens is open, where the press opens one. */
+  readonly expanded?: boolean;
   readonly onChoose: () => void;
+  readonly children?: ReactNode;
 }
 
 export function actionStateOf(props: OfferedActionProps): ActionState {
@@ -107,6 +111,9 @@ export function OfferedAction(props: OfferedActionProps): ReactNode {
           disabled={state !== "ready"}
           busy={state === "busy"}
           describedBy={describedBy}
+          {...(props.expanded === undefined
+            ? {}
+            : { expanded: props.expanded })}
           onClick={props.onChoose}
         >
           {props.action}
@@ -119,6 +126,7 @@ export function OfferedAction(props: OfferedActionProps): ReactNode {
         describedBy={describedBy}
         hidden={compact}
       />
+      {props.children}
     </div>
   );
 }

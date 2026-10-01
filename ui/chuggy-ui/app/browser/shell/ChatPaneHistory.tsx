@@ -20,7 +20,8 @@ import type { ThreadStanding } from "../../../../../src/contract/rosters.ts";
 import { agoText } from "../../core/figures.ts";
 import { threadLabel, threadsByStanding } from "../../core/threads.ts";
 import { useNowMs } from "../Freshness.tsx";
-import { Button, buttonLookClassName } from "../ui/Button.tsx";
+import { buttonLookClassName } from "../ui/Button.tsx";
+import { Confirm } from "../ui/Confirm.tsx";
 import { MenuContent, menuItemClassName } from "../ui/Menu.tsx";
 import { Notice } from "../ui/Notice.tsx";
 import { Tooltip } from "../ui/Tooltip.tsx";
@@ -167,33 +168,19 @@ function ChatPaneCloseConfirm(props: {
   readonly onCancel: () => void;
 }): ReactNode {
   return (
-    <div
-      role="group"
-      aria-label="Close this thread?"
-      className="border-edge grid gap-2 rounded-2 border p-3 text-sm"
+    <Confirm
+      question="Close this thread?"
+      confirm="Close thread"
+      busy={props.busy}
+      onConfirm={props.onConfirm}
+      onCancel={props.onCancel}
     >
-      <p className="text-ink-2 m-0">
-        {props.mine
-          ? ""
-          : "This thread is not yours; closing it ends it for its owner too. "}
-        It stays readable in History, but it will take no more messages, and a
-        reply still in progress is abandoned. This cannot be undone.
-      </p>
-      <div className="flex justify-end gap-2">
-        <Button variant="quiet" size="sm" onClick={props.onCancel}>
-          Cancel
-        </Button>
-        <Button
-          variant="danger"
-          size="sm"
-          busy={props.busy}
-          disabled={props.busy}
-          onClick={props.onConfirm}
-        >
-          Close thread
-        </Button>
-      </div>
-    </div>
+      {props.mine
+        ? ""
+        : "This thread is not yours; closing it ends it for its owner too. "}
+      It stays readable in History, but it will take no more messages, and a
+      reply still in progress is abandoned. This cannot be undone.
+    </Confirm>
   );
 }
 

@@ -19,6 +19,12 @@ import {
 } from "../app/core/inboxAnswers.ts";
 import type { InboxAnswers } from "../app/core/inboxAnswers.ts";
 import type { OperationStep } from "../app/core/operationFollow.ts";
+import type { TicketAction } from "../app/core/ticketActions.ts";
+
+const resume: TicketAction = {
+  action: "Resume",
+  mutation: { mutation: "ResumeTicket", ticket: 4 },
+};
 
 const settled: OperationStep = {
   step: "Settled",
@@ -45,7 +51,8 @@ function answered(
   from: InboxAnswers = inboxAnswersEmpty,
 ): InboxAnswers {
   let held = from;
-  for (const ticket of tickets) held = inboxAnswersWith(held, ticket, step);
+  for (const ticket of tickets)
+    held = inboxAnswersWith(held, ticket, { action: resume, step });
   return held;
 }
 
@@ -59,12 +66,12 @@ const overCap = Array.from(
 
 test("the latest step of a ticket replaces the one before it", () => {
   const held = inboxAnswersWith(
-    inboxAnswersWith(inboxAnswersEmpty, 4, following),
+    inboxAnswersWith(inboxAnswersEmpty, 4, { action: resume, step: following }),
     4,
-    settled,
+    { action: resume, step: settled },
   );
   expect(Object.keys(held)).toStrictEqual(["4"]);
-  expect(held["4"]).toStrictEqual(settled);
+  expect(held["4"]?.step).toStrictEqual(settled);
 });
 
 test("finished answers past the cap are shed and the count stops growing", () => {
@@ -75,9 +82,10 @@ test("finished answers past the cap are shed and the count stops growing", () =>
 
 test("an answer still in flight is never shed, however many finish around it", () => {
   const held = answered(overCap, settled, answered([1], following));
-  expect(held["1"]).toStrictEqual(following);
+  expect(held["1"]?.step).toStrictEqual(following);
   expect(
-    Object.values(held).filter((step) => inboxAnswerInFlight(step)).length,
+    Object.values(held).filter((answer) => inboxAnswerInFlight(answer.step))
+      .length,
   ).toBe(1);
 });
 

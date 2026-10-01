@@ -649,6 +649,9 @@ test("a press naming another action still resolves the attempt that is held", as
   await turned(() => {
     screen.getByRole("button", { name: "Revoke" }).click();
   });
+  await turned(() => {
+    screen.getByRole("button", { name: "Revoke ticket" }).click();
+  });
   await settled();
   standing.state = "Answered";
   await stepped();

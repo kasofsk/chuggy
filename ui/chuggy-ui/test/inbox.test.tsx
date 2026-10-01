@@ -9,7 +9,13 @@
  */
 
 import { QueryClient } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
@@ -24,6 +30,7 @@ import {
   settled,
   turned,
 } from "./screenHarness.tsx";
+import type { ApiDouble } from "./screenHarness.tsx";
 import { frame } from "./streamDouble.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 import { leadRefusals } from "./leadFixture.ts";
@@ -32,9 +39,13 @@ import { resizeObserverStubbed } from "./resizeObserver.ts";
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
 
+/** Whether the wait between polls ever ends: held, a follow stays in flight. */
+const waiting = vi.hoisted(() => ({ held: false }));
+
 vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof BrowserPorts>()),
-  sleepMs: () => Promise.resolve(),
+  sleepMs: () =>
+    waiting.held ? new Promise<void>(() => undefined) : Promise.resolve(),
 }));
 
 vi.mock("@tanstack/react-router", () => ({
@@ -52,6 +63,7 @@ beforeEach(resizeObserverStubbed);
  * library's own hook, which this runner has no global `afterEach` for. */
 afterEach(() => {
   cleanup();
+  waiting.held = false;
   vi.unstubAllGlobals();
 });
 
@@ -87,11 +99,9 @@ function servedWithRefusal(url: string): Response {
   return served(url);
 }
 
-function drawInbox(route: (url: string) => Response): void {
-  vi.stubGlobal(
-    "fetch",
-    apiDouble({ operation: operationAt("Pending"), route }).fetch,
-  );
+function drawInbox(route: (url: string) => Response): ApiDouble {
+  const api = apiDouble({ operation: operationAt("Pending"), route });
+  vi.stubGlobal("fetch", api.fetch);
   render(
     <ScreenHarness
       partition={atlas}
@@ -101,6 +111,7 @@ function drawInbox(route: (url: string) => Response): void {
       <InboxScreen partition={atlas} />
     </ScreenHarness>,
   );
+  return api;
 }
 
 test("a row names the ticket it is about beside its number", async () => {
@@ -145,6 +156,44 @@ test("an answered row stays until a Ticket frame moves it out of the section", a
   });
   expect(screen.queryByRole("button", { name: "resume" })).toBeNull();
   expect(screen.getByText("Inbox is clear")).toBeDefined();
+});
+
+/** Revoke ends the ticket for good, so a row asks before it sends one: the
+ * press and Cancel send nothing, and the ask stays, busy, once it has. */
+test("revoke asks before it is sent, and only the ask's own button sends it", async () => {
+  waiting.held = true;
+  const api = drawInbox(served);
+  await settled();
+  const ask = (): HTMLElement | null =>
+    screen.queryByRole("group", { name: "Revoke this ticket?" });
+
+  await turned(() => {
+    screen.getByRole("button", { name: "revoke" }).click();
+  });
+  const group = ask();
+  if (group === null) throw new Error("revoke opened no ask");
+  expect(api.submissions()).toBe(0);
+  await turned(() => {
+    within(group).getByRole("button", { name: "Cancel" }).click();
+  });
+  expect(ask()).toBeNull();
+  expect(api.submissions()).toBe(0);
+
+  await turned(() => {
+    screen.getByRole("button", { name: "revoke" }).click();
+  });
+  await turned(() => {
+    screen.getByRole("button", { name: "Revoke ticket" }).click();
+  });
+  expect(api.submissions()).toBe(1);
+  expect(api.submitted()).toMatchObject({
+    mutation: { mutation: "RevokeTicket", ticket: 4 },
+  });
+  expect(
+    screen
+      .getByRole("button", { name: "Revoke ticket" })
+      .hasAttribute("disabled"),
+  ).toBe(true);
 });
 
 test("the top bar names how many the inbox holds", async () => {
