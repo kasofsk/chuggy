@@ -28,6 +28,7 @@ import { migration027 } from "./027-forge-claim-per-tenant.ts";
 import { migration028 } from "./028-binding-lands-by-pull-request.ts";
 import { migration029 } from "./029-project-execution-placement.ts";
 import { migration030 } from "./030-api-reads-worker-error.ts";
+import { migration031 } from "./031-session-bearer-turn-failure.ts";
 import type { Migration } from "../shared.ts";
 
 export const migrations: readonly Migration[] = [
@@ -61,4 +62,5 @@ export const migrations: readonly Migration[] = [
   migration028,
   migration029,
   migration030,
+  migration031,
 ];

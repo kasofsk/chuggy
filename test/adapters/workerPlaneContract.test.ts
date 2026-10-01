@@ -826,7 +826,7 @@ const sessionPlaneCalls: Readonly<
     headers: json,
     payload: { repository: "github.com/owner/name" },
   },
-  ended: { headers: json, payload: { evidence: "SessionIdle" } },
+  ended: { headers: json, payload: { phase: "Succeeded" } },
 };
 
 const sessionPlaneRequests: Readonly<
@@ -1116,7 +1116,12 @@ const sessionPlaneCases: Readonly<
     workerPlaneMalformed,
     ...bothAnswers.map((lost) => ({
       name: `a loss answering ${String(lost)}`,
-      service: sessionPorts({ losses: { lose: () => Promise.resolve(lost) } }),
+      service: sessionPorts({
+        losses: {
+          lose: () => Promise.resolve(lost),
+          turnFailure: () => Promise.resolve(undefined),
+        },
+      }),
     })),
   ],
 };

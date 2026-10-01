@@ -51,20 +51,21 @@ import {
   type SessionBearerSecret,
   type SessionStoreStream,
 } from "../../interpreter/agentSession.ts";
-import type {
-  SessionAttemptHoldPort,
-  SessionAttemptLossPort,
-  SessionHeartbeatPort,
-  SessionPlaneAuthority,
-  SessionPlaneIdentity,
-  SessionReferenceBound,
-  SessionReferencePort,
-  SessionStoreQueryPort,
-  SessionStoreRecordPort,
-  SessionTurnAnswered,
-  SessionTurnClaimPort,
-  SessionTurnFailed,
-  SessionTurnSettlePort,
+import {
+  sessionContainerEnded,
+  type SessionAttemptHoldPort,
+  type SessionAttemptLossPort,
+  type SessionHeartbeatPort,
+  type SessionPlaneAuthority,
+  type SessionPlaneIdentity,
+  type SessionReferenceBound,
+  type SessionReferencePort,
+  type SessionStoreQueryPort,
+  type SessionStoreRecordPort,
+  type SessionTurnAnswered,
+  type SessionTurnClaimPort,
+  type SessionTurnFailed,
+  type SessionTurnSettlePort,
 } from "../../interpreter/sessionPlane.ts";
 import type {
   SessionStoreReadPort,
@@ -1194,10 +1195,11 @@ function sessionEndedRoute(
   register("ended", async (request, reply, caller) => {
     const offered = sessionEndedSchema.safeParse(request.body);
     if (!offered.success) return reply.code(400).send({ action: "stop" });
-    return (await sessions.losses.lose(
+    return (await sessionContainerEnded(
+      sessions.losses,
       caller.secret,
       caller.identity.generation,
-      offered.data.evidence,
+      offered.data.phase,
     ))
       ? reply.code(204).send()
       : reply.code(409).send({ action: "stop", reason: "Fenced" });

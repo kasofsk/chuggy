@@ -68,7 +68,6 @@ import {
   sessionCapabilities,
   agentReportedTurnFailures,
   runEndedEvidences,
-  sessionEndedEvidences,
 } from "../../src/contract/rosters.ts";
 import {
   allForgeAccountKinds,
@@ -121,7 +120,6 @@ import {
 } from "../../src/interpreter/refusal.ts";
 import { allAgenticRefusalEvents } from "../../src/interpreter/agenticRefusal.ts";
 import { allThreadStandings } from "../../src/interpreter/thread.ts";
-import { sessionPodEvidence } from "../../src/interpreter/sessionScheduler.ts";
 import {
   allAgentReportedTurnFailures,
   allPlatformTurnFailures,
@@ -412,13 +410,6 @@ test("the wire has an arm, and its keys, for every requirement the interpreter m
 test("the wire's evidence labels are the interpreter's own list", () => {
   assert.deepEqual([...attemptEvidences], [...allAttemptEvidence]);
   assert.deepEqual(runEndedEvidences, interpretedRunEndedEvidences);
-});
-
-test("a runner names a session container's end as the evidence an observed pod's own end is recorded under", () => {
-  assert.deepEqual(sessionEndedEvidences, [
-    sessionPodEvidence("Succeeded", undefined),
-    sessionPodEvidence("Failed", undefined),
-  ]);
 });
 
 test("the cost basis roster is exhaustive over the union it induces", () => {

@@ -141,7 +141,7 @@ export const sessionTaskAnswerSchema = sessionTaskDocumentSchema
     kind: z.enum(sessionKinds),
     api: sessionTaskDocumentSchema.shape.api.exactOptional(),
     bounds: sessionBoundsSchema.exactOptional(),
-    model: z.string().exactOptional(),
+    model: z.string().min(1).exactOptional(),
   })
   .refine(
     (task) =>

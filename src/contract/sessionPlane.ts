@@ -39,7 +39,7 @@ import { leadStoreStreamResponseSchema } from "./responses.ts";
 import {
   agentReportedTurnFailures,
   sessionCapabilities,
-  sessionEndedEvidences,
+  sessionContainerEnds,
   sessionKinds,
   sessionTurnInputKinds,
 } from "./rosters.ts";
@@ -68,7 +68,7 @@ export {
 export {
   agentReportedTurnFailures,
   sessionCapabilities,
-  sessionEndedEvidences,
+  sessionContainerEnds,
 } from "./rosters.ts";
 
 /** The routes a session pod and the runner holding it call, which a plane composed without sessions does not serve. */
@@ -192,7 +192,7 @@ export const sessionTurnFailureSchema = z.strictObject({
 
 /** How a pool's runner reports that the container its session ran in has ended, under that session's bearer. */
 export const sessionEndedSchema = z.strictObject({
-  evidence: z.enum(sessionEndedEvidences),
+  phase: z.enum(sessionContainerEnds),
 });
 
 /** What a pod is told of its own session, each optional fact absent where the session has none. */

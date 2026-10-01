@@ -170,6 +170,10 @@ test("a pool-held session's answer names its site's API, bounds and model togeth
         false,
         missing,
       );
+    assert.equal(
+      workerTaskAnswerSchema.safeParse({ ...poolHeld, model: "" }).success,
+      false,
+    );
   }
 });
 

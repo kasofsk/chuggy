@@ -296,24 +296,30 @@ test("a pod reads its own session's facts, renews its lease, and loses its attem
   await rig.sessions.close(partition, session);
 });
 
-test("a runner's report that its session's container ended loses the attempt under the evidence it named, once", async () => {
+/** The worker plane over the rig's own plane, so a runner's report reaches the real boundaries. */
+function endedReporter(secret: string) {
+  const app = createWorkerPlaneApp({
+    ...inertWorkerPlane(1),
+    sessions: { ...inertSessionPlane(rig.plane), losses: rig.plane },
+  });
+  const ended = (phase: string) =>
+    app.inject({
+      method: sessionPlaneRoutes.ended.method,
+      url: sessionPlaneRoutes.ended.path,
+      headers: { authorization: `Bearer ${secret}` },
+      payload: { phase },
+    });
+  return { app, ended };
+}
+
+test("a runner's report that its session's container failed loses the attempt as the observed failure would, once", async () => {
   const { partition, session, first, held } = await mailbox("ended");
   await rig.plane.claim({
     secret: held.secret,
     generation: held.attempt.generation,
   });
-  const app = createWorkerPlaneApp({
-    ...inertWorkerPlane(1),
-    sessions: { ...inertSessionPlane(rig.plane), losses: rig.plane },
-  });
-  const ended = (evidence: string) =>
-    app.inject({
-      method: sessionPlaneRoutes.ended.method,
-      url: sessionPlaneRoutes.ended.path,
-      headers: { authorization: `Bearer ${held.secret}` },
-      payload: { evidence },
-    });
-  assert.equal((await ended("TurnFailed")).statusCode, 204);
+  const { app, ended } = endedReporter(held.secret);
+  assert.equal((await ended("Failed")).statusCode, 204);
   const lost = await sessionRigAttemptState(rig, held.attempt);
   assert.equal(lost["state"], "Lost");
   assert.equal(lost["evidence"], "TurnFailed");
@@ -321,12 +327,47 @@ test("a runner's report that its session's container ended loses the attempt und
   const returned = await sessionRigTurnState(rig, partition, session, first);
   assert.equal(returned["state"], "Queued");
   assert.equal(returned["attempts_spent"], "1");
-  const again = await ended("SessionIdle");
+  const again = await ended("Succeeded");
   assert.equal(again.statusCode, 401);
   assert.equal(
     (await sessionRigAttemptState(rig, held.attempt))["evidence"],
     "TurnFailed",
   );
+  await app.close();
+  await rig.sessions.close(partition, session);
+});
+
+/**
+ * The container exited cleanly, and the runner says so; the turn it refused to
+ * store is what the attempt is charged with, read by the bearer exactly as the
+ * scheduler reads it by the attempt, and by no stale or ended bearer.
+ */
+test("a container that exited cleanly after refusing a turn's store is charged StoreRefused", async () => {
+  const { partition, session, first, held } = await mailbox("ended-store");
+  const { secret } = held;
+  const { generation } = held.attempt;
+  await rig.plane.claim({ secret, generation });
+  assert.equal(
+    await rig.plane.fail({
+      secret,
+      generation,
+      turn: first,
+      failure: "StoreRefused",
+    }),
+    "Failed",
+  );
+  assert.equal(await rig.plane.turnFailure(secret, generation), "StoreRefused");
+  assert.equal(
+    await rig.scheduler.attemptTurnFailure(held.attempt),
+    "StoreRefused",
+  );
+  assert.equal(await rig.plane.turnFailure(secret, generation + 1), undefined);
+  const { app, ended } = endedReporter(secret);
+  assert.equal((await ended("Succeeded")).statusCode, 204);
+  const lost = await sessionRigAttemptState(rig, held.attempt);
+  assert.equal(lost["state"], "Lost");
+  assert.equal(lost["evidence"], "StoreRefused");
+  assert.equal(await rig.plane.turnFailure(secret, generation), undefined);
   await app.close();
   await rig.sessions.close(partition, session);
 });

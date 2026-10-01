@@ -61,6 +61,7 @@ import type {
   SessionKind,
   SessionTurnFailure,
 } from "./agentSession.ts";
+import type { SessionContainerEnd } from "../contract/rosters.ts";
 import type { SessionTaskDocument } from "../contract/workerTask.ts";
 import type {
   AttemptPlacementOutcome,
@@ -114,7 +115,7 @@ export type SessionPlacementOutcome = AttemptPlacementOutcome;
  * told them apart would still do the same thing.
  */
 export type SessionPodObserved =
-  | { readonly observed: "Ended"; readonly phase: "Succeeded" | "Failed" }
+  | { readonly observed: "Ended"; readonly phase: SessionContainerEnd }
   | { readonly observed: "Unended" };
 
 /** Session placement, behind the same backend-neutral port an execution attempt is placed through. */
@@ -174,9 +175,9 @@ export const allSessionAttemptEvidences = [
   "TurnFailed",
   "StoreRefused",
   /**
-   * The provider refused the account the pod was running under. It is the one
-   * evidence a pod may end its own attempt on, and the only one that ends it
-   * `Withdrawn`: the session never got to spend its turn.
+   * The provider refused the account the pod was running under. It is the only
+   * evidence that ends an attempt `Withdrawn`: the session never got to spend
+   * its turn.
    */
   "AgentRateLimited",
 ] as const;
@@ -192,7 +193,7 @@ export type SessionAttemptEvidence =
  * reaper would have written for the same attempt one idle window later.
  */
 export function sessionPodEvidence(
-  phase: "Succeeded" | "Failed",
+  phase: SessionContainerEnd,
   turnFailure: SessionTurnFailure | undefined,
 ): SessionAttemptEvidence {
   if (turnFailure === "StoreRefused") return "StoreRefused";
