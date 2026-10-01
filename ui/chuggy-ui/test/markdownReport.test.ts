@@ -55,6 +55,24 @@ test("bold, italic, inline code and a link read as their own marks", () => {
   ]);
 });
 
+test("an underscore inside a name is the name's own", () => {
+  for (const names of [
+    "count_vowels in tally/__init__.py calls _parse_line with type_ and id_",
+    "__init__.py and type_",
+    "_private beside __init__",
+    "x2_y_",
+    "_tmp_1",
+    "café_x_",
+    "_x_é",
+  ])
+    expect(markdownInlineOf(names)).toEqual([{ kind: "Text", text: names }]);
+  expect(markdownInlineOf("an _italic_ word")).toEqual([
+    { kind: "Text", text: "an " },
+    { kind: "Italic", text: "italic" },
+    { kind: "Text", text: " word" },
+  ]);
+});
+
 /** A link naming no `http(s)` scheme is read as the plain text it wrote,
  * never as a mark a browser would navigate on. */
 test("a link scheme this console does not trust reads as plain text", () => {
