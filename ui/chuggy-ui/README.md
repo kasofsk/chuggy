@@ -141,16 +141,18 @@ expected" and posts nothing. The page then drops the code and state from the
 address. The api claims each account the authorization proves the person owns,
 with the worker App's installation on it, and the page draws one line per
 account, with an install link for an App the account is missing. A person who
-proved no account is offered the portal App's install. A code GitHub refused,
-or redeemed before the api could read what it reaches, cannot be offered again,
-so the page offers `Connect GitHub` in its place.
+reached no account, or only accounts they do not own, is offered the portal
+App's install. A code GitHub refused, or redeemed before the api could read what
+it reaches, cannot be offered again, so the page offers `Connect GitHub` in its
+place.
 
-`Connect GitHub` is the Accounts panel's one action, and an account it connected
+`Connect GitHub` is the Accounts panel's one action until an account is
+connected. Then `Add account` installs the portal App on another, and an account
 without the worker App offers that App's install on its own row. Each install
-link carries a state of its own, stored the same way. The forge sends the
-person back to `/forge/github/setup`, which takes that transaction once and,
-when the state matches, goes on to the authorization; an install an owner has
-to approve says "Requested".
+link carries a state of its own, stored the same way. The forge sends the person
+back to `/forge/github/setup`, which takes that transaction once and, when the
+state matches, goes on to the authorization; an install an owner has to approve
+says "Requested".
 
 Both Apps' Setup URL must be that route on the console's own host, with
 "Redirect on update" set so an App already installed comes back too, and the

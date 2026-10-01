@@ -58,6 +58,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   sessionStorage.clear();
+  history.pushState({}, "", "/");
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
@@ -306,20 +307,56 @@ test("an account is one row saying which of the two apps it holds", async () => 
   ]);
 });
 
-test("the accounts panel's one action is Connect GitHub", async () => {
-  await drawPage({ described: { apps: forgeApps, authorization: client } });
+/** Where the page is drawn, which every install it offers must come back to. */
+const projectPath = `/${leadPartition.tenant}/${leadPartition.project}/repositories`;
+
+/** The install a followed link stored, which the setup landing matches. */
+function storedInstall(): unknown {
+  return JSON.parse(sessionStorage.getItem(forgeInstallTransactionKey) ?? "{}");
+}
+
+/** The page drawn at its own address with both apps held. */
+async function drawAtProject(claimed?: typeof installations): Promise<void> {
+  history.pushState({}, "", projectPath);
+  await drawPage({
+    ...(claimed === undefined ? {} : { claimed }),
+    described: { apps: forgeApps, authorization: client },
+  });
+}
+
+test("a panel with no account offers Connect GitHub alone", async () => {
+  await drawAtProject({ truncated: false, installations: [] });
+  const accounts = within(sectionOf("Accounts"));
   expect(
-    within(sectionOf("Accounts"))
-      .getAllByRole("button")
-      .map((one) => one.textContent),
+    accounts.getAllByRole("button").map((one) => one.textContent),
   ).toStrictEqual(["Connect GitHub"]);
-  expect(screen.queryByRole("button", { name: "Install" })).toBeNull();
+  expect(accounts.queryAllByRole("link")).toStrictEqual([]);
+});
+
+/** Connect GitHub claims only what is already installed, so a second account is
+ * the portal app's install, which comes back through the authorization. */
+test("a panel with an account offers Add account, which installs the portal", async () => {
+  await drawAtProject();
+  const add = within(sectionOf("Accounts")).getByRole<HTMLAnchorElement>(
+    "link",
+    { name: "Add account" },
+  );
+  expect(add.href.startsWith(`${forgeApps[0]?.installUrl}?state=`)).toBe(true);
+  fireEvent.click(add);
+  await settled();
+  expect(storedInstall()).toStrictEqual({
+    state: new URL(add.href).searchParams.get("state"),
+    app: "portal",
+    tenant: leadPartition.tenant,
+    project: leadPartition.project,
+    returnPath: projectPath,
+  });
 });
 
 /** Connect GitHub claims the worker app where it is installed, so the worker's
  * install is the one thing a connected account can still be missing. */
 test("an account connected without the worker offers the worker's install on its own row", async () => {
-  await drawPage({ described: { apps: forgeApps, authorization: client } });
+  await drawAtProject();
   const rows = within(sectionOf("Accounts")).getAllByRole("row");
   expect(rows.map((row) => within(row).queryAllByRole("link").length)).toEqual([
     0, 0, 1,
@@ -333,23 +370,13 @@ test("an account connected without the worker offers the worker's install on its
   );
   fireEvent.click(install);
   await settled();
-  expect(
-    JSON.parse(sessionStorage.getItem(forgeInstallTransactionKey) ?? "{}"),
-  ).toStrictEqual({
+  expect(storedInstall()).toStrictEqual({
     state: new URL(install.href).searchParams.get("state"),
     app: "worker",
     tenant: leadPartition.tenant,
     project: leadPartition.project,
-    returnPath: `${window.location.pathname}${window.location.search}`,
+    returnPath: projectPath,
   });
-});
-
-test("an account holding no portal claim is offered no install of its own", async () => {
-  await drawPage({
-    claimed: without("portal"),
-    described: { apps: forgeApps, authorization: client },
-  });
-  expect(within(sectionOf("Accounts")).queryAllByRole("link")).toEqual([]);
 });
 
 test("the bindings are drawn by the account and name they are under", async () => {

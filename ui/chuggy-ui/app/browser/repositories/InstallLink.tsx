@@ -31,6 +31,8 @@ export function InstallLink(props: {
   readonly partition: PartitionIdentity;
   readonly returnPath: string;
   readonly app: ForgeAppName;
+  /** What the link says where it is not the app's own install. */
+  readonly label?: string;
 }): ReactNode {
   const partition = props.partition;
   const state = usePanelResource(
@@ -59,7 +61,7 @@ export function InstallLink(props: {
         });
       }}
     >
-      {forgeInstallLabel(props.app)}
+      {props.label ?? forgeInstallLabel(props.app)}
     </a>
   );
 }

@@ -141,11 +141,6 @@ export function forgeAccountRows(
   return rows;
 }
 
-/** Whether an account is connected without the worker app, which installing the worker is the one action for. */
-export function forgeWorkerInstallOffered(row: ForgeAccountRow): boolean {
-  return row.portal === "Installed" && row.worker === "Missing";
-}
-
 /**
  * The accounts a repository may be created under, which are the accounts whose
  * row says both apps. A create makes the repository through one app's

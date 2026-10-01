@@ -4,8 +4,9 @@
  * transaction is taken, the code posted once and then cleared from the address.
  *
  * Every install offered here comes back through the setup landing to this page,
- * so a person missing an app installs it and returns connected. One who proved
- * no account is offered the portal app's install.
+ * so a person missing an app installs it and returns connected. One who reached
+ * no account, or only accounts they do not own, is offered the portal app's
+ * install.
  */
 
 import { useNavigate, useSearch } from "@tanstack/react-router";

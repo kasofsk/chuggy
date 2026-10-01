@@ -4,9 +4,10 @@
  *
  * An account is a row per account and not per installation, because what
  * onboarding needs to know is whether both of this deployment's apps are on it.
- * Connect GitHub is the panel's one action and claims both where they are; an
- * account it connected without the worker app offers that app's install on its
- * own row. The bindings below are what a ticket may name, except a retired one,
+ * Connect GitHub claims both where they are, and is the panel's one action
+ * until an account is connected; then Add account installs the portal app on
+ * another, and an account without the worker app offers its install on its own
+ * row. The bindings below are what a ticket may name, except a retired one,
  * which is drawn as retired because it is still bound and no longer read; a
  * binding is added from what those installations grant rather than from a
  * typed address.
@@ -28,7 +29,6 @@ import { instantFigure } from "../core/figures.ts";
 import {
   forgeAccountRows,
   forgePortalInstallations,
-  forgeWorkerInstallOffered,
 } from "../core/forgeInstallation.ts";
 import type { ForgeAccountRow } from "../core/forgeInstallation.ts";
 import { repositoryLabel } from "../core/projectRepositories.ts";
@@ -74,7 +74,7 @@ function AccountRow(props: {
       <td>
         <span className="flex items-center gap-2">
           <Pill tone={forgeAppStandingTone(row.worker)}>{row.worker}</Pill>
-          {forgeWorkerInstallOffered(row) ? (
+          {row.worker === "Missing" ? (
             <InstallLink
               partition={props.partition}
               returnPath={currentPath()}
@@ -182,7 +182,21 @@ function AccountsSection(props: {
       title="Accounts"
       about="The forge accounts this tenant has connected, and the apps each holds."
       meta={
-        <ConnectGithub partition={props.partition} returnPath={currentPath()} />
+        <span className="flex items-center gap-2">
+          <ConnectGithub
+            partition={props.partition}
+            returnPath={currentPath()}
+          />
+          {props.installations === undefined ||
+          props.installations.length === 0 ? null : (
+            <InstallLink
+              partition={props.partition}
+              returnPath={currentPath()}
+              app="portal"
+              label="Add account"
+            />
+          )}
+        </span>
       }
     >
       {props.unready}
