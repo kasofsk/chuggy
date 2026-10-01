@@ -1,8 +1,12 @@
-/* Tooltip: a level with a hairline, bounded by the measure. */
+/* Tooltip: a level with a hairline, bounded by the measure and the screen. */
 
 @layer ui {
   .tooltip {
-    max-width: var(--measure);
+    max-width: min(
+      var(--measure),
+      var(--radix-tooltip-content-available-width)
+    );
+    overflow-wrap: anywhere;
     padding: var(--space-1) var(--space-3);
     border-radius: var(--radius-3);
     background: var(--surface-1);
