@@ -117,7 +117,7 @@ const successfulProcessProgram = `
         selectorPasses += 1;
         await new Promise((resolve) => setTimeout(resolve, 0));
         appended += 1;
-        return {};
+        return { reached: [], failures: [] };
       },
     };
     let wakePasses = 0;
@@ -386,7 +386,7 @@ const truncatedWakeProgram = `
       wakesPerPassMax: 2,
     };
     const runtime = roots.selectorProcess(
-      { runOnce: async () => ({}) },
+      { runOnce: async () => ({ reached: [], failures: [] }) },
       wakes,
       requirements,
       config,
@@ -415,6 +415,67 @@ test("a change wider than one pass reads reaches an operator, and the loop lives
       "thread wakes: change 7 wakes more threads than one pass reads, and the pass moved past it",
     ),
     result.stderr,
+  );
+});
+
+const hostedRunsProgram = `
+    const roots = await import('./src/roots/controlPlane.ts');
+    const schema = await import('./src/adapters/postgres/runtimeSchema.ts');
+    const rows = schema.currentRuntimeSchemaContract.required;
+    const requirements = { pool: { query: async () => ({ rows }) } };
+    const config = { idleIntervalMilliseconds: 1, shutdownDrainMilliseconds: 1000 };
+    const web = { tenant: 'acme', project: 'web' };
+    const refused = { reached: [web], failures: [{ phase: 'HostedRunsNotGranted', partition: web }] };
+    const undecided = { reached: [web], failures: [{ phase: 'HostedRunsUndecided', partition: web }] };
+    const elsewhere = { reached: [], failures: [] };
+    const served = { reached: [web], failures: [] };
+    /** One run per pass: refused on every pass that reaches it, served, refused, then undecided twice. */
+    const passes = [refused, refused, elsewhere, refused, served, refused, undecided, undecided];
+    let pass = 0;
+    let finished;
+    const scripted = new Promise((resolve) => { finished = resolve; });
+    const service = {
+      runOnce: async () => {
+        const run = passes[pass] ?? elsewhere;
+        pass += 1;
+        if (pass === passes.length) finished();
+        return run;
+      },
+    };
+    const wakes = {
+      store: {
+        cursor: async () => 0,
+        candidates: async () => [],
+        wake: async () => { throw new Error('an empty page offered a wake'); },
+        advance: async () => { throw new Error('an empty page moved the cursor'); },
+      },
+      clock: { nowIso: () => '2026-09-02T00:00:00.000Z' },
+      wakesPerPassMax: 1,
+    };
+    const runtime = roots.selectorProcess(service, wakes, requirements, config);
+    await runtime.start();
+    await scripted;
+    await runtime.stop();
+  `;
+
+test("a project passed over for want of hosted runs reaches an operator once per change", async () => {
+  const result = await execute(
+    process.execPath,
+    [
+      "--experimental-strip-types",
+      "--input-type=module",
+      "--eval",
+      hostedRunsProgram,
+    ],
+    { cwd: process.cwd() },
+  );
+  const refused =
+    "selector: acme/web HostedRunsNotGranted: its tenant grants this selector no hosted runs, so its lead does not run";
+  const undecided =
+    "selector: acme/web HostedRunsUndecided: the project authority could not say whether its tenant grants this selector hosted runs";
+  assert.deepEqual(
+    result.stderr.split("\n").filter((line) => line.startsWith("selector:")),
+    [refused, refused, undecided],
   );
 });
 

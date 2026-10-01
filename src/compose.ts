@@ -203,6 +203,7 @@ export function composeSelectorRuntime(
   selectorPool: pg.Pool,
   source: SelectorRuntimeSource,
   lead: SelectorLeadRuntime,
+  access: ProjectAccess,
   identities: SelectorIdentityFactory,
   config?: SelectorRuntimeConfig,
 ): SelectorRuntimeService {
@@ -215,6 +216,7 @@ export function composeSelectorRuntime(
       store,
       lead.sessions,
       lead.clock,
+      access,
       lead.policy,
     ),
     lead.deadline,

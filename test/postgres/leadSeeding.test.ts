@@ -35,6 +35,7 @@ import {
   leadRigPod,
   leadRigPodAttempt,
   leadRigPodTurn,
+  leadRigHostedAccess,
   leadRigProject,
   leadRigSuccessor,
   type LeadRig,
@@ -69,6 +70,7 @@ function seedingPolicy() {
     postgresSelectorState(rig.selectorPool),
     leadSessionMint(),
     clock,
+    leadRigHostedAccess,
     {
       pollIntervalMs: 5,
       implementationRevision: "selector-build",

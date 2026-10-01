@@ -30,7 +30,18 @@ import type {
   LeadSeeding,
 } from "../../src/interpreter/leadTurn.ts";
 import { parseLeadObservation } from "../../src/interpreter/leadTurn.ts";
-import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
+import type { Principal } from "../../src/interpreter/principal.ts";
+import {
+  memberAuthority,
+  ProjectAccessUnavailable,
+  type ProjectAccess,
+  type TenantAccessKind,
+} from "../../src/interpreter/projectAccess.ts";
+import {
+  asProjectId,
+  asTenantId,
+  type TenantId,
+} from "../../src/interpreter/projectStore.ts";
 import {
   leadObservationBytesMax,
   leadRefusalsObservedMax,
@@ -283,12 +294,19 @@ const leadPolicyConfig = {
   credentialSlot: leadCredentialSlot,
 } as const;
 
+/** An authority granting every question, for the cases about a decision rather than the grant. */
+const hostedEverywhere: ProjectAccess = {
+  authorize: (principal) => Promise.resolve(memberAuthority(principal)),
+  authorizeTenant: (principal) => Promise.resolve(memberAuthority(principal)),
+};
+
 function policyOf(double: MailboxDouble) {
   return leadSelectorPolicy(
     double.mailbox,
     decisionTail(),
     sessionMint(),
     clock(),
+    hostedEverywhere,
     leadPolicyConfig,
   );
 }
@@ -341,6 +359,7 @@ test("a turn that measured nothing spends the host's own wall clock", async () =
     decisionTail(),
     sessionMint(),
     clock([1_788_000_000_000, 1_788_000_150_000]),
+    hostedEverywhere,
     leadPolicyConfig,
   );
   const execution = (await policy.execute(
@@ -647,6 +666,7 @@ test("a session with no agent reference is seeded and one with a reference is no
     ]),
     sessionMint(),
     clock(),
+    hostedEverywhere,
     leadPolicyConfig,
   );
   const execution = (await policy.execute(
@@ -699,6 +719,7 @@ test("a seeding block the mailbox could not hold sheds its oldest decisions", as
     ),
     sessionMint(),
     clock(),
+    hostedEverywhere,
     leadPolicyConfig,
   );
   await policy.execute(request, new AbortController().signal);
@@ -766,6 +787,7 @@ test("a poll interval that could never fire is refused at construction", () => {
         decisionTail(),
         sessionMint(),
         clock(),
+        hostedEverywhere,
         { ...leadPolicyConfig, pollIntervalMs: 0 },
       ),
     RangeError,
@@ -795,8 +817,94 @@ test("the turn's identity is the decision's", async () => {
     decisionTail(),
     sessionMint(),
     clock(),
+    hostedEverywhere,
     leadPolicyConfig,
   );
   await policy.execute(request, new AbortController().signal);
   assert.deepEqual(identities, [request.attempt]);
+});
+
+/** One tenant question as the authority was asked it. */
+interface HostedQuestion {
+  readonly principal: Principal;
+  readonly tenant: TenantId;
+  readonly kind: TenantAccessKind;
+}
+
+/** An authority answering every tenant question one way and keeping each question it was asked. */
+function hostedAuthority(answer: "Granted" | "Refused" | "Unavailable"): {
+  readonly access: ProjectAccess;
+  readonly asked: HostedQuestion[];
+} {
+  const asked: HostedQuestion[] = [];
+  return {
+    asked,
+    access: {
+      authorize: () =>
+        Promise.reject(new Error("a lead's grant is its tenant's to answer")),
+      authorizeTenant: (principal, tenant, kind) => {
+        asked.push({ principal, tenant, kind });
+        if (answer === "Unavailable")
+          return Promise.reject(
+            new ProjectAccessUnavailable("the authority did not answer"),
+          );
+        return Promise.resolve(
+          answer === "Granted" ? memberAuthority(principal) : undefined,
+        );
+      },
+    },
+  };
+}
+
+function hostedPolicyOf(double: MailboxDouble, access: ProjectAccess) {
+  return leadSelectorPolicy(
+    double.mailbox,
+    decisionTail(),
+    sessionMint(),
+    clock(),
+    access,
+    leadPolicyConfig,
+  );
+}
+
+test("the hosted grant asked is the tenant's, for the principal a lead is opened as", async () => {
+  for (const [answer, granted] of [
+    ["Granted", true],
+    ["Refused", false],
+  ] as const) {
+    const authority = hostedAuthority(answer);
+    const double = mailboxDouble({ absent: true });
+    const policy = hostedPolicyOf(double, authority.access);
+    assert.equal(await policy.hostedRunsGranted(partition), granted);
+    assert.deepEqual(authority.asked, [
+      {
+        principal: leadPrincipal,
+        tenant: partition.tenant,
+        kind: "ExecuteHosted",
+      },
+    ]);
+    assert.deepEqual(double.openings, [], "asking opens no lead");
+    assert.deepEqual(double.offers, [], "and offers no turn");
+  }
+});
+
+test("the principal whose grant is asked is the one a successor is opened as", async () => {
+  const authority = hostedAuthority("Granted");
+  const double = mailboxDouble({ absent: true });
+  const policy = hostedPolicyOf(double, authority.access);
+  assert.equal(await policy.hostedRunsGranted(partition), true);
+  await policy.execute(request, new AbortController().signal);
+  assert.equal(double.openings.length, 1);
+  assert.equal(authority.asked[0]?.principal, double.openings[0]?.principal);
+});
+
+test("an authority that cannot say whether the lead is hosted raises rather than refusing", async () => {
+  const policy = hostedPolicyOf(
+    mailboxDouble(),
+    hostedAuthority("Unavailable").access,
+  );
+  await assert.rejects(
+    policy.hostedRunsGranted(partition),
+    ProjectAccessUnavailable,
+  );
 });

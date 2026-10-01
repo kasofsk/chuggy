@@ -35,6 +35,7 @@ import { postgresHarnessSelectorContext } from "./harness.ts";
 import {
   leadRigOpen,
   leadRigPod,
+  leadRigHostedAccess,
   leadRigProject,
   type LeadRig,
 } from "./leadHarness.ts";
@@ -113,6 +114,7 @@ function leadPolicy() {
       postgresSelectorState(rig.selectorPool),
       leadSessionMint(),
       clock,
+      leadRigHostedAccess,
       {
         pollIntervalMs: 5,
         implementationRevision: "selector-build",
