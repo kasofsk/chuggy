@@ -1093,6 +1093,19 @@ export const leadResponseSchema = z.object({
 });
 export type LeadResponse = z.infer<typeof leadResponseSchema>;
 
+/** A project the reader may read that holds no lead session: an answer, where a refusal is a 404. */
+export const leadNoneResponseSchema = z.strictObject({
+  lead: z.literal("None"),
+});
+export type LeadNoneResponse = z.infer<typeof leadNoneResponseSchema>;
+
+/** What the lead route answers: the project's lead, or that it has none. */
+export const leadReadResponseSchema = z.union([
+  leadResponseSchema,
+  leadNoneResponseSchema,
+]);
+export type LeadReadResponse = z.infer<typeof leadReadResponseSchema>;
+
 /** One entry of a session's transcript, parsed no further than a reader draws it. */
 export const leadTranscriptEntryResponseSchema = z.object({
   uuid: identitySchema.optional(),
@@ -1590,6 +1603,12 @@ export const executionPlacementResponseSchema = z.object({
 export type ExecutionPlacementResponse = z.infer<
   typeof executionPlacementResponseSchema
 >;
+
+/** Whether the project's tenant grants the caller the hosted runs a thread or an inquiry spends. */
+export const hostedRunsResponseSchema = z.strictObject({
+  granted: z.boolean(),
+});
+export type HostedRunsResponse = z.infer<typeof hostedRunsResponseSchema>;
 
 /** What a registration-token mint answers: the token, once, and the instant it stops being redeemable. */
 export const workerPoolTokenResponseSchema = z.object({

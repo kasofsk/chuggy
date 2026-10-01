@@ -30,6 +30,7 @@ import {
 } from "../../core/apiRoutes.ts";
 import {
   chatPaneFilled,
+  chatPaneHeaderUnhosted,
   chatPaneHolding,
   chatPaneRestored,
   chatPaneStripped,
@@ -51,7 +52,11 @@ import { useApiPorts, usePanelList } from "../api.ts";
 import { PanelUnready } from "../DataPanel.tsx";
 import { Conversation } from "../conversation/Conversation.tsx";
 import { ThreadConversation } from "../thread/ThreadConversation.tsx";
-import { ThreadUnhostedNotice, useThreadSend } from "../thread/threadSend.tsx";
+import {
+  ThreadUnhostedNotice,
+  useHostedRuns,
+  useThreadSend,
+} from "../thread/threadSend.tsx";
 import { threadsListName, useThread } from "../thread/threadRead.ts";
 import { Button } from "../ui/Button.tsx";
 import { Notice } from "../ui/Notice.tsx";
@@ -119,10 +124,10 @@ function ChatPaneStartControl(props: {
   readonly start: ChatPaneStart;
   readonly onOpened: (session: string) => void;
   readonly onUnhosted: () => void;
-  /** Whether the hosted grant refused New, which is drawn here where the pane's
-   * body is a thread and in the body otherwise. */
+  /** Whether the tenant grants no hosted runs and nothing under the header says
+   * so: the body says it where no thread is drawn, and a drawn thread's own
+   * composer where it takes messages. */
   readonly unhosted: boolean;
-  readonly threadDrawn: boolean;
 }): ReactNode {
   const start = props.start;
   const ports = useApiPorts();
@@ -166,7 +171,7 @@ function ChatPaneStartControl(props: {
       {refused === undefined ? null : (
         <Notice tone="danger" inline detail={`Refused · ${refused}`} />
       )}
-      {props.unhosted && props.threadDrawn ? <ThreadUnhostedNotice /> : null}
+      {props.unhosted ? <ThreadUnhostedNotice /> : null}
     </>
   );
 }
@@ -262,8 +267,8 @@ function ChatPaneFirst(props: {
   );
 }
 
-/** What stands where the composer would, for a reader the tenant has not
- * granted hosted runs: no thread they open could run. */
+/** What stands where the composer would, for a reader the tenant does not
+ * grant hosted runs: no thread they open could run. */
 function ChatPaneUnhosted(): ReactNode {
   return (
     <div
@@ -340,19 +345,21 @@ function ChatPaneOpen(props: {
   const answering = useChatPaneAnswering(props.partition, mine?.session);
   const [chosen, setChosen] = useState<string | undefined>(undefined);
   const [starting, setStarting] = useState(false);
-  const [unhosted, setUnhosted] = useState(false);
+  const hosted = useHostedRuns(props.partition);
   const holding = chatPaneHolding(threads, answering, chosen);
+  /** New refused for the grant, which is the newest word on whether it is given. */
   const refuseUnhosted = (): void => {
-    setUnhosted(true);
+    hosted.learnt(false);
     setStarting(false);
   };
-  /** A thread that opened, which answers any refusal the hosted grant gave before. */
+  /** A thread that opened, which the grant had to allow. */
   const holdOpened = (session: string): void => {
     setChosen(session);
     setStarting(false);
-    setUnhosted(false);
+    hosted.learnt(true);
   };
   const held = threads?.find((thread) => thread.session === holding.session);
+  const drawn = chatPaneThreadDrawn(holding.session, starting);
   return (
     <section
       aria-label="Chat"
@@ -365,8 +372,7 @@ function ChatPaneOpen(props: {
             start={holding.start}
             onOpened={holdOpened}
             onUnhosted={refuseUnhosted}
-            unhosted={unhosted}
-            threadDrawn={chatPaneThreadDrawn(holding.session, starting)}
+            unhosted={chatPaneHeaderUnhosted(hosted.granted, drawn, held)}
           />
           {threads === undefined ? null : (
             <ChatPaneHistory
@@ -392,7 +398,7 @@ function ChatPaneOpen(props: {
           session={holding.session}
           named={chosen !== undefined}
           starting={starting}
-          unhosted={unhosted}
+          unhosted={hosted.granted === false}
           onStarting={() => {
             setStarting(true);
           }}

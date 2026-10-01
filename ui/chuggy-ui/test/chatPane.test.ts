@@ -13,6 +13,7 @@ import {
   chatPaneContentDrawn,
   chatPaneDefault,
   chatPaneFilled,
+  chatPaneHeaderUnhosted,
   chatPaneHolding,
   chatPaneNarrowed,
   chatPaneRead,
@@ -219,4 +220,17 @@ test("a thread the reader named is held before the listing carries it", () => {
     session: "just-opened",
     start: { start: "Unknown" },
   });
+});
+
+/** The header is the one place left to say the grant is withheld where a
+ * thread is drawn whose composer would not; nowhere says it before the read. */
+test("the header says the grant is withheld only beside a drawn thread that takes no messages", () => {
+  const open = threadEntry({ session: "thread-open", state: "Open" });
+  const closed = threadEntry({ session: "thread-closed", state: "Closed" });
+  expect(chatPaneHeaderUnhosted(false, true, closed)).toBe(true);
+  expect(chatPaneHeaderUnhosted(false, true, undefined)).toBe(true);
+  expect(chatPaneHeaderUnhosted(false, true, open)).toBe(false);
+  expect(chatPaneHeaderUnhosted(false, false, closed)).toBe(false);
+  expect(chatPaneHeaderUnhosted(true, true, closed)).toBe(false);
+  expect(chatPaneHeaderUnhosted(undefined, true, closed)).toBe(false);
 });

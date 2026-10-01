@@ -18,6 +18,7 @@ import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import { inboxCountLabel } from "../../core/inboxList.ts";
+import { projectLeadFound } from "../../core/projectLead.ts";
 import { navEntryCurrent, shellNav } from "../../core/shellNav.ts";
 import type { NavEntry } from "../../core/shellNav.ts";
 import { sessionStateTone } from "../../core/tones.ts";
@@ -93,14 +94,16 @@ export function TopBarNavEntry(props: { readonly entry: NavEntry }): ReactNode {
 function TopBarNav(props: {
   readonly partition: PartitionIdentity;
 }): ReactNode {
-  const lead = useLead(props.partition);
+  const read = useLead(props.partition);
+  const lead =
+    read.state === "Ready" ? projectLeadFound(read.value) : undefined;
   const inbox = useInboxRows(props.partition);
   const entries = shellNav({
     partition: props.partition,
     leadStanding:
-      lead.state === "Ready"
-        ? { word: lead.value.state, tone: sessionStateTone(lead.value.state) }
-        : undefined,
+      lead === undefined
+        ? undefined
+        : { word: lead.state, tone: sessionStateTone(lead.state) },
     inboxCount: inboxCountLabel(inbox.union),
   });
   return (

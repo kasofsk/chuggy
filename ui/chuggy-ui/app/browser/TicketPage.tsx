@@ -19,6 +19,7 @@ import type {
   DraftResponse,
   DispatchViewResponse,
   ExecutionsResponse,
+  LeadReadResponse,
   TicketNativeActionsResponse,
   TicketResponse,
 } from "../../../../src/contract/responses.ts";
@@ -29,11 +30,16 @@ import {
   apiTicketNativeActions,
 } from "../core/apiRoutes.ts";
 import type { PanelState } from "../core/freshness.ts";
+import { projectLeadPresent } from "../core/projectLead.ts";
 import {
   manualDispatchAction,
   ticketDispatchList,
 } from "../core/ticketActions.ts";
-import { offersAnswered, ticketOffers } from "../core/ticketOffers.ts";
+import {
+  offersAnswered,
+  offersDispatchByHand,
+  ticketOffers,
+} from "../core/ticketOffers.ts";
 import type { TicketOffers } from "../core/ticketOffers.ts";
 import { ticketPageFacts } from "../core/ticketPageFacts.ts";
 import type { TicketPageFacts } from "../core/ticketPageFacts.ts";
@@ -41,6 +47,7 @@ import { resumedFrom, ticketSlot } from "../core/ticketSituation.ts";
 import type { TicketSlot as Slot } from "../core/ticketSituation.ts";
 import { usePanelList, usePanelResource } from "./api.ts";
 import { FreshnessInstants, useNowMs } from "./Freshness.tsx";
+import { useLead } from "./LeadPage.tsx";
 import { currentAnchor } from "./ports.ts";
 import { DetailsSlot, TopBarSlot } from "./shell/slots.tsx";
 import {
@@ -71,6 +78,7 @@ export interface TicketReads {
   readonly openState: PanelState<TicketNativeActionsResponse>;
   readonly dispatchState: PanelState<DispatchViewResponse>;
   readonly pageState: PanelState<ExecutionsResponse>;
+  readonly leadState: PanelState<LeadReadResponse>;
 }
 
 function readValue<T>(state: PanelState<T>): T | undefined {
@@ -164,6 +172,10 @@ function TicketStanding(
             dispatchState={props.reads.dispatchState}
             resume={props.facts.resume}
             answered={answered}
+            byHand={offersDispatchByHand(
+              offers,
+              projectLeadPresent(props.reads.leadState),
+            )}
           />
         }
       />
@@ -277,13 +289,21 @@ export function TicketPage(): ReactNode {
       }),
   );
   const pageState = useTicketExecutions(partition, ticket);
+  const leadState = useLead(partition);
   if (!Number.isSafeInteger(ticket) || ticket <= 0)
     return <EmptyState label="No such ticket" variant="page" />;
   return (
     <TicketBody
       partition={partition}
       ticket={ticket}
-      reads={{ ticketState, draftState, openState, dispatchState, pageState }}
+      reads={{
+        ticketState,
+        draftState,
+        openState,
+        dispatchState,
+        pageState,
+        leadState,
+      }}
       nowMs={nowMs}
     />
   );
