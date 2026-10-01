@@ -53,6 +53,14 @@ test("a run the fabric settled after it was lost still gives its worker's reason
   expect(
     runReasonAttempt(executionOf([lost("a1", 1)], runSettledLost("a1"))),
   ).toBe("a1");
+  const withdrawn = runAttempt("a1", {
+    state: "Withdrawn",
+    evidence: "RunRateLimited",
+    error: { bytes: 9 },
+  });
+  expect(runReasonAttempt(executionOf([withdrawn], runSettledLost("a1")))).toBe(
+    "a1",
+  );
 });
 
 test("a run that reported has no reason to give", () => {
