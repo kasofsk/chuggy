@@ -421,7 +421,7 @@ function door(
   route: ThreadDoor["route"],
   granted: ThreadDoor["granted"],
   runner: ThreadDoor["runner"] = undefined,
-  reads: ThreadDoor["reads"] = route === undefined ? undefined : 1,
+  reads: ThreadDoor["reads"] = 1,
 ): ThreadDoor {
   return { route, granted, runner, reads };
 }
@@ -506,9 +506,9 @@ test("a press refused for the grant gives way once a later read says runners", (
   expect(
     threadSendStanding(unhosted, true, door(undefined, true)),
   ).toStrictEqual(unhosted);
-  const unread = { send: "Unhosted", readsAt: undefined } as const;
+  const unstamped = { send: "Unhosted" } as const;
   expect(
-    threadSendStanding(unread, true, door("Pool", false, "Live", 2)),
+    threadSendStanding(unstamped, true, door("Pool", false, "Live", 2)),
   ).toStrictEqual({ send: "Idle" });
 });
 

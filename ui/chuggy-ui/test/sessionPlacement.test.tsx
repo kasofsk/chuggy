@@ -10,7 +10,12 @@ import type { ReactNode } from "react";
 import { afterEach, expect, test, vi } from "vitest";
 
 import { SessionProvider } from "../app/browser/session.tsx";
-import { useSessionRunnerShort } from "../app/browser/sessionPlacement.tsx";
+import {
+  sessionPlacementResource,
+  useSessionPlacementReads,
+  useSessionRunnerShort,
+} from "../app/browser/sessionPlacement.tsx";
+import { projectResourceKey } from "../app/core/projectQueryKeys.ts";
 import { sessionPlacementPolledMs } from "../app/core/sessionRunners.ts";
 import { answer, holderDouble, settled } from "./screenHarness.tsx";
 import { sessionPlacementBody } from "./sessionPlacementFixture.ts";
@@ -48,4 +53,41 @@ test("a runner that comes back is read as live within one poll", async () => {
   await act(() => vi.advanceTimersByTimeAsync(sessionPlacementPolledMs));
   await settled();
   expect(result.current).toBeUndefined();
+});
+
+/** Reads are counted rather than timed, so two that land in one millisecond
+ * are two, and one that fails is none. */
+test("the placement's reads count every answer and no failure", async () => {
+  const client = new QueryClient();
+  const key = projectResourceKey(
+    threadPartition,
+    "Project",
+    sessionPlacementResource,
+  );
+  const { result } = renderHook(
+    () => useSessionPlacementReads(threadPartition),
+    {
+      wrapper: (props: { readonly children: ReactNode }) => (
+        <QueryClientProvider client={client}>
+          {props.children}
+        </QueryClientProvider>
+      ),
+    },
+  );
+  expect(result.current).toBe(0);
+  act(() => {
+    client.setQueryData(key, sessionPlacementBody({ thread: "Pool" }));
+    client.setQueryData(key, sessionPlacementBody({ thread: "Pool" }));
+  });
+  expect(result.current).toBe(2);
+  await act(() =>
+    client
+      .fetchQuery({
+        queryKey: key,
+        queryFn: () => Promise.reject(new Error("unavailable")),
+        retry: false,
+      })
+      .catch(() => undefined),
+  );
+  expect(result.current).toBe(2);
 });

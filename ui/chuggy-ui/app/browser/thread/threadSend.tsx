@@ -51,6 +51,7 @@ import { drawBytes } from "../ports.ts";
 import {
   SessionRunnerNotice,
   useSessionPlacement,
+  useSessionPlacementReads,
   useSessionPlacementStale,
 } from "../sessionPlacement.tsx";
 import { Notice } from "../ui/Notice.tsx";
@@ -94,7 +95,7 @@ export function useHostedRuns(partition: PartitionIdentity): {
  * What the reader's own thread door asks of them, from the reads that say, and
  * where a door's refusal goes once it is newer than those reads: the grant as
  * `useHostedRuns` says, and the placement is read again rather than waiting on
- * the next poll, the refusal naming the read it met.
+ * the next poll, the refusal counting the reads before it.
  */
 export function useThreadDoor(partition: PartitionIdentity): {
   readonly door: ThreadDoor;
@@ -103,20 +104,18 @@ export function useThreadDoor(partition: PartitionIdentity): {
 } {
   const hosted = useHostedRuns(partition);
   const placement = useSessionPlacement(partition);
+  const reads = useSessionPlacementReads(partition);
   const stale = useSessionPlacementStale(partition);
-  const ready = placement.state === "Ready" ? placement : undefined;
+  const read = placement.state === "Ready" ? placement.value : undefined;
   return {
     door: {
-      route: ready?.value.thread.route,
+      route: read?.thread.route,
       granted: hosted.granted,
-      runner: ready?.value.runners.mine,
-      reads: ready?.observedAtMs,
+      runner: read?.runners.mine,
+      reads,
     },
     learnt: hosted.learnt,
-    refused: async () => {
-      await stale();
-      return { send: "Unhosted", readsAt: ready?.observedAtMs };
-    },
+    refused: async () => ({ send: "Unhosted", readsAt: await stale() }),
   };
 }
 
@@ -196,6 +195,7 @@ export function useThreadSend(input: {
       if (session === undefined) {
         const open = await apiOpenThread(ports, partition);
         if (threadUnhosted(open)) {
+          door.learnt(false);
           setSend(await door.refused());
           return "Kept";
         }

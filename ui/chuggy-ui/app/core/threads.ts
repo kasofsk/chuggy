@@ -115,8 +115,9 @@ export interface ThreadDoor {
   readonly route: PlacementRoute | undefined;
   readonly granted: boolean | undefined;
   readonly runner: SessionRunnerStanding | undefined;
-  /** When the placement last answered, which a failed read does not move. */
-  readonly reads: number | undefined;
+  /** How many times the placement has answered, which a failed read does not
+   * move. */
+  readonly reads: number;
 }
 
 /** Whether the door would refuse for the hosted grant: the grant read as not
@@ -285,8 +286,8 @@ export type ThreadSend =
   | { readonly send: "Ended"; readonly why: string }
   | { readonly send: "Unsettled"; readonly why: string }
   /** The tenant does not grant the reader hosted runs, so this thread takes
-   * nothing from them; a press's answer names the placement read it met. */
-  | { readonly send: "Unhosted"; readonly readsAt?: number | undefined }
+   * nothing from them; a refusal counts the placement reads before it. */
+  | { readonly send: "Unhosted"; readonly readsAt?: number }
   /** The thread's turns go to runners and the reader has registered none. */
   | { readonly send: "NoRunner" }
   /** The reader's runner has not polled lately, so a turn waits for it. */
@@ -311,7 +312,6 @@ export function threadSendStanding(
   const pressed: ThreadSend =
     send.send === "Unhosted" &&
     door.route === "Pool" &&
-    door.reads !== undefined &&
     (send.readsAt === undefined || door.reads > send.readsAt)
       ? { send: "Idle" }
       : send;

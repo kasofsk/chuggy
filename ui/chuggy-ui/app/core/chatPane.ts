@@ -28,9 +28,10 @@ import {
   threadDoorRunnerShort,
   threadDoorUnhosted,
   threadMine,
+  threadSendStanding,
   threadTakesMessages,
 } from "./threads.ts";
-import type { ThreadDoor } from "./threads.ts";
+import type { ThreadDoor, ThreadSend } from "./threads.ts";
 
 export const chatPanePlacements = ["Right", "Left", "Bottom"] as const;
 
@@ -204,21 +205,35 @@ export interface ChatPaneHeaderDoor {
   readonly runner: SessionRunnerShort | undefined;
 }
 
+/** Whether the pane's door refuses for the hosted grant: as read, or as New
+ * last met it, until a read after that says runners. */
+export function chatPaneUnhosted(
+  door: ThreadDoor,
+  refusal: ThreadSend,
+): boolean {
+  return threadSendStanding(refusal, true, door).send === "Unhosted";
+}
+
 /**
  * The body says what the door would answer where no thread is drawn, and a
  * drawn thread's composer where it takes messages, so the header says it only
  * beside a drawn thread that takes none, or one the listing has not caught up
- * with.
+ * with. A grant New met after the read is said beside any drawn thread whose
+ * box, reading only the read, would not say it.
  */
 export function chatPaneHeaderDoor(
   door: ThreadDoor,
   threadDrawn: boolean,
   held: ThreadEntryResponse | undefined,
+  refusal: ThreadSend = { send: "Idle" },
 ): ChatPaneHeaderDoor {
-  const says =
-    threadDrawn && !(held !== undefined && threadTakesMessages(held));
+  const takes = held !== undefined && threadTakesMessages(held);
+  const says = threadDrawn && !takes;
   return {
-    unhosted: says && threadDoorUnhosted(door),
+    unhosted:
+      threadDrawn &&
+      chatPaneUnhosted(door, refusal) &&
+      !(takes && threadDoorUnhosted(door)),
     runner: says ? threadDoorRunnerShort(door) : undefined,
   };
 }

@@ -263,8 +263,9 @@ function door(
   route: ThreadDoor["route"],
   granted: ThreadDoor["granted"],
   runner: ThreadDoor["runner"] = undefined,
+  reads: ThreadDoor["reads"] = 1,
 ): ThreadDoor {
-  return { route, granted, runner, reads: undefined };
+  return { route, granted, runner, reads };
 }
 
 /** The header is the one place left to say the grant is withheld where a
@@ -282,6 +283,19 @@ test("the header says the grant is withheld only beside a drawn thread that take
   expect(unhostedSaid(door("Pool", false), true, closed)).toBe(false);
   expect(unhostedSaid(door("InCluster", true), true, closed)).toBe(false);
   expect(unhostedSaid(door("InCluster", undefined), true, closed)).toBe(false);
+});
+
+/** New's own refusal is newer than the read a drawn thread's box reads, so the
+ * header says it beside that thread until a later read says runners. */
+test("the header says the grant New met beside a drawn thread until a later read says runners", () => {
+  const open = threadEntry({ session: "thread-open", state: "Open" });
+  const met = { send: "Unhosted", readsAt: 1 } as const;
+  expect(unhostedSaid(door("Pool", false), true, open, met)).toBe(true);
+  expect(unhostedSaid(door("Pool", false, undefined, 2), true, open, met)).toBe(
+    false,
+  );
+  expect(unhostedSaid(door("InCluster", false), true, open, met)).toBe(false);
+  expect(unhostedSaid(door("Pool", false), false, open, met)).toBe(false);
 });
 
 /** The runner is said where the grant would be. */

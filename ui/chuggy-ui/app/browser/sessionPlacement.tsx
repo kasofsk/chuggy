@@ -6,6 +6,7 @@
 
 import { Link } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
+import { useCallback, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
@@ -52,21 +53,42 @@ export function useSessionRunnerShort(
   );
 }
 
+/** How many times the placement has answered: every read that landed and
+ * every write held as one moves it, and a failed read does not. */
+export function useSessionPlacementReads(partition: PartitionIdentity): number {
+  const client = useQueryClient();
+  const key = projectResourceKey(
+    partition,
+    "Project",
+    sessionPlacementResource,
+  );
+  const subscribe = useCallback(
+    (changed: () => void) => client.getQueryCache().subscribe(changed),
+    [client],
+  );
+  return useSyncExternalStore(
+    subscribe,
+    () => client.getQueryState(key)?.dataUpdateCount ?? 0,
+  );
+}
+
 /** Reads the placement again now, for a door whose refusal is newer than it:
- * the route or the reader's runner has moved since the last poll. Settles once
- * the read has answered. */
+ * the route or the reader's runner has moved since the last poll. Answers, once
+ * the read has, how many reads had answered when the refusal arrived. */
 export function useSessionPlacementStale(
   partition: PartitionIdentity,
-): () => Promise<void> {
+): () => Promise<number> {
   const client = useQueryClient();
-  return () =>
-    client.invalidateQueries({
-      queryKey: projectResourceKey(
-        partition,
-        "Project",
-        sessionPlacementResource,
-      ),
-    });
+  const key = projectResourceKey(
+    partition,
+    "Project",
+    sessionPlacementResource,
+  );
+  return async () => {
+    const reads = client.getQueryState(key)?.dataUpdateCount ?? 0;
+    await client.invalidateQueries({ queryKey: key });
+    return reads;
+  };
 }
 
 /** Why no runner can take a turn now, with where one is added where none is. */

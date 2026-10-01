@@ -1103,6 +1103,125 @@ test.each([
   },
 );
 
+/** A poll that lands while a press is out is older than the refusal the press
+ * meets, so a re-read that fails after it does not clear that refusal. */
+test.each([
+  ["a message", "/messages", true],
+  ["a first message", "/threads", false],
+] as const)(
+  "%s the hosted grant refuses after a poll landed mid-send stays held",
+  async (_said, refusing, held) => {
+    const client = new QueryClient();
+    let refuses = (): void => undefined;
+    const gate = new Promise<void>((resolve) => {
+      refuses = resolve;
+    });
+    const moving: PaneMoving = { thread: "Pool", refusing };
+    const served = movingServed(
+      moving,
+      grantReadServed(false, ownThread(held)),
+    );
+    await mounted(
+      viewportDeskEm,
+      ((url: string, init?: { readonly method?: string }) =>
+        init?.method === "POST" && url.endsWith(refusing)
+          ? gate.then(() => served(url, init))
+          : served(url, init)) as unknown as typeof fetch,
+      client,
+    );
+    fireEvent.change(composerDrawn(), { target: { value: "hello" } });
+    await turned(() => {
+      screen.getByRole("button", { name: "Send" }).click();
+    });
+    await placementReread(client);
+    moving.thread = undefined;
+    await turned(refuses);
+    await settled();
+    await placementReread(client);
+    expect(heldBox().value).toBe("hello");
+    expect(heldBox().readOnly).toBe(true);
+    styleless();
+  },
+);
+
+/** The re-read a refusal asks is after it, so where that read says runners
+ * the box takes the message back at once. */
+test.each([
+  ["a message", "/messages", true],
+  ["a first message", "/threads", false],
+] as const)(
+  "%s the hosted grant refuses gives way to its re-read saying runners",
+  async (_said, refusing, held) => {
+    const moving: PaneMoving = { thread: "Pool", refusing };
+    await mounted(
+      viewportDeskEm,
+      movingServed(moving, grantReadServed(false, ownThread(held))),
+    );
+    await helloSent();
+    expect(heldBox().value).toBe("hello");
+    expect(heldBox().readOnly).toBe(false);
+    styleless();
+  },
+);
+
+/** The open's refusal is the newest word on the grant, wherever its read
+ * stands. */
+test("a first message the hosted grant refuses has every screen read the grant as withheld", async () => {
+  const client = new QueryClient();
+  const moving: PaneMoving = { thread: "Pool", refusing: "/threads" };
+  await mounted(viewportDeskEm, movingServed(moving, threadServed([])), client);
+  await helloSent();
+  expect(
+    client.getQueryData(
+      projectResourceKey(atlas, "Project", hostedRunsResource),
+    ),
+  ).toStrictEqual({ granted: false });
+  styleless();
+});
+
+/** New's refusal is newer than every read, so while the reads fail the pane
+ * says the grant it met, with or without a thread drawn. */
+test.each([
+  ["with a thread", true],
+  ["before a thread", false],
+] as const)(
+  "New the hosted grant refuses while the placement reads fail says so (%s)",
+  async (_said, held) => {
+    const client = new QueryClient();
+    const moving: PaneMoving = { thread: "Pool", refusing: "/threads" };
+    await mounted(
+      viewportDeskEm,
+      movingServed(moving, grantReadServed(false, ownThread(held))),
+      client,
+    );
+    moving.thread = undefined;
+    await pressed("New");
+    expect(screen.getAllByText("Needs hosted runs")).toHaveLength(1);
+    moving.thread = "Pool";
+    moving.refusing = undefined;
+    await placementReread(client);
+    expect(screen.queryByText("Needs hosted runs")).toBeNull();
+    styleless();
+  },
+);
+
+/** A New that opens is newer than the refusal an earlier one met, so the pane
+ * stops saying the grant even while the reads still fail. */
+test("New that opens after one refused for the grant drops what that one met", async () => {
+  const moving: PaneMoving = { thread: "Pool", refusing: "/threads" };
+  await mounted(
+    viewportDeskEm,
+    movingServed(moving, grantReadServed(false, [])),
+  );
+  moving.thread = undefined;
+  await pressed("New");
+  expect(screen.getByText("Needs hosted runs")).toBeTruthy();
+  moving.refusing = undefined;
+  await pressed("New");
+  expect(screen.queryByText("Needs hosted runs")).toBeNull();
+  styleless();
+});
+
 /** A box emptied again holds nothing, so the pane says the grant where the
  * box would be, as it does before typing. */
 test("a route read as hosted under an emptied box draws the grant in its place", async () => {

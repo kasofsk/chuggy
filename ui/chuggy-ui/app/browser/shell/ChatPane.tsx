@@ -35,6 +35,7 @@ import {
   chatPaneRestored,
   chatPaneStripped,
   chatPaneToggled,
+  chatPaneUnhosted,
 } from "../../core/chatPane.ts";
 import type {
   ChatPaneHeaderDoor,
@@ -49,10 +50,10 @@ import {
 } from "../../core/projectQueryKeys.ts";
 import {
   threadAnswering,
-  threadDoorUnhosted,
   threadMine,
   threadUnhosted,
 } from "../../core/threads.ts";
+import type { ThreadDoor, ThreadSend } from "../../core/threads.ts";
 import { sessionRefusedNoRunner } from "../../core/sessionRunners.ts";
 import { useApiPorts, usePanelList } from "../api.ts";
 import { PanelUnready } from "../DataPanel.tsx";
@@ -360,6 +361,33 @@ function ChatPaneBody(props: {
   );
 }
 
+/** The reader's thread door as the pane holds it: as read, and as New last
+ * met it, which is newer than the read until a read after it answers. */
+function useChatPaneDoor(partition: PartitionIdentity): {
+  readonly door: ThreadDoor;
+  readonly refusal: ThreadSend;
+  readonly refused: (answer: "Unhosted" | "NoRunner") => void;
+  readonly opened: () => void;
+} {
+  const door = useThreadDoor(partition);
+  const [refusal, setRefusal] = useState<ThreadSend>({ send: "Idle" });
+  return {
+    door: door.door,
+    refusal,
+    refused: (answer) => {
+      if (answer === "Unhosted") door.learnt(false);
+      void door.refused().then((met) => {
+        setRefusal(answer === "Unhosted" ? met : { send: "Idle" });
+      });
+    },
+    /** The grant had to allow the open only where the route was read as hosted. */
+    opened: () => {
+      setRefusal({ send: "Idle" });
+      if (door.door.route === "InCluster") door.learnt(true);
+    },
+  };
+}
+
 function ChatPaneOpen(props: {
   readonly partition: PartitionIdentity;
 }): ReactNode {
@@ -368,20 +396,16 @@ function ChatPaneOpen(props: {
   const answering = useChatPaneAnswering(props.partition, mine?.session);
   const [chosen, setChosen] = useState<string | undefined>(undefined);
   const [starting, setStarting] = useState(false);
-  const door = useThreadDoor(props.partition);
+  const door = useChatPaneDoor(props.partition);
   const holding = chatPaneHolding(threads, answering, chosen);
-  /** New refused, which is the newest word on what the door asks. */
   const refuse = (answer: "Unhosted" | "NoRunner"): void => {
-    if (answer === "Unhosted") door.learnt(false);
-    void door.refused();
+    door.refused(answer);
     setStarting(false);
   };
-  /** A thread that opened, which the grant had to allow only where the route
-   * was read as hosted. */
   const holdOpened = (session: string): void => {
     setChosen(session);
     setStarting(false);
-    if (door.door.route === "InCluster") door.learnt(true);
+    door.opened();
   };
   const held = threads?.find((thread) => thread.session === holding.session);
   const drawn = chatPaneThreadDrawn(holding.session, starting);
@@ -397,7 +421,7 @@ function ChatPaneOpen(props: {
             start={holding.start}
             onOpened={holdOpened}
             onRefused={refuse}
-            header={chatPaneHeaderDoor(door.door, drawn, held)}
+            header={chatPaneHeaderDoor(door.door, drawn, held, door.refusal)}
           />
           {threads === undefined ? null : (
             <ChatPaneHistory
@@ -423,7 +447,7 @@ function ChatPaneOpen(props: {
           session={holding.session}
           named={chosen !== undefined}
           starting={starting}
-          unhosted={threadDoorUnhosted(door.door)}
+          unhosted={chatPaneUnhosted(door.door, door.refusal)}
           onStarting={() => {
             setStarting(true);
           }}
