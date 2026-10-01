@@ -548,8 +548,8 @@ function selectorHostedRunsChangesKey(partition: Partition): string {
  * The hosted-runs skips a run names that were not already reported under the
  * same phase, and what stands reported after it. A project the run reached and
  * did not skip is forgotten, so one passed over on every pass that reaches it is
- * reported once, and again only after one that served it or named the other
- * phase.
+ * reported once, and again only after a pass reached it without skipping it or
+ * named the other phase.
  */
 export function selectorHostedRunsChanges(
   reported: SelectorHostedRunsReported,
