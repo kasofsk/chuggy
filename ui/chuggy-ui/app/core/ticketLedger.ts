@@ -179,8 +179,8 @@ export function executionStopped(row: ExecutionSummary): boolean {
 /**
  * Whether an execution still waits for its worker: queued, or open under an
  * agent that has recorded no run. A command list records its run only as it
- * ends, so a commanded task, or one a server names no carrier for, has begun
- * once an attempt opens.
+ * ends, so a commanded task, or one a server names no carrier for, reads as
+ * begun once an attempt opens.
  */
 export function executionStarting(row: ExecutionSummary): boolean {
   if (row.status === "Queued" || row.status === "Admitted") return true;

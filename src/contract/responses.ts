@@ -570,8 +570,7 @@ export const executionSummarySchema = z.object({
   startedAt: instantSchema.optional(),
   /**
    * When the worker of the attempt now open recorded its run, absent until it
-   * does: an attempt opens before its worker's image is pulled. Optional for
-   * the deployment window, as `request` is.
+   * does: an attempt opens before its worker's image is pulled.
    */
   runStartedAt: instantSchema.optional(),
   /**
