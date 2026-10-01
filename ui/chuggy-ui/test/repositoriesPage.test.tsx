@@ -409,6 +409,20 @@ test("connecting is offered only where this deployment answers a client to autho
     screen.getByRole<HTMLButtonElement>("button", { name: "Connect GitHub" })
       .disabled,
   ).toBe(true);
+  expect(screen.getByText("Not configured")).toBeTruthy();
+});
+
+test("a deployment that answers a client says nothing against connecting", async () => {
+  await drawPage({
+    described: {
+      apps: [],
+      authorization: {
+        clientId: "Iv1.portal",
+        authorizeUrl: "https://forge.test/login/oauth/authorize",
+      },
+    },
+  });
+  expect(screen.queryByText("Not configured")).toBeNull();
 });
 
 test("connecting stores this tab's transaction and sends the person to authorize", async () => {

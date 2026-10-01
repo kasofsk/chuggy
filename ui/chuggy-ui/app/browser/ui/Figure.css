@@ -25,7 +25,6 @@
   .fig-unit {
     font-size: var(--text-sm);
     color: var(--ink-3);
-    margin-left: var(--space-1);
     font-style: normal;
   }
 

@@ -142,11 +142,12 @@ test("a span breaks only between its parts", () => {
 });
 
 /** A ceiling and what it counts are read together, so the unit is drawn beside
- * the digits rather than left to the column head a settings row does not have. */
+ * the digits rather than left to the column head a settings row does not have,
+ * and a space in the text keeps the two words apart wherever it is read as text. */
 test("a quantity draws its unit beside its digits", () => {
   const { container } = render(
     <Figure figure={{ kind: "Quantity", text: "15", unit: "min" }} />,
   );
-  expect(container.querySelector(".fig")?.textContent).toBe("15min");
+  expect(container.querySelector(".fig")?.textContent).toBe("15 min");
   expect(container.querySelector(".fig-unit")?.textContent).toBe("min");
 });

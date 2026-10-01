@@ -132,15 +132,34 @@ test("the context carries what the project binds", async () => {
   ]);
 });
 
-test("a project whose revisions run out with none ready says exactly that", async () => {
-  const held = answering(() =>
-    ok({ configurations: [creationSummary("r4", "Incomplete")] }),
+test("a project with a repository and no ready revision says exactly that", async () => {
+  const held = answering((_method, path) =>
+    path.endsWith("/repositories")
+      ? ok({
+          repositories: [
+            {
+              repository: "https://forge.test/kasofsk/chuggy",
+              boundAt: "2026-08-26T00:00:00Z",
+              landing: { mode: "Push" },
+            },
+          ],
+        })
+      : ok({ configurations: [creationSummary("r4", "Incomplete")] }),
   );
   const read = await readCreationContext(held.ports, creationPartition);
   expect(read.outcome === "Ok" && read.value.context).toBe(
     "NoReadyConfiguration",
   );
-  expect(held.calls.length).toBe(1);
+});
+
+test("a project that binds no repository says so rather than that nothing is ready", async () => {
+  const held = answering((_method, path) =>
+    path.endsWith("/repositories")
+      ? ok({ repositories: [] })
+      : ok({ configurations: [creationSummary("r4", "Incomplete")] }),
+  );
+  const read = await readCreationContext(held.ports, creationPartition);
+  expect(read.outcome === "Ok" && read.value.context).toBe("NoRepository");
 });
 
 test("a walk that runs out of budget knows nothing about the project", async () => {
@@ -158,15 +177,19 @@ test("a walk that runs out of budget knows nothing about the project", async () 
   expect(held.calls.length).toBe(configurationPagesMax);
 });
 
-test("not knowing and there being none are not drawn as the same sentence", () => {
-  const none = creationContextSentence({ context: "NoReadyConfiguration" });
-  const unknown = creationContextSentence({
-    context: "ReadyConfigurationUnknown",
-    pagesRead: configurationPagesMax,
-  });
-  expect(none).not.toBe(unknown);
-  expect(none).toContain("no ready configuration");
-  expect(unknown).toContain(String(configurationPagesMax));
+test("not knowing, there being none and there being nowhere are drawn as three words", () => {
+  const sentences = [
+    creationContextSentence({ context: "NoRepository" }),
+    creationContextSentence({ context: "NoReadyConfiguration" }),
+    creationContextSentence({
+      context: "ReadyConfigurationUnknown",
+      pagesRead: configurationPagesMax,
+    }),
+  ];
+  expect(new Set(sentences).size).toBe(3);
+  expect(sentences[0]).toBe("No repository bound");
+  expect(sentences[1]).toBe("No configuration");
+  expect(sentences[2]).toContain(String(configurationPagesMax));
 });
 
 test("an initialization that cannot be read is the outcome, not a blank form", async () => {
