@@ -115,6 +115,8 @@ export interface ThreadDoor {
   readonly route: PlacementRoute | undefined;
   readonly granted: boolean | undefined;
   readonly runner: SessionRunnerStanding | undefined;
+  /** When the placement last answered, which a failed read does not move. */
+  readonly reads: number | undefined;
 }
 
 /** Whether the door would refuse for the hosted grant: the grant read as not
@@ -282,8 +284,9 @@ export type ThreadSend =
   | { readonly send: "Waiting"; readonly why: string }
   | { readonly send: "Ended"; readonly why: string }
   | { readonly send: "Unsettled"; readonly why: string }
-  /** The tenant does not grant the reader hosted runs, so this thread takes nothing from them. */
-  | { readonly send: "Unhosted" }
+  /** The tenant does not grant the reader hosted runs, so this thread takes
+   * nothing from them; a press's answer names the placement read it met. */
+  | { readonly send: "Unhosted"; readonly readsAt?: number | undefined }
   /** The thread's turns go to runners and the reader has registered none. */
   | { readonly send: "NoRunner" }
   /** The reader's runner has not polled lately, so a turn waits for it. */
@@ -296,8 +299,8 @@ export type ThreadSend =
  * rather than after they send — `Unhosted` before any press, on a thread that
  * takes messages where the door asks a grant the read says is not given, and
  * the reader's runner where the turns go to runners and it cannot take one now.
- * A press's `Unhosted` gives way once the route is read as runners, which asks
- * no grant; the press reads the placement again before it says so.
+ * A press's `Unhosted` gives way to a placement read after it that says
+ * runners, which ask no grant, and never to the read it was refused over.
  */
 export function threadSendStanding(
   send: ThreadSend,
@@ -306,7 +309,12 @@ export function threadSendStanding(
 ): ThreadSend {
   if (!takes) return send;
   const pressed: ThreadSend =
-    send.send === "Unhosted" && door.route === "Pool" ? { send: "Idle" } : send;
+    send.send === "Unhosted" &&
+    door.route === "Pool" &&
+    door.reads !== undefined &&
+    (send.readsAt === undefined || door.reads > send.readsAt)
+      ? { send: "Idle" }
+      : send;
   if (pressed.send === "Idle" && threadDoorUnhosted(door))
     return { send: "Unhosted" };
   const short = threadDoorRunnerShort(door);

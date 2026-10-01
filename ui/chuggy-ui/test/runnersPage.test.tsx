@@ -104,6 +104,8 @@ interface Drawing {
   readonly client?: QueryClient;
   /** Whether the session placement's read fails, which a case may set too. */
   readonly sessionsFailing?: boolean;
+  /** What a session placement read waits on before it answers. */
+  readonly sessionsHeld?: Promise<void> | undefined;
 }
 
 async function drawPage(drawing: Drawing = {}): Promise<readonly Sent[]> {
@@ -128,7 +130,7 @@ async function drawPage(drawing: Drawing = {}): Promise<readonly Sent[]> {
         return Promise.resolve(written.shift() ?? answer({}, 503));
       if (url.endsWith("/worker-pools")) return Promise.resolve(answer(listed));
       if (url.endsWith("/session-placement"))
-        return Promise.resolve(
+        return (drawing.sessionsHeld ?? Promise.resolve()).then(() =>
           drawing.sessionsFailing === true
             ? answer({ error: { code: "Unavailable" } }, 500)
             : answer(sessions()),
@@ -333,7 +335,11 @@ test("a reader who moves chat alone writes the session placement alone", async (
 });
 
 /** A drawing a case moves under the page while its editor is open. */
-type Moving = Drawing & { sessions: unknown; sessionsFailing: boolean };
+type Moving = Drawing & {
+  sessions: unknown;
+  sessionsFailing: boolean;
+  sessionsHeld: Promise<void> | undefined;
+};
 
 /** The page with its editor open and `chosen` chosen in it, then `move` made
  * to what the server holds and the reads taken again, as a poll would. */
@@ -345,6 +351,7 @@ async function movedUnderEditor(
   const client = new QueryClient();
   const moving: Moving = {
     sessionsFailing: false,
+    sessionsHeld: undefined,
     ...drawing,
     sessions: drawing.sessions ?? sessionsGranted,
     client,
@@ -440,6 +447,33 @@ test("a session placement poll that fails leaves the open editor and the reader'
   );
   expect(radio("Chat", "Hosted").getAttribute("aria-checked")).toBe("true");
   expect(screen.getByRole("button", { name: "Save changes" })).toBeTruthy();
+});
+
+/** A read asked before a save answers the placement the save replaced, so it
+ * is cancelled rather than let land over the save. */
+test("a session placement read in flight at a save does not draw over it", async () => {
+  let answered = (): void => undefined;
+  const sent = await movedUnderEditor(
+    {
+      written: [
+        answer({
+          ...sessionsGranted,
+          thread: { route: "InCluster", source: "Project" },
+        }),
+      ],
+    },
+    (moving) => {
+      moving.sessionsHeld = new Promise((resolve) => {
+        answered = resolve;
+      });
+    },
+    ["Chat", "Hosted"],
+  );
+  await press("Save changes");
+  await turned(answered);
+  await settled();
+  expect(puts(sent)).toHaveLength(1);
+  expect(placementRows()).toContain("ChatHostedProject");
 });
 
 test("a write the hosted grant refuses says so and stays open", async () => {

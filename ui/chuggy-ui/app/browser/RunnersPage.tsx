@@ -248,11 +248,12 @@ function usePlacementWriting(partition: PartitionIdentity): PlacementWriting {
   const ports = useApiPorts();
   const client = useQueryClient();
   const [saved, setSaved] = useState<RunnersPlacementSaved>({ saved: "Idle" });
-  const held = (resource: string, placement: unknown): void => {
-    client.setQueryData(
-      projectResourceKey(partition, "Project", resource),
-      placement,
-    );
+  /** A read still in flight was asked before the write, so it is cancelled
+   * rather than let land over it. */
+  const held = async (resource: string, placement: unknown): Promise<void> => {
+    const key = projectResourceKey(partition, "Project", resource);
+    await client.cancelQueries({ queryKey: key });
+    client.setQueryData(key, placement);
   };
   const written = async (writes: RunnersPlacementWrites): Promise<boolean> => {
     let landed = false;
@@ -264,7 +265,7 @@ function usePlacementWriting(partition: PartitionIdentity): PlacementWriting {
         setSaved({ ...execution, landed });
         return false;
       }
-      held(executionPlacementResource, execution.placement);
+      await held(executionPlacementResource, execution.placement);
       landed = true;
     }
     if (writes.session !== undefined) {
@@ -275,7 +276,7 @@ function usePlacementWriting(partition: PartitionIdentity): PlacementWriting {
         setSaved({ ...session, landed });
         return false;
       }
-      held(sessionPlacementResource, session.placement);
+      await held(sessionPlacementResource, session.placement);
     }
     return true;
   };

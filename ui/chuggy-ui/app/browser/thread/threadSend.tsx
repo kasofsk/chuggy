@@ -94,25 +94,29 @@ export function useHostedRuns(partition: PartitionIdentity): {
  * What the reader's own thread door asks of them, from the reads that say, and
  * where a door's refusal goes once it is newer than those reads: the grant as
  * `useHostedRuns` says, and the placement is read again rather than waiting on
- * the next poll.
+ * the next poll, the refusal naming the read it met.
  */
 export function useThreadDoor(partition: PartitionIdentity): {
   readonly door: ThreadDoor;
   readonly learnt: (granted: boolean) => void;
-  readonly refused: () => Promise<void>;
+  readonly refused: () => Promise<ThreadSend & { readonly send: "Unhosted" }>;
 } {
   const hosted = useHostedRuns(partition);
   const placement = useSessionPlacement(partition);
-  const refused = useSessionPlacementStale(partition);
-  const read = placement.state === "Ready" ? placement.value : undefined;
+  const stale = useSessionPlacementStale(partition);
+  const ready = placement.state === "Ready" ? placement : undefined;
   return {
     door: {
-      route: read?.thread.route,
+      route: ready?.value.thread.route,
       granted: hosted.granted,
-      runner: read?.runners.mine,
+      runner: ready?.value.runners.mine,
+      reads: ready?.observedAtMs,
     },
     learnt: hosted.learnt,
-    refused,
+    refused: async () => {
+      await stale();
+      return { send: "Unhosted", readsAt: ready?.observedAtMs };
+    },
   };
 }
 
@@ -161,8 +165,8 @@ function ThreadSendNote(props: {
  * message may carry, and what a press ended as. A door that answered `Ended`
  * takes nothing more whatever the read said, because the read that drew this
  * page is older than the refusal; one the hosted grant refused, at a press or
- * in its read before anything is typed, takes nothing more until the route is
- * read as runners, and holds any text it handed back, read-only.
+ * in its read before anything is typed, takes nothing more until a read after
+ * that says runners, and holds any text it handed back, read-only.
  */
 export function useThreadSend(input: {
   readonly partition: PartitionIdentity;
@@ -192,8 +196,7 @@ export function useThreadSend(input: {
       if (session === undefined) {
         const open = await apiOpenThread(ports, partition);
         if (threadUnhosted(open)) {
-          await door.refused();
-          setSend({ send: "Unhosted" });
+          setSend(await door.refused());
           return "Kept";
         }
         if (sessionRefusedNoRunner(open)) {
@@ -211,11 +214,8 @@ export function useThreadSend(input: {
         turn,
         message: text,
       });
-      if (answered.send === "Unhosted") {
-        door.learnt(false);
-        await door.refused();
-      }
-      setSend(answered);
+      if (answered.send === "Unhosted") door.learnt(false);
+      setSend(answered.send === "Unhosted" ? await door.refused() : answered);
       if (answered.send === "Sent") {
         setHeld(undefined);
         if (input.session === undefined) input.onStarted?.(session);

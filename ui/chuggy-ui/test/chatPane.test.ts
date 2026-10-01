@@ -264,7 +264,7 @@ function door(
   granted: ThreadDoor["granted"],
   runner: ThreadDoor["runner"] = undefined,
 ): ThreadDoor {
-  return { route, granted, runner };
+  return { route, granted, runner, reads: undefined };
 }
 
 /** The header is the one place left to say the grant is withheld where a

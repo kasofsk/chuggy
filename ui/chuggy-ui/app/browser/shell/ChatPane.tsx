@@ -245,22 +245,40 @@ function ChatPaneThread(props: {
   );
 }
 
+/** What stands where the composer would, for a reader whose thread door asks a
+ * hosted grant the tenant does not give them: no thread they open could run. */
+function ChatPaneUnhosted(): ReactNode {
+  return (
+    <div
+      role="region"
+      aria-label="Conversation"
+      className="grid min-h-0 min-w-0 flex-1 content-end px-4 pb-4"
+    >
+      <ThreadUnhostedNotice />
+    </div>
+  );
+}
+
 /**
  * The composer a reader with no thread types in, whose first press opens one.
  * It stays drawn until that message is sent, so the thread it opened arriving
- * in the listing mid-send does not take the text away with it.
+ * in the listing mid-send does not take the text away with it, and while it
+ * holds text a door read as `unhosted` holds that text read-only.
  */
 function ChatPaneFirst(props: {
   readonly partition: PartitionIdentity;
+  readonly unhosted: boolean;
   readonly onStarting: () => void;
   readonly onStarted: (session: string) => void;
 }): ReactNode {
+  const [typed, setTyped] = useState(false);
   const composer = useThreadSend({
     partition: props.partition,
     session: undefined,
     takes: true,
     onStarted: props.onStarted,
   });
+  if (props.unhosted && !typed) return <ChatPaneUnhosted />;
   return (
     <div
       role="region"
@@ -275,23 +293,13 @@ function ChatPaneFirst(props: {
             props.onStarting();
             return composer.onSend(text);
           },
+          onEdit: (text) => {
+            setTyped(text !== "");
+            composer.onEdit?.(text);
+          },
         }}
         pane
       />
-    </div>
-  );
-}
-
-/** What stands where the composer would, for a reader whose thread door asks a
- * hosted grant the tenant does not give them: no thread they open could run. */
-function ChatPaneUnhosted(): ReactNode {
-  return (
-    <div
-      role="region"
-      aria-label="Conversation"
-      className="grid min-h-0 min-w-0 flex-1 content-end px-4 pb-4"
-    >
-      <ThreadUnhostedNotice />
     </div>
   );
 }
@@ -342,10 +350,10 @@ function ChatPaneBody(props: {
         named={props.named}
       />
     );
-  if (props.unhosted) return <ChatPaneUnhosted />;
   return (
     <ChatPaneFirst
       partition={props.partition}
+      unhosted={props.unhosted}
       onStarting={props.onStarting}
       onStarted={props.onStarted}
     />

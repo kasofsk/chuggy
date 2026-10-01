@@ -421,8 +421,9 @@ function door(
   route: ThreadDoor["route"],
   granted: ThreadDoor["granted"],
   runner: ThreadDoor["runner"] = undefined,
+  reads: ThreadDoor["reads"] = route === undefined ? undefined : 1,
 ): ThreadDoor {
-  return { route, granted, runner };
+  return { route, granted, runner, reads };
 }
 
 /**
@@ -486,22 +487,29 @@ test("a composer on runners says the reader's runner where it cannot take a turn
   ).toStrictEqual(refused);
 });
 
-/** A press refused for the grant reads the placement again before it says
- * so, so a route read as runners afterwards is newer than the refusal. */
-test("a press refused for the grant gives way once the route is read as runners", () => {
-  const unhosted = { send: "Unhosted" } as const;
+/** A press refused for the grant gives way to a read after the one it met
+ * that says runners, and never to that read, however often it is drawn. */
+test("a press refused for the grant gives way once a later read says runners", () => {
+  const unhosted = { send: "Unhosted", readsAt: 1 } as const;
   expect(
-    threadSendStanding(unhosted, true, door("Pool", false, "Live")),
+    threadSendStanding(unhosted, true, door("Pool", false, "Live", 2)),
   ).toStrictEqual({ send: "Idle" });
   expect(
-    threadSendStanding(unhosted, true, door("Pool", false, "Offline")),
+    threadSendStanding(unhosted, true, door("Pool", false, "Offline", 2)),
   ).toStrictEqual({ send: "RunnerOffline" });
   expect(
-    threadSendStanding(unhosted, true, door("InCluster", true)),
+    threadSendStanding(unhosted, true, door("Pool", false, "Live", 1)),
+  ).toStrictEqual(unhosted);
+  expect(
+    threadSendStanding(unhosted, true, door("InCluster", true, undefined, 2)),
   ).toStrictEqual(unhosted);
   expect(
     threadSendStanding(unhosted, true, door(undefined, true)),
   ).toStrictEqual(unhosted);
+  const unread = { send: "Unhosted", readsAt: undefined } as const;
+  expect(
+    threadSendStanding(unread, true, door("Pool", false, "Live", 2)),
+  ).toStrictEqual({ send: "Idle" });
 });
 
 test("a send refused for no runner is told apart from any other refusal", () => {

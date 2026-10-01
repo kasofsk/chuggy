@@ -997,13 +997,71 @@ test("a message the hosted grant refuses where the read said runners is held unt
  * so the box holds the message rather than taking it back at once. */
 test("a first message the hosted grant refuses where the read said runners stays held", async () => {
   const moving: PaneMoving = { thread: "Pool", refusing: "/threads" };
-  await mounted(viewportDeskEm, movingServed(moving, threadServed([])));
+  await mounted(
+    viewportDeskEm,
+    movingServed(moving, grantReadServed(false, [])),
+  );
   moving.thread = "InCluster";
   await helloSent();
   expect(heldBox().value).toBe("hello");
   expect(heldBox().readOnly).toBe(true);
+  expect(
+    within(conversationRegion()).getByText("Needs hosted runs"),
+  ).toBeTruthy();
   styleless();
 });
+
+/** A refusal is newer than the read it met, and a read that fails after it
+ * says nothing newer, so the box holds until a read answers runners. */
+test.each([
+  ["a message", "/messages", true],
+  ["a first message", "/threads", false],
+] as const)(
+  "%s the hosted grant refuses while the placement reads fail stays held",
+  async (_said, refusing, held) => {
+    const client = new QueryClient();
+    const moving: PaneMoving = { thread: "Pool", refusing };
+    await mounted(
+      viewportDeskEm,
+      movingServed(moving, grantReadServed(false, ownThread(held))),
+      client,
+    );
+    moving.thread = undefined;
+    await helloSent();
+    await placementReread(client);
+    expect(heldBox().value).toBe("hello");
+    expect(heldBox().readOnly).toBe(true);
+    moving.thread = "Pool";
+    moving.refusing = undefined;
+    await placementReread(client);
+    expect(heldBox().readOnly).toBe(false);
+    expect(heldBox().value).toBe("hello");
+    styleless();
+  },
+);
+
+/** The reader's own thread where `held`, and none otherwise. */
+function ownThread(held: boolean): readonly unknown[] {
+  return held
+    ? [threadEntry({ session: openedSession, owner: "geoff", mine: true })]
+    : [];
+}
+
+/** A pane over `moving` for a reader the grant is read as not given, with
+ * their own thread where `held`, and "hello" typed into its box. */
+async function typedUnhosted(
+  held: boolean,
+  moving: PaneMoving,
+): Promise<QueryClient> {
+  const client = new QueryClient();
+  await mounted(
+    viewportDeskEm,
+    movingServed(moving, grantReadServed(false, ownThread(held))),
+    client,
+  );
+  fireEvent.change(composerDrawn(), { target: { value: "hello" } });
+  return client;
+}
 
 /** A poll is asked on a clock, so one that fails says nothing of the route:
  * a reader on runners without the grant keeps the box and what is in it. */
@@ -1013,28 +1071,8 @@ test.each([
 ] as const)(
   "a placement poll that fails keeps the composer on runners without the grant (%s)",
   async (_said, held) => {
-    const client = new QueryClient();
     const moving: PaneMoving = { thread: "Pool", refusing: undefined };
-    await mounted(
-      viewportDeskEm,
-      movingServed(
-        moving,
-        grantReadServed(
-          false,
-          held
-            ? [
-                threadEntry({
-                  session: openedSession,
-                  owner: "geoff",
-                  mine: true,
-                }),
-              ]
-            : [],
-        ),
-      ),
-      client,
-    );
-    fireEvent.change(composerDrawn(), { target: { value: "hello" } });
+    const client = await typedUnhosted(held, moving);
     moving.thread = undefined;
     await placementReread(client);
     expect(screen.queryByText("Needs hosted runs")).toBeNull();
@@ -1043,6 +1081,42 @@ test.each([
     styleless();
   },
 );
+
+/** A route moved to hosted under a reader without the grant holds what they
+ * typed, read-only, whether or not they have a thread yet. */
+test.each([
+  ["with a thread", true],
+  ["before a thread", false],
+] as const)(
+  "a route read as hosted under typed text holds it read-only (%s)",
+  async (_said, held) => {
+    const moving: PaneMoving = { thread: "Pool", refusing: undefined };
+    const client = await typedUnhosted(held, moving);
+    moving.thread = "InCluster";
+    await placementReread(client);
+    expect(heldBox().value).toBe("hello");
+    expect(heldBox().readOnly).toBe(true);
+    expect(
+      within(conversationRegion()).getByText("Needs hosted runs"),
+    ).toBeTruthy();
+    styleless();
+  },
+);
+
+/** A box emptied again holds nothing, so the pane says the grant where the
+ * box would be, as it does before typing. */
+test("a route read as hosted under an emptied box draws the grant in its place", async () => {
+  const moving: PaneMoving = { thread: "Pool", refusing: undefined };
+  const client = await typedUnhosted(false, moving);
+  fireEvent.change(composerDrawn(), { target: { value: "" } });
+  moving.thread = "InCluster";
+  await placementReread(client);
+  expect(screen.queryByRole("textbox", { name: "Message" })).toBeNull();
+  expect(
+    within(conversationRegion()).getByText("Needs hosted runs"),
+  ).toBeTruthy();
+  styleless();
+});
 
 /** New refused for the grant is newer than the read that said runners, so the
  * placement is read again rather than at the next poll. */
