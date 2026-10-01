@@ -124,6 +124,15 @@ interface ThreadDoubles {
   readonly minted?: SessionId;
 }
 
+/** The message door, recording the turn it took and the route it was stamped with. */
+function enqueueDouble(doubles: ThreadDoubles): ThreadStore["enqueueMessage"] {
+  return (input) => {
+    doubles.calls.push(`enqueue:${input.turn}:${input.input}`);
+    doubles.calls.push(`enqueue-route:${input.route}`);
+    return Promise.resolve(doubles.enqueued);
+  };
+}
+
 function threadStore(doubles: ThreadDoubles): ThreadStore {
   return {
     threads: (_partition, limit) => {
@@ -155,11 +164,7 @@ function threadStore(doubles: ThreadDoubles): ThreadStore {
             },
       );
     },
-    enqueueMessage: (input) => {
-      doubles.calls.push(`enqueue:${input.turn}:${input.input}`);
-      doubles.calls.push(`enqueue-route:${input.route}`);
-      return Promise.resolve(doubles.enqueued);
-    },
+    enqueueMessage: enqueueDouble(doubles),
     close: ({ session }) => {
       doubles.calls.push(`close:${session}`);
       if (doubles.closed !== undefined) return Promise.resolve(doubles.closed);

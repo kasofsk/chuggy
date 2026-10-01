@@ -9412,6 +9412,36 @@ async function sessionPlacementRefusals(subject: pg.Pool): Promise<void> {
   );
 }
 
+/** A lead session of project-a holding one queued turn, as an installation before 032 holds it. */
+const queuedTurnSeed = `
+  INSERT INTO execution_cluster(cluster,slots_max,policy_revision)
+  VALUES('cluster-32',1,1);
+  INSERT INTO capacity_account(account,cluster,reserved,maximum,policy_revision)
+  VALUES('account-32','cluster-32',0,1,1);
+  INSERT INTO agent_session
+    (tenant,project,session,kind,principal,capabilities,credential_slot,account,cluster)
+  VALUES('tenant-32','project-a','session-32','Lead','principal-32','{}',
+         'slot-32','account-32','cluster-32');
+  INSERT INTO session_turn(tenant,project,session,turn,ordinal,input_kind,input)
+  VALUES('tenant-32','project-a','session-32','turn-32',1,'Observation','{}')`;
+
+/** That turn stamped in cluster, where it ran, and no default route for a turn queued after it. */
+async function queuedTurnStamped(subject: pg.Pool): Promise<void> {
+  assert.deepEqual(
+    (await subject.query(`SELECT turn, route FROM session_turn`)).rows,
+    [{ turn: "turn-32", route: "InCluster" }],
+    "a turn queued before the routes ran in cluster",
+  );
+  await assert.rejects(
+    subject.query(
+      `INSERT INTO session_turn(tenant,project,session,turn,ordinal,input_kind,input)
+       VALUES('tenant-32','project-a','session-32','turn-32-b',2,'Observation','{}')`,
+    ),
+    /null value in column "route"/u,
+    "a turn no door stamped was queued",
+  );
+}
+
 test("032 places every project's sessions and queued turns in cluster, publishes no routing, and leaves a later project to the default", async () => {
   await migrationDatabase("session_placement", async (subject) => {
     const doors = [
@@ -9424,31 +9454,10 @@ test("032 places every project's sessions and queued turns in cluster, publishes
       `${tenantSeed("tenant-32")}
        INSERT INTO project(tenant,project,lifecycle) VALUES
          ('tenant-32','project-a','Active'),('tenant-32','project-b','Active');
-       INSERT INTO execution_cluster(cluster,slots_max,policy_revision)
-       VALUES('cluster-32',1,1);
-       INSERT INTO capacity_account(account,cluster,reserved,maximum,policy_revision)
-       VALUES('account-32','cluster-32',0,1,1);
-       INSERT INTO agent_session
-         (tenant,project,session,kind,principal,capabilities,credential_slot,account,cluster)
-       VALUES('tenant-32','project-a','session-32','Lead','principal-32','{}',
-              'slot-32','account-32','cluster-32');
-       INSERT INTO session_turn(tenant,project,session,turn,ordinal,input_kind,input)
-       VALUES('tenant-32','project-a','session-32','turn-32',1,'Observation','{}')`,
+       ${queuedTurnSeed}`,
     );
     assert.ok((await postgresMigrate(subject)).includes(migration032.version));
-    assert.deepEqual(
-      (await subject.query(`SELECT turn, route FROM session_turn`)).rows,
-      [{ turn: "turn-32", route: "InCluster" }],
-      "a turn queued before the routes ran in cluster",
-    );
-    await assert.rejects(
-      subject.query(
-        `INSERT INTO session_turn(tenant,project,session,turn,ordinal,input_kind,input)
-         VALUES('tenant-32','project-a','session-32','turn-32-b',2,'Observation','{}')`,
-      ),
-      /null value in column "route"/u,
-      "a turn no door stamped was queued",
-    );
+    await queuedTurnStamped(subject);
     await subject.query(
       `INSERT INTO project(tenant,project,lifecycle) VALUES('tenant-32','project-c','Active')`,
     );
