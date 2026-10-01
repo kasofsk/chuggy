@@ -47,11 +47,21 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+const authorization = {
+  clientId: "Iv1.portal",
+  authorizeUrl: "https://forge.test/login/oauth/authorize",
+};
+
 async function drawLinks(
   apps: readonly ForgeAppName[],
   held: readonly unknown[] = [portal, worker],
+  authorizes = true,
 ): Promise<void> {
-  vi.stubGlobal("fetch", () => Promise.resolve(answer({ apps: held })));
+  vi.stubGlobal("fetch", () =>
+    Promise.resolve(
+      answer(authorizes ? { apps: held, authorization } : { apps: held }),
+    ),
+  );
   render(
     <ScreenHarness
       partition={leadPartition}
@@ -116,5 +126,12 @@ test("two links are two states", async () => {
 
 test("an app this deployment holds no key for is offered nothing", async () => {
   await drawLinks(["worker"], [portal]);
+  expect(screen.queryByRole("link")).toBeNull();
+});
+
+/** The landing goes on to an authorization, so an install made where there is
+ * none would end at Not configured with the app already installed. */
+test("a deployment that answers no client to authorize is offered nothing", async () => {
+  await drawLinks(["portal", "worker"], [portal, worker], false);
   expect(screen.queryByRole("link")).toBeNull();
 });

@@ -335,6 +335,16 @@ test("a panel with no account offers Connect GitHub alone", async () => {
   expect(accounts.queryAllByRole("link")).toStrictEqual([]);
 });
 
+/** An install comes back through the authorization, so where the deployment
+ * answers no client the panel offers no install that could not be finished. */
+test("a panel whose deployment cannot authorize offers no install", async () => {
+  history.pushState({}, "", projectPath);
+  await drawPage({ described: { apps: forgeApps } });
+  expect(within(sectionOf("Accounts")).queryAllByRole("link")).toStrictEqual(
+    [],
+  );
+});
+
 /** Connect GitHub claims only what is already installed, so a second account is
  * the portal app's install, which comes back through the authorization. */
 test("a panel with an account offers Add account, which installs the portal", async () => {

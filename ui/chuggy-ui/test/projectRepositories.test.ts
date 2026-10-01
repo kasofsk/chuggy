@@ -46,6 +46,9 @@ test("a repository is labelled by the account and the name it is under", () => {
   expect(repositoryLabel("https://forge.test/kasofsk/chuggy")).toBe(
     "kasofsk/chuggy",
   );
+  expect(repositoryLabel("https://forge.test/kasofsk/chuggy.git")).toBe(
+    "kasofsk/chuggy",
+  );
   expect(repositoryLabel("chuggy")).toBe("chuggy");
 });
 
