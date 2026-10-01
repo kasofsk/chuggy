@@ -48,16 +48,12 @@ export function App(props: { readonly queryClient: QueryClient }): ReactNode {
   useSilentRefresh();
   if (snapshot.phase === "Loading")
     return (
-      <SessionCard
-        title="chuggy"
-        detail="reading this deployment's configuration…"
-        media={<Locomotive />}
-      />
+      <SessionCard title="chuggy" detail="Loading…" media={<Locomotive />} />
     );
   if (snapshot.phase === "Unconfigured")
     return (
       <SessionCard
-        title="not configured"
+        title="Not configured"
         detail={`${consoleConfigurationPath} could not be read: ${snapshot.reason ?? "no reason was given"}`}
       />
     );
@@ -65,7 +61,7 @@ export function App(props: { readonly queryClient: QueryClient }): ReactNode {
     return (
       <SessionCard
         title="chuggy"
-        detail={snapshot.reason ?? "this browser holds no session."}
+        detail={snapshot.reason ?? "Signed out"}
         action={
           <Button
             variant="primary"
@@ -73,7 +69,7 @@ export function App(props: { readonly queryClient: QueryClient }): ReactNode {
               void holder.signIn(currentPath());
             }}
           >
-            sign in
+            Sign in
           </Button>
         }
       />
