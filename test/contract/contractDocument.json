@@ -34,8 +34,8 @@
   },
   "briefFinalization": "a PullRequest finalization requires the brief to name a branch, and a target that is not it where it names one; a proposal naming no target opens into the repository's default branch",
   "selectorProjectSettings": "installation settings are defaults; an absent override inherits one, and a write replaces the whole set under the revision it was read at",
-  "forgeInstallations": "a tenant's administrator claims an installation of this deployment's app; an installation another tenant holds is a conflict, and a claim is never released",
-  "projectCreation": "a principal creates a project in a tenant it administers, or in a new tenant it then administers; a tenant another principal holds is a conflict, each name is at most 39 lowercase letters, digits and hyphens that begin and end with a letter or digit, a new tenant may not be named api, auth, forge, health, projects, and repeating the request under its idempotency key answers the same project",
+  "forgeInstallations": "a tenant's administrator claims an account by authorizing this deployment's app on the forge, which claims each account the forge says they own and nothing else; each tenant holds its own claim, and a claim is never released",
+  "projectCreation": "a principal creates a project in a tenant it administers, or in a tenant nothing holds, which it then administers; a tenant is held by its row, by any grant on it and by any project inheriting from it, and a held tenant the caller does not administer is a conflict; each name is at most 39 lowercase letters, digits and hyphens that begin and end with a letter or digit, a new tenant may not be named api, auth, forge, health, projects, and its creator repeating the request, under any idempotency key, answers the same project",
   "repositoryBinding": "binding a repository to a project creates no project: a project that does not exist is not found, and the repository must be one this deployment holds a credential for — on a host it mints for, that means an installation this tenant has claimed",
   "repositoryLanding": "a repository's landing default is the mode a ticket in it lands by unless its brief names one; it is written against the value the writer read, and a ticket whose landing is None names no reference to land on",
   "repositoryRetirement": "a retired repository stays bound and stays readable by name, and stops being the one a session is placed against, the importer reads or a brief may name; this route only retires and repeating it changes nothing, and binding the repository again reinstates it",
@@ -47,6 +47,7 @@
     "contract": "/api/v1/contract",
     "installation": "/api/v1/installation",
     "forgeApps": "/api/v1/forge/github",
+    "forgeAuthorizations": "/api/v1/tenants/:tenant/forge-authorizations",
     "forgeInstallations": "/api/v1/tenants/:tenant/forge-installations",
     "forgeInstallationRepositories": "/api/v1/tenants/:tenant/forge-installations/:installationId/repositories",
     "projects": "/api/v1/projects",
@@ -749,7 +750,7 @@
       "required": ["repository", "permissions"],
       "additionalProperties": false
     },
-    "forgeInstallationClaim": {
+    "forgeAuthorization": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
       "properties": {
@@ -757,16 +758,23 @@
           "type": "string",
           "enum": ["github"]
         },
-        "app": {
+        "code": {
           "type": "string",
-          "enum": ["portal", "worker"]
+          "minLength": 1,
+          "maxLength": 2048
         },
-        "installationId": {
+        "redirectUri": {
           "type": "string",
-          "minLength": 1
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "codeVerifier": {
+          "type": "string",
+          "minLength": 43,
+          "maxLength": 128
         }
       },
-      "required": ["forge", "app", "installationId"],
+      "required": ["forge", "code", "redirectUri", "codeVerifier"],
       "additionalProperties": false
     },
     "projectCreation": {

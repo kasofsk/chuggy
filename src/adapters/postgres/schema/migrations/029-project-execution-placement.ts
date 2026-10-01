@@ -14,8 +14,8 @@ const signature = `public.${executionPlacementSetFunction}(in_tenant text, in_pr
  * Every existing project is backfilled in cluster with no setter, because
  * nobody chose it; a write that changes nothing keeps the setter it had.
  */
-export const migration027: Migration = {
-  version: 27,
+export const migration029: Migration = {
+  version: 29,
   name: "where a project's work runs is the project's own row",
   statements: [
     `CREATE TABLE public.project_execution_placement (

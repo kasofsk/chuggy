@@ -27,7 +27,7 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { generateKeyPairSync } from "node:crypto";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { type TestContext } from "node:test";
@@ -381,6 +381,7 @@ async function rootRead(
     "CHUG_API_FORGE_WORKER_APP_ID",
     "CHUG_API_FORGE_WORKER_APP_KEY_FILE",
     "CHUG_API_FORGE_API_URL",
+    "CHUG_API_FORGE_APP_CLIENT_SECRET_FILE",
     "CHUG_API_POOL_TOKEN_URL",
     "CHUG_API_POOL_PLANE_URL",
     "CHUG_API_POOL_REGISTRY_HOST",
@@ -621,6 +622,84 @@ test("the worker app is its own pair, optional, and composed beside the portal's
     portalOnly.map((pair) => pair.app),
     ["portal"],
   );
+});
+
+const forgeSecretProgram = `
+  const root = await import('./src/roots/nativeHttp.ts');
+  const setting = await root.forgeClientSecretSetting(root.forgePortalKey());
+  process.stdout.write(JSON.stringify({
+    setting: setting.setting,
+    path: setting.path,
+    why: setting.why,
+  }));
+`;
+
+/** What the root decided about the client secret under the variables one case names. */
+async function forgeSecretRead(
+  named: Readonly<Record<string, string>>,
+): Promise<{ setting: string; path?: string; why?: string }> {
+  const ran = await rootRead(named, forgeSecretProgram);
+  assert.equal(ran.code, 0, ran.out);
+  return JSON.parse(ran.out) as {
+    setting: string;
+    path?: string;
+    why?: string;
+  };
+}
+
+/** A mounted secret, one that is not there, one holding only a newline, and one that is a directory. */
+function forgeSecretFiles(t: TestContext): {
+  readonly present: string;
+  readonly missing: string;
+  readonly empty: string;
+  readonly unreadable: string;
+} {
+  const root = mkdtempSync(join(tmpdir(), "chuggy-root-forge-secret-"));
+  t.after(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+  const present = join(root, "client-secret");
+  writeFileSync(present, "a-client-secret\n");
+  const empty = join(root, "empty");
+  writeFileSync(empty, "\n");
+  const unreadable = join(root, "directory");
+  mkdirSync(unreadable);
+  return { present, missing: join(root, "missing"), empty, unreadable };
+}
+
+/**
+ * The secret's Secret is optional on the rig, so a file that is not there — or
+ * holds nothing but the newline a mount leaves — is a deployment that cannot
+ * redeem an authorization and starts anyway; one it cannot read, or one named
+ * with no portal key to redeem beside, refuses the start.
+ */
+test("a client secret that is not there starts without redemption, and one that cannot be used refuses the start", async (t) => {
+  const files = forgeSecretFiles(t);
+  const portal = {
+    CHUG_API_FORGE_APP_ID: "4708055",
+    CHUG_API_FORGE_APP_KEY_FILE: "/etc/chuggy/forge/portal.pem",
+  };
+  const secret = "CHUG_API_FORGE_APP_CLIENT_SECRET_FILE";
+  assert.deepEqual(await forgeSecretRead(portal), { setting: "Absent" });
+  for (const absent of [files.missing, files.empty])
+    assert.deepEqual(
+      await forgeSecretRead({ ...portal, [secret]: absent }),
+      { setting: "Absent" },
+      absent,
+    );
+  assert.deepEqual(
+    await forgeSecretRead({ ...portal, [secret]: files.present }),
+    { setting: "Named", path: files.present },
+  );
+  const unreadable = await forgeSecretRead({
+    ...portal,
+    [secret]: files.unreadable,
+  });
+  assert.equal(unreadable.setting, "Refused");
+  assert.match(unreadable.why ?? "", /cannot be read/u);
+  const alone = await forgeSecretRead({ [secret]: files.present });
+  assert.equal(alone.setting, "Refused");
+  assert.match(alone.why ?? "", /CHUG_API_FORGE_APP_ID/u);
 });
 
 async function authenticating(token: string): Promise<Authenticated> {

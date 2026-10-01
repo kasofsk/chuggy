@@ -3,6 +3,7 @@
 import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
 
+import { asOperationId } from "../../interpreter/operationInbox.ts";
 import {
   allProjectCreationOutcomes,
   type ProjectCreationStore,
@@ -15,10 +16,12 @@ export function postgresProjectCreation(pool: pg.Pool): ProjectCreationStore {
         outcome: string | null;
         tenant_created: boolean | null;
         grants_written: boolean | null;
+        operation: string | null;
       }>(
-        sql`SELECT outcome, tenant_created, grants_written FROM create_project(
-          ${write.partition.tenant},${write.partition.project},${write.tenantNew},
-          ${write.operation},${write.authority.kind},${write.authority.subject})`,
+        sql`SELECT outcome, tenant_created, grants_written, operation FROM create_project(
+          ${write.partition.tenant},${write.partition.project},${write.standing},
+          ${write.reserved},${write.operation},${write.authority.kind},
+          ${write.authority.subject})`,
       );
       const row = found.rows[0];
       const outcome = allProjectCreationOutcomes.find(
@@ -27,7 +30,8 @@ export function postgresProjectCreation(pool: pg.Pool): ProjectCreationStore {
       if (
         outcome === undefined ||
         typeof row?.tenant_created !== "boolean" ||
-        typeof row.grants_written !== "boolean"
+        typeof row.grants_written !== "boolean" ||
+        typeof row.operation !== "string"
       )
         throw new Error(
           `project creation: unknown outcome ${String(row?.outcome)}`,
@@ -36,6 +40,7 @@ export function postgresProjectCreation(pool: pg.Pool): ProjectCreationStore {
         outcome,
         tenantCreated: row.tenant_created,
         grantsWritten: row.grants_written,
+        operation: asOperationId(row.operation),
       };
     },
     recordGrants: async (operation) => {

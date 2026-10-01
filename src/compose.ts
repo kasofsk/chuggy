@@ -65,6 +65,7 @@ import {
   type RepositoryConfigurationsPorts,
   type RepositoryCreationPorts,
   type RepositoryOnboarding,
+  type RepositoryOnboardingAuthorization,
   type RepositoryOnboardingForgeApp,
 } from "./interpreter/repositoryOnboarding.ts";
 import {
@@ -89,6 +90,7 @@ import { postgresProjectCreation } from "./adapters/postgres/projectCreation.ts"
 import {
   projectCreation,
   type ProjectCreation,
+  type TenantClaims,
 } from "./interpreter/projectCreation.ts";
 import type { ProjectGrantWriter } from "./interpreter/projectGrant.ts";
 import {
@@ -245,10 +247,12 @@ export interface SelectorLeadRuntime {
 export function composeProjectCreation(
   apiPool: pg.Pool,
   access: ProjectAccess,
+  claims: TenantClaims,
   grants: ProjectGrantWriter | undefined,
 ): ProjectCreation {
   return projectCreation({
     access,
+    claims,
     store: postgresProjectCreation(apiPool),
     ...(grants === undefined ? {} : { grants }),
   });
@@ -458,6 +462,7 @@ export interface RepositoryOnboardingComposition {
     RepositoryDefaultBranchPort;
   readonly bootstrapImage?: string;
   readonly creation?: RepositoryCreationPorts;
+  readonly authorization?: RepositoryOnboardingAuthorization;
 }
 
 /** The configuration step's own half, over the one adapter that reads a repository. */
@@ -505,6 +510,9 @@ export function composeRepositoryOnboarding(
     ...(composition.creation === undefined
       ? {}
       : { creation: composition.creation }),
+    ...(composition.authorization === undefined
+      ? {}
+      : { authorization: composition.authorization }),
   });
 }
 

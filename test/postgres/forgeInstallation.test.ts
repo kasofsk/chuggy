@@ -1,11 +1,8 @@
 /**
- * The claimed-installation row against a real server: the door's four outcomes,
- * what the trigger refuses even from the owner, and which role may reach any of
- * it.
- *
- * AN ACCOUNT IS THE UNIT AND THE TENANT IS NOT PART OF IT. The cases that
- * matter are two tenants claiming one account and one tenant claiming it twice,
- * because those are the two the key shape decides.
+ * The claimed-installation row against a real server: the door's outcomes, what
+ * the trigger refuses even from the owner, and which role may reach any of it.
+ * The tenant is part of the key, so every reader is asked for each tenant
+ * apart.
  */
 
 import assert from "node:assert/strict";
@@ -94,24 +91,54 @@ test("a claim is recorded once and replays by equality", async () => {
   );
 });
 
-test("an account another tenant holds is reported rather than taken", async () => {
+test("two tenants each record their own claim of one installation", async () => {
   const recording = postgresForgeInstallationRecording(harness.pool);
-  const first = claim();
+  const first = claim({ tenant: asTenantId(`tenant-${randomUUID()}`) });
+  const second = { ...first, tenant: asTenantId(`tenant-${randomUUID()}`) };
   assert.equal(await recording.record(first), "Recorded");
-  assert.equal(
-    await recording.record({ ...first, tenant: asTenantId("other") }),
-    "ClaimedElsewhere",
-  );
-  const held = await postgresForgeInstallations(harness.pool).installation({
+  assert.equal(await recording.record(second), "Recorded");
+  assert.equal(await recording.record(second), "AlreadyRecorded");
+  const moved = {
+    ...second,
+    installationId: asForgeInstallationId("156786299"),
+  };
+  assert.equal(await recording.record(moved), "Reinstalled");
+  const installations = postgresForgeInstallations(harness.pool);
+  const claims = postgresForgeInstallationClaims(harness.pool);
+  const asked = {
     forge: first.forge,
     app: first.app,
     account: first.account,
-    tenant: first.tenant,
-  });
+  };
+  for (const [tenant, installationId] of [
+    [first.tenant, first.installationId],
+    [second.tenant, moved.installationId],
+  ] as const) {
+    assert.equal(
+      (await installations.installation({ ...asked, tenant }))?.installationId,
+      installationId,
+      tenant,
+    );
+    assert.deepEqual(
+      (await claims.claims(tenant)).claims.map((row) => row.installationId),
+      [installationId],
+      tenant,
+    );
+    assert.equal(
+      (await claims.claim(tenant, installationId))?.account,
+      first.account,
+      tenant,
+    );
+    assert.equal(
+      (await claims.accountClaim({ ...asked, tenant }))?.installationId,
+      installationId,
+      tenant,
+    );
+  }
   assert.equal(
-    held?.installationId,
-    first.installationId,
-    "the standing claim did not move",
+    await claims.claim(first.tenant, moved.installationId),
+    undefined,
+    "a reinstall under one tenant moves no other tenant's claim",
   );
 });
 

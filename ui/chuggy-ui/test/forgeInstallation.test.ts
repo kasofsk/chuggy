@@ -10,13 +10,10 @@
 import { expect, test } from "vitest";
 
 import type { ForgeInstallationResponse } from "../../../src/contract/responses.ts";
-import type { ApiResult } from "../app/core/apiRequest.ts";
-import type { ForgeInstallationClaimedResponse } from "../../../src/contract/responses.ts";
 import {
   forgeAccountRows,
   forgeCreatingAccounts,
   forgeAppLabel,
-  forgeClaimOutcome,
   forgeInstallBegin,
   forgeInstallState,
   forgeInstallStateBytesCount,
@@ -145,52 +142,4 @@ test("the repositories are read under the portal claims alone", () => {
 test("each app is named as a person reads it", () => {
   expect(forgeAppLabel("portal")).toBe("Portal");
   expect(forgeAppLabel("worker")).toBe("Worker");
-});
-
-const claimed: ForgeInstallationClaimedResponse = {
-  forge: "github",
-  app: "portal",
-  account: "kasofsk",
-  accountKind: "Organization",
-  installationId: "1",
-};
-
-function outcomeStatus(
-  result: ApiResult<ForgeInstallationClaimedResponse>,
-): string | undefined {
-  const outcome = forgeClaimOutcome(result);
-  return outcome.outcome === "Refused" ? outcome.status : undefined;
-}
-
-test("a claim that landed answers the installation it claimed", () => {
-  expect(forgeClaimOutcome({ outcome: "Ok", value: claimed })).toStrictEqual({
-    outcome: "Claimed",
-    installation: claimed,
-  });
-});
-
-test("each refusal is the one line the landing sends back", () => {
-  expect(
-    outcomeStatus({
-      outcome: "Conflict",
-      code: "InstallationClaimed",
-      body: undefined,
-    }),
-  ).toBe("Claimed by another tenant");
-  expect(outcomeStatus({ outcome: "Absent" })).toBe("Unknown");
-  expect(
-    outcomeStatus({
-      outcome: "Retryable",
-      code: "ForgeUnavailable",
-      retryAfterSeconds: 5,
-    }),
-  ).toBe("Deferring");
-  expect(
-    outcomeStatus({
-      outcome: "Rejected",
-      code: "InvalidRequest",
-      status: 422,
-      body: undefined,
-    }),
-  ).toBe("Refused");
 });

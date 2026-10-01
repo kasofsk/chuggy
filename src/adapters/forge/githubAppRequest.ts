@@ -3,23 +3,24 @@
  * the exchange every caller in this directory shares.
  *
  * IT IS ONE FILE BECAUSE IT IS ONE CONVERSATION. Minting an installation token,
- * reading the app's own identity, reading one installation and paging what an
- * installation grants are all this tree talking to one host under one set of
- * bounds. Spelled four times, they would be four chances for one of them to
- * accept a redirect, drop a deadline, or read an answer past its bound — and
- * the one that did would be the one holding a private key.
+ * reading the app's own identity, finding an account's installation, redeeming
+ * a person's authorization and paging what an installation grants are all this
+ * tree talking to one forge under one set of bounds. Spelled apart, each would
+ * be a chance to accept a redirect, drop a deadline, or read an answer past its
+ * bound — and the one that did would be the one holding a secret.
  *
- * A BEARER IS THE CALLER'S AND THE REQUEST IS NOT. Two of those callers present
- * the app's own JWT and one presents an installation token minted under it, so
- * the bearer is a parameter and the app's key is reached only by the callers
- * that need it — an adapter that only pages a listing never opens the key file.
+ * A BEARER IS THE CALLER'S AND THE REQUEST IS NOT. Some callers present the
+ * app's own JWT, some a token minted under it, and one redeems a person's
+ * authorization with none at all, so the bearer is a parameter and the app's
+ * key is reached only by the callers that need it — an adapter that only pages
+ * a listing never opens the key file.
  *
- * THE KEY IS READ PER REQUEST AND IS NEVER HELD. It stands in a file the
- * deployment mounts, read once into a buffer a byte wider than a key may be, so
- * a device standing where a key should be cannot be drawn on and a file that
- * grew past its bound is refused rather than truncated into something that
- * signs differently. Requests are rare because their answers are cached or made
- * once, so reading is cheaper than holding.
+ * A SECRET IS READ PER REQUEST AND IS NEVER HELD. The key and the client
+ * secret stand in files the deployment mounts, each read once into a buffer a
+ * byte wider than it may be, so a device standing where one should be cannot be
+ * drawn on and a file that grew past its bound is refused rather than truncated
+ * into something that signs differently. Requests are rare because their
+ * answers are cached or made once, so reading is cheaper than holding.
  *
  * BOTH PEM ENCODINGS ARE ACCEPTED BECAUSE GITHUB ISSUES THE OLDER ONE. An app's
  * key downloads as PKCS#1 and a key converted by hand is PKCS#8;
@@ -102,6 +103,15 @@ const githubAppJwtLifetimeSecs = 540;
 /** The statuses that are the forge refusing this caller rather than failing. */
 const githubDeniedStatuses: readonly number[] = [401, 403, 404, 422];
 
+/** A `403` the forge answers for a rate limit, which its documented headers tell apart from a refusal. */
+function githubThrottled(response: Response): boolean {
+  return (
+    response.status === 403 &&
+    (response.headers.get("x-ratelimit-remaining") === "0" ||
+      response.headers.has("retry-after"))
+  );
+}
+
 const millisecondsPerSecond = 1_000;
 
 /** Where the forge is and what one call may spend, checked once at construction. */
@@ -174,11 +184,11 @@ export function githubAppState(options: GithubAppOptions): GithubAppState {
 }
 
 /**
- * One file's whole key text, refused rather than truncated once it passes the
- * bound. Every way of not reading it raises, because a caller that cannot read
- * its key is an outage rather than an answer.
+ * One file's whole secret text, refused rather than truncated once it passes
+ * the bound. Every way of not reading it raises, because a caller that cannot
+ * read its secret is an outage rather than an answer.
  */
-async function githubAppKeyText(
+export async function githubSecretText(
   path: string,
   bytesMax: number,
 ): Promise<string> {
@@ -187,7 +197,7 @@ async function githubAppKeyText(
     const buffer = Buffer.alloc(bytesMax + 1);
     const read = await handle.read(buffer, 0, buffer.length, 0);
     if (read.bytesRead > bytesMax)
-      throw new RangeError("github app: the private key passed its bound");
+      throw new RangeError("github app: a secret file passed its bound");
     return buffer.subarray(0, read.bytesRead).toString("utf8");
   } finally {
     await handle.close().catch(() => undefined);
@@ -199,7 +209,7 @@ export async function githubAppKey(
   own: Pick<GithubAppState, "privateKeyPath" | "privateKeyBytesMax">,
 ): Promise<KeyObject> {
   const key = createPrivateKey(
-    await githubAppKeyText(own.privateKeyPath, own.privateKeyBytesMax),
+    await githubSecretText(own.privateKeyPath, own.privateKeyBytesMax),
   );
   if (key.asymmetricKeyType !== githubAppKeyType)
     throw new RangeError("github app: the private key is not an RSA key");
@@ -267,23 +277,28 @@ async function githubRefusalMessage(
   );
 }
 
+/** What a request is answered in, and the bearer it presents where it presents one. */
+interface GithubRequestHeaders {
+  readonly accept: string;
+  readonly authorization?: string;
+}
+
 /**
  * Makes the one bounded forge request, every way of not answering being an
  * outage and a status the caller did not ask for being one too: a caller reads
  * a body only from the status it named.
  */
-export async function githubBearerSend(
+async function githubSend(
   own: GithubRequestBounds,
   request: GithubAppRequest,
-  bearer: string,
+  headers: GithubRequestHeaders,
 ): Promise<GithubAppAnswered> {
   let response: Response;
   try {
     response = await own.requestFetch(request.url, {
       method: request.method,
       headers: {
-        accept: githubAcceptMediaType,
-        authorization: `Bearer ${bearer}`,
+        ...headers,
         "content-type": githubRequestMediaType,
         "user-agent": githubUserAgent,
         "x-github-api-version": githubApiVersion,
@@ -299,7 +314,10 @@ export async function githubBearerSend(
   }
   if (response.status === request.okStatus)
     return { answered: "Answer", response };
-  if (!githubDeniedStatuses.includes(response.status)) {
+  if (
+    !githubDeniedStatuses.includes(response.status) ||
+    githubThrottled(response)
+  ) {
     await response.body?.cancel().catch(() => undefined);
     return { answered: "Unavailable" };
   }
@@ -307,6 +325,26 @@ export async function githubBearerSend(
     answered: "Denied",
     message: await githubRefusalMessage(own, response),
   };
+}
+
+/** The request under a bearer the caller holds. */
+export function githubBearerSend(
+  own: GithubRequestBounds,
+  request: GithubAppRequest,
+  bearer: string,
+): Promise<GithubAppAnswered> {
+  return githubSend(own, request, {
+    accept: githubAcceptMediaType,
+    authorization: `Bearer ${bearer}`,
+  });
+}
+
+/** The request under no bearer, answered in plain JSON, which is how the forge's web host redeems an authorization. */
+export function githubWebSend(
+  own: GithubRequestBounds,
+  request: GithubAppRequest,
+): Promise<GithubAppAnswered> {
+  return githubSend(own, request, { accept: githubRequestMediaType });
 }
 
 /** The same request under the app's own bearer, a key this process cannot sign with being an outage. */

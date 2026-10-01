@@ -17,6 +17,7 @@ import {
   agenticRefusalsAnsweredMax,
   countSchema,
   cursorSchema,
+  forgeAuthorizationAccountsAnsweredMax,
   forgeInstallationsAnsweredMax,
   forgeRefusalMessageCharsMax,
   forgeRepositoriesAnsweredMax,
@@ -104,6 +105,8 @@ import {
   sessionTurnStates,
   threadStandings,
   forgeAccountKinds,
+  forgeAccountProofs,
+  forgeAppClaims,
   forgeApps,
   projectRepositoryConfigurationDeferrals,
 } from "./rosters.ts";
@@ -1336,33 +1339,35 @@ export const forgeAppResponseSchema = z.object({
 });
 export type ForgeAppResponse = z.infer<typeof forgeAppResponseSchema>;
 
+/** The client a person authorizes to prove which accounts are theirs, and where they are sent to do it. */
+export const forgeAuthorizationClientSchema = z.object({
+  clientId: identitySchema,
+  authorizeUrl: z.string().min(1),
+});
+export type ForgeAuthorizationClientResponse = z.infer<
+  typeof forgeAuthorizationClientSchema
+>;
+
 /**
- * Every app this deployment holds a key for. Every bearer reads it, because it
- * says nothing about any tenant: it is the identity of the deployment's own
- * apps, and onboarding installs each of them.
+ * Every app this deployment holds a key for, which every bearer reads because
+ * it names no tenant, only the deployment's own apps that onboarding installs.
+ * `authorization` is absent where this deployment cannot redeem one.
  */
 export const forgeAppsResponseSchema = z.object({
   apps: z.array(forgeAppResponseSchema).max(forgeApps.length),
+  authorization: forgeAuthorizationClientSchema.optional(),
 });
 export type ForgeAppsResponse = z.infer<typeof forgeAppsResponseSchema>;
 
-/** One installation a tenant has claimed, as the claim route answers it. */
-export const forgeInstallationClaimedSchema = z.object({
+/** One installation a tenant has claimed, and the moment it was claimed. */
+export const forgeInstallationResponseSchema = z.object({
   forge: identitySchema,
   app: z.enum(forgeApps),
   account: identitySchema,
   accountKind: z.enum(forgeAccountKinds),
   installationId: identitySchema,
+  claimedAt: instantSchema,
 });
-export type ForgeInstallationClaimedResponse = z.infer<
-  typeof forgeInstallationClaimedSchema
->;
-
-/** The same, with the moment it was claimed, as a listing answers it. */
-export const forgeInstallationResponseSchema =
-  forgeInstallationClaimedSchema.extend({
-    claimedAt: instantSchema,
-  });
 export type ForgeInstallationResponse = z.infer<
   typeof forgeInstallationResponseSchema
 >;
@@ -1380,6 +1385,33 @@ export const forgeInstallationsResponseSchema = z.object({
 });
 export type ForgeInstallationsResponse = z.infer<
   typeof forgeInstallationsResponseSchema
+>;
+
+/** One account a person's authorization reaches, whether it is theirs, and what claiming each app on it came to. */
+export const forgeAuthorizedAccountResponseSchema = z.object({
+  account: identitySchema,
+  accountKind: z.enum(forgeAccountKinds),
+  proof: z.enum(forgeAccountProofs),
+  apps: z
+    .array(z.object({ app: z.enum(forgeApps), claim: z.enum(forgeAppClaims) }))
+    .max(forgeApps.length),
+});
+export type ForgeAuthorizedAccountResponse = z.infer<
+  typeof forgeAuthorizedAccountResponseSchema
+>;
+
+/**
+ * What redeeming one person's authorization for a tenant came to, per account
+ * it reaches. `truncated` says the person reaches more than one answer holds.
+ */
+export const forgeAuthorizationResponseSchema = z.object({
+  accounts: z
+    .array(forgeAuthorizedAccountResponseSchema)
+    .max(forgeAuthorizationAccountsAnsweredMax),
+  truncated: z.boolean(),
+});
+export type ForgeAuthorizationResponse = z.infer<
+  typeof forgeAuthorizationResponseSchema
 >;
 
 /** One repository an installation grants, `url` being the address a binding names it by. */

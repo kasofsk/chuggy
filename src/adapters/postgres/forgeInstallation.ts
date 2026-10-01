@@ -2,14 +2,13 @@
  * PostgreSQL read side of the claimed forge installations, and the owner's door
  * that records one.
  *
- * THE READ IS A TABLE READ AND THE WRITE IS A FUNCTION. A claim is one row the
- * API mints from and never makes, so the API role holds SELECT and nothing
- * else; the door runs as the boundary owner, which is what keeps a route from
- * claiming an account before the slice that has one.
+ * THE READ IS A TABLE READ AND THE WRITE IS A FUNCTION. The API role holds
+ * SELECT on the relation and EXECUTE on the door, which runs as the boundary
+ * owner, so a claim is written only through the outcome the door decides.
  *
- * THE TENANT IS A TERM OF THE READ. A row another tenant claimed does not match
- * and the read answers nothing, so a caller cannot be handed a claim it would
- * have had to remember to compare.
+ * THE TENANT IS A TERM OF EVERY READ. Each tenant holds its own row for an
+ * account, so a read that left the tenant out would answer another tenant's
+ * claim as this one's.
  */
 
 import { sql } from "@ts-safeql/sql-tag";

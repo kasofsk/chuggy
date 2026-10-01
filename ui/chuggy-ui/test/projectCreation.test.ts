@@ -56,8 +56,8 @@ test("each refusal is one short line of its own", () => {
     code,
     body: undefined,
   });
-  expect(status(conflict("TenantTaken"))).toBe("Name taken");
-  expect(status(conflict("ProjectExists"))).toBe("Project exists");
+  expect(status(conflict("TenantTaken"))).toBe("Taken");
+  expect(status(conflict("ProjectExists"))).toBe("Exists");
   expect(status(conflict("OperationConflict"))).toBe("Conflict");
   for (const code of ["TenantNameInvalid", "ProjectNameInvalid"])
     expect(

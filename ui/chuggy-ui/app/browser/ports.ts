@@ -134,7 +134,7 @@ export function redirect(url: string): void {
   location.assign(url);
 }
 
-/** The origin this console is served from, which is where its API answers. */
+/** This console's own origin, where its API answers and where a forge is told to return an authorization. */
 export function currentOrigin(): string {
   return location.origin;
 }

@@ -289,6 +289,16 @@ export const threadsAnsweredMax = 64;
 /** How many claimed installations one tenant's listing answers with, oldest first. */
 export const forgeInstallationsAnsweredMax = 64;
 
+/** How many accounts one person's forge authorization answers for, in the forge's order. */
+export const forgeAuthorizationAccountsAnsweredMax = 64;
+
+/** The longest authorization code or redirect address one forge authorization carries. */
+export const forgeAuthorizationTextCharsMax = 2_048;
+
+/** The shortest and the longest code verifier a proof key admits, which are the proof key's own. */
+export const forgeAuthorizationVerifierCharsMin = 43;
+export const forgeAuthorizationVerifierCharsMax = 128;
+
 /** How many bindings one project's repository listing answers with, oldest first. */
 export const projectRepositoriesAnsweredMax = 200;
 
@@ -350,6 +360,7 @@ export const nativeHttpRoutes = {
   contract: `${nativeHttpBasePath}/contract`,
   installation: `${nativeHttpBasePath}/installation`,
   forgeApps: `${nativeHttpBasePath}/forge/github`,
+  forgeAuthorizations: `${nativeHttpBasePath}/tenants/:tenant/forge-authorizations`,
   forgeInstallations: `${nativeHttpBasePath}/tenants/:tenant/forge-installations`,
   forgeInstallationRepositories: `${nativeHttpBasePath}/tenants/:tenant/forge-installations/:installationId/repositories`,
   projects: `${nativeHttpBasePath}/projects`,

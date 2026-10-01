@@ -9,12 +9,17 @@ import { execFile } from "node:child_process";
 import { test } from "node:test";
 import { promisify } from "node:util";
 
-import { allProjectAccessKinds } from "../../src/interpreter/projectAccess.ts";
+import {
+  allProjectAccessKinds,
+  projectAccessObject,
+} from "../../src/interpreter/projectAccess.ts";
 import { oidcPrincipal } from "../../src/interpreter/principal.ts";
 import {
   ketoHarnessAccess,
+  ketoHarnessClaims,
   ketoHarnessIssuer,
   ketoHarnessPartition,
+  ketoHarnessReadUrl,
   ketoHarnessWriteUrl,
 } from "./harness.ts";
 
@@ -106,6 +111,46 @@ test("a tenant grant and the project's tenant relation compose to project access
     );
 });
 
+test("a person's project grant links the project to its tenant, which then holds the tenant, and a revocation leaves the link", async () => {
+  const partition = ketoHarnessPartition("provision-link");
+  const person = {
+    CHUG_PROVISION_SUBJECT: "linked",
+    CHUG_PROVISION_TENANT: partition.tenant,
+    CHUG_PROVISION_PROJECT: partition.project,
+    CHUG_PROVISION_RELATION: "developers",
+  };
+  const claims = ketoHarnessClaims();
+  assert.equal(await claims.claimed(partition.tenant), false);
+  const granted = await provision({
+    ...person,
+    CHUG_PROVISION_ACTION: "grant",
+  });
+  assert.equal(granted.code, 0, granted.output);
+  assert.equal(await claims.claimed(partition.tenant), true, granted.output);
+  const onTenant = await provision({
+    CHUG_PROVISION_ACTION: "grant",
+    CHUG_PROVISION_SUBJECT: "linked-admin",
+    CHUG_PROVISION_TENANT: partition.tenant,
+    CHUG_PROVISION_RELATION: "admins",
+  });
+  assert.equal(onTenant.code, 0, onTenant.output);
+  const tenantAdmin = oidcPrincipal(ketoHarnessIssuer, "linked-admin");
+  assert.notEqual(
+    await access.authorize(tenantAdmin, partition, "ManageProjectSelector"),
+    undefined,
+  );
+  const revoked = await provision({
+    ...person,
+    CHUG_PROVISION_ACTION: "revoke",
+  });
+  assert.equal(revoked.code, 0, revoked.output);
+  assert.notEqual(
+    await access.authorize(tenantAdmin, partition, "ManageProjectSelector"),
+    undefined,
+    revoked.output,
+  );
+});
+
 test("a project nothing created is granted access anyway", async () => {
   const partition = ketoHarnessPartition("provision-absent");
   const granted = await provision({
@@ -137,4 +182,12 @@ test("a relation the model does not declare is refused before anything is writte
   });
   assert.equal(refused.code, 1);
   assert.match(refused.output, /is not a project relation/u);
+  const listing = new URL("relation-tuples", ketoHarnessReadUrl());
+  listing.searchParams.set("namespace", "Project");
+  listing.searchParams.set("object", projectAccessObject(partition));
+  const onProject = (await (await fetch(listing)).json()) as {
+    relation_tuples: unknown[];
+  };
+  assert.deepEqual(onProject.relation_tuples, []);
+  assert.equal(await ketoHarnessClaims().claimed(partition.tenant), false);
 });

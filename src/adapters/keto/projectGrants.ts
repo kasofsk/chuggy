@@ -21,7 +21,7 @@ const ketoAdminTuplesPath = "admin/relation-tuples";
  * A subject set's relation is empty, which names the tenant object itself
  * rather than anyone standing in one of its relations.
  */
-const ketoSubjectSetRelation = "";
+export const ketoSubjectSetRelation = "";
 
 function ketoGrantBody(grant: ProjectGrant): Record<string, unknown> {
   return {

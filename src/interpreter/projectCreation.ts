@@ -2,20 +2,22 @@
  * A signed-in principal creating a project: the service the API's creation
  * route answers from.
  *
- * A TENANT NAME IS FIRST-COME. Any principal may create a tenant no row holds
- * and becomes its administrator; a tenant that stands takes a project only from
- * a principal the authority says administers it, and anyone else is told the
- * name is taken rather than that it was not found, because a tenant name is not
- * a secret. The door decides the race between two creators of one new tenant,
- * so the loser is `TenantTaken` and never a project in the winner's tenant. A
- * name another path begins with is refused only to a caller who would make the
- * tenant, so a tenant that already stands keeps taking projects.
+ * A TENANT NAME IS FIRST-COME. A tenant is held by its row, by any tuple on its
+ * own object and by any project whose `tenant` it is. Any principal may create a
+ * tenant nothing holds and becomes its administrator; a held tenant takes a project
+ * only from a principal the authority says administers it, and anyone else is
+ * told the name is taken rather than that it was not found, because a tenant
+ * name is not a secret. Tuples hold it because an operator may grant access
+ * before any row exists, and a wiped database leaves tuples behind. The door
+ * decides the race between two creators of one new tenant, so the loser is
+ * `TenantTaken` and never a project in the winner's tenant, and it refuses a
+ * name another path begins with only for a tenant that is new.
  *
- * ACCESS IS WRITTEN AFTER THE ROW COMMITS, AND A REPLAY WRITES IT AGAIN UNTIL
+ * ACCESS IS WRITTEN AFTER THE ROW COMMITS, AND A REPEAT WRITES IT AGAIN UNTIL
  * THE WRITES ARE RECORDED. Both grants are idempotent, so an authority that
- * failed after the commit is repaired by sending the same request under the
- * same idempotency key; once recorded, a replay writes nothing, so it cannot
- * restore a grant an operator has since revoked.
+ * failed after the commit is repaired by the creator asking again for the same
+ * tenant and project, under any idempotency key; once recorded, a repeat writes
+ * nothing, so it cannot restore a grant an operator has since revoked.
  */
 
 import { assertNever } from "../domain/assertNever.ts";
@@ -29,7 +31,12 @@ import {
   type ProjectGrantWriter,
 } from "./projectGrant.ts";
 import type { Principal } from "./principal.ts";
-import { asProjectId, asTenantId, type Partition } from "./projectStore.ts";
+import {
+  asProjectId,
+  asTenantId,
+  type Partition,
+  type TenantId,
+} from "./projectStore.ts";
 
 /** One creation as the wire names it, before either name is held to the rule. */
 export interface ProjectCreationRequest {
@@ -47,25 +54,36 @@ export const allProjectCreationOutcomes = [
   "AlreadyCreated",
   "ProjectExists",
   "TenantTaken",
+  "TenantReserved",
   "OperationConflict",
 ] as const;
 
 export type ProjectCreationOutcome =
   (typeof allProjectCreationOutcomes)[number];
 
-/** What the door answered, whether the operation it accepted made the tenant, and whether its grants are recorded as written. */
+/** What the door answered and, for a creation, the operation that made the project, whether it made the tenant and whether its grants are recorded as written. */
 export interface ProjectCreationAnswer {
   readonly outcome: ProjectCreationOutcome;
   readonly tenantCreated: boolean;
   readonly grantsWritten: boolean;
+  readonly operation: OperationId;
 }
 
-/** One creation as the door takes it: whether the caller expects the tenant to be new is the caller's standing. */
+/** Whether the caller administers the tenant, and otherwise whether any tuple holds it. */
+export type TenantStanding = "Administers" | "Claimed" | "Unclaimed";
+
+/** One creation as the door takes it, with what the authority says of the tenant. */
 export interface ProjectCreationWrite {
   readonly partition: Partition;
-  readonly tenantNew: boolean;
+  readonly standing: TenantStanding;
+  readonly reserved: boolean;
   readonly operation: OperationId;
   readonly authority: Authority;
+}
+
+/** Whether any tuple holds a tenant: on the tenant's object, or as the tenant a project inherits from. */
+export interface TenantClaims {
+  claimed(tenant: TenantId): Promise<boolean>;
 }
 
 /** The durable side: the tenant, the project and the operation in one transaction, and later the record that its grants were written. */
@@ -77,6 +95,7 @@ export interface ProjectCreationStore {
 /** What creation reaches, with no grant writer on a deployment that names no authority to write to. */
 export interface ProjectCreationPorts {
   readonly access: ProjectAccess;
+  readonly claims: TenantClaims;
   readonly store: ProjectCreationStore;
   readonly grants?: ProjectGrantWriter;
 }
@@ -119,6 +138,23 @@ export function projectCreationGrants(
     : [placed];
 }
 
+/** The caller's standing on the tenant, asking whether any tuple holds it only of a caller that does not administer it. */
+async function projectCreationStanding(
+  ports: ProjectCreationPorts,
+  principal: Principal,
+  partition: Partition,
+): Promise<TenantStanding> {
+  const administers = await ports.access.authorizeTenant(
+    principal,
+    partition.tenant,
+    "AdministerTenant",
+  );
+  if (administers !== undefined) return "Administers";
+  return (await ports.claims.claimed(partition.tenant))
+    ? "Claimed"
+    : "Unclaimed";
+}
+
 async function projectCreationCreate(
   ports: ProjectCreationPorts,
   grants: ProjectGrantWriter,
@@ -131,16 +167,11 @@ async function projectCreationCreate(
     tenant: asTenantId(request.tenant),
     project: asProjectId(request.project),
   };
-  const administers = await ports.access.authorizeTenant(
-    principal,
-    partition.tenant,
-    "AdministerTenant",
-  );
-  if (administers === undefined && tenantNameReserved(partition.tenant))
-    return { result: "TenantReserved" };
+  const standing = await projectCreationStanding(ports, principal, partition);
   const answer = await ports.store.create({
     partition,
-    tenantNew: administers === undefined,
+    standing,
+    reserved: tenantNameReserved(partition.tenant),
     operation: request.operation,
     authority: memberAuthority(principal),
   });
@@ -154,11 +185,12 @@ async function projectCreationCreate(
           answer.tenantCreated,
         ))
           await grants.write(grant);
-        await ports.store.recordGrants(request.operation);
+        await ports.store.recordGrants(answer.operation);
       }
       return { result: answer.outcome, partition };
     case "ProjectExists":
     case "TenantTaken":
+    case "TenantReserved":
     case "OperationConflict":
       return { result: answer.outcome };
     default:

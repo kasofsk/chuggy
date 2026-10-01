@@ -19,12 +19,18 @@ import { useEffect } from "react";
 import type { ReactNode } from "react";
 
 import { apiProjectInventoryAll } from "../core/apiRoutes.ts";
+import {
+  forgeCallbackQueryOf,
+  forgeCallbackRoutePath,
+} from "../core/forgeAuthorization.ts";
+import type { ForgeCallbackQuery } from "../core/forgeAuthorization.ts";
 import { forgeSetupQueryOf, forgeSetupRoutePath } from "../core/forgeSetup.ts";
 import type { ForgeSetupQuery } from "../core/forgeSetup.ts";
 import { lastProjectOrFirst, lastProjectRead } from "../core/lastProject.ts";
 import { projectCreationRoutePath } from "../core/projectCreation.ts";
 import { usePanelInventory } from "./api.ts";
 import { DataPanel } from "./DataPanel.tsx";
+import { ForgeCallbackPage } from "./ForgeCallbackPage.tsx";
 import { ForgeSetupPage } from "./ForgeSetupPage.tsx";
 import { Inbox } from "./Inbox.tsx";
 import { LeadPage } from "./LeadPage.tsx";
@@ -132,22 +138,10 @@ const selectorRoute = createRoute({
   component: SelectorSettingsPage,
 });
 
-/** What the setup landing sends back: one word about the claim it made, and
- * nothing the landing was handed by the forge. */
-interface RepositoriesSearch {
-  readonly connected?: string | undefined;
-}
-
 const repositoriesRoute = createRoute({
   getParentRoute: () => partitionRoute,
   path: "/repositories",
   component: RepositoriesPage,
-  validateSearch: (
-    search: Readonly<Record<string, unknown>>,
-  ): RepositoriesSearch => {
-    const connected = search["connected"];
-    return { connected: typeof connected === "string" ? connected : undefined };
-  },
 });
 
 const runnersRoute = createRoute({
@@ -176,6 +170,19 @@ const forgeSetupRoute = createRoute({
   validateSearch: (
     search: Readonly<Record<string, unknown>>,
   ): ForgeSetupQuery => forgeSetupQueryOf(search),
+});
+
+/**
+ * The address the portal app's authorization returns to, outside the partition
+ * for the same reason as the setup landing.
+ */
+const forgeCallbackRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: forgeCallbackRoutePath,
+  component: ForgeCallbackPage,
+  validateSearch: (
+    search: Readonly<Record<string, unknown>>,
+  ): ForgeCallbackQuery => forgeCallbackQueryOf(search),
 });
 
 /** Outside the partition because it makes one. A static segment outranks a
@@ -207,6 +214,7 @@ const ticketEditRoute = createRoute({
 const routeTree = rootRoute.addChildren([
   landingRoute,
   forgeSetupRoute,
+  forgeCallbackRoute,
   projectCreationRoute,
   partitionRoute.addChildren([
     projectRoute,

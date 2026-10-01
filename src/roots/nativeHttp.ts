@@ -7,6 +7,7 @@ import { postgresInstallationAuthority } from "../adapters/postgres/installation
 import {
   ketoProjectAccess,
   ketoReadiness,
+  ketoTenantClaims,
 } from "../adapters/keto/projectAccess.ts";
 import { postgresExecutionBacklogGuard } from "../adapters/postgres/schedulerContext.ts";
 import {
@@ -97,11 +98,17 @@ import {
   githubInstallationRepositories,
   githubInstallationRepositoriesDefaults,
 } from "../adapters/forge/githubInstallationRepositories.ts";
+import {
+  githubClientSecretPresence,
+  githubUserAuthorization,
+} from "../adapters/forge/githubUserAuthorization.ts";
 import type {
   RepositoryOnboarding,
+  RepositoryOnboardingAuthorization,
   RepositoryOnboardingForgeApp,
 } from "../interpreter/repositoryOnboarding.ts";
 import { forgeRepositoriesAnsweredMax } from "../contract/http.ts";
+import { bootstrapImageFault } from "../interpreter/bootstrapConfiguration.ts";
 import type { ForgeCredentialMinting } from "../interpreter/forgeCredentials.ts";
 import type { RepositoryCredentialPort } from "../interpreter/finalizer.ts";
 import {
@@ -183,10 +190,10 @@ const repositoryCredentialSourcesVariable =
   "CHUG_API_REPOSITORY_CREDENTIAL_SOURCES";
 /**
  * The portal app this process acts under and the key it signs with, and the
- * worker app it verifies a claim for and enumerates an installation of. Each
- * pair is named together or not at all: one alone is a deployment that meant to
- * hold an app and cannot, which is a refusal to start rather than an outage per
- * request.
+ * worker app it finds on a proven account and enumerates an installation of.
+ * Each pair is named together or not at all: one alone is a deployment that
+ * meant to hold an app and cannot, which is a refusal to start rather than an
+ * outage per request.
  */
 const forgeAppIdVariable = "CHUG_API_FORGE_APP_ID";
 const forgeAppKeyFileVariable = "CHUG_API_FORGE_APP_KEY_FILE";
@@ -195,6 +202,14 @@ const forgeWorkerAppKeyFileVariable = "CHUG_API_FORGE_WORKER_APP_KEY_FILE";
 const forgeApiUrlVariable = "CHUG_API_FORGE_API_URL";
 const forgeTimeoutVariable = "CHUG_API_FORGE_TIMEOUT_MS";
 const forgeRepositoriesMaxVariable = "CHUG_API_FORGE_REPOSITORIES_MAX";
+/**
+ * The portal app's client secret, which redeems a person's authorization of the
+ * app. It is optional and withholds only that: a deployment naming none, or
+ * naming a file that is absent or empty as it starts, answers an authorization
+ * `NotConfigured`, and one naming a secret without a portal key, or a file it
+ * cannot read, refuses to start.
+ */
+const forgeClientSecretFileVariable = "CHUG_API_FORGE_APP_CLIENT_SECRET_FILE";
 /**
  * The worker image a bootstrap configuration commands, and the repository a
  * personal account's is copied from. Both are optional and each withholds one
@@ -528,7 +543,7 @@ export function forgePortalKey(): ForgeAppKey | undefined {
 /**
  * Which file each app's key is named by. It is exhaustive over `ForgeApp`, so
  * an app added to the roster without a pair here is a compile error rather than
- * a claim route that silently answers `NotConfigured` forever.
+ * an app no deployment could ever claim.
  */
 const forgeKeyFileVariables: Readonly<Record<ForgeApp, string>> = {
   portal: forgeAppKeyFileVariable,
@@ -543,9 +558,9 @@ export interface ForgeAppPair {
 
 /**
  * Every app this deployment names a key pair for, portal first. The worker pair
- * is held so a tenant can claim the plane's installation over the API and read
- * what it grants, which is the only thing it mints for; naming no worker pair
- * answers a worker claim `NotConfigured`.
+ * is held so a tenant's authorization can claim the plane's installation and
+ * read what it grants, which is the only thing it mints for; naming no worker
+ * pair claims the portal app alone.
  */
 export function forgeAppPairs(): readonly ForgeAppPair[] {
   const portal = forgePortalKey();
@@ -646,10 +661,19 @@ function forgeRepositoriesMax(): number {
   return asked;
 }
 
-/** The image a bootstrap configuration commands, or nothing where this deployment names none. */
+/**
+ * The image a bootstrap configuration commands, or nothing where this
+ * deployment names none; one its briefing cannot name is refused here.
+ */
 function bootstrapWorkerImage(): string | undefined {
   const image = process.env[bootstrapWorkerImageVariable];
-  return image === undefined || image.length === 0 ? undefined : image;
+  if (image === undefined || image.length === 0) return undefined;
+  const fault = bootstrapImageFault(image);
+  if (fault !== undefined)
+    throw new Error(
+      `${bootstrapWorkerImageVariable} cannot be named in a briefing: ${fault}`,
+    );
+  return image;
 }
 
 /**
@@ -725,6 +749,7 @@ async function nativeForge(
   const credentials = nativeRepositoryCredentials(minting);
   const repositories = repositoryConfigurationSnapshots(credentials);
   const half = nativePortalHalf(portal, minting);
+  const authorization = await nativeForgeAuthorization(portal, half, pools);
   return {
     credentials,
     minting:
@@ -740,8 +765,78 @@ async function nativeForge(
       ...(repositories === undefined ? {} : { repositories }),
       ...(image === undefined ? {} : { bootstrapImage: image }),
       ...(half === undefined ? {} : { creation: half.creation }),
+      ...(authorization === undefined ? {} : { authorization }),
     }),
   };
+}
+
+/** Refuses to start, leaving no pool open behind it. */
+async function nativeForgeRefused(
+  pools: NativePools,
+  why: string,
+): Promise<never> {
+  await closePools(pools.pool, pools.selectorReviewPool);
+  throw new Error(why);
+}
+
+/** What the client secret setting comes to at start, `portal` being what it redeems with where it is named. */
+export type ForgeClientSecretSetting<T> =
+  | { readonly setting: "Named"; readonly path: string; readonly portal: T }
+  | { readonly setting: "Absent" }
+  | { readonly setting: "Refused"; readonly why: string };
+
+/** Whether the file is there is decided here; its contents are read per authorization. */
+export async function forgeClientSecretSetting<T>(
+  portal: T | undefined,
+): Promise<ForgeClientSecretSetting<T>> {
+  const path = process.env[forgeClientSecretFileVariable];
+  if (path === undefined || path.length === 0) return { setting: "Absent" };
+  const presence = await githubClientSecretPresence({
+    clientSecretPath: path,
+  });
+  if (presence === "Absent") return { setting: "Absent" };
+  if (presence === "Unreadable")
+    return {
+      setting: "Refused",
+      why: `${forgeClientSecretFileVariable}: the file it names cannot be read`,
+    };
+  if (portal === undefined)
+    return {
+      setting: "Refused",
+      why: `${forgeClientSecretFileVariable} is named without ${forgeAppIdVariable}`,
+    };
+  return { setting: "Named", path, portal };
+}
+
+/** The redemption of a person's authorization of the portal app, where this deployment names its client secret. */
+async function nativeForgeAuthorization(
+  portal: ForgeAppPair | undefined,
+  half: NativePortalHalf | undefined,
+  pools: NativePools,
+): Promise<RepositoryOnboardingAuthorization | undefined> {
+  const secret = await forgeClientSecretSetting(
+    portal === undefined || half === undefined
+      ? undefined
+      : { key: portal.key, half },
+  );
+  switch (secret.setting) {
+    case "Absent":
+      return undefined;
+    case "Refused":
+      return nativeForgeRefused(pools, secret.why);
+    case "Named":
+      return {
+        forge: githubForgeId,
+        app: portalForgeApp,
+        user: githubUserAuthorization({
+          ...githubInstallationTokensOptions(secret.portal.key),
+          app: secret.portal.half.onboarding.apps,
+          clientSecretPath: secret.path,
+        }),
+      };
+    default:
+      return assertNever(secret);
+  }
 }
 
 /** What the portal app answers for, and nothing where this deployment holds no portal key. */
@@ -1002,7 +1097,12 @@ async function main(): Promise<void> {
     forge.minting,
     forge.onboarding,
     nativeWorkerPools(pool, access, grants),
-    composeProjectCreation(pool, access, grants),
+    composeProjectCreation(
+      pool,
+      access,
+      ketoTenantClaims(accessSettings),
+      grants,
+    ),
     composeExecutionPlacement(pool, access),
   );
   app.addHook("onClose", async () => {

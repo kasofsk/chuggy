@@ -22,6 +22,11 @@ import {
   sessionHarnessDiscovery as discovery,
 } from "./sessionHolderHarness.ts";
 
+/** A callback arriving at the address this client is registered with. */
+function signedInAt(search: string): { pathname: string; search: string } {
+  return { pathname: new URL(configuration.redirectUri).pathname, search };
+}
+
 test("a console that cannot read its configuration says so and stops", async () => {
   const held = harness();
   held.answer = () => {
@@ -58,12 +63,30 @@ test("a callback whose state does not match this tab is refused", async () => {
   const holder = createSessionHolder(held.ports);
   await holder.load();
   await holder.signIn();
-  const answer = await holder.completeCallback("?code=abc&state=someone-else");
+  const answer = await holder.completeCallback(
+    signedInAt("?code=abc&state=someone-else"),
+  );
   expect(answer).toEqual({
     result: "Denied",
     reason: "the callback did not match this tab",
   });
   expect(held.transient.held.has(sessionTransactionKey)).toBe(false);
+});
+
+/** The forge returns its own code and state to a page of its own, which a
+ * sign-in in flight must survive rather than be refused by. */
+test("a code arriving anywhere but the sign-in's address is not a sign-in", async () => {
+  const held = harness();
+  const holder = createSessionHolder(held.ports);
+  await holder.load();
+  await holder.signIn();
+  const answer = await holder.completeCallback({
+    pathname: "/forge/github/callback",
+    search: "?code=abc&state=forge-state",
+  });
+  expect(answer).toEqual({ result: "None" });
+  expect(held.transient.held.has(sessionTransactionKey)).toBe(true);
+  expect(held.asked.filter((asked) => typeof asked !== "string")).toEqual([]);
 });
 
 test("a completed callback persists the refresh token and no access token", async () => {
@@ -75,7 +98,7 @@ test("a completed callback persists the refresh token and no access token", asyn
     new URL(held.redirects[0] ?? "").search,
   ).get("state");
   const answer = await holder.completeCallback(
-    `?code=abc&state=${String(state)}`,
+    signedInAt(`?code=abc&state=${String(state)}`),
   );
   expect(answer).toEqual({ result: "SignedIn", returnPath: undefined });
   expect(held.persistent.held.get(sessionRefreshTokenKey)).toBe("renew");
@@ -93,7 +116,7 @@ test("a sign-in that names a page answers that page back on the callback", async
     new URL(held.redirects[0] ?? "").search,
   ).get("state");
   const answer = await holder.completeCallback(
-    `?code=abc&state=${String(state)}`,
+    signedInAt(`?code=abc&state=${String(state)}`),
   );
   expect(answer).toEqual({
     result: "SignedIn",
@@ -176,7 +199,7 @@ test("a sign-in the issuer refused is drawn with the reason it gave", async () =
   const holder = createSessionHolder(held.ports);
   await holder.load();
   const answer = await holder.completeCallback(
-    "?error=access_denied&error_description=the+operator+said+no",
+    signedInAt("?error=access_denied&error_description=the+operator+said+no"),
   );
   expect(answer.result).toBe("Denied");
   holder.refuse(answer.result === "Denied" ? answer.reason : "");

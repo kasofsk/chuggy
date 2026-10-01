@@ -28,7 +28,7 @@ import {
   executionPlacementSchema,
   publicMutationSchema,
   forgeCredentialRequestSchema,
-  forgeInstallationClaimSchema,
+  forgeAuthorizationSchema,
   projectCreationSchema,
   projectRepositoryBindSchema,
   projectRepositoryCreateSchema,
@@ -67,14 +67,13 @@ import { checkedSelectorDecisionReference } from "../../interpreter/dispatchView
 import type { ForgeCredentialRequest } from "../../interpreter/forgeCredentials.ts";
 import {
   asForgeAccount,
-  asForgeApp,
   asForgeId,
   asForgeInstallationId,
   asForgeRepositoryName,
   type ForgeInstallationId,
 } from "../../interpreter/forgeInstallation.ts";
 import type {
-  ForgeInstallationClaimRequest,
+  ForgeAuthorizationRequest,
   ProjectRepositoryBindRequest,
   ProjectRepositoryCreateRequest,
 } from "../../interpreter/repositoryOnboarding.ts";
@@ -199,15 +198,16 @@ export function parseForgeCredentialRequest(
   };
 }
 
-/** One claim as the wire carries it, every field already narrowed. */
-export function parseForgeInstallationClaim(
+/** One authorization as the wire carries it, every field already narrowed. */
+export function parseForgeAuthorization(
   body: unknown,
-): ForgeInstallationClaimRequest {
-  const parsed = forgeInstallationClaimSchema.parse(body);
+): ForgeAuthorizationRequest {
+  const parsed = forgeAuthorizationSchema.parse(body);
   return {
     forge: asForgeId(parsed.forge),
-    app: asForgeApp(parsed.app),
-    installationId: asForgeInstallationId(parsed.installationId),
+    code: parsed.code,
+    redirectUri: parsed.redirectUri,
+    codeVerifier: parsed.codeVerifier,
   };
 }
 

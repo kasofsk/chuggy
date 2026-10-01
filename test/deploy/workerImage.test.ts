@@ -72,11 +72,14 @@ function dockerStages(text: string): DockerStage[] {
   return stages;
 }
 
-/** The environment the built image carries: the last stage's, over every stage it is built from. */
-function imageEnvironment(text: string): Map<string, string> {
+/** The environment a built target carries, the last stage by default, over every stage it is built from. */
+function imageEnvironment(text: string, target?: string): Map<string, string> {
   const stages = dockerStages(text);
   const chain: DockerStage[] = [];
-  let stage = stages.at(-1);
+  let stage =
+    target === undefined
+      ? stages.at(-1)
+      : stages.find((named) => named.name === target);
   while (stage !== undefined) {
     assert.ok(chain.length < stages.length, "the stages are built in a cycle");
     chain.unshift(stage);
@@ -98,10 +101,18 @@ test("the release the pin names is one the job and session planes accept", () =>
   );
 });
 
-/** Catches the image and the work launcher naming the workspace apart, since that launcher writes none. */
-test("the image names the workspace a work pod reads", () => {
-  const environment = imageEnvironment(readFileSync(dockerfilePath, "utf8"));
+/** Catches an image and the work launcher naming the workspace apart, since that launcher writes none. */
+test("each image names the workspace a work pod reads", () => {
+  const text = readFileSync(dockerfilePath, "utf8");
+  for (const target of [undefined, "generic"]) {
+    const image = target ?? "the default target";
+    const environment = imageEnvironment(text, target);
 
-  assert.ok(environment.size > 0, "the image sets no environment at all");
-  assert.match(environment.get(workerWorkspaceVariable) ?? "", /^\//u);
+    assert.ok(environment.size > 0, `${image} sets no environment at all`);
+    assert.match(
+      environment.get(workerWorkspaceVariable) ?? "",
+      /^\//u,
+      `${image} names no workspace`,
+    );
+  }
 });

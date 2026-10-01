@@ -33,7 +33,20 @@ import { migration021 } from "../../src/adapters/postgres/schema/migrations/021-
 import { migration022 } from "../../src/adapters/postgres/schema/migrations/022-worker-pool-fencing.ts";
 import { migration023 } from "../../src/adapters/postgres/schema/migrations/023-worker-pool-release-ends.ts";
 import { migration026 } from "../../src/adapters/postgres/schema/migrations/026-project-creation.ts";
-import { migration027 } from "../../src/adapters/postgres/schema/migrations/027-project-execution-placement.ts";
+import { migration027 } from "../../src/adapters/postgres/schema/migrations/027-forge-claim-per-tenant.ts";
+import { migration028 } from "../../src/adapters/postgres/schema/migrations/028-binding-lands-by-pull-request.ts";
+import { migration029 } from "../../src/adapters/postgres/schema/migrations/029-project-execution-placement.ts";
+import {
+  postgresForgeInstallationClaims,
+  postgresForgeInstallations,
+} from "../../src/adapters/postgres/forgeInstallation.ts";
+import {
+  asForgeAccount,
+  asForgeApp,
+  asForgeId,
+  asForgeInstallationId,
+} from "../../src/interpreter/forgeInstallation.ts";
+import { asTenantId } from "../../src/interpreter/projectStore.ts";
 import { leadDispatchesPerDecision } from "../../src/adapters/postgres/schema/migrations/baseline/seed.ts";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
@@ -45,12 +58,14 @@ import {
   acceptanceFunction,
   apiRole,
   boundaryOwnerRole,
+  configurationImporterRole,
   draftCreateFunction,
   draftReleaseFunction,
   draftReviseFunction,
   executionPlacementSetFunction,
   finalizationFunction,
   finalizerRole,
+  forgeInstallationRecordFunction,
   migrations,
   migrationLedger,
   poolPlaneRole,
@@ -9050,7 +9065,7 @@ test("023 gives the plane serving pools the release and takes back its reading o
 test("026 gives every tenant a project stands in a row of its own, and a project no tenant row holds is refused", async () => {
   await migrationDatabase("project_creation", async (subject) => {
     const doors = [
-      `${projectCreateFunction}(text,text,boolean,text,text,text)`,
+      `${projectCreateFunction}(text,text,text,boolean,text,text,text)`,
       `${projectCreationGrantsFunction}(text)`,
     ];
     await installationBefore(subject, migration026.version);
@@ -9061,15 +9076,8 @@ test("026 gives every tenant a project stands in a row of its own, and a project
     );
     assert.ok((await postgresMigrate(subject)).includes(migration026.version));
     assert.deepEqual(
-      (
-        await subject.query(
-          "SELECT tenant, created_at FROM tenant ORDER BY tenant",
-        )
-      ).rows,
-      [
-        { tenant: "other-26", created_at: null },
-        { tenant: "tenant-26", created_at: null },
-      ],
+      (await subject.query("SELECT tenant FROM tenant ORDER BY tenant")).rows,
+      [{ tenant: "other-26" }, { tenant: "tenant-26" }],
     );
     await assert.rejects(
       subject.query(
@@ -9092,7 +9100,193 @@ test("026 gives every tenant a project stands in a row of its own, and a project
   });
 });
 
-/** The placement rows 027 leaves, in project order, and whether each names who set it. */
+/** The columns a forge claim is keyed by, in key order. */
+async function forgeClaimKey(subject: pg.Pool): Promise<readonly string[]> {
+  const found = await subject.query<{ attname: string }>(
+    `SELECT a.attname FROM pg_constraint c
+       CROSS JOIN LATERAL unnest(c.conkey) WITH ORDINALITY AS k(attnum,ord)
+       JOIN pg_attribute a ON a.attrelid=c.conrelid AND a.attnum=k.attnum
+      WHERE c.conname='forge_installation_pkey' ORDER BY k.ord`,
+  );
+  return found.rows.map((row) => row.attname);
+}
+
+/** One claim through the door, answering what the door decided. */
+async function forgeClaimRecorded(
+  subject: pg.Pool,
+  app: string,
+  installationId: string,
+  tenant: string,
+): Promise<unknown> {
+  const found = await subject.query<{ recorded: string }>(
+    `SELECT ${forgeInstallationRecordFunction}('github',$1,'acme','Organization',$2,$3,'Member','s') AS recorded`,
+    [app, installationId, tenant],
+  );
+  return found.rows[0]?.recorded;
+}
+
+/** Every claim as the relation holds it, in an order that does not depend on the key. */
+async function forgeClaimRows(subject: pg.Pool): Promise<readonly unknown[]> {
+  const found = await subject.query<Record<string, unknown>>(
+    `SELECT forge,app,account,account_kind,installation_id,tenant,
+            authority_kind,authority_subject,claimed_at::text AS claimed_at
+       FROM forge_installation ORDER BY tenant,app`,
+  );
+  return found.rows;
+}
+
+/** Two apps claimed by one tenant and the same account refused to another, as 027 found them. */
+async function forgeClaimsBefore027(subject: pg.Pool): Promise<void> {
+  assert.equal(
+    await forgeClaimRecorded(subject, "portal", "101", "tenant-a"),
+    "Recorded",
+  );
+  assert.equal(
+    await forgeClaimRecorded(subject, "worker", "102", "tenant-a"),
+    "Recorded",
+  );
+  assert.equal(
+    await forgeClaimRecorded(subject, "portal", "101", "tenant-b"),
+    "ClaimedElsewhere",
+  );
+  assert.deepEqual(await forgeClaimKey(subject), ["forge", "app", "account"]);
+}
+
+/** Every reader of a claim, asked for each tenant apart, answers that tenant's own row. */
+async function forgeClaimReadersAnswer(subject: pg.Pool): Promise<void> {
+  const installations = postgresForgeInstallations(subject);
+  const claims = postgresForgeInstallationClaims(subject);
+  const asked = {
+    forge: asForgeId("github"),
+    app: asForgeApp("portal"),
+    account: asForgeAccount("acme"),
+  };
+  for (const [tenant, installationId, held] of [
+    ["tenant-a", "101", ["portal", "worker"]],
+    ["tenant-b", "103", ["portal"]],
+  ] as const) {
+    const named = asTenantId(tenant);
+    assert.equal(
+      (await installations.installation({ ...asked, tenant: named }))
+        ?.installationId,
+      installationId,
+      tenant,
+    );
+    assert.deepEqual(
+      (await claims.claims(named)).claims.map((row) => row.app).sort(),
+      held,
+      tenant,
+    );
+    assert.equal(
+      (await claims.claim(named, asForgeInstallationId(installationId)))
+        ?.account,
+      "acme",
+      tenant,
+    );
+    assert.equal(
+      (await claims.accountClaim({ ...asked, tenant: named }))?.installationId,
+      installationId,
+      tenant,
+    );
+  }
+}
+
+/** The door is still the boundary owner's and the API's alone, and every role that minted still reads. */
+async function forgeClaimGrantsKept(subject: pg.Pool): Promise<void> {
+  const door = `${forgeInstallationRecordFunction}(text,text,text,text,text,text,text,text)`;
+  assert.deepEqual(await sessionInvocationBoundaries(subject, [door]), [
+    {
+      signature: door,
+      owner: boundaryOwnerRole,
+      definer: true,
+      scheduler: false,
+      plane: false,
+      pool: false,
+      api: true,
+    },
+  ]);
+  const readers = await subject.query<{ reads: boolean }>(
+    `SELECT has_table_privilege(role,'public.forge_installation','SELECT') AS reads
+       FROM unnest($1::text[]) AS role`,
+    [
+      [
+        apiRole,
+        workerPlaneRole,
+        finalizerRole,
+        ticketServiceRole,
+        configurationImporterRole,
+      ],
+    ],
+  );
+  assert.deepEqual(
+    readers.rows.map((row) => row.reads),
+    [true, true, true, true, true],
+  );
+}
+
+test("027 keys a forge claim by its tenant, keeping every claim that stood", async () => {
+  await migrationDatabase("forge_claim_per_tenant", async (subject) => {
+    await installationAt(subject, migrations.indexOf(migration027));
+    await forgeClaimsBefore027(subject);
+    const stood = await forgeClaimRows(subject);
+    assert.ok((await postgresMigrate(subject)).includes(migration027.version));
+    assert.deepEqual(await forgeClaimKey(subject), [
+      "tenant",
+      "forge",
+      "app",
+      "account",
+    ]);
+    assert.deepEqual(await forgeClaimRows(subject), stood);
+    assert.equal(
+      await forgeClaimRecorded(subject, "portal", "101", "tenant-a"),
+      "AlreadyRecorded",
+    );
+    assert.equal(
+      await forgeClaimRecorded(subject, "portal", "101", "tenant-b"),
+      "Recorded",
+    );
+    assert.equal(
+      await forgeClaimRecorded(subject, "portal", "103", "tenant-b"),
+      "Reinstalled",
+    );
+    await forgeClaimReadersAnswer(subject);
+    await forgeClaimGrantsKept(subject);
+  });
+});
+
+test("028 lands a repository bound from here on by pull request, leaving the bindings that stood", async () => {
+  await migrationDatabase("binding_lands_by_pull_request", async (subject) => {
+    await installationAt(subject, migrations.indexOf(migration028));
+    await seedLandinglessBinding(subject);
+    const landings = async () =>
+      (
+        await subject.query<{ repository: string; landing_mode: string }>(
+          `SELECT repository,landing_mode FROM project_repository
+            WHERE tenant='tenant-90' AND project='project-90' ORDER BY repository`,
+        )
+      ).rows;
+    assert.deepEqual(await landings(), [
+      { repository: "bound-90", landing_mode: "Push" },
+    ]);
+    assert.ok((await postgresMigrate(subject)).includes(migration028.version));
+    assert.equal(
+      (
+        await subject.query<{ bound: string }>(
+          `SELECT ${repositoryBindingWriteFunction}(
+             'tenant-90','project-90','bound-90-after','epoch-90',
+             'operation-90','Administrator','test-operator') AS bound`,
+        )
+      ).rows[0]?.bound,
+      "Bound",
+    );
+    assert.deepEqual(await landings(), [
+      { repository: "bound-90", landing_mode: "Push" },
+      { repository: "bound-90-after", landing_mode: "PullRequest" },
+    ]);
+  });
+});
+
+/** The placement rows 029 leaves, in project order, and whether each names who set it. */
 async function placementRows(subject: pg.Pool): Promise<readonly unknown[]> {
   const found = await subject.query<Record<string, unknown>>(
     `SELECT project, work_route, evaluation_route, set_by_kind, set_at
@@ -9101,7 +9295,7 @@ async function placementRows(subject: pg.Pool): Promise<readonly unknown[]> {
   return found.rows;
 }
 
-/** What 027's constraints refuse: a second routing row, and a setter named in part. */
+/** What 029's constraints refuse: a second routing row, and a setter named in part. */
 async function placementRefusals(subject: pg.Pool): Promise<void> {
   await assert.rejects(
     subject.query(`INSERT INTO execution_routing
@@ -9117,18 +9311,18 @@ async function placementRefusals(subject: pg.Pool): Promise<void> {
   );
 }
 
-test("027 places every project that runs today in cluster, naming no setter, and seeds the routing a scheduler naming none runs", async () => {
+test("029 places every project that runs today in cluster, naming no setter, and seeds the routing a scheduler naming none runs", async () => {
   await migrationDatabase("execution_placement", async (subject) => {
     const door = `${executionPlacementSetFunction}(text,text,text,text,text,text)`;
-    await installationBefore(subject, migration027.version);
+    await installationBefore(subject, migration029.version);
     await subject.query(
-      `${tenantSeed("tenant-27")}
+      `${tenantSeed("tenant-29")}
        INSERT INTO project(tenant,project,lifecycle) VALUES
-         ('tenant-27','project-a','Active'),('tenant-27','project-b','Active')`,
+         ('tenant-29','project-a','Active'),('tenant-29','project-b','Active')`,
     );
-    assert.ok((await postgresMigrate(subject)).includes(migration027.version));
+    assert.ok((await postgresMigrate(subject)).includes(migration029.version));
     await subject.query(
-      `INSERT INTO project(tenant,project,lifecycle) VALUES('tenant-27','project-c','Active')`,
+      `INSERT INTO project(tenant,project,lifecycle) VALUES('tenant-29','project-c','Active')`,
     );
     assert.deepEqual(
       await placementRows(subject),

@@ -99,7 +99,7 @@ export function ProjectCreationForm(): ReactNode {
   return (
     <div className="grid w-full max-w-aside gap-3">
       <ProjectCreationName
-        label="Workspace"
+        label="Tenant"
         value={fields.tenant}
         onChange={(tenant) => {
           edit({ ...fields, tenant });

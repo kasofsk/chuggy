@@ -3,65 +3,72 @@
  *
  * It is outside the partition routes because the forge redirects to one fixed
  * address and knows nothing about a project; the transaction this tab stored
- * before sending them away is what says which project, which app and where they
- * were. That transaction is taken once, on the first render, so a landing
- * opened again claims nothing.
+ * before sending them away is what says which project and where they were.
+ * That transaction is taken once, on the first render, and a matching install
+ * goes on to the authorization that proves which accounts are theirs.
  */
 
-import { useNavigate, useSearch } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useSearch } from "@tanstack/react-router";
+import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
-import { apiClaimForgeInstallation } from "../core/apiRoutes.ts";
-import {
-  forgeClaimOutcome,
-  forgeInstallTake,
-} from "../core/forgeInstallation.ts";
+import { apiForgeApps } from "../core/apiRoutes.ts";
+import { forgeInstallTake } from "../core/forgeInstallation.ts";
 import {
   forgeSetupDecision,
   forgeSetupRequested,
-  forgeSetupReturn,
   forgeSetupRoutePath,
   forgeSetupUnexpected,
 } from "../core/forgeSetup.ts";
 import type { ForgeSetupDecision } from "../core/forgeSetup.ts";
 import { useApiPorts } from "./api.ts";
 import { Footer } from "./Footer.tsx";
+import { forgeAuthorizeRedirect } from "./forgeAuthorizeRedirect.ts";
 import { transientStore } from "./ports.ts";
 import { Notice } from "./ui/Notice.tsx";
 
-/** What this page says while the claim is in flight. */
-export const forgeSetupClaiming = "Connecting";
+/** What this page says while it reads where to send the person. */
+export const forgeSetupConnecting = "Connecting";
 
-/** What the repositories page is told a landed claim came to. */
-export const forgeSetupConnected = "Connected";
+/** What this page says where this deployment cannot redeem an authorization. */
+export const forgeSetupNotConfigured = "Not configured";
 
-function ForgeSetupClaim(props: {
-  readonly decision: Extract<ForgeSetupDecision, { decision: "Claim" }>;
+function ForgeSetupAuthorize(props: {
+  readonly decision: Extract<ForgeSetupDecision, { decision: "Authorize" }>;
 }): ReactNode {
   const ports = useApiPorts();
-  const navigate = useNavigate();
-  const { installationId, transaction } = props.decision;
+  const [stopped, setStopped] = useState<string | undefined>(undefined);
+  const started = useRef(false);
+  const transaction = props.decision.transaction;
   useEffect(() => {
+    if (started.current) return;
+    started.current = true;
     void (async () => {
-      const outcome = forgeClaimOutcome(
-        await apiClaimForgeInstallation(ports, transaction.tenant, {
-          forge: "github",
-          app: transaction.app,
-          installationId,
-        }),
-      );
-      await navigate({
-        href: forgeSetupReturn(
-          transaction.returnPath,
-          outcome.outcome === "Claimed" ? forgeSetupConnected : outcome.status,
-        ),
-        replace: true,
+      const apps = await apiForgeApps(ports);
+      const client =
+        apps.outcome === "Ok" ? apps.value.authorization : undefined;
+      if (client === undefined) {
+        setStopped(
+          apps.outcome === "Ok" ? forgeSetupNotConfigured : "Unavailable",
+        );
+        return;
+      }
+      await forgeAuthorizeRedirect(client, {
+        tenant: transaction.tenant,
+        project: transaction.project,
+        returnPath: transaction.returnPath,
       });
     })();
-  }, [ports, navigate, transaction, installationId]);
+  }, [ports, transaction]);
+  if (stopped === undefined)
+    return (
+      <Notice tone="info" inline role="status" detail={forgeSetupConnecting} />
+    );
   return (
-    <Notice tone="info" inline role="status" detail={forgeSetupClaiming} />
+    <>
+      <Notice tone="danger" inline detail={stopped} />
+      <a href={transaction.returnPath}>Repositories</a>
+    </>
   );
 }
 
@@ -70,8 +77,8 @@ function ForgeSetupAnswer(props: {
 }): ReactNode {
   const decision = props.decision;
   switch (decision.decision) {
-    case "Claim":
-      return <ForgeSetupClaim decision={decision} />;
+    case "Authorize":
+      return <ForgeSetupAuthorize decision={decision} />;
     case "Requested":
       return (
         <>
