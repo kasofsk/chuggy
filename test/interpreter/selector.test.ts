@@ -56,6 +56,7 @@ import {
   operationIdentityCharsMax,
 } from "../../src/interpreter/operationInbox.ts";
 import {
+  selectorHostedRunsChanges,
   selectorRunOnce,
   type SelectorRunResult,
 } from "../../src/interpreter/selectorRuntime.ts";
@@ -713,6 +714,7 @@ test("a paused runtime creates no new observations but still drains durable work
     ),
   );
   assert.deepEqual(result, {
+    reached: [],
     observed: 0,
     proposed: 0,
     dispatched: 0,
@@ -757,9 +759,10 @@ const movedTicketPage = {
  * those a decision reference, a `selector_interaction` row and a
  * selections-per-minute slot for an attempt with nothing to observe.
  */
-test("a pass whose view has not moved takes no permit and leaves no attempt", async () => {
+test("a pass whose view has not moved takes no permit, leaves no attempt and asks no hosted grant", async () => {
   const allocated: string[] = [];
   const terminated: string[] = [];
+  let hostedAsked = 0;
   const result = await selectorRunOnce(
     refusalWrites(),
     {
@@ -788,13 +791,22 @@ test("a pass whose view has not moved takes no permit and leaves no attempt", as
       submit: () => Promise.reject(new Error("no delivery expected")),
       operation: () => Promise.resolve(undefined),
     },
-    policyHost(() => Promise.reject(new Error("the lead was asked to decide"))),
+    {
+      ...policyHost(() =>
+        Promise.reject(new Error("the lead was asked to decide")),
+      ),
+      hostedRunsGranted: () => {
+        hostedAsked += 1;
+        return Promise.resolve(true);
+      },
+    },
     perProjectIdentities(),
     settingsSource(() => Promise.resolve(runtimeSettings)),
     { projectsMax: 1, deliveriesMax: 1, reconciliationsMax: 1 },
   );
   assert.deepEqual(allocated, []);
   assert.deepEqual(terminated, []);
+  assert.equal(hostedAsked, 0);
   assert.equal(result.observed, 0);
   assert.deepEqual(result.failures, []);
 });
@@ -971,8 +983,9 @@ test("a project whose tenant grants the lead no hosted runs takes no permit and 
   assert.deepEqual(allocated, [hosted.project]);
   assert.deepEqual(started, [`decision-${hosted.project}`]);
   assert.equal(result.observed, 1);
+  assert.deepEqual(result.reached, [unhosted, hosted]);
   assert.deepEqual(result.failures, [
-    { phase: "HostedRunsRefused", partition: unhosted },
+    { phase: "HostedRunsNotGranted", partition: unhosted },
   ]);
 });
 
@@ -1020,7 +1033,7 @@ test("a refused project is asked again on the next pass and decides once its ten
   ]);
   assert.deepEqual(
     passes.results.map((result) => result.failures),
-    [[{ phase: "HostedRunsRefused", partition }], []],
+    [[{ phase: "HostedRunsNotGranted", partition }], []],
   );
   assert.deepEqual(passes.allocated, [`decision-${partition.project}`]);
   assert.deepEqual(passes.started, [`decision-${partition.project}`]);
@@ -1040,6 +1053,34 @@ test("an authority that cannot say skips the project this pass and serves it on 
   );
   assert.deepEqual(passes.allocated, [`decision-${partition.project}`]);
   assert.deepEqual(passes.started, [`decision-${partition.project}`]);
+});
+
+test("a hosted-runs skip is reported per project, and no other failure is", () => {
+  const slashedTenant = {
+    tenant: asTenantId("a/b"),
+    project: asProjectId("c"),
+  };
+  const slashedProject = {
+    tenant: asTenantId("a"),
+    project: asProjectId("b/c"),
+  };
+  const first = selectorHostedRunsChanges(new Map(), {
+    reached: [slashedTenant, partition],
+    failures: [
+      { phase: "HostedRunsNotGranted", partition: slashedTenant },
+      { phase: "Observation", partition },
+    ],
+  });
+  assert.deepEqual(first.changed, [
+    { phase: "HostedRunsNotGranted", partition: slashedTenant },
+  ]);
+  assert.deepEqual(
+    selectorHostedRunsChanges(first.reported, {
+      reached: [slashedProject],
+      failures: [{ phase: "HostedRunsNotGranted", partition: slashedProject }],
+    }).changed,
+    [{ phase: "HostedRunsNotGranted", partition: slashedProject }],
+  );
 });
 
 /**
@@ -1314,6 +1355,7 @@ test("a pause observed after permit acquisition prevents a new decision", async 
     },
   );
   assert.deepEqual(result, {
+    reached: [],
     observed: 0,
     proposed: 0,
     dispatched: 0,

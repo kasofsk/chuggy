@@ -105,10 +105,14 @@ import { postgresJournalLegality } from "../adapters/postgres/journal.ts";
 import type { Config } from "../domain/config.ts";
 import { checkedReworkCap, type ReworkCap } from "../interpreter/reworkCap.ts";
 import { asOwnerId } from "../interpreter/projectStore.ts";
-import type {
-  SelectorIdentityFactory,
-  SelectorRuntimeConfig,
-  SelectorRuntimeSource,
+import {
+  selectorHostedRunsChanges,
+  type SelectorHostedRunsPhase,
+  type SelectorHostedRunsReported,
+  type SelectorHostedRunsSkip,
+  type SelectorIdentityFactory,
+  type SelectorRuntimeConfig,
+  type SelectorRuntimeSource,
 } from "../interpreter/selectorRuntime.ts";
 import type { TicketServiceConfig } from "../interpreter/ticketService.ts";
 import type { FinalizerConfig } from "../interpreter/finalizer.ts";
@@ -207,6 +211,20 @@ function processPreconditions(
   ];
 }
 
+/** Why a project's lead is not run, as an operator reads it beside the phase. */
+const selectorProcessHostedRunsWhy: Readonly<
+  Record<SelectorHostedRunsPhase, string>
+> = {
+  HostedRunsNotGranted:
+    "its tenant grants this selector no hosted runs, so its lead does not run",
+  HostedRunsUndecided:
+    "the project authority could not say whether its tenant grants this selector hosted runs",
+};
+
+function selectorProcessHostedRunsLine(skip: SelectorHostedRunsSkip): string {
+  return `selector: ${skip.partition.tenant}/${skip.partition.project} ${skip.phase}: ${selectorProcessHostedRunsWhy[skip.phase]}\n`;
+}
+
 /**
  * Drives the selector's own pass and the thread wake pass in ONE tick of ONE
  * pacing loop, the runtime STRICTLY FIRST: the runtime pass ends by appending
@@ -214,8 +232,9 @@ function processPreconditions(
  * together would read the log before this tick's refusals were in it, and one
  * loop is the whole of the pacing because a second loop over the same cursor
  * would be a second writer to it. A change whose fan-out one pass cannot read
- * is the one arm in which a notice is dropped for good, so it reaches stderr
- * the way a contained ticket service fault does.
+ * is the one arm in which a notice is dropped for good, and a project newly
+ * passed over for want of hosted runs is a lead that stops, so each reaches
+ * stderr the way a contained ticket service fault does.
  */
 export function selectorProcess(
   service: SelectorRuntimeService,
@@ -223,10 +242,15 @@ export function selectorProcess(
   requirements: ControlPlaneRequirements,
   config: ServiceRuntimeConfig,
 ): ServiceRuntime {
+  let hostedRuns: SelectorHostedRunsReported = new Map();
   return serviceRuntime(
     {
       run: async () => {
-        await service.runOnce();
+        const result = await service.runOnce();
+        const hosted = selectorHostedRunsChanges(hostedRuns, result);
+        hostedRuns = hosted.reported;
+        for (const skip of hosted.changed)
+          process.stderr.write(selectorProcessHostedRunsLine(skip));
         const report = await threadWakePass(wakes);
         if (report.truncatedAt !== undefined)
           process.stderr.write(

@@ -31,8 +31,14 @@ import {
   deliverPendingSelectorProposals,
   reconcileSubmittedSelectorProposals,
 } from "./selectorDeliveryRuntime.ts";
-import type { SelectorRunFailure } from "./selectorRuntimeTypes.ts";
-export type { SelectorRunFailure } from "./selectorRuntimeTypes.ts";
+import type {
+  SelectorHostedRunsPhase,
+  SelectorRunFailure,
+} from "./selectorRuntimeTypes.ts";
+export type {
+  SelectorHostedRunsPhase,
+  SelectorRunFailure,
+} from "./selectorRuntimeTypes.ts";
 
 export interface SelectorRuntimeSource
   extends
@@ -58,6 +64,8 @@ export interface SelectorIdentityFactory {
  * proposal and no dispatch, which is what its failures are about.
  */
 export interface SelectorRunResult {
+  /** The projects the sweep reached, whether it served them, passed them over or failed on them. */
+  readonly reached: readonly Partition[];
   readonly observed: number;
   readonly proposed: number;
   readonly dispatched: number;
@@ -104,7 +112,7 @@ async function observeProjects(
   identities: SelectorIdentityFactory,
   control: SelectorRuntimeSettingsSource,
 ): Promise<{
-  readonly scanned: number;
+  readonly reached: readonly Partition[];
   readonly observed: number;
   readonly proposed: number;
   readonly dispatched: number;
@@ -113,7 +121,7 @@ async function observeProjects(
   let proposed = 0;
   let dispatched = 0;
   let observed = 0;
-  let scanned = 0;
+  const reached: Partition[] = [];
   const failures: SelectorRunFailure[] = [];
   for (const partition of projects) {
     const result = await observeProject(
@@ -127,12 +135,12 @@ async function observeProjects(
     );
     failures.push(...result.failures);
     if (result.stop) break;
-    scanned += 1;
+    reached.push(partition);
     if (result.observed) observed += 1;
     if (result.proposed) proposed += 1;
     dispatched += result.dispatched;
   }
-  return { scanned, observed, proposed, dispatched, failures };
+  return { reached, observed, proposed, dispatched, failures };
 }
 
 interface ProjectObservationResult {
@@ -233,7 +241,7 @@ async function observeProjectHostedRuns(
   }
   return granted
     ? undefined
-    : projectObservationFailure("HostedRunsRefused", partition);
+    : projectObservationFailure("HostedRunsNotGranted", partition);
 }
 
 /**
@@ -397,6 +405,7 @@ async function observeInventory(
   control: SelectorRuntimeSettingsSource,
   projectsMax: number,
 ): Promise<{
+  readonly reached: readonly Partition[];
   readonly observed: number;
   readonly proposed: number;
   readonly dispatched: number;
@@ -417,12 +426,13 @@ async function observeInventory(
     identities,
     control,
   );
-  await saveInventoryProgress(store, inventory, progress.scanned);
+  await saveInventoryProgress(store, inventory, progress.reached.length);
   return progress;
 }
 
 /** A paused installation reads no inventory, so it has no progress to record. */
 const pausedInventory = {
+  reached: [],
   observed: 0,
   proposed: 0,
   dispatched: 0,
@@ -466,6 +476,7 @@ export async function selectorRunOnce(
     config.projectsMax,
     "selector project bound",
   );
+  let reached: readonly Partition[] = [];
   let observed = 0;
   let proposed = 0;
   let dispatched = 0;
@@ -480,6 +491,7 @@ export async function selectorRunOnce(
       control,
       projectsMax,
     );
+    reached = progress.reached;
     observed = progress.observed;
     proposed = progress.proposed;
     dispatched = progress.dispatched;
@@ -505,6 +517,7 @@ export async function selectorRunOnce(
     failures.push({ phase: "AttemptReconciliation" });
   }
   return {
+    reached,
     observed,
     proposed,
     dispatched,
@@ -512,4 +525,50 @@ export async function selectorRunOnce(
     reconciled: reconciliation.reconciled,
     failures,
   };
+}
+
+/** One project a run passed over for want of hosted runs, and which answer stopped it. */
+export interface SelectorHostedRunsSkip {
+  readonly partition: Partition;
+  readonly phase: SelectorHostedRunsPhase;
+}
+
+/** What has been reported of each skipped project, keyed by `selectorHostedRunsChangesKey`. */
+export type SelectorHostedRunsReported = ReadonlyMap<
+  string,
+  SelectorHostedRunsPhase
+>;
+
+/** A partition as one key, its two halves kept apart so no pair reads as another. */
+function selectorHostedRunsChangesKey(partition: Partition): string {
+  return JSON.stringify([partition.tenant, partition.project]);
+}
+
+/**
+ * The hosted-runs skips a run names that were not already reported under the
+ * same phase, and what stands reported after it. A project the run reached and
+ * did not skip is forgotten, so one passed over on every pass that reaches it is
+ * reported once, and again only after one that served it or named the other
+ * phase.
+ */
+export function selectorHostedRunsChanges(
+  reported: SelectorHostedRunsReported,
+  run: Pick<SelectorRunResult, "reached" | "failures">,
+): {
+  readonly changed: readonly SelectorHostedRunsSkip[];
+  readonly reported: SelectorHostedRunsReported;
+} {
+  const standing = new Map(reported);
+  for (const partition of run.reached)
+    standing.delete(selectorHostedRunsChangesKey(partition));
+  const changed: SelectorHostedRunsSkip[] = [];
+  for (const { phase, partition } of run.failures) {
+    if (phase !== "HostedRunsNotGranted" && phase !== "HostedRunsUndecided")
+      continue;
+    if (partition === undefined) continue;
+    const key = selectorHostedRunsChangesKey(partition);
+    if (reported.get(key) !== phase) changed.push({ partition, phase });
+    standing.set(key, phase);
+  }
+  return { changed, reported: standing };
 }
