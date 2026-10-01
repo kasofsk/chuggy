@@ -53,9 +53,10 @@
  *
  * THE BOOTSTRAP'S REVISION IS ITS NAME, so two steps racing to author it author
  * one row: the second meets the first's revision as the one it already is. A
- * revision is never rewritten, so one the release rule has since outgrown is
- * met as an `IdentityConflict` rather than replaced, and only counts as held
- * while it still releases.
+ * revision is never rewritten, so a stored bootstrap whose text differs, being
+ * another repository's or one the release rule has since outgrown, is met as
+ * `BootstrapDiffers` rather than replaced, and only counts as held while it
+ * still releases.
  */
 
 import { assertNever } from "../domain/assertNever.ts";
@@ -225,6 +226,7 @@ export const allProjectRepositoryConfigurationsDeferrals = [
   "SnapshotRefused",
   "DeclarationsRefused",
   "IdentityConflict",
+  "BootstrapDiffers",
   "StaleBinding",
   "NotFound",
   "ParentNotFound",
@@ -735,10 +737,10 @@ const bootstrapConfigurationRevision = asConfigurationRevisionId(
 
 /**
  * The bootstrap configuration authored as this project's own, at the revision
- * the name itself is. A second repository in one project needing a bootstrap
- * meets the first one's revision: identical text is that revision and different
- * text is `IdentityConflict`, which is the deferral saying the project already
- * has a bootstrap to bind the second repository's tickets against.
+ * the name itself is. Identical text is that revision and any other is
+ * `BootstrapDiffers`, whether it is another repository's, was authored under
+ * another image or branch, or no longer releases, and in each case the
+ * repository declaring its own configurations is what clears it.
  */
 async function bindRepositoryBootstrapped(
   configurations: RepositoryConfigurationsPorts,
@@ -763,7 +765,7 @@ async function bindRepositoryBootstrapped(
     case "AlreadyExists":
       return { result: "Bootstrapped", revision: created.revision.revision };
     case "IdentityConflict":
-      return { result: "Deferred", reason: "IdentityConflict" };
+      return { result: "Deferred", reason: "BootstrapDiffers" };
     case "ParentNotFound":
       return { result: "Deferred", reason: "ParentNotFound" };
     default:

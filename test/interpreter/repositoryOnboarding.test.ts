@@ -1498,7 +1498,7 @@ test("a project already holding a different bootstrap is told so and stays bound
     result: "Bound",
     repository,
     landing: { mode: "Push" },
-    configurations: { result: "Deferred", reason: "IdentityConflict" },
+    configurations: { result: "Deferred", reason: "BootstrapDiffers" },
   });
 });
 
@@ -2221,7 +2221,7 @@ test("a bootstrap that no longer releases is not held, and the step meets it rat
     {
       result: "Configurations",
       repository,
-      configurations: { result: "Deferred", reason: "IdentityConflict" },
+      configurations: { result: "Deferred", reason: "BootstrapDiffers" },
     },
   );
   assert.equal(wrote.heads.length, 1, "the step ran");

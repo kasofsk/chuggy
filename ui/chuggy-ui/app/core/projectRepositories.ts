@@ -101,7 +101,7 @@ export const repositoryDeferrals: Readonly<
   },
   DefaultBranchUnavailable: { status: "GitHub unavailable", retry: true },
   RepositoryAbsent: { status: "Not bound · bind again", retry: false },
-  SnapshotAbsent: { status: "Branch moved", retry: true },
+  SnapshotAbsent: { status: "Head unreadable", retry: true },
   SnapshotUnavailable: { status: "GitHub unavailable", retry: true },
   SnapshotRefused: {
     status: "Unreadable configurations · fix the repository",
@@ -113,6 +113,10 @@ export const repositoryDeferrals: Readonly<
   },
   IdentityConflict: {
     status: "Configuration conflict · ask an operator",
+    retry: false,
+  },
+  BootstrapDiffers: {
+    status: "Bootstrap differs · add configurations",
     retry: false,
   },
   StaleBinding: { status: "Binding changed", retry: true },

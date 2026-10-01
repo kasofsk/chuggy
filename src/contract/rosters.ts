@@ -348,7 +348,7 @@ export const forgeRepositoryVisibilities = ["private", "public"] as const;
 export type ForgeRepositoryVisibilityName =
   (typeof forgeRepositoryVisibilities)[number];
 
-/** Why a newly bound repository came away with no configurations of its own. */
+/** Why a bound repository came away from the configuration step with no configurations of its own. */
 export const projectRepositoryConfigurationDeferrals = [
   "NotConfigured",
   "NoBootstrapImage",
@@ -360,6 +360,7 @@ export const projectRepositoryConfigurationDeferrals = [
   "SnapshotRefused",
   "DeclarationsRefused",
   "IdentityConflict",
+  "BootstrapDiffers",
   "StaleBinding",
   "NotFound",
   "ParentNotFound",

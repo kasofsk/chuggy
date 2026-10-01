@@ -165,6 +165,18 @@ test("a configuration step asked for again draws its outcome, or the refusal it 
     retry: false,
   });
   expect(
+    configured({ result: "Deferred", reason: "BootstrapDiffers" }),
+  ).toStrictEqual({
+    status: "Bootstrap differs · add configurations",
+    retry: false,
+  });
+  expect(
+    configured({ result: "Deferred", reason: "IdentityConflict" }),
+  ).toStrictEqual({
+    status: "Configuration conflict · ask an operator",
+    retry: false,
+  });
+  expect(
     repositoryConfigureStatus({
       outcome: "Conflict",
       code: "RepositoryRetired",

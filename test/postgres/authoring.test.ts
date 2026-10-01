@@ -2743,8 +2743,8 @@ test("a released ticket that lands nothing still hands release a brief", async (
 
 /**
  * A project beside this one in its tenant and one of its name in another
- * tenant, each holding a bootstrap; the first also holds a name it imported from
- * this repository while the repository was bound there instead.
+ * tenant, each holding a bootstrap and a name it imported from this repository
+ * while the repository was bound there instead.
  */
 async function configurationsHeldNeighbours(
   partition: Partition,
@@ -2762,20 +2762,20 @@ async function configurationsHeldNeighbours(
       revision: asConfigurationRevisionId("bootstrap"),
       canonical: postgresHarnessConfiguration,
     });
+    await harness.query(
+      `INSERT INTO repository_configuration_provenance
+         (tenant,project,revision,digest,repository,repository_commit,path,name)
+       SELECT tenant,project,revision,digest,$3,$4,$5,'older'
+         FROM configuration_revision WHERE tenant=$1 AND project=$2 AND revision='bootstrap'`,
+      [
+        neighbour.tenant,
+        neighbour.project,
+        repository,
+        "c".repeat(40),
+        [".chug", "configurations", "older.json"].join("/"),
+      ],
+    );
   }
-  await harness.query(
-    `INSERT INTO repository_configuration_provenance
-       (tenant,project,revision,digest,repository,repository_commit,path,name)
-     SELECT tenant,project,revision,digest,$3,$4,$5,'older'
-       FROM configuration_revision WHERE tenant=$1 AND project=$2 AND revision='bootstrap'`,
-    [
-      neighbours[0]?.tenant,
-      neighbours[0]?.project,
-      repository,
-      "c".repeat(40),
-      [".chug", "configurations", "older.json"].join("/"),
-    ],
-  );
 }
 
 test("what a project holds from the configuration step is read per repository and per project", async (t) => {

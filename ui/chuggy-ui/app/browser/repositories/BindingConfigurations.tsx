@@ -3,8 +3,8 @@
  * step asked for again.
  *
  * Why the step last deferred is not stored, so the row says only that it did
- * until a retry answers with a reason. A retry that leaves the project holding
- * a configuration, or meets the binding retired, redraws the listing.
+ * until a retry answers with a reason. A retry the route answers, or one that
+ * meets the binding retired, redraws the listing.
  */
 
 import { useQueryClient } from "@tanstack/react-query";
