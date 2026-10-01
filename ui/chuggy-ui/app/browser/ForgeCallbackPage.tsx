@@ -1,194 +1,114 @@
 /**
  * Where the forge returns a person's authorization of the portal app, outside
  * the partition because the stored transaction names the tenant. The
- * transaction is taken, the code posted once and then cleared from the address.
- *
- * Every install offered here comes back through the setup landing to this page,
- * so a person missing an app installs it and returns connected. One who reached
- * no account, or only accounts they do not own, is offered the portal app's
- * install.
+ * transaction is taken, the code posted once and cleared from the address, and
+ * the person put back where they pressed Connect GitHub with the word it came
+ * to. A return this tab did not start has nowhere to go back to, so it stays.
  */
 
-import { useNavigate, useSearch } from "@tanstack/react-router";
+import { Link, useNavigate, useSearch } from "@tanstack/react-router";
+import type { UseNavigateResult } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
+import type { ApiPorts } from "../core/apiRequest.ts";
 import { apiForgeAuthorization } from "../core/apiRoutes.ts";
 import {
-  forgeAuthorizationOutcome,
+  forgeAuthorizationDeclined,
+  forgeAuthorizationWord,
   forgeAuthorizeTake,
   forgeCallbackDecision,
   forgeCallbackQueryOf,
   forgeCallbackRedirectUri,
   forgeCallbackRoutePath,
-  forgePortalInstallOffered,
 } from "../core/forgeAuthorization.ts";
-import type {
-  ForgeAuthorizationOutcome,
-  ForgeAuthorizeTransaction,
-  ForgeCallbackDecision,
-} from "../core/forgeAuthorization.ts";
+import type { ForgeCallbackDecision } from "../core/forgeAuthorization.ts";
 import { forgeSetupUnexpected } from "../core/forgeSetup.ts";
-import { forgeAccountProofTone } from "../core/tones.ts";
 import { useApiPorts } from "./api.ts";
 import { Footer } from "./Footer.tsx";
+import { forgeReturnNavigate } from "./forgeReturnNavigate.ts";
 import { currentOrigin, transientStore } from "./ports.ts";
-import { ConnectGithub } from "./repositories/ConnectGithub.tsx";
-import { InstallLink } from "./repositories/InstallLink.tsx";
 import { Notice } from "./ui/Notice.tsx";
-import { Pill } from "./ui/Pill.tsx";
 
 /** What this page says while the code is being redeemed. */
 export const forgeCallbackConnecting = "Connecting";
 
-/** What this page says where the person declined at the forge. */
-export const forgeCallbackDeclined = "Declined";
-
-/** What this page says where the authorization reached no installation of the portal app. */
-export const forgeCallbackNotInstalled = "Not installed";
-
-function ForgeCallbackLines(props: {
-  readonly outcome: Extract<
-    ForgeAuthorizationOutcome,
-    { outcome: "Authorized" }
-  >;
-  readonly transaction: ForgeAuthorizeTransaction;
-}): ReactNode {
-  const { outcome, transaction } = props;
-  const partition = {
-    tenant: transaction.tenant,
-    project: transaction.project,
-  };
-  return (
-    <>
-      {outcome.lines.length === 0 ? (
-        <Notice tone="parked" inline detail={forgeCallbackNotInstalled} />
-      ) : (
-        <ul className="grid gap-2">
-          {outcome.lines.map((line) => (
-            <li key={line.account} className="flex items-center gap-2">
-              <span className="text-ink-1">{line.account}</span>
-              <Pill tone={forgeAccountProofTone(line.proof)}>
-                {line.status}
-              </Pill>
-              {line.install.map((app) => (
-                <InstallLink
-                  key={app}
-                  partition={partition}
-                  returnPath={transaction.returnPath}
-                  app={app}
-                />
-              ))}
-            </li>
-          ))}
-        </ul>
-      )}
-      {outcome.truncated ? (
-        <Notice tone="parked" inline detail="Partial" />
-      ) : null}
-      {forgePortalInstallOffered(outcome.lines) ? (
-        <span className="flex items-center gap-2 empty:hidden">
-          <InstallLink
-            partition={partition}
-            returnPath={transaction.returnPath}
-            app="portal"
-          />
-        </span>
-      ) : null}
-    </>
-  );
-}
-
-function ForgeCallbackRedeem(props: {
-  readonly decision: Extract<ForgeCallbackDecision, { decision: "Redeem" }>;
-}): ReactNode {
-  const ports = useApiPorts();
-  const [outcome, setOutcome] = useState<ForgeAuthorizationOutcome>();
-  const sent = useRef(false);
-  const { code, transaction } = props.decision;
-  useEffect(() => {
-    if (sent.current) return;
-    sent.current = true;
-    void (async () => {
-      setOutcome(
-        forgeAuthorizationOutcome(
-          await apiForgeAuthorization(ports, transaction.tenant, {
-            forge: "github",
-            code,
-            redirectUri: forgeCallbackRedirectUri(currentOrigin()),
-            codeVerifier: transaction.verifier,
-          }),
-        ),
-      );
-    })();
-  }, [ports, code, transaction]);
-  if (outcome === undefined)
-    return (
-      <Notice
-        tone="info"
-        inline
-        role="status"
-        detail={forgeCallbackConnecting}
-      />
+async function forgeCallbackAnswer(
+  ports: ApiPorts,
+  navigate: UseNavigateResult<string>,
+  decision: ForgeCallbackDecision,
+): Promise<void> {
+  if (decision.decision === "Declined") {
+    await forgeReturnNavigate(
+      navigate,
+      decision.transaction,
+      forgeAuthorizationDeclined,
     );
-  return (
-    <>
-      {outcome.outcome === "Authorized" ? (
-        <ForgeCallbackLines outcome={outcome} transaction={transaction} />
-      ) : (
-        <Notice tone="danger" inline detail={outcome.status} />
-      )}
-      {outcome.outcome === "Again" ? (
-        <ConnectGithub
-          partition={{
-            tenant: transaction.tenant,
-            project: transaction.project,
-          }}
-          returnPath={transaction.returnPath}
-        />
-      ) : null}
-      <a href={transaction.returnPath}>Repositories</a>
-    </>
+    return;
+  }
+  void navigate({
+    to: forgeCallbackRoutePath,
+    search: forgeCallbackQueryOf({}),
+    replace: true,
+  });
+  if (decision.decision === "Unexpected") return;
+  const { code, transaction } = decision;
+  const answered = await apiForgeAuthorization(ports, transaction.tenant, {
+    forge: "github",
+    code,
+    redirectUri: forgeCallbackRedirectUri(currentOrigin()),
+    codeVerifier: transaction.verifier,
+  });
+  await forgeReturnNavigate(
+    navigate,
+    transaction,
+    forgeAuthorizationWord(answered),
   );
 }
 
-function ForgeCallbackAnswer(props: {
+function ForgeCallbackDrawn(props: {
   readonly decision: ForgeCallbackDecision;
 }): ReactNode {
-  const decision = props.decision;
-  switch (decision.decision) {
+  switch (props.decision.decision) {
     case "Redeem":
-      return <ForgeCallbackRedeem decision={decision} />;
+      return (
+        <Notice
+          tone="info"
+          inline
+          role="status"
+          detail={forgeCallbackConnecting}
+        />
+      );
     case "Declined":
+      return null;
+    case "Unexpected":
       return (
         <>
-          <Notice tone="parked" inline detail={forgeCallbackDeclined} />
-          <a href={decision.transaction.returnPath}>Repositories</a>
+          <Notice tone="danger" inline detail={forgeSetupUnexpected} />
+          <Link to="/">Home</Link>
         </>
       );
-    case "Unexpected":
-      return <Notice tone="danger" inline detail={forgeSetupUnexpected} />;
   }
 }
 
 export function ForgeCallbackPage(): ReactNode {
   const query = useSearch({ from: forgeCallbackRoutePath });
   const navigate = useNavigate();
+  const ports = useApiPorts();
   const [decision] = useState<ForgeCallbackDecision>(() =>
     forgeCallbackDecision(query, forgeAuthorizeTake(transientStore)),
   );
+  const answered = useRef(false);
   useEffect(() => {
-    void navigate({
-      to: forgeCallbackRoutePath,
-      search: forgeCallbackQueryOf({}),
-      replace: true,
-    });
-  }, [navigate]);
+    if (answered.current) return;
+    answered.current = true;
+    void forgeCallbackAnswer(ports, navigate, decision);
+  }, [ports, navigate, decision]);
   return (
     <div className="grid min-h-dvh content-start gap-4 p-4">
       <main className="grid gap-3">
         <h1 className="text-md font-strong text-ink-1">GitHub</h1>
-        <ForgeCallbackAnswer decision={decision} />
+        <ForgeCallbackDrawn decision={decision} />
       </main>
       <Footer />
     </div>

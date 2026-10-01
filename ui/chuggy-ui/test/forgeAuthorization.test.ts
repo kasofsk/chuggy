@@ -1,13 +1,14 @@
 /**
- * The authorization this console starts at the forge, and what the callback
- * decides from what came back: a return whose state is not this tab's unspent
- * one redeems nothing.
+ * The authorization this console starts at the forge, what the callback
+ * decides from what came back, and the word a redemption returns with: a return
+ * whose state is not this tab's unspent one redeems nothing.
  */
 
 import { expect, test } from "vitest";
 
+import type { ForgeAuthorizationResponse } from "../../../src/contract/responses.ts";
 import {
-  forgeAuthorizationOutcome,
+  forgeAuthorizationWord,
   forgeAuthorizeBegin,
   forgeAuthorizeTake,
   forgeAuthorizeTransactionKey,
@@ -15,14 +16,9 @@ import {
   forgeCallbackQueryOf,
   forgeCallbackRedirectUri,
   forgeCallbackRoutePath,
-  forgePortalInstallOffered,
 } from "../app/core/forgeAuthorization.ts";
-import type {
-  ForgeAuthorizedLine,
-  ForgeAuthorizeTransaction,
-} from "../app/core/forgeAuthorization.ts";
+import type { ForgeAuthorizeTransaction } from "../app/core/forgeAuthorization.ts";
 import { pkceChallengeFromVerifier } from "../app/core/pkce.ts";
-import { forgeAccountProofTone } from "../app/core/tones.ts";
 import { keyValueDouble } from "./keyValueDouble.ts";
 
 const client = {
@@ -165,90 +161,66 @@ test("the callback's address is the one the README tells an operator to set", ()
   );
 });
 
-test("each account is one line, with the apps left to install", () => {
-  const outcome = forgeAuthorizationOutcome({
+/** One account an authorization reaches, as the api answers it. */
+function reached(
+  account: string,
+  proof: "Proven" | "NotOwner" | "Unavailable",
+): ForgeAuthorizationResponse["accounts"][number] {
+  return { account, accountKind: "Organization", proof, apps: [] };
+}
+
+function wordOf(
+  accounts: ForgeAuthorizationResponse["accounts"],
+  truncated = false,
+): ReturnType<typeof forgeAuthorizationWord> {
+  return forgeAuthorizationWord({
     outcome: "Ok",
-    value: {
-      accounts: [
-        {
-          account: "kasofsk",
-          accountKind: "Organization",
-          proof: "Proven",
-          apps: [
-            { app: "portal", claim: "Claimed" },
-            { app: "worker", claim: "Missing" },
-          ],
-        },
-        {
-          account: "globex",
-          accountKind: "Organization",
-          proof: "NotOwner",
-          apps: [],
-        },
-        {
-          account: "initech",
-          accountKind: "Organization",
-          proof: "Unavailable",
-          apps: [],
-        },
-      ],
-      truncated: true,
-    },
+    value: { accounts, truncated },
   });
-  expect(outcome).toStrictEqual({
-    outcome: "Authorized",
-    truncated: true,
-    lines: [
-      {
-        account: "kasofsk",
-        proof: "Proven",
-        status: "Connected",
-        install: ["worker"],
-      },
-      {
-        account: "globex",
-        proof: "NotOwner",
-        status: "Not owner",
-        install: [],
-      },
-      {
-        account: "initech",
-        proof: "Unavailable",
-        status: "Unavailable",
-        install: [],
-      },
-    ],
-  });
-  expect(forgeAccountProofTone("Proven")).toBe("pass");
-  expect(forgeAccountProofTone("NotOwner")).not.toBe("pass");
-  expect(forgeAccountProofTone("Unavailable")).not.toBe("pass");
+}
+
+test("an authorization that connected an account and read every one says nothing", () => {
+  expect(
+    wordOf([reached("kasofsk", "Proven"), reached("globex", "NotOwner")]),
+  ).toBeUndefined();
+});
+
+test("reaching no account the person owns says so, and only that returns to the portal's install", () => {
+  const uninstalled = { standing: "Uninstalled", status: "Not installed" };
+  expect(wordOf([])).toStrictEqual(uninstalled);
+  expect(wordOf([reached("globex", "NotOwner")])).toStrictEqual(uninstalled);
 });
 
 /** An account the forge could not answer for may be proven by asking again, so
  * it is not a reason to send the person to install anything. */
-test("the portal's install is offered only where no account is or could be proven", () => {
-  const line = (proof: ForgeAuthorizedLine["proof"]): ForgeAuthorizedLine => ({
-    account: proof,
-    proof,
-    status: proof,
-    install: [],
-  });
-  expect(forgePortalInstallOffered([])).toBe(true);
-  expect(forgePortalInstallOffered([line("NotOwner")])).toBe(true);
-  expect(forgePortalInstallOffered([line("NotOwner"), line("Proven")])).toBe(
-    false,
+test("an account the forge could not answer for is a word, and no install", () => {
+  const unavailable = { standing: "Unfinished", status: "Unavailable" };
+  expect(wordOf([reached("initech", "Unavailable")])).toStrictEqual(
+    unavailable,
   );
-  expect(forgePortalInstallOffered([line("Unavailable")])).toBe(false);
+  expect(
+    wordOf([reached("kasofsk", "Proven"), reached("initech", "Unavailable")]),
+  ).toStrictEqual(unavailable);
 });
 
-test("a refusal is one word in place of the lines, and a dead code asks for another", () => {
+test("an answer that reached more than it holds is Partial, offering the install only where it proved nothing", () => {
+  expect(wordOf([reached("kasofsk", "Proven")], true)).toStrictEqual({
+    standing: "Unfinished",
+    status: "Partial",
+  });
+  expect(wordOf([], true)).toStrictEqual({
+    standing: "Uninstalled",
+    status: "Partial",
+  });
+});
+
+test("a refusal is one failed word, a dead code's being Start again", () => {
   const status = (
-    result: Parameters<typeof forgeAuthorizationOutcome>[0],
-  ): readonly [string, string] | undefined => {
-    const outcome = forgeAuthorizationOutcome(result);
-    return outcome.outcome === "Authorized"
-      ? undefined
-      : [outcome.outcome, outcome.status];
+    result: Parameters<typeof forgeAuthorizationWord>[0],
+  ): string | undefined => {
+    const word = forgeAuthorizationWord(result);
+    expect(word?.standing).toBe("Failed");
+    return word?.status;
   };
   expect(
     status({
@@ -257,7 +229,7 @@ test("a refusal is one word in place of the lines, and a dead code asks for anot
       status: 422,
       body: undefined,
     }),
-  ).toStrictEqual(["Again", "Refused"]);
+  ).toBe("Refused");
   expect(
     status({
       outcome: "Rejected",
@@ -265,19 +237,19 @@ test("a refusal is one word in place of the lines, and a dead code asks for anot
       status: 400,
       body: undefined,
     }),
-  ).toStrictEqual(["Refused", "Refused"]);
+  ).toBe("Refused");
   expect(
     status({ outcome: "Fault", code: "AuthorizationSpent", status: 502 }),
-  ).toStrictEqual(["Again", "Start again"]);
-  expect(
-    status({ outcome: "Fault", code: "InternalError", status: 500 }),
-  ).toStrictEqual(["Refused", "Failed"]);
-  expect(status({ outcome: "Absent" })).toStrictEqual(["Refused", "Not found"]);
+  ).toBe("Start again");
+  expect(status({ outcome: "Fault", code: "InternalError", status: 500 })).toBe(
+    "Failed",
+  );
+  expect(status({ outcome: "Absent" })).toBe("Not found");
   expect(
     status({
       outcome: "Retryable",
       code: "ForgeUnavailable",
       retryAfterSeconds: 5,
     }),
-  ).toStrictEqual(["Refused", "Unavailable"]);
+  ).toBe("Unavailable");
 });

@@ -21,11 +21,7 @@ import { QueryClient } from "@tanstack/react-query";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
-import {
-  createSessionHolder,
-  sessionCallbackPath,
-} from "../core/sessionHolder.ts";
-import type { SessionHolder } from "../core/sessionHolder.ts";
+import { createSessionHolder } from "../core/sessionHolder.ts";
 import { App } from "./App.tsx";
 import {
   digest,
@@ -34,9 +30,10 @@ import {
   nowMs,
   persistentStore,
   redirect,
+  sleepMs,
   transientStore,
 } from "./ports.ts";
-import { SessionProvider } from "./session.tsx";
+import { SessionProvider, sessionBegin } from "./session.tsx";
 import { themeChoiceApply, themeChoiceRead } from "./theme.ts";
 import "../styles.css";
 
@@ -52,6 +49,7 @@ const queryClient = new QueryClient({
 
 const holder = createSessionHolder({
   nowMs,
+  sleepMs,
   fetchJson,
   persistent: persistentStore,
   transient: transientStore,
@@ -59,15 +57,6 @@ const holder = createSessionHolder({
   drawBytes,
   redirect,
 });
-
-/** A refused sign-in is drawn with its reason, not as a browser holding none. */
-async function begin(session: SessionHolder): Promise<void> {
-  await session.load();
-  const callback = await session.completeCallback(location);
-  if (callback.result === "None") return;
-  if (callback.result === "Denied") session.refuse(callback.reason);
-  history.replaceState(null, "", sessionCallbackPath(callback));
-}
 
 themeChoiceApply(document.documentElement, themeChoiceRead(persistentStore));
 
@@ -85,4 +74,4 @@ createRoot(container).render(
   </StrictMode>,
 );
 
-void begin(holder);
+void sessionBegin(holder);

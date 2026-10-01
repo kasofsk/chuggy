@@ -12,7 +12,6 @@
 
 import type {
   ExecutionOutcome,
-  ForgeAccountProofName,
   ExecutionStatus,
   SelectorAttention,
   SelectorMode,
@@ -149,18 +148,6 @@ export function forgeAppStandingTone(standing: ForgeAppStanding): Tone {
     case "Installed":
       return "pass";
     case "Missing":
-      return "parked";
-  }
-}
-
-/** Whether an authorization proved an account the person's own. */
-export function forgeAccountProofTone(proof: ForgeAccountProofName): Tone {
-  switch (proof) {
-    case "Proven":
-      return "pass";
-    case "NotOwner":
-      return "neutral";
-    case "Unavailable":
       return "parked";
   }
 }

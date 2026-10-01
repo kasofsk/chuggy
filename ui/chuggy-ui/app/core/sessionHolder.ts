@@ -45,6 +45,7 @@ import type { SessionState } from "./session.ts";
 
 export const sessionRefreshTokenKey = "chuggy.refreshToken";
 export const sessionTransactionKey = "chuggy.authorization";
+export const sessionLoadRetryDelayMs = 1_000;
 
 export interface KeyValuePort {
   read: (key: string) => string | null;
@@ -52,8 +53,26 @@ export interface KeyValuePort {
   remove: (key: string) => void;
 }
 
+/** How a request failed before there was a body to read. */
+export type FetchJsonFault =
+  | { readonly fault: "Unanswered" }
+  | { readonly fault: "Status"; readonly status: number };
+
+/** What `fetchJson` rejects with when it has no body to parse, so a request
+ * that got no answer is told from one that answered with something unusable. */
+export class FetchJsonError extends Error {
+  readonly fault: FetchJsonFault;
+
+  constructor(fault: FetchJsonFault, message: string) {
+    super(message);
+    this.name = "FetchJsonError";
+    this.fault = fault;
+  }
+}
+
 export interface SessionHolderPorts {
   readonly nowMs: () => number;
+  readonly sleepMs: (ms: number) => Promise<void>;
   readonly fetchJson: (request: FormRequest | string) => Promise<unknown>;
   readonly persistent: KeyValuePort;
   readonly transient: KeyValuePort;
@@ -63,7 +82,7 @@ export interface SessionHolderPorts {
 }
 
 export type SessionPhase =
-  "Loading" | "Unconfigured" | "SignedOut" | "SignedIn";
+  "Loading" | "Unconfigured" | "Unreachable" | "SignedOut" | "SignedIn";
 
 export interface SessionSnapshot {
   readonly phase: SessionPhase;
@@ -147,21 +166,87 @@ function sessionSettle(inner: SessionInner): void {
   sessionAnnounce(inner);
 }
 
-async function sessionLoad(inner: SessionInner): Promise<void> {
+type SessionLoaded =
+  | {
+      readonly phase: "Loaded";
+      readonly configuration: ConsoleConfiguration;
+      readonly endpoints: AuthorizationEndpoints;
+    }
+  | {
+      readonly phase: "Unconfigured" | "Unreachable";
+      readonly reason: string;
+    };
+
+/** What a gateway answers for a server it could not reach or that is briefly
+ * down, which is a blip like a request with no answer, not a deployment fault. */
+const sessionLoadTransientStatuses: ReadonlySet<number> = new Set([
+  502, 503, 504,
+]);
+
+/** The reason names where it was asked, because the configuration and the
+ * issuer are different hosts. */
+function sessionLoadFailure(source: string, failure: unknown): SessionLoaded {
+  if (!(failure instanceof FetchJsonError))
+    return {
+      phase: "Unconfigured",
+      reason: `${source} answered nothing usable`,
+    };
+  switch (failure.fault.fault) {
+    case "Unanswered":
+      return { phase: "Unreachable", reason: `No answer from ${source}` };
+    case "Status":
+      return {
+        phase: sessionLoadTransientStatuses.has(failure.fault.status)
+          ? "Unreachable"
+          : "Unconfigured",
+        reason: `${source} answered ${String(failure.fault.status)}`,
+      };
+  }
+}
+
+async function sessionLoadOnce(
+  ports: SessionHolderPorts,
+): Promise<SessionLoaded> {
+  let configuration: ConsoleConfiguration;
   try {
-    inner.configuration = parseConsoleConfiguration(
-      await inner.ports.fetchJson(consoleConfigurationPath),
-    );
-    inner.endpoints = parseDiscovery(
-      inner.configuration,
-      await inner.ports.fetchJson(discoveryUrl(inner.configuration)),
+    configuration = parseConsoleConfiguration(
+      await ports.fetchJson(consoleConfigurationPath),
     );
   } catch (failure: unknown) {
-    inner.phase = "Unconfigured";
-    inner.reason = sessionReason(failure);
+    return sessionLoadFailure(consoleConfigurationPath, failure);
+  }
+  try {
+    const endpoints = parseDiscovery(
+      configuration,
+      await ports.fetchJson(discoveryUrl(configuration)),
+    );
+    return { phase: "Loaded", configuration, endpoints };
+  } catch (failure: unknown) {
+    return sessionLoadFailure(new URL(configuration.issuer).host, failure);
+  }
+}
+
+/** A load that got no answer is asked once more after a pause before it is
+ * drawn, and again only when the reader asks. */
+async function sessionLoad(inner: SessionInner): Promise<void> {
+  if (inner.phase !== "Loading") {
+    inner.phase = "Loading";
+    inner.reason = undefined;
+    sessionAnnounce(inner);
+  }
+  let loaded = await sessionLoadOnce(inner.ports);
+  if (loaded.phase === "Unreachable") {
+    await inner.ports.sleepMs(sessionLoadRetryDelayMs);
+    loaded = await sessionLoadOnce(inner.ports);
+  }
+  if (loaded.phase !== "Loaded") {
+    inner.phase = loaded.phase;
+    inner.reason = loaded.reason;
     sessionAnnounce(inner);
     return;
   }
+  inner.configuration = loaded.configuration;
+  inner.endpoints = loaded.endpoints;
   const stored = inner.ports.persistent.read(sessionRefreshTokenKey);
   if (stored !== null) inner.session = sessionFromRefreshToken(stored);
   sessionSettle(inner);
@@ -321,7 +406,8 @@ function sessionTakeTransaction(
 /**
  * A callback is read only at the address this client is registered with, so a
  * forge's own authorization, which returns a code and a state to a page of its
- * own, is that page's to redeem and spends nothing of a sign-in.
+ * own, is that page's to redeem and spends nothing of a sign-in. One arriving
+ * before the console has loaded is left untouched for the load that succeeds.
  */
 async function sessionCompleteCallback(
   inner: SessionInner,
@@ -330,15 +416,12 @@ async function sessionCompleteCallback(
   const callback = parseAuthorizationCallback(location.search);
   if (callback.result === "None") return { result: "None" };
   const { configuration, endpoints } = inner;
-  if (
-    configuration !== undefined &&
-    new URL(configuration.redirectUri).pathname !== location.pathname
-  )
+  if (configuration === undefined || endpoints === undefined)
+    return { result: "None" };
+  if (new URL(configuration.redirectUri).pathname !== location.pathname)
     return { result: "None" };
   const transaction = sessionTakeTransaction(inner);
   if (callback.result === "Denied") return callback;
-  if (configuration === undefined || endpoints === undefined)
-    return { result: "Denied", reason: "the console is not configured" };
   if (transaction === undefined || transaction.state !== callback.state)
     return { result: "Denied", reason: "the callback did not match this tab" };
   try {

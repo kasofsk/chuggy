@@ -11,7 +11,8 @@
 import type { FormRequest } from "../core/authorization.ts";
 import type { ApiFetchInit } from "../core/apiRequest.ts";
 import type { StreamResponse } from "../core/projectStream.ts";
-import type { KeyValuePort } from "../core/sessionHolder.ts";
+import { FetchJsonError } from "../core/sessionHolder.ts";
+import type { KeyValuePort, SessionLocation } from "../core/sessionHolder.ts";
 
 export function nowMs(): number {
   return Date.now();
@@ -79,26 +80,50 @@ export async function streamFetch(
   };
 }
 
-/** The token endpoints speak form encoding; `/config.json` and discovery, GET. */
+function fetchJsonInit(request: FormRequest | string): RequestInit {
+  if (typeof request === "string")
+    return { headers: { accept: "application/json" } };
+  return {
+    method: "POST",
+    headers: {
+      accept: "application/json",
+      "content-type": "application/x-www-form-urlencoded",
+    },
+    body: request.body,
+  };
+}
+
+function fetchJsonUnanswered(failure: unknown): FetchJsonError {
+  return new FetchJsonError(
+    { fault: "Unanswered" },
+    failure instanceof Error ? failure.message : "the request got no answer",
+  );
+}
+
+/**
+ * The token endpoints speak form encoding; `/config.json` and discovery, GET.
+ * A request that got no answer, or lost its body on the way, rejects as
+ * unanswered, and a body that is not JSON as the parser's own error.
+ */
 export async function fetchJson(
   request: FormRequest | string,
 ): Promise<unknown> {
-  const response =
-    typeof request === "string"
-      ? await fetch(request, { headers: { accept: "application/json" } })
-      : await fetch(request.url, {
-          method: "POST",
-          headers: {
-            accept: "application/json",
-            "content-type": "application/x-www-form-urlencoded",
-          },
-          body: request.body,
-        });
+  const url = typeof request === "string" ? request : request.url;
+  const response = await fetch(url, fetchJsonInit(request)).catch(
+    (failure: unknown) => {
+      throw fetchJsonUnanswered(failure);
+    },
+  );
   if (!response.ok)
-    throw new Error(
-      `${typeof request === "string" ? request : request.url} answered ${String(response.status)}`,
+    throw new FetchJsonError(
+      { fault: "Status", status: response.status },
+      `${url} answered ${String(response.status)}`,
     );
-  return response.json();
+  const text = await response.text().catch((failure: unknown) => {
+    throw fetchJsonUnanswered(failure);
+  });
+  const value: unknown = JSON.parse(text);
+  return value;
 }
 
 function keyValuePort(store: () => Storage): KeyValuePort {
@@ -147,6 +172,16 @@ export async function clipboardWritten(text: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/** Where this tab is, as the path and query a sign-in's return is read from. */
+export function currentLocation(): SessionLocation {
+  return { pathname: location.pathname, search: location.search };
+}
+
+/** Moves the address without a navigation, so nothing the tab holds is lost. */
+export function replacePath(path: string): void {
+  history.replaceState(null, "", path);
 }
 
 /** Where this tab is, as the path something that leaves it returns to. */

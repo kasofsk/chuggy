@@ -11,11 +11,14 @@ import { expect, test } from "vitest";
 
 import { sessionRefreshFailuresMax } from "../app/core/authorization.ts";
 import {
+  FetchJsonError,
   createSessionHolder,
   sessionCallbackPath,
+  sessionLoadRetryDelayMs,
   sessionRefreshTokenKey,
   sessionTransactionKey,
 } from "../app/core/sessionHolder.ts";
+import type { FormRequest } from "../app/core/authorization.ts";
 import {
   sessionHarness as harness,
   sessionHarnessConfiguration as configuration,
@@ -27,15 +30,174 @@ function signedInAt(search: string): { pathname: string; search: string } {
   return { pathname: new URL(configuration.redirectUri).pathname, search };
 }
 
-test("a console that cannot read its configuration says so and stops", async () => {
+/** What the network port rejects with when a request never got an answer. */
+function unanswered(): never {
+  throw new FetchJsonError({ fault: "Unanswered" }, "Failed to fetch");
+}
+
+function isDiscovery(request: FormRequest | string): boolean {
+  return typeof request === "string" && request !== "/config.json";
+}
+
+/** The harness's answers, except where `failing` names the request. */
+function failingAt(
+  failing: (request: FormRequest | string) => boolean,
+  failure: () => never,
+  answer: (request: FormRequest | string) => unknown,
+): (request: FormRequest | string) => unknown {
+  return (request) => (failing(request) ? failure() : answer(request));
+}
+
+test("a configuration that answered with something unusable is not configured, asked once", async () => {
   const held = harness();
   held.answer = () => {
-    throw new Error("no such file");
+    throw new SyntaxError("Unexpected token '<'");
   };
   const holder = createSessionHolder(held.ports);
   await holder.load();
-  expect(holder.snapshot().phase).toBe("Unconfigured");
-  expect(holder.snapshot().reason).toBe("no such file");
+  expect(holder.snapshot()).toMatchObject({
+    phase: "Unconfigured",
+    reason: "/config.json answered nothing usable",
+  });
+  expect(held.asked).toEqual(["/config.json"]);
+  expect(held.slept).toEqual([]);
+});
+
+test("a load that got no answer is asked once more after a pause, and no more", async () => {
+  const held = harness();
+  held.answer = unanswered;
+  const holder = createSessionHolder(held.ports);
+  await holder.load();
+  expect(holder.snapshot()).toMatchObject({
+    phase: "Unreachable",
+    reason: "No answer from /config.json",
+  });
+  expect(held.asked).toEqual(["/config.json", "/config.json"]);
+  expect(held.slept).toEqual([sessionLoadRetryDelayMs]);
+});
+
+test("a load whose first ask got no answer settles on the second", async () => {
+  const held = harness();
+  const answered = held.answer;
+  held.answer = failingAt(() => held.asked.length === 1, unanswered, answered);
+  const holder = createSessionHolder(held.ports);
+  await holder.load();
+  expect(holder.snapshot()).toMatchObject({
+    phase: "SignedOut",
+    reason: undefined,
+  });
+});
+
+/** A gateway answers for a server it could not reach, so its answer is the same
+ * blip as no answer at all. */
+test("a gateway's answer is unreachable and asked once more; a server's own error is not", async () => {
+  for (const [status, phase, asked] of [
+    [502, "Unreachable", 2],
+    [503, "Unreachable", 2],
+    [504, "Unreachable", 2],
+    [500, "Unconfigured", 1],
+    [404, "Unconfigured", 1],
+  ] as const) {
+    const held = harness();
+    held.answer = () => {
+      throw new FetchJsonError(
+        { fault: "Status", status },
+        `answered ${String(status)}`,
+      );
+    };
+    const holder = createSessionHolder(held.ports);
+    await holder.load();
+    expect(holder.snapshot()).toMatchObject({
+      phase,
+      reason: `/config.json answered ${String(status)}`,
+    });
+    expect(held.asked).toHaveLength(asked);
+  }
+});
+
+test("an issuer that got no answer is unreachable, named by its host", async () => {
+  const held = harness();
+  held.answer = failingAt(isDiscovery, unanswered, held.answer);
+  const holder = createSessionHolder(held.ports);
+  await holder.load();
+  expect(holder.snapshot()).toMatchObject({
+    phase: "Unreachable",
+    reason: "No answer from auth.example",
+  });
+});
+
+test("an issuer that answered with something unusable is named by its host, not the configuration", async () => {
+  const held = harness();
+  const answered = held.answer;
+  held.answer = failingAt(
+    isDiscovery,
+    () => {
+      throw new FetchJsonError(
+        { fault: "Status", status: 500 },
+        "answered 500",
+      );
+    },
+    answered,
+  );
+  const holder = createSessionHolder(held.ports);
+  await holder.load();
+  expect(holder.snapshot()).toMatchObject({
+    phase: "Unconfigured",
+    reason: "auth.example answered 500",
+  });
+  held.answer = (request) =>
+    isDiscovery(request)
+      ? { ...discovery, issuer: "https://elsewhere" }
+      : answered(request);
+  await holder.load();
+  expect(holder.snapshot()).toMatchObject({
+    phase: "Unconfigured",
+    reason: "auth.example answered nothing usable",
+  });
+});
+
+/** A failure at the issuer is named by its host, so an issuer with none would
+ * throw from the load rather than be drawn. */
+test("a configuration whose issuer is not an absolute address is not configured", async () => {
+  const held = harness();
+  const answered = held.answer;
+  held.answer = (request) =>
+    request === "/config.json"
+      ? { ...configuration, issuer: "auth.example" }
+      : answered(request);
+  const holder = createSessionHolder(held.ports);
+  await holder.load();
+  expect(holder.snapshot()).toMatchObject({
+    phase: "Unconfigured",
+    reason: "/config.json answered nothing usable",
+  });
+});
+
+/** The code is the issuer's to redeem once, so a callback refused for want of a
+ * configuration would leave the load that later succeeds nothing to sign in. */
+test("a callback that arrives before the console has loaded is kept for the load that does", async () => {
+  const held = harness();
+  const answered = held.answer;
+  const started = createSessionHolder(held.ports);
+  await started.load();
+  await started.signIn();
+  const state = new URLSearchParams(
+    new URL(held.redirects[0] ?? "").search,
+  ).get("state");
+  const callback = signedInAt(`?code=abc&state=${String(state)}`);
+  const returned = createSessionHolder(held.ports);
+  held.answer = unanswered;
+  await returned.load();
+  expect(await returned.completeCallback(callback)).toEqual({
+    result: "None",
+  });
+  expect(held.transient.held.has(sessionTransactionKey)).toBe(true);
+  held.answer = answered;
+  await returned.load();
+  expect(await returned.completeCallback(callback)).toEqual({
+    result: "SignedIn",
+    returnPath: undefined,
+  });
 });
 
 test("a stored refresh token is what makes a reload a signed-in session", async () => {

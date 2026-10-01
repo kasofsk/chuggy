@@ -1,7 +1,7 @@
 /**
  * A session holder driven with no browser present, shared by the suites that
  * need a real one rather than a double: the ports stand in for the network, the
- * clock, the two stores, the digest and the address bar.
+ * clock, the timers, the two stores, the digest and the address bar.
  */
 
 import type { SessionHolderPorts } from "../app/core/sessionHolder.ts";
@@ -30,6 +30,7 @@ export interface SessionHarness {
   readonly transient: HeldStore;
   readonly asked: (FormRequest | string)[];
   readonly redirects: string[];
+  readonly slept: number[];
   answer: (request: FormRequest | string) => unknown;
   nowMs: number;
 }
@@ -39,11 +40,13 @@ export function sessionHarness(): SessionHarness {
   const transient = keyValueDouble();
   const asked: (FormRequest | string)[] = [];
   const redirects: string[] = [];
+  const slept: number[] = [];
   const held: SessionHarness = {
     persistent,
     transient,
     asked,
     redirects,
+    slept,
     nowMs: 1_000,
     answer: (request) =>
       request === "/config.json"
@@ -53,6 +56,10 @@ export function sessionHarness(): SessionHarness {
           : { access_token: "access", refresh_token: "renew", expires_in: 600 },
     ports: {
       nowMs: () => held.nowMs,
+      sleepMs: (ms) => {
+        slept.push(ms);
+        return Promise.resolve();
+      },
       fetchJson: (request) => {
         asked.push(request);
         try {
