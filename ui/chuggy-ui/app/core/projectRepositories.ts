@@ -18,13 +18,14 @@ import type { ProjectRepositoryBindAnswer } from "./apiRoutes.ts";
 
 /**
  * A repository as a row names it. The address is opaque to this console, so
- * the label is its last two path segments where it has them and the whole
- * address where it does not; the address itself is what hovering reveals.
+ * the label is its last two path segments, less the `.git` a clone address
+ * ends in, where it has them and the whole address where it does not; the
+ * address itself is what hovering reveals.
  */
 export function repositoryLabel(repository: string): string {
   const segments = repository.split("/").filter((segment) => segment !== "");
   const last = segments.slice(-2);
-  return last.length === 2 ? last.join("/") : repository;
+  return last.length === 2 ? last.join("/").replace(/\.git$/u, "") : repository;
 }
 
 /** One repository an installation grants, and whether this project holds it. */
