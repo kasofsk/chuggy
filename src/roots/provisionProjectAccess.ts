@@ -65,8 +65,9 @@ function provisionAction(): "Grant" | "Revoke" {
 
 /**
  * The tuples the variables name, with the project's `tenant` link beside a
- * person's project grant. A project is what decides which namespace the
- * relation is looked for in, and the link is the one arm naming no person.
+ * person's project grant, written first so a grant that fails after it leaves
+ * the tenant held. A project is what decides which namespace the relation is
+ * looked for in, and the link is the one arm naming no person.
  */
 function provisionGrants(action: "Grant" | "Revoke"): readonly ProjectGrant[] {
   const tenant = requiredEnvironment(tenantVariable);
@@ -90,7 +91,7 @@ function provisionGrants(action: "Grant" | "Revoke"): readonly ProjectGrant[] {
     project,
     relation,
   });
-  return action === "Grant" ? [granted, link] : [granted];
+  return action === "Grant" ? [link, granted] : [granted];
 }
 
 /** What one tuple is reported as, naming the holder the authority will answer for. */

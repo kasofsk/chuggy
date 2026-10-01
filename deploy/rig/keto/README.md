@@ -16,16 +16,6 @@ still declared under a changed meaning — a `develop` that no longer implies
 `read` — passes readiness, so a change to the deployed model is still read
 against `.chug/tasks/keto/namespaces.ts` by hand.
 
-## Before migration 83
-
-Write a tuple for every principal the `project_membership` table admitted, then
-apply the migration: a principal with no tuple is refused from the moment the
-API restarts. **Threads and drafts written before migration 83 stop matching
-their author** — those rows carry the authority the dropped table supplied
-rather than the one a principal derives, so a pre-cutover draft is no longer
-seeded into its author's next thread and a pre-cutover ticket wakes nobody. The
-loss is accepted rather than repaired.
-
 ## Before migration 26
 
 Link every project a person was granted on before
@@ -37,13 +27,18 @@ the first principal to ask for its tenant is given the tenant, then creates
 that project and administers it. Keto's read API lists every project object
 that carries a tuple (`GET /relation-tuples?namespace=Project`, following
 `next_page_token`); each one with no `tenant` tuple is linked once, with the
-command below and its write URL exported:
+command below and its write URL exported. An object is the tenant's length, a
+colon, then the tenant and the project run together: `5:vtengchuggy` is tenant
+`vteng`, project `chuggy`. The command writes whatever it is named, so a wrong
+split links a project nothing reads and leaves this one unlinked.
 
 ```sh
 CHUG_PROVISION_TENANT="tenant" CHUG_PROVISION_PROJECT="project" \
   CHUG_PROVISION_RELATION=tenant CHUG_PROVISION_ACTION=grant \
   npm run provision:project-access
 ```
+
+Then list again: every project object carries a `tenant` tuple.
 
 ## Grant a project access
 
@@ -100,8 +95,8 @@ CHUG_PROVISION_ACTION=revoke npm run provision:project-access
 One relation, taken back. A revocation names the same tuple as the grant and
 is idempotent: a tuple that was never there is not an error. Revoking a
 person's project grant leaves the project's `tenant` link; a link written by
-mistake is revoked on its own, with `CHUG_PROVISION_TENANT` and
-`CHUG_PROVISION_PROJECT` naming the project:
+mistake is revoked on its own, after the project's person grants, with
+`CHUG_PROVISION_TENANT` and `CHUG_PROVISION_PROJECT` naming the project:
 
 ```sh
 CHUG_PROVISION_RELATION=tenant CHUG_PROVISION_ACTION=revoke \
