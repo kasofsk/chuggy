@@ -303,8 +303,8 @@ function ProjectTableNewTicket(props: {
   );
 }
 
-/** What a project holding no ticket at all draws in place of the five
- * sections: the one way to make the first. */
+/** What a project holding no ticket at all draws in place of the sections:
+ * the one way to make the first. */
 function ProjectTableEmpty(props: {
   readonly partition: PartitionIdentity;
 }): ReactNode {

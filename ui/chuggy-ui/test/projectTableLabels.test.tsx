@@ -258,7 +258,7 @@ test("nothing the project table draws is a runtime style element", async () => {
 });
 
 /** A project with no ticket at all is one empty state offering the first,
- * rather than five sections each saying so under a clock of its own. */
+ * with no section and no filter to choose between. */
 test("a project with no ticket draws one empty state that offers a new one", async () => {
   await drawTableWith([], []);
   expect(screen.getByRole("heading", { name: "No tickets" })).toBeDefined();

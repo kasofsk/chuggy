@@ -66,10 +66,10 @@ export function ticketStatusTone(ticket: TicketResponse): Tone {
 }
 
 /**
- * A running ticket from its first run, or from its release while it has none;
- * anything else from the instant it last moved, with how long it ran from its
- * first run where this page holds its runs. A release is not a run: a ticket
- * nobody dispatches can wait hours between the two.
+ * A running ticket from its first run, or from its release while this page
+ * holds none of its runs; anything else from the instant it last moved, with
+ * how long it ran from its first run where this page holds its runs. A release
+ * is not a run: a ticket nobody dispatches can wait hours between the two.
  */
 export function ticketStatusFigure(
   ticket: TicketResponse,
