@@ -63,6 +63,8 @@ export function verdictTone(verdict: SetVerdict): Tone {
       return "pass";
     case "Failed":
       return "fail";
+    case "Starting":
+      return "queued";
     case "Running":
       return "live";
     case "Cancelled":

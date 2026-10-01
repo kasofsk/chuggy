@@ -22,7 +22,12 @@ import { settledFigure, sinceFigure } from "./figures.ts";
 import type { Figure } from "./figures.ts";
 import { runSpanOf } from "./runTotals.ts";
 import type { Cycle, Ledger as LedgerFacts, RanStage } from "./ticketLedger.ts";
-import { cycleLabel, ledgerLastSet, stageLabel } from "./ticketLedger.ts";
+import {
+  cycleLabel,
+  ledgerLastSet,
+  setVerdictSettled,
+  stageLabel,
+} from "./ticketLedger.ts";
 import { phaseIsRunning } from "./ticketPageFacts.ts";
 import { phaseTone } from "./tones.ts";
 import type { Tone } from "./tones.ts";
@@ -89,7 +94,7 @@ function currentCycle(facts: LedgerFacts): Cycle | undefined {
 /**
  * The stage a resume re-asked now, not the first one a resume ever touched: a
  * cycle can hold more than one stage past its first generation at once, so
- * this takes the highest-numbered one that is still running, and only falls
+ * this takes the highest-numbered one that has not settled, and only falls
  * back to the highest-numbered one at all where none is.
  */
 function resumedStage(facts: LedgerFacts): number | undefined {
@@ -99,7 +104,7 @@ function resumedStage(facts: LedgerFacts): number | undefined {
       row.kind === "Ran" &&
       row.evaluators.some((evaluator) => evaluator.generation > 1),
   );
-  const running = resumed.filter((row) => row.verdict === "Running");
+  const running = resumed.filter((row) => !setVerdictSettled(row.verdict));
   return (running.length > 0 ? running : resumed).at(-1)?.stage;
 }
 

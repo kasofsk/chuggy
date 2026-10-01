@@ -73,9 +73,9 @@ import type { RunSpan, RunSpend } from "./runTotals.ts";
  */
 export type TicketProgram = NonNullable<TicketResponse["program"]>;
 
-/** How a fan-out set settled, once every task in it is accounted for. */
+/** How a fan-out set settled, once every task in it is accounted for, or that it has not. */
 export type SetVerdict =
-  "Passed" | "Failed" | "Running" | "Cancelled" | "Blocked";
+  "Passed" | "Failed" | "Starting" | "Running" | "Cancelled" | "Blocked";
 
 /** Whether the ticket's current artifact is this cycle's, or a later one's. */
 export type CycleStanding = "Current" | "Superseded";
@@ -177,9 +177,25 @@ export function executionStopped(row: ExecutionSummary): boolean {
 }
 
 /**
- * A set settles only once no task can still move, and a stopped task is a wall
- * of its own rather than a failure the unanimous rule gets to weigh. An
- * execution read on its own is a set of one and settles like one.
+ * Whether an execution still waits for its worker: queued, or open under an
+ * agent that has recorded no run. A command list records its run only as it
+ * ends, so a commanded task, or one a server names no carrier for, has begun
+ * once an attempt opens.
+ */
+export function executionStarting(row: ExecutionSummary): boolean {
+  if (row.status === "Queued" || row.status === "Admitted") return true;
+  return (
+    (row.status === "Launching" || row.status === "Running") &&
+    row.carrier === "Agent" &&
+    row.runStartedAt === undefined
+  );
+}
+
+/**
+ * A set settles only once no task can still move, and one still moving is
+ * Starting while every task in it waits for its worker. A stopped task is a
+ * wall of its own rather than a failure the unanimous rule gets to weigh, and
+ * an execution read on its own is a set of one and settles like one.
  */
 export function setVerdict(
   executions: readonly ExecutionSummary[],
@@ -189,7 +205,7 @@ export function setVerdict(
       (row) => row.status !== "Terminal" && row.status !== "Cancelled",
     )
   )
-    return "Running";
+    return executions.every(executionStarting) ? "Starting" : "Running";
   if (executions.every((row) => row.status === "Cancelled")) return "Cancelled";
   if (executions.some(executionStopped)) return "Blocked";
   return executions.every((row) => row.outcome === "Passed")
@@ -327,6 +343,20 @@ export function stageEvaluatorsCurrent(
   stage: RanStage,
 ): readonly EvaluatorRow[] {
   return stage.evaluators.filter((row) => row.standing === "Current");
+}
+
+/** Whether a set has settled, which a starting one has not any more than a running one. */
+export function setVerdictSettled(verdict: SetVerdict): boolean {
+  switch (verdict) {
+    case "Starting":
+    case "Running":
+      return false;
+    case "Passed":
+    case "Failed":
+    case "Cancelled":
+    case "Blocked":
+      return true;
+  }
 }
 
 /**

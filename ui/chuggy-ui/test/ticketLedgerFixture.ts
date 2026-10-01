@@ -18,6 +18,7 @@ import type {
   TaskIdentity,
 } from "../../../src/contract/responses.ts";
 import type {
+  BriefingCarrier,
   ExecutionOutcome,
   ExecutionStatus,
   RunCostBasis,
@@ -44,6 +45,8 @@ export interface ExecutionShape {
   readonly totals?: TotalsShape;
   readonly registeredAt?: string;
   readonly terminalAt?: string;
+  readonly carrier?: BriefingCarrier;
+  readonly runStartedAt?: string;
 }
 
 /** A work task's identity, in the cycle a case names. */

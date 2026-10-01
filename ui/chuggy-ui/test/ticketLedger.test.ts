@@ -17,9 +17,12 @@ import {
   cycleLabel,
   cycleLastSet,
   relaunchesLabel,
+  setVerdict,
+  setVerdictSettled,
   stageLabel,
   ticketLedger,
 } from "../app/core/ticketLedger.ts";
+import type { SetVerdict } from "../app/core/ticketLedger.ts";
 import {
   evalIdentity,
   ledgerPage,
@@ -350,6 +353,80 @@ test("a stage that is still running leaves the stages after it queued", () => {
     "1 Running 1",
     "2 Queued",
   ]);
+});
+
+/** One evaluation of stage 1, open and unstarted unless a case says otherwise. */
+function launching(
+  evaluator: number,
+  step: Partial<ExecutionShape>,
+): ExecutionShape {
+  return {
+    execution: `execution-bb-${String(evaluator)}`,
+    task: evaluator,
+    identity: evalIdentity(1, 1, 1, evaluator),
+    status: "Launching",
+    ...step,
+  };
+}
+
+const agent = { carrier: "Agent" } as const;
+const started = { ...agent, runStartedAt: "2026-08-26T00:05:00Z" };
+
+function launchVerdict(steps: readonly Partial<ExecutionShape>[]): SetVerdict {
+  return setVerdict(
+    ledgerPage(steps.map((step, at) => launching(at + 1, step))).executions,
+  );
+}
+
+test("a commanded run has begun once its attempt opens, and so has one no carrier is named for", () => {
+  const steps: readonly Partial<ExecutionShape>[] = [
+    { carrier: "Commands", status: "Queued" },
+    { carrier: "Commands" },
+    {},
+    { status: "Queued" },
+    agent,
+    started,
+  ];
+  expect(steps.map((step) => launchVerdict([step]))).toEqual([
+    "Starting",
+    "Running",
+    "Running",
+    "Starting",
+    "Starting",
+    "Running",
+  ]);
+});
+
+test("a set is Starting only while every task in it waits for its worker", () => {
+  const passed = { ...agent, status: "Terminal", outcome: "Passed" } as const;
+  expect([
+    launchVerdict([agent, { ...agent, status: "Queued" }]),
+    launchVerdict([agent, started]),
+    launchVerdict([{ ...agent, status: "Queued" }, passed]),
+  ]).toEqual(["Starting", "Running", "Running"]);
+});
+
+test("a starting set has not settled: it leaves the stages after it queued", () => {
+  const ledger = ticketLedger(
+    ledgerPage([launching(1, agent)]),
+    ticket21Program,
+  );
+  expect(stagesOf(ledger.cycles[0]?.stages ?? [])).toEqual([
+    "1 Starting 1",
+    "2 Queued",
+  ]);
+  expect(
+    (
+      [
+        "Starting",
+        "Running",
+        "Passed",
+        "Failed",
+        "Cancelled",
+        "Blocked",
+      ] as const
+    ).filter((verdict) => !setVerdictSettled(verdict)),
+  ).toEqual(["Starting", "Running"]);
 });
 
 test("two stages of one generation are two rows, not one merged row", () => {
