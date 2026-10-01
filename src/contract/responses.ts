@@ -100,6 +100,7 @@ import {
   selectorDispatchModes,
   selectorModes,
   agenticRefusalEvents,
+  sessionRunnerStandings,
   sessionStates,
   sessionTurnFailures,
   sessionTurnInputKinds,
@@ -1660,7 +1661,25 @@ export type ExecutionPlacementResponse = z.infer<
   typeof executionPlacementResponseSchema
 >;
 
-/** Whether the project's tenant grants the caller the hosted runs a thread or an inquiry spends. */
+/**
+ * Where a project's threads and its lead run and what decided each, the routes
+ * this caller may choose, and the runners each would run on: the caller's own
+ * for their thread, and any of the project's for the lead.
+ */
+export const sessionPlacementResponseSchema = z.object({
+  thread: placementRouteResolvedSchema,
+  lead: placementRouteResolvedSchema,
+  choices: z.array(z.enum(placementRoutes)).max(placementRoutes.length),
+  runners: z.object({
+    mine: z.enum(sessionRunnerStandings),
+    project: z.enum(sessionRunnerStandings),
+  }),
+});
+export type SessionPlacementResponse = z.infer<
+  typeof sessionPlacementResponseSchema
+>;
+
+/** Whether the project's tenant grants the caller the hosted runs a thread or an inquiry spends in cluster. */
 export const hostedRunsResponseSchema = z.strictObject({
   granted: z.boolean(),
 });

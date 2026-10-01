@@ -47,11 +47,15 @@ import {
   interactionsReadSignature,
   leadOpenSignature,
   selectorSignatures,
+  sessionRouteSignature,
+  sessionRunnerStandingSignature,
   systemPromptSetSignature,
 } from "./schema/lead.ts";
 import {
   leadOpenFunction,
   selectorInteractionsReadFunction,
+  sessionRouteFunction,
+  sessionRunnerStandingFunction,
   sessionSystemPromptSetFunction,
 } from "./schema/shared.ts";
 import {
@@ -172,7 +176,7 @@ export function postgresLeadMailbox(pool: pg.Pool): LeadMailbox {
         sql`SELECT enqueued,ordinal::text AS ordinal
               FROM enqueue_lead_turn(
                 ${input.partition.tenant},${input.partition.project},
-                ${input.turn},${input.input})`,
+                ${input.turn},${input.input},${input.route})`,
       );
       const row = offered.rows[0];
       if (row?.ordinal !== null && row?.ordinal !== undefined)
@@ -258,6 +262,8 @@ export const leadDoorSignatures: readonly string[] = (
     [selectorInteractionsReadFunction, interactionsReadSignature],
     [sessionSystemPromptSetFunction, systemPromptSetSignature],
     [leadOpenFunction, leadOpenSignature],
+    [sessionRouteFunction, sessionRouteSignature],
+    [sessionRunnerStandingFunction, sessionRunnerStandingSignature],
   ] as readonly (readonly [string, string])[]
 ).map(leadDoorNamed);
 

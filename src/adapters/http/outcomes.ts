@@ -64,6 +64,7 @@ import type {
 import type { NotificationBatch } from "../../interpreter/notifications.ts";
 import {
   hostedRunsNotGrantedCode,
+  noRunnerCode,
   type ThreadMessageRefusalCode,
 } from "../../contract/rosters.ts";
 import type {
@@ -129,13 +130,15 @@ import type {
   WorkerPoolTokenMinted,
   WorkerPoolTokenRedeemed,
 } from "../../interpreter/workerPoolRegistrationToken.ts";
+import type { ExecutionPlacementView } from "../../interpreter/executionPlacement.ts";
 import type {
-  ExecutionPlacementRead,
-  ExecutionPlacementView,
-  ExecutionPlacementWritten,
-} from "../../interpreter/executionPlacement.ts";
+  PlacementRead,
+  PlacementWritten,
+} from "../../interpreter/placementRoute.ts";
+import type { SessionPlacementView } from "../../interpreter/sessionPlacement.ts";
 import type {
   ExecutionPlacementResponse,
+  SessionPlacementResponse,
   WorkerPoolCredentialsResponse,
   WorkerPoolsResponse,
 } from "../../contract/responses.ts";
@@ -913,7 +916,7 @@ export function workerPoolsResponse(
   }
 }
 
-function executionPlacementBody(
+export function executionPlacementBody(
   view: ExecutionPlacementView,
 ): ExecutionPlacementResponse {
   return {
@@ -923,14 +926,26 @@ function executionPlacementBody(
   };
 }
 
-export function executionPlacementReadResponse(
-  result: ExecutionPlacementRead,
+export function sessionPlacementBody(
+  view: SessionPlacementView,
+): SessionPlacementResponse {
+  return {
+    thread: view.routes.Thread,
+    lead: view.routes.Lead,
+    choices: [...view.choices],
+    runners: view.runners,
+  };
+}
+
+export function placementReadResponse<View>(
+  result: PlacementRead<View>,
+  body: (view: View) => unknown,
 ): NativeHttpResponse {
   switch (result.result) {
     case "NotFound":
       return notFound();
     case "Found":
-      return response(200, executionPlacementBody(result.view));
+      return response(200, body(result.view));
     default:
       return assertNever(result);
   }
@@ -947,13 +962,25 @@ function hostedRunsRefused(): NativeHttpResponse {
   );
 }
 
+/** What a door answers a caller whose turn would be offered to runners, where they have registered none. */
+function noRunnerRefused(): NativeHttpResponse {
+  return response(
+    403,
+    nativeHttpError(
+      noRunnerCode,
+      "This caller has registered no runner on the project.",
+    ),
+  );
+}
+
 /**
- * A placement written, answering where the project's executions now run. A
- * repeat is the same answer, and a route the tenant has not granted this caller
- * is named so a console can say so.
+ * A placement written, answering where the project's executions or sessions
+ * now run. A repeat is the same answer, and a route the tenant has not granted
+ * this caller is named so a console can say so.
  */
-export function executionPlacementWriteResponse(
-  result: ExecutionPlacementWritten,
+export function placementWriteResponse<View>(
+  result: PlacementWritten<View>,
+  body: (view: View) => unknown,
 ): NativeHttpResponse {
   switch (result.result) {
     case "NotFound":
@@ -962,7 +989,7 @@ export function executionPlacementWriteResponse(
       return hostedRunsRefused();
     case "Written":
     case "Unchanged":
-      return response(200, executionPlacementBody(result.view));
+      return response(200, body(result.view));
     default:
       return assertNever(result);
   }
@@ -1865,6 +1892,7 @@ export function openThreadResponse(
   if (result.result === "NotFound")
     return response(404, nativeHttpError("NotFound", "Resource not found."));
   if (result.result === "HostedRunsNotGranted") return hostedRunsRefused();
+  if (result.result === "NoRunner") return noRunnerRefused();
   return response(result.result === "Opened" ? 201 : 200, result.thread, {
     location: resourcePath(partition, "threads", result.thread.session),
   });
@@ -1933,7 +1961,7 @@ const threadMessageRefusalCode: Readonly<
   Record<
     Exclude<
       ThreadMessageSent["result"],
-      "NotFound" | "HostedRunsNotGranted" | "Sent" | "AlreadySent"
+      "NotFound" | "HostedRunsNotGranted" | "NoRunner" | "Sent" | "AlreadySent"
     >,
     ThreadMessageRefusalCode
   >
@@ -1959,6 +1987,8 @@ export function threadMessageResponse(
       return response(404, nativeHttpError("NotFound", "Resource not found."));
     case "HostedRunsNotGranted":
       return hostedRunsRefused();
+    case "NoRunner":
+      return noRunnerRefused();
     case "NotYourThread":
       return response(
         403,
@@ -2034,6 +2064,8 @@ export function askLeadResponse(
       return response(404, nativeHttpError("NotFound", "Resource not found."));
     case "HostedRunsNotGranted":
       return hostedRunsRefused();
+    case "NoRunner":
+      return noRunnerRefused();
     case "LeadNotStarted":
       return response(
         409,

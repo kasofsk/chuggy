@@ -106,6 +106,7 @@ to start without the required ones.
 | `CHUG_API_OIDC_ALGORITHMS` | required | comma-separated, surrounding spaces trimmed; every entry must be one `oidcVerifiableAlgorithms` in `src/adapters/http/oidc.ts` admits, and anything else — a shared-secret algorithm, `none`, an empty entry, a name with a typo — refuses to start, naming what it refused |
 | `CHUG_API_KETO_READ_URL` | required | the read API of the authority that answers project access, HTTP or HTTPS and carrying no credentials |
 | `CHUG_API_KETO_WRITE_URL` | optional | the write API of that authority, where a created project's grants and a registered pool's tuple are written; without it, creating a project answers `ProjectCreationNotConfigured` and no pool registers |
+| `CHUG_API_SELECTOR_SUBJECT` | optional | the subject the site's selector authenticates as under the issuer above; a project created here grants it `developers`, and without it an operator grants the selector each project |
 | `CHUG_API_HYDRA_ADMIN_URL` | optional | the issuer's admin API, where a registered pool's OAuth2 client is minted; naming it without the write URL refuses the start |
 | `CHUG_API_POOL_TOKEN_URL` | with the admin URL | the token endpoint a registered pool's client asks for its bearer, written into the file a redemption answers; https, or http on the loopback, with no credentials in it, or the API refuses to start |
 | `CHUG_API_POOL_PLANE_URL` | with the admin URL | the pool plane's address, written into that file; https, or http on the loopback, with no credentials in it, or the API refuses to start |

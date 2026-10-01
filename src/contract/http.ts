@@ -408,6 +408,7 @@ export const nativeHttpRoutes = {
   projectRepositoryRetirement: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/repositories/retirement`,
   projectRepositoryConfigurations: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/repositories/configurations`,
   executionPlacement: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/execution-placement`,
+  sessionPlacement: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/session-placement`,
   hostedRuns: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/hosted-runs`,
   workerPools: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/worker-pools`,
   workerPoolRegistrationTokens: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/worker-pool-registration-tokens`,

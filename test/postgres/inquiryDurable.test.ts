@@ -51,6 +51,7 @@ import {
   sessionStorePageBatchesMax,
   sessionSystemPromptCharsMax,
 } from "../../src/contract/http.ts";
+import type { PlacementRoute } from "../../src/contract/rosters.ts";
 import type { SessionId } from "../../src/interpreter/agentSession.ts";
 import {
   inquiryCapabilities,
@@ -64,6 +65,7 @@ import {
 } from "../../src/interpreter/leadInquiry.ts";
 import { asPrincipal } from "../../src/interpreter/principal.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
+import { sessionPoolTurnDwellSecs } from "../../src/interpreter/sessionPlacement.ts";
 import { postgresHarnessDenial } from "./harness.ts";
 import {
   inquiryRigClaim,
@@ -87,7 +89,13 @@ import {
   threadRigSiblingProject,
   threadRigThread,
 } from "./threadHarness.ts";
-import { sessionRigAttempt, sessionRigSession } from "./sessionHarness.ts";
+import {
+  sessionRigAttempt,
+  sessionRigBoundless,
+  sessionRigQueuedFor,
+  sessionRigSession,
+  sessionRigTurnRoutes,
+} from "./sessionHarness.ts";
 
 let rig: InquiryRig;
 
@@ -115,6 +123,7 @@ async function inquiryAsk(
   partition: Partition,
   member: InquiryRigMember,
   label: string,
+  route: PlacementRoute = "InCluster",
 ) {
   const identities = inquiryRigIdentities(label);
   const opened = await rig.inquiries.open({
@@ -126,6 +135,7 @@ async function inquiryAsk(
       question: asked,
       asker: member.authority.subject,
     }),
+    route,
   });
   return { ...identities, opened };
 }
@@ -158,6 +168,59 @@ test("a question forks the lead that stands, not the one it replaced", async () 
   );
 });
 
+test("a question's turn keeps the route it was admitted on", async () => {
+  const { partition, member } = await inquirySubject("routed");
+  const asking = await inquiryAsk(partition, member, "routed", "Pool");
+  assert.equal(asking.opened.opened, "Opened");
+  assert.deepEqual(
+    await sessionRigTurnRoutes(rig.sessions, partition, asking.session),
+    ["Pool"],
+  );
+});
+
+test("a question offered to runners that none takes is withdrawn after the dwell, which closes it and frees its asker's slot", async () => {
+  const { partition, member } = await inquirySubject("dwelt");
+  const spent = [];
+  for (let n = 0; n < inquiriesOpenPerMemberMax; n += 1) {
+    const asking = await inquiryAsk(
+      partition,
+      member,
+      `dwelt-${String(n)}`,
+      "Pool",
+    );
+    assert.equal(asking.opened.opened, "Opened");
+    spent.push(asking);
+  }
+  assert.deepEqual(
+    (await inquiryAsk(partition, member, "dwelt-over", "Pool")).opened,
+    { opened: "InFlight" },
+  );
+
+  for (const asking of spent)
+    await sessionRigQueuedFor(
+      rig.sessions,
+      asking.turn,
+      sessionPoolTurnDwellSecs + 60,
+    );
+  assert.equal(
+    await rig.sessions.scheduler.withdrawUnservedPoolTurns(
+      rig.sessions.epoch,
+      sessionPoolTurnDwellSecs,
+      sessionRigBoundless,
+    ),
+    inquiriesOpenPerMemberMax,
+  );
+  for (const asking of spent)
+    assert.equal(
+      (await inquiryRigSessionRow(rig, asking.session))["state"],
+      "Closed",
+    );
+  assert.equal(
+    (await inquiryAsk(partition, member, "dwelt-again", "Pool")).opened.opened,
+    "Opened",
+  );
+});
+
 test("a member's question forks the lead once, and a retry is the same fork", async () => {
   const { partition, lead, member } = await inquirySubject("once");
   const first = await inquiryAsk(partition, member, "once");
@@ -176,6 +239,7 @@ test("a member's question forks the lead once, and a retry is the same fork", as
       question: "a question the retry never gets to write",
       asker: member.authority.subject,
     }),
+    route: "InCluster",
   });
   assert.deepEqual(retried, {
     opened: "AlreadyOpen",
@@ -217,6 +281,7 @@ test("a retry is answered its own ordinal even once the lead is closed", async (
       question: asked,
       asker: member.authority.subject,
     }),
+    route: "InCluster",
   });
   assert.deepEqual(retried, {
     opened: "AlreadyOpen",
@@ -1132,6 +1197,7 @@ test("a session identity another member holds raises rather than being answered"
         question: asked,
         asker: other.authority.subject,
       }),
+      route: "InCluster",
     }),
     /duplicate key value violates unique constraint "agent_session_pkey"/,
   );
@@ -1146,6 +1212,7 @@ test("a session identity another member holds raises rather than being answered"
         question: asked,
         asker: other.authority.subject,
       }),
+      route: "InCluster",
     }),
     /duplicate key value violates unique constraint "agent_session_pkey"/,
     "another member was told the question they never asked was already open",
@@ -1162,6 +1229,7 @@ test("a session identity another member holds raises rather than being answered"
         question: asked,
         asker: elsewhere.member.authority.subject,
       }),
+      route: "InCluster",
     }),
     /agent_session_identity_is_never_reused/,
     "a session id another project already holds was opened again",
@@ -1188,6 +1256,7 @@ test("a second turn on a fork the caller already opened is refused", async () =>
         question: asked,
         asker: member.authority.subject,
       }),
+      route: "InCluster",
     }),
     /duplicate key value violates unique constraint "agent_session_pkey"/,
   );
@@ -1206,7 +1275,7 @@ const otherRoles = [
 
 /** Every door 063 declares, beside the arguments it is called with and its role. */
 const doors: readonly (readonly [string, string, string])[] = [
-  [leadInquiryOpenFunction, "'t','p','k','s','u',''", apiRole],
+  [leadInquiryOpenFunction, "'t','p','k','s','u','','InCluster'", apiRole],
   [leadInquiriesReadFunction, "'t','p',1", apiRole],
   [leadInquiryReadFunction, "'t','p','s'", apiRole],
   [sessionAttemptReadFunction, "''", workerPlaneRole],
@@ -1299,7 +1368,7 @@ test("the door takes no roster, no account and no credential slot", async () => 
   const taken = String(held[0]?.["taken"]);
   assert.equal(
     taken,
-    "in_tenant text, in_project text, in_principal text, in_session text, in_turn text, in_question text",
+    "in_tenant text, in_project text, in_principal text, in_session text, in_turn text, in_question text, in_route text",
   );
   for (const chosen of ["capabilities", "account", "cluster", "credential"])
     assert.ok(
@@ -1316,6 +1385,7 @@ test("a principal the project never admitted still cannot spend another's quota"
     session: inquiryRigIdentities("nobody").session,
     turn: inquiryRigIdentities("nobody").turn,
     question: leadInquiryTurnInput({ question: asked, asker: "nobody" }),
+    route: "InCluster",
   });
   assert.equal(
     opened.opened,

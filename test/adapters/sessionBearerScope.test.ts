@@ -109,6 +109,7 @@ function scopedApp(reached: string[], web?: ServedNativeWeb) {
     recorded(reached, "workerPools"),
     recorded(reached, "creation"),
     recorded(reached, "placement"),
+    recorded(reached, "sessionPlacement"),
   );
 }
 

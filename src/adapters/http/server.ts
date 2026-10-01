@@ -83,6 +83,7 @@ import {
   parseProjectRepositoryCreate,
   parseProjectRepositoryLanding,
   parseExecutionPlacement,
+  parseSessionPlacement,
   parseProjectRepositoryRetirement,
   parseProjectRepositoryConfigure,
   parseRepositoryConfigurationImport,
@@ -166,13 +167,17 @@ import {
   workerPoolRedemptionResponse,
   workerPoolTokenResponse,
   workerPoolsResponse,
-  executionPlacementReadResponse,
-  executionPlacementWriteResponse,
+  executionPlacementBody,
+  placementReadResponse,
+  placementWriteResponse,
+  sessionPlacementBody,
   notFound,
   sessionBearerRefusedResponse,
 } from "./outcomes.ts";
 import type { WorkerPoolRegistrationService } from "../../interpreter/workerPoolRegistrationToken.ts";
 import type { ExecutionPlacementAdministration } from "../../interpreter/executionPlacement.ts";
+import type { PlacementAdministration } from "../../interpreter/placementRoute.ts";
+import type { SessionPlacementAdministration } from "../../interpreter/sessionPlacement.ts";
 import type { ProjectCreation } from "../../interpreter/projectCreation.ts";
 import { sessionBearerAdmission } from "./sessionBearerScope.ts";
 
@@ -1022,32 +1027,36 @@ function registerWorkerPools(
  * Where a project's executions run: read under `Read` and written whole under
  * `Administer`, a hosted route needing the tenant's grant besides.
  */
-function registerExecutionPlacement(
+function registerPlacement<Routes, View>(
   app: FastifyInstance,
-  placement: ExecutionPlacementAdministration,
-  partitionRoot: string,
+  path: string,
+  placement: PlacementAdministration<Routes, View>,
+  parse: (body: unknown) => Routes,
+  body: (view: View) => unknown,
 ): void {
-  app.get(`${partitionRoot}/execution-placement`, async (request, reply) => {
+  app.get(path, async (request, reply) => {
     send(
       reply,
-      executionPlacementReadResponse(
+      placementReadResponse(
         await placement.read(principalOf(request), partitionOf(request)),
+        body,
       ),
     );
   });
   app.put(
-    `${partitionRoot}/execution-placement`,
+    path,
     { preValidation: requireVersionedJson },
     async (request, reply) => {
-      const written = parseExecutionPlacement(request.body);
+      const written = parse(request.body);
       send(
         reply,
-        executionPlacementWriteResponse(
+        placementWriteResponse(
           await placement.write(
             principalOf(request),
             partitionOf(request),
             written,
           ),
+          body,
         ),
       );
     },
@@ -1843,6 +1852,30 @@ function nativeHttpServer(limits: NativeHttpLimits): FastifyInstance {
   return app;
 }
 
+function registerPlacements(
+  app: FastifyInstance,
+  partitionRoot: string,
+  placement: ExecutionPlacementAdministration | undefined,
+  sessionPlacement: SessionPlacementAdministration | undefined,
+): void {
+  if (placement !== undefined)
+    registerPlacement(
+      app,
+      `${partitionRoot}/execution-placement`,
+      placement,
+      parseExecutionPlacement,
+      executionPlacementBody,
+    );
+  if (sessionPlacement !== undefined)
+    registerPlacement(
+      app,
+      `${partitionRoot}/session-placement`,
+      sessionPlacement,
+      parseSessionPlacement,
+      sessionPlacementBody,
+    );
+}
+
 export function createNativeHttpApp(
   web: InitialNativeWeb,
   authentication: PrincipalAuthentication,
@@ -1856,6 +1889,7 @@ export function createNativeHttpApp(
   workerPools?: WorkerPoolRegistrationService,
   creation?: ProjectCreation,
   placement?: ExecutionPlacementAdministration,
+  sessionPlacement?: SessionPlacementAdministration,
 ): FastifyInstance {
   const app = nativeHttpServer(limits);
   const partitionRoot = "/api/v1/tenants/:tenant/projects/:project";
@@ -1893,8 +1927,7 @@ export function createNativeHttpApp(
   registerDispatchView(app, web);
   if (workerPools !== undefined)
     registerWorkerPools(app, workerPools, partitionRoot);
-  if (placement !== undefined)
-    registerExecutionPlacement(app, placement, partitionRoot);
+  registerPlacements(app, partitionRoot, placement, sessionPlacement);
   app.setErrorHandler((failure, _request, reply) => {
     send(reply, failureResponse(failure));
   });

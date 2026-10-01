@@ -37,6 +37,11 @@ import {
 } from "../../src/interpreter/principal.ts";
 import { asPublicInstant } from "../../src/interpreter/publicResource.ts";
 import { unaskedNativeWebPorts } from "./nativeWebFixtures.ts";
+import {
+  sessionRoutesAt,
+  sessionRoutesFlipping,
+} from "./sessionRoutesFixture.ts";
+import type { SessionRouteReads } from "../../src/interpreter/sessionPlacement.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import {
   checkedThreadsLimit,
@@ -122,6 +127,15 @@ interface ThreadDoubles {
   readonly minted?: SessionId;
 }
 
+/** The message door, recording the turn it took and the route it was stamped with. */
+function enqueueDouble(doubles: ThreadDoubles): ThreadStore["enqueueMessage"] {
+  return (input) => {
+    doubles.calls.push(`enqueue:${input.turn}:${input.input}`);
+    doubles.calls.push(`enqueue-route:${input.route}`);
+    return Promise.resolve(doubles.enqueued);
+  };
+}
+
 function threadStore(doubles: ThreadDoubles): ThreadStore {
   return {
     threads: (_partition, limit) => {
@@ -153,10 +167,7 @@ function threadStore(doubles: ThreadDoubles): ThreadStore {
             },
       );
     },
-    enqueueMessage: (input) => {
-      doubles.calls.push(`enqueue:${input.turn}:${input.input}`);
-      return Promise.resolve(doubles.enqueued);
-    },
+    enqueueMessage: enqueueDouble(doubles),
     close: ({ session }) => {
       doubles.calls.push(`close:${session}`);
       if (doubles.closed !== undefined) return Promise.resolve(doubles.closed);
@@ -244,6 +255,7 @@ function boundary(
     "Mutate",
     "ExecuteHosted",
   ],
+  routes: SessionRouteReads = sessionRoutesAt(),
 ) {
   const held: ThreadDoubles = {
     calls: [],
@@ -284,6 +296,8 @@ function boundary(
     undefined,
     undefined,
     ports(held),
+    undefined,
+    routes,
   );
   return { web, held };
 }
@@ -840,6 +854,73 @@ test("a message needs the tenant's hosted grant at every send, and nothing is en
   );
 });
 
+test("a thread routed to the member's runner opens and takes a message without the hosted grant, stamped for the runner", async () => {
+  const { web, held } = boundary(
+    {},
+    ["Read", "Mutate"],
+    sessionRoutesAt(
+      { Thread: "Pool" },
+      { mine: "Offline", project: "Offline" },
+    ),
+  );
+
+  assert.equal((await web.openThread(geoff, partition)).result, "Opened");
+  const sent = await web.sendThreadMessage(geoff, partition, {
+    session: mine,
+    turn: asSessionTurnId("thread-turn-1"),
+    message: "have a look at 42",
+  });
+
+  assert.equal(sent.result, "Sent");
+  assert.ok(!held.calls.includes("authorizeTenant:ExecuteHosted"));
+  assert.ok(held.calls.includes("enqueue-route:Pool"));
+});
+
+test("a thread routed to runners where the member has registered none is refused at the open and at every send", async () => {
+  const { web, held } = boundary(
+    {},
+    ["Read", "Mutate", "ExecuteHosted"],
+    sessionRoutesAt({ Thread: "Pool" }),
+  );
+
+  assert.deepEqual(await web.openThread(geoff, partition), {
+    result: "NoRunner",
+  });
+  const sent = await web.sendThreadMessage(geoff, partition, {
+    session: mine,
+    turn: asSessionTurnId("thread-turn-1"),
+    message: "have a look at 42",
+  });
+
+  assert.deepEqual(sent, { result: "NoRunner" });
+  assert.deepEqual(
+    held.calls.filter(
+      (call) => call.startsWith("open:") || call.startsWith("enqueue"),
+    ),
+    [],
+  );
+});
+
+test("a message is stamped with the route its admission was asked of, however the route reads after", async () => {
+  const { web, held } = boundary(
+    {},
+    ["Read", "Mutate"],
+    sessionRoutesFlipping("Pool", { mine: "Offline", project: "Offline" }),
+  );
+
+  const sent = await web.sendThreadMessage(geoff, partition, {
+    session: mine,
+    turn: asSessionTurnId("thread-turn-1"),
+    message: "have a look at 42",
+  });
+
+  assert.equal(sent.result, "Sent");
+  assert.deepEqual(
+    held.calls.filter((call) => call.startsWith("enqueue-route:")),
+    ["enqueue-route:Pool"],
+  );
+});
+
 test("a message to my own thread is enqueued and answers its ordinal", async () => {
   const { web, held } = boundary();
 
@@ -855,6 +936,7 @@ test("a message to my own thread is enqueued and answers its ordinal", async () 
     ordinal: 7,
   });
   assert.ok(held.calls.includes("enqueue:thread-turn-1:have a look at 42"));
+  assert.ok(held.calls.includes("enqueue-route:InCluster"));
   assert.ok(held.calls.includes("authorize:Mutate"));
 });
 

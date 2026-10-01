@@ -1085,3 +1085,36 @@ test("the API registering a pool may fence its attempts and write no attempt", a
     /permission denied/u,
   );
 });
+
+test("a pool registered from a member's token records that member, and one registered without names nobody", async () => {
+  const project = await poolProject("pool-provenance");
+  const minter = asPrincipal("https://issuer.invalid#a-member");
+  for (const [label, registeredBy] of [
+    ["minted", minter],
+    ["operated", undefined],
+  ] as const)
+    assert.equal(
+      await registry.register({
+        partition: project.partition,
+        pool: label,
+        capabilities: [platform],
+        class: "Dedicated",
+        clientId: `chuggy-pool-${randomUUID()}`,
+        principal: asPrincipal(`https://issuer.invalid#pool-${label}`),
+        ...(registeredBy === undefined ? {} : { registeredBy }),
+      }),
+      true,
+    );
+  const rows = await apiPool.query<{
+    pool: string;
+    registered_by: string | null;
+  }>(
+    `SELECT pool,registered_by FROM worker_pool
+      WHERE tenant=$1 AND project=$2 ORDER BY pool`,
+    [project.partition.tenant, project.partition.project],
+  );
+  assert.deepEqual(rows.rows, [
+    { pool: "minted", registered_by: minter },
+    { pool: "operated", registered_by: null },
+  ]);
+});

@@ -4,6 +4,7 @@ import type pg from "pg";
 
 import { postgresWorkerPoolRegistrationTokens } from "../../src/adapters/postgres/workerPool.ts";
 import { apiRole } from "../../src/adapters/postgres/schema/shared.ts";
+import { asPrincipal } from "../../src/interpreter/principal.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 import { workerPoolTokensLiveMax } from "../../src/interpreter/workerPoolRegistrationToken.ts";
 import {
@@ -12,6 +13,9 @@ import {
   postgresHarnessRolePool,
   type PostgresHarness,
 } from "./harness.ts";
+
+/** The member every case mints as, which a token carries to the pool it registers. */
+const minter = asPrincipal("https://issuer.invalid#a-member");
 
 let harness: PostgresHarness;
 let api: pg.Pool;
@@ -38,12 +42,19 @@ test("a token stands for the partition it was minted against", async () => {
   const tokens = postgresWorkerPoolRegistrationTokens(api);
   const digest = digestOf("abc");
   assert.equal(
-    await tokens.mint(partition, digest, ["linux"], Date.now() + 60_000),
+    await tokens.mint(
+      partition,
+      digest,
+      ["linux"],
+      Date.now() + 60_000,
+      minter,
+    ),
     "Minted",
   );
   assert.deepEqual(await tokens.permitted(digest), {
     partition,
     capabilities: ["linux"],
+    mintedBy: minter,
   });
 });
 
@@ -52,12 +63,19 @@ test("a token is spent by the statement that reads it, and once", async () => {
   const tokens = postgresWorkerPoolRegistrationTokens(api);
   const digest = digestOf("bcd");
   assert.equal(
-    await tokens.mint(partition, digest, ["linux"], Date.now() + 60_000),
+    await tokens.mint(
+      partition,
+      digest,
+      ["linux"],
+      Date.now() + 60_000,
+      minter,
+    ),
     "Minted",
   );
   assert.deepEqual(await tokens.consume(digest), {
     partition,
     capabilities: ["linux"],
+    mintedBy: minter,
   });
   assert.equal(await tokens.consume(digest), undefined);
   assert.equal(
@@ -72,7 +90,7 @@ test("a token past its expiry is neither readable nor spendable", async () => {
   const tokens = postgresWorkerPoolRegistrationTokens(api);
   const digest = digestOf("cde");
   assert.equal(
-    await tokens.mint(partition, digest, ["linux"], Date.now() - 1_000),
+    await tokens.mint(partition, digest, ["linux"], Date.now() - 1_000, minter),
     "Minted",
   );
   assert.equal(await tokens.permitted(digest), undefined);
@@ -84,7 +102,13 @@ test("a token given back after its spend is spendable again, unless it has expir
   const tokens = postgresWorkerPoolRegistrationTokens(api);
   const digest = digestOf("dee");
   assert.equal(
-    await tokens.mint(partition, digest, ["linux"], Date.now() + 60_000),
+    await tokens.mint(
+      partition,
+      digest,
+      ["linux"],
+      Date.now() + 60_000,
+      minter,
+    ),
     "Minted",
   );
   assert.notEqual(await tokens.consume(digest), undefined);
@@ -92,6 +116,7 @@ test("a token given back after its spend is spendable again, unless it has expir
   assert.deepEqual(await tokens.permitted(digest), {
     partition,
     capabilities: ["linux"],
+    mintedBy: minter,
   });
   assert.notEqual(await tokens.consume(digest), undefined);
   assert.equal(
@@ -101,7 +126,13 @@ test("a token given back after its spend is spendable again, unless it has expir
   );
   const expired = digestOf("eef");
   assert.equal(
-    await tokens.mint(partition, expired, ["linux"], Date.now() - 1_000),
+    await tokens.mint(
+      partition,
+      expired,
+      ["linux"],
+      Date.now() - 1_000,
+      minter,
+    ),
     "Minted",
   );
   assert.equal(await tokens.restore(expired), false);
@@ -116,6 +147,7 @@ test("a token names no project this installation holds", async () => {
       digestOf("def"),
       [],
       Date.now() + 60_000,
+      minter,
     ),
     "NotFound",
   );
@@ -138,18 +170,36 @@ test("a project holds at most its bound of unspent tokens, and a spent one stays
     digestOf(`b${ordinal.toString(16).padStart(2, "0")}`);
   for (let minted = 0; minted < workerPoolTokensLiveMax; minted += 1)
     assert.equal(
-      await tokens.mint(partition, digest(minted), [], Date.now() + 60_000),
+      await tokens.mint(
+        partition,
+        digest(minted),
+        [],
+        Date.now() + 60_000,
+        minter,
+      ),
       "Minted",
       `token ${String(minted)} is within the bound`,
     );
   assert.equal(
-    await tokens.mint(partition, digestOf("0e"), [], Date.now() + 60_000),
+    await tokens.mint(
+      partition,
+      digestOf("0e"),
+      [],
+      Date.now() + 60_000,
+      minter,
+    ),
     "LimitReached",
   );
   assert.equal(await tokensOf(partition), workerPoolTokensLiveMax);
   assert.notEqual(await tokens.consume(digest(0)), undefined);
   assert.equal(
-    await tokens.mint(partition, digestOf("af"), [], Date.now() + 60_000),
+    await tokens.mint(
+      partition,
+      digestOf("af"),
+      [],
+      Date.now() + 60_000,
+      minter,
+    ),
     "Minted",
     "a spent token no longer counts against the bound",
   );
@@ -161,7 +211,13 @@ test("a project holds at most its bound of unspent tokens, and a spent one stays
   assert.equal(await tokens.permitted(digest(0)), undefined);
   const elsewhere = await project("token-bound-elsewhere");
   assert.equal(
-    await tokens.mint(elsewhere, digestOf("07"), [], Date.now() + 60_000),
+    await tokens.mint(
+      elsewhere,
+      digestOf("07"),
+      [],
+      Date.now() + 60_000,
+      minter,
+    ),
     "Minted",
     "the bound is one project's, not the table's",
   );
@@ -173,12 +229,24 @@ test("a spent token whose redemption is in flight survives another mint of the p
   const tokens = postgresWorkerPoolRegistrationTokens(api);
   const inflight = digestOf("1f");
   assert.equal(
-    await tokens.mint(partition, inflight, ["linux"], Date.now() + 60_000),
+    await tokens.mint(
+      partition,
+      inflight,
+      ["linux"],
+      Date.now() + 60_000,
+      minter,
+    ),
     "Minted",
   );
   assert.notEqual(await tokens.consume(inflight), undefined);
   assert.equal(
-    await tokens.mint(partition, digestOf("2e"), [], Date.now() + 60_000),
+    await tokens.mint(
+      partition,
+      digestOf("2e"),
+      [],
+      Date.now() + 60_000,
+      minter,
+    ),
     "Minted",
   );
   assert.equal(
@@ -189,6 +257,7 @@ test("a spent token whose redemption is in flight survives another mint of the p
   assert.deepEqual(await tokens.permitted(inflight), {
     partition,
     capabilities: ["linux"],
+    mintedBy: minter,
   });
 });
 
@@ -196,12 +265,24 @@ test("a mint sweeps the project's expired tokens", async () => {
   const partition = await project("token-sweep");
   const tokens = postgresWorkerPoolRegistrationTokens(api);
   assert.equal(
-    await tokens.mint(partition, digestOf("5a1e"), [], Date.now() - 1_000),
+    await tokens.mint(
+      partition,
+      digestOf("5a1e"),
+      [],
+      Date.now() - 1_000,
+      minter,
+    ),
     "Minted",
   );
   assert.equal(await tokensOf(partition), 1);
   assert.equal(
-    await tokens.mint(partition, digestOf("f5e5"), [], Date.now() + 60_000),
+    await tokens.mint(
+      partition,
+      digestOf("f5e5"),
+      [],
+      Date.now() + 60_000,
+      minter,
+    ),
     "Minted",
   );
   assert.equal(await tokensOf(partition), 1);

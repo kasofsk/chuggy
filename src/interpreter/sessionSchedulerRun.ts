@@ -38,6 +38,10 @@
  * resumes is the one the store holds. That reaping is what makes the whole
  * arrangement affordable, and it is bounded like every other step.
  *
+ * A TURN OFFERED TO RUNNERS THAT NONE TAKES IS WITHDRAWN. Until one does it
+ * holds its session, so past `sessionPoolTurnDwellSecs` it ends `TurnWithdrawn`
+ * before the placement step, which can then place a thread's next turn.
+ *
  * THE TWO INABILITIES ARE KEPT APART, which is why the placement port answers
  * with three arms rather than a boolean — but a session has no execution to
  * retire, so a denial ends the attempt with `PlacementDenied` rather than
@@ -115,6 +119,7 @@ import {
   type SessionSchedulerConfig,
   type SessionSchedulerStore,
 } from "./sessionScheduler.ts";
+import { sessionPoolTurnDwellSecs } from "./sessionPlacement.ts";
 import { sessionTaskInvocation } from "./workerTask.ts";
 
 /** One attempt identity, its bearer, and the digest the durable row keeps of the secret. */
@@ -147,6 +152,7 @@ export interface SessionPassReport {
   readonly observed: number;
   readonly reaped: number;
   readonly idled: number;
+  readonly withdrawn: number;
   readonly placed: number;
 }
 
@@ -226,6 +232,22 @@ export async function sessionSchedulerIdle(
   return service.store.reapIdleAttempts(
     epoch,
     config.idleSecsMax,
+    config.attemptsPerPassMax,
+  );
+}
+
+/**
+ * Withdraws a bounded batch of turns offered to runners that none took within
+ * the dwell, so an inquiry closes and a thread's later turns can be placed.
+ */
+export async function sessionSchedulerWithdraw(
+  service: SessionSchedulerService,
+  epoch: RecoveryEpoch,
+): Promise<number> {
+  const config = checkedSessionSchedulerConfig(service.config);
+  return service.store.withdrawUnservedPoolTurns(
+    epoch,
+    sessionPoolTurnDwellSecs,
     config.attemptsPerPassMax,
   );
 }
@@ -333,6 +355,7 @@ export async function sessionSchedulerPass(
   const observed = await sessionSchedulerObserve(service, epoch);
   const reaped = await sessionSchedulerReap(service, epoch);
   const idled = await sessionSchedulerIdle(service, epoch);
+  const withdrawn = await sessionSchedulerWithdraw(service, epoch);
   const placed = await sessionSchedulerPlace(service, epoch);
-  return { fenced, cleaned, observed, reaped, idled, placed };
+  return { fenced, cleaned, observed, reaped, idled, withdrawn, placed };
 }

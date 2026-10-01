@@ -1,4 +1,5 @@
 import type { Partition } from "./projectStore.ts";
+import type { LeadAdmission } from "./sessionPlacement.ts";
 import type { ProjectInventoryPage } from "./nativeWeb.ts";
 import {
   leadInputBytesMax,
@@ -32,11 +33,11 @@ import {
   reconcileSubmittedSelectorProposals,
 } from "./selectorDeliveryRuntime.ts";
 import type {
-  SelectorHostedRunsPhase,
+  SelectorAdmissionPhase,
   SelectorRunFailure,
 } from "./selectorRuntimeTypes.ts";
 export type {
-  SelectorHostedRunsPhase,
+  SelectorAdmissionPhase,
   SelectorRunFailure,
 } from "./selectorRuntimeTypes.ts";
 
@@ -190,7 +191,7 @@ async function observeProject(
     return projectObservationFailure("Observation", partition);
   }
   if (observation === undefined) return emptyProjectObservation;
-  const passedOver = await observeProjectHostedRuns(partition, policy);
+  const passedOver = await observeProjectAdmission(partition, policy);
   if (passedOver !== undefined) return passedOver;
   const identity = identities.next(partition);
   let allocated: boolean;
@@ -224,24 +225,24 @@ async function observeProject(
 
 /**
  * Why a project with something to decide is passed over before its permit, or
- * nothing where its tenant grants the policy's principal the hosted runs every
- * turn spends: a refusal, or an authority that could not say. Neither is kept,
- * because the notification cursor moves only with a completed cycle, so the next
- * pass that reaches the project asks again and finds its changes waiting.
+ * nothing where its lead may take a turn now: a refusal, or a read that could
+ * not say. Neither is kept, because the notification cursor moves only with a
+ * completed cycle, so the next pass that reaches the project asks again and
+ * finds its changes waiting.
  */
-async function observeProjectHostedRuns(
+async function observeProjectAdmission(
   partition: Partition,
   policy: SelectorPolicyHost,
 ): Promise<ProjectObservationResult | undefined> {
-  let granted: boolean;
+  let admission: LeadAdmission;
   try {
-    granted = await policy.hostedRunsGranted(partition);
+    admission = await policy.leadAdmission(partition);
   } catch {
-    return projectObservationFailure("HostedRunsUndecided", partition);
+    return projectObservationFailure("AdmissionUndecided", partition);
   }
-  return granted
+  return admission === "Admitted"
     ? undefined
-    : projectObservationFailure("HostedRunsNotGranted", partition);
+    : projectObservationFailure(admission, partition);
 }
 
 /**
@@ -527,46 +528,58 @@ export async function selectorRunOnce(
   };
 }
 
-/** One project a run passed over for want of hosted runs, and which answer stopped it. */
-export interface SelectorHostedRunsSkip {
+/** One project a run passed over because its lead may not take a turn, and which answer stopped it. */
+export interface SelectorAdmissionSkip {
   readonly partition: Partition;
-  readonly phase: SelectorHostedRunsPhase;
+  readonly phase: SelectorAdmissionPhase;
 }
 
-/** What has been reported of each skipped project, keyed by `selectorHostedRunsChangesKey`. */
-export type SelectorHostedRunsReported = ReadonlyMap<
+/** What has been reported of each skipped project, keyed by `selectorAdmissionChangesKey`. */
+export type SelectorAdmissionReported = ReadonlyMap<
   string,
-  SelectorHostedRunsPhase
+  SelectorAdmissionPhase
 >;
 
 /** A partition as one key, its two halves kept apart so no pair reads as another. */
-function selectorHostedRunsChangesKey(partition: Partition): string {
+function selectorAdmissionChangesKey(partition: Partition): string {
   return JSON.stringify([partition.tenant, partition.project]);
 }
 
+const selectorAdmissionPhases: ReadonlySet<SelectorRunFailure["phase"]> =
+  new Set<SelectorAdmissionPhase>([
+    "HostedRunsNotGranted",
+    "RunnerOffline",
+    "AdmissionUndecided",
+  ]);
+
+function selectorAdmissionPhase(
+  phase: SelectorRunFailure["phase"],
+): phase is SelectorAdmissionPhase {
+  return selectorAdmissionPhases.has(phase);
+}
+
 /**
- * The hosted-runs skips a run names that were not already reported under the
+ * The admission skips a run names that were not already reported under the
  * same phase, and what stands reported after it. A project the run reached and
  * did not skip is forgotten, so one passed over on every pass that reaches it is
  * reported once, and again only after a pass reached it without skipping it or
- * named the other phase.
+ * named another phase.
  */
-export function selectorHostedRunsChanges(
-  reported: SelectorHostedRunsReported,
+export function selectorAdmissionChanges(
+  reported: SelectorAdmissionReported,
   run: Pick<SelectorRunResult, "reached" | "failures">,
 ): {
-  readonly changed: readonly SelectorHostedRunsSkip[];
-  readonly reported: SelectorHostedRunsReported;
+  readonly changed: readonly SelectorAdmissionSkip[];
+  readonly reported: SelectorAdmissionReported;
 } {
   const standing = new Map(reported);
   for (const partition of run.reached)
-    standing.delete(selectorHostedRunsChangesKey(partition));
-  const changed: SelectorHostedRunsSkip[] = [];
+    standing.delete(selectorAdmissionChangesKey(partition));
+  const changed: SelectorAdmissionSkip[] = [];
   for (const { phase, partition } of run.failures) {
-    if (phase !== "HostedRunsNotGranted" && phase !== "HostedRunsUndecided")
-      continue;
+    if (!selectorAdmissionPhase(phase)) continue;
     if (partition === undefined) continue;
-    const key = selectorHostedRunsChangesKey(partition);
+    const key = selectorAdmissionChangesKey(partition);
     if (reported.get(key) !== phase) changed.push({ partition, phase });
     standing.set(key, phase);
   }

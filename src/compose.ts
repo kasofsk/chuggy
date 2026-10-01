@@ -86,6 +86,14 @@ import { postgresDispatchViews } from "./adapters/postgres/dispatchViews.ts";
 import { postgresProjectInventory } from "./adapters/postgres/projectInventory.ts";
 import { postgresExecutionPlacement } from "./adapters/postgres/executionPlacement.ts";
 import {
+  postgresSessionPlacement,
+  postgresSessionRouteReads,
+} from "./adapters/postgres/sessionPlacement.ts";
+import {
+  sessionPlacementAdministration,
+  type SessionPlacementAdministration,
+} from "./interpreter/sessionPlacement.ts";
+import {
   executionPlacementAdministration,
   type ExecutionPlacementAdministration,
 } from "./interpreter/executionPlacement.ts";
@@ -96,6 +104,7 @@ import {
   type TenantClaims,
 } from "./interpreter/projectCreation.ts";
 import type { ProjectGrantWriter } from "./interpreter/projectGrant.ts";
+import type { Principal } from "./interpreter/principal.ts";
 import {
   postgresSelectorProjectSettings,
   postgresSelectorRuntimeControl,
@@ -220,6 +229,7 @@ export function composeSelectorRuntime(
       lead.sessions,
       lead.clock,
       access,
+      postgresSessionRouteReads(selectorPool),
       lead.policy,
     ),
     lead.deadline,
@@ -254,13 +264,26 @@ export function composeProjectCreation(
   access: ProjectAccess,
   claims: TenantClaims,
   grants: ProjectGrantWriter | undefined,
+  selector?: Principal,
 ): ProjectCreation {
   return projectCreation({
     access,
     claims,
     store: postgresProjectCreation(apiPool),
     ...(grants === undefined ? {} : { grants }),
+    ...(selector === undefined ? {} : { selector }),
   });
+}
+
+/** Wires where a project's sessions run to API-role credentials and the access that gates choosing it. */
+export function composeSessionPlacement(
+  apiPool: pg.Pool,
+  access: ProjectAccess,
+): SessionPlacementAdministration {
+  return sessionPlacementAdministration(
+    access,
+    postgresSessionPlacement(apiPool),
+  );
 }
 
 /** Wires where a project's executions run to API-role credentials and the access that gates choosing it. */
@@ -739,12 +762,13 @@ function finalizerServiceRuntime(
 /**
  * Wires the authenticated web application to API-role PostgreSQL ports.
  *
- * THE INQUIRY STORE IS COMPOSED HERE AND IS NOT A PARAMETER, which the lead's
- * and the thread's bundles are: those carry an artifact volume and a credential
- * slot a deployment must choose, this one is the API pool and nothing else, and
- * a bundle with nothing to choose is a line no case can refute and a root can
- * forget — a forgotten one costing three routes that raise in a deployment
- * while every gate stays green, so there is no composing this without it.
+ * THE INQUIRY STORE AND THE SESSION ROUTES ARE COMPOSED HERE AND ARE NOT
+ * PARAMETERS, which the lead's and the thread's bundles are: those carry an
+ * artifact volume and a credential slot a deployment must choose, these are the
+ * API pool and nothing else, and a bundle with nothing to choose is a line no
+ * case can refute and a root can forget — a forgotten one costing routes that
+ * raise in a deployment while every gate stays green, so there is no composing
+ * this without them.
  */
 export function composeNativeWeb(
   apiPool: pg.Pool,
@@ -787,6 +811,7 @@ export function composeNativeWeb(
     leads,
     threads,
     postgresLeadInquiries(apiPool),
+    postgresSessionRouteReads(apiPool),
   );
 }
 

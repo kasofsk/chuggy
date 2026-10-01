@@ -49,6 +49,12 @@ export const repositoryLandingReadFunction = "read_project_repository_landing";
 export const repositoryLandingWriteFunction = "set_project_repository_landing";
 export const repositoryRetirementWriteFunction = "retire_project_repository";
 export const executionPlacementSetFunction = "set_project_execution_placement";
+export const sessionPlacementSetFunction = "set_project_session_placement";
+/** The one resolution of where a session kind runs for one project. */
+export const sessionRouteFunction = "session_route";
+export const sessionRunnerStandingFunction = "session_runner_standing";
+/** The route a session's oldest queued turn was admitted on, which is the only one that may run next. */
+export const sessionWaitingRouteFunction = "session_waiting_route";
 export const forgeInstallationRecordFunction = "record_forge_installation";
 export const draftCreateFunction = "create_draft";
 export const draftReviseFunction = "revise_draft";
@@ -100,6 +106,7 @@ export const sessionAttemptPlaceFunction = "place_session_attempt";
 export const sessionAttemptEndFunction = "end_session_attempt";
 export const sessionAttemptReapLapsedFunction = "reap_lapsed_session_attempts";
 export const sessionAttemptReapIdleFunction = "reap_idle_session_attempts";
+export const sessionPoolTurnWithdrawFunction = "withdraw_unserved_pool_turns";
 export const sessionAttemptFenceFunction = "fence_old_epoch_session_attempts";
 export const sessionAttemptCleanupFunction =
   "session_attempts_awaiting_cleanup";

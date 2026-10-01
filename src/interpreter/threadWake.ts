@@ -23,14 +23,16 @@
  * member's mailbox is not the pass's business to stop for.
  *
  * A THREAD WHOSE PRINCIPAL THE PROJECT NO LONGER ADMITS IS ONE OF THOSE, AND
- * SO IS ONE WHOSE TENANT NO LONGER GRANTS THEM HOSTED RUNS, WHICH THE TURN
- * WOULD SPEND; THE AUTHORITY IS ASKED HERE. `src/interpreter/projectAccess.ts`
+ * SO IS ONE ROUTED IN CLUSTER WHOSE TENANT NO LONGER GRANTS THEM THE HOSTED RUN
+ * THE TURN WOULD SPEND; THE AUTHORITY IS ASKED HERE. `src/interpreter/projectAccess.ts`
  * answers it, not the mailbox door, because access is not a row this database
  * holds. An authority that could not answer at all is neither a wake nor an
  * ownerless thread: the candidate is passed over and its sequence holds the
  * cursor, which is the same rule the paragraph below states for a sequence
  * read in part. A raise instead would end the pacing loop, and an outage is
- * not a reason to stop selecting.
+ * not a reason to stop selecting. One routed to runners where the member has
+ * registered none is skipped too, read off the page beside its route, because
+ * no runner would take the turn.
  *
  * A CURSOR MAY ONLY MOVE PAST A SEQUENCE THE PASS DECIDED WHOLE. One change row
  * wakes one thread per member who authored a revision of the ticket it names,
@@ -64,12 +66,17 @@ import { threadWakesPerPassMax } from "../contract/http.ts";
 import type { SessionId, SessionTurnId } from "./agentSession.ts";
 import { asSessionTurnId } from "./agentSession.ts";
 import type { Principal } from "./principal.ts";
+import type {
+  PlacementRoute,
+  SessionRunnerStanding,
+} from "../contract/rosters.ts";
+import { placementRouteGranted } from "./placementRoute.ts";
 import {
-  hostedRunsGranted,
   ProjectAccessUnavailable,
   type ProjectAccess,
 } from "./projectAccess.ts";
 import type { Partition } from "./projectStore.ts";
+import { sessionRunnerServes } from "./sessionPlacement.ts";
 import {
   threadWakeDocument,
   threadWakeText,
@@ -84,6 +91,10 @@ export interface ThreadWakeCandidate {
   readonly resource: string;
   readonly principal: Principal;
   readonly session: SessionId;
+  /** Where the thread's turns run as the page was read, which decides whether the wake needs the hosted grant. */
+  readonly route: PlacementRoute;
+  /** Whether the member has registered a runner on the project, which a wake on a runner route needs. */
+  readonly runner: SessionRunnerStanding;
   /**
    * The project's own standing rules, absent where it takes the default. It
    * rides on the candidate because the pass composes a document that restates
@@ -117,6 +128,8 @@ export interface ThreadWakeStore {
     readonly principal: Principal;
     readonly turn: SessionTurnId;
     readonly input: string;
+    /** The route the wake was admitted on, which it keeps whatever the thread's route becomes. */
+    readonly route: PlacementRoute;
   }): Promise<ThreadWakeOffered>;
   advance(sequence: number): Promise<number>;
 }
@@ -201,7 +214,7 @@ function orderedPage(
   return page;
 }
 
-/** Whether the project still admits a candidate's principal and the tenant still grants them hosted runs, or nothing where the authority could not say. */
+/** Whether the project still admits a candidate's principal and the thread's route still lets them spend a turn, or nothing where the authority could not say. */
 async function threadWakeAdmitted(
   access: ProjectAccess,
   candidate: ThreadWakeCandidate,
@@ -213,11 +226,13 @@ async function threadWakeAdmitted(
         candidate.partition,
         "Read",
       )) !== undefined &&
-      (await hostedRunsGranted(
+      (await placementRouteGranted(
         access,
         candidate.principal,
-        candidate.partition.tenant,
-      ))
+        candidate.partition,
+        candidate.route,
+      )) &&
+      sessionRunnerServes(candidate.route, candidate.runner)
     );
   } catch (failure) {
     if (failure instanceof ProjectAccessUnavailable) return undefined;
@@ -243,6 +258,7 @@ async function threadWakesOffered(
       partition: candidate.partition,
       principal: candidate.principal,
       turn: threadWakeTurn(candidate),
+      route: candidate.route,
       input: threadWakeText(
         threadWakeDocument({
           wake: candidate.reason,

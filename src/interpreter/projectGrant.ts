@@ -29,7 +29,12 @@ import {
   projectAccessTenantObject,
 } from "./projectAccess.ts";
 import { oidcPrincipal, type Principal } from "./principal.ts";
-import { asProjectId, asTenantId, type TenantId } from "./projectStore.ts";
+import {
+  asProjectId,
+  asTenantId,
+  type Partition,
+  type TenantId,
+} from "./projectStore.ts";
 
 /** The relations a principal may be written into on a project. */
 export const allProjectGrantRelations = [
@@ -145,6 +150,20 @@ export function tenantAdministratorGrant(
     namespace: projectAccessTenantNamespace,
     object: projectAccessTenantObject(tenant),
     relation: tenantAdministratorRelation,
+    holder: { subject: "Principal", principal },
+  };
+}
+
+/** One derived principal's relation on one project. */
+export function projectRelationGrant(
+  principal: Principal,
+  partition: Partition,
+  relation: ProjectGrantRelation,
+): ProjectGrant {
+  return {
+    namespace: projectAccessNamespace,
+    object: projectAccessObject(partition),
+    relation,
     holder: { subject: "Principal", principal },
   };
 }

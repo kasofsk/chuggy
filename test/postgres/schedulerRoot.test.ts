@@ -170,6 +170,7 @@ function schedulerRootProgram(): string {
       },
       service: ports.schedulerRootService,
       access: ports.schedulerRootAccess,
+      sessionRouting: { routes: { Thread: 'InCluster', Lead: 'InCluster' }, projectRoutes: new Map() },
       workerCatalog: ${JSON.stringify([schedulerRootWorker])},
       additional: supplied,
     });

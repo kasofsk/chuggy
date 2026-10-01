@@ -40,10 +40,12 @@
  * nothing spent — which the model allowlist then refuses unless it admits
  * everything. A control that cannot see what it controls refuses.
  *
- * THE HOSTED GRANT IS ASKED OF THE PRINCIPAL A LEAD IS OPENED AS. Every turn is
- * spent on the shared credential, so `hostedRunsGranted` asks the project's
- * tenant about `config.principal`, the same field a successor is opened under,
- * and the runtime asks it before it takes a permit for the project.
+ * THE HOSTED GRANT IS ASKED OF THE PRINCIPAL A LEAD IS OPENED AS. A turn on
+ * the hosted route is spent on the shared credential, so `leadAdmission` asks
+ * the project's tenant about `config.principal`, the same field a successor is
+ * opened under; on a runner route it asks instead whether one of the project's
+ * runners is live. The runtime asks it before it takes a permit for the project,
+ * and the offer asks it again and stamps the turn with the route it admitted.
  */
 
 import { leadSeedingDecisionsMax } from "../contract/http.ts";
@@ -63,7 +65,7 @@ import type {
 } from "./leadMailbox.ts";
 import { leadSystemPrompt } from "./leadTools.ts";
 import { asPrincipal } from "./principal.ts";
-import { hostedRunsGranted, type ProjectAccess } from "./projectAccess.ts";
+import type { ProjectAccess } from "./projectAccess.ts";
 import {
   leadObservationText,
   leadObservedRefusals,
@@ -82,6 +84,11 @@ import type {
   SelectorTerminationResult,
 } from "./selector.ts";
 import type { SelectorPolicy } from "./selectorPolicyHost.ts";
+import {
+  leadAdmission,
+  type LeadRouteAdmission,
+  type SessionRouteReads,
+} from "./sessionPlacement.ts";
 
 /**
  * The tail of the decision log a seeding turn carries, newest first, which is
@@ -297,6 +304,7 @@ interface LeadPolicyPorts {
   readonly sessions: LeadSessionMint;
   readonly clock: LeadPolicyClock;
   readonly config: LeadPolicyConfig;
+  admission(partition: Partition): Promise<LeadRouteAdmission>;
 }
 
 /**
@@ -378,8 +386,18 @@ async function leadTurnOffer(
       ? await leadSeedingBlock(ports, request, partition, observed)
       : undefined,
   );
+  const admitted = await ports.admission(partition);
+  if (admitted.admission !== "Admitted")
+    throw new Error("the lead may not take a turn now", {
+      cause: admitted.admission,
+    });
   const turn = asSessionTurnId(request.attempt);
-  const enqueued = await ports.mailbox.offer({ partition, turn, input });
+  const enqueued = await ports.mailbox.offer({
+    partition,
+    turn,
+    input,
+    route: admitted.route,
+  });
   if (enqueued.offered !== "Enqueued" && enqueued.offered !== "AlreadyEnqueued")
     throw new Error("the lead mailbox took no turn for this decision", {
       cause: enqueued.offered,
@@ -446,17 +464,20 @@ export function leadSelectorPolicy(
   sessions: LeadSessionMint,
   clock: LeadPolicyClock,
   access: ProjectAccess,
+  routes: SessionRouteReads,
   config: LeadPolicyConfig,
 ): SelectorPolicy {
+  const principal = asPrincipal(config.principal);
   const ports: LeadPolicyPorts = {
     mailbox,
     decisions,
     sessions,
     clock,
     config,
+    admission: (partition) =>
+      leadAdmission(access, routes, principal, partition),
   };
   const pollIntervalMs = checkedPollInterval(config.pollIntervalMs);
-  const principal = asPrincipal(config.principal);
   const withdraw = async (
     attempt: string,
   ): Promise<SelectorTerminationResult> => {
@@ -464,8 +485,8 @@ export function leadSelectorPolicy(
     return leadTermination(attempt, turn, await mailbox.withdraw(turn));
   };
   return {
-    hostedRunsGranted: (partition) =>
-      hostedRunsGranted(access, principal, partition.tenant),
+    leadAdmission: async (partition) =>
+      (await ports.admission(partition)).admission,
     execute: (request, signal) =>
       leadDecision(ports, request, pollIntervalMs, signal),
     cancel: (attempt) => withdraw(attempt),

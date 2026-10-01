@@ -238,6 +238,7 @@ test("every lead door means the successor and not the row it replaced", async ()
     partition,
     turn: asSessionTurnId(`turn-doors-${Date.now()}`),
     input: "{}",
+    route: "InCluster",
   });
   assert.equal(
     offered.offered,
@@ -268,6 +269,7 @@ test("a project between leads shows the last lead there was and takes no turn", 
     partition,
     turn: asSessionTurnId(`turn-between-${Date.now()}`),
     input: "{}",
+    route: "InCluster",
   });
   assert.equal(
     offered.offered,

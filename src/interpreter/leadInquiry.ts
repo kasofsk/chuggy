@@ -7,10 +7,12 @@
  * which is a strict subset of what `Read` already permits, so opening one
  * grants the asker nothing they did not already hold; gating it on `Mutate`
  * would say a reader may not ask a question about what they are already allowed
- * to read, which is a control with no failure to prevent. What asking spends is
- * a hosted run on the shared credential, so it also needs the tenant's hosted
- * grant, as a thread's turn does; `inquiriesOpenPerMemberMax` bounds how many a
- * granted member holds open, beside the grant and not instead of it.
+ * to read, which is a control with no failure to prevent. What asking needs
+ * beyond that is what the lead's route needs, as a thread's turn does: in
+ * cluster it spends a hosted run on the shared credential, so it needs the
+ * tenant's hosted grant, and on runners it needs one of the asker's registered.
+ * `inquiriesOpenPerMemberMax` bounds how many a member holds open on either
+ * route, beside those and not instead of them.
  *
  * THE LISTING IS EVERY MEMBER'S. An inquiry any member asked is an inquiry
  * every member with `Read` can see, because members cooperating is the reason
@@ -32,6 +34,7 @@
  * deliberately does not make.
  */
 
+import type { PlacementRoute } from "../contract/rosters.ts";
 import type {
   SessionId,
   SessionState,
@@ -108,6 +111,8 @@ export interface LeadInquiryStore {
     readonly turn: SessionTurnId;
     /** The composed `InquiryDocument` text, which the definer stores and never reads. */
     readonly question: string;
+    /** The route the turn was admitted on, which it keeps whatever the lead's route becomes. */
+    readonly route: PlacementRoute;
   }): Promise<LeadInquiryOpened>;
 }
 
@@ -194,12 +199,14 @@ export type LeadInquiryRead =
  * `NotFound` a project they may not read, `NoLead` a project with no lead,
  * `LeadNotStarted` a lead with no head to fork from, `LeadClosed` a lead that
  * takes no more, `InFlight` their own unanswered questions,
- * `HostedRunsNotGranted` a tenant that grants them no hosted runs. A question too long
- * is not an arm here: it is bounded where it is read off the wire, so it is an
- * invalid request rather than something this door met.
+ * `HostedRunsNotGranted` a lead run in cluster for a tenant that grants them no
+ * hosted runs, `NoRunner` a lead run on runners where they have registered
+ * none. A question too long is not an arm here: it is bounded where it
+ * is read off the wire, so it is an invalid request rather than something this
+ * door met.
  */
 export type LeadInquiryAsked =
-  | { readonly result: "NotFound" | "HostedRunsNotGranted" }
+  | { readonly result: "NotFound" | "HostedRunsNotGranted" | "NoRunner" }
   | {
       readonly result: "NoLead" | "LeadNotStarted" | "LeadClosed" | "InFlight";
     }

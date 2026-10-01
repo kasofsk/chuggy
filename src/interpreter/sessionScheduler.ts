@@ -299,6 +299,13 @@ export interface SessionSchedulerStore {
     attemptsMax: number,
   ): Promise<number>;
 
+  /** Withdraws at most `turnsMax` turns offered to runners and queued past `dwellSecs`, oldest first. */
+  withdrawUnservedPoolTurns(
+    epoch: RecoveryEpoch,
+    dwellSecs: number,
+    turnsMax: number,
+  ): Promise<number>;
+
   /** Marks at most `attemptsMax` attempts issued under an older recovery epoch unable to report. */
   fenceOldEpochAttempts(
     epoch: RecoveryEpoch,

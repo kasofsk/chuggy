@@ -45,6 +45,7 @@ import {
   composeProjectCreation,
   composeRepositoryOnboarding,
   composeSelectorProjectSettings,
+  composeSessionPlacement,
   type RepositoryCredentialMinting,
 } from "../compose.ts";
 import type { IdempotencyKeying } from "../adapters/postgres/keying.ts";
@@ -129,6 +130,7 @@ import type {
 } from "../interpreter/repositoryConfiguration.ts";
 import type { RepositoryCreationPorts } from "../interpreter/repositoryOnboarding.ts";
 import type { ProjectAccess } from "../interpreter/projectAccess.ts";
+import { oidcPrincipal, type Principal } from "../interpreter/principal.ts";
 import { randomBytes, createHash, randomUUID } from "node:crypto";
 import type pg from "pg";
 import { hydraWorkerPoolClients } from "../adapters/hydra/oauthClients.ts";
@@ -185,6 +187,12 @@ const poolRegistryHostVariable = "CHUG_API_POOL_REGISTRY_HOST";
 const threadCredentialSlotVariable = "CHUG_API_THREAD_CREDENTIAL_SLOT";
 const selectorReviewDatabaseUrlVariable =
   "CHUG_API_SELECTOR_REVIEW_DATABASE_URL";
+/**
+ * The subject the site's selector authenticates as under this API's issuer.
+ * Naming one grants the selector each project created here; naming none leaves
+ * granting it to an operator.
+ */
+const selectorSubjectVariable = "CHUG_API_SELECTOR_SUBJECT";
 const gitScratchRootVariable = "CHUG_API_GIT_SCRATCH_ROOT";
 const repositoryCredentialSourcesVariable =
   "CHUG_API_REPOSITORY_CREDENTIAL_SOURCES";
@@ -290,6 +298,13 @@ function nativeWorkerPools(
       clientId: () => `chuggy-pool-${randomUUID()}`,
     },
   });
+}
+
+/** The site's selector as the authority knows it, or nothing where this deployment names none. */
+function nativeSelectorPrincipal(issuer: string): Principal | undefined {
+  const subject = process.env[selectorSubjectVariable];
+  if (subject === undefined || subject.length === 0) return undefined;
+  return oidcPrincipal(issuer, subject);
 }
 
 /** What writes the authority's tuples, or nothing where this deployment names no write port. */
@@ -1111,8 +1126,10 @@ async function main(): Promise<void> {
       access,
       ketoTenantClaims(accessSettings),
       grants,
+      nativeSelectorPrincipal(authenticationConfig.issuer),
     ),
     composeExecutionPlacement(pool, access),
+    composeSessionPlacement(pool, access),
   );
   app.addHook("onClose", async () => {
     await hub.close();

@@ -14,7 +14,7 @@
  * name another path begins with only for a tenant that is new.
  *
  * ACCESS IS WRITTEN AFTER THE ROW COMMITS, AND A REPEAT WRITES IT AGAIN UNTIL
- * THE WRITES ARE RECORDED. Both grants are idempotent, so an authority that
+ * THE WRITES ARE RECORDED. Every grant is idempotent, so an authority that
  * failed after the commit is repaired by the creator asking again for the same
  * tenant and project, under any idempotency key; once recorded, a repeat writes
  * nothing, so it cannot restore a grant an operator has since revoked.
@@ -25,6 +25,7 @@ import { projectNameSchema, tenantNameReserved } from "../contract/requests.ts";
 import type { OperationId, Authority } from "./operationInbox.ts";
 import { memberAuthority, type ProjectAccess } from "./projectAccess.ts";
 import {
+  projectRelationGrant,
   projectTenantGrant,
   tenantAdministratorGrant,
   type ProjectGrant,
@@ -92,12 +93,17 @@ export interface ProjectCreationStore {
   recordGrants(operation: OperationId): Promise<void>;
 }
 
-/** What creation reaches, with no grant writer on a deployment that names no authority to write to. */
+/**
+ * What creation reaches, with no grant writer on a deployment that names no
+ * authority to write to, and no selector on one whose selector is granted each
+ * project by hand.
+ */
 export interface ProjectCreationPorts {
   readonly access: ProjectAccess;
   readonly claims: TenantClaims;
   readonly store: ProjectCreationStore;
   readonly grants?: ProjectGrantWriter;
+  readonly selector?: Principal;
 }
 
 export type ProjectCreationResult =
@@ -126,16 +132,26 @@ export function projectCreationNameFault(
   return undefined;
 }
 
-/** The grants an accepted creation writes: the tenant's administrator only where it made the tenant. */
+/**
+ * The grants an accepted creation writes: the tenant's administrator only where
+ * it made the tenant, and the site's selector as a developer where the site
+ * names one, so the project is decided for from its first ticket.
+ */
 export function projectCreationGrants(
   principal: Principal,
   partition: Partition,
   tenantCreated: boolean,
+  selector?: Principal,
 ): readonly ProjectGrant[] {
-  const placed = projectTenantGrant(partition);
-  return tenantCreated
-    ? [tenantAdministratorGrant(principal, partition.tenant), placed]
-    : [placed];
+  return [
+    ...(tenantCreated
+      ? [tenantAdministratorGrant(principal, partition.tenant)]
+      : []),
+    projectTenantGrant(partition),
+    ...(selector === undefined
+      ? []
+      : [projectRelationGrant(selector, partition, "developers")]),
+  ];
 }
 
 /** The caller's standing on the tenant, asking whether any tuple holds it only of a caller that does not administer it. */
@@ -183,6 +199,7 @@ async function projectCreationCreate(
           principal,
           partition,
           answer.tenantCreated,
+          ports.selector,
         ))
           await grants.write(grant);
         await ports.store.recordGrants(answer.operation);

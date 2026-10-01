@@ -34,7 +34,10 @@ import {
 } from "../../src/interpreter/agentSession.ts";
 import type { AgentSessionStore } from "../../src/interpreter/agentSession.ts";
 import { sessionBearerPrefix } from "../../src/contract/sessionPlane.ts";
-import { asPrincipal } from "../../src/interpreter/principal.ts";
+import {
+  asPrincipal,
+  type Principal,
+} from "../../src/interpreter/principal.ts";
 import type {
   Partition,
   RecoveryEpoch,
@@ -50,10 +53,13 @@ import {
   type SessionPlaneStore,
 } from "../../src/adapters/postgres/sessionPlane.ts";
 import { postgresSessionScheduler } from "../../src/adapters/postgres/sessionScheduler.ts";
+import { postgresWorkerPoolRegistry } from "../../src/adapters/postgres/workerPool.ts";
 import {
   schedulerRole,
+  sessionPlacementSetFunction,
   workerPlaneRole,
 } from "../../src/adapters/postgres/schema.ts";
+import type { PlacementRoute } from "../../src/contract/rosters.ts";
 import {
   postgresHarnessOpen,
   postgresHarnessProject,
@@ -172,6 +178,67 @@ export async function sessionRigTurn(
       `session rig: enqueuing ${label} answered ${enqueued.enqueued}`,
     );
   return turn;
+}
+
+/** Routes a project's threads and its lead, as an administrator's write would. */
+export async function sessionRigRouted(
+  rig: SessionRig,
+  partition: Partition,
+  thread: PlacementRoute,
+  lead: PlacementRoute,
+): Promise<void> {
+  await rig.harness.query(
+    `SELECT ${sessionPlacementSetFunction}($1,$2,$3,$4,'Member','an-owner')`,
+    [partition.tenant, partition.project, thread, lead],
+  );
+}
+
+/** Registers a runner on the project for the member, one that has never polled. */
+export async function sessionRigRunner(
+  rig: SessionRig,
+  partition: Partition,
+  member: Principal,
+): Promise<void> {
+  const registered = await postgresWorkerPoolRegistry(
+    rig.harness.pool,
+  ).register({
+    partition,
+    pool: `runner-${randomUUID()}`,
+    capabilities: [],
+    class: "Dedicated",
+    clientId: `chuggy-pool-${randomUUID()}`,
+    principal: asPrincipal(`https://issuer.invalid#pool-${randomUUID()}`),
+    registeredBy: member,
+  });
+  if (!registered)
+    throw new Error("session rig: the member's runner was not registered");
+}
+
+/** Moves a turn's enqueue back by `secs`, as though it had waited that long. */
+export async function sessionRigQueuedFor(
+  rig: SessionRig,
+  turn: SessionTurnId,
+  secs: number,
+): Promise<void> {
+  await rig.harness.query(
+    `UPDATE session_turn SET enqueued_at=now()-make_interval(secs=>$2)
+      WHERE turn=$1`,
+    [turn, secs],
+  );
+}
+
+/** The route each of a session's turns was admitted on, oldest first. */
+export async function sessionRigTurnRoutes(
+  rig: SessionRig,
+  partition: Partition,
+  session: SessionId,
+): Promise<readonly string[]> {
+  const rows = await rig.harness.query(
+    `SELECT route FROM session_turn
+      WHERE tenant=$1 AND project=$2 AND session=$3 ORDER BY ordinal`,
+    [partition.tenant, partition.project, session],
+  );
+  return rows.map((row) => String(row["route"]));
 }
 
 /** A bearer no other case holds, and the digest the durable side keys it by. */

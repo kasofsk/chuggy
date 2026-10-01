@@ -205,6 +205,12 @@ export const executionPlacementSchema = z.strictObject({
   evaluation: z.enum(placementRoutes),
 });
 
+/** Where a project's threads and its lead run, both written whole. */
+export const sessionPlacementSchema = z.strictObject({
+  thread: z.enum(placementRoutes),
+  lead: z.enum(placementRoutes),
+});
+
 /**
  * One binding retired. It carries the repository and nothing else: retirement
  * is one-way and names its own row, so there is no value for a second writer

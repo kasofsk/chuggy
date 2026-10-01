@@ -56,7 +56,7 @@ import {
   operationIdentityCharsMax,
 } from "../../src/interpreter/operationInbox.ts";
 import {
-  selectorHostedRunsChanges,
+  selectorAdmissionChanges,
   selectorRunOnce,
   type SelectorRunResult,
 } from "../../src/interpreter/selectorRuntime.ts";
@@ -68,6 +68,10 @@ import { selectorRuntimeAdministration } from "../../src/interpreter/selectorAdm
 import { selectorPlanning } from "../../src/interpreter/selectorPlanning.ts";
 import { selectorOperationalContext } from "./selectorFixture.ts";
 import { selectorPolicyHost } from "../../src/interpreter/selectorPolicyHost.ts";
+import {
+  allLeadAdmissions,
+  type LeadAdmission,
+} from "../../src/interpreter/sessionPlacement.ts";
 
 const partition = {
   tenant: asTenantId("tenant"),
@@ -220,7 +224,7 @@ function policyHost(
 ): SelectorPolicyHost {
   return {
     productionReady: true,
-    hostedRunsGranted: () => Promise.resolve(true),
+    leadAdmission: () => Promise.resolve("Admitted"),
     start: (request) => ({
       result: execute(request),
       terminate: async (reason) => {
@@ -759,10 +763,10 @@ const movedTicketPage = {
  * those a decision reference, a `selector_interaction` row and a
  * selections-per-minute slot for an attempt with nothing to observe.
  */
-test("a pass whose view has not moved takes no permit, leaves no attempt and asks no hosted grant", async () => {
+test("a pass whose view has not moved takes no permit, leaves no attempt and asks no admission", async () => {
   const allocated: string[] = [];
   const terminated: string[] = [];
-  let hostedAsked = 0;
+  let admissionAsked = 0;
   const result = await selectorRunOnce(
     refusalWrites(),
     {
@@ -795,9 +799,9 @@ test("a pass whose view has not moved takes no permit, leaves no attempt and ask
       ...policyHost(() =>
         Promise.reject(new Error("the lead was asked to decide")),
       ),
-      hostedRunsGranted: () => {
-        hostedAsked += 1;
-        return Promise.resolve(true);
+      leadAdmission: () => {
+        admissionAsked += 1;
+        return Promise.resolve("Admitted");
       },
     },
     perProjectIdentities(),
@@ -806,7 +810,7 @@ test("a pass whose view has not moved takes no permit, leaves no attempt and ask
   );
   assert.deepEqual(allocated, []);
   assert.deepEqual(terminated, []);
-  assert.equal(hostedAsked, 0);
+  assert.equal(admissionAsked, 0);
   assert.equal(result.observed, 0);
   assert.deepEqual(result.failures, []);
 });
@@ -970,9 +974,11 @@ test("a project whose tenant grants the lead no hosted runs takes no permit and 
         started.push(request.attempt);
         return Promise.resolve(waitingExecution());
       }),
-      hostedRunsGranted: (of) => {
+      leadAdmission: (of) => {
         asked.push(of);
-        return Promise.resolve(of.tenant === hosted.tenant);
+        return Promise.resolve(
+          of.tenant === hosted.tenant ? "Admitted" : "HostedRunsNotGranted",
+        );
       },
     },
     perProjectIdentities(),
@@ -989,8 +995,10 @@ test("a project whose tenant grants the lead no hosted runs takes no permit and 
   ]);
 });
 
-/** Passes over one moved project, the hosted grant answered by each pass's own answer in turn. */
-async function hostedRunsPasses(answers: readonly (() => Promise<boolean>)[]) {
+/** Passes over one moved project, its lead's admission answered by each pass's own answer in turn. */
+async function admissionPasses(
+  answers: readonly (() => Promise<LeadAdmission>)[],
+) {
   const allocated: string[] = [];
   const started: string[] = [];
   const results: SelectorRunResult[] = [];
@@ -1016,7 +1024,7 @@ async function hostedRunsPasses(answers: readonly (() => Promise<boolean>)[]) {
             started.push(request.attempt);
             return Promise.resolve(waitingExecution());
           }),
-          hostedRunsGranted: answer,
+          leadAdmission: answer,
         },
         perProjectIdentities(),
         settingsSource(() => Promise.resolve(runtimeSettings)),
@@ -1027,9 +1035,9 @@ async function hostedRunsPasses(answers: readonly (() => Promise<boolean>)[]) {
 }
 
 test("a refused project is asked again on the next pass and decides once its tenant grants hosted runs", async () => {
-  const passes = await hostedRunsPasses([
-    () => Promise.resolve(false),
-    () => Promise.resolve(true),
+  const passes = await admissionPasses([
+    () => Promise.resolve("HostedRunsNotGranted"),
+    () => Promise.resolve("Admitted"),
   ]);
   assert.deepEqual(
     passes.results.map((result) => result.failures),
@@ -1039,15 +1047,15 @@ test("a refused project is asked again on the next pass and decides once its ten
   assert.deepEqual(passes.started, [`decision-${partition.project}`]);
 });
 
-test("an authority that cannot say skips the project this pass and serves it on a later one", async () => {
-  const passes = await hostedRunsPasses([
-    () => Promise.reject(new ProjectAccessUnavailable("no answer")),
-    () => Promise.resolve(true),
+test("a project whose runners are offline takes no permit, and decides once one is live", async () => {
+  const passes = await admissionPasses([
+    () => Promise.resolve("RunnerOffline"),
+    () => Promise.resolve("Admitted"),
   ]);
   assert.deepEqual(
     passes.results.map((result) => [result.observed, result.failures]),
     [
-      [0, [{ phase: "HostedRunsUndecided", partition }]],
+      [0, [{ phase: "RunnerOffline", partition }]],
       [1, []],
     ],
   );
@@ -1055,7 +1063,23 @@ test("an authority that cannot say skips the project this pass and serves it on 
   assert.deepEqual(passes.started, [`decision-${partition.project}`]);
 });
 
-test("a hosted-runs skip is reported per project, and no other failure is", () => {
+test("an authority that cannot say skips the project this pass and serves it on a later one", async () => {
+  const passes = await admissionPasses([
+    () => Promise.reject(new ProjectAccessUnavailable("no answer")),
+    () => Promise.resolve("Admitted"),
+  ]);
+  assert.deepEqual(
+    passes.results.map((result) => [result.observed, result.failures]),
+    [
+      [0, [{ phase: "AdmissionUndecided", partition }]],
+      [1, []],
+    ],
+  );
+  assert.deepEqual(passes.allocated, [`decision-${partition.project}`]);
+  assert.deepEqual(passes.started, [`decision-${partition.project}`]);
+});
+
+test("an admission skip is reported per project, and no other failure is", () => {
   const slashedTenant = {
     tenant: asTenantId("a/b"),
     project: asProjectId("c"),
@@ -1064,7 +1088,7 @@ test("a hosted-runs skip is reported per project, and no other failure is", () =
     tenant: asTenantId("a"),
     project: asProjectId("b/c"),
   };
-  const first = selectorHostedRunsChanges(new Map(), {
+  const first = selectorAdmissionChanges(new Map(), {
     reached: [slashedTenant, partition],
     failures: [
       { phase: "HostedRunsNotGranted", partition: slashedTenant },
@@ -1075,11 +1099,11 @@ test("a hosted-runs skip is reported per project, and no other failure is", () =
     { phase: "HostedRunsNotGranted", partition: slashedTenant },
   ]);
   assert.deepEqual(
-    selectorHostedRunsChanges(first.reported, {
+    selectorAdmissionChanges(first.reported, {
       reached: [slashedProject],
-      failures: [{ phase: "HostedRunsNotGranted", partition: slashedProject }],
+      failures: [{ phase: "RunnerOffline", partition: slashedProject }],
     }).changed,
-    [{ phase: "HostedRunsNotGranted", partition: slashedProject }],
+    [{ phase: "RunnerOffline", partition: slashedProject }],
   );
 });
 
@@ -2209,14 +2233,14 @@ test("selector configuration changes require platform administration", async () 
   assert.equal(mutations, 1);
 });
 
-test("the selector policy host answers the hosted grant its policy answers", async () => {
-  for (const granted of [true, false]) {
+test("the selector policy host answers the admission its policy answers", async () => {
+  for (const admission of allLeadAdmissions) {
     const asked: (typeof partition)[] = [];
     const host = selectorPolicyHost(
       {
-        hostedRunsGranted: (of) => {
+        leadAdmission: (of) => {
           asked.push(of);
-          return Promise.resolve(granted);
+          return Promise.resolve(admission);
         },
         execute: () => Promise.reject(new Error("no decision was expected")),
         cancel: () => Promise.resolve({ status: "Unconfirmed" }),
@@ -2225,7 +2249,7 @@ test("the selector policy host answers the hosted grant its policy answers", asy
       { after: () => new Promise<never>(() => undefined) },
       { controlDeadlineMs: 1_000 },
     );
-    assert.equal(await host.hostedRunsGranted(partition), granted);
+    assert.equal(await host.leadAdmission(partition), admission);
     assert.deepEqual(asked, [partition]);
   }
 });
@@ -2235,7 +2259,7 @@ test("the selector policy host starts once and bounds cancellation evidence", as
   let aborted = false;
   const host = selectorPolicyHost(
     {
-      hostedRunsGranted: () => Promise.resolve(true),
+      leadAdmission: () => Promise.resolve("Admitted"),
       execute: (_request, signal) => {
         executions += 1;
         signal.addEventListener("abort", () => {

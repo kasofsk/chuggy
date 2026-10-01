@@ -91,6 +91,8 @@ import {
 import { postgresDomainConfigurationPrecondition } from "../adapters/postgres/domainConfiguration.ts";
 import { postgresWorkerCatalogPrecondition } from "../adapters/postgres/workerCatalog.ts";
 import { postgresExecutionRoutingPrecondition } from "../adapters/postgres/executionPlacement.ts";
+import { postgresSessionRoutingPrecondition } from "../adapters/postgres/sessionPlacement.ts";
+import type { SessionRouting } from "../interpreter/sessionPlacement.ts";
 import type { AdmittedWorker } from "../interpreter/workerCatalog.ts";
 import {
   currentRuntimeSchemaContract,
@@ -106,10 +108,10 @@ import type { Config } from "../domain/config.ts";
 import { checkedReworkCap, type ReworkCap } from "../interpreter/reworkCap.ts";
 import { asOwnerId } from "../interpreter/projectStore.ts";
 import {
-  selectorHostedRunsChanges,
-  type SelectorHostedRunsPhase,
-  type SelectorHostedRunsReported,
-  type SelectorHostedRunsSkip,
+  selectorAdmissionChanges,
+  type SelectorAdmissionPhase,
+  type SelectorAdmissionReported,
+  type SelectorAdmissionSkip,
   type SelectorIdentityFactory,
   type SelectorRuntimeConfig,
   type SelectorRuntimeSource,
@@ -212,17 +214,19 @@ function processPreconditions(
 }
 
 /** Why a project's lead is not run, as an operator reads it beside the phase. */
-const selectorProcessHostedRunsWhy: Readonly<
-  Record<SelectorHostedRunsPhase, string>
+const selectorProcessAdmissionWhy: Readonly<
+  Record<SelectorAdmissionPhase, string>
 > = {
   HostedRunsNotGranted:
     "its tenant grants this selector no hosted runs, so its lead does not run",
-  HostedRunsUndecided:
-    "the project authority could not say whether its tenant grants this selector hosted runs",
+  RunnerOffline:
+    "its lead runs on the project's runners and none has polled lately, so its lead does not run",
+  AdmissionUndecided:
+    "the project authority or the database could not say whether its lead may run",
 };
 
-function selectorProcessHostedRunsLine(skip: SelectorHostedRunsSkip): string {
-  return `selector: ${skip.partition.tenant}/${skip.partition.project} ${skip.phase}: ${selectorProcessHostedRunsWhy[skip.phase]}\n`;
+function selectorProcessAdmissionLine(skip: SelectorAdmissionSkip): string {
+  return `selector: ${skip.partition.tenant}/${skip.partition.project} ${skip.phase}: ${selectorProcessAdmissionWhy[skip.phase]}\n`;
 }
 
 /**
@@ -233,8 +237,8 @@ function selectorProcessHostedRunsLine(skip: SelectorHostedRunsSkip): string {
  * loop is the whole of the pacing because a second loop over the same cursor
  * would be a second writer to it. A change whose fan-out one pass cannot read
  * is the one arm in which a notice is dropped for good, and a project newly
- * passed over for want of hosted runs is a lead that stops, so each reaches
- * stderr the way a contained ticket service fault does.
+ * passed over because its lead may not run is a lead that stops, so each
+ * reaches stderr the way a contained ticket service fault does.
  */
 export function selectorProcess(
   service: SelectorRuntimeService,
@@ -242,15 +246,15 @@ export function selectorProcess(
   requirements: ControlPlaneRequirements,
   config: ServiceRuntimeConfig,
 ): ServiceRuntime {
-  let hostedRuns: SelectorHostedRunsReported = new Map();
+  let admissions: SelectorAdmissionReported = new Map();
   return serviceRuntime(
     {
       run: async () => {
         const result = await service.runOnce();
-        const hosted = selectorHostedRunsChanges(hostedRuns, result);
-        hostedRuns = hosted.reported;
-        for (const skip of hosted.changed)
-          process.stderr.write(selectorProcessHostedRunsLine(skip));
+        const admitted = selectorAdmissionChanges(admissions, result);
+        admissions = admitted.reported;
+        for (const skip of admitted.changed)
+          process.stderr.write(selectorProcessAdmissionLine(skip));
         const report = await threadWakePass(wakes);
         if (report.truncatedAt !== undefined)
           process.stderr.write(
@@ -372,7 +376,8 @@ export interface SelectorProcessRootConfig {
   /**
    * Where the project authority is. The wake pass asks it whether a thread's
    * principal may still read the project, and the runtime whether a project's
-   * tenant grants the lead hosted runs, which no row in this database says.
+   * tenant grants a lead run in cluster hosted runs, which no row in this
+   * database says.
    */
   readonly access: ProjectAccessSettings;
 }
@@ -552,6 +557,8 @@ export interface SchedulerProcessRootConfig {
    * come from the same pool, so a deployment names neither.
    */
   readonly sessions: Omit<SessionSchedulerService, "store" | "bindings">;
+  /** Where sessions run, published before the loop so the pass that places them reads this process's routing. */
+  readonly sessionRouting: SessionRouting;
   readonly workerCatalog: readonly AdmittedWorker[];
   readonly additional?: readonly RuntimePrecondition[];
 }
@@ -618,6 +625,7 @@ export function schedulerProcessRoot(
             pool,
             config.service.policy.routing,
           ),
+          postgresSessionRoutingPrecondition(pool, config.sessionRouting),
           ...(config.additional ?? []),
         ],
       },

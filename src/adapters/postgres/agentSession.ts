@@ -111,6 +111,7 @@ async function agentSessionOpen(
   return agentSessionOpened(opened.rows[0]?.opened);
 }
 
+/** A provisioned turn asks no grant, so it is stamped with whatever its session's kind resolves to now. */
 async function agentSessionEnqueue(
   pool: pg.Pool,
   offering: SessionTurnOffering,
@@ -121,7 +122,12 @@ async function agentSessionEnqueue(
   }>(
     sql`SELECT enqueued,ordinal::text AS ordinal FROM enqueue_session_turn(
       ${offering.partition.tenant},${offering.partition.project},${offering.session},
-      ${offering.turn},${offering.inputKind},${offering.input})`,
+      ${offering.turn},${offering.inputKind},${offering.input},
+      (SELECT r.route FROM agent_session s
+         CROSS JOIN LATERAL session_route(s.tenant,s.project,s.kind) r
+        WHERE s.tenant=${offering.partition.tenant}
+          AND s.project=${offering.partition.project}
+          AND s.session=${offering.session}))`,
   );
   const row = answered.rows[0];
   if (row === undefined)

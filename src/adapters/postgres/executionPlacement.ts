@@ -7,17 +7,22 @@
 import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
 
-import {
-  allExecutionPlacementWrites,
-  type ExecutionPlacementStore,
-} from "../../interpreter/executionPlacement.ts";
+import type { ExecutionPlacementStore } from "../../interpreter/executionPlacement.ts";
 import {
   allExecutionRoutes,
   type ExecutionRoute,
   type ExecutionRoutes,
   type ExecutionRouting,
 } from "../../interpreter/executionScheduler.ts";
-import type { Partition } from "../../interpreter/projectStore.ts";
+import {
+  allPlacementWrites,
+  type PlacementWrite,
+} from "../../interpreter/placementRoute.ts";
+import type {
+  Partition,
+  ProjectId,
+  TenantId,
+} from "../../interpreter/projectStore.ts";
 import type { RuntimePrecondition } from "../../interpreter/serviceRuntime.ts";
 
 function placementRoute(value: string): ExecutionRoute {
@@ -54,11 +59,13 @@ export async function postgresProjectPlacement(
       };
 }
 
-/** The overrides as the published document holds them: tenant, then project, then kind. */
-function executionRoutingDocument(routing: ExecutionRouting): string {
+/** The overrides as a published routing document holds them: tenant, then project, then kind. */
+export function projectRoutesDocument(
+  projectRoutes: ReadonlyMap<TenantId, ReadonlyMap<ProjectId, object>>,
+): string {
   return JSON.stringify(
     Object.fromEntries(
-      [...routing.projectRoutes].map(([tenant, projects]) => [
+      [...projectRoutes].map(([tenant, projects]) => [
         tenant,
         Object.fromEntries(projects),
       ]),
@@ -66,12 +73,22 @@ function executionRoutingDocument(routing: ExecutionRouting): string {
   );
 }
 
+/** One door's verdict on a placement write, which names no outcome the store does not know. */
+export function placementWriteOutcome(
+  outcome: string | null | undefined,
+): PlacementWrite {
+  const known = allPlacementWrites.find((each) => each === outcome);
+  if (known === undefined)
+    throw new Error(`placement: unknown outcome ${String(outcome)}`);
+  return known;
+}
+
 /** Publishes the routing this scheduler registers under, before its loop reads anything. */
 export function postgresExecutionRoutingPrecondition(
   pool: pg.Pool,
   routing: ExecutionRouting,
 ): RuntimePrecondition {
-  const document = executionRoutingDocument(routing);
+  const document = projectRoutesDocument(routing.projectRoutes);
   return {
     name: "execution-routing-published",
     check: async (signal) => {
@@ -145,14 +162,7 @@ export function postgresExecutionPlacement(
               ${partition.tenant},${partition.project},${placement.Work},
               ${placement.Evaluation},${authority.kind},${authority.subject})::text AS outcome`,
       );
-      const outcome = allExecutionPlacementWrites.find(
-        (known) => known === found.rows[0]?.outcome,
-      );
-      if (outcome === undefined)
-        throw new Error(
-          `execution placement: unknown outcome ${String(found.rows[0]?.outcome)}`,
-        );
-      return outcome;
+      return placementWriteOutcome(found.rows[0]?.outcome);
     },
   };
 }

@@ -27,6 +27,11 @@ import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
 
 import {
+  placementRoutes,
+  sessionRunnerStandings,
+  type PlacementRoute,
+} from "../../contract/rosters.ts";
+import {
   allSessionStates,
   asSessionId,
   type SessionId,
@@ -34,6 +39,7 @@ import {
 } from "../../interpreter/agentSession.ts";
 import { asPrincipal, type Principal } from "../../interpreter/principal.ts";
 import { asPublicInstant } from "../../interpreter/publicResource.ts";
+import { sessionRunnerPolledSecsMax } from "../../interpreter/sessionPlacement.ts";
 import {
   asProjectId,
   asTenantId,
@@ -341,6 +347,7 @@ async function threadEnqueue(
     readonly session: SessionId;
     readonly turn: SessionTurnId;
     readonly input: string;
+    readonly route: PlacementRoute;
   },
 ): Promise<ThreadMessageEnqueued> {
   const answered = await pool.query<{
@@ -352,7 +359,7 @@ async function threadEnqueue(
           FROM enqueue_thread_message(
             ${input.partition.tenant},${input.partition.project},
             ${input.principal},${input.session},
-            ${input.turn},${input.input})`,
+            ${input.turn},${input.input},${input.route})`,
   );
   const row = answered.rows[0];
   if (row === undefined)
@@ -588,6 +595,8 @@ function threadWakeCandidateOf(row: {
   readonly reason: string | null;
   readonly principal: string | null;
   readonly session: string | null;
+  readonly route: string | null;
+  readonly runner: string | null;
   readonly thread_standing_rules: string | null;
 }): ThreadWakeCandidate {
   return {
@@ -610,14 +619,20 @@ function threadWakeCandidateOf(row: {
     ),
     principal: asPrincipal(sessionRowText(row.principal, "principal")),
     session: asSessionId(sessionRowText(row.session, "session")),
+    route: sessionRowMember(placementRoutes, row.route, "thread route"),
+    runner: sessionRowMember(
+      sessionRunnerStandings,
+      row.runner,
+      "runner standing",
+    ),
   };
 }
 
 /**
- * One page of candidates, with the standing rules of the project each names
- * hung off it: the settings row is keyed by the partition the page already
- * carries, so the join adds a column and no candidate. It restates the
- * definer's order, which a join over a function's rows does not preserve.
+ * One page of candidates, with the thread route, the member's runners and the
+ * standing rules of the project each names hung off it: each is keyed by what
+ * the candidate already carries, so none adds one. It restates the definer's
+ * order, which a join over a function's rows does not preserve.
  */
 async function threadWakeCandidates(
   pool: pg.Pool,
@@ -632,12 +647,21 @@ async function threadWakeCandidates(
     reason: string | null;
     principal: string | null;
     session: string | null;
+    route: string | null;
+    runner: string | null;
     thread_standing_rules: string | null;
   }>(
     sql`SELECT candidate.sequence::text AS sequence,candidate.tenant,
                candidate.project,candidate.resource,candidate.reason,
-               candidate.principal,candidate.session,settings.thread_standing_rules
+               candidate.principal,candidate.session,routed.route,
+               runners.member_standing AS runner,
+               settings.thread_standing_rules
           FROM thread_wake_candidates(${after},${limit}) candidate
+          CROSS JOIN LATERAL session_route(candidate.tenant,candidate.project,
+                                           'Thread') routed
+          CROSS JOIN LATERAL session_runner_standing(
+            candidate.tenant,candidate.project,candidate.principal,
+            ${sessionRunnerPolledSecsMax}) runners
           LEFT JOIN selector_project_settings settings
             ON settings.tenant=candidate.tenant
            AND settings.project=candidate.project
@@ -653,6 +677,7 @@ async function threadWake(
     readonly principal: Principal;
     readonly turn: SessionTurnId;
     readonly input: string;
+    readonly route: PlacementRoute;
   },
 ): Promise<ThreadWakeOffered> {
   const answered = await pool.query<{
@@ -661,7 +686,7 @@ async function threadWake(
   }>(
     sql`SELECT enqueued,ordinal::text AS ordinal FROM wake_member_thread(
           ${input.partition.tenant},${input.partition.project},
-          ${input.principal},${input.turn},${input.input})`,
+          ${input.principal},${input.turn},${input.input},${input.route})`,
   );
   const row = answered.rows[0];
   if (row === undefined)

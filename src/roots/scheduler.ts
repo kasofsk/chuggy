@@ -41,6 +41,7 @@ function schedulerRuntime(config: SchedulerCommandConfig): ServiceRuntime {
       policy: config.sessionPolicy,
       config: config.sessionScheduler,
     },
+    sessionRouting: config.sessionRouting,
     workerCatalog: config.workerCatalog,
     additional: [kubernetesNamespacePrecondition(config.workers)],
   });

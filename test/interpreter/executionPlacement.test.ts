@@ -9,12 +9,14 @@ import { test } from "node:test";
 
 import {
   executionPlacementAdministration,
-  executionPlacementChoices,
   type ExecutionPlacementStanding,
   type ExecutionPlacementStore,
-  type ExecutionPlacementWrite,
 } from "../../src/interpreter/executionPlacement.ts";
 import type { ExecutionRoutes } from "../../src/interpreter/executionScheduler.ts";
+import {
+  placementChoices,
+  type PlacementWrite,
+} from "../../src/interpreter/placementRoute.ts";
 import {
   memberAuthority,
   type ProjectAccess,
@@ -64,7 +66,7 @@ const standing: ExecutionPlacementStanding = {
 
 /** A store answering `written` to every write and recording what it was asked to write. */
 function storeAnswering(
-  written: ExecutionPlacementWrite,
+  written: PlacementWrite,
   writes: ExecutionRoutes[],
 ): ExecutionPlacementStore {
   return {
@@ -83,12 +85,9 @@ const hostedPlacement: ExecutionRoutes = {
 const pooledPlacement: ExecutionRoutes = { Work: "Pool", Evaluation: "Pool" };
 
 test("a reader is offered no route, an administrator runners alone, and the hosted grant both", () => {
-  assert.deepEqual(executionPlacementChoices(false, true), []);
-  assert.deepEqual(executionPlacementChoices(true, false), ["Pool"]);
-  assert.deepEqual(executionPlacementChoices(true, true), [
-    "InCluster",
-    "Pool",
-  ]);
+  assert.deepEqual(placementChoices(false, true), []);
+  assert.deepEqual(placementChoices(true, false), ["Pool"]);
+  assert.deepEqual(placementChoices(true, true), ["InCluster", "Pool"]);
 });
 
 test("a caller who cannot read the project is not told it exists", async () => {

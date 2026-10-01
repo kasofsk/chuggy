@@ -327,8 +327,12 @@ from the session's own counter and the turn identity unique globally. It is
 changed by enqueuing, by a claim, by an answer or a failure, by an ending
 attempt returning it, and by a close abandoning it; a partial unique index
 admits one claimed turn per session, which is what makes the claim a lease
-rather than a convention. Unfinished work is found by selecting queued turns
-for a session in ordinal order, which is what a claim takes the lowest of.
+rather than a convention. Each turn carries the route it was admitted on,
+fixed at the enqueue. Unfinished work is found by selecting queued turns for a
+session in ordinal order, which is what a claim takes the lowest of, and only
+where that turn's route is the attempt's own; a queued `Pool` turn older than
+the dwell the scheduler names is withdrawn by `withdraw_unserved_pool_turns`,
+oldest first.
 
 `session_store_batch` — one batch of one stream of a session's transcript,
 pointing at bytes that live on the artifacts volume. Owned by the boundary
@@ -390,3 +394,22 @@ a single row, keyed `singleton` and held to it by a CHECK, owned by the
 scheduler, which writes it at boot, and read by the API, which answers a
 project's placement from it. It has no unfinished work: the scheduler decides
 from its own routing, so a row older than the process only misreports.
+
+`project_session_placement` — where one project's threads and its lead run,
+and who set it; an inquiry runs where the lead does. Owned by the boundary
+owner, which is what `set_project_session_placement` runs as; the API role
+writes it through that door alone, and every reader reaches it through
+`session_route`. Its key and identity are `(tenant, project)` and it points at
+`project`. It is changed by that door alone, which answers `Unchanged` and
+keeps the setter where nothing moved; a row backfilled for a project that ran
+before it names no setter. It has no unfinished work: a project with no row
+runs where the published routing's default sends it.
+
+`session_routing` — the session routing the scheduler last published: the
+default per kind and each project's override. It is a single row, keyed
+`singleton` and held to it by a CHECK, written by the scheduler at boot and
+read through `session_route`, which resolves a session's kind against it and
+`project_session_placement` and answers in cluster where no row was ever
+published. It has no unfinished work: the resolution is read when a turn is
+admitted and stamped on it, so a newer publish moves what is admitted after
+it.
