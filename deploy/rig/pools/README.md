@@ -19,7 +19,10 @@ and `Lead`, and its `projectRoutes`, over the project's own session placement;
 an inquiry runs where the lead does. A turn keeps the route it was admitted
 on, so a placement changed later moves the next turn admitted and never one
 already queued, and the cluster places and claims only turns admitted
-`InCluster`.
+`InCluster`. A member with no runner registered on the project is refused a
+turn on `Pool` as `NoRunner`, and a `Pool` turn no runner takes within
+`sessionPoolTurnDwellSecs` (`src/interpreter/sessionPlacement.ts`) is withdrawn
+by the scheduler.
 
 A pool is handed a placement and nothing about the work, so its harness
 fetches the task from the worker plane under the attempt bearer, as it fetches

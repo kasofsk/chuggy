@@ -56,6 +56,7 @@ import {
   type SessionPolicy,
   type SessionSchedulerStore,
 } from "../../src/interpreter/sessionScheduler.ts";
+import { sessionPoolTurnDwellSecs } from "../../src/interpreter/sessionPlacement.ts";
 import { sessionContainerEnded } from "../../src/interpreter/sessionPlane.ts";
 import {
   sessionSchedulerObserve,
@@ -190,6 +191,12 @@ function recordingStore(
       );
       return Promise.resolve(0);
     },
+    withdrawUnservedPoolTurns: (_epoch, dwellSecs, turnsMax) => {
+      calls.push(
+        `withdrawUnservedPoolTurns ${String(dwellSecs)} ${String(turnsMax)}`,
+      );
+      return Promise.resolve(0);
+    },
     fenceOldEpochAttempts: (_epoch, attemptsMax) => {
       calls.push(`fenceOldEpochAttempts ${String(attemptsMax)}`);
       return Promise.resolve(0);
@@ -291,6 +298,7 @@ test("every step of one pass is asked for at most the bound this deployment name
     `attemptsAwaitingObservation ${String(sessionSchedulerDefaults.attemptsPerPassMax)}`,
     `reapLapsedAttempts ${String(sessionSchedulerDefaults.attemptsPerPassMax)}`,
     `reapIdleAttempts ${String(sessionSchedulerDefaults.idleSecsMax)} ${String(sessionSchedulerDefaults.attemptsPerPassMax)}`,
+    `withdrawUnservedPoolTurns ${String(sessionPoolTurnDwellSecs)} ${String(sessionSchedulerDefaults.attemptsPerPassMax)}`,
     `awaitingPlacement ${String(sessionSchedulerDefaults.placementsPerPassMax)}`,
   ]);
   assert.deepEqual(report, {
@@ -299,6 +307,7 @@ test("every step of one pass is asked for at most the bound this deployment name
     observed: 0,
     reaped: 0,
     idled: 0,
+    withdrawn: 0,
     placed: 0,
   });
 });

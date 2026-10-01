@@ -10,6 +10,10 @@
  * the tenant grants no hosted runs may queue a turn for a runner, and nothing
  * the route becomes after that may hand the turn to a pod on the shared
  * credential.
+ *
+ * A turn queued for runners needs the member to have registered one, and one
+ * that no runner takes within the dwell is withdrawn, so it stops holding its
+ * session.
  */
 
 import assert from "node:assert/strict";
@@ -18,25 +22,38 @@ import type pg from "pg";
 
 import { postgresSessionRoutingPrecondition } from "../../src/adapters/postgres/sessionPlacement.ts";
 import { schedulerRole } from "../../src/adapters/postgres/schema.ts";
-import { nativeHttpMediaType } from "../../src/contract/http.ts";
-import type { PlacementRoute } from "../../src/contract/rosters.ts";
+import {
+  nativeHttpMediaType,
+  type HttpErrorEnvelope,
+} from "../../src/contract/http.ts";
+import {
+  noRunnerCode,
+  type PlacementRoute,
+} from "../../src/contract/rosters.ts";
 import { threadEntryResponseSchema } from "../../src/contract/responses.ts";
 import {
   asSessionId,
   type SessionId,
   type SessionTurnId,
 } from "../../src/interpreter/agentSession.ts";
-import type { Partition } from "../../src/interpreter/projectStore.ts";
+import {
+  asRecoveryEpoch,
+  type Partition,
+} from "../../src/interpreter/projectStore.ts";
+import { sessionPoolTurnDwellSecs } from "../../src/interpreter/sessionPlacement.ts";
 import { postgresHarnessRolePool } from "./harness.ts";
 import { leadRigProject } from "./leadHarness.ts";
 import {
   sessionRigAttempt,
   sessionRigAttemptState,
   sessionRigBoundless,
+  sessionRigQueuedFor,
   sessionRigRouted,
+  sessionRigRunner,
   sessionRigSession,
   sessionRigTurnId,
   sessionRigTurnRoutes,
+  sessionRigTurnState,
   type SessionRigAttempt,
 } from "./sessionHarness.ts";
 import { sessionStoreDouble } from "./storeDouble.ts";
@@ -92,11 +109,11 @@ function threadsOf(partition: Partition): string {
   return `/api/v1/tenants/${partition.tenant}/projects/${partition.project}/threads`;
 }
 
-/** The member's thread, opened through the door. */
-async function threadOf(
+/** What the open door answers the member. */
+async function opening(
   partition: Partition,
   member: ThreadRigMember,
-): Promise<SessionId> {
+): Promise<{ readonly status: number; readonly body: unknown }> {
   await using app = threadRigApp({
     rig,
     principal: member.principal,
@@ -109,16 +126,29 @@ async function threadOf(
     headers: versioned,
     payload: {},
   });
-  assert.equal(opened.statusCode, 201, opened.body);
-  return asSessionId(threadEntryResponseSchema.parse(opened.json()).session);
+  return { status: opened.statusCode, body: opened.json() };
 }
 
-/** One message through the door, answering the status and the turn it named. */
+/** The member's thread, opened through the door. */
+async function threadOf(
+  partition: Partition,
+  member: ThreadRigMember,
+): Promise<SessionId> {
+  const opened = await opening(partition, member);
+  assert.equal(opened.status, 201, JSON.stringify(opened.body));
+  return asSessionId(threadEntryResponseSchema.parse(opened.body).session);
+}
+
+/** One message through the door, answering the status, the turn it named and the body. */
 async function sent(
   partition: Partition,
   member: ThreadRigMember,
   session: SessionId,
-): Promise<{ readonly status: number; readonly turn: SessionTurnId }> {
+): Promise<{
+  readonly status: number;
+  readonly turn: SessionTurnId;
+  readonly body: unknown;
+}> {
   await using app = threadRigApp({
     rig,
     principal: member.principal,
@@ -132,7 +162,7 @@ async function sent(
     headers: versioned,
     payload: { turn, message: "have a look at the footer" },
   });
-  return { status: answered.statusCode, turn };
+  return { status: answered.statusCode, turn, body: answered.json() };
 }
 
 /** Whether the cluster's placement read offers the session. */
@@ -178,6 +208,7 @@ test("a turn queued for a runner stays there when an administrator moves threads
   const partition = await threadRigProject(rig, "route-moved");
   const member = threadRigMember(rig, partition, "route-moved");
   unhosted(partition, member);
+  await sessionRigRunner(rig.sessions, partition, member.principal);
   await sessionRigRouted(rig.sessions, partition, "Pool", "Pool");
   const session = await threadOf(partition, member);
   assert.equal((await sent(partition, member, session)).status, 202);
@@ -209,6 +240,7 @@ test("a turn queued for a runner stays there when the published routing moves to
   const partition = await threadRigProject(rig, "route-published");
   const member = threadRigMember(rig, partition, "route-published");
   unhosted(partition, member);
+  await sessionRigRunner(rig.sessions, partition, member.principal);
   const session = await threadOf(partition, member);
   assert.equal((await sent(partition, member, session)).status, 202);
 
@@ -245,6 +277,7 @@ test("a running thread attempt claims no turn admitted for a runner, nor one que
   await answered(pod, first.turn);
 
   unhosted(partition, member);
+  await sessionRigRunner(rig.sessions, partition, member.principal);
   await sessionRigRouted(rig.sessions, partition, "Pool", "Pool");
   assert.equal((await sent(partition, member, session)).status, 202);
   assert.equal(
@@ -310,4 +343,163 @@ test("a running lead attempt claims no turn the selector admitted for the projec
     undefined,
     "a cluster lead attempt claimed a turn admitted for a runner",
   );
+});
+
+/** The refusal code a door answered with. */
+function refusal(body: unknown): string {
+  return (body as HttpErrorEnvelope).error.code;
+}
+
+test("a member with no runner on the project is refused a thread routed to runners, and admitted once one is registered though it never polled", async () => {
+  const partition = await threadRigProject(rig, "route-runnerless");
+  const member = threadRigMember(rig, partition, "route-runnerless");
+  const session = await threadOf(partition, member);
+  const newcomer = threadRigMember(rig, partition, "route-runnerless-new");
+  await sessionRigRouted(rig.sessions, partition, "Pool", "Pool");
+
+  const refused = await opening(partition, newcomer);
+  assert.deepEqual(
+    [refused.status, refusal(refused.body)],
+    [403, noRunnerCode],
+  );
+  const unsent = await sent(partition, member, session);
+  assert.deepEqual([unsent.status, refusal(unsent.body)], [403, noRunnerCode]);
+  assert.deepEqual(
+    await sessionRigTurnRoutes(rig.sessions, partition, session),
+    [],
+  );
+
+  await sessionRigRunner(rig.sessions, partition, member.principal);
+  assert.equal((await sent(partition, member, session)).status, 202);
+  assert.deepEqual(
+    await sessionRigTurnRoutes(rig.sessions, partition, session),
+    ["Pool"],
+  );
+});
+
+/** Withdraws at most `turnsMax` turns offered to runners and queued past the dwell. */
+function withdrawn(turnsMax = sessionRigBoundless): Promise<number> {
+  return rig.sessions.scheduler.withdrawUnservedPoolTurns(
+    rig.sessions.epoch,
+    sessionPoolTurnDwellSecs,
+    turnsMax,
+  );
+}
+
+/** How a turn stands, as the two columns a withdrawal writes. */
+async function standing(
+  partition: Partition,
+  session: SessionId,
+  turn: SessionTurnId,
+): Promise<readonly unknown[]> {
+  const row = await sessionRigTurnState(rig.sessions, partition, session, turn);
+  return [row["state"], row["failure"]];
+}
+
+test("a thread's turn offered to runners that none takes is withdrawn after the dwell, and the turn behind it is placed", async () => {
+  const partition = await threadRigProject(rig, "dwell-thread");
+  const member = threadRigMember(rig, partition, "dwell-thread");
+  await sessionRigRunner(rig.sessions, partition, member.principal);
+  await sessionRigRouted(rig.sessions, partition, "Pool", "Pool");
+  const session = await threadOf(partition, member);
+  const unserved = await sent(partition, member, session);
+  assert.equal(unserved.status, 202);
+  await sessionRigRouted(rig.sessions, partition, "InCluster", "InCluster");
+  assert.equal((await sent(partition, member, session)).status, 202);
+  assert.equal(await offered(session), false);
+
+  await sessionRigQueuedFor(
+    rig.sessions,
+    unserved.turn,
+    sessionPoolTurnDwellSecs - 60,
+  );
+  assert.equal(await withdrawn(), 0, "a turn was withdrawn inside the dwell");
+  await sessionRigQueuedFor(
+    rig.sessions,
+    unserved.turn,
+    sessionPoolTurnDwellSecs + 60,
+  );
+  assert.equal(
+    await rig.sessions.scheduler.withdrawUnservedPoolTurns(
+      asRecoveryEpoch("epoch-nobody-restored"),
+      sessionPoolTurnDwellSecs,
+      sessionRigBoundless,
+    ),
+    0,
+    "a scheduler of a past epoch withdrew a turn",
+  );
+  assert.equal(await withdrawn(), 1);
+  assert.deepEqual(await standing(partition, session, unserved.turn), [
+    "Abandoned",
+    "TurnWithdrawn",
+  ]);
+  assert.equal(
+    await offered(session),
+    true,
+    "the turn behind a withdrawn one still waits",
+  );
+});
+
+/**
+ * The two turns offered to runners are backdated against their order, so the
+ * one that waited longest is the later one and an order by ordinal would take
+ * the other. The claimed and the in-cluster turn waited longer than both.
+ */
+test("the dwell withdraws the longest waiting turn first, and never a claimed turn or one admitted in cluster", async () => {
+  const partition = await threadRigProject(rig, "dwell-order");
+  const member = threadRigMember(rig, partition, "dwell-order");
+  const session = await threadOf(partition, member);
+  const held = await sent(partition, member, session);
+  const pod = await sessionRigAttempt(
+    rig.sessions,
+    partition,
+    session,
+    "dwell-order",
+  );
+  assert.equal(await claimed(pod), held.turn);
+  const cluster = await sent(partition, member, session);
+  await sessionRigRunner(rig.sessions, partition, member.principal);
+  await sessionRigRouted(rig.sessions, partition, "Pool", "Pool");
+  const shorter = await sent(partition, member, session);
+  const longer = await sent(partition, member, session);
+  await rig.sessions.harness.query(
+    `UPDATE session_turn SET route='Pool' WHERE turn=$1`,
+    [held.turn],
+  );
+  const hour = 60 * 60;
+  for (const [turn, waited] of [
+    [held.turn, 4 * hour],
+    [cluster.turn, 3 * hour],
+    [longer.turn, 2 * hour],
+    [shorter.turn, hour],
+  ] as const)
+    await sessionRigQueuedFor(
+      rig.sessions,
+      turn,
+      sessionPoolTurnDwellSecs + waited,
+    );
+
+  assert.equal(await withdrawn(1), 1);
+  assert.deepEqual(await standing(partition, session, longer.turn), [
+    "Abandoned",
+    "TurnWithdrawn",
+  ]);
+  assert.deepEqual(await standing(partition, session, shorter.turn), [
+    "Queued",
+    null,
+  ]);
+  assert.equal(await withdrawn(1), 1);
+  assert.deepEqual(await standing(partition, session, shorter.turn), [
+    "Abandoned",
+    "TurnWithdrawn",
+  ]);
+  assert.equal(await withdrawn(), 0);
+  assert.deepEqual(await standing(partition, session, held.turn), [
+    "Claimed",
+    null,
+  ]);
+  assert.deepEqual(await standing(partition, session, cluster.turn), [
+    "Queued",
+    null,
+  ]);
 });

@@ -1458,9 +1458,9 @@ async function nativeInquiryEntries(
 /**
  * Opening the caller's own thread, which is `Mutate` and takes no session: a
  * member has one thread per project, the definer is idempotent on that, and the
- * roster it is opened with is the definer's own. A thread routed in cluster
- * runs on this deployment's hosted sessions, so there it also needs the
- * tenant's hosted grant.
+ * roster it is opened with is the definer's own. It is refused where its first
+ * turn would be: in cluster without the tenant's hosted grant, and on a runner
+ * with none of the member's registered.
  */
 function nativeOpenThreadMethod(
   access: ProjectAccess,
@@ -1470,16 +1470,14 @@ function nativeOpenThreadMethod(
   return async (principal, partition) => {
     const authority = await access.authorize(principal, partition, "Mutate");
     if (authority === undefined) return { result: "NotFound" };
-    if (
-      (await sessionSpendRoute(
-        access,
-        composedSessionRoutes(routes),
-        principal,
-        partition,
-        "Thread",
-      )) === undefined
-    )
-      return { result: "HostedRunsNotGranted" };
+    const spend = await sessionSpendRoute(
+      access,
+      composedSessionRoutes(routes),
+      principal,
+      partition,
+      "Thread",
+    );
+    if (spend.spend !== "Admitted") return { result: spend.spend };
     const ports = composedThreadPorts(threads);
     const texts = await ports.seeding.projectTexts(partition);
     const opened = await ports.threads.open({
@@ -1526,8 +1524,8 @@ function nativeHostedRunsMethod(
  * alone: the session the URL names is checked against the one the caller's
  * principal resolves to, so the page a member is reading and the mailbox their
  * message lands in cannot come apart. Each turn is stamped with the route it
- * was admitted on and runs there, so the route and the grant it needs are asked
- * at every send, not only when the thread opened.
+ * was admitted on and runs there, so the route and what it needs of the member
+ * are asked at every send, not only when the thread opened.
  */
 function nativeSendThreadMessageMethod(
   access: ProjectAccess,
@@ -1537,14 +1535,14 @@ function nativeSendThreadMessageMethod(
   return async (principal, partition, input) => {
     const authority = await access.authorize(principal, partition, "Mutate");
     if (authority === undefined) return { result: "NotFound" };
-    const route = await sessionSpendRoute(
+    const spend = await sessionSpendRoute(
       access,
       composedSessionRoutes(routes),
       principal,
       partition,
       "Thread",
     );
-    if (route === undefined) return { result: "HostedRunsNotGranted" };
+    if (spend.spend !== "Admitted") return { result: spend.spend };
     const ports = composedThreadPorts(threads);
     const message = checkedThreadMessage(input.message);
     const mine = await ports.threads.standing({
@@ -1571,7 +1569,7 @@ function nativeSendThreadMessageMethod(
         session: input.session,
         turn: input.turn,
         input: turnInput,
-        route,
+        route: spend.route,
       }),
       input.session,
       input.turn,
@@ -1834,9 +1832,8 @@ function nativeLeadReadMethods(
 /**
  * The three ways a member reaches the lead's inquiries, every one gated on
  * `Read` because an inquiry holds a strict subset of what `Read` already
- * permits, and asking on the tenant's hosted grant too where the inquiry's
- * route spends a hosted run — `./leadInquiry.ts`'s header carries the whole
- * argument. THE ASKER IS THE AUTHORITY'S OWN SUBJECT and comes from the
+ * permits, and asking on what the inquiry's route needs of the asker too —
+ * `./leadInquiry.ts`'s header carries the argument. THE ASKER IS THE AUTHORITY'S OWN SUBJECT and comes from the
  * authorization this door already did, never from the body: a question whose
  * asker the caller chose would name whoever they liked on a document the lead
  * reads.
@@ -1883,14 +1880,14 @@ function nativeLeadInquiryMethods(
     askLead: async (principal, partition, input) => {
       const authority = await access.authorize(principal, partition, "Read");
       if (authority === undefined) return { result: "NotFound" };
-      const route = await sessionSpendRoute(
+      const spend = await sessionSpendRoute(
         access,
         composedSessionRoutes(routes),
         principal,
         partition,
         "Inquiry",
       );
-      if (route === undefined) return { result: "HostedRunsNotGranted" };
+      if (spend.spend !== "Admitted") return { result: spend.spend };
       return leadInquiryAsked(
         await composed().open({
           partition,
@@ -1901,7 +1898,7 @@ function nativeLeadInquiryMethods(
             question: input.question,
             asker: authority.subject,
           }),
-          route,
+          route: spend.route,
         }),
         input.session,
         input.turn,

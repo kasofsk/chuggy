@@ -9,6 +9,7 @@ import {
   sessionAttemptObservationFunction,
   sessionAttemptOpenFunction,
   sessionPlacementSetFunction,
+  sessionPoolTurnWithdrawFunction,
   sessionRouteFunction,
   sessionRunnerStandingFunction,
   sessionsAwaitingPlacementFunction,
@@ -38,6 +39,8 @@ const inquiryOpen = `public.${leadInquiryOpenFunction}(in_tenant text, in_projec
 
 const waitingRoute = `public.${sessionWaitingRouteFunction}(in_tenant text, in_project text, in_session text)`;
 
+const unserved = `public.${sessionPoolTurnWithdrawFunction}(in_epoch text, in_dwell_secs bigint, in_max bigint)`;
+
 const opened = `public.${sessionAttemptOpenFunction}(in_tenant text, in_project text, in_session text, in_epoch text, in_attempt text, in_bearer text, in_secret_digest text, in_lease_secs bigint, in_backoff_secs bigint, in_account_max bigint, in_cluster_max bigint, in_invocation jsonb)`;
 
 /**
@@ -53,7 +56,9 @@ const opened = `public.${sessionAttemptOpenFunction}(in_tenant text, in_project 
  * already queued keeps it. The cluster places a session, and its attempt claims
  * a turn, only where the oldest queued turn was admitted in cluster, so a route
  * changed later moves the next turn admitted and never one queued before it.
- * Every turn queued before this migration ran in cluster and is stamped so.
+ * Every turn queued before this migration ran in cluster and is stamped so. A
+ * turn admitted for runners that is still queued past the scheduler's dwell is
+ * withdrawn, oldest first, so it stops holding its session.
  *
  * A session attempt gains the columns a pool holds one by, as an execution
  * attempt's in 002 and 022; the cluster's counts, observation and cleanup
@@ -439,6 +444,31 @@ This is a question asked aside: nothing you say here reaches the lead's record, 
      $$`,
     `ALTER FUNCTION ${waitingRoute} OWNER TO ${boundaryOwnerRole}`,
     `REVOKE ALL ON FUNCTION ${waitingRoute} FROM PUBLIC`,
+    `CREATE FUNCTION ${unserved} RETURNS bigint
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'public', 'pg_temp'
+    AS $$
+     DECLARE dwelt record; withdrawn bigint;
+     BEGIN
+       IF in_epoch<>(SELECT epoch FROM recovery_epoch ORDER BY ordinal DESC LIMIT 1) THEN RETURN 0; END IF;
+       withdrawn:=0;
+       FOR dwelt IN SELECT t.tenant,t.project,t.session,t.turn FROM session_turn t
+            WHERE t.state='Queued' AND t.route='Pool'
+              AND t.enqueued_at < now() - make_interval(
+                    secs => in_dwell_secs::double precision)
+            ORDER BY t.enqueued_at,t.tenant,t.project,t.session,t.ordinal
+            LIMIT in_max FOR UPDATE LOOP
+         UPDATE session_turn t
+            SET state='Abandoned',failure='TurnWithdrawn',ended_at=now()
+          WHERE t.tenant=dwelt.tenant AND t.project=dwelt.project
+            AND t.session=dwelt.session AND t.turn=dwelt.turn;
+         withdrawn:=withdrawn+1;
+       END LOOP;
+       RETURN withdrawn;
+     END $$`,
+    `ALTER FUNCTION ${unserved} OWNER TO ${boundaryOwnerRole}`,
+    `REVOKE ALL ON FUNCTION ${unserved} FROM PUBLIC`,
+    `GRANT EXECUTE ON FUNCTION ${unserved} TO ${schedulerRole}`,
     `CREATE OR REPLACE FUNCTION public.${sessionsAwaitingPlacementFunction}(in_epoch text, in_max bigint) RETURNS TABLE(tenant text, project text, session text, kind text, principal text, parent_session text, agent_reference text, capabilities text[], credential_slot text, account text, cluster text, state text)
     LANGUAGE sql STABLE SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'public', 'pg_temp'

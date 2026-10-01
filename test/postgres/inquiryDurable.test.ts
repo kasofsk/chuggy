@@ -65,6 +65,7 @@ import {
 } from "../../src/interpreter/leadInquiry.ts";
 import { asPrincipal } from "../../src/interpreter/principal.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
+import { sessionPoolTurnDwellSecs } from "../../src/interpreter/sessionPlacement.ts";
 import { postgresHarnessDenial } from "./harness.ts";
 import {
   inquiryRigClaim,
@@ -90,6 +91,8 @@ import {
 } from "./threadHarness.ts";
 import {
   sessionRigAttempt,
+  sessionRigBoundless,
+  sessionRigQueuedFor,
   sessionRigSession,
   sessionRigTurnRoutes,
 } from "./sessionHarness.ts";
@@ -172,6 +175,49 @@ test("a question's turn keeps the route it was admitted on", async () => {
   assert.deepEqual(
     await sessionRigTurnRoutes(rig.sessions, partition, asking.session),
     ["Pool"],
+  );
+});
+
+test("a question offered to runners that none takes is withdrawn after the dwell, which closes it and frees its asker's slot", async () => {
+  const { partition, member } = await inquirySubject("dwelt");
+  const spent = [];
+  for (let n = 0; n < inquiriesOpenPerMemberMax; n += 1) {
+    const asking = await inquiryAsk(
+      partition,
+      member,
+      `dwelt-${String(n)}`,
+      "Pool",
+    );
+    assert.equal(asking.opened.opened, "Opened");
+    spent.push(asking);
+  }
+  assert.deepEqual(
+    (await inquiryAsk(partition, member, "dwelt-over", "Pool")).opened,
+    { opened: "InFlight" },
+  );
+
+  for (const asking of spent)
+    await sessionRigQueuedFor(
+      rig.sessions,
+      asking.turn,
+      sessionPoolTurnDwellSecs + 60,
+    );
+  assert.equal(
+    await rig.sessions.scheduler.withdrawUnservedPoolTurns(
+      rig.sessions.epoch,
+      sessionPoolTurnDwellSecs,
+      sessionRigBoundless,
+    ),
+    inquiriesOpenPerMemberMax,
+  );
+  for (const asking of spent)
+    assert.equal(
+      (await inquiryRigSessionRow(rig, asking.session))["state"],
+      "Closed",
+    );
+  assert.equal(
+    (await inquiryAsk(partition, member, "dwelt-again", "Pool")).opened.opened,
+    "Opened",
   );
 });
 

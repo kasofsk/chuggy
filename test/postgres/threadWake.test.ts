@@ -58,7 +58,11 @@ import {
   postgresHarnessStalled,
 } from "./harness.ts";
 import { leadRigDecision } from "./leadHarness.ts";
-import { sessionRigRouted, sessionRigTurnRoutes } from "./sessionHarness.ts";
+import {
+  sessionRigRouted,
+  sessionRigRunner,
+  sessionRigTurnRoutes,
+} from "./sessionHarness.ts";
 import {
   threadRigMember,
   threadRigOpen,
@@ -196,6 +200,7 @@ test("a refusal against a member's own ticket becomes one Wake turn, once", asyn
       principal: member.principal,
       session: thread.session,
       route: "InCluster",
+      runner: "Unregistered",
     }),
     "the turn the door holds is the identity the pass derives, or a replay is a second turn",
   );
@@ -533,12 +538,6 @@ test("a change that commits while the door waits is a change the thread was open
 });
 
 /**
- * The standing rules a wake restates are the project's own, and they reach the
- * pass on the candidate. The pass cannot read them for itself — a read there
- * would be an await inside it — so what proves the join is a project holding
- * rules of its own and a document that says them.
- */
-/**
  * A thread and its project's lead may run apart, and the wake is a thread's
  * turn: the grant is asked of the thread's route and the turn keeps it, so a
  * member the tenant grants no hosted runs is woken on their runner.
@@ -551,6 +550,7 @@ test("a wake is admitted on the thread's own route rather than the lead's, and t
     principal: member.principal,
     access: new Set(),
   });
+  await sessionRigRunner(rig.sessions, partition, member.principal);
   await sessionRigRouted(rig.sessions, partition, "Pool", "InCluster");
   const thread = await threadRigThread(rig, partition, member);
   const revision = await configuration(partition);
@@ -571,6 +571,61 @@ test("a wake is admitted on the thread's own route rather than the lead's, and t
   );
 });
 
+/** The runner a wake needs is the member's own, so another member's on the project wakes nobody here. */
+test("a wake on a thread routed to runners is skipped where its member has registered none", async () => {
+  const partition = await threadRigProject(rig, "wakerunnerless");
+  const member = threadRigMember(rig, partition, "wakerunnerless");
+  const other = threadRigMember(rig, partition, "wakerunnerless-other");
+  await sessionRigRunner(rig.sessions, partition, other.principal);
+  await sessionRigRouted(rig.sessions, partition, "Pool", "Pool");
+  const thread = await threadRigThread(rig, partition, member);
+  const revision = await configuration(partition);
+  const ticket = await draft(partition, revision, member);
+  await fromTheHead();
+  await refuse(partition, "wakerunnerless", ticket);
+
+  const report = await threadWakePass(service(threadWakesPerPassMax));
+  assert.deepEqual(report, {
+    read: 1,
+    woken: 0,
+    skipped: 1,
+    cursor: report.cursor,
+  });
+  assert.deepEqual(
+    await sessionRigTurnRoutes(rig.sessions, partition, thread.session),
+    [],
+  );
+});
+
+/** The route can move between the candidate read and the wake, and the turn keeps the one the pass admitted. */
+test("the wake door stamps the route it is handed rather than the one the thread resolves to", async () => {
+  const partition = await threadRigProject(rig, "wakestamp");
+  const member = threadRigMember(rig, partition, "wakestamp");
+  await sessionRigRouted(rig.sessions, partition, "InCluster", "InCluster");
+  const thread = await threadRigThread(rig, partition, member);
+
+  const woken = await rig.wakes.wake({
+    partition,
+    principal: member.principal,
+    turn: asSessionTurnId(threadRigTurnId("wakestamp")),
+    input: threadWakeText(
+      threadWakeDocument({ wake: "TicketRefused", resource: "1", at: instant }),
+    ),
+    route: "Pool",
+  });
+  assert.equal(woken.woken, "Woken");
+  assert.deepEqual(
+    await sessionRigTurnRoutes(rig.sessions, partition, thread.session),
+    ["Pool"],
+  );
+});
+
+/**
+ * The standing rules a wake restates are the project's own, and they reach the
+ * pass on the candidate. The pass cannot read them for itself — a read there
+ * would be an await inside it — so what proves the join is a project holding
+ * rules of its own and a document that says them.
+ */
 test("a project's own standing rules reach the wake through the candidate", async () => {
   const partition = await threadRigProject(rig, "wakestanding");
   const member = threadRigMember(rig, partition, "wakestanding");

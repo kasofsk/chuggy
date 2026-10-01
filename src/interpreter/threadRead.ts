@@ -324,6 +324,7 @@ export type ThreadRead =
 export type ThreadOpening =
   | { readonly result: "NotFound" }
   | { readonly result: "HostedRunsNotGranted" }
+  | { readonly result: "NoRunner" }
   | {
       readonly result: "Opened" | "AlreadyOpen";
       readonly thread: ThreadEntry;
@@ -373,6 +374,8 @@ export type ThreadMessageSent =
   | { readonly result: "Closed" }
   /** The tenant does not grant the caller hosted runs, which the turn would spend. */
   | { readonly result: "HostedRunsNotGranted" }
+  /** The turn would be offered to the caller's runners, and they have registered none. */
+  | { readonly result: "NoRunner" }
   /** The first turn's seeding block and the message will not fit one turn together. */
   | { readonly result: "TooLarge"; readonly charsMax: number }
   | { readonly result: "Backlogged"; readonly retryAfterSeconds: number }

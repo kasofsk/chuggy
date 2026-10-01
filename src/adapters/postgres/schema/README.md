@@ -330,7 +330,9 @@ admits one claimed turn per session, which is what makes the claim a lease
 rather than a convention. Each turn carries the route it was admitted on,
 fixed at the enqueue. Unfinished work is found by selecting queued turns for a
 session in ordinal order, which is what a claim takes the lowest of, and only
-where that turn's route is the attempt's own.
+where that turn's route is the attempt's own; a queued `Pool` turn older than
+the dwell the scheduler names is withdrawn by `withdraw_unserved_pool_turns`,
+oldest first.
 
 `session_store_batch` — one batch of one stream of a session's transcript,
 pointing at bytes that live on the artifacts volume. Owned by the boundary

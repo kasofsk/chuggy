@@ -1003,6 +1003,7 @@ function processSessionFakes(observing: boolean): string {
       attemptTurnFailure: async () => ${observing ? "'StoreRefused'" : "undefined"},
       reapLapsedAttempts: async () => 0,
       reapIdleAttempts: async () => 0,
+      withdrawUnservedPoolTurns: async () => 0,
       awaitingPlacement: async () => [agentSession],
       openAttempt: async () => ({ opened: 'Opened', attempt: sessionFence }),
       attemptPlaced: async (_attempt, placement) => { sessionPlaced.push(placement); return true; },

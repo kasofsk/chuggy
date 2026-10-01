@@ -557,6 +557,12 @@ export type SessionRunnerStanding = (typeof sessionRunnerStandings)[number];
  */
 export const hostedRunsNotGrantedCode = "HostedRunsNotGranted";
 
+/**
+ * What a door answers a caller with no runner registered on the project, where
+ * the turn would be offered to runners; shared for the same reason.
+ */
+export const noRunnerCode = "NoRunner";
+
 /** Who or what put a turn in a session's mailbox. */
 export const sessionTurnInputKinds = [
   "Observation",

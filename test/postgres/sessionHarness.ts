@@ -34,7 +34,10 @@ import {
 } from "../../src/interpreter/agentSession.ts";
 import type { AgentSessionStore } from "../../src/interpreter/agentSession.ts";
 import { sessionBearerPrefix } from "../../src/contract/sessionPlane.ts";
-import { asPrincipal } from "../../src/interpreter/principal.ts";
+import {
+  asPrincipal,
+  type Principal,
+} from "../../src/interpreter/principal.ts";
 import type {
   Partition,
   RecoveryEpoch,
@@ -50,6 +53,7 @@ import {
   type SessionPlaneStore,
 } from "../../src/adapters/postgres/sessionPlane.ts";
 import { postgresSessionScheduler } from "../../src/adapters/postgres/sessionScheduler.ts";
+import { postgresWorkerPoolRegistry } from "../../src/adapters/postgres/workerPool.ts";
 import {
   schedulerRole,
   sessionPlacementSetFunction,
@@ -186,6 +190,40 @@ export async function sessionRigRouted(
   await rig.harness.query(
     `SELECT ${sessionPlacementSetFunction}($1,$2,$3,$4,'Member','an-owner')`,
     [partition.tenant, partition.project, thread, lead],
+  );
+}
+
+/** Registers a runner on the project for the member, one that has never polled. */
+export async function sessionRigRunner(
+  rig: SessionRig,
+  partition: Partition,
+  member: Principal,
+): Promise<void> {
+  const registered = await postgresWorkerPoolRegistry(
+    rig.harness.pool,
+  ).register({
+    partition,
+    pool: `runner-${randomUUID()}`,
+    capabilities: [],
+    class: "Dedicated",
+    clientId: `chuggy-pool-${randomUUID()}`,
+    principal: asPrincipal(`https://issuer.invalid#pool-${randomUUID()}`),
+    registeredBy: member,
+  });
+  if (!registered)
+    throw new Error("session rig: the member's runner was not registered");
+}
+
+/** Moves a turn's enqueue back by `secs`, as though it had waited that long. */
+export async function sessionRigQueuedFor(
+  rig: SessionRig,
+  turn: SessionTurnId,
+  secs: number,
+): Promise<void> {
+  await rig.harness.query(
+    `UPDATE session_turn SET enqueued_at=now()-make_interval(secs=>$2)
+      WHERE turn=$1`,
+    [turn, secs],
   );
 }
 

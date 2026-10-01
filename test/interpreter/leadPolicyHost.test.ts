@@ -52,7 +52,10 @@ import {
 } from "../../src/interpreter/selector.ts";
 import type { SessionRouteReads } from "../../src/interpreter/sessionPlacement.ts";
 import { selectorOperationalContext } from "./selectorFixture.ts";
-import { sessionRoutesAt } from "./sessionRoutesFixture.ts";
+import {
+  sessionRoutesAt,
+  sessionRoutesFlipping,
+} from "./sessionRoutesFixture.ts";
 import {
   agenticRefusalReasonCharsMax,
   selectorHandoffNoteBytesMax,
@@ -973,6 +976,16 @@ test("a turn is offered on the route its lead was admitted on", async () => {
     ).execute(request, new AbortController().signal);
     assert.deepEqual(routed.routes, [lead]);
   }
+});
+
+test("a turn is stamped with the route its admission was asked of, however the route reads after", async () => {
+  const routed = routedMailbox(mailboxDouble());
+  await hostedPolicyOf(
+    routed.double,
+    hostedAuthority("Refused").access,
+    sessionRoutesFlipping("Pool", { mine: "Unregistered", project: "Live" }),
+  ).execute(request, new AbortController().signal);
+  assert.deepEqual(routed.routes, ["Pool"]);
 });
 
 /** The runtime asks before it takes a permit, and the grant or the runner can go before the offer. */

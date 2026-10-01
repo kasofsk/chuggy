@@ -1679,7 +1679,7 @@ export type SessionPlacementResponse = z.infer<
   typeof sessionPlacementResponseSchema
 >;
 
-/** Whether the project's tenant grants the caller the hosted runs a thread or an inquiry spends. */
+/** Whether the project's tenant grants the caller the hosted runs a thread or an inquiry spends in cluster. */
 export const hostedRunsResponseSchema = z.strictObject({
   granted: z.boolean(),
 });

@@ -64,6 +64,7 @@ import type {
 import type { NotificationBatch } from "../../interpreter/notifications.ts";
 import {
   hostedRunsNotGrantedCode,
+  noRunnerCode,
   type ThreadMessageRefusalCode,
 } from "../../contract/rosters.ts";
 import type {
@@ -957,6 +958,17 @@ function hostedRunsRefused(): NativeHttpResponse {
     nativeHttpError(
       hostedRunsNotGrantedCode,
       "The tenant has not granted this caller hosted runs.",
+    ),
+  );
+}
+
+/** What a door answers a caller whose turn would be offered to runners, where they have registered none. */
+function noRunnerRefused(): NativeHttpResponse {
+  return response(
+    403,
+    nativeHttpError(
+      noRunnerCode,
+      "This caller has registered no runner on the project.",
     ),
   );
 }
@@ -1880,6 +1892,7 @@ export function openThreadResponse(
   if (result.result === "NotFound")
     return response(404, nativeHttpError("NotFound", "Resource not found."));
   if (result.result === "HostedRunsNotGranted") return hostedRunsRefused();
+  if (result.result === "NoRunner") return noRunnerRefused();
   return response(result.result === "Opened" ? 201 : 200, result.thread, {
     location: resourcePath(partition, "threads", result.thread.session),
   });
@@ -1948,7 +1961,7 @@ const threadMessageRefusalCode: Readonly<
   Record<
     Exclude<
       ThreadMessageSent["result"],
-      "NotFound" | "HostedRunsNotGranted" | "Sent" | "AlreadySent"
+      "NotFound" | "HostedRunsNotGranted" | "NoRunner" | "Sent" | "AlreadySent"
     >,
     ThreadMessageRefusalCode
   >
@@ -1974,6 +1987,8 @@ export function threadMessageResponse(
       return response(404, nativeHttpError("NotFound", "Resource not found."));
     case "HostedRunsNotGranted":
       return hostedRunsRefused();
+    case "NoRunner":
+      return noRunnerRefused();
     case "NotYourThread":
       return response(
         403,
@@ -2049,6 +2064,8 @@ export function askLeadResponse(
       return response(404, nativeHttpError("NotFound", "Resource not found."));
     case "HostedRunsNotGranted":
       return hostedRunsRefused();
+    case "NoRunner":
+      return noRunnerRefused();
     case "LeadNotStarted":
       return response(
         409,

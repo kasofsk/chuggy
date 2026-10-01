@@ -184,6 +184,33 @@ function sessionSweptCount(value: string | null | undefined): number {
   return projectRowCounter(value, "swept session attempts");
 }
 
+async function sessionAwaitingCleanup(
+  pool: pg.Pool,
+  attemptsMax: number,
+): Promise<readonly FencedSessionAttempt[]> {
+  sessionRequirePositive(attemptsMax, "the cleanup bound");
+  const found = await pool.query<SessionAttemptRow>(
+    sql`SELECT tenant,project,session,attempt,generation::text AS generation
+          FROM session_attempts_awaiting_cleanup(${attemptsMax})`,
+  );
+  return found.rows.map(fencedSessionAttemptOf);
+}
+
+async function sessionUnservedWithdrawn(
+  pool: pg.Pool,
+  epoch: RecoveryEpoch,
+  dwellSecs: number,
+  turnsMax: number,
+): Promise<number> {
+  sessionRequirePositive(dwellSecs, "the dwell");
+  sessionRequirePositive(turnsMax, "the withdrawal bound");
+  const withdrawn = await pool.query<{ withdrawn: string | null }>(
+    sql`SELECT withdraw_unserved_pool_turns(
+      ${epoch},${dwellSecs},${turnsMax})::text AS withdrawn`,
+  );
+  return sessionSweptCount(withdrawn.rows[0]?.withdrawn);
+}
+
 /** The session scheduler's durable store, over the scheduler role's own pool. */
 export function postgresSessionScheduler(pool: pg.Pool): SessionSchedulerStore {
   return {
@@ -238,6 +265,9 @@ export function postgresSessionScheduler(pool: pg.Pool): SessionSchedulerStore {
       return sessionSweptCount(reaped.rows[0]?.reaped);
     },
 
+    withdrawUnservedPoolTurns: (epoch, dwellSecs, turnsMax) =>
+      sessionUnservedWithdrawn(pool, epoch, dwellSecs, turnsMax),
+
     fenceOldEpochAttempts: async (epoch, attemptsMax) => {
       sessionRequirePositive(attemptsMax, "the fencing bound");
       const fenced = await pool.query<{ fenced: string | null }>(
@@ -247,14 +277,8 @@ export function postgresSessionScheduler(pool: pg.Pool): SessionSchedulerStore {
       return sessionSweptCount(fenced.rows[0]?.fenced);
     },
 
-    attemptsAwaitingCleanup: async (attemptsMax) => {
-      sessionRequirePositive(attemptsMax, "the cleanup bound");
-      const found = await pool.query<SessionAttemptRow>(
-        sql`SELECT tenant,project,session,attempt,generation::text AS generation
-              FROM session_attempts_awaiting_cleanup(${attemptsMax})`,
-      );
-      return found.rows.map(fencedSessionAttemptOf);
-    },
+    attemptsAwaitingCleanup: (attemptsMax) =>
+      sessionAwaitingCleanup(pool, attemptsMax),
 
     attemptCleanupCompleted: async (attempt: FencedSessionAttempt) => {
       const completed = await pool.query<{ completed: boolean | null }>(

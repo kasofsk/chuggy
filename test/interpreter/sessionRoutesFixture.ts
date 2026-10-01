@@ -21,3 +21,25 @@ export function sessionRoutesAt(
     runners: () => Promise.resolve(runners),
   };
 }
+
+/**
+ * Routes that answer `first` on the first read and alternate after, so a case
+ * can tell the route a door checked from one it read again before stamping.
+ */
+export function sessionRoutesFlipping(
+  first: PlacementRoute,
+  runners: SessionRunners,
+): SessionRouteReads {
+  let reads = 0;
+  return {
+    route: () => {
+      reads += 1;
+      return Promise.resolve({
+        route:
+          reads % 2 === 1 ? first : first === "Pool" ? "InCluster" : "Pool",
+        source: "Project",
+      });
+    },
+    runners: () => Promise.resolve(runners),
+  };
+}

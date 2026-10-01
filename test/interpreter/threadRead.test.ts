@@ -19,7 +19,6 @@ import {
   threadTurnsAnsweredMax,
   threadsAnsweredMax,
 } from "../../src/contract/http.ts";
-import type { PlacementRoute } from "../../src/contract/rosters.ts";
 import {
   asSessionId,
   asSessionTurnId,
@@ -38,7 +37,11 @@ import {
 } from "../../src/interpreter/principal.ts";
 import { asPublicInstant } from "../../src/interpreter/publicResource.ts";
 import { unaskedNativeWebPorts } from "./nativeWebFixtures.ts";
-import { sessionRoutesAt } from "./sessionRoutesFixture.ts";
+import {
+  sessionRoutesAt,
+  sessionRoutesFlipping,
+} from "./sessionRoutesFixture.ts";
+import type { SessionRouteReads } from "../../src/interpreter/sessionPlacement.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import {
   checkedThreadsLimit,
@@ -252,7 +255,7 @@ function boundary(
     "Mutate",
     "ExecuteHosted",
   ],
-  thread: PlacementRoute = "InCluster",
+  routes: SessionRouteReads = sessionRoutesAt(),
 ) {
   const held: ThreadDoubles = {
     calls: [],
@@ -294,7 +297,7 @@ function boundary(
     undefined,
     ports(held),
     undefined,
-    sessionRoutesAt({ Thread: thread }),
+    routes,
   );
   return { web, held };
 }
@@ -852,7 +855,14 @@ test("a message needs the tenant's hosted grant at every send, and nothing is en
 });
 
 test("a thread routed to the member's runner opens and takes a message without the hosted grant, stamped for the runner", async () => {
-  const { web, held } = boundary({}, ["Read", "Mutate"], "Pool");
+  const { web, held } = boundary(
+    {},
+    ["Read", "Mutate"],
+    sessionRoutesAt(
+      { Thread: "Pool" },
+      { mine: "Offline", project: "Offline" },
+    ),
+  );
 
   assert.equal((await web.openThread(geoff, partition)).result, "Opened");
   const sent = await web.sendThreadMessage(geoff, partition, {
@@ -864,6 +874,51 @@ test("a thread routed to the member's runner opens and takes a message without t
   assert.equal(sent.result, "Sent");
   assert.ok(!held.calls.includes("authorizeTenant:ExecuteHosted"));
   assert.ok(held.calls.includes("enqueue-route:Pool"));
+});
+
+test("a thread routed to runners where the member has registered none is refused at the open and at every send", async () => {
+  const { web, held } = boundary(
+    {},
+    ["Read", "Mutate", "ExecuteHosted"],
+    sessionRoutesAt({ Thread: "Pool" }),
+  );
+
+  assert.deepEqual(await web.openThread(geoff, partition), {
+    result: "NoRunner",
+  });
+  const sent = await web.sendThreadMessage(geoff, partition, {
+    session: mine,
+    turn: asSessionTurnId("thread-turn-1"),
+    message: "have a look at 42",
+  });
+
+  assert.deepEqual(sent, { result: "NoRunner" });
+  assert.deepEqual(
+    held.calls.filter(
+      (call) => call.startsWith("open:") || call.startsWith("enqueue"),
+    ),
+    [],
+  );
+});
+
+test("a message is stamped with the route its admission was asked of, however the route reads after", async () => {
+  const { web, held } = boundary(
+    {},
+    ["Read", "Mutate"],
+    sessionRoutesFlipping("Pool", { mine: "Offline", project: "Offline" }),
+  );
+
+  const sent = await web.sendThreadMessage(geoff, partition, {
+    session: mine,
+    turn: asSessionTurnId("thread-turn-1"),
+    message: "have a look at 42",
+  });
+
+  assert.equal(sent.result, "Sent");
+  assert.deepEqual(
+    held.calls.filter((call) => call.startsWith("enqueue-route:")),
+    ["enqueue-route:Pool"],
+  );
 });
 
 test("a message to my own thread is enqueued and answers its ordinal", async () => {

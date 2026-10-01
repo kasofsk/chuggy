@@ -53,6 +53,14 @@ export interface SessionRouteResolved {
  */
 export const sessionRunnerPolledSecsMax = 120;
 
+/**
+ * How long a turn offered to runners waits for one to take it before it is
+ * withdrawn, since until then it holds its session: an inquiry its asker's
+ * slot, a thread every turn behind it. It spans a machine waking from sleep,
+ * and not a member left waiting on one that will not.
+ */
+export const sessionPoolTurnDwellSecs = 30 * 60;
+
 /** The runners a session would run on: the member's own for a thread, and any of the project's for the lead. */
 export interface SessionRunners {
   readonly mine: SessionRunnerStanding;
@@ -145,21 +153,45 @@ export function sessionPlacementAdministration(
 }
 
 /**
- * The route a member may spend a turn of this kind on now, or nothing where it
- * is hosted and the tenant does not grant them hosted runs. The turn is stamped
- * with this route, so the grant is asked of the resolution the turn keeps.
+ * Whether a member's turn on this route has a runner that could take it. One
+ * offline may come back, and with none registered the turn would only hold its
+ * session until it is withdrawn.
+ */
+export function sessionRunnerServes(
+  route: PlacementRoute,
+  mine: SessionRunnerStanding,
+): boolean {
+  return placementRouteHosted[route] || mine !== "Unregistered";
+}
+
+/** A member's turn admitted on the route it is stamped with, or the reason it is not. */
+export type SessionSpend =
+  | { readonly spend: "Admitted"; readonly route: PlacementRoute }
+  | { readonly spend: "HostedRunsNotGranted" | "NoRunner" };
+
+/**
+ * The route a member may spend a turn of this kind on now: a hosted one under
+ * the tenant's grant, and a runner one where they have registered a runner.
+ * The turn is stamped with this route, so both are asked of the resolution the
+ * turn keeps.
  */
 export async function sessionSpendRoute(
   access: ProjectAccess,
-  routes: Pick<SessionRouteReads, "route">,
+  routes: SessionRouteReads,
   principal: Principal,
   partition: Partition,
   kind: SessionKind,
-): Promise<PlacementRoute | undefined> {
+): Promise<SessionSpend> {
   const { route } = await routes.route(partition, kind);
-  return (await placementRouteGranted(access, principal, partition, route))
-    ? route
-    : undefined;
+  if (!(await placementRouteGranted(access, principal, partition, route)))
+    return { spend: "HostedRunsNotGranted" };
+  if (placementRouteHosted[route]) return { spend: "Admitted", route };
+  return sessionRunnerServes(
+    route,
+    (await routes.runners(partition, principal)).mine,
+  )
+    ? { spend: "Admitted", route }
+    : { spend: "NoRunner" };
 }
 
 export const allLeadAdmissions = [

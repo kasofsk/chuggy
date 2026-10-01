@@ -28,6 +28,7 @@ import type pg from "pg";
 
 import {
   placementRoutes,
+  sessionRunnerStandings,
   type PlacementRoute,
 } from "../../contract/rosters.ts";
 import {
@@ -38,6 +39,7 @@ import {
 } from "../../interpreter/agentSession.ts";
 import { asPrincipal, type Principal } from "../../interpreter/principal.ts";
 import { asPublicInstant } from "../../interpreter/publicResource.ts";
+import { sessionRunnerPolledSecsMax } from "../../interpreter/sessionPlacement.ts";
 import {
   asProjectId,
   asTenantId,
@@ -594,6 +596,7 @@ function threadWakeCandidateOf(row: {
   readonly principal: string | null;
   readonly session: string | null;
   readonly route: string | null;
+  readonly runner: string | null;
   readonly thread_standing_rules: string | null;
 }): ThreadWakeCandidate {
   return {
@@ -617,13 +620,18 @@ function threadWakeCandidateOf(row: {
     principal: asPrincipal(sessionRowText(row.principal, "principal")),
     session: asSessionId(sessionRowText(row.session, "session")),
     route: sessionRowMember(placementRoutes, row.route, "thread route"),
+    runner: sessionRowMember(
+      sessionRunnerStandings,
+      row.runner,
+      "runner standing",
+    ),
   };
 }
 
 /**
- * One page of candidates, with the thread route and the standing rules of the
- * project each names hung off it: both are keyed by the partition the page
- * already carries, so neither adds a candidate. It restates the definer's
+ * One page of candidates, with the thread route, the member's runners and the
+ * standing rules of the project each names hung off it: each is keyed by what
+ * the candidate already carries, so none adds one. It restates the definer's
  * order, which a join over a function's rows does not preserve.
  */
 async function threadWakeCandidates(
@@ -640,15 +648,20 @@ async function threadWakeCandidates(
     principal: string | null;
     session: string | null;
     route: string | null;
+    runner: string | null;
     thread_standing_rules: string | null;
   }>(
     sql`SELECT candidate.sequence::text AS sequence,candidate.tenant,
                candidate.project,candidate.resource,candidate.reason,
                candidate.principal,candidate.session,routed.route,
+               runners.member_standing AS runner,
                settings.thread_standing_rules
           FROM thread_wake_candidates(${after},${limit}) candidate
           CROSS JOIN LATERAL session_route(candidate.tenant,candidate.project,
                                            'Thread') routed
+          CROSS JOIN LATERAL session_runner_standing(
+            candidate.tenant,candidate.project,candidate.principal,
+            ${sessionRunnerPolledSecsMax}) runners
           LEFT JOIN selector_project_settings settings
             ON settings.tenant=candidate.tenant
            AND settings.project=candidate.project

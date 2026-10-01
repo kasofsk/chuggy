@@ -22,7 +22,10 @@ import {
   threadBacklogMax,
   threadWakesPerPassMax,
 } from "../../src/contract/http.ts";
-import type { PlacementRoute } from "../../src/contract/rosters.ts";
+import type {
+  PlacementRoute,
+  SessionRunnerStanding,
+} from "../../src/contract/rosters.ts";
 import {
   asSessionId,
   type SessionId,
@@ -74,6 +77,7 @@ function candidateAt(
   label: string,
   reason: ThreadWakeReason = "TicketRefused",
   route: PlacementRoute = "InCluster",
+  runner: SessionRunnerStanding = "Unregistered",
 ): ThreadWakeCandidate {
   const { principal, session } = member(label);
   return {
@@ -84,6 +88,7 @@ function candidateAt(
     principal,
     session,
     route,
+    runner,
   };
 }
 
@@ -422,7 +427,7 @@ test("a thread whose principal the tenant grants no hosted runs is skipped unoff
 
 test("a thread routed to its member's runner wakes without the hosted grant, and each wake is stamped with its candidate's route", async () => {
   const log = [
-    candidateAt(1, "unhosted", "TicketRefused", "Pool"),
+    candidateAt(1, "unhosted", "TicketRefused", "Pool", "Offline"),
     candidateAt(2, "hosted"),
   ];
   const store = referenceStore({ log });
@@ -447,6 +452,21 @@ test("a thread routed to its member's runner wakes without the hosted grant, and
   assert.deepEqual(report, { read: 2, woken: 2, skipped: 0, cursor: 2 });
   assert.deepEqual(access.refused, []);
   assert.deepEqual(stamped, ["Pool", "InCluster"]);
+});
+
+test("a thread routed to runners where its member has registered none is skipped unoffered", async () => {
+  const log = [
+    candidateAt(1, "runnerless", "TicketRefused", "Pool"),
+    candidateAt(2, "here"),
+  ];
+  const store = referenceStore({ log });
+  const report = await threadWakePass(serviceOf(store));
+
+  assert.deepEqual(report, { read: 2, woken: 1, skipped: 1, cursor: 2 });
+  assert.deepEqual(
+    store.offers.map((offer) => offer.session),
+    [member("here").session],
+  );
 });
 
 test("an authority that could not answer the hosted grant holds the cursor too", async () => {

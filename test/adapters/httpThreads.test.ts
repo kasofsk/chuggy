@@ -16,6 +16,7 @@ import test from "node:test";
 import type { HttpErrorEnvelope } from "../../src/contract/http.ts";
 import {
   hostedRunsNotGrantedCode,
+  noRunnerCode,
   threadMessageRefusalCodes,
 } from "../../src/contract/rosters.ts";
 import {
@@ -455,25 +456,24 @@ test("opening my thread is created once and answered again after that", async ()
     assert.equal(answer.headers["location"], `${root}/${mine}`);
 });
 
-test("a caller the tenant has not granted hosted runs is refused a thread by that code", async () => {
-  const held: ThreadCase = {
-    calls: [],
-    opening: { result: "HostedRunsNotGranted" },
-  };
-  await using app = appOf(held);
+test("a caller without what the thread's route needs is refused a thread by that refusal's code", async () => {
+  for (const [result, code] of [
+    ["HostedRunsNotGranted", hostedRunsNotGrantedCode],
+    ["NoRunner", noRunnerCode],
+  ] as const) {
+    const held: ThreadCase = { calls: [], opening: { result } };
+    await using app = appOf(held);
 
-  const refused = await app.inject({
-    method: "POST",
-    url: root,
-    headers: versioned,
-    payload: {},
-  });
+    const refused = await app.inject({
+      method: "POST",
+      url: root,
+      headers: versioned,
+      payload: {},
+    });
 
-  assert.equal(refused.statusCode, 403);
-  assert.equal(
-    refused.json<HttpErrorEnvelope>().error.code,
-    hostedRunsNotGrantedCode,
-  );
+    assert.equal(refused.statusCode, 403, result);
+    assert.equal(refused.json<HttpErrorEnvelope>().error.code, code);
+  }
 });
 
 /**
@@ -880,25 +880,24 @@ test("a first turn that will not fit says so, and says how much fits", async () 
   );
 });
 
-test("a message the tenant's hosted grant refuses is refused by that code", async () => {
-  const held: ThreadCase = {
-    calls: [],
-    sent: { result: "HostedRunsNotGranted" },
-  };
-  await using app = appOf(held);
+test("a message without what the thread's route needs is refused by that refusal's code", async () => {
+  for (const [result, code] of [
+    ["HostedRunsNotGranted", hostedRunsNotGrantedCode],
+    ["NoRunner", noRunnerCode],
+  ] as const) {
+    const held: ThreadCase = { calls: [], sent: { result } };
+    await using app = appOf(held);
 
-  const refused = await app.inject({
-    method: "POST",
-    url: `${root}/${mine}/messages`,
-    headers: versioned,
-    payload: { turn: "thread-turn-2", message: "why is 42 refused?" },
-  });
+    const refused = await app.inject({
+      method: "POST",
+      url: `${root}/${mine}/messages`,
+      headers: versioned,
+      payload: { turn: "thread-turn-2", message: "why is 42 refused?" },
+    });
 
-  assert.equal(refused.statusCode, 403);
-  assert.equal(
-    refused.json<HttpErrorEnvelope>().error.code,
-    hostedRunsNotGrantedCode,
-  );
+    assert.equal(refused.statusCode, 403, result);
+    assert.equal(refused.json<HttpErrorEnvelope>().error.code, code);
+  }
 });
 
 test("a retried message is accepted again rather than answered as a conflict", async () => {

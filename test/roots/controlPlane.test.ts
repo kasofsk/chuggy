@@ -165,6 +165,7 @@ const successfulProcessProgram = `
         attemptTurnFailure: async () => undefined,
         reapLapsedAttempts: async () => 0,
         reapIdleAttempts: async () => 0,
+        withdrawUnservedPoolTurns: async () => 0,
         awaitingPlacement: async () => { sessionPasses += 1; return []; },
       },
       placement: {},

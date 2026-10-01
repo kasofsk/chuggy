@@ -15,7 +15,6 @@ import {
   inquiriesAnsweredMax,
   inquiryQuestionCharsMax,
 } from "../../src/contract/http.ts";
-import type { PlacementRoute } from "../../src/contract/rosters.ts";
 import {
   asSessionId,
   asSessionTurnId,
@@ -49,7 +48,11 @@ import {
   asAuthoritySubject,
 } from "../../src/interpreter/operationInbox.ts";
 import { unaskedNativeWebPorts } from "./nativeWebFixtures.ts";
-import { sessionRoutesAt } from "./sessionRoutesFixture.ts";
+import type { SessionRouteReads } from "../../src/interpreter/sessionPlacement.ts";
+import {
+  sessionRoutesAt,
+  sessionRoutesFlipping,
+} from "./sessionRoutesFixture.ts";
 
 const partition: Partition = {
   tenant: asTenantId("vteng"),
@@ -127,7 +130,7 @@ function storeAnswering(
 function webOver(
   store: LeadInquiryStore,
   access: ProjectAccess,
-  lead: PlacementRoute = "InCluster",
+  routes: SessionRouteReads = sessionRoutesAt(),
 ) {
   return nativeWeb(
     access,
@@ -143,8 +146,23 @@ function webOver(
     undefined,
     undefined,
     store,
-    sessionRoutesAt({ Lead: lead }),
+    routes,
   );
+}
+
+/** The routes a reader the tenant grants no hosted runs has a question stamped with. */
+async function routesAskedOn(
+  routes: SessionRouteReads,
+): Promise<readonly string[]> {
+  const asked: unknown[] = [];
+  const web = webOver(storeAnswering({}, asked), accessHolding("Read"), routes);
+  const asking = await web.askLead(reader, partition, {
+    session,
+    turn,
+    question: "what stopped 14?",
+  });
+  assert.equal(asking.result, "Asked");
+  return asked.map((offered) => (offered as { readonly route: string }).route);
 }
 
 test("a member with Read reaches all three doors and one without reaches none", async () => {
@@ -212,16 +230,41 @@ test("a reader the tenant grants no hosted runs reads every inquiry and asks non
 });
 
 test("a reader the tenant grants no hosted runs asks a lead routed to the project's runners, and the question is stamped for them", async () => {
+  assert.deepEqual(
+    await routesAskedOn(
+      sessionRoutesAt(
+        { Lead: "Pool" },
+        { mine: "Offline", project: "Offline" },
+      ),
+    ),
+    ["Pool"],
+  );
+});
+
+test("a reader with no runner registered on the project asks a lead routed to runners nothing", async () => {
   const asked: unknown[] = [];
-  const web = webOver(storeAnswering({}, asked), accessHolding("Read"), "Pool");
+  const web = webOver(
+    storeAnswering({}, asked),
+    accessHolding("Read", "ExecuteHosted"),
+    sessionRoutesAt(
+      { Lead: "Pool" },
+      { mine: "Unregistered", project: "Live" },
+    ),
+  );
   const asking = await web.askLead(reader, partition, {
     session,
     turn,
     question: "what stopped 14?",
   });
-  assert.equal(asking.result, "Asked");
+  assert.equal(asking.result, "NoRunner");
+  assert.deepEqual(asked, [], "a refused question still reached the store");
+});
+
+test("a question is stamped with the route its admission was asked of, however the route reads after", async () => {
   assert.deepEqual(
-    asked.map((offered) => (offered as { readonly route: string }).route),
+    await routesAskedOn(
+      sessionRoutesFlipping("Pool", { mine: "Offline", project: "Offline" }),
+    ),
     ["Pool"],
   );
 });
