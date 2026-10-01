@@ -34,6 +34,7 @@ import { migration022 } from "../../src/adapters/postgres/schema/migrations/022-
 import { migration023 } from "../../src/adapters/postgres/schema/migrations/023-worker-pool-release-ends.ts";
 import { migration026 } from "../../src/adapters/postgres/schema/migrations/026-project-creation.ts";
 import { migration027 } from "../../src/adapters/postgres/schema/migrations/027-forge-claim-per-tenant.ts";
+import { migration028 } from "../../src/adapters/postgres/schema/migrations/028-binding-lands-by-pull-request.ts";
 import {
   postgresForgeInstallationClaims,
   postgresForgeInstallations,
@@ -9246,5 +9247,37 @@ test("027 keys a forge claim by its tenant, keeping every claim that stood", asy
     );
     await forgeClaimReadersAnswer(subject);
     await forgeClaimGrantsKept(subject);
+  });
+});
+
+test("028 lands a repository bound from here on by pull request, leaving the bindings that stood", async () => {
+  await migrationDatabase("binding_lands_by_pull_request", async (subject) => {
+    await installationAt(subject, migrations.indexOf(migration028));
+    await seedLandinglessBinding(subject);
+    const landings = async () =>
+      (
+        await subject.query<{ repository: string; landing_mode: string }>(
+          `SELECT repository,landing_mode FROM project_repository
+            WHERE tenant='tenant-90' AND project='project-90' ORDER BY repository`,
+        )
+      ).rows;
+    assert.deepEqual(await landings(), [
+      { repository: "bound-90", landing_mode: "Push" },
+    ]);
+    assert.ok((await postgresMigrate(subject)).includes(migration028.version));
+    assert.equal(
+      (
+        await subject.query<{ bound: string }>(
+          `SELECT ${repositoryBindingWriteFunction}(
+             'tenant-90','project-90','bound-90-after','epoch-90',
+             'operation-90','Administrator','test-operator') AS bound`,
+        )
+      ).rows[0]?.bound,
+      "Bound",
+    );
+    assert.deepEqual(await landings(), [
+      { repository: "bound-90", landing_mode: "Push" },
+      { repository: "bound-90-after", landing_mode: "PullRequest" },
+    ]);
   });
 });

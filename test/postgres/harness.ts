@@ -150,8 +150,8 @@ export async function postgresHarnessBinding(
   if (typeof held === "string") return asRepositoryId(held);
   const repository = postgresHarnessRepository(partition);
   await harness.query(
-    `INSERT INTO project_repository (tenant,project,repository,recovery_epoch)
-       SELECT $1,$2,$3,epoch FROM recovery_epoch ORDER BY ordinal DESC LIMIT 1`,
+    `INSERT INTO project_repository (tenant,project,repository,recovery_epoch,landing_mode)
+       SELECT $1,$2,$3,epoch,'Push' FROM recovery_epoch ORDER BY ordinal DESC LIMIT 1`,
     [partition.tenant, partition.project, repository],
   );
   return repository;

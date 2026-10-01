@@ -45,8 +45,8 @@ test("repository binding reads are project-local and preserve their epoch", asyn
   const epoch = row[0]?.epoch;
   if (epoch === undefined) throw new Error("recovery epoch fixture is absent");
   await harness.query(
-    `INSERT INTO project_repository (tenant,project,repository,recovery_epoch)
-     VALUES ($1,$2,$3,$7),($4,$5,$6,$7)`,
+    `INSERT INTO project_repository (tenant,project,repository,recovery_epoch,landing_mode)
+     VALUES ($1,$2,$3,$7,'Push'),($4,$5,$6,$7,'Push')`,
     [
       first.tenant,
       first.project,
@@ -114,8 +114,8 @@ test("repository binding reads hold a shared project name and a shared tenant ap
   for (const { partition, repository } of fixtures) {
     await harness.store.createProject(partition);
     await harness.query(
-      `INSERT INTO project_repository (tenant,project,repository,recovery_epoch)
-       VALUES ($1,$2,$3,$4)`,
+      `INSERT INTO project_repository (tenant,project,repository,recovery_epoch,landing_mode)
+       VALUES ($1,$2,$3,$4,'Push')`,
       [partition.tenant, partition.project, repository, epoch],
     );
   }
@@ -143,8 +143,8 @@ test("a binding read answers the repository named, and the project's oldest wher
   const older = `repository-binding-named-older-${randomUUID()}`;
   const newer = `repository-binding-named-newer-${randomUUID()}`;
   await harness.query(
-    `INSERT INTO project_repository (tenant,project,repository,recovery_epoch,bound_at)
-     VALUES ($1,$2,$3,$5,'2026-01-01'),($1,$2,$4,$5,'2026-01-02')`,
+    `INSERT INTO project_repository (tenant,project,repository,recovery_epoch,bound_at,landing_mode)
+     VALUES ($1,$2,$3,$5,'2026-01-01','Push'),($1,$2,$4,$5,'2026-01-02','Push')`,
     [partition.tenant, partition.project, older, newer, epoch],
   );
   const bindings = postgresProjectRepositoryBinding(pool);
