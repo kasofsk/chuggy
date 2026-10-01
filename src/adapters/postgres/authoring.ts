@@ -25,7 +25,11 @@ import {
   type DraftState,
   type ConfigurationRevisionProvenance,
 } from "../../interpreter/authoring.ts";
-import { asGitObjectId, asRepositoryId } from "../../interpreter/finalizer.ts";
+import {
+  asGitObjectId,
+  asRepositoryId,
+  type RepositoryId,
+} from "../../interpreter/finalizer.ts";
 import { briefFinalizationTarget } from "../../interpreter/ticketBrief.ts";
 import { draftBriefOf } from "./ticketBrief.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
@@ -39,6 +43,10 @@ import {
   asRepositoryConfigurationPath,
   repositoryConfigurationDeclarationsMax,
 } from "../../interpreter/repositoryConfigurationIdentity.ts";
+import type {
+  RepositoryConfigurationsHeld,
+  RepositoryConfigurationsHeldRead,
+} from "../../interpreter/repositoryOnboarding.ts";
 import { projectRowCounter } from "./rows.ts";
 import {
   configurationVersionOf,
@@ -685,4 +693,50 @@ export function postgresAuthoring(
     reviseDraft: (input) => reviseDraft(pool, input),
     deleteDraft: (input) => deleteDraft(pool, input),
   };
+}
+
+type HeldConfigurationsQuery = Parameters<
+  RepositoryConfigurationsHeldRead["held"]
+>[0];
+
+/**
+ * How many names each repository asked about declared into the project, and
+ * the bootstrap revision's text where the project holds one. Both are the
+ * tables the configurations listing already reads, so this is that listing's
+ * question asked of one project's rows rather than of every page of them.
+ */
+async function readConfigurationsHeld(
+  pool: pg.Pool,
+  query: HeldConfigurationsQuery,
+): Promise<RepositoryConfigurationsHeld> {
+  const declared = await pool.query<{ repository: string; names: string }>(
+    sql`SELECT p.repository,count(DISTINCT p.name)::text AS names
+          FROM repository_configuration_provenance p
+         WHERE p.tenant=${query.partition.tenant} AND p.project=${query.partition.project}
+           AND p.repository=ANY(${[...query.repositories]}::text[])
+         GROUP BY p.repository`,
+  );
+  const bootstrap = await pool.query<{ canonical: string }>(
+    sql`SELECT c.canonical FROM configuration_revision c
+          WHERE c.tenant=${query.partition.tenant} AND c.project=${query.partition.project}
+            AND c.revision=${query.bootstrap}`,
+  );
+  const canonical = bootstrap.rows[0]?.canonical;
+  return {
+    declared: new Map<RepositoryId, number>(
+      declared.rows.map((row) => [
+        asRepositoryId(row.repository),
+        projectRowCounter(row.names, "declared configuration names"),
+      ]),
+    ),
+    bootstrap:
+      canonical === undefined ? undefined : asCanonicalConfiguration(canonical),
+  };
+}
+
+/** Answers what a project holds from the configuration step, through the API's own reads. */
+export function postgresRepositoryConfigurationsHeld(
+  pool: pg.Pool,
+): RepositoryConfigurationsHeldRead {
+  return { held: (query) => readConfigurationsHeld(pool, query) };
 }

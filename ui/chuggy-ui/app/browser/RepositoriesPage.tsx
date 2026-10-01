@@ -10,7 +10,8 @@
  * row. The bindings below are what a ticket may name, except a retired one,
  * which is drawn as retired because it is still bound and no longer read; a
  * binding is added from what those installations grant rather than from a
- * typed address.
+ * typed address. A live binding the project holds no configuration for is
+ * drawn as deferred, with its configuration step offered again on its row.
  */
 
 import { Link, useParams } from "@tanstack/react-router";
@@ -19,7 +20,7 @@ import type { ReactNode } from "react";
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type {
   ForgeInstallationResponse,
-  ProjectRepositoryResponse,
+  ProjectRepositoryListedResponse,
 } from "../../../../src/contract/responses.ts";
 import {
   apiForgeInstallations,
@@ -41,6 +42,7 @@ import {
   AddRepository,
   projectRepositoriesResource,
 } from "./repositories/AddRepository.tsx";
+import { BindingConfigurations } from "./repositories/BindingConfigurations.tsx";
 import { ConnectGithub } from "./repositories/ConnectGithub.tsx";
 import { CreateRepository } from "./repositories/CreateRepository.tsx";
 import { InstallLink } from "./repositories/InstallLink.tsx";
@@ -114,7 +116,7 @@ function AccountTable(props: {
 
 function BindingRow(props: {
   readonly partition: PartitionIdentity;
-  readonly binding: ProjectRepositoryResponse;
+  readonly binding: ProjectRepositoryListedResponse;
   readonly nowMs: number;
 }): ReactNode {
   const binding = props.binding;
@@ -133,6 +135,12 @@ function BindingRow(props: {
           {binding.retiredAt === undefined ? undefined : (
             <Pill tone="retired">Retired</Pill>
           )}
+          {binding.retiredAt !== undefined || binding.configured ? null : (
+            <BindingConfigurations
+              partition={props.partition}
+              repository={binding.repository}
+            />
+          )}
         </span>
       </th>
       <td>
@@ -144,7 +152,7 @@ function BindingRow(props: {
 
 function BindingTable(props: {
   readonly partition: PartitionIdentity;
-  readonly bindings: readonly ProjectRepositoryResponse[];
+  readonly bindings: readonly ProjectRepositoryListedResponse[];
 }): ReactNode {
   const nowMs = useNowMs();
   if (props.bindings.length === 0)
@@ -213,7 +221,7 @@ function AccountsSection(props: {
 function RepositoriesSection(props: {
   readonly partition: PartitionIdentity;
   readonly installations: readonly ForgeInstallationResponse[];
-  readonly bindings: readonly ProjectRepositoryResponse[] | undefined;
+  readonly bindings: readonly ProjectRepositoryListedResponse[] | undefined;
   readonly unready: ReactNode;
 }): ReactNode {
   const bindings = props.bindings;

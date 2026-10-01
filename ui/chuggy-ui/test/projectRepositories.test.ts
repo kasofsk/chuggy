@@ -13,6 +13,7 @@ import type {
   ForgeRepositoryResponse,
   ProjectRepositoryConfigurationsResponse,
 } from "../../../src/contract/responses.ts";
+import { projectRepositoryConfigurationDeferrals } from "../../../src/contract/rosters.ts";
 import type { ApiResult } from "../app/core/apiRequest.ts";
 import type { ProjectRepositoryBindAnswer } from "../app/core/apiRoutes.ts";
 import {
@@ -20,7 +21,11 @@ import {
   repositoryBindOutcome,
   repositoryBindStatus,
   repositoryChoices,
+  repositoryConfigureStatus,
+  repositoryConfigurationsStatus,
+  repositoryDeferrals,
   repositoryLabel,
+  type RepositoryStepStatus,
 } from "../app/core/projectRepositories.ts";
 import { repositoryRefusalsDrawn } from "./repositoryRefusals.ts";
 
@@ -116,7 +121,7 @@ test("a new binding draws what its own configurations came to", () => {
         answered({ result: "Deferred", reason: "StepFailed" }),
       ),
     ),
-  ).toEqual(["Bound", "Deferred · StepFailed"]);
+  ).toEqual(["Bound", "Step failed"]);
 });
 
 test("each refusal is the one line the picker draws under itself", () => {
@@ -129,4 +134,103 @@ test("each refusal is the one line the picker draws under itself", () => {
     }),
   ).toBe("Not installed");
   repositoryRefusalsDrawn(status);
+});
+
+/** A retired binding is the one refusal Retry cannot outlast, so it alone withdraws it. */
+test("a configuration step asked for again draws its outcome, or the refusal it met", () => {
+  const configured = (
+    configurations: ProjectRepositoryConfigurationsResponse,
+  ): RepositoryStepStatus =>
+    repositoryConfigureStatus({
+      outcome: "Ok",
+      value: {
+        repository: "https://forge.test/kasofsk/chuggy",
+        configurations,
+      },
+    });
+  expect(configured({ result: "Imported", count: 1 })).toStrictEqual({
+    status: "Imported",
+    retry: false,
+  });
+  expect(
+    configured({ result: "Bootstrapped", revision: "bootstrap" }),
+  ).toStrictEqual({ status: "Bootstrapped", retry: false });
+  expect(
+    configured({ result: "Deferred", reason: "DefaultBranchUnavailable" }),
+  ).toStrictEqual({ status: "GitHub unavailable", retry: true });
+  expect(
+    configured({ result: "Deferred", reason: "NoBootstrapImage" }),
+  ).toStrictEqual({
+    status: "No worker image · ask an operator",
+    retry: false,
+  });
+  expect(
+    configured({ result: "Deferred", reason: "BootstrapDiffers" }),
+  ).toStrictEqual({
+    status: "Bootstrap differs · add configurations",
+    retry: false,
+  });
+  expect(
+    configured({ result: "Deferred", reason: "IdentityConflict" }),
+  ).toStrictEqual({
+    status: "Configuration conflict · ask an operator",
+    retry: false,
+  });
+  expect(
+    repositoryConfigureStatus({
+      outcome: "Conflict",
+      code: "RepositoryRetired",
+      body: undefined,
+    }),
+  ).toStrictEqual({ status: "Retired", retry: false });
+  expect(
+    repositoryConfigureStatus({
+      outcome: "Conflict",
+      code: "SomethingElse",
+      body: undefined,
+    }),
+  ).toStrictEqual({ status: "Conflict", retry: true });
+  expect(
+    repositoryConfigureStatus({
+      outcome: "Rejected",
+      code: "InvalidRequest",
+      status: 400,
+      body: undefined,
+    }),
+  ).toStrictEqual({ status: "Refused", retry: true });
+  expect(repositoryConfigureStatus({ outcome: "Absent" })).toStrictEqual({
+    status: "Not found",
+    retry: true,
+  });
+});
+
+/**
+ * The roster is the contract's, which the contract's own tests hold to the
+ * interpreter's, so a new reason fails here until it has a phrase and a retry
+ * decision. Only a reason the next attempt can find gone is retried.
+ */
+test("every deferral has one short phrase, and only one a retry can clear offers Retry", () => {
+  expect(Object.keys(repositoryDeferrals).toSorted()).toStrictEqual(
+    [...projectRepositoryConfigurationDeferrals].toSorted(),
+  );
+  for (const reason of projectRepositoryConfigurationDeferrals) {
+    const drawn = repositoryDeferrals[reason];
+    expect(drawn.status.length).toBeGreaterThan(0);
+    expect(drawn.status.length).toBeLessThanOrEqual(60);
+    expect(drawn.status.includes(" · ")).toBe(!drawn.retry);
+    expect(repositoryConfigurationsStatus({ result: "Deferred", reason })).toBe(
+      drawn.status,
+    );
+  }
+  expect(
+    projectRepositoryConfigurationDeferrals.filter(
+      (reason) => repositoryDeferrals[reason].retry,
+    ),
+  ).toStrictEqual([
+    "DefaultBranchUnavailable",
+    "SnapshotAbsent",
+    "SnapshotUnavailable",
+    "StaleBinding",
+    "StepFailed",
+  ]);
 });

@@ -81,6 +81,7 @@ import {
   parseProjectRepositoryLanding,
   parseExecutionPlacement,
   parseProjectRepositoryRetirement,
+  parseProjectRepositoryConfigure,
   parseRepositoryConfigurationImport,
   parseDraftCreation,
   parseDraftRevision,
@@ -116,6 +117,7 @@ import {
   projectRepositoriesResponse,
   projectCreationResponse,
   projectRepositoryBindResponse,
+  projectRepositoryConfigureResponse,
   projectRepositoryCreateResponse,
   projectRepositoryLandingResponse,
   projectRepositoryRetirementResponse,
@@ -1186,6 +1188,33 @@ function registerProjectRepositoryRetirement(
   );
 }
 
+/**
+ * One binding's configuration step asked for again. It is a PUT for the reason
+ * retirement is: a caller repeating it is answered what the first one left,
+ * and the bootstrap it may author is one revision however many ask.
+ */
+function registerProjectRepositoryConfigurations(
+  app: FastifyInstance,
+  onboarding: RepositoryOnboarding,
+): void {
+  app.put(
+    "/api/v1/tenants/:tenant/projects/:project/repositories/configurations",
+    { preValidation: requireVersionedJson },
+    async (request, reply) => {
+      send(
+        reply,
+        projectRepositoryConfigureResponse(
+          await onboarding.configureRepository(
+            principalOf(request),
+            partitionOf(request),
+            parseProjectRepositoryConfigure(request.body),
+          ),
+        ),
+      );
+    },
+  );
+}
+
 /** The executions read's own parameters: its cursor, its size and what it narrows to. */
 function executionListQuery(
   value: unknown,
@@ -1791,6 +1820,7 @@ export function createNativeHttpApp(
     registerProjectRepositories(app, onboarding);
     registerProjectRepositoryLanding(app, onboarding);
     registerProjectRepositoryRetirement(app, onboarding);
+    registerProjectRepositoryConfigurations(app, onboarding);
   }
   registerOperations(app, web);
   registerNotifications(app, web);

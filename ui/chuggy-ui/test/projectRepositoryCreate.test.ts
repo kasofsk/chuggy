@@ -93,7 +93,7 @@ test("every step the create took is a row of its own", () => {
   ).toEqual([
     { label: "Seed", detail: "Not seeded" },
     { label: "Ruleset", detail: "Skipped" },
-    { label: "Configurations", detail: "Deferred · StepFailed" },
+    { label: "Configurations", detail: "Step failed" },
   ]);
 });
 

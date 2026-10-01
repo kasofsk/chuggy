@@ -87,6 +87,8 @@ import type {
 } from "../../src/interpreter/repositoryBinding.ts";
 import {
   repositoryOnboarding,
+  type RepositoryConfigurationsHeld,
+  type RepositoryConfigurationsHeldRead,
   type RepositoryConfigurationsPorts,
   type RepositoryCreationPorts,
   type RepositoryOnboarding,
@@ -96,9 +98,11 @@ import {
 import {
   asCanonicalConfiguration,
   asConfigurationRevisionId,
+  type CanonicalConfiguration,
   type ConfigurationCreated,
   type ConfigurationRevisionId,
 } from "../../src/interpreter/authoring.ts";
+import { bootstrapConfiguration } from "../../src/interpreter/bootstrapConfiguration.ts";
 import type {
   RepositoryConfigurationsImported,
   RepositoryConfigurationSnapshotRead,
@@ -216,6 +220,8 @@ function fixtureAccess(
  */
 interface FixtureConfigurations {
   readonly head?: RepositoryDefaultBranchRead;
+  /** Heads answered in turn before `head`, so a case can see a forge recover between two steps. */
+  readonly heads?: readonly RepositoryDefaultBranchRead[];
   readonly snapshot?: RepositoryConfigurationSnapshotRead;
   readonly stored?: RepositoryConfigurationsImported;
   readonly authored?: ConfigurationCreated;
@@ -249,6 +255,11 @@ interface FixturePorts {
   readonly elsewhere?: readonly ForgeApp[];
   readonly configurations?: FixtureConfigurations;
   readonly creation?: FixtureCreation;
+  /** What the project already holds from the configuration step, nothing where absent. */
+  readonly stepHeld?: RepositoryConfigurationsHeld;
+  /** The one binding retired, or not there at all. */
+  readonly retiredAt?: string;
+  readonly unbound?: boolean;
 }
 
 /**
@@ -273,6 +284,9 @@ interface FixtureWrites {
   readonly rulesets: ForgeRepositoryRulesetRequest[];
   readonly landings: ProjectRepositoryLandingCommand[];
   readonly retirements: ProjectRepositoryRetirementCommand[];
+  readonly heldQueries: Parameters<
+    RepositoryConfigurationsHeldRead["held"]
+  >[0][];
 }
 
 /**
@@ -327,9 +341,12 @@ function fixtureConfigurations(
     heads: {
       defaultBranch: (asked) => {
         wrote.heads.push(asked);
+        const turn = given.heads?.[wrote.heads.length - 1];
         return given.raising === true
           ? Promise.reject(new Error("the scratch could not be written"))
-          : Promise.resolve(given.head ?? { read: "Unavailable" as const });
+          : Promise.resolve(
+              turn ?? given.head ?? { read: "Unavailable" as const },
+            );
       },
     },
     imports: {
@@ -468,6 +485,22 @@ function fixtureBinding(given: FixturePorts): ProjectRepositoryBound {
     repository,
     boundAt: "2026-09-11T01:00:00Z",
     landing: given.landing ?? { mode: "Push" },
+    ...(given.retiredAt === undefined ? {} : { retiredAt: given.retiredAt }),
+  };
+}
+
+/** The held read, answering what the case gave it and recording what it was asked. */
+function fixturePortsHeld(
+  given: FixturePorts,
+  wrote: FixtureWrites,
+): RepositoryConfigurationsHeldRead {
+  return {
+    held: (query) => {
+      wrote.heldQueries.push(query);
+      return Promise.resolve(
+        given.stepHeld ?? { declared: new Map(), bootstrap: undefined },
+      );
+    },
   };
 }
 
@@ -477,7 +510,10 @@ function fixturePortsLanding(
   wrote: FixtureWrites,
 ): ProjectRepositoryLandingStore {
   return {
-    landing: () => Promise.resolve(fixtureBinding(given)),
+    landing: () =>
+      Promise.resolve(
+        given.unbound === true ? undefined : fixtureBinding(given),
+      ),
     setLanding: (command) => {
       wrote.landings.push(command);
       return Promise.resolve(
@@ -552,6 +588,7 @@ function fixturePorts(
     rulesets: [],
     landings: [],
     retirements: [],
+    heldQueries: [],
   };
   const credentials: RepositoryCredentialPort = {
     credential: () =>
@@ -582,6 +619,7 @@ function fixturePorts(
       },
       landing: fixturePortsLanding(given, wrote),
       retirement: fixturePortsRetirement(given, wrote),
+      configurationsHeld: fixturePortsHeld(given, wrote),
       ...(given.configurations === undefined
         ? {}
         : {
@@ -1322,6 +1360,7 @@ test("what a project binds is its readers' to read and nobody else's", async () 
           repository,
           boundAt: "2026-09-11T01:00:00Z",
           landing: { mode: "Push" },
+          configured: false,
         },
       ],
     },
@@ -1459,7 +1498,7 @@ test("a project already holding a different bootstrap is told so and stays bound
     result: "Bound",
     repository,
     landing: { mode: "Push" },
-    configurations: { result: "Deferred", reason: "IdentityConflict" },
+    configurations: { result: "Deferred", reason: "BootstrapDiffers" },
   });
 });
 
@@ -1907,4 +1946,284 @@ test("a retirement that could not be completed is answered as one to try again",
     retirementOutcome: { outcome: "Unavailable" },
   });
   assert.deepEqual(written, { result: "Unavailable" });
+});
+
+/** The bootstrap the step authors for this repository, which releases as it stands. */
+const readyBootstrap = bootstrapConfiguration({
+  repository,
+  defaultBranch: madeBranch,
+  image: workerImage,
+});
+
+/** A bootstrap the release rule refuses, as one authored before the rule grew is. */
+const unreadyBootstrap = asCanonicalConfiguration('{"image":"","version":1}');
+
+/** A repository that declares nothing, read at a head that answers, under an image to author against. */
+const undeclared: FixtureConfigurations = {
+  head: branchHead,
+  snapshot: { read: "Absent", absent: "ConfigurationDirectory" },
+  image: workerImage,
+};
+
+async function fixtureConfigured(
+  granted: readonly (ProjectAccessKind | TenantAccessKind)[],
+  given: FixturePorts = {},
+) {
+  const composed = fixtureService(granted, given);
+  const configured = await composed.service.configureRepository(
+    principal,
+    partition,
+    repository,
+  );
+  return { configured, asked: composed.asked, wrote: composed.wrote };
+}
+
+test("configuring a binding again is asked behind the permit that binds one", async () => {
+  const { configured, asked, wrote } = await fixtureConfigured(["Read"], {
+    configurations: undeclared,
+  });
+  assert.deepEqual(configured, { result: "NotFound" });
+  assert.deepEqual(asked.askedProject, ["Administer"]);
+  assert.deepEqual(wrote.heldQueries, [], "nothing was read for the caller");
+  assert.deepEqual(wrote.heads, []);
+  assert.deepEqual(wrote.authored, []);
+});
+
+test("a step that deferred at the bind bootstraps when asked again once the forge answers", async () => {
+  const composed = fixtureService(["Administer"], {
+    resolved: credentialProved,
+    configurations: {
+      ...undeclared,
+      heads: [{ read: "Unavailable" }],
+    },
+  });
+  const bound = await composed.service.bindRepository(principal, partition, {
+    repository,
+    operation,
+  });
+  assert.deepEqual(bound.result === "Bound" && bound.configurations, {
+    result: "Deferred",
+    reason: "DefaultBranchUnavailable",
+  });
+  assert.deepEqual(composed.wrote.authored, []);
+  assert.deepEqual(
+    await composed.service.configureRepository(
+      principal,
+      partition,
+      repository,
+    ),
+    {
+      result: "Configurations",
+      repository,
+      configurations: { result: "Bootstrapped", revision: "bootstrap" },
+    },
+  );
+  assert.deepEqual(composed.wrote.authored, ["bootstrap"]);
+  assert.deepEqual(composed.wrote.heads.at(-1), {
+    partition,
+    repository,
+    recoveryEpoch: epoch,
+  });
+  assert.deepEqual(composed.wrote.heldQueries, [
+    { partition, repositories: [repository], bootstrap: "bootstrap" },
+  ]);
+});
+
+test("a repository the project already holds configurations for answers them and reads nothing", async () => {
+  const cases: readonly (readonly [RepositoryConfigurationsHeld, unknown])[] = [
+    [
+      { declared: new Map([[repository, 2]]), bootstrap: readyBootstrap },
+      { result: "Imported", count: 2 },
+    ],
+    [
+      { declared: new Map(), bootstrap: readyBootstrap },
+      { result: "Bootstrapped", revision: "bootstrap" },
+    ],
+  ];
+  for (const [stepHeld, configurations] of cases) {
+    const { configured, wrote } = await fixtureConfigured(["Administer"], {
+      configurations: undeclared,
+      stepHeld,
+    });
+    assert.deepEqual(configured, {
+      result: "Configurations",
+      repository,
+      configurations,
+    });
+    assert.deepEqual(wrote.heads, [], "the repository was not read");
+    assert.deepEqual(wrote.authored, [], "nothing was authored");
+  }
+});
+
+test("names another repository declared are not this repository's configurations", async () => {
+  const elsewhere = asRepositoryId("https://github.com/kasofsk/other.git");
+  const { configured, wrote } = await fixtureConfigured(["Administer"], {
+    configurations: undeclared,
+    stepHeld: { declared: new Map([[elsewhere, 3]]), bootstrap: undefined },
+  });
+  assert.deepEqual(configured, {
+    result: "Configurations",
+    repository,
+    configurations: { result: "Bootstrapped", revision: "bootstrap" },
+  });
+  assert.deepEqual(wrote.authored, ["bootstrap"]);
+});
+
+test("a binding that is not there, or is retired, runs no step", async () => {
+  const cases: readonly (readonly [FixturePorts, string])[] = [
+    [{ unbound: true }, "NotBound"],
+    [{ retiredAt: fixtureRetiredAt }, "Retired"],
+  ];
+  for (const [given, result] of cases) {
+    const { configured, wrote } = await fixtureConfigured(["Administer"], {
+      configurations: undeclared,
+      ...given,
+    });
+    assert.deepEqual(configured, { result }, result);
+    assert.deepEqual(wrote.heldQueries, [], result);
+    assert.deepEqual(wrote.heads, [], result);
+  }
+});
+
+test("a deployment with no configuration step still answers what is held and defers the rest", async () => {
+  const { configured } = await fixtureConfigured(["Administer"]);
+  assert.deepEqual(configured, {
+    result: "Configurations",
+    repository,
+    configurations: { result: "Deferred", reason: "NotConfigured" },
+  });
+});
+
+/**
+ * The revisions a project holds, keyed by identity as the durable side keys
+ * them: the first author of one creates it and every later one meets it.
+ */
+function fixtureRevisions(
+  standing: ReadonlyMap<string, CanonicalConfiguration> = new Map(),
+) {
+  const revisions = new Map<string, CanonicalConfiguration>(standing);
+  const created: string[] = [];
+  const authoring: RepositoryConfigurationsPorts["authoring"] = {
+    createConfiguration: (input) => {
+      const standing = revisions.get(input.revision);
+      const revision = {
+        partition: input.partition,
+        revision: input.revision,
+        canonical: input.canonical,
+        digest: "sha256:bootstrap",
+      };
+      if (standing === undefined) {
+        revisions.set(input.revision, input.canonical);
+        created.push(input.revision);
+        return Promise.resolve({ created: "Created" as const, revision });
+      }
+      return Promise.resolve(
+        standing === input.canonical
+          ? { created: "AlreadyExists" as const, revision }
+          : { created: "IdentityConflict" as const },
+      );
+    },
+  };
+  const held: RepositoryConfigurationsHeldRead = {
+    held: (query) =>
+      Promise.resolve({
+        declared: new Map(),
+        bootstrap: revisions.get(query.bootstrap),
+      }),
+  };
+  return { created, authoring, held };
+}
+
+/** The service over one revision store, its permits granted and its repository declaring nothing. */
+function fixtureRevisionsService(
+  revisions: ReturnType<typeof fixtureRevisions>,
+  granted: readonly (ProjectAccessKind | TenantAccessKind)[] = ["Administer"],
+) {
+  const { ports, wrote } = fixturePorts(fixtureAccess(granted).access, {
+    configurations: undeclared,
+  });
+  const service = repositoryOnboarding({
+    ...ports,
+    configurationsHeld: revisions.held,
+    ...(ports.configurations === undefined
+      ? {}
+      : {
+          configurations: {
+            ...ports.configurations,
+            authoring: revisions.authoring,
+          },
+        }),
+  });
+  return { service, wrote };
+}
+
+test("two requests racing to configure one repository author its bootstrap once", async () => {
+  const revisions = fixtureRevisions();
+  const { service, wrote } = fixtureRevisionsService(revisions);
+  const configure = () =>
+    service.configureRepository(principal, partition, repository);
+  const raced = await Promise.all([configure(), configure()]);
+  assert.equal(wrote.heads.length, 2, "both requests ran the step");
+  assert.deepEqual(revisions.created, ["bootstrap"]);
+  for (const answered of raced)
+    assert.deepEqual(answered, {
+      result: "Configurations",
+      repository,
+      configurations: { result: "Bootstrapped", revision: "bootstrap" },
+    });
+  await configure();
+  assert.equal(wrote.heads.length, 2, "a third request read nothing");
+  assert.deepEqual(revisions.created, ["bootstrap"]);
+});
+
+test("the listing marks each binding by whether the project holds anything for it", async () => {
+  const cases: readonly (readonly [RepositoryConfigurationsHeld, boolean])[] = [
+    [{ declared: new Map(), bootstrap: undefined }, false],
+    [{ declared: new Map([[repository, 1]]), bootstrap: undefined }, true],
+    [{ declared: new Map(), bootstrap: readyBootstrap }, true],
+    [{ declared: new Map(), bootstrap: unreadyBootstrap }, false],
+  ];
+  for (const [stepHeld, configured] of cases) {
+    const { service, wrote } = fixtureService(["Read"], { stepHeld });
+    const listed = await service.projectRepositories(principal, partition);
+    assert.deepEqual(
+      listed.result === "Repositories" &&
+        listed.repositories.map((row) => row.configured),
+      [configured],
+    );
+    assert.deepEqual(wrote.heldQueries, [
+      { partition, repositories: [repository], bootstrap: "bootstrap" },
+    ]);
+  }
+});
+
+/**
+ * A revision is never rewritten, so a bootstrap the release rule has outgrown
+ * is neither held nor replaced: the step still runs, because a repository that
+ * now declares its own is imported, and one declaring none meets the old one.
+ */
+test("a bootstrap that no longer releases is not held, and the step meets it rather than replacing it", async () => {
+  const revisions = fixtureRevisions(
+    new Map([["bootstrap", unreadyBootstrap]]),
+  );
+  const { service, wrote } = fixtureRevisionsService(revisions, [
+    "Administer",
+    "Read",
+  ]);
+  const listed = await service.projectRepositories(principal, partition);
+  assert.deepEqual(
+    listed.result === "Repositories" &&
+      listed.repositories.map((row) => row.configured),
+    [false],
+  );
+  assert.deepEqual(
+    await service.configureRepository(principal, partition, repository),
+    {
+      result: "Configurations",
+      repository,
+      configurations: { result: "Deferred", reason: "BootstrapDiffers" },
+    },
+  );
+  assert.equal(wrote.heads.length, 1, "the step ran");
+  assert.deepEqual(revisions.created, [], "nothing was authored over it");
 });

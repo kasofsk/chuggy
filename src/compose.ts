@@ -46,7 +46,10 @@ import { gitPromotion } from "./adapters/git/gitPromotion.ts";
 import { postgresOperationInbox } from "./adapters/postgres/operationInbox.ts";
 import { postgresLeadInquiries } from "./adapters/postgres/leadInquiry.ts";
 import { postgresNativeReads } from "./adapters/postgres/nativeReads.ts";
-import { postgresAuthoring } from "./adapters/postgres/authoring.ts";
+import {
+  postgresAuthoring,
+  postgresRepositoryConfigurationsHeld,
+} from "./adapters/postgres/authoring.ts";
 import { postgresProjectRepositoryBinding } from "./adapters/postgres/repositoryConfiguration.ts";
 import {
   forgeCredentialMinting,
@@ -501,6 +504,9 @@ export function composeRepositoryOnboarding(
     binding: postgresRepositoryBinding(composition.apiPool),
     landing: postgresProjectRepositoryLanding(composition.apiPool),
     retirement: postgresProjectRepositoryRetirement(composition.apiPool),
+    configurationsHeld: postgresRepositoryConfigurationsHeld(
+      composition.apiPool,
+    ),
     ...(composition.repositories === undefined
       ? {}
       : {

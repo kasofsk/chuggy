@@ -3,7 +3,10 @@ import { createHash, randomUUID } from "node:crypto";
 import { after, before, test } from "node:test";
 import type pg from "pg";
 
-import { postgresAuthoring } from "../../src/adapters/postgres/authoring.ts";
+import {
+  postgresAuthoring,
+  postgresRepositoryConfigurationsHeld,
+} from "../../src/adapters/postgres/authoring.ts";
 import { postgresDomainConfigurationPrecondition } from "../../src/adapters/postgres/domainConfiguration.ts";
 import { postgresNativeReads } from "../../src/adapters/postgres/nativeReads.ts";
 import { postgresPool } from "../../src/adapters/postgres/pool.ts";
@@ -2740,5 +2743,102 @@ test("a released ticket that lands nothing still hands release a brief", async (
       finalization: { mode: "None" },
     },
     "the brief release reads is the whole of one, landing and all",
+  );
+});
+
+/**
+ * A project beside this one in its tenant and one of its name in another
+ * tenant, each holding a bootstrap and a name it imported from this repository
+ * while the repository was bound there instead.
+ */
+async function configurationsHeldNeighbours(
+  partition: Partition,
+  repository: RepositoryId,
+): Promise<void> {
+  const neighbours: readonly Partition[] = [
+    { ...partition, project: asProjectId(`project-held-${randomUUID()}`) },
+    { ...partition, tenant: asTenantId(`tenant-held-${randomUUID()}`) },
+  ];
+  for (const neighbour of neighbours) {
+    await harness.store.createProject(neighbour);
+    await harness.authoring.createConfiguration({
+      partition: neighbour,
+      authority,
+      revision: asConfigurationRevisionId("bootstrap"),
+      canonical: postgresHarnessConfiguration,
+    });
+    await harness.query(
+      `INSERT INTO repository_configuration_provenance
+         (tenant,project,revision,digest,repository,repository_commit,path,name)
+       SELECT tenant,project,revision,digest,$3,$4,$5,'older'
+         FROM configuration_revision WHERE tenant=$1 AND project=$2 AND revision='bootstrap'`,
+      [
+        neighbour.tenant,
+        neighbour.project,
+        repository,
+        "c".repeat(40),
+        [".chug", "configurations", "older.json"].join("/"),
+      ],
+    );
+  }
+}
+
+test("what a project holds from the configuration step is read per repository and per project", async (t) => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "configurations-held",
+  );
+  const declaring = await repositoryBinding(partition, "declaring");
+  const silent = await repositoryBinding(partition, "silent");
+  const asApi = postgresHarnessRolePool(apiRole);
+  t.after(() => asApi.end());
+  const held = postgresRepositoryConfigurationsHeld(asApi);
+  const bootstrap = asConfigurationRevisionId("bootstrap");
+  const query = {
+    partition,
+    repositories: [declaring.repository, silent.repository],
+    bootstrap,
+  };
+  assert.deepEqual(await held.held(query), {
+    declared: new Map(),
+    bootstrap: undefined,
+  });
+  for (const commit of ["a", "b"])
+    await harness.authoring.importRepositoryConfigurations({
+      partition,
+      binding: declaring,
+      authority,
+      declarations: repositoryDeclarations(commit.repeat(40), [
+        "work",
+        "review",
+      ]),
+    });
+  await configurationsHeldNeighbours(partition, declaring.repository);
+  assert.deepEqual(await held.held(query), {
+    declared: new Map([[declaring.repository, 2]]),
+    bootstrap: undefined,
+  });
+  assert.deepEqual(
+    await held.held({ ...query, repositories: [silent.repository] }),
+    { declared: new Map(), bootstrap: undefined },
+  );
+  const authoringAsApi = postgresAuthoring(asApi);
+  const raced = await Promise.all(
+    [1, 2].map(() =>
+      authoringAsApi.createConfiguration({
+        partition,
+        authority,
+        revision: bootstrap,
+        canonical: postgresHarnessConfiguration,
+      }),
+    ),
+  );
+  assert.deepEqual(raced.map(({ created }) => created).sort(), [
+    "AlreadyExists",
+    "Created",
+  ]);
+  assert.equal(
+    (await held.held(query)).bootstrap,
+    postgresHarnessConfiguration,
   );
 });

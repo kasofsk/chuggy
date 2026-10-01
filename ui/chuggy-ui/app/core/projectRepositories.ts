@@ -8,8 +8,10 @@
 import type {
   ForgeRepositoryResponse,
   ProjectRepositoryConfigurationsResponse,
+  ProjectRepositoryConfiguredResponse,
   ProjectRepositoryResponse,
 } from "../../../../src/contract/responses.ts";
+import type { ProjectRepositoryConfigurationDeferralName } from "../../../../src/contract/rosters.ts";
 
 import type { ApiFailure, ApiResult } from "./apiRequest.ts";
 import type { ProjectRepositoryBindAnswer } from "./apiRoutes.ts";
@@ -72,11 +74,61 @@ export function repositoryRefusalStatus(
   }
 }
 
+/** What a binding's configuration step draws, and whether asking again could change it. */
+export interface RepositoryStepStatus {
+  readonly status: string;
+  readonly retry: boolean;
+}
+
 /**
- * What a newly bound repository's own configurations came to, as the one line
- * drawn beside the binding. A `Deferred` names its reason because the reason
- * is what says whether anything can be done about it.
+ * Every deferral as a row draws it. One that asking again cannot clear names
+ * who has to act instead, and its row offers no Retry.
  */
+export const repositoryDeferrals: Readonly<
+  Record<ProjectRepositoryConfigurationDeferralName, RepositoryStepStatus>
+> = {
+  NotConfigured: {
+    status: "No configuration step · ask an operator",
+    retry: false,
+  },
+  NoBootstrapImage: {
+    status: "No worker image · ask an operator",
+    retry: false,
+  },
+  DefaultBranchAbsent: {
+    status: "Empty repository · push a commit",
+    retry: false,
+  },
+  DefaultBranchUnavailable: { status: "GitHub unavailable", retry: true },
+  RepositoryAbsent: { status: "Not bound · bind again", retry: false },
+  SnapshotAbsent: { status: "Head unreadable", retry: true },
+  SnapshotUnavailable: { status: "GitHub unavailable", retry: true },
+  SnapshotRefused: {
+    status: "Unreadable configurations · fix the repository",
+    retry: false,
+  },
+  DeclarationsRefused: {
+    status: "Invalid configurations · fix the repository",
+    retry: false,
+  },
+  IdentityConflict: {
+    status: "Configuration conflict · ask an operator",
+    retry: false,
+  },
+  BootstrapDiffers: {
+    status: "Bootstrap differs · add configurations",
+    retry: false,
+  },
+  StaleBinding: { status: "Binding changed", retry: true },
+  NotFound: { status: "Project not found · ask an operator", retry: false },
+  ParentNotFound: {
+    status: "Project not found · ask an operator",
+    retry: false,
+  },
+  StepFailed: { status: "Step failed", retry: true },
+};
+
+/** What a repository's configuration step came to, as the one line drawn beside it. */
 export function repositoryConfigurationsStatus(
   configurations: ProjectRepositoryConfigurationsResponse,
 ): string {
@@ -86,8 +138,32 @@ export function repositoryConfigurationsStatus(
     case "Bootstrapped":
       return "Bootstrapped";
     case "Deferred":
-      return `Deferred · ${configurations.reason}`;
+      return repositoryDeferrals[configurations.reason].status;
   }
+}
+
+/**
+ * What a configuration step asked for again came to on its row. A refusal of
+ * the request itself leaves Retry offered unless the binding is retired.
+ */
+export function repositoryConfigureStatus(
+  result: ApiResult<ProjectRepositoryConfiguredResponse>,
+): RepositoryStepStatus {
+  if (result.outcome === "Ok") {
+    const configurations = result.value.configurations;
+    return configurations.result === "Deferred"
+      ? repositoryDeferrals[configurations.reason]
+      : {
+          status: repositoryConfigurationsStatus(configurations),
+          retry: false,
+        };
+  }
+  if (result.outcome === "Conflict")
+    return result.code === "RepositoryRetired"
+      ? { status: "Retired", retry: false }
+      : { status: "Conflict", retry: true };
+  if (result.outcome === "Rejected") return { status: "Refused", retry: true };
+  return { status: repositoryRefusalStatus(result), retry: true };
 }
 
 export type RepositoryBindOutcome =

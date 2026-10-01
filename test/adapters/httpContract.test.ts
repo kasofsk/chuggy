@@ -78,6 +78,7 @@ test("the versioned route and media contracts move together", () => {
     "/api/v1/tenants/:tenant/projects/:project/repositories/new",
     "/api/v1/tenants/:tenant/projects/:project/repositories/landing",
     "/api/v1/tenants/:tenant/projects/:project/repositories/retirement",
+    "/api/v1/tenants/:tenant/projects/:project/repositories/configurations",
     "/api/v1/tenants/:tenant/projects/:project/execution-placement",
     "/api/v1/tenants/:tenant/projects/:project/hosted-runs",
     "/api/v1/tenants/:tenant/projects/:project/worker-pools",
