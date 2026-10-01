@@ -79,6 +79,8 @@ import { Picker } from "./ui/Picker.tsx";
 import { RadioGroup } from "./ui/RadioGroup.tsx";
 import { Tooltip } from "./ui/Tooltip.tsx";
 
+import "./TicketCreation.css";
+
 export type Attempt =
   | { readonly attempt: "Idle" }
   | { readonly attempt: "Running"; readonly step: OperationStep }
@@ -145,7 +147,7 @@ function Links(props: FormEdit): ReactNode {
     <fieldset className="creation-set">
       <legend>Links</legend>
       {form.links.map((link, index) => (
-        <div key={index} className="creation-row">
+        <div key={index} className="creation-row creation-line">
           <input
             type="url"
             aria-label={`Link ${String(index + 1)}`}
@@ -193,7 +195,7 @@ function Checks(props: FormEdit): ReactNode {
     <fieldset className="creation-set">
       <legend>Checks</legend>
       {form.checks.map((check, index) => (
-        <div key={index} className="creation-row">
+        <div key={index} className="creation-row creation-line">
           <input
             type="text"
             aria-label={`Check ${String(index + 1)}`}
@@ -259,7 +261,7 @@ function BranchRow(props: {
           props.onChange(event.target.value);
         }}
       />
-      <span id={hint} className="col-start-2 -col-end-1 text-ink-3 text-xs">
+      <span id={hint} className="creation-hint text-ink-3 text-xs">
         {props.hint}
       </span>
     </div>
@@ -312,6 +314,7 @@ function Repository(
         label="Repository"
         value={form.repository}
         placeholder="Choose"
+        hint={form.repository === "" ? undefined : form.repository}
         options={repositories.map((binding) => ({
           value: binding.repository,
           text: repositoryLabel(binding.repository),
@@ -416,7 +419,7 @@ function LockedDependencies(props: {
           ? "None"
           : props.dependencies.map((held) => `#${String(held)}`).join(", ")}
       </p>
-      <span className="col-start-2 -col-end-1 text-ink-3 text-xs">
+      <span className="creation-hint text-ink-3 text-xs">
         Fixed once released
       </span>
     </div>

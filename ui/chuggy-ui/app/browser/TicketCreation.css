@@ -1,0 +1,96 @@
+/* The ticket form, shared by creating and editing: a row is its label beside
+   its field, and under the narrow width the label stands above it. A field
+   takes the width its column gives it, never its own default. */
+
+@layer page {
+  .creation {
+    display: grid;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-4);
+    justify-items: start;
+  }
+
+  .creation > * {
+    width: 100%;
+  }
+
+  .creation-row {
+    display: grid;
+    grid-template-columns: var(--col-field-label) minmax(0, 1fr) auto;
+    align-items: baseline;
+    gap: var(--space-2);
+  }
+
+  .creation-row > span:first-child {
+    color: var(--ink-3);
+  }
+
+  .creation-row > :is(input, select, textarea) {
+    min-width: 0;
+  }
+
+  .creation-hint {
+    grid-column: 2 / -1;
+  }
+
+  .creation-intent textarea {
+    resize: vertical;
+  }
+
+  .creation-set {
+    display: grid;
+    gap: var(--space-2);
+    min-width: 0;
+    margin: 0;
+    padding: var(--space-2) var(--space-4);
+    border: var(--hairline) solid var(--edge);
+    border-radius: var(--radius-2);
+  }
+
+  .creation-set legend {
+    color: var(--ink-3);
+    padding: 0 var(--space-2);
+  }
+
+  .creation-check {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-2);
+  }
+
+  .creation-check input {
+    width: auto;
+  }
+
+  .creation-stage {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: var(--space-2);
+  }
+
+  .creation-set > button,
+  .creation-stage > button {
+    justify-self: start;
+  }
+
+  @container (max-width: 40em) {
+    .creation-row {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .creation-hint {
+      grid-column: 1 / -1;
+    }
+
+    .creation-stage {
+      align-items: end;
+    }
+  }
+
+  /* A link or a check has no label of its own: at every width its box takes
+     the whole field and its Remove stays beside it, so it follows the rules
+     above that it overrides. */
+  .creation-line {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+}

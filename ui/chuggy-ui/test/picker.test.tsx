@@ -87,3 +87,30 @@ test("choosing another option reaches the caller with its value", async () => {
   expect(chosen).toEqual(["acme/beta"]);
   styleless();
 });
+
+/** A trigger takes the width its place gives it, so the chosen text is clipped
+ * to that and the hint is where the whole of it stays reachable. */
+test("the trigger may be narrower than its text, which it clips, and focusing it reveals the hint", async () => {
+  const view = render(
+    <Picker
+      label="Repository"
+      value="https://forge.test/acme/atlas.git"
+      options={[
+        { value: "https://forge.test/acme/atlas.git", text: "acme/atlas" },
+      ]}
+      hint="https://forge.test/acme/atlas.git"
+      onChoose={() => undefined}
+    />,
+  );
+  const trigger = screen.getByRole("button", { name: "Repository acme/atlas" });
+  expect(trigger.classList.contains("min-w-0")).toBe(true);
+  expect(screen.getByText("acme/atlas").classList.contains("truncate")).toBe(
+    true,
+  );
+  fireEvent.focus(trigger);
+  expect((await screen.findByRole("tooltip")).textContent).toBe(
+    "https://forge.test/acme/atlas.git",
+  );
+  styleless();
+  expect(view.container.querySelector("[style]")).toBeNull();
+});

@@ -155,6 +155,7 @@
     --col-pill: 7rem; /* ledger: the verdict */
     --col-when: 10rem; /* ledger: the row's start and how long it took */
     --col-spent: 11rem; /* ledger: the row's cost and tokens */
+    --col-field-label: 10rem; /* a form row's label, beside its field */
   }
 
   :root[data-theme="light"] {

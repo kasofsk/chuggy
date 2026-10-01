@@ -574,6 +574,18 @@ test("a sole binding is the choice already made, and it reaches the wire", async
   expect(briefOf(held.sent)?.["repository"]).toBe(chuggy);
 });
 
+/** The picker draws a binding's short name and may clip even that, so the
+ * address it stands for is what focusing it reveals. */
+test("the chosen repository's whole address is what its picker reveals", async () => {
+  draw(api({ state: "Succeeded" }).ports, [], creationInitialization, [
+    creationBinding(chuggy),
+  ]);
+  const trigger = picker();
+  if (trigger === null) throw new Error("no repository picker");
+  fireEvent.focus(trigger);
+  expect((await screen.findByRole("tooltip")).textContent).toBe(chuggy);
+});
+
 /**
  * Two bindings is where the rule has teeth: nothing can be chosen for the
  * person, so a submission with none chosen must not reach the wire naming
