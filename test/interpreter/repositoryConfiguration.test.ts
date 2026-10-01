@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readdirSync, readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import {
@@ -38,6 +39,11 @@ const configuration = {
   practices: [],
   work: { instructions: [] },
   review: { instructions: [] },
+  worker: {
+    mode: { type: "SingleAgent", agent: "Claude", arguments: [] },
+    setup: [],
+    files: [],
+  },
 };
 
 function declaration(
@@ -68,12 +74,31 @@ test("a repository declaration becomes a ready immutable revision", () => {
           path: `${repositoryConfigurationRoot}review.json`,
           revision: `repository:${commit}:review`,
           canonical:
-            '{"brief":{"acceptanceCriteria":["The declaration is imported."],"constraints":[],"motivation":["The repository declares its configuration."]},"image":"worker:v1","practices":[],"review":{"instructions":[]},"version":1,"work":{"instructions":[]}}',
+            '{"brief":{"acceptanceCriteria":["The declaration is imported."],"constraints":[],"motivation":["The repository declares its configuration."]},"image":"worker:v1","practices":[],"review":{"instructions":[]},"version":1,"work":{"instructions":[]},"worker":{"files":[],"mode":{"agent":"Claude","arguments":[],"type":"SingleAgent"},"setup":[]}}',
           configuration,
         },
       ],
     },
   );
+});
+
+test("every declaration this tree makes imports, each one releasable", () => {
+  const names = readdirSync(repositoryConfigurationRoot).filter((name) =>
+    name.endsWith(".json"),
+  );
+  assert.ok(names.includes("basic-coding.json"));
+  const found = repositoryConfigurationImportReadiness({
+    repository,
+    commit,
+    files: names.map((name) => ({
+      path: `${repositoryConfigurationRoot}${name}`,
+      kind: "File",
+      content: readFileSync(`${repositoryConfigurationRoot}${name}`, "utf8"),
+    })),
+  });
+  assert.equal(found.readiness, "Ready", JSON.stringify(found));
+  if (found.readiness !== "Ready") return;
+  assert.equal(found.declarations.length, names.length);
 });
 
 test("one bad declaration refuses the snapshot without partial output", () => {

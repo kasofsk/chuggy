@@ -133,6 +133,7 @@ import {
   executionsResponse,
   operationalStatusResponse,
   agenticRefusalsResponse,
+  hostedRunsResponse,
   leadResponse,
   leadTranscriptResponse,
   selectorHistoryResponse,
@@ -230,6 +231,7 @@ type InitialNativeWeb = Pick<
   | "executions"
   | "operationalStatus"
   | "selectorOperationalContext"
+  | "hostedRuns"
   | "lead"
   | "leadTranscript"
   | "agenticRefusals"
@@ -555,6 +557,15 @@ function registerProject(app: FastifyInstance, web: InitialNativeWeb): void {
   registerAgenticRefusals(app, web, root);
   registerOperationalRoutes(app, web, root);
   registerRunEvidenceRoutes(app, web);
+}
+
+function registerHostedRuns(app: FastifyInstance, web: InitialNativeWeb): void {
+  registerEndpoint(
+    app,
+    nativeHttpEndpoints.hostedRuns,
+    (_request, principal, partition) => web.hostedRuns(principal, partition),
+    hostedRunsResponse,
+  );
 }
 
 function registerLead(app: FastifyInstance, web: InitialNativeWeb): void {
@@ -1796,6 +1807,7 @@ export function createNativeHttpApp(
   registerInventory(app, web);
   if (creation !== undefined) registerProjectCreation(app, creation);
   registerProject(app, web);
+  registerHostedRuns(app, web);
   registerLead(app, web);
   registerSelectorContext(app, web);
   registerSelectorHistory(app, web, partitionRoot);

@@ -448,14 +448,46 @@ test("choosing a repository binds it by address under an idempotency key", async
   ).toBeTruthy();
 });
 
+function pickerRows(): readonly (string | null)[] {
+  return within(screen.getByRole("dialog"))
+    .queryAllByRole("listitem")
+    .map((row) => row.textContent);
+}
+
+function typedInPicker(query: string): void {
+  fireEvent.change(screen.getByRole("textbox", { name: "Filter" }), {
+    target: { value: query },
+  });
+}
+
 async function searchPicker(query: string): Promise<void> {
   fireEvent.click(screen.getByRole("button", { name: "Add" }));
   await settled();
-  fireEvent.change(screen.getByRole("textbox", { name: "Search" }), {
-    target: { value: query },
-  });
+  typedInPicker(query);
   await settled();
 }
+
+test("the picker's filter says what it is and has the caret once the roster arrives", async () => {
+  await drawPage();
+  fireEvent.click(screen.getByRole("button", { name: "Add" }));
+  await settled();
+  const box = screen.getByRole("textbox", { name: "Filter" });
+  expect(box.getAttribute("placeholder")).toBe("Filter");
+  expect(document.activeElement).toBe(box);
+});
+
+test("clearing the filter draws every row again, the bound mark with them", async () => {
+  await drawPage();
+  fireEvent.click(screen.getByRole("button", { name: "Add" }));
+  await settled();
+  const every = pickerRows();
+  expect(every.length).toBeGreaterThan(1);
+  typedInPicker("scratch");
+  expect(pickerRows()).toStrictEqual(["gdoteof/scratch"]);
+  typedInPicker("");
+  expect(pickerRows()).toStrictEqual(every);
+  expect(within(screen.getByRole("dialog")).getByText("Bound")).toBeTruthy();
+});
 
 test("a query narrows the picker and a row it kept still binds by address", async () => {
   const sent = await drawPage();

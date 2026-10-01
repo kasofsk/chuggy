@@ -25,6 +25,7 @@ import {
   apiForgeApps,
   apiForgeInstallationRepositories,
   apiForgeInstallations,
+  apiHostedRuns,
   apiLead,
   apiLeadInquiries,
   apiLeadInquiry,
@@ -288,6 +289,25 @@ test("the lead and its transcript hang from one segment, the store from two", as
   expect(held.urls[1]).toBe(
     `${partitionPath}/lead/transcript?stream=1a2b&after=4&limit=8`,
   );
+});
+
+/** A project with no lead is an answer the route gives in a body of its own,
+ * and the console reads it rather than refusing it as unreadable. */
+test("the lead route's answer that there is none is read as that", async () => {
+  const held = recording(() => ({ lead: "None" }));
+  expect(await apiLead(held.ports, partition)).toStrictEqual({
+    outcome: "Ok",
+    value: { lead: "None" },
+  });
+});
+
+test("the hosted-runs grant hangs from the partition and is read as given or not", async () => {
+  const held = recording(() => ({ granted: false }));
+  expect(await apiHostedRuns(held.ports, partition)).toStrictEqual({
+    outcome: "Ok",
+    value: { granted: false },
+  });
+  expect(held.urls[0]).toBe(`${partitionPath}/hosted-runs`);
 });
 
 /**

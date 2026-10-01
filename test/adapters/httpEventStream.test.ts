@@ -127,6 +127,7 @@ function servedWeb(
     execution: () => Promise.resolve(undefined),
     executions: notFound,
     operationalStatus: notFound,
+    hostedRuns: notFound,
     selectorOperationalContext: notFound,
     outputContent: () => Promise.resolve({ read: "NotFound" }),
     runTurns: () => Promise.resolve(undefined),

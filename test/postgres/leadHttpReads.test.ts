@@ -23,6 +23,7 @@ import {
 } from "../../src/contract/http.ts";
 import {
   agenticRefusalsResponseSchema,
+  leadNoneResponseSchema,
   leadResponseSchema,
   leadTranscriptResponseSchema,
   selectorHistoryResponseSchema,
@@ -474,6 +475,26 @@ test("the decision log pages forward and answers its far end", async () => {
     "asking for no limit answers at most the bound the route defaults to",
   );
   assert.equal(unbounded.decisions.length, decisions.length);
+});
+
+/**
+ * The standing definer keys on a lead session, so a project holding only a
+ * member's thread holds no lead, and a reader is told so rather than refused.
+ */
+test("a readable project whose only session is a thread answers that it has no lead", async () => {
+  const partition = await readableProject("http-leadless");
+  await sessionRigSession(rig.sessions, partition, "http-leadless", {
+    kind: "Thread",
+  });
+  await using app = leadApp("http-leadless");
+  const found = await app.inject({
+    url: `${pathOf(partition)}/lead`,
+    headers: authorized,
+  });
+  assert.equal(found.statusCode, 200);
+  assert.deepEqual(leadNoneResponseSchema.parse(found.json()), {
+    lead: "None",
+  });
 });
 
 test("a project the reader has no membership in answers not found", async () => {

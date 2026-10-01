@@ -26,7 +26,7 @@ afterEach(cleanup);
 
 function Bar(): ReactNode {
   return (
-    <ChatPaneProvider>
+    <ChatPaneProvider twoColumn>
       <nav aria-label="Console">
         <ul>
           {shellNav({ partition: atlas }).map((entry) => (

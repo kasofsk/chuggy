@@ -4,8 +4,8 @@
  *
  * The lead read is the `Session` change kind's own representation, so a turn
  * moving rewrites the head and raises the batch count the transcript walks to
- * and the page is live by construction. A project with no lead answers `404`,
- * which is a page saying so rather than five empty panels.
+ * and the page is live by construction. A project with no lead is a page
+ * saying so rather than five empty panels.
  *
  * WHAT A READER HAS TYPED AT THE INQUIRY BOX IS NOT HELD HERE. This page is
  * replaced outright by a click on any sibling screen, and the pair a box holds
@@ -20,6 +20,7 @@ import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type {
+  LeadReadResponse,
   LeadResponse,
   LeadTurnResponse,
 } from "../../../../src/contract/responses.ts";
@@ -35,7 +36,14 @@ import {
   leadSessionNamed,
   leadStreamBatches,
   leadStreamListed,
+  sessionChangeKindNamed,
 } from "../core/leadTranscript.ts";
+import {
+  projectLeadFound,
+  projectLeadPanelState,
+  projectLeadPresent,
+  projectLeadSessionKind,
+} from "../core/projectLead.ts";
 import { projectListRereadNamed } from "../core/projectQueryKeys.ts";
 import {
   sessionConversationItems,
@@ -69,23 +77,29 @@ export const leadListName = "lead";
  * left alone by the rest, a project holding a session per thread beside its
  * lead. Which session that is, is learnt from the read and then KEPT, since a
  * read that has failed would otherwise leave the panel deaf to the very frame
- * telling it to try again.
+ * telling it to try again, and until then any lead's frame re-reads it, which
+ * is how a project with none hears that one has opened.
  */
 export function useLead(
   partition: PartitionIdentity,
-): PanelState<LeadResponse> {
+): PanelState<LeadReadResponse> {
   const [session, setSession] = useState<string | undefined>(undefined);
   const state = usePanelList(
-    projectListRereadNamed<LeadResponse>(
+    projectListRereadNamed<LeadReadResponse>(
       partition,
       "Session",
       leadListName,
       (change) =>
-        session !== undefined && leadSessionNamed(change.resource) === session,
+        session === undefined
+          ? sessionChangeKindNamed(change.resource) === projectLeadSessionKind
+          : leadSessionNamed(change.resource) === session,
     ),
     (ports) => apiLead(ports, partition),
   );
-  const named = state.state === "Ready" ? state.value.session : undefined;
+  const named =
+    state.state === "Ready"
+      ? projectLeadFound(state.value)?.session
+      : undefined;
   if (named !== undefined && named !== session) setSession(named);
   return state;
 }
@@ -267,10 +281,19 @@ export function LeadPage(): ReactNode {
     project: params.project,
   };
   const nowMs = useNowMs();
-  const state = useLead(partition);
+  const read = useLead(partition);
+  const state = projectLeadPanelState(read);
   const inquiries = useInquiryBoxes();
   if (state.state === "Absent")
-    return <EmptyState label="No lead" variant="page" />;
+    return projectLeadPresent(read) === false ? (
+      <EmptyState
+        label="No lead"
+        variant="page"
+        detail="Tickets are dispatched by hand"
+      />
+    ) : (
+      <EmptyState label="No lead" variant="page" />
+    );
   return (
     <LeadBody
       partition={partition}

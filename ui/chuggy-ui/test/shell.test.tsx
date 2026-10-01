@@ -30,6 +30,7 @@ import {
 import { chatPaneStoreKey } from "../app/core/chatPane.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import { elementScrollToStubbed } from "./scrolling.ts";
+import { leadBody } from "./leadFixture.ts";
 import {
   threadBody,
   threadEntry,
@@ -187,10 +188,34 @@ test("the bar spans the frame rather than sharing the row with the pane", async 
   styleless();
 });
 
-test("under that width it stacks under the pages rather than dividing them", async () => {
+/** A docked pane under the pages takes a share of every page's height, which
+ * a narrow viewport cannot spare until the reader asks for the chat. */
+test("under that width it starts as a strip under the pages, and expands there", async () => {
+  await mounted(viewportTwoColumnEm - 1);
+  expect(chatDrawn()).toBeNull();
+  expect(navDrawn()).not.toBeNull();
+  expect(frameTracks()).toContain(
+    "grid-rows-[minmax(0,1fr)_var(--width-chat-strip)]",
+  );
+  expect(localStorage.getItem(chatPaneStoreKey)).toBeNull();
+  styleless();
+  await pressed("Expand chat");
+  expect(chatDrawn()).not.toBeNull();
+  expect(frameTracks()).toContain(
+    "grid-rows-[minmax(0,1fr)_var(--height-chat)]",
+  );
+  styleless();
+});
+
+/** What the reader chose is theirs at every width: a pane they expanded is
+ * not put away again because the viewport is narrow. */
+test("under that width a pane the reader expanded starts expanded", async () => {
+  localStorage.setItem(
+    chatPaneStoreKey,
+    JSON.stringify({ placement: "Right", presentation: "Docked" }),
+  );
   await mounted(viewportTwoColumnEm - 1);
   expect(chatDrawn()).not.toBeNull();
-  expect(navDrawn()).not.toBeNull();
   expect(frameTracks()).toContain(
     "grid-rows-[minmax(0,1fr)_var(--height-chat)]",
   );
@@ -621,6 +646,118 @@ test("a message to a held thread the hosted grant refuses stays in the box, read
   });
   await settled();
   expect(sends, "a held box sent its message again").toBe(1);
+  styleless();
+});
+
+/** The shell over a server answering the lead route with `lead`. */
+function leadServed(lead: unknown): typeof fetch {
+  return apiDouble({
+    operation: operationAt("Pending"),
+    route: (url) => (url.endsWith("/lead") ? answer(lead) : shellRoute(url)),
+  }).fetch;
+}
+
+/** A project with no lead is answered rather than refused, so the bar draws the
+ * entry with nothing beside it, and one with a lead draws where it stands. */
+test("the bar's Lead entry stands only where the project has a lead", async () => {
+  await mounted(viewportDeskEm, leadServed({ lead: "None" }));
+  const bar = (): HTMLElement => navDrawn() ?? document.body;
+  const unled = within(bar()).getByRole("link", { name: "Lead" });
+  expect(unled.querySelector("[aria-hidden]"), "a dot with no lead").toBeNull();
+  cleanup();
+  await mounted(viewportDeskEm, leadServed(leadBody(1, 1)));
+  const led = within(bar()).getByRole("link", { name: "OpenLead" });
+  expect(led.querySelector("[aria-hidden]")).not.toBeNull();
+  styleless();
+});
+
+/** A server whose grant read answers as `granted` says, holding `listed`, and
+ * answering the held thread's own read in the standing `state` names. */
+function grantReadServed(
+  granted: boolean,
+  listed: readonly unknown[],
+  state: "Open" | "Orphaned" = "Open",
+): typeof fetch {
+  const served = threadServed(listed);
+  return ((url: string, init?: { readonly method?: string }) => {
+    if (url.endsWith("/hosted-runs"))
+      return Promise.resolve(answer({ granted }));
+    if (url.endsWith(`/threads/${openedSession}`) && init?.method !== "POST")
+      return Promise.resolve(
+        answer(
+          threadBody({
+            session: openedSession,
+            streamless: true,
+            turns: [],
+            state,
+          }),
+        ),
+      );
+    return served(url, init);
+  }) as unknown as typeof fetch;
+}
+
+test("a reader the tenant grants no hosted runs is told so where the composer would be, before typing", async () => {
+  await mounted(viewportDeskEm, grantReadServed(false, []));
+  expect(screen.queryByRole("textbox", { name: "Message" })).toBeNull();
+  const conversation = within(
+    screen.getByRole("region", { name: "Conversation" }),
+  );
+  expect(conversation.getByText("Needs hosted runs")).toBeTruthy();
+  expect(conversation.getByText("· Granted by the operator")).toBeTruthy();
+  styleless();
+});
+
+test("a reader the tenant grants hosted runs is offered the composer", async () => {
+  await mounted(viewportDeskEm, grantReadServed(true, []));
+  expect(composerDrawn()).toBeTruthy();
+  expect(screen.queryByText("Needs hosted runs")).toBeNull();
+  styleless();
+});
+
+/** The box is the one place a held thread says it, so the bar beside New does
+ * not say it a second time. */
+test("a held thread's box takes nothing where the grant is read as not given, and says so once", async () => {
+  await mounted(
+    viewportDeskEm,
+    grantReadServed(false, [
+      threadEntry({ session: openedSession, owner: "geoff", mine: true }),
+    ]),
+  );
+  expect(heldBox().readOnly).toBe(true);
+  expect(
+    within(screen.getByRole("region", { name: "Conversation" })).getByText(
+      "Needs hosted runs",
+    ),
+  ).toBeTruthy();
+  expect(screen.getAllByText("Needs hosted runs")).toHaveLength(1);
+  styleless();
+});
+
+/** A thread that takes no messages draws `Closed` where the box would be, so
+ * the grant is said beside New, which is what it would refuse. */
+test("a held thread that takes no messages has the grant said beside New", async () => {
+  await mounted(
+    viewportDeskEm,
+    grantReadServed(
+      false,
+      [
+        threadEntry({
+          session: openedSession,
+          owner: "geoff",
+          mine: true,
+          state: "Orphaned",
+        }),
+      ],
+      "Orphaned",
+    ),
+  );
+  const conversation = within(
+    screen.getByRole("region", { name: "Conversation" }),
+  );
+  expect(conversation.getByText("Closed")).toBeTruthy();
+  expect(conversation.queryByText("Needs hosted runs")).toBeNull();
+  expect(screen.getAllByText("Needs hosted runs")).toHaveLength(1);
   styleless();
 });
 

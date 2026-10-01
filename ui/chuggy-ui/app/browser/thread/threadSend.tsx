@@ -19,22 +19,25 @@
  * opened rather than opening another.
  */
 
+import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import type { ReactNode } from "react";
 
 import { threadMessageCharsMax } from "../../../../../src/contract/http.ts";
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
-import { apiOpenThread } from "../../core/apiRoutes.ts";
+import { apiHostedRuns, apiOpenThread } from "../../core/apiRoutes.ts";
 import { panelReason } from "../../core/freshness.ts";
+import { projectResourceKey } from "../../core/projectQueryKeys.ts";
 import { threadMessageSent } from "../../core/threadSendRun.ts";
 import {
+  threadSendStanding,
   threadUnhosted,
   threadTurnIdBytesCount,
   threadTurnMinted,
   threadTurnRetained,
 } from "../../core/threads.ts";
 import type { ThreadSend } from "../../core/threads.ts";
-import { useApiPorts } from "../api.ts";
+import { useApiPorts, usePanelResource } from "../api.ts";
 import type {
   ConversationComposerProps,
   ConversationSent,
@@ -49,10 +52,42 @@ interface ThreadHeld {
   readonly turn: string;
 }
 
+/** No frame names the grant, so the partition's own refetch reaches it, and a
+ * thread door's answer is written over it as the newer word on the question. */
+export const hostedRunsResource = "hosted-runs";
+
+/** Whether the project's tenant grants the reader hosted runs, unknown until a
+ * read has said, and where a door's own answer to the same question goes. */
+export function useHostedRuns(partition: PartitionIdentity): {
+  readonly granted: boolean | undefined;
+  readonly learnt: (granted: boolean) => void;
+} {
+  const client = useQueryClient();
+  const state = usePanelResource(
+    partition,
+    "Project",
+    hostedRunsResource,
+    (ports) => apiHostedRuns(ports, partition),
+  );
+  return {
+    granted: state.state === "Ready" ? state.value.granted : undefined,
+    learnt: (granted) => {
+      client.setQueryData(
+        projectResourceKey(partition, "Project", hostedRunsResource),
+        { granted },
+      );
+    },
+  };
+}
+
 /** What a thread door refused for the tenant's hosted grant is drawn as,
- * whether the open or a send met it. */
+ * whether the grant's read, the open or a send met it, and who gives it. */
 export function ThreadUnhostedNotice(): ReactNode {
-  return <Notice tone="parked" inline detail="Needs hosted runs" />;
+  return (
+    <Notice tone="parked" inline detail="Needs hosted runs">
+      <span className="text-ink-3"> · Granted by the operator</span>
+    </Notice>
+  );
 }
 
 /** The one line a press is reported as, and nothing while it has not been
@@ -81,8 +116,9 @@ function ThreadSendNote(props: { readonly send: ThreadSend }): ReactNode {
  * The composer one thread hands the surface: what the door still takes, what a
  * message may carry, and what a press ended as. A door that answered `Ended`
  * takes nothing more whatever the read said, because the read that drew this
- * page is older than the refusal; one the hosted grant refused takes nothing
- * more either, and holds the text it handed back, read-only.
+ * page is older than the refusal; one the hosted grant refused, at a press or
+ * in its read before anything is typed, takes nothing more either, and holds
+ * any text it handed back, read-only.
  */
 export function useThreadSend(input: {
   readonly partition: PartitionIdentity;
@@ -97,8 +133,14 @@ export function useThreadSend(input: {
   const [held, setHeld] = useState<ThreadHeld | undefined>(undefined);
   const [send, setSend] = useState<ThreadSend>({ send: "Idle" });
   const [opened, setOpened] = useState<string | undefined>(undefined);
+  const standing = threadSendStanding(
+    send,
+    input.takes,
+    useHostedRuns(partition).granted,
+  );
   return {
-    takes: input.takes && send.send !== "Ended" && send.send !== "Unhosted",
+    takes:
+      input.takes && standing.send !== "Ended" && standing.send !== "Unhosted",
     charsMax: threadMessageCharsMax,
     onSend: async (text: string): Promise<ConversationSent> => {
       const turn =
@@ -136,7 +178,7 @@ export function useThreadSend(input: {
       if (send.send === "Waiting" || send.send === "Refused")
         setSend({ send: "Idle" });
     },
-    note: <ThreadSendNote send={send} />,
-    holds: send.send === "Unhosted",
+    note: <ThreadSendNote send={standing} />,
+    holds: standing.send === "Unhosted",
   };
 }

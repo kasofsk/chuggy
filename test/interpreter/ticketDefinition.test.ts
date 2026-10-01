@@ -47,6 +47,11 @@ const configuration: ReleaseConfiguration = (() => {
       review: { instructions: [] },
       version: 1,
       work: { instructions: ["Do the work."] },
+      worker: {
+        files: [],
+        mode: { agent: "Claude", arguments: [], type: "SingleAgent" },
+        setup: [],
+      },
     }),
   );
   if (readiness.readiness !== "Ready")

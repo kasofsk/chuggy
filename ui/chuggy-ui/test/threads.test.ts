@@ -25,6 +25,7 @@ import {
   threadRefusalCode,
   threadRefusalWord,
   threadSendFrom,
+  threadSendStanding,
   threadTakesMessages,
   threadTurnKindWord,
   threadTurnMinted,
@@ -412,4 +413,21 @@ test("only an open rejected for the hosted grant is one no retry answers", () =>
       body: undefined,
     }),
   ).toBe(false);
+});
+
+/**
+ * A grant read as withheld is said before a press, on a box that would take
+ * one; a grant not yet read, or given, says nothing; and a press's own answer
+ * is never written over by the read.
+ */
+test("a composer is held for the grant only before a press, where it takes messages and the read said no", () => {
+  const idle = { send: "Idle" } as const;
+  expect(threadSendStanding(idle, true, false)).toStrictEqual({
+    send: "Unhosted",
+  });
+  expect(threadSendStanding(idle, true, true)).toStrictEqual(idle);
+  expect(threadSendStanding(idle, true, undefined)).toStrictEqual(idle);
+  expect(threadSendStanding(idle, false, false)).toStrictEqual(idle);
+  const waiting = { send: "Waiting", why: "Backlogged" } as const;
+  expect(threadSendStanding(waiting, true, false)).toStrictEqual(waiting);
 });

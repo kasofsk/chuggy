@@ -1,13 +1,14 @@
 /**
  * The canonical configuration document, read into what the panel draws.
  *
- * The three shapes a repository declaration actually takes — no worker at all,
- * a worker with no model pinned, and one with a model pinned — are read from
- * the files themselves rather than a copied fixture, so a shape those files
- * change reaches this suite without anyone updating it by hand. What follows
- * them is the reader refusing nothing: a document that is not JSON, one with
- * nothing in it, and the two ways a `worker.mode` can fail to say what this
- * reads for a `SingleAgent` Claude run.
+ * The shapes this tree's declarations take — a worker with no authority, one
+ * with an authority and no model pinned, and one with a model pinned — are read
+ * from the files themselves rather than a copied fixture, so a shape those files
+ * change reaches this suite without anyone updating it by hand. A document
+ * naming no worker, which no file here declares and a stored revision still
+ * may, is written inline. What follows is the reader refusing nothing: a
+ * document that is not JSON, one with nothing in it, and the two ways a
+ * `worker.mode` can fail to say what this reads for a `SingleAgent` Claude run.
  */
 
 import { expect, test } from "vitest";
@@ -36,8 +37,15 @@ function declaredConfiguration(name: string): string {
   return JSON.stringify(body);
 }
 
-test("a repository configuration authoring no worker states no worker-only field", () => {
-  const view = configurationViewOf(declaredConfiguration("basic-coding"));
+test("a configuration naming no worker states no worker-only field", () => {
+  const view = configurationViewOf(
+    JSON.stringify({
+      version: 1,
+      image: "worker:v1",
+      work: { instructions: ["Implement it."] },
+      evaluations: [{ purpose: "Check", checks: ["npm test"] }],
+    }),
+  );
   expect(view.settings).toStrictEqual({
     model: { label: "Default", argument: undefined },
     agent: undefined,
@@ -47,6 +55,29 @@ test("a repository configuration authoring no worker states no worker-only field
     credentials: undefined,
     access: undefined,
     setup: undefined,
+    completesTask: undefined,
+  });
+  expect(view.evaluations).toStrictEqual([
+    {
+      purpose: "Check",
+      checks: ["npm test"],
+      instructions: undefined,
+      practices: undefined,
+    },
+  ]);
+});
+
+test("a worker with no authority states its agent, tools and setup and no grant", () => {
+  const view = configurationViewOf(declaredConfiguration("basic-coding"));
+  expect(view.settings).toStrictEqual({
+    model: { label: "Default", argument: undefined },
+    agent: "Claude Code",
+    agentDetail: "Single agent",
+    worker: { short: "worker:v1", full: "worker:v1" },
+    tools: ["Bash", "Edit", "Read", "Write", "Glob", "Grep"],
+    credentials: undefined,
+    access: undefined,
+    setup: ["npm ci"],
     completesTask: undefined,
   });
   expect(view.evaluations).toStrictEqual([

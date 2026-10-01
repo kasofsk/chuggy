@@ -17,6 +17,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { createNativeHttpApp } from "../../src/adapters/http/server.ts";
+import { nativeHttpEndpoints } from "../../src/contract/endpoints.ts";
 import {
   agenticRefusalsResponseSchema,
   leadResponseSchema,
@@ -363,6 +364,7 @@ test("the lead read carries its standing, its mailbox tail and its streams", asy
   });
   assert.equal(found.statusCode, 200);
   const body = leadResponseSchema.parse(found.json());
+  assert.deepEqual(nativeHttpEndpoints.lead.response.parse(found.json()), body);
   assert.equal(body.session, "lead-atlas");
   assert.equal(body.attention, "Monitoring");
   assert.equal(body.turns[0]?.decision, "selector-decision-one");
@@ -375,11 +377,28 @@ test("the lead read carries its standing, its mailbox tail and its streams", asy
   assert.equal(body.streams[0]?.batches, 14);
 });
 
-test("a project with no lead answers not found, as does one nobody may read", async () => {
+/**
+ * A project with no lead is a fact its readers are owed, so it is answered;
+ * one the caller may not read is not, and stays indistinguishable from a
+ * project that does not exist.
+ */
+test("a project with no lead answers that it has none, and one nobody may read answers not found", async () => {
   await using absent = appOf({ standing: undefined });
+  const none = await absent.inject({
+    url: `${root}/lead`,
+    headers: authorized,
+  });
+  assert.equal(none.statusCode, 200);
+  assert.deepEqual(nativeHttpEndpoints.lead.response.parse(none.json()), {
+    lead: "None",
+  });
   assert.equal(
-    (await absent.inject({ url: `${root}/lead`, headers: authorized }))
-      .statusCode,
+    (
+      await absent.inject({
+        url: `${root}/lead/transcript`,
+        headers: authorized,
+      })
+    ).statusCode,
     404,
   );
   await using refused = appOf({ allowed: false });

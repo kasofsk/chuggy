@@ -26,6 +26,7 @@ import {
   apiSelectorSettingsHistory,
   apiWriteSelectorSettings,
 } from "../core/apiRoutes.ts";
+import { projectLeadPresent } from "../core/projectLead.ts";
 import { projectResourceKey } from "../core/projectQueryKeys.ts";
 import {
   selectorSettingsAnswered,
@@ -45,11 +46,13 @@ import type {
 import { useApiPorts, usePanelResource } from "./api.ts";
 import { PanelUnready } from "./DataPanel.tsx";
 import { useNowMs } from "./Freshness.tsx";
+import { useLead } from "./LeadPage.tsx";
 import { SelectorLimitsSection } from "./selector/SelectorLimitsSection.tsx";
 import { SelectorRevisions } from "./selector/SelectorRevisions.tsx";
 import { SelectorStrip } from "./selector/SelectorStrip.tsx";
 import { SelectorTextSection } from "./selector/SelectorTextSection.tsx";
 import { TopBarSlot } from "./shell/slots.tsx";
+import { Notice } from "./ui/Notice.tsx";
 
 /** No frame names either read, so the partition's own refetch is what reaches
  * them. */
@@ -330,6 +333,21 @@ function SelectorSettingsHistory(props: {
   );
 }
 
+/** What stands above the settings where the project has no lead: they say how
+ * a lead would dispatch, and there is none here to do it. */
+function SelectorSettingsUnled(props: {
+  readonly partition: PartitionIdentity;
+}): ReactNode {
+  if (projectLeadPresent(useLead(props.partition)) !== false) return null;
+  return (
+    <Notice
+      tone="info"
+      heading="No lead"
+      detail="Tickets are dispatched by hand"
+    />
+  );
+}
+
 export function SelectorSettingsPage(): ReactNode {
   const params = useParams({ from: "/$tenant/$project/selector" });
   const partition: PartitionIdentity = {
@@ -352,6 +370,7 @@ export function SelectorSettingsPage(): ReactNode {
           </span>
         ) : null}
       </TopBarSlot>
+      <SelectorSettingsUnled partition={partition} />
       <PanelUnready state={state} />
       {state.state === "Ready" ? (
         <SelectorSettingsForm partition={partition} settings={state.value} />

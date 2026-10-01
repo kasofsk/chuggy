@@ -717,9 +717,16 @@ export function apiDraft(
   );
 }
 
-/** The project's lead session, its mailbox tail and the streams its store holds. */
+/** The project's lead session, its mailbox tail and the streams its store
+ * holds, or that the project has none. */
 export const apiLead = apiProjectEndpoint(
   nativeHttpEndpoints.lead,
+  (partition) => ({ parameters: partition }),
+);
+
+/** Whether the project's tenant grants the reader hosted runs. */
+export const apiHostedRuns = apiProjectEndpoint(
+  nativeHttpEndpoints.hostedRuns,
   (partition) => ({ parameters: partition }),
 );
 

@@ -1,0 +1,10 @@
+/* Dialog: the body between the title and Close. Each child keeps its own
+   height and the body scrolls instead, since a child that clips its overflow
+   would otherwise be squeezed first; a utility outranks this layer, so a
+   child that should give way says so with `shrink`. */
+
+@layer ui {
+  .dialog-body > * {
+    flex-shrink: 0;
+  }
+}

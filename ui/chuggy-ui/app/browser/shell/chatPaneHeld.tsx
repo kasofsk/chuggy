@@ -1,6 +1,7 @@
 /**
  * The chat pane's state as the shell holds it: read from the store once, and
- * written back on every move.
+ * written back on every move. Until the reader moves it, it is the default the
+ * viewport's width decides, so a viewport that changes width redraws it.
  *
  * The frame draws from it and the pane's own controls move it, and the two are
  * far enough apart in the tree that passing it down would thread it through
@@ -18,7 +19,11 @@ import {
 } from "react";
 import type { ReactNode } from "react";
 
-import { chatPaneRead, chatPaneWrite } from "../../core/chatPane.ts";
+import {
+  chatPaneDefaultAt,
+  chatPaneRead,
+  chatPaneWrite,
+} from "../../core/chatPane.ts";
 import type { ChatPaneState } from "../../core/chatPane.ts";
 import { persistentStore } from "../ports.ts";
 
@@ -30,14 +35,16 @@ interface ChatPaneHeld {
 const chatPaneContext = createContext<ChatPaneHeld | undefined>(undefined);
 
 export function ChatPaneProvider(props: {
+  readonly twoColumn: boolean;
   readonly children: ReactNode;
 }): ReactNode {
-  const [state, setState] = useState<ChatPaneState>(() =>
+  const [stored, setStored] = useState<ChatPaneState | undefined>(() =>
     chatPaneRead(persistentStore),
   );
+  const state = stored ?? chatPaneDefaultAt(props.twoColumn);
   const moveTo = useCallback((next: ChatPaneState) => {
     chatPaneWrite(persistentStore, next);
-    setState(next);
+    setStored(next);
   }, []);
   const held = useMemo<ChatPaneHeld>(
     () => ({ state, moveTo }),

@@ -87,6 +87,7 @@
     "projectRepositoryRetirement": "/api/v1/tenants/:tenant/projects/:project/repositories/retirement",
     "projectRepositoryConfigurations": "/api/v1/tenants/:tenant/projects/:project/repositories/configurations",
     "executionPlacement": "/api/v1/tenants/:tenant/projects/:project/execution-placement",
+    "hostedRuns": "/api/v1/tenants/:tenant/projects/:project/hosted-runs",
     "workerPools": "/api/v1/tenants/:tenant/projects/:project/worker-pools",
     "workerPoolRegistrationTokens": "/api/v1/tenants/:tenant/projects/:project/worker-pool-registration-tokens",
     "workerPoolRegistrations": "/api/v1/worker-pool-registrations",

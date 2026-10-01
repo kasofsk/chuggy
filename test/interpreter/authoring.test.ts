@@ -13,6 +13,7 @@ import {
   encodeDraftAuthoring,
   parseDraftAuthoring,
   releaseConfigurationReadiness,
+  type CanonicalConfiguration,
 } from "../../src/interpreter/authoring.ts";
 import { asBriefCheckLine } from "../../src/interpreter/ticketBrief.ts";
 import { asRepositoryId } from "../../src/interpreter/finalizer.ts";
@@ -33,7 +34,7 @@ import {
 } from "../../src/interpreter/wire.ts";
 
 const readyConfiguration = asCanonicalConfiguration(
-  '{"brief":{"acceptanceCriteria":["It works."],"constraints":[],"motivation":["It matters."]},"image":"worker:v1","practices":[],"review":{"instructions":[]},"version":1,"work":{"instructions":[]}}',
+  '{"brief":{"acceptanceCriteria":["It works."],"constraints":[],"motivation":["It matters."]},"image":"worker:v1","practices":[],"review":{"instructions":[]},"version":1,"work":{"instructions":[]},"worker":{"files":[],"mode":{"agent":"Claude","arguments":[],"type":"SingleAgent"},"setup":[]}}',
 );
 
 test("draft authoring round-trips through the generated domain codec", () => {
@@ -165,6 +166,72 @@ test("a present invalid worker mode is not interpreted as a legacy worker", () =
     ),
     { readiness: "Incomplete", fault: "WorkerInvalid" },
   );
+});
+
+/** The ready fixture with no worker, `stages` laid over it. */
+function workerlessConfiguration(
+  stages: Readonly<Record<string, unknown>>,
+): CanonicalConfiguration {
+  const parsed = JSON.parse(readyConfiguration) as Record<string, unknown>;
+  return canonicalConfigurationOf({
+    ...Object.fromEntries(
+      Object.entries(parsed).filter(([key]) => key !== "worker"),
+    ),
+    ...stages,
+  });
+}
+
+const commandedWork = { commands: ["./work.sh"] };
+const commandedCheck = { purpose: "Check", checks: [".chug/tasks/ci.sh"] };
+
+test("a stage that briefs an agent with no worker to run it is not releasable", () => {
+  for (const [stages, which] of [
+    [{ evaluations: [commandedCheck] }, "a briefed work stage"],
+    [{ work: commandedWork }, "the review block where no stage is indexed"],
+    [
+      {
+        work: commandedWork,
+        evaluations: [
+          commandedCheck,
+          { purpose: "Review", instructions: ["Review it."], practices: [] },
+        ],
+      },
+      "a briefed evaluation stage",
+    ],
+    [
+      {
+        work: commandedWork,
+        evaluations: [
+          { purpose: "Check", instructions: ["Check it."], practices: [] },
+        ],
+      },
+      "a check stage that briefs an agent",
+    ],
+  ] as const) {
+    assert.deepEqual(
+      releaseConfigurationReadiness(workerlessConfiguration(stages)),
+      { readiness: "Incomplete", fault: "WorkerUndeclared" },
+      which,
+    );
+    assert.deepEqual(
+      releaseConfigurationReadiness(workerlessConfiguration(stages), {
+        checks: [asBriefCheckLine("npm test")],
+      }),
+      { readiness: "Incomplete", fault: "WorkerUndeclared" },
+      `${which}, refused for itself before any pairing`,
+    );
+  }
+});
+
+test("a configuration whose every stage runs commands is releasable with no worker", () => {
+  const readiness = releaseConfigurationReadiness(
+    workerlessConfiguration({
+      work: commandedWork,
+      evaluations: [commandedCheck],
+    }),
+    { checks: [asBriefCheckLine("npm test")] },
+  );
+  assert.equal(readiness.readiness, "Ready");
 });
 
 test("a configuration commanding no check stage refuses a brief that appends check lines", () => {
