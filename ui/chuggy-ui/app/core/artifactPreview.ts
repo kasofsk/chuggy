@@ -21,17 +21,13 @@ export interface PreviewableArtifact {
 
 export type ArtifactPreviewOffer =
   | { readonly offer: "Previewable"; readonly renderer: OutputRenderer }
-  | { readonly offer: "Unpreviewable"; readonly reason: string };
+  | { readonly offer: "Unpreviewable"; readonly note: string };
 
 export function artifactPreviewOffer(
   artifact: PreviewableArtifact,
 ): ArtifactPreviewOffer {
   const output = artifact.output;
   if (output === undefined)
-    return {
-      offer: "Unpreviewable",
-      reason:
-        "no task output declares this path, so the API renders nothing for it",
-    };
+    return { offer: "Unpreviewable", note: "No preview" };
   return { offer: "Previewable", renderer: output.renderer };
 }

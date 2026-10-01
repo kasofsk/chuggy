@@ -14,7 +14,7 @@ test("an artifact no output declares is not offered a preview", () => {
   const offer = artifactPreviewOffer({ ordinal: 0, bytes: 12 });
   expect(offer.offer).toBe("Unpreviewable");
   if (offer.offer === "Unpreviewable")
-    expect(offer.reason.length).toBeGreaterThan(0);
+    expect(offer.note.length).toBeGreaterThan(0);
 });
 
 test("an artifact whose output is undefined is treated the same way", () => {

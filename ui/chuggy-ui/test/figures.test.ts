@@ -19,6 +19,7 @@ import {
   countFigure,
   durationText,
   instantText,
+  ranFigure,
   settledFigure,
   sinceFigure,
   spanFigure,
@@ -242,6 +243,19 @@ test("a row separates the wait from the run where the wire carries the start", (
   if (running.kind !== "Span") throw new Error("not a span");
   expect(running.parts).toEqual(["started 3m 28s ago", "waited 12s"]);
   expect(running.open).toBe(true);
+});
+
+test("a run's length is its two ends apart, and one not ended has none yet", () => {
+  expect(
+    ranFigure("2026-10-01 15:32:48.356468+00", "2026-10-01 15:35:36.366517+00"),
+  ).toEqual({ kind: "Duration", text: "2m 48s" });
+  expect(ranFigure("2026-10-01T15:32:48Z", undefined)).toEqual({
+    kind: "Absent",
+    why: "Not ended",
+  });
+  expect(ranFigure("not an instant", "2026-10-01T15:32:48Z").kind).toBe(
+    "Absent",
+  );
 });
 
 test("an ago on the ticket page is two units, names what happened and hovers the second", () => {

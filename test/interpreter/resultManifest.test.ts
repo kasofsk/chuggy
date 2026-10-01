@@ -68,8 +68,9 @@ function withoutReport(version: number): string {
 }
 
 /**
- * The console draws "report schema too old" below this version, so a value
- * either side of the reader's own decision is a pane that lies about #363.
+ * Below this version the console says a run has no summary from an older
+ * worker, so a value either side of the reader's own decision is a pane that
+ * lies about #363.
  */
 test("the contract's summary version is where this reader begins requiring one", () => {
   const retained = [1, 2, resultManifestSchemaVersion];

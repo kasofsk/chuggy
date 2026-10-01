@@ -1,6 +1,7 @@
 /**
- * One execution opened out: what it ran on, the attempts it took, the verdict
- * it recorded and the artifacts it left.
+ * One execution opened out: the runs it took, the verdict it recorded, the
+ * artifacts it left beside the run's own result, and its identity one press
+ * further in for whoever has to look it up.
  *
  * An expanded execution is its own read, so a live `Execution` frame lands in
  * it and in the page of summaries the ledger holds without either being
@@ -16,14 +17,24 @@ import type { ExecutionResponse } from "../../../../src/contract/responses.ts";
 import type { ResultVerdict } from "../../../../src/contract/rosters.ts";
 import { apiExecution, apiOutputContent } from "../core/apiRoutes.ts";
 import { artifactPreviewOffer } from "../core/artifactPreview.ts";
+import { ranFigure, sinceFigure } from "../core/figures.ts";
+import { runArtifactsListed } from "../core/runSummary.ts";
+import { runCountLabel } from "../core/runTotals.ts";
+import type { SetVerdict } from "../core/ticketLedger.ts";
+import { verdictTone } from "../core/tones.ts";
 import { usePanelResource } from "./api.ts";
 import { DataPanel } from "./DataPanel.tsx";
 import { RunEvidence } from "./RunEvidence.tsx";
 import { Disclosure } from "./ui/Disclosure.tsx";
+import { Figure } from "./ui/Figure.tsx";
+import { Identity } from "./ui/Identity.tsx";
+import { Pill } from "./ui/Pill.tsx";
+import { Table } from "./ui/Table.tsx";
 
-const resultVerdictClass: Record<ResultVerdict, string> = {
-  Pass: "text-tone-live",
-  Fail: "text-tone-fail",
+/** A result's verdict in the word the ledger's own rows draw it in. */
+const resultVerdictWord: Record<ResultVerdict, SetVerdict> = {
+  Pass: "Passed",
+  Fail: "Failed",
 };
 
 type ResultArtifact = NonNullable<
@@ -44,7 +55,7 @@ function ArtifactPreview(props: {
       apiOutputContent(ports, props.partition, props.execution, props.ordinal),
   );
   return (
-    <DataPanel title={`artifact ${props.ordinal}`} state={state}>
+    <DataPanel title="Preview" state={state}>
       {(preview) => (
         <pre className="preview" data-renderer={preview.renderer}>
           {preview.content}
@@ -65,14 +76,16 @@ function Artifact(props: {
     <li className="flex flex-wrap items-baseline gap-2">
       <span className="text-ink-3">{props.artifact.role}</span>
       <code>{props.artifact.path}</code>
-      <span className="text-ink-3 text-xs">{props.artifact.bytes} bytes</span>
+      <span className="text-ink-3 text-xs">
+        {runCountLabel(props.artifact.bytes)} bytes
+      </span>
       {offer.offer === "Unpreviewable" ? (
-        <span className="panel-absent">{offer.reason}</span>
+        <span className="text-ink-3 text-xs">{offer.note}</span>
       ) : (
         <Disclosure
           open={shown}
           onOpenChange={setShown}
-          label={shown ? "hide" : `preview as ${offer.renderer}`}
+          label={shown ? "Hide" : "Preview"}
         >
           <div className="basis-full">
             <ArtifactPreview
@@ -87,65 +100,89 @@ function Artifact(props: {
   );
 }
 
+/** One row per run, which its number tells apart from the others. */
 function ExecutionAttempts(props: {
   readonly execution: ExecutionResponse;
+  readonly nowMs: number;
 }): ReactNode {
   return (
-    <div className="max-w-full overflow-x-auto">
-      <table className="attempts">
-        <thead>
-          <tr>
-            <th>attempt</th>
-            <th>generation</th>
-            <th>state</th>
-            <th>evidence</th>
-            <th>opened</th>
-            <th>ended</th>
+    <Table caption="Runs">
+      <thead>
+        <tr>
+          <th scope="col">Run</th>
+          <th scope="col">State</th>
+          <th scope="col">Started</th>
+          <th scope="col">Ran</th>
+        </tr>
+      </thead>
+      <tbody>
+        {props.execution.attempts.map((attempt) => (
+          <tr key={attempt.attempt}>
+            <th scope="row">{attempt.number}</th>
+            <td>{attempt.state}</td>
+            <td>
+              <Figure figure={sinceFigure(attempt.openedAt, props.nowMs)} />
+            </td>
+            <td>
+              <Figure figure={ranFigure(attempt.openedAt, attempt.endedAt)} />
+            </td>
           </tr>
-        </thead>
-        <tbody>
-          {props.execution.attempts.map((attempt) => (
-            <tr key={attempt.attempt}>
-              <td>{attempt.number}</td>
-              <td>{attempt.generation}</td>
-              <td>{attempt.state}</td>
-              <td>{attempt.evidence ?? "—"}</td>
-              <td>{attempt.openedAt}</td>
-              <td>{attempt.endedAt ?? "—"}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+        ))}
+      </tbody>
+    </Table>
   );
 }
 
 function ExecutionResult(props: {
   readonly partition: PartitionIdentity;
   readonly execution: ExecutionResponse;
+  readonly nowMs: number;
 }): ReactNode {
   const result = props.execution.result;
-  if (result === undefined)
-    return <p className="panel-note">no result has been recorded</p>;
+  if (result === undefined) return <p className="panel-note">No result</p>;
+  const verdict = resultVerdictWord[result.verdict];
+  const artifacts = runArtifactsListed(result.artifacts);
   return (
     <div className="grid gap-2 px-4 py-2">
-      <p>
-        <strong className={resultVerdictClass[result.verdict]}>
-          {result.verdict}
-        </strong>{" "}
-        recorded {result.recordedAt} under manifest{" "}
-        <code>{result.manifest}</code>
+      <p className="flex flex-wrap items-baseline gap-2">
+        <Pill tone={verdictTone(verdict)}>{verdict}</Pill>
+        <Figure figure={sinceFigure(result.recordedAt, props.nowMs)} />
       </p>
-      <ul className="grid gap-2 px-4 py-2">
-        {result.artifacts.map((artifact) => (
-          <Artifact
-            key={artifact.ordinal}
-            partition={props.partition}
-            execution={props.execution.execution}
-            artifact={artifact}
+      {artifacts.length === 0 ? null : (
+        <ul className="grid gap-2">
+          {artifacts.map((artifact) => (
+            <Artifact
+              key={artifact.ordinal}
+              partition={props.partition}
+              execution={props.execution.execution}
+              artifact={artifact}
+            />
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/** The execution's identity, selectable whole, for a lookup the page has no
+ * other use for. */
+function ExecutionIdentity(props: { readonly execution: string }): ReactNode {
+  const [shown, setShown] = useState(false);
+  return (
+    <div className="flex flex-wrap items-baseline gap-2">
+      <Disclosure
+        open={shown}
+        onOpenChange={setShown}
+        label={shown ? "Hide ID" : "Execution ID"}
+        look={{ variant: "quiet", size: "sm" }}
+      >
+        <div className="basis-full">
+          <Identity
+            label={{ text: props.execution, title: props.execution }}
+            block
           />
-        ))}
-      </ul>
+        </div>
+      </Disclosure>
     </div>
   );
 }
@@ -153,6 +190,7 @@ function ExecutionResult(props: {
 export function ExecutionDetail(props: {
   readonly partition: PartitionIdentity;
   readonly execution: string;
+  readonly nowMs: number;
 }): ReactNode {
   const state = usePanelResource(
     props.partition,
@@ -161,12 +199,21 @@ export function ExecutionDetail(props: {
     (ports) => apiExecution(ports, props.partition, props.execution),
   );
   return (
-    <DataPanel title={`execution ${props.execution}`} state={state}>
+    <DataPanel title="Runs" state={state}>
       {(execution) => (
         <div className="grid gap-2 px-4 py-2">
-          <ExecutionAttempts execution={execution} />
-          <ExecutionResult partition={props.partition} execution={execution} />
-          <RunEvidence partition={props.partition} execution={execution} />
+          <ExecutionAttempts execution={execution} nowMs={props.nowMs} />
+          <ExecutionResult
+            partition={props.partition}
+            execution={execution}
+            nowMs={props.nowMs}
+          />
+          <RunEvidence
+            partition={props.partition}
+            execution={execution}
+            nowMs={props.nowMs}
+          />
+          <ExecutionIdentity execution={execution.execution} />
         </div>
       )}
     </DataPanel>

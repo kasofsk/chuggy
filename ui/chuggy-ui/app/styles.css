@@ -125,24 +125,6 @@
   color: var(--ink-3);
 }
 
-.attempts {
-  border-collapse: collapse;
-  width: 100%;
-}
-
-.attempts th,
-.attempts td {
-  text-align: left;
-  padding: 0.1rem var(--space-2);
-  border-bottom: 1px solid var(--edge);
-  font-weight: 400;
-}
-
-.attempts th {
-  color: var(--ink-3);
-  font-size: var(--text-xs);
-}
-
 .session-card {
   max-width: 34rem;
   margin: 12vh auto;
