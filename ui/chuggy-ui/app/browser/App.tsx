@@ -3,9 +3,9 @@
  *
  * A console with no usable configuration says so rather than showing a blank
  * page, because a mounted `/config.json` is the one thing a deployment has to
- * get right and a blank page names nothing. One that got no answer offers to
- * ask again, since a request that never arrived says nothing about the
- * deployment.
+ * get right and a blank page names nothing. One that got no answer, or a
+ * gateway's answer for a server it could not reach, offers to ask again, since
+ * a blip says nothing about the deployment.
  *
  * The sign-in names the page it was pressed on, because the issuer redirects to
  * the one address this client is registered with: a page reached with a query

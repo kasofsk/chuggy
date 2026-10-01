@@ -88,6 +88,33 @@ test("a load whose first ask got no answer settles on the second", async () => {
   });
 });
 
+/** A gateway answers for a server it could not reach, so its answer is the same
+ * blip as no answer at all. */
+test("a gateway's answer is unreachable and asked once more; a server's own error is not", async () => {
+  for (const [status, phase, asked] of [
+    [502, "Unreachable", 2],
+    [503, "Unreachable", 2],
+    [504, "Unreachable", 2],
+    [500, "Unconfigured", 1],
+    [404, "Unconfigured", 1],
+  ] as const) {
+    const held = harness();
+    held.answer = () => {
+      throw new FetchJsonError(
+        { fault: "Status", status },
+        `answered ${String(status)}`,
+      );
+    };
+    const holder = createSessionHolder(held.ports);
+    await holder.load();
+    expect(holder.snapshot()).toMatchObject({
+      phase,
+      reason: `/config.json answered ${String(status)}`,
+    });
+    expect(held.asked).toHaveLength(asked);
+  }
+});
+
 test("an issuer that got no answer is unreachable, named by its host", async () => {
   const held = harness();
   held.answer = failingAt(isDiscovery, unanswered, held.answer);
@@ -106,8 +133,8 @@ test("an issuer that answered with something unusable is named by its host, not 
     isDiscovery,
     () => {
       throw new FetchJsonError(
-        { fault: "Status", status: 503 },
-        "answered 503",
+        { fault: "Status", status: 500 },
+        "answered 500",
       );
     },
     answered,
@@ -116,7 +143,7 @@ test("an issuer that answered with something unusable is named by its host, not 
   await holder.load();
   expect(holder.snapshot()).toMatchObject({
     phase: "Unconfigured",
-    reason: "auth.example answered 503",
+    reason: "auth.example answered 500",
   });
   held.answer = (request) =>
     isDiscovery(request)

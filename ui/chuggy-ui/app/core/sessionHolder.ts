@@ -177,6 +177,12 @@ type SessionLoaded =
       readonly reason: string;
     };
 
+/** What a gateway answers for a server it could not reach or that is briefly
+ * down, which is a blip like a request with no answer, not a deployment fault. */
+const sessionLoadTransientStatuses: ReadonlySet<number> = new Set([
+  502, 503, 504,
+]);
+
 /** The reason names where it was asked, because the configuration and the
  * issuer are different hosts. */
 function sessionLoadFailure(source: string, failure: unknown): SessionLoaded {
@@ -190,7 +196,9 @@ function sessionLoadFailure(source: string, failure: unknown): SessionLoaded {
       return { phase: "Unreachable", reason: `No answer from ${source}` };
     case "Status":
       return {
-        phase: "Unconfigured",
+        phase: sessionLoadTransientStatuses.has(failure.fault.status)
+          ? "Unreachable"
+          : "Unconfigured",
         reason: `${source} answered ${String(failure.fault.status)}`,
       };
   }
