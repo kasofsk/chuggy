@@ -64,19 +64,26 @@ export type CreationContext =
        * the listing answers. */
       readonly repositories: readonly ProjectRepositoryResponse[];
     }
+  | { readonly context: "NoRepository" }
   | { readonly context: "NoReadyConfiguration" }
   | {
       readonly context: "ReadyConfigurationUnknown";
       readonly pagesRead: number;
     };
 
-/** What a context with no configuration in it says, absence and not-knowing apart. */
+/** What a context with no configuration in it says: no repository to hold one,
+ * no ready one in a repository, and not knowing, each apart. */
 export function creationContextSentence(
   context: Exclude<CreationContext, { context: "Ready" }>,
 ): string {
-  return context.context === "NoReadyConfiguration"
-    ? "this project has no ready configuration, so there is nothing to shape a ticket with yet"
-    : `the newest ${String(context.pagesRead)} pages of this project's revisions are all incomplete, so this console could not find a ready configuration to shape a ticket with`;
+  switch (context.context) {
+    case "NoRepository":
+      return "No repository bound";
+    case "NoReadyConfiguration":
+      return "No configuration";
+    case "ReadyConfigurationUnknown":
+      return `the newest ${String(context.pagesRead)} pages of this project's revisions are all incomplete, so this console could not find a ready configuration to shape a ticket with`;
+  }
 }
 
 export interface TicketCreationRequest {
@@ -163,8 +170,19 @@ export async function readCreationContext(
 ): Promise<ApiResult<CreationContext>> {
   const found = await readyConfiguration(ports, partition);
   if (found.outcome !== "Ok") return found;
-  if (found.value.found === "None")
-    return { outcome: "Ok", value: { context: "NoReadyConfiguration" } };
+  if (found.value.found === "None") {
+    const bound = await apiProjectRepositories(ports, partition);
+    if (bound.outcome !== "Ok") return bound;
+    return {
+      outcome: "Ok",
+      value: {
+        context:
+          bound.value.repositories.length === 0
+            ? "NoRepository"
+            : "NoReadyConfiguration",
+      },
+    };
+  }
   if (found.value.found === "Unknown")
     return {
       outcome: "Ok",

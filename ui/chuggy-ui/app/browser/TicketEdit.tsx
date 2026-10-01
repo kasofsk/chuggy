@@ -36,7 +36,6 @@ import type {
 } from "../core/ticketCreation.ts";
 import {
   creationContextList,
-  creationContextSentence,
   readCreationContext,
   reviseAndUpdateTicket,
 } from "../core/ticketCreationRun.ts";
@@ -52,7 +51,12 @@ import {
 import { TicketAuthoring } from "./editor/TicketAuthoring.tsx";
 import { drawBytes } from "./ports.ts";
 import { TopBarSlot } from "./shell/slots.tsx";
-import { AttemptNote, CreationFields, useMounted } from "./TicketCreation.tsx";
+import {
+  AttemptNote,
+  CreationContextAbsent,
+  CreationFields,
+  useMounted,
+} from "./TicketCreation.tsx";
 import type { Attempt } from "./TicketCreation.tsx";
 
 /** What the edit is written against: the ticket as read, and its draft. */
@@ -293,7 +297,7 @@ export function TicketEdit(): ReactNode {
               )}
             </EditSubjectRead>
           ) : (
-            <p className="panel-absent">{creationContextSentence(context)}</p>
+            <CreationContextAbsent partition={partition} context={context} />
           )
         }
       </DataPanel>

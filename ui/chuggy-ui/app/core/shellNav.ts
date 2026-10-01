@@ -83,3 +83,33 @@ export function shellNav(input: ShellNavInput): readonly NavEntry[] {
     { id: "ticket-new", label: "New ticket", to: navRoutes.ticketNew, params },
   ];
 }
+
+/** The address an entry's route has under its parameters. */
+function navEntryPath(entry: NavEntry): string {
+  return entry.to
+    .replace("$tenant", encodeURIComponent(entry.params.tenant))
+    .replace("$project", encodeURIComponent(entry.params.project));
+}
+
+const ticketNewSegment = "new";
+
+/**
+ * Whether a page is the one an entry stands for: its own address and whatever
+ * lies beneath it. Tickets is the exception, because the overview is the
+ * parent of every other address and would read as selected on all of them; it
+ * is current on the overview and on a ticket's page and edit, and `tickets/new`
+ * is New ticket's.
+ */
+export function navEntryCurrent(entry: NavEntry, pathname: string): boolean {
+  const path = navEntryPath(entry);
+  const at = pathname.length > 1 ? pathname.replace(/\/+$/, "") : pathname;
+  if (entry.to !== navRoutes.overview)
+    return at === path || at.startsWith(`${path}/`);
+  if (at === path) return true;
+  const ticketPrefix = `${path}/tickets/`;
+  if (!at.startsWith(ticketPrefix)) return false;
+  const [ticket, ...rest] = at.slice(ticketPrefix.length).split("/");
+  if (ticket === "" || ticket === undefined) return false;
+  if (ticket === ticketNewSegment) return false;
+  return rest.length === 0 || (rest.length === 1 && rest[0] === "edit");
+}

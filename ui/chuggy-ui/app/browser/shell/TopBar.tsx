@@ -12,13 +12,13 @@
  * the theme are reachable before there is a project to open.
  */
 
-import { Link } from "@tanstack/react-router";
+import { Link, useRouterState } from "@tanstack/react-router";
 import { Separator } from "radix-ui";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import { inboxCountLabel } from "../../core/inboxList.ts";
-import { shellNav } from "../../core/shellNav.ts";
+import { navEntryCurrent, shellNav } from "../../core/shellNav.ts";
 import type { NavEntry } from "../../core/shellNav.ts";
 import { sessionStateTone } from "../../core/tones.ts";
 import type { Tone } from "../../core/tones.ts";
@@ -53,9 +53,12 @@ const navDotFills: Readonly<Record<Tone, string>> = {
  * and a pane still over the whole body would answer by drawing the chat again.
  * A pane the reader put away stays away — that press was theirs too.
  */
-function TopBarNavEntry(props: { readonly entry: NavEntry }): ReactNode {
+export function TopBarNavEntry(props: { readonly entry: NavEntry }): ReactNode {
   const entry = props.entry;
   const held = useChatPane();
+  const current = useRouterState({
+    select: (router) => navEntryCurrent(entry, router.location.pathname),
+  });
   return (
     <li>
       <Link
@@ -65,9 +68,9 @@ function TopBarNavEntry(props: { readonly entry: NavEntry }): ReactNode {
           if (held.state.presentation === "Full")
             held.moveTo(chatPaneRestored(held.state));
         }}
-        className="flex items-center gap-2 rounded-2 px-3 py-1 text-md whitespace-nowrap no-underline"
-        activeProps={{ className: "bg-surface-2 text-ink-1" }}
-        inactiveProps={{ className: "text-ink-2" }}
+        activeOptions={{ exact: true }}
+        aria-current={current ? "page" : undefined}
+        className={`flex items-center gap-2 rounded-2 px-3 py-1 text-md whitespace-nowrap no-underline ${current ? "bg-surface-2 text-ink-1" : "text-ink-2"}`}
       >
         {entry.standing === undefined ? null : (
           <>

@@ -10,7 +10,7 @@
 import { expect, test } from "vitest";
 
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
-import { navRoutes, shellNav } from "../app/core/shellNav.ts";
+import { navEntryCurrent, navRoutes, shellNav } from "../app/core/shellNav.ts";
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
 
@@ -46,4 +46,34 @@ test("the inbox count and the lead's standing are drawn only where a read suppli
     word: "Working",
     tone: "live",
   });
+});
+
+function currentAt(pathname: string): readonly string[] {
+  return shellNav({ partition: atlas })
+    .filter((entry) => navEntryCurrent(entry, pathname))
+    .map((entry) => entry.id);
+}
+
+test("each screen is current on its own address alone", () => {
+  expect(currentAt("/acme/atlas")).toStrictEqual(["overview"]);
+  expect(currentAt("/acme/atlas/inbox")).toStrictEqual(["inbox"]);
+  expect(currentAt("/acme/atlas/lead")).toStrictEqual(["lead"]);
+  expect(currentAt("/acme/atlas/selector")).toStrictEqual(["selector"]);
+  expect(currentAt("/acme/atlas/runners")).toStrictEqual(["runners"]);
+  expect(currentAt("/acme/atlas/repositories")).toStrictEqual(["repositories"]);
+  expect(currentAt("/acme/atlas/repositories/a%2Fb")).toStrictEqual([
+    "repositories",
+  ]);
+});
+
+test("a ticket's page and its edit belong to Tickets, and a new one to New ticket", () => {
+  expect(currentAt("/acme/atlas/tickets/7")).toStrictEqual(["overview"]);
+  expect(currentAt("/acme/atlas/tickets/7/edit")).toStrictEqual(["overview"]);
+  expect(currentAt("/acme/atlas/tickets/new")).toStrictEqual(["ticket-new"]);
+  expect(currentAt("/acme/atlas/tickets/")).toStrictEqual([]);
+});
+
+test("another project's addresses are current for none of this one's entries", () => {
+  expect(currentAt("/acme/atlas2")).toStrictEqual([]);
+  expect(currentAt("/acme/atlas2/tickets/7")).toStrictEqual([]);
 });
