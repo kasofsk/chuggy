@@ -12,8 +12,14 @@ import {
   allExecutionOutcomes,
   allExecutionStatuses,
   attemptEvidenceLabel,
+  taskPurposeForKind,
   type ExecutionStatus,
 } from "../../interpreter/executionScheduler.ts";
+import {
+  authoredTaskConfigurationReadiness,
+  briefingStageCarrier,
+  type BriefingCarrier,
+} from "../../interpreter/taskBriefing.ts";
 import { asPublicInstant } from "../../interpreter/publicResource.ts";
 import {
   configuredOutputs,
@@ -87,6 +93,7 @@ interface ExecutionViewRow extends ConfigurationVersionRow {
   readonly relaunches: string;
   readonly registered_at: string;
   readonly started_at: string | null;
+  readonly run_started_at: string | null;
   readonly terminal_at: string | null;
   readonly result_manifest: string | null;
 }
@@ -174,8 +181,24 @@ function executionIdentity(row: ExecutionViewRow): TaskIdentity {
   };
 }
 
+/** What carries out the row's stage, read from the revision it pinned; a revision no briefing reads names none. */
+function executionSummaryCarrier(
+  row: ExecutionViewRow,
+): BriefingCarrier | undefined {
+  const parsed = authoredTaskConfigurationReadiness(JSON.parse(row.canonical));
+  if (parsed.readiness !== "Ready") return undefined;
+  return briefingStageCarrier(
+    parsed.configuration,
+    taskPurposeForKind(taskKind(row.task_kind)),
+    row.stage === null
+      ? undefined
+      : projectRowCounter(row.stage, "execution task stage") - 1,
+  );
+}
+
 function executionSummary(row: ExecutionViewRow): ExecutionSummary {
   const configurationVersion = configurationVersionOf(row);
+  const carrier = executionSummaryCarrier(row);
   return {
     execution: asExecutionId(row.execution),
     ticket: asTicketId(projectRowCounter(row.ticket, "execution ticket")),
@@ -212,6 +235,10 @@ function executionSummary(row: ExecutionViewRow): ExecutionSummary {
     ...(row.started_at === null
       ? {}
       : { startedAt: asPublicInstant(row.started_at) }),
+    ...(row.run_started_at === null
+      ? {}
+      : { runStartedAt: asPublicInstant(row.run_started_at) }),
+    ...(carrier === undefined ? {} : { carrier }),
     ...(row.terminal_at === null
       ? {}
       : { terminalAt: asPublicInstant(row.terminal_at) }),
@@ -320,6 +347,12 @@ async function executionRows(
                  WHERE a.tenant=e.tenant AND a.project=e.project
                    AND a.execution=e.execution
                  ORDER BY a.attempt_number LIMIT 1) AS started_at,
+               (SELECT r.started_at::text FROM execution_attempt a
+                  LEFT JOIN execution_run r ON r.tenant=a.tenant AND r.project=a.project
+                   AND r.execution=a.execution AND r.attempt=a.attempt
+                 WHERE a.tenant=e.tenant AND a.project=e.project
+                   AND a.execution=e.execution AND a.state IN ('Placing','Running')
+                 ORDER BY a.attempt_number DESC LIMIT 1) AS run_started_at,
                e.result_manifest,
                v.name AS version_name,v.number::text AS version_number
           FROM execution e JOIN configuration_revision c
@@ -402,6 +435,12 @@ async function oneExecution(
                  WHERE a.tenant=e.tenant AND a.project=e.project
                    AND a.execution=e.execution
                  ORDER BY a.attempt_number LIMIT 1) AS started_at,
+               (SELECT r.started_at::text FROM execution_attempt a
+                  LEFT JOIN execution_run r ON r.tenant=a.tenant AND r.project=a.project
+                   AND r.execution=a.execution AND r.attempt=a.attempt
+                 WHERE a.tenant=e.tenant AND a.project=e.project
+                   AND a.execution=e.execution AND a.state IN ('Placing','Running')
+                 ORDER BY a.attempt_number DESC LIMIT 1) AS run_started_at,
                e.result_manifest,
                v.name AS version_name,v.number::text AS version_number
           FROM execution e JOIN configuration_revision c

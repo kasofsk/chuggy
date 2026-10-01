@@ -225,6 +225,7 @@ export const executionSummary: ExecutionSummary = {
   retriesSpent: 2,
   relaunches: 1,
   registeredAt: instant,
+  carrier: "Agent",
   terminalAt: instant,
 };
 

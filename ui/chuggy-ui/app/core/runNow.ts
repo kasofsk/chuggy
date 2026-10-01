@@ -20,6 +20,7 @@ import { durationFigure } from "./figures.ts";
 import type { Figure } from "./figures.ts";
 import type { RunTranscriptReading } from "./runTranscript.ts";
 import { runCountLabel } from "./runTotals.ts";
+import { executionStarting } from "./ticketLedger.ts";
 
 export type RunNowAttempt = ExecutionResponse["attempts"][number];
 
@@ -60,6 +61,13 @@ export function runNowAttempt(
     (left, right) => left.number - right.number,
   );
   return byNumber.filter(runNowAttemptLive).at(-1) ?? byNumber.at(-1);
+}
+
+/** The card's word for a run that has said nothing yet: whether its worker has begun. */
+export function runNowStatus(
+  execution: ExecutionSummary,
+): "Starting" | "Running" {
+  return executionStarting(execution) ? "Starting" : "Running";
 }
 
 /** When the run began: its attempt's own start where the detail is read, and

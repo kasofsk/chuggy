@@ -461,7 +461,7 @@ export interface BriefingView {
 
 /** The block one role reads, which is the only part of a configuration the two roles differ on; every evaluator of a stage runs the stage's block, whatever key it carries. */
 function purposeBlock(
-  configuration: PinnedTaskConfiguration,
+  configuration: AuthoredTaskConfiguration,
   purpose: TaskPurpose,
   stage?: number,
 ): StageBlock | undefined {
@@ -470,9 +470,21 @@ function purposeBlock(
   return stage === undefined ? undefined : configuration.evaluations[stage];
 }
 
+/** What carries out one stage of a configuration, which its block's command lines decide; a ticket's own lines only join a stage that already has some. */
+export function briefingStageCarrier(
+  configuration: AuthoredTaskConfiguration,
+  purpose: TaskPurpose,
+  stage?: number,
+): BriefingCarrier {
+  const block = purposeBlock(configuration, purpose, stage);
+  return block === undefined || blockCommandLines(block) === undefined
+    ? "Agent"
+    : "Commands";
+}
+
 /** The carrier one view renders under, which is the only thing the wording turns on. */
 function briefingCarrier(view: BriefingView): BriefingCarrier {
-  return briefingStageCommands(view) === undefined ? "Agent" : "Commands";
+  return briefingStageCarrier(view.configuration, view.purpose, view.stage);
 }
 
 /**

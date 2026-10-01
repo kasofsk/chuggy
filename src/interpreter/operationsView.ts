@@ -29,6 +29,7 @@ import type {
   RequirementSource,
 } from "./executionRequirement.ts";
 import type { Worker } from "./workerCatalog.ts";
+import type { BriefingCarrier } from "./briefingTemplate.ts";
 
 export type OutputRenderer = "UnifiedDiff" | "Markdown" | "Json" | "Text";
 
@@ -125,6 +126,10 @@ export interface ExecutionSummary {
   readonly registeredAt: PublicInstant;
   /** When the first attempt opened, absent while the execution has none. */
   readonly startedAt?: PublicInstant;
+  /** When the worker of the attempt now open recorded its run, absent until it does. */
+  readonly runStartedAt?: PublicInstant;
+  /** What carries out the stage, absent where the pinned revision cannot be briefed. */
+  readonly carrier?: BriefingCarrier;
   readonly terminalAt?: PublicInstant;
   readonly runTotals?: RunTotals;
 }

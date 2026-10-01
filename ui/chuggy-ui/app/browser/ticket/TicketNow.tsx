@@ -1,8 +1,8 @@
 /**
  * The run the ticket is on now: what the agent last said, the call it is
  * waiting on and the notes before it, opening into the run's whole
- * conversation. A stage that records no transcript, such as a command, is its
- * stage and how long it has been running.
+ * conversation. A run with no transcript, such as a command or one whose
+ * worker has not started, is its stage, its status and how long it has gone.
  *
  * The execution is read under the key its ledger row reads it by, so a live
  * `Execution` frame lands in both and the card follows the same high-water
@@ -24,6 +24,7 @@ import {
   runNowElapsedFigure,
   runNowOf,
   runNowStartedAt,
+  runNowStatus,
 } from "../../core/runNow.ts";
 import type { RunNow, RunNowAttempt, RunNowCall } from "../../core/runNow.ts";
 import type { RunningNow } from "../../core/ticketSituation.ts";
@@ -61,12 +62,13 @@ function TicketNowHead(props: {
 }
 
 function TicketNowRunning(props: {
+  readonly status: string;
   readonly since: string;
   readonly nowMs: number;
 }): ReactNode {
   return (
     <div className="ticket-now-running">
-      <p className="ticket-now-line">Running</p>
+      <p className="ticket-now-line">{props.status}</p>
       <span className="text-ink-3">
         <Figure figure={runNowElapsedFigure(props.since, props.nowMs)} />
       </span>
@@ -100,6 +102,7 @@ function TicketNowCall(props: {
  * notes before it, newest first and fading. */
 function TicketNowSaid(props: {
   readonly now: RunNow;
+  readonly status: string;
   readonly since: string;
   readonly nowMs: number;
 }): ReactNode {
@@ -107,7 +110,11 @@ function TicketNowSaid(props: {
   return (
     <>
       {note === undefined ? (
-        <TicketNowRunning since={props.since} nowMs={props.nowMs} />
+        <TicketNowRunning
+          status={props.status}
+          since={props.since}
+          nowMs={props.nowMs}
+        />
       ) : (
         <p className="ticket-now-line">
           <MarkdownLine text={note.text} />
@@ -153,6 +160,7 @@ function TicketNowRun(props: {
   readonly partition: PartitionIdentity;
   readonly running: RunningNow;
   readonly attempt: RunNowAttempt;
+  readonly status: string;
   readonly observedAt: string;
   readonly highWaterBatch: number;
   readonly nowMs: number;
@@ -202,6 +210,7 @@ function TicketNowRun(props: {
           )}
           <TicketNowSaid
             now={now}
+            status={props.status}
             since={runNowStartedAt(props.running.execution, props.attempt)}
             nowMs={props.nowMs}
           />
@@ -230,8 +239,9 @@ export function TicketNow(props: {
     execution.execution,
     (ports) => apiExecution(ports, partition, execution.execution),
   );
-  const attempt =
-    state.state === "Ready" ? runNowAttempt(state.value) : undefined;
+  const read = state.state === "Ready" ? state.value : undefined;
+  const attempt = read === undefined ? undefined : runNowAttempt(read);
+  const status = runNowStatus(read ?? execution);
   const transcript = attempt?.run?.transcript;
   if (attempt !== undefined && transcript !== undefined)
     return (
@@ -240,6 +250,7 @@ export function TicketNow(props: {
         partition={partition}
         running={running}
         attempt={attempt}
+        status={status}
         observedAt={transcript.observedAt}
         highWaterBatch={transcript.highWaterBatch}
         nowMs={props.nowMs}
@@ -249,6 +260,7 @@ export function TicketNow(props: {
     <section className="ticket-card" aria-label="Now">
       <TicketNowHead running={running} nowMs={props.nowMs} />
       <TicketNowRunning
+        status={status}
         since={runNowStartedAt(execution, attempt)}
         nowMs={props.nowMs}
       />

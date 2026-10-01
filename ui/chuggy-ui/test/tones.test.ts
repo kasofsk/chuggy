@@ -27,6 +27,7 @@ import type { SetVerdict } from "../app/core/ticketLedger.ts";
 const verdicts: readonly SetVerdict[] = [
   "Passed",
   "Failed",
+  "Starting",
   "Running",
   "Cancelled",
   "Blocked",
@@ -47,6 +48,7 @@ test("the machine's own meanings keep their own hues", () => {
   expect(phaseTone("Revoked")).toBe("retired");
   expect(verdictTone("Passed")).toBe("pass");
   expect(verdictTone("Failed")).toBe("fail");
+  expect(verdictTone("Starting")).toBe("queued");
   expect(verdictTone("Running")).toBe("live");
   expect(verdictTone("Blocked")).toBe("retired");
 });

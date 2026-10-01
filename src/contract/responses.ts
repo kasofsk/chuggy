@@ -65,6 +65,7 @@ import {
   attemptEvidences,
   attemptStates,
   blockedReasons,
+  briefingCarriers,
   draftStates,
   escalationKinds,
   executionCapabilities,
@@ -567,6 +568,17 @@ export const executionSummarySchema = z.object({
    * only the summary can still separate the wait from the run.
    */
   startedAt: instantSchema.optional(),
+  /**
+   * When the worker of the attempt now open recorded its run, absent until it
+   * does: an attempt opens before its worker's image is pulled.
+   */
+  runStartedAt: instantSchema.optional(),
+  /**
+   * What carries out this execution's stage, absent for a revision no briefing
+   * can read and for the deployment window. A command list records its run
+   * only as it ends, so `runStartedAt` marks a start only under an agent.
+   */
+  carrier: z.enum(briefingCarriers).optional(),
   terminalAt: instantSchema.optional(),
   runTotals: runTotalsSchema.optional(),
 });

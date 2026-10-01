@@ -143,6 +143,10 @@ export type ExecutionOutcome = (typeof executionOutcomes)[number];
 export const executionTaskKinds = ["Work", "Evaluation"] as const;
 export type ExecutionTaskKind = (typeof executionTaskKinds)[number];
 
+/** What carries out a task: an agent the worker briefs, or the stage's own command lines. */
+export const briefingCarriers = ["Agent", "Commands"] as const;
+export type BriefingCarrier = (typeof briefingCarriers)[number];
+
 /** The platform halves a container requirement names, and the native driver's. */
 export const operatingSystems = ["Linux", "MacOS"] as const;
 export type OperatingSystem = (typeof operatingSystems)[number];

@@ -160,10 +160,12 @@ test("a live run a phase no longer running left behind is not drawn as now", () 
 
 /**
  * A two-stage page where each stage blocked at generation 1 and was re-asked;
- * the second stage's second generation ends however the case says.
+ * each stage's second generation ends however the case says, the first's
+ * passing where it says nothing.
  */
 function twoResumedStages(
   lastRow: { readonly outcome: "Failed" } | { readonly status: "Running" },
+  firstRow: Partial<ExecutionShape> = { outcome: "Passed" },
 ): ReturnType<typeof ticketLedger> {
   return ticketLedger(
     ledgerPage([
@@ -183,7 +185,7 @@ function twoResumedStages(
         execution: "execution-cc-3",
         task: 3,
         identity: evalIdentity(1, 1, 2),
-        outcome: "Passed",
+        ...firstRow,
       },
       {
         execution: "execution-dd-4",
@@ -209,6 +211,17 @@ test("resumedFrom names the highest-numbered stage whose resume is still running
   expect(resumedFrom(twoResumedStages({ status: "Running" }))).toBe(
     "Resumed at stage 2 · cycle 1",
   );
+});
+
+test("a resume still starting has not settled, so resumedFrom names its stage", () => {
+  expect(
+    resumedFrom(
+      twoResumedStages(
+        { outcome: "Failed" },
+        { status: "Queued", carrier: "Agent" },
+      ),
+    ),
+  ).toBe("Resumed at stage 1 · cycle 1");
 });
 
 test("with nothing running, resumedFrom names the highest-numbered stage a resume re-asked", () => {

@@ -42,6 +42,7 @@ import {
   allPracticeIds,
   blessedPracticeCatalog,
   briefingLinesMax,
+  briefingStageCarrier,
   stageCommandsMax,
   authoredTaskConfigurationReadiness,
   composeTaskInvocation,
@@ -773,6 +774,35 @@ test("a work stage that names commands briefs no agent", () => {
     "This stage is the command list below, run in order by the worker.",
     "No agent runs this stage and nothing reads this briefing.",
   ]);
+});
+
+/** What a reader is told carries out a stage is what a launch hands its worker. */
+test("a stage's carrier is the mode its worker is handed", () => {
+  const views = [
+    viewOf({ evaluations: checkEvaluations }),
+    viewOf({ work: commandedWork }),
+    viewOf({ purpose: "Review", stage: 0, evaluations: checkEvaluations }),
+    viewOf({ purpose: "Check", stage: 1, evaluations: checkEvaluations }),
+    viewOf({ purpose: "Review" }),
+  ];
+  const expected = ["Agent", "Commands", "Agent", "Commands", "Agent"];
+  assert.deepEqual(
+    views.map((view) =>
+      briefingStageCarrier(view.configuration, view.purpose, view.stage),
+    ),
+    expected,
+  );
+  assert.deepEqual(
+    views.map((view) => {
+      const worker = composed(view).worker;
+      return worker !== undefined &&
+        "mode" in worker &&
+        worker.mode.type === "Commands"
+        ? "Commands"
+        : "Agent";
+    }),
+    expected,
+  );
 });
 
 test("a ticket's check lines reach no commanded work stage, whatever stage it is composed for", () => {
