@@ -1,7 +1,7 @@
 /**
  * The ticket page over one execution and its run: the rows the ledger reads,
- * the execution its details read, the pages of its transcript and the
- * configuration snapshot its prompt is read from.
+ * the execution its details read, the pages of its transcript, the
+ * configuration snapshot its prompt is read from and the error its worker left.
  *
  * Shared by the suites about a run's evidence, its conversation and the Now
  * card, because each draws the same page and differs only in what the run
@@ -163,6 +163,8 @@ export interface RunPageServed {
   readonly transcripts: readonly Record<string, unknown>[];
   /** The run's snapshot, and a `404` where a case keeps none. */
   readonly configuration?: Record<string, unknown>;
+  /** The text the run's worker left, and a `404` where it left none. */
+  readonly error?: Record<string, unknown>;
 }
 
 export interface RunPageDrawn {
@@ -187,6 +189,10 @@ function runPageRoute(
       return served.configuration === undefined
         ? answer({}, 404)
         : answer(served.configuration);
+    if (url.endsWith("/error"))
+      return served.error === undefined
+        ? answer({}, 404)
+        : answer(served.error);
     if (url.includes("/dispatch-view")) return answer({ result: "Reset" });
     if (url.includes("/native-actions")) return answer({ actions: [] });
     if (url.includes("/executions/")) return answer(served.execution);

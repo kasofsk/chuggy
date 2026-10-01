@@ -165,6 +165,13 @@ export const sessionTurnToolNameCharsMax = 128;
 /** The largest body one worker-plane upload carries, which an artifact is written against. */
 export const workerPlaneUploadBytesMax = 4_194_304;
 
+/**
+ * Where an attempt that ended without a result leaves its worker's own text
+ * saying why, uploaded as an artifact. The worker core writes it under the
+ * same name in kasofsk/chuggy-common's `runEvidence.mjs`.
+ */
+export const workerErrorPath = ".chuggy/worker-error.txt";
+
 /** The longest label the agent runtime names its own outcome with. */
 export const runOutcomeLabelCharsMax = 64;
 
@@ -386,6 +393,7 @@ export const nativeHttpRoutes = {
   runTurns: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/executions/:execution/attempts/:attempt/turns`,
   runTranscript: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/executions/:execution/attempts/:attempt/transcript`,
   runConfiguration: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/executions/:execution/attempts/:attempt/configuration`,
+  runError: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/executions/:execution/attempts/:attempt/error`,
   operations: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/operations`,
   operation: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/operations/:operation`,
   notifications: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/notifications`,

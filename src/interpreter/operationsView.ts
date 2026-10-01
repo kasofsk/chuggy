@@ -120,6 +120,8 @@ export interface ExecutionSummary {
   readonly status: ExecutionStatus;
   readonly outcome?: ExecutionOutcome;
   readonly retriesSpent: number;
+  /** How many times the fabric opened another attempt after losing one. */
+  readonly relaunches: number;
   readonly registeredAt: PublicInstant;
   /** When the first attempt opened, absent while the execution has none. */
   readonly startedAt?: PublicInstant;
@@ -168,6 +170,8 @@ export interface ExecutionAttemptResource {
   readonly endedAt?: PublicInstant;
   readonly evidence?: AttemptEvidence;
   readonly run?: ExecutionRunResource;
+  /** How much text this attempt's worker left saying why it ended, where it left any. */
+  readonly error?: { readonly bytes: number };
 }
 
 export interface ResultArtifactResource {

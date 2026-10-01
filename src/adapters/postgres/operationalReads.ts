@@ -44,6 +44,10 @@ import {
   type ArtifactRole,
 } from "../../interpreter/resultManifest.ts";
 import type { ExecutionRunResource } from "../../interpreter/runEvidence.ts";
+import {
+  nativeHttpPageItemsMax,
+  workerErrorPath,
+} from "../../contract/http.ts";
 import { projectRowCounter } from "./rows.ts";
 import {
   postgresAttemptRuns,
@@ -80,6 +84,7 @@ interface ExecutionViewRow extends ConfigurationVersionRow {
   readonly status: string;
   readonly outcome: string | null;
   readonly retries_spent: string;
+  readonly relaunches: string;
   readonly registered_at: string;
   readonly started_at: string | null;
   readonly terminal_at: string | null;
@@ -94,6 +99,7 @@ interface AttemptViewRow {
   readonly opened_at: string;
   readonly ended_at: string | null;
   readonly evidence: string | null;
+  readonly error_bytes: string | null;
 }
 
 interface ResultViewRow {
@@ -201,6 +207,7 @@ function executionSummary(row: ExecutionViewRow): ExecutionSummary {
           ),
         }),
     retriesSpent: projectRowCounter(row.retries_spent, "execution retries"),
+    relaunches: projectRowCounter(row.relaunches, "execution relaunches"),
     registeredAt: asPublicInstant(row.registered_at),
     ...(row.started_at === null
       ? {}
@@ -228,6 +235,11 @@ function attemptResource(
       : { endedAt: asPublicInstant(row.ended_at) }),
     ...(evidence === undefined ? {} : { evidence }),
     ...(run === undefined ? {} : { run }),
+    ...(row.error_bytes === null
+      ? {}
+      : {
+          error: { bytes: projectRowCounter(row.error_bytes, "error bytes") },
+        }),
   };
 }
 
@@ -295,6 +307,14 @@ async function executionRows(
                e.platform_default_version::text AS platform_default_version,
                c.canonical,e.status,e.outcome,
                e.retries_spent::text AS retries_spent,
+               (SELECT count(*) FROM execution_attempt a
+                 WHERE a.tenant=e.tenant AND a.project=e.project
+                   AND a.execution=e.execution AND a.state='Lost'
+                   AND EXISTS (SELECT 1 FROM execution_attempt b
+                                WHERE b.tenant=a.tenant AND b.project=a.project
+                                  AND b.execution=a.execution
+                                  AND b.attempt_number>a.attempt_number))::text
+                 AS relaunches,
                e.registered_at::text AS registered_at,e.terminal_at::text AS terminal_at,
                (SELECT a.opened_at::text FROM execution_attempt a
                  WHERE a.tenant=e.tenant AND a.project=e.project
@@ -369,6 +389,14 @@ async function oneExecution(
                e.platform_default_version::text AS platform_default_version,
                c.canonical,e.status,e.outcome,
                e.retries_spent::text AS retries_spent,
+               (SELECT count(*) FROM execution_attempt a
+                 WHERE a.tenant=e.tenant AND a.project=e.project
+                   AND a.execution=e.execution AND a.state='Lost'
+                   AND EXISTS (SELECT 1 FROM execution_attempt b
+                                WHERE b.tenant=a.tenant AND b.project=a.project
+                                  AND b.execution=a.execution
+                                  AND b.attempt_number>a.attempt_number))::text
+                 AS relaunches,
                e.registered_at::text AS registered_at,e.terminal_at::text AS terminal_at,
                (SELECT a.opened_at::text FROM execution_attempt a
                  WHERE a.tenant=e.tenant AND a.project=e.project
@@ -399,13 +427,20 @@ async function attempts(
   execution: ExecutionId,
 ): Promise<readonly ExecutionAttemptResource[]> {
   const found = await pool.query<AttemptViewRow>(
-    sql`SELECT attempt,attempt_number::text AS attempt_number,
-               generation::text AS generation,state,opened_at::text AS opened_at,
-               ended_at::text AS ended_at,evidence
-          FROM execution_attempt
-         WHERE tenant=${partition.tenant} AND project=${partition.project}
-           AND execution=${execution}
-         ORDER BY execution_attempt.attempt_number LIMIT 100`,
+    sql`SELECT n.attempt,n.attempt_number::text AS attempt_number,
+               n.generation::text AS generation,n.state,n.opened_at::text AS opened_at,
+               n.ended_at::text AS ended_at,n.evidence,n.error_bytes::text AS error_bytes
+          FROM (SELECT a.attempt,a.attempt_number,a.generation,a.state,a.opened_at,
+                       a.ended_at,a.evidence,r.bytes AS error_bytes
+                  FROM execution_attempt a
+                  LEFT JOIN worker_artifact_reservation r
+                    ON r.tenant=a.tenant AND r.project=a.project
+                   AND r.execution=a.execution AND r.attempt=a.attempt
+                   AND r.path=${workerErrorPath}
+                 WHERE a.tenant=${partition.tenant} AND a.project=${partition.project}
+                   AND a.execution=${execution}
+                 ORDER BY a.attempt_number DESC LIMIT ${nativeHttpPageItemsMax}) n
+         ORDER BY n.attempt_number`,
   );
   const runs = await postgresAttemptRuns(pool, partition, execution);
   return found.rows.map((row) => attemptResource(row, runs.get(row.attempt)));

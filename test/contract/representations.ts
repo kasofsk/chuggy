@@ -223,6 +223,7 @@ export const executionSummary: ExecutionSummary = {
   status: "Terminal",
   outcome: "Passed",
   retriesSpent: 2,
+  relaunches: 1,
   registeredAt: instant,
   terminalAt: instant,
 };

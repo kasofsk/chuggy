@@ -52,6 +52,7 @@ import type {
 } from "../../interpreter/operationsView.ts";
 import type {
   RunConfigurationRead,
+  RunEvidenceContentRead,
   RunTranscriptRead,
   RunTurnsPage,
 } from "../../interpreter/runEvidence.ts";
@@ -623,6 +624,27 @@ export function runConfigurationResponse(
         nativeHttpError(
           "ConfigurationCorrupt",
           "The configuration snapshot failed verification.",
+        ),
+      );
+  }
+}
+
+export function runErrorResponse(
+  result: RunEvidenceContentRead,
+): NativeHttpResponse {
+  switch (result.read) {
+    case "Content":
+      return response(200, result);
+    case "NotFound":
+      return response(404, nativeHttpError("NotFound", "Resource not found."));
+    case "Unavailable":
+      return retry(503, result.retryAfterSeconds, "RunErrorUnavailable");
+    case "Corrupt":
+      return response(
+        409,
+        nativeHttpError(
+          "RunErrorCorrupt",
+          "The error text failed verification.",
         ),
       );
   }

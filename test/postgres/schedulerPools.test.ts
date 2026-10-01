@@ -24,7 +24,13 @@ import {
   poolPlaneRole,
   workerPlaneRole,
 } from "../../src/adapters/postgres/schema.ts";
-import { postgresWorkerRunEnded } from "../../src/adapters/postgres/workerPlane.ts";
+import { postgresOperationalReads } from "../../src/adapters/postgres/operationalReads.ts";
+import { postgresRunEvidenceReads } from "../../src/adapters/postgres/runEvidence.ts";
+import {
+  postgresWorkerArtifactReservations,
+  postgresWorkerRunEnded,
+} from "../../src/adapters/postgres/workerPlane.ts";
+import { workerErrorPath } from "../../src/contract/http.ts";
 import { workerPoolEvidenceCharsMax } from "../../src/contract/workerPool.ts";
 import {
   postgresWorkerPoolAssignments,
@@ -591,6 +597,52 @@ test("an execution whose claimed attempt its run ends rate limited concludes on 
       { state: "Withdrawn", evidence: "RunRateLimited" },
       { retries_spent: 0, backed_off: true },
     ),
+  );
+});
+
+/**
+ * What a member reads of the run a killed runner ended: the retry its loss
+ * spent was never a relaunch, and the attempt carries the text its worker left.
+ */
+test("an execution a pool lost its one attempt of reads as relaunched never, carrying the worker's error", async () => {
+  const routed = await poolRoutedExecution(rig, "pools-run-failed");
+  const { bearer } = await poolClaimed(routed, "claiming");
+  const left = { path: workerErrorPath, digest: "e".repeat(64), bytes: 61 };
+  assert.deepEqual(
+    await postgresWorkerArtifactReservations(harnessPlanePool).reserve({
+      secret: asAttemptCapabilitySecret(bearer),
+      ...left,
+    }),
+    { reserved: "Reserved" },
+  );
+  assert.equal(
+    await postgresWorkerRunEnded(harnessPlanePool).end({
+      secret: asAttemptCapabilitySecret(bearer),
+      generation: 1,
+      evidence: "RunFailed",
+    }),
+    true,
+  );
+  await executionSchedulerLaunch(service, routed.project.epoch);
+  const { partition } = routed.project;
+  const read = await postgresOperationalReads(apiPool).execution(
+    partition,
+    routed.execution,
+  );
+  assert.equal(read?.outcome, "ProcessFailed");
+  assert.equal(read.retriesSpent, 1);
+  assert.equal(read.relaunches, 0);
+  const [attempt] = read.attempts;
+  assert.ok(attempt !== undefined && read.attempts.length === 1);
+  assert.deepEqual(attempt.error, { bytes: left.bytes });
+  const stored = await postgresRunEvidenceReads(apiPool).error(
+    partition,
+    routed.execution,
+    attempt.attempt,
+  );
+  assert.deepEqual(
+    { path: stored?.path, digest: stored?.digest, bytes: stored?.bytes },
+    left,
   );
 });
 

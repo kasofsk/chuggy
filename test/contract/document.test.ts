@@ -70,6 +70,7 @@ test("the golden names every route and not an empty stand-in", () => {
     "projectRepositoryRetirement",
     "projects",
     "runConfiguration",
+    "runError",
     "runTranscript",
     "runTurns",
     "selectorContext",

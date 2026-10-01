@@ -37,6 +37,7 @@ import {
   projectRepositoryCreateResponse,
   projectResponse,
   runConfigurationResponse,
+  runErrorResponse,
   runTranscriptResponse,
   runTurnsResponse,
   repositoryConfigurationImportResponse,
@@ -81,6 +82,7 @@ import {
   projectResponseSchema,
   repositoryConfigurationRefusalsSchema,
   runConfigurationResponseSchema,
+  runErrorResponseSchema,
   runTranscriptResponseSchema,
   runTurnsResponseSchema,
   selectorProjectSettingsResponseSchema,
@@ -1379,7 +1381,7 @@ test("a ticket read carries the rollup and an untouched ticket omits it", () => 
   );
 });
 
-test("the three run reads parse as the contract names them", () => {
+test("the run reads parse as the contract names them", () => {
   const page = runTurnsResponseSchema.parse(
     runTurnsResponse({
       turns: [
@@ -1435,6 +1437,17 @@ test("the three run reads parse as the contract names them", () => {
   );
   assert.equal(snapshot.digest, digest);
   assert.equal(snapshot.content, "{}");
+  const error = runErrorResponse({ read: "Content", content: "killed\n" });
+  assert.equal(error.status, 200);
+  assert.equal(runErrorResponseSchema.parse(error.body).content, "killed\n");
+  assert.deepEqual(
+    [
+      runErrorResponse({ read: "NotFound" }),
+      runErrorResponse({ read: "Unavailable", retryAfterSeconds: 5 }),
+      runErrorResponse({ read: "Corrupt" }),
+    ].map((answered) => answered.status),
+    [404, 503, 409],
+  );
 });
 
 test("a run figure past the bound the contract names is refused", () => {

@@ -16,7 +16,11 @@ import type {
   ExecutionResponse,
   RunTurnsResponse,
 } from "../../../../src/contract/responses.ts";
-import { apiRunConfiguration, apiRunTurns } from "../core/apiRoutes.ts";
+import {
+  apiRunConfiguration,
+  apiRunError,
+  apiRunTurns,
+} from "../core/apiRoutes.ts";
 import {
   runConfigurationArgvSentence,
   runConfigurationCapabilitiesSentence,
@@ -28,6 +32,8 @@ import {
   runConfigurationSourceSentence,
 } from "../core/runConfiguration.ts";
 import type { RunConfigurationFile } from "../core/runConfiguration.ts";
+import { runReasonLeft, runReasonOf } from "../core/runReason.ts";
+import type { RunReason } from "../core/runReason.ts";
 import { runSummaryOf } from "../core/runSummary.ts";
 import {
   runCostLabel,
@@ -289,6 +295,35 @@ function RunSummary(props: {
   );
 }
 
+/** A worker's reason for one attempt, read under the key its row reads it by. */
+export function useRunReason(
+  partition: PartitionIdentity,
+  execution: string,
+  attempt: string,
+): RunReason | undefined {
+  const state = usePanelResource(
+    partition,
+    "Execution",
+    attemptResource(execution, attempt, "error"),
+    (ports) => apiRunError(ports, partition, execution, attempt),
+  );
+  return state.state === "Ready" ? runReasonOf(state.value.content) : undefined;
+}
+
+/** The worker's reason whole, where a row draws its first line cut short. */
+function RunReasonText(props: {
+  readonly partition: PartitionIdentity;
+  readonly execution: string;
+  readonly attempt: string;
+}): ReactNode {
+  const reason = useRunReason(props.partition, props.execution, props.attempt);
+  return reason === undefined ? null : (
+    <p className="text-ink-2 text-sm whitespace-pre-wrap wrap-anywhere">
+      {reason.full}
+    </p>
+  );
+}
+
 /** The run's own conversation, told what state the attempt is in so a run that
  * is over draws no exchange still open, and whether it kept the snapshot its
  * prompt is read from. */
@@ -395,6 +430,13 @@ function RunAttempt(props: {
         <span className="text-ink-3 text-xs">opened {attempt.openedAt}</span>
       </p>
       <RunSummary attempt={attempt} result={props.execution.result} />
+      {runReasonLeft(attempt, props.execution.result) ? (
+        <RunReasonText
+          partition={props.partition}
+          execution={props.execution.execution}
+          attempt={attempt.attempt}
+        />
+      ) : null}
       <RunEvidenceReads
         partition={props.partition}
         execution={props.execution.execution}

@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import { viewportDeskEm } from "../app/browser/shell/viewport.ts";
+import ledgerSheet from "../app/browser/ui/Ledger.css?raw";
 import {
   runAttempt,
   runDigest,
@@ -285,4 +286,127 @@ test("a run from a worker that wrote no evidence says so", async () => {
     rendered.container.querySelector(".ticket-status")?.textContent,
   ).toContain("—");
   expect(transcriptReads(rendered.reads)).toEqual([]);
+});
+
+/** What a runner uploads for the container it saw killed, as the worker core
+ * writes it. */
+const killed =
+  "Worker exited before reporting: its container exited with status 137";
+
+/** A run lost before it reported, its worker's text served where it left any. */
+function lostRun(content: string | undefined): RunPageServed {
+  const summary = runSummary({ outcome: "ProcessFailed" });
+  const left = content === undefined ? {} : { error: { bytes: 70 } };
+  return {
+    ticket,
+    executions: [summary],
+    execution: {
+      ...summary,
+      attempts: [
+        runAttempt("a1", {
+          state: "Lost",
+          evidence: "RunFailed",
+          run: undefined,
+          ...left,
+        }),
+      ],
+    },
+    transcripts: [],
+    ...(content === undefined
+      ? {}
+      : { error: { read: "Content", content: `${content}\n` } }),
+  };
+}
+
+function errorReads(reads: readonly string[]): readonly string[] {
+  return reads.filter((url) => url.endsWith("/error"));
+}
+
+test("a run whose worker said why it ended shows the reason on its row", async () => {
+  const rendered = await runPageDrawn(atlas, lostRun(killed));
+  const reason = rendered.container.querySelector(".ledger-row .ledger-reason");
+  expect(reason?.textContent).toBe(killed);
+  expect(reason?.getAttribute("title")).toBe(killed);
+  expect(errorReads(rendered.reads)).toHaveLength(1);
+});
+
+test("a run whose worker left no reason shows none, and asks for none", async () => {
+  const rendered = await runPageDrawn(atlas, lostRun(undefined));
+  expect(rendered.container.querySelector(".ledger-reason")).toBeNull();
+  expect(errorReads(rendered.reads)).toEqual([]);
+});
+
+/** The text is the worker's, so a reason is drawn as what it says. */
+test("a reason that reads as markup is drawn as text", async () => {
+  const written = '<img src="x" onerror="alert(1)"><b>killed</b>';
+  const rendered = await runPageDrawn(atlas, lostRun(written));
+  const reason = rendered.container.querySelector(".ledger-reason");
+  expect(reason?.textContent).toBe(written);
+  expect(reason?.querySelector("img, b")).toBeNull();
+});
+
+/** A runner's placement failure, whose engine's own words start past the cut. */
+const pullFailed =
+  "Worker could not start: the runner could not pull ghcr.io/kasofsk/chuggy-worker:0.31.0 for this run. " +
+  "The container engine answered: Error response from daemon: manifest for ghcr.io/kasofsk/chuggy-worker:0.31.0 not found: manifest unknown";
+
+/** A phone cannot hover, so the details are where a long reason is read. */
+test("a reason longer than a row's line is drawn whole in the run's details", async () => {
+  const rendered = await ticketPage(lostRun(pullFailed));
+  const line = rendered.container.querySelector(".ledger-row .ledger-reason");
+  expect(line?.textContent).not.toContain("manifest unknown");
+  expect(
+    rendered.container.querySelector('[data-attempt="a1"]')?.textContent,
+  ).toContain(pullFailed);
+});
+
+test("the attempts table scrolls itself rather than widening the run's details", async () => {
+  const rendered = await ticketPage(lostRun(pullFailed));
+  const table = rendered.container.querySelector("table.attempts");
+  expect(table).not.toBeNull();
+  expect(table?.parentElement?.classList).toContain("overflow-x-auto");
+  expect(table?.parentElement?.classList).toContain("max-w-full");
+});
+
+function styleRules(list: CSSRuleList): readonly CSSStyleRule[] {
+  return Array.from(list).flatMap((rule) =>
+    rule instanceof CSSStyleRule
+      ? [rule]
+      : rule instanceof CSSGroupingRule
+        ? styleRules(rule.cssRules)
+        : [],
+  );
+}
+
+/** Every value the ledger's sheet, at any width, gives one element for one property. */
+function ledgerDeclared(element: Element, property: string): readonly string[] {
+  const sheet = new CSSStyleSheet();
+  sheet.replaceSync(ledgerSheet);
+  return styleRules(sheet.cssRules).flatMap((rule) => {
+    const value = rule.style.getPropertyValue(property);
+    return value !== "" && element.matches(rule.selectorText) ? [value] : [];
+  });
+}
+
+/**
+ * Whether the line then breaks before a phone's edge is a browser's to say,
+ * and no suite here runs one; what this holds is that the ledger's sheet asks
+ * for no single line, on the reason or anything it inherits from.
+ */
+test("nothing in the ledger's sheet holds a row's reason to one line", async () => {
+  const rendered = await runPageDrawn(atlas, lostRun(killed));
+  const reason = rendered.container.querySelector(".ledger-row .ledger-reason");
+  expect(reason).not.toBeNull();
+  for (let at = reason; at !== null; at = at.parentElement) {
+    for (const value of ledgerDeclared(at, "white-space"))
+      expect(["normal", "pre-wrap", "pre-line", "break-spaces"]).toContain(
+        value,
+      );
+    for (const property of ["text-wrap", "text-wrap-mode"])
+      expect(ledgerDeclared(at, property)).not.toContain("nowrap");
+  }
+  if (reason === null) return;
+  for (const property of ["text-overflow", "line-clamp", "-webkit-line-clamp"])
+    expect(ledgerDeclared(reason, property), property).toEqual([]);
+  expect(ledgerDeclared(reason, "overflow-wrap")).toContain("anywhere");
 });

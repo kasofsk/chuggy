@@ -96,6 +96,7 @@ export const unservedNativeWeb: Parameters<typeof createNativeHttpApp>[0] = {
   runTurns: unserved("run turns"),
   runTranscript: unserved("run transcript"),
   runConfiguration: unserved("run configuration"),
+  runError: unserved("run error"),
 };
 
 /**

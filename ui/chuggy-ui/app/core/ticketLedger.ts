@@ -493,8 +493,8 @@ export function cycleLabel(ordinal: number): string {
 }
 
 /** The fabric's own relaunches of a container, which are below the cycle and are not rework. */
-export function retriesLabel(retriesSpent: number): string | undefined {
-  return retriesSpent < 1
+export function relaunchesLabel(relaunches: number): string | undefined {
+  return relaunches < 1
     ? undefined
-    : `Relaunched ${String(retriesSpent)}× by fabric`;
+    : `Relaunched ${String(relaunches)}× by fabric`;
 }

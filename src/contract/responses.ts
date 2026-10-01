@@ -554,6 +554,12 @@ export const executionSummarySchema = z.object({
   status: z.enum(executionStatuses),
   outcome: z.enum(executionOutcomes).optional(),
   retriesSpent: countSchema,
+  /**
+   * How many times the fabric opened another attempt after losing one, which
+   * `retriesSpent` is not: a loss spends a retry whether or not anything
+   * followed it. Optional for the deployment window, as `request` is.
+   */
+  relaunches: countSchema.optional(),
   registeredAt: instantSchema,
   /**
    * When this execution's first attempt opened, absent while it has none. It is
@@ -602,6 +608,8 @@ const executionAttemptSchema = z.object({
   endedAt: instantSchema.optional(),
   evidence: z.enum(attemptEvidences).optional(),
   run: executionRunSchema.optional(),
+  /** The text this attempt's worker left saying why it ended, which is read on its own route. */
+  error: z.object({ bytes: countSchema }).optional(),
 });
 
 const executionResultSchema = z.object({
@@ -679,6 +687,13 @@ export const runConfigurationResponseSchema = z.object({
 export type RunConfigurationResponse = z.infer<
   typeof runConfigurationResponseSchema
 >;
+
+/** The worker's own text, as untrusted as anything a run wrote. */
+export const runErrorResponseSchema = z.object({
+  read: z.literal("Content"),
+  content: z.string(),
+});
+export type RunErrorResponse = z.infer<typeof runErrorResponseSchema>;
 
 const operationIdentitySchema = {
   operation: identitySchema,

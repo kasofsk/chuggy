@@ -91,30 +91,32 @@ function ExecutionAttempts(props: {
   readonly execution: ExecutionResponse;
 }): ReactNode {
   return (
-    <table className="attempts">
-      <thead>
-        <tr>
-          <th>attempt</th>
-          <th>generation</th>
-          <th>state</th>
-          <th>evidence</th>
-          <th>opened</th>
-          <th>ended</th>
-        </tr>
-      </thead>
-      <tbody>
-        {props.execution.attempts.map((attempt) => (
-          <tr key={attempt.attempt}>
-            <td>{attempt.number}</td>
-            <td>{attempt.generation}</td>
-            <td>{attempt.state}</td>
-            <td>{attempt.evidence ?? "—"}</td>
-            <td>{attempt.openedAt}</td>
-            <td>{attempt.endedAt ?? "—"}</td>
+    <div className="max-w-full overflow-x-auto">
+      <table className="attempts">
+        <thead>
+          <tr>
+            <th>attempt</th>
+            <th>generation</th>
+            <th>state</th>
+            <th>evidence</th>
+            <th>opened</th>
+            <th>ended</th>
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {props.execution.attempts.map((attempt) => (
+            <tr key={attempt.attempt}>
+              <td>{attempt.number}</td>
+              <td>{attempt.generation}</td>
+              <td>{attempt.state}</td>
+              <td>{attempt.evidence ?? "—"}</td>
+              <td>{attempt.openedAt}</td>
+              <td>{attempt.endedAt ?? "—"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 

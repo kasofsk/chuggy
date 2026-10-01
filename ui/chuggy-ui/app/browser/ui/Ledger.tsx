@@ -1,13 +1,13 @@
 /**
  * A journal drawn in its own structure: groups with a standing, blocks with an
  * eyebrow, and rows on hairline rules carrying a label, an identity, a status,
- * a window, a spend and a note.
+ * a window, a spend, a note and a reason.
  *
  * Total over a group current or superseded × open or closed, and over a row
  * plain or ghosted × changed or not × any number of expanders, which share the
  * one detail area beneath it. Every figure arrives
  * already formatted, so a row does no arithmetic and no two rows round the same
- * quantity differently. It is four components rather than one because the
+ * quantity differently. It is split into components because the
  * function-length cap is what keeps each of them readable.
  */
 
@@ -122,6 +122,8 @@ export interface LedgerRowProps {
   readonly when?: FigureValue | undefined;
   readonly spent?: Spend | undefined;
   readonly note?: ReactNode | undefined;
+  /** Why the row's run ended, drawn beneath it. */
+  readonly reason?: ReactNode | undefined;
   readonly ghost?: boolean;
   readonly changed?: boolean;
   /** A generation an evaluator's own resume replaced, drawn dimmed beneath
@@ -161,6 +163,18 @@ function LedgerRowExpands(props: {
   );
 }
 
+/** A row's reason: text already cut short, its whole on hover. */
+export function LedgerReason(props: {
+  readonly line: string;
+  readonly full: string;
+}): ReactNode {
+  return (
+    <p className="ledger-reason" title={props.full}>
+      {props.line}
+    </p>
+  );
+}
+
 export function LedgerRow(props: LedgerRowProps): ReactNode {
   const expands = props.expands ?? [];
   const opened = expands.find((expand) => expand.open);
@@ -197,6 +211,7 @@ export function LedgerRow(props: LedgerRowProps): ReactNode {
       </span>
       <span className="ledger-note">{props.note}</span>
       {expands.length === 0 ? null : <LedgerRowExpands expands={expands} />}
+      {props.reason}
       {opened === undefined ? null : (
         <div className="ledger-detail">{opened.children}</div>
       )}

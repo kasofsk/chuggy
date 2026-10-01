@@ -20,6 +20,7 @@ import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import type {
+  ExecutionResponse,
   ExecutionSummary,
   ExecutionsResponse,
 } from "../../../../../src/contract/responses.ts";
@@ -29,6 +30,7 @@ import type { Spend } from "../../core/figures.ts";
 import { executionRequirementLabel } from "../../core/labels.ts";
 import { projectListFolded } from "../../core/projectQueryKeys.ts";
 import type { ProjectListChange } from "../../core/projectQueryKeys.ts";
+import { runReasonAttempt } from "../../core/runReason.ts";
 import { generationLabel, runSpendOf } from "../../core/runTotals.ts";
 import { runTranscriptAttempt } from "../../core/runTranscript.ts";
 import { ticketExecutionsFolded } from "../../core/ticketExecutions.ts";
@@ -44,7 +46,7 @@ import type {
 import {
   cycleLabel,
   cycleLastSet,
-  retriesLabel,
+  relaunchesLabel,
   setVerdict,
   stageEvaluatorsCurrent,
   stageLabel,
@@ -53,11 +55,18 @@ import {
 import { stageArm, verdictTone } from "../../core/tones.ts";
 import { usePanelList, usePanelResource } from "../api.ts";
 import { DataPanel } from "../DataPanel.tsx";
+import { useRunReason } from "../RunEvidence.tsx";
 import { RunConversationFollowed } from "../RunTranscript.tsx";
 import { ExecutionDetail } from "../TicketExecutions.tsx";
 import { EmptyState } from "../ui/EmptyState.tsx";
 import { Figure } from "../ui/Figure.tsx";
-import { Ledger, LedgerBlock, LedgerGroup, LedgerRow } from "../ui/Ledger.tsx";
+import {
+  Ledger,
+  LedgerBlock,
+  LedgerGroup,
+  LedgerReason,
+  LedgerRow,
+} from "../ui/Ledger.tsx";
 import type { LedgerRowExpand } from "../ui/Ledger.tsx";
 
 /**
@@ -85,8 +94,8 @@ function setSpend(set: TaskSet): Spend {
  * it and not the first task's alone.
  */
 function setRelaunches(set: TaskSet): string | undefined {
-  return retriesLabel(
-    set.executions.reduce((held, row) => held + row.retriesSpent, 0),
+  return relaunchesLabel(
+    set.executions.reduce((held, row) => held + (row.relaunches ?? 0), 0),
   );
 }
 
@@ -162,18 +171,14 @@ interface SetRowProps {
 }
 
 /** The row's expanders: the run's conversation, where one of its attempts
- * recorded a transcript, and its details. The execution is read under the key
- * the details read it by, so opening them costs nothing further. */
-function useSetRowExpands(
+ * recorded a transcript, and its details. */
+function setRowExpands(
   chrome: RowChrome,
   execution: string,
+  read: ExecutionResponse | undefined,
 ): readonly LedgerRowExpand[] {
   const { partition } = chrome;
-  const state = usePanelResource(partition, "Execution", execution, (ports) =>
-    apiExecution(ports, partition, execution),
-  );
-  const attempt =
-    state.state === "Ready" ? runTranscriptAttempt(state.value) : undefined;
+  const attempt = read === undefined ? undefined : runTranscriptAttempt(read);
   const expand = (
     detail: RowDetail,
     hide: string,
@@ -212,11 +217,32 @@ function useSetRowExpands(
   ];
 }
 
+/** Why the row's run ended without a result, in its worker's words. */
+function RunReasonLine(props: {
+  readonly partition: PartitionIdentity;
+  readonly execution: string;
+  readonly attempt: string;
+}): ReactNode {
+  const reason = useRunReason(props.partition, props.execution, props.attempt);
+  return reason === undefined ? null : (
+    <LedgerReason line={reason.line} full={reason.full} />
+  );
+}
+
+/** The execution is read under the key the details read it by. */
 function SetRowRan(
   props: SetRowProps & { readonly first: ExecutionSummary },
 ): ReactNode {
   const first = props.first;
-  const expands = useSetRowExpands(props.chrome, first.execution);
+  const { partition } = props.chrome;
+  const state = usePanelResource(
+    partition,
+    "Execution",
+    first.execution,
+    (ports) => apiExecution(ports, partition, first.execution),
+  );
+  const read = state.state === "Ready" ? state.value : undefined;
+  const reasoned = read === undefined ? undefined : runReasonAttempt(read);
   return (
     <LedgerRow
       label={props.label}
@@ -238,10 +264,19 @@ function SetRowRan(
           shortfall={props.shortfall}
         />
       }
+      reason={
+        reasoned === undefined ? undefined : (
+          <RunReasonLine
+            partition={partition}
+            execution={first.execution}
+            attempt={reasoned}
+          />
+        )
+      }
       {...(props.superseded === undefined
         ? {}
         : { superseded: props.superseded })}
-      expands={expands}
+      expands={setRowExpands(props.chrome, first.execution, read)}
     />
   );
 }

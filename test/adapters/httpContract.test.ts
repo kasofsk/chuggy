@@ -66,6 +66,7 @@ test("the versioned route and media contracts move together", () => {
     "/api/v1/tenants/:tenant/projects/:project/executions/:execution/attempts/:attempt/turns",
     "/api/v1/tenants/:tenant/projects/:project/executions/:execution/attempts/:attempt/transcript",
     "/api/v1/tenants/:tenant/projects/:project/executions/:execution/attempts/:attempt/configuration",
+    "/api/v1/tenants/:tenant/projects/:project/executions/:execution/attempts/:attempt/error",
     "/api/v1/tenants/:tenant/projects/:project/operations",
     "/api/v1/tenants/:tenant/projects/:project/operations/:operation",
     "/api/v1/tenants/:tenant/projects/:project/notifications",

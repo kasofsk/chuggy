@@ -73,6 +73,7 @@
     "runTurns": "/api/v1/tenants/:tenant/projects/:project/executions/:execution/attempts/:attempt/turns",
     "runTranscript": "/api/v1/tenants/:tenant/projects/:project/executions/:execution/attempts/:attempt/transcript",
     "runConfiguration": "/api/v1/tenants/:tenant/projects/:project/executions/:execution/attempts/:attempt/configuration",
+    "runError": "/api/v1/tenants/:tenant/projects/:project/executions/:execution/attempts/:attempt/error",
     "operations": "/api/v1/tenants/:tenant/projects/:project/operations",
     "operation": "/api/v1/tenants/:tenant/projects/:project/operations/:operation",
     "notifications": "/api/v1/tenants/:tenant/projects/:project/notifications",
