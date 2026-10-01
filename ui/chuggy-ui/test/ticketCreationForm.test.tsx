@@ -21,7 +21,10 @@ import {
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { briefChecksMax, briefLinksMax } from "../../../src/contract/brief.ts";
-import type { ProjectRepositoryResponse } from "../../../src/contract/responses.ts";
+import type {
+  ConfigurationSummary,
+  ProjectRepositoryResponse,
+} from "../../../src/contract/responses.ts";
 import type { ApiPorts } from "../app/core/apiRequest.ts";
 import { CreationForm } from "../app/browser/TicketCreation.tsx";
 import { creationContextList } from "../app/core/ticketCreationRun.ts";
@@ -30,6 +33,7 @@ import {
   creationDraft,
   creationInitialization,
   creationPartition,
+  creationSummary,
 } from "./ticketCreationFixture.ts";
 import { answeringApi } from "./answeringApi.ts";
 import type { Sent } from "./answeringApi.ts";
@@ -96,11 +100,32 @@ function api(options: {
 
 const queryKey = creationContextList(creationPartition).key;
 
+/** The configuration a project holding this initialization lists. */
+function shaping(
+  initialization: typeof creationInitialization,
+): ConfigurationSummary {
+  return {
+    revision: initialization.configuration.revision,
+    digest: initialization.configuration.digest,
+    createdAt: "2026-08-26T00:00:00Z",
+    provenance: { source: "Authored" },
+    version: { name: "chuggy", number: 12 },
+    readiness: "Ready",
+    image: "an-image",
+    practices: [],
+    workInstructionsCount: 1,
+    reviewInstructionsCount: 1,
+    finalization: { approvalRequired: false },
+    evaluationStagesCount: 1,
+  };
+}
+
 function draw(
   ports: ApiPorts,
   created: number[],
   initialization = creationInitialization,
   repositories: readonly ProjectRepositoryResponse[] = [],
+  configuration?: ConfigurationSummary,
 ): { readonly rerender: (next: typeof creationInitialization) => void } {
   const tree = (next: typeof creationInitialization) => (
     <QueryClientProvider client={new QueryClient()}>
@@ -110,20 +135,7 @@ function draw(
         queryKey={queryKey}
         context={{
           context: "Ready",
-          configuration: {
-            revision: next.configuration.revision,
-            digest: next.configuration.digest,
-            createdAt: "2026-08-26T00:00:00Z",
-            provenance: { source: "Authored" },
-            version: { name: "chuggy", number: 12 },
-            readiness: "Ready",
-            image: "an-image",
-            practices: [],
-            workInstructionsCount: 1,
-            reviewInstructionsCount: 1,
-            finalization: { approvalRequired: false },
-            evaluationStagesCount: 1,
-          },
+          configuration: configuration ?? shaping(next),
           initialization: next,
           repositories,
         }}
@@ -152,7 +164,7 @@ function typeTitle(text: string): void {
 }
 
 function submit(): void {
-  fireEvent.click(screen.getByText("create and release"));
+  fireEvent.click(screen.getByRole("button", { name: "Create ticket" }));
 }
 
 function releases(sent: readonly Sent[]): readonly Sent[] {
@@ -167,16 +179,66 @@ function drafts(sent: readonly Sent[]): readonly Sent[] {
   );
 }
 
-/** The sentence names the configuration nobody was asked about, so the revision
- * it names it instead of has nowhere else on this screen to be. */
-test("the shaping sentence keeps the revision behind the name it draws", async () => {
+/** The line names the configuration nobody was asked about, so the revision it
+ * names it instead of has nowhere else on this screen to be. */
+test("the configuration line keeps the revision behind the name it draws", async () => {
   const held = api({ state: "Succeeded" });
   draw(held.ports, []);
-  const sentence = screen.getByText(/^shaped by configuration chuggy #12,/u);
-  fireEvent.focus(sentence);
+  const line = screen.getByText("Configuration · chuggy #12");
+  fireEvent.focus(line);
   expect((await screen.findByRole("tooltip")).textContent).toBe(
     creationInitialization.configuration.revision,
   );
+});
+
+/**
+ * A field is named by its label alone and its line is its description: a hint
+ * folded into the name is a paragraph a screen reader speaks as the field.
+ */
+test("each field is named by its label, and a line beside one describes it", () => {
+  const commanding = { ...creationInitialization, commandedCheckStage: 1 };
+  draw(api({ state: "Succeeded" }).ports, [], commanding);
+  fireEvent.click(screen.getByText("Add link"));
+  fireEvent.click(screen.getByText("Add check"));
+  expect(screen.getByRole("textbox", { name: "Link 1" })).toBeDefined();
+  expect(screen.getByRole("textbox", { name: "Check 1" })).toBeDefined();
+  expect(screen.getByRole("textbox", { name: "Title" })).toBeDefined();
+  expect(screen.getByRole("textbox", { name: "Intent" })).toBeDefined();
+  expect(
+    screen.getByRole("textbox", {
+      name: "Branch",
+      description: "Where the work happens · created if missing",
+    }),
+  ).toBeDefined();
+  expect(
+    screen.getByRole("textbox", {
+      name: "Target branch",
+      description: "Empty means the branch above",
+    }),
+  ).toBeDefined();
+  expect(
+    screen.getByRole("button", {
+      name: "Create ticket",
+      description: "Releases the ticket to run",
+    }),
+  ).toBeDefined();
+});
+
+/** On the bootstrap a ticket's one job is the repository's own configuration,
+ * which is not the feature a newcomer came to file. */
+test("a form on the bootstrap says what its ticket is for", () => {
+  const line = "First ticket · writes this repository's configuration";
+  draw(api({ state: "Succeeded" }).ports, []);
+  expect(screen.queryByText(line)).toBeNull();
+  cleanup();
+  draw(
+    api({ state: "Succeeded" }).ports,
+    [],
+    creationInitialization,
+    [],
+    creationSummary("bootstrap", "Ready"),
+  );
+  expect(screen.getByText(line)).toBeDefined();
 });
 
 test("a release that settles as succeeded navigates, and to that ticket", async () => {
@@ -311,10 +373,10 @@ test("the advanced disclosure holds the authoring, and offers what is chosen", (
   draw(api({ state: "Succeeded" }).ports, [], chosen);
   const disclosure = screen.getByRole("button", { name: "Advanced" });
   expect(disclosure.getAttribute("aria-expanded")).toBe("false");
-  expect(screen.queryByLabelText("stage 1")).toBeNull();
+  expect(screen.queryByLabelText("Stage 1")).toBeNull();
   fireEvent.click(disclosure);
   expect(disclosure.getAttribute("aria-expanded")).toBe("true");
-  const stage = screen.getByLabelText<HTMLSelectElement>("stage 1");
+  const stage = screen.getByLabelText<HTMLSelectElement>("Stage 1");
   expect(stage.value).toBe("9");
   expect([...stage.options].map((option) => option.value)).toStrictEqual([
     "9",
@@ -347,8 +409,8 @@ test("a two-stage pick sends positional stage keys and evaluators keyed 1..n", a
   draw(held.ports, []);
   typeIntent("ship it");
   fireEvent.click(screen.getByRole("button", { name: "Advanced" }));
-  fireEvent.click(screen.getByText("add stage"));
-  fireEvent.change(screen.getByLabelText("stage 2"), {
+  fireEvent.click(screen.getByText("Add stage"));
+  fireEvent.change(screen.getByLabelText("Stage 2"), {
     target: { value: "3" },
   });
   const authoring = await submittedAuthoring(held);
@@ -367,7 +429,7 @@ test("adding a stage without touching its count sends it keyed to its position",
   draw(held.ports, []);
   typeIntent("ship it");
   fireEvent.click(screen.getByRole("button", { name: "Advanced" }));
-  fireEvent.click(screen.getByText("add stage"));
+  fireEvent.click(screen.getByText("Add stage"));
   const authoring = await submittedAuthoring(held);
   expect(authoring).toStrictEqual({
     dependencies: [],
@@ -384,11 +446,11 @@ test("removing the first stage sends the remaining stage keyed to its new positi
   draw(held.ports, []);
   typeIntent("ship it");
   fireEvent.click(screen.getByRole("button", { name: "Advanced" }));
-  fireEvent.click(screen.getByText("add stage"));
-  fireEvent.change(screen.getByLabelText("stage 2"), {
+  fireEvent.click(screen.getByText("Add stage"));
+  fireEvent.change(screen.getByLabelText("Stage 2"), {
     target: { value: "2" },
   });
-  fireEvent.click(screen.getAllByText("remove")[0] as HTMLElement);
+  fireEvent.click(screen.getAllByText("Remove")[0] as HTMLElement);
   const authoring = await submittedAuthoring(held);
   expect(authoring).toStrictEqual({
     dependencies: [],
@@ -401,7 +463,7 @@ test("the checks editor is drawn only where the configuration commands a stage f
   const held = api({ state: "Succeeded" });
   draw(held.ports, [], commanding);
   typeIntent("ship it");
-  fireEvent.click(screen.getByText("add check"));
+  fireEvent.click(screen.getByText("Add check"));
   fireEvent.change(screen.getByPlaceholderText("a command line"), {
     target: { value: "npm test" },
   });
@@ -419,7 +481,7 @@ test("the checks editor is drawn only where the configuration commands a stage f
 
 test("a configuration commanding no check stage offers no checks editor", () => {
   draw(api({ state: "Succeeded" }).ports, []);
-  expect(screen.queryByText("add check")).toBeNull();
+  expect(screen.queryByText("Add check")).toBeNull();
 });
 
 /** The served policy refuses `style-src` but `'self'`, so nothing this form
@@ -439,8 +501,8 @@ test("each list editor stops adding rows exactly at the bound the wire states", 
   const commanding = { ...creationInitialization, commandedCheckStage: 1 };
   draw(api({ state: "Succeeded" }).ports, [], commanding);
   for (const [control, bound] of [
-    ["add link", briefLinksMax],
-    ["add check", briefChecksMax],
+    ["Add link", briefLinksMax],
+    ["Add check", briefChecksMax],
   ] as const) {
     const add = screen.getByText<HTMLButtonElement>(control);
     for (let added = 0; added < bound; added += 1) {
@@ -456,7 +518,7 @@ const scratch = "https://forge.test/gdoteof/scratch";
 const fabric = "https://forge.test/kasofsk/chuggy-fabric";
 
 function picker(): HTMLElement | null {
-  return screen.queryByRole("button", { name: /^repository/u });
+  return screen.queryByRole("button", { name: /^Repository/u });
 }
 
 function briefOf(sent: readonly Sent[]): Record<string, unknown> | undefined {
@@ -523,7 +585,7 @@ test("two bindings ask, and a submission naming none sends nothing", () => {
     creationBinding(chuggy),
     creationBinding(scratch),
   ]);
-  expect(picker()?.textContent).toContain("choose");
+  expect(picker()?.textContent).toContain("Choose");
   typeIntent("ship it");
   submit();
   expect(screen.getByText(/names which one/u)).toBeTruthy();
@@ -531,7 +593,7 @@ test("two bindings ask, and a submission naming none sends nothing", () => {
 });
 
 function landing(): HTMLElement | null {
-  return screen.queryByRole("radiogroup", { name: "landing" });
+  return screen.queryByRole("radiogroup", { name: "Landing" });
 }
 
 /** What the group draws as chosen, read by name because the label sits beside
@@ -548,7 +610,7 @@ async function chooseRepository(name: string): Promise<void> {
   await waitFor(() => {
     expect(screen.queryByRole("menu")).toBeNull();
   });
-  fireEvent.keyDown(screen.getByRole("button", { name: /^repository/u }), {
+  fireEvent.keyDown(screen.getByRole("button", { name: /^Repository/u }), {
     key: "ArrowDown",
   });
   const menu = await screen.findByRole("menu");

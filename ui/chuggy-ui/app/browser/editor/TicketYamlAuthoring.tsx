@@ -13,7 +13,15 @@
  * YAML parser with it.
  */
 
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type { ReactNode } from "react";
 
 import type {
@@ -51,6 +59,7 @@ export interface TicketYamlAuthoringProps {
   readonly faultsOf: (form: TicketCreationForm) => readonly CreationFault[];
   readonly storeKey: string;
   readonly submitLabel: string;
+  readonly submitEffect?: string | undefined;
   readonly busy: boolean;
   readonly onSubmit: (form: TicketCreationForm) => void;
 }
@@ -89,10 +98,12 @@ function YamlSubmit(props: {
   readonly problems: number;
   readonly form: TicketCreationForm | undefined;
   readonly label: string;
+  readonly effect: string | undefined;
   readonly busy: boolean;
   readonly onSubmit: (form: TicketCreationForm) => void;
 }): ReactNode {
   const [open, setOpen] = useState(false);
+  const effect = useId();
   const form = props.form;
   return (
     <Dialog
@@ -108,9 +119,15 @@ function YamlSubmit(props: {
       <p className="text-ink-2 m-0 text-sm">
         {ticketYamlProblemsSentence(props.problems)}
       </p>
+      {props.effect === undefined ? null : (
+        <p id={effect} className="text-ink-3 m-0 text-sm">
+          {props.effect}
+        </p>
+      )}
       <Button
         variant="primary"
         disabled={props.problems > 0 || form === undefined}
+        {...(props.effect === undefined ? {} : { describedBy: effect })}
         onClick={() => {
           if (form === undefined) return;
           setOpen(false);
@@ -223,6 +240,7 @@ export default function TicketYamlAuthoring(
           problems={yaml.problems.length}
           form={yaml.read}
           label={props.submitLabel}
+          effect={props.submitEffect}
           busy={props.busy}
           onSubmit={props.onSubmit}
         />

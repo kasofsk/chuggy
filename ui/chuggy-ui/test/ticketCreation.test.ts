@@ -28,6 +28,7 @@ import {
   creationFormFrom,
   creationLandingDefault,
   creationLandingBranchSentence,
+  creationTargetBranchFieldHint,
   creationTargetBranchHint,
   creationLandingWholeSentence,
   creationRepositoryChosen,
@@ -35,7 +36,8 @@ import {
   creationRepositoryDefault,
   creationRepositoryRequired,
   creationBranchPrefixedSentence,
-  creationConfigurationSentence,
+  creationBootstrapLine,
+  creationConfigurationLabel,
   creationIntentLines,
   creationOffered,
   latestReadyConfiguration,
@@ -103,9 +105,9 @@ test("the configuration is the newest ready revision, and none is drawable", () 
   expect(latestReadyConfiguration([])).toBe(undefined);
 });
 
-test("the sentence names the configuration and keeps its revision on hover", () => {
+test("the line names the configuration and keeps its revision on hover", () => {
   expect(
-    creationConfigurationSentence({
+    creationConfigurationLabel({
       ...creationSummary("repository:cfaca0a:chuggy", "Ready"),
       provenance: {
         source: "Repository",
@@ -117,18 +119,55 @@ test("the sentence names the configuration and keeps its revision on hover", () 
       version: { name: "chuggy", number: 12 },
     }),
   ).toEqual({
-    text: "shaped by configuration chuggy #12 · cfaca0a, the latest revision this project has ready",
+    text: "Configuration · chuggy #12 · cfaca0a",
     title: "repository:cfaca0a:chuggy",
   });
 });
 
 test("a configuration with no version and no commit is named by its revision alone", () => {
-  expect(creationConfigurationSentence(creationSummary("r3", "Ready"))).toEqual(
-    {
-      text: "shaped by configuration r3, the latest revision this project has ready",
-      title: "r3",
-    },
+  expect(creationConfigurationLabel(creationSummary("r3", "Ready"))).toEqual({
+    text: "Configuration · r3",
+    title: "r3",
+  });
+});
+
+/**
+ * The bootstrap arrives authored at the revision its name is, or imported from
+ * a repository seeded with it under that name. Either way the form says what
+ * its ticket is for, and under any other name it says nothing.
+ */
+test("a form on the bootstrap says what its ticket is for, and no other does", () => {
+  const line = "First ticket · writes this repository's configuration";
+  expect(creationBootstrapLine(creationSummary("bootstrap", "Ready"))).toBe(
+    line,
   );
+  expect(
+    creationBootstrapLine({
+      ...creationSummary("repository:cfaca0a:bootstrap", "Ready"),
+      provenance: {
+        source: "Repository",
+        repository: "kasofsk/chuggy",
+        commit: "cfaca0a0f14ec03845a4e01458ac6c3a56d52a23",
+        path: "configurations/bootstrap.json",
+        name: "bootstrap",
+      },
+      version: { name: "bootstrap", number: 1 },
+    }),
+  ).toBe(line);
+  expect(creationBootstrapLine(creationSummary("r3", "Ready"))).toBe(undefined);
+  expect(
+    creationBootstrapLine({
+      ...creationSummary("bootstrap", "Ready"),
+      provenance: {
+        source: "Repository",
+        repository: "kasofsk/chuggy",
+        commit: "cfaca0a0f14ec03845a4e01458ac6c3a56d52a23",
+        path: "configurations/everyday.json",
+        name: "everyday",
+      },
+      version: { name: "everyday", number: 1 },
+    }),
+  ).toBe(undefined);
 });
 
 test("a filled form becomes a body the wire's own parser accepts", () => {
@@ -657,6 +696,17 @@ test("the target hint names what leaving it empty lands on under each landing", 
     );
   expect(creationTargetBranchHint("Push")).toContain(
     "the branch the work happened on",
+  );
+});
+
+/** The form's own line under the target box says the same in its own words. */
+test("the target box's line names what leaving it empty lands on under each landing", () => {
+  for (const landingMode of ["PullRequest", "PullRequestMerge"] as const)
+    expect(creationTargetBranchFieldHint(landingMode)).toBe(
+      "Empty means the repository's default branch",
+    );
+  expect(creationTargetBranchFieldHint("Push")).toBe(
+    "Empty means the branch above",
   );
 });
 

@@ -33,6 +33,7 @@ import {
   type CanonicalConfiguration,
 } from "./authoring.ts";
 import { textCodePointsCount } from "../contract/http.ts";
+import { bootstrapConfigurationName } from "../contract/responses.ts";
 import {
   briefingLineCharsMax,
   commandLinesMax,
@@ -51,13 +52,8 @@ export interface BootstrapConfigurationInput {
   readonly image: string;
 }
 
-/**
- * The name a bootstrap configuration is declared under. It is also the revision
- * an authored one is created at: a project authors one bootstrap per revision
- * identity, and a second repository that needs one is authored under a revision
- * its author chooses.
- */
-export const bootstrapConfigurationName = "bootstrap";
+/** The bootstrap's name, surfaced where the configuration it names is generated. */
+export { bootstrapConfigurationName };
 
 /** Where a seeded bootstrap configuration is written in the repository it configures. */
 export const bootstrapConfigurationPath = `${repositoryConfigurationRoot}${bootstrapConfigurationName}.json`;

@@ -33,6 +33,7 @@ import {
   type BriefFinalizationMode,
 } from "../../../../src/contract/rosters.ts";
 import type { PublicMutation } from "../../../../src/contract/requests.ts";
+import { bootstrapConfigurationName } from "../../../../src/contract/responses.ts";
 import type {
   ConfigurationSummary,
   DraftInitializationResponse,
@@ -106,11 +107,11 @@ export function latestReadyConfiguration(
 }
 
 /**
- * The one sentence a screen says about the configuration it did not ask about,
- * with the commit it was imported from where it came from one, and the revision
- * itself on hover.
+ * The line a screen draws for the configuration it did not ask about, with the
+ * commit it was imported from where it came from one, and the revision itself
+ * on hover.
  */
-export function creationConfigurationSentence(
+export function creationConfigurationLabel(
   configuration: ConfigurationSummary,
 ): Label {
   const label = configurationLabel(
@@ -119,10 +120,25 @@ export function creationConfigurationSentence(
   );
   const commit = configurationCommitShort(configuration.provenance);
   const named = commit === undefined ? label.text : `${label.text} · ${commit}`;
-  return {
-    text: `shaped by configuration ${named}, the latest revision this project has ready`,
-    title: label.title,
-  };
+  return { text: `Configuration · ${named}`, title: label.title };
+}
+
+/**
+ * What a ticket on the bootstrap is for, which is the one thing it can do:
+ * write the repository's own configuration. An authored bootstrap's revision
+ * is its name, and an imported one is known by the name it was declared under.
+ */
+export function creationBootstrapLine(
+  configuration: ConfigurationSummary,
+): string | undefined {
+  const provenance = configuration.provenance;
+  const name =
+    provenance.source === "Repository"
+      ? provenance.name
+      : configuration.revision;
+  return name === bootstrapConfigurationName
+    ? "First ticket · writes this repository's configuration"
+    : undefined;
 }
 
 /**
@@ -240,7 +256,7 @@ export function creationBranchOf(branchName: string): CreationBranch {
   return { named: "Ref", ref: `${briefBranchPrefix}${named}` };
 }
 
-/** What the branch field asks for and what naming it does, said beside it rather than only when refused. */
+/** What the branch key asks for and what naming it does, which the YAML editor explains the key with. */
 export const creationBranchHint = `the branch this work starts from, and lands on unless a target names another, created if it does not exist yet: a name, not a reference, which this console sends as ${briefBranchPrefix}<name>`;
 
 /** Where the work lands when the target box is left empty, which each landing answers for itself. */
@@ -256,9 +272,28 @@ function creationTargetBranchUnnamed(mode: BriefFinalizationMode): string {
   }
 }
 
-/** The same, for the field that names where the work ends up instead. */
+/** The same, for the key that names where the work ends up instead. */
 export function creationTargetBranchHint(mode: BriefFinalizationMode): string {
   return `where the finished work lands, created if it does not exist yet: a name, not a reference, which this console sends as ${briefBranchPrefix}<name>, and ${creationTargetBranchUnnamed(mode)} where it is left empty`;
+}
+
+/** The line under the form's branch box. */
+export const creationBranchFieldHint =
+  "Where the work happens · created if missing";
+
+/** The line under the form's target box: what leaving it empty lands on. */
+export function creationTargetBranchFieldHint(
+  mode: BriefFinalizationMode,
+): string {
+  switch (mode) {
+    case "Push":
+      return "Empty means the branch above";
+    case "PullRequest":
+    case "PullRequestMerge":
+      return "Empty means the repository's default branch";
+    case "None":
+      return "Lands nothing";
+  }
 }
 
 /** The one input either branch field refuses, said as the edit that fixes it. */

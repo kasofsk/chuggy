@@ -1455,6 +1455,14 @@ export type ForgeRepositoriesResponse = z.infer<
 >;
 
 /**
+ * The name a bootstrap configuration is declared under. It is also the revision
+ * an authored one is created at: a project authors one bootstrap per revision
+ * identity, and a second repository that needs one is authored under a revision
+ * its author chooses.
+ */
+export const bootstrapConfigurationName = "bootstrap";
+
+/**
  * What a bound repository's own configurations came to. It is beside the
  * binding and not part of it: the binding is durable whatever this says, so a
  * `Deferred` is a step to run again through the configuration route rather than

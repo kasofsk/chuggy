@@ -134,9 +134,9 @@ test("the form opens on the draft's current revision", () => {
 test("the dependencies are drawn, and nowhere offered to change", () => {
   draw(api({ status: 200, body: draft }).ports, []);
   expect(screen.getByText("#7")).toBeDefined();
-  expect(screen.getByText("fixed once the ticket was released")).toBeDefined();
+  expect(screen.getByText("Fixed once released")).toBeDefined();
   fireEvent.click(screen.getByRole("button", { name: /Advanced/u }));
-  expect(screen.queryByText("ticket 7")).toBeNull();
+  expect(screen.queryByText("Ticket 7")).toBeNull();
   expect(screen.queryAllByRole("checkbox")).toEqual([]);
 });
 
