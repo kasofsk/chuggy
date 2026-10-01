@@ -20,9 +20,10 @@
  * let one side record what the other cannot find.
  *
  * ONE KIND NAMES EVERY PRINCIPAL THIS PORT AUTHORIZES. A session bearer
- * resolves to its own row's principal and is authorized as that principal, so a
- * kind that varied by the route a request arrived on would give one person two
- * authorities and two idempotency scopes. It is neither of the two boundary
+ * resolves to its own row's principal and is authorized as that principal, once
+ * the API has confined it to its own session's partition, so a kind that varied
+ * by the route a request arrived on would give one person two authorities and
+ * two idempotency scopes. It is neither of the two boundary
  * kinds `operation_completion_authority_is_its_boundary` reserves, which is
  * what keeps a member from submitting a boundary's completion.
  *

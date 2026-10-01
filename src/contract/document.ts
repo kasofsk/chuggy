@@ -82,7 +82,7 @@ export function nativeHttpContractDocument(): unknown {
       formats: ["OIDC JWT", "session bearer"],
       principal: "length-prefixed issuer and subject",
       session:
-        "a session bearer authorizes as the session's principal and is recorded on the operation",
+        "a session bearer authorizes as the session's principal within the session's own tenant and project only, and is recorded on the operation; another project is not found, and a route no session may reach answers 403 insufficient_scope",
     },
     notifications: "bounded-polling",
     events: "sse",

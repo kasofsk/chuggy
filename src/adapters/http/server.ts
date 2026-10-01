@@ -17,6 +17,7 @@ import type { TicketId } from "../../domain/ids.ts";
 import {
   asSessionId,
   asSessionStoreStream,
+  type SessionBearerIdentity,
   type SessionId,
 } from "../../interpreter/agentSession.ts";
 import type { InstallationAuthorityRead } from "../../interpreter/installationAuthority.ts";
@@ -167,17 +168,20 @@ import {
   workerPoolsResponse,
   executionPlacementReadResponse,
   executionPlacementWriteResponse,
+  notFound,
+  sessionBearerRefusedResponse,
 } from "./outcomes.ts";
 import type { WorkerPoolRegistrationService } from "../../interpreter/workerPoolRegistrationToken.ts";
 import type { ExecutionPlacementAdministration } from "../../interpreter/executionPlacement.ts";
 import type { ProjectCreation } from "../../interpreter/projectCreation.ts";
+import { sessionBearerAdmission } from "./sessionBearerScope.ts";
 
 /** Who the bearer is, and when it stops saying so, for a route that outlives one request. */
 export interface AuthenticatedBearer {
   readonly principal: Principal;
   readonly expiresAtMs?: number | undefined;
-  /** The session a command came through, where a session bearer is what carried it. */
-  readonly viaSession?: SessionId;
+  /** The session a session bearer carried, which a command records, and the partition it is confined to. */
+  readonly viaSession?: Pick<SessionBearerIdentity, "partition" | "session">;
 }
 
 /**
@@ -375,12 +379,45 @@ function registerAuthentication(
       await unauthenticated(reply, true);
       return reply;
     }
+    const session = decided.bearer.viaSession;
+    if (
+      session !== undefined &&
+      !registerAuthenticationSession(request, reply, session)
+    )
+      return reply;
     request.principal = decided.bearer.principal;
     if (decided.bearer.expiresAtMs !== undefined)
       request.bearerExpiresAtMs = decided.bearer.expiresAtMs;
-    if (decided.bearer.viaSession !== undefined)
-      request.viaSession = decided.bearer.viaSession;
+    if (session !== undefined) request.viaSession = session.session;
   });
+}
+
+/**
+ * Whether a session bearer may reach the route this request matched, having
+ * answered it when it may not: another partition as an unauthorized read is
+ * answered, and a route no session may reach as `insufficient_scope`.
+ */
+function registerAuthenticationSession(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  session: Pick<SessionBearerIdentity, "partition">,
+): boolean {
+  const admission = sessionBearerAdmission(
+    session.partition,
+    request.method,
+    request.routeOptions.url,
+    request.params,
+  );
+  switch (admission) {
+    case "Admitted":
+      return true;
+    case "OtherPartition":
+      send(reply, notFound());
+      return false;
+    case "Refused":
+      send(reply, sessionBearerRefusedResponse());
+      return false;
+  }
 }
 
 function registerCapacity(app: FastifyInstance, requestsMax: number): void {

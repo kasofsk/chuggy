@@ -32,9 +32,11 @@
  * closes or its attempt ends, so ending a session ends its pod's authority with
  * no token exchange and no second issuer.
  *
- * AUTHORIZATION IS UNCHANGED. A session resolves to its own row's principal and
- * is authorized as that principal, by the one path every other bearer takes.
- * The session is recorded on what it submits and decides nothing.
+ * A SESSION IS AUTHORIZED AS ITS PRINCIPAL, INSIDE ITS OWN PARTITION ONLY. It
+ * resolves to its own row's principal and is authorized as that principal, by
+ * the one path every other bearer takes, but the partition the authority
+ * answered travels with it and `./sessionBearerScope.ts` confines it there. The
+ * session is recorded on what it submits and decides nothing.
  */
 
 import {
@@ -70,7 +72,10 @@ export function twoBearerAuthentication(
         authenticated: "Bearer",
         bearer: {
           principal: identity.principal,
-          viaSession: identity.session,
+          viaSession: {
+            session: identity.session,
+            partition: identity.partition,
+          },
         },
       };
     },
