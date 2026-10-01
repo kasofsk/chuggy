@@ -7,7 +7,12 @@ import {
   runReasonFullCharsMax,
   runReasonOf,
 } from "../app/core/runReason.ts";
-import { runAttempt, runDigest, runSummary } from "./runPageFixture.tsx";
+import {
+  runAttempt,
+  runDigest,
+  runSettledLost,
+  runSummary,
+} from "./runPageFixture.tsx";
 
 function executionOf(
   attempts: readonly Record<string, unknown>[],
@@ -42,6 +47,12 @@ test("an earlier attempt's text never speaks for the run that followed it", () =
   expect(
     runReasonAttempt(executionOf([lost("a1", 1), silent])),
   ).toBeUndefined();
+});
+
+test("a run the fabric settled after it was lost still gives its worker's reason", () => {
+  expect(
+    runReasonAttempt(executionOf([lost("a1", 1)], runSettledLost("a1"))),
+  ).toBe("a1");
 });
 
 test("a run that reported has no reason to give", () => {

@@ -24,6 +24,21 @@ import {
 
 export const runDigest = "a".repeat(64);
 
+/** The failure the fabric records for an execution whose attempt a pool
+ * claimed and lost before it reported: a result naming that attempt. */
+export function runSettledLost(attempt: string): Record<string, unknown> {
+  return {
+    manifest: "m1",
+    attempt,
+    schemaVersion: 3,
+    digest: runDigest,
+    verdict: "Fail",
+    recordedAt: "2026-08-27T00:01:00Z",
+    artifacts: [],
+    report: "The attempt a pool claimed ended before it reported a result.",
+  };
+}
+
 export function runTotals(costUsdMicros: number): Record<string, unknown> {
   return {
     turns: 3,

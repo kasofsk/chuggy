@@ -24,14 +24,16 @@ export interface RunReason {
   readonly full: string;
 }
 
-/** Whether an attempt ended without a result and its worker left text saying why. */
-export function runReasonLeft(
-  attempt: ExecutionAttempt,
-  result: ExecutionResponse["result"],
-): boolean {
+/**
+ * Whether an attempt ended without reporting and its worker left text saying
+ * why. It is judged by the attempt's own state, because the result the fabric
+ * settles for an execution whose last attempt never reported names that
+ * attempt too.
+ */
+export function runReasonLeft(attempt: ExecutionAttempt): boolean {
   return (
     attempt.error !== undefined &&
-    runSummaryOf(attempt, result).summary === "Ended"
+    runSummaryOf(attempt, undefined).summary === "Ended"
   );
 }
 
@@ -42,7 +44,7 @@ export function runReasonAttempt(
   const newest = [...execution.attempts]
     .sort((left, right) => left.number - right.number)
     .at(-1);
-  return newest !== undefined && runReasonLeft(newest, execution.result)
+  return newest !== undefined && runReasonLeft(newest)
     ? newest.attempt
     : undefined;
 }

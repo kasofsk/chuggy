@@ -14,6 +14,7 @@ import {
   runTotals,
   runTranscriptPage,
   transcriptReads,
+  runSettledLost,
 } from "./runPageFixture.tsx";
 import type { RunPageDrawn, RunPageServed } from "./runPageFixture.tsx";
 import { settled, turned } from "./screenHarness.tsx";
@@ -293,7 +294,9 @@ test("a run from a worker that wrote no evidence says so", async () => {
 const killed =
   "Worker exited before reporting: its container exited with status 137";
 
-/** A run lost before it reported, its worker's text served where it left any. */
+/** A run lost before it reported and settled as a failure naming it, as the
+ * fabric settles a pool's lost attempt, its worker's text served where it
+ * left any. */
 function lostRun(content: string | undefined): RunPageServed {
   const summary = runSummary({ outcome: "ProcessFailed" });
   const left = content === undefined ? {} : { error: { bytes: 70 } };
@@ -302,6 +305,7 @@ function lostRun(content: string | undefined): RunPageServed {
     executions: [summary],
     execution: {
       ...summary,
+      result: runSettledLost("a1"),
       attempts: [
         runAttempt("a1", {
           state: "Lost",

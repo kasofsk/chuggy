@@ -430,7 +430,7 @@ function RunAttempt(props: {
         <span className="text-ink-3 text-xs">opened {attempt.openedAt}</span>
       </p>
       <RunSummary attempt={attempt} result={props.execution.result} />
-      {runReasonLeft(attempt, props.execution.result) ? (
+      {runReasonLeft(attempt) ? (
         <RunReasonText
           partition={props.partition}
           execution={props.execution.execution}
