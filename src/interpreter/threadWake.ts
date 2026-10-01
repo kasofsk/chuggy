@@ -23,13 +23,14 @@
  * member's mailbox is not the pass's business to stop for.
  *
  * A THREAD WHOSE PRINCIPAL THE PROJECT NO LONGER ADMITS IS ONE OF THOSE, AND
- * THE AUTHORITY IS ASKED HERE. `src/interpreter/projectAccess.ts` answers it,
- * not the mailbox door, because access is not a row this database holds. An
- * authority that could not answer at all is neither a wake nor an ownerless
- * thread: the candidate is passed over and its sequence holds the cursor,
- * which is the same rule the paragraph below states for a sequence read in
- * part. A raise instead would end the pacing loop, and an outage is not a
- * reason to stop selecting.
+ * SO IS ONE WHOSE TENANT NO LONGER GRANTS THEM HOSTED RUNS, WHICH THE TURN
+ * WOULD SPEND; THE AUTHORITY IS ASKED HERE. `src/interpreter/projectAccess.ts`
+ * answers it, not the mailbox door, because access is not a row this database
+ * holds. An authority that could not answer at all is neither a wake nor an
+ * ownerless thread: the candidate is passed over and its sequence holds the
+ * cursor, which is the same rule the paragraph below states for a sequence
+ * read in part. A raise instead would end the pacing loop, and an outage is
+ * not a reason to stop selecting.
  *
  * A CURSOR MAY ONLY MOVE PAST A SEQUENCE THE PASS DECIDED WHOLE. One change row
  * wakes one thread per member who authored a revision of the ticket it names,
@@ -64,6 +65,7 @@ import type { SessionId, SessionTurnId } from "./agentSession.ts";
 import { asSessionTurnId } from "./agentSession.ts";
 import type { Principal } from "./principal.ts";
 import {
+  hostedRunsGranted,
   ProjectAccessUnavailable,
   type ProjectAccess,
 } from "./projectAccess.ts";
@@ -199,7 +201,7 @@ function orderedPage(
   return page;
 }
 
-/** Whether the project still admits a candidate's principal, or nothing where the authority could not say. */
+/** Whether the project still admits a candidate's principal and the tenant still grants them hosted runs, or nothing where the authority could not say. */
 async function threadWakeAdmitted(
   access: ProjectAccess,
   candidate: ThreadWakeCandidate,
@@ -210,7 +212,12 @@ async function threadWakeAdmitted(
         candidate.principal,
         candidate.partition,
         "Read",
-      )) !== undefined
+      )) !== undefined &&
+      (await hostedRunsGranted(
+        access,
+        candidate.principal,
+        candidate.partition.tenant,
+      ))
     );
   } catch (failure) {
     if (failure instanceof ProjectAccessUnavailable) return undefined;

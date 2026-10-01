@@ -217,6 +217,18 @@ export interface ProjectAccess {
   ): Promise<Authority | undefined>;
 }
 
+/** Whether the tenant grants a principal hosted runs, which every turn on the shared credential spends. */
+export async function hostedRunsGranted(
+  access: ProjectAccess,
+  principal: Principal,
+  tenant: TenantId,
+): Promise<boolean> {
+  return (
+    (await access.authorizeTenant(principal, tenant, "ExecuteHosted")) !==
+    undefined
+  );
+}
+
 /**
  * The authority each principal named on one page acts under, and nothing for
  * the ones the project no longer admits. One question is asked per DISTINCT

@@ -46,6 +46,7 @@ import {
 } from "../../../../src/contract/http.ts";
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type { leadInquirySchema } from "../../../../src/contract/requests.ts";
+import { hostedRunsNotGrantedCode } from "../../../../src/contract/rosters.ts";
 import type { LeadInquiryAccepted } from "../../../../src/contract/responses.ts";
 import type { ApiResult } from "./apiRequest.ts";
 import { panelReason } from "./freshness.ts";
@@ -168,6 +169,7 @@ export const inquiryRefusalWords: Readonly<Record<string, string>> = {
   LeadNotStarted: "Not started",
   LeadClosed: "Closed",
   InquiriesInFlight: "In flight",
+  [hostedRunsNotGrantedCode]: "Needs hosted runs",
 };
 
 export const inquiryRefusalWordUnknown = "Refused";

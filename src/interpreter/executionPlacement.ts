@@ -9,7 +9,7 @@ import {
 } from "./executionScheduler.ts";
 import type { Authority } from "./operationInbox.ts";
 import type { Principal } from "./principal.ts";
-import type { ProjectAccess } from "./projectAccess.ts";
+import { hostedRunsGranted, type ProjectAccess } from "./projectAccess.ts";
 import type { Partition } from "./projectStore.ts";
 
 /**
@@ -113,20 +113,6 @@ function executionPlacementView(
   };
 }
 
-async function executionPlacementHosted(
-  access: ProjectAccess,
-  principal: Principal,
-  partition: Partition,
-): Promise<boolean> {
-  return (
-    (await access.authorizeTenant(
-      principal,
-      partition.tenant,
-      "ExecuteHosted",
-    )) !== undefined
-  );
-}
-
 async function executionPlacementRead(
   access: ProjectAccess,
   store: ExecutionPlacementStore,
@@ -139,7 +125,7 @@ async function executionPlacementRead(
     (await access.authorize(principal, partition, "Administer")) !== undefined;
   const hosted =
     administers &&
-    (await executionPlacementHosted(access, principal, partition));
+    (await hostedRunsGranted(access, principal, partition.tenant));
   const standing = await store.standing(partition);
   return {
     result: "Found",
@@ -156,7 +142,7 @@ async function executionPlacementWrite(
 ): Promise<ExecutionPlacementWritten> {
   const authority = await access.authorize(principal, partition, "Administer");
   if (authority === undefined) return { result: "NotFound" };
-  const hosted = await executionPlacementHosted(access, principal, partition);
+  const hosted = await hostedRunsGranted(access, principal, partition.tenant);
   if (executionPlacementRefused(placement, hosted))
     return { result: "HostedRunsNotGranted" };
   const written = await store.write(partition, placement, authority);

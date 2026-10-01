@@ -106,5 +106,5 @@ test("a send the hosted grant refuses keeps the text and stops the composer taki
   });
   expect(sent).toBe("Kept");
   expect(result.current.takes).toBe(false);
-  expect(result.current.stopped).toBeDefined();
+  expect(result.current.holds).toBe(true);
 });

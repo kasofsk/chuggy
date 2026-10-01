@@ -211,7 +211,7 @@ function poolEndpointSetting(variable: string): string {
   const text = requiredEnvironment(variable);
   if (!workerPoolEndpointSchema.safeParse(text).success)
     throw new Error(
-      `${variable} must be an https URL, or an http URL on the loopback`,
+      `${variable} must be an https URL, or an http URL on the loopback, carrying no credentials`,
     );
   return new URL(text).toString();
 }

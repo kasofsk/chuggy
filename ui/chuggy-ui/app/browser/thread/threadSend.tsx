@@ -62,9 +62,10 @@ function ThreadSendNote(props: { readonly send: ThreadSend }): ReactNode {
   switch (send.send) {
     case "Idle":
     case "Sending":
-    case "Unhosted":
     case "Sent":
       return null;
+    case "Unhosted":
+      return <ThreadUnhostedNotice />;
     case "Waiting":
     case "Ended":
     case "Unsettled":
@@ -80,7 +81,8 @@ function ThreadSendNote(props: { readonly send: ThreadSend }): ReactNode {
  * The composer one thread hands the surface: what the door still takes, what a
  * message may carry, and what a press ended as. A door that answered `Ended`
  * takes nothing more whatever the read said, because the read that drew this
- * page is older than the refusal.
+ * page is older than the refusal; one the hosted grant refused takes nothing
+ * more either, and holds the text it handed back, read-only.
  */
 export function useThreadSend(input: {
   readonly partition: PartitionIdentity;
@@ -89,9 +91,6 @@ export function useThreadSend(input: {
   readonly takes: boolean;
   /** The thread a first press opened, once its message is sent. */
   readonly onStarted?: (session: string) => void;
-  /** An open the tenant's hosted grant refused, which the text is kept through
-   * and the composer stops taking messages at. */
-  readonly onUnhosted?: () => void;
 }): ConversationComposerProps {
   const ports = useApiPorts();
   const { partition } = input;
@@ -111,7 +110,6 @@ export function useThreadSend(input: {
         const open = await apiOpenThread(ports, partition);
         if (threadUnhosted(open)) {
           setSend({ send: "Unhosted" });
-          input.onUnhosted?.();
           return "Kept";
         }
         if (open.outcome !== "Ok") {
@@ -139,6 +137,6 @@ export function useThreadSend(input: {
         setSend({ send: "Idle" });
     },
     note: <ThreadSendNote send={send} />,
-    ...(send.send === "Unhosted" ? { stopped: <ThreadUnhostedNotice /> } : {}),
+    holds: send.send === "Unhosted",
   };
 }

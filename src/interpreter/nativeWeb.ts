@@ -124,7 +124,7 @@ import {
 } from "./runEvidence.ts";
 import type { AttemptId, ExecutionId } from "./schedulerIdentity.ts";
 import { type PublicInstant } from "./publicResource.ts";
-import { memberAuthorities } from "./projectAccess.ts";
+import { hostedRunsGranted, memberAuthorities } from "./projectAccess.ts";
 import type { ProjectAccess, ProjectAccessKind } from "./projectAccess.ts";
 import type { Authority } from "./operationInbox.ts";
 import type { SelectorOperationalContext } from "./selector.ts";
@@ -1420,21 +1420,6 @@ async function nativeInquiryEntries(
   );
 }
 
-/** Whether the tenant grants the caller hosted runs, which every turn of a thread spends. */
-async function threadHosted(
-  access: ProjectAccess,
-  principal: Principal,
-  partition: Partition,
-): Promise<boolean> {
-  return (
-    (await access.authorizeTenant(
-      principal,
-      partition.tenant,
-      "ExecuteHosted",
-    )) !== undefined
-  );
-}
-
 /**
  * Opening the caller's own thread, which is `Mutate` and takes no session: a
  * member has one thread per project, the definer is idempotent on that, and the
@@ -1448,7 +1433,7 @@ function nativeOpenThreadMethod(
   return async (principal, partition) => {
     const authority = await access.authorize(principal, partition, "Mutate");
     if (authority === undefined) return { result: "NotFound" };
-    if (!(await threadHosted(access, principal, partition)))
+    if (!(await hostedRunsGranted(access, principal, partition.tenant)))
       return { result: "HostedRunsNotGranted" };
     const ports = composedThreadPorts(threads);
     const texts = await ports.seeding.projectTexts(partition);
@@ -1487,7 +1472,7 @@ function nativeSendThreadMessageMethod(
   return async (principal, partition, input) => {
     const authority = await access.authorize(principal, partition, "Mutate");
     if (authority === undefined) return { result: "NotFound" };
-    if (!(await threadHosted(access, principal, partition)))
+    if (!(await hostedRunsGranted(access, principal, partition.tenant)))
       return { result: "HostedRunsNotGranted" };
     const ports = composedThreadPorts(threads);
     const message = checkedThreadMessage(input.message);
@@ -1777,7 +1762,8 @@ function nativeLeadReadMethods(
 /**
  * The three ways a member reaches the lead's inquiries, every one gated on
  * `Read` because an inquiry holds a strict subset of what `Read` already
- * permits — `./leadInquiry.ts`'s header carries the whole argument. THE ASKER
+ * permits, and asking on the tenant's hosted grant too because it spends a
+ * hosted run — `./leadInquiry.ts`'s header carries the whole argument. THE ASKER
  * IS THE AUTHORITY'S OWN SUBJECT and comes from the authorization this door
  * already did, never from the body: a question whose asker the caller chose
  * would name whoever they liked on a document the lead reads.
@@ -1823,6 +1809,8 @@ function nativeLeadInquiryMethods(
     askLead: async (principal, partition, input) => {
       const authority = await access.authorize(principal, partition, "Read");
       if (authority === undefined) return { result: "NotFound" };
+      if (!(await hostedRunsGranted(access, principal, partition.tenant)))
+        return { result: "HostedRunsNotGranted" };
       return leadInquiryAsked(
         await composed().open({
           partition,

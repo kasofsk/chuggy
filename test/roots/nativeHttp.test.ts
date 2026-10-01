@@ -292,7 +292,10 @@ const inquiryComposedProgram = `
   const web = compose.composeNativeWeb(
     pool,
     { digest: () => 'digest' },
-    { authorize: async () => ({ kind: 'OidcUser', subject: 'geoff' }) },
+    {
+      authorize: async () => ({ kind: 'OidcUser', subject: 'geoff' }),
+      authorizeTenant: async () => ({ kind: 'OidcUser', subject: 'geoff' }),
+    },
     { admits: async () => ({ admitted: 'Admitted' }) },
   );
   const principal = 'principal';
@@ -428,6 +431,8 @@ test("a pool address a runner would refuse is a refusal to start", async () => {
     ["CHUG_API_POOL_TOKEN_URL", "not a url"],
     ["CHUG_API_POOL_PLANE_URL", "ftp://plane.chuggy.test/"],
     ["CHUG_API_POOL_PLANE_URL", "http://plane.chuggy.test/"],
+    ["CHUG_API_POOL_PLANE_URL", "https://op:pw-fixture@plane.chuggy.test/"],
+    ["CHUG_API_POOL_TOKEN_URL", "https://op@auth.chuggy.test/oauth2/token"],
   ] as const) {
     const ran = await rootRead(
       { ...poolNamed, [variable]: value },
@@ -435,6 +440,7 @@ test("a pool address a runner would refuse is a refusal to start", async () => {
     );
     assert.equal(ran.code, 1, `${variable}=${value}`);
     assert.match(ran.out, new RegExp(`${variable} must be an https URL`, "u"));
+    assert.doesNotMatch(ran.out, /pw-fixture/u);
   }
 });
 

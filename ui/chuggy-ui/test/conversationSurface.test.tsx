@@ -599,6 +599,39 @@ test("a closed door draws no box to type into", () => {
   styleless();
 });
 
+test("a door that takes nothing more and holds a kept message draws it read-only over the note", async () => {
+  const onSend = vi.fn(() => Promise.resolve<ConversationSent>("Kept"));
+  const { rerender } = render(
+    <Conversation
+      exchanges={[answered]}
+      composer={composerOf({ onSend })}
+      empty="No conversation"
+    />,
+  );
+  const box = await typed("keep this");
+  fireEvent.click(screen.getByRole("button", { name: "Send" }));
+  await waitFor(() => {
+    expect(box.value).toBe("keep this");
+  });
+  rerender(
+    <Conversation
+      exchanges={[answered]}
+      composer={{
+        ...composerOf({ takes: false, onSend }),
+        holds: true,
+        note: <span>Held</span>,
+      }}
+      empty="No conversation"
+    />,
+  );
+  const held = screen.getByRole<HTMLTextAreaElement>("textbox");
+  expect(held.value).toBe("keep this");
+  expect(held.readOnly).toBe(true);
+  expect(screen.getByText("Held")).toBeDefined();
+  expect(screen.queryByText("Closed")).toBeNull();
+  styleless();
+});
+
 test("the counter appears only once the text nears the bound", async () => {
   const onSend = vi.fn(() => Promise.resolve<ConversationSent>("Sent"));
   render(

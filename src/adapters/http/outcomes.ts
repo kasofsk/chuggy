@@ -1939,6 +1939,8 @@ export function askLeadResponse(
     case "NotFound":
     case "NoLead":
       return response(404, nativeHttpError("NotFound", "Resource not found."));
+    case "HostedRunsNotGranted":
+      return hostedRunsRefused();
     case "LeadNotStarted":
       return response(
         409,

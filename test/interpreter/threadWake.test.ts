@@ -37,6 +37,7 @@ import {
   type ProjectAccess,
 } from "../../src/interpreter/projectAccess.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
+import type { Authority } from "../../src/interpreter/operationInbox.ts";
 import {
   allThreadWakeReasons,
   parseThreadWake,
@@ -186,30 +187,40 @@ function referenceStore(options: ReferenceStoreOptions): ReferenceStore {
 
 /**
  * The project authority the pass asks, admitting every principal a case has not
- * named. It counts its refusals, because a candidate the authority turned away
- * reaches no store and a case has nowhere else to read that from.
+ * named and granting each hosted runs. It counts its refusals, because a
+ * candidate the authority turned away reaches no store and a case has nowhere
+ * else to read that from.
  */
 function referenceAccess(
   options: {
     readonly unadmitted?: ReadonlySet<Principal>;
     readonly undecided?: ReadonlySet<Principal>;
+    readonly unhosted?: ReadonlySet<Principal>;
+    readonly hostedUndecided?: ReadonlySet<Principal>;
   } = {},
 ): ProjectAccess & { readonly refused: readonly Principal[] } {
   const refused: Principal[] = [];
+  const answered = (
+    principal: Principal,
+    undecided: ReadonlySet<Principal> | undefined,
+    refusing: ReadonlySet<Principal> | undefined,
+  ): Promise<Authority | undefined> => {
+    if (undecided?.has(principal) === true)
+      return Promise.reject(
+        new ProjectAccessUnavailable("the authority did not answer"),
+      );
+    if (refusing?.has(principal) === true) {
+      refused.push(principal);
+      return Promise.resolve(undefined);
+    }
+    return Promise.resolve(memberAuthority(principal));
+  };
   return {
     refused,
-    authorize: (principal) => {
-      if (options.undecided?.has(principal) === true)
-        return Promise.reject(
-          new ProjectAccessUnavailable("the authority did not answer"),
-        );
-      if (options.unadmitted?.has(principal) === true) {
-        refused.push(principal);
-        return Promise.resolve(undefined);
-      }
-      return Promise.resolve(memberAuthority(principal));
-    },
-    authorizeTenant: () => Promise.resolve(undefined),
+    authorize: (principal) =>
+      answered(principal, options.undecided, options.unadmitted),
+    authorizeTenant: (principal) =>
+      answered(principal, options.hostedUndecided, options.unhosted),
   };
 }
 
@@ -388,6 +399,34 @@ test("a thread whose principal is no longer admitted is skipped unoffered", asyn
     [member("here").session],
   );
   assert.deepEqual(access.refused, [member("gone").principal]);
+});
+
+test("a thread whose principal the tenant grants no hosted runs is skipped unoffered", async () => {
+  const log = [candidateAt(1, "unhosted"), candidateAt(2, "here")];
+  const store = referenceStore({ log });
+  const access = referenceAccess({
+    unhosted: new Set([member("unhosted").principal]),
+  });
+  const report = await threadWakePass(serviceOf(store, undefined, access));
+
+  assert.deepEqual(report, { read: 2, woken: 1, skipped: 1, cursor: 2 });
+  assert.deepEqual(
+    store.offers.map((offer) => offer.session),
+    [member("here").session],
+  );
+  assert.deepEqual(access.refused, [member("unhosted").principal]);
+});
+
+test("an authority that could not answer the hosted grant holds the cursor too", async () => {
+  const log = [candidateAt(1, "first"), candidateAt(2, "silent")];
+  const store = referenceStore({ log });
+  const access = referenceAccess({
+    hostedUndecided: new Set([member("silent").principal]),
+  });
+  const report = await threadWakePass(serviceOf(store, undefined, access));
+
+  assert.deepEqual(report, { read: 2, woken: 1, skipped: 1, cursor: 1 });
+  assert.deepEqual(store.advances, [1]);
 });
 
 /**

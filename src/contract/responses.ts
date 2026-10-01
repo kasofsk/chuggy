@@ -1568,7 +1568,7 @@ export type WorkerPoolTokenResponse = z.infer<
   typeof workerPoolTokenResponseSchema
 >;
 
-/** Whether a runner sends its pool's credential to this URL: https, or http to its own loopback. */
+/** Whether a runner sends its pool's credential to this URL: https, or http to its own loopback, and carrying no credential of its own. */
 function workerPoolEndpointAllowed(text: string): boolean {
   let url: URL;
   try {
@@ -1576,6 +1576,7 @@ function workerPoolEndpointAllowed(text: string): boolean {
   } catch {
     return false;
   }
+  if (url.username !== "" || url.password !== "") return false;
   if (url.protocol === "https:") return true;
   const loopback =
     url.hostname === "localhost" ||
@@ -1588,7 +1589,8 @@ function workerPoolEndpointAllowed(text: string): boolean {
 export const workerPoolEndpointSchema = z
   .string()
   .refine(workerPoolEndpointAllowed, {
-    error: "is not an https URL, or an http URL on the loopback",
+    error:
+      "is not an https URL, or an http URL on the loopback, carrying no credentials",
   });
 
 /** A registry a runner presents its pool's token to: a lowercase DNS name, and a port where it names one. */

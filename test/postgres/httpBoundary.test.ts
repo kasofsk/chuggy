@@ -207,6 +207,20 @@ async function ingressLead(
   );
 }
 
+/** Admits the principal to ask: `Read` on the project, and the tenant's hosted grant asking spends. */
+function ingressAsker(harness: PostgresHarness, partition: Partition): void {
+  harness.access.grant({
+    partition,
+    principal,
+    access: new Set(["Read"]),
+  });
+  harness.access.grantTenant({
+    tenant: partition.tenant,
+    principal,
+    access: new Set(["ExecuteHosted"]),
+  });
+}
+
 /**
  * The inquiry routes over the REAL composition, because what
  * `test/adapters/httpLeadInquiries.test.ts` settles is the transport and what
@@ -219,11 +233,7 @@ async function ingressLead(
 test("real HTTP ingress asks the lead a question and lists it back", async () => {
   const harness = await postgresHarnessOpen();
   const partition = await postgresHarnessProject(harness.store, "http-inquiry");
-  harness.access.grant({
-    partition,
-    principal,
-    access: new Set(["Read"]),
-  });
+  ingressAsker(harness, partition);
   await ingressLead(harness, partition);
   const { pool, app } = composedIngress(harness.access);
   const address = await app.listen({ host: "127.0.0.1", port: 0 });

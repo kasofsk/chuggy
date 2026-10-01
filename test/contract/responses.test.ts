@@ -93,6 +93,7 @@ import {
 import { authoringSchema } from "../../src/contract/authoring.ts";
 import { draftRevisionSchema } from "../../src/contract/requests.ts";
 import { projectRepositoryConfigurationDeferrals } from "../../src/contract/rosters.ts";
+import { workerPoolTokenCharsMax } from "../../src/contract/workerPool.ts";
 import { asConfigurationRevisionId } from "../../src/interpreter/authoring.ts";
 import type {
   ProjectRepositoryConfigurationsResult,
@@ -2024,19 +2025,28 @@ test("a redemption's pool file parses as the file a runner keeps, and an address
   for (const refused of [
     { tokenUrl: "http://auth.chuggy.test/oauth2/token" },
     { planeUrl: "ftp://chuggy-pool.chuggy.test/" },
+    { planeUrl: "ftp://127.0.0.1/" },
+    { tokenUrl: "https://op:pw-fixture@auth.chuggy.test/oauth2/token" },
+    { planeUrl: "https://op@chuggy-pool.chuggy.test/" },
+    { planeUrl: "https://:pw-fixture@chuggy-pool.chuggy.test/" },
     { registryHost: "https://chuggy-registry.chuggy.test" },
     { capabilities: [""] },
+    { capabilities: ["a b"] },
+    { capabilities: ["x".repeat(workerPoolTokenCharsMax + 1)] },
   ])
     assert.equal(
       workerPoolCredentialsSchema.safeParse({ ...file, ...refused }).success,
       false,
       JSON.stringify(refused),
     );
-  assert.equal(
-    workerPoolCredentialsSchema.safeParse({
-      ...file,
-      planeUrl: "http://127.0.0.1:4444/",
-    }).success,
-    true,
-  );
+  for (const planeUrl of [
+    "http://127.0.0.1:4444/",
+    "http://localhost:4444/",
+    "http://[::1]:4444/",
+  ])
+    assert.equal(
+      workerPoolCredentialsSchema.safeParse({ ...file, planeUrl }).success,
+      true,
+      planeUrl,
+    );
 });

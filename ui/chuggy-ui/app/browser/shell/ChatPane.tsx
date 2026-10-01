@@ -227,14 +227,12 @@ function ChatPaneFirst(props: {
   readonly partition: PartitionIdentity;
   readonly onStarting: () => void;
   readonly onStarted: (session: string) => void;
-  readonly onUnhosted: () => void;
 }): ReactNode {
   const composer = useThreadSend({
     partition: props.partition,
     session: undefined,
     takes: true,
     onStarted: props.onStarted,
-    onUnhosted: props.onUnhosted,
   });
   return (
     <div
@@ -298,7 +296,6 @@ function ChatPaneBody(props: {
   readonly unhosted: boolean;
   readonly onStarting: () => void;
   readonly onStarted: (session: string) => void;
-  readonly onUnhosted: () => void;
 }): ReactNode {
   if (props.session !== undefined && !props.starting)
     return (
@@ -315,7 +312,6 @@ function ChatPaneBody(props: {
       partition={props.partition}
       onStarting={props.onStarting}
       onStarted={props.onStarted}
-      onUnhosted={props.onUnhosted}
     />
   );
 }
@@ -383,7 +379,6 @@ function ChatPaneOpen(props: {
             setChosen(session);
             setStarting(false);
           }}
-          onUnhosted={refuseUnhosted}
         />
       </div>
     </section>

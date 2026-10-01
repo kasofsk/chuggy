@@ -450,16 +450,23 @@ function unhostedServed(): typeof fetch {
       : served(url, init)) as unknown as typeof fetch;
 }
 
-/** No thread the reader opens could run, so the box they would type in is
- * replaced by what refused it rather than left to refuse every press. */
-test("a first message the hosted grant refuses puts the refusal where the composer was", async () => {
+/** The box a refused message was typed in, which keeps it to be read and
+ * copied and takes nothing more. */
+function heldBox(): HTMLTextAreaElement {
+  return screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Message" });
+}
+
+/** No thread the reader opens could run, so the box takes no more presses and
+ * keeps the message it handed back, with what refused it beneath. */
+test("a first message the hosted grant refuses stays in the box, read-only, over the refusal", async () => {
   await mounted(viewportDeskEm, unhostedServed());
   fireEvent.change(composerDrawn(), { target: { value: "hello" } });
   await turned(() => {
     screen.getByRole("button", { name: "Send" }).click();
   });
   await settled();
-  expect(screen.queryByRole("textbox", { name: "Message" })).toBeNull();
+  expect(heldBox().value).toBe("hello");
+  expect(heldBox().readOnly).toBe(true);
   expect(
     within(screen.getByRole("region", { name: "Conversation" })).getByText(
       "Needs hosted runs",
@@ -477,28 +484,37 @@ test("New the hosted grant refuses puts the refusal where the composer was", asy
 });
 
 /** A grant withdrawn after the thread opened refuses its next message, and the
- * thread stops offering a box every press of which would be refused. */
-test("a message to a held thread the hosted grant refuses puts the refusal where the composer was", async () => {
+ * box keeps that message while taking no more. */
+test("a message to a held thread the hosted grant refuses stays in the box, read-only, over the refusal", async () => {
   const served = threadServed([
     threadEntry({ session: openedSession, owner: "geoff", mine: true }),
   ]);
+  let sends = 0;
   await mounted(viewportDeskEm, ((
     url: string,
     init?: { readonly method?: string },
-  ) =>
-    init?.method === "POST" && url.endsWith("/messages")
-      ? Promise.resolve(
-          answer({ error: { code: "HostedRunsNotGranted" } }, 403),
-        )
-      : served(url, init)) as unknown as typeof fetch);
+  ) => {
+    if (init?.method !== "POST" || !url.endsWith("/messages"))
+      return served(url, init);
+    sends += 1;
+    return Promise.resolve(
+      answer({ error: { code: "HostedRunsNotGranted" } }, 403),
+    );
+  }) as unknown as typeof fetch);
   fireEvent.change(composerDrawn(), { target: { value: "hello" } });
   await turned(() => {
     screen.getByRole("button", { name: "Send" }).click();
   });
   await settled();
-  expect(screen.queryByRole("textbox", { name: "Message" })).toBeNull();
+  expect(heldBox().value).toBe("hello");
+  expect(heldBox().readOnly).toBe(true);
   expect(screen.getByText("Needs hosted runs")).toBeTruthy();
   expect(screen.queryByText("Closed")).toBeNull();
+  await turned(() => {
+    fireEvent.keyDown(heldBox(), { key: "Enter" });
+  });
+  await settled();
+  expect(sends, "a held box sent its message again").toBe(1);
   styleless();
 });
 
