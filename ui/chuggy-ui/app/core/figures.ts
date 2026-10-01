@@ -486,6 +486,17 @@ export function whenFigure(window: RunWindow, nowMs: number): Figure {
   };
 }
 
+/** How long a window ran, for a column whose head already says so; one that
+ * has not ended has no length yet. */
+export function ranFigure(from: string, to: string | undefined): Figure {
+  if (to === undefined) return { kind: "Absent", why: "Not ended" };
+  const fromMs = parsedMs(from);
+  const toMs = parsedMs(to);
+  if (fromMs === undefined || toMs === undefined)
+    return { kind: "Absent", why: "No instant" };
+  return durationFigure(toMs - fromMs);
+}
+
 /** The one absence a set of runs has: it is running, and nothing is counted yet. */
 export function spendAbsent(why: string): Spend {
   return { cost: { kind: "Absent", why }, tokens: { kind: "Absent", why } };

@@ -9,7 +9,11 @@
 import { expect, test } from "vitest";
 
 import type { ExecutionResponse } from "../../../src/contract/responses.ts";
-import { runSummaryOf } from "../app/core/runSummary.ts";
+import {
+  runArtifactsListed,
+  runResultPath,
+  runSummaryOf,
+} from "../app/core/runSummary.ts";
 
 type ExecutionResult = NonNullable<ExecutionResponse["result"]>;
 
@@ -42,8 +46,8 @@ test("a result older than the summary field says so rather than drawing nothing"
     result({ schemaVersion: 2, report: undefined }),
   );
   expect(summary.summary).toBe("SchemaTooOld");
-  expect(summary.summary === "Report" ? "" : summary.sentence).toContain(
-    "report schema too old",
+  expect(summary.summary === "Report" ? "" : summary.note).toContain(
+    "older worker",
   );
 });
 
@@ -54,7 +58,7 @@ test("a run that ended without a result names the reason the wire gave", () => {
   );
   expect(summary).toEqual({
     summary: "Ended",
-    sentence: "ended without a result: LeaseExpired",
+    note: "No result · LeaseExpired",
   });
 });
 
@@ -63,7 +67,7 @@ test("a run that ended without a reason on the wire admits there is none", () =>
     runSummaryOf({ attempt: "a2", state: "Withdrawn" }, undefined),
   ).toEqual({
     summary: "Ended",
-    sentence: "ended without a result: no reason was recorded",
+    note: "No result",
   });
 });
 
@@ -83,4 +87,15 @@ test("a result carrying no summary is an absence rather than a blank pane", () =
       result({ report: undefined }),
     ).summary,
   ).toBe("Absent");
+});
+
+/** The run's own result is the summary and figures already drawn, and a row
+ * for it reads as a second, unexplained copy. */
+test("a result lists every artifact but the run's own result, in order", () => {
+  const paths = [".chuggy/check-output.json", runResultPath, "out/notes.md"];
+  expect(
+    runArtifactsListed(paths.map((path) => ({ path }))).map(
+      (artifact) => artifact.path,
+    ),
+  ).toEqual([".chuggy/check-output.json", "out/notes.md"]);
 });

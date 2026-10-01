@@ -1,6 +1,6 @@
 /**
  * What one run's summary pane says, decided from the attempt and the result the
- * execution recorded.
+ * execution recorded, and which of the result's artifacts are listed beside it.
  *
  * A result belongs to the attempt it names, so an attempt that ended without
  * one is never drawn under another attempt's verdict; a manifest older than the
@@ -16,6 +16,20 @@ import type {
 
 type ExecutionResult = NonNullable<ExecutionResponse["result"]>;
 
+/**
+ * Where an agent run uploads its own result event, as the worker core names it
+ * in kasofsk/chuggy-common's `entrypoint.mjs`. Its summary and its figures are
+ * what a run's details already draw.
+ */
+export const runResultPath = ".chuggy/agent-result.json";
+
+/** A result's artifacts as its details list them: all but the run's own result. */
+export function runArtifactsListed<T extends { readonly path: string }>(
+  artifacts: readonly T[],
+): readonly T[] {
+  return artifacts.filter((artifact) => artifact.path !== runResultPath);
+}
+
 /** As much of an attempt as the summary pane reads. */
 export interface RunAttemptSummary {
   readonly attempt: string;
@@ -25,33 +39,27 @@ export interface RunAttemptSummary {
 
 export type RunSummary =
   | { readonly summary: "Report"; readonly report: string }
-  | { readonly summary: "SchemaTooOld"; readonly sentence: string }
-  | { readonly summary: "Ended"; readonly sentence: string }
-  | { readonly summary: "Live"; readonly sentence: string }
-  | { readonly summary: "Absent"; readonly sentence: string };
+  | { readonly summary: "SchemaTooOld"; readonly note: string }
+  | { readonly summary: "Ended"; readonly note: string }
+  | { readonly summary: "Live"; readonly note: string }
+  | { readonly summary: "Absent"; readonly note: string };
 
-/** The label the wire gave, or the admission that the row carries none. */
-function runEndedSentence(evidence: AttemptEvidence | undefined): string {
-  return `ended without a result: ${evidence ?? "no reason was recorded"}`;
+/** The label the wire gave, where the row carries one. */
+function runEndedNote(evidence: AttemptEvidence | undefined): string {
+  return evidence === undefined ? "No result" : `No result · ${evidence}`;
 }
 
 function runSummaryWithoutResult(attempt: RunAttemptSummary): RunSummary {
   switch (attempt.state) {
     case "Placing":
     case "Running":
-      return {
-        summary: "Live",
-        sentence: "this run has not ended, so it has recorded no summary yet",
-      };
+      return { summary: "Live", note: "No summary yet" };
     case "Lost":
     case "Withdrawn":
     case "Superseded":
-      return { summary: "Ended", sentence: runEndedSentence(attempt.evidence) };
+      return { summary: "Ended", note: runEndedNote(attempt.evidence) };
     case "Reported":
-      return {
-        summary: "Absent",
-        sentence: "this run reported, and no result is recorded against it",
-      };
+      return { summary: "Absent", note: "No result" };
   }
 }
 
@@ -66,15 +74,9 @@ export function runSummaryOf(
   if (result === undefined || result.attempt !== attempt.attempt)
     return runSummaryWithoutResult(attempt);
   if (result.schemaVersion < resultReportSchemaVersionMin)
-    return {
-      summary: "SchemaTooOld",
-      sentence: "report schema too old: this manifest predates the summary",
-    };
+    return { summary: "SchemaTooOld", note: "No summary · older worker" };
   const report = result.report;
   return report === undefined
-    ? {
-        summary: "Absent",
-        sentence: "this run recorded a result and no summary with it",
-      }
+    ? { summary: "Absent", note: "No summary" }
     : { summary: "Report", report };
 }

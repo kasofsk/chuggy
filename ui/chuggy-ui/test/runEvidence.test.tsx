@@ -186,7 +186,7 @@ test("a lost run says it ended without a result and draws no verdict", async () 
     transcripts: [runTranscriptPage([1, 2], true)],
   });
   const lost = rendered.container.querySelector('[data-attempt="a1"]');
-  expect(lost?.textContent).toContain("ended without a result: LeaseExpired");
+  expect(lost?.textContent).toContain("No result · LeaseExpired");
   expect(lost?.textContent).not.toContain("Pass");
   const reported = rendered.container.querySelector('[data-attempt="a2"]');
   expect(reported?.textContent).toContain("the work passed");
@@ -215,7 +215,7 @@ test("a result older than the summary field draws the reason there is none", asy
   });
   expect(
     rendered.container.querySelector('[data-attempt="a1"]')?.textContent,
-  ).toContain("report schema too old");
+  ).toContain("No summary · older worker");
 });
 
 /** The server's sum is over every attempt of every execution, including the
@@ -282,7 +282,7 @@ test("a run from a worker that wrote no evidence says so", async () => {
   });
   expect(
     rendered.container.querySelector('[data-attempt="a1"]')?.textContent,
-  ).toContain("recorded no run evidence");
+  ).toContain("Nothing recorded");
   expect(
     rendered.container.querySelector(".ticket-status")?.textContent,
   ).toContain("—");
@@ -364,12 +364,11 @@ test("a reason longer than a row's line is drawn whole in the run's details", as
   ).toContain(pullFailed);
 });
 
-test("the attempts table scrolls itself rather than widening the run's details", async () => {
-  const rendered = await ticketPage(lostRun(pullFailed));
-  const table = rendered.container.querySelector("table.attempts");
-  expect(table).not.toBeNull();
-  expect(table?.parentElement?.classList).toContain("overflow-x-auto");
-  expect(table?.parentElement?.classList).toContain("max-w-full");
+test("the runs table scrolls itself rather than widening the run's details", async () => {
+  await ticketPage(lostRun(pullFailed));
+  const table = screen.getByRole("table", { name: "Runs" });
+  expect(table.parentElement?.classList).toContain("overflow-x-auto");
+  expect(table.parentElement?.classList).toContain("max-w-full");
 });
 
 function styleRules(list: CSSRuleList): readonly CSSStyleRule[] {

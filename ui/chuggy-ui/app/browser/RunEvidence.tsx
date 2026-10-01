@@ -21,6 +21,7 @@ import {
   apiRunError,
   apiRunTurns,
 } from "../core/apiRoutes.ts";
+import { sinceFigure, whenFigure } from "../core/figures.ts";
 import {
   runConfigurationArgvSentence,
   runConfigurationCapabilitiesSentence,
@@ -45,6 +46,7 @@ import { DataPanel } from "./DataPanel.tsx";
 import { MarkdownReport } from "./ui/MarkdownReport.tsx";
 import { RunTranscript } from "./RunTranscript.tsx";
 import { Disclosure } from "./ui/Disclosure.tsx";
+import { Figure } from "./ui/Figure.tsx";
 
 /** The most turn pages one reader may walk through in one sitting. */
 export const runTurnPagesMax = 32;
@@ -88,7 +90,10 @@ export function RunTotalsLine(props: {
   );
 }
 
-function RunTurnRows(props: { readonly page: RunTurnsResponse }): ReactNode {
+function RunTurnRows(props: {
+  readonly page: RunTurnsResponse;
+  readonly nowMs: number;
+}): ReactNode {
   return (
     <table className="turns">
       <thead>
@@ -111,7 +116,9 @@ function RunTurnRows(props: { readonly page: RunTurnsResponse }): ReactNode {
             <td>{runCountLabel(turn.tokensOutput)}</td>
             <td>{runCountLabel(turn.tokensCacheCreation)}</td>
             <td>{runCountLabel(turn.tokensCacheRead)}</td>
-            <td>{turn.recordedAt}</td>
+            <td>
+              <Figure figure={sinceFigure(turn.recordedAt, props.nowMs)} />
+            </td>
           </tr>
         ))}
       </tbody>
@@ -123,6 +130,7 @@ function RunTurns(props: {
   readonly partition: PartitionIdentity;
   readonly execution: string;
   readonly attempt: string;
+  readonly nowMs: number;
 }): ReactNode {
   const [walked, setWalked] = useState<readonly number[]>([]);
   const after = walked.at(-1);
@@ -144,9 +152,9 @@ function RunTurns(props: {
       {(page) => (
         <div className="run-turn-pages">
           {page.turns.length === 0 ? (
-            <p className="panel-note">no turn was recorded for this run</p>
+            <p className="panel-note">No turns</p>
           ) : (
-            <RunTurnRows page={page} />
+            <RunTurnRows page={page} nowMs={props.nowMs} />
           )}
           <div className="flex gap-2">
             <button
@@ -211,7 +219,7 @@ function RunConfigurationFileRow(props: {
 function RunConfigurationBody(props: { readonly content: string }): ReactNode {
   const reading = runConfigurationRead(props.content);
   if (reading.reading === "Unreadable")
-    return <p className="panel-failed">could not be read — {reading.reason}</p>;
+    return <p className="panel-failed">Unreadable · {reading.reason}</p>;
   const snapshot = reading.snapshot;
   const head = runConfigurationHead(snapshot);
   const argv = runConfigurationArgvSentence(snapshot);
@@ -221,15 +229,15 @@ function RunConfigurationBody(props: { readonly content: string }): ReactNode {
       <dl className="legacy-fields">
         <div className="legacy-field">
           <dt>model</dt>
-          <dd>{head.model ?? "none was reported"}</dd>
+          <dd>{head.model ?? "Not reported"}</dd>
         </div>
         <div className="legacy-field">
           <dt>permission mode</dt>
-          <dd>{head.permissionMode ?? "none was reported"}</dd>
+          <dd>{head.permissionMode ?? "Not reported"}</dd>
         </div>
         <div className="legacy-field">
           <dt>working directory</dt>
-          <dd>{head.cwd ?? "none was reported"}</dd>
+          <dd>{head.cwd ?? "Not reported"}</dd>
         </div>
         <div className="legacy-field">
           <dt>tools and skills</dt>
@@ -291,7 +299,7 @@ function RunSummary(props: {
   return summary.summary === "Report" ? (
     <MarkdownReport text={summary.report} />
   ) : (
-    <p className="panel-note">{summary.sentence}</p>
+    <p className="panel-note">{summary.note}</p>
   );
 }
 
@@ -334,9 +342,7 @@ function RunEvidenceTranscript(props: {
 }): ReactNode {
   const transcript = props.attempt.run?.transcript;
   if (transcript === undefined)
-    return (
-      <p className="panel-note">no transcript was recorded for this run</p>
-    );
+    return <p className="panel-note">No transcript</p>;
   return (
     <RunTranscript
       partition={props.partition}
@@ -351,21 +357,16 @@ function RunEvidenceReads(props: {
   readonly partition: PartitionIdentity;
   readonly execution: string;
   readonly attempt: ExecutionAttempt;
+  readonly nowMs: number;
 }): ReactNode {
   const [turns, setTurns] = useState(false);
   const [configuration, setConfiguration] = useState(false);
   const run = props.attempt.run;
-  if (run === undefined)
-    return (
-      <p className="panel-note">
-        this attempt recorded no run evidence — the worker that ran it wrote
-        none
-      </p>
-    );
+  if (run === undefined) return <p className="panel-note">Nothing recorded</p>;
   return (
     <div className="grid gap-2">
       {run.totals === undefined ? (
-        <p className="panel-note">this run recorded no figures</p>
+        <p className="panel-note">No usage</p>
       ) : (
         <RunTotalsLine totals={run.totals} />
       )}
@@ -395,6 +396,7 @@ function RunEvidenceReads(props: {
           partition={props.partition}
           execution={props.execution}
           attempt={props.attempt.attempt}
+          nowMs={props.nowMs}
         />
       ) : null}
       {configuration && run.configuration !== undefined ? (
@@ -417,6 +419,7 @@ function RunAttempt(props: {
   readonly partition: PartitionIdentity;
   readonly execution: ExecutionResponse;
   readonly attempt: ExecutionAttempt;
+  readonly nowMs: number;
 }): ReactNode {
   const attempt = props.attempt;
   return (
@@ -425,9 +428,16 @@ function RunAttempt(props: {
       data-attempt={attempt.attempt}
     >
       <p className="flex flex-wrap items-baseline gap-4">
-        <span className="text-ink-1 font-strong">run {attempt.number}</span>
+        <span className="text-ink-1 font-strong">Run {attempt.number}</span>
         <span className="text-ink-3">{attempt.state}</span>
-        <span className="text-ink-3 text-xs">opened {attempt.openedAt}</span>
+        <span className="text-ink-3 text-xs">
+          <Figure
+            figure={whenFigure(
+              { registeredAt: attempt.openedAt, terminalAt: attempt.endedAt },
+              props.nowMs,
+            )}
+          />
+        </span>
       </p>
       <RunSummary attempt={attempt} result={props.execution.result} />
       {runReasonLeft(attempt) ? (
@@ -441,6 +451,7 @@ function RunAttempt(props: {
         partition={props.partition}
         execution={props.execution.execution}
         attempt={attempt}
+        nowMs={props.nowMs}
       />
     </li>
   );
@@ -450,10 +461,11 @@ function RunAttempt(props: {
 export function RunEvidence(props: {
   readonly partition: PartitionIdentity;
   readonly execution: ExecutionResponse;
+  readonly nowMs: number;
 }): ReactNode {
   const attempts = props.execution.attempts;
   return attempts.length === 0 ? (
-    <p className="panel-note">nothing has run for this execution yet</p>
+    <p className="panel-note">Nothing has run</p>
   ) : (
     <ul className="grid gap-2 px-4 py-2">
       {attempts.map((attempt) => (
@@ -462,6 +474,7 @@ export function RunEvidence(props: {
           partition={props.partition}
           execution={props.execution}
           attempt={attempt}
+          nowMs={props.nowMs}
         />
       ))}
     </ul>
