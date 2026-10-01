@@ -1009,8 +1009,20 @@ function tenantResourcePath(
 }
 
 /** A resource that is not found, which every refused permit in this file answers with. */
-function notFound(): NativeHttpResponse {
+export function notFound(): NativeHttpResponse {
   return response(404, nativeHttpError("NotFound", "Resource not found."));
+}
+
+/** What a session bearer is answered on a route no session may reach, RFC 6750's `insufficient_scope`. */
+export function sessionBearerRefusedResponse(): NativeHttpResponse {
+  return response(
+    403,
+    nativeHttpError(
+      "InsufficientScope",
+      "A session bearer is not admitted to this route.",
+    ),
+    { "www-authenticate": 'Bearer error="insufficient_scope"' },
+  );
 }
 
 /**

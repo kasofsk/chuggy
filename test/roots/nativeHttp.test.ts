@@ -85,7 +85,13 @@ interface Authenticated {
     readonly authenticated: string;
     readonly bearer?: {
       readonly principal: string;
-      readonly viaSession?: string;
+      readonly viaSession?: {
+        readonly session: string;
+        readonly partition: {
+          readonly tenant: string;
+          readonly project: string;
+        };
+      };
     };
   };
   readonly asked: {
@@ -720,7 +726,13 @@ test("a session bearer is answered by this deployment's own session authority", 
   const found = await authenticating(sessionToken);
   assert.deepEqual(found.authenticated, {
     authenticated: "Bearer",
-    bearer: { principal, viaSession: "session-pool" },
+    bearer: {
+      principal,
+      viaSession: {
+        session: "session-pool",
+        partition: { tenant: "tenant", project: "project" },
+      },
+    },
   });
   assert.equal(found.asked.pool.length, 1);
   assert.deepEqual(found.asked.oidc, []);
@@ -731,7 +743,7 @@ test("the session authority stands on the API pool and never the review pool", a
   assert.deepEqual(found.asked.selectorReviewPool, []);
   assert.equal(found.asked.pool.length, 1);
   assert.equal(
-    found.authenticated.bearer?.viaSession,
+    found.authenticated.bearer?.viaSession?.session,
     "session-pool",
     "the session bearer was answered by a pool that is not the API's",
   );
