@@ -81,3 +81,17 @@ export function ticketFilterMoreCursor(
 ): string | undefined {
   return projectTicketRowsHaveMore(rows) ? rows.nextCursor : undefined;
 }
+
+/** Whether a read says the project holds no ticket at all, which only the
+ * unfiltered read can say, and only once nothing further is left to read. */
+export function ticketFilterProjectEmpty(
+  filter: TicketFilter,
+  rows: ProjectTicketRows,
+): boolean {
+  return (
+    filter === ticketFilterAll &&
+    rows.tickets.length === 0 &&
+    rows.nextCursor === undefined &&
+    rows.failure === undefined
+  );
+}

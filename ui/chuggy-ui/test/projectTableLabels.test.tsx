@@ -241,3 +241,32 @@ test("nothing the project table draws is a runtime style element", async () => {
   await screen.findByRole("tooltip");
   expect(document.querySelectorAll("style").length).toBe(0);
 });
+
+/** A project with no ticket at all is one empty state offering the first,
+ * rather than five sections each saying so under a clock of its own. */
+test("a project with no ticket draws one empty state that offers a new one", async () => {
+  await drawTableWith([], []);
+  expect(screen.getByRole("heading", { name: "No tickets" })).toBeDefined();
+  const offer = screen.getByText("New ticket");
+  expect(offer.tagName).toBe("A");
+  expect(offer.closest(".empty")).not.toBeNull();
+  expect(screen.queryAllByRole("heading", { level: 2 })).toEqual([]);
+  expect(screen.queryByRole("group", { name: "phase" })).toBeNull();
+});
+
+test("a project with a ticket draws the five sections, each heading capitalised", async () => {
+  await drawTable();
+  expect(
+    screen
+      .getAllByRole("heading", { level: 2 })
+      .map((heading) => heading.textContent),
+  ).toEqual([
+    "Needs you",
+    "In progress",
+    "Up next",
+    "Done",
+    "Failed or revoked",
+  ]);
+  expect(screen.getByRole("button", { name: "All" })).toBeDefined();
+  expect(screen.queryByRole("heading", { name: "No tickets" })).toBeNull();
+});
