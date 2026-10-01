@@ -48,6 +48,11 @@ vi.mock("@tanstack/react-router", () => ({
   Outlet: () => <InboxScreen partition={atlas} />,
   useNavigate: () => () => undefined,
   useParams: () => atlas,
+  useRouterState: (options: {
+    readonly select: (state: {
+      readonly location: { readonly pathname: string };
+    }) => unknown;
+  }) => options.select({ location: { pathname: "/acme/atlas" } }),
 }));
 // jscpd:ignore-end -- the case's own doubles resume here
 

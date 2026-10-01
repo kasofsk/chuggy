@@ -67,8 +67,7 @@ export function Figure(props: { readonly figure: FigureValue }): ReactNode {
     case "Quantity":
       return (
         <span className="fig">
-          {figure.text}{" "}
-          <i className="fig-unit">{figure.unit}</i>
+          {figure.text} <i className="fig-unit">{figure.unit}</i>
         </span>
       );
     case "Instant":
