@@ -47,3 +47,26 @@ test("a query keeping no row draws the empty line and no list", () => {
   expect(screen.queryByRole("list")).toBeNull();
   expect(screen.getByText("No match").classList.contains("empty")).toBe(true);
 });
+
+test("the box shows its label and takes the caret", () => {
+  const box = drawRoster();
+  expect(box.getAttribute("placeholder")).toBe("Search");
+  expect(document.activeElement).toBe(box);
+});
+
+/** jsdom lays nothing out, so what is asserted is the structure a bounded
+ * parent shrinks: the roster gives way, its rows are the track that does, and
+ * the box is outside them. */
+test("the rows scroll under the box rather than taking the box with them", () => {
+  const box = drawRoster();
+  const rows = screen.getByRole("list");
+  expect([...rows.classList]).toContain("overflow-y-auto");
+  expect(rows.contains(box)).toBe(false);
+  expect([...(rows.parentElement?.classList ?? [])]).toEqual(
+    expect.arrayContaining([
+      "shrink",
+      "min-h-0",
+      "grid-rows-[auto_minmax(0,1fr)]",
+    ]),
+  );
+});
