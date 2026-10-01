@@ -173,6 +173,8 @@ provision() { # <action> [extra assignments as VAR=value ...]
 
 psql_as postgres "INSERT INTO recovery_epoch (epoch) VALUES ('epoch-drill')
   ON CONFLICT DO NOTHING" >/dev/null
+psql_as postgres "INSERT INTO tenant (tenant) VALUES ('drill')
+  ON CONFLICT DO NOTHING" >/dev/null
 psql_as postgres "INSERT INTO project (tenant,project,lifecycle)
   VALUES ('drill','drill','Active') ON CONFLICT DO NOTHING" >/dev/null
 provision open || fail "the session could not be opened"

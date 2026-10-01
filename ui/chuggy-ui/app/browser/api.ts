@@ -115,10 +115,11 @@ export function usePanelList<T>(
 }
 
 /**
- * The inventory, which belongs to no partition and so has no refresh path at
- * all: `["projects"]` is outside `projectPartitionKey`, so neither a `Project`
- * frame nor the fallback's refetch reaches it and the switcher's list is the
- * one this tab opened with (kasofsk/chuggy#439).
+ * The inventory, which belongs to no partition and so has no refresh path of
+ * its own: `["projects"]` is outside `projectPartitionKey`, so neither a
+ * `Project` frame nor the fallback's refetch reaches it and the switcher's list
+ * is the one this tab opened with, or last created a project in
+ * (kasofsk/chuggy#439).
  */
 export function usePanelInventory<T>(read: PanelRead<T>): PanelState<T> {
   return usePanelQuery(projectsInventoryKey(), read);

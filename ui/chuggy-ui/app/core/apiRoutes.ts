@@ -26,6 +26,7 @@ import {
   operationAcceptanceSchema,
   operationResponseSchema,
   outputContentResponseSchema,
+  projectCreatedSchema,
   projectInventoryResponseSchema,
   projectNativeActionsResponseSchema,
   projectRepositoriesResponseSchema,
@@ -58,6 +59,7 @@ import type {
   OperationAcceptance,
   OperationResponse,
   OutputContentResponse,
+  ProjectCreatedResponse,
   ProjectInventoryResponse,
   ProjectNativeActionsResponse,
   ProjectRepositoriesResponse,
@@ -78,6 +80,7 @@ import type {
   draftRevisionSchema,
   forgeInstallationClaimSchema,
   leadInquirySchema,
+  projectCreationSchema,
   projectRepositoryBindSchema,
   projectRepositoryCreateSchema,
   projectRepositoryLandingSchema,
@@ -353,6 +356,25 @@ export function apiProjectInventory(
     ports,
     apiPath(nativeHttpRoutes.projects, { cursor: page.cursor }),
     (value) => projectInventoryResponseSchema.parse(value),
+  );
+}
+
+/** A tenant and a project made under the caller, or one more project in a
+ * tenant the caller administers. */
+export function apiCreateProject(
+  ports: ApiPorts,
+  creation: z.infer<typeof projectCreationSchema>,
+  operation: string,
+): Promise<ApiResult<ProjectCreatedResponse>> {
+  return apiRead(
+    ports,
+    {
+      method: "POST",
+      path: nativeHttpRoutes.projects,
+      body: creation,
+      idempotencyKey: operation,
+    },
+    (value) => projectCreatedSchema.parse(value),
   );
 }
 

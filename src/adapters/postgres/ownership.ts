@@ -128,12 +128,15 @@ export async function postgresOwnershipLockKnown(
   return row;
 }
 
-/** Provisions an `Active` project with an empty journal, absorbing a repeat on the composite key. */
+/** Provisions an `Active` project with an empty journal, and its tenant, absorbing a repeat of either. */
 export async function postgresOwnershipCreate(
   pool: pg.Pool,
   partition: Partition,
 ): Promise<ProjectStanding> {
   return postgresTransaction(pool, async (client) => {
+    await client.query(
+      sql`INSERT INTO tenant (tenant) VALUES (${partition.tenant}) ON CONFLICT (tenant) DO NOTHING`,
+    );
     await client.query(
       sql`INSERT INTO project (tenant, project, lifecycle) VALUES (${partition.tenant}, ${partition.project}, 'Active') ON CONFLICT (tenant, project) DO NOTHING`,
     );

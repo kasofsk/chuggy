@@ -22,8 +22,8 @@
  * holding a roster of what an installation contains.
  *
  * BINDING IS NOT CREATING. The project is the door's to find, and a project
- * that is not there is `NotFound` rather than a project this route makes: what
- * a project is and who may make one is 083's question, and a route that created
+ * that is not there is `NotFound` rather than a project this route makes: who
+ * may make one is `./projectCreation.ts`'s question, and a route that created
  * one on the way past would answer it a second way.
  *
  * A TENANT INSTALLS TWO APPS AND A CLAIM NAMES WHICH. The portal app is what

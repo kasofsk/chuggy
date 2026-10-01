@@ -11,14 +11,16 @@
 -- one, and each such migration names it because nothing else can.
 --
 -- WHAT IT KEEPS is everything a project IS rather than everything it has DONE:
--- the project rows and their lifecycles, configuration revisions and the
--- repository configurations drawn from them, bound repositories and the
--- operations that bound them, forge installations and the authority that
--- claimed them, the deployment authoring policy, the selector's project and
--- runtime settings with their histories, worker pools and their registration
--- tokens, the execution cluster, the capacity entitlements drawn on it,
--- admitted workers and the recovery epochs. Re-onboarding a project is not part
--- of the release, so none of that is in the list below.
+-- the tenants, the project rows, their lifecycles, the operations that
+-- created them and the record that their grants were written, configuration
+-- revisions and the repository configurations drawn from them, bound
+-- repositories and the operations that bound them, forge installations and
+-- the authority that claimed them, the deployment authoring policy, the
+-- selector's project and runtime settings with their histories, worker pools
+-- and their registration tokens, the execution cluster, the capacity
+-- entitlements drawn on it, admitted workers and the recovery epochs.
+-- Re-onboarding a project is not part of the release, so none of that is in
+-- the list below.
 --
 -- WHY THE SEEDED SINGLETONS ARE NOT IN IT. `thread_wake_cursor`,
 -- `selector_inventory_state` and `selector_runtime_readiness` hold one row

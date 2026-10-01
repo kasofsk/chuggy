@@ -91,6 +91,14 @@ import type {
   ProjectRepositoryRetirementResult,
 } from "../../interpreter/repositoryOnboarding.ts";
 import type { Partition, TenantId } from "../../interpreter/projectStore.ts";
+import type {
+  ProjectCreationField,
+  ProjectCreationResult,
+} from "../../interpreter/projectCreation.ts";
+import {
+  projectNameCharsMax,
+  reservedTenantNames,
+} from "../../contract/requests.ts";
 import type { DraftBrief } from "../../interpreter/ticketBrief.ts";
 import type { RepositoryConfigurationImportOutcome } from "../../interpreter/repositoryConfiguration.ts";
 import { nativeHttpError, nativeHttpMediaType } from "../../contract/http.ts";
@@ -970,6 +978,81 @@ export function forgeRepositoriesResponse(
       return notFound();
     case "Unavailable":
       return retry(503, authorityRetryAfterSeconds, "ForgeUnavailable");
+    default:
+      return assertNever(result);
+  }
+}
+
+/** Why a name was refused, by the field it is in. */
+const projectNameInvalidCodes: Readonly<Record<ProjectCreationField, string>> =
+  {
+    tenant: "TenantNameInvalid",
+    project: "ProjectNameInvalid",
+  };
+
+/**
+ * A creation. A tenant another principal holds is a conflict rather than a
+ * missing resource, because a tenant name is first-come and not a secret.
+ */
+export function projectCreationResponse(
+  result: ProjectCreationResult,
+): NativeHttpResponse {
+  switch (result.result) {
+    case "Created":
+      return response(201, result.partition, {
+        location: tenantResourcePath(
+          result.partition.tenant,
+          "projects",
+          result.partition.project,
+        ),
+      });
+    case "AlreadyCreated":
+      return response(200, result.partition);
+    case "ProjectExists":
+      return response(
+        409,
+        nativeHttpError(
+          "ProjectExists",
+          "The tenant already has a project of that name.",
+        ),
+      );
+    case "TenantTaken":
+      return response(
+        409,
+        nativeHttpError("TenantTaken", "Another principal holds the tenant."),
+      );
+    case "OperationConflict":
+      return response(
+        409,
+        nativeHttpError(
+          "OperationConflict",
+          "The operation identity names a different request.",
+        ),
+      );
+    case "NameInvalid":
+      return response(
+        422,
+        nativeHttpError(
+          projectNameInvalidCodes[result.field],
+          `A ${result.field} name is at most ${String(projectNameCharsMax)} lowercase letters, digits and hyphens, beginning and ending with a letter or digit.`,
+        ),
+      );
+    case "TenantReserved":
+      return response(
+        422,
+        nativeHttpError(
+          "TenantNameReserved",
+          `A new tenant may not be named ${reservedTenantNames.join(", ")}.`,
+        ),
+      );
+    case "NotConfigured":
+      return response(
+        404,
+        nativeHttpError(
+          "ProjectCreationNotConfigured",
+          "This deployment creates no projects.",
+        ),
+      );
     default:
       return assertNever(result);
   }

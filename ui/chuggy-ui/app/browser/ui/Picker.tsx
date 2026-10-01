@@ -1,5 +1,6 @@
 /**
- * One choice out of a short roster, drawn as a menu of radio items.
+ * One choice out of a short roster, drawn as a menu of radio items, and any
+ * action that belongs beside the roster under it.
  *
  * `modal={false}` keeps `react-remove-scroll` out of the tree: it appends a
  * `<style>` element the served `style-src 'self'` refuses.
@@ -18,6 +19,12 @@ export interface PickerOption {
   readonly text: string;
 }
 
+/** An item under the roster that does something rather than choosing a value. */
+export interface PickerAction {
+  readonly text: string;
+  readonly onSelect: () => void;
+}
+
 export function Picker(props: {
   readonly label: string;
   readonly value: string;
@@ -27,6 +34,7 @@ export function Picker(props: {
   /** What the trigger says while the held value is none of the options, so a
    * choice nobody has made yet reads as one rather than as a blank control. */
   readonly placeholder?: string;
+  readonly actions?: readonly PickerAction[];
 }): ReactNode {
   const chosen = props.options.find(
     (candidate) => candidate.value === props.value,
@@ -56,6 +64,23 @@ export function Picker(props: {
               </DropdownMenu.RadioItem>
             ))}
           </DropdownMenu.RadioGroup>
+          {props.actions === undefined || props.actions.length === 0 ? null : (
+            <>
+              {props.options.length === 0 ? null : (
+                <DropdownMenu.Separator className="bg-edge my-1 h-px" />
+              )}
+              {props.actions.map((action) => (
+                <DropdownMenu.Item
+                  key={action.text}
+                  className={menuItemClassName}
+                  onSelect={action.onSelect}
+                >
+                  <span className="picker-gutter" />
+                  {action.text}
+                </DropdownMenu.Item>
+              ))}
+            </>
+          )}
         </MenuContent>
       </DropdownMenu.Portal>
     </DropdownMenu.Root>

@@ -1,6 +1,6 @@
 /**
- * `ProjectAccess` answered by Ory Keto's read API, and the readiness probe
- * beside it.
+ * `ProjectAccess` answered by Ory Keto's read API, with the tenant claims a
+ * creation asks of the same API and the readiness probe beside them.
  *
  * A CHECK IS ONE QUESTION AND THE ANSWER IS ONE FLAG. The permit a kind asks
  * for and the object a partition is addressed by are the interpreter's, so this
@@ -30,7 +30,10 @@ import {
   type ProjectAccessSettings,
 } from "../../interpreter/projectAccess.ts";
 import type { Authority } from "../../interpreter/operationInbox.ts";
+import type { TenantClaims } from "../../interpreter/projectCreation.ts";
+import { projectTenantRelation } from "../../interpreter/projectGrant.ts";
 import type { Principal } from "../../interpreter/principal.ts";
+import { ketoSubjectSetRelation } from "./projectGrants.ts";
 import { ketoRequest } from "./request.ts";
 
 /** The read API's check, whose query names the tuple being asked about. */
@@ -51,6 +54,18 @@ function ketoAllowed(answered: unknown, what: string): boolean {
   )
     throw new ProjectAccessUnavailable(`${what} answered no verdict`);
   return answered.allowed;
+}
+
+/** Whether a listing holds any tuple, which is all a claim asks of it. */
+function ketoListed(answered: unknown): boolean {
+  if (
+    typeof answered !== "object" ||
+    answered === null ||
+    !("relation_tuples" in answered) ||
+    !Array.isArray(answered.relation_tuples)
+  )
+    throw new ProjectAccessUnavailable("the tuple listing answered no tuples");
+  return answered.relation_tuples.length > 0;
 }
 
 /** The check URL for one tuple, which is the only shape either question takes. */
@@ -104,6 +119,44 @@ export function ketoProjectAccess(
         projectAccessTenantObject(tenant),
         tenantAccessPermits[access],
       ),
+  };
+}
+
+/** A tenant is claimed by a tuple on its own object or by a project naming it as its tenant. */
+export function ketoTenantClaims(
+  settings: ProjectAccessSettings,
+  fetcher: typeof fetch = fetch,
+): TenantClaims {
+  const listed = async (
+    query: Readonly<Record<string, string>>,
+  ): Promise<boolean> => {
+    const url = new URL(ketoTuplesPath, settings.readUrl);
+    for (const [name, value] of Object.entries(query))
+      url.searchParams.set(name, value);
+    url.searchParams.set("page_size", "1");
+    return ketoListed(
+      await ketoRequest({
+        url,
+        method: "GET",
+        requestTimeoutMs: settings.requestTimeoutMs,
+        fetcher,
+      }),
+    );
+  };
+  return {
+    claimed: async (tenant) => {
+      const object = projectAccessTenantObject(tenant);
+      return (
+        (await listed({ namespace: projectAccessTenantNamespace, object })) ||
+        (await listed({
+          namespace: projectAccessNamespace,
+          relation: projectTenantRelation,
+          "subject_set.namespace": projectAccessTenantNamespace,
+          "subject_set.object": object,
+          "subject_set.relation": ketoSubjectSetRelation,
+        }))
+      );
+    },
   };
 }
 
