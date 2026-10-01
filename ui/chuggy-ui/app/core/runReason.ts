@@ -10,10 +10,12 @@
 import type { ExecutionResponse } from "../../../../src/contract/responses.ts";
 import { runSummaryOf } from "./runSummary.ts";
 
+type ExecutionAttempt = ExecutionResponse["attempts"][number];
+
 /** The most characters a row's reason draws before it is cut short. */
 export const runReasonCharsMax = 120;
 
-/** The most characters of a reason kept whole, for hover. */
+/** The most characters of a reason kept whole, for hover and the run's details. */
 export const runReasonFullCharsMax = 2_000;
 
 /** A worker's reason as a row draws it, and whole. */
@@ -22,15 +24,25 @@ export interface RunReason {
   readonly full: string;
 }
 
-/** The newest attempt, where it ended without a result and its worker left text saying why. */
+/** Whether an attempt ended without a result and its worker left text saying why. */
+export function runReasonLeft(
+  attempt: ExecutionAttempt,
+  result: ExecutionResponse["result"],
+): boolean {
+  return (
+    attempt.error !== undefined &&
+    runSummaryOf(attempt, result).summary === "Ended"
+  );
+}
+
+/** The newest attempt, where it left a reason. */
 export function runReasonAttempt(
   execution: ExecutionResponse,
 ): string | undefined {
   const newest = [...execution.attempts]
     .sort((left, right) => left.number - right.number)
     .at(-1);
-  if (newest?.error === undefined) return undefined;
-  return runSummaryOf(newest, execution.result).summary === "Ended"
+  return newest !== undefined && runReasonLeft(newest, execution.result)
     ? newest.attempt
     : undefined;
 }

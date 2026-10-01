@@ -147,13 +147,11 @@
     padding: var(--space-2) 0 var(--space-3);
   }
 
-  /* One line under the row, however long the text it was given. */
+  /* Wraps rather than clips: the text it is given is already cut short. */
   .ledger-reason {
     grid-column: 1 / -1;
     min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    overflow-wrap: anywhere;
     color: var(--ink-2);
     font-size: var(--text-sm);
   }

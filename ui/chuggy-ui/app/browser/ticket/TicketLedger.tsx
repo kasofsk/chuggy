@@ -24,17 +24,13 @@ import type {
   ExecutionSummary,
   ExecutionsResponse,
 } from "../../../../../src/contract/responses.ts";
-import {
-  apiExecution,
-  apiExecutions,
-  apiRunError,
-} from "../../core/apiRoutes.ts";
+import { apiExecution, apiExecutions } from "../../core/apiRoutes.ts";
 import { spanFigure, spendFigures, whenFigure } from "../../core/figures.ts";
 import type { Spend } from "../../core/figures.ts";
 import { executionRequirementLabel } from "../../core/labels.ts";
 import { projectListFolded } from "../../core/projectQueryKeys.ts";
 import type { ProjectListChange } from "../../core/projectQueryKeys.ts";
-import { runReasonAttempt, runReasonOf } from "../../core/runReason.ts";
+import { runReasonAttempt } from "../../core/runReason.ts";
 import { generationLabel, runSpendOf } from "../../core/runTotals.ts";
 import { runTranscriptAttempt } from "../../core/runTranscript.ts";
 import { ticketExecutionsFolded } from "../../core/ticketExecutions.ts";
@@ -59,6 +55,7 @@ import {
 import { stageArm, verdictTone } from "../../core/tones.ts";
 import { usePanelList, usePanelResource } from "../api.ts";
 import { DataPanel } from "../DataPanel.tsx";
+import { useRunReason } from "../RunEvidence.tsx";
 import { RunConversationFollowed } from "../RunTranscript.tsx";
 import { ExecutionDetail } from "../TicketExecutions.tsx";
 import { EmptyState } from "../ui/EmptyState.tsx";
@@ -226,15 +223,7 @@ function RunReasonLine(props: {
   readonly execution: string;
   readonly attempt: string;
 }): ReactNode {
-  const { partition, execution, attempt } = props;
-  const state = usePanelResource(
-    partition,
-    "Execution",
-    `${execution}/attempts/${attempt}/error`,
-    (ports) => apiRunError(ports, partition, execution, attempt),
-  );
-  const reason =
-    state.state === "Ready" ? runReasonOf(state.value.content) : undefined;
+  const reason = useRunReason(props.partition, props.execution, props.attempt);
   return reason === undefined ? null : (
     <LedgerReason line={reason.line} full={reason.full} />
   );

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 
 import { postgresOperationalReads } from "../../src/adapters/postgres/operationalReads.ts";
+import { nativeHttpPageItemsMax } from "../../src/contract/http.ts";
 import { workerPlaneRole } from "../../src/adapters/postgres/schema.ts";
 import {
   postgresWorkerRunTotal,
@@ -392,21 +393,24 @@ test("a ticket's executions are read and paged in task order", async () => {
   );
 });
 
-test("an execution's attempts are read in the order they were opened", async () => {
-  const project = await schedulerProject(rig, "operational-attempt-order");
+/** Opens `opened` attempts of one execution, losing all but the last. */
+async function operationalAttemptsOpened(
+  label: string,
+  opened: number,
+): Promise<{ project: SchedulerProject; execution: ExecutionId }> {
+  const project = await schedulerProject(rig, label);
   await rig.store.registerSpawn(
     await schedulerClaimFor(
       rig,
       project.partition,
       project.request,
-      schedulerOwner("operational-attempt-order"),
+      schedulerOwner(label),
     ),
     executionSchedulerDefaults.nTasks,
     schedulerInCluster,
   );
   const admitted = await rig.store.admit(project.cluster);
   assert.ok(admitted.admitted === "Admitted");
-  const opened = 11;
   for (let number = 1; number <= opened; number += 1) {
     const attempt = await rig.store.openAttempt({
       partition: project.partition,
@@ -428,14 +432,48 @@ test("an execution's attempts are read in the order they were opened", async () 
       [project.partition.tenant, project.partition.project, admitted.execution],
     );
   }
+  return { project, execution: admitted.execution };
+}
+
+test("an execution's attempts are read in the order they were opened", async () => {
+  const opened = 11;
+  const { project, execution } = await operationalAttemptsOpened(
+    "operational-attempt-order",
+    opened,
+  );
   const detail = await postgresOperationalReads(ingress).execution(
     project.partition,
-    admitted.execution,
+    execution,
   );
   assert.deepEqual(
     detail?.attempts.map((attempt) => attempt.number),
     Array.from({ length: opened }, (_unused, index) => index + 1),
   );
+});
+
+/**
+ * A pool execution nobody claims reopens an attempt every lease, so one left
+ * waiting overnight has more attempts than a page holds; the page keeps the
+ * newest, which are the ones a run's reason and state are read from.
+ */
+test("an execution with more attempts than a page reads its newest, in the order they were opened", async () => {
+  const opened = nativeHttpPageItemsMax + 2;
+  const { project, execution } = await operationalAttemptsOpened(
+    "operational-attempt-newest",
+    opened,
+  );
+  const detail = await postgresOperationalReads(ingress).execution(
+    project.partition,
+    execution,
+  );
+  assert.deepEqual(
+    detail?.attempts.map((attempt) => attempt.number),
+    Array.from(
+      { length: nativeHttpPageItemsMax },
+      (_unused, index) => opened - nativeHttpPageItemsMax + index + 1,
+    ),
+  );
+  assert.equal(detail?.attempts.at(-1)?.state, "Placing");
 });
 
 /** Opens an execution's next attempt now, past the backoff its last loss set. */

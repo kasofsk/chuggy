@@ -122,7 +122,7 @@ export interface LedgerRowProps {
   readonly when?: FigureValue | undefined;
   readonly spent?: Spend | undefined;
   readonly note?: ReactNode | undefined;
-  /** Why the row's run ended, drawn as one line beneath it. */
+  /** Why the row's run ended, drawn beneath it. */
   readonly reason?: ReactNode | undefined;
   readonly ghost?: boolean;
   readonly changed?: boolean;
@@ -163,7 +163,7 @@ function LedgerRowExpands(props: {
   );
 }
 
-/** A row's reason: text cut to one line, its whole on hover. */
+/** A row's reason: text already cut short, its whole on hover. */
 export function LedgerReason(props: {
   readonly line: string;
   readonly full: string;

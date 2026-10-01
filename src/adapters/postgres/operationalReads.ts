@@ -44,7 +44,10 @@ import {
   type ArtifactRole,
 } from "../../interpreter/resultManifest.ts";
 import type { ExecutionRunResource } from "../../interpreter/runEvidence.ts";
-import { workerErrorPath } from "../../contract/http.ts";
+import {
+  nativeHttpPageItemsMax,
+  workerErrorPath,
+} from "../../contract/http.ts";
 import { projectRowCounter } from "./rows.ts";
 import {
   postgresAttemptRuns,
@@ -424,17 +427,20 @@ async function attempts(
   execution: ExecutionId,
 ): Promise<readonly ExecutionAttemptResource[]> {
   const found = await pool.query<AttemptViewRow>(
-    sql`SELECT a.attempt,a.attempt_number::text AS attempt_number,
-               a.generation::text AS generation,a.state,a.opened_at::text AS opened_at,
-               a.ended_at::text AS ended_at,a.evidence,r.bytes::text AS error_bytes
-          FROM execution_attempt a
-          LEFT JOIN worker_artifact_reservation r
-            ON r.tenant=a.tenant AND r.project=a.project
-           AND r.execution=a.execution AND r.attempt=a.attempt
-           AND r.path=${workerErrorPath}
-         WHERE a.tenant=${partition.tenant} AND a.project=${partition.project}
-           AND a.execution=${execution}
-         ORDER BY a.attempt_number LIMIT 100`,
+    sql`SELECT n.attempt,n.attempt_number::text AS attempt_number,
+               n.generation::text AS generation,n.state,n.opened_at::text AS opened_at,
+               n.ended_at::text AS ended_at,n.evidence,n.error_bytes::text AS error_bytes
+          FROM (SELECT a.attempt,a.attempt_number,a.generation,a.state,a.opened_at,
+                       a.ended_at,a.evidence,r.bytes AS error_bytes
+                  FROM execution_attempt a
+                  LEFT JOIN worker_artifact_reservation r
+                    ON r.tenant=a.tenant AND r.project=a.project
+                   AND r.execution=a.execution AND r.attempt=a.attempt
+                   AND r.path=${workerErrorPath}
+                 WHERE a.tenant=${partition.tenant} AND a.project=${partition.project}
+                   AND a.execution=${execution}
+                 ORDER BY a.attempt_number DESC LIMIT ${nativeHttpPageItemsMax}) n
+         ORDER BY n.attempt_number`,
   );
   const runs = await postgresAttemptRuns(pool, partition, execution);
   return found.rows.map((row) => attemptResource(row, runs.get(row.attempt)));
