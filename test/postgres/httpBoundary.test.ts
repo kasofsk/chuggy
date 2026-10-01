@@ -186,7 +186,7 @@ async function ingressLead(
     [partition.tenant, partition.project, lead, "principal-lead"],
   );
   await harness.query(
-    `SELECT enqueue_session_turn($1,$2,$3,$4,'Observation','observe')`,
+    `SELECT enqueue_session_turn($1,$2,$3,$4,'Observation','observe','InCluster')`,
     [partition.tenant, partition.project, lead, turn],
   );
   await harness.query(

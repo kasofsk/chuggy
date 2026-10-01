@@ -9397,7 +9397,7 @@ async function sessionPlacementRefusals(subject: pg.Pool): Promise<void> {
   );
 }
 
-test("031 places every project's sessions in cluster, publishes no routing, and leaves a later project to the default", async () => {
+test("031 places every project's sessions and queued turns in cluster, publishes no routing, and leaves a later project to the default", async () => {
   await migrationDatabase("session_placement", async (subject) => {
     const doors = [
       `${sessionRouteFunction}(text,text,text)`,
@@ -9408,9 +9408,32 @@ test("031 places every project's sessions in cluster, publishes no routing, and 
     await subject.query(
       `${tenantSeed("tenant-31")}
        INSERT INTO project(tenant,project,lifecycle) VALUES
-         ('tenant-31','project-a','Active'),('tenant-31','project-b','Active')`,
+         ('tenant-31','project-a','Active'),('tenant-31','project-b','Active');
+       INSERT INTO execution_cluster(cluster,slots_max,policy_revision)
+       VALUES('cluster-31',1,1);
+       INSERT INTO capacity_account(account,cluster,reserved,maximum,policy_revision)
+       VALUES('account-31','cluster-31',0,1,1);
+       INSERT INTO agent_session
+         (tenant,project,session,kind,principal,capabilities,credential_slot,account,cluster)
+       VALUES('tenant-31','project-a','session-31','Lead','principal-31','{}',
+              'slot-31','account-31','cluster-31');
+       INSERT INTO session_turn(tenant,project,session,turn,ordinal,input_kind,input)
+       VALUES('tenant-31','project-a','session-31','turn-31',1,'Observation','{}')`,
     );
     assert.ok((await postgresMigrate(subject)).includes(migration031.version));
+    assert.deepEqual(
+      (await subject.query(`SELECT turn, route FROM session_turn`)).rows,
+      [{ turn: "turn-31", route: "InCluster" }],
+      "a turn queued before the routes ran in cluster",
+    );
+    await assert.rejects(
+      subject.query(
+        `INSERT INTO session_turn(tenant,project,session,turn,ordinal,input_kind,input)
+         VALUES('tenant-31','project-a','session-31','turn-31-b',2,'Observation','{}')`,
+      ),
+      /null value in column "route"/u,
+      "a turn no door stamped was queued",
+    );
     await subject.query(
       `INSERT INTO project(tenant,project,lifecycle) VALUES('tenant-31','project-c','Active')`,
     );

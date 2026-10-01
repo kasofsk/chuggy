@@ -32,6 +32,7 @@
  * deliberately does not make.
  */
 
+import type { PlacementRoute } from "../contract/rosters.ts";
 import type {
   SessionId,
   SessionState,
@@ -108,6 +109,8 @@ export interface LeadInquiryStore {
     readonly turn: SessionTurnId;
     /** The composed `InquiryDocument` text, which the definer stores and never reads. */
     readonly question: string;
+    /** The route the turn was admitted on, which it keeps whatever the lead's route becomes. */
+    readonly route: PlacementRoute;
   }): Promise<LeadInquiryOpened>;
 }
 

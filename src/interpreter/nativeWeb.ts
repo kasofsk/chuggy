@@ -130,7 +130,7 @@ import type { ProjectAccess, ProjectAccessKind } from "./projectAccess.ts";
 import type { Authority } from "./operationInbox.ts";
 import type { SelectorOperationalContext } from "./selector.ts";
 import {
-  sessionSpendGranted,
+  sessionSpendRoute,
   type SessionRouteReads,
 } from "./sessionPlacement.ts";
 import type { SelectorOperationalContextRead } from "./selectorOperationalContext.ts";
@@ -1471,13 +1471,13 @@ function nativeOpenThreadMethod(
     const authority = await access.authorize(principal, partition, "Mutate");
     if (authority === undefined) return { result: "NotFound" };
     if (
-      !(await sessionSpendGranted(
+      (await sessionSpendRoute(
         access,
         composedSessionRoutes(routes),
         principal,
         partition,
         "Thread",
-      ))
+      )) === undefined
     )
       return { result: "HostedRunsNotGranted" };
     const ports = composedThreadPorts(threads);
@@ -1525,9 +1525,9 @@ function nativeHostedRunsMethod(
  * The message door, which is `Mutate` and reaches the caller's own mailbox
  * alone: the session the URL names is checked against the one the caller's
  * principal resolves to, so the page a member is reading and the mailbox their
- * message lands in cannot come apart. A turn runs wherever the thread's route
- * resolves when it is placed, so the route and the grant it needs are asked at
- * every send, not only when the thread opened.
+ * message lands in cannot come apart. Each turn is stamped with the route it
+ * was admitted on and runs there, so the route and the grant it needs are asked
+ * at every send, not only when the thread opened.
  */
 function nativeSendThreadMessageMethod(
   access: ProjectAccess,
@@ -1537,16 +1537,14 @@ function nativeSendThreadMessageMethod(
   return async (principal, partition, input) => {
     const authority = await access.authorize(principal, partition, "Mutate");
     if (authority === undefined) return { result: "NotFound" };
-    if (
-      !(await sessionSpendGranted(
-        access,
-        composedSessionRoutes(routes),
-        principal,
-        partition,
-        "Thread",
-      ))
-    )
-      return { result: "HostedRunsNotGranted" };
+    const route = await sessionSpendRoute(
+      access,
+      composedSessionRoutes(routes),
+      principal,
+      partition,
+      "Thread",
+    );
+    if (route === undefined) return { result: "HostedRunsNotGranted" };
     const ports = composedThreadPorts(threads);
     const message = checkedThreadMessage(input.message);
     const mine = await ports.threads.standing({
@@ -1573,6 +1571,7 @@ function nativeSendThreadMessageMethod(
         session: input.session,
         turn: input.turn,
         input: turnInput,
+        route,
       }),
       input.session,
       input.turn,
@@ -1884,16 +1883,14 @@ function nativeLeadInquiryMethods(
     askLead: async (principal, partition, input) => {
       const authority = await access.authorize(principal, partition, "Read");
       if (authority === undefined) return { result: "NotFound" };
-      if (
-        !(await sessionSpendGranted(
-          access,
-          composedSessionRoutes(routes),
-          principal,
-          partition,
-          "Inquiry",
-        ))
-      )
-        return { result: "HostedRunsNotGranted" };
+      const route = await sessionSpendRoute(
+        access,
+        composedSessionRoutes(routes),
+        principal,
+        partition,
+        "Inquiry",
+      );
+      if (route === undefined) return { result: "HostedRunsNotGranted" };
       return leadInquiryAsked(
         await composed().open({
           partition,
@@ -1904,6 +1901,7 @@ function nativeLeadInquiryMethods(
             question: input.question,
             asker: authority.subject,
           }),
+          route,
         }),
         input.session,
         input.turn,

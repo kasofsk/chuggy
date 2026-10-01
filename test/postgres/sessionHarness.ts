@@ -52,8 +52,10 @@ import {
 import { postgresSessionScheduler } from "../../src/adapters/postgres/sessionScheduler.ts";
 import {
   schedulerRole,
+  sessionPlacementSetFunction,
   workerPlaneRole,
 } from "../../src/adapters/postgres/schema.ts";
+import type { PlacementRoute } from "../../src/contract/rosters.ts";
 import {
   postgresHarnessOpen,
   postgresHarnessProject,
@@ -172,6 +174,33 @@ export async function sessionRigTurn(
       `session rig: enqueuing ${label} answered ${enqueued.enqueued}`,
     );
   return turn;
+}
+
+/** Routes a project's threads and its lead, as an administrator's write would. */
+export async function sessionRigRouted(
+  rig: SessionRig,
+  partition: Partition,
+  thread: PlacementRoute,
+  lead: PlacementRoute,
+): Promise<void> {
+  await rig.harness.query(
+    `SELECT ${sessionPlacementSetFunction}($1,$2,$3,$4,'Member','an-owner')`,
+    [partition.tenant, partition.project, thread, lead],
+  );
+}
+
+/** The route each of a session's turns was admitted on, oldest first. */
+export async function sessionRigTurnRoutes(
+  rig: SessionRig,
+  partition: Partition,
+  session: SessionId,
+): Promise<readonly string[]> {
+  const rows = await rig.harness.query(
+    `SELECT route FROM session_turn
+      WHERE tenant=$1 AND project=$2 AND session=$3 ORDER BY ordinal`,
+    [partition.tenant, partition.project, session],
+  );
+  return rows.map((row) => String(row["route"]));
 }
 
 /** A bearer no other case holds, and the digest the durable side keys it by. */

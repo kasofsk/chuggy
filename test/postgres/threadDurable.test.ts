@@ -326,6 +326,7 @@ test("a thread closes through the API's door, its waiting turns abandoned, and s
       session: thread.session,
       turn: asSessionTurnId(threadRigTurnId(`close-${each}`)),
       input: each,
+      route: "InCluster",
     });
 
   const closed = await rig.threads.close({
@@ -361,6 +362,7 @@ test("a thread closes through the API's door, its waiting turns abandoned, and s
         session: thread.session,
         turn: asSessionTurnId(threadRigTurnId("close-after")),
         input: "after the close",
+        route: "InCluster",
       })
     ).enqueued,
     "Closed",
@@ -506,6 +508,7 @@ test("a member names their own thread, and clearing the name gives the message b
     session: thread.session,
     turn: asSessionTurnId(threadRigTurnId("rename")),
     input: "why is 42 blocked?",
+    route: "InCluster",
   });
 
   const named = await rig.threads.rename({
@@ -553,6 +556,7 @@ test("a whitespace-only title clears the override rather than storing it", async
     session: thread.session,
     turn: asSessionTurnId(threadRigTurnId("rename-blank")),
     input: "why is 42 blocked?",
+    route: "InCluster",
   });
 
   for (const title of ["\n\n", "\r", "\r\n", " \t\r\n "]) {
@@ -744,6 +748,7 @@ test("the listing orders open threads by when they last moved", async () => {
     session: older.session,
     turn: asSessionTurnId(threadRigTurnId("order")),
     input: "why is 42 blocked?",
+    route: "InCluster",
   });
 
   assert.deepEqual(
@@ -793,6 +798,7 @@ test("a thread's activity is its opening, its turns and its close", async () => 
     session: thread.session,
     turn: asSessionTurnId(threadRigTurnId("activity")),
     input: "why is 42 blocked?",
+    route: "InCluster",
   });
   assert.ok(
     (await threadListedActivity(partition)) > opened,
@@ -891,6 +897,7 @@ test("a closed thread does not block a new one", async () => {
       session: second.session,
       turn: asSessionTurnId(threadRigTurnId("reopened")),
       input: "into the one that is open",
+      route: "InCluster",
     }),
     { enqueued: "Enqueued", session: second.session, ordinal: 1 },
     "a member with an open thread and a closed one is heard by the open one",
@@ -990,6 +997,7 @@ test("a principal with no thread of its own is told there is none", async () => 
       session: rig.minting.session(),
       turn: asSessionTurnId(threadRigTurnId("nothread")),
       input: "anyone there",
+      route: "InCluster",
     }),
     { enqueued: "NoThread" },
   );
@@ -1007,6 +1015,7 @@ test("the same turn twice is the same ordinal, and one past the backlog is refus
       session: thread.session,
       turn: asSessionTurnId(turn),
       input,
+      route: "InCluster",
     });
 
   const repeated = threadRigTurnId("repeat");
@@ -1066,6 +1075,7 @@ test("a message naming a session the caller does not own is refused by the door"
       session: theirs.session,
       turn: asSessionTurnId(threadRigTurnId("named-other")),
       input: "into someone else's",
+      route: "InCluster",
     }),
     { enqueued: "NotYourThread" },
   );
@@ -1079,6 +1089,7 @@ test("a message naming a session the caller does not own is refused by the door"
       session: ours.session,
       turn: asSessionTurnId(threadRigTurnId("named-stale")),
       input: "into the one I read about",
+      route: "InCluster",
     }),
     { enqueued: "NotYourThread" },
     "a stale listing must not enqueue a first turn into a thread that was reopened",
@@ -1110,6 +1121,7 @@ test("a retried turn keeps the input it was enqueued with", async () => {
       session: thread.session,
       turn,
       input,
+      route: "InCluster",
     });
 
   assert.equal((await message("what I asked")).enqueued, "Enqueued");
@@ -1144,6 +1156,7 @@ test("a retried turn is already enqueued before it is backlogged", async () => {
       session: thread.session,
       turn: asSessionTurnId(turn),
       input: "the first thing",
+      route: "InCluster",
     });
 
   const repeated = threadRigTurnId("retryfull-first");
@@ -1178,6 +1191,7 @@ test("a closed thread takes no message", async () => {
       session: thread.session,
       turn: asSessionTurnId(threadRigTurnId("closed")),
       input: "still there",
+      route: "InCluster",
     }),
     { enqueued: "Closed" },
   );
@@ -1201,6 +1215,7 @@ test("a thread the project no longer admits its owner to is listed unchanged", a
       session: thread.session,
       turn: asSessionTurnId(threadRigTurnId("orphan")),
       input: "am I still here",
+      route: "InCluster",
     }),
     { enqueued: "Enqueued", session: thread.session, ordinal: 1 },
   );
@@ -1263,6 +1278,7 @@ test("the two mailbox doors write the two input kinds and no other", async () =>
     session: thread.session,
     turn: asSessionTurnId(threadRigTurnId("typed")),
     input: "typed by a member",
+    route: "InCluster",
   });
   const woken = await rig.wakes.wake({
     partition,
@@ -1275,6 +1291,7 @@ test("the two mailbox doors write the two input kinds and no other", async () =>
         at: "2026-09-02T12:00:00.000Z",
       }),
     ),
+    route: "InCluster",
   });
   assert.deepEqual(woken, { woken: "Woken", ordinal: 2 });
 
@@ -1308,6 +1325,7 @@ test("a wake offered twice is the same ordinal and no second turn", async () => 
       principal: member.principal,
       turn,
       input: document,
+      route: "InCluster",
     });
   assert.deepEqual(await offering(), { woken: "Woken", ordinal: 1 });
   assert.deepEqual(await offering(), { woken: "AlreadyWoken", ordinal: 1 });
@@ -1331,6 +1349,7 @@ test("a thread turn's change frame names the session the console must re-read", 
     session: thread.session,
     turn: asSessionTurnId(turn),
     input: "watch this land",
+    route: "InCluster",
   });
 
   const rows = await rig.sessions.harness.query(
@@ -1355,6 +1374,7 @@ test("the mailbox is paged backwards and answers the cursor of the older page", 
       session: thread.session,
       turn: asSessionTurnId(threadRigTurnId(each)),
       input: each,
+      route: "InCluster",
     });
 
   const newest = await rig.threads.standing({
@@ -1402,6 +1422,7 @@ test("a thread that has taken no turn still reads, and a turn carries what was s
     session: thread.session,
     turn: asSessionTurnId(threadRigTurnId("said")),
     input: "what a member typed",
+    route: "InCluster",
   });
   const said = await rig.threads.standing({
     partition,
@@ -1442,6 +1463,7 @@ test("both reads answer the first member message, seeding shed and bounded", asy
         at: "2026-09-02T12:00:00.000Z",
       }),
     ),
+    route: "InCluster",
   });
   assert.equal(
     (await listed())?.firstMessage,
@@ -1461,6 +1483,7 @@ test("both reads answer the first member message, seeding shed and bounded", asy
       drafts: [],
       refusals: [],
     }),
+    route: "InCluster",
   });
   await rig.threads.enqueueMessage({
     partition,
@@ -1468,6 +1491,7 @@ test("both reads answer the first member message, seeding shed and bounded", asy
     session: thread.session,
     turn: asSessionTurnId(threadRigTurnId("firstsaid-two")),
     input: "a later message names nothing",
+    route: "InCluster",
   });
 
   const head = said.slice(0, threadTitleCharsMax);
@@ -1499,6 +1523,7 @@ test("a first message is found after the older marker and after none", async () 
       `${threadStandingHeading}\n\n- You draft, and nothing else.\n${threadTurnRecordedLastLine}`,
       said,
     ].join("\n\n"),
+    route: "InCluster",
   });
   await rig.threads.enqueueMessage({
     partition,
@@ -1506,6 +1531,7 @@ test("a first message is found after the older marker and after none", async () 
     session: bareThread.session,
     turn: asSessionTurnId(threadRigTurnId("olderfirst-bare")),
     input: said,
+    route: "InCluster",
   });
 
   const listing = await rig.threads.threads(partition, threadsAnsweredMax);
@@ -2051,7 +2077,7 @@ test("each door 062 declares is the role's it was granted to and no other's", as
   await onlyTheseRolesMay(
     [apiRole],
     threadMessageEnqueueFunction,
-    `SELECT ${threadMessageEnqueueFunction}(${named},'session-grants','turn-grants','hello')`,
+    `SELECT ${threadMessageEnqueueFunction}(${named},'session-grants','turn-grants','hello','InCluster')`,
   );
   await onlyTheseRolesMay(
     [apiRole],
@@ -2076,7 +2102,7 @@ test("each door 062 declares is the role's it was granted to and no other's", as
   await onlyTheseRolesMay(
     [selectorServiceRole],
     threadWakeFunction,
-    `SELECT ${threadWakeFunction}(${named},'turn-wake-grants','{}')`,
+    `SELECT ${threadWakeFunction}(${named},'turn-wake-grants','{}','InCluster')`,
   );
   await onlyTheseRolesMay(
     [selectorServiceRole],

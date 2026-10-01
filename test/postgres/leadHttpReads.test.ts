@@ -78,7 +78,12 @@ async function claimedLead(label: string) {
     kind: "Lead",
   });
   const turn = sessionRigTurnId(label);
-  await rig.mailbox.offer({ partition, turn, input: '{"version":1}' });
+  await rig.mailbox.offer({
+    partition,
+    turn,
+    input: '{"version":1}',
+    route: "InCluster",
+  });
   const attempt = await sessionRigAttempt(
     rig.sessions,
     partition,

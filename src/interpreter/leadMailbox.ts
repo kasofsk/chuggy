@@ -28,6 +28,7 @@
  * with no provenance rather than a decision that spent nothing.
  */
 
+import type { PlacementRoute } from "../contract/rosters.ts";
 import type {
   SessionId,
   SessionState,
@@ -105,6 +106,8 @@ export interface LeadMailbox {
     readonly partition: Partition;
     readonly turn: SessionTurnId;
     readonly input: string;
+    /** The route the turn was admitted on, which it keeps whatever the lead's route becomes. */
+    readonly route: PlacementRoute;
   }): Promise<LeadTurnOffered>;
   /** Keyed by the turn alone, which is globally unique and joined to the lead. */
   turn(turn: SessionTurnId): Promise<LeadTurnStanding | undefined>;

@@ -157,6 +157,7 @@ function threadStore(doubles: ThreadDoubles): ThreadStore {
     },
     enqueueMessage: (input) => {
       doubles.calls.push(`enqueue:${input.turn}:${input.input}`);
+      doubles.calls.push(`enqueue-route:${input.route}`);
       return Promise.resolve(doubles.enqueued);
     },
     close: ({ session }) => {
@@ -845,7 +846,7 @@ test("a message needs the tenant's hosted grant at every send, and nothing is en
   );
 });
 
-test("a thread routed to the member's runner opens and takes a message without the hosted grant", async () => {
+test("a thread routed to the member's runner opens and takes a message without the hosted grant, stamped for the runner", async () => {
   const { web, held } = boundary({}, ["Read", "Mutate"], "Pool");
 
   assert.equal((await web.openThread(geoff, partition)).result, "Opened");
@@ -857,6 +858,7 @@ test("a thread routed to the member's runner opens and takes a message without t
 
   assert.equal(sent.result, "Sent");
   assert.ok(!held.calls.includes("authorizeTenant:ExecuteHosted"));
+  assert.ok(held.calls.includes("enqueue-route:Pool"));
 });
 
 test("a message to my own thread is enqueued and answers its ordinal", async () => {
@@ -874,6 +876,7 @@ test("a message to my own thread is enqueued and answers its ordinal", async () 
     ordinal: 7,
   });
   assert.ok(held.calls.includes("enqueue:thread-turn-1:have a look at 42"));
+  assert.ok(held.calls.includes("enqueue-route:InCluster"));
   assert.ok(held.calls.includes("authorize:Mutate"));
 });
 

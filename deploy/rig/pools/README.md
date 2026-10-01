@@ -16,9 +16,10 @@ later moves only what registers after it.
 
 A session is routed by `CHUG_SCHEDULER_SESSION_POLICY`'s `routes`, on `Thread`
 and `Lead`, and its `projectRoutes`, over the project's own session placement;
-an inquiry runs where the lead does. The route is resolved each time a turn
-waits to be placed, so a placement changed later moves the next turn, and the
-cluster does not place a session routed `Pool`.
+an inquiry runs where the lead does. A turn keeps the route it was admitted
+on, so a placement changed later moves the next turn admitted and never one
+already queued, and the cluster places and claims only turns admitted
+`InCluster`.
 
 A pool is handed a placement and nothing about the work, so its harness
 fetches the task from the worker plane under the attempt bearer, as it fetches

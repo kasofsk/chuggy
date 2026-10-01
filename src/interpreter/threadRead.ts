@@ -50,6 +50,7 @@ import {
   threadTurnsAnsweredMax,
   threadsAnsweredMax,
 } from "../contract/http.ts";
+import type { PlacementRoute } from "../contract/rosters.ts";
 import { resolvedThreadStandingRules } from "../contract/threadSeeding.ts";
 import type {
   SessionId,
@@ -234,6 +235,8 @@ export interface ThreadStore {
     readonly session: SessionId;
     readonly turn: SessionTurnId;
     readonly input: string;
+    /** The route the turn was admitted on, which it keeps whatever the thread's route becomes. */
+    readonly route: PlacementRoute;
   }): Promise<ThreadMessageEnqueued>;
   /** Closes the thread named, abandoning the turns it still held; a closed thread stays readable. */
   close(input: {

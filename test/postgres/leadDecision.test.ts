@@ -427,7 +427,7 @@ test("the refusal reaches the stream and the project's standing read", async () 
 test("a withdrawn turn cannot be answered, and reconciles with a proof", async () => {
   const { partition, session } = await leadProject("withdrawn");
   const turn = sessionRigTurnId("withdrawn");
-  await rig.mailbox.offer({ partition, turn, input: "{}" });
+  await rig.mailbox.offer({ partition, turn, input: "{}", route: "InCluster" });
   const attempt = await sessionRigAttempt(
     rig.sessions,
     partition,

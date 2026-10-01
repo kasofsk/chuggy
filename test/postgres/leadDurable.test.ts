@@ -144,6 +144,7 @@ test("a project whose only session is a thread has no lead to offer a turn to", 
       partition,
       turn: sessionRigTurnId("thread-only"),
       input: anObservation,
+      route: "InCluster",
     }),
     { offered: "NoLead" },
     "the selector may reach one session per project and a thread is not it",
@@ -157,12 +158,14 @@ test("one decision offers one turn however often it is retried", async () => {
     partition,
     turn,
     input: anObservation,
+    route: "InCluster",
   });
   assert.equal(first.offered, "Enqueued");
   const again = await rig.mailbox.offer({
     partition,
     turn,
     input: anObservation,
+    route: "InCluster",
   });
   assert.deepEqual(again, {
     offered: "AlreadyEnqueued",
@@ -188,6 +191,7 @@ test("a closed lead takes no more turns", async () => {
       partition,
       turn: sessionRigTurnId("closed"),
       input: anObservation,
+      route: "InCluster",
     }),
     { offered: "Closed" },
   );
@@ -196,7 +200,12 @@ test("a closed lead takes no more turns", async () => {
 test("an answered turn reports what the pod measured of it", async () => {
   const { partition, session } = await leadProject("measured");
   const turn = sessionRigTurnId("measured");
-  await rig.mailbox.offer({ partition, turn, input: anObservation });
+  await rig.mailbox.offer({
+    partition,
+    turn,
+    input: anObservation,
+    route: "InCluster",
+  });
   const attempt = await leadPod(partition, session, "measured");
   const claimed = await rig.sessions.plane.claim({
     secret: attempt.secret,
@@ -236,7 +245,12 @@ test("an answered turn reports what the pod measured of it", async () => {
 test("a turn answered without a measurement carries none", async () => {
   const { partition, session } = await leadProject("unmeasured");
   const turn = sessionRigTurnId("unmeasured");
-  await rig.mailbox.offer({ partition, turn, input: anObservation });
+  await rig.mailbox.offer({
+    partition,
+    turn,
+    input: anObservation,
+    route: "InCluster",
+  });
   const attempt = await leadPod(partition, session, "unmeasured");
   await rig.sessions.plane.claim({
     secret: attempt.secret,
@@ -263,7 +277,12 @@ test("a turn answered without a measurement carries none", async () => {
 test("a half-written measurement is refused by the constraint", async () => {
   const { partition, session } = await leadProject("half-measured");
   const turn = sessionRigTurnId("half-measured");
-  await rig.mailbox.offer({ partition, turn, input: anObservation });
+  await rig.mailbox.offer({
+    partition,
+    turn,
+    input: anObservation,
+    route: "InCluster",
+  });
   const attempt = await leadPod(partition, session, "half-measured");
   await rig.sessions.plane.claim({
     secret: attempt.secret,
@@ -290,7 +309,12 @@ test("a half-written measurement is refused by the constraint", async () => {
 test("more tool names than a turn may report is refused by the constraint", async () => {
   const { partition, session } = await leadProject("tool-bound");
   const turn = sessionRigTurnId("tool-bound");
-  await rig.mailbox.offer({ partition, turn, input: anObservation });
+  await rig.mailbox.offer({
+    partition,
+    turn,
+    input: anObservation,
+    route: "InCluster",
+  });
   const attempt = await leadPod(partition, session, "tool-bound");
   await rig.sessions.plane.claim({
     secret: attempt.secret,
@@ -320,7 +344,12 @@ test("more tool names than a turn may report is refused by the constraint", asyn
 test("a withdrawn turn is abandoned and the pod holding it is refused", async () => {
   const { partition, session } = await leadProject("withdraw");
   const turn = sessionRigTurnId("withdraw");
-  await rig.mailbox.offer({ partition, turn, input: anObservation });
+  await rig.mailbox.offer({
+    partition,
+    turn,
+    input: anObservation,
+    route: "InCluster",
+  });
   const attempt = await leadPod(partition, session, "withdraw");
   assert.equal(
     (
@@ -366,7 +395,12 @@ test("a withdrawn turn is abandoned and the pod holding it is refused", async ()
 test("the API reads the lead, its mailbox tail and the streams beneath it", async () => {
   const { partition, session } = await leadProject("api-read");
   const turn = sessionRigTurnId("api-read");
-  await rig.mailbox.offer({ partition, turn, input: anObservation });
+  await rig.mailbox.offer({
+    partition,
+    turn,
+    input: anObservation,
+    route: "InCluster",
+  });
   const attempt = await leadPod(partition, session, "api-read");
   await rig.sessions.plane.claim({
     secret: attempt.secret,
@@ -711,7 +745,12 @@ test("the API reassembles a decision whose resources outgrew one audit column", 
 test("a pod cannot name the withdrawal as its own failure", async () => {
   const { partition, session } = await leadProject("forged-withdrawal");
   const turn = sessionRigTurnId("forged-withdrawal");
-  await rig.mailbox.offer({ partition, turn, input: anObservation });
+  await rig.mailbox.offer({
+    partition,
+    turn,
+    input: anObservation,
+    route: "InCluster",
+  });
   const attempt = await leadPod(partition, session, "forged-withdrawal");
   await rig.sessions.plane.claim({
     secret: attempt.secret,
@@ -742,7 +781,12 @@ test("a pod cannot name the withdrawal as its own failure", async () => {
 test("a restarted process withdraws a turn it holds no partition for", async () => {
   const { partition, session } = await leadProject("restart");
   const turn = sessionRigTurnId("restart");
-  await rig.mailbox.offer({ partition, turn, input: anObservation });
+  await rig.mailbox.offer({
+    partition,
+    turn,
+    input: anObservation,
+    route: "InCluster",
+  });
   const attempt = await leadPod(partition, session, "restart");
   await rig.sessions.plane.claim({
     secret: attempt.secret,
@@ -833,7 +877,12 @@ test("a turn answer and a batch record each append one session change", async ()
   const { partition, session } = await leadProject("session-change");
   const log = postgresProjectChangeLog(rig.sessions.harness.pool);
   const turn = sessionRigTurnId("session-change");
-  await rig.mailbox.offer({ partition, turn, input: anObservation });
+  await rig.mailbox.offer({
+    partition,
+    turn,
+    input: anObservation,
+    route: "InCluster",
+  });
   const {
     attempt,
     stream,
@@ -935,7 +984,12 @@ test("neither mailbox door reaches a turn that is not a lead's", async () => {
 test("an answer retried with a re-derived measurement is the same answer", async () => {
   const { partition, session } = await leadProject("answer-retry");
   const turn = sessionRigTurnId("answer-retry");
-  await rig.mailbox.offer({ partition, turn, input: anObservation });
+  await rig.mailbox.offer({
+    partition,
+    turn,
+    input: anObservation,
+    route: "InCluster",
+  });
   const attempt = await leadPod(partition, session, "answer-retry");
   await rig.sessions.plane.claim({
     secret: attempt.secret,
@@ -983,7 +1037,12 @@ test("an answer retried with a re-derived measurement is the same answer", async
 test("a tool name longer than one may be reported is refused at the door", async () => {
   const { partition, session } = await leadProject("tool-name");
   const turn = sessionRigTurnId("tool-name");
-  await rig.mailbox.offer({ partition, turn, input: anObservation });
+  await rig.mailbox.offer({
+    partition,
+    turn,
+    input: anObservation,
+    route: "InCluster",
+  });
   const attempt = await leadPod(partition, session, "tool-name");
   await rig.sessions.plane.claim({
     secret: attempt.secret,
@@ -1030,8 +1089,14 @@ test("a session at its identity bound still makes a frame the stream can build",
   const log = postgresProjectChangeLog(rig.sessions.harness.pool);
   const before = await log.latest();
   assert.equal(
-    (await rig.mailbox.offer({ partition, turn, input: anObservation }))
-      .offered,
+    (
+      await rig.mailbox.offer({
+        partition,
+        turn,
+        input: anObservation,
+        route: "InCluster",
+      })
+    ).offered,
     "Enqueued",
   );
 
@@ -1058,7 +1123,12 @@ test("a session at its identity bound still makes a frame the stream can build",
 test("a tools array holding nothing where a name should be is refused", async () => {
   const { partition, session } = await leadProject("tool-null");
   const turn = sessionRigTurnId("tool-null");
-  await rig.mailbox.offer({ partition, turn, input: anObservation });
+  await rig.mailbox.offer({
+    partition,
+    turn,
+    input: anObservation,
+    route: "InCluster",
+  });
   const attempt = await leadPod(partition, session, "tool-null");
   await rig.sessions.plane.claim({
     secret: attempt.secret,
@@ -1117,8 +1187,14 @@ test("the widest session change a legal identity can make is a frame that parses
   const log = postgresProjectChangeLog(rig.sessions.harness.pool);
   const before = await log.latest();
   assert.equal(
-    (await rig.mailbox.offer({ partition, turn, input: anObservation }))
-      .offered,
+    (
+      await rig.mailbox.offer({
+        partition,
+        turn,
+        input: anObservation,
+        route: "InCluster",
+      })
+    ).offered,
     "Enqueued",
   );
 
@@ -1230,6 +1306,7 @@ test("a turn identity past what a stored row holds is refused", async () => {
         "t",
       ) as SessionTurnId,
       input: anObservation,
+      route: "InCluster",
     }),
     /session_turn_identity_is_bounded/u,
     "a turn nothing can read back is a lead page poisoned by one row",
@@ -1239,7 +1316,12 @@ test("a turn identity past what a stored row holds is refused", async () => {
 test("a model name past what the measure column holds is refused", async () => {
   const { partition, session } = await leadProject("model-bound");
   const turn = sessionRigTurnId("model-bound");
-  await rig.mailbox.offer({ partition, turn, input: anObservation });
+  await rig.mailbox.offer({
+    partition,
+    turn,
+    input: anObservation,
+    route: "InCluster",
+  });
   const attempt = await leadPod(partition, session, "model-bound");
   await rig.sessions.plane.claim({
     secret: attempt.secret,
@@ -1364,7 +1446,7 @@ test("the widest observation the parts admit is one the mailbox row holds", asyn
     `the widest observation is ${String(input.length)} characters, against a bound of ${String(sessionTurnInputCharsMax)}`,
   );
   assert.deepEqual(
-    await rig.mailbox.offer({ partition, turn, input }),
+    await rig.mailbox.offer({ partition, turn, input, route: "InCluster" }),
     { offered: "Enqueued", ordinal: 1 },
     "a document every bound admits is one the column must hold",
   );
@@ -1407,7 +1489,12 @@ test("every resource the session triggers write parses as the shape the wire exp
   const log = postgresProjectChangeLog(rig.sessions.harness.pool);
   const turn = sessionRigTurnId("resource-shape");
   const beforeTurn = await log.latest();
-  await rig.mailbox.offer({ partition, turn, input: anObservation });
+  await rig.mailbox.offer({
+    partition,
+    turn,
+    input: anObservation,
+    route: "InCluster",
+  });
   const turnChange = (await log.after(partition, beforeTurn, 10))[0];
   assert.ok(turnChange !== undefined, "the turn trigger appended nothing");
   assert.deepEqual(

@@ -938,3 +938,58 @@ test("a lead routed to the project's runners is admitted by a live one and asks 
     assert.deepEqual(authority.asked, [], "a runner route spends no grant");
   }
 });
+
+/** A mailbox double that also keeps the route each turn was offered on. */
+function routedMailbox(double: MailboxDouble): {
+  readonly double: MailboxDouble;
+  readonly routes: string[];
+} {
+  const routes: string[] = [];
+  return {
+    routes,
+    double: {
+      ...double,
+      mailbox: {
+        ...double.mailbox,
+        offer: (input) => {
+          routes.push(input.route);
+          return double.mailbox.offer(input);
+        },
+      },
+    },
+  };
+}
+
+test("a turn is offered on the route its lead was admitted on", async () => {
+  for (const [lead, project] of [
+    ["InCluster", "Unregistered"],
+    ["Pool", "Live"],
+  ] as const) {
+    const routed = routedMailbox(mailboxDouble());
+    await hostedPolicyOf(
+      routed.double,
+      hostedAuthority("Granted").access,
+      sessionRoutesAt({ Lead: lead }, { mine: "Unregistered", project }),
+    ).execute(request, new AbortController().signal);
+    assert.deepEqual(routed.routes, [lead]);
+  }
+});
+
+/** The runtime asks before it takes a permit, and the grant or the runner can go before the offer. */
+test("a lead no longer admitted when its turn is offered offers none", async () => {
+  for (const [answer, lead] of [
+    ["Refused", "InCluster"],
+    ["Granted", "Pool"],
+  ] as const) {
+    const double = mailboxDouble();
+    await assert.rejects(
+      hostedPolicyOf(
+        double,
+        hostedAuthority(answer).access,
+        sessionRoutesAt({ Lead: lead }),
+      ).execute(request, new AbortController().signal),
+      /may not take a turn/u,
+    );
+    assert.deepEqual(double.offers, []);
+  }
+});

@@ -327,8 +327,10 @@ from the session's own counter and the turn identity unique globally. It is
 changed by enqueuing, by a claim, by an answer or a failure, by an ending
 attempt returning it, and by a close abandoning it; a partial unique index
 admits one claimed turn per session, which is what makes the claim a lease
-rather than a convention. Unfinished work is found by selecting queued turns
-for a session in ordinal order, which is what a claim takes the lowest of.
+rather than a convention. Each turn carries the route it was admitted on,
+fixed at the enqueue. Unfinished work is found by selecting queued turns for a
+session in ordinal order, which is what a claim takes the lowest of, and only
+where that turn's route is the attempt's own.
 
 `session_store_batch` — one batch of one stream of a session's transcript,
 pointing at bytes that live on the artifacts volume. Owned by the boundary
@@ -406,5 +408,6 @@ default per kind and each project's override. It is a single row, keyed
 `singleton` and held to it by a CHECK, written by the scheduler at boot and
 read through `session_route`, which resolves a session's kind against it and
 `project_session_placement` and answers in cluster where no row was ever
-published. It has no unfinished work: the resolution is read every time a
-session waits for placement, so a newer publish moves what waits after it.
+published. It has no unfinished work: the resolution is read when a turn is
+admitted and stamped on it, so a newer publish moves what is admitted after
+it.

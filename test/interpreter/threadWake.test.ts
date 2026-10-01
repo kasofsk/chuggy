@@ -420,16 +420,33 @@ test("a thread whose principal the tenant grants no hosted runs is skipped unoff
   assert.deepEqual(access.refused, [member("unhosted").principal]);
 });
 
-test("a thread routed to its member's runner wakes without the hosted grant", async () => {
-  const log = [candidateAt(1, "unhosted", "TicketRefused", "Pool")];
+test("a thread routed to its member's runner wakes without the hosted grant, and each wake is stamped with its candidate's route", async () => {
+  const log = [
+    candidateAt(1, "unhosted", "TicketRefused", "Pool"),
+    candidateAt(2, "hosted"),
+  ];
   const store = referenceStore({ log });
   const access = referenceAccess({
     unhosted: new Set([member("unhosted").principal]),
   });
-  const report = await threadWakePass(serviceOf(store, undefined, access));
+  const stamped: string[] = [];
+  const report = await threadWakePass(
+    serviceOf(
+      {
+        ...store,
+        wake: (offer) => {
+          stamped.push(offer.route);
+          return store.wake(offer);
+        },
+      },
+      undefined,
+      access,
+    ),
+  );
 
-  assert.deepEqual(report, { read: 1, woken: 1, skipped: 0, cursor: 1 });
+  assert.deepEqual(report, { read: 2, woken: 2, skipped: 0, cursor: 2 });
   assert.deepEqual(access.refused, []);
+  assert.deepEqual(stamped, ["Pool", "InCluster"]);
 });
 
 test("an authority that could not answer the hosted grant holds the cursor too", async () => {

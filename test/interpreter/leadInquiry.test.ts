@@ -211,7 +211,7 @@ test("a reader the tenant grants no hosted runs reads every inquiry and asks non
   assert.deepEqual(asked, [], "a refused question still reached the store");
 });
 
-test("a reader the tenant grants no hosted runs asks a lead routed to the project's runners", async () => {
+test("a reader the tenant grants no hosted runs asks a lead routed to the project's runners, and the question is stamped for them", async () => {
   const asked: unknown[] = [];
   const web = webOver(storeAnswering({}, asked), accessHolding("Read"), "Pool");
   const asking = await web.askLead(reader, partition, {
@@ -220,7 +220,10 @@ test("a reader the tenant grants no hosted runs asks a lead routed to the projec
     question: "what stopped 14?",
   });
   assert.equal(asking.result, "Asked");
-  assert.equal(asked.length, 1);
+  assert.deepEqual(
+    asked.map((offered) => (offered as { readonly route: string }).route),
+    ["Pool"],
+  );
 });
 
 test("the question the door offers carries the standing rule and the asker", async () => {

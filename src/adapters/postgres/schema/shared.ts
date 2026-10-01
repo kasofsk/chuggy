@@ -53,6 +53,8 @@ export const sessionPlacementSetFunction = "set_project_session_placement";
 /** The one resolution of where a session kind runs for one project. */
 export const sessionRouteFunction = "session_route";
 export const sessionRunnerStandingFunction = "session_runner_standing";
+/** The route a session's oldest queued turn was admitted on, which is the only one that may run next. */
+export const sessionWaitingRouteFunction = "session_waiting_route";
 export const forgeInstallationRecordFunction = "record_forge_installation";
 export const draftCreateFunction = "create_draft";
 export const draftReviseFunction = "revise_draft";

@@ -13,17 +13,12 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { after, before, test } from "node:test";
 
-import { sessionPlacementSetFunction } from "../../src/adapters/postgres/schema.ts";
-import type { PlacementRoute } from "../../src/contract/rosters.ts";
 import type {
   AgentSession,
   SessionId,
   SessionTurnId,
 } from "../../src/interpreter/agentSession.ts";
-import {
-  asRecoveryEpoch,
-  type Partition,
-} from "../../src/interpreter/projectStore.ts";
+import { asRecoveryEpoch } from "../../src/interpreter/projectStore.ts";
 import { asPlacementId } from "../../src/interpreter/schedulerIdentity.ts";
 import type { FencedSessionAttempt } from "../../src/interpreter/sessionScheduler.ts";
 import { postgresHarnessNewEpoch, postgresHarnessProject } from "./harness.ts";
@@ -38,6 +33,8 @@ import {
   sessionRigSession,
   sessionRigTurn,
   sessionRigAttemptState,
+  sessionRigRouted,
+  sessionRigTurnRoutes,
   type SessionRig,
 } from "./sessionHarness.ts";
 
@@ -299,20 +296,14 @@ test("the read offers only sessions with queued work and no attempt already runn
   assert.equal(await offered(), false);
 });
 
-/** Routes a project's threads and its lead, as an administrator's write would. */
-async function routedTo(
-  partition: Partition,
-  thread: PlacementRoute,
-  lead: PlacementRoute,
-): Promise<void> {
-  await rig.harness.query(
-    `SELECT ${sessionPlacementSetFunction}($1,$2,$3,$4,'Member','an-owner')`,
-    [partition.tenant, partition.project, thread, lead],
-  );
-}
-
-test("the cluster offers a session only where its kind is routed in cluster", async () => {
+/**
+ * A provisioned turn is stamped with the route its kind resolves to when it is
+ * enqueued, and the read follows the oldest queued turn's stamp, so a route
+ * changed later moves only what is admitted after it.
+ */
+test("the cluster offers a session only where its oldest queued turn was admitted in cluster", async () => {
   const partition = await sessionRigProject(rig, "routed");
+  await sessionRigRouted(rig, partition, "Pool", "InCluster");
   const lead = await sessionRigSession(rig, partition, "routed-lead");
   await sessionRigTurn(rig, partition, lead, "routed-lead");
   const thread = await sessionRigSession(rig, partition, "routed-thread", {
@@ -323,13 +314,24 @@ test("the cluster offers a session only where its kind is routed in cluster", as
   const offered = async () =>
     (await rig.scheduler.awaitingPlacement(rig.epoch, sessionRigBoundless))
       .map((candidate: AgentSession) => candidate.session)
-      .filter((session) => session === lead || session === thread)
-      .toSorted();
-  assert.deepEqual(await offered(), [lead, thread].toSorted());
-  await routedTo(partition, "Pool", "InCluster");
+      .filter((session) => session === lead || session === thread);
   assert.deepEqual(await offered(), [lead]);
-  await routedTo(partition, "InCluster", "Pool");
-  assert.deepEqual(await offered(), [thread]);
+  await sessionRigRouted(rig, partition, "InCluster", "Pool");
+  assert.deepEqual(
+    await offered(),
+    [lead],
+    "a route changed after a turn was queued moved the turn",
+  );
+  await sessionRigTurn(rig, partition, thread, "routed-thread-later");
+  assert.deepEqual(await sessionRigTurnRoutes(rig, partition, thread), [
+    "Pool",
+    "InCluster",
+  ]);
+  assert.deepEqual(
+    await offered(),
+    [lead],
+    "a turn admitted in cluster was placed ahead of an older one admitted for a runner",
+  );
 });
 
 test("a per-account ceiling binds one account and leaves another project's alone", async () => {

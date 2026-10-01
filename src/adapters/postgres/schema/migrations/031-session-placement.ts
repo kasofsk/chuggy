@@ -1,6 +1,8 @@
 import {
   apiRole,
   boundaryOwnerRole,
+  leadInquiryOpenFunction,
+  leadTurnEnqueueFunction,
   schedulerRole,
   selectorServiceRole,
   sessionAttemptCleanupFunction,
@@ -10,6 +12,11 @@ import {
   sessionRouteFunction,
   sessionRunnerStandingFunction,
   sessionsAwaitingPlacementFunction,
+  sessionTurnClaimFunction,
+  sessionTurnEnqueueFunction,
+  sessionWaitingRouteFunction,
+  threadMessageEnqueueFunction,
+  threadWakeFunction,
   type Migration,
 } from "../shared.ts";
 
@@ -19,15 +26,34 @@ const route = `public.${sessionRouteFunction}(in_tenant text, in_project text, i
 
 const runnerStanding = `public.${sessionRunnerStandingFunction}(in_tenant text, in_project text, in_member text, in_polled_secs_max bigint)`;
 
+const turnEnqueue = `public.${sessionTurnEnqueueFunction}(in_tenant text, in_project text, in_session text, in_turn text, in_input_kind text, in_input text, in_route text)`;
+
+const leadTurnEnqueue = `public.${leadTurnEnqueueFunction}(in_tenant text, in_project text, in_turn text, in_input text, in_route text)`;
+
+const threadMessageEnqueue = `public.${threadMessageEnqueueFunction}(in_tenant text, in_project text, in_principal text, in_session text, in_turn text, in_input text, in_route text)`;
+
+const threadWake = `public.${threadWakeFunction}(in_tenant text, in_project text, in_principal text, in_turn text, in_input text, in_route text)`;
+
+const inquiryOpen = `public.${leadInquiryOpenFunction}(in_tenant text, in_project text, in_principal text, in_session text, in_turn text, in_question text, in_route text)`;
+
+const waitingRoute = `public.${sessionWaitingRouteFunction}(in_tenant text, in_project text, in_session text)`;
+
 const opened = `public.${sessionAttemptOpenFunction}(in_tenant text, in_project text, in_session text, in_epoch text, in_attempt text, in_bearer text, in_secret_digest text, in_lease_secs bigint, in_backoff_secs bigint, in_account_max bigint, in_cluster_max bigint, in_invocation jsonb)`;
 
 /**
  * Where a project's sessions run is the project's own row beside the routing
  * the scheduler publishes, and `session_route` is the one resolution of the
- * two that the cluster's pass, the API and the selector read. Every existing
- * project is backfilled in cluster with no setter; no routing row is seeded,
- * so a database no scheduler has published to resolves every session in
- * cluster, which is where every session ran before.
+ * two, which the API and the selector ask when they admit a turn. Every
+ * existing project is backfilled in cluster with no setter; no routing row is
+ * seeded, so a database no scheduler has published to resolves every session
+ * in cluster, which is where every session ran before.
+ *
+ * A turn carries the route it was admitted on: each door that enqueues one
+ * stamps the resolution it checked the hosted grant against, and a turn
+ * already queued keeps it. The cluster places a session, and its attempt claims
+ * a turn, only where the oldest queued turn was admitted in cluster, so a route
+ * changed later moves the next turn admitted and never one queued before it.
+ * Every turn queued before this migration ran in cluster and is stamped so.
  *
  * A session attempt gains the columns a pool holds one by, as an execution
  * attempt's in 002 and 022; the cluster's counts, observation and cleanup
@@ -187,6 +213,232 @@ export const migration031: Migration = {
          CHECK ((pool IS NULL) = (assignment IS NULL)),
        ADD CONSTRAINT session_attempt_pool_principal_is_a_pool_s
          CHECK ((pool IS NULL) = (pool_principal IS NULL))`,
+    `ALTER TABLE public.session_turn
+       ADD COLUMN route text NOT NULL DEFAULT 'InCluster'
+         CONSTRAINT session_turn_route_is_known
+         CHECK (route IN ('InCluster','Pool'))`,
+    `ALTER TABLE public.session_turn ALTER COLUMN route DROP DEFAULT`,
+    `DROP FUNCTION public.${leadTurnEnqueueFunction}(text,text,text,text)`,
+    `DROP FUNCTION public.${threadMessageEnqueueFunction}(text,text,text,text,text,text)`,
+    `DROP FUNCTION public.${threadWakeFunction}(text,text,text,text,text)`,
+    `DROP FUNCTION public.${leadInquiryOpenFunction}(text,text,text,text,text,text)`,
+    `DROP FUNCTION public.${sessionTurnEnqueueFunction}(text,text,text,text,text,text)`,
+    `CREATE FUNCTION ${turnEnqueue} RETURNS TABLE(enqueued text, ordinal bigint)
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'public', 'pg_temp'
+    AS $$
+     DECLARE held record; standing bigint; queued bigint; minted bigint;
+     BEGIN
+       SELECT s.state,s.turn_next INTO held FROM agent_session s
+        WHERE s.tenant=in_tenant AND project=in_project AND session=in_session FOR UPDATE;
+       IF NOT FOUND THEN
+         RAISE EXCEPTION 'there is no session % to enqueue a turn for', in_session
+           USING ERRCODE = 'integrity_constraint_violation';
+       END IF;
+       SELECT t.ordinal INTO standing FROM session_turn t
+        WHERE t.tenant=in_tenant AND project=in_project AND session=in_session AND t.turn=in_turn;
+       IF FOUND THEN
+         RETURN QUERY SELECT 'AlreadyEnqueued'::text,standing; RETURN;
+       END IF;
+       IF held.state<>'Open' THEN
+         RETURN QUERY SELECT 'Closed'::text,NULL::bigint; RETURN;
+       END IF;
+       SELECT count(*) INTO queued FROM session_turn t
+        WHERE t.tenant=in_tenant AND project=in_project AND session=in_session AND t.state='Queued';
+       IF queued>=256 THEN
+         RETURN QUERY SELECT 'Backlogged'::text,NULL::bigint; RETURN;
+       END IF;
+       UPDATE agent_session s SET turn_next=s.turn_next+1
+        WHERE s.tenant=in_tenant AND project=in_project AND session=in_session RETURNING s.turn_next-1 INTO minted;
+       INSERT INTO session_turn (tenant,project,session,turn,ordinal,input_kind,input,route)
+         VALUES(in_tenant,in_project,in_session,in_turn,minted,in_input_kind,in_input,in_route);
+       RETURN QUERY SELECT 'Enqueued'::text,minted;
+     END $$`,
+    `ALTER FUNCTION ${turnEnqueue} OWNER TO ${boundaryOwnerRole}`,
+    `REVOKE ALL ON FUNCTION ${turnEnqueue} FROM PUBLIC`,
+    `CREATE FUNCTION ${leadTurnEnqueue} RETURNS TABLE(enqueued text, ordinal bigint)
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'public', 'pg_temp'
+    AS $$
+     DECLARE held text; answered record;
+     BEGIN
+       SELECT s.session INTO held FROM agent_session s
+        WHERE s.tenant=in_tenant AND s.project=in_project
+          AND s.session=(SELECT candidate.session FROM agent_session candidate
+        WHERE candidate.tenant=in_tenant AND candidate.project=in_project
+          AND candidate.kind='Lead'
+        ORDER BY (candidate.state='Open') DESC,candidate.opened_at DESC,
+                 candidate.session DESC
+        LIMIT 1);
+       IF NOT FOUND THEN
+         RETURN QUERY SELECT 'NoLead'::text,NULL::bigint; RETURN;
+       END IF;
+       SELECT * INTO answered FROM enqueue_session_turn(
+         in_tenant,in_project,held,in_turn,'Observation',in_input,in_route);
+       RETURN QUERY SELECT answered.enqueued,answered.ordinal;
+     END $$`,
+    `ALTER FUNCTION ${leadTurnEnqueue} OWNER TO ${boundaryOwnerRole}`,
+    `REVOKE ALL ON FUNCTION ${leadTurnEnqueue} FROM PUBLIC`,
+    `GRANT EXECUTE ON FUNCTION ${leadTurnEnqueue} TO ${selectorServiceRole}`,
+    `CREATE FUNCTION ${threadMessageEnqueue} RETURNS TABLE(enqueued text, ordinal bigint, session text)
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'public', 'pg_temp'
+    AS $$
+     DECLARE held record; standing bigint; queued bigint; answered record;
+     BEGIN
+       SELECT s.session,s.state INTO held FROM agent_session s
+        WHERE s.tenant=in_tenant AND s.project=in_project
+          AND s.kind='Thread' AND s.principal=in_principal
+        ORDER BY (s.state='Open') DESC,s.opened_at DESC
+        LIMIT 1 FOR UPDATE;
+       IF NOT FOUND THEN
+         RETURN QUERY SELECT 'NoThread'::text,NULL::bigint,NULL::text; RETURN;
+       END IF;
+       IF held.session<>in_session THEN
+         RETURN QUERY SELECT 'NotYourThread'::text,NULL::bigint,held.session;
+         RETURN;
+       END IF;
+       IF held.state<>'Open' THEN
+         RETURN QUERY SELECT 'Closed'::text,NULL::bigint,held.session; RETURN;
+       END IF;
+       SELECT t.ordinal INTO standing FROM session_turn t
+        WHERE t.tenant=in_tenant AND t.project=in_project
+          AND t.session=held.session AND t.turn=in_turn;
+       IF FOUND THEN
+         RETURN QUERY SELECT 'AlreadyEnqueued'::text,standing,held.session; RETURN;
+       END IF;
+       SELECT count(*) INTO queued FROM session_turn t
+        WHERE t.tenant=in_tenant AND t.project=in_project
+          AND t.session=held.session AND t.state='Queued';
+       IF queued>=8 THEN
+         RETURN QUERY SELECT 'Backlogged'::text,NULL::bigint,held.session; RETURN;
+       END IF;
+       SELECT * INTO answered FROM enqueue_session_turn(
+         in_tenant,in_project,held.session,in_turn,'UserMessage',in_input,in_route);
+       RETURN QUERY SELECT CASE answered.enqueued
+                             WHEN 'Enqueued' THEN 'Enqueued'
+                             WHEN 'AlreadyEnqueued' THEN 'AlreadyEnqueued'
+                             ELSE answered.enqueued END,
+                          answered.ordinal,held.session;
+     END $$`,
+    `ALTER FUNCTION ${threadMessageEnqueue} OWNER TO ${boundaryOwnerRole}`,
+    `REVOKE ALL ON FUNCTION ${threadMessageEnqueue} FROM PUBLIC`,
+    `GRANT EXECUTE ON FUNCTION ${threadMessageEnqueue} TO ${apiRole}`,
+    `CREATE FUNCTION ${threadWake} RETURNS TABLE(enqueued text, ordinal bigint, session text)
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'public', 'pg_temp'
+    AS $$
+     DECLARE held record; standing bigint; queued bigint; answered record;
+     BEGIN
+       SELECT s.session,s.state INTO held FROM agent_session s
+        WHERE s.tenant=in_tenant AND s.project=in_project
+          AND s.kind='Thread' AND s.principal=in_principal
+        ORDER BY (s.state='Open') DESC,s.opened_at DESC
+        LIMIT 1 FOR UPDATE;
+       IF NOT FOUND THEN
+         RETURN QUERY SELECT 'NoThread'::text,NULL::bigint,NULL::text; RETURN;
+       END IF;
+       IF held.state<>'Open' THEN
+         RETURN QUERY SELECT 'Closed'::text,NULL::bigint,held.session; RETURN;
+       END IF;
+       SELECT t.ordinal INTO standing FROM session_turn t
+        WHERE t.tenant=in_tenant AND t.project=in_project
+          AND t.session=held.session AND t.turn=in_turn;
+       IF FOUND THEN
+         RETURN QUERY SELECT 'AlreadyWoken'::text,standing,held.session; RETURN;
+       END IF;
+       SELECT count(*) INTO queued FROM session_turn t
+        WHERE t.tenant=in_tenant AND t.project=in_project
+          AND t.session=held.session AND t.state='Queued';
+       IF queued>=8 THEN
+         RETURN QUERY SELECT 'Backlogged'::text,NULL::bigint,held.session; RETURN;
+       END IF;
+       SELECT * INTO answered FROM enqueue_session_turn(
+         in_tenant,in_project,held.session,in_turn,'Wake',in_input,in_route);
+       RETURN QUERY SELECT CASE answered.enqueued
+                             WHEN 'Enqueued' THEN 'Woken'
+                             WHEN 'AlreadyEnqueued' THEN 'AlreadyWoken'
+                             ELSE answered.enqueued END,
+                          answered.ordinal,held.session;
+     END $$`,
+    `ALTER FUNCTION ${threadWake} OWNER TO ${boundaryOwnerRole}`,
+    `REVOKE ALL ON FUNCTION ${threadWake} FROM PUBLIC`,
+    `GRANT EXECUTE ON FUNCTION ${threadWake} TO ${selectorServiceRole}`,
+    `CREATE FUNCTION ${inquiryOpen} RETURNS TABLE(opened text, ordinal bigint, session text)
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'public', 'pg_temp'
+    AS $_$
+     DECLARE standing bigint; parent record; head bigint; held bigint; answered record;
+     BEGIN
+       SELECT t.ordinal INTO standing FROM session_turn t
+         JOIN agent_session s ON s.tenant=t.tenant AND s.project=t.project
+                             AND s.session=t.session
+        WHERE s.tenant=in_tenant AND s.project=in_project AND s.session=in_session
+          AND s.kind='Inquiry' AND s.principal=in_principal AND t.turn=in_turn;
+       IF FOUND THEN
+         RETURN QUERY SELECT 'AlreadyOpen'::text,standing,in_session; RETURN;
+       END IF;
+       SELECT s.session,s.state,s.agent_reference,s.credential_slot,
+              s.account,s.cluster,s.system_prompt
+         INTO parent FROM agent_session s
+        WHERE s.tenant=in_tenant AND s.project=in_project
+          AND s.session=(SELECT candidate.session FROM agent_session candidate
+        WHERE candidate.tenant=in_tenant AND candidate.project=in_project
+          AND candidate.kind='Lead'
+        ORDER BY (candidate.state='Open') DESC,candidate.opened_at DESC,
+                 candidate.session DESC
+        LIMIT 1)
+        FOR UPDATE;
+       IF NOT FOUND THEN
+         RETURN QUERY SELECT 'NoLead'::text,NULL::bigint,NULL::text; RETURN;
+       END IF;
+       IF parent.state<>'Open' THEN
+         RETURN QUERY SELECT 'LeadClosed'::text,NULL::bigint,parent.session; RETURN;
+       END IF;
+       SELECT (SELECT coalesce(max(t.batch_last),0) FROM session_turn t
+                WHERE t.tenant=in_tenant AND t.project=in_project AND t.session=parent.session
+                  AND t.state IN ('Answered','Failed')) INTO head;
+       IF parent.agent_reference IS NULL OR head=0 THEN
+         RETURN QUERY SELECT 'LeadNotStarted'::text,NULL::bigint,parent.session;
+         RETURN;
+       END IF;
+       SELECT count(*) INTO held FROM agent_session s
+        WHERE s.tenant=in_tenant AND s.project=in_project
+          AND s.kind='Inquiry' AND s.principal=in_principal AND s.state='Open';
+       IF held>=2 THEN
+         RETURN QUERY SELECT 'InFlight'::text,NULL::bigint,NULL::text; RETURN;
+       END IF;
+       INSERT INTO agent_session
+         (tenant,project,session,kind,principal,parent_session,capabilities,
+          credential_slot,account,cluster,system_prompt)
+       VALUES(in_tenant,in_project,in_session,'Inquiry',in_principal,parent.session,
+              ARRAY['ProjectRead']::text[],parent.credential_slot,parent.account,parent.cluster,
+              parent.system_prompt || $inquiry_objectives$
+
+# Why this session exists
+
+You are a fork of this project's lead, opened to answer one question a member
+asked aside. Answer it from what the lead already holds, and stop.
+
+This is a question asked aside: nothing you say here reaches the lead's record, and no tool you hold writes.$inquiry_objectives$);
+       SELECT * INTO answered FROM enqueue_session_turn(
+         in_tenant,in_project,in_session,in_turn,'Inquiry',in_question,in_route);
+       RETURN QUERY SELECT 'Opened'::text,answered.ordinal,in_session;
+     END $_$`,
+    `ALTER FUNCTION ${inquiryOpen} OWNER TO ${boundaryOwnerRole}`,
+    `REVOKE ALL ON FUNCTION ${inquiryOpen} FROM PUBLIC`,
+    `GRANT EXECUTE ON FUNCTION ${inquiryOpen} TO ${apiRole}`,
+    `CREATE FUNCTION ${waitingRoute} RETURNS text
+    LANGUAGE sql STABLE
+    SET search_path TO 'pg_catalog', 'public', 'pg_temp'
+    AS $$
+       SELECT t.route FROM session_turn t
+        WHERE t.tenant=in_tenant AND t.project=in_project
+          AND t.session=in_session AND t.state='Queued'
+        ORDER BY t.ordinal LIMIT 1
+     $$`,
+    `ALTER FUNCTION ${waitingRoute} OWNER TO ${boundaryOwnerRole}`,
+    `REVOKE ALL ON FUNCTION ${waitingRoute} FROM PUBLIC`,
     `CREATE OR REPLACE FUNCTION public.${sessionsAwaitingPlacementFunction}(in_epoch text, in_max bigint) RETURNS TABLE(tenant text, project text, session text, kind text, principal text, parent_session text, agent_reference text, capabilities text[], credential_slot text, account text, cluster text, state text)
     LANGUAGE sql STABLE SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'public', 'pg_temp'
@@ -196,13 +448,10 @@ export const migration031: Migration = {
          FROM agent_session s
         WHERE s.state='Open'
           AND in_epoch=(SELECT epoch FROM recovery_epoch ORDER BY ordinal DESC LIMIT 1)
-          AND EXISTS(SELECT 1 FROM session_turn t
-                      WHERE t.tenant=s.tenant AND t.project=s.project
-                        AND t.session=s.session AND t.state='Queued')
+          AND ${sessionWaitingRouteFunction}(s.tenant,s.project,s.session)='InCluster'
           AND NOT EXISTS(SELECT 1 FROM session_attempt a
                       WHERE a.tenant=s.tenant AND a.project=s.project
                         AND a.session=s.session AND a.state IN ('Placing','Running'))
-          AND (SELECT r.route FROM ${sessionRouteFunction}(s.tenant,s.project,s.kind) r)='InCluster'
         ORDER BY s.tenant,s.project,s.session
         LIMIT in_max
      $$`,
@@ -245,8 +494,7 @@ export const migration031: Migration = {
        IF NOT FOUND OR held.state<>'Open'
           OR EXISTS(SELECT 1 FROM session_attempt a
                      WHERE a.tenant=in_tenant AND project=in_project AND session=in_session AND a.state IN ('Placing','Running'))
-          OR NOT EXISTS(SELECT 1 FROM session_turn t
-                     WHERE t.tenant=in_tenant AND project=in_project AND session=in_session AND t.state='Queued') THEN
+          OR ${sessionWaitingRouteFunction}(in_tenant,in_project,in_session) IS DISTINCT FROM 'InCluster' THEN
          RETURN QUERY SELECT 'NotLaunchable'::text,NULL::text,NULL::bigint; RETURN;
        END IF;
        IF EXISTS(SELECT 1 FROM session_attempt a
@@ -278,6 +526,42 @@ export const migration031: Migration = {
               in_attempt,now()+make_interval(secs => in_lease_secs::double precision),
               in_bearer,in_secret_digest,in_invocation);
        RETURN QUERY SELECT 'Opened'::text,in_attempt,1::bigint;
+     END $$`,
+    `CREATE OR REPLACE FUNCTION public.${sessionTurnClaimFunction}(in_secret_digest text, in_generation bigint) RETURNS TABLE(turn text, ordinal bigint, input_kind text, input text)
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'public', 'pg_temp'
+    AS $$
+     DECLARE bound record; standing record; picked record;
+     BEGIN
+       SELECT * INTO bound FROM session_attempt_binding(
+         in_secret_digest,in_generation);
+       IF NOT FOUND THEN RETURN; END IF;
+       SELECT t.turn,t.ordinal,t.input_kind,t.input,t.attempt INTO standing
+         FROM session_turn t WHERE t.tenant=bound.tenant AND project=bound.project AND session=bound.session AND t.state='Claimed' FOR UPDATE;
+       IF FOUND THEN
+         IF standing.attempt=bound.attempt THEN
+           RETURN QUERY SELECT standing.turn,standing.ordinal,
+                               standing.input_kind,standing.input;
+         END IF;
+         RETURN;
+       END IF;
+       SELECT t.turn,t.ordinal,t.input_kind,t.input,t.route INTO picked FROM session_turn t
+        WHERE t.tenant=bound.tenant AND project=bound.project AND session=bound.session AND t.state='Queued'
+        ORDER BY t.ordinal LIMIT 1 FOR UPDATE;
+       IF NOT FOUND THEN RETURN; END IF;
+       IF picked.route IS DISTINCT FROM (
+            SELECT CASE WHEN a.pool IS NULL THEN 'InCluster' ELSE 'Pool' END
+              FROM session_attempt a
+             WHERE a.tenant=bound.tenant AND a.project=bound.project
+               AND a.session=bound.session AND a.attempt=bound.attempt) THEN
+         RETURN;
+       END IF;
+       UPDATE session_turn t
+          SET state='Claimed',attempt=bound.attempt,claim_generation=in_generation,
+              claimed_at=now()
+        WHERE t.tenant=bound.tenant AND project=bound.project AND session=bound.session AND t.turn=picked.turn;
+       UPDATE session_attempt a SET idle_since=NULL WHERE a.attempt=bound.attempt;
+       RETURN QUERY SELECT picked.turn,picked.ordinal,picked.input_kind,picked.input;
      END $$`,
   ],
 };

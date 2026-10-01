@@ -58,6 +58,7 @@ import {
   postgresHarnessStalled,
 } from "./harness.ts";
 import { leadRigDecision } from "./leadHarness.ts";
+import { sessionRigRouted, sessionRigTurnRoutes } from "./sessionHarness.ts";
 import {
   threadRigMember,
   threadRigOpen,
@@ -332,6 +333,7 @@ test("the wake door wakes a thread the project no longer admits its owner to", a
           at: instant,
         }),
       ),
+      route: "InCluster",
     }),
     { woken: "Woken", ordinal: 1 },
   );
@@ -536,6 +538,39 @@ test("a change that commits while the door waits is a change the thread was open
  * would be an await inside it — so what proves the join is a project holding
  * rules of its own and a document that says them.
  */
+/**
+ * A thread and its project's lead may run apart, and the wake is a thread's
+ * turn: the grant is asked of the thread's route and the turn keeps it, so a
+ * member the tenant grants no hosted runs is woken on their runner.
+ */
+test("a wake is admitted on the thread's own route rather than the lead's, and the turn keeps it", async () => {
+  const partition = await threadRigProject(rig, "wakeroute");
+  const member = threadRigMember(rig, partition, "wakeroute");
+  rig.sessions.harness.access.grantTenant({
+    tenant: partition.tenant,
+    principal: member.principal,
+    access: new Set(),
+  });
+  await sessionRigRouted(rig.sessions, partition, "Pool", "InCluster");
+  const thread = await threadRigThread(rig, partition, member);
+  const revision = await configuration(partition);
+  const ticket = await draft(partition, revision, member);
+  await fromTheHead();
+  await refuse(partition, "wakeroute", ticket);
+
+  const report = await threadWakePass(service(threadWakesPerPassMax));
+  assert.deepEqual(report, {
+    read: 1,
+    woken: 1,
+    skipped: 0,
+    cursor: report.cursor,
+  });
+  assert.deepEqual(
+    await sessionRigTurnRoutes(rig.sessions, partition, thread.session),
+    ["Pool"],
+  );
+});
+
 test("a project's own standing rules reach the wake through the candidate", async () => {
   const partition = await threadRigProject(rig, "wakestanding");
   const member = threadRigMember(rig, partition, "wakestanding");

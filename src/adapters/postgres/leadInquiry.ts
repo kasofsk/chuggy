@@ -24,6 +24,7 @@
 import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
 
+import type { PlacementRoute } from "../../contract/rosters.ts";
 import {
   allSessionStates,
   allSessionTurnFailures,
@@ -165,6 +166,7 @@ async function leadInquiryOpen(
     readonly session: SessionId;
     readonly turn: SessionTurnId;
     readonly question: string;
+    readonly route: PlacementRoute;
   },
 ): Promise<LeadInquiryOpened> {
   const answered = await pool.query<{
@@ -176,7 +178,7 @@ async function leadInquiryOpen(
           FROM open_lead_inquiry(
             ${input.partition.tenant},${input.partition.project},
             ${input.principal},${input.session},
-            ${input.turn},${input.question})`,
+            ${input.turn},${input.question},${input.route})`,
   );
   const row = answered.rows[0];
   if (row === undefined)

@@ -120,6 +120,8 @@ export interface ThreadWakeStore {
     readonly principal: Principal;
     readonly turn: SessionTurnId;
     readonly input: string;
+    /** The route the wake was admitted on, which it keeps whatever the thread's route becomes. */
+    readonly route: PlacementRoute;
   }): Promise<ThreadWakeOffered>;
   advance(sequence: number): Promise<number>;
 }
@@ -247,6 +249,7 @@ async function threadWakesOffered(
       partition: candidate.partition,
       principal: candidate.principal,
       turn: threadWakeTurn(candidate),
+      route: candidate.route,
       input: threadWakeText(
         threadWakeDocument({
           wake: candidate.reason,

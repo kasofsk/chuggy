@@ -511,7 +511,7 @@ test("the selector process refuses to start without every door a decision opens"
         if (text.includes('current_user'))
           return { rows: [{ current_role: 'chuggy_selector_service' }] };
         return { rows: [
-          { door: 'enqueue_lead_turn(text,text,text,text)', permitted },
+          { door: 'enqueue_lead_turn(text,text,text,text,text)', permitted },
           { door: 'read_lead_turn(text)', permitted: true },
         ] };
       },

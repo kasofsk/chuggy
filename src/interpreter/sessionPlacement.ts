@@ -144,20 +144,22 @@ export function sessionPlacementAdministration(
   };
 }
 
-/** Whether a member may spend a session of this kind on the project, asked of the route it resolves to now. */
-export async function sessionSpendGranted(
+/**
+ * The route a member may spend a turn of this kind on now, or nothing where it
+ * is hosted and the tenant does not grant them hosted runs. The turn is stamped
+ * with this route, so the grant is asked of the resolution the turn keeps.
+ */
+export async function sessionSpendRoute(
   access: ProjectAccess,
   routes: Pick<SessionRouteReads, "route">,
   principal: Principal,
   partition: Partition,
   kind: SessionKind,
-): Promise<boolean> {
-  return placementRouteGranted(
-    access,
-    principal,
-    partition,
-    (await routes.route(partition, kind)).route,
-  );
+): Promise<PlacementRoute | undefined> {
+  const { route } = await routes.route(partition, kind);
+  return (await placementRouteGranted(access, principal, partition, route))
+    ? route
+    : undefined;
 }
 
 export const allLeadAdmissions = [
@@ -166,6 +168,11 @@ export const allLeadAdmissions = [
   "RunnerOffline",
 ] as const;
 export type LeadAdmission = (typeof allLeadAdmissions)[number];
+
+/** A lead's admission, carrying the route an admitted turn is stamped with. */
+export type LeadRouteAdmission =
+  | { readonly admission: "Admitted"; readonly route: PlacementRoute }
+  | { readonly admission: Exclude<LeadAdmission, "Admitted"> };
 
 /**
  * Whether a project's lead may take a turn now: on a hosted route the tenant
@@ -178,13 +185,13 @@ export async function leadAdmission(
   routes: SessionRouteReads,
   principal: Principal,
   partition: Partition,
-): Promise<LeadAdmission> {
-  const resolved = await routes.route(partition, "Lead");
-  if (placementRouteHosted[resolved.route])
+): Promise<LeadRouteAdmission> {
+  const { route } = await routes.route(partition, "Lead");
+  if (placementRouteHosted[route])
     return (await hostedRunsGranted(access, principal, partition.tenant))
-      ? "Admitted"
-      : "HostedRunsNotGranted";
+      ? { admission: "Admitted", route }
+      : { admission: "HostedRunsNotGranted" };
   return (await routes.runners(partition, undefined)).project === "Live"
-    ? "Admitted"
-    : "RunnerOffline";
+    ? { admission: "Admitted", route }
+    : { admission: "RunnerOffline" };
 }

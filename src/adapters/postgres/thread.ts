@@ -26,7 +26,10 @@
 import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
 
-import { placementRoutes } from "../../contract/rosters.ts";
+import {
+  placementRoutes,
+  type PlacementRoute,
+} from "../../contract/rosters.ts";
 import {
   allSessionStates,
   asSessionId,
@@ -342,6 +345,7 @@ async function threadEnqueue(
     readonly session: SessionId;
     readonly turn: SessionTurnId;
     readonly input: string;
+    readonly route: PlacementRoute;
   },
 ): Promise<ThreadMessageEnqueued> {
   const answered = await pool.query<{
@@ -353,7 +357,7 @@ async function threadEnqueue(
           FROM enqueue_thread_message(
             ${input.partition.tenant},${input.partition.project},
             ${input.principal},${input.session},
-            ${input.turn},${input.input})`,
+            ${input.turn},${input.input},${input.route})`,
   );
   const row = answered.rows[0];
   if (row === undefined)
@@ -660,6 +664,7 @@ async function threadWake(
     readonly principal: Principal;
     readonly turn: SessionTurnId;
     readonly input: string;
+    readonly route: PlacementRoute;
   },
 ): Promise<ThreadWakeOffered> {
   const answered = await pool.query<{
@@ -668,7 +673,7 @@ async function threadWake(
   }>(
     sql`SELECT enqueued,ordinal::text AS ordinal FROM wake_member_thread(
           ${input.partition.tenant},${input.partition.project},
-          ${input.principal},${input.turn},${input.input})`,
+          ${input.principal},${input.turn},${input.input},${input.route})`,
   );
   const row = answered.rows[0];
   if (row === undefined)
