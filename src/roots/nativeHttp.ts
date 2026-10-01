@@ -987,6 +987,20 @@ export function nativeAuthentication(
   );
 }
 
+/** The bearers this API accepts, leaving neither pool open where the issuer cannot be reached at start. */
+async function nativeAuthenticationStarted(
+  config: OidcAuthenticationConfig,
+  pools: NativePools,
+): Promise<PrincipalAuthentication> {
+  const oidc = await oidcAuthentication(config).catch(
+    async (failure: unknown) => {
+      await closePools(pools.pool, pools.selectorReviewPool);
+      throw failure;
+    },
+  );
+  return nativeAuthentication(oidc, pools);
+}
+
 /**
  * Refuses to start on either pool this process must have, naming which one, and
  * leaves neither open behind the refusal.
@@ -1055,13 +1069,8 @@ async function main(): Promise<void> {
   const pools = nativePools();
   const { pool, selectorReviewPool } = pools;
   await nativeDatabasesReady(pool, selectorReviewPool);
-  const authentication = nativeAuthentication(
-    await oidcAuthentication(authenticationConfig).catch(
-      async (failure: unknown) => {
-        await closePools(pool, selectorReviewPool);
-        throw failure;
-      },
-    ),
+  const authentication = await nativeAuthenticationStarted(
+    authenticationConfig,
     pools,
   );
   const accessSettings = ketoConfig();
