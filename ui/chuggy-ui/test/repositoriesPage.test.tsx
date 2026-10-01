@@ -18,6 +18,7 @@ import {
   within,
 } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { StrictMode } from "react";
 import type { ReactNode } from "react";
 
 import { RepositoriesPage } from "../app/browser/RepositoriesPage.tsx";
@@ -30,6 +31,9 @@ import {
 import { leadPartition } from "./leadFixture.ts";
 import { forgeAuthorizeTransactionKey } from "../app/core/forgeAuthorization.ts";
 import { forgeInstallTransactionKey } from "../app/core/forgeInstallation.ts";
+import { forgeReturnHold } from "../app/core/forgeReturn.ts";
+import type { ForgeReturnWord } from "../app/core/forgeReturn.ts";
+import { transientStore } from "../app/browser/ports.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 
 const redirects = vi.hoisted((): string[] => []);
@@ -223,6 +227,8 @@ interface Drawing {
   readonly bound?: unknown;
   /** What this deployment answers about its apps. */
   readonly described?: unknown;
+  /** Drawn under `StrictMode`, as the console's root draws it. */
+  readonly strict?: boolean;
 }
 
 async function drawPage(drawing: Drawing = {}): Promise<readonly Sent[]> {
@@ -250,15 +256,16 @@ async function drawPage(drawing: Drawing = {}): Promise<readonly Sent[]> {
     return Promise.resolve(answer(bound));
   }) as unknown as typeof fetch;
   vi.stubGlobal("fetch", fetching);
-  render(
+  const page = (
     <ScreenHarness
       partition={leadPartition}
       client={new QueryClient()}
       transport={openedStream().ports.fetch}
     >
       <RepositoriesPage />
-    </ScreenHarness>,
+    </ScreenHarness>
   );
+  render(drawing.strict === true ? <StrictMode>{page}</StrictMode> : page);
   await settled();
   return sent;
 }
@@ -375,6 +382,60 @@ test("a panel with an account offers Add account, which installs the portal", as
     project: leadPartition.project,
     returnPath: projectPath,
   });
+});
+
+/** A forge return held for this project, as the callback leaves it. */
+function returnedWith(word: ForgeReturnWord): void {
+  forgeReturnHold(transientStore, leadPartition, word);
+}
+
+/** The panel's own lines, which a return's word is one of. */
+function accountsLines(): readonly (string | null)[] {
+  return within(sectionOf("Accounts"))
+    .queryAllByRole("paragraph")
+    .map((line) => line.textContent);
+}
+
+test("a return's word is drawn on the Accounts panel once, and not on the next visit", async () => {
+  returnedWith({ standing: "Failed", status: "Refused" });
+  await drawPage({ strict: true });
+  expect(accountsLines()).toStrictEqual(["Refused"]);
+  expect(
+    within(sectionOf("Accounts"))
+      .getByText("Refused")
+      .classList.contains("notice-danger"),
+  ).toBe(true);
+  cleanup();
+  await drawPage({ strict: true });
+  expect(accountsLines()).toStrictEqual([]);
+});
+
+/** Connect GitHub claims only what is installed, so a return that reached no
+ * account the person owns is one the portal's install puts right. */
+test("a return that reached no account the person owns offers Add account beside Connect GitHub", async () => {
+  returnedWith({ standing: "Uninstalled", status: "Not installed" });
+  await drawAtProject({ truncated: false, installations: [] });
+  const accounts = within(sectionOf("Accounts"));
+  expect(accountsLines()).toStrictEqual([
+    "Not installed",
+    "No account connected",
+  ]);
+  expect(accounts.getByRole("button", { name: "Connect GitHub" })).toBeTruthy();
+  const add = accounts.getByRole<HTMLAnchorElement>("link", {
+    name: "Add account",
+  });
+  expect(add.href.startsWith(`${forgeApps[0]?.installUrl}?state=`)).toBe(true);
+});
+
+test("a return that stopped short for another reason offers no install with no account", async () => {
+  returnedWith({ standing: "Unfinished", status: "Declined" });
+  await drawAtProject({ truncated: false, installations: [] });
+  expect(accountsLines()).toStrictEqual(["Declined", "No account connected"]);
+  const accounts = within(sectionOf("Accounts"));
+  expect(
+    accounts.getByText("Declined").classList.contains("notice-parked"),
+  ).toBe(true);
+  expect(accounts.queryAllByRole("link")).toStrictEqual([]);
 });
 
 /** Connect GitHub claims the worker app where it is installed, so the worker's

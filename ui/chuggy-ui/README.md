@@ -137,22 +137,21 @@ the verifier, the tenant, the project and where the person was are stored in
 `sessionStorage` under one key. The forge returns to `/forge/github/callback`,
 which takes that transaction once and posts the code only when the state it was
 sent matches; a callback reached without a matching transaction says "Not
-expected" and posts nothing. The page then drops the code and state from the
-address. The api claims each account the authorization proves the person owns,
-with the worker App's installation on it, and the page draws one line per
-account, with an install link for an App the account is missing. A person who
-reached no account, or only accounts they do not own, is offered the portal
-App's install. A code GitHub refused, or redeemed before the api could read what
-it reaches, cannot be offered again, so the page offers `Connect GitHub` in its
-place.
+expected", posts nothing and links home. The page then drops the code and state
+from the address. The api claims each account the authorization proves the
+person owns, with the worker App's installation on it, and the page puts the
+person back where they pressed `Connect GitHub`. Anything short of a plain
+connection comes back as one word, held in `sessionStorage` and shown once on
+the Accounts panel. A person who reached no account, or only accounts they do
+not own, comes back to `Add account`, the portal App's install.
 
 `Connect GitHub` is the Accounts panel's one action until an account is
-connected. Then `Add account` installs the portal App on another, and an account
-without the worker App offers that App's install on its own row. Each install
-link carries a state of its own, stored the same way. The forge sends the person
-back to `/forge/github/setup`, which takes that transaction once and, when the
-state matches, goes on to the authorization; an install an owner has to approve
-says "Requested".
+connected or a return offers that install. Then `Add account` installs the
+portal App, and an account without the worker App offers that App's install on
+its own row. Each install link carries a state of its own, stored the same way.
+The forge sends the person back to `/forge/github/setup`, which takes that
+transaction once and, when the state matches, goes on to the authorization; an
+install an owner has to approve returns with "Requested".
 
 Both Apps' Setup URL must be that route on the console's own host, with
 "Redirect on update" set so an App already installed comes back too, and the
