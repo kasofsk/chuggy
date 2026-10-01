@@ -83,42 +83,64 @@ export interface RunnersPlacementDraft {
   readonly lead: PlacementRoute;
 }
 
-/** A kind's route where the reader may choose it, else the first route they may. */
-function runnersPlacementSeeded(
-  route: PlacementRoute,
-  choices: readonly PlacementRoute[],
-): PlacementRoute {
-  return choices.includes(route) ? route : (choices[0] ?? route);
-}
-
+/** Every kind's route as read, which a draft starts from and a save is told
+ * apart from. */
 export function runnersPlacementDraft(
   execution: ExecutionPlacementResponse,
   session: SessionPlacementResponse,
 ): RunnersPlacementDraft {
   return {
-    work: runnersPlacementSeeded(execution.work.route, execution.choices),
-    evaluation: runnersPlacementSeeded(
-      execution.evaluation.route,
-      execution.choices,
-    ),
-    thread: runnersPlacementSeeded(session.thread.route, session.choices),
-    lead: runnersPlacementSeeded(session.lead.route, session.choices),
+    work: execution.work.route,
+    evaluation: execution.evaluation.route,
+    thread: session.thread.route,
+    lead: session.lead.route,
   };
 }
 
-/** Whether a draft names only routes the reader may choose, each kind from its
- * own placement's choices, which is all a write is refused for. */
-export function runnersPlacementSavable(
+/** One route a kind's choice draws, and whether the reader may choose it. */
+export interface RunnersPlacementOption {
+  readonly route: PlacementRoute;
+  readonly choosable: boolean;
+}
+
+/** The routes the reader may choose, after the one the kind was read on where
+ * it is not among them, which is drawn as standing and kept until another is
+ * chosen. */
+export function runnersPlacementOptions(
+  read: PlacementRoute,
+  choices: readonly PlacementRoute[],
+): readonly RunnersPlacementOption[] {
+  const offered = choices.map((route) => ({ route, choosable: true }));
+  return choices.includes(read)
+    ? offered
+    : [{ route: read, choosable: false }, ...offered];
+}
+
+/** What a save writes: each placement only where one of its own kinds moved
+ * from the read the draft started on, since a write names both its kinds. */
+export interface RunnersPlacementWrites {
+  readonly execution:
+    | { readonly work: PlacementRoute; readonly evaluation: PlacementRoute }
+    | undefined;
+  readonly session:
+    | { readonly thread: PlacementRoute; readonly lead: PlacementRoute }
+    | undefined;
+}
+
+export function runnersPlacementWrites(
+  read: RunnersPlacementDraft,
   draft: RunnersPlacementDraft,
-  execution: readonly PlacementRoute[],
-  session: readonly PlacementRoute[],
-): boolean {
-  return (
-    execution.includes(draft.work) &&
-    execution.includes(draft.evaluation) &&
-    session.includes(draft.thread) &&
-    session.includes(draft.lead)
-  );
+): RunnersPlacementWrites {
+  return {
+    execution:
+      draft.work === read.work && draft.evaluation === read.evaluation
+        ? undefined
+        : { work: draft.work, evaluation: draft.evaluation },
+    session:
+      draft.thread === read.thread && draft.lead === read.lead
+        ? undefined
+        : { thread: draft.thread, lead: draft.lead },
+  };
 }
 
 /** The route a radio group answered, where it is one this wire knows. */
@@ -134,13 +156,18 @@ export type RunnersPlacementAnswer<Placement> =
   | { readonly saved: "Unhosted" }
   | { readonly saved: "Failed"; readonly reason: string };
 
-/** Where a save of the section got to. */
+/** Where a save of the section got to, and with a refusal, whether the
+ * placement written before it landed, since that one stands. */
 export type RunnersPlacementSaved =
   | { readonly saved: "Idle" }
   | { readonly saved: "Writing" }
   | { readonly saved: "Written" }
-  | { readonly saved: "Unhosted" }
-  | { readonly saved: "Failed"; readonly reason: string };
+  | { readonly saved: "Unhosted"; readonly landed: boolean }
+  | {
+      readonly saved: "Failed";
+      readonly reason: string;
+      readonly landed: boolean;
+    };
 
 export function runnersPlacementAnswered<Placement>(
   result: ApiResult<Placement>,

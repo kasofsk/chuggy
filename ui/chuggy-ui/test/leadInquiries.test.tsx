@@ -620,9 +620,9 @@ test.each([
   },
 );
 
-/** The refusal's word says it, so the runner line under it does not say it
- * a second time. */
-test("a question refused for no runner says so once", async () => {
+/** The refusal says it with where a runner is added, so the runner line
+ * under it does not say it a second time. */
+test("a question refused for no runner says so once, with the Runners page", async () => {
   await drawInquiries({
     listing: () => ({ inquiries: [] }),
     asked: () => refusal("NoRunner", 403),
@@ -635,7 +635,7 @@ test("a question refused for no runner says so once", async () => {
   await turned(ask);
   await settled();
   expect(screen.getAllByText("No runner")).toHaveLength(1);
-  expect(screen.queryByRole("link", { name: "Runners" })).toBeNull();
+  expect(screen.getAllByRole("link", { name: "Runners" })).toHaveLength(1);
 });
 
 /**

@@ -132,7 +132,10 @@ function leadInquiriesList(
 }
 
 /** What the last ask did, in the one line the box says it in. */
-function LeadAskNotice(props: { readonly ask: InquiryAsk }): ReactNode {
+function LeadAskNotice(props: {
+  readonly partition: PartitionIdentity;
+  readonly ask: InquiryAsk;
+}): ReactNode {
   const ask = props.ask;
   switch (ask.ask) {
     case "Idle":
@@ -143,6 +146,10 @@ function LeadAskNotice(props: { readonly ask: InquiryAsk }): ReactNode {
       return <Notice tone="live" inline detail="Asked" />;
     case "Refused":
       return <Notice tone="parked" inline detail={ask.word} />;
+    case "NoRunner":
+      return (
+        <SessionRunnerNotice partition={props.partition} short="NoRunner" />
+      );
     case "Failed":
       return <Notice tone="danger" inline detail={`Failed · ${ask.reason}`} />;
   }
@@ -155,7 +162,9 @@ function LeadAskRunner(props: {
   readonly ask: InquiryAsk;
 }): ReactNode {
   const runner = useSessionRunnerShort(props.partition, "lead", "mine");
-  return runner === undefined || props.ask.ask === "Refused" ? null : (
+  return runner === undefined ||
+    props.ask.ask === "Refused" ||
+    props.ask.ask === "NoRunner" ? null : (
     <SessionRunnerNotice partition={props.partition} short={runner} />
   );
 }
@@ -206,7 +215,7 @@ function LeadAsk(props: {
   };
   return (
     <div className="grid min-w-0 gap-2 pb-3">
-      <LeadAskNotice ask={box.ask} />
+      <LeadAskNotice partition={partition} ask={box.ask} />
       <LeadAskRunner partition={partition} ask={box.ask} />
       <Fields>
         <Field name="Question">

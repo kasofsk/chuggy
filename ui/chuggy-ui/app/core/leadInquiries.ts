@@ -53,7 +53,6 @@ import {
 import type { LeadInquiryAccepted } from "../../../../src/contract/responses.ts";
 import type { ApiResult } from "./apiRequest.ts";
 import { panelReason } from "./freshness.ts";
-import { sessionRunnerShortWord } from "./sessionRunners.ts";
 
 /**
  * How much entropy an inquiry's pair is named with. It is its own constant
@@ -174,7 +173,6 @@ export const inquiryRefusalWords: Readonly<Record<string, string>> = {
   LeadClosed: "Closed",
   InquiriesInFlight: "In flight",
   [hostedRunsNotGrantedCode]: "Needs hosted runs",
-  [noRunnerCode]: sessionRunnerShortWord("NoRunner"),
 };
 
 export const inquiryRefusalWordUnknown = "Refused";
@@ -189,9 +187,13 @@ export type InquiryAsk =
   | { readonly ask: "Asking" }
   | { readonly ask: "Asked"; readonly session: string }
   | { readonly ask: "Refused"; readonly word: string }
+  | { readonly ask: "NoRunner" }
   | { readonly ask: "Failed"; readonly reason: string };
 
+/** A refusal for no runner of the asker's own is its own arm, since the box
+ * says where one is added. */
 function inquiryRefused(code: string): InquiryAsk {
+  if (code === noRunnerCode) return { ask: "NoRunner" };
   return {
     ask: "Refused",
     word: inquiryRefusalWords[code] ?? inquiryRefusalWordUnknown,

@@ -96,15 +96,17 @@ interface Sent {
 
 interface Drawing {
   readonly placement?: unknown;
+  /** Read again at every read, so a case may move it under the page. */
   readonly sessions?: unknown;
   readonly listed?: unknown;
   /** What a write answers, in the order the page makes them. */
   readonly written?: readonly Response[];
+  readonly client?: QueryClient;
 }
 
 async function drawPage(drawing: Drawing = {}): Promise<readonly Sent[]> {
   const placement: unknown = drawing.placement ?? granted;
-  const sessions: unknown = drawing.sessions ?? sessionsGranted;
+  const sessions = (): unknown => drawing.sessions ?? sessionsGranted;
   const listed: unknown = drawing.listed ?? pools;
   const written = [...(drawing.written ?? [])];
   const sent: Sent[] = [];
@@ -124,14 +126,14 @@ async function drawPage(drawing: Drawing = {}): Promise<readonly Sent[]> {
         return Promise.resolve(written.shift() ?? answer({}, 503));
       if (url.endsWith("/worker-pools")) return Promise.resolve(answer(listed));
       if (url.endsWith("/session-placement"))
-        return Promise.resolve(answer(sessions));
+        return Promise.resolve(answer(sessions()));
       return Promise.resolve(answer(placement));
     },
   );
   render(
     <ScreenHarness
       partition={leadPartition}
-      client={new QueryClient()}
+      client={drawing.client ?? new QueryClient()}
       transport={openedStream().ports.fetch}
     >
       <RunnersPage />
@@ -238,25 +240,118 @@ test("a reader the tenant granted hosted runs is offered both routes, and a save
   expect(placementRows()).toContain("LeadRunnersProjectLive");
 });
 
-test("a reader without the hosted grant is offered runners alone, and a draft starts there", async () => {
+/** An administrator without the grant: work hosted and evaluation on runners,
+ * chat and the lead hosted, and runners the one route they may choose. */
+const grantless = {
+  placement: {
+    work: { route: "InCluster", source: "Project" },
+    evaluation: { route: "Pool", source: "Project" },
+    choices: ["Pool"],
+  },
+  sessions: {
+    ...sessionsGranted,
+    thread: { route: "InCluster", source: "Default" },
+    lead: { route: "InCluster", source: "Project" },
+    choices: ["Pool"],
+  },
+};
+
+function puts(sent: readonly Sent[]): readonly unknown[] {
+  return sent
+    .filter((one) => one.method === "PUT")
+    .map((one) => [one.url.split("/").pop(), one.body]);
+}
+
+function radio(kind: string, name: string): HTMLElement {
+  return within(screen.getByRole("radiogroup", { name: kind })).getByRole(
+    "radio",
+    { name },
+  );
+}
+
+/** A hosted kind the reader may not choose stays where it is, drawn as such,
+ * and a save that moved nothing writes nothing. */
+test("a reader without the hosted grant sees hosted kinds as they stand, and an untouched save writes nothing", async () => {
+  const sent = await drawPage(grantless);
+  await press("Edit");
+  for (const kind of ["Work", "Chat", "Lead"]) {
+    expect(offered(kind)).toStrictEqual(["InCluster", "Pool"]);
+    expect(radio(kind, "Hosted").getAttribute("aria-checked")).toBe("true");
+    expect(radio(kind, "Hosted").hasAttribute("disabled")).toBe(true);
+    expect(radio(kind, "Runners").hasAttribute("disabled")).toBe(false);
+  }
+  expect(offered("Evaluation")).toStrictEqual(["Pool"]);
+  await press("Save changes");
+  expect(puts(sent)).toStrictEqual([]);
+  expect(screen.queryByText("Written")).toBeNull();
+  expect(screen.getByRole("button", { name: "Edit" })).toBeTruthy();
+});
+
+test("a reader without the hosted grant who moves work alone writes work's placement alone", async () => {
   const sent = await drawPage({
-    placement: { ...granted, choices: ["Pool"] },
-    sessions: { ...sessionsGranted, choices: ["Pool"] },
+    ...grantless,
     written: [
-      answer({ ...granted, choices: ["Pool"] }),
-      answer({ ...sessionsGranted, choices: ["Pool"] }),
+      answer({
+        ...grantless.placement,
+        work: { route: "Pool", source: "Project" },
+      }),
     ],
   });
   await press("Edit");
-  for (const kind of ["Work", "Evaluation", "Chat", "Lead"])
-    expect(offered(kind)).toStrictEqual(["Pool"]);
+  await choose("Work", "Runners");
+  expect(offered("Work")).toStrictEqual(["InCluster", "Pool"]);
   await press("Save changes");
-  expect(
-    sent.filter((one) => one.method === "PUT").map((one) => one.body),
-  ).toStrictEqual([
-    { work: "Pool", evaluation: "Pool" },
-    { thread: "Pool", lead: "Pool" },
+  expect(puts(sent)).toStrictEqual([
+    ["execution-placement", { work: "Pool", evaluation: "Pool" }],
   ]);
+  expect(screen.getByText("Written")).toBeTruthy();
+  expect(placementRows()).toContain("ChatHostedDefault");
+});
+
+/** The session placement is polled, so it can move while the section is open;
+ * what the reader left alone is told apart from the read they started on. */
+test("a session placement moved under an open editor is not written back", async () => {
+  const client = new QueryClient();
+  const drawing: { sessions: unknown } & Drawing = {
+    sessions: sessionsGranted,
+    client,
+    written: [
+      answer({ ...granted, work: { route: "Pool", source: "Project" } }),
+    ],
+  };
+  const sent = await drawPage(drawing);
+  await press("Edit");
+  drawing.sessions = {
+    ...sessionsGranted,
+    lead: { route: "Pool", source: "Project" },
+  };
+  await turned(() => {
+    void client.invalidateQueries();
+  });
+  await settled();
+  await choose("Work", "Runners");
+  await press("Save changes");
+  expect(puts(sent)).toStrictEqual([
+    ["execution-placement", { work: "Pool", evaluation: "InCluster" }],
+  ]);
+});
+
+test("a reader who moves chat alone writes the session placement alone", async () => {
+  const sent = await drawPage({
+    written: [
+      answer({
+        ...sessionsGranted,
+        thread: { route: "InCluster", source: "Project" },
+      }),
+    ],
+  });
+  await press("Edit");
+  await choose("Chat", "Hosted");
+  await press("Save changes");
+  expect(puts(sent)).toStrictEqual([
+    ["session-placement", { thread: "InCluster", lead: "InCluster" }],
+  ]);
+  expect(screen.getByText("Written")).toBeTruthy();
 });
 
 test("a write the hosted grant refuses says so and stays open", async () => {
@@ -264,12 +359,15 @@ test("a write the hosted grant refuses says so and stays open", async () => {
     written: [answer({ error: { code: "HostedRunsNotGranted" } }, 403)],
   });
   await press("Edit");
+  await choose("Work", "Runners");
   await press("Save changes");
   expect(screen.getByText("Needs hosted runs")).toBeTruthy();
+  expect(screen.queryByText("Work and evaluation saved")).toBeNull();
   expect(screen.getByRole("button", { name: "Save changes" })).toBeTruthy();
 });
 
-/** The sessions are written second, so their refusal stops the save there. */
+/** The sessions are written second, so their refusal stops the save there,
+ * and the placement written before it stands. */
 test("a session write the hosted grant refuses says so and stays open after work's landed", async () => {
   const sent = await drawPage({
     written: [
@@ -278,9 +376,12 @@ test("a session write the hosted grant refuses says so and stays open after work
     ],
   });
   await press("Edit");
+  await choose("Work", "Runners");
+  await choose("Chat", "Hosted");
   await press("Save changes");
-  expect(sent.filter((one) => one.method === "PUT")).toHaveLength(2);
+  expect(puts(sent)).toHaveLength(2);
   expect(screen.getByText("Needs hosted runs")).toBeTruthy();
+  expect(screen.getByText("Work and evaluation saved")).toBeTruthy();
   expect(screen.getByRole("button", { name: "Save changes" })).toBeTruthy();
 });
 

@@ -368,11 +368,12 @@ function ChatPaneOpen(props: {
     door.refused();
     setStarting(false);
   };
-  /** A thread that opened, which the grant had to allow where the route asks it. */
+  /** A thread that opened, which the grant had to allow only where the route
+   * was read as hosted. */
   const holdOpened = (session: string): void => {
     setChosen(session);
     setStarting(false);
-    if (door.door.route !== "Pool") door.learnt(true);
+    if (door.door.route === "InCluster") door.learnt(true);
   };
   const held = threads?.find((thread) => thread.session === holding.session);
   const drawn = chatPaneThreadDrawn(holding.session, starting);

@@ -6,6 +6,11 @@
  * answers the routes this reader may choose, so the choice is drawn from that
  * list and never from the roster; a write the grant still refuses says so in
  * the section rather than retrying.
+ *
+ * A KIND NOBODY TOUCHED IS NEVER WRITTEN. A route the reader may not choose is
+ * drawn as it stands rather than moved to one they may, and a save writes only
+ * a placement the draft moved, so an administrator changing one kind leaves the
+ * others where whoever set them put them.
  */
 
 import { useParams } from "@tanstack/react-router";
@@ -42,14 +47,17 @@ import {
   runnerRouteSourceLabel,
   runnersPlacementAnswered,
   runnersPlacementDraft,
+  runnersPlacementOptions,
   runnersPlacementRoute,
-  runnersPlacementSavable,
+  runnersPlacementWrites,
   runnerStandingLabel,
   runnerTokenLifetimeSecs,
 } from "../core/runners.ts";
 import type {
   RunnersPlacementDraft,
+  RunnersPlacementOption,
   RunnersPlacementSaved,
+  RunnersPlacementWrites,
 } from "../core/runners.ts";
 import { useApiPorts, usePanelResource } from "./api.ts";
 import { PanelUnready } from "./DataPanel.tsx";
@@ -126,7 +134,7 @@ function PlacementTable(props: {
 function PlacementChoice(props: {
   readonly label: string;
   readonly value: PlacementRoute;
-  readonly choices: readonly PlacementRoute[];
+  readonly options: readonly RunnersPlacementOption[];
   readonly onChoose: (route: PlacementRoute) => void;
 }): ReactNode {
   return (
@@ -135,9 +143,10 @@ function PlacementChoice(props: {
       <RadioGroup
         label={props.label}
         value={props.value}
-        options={props.choices.map((route) => ({
-          value: route,
-          text: runnerRouteLabel(route),
+        options={props.options.map((option) => ({
+          value: option.route,
+          text: runnerRouteLabel(option.route),
+          disabled: !option.choosable,
         }))}
         onChoose={(value) => {
           const route = runnersPlacementRoute(value);
@@ -160,12 +169,27 @@ function PlacementNotice(props: {
     case "Written":
       return <Notice tone="live" inline detail="Written" />;
     case "Unhosted":
-      return <Notice tone="parked" inline detail="Needs hosted runs" />;
+      return (
+        <>
+          <PlacementLanded landed={saved.landed} />
+          <Notice tone="parked" inline detail="Needs hosted runs" />
+        </>
+      );
     case "Failed":
       return (
-        <Notice tone="danger" inline detail={`Failed · ${saved.reason}`} />
+        <>
+          <PlacementLanded landed={saved.landed} />
+          <Notice tone="danger" inline detail={`Failed · ${saved.reason}`} />
+        </>
       );
   }
+}
+
+/** The placement a save wrote before the one refused, which stands. */
+function PlacementLanded(props: { readonly landed: boolean }): ReactNode {
+  return props.landed ? (
+    <Notice tone="live" inline detail="Work and evaluation saved" />
+  ) : null;
 }
 
 /** The draft's kinds in the order the table draws them, each with the label
@@ -178,6 +202,7 @@ const placementEditorKinds = [
 ] as const;
 
 function PlacementEditor(props: {
+  readonly read: RunnersPlacementDraft;
   readonly draft: RunnersPlacementDraft;
   readonly choices: {
     readonly execution: readonly PlacementRoute[];
@@ -192,7 +217,10 @@ function PlacementEditor(props: {
           key={kind}
           label={label}
           value={props.draft[kind]}
-          choices={props.choices[placement]}
+          options={runnersPlacementOptions(
+            props.read[kind],
+            props.choices[placement],
+          )}
           onChoose={(route) => {
             props.onDraft({ ...props.draft, [kind]: route });
           }}
@@ -205,14 +233,13 @@ function PlacementEditor(props: {
 interface PlacementWriting {
   readonly saved: RunnersPlacementSaved;
   readonly reset: () => void;
-  readonly write: (draft: RunnersPlacementDraft, wrote: () => void) => void;
+  readonly write: (writes: RunnersPlacementWrites, wrote: () => void) => void;
 }
 
 /**
  * The doors the section writes through: work and evaluation, then a thread and
- * the lead once the first has landed, each whole and answering a repeat the
- * same, so a save the second refused is saved again whole. A write that landed
- * is the newest read of its placement, so the page holds it.
+ * the lead once the first has landed, each only where the draft moved it. A
+ * write that landed is the newest read of its placement, so the page holds it.
  */
 function usePlacementWriting(partition: PartitionIdentity): PlacementWriting {
   const ports = useApiPorts();
@@ -224,39 +251,47 @@ function usePlacementWriting(partition: PartitionIdentity): PlacementWriting {
       placement,
     );
   };
+  const written = async (writes: RunnersPlacementWrites): Promise<boolean> => {
+    let landed = false;
+    if (writes.execution !== undefined) {
+      const execution = runnersPlacementAnswered(
+        await apiWriteExecutionPlacement(ports, partition, writes.execution),
+      );
+      if (execution.saved !== "Written") {
+        setSaved({ ...execution, landed });
+        return false;
+      }
+      held(executionPlacementResource, execution.placement);
+      landed = true;
+    }
+    if (writes.session !== undefined) {
+      const session = runnersPlacementAnswered(
+        await apiWriteSessionPlacement(ports, partition, writes.session),
+      );
+      if (session.saved !== "Written") {
+        setSaved({ ...session, landed });
+        return false;
+      }
+      held(sessionPlacementResource, session.placement);
+    }
+    return true;
+  };
   return {
     saved,
     reset: () => {
       setSaved({ saved: "Idle" });
     },
-    write: (draft, wrote) => {
+    write: (writes, wrote) => {
+      if (writes.execution === undefined && writes.session === undefined) {
+        wrote();
+        return;
+      }
       setSaved({ saved: "Writing" });
-      void (async () => {
-        const execution = runnersPlacementAnswered(
-          await apiWriteExecutionPlacement(ports, partition, {
-            work: draft.work,
-            evaluation: draft.evaluation,
-          }),
-        );
-        if (execution.saved !== "Written") {
-          setSaved(execution);
-          return;
-        }
-        held(executionPlacementResource, execution.placement);
-        const session = runnersPlacementAnswered(
-          await apiWriteSessionPlacement(ports, partition, {
-            thread: draft.thread,
-            lead: draft.lead,
-          }),
-        );
-        if (session.saved !== "Written") {
-          setSaved(session);
-          return;
-        }
-        held(sessionPlacementResource, session.placement);
+      void written(writes).then((landed) => {
+        if (!landed) return;
         setSaved({ saved: "Written" });
         wrote();
-      })();
+      });
     },
   };
 }
@@ -268,9 +303,10 @@ function PlacementSection(props: {
 }): ReactNode {
   const writing = usePlacementWriting(props.partition);
   const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState<RunnersPlacementDraft>(() =>
+  const [read, setRead] = useState<RunnersPlacementDraft>(() =>
     runnersPlacementDraft(props.execution, props.session),
   );
+  const [draft, setDraft] = useState<RunnersPlacementDraft>(read);
   const saved = writing.saved;
   const choices = {
     execution: props.execution.choices,
@@ -282,16 +318,15 @@ function PlacementSection(props: {
       about="Where this project's agents run."
       editing={editing}
       editable={choices.execution.length > 0 && choices.session.length > 0}
-      savable={
-        runnersPlacementSavable(draft, choices.execution, choices.session) &&
-        saved.saved !== "Writing"
-      }
+      savable={saved.saved !== "Writing"}
       footLead={null}
       {...(saved.saved === "Idle"
         ? {}
         : { notice: <PlacementNotice saved={saved} /> })}
       onEdit={() => {
-        setDraft(runnersPlacementDraft(props.execution, props.session));
+        const now = runnersPlacementDraft(props.execution, props.session);
+        setRead(now);
+        setDraft(now);
         writing.reset();
         setEditing(true);
       }}
@@ -299,13 +334,18 @@ function PlacementSection(props: {
         setEditing(false);
       }}
       onSave={() => {
-        writing.write(draft, () => {
+        writing.write(runnersPlacementWrites(read, draft), () => {
           setEditing(false);
         });
       }}
     >
       {editing ? (
-        <PlacementEditor draft={draft} choices={choices} onDraft={setDraft} />
+        <PlacementEditor
+          read={read}
+          draft={draft}
+          choices={choices}
+          onDraft={setDraft}
+        />
       ) : (
         <PlacementTable execution={props.execution} session={props.session} />
       )}

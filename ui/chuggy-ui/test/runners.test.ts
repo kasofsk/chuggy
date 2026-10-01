@@ -17,7 +17,8 @@ import {
   runnerStandingLabel,
   runnersPlacementAnswered,
   runnersPlacementDraft,
-  runnersPlacementSavable,
+  runnersPlacementOptions,
+  runnersPlacementWrites,
 } from "../app/core/runners.ts";
 
 const hosted: ExecutionPlacementResponse = {
@@ -33,61 +34,69 @@ const sessions: SessionPlacementResponse = {
   runners: { mine: "Live", project: "Live" },
 };
 
-test("a draft starts on each kind's route where the reader may choose it", () => {
-  expect(runnersPlacementDraft(hosted, sessions)).toStrictEqual({
+/** A route the reader may not choose is where the kind runs until they choose
+ * another, so the draft starts there rather than on one they may. */
+test("a draft starts on each kind's route as read, whether or not the reader may choose it", () => {
+  const read = {
     work: "InCluster",
     evaluation: "Pool",
     thread: "Pool",
     lead: "InCluster",
-  });
+  };
+  expect(runnersPlacementDraft(hosted, sessions)).toStrictEqual(read);
+  expect(
+    runnersPlacementDraft(
+      { ...hosted, choices: ["Pool"] },
+      { ...sessions, choices: ["Pool"] },
+    ),
+  ).toStrictEqual(read);
 });
 
-test("a draft starts a hosted route the reader may not choose on one they may, each from its own placement's choices", () => {
-  expect(
-    runnersPlacementDraft(hosted, { ...sessions, choices: ["Pool"] }),
-  ).toStrictEqual({
-    work: "InCluster",
-    evaluation: "Pool",
-    thread: "Pool",
-    lead: "Pool",
-  });
-  expect(
-    runnersPlacementDraft({ ...hosted, choices: ["Pool"] }, sessions),
-  ).toStrictEqual({
-    work: "Pool",
-    evaluation: "Pool",
-    thread: "Pool",
-    lead: "InCluster",
-  });
+test("a kind offers the reader's choices, after its route as read where that is not one of them", () => {
+  expect(runnersPlacementOptions("InCluster", ["Pool"])).toStrictEqual([
+    { route: "InCluster", choosable: false },
+    { route: "Pool", choosable: true },
+  ]);
+  expect(runnersPlacementOptions("Pool", ["InCluster", "Pool"])).toStrictEqual([
+    { route: "InCluster", choosable: true },
+    { route: "Pool", choosable: true },
+  ]);
+  expect(runnersPlacementOptions("Pool", ["Pool"])).toStrictEqual([
+    { route: "Pool", choosable: true },
+  ]);
 });
 
-test("a draft is savable only where every route in it is one the reader may choose from its own placement", () => {
-  const draft = {
+/** A write names both its kinds, so a placement is written whole where either
+ * moved and not at all where neither did. */
+test("a save writes only the placements the draft moved, each whole", () => {
+  const read = {
     work: "InCluster",
     evaluation: "Pool",
     thread: "Pool",
     lead: "InCluster",
   } as const;
-  const both = ["InCluster", "Pool"] as const;
-  expect(runnersPlacementSavable(draft, both, both)).toBe(true);
-  expect(runnersPlacementSavable(draft, ["Pool"], both)).toBe(false);
-  expect(runnersPlacementSavable(draft, both, ["Pool"])).toBe(false);
+  expect(runnersPlacementWrites(read, read)).toStrictEqual({
+    execution: undefined,
+    session: undefined,
+  });
+  expect(runnersPlacementWrites(read, { ...read, work: "Pool" })).toStrictEqual(
+    { execution: { work: "Pool", evaluation: "Pool" }, session: undefined },
+  );
   expect(
-    runnersPlacementSavable(
-      { ...draft, work: "Pool", evaluation: "InCluster" },
-      ["Pool"],
-      both,
-    ),
-  ).toBe(false);
+    runnersPlacementWrites(read, { ...read, evaluation: "InCluster" }),
+  ).toStrictEqual({
+    execution: { work: "InCluster", evaluation: "InCluster" },
+    session: undefined,
+  });
+  expect(runnersPlacementWrites(read, { ...read, lead: "Pool" })).toStrictEqual(
+    { execution: undefined, session: { thread: "Pool", lead: "Pool" } },
+  );
   expect(
-    runnersPlacementSavable(
-      { ...draft, thread: "InCluster", lead: "Pool" },
-      both,
-      ["Pool"],
-    ),
-  ).toBe(false);
-  expect(runnersPlacementSavable(draft, [], both)).toBe(false);
-  expect(runnersPlacementSavable(draft, both, [])).toBe(false);
+    runnersPlacementWrites(read, { ...read, thread: "InCluster" }),
+  ).toStrictEqual({
+    execution: undefined,
+    session: { thread: "InCluster", lead: "InCluster" },
+  });
 });
 
 test("a runner standing is one word, and no runner at all is None", () => {
