@@ -57,6 +57,7 @@ import {
   leadUnstarted,
 } from "./leadFixture.ts";
 import type { LeadServed } from "./leadFixture.ts";
+import { sessionPlacementBody } from "./sessionPlacementFixture.ts";
 import type { LeadInquiriesResponse } from "../../../src/contract/responses.ts";
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
@@ -193,6 +194,35 @@ test("the head names the session, its state and the cursor it stands on", async 
   expect(screen.getByText("Monitoring")).toBeDefined();
   expect(screen.getByText("1204")).toBeDefined();
 });
+
+/** One word beside the state, and only where the lead runs on runners the
+ * project has none of live: the reader's own runner is not what the lead
+ * waits on. */
+test.each([
+  ["Pool", "Unregistered", "Live", "No runner"],
+  ["Pool", "Offline", "Live", "Runner offline"],
+  ["Pool", "Live", "Unregistered", undefined],
+  ["InCluster", "Unregistered", "Unregistered", undefined],
+] as const)(
+  "a lead on %s whose project's runners are %s and the reader's %s says %s beside its state",
+  async (lead, project, mine, said) => {
+    await drawLead(() => ({
+      ...opening,
+      placement: sessionPlacementBody({ lead, project, mine }),
+    }));
+    const chips = screen.getByRole("heading", {
+      name: "Lead",
+    }).nextElementSibling;
+    const words = [...(chips?.querySelectorAll(".pill") ?? [])].map(
+      (pill) => pill.textContent,
+    );
+    expect(words).toStrictEqual(
+      said === undefined
+        ? ["Open", "Monitoring"]
+        : ["Open", said, "Monitoring"],
+    );
+  },
+);
 
 /** Below the desk width an open details pane would replace the page a reader
  * came here to see, so `openFirst` starts it closed there — the toggle is
@@ -516,7 +546,7 @@ test("a Session frame with a resource this console cannot read is ignored", asyn
 /** A server answering that the project has no lead until `opened` says one
  * has, and every other route as the held state does; it counts the head's
  * reads. */
-function leadlessServed(): {
+function leadlessServed(served: LeadServed = opening): {
   readonly open: () => void;
   readonly reads: () => number;
 } {
@@ -528,7 +558,7 @@ function leadlessServed(): {
       const head = url.endsWith("/lead");
       if (head) reads += 1;
       if (head && !opened) return answer({ lead: "None" });
-      const found = leadRouteAnswer(url, opening);
+      const found = leadRouteAnswer(url, served);
       return answer(found.body, found.status);
     },
   });
@@ -548,6 +578,19 @@ test("a project with no lead is a page saying so and how its tickets run, not fi
   expect(heading.nextElementSibling?.textContent).toBe(
     "Tickets are dispatched by hand",
   );
+});
+
+/** The lead waits on any of the project's runners, so where none is live the
+ * page says why under `No lead`, with where one is added. */
+test("a project with no lead on runners none of its own has says so under the line", async () => {
+  leadlessServed({
+    ...opening,
+    placement: sessionPlacementBody({ lead: "Pool", project: "Unregistered" }),
+  });
+  await mountLead();
+  expect(screen.getByText("Tickets are dispatched by hand")).toBeDefined();
+  expect(screen.getByText("No runner")).toBeDefined();
+  expect(screen.getByRole("link", { name: "Runners" })).toBeDefined();
 });
 
 /** A project this reader is not shown says there is no lead here for them to

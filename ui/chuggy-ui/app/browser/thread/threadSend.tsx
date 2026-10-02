@@ -17,6 +17,10 @@
  * A READER WITH NO THREAD STILL HAS A COMPOSER. Their first press opens one and
  * sends to it, and a press after a failed send reaches the thread that press
  * opened rather than opening another.
+ *
+ * THE GRANT IS ASKED ONLY WHERE THE THREAD RUNS IN CLUSTER. On runners the door
+ * asks for a runner of the reader's own instead, so the box takes a message
+ * whatever the grant and says when no runner of theirs could take the turn.
  */
 
 import { useQueryClient } from "@tanstack/react-query";
@@ -36,13 +40,20 @@ import {
   threadTurnMinted,
   threadTurnRetained,
 } from "../../core/threads.ts";
-import type { ThreadSend } from "../../core/threads.ts";
+import type { ThreadDoor, ThreadSend } from "../../core/threads.ts";
+import { sessionRefusedNoRunner } from "../../core/sessionRunners.ts";
 import { useApiPorts, usePanelResource } from "../api.ts";
 import type {
   ConversationComposerProps,
   ConversationSent,
 } from "../conversation/Conversation.tsx";
 import { drawBytes } from "../ports.ts";
+import {
+  SessionRunnerNotice,
+  useSessionPlacement,
+  useSessionPlacementReads,
+  useSessionPlacementStale,
+} from "../sessionPlacement.tsx";
 import { Notice } from "../ui/Notice.tsx";
 
 /** What the last press left behind, so the next one can tell a retry of the
@@ -80,6 +91,34 @@ export function useHostedRuns(partition: PartitionIdentity): {
   };
 }
 
+/**
+ * What the reader's own thread door asks of them, from the reads that say, and
+ * where a door's refusal goes once it is newer than those reads: the grant as
+ * `useHostedRuns` says, and the placement is read again rather than waiting on
+ * the next poll, the refusal counting the reads before it.
+ */
+export function useThreadDoor(partition: PartitionIdentity): {
+  readonly door: ThreadDoor;
+  readonly learnt: (granted: boolean) => void;
+  readonly refused: () => Promise<ThreadSend & { readonly send: "Unhosted" }>;
+} {
+  const hosted = useHostedRuns(partition);
+  const placement = useSessionPlacement(partition);
+  const reads = useSessionPlacementReads(partition);
+  const stale = useSessionPlacementStale(partition);
+  const read = placement.state === "Ready" ? placement.value : undefined;
+  return {
+    door: {
+      route: read?.thread.route,
+      granted: hosted.granted,
+      runner: read?.runners.mine,
+      reads,
+    },
+    learnt: hosted.learnt,
+    refused: async () => ({ send: "Unhosted", readsAt: await stale() }),
+  };
+}
+
 /** What a thread door refused for the tenant's hosted grant is drawn as,
  * whether the grant's read, the open or a send met it, and who gives it. */
 export function ThreadUnhostedNotice(): ReactNode {
@@ -92,7 +131,10 @@ export function ThreadUnhostedNotice(): ReactNode {
 
 /** The one line a press is reported as, and nothing while it has not been
  * pressed: a composer that narrated its own idleness would be prose. */
-function ThreadSendNote(props: { readonly send: ThreadSend }): ReactNode {
+function ThreadSendNote(props: {
+  readonly partition: PartitionIdentity;
+  readonly send: ThreadSend;
+}): ReactNode {
   const send = props.send;
   switch (send.send) {
     case "Idle":
@@ -101,6 +143,11 @@ function ThreadSendNote(props: { readonly send: ThreadSend }): ReactNode {
       return null;
     case "Unhosted":
       return <ThreadUnhostedNotice />;
+    case "NoRunner":
+    case "RunnerOffline":
+      return (
+        <SessionRunnerNotice partition={props.partition} short={send.send} />
+      );
     case "Waiting":
     case "Ended":
     case "Unsettled":
@@ -117,8 +164,8 @@ function ThreadSendNote(props: { readonly send: ThreadSend }): ReactNode {
  * message may carry, and what a press ended as. A door that answered `Ended`
  * takes nothing more whatever the read said, because the read that drew this
  * page is older than the refusal; one the hosted grant refused, at a press or
- * in its read before anything is typed, takes nothing more either, and holds
- * any text it handed back, read-only.
+ * in its read before anything is typed, takes nothing more until a read after
+ * that says runners, and holds any text it handed back, read-only.
  */
 export function useThreadSend(input: {
   readonly partition: PartitionIdentity;
@@ -133,11 +180,8 @@ export function useThreadSend(input: {
   const [held, setHeld] = useState<ThreadHeld | undefined>(undefined);
   const [send, setSend] = useState<ThreadSend>({ send: "Idle" });
   const [opened, setOpened] = useState<string | undefined>(undefined);
-  const standing = threadSendStanding(
-    send,
-    input.takes,
-    useHostedRuns(partition).granted,
-  );
+  const door = useThreadDoor(partition);
+  const standing = threadSendStanding(send, input.takes, door.door);
   return {
     takes:
       input.takes && standing.send !== "Ended" && standing.send !== "Unhosted",
@@ -151,7 +195,12 @@ export function useThreadSend(input: {
       if (session === undefined) {
         const open = await apiOpenThread(ports, partition);
         if (threadUnhosted(open)) {
-          setSend({ send: "Unhosted" });
+          door.learnt(false);
+          setSend(await door.refused());
+          return "Kept";
+        }
+        if (sessionRefusedNoRunner(open)) {
+          setSend({ send: "NoRunner" });
           return "Kept";
         }
         if (open.outcome !== "Ok") {
@@ -165,7 +214,8 @@ export function useThreadSend(input: {
         turn,
         message: text,
       });
-      setSend(answered);
+      if (answered.send === "Unhosted") door.learnt(false);
+      setSend(answered.send === "Unhosted" ? await door.refused() : answered);
       if (answered.send === "Sent") {
         setHeld(undefined);
         if (input.session === undefined) input.onStarted?.(session);
@@ -175,10 +225,14 @@ export function useThreadSend(input: {
       return "Kept";
     },
     onEdit: () => {
-      if (send.send === "Waiting" || send.send === "Refused")
+      if (
+        send.send === "Waiting" ||
+        send.send === "Refused" ||
+        send.send === "NoRunner"
+      )
         setSend({ send: "Idle" });
     },
-    note: <ThreadSendNote send={standing} />,
+    note: <ThreadSendNote partition={partition} send={standing} />,
     holds: standing.send === "Unhosted",
   };
 }

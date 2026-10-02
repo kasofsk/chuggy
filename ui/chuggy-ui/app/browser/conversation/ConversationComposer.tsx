@@ -32,10 +32,10 @@ export interface ConversationComposerProps {
    * because a refusal handed text back into it; the note beneath says why.
    * Otherwise such a box is `Closed` and the note. */
   readonly holds?: boolean;
-  /** Called when the reader changes the text, so the page can drop a note
-   * about a press this text has since moved past. Fired on the box's own
+  /** Called with the text when the reader changes it, so the page can drop a
+   * note about a press this text has since moved past. Fired on the box's own
    * change event, not on a programmatic restore of a kept message. */
-  readonly onEdit?: () => void;
+  readonly onEdit?: (text: string) => void;
   /** Whether this box takes the caret as it mounts, which is for a thread the
    * reader just named — one they started, or picked out of the history. A box
    * that took focus on every mount would take it from the page on the first
@@ -99,7 +99,11 @@ export function ConversationComposer(
             aria-label="Message"
             autoFocus={props.focusOnMount === true}
             onChange={
-              props.onEdit === undefined ? undefined : () => props.onEdit?.()
+              props.onEdit === undefined
+                ? undefined
+                : (event) => {
+                    props.onEdit?.(event.target.value);
+                  }
             }
           />
           <ComposerPrimitive.Send

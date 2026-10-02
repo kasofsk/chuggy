@@ -14,7 +14,7 @@ import {
   chatPaneDefault,
   chatPaneDefaultAt,
   chatPaneFilled,
-  chatPaneHeaderUnhosted,
+  chatPaneHeaderDoor,
   chatPaneHolding,
   chatPaneNarrowed,
   chatPaneRead,
@@ -27,6 +27,7 @@ import {
 } from "../app/core/chatPane.ts";
 import type { ChatPaneState } from "../app/core/chatPane.ts";
 import type { KeyValuePort } from "../app/core/sessionHolder.ts";
+import type { ThreadDoor } from "../app/core/threads.ts";
 import { threadEntry } from "./threadFixture.ts";
 
 function storeDouble(held: Record<string, string>): KeyValuePort {
@@ -246,15 +247,71 @@ test("a thread the reader named is held before the listing carries it", () => {
   });
 });
 
+function unhostedSaid(
+  ...header: Parameters<typeof chatPaneHeaderDoor>
+): boolean {
+  return chatPaneHeaderDoor(...header).unhosted;
+}
+
+function runnerSaid(
+  ...header: Parameters<typeof chatPaneHeaderDoor>
+): ReturnType<typeof chatPaneHeaderDoor>["runner"] {
+  return chatPaneHeaderDoor(...header).runner;
+}
+
+function door(
+  route: ThreadDoor["route"],
+  granted: ThreadDoor["granted"],
+  runner: ThreadDoor["runner"] = undefined,
+  reads: ThreadDoor["reads"] = 1,
+): ThreadDoor {
+  return { route, granted, runner, reads };
+}
+
 /** The header is the one place left to say the grant is withheld where a
- * thread is drawn whose composer would not; nowhere says it before the read. */
+ * thread is drawn whose composer would not; nowhere says it before the read,
+ * nor where the thread's turns go to runners, which ask no grant. */
 test("the header says the grant is withheld only beside a drawn thread that takes no messages", () => {
   const open = threadEntry({ session: "thread-open", state: "Open" });
   const closed = threadEntry({ session: "thread-closed", state: "Closed" });
-  expect(chatPaneHeaderUnhosted(false, true, closed)).toBe(true);
-  expect(chatPaneHeaderUnhosted(false, true, undefined)).toBe(true);
-  expect(chatPaneHeaderUnhosted(false, true, open)).toBe(false);
-  expect(chatPaneHeaderUnhosted(false, false, closed)).toBe(false);
-  expect(chatPaneHeaderUnhosted(true, true, closed)).toBe(false);
-  expect(chatPaneHeaderUnhosted(undefined, true, closed)).toBe(false);
+  const withheld = door("InCluster", false);
+  expect(unhostedSaid(withheld, true, closed)).toBe(true);
+  expect(unhostedSaid(withheld, true, undefined)).toBe(true);
+  expect(unhostedSaid(door(undefined, false), true, closed)).toBe(true);
+  expect(unhostedSaid(withheld, true, open)).toBe(false);
+  expect(unhostedSaid(withheld, false, closed)).toBe(false);
+  expect(unhostedSaid(door("Pool", false), true, closed)).toBe(false);
+  expect(unhostedSaid(door("InCluster", true), true, closed)).toBe(false);
+  expect(unhostedSaid(door("InCluster", undefined), true, closed)).toBe(false);
+});
+
+/** New's own refusal is newer than the read a drawn thread's box reads, so the
+ * header says it beside that thread until a later read says runners. */
+test("the header says the grant New met beside a drawn thread until a later read says runners", () => {
+  const open = threadEntry({ session: "thread-open", state: "Open" });
+  const met = { send: "Unhosted", readsAt: 1 } as const;
+  expect(unhostedSaid(door("Pool", false), true, open, met)).toBe(true);
+  expect(unhostedSaid(door("Pool", false, undefined, 2), true, open, met)).toBe(
+    false,
+  );
+  expect(unhostedSaid(door("InCluster", false), true, open, met)).toBe(false);
+  expect(unhostedSaid(door("Pool", false), false, open, met)).toBe(false);
+});
+
+/** The runner is said where the grant would be. */
+test("the header says the reader's runner only beside a drawn thread that takes no messages", () => {
+  const open = threadEntry({ session: "thread-open", state: "Open" });
+  const closed = threadEntry({ session: "thread-closed", state: "Closed" });
+  const none = door("Pool", false, "Unregistered");
+  expect(runnerSaid(none, true, closed)).toBe("NoRunner");
+  expect(runnerSaid(none, true, undefined)).toBe("NoRunner");
+  expect(runnerSaid(door("Pool", true, "Offline"), true, closed)).toBe(
+    "RunnerOffline",
+  );
+  expect(runnerSaid(door("Pool", true, "Live"), true, closed)).toBeUndefined();
+  expect(runnerSaid(none, true, open)).toBeUndefined();
+  expect(runnerSaid(none, false, closed)).toBeUndefined();
+  expect(
+    runnerSaid(door("InCluster", true, "Unregistered"), true, closed),
+  ).toBeUndefined();
 });

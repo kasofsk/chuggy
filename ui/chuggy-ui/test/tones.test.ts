@@ -97,6 +97,9 @@ test("each standing the arm draws is its own word and its own tone", () => {
     conversationStandingArm({ standing: "Running", state: "Claimed" }),
   ).toEqual({ word: "Claimed", tone: "live" });
   expect(
+    conversationStandingArm({ standing: "Running", state: "Waiting" }),
+  ).toEqual({ word: "Waiting", tone: "parked" });
+  expect(
     conversationStandingArm({ standing: "Failed", failure: "AgentFailed" }),
   ).toEqual({ word: "Failed", tone: "fail" });
   expect(conversationStandingArm({ standing: "Abandoned" })).toEqual({

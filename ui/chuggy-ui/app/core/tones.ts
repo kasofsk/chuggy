@@ -19,7 +19,10 @@ import type {
   SessionTurnState,
   TicketPhase,
 } from "../../../../src/contract/rosters.ts";
-import type { ConversationStanding } from "./conversation.ts";
+import type {
+  ConversationRunningState,
+  ConversationStanding,
+} from "./conversation.ts";
 import type { ForgeAppStanding } from "./forgeInstallation.ts";
 import { leadDispatchLanded } from "./leadTranscript.ts";
 import type { AgenticRefusalStanding, LeadDispatch } from "./leadTranscript.ts";
@@ -237,6 +240,18 @@ export function agenticRefusalStandingTone(
   }
 }
 
+/** A running turn's hue: the mailbox's own, and a turn waiting on a runner
+ * parked, since something stands in its way. */
+function conversationRunningTone(state: ConversationRunningState): Tone {
+  switch (state) {
+    case "Queued":
+    case "Claimed":
+      return sessionTurnStateTone(state);
+    case "Waiting":
+      return "parked";
+  }
+}
+
 /** One status word and its tone for where an exchange stands. */
 export interface ConversationStandingArm {
   readonly word: string;
@@ -259,7 +274,7 @@ export function conversationStandingArm(
     case "Running":
       return {
         word: standing.state,
-        tone: sessionTurnStateTone(standing.state),
+        tone: conversationRunningTone(standing.state),
       };
     case "Failed":
       return { word: "Failed", tone: sessionTurnStateTone("Failed") };

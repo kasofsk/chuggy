@@ -30,13 +30,18 @@ import {
 } from "../../core/apiRoutes.ts";
 import {
   chatPaneFilled,
-  chatPaneHeaderUnhosted,
+  chatPaneHeaderDoor,
   chatPaneHolding,
   chatPaneRestored,
   chatPaneStripped,
   chatPaneToggled,
+  chatPaneUnhosted,
 } from "../../core/chatPane.ts";
-import type { ChatPaneStart, ChatPaneState } from "../../core/chatPane.ts";
+import type {
+  ChatPaneHeaderDoor,
+  ChatPaneStart,
+  ChatPaneState,
+} from "../../core/chatPane.ts";
 import { panelReason } from "../../core/freshness.ts";
 import { leadSessionNamed } from "../../core/leadTranscript.ts";
 import {
@@ -48,13 +53,16 @@ import {
   threadMine,
   threadUnhosted,
 } from "../../core/threads.ts";
+import type { ThreadDoor, ThreadSend } from "../../core/threads.ts";
+import { sessionRefusedNoRunner } from "../../core/sessionRunners.ts";
 import { useApiPorts, usePanelList } from "../api.ts";
 import { PanelUnready } from "../DataPanel.tsx";
 import { Conversation } from "../conversation/Conversation.tsx";
 import { ThreadConversation } from "../thread/ThreadConversation.tsx";
+import { SessionRunnerNotice } from "../sessionPlacement.tsx";
 import {
   ThreadUnhostedNotice,
-  useHostedRuns,
+  useThreadDoor,
   useThreadSend,
 } from "../thread/threadSend.tsx";
 import { threadsListName, useThread } from "../thread/threadRead.ts";
@@ -111,8 +119,8 @@ function useChatPaneThreads(
 /**
  * The offer to start a thread: opened where the reader has none, closed and
  * reopened where they have one — the open asked first, which answers that
- * thread, so the hosted grant a close does not ask refuses before anything is
- * closed — and withheld while the one they have is still answering.
+ * thread, so the hosted grant or the runner a close does not ask refuses before
+ * anything is closed — and withheld while the one they have is still answering.
  *
  * IT NAVIGATES NOWHERE — the pane is where a thread is read, so opening one and
  * then going to its page would draw the same conversation twice, once under the
@@ -123,11 +131,9 @@ function ChatPaneStartControl(props: {
   readonly partition: PartitionIdentity;
   readonly start: ChatPaneStart;
   readonly onOpened: (session: string) => void;
-  readonly onUnhosted: () => void;
-  /** Whether the tenant grants no hosted runs and nothing under the header says
-   * so: the body says it where no thread is drawn, and a drawn thread's own
-   * composer where it takes messages. */
-  readonly unhosted: boolean;
+  readonly onRefused: (answer: "Unhosted" | "NoRunner") => void;
+  /** What the door would answer that nothing under the header says. */
+  readonly header: ChatPaneHeaderDoor;
 }): ReactNode {
   const start = props.start;
   const ports = useApiPorts();
@@ -157,7 +163,11 @@ function ChatPaneStartControl(props: {
           void opened.then((result) => {
             setBusy(false);
             if (threadUnhosted(result)) {
-              props.onUnhosted();
+              props.onRefused("Unhosted");
+              return;
+            }
+            if (sessionRefusedNoRunner(result)) {
+              props.onRefused("NoRunner");
               return;
             }
             if (result.outcome !== "Ok") {
@@ -171,7 +181,13 @@ function ChatPaneStartControl(props: {
       {refused === undefined ? null : (
         <Notice tone="danger" inline detail={`Refused · ${refused}`} />
       )}
-      {props.unhosted ? <ThreadUnhostedNotice /> : null}
+      {props.header.runner === undefined ? null : (
+        <SessionRunnerNotice
+          partition={props.partition}
+          short={props.header.runner}
+        />
+      )}
+      {props.header.unhosted ? <ThreadUnhostedNotice /> : null}
     </>
   );
 }
@@ -230,22 +246,40 @@ function ChatPaneThread(props: {
   );
 }
 
+/** What stands where the composer would, for a reader whose thread door asks a
+ * hosted grant the tenant does not give them: no thread they open could run. */
+function ChatPaneUnhosted(): ReactNode {
+  return (
+    <div
+      role="region"
+      aria-label="Conversation"
+      className="grid min-h-0 min-w-0 flex-1 content-end px-4 pb-4"
+    >
+      <ThreadUnhostedNotice />
+    </div>
+  );
+}
+
 /**
  * The composer a reader with no thread types in, whose first press opens one.
  * It stays drawn until that message is sent, so the thread it opened arriving
- * in the listing mid-send does not take the text away with it.
+ * in the listing mid-send does not take the text away with it, and while it
+ * holds text a door read as `unhosted` holds that text read-only.
  */
 function ChatPaneFirst(props: {
   readonly partition: PartitionIdentity;
+  readonly unhosted: boolean;
   readonly onStarting: () => void;
   readonly onStarted: (session: string) => void;
 }): ReactNode {
+  const [typed, setTyped] = useState(false);
   const composer = useThreadSend({
     partition: props.partition,
     session: undefined,
     takes: true,
     onStarted: props.onStarted,
   });
+  if (props.unhosted && !typed) return <ChatPaneUnhosted />;
   return (
     <div
       role="region"
@@ -260,23 +294,13 @@ function ChatPaneFirst(props: {
             props.onStarting();
             return composer.onSend(text);
           },
+          onEdit: (text) => {
+            setTyped(text !== "");
+            composer.onEdit?.(text);
+          },
         }}
         pane
       />
-    </div>
-  );
-}
-
-/** What stands where the composer would, for a reader the tenant does not
- * grant hosted runs: no thread they open could run. */
-function ChatPaneUnhosted(): ReactNode {
-  return (
-    <div
-      role="region"
-      aria-label="Conversation"
-      className="grid min-h-0 min-w-0 flex-1 content-end px-4 pb-4"
-    >
-      <ThreadUnhostedNotice />
     </div>
   );
 }
@@ -327,14 +351,41 @@ function ChatPaneBody(props: {
         named={props.named}
       />
     );
-  if (props.unhosted) return <ChatPaneUnhosted />;
   return (
     <ChatPaneFirst
       partition={props.partition}
+      unhosted={props.unhosted}
       onStarting={props.onStarting}
       onStarted={props.onStarted}
     />
   );
+}
+
+/** The reader's thread door as the pane holds it: as read, and as New last
+ * met it, which is newer than the read until a read after it answers. */
+function useChatPaneDoor(partition: PartitionIdentity): {
+  readonly door: ThreadDoor;
+  readonly refusal: ThreadSend;
+  readonly refused: (answer: "Unhosted" | "NoRunner") => void;
+  readonly opened: () => void;
+} {
+  const door = useThreadDoor(partition);
+  const [refusal, setRefusal] = useState<ThreadSend>({ send: "Idle" });
+  return {
+    door: door.door,
+    refusal,
+    refused: (answer) => {
+      if (answer === "Unhosted") door.learnt(false);
+      void door.refused().then((met) => {
+        setRefusal(answer === "Unhosted" ? met : { send: "Idle" });
+      });
+    },
+    /** The grant had to allow the open only where the route was read as hosted. */
+    opened: () => {
+      setRefusal({ send: "Idle" });
+      if (door.door.route === "InCluster") door.learnt(true);
+    },
+  };
 }
 
 function ChatPaneOpen(props: {
@@ -345,18 +396,16 @@ function ChatPaneOpen(props: {
   const answering = useChatPaneAnswering(props.partition, mine?.session);
   const [chosen, setChosen] = useState<string | undefined>(undefined);
   const [starting, setStarting] = useState(false);
-  const hosted = useHostedRuns(props.partition);
+  const door = useChatPaneDoor(props.partition);
   const holding = chatPaneHolding(threads, answering, chosen);
-  /** New refused for the grant, which is the newest word on whether it is given. */
-  const refuseUnhosted = (): void => {
-    hosted.learnt(false);
+  const refuse = (answer: "Unhosted" | "NoRunner"): void => {
+    door.refused(answer);
     setStarting(false);
   };
-  /** A thread that opened, which the grant had to allow. */
   const holdOpened = (session: string): void => {
     setChosen(session);
     setStarting(false);
-    hosted.learnt(true);
+    door.opened();
   };
   const held = threads?.find((thread) => thread.session === holding.session);
   const drawn = chatPaneThreadDrawn(holding.session, starting);
@@ -371,8 +420,8 @@ function ChatPaneOpen(props: {
             partition={props.partition}
             start={holding.start}
             onOpened={holdOpened}
-            onUnhosted={refuseUnhosted}
-            unhosted={chatPaneHeaderUnhosted(hosted.granted, drawn, held)}
+            onRefused={refuse}
+            header={chatPaneHeaderDoor(door.door, drawn, held, door.refusal)}
           />
           {threads === undefined ? null : (
             <ChatPaneHistory
@@ -398,7 +447,7 @@ function ChatPaneOpen(props: {
           session={holding.session}
           named={chosen !== undefined}
           starting={starting}
-          unhosted={hosted.granted === false}
+          unhosted={chatPaneUnhosted(door.door, door.refusal)}
           onStarting={() => {
             setStarting(true);
           }}

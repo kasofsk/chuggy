@@ -8,13 +8,20 @@
  * runtime verbatim. The thread page draws this in the middle of the shell and
  * the chat pane draws it in its own column, so it takes a thread already read
  * and reaches for nothing about where it sits.
+ *
+ * A queued turn of the reader's own thread reads as waiting where its turns go
+ * to runners and none of theirs can take one now; another member's thread
+ * runs on their runner, which no read here answers for.
  */
 
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import type { ThreadResponse } from "../../../../../src/contract/responses.ts";
-import { conversationExchanges } from "../../core/conversation.ts";
+import {
+  conversationExchanges,
+  conversationExchangesWaiting,
+} from "../../core/conversation.ts";
 import {
   leadStreamBatches,
   leadStreamListed,
@@ -23,11 +30,11 @@ import {
   sessionConversationItems,
   sessionConversationTurns,
 } from "../../core/sessionConversation.ts";
-import { threadTakesMessages } from "../../core/threads.ts";
+import { threadTakesMessages, threadTurnsWait } from "../../core/threads.ts";
 import { Conversation } from "../conversation/Conversation.tsx";
 import { useLeadTranscript } from "../lead/LeadTranscript.tsx";
 import { useConversationMentions } from "./threadMentions.ts";
-import { useThreadSend } from "./threadSend.tsx";
+import { useThreadDoor, useThreadSend } from "./threadSend.tsx";
 
 export function ThreadConversation(props: {
   readonly partition: PartitionIdentity;
@@ -49,6 +56,16 @@ export function ThreadConversation(props: {
     takes: threadTakesMessages(thread),
   });
   const mentions = useConversationMentions(props.partition);
+  const door = useThreadDoor(props.partition).door;
+  const exchanges = conversationExchanges(
+    sessionConversationItems({
+      held: walked.held,
+      stream: thread.agentReference,
+      listed: leadStreamListed(thread),
+      turned: thread.turns.length > 0,
+    }),
+    sessionConversationTurns(thread.turns),
+  );
   return (
     <div
       role="region"
@@ -57,15 +74,11 @@ export function ThreadConversation(props: {
       className="min-h-0 min-w-0 flex-1"
     >
       <Conversation
-        exchanges={conversationExchanges(
-          sessionConversationItems({
-            held: walked.held,
-            stream: thread.agentReference,
-            listed: leadStreamListed(thread),
-            turned: thread.turns.length > 0,
-          }),
-          sessionConversationTurns(thread.turns),
-        )}
+        exchanges={
+          thread.mine && threadTurnsWait(door)
+            ? conversationExchangesWaiting(exchanges)
+            : exchanges
+        }
         {...(thread.mine
           ? {
               composer: {

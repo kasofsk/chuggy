@@ -46,7 +46,10 @@ import {
 } from "../../../../src/contract/http.ts";
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type { leadInquirySchema } from "../../../../src/contract/requests.ts";
-import { hostedRunsNotGrantedCode } from "../../../../src/contract/rosters.ts";
+import {
+  hostedRunsNotGrantedCode,
+  noRunnerCode,
+} from "../../../../src/contract/rosters.ts";
 import type { LeadInquiryAccepted } from "../../../../src/contract/responses.ts";
 import type { ApiResult } from "./apiRequest.ts";
 import { panelReason } from "./freshness.ts";
@@ -184,9 +187,13 @@ export type InquiryAsk =
   | { readonly ask: "Asking" }
   | { readonly ask: "Asked"; readonly session: string }
   | { readonly ask: "Refused"; readonly word: string }
+  | { readonly ask: "NoRunner" }
   | { readonly ask: "Failed"; readonly reason: string };
 
+/** A refusal for no runner of the asker's own is its own arm, since the box
+ * says where one is added. */
 function inquiryRefused(code: string): InquiryAsk {
+  if (code === noRunnerCode) return { ask: "NoRunner" };
   return {
     ask: "Refused",
     word: inquiryRefusalWords[code] ?? inquiryRefusalWordUnknown,

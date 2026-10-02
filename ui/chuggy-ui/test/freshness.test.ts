@@ -16,6 +16,7 @@ import {
   panelObservedAtMs,
   panelReason,
   panelStateFromQuery,
+  panelStatePolled,
 } from "../app/core/freshness.ts";
 
 const nowMs = Date.parse("2026-08-26T12:00:00Z");
@@ -106,4 +107,34 @@ test("a live write with no cache timestamp yet is ready without a claim", () => 
     value: { ticket: 3 },
     observedAtMs: undefined,
   });
+});
+
+/** A poll is asked on a clock, so one that failed leaves its last answer
+ * standing; a polled read that never answered is still failed. */
+test("a polled read keeps its last answer across a failed poll, and only that", () => {
+  const fault = {
+    outcome: "Fault",
+    code: "InternalError",
+    status: 500,
+  } as const;
+  const error = new ApiOutcomeError(fault, panelReason(fault));
+  const kept = panelStatePolled({
+    data: { route: "Pool" },
+    error,
+    isPending: false,
+    dataUpdatedAt: nowMs,
+  });
+  expect(kept).toStrictEqual({
+    state: "Ready",
+    value: { route: "Pool" },
+    observedAtMs: nowMs,
+  });
+  expect(
+    panelStatePolled({
+      data: undefined,
+      error,
+      isPending: false,
+      dataUpdatedAt: 0,
+    }).state,
+  ).toBe("Failed");
 });
