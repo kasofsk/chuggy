@@ -528,8 +528,8 @@ async function workerPoolHoldingRead(
  * bounded wait runs out, where an empty answer is correct and the pool asks
  * again. A held list longer than a kind's bound is refused whole, since a cut
  * one reads as a pool that let go of work it still runs, and only a pool that
- * can take a session, reading them with room for one or holding one, is
- * recorded as polling.
+ * can take a session, reading them with room for one or holding one, from a
+ * plane that names the API a session reaches, is recorded as polling.
  */
 export async function workerPoolPoll(
   ports: WorkerPoolPorts,
@@ -553,6 +553,7 @@ export async function workerPoolPoll(
   )
     return { polled: "HeldOverBound" };
   if (
+    settings.sessionApiUrl !== undefined &&
     asked.readsSessions &&
     (asked.wantedSessions > 0 || holding.sessions.length > 0)
   )

@@ -274,7 +274,7 @@ export const migration033: Migration = {
                       WHERE w.tenant=a.tenant AND w.project=a.project
                         AND w.pool=a.pool AND w.principal=in_principal)
           AND a.state IN ('Placing','Running')
-          AND a.lease_expires_at>now() AND a.pool_refusal IS NULL
+          AND a.lease_expires_at>now()
           AND a.recovery_epoch=(SELECT r.epoch FROM recovery_epoch r
                                  ORDER BY r.ordinal DESC LIMIT 1)
           AND s.state='Open'

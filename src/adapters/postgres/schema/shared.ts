@@ -87,7 +87,7 @@ export const poolSessionHeldFunction = "pool_session_attempt_held";
 export const poolSessionRefuseFunction = "refuse_pool_session_attempt";
 export const poolSessionReleaseFunction = "release_pool_session_attempt";
 export const poolSessionImagesFunction = "pool_session_images";
-/** When a session's oldest queued turn could first be claimed: its enqueue, or the later end of whatever stood before it. */
+/** When a session's oldest queued turn could first be claimed: its enqueue, the end of the turn before it, or its return to the queue by an attempt that had claimed it. */
 export const sessionClaimableSinceFunction = "session_turn_claimable_since";
 export const configurationImporterRole = "chuggy_configuration_importer";
 export const workerAttemptReadFunction = "read_worker_attempt";

@@ -703,12 +703,13 @@ test("a pool whose release reads no sessions is asked nothing of sessions, claim
   assert.equal(recorded, 0);
 });
 
-test("only a poll from a pool able to take a session is recorded as one, once however long it waits", async () => {
-  for (const [over, recordedOnce] of [
-    [{ wantedSessions: 1 }, true],
-    [{ held: ["s1"] }, true],
-    [{ wanted: 1 }, false],
-    [{ wantedSessions: 1, readsSessions: false }, false],
+test("only a poll from a pool able to take a session, to a plane able to hand one out, is recorded as one, once however long it waits", async () => {
+  for (const [over, recordedOnce, terms] of [
+    [{ wantedSessions: 1 }, true, settings],
+    [{ held: ["s1"] }, true, settings],
+    [{ wanted: 1 }, false, settings],
+    [{ wantedSessions: 1, readsSessions: false }, false, settings],
+    [{ wantedSessions: 2 }, false, unaddressed],
   ] as const) {
     let recorded = 0;
     await workerPoolPoll(
@@ -723,7 +724,7 @@ test("only a poll from a pool able to take a session is recorded as one, once ho
       ),
       identity,
       asked(over),
-      settings,
+      terms,
     );
     assert.equal(recorded, recordedOnce ? 1 : 0, JSON.stringify(over));
   }
