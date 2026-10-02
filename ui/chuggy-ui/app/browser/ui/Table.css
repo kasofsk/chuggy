@@ -39,4 +39,15 @@
   .tabular .num {
     text-align: right;
   }
+
+  /* The scroller keeps a bar a reader can see, because an overlay bar leaves a
+     table cut at the edge looking like a table that ends there. */
+  .tabular-scroll::-webkit-scrollbar {
+    height: var(--space-2);
+  }
+
+  .tabular-scroll::-webkit-scrollbar-thumb {
+    border-radius: var(--radius-2);
+    background: var(--edge-strong);
+  }
 }
