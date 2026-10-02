@@ -9,10 +9,11 @@
  * count and the rows are one value: a read that refused becomes a notice beside
  * the rows the other one supplied rather than an empty panel under a badge that
  * still counts them. What a row ran is the project table's own index under the
- * project table's own key. What a row offers is the core's decision and what
- * happens after the click is `followOperation`'s, both shared with the ticket
- * page, because a second account of what the machine accepts is a second account
- * that drifts.
+ * project table's own key, and a ticket the phase page did not carry is the
+ * ticket page's own read under its key. What a row offers is the core's
+ * decision and what happens after the click is `followOperation`'s, both shared
+ * with the ticket page, because a second account of what the machine accepts
+ * is a second account that drifts.
  *
  * ANSWERING NEVER TOUCHES THE ROWS. The follow reports its steps into the row it
  * came from and writes into neither list; the row leaves when a `Ticket` frame
@@ -29,11 +30,15 @@ import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
-import type { AgenticRefusalsResponse } from "../../../../src/contract/responses.ts";
+import type {
+  AgenticRefusalsResponse,
+  TicketResponse,
+} from "../../../../src/contract/responses.ts";
 import {
   apiAgenticRefusals,
   apiNativeActions,
   apiProject,
+  apiTicket,
 } from "../core/apiRoutes.ts";
 import { base64urlFromBytes } from "../core/base64url.ts";
 import {
@@ -64,6 +69,7 @@ import {
   inboxUnionEmpty,
   inboxUnionRefusals,
   inboxUnionState,
+  inboxUnionTicketsUnheld,
 } from "../core/inboxUnion.ts";
 import type {
   InboxEntry,
@@ -106,7 +112,7 @@ import { actionsFor, ticketActionSentence } from "../core/ticketActions.ts";
 import type { TicketAction } from "../core/ticketActions.ts";
 import { ticketSectionTitles } from "../core/ticketSections.ts";
 import { agenticRefusalStandingTone } from "../core/tones.ts";
-import { useApiPorts, usePanelList } from "./api.ts";
+import { useApiPorts, usePanelList, usePanelResources } from "./api.ts";
 import { DataPanel } from "./DataPanel.tsx";
 import { useProjectExecutionIndex } from "./executionIndex.ts";
 import { useNowMs } from "./Freshness.tsx";
@@ -279,6 +285,31 @@ export function useInboxRows(partition: PartitionIdentity): InboxRowsHeld {
   };
 }
 
+/**
+ * The tickets the rows name that the phase page did not carry, each read under
+ * the ticket page's own key — which a `Ticket` frame writes, as it folds the
+ * phase page — and held by number once it has answered. The panel alone reads
+ * them; the badge counts rows and draws none.
+ */
+function useInboxTicketsUnheld(
+  partition: PartitionIdentity,
+  union: InboxUnion,
+): ReadonlyMap<number, TicketResponse> {
+  const tickets = inboxUnionTicketsUnheld(union);
+  const states = usePanelResources(
+    partition,
+    "Ticket",
+    tickets.map(String),
+    (resource, ports) => apiTicket(ports, partition, Number(resource)),
+  );
+  const read = new Map<number, TicketResponse>();
+  tickets.forEach((ticket, at) => {
+    const state = states[at];
+    if (state?.state === "Ready") read.set(ticket, state.value);
+  });
+  return read;
+}
+
 /** A follow that outlived its screen has nowhere to report, so it stops here. */
 function useLiving(): { readonly current: boolean } {
   const living = useRef(true);
@@ -418,12 +449,14 @@ function InboxRefusal(props: { readonly entry: InboxEntry }): ReactNode {
 }
 
 /**
- * One row. A ticket only the actions named has no projection row to draw from,
- * so its execution and activity columns say the screen did not read them rather
- * than filling them from a join it does not have.
+ * One row, drawn from the phase page's ticket or, where the page did not carry
+ * it, from the ticket's own read. Until that read answers the row has nothing
+ * to join, so its execution column says it was not read rather than that the
+ * ticket never ran.
  */
 function InboxRow(props: {
   readonly entry: InboxEntry;
+  readonly read: TicketResponse | undefined;
   readonly known: ProjectExecutionKnown | undefined;
   readonly truncated: boolean;
   readonly partition: PartitionIdentity;
@@ -432,11 +465,11 @@ function InboxRow(props: {
   readonly nowMs: number;
   readonly onAnswer: (action: TicketAction) => void;
 }): ReactNode {
-  const held = props.entry.held;
+  const ticket = props.entry.held ?? props.read;
   const row =
-    held === undefined
+    ticket === undefined
       ? undefined
-      : projectTableRow(held, props.known, props.truncated);
+      : projectTableRow(ticket, props.known, props.truncated);
   return (
     <tr>
       <TicketTitleCell
@@ -482,6 +515,7 @@ function InboxRow(props: {
 
 function InboxTable(props: {
   readonly entries: readonly InboxEntry[];
+  readonly read: ReadonlyMap<number, TicketResponse>;
   readonly index: ProjectExecutionIndex;
   readonly partition: PartitionIdentity;
   readonly answers: InboxAnswers;
@@ -506,6 +540,7 @@ function InboxTable(props: {
           <InboxRow
             key={entry.ticket}
             entry={entry}
+            read={props.read.get(entry.ticket)}
             known={projectExecutionIndexAt(props.index, entry.ticket)}
             truncated={props.index.truncated}
             partition={props.partition}
@@ -625,6 +660,7 @@ export function InboxScreen(props: {
 }): ReactNode {
   const partition = props.partition;
   const inbox = useInboxRows(partition);
+  const read = useInboxTicketsUnheld(partition, inbox.union);
   const executions = useProjectExecutionIndex(partition);
   const index =
     executions.state === "Ready"
@@ -651,6 +687,7 @@ export function InboxScreen(props: {
           ) : (
             <InboxTable
               entries={union.entries}
+              read={read}
               index={index}
               partition={partition}
               answers={answering.answers}

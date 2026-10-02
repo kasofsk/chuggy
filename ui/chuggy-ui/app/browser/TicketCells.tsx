@@ -123,7 +123,7 @@ export function TicketRowExecutionCell(props: {
 
 /** A ticket's last activity, wherever it is drawn: how long ago it was,
  * carrying the full instant on hover. A row with no ticket body — an inbox
- * entry a phase page never answered — has no instant of its own and keeps
+ * entry whose ticket is not read yet — has no instant of its own and keeps
  * the dash. */
 export function TicketActivity(props: {
   readonly activityAt: string | undefined;

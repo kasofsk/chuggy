@@ -24,16 +24,20 @@
  * screen counting rows a panel refuses to draw is the failure this arrangement
  * exists to make unreachable.
  *
- * A TICKET ONLY THE ACTIONS NAME IS DRAWN FROM WHAT THE ACTION CARRIES. Reading
- * the ticket for each such entry is a request per row, and this screen already
- * has four reads and a bounded index; the ticket's own page is one link away
- * and holds the rest. A proposed ticket is one of these: it is released, which
- * no phase the section holds, so its row says only what the proposal does.
+ * A TICKET THE PHASE PAGE DID NOT CARRY IS READ ON ITS OWN. Only an action, a
+ * refusal or a proposal named it, and none of those carries the ticket, so the
+ * screen draws its row from the ticket's own read where it would have drawn the
+ * page's. A proposed ticket is always one of these: it is released, which no
+ * phase the section holds, and its title names what an approval dispatches.
  *
  * A READER WHO MAY NOT DISPATCH HAS NO PROPOSALS, and the read answering them
  * absent is that answer rather than a refusal to say beside the rows.
  */
 
+import {
+  agenticRefusalsAnsweredMax,
+  selectorProposalDispatchesAnsweredMax,
+} from "../../../../src/contract/http.ts";
 import type { TicketResponse } from "../../../../src/contract/responses.ts";
 import type {
   AgenticRefusalResponse,
@@ -44,6 +48,7 @@ import type {
 } from "../../../../src/contract/responses.ts";
 
 import type { PanelState } from "./freshness.ts";
+import { projectNativeActionRowsMax } from "./projectNativeActionPages.ts";
 import type { ProjectNativeActionRows } from "./projectNativeActionPages.ts";
 import type { ProjectTicketRows } from "./projectTicketPages.ts";
 
@@ -137,6 +142,25 @@ export function inboxUnion(
       refused?.more === true ||
       proposals?.more === true,
   };
+}
+
+/**
+ * The most tickets the reads besides the phase page can name between them,
+ * each held to its own bound, so reading every one is reading no more than the
+ * inbox can hold.
+ */
+export const inboxUnionTicketsUnheldMax =
+  projectNativeActionRowsMax +
+  agenticRefusalsAnsweredMax +
+  selectorProposalDispatchesAnsweredMax;
+
+/** The tickets a row names that the phase page did not carry, in the union's
+ * order: the ones a screen reads on their own. */
+export function inboxUnionTicketsUnheld(union: InboxUnion): readonly number[] {
+  return union.entries
+    .filter((entry) => entry.held === undefined)
+    .slice(0, inboxUnionTicketsUnheldMax)
+    .map((entry) => entry.ticket);
 }
 
 function inboxUnionRefused(state: PanelState<unknown>): string | undefined {
