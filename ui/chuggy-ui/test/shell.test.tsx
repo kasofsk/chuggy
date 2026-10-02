@@ -1426,6 +1426,19 @@ test("the page column only stretches its wrapper for a page that fills it", asyn
   styleless();
 });
 
+test("the details are a container, so a sheet in them lays out at the aside's width", async () => {
+  pageDrawn = () => (
+    <DetailsSlot openFirst>
+      <p>aside</p>
+    </DetailsSlot>
+  );
+  await mounted(viewportDeskEm);
+  expect(screen.getByText("aside").parentElement?.className).toContain(
+    "@container",
+  );
+  styleless();
+});
+
 test("at the desk width the details open beside the page", async () => {
   pageDrawn = () => (
     <>

@@ -76,7 +76,7 @@ export function DetailsPane(props: {
           <aside
             ref={holdDetails}
             aria-label="Details"
-            className="grid min-h-0 content-start gap-4 overflow-y-auto p-4"
+            className="@container grid min-h-0 content-start gap-4 overflow-y-auto p-4"
           />
         </>
       ) : null}
