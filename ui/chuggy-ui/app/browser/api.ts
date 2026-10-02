@@ -18,7 +18,8 @@
  * is the freshness a finished run's evidence needs and is not live.
  */
 
-import { useQuery } from "@tanstack/react-query";
+import { queryOptions, useQueries, useQuery } from "@tanstack/react-query";
+import type { UseQueryResult } from "@tanstack/react-query";
 import { useMemo } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
@@ -79,19 +80,27 @@ export function useApiPorts(): ApiPorts {
   }, [holder]);
 }
 
-function usePanelQuery<T>(
+/** One key's read, the same however many keys a screen asks for at once, so a
+ * key two screens read is read one way. */
+function panelQueryOptions<T>(
+  ports: ApiPorts,
   key: ProjectQueryKey,
   read: PanelRead<T>,
-  polledMs?: number,
-): PanelState<T> {
-  const ports = useApiPorts();
-  const query = useQuery({
+  polledMs: number | undefined,
+) {
+  return queryOptions({
     queryKey: key,
     queryFn: async ({ signal }) =>
       apiOrThrow(await read(ports, signal), panelReason),
     retry: false,
     refetchInterval: polledMs ?? false,
   });
+}
+
+function panelQueryState<T>(
+  query: UseQueryResult<T>,
+  polledMs: number | undefined,
+): PanelState<T> {
   const state = {
     data: query.data,
     error: query.error,
@@ -101,6 +110,16 @@ function usePanelQuery<T>(
   return polledMs === undefined
     ? panelStateFromQuery<T>(state)
     : panelStatePolled<T>(state);
+}
+
+function usePanelQuery<T>(
+  key: ProjectQueryKey,
+  read: PanelRead<T>,
+  polledMs?: number,
+): PanelState<T> {
+  const ports = useApiPorts();
+  const query = useQuery(panelQueryOptions(ports, key, read, polledMs));
+  return panelQueryState(query, polledMs);
 }
 
 /** One resource of one kind, written by the frame that names it — or a part
@@ -119,6 +138,32 @@ export function usePanelResource<T>(
     read,
     polledMs,
   );
+}
+
+/** Several resources of one kind, each under the key `usePanelResource` reads
+ * it at, so a frame naming one writes it and a screen drawing one shares it. */
+export function usePanelResources<T>(
+  partition: PartitionIdentity,
+  kind: ProjectChangeKind,
+  resources: readonly string[],
+  read: (
+    resource: string,
+    ports: ApiPorts,
+    signal: AbortSignal,
+  ) => Promise<ApiResult<T>>,
+): readonly PanelState<T>[] {
+  const ports = useApiPorts();
+  const queries = useQueries({
+    queries: resources.map((resource) =>
+      panelQueryOptions(
+        ports,
+        projectResourceKey(partition, kind, resource),
+        (readPorts, signal) => read(resource, readPorts, signal),
+        undefined,
+      ),
+    ),
+  });
+  return queries.map((query) => panelQueryState<T>(query, undefined));
 }
 
 /** A list entry, whose refresh the list itself carries and this registers. */
