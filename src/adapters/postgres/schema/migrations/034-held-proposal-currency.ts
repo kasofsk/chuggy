@@ -1,11 +1,11 @@
 /**
- * A held proposal is always one its writer could still accept: a decision
- * stays `AwaitingApproval` only while every ticket it names is at the version
- * its command was fenced at. The writer ends each held decision naming a
- * ticket it moves, in the transaction that moves it, and the selector ends one
- * whose ticket moved while its lead was deciding, in the transaction that
- * records it. Either ends the decision whole and records no review, since a
- * reviewer is shown a decision whole and nobody answered this one.
+ * A decision stays `AwaitingApproval` only while every ticket it names is at
+ * the version its command was fenced at. The writer ends each held decision
+ * naming a ticket it moves, in the transaction that moves it, and the selector
+ * ends one whose ticket moved while its lead was deciding, in the transaction
+ * that records it. Either ends every held row of the decision and records no
+ * review, since a reviewer is shown a decision whole and nobody answered this
+ * one; a row the decision already released is left to its delivery.
  *
  * Both, and a review, take the project's row lock, which the writer holds for
  * the whole of every decision. An answer is therefore ordered against every
@@ -40,7 +40,8 @@ export const migration034: Migration = {
        PERFORM 1 FROM project WHERE tenant=in_tenant AND project=in_project FOR SHARE;
        UPDATE selector_proposal_delivery
           SET state='Terminal',outcome='{"state":"SelectionChanged"}'
-        WHERE selector_decision IN (
+        WHERE tenant=in_tenant AND project=in_project AND state='AwaitingApproval'
+          AND selector_decision IN (
             SELECT held.selector_decision FROM selector_proposal_delivery held
               JOIN ticket_projection moved
                 ON moved.tenant=held.tenant AND moved.project=held.project

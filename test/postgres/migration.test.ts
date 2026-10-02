@@ -9527,7 +9527,7 @@ function heldDecisionSeed(
       operation,command,ticket) VALUES ${deliveries};`;
 }
 
-test("034 ends whole every held decision naming a ticket that already moved, and keeps the rest held", async () => {
+test("034 ends every held row of a decision naming a ticket that already moved, and keeps the rest", async () => {
   await migrationDatabase("held_proposal_currency", async (subject) => {
     await installationBefore(subject, migration034.version);
     await subject.query(
@@ -9537,12 +9537,20 @@ test("034 ends whole every held decision naming a ticket that already moved, and
        INSERT INTO ticket_projection(tenant,project,ticket,phase,seq) VALUES
          ('tenant-34','project-34',1,'Work',5),
          ('tenant-34','project-34',2,'Pending',3),
-         ('tenant-34','project-34',3,'Pending',2);
+         ('tenant-34','project-34',3,'Pending',2),
+         ('tenant-34','project-34',4,'Work',7),
+         ('tenant-34','project-34',5,'Pending',1);
        ${heldDecisionSeed("moved", [
          [1, 4],
          [2, 3],
        ])}
-       ${heldDecisionSeed("current", [[3, 2]])}`,
+       ${heldDecisionSeed("current", [[3, 2]])}
+       ${heldDecisionSeed("mixed", [
+         [4, 6],
+         [5, 1],
+       ])}
+       UPDATE selector_proposal_delivery SET state='Pending',retry_at=now()
+        WHERE selector_decision='mixed' AND ticket=5;`,
     );
     assert.ok((await postgresMigrate(subject)).includes(migration034.version));
     assert.deepEqual(
@@ -9559,6 +9567,13 @@ test("034 ends whole every held decision naming a ticket that already moved, and
           state: "AwaitingApproval",
           outcome: null,
         },
+        {
+          decision: "mixed",
+          ticket: 4,
+          state: "Terminal",
+          outcome: '{"state":"SelectionChanged"}',
+        },
+        { decision: "mixed", ticket: 5, state: "Pending", outcome: null },
         ...[1, 2].map((ticket) => ({
           decision: "moved",
           ticket,
