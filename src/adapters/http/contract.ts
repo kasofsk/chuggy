@@ -15,11 +15,13 @@ import {
 } from "../../actor/command.ts";
 import type { ReleaseAuthoring } from "../../interpreter/authoring.ts";
 import {
+  identitySchema,
   nativeHttpCursorCharsMax,
   nativeHttpVersion,
   textCodePointsCount,
 } from "../../contract/http.ts";
 import type { ReleaseAuthoringBody } from "../../contract/authoring.ts";
+import type { SelectorReviewOutcome } from "../../contract/rosters.ts";
 import type { TicketBriefBody } from "../../contract/brief.ts";
 import {
   configurationCreationSchema,
@@ -645,6 +647,23 @@ export function parseThreadMessage(body: unknown): {
  */
 export function parseThreadRename(body: unknown): { readonly title: string } {
   return { title: nativeHttpEndpoints.renameThread.body.parse(body).title };
+}
+
+/** The decision a review names, and the answer and note its body carries. */
+export function parseSelectorProposalReview(
+  decision: string,
+  body: unknown,
+): {
+  readonly decision: string;
+  readonly outcome: SelectorReviewOutcome;
+  readonly feedback: string | undefined;
+} {
+  const value = nativeHttpEndpoints.reviewSelectorProposal.body.parse(body);
+  return {
+    decision: identitySchema.parse(decision),
+    outcome: value.outcome,
+    feedback: value.feedback,
+  };
 }
 
 /** Which side of its owner's rail this thread is on, strictly as `hidden`. */

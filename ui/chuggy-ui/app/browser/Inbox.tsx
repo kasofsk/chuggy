@@ -2,10 +2,10 @@
  * The escalation inbox: every ticket that needs a human, newest activity first,
  * each answerable where it stands.
  *
- * Three reads make the list — the phase page, the project's open native
- * actions and the lead's standing refusals — and `inboxUnion` is where they
- * become one row per ticket. The shell badge and this panel both take those
- * three reads through `useInboxRows`, so the
+ * Four reads make the list — the phase page, the project's open native
+ * actions, the lead's standing refusals and its decisions held for approval —
+ * and `inboxUnion` is where they become one row per ticket. The shell badge and
+ * this panel both take those reads through `useInboxRows`, so the
  * count and the rows are one value: a read that refused becomes a notice beside
  * the rows the other one supplied rather than an empty panel under a badge that
  * still counts them. What a row ran is the project table's own index under the
@@ -17,9 +17,10 @@
  * ANSWERING NEVER TOUCHES THE ROWS. The follow reports its steps into the row it
  * came from and writes into neither list; the row leaves when a `Ticket` frame
  * says the ticket left the section, or when a `NativeAction` frame says its open
- * questions are answered. Those are the only accounts of where a ticket is that
- * a reader can trust. `ui/chuggy-ui/test/inbox.test.tsx` and
- * `ui/chuggy-ui/test/inboxApproval.test.tsx` hold that.
+ * questions are answered, or when the held decisions read again no longer name
+ * it. Those are the only accounts of where a ticket is that a reader can trust.
+ * `ui/chuggy-ui/test/inbox.test.tsx`, `ui/chuggy-ui/test/inboxApproval.test.tsx`
+ * and `ui/chuggy-ui/test/inboxProposals.test.tsx` hold that.
  */
 
 import { useQueryClient } from "@tanstack/react-query";
@@ -43,6 +44,7 @@ import {
 } from "../core/codeSentences.ts";
 import { phaseLabel } from "../core/codeLabels.ts";
 import type { PanelState } from "../core/freshness.ts";
+import { inboxProposalsHeld } from "../core/inboxProposals.ts";
 import {
   inboxAnswerInFlight,
   inboxAnswersEmpty,
@@ -108,6 +110,14 @@ import { useApiPorts, usePanelList } from "./api.ts";
 import { DataPanel } from "./DataPanel.tsx";
 import { useProjectExecutionIndex } from "./executionIndex.ts";
 import { useNowMs } from "./Freshness.tsx";
+import {
+  InboxProposalActions,
+  InboxProposalNotice,
+  InboxProposalWhy,
+  useInboxProposalAnswers,
+  useInboxProposals,
+} from "./InboxProposals.tsx";
+import type { InboxProposalAnswers } from "./InboxProposals.tsx";
 import { drawBytes } from "./ports.ts";
 import { TopBarSlot } from "./shell/slots.tsx";
 import {
@@ -236,27 +246,32 @@ function useInboxPhaseRows(partition: PartitionIdentity): {
 }
 
 /**
- * All three reads, the union they make and the one state that draws it. The
- * badge and the panel take the same three values through the same two
- * functions, which is what makes the header's claim above true rather than
- * merely intended.
+ * All four reads, the union they make and the one state that draws it. The
+ * badge and the panel take the same values through the same two functions,
+ * which is what makes the header's claim above true rather than merely
+ * intended.
  */
 export function useInboxRows(partition: PartitionIdentity): InboxRowsHeld {
   const phase = useInboxPhaseRows(partition);
   const open = useInboxOpenActions(partition);
   const refused = useInboxRefusals(partition);
+  const proposals = useInboxProposals(partition);
   const held = phase.state.state === "Ready" ? phase.state.value : undefined;
   const openHeld = open.state === "Ready" ? open.value : undefined;
   const refusedHeld = refused.state === "Ready" ? refused.value : undefined;
+  const proposed = inboxProposalsHeld(proposals);
   const union =
-    held === undefined && openHeld === undefined && refusedHeld === undefined
+    held === undefined &&
+    openHeld === undefined &&
+    refusedHeld === undefined &&
+    proposed === undefined
       ? inboxUnionEmpty
-      : inboxUnion(held, openHeld, refusedHeld);
-  const panel = inboxUnionState(union, phase.state, open, refused);
+      : inboxUnion(held, openHeld, refusedHeld, proposed);
+  const panel = inboxUnionState(union, phase.state, open, refused, proposals);
   return {
     union,
     panel,
-    refusals: inboxUnionRefusals(panel, phase.state, open, refused),
+    refusals: inboxUnionRefusals(panel, phase.state, open, refused, proposals),
     pageFailure: held?.failure,
     openPageFailure: openHeld?.failure,
     readMore: phase.readMore,
@@ -312,7 +327,7 @@ function InboxActions(props: {
   const revoke = useTicketRevokeAsk(props.answer);
   const revoking = actions.find((action) => action.action === "Revoke");
   if (actions.length === 0)
-    return (
+    return props.entry.proposals.length > 0 ? null : (
       <span className="text-ink-3">no action can be sent from here yet</span>
     );
   return (
@@ -413,6 +428,7 @@ function InboxRow(props: {
   readonly truncated: boolean;
   readonly partition: PartitionIdentity;
   readonly answer: InboxAnswer | undefined;
+  readonly proposed: InboxProposalAnswers;
   readonly nowMs: number;
   readonly onAnswer: (action: TicketAction) => void;
 }): ReactNode {
@@ -430,6 +446,10 @@ function InboxRow(props: {
       />
       <td>
         <InboxWhy entry={props.entry} row={row} />
+        <InboxProposalWhy
+          ticket={props.entry.ticket}
+          proposals={props.entry.proposals}
+        />
         <InboxRefusal entry={props.entry} />
       </td>
       <td>
@@ -446,6 +466,10 @@ function InboxRow(props: {
           answer={props.answer}
           onAnswer={props.onAnswer}
         />
+        <InboxProposalActions
+          proposals={props.entry.proposals}
+          answers={props.proposed}
+        />
       </td>
       <td className="text-ink-3">
         {props.answer === undefined
@@ -461,6 +485,7 @@ function InboxTable(props: {
   readonly index: ProjectExecutionIndex;
   readonly partition: PartitionIdentity;
   readonly answers: InboxAnswers;
+  readonly proposed: InboxProposalAnswers;
   readonly nowMs: number;
   readonly onAnswer: (ticket: number, action: TicketAction) => void;
 }): ReactNode {
@@ -485,6 +510,7 @@ function InboxTable(props: {
             truncated={props.index.truncated}
             partition={props.partition}
             answer={props.answers[String(entry.ticket)]}
+            proposed={props.proposed}
             nowMs={props.nowMs}
             onAnswer={(action) => {
               props.onAnswer(entry.ticket, action);
@@ -559,6 +585,13 @@ function InboxNotices(props: {
           detail={`Refusals · ${held.refusals.standing}`}
         />
       )}
+      {held.refusals.proposals === undefined ? null : (
+        <Notice
+          tone="parked"
+          inline
+          detail={`Proposals · ${held.refusals.proposals}`}
+        />
+      )}
       {held.openPageFailure === undefined ? null : (
         <p className="panel-failed">
           a further page of open questions could not be read —{" "}
@@ -598,6 +631,7 @@ export function InboxScreen(props: {
       ? executions.value
       : projectExecutionIndexUnread;
   const answering = useInboxAnswers(partition);
+  const proposed = useInboxProposalAnswers(partition);
   const nowMs = useNowMs();
   const count = inboxCountLabel(inbox.union);
   return (
@@ -609,6 +643,7 @@ export function InboxScreen(props: {
         )}
       </TopBarSlot>
       <InboxNotices executions={executions} index={index} held={inbox} />
+      <InboxProposalNotice answers={proposed} />
       <DataPanel title={ticketSectionTitles[inboxSection]} state={inbox.panel}>
         {(union) =>
           union.entries.length === 0 ? (
@@ -619,6 +654,7 @@ export function InboxScreen(props: {
               index={index}
               partition={partition}
               answers={answering.answers}
+              proposed={proposed}
               nowMs={nowMs}
               onAnswer={answering.answer}
             />

@@ -63,7 +63,10 @@ import {
 import type { AgenticRefusalWrite } from "../../src/interpreter/agenticRefusal.ts";
 import type { SelectorRunFailure } from "../../src/interpreter/selectorRuntimeTypes.ts";
 import { asPrincipal } from "../../src/interpreter/nativeWeb.ts";
-import { selectorProposalReviews } from "../../src/interpreter/selectorReview.ts";
+import {
+  selectorProposalReviews,
+  selectorProposalReviewsHeld,
+} from "../../src/interpreter/selectorReview.ts";
 import { selectorRuntimeAdministration } from "../../src/interpreter/selectorAdmin.ts";
 import { selectorPlanning } from "../../src/interpreter/selectorPlanning.ts";
 import { selectorOperationalContext } from "./selectorFixture.ts";
@@ -2158,10 +2161,15 @@ test("proposal review requires dispatch authority and preserves feedback", async
       },
       reject: () => Promise.resolve(false),
       reviewFeedback: () => Promise.resolve([]),
+      recentReviewFeedback: () => Promise.resolve([]),
     },
   );
   const listed = await reviews.pending(asPrincipal("reviewer"), partition, 10);
-  assert.equal(listed.result, "Found");
+  assert.deepEqual(listed, {
+    result: "Found",
+    proposals: [{ decision: delivery.decision, tickets: [delivery.ticket] }],
+    more: false,
+  });
   const approved = await reviews.approve(
     asPrincipal("reviewer"),
     partition,
@@ -2170,6 +2178,27 @@ test("proposal review requires dispatch authority and preserves feedback", async
   );
   assert.deepEqual(approved, { result: "Changed" });
   assert.equal(approvedFeedback, "start this after the database migration");
+});
+
+test("held proposals are read whole, a full page leaving its last decision unread", () => {
+  const held = (decision: string, ticket: number): SelectorDelivery => ({
+    ...delivery,
+    decision,
+    ticket: asTicketId(ticket),
+  });
+  const page = [held("first", 1), held("first", 2), held("second", 3)];
+  assert.deepEqual(selectorProposalReviewsHeld(page, 4), {
+    proposals: [
+      { decision: "first", tickets: [1, 2] },
+      { decision: "second", tickets: [3] },
+    ],
+    more: false,
+  });
+  assert.deepEqual(
+    selectorProposalReviewsHeld(page, 3),
+    { proposals: [{ decision: "first", tickets: [1, 2] }], more: true },
+    "a page the limit filled may have cut its last decision short",
+  );
 });
 
 test("selector configuration changes require platform administration", async () => {

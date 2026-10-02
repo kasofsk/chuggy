@@ -237,6 +237,7 @@ test("a read that refused does not take the other read's rows off the panel", ()
     phase: "the API failed with InternalError",
     open: undefined,
     standing: undefined,
+    proposals: undefined,
   });
 });
 
@@ -251,6 +252,7 @@ test("the same holds the other way round, and the refusal is said as itself", ()
     phase: undefined,
     open: "the API could not be reached",
     standing: undefined,
+    proposals: undefined,
   });
 });
 
@@ -265,7 +267,12 @@ test("a screen holding neither answer refuses, with the phase page's reason", ()
   expect(
     inboxUnionRefusals(refused, phaseFailed, openFailed, standingFailed),
     "a refusal the panel is already drawing was repeated beside it",
-  ).toStrictEqual({ phase: undefined, open: undefined, standing: undefined });
+  ).toStrictEqual({
+    phase: undefined,
+    open: undefined,
+    standing: undefined,
+    proposals: undefined,
+  });
 });
 
 test("both reads still arriving is pending, and one of them arriving is not", () => {

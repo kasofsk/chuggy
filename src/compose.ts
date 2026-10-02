@@ -107,6 +107,7 @@ import type { ProjectGrantWriter } from "./interpreter/projectGrant.ts";
 import type { Principal } from "./interpreter/principal.ts";
 import {
   postgresSelectorProjectSettings,
+  postgresSelectorProposalReviews,
   postgresSelectorRuntimeControl,
   postgresSelectorState,
 } from "./adapters/postgres/selector.ts";
@@ -134,6 +135,10 @@ import {
   selectorProjectSettingsAdministration,
   type SelectorProjectSettingsAdministration,
 } from "./interpreter/selectorProjectSettings.ts";
+import {
+  selectorProposalReviews,
+  type SelectorProposalReviews,
+} from "./interpreter/selectorReview.ts";
 import { postgresFinalizer } from "./adapters/postgres/finalizer.ts";
 import { postgresTicketBrief } from "./adapters/postgres/ticketBrief.ts";
 import {
@@ -310,6 +315,20 @@ export function composeSelectorProjectSettings(
   return selectorProjectSettingsAdministration(
     access,
     postgresSelectorProjectSettings(apiPool),
+  );
+}
+
+/**
+ * Wires the review of a lead's held proposals to the review role, whose definer
+ * is the one way a held delivery moves, under the dispatch permit a reviewer needs.
+ */
+export function composeSelectorProposalReviews(
+  selectorReviewPool: pg.Pool,
+  access: ProjectAccess,
+): SelectorProposalReviews {
+  return selectorProposalReviews(
+    access,
+    postgresSelectorProposalReviews(selectorReviewPool),
   );
 }
 

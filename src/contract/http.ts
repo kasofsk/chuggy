@@ -211,6 +211,19 @@ export const selectorHandoffNotePreviewCharsMax = 4_096;
 export const selectorHistoryLimitMax = 50;
 
 /**
+ * How many dispatches one read of a project's held proposals answers with. A
+ * proposal is read whole, so this is wider than any one decision's dispatches.
+ */
+export const selectorProposalDispatchesAnsweredMax = nativeHttpPageItemsMax;
+
+/**
+ * The longest note a reviewer leaves on a proposal, which the lead reads in its
+ * next observation. It is typed by a person about one decision, so it is
+ * bounded as a reason is rather than as the column is.
+ */
+export const selectorReviewFeedbackCharsMax = 1_024;
+
+/**
  * The longest reason one agentic refusal carries. It is what makes a page of
  * standing refusals bounded, so it moves only together with the two counts
  * below it.
@@ -383,6 +396,8 @@ export const nativeHttpRoutes = {
   selectorSettings: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/selector-settings`,
   selectorSettingsHistory: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/selector-settings/history`,
   selectorHistory: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/selector-history`,
+  selectorProposals: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/selector-proposals`,
+  selectorProposalReview: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/selector-proposals/:decision/review`,
   lead: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/lead`,
   leadTranscript: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/lead/transcript`,
   leadInquiries: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/lead/inquiries`,

@@ -81,6 +81,8 @@ function serving(served: {
   return (url) => {
     if (url.includes("/native-actions")) return served.actions();
     if (url.includes("/executions")) return answer({ executions: [] });
+    if (url.includes("/selector-proposals"))
+      return answer({ proposals: [], more: false });
     if (url.includes("/tenants/")) return served.phase();
     return answer({ projects: [atlas] });
   };

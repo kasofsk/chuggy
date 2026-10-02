@@ -32,7 +32,7 @@ test("selector context preserves both scheduler backlog authorities", async () =
           backlog: { project: 6, installation: 12 },
         }),
     },
-    { reviewFeedback: () => Promise.resolve([]) },
+    { recentReviewFeedback: () => Promise.resolve([]) },
     {
       now: () => ({
         instant: "2026-08-23T12:00:00.000Z",

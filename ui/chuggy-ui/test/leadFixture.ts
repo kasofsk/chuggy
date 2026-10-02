@@ -385,6 +385,8 @@ export function leadRouteAnswer(
   if (url.includes("/selector-history")) return found(leadHistory);
   if (url.includes("/agentic-refusals")) return found(served.refusals);
   if (url.includes("/native-actions")) return found({ actions: [] });
+  if (url.includes("/selector-proposals"))
+    return found({ proposals: [], more: false });
   return found({ partition: leadPartition, sequence: 12, tickets: [] });
 }
 

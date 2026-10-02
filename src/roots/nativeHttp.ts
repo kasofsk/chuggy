@@ -45,6 +45,7 @@ import {
   composeProjectCreation,
   composeRepositoryOnboarding,
   composeSelectorProjectSettings,
+  composeSelectorProposalReviews,
   composeSessionPlacement,
   type RepositoryCredentialMinting,
 } from "../compose.ts";
@@ -1130,6 +1131,7 @@ async function main(): Promise<void> {
     ),
     composeExecutionPlacement(pool, access),
     composeSessionPlacement(pool, access),
+    composeSelectorProposalReviews(selectorReviewPool, access),
   );
   app.addHook("onClose", async () => {
     await hub.close();

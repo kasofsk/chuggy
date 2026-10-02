@@ -1,7 +1,7 @@
 /**
  * The tickets the inbox holds: the phase page joined with the project's open
- * native actions and its standing agentic refusals, one entry per ticket in
- * any of the three.
+ * native actions, its standing agentic refusals and the lead's decisions held
+ * for approval, one entry per ticket in any of the four.
  *
  * "Needs you" is the phase section plus any ticket carrying an open action,
  * which is what puts a ticket awaiting a finalization approval in front of the
@@ -26,8 +26,12 @@
  *
  * A TICKET ONLY THE ACTIONS NAME IS DRAWN FROM WHAT THE ACTION CARRIES. Reading
  * the ticket for each such entry is a request per row, and this screen already
- * has three reads and a bounded index; the ticket's own page is one link away
- * and holds the rest.
+ * has four reads and a bounded index; the ticket's own page is one link away
+ * and holds the rest. A proposed ticket is one of these: it is released, which
+ * no phase the section holds, so its row says only what the proposal does.
+ *
+ * A READER WHO MAY NOT DISPATCH HAS NO PROPOSALS, and the read answering them
+ * absent is that answer rather than a refusal to say beside the rows.
  */
 
 import type { TicketResponse } from "../../../../src/contract/responses.ts";
@@ -35,6 +39,8 @@ import type {
   AgenticRefusalResponse,
   AgenticRefusalsResponse,
   ProjectNativeActionResponse,
+  SelectorProposalResponse,
+  SelectorProposalsResponse,
 } from "../../../../src/contract/responses.ts";
 
 import type { PanelState } from "./freshness.ts";
@@ -46,6 +52,7 @@ export interface InboxEntry {
   readonly held: TicketResponse | undefined;
   readonly actions: readonly ProjectNativeActionResponse[];
   readonly refusals: readonly AgenticRefusalResponse[];
+  readonly proposals: readonly SelectorProposalResponse[];
 }
 
 export interface InboxUnion {
@@ -69,51 +76,66 @@ function inboxUnionRefusalsAt(
   return refusals.filter((refusal) => refusal.ticket === ticket);
 }
 
+interface InboxUnionReads {
+  readonly open: readonly ProjectNativeActionResponse[];
+  readonly standing: readonly AgenticRefusalResponse[];
+  readonly proposed: readonly SelectorProposalResponse[];
+}
+
 function inboxUnionEntry(
   ticket: number,
   held: TicketResponse | undefined,
-  open: readonly ProjectNativeActionResponse[],
-  standing: readonly AgenticRefusalResponse[],
+  reads: InboxUnionReads,
 ): InboxEntry {
   return {
     ticket,
     held,
-    actions: inboxUnionActionsAt(open, ticket),
-    refusals: inboxUnionRefusalsAt(standing, ticket),
+    actions: inboxUnionActionsAt(reads.open, ticket),
+    refusals: inboxUnionRefusalsAt(reads.standing, ticket),
+    proposals: reads.proposed.filter((proposal) =>
+      proposal.tickets.includes(ticket),
+    ),
   };
 }
 
 /**
  * The phase page's rows in the order it gave them, then the tickets only the
- * actions name, then the tickets only the refusals name: each list is already
- * ordered by its own fence, and interleaving three fences would order by none.
+ * actions name, then those only the refusals name, then those only a proposal
+ * names: each list is already ordered by its own fence, and interleaving them
+ * would order by none. An unread proposals read is the one a caller omits.
  */
 export function inboxUnion(
   rows: ProjectTicketRows | undefined,
   actions: ProjectNativeActionRows | undefined,
   refused: AgenticRefusalsResponse | undefined,
+  proposals?: SelectorProposalsResponse,
 ): InboxUnion {
-  const open = actions?.actions ?? [];
-  const standing = refused?.refusals ?? [];
+  const reads: InboxUnionReads = {
+    open: actions?.actions ?? [],
+    standing: refused?.refusals ?? [],
+    proposed: proposals?.proposals ?? [],
+  };
   const held = rows?.tickets ?? [];
   const listed = new Set(held.map((ticket) => ticket.ticket));
   const entries: InboxEntry[] = held.map((ticket) =>
-    inboxUnionEntry(ticket.ticket, ticket, open, standing),
+    inboxUnionEntry(ticket.ticket, ticket, reads),
   );
   for (const ticket of [
-    ...open.map((action) => action.ticket),
-    ...standing.map((refusal) => refusal.ticket),
+    ...reads.open.map((action) => action.ticket),
+    ...reads.standing.map((refusal) => refusal.ticket),
+    ...reads.proposed.flatMap((proposal) => proposal.tickets),
   ]) {
     if (listed.has(ticket)) continue;
     listed.add(ticket);
-    entries.push(inboxUnionEntry(ticket, undefined, open, standing));
+    entries.push(inboxUnionEntry(ticket, undefined, reads));
   }
   return {
     entries,
     more:
       rows?.nextCursor !== undefined ||
       actions?.nextCursor !== undefined ||
-      refused?.more === true,
+      refused?.more === true ||
+      proposals?.more === true,
   };
 }
 
@@ -135,17 +157,18 @@ function inboxUnionObservedAtMs(
 }
 
 /**
- * What the panel draws, over the three reads. Any one answering draws the
- * union; only a screen holding no answer at all refuses, and it refuses with
- * the phase page's reason, which is the read the section is named for.
+ * What the panel draws, over the reads. Any one answering draws the union;
+ * only a screen holding no answer at all refuses, and it refuses with the phase
+ * page's reason, which is the read the section is named for.
  */
 export function inboxUnionState(
   union: InboxUnion,
   phase: PanelState<ProjectTicketRows>,
   open: PanelState<ProjectNativeActionRows>,
   refused: PanelState<AgenticRefusalsResponse>,
+  proposals: PanelState<SelectorProposalsResponse> = { state: "Pending" },
 ): PanelState<InboxUnion> {
-  const states = [phase, open, refused];
+  const states = [phase, open, refused, proposals];
   if (states.some((state) => state.state === "Ready"))
     return {
       state: "Ready",
@@ -162,6 +185,7 @@ export interface InboxRefusals {
   readonly phase: string | undefined;
   readonly open: string | undefined;
   readonly standing: string | undefined;
+  readonly proposals: string | undefined;
 }
 
 /**
@@ -173,12 +197,19 @@ export function inboxUnionRefusals(
   phase: PanelState<ProjectTicketRows>,
   open: PanelState<ProjectNativeActionRows>,
   refused: PanelState<AgenticRefusalsResponse>,
+  proposals: PanelState<SelectorProposalsResponse> = { state: "Pending" },
 ): InboxRefusals {
   if (state.state !== "Ready")
-    return { phase: undefined, open: undefined, standing: undefined };
+    return {
+      phase: undefined,
+      open: undefined,
+      standing: undefined,
+      proposals: undefined,
+    };
   return {
     phase: inboxUnionRefused(phase),
     open: inboxUnionRefused(open),
     standing: inboxUnionRefused(refused),
+    proposals: proposals.state === "Failed" ? proposals.reason : undefined,
   };
 }

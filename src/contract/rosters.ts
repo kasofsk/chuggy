@@ -377,6 +377,10 @@ export type ProjectRepositoryConfigurationDeferralName =
 export const selectorDispatchModes = ["Automatic", "ApprovalRequired"] as const;
 export type SelectorDispatchMode = (typeof selectorDispatchModes)[number];
 
+/** What a reviewer answers a held proposal: send its dispatches, or end them. */
+export const selectorReviewOutcomes = ["Approved", "Rejected"] as const;
+export type SelectorReviewOutcome = (typeof selectorReviewOutcomes)[number];
+
 /** Where one of a decision's dispatches stands, which is what the log says landed. */
 export const selectorDeliveryStates = [
   "AwaitingApproval",
@@ -562,6 +566,9 @@ export const hostedRunsNotGrantedCode = "HostedRunsNotGranted";
  * the turn would be offered to runners; shared for the same reason.
  */
 export const noRunnerCode = "NoRunner";
+
+/** What a review of a decision no longer held is answered with; shared for the same reason. */
+export const selectorProposalNotHeldCode = "ProposalNotHeld";
 
 /** Who or what put a turn in a session's mailbox. */
 export const sessionTurnInputKinds = [

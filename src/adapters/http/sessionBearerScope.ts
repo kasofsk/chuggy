@@ -11,7 +11,9 @@
  * is answered, so a session learns nothing of a project it cannot reach. A
  * `Refused` route never admits one: everything not addressed to one partition,
  * and inside one the registration-token mint, because enrolling a machine is
- * provisioning rather than work. A `Public` route reads no bearer at all.
+ * provisioning rather than work, and the answer to a lead's held proposal,
+ * because the hold is there for a person to answer and the lead's session
+ * holds a bearer. A `Public` route reads no bearer at all.
  *
  * THE TABLE IS EXHAUSTIVE OVER THE ROUTE TABLE, so a route named there without
  * a class is a compile error, and a method or path served without an entry
@@ -60,6 +62,8 @@ export const sessionBearerRouteClasses = {
   selectorSettings: { GET: "Partition", PUT: "Partition" },
   selectorSettingsHistory: partitionRead,
   selectorHistory: partitionRead,
+  selectorProposals: partitionRead,
+  selectorProposalReview: { POST: "Refused" },
   lead: partitionRead,
   leadTranscript: partitionRead,
   leadInquiries: { GET: "Partition", POST: "Partition" },

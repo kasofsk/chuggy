@@ -32,6 +32,7 @@ import {
   leadRefusals,
   leadRouteAnswer,
 } from "./leadFixture.ts";
+import { navRoutes } from "../app/core/shellNav.ts";
 import { pillTones } from "../app/core/tones.ts";
 import { operationRefusalCodes } from "../../../src/contract/rosters.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
@@ -43,8 +44,8 @@ vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
 
 vi.mock("@tanstack/react-router", () => ({
   createLink: (component: unknown) => component,
-  Link: (props: { readonly children?: ReactNode }) => (
-    <a href="/">{props.children}</a>
+  Link: (props: { readonly children?: ReactNode; readonly to?: string }) => (
+    <a href={props.to ?? "/"}>{props.children}</a>
   ),
   useParams: () => ({ ...leadPartition }),
 }));
@@ -271,9 +272,27 @@ test("a dispatch settled with no readable outcome says so", async () => {
   await drawDecisions({ decisions: [leadDecisionUnsaid] });
   expect(rows(groups()[0])).toStrictEqual([
     { label: "Dispatch", tone: "neutral", word: "Unknown", note: "71" },
-    { label: "Dispatch", tone: "parked", word: "Approval", note: "72" },
+    {
+      label: "Dispatch",
+      tone: "parked",
+      word: "Approval",
+      note: "72 · Inbox",
+    },
     { label: "Refused", tone: "fail", word: "Refused", note: "42" },
   ]);
+});
+
+/** A held dispatch is answered in the inbox, so its row says where rather
+ * than being a second place to answer it. */
+test("a dispatch held for approval points to the inbox, and no other does", async () => {
+  await drawDecisions({ decisions: [leadDecisionUnsaid] });
+  const links = [
+    ...(groups()[0]?.querySelectorAll<HTMLAnchorElement>(".ledger-note a") ??
+      []),
+  ];
+  expect(
+    links.map((link) => [link.textContent, link.getAttribute("href")]),
+  ).toStrictEqual([["Inbox", navRoutes.inbox]]);
 });
 
 /**
