@@ -1439,29 +1439,31 @@ async function awaitingApproval(
   return found.rows.map(deliveryOf);
 }
 
-async function readReviewFeedback(
+async function heldAmong(
   pool: pg.Pool,
   partition: Partition,
-  after: number | undefined,
-  limit: number,
-): Promise<readonly SelectorReviewFeedback[]> {
-  checkedSelectorLimit(limit, "selector review feedback");
-  const found = await pool.query<{
-    selector_decision: string;
-    ordinal: string;
-    review_outcome: string;
-    reviewer_kind: string;
-    reviewer_subject: string;
-    review_feedback: string | null;
-    reviewed_at: Date;
-  }>(
-    sql`SELECT selector_decision,ordinal::text,outcome AS review_outcome,
-       reviewer_kind,reviewer_subject,feedback AS review_feedback,reviewed_at
-       FROM selector_proposal_review
+  tickets: readonly SelectorDelivery["ticket"][],
+): Promise<readonly SelectorDelivery["ticket"][]> {
+  const found = await pool.query<{ ticket: string }>(
+    sql`SELECT DISTINCT ticket::text AS ticket FROM selector_proposal_delivery
      WHERE tenant=${partition.tenant} AND project=${partition.project}
-       AND ordinal>${after ?? 0} ORDER BY ordinal LIMIT ${limit}`,
+       AND state='AwaitingApproval' AND ticket=ANY(${[...tickets]}::bigint[])`,
   );
-  return found.rows.map((row) => ({
+  return found.rows.map((row) => asTicketId(Number(row.ticket)));
+}
+
+interface ReviewFeedbackRow {
+  selector_decision: string;
+  ordinal: string;
+  review_outcome: string;
+  reviewer_kind: string;
+  reviewer_subject: string;
+  review_feedback: string | null;
+  reviewed_at: Date;
+}
+
+function reviewFeedbackOf(row: ReviewFeedbackRow): SelectorReviewFeedback {
+  return {
     ordinal: projectRowCounter(row.ordinal, "selector review ordinal"),
     selectorDecision: row.selector_decision,
     outcome:
@@ -1476,7 +1478,42 @@ async function readReviewFeedback(
     },
     ...(row.review_feedback === null ? {} : { feedback: row.review_feedback }),
     reviewedAt: row.reviewed_at.toISOString(),
-  }));
+  };
+}
+
+async function readReviewFeedback(
+  pool: pg.Pool,
+  partition: Partition,
+  after: number | undefined,
+  limit: number,
+): Promise<readonly SelectorReviewFeedback[]> {
+  checkedSelectorLimit(limit, "selector review feedback");
+  const found = await pool.query<ReviewFeedbackRow>(
+    sql`SELECT selector_decision,ordinal::text,outcome AS review_outcome,
+       reviewer_kind,reviewer_subject,feedback AS review_feedback,reviewed_at
+       FROM selector_proposal_review
+     WHERE tenant=${partition.tenant} AND project=${partition.project}
+       AND ordinal>${after ?? 0} ORDER BY ordinal LIMIT ${limit}`,
+  );
+  return found.rows.map(reviewFeedbackOf);
+}
+
+/** The newest reviews, oldest of them first, which is the order they were given in. */
+async function readRecentReviewFeedback(
+  pool: pg.Pool,
+  partition: Partition,
+  limit: number,
+): Promise<readonly SelectorReviewFeedback[]> {
+  checkedSelectorLimit(limit, "selector review feedback");
+  const found = await pool.query<ReviewFeedbackRow>(
+    sql`SELECT selector_decision,ordinal::text,outcome AS review_outcome,
+       reviewer_kind,reviewer_subject,feedback AS review_feedback,reviewed_at
+       FROM (SELECT * FROM selector_proposal_review
+         WHERE tenant=${partition.tenant} AND project=${partition.project}
+         ORDER BY ordinal DESC LIMIT ${limit}) AS recent
+     ORDER BY ordinal`,
+  );
+  return found.rows.map(reviewFeedbackOf);
 }
 
 async function readInventoryCursor(
@@ -1710,6 +1747,10 @@ async function recordSelectorState(
       return { recorded: false, deliveries: [] };
     await replacePlanningIntent(client, interaction, planningIntent);
     const deliveries = await insertSelectorProposals(client, proposals);
+    if (deliveries.length > 0)
+      await client.query<{ retire_moved_selector_proposals: string | null }>(
+        sql`SELECT retire_moved_selector_proposals(${interaction.partition.tenant},${interaction.partition.project})::text`,
+      );
     await writeSelectorProject(client, state);
     return { recorded: true, deliveries };
   });
@@ -2026,6 +2067,7 @@ export function postgresSelectorState(pool: pg.Pool): SelectorStateStore {
       readSelectorInteractions(pool, partition, undefined, limit, true),
     project: (partition) => readSelectorProject(pool, partition),
     planningIntent: (partition) => readPlanningIntent(pool, partition),
+    heldAmong: (partition, tickets) => heldAmong(pool, partition, tickets),
   };
 }
 
@@ -2053,5 +2095,7 @@ export function postgresSelectorProposalReviews(
     },
     reviewFeedback: (partition, after, limit) =>
       readReviewFeedback(pool, partition, after, limit),
+    recentReviewFeedback: (partition, limit) =>
+      readRecentReviewFeedback(pool, partition, limit),
   };
 }

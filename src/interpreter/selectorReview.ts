@@ -2,8 +2,9 @@ import type { Principal, ProjectAccess } from "./nativeWeb.ts";
 import type { Partition } from "./projectStore.ts";
 import type { SelectorDelivery, SelectorReviewFeedback } from "./selector.ts";
 import type { Authority } from "./operationInbox.ts";
+import type { SelectorReviewFeedbackRead } from "./selectorOperationalContext.ts";
 
-export interface SelectorProposalReviewStore {
+export interface SelectorProposalReviewStore extends SelectorReviewFeedbackRead {
   awaitingApproval(
     partition: Partition,
     limit: number,
@@ -32,6 +33,17 @@ export type SelectorReviewResult =
   | { readonly result: "Changed" }
   | { readonly result: "Stale" };
 
+/** One held decision and every ticket it would dispatch, since a review answers the decision whole. */
+export interface SelectorProposalHeld {
+  readonly decision: string;
+  readonly tickets: readonly SelectorDelivery["ticket"][];
+}
+
+export interface SelectorProposalsHeld {
+  readonly proposals: readonly SelectorProposalHeld[];
+  readonly more: boolean;
+}
+
 export interface SelectorProposalReviews {
   pending(
     principal: Principal,
@@ -39,10 +51,7 @@ export interface SelectorProposalReviews {
     limit: number,
   ): Promise<
     | { readonly result: "NotFound" }
-    | {
-        readonly result: "Found";
-        readonly proposals: readonly SelectorDelivery[];
-      }
+    | ({ readonly result: "Found" } & SelectorProposalsHeld)
   >;
   approve(
     principal: Principal,
@@ -68,6 +77,33 @@ export interface SelectorProposalReviews {
         readonly feedback: readonly SelectorReviewFeedback[];
       }
   >;
+}
+
+/**
+ * The deliveries a page read, grouped by decision in the order the store gave
+ * them. A full page may have cut its last decision short, so that decision is
+ * left for a later read rather than offered for review missing a ticket.
+ */
+export function selectorProposalReviewsHeld(
+  deliveries: readonly SelectorDelivery[],
+  limit: number,
+): SelectorProposalsHeld {
+  const proposals: {
+    decision: string;
+    tickets: SelectorDelivery["ticket"][];
+  }[] = [];
+  for (const delivery of deliveries) {
+    const last = proposals.at(-1);
+    if (last?.decision === delivery.decision)
+      last.tickets.push(delivery.ticket);
+    else
+      proposals.push({
+        decision: delivery.decision,
+        tickets: [delivery.ticket],
+      });
+  }
+  const full = deliveries.length >= limit;
+  return { proposals: full ? proposals.slice(0, -1) : proposals, more: full };
 }
 
 /** Reuses manual-dispatch authority for the weaker, user-approved selector mode. */
@@ -101,7 +137,10 @@ export function selectorProposalReviews(
         ? { result: "NotFound" }
         : {
             result: "Found",
-            proposals: await store.awaitingApproval(partition, limit),
+            ...selectorProposalReviewsHeld(
+              await store.awaitingApproval(partition, limit),
+              limit,
+            ),
           },
     approve: (principal, partition, decision, feedback) =>
       change(

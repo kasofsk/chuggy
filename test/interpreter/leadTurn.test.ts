@@ -604,6 +604,7 @@ test("a candidate excluded past a page of standing is shown and can be lifted", 
       operationalContext: () => Promise.resolve(operationalContext),
     },
     refusalsStandingAmong([refused]),
+    { heldAmong: () => Promise.resolve([]) },
     { result: "Events", cursor: 1, events: [] },
   );
   assert.ok(observed, "a moved view is an observation");

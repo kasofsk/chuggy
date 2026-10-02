@@ -42,6 +42,7 @@ import { migration027 } from "../../src/adapters/postgres/schema/migrations/027-
 import { migration028 } from "../../src/adapters/postgres/schema/migrations/028-binding-lands-by-pull-request.ts";
 import { migration029 } from "../../src/adapters/postgres/schema/migrations/029-project-execution-placement.ts";
 import { migration032 } from "../../src/adapters/postgres/schema/migrations/032-session-placement.ts";
+import { migration034 } from "../../src/adapters/postgres/schema/migrations/034-held-proposal-currency.ts";
 import {
   postgresForgeInstallationClaims,
   postgresForgeInstallations,
@@ -9497,6 +9498,94 @@ test("032 places every project's sessions and queued turns in cluster, publishes
         pool: false,
         api: true,
       })),
+    );
+  });
+});
+
+/** A held decision for `ticket` at `version`, as its lead recorded it before 034. */
+function heldDecisionSeed(
+  decision: string,
+  named: readonly (readonly [number, number])[],
+): string {
+  const deliveries = named
+    .map(
+      ([ticket, version]) =>
+        `('${decision}','tenant-34','project-34','${decision}-${String(ticket)}',
+          '{"expectedTicketVersion":${String(version)}}',${String(ticket)})`,
+    )
+    .join(",");
+  return `
+    INSERT INTO selector_attempt(attempt,tenant,project,state)
+      VALUES('${decision}','tenant-34','project-34','Completed');
+    INSERT INTO selector_interaction(selector_decision,tenant,project,
+      instructions_version,instructions,observed_view,context,tool_activity,
+      result,implementation_revision,model_revision,policy_revision,accounting,
+      started_at,completed_at)
+      VALUES('${decision}','tenant-34','project-34','v','','','','','','r','r',
+             'r','',now(),now());
+    INSERT INTO selector_proposal_delivery(selector_decision,tenant,project,
+      operation,command,ticket) VALUES ${deliveries};`;
+}
+
+test("034 ends every held row of a decision naming a ticket that already moved, and keeps the rest", async () => {
+  await migrationDatabase("held_proposal_currency", async (subject) => {
+    await installationBefore(subject, migration034.version);
+    await subject.query(
+      `${tenantSeed("tenant-34")}
+       INSERT INTO project(tenant,project,lifecycle)
+         VALUES('tenant-34','project-34','Active');
+       INSERT INTO ticket_projection(tenant,project,ticket,phase,seq) VALUES
+         ('tenant-34','project-34',1,'Work',5),
+         ('tenant-34','project-34',2,'Pending',3),
+         ('tenant-34','project-34',3,'Pending',2),
+         ('tenant-34','project-34',4,'Work',7),
+         ('tenant-34','project-34',5,'Pending',1);
+       ${heldDecisionSeed("moved", [
+         [1, 4],
+         [2, 3],
+       ])}
+       ${heldDecisionSeed("current", [[3, 2]])}
+       ${heldDecisionSeed("mixed", [
+         [4, 6],
+         [5, 1],
+       ])}
+       UPDATE selector_proposal_delivery SET state='Pending',retry_at=now()
+        WHERE selector_decision='mixed' AND ticket=5;`,
+    );
+    assert.ok((await postgresMigrate(subject)).includes(migration034.version));
+    assert.deepEqual(
+      (
+        await subject.query(
+          `SELECT selector_decision AS decision,ticket::int,state,outcome
+             FROM selector_proposal_delivery ORDER BY selector_decision,ticket`,
+        )
+      ).rows,
+      [
+        {
+          decision: "current",
+          ticket: 3,
+          state: "AwaitingApproval",
+          outcome: null,
+        },
+        {
+          decision: "mixed",
+          ticket: 4,
+          state: "Terminal",
+          outcome: '{"state":"SelectionChanged"}',
+        },
+        { decision: "mixed", ticket: 5, state: "Pending", outcome: null },
+        ...[1, 2].map((ticket) => ({
+          decision: "moved",
+          ticket,
+          state: "Terminal",
+          outcome: '{"state":"SelectionChanged"}',
+        })),
+      ],
+    );
+    assert.deepEqual(
+      (await subject.query(`SELECT 1 FROM selector_proposal_review`)).rows,
+      [],
+      "a review nobody gave",
     );
   });
 });

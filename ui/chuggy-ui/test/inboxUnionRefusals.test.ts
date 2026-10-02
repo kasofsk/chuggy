@@ -167,6 +167,7 @@ test("the refusals read refusing does not take the other rows off the panel", ()
     phase: undefined,
     open: undefined,
     standing: "the API failed with InternalError",
+    proposals: undefined,
   });
 });
 

@@ -11,6 +11,7 @@ import {
   threadRenameRequestSchema,
   threadHideRequestSchema,
   leadInquirySchema,
+  selectorProposalReviewSchema,
 } from "./requests.ts";
 import {
   operationalStatusResponseSchema,
@@ -32,6 +33,8 @@ import {
   leadInquiriesResponseSchema,
   leadInquiryResponseSchema,
   leadInquiryAcceptedSchema,
+  selectorProposalsResponseSchema,
+  selectorProposalReviewResponseSchema,
 } from "./responses.ts";
 
 function endpointInteger(name: string, fallback?: number) {
@@ -176,6 +179,17 @@ export const nativeHttpEndpoints = {
     path: nativeHttpRoutes.leadInquiries,
     body: leadInquirySchema,
     response: leadInquiryAcceptedSchema,
+  },
+  selectorProposals: {
+    method: "GET",
+    path: nativeHttpRoutes.selectorProposals,
+    response: selectorProposalsResponseSchema,
+  },
+  reviewSelectorProposal: {
+    method: "POST",
+    path: nativeHttpRoutes.selectorProposalReview,
+    body: selectorProposalReviewSchema,
+    response: selectorProposalReviewResponseSchema,
   },
 } as const;
 

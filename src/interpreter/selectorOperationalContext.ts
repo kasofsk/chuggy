@@ -20,10 +20,10 @@ export interface SelectorOperationalContextRead {
   context(partition: Partition): Promise<SelectorOperationalContext>;
 }
 
+/** The newest reviews of a project, oldest of them first, so the lead reads the latest. */
 export interface SelectorReviewFeedbackRead {
-  reviewFeedback(
+  recentReviewFeedback(
     partition: Partition,
-    after: number | undefined,
     limit: number,
   ): Promise<readonly SelectorReviewFeedback[]>;
 }
@@ -50,7 +50,7 @@ export function selectorOperationalContextRead(
       const observed = clock.now();
       const [scheduler, reviewFeedback] = await Promise.all([
         execution.context(partition),
-        reviews.reviewFeedback(partition, undefined, reviewFeedbackMax),
+        reviews.recentReviewFeedback(partition, reviewFeedbackMax),
       ]);
       return {
         version: 2,

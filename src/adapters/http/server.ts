@@ -50,6 +50,7 @@ import type {
   ProjectStreamHub,
 } from "../../interpreter/projectStream.ts";
 import type { SelectorProjectSettingsAdministration } from "../../interpreter/selectorProjectSettings.ts";
+import type { SelectorProposalReviews } from "../../interpreter/selectorReview.ts";
 import type { ForgeCredentialMinting } from "../../interpreter/forgeCredentials.ts";
 import type { RepositoryOnboarding } from "../../interpreter/repositoryOnboarding.ts";
 import { projectStreamSocket } from "./eventStream.ts";
@@ -66,6 +67,7 @@ import {
   nativeHttpMediaType,
   nativeHttpPathSegmentCharsMax,
   selectorHistoryLimitMax,
+  selectorProposalDispatchesAnsweredMax,
 } from "../../contract/http.ts";
 import {
   parseConfigurationCursor,
@@ -91,6 +93,7 @@ import {
   parseDraftRevision,
   parsePartition,
   parseSelectorProjectSettings,
+  parseSelectorProposalReview,
   parseSubmission,
   parseLeadInquiry,
   parseThreadHide,
@@ -141,6 +144,8 @@ import {
   leadResponse,
   leadTranscriptResponse,
   selectorHistoryResponse,
+  selectorProposalReviewResponse,
+  selectorProposalsResponse,
   ticketAgenticRefusalsResponse,
   selectorOperationalContextResponse,
   selectorProjectSettingsResponse,
@@ -707,6 +712,51 @@ function registerSelectorHistory(
       ),
     );
   });
+}
+
+/** The lead's held decisions, read and answered by a principal who may dispatch. */
+function registerSelectorProposals(
+  app: FastifyInstance,
+  reviews: SelectorProposalReviews,
+): void {
+  registerEndpoint(
+    app,
+    nativeHttpEndpoints.selectorProposals,
+    (_request, principal, partition) =>
+      reviews.pending(
+        principal,
+        partition,
+        selectorProposalDispatchesAnsweredMax,
+      ),
+    selectorProposalsResponse,
+  );
+  registerEndpoint(
+    app,
+    nativeHttpEndpoints.reviewSelectorProposal,
+    async (request, principal, partition) => {
+      const review = parseSelectorProposalReview(
+        textField(record(request.params), "decision"),
+        request.body,
+      );
+      const result =
+        review.outcome === "Approved"
+          ? await reviews.approve(
+              principal,
+              partition,
+              review.decision,
+              review.feedback,
+            )
+          : await reviews.reject(
+              principal,
+              partition,
+              review.decision,
+              review.feedback,
+            );
+      return { review, result };
+    },
+    ({ review, result }) =>
+      selectorProposalReviewResponse(result, review.decision, review.outcome),
+  );
 }
 
 function registerRunEvidenceRoutes(
@@ -1890,6 +1940,7 @@ export function createNativeHttpApp(
   creation?: ProjectCreation,
   placement?: ExecutionPlacementAdministration,
   sessionPlacement?: SessionPlacementAdministration,
+  proposalReviews?: SelectorProposalReviews,
 ): FastifyInstance {
   const app = nativeHttpServer(limits);
   const partitionRoot = "/api/v1/tenants/:tenant/projects/:project";
@@ -1907,6 +1958,8 @@ export function createNativeHttpApp(
   registerSelectorHistory(app, web, partitionRoot);
   if (selectorSettings !== undefined)
     registerSelectorSettings(app, selectorSettings);
+  if (proposalReviews !== undefined)
+    registerSelectorProposals(app, proposalReviews);
   if (forgeCredentials !== undefined)
     registerForgeCredentials(app, forgeCredentials);
   if (onboarding !== undefined) {

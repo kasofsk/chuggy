@@ -3,6 +3,7 @@ import { asInstallationId } from "../../src/domain/ids.ts";
 import type { RepositoryOnboarding } from "../../src/interpreter/repositoryOnboarding.ts";
 import type { ProjectCreation } from "../../src/interpreter/projectCreation.ts";
 import type { SessionPlacementAdministration } from "../../src/interpreter/sessionPlacement.ts";
+import type { SelectorProposalReviews } from "../../src/interpreter/selectorReview.ts";
 import {
   asPrincipal,
   type NativeWeb,
@@ -110,6 +111,7 @@ export function servedNativeHttpApp(
   onboarding?: RepositoryOnboarding,
   creation?: ProjectCreation,
   sessionPlacement?: SessionPlacementAdministration,
+  proposalReviews?: SelectorProposalReviews,
 ) {
   return createNativeHttpApp(
     web,
@@ -140,5 +142,6 @@ export function servedNativeHttpApp(
     creation,
     undefined,
     sessionPlacement,
+    proposalReviews,
   );
 }

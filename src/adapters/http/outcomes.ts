@@ -36,6 +36,10 @@ import {
   type LeadTurnRecord,
 } from "../../interpreter/leadRead.ts";
 import type { SelectorHistoryRead } from "../../interpreter/selectorHistory.ts";
+import type {
+  SelectorProposalReviews,
+  SelectorReviewResult,
+} from "../../interpreter/selectorReview.ts";
 import type { SessionStoreEntry } from "../../interpreter/sessionTranscript.ts";
 import type {
   SelectorProjectSettingsHistoryRead,
@@ -65,6 +69,8 @@ import type { NotificationBatch } from "../../interpreter/notifications.ts";
 import {
   hostedRunsNotGrantedCode,
   noRunnerCode,
+  selectorProposalNotHeldCode,
+  type SelectorReviewOutcome,
   type ThreadMessageRefusalCode,
 } from "../../contract/rosters.ts";
 import type {
@@ -1835,6 +1841,38 @@ export function selectorHistoryResponse(
           ? {}
           : { nextAfter: result.nextAfter }),
       });
+}
+
+export function selectorProposalsResponse(
+  result: Awaited<ReturnType<SelectorProposalReviews["pending"]>>,
+): NativeHttpResponse {
+  return result.result === "NotFound"
+    ? response(404, nativeHttpError("NotFound", "Resource not found."))
+    : response(200, { proposals: result.proposals, more: result.more });
+}
+
+/** A decision no longer held — answered by someone else, or never held — is the conflict. */
+export function selectorProposalReviewResponse(
+  result: SelectorReviewResult,
+  decision: string,
+  outcome: SelectorReviewOutcome,
+): NativeHttpResponse {
+  switch (result.result) {
+    case "NotFound":
+      return response(404, nativeHttpError("NotFound", "Resource not found."));
+    case "Stale":
+      return response(
+        409,
+        nativeHttpError(
+          selectorProposalNotHeldCode,
+          "This proposal is no longer awaiting approval.",
+        ),
+      );
+    case "Changed":
+      return response(200, { decision, outcome });
+    default:
+      return assertNever(result);
+  }
 }
 
 /** One turn as the wire carries it, dropping the fields a pod has not measured. */

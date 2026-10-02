@@ -18,9 +18,11 @@
  * The log has no change kind of its own, so it is re-read on the partition
  * invalidation the stream's fallback already performs; what a decision saw is
  * not drawn here, because the observation is a page of candidates and this is
- * the record of what was done with it.
+ * the record of what was done with it. A dispatch held for approval points to
+ * the inbox, which is the one place it is answered.
  */
 
+import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
@@ -41,6 +43,7 @@ import {
   leadDecisionsNewestFirst,
   leadDecisionSummary,
 } from "../../core/leadTranscript.ts";
+import { navRoutes } from "../../core/shellNav.ts";
 import { leadDispatchArm } from "../../core/tones.ts";
 import type { Tone } from "../../core/tones.ts";
 import { usePanelResource } from "../api.ts";
@@ -127,6 +130,7 @@ function leadDecisionArms(
 /** What one decision did, a row at a time: its dispatches with their landings,
  * then the tickets it refused and lifted, and the ghost where it did none. */
 function LeadDecisionRows(props: {
+  readonly partition: PartitionIdentity;
   readonly decision: SelectorDecisionResponse;
   readonly when: FigureValue;
 }): ReactNode {
@@ -153,7 +157,21 @@ function LeadDecisionRows(props: {
             label="Dispatch"
             pill={{ tone: arm.tone, text: arm.word }}
             when={props.when}
-            note={String(dispatch.ticket)}
+            note={
+              dispatch.state === "AwaitingApproval" ? (
+                <>
+                  {String(dispatch.ticket)}
+                  <span className="text-ink-3">
+                    {" · "}
+                    <Link to={navRoutes.inbox} params={props.partition}>
+                      Inbox
+                    </Link>
+                  </span>
+                </>
+              ) : (
+                String(dispatch.ticket)
+              )
+            }
           />
         );
       })}
@@ -171,6 +189,7 @@ function LeadDecisionRows(props: {
 }
 
 function LeadDecisionGroup(props: {
+  readonly partition: PartitionIdentity;
   readonly decision: SelectorDecisionResponse;
   readonly current: boolean;
   readonly nowMs: number;
@@ -186,6 +205,7 @@ function LeadDecisionGroup(props: {
     >
       <LedgerBlock eyebrow={decision.decision}>
         <LeadDecisionRows
+          partition={props.partition}
           decision={decision}
           when={instantFigure(decision.completedAt, props.nowMs)}
         />
@@ -195,6 +215,7 @@ function LeadDecisionGroup(props: {
 }
 
 function LeadDecisionList(props: {
+  readonly partition: PartitionIdentity;
   readonly history: SelectorHistoryResponse;
   readonly nowMs: number;
 }): ReactNode {
@@ -206,6 +227,7 @@ function LeadDecisionList(props: {
       {decisions.map((decision) => (
         <LeadDecisionGroup
           key={decision.decision}
+          partition={props.partition}
           decision={decision}
           current={decision.ordinal === newest}
           nowMs={props.nowMs}
@@ -232,7 +254,13 @@ export function LeadDecisions(props: {
   );
   return (
     <DataPanel title="Decisions" state={state}>
-      {(history) => <LeadDecisionList history={history} nowMs={props.nowMs} />}
+      {(history) => (
+        <LeadDecisionList
+          partition={partition}
+          history={history}
+          nowMs={props.nowMs}
+        />
+      )}
     </DataPanel>
   );
 }

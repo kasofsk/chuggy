@@ -56,6 +56,8 @@ test("the versioned route and media contracts move together", () => {
     "/api/v1/tenants/:tenant/projects/:project/selector-settings",
     "/api/v1/tenants/:tenant/projects/:project/selector-settings/history",
     "/api/v1/tenants/:tenant/projects/:project/selector-history",
+    "/api/v1/tenants/:tenant/projects/:project/selector-proposals",
+    "/api/v1/tenants/:tenant/projects/:project/selector-proposals/:decision/review",
     "/api/v1/tenants/:tenant/projects/:project/lead",
     "/api/v1/tenants/:tenant/projects/:project/lead/transcript",
     "/api/v1/tenants/:tenant/projects/:project/lead/inquiries",

@@ -110,6 +110,7 @@ function scopedApp(reached: string[], web?: ServedNativeWeb) {
     recorded(reached, "creation"),
     recorded(reached, "placement"),
     recorded(reached, "sessionPlacement"),
+    recorded(reached, "proposalReviews"),
   );
 }
 
@@ -308,6 +309,27 @@ test("a session bearer is refused a route addressed to no partition, and one tha
   }
   assert.deepEqual(reached, []);
   assert.deepEqual(asked, []);
+});
+
+test("a session bearer reads its own project's held proposals and may not answer one", async () => {
+  const reached: string[] = [];
+  await using app = scopedApp(reached);
+  const answered = await app.inject({
+    method: "POST",
+    url: `${projectPath(own)}/selector-proposals/decision/review`,
+    headers: {
+      authorization: `Bearer ${sessionToken}`,
+      "content-type": nativeHttpMediaType,
+    },
+    payload: { outcome: "Approved" },
+  });
+  assert.ok(scopeRefused(answered));
+  assert.deepEqual(reached, []);
+  await app.inject({
+    url: `${projectPath(own)}/selector-proposals`,
+    headers: { authorization: `Bearer ${sessionToken}` },
+  });
+  assert.deepEqual(reached, ["proposalReviews.pending"]);
 });
 
 test("the admission reads the matched route, folds HEAD into GET and refuses what it cannot place", () => {

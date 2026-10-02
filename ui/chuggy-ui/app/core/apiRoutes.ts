@@ -98,6 +98,7 @@ import type {
   projectRepositoryLandingSchema,
   repositoryConfigurationImportSchema,
   selectorProjectSettingsSchema,
+  selectorProposalReviewSchema,
   sessionPlacementSchema,
   submissionSchema,
   threadMessageSchema,
@@ -766,6 +767,22 @@ export const apiLead = apiProjectEndpoint(
 export const apiHostedRuns = apiProjectEndpoint(
   nativeHttpEndpoints.hostedRuns,
   (partition) => ({ parameters: partition }),
+);
+
+/** The lead's decisions held for approval; a reader who may not dispatch is answered as absent. */
+export const apiSelectorProposals = apiProjectEndpoint(
+  nativeHttpEndpoints.selectorProposals,
+  (partition) => ({ parameters: partition }),
+);
+
+/** One held decision answered whole, every ticket it names at once. */
+export const apiReviewSelectorProposal = apiProjectEndpoint(
+  nativeHttpEndpoints.reviewSelectorProposal,
+  (
+    partition,
+    decision: string,
+    review: z.infer<typeof selectorProposalReviewSchema>,
+  ) => ({ parameters: { ...partition, decision }, body: review }),
 );
 
 export interface LeadTranscriptPage {

@@ -26,6 +26,7 @@ import {
   dispatchViewSchemaVersion,
   identitySchema,
   inquiriesAnsweredMax,
+  leadDispatchesMax,
   inquiryQuestionCharsMax,
   instantSchema,
   leadTurnsAnsweredMax,
@@ -38,6 +39,7 @@ import {
   selectorHandoffNoteBytesMax,
   selectorHandoffNotePreviewCharsMax,
   selectorHistoryLimitMax,
+  selectorProposalDispatchesAnsweredMax,
   sessionStoreStreamCharsMax,
   sessionStoreStreamsAnswered,
   sessionTranscriptEntriesMax,
@@ -97,6 +99,7 @@ import {
   schedulerFreshnesses,
   selectorAttentions,
   selectorDeliveryStates,
+  selectorReviewOutcomes,
   selectorDispatchModes,
   selectorModes,
   agenticRefusalEvents,
@@ -1215,6 +1218,34 @@ export const selectorHistoryResponseSchema = z.object({
 });
 export type SelectorHistoryResponse = z.infer<
   typeof selectorHistoryResponseSchema
+>;
+
+/** One decision held for a reviewer, and every ticket an approval would dispatch. */
+export const selectorProposalResponseSchema = z.object({
+  decision: identitySchema,
+  tickets: z.array(ticketNumberSchema).min(1).max(leadDispatchesMax),
+});
+export type SelectorProposalResponse = z.infer<
+  typeof selectorProposalResponseSchema
+>;
+
+/** `more` says a held decision was left unread, which answering these reaches. */
+export const selectorProposalsResponseSchema = z.object({
+  proposals: z
+    .array(selectorProposalResponseSchema)
+    .max(selectorProposalDispatchesAnsweredMax),
+  more: z.boolean(),
+});
+export type SelectorProposalsResponse = z.infer<
+  typeof selectorProposalsResponseSchema
+>;
+
+export const selectorProposalReviewResponseSchema = z.object({
+  decision: identitySchema,
+  outcome: z.enum(selectorReviewOutcomes),
+});
+export type SelectorProposalReviewResponse = z.infer<
+  typeof selectorProposalReviewResponseSchema
 >;
 
 /**

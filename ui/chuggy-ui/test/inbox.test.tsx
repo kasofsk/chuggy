@@ -89,6 +89,8 @@ function served(url: string): Response {
     return answer({ refusals: [], more: false });
   if (url.includes("/native-actions")) return answer({ actions: [] });
   if (url.includes("/executions")) return answer({ executions: [] });
+  if (url.includes("/selector-proposals"))
+    return answer({ proposals: [], more: false });
   return answer({ partition: atlas, sequence: 9, tickets: [escalated] });
 }
 

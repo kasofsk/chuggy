@@ -182,6 +182,11 @@ export interface SelectorStateStore {
   planningIntent(
     partition: Partition,
   ): Promise<SelectorPlanningIntent | undefined>;
+  /** Which of the tickets named a decision held for approval already dispatches. */
+  heldAmong(
+    partition: Partition,
+    tickets: readonly DispatchCandidate["ticket"][],
+  ): Promise<readonly DispatchCandidate["ticket"][]>;
 }
 
 /** One of a decision's dispatches as the delivery record settled it. */
@@ -1563,6 +1568,7 @@ export async function runSelectorCycle(
     state,
     source,
     refusals,
+    store,
     await source.notifications(state.partition, {
       after: state.notificationCursor,
       limit: selectorNotificationPageLimit,
@@ -1724,6 +1730,7 @@ export async function observeSelectorProject(
     "dispatchView" | "operationalContext"
   >,
   refusals: Pick<SelectorRefusalLedger, "standingAmong">,
+  held: Pick<SelectorStateStore, "heldAmong">,
   notifications: NotificationBatch,
   pageLimit = 100,
   candidateBytesMax = 524_288,
@@ -1768,14 +1775,15 @@ export async function observeSelectorProject(
           : { state: "Continue", token: page.token, after: page.candidate },
       resourceLimit: "CandidateTooLarge",
     };
-  const standing = await refusals.standingAmong(
-    state.partition,
-    page.candidates.map((candidate) => candidate.ticket),
-  );
+  const tickets = page.candidates.map((candidate) => candidate.ticket);
+  const standing = await refusals.standingAmong(state.partition, tickets);
+  const proposed = await held.heldAmong(state.partition, tickets);
   return {
     ...observed,
     token: page.token,
-    candidates: undecidedCandidates(page.candidates, standing),
+    candidates: undecidedCandidates(page.candidates, standing).filter(
+      (candidate) => !proposed.includes(candidate.ticket),
+    ),
     refusals: standing,
     nextCandidateScan:
       page.nextAfter === undefined
