@@ -25,8 +25,11 @@ import {
 } from "../../src/adapters/postgres/schedulerContext.ts";
 import {
   apiRole,
+  selectorControlRole,
+  selectorProposalRetireFunction,
   selectorReviewRole,
   selectorServiceRole,
+  ticketServiceRole,
 } from "../../src/adapters/postgres/schema.ts";
 import {
   postgresSelectorProposalReviews,
@@ -63,6 +66,7 @@ import { selectorNativeSource } from "../../src/interpreter/selectorNativeSource
 import { selectorOperationalContextRead } from "../../src/interpreter/selectorOperationalContext.ts";
 import { memoryProjectAccess } from "./projectAccessMemory.ts";
 import {
+  postgresHarnessAccepted,
   postgresHarnessHistory,
   postgresHarnessKeying,
   postgresHarnessOpen,
@@ -88,9 +92,13 @@ const bearers = new Map([
   ["selector", selector],
 ]);
 
-function rolePool(role: string) {
+/** A pool as `role`, which gives up on a lock after `lockTimeout` where one is named. */
+function rolePool(role: string, lockTimeout?: string) {
   const url = new URL(postgresHarnessUrl());
-  url.searchParams.set("options", `-c role=${role}`);
+  url.searchParams.set(
+    "options",
+    `-c role=${role}${lockTimeout === undefined ? "" : ` -c lock_timeout=${lockTimeout}`}`,
+  );
   return postgresPool(url.toString());
 }
 
@@ -253,30 +261,75 @@ async function answer(
   };
 }
 
-/** A project with one released ticket, readable by the reviewer and the selector. */
-async function releasedProject(on: Served, label: string) {
+/** A project with `releases` released tickets, readable by the reviewer and the selector. */
+async function releasedProject(on: Served, label: string, releases = 1) {
   const partition = await postgresHarnessProject(harness.store, label);
-  const memory = await postgresHarnessHistory(harness, partition, label, 1);
+  let memory = await postgresHarnessHistory(harness, partition, label, 1);
+  for (let release = 1; release < releases; release += 1) {
+    const step = await projectWriterDecide(
+      postgresHarnessWriter(harness),
+      memory,
+      await postgresHarnessAccepted(
+        harness,
+        partition,
+        `${label}-release-${String(release)}`,
+        0,
+      ),
+    );
+    assert.equal(step.decided.decided, "Committed");
+    memory = step.memory;
+  }
   on.grant(partition);
   const page = await postgresDispatchViews(on.apiPool).read(partition, {
     limit: 10,
   });
   assert.ok(page.result === "Page");
+  assert.equal(page.candidates.length, releases);
   const candidate = page.candidates[0];
   assert.ok(candidate !== undefined);
   return { partition, memory, page, candidate };
 }
 
-/** The lead's decision to dispatch the project's ticket, recorded as the project's `revision`th. */
+type Released = Awaited<ReturnType<typeof releasedProject>>;
+
+/** The project's first ticket dispatched by hand, which moves it past every proposal fenced before. */
+async function manualDispatch(project: Released, label: string) {
+  const input = await postgresHarnessAccepted(
+    harness,
+    project.partition,
+    `${label}-manual`,
+    1,
+  );
+  return (
+    await projectWriterDecide(
+      postgresHarnessWriter(harness),
+      project.memory,
+      input,
+    )
+  ).decided.decided;
+}
+
+/**
+ * The lead's decision to dispatch the project's tickets, its first unless
+ * others are named, recorded as its `revision`th under the reference given or
+ * a fresh one.
+ */
 async function recordedDecision(
   on: Served,
-  project: Awaited<ReturnType<typeof releasedProject>>,
+  project: Released,
   label: string,
   revision: number,
+  {
+    candidates = [project.candidate],
+    decision = `${label}-${randomUUID()}`,
+  }: {
+    readonly candidates?: Released["page"]["candidates"];
+    readonly decision?: string;
+  } = {},
 ) {
-  const { partition, page, candidate } = project;
-  const decision = `${label}-${randomUUID()}`;
-  const operation = asOperationId(`${decision}-t${String(candidate.ticket)}`);
+  const { partition, page } = project;
+  const operationOf = (ticket: number) =>
+    asOperationId(`${decision}-t${String(ticket)}`);
   const proposed: SelectorDecisionProposals = {
     interaction: {
       decision,
@@ -289,7 +342,7 @@ async function recordedDecision(
         operationalContext: postgresHarnessSelectorContext,
       },
       toolActivity: [],
-      result: { dispatch: [candidate.ticket] },
+      result: { dispatch: candidates.map((candidate) => candidate.ticket) },
       implementationRevision: "implementation-1",
       modelRevision: "model-1",
       policyRevision: "policy-1",
@@ -299,17 +352,15 @@ async function recordedDecision(
     },
     fence: { settingsRevision: 1, projectSettingsRevision: 0 },
     deliveryMode: "ApprovalRequired",
-    dispatches: [
-      {
-        ticket: candidate.ticket,
-        operation,
-        command: proposalCommand({
-          ticket: candidate,
-          token: page.token,
-          selectorDecisionReference: decision,
-        }),
-      },
-    ],
+    dispatches: candidates.map((candidate) => ({
+      ticket: candidate.ticket,
+      operation: operationOf(candidate.ticket),
+      command: proposalCommand({
+        ticket: candidate,
+        token: page.token,
+        selectorDecisionReference: decision,
+      }),
+    })),
   };
   const recorded = await on.state.record(proposed, {
     partition,
@@ -318,8 +369,46 @@ async function recordedDecision(
     attention: "Monitoring",
     handoffNote: {},
   });
-  assert.deepEqual(recorded.dispatched, [candidate.ticket]);
-  return { decision, operation };
+  assert.deepEqual(
+    recorded.dispatched,
+    candidates.map((candidate) => candidate.ticket),
+  );
+  return { decision, operation: operationOf(project.candidate.ticket) };
+}
+
+/**
+ * A decision reference whose attempt is running on the project's whole page,
+ * as the runtime allocates and starts one before its lead decides.
+ */
+async function runningDecision(
+  pool: ReturnType<typeof rolePool>,
+  project: Released,
+) {
+  const state = postgresSelectorState(pool);
+  const decision = `running-${randomUUID()}`;
+  assert.equal(
+    await state.allocateAttempt(decision, project.partition, {
+      concurrentDecisions: 2,
+      selectionsPerMinute: 60,
+      millisecondsPerDecision: 60_000,
+    }),
+    true,
+  );
+  await state.runningAttempt(
+    decision,
+    {
+      token: project.page.token,
+      candidates: project.page.candidates,
+      refusals: [],
+      notificationCursor: 0,
+      changes: [],
+      operationalContext: postgresHarnessSelectorContext,
+      handoffNote: {},
+      nextCandidateScan: { state: "Exhausted", token: project.page.token },
+    },
+    { settingsRevision: 1, projectSettingsRevision: 0 },
+  );
+  return decision;
 }
 
 /** A project whose lead's one decision is recorded and held. */
@@ -332,6 +421,17 @@ async function heldDecision(on: Served, label: string) {
     ticket: project.candidate.ticket,
     ...recorded,
   };
+}
+
+/** Each of a decision's rows as its state and its outcome read as JSON, in ticket order. */
+async function deliveryRows(decision: string) {
+  return (
+    await harness.query(
+      `SELECT state,outcome::jsonb AS outcome FROM selector_proposal_delivery
+        WHERE selector_decision=$1 ORDER BY ticket`,
+      [decision],
+    )
+  ).map((row) => [row["state"], row["outcome"]]);
 }
 
 async function deliveryRow(decision: string) {
@@ -549,4 +649,164 @@ test("the lead's observation carries the newest reviews", async () => {
   } finally {
     await on.close();
   }
+});
+
+/** What the writer ends a held decision with when it moves one of its tickets. */
+const moved = { state: "SelectionChanged" };
+
+/**
+ * A held decision is withdrawn whole by the writer's decision that moves one
+ * of its tickets: the Inbox stops offering it, either answer is stale and
+ * reaches the lead as nothing, and the ticket it did not move is the lead's
+ * to propose again.
+ */
+test("a held decision whose ticket moves is withdrawn, and answering it is stale", async () => {
+  const on = await served(new Set(["Read", "DispatchTicket"]));
+  try {
+    const project = await releasedProject(on, "proposal-moved", 2);
+    const { partition } = project;
+    const tickets = project.page.candidates.map(
+      (candidate) => candidate.ticket,
+    );
+    const [, untouched] = tickets;
+    assert.ok(untouched !== undefined);
+    const held = await recordedDecision(on, project, "proposal-moved", 0, {
+      candidates: project.page.candidates,
+    });
+    assert.deepEqual(
+      [...(await on.state.heldAmong(partition, tickets))].sort(
+        (left, right) => left - right,
+      ),
+      tickets,
+    );
+    assert.deepEqual(await on.state.heldAmong(partition, [untouched]), [
+      untouched,
+    ]);
+    assert.equal(await manualDispatch(project, "proposal-moved"), "Committed");
+    assert.deepEqual((await proposals(on, partition)).body, {
+      proposals: [],
+      more: false,
+    });
+    for (const outcome of ["Approved", "Rejected"]) {
+      const answered = await answer(on, partition, held.decision, {
+        outcome,
+        feedback: "too late",
+      });
+      assert.equal(answered.status, 409, outcome);
+      assert.equal(
+        (answered.body as { error: { code: string } }).error.code,
+        selectorProposalNotHeldCode,
+      );
+    }
+    assert.deepEqual(await deliveryRows(held.decision), [
+      ["Terminal", moved],
+      ["Terminal", moved],
+    ]);
+    assert.deepEqual(await on.feedback(partition, 10), []);
+    assert.deepEqual(await on.state.heldAmong(partition, tickets), []);
+  } finally {
+    await on.close();
+  }
+});
+
+/** A decision naming a ticket that moved while its lead decided is ended as it is recorded. */
+test("a decision recorded after its ticket moved is never held", async () => {
+  const on = await served(new Set(["Read", "DispatchTicket"]));
+  try {
+    const project = await releasedProject(on, "proposal-late");
+    assert.equal(await manualDispatch(project, "proposal-late"), "Committed");
+    const late = await recordedDecision(on, project, "proposal-late", 0);
+    assert.deepEqual(await deliveryRows(late.decision), [["Terminal", moved]]);
+    assert.deepEqual((await proposals(on, project.partition)).body, {
+      proposals: [],
+      more: false,
+    });
+  } finally {
+    await on.close();
+  }
+});
+
+/**
+ * The writer holds its project's row for the whole of a decision, and an
+ * answer and a held record each wait for it, which is what orders both
+ * against every move of the project's tickets.
+ */
+test("an answer and a held record wait for the writer's decision in flight", async () => {
+  const on = await served(new Set(["Read", "DispatchTicket"]));
+  const impatientReview = rolePool(selectorReviewRole, "100ms");
+  const impatientSelector = rolePool(selectorServiceRole, "100ms");
+  try {
+    const project = await releasedProject(on, "proposal-ordered");
+    const held = await recordedDecision(on, project, "proposal-ordered", 0);
+    const next = await runningDecision(impatientSelector, project);
+    const writer = await harness.begin();
+    try {
+      await writer.query(
+        `SELECT 1 FROM project WHERE tenant=$1 AND project=$2 FOR UPDATE`,
+        [project.partition.tenant, project.partition.project],
+      );
+      await assert.rejects(
+        postgresSelectorProposalReviews(impatientReview).approve(
+          project.partition,
+          held.decision,
+          memberAuthority(reviewer),
+        ),
+        /lock timeout/,
+      );
+      await assert.rejects(
+        recordedDecision(
+          { ...on, state: postgresSelectorState(impatientSelector) },
+          project,
+          "proposal-ordered-next",
+          1,
+          { decision: next },
+        ),
+        /lock timeout/,
+      );
+    } finally {
+      await writer.rollback();
+    }
+    assert.deepEqual(await deliveryRows(held.decision), [
+      ["AwaitingApproval", null],
+    ]);
+  } finally {
+    await Promise.all([impatientReview.end(), impatientSelector.end()]);
+    await on.close();
+  }
+});
+
+/** Ending a held decision is the writer's and the selector's to do, and no other role's. */
+test("the retirement is pinned, world-revoked, and the writer's and the selector's alone", async () => {
+  const identity = `${selectorProposalRetireFunction}(text,text)`;
+  assert.deepEqual(
+    await harness.query(
+      `SELECT prosecdef AS definer,array_to_string(proconfig,',') AS settings,
+              EXISTS(SELECT 1 FROM aclexplode(proacl) entry
+                      WHERE entry.grantee=0) AS world
+         FROM pg_proc WHERE oid=$1::regprocedure`,
+      [identity],
+    ),
+    [
+      {
+        definer: true,
+        settings: "search_path=pg_catalog, public, pg_temp",
+        world: false,
+      },
+    ],
+  );
+  const able: string[] = [];
+  for (const role of [
+    apiRole,
+    selectorControlRole,
+    selectorReviewRole,
+    selectorServiceRole,
+    ticketServiceRole,
+  ]) {
+    const [granted] = await harness.query(
+      `SELECT has_function_privilege($1,$2::regprocedure,'EXECUTE') AS held`,
+      [role, identity],
+    );
+    if (granted?.["held"] === true) able.push(role);
+  }
+  assert.deepEqual(able, [selectorServiceRole, ticketServiceRole]);
 });

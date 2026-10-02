@@ -49,6 +49,10 @@
  * immutable evidence that failure named. So a worker forms its reconciliation
  * objective from the bundle rather than from current refs, finalizer logs or
  * the bare outcome.
+ *
+ * A HELD PROPOSAL ENDS WITH THE DECISION THAT MOVES ITS TICKET. Every held
+ * lead decision naming a ticket this transaction moves is ended in it, so no
+ * reviewer is offered a dispatch the writer's fence would refuse.
  */
 
 import { sql } from "@ts-safeql/sql-tag";
@@ -212,6 +216,18 @@ async function decisionProject(
                      escalation_evidence = EXCLUDED.escalation_evidence`,
     );
   }
+}
+
+/** Ends every held lead decision naming a ticket this decision moved, under the project lock already held. */
+async function decisionRetireHeldProposals(
+  client: pg.PoolClient,
+  partition: Partition,
+  projection: readonly TicketProjection[],
+): Promise<void> {
+  if (projection.length === 0) return;
+  await client.query<{ retire_moved_selector_proposals: string | null }>(
+    sql`SELECT retire_moved_selector_proposals(${partition.tenant},${partition.project})::text`,
+  );
 }
 
 /**
@@ -729,6 +745,11 @@ async function decisionApplyJournaled(
     seq,
     outcome.projection,
     configuration,
+  );
+  await decisionRetireHeldProposals(
+    client,
+    lease.partition,
+    outcome.projection,
   );
   await decisionRepin(client, lease.partition, draftRelease);
   if (outcome.dispatchView !== undefined)

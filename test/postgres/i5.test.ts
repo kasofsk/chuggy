@@ -1272,6 +1272,61 @@ test("a stored delivery names the ticket its command dispatches", async () => {
 });
 
 /**
+ * The held read orders by decision before ticket, so a decision's rows stay
+ * adjacent where another decision's ticket falls between them, and a page is
+ * cut at a decision's edge rather than through one.
+ */
+test("the held read keeps a decision's rows together when their tickets interleave", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "i5-held-interleaved",
+  );
+  const selectorPool = postgresRolePool(selectorServiceRole);
+  const reviewPool = postgresRolePool(selectorReviewRole);
+  const state = postgresSelectorState(selectorPool);
+  const reviews = postgresSelectorProposalReviews(reviewPool);
+  const restore = await i5HeldDispatchMode("ApprovalRequired");
+  const suffix = crypto.randomUUID();
+  const first = `interleaved-a-${suffix}`;
+  const second = `interleaved-b-${suffix}`;
+  try {
+    assert.equal(
+      await wrote(
+        state.record(
+          selectorTestProposal(partition, first, [1, 3]),
+          selectorTestState(partition, 0),
+        ),
+      ),
+      2,
+    );
+    assert.equal(
+      await wrote(
+        state.record(
+          selectorTestProposal(partition, second, [2]),
+          selectorTestState(partition, 1),
+        ),
+      ),
+      1,
+    );
+    assert.deepEqual(
+      (await reviews.awaitingApproval(partition, 10)).map((delivery) => [
+        delivery.decision,
+        delivery.ticket,
+      ]),
+      [
+        [first, 1],
+        [first, 3],
+        [second, 2],
+      ],
+    );
+  } finally {
+    await restore();
+    await reviewPool.end();
+    await selectorPool.end();
+  }
+});
+
+/**
  * The rekey's first claim: a decision holds one row per ticket. The key refuses
  * a second row for a ticket the decision already dispatches, and `operation`
  * keeps its own uniqueness, which is what lets one operation outcome settle one

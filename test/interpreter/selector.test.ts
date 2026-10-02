@@ -262,6 +262,11 @@ function refusalWrites(
   };
 }
 
+/** A project no decision is held in. */
+const noneHeld: Pick<SelectorStateStore, "heldAmong"> = {
+  heldAmong: () => Promise.resolve([]),
+};
+
 /** One standing refusal of the ticket and version named, as the ledger answers it. */
 function standingRefusalOf(
   ticket: DispatchCandidate["ticket"],
@@ -355,6 +360,7 @@ function stateStore(
     tail: () => Promise.resolve([]),
     project: () => Promise.resolve(undefined),
     planningIntent: () => Promise.resolve(undefined),
+    heldAmong: () => Promise.resolve([]),
   };
 }
 
@@ -387,6 +393,7 @@ test("selector observation resumes from a reset cursor and pins every view page"
       },
     },
     refusalWrites(),
+    noneHeld,
     { result: "Reset", cursor: 12 },
   );
   assert.equal(observed?.notificationCursor, 12);
@@ -409,6 +416,7 @@ test("an observation carries the notification page that triggered it", async () 
     },
     promptObservationSource(),
     refusalWrites(),
+    noneHeld,
     { result: "Events", cursor: 5, events },
   );
   assert.deepEqual(observed?.changes, events);
@@ -456,6 +464,7 @@ test("selector observation restarts a continued scan when its view resets", asyn
       },
     },
     refusalWrites(),
+    noneHeld,
     movedPage,
   );
   assert.equal(observed?.token.watermark, 2);
@@ -499,6 +508,7 @@ test("an oversized final candidate advances the scan to Exhausted", async () => 
     },
     source,
     refusalWrites(),
+    noneHeld,
     movedPage,
     10,
     100,
@@ -518,6 +528,7 @@ test("an oversized final candidate advances the scan to Exhausted", async () => 
       },
       source,
       refusalWrites(),
+      noneHeld,
       { result: "Events", cursor: 2, events: [] },
       10,
       100,
@@ -567,6 +578,7 @@ function observeAgainstRefusals(
         } as const),
     },
     refusals,
+    noneHeld,
     movedPage,
   );
 }
@@ -1406,6 +1418,7 @@ test("a stale persisted observation releases its permit without starting policy"
     },
     promptObservationSource(),
     refusalWrites(),
+    noneHeld,
     movedPage,
   );
   assert.ok(observation !== undefined);
@@ -3731,6 +3744,43 @@ test("a failed decision leaves its view standing, and the next cycle is offered 
     resolved(),
   );
   assert.deepEqual(offered, [dispatchable]);
+});
+
+/**
+ * A sweep asks the store it records into which tickets its project's held
+ * decisions dispatch, so its lead is not offered one of them again.
+ */
+test("a sweep does not offer its lead a ticket a held decision dispatches", async () => {
+  const second = { ...dispatchable, ticket: asTicketId(2) };
+  let shown: readonly DispatchCandidate[] | undefined;
+  await selectorRunOnce(
+    refusalWrites(),
+    {
+      ...stateStore(() => undefined),
+      heldAmong: (_partition, tickets) =>
+        Promise.resolve(
+          tickets.filter((ticket) => ticket === dispatchable.ticket),
+        ),
+    },
+    {
+      ...candidateSource([dispatchable, second]),
+      projects: () => Promise.resolve({ projects: [partition] }),
+      submit: () => Promise.reject(new Error("no delivery expected")),
+      operation: () => Promise.resolve(undefined),
+    },
+    policyHost((request) => {
+      shown = request.observation.candidates;
+      return Promise.resolve(waitingExecution());
+    }),
+    {
+      next: () => ({
+        operation: asOperationId("held-sweep-operation"),
+        selectorDecisionReference: "held-sweep-decision",
+      }),
+    },
+    settingsSource(() => Promise.resolve(runtimeSettings)),
+  );
+  assert.deepEqual(shown, [second]);
 });
 
 test("the last failure a view is allowed consumes it as a completed decision would", async () => {

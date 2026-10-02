@@ -23,6 +23,8 @@ export const selectorProposalInitialStateFunction =
 export const selectorAutomaticReadinessErrorCode = "CHG01";
 
 export const selectorReviewFunction = "review_selector_proposal";
+/** Ends every held decision of a project naming a ticket moved past the version its command was fenced at. */
+export const selectorProposalRetireFunction = "retire_moved_selector_proposals";
 export const selectorReconcileClaimFunction =
   "claim_selector_proposal_reconciliation";
 export const selectorClaimFunction = "claim_selector_deliveries";

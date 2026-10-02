@@ -1439,6 +1439,19 @@ async function awaitingApproval(
   return found.rows.map(deliveryOf);
 }
 
+async function heldAmong(
+  pool: pg.Pool,
+  partition: Partition,
+  tickets: readonly SelectorDelivery["ticket"][],
+): Promise<readonly SelectorDelivery["ticket"][]> {
+  const found = await pool.query<{ ticket: string }>(
+    sql`SELECT DISTINCT ticket::text AS ticket FROM selector_proposal_delivery
+     WHERE tenant=${partition.tenant} AND project=${partition.project}
+       AND state='AwaitingApproval' AND ticket=ANY(${[...tickets]}::bigint[])`,
+  );
+  return found.rows.map((row) => asTicketId(Number(row.ticket)));
+}
+
 interface ReviewFeedbackRow {
   selector_decision: string;
   ordinal: string;
@@ -1734,6 +1747,10 @@ async function recordSelectorState(
       return { recorded: false, deliveries: [] };
     await replacePlanningIntent(client, interaction, planningIntent);
     const deliveries = await insertSelectorProposals(client, proposals);
+    if (deliveries.length > 0)
+      await client.query<{ retire_moved_selector_proposals: string | null }>(
+        sql`SELECT retire_moved_selector_proposals(${interaction.partition.tenant},${interaction.partition.project})::text`,
+      );
     await writeSelectorProject(client, state);
     return { recorded: true, deliveries };
   });
@@ -2050,6 +2067,7 @@ export function postgresSelectorState(pool: pg.Pool): SelectorStateStore {
       readSelectorInteractions(pool, partition, undefined, limit, true),
     project: (partition) => readSelectorProject(pool, partition),
     planningIntent: (partition) => readPlanningIntent(pool, partition),
+    heldAmong: (partition, tickets) => heldAmong(pool, partition, tickets),
   };
 }
 

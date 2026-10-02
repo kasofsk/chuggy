@@ -54,6 +54,7 @@ import {
 import {
   leadOpenFunction,
   selectorInteractionsReadFunction,
+  selectorProposalRetireFunction,
   sessionRouteFunction,
   sessionRunnerStandingFunction,
   sessionSystemPromptSetFunction,
@@ -260,6 +261,7 @@ export const leadDoorSignatures: readonly string[] = (
   [
     ...selectorSignatures,
     [selectorInteractionsReadFunction, interactionsReadSignature],
+    [selectorProposalRetireFunction, "text,text"],
     [sessionSystemPromptSetFunction, systemPromptSetSignature],
     [leadOpenFunction, leadOpenSignature],
     [sessionRouteFunction, sessionRouteSignature],

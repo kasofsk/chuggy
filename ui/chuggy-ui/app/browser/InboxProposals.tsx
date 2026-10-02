@@ -4,8 +4,9 @@
  * has gone.
  *
  * AN ANSWER NEVER REMOVES ITS ROW. It asks for the held decisions again, and
- * the row leaves because that read no longer names it — so a decision someone
- * else answered first reads as stale here, and its row leaves the same way.
+ * the row leaves because that read no longer names it, answering nothing more
+ * until then — so a decision someone else answered first, or whose ticket
+ * moved, reads as stale here, and its row leaves the same way.
  */
 
 import { useQueryClient } from "@tanstack/react-query";
@@ -61,7 +62,7 @@ export function useInboxProposals(
 }
 
 export interface InboxProposalAnswers {
-  /** The decisions whose answer is in flight, which neither of their rows may send again. */
+  /** The decisions answered since the held decisions were last read, which neither of their rows may send again. */
   readonly sending: ReadonlySet<string>;
   /** The answer settled last, which outlives the row it was given on. */
   readonly last: InboxProposalAnswer | undefined;
@@ -94,11 +95,6 @@ export function useInboxProposalAnswers(
           inboxProposalReview(outcome, note),
         ),
       );
-      setSending((was) => {
-        const still = new Set(was);
-        still.delete(proposal.decision);
-        return still;
-      });
       setLast({ proposal, step });
       await client.invalidateQueries({
         queryKey: projectResourceKey(
@@ -106,6 +102,11 @@ export function useInboxProposalAnswers(
           "Project",
           inboxProposalsResource,
         ),
+      });
+      setSending((was) => {
+        const still = new Set(was);
+        still.delete(proposal.decision);
+        return still;
       });
     })();
   };

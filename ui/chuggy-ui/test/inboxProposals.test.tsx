@@ -65,7 +65,8 @@ interface Reviewed {
  * A project whose only questions are the lead's held decisions. A review ends
  * the decision it names; `answeredElsewhere` has someone else end it first, so
  * the review is refused as no longer held; `failing` refuses it as a fault,
- * and `unanswered` never answers it.
+ * `unanswered` never answers it, and `rereadHeld` answers it but never the
+ * read after.
  * `absent` is a reader who may not dispatch, whom the read answers as it
  * answers a project they cannot see.
  */
@@ -74,10 +75,12 @@ function drawProject(served: {
   readonly answeredElsewhere?: boolean;
   readonly failing?: boolean;
   readonly unanswered?: boolean;
+  readonly rereadHeld?: boolean;
   readonly absent?: boolean;
 }): { readonly reviewed: readonly Reviewed[] } {
   const reviewed: Reviewed[] = [];
   let held = [...served.held];
+  let answered = false;
   const respond = (
     url: string,
     init?: { method?: string; body?: string },
@@ -97,6 +100,7 @@ function drawProject(served: {
         url.endsWith(`/selector-proposals/${proposal.decision}/review`),
       );
       held = held.filter((proposal) => proposal !== named);
+      answered = named !== undefined;
       return named === undefined || served.answeredElsewhere === true
         ? answer(
             { error: { code: selectorProposalNotHeldCode, message: "held" } },
@@ -104,10 +108,12 @@ function drawProject(served: {
           )
         : answer({ decision: named.decision, outcome: body.outcome });
     }
-    if (url.includes("/selector-proposals"))
+    if (url.includes("/selector-proposals")) {
+      if (answered && served.rereadHeld === true) return undefined;
       return served.absent === true
         ? answer({ error: { code: "NotFound", message: "absent" } }, 404)
         : answer({ proposals: held, more: false });
+    }
     if (url.includes("/agentic-refusals"))
       return answer({ refusals: [], more: false });
     if (url.includes("/native-actions")) return answer({ actions: [] });
@@ -236,6 +242,23 @@ test("a decision being answered cannot be answered again from either row", async
           .hasAttribute("disabled"),
       ).toBe(true);
   expect(api.reviewed.length).toBe(1);
+});
+
+/** The rows of an answered decision stay on screen until the read after the answer lands, and stay unanswerable until then. */
+test("an answered decision cannot be answered again before the read that removes it", async () => {
+  const api = drawProject({ held: [both], rereadHeld: true });
+  await settled();
+  await turned(() => {
+    within(row(7)).getByRole("button", { name: "approve" }).click();
+  });
+  await settled();
+  expect(said()).toBe("Proposal 7, 8 · Approved");
+  await turned(() => {
+    within(row(8)).getByRole("button", { name: "approve" }).click();
+  });
+  await settled();
+  expect(api.reviewed.length).toBe(1);
+  expect(said()).toBe("Proposal 7, 8 · Approved");
 });
 
 test("a note is held to what the wire takes as it is typed", async () => {
