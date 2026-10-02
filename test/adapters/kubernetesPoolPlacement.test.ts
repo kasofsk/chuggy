@@ -10,6 +10,7 @@ import {
 } from "../../src/contract/workerEnvironment.ts";
 import type { WorkerPoolAssignment } from "../../src/contract/workerPool.ts";
 import { poolEnvelopeSchema } from "../../src/contract/workerTask.ts";
+import type { WorkerPoolPlacement } from "../../src/interpreter/workerPoolClient.ts";
 import type { KubernetesPod } from "../../src/adapters/kubernetes/kubernetesSite.ts";
 import {
   checkedKubernetesPoolPlacementConfig,
@@ -149,17 +150,31 @@ function created(name: string): Response {
   );
 }
 
-test("a placed pod is named for its assignment and asks for the box it was offered", async () => {
-  const name = kubernetesPoolPodName(config, assignment.assignment);
+/** Places `placed` as a job on a cluster that creates every pod it is sent, answering what the backend said and what the cluster was sent. */
+async function jobPlaced(
+  site: KubernetesPoolPlacementConfig,
+  placed: WorkerPoolAssignment = assignment,
+): Promise<{
+  readonly placement: WorkerPoolPlacement;
+  readonly reached: readonly Reached[];
+}> {
+  const name = kubernetesPoolPodName(site, placed.assignment);
   const { reached, fetcher } = cluster((made) =>
     made.path.startsWith("/api/v1/namespaces/pool/pods")
       ? created(name)
       : new Response("{}", { status: 201 }),
   );
-  assert.deepEqual(
-    await kubernetesPoolBackend(config, fetcher).place(assignment),
-    { placed: "Placed" },
-  );
+  const placement = await kubernetesPoolBackend(site, fetcher).place({
+    kind: "Job",
+    assignment: placed,
+  });
+  return { placement, reached };
+}
+
+test("a placed pod is named for its assignment and asks for the box it was offered", async () => {
+  const { placement, reached } = await jobPlaced(config);
+  assert.deepEqual(placement, { placed: "Placed" });
+  const name = kubernetesPoolPodName(config, assignment.assignment);
   const pod = reached[0]?.body as {
     metadata: {
       name: string;
@@ -206,13 +221,7 @@ async function placedPod(
     volumes: readonly { name: string; emptyDir?: unknown }[];
   };
 }> {
-  const name = kubernetesPoolPodName(site, placed.assignment);
-  const { reached, fetcher } = cluster((made) =>
-    made.path.startsWith("/api/v1/namespaces/pool/pods")
-      ? created(name)
-      : new Response("{}", { status: 201 }),
-  );
-  await kubernetesPoolBackend(site, fetcher).place(placed);
+  const { reached } = await jobPlaced(site, placed);
   return reached[0]?.body as Awaited<ReturnType<typeof placedPod>>;
 }
 
@@ -260,13 +269,7 @@ test("a pool pod mounts memory where the image writes a minted credential", asyn
 });
 
 test("a mapped capability moves the pod and an unmapped one does not", async () => {
-  const name = kubernetesPoolPodName(config, assignment.assignment);
-  const { reached, fetcher } = cluster((made) =>
-    made.path.startsWith("/api/v1/namespaces/pool/pods")
-      ? created(name)
-      : new Response("{}", { status: 201 }),
-  );
-  await kubernetesPoolBackend(config, fetcher).place(assignment);
+  const { reached } = await jobPlaced(config);
   const pod = reached[0]?.body as {
     spec: {
       nodeSelector: Record<string, string>;
@@ -281,13 +284,7 @@ test("a mapped capability moves the pod and an unmapped one does not", async () 
 });
 
 test("the envelope carries the callback and the bearer and no material at all", async () => {
-  const name = kubernetesPoolPodName(config, assignment.assignment);
-  const { reached, fetcher } = cluster((made) =>
-    made.path.startsWith("/api/v1/namespaces/pool/pods")
-      ? created(name)
-      : new Response("{}", { status: 201 }),
-  );
-  await kubernetesPoolBackend(config, fetcher).place(assignment);
+  const { reached } = await jobPlaced(config);
   const secret = reached.find((made) => made.path.includes("/secrets"))
     ?.body as {
     stringData: { task: string };
@@ -305,13 +302,7 @@ test("the envelope carries the callback and the bearer and no material at all", 
 /** Catches the launcher writing a field the contract's envelope does not name. */
 test("the envelope, with a provider credential and without, is one the contract names in full", async () => {
   for (const site of [config, { ...config, providerCredential: undefined }]) {
-    const name = kubernetesPoolPodName(site, assignment.assignment);
-    const { reached, fetcher } = cluster((made) =>
-      made.path.startsWith("/api/v1/namespaces/pool/pods")
-        ? created(name)
-        : new Response("{}", { status: 201 }),
-    );
-    await kubernetesPoolBackend(site, fetcher).place(assignment);
+    const { reached } = await jobPlaced(site);
     const secret = reached.find((made) => made.path.includes("/secrets"))
       ?.body as { stringData: { task: string } };
     const envelope = JSON.parse(secret.stringData.task) as object;
@@ -325,16 +316,17 @@ test("the envelope, with a provider credential and without, is one the contract 
 
 test("a cluster that refused the document itself is a settled no", async () => {
   const { fetcher } = cluster(() => new Response("{}", { status: 422 }));
-  const placement = await kubernetesPoolBackend(config, fetcher).place(
-    assignment,
-  );
+  const placement = await kubernetesPoolBackend(config, fetcher).place({
+    kind: "Job",
+    assignment: assignment,
+  });
   assert.equal(placement.placed, "Refused");
 });
 
 test("a cluster that could not be reached is unavailable", async () => {
   const placement = await kubernetesPoolBackend(config, () =>
     Promise.reject(new Error("connection refused")),
-  ).place(assignment);
+  ).place({ kind: "Job", assignment: assignment });
   assert.deepEqual(placement, { placed: "Unavailable" });
 });
 
@@ -365,8 +357,8 @@ test("what the pool holds is its own labelled pods, read off their annotation", 
       ),
   );
   assert.deepEqual(await kubernetesPoolBackend(config, fetcher).held(), [
-    "one",
-    "two",
+    { assignment: "one", kind: "Job" },
+    { assignment: "two", kind: "Job" },
   ]);
   assert.match(
     reached[0]?.path ?? "",
@@ -410,7 +402,7 @@ test("a pod that has ended is not held, and is deleted so its lease lapses", asy
       : new Response("{}", { status: 200 }),
   );
   assert.deepEqual(await kubernetesPoolBackend(config, fetcher).held(), [
-    "three",
+    { assignment: "three", kind: "Job" },
   ]);
   assert.deepEqual(
     reached.filter((made) => made.method === "DELETE").map((made) => made.path),
@@ -419,6 +411,22 @@ test("a pod that has ended is not held, and is deleted so its lease lapses", asy
       "/api/v1/namespaces/pool/pods/pool-succeeded",
     ],
   );
+});
+
+test("a session offered is refused without the cluster being reached, and nothing ended is reported", async () => {
+  const { reached, fetcher } = cluster(
+    () => new Response("{}", { status: 201 }),
+  );
+  const backend = kubernetesPoolBackend(config, fetcher);
+  assert.deepEqual(
+    await backend.place({
+      kind: "Session",
+      assignment: { ...assignment, image: "registry.invalid/session:1" },
+    }),
+    { placed: "Refused", evidence: "this pool runs no session" },
+  );
+  assert.deepEqual(await backend.ended(), []);
+  assert.deepEqual(reached, []);
 });
 
 test("a cluster that could not be listed raises rather than answering an empty pool", async () => {

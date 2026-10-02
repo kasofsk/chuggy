@@ -505,10 +505,11 @@ test("only a placed, live attempt of this epoch has a pod to observe", async () 
   assert.equal(await observed(held.attempt), undefined);
 });
 
-/** Hands a placed attempt to a pool, as a pool's claim would. */
+/** Hands a placed attempt to a pool, as a pool's claim would, with the image and launch a claim records. */
 async function poolHeld(held: SessionRigAttempt, label: string): Promise<void> {
   await rig.harness.query(
-    `UPDATE session_attempt SET pool=$2,pool_principal=$3,assignment=$4
+    `UPDATE session_attempt SET pool=$2,pool_principal=$3,assignment=$4,
+            image='registry.invalid/session:1',launch='{}'::jsonb
       WHERE attempt=$1`,
     [
       held.attempt.attempt,

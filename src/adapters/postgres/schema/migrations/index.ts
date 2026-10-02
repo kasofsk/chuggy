@@ -30,6 +30,7 @@ import { migration029 } from "./029-project-execution-placement.ts";
 import { migration030 } from "./030-api-reads-worker-error.ts";
 import { migration031 } from "./031-session-bearer-turn-failure.ts";
 import { migration032 } from "./032-session-placement.ts";
+import { migration033 } from "./033-pool-sessions.ts";
 import type { Migration } from "../shared.ts";
 
 export const migrations: readonly Migration[] = [
@@ -65,4 +66,5 @@ export const migrations: readonly Migration[] = [
   migration030,
   migration031,
   migration032,
+  migration033,
 ];

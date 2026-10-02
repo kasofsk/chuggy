@@ -603,6 +603,25 @@ function sessionTaskPorts(
   };
 }
 
+/** A pool-held session's task, asked by a release whose runners launch a session and so are told what it is launched with. */
+function poolHeldSessionTaskCase(): WorkerPlaneCase {
+  return {
+    name: "a resumed session's task, bound to a repository and held by a pool",
+    release: workerContractRelease,
+    service: sessionTaskPorts({
+      ...liveSessionTask,
+      launch: poolSessionLaunch,
+      invocation: {
+        ...liveSessionTask.invocation,
+        capabilities: ["RepositoryRead"],
+        agentReference: "runtime-session",
+        authority: liveInvocation.authority,
+        repository: { reference: "github.com/owner/name" },
+      },
+    }),
+  };
+}
+
 /** Every way a session bearer is answered on `/v1/task`, each case carrying that bearer. */
 function sessionTaskCases(): readonly WorkerPlaneCase[] {
   const bearer = `chgs_${"a".repeat(32)}`;
@@ -637,20 +656,7 @@ function sessionTaskCases(): readonly WorkerPlaneCase[] {
       name: "a fresh session's task",
       service: sessionTaskPorts(liveSessionTask),
     },
-    {
-      name: "a resumed session's task, bound to a repository and held by a pool",
-      service: sessionTaskPorts({
-        ...liveSessionTask,
-        launch: poolSessionLaunch,
-        invocation: {
-          ...liveSessionTask.invocation,
-          capabilities: ["RepositoryRead"],
-          agentReference: "runtime-session",
-          authority: liveInvocation.authority,
-          repository: { reference: "github.com/owner/name" },
-        },
-      }),
-    },
+    poolHeldSessionTaskCase(),
     ...allSessionKinds.map((kind) => ({
       name: `a ${kind} session's task holding every capability`,
       service: sessionTaskPorts({

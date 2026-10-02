@@ -21,11 +21,21 @@ import {
   workerPoolReconciliationSchema,
   workerPoolSettlementPath,
 } from "../../src/contract/workerPool.ts";
+import {
+  asSessionAttemptId,
+  asSessionBearerId,
+  asSessionBearerSecret,
+  asSessionId,
+} from "../../src/interpreter/agentSession.ts";
 import { workerContractAccepted } from "../../src/interpreter/workerPlane.ts";
 import type {
   WorkerPoolAssignments,
   WorkerPoolIdentity,
 } from "../../src/interpreter/workerPool.ts";
+import type {
+  SessionLaunchFacts,
+  WorkerPoolSessions,
+} from "../../src/interpreter/workerPoolSessions.ts";
 import {
   oidcPrincipal,
   type Principal,
@@ -73,11 +83,18 @@ const speaking = {
   [workerContractHeader]: workerContractRelease,
 };
 
-/** The poll's address carrying one `held` per assignment and the room asked for. */
-function polling(held: readonly string[], wanted = 1): string {
+/** The poll's address carrying one `held` per assignment and the room asked for, of sessions only where it is said. */
+function polling(
+  held: readonly string[],
+  wanted = 1,
+  wantedSessions?: number,
+): string {
   const query = new URLSearchParams([
     ...held.map((assignment) => [workerPoolPollQuery.held, assignment]),
     [workerPoolPollQuery.wanted, String(wanted)],
+    ...(wantedSessions === undefined
+      ? []
+      : [[workerPoolPollQuery.wantedSessions, String(wantedSessions)]]),
   ]).toString();
   return `${workerPoolPollRoute}?${query}`;
 }
@@ -124,6 +141,81 @@ function calls(pinning: readonly string[] = []): {
   };
 }
 
+/** The image every session of this site runs, and the name a pool is handed it by. */
+const sessionImage = `registry.invalid/session@sha256:${"c".repeat(64)}`;
+const sessionPublished = `registry.public.invalid/session@sha256:${"c".repeat(64)}`;
+const sessionSecret = `chgs_${"e".repeat(64)}`;
+
+const launch: SessionLaunchFacts = {
+  image: sessionImage,
+  authority: {
+    tools: [],
+    credentials: [],
+    network: false,
+    filesystem: "None",
+    mayCompleteTask: false,
+  },
+  mirrors: {},
+  bounds: {
+    mailboxPollMs: 1,
+    idleMs: 2,
+    resultDrainMs: 3,
+    loadTimeoutMs: 4,
+    turnsMax: 5,
+    budgetUsd: 6,
+  },
+  model: "session-model",
+  deadlineSecs: 900,
+  placementBackoffSecs: 7,
+};
+
+/**
+ * Records every call a route made of the session side, which holds `holding`
+ * and offers `offered`, each opened as the claim asks.
+ */
+function sessionCalls(
+  holding: readonly string[] = [],
+  offered: readonly string[] = [],
+): { readonly made: unknown[]; readonly store: WorkerPoolSessions } {
+  const made: unknown[] = [];
+  const answer = <T>(call: unknown[], value: T): Promise<T> =>
+    Promise.resolve((made.push(call), value));
+  return {
+    made,
+    store: {
+      launch: () => answer(["launch"], launch),
+      among: (_identity, named) =>
+        answer(
+          ["among", [...named]],
+          new Set(named.filter((one) => holding.includes(one))),
+        ),
+      awaiting: (_identity, _backoff, max) =>
+        answer(
+          ["awaiting", max],
+          offered.slice(0, max).map((session) => ({
+            session: asSessionId(session),
+            kind: "Lead" as const,
+            capabilities: [],
+          })),
+        ),
+      open: (_identity, opening) =>
+        answer(
+          ["open", opening.candidate.session, opening.assignment],
+          "Opened",
+        ),
+      renew: (_identity, assignment) =>
+        answer(["renew", assignment], assignment === "session-live"),
+      held: (_identity, assignment) => answer(["held", assignment], true),
+      refuse: (_identity, assignment, evidence) =>
+        answer(["refuse", assignment, evidence], true),
+      release: (_identity, assignment) => answer(["release", assignment], true),
+      heldImages: (_identity, max) =>
+        answer(["heldImages", max], holding.length > 0 ? [sessionImage] : []),
+      polled: () => answer(["polled"], undefined),
+    },
+  };
+}
+
 /** An issuer that knows one token, refuses one and cannot answer for a third. */
 const issuing = {
   authenticateBearer: (token: string) =>
@@ -156,6 +248,7 @@ function authority(answer: "Allow" | "Refuse" | "Outage"): ProjectAccess {
 function plane(
   ports: WorkerPoolAssignments,
   access: ProjectAccess = authority("Allow"),
+  sessions: WorkerPoolSessions = sessionCalls().store,
 ): PoolPlaneService {
   let minted = 0;
   return {
@@ -169,6 +262,20 @@ function plane(
         Promise.resolve(principal === poolPrincipal ? identity : undefined),
     },
     assignments: ports,
+    sessions: {
+      store: sessions,
+      bindings: { binding: () => Promise.resolve(undefined) },
+      bearers: {
+        mint: () => ({
+          attempt: asSessionAttemptId("attempt-one"),
+          bearer: {
+            id: asSessionBearerId("bearer-one"),
+            secret: asSessionBearerSecret(sessionSecret),
+          },
+          bearerSecretDigest: "d".repeat(64),
+        }),
+      },
+    },
     mint: () => `minted-${String((minted += 1))}`,
     settings: {
       leaseSecs: 30,
@@ -176,8 +283,11 @@ function plane(
       memoryMib: 256,
       assignmentsPerPollMax: 1,
       heldMax: 3,
+      sessionsPerPollMax: 1,
+      sessionsHeldMax: 2,
       deadlineSecs: 600,
       callbackUrl: "https://plane.invalid/v1/ticket-execution",
+      sessionApiUrl: "https://api.invalid/",
       pollIntervalMs: 1,
       pollsMax: 1,
       imageHosts: new Map([["registry.invalid", "registry.public.invalid"]]),
@@ -517,11 +627,14 @@ function poolReplayPolled(older: WorkerContractReleasePool): void {
         ...recorded.ports,
         claim: () => Promise.resolve(claimed),
       };
+      const offering = sessionCalls([], ["session-waiting"]);
       const query = new URLSearchParams([
         ...held.map((assignment) => [older.pollQuery.held, assignment]),
         [older.pollQuery.wanted, String(wanted)],
       ]);
-      const answered = await createPoolPlaneApp(plane(ports)).inject({
+      const answered = await createPoolPlaneApp(
+        plane(ports, authority("Allow"), offering.store),
+      ).inject({
         method: "GET",
         url: `${older.pollRoute}?${query.toString()}`,
         headers: {
@@ -533,12 +646,126 @@ function poolReplayPolled(older: WorkerContractReleasePool): void {
       const body: unknown = answered.json();
       assert.deepEqual(older.reconciliation.parse(body), body, what);
       assert.equal(Object.hasOwn(body as object, "sessions"), false, what);
+      assert.deepEqual(offering.made, [], what);
       workerContractOptionalsSeen(older.reconciliation, body, "answer", seen);
     }
     for (const [field, held] of seen)
       assert.equal(held.size, 2, `${field} is seen only one way`);
   });
 }
+
+test("a pool of this release with room for a session is handed the one waiting, on the plane's terms, and is recorded as polling", async () => {
+  const recorded = calls();
+  const offering = sessionCalls([], ["session-waiting"]);
+  const answered = await createPoolPlaneApp(
+    plane(recorded.ports, authority("Allow"), offering.store),
+  ).inject({
+    method: "GET",
+    url: polling([], 0, 3),
+    headers: speaking,
+  });
+  assert.equal(answered.statusCode, 200);
+  assert.deepEqual(answered.json(), {
+    assignments: [],
+    sessions: [
+      {
+        assignment: "minted-1",
+        capabilities: [],
+        image: sessionPublished,
+        cpuMillis: 500,
+        memoryMib: 256,
+        deadlineSecs: launch.deadlineSecs,
+        callbackUrl: "https://plane.invalid/v1/ticket-execution",
+        bearer: sessionSecret,
+      },
+    ],
+    stop: [],
+  });
+  assert.deepEqual(offering.made, [
+    ["among", []],
+    ["polled"],
+    ["launch"],
+    ["awaiting", 1],
+    ["open", "session-waiting", "minted-1"],
+  ]);
+  assert.deepEqual(recorded.made, []);
+});
+
+test("what a pool holds is renewed through the rows of its own kind, each kind held to its own bound", async () => {
+  const recorded = calls();
+  const holding = sessionCalls(["session-live", "session-gone"]);
+  const app = createPoolPlaneApp(
+    plane(recorded.ports, authority("Allow"), holding.store),
+  );
+  const answered = await app.inject({
+    method: "GET",
+    url: polling(["live", "live", "live", "session-live", "session-gone"], 0),
+    headers: speaking,
+  });
+  assert.equal(answered.statusCode, 200);
+  assert.deepEqual(answered.json(), {
+    assignments: [],
+    sessions: [],
+    stop: ["session-gone"],
+  });
+  assert.deepEqual(recorded.made, Array(3).fill(["renew", "live"]));
+  assert.deepEqual(holding.made.slice(2), [
+    ["renew", "session-live"],
+    ["renew", "session-gone"],
+  ]);
+  const overSessions = await createPoolPlaneApp(
+    plane(
+      calls().ports,
+      authority("Allow"),
+      sessionCalls(["s1", "s2", "s3"]).store,
+    ),
+  ).inject({
+    method: "GET",
+    url: polling(["s1", "s2", "s3"], 0),
+    headers: speaking,
+  });
+  assert.equal(overSessions.statusCode, 400);
+  const unsessioned = await app.inject({
+    method: "GET",
+    url: polling(["live", "live", "live", "session-live"], 0),
+    headers: { ...speaking, [workerContractHeader]: "1.2.0" },
+  });
+  assert.equal(
+    unsessioned.statusCode,
+    400,
+    "a pool reading no sessions is held to its executions' bound alone",
+  );
+});
+
+test("a settlement of a held session reaches the session side and never the executions'", async () => {
+  const recorded = calls();
+  const holding = sessionCalls(["session-one"]);
+  const app = createPoolPlaneApp(
+    plane(recorded.ports, authority("Allow"), holding.store),
+  );
+  for (const [outcome, payload] of [
+    ["Accepted", {}],
+    ["Refused", { evidence: "no runner" }],
+    ["Unavailable", {}],
+  ] as const) {
+    const answered = await app.inject({
+      method: "POST",
+      url: workerPoolSettlementPath(outcome, "session-one"),
+      headers: speaking,
+      payload,
+    });
+    assert.equal(answered.statusCode, 204, outcome);
+  }
+  assert.deepEqual(recorded.made, []);
+  assert.deepEqual(
+    holding.made.filter((call) => (call as unknown[])[0] !== "among"),
+    [
+      ["held", "session-one"],
+      ["refuse", "session-one", "no runner"],
+      ["release", "session-one"],
+    ],
+  );
+});
 
 /** Every settlement a pool built with `older` makes, at the paths and with the bodies its own release builds, each reaching its port. */
 function poolReplaySettled(older: WorkerContractReleasePool): void {
@@ -887,6 +1114,23 @@ test("a request the grammar refuses is 403 before anything held is read", async 
   });
   assert.equal(unforwarded.statusCode, 403);
   assert.deepEqual(recorded.made, []);
+});
+
+test("a pool holding a session may pull its session's image, and one holding none may not", async () => {
+  const address = `/v2/session/manifests/sha256:${"c".repeat(64)}`;
+  for (const [holding, status] of [
+    [["session-one"], 200],
+    [[], 403],
+  ] as const) {
+    const answered = await createPoolPlaneApp(
+      plane(calls().ports, authority("Allow"), sessionCalls(holding).store),
+    ).inject({
+      method: "GET",
+      url: authorizing,
+      headers: forwarded("GET", address),
+    });
+    assert.equal(answered.statusCode, status, holding.join(","));
+  }
 });
 
 test("a pull of an image the pool holds no assignment for is 403", async () => {

@@ -46,6 +46,10 @@ import {
   postgresHarnessUrl,
   type PostgresHarness,
 } from "./harness.ts";
+import {
+  schedulerRootSessionLaunch,
+  schedulerRootSessions,
+} from "./schedulerRootPorts.ts";
 
 const execute = promisify(execFile);
 
@@ -170,7 +174,9 @@ function schedulerRootProgram(): string {
       },
       service: ports.schedulerRootService,
       access: ports.schedulerRootAccess,
+      sessions: ports.schedulerRootSessions,
       sessionRouting: { routes: { Thread: 'InCluster', Lead: 'InCluster' }, projectRoutes: new Map() },
+      sessionLaunch: ports.schedulerRootSessionLaunch,
       workerCatalog: ${JSON.stringify([schedulerRootWorker])},
       additional: supplied,
     });
@@ -206,6 +212,25 @@ test("a precondition the deployment supplies is reached past the database ones a
       [schedulerRootWorker.image],
     ),
     [schedulerRootWorker],
+  );
+  assert.deepEqual(
+    await harness.query(
+      `SELECT image,authority,mirrors,bounds,model,deadline_secs::int AS deadline,
+              backoff_secs::int AS backoff
+         FROM session_launch`,
+    ),
+    [
+      {
+        image: schedulerRootSessions.policy.image,
+        authority: schedulerRootSessions.policy.grant,
+        mirrors: schedulerRootSessions.policy.mirrors,
+        bounds: schedulerRootSessionLaunch.bounds,
+        model: schedulerRootSessionLaunch.model,
+        deadline: schedulerRootSessionLaunch.deadlineSecs,
+        backoff: schedulerRootSessions.config.placementBackoffSecs,
+      },
+    ],
+    "what a pool's claim launches a session with is what this root launches one with",
   );
 });
 

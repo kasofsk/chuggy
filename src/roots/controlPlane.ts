@@ -92,7 +92,9 @@ import { postgresDomainConfigurationPrecondition } from "../adapters/postgres/do
 import { postgresWorkerCatalogPrecondition } from "../adapters/postgres/workerCatalog.ts";
 import { postgresExecutionRoutingPrecondition } from "../adapters/postgres/executionPlacement.ts";
 import { postgresSessionRoutingPrecondition } from "../adapters/postgres/sessionPlacement.ts";
+import { postgresSessionLaunchPrecondition } from "../adapters/postgres/workerPoolSessions.ts";
 import type { SessionRouting } from "../interpreter/sessionPlacement.ts";
+import type { SessionLaunchFacts } from "../interpreter/workerPoolSessions.ts";
 import type { AdmittedWorker } from "../interpreter/workerCatalog.ts";
 import {
   currentRuntimeSchemaContract,
@@ -559,6 +561,11 @@ export interface SchedulerProcessRootConfig {
   readonly sessions: Omit<SessionSchedulerService, "store" | "bindings">;
   /** Where sessions run, published before the loop so the pass that places them reads this process's routing. */
   readonly sessionRouting: SessionRouting;
+  /** What a session's pod is launched with beyond its policy, published with it so a pool's claim launches a session as this process would. */
+  readonly sessionLaunch: Pick<
+    SessionLaunchFacts,
+    "bounds" | "model" | "deadlineSecs"
+  >;
   readonly workerCatalog: readonly AdmittedWorker[];
   readonly additional?: readonly RuntimePrecondition[];
 }
@@ -626,6 +633,13 @@ export function schedulerProcessRoot(
             config.service.policy.routing,
           ),
           postgresSessionRoutingPrecondition(pool, config.sessionRouting),
+          postgresSessionLaunchPrecondition(pool, {
+            image: config.sessions.policy.image,
+            authority: config.sessions.policy.grant,
+            mirrors: config.sessions.policy.mirrors,
+            placementBackoffSecs: config.sessions.config.placementBackoffSecs,
+            ...config.sessionLaunch,
+          }),
           ...(config.additional ?? []),
         ],
       },

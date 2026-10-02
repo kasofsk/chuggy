@@ -28,6 +28,7 @@ import {
   boundaryOwnerRole,
   configurationImporterRole,
   finalizerRole,
+  poolPlaneRole,
   projectDraftsReadFunction,
   repositoryBindingReadFunction,
   schedulerRole,
@@ -492,8 +493,9 @@ test("the pod is answered the objectives its session was opened with", async () 
  * configuration importer's (029), 061 adds the scheduler, 082 takes the
  * finalizer's (040) back with its caller and 086 adds the worker plane, which
  * holds a session to its project's own bindings before minting for the
- * repository the session named — so the case names them all rather than
- * asserting a door has one holder it never had.
+ * repository the session named, and 033 adds the pool plane, whose claim of a
+ * session records the repository its pod reads — so the case names them all
+ * rather than asserting a door has one holder it never had.
  */
 const leadToolDoors: readonly {
   readonly door: string;
@@ -511,6 +513,7 @@ const leadToolDoors: readonly {
       configurationImporterRole,
       schedulerRole,
       workerPlaneRole,
+      poolPlaneRole,
     ],
   },
 ];
@@ -520,6 +523,7 @@ const runtimeRoles = [
   apiRole,
   schedulerRole,
   workerPlaneRole,
+  poolPlaneRole,
   ticketServiceRole,
   finalizerRole,
   selectorServiceRole,

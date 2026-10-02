@@ -23,6 +23,7 @@ import type { ProjectAccessSettings } from "../../src/interpreter/projectAccess.
 import { sessionSchedulerDefaults } from "../../src/interpreter/sessionScheduler.ts";
 import type { SessionSchedulerService } from "../../src/interpreter/sessionSchedulerRun.ts";
 import { blessedPracticeCatalog } from "../../src/interpreter/taskBriefing.ts";
+import type { SessionLaunchFacts } from "../../src/interpreter/workerPoolSessions.ts";
 import { ticketServiceDefaults } from "../../src/interpreter/ticketService.ts";
 
 /** Everything `schedulerProcessRoot` takes but the store it opens for itself. */
@@ -87,6 +88,23 @@ export const schedulerRootSessions: Omit<
     mirrors: {},
   },
   config: sessionSchedulerDefaults,
+};
+
+/** What the root publishes of a session's launch beyond its policy. */
+export const schedulerRootSessionLaunch: Pick<
+  SessionLaunchFacts,
+  "bounds" | "model" | "deadlineSecs"
+> = {
+  bounds: {
+    mailboxPollMs: 1_000,
+    idleMs: 2_000,
+    resultDrainMs: 3_000,
+    loadTimeoutMs: 4_000,
+    turnsMax: 5,
+    budgetUsd: 6,
+  },
+  model: "scheduler-root-model",
+  deadlineSecs: 600,
 };
 
 /** A project authority nothing listens at, which is what the root's own access adapter is asked of. */

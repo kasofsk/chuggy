@@ -78,6 +78,17 @@ export const workerPlaneRole = "chuggy_worker_plane";
 export const poolPlaneRole = "chuggy_pool_plane";
 export const workerPoolFenceFunction = "fence_worker_pool_attempts";
 export const workerPoolReleaseFunction = "release_worker_pool_assignment";
+export const poolSessionsAwaitingFunction = "pool_sessions_awaiting_claim";
+export const poolSessionOpenFunction = "open_pool_session_attempt";
+export const poolSessionAssignmentsFunction = "pool_session_assignments";
+export const poolSessionHoldingFunction = "pool_session_attempt_holding";
+export const poolSessionRenewFunction = "renew_pool_session_attempt";
+export const poolSessionHeldFunction = "pool_session_attempt_held";
+export const poolSessionRefuseFunction = "refuse_pool_session_attempt";
+export const poolSessionReleaseFunction = "release_pool_session_attempt";
+export const poolSessionImagesFunction = "pool_session_images";
+/** When a session's oldest queued turn could first be claimed: its enqueue, the end of the turn before it, or its return to the queue by an attempt that had claimed it. */
+export const sessionClaimableSinceFunction = "session_turn_claimable_since";
 export const configurationImporterRole = "chuggy_configuration_importer";
 export const workerAttemptReadFunction = "read_worker_attempt";
 export const workerTaskReadFunction = "read_worker_task";

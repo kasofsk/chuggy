@@ -6221,6 +6221,7 @@ const wipeKept = [
   "selector_runtime_readiness",
   "selector_runtime_settings",
   "selector_runtime_settings_history",
+  "session_launch",
   "session_routing",
   "tenant",
   "thread_wake_cursor",

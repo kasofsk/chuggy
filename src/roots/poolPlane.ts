@@ -18,6 +18,7 @@
 import { pathToFileURL } from "node:url";
 
 import { poolBearerMint } from "../adapters/crypto/poolBearerMint.ts";
+import { sessionAttemptMint } from "../adapters/crypto/sessionAttemptMint.ts";
 import { createPoolPlaneApp } from "../adapters/http/poolPlaneServer.ts";
 import { oidcAuthentication } from "../adapters/http/oidc.ts";
 import { ketoProjectAccess } from "../adapters/keto/projectAccess.ts";
@@ -26,6 +27,7 @@ import {
   checkedProjectAccessSettings,
   projectAccessTimeoutMsDefault,
 } from "../interpreter/projectAccess.ts";
+import type { WorkerPoolPollSettings } from "../interpreter/workerPool.ts";
 import {
   workerPoolImageHostsRead,
   type WorkerPoolImageHosts,
@@ -34,11 +36,13 @@ import {
   planeEnvironmentPositive,
   planeEnvironmentRequired,
 } from "./planeEnvironment.ts";
+import { postgresProjectRepositoryBinding } from "../adapters/postgres/repositoryConfiguration.ts";
 import { poolPlaneRole } from "../adapters/postgres/schema.ts";
 import {
   postgresWorkerPoolAssignments,
   postgresWorkerPoolRegistry,
 } from "../adapters/postgres/workerPool.ts";
+import { postgresWorkerPoolSessions } from "../adapters/postgres/workerPoolSessions.ts";
 
 /**
  * Where a pool's harness fetches what its assignment does not carry, which is
@@ -49,6 +53,20 @@ import {
 const callbackUrlVariable = "CHUG_POOL_PLANE_CALLBACK_URL";
 
 const imageHostsVariable = "CHUG_POOL_PLANE_IMAGE_HOSTS";
+
+/**
+ * Where a pool-held session's own tools reach the API. A plane that names none
+ * hands no session out, since a session that cannot reach its API cannot
+ * answer a turn.
+ */
+const sessionApiUrlVariable = "CHUG_POOL_PLANE_SESSION_API_URL";
+
+function poolPlaneSessionApiUrl(): { sessionApiUrl?: string } {
+  const named = process.env[sessionApiUrlVariable];
+  return named === undefined || named.length === 0
+    ? {}
+    : { sessionApiUrl: named };
+}
 
 /** The public host each internal registry host is published as, where a malformed setting refuses the start rather than publishing nothing. */
 function poolPlaneImageHosts(): WorkerPoolImageHosts {
@@ -77,6 +95,42 @@ function poolPlaneIssuer() {
   };
 }
 
+/** The bounds a poll is answered within, each read the way every other bound is. */
+function poolPlaneSettings(
+  imageHosts: WorkerPoolImageHosts,
+): WorkerPoolPollSettings {
+  return {
+    leaseSecs: planeEnvironmentPositive("CHUG_POOL_PLANE_LEASE_SECS", 300),
+    assignmentsPerPollMax: planeEnvironmentPositive(
+      "CHUG_POOL_PLANE_ASSIGNMENTS_PER_POLL_MAX",
+      8,
+    ),
+    heldMax: planeEnvironmentPositive("CHUG_POOL_PLANE_HELD_MAX", 64),
+    sessionsPerPollMax: planeEnvironmentPositive(
+      "CHUG_POOL_PLANE_SESSIONS_PER_POLL_MAX",
+      4,
+    ),
+    sessionsHeldMax: planeEnvironmentPositive(
+      "CHUG_POOL_PLANE_SESSIONS_HELD_MAX",
+      16,
+    ),
+    deadlineSecs: planeEnvironmentPositive(
+      "CHUG_POOL_PLANE_DEADLINE_SECS",
+      3_600,
+    ),
+    cpuMillis: planeEnvironmentPositive("CHUG_POOL_PLANE_CPU_MILLIS", 2_000),
+    memoryMib: planeEnvironmentPositive("CHUG_POOL_PLANE_MEMORY_MIB", 4_096),
+    callbackUrl: planeEnvironmentRequired(callbackUrlVariable),
+    ...poolPlaneSessionApiUrl(),
+    pollIntervalMs: planeEnvironmentPositive(
+      "CHUG_POOL_PLANE_POLL_INTERVAL_MS",
+      1_000,
+    ),
+    pollsMax: planeEnvironmentPositive("CHUG_POOL_PLANE_POLLS_MAX", 25),
+    imageHosts,
+  };
+}
+
 async function main(): Promise<void> {
   const imageHosts = poolPlaneImageHosts();
   const pool = postgresPool(
@@ -101,28 +155,13 @@ async function main(): Promise<void> {
     ),
     registry: postgresWorkerPoolRegistry(pool),
     assignments: postgresWorkerPoolAssignments(pool),
-    mint: poolBearerMint,
-    settings: {
-      leaseSecs: planeEnvironmentPositive("CHUG_POOL_PLANE_LEASE_SECS", 300),
-      assignmentsPerPollMax: planeEnvironmentPositive(
-        "CHUG_POOL_PLANE_ASSIGNMENTS_PER_POLL_MAX",
-        8,
-      ),
-      heldMax: planeEnvironmentPositive("CHUG_POOL_PLANE_HELD_MAX", 64),
-      deadlineSecs: planeEnvironmentPositive(
-        "CHUG_POOL_PLANE_DEADLINE_SECS",
-        3_600,
-      ),
-      cpuMillis: planeEnvironmentPositive("CHUG_POOL_PLANE_CPU_MILLIS", 2_000),
-      memoryMib: planeEnvironmentPositive("CHUG_POOL_PLANE_MEMORY_MIB", 4_096),
-      callbackUrl: planeEnvironmentRequired(callbackUrlVariable),
-      pollIntervalMs: planeEnvironmentPositive(
-        "CHUG_POOL_PLANE_POLL_INTERVAL_MS",
-        1_000,
-      ),
-      pollsMax: planeEnvironmentPositive("CHUG_POOL_PLANE_POLLS_MAX", 25),
-      imageHosts,
+    sessions: {
+      store: postgresWorkerPoolSessions(pool),
+      bindings: postgresProjectRepositoryBinding(pool),
+      bearers: sessionAttemptMint(),
     },
+    mint: poolBearerMint,
+    settings: poolPlaneSettings(imageHosts),
     ready: async () => {
       try {
         const found = await pool.query<{ current_role: string }>(

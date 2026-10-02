@@ -38,15 +38,18 @@ import { setTimeout as delay } from "node:timers/promises";
 import type pg from "pg";
 
 import type { WorkerPoolAssignment } from "../../src/contract/workerPool.ts";
+import { sessionAttemptMint } from "../../src/adapters/crypto/sessionAttemptMint.ts";
 import {
   kubernetesPoolBackend,
   type KubernetesPoolPlacementConfig,
 } from "../../src/adapters/kubernetes/poolPlacement.ts";
+import { postgresProjectRepositoryBinding } from "../../src/adapters/postgres/repositoryConfiguration.ts";
 import { apiRole, poolPlaneRole } from "../../src/adapters/postgres/schema.ts";
 import {
   postgresWorkerPoolAssignments,
   postgresWorkerPoolRegistry,
 } from "../../src/adapters/postgres/workerPool.ts";
+import { postgresWorkerPoolSessions } from "../../src/adapters/postgres/workerPoolSessions.ts";
 import {
   allExecutionCapabilities,
   type ExecutionRequirement,
@@ -65,6 +68,7 @@ import {
   workerPoolReconcile,
   type WorkerPoolIdentity,
   type WorkerPoolPollSettings,
+  type WorkerPoolPorts,
 } from "../../src/interpreter/workerPool.ts";
 import {
   workerPoolCanAssign,
@@ -102,6 +106,19 @@ after(async () => {
 
 const registry = postgresWorkerPoolRegistry(apiPool);
 const assignments = postgresWorkerPoolAssignments(planePool);
+
+/** The pool plane's ports with no session ever waiting, since every case here is an execution's. */
+function polling(mint: () => string): WorkerPoolPorts {
+  return {
+    assignments,
+    sessions: {
+      store: postgresWorkerPoolSessions(planePool),
+      bindings: postgresProjectRepositoryBinding(planePool),
+      bearers: sessionAttemptMint(),
+    },
+    mint,
+  };
+}
 
 await rig.harness.query(
   "ALTER TABLE worker_pool DROP CONSTRAINT worker_pool_class_is_known",
@@ -464,6 +481,8 @@ const settings: WorkerPoolPollSettings = {
   memoryMib: 256,
   assignmentsPerPollMax: 4,
   heldMax: 1,
+  sessionsPerPollMax: 1,
+  sessionsHeldMax: 1,
   deadlineSecs: 600,
   callbackUrl: "https://plane.invalid/v1/ticket-execution",
   pollIntervalMs: 1,
@@ -508,21 +527,21 @@ test("a pool that reports holding nothing is held to what the database says it h
   await opened(project);
   await claimedBy(pool, `held-${randomUUID()}`);
   await opened(project);
-  const mint = () => randomUUID();
+  const ports = polling(() => randomUUID());
   const underReported = await workerPoolReconcile(
-    assignments,
+    ports,
     pool,
-    { held: [], wanted: 1, wantedSessions: 0 },
+    { jobs: [], sessions: [] },
+    { wanted: 1, wantedSessions: 0 },
     settings,
-    mint,
   );
   assert.deepEqual(underReported.assignments, []);
   const roomier = await workerPoolReconcile(
-    assignments,
+    ports,
     pool,
-    { held: [], wanted: 1, wantedSessions: 0 },
+    { jobs: [], sessions: [] },
+    { wanted: 1, wantedSessions: 0 },
     { ...settings, heldMax: 2 },
-    mint,
   );
   assert.equal(
     roomier.assignments.length,
@@ -710,7 +729,10 @@ async function podImage(assignment: WorkerPoolAssignment): Promise<string> {
     );
   };
   assert.deepEqual(
-    await kubernetesPoolBackend(site, fetcher).place(assignment),
+    await kubernetesPoolBackend(site, fetcher).place({
+      kind: "Job",
+      assignment,
+    }),
     { placed: "Placed" },
   );
   const [pod] = created as { spec: { containers: { image: string }[] } }[];
@@ -728,11 +750,11 @@ async function handedOut(
   const pool = await pollingPool(project, label, requirement);
   await opened(project);
   const answered = await workerPoolReconcile(
-    assignments,
+    polling(() => randomUUID()),
     pool,
-    { held: [], wanted: 1, wantedSessions: 0 },
+    { jobs: [], sessions: [] },
+    { wanted: 1, wantedSessions: 0 },
     settings,
-    () => randomUUID(),
   );
   const [assignment] = answered.assignments;
   if (assignment === undefined) throw new Error(`${label} was handed nothing`);

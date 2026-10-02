@@ -67,7 +67,7 @@ import type {
   AttemptPlacementOutcome,
   ExecutionProfile,
 } from "./executionScheduler.ts";
-import type { RepositoryId } from "./finalizer.ts";
+import type { RepositoryBinding, RepositoryId } from "./finalizer.ts";
 import type { Partition, RecoveryEpoch } from "./projectStore.ts";
 import type { PlacementId } from "./schedulerIdentity.ts";
 import type { PolicyAuthorityGrant } from "./taskAuthority.ts";
@@ -155,6 +155,21 @@ export function sessionRepositoryRead(
   bound: RepositoryId,
 ): RepositoryId {
   return Object.hasOwn(mirrors, bound) ? (mirrors[bound] ?? bound) : bound;
+}
+
+/**
+ * The repository a placed session clones, which is none where its project
+ * binds none or where its roster reads none: a checkout nothing on the roster
+ * may read is a cost with no consequence.
+ */
+export function sessionRepositoryPlaced(
+  binding: RepositoryBinding | undefined,
+  capabilities: readonly SessionCapability[],
+  mirrors: RepositoryMirrors,
+): RepositoryId | undefined {
+  return binding === undefined || !capabilities.includes("RepositoryRead")
+    ? undefined
+    : sessionRepositoryRead(mirrors, binding.repository);
 }
 
 /**
@@ -299,7 +314,7 @@ export interface SessionSchedulerStore {
     attemptsMax: number,
   ): Promise<number>;
 
-  /** Withdraws at most `turnsMax` turns offered to runners and queued past `dwellSecs`, oldest first. */
+  /** Withdraws at most `turnsMax` turns offered to runners that have headed a session no attempt holds for longer than `dwellSecs`, longest first. */
   withdrawUnservedPoolTurns(
     epoch: RecoveryEpoch,
     dwellSecs: number,

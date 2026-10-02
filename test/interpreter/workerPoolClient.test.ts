@@ -1,17 +1,24 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import type { WorkerPoolAssignment } from "../../src/contract/workerPool.ts";
+import type {
+  WorkerPoolAssignment,
+  WorkerPoolSessionAssignment,
+} from "../../src/contract/workerPool.ts";
 import {
   workerPoolClientPass,
   workerPoolClientRun,
   type WorkerPoolBackend,
   type WorkerPoolClient,
   type WorkerPoolClientSettings,
+  type WorkerPoolEndAnswer,
+  type WorkerPoolHeld,
+  type WorkerPoolOffer,
   type WorkerPoolPlacement,
   type WorkerPoolPlane,
   type WorkerPoolPolled,
   type WorkerPoolStopped,
+  type WorkerPoolSessionEnd,
   type WorkerPoolSettled,
   type WorkerPoolTokenAcquired,
   type WorkerPoolTokens,
@@ -35,11 +42,25 @@ function assignment(named: string): WorkerPoolAssignment {
   };
 }
 
+function session(named: string): WorkerPoolSessionAssignment {
+  return {
+    ...assignment(named),
+    image: "registry.invalid/session:1",
+    bearer: `chgs_${named}`,
+  };
+}
+
+/** What a backend holds, every one of it a job's. */
+function jobs(...named: string[]): WorkerPoolHeld[] {
+  return named.map((one) => ({ assignment: one, kind: "Job" }));
+}
+
 /** A backend holding nothing and placing everything, which every case narrows from. */
 const idle: WorkerPoolBackend = {
   place: () => Promise.resolve<WorkerPoolPlacement>({ placed: "Placed" }),
   stop: () => Promise.resolve<WorkerPoolStopped>({ stopped: "Stopped" }),
   held: () => Promise.resolve([]),
+  ended: () => Promise.resolve([]),
 };
 
 /** A plane with nothing to say, answered by the poll that says so. */
@@ -48,6 +69,7 @@ const quiet: WorkerPoolPlane = {
     Promise.resolve<WorkerPoolPolled>({
       polled: "Reconciled",
       assignments: [],
+      sessions: [],
       stop: [],
     }),
   settle: () => Promise.resolve<WorkerPoolSettled>("Settled"),
@@ -104,7 +126,7 @@ test("what the pool holds is read from the backend rather than remembered", asyn
   const sent: string[][] = [];
   const passed = await workerPoolClientPass(
     client({
-      backend: { ...idle, held: () => Promise.resolve(["running-one"]) },
+      backend: { ...idle, held: () => Promise.resolve(jobs("running-one")) },
       plane: {
         ...quiet,
         poll: (_token, held) => {
@@ -112,6 +134,7 @@ test("what the pool holds is read from the backend rather than remembered", asyn
           return Promise.resolve<WorkerPoolPolled>({
             polled: "Reconciled",
             assignments: [],
+            sessions: [],
             stop: [],
           });
         },
@@ -131,6 +154,7 @@ test("a poll asks for the room left under the ceiling, and none at it", async ()
       return Promise.resolve<WorkerPoolPolled>({
         polled: "Reconciled",
         assignments: [],
+        sessions: [],
         stop: [],
       });
     },
@@ -138,7 +162,7 @@ test("a poll asks for the room left under the ceiling, and none at it", async ()
   await workerPoolClientPass(
     client({
       settings: { ...settings, concurrencyMax: 3 },
-      backend: { ...idle, held: () => Promise.resolve(["one"]) },
+      backend: { ...idle, held: () => Promise.resolve(jobs("one")) },
       plane,
     }),
   );
@@ -147,14 +171,14 @@ test("a poll asks for the room left under the ceiling, and none at it", async ()
       settings: { ...settings, concurrencyMax: 3 },
       backend: {
         ...idle,
-        held: () => Promise.resolve(["one", "two", "three"]),
+        held: () => Promise.resolve(jobs("one", "two", "three")),
       },
       plane,
     }),
   );
   await workerPoolClientPass(
     client({
-      backend: { ...idle, held: () => Promise.resolve(["one", "two"]) },
+      backend: { ...idle, held: () => Promise.resolve(jobs("one", "two")) },
       plane,
     }),
   );
@@ -169,7 +193,7 @@ test("a pool at its own ceiling polls for none, and places nothing it is offered
     client({
       backend: {
         ...idle,
-        held: () => Promise.resolve(["running-one"]),
+        held: () => Promise.resolve(jobs("running-one")),
         place: () => {
           placed += 1;
           return Promise.resolve<WorkerPoolPlacement>({ placed: "Placed" });
@@ -181,6 +205,7 @@ test("a pool at its own ceiling polls for none, and places nothing it is offered
           return Promise.resolve<WorkerPoolPolled>({
             polled: "Reconciled",
             assignments: [assignment("offered")],
+            sessions: [],
             stop: [],
           });
         },
@@ -199,6 +224,7 @@ test("a pool at its own ceiling polls for none, and places nothing it is offered
     placed: 0,
     stopped: 0,
     refused: 0,
+    ended: 0,
   });
 });
 
@@ -208,7 +234,7 @@ test("a stopped assignment frees the room the same pass places into", async () =
     client({
       backend: {
         ...idle,
-        held: () => Promise.resolve(["going"]),
+        held: () => Promise.resolve(jobs("going")),
         stop: (named) => {
           stopped.push(named);
           return Promise.resolve<WorkerPoolStopped>({ stopped: "Stopped" });
@@ -220,6 +246,7 @@ test("a stopped assignment frees the room the same pass places into", async () =
           Promise.resolve<WorkerPoolPolled>({
             polled: "Reconciled",
             assignments: [assignment("offered")],
+            sessions: [],
             stop: ["going"],
           }),
       },
@@ -231,6 +258,7 @@ test("a stopped assignment frees the room the same pass places into", async () =
     placed: 1,
     stopped: 1,
     refused: 0,
+    ended: 0,
   });
 });
 
@@ -240,7 +268,7 @@ test("a fabric that could not take a stop places nothing further this pass", asy
     client({
       backend: {
         ...idle,
-        held: () => Promise.resolve(["going"]),
+        held: () => Promise.resolve(jobs("going")),
         stop: () =>
           Promise.resolve<WorkerPoolStopped>({
             stopped: "Unavailable",
@@ -257,6 +285,7 @@ test("a fabric that could not take a stop places nothing further this pass", asy
           Promise.resolve<WorkerPoolPolled>({
             polled: "Reconciled",
             assignments: [assignment("offered")],
+            sessions: [],
             stop: ["going"],
           }),
       },
@@ -276,7 +305,7 @@ test("a fabric that refused a stop ends the run rather than renewing that lease"
       settings: { ...settings, passesMax: 5 },
       backend: {
         ...idle,
-        held: () => Promise.resolve(["going"]),
+        held: () => Promise.resolve(jobs("going")),
         stop: () =>
           Promise.resolve<WorkerPoolStopped>({
             stopped: "Refused",
@@ -290,6 +319,7 @@ test("a fabric that refused a stop ends the run rather than renewing that lease"
           return Promise.resolve<WorkerPoolPolled>({
             polled: "Reconciled",
             assignments: [],
+            sessions: [],
             stop: ["going"],
           });
         },
@@ -320,6 +350,7 @@ test("a placement the plane never acknowledged is still placed", async () => {
           Promise.resolve<WorkerPoolPolled>({
             polled: "Reconciled",
             assignments: [assignment("offered")],
+            sessions: [],
             stop: [],
           }),
         settle: () => Promise.resolve<WorkerPoolSettled>("Unavailable"),
@@ -332,6 +363,7 @@ test("a placement the plane never acknowledged is still placed", async () => {
     placed: 1,
     stopped: 0,
     refused: 0,
+    ended: 0,
   });
 });
 
@@ -352,6 +384,7 @@ test("a refused placement is reported as evidence rather than as unavailable", a
           Promise.resolve<WorkerPoolPolled>({
             polled: "Reconciled",
             assignments: [assignment("offered")],
+            sessions: [],
             stop: [],
           }),
         settle: (_token, _assignment, outcome) => {
@@ -387,7 +420,7 @@ test("a token the poll was refused with is invalidated, and the next pass acquir
         return Promise.resolve<WorkerPoolPolled>(
           polledWith.length === 1
             ? { polled: "Stale" }
-            : { polled: "Reconciled", assignments: [], stop: [] },
+            : { polled: "Reconciled", assignments: [], sessions: [], stop: [] },
         );
       },
     },
@@ -411,6 +444,7 @@ test("a token a settlement was refused with is invalidated, and the next pass ac
         return Promise.resolve<WorkerPoolPolled>({
           polled: "Reconciled",
           assignments: [assignment("offered")],
+          sessions: [],
           stop: [],
         });
       },
@@ -478,4 +512,186 @@ test("a run refuses a bound that is not a positive whole number", async () => {
       ),
     RangeError,
   );
+});
+
+/** A session plane recording each end it is told of and answering each as `answer` says. */
+function endings(
+  answer: (ended: WorkerPoolSessionEnd) => WorkerPoolEndAnswer = () => "Ended",
+) {
+  const told: WorkerPoolSessionEnd[] = [];
+  return {
+    told,
+    sessions: {
+      end: (ended: WorkerPoolSessionEnd) => {
+        told.push(ended);
+        return Promise.resolve(answer(ended));
+      },
+    },
+  };
+}
+
+test("each kind's room is asked apart, and a pool naming no session ceiling asks for none", async () => {
+  const asked: [number, number][] = [];
+  const plane: WorkerPoolPlane = {
+    ...quiet,
+    poll: (_token, _held, wanted, wantedSessions) => {
+      asked.push([wanted, wantedSessions]);
+      return Promise.resolve<WorkerPoolPolled>({
+        polled: "Reconciled",
+        assignments: [],
+        sessions: [],
+        stop: [],
+      });
+    },
+  };
+  const holding: WorkerPoolBackend = {
+    ...idle,
+    held: () =>
+      Promise.resolve([
+        { assignment: "job-one", kind: "Job" },
+        { assignment: "session-one", kind: "Session" },
+      ]),
+  };
+  await workerPoolClientPass(
+    client({
+      settings: { ...settings, concurrencyMax: 3, sessionsMax: 3 },
+      sessions: endings().sessions,
+      backend: holding,
+      plane,
+    }),
+  );
+  await workerPoolClientPass(
+    client({
+      settings: { ...settings, concurrencyMax: 3 },
+      backend: holding,
+      plane,
+    }),
+  );
+  assert.deepEqual(asked, [
+    [2, 2],
+    [2, 0],
+  ]);
+});
+
+test("a session offer is placed as a session against its own ceiling, and never takes a job's room", async () => {
+  const placed: WorkerPoolOffer[] = [];
+  const posted: string[] = [];
+  const passed = await workerPoolClientPass(
+    client({
+      settings: { ...settings, concurrencyMax: 1, sessionsMax: 1 },
+      sessions: endings().sessions,
+      backend: {
+        ...idle,
+        held: () => Promise.resolve(jobs("running-job")),
+        place: (offer) => {
+          placed.push(offer);
+          return Promise.resolve<WorkerPoolPlacement>({ placed: "Placed" });
+        },
+      },
+      plane: {
+        poll: () =>
+          Promise.resolve<WorkerPoolPolled>({
+            polled: "Reconciled",
+            assignments: [assignment("job")],
+            sessions: [session("offered-session"), session("past-ceiling")],
+            stop: [],
+          }),
+        settle: (_token, named, outcome) => {
+          posted.push(`${named}:${outcome.outcome}`);
+          return Promise.resolve<WorkerPoolSettled>("Settled");
+        },
+      },
+    }),
+  );
+  assert.deepEqual(placed, [
+    { kind: "Session", assignment: session("offered-session") },
+  ]);
+  assert.deepEqual(posted, [
+    "job:Unavailable",
+    "offered-session:Accepted",
+    "past-ceiling:Unavailable",
+  ]);
+  assert.deepEqual(passed, {
+    passed: "Reconciled",
+    placed: 1,
+    stopped: 0,
+    refused: 0,
+    ended: 0,
+  });
+});
+
+test("a session whose container ended is reported on the session plane before the poll, and only a taken end counts", async () => {
+  const order: string[] = [];
+  const ended = (named: string): WorkerPoolSessionEnd => ({
+    kind: "Session",
+    session: {
+      assignment: named,
+      callbackUrl: "https://plane.invalid/",
+      bearer: `chgs_${named}`,
+    },
+    phase: "Succeeded",
+  });
+  const plane = endings((one) => {
+    order.push(`end:${one.session.assignment}`);
+    return one.session.assignment === "taken" ? "Ended" : "Refused";
+  });
+  const passed = await workerPoolClientPass(
+    client({
+      settings: { ...settings, sessionsMax: 1 },
+      sessions: plane.sessions,
+      backend: {
+        ...idle,
+        ended: () => Promise.resolve([ended("taken"), ended("refused")]),
+      },
+      plane: {
+        ...quiet,
+        poll: () => {
+          order.push("poll");
+          return quiet.poll("", [], 0, 0);
+        },
+      },
+    }),
+  );
+  assert.deepEqual(order, ["end:taken", "end:refused", "poll"]);
+  assert.deepEqual(plane.told, [ended("taken"), ended("refused")]);
+  assert.equal(passed.passed === "Reconciled" ? passed.ended : -1, 1);
+});
+
+test("a pool with a session ceiling and no session plane is refused before it polls", async () => {
+  let polled = 0;
+  await assert.rejects(
+    () =>
+      workerPoolClientPass(
+        client({
+          settings: { ...settings, sessionsMax: 1 },
+          plane: {
+            ...quiet,
+            poll: (...asked) => {
+              polled += 1;
+              return quiet.poll(...asked);
+            },
+          },
+        }),
+      ),
+    /no session plane/u,
+  );
+  assert.equal(polled, 0);
+});
+
+test("a session ceiling is a whole count of zero or more, or absent", async () => {
+  for (const sessionsMax of [-1, 1.5, Number.NaN])
+    await assert.rejects(
+      () =>
+        workerPoolClientRun(
+          client({ settings: { ...settings, sessionsMax } }),
+          () => Promise.resolve(),
+        ),
+      /sessionsMax/u,
+      String(sessionsMax),
+    );
+  const passed = await workerPoolClientRun(
+    client({ settings: { ...settings, sessionsMax: 0 } }),
+    () => Promise.resolve(),
+  );
+  assert.equal(passed.passed, "Reconciled");
 });

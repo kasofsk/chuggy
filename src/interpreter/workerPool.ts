@@ -23,12 +23,20 @@
  * plane's own setting — the same budget `kubernetesWorkerLaunch` gives an
  * in-cluster attempt. A per-execution profile is a requirement change, and
  * this contract already has the field waiting for it.
+ *
+ * A SESSION IS THE SAME CHANNEL'S SECOND KIND. A pool whose release reads
+ * sessions states its room for them apart, and what it holds is told apart by
+ * the rows each kind lives in, so each kind is renewed, bounded and claimed on
+ * its own; `./workerPoolSessions.ts` says what claiming one opens. Such a poll
+ * is also what a member's runner reads as live by, so only it is recorded.
  */
 import { setTimeout as delay } from "node:timers/promises";
 
 import type {
+  AssignmentOutcome,
   WorkerPoolAssignment,
   WorkerPoolReconciliation,
+  WorkerPoolSessionAssignment,
 } from "../contract/workerPool.ts";
 export { workerPoolsAnsweredMax } from "../contract/http.ts";
 import type { ExecutionRequirement } from "./executionRequirement.ts";
@@ -46,8 +54,21 @@ import {
 import {
   contractVersionAccepted,
   workerContractAccepted,
+  workerContractRunnerSessions,
   type WorkerContractRange,
 } from "./workerPlane.ts";
+import type {
+  WorkerPoolIdentity,
+  WorkerPoolMint,
+} from "./workerPoolIdentity.ts";
+export type {
+  WorkerPoolIdentity,
+  WorkerPoolMint,
+} from "./workerPoolIdentity.ts";
+import {
+  workerPoolSessionClaims,
+  type WorkerPoolSessionPorts,
+} from "./workerPoolSessions.ts";
 
 /**
  * The worker contract versions the pool plane serves, from the one whose
@@ -60,22 +81,17 @@ export const workerPoolContractAccepted: WorkerContractRange = {
   max: workerContractAccepted.max,
 };
 
-/** The versions whose reconciliation names `sessions`, which an earlier pool's strict schema refuses. */
-const workerPoolSessionsAccepted: WorkerContractRange = {
-  min: { major: 1, minor: 3 },
-  max: workerContractAccepted.max,
-};
-
-/** What one poll asks: what the pool holds, and its room for executions and for sessions. */
+/** What one poll asks: what the pool holds, its room for executions and for sessions, and whether its release reads sessions at all. */
 export interface WorkerPoolAsked {
   readonly held: readonly string[];
   readonly wanted: number;
   readonly wantedSessions: number;
+  readonly readsSessions: boolean;
 }
 
-/** Whether a pool naming `release` reads `sessions`, which only such a pool is ever handed. */
+/** Whether a pool naming `release` reads `sessions`, which an earlier pool's strict schema refuses and so is never handed. */
 export function workerPoolSessionsRead(release: string | undefined): boolean {
-  return contractVersionAccepted(workerPoolSessionsAccepted, release);
+  return contractVersionAccepted(workerContractRunnerSessions, release);
 }
 
 /** A reconciliation as a pool from before sessions reads it. */
@@ -93,13 +109,6 @@ export function workerPoolReconciliationUnsessioned(
   return { assignments: reconciled.assignments, stop: reconciled.stop };
 }
 
-/** One registered pool as its principal resolves it: whose it is, and the principal a claim is current under. */
-export interface WorkerPoolIdentity {
-  readonly partition: Partition;
-  readonly pool: string;
-  readonly principal: Principal;
-}
-
 /** What registering one pool records: who it is at the issuer, what it declared, and its class. */
 export interface WorkerPoolRegistration {
   readonly partition: Partition;
@@ -108,7 +117,7 @@ export interface WorkerPoolRegistration {
   readonly class: WorkerPoolClass;
   readonly clientId: string;
   readonly principal: Principal;
-  /** The person whose token registered the pool, which is provenance and grants nothing. */
+  /** The person whose token registered the pool, whose own threads and inquiries are the only ones it is handed; a pool no person registered is handed leads alone. */
   readonly registeredBy?: Principal;
 }
 
@@ -272,25 +281,36 @@ export interface WorkerPoolPollSettings {
   readonly leaseSecs: number;
   readonly assignmentsPerPollMax: number;
   readonly heldMax: number;
+  /** The sessions one poll claims at most, and the session attempts a pool may hold at once, each apart from its executions. */
+  readonly sessionsPerPollMax: number;
+  readonly sessionsHeldMax: number;
   readonly deadlineSecs: number;
   /** The box every assignment this plane hands out asks for, which is the deployment's. */
   readonly cpuMillis: number;
   readonly memoryMib: number;
   readonly callbackUrl: string;
+  /** Where a pool-held session's own tools reach the API; a plane that names none claims no session. */
+  readonly sessionApiUrl?: string;
   readonly pollIntervalMs: number;
   readonly pollsMax: number;
   /** The public host each internal registry host is published as, which an assignment names its image by. */
   readonly imageHosts: WorkerPoolImageHosts;
 }
 
-/** Draws an assignment's identity and the one-shot bearer its harness answers under. */
-export type WorkerPoolMint = () => string;
+/** Everything a poll reaches: each kind's durable side, and where an assignment's name is drawn. */
+export interface WorkerPoolPorts {
+  readonly assignments: WorkerPoolAssignments;
+  readonly sessions: WorkerPoolSessionPorts;
+  readonly mint: WorkerPoolMint;
+}
 
 function workerPoolCheckedSettings(settings: WorkerPoolPollSettings): void {
   for (const [name, bound] of [
     ["leaseSecs", settings.leaseSecs],
     ["assignmentsPerPollMax", settings.assignmentsPerPollMax],
     ["heldMax", settings.heldMax],
+    ["sessionsPerPollMax", settings.sessionsPerPollMax],
+    ["sessionsHeldMax", settings.sessionsHeldMax],
     ["deadlineSecs", settings.deadlineSecs],
     ["cpuMillis", settings.cpuMillis],
     ["memoryMib", settings.memoryMib],
@@ -303,6 +323,22 @@ function workerPoolCheckedSettings(settings: WorkerPoolPollSettings): void {
       );
 }
 
+/** The most a poll's `held` may name, which is both kinds' bounds where the pool reads sessions and its executions' alone where it does not. */
+export function workerPoolHeldNamedMax(
+  settings: WorkerPoolPollSettings,
+  readsSessions: boolean,
+): number {
+  return readsSessions
+    ? settings.heldMax + settings.sessionsHeldMax
+    : settings.heldMax;
+}
+
+/** What a pool holds, told apart by kind, since each kind is renewed through its own rows and bounded by its own setting. */
+export interface WorkerPoolHolding {
+  readonly jobs: readonly string[];
+  readonly sessions: readonly string[];
+}
+
 /**
  * The lease renewal and the cancellation delivery, which are one pass over
  * what the pool says it holds: a renewal that finds no live attempt of this
@@ -310,7 +346,7 @@ function workerPoolCheckedSettings(settings: WorkerPoolPollSettings): void {
  * and a pool need not tell them apart.
  */
 async function workerPoolHeldReconciled(
-  assignments: WorkerPoolAssignments,
+  renewing: Pick<WorkerPoolAssignments, "renew">,
   identity: WorkerPoolIdentity,
   held: readonly string[],
   leaseSecs: number,
@@ -318,7 +354,7 @@ async function workerPoolHeldReconciled(
   const renewed = await Promise.all(
     held.map(async (assignment) => ({
       assignment,
-      live: await assignments.renew(identity, assignment, leaseSecs),
+      live: await renewing.renew(identity, assignment, leaseSecs),
     })),
   );
   return renewed.filter((row) => !row.live).map((row) => row.assignment);
@@ -383,73 +419,155 @@ async function workerPoolClaims(
   return claimed;
 }
 
+/** The sessions one pass claims, which is none on a plane that names no API for a session to reach. */
+function workerPoolSessionsClaimed(
+  ports: WorkerPoolPorts,
+  identity: WorkerPoolIdentity,
+  settings: WorkerPoolPollSettings,
+  wanted: number,
+): Promise<WorkerPoolSessionAssignment[]> {
+  const apiUrl = settings.sessionApiUrl;
+  if (apiUrl === undefined) return Promise.resolve([]);
+  return workerPoolSessionClaims(
+    ports.sessions,
+    identity,
+    {
+      leaseSecs: settings.leaseSecs,
+      heldMax: settings.sessionsHeldMax,
+      cpuMillis: settings.cpuMillis,
+      memoryMib: settings.memoryMib,
+      callbackUrl: settings.callbackUrl,
+      apiUrl,
+      imageHosts: settings.imageHosts,
+    },
+    ports.mint,
+    wanted,
+  );
+}
+
 /**
  * One reconciliation pass, which is a renewal of what is held and a claim of
- * what is not. The pool's `wanted` is its room and the plane's settings are
- * the plane's, so what is claimed is the least of the three; no session is
- * claimed by any pass, so a pool with room for one is answered with none.
+ * what is not, each kind through its own rows. Each kind's room is the least
+ * of what the pool asked, the plane's per-poll bound and what its held bound
+ * leaves.
  */
 export async function workerPoolReconcile(
-  assignments: WorkerPoolAssignments,
+  ports: WorkerPoolPorts,
   identity: WorkerPoolIdentity,
-  asked: WorkerPoolAsked,
+  holding: WorkerPoolHolding,
+  asked: Pick<WorkerPoolAsked, "wanted" | "wantedSessions">,
   settings: WorkerPoolPollSettings,
-  mint: WorkerPoolMint,
 ): Promise<WorkerPoolReconciliation> {
-  workerPoolCheckedSettings(settings);
-  const { held, wanted, wantedSessions } = asked;
-  if (held.length > settings.heldMax)
-    throw new RangeError("worker pool holds more than its bound");
-  for (const [name, room] of [
-    ["wanted", wanted],
-    ["wantedSessions", wantedSessions],
-  ] as const)
-    if (!Number.isSafeInteger(room) || room < 0)
-      throw new RangeError(
-        `worker pool ${name} must be a non-negative integer`,
-      );
-  const stop = await workerPoolHeldReconciled(
-    assignments,
-    identity,
-    held,
-    settings.leaseSecs,
-  );
-  const claimable = Math.min(
-    wanted,
-    settings.assignmentsPerPollMax,
-    settings.heldMax - held.length,
-  );
+  const stop = [
+    ...(await workerPoolHeldReconciled(
+      ports.assignments,
+      identity,
+      holding.jobs,
+      settings.leaseSecs,
+    )),
+    ...(await workerPoolHeldReconciled(
+      ports.sessions.store,
+      identity,
+      holding.sessions,
+      settings.leaseSecs,
+    )),
+  ];
   return {
     assignments: await workerPoolClaims(
-      assignments,
+      ports.assignments,
       identity,
       settings,
-      mint,
-      claimable,
+      ports.mint,
+      Math.min(
+        asked.wanted,
+        settings.assignmentsPerPollMax,
+        settings.heldMax - holding.jobs.length,
+      ),
     ),
-    sessions: [],
+    sessions: await workerPoolSessionsClaimed(
+      ports,
+      identity,
+      settings,
+      Math.min(
+        asked.wantedSessions,
+        settings.sessionsPerPollMax,
+        settings.sessionsHeldMax - holding.sessions.length,
+      ),
+    ),
     stop,
+  };
+}
+
+/** What a poll came to: an answer, or a held list naming more of one kind than its bound. */
+export type WorkerPoolPolled =
+  | {
+      readonly polled: "Answered";
+      readonly answer: WorkerPoolReconciliation;
+    }
+  | { readonly polled: "HeldOverBound" };
+
+/**
+ * What the pool holds, told apart by kind. A pool that reads no sessions was
+ * never handed one, so everything it holds is an execution's.
+ */
+async function workerPoolHoldingRead(
+  ports: WorkerPoolPorts,
+  identity: WorkerPoolIdentity,
+  asked: WorkerPoolAsked,
+): Promise<WorkerPoolHolding> {
+  if (!asked.readsSessions) return { jobs: asked.held, sessions: [] };
+  const sessions = await ports.sessions.store.among(identity, asked.held);
+  return {
+    jobs: asked.held.filter((assignment) => !sessions.has(assignment)),
+    sessions: asked.held.filter((assignment) => sessions.has(assignment)),
   };
 }
 
 /**
  * The long poll: reconciliation until it has something to say or until the
- * bounded wait runs out. An empty answer is a correct answer rather than a
- * failure, and the pool asks again.
+ * bounded wait runs out, where an empty answer is correct and the pool asks
+ * again. A held list longer than a kind's bound is refused whole, since a cut
+ * one reads as a pool that let go of work it still runs, and only a pool that
+ * can take a session, reading them with room for one or holding one, from a
+ * plane that names the API a session reaches, is recorded as polling.
  */
 export async function workerPoolPoll(
-  assignments: WorkerPoolAssignments,
+  ports: WorkerPoolPorts,
   identity: WorkerPoolIdentity,
   asked: WorkerPoolAsked,
   settings: WorkerPoolPollSettings,
-  mint: WorkerPoolMint,
-): Promise<WorkerPoolReconciliation> {
+): Promise<WorkerPoolPolled> {
+  workerPoolCheckedSettings(settings);
+  for (const [name, room] of [
+    ["wanted", asked.wanted],
+    ["wantedSessions", asked.wantedSessions],
+  ] as const)
+    if (!Number.isSafeInteger(room) || room < 0)
+      throw new RangeError(
+        `worker pool ${name} must be a non-negative integer`,
+      );
+  const holding = await workerPoolHoldingRead(ports, identity, asked);
+  if (
+    holding.jobs.length > settings.heldMax ||
+    holding.sessions.length > settings.sessionsHeldMax
+  )
+    return { polled: "HeldOverBound" };
+  if (
+    settings.sessionApiUrl !== undefined &&
+    asked.readsSessions &&
+    (asked.wantedSessions > 0 || holding.sessions.length > 0)
+  )
+    await ports.sessions.store.polled(identity);
+  const rooms = {
+    wanted: asked.wanted,
+    wantedSessions: asked.readsSessions ? asked.wantedSessions : 0,
+  };
   let answer = await workerPoolReconcile(
-    assignments,
+    ports,
     identity,
-    asked,
+    holding,
+    rooms,
     settings,
-    mint,
   );
   for (
     let polled = 1;
@@ -461,12 +579,53 @@ export async function workerPoolPoll(
   ) {
     await delay(settings.pollIntervalMs);
     answer = await workerPoolReconcile(
-      assignments,
+      ports,
       identity,
-      asked,
+      holding,
+      rooms,
       settings,
-      mint,
     );
   }
-  return answer;
+  return { polled: "Answered", answer };
+}
+
+/**
+ * One settlement a pool reports, made against the kind the assignment is: an
+ * accepted one is already leased and needs no write, a refusal is recorded
+ * against its attempt, and an unavailable releases it.
+ */
+export async function workerPoolSettled(
+  ports: WorkerPoolPorts,
+  identity: WorkerPoolIdentity,
+  assignment: string,
+  offered: AssignmentOutcome,
+): Promise<boolean> {
+  const settling: Pick<WorkerPoolAssignments, "held" | "refuse" | "release"> = (
+    await ports.sessions.store.among(identity, [assignment])
+  ).has(assignment)
+    ? ports.sessions.store
+    : ports.assignments;
+  switch (offered.outcome) {
+    case "Accepted":
+      return settling.held(identity, assignment);
+    case "Refused":
+      return settling.refuse(identity, assignment, offered.evidence);
+    case "Unavailable":
+      return settling.release(identity, assignment);
+  }
+}
+
+/** The images pinned by what this registration may still renew of either kind, each kind to its own bound. */
+export async function workerPoolHeldImages(
+  ports: WorkerPoolPorts,
+  identity: WorkerPoolIdentity,
+  settings: WorkerPoolPollSettings,
+): Promise<readonly string[]> {
+  return [
+    ...(await ports.assignments.heldImages(identity, settings.heldMax)),
+    ...(await ports.sessions.store.heldImages(
+      identity,
+      settings.sessionsHeldMax,
+    )),
+  ];
 }

@@ -441,37 +441,46 @@ test("a thread's turn offered to runners that none takes is withdrawn after the 
 });
 
 /**
- * The two turns offered to runners are backdated against their order, so the
- * one that waited longest is the later one and an order by ordinal would take
- * the other. The claimed and the in-cluster turn waited longer than both.
+ * The two waiting threads are backdated against the order they were sent in,
+ * so an order by when a turn was sent would take the other. The turn behind a
+ * live attempt and the one behind an in-cluster turn waited longer than both.
  */
-test("the dwell withdraws the longest waiting turn first, and never a claimed turn or one admitted in cluster", async () => {
+test("the dwell withdraws the thread that waited longest first, and never a turn behind a live attempt or an in-cluster turn", async () => {
   const partition = await threadRigProject(rig, "dwell-order");
-  const member = threadRigMember(rig, partition, "dwell-order");
-  const session = await threadOf(partition, member);
-  const held = await sent(partition, member, session);
+  const member = (label: string) =>
+    threadRigMember(rig, partition, `dwell-order-${label}`);
+  const held = member("held");
+  const cluster = member("cluster");
+  const shorter = member("shorter");
+  const longer = member("longer");
+  await sessionRigRouted(rig.sessions, partition, "InCluster", "InCluster");
+  const heldThread = await threadOf(partition, held);
+  const answering = await sent(partition, held, heldThread);
   const pod = await sessionRigAttempt(
     rig.sessions,
     partition,
-    session,
+    heldThread,
     "dwell-order",
   );
-  assert.equal(await claimed(pod), held.turn);
-  const cluster = await sent(partition, member, session);
-  await sessionRigRunner(rig.sessions, partition, member.principal);
+  assert.equal(await claimed(pod), answering.turn);
+  const clusterThread = await threadOf(partition, cluster);
+  const inCluster = await sent(partition, cluster, clusterThread);
+  for (const runner of [held, cluster, shorter, longer])
+    await sessionRigRunner(rig.sessions, partition, runner.principal);
   await sessionRigRouted(rig.sessions, partition, "Pool", "Pool");
-  const shorter = await sent(partition, member, session);
-  const longer = await sent(partition, member, session);
-  await rig.sessions.harness.query(
-    `UPDATE session_turn SET route='Pool' WHERE turn=$1`,
-    [held.turn],
-  );
+  const behindAttempt = await sent(partition, held, heldThread);
+  const behindCluster = await sent(partition, cluster, clusterThread);
+  const shorterThread = await threadOf(partition, shorter);
+  const shorterTurn = await sent(partition, shorter, shorterThread);
+  const longerThread = await threadOf(partition, longer);
+  const longerTurn = await sent(partition, longer, longerThread);
   const hour = 60 * 60;
   for (const [turn, waited] of [
-    [held.turn, 4 * hour],
-    [cluster.turn, 3 * hour],
-    [longer.turn, 2 * hour],
-    [shorter.turn, hour],
+    [behindAttempt.turn, 4 * hour],
+    [inCluster.turn, 4 * hour],
+    [behindCluster.turn, 3 * hour],
+    [longerTurn.turn, 2 * hour],
+    [shorterTurn.turn, hour],
   ] as const)
     await sessionRigQueuedFor(
       rig.sessions,
@@ -480,26 +489,57 @@ test("the dwell withdraws the longest waiting turn first, and never a claimed tu
     );
 
   assert.equal(await withdrawn(1), 1);
-  assert.deepEqual(await standing(partition, session, longer.turn), [
+  assert.deepEqual(await standing(partition, longerThread, longerTurn.turn), [
     "Abandoned",
     "TurnWithdrawn",
   ]);
-  assert.deepEqual(await standing(partition, session, shorter.turn), [
+  assert.deepEqual(await standing(partition, shorterThread, shorterTurn.turn), [
     "Queued",
     null,
   ]);
   assert.equal(await withdrawn(1), 1);
-  assert.deepEqual(await standing(partition, session, shorter.turn), [
+  assert.deepEqual(await standing(partition, shorterThread, shorterTurn.turn), [
     "Abandoned",
     "TurnWithdrawn",
   ]);
   assert.equal(await withdrawn(), 0);
-  assert.deepEqual(await standing(partition, session, held.turn), [
-    "Claimed",
-    null,
+  for (const [thread, turn] of [
+    [heldThread, behindAttempt.turn],
+    [clusterThread, inCluster.turn],
+    [clusterThread, behindCluster.turn],
+  ] as const)
+    assert.deepEqual(await standing(partition, thread, turn), ["Queued", null]);
+});
+
+test("a turn's dwell runs from when it came to head its thread, not from when it was sent", async () => {
+  const partition = await threadRigProject(rig, "dwell-head");
+  const member = threadRigMember(rig, partition, "dwell-head");
+  await sessionRigRunner(rig.sessions, partition, member.principal);
+  await sessionRigRouted(rig.sessions, partition, "Pool", "Pool");
+  const session = await threadOf(partition, member);
+  const first = await sent(partition, member, session);
+  const second = await sent(partition, member, session);
+  for (const turn of [first.turn, second.turn])
+    await sessionRigQueuedFor(rig.sessions, turn, 2 * sessionPoolTurnDwellSecs);
+
+  assert.equal(await withdrawn(), 1);
+  assert.deepEqual(await standing(partition, session, first.turn), [
+    "Abandoned",
+    "TurnWithdrawn",
   ]);
-  assert.deepEqual(await standing(partition, session, cluster.turn), [
-    "Queued",
-    null,
+  assert.equal(
+    await withdrawn(),
+    0,
+    "a turn was withdrawn as soon as it headed its thread",
+  );
+  await rig.sessions.harness.query(
+    `UPDATE session_turn SET ended_at=now()-make_interval(secs=>$2)
+      WHERE turn=$1`,
+    [first.turn, sessionPoolTurnDwellSecs + 60],
+  );
+  assert.equal(await withdrawn(), 1);
+  assert.deepEqual(await standing(partition, session, second.turn), [
+    "Abandoned",
+    "TurnWithdrawn",
   ]);
 });

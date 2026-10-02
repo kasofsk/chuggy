@@ -25,11 +25,45 @@
  * next pass reads back out of the backend and carries in its `held` list, which
  * is what renews its lease. Nothing here retries a settlement, because the
  * lease is the retry.
+ *
+ * A JOB AND A SESSION ARE COUNTED APART. Each kind has its own ceiling, its own
+ * room on the poll and its own offers, and a pool that names no session ceiling
+ * asks for none. This is chuggy-common's `poolLoop.mjs` in TypeScript, and a
+ * change to one is a change to both, except that only a session's unreported
+ * end is reported here: a job's is left to its lease.
  */
+import type { SessionContainerEnd } from "../contract/rosters.ts";
 import type {
   AssignmentOutcome,
   WorkerPoolAssignment,
+  WorkerPoolSessionAssignment,
 } from "../contract/workerPool.ts";
+
+export type WorkerPoolWorkloadKind = "Job" | "Session";
+
+/** One workload a backend runs, with the kind it was placed as. */
+export interface WorkerPoolHeld {
+  readonly assignment: string;
+  readonly kind: WorkerPoolWorkloadKind;
+}
+
+/** One offer, with the kind it was offered as. */
+export type WorkerPoolOffer =
+  | { readonly kind: "Job"; readonly assignment: WorkerPoolAssignment }
+  | {
+      readonly kind: "Session";
+      readonly assignment: WorkerPoolSessionAssignment;
+    };
+
+/** A session whose container ended, which only the pool holding it sees: `Succeeded` for a clean exit, `Failed` for any other. */
+export interface WorkerPoolSessionEnd {
+  readonly kind: "Session";
+  readonly session: Pick<
+    WorkerPoolSessionAssignment,
+    "assignment" | "callbackUrl" | "bearer"
+  >;
+  readonly phase: SessionContainerEnd;
+}
 
 /** What placing one assignment came to, which is the contract's outcome before it is posted. */
 export type WorkerPoolPlacement =
@@ -48,14 +82,17 @@ export type WorkerPoolStopped =
   | { readonly stopped: "Unavailable"; readonly evidence: string };
 
 /**
- * The three operations a backend answers, `held` being the one the contract has
- * no member for. It is derived from the backend rather than from this process,
- * so what is running is read from where it is running.
+ * The operations a backend answers, `held` and `ended` being the ones the
+ * contract has no member for. Both are derived from the backend rather than
+ * from this process, so what is running is read from where it is running.
  */
 export interface WorkerPoolBackend {
-  place(assignment: WorkerPoolAssignment): Promise<WorkerPoolPlacement>;
+  place(offer: WorkerPoolOffer): Promise<WorkerPoolPlacement>;
+  /** Idempotent, whichever kind it is. */
   stop(assignment: string): Promise<WorkerPoolStopped>;
-  held(): Promise<readonly string[]>;
+  held(): Promise<readonly WorkerPoolHeld[]>;
+  /** Each session once, after `held` stopped naming it, and never one this pool stopped. */
+  ended(): Promise<readonly WorkerPoolSessionEnd[]>;
 }
 
 /**
@@ -67,6 +104,7 @@ export type WorkerPoolPolled =
   | {
       readonly polled: "Reconciled";
       readonly assignments: readonly WorkerPoolAssignment[];
+      readonly sessions: readonly WorkerPoolSessionAssignment[];
       readonly stop: readonly string[];
     }
   | { readonly polled: "Stale" }
@@ -86,12 +124,21 @@ export interface WorkerPoolPlane {
     token: string,
     held: readonly string[],
     wanted: number,
+    wantedSessions: number,
   ): Promise<WorkerPoolPolled>;
   settle(
     token: string,
     assignment: string,
     outcome: AssignmentOutcome,
   ): Promise<WorkerPoolSettled>;
+}
+
+/** What reporting an end came to; `Refused` is an attempt no longer live, or one the plane refused to end. */
+export type WorkerPoolEndAnswer = "Ended" | "Refused" | "Unavailable";
+
+/** The session plane as a pool reaches it, under each session's own bearer. */
+export interface WorkerPoolSessionPlane {
+  end(ended: WorkerPoolSessionEnd): Promise<WorkerPoolEndAnswer>;
 }
 
 /**
@@ -118,6 +165,8 @@ export interface WorkerPoolTokens {
 export interface WorkerPoolClientSettings {
   /** How many assignments this pool holds at once, which every poll's `wanted` is measured from. */
   readonly concurrencyMax: number;
+  /** How many sessions it holds at once, which every poll's `wantedSessions` is measured from; none where absent. */
+  readonly sessionsMax?: number;
   /** How long a pass waits after an outage before the next one. */
   readonly outageBackoffMs: number;
   /** How many passes one run makes, so the loop is bounded like every other. */
@@ -131,6 +180,7 @@ export type WorkerPoolPass =
       readonly placed: number;
       readonly stopped: number;
       readonly refused: number;
+      readonly ended: number;
     }
   | { readonly passed: "Denied"; readonly evidence: string }
   | { readonly passed: "Unavailable"; readonly evidence: string };
@@ -139,6 +189,8 @@ export type WorkerPoolPass =
 export interface WorkerPoolClient {
   readonly tokens: WorkerPoolTokens;
   readonly plane: WorkerPoolPlane;
+  /** Where a session's end is reported, which a pool with a session ceiling must have. */
+  readonly sessions?: WorkerPoolSessionPlane;
   readonly backend: WorkerPoolBackend;
   readonly settings: WorkerPoolClientSettings;
 }
@@ -155,7 +207,86 @@ export function checkedWorkerPoolClientSettings(
       throw new RangeError(
         `worker pool client ${name} must be a positive safe integer`,
       );
+  const { sessionsMax } = settings;
+  if (
+    sessionsMax !== undefined &&
+    (!Number.isSafeInteger(sessionsMax) || sessionsMax < 0)
+  )
+    throw new RangeError(
+      "worker pool client sessionsMax must be a safe integer of zero or more, or absent",
+    );
   return settings;
+}
+
+function workerPoolClientCeiling(
+  settings: WorkerPoolClientSettings,
+  kind: WorkerPoolWorkloadKind,
+): number {
+  return kind === "Session"
+    ? (settings.sessionsMax ?? 0)
+    : settings.concurrencyMax;
+}
+
+/** How many of a kind are running, less those this pass has stopped. */
+function workerPoolClientRunning(
+  held: readonly WorkerPoolHeld[],
+  kind: WorkerPoolWorkloadKind,
+  stopped: readonly string[],
+): number {
+  return held.filter(
+    (workload) =>
+      workload.kind === kind && !stopped.includes(workload.assignment),
+  ).length;
+}
+
+/** The room a poll asks for of a kind: its ceiling less what is running. */
+function workerPoolClientRoom(
+  settings: WorkerPoolClientSettings,
+  held: readonly WorkerPoolHeld[],
+  kind: WorkerPoolWorkloadKind,
+): number {
+  return Math.max(
+    workerPoolClientCeiling(settings, kind) -
+      workerPoolClientRunning(held, kind, []),
+    0,
+  );
+}
+
+/**
+ * The plane a session's end is reported on, which a pool with a session
+ * ceiling must have. It is checked by the pass rather than with the settings,
+ * because settings are checked before the client they go into exists.
+ */
+function workerPoolClientSessionPlane(
+  client: WorkerPoolClient,
+): WorkerPoolSessionPlane | undefined {
+  if (
+    workerPoolClientCeiling(client.settings, "Session") > 0 &&
+    client.sessions === undefined
+  )
+    throw new TypeError(
+      "worker pool client sessionsMax is above zero with no session plane to end a session on",
+    );
+  return client.sessions;
+}
+
+/**
+ * Ends each session whose container ended unreported, counting the ends the
+ * plane took. One it did not take is left to its lease.
+ */
+async function workerPoolClientEnded(
+  client: WorkerPoolClient,
+  sessions: WorkerPoolSessionPlane | undefined,
+): Promise<number> {
+  const ended = await client.backend.ended();
+  if (ended.length > 0 && sessions === undefined)
+    throw new TypeError(
+      "a backend ended a session with no session plane to end it on",
+    );
+  let taken = 0;
+  for (const workload of ended)
+    if ((await sessions?.end(workload)) === "Ended") taken += 1;
+  return taken;
 }
 
 /**
@@ -223,28 +354,29 @@ interface WorkerPoolTally {
 }
 
 /**
- * Places what there is room for and answers `Unavailable` for the rest. The
- * poll asked for no more than the room there was, so the rest is a plane that
- * offered past what it was asked, and room is measured against what the backend
- * held at the top of the pass plus what this pass has placed since.
+ * Places what there is room for of one kind and answers `Unavailable` for the
+ * rest. The poll asked for no more than the room there was, so the rest is a
+ * plane that offered past what it was asked, and room is the kind's ceiling
+ * less what is running of it and what this pass has placed of it.
  */
 async function workerPoolClientPlaced(
   client: WorkerPoolClient,
   token: string,
-  offered: readonly WorkerPoolAssignment[],
+  offered: readonly WorkerPoolOffer[],
   running: number,
 ): Promise<WorkerPoolTally> {
   const tally: WorkerPoolTally = { placed: 0, refused: 0 };
-  for (const assignment of offered) {
+  for (const offer of offered) {
     const placement: WorkerPoolPlacement =
-      running + tally.placed < client.settings.concurrencyMax
-        ? await client.backend.place(assignment)
+      running + tally.placed <
+      workerPoolClientCeiling(client.settings, offer.kind)
+        ? await client.backend.place(offer)
         : { placed: "Unavailable" };
     if (placement.placed === "Placed") tally.placed += 1;
     if (placement.placed === "Refused") tally.refused += 1;
     const settled = await client.plane.settle(
       token,
-      assignment.assignment,
+      offer.assignment.assignment,
       workerPoolClientOutcome(placement),
     );
     if (settled === "Stale") client.tokens.invalidate(token);
@@ -253,21 +385,25 @@ async function workerPoolClientPlaced(
 }
 
 /**
- * One reconciliation pass: read what is running, poll for the room that
- * leaves, stop what must stop, place what was offered. The room is asked
- * before the stops are known, so it is what the backend holds against the
- * ceiling and a stop this pass delivers frees room the next pass asks for.
+ * One reconciliation pass: read what is running, report what ended before a
+ * poll that may wait on the plane, poll for the room that leaves, stop what
+ * must stop, place what was offered. The room is asked before the stops are
+ * known, so it is what the backend holds against each ceiling and a stop this
+ * pass delivers frees room the next pass asks for.
  */
 export async function workerPoolClientPass(
   client: WorkerPoolClient,
 ): Promise<WorkerPoolPass> {
+  const sessions = workerPoolClientSessionPlane(client);
   const minted = await workerPoolClientToken(client);
   if (!("token" in minted)) return minted;
   const held = await client.backend.held();
+  const ended = await workerPoolClientEnded(client, sessions);
   const polled = await client.plane.poll(
     minted.token,
-    held,
-    Math.max(client.settings.concurrencyMax - held.length, 0),
+    held.map(({ assignment }) => assignment),
+    workerPoolClientRoom(client.settings, held, "Job"),
+    workerPoolClientRoom(client.settings, held, "Session"),
   );
   if (polled.polled === "Stale") {
     client.tokens.invalidate(minted.token);
@@ -277,17 +413,24 @@ export async function workerPoolClientPass(
     return { passed: polled.polled, evidence: polled.evidence };
   const stopped = await workerPoolClientStopped(client, polled.stop);
   if ("passed" in stopped) return stopped;
-  const tally = await workerPoolClientPlaced(
+  const jobs = await workerPoolClientPlaced(
     client,
     minted.token,
-    polled.assignments,
-    held.length - stopped.stopped,
+    polled.assignments.map((assignment) => ({ kind: "Job", assignment })),
+    workerPoolClientRunning(held, "Job", polled.stop),
+  );
+  const placedSessions = await workerPoolClientPlaced(
+    client,
+    minted.token,
+    polled.sessions.map((assignment) => ({ kind: "Session", assignment })),
+    workerPoolClientRunning(held, "Session", polled.stop),
   );
   return {
     passed: "Reconciled",
-    placed: tally.placed,
+    placed: jobs.placed + placedSessions.placed,
     stopped: stopped.stopped,
-    refused: tally.refused,
+    refused: jobs.refused + placedSessions.refused,
+    ended,
   };
 }
 
@@ -306,6 +449,7 @@ export async function workerPoolClientRun(
     placed: 0,
     stopped: 0,
     refused: 0,
+    ended: 0,
   };
   for (let pass = 0; pass < client.settings.passesMax; pass += 1) {
     last = await workerPoolClientPass(client);
