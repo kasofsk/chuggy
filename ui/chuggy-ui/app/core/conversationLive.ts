@@ -16,6 +16,14 @@
  * go of the first time the walk has nothing left to read, so text its store
  * never came to hold cannot return when the walk next falls behind.
  *
+ * AND WHAT IS OVER IS NOT HEARD AGAIN. A runner whose turn failed sends the
+ * turn's last words after it has settled it, and the hub goes on holding a
+ * session's last message until its next turn begins, so a frame or a snapshot
+ * naming a settled turn is an ordinary thing to hear. It is turned away where
+ * it arrives: nothing of it is held, so nothing of it can be drawn, and it
+ * cannot be taken for another turn being written, which would say the turn
+ * that is being written had ended.
+ *
  * AN END IS HEARD AND NEVER GUESSED. The hub tells a reader it holds nothing
  * whenever it forgets a session, which it does in the middle of a long tool as
  * readily as at a turn's end, so only an `End`, or another turn being written,
@@ -188,18 +196,42 @@ function conversationLiveEnded(
     : held.ended;
 }
 
+function conversationTurnSettled(
+  state: ConversationTurn["state"] | undefined,
+): boolean {
+  return state !== undefined && state !== "Queued" && state !== "Claimed";
+}
+
+/** The turns the mailbox has settled, which is what a frame is asked at the
+ * door. */
+export function conversationTurnsSettled(
+  turns: readonly ConversationTurn[],
+): ReadonlySet<string> {
+  return new Set(
+    turns.flatMap((turn) =>
+      conversationTurnSettled(turn.state) ? [turn.turn] : [],
+    ),
+  );
+}
+
+const conversationTurnsNone: ReadonlySet<string> = new Set();
+
 /**
- * What is held once one frame of the stream is heard: a snapshot replaces the
- * fold's account of the message being written with the server's, and an event
- * is folded by the wire's fold. What was heard before is set aside rather than
- * dropped wherever the fold is left holding less than was heard here, and a
- * message heard for the first time is marked with `known`.
+ * What is held once one frame of the stream is heard, where its turn is not in
+ * `settled`: a snapshot replaces the fold's account of the message being
+ * written, an event is folded by the wire's fold, and a message heard for the
+ * first time is marked with `known`. What was heard before is set aside
+ * rather than dropped wherever the fold is left holding less than was heard.
  */
 export function conversationLiveHeard(
   held: ConversationLiveHeld,
   heard: ThreadLiveStreamEvent,
   known?: ConversationLiveKnown,
+  settled: ReadonlySet<string> = conversationTurnsNone,
 ): ConversationLiveHeld {
+  const named =
+    heard.event === "snapshot" ? heard.data.held.turn : heard.data.turn;
+  if (named !== undefined && settled.has(named)) return held;
   const writing =
     heard.event === "snapshot"
       ? heard.data.held
@@ -217,12 +249,6 @@ export function conversationLiveHeard(
     written: continued ? held.written : conversationLiveSetAside(held),
     ...(ended === undefined ? {} : { ended }),
   };
-}
-
-function conversationTurnSettled(
-  state: ConversationTurn["state"] | undefined,
-): boolean {
-  return state !== undefined && state !== "Queued" && state !== "Claimed";
 }
 
 /**

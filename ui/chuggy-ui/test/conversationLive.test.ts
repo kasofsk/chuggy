@@ -31,6 +31,7 @@ import {
   conversationLiveTurns,
   conversationLiveTurnsHeard,
   conversationStoredBlocks,
+  conversationTurnsSettled,
 } from "../app/core/conversationLive.ts";
 import type { ConversationLiveHeld } from "../app/core/conversationLive.ts";
 import { leadTranscriptFoldEmpty } from "../app/core/leadTranscript.ts";
@@ -571,6 +572,109 @@ test("text a settled turn never stored is forgotten, and does not return when th
     undefined,
     undefined,
   ]);
+});
+
+/** A turn that failed and the turn sent after it, which a runner has. */
+const failedThenNext: readonly ConversationTurn[] = [
+  { turn, ordinal: 1, inputKind: "UserMessage", input, state: "Failed" },
+  {
+    turn: "turn-2",
+    ordinal: 2,
+    inputKind: "UserMessage",
+    input: "again",
+    state: "Claimed",
+  },
+];
+
+/** The failed turn's last message as the hub goes on holding it. */
+const failedHeld: ThreadLiveHeld = {
+  turn,
+  message: "m1",
+  blocks: [{ index: 0, kind: "Text", text: "Half an answer", gapped: false }],
+};
+
+test("the last words and the end of a turn the mailbox has settled, and a snapshot still naming it, change nothing held", () => {
+  const settled = conversationTurnsSettled(failedThenNext);
+  expect([...settled]).toEqual([turn]);
+  const late = [
+    wrote("m1", 0, 12, "er"),
+    began("m1", 1, "Text"),
+    ended,
+    snapshot(failedHeld),
+  ];
+  for (const from of [
+    conversationLiveNothing,
+    heardAll([
+      began("m2", 0, "Text", undefined, "turn-2"),
+      wrote("m2", 0, 0, "Trying", "turn-2"),
+    ]),
+  ])
+    for (const frame of late)
+      expect(conversationLiveHeard(from, frame, undefined, settled)).toBe(from);
+});
+
+test("a snapshot still naming a settled turn while the next is out is drawn under neither", () => {
+  const settled = conversationTurnsSettled(failedThenNext);
+  const held = conversationLiveHeard(
+    conversationLiveNothing,
+    snapshot(failedHeld),
+    undefined,
+    settled,
+  );
+  expect(held).toBe(conversationLiveNothing);
+  const behind = drawn({ held, items: [asked], turns: failedThenNext });
+  expect(behind.map((exchange) => exchange.answer)).toEqual([
+    undefined,
+    undefined,
+  ]);
+  expect(behind.map((exchange) => exchange.activity)).toEqual([
+    undefined,
+    undefined,
+  ]);
+});
+
+test("a settled turn heard late does not end the turn being written, nor take its place", () => {
+  const settled = conversationTurnsSettled(failedThenNext);
+  const writing = [
+    began("m2", 0, "Text", undefined, "turn-2"),
+    wrote("m2", 0, 0, "Trying", "turn-2"),
+  ];
+  const late = [snapshot(failedHeld), wrote("m1", 0, 12, "er"), ended];
+  const held = [
+    ...writing,
+    ...late,
+    wrote("m2", 0, 6, " again", "turn-2"),
+  ].reduce(
+    (from, frame) => conversationLiveHeard(from, frame, undefined, settled),
+    conversationLiveNothing,
+  );
+  const [failed, next] = drawn({
+    held,
+    items: [asked],
+    turns: failedThenNext,
+  });
+  expect(failed?.answer).toBeUndefined();
+  expect(next?.answer).toBe("Trying again");
+  expect(next?.activity).toEqual({ activity: "Writing" });
+  expect(held.ended).toBeUndefined();
+});
+
+test("a turn the mailbox has not settled, or does not name, is heard as before", () => {
+  const settled = conversationTurnsSettled(failedThenNext);
+  const next = conversationLiveHeard(
+    conversationLiveNothing,
+    snapshot({ ...failedHeld, turn: "turn-2" }),
+    undefined,
+    settled,
+  );
+  expect(next.writing.turn).toBe("turn-2");
+  const unnamed = conversationLiveHeard(
+    conversationLiveNothing,
+    began("m9", 0, "Text", undefined, "turn-9"),
+    undefined,
+    settled,
+  );
+  expect(unnamed.writing.turn).toBe("turn-9");
 });
 
 test("what is held is handed back itself while nothing of it is over", () => {

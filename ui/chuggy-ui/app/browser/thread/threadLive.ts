@@ -16,10 +16,12 @@
  * none: a thread that hears nothing is drawn from its transcript alone.
  *
  * WHAT THE MAILBOX SAYS IS OVER IS LET GO OF HERE, in what is drawn and in
- * what the next event is folded onto, so nothing forgotten is heard again.
+ * what the next event is folded onto, and every event is asked whether its
+ * turn is one the mailbox has settled before it is folded at all, so nothing
+ * forgotten is heard again.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import type { ConversationTurn } from "../../core/conversation.ts";
@@ -27,6 +29,7 @@ import {
   conversationLiveHeard,
   conversationLiveKept,
   conversationLiveNothing,
+  conversationTurnsSettled,
 } from "../../core/conversationLive.ts";
 import type {
   ConversationLiveHeld,
@@ -51,14 +54,17 @@ export function useThreadLive(read: {
   const generation = useSessionGeneration();
   const heard = useRef(conversationLiveNothing);
   const known = useRef(read.known);
+  const settled = useRef<ReadonlySet<string>>(new Set());
   const frame = useRef<number | undefined>(undefined);
   const [held, setHeld] = useState(conversationLiveNothing);
   const { tenant, project } = read.partition;
   const { session, open, turns, reached } = read;
   const kept = conversationLiveKept(held, turns, reached);
   if (kept !== held) setHeld(kept);
+  const over = useMemo(() => conversationTurnsSettled(turns), [turns]);
   useEffect(() => {
     known.current = read.known;
+    settled.current = over;
     heard.current = conversationLiveKept(heard.current, turns, reached);
   });
   useEffect(
@@ -79,6 +85,7 @@ export function useThreadLive(read: {
           heard.current,
           event,
           known.current,
+          settled.current,
         );
         frame.current ??= requestAnimationFrame(() => {
           frame.current = undefined;

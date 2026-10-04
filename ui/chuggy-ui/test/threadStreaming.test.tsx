@@ -611,6 +611,66 @@ test("text a failed turn never stored leaves at settle and does not return while
   await readWithoutTheFailedText(script);
 });
 
+test("a snapshot still naming a failed turn while the next is out brings none of its text back", async () => {
+  const stillHeld = snapshot({
+    turn: "turn-2",
+    message: "msg_a",
+    blocks: [{ index: 0, kind: "Text", text: "Half an answer", gapped: false }],
+  });
+  const script = scripted(threadAt("Claimed", 1), [
+    { status: 200, chunks: [nothingHeld], hold: true },
+    { status: 200, chunks: [stillHeld], hold: true },
+  ]);
+  await failedThenSentAgain(script);
+  await settled();
+  expect(shown(script.container)).toMatchObject({
+    answer: undefined,
+    moving: ["engine"],
+    standing: "Starting",
+  });
+  await readWithoutTheFailedText(script);
+});
+
+test("a failed turn's last words and its end, heard while the next is written, are drawn nowhere and end nothing", async () => {
+  const script = scripted(threadAt("Claimed", 1), [
+    { status: 200, chunks: [nothingHeld], hold: true },
+    { status: 200, chunks: [nothingHeld], hold: true },
+  ]);
+  await failedThenSentAgain(script);
+  const next = { message: "msg_c", index: 0 };
+  script.server.pushLive(
+    liveOf("turn-3", { live: "Block", ...next, kind: "Text" }),
+  );
+  script.server.pushLive(
+    liveOf("turn-3", { live: "Text", ...next, offset: 0, text: "Trying" }),
+  );
+  await until(script.container, { answer: "Trying", moving: ["mark"] });
+  script.server.pushLive(
+    liveOf("turn-2", {
+      live: "Text",
+      message: "msg_a",
+      index: 0,
+      offset: 12,
+      text: "er",
+    }),
+  );
+  script.server.pushLive(liveOf("turn-2", { live: "End" }));
+  script.server.pushLive(
+    liveOf("turn-3", { live: "Text", ...next, offset: 6, text: " again" }),
+  );
+  await until(script.container, {
+    answer: "Trying again",
+    writing: true,
+    moving: ["mark"],
+    standing: "Working",
+  });
+  await readWithoutTheFailedText(script);
+  expect(shown(script.container)).toMatchObject({
+    answer: "Trying again",
+    moving: ["mark"],
+  });
+});
+
 test("a settled turn's answer stays while the page holding it is still being read", async () => {
   const script = scripted(threadAt("Claimed", 1), [
     { status: 200, chunks: [nothingHeld], hold: true },
