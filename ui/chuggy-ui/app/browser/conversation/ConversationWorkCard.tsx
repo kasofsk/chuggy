@@ -2,6 +2,11 @@
  * Everything the pod did between the ask and the answer, in one card the
  * reader opens: no work draws no card, and what there is is a timeline in the
  * order it happened.
+ *
+ * WHILE THE WORK GOES ON THE CARD SAYS WHAT IT IS. A page that hears its turn
+ * names the thought or the tool under way, and one that does not says
+ * `Working`. Once the answer is being written, or is whole, the card is no
+ * longer where the work is and says what there was of it.
  */
 
 import { Collapsible } from "radix-ui";
@@ -14,7 +19,10 @@ import {
   conversationArgumentText,
   conversationWorkSummary,
 } from "../../core/conversation.ts";
-import type { ConversationStep } from "../../core/conversation.ts";
+import type {
+  ConversationActivity,
+  ConversationStep,
+} from "../../core/conversation.ts";
 import { runCountLabel } from "../../core/runTotals.ts";
 import { MarkdownReport } from "../ui/MarkdownReport.tsx";
 import {
@@ -118,13 +126,33 @@ function conversationCountWords(count: number, noun: string): string {
   return `${runCountLabel(count)} ${noun}${count === 1 ? "" : "s"}`;
 }
 
+/** Whether the work is still going on in the card, which is what its glyph
+ * pulses for. */
+function conversationWorkUnderWay(
+  running: boolean,
+  activity: ConversationActivity | undefined,
+): boolean {
+  return (
+    running &&
+    activity?.activity !== "Writing" &&
+    activity?.activity !== "Whole"
+  );
+}
+
+/** What is under way, named the way a step of the work names it. The name's
+ * own line is the tight one, so the row is as tall under it as under a word. */
+function conversationActivityLabel(
+  activity: ConversationActivity | undefined,
+): ReactNode {
+  if (activity?.activity === "Thinking") return "Thinking";
+  if (activity?.activity === "ToolUse" && activity.name.length > 0)
+    return <code className="text-ink-1 leading-tight">{activity.name}</code>;
+  return "Working";
+}
+
 /** What the card says while closed, which is the shape of the work rather than
  * a count of everything in it. */
-function conversationWorkLabel(
-  work: readonly ConversationStep[],
-  running: boolean,
-): string {
-  if (running) return "Working";
+function conversationWorkLabel(work: readonly ConversationStep[]): string {
   const summary = conversationWorkSummary(work);
   const said = [
     ...(summary.thought ? ["Thought"] : []),
@@ -141,14 +169,21 @@ function conversationWorkLabel(
 export function ConversationWorkCard(props: {
   readonly work: readonly ConversationStep[];
   readonly running: boolean;
+  /** What a running exchange is doing, where its page hears it. */
+  readonly activity?: ConversationActivity | undefined;
   /** Whether the card first draws open. */
   readonly open?: boolean;
 }): ReactNode {
   if (props.work.length === 0) return null;
+  const underWay = conversationWorkUnderWay(props.running, props.activity);
   return (
     <ConversationCard
-      label={conversationWorkLabel(props.work, props.running)}
-      glyph={<ConversationGlyph running={props.running} />}
+      label={
+        underWay
+          ? conversationActivityLabel(props.activity)
+          : conversationWorkLabel(props.work)
+      }
+      glyph={<ConversationGlyph running={underWay} />}
       defaultOpen={props.open === true}
     >
       <ol className="border-edge flex flex-col gap-3 border-l pl-4">

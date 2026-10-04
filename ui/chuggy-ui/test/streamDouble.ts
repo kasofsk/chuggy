@@ -74,19 +74,17 @@ function bodyOf(
           return { done: true };
         }
         return new Promise<StreamChunkRead>((resolve) => {
+          const abandoned = (): void => {
+            aborts.push(1);
+            waiting(undefined);
+            resolve({ done: true });
+          };
           waiting((read) => {
             waiting(undefined);
+            signal.removeEventListener("abort", abandoned);
             resolve(read);
           });
-          signal.addEventListener(
-            "abort",
-            () => {
-              aborts.push(1);
-              waiting(undefined);
-              resolve({ done: true });
-            },
-            { once: true },
-          );
+          signal.addEventListener("abort", abandoned, { once: true });
           held();
         });
       },

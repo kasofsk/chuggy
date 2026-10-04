@@ -10,9 +10,15 @@
  * Both halves stack with a column flex and neither draws a gutter beside the
  * text, so an exchange is the same shape in a pane as on a page and the words
  * take the whole width wherever it is drawn.
+ *
+ * AN ANSWER BEING WRITTEN IS DRAWN BY WHAT DRAWS A FINISHED ONE. The same part
+ * and the same report read it at every moment, so the transcript's own copy
+ * arriving changes nothing a reader can see. What differs while more is coming
+ * is the text handed to them: let out at an even pace, with the marks its last
+ * line leaves open closed.
  */
 
-import { MessagePrimitive, useAuiState } from "@assistant-ui/react";
+import { MessagePrimitive, useAuiState, useSmooth } from "@assistant-ui/react";
 import type { TextMessagePartComponent } from "@assistant-ui/react";
 import { createContext, Fragment, useContext } from "react";
 import type { ReactNode } from "react";
@@ -35,6 +41,10 @@ import "./conversation.css";
 
 /** Whether the surface draws each exchange's work open. */
 export const ConversationWorkOpen = createContext(false);
+
+/** Whether the surface lets an answer still being written out at an even
+ * pace. */
+export const ConversationPaced = createContext(false);
 
 /** What one message carries of the exchange it is half of. */
 export interface ConversationCustom {
@@ -71,11 +81,24 @@ const ConversationSaid: TextMessagePartComponent = (props) => (
   </>
 );
 
-/** The report gives up its own panel here: what it sits on is already a
- * surface, and a box inside a box is width the words need more. */
-const ConversationReport: TextMessagePartComponent = (props) => (
-  <MarkdownReport text={props.text} bare />
-);
+/**
+ * The report gives up its own panel here: what it sits on is already a
+ * surface, and a box inside a box is width the words need more. It is still
+ * being written while its block is, and while the pace has yet to catch up
+ * with what was heard of it.
+ */
+const ConversationReport: TextMessagePartComponent = (props) => {
+  const paced = useContext(ConversationPaced);
+  const activity = useConversationExchange()?.activity?.activity;
+  const shown = useSmooth(props, paced);
+  const writing =
+    activity === "Writing" || shown.text.length < props.text.length;
+  return (
+    <div className={writing ? "conversation-writing" : undefined}>
+      <MarkdownReport text={shown.text} bare writing={writing} />
+    </div>
+  );
+};
 
 /** The member's own words, on the right, as they were typed — with the block
  * the server composed in front of a thread's first message folded away above
@@ -168,6 +191,7 @@ export function ConversationAnswerMessage(): ReactNode {
       <ConversationWorkCard
         work={exchange.work}
         running={standing.standing === "Running"}
+        activity={exchange.activity}
         open={workOpen}
       />
       {standing.standing === "Failed" && standing.failure !== undefined ? (

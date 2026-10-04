@@ -32,6 +32,7 @@ import {
   threadTurnRetained,
   threadTurnsWait,
   threadWakeDrawn,
+  threadWriting,
   threadsByStanding,
 } from "../app/core/threads.ts";
 import type { ThreadDoor } from "../app/core/threads.ts";
@@ -388,6 +389,29 @@ describe("whether a thread is still answering", () => {
       false,
     );
     expect(threadAnswering({ turns: [] })).toBe(false);
+  });
+});
+
+describe("whether a thread's session is writing", () => {
+  test("it is while the newest turn is unsettled, whatever order the turns are held in", () => {
+    const settled = turnOf({ turn: "thread-turn-1", ordinal: 1 });
+    for (const state of ["Queued", "Claimed"] as const) {
+      const newest = turnOf({ turn: "thread-turn-2", ordinal: 2, state });
+      expect(threadWriting({ turns: [settled, newest] })).toBe(true);
+      expect(threadWriting({ turns: [newest, settled] })).toBe(true);
+    }
+  });
+
+  test("it is not once the newest turn settled, though an older one never did", () => {
+    const stuck = turnOf({
+      turn: "thread-turn-1",
+      ordinal: 1,
+      state: "Claimed",
+    });
+    const newest = turnOf({ turn: "thread-turn-2", ordinal: 2 });
+    expect(threadWriting({ turns: [stuck, newest] })).toBe(false);
+    expect(threadWriting({ turns: [newest, stuck] })).toBe(false);
+    expect(threadWriting({ turns: [] })).toBe(false);
   });
 });
 

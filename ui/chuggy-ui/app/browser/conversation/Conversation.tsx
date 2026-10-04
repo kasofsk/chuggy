@@ -17,6 +17,11 @@
  * grid track sized `auto` does the opposite — it grows to its content's
  * min-content width — so one such track above the text pushes the whole thread
  * past the pane holding it.
+ *
+ * AN EXCHANGE THAT DID NOT CHANGE IS NOT DRAWN AGAIN. The library keeps what it
+ * made of a message for as long as it is handed the same one, so each
+ * exchange's two messages are made once and a page redrawing one exchange a
+ * frame redraws that one.
  */
 
 import {
@@ -42,6 +47,7 @@ import type { ConversationComposerProps } from "./ConversationComposer.tsx";
 import {
   ConversationAnswerMessage,
   ConversationAskMessage,
+  ConversationPaced,
   ConversationWorkOpen,
 } from "./ConversationExchange.tsx";
 import {
@@ -79,14 +85,20 @@ function conversationStatus(exchange: ConversationExchange): MessageStatus {
   }
 }
 
-/** One exchange as the two messages the library holds a turn as: the ask, and
- * the answer it is still waiting for or already has. */
-function conversationMessages(
-  exchanges: readonly ConversationExchange[],
+/**
+ * One exchange as the two messages the library holds a turn as: the ask, and
+ * the answer it is still waiting for or already has. They are named by the
+ * exchange's turn where it has one, because that is the name that stays while
+ * the transcript comes to hold the turn, and the library begins a message
+ * again when its name changes.
+ */
+function conversationExchangeMessages(
+  exchange: ConversationExchange,
 ): readonly ThreadMessageLike[] {
-  return exchanges.flatMap((exchange): ThreadMessageLike[] => [
+  const named = exchange.turn ?? exchange.id;
+  return [
     {
-      id: `${exchange.id}-ask`,
+      id: `${named}-ask`,
       role: exchange.ask?.ask === "Message" ? "user" : "system",
       content: [
         {
@@ -97,7 +109,7 @@ function conversationMessages(
       metadata: { custom: { exchange, side: "Ask" } },
     },
     {
-      id: `${exchange.id}-answer`,
+      id: `${named}-answer`,
       role: "assistant",
       content:
         exchange.answer === undefined
@@ -106,7 +118,30 @@ function conversationMessages(
       status: conversationStatus(exchange),
       metadata: { custom: { exchange, side: "Answer" } },
     },
-  ]);
+  ];
+}
+
+const conversationMessagesMade = new WeakMap<
+  ConversationExchange,
+  readonly ThreadMessageLike[]
+>();
+
+function conversationMessages(
+  exchanges: readonly ConversationExchange[],
+): readonly ThreadMessageLike[] {
+  return exchanges.flatMap((exchange) => {
+    const made =
+      conversationMessagesMade.get(exchange) ??
+      conversationExchangeMessages(exchange);
+    conversationMessagesMade.set(exchange, made);
+    return made;
+  });
+}
+
+function conversationMessageKept(
+  message: ThreadMessageLike,
+): ThreadMessageLike {
+  return message;
 }
 
 /** Whether any exchange is still being worked, which is what the library's own
@@ -118,14 +153,17 @@ function conversationRunning(
 }
 
 /** Whether a turn is out with nothing said for it yet, the half of the waiting
- * predicate that outlives one send: an exchange already carrying its answer
- * stops drawing the engine, however its turn stands in the mailbox. */
+ * predicate that outlives one send: an exchange already carrying its answer,
+ * or heard to be whole, stops drawing the engine, however its turn stands in
+ * the mailbox. */
 function conversationUnanswered(
   exchanges: readonly ConversationExchange[],
 ): boolean {
   return exchanges.some(
     (exchange) =>
-      exchange.standing.standing === "Running" && exchange.answer === undefined,
+      exchange.standing.standing === "Running" &&
+      exchange.answer === undefined &&
+      exchange.activity?.activity !== "Whole",
   );
 }
 
@@ -175,7 +213,7 @@ function useConversationRuntime(props: {
     messages: conversationMessages(props.exchanges),
     isRunning: conversationRunning(props.exchanges),
     isSendDisabled: props.composer === undefined || !props.composer.takes,
-    convertMessage: (message) => message,
+    convertMessage: conversationMessageKept,
     onNew: dispatch,
   });
   useEffect(() => {
@@ -262,6 +300,9 @@ export function Conversation(props: {
   /** Whether each exchange's work draws open, which is how a run is read:
    * its steps are the conversation rather than the way to an answer. */
   readonly workOpen?: boolean;
+  /** Whether an answer still being written is let out at an even pace, which
+   * is what a page that hears its turns as they are written asks for. */
+  readonly paced?: boolean;
 }): ReactNode {
   const reading = props.reading === true;
   const activeExchanges = reading ? [] : props.exchanges;
@@ -285,12 +326,14 @@ export function Conversation(props: {
               <ConversationEarlier {...props.earlier} />
             )}
             <ConversationWorkOpen.Provider value={props.workOpen === true}>
-              <ConversationBody
-                reading={reading}
-                empty={props.exchanges.length === 0}
-                emptyTitle={props.emptyTitle}
-                sentence={props.empty}
-              />
+              <ConversationPaced.Provider value={props.paced === true}>
+                <ConversationBody
+                  reading={reading}
+                  empty={props.exchanges.length === 0}
+                  emptyTitle={props.emptyTitle}
+                  sentence={props.empty}
+                />
+              </ConversationPaced.Provider>
             </ConversationWorkOpen.Provider>
           </div>
         </ThreadPrimitive.Viewport>
