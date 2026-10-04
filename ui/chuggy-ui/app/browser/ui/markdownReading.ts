@@ -25,7 +25,10 @@
  *
  * A BLOCK THAT READS THE SAME IS KEPT AS THE OBJECT IT WAS. The last piece is
  * read again whole each time, and a text that stops being written is read
- * once more, and either draws again only the blocks that changed.
+ * once more, and either draws again only the blocks that changed. The one
+ * block a text still being written ends in is kept only where it also ends
+ * where it did, so what is drawn of it is what the text so far is drawn as
+ * from nothing, however it came to be written.
  *
  * A READING GIVES THE FRAME BACK. A piece is never read in parts, and the
  * first one a reading comes to is read whatever it costs, or a dear one would
@@ -151,6 +154,26 @@ function markdownBlocksKept(
   });
 }
 
+/**
+ * The blocks a text still being written ends in, each the object held in its
+ * place where the two read the same, and the last of them only where it also
+ * ends where it did. Whether a pipe has closed a table's last cell is told by
+ * where the cell ends and by nothing it holds, and its column is sized by it.
+ */
+function markdownBlocksOpenKept(
+  blocks: readonly MarkdownBlock[],
+  held: readonly MarkdownBlock[],
+  from: number,
+): readonly MarkdownBlock[] {
+  const kept = markdownBlocksKept(blocks, held, from);
+  const last = blocks.at(-1);
+  const was = kept.at(-1);
+  if (last === undefined || was === undefined || was === last) return kept;
+  return was.position?.end.offset === last.position?.end.offset
+    ? kept
+    : [...kept.slice(0, -1), last];
+}
+
 /** The piece a text still being written ends in, as the blocks it is drawn,
  * counted on from the piece above. */
 function markdownPieceWritten(
@@ -237,7 +260,7 @@ export function markdownReadingNext(
   const open =
     last === undefined || behind
       ? []
-      : markdownBlocksKept(
+      : markdownBlocksOpenKept(
           markdownPieceWritten(read, last, count),
           held,
           drawn,

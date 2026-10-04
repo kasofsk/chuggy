@@ -13,11 +13,11 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import {
-  markdownColumnClassName,
   markdownDepthMax,
   markdownMarkClassName,
 } from "../app/browser/ui/MarkdownBlocks.tsx";
 import { markdownCodeLanguageCharsMax } from "../app/browser/ui/MarkdownCode.tsx";
+import { markdownColumnClassNames } from "../app/browser/ui/markdownColumns.ts";
 import { MarkdownProvider } from "../app/browser/ui/markdownHeld.ts";
 import {
   MarkdownLine,
@@ -132,7 +132,11 @@ describe("a comparison", () => {
     const root = drawn(corpusComparison);
     expect(tags(root.children)).toEqual(["p", "div", "p", "ol"]);
     const box = root.children[1];
-    expect(tags(box?.children ?? [])).toEqual(["table"]);
+    expect(tags(box?.children ?? [])).toEqual(["div"]);
+    expect(tags(box?.firstElementChild?.children ?? [])).toEqual([
+      "div",
+      "table",
+    ]);
     expect(all(root, "table > thead > tr > th")).toHaveLength(7);
     expect(all(root, "table > tbody > tr")).toHaveLength(3);
     expect(all(root, "table > tbody > tr > td")).toHaveLength(21);
@@ -437,8 +441,9 @@ function declared(element: Element, property: string): readonly string[] {
 /**
  * Where a column sits is a browser's to say, and no suite here runs one. What
  * these hold is everything that decides it: a `col` to each cell of the
- * header, one class on each, a sheet that fixes the layout and sizes a column
- * by that class alone, and a cell that stays the cell of its column.
+ * header, each of its step's classes, a sheet that fixes the layout and sizes
+ * a column by those classes alone, and a cell that stays the cell of its
+ * column; which step a column is at is `markdownColumns.test.tsx`'s.
  */
 const audited = [
   "| Part | Language | Purpose |",
@@ -456,48 +461,63 @@ const uneven = [
   "| `check-model` |",
   "| `check-paths` | yes | a path a doc names is there |",
 ].join("\n");
+const everyStep = [
+  "| a | Console | Language | Description | `arbbot.record` | Purpose |",
+  "| --- | --- | --- | --- | --- | --- |",
+  "| x | y | z | w | v | Holds the journal and decides every transition a ticket makes, one project at a time |",
+].join("\n");
 
-/** What sizes a table's columns, as it is in the markup. */
-function columns(root: Element): string {
-  const table = root.querySelector("div.run-report-table > table");
-  const group = table?.querySelector(":scope > colgroup");
-  if (table === null || table === undefined) return "none";
-  if (group === null || group === undefined) return "none";
-  return `${String(table.attributes.length)} ${group.outerHTML}`;
+/** The classes of each of a table's columns, which the boxes beside the table
+ * carry too. */
+function columns(root: Element): readonly string[] {
+  const names = all(root, "table > colgroup > col").map((col) => col.className);
+  const boxes = all(root, "div.run-report-table-floor > span");
+  expect(boxes.map((box) => box.className)).toEqual(names);
+  return names;
 }
 
-/** The table a report draws, and the box it scrolls in. */
-function tableOf(root: Element): readonly [Element, Element] {
-  const table = root.querySelector("table");
-  const box = table?.parentElement;
-  if (table === null || box === null || box === undefined)
+/** The table a report draws, the box it fills, and the box that one scrolls
+ * in. */
+function tableOf(root: Element): readonly [Element, Element, Element] {
+  const table = root.querySelector("div.run-report-table > div > table");
+  const fit = table?.parentElement;
+  const box = fit?.parentElement;
+  if (table === null || fit === null || fit === undefined)
     throw new Error("no table is drawn");
-  return [table, box];
+  if (box === null || box === undefined) throw new Error("no table is drawn");
+  return [table, fit, box];
 }
 
 describe("where a table's columns sit", () => {
-  test("are a column to each cell of the header, each of the one class and nothing else", () => {
+  test("are a column to each cell of the header, each of its step's classes and nothing else, with an empty box of the same beside the table", () => {
     const root = drawn(corpusComparison);
     const cols = all(root, "table > colgroup > col");
     expect(cols).toHaveLength(7);
-    for (const col of cols)
-      expect(col.outerHTML).toBe(`<col class="${markdownColumnClassName}">`);
-    expect(root.querySelector("table")?.attributes).toHaveLength(0);
+    const names = columns(root);
+    cols.forEach((col, at) => {
+      expect(markdownColumnClassNames).toContain(names[at]);
+      expect(col.outerHTML).toBe(`<col class="${names[at] ?? ""}">`);
+    });
+    const [table, fit] = tableOf(root);
+    const floor = fit.firstElementChild;
+    expect(floor?.nextElementSibling).toBe(table);
+    expect(floor?.outerHTML).toBe(
+      `<div class="run-report-table-floor" aria-hidden="true">${names
+        .map((name) => `<span class="${name}"></span>`)
+        .join("")}</div>`,
+    );
+    expect(table.attributes).toHaveLength(0);
     expect(all(root, "[style], [width], style")).toHaveLength(0);
     styleless();
   });
 
-  test("are sized by the sheet from that class under a fixed layout, and by nothing a cell holds", () => {
+  test("are sized by the sheet from those classes under a fixed layout, and by nothing a cell holds", () => {
     const root = drawn(audited);
-    const [table, box] = tableOf(root);
+    const [table, , box] = tableOf(root);
     expect(declared(table, "table-layout")).toEqual(["fixed"]);
     expect(declared(table, "width")).toEqual(["100%"]);
     expect(declared(table, "min-width")).toEqual([]);
     expect(declared(box, "overflow-x")).toEqual(["auto"]);
-    const widths = all(root, "col").map((col) => declared(col, "width"));
-    expect(widths).toHaveLength(3);
-    for (const width of widths) expect(width).toEqual(widths[0]);
-    expect(widths[0]).toHaveLength(1);
     const held = all(root, "th, td, th *, td *");
     expect(held.some((element) => element.matches("td > code"))).toBe(true);
     for (const element of held) {
@@ -510,18 +530,89 @@ describe("where a table's columns sit", () => {
       expect(declared(cell, "overflow-wrap")).toEqual(["anywhere"]);
   });
 
-  test("are no narrower than a floor set in the report's own type, in a box that scrolls and never widens what holds it", () => {
+  test("fill a box no narrower than their floors come to, which scrolls and never widens what holds it", () => {
     const root = drawn(audited);
-    const [table, box] = tableOf(root);
-    for (const col of all(root, "col"))
-      expect(declared(col, "width")).toEqual(["10em"]);
+    const [table, fit, box] = tableOf(root);
+    const boxes = all(root, "div.run-report-table-floor > span");
     expect(declared(table, "width")).toEqual(["100%"]);
+    expect(declared(fit, "width")).toEqual(["min-content"]);
+    expect(declared(fit, "min-width")).toEqual(["100%"]);
+    expect(declared(boxes[0]?.parentElement ?? root, "display")).toEqual([
+      "flex",
+    ]);
+    for (const boxed of boxes)
+      expect(declared(boxed, "flex")).toEqual(["0 0 auto"]);
     expect(declared(box, "overflow-x")).toEqual(["auto"]);
+    expect(declared(box, "container-type")).toEqual(["inline-size"]);
+    expect(declared(box, "contain-intrinsic-inline-size")).toEqual([
+      "var(--measure)",
+    ]);
     for (const property of ["width", "min-width", "max-width", "display"])
       expect(declared(box, property), property).toEqual([]);
     expect(declared(root, "min-width")).toEqual(["0px"]);
-    for (const element of [root, box, table, ...all(root, "col, th, td")])
-      for (const property of ["font-size", "width", "min-width", "padding"])
+  });
+});
+
+describe("the width the sheet gives a column at each step", () => {
+  const padded = "calc(var(--run-report-held) + 2 * var(--space-3))";
+  const first = "calc(var(--run-report-held) + var(--space-3))";
+  const last = "calc(var(--run-report-held) + var(--space-3) + var(--space-1))";
+  const only = "calc(var(--run-report-held) + var(--space-1))";
+
+  test("is what a cell of that step holds, in the report's own type and wider at each, and a long word's is a share of the box between a phrase's and its own", () => {
+    const root = drawn(everyStep);
+    expect(columns(root)).toEqual(markdownColumnClassNames);
+    for (const selector of ["col", "div.run-report-table-floor > span"])
+      expect(
+        all(root, selector).map((sized) =>
+          declared(sized, "--run-report-held"),
+        ),
+      ).toEqual([
+        ["2em"],
+        ["4.25em"],
+        ["6em"],
+        ["7.75em"],
+        ["clamp(7.75em,27cqw,12.5em)"],
+        ["8.75em"],
+      ]);
+  });
+
+  test("is that and the padding its cells have, which the first and the last of a row have less of", () => {
+    const root = drawn(everyStep);
+    const widths = all(root, "div.run-report-table-floor > span").map((box) =>
+      declared(box, "width"),
+    );
+    expect(widths[0]).toEqual([padded, first]);
+    for (const width of widths.slice(1, -1)) expect(width).toEqual([padded]);
+    expect(widths.at(-1)).toEqual([padded, last]);
+    cleanup();
+    const alone = drawn("| Language |\n| --- |\n| Rust |");
+    expect(declared(all(alone, "col")[0] ?? alone, "width")).toEqual([
+      padded,
+      first,
+      last,
+      only,
+    ]);
+  });
+
+  test("is no width at the widest step, whose column takes what the others leave and whose box alone holds its floor", () => {
+    const root = drawn(everyStep);
+    const cols = all(root, "col").map((col) => declared(col, "width"));
+    const boxes = all(root, "div.run-report-table-floor > span").map((box) =>
+      declared(box, "width"),
+    );
+    expect(cols.at(-1)).toEqual([padded, last, "auto"]);
+    expect(boxes.at(-1)).toEqual([padded, last]);
+    expect(cols.slice(0, -1)).toEqual(boxes.slice(0, -1));
+    for (const width of cols.slice(0, -1)) expect(width).not.toContain("auto");
+  });
+
+  test("is set in nothing but the report's own type, the box's width and the tokens", () => {
+    const root = drawn(everyStep);
+    const sized = [root, ...all(root, "div, table, col, span, th, td")];
+    const properties = ["font-size", "width", "min-width", "padding"];
+    for (const element of sized)
+      for (const property of [...properties, "--run-report-held"])
         for (const value of declared(element, property))
           expect(value, property).not.toMatch(/[1-9]\d*(?:px|rem)\b/u);
   });
@@ -533,39 +624,40 @@ describe("a table written a few characters at a time", () => {
     ["a table of rows wider and narrower than its header", uneven],
     ["a comparison", corpusComparison],
   ])(
-    "%s keeps every drawn cell in its column, and its columns as its header drew them",
+    "%s keeps every drawn cell in its column and every column the element it was, at a step the sheet sizes",
     (_name, text) => {
       const fresh = drawn(text).outerHTML;
       cleanup();
       const view = render(<MarkdownReport text="" bare writing />);
       const seen = new Map<string, Element>();
-      let sized: string | undefined;
+      const kept = (place: string, element: Element): void => {
+        if (seen.has(place)) expect(seen.get(place), place).toBe(element);
+        seen.set(place, element);
+      };
       let frames = 0;
-      const headed = text.indexOf("\n", text.indexOf("|"));
       const frame = (written: string, writing: boolean): void => {
         view.rerender(<MarkdownReport text={written} bare writing={writing} />);
-        const root = view.container;
-        const table = root.querySelector("table");
+        const table = view.container.querySelector("table");
         if (table === null) return;
-        const count = all(table, "col").length;
-        expect(all(table, "thead th")).toHaveLength(count);
+        const names = columns(view.container);
+        for (const name of names)
+          expect(markdownColumnClassNames).toContain(name);
+        expect(all(table, "thead th")).toHaveLength(names.length);
+        for (const sized of ["col", "div.run-report-table-floor > span"])
+          all(view.container, sized).forEach((element, at) => {
+            kept(`${sized} ${String(at)}`, element);
+          });
         all(table, "tr").forEach((row, line) => {
-          expect(row.children).toHaveLength(count);
+          expect(row.children).toHaveLength(names.length);
           Array.from(row.children).forEach((cell, column) => {
-            const place = `${String(line)}.${String(column)}`;
-            if (seen.has(place)) expect(seen.get(place)).toBe(cell);
-            seen.set(place, cell);
+            kept(`${String(line)}.${String(column)}`, cell);
           });
         });
-        if (written.length <= headed) return;
-        sized ??= columns(root);
-        expect(columns(root)).toBe(sized);
         frames += 1;
       };
       for (const prefix of prefixes(text, 3)) frame(prefix, true);
       frame(text, false);
       expect(frames).toBeGreaterThan(20);
-      expect(sized).toContain(markdownColumnClassName);
       expect(all(view.container, "[style]")).toHaveLength(0);
       expect(view.container.firstElementChild?.outerHTML).toBe(fresh);
       styleless();

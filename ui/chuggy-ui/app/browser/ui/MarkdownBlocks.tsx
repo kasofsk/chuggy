@@ -16,11 +16,14 @@
  * its writer leaves a blank line in it, and one that changed its elements or
  * its setting then would move everything already written in it.
  *
- * A TABLE'S COLUMNS ARE SET BY HOW MANY ITS HEADER HAS, AND BY NOTHING A CELL
- * HOLDS. Each column is a `col` of one class, which the sheet gives one width
- * under a fixed layout, so a cell filling makes its row taller and moves no
- * column: not while the table is written, not when the turn settles, and not
- * when the stored answer is read back, because all three draw this.
+ * A TABLE'S COLUMNS ARE AS MANY AS ITS HEADER HAS, EACH A `col` OF ONE STEP.
+ * The step is the one `markdownColumns.ts` puts the column at for what is
+ * written in it, said in the `col`'s class and nowhere else, and the sheet
+ * gives each step a width under a fixed layout: so a cell filling makes its
+ * row taller, a column moves only when it steps, and the turn settling or the
+ * stored answer read back draws the same table, because all three draw this.
+ * Beside the table is a row of empty boxes of the same classes, which is what
+ * the sheet holds the table's least width to.
  *
  * EVERY CELL A WRITER WROTE IS DRAWN. A table is as long and as wide as
  * `markdownGuard.ts` let its text be, and a row with more cells than its
@@ -37,6 +40,10 @@ import type { ReactNode } from "react";
 
 import { ticketReferenceSplit } from "../../../../../src/contract/ticketReference.ts";
 import { MarkdownCode } from "./MarkdownCode.tsx";
+import {
+  markdownColumnClassNames,
+  markdownColumnsStepped,
+} from "./markdownColumns.ts";
 import type {
   MarkdownBlock,
   MarkdownInline,
@@ -48,9 +55,6 @@ type List = MarkdownNodeOf<"list">;
 type ListItem = MarkdownNodeOf<"listItem">;
 type Table = MarkdownNodeOf<"table">;
 type TableRow = MarkdownNodeOf<"tableRow">;
-
-/** The class each of a table's columns carries, which is all that sizes one. */
-export const markdownColumnClassName = "run-report-column";
 
 /** How deep blocks or marks may sit inside each other and still be drawn as
  * what they are; past it they are drawn as their words. */
@@ -352,6 +356,8 @@ function MarkdownTable(props: {
 }): ReactNode {
   const [header, ...body] = props.table.children;
   const columns = header?.children.length ?? 0;
+  const steps = markdownColumnsStepped(props.table, props.mark);
+  const classNames = steps.map((step) => markdownColumnClassNames[step]);
   const row = (held: TableRow | undefined, at: number): ReactNode => (
     <MarkdownTableRow
       key={at}
@@ -365,15 +371,22 @@ function MarkdownTable(props: {
   );
   return (
     <div className="run-report-table">
-      <table>
-        <colgroup>
-          {Array.from({ length: columns }, (_unused, at) => (
-            <col key={at} className={markdownColumnClassName} />
+      <div className="run-report-table-fit">
+        <div className="run-report-table-floor" aria-hidden="true">
+          {classNames.map((className, at) => (
+            <span key={at} className={className} />
           ))}
-        </colgroup>
-        <thead>{row(header, -1)}</thead>
-        <tbody>{body.map(row)}</tbody>
-      </table>
+        </div>
+        <table>
+          <colgroup>
+            {classNames.map((className, at) => (
+              <col key={at} className={className} />
+            ))}
+          </colgroup>
+          <thead>{row(header, -1)}</thead>
+          <tbody>{body.map(row)}</tbody>
+        </table>
+      </div>
     </div>
   );
 }
