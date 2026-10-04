@@ -12,14 +12,16 @@ import type { ProjectStreamEvent } from "../../../src/contract/events.ts";
 import {
   openProjectStream,
   projectStreamCarrying,
-  projectStreamDelayMs,
   projectStreamUnanswered,
   projectStreamUrl,
+} from "../app/core/projectStream.ts";
+import type { ProjectStreamStatus } from "../app/core/projectStream.ts";
+import {
+  streamDelayMs,
   streamOpenFailuresMax,
   streamReopenDelayMsMax,
   streamReopenDelayMsMin,
-} from "../app/core/projectStream.ts";
-import type { ProjectStreamStatus } from "../app/core/projectStream.ts";
+} from "../app/core/streamConnection.ts";
 import { frame, streamServer } from "./streamDouble.ts";
 import { ticketInstants } from "./ticketInstants.ts";
 
@@ -178,9 +180,9 @@ test("a frame the contract rejects ends the connection rather than being skipped
 });
 
 test("the reopen delay doubles from the floor and stops at the ceiling", () => {
-  expect(projectStreamDelayMs(1)).toBe(streamReopenDelayMsMin);
-  expect(projectStreamDelayMs(2)).toBe(streamReopenDelayMsMin * 2);
-  expect(projectStreamDelayMs(20)).toBe(streamReopenDelayMsMax);
+  expect(streamDelayMs(1)).toBe(streamReopenDelayMsMin);
+  expect(streamDelayMs(2)).toBe(streamReopenDelayMsMin * 2);
+  expect(streamDelayMs(20)).toBe(streamReopenDelayMsMax);
 });
 
 test("stopping abandons the request that is reading rather than leaving it", async () => {
