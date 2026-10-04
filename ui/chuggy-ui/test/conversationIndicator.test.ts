@@ -112,6 +112,7 @@ test("where no engine is drawn the first turn out moves in its place", () => {
 test("a turn has begun once a step, a word or what it is doing has reached the page", () => {
   const nothing = running("b", "Claimed");
   expect(conversationExchangeBegun(nothing)).toBe(false);
+  expect(conversationExchangeBegun({ ...nothing, inputless: true })).toBe(true);
   expect(conversationExchangeBegun({ ...nothing, answer: "It" })).toBe(true);
   expect(
     conversationExchangeBegun({

@@ -325,6 +325,7 @@ test("a turn carries every measure it was answered with and invents none", () =>
       turn: "thread-turn-1",
       state: "Failed",
       failure: "AgentRateLimited",
+      result: undefined,
       tokens: undefined,
       costMicros: undefined,
       durationMs: undefined,
@@ -340,6 +341,15 @@ test("a turn carries every measure it was answered with and invents none", () =>
       failure: "AgentRateLimited",
     },
   ]);
+});
+
+/** The words an answered turn ended on are what tells its exchange from the
+ * next turn's where the same thing was asked twice. */
+test("an answered thread turn carries the words it ended on", () => {
+  const [turn] = sessionConversationTurns([
+    threadTurn({ turn: "thread-turn-1", result: "it waits on 40" }),
+  ]);
+  expect(turn?.result).toBe("it waits on 40");
 });
 
 /** A lead's turn carries no `input` at all — the decision log already holds

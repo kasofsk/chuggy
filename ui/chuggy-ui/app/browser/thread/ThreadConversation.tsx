@@ -34,6 +34,7 @@ import {
 import type { ConversationExchange } from "../../core/conversation.ts";
 import {
   conversationExchangesLive,
+  conversationLiveHeardUnder,
   conversationLiveTurns,
   conversationLiveTurnsHeard,
   conversationStoredBlocks,
@@ -66,6 +67,18 @@ function useTurnsNamed(turns: readonly string[]): ReadonlySet<string> {
   const named = JSON.stringify(turns);
   return useMemo(
     () => new Set(JSON.parse(named) as readonly string[]),
+    [named],
+  );
+}
+
+/** The turn each message heard was heard under, as one map that is the same
+ * map while they are the same messages. */
+function useHeardUnder(
+  heard: readonly (readonly [message: string, turn: string])[],
+): ReadonlyMap<string, string> {
+  const named = JSON.stringify(heard);
+  return useMemo(
+    () => new Map(JSON.parse(named) as readonly [string, string][]),
     [named],
   );
 }
@@ -106,9 +119,10 @@ function useThreadExchanges(
   });
   const live = conversationLiveTurns(heard, stored);
   const heardTurns = useTurnsNamed(conversationLiveTurnsHeard(live));
+  const heardUnder = useHeardUnder(conversationLiveHeardUnder(heard));
   const exchanges = useMemo(
-    () => conversationExchanges(items, turns, heardTurns),
-    [items, turns, heardTurns],
+    () => conversationExchanges(items, turns, heardTurns, heardUnder),
+    [items, turns, heardTurns, heardUnder],
   );
   return conversationExchangesLive(exchanges, live);
 }

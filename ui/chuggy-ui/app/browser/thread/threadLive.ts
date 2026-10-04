@@ -49,25 +49,29 @@ export function useThreadLive(read: {
   readonly turns: readonly ConversationTurn[];
   /** Whether the transcript walk has nothing left to read. */
   readonly reached: boolean;
-  /** What a message first heard now is marked with. */
+  /** What a message held and not yet marked is marked with, which is nothing
+   * until the walk has read everything. */
   readonly known: ConversationLiveKnown;
 }): ConversationLiveHeld {
   const ports = useStreamPorts();
   const generation = useSessionGeneration();
   const heard = useRef(conversationLiveNothing);
-  const known = useRef(read.known);
   const settled = useRef<ReadonlySet<string>>(new Set());
   const frame = useRef<number | undefined>(undefined);
   const [held, setHeld] = useState(conversationLiveNothing);
   const { tenant, project } = read.partition;
   const { session, open, turns, reached } = read;
-  const kept = conversationLiveKept(held, turns, reached);
+  const kept = conversationLiveKept(held, turns, reached, read.known);
   if (kept !== held) setHeld(kept);
   const over = useMemo(() => conversationTurnsSettled(turns), [turns]);
   useEffect(() => {
-    known.current = read.known;
     settled.current = over;
-    heard.current = conversationLiveKept(heard.current, turns, reached);
+    heard.current = conversationLiveKept(
+      heard.current,
+      turns,
+      reached,
+      read.known,
+    );
   });
   useEffect(
     () => () => {
@@ -86,7 +90,6 @@ export function useThreadLive(read: {
         const next = conversationLiveHeard(
           heard.current,
           event,
-          known.current,
           settled.current,
         );
         if (next === heard.current) return;

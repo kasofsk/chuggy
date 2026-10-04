@@ -341,25 +341,55 @@ test("a tool call sits inside the collapsed work disclosure", async () => {
   expect(screen.getByText("bytes")).toBeDefined();
 });
 
-/** A turn nobody has claimed appends a running exchange that draws its kind
- * word and no text — the lead's mailbox carries no input of its own. */
-test("a Queued lead turn appends a running exchange with the kind word and no text", async () => {
+function storeEntry(uuid: string, type: string, message: unknown): unknown {
+  return { uuid, type, timestamp: "2026-09-02T10:00:00Z", message };
+}
+
+/** The work of one lead turn in its store: the wake it was handed, a thought,
+ * a line of text and a tool call still out. */
+const leadWorking = [
+  storeEntry("uuid-a", "user", { content: "an observation document" }),
+  storeEntry("uuid-b", "assistant", {
+    id: "msg_a",
+    content: [{ type: "thinking", thinking: "", signature: "sig" }],
+  }),
+  storeEntry("uuid-c", "assistant", {
+    id: "msg_a",
+    content: [{ type: "text", text: "Looking at the board." }],
+  }),
+  storeEntry("uuid-d", "assistant", {
+    id: "msg_a",
+    content: [{ type: "tool_use", id: "toolu_1", name: "Bash", input: {} }],
+  }),
+];
+
+/** A lead whose one turn the mailbox has not settled, over a store holding
+ * `entries` in one batch. */
+function leadTurnOut(
+  state: "Queued" | "Claimed",
+  entries: readonly unknown[],
+): void {
+  const page = (url: string): unknown => {
+    const first =
+      new URL(url, "http://console").searchParams.get("after") !== "1";
+    return {
+      stream: leadStream,
+      entries: first ? entries : [],
+      held: [],
+      elided: 0,
+      truncated: false,
+      ...(entries.length > 0 ? { cut: 1 } : {}),
+      ...(entries.length > 0 && first ? { nextAfter: 1 } : {}),
+    };
+  };
+  const turns = [
+    { turn: "turn-1", ordinal: 1, inputKind: "Observation", state },
+  ];
   const api = apiDouble({
     operation: { operation: "op-one", state: "Pending" },
     route: (url) => {
-      if (url.includes("/lead/transcript"))
-        return answer({
-          stream: leadStream,
-          entries: [],
-          held: [],
-          elided: 0,
-          truncated: false,
-        });
-      if (
-        url.includes("/lead") &&
-        !url.includes("/transcript") &&
-        !url.includes("/inquiries")
-      )
+      if (url.includes("/lead/transcript")) return answer(page(url));
+      if (url.includes("/lead") && !url.includes("/inquiries"))
         return answer({
           session: leadSession,
           state: "Open",
@@ -367,14 +397,7 @@ test("a Queued lead turn appends a running exchange with the kind word and no te
           agentReference: leadStream,
           notificationCursor: 1,
           handoffNote: { bytes: 0, preview: "", truncated: false },
-          turns: [
-            {
-              turn: "turn-1",
-              ordinal: 1,
-              inputKind: "Observation",
-              state: "Queued",
-            },
-          ],
+          turns,
           streams: [{ stream: leadStream, batches: 1 }],
         });
       const found = leadRouteAnswer(url, opening);
@@ -382,12 +405,41 @@ test("a Queued lead turn appends a running exchange with the kind word and no te
     },
   });
   vi.stubGlobal("fetch", api.fetch);
+}
+
+/** The word under each exchange the conversation draws. */
+function standingWords(conversation: HTMLElement): readonly string[] {
+  return Array.from(
+    conversation.querySelectorAll('.conversation-meta p [role="status"]'),
+    (status) => status.textContent,
+  );
+}
+
+/** A turn nobody has claimed appends a running exchange that draws its kind
+ * word and no text — the lead's mailbox carries no input of its own. */
+test("a Queued lead turn appends a running exchange with the kind word and no text", async () => {
+  leadTurnOut("Queued", []);
   await mountLead();
   expect(exchangeCount()).toBe(1);
   const conversation = screen.getByRole("region", { name: "Conversation" });
   expect(conversation.hasAttribute("data-fills-page")).toBe(true);
   expect(within(conversation).getByText("Observation")).toBeDefined();
   expect(within(conversation).getByText("Queued")).toBeDefined();
+});
+
+/** A lead turn has no ask to be paired with its stored work by, and nothing is
+ * heard of it, so nothing on this page tells starting from working. */
+test("a lead turn a runner has taken reads Working from the claim, with its work stored or not", async () => {
+  leadTurnOut("Claimed", []);
+  await mountLead();
+  const unstored = screen.getByRole("region", { name: "Conversation" });
+  expect(standingWords(unstored)).toEqual(["Working"]);
+  cleanup();
+  leadTurnOut("Claimed", leadWorking);
+  await mountLead();
+  const stored = screen.getByRole("region", { name: "Conversation" });
+  expect(stored.textContent).toContain("an observation document");
+  expect(standingWords(stored)).toEqual(["Open", "Working"]);
 });
 
 /**
