@@ -310,6 +310,23 @@ test("an end heard twice is heard once", () => {
   expect(conversationLiveHeard(held, ended)).toBe(held);
 });
 
+test("the end of another turn never takes the word from the turn a runner holds, and takes it from any other", () => {
+  const whole = heardAll([
+    began("m1", 0, "Text"),
+    wrote("m1", 0, 0, "Done."),
+    ended,
+  ]);
+  const other = live({ live: "End" }, "turn-9");
+  expect(conversationLiveHeard(whole, other).ended).toBe("turn-9");
+  const taken = conversationLiveKept(whole, turnsOf("Claimed"), true);
+  expect([taken.ended, taken.taken]).toEqual([turn, turn]);
+  expect(conversationLiveHeard(taken, other)).toBe(taken);
+  expect(conversationLiveHeard(taken, ended)).toBe(taken);
+  expect(only({ held: taken, items: [asked] }).activity).toEqual({
+    activity: "Whole",
+  });
+});
+
 test("a gap takes away nothing heard before it and draws nothing after it", () => {
   const before = heardAll([began("m1", 0, "Text"), wrote("m1", 0, 0, "Hello")]);
   const gapped = heardAll([wrote("m1", 0, 9, "lost")], before);

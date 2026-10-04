@@ -8,6 +8,12 @@
  * says how, offers the answer to copy, and gives what it took — so the turn
  * settling moves nothing above it or below.
  *
+ * BETWEEN A TURN'S LAST WORD AND ITS SETTLING THE LINE SAYS NOTHING. The
+ * runner goes on listening after the turn's last message is whole, and the
+ * turn can still fail there, so the line neither goes on saying the turn is
+ * working nor says how it ended. It keeps its place and what stood in it, out
+ * of sight, until the mailbox says.
+ *
  * THE WORD IS A STATUS. A reader who cannot see the text arriving is told when
  * the turn begins to work and when it is answered, and of no word in between.
  */
@@ -15,7 +21,10 @@
 import { Fragment } from "react";
 import type { ReactNode } from "react";
 
-import { conversationExchangeBegun } from "../../core/conversation.ts";
+import {
+  conversationExchangeBegun,
+  conversationExchangeQuiet,
+} from "../../core/conversation.ts";
 import type {
   ConversationExchange,
   ConversationMarker,
@@ -141,10 +150,15 @@ export function ConversationMetaLine(props: {
 }): ReactNode {
   const { exchange, standing } = props;
   const running = standing.standing === "Running";
+  const quiet = conversationExchangeQuiet(exchange);
   const copies = useCopyHeld() !== undefined && !running;
   return (
     <div className="conversation-meta text-ink-3 text-xs">
-      <span className="conversation-meta-lead">
+      <span
+        className={
+          quiet ? "conversation-meta-lead invisible" : "conversation-meta-lead"
+        }
+      >
         {copies && exchange.answer !== undefined ? (
           <CopyButton text={exchange.answer} label="Copy answer" />
         ) : (
@@ -153,12 +167,12 @@ export function ConversationMetaLine(props: {
       </span>
       <p className="flex flex-wrap items-baseline gap-2">
         <span role="status" className={conversationStandingInk(standing)}>
-          {
-            conversationStandingArm(
-              standing,
-              conversationExchangeBegun(exchange),
-            ).word
-          }
+          {quiet
+            ? null
+            : conversationStandingArm(
+                standing,
+                conversationExchangeBegun(exchange),
+              ).word}
         </span>
         {conversationMetaFigures(exchange.measures).map((figure, at) => (
           <Fragment key={at}>

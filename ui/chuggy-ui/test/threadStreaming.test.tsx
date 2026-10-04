@@ -392,8 +392,8 @@ test("a turn as it ends: whole, then stored, then settled, and nothing moves", a
   script.server.pushLive(live({ live: "End" }));
   await until(script.container, {
     writing: false,
-    moving: ["glyph"],
-    standing: "Working",
+    moving: [],
+    standing: "",
   });
   const whole = answerNode(script.container);
   const markup = script.container.innerHTML;
@@ -1077,6 +1077,165 @@ test("the turn being answered keeps its own stored work when an older answered t
   await settled();
   await settled();
   expect(halves(script.container)).toEqual(written);
+});
+
+/** The line under the newest answer: the box itself, its lead and its word. */
+function lineUnder(container: HTMLElement): readonly (Element | null)[] {
+  const answers = container.querySelectorAll(".conversation-answer");
+  const last = answers.item(answers.length - 1);
+  return [
+    last.querySelector(".conversation-meta"),
+    last.querySelector(".conversation-meta-lead"),
+    last.querySelector(
+      '.conversation-meta [role="status"]:not(.visually-hidden)',
+    ),
+  ];
+}
+
+/** What a reader is shown of a turn heard to end that the mailbox still says a
+ * runner has. */
+const quiet = { writing: false, moving: [], engine: false, standing: "" };
+
+const lastWords = "It is blocked by 40.";
+
+/** The turn written to its last word and heard to end, the mailbox still
+ * saying a runner has it. It answers with the line as it stood while written. */
+async function heardToEnd(
+  script: Script,
+): Promise<readonly (Element | null)[]> {
+  await askStored(script);
+  script.server.pushLive(began("msg_a", 0, "Text"));
+  script.server.pushLive(wrote("msg_a", 0, 0, lastWords));
+  await until(script.container, {
+    answer: lastWords,
+    moving: ["mark"],
+    standing: "Working",
+  });
+  const working = lineUnder(script.container);
+  script.server.pushLive(live({ live: "End" }));
+  await until(script.container, quiet);
+  return working;
+}
+
+function sameLine(script: Script, line: readonly (Element | null)[]): void {
+  lineUnder(script.container).forEach((node, at) => {
+    expect(node).not.toBeNull();
+    expect(node).toBe(line[at]);
+  });
+}
+
+test("from a turn's last word until the mailbox settles it, the line under it says nothing and keeps its place", async () => {
+  const script = scripted(threadAt("Claimed", 1), oneOpening);
+  const working = await heardToEnd(script);
+  sameLine(script, working);
+  expect(working[0]?.textContent).toBe("");
+  expect(working[1]?.classList.contains("invisible")).toBe(true);
+  script.batches.push([
+    entry("uuid-h", "assistant", {
+      id: "msg_a",
+      content: [{ type: "text", text: lastWords }],
+    }),
+  ]);
+  script.draw(threadAt("Claimed", 3));
+  await settled();
+  await settled();
+  expect(shown(script.container)).toMatchObject({
+    ...quiet,
+    answer: lastWords,
+  });
+  script.draw(threadAt("Answered", 3));
+  await until(script.container, { standing: "Answered", moving: [] });
+  sameLine(script, working);
+  expect(working[1]?.classList.contains("invisible")).toBe(false);
+  expect(working[2]?.textContent).toBe("Answered");
+  expect(working[2]?.parentElement?.childElementCount).toBeGreaterThan(1);
+  styleless();
+});
+
+test("a turn heard to end that the mailbox settles failed shows its failure where the line said nothing", async () => {
+  const script = scripted(threadAt("Claimed", 1), oneOpening);
+  const working = await heardToEnd(script);
+  const refusedStore: ThreadTurnResponse = {
+    ...turnAt("Failed"),
+    failure: "StoreRefused",
+  };
+  script.draw(threadBody({ batches: 2, turns: [before, refusedStore] }));
+  await until(script.container, { standing: "Failed", moving: [] });
+  sameLine(script, working);
+  const answers = script.container.querySelectorAll(".conversation-answer");
+  expect(
+    answers.item(answers.length - 1).querySelector(".notice-detail")
+      ?.textContent,
+  ).toBe("StoreRefused");
+});
+
+test("more heard of a turn after its end brings the word and the motion back", async () => {
+  const script = scripted(threadAt("Claimed", 1), oneOpening);
+  const working = await heardToEnd(script);
+  script.server.pushLive(began("msg_b", 0, "ToolUse", "Read"));
+  await until(script.container, {
+    answer: lastWords,
+    card: "Read",
+    moving: ["glyph"],
+    standing: "Working",
+  });
+  sameLine(script, working);
+  expect(working[1]?.classList.contains("invisible")).toBe(false);
+});
+
+test("a turn heard to end that the mailbox says is waiting, then taken again, is drawn as a turn that is out", async () => {
+  const script = scripted(threadAt("Claimed", 1), oneOpening);
+  await heardToEnd(script);
+  script.draw(threadAt("Queued", 2));
+  await until(script.container, {
+    answer: undefined,
+    moving: ["engine"],
+    standing: "Queued",
+  });
+  script.draw(threadAt("Claimed", 2));
+  await until(script.container, { moving: ["engine"], standing: "Starting" });
+});
+
+test("an end heard of another turn, or heard twice, changes nothing drawn", async () => {
+  const script = scripted(threadAt("Claimed", 1), oneOpening);
+  await askStored(script);
+  script.server.pushLive(began("msg_a", 0, "Text"));
+  script.server.pushLive(wrote("msg_a", 0, 0, "It is blo"));
+  await until(script.container, {
+    answer: "It is blo",
+    moving: ["mark"],
+    standing: "Working",
+  });
+  const written = script.container.innerHTML;
+  script.server.pushLive(liveOf("turn-1", { live: "End" }));
+  script.server.pushLive(liveOf("turn-9", { live: "End" }));
+  await settled();
+  await settled();
+  expect(script.container.innerHTML).toBe(written);
+
+  script.server.pushLive(live({ live: "End" }));
+  await until(script.container, quiet);
+  const ended = script.container.innerHTML;
+  script.server.pushLive(live({ live: "End" }));
+  script.server.pushLive(liveOf("turn-9", { live: "End" }));
+  script.server.pushLive(liveOf("turn-1", { live: "End" }));
+  await settled();
+  await settled();
+  expect(script.container.innerHTML).toBe(ended);
+});
+
+test("a reader who asked for less motion is shown the same line: nothing from the last word, and the settling in its place", async () => {
+  vi.stubGlobal("matchMedia", (query: string) => ({
+    matches: query.includes("prefers-reduced-motion"),
+    addEventListener: () => undefined,
+    removeEventListener: () => undefined,
+  }));
+  const script = scripted(threadAt("Claimed", 1), oneOpening);
+  const working = await heardToEnd(script);
+  sameLine(script, working);
+  script.draw(threadAt("Answered", 2));
+  await until(script.container, { standing: "Answered", moving: [] });
+  sameLine(script, working);
 });
 
 const hello = "hello";

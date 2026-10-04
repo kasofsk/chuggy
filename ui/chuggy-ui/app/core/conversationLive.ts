@@ -246,8 +246,9 @@ function conversationLiveSetAside(
 
 /**
  * The turn whose last message is whole: an `End` says so, and so does another
- * turn being written. Nothing held says nothing, and more heard of that turn
- * takes the word back.
+ * turn being written. Nothing held says nothing, more heard of that turn takes
+ * the word back, and the end of another turn never takes it from the turn a
+ * runner holds.
  */
 function conversationLiveEnded(
   held: ConversationLiveHeld,
@@ -255,7 +256,9 @@ function conversationLiveEnded(
   writing: ThreadLiveHeld,
 ): string | undefined {
   if (heard.event === "live" && heard.data.event.live === "End")
-    return heard.data.turn;
+    return held.ended !== undefined && held.ended === held.taken
+      ? held.ended
+      : heard.data.turn;
   const was = held.writing.turn;
   if (was !== undefined && writing.turn !== undefined && was !== writing.turn)
     return was;

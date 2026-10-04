@@ -117,8 +117,11 @@ describe("one thing moves while a turn is out", () => {
       ["glyph"],
     );
     await settledOn({ answer }, ["glyph"]);
-    await settledOn({ answer, activity: { activity: "Whole" } }, ["glyph"]);
-    await settledOn({ activity: { activity: "Whole" } }, ["glyph"]);
+  });
+
+  test("nothing, once the turn is heard to end, though the mailbox has yet to settle it", async () => {
+    await settledOn({ answer, activity: { activity: "Whole" } }, []);
+    await settledOn({ activity: { activity: "Whole" } }, []);
   });
 
   test("nothing, once the turn has settled", async () => {
@@ -195,7 +198,7 @@ describe("a turn drawn through", () => {
       attributes: true,
       characterData: true,
     });
-    for (const moment of throughMoments) {
+    for (const moment of throughMoments.slice(0, -1)) {
       view.rerender(drawn([running(moment)]));
       await waitFor(() => {
         expect(moving(view.container)).toHaveLength(1);
@@ -204,6 +207,10 @@ describe("a turn drawn through", () => {
     }
     await waitFor(() => {
       expect(moving(view.container)).toEqual(["glyph"]);
+    });
+    view.rerender(drawn([running(throughMoments.at(-1) ?? {})]));
+    await waitFor(() => {
+      expect(moving(view.container)).toEqual([]);
     });
     view.rerender(
       drawn([running({ answer, standing: { standing: "Answered" } })]),
@@ -282,6 +289,78 @@ describe("the word under an answer", () => {
     );
     expect(found(view.container, ".conversation-answer")).toBe(root);
     expect(root.getAttribute("aria-busy")).toBe("false");
+  });
+});
+
+describe("the line under an answer, from the turn's last word to its settling", () => {
+  const whole = { answer, activity: { activity: "Whole" } } as const;
+
+  function held(container: HTMLElement): readonly Element[] {
+    return [
+      found(container, ".conversation-meta"),
+      found(container, ".conversation-meta-lead"),
+      found(container, '.conversation-meta p [role="status"]'),
+    ];
+  }
+
+  test("says nothing and shows nothing, in the box, the lead and the status that were there", async () => {
+    const view = render(drawn([running({ answer, activity: writing })]));
+    await waitFor(() => {
+      expect(view.container.querySelector(".run-report")?.textContent).toBe(
+        answer,
+      );
+    });
+    const working = held(view.container);
+    const [line, lead, status] = working;
+    expect(status?.textContent).toBe("Working");
+    view.rerender(drawn([running(whole)]));
+    held(view.container).forEach((node, at) => {
+      expect(node).toBe(working[at]);
+    });
+    expect(line?.textContent).toBe("");
+    expect(lead?.classList.contains("invisible")).toBe(true);
+    expect(lead?.childElementCount).toBe(1);
+    expect(moving(view.container)).toEqual([]);
+    expect(
+      found(view.container, ".conversation-answer").getAttribute("aria-busy"),
+    ).toBe("true");
+    view.rerender(
+      drawn([running({ answer, standing: { standing: "Answered" } })]),
+    );
+    held(view.container).forEach((node, at) => {
+      expect(node).toBe(working[at]);
+    });
+    expect(lead?.classList.contains("invisible")).toBe(false);
+    expect(status?.textContent).toBe("Answered");
+    styleless();
+  });
+
+  test("a turn that settles failed says so in the status that said nothing", () => {
+    const view = render(drawn([running(whole)]));
+    const quiet = held(view.container);
+    expect(quiet[2]?.textContent).toBe("");
+    const failed = { standing: "Failed", failure: "StoreRefused" } as const;
+    view.rerender(drawn([running({ standing: failed })]));
+    held(view.container).forEach((node, at) => {
+      expect(node).toBe(quiet[at]);
+    });
+    expect(quiet[2]?.textContent).toBe("Failed");
+    expect(view.container.querySelector(".notice-detail")?.textContent).toBe(
+      "StoreRefused",
+    );
+  });
+
+  test("more of the turn being written brings the word and the motion back", async () => {
+    const view = render(drawn([running(whole)]));
+    const quiet = held(view.container);
+    view.rerender(
+      drawn([running({ answer: `${answer} And 41.`, activity: writing })]),
+    );
+    await waitFor(() => {
+      expect(moving(view.container)).toEqual(["mark"]);
+    });
+    expect(quiet[2]?.textContent).toBe("Working");
+    expect(quiet[1]?.classList.contains("invisible")).toBe(false);
   });
 });
 

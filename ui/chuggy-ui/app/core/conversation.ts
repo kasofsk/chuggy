@@ -1316,6 +1316,18 @@ export function conversationExchangeBegun(
   );
 }
 
+/** Whether an exchange's turn was heard to end and the mailbox has yet to
+ * settle it. Nothing is said of such a turn and nothing moves for it, since
+ * how it ended is the mailbox's to say. */
+export function conversationExchangeQuiet(
+  exchange: ConversationExchange,
+): boolean {
+  return (
+    exchange.standing.standing === "Running" &&
+    exchange.activity?.activity === "Whole"
+  );
+}
+
 /**
  * The one thing on a conversation that moves while a turn is out: the engine
  * above the composer until a running turn has words, and from then that turn's
@@ -1326,8 +1338,13 @@ export type ConversationIndicator =
   | { readonly indicator: "Engine" }
   | { readonly indicator: "Exchange"; readonly id: string };
 
-function conversationExchangeRunning(exchange: ConversationExchange): boolean {
-  return exchange.standing.standing === "Running";
+/** Whether an exchange's turn is out for the indicator, which one heard to
+ * end no longer is. */
+function conversationExchangeOut(exchange: ConversationExchange): boolean {
+  return (
+    exchange.standing.standing === "Running" &&
+    !conversationExchangeQuiet(exchange)
+  );
 }
 
 /**
@@ -1339,15 +1356,12 @@ export function conversationIndicator(
   exchanges: readonly ConversationExchange[],
   engine: { readonly drawn: boolean; readonly sending: boolean },
 ): ConversationIndicator {
-  const running = exchanges.filter(conversationExchangeRunning);
-  const said = running.find(
-    (exchange) =>
-      exchange.answer !== undefined || exchange.activity?.activity === "Whole",
-  );
+  const out = exchanges.filter(conversationExchangeOut);
+  const said = out.find((exchange) => exchange.answer !== undefined);
   if (said !== undefined) return { indicator: "Exchange", id: said.id };
-  if (engine.drawn && (engine.sending || running.length > 0))
+  if (engine.drawn && (engine.sending || out.length > 0))
     return { indicator: "Engine" };
-  const first = running[0];
+  const first = out[0];
   return first === undefined
     ? { indicator: "None" }
     : { indicator: "Exchange", id: first.id };

@@ -25,7 +25,8 @@
  *
  * ONE THING MOVES WHILE A TURN IS OUT, and `conversationIndicator` says which:
  * the engine above the composer until the turn has words, and that turn's own
- * exchange from then on.
+ * exchange from then on. A turn heard to end is out no longer, whatever the
+ * mailbox still says of it, and nothing moves for it.
  *
  * A READER WHO HAS SCROLLED AWAY IS OFFERED THE WAY BACK. The library keeps
  * the column pinned to its foot only while the reader is at it, and its own

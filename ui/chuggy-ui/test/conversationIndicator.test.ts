@@ -3,13 +3,14 @@
  *
  * Each case is a moment a thread can be in, and what is held to is that the
  * answer names one place or none: never the engine and an exchange together,
- * and never nothing while a turn is out.
+ * and never nothing while a turn is out and has not been heard to end.
  */
 
 import { expect, test } from "vitest";
 
 import {
   conversationExchangeBegun,
+  conversationExchangeQuiet,
   conversationIndicator,
 } from "../app/core/conversation.ts";
 import type {
@@ -87,13 +88,46 @@ test("a turn with words takes it from the engine, and keeps it while a send is o
   ).toEqual({ indicator: "Exchange", id: "b" });
 });
 
-test("a turn whose last message is whole holds it until it settles, words or none", () => {
+const whole = { activity: "Whole" } as const;
+
+test("nothing moves for a turn heard to end until the mailbox settles it, words or none", () => {
+  for (const said of [{}, { answer: "It is open." }])
+    for (const drawn of [true, false])
+      expect(
+        conversationIndicator(
+          [running("b", "Claimed", { ...said, activity: whole })],
+          { drawn, sending: false },
+        ),
+      ).toEqual({ indicator: "None" });
+});
+
+test("a turn heard to end leaves the indicator to what is still under way", () => {
+  const ended = running("b", "Claimed", { answer: "Done.", activity: whole });
+  const next = running("c", "Queued");
+  expect(conversationIndicator([ended, next], composing)).toEqual({
+    indicator: "Engine",
+  });
   expect(
-    conversationIndicator(
-      [running("b", "Claimed", { activity: { activity: "Whole" } })],
-      composing,
+    conversationIndicator([ended], { drawn: true, sending: true }),
+  ).toEqual({ indicator: "Engine" });
+  expect(
+    conversationIndicator([ended, next], { drawn: false, sending: false }),
+  ).toEqual({ indicator: "Exchange", id: "c" });
+});
+
+test("a turn is quiet only while it is out and was heard to end", () => {
+  expect(conversationExchangeQuiet(running("b", "Claimed"))).toBe(false);
+  expect(
+    conversationExchangeQuiet(
+      running("b", "Claimed", { activity: { activity: "Writing" } }),
     ),
-  ).toEqual({ indicator: "Exchange", id: "b" });
+  ).toBe(false);
+  expect(
+    conversationExchangeQuiet(running("b", "Claimed", { activity: whole })),
+  ).toBe(true);
+  expect(conversationExchangeQuiet({ ...answered("a"), activity: whole })).toBe(
+    false,
+  );
 });
 
 test("where no engine is drawn the first turn out moves in its place", () => {
