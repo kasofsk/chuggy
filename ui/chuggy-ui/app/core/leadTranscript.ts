@@ -503,6 +503,20 @@ export function leadStreamListed(session: SessionStreams): boolean {
 }
 
 /**
+ * Whether the store's listing carries a stream that is neither the one the
+ * session names nor a stream under it: the session wrote to another before,
+ * and the one it names is not its whole record. A listing cut short of such a
+ * stream reads as a session that never did.
+ */
+export function leadStreamReplaced(session: SessionStreams): boolean {
+  const named = session.agentReference;
+  if (named === undefined) return false;
+  return session.streams.some(
+    (held) => held.stream !== named && !held.stream.startsWith(`${named}/`),
+  );
+}
+
+/**
  * What a `Session` frame names, and nothing where the frame does not name it —
  * a change frame being a pointer and never a body, so what a reader takes from
  * it is which session to re-read, and a resource this console cannot parse is a

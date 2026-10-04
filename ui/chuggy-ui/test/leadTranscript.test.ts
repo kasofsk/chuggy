@@ -20,6 +20,7 @@ import {
   sessionChangeKindNamed,
   leadStreamBatches,
   leadStreamListed,
+  leadStreamReplaced,
   leadTranscriptCursorsFrom,
   leadTranscriptDrawn,
   leadTranscriptEntriesHeldMax,
@@ -604,6 +605,23 @@ test("a reference the store's listing does not carry is not a listed stream", ()
     }),
   ).toBe(false);
   expect(leadStreamListed(leadUnstarted())).toBe(false);
+});
+
+test("a store holding a stream that is neither the one named nor under it wrote to another before", () => {
+  const lead = leadBody(2, 1);
+  const under = { stream: `${leadStream}/subagent-1`, batches: 3 };
+  expect(leadStreamReplaced(lead)).toBe(false);
+  expect(
+    leadStreamReplaced({ ...lead, streams: [...lead.streams, under] }),
+  ).toBe(false);
+  expect(
+    leadStreamReplaced({
+      ...lead,
+      streams: [{ stream: `${leadStream}0`, batches: 9 }, ...lead.streams],
+    }),
+  ).toBe(true);
+  expect(leadStreamReplaced({ ...lead, streams: [] })).toBe(false);
+  expect(leadStreamReplaced(leadUnstarted())).toBe(false);
 });
 
 /**

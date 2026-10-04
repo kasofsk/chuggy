@@ -1009,6 +1009,40 @@ test("a turn that ran and failed keeps its stored words while the same thing is 
   expect(halves(script.container).slice(1)).toEqual(written);
 });
 
+test("a turn its session reported failed keeps the words a page saw it store while the same thing is sent again and taken", async () => {
+  const script = scripted(threadAt("Claimed", 1), oneOpening);
+  await settled();
+  script.batches.push([
+    entry("uuid-c", "user", { content: asked }),
+    entry("uuid-e", "assistant", {
+      id: "msg_a",
+      content: [{ type: "text", text: "Half an answer" }],
+    }),
+  ]);
+  script.draw(threadAt("Claimed", 2));
+  await waitFor(() => {
+    expect(halves(script.container).slice(1)).toEqual([
+      ["Half an answer", "Working"],
+    ]);
+  });
+  const reported = { ...turnAt("Failed"), failure: "AgentFailed" as const };
+  const failed = ["Half an answer", "Failed"];
+  for (const [state, word] of [
+    ["Queued", "Queued"],
+    ["Claimed", "Starting"],
+  ] as const) {
+    script.draw(
+      threadBody({ batches: 2, turns: [before, reported, sentAgain(state)] }),
+    );
+    await waitFor(() => {
+      expect(halves(script.container).slice(1)).toEqual([
+        failed,
+        [undefined, word],
+      ]);
+    });
+  }
+});
+
 test("the turn being answered keeps its own stored work when an older answered turn asked the same and its exchange is not on the page", async () => {
   const old = threadTurn({
     turn: "turn-1",
@@ -1043,6 +1077,167 @@ test("the turn being answered keeps its own stored work when an older answered t
   await settled();
   await settled();
   expect(halves(script.container)).toEqual(written);
+});
+
+const hello = "hello";
+
+/** A turn its runner took and failed without running, which the mailbox says
+ * only that its session reported. */
+const refused: ThreadTurnResponse = {
+  turn: "turn-1",
+  ordinal: 1,
+  inputKind: "UserMessage",
+  input: hello,
+  state: "Failed",
+  failure: "AgentFailed",
+  tools: [],
+};
+
+function retried(state: ThreadTurnResponse["state"]): ThreadTurnResponse {
+  if (state === "Answered")
+    return threadTurn({
+      turn: "turn-2",
+      ordinal: 2,
+      input: hello,
+      result: "Hi, I am here.",
+    });
+  return {
+    turn: "turn-2",
+    ordinal: 2,
+    inputKind: "UserMessage",
+    input: hello,
+    state,
+    tools: [],
+  };
+}
+
+/** Every answer on the page: its text, the word under it and the failure it
+ * is drawn with. */
+function halvesNoticed(
+  container: HTMLElement,
+): readonly (readonly (string | undefined)[])[] {
+  const answers = container.querySelectorAll(".conversation-answer");
+  return halves(container).map((half, at) => [
+    ...half,
+    answers.item(at).querySelector(".notice-detail")?.textContent ?? undefined,
+  ]);
+}
+
+const refusedDrawn = [undefined, "Failed", "AgentFailed"];
+
+test("a turn its session refused without running, sent again: the answer is the retry's as it is written, stored and settled", async () => {
+  const of = (
+    batches: number,
+    turns: readonly ThreadTurnResponse[],
+  ): ThreadResponse => threadBody({ batches, turns });
+  const script = scripted(of(1, [refused]), oneOpening, []);
+  await settled();
+  expect(halvesNoticed(script.container)).toEqual([refusedDrawn]);
+  script.draw(of(1, [refused, retried("Queued")]));
+  await waitFor(() => {
+    expect(halvesNoticed(script.container)).toEqual([
+      refusedDrawn,
+      [undefined, "Queued", undefined],
+    ]);
+  });
+  script.draw(of(1, [refused, retried("Claimed")]));
+  await settled();
+  script.batches.push([entry("uuid-c", "user", { content: hello })]);
+  script.draw(of(2, [refused, retried("Claimed")]));
+  await settled();
+  script.server.pushLive(
+    liveOf("turn-2", {
+      live: "Block",
+      message: "msg_a",
+      index: 0,
+      kind: "Text",
+    }),
+  );
+  script.server.pushLive(
+    liveOf("turn-2", {
+      live: "Text",
+      message: "msg_a",
+      index: 0,
+      offset: 0,
+      text: "Hi, I am here.",
+    }),
+  );
+  const written = [["Hi, I am here.", "Working", undefined], refusedDrawn];
+  await waitFor(() => {
+    expect(halvesNoticed(script.container)).toEqual(written);
+  });
+  script.batches.push([
+    entry("uuid-d", "assistant", {
+      id: "msg_a",
+      content: [{ type: "text", text: "Hi, I am here." }],
+    }),
+  ]);
+  script.draw(of(3, [refused, retried("Claimed")]));
+  await settled();
+  await settled();
+  expect(halvesNoticed(script.container)).toEqual(written);
+  script.draw(of(3, [refused, retried("Answered")]));
+  await waitFor(() => {
+    expect(halvesNoticed(script.container)).toEqual([
+      ["Hi, I am here.", "Answered", undefined],
+      refusedDrawn,
+    ]);
+  });
+});
+
+test("a refused turn and its answered retry, on a page opened afterwards: the answer stands under Answered and no failure", async () => {
+  const script = scripted(
+    threadBody({ batches: 1, turns: [refused, retried("Answered")] }),
+    oneOpening,
+    [
+      entry("uuid-c", "user", { content: hello }),
+      entry("uuid-d", "assistant", {
+        id: "msg_a",
+        content: [{ type: "text", text: "Hi, I am here." }],
+      }),
+    ],
+  );
+  await waitFor(() => {
+    expect(halvesNoticed(script.container)).toEqual([
+      ["Hi, I am here.", "Answered", undefined],
+      refusedDrawn,
+    ]);
+  });
+});
+
+test("a thread whose stream was replaced: the new turn's stored words, none of them heard, are its own", async () => {
+  const old = threadTurn({
+    turn: "turn-1",
+    ordinal: 1,
+    input: asked,
+    result: "Old answer.",
+  });
+  const body = threadBody({ batches: 1, turns: [old, turnAt("Claimed")] });
+  const stored = [
+    entry("uuid-c", "user", { content: asked }),
+    entry("uuid-e", "assistant", {
+      id: "msg_a",
+      content: [{ type: "text", text: "New answer so far" }],
+    }),
+  ];
+  const whole = scripted(body, oneOpening, stored);
+  await waitFor(() => {
+    expect(halves(whole.container)).toEqual([
+      ["New answer so far", "Answered"],
+      [undefined, "Starting"],
+    ]);
+  });
+  whole.unmount();
+  const replaced = scripted(
+    { ...body, streams: [{ stream: "1a2b3c", batches: 4 }, ...body.streams] },
+    oneOpening,
+    stored,
+  );
+  await waitFor(() => {
+    expect(halves(replaced.container)).toEqual([
+      ["New answer so far", "Working"],
+    ]);
+  });
 });
 
 /** Frames asked for and not yet painted, each run only when a case says. */

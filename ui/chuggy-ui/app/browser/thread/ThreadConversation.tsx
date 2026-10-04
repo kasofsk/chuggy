@@ -30,8 +30,15 @@ import type { ThreadResponse } from "../../../../../src/contract/responses.ts";
 import {
   conversationExchanges,
   conversationExchangesWaiting,
+  conversationSeenNothing,
+  conversationSeenWith,
 } from "../../core/conversation.ts";
-import type { ConversationExchange } from "../../core/conversation.ts";
+import type {
+  ConversationExchange,
+  ConversationItem,
+  ConversationRecord,
+  ConversationTurn,
+} from "../../core/conversation.ts";
 import {
   conversationExchangesLive,
   conversationLiveHeardUnder,
@@ -42,6 +49,7 @@ import {
 import {
   leadStreamBatches,
   leadStreamListed,
+  leadStreamReplaced,
   leadTranscriptReached,
 } from "../../core/leadTranscript.ts";
 import {
@@ -83,6 +91,25 @@ function useHeardUnder(
   );
 }
 
+/** What the page knows of the record that its items do not say: which
+ * exchanges it held before each turn was listed, and whether the thread wrote
+ * to a stream before the one drawn. */
+function useThreadRecord(
+  thread: ThreadResponse,
+  items: readonly ConversationItem[],
+  turns: readonly ConversationTurn[],
+  reached: boolean,
+): ConversationRecord {
+  const [seen, setSeen] = useState(conversationSeenNothing);
+  const next = useMemo(
+    () => conversationSeenWith(seen, items, turns, reached),
+    [seen, items, turns, reached],
+  );
+  if (next !== seen) setSeen(next);
+  const replaced = leadStreamReplaced(thread);
+  return useMemo(() => ({ seen: next, replaced }), [next, replaced]);
+}
+
 /**
  * The thread's exchanges: its transcript, its mailbox over that, and what is
  * heard of its newest turn over both. Everything but the last is kept between
@@ -120,9 +147,10 @@ function useThreadExchanges(
   const live = conversationLiveTurns(heard, stored);
   const heardTurns = useTurnsNamed(conversationLiveTurnsHeard(live));
   const heardUnder = useHeardUnder(conversationLiveHeardUnder(heard));
+  const record = useThreadRecord(thread, items, turns, reached);
   const exchanges = useMemo(
-    () => conversationExchanges(items, turns, heardTurns, heardUnder),
-    [items, turns, heardTurns, heardUnder],
+    () => conversationExchanges(items, turns, heardTurns, heardUnder, record),
+    [items, turns, heardTurns, heardUnder, record],
   );
   return conversationExchangesLive(exchanges, live);
 }
