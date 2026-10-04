@@ -24,6 +24,14 @@
  * go of the first time the walk has nothing left to read, so text its store
  * never came to hold cannot return when the walk next falls behind.
  *
+ * A TURN A MEMBER STOPPED IS THE ONE KEPT. Its store holds whatever the
+ * runtime had written when it was interrupted, which need not be the message
+ * that was being written, so what was heard of it stays for as long as the
+ * page lives. Its messages are held to a bound of their own, so a later turn
+ * setting many aside does not push them out, and only a later message of the
+ * stopped turn itself says one of them was abandoned: the next turn's being
+ * stored says nothing about it.
+ *
  * AND WHAT IS OVER IS NOT HEARD AGAIN. A runner whose turn failed sends the
  * turn's last words after it has settled it, and the hub goes on holding a
  * session's last message until its next turn begins, so a frame or a snapshot
@@ -67,6 +75,7 @@ import type {
 import {
   conversationEntryOpens,
   conversationExchangeContinued,
+  conversationTurnStopped,
 } from "./conversation.ts";
 import type {
   ConversationActivity,
@@ -91,6 +100,10 @@ export const conversationLiveMessagesMax = 8;
 /** The most messages remembered as heard once they are kept no longer. */
 export const conversationLiveLeftMax = 64;
 
+/** The most messages kept of turns a member stopped, past which the oldest
+ * of those leaves. */
+export const conversationLiveStoppedMax = 32;
+
 /** The most turns remembered as ones the stream was opened in the middle of:
  * one for each message kept, and the one being written. */
 export const conversationLiveRejoinedMax = conversationLiveMessagesMax + 1;
@@ -101,12 +114,14 @@ export interface ConversationLiveBlock extends ThreadLiveBlock {
   readonly stopped?: boolean;
 }
 
-/** One message as it was heard. */
+/** One message as it was heard. `kept` is a message of a turn a member
+ * stopped, which the transcript may never come to hold. */
 export interface ConversationLiveMessage {
   readonly turn: string;
   readonly message: string;
   readonly blocks: readonly ConversationLiveBlock[];
   readonly known?: number;
+  readonly kept?: true;
 }
 
 /** A message heard that is kept no longer. */
@@ -226,6 +241,40 @@ interface ConversationLiveAside {
   readonly left: readonly ConversationLiveLeft[];
 }
 
+/** The messages past their bound, oldest first: those of stopped turns past
+ * the bound on those, and the others past the bound on what is set aside. */
+function conversationLiveLeaving(
+  all: readonly ConversationLiveMessage[],
+): readonly ConversationLiveMessage[] {
+  const kept = all.filter((message) => message.kept === true);
+  const others = all.filter((message) => message.kept !== true);
+  const leaving = new Set([
+    ...kept.slice(0, Math.max(0, kept.length - conversationLiveStoppedMax)),
+    ...others.slice(
+      0,
+      Math.max(0, others.length - conversationLiveMessagesMax),
+    ),
+  ]);
+  return all.filter((message) => leaving.has(message));
+}
+
+/** The messages held to their bounds, those that leave remembered as heard. */
+function conversationLiveBounded(
+  all: readonly ConversationLiveMessage[],
+  left: readonly ConversationLiveLeft[],
+): ConversationLiveAside {
+  const leaving = conversationLiveLeaving(all);
+  if (leaving.length === 0) return { written: all, left };
+  const remembered = leaving.map((gone) => ({
+    turn: gone.turn,
+    message: gone.message,
+  }));
+  return {
+    written: all.filter((message) => !leaving.includes(message)),
+    left: [...left, ...remembered].slice(-conversationLiveLeftMax),
+  };
+}
+
 /** What is set aside with the message being written among it, the oldest
  * past the bound leaving to be remembered as heard. */
 function conversationLiveSetAside(
@@ -234,15 +283,10 @@ function conversationLiveSetAside(
   const left = held.left ?? [];
   const message = conversationLiveMessageOf(held.writing, held.known);
   if (message === undefined) return { written: held.written, left };
-  const all = conversationLiveMessagesWith(held.written, message);
-  const over = Math.max(0, all.length - conversationLiveMessagesMax);
-  const leaving = all
-    .slice(0, over)
-    .map((gone) => ({ turn: gone.turn, message: gone.message }));
-  return {
-    written: all.slice(over),
-    left: [...left, ...leaving].slice(-conversationLiveLeftMax),
-  };
+  return conversationLiveBounded(
+    conversationLiveMessagesWith(held.written, message),
+    left,
+  );
 }
 
 /**
@@ -283,6 +327,16 @@ export function conversationTurnsSettled(
     turns.flatMap((turn) =>
       conversationTurnSettled(turn.state) ? [turn.turn] : [],
     ),
+  );
+}
+
+/** The turns a member stopped, which are the ones whose heard words a page
+ * keeps. */
+function conversationTurnsStopped(
+  turns: readonly ConversationTurn[],
+): ReadonlySet<string> {
+  return new Set(
+    turns.flatMap((turn) => (conversationTurnStopped(turn) ? [turn.turn] : [])),
   );
 }
 
@@ -434,12 +488,46 @@ function conversationLiveMarked(
 }
 
 /**
+ * What is held with every message of the turns `stopped` names kept: the one
+ * being written is set aside, since nothing more of it will be heard, and each
+ * is held to the bound on stopped turns' messages from then. It is handed back
+ * itself where every one of them is kept already.
+ */
+function conversationLiveStoppedKept(
+  held: ConversationLiveHeld,
+  stopped: ReadonlySet<string>,
+): ConversationLiveHeld {
+  const owed = (message: ConversationLiveMessage): boolean =>
+    message.kept !== true && stopped.has(message.turn);
+  const writing =
+    held.writing.turn !== undefined && stopped.has(held.writing.turn);
+  if (!writing && !held.written.some(owed)) return held;
+  const { known, ...rest } = held;
+  const aside = writing
+    ? conversationLiveSetAside(held)
+    : { written: held.written, left: held.left ?? [] };
+  const bounded = conversationLiveBounded(
+    aside.written.map((message) =>
+      owed(message) ? { ...message, kept: true as const } : message,
+    ),
+    aside.left,
+  );
+  return {
+    ...rest,
+    writing: writing ? { blocks: [] } : held.writing,
+    written: bounded.written,
+    ...(bounded.left.length === 0 ? {} : { left: bounded.left }),
+    ...(writing || known === undefined ? {} : { known }),
+  };
+}
+
+/**
  * What is held once what the mailbox says is over is forgotten: everything
- * heard of a turn it has settled, once `reached` — the walk has nothing left
- * to read — and of a turn it said a runner held that is waiting again, at
- * once. A message not yet marked is marked with `known` where the page gives
- * one, which it does once it has read everything, and what is held is handed
- * back itself where nothing changed.
+ * heard of a turn it has settled other than one a member stopped, once
+ * `reached` — the walk has nothing left to read — and of a turn it said a
+ * runner held that is waiting again, at once. A message not yet marked is
+ * marked with `known` where the page gives one, which it does once it has read
+ * everything, and what is held is handed back itself where nothing changed.
  */
 export function conversationLiveKept(
   held: ConversationLiveHeld,
@@ -451,12 +539,18 @@ export function conversationLiveKept(
   const waiting = (turn: string | undefined): boolean =>
     turn !== undefined && states.get(turn) === "Queued";
   const again = waiting(held.taken) ? held.taken : undefined;
+  const stopped = conversationTurnsStopped(turns);
+  const over = (turn: string): boolean =>
+    reached && conversationTurnSettled(states.get(turn)) && !stopped.has(turn);
   const gone = (turn: string | undefined): boolean =>
-    turn !== undefined &&
-    (turn === again || (reached && conversationTurnSettled(states.get(turn))));
+    turn !== undefined && (turn === again || over(turn));
   const kept = conversationLiveTaken(
     conversationLiveLetGo(
-      conversationLiveForgotten(held, gone, waiting),
+      conversationLiveForgotten(
+        conversationLiveStoppedKept(held, stopped),
+        gone,
+        waiting,
+      ),
       turns,
     ),
     turns,
@@ -622,12 +716,24 @@ function conversationLiveHeldTo(
   return heldTo;
 }
 
+/** Whether the transcript holds, after a message it holds, another in the
+ * same exchange, which is another of the same turn. */
+function conversationStoredFollowed(
+  stored: ConversationStored,
+  message: string,
+): boolean {
+  const exchange = stored.exchanges.get(message);
+  return stored.messages
+    .slice(stored.messages.indexOf(message) + 1)
+    .some((later) => stored.exchanges.get(later) === exchange);
+}
+
 /**
  * Whether the transcript holds a block of a message later than the one heard
  * at this place, which makes it a message the transcript will hold no more of:
  * the store is written in order, and a message the model abandoned is never
  * finished. A later message is one the transcript holds after this one, or one
- * heard after it.
+ * heard after it; of a turn a member stopped, only a later one of that turn.
  */
 function conversationLiveOver(
   heard: readonly ConversationLiveMessage[],
@@ -636,9 +742,18 @@ function conversationLiveOver(
 ): boolean {
   const message = heard[at];
   if (message === undefined) return false;
+  const kept = message.kept === true;
   if (stored.blocks.has(message.message))
-    return stored.messages.at(-1) !== message.message;
-  return heard.slice(at + 1).some((later) => stored.blocks.has(later.message));
+    return kept
+      ? conversationStoredFollowed(stored, message.message)
+      : stored.messages.at(-1) !== message.message;
+  return heard
+    .slice(at + 1)
+    .some(
+      (later) =>
+        (!kept || later.turn === message.turn) &&
+        stored.blocks.has(later.message),
+    );
 }
 
 /**
@@ -670,7 +785,7 @@ function conversationLiveReplacedIn(
 }
 
 /** The messages of one turn with blocks the transcript does not hold and is
- * still to. */
+ * still to, or may never where a member stopped the turn. */
 function conversationLiveTurnRuns(
   held: ConversationLiveHeld,
   turn: string,
@@ -784,21 +899,68 @@ function conversationLiveRunsDrawn(
   );
 }
 
+/** A heard block is a text, a thought or a call, and nothing else of a
+ * thought or a call is heard than its kind and its name. */
+function conversationLiveBlockSame(
+  left: ConversationBlock,
+  right: ConversationBlock | undefined,
+): boolean {
+  if (left.block === "Text")
+    return right?.block === "Text" && left.text === right.text;
+  if (left.block === "ToolUse")
+    return right?.block === "ToolUse" && left.name === right.name;
+  return left.block === right?.block;
+}
+
+function conversationLiveRunSame(
+  left: ConversationLiveRun,
+  right: ConversationLiveRun | undefined,
+): boolean {
+  return (
+    right !== undefined &&
+    left.stopped === right.stopped &&
+    left.blocks.length === right.blocks.length &&
+    left.blocks.every((block, at) =>
+      conversationLiveBlockSame(block, right.blocks[at]),
+    )
+  );
+}
+
+/** An exchange as it was last drawn over what was heard of its turn. */
+interface ConversationLiveMade {
+  readonly runs: readonly ConversationLiveRun[];
+  readonly ended: boolean;
+  readonly made: ConversationExchange;
+}
+
+const conversationLiveMade = new WeakMap<
+  ConversationExchange,
+  ConversationLiveMade
+>();
+
+/** An exchange with what was heard of its turn read after what it holds, the
+ * same exchange each time while the same is heard of it. */
 function conversationExchangeLive(
   exchange: ConversationExchange,
   live: ConversationLiveTurn | undefined,
 ): ConversationExchange {
   const runs = conversationLiveRunsDrawn(exchange, live);
+  const ended = live?.ended === true;
+  const before = conversationLiveMade.get(exchange);
+  if (
+    before?.ended === ended &&
+    before.runs.length === runs.length &&
+    runs.every((run, at) => conversationLiveRunSame(run, before.runs[at]))
+  )
+    return before.made;
   const continued = conversationExchangeContinued(
     exchange,
     runs.flatMap((run) => run.blocks),
   );
-  const activity = conversationLiveActivity(
-    continued,
-    live?.ended === true,
-    runs.at(-1),
-  );
-  return activity === undefined ? continued : { ...continued, activity };
+  const activity = conversationLiveActivity(continued, ended, runs.at(-1));
+  const made = activity === undefined ? continued : { ...continued, activity };
+  conversationLiveMade.set(exchange, { runs, ended, made });
+  return made;
 }
 
 /**

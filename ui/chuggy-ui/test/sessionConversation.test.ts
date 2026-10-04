@@ -23,6 +23,13 @@ import {
   sessionConversationTurns,
 } from "../app/core/sessionConversation.ts";
 import type { LeadTurnResponse } from "../../../src/contract/responses.ts";
+import {
+  interruptionNote,
+  interruptionRefusal,
+  interruptionResult,
+  interruptionSentence,
+  interruptionToolSentence,
+} from "./interruptionFixture.ts";
 import { threadTurn } from "./threadFixture.ts";
 
 const stream = "9f8e7d";
@@ -281,6 +288,208 @@ test("a walk that stopped short says so, and one that reached the end says nothi
   expect(markers(itemsOf({ unreached: true, truncated: true }))).toStrictEqual([
     "Unreached",
   ]);
+});
+
+const sentences = [interruptionSentence, interruptionToolSentence] as const;
+
+function entered(uuid: string, text: string): LeadTranscriptEntry {
+  return entryOf({ uuid, type: "user", message: { content: text } });
+}
+
+function ids(items: readonly ConversationItem[]): readonly string[] {
+  return items.flatMap((item) =>
+    item.item === "Entry" ? [item.entry.id] : [],
+  );
+}
+
+test.each(sentences)(
+  "the runtime's note that a turn was interrupted is no entry: %s",
+  (sentence) => {
+    const items = itemsOf({
+      entries: [
+        entered("uuid-a", "what of 41"),
+        entryOf({ uuid: "uuid-b", type: "assistant", message: said("it wa") }),
+        entryOf({
+          uuid: "uuid-c",
+          type: "user",
+          message: interruptionNote(sentence),
+        }),
+      ],
+    });
+    expect(ids(items)).toStrictEqual(["uuid-a", "uuid-b"]);
+  },
+);
+
+const cutOff: readonly LeadTranscriptEntry[] = [
+  entered("uuid-a", "run the gates"),
+  entryOf({
+    uuid: "uuid-b",
+    type: "assistant",
+    message: {
+      content: [{ type: "tool_use", id: "toolu_1", name: "Bash", input: {} }],
+    },
+  }),
+  entryOf({
+    uuid: "uuid-c",
+    type: "user",
+    message: interruptionResult("toolu_1"),
+  }),
+  entryOf({
+    uuid: "uuid-d",
+    type: "user",
+    message: interruptionNote(interruptionToolSentence),
+  }),
+];
+
+test("the refusal the runtime gives a call it cut off is no entry, and the call is left with no result", () => {
+  const items = itemsOf({ entries: cutOff });
+  expect(ids(items)).toStrictEqual(["uuid-a", "uuid-b"]);
+  const [exchange] = conversationExchanges(items);
+  expect(exchange?.work).toStrictEqual([
+    { step: "ToolCall", id: "toolu_1", name: "Bash", input: {} },
+  ]);
+});
+
+test.each([
+  { record: "a record that can be counted", ordinal: 1 },
+  { record: "a record that cannot", ordinal: 5 },
+])(
+  "a stopped turn's store makes one exchange, the turn's own, in $record",
+  ({ ordinal }) => {
+    const stopped = sessionConversationTurns([
+      {
+        turn: "thread-turn-1",
+        ordinal,
+        inputKind: "UserMessage",
+        input: "run the gates",
+        state: "Abandoned",
+        failure: "TurnStopped",
+        tools: [],
+      },
+    ]);
+    const exchanges = conversationExchanges(
+      itemsOf({ entries: cutOff }),
+      stopped,
+    );
+    expect(exchanges).toHaveLength(1);
+    expect(exchanges[0]).toMatchObject({
+      id: "uuid-a",
+      turn: "thread-turn-1",
+      ask: { ask: "Message", text: "run the gates" },
+      standing: { standing: "Stopped" },
+    });
+  },
+);
+
+test.each(sentences)(
+  "a member who types the runtime's words is drawn saying them: %s",
+  (sentence) => {
+    const items = itemsOf({ entries: [entered("uuid-a", sentence)] });
+    expect(ids(items)).toStrictEqual(["uuid-a"]);
+    expect(conversationExchanges(items)[0]?.ask).toStrictEqual({
+      ask: "Message",
+      text: sentence,
+    });
+  },
+);
+
+test("only what the runtime writes is left out: its words among others, by the assistant, or of a result that did not fail are entries", () => {
+  const kept: readonly unknown[] = [
+    {
+      content: [
+        { type: "text", text: interruptionSentence },
+        { type: "text", text: "and more" },
+      ],
+    },
+    said(`${interruptionSentence} `),
+    said("Request interrupted by user"),
+    {
+      content: [
+        { type: "tool_result", tool_use_id: "t", content: interruptionRefusal },
+      ],
+    },
+    {
+      content: [
+        {
+          type: "tool_result",
+          tool_use_id: "t",
+          content: interruptionRefusal,
+          is_error: false,
+        },
+      ],
+    },
+    {
+      content: [
+        {
+          type: "tool_result",
+          tool_use_id: "t",
+          content: [{ type: "text", text: interruptionRefusal }],
+          is_error: true,
+        },
+      ],
+    },
+  ];
+  const items = itemsOf({
+    entries: [
+      ...kept.map((message, at) =>
+        entryOf({ uuid: `uuid-${String(at)}`, type: "user", message }),
+      ),
+      entryOf({
+        uuid: "uuid-assistant",
+        type: "assistant",
+        message: interruptionNote(interruptionSentence),
+      }),
+    ],
+  });
+  expect(ids(items)).toHaveLength(kept.length + 1);
+});
+
+test.each([
+  { failed: "a call that failed", content: "Exit code 1" },
+  {
+    failed: "a call the permission rules refused",
+    content:
+      "Permission to use Bash has been denied because of a deny rule in the settings.",
+  },
+])(
+  "the failed result of $failed is still an entry that says it failed",
+  ({ content }) => {
+    const items = itemsOf({
+      entries: [
+        ...cutOff.slice(0, 2),
+        entryOf({
+          uuid: "uuid-c",
+          type: "user",
+          message: interruptionResult("toolu_1", content),
+        }),
+      ],
+    });
+    expect(ids(items)).toStrictEqual(["uuid-a", "uuid-b", "uuid-c"]);
+    expect(conversationExchanges(items)[0]?.work).toMatchObject([
+      { step: "ToolCall", result: { text: content, isError: true } },
+    ]);
+  },
+);
+
+test("the seam still stands where the compaction cut at the note, and an entry after it keeps its place in the chain", () => {
+  const items = itemsOf({
+    entries: [
+      entered("uuid-a", "before"),
+      entryOf({
+        uuid: "uuid-b",
+        type: "user",
+        message: interruptionNote(interruptionSentence),
+      }),
+      entryOf({ uuid: undefined, type: "assistant", message: said("after") }),
+    ],
+    compaction: { boundary: "uuid-b", at: "2026-09-02T11:00:00Z" },
+  });
+  expect(items.map((item) => item.item)).toStrictEqual([
+    "Entry",
+    "Marker",
+    "Entry",
+  ]);
+  expect(ids(items)).toStrictEqual(["uuid-a", "entry-2"]);
 });
 
 /**

@@ -28,6 +28,10 @@
  * exchange stands for yet. A turn heard to end is out no longer, whatever the
  * mailbox still says of it, and nothing moves for it.
  *
+ * THE TURN THAT MOVES IS THE ONE STOP ENDS. Where the page takes a stop the
+ * composer's button is Stop for as long as a turn is the thing moving, and one
+ * press hands the page that turn through the library's own cancel.
+ *
  * NOTHING STANDS BETWEEN THE COLUMN AND THE COMPOSER BUT WHAT A READER NEEDS
  * THERE. The engine runs where the answer is about to be and not on a strip of
  * its own, so the column ends where the composer begins.
@@ -64,6 +68,7 @@ import type { ReactNode } from "react";
 import {
   conversationExchangeParts,
   conversationIndicator,
+  conversationTurnStoppable,
 } from "../../core/conversation.ts";
 import type {
   ConversationExchange,
@@ -108,6 +113,7 @@ function conversationStatus(exchange: ConversationExchange): MessageStatus {
         error: standing.failure ?? null,
       };
     case "Abandoned":
+    case "Stopped":
       return { type: "incomplete", reason: "cancelled" };
     case "Open":
     case "Markers":
@@ -190,16 +196,15 @@ function conversationAppendedText(message: AppendMessage): string {
     .join("");
 }
 
-interface ConversationHeld {
-  readonly runtime: AssistantRuntime;
-  readonly sending: boolean;
-}
-
 function useConversationRuntime(props: {
   readonly exchanges: readonly ConversationExchange[];
   readonly composer: ConversationComposerProps | undefined;
-}): ConversationHeld {
-  const [sending, setSending] = useState(false);
+  /** The turn a press of Stop ends, where there is one. */
+  readonly stoppable: string | undefined;
+  /** Told whether a send is on its way, as one begins and as it ends. */
+  readonly onSending: (sending: boolean) => void;
+}): AssistantRuntime {
+  const setSending = props.onSending;
   const dispatchRef = useRef<(message: AppendMessage) => Promise<void>>(() =>
     Promise.resolve(),
   );
@@ -225,6 +230,8 @@ function useConversationRuntime(props: {
     setSending(false);
     if (sent === "Kept") restoreRef.current(text);
   };
+  const onStop = props.composer?.onStop;
+  const stoppable = props.stoppable;
   const runtime = useExternalStoreRuntime<ThreadMessageLike>({
     queue,
     messages: conversationMessages(props.exchanges),
@@ -232,6 +239,14 @@ function useConversationRuntime(props: {
     isSendDisabled: props.composer === undefined || !props.composer.takes,
     convertMessage: conversationMessageKept,
     onNew: dispatch,
+    ...(onStop === undefined
+      ? {}
+      : {
+          onCancel: () => {
+            if (stoppable !== undefined) onStop(stoppable);
+            return Promise.resolve();
+          },
+        }),
   });
   useEffect(() => {
     dispatchRef.current = dispatch;
@@ -241,7 +256,7 @@ function useConversationRuntime(props: {
       box.setText(text);
     };
   });
-  return { runtime, sending };
+  return runtime;
 }
 
 function conversationMessageDrawn(value: {
@@ -340,13 +355,8 @@ function ConversationDrawn(props: {
   );
 }
 
-/**
- * The conversation as a page holds it: a column of exchanges that scrolls, and
- * the composer beneath it. A bounded height pins the composer to the foot of
- * it, and an unbounded one — a transcript inside a panel — leaves both in
- * normal flow.
- */
-export function Conversation(props: {
+/** What a page hands the surface to draw. */
+export interface ConversationProps {
   readonly exchanges: readonly ConversationExchange[];
   readonly composer?: ConversationComposerProps;
   /** The one line a column with nothing in it says. A caller that words none
@@ -371,21 +381,36 @@ export function Conversation(props: {
   /** Whether an answer still being written is let out at an even pace, which
    * is what a page that hears its turns as they are written asks for. */
   readonly paced?: boolean;
-}): ReactNode {
+}
+
+/**
+ * The conversation as a page holds it: a column of exchanges that scrolls, and
+ * the composer beneath it. A bounded height pins the composer to the foot of
+ * it, and an unbounded one — a transcript inside a panel — leaves both in
+ * normal flow.
+ */
+export function Conversation(props: ConversationProps): ReactNode {
   const reading = props.reading === true;
   const activeExchanges = reading ? [] : props.exchanges;
-  const held = useConversationRuntime({
-    exchanges: activeExchanges,
-    composer: props.composer,
-  });
+  const [sending, setSending] = useState(false);
   const indicator = conversationIndicator(activeExchanges, {
     drawn: props.composer !== undefined,
-    sending: held.sending,
+    sending,
+  });
+  const stoppable =
+    props.composer?.onStop === undefined
+      ? undefined
+      : conversationTurnStoppable(activeExchanges, indicator);
+  const runtime = useConversationRuntime({
+    exchanges: activeExchanges,
+    composer: props.composer,
+    stoppable,
+    onSending: setSending,
   });
   const composed = props.composer !== undefined;
   const inset = props.pane === true ? "px-4 py-4" : "";
   return (
-    <AssistantRuntimeProvider runtime={held.runtime}>
+    <AssistantRuntimeProvider runtime={runtime}>
       <ThreadPrimitive.Root className="conversation flex h-full min-h-0 flex-col">
         <ThreadPrimitive.Viewport className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto">
           <div
@@ -418,7 +443,11 @@ export function Conversation(props: {
           <div
             className={`conversation-column mx-auto w-full ${props.pane === true ? "conversation-foot" : "pt-4"}`}
           >
-            <ConversationComposer {...props.composer} busy={held.sending} />
+            <ConversationComposer
+              {...props.composer}
+              busy={sending}
+              stops={stoppable !== undefined}
+            />
           </div>
         )}
       </ThreadPrimitive.Root>

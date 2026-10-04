@@ -617,6 +617,55 @@ test("a running exchange still takes a message, because the mailbox queues", asy
   styleless();
 });
 
+/** The composer's one button, by the word it says. */
+function buttonSaid(): readonly string[] {
+  return ["Stop", "Send"].filter(
+    (name) => screen.queryByRole("button", { name }) !== null,
+  );
+}
+
+test("a page that takes a stop draws Stop while a turn is out, and one press hands it that turn", () => {
+  const onSend = vi.fn(() => Promise.resolve<ConversationSent>("Sent"));
+  const onStop = vi.fn();
+  const drawn = (standing: ConversationExchange["standing"]) => (
+    <Conversation
+      exchanges={[answered, exchangeOf({ id: "x3", turn: "turn-3", standing })]}
+      composer={{ ...composerOf({ onSend }), onStop }}
+      empty="No conversation"
+    />
+  );
+  const view = render(drawn({ standing: "Running", state: "Claimed" }));
+  expect(buttonSaid()).toStrictEqual(["Stop"]);
+  fireEvent.click(screen.getByRole("button", { name: "Stop" }));
+  expect(onStop.mock.calls).toStrictEqual([["turn-3"]]);
+  expect(onSend).not.toHaveBeenCalled();
+
+  view.rerender(drawn({ standing: "Stopped" }));
+  expect(buttonSaid()).toStrictEqual(["Send"]);
+  view.rerender(drawn({ standing: "Running", state: "Queued" }));
+  expect(buttonSaid()).toStrictEqual(["Stop"]);
+  styleless();
+});
+
+test("a page that takes no stop draws Send whatever is out", () => {
+  const onSend = vi.fn(() => Promise.resolve<ConversationSent>("Sent"));
+  render(
+    <Conversation
+      exchanges={[
+        exchangeOf({
+          id: "x3",
+          turn: "turn-3",
+          standing: { standing: "Running", state: "Claimed" },
+        }),
+      ]}
+      composer={composerOf({ onSend })}
+      empty="No conversation"
+    />,
+  );
+  expect(buttonSaid()).toStrictEqual(["Send"]);
+  styleless();
+});
+
 test("a closed door draws no box to type into", () => {
   const onSend = vi.fn(() => Promise.resolve<ConversationSent>("Sent"));
   render(

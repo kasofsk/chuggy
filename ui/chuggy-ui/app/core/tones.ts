@@ -291,6 +291,8 @@ export function conversationStandingArm(
       return { word: "Failed", tone: sessionTurnStateTone("Failed") };
     case "Abandoned":
       return { word: "Abandoned", tone: sessionTurnStateTone("Abandoned") };
+    case "Stopped":
+      return { word: "Stopped", tone: sessionTurnStateTone("Abandoned") };
     case "Open":
       return { word: "Open", tone: "live" };
   }

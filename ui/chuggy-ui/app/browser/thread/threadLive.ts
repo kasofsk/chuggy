@@ -21,6 +21,11 @@
  * what the next event is folded onto, and every event is asked whether its
  * turn is one the mailbox has settled before it is folded at all, so nothing
  * forgotten is heard again.
+ *
+ * A TURN THE READER STOPPED IS TURNED AWAY FROM THE PRESS, as a settled one
+ * is, so nothing written after the press is drawn. What it had heard stays,
+ * and a stop the door refused opens the stream again, since the turn is still
+ * being written and what was turned away meanwhile is in the snapshot.
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -52,6 +57,10 @@ export function useThreadLive(read: {
   /** What a message held and not yet marked is marked with, which is nothing
    * until the walk has read everything. */
   readonly known: ConversationLiveKnown;
+  /** The turns the reader stopped, less each the door refused to stop. */
+  readonly stopping: ReadonlySet<string>;
+  /** How many stops the door refused, each of which opens the stream again. */
+  readonly refusals: number;
 }): ConversationLiveHeld {
   const ports = useStreamPorts();
   const generation = useSessionGeneration();
@@ -60,10 +69,13 @@ export function useThreadLive(read: {
   const frame = useRef<number | undefined>(undefined);
   const [held, setHeld] = useState(conversationLiveNothing);
   const { tenant, project } = read.partition;
-  const { session, open, turns, reached } = read;
+  const { session, open, turns, reached, stopping, refusals } = read;
   const kept = conversationLiveKept(held, turns, reached, read.known);
   if (kept !== held) setHeld(kept);
-  const over = useMemo(() => conversationTurnsSettled(turns), [turns]);
+  const over = useMemo(
+    () => new Set([...conversationTurnsSettled(turns), ...stopping]),
+    [turns, stopping],
+  );
   useEffect(() => {
     settled.current = over;
     heard.current = conversationLiveKept(
@@ -103,6 +115,6 @@ export function useThreadLive(read: {
     return () => {
       opened.stop();
     };
-  }, [ports, generation, tenant, project, session, open]);
+  }, [ports, generation, tenant, project, session, open, refusals]);
   return kept;
 }

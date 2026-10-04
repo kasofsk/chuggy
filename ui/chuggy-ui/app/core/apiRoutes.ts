@@ -890,6 +890,19 @@ export const apiCloseThread = apiProjectEndpoint(
 );
 
 /**
+ * Stops one turn of a thread, waiting or being answered. A turn that had ended
+ * is the door's success too, and the body is an empty object for the reason
+ * `apiOpenThread`'s is.
+ */
+export const apiStopThreadTurn = apiProjectEndpoint(
+  nativeHttpEndpoints.stopThreadTurn,
+  (partition, session: string, turn: string) => ({
+    parameters: { ...partition, session, turn },
+    body: {},
+  }),
+);
+
+/**
  * Names one thread. An empty title clears the member's name and leaves the
  * title derived from the first message, so a rail row never goes blank.
  */

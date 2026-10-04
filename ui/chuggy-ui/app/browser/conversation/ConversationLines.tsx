@@ -126,6 +126,7 @@ function conversationStandingInk(standing: ConversationStandingDrawn): string {
       return "text-tone-live";
     case "Answered":
     case "Abandoned":
+    case "Stopped":
       return "text-ink-3";
   }
 }

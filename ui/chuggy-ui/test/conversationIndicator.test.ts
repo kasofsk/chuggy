@@ -65,6 +65,26 @@ test("the engine runs while a send is on its way, before there is a turn to draw
   ).toEqual({ indicator: "Engine" });
 });
 
+test("no engine runs for a send on its way whose turn the reader stopped, which its own exchange at the foot says", () => {
+  const stopped: ConversationExchange = {
+    id: "b",
+    turn: "b",
+    work: [],
+    standing: { standing: "Stopped" },
+    before: [],
+  };
+  const sending = { drawn: true, sending: true };
+  expect(conversationIndicator([answered("a"), stopped], sending)).toEqual({
+    indicator: "None",
+  });
+  expect(conversationIndicator([stopped, answered("a")], sending)).toEqual({
+    indicator: "Engine",
+  });
+  expect(
+    conversationIndicator([stopped, running("c", "Queued")], sending),
+  ).toEqual({ indicator: "Exchange", id: "c" });
+});
+
 test("a turn nobody has said a word of is the one that moves, whatever it is waiting on", () => {
   for (const state of ["Queued", "Waiting", "Claimed"] as const)
     for (const drawn of [true, false])

@@ -27,7 +27,7 @@ import { frame, streamServer } from "./streamDouble.ts";
 import type { StreamOpening, StreamServer } from "./streamDouble.ts";
 import { styleless } from "./styleless.ts";
 import { threadConversationMounted } from "./threadConversationMount.tsx";
-import { threadBody, threadStream, threadTurn } from "./threadFixture.ts";
+import { threadBody, threadStorePage, threadTurn } from "./threadFixture.ts";
 
 type StoreEntry = ThreadTranscriptResponse["entries"][number];
 
@@ -93,24 +93,6 @@ interface Script {
   readonly unmount: () => void;
 }
 
-function page(
-  batches: readonly (readonly StoreEntry[])[],
-  after: number,
-): ThreadTranscriptResponse {
-  const entries = batches.slice(after).flat();
-  return {
-    stream: threadStream,
-    entries,
-    held: entries.flatMap((held) =>
-      held.uuid === undefined ? [] : [held.uuid],
-    ),
-    cut: 1,
-    elided: 0,
-    truncated: false,
-    ...(after < batches.length ? { nextAfter: batches.length } : {}),
-  };
-}
-
 const held: StreamOpening = {
   status: 200,
   chunks: [frame("ready", undefined, { version: 1 })],
@@ -148,10 +130,11 @@ function scripted(
     const after = Number(
       new URL(url, "http://console").searchParams.get("after"),
     );
-    if (!gate.held) return Promise.resolve(answer(page(batches, after)));
+    if (!gate.held)
+      return Promise.resolve(answer(threadStorePage(batches, after)));
     return new Promise((resolve) => {
       waiting.push(() => {
-        resolve(answer(page(batches, after)));
+        resolve(answer(threadStorePage(batches, after)));
       });
     });
   });

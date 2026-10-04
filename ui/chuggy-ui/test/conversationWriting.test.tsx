@@ -143,6 +143,21 @@ describe("what the work's line says is going on", () => {
   });
 });
 
+/** The words of the first line of work drawn. */
+function line(container: HTMLElement): string {
+  return container.querySelector(".conversation-work-line")?.textContent ?? "";
+}
+
+/** The clock a case holds moved on by `ms`. */
+function lasting(ms: number): void {
+  act(() => {
+    vi.advanceTimersByTime(ms);
+  });
+}
+
+const thinking = { activity: "Thinking" } as const;
+const reading = { activity: "ToolUse", name: "Read" } as const;
+
 describe("how long what is under way has been", () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -150,21 +165,6 @@ describe("how long what is under way has been", () => {
   afterEach(() => {
     vi.useRealTimers();
   });
-
-  function line(container: HTMLElement): string {
-    return (
-      container.querySelector(".conversation-work-line")?.textContent ?? ""
-    );
-  }
-
-  function lasting(ms: number): void {
-    act(() => {
-      vi.advanceTimersByTime(ms);
-    });
-  }
-
-  const thinking = { activity: "Thinking" } as const;
-  const reading = { activity: "ToolUse", name: "Read" } as const;
 
   test("is counted in seconds on its line once it has lasted one, and from nothing for the step after it", () => {
     const view = render(
@@ -201,6 +201,39 @@ describe("how long what is under way has been", () => {
     expect(line(view.container)).toBe("Thought");
     lasting(5000);
     expect(line(view.container)).toBe("Thought");
+  });
+});
+
+describe("a call a stop cut off", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  test("is a still line that says what the work was, counts no time and is in no error ink", () => {
+    const view = render(
+      drawn(running({ work: [thought, read], activity: reading })),
+    );
+    lasting(5000);
+    expect(line(view.container)).toBe("Read5s");
+    expect(moving(view.container)).toEqual(["card"]);
+    view.rerender(
+      drawn(
+        running({ work: [thought, read], standing: { standing: "Stopped" } }),
+      ),
+    );
+    expect(line(view.container)).toBe("Thought · 1 tool");
+    lasting(5000);
+    expect(line(view.container)).toBe("Thought · 1 tool");
+    expect(moving(view.container)).toEqual([]);
+    expect(
+      view.container
+        .querySelector(".conversation-work-line circle")
+        ?.getAttribute("fill"),
+    ).not.toBe("currentColor");
+    expect(view.container.querySelector(".text-tone-fail")).toBe(null);
   });
 });
 
@@ -476,6 +509,42 @@ describe("what an answer being written is drawn as", () => {
     );
     expect(said(view.container)).toBe("It is blocked by 40.");
     expect(view.container.querySelector(".conversation-writing")).toBe(null);
+  });
+});
+
+describe("the answer of a turn that was stopped", () => {
+  const whole = "It is blocked by 40, and 40 is waiting on a review.";
+  const writing = { activity: "Writing" } as const;
+
+  test("is drawn whole at the stop, with no mark and nothing moving, however little of it the pace had let out", async () => {
+    const view = render(drawn(running({ answer: "It is", activity: writing })));
+    await written(view.container, "It is");
+    view.rerender(drawn(running({ answer: whole, activity: writing })));
+    expect(said(view.container).length).toBeLessThan(whole.length);
+    view.rerender(
+      drawn(running({ answer: whole, standing: { standing: "Stopped" } })),
+    );
+    expect(said(view.container)).toBe(whole);
+    expect(view.container.querySelector(".conversation-writing")).toBe(null);
+    expect(moving(view.container)).toEqual([]);
+    styleless();
+  });
+
+  test("says Stopped under it in the ink of a settled turn, and draws no failure", () => {
+    const view = render(
+      drawn(running({ answer: whole, standing: { standing: "Stopped" } })),
+    );
+    const word = view.container.querySelector(
+      '.conversation-meta p [role="status"]',
+    );
+    expect(word?.textContent).toBe("Stopped");
+    expect(word?.className).toBe("text-ink-3");
+    expect(view.container.querySelector(".notice")).toBe(null);
+    expect(view.container.querySelector(".text-tone-fail")).toBe(null);
+    expect(view.container.querySelector(".conversation-answer")?.ariaBusy).toBe(
+      "false",
+    );
+    styleless();
   });
 });
 

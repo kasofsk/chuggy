@@ -42,7 +42,10 @@ import type {
   ChatPaneStart,
   ChatPaneState,
 } from "../../core/chatPane.ts";
-import { conversationExchangeSent } from "../../core/conversation.ts";
+import {
+  conversationExchangeSent,
+  conversationExchangesStopped,
+} from "../../core/conversation.ts";
 import { panelReason } from "../../core/freshness.ts";
 import { leadSessionNamed } from "../../core/leadTranscript.ts";
 import {
@@ -52,6 +55,7 @@ import {
 import {
   threadAnswering,
   threadMine,
+  threadTurnsEnded,
   threadUnhosted,
 } from "../../core/threads.ts";
 import type { ThreadDoor, ThreadSend } from "../../core/threads.ts";
@@ -282,6 +286,30 @@ function ChatPaneUnhosted(): ReactNode {
 }
 
 /**
+ * The read of a thread a first message opened, which says once it has
+ * answered and draws nothing: the pane draws the thread from then, in place of
+ * the composer that message was typed in. A turn stopped in that composer is
+ * waited for until the read lists it ended, so the thread is never drawn
+ * saying a turn drawn stopped is out.
+ */
+function ChatPaneOpening(props: {
+  readonly partition: PartitionIdentity;
+  readonly session: string;
+  readonly stopping: ReadonlySet<string>;
+  readonly onRead: () => void;
+}): ReactNode {
+  const state = useThread(props.partition, props.session);
+  const ended = state.state === "Ready" ? threadTurnsEnded(state.value) : [];
+  const awaited = [...props.stopping].some((turn) => !ended.includes(turn));
+  const read = state.state !== "Pending" && !awaited;
+  const onRead = props.onRead;
+  useEffect(() => {
+    if (read) onRead();
+  }, [read, onRead]);
+  return null;
+}
+
+/**
  * The composer a reader with no thread types in, whose first press opens one.
  * It stays drawn until that message is sent and the thread it opened has been
  * read, so neither the thread arriving in the listing mid-send nor the read of
@@ -291,8 +319,11 @@ function ChatPaneUnhosted(): ReactNode {
 function ChatPaneFirst(props: {
   readonly partition: PartitionIdentity;
   readonly unhosted: boolean;
+  /** The thread a first message opened, while its read is awaited. */
+  readonly opening: string | undefined;
   readonly onStarting: () => void;
   readonly onStarted: (session: string) => void;
+  readonly onRead: () => void;
 }): ReactNode {
   const [typed, setTyped] = useState(false);
   const sends = useThreadSend({
@@ -306,15 +337,31 @@ function ChatPaneFirst(props: {
     () => sends.sending.map(conversationExchangeSent),
     [sends.sending],
   );
-  if (props.unhosted && !typed) return <ChatPaneUnhosted />;
+  const opening =
+    props.opening === undefined ? null : (
+      <ChatPaneOpening
+        partition={props.partition}
+        session={props.opening}
+        stopping={sends.stopping}
+        onRead={props.onRead}
+      />
+    );
+  if (props.unhosted && !typed)
+    return (
+      <>
+        {opening}
+        <ChatPaneUnhosted />
+      </>
+    );
   return (
     <div
       role="region"
       aria-label="Conversation"
       className="min-h-0 min-w-0 flex-1"
     >
+      {opening}
       <Conversation
-        exchanges={sent}
+        exchanges={conversationExchangesStopped(sent, sends.stopping)}
         composer={{
           ...composer,
           onSend: (text) => {
@@ -330,22 +377,6 @@ function ChatPaneFirst(props: {
       />
     </div>
   );
-}
-
-/** The read of a thread a first message opened, which says once it has
- * answered and draws nothing: the pane draws the thread from then, in place of
- * the composer that message was typed in. */
-function ChatPaneOpening(props: {
-  readonly partition: PartitionIdentity;
-  readonly session: string;
-  readonly onRead: () => void;
-}): ReactNode {
-  const pending = useThread(props.partition, props.session).state === "Pending";
-  const onRead = props.onRead;
-  useEffect(() => {
-    if (!pending) onRead();
-  }, [pending, onRead]);
-  return null;
 }
 
 /** The collapsed pane: the one control that brings it back, and nothing that
@@ -382,8 +413,10 @@ function ChatPaneBody(props: {
   readonly named: boolean;
   readonly starting: boolean;
   readonly unhosted: boolean;
+  readonly opening: string | undefined;
   readonly onStarting: () => void;
   readonly onStarted: (session: string) => void;
+  readonly onRead: () => void;
 }): ReactNode {
   if (chatPaneThreadDrawn(props.session, props.starting))
     return (
@@ -398,8 +431,10 @@ function ChatPaneBody(props: {
     <ChatPaneFirst
       partition={props.partition}
       unhosted={props.unhosted}
+      opening={props.opening}
       onStarting={props.onStarting}
       onStarted={props.onStarted}
+      onRead={props.onRead}
     />
   );
 }
@@ -534,19 +569,14 @@ function ChatPaneOpen(props: {
           named={pane.named}
           starting={pane.starting}
           unhosted={chatPaneUnhosted(door.door, door.refusal)}
+          opening={pane.opening}
           onStarting={pane.began}
           onStarted={(session) => {
             pane.sent(session);
             door.opened();
           }}
+          onRead={pane.read}
         />
-        {pane.opening === undefined ? null : (
-          <ChatPaneOpening
-            partition={props.partition}
-            session={pane.opening}
-            onRead={pane.read}
-          />
-        )}
       </div>
     </section>
   );

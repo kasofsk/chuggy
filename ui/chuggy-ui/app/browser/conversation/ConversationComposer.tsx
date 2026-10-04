@@ -6,6 +6,10 @@
  * page's answer arrives after that, so a page that could not take the message
  * says `Kept` and the characters are put back in the box the reader is still
  * looking at.
+ *
+ * WHILE A TURN CAN BE STOPPED THE BUTTON IS STOP, and Enter still sends, so a
+ * message typed under an answer being written queues behind it. Escape stops
+ * nothing: a stop is one press of the one control that says so.
  */
 
 import { ComposerPrimitive, useAuiState } from "@assistant-ui/react";
@@ -26,6 +30,8 @@ export interface ConversationComposerProps {
   readonly takes: boolean;
   readonly charsMax: number;
   readonly onSend: (text: string) => Promise<ConversationSent>;
+  /** Stops the turn named, on a page that can stop one. */
+  readonly onStop?: (turn: string) => void;
   /** The one line the last press is reported as, worded by the page. */
   readonly note?: ReactNode;
   /** Whether a box the door takes nothing more from stays drawn, read-only,
@@ -70,8 +76,47 @@ function ConversationSendGlyph(): ReactNode {
   );
 }
 
+function ConversationStopGlyph(): ReactNode {
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden="true" className="size-3">
+      <rect x="3" y="3" width="10" height="10" rx="2" fill="currentColor" />
+    </svg>
+  );
+}
+
+/** The composer's one button: Stop while a turn can be stopped, and Send. */
+function ConversationComposerButton(props: {
+  readonly busy: boolean;
+  readonly stops: boolean;
+}): ReactNode {
+  if (props.stops)
+    return (
+      <ComposerPrimitive.Cancel className="conversation-send">
+        <span className="conversation-send-mark">
+          <ConversationStopGlyph />
+        </span>
+        <span className="visually-hidden">Stop</span>
+      </ComposerPrimitive.Cancel>
+    );
+  return (
+    <ComposerPrimitive.Send
+      className="conversation-send"
+      aria-busy={props.busy}
+    >
+      <span className="conversation-send-mark">
+        <ConversationSendGlyph />
+      </span>
+      <span className="visually-hidden">Send</span>
+    </ComposerPrimitive.Send>
+  );
+}
+
 export function ConversationComposer(
-  props: ConversationComposerProps & { readonly busy: boolean },
+  props: ConversationComposerProps & {
+    readonly busy: boolean;
+    /** Whether a turn the page can stop is the thing moving. */
+    readonly stops: boolean;
+  },
 ): ReactNode {
   const written = useAuiState((state) => state.composer.text);
   const count = textCodePointsCount(written);
@@ -96,6 +141,7 @@ export function ConversationComposer(
             maxLength={props.charsMax}
             readOnly={!props.takes}
             submitMode="enter"
+            cancelOnEscape={false}
             aria-label="Message"
             placeholder="Message"
             autoFocus={props.focusOnMount === true}
@@ -107,15 +153,7 @@ export function ConversationComposer(
                   }
             }
           />
-          <ComposerPrimitive.Send
-            className="conversation-send"
-            aria-busy={props.busy}
-          >
-            <span className="conversation-send-mark">
-              <ConversationSendGlyph />
-            </span>
-            <span className="visually-hidden">Send</span>
-          </ComposerPrimitive.Send>
+          <ConversationComposerButton busy={props.busy} stops={props.stops} />
         </div>
         <div className="conversation-note text-ink-3 flex flex-wrap items-baseline gap-3 text-xs">
           {props.note}

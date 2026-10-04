@@ -25,6 +25,10 @@
  * which would be that turn's. One left with no exchange is drawn as its ask
  * and its failure.
  *
+ * A TURN A MEMBER STOPPED IS READ AS ONE OF THOSE. It was stopped while it
+ * waited, with nothing stored, or part way through its answer, and the mailbox
+ * says the same of both.
+ *
  * A TURN THAT ENDED SAYING NOTHING OF ITSELF — its attempts lost, withdrawn,
  * its session closed — may never have had a runner. Such turns take nothing
  * unless a record that can be counted holds an exchange to spare for each of
@@ -74,6 +78,11 @@
  * none is appended with no work, so a wrong answer above is either that or
  * one turn's stored work under its neighbour's name, until a message heard
  * under the turn is stored or the turn settles.
+ *
+ * A TURN THAT TOOK NONE IS DRAWN AT THE FOOT, AND A STOPPED ONE WHERE IT WAS
+ * SENT. A member stops a message and sends another as a matter of course, and
+ * the one they stopped is not the newest thing in the column: it stands ahead
+ * of the first exchange a later turn took.
  */
 
 import { sessionTranscriptEntriesMax } from "../../../../src/contract/http.ts";
@@ -208,6 +217,37 @@ export function conversationBlocksOf(
   return cut === 0 ? read : [...read, { block: "Capped", count: cut }];
 }
 
+/** The sentences the runtime writes in the member's role where a turn is
+ * interrupted, which nobody typed. */
+const conversationInterruptionSentences: ReadonlySet<unknown> = new Set([
+  "[Request interrupted by user]",
+  "[Request interrupted by user for tool use]",
+]);
+
+/** What the runtime writes as the result of a call it cut off, which is an
+ * instruction to the model and nothing the call returned. */
+const conversationInterruptionResult =
+  "The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP what you are doing and wait for the user to tell you how to proceed.";
+
+/**
+ * Whether a message is the runtime's own note that a turn was interrupted: one
+ * block, holding one of its sentences as text or its refusal as the failed
+ * result of the call it cut off. A member's message is stored as a string, so
+ * the same words typed are a message and not this.
+ */
+export function conversationMessageInterruption(message: unknown): boolean {
+  const content = conversationRecord(message)?.["content"];
+  if (!Array.isArray(content) || content.length !== 1) return false;
+  const block = conversationRecord(content[0]);
+  if (block?.["type"] === "text")
+    return conversationInterruptionSentences.has(block["text"]);
+  return (
+    block?.["type"] === "tool_result" &&
+    block["is_error"] === true &&
+    block["content"] === conversationInterruptionResult
+  );
+}
+
 export const conversationRoles = ["User", "Assistant"] as const;
 
 export type ConversationRole = (typeof conversationRoles)[number];
@@ -296,9 +336,10 @@ export type ConversationStep =
 export type ConversationRunningState =
   Extract<SessionTurnState, "Queued" | "Claimed"> | "Waiting";
 
-/** Where one exchange stands: `Open` is a transcript exchange with no answer
- * that no turn speaks for, a run still going; `Markers` carries only the
- * markers ahead of it, with no ask, work, answer or measures. */
+/** Where one exchange stands: `Stopped` is a turn a member stopped, which is
+ * no failure; `Open` is a transcript exchange with no answer that no turn
+ * speaks for, a run still going; `Markers` carries only the markers ahead of
+ * it, with no ask, work, answer or measures. */
 export type ConversationStanding =
   | { readonly standing: "Answered" }
   | {
@@ -307,6 +348,7 @@ export type ConversationStanding =
     }
   | { readonly standing: "Failed"; readonly failure?: SessionTurnFailure }
   | { readonly standing: "Abandoned" }
+  | { readonly standing: "Stopped" }
   | { readonly standing: "Open" }
   | { readonly standing: "Markers" };
 
@@ -556,6 +598,11 @@ function conversationAskOf(
   }
 }
 
+/** Whether a turn ended by a member stopping it. */
+export function conversationTurnStopped(turn: ConversationTurn): boolean {
+  return turn.state === "Abandoned" && turn.failure === "TurnStopped";
+}
+
 function conversationStandingOf(turn: ConversationTurn): ConversationStanding {
   switch (turn.state) {
     case "Queued":
@@ -568,7 +615,9 @@ function conversationStandingOf(turn: ConversationTurn): ConversationStanding {
         ? { standing: "Failed" }
         : { standing: "Failed", failure: turn.failure };
     case "Abandoned":
-      return { standing: "Abandoned" };
+      return conversationTurnStopped(turn)
+        ? { standing: "Stopped" }
+        : { standing: "Abandoned" };
   }
 }
 
@@ -872,10 +921,14 @@ function conversationTurnOut(turn: ConversationTurn): boolean {
   return turn.state === "Queued" || turn.state === "Claimed";
 }
 
-/** Whether a turn's session reported it failed in a word that does not say it
- * ran, which a session refusing a turn reports it in too. A failed turn the
- * mailbox names no failure for is read as one of these. */
+/**
+ * Whether a turn ended in a word that does not say whether it ran: one its
+ * session reported failed, which a session refusing a turn reports too, or one
+ * a member stopped. A failed turn the mailbox names no failure for is read as
+ * one of these.
+ */
 function conversationTurnReported(turn: ConversationTurn): boolean {
+  if (conversationTurnStopped(turn)) return true;
   if (turn.state !== "Failed" || conversationTurnStored(turn)) return false;
   return (
     turn.failure === undefined || conversationFailuresReported.has(turn.failure)
@@ -1133,7 +1186,7 @@ function conversationApplied(
 function conversationAppended(
   builder: ConversationBuilder,
   turn: ConversationTurn,
-): void {
+): ConversationBuilt {
   const built = conversationOpened(builder, turn.turn);
   built.matched = true;
   built.turn = turn.turn;
@@ -1142,6 +1195,32 @@ function conversationAppended(
   built.askText = turn.input;
   built.ask = conversationAskOf(turn.inputKind, turn.input);
   built.inputless = turn.input === undefined;
+  return built;
+}
+
+/**
+ * Puts each exchange appended for a turn a member stopped where the turn was
+ * sent: ahead of the first exchange a later turn took. One carrying markers
+ * stays at the foot, where those belong, as does one nothing later follows.
+ */
+function conversationStoppedPlaced(
+  builder: ConversationBuilder,
+  appended: ReadonlyMap<ConversationBuilt, ConversationTurn>,
+  ordered: readonly ConversationTurn[],
+): void {
+  const ordinals = new Map(ordered.map((turn) => [turn.turn, turn.ordinal]));
+  for (const [built, turn] of appended) {
+    if (!conversationTurnStopped(turn) || built.before.length > 0) continue;
+    const from = builder.built.indexOf(built);
+    const to = builder.built.findIndex(
+      (other) =>
+        other.turn !== undefined &&
+        (ordinals.get(other.turn) ?? 0) > turn.ordinal,
+    );
+    if (from === -1 || to === -1 || to > from) continue;
+    builder.built.splice(from, 1);
+    builder.built.splice(to, 0, built);
+  }
 }
 
 /** What a page that follows its turns as they are written heard of them. */
@@ -1186,11 +1265,13 @@ function conversationOverlaid(
     for (const turn of conversationAskPaired(pairing, asking, exchanges))
       paired.add(turn.turn);
   }
+  const appended = new Map<ConversationBuilt, ConversationTurn>();
   for (const turn of ordered) {
     if (paired.has(turn.turn)) continue;
     if (turn.state === "Answered" && !heard.turns.has(turn.turn)) continue;
-    conversationAppended(builder, turn);
+    appended.set(conversationAppended(builder, turn), turn);
   }
+  conversationStoppedPlaced(builder, appended, ordered);
 }
 
 /** What a marker says the items are short of: `Cut` is entries the store
@@ -1447,7 +1528,8 @@ function conversationExchangeOut(exchange: ConversationExchange): boolean {
 /**
  * Which one it is: the turn out that has begun, and the first one out where
  * none has. `engine` is whether the surface draws an engine at all and whether
- * a send is still on its way.
+ * a send is still on its way; one whose turn the reader stopped has that
+ * turn's exchange at the foot, and nothing runs under it.
  */
 export function conversationIndicator(
   exchanges: readonly ConversationExchange[],
@@ -1456,9 +1538,20 @@ export function conversationIndicator(
   const out = exchanges.filter(conversationExchangeOut);
   const moving = out.find(conversationExchangeBegun) ?? out[0];
   if (moving !== undefined) return { indicator: "Exchange", id: moving.id };
-  return engine.drawn && engine.sending
+  const stopped = exchanges.at(-1)?.standing.standing === "Stopped";
+  return engine.drawn && engine.sending && !stopped
     ? { indicator: "Engine" }
     : { indicator: "None" };
+}
+
+/** The turn one press of Stop ends: the one the indicator moves for, which is
+ * none where nothing moves or what moves is no turn's. */
+export function conversationTurnStoppable(
+  exchanges: readonly ConversationExchange[],
+  indicator: ConversationIndicator,
+): string | undefined {
+  if (indicator.indicator !== "Exchange") return undefined;
+  return exchanges.find((exchange) => exchange.id === indicator.id)?.turn;
 }
 
 /** A message this page sent, as the queued turn the mailbox is about to list
@@ -1487,6 +1580,45 @@ export function conversationExchangesWithSent(
     (one) => !exchanges.some((exchange) => exchange.turn === one.turn),
   );
   return unlisted.length === 0 ? exchanges : [...exchanges, ...unlisted];
+}
+
+const conversationStoppedMade = new WeakMap<
+  ConversationExchange,
+  ConversationExchange
+>();
+
+function conversationExchangeStopped(
+  exchange: ConversationExchange,
+): ConversationExchange {
+  const made = conversationStoppedMade.get(exchange);
+  if (made !== undefined) return made;
+  const stopped: ConversationExchangeSaying = {
+    ...exchange,
+    standing: { standing: "Stopped" },
+  };
+  delete stopped.activity;
+  conversationStoppedMade.set(exchange, stopped);
+  return stopped;
+}
+
+/**
+ * The exchanges with each turn the reader stopped read as stopped from the
+ * press, where the mailbox still says it is out. One stopped exchange is the
+ * same exchange each time it is asked for, and the list is handed back itself
+ * where none of its turns was stopped.
+ */
+export function conversationExchangesStopped(
+  exchanges: readonly ConversationExchange[],
+  stopped: ReadonlySet<string>,
+): readonly ConversationExchange[] {
+  const pressed = (exchange: ConversationExchange): boolean =>
+    exchange.standing.standing === "Running" &&
+    exchange.turn !== undefined &&
+    stopped.has(exchange.turn);
+  if (!exchanges.some(pressed)) return exchanges;
+  return exchanges.map((exchange) =>
+    pressed(exchange) ? conversationExchangeStopped(exchange) : exchange,
+  );
 }
 
 /** The exchanges with every queued turn read as waiting, for a surface whose

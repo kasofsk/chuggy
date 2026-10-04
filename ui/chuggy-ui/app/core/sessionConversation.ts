@@ -17,7 +17,10 @@ import type {
   LeadTurnResponse,
   ThreadTurnResponse,
 } from "../../../../src/contract/responses.ts";
-import { conversationBlocksOf } from "./conversation.ts";
+import {
+  conversationBlocksOf,
+  conversationMessageInterruption,
+} from "./conversation.ts";
 import type {
   ConversationEntry,
   ConversationItem,
@@ -118,7 +121,17 @@ function sessionConversationEntry(
   };
 }
 
-/** The chain as items, with the seam above the entry the compaction cut at. */
+/** Whether an entry is the runtime's own note that a turn was interrupted,
+ * which is written in the member's role and is nothing a member said or a
+ * call returned. */
+function sessionConversationInterruption(entry: LeadTranscriptEntry): boolean {
+  return (
+    entry.type === "user" && conversationMessageInterruption(entry.message)
+  );
+}
+
+/** The chain as items, with the seam above the entry the compaction cut at
+ * and the runtime's note of an interruption left out. */
 export function sessionConversationItems(
   read: SessionConversationRead,
 ): readonly ConversationItem[] {
@@ -133,6 +146,7 @@ export function sessionConversationItems(
   read.held.entries.forEach((entry, at) => {
     if (entry.uuid !== undefined && entry.uuid === compaction?.boundary)
       said.push({ item: "Marker", marker: seam });
+    if (sessionConversationInterruption(entry)) return;
     said.push({ item: "Entry", entry: sessionConversationEntry(entry, at) });
   });
   return said;

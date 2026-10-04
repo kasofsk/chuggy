@@ -30,7 +30,10 @@ import type {
   ConversationItem,
   ConversationStanding,
 } from "./conversation.ts";
-import { conversationBlocksOf } from "./conversation.ts";
+import {
+  conversationBlocksOf,
+  conversationMessageInterruption,
+} from "./conversation.ts";
 import { freshnessLabel, panelObservedAtMs } from "./freshness.ts";
 import { runCountLabel } from "./runTotals.ts";
 
@@ -242,7 +245,8 @@ function runTranscriptEntryId(ordinal: number, message: unknown): string {
  * user line is an entry, a cap or an unreadable line is the marker the
  * surface has for it, and every other type is bookkeeping the surface has no
  * place for — its elisions still are, because those are a fact about the
- * bytes rather than about the type that carried them. */
+ * bytes rather than about the type that carried them. The runtime's note that
+ * a turn was interrupted is a user line nobody said, and is bookkeeping too. */
 export function runTranscriptStep(
   ordinal: number,
   line: string,
@@ -268,6 +272,8 @@ export function runTranscriptStep(
     ];
   const elisions = runTranscriptElisionItems(event);
   if (type !== "assistant" && type !== "user") return elisions;
+  if (type === "user" && conversationMessageInterruption(event["message"]))
+    return elisions;
   return [
     ...elisions,
     {

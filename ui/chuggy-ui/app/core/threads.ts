@@ -73,6 +73,7 @@ import type {
   ThreadMessageAccepted,
   ThreadResponse,
   ThreadTurnResponse,
+  ThreadTurnStopResponse,
 } from "../../../../src/contract/responses.ts";
 import {
   hostedRunsNotGrantedCode,
@@ -247,10 +248,14 @@ export function threadWriting(thread: Pick<ThreadResponse, "turns">): boolean {
 }
 
 /** Whether the thread has a turn the mailbox settled, which is when a store it
- * does not name is one that is missing rather than one not written yet. */
+ * does not name is one that is missing rather than one not written yet. A turn
+ * a member stopped may never have been taken, so it is no sign of one. */
 export function threadStoreDue(thread: Pick<ThreadResponse, "turns">): boolean {
   return thread.turns.some(
-    (turn) => turn.state !== "Queued" && turn.state !== "Claimed",
+    (turn) =>
+      turn.state !== "Queued" &&
+      turn.state !== "Claimed" &&
+      turn.failure !== "TurnStopped",
   );
 }
 
@@ -325,6 +330,58 @@ export function threadSendingWithout(
 ): readonly ThreadSending[] {
   const left = sending.filter((held) => !turns.includes(held.turn));
   return left.length === sending.length ? sending : left;
+}
+
+/** The turns a press of Stop named, with one more. A page holds no more of
+ * them than the mailbox takes turns, the oldest leaving past that. */
+export function threadStoppingWith(
+  stopping: readonly string[],
+  turn: string,
+): readonly string[] {
+  if (stopping.includes(turn)) return stopping;
+  return [...stopping, turn].slice(-threadBacklogMax);
+}
+
+/** The turns a press of Stop named less `turn`, and the same list where it
+ * does not hold that one. */
+export function threadStoppingWithout(
+  stopping: readonly string[],
+  turn: string,
+): readonly string[] {
+  return stopping.includes(turn)
+    ? stopping.filter((held) => held !== turn)
+    : stopping;
+}
+
+/** The turns the mailbox read lists as ended, however each ended. */
+export function threadTurnsEnded(
+  thread: Pick<ThreadResponse, "turns">,
+): readonly string[] {
+  return thread.turns.flatMap((turn) =>
+    turn.state === "Queued" || turn.state === "Claimed" ? [] : [turn.turn],
+  );
+}
+
+/** What one press of Stop came to: the turn is ended, or it is still out. */
+export type ThreadStop =
+  | { readonly stop: "Ended" }
+  | { readonly stop: "Refused"; readonly reason: string };
+
+/**
+ * One stop, classified. The turn is ended where this press ended it, where it
+ * had ended, and where its thread was closed under it, which ends every turn
+ * of it; anything else leaves it out and is one refusal carrying its reason.
+ */
+export function threadStopFrom(
+  result: ApiResult<ThreadTurnStopResponse>,
+): ThreadStop {
+  if (result.outcome === "Ok") return { stop: "Ended" };
+  const closed =
+    result.outcome === "Conflict" &&
+    threadRefusalCode(result.code) === "ThreadClosed";
+  return closed
+    ? { stop: "Ended" }
+    : { stop: "Refused", reason: panelReason(result) };
 }
 
 /** Where one press of `Send` got to, or before one, what its door would answer. */

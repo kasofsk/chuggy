@@ -112,6 +112,13 @@ test("each standing the arm draws is its own word and its own tone", () => {
   });
 });
 
+test("a turn a member stopped says so in the ink of a turn given up, and not a failure's", () => {
+  expect(conversationStandingArm({ standing: "Stopped" }, true)).toEqual({
+    word: "Stopped",
+    tone: "retired",
+  });
+});
+
 test("a turn a runner has is starting until something has come of it, and working from then", () => {
   const claimed = { standing: "Running", state: "Claimed" } as const;
   expect(conversationStandingArm(claimed, false)).toEqual({

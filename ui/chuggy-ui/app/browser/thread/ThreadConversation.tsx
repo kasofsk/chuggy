@@ -21,6 +21,10 @@
  * of the column and under its turn's name, and from the read that lists that
  * turn the mailbox's own exchange stands in the same place.
  *
+ * A TURN THE READER STOPPED IS DRAWN STOPPED BEFORE THE MAILBOX SAYS SO, with
+ * everything heard of it and nothing heard after the press, and from the read
+ * that lists it ended the mailbox's own word stands there.
+ *
  * THE COLUMN IS READ ONCE. A walk begins again when the runner names the
  * thread's store, which is in the middle of its first turn, and saying
  * `Loading…` over a turn being written would take the words away to say it.
@@ -34,6 +38,7 @@ import type { ThreadResponse } from "../../../../../src/contract/responses.ts";
 import {
   conversationExchanges,
   conversationExchangeSent,
+  conversationExchangesStopped,
   conversationExchangesWaiting,
   conversationExchangesWithSent,
   conversationSeenNothing,
@@ -74,6 +79,7 @@ import type { LeadTranscriptWalk } from "../lead/LeadTranscript.tsx";
 import { useThreadLive } from "./threadLive.ts";
 import { useConversationMentions } from "./threadMentions.ts";
 import { useThreadDoor, useThreadSend } from "./threadSend.tsx";
+import type { ThreadSendHeld } from "./threadSend.tsx";
 
 /** The turns named, as one set that is the same set while they are the same
  * turns. */
@@ -126,6 +132,7 @@ function useThreadExchanges(
   partition: PartitionIdentity,
   thread: ThreadResponse,
   walked: LeadTranscriptWalk,
+  stops: Pick<ThreadSendHeld, "stopping" | "refusals">,
 ): readonly ConversationExchange[] {
   const held = walked.held;
   const stream = thread.agentReference;
@@ -149,6 +156,8 @@ function useThreadExchanges(
     turns,
     reached,
     known: reached ? stored.messages.length : undefined,
+    stopping: stops.stopping,
+    refusals: stops.refusals,
   });
   const live = conversationLiveTurns(heard, stored);
   const heardTurns = useTurnsNamed(conversationLiveTurnsHeard(live));
@@ -187,9 +196,12 @@ export function ThreadConversation(props: {
   );
   const mentions = useConversationMentions(props.partition);
   const door = useThreadDoor(props.partition).door;
-  const exchanges = conversationExchangesWithSent(
-    useThreadExchanges(props.partition, thread, walked),
-    sent,
+  const exchanges = conversationExchangesStopped(
+    conversationExchangesWithSent(
+      useThreadExchanges(props.partition, thread, walked, sends),
+      sent,
+    ),
+    sends.stopping,
   );
   const [read, setRead] = useState(false);
   if (!walked.reading && !read) setRead(true);

@@ -38,12 +38,16 @@ import {
   conversationLiveMessagesMax,
   conversationLiveNothing,
   conversationLiveRejoinedMax,
+  conversationLiveStoppedMax,
   conversationLiveTurns,
   conversationLiveTurnsHeard,
   conversationStoredBlocks,
   conversationTurnsSettled,
 } from "../app/core/conversationLive.ts";
-import type { ConversationLiveHeld } from "../app/core/conversationLive.ts";
+import type {
+  ConversationLiveHeld,
+  ConversationLiveRun,
+} from "../app/core/conversationLive.ts";
 import { leadTranscriptFoldEmpty } from "../app/core/leadTranscript.ts";
 import { sessionConversationItems } from "../app/core/sessionConversation.ts";
 import { conversationStoreEntries } from "./conversationFixture.ts";
@@ -1639,3 +1643,278 @@ test("in every order the two paths can arrive, no text is drawn twice and none d
     );
   }
 });
+
+/** The turn as the mailbox lists it once a member has stopped it. */
+const stoppedTurn: ConversationTurn = {
+  turn,
+  ordinal: 1,
+  inputKind: "UserMessage",
+  input,
+  state: "Abandoned",
+  failure: "TurnStopped",
+};
+
+const sentAfter = "then this";
+
+const halfHeard = [began("m1", 0, "Text"), wrote("m1", 0, 0, "Half an ans")];
+
+/** A page that heard half a message of the turn before the mailbox said a
+ * member had stopped it. */
+function stoppedHalfHeard(): Paged {
+  const page = paged().see([asked], turnsOf("Claimed"));
+  page.hear(...halfHeard);
+  return page.see([asked], [stoppedTurn]);
+}
+
+/** The turn sent after the stopped one, heard and then stored, read by read. */
+function sentAfterStored(page: Paged): Paged {
+  const out = [stoppedTurn, turnAsking("turn-2", 2, sentAfter, "Claimed")];
+  page.see([asked], out);
+  page.hear(
+    began("m2", 0, "Text", undefined, "turn-2"),
+    wrote("m2", 0, 0, "Second", "turn-2"),
+  );
+  return page.see(
+    [asked, asking(sentAfter), stored("m2", { block: "Text", text: "Second" })],
+    out,
+  );
+}
+
+test("what was heard of a turn a member stopped stays drawn once the mailbox says so, where a failed turn's is forgotten", () => {
+  const [exchange] = stoppedHalfHeard().drawn();
+  expect(texts(exchange)).toBe("Half an ans");
+  expect(exchange?.standing).toEqual({ standing: "Stopped" });
+  expect(exchange?.activity).toBeUndefined();
+  const failed = paged().see([asked], turnsOf("Claimed"));
+  failed.hear(...halfHeard);
+  expect(texts(failed.see([asked], turnsOf("Failed")).drawn()[0])).toBe("");
+});
+
+test("the store coming to hold a stopped turn's message draws it once, as the store has it", () => {
+  const page = stoppedHalfHeard().see(
+    [asked, stored("m1", { block: "Text", text: "Half an answer" })],
+    [stoppedTurn],
+  );
+  const [exchange] = page.drawn();
+  if (exchange === undefined) throw new Error("no exchange was drawn");
+  expect(written(exchange)).toEqual(["Half an answer"]);
+});
+
+test("what was heard of a stopped message past what the store holds of it stays after it", () => {
+  const page = paged().see([asked], turnsOf("Claimed"));
+  page.hear(
+    began("m1", 0, "Thinking"),
+    ...[began("m1", 1, "Text"), wrote("m1", 1, 0, "Half an ans")],
+    began("m1", 2, "ToolUse", "Read"),
+  );
+  page.see(
+    [asked, stored("m1", { block: "Thinking", text: "" })],
+    [stoppedTurn],
+  );
+  const [exchange] = page.drawn();
+  if (exchange === undefined) throw new Error("no exchange was drawn");
+  expect(kinds(exchange)).toEqual(["Work", "Text", "Work"]);
+  expect(written(exchange)).toEqual(["Half an ans"]);
+});
+
+test("the turn sent after a stopped one being heard and stored says nothing of the stopped turn's words", () => {
+  const page = sentAfterStored(stoppedHalfHeard());
+  expect(page.drawn().map(texts)).toEqual(["Half an ans", "Second"]);
+});
+
+test("a stopped message the store holds part of keeps the rest once the turn sent after it is stored", () => {
+  const page = paged().see([asked], turnsOf("Claimed"));
+  page.hear(began("m1", 0, "Thinking"), began("m1", 1, "Text"));
+  page.hear(wrote("m1", 1, 0, "Half an ans"));
+  const thought = stored("m1", { block: "Thinking", text: "" });
+  page.see([asked, thought], [stoppedTurn]);
+  const out = [stoppedTurn, turnAsking("turn-2", 2, sentAfter, "Claimed")];
+  page.see(
+    [
+      asked,
+      thought,
+      asking(sentAfter),
+      stored("m2", { block: "Text", text: "Second" }),
+    ],
+    out,
+  );
+  expect(page.drawn().map(texts)).toEqual(["Half an ans", "Second"]);
+});
+
+test("a later message of the stopped turn itself that the store holds says the one before it was abandoned", () => {
+  const page = paged().see([asked], turnsOf("Claimed"));
+  page.hear(began("m1", 0, "Text"), wrote("m1", 0, 0, "A draft"));
+  page.hear(began("m1b", 0, "Text"), wrote("m1b", 0, 0, "Written again"));
+  page.see(
+    [asked, stored("m1b", { block: "Text", text: "Written again" })],
+    [stoppedTurn],
+  );
+  expect(page.drawn().map(texts)).toEqual(["Written again"]);
+});
+
+test("a stopped message the store holds part of loses the rest where the store holds a later message of its turn", () => {
+  const page = paged().see([asked], turnsOf("Claimed"));
+  page.hear(began("m1", 0, "Thinking"), began("m1", 1, "Text"));
+  page.hear(wrote("m1", 1, 0, "A draft"));
+  page.see(
+    [
+      asked,
+      stored("m1", { block: "Thinking", text: "" }),
+      stored("m1b", { block: "Text", text: "Written again" }),
+    ],
+    [stoppedTurn],
+  );
+  expect(page.drawn().map(texts)).toEqual(["Written again"]);
+});
+
+/** What is held after these frames, each folded as a page that has read
+ * everything folds it under these turns. */
+function heardUnder(
+  from: ConversationLiveHeld,
+  turns: readonly ConversationTurn[],
+  frames: readonly ThreadLiveStreamEvent[],
+): ConversationLiveHeld {
+  return frames.reduce(
+    (held, frame) =>
+      conversationLiveKept(
+        conversationLiveHeard(held, frame, conversationTurnsSettled(turns)),
+        turns,
+        true,
+        0,
+      ),
+    conversationLiveKept(from, turns, true, 0),
+  );
+}
+
+test("a stop the mailbox says while its message is being written sets the message aside, and nothing more of the turn is heard", () => {
+  const kept = heardUnder(heardAll(halfHeard), [stoppedTurn], []);
+  expect(kept.writing).toEqual({ blocks: [] });
+  expect(kept.written).toMatchObject([{ turn, message: "m1", kept: true }]);
+  expect(conversationLiveKept(kept, [stoppedTurn], true, 0)).toBe(kept);
+  expect(heardUnder(kept, [stoppedTurn], [wrote("m1", 0, 11, "wer")])).toBe(
+    kept,
+  );
+});
+
+test("a stopped turn's message is not pushed out by a later turn setting more aside than a page keeps", () => {
+  const turns = [stoppedTurn, turnAsking("turn-2", 2, sentAfter, "Claimed")];
+  const later = Array.from(
+    { length: conversationLiveMessagesMax + 2 },
+    (_, at) => `n${String(at)}`,
+  );
+  const held = heardUnder(
+    heardAll(halfHeard),
+    turns,
+    later.flatMap((message) => [
+      began(message, 0, "Text", undefined, "turn-2"),
+      wrote(message, 0, 0, "more", "turn-2"),
+    ]),
+  );
+  const of = (named: string): readonly string[] =>
+    held.written.flatMap((message) =>
+      message.turn === named ? [message.message] : [],
+    );
+  expect(of(turn)).toEqual(["m1"]);
+  expect(of("turn-2")).toEqual(later.slice(1, -1));
+});
+
+test("past the bound on stopped turns' messages the oldest of them leaves, remembered as heard", () => {
+  const turns: ConversationTurn[] = [];
+  let held = conversationLiveNothing;
+  for (let at = 0; at <= conversationLiveStoppedMax; at += 1) {
+    const named = `stopped-${String(at)}`;
+    const message = `s${String(at)}`;
+    held = heardUnder(held, turns, [
+      began(message, 0, "Text", undefined, named),
+      wrote(message, 0, 0, "half", named),
+    ]);
+    turns.push({ ...stoppedTurn, turn: named, ordinal: at + 1 });
+    held = heardUnder(held, turns, []);
+  }
+  expect(held.written).toHaveLength(conversationLiveStoppedMax);
+  expect(held.written[0]?.message).toBe("s1");
+  expect(held.left).toEqual([{ turn: "stopped-0", message: "s0" }]);
+});
+
+test("a stopped turn's exchange over what was heard of it is the same exchange while the same is heard, whatever a later turn writes", () => {
+  const turns = [stoppedTurn, turnAsking("turn-2", 2, sentAfter, "Claimed")];
+  const exchanges = conversationExchanges([asked], turns);
+  const over = (held: ConversationLiveHeld): readonly ConversationExchange[] =>
+    conversationExchangesLive(
+      exchanges,
+      conversationLiveTurns(held, conversationStoredBlocks([asked])),
+    );
+  const stopped = heardUnder(heardAll(halfHeard), turns, []);
+  const first = over(stopped);
+  const begun = heardUnder(stopped, turns, [
+    began("m2", 0, "Text", undefined, "turn-2"),
+    wrote("m2", 0, 0, "Sec", "turn-2"),
+  ]);
+  const second = over(begun);
+  const third = over(
+    heardUnder(begun, turns, [wrote("m2", 0, 3, "ond", "turn-2")]),
+  );
+  expect(texts(first[0])).toBe("Half an ans");
+  expect(second[0]).toBe(first[0]);
+  expect(third[0]).toBe(first[0]);
+  expect(texts(second[1])).toBe("Sec");
+  expect(texts(third[1])).toBe("Second");
+});
+
+/** One run of the turn still to draw, with these blocks heard of it. */
+function runOf(
+  stopped: boolean,
+  ...blocks: ConversationLiveRun["blocks"]
+): ConversationLiveRun {
+  return { blocks, stopped, replacedIn: [] };
+}
+
+function callOf(name: string): ConversationLiveRun["blocks"][number] {
+  return { block: "ToolUse", id: "", name, input: undefined };
+}
+
+const thought = { block: "Thinking", text: "" } as const;
+const halfText = { block: "Text", text: "Half" } as const;
+const worked = runOf(true, thought, callOf("Read"));
+const writing = runOf(false, halfText);
+
+/** What an exchange is drawn from: its texts, its calls and what it is doing. */
+function drawnOf(exchange: ConversationExchange | undefined): string {
+  const calls = (exchange?.work ?? []).flatMap((step) =>
+    step.step === "ToolCall" ? [step.name ?? ""] : [],
+  );
+  return [texts(exchange), ...calls, exchange?.activity?.activity].join(" ");
+}
+
+test.each([
+  { heard: "a run fewer", runs: [worked], drawn: " Read ToolUse" },
+  {
+    heard: "a block fewer in a run",
+    runs: [runOf(true, thought), writing],
+    drawn: "Half Writing",
+  },
+  {
+    heard: "another call where one was",
+    runs: [runOf(true, thought, callOf("Bash")), writing],
+    drawn: "Half Bash Writing",
+  },
+  {
+    heard: "the last block as one no more is heard of",
+    runs: [worked, runOf(true, halfText)],
+    drawn: "Half Read ",
+  },
+])(
+  "an exchange drawn over what was heard is made again where $heard is heard, and is the same one where the same is",
+  ({ runs, drawn }) => {
+    const exchanges = conversationExchanges([asked], turnsOf("Claimed"));
+    const over = (heard: readonly ConversationLiveRun[]) =>
+      conversationExchangesLive(exchanges, [
+        { turn, runs: heard, ended: false },
+      ])[0];
+    const first = over([worked, writing]);
+    expect(drawnOf(first)).toBe("Half Read Writing");
+    expect(over([runOf(true, thought, callOf("Read")), writing])).toBe(first);
+    expect(drawnOf(over(runs))).toBe(drawn);
+    expect(drawnOf(over([worked, writing]))).toBe("Half Read Writing");
+  },
+);

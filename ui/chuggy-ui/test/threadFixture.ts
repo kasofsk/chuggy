@@ -230,6 +230,26 @@ function threadTranscriptOf(
   };
 }
 
+/** One page of a store its session writes a batch per flush: every batch
+ * past the cursor asked at, and the cursor that follows them. */
+export function threadStorePage(
+  batches: readonly (readonly ThreadTranscriptEntry[])[],
+  after: number,
+): ThreadTranscriptResponse {
+  const entries = batches.slice(after).flat();
+  return {
+    stream: threadStream,
+    entries,
+    held: entries.flatMap((held) =>
+      held.uuid === undefined ? [] : [held.uuid],
+    ),
+    cut: 1,
+    elided: 0,
+    truncated: false,
+    ...(after < batches.length ? { nextAfter: batches.length } : {}),
+  };
+}
+
 /** The resource a `Session` change frame carries: the session, and the turn or
  * the batch that moved. */
 export function threadSessionResource(session: string, turn: string): string {

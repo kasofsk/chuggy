@@ -131,9 +131,10 @@ export function ConversationLettingHeld(props: {
   );
 }
 
-/** Where a text stands in its answer: before a later part, the last part, or
- * the last part of a turn that is still at it. */
-type ConversationTextPlace = "Earlier" | "Last" | "UnderWay";
+/** Where a text stands in its answer: one no more is written of, since a part
+ * follows it or its turn was stopped, the last part, or the last part of a
+ * turn that is still at it. */
+type ConversationTextPlace = "Closed" | "Last" | "UnderWay";
 
 const ConversationTextPlaced = createContext<ConversationTextPlace>("Last");
 
@@ -210,16 +211,17 @@ const conversationPartWhole: MessagePartStatus = { type: "complete" };
  *
  * Only the last part of an answer is let out at a pace. A text something was
  * written after is drawn whole from then on, so a part is never drawn under
- * one still arriving and two texts never carry the mark at once.
+ * one still arriving and two texts never carry the mark at once; so is every
+ * text of a turn that was stopped, at once, since a stop leaves nothing moving.
  */
 const ConversationReport: TextMessagePartComponent = (props) => {
   const paced = useContext(ConversationPaced);
   const place = useContext(ConversationTextPlaced);
-  const [followed, setFollowed] = useState(false);
-  if (place === "Earlier" && !followed) setFollowed(true);
+  const [closed, setClosed] = useState(false);
+  if (place === "Closed" && !closed) setClosed(true);
   const shown = useSmooth(
     { ...props, status: conversationPartWhole },
-    paced && !followed,
+    paced && !closed,
   );
   const writing = place === "UnderWay" || shown.text.length < props.text.length;
   const marked = useContext(ConversationMarkedSaid);
@@ -320,8 +322,9 @@ export function ConversationAskMessage(): ReactNode {
 function conversationTextPlace(
   last: boolean,
   underWay: boolean,
+  stopped: boolean,
 ): ConversationTextPlace {
-  if (!last) return "Earlier";
+  if (!last || stopped) return "Closed";
   return underWay ? "UnderWay" : "Last";
 }
 
@@ -337,6 +340,8 @@ function conversationPartsDrawn(
     readonly open: boolean;
     /** Whether this exchange holds the one thing that moves. */
     readonly mine: boolean;
+    /** Whether the exchange's turn was stopped. */
+    readonly stopped: boolean;
   },
 ): readonly ReactNode[] {
   const drawn: ReactNode[] = [];
@@ -361,6 +366,7 @@ function conversationPartsDrawn(
         value={conversationTextPlace(
           last,
           shown.mine && doing.doing === "Text",
+          shown.stopped,
         )}
       >
         <MessagePrimitive.PartByIndex
@@ -398,6 +404,7 @@ function ConversationAnswerBody(props: {
       {conversationPartsDrawn(conversationExchangeParts(exchange), doing, {
         open,
         mine,
+        stopped: standing.standing === "Stopped",
       })}
       {doing.doing === "Unbegun" && mine && indicated.engine ? (
         <ConversationEngine />

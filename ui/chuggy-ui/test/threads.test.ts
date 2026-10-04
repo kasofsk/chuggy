@@ -30,11 +30,15 @@ import {
   threadSendingWith,
   threadSendingWithout,
   threadSendStanding,
+  threadStopFrom,
+  threadStoppingWith,
+  threadStoppingWithout,
   threadStoreDue,
   threadTakesMessages,
   threadTurnKindWord,
   threadTurnMinted,
   threadTurnRetained,
+  threadTurnsEnded,
   threadTurnsWait,
   threadWakeDrawn,
   threadWriting,
@@ -226,6 +230,91 @@ describe("the messages a page sent that its mailbox does not list yet", () => {
     expect(threadSendingWithout(held, [first.turn])).toStrictEqual([second]);
     expect(threadSendingWithout(held, ["thread-turn-c"])).toBe(held);
     expect(threadSendingWithout(held, [])).toBe(held);
+  });
+});
+
+describe("the turns a press of Stop named", () => {
+  test("are held each once, in the order pressed", () => {
+    const held = threadStoppingWith(threadStoppingWith([], "a"), "b");
+    expect(held).toStrictEqual(["a", "b"]);
+    expect(threadStoppingWith(held, "a")).toBe(held);
+  });
+
+  test("are no more than the mailbox takes turns, the oldest leaving past that", () => {
+    let held: readonly string[] = [];
+    for (let at = 0; at <= threadBacklogMax; at += 1)
+      held = threadStoppingWith(held, `turn-${at}`);
+    expect(held).toHaveLength(threadBacklogMax);
+    expect(held[0]).toBe("turn-1");
+    expect(held.at(-1)).toBe(`turn-${threadBacklogMax}`);
+  });
+
+  test("are less the one a door refused to stop, and the same list where it is not held", () => {
+    const held = ["a", "b"];
+    expect(threadStoppingWithout(held, "a")).toStrictEqual(["b"]);
+    expect(threadStoppingWithout(held, "c")).toBe(held);
+  });
+});
+
+describe("the turns a mailbox read lists as ended", () => {
+  test("are every turn no runner has and none waits on, however it ended", () => {
+    const turns = sessionTurnStates.map((state) =>
+      turnOf({ turn: `turn-${state}`, state }),
+    );
+    expect(threadTurnsEnded({ turns })).toStrictEqual([
+      "turn-Answered",
+      "turn-Failed",
+      "turn-Abandoned",
+    ]);
+  });
+});
+
+describe("what a press of Stop came to", () => {
+  test("a door that stopped the turn, or says it had ended, ends it", () => {
+    for (const stopped of ["Stopped", "AlreadyEnded"] as const)
+      expect(
+        threadStopFrom({ outcome: "Ok", value: { stopped } }),
+      ).toStrictEqual({ stop: "Ended" });
+  });
+
+  test("a thread closed under the turn has nothing left to stop, and no other conflict says so", () => {
+    expect(
+      threadStopFrom({
+        outcome: "Conflict",
+        code: "ThreadClosed",
+        body: undefined,
+      }),
+    ).toStrictEqual({ stop: "Ended" });
+    expect(
+      threadStopFrom({
+        outcome: "Conflict",
+        code: "Whatever",
+        body: undefined,
+      }),
+    ).toMatchObject({ stop: "Refused" });
+  });
+
+  test("any other answer leaves the turn out and says why", () => {
+    expect(
+      threadStopFrom({
+        outcome: "Rejected",
+        code: "NotYourThread",
+        status: 403,
+        body: undefined,
+      }),
+    ).toStrictEqual({
+      stop: "Refused",
+      reason: "the API rejected this read as NotYourThread",
+    });
+    expect(
+      threadStopFrom({ outcome: "Unreachable", reason: "offline" }),
+    ).toStrictEqual({
+      stop: "Refused",
+      reason: "the API could not be reached: offline",
+    });
+    expect(threadStopFrom({ outcome: "Absent" })).toMatchObject({
+      stop: "Refused",
+    });
   });
 });
 
@@ -469,6 +558,16 @@ describe("whether a store the thread does not name is missing", () => {
       expect(threadStoreDue({ turns: [settled] })).toBe(true);
       expect(threadStoreDue({ turns: [settled, asked] })).toBe(true);
     }
+  });
+
+  test("a turn a member stopped is no sign of one, since it may never have been taken", () => {
+    const stopped = turnOf({ state: "Abandoned", failure: "TurnStopped" });
+    expect(threadStoreDue({ turns: [stopped] })).toBe(false);
+    const withdrawn = turnOf({ state: "Abandoned", failure: "TurnWithdrawn" });
+    expect(threadStoreDue({ turns: [withdrawn] })).toBe(true);
+    expect(threadStoreDue({ turns: [stopped, turnOf({ ordinal: 2 })] })).toBe(
+      true,
+    );
   });
 });
 
