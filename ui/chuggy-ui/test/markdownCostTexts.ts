@@ -2,10 +2,11 @@
  * Texts for the suite that holds the report to what reading one may cost.
  *
  * Three kinds, each written out as the unit it repeats: the texts that made
- * the parser look back from every mark, which is what a text built to stall a
- * reader looks like; ordinary texts of the same size, which are what the cost
- * of those is held against; and texts dear enough to come close to what
- * `markdownGuard.ts` allows and still be read.
+ * the parser look back from every mark or read a line once for everything it
+ * is nested in, which is what a text built to stall a reader looks like;
+ * ordinary texts of the same size, which are what the cost of those is held
+ * against; and texts dear enough to come close to what `markdownGuard.ts`
+ * allows and still be read.
  */
 
 /** The size every text here is made to: the most of a text that is read. */
@@ -139,11 +140,131 @@ const hostileBlocks: Readonly<Record<string, string>> = {
   "a fence indented, then marks": ` \`\`\`\n\`\`\`\n${costFill("a*")}`,
 };
 
+const mark = "\uFEFF";
+
+/** A character the parser drops where a text opens, and the marks after it. */
+const hostileOpened: Readonly<Record<string, string>> = {
+  "a byte order mark then list marks": `${mark}${"- ".repeat(8_000)}a`,
+  "a byte order mark then stars": `${mark}${"* ".repeat(8_000)}a`,
+  "a byte order mark then numbers": `${mark}${"1. ".repeat(5_333)}a`,
+  "a byte order mark then quoted list marks": `${mark}${"> - ".repeat(4_000)}a`,
+  "a byte order mark then list marks, after a fence": `\`\`\`\ncode\n\`\`\`\n${mark}${"- ".repeat(8_000)}a`,
+  "a byte order mark then list marks, after words": `Some words.\n\n${mark}${"- ".repeat(8_000)}a`,
+  "four sections that each open with a byte order mark":
+    `${mark}${"- ".repeat(8_000)}a\n\n`.repeat(4),
+  "a byte order mark on every line": costFill(`${mark}- a\n`),
+};
+
+/** A word that holds an address, written or made by an escape or a
+ * reference, and then what an address may be cut back over. */
+const hostileTrails: Readonly<Record<string, string>> = {
+  "addresses after a colon, then braces": ` :www.a.b/${"}".repeat(16_360)}x\n\n`
+    .repeat(4)
+    .slice(0, costChars),
+  "an address after a colon, then braces": `:www.a.b/${"}".repeat(16_370)}x`,
+  "an address of a dot, then braces": `http://.${"}".repeat(16_370)}x`,
+  "an address after a letter, then marks": `xhttp://a/${"!".repeat(16_370)}x`,
+  "an address an escape writes, then braces": `www\\.a.b/${"}".repeat(16_360)}x`,
+  "an address a reference writes, then braces": `&#119;ww.a.b/${"}".repeat(16_360)}x`,
+  "addresses and braces as far as they are read": costFill(
+    `:www.a.b/${"}".repeat(7_600)}x\n\n`,
+  ),
+  "braces and an escaped one": costFill("}}}\\}"),
+  "braces then a reference": costFill(`${"}".repeat(100)}&gt;`),
+  "names then an escaped dot": costFill(`${"a.".repeat(50)}\\.`),
+  "a word then dots": `words${".".repeat(16_370)}x`,
+  "addresses escapes write, then a mark": `${"www\\.".repeat(3_275)}_`,
+  "addresses escapes write, as far as they are read": costFill(
+    `${"www\\.".repeat(1_249)}_\n\n`,
+  ),
+};
+
+/** Lines that open with as many quote and list marks as a line may. */
+const hostileOpenings: Readonly<Record<string, string>> = {
+  "sixteen list marks a line": costFill(`${"- ".repeat(16)}a\n`),
+  "fifteen numbers a line": costFill(`${"1) ".repeat(15)}a b\n`),
+  "fifteen list marks and a reference a line": costFill(
+    `${"+ ".repeat(15)}&amp;\n`,
+  ),
+  "sixteen quote marks a line": costFill(`${"> ".repeat(16)}a\n`),
+  "quote and list marks, sixteen a line": costFill(`${"> - ".repeat(8)}a\n`),
+  "eight list marks a line": costFill(`${"- ".repeat(8)}a\n`),
+};
+
+/** Code fenced under a list item or in a quote, and what it is made of. */
+const hostileFenced: Readonly<Record<string, string>> = {
+  "a fence under an item, of marks": `1. a\n\n   \`\`\`\n${costFill("   a* b* [c](d `e\n", 60_000)}   \`\`\`\n`,
+  "a fence under an item, never closed": `- a\n  \`\`\`\n${costFill("  *a* `b` [c](\n")}`,
+  "a fence under an item, of one line": `- a\n  \`\`\`\n  ${"a*".repeat(30_000)}`,
+  "a fence in a quote, never closed": `> \`\`\`\n${costFill("> a*\n")}`,
+  "a fence in a quote, of blank lines": `> \`\`\`\n${costFill(">\n")}`,
+  "fences under items, one after another": costFill(
+    "- a\n  ```\n  b*\n  ```\n",
+  ),
+  "fences under items, each of blank lines": costFill(
+    `1. a\n\n   \`\`\`\n${"\n".repeat(40)}   \`\`\`\n\n`,
+  ),
+  "a fence sixteen marks deep": `${"- ".repeat(15)}\`\`\`\n${costFill(`${" ".repeat(30)}a*\n`)}`,
+  "fences opened under an item and never closed": costFill(
+    "- a\n  ```\n- b\n  ~~~\n",
+  ),
+};
+
+/** A list of so many items, each under the one before it, and the blank a
+ * line under the last of them opens with. */
+export function costNested(depth: number, mark = "- "): string {
+  let text = "";
+  for (let at = 0; at < depth; at += 1)
+    text += `${costSunk(at, mark)}${mark}a\n`;
+  return text;
+}
+
+export function costSunk(depth: number, mark = "- "): string {
+  return " ".repeat(mark.length * depth);
+}
+
+/** What list items nested deep may be left holding, a count of each at a
+ * depth: blank lines, blank lines of spaces, and lines a blank line apart. */
+function heldBlank(depth: number, lines: number, mark = "- "): string {
+  const under = costSunk(depth, mark);
+  return `${costNested(depth, mark)}${"\n".repeat(lines)}${under}b\n`;
+}
+
+function heldSpaces(depth: number, lines: number): string {
+  const under = costSunk(depth);
+  return `${costNested(depth)}${`${under}\n`.repeat(lines)}${under}b\n`;
+}
+
+function heldApart(depth: number, lines: number): string {
+  return `${costNested(depth)}${`\n${costSunk(depth)}b\n`.repeat(lines)}`;
+}
+
+/** List items nested deep, and what they are then left holding. */
+const hostileDeep: Readonly<Record<string, string>> = {
+  "items four deep, then blank lines": heldBlank(4, 14_000),
+  "items sixteen deep, then blank lines": heldBlank(16, 14_000),
+  "items sixty deep, then blank lines": heldBlank(60, 14_000),
+  "items a hundred deep, then blank lines": heldBlank(100, 13_000),
+  "numbered items sixty deep, then blank lines": heldBlank(60, 14_000, "1. "),
+  "items sixteen deep, then blank lines of spaces": heldSpaces(16, 1_900),
+  "items sixty deep, then blank lines of spaces": heldSpaces(60, 500),
+  "items a hundred deep, then blank lines of spaces": heldSpaces(100, 270),
+  "items sixty deep, then lines a blank line apart": heldApart(60, 80),
+  "items a hundred deep, then lines a blank line apart": heldApart(100, 48),
+  "items a hundred deep": costNested(100),
+  "items a hundred and twenty deep": costNested(120),
+};
+
 /** The texts built to stall a reader, each by what it is made of. */
 export const costHostile: Readonly<Record<string, string>> = {
   ...hostileMarks,
   ...hostileLinks,
   ...hostileBlocks,
+  ...hostileOpened,
+  ...hostileTrails,
+  ...hostileOpenings,
+  ...hostileFenced,
+  ...hostileDeep,
 };
 
 const sentence =
@@ -158,6 +279,7 @@ const tableHead =
   "| Option | p50 | p99 | Cold | Cost | Burden | Verdict |\n| :-- | --: | --: | :-: | --: | :-- | :-- |\n";
 const codeLine =
   "  const waitMilliseconds = Math.min(retryBaseMilliseconds * 2 ** attempt, retryCeilingMilliseconds);\n";
+const step = `1. Run it, and read what it prints:\n\n   \`\`\`sh\n   npm ci --offline\n\n   just check\n   \`\`\`\n\n`;
 
 /** Ordinary texts, as a model writes them, each all of one thing. */
 export const costOrdinary: Readonly<Record<string, string>> = {
@@ -183,6 +305,12 @@ export const costOrdinary: Readonly<Record<string, string>> = {
   "headings over words with no line between": costFill(
     `## A heading\n${sentence}\n`,
   ),
+  "steps that each hold code": costFill(step),
+  "one step holding a long block of code": `1. Run it:\n\n   \`\`\`ts\n${costFill(`   ${codeLine}\n`, 20_000)}   \`\`\`\n\nThen read what it printed.\n`,
+  "a quote holding code": costFill(
+    `> As the file has it:\n>\n> \`\`\`ts\n>${codeLine}> \`\`\`\n\n`,
+  ),
+  "steps after an indented block": `1. Do it\n\n   This step needs a word more.\n${Array.from({ length: 1_200 }, (_unused, at) => `${String(at + 2)}. step with **bold** words\n`).join("")}`,
 };
 
 /** Texts whose every run is dear to read, and is read. */

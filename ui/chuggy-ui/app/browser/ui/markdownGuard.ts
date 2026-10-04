@@ -25,9 +25,8 @@
  * A RUN PAST ITS ALLOWANCE IS DRAWN AS ITS CHARACTERS. The allowance is a floor
  * and a rate for each character, under a ceiling one call may cost, and it is
  * held to at every character rather than at the end. So the verdict on a run is
- * a function of its text alone, a run still being written can go from read to
- * plain and never back, and no text costs much more than its length in ordinary
- * lists would.
+ * a function of its text alone, and a run still being written can go from read
+ * to plain and never back.
  *
  * A LONG LIST IS NOT A RUN PAST ITS ALLOWANCE. Where a run goes past it on a
  * line below one that begins a block at the margin whatever stands above it, a
@@ -37,13 +36,41 @@
  * in it is its characters. The line it ends at is above the one that took it
  * past, so every line that decides where is whole and the place never moves.
  *
+ * CODE FENCED UNDER A LIST ITEM OR IN A QUOTE IS CHARGED AS CODE. Which lines
+ * are such a fence's own is `markdownNested.ts`'s to say. Each is charged for
+ * what the fence is inside and a little for its length, no mark in it is
+ * looked back from, no blank line among them ends the run, and none of them
+ * is a line a run may be ended at: so a step's code is one block however long
+ * it is, and a run with a fence in it is ended above the fence or not at all.
+ *
+ * A LINE HELD DEEP IS CHARGED BY HOW DEEP. The parser reads the blank a line
+ * opens with, and a blank line, once for each list item open above it. So
+ * both are charged by the most items the lines so far can have left open,
+ * which `markdownNested.ts` counts: a list nested deeper than one call may be
+ * spent on is its characters, and so are blank lines enough under a deep one.
+ *
+ * WHAT IS DONE TO THE TEXT ONCE IT IS READ IS CHARGED AS WELL. Bare addresses
+ * are looked for again in the words the parser decoded, where an escape or a
+ * character reference may have written one this scan cannot see, and where
+ * one the grammar refused is cut back over its trail all the same. A word
+ * that may hold either is charged for it.
+ *
  * THE WEIGHTS ARE MEASURED, NOT ARGUED. Each is the parser's cost for the worst
  * text of its kind this tree's suites and a seeded search could build, in the
  * units the allowance is written in; `markdownCost.test.ts` holds the parser to
  * the bounds they keep, and `markdownGuard.test.ts` holds each verdict.
  */
 
-/** The most characters and lines one run may hold and still be parsed. */
+import {
+  markdownBlankCode,
+  markdownBlankColumns,
+  markdownNestingBegun,
+  markdownNestingLine,
+} from "./markdownNested.ts";
+import type { MarkdownNesting } from "./markdownNested.ts";
+
+/** The most characters and lines one run may hold and still be parsed, a
+ * fence's own lines apart. */
 export const markdownRunCharsMax = 16_384;
 export const markdownRunLinesMax = 1_024;
 
@@ -71,8 +98,13 @@ export const markdownCost = {
   call: 40_000,
   char: 330,
   line: 18_000,
-  /** A blank line between two runs of one section. */
+  /** A blank line between two runs of one section, and each list item that
+   * may be holding it open. */
   blank: 1_800,
+  held: 500,
+  /** A column of blank a line opens with, for each list item that may be
+   * holding the line. */
+  sunk: 40,
   mark: 3_000,
   /** A run of emphasis or strikethrough marks, back to where the words began. */
   attention: 55,
@@ -92,6 +124,12 @@ export const markdownCost = {
   forward: 110,
   /** A character that may end an address, over the ones before it that may. */
   trail: 40,
+  /** A character an address may be cut back over once the text is read, over
+   * the ones before it that may. */
+  split: 1,
+  /** An escape or a character reference, which may write an address this scan
+   * cannot see written, for each character after it in its word. */
+  hidden: 5,
   /** A place an email could begin, for each character after it in its word,
    * and the `@` that may make one of it. */
   email: 1,
@@ -110,6 +148,10 @@ export const markdownCost = {
   tick: 40,
   /** A pipe, which in a table's row ends a cell. */
   cell: 6_000,
+  /** A line of a fence under a list item or inside a quote, for each thing it
+   * may be inside and once more, and each of its characters. */
+  code: 1_800,
+  coded: 25,
 } as const;
 
 /** What one run came to. */
@@ -137,6 +179,7 @@ const alphanumeric = 2;
 const mailText = 4;
 const trail = 8;
 const punctuation = 16;
+const split = 32;
 
 /** What each ASCII character is to the scan. */
 const kinds = ((): Uint8Array => {
@@ -157,6 +200,7 @@ const kinds = ((): Uint8Array => {
   };
   also("+-._", mailText);
   also("!\"')*,.:;?_~]&", trail);
+  also("!\"&'),.:;<>?]}", split);
   return table;
 })();
 
@@ -168,8 +212,8 @@ const sideSpacePattern = /\s/u;
 const sidePunctuationPattern = /[\p{P}\p{S}]/u;
 
 /** What a character is to a mark beside it, by the grammar's own sorting:
- * space, punctuation, or neither. */
-function sideOf(code: number): 0 | 1 | 2 {
+ * neither, space, or punctuation. */
+export function markdownSideOf(code: number): 0 | 1 | 2 {
   if (code < 128) {
     if (code === 32 || (code > 8 && code < 14)) return 1;
     return (kindOf(code) & punctuation) === 0 ? 0 : 2;
@@ -199,6 +243,11 @@ interface Scan {
   work: number;
   exits: number;
   lines: number;
+  /** How many lines have been read since nothing could be open for words to
+   * go on with: the run's start, or a fence's own line. */
+  since: number;
+  /** How many of the run's characters are a fence's own, which are no words. */
+  coded: number;
   plain: boolean;
   apart: boolean;
   /** The content columns of the list items known to be open, and the mark
@@ -251,6 +300,17 @@ interface Scan {
   starts: number;
   /** The addresses written in the word that the grammar does not take. */
   refused: number;
+  /** Whether an address is written in the word, and how many characters it
+   * may be cut back over stand in the run being read. */
+  addressed: boolean;
+  split: number;
+  /** The escapes and character references in the word, and where the
+   * reference being read ends, or a place before the text where none is. */
+  hidden: number;
+  reference: number;
+  /** Whether `markdownNested.ts` says the line being read opens a list
+   * item. */
+  item: boolean;
   /** Whether the line being read begins a block at the margin whatever
    * stands above it. */
   sure: boolean;
@@ -272,6 +332,8 @@ function markdownScanFrom(
     work: 0,
     exits: 0,
     lines: 0,
+    since: 0,
+    coded: 0,
     plain: false,
     apart: false,
     cols: [],
@@ -302,6 +364,11 @@ function markdownScanFrom(
     entity: false,
     starts: 0,
     refused: 0,
+    addressed: false,
+    split: 0,
+    hidden: 0,
+    reference: -1,
+    item: false,
     sure: false,
   };
 }
@@ -317,7 +384,8 @@ function markdownAllowance(scan: Scan, chars: number): number {
  * section it would join. */
 function markdownScanChecked(scan: Scan, at: number): void {
   const chars = at - scan.from + 1;
-  if (scan.work > markdownAllowance(scan, chars) || chars > markdownRunCharsMax)
+  const words = chars - scan.coded;
+  if (scan.work > markdownAllowance(scan, chars) || words > markdownRunCharsMax)
     scan.plain = true;
   const joined =
     scan.carriedWork +
@@ -348,6 +416,9 @@ function markdownScanContent(scan: Scan, at: number): void {
   scan.entity = false;
   scan.starts = 0;
   scan.refused = 0;
+  scan.addressed = false;
+  scan.split = 0;
+  scan.hidden = 0;
 }
 
 /** Code marks still open can no longer be followed: what closes one depends
@@ -365,6 +436,9 @@ function markdownScanWordEnd(scan: Scan): void {
   scan.entity = false;
   scan.starts = 0;
   scan.refused = 0;
+  scan.addressed = false;
+  scan.split = 0;
+  scan.hidden = 0;
   scan.angle = false;
   if (scan.resource === 1) scan.resource = 2;
 }
@@ -445,6 +519,7 @@ function markdownScanNamed(scan: Scan, at: number, code: number): void {
     scan.work += (at - scan.bracket) * markdownCost.word;
   if (lower !== 119 && lower !== 104) return;
   if (!markdownScanAddressed(scan.text, at, code)) return;
+  scan.addressed = true;
   if (!markdownScanLinked(scan.previous, code)) {
     scan.refused += 1;
     return;
@@ -470,6 +545,65 @@ function markdownScanTrail(scan: Scan, code: number, kind: number): void {
   if ((kind & alphanumeric) === 0) scan.entity = code === 38;
 }
 
+/**
+ * A character an address may be cut back over, charged over the ones before
+ * it in its run. What makes a link of an address once the text is read looks
+ * for where such a run ends from each place in it, whether or not the grammar
+ * took the address, and it reads the text with its escapes and references
+ * undone: so a word that holds one of those is charged as though it held an
+ * address, and its runs are one.
+ */
+function markdownScanSplit(scan: Scan, kind: number): void {
+  const joined = scan.hidden > 0;
+  if (!joined && !scan.addressed) return;
+  if ((kind & split) !== 0) {
+    scan.split += 1;
+    scan.work += scan.split * markdownCost.split;
+  } else if (!joined) scan.split = 0;
+}
+
+const referenceCharsMax = 32;
+
+/** Where the character reference an ampersand opens ends, at its semicolon,
+ * or a place before the text where it opens none: any name counts, since
+ * which names the grammar knows is the parser's to say. */
+function markdownReferenceEnd(text: string, at: number, to: number): number {
+  let end = at + 1;
+  if (text.charCodeAt(end) === 35) end += 1;
+  const from = end;
+  const last = Math.min(to, from + referenceCharsMax);
+  while (end < last && (kindOf(text.charCodeAt(end)) & alphanumeric) !== 0)
+    end += 1;
+  return end > from && text.charCodeAt(end) === 59 ? end : -1;
+}
+
+/**
+ * Whether a character that is no part of a name is one the text is read
+ * without once its escapes and references are undone: a backslash that
+ * escapes, or the marks of a reference. What looks for emails and addresses
+ * reads the text that way, so such a character ends no name, and each escape
+ * or reference may write an address or an `@` this scan does not see.
+ */
+function markdownScanUndone(
+  scan: Scan,
+  at: number,
+  code: number,
+  to: number,
+): boolean {
+  if (at <= scan.reference) return true;
+  const next = scan.text.charCodeAt(at + 1);
+  const escapes =
+    code === 92 &&
+    !scan.escaped &&
+    at + 1 < to &&
+    (kindOf(next) & punctuation) !== 0;
+  if (code === 38) scan.reference = markdownReferenceEnd(scan.text, at, to);
+  if (!escapes && at > scan.reference) return false;
+  scan.hidden += 1;
+  if (code === 38 && scan.starts > 0) scan.work += markdownCost.mail;
+  return true;
+}
+
 /** Whether a mark here may be something else's own characters: an address's,
  * a title's, or a bare address's. */
 function markdownScanDoubted(scan: Scan): boolean {
@@ -485,8 +619,8 @@ function markdownScanFlanks(
   to: number,
 ): { readonly opens: boolean; readonly closes: boolean } {
   const next = end < to ? scan.text.charCodeAt(end) : 10;
-  const before = sideOf(scan.previous);
-  const after = sideOf(next);
+  const before = markdownSideOf(scan.previous);
+  const after = markdownSideOf(next);
   const marks = (side: number): boolean =>
     code !== 126 && (side === 42 || side === 95 || side === 126);
   const opens = after === 0 || (after === 2 && before !== 0) || marks(next);
@@ -645,11 +779,12 @@ function markdownScanChar(
   }
   if (scan.resource === 2) markdownScanTitled(scan, code);
   if ((kind & mailText) !== 0) markdownScanNamed(scan, at, code);
-  else {
+  else if (!markdownScanUndone(scan, at, code, to)) {
     if (code === 64 && scan.starts > 0) scan.work += markdownCost.mail;
     scan.starts = 0;
   }
   markdownScanTrail(scan, code, kind);
+  markdownScanSplit(scan, kind);
   if ((kind & punctuation) === 0) return;
   const escaped = scan.escaped;
   const next = scan.text.charCodeAt(at + 1);
@@ -669,6 +804,7 @@ function markdownScanWords(scan: Scan, from: number, to: number): void {
       markdownCost.char +
       scan.links * markdownCost.forward +
       scan.refused * markdownCost.refused +
+      scan.hidden * markdownCost.hidden +
       scan.pending * markdownCost.tick +
       scan.titles * markdownCost.title;
     markdownScanChar(scan, at, code, to);
@@ -704,12 +840,6 @@ interface Line {
 
 function digit(code: number): boolean {
   return code > 47 && code < 58;
-}
-
-/** Whether a character is a space or a tab, which is all this reader ever
- * means by blank. */
-export function markdownBlankCode(code: number): boolean {
-  return code === 32 || code === 9;
 }
 
 const markNone = -1;
@@ -876,7 +1006,8 @@ function markdownScanItem(
   const bullet = line.mark !== 46 && line.mark !== 41;
   const sibling = popped > 0 && scan.left === line.mark && !scan.loose;
   if (line.words === end) return false;
-  if (!bullet && !line.one && !sibling && scan.lines > 1) return false;
+  const next = sibling || scan.item;
+  if (!bullet && !line.one && !next && scan.since > 1) return false;
   if (popped > 1 || scan.loose) markdownScanExit(scan, start);
   scan.loose = line.indent > 0 && scan.loose;
   scan.top = false;
@@ -914,7 +1045,7 @@ function markdownScanPlain(
 ): void {
   const margin = line.indent === 0 && !line.tabbed;
   const piped = margin && scan.text.charCodeAt(start) === 124;
-  if (scan.lines === 1) {
+  if (scan.since === 1) {
     markdownScanExit(scan, start);
     scan.loose = !margin;
     scan.top = margin;
@@ -924,7 +1055,7 @@ function markdownScanPlain(
   if (!scan.top && (popped > 0 || scan.loose || scan.quoted))
     markdownScanDoubt(scan, start);
   const whole = end < scan.text.length;
-  if (scan.lines === 2 && scan.header > 0 && piped && whole)
+  if (scan.since === 2 && scan.header > 0 && piped && whole)
     scan.table = markdownRuleCells(scan.text, start, end) === scan.header;
   else if (scan.table && piped) markdownScanContent(scan, start);
   else scan.table = false;
@@ -938,6 +1069,7 @@ function markdownScanLine(
   end: number,
 ): number {
   if (line.marks > markdownLineMarksMax) scan.plain = true;
+  if (line.marks > 1) scan.work += (line.marks - 1) * markdownCost.line;
   const popped = markdownScanPopped(scan, line.indent);
   const near = line.indent - (scan.cols.at(-1) ?? 0) < 4;
   if (line.kind === lineItem && near) {
@@ -955,7 +1087,7 @@ function markdownScanLine(
     line.indent === 0 &&
     !line.tabbed &&
     line.marks === 1 &&
-    (scan.lines === 1 || scan.quoted);
+    (scan.since === 1 || scan.quoted);
   if (own) {
     scan.loose = false;
     scan.top = false;
@@ -969,6 +1101,7 @@ function markdownScanLine(
  * across its end is carried into it. Whether the scan goes on. */
 function markdownScanLineBegun(scan: Scan): boolean {
   scan.lines += 1;
+  scan.since += 1;
   if (scan.lines > markdownRunLinesMax) scan.plain = true;
   if (scan.plain) return false;
   scan.work += markdownCost.line;
@@ -1008,37 +1141,110 @@ function markdownRunOf(
   };
 }
 
+/** A line under list items charged for the blank it opens with, which the
+ * parser reads once for each of them. */
+function markdownScanSunk(scan: Scan, start: number, held: number): void {
+  if (scan.plain || held === 0) return;
+  let columns = 0;
+  for (let at = start; markdownBlankCode(scan.text.charCodeAt(at)); at += 1)
+    columns += markdownBlankColumns(scan.text.charCodeAt(at));
+  scan.work += columns * held * markdownCost.sunk;
+}
+
 /** A place a run may be ended at, and what the scan held when it reached
  * it. */
 interface Cut {
   readonly at: number;
   readonly work: number;
   readonly exits: number;
-  readonly apart: boolean;
 }
 
-function markdownRunCut(cut: Cut, fresh: boolean): MarkdownRun {
+/** A run ended at a place above the line that took it past its allowance.
+ * Whether it stands apart is what the scan had said by that line, so a run
+ * once apart stays so when more of it arrives. */
+function markdownRunCut(scan: Scan, cut: Cut, fresh: boolean): MarkdownRun {
   return {
     end: cut.at,
     stop: "cut",
     work: cut.work,
     exits: cut.exits,
     plain: false,
-    apart: cut.apart,
+    apart: scan.apart,
     fresh,
   };
 }
 
+/** Nothing is open for words to go on with, so the next line is read as a
+ * run's first is: what stands open above it is not known, and its words begin
+ * with it. */
+function markdownScanRestart(scan: Scan, at: number): void {
+  scan.cols.length = 0;
+  scan.marks.length = 0;
+  scan.left = 0;
+  scan.loose = true;
+  scan.top = false;
+  scan.quoted = false;
+  scan.header = 0;
+  scan.table = false;
+  scan.since = 0;
+  markdownScanContent(scan, at);
+}
+
+/**
+ * A fence's own line charged. Its opening is a line that may leave what is
+ * open and is read as the words it holds; every other is code, held to the
+ * allowance where it begins and where it ends.
+ */
+function markdownScanFenced(
+  scan: Scan,
+  start: number,
+  end: number,
+  depth: number,
+  opening: boolean,
+): void {
+  scan.sure = false;
+  if (!scan.plain) scan.work += depth * markdownCost.code;
+  if (opening && !scan.plain) {
+    markdownScanExit(scan, start);
+    markdownScanContent(scan, start);
+    if (markdownScanLineBegun(scan)) markdownScanWords(scan, start, end);
+  } else if (!scan.plain) {
+    scan.coded += end - start + 1;
+    markdownScanChecked(scan, start);
+    scan.work += (end - start) * markdownCost.coded;
+    markdownScanChecked(scan, end);
+  }
+  markdownScanRestart(scan, end + 1);
+}
+
+/** A run ended by a blank line or by a fence opened at the margin. */
+function markdownRunEnded(
+  scan: Scan,
+  line: Line,
+  at: number,
+  fresh: boolean,
+): MarkdownRun {
+  if (line.kind === lineFence) return markdownRunOf(scan, at, "fence", fresh);
+  if (!scan.top && (scan.quoted || scan.loose)) {
+    markdownScanExit(scan, at);
+    markdownScanChecked(scan, at - 1);
+  }
+  return markdownRunOf(scan, at, "blank", fresh);
+}
+
 /**
  * The run that begins at the start of a line, scanned to the line that ends
- * it. `carriedWork` and `carriedChars` are what the section it would join has
- * spent and how long that is, which decide `apart` and nothing else.
+ * it, which is never a fence's own. `carriedWork` and `carriedChars` are what
+ * the section it would join has spent and how long that is, which decide
+ * `apart` and nothing else, and `nesting` is what its lines above have left
+ * open.
  */
 export function markdownRunScanned(
   text: string,
   from: number,
   carriedWork = 0,
   carriedChars = 0,
+  nesting: MarkdownNesting = markdownNestingBegun(),
 ): MarkdownRun {
   const scan = markdownScanFrom(
     text,
@@ -1053,35 +1259,49 @@ export function markdownRunScanned(
   while (at < text.length) {
     const newline = text.indexOf("\n", at);
     const end = newline < 0 ? text.length : newline;
+    const { fence: open, held } = nesting;
+    const depth = markdownNestingLine(nesting, text, at, end);
     const line = markdownLineRead(text, at, end);
     const ends = line.kind === lineBlank || line.kind === lineFence;
-    if (ends && newline >= 0) {
-      if (line.kind === lineFence)
-        return markdownRunOf(scan, at, "fence", fresh);
-      if (!scan.top && (scan.quoted || scan.loose)) {
-        markdownScanExit(scan, at);
-        markdownScanChecked(scan, at - 1);
-      }
-      return markdownRunOf(scan, at, "blank", fresh);
-    }
-    if (ends || line.kind === linePending) {
+    if (depth === 0 && ends && newline >= 0)
+      return markdownRunEnded(scan, line, at, fresh);
+    /** A line the text ends in is charged for its characters alone where a
+     * longer text may read it otherwise. */
+    if (newline < 0 && (depth > 0 || ends || line.kind === linePending)) {
       scan.work += (end - at) * markdownCost.char;
       break;
     }
-    if (scan.lines === 0)
-      fresh = line.indent === 0 && !line.tabbed && line.kind !== lineItem;
-    const { work, exits, apart } = scan;
-    markdownScanTaken(scan, line, at, end);
-    if (scan.plain && cut !== undefined) return markdownRunCut(cut, fresh);
-    if (scan.sure && at > from) cut = { at, work, exits, apart };
+    const { work, exits } = scan;
+    const opening = nesting.fence !== undefined && nesting.fence !== open;
+    if (depth > 0) {
+      if (at === from) fresh = text.charCodeAt(at) === 62;
+      markdownScanFenced(scan, at, end, depth, opening);
+    } else {
+      if (at === from)
+        fresh = line.indent === 0 && !line.tabbed && line.kind !== lineItem;
+      scan.item = nesting.item;
+      markdownScanSunk(scan, at, held);
+      markdownScanTaken(scan, line, at, end);
+    }
+    if (scan.plain && cut !== undefined)
+      return markdownRunCut(scan, cut, fresh);
+    if (scan.sure && at > from) cut = { at, work, exits };
     at = newline < 0 ? end : end + 1;
   }
   return markdownRunOf(scan, text.length, "end", fresh);
 }
 
-/** Whether a text read as words alone, no block read in it, is within what
- * that may cost: each line is charged as a line and its words as words. */
-export function markdownWordsPass(text: string): boolean {
+/** What a text read as words alone came to. */
+export interface MarkdownWords {
+  /** What the parser is reckoned to spend on it, as far as it was scanned. */
+  readonly work: number;
+  /** Whether it is past what words may cost, and drawn as it was written. */
+  readonly plain: boolean;
+}
+
+/** A text reckoned as words alone, no block read in it: each line is charged
+ * as a line and its words as words. */
+export function markdownWordsScanned(text: string): MarkdownWords {
   const scan = markdownScanFrom(text, 0, 0, 0, markdownWordsWorkMax);
   let at = 0;
   while (at < text.length && markdownScanLineBegun(scan)) {
@@ -1091,5 +1311,10 @@ export function markdownWordsPass(text: string): boolean {
     markdownScanChecked(scan, end - 1);
     at = end + 1;
   }
-  return !scan.plain;
+  return { work: scan.work, plain: scan.plain };
+}
+
+/** Whether a text read as words alone is within what that may cost. */
+export function markdownWordsPass(text: string): boolean {
+  return !markdownWordsScanned(text).plain;
 }
