@@ -116,20 +116,21 @@ export async function reaches(reading: () => boolean): Promise<boolean> {
   return false;
 }
 
+/** The lines the stream has carried whole: the last of what has arrived is a line still arriving, and is not one yet. */
+function lines(found: Held): string[] {
+  return found.body().split("\n").slice(0, -1);
+}
+
 /** Every `data:` payload the stream carried, in the order it carried them. */
 export function payloads(found: Held): unknown[] {
-  return found
-    .body()
-    .split("\n")
+  return lines(found)
     .filter((line) => line.startsWith("data: "))
     .map((line) => JSON.parse(line.slice("data: ".length)) as unknown);
 }
 
 /** Every `event:` and `id:` line the stream carried, in the order it carried them. */
 export function identities(found: Held): string[] {
-  return found
-    .body()
-    .split("\n")
+  return lines(found)
     .filter((line) => line.startsWith("event: ") || line.startsWith("id: "))
     .map((line) => line.trim());
 }
