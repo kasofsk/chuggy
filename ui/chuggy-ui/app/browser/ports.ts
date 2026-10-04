@@ -2,8 +2,8 @@
  * The platform capabilities the decision layer takes as arguments.
  *
  * Every ambient thing this console touches — the clock, the network, the
- * timers, the draws, the digest, the two stores and the address bar — is
- * spelled once here, so `ui/chuggy-ui/app/core/` names none of them and a suite can hand it
+ * timers, the draws, the digest, the two stores, the address bar and the
+ * worker — is spelled once here, so `ui/chuggy-ui/app/core/` names none of them and a suite can hand it
  * something else. A store a browser refuses in a private window is read as
  * empty rather than thrown from.
  */
@@ -13,9 +13,15 @@ import type { ApiFetchInit } from "../core/apiRequest.ts";
 import type { StreamResponse } from "../core/streamConnection.ts";
 import { FetchJsonError } from "../core/sessionHolder.ts";
 import type { KeyValuePort, SessionLocation } from "../core/sessionHolder.ts";
+import type { MarkdownSyntaxWorker } from "./ui/markdownSyntax.ts";
 
 export function nowMs(): number {
   return Date.now();
+}
+
+/** Milliseconds that never go back, for telling how long something took. */
+export function elapsedMs(): number {
+  return performance.now();
 }
 
 export function drawBytes(count: number): Uint8Array<ArrayBuffer> {
@@ -193,4 +199,32 @@ export function currentPath(): string {
 /** The anchor this tab was opened at, without its `#`. */
 export function currentAnchor(): string {
   return location.hash.slice(1);
+}
+
+/**
+ * Starts the worker that colours code, this console's own module on its own
+ * thread. `heard` is told what it says, and `{ failed: true }` where it could
+ * not be loaded or broke.
+ */
+export function syntaxWorkerOpened(
+  heard: (message: unknown) => void,
+): MarkdownSyntaxWorker {
+  const worker = new Worker(
+    new URL("./ui/markdownSyntaxWorker.ts", import.meta.url),
+    { type: "module" },
+  );
+  worker.addEventListener("message", (event: MessageEvent<unknown>) => {
+    heard(event.data);
+  });
+  worker.addEventListener("error", () => {
+    heard({ failed: true });
+  });
+  return {
+    ask: (asked) => {
+      worker.postMessage(asked);
+    },
+    end: () => {
+      worker.terminate();
+    },
+  };
 }

@@ -33,7 +33,7 @@ import {
   projectStreamCarrying,
   projectStreamUnanswered,
 } from "../core/projectStream.ts";
-import { clipboardWritten } from "./ports.ts";
+import { clipboardWritten, elapsedMs, syntaxWorkerOpened } from "./ports.ts";
 import { ChatPane } from "./shell/ChatPane.tsx";
 import { ChatPaneProvider, useChatPane } from "./shell/chatPaneHeld.tsx";
 import { DetailsPane } from "./shell/DetailsPane.tsx";
@@ -46,6 +46,7 @@ import {
   useProjectStreamStatus,
 } from "./stream.tsx";
 import { CopyProvider } from "./ui/copyHeld.tsx";
+import { MarkdownProvider } from "./ui/markdownHeld.ts";
 import { Notice } from "./ui/Notice.tsx";
 import "./shell/shell.css";
 
@@ -208,11 +209,13 @@ export function Shell(props: {
   return (
     <ShellSlots>
       <CopyProvider write={clipboardWritten}>
-        <TicketReferenceWiring partition={props.partition}>
-          <ChatPaneProvider twoColumn={twoColumn}>
-            <ShellDrawn partition={props.partition} twoColumn={twoColumn} />
-          </ChatPaneProvider>
-        </TicketReferenceWiring>
+        <MarkdownProvider clock={elapsedMs} syntax={syntaxWorkerOpened}>
+          <TicketReferenceWiring partition={props.partition}>
+            <ChatPaneProvider twoColumn={twoColumn}>
+              <ShellDrawn partition={props.partition} twoColumn={twoColumn} />
+            </ChatPaneProvider>
+          </TicketReferenceWiring>
+        </MarkdownProvider>
       </CopyProvider>
     </ShellSlots>
   );

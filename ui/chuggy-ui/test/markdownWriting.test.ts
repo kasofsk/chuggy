@@ -6,16 +6,20 @@
  * every one go by: no block turns into another kind of block, and nothing a
  * reader was drawn is taken away or loses the mark it was drawn in.
  *
- * Three things are allowed to arrive late, and each is pinned here as a case
+ * Four things are allowed to arrive late, and each is pinned here as a case
  * rather than left out of a property in silence: words a writer did mean in
- * brackets, an underscore pair, and a table written without its leading pipe.
+ * brackets, an underscore pair, a pair of stars opened inside a word, and a
+ * table written without its leading pipe.
  */
 
 import { describe, expect, test } from "vitest";
 
+import {
+  markdownReadingBlocks,
+  markdownReadingNext,
+} from "../app/browser/ui/markdownReading.ts";
 import { markdownBlocksParsed } from "../app/browser/ui/markdownTree.ts";
 import type { MarkdownBlock } from "../app/browser/ui/markdownTree.ts";
-import { markdownWritten } from "../app/browser/ui/markdownWriting.ts";
 import { corpusAnswers, corpusReview } from "./markdownCorpus.ts";
 import { drawn, prefixes, shape, skeleton, within } from "./markdownShape.ts";
 import type { Drawn } from "./markdownShape.ts";
@@ -25,7 +29,7 @@ function read(text: string): string {
 }
 
 function blocksWritten(text: string): readonly MarkdownBlock[] {
-  return markdownBlocksParsed(markdownWritten(text).text) ?? [];
+  return markdownReadingBlocks(markdownReadingNext(undefined, text, true));
 }
 
 function written(text: string): string {
@@ -106,6 +110,30 @@ describe("a mark left open inside another", () => {
   });
 });
 
+describe("a star inside a word", () => {
+  test("is not opened early, so a power is never drawn as bold", () => {
+    for (const prefix of prefixes("2**10 is 1024, and 3*4 is 12."))
+      expect(written(prefix), prefix).not.toMatch(/<emphasis>|<strong>/u);
+    for (const text of ["2**10", "so**bo", "a*b", "é**b", "10***x"])
+      expect(written(text), text).toBe(paragraph(text));
+  });
+
+  test("marks once its pair is whole, which takes back the stars it was drawn as", () => {
+    expect(written("2**10*")).toBe(paragraph("2**10"));
+    expect(written("2**10** is")).toBe(paragraph("2<strong>10</strong> is"));
+    expect(written("x*y")).toBe(paragraph("x*y"));
+    expect(written("x*y*z")).toBe(paragraph("x<emphasis>y</emphasis>z"));
+  });
+
+  test("is opened early after a space, a line's start or a mark of punctuation", () => {
+    expect(written("so **bo")).toBe(paragraph("so <strong>bo</strong>"));
+    expect(written("one\n**bo")).toBe(paragraph("one\n<strong>bo</strong>"));
+    expect(written("(**bo")).toBe(paragraph("(<strong>bo</strong>"));
+    expect(written("f(*args")).toBe(paragraph("f(<emphasis>args</emphasis>"));
+    expect(written('"*so')).toBe(paragraph('"<emphasis>so</emphasis>'));
+  });
+});
+
 describe("an underscore", () => {
   test("is never opened early, because a name is what it nearly always is", () => {
     expect(written("see count_wor")).toBe(paragraph("see count_wor"));
@@ -144,7 +172,7 @@ describe("a link left open", () => {
       expect(now.startsWith(before), prefix).toBe(true);
       before = now;
     }
-    expect(before).toBe("See the brief for the rest of it.");
+    expect(before).toBe("See the brief ./console/BRIEF.md for the rest of it.");
   });
 
   test("a picture is its description, and its mark is never drawn", () => {
@@ -155,10 +183,20 @@ describe("a link left open", () => {
   });
 
   test("an address between angle brackets is drawn without them", () => {
-    for (const prefix of prefixes("Go to <https://example.test/a_b> now."))
-      expect(drawn(blocksWritten(prefix)).characters, prefix).not.toMatch(
-        /[<>]/u,
-      );
+    for (const text of [
+      "Go to <https://example.test/a_b> now.",
+      "Write to <someone@example.com> now.",
+      "Write to <mailto:some.one+tag@example.com>.",
+    ])
+      for (const prefix of prefixes(text))
+        expect(drawn(blocksWritten(prefix)).characters, prefix).not.toMatch(
+          /[<>]/u,
+        );
+    expect(written("Write to <someone@example.com")).toBe(
+      paragraph(
+        "Write to <link mailto:someone@example.com>someone@example.com</link>",
+      ),
+    );
   });
 });
 
@@ -284,6 +322,28 @@ describe("a table, half written", () => {
     );
   });
 
+  test("a cell that opens on a mark is held until it has a word, and the table stands", () => {
+    const one =
+      "<table none><tableRow><tableCell>Option</tableCell></tableRow></table>";
+    for (const mark of ["*", "**", "***", "`", "~~", "[", "\\"])
+      expect(written(`| Option | ${mark}`), mark).toBe(one);
+    expect(written("| Option | **V")).toBe(
+      "<table none,none><tableRow><tableCell>Option</tableCell><tableCell><strong>V</strong></tableCell></tableRow></table>",
+    );
+  });
+
+  test("a header is a table at every moment it grows, whatever its cells open with", () => {
+    for (const header of [
+      "| Option | **Verdict** |",
+      "| `code` | *why* | ~~not~~ | [link](https://a.test) | _n_ |",
+      "| a \\| b | [[ticket:4]] | <https://a.test> | 2**10 |",
+    ])
+      for (const prefix of prefixes(header).slice(3))
+        expect(written(prefix), prefix).toMatch(
+          prefix.length < 5 ? /^(?:$|<table )/u : /^<table [a-z,]+><tableRow>/u,
+        );
+  });
+
   test("the header stands while the row under it is written", () => {
     for (const under of ["", "|", "| ", "|:", "| --", "| --- |", "| --- | :"])
       expect(written(`| Ticket | State |\n${under}`), under).toBe(
@@ -334,6 +394,11 @@ const hostile: Readonly<Record<string, string>> = {
   listed: "- item\n\n  | a | b |\n  | - | - |\n  | 1 | *2* |\n",
   task: "- [x] done\n- [ ] todo\n- [link](https://a.test) item",
   stepped: "1. step\n\n   ```sh\n   npm ci\n   ```\n\n2. next",
+  header:
+    "| Option | **Verdict** | `x` |\n| --- | --- | --- |\n| A | **take it** | y |\n\nAfter.",
+  power: "So 2**10 is 1024 and 3*4 is a product, **not** bold.",
+  mail: "Write to <someone@example.com> or <https://example.test/a> today.",
+  returns: "# Title\rThe answer\r\ngoes on.\r\r- one\r- two\r\rEnd.",
 };
 
 /** Every prefix of a text as it is drawn, with the one before it. */
