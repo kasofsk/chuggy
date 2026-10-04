@@ -23,14 +23,25 @@
  * exchange's two messages are made once and a page redrawing one exchange a
  * frame redraws that one.
  *
- * ONE THING MOVES WHILE A TURN IS OUT, and `conversationIndicator` says which:
- * the engine above the composer until the turn has words, and that turn's own
- * exchange from then on. A turn heard to end is out no longer, whatever the
+ * ONE THING MOVES WHILE A TURN IS OUT, and `conversationIndicator` says where:
+ * in that turn's own exchange, and at the foot of the column for a send no
+ * exchange stands for yet. A turn heard to end is out no longer, whatever the
  * mailbox still says of it, and nothing moves for it.
  *
- * A READER WHO HAS SCROLLED AWAY IS OFFERED THE WAY BACK. The library keeps
- * the column pinned to its foot only while the reader is at it, and its own
- * control returns them there and pins it again.
+ * NOTHING STANDS BETWEEN THE COLUMN AND THE COMPOSER BUT WHAT A READER NEEDS
+ * THERE. The engine runs where the answer is about to be and not on a strip of
+ * its own, so the column ends where the composer begins.
+ *
+ * A READER WHO HAS SCROLLED AWAY IS OFFERED THE WAY BACK, on a band of its own
+ * under the column, which is there only while they are away from its foot and
+ * so never stands over a line of text. The library keeps the column pinned to
+ * its foot only while the reader is at it, and its own control returns them
+ * there and pins it again.
+ *
+ * HOW WIDE THE COLUMN IS AND HOW LARGE ITS TEXT ARE THE MOUNT'S TO SAY, through
+ * the custom properties `conversation.css` reads, so a pane that gives the
+ * conversation the whole frame sets it as a column to read and this file knows
+ * nothing of where it is mounted.
  */
 
 import {
@@ -50,7 +61,10 @@ import type {
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
-import { conversationIndicator } from "../../core/conversation.ts";
+import {
+  conversationExchangeParts,
+  conversationIndicator,
+} from "../../core/conversation.ts";
 import type {
   ConversationExchange,
   ConversationIndicator,
@@ -62,6 +76,7 @@ import {
   ConversationAnswerMessage,
   ConversationAskMessage,
   ConversationIndicated,
+  ConversationLettingHeld,
   ConversationPaced,
   ConversationWorkOpen,
 } from "./ConversationExchange.tsx";
@@ -102,10 +117,11 @@ function conversationStatus(exchange: ConversationExchange): MessageStatus {
 
 /**
  * One exchange as the two messages the library holds a turn as: the ask, and
- * the answer it is still waiting for or already has. They are named by the
- * exchange's turn where it has one, because that is the name that stays while
- * the transcript comes to hold the turn, and the library begins a message
- * again when its name changes.
+ * the answer it is still waiting for or already has, which holds each text of
+ * the answer in the order it was written. They are named by the exchange's
+ * turn where it has one, because that is the name that stays while the
+ * transcript comes to hold the turn, and the library begins a message again
+ * when its name changes.
  */
 function conversationExchangeMessages(
   exchange: ConversationExchange,
@@ -126,10 +142,11 @@ function conversationExchangeMessages(
     {
       id: `${named}-answer`,
       role: "assistant",
-      content:
-        exchange.answer === undefined
-          ? []
-          : [{ type: "text", text: exchange.answer }],
+      content: conversationExchangeParts(exchange).flatMap((part) =>
+        part.part === "Text"
+          ? [{ type: "text" as const, text: part.text }]
+          : [],
+      ),
       status: conversationStatus(exchange),
       metadata: { custom: { exchange, side: "Answer" } },
     },
@@ -237,27 +254,29 @@ function conversationMessageDrawn(value: {
   );
 }
 
-/** The way back to the newest words, standing over the foot of the column for
- * as long as the reader is not there. */
+/** The way back to the newest words, on a band under the column for as long
+ * as the reader is not at its foot. */
 function ConversationBottom(): ReactNode {
   const atBottom = useThreadViewport((viewport) => viewport.isAtBottom);
   if (atBottom) return null;
   return (
-    <ThreadPrimitive.ScrollToBottom
-      className="conversation-bottom"
-      aria-label="Scroll to bottom"
-    >
-      <svg viewBox="0 0 16 16" aria-hidden="true" className="size-3">
-        <path
-          d="M8 3 L8 13 M4 9 L8 13 L12 9"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </svg>
-    </ThreadPrimitive.ScrollToBottom>
+    <div className="conversation-bottom-band">
+      <ThreadPrimitive.ScrollToBottom
+        className="conversation-bottom"
+        aria-label="Scroll to bottom"
+      >
+        <svg viewBox="0 0 16 16" aria-hidden="true" className="size-3">
+          <path
+            d="M8 3 L8 13 M4 9 L8 13 L12 9"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </ThreadPrimitive.ScrollToBottom>
+    </div>
   );
 }
 
@@ -297,21 +316,24 @@ function ConversationBody(props: {
 }
 
 /** How every exchange under it is drawn: its work open or not, its text paced
- * or not, and which of them holds the one thing that moves. */
+ * or not, which of them holds the one thing that moves, whether an engine is
+ * what runs for a turn nothing is drawn of, and whether text of any of them is
+ * still being let out. */
 function ConversationDrawn(props: {
   readonly workOpen: boolean;
   readonly paced: boolean;
   readonly indicator: ConversationIndicator;
+  readonly engine: boolean;
   readonly children: ReactNode;
 }): ReactNode {
-  const indicator = props.indicator;
+  const { indicator, engine } = props;
+  const id = indicator.indicator === "Exchange" ? indicator.id : undefined;
+  const indicated = useMemo(() => ({ id, engine }), [id, engine]);
   return (
     <ConversationWorkOpen.Provider value={props.workOpen}>
       <ConversationPaced.Provider value={props.paced}>
-        <ConversationIndicated.Provider
-          value={indicator.indicator === "Exchange" ? indicator.id : undefined}
-        >
-          {props.children}
+        <ConversationIndicated.Provider value={indicated}>
+          <ConversationLettingHeld>{props.children}</ConversationLettingHeld>
         </ConversationIndicated.Provider>
       </ConversationPaced.Provider>
     </ConversationWorkOpen.Provider>
@@ -360,42 +382,42 @@ export function Conversation(props: {
     drawn: props.composer !== undefined,
     sending: held.sending,
   });
+  const composed = props.composer !== undefined;
   const inset = props.pane === true ? "px-4 py-4" : "";
   return (
     <AssistantRuntimeProvider runtime={held.runtime}>
-      <ThreadPrimitive.Root className="flex h-full min-h-0 flex-col gap-4">
-        <div className="relative flex min-h-0 flex-1 flex-col">
-          <ThreadPrimitive.Viewport className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto">
-            <div
-              className={`max-w-column mx-auto flex w-full flex-col gap-6 ${inset}`}
+      <ThreadPrimitive.Root className="conversation flex h-full min-h-0 flex-col">
+        <ThreadPrimitive.Viewport className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto">
+          <div
+            className={`conversation-column mx-auto flex w-full flex-col gap-6 ${inset}`}
+          >
+            {props.prompt === undefined ? null : (
+              <ConversationPrompt prompt={props.prompt} />
+            )}
+            {props.earlier === undefined ? null : (
+              <ConversationEarlier {...props.earlier} />
+            )}
+            <ConversationDrawn
+              workOpen={props.workOpen === true}
+              paced={props.paced === true}
+              indicator={indicator}
+              engine={composed}
             >
-              {props.prompt === undefined ? null : (
-                <ConversationPrompt prompt={props.prompt} />
-              )}
-              {props.earlier === undefined ? null : (
-                <ConversationEarlier {...props.earlier} />
-              )}
-              <ConversationDrawn
-                workOpen={props.workOpen === true}
-                paced={props.paced === true}
-                indicator={indicator}
-              >
-                <ConversationBody
-                  reading={reading}
-                  empty={props.exchanges.length === 0}
-                  emptyTitle={props.emptyTitle}
-                  sentence={props.empty}
-                />
-              </ConversationDrawn>
-            </div>
-          </ThreadPrimitive.Viewport>
-          <ConversationBottom />
-        </div>
+              <ConversationBody
+                reading={reading}
+                empty={props.exchanges.length === 0}
+                emptyTitle={props.emptyTitle}
+                sentence={props.empty}
+              />
+            </ConversationDrawn>
+            {indicator.indicator === "Engine" ? <ConversationWaiting /> : null}
+          </div>
+        </ThreadPrimitive.Viewport>
+        <ConversationBottom />
         {props.composer === undefined ? null : (
           <div
-            className={`max-w-column mx-auto w-full ${props.pane === true ? "px-4 pb-4" : ""}`}
+            className={`conversation-column mx-auto w-full ${props.pane === true ? "conversation-foot" : "pt-4"}`}
           >
-            <ConversationWaiting waiting={indicator.indicator === "Engine"} />
             <ConversationComposer {...props.composer} busy={held.sending} />
           </div>
         )}

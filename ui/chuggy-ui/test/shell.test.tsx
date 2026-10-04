@@ -11,6 +11,7 @@
 // jscpd:ignore-start -- the imports and vi.mock factories a case cannot hoist out
 import { QueryClient } from "@tanstack/react-query";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -22,6 +23,7 @@ import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import { Shell } from "../app/browser/Shell.tsx";
+import { conversationWaitWordAfterMs } from "../app/browser/conversation/ConversationLines.tsx";
 import { DetailsSlot, TopBarSlot } from "../app/browser/shell/slots.tsx";
 import {
   viewportDeskEm,
@@ -103,6 +105,7 @@ afterEach(() => {
   pageDrawn = () => null;
   localStorage.removeItem(chatPaneStoreKey);
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 function styleless(): void {
@@ -370,8 +373,8 @@ function threadServed(listed: readonly unknown[]): typeof fetch {
   }) as unknown as typeof fetch;
 }
 
-function composerDrawn(): HTMLElement {
-  return screen.getByRole("textbox", { name: "Message" });
+function composerDrawn(): HTMLTextAreaElement {
+  return screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Message" });
 }
 
 /** A server holding the reader's own thread with a turn the mailbox has not
@@ -1262,21 +1265,44 @@ test("New the hosted grant refuses where the read said runners reads the placeme
   styleless();
 });
 
+/** The word under the last answer of the conversation. */
+function lastWord(): string | undefined {
+  return Array.from(
+    conversationRegion().querySelectorAll(
+      '.conversation-meta p [role="status"]',
+    ),
+    (status) => status.textContent,
+  ).at(-1);
+}
+
+/** The word a waiting turn says once the wait has outlasted a glance. The
+ * clock is driven so the case does not wait it out. */
+async function waitedWord(): Promise<string | undefined> {
+  await act(() => vi.advanceTimersByTimeAsync(conversationWaitWordAfterMs));
+  return lastWord();
+}
+
 /** The reader's own queued turn on runners their runner cannot take now says
- * it is waiting rather than queued; the train still runs above the box. */
+ * it is waiting rather than queued, and says so at once; a turn that is only
+ * queued says so once that has lasted. The train runs in its answer's place. */
 test.each([
-  ["Offline", "Pool", "Waiting"],
-  ["Unregistered", "Pool", "Waiting"],
-  ["Live", "Pool", "Queued"],
-  ["Offline", "InCluster", "Queued"],
+  ["Offline", "Pool", "Waiting", "Waiting"],
+  ["Unregistered", "Pool", "Waiting", "Waiting"],
+  ["Live", "Pool", "", "Queued"],
+  ["Offline", "InCluster", "", "Queued"],
 ] as const)(
-  "a queued turn with the reader's runner %s on %s reads %s",
-  async (mine, thread, word) => {
+  "a queued turn with the reader's runner %s on %s reads %j at once and %s once it has lasted",
+  async (mine, thread, atOnce, lasted) => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
     await mounted(
       viewportDeskEm,
       placedServed(answeringThreadServed(), { thread, mine }),
     );
-    expect(within(conversationRegion()).getByText(word)).toBeTruthy();
+    expect(lastWord()).toBe(atOnce);
+    expect(
+      conversationRegion().querySelectorAll(".conversation-waiting-engine"),
+    ).toHaveLength(1);
+    expect(await waitedWord()).toBe(lasted);
     styleless();
   },
 );
@@ -1284,6 +1310,7 @@ test.each([
 /** No read says how another member's runner stands, so their queued turn is
  * queued whatever the reader's own runner is doing. */
 test("another member's queued turn reads Queued whatever the reader's runner", async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
   await mounted(
     viewportDeskEm,
     placedServed(
@@ -1321,7 +1348,7 @@ test("another member's queued turn reads Queued whatever the reader's runner", a
     fireEvent.click(row);
   });
   await settled();
-  expect(within(conversationRegion()).getByText("Queued")).toBeTruthy();
+  expect(await waitedWord()).toBe("Queued");
   expect(screen.queryByText("Waiting")).toBeNull();
   styleless();
 });

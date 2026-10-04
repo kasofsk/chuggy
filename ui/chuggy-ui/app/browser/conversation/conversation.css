@@ -5,6 +5,45 @@
  * refuses. */
 
 @layer page {
+  /* What a mount may say of the conversation it holds: how wide its column
+   * is, how large its text and how tall a line of it. Each has the console's
+   * own answer until a mount gives another, and a line of the answer is
+   * stated once here because three things are as tall as one: the engine, the
+   * line of a part of the work, and the text that takes the place of either. */
+  .conversation {
+    --conversation-line: calc(
+      var(--conversation-text, var(--text-md)) *
+        var(--conversation-leading, var(--leading-prose))
+    );
+    font-size: var(--conversation-text, inherit);
+  }
+
+  .conversation-column {
+    max-width: var(--conversation-width, var(--width-column));
+  }
+
+  /* The composer under a pane's column keeps the column's inset from the
+   * pane's edges, and less of it on a narrow screen. */
+  .conversation-foot {
+    padding: 0 var(--space-4) var(--space-4);
+  }
+
+  /* A phone zooms into any field typed smaller than this, and what is read on
+   * one is read at the size it is typed in. */
+  @media (max-width: 40em) {
+    .conversation {
+      --conversation-text: var(--text-unzoomed);
+    }
+
+    .conversation-foot {
+      padding: 0 var(--space-2) var(--space-2);
+    }
+  }
+
+  .conversation .run-report {
+    line-height: var(--conversation-leading, var(--leading-prose));
+  }
+
   .conversation-trigger {
     appearance: none;
     background: transparent;
@@ -15,6 +54,19 @@
     cursor: pointer;
   }
 
+  /* The box and its control are one row, a line tall until the text needs
+   * more: a line of the box is as tall as the control, whose own size is the
+   * least a finger is given on a narrow screen, and the text sits in the
+   * middle of it. The control's mark keeps one size, so on that screen the
+   * room around it is the control's and the field gives up its own. */
+  .conversation-field {
+    --conversation-control: var(--height-icon);
+    display: flex;
+    align-items: flex-end;
+    gap: var(--space-2);
+    padding: var(--space-1) var(--space-1) var(--space-1) var(--space-3);
+  }
+
   /* The ring is the field's, not the textarea's: a box drawn around a box is
    * two rings, and the outer one is the control the reader sees. */
   .conversation-field:focus-within {
@@ -22,11 +74,62 @@
   }
 
   .conversation-input {
+    padding: calc((var(--conversation-control) - 1lh) / 2) 0;
     background: transparent;
+  }
+
+  .conversation-input::placeholder {
+    color: var(--ink-3);
   }
 
   .conversation-input:focus-visible {
     box-shadow: none;
+  }
+
+  .conversation-send {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: var(--conversation-control);
+    height: var(--conversation-control);
+    padding: 0;
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+  }
+
+  .conversation-send-mark {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--height-icon);
+    height: var(--height-icon);
+    border-radius: var(--radius-circle);
+    background: var(--surface-inverse);
+    color: var(--ink-inverse);
+  }
+
+  .conversation-send:disabled {
+    cursor: default;
+  }
+
+  .conversation-send:disabled > .conversation-send-mark {
+    background: var(--surface-2);
+    color: var(--ink-3);
+  }
+
+  /* The line under the box is there only while it says something. */
+  .conversation-note:empty {
+    display: none;
+  }
+
+  @media (max-width: 40em) {
+    .conversation-field {
+      --conversation-control: var(--height-touch);
+      padding-block: 0;
+      padding-inline-end: 0;
+    }
   }
 
   /* The list stands over the thread rather than inside the composer, because
@@ -64,21 +167,11 @@
     animation: conversation-pulse var(--duration-pulse) var(--ease-out) infinite;
   }
 
-  /* The answer sits a little into the gap above it, so the place it holds for
-   * the work's line reads as that gap and not as a hole under it. */
-  .conversation-answer {
-    margin-block-start: calc(-1 * var(--space-3));
-  }
-
-  /* The place the work's line takes, held whether or not there is work yet.
-   * The line is given its height rather than left to its words' leading, so
-   * the place is as tall empty as with the closed line in it, to the pixel. */
-  .conversation-work {
-    min-height: 1.5em;
-  }
-
+  /* The line of a part of the work is as tall as a line of the answer's text,
+   * whether or not it opens to anything, so the engine giving way to it and
+   * the record coming to hold what it opens to both move nothing. */
   .conversation-work-line {
-    height: 1.5em;
+    min-height: var(--conversation-line);
   }
 
   /* The line under an answer, as tall with a glyph in it as with the copy
@@ -99,13 +192,15 @@
     width: calc(1em + 2 * var(--space-1));
   }
 
-  /* The way back to the foot of the column: a round control standing over it,
-   * which is not there at all while the reader is at the foot. */
+  /* The way back to the foot of the column: a round control on a band of its
+   * own, which is not there at all while the reader is at the foot. */
+  .conversation-bottom-band {
+    display: flex;
+    justify-content: center;
+    padding-block: var(--space-1);
+  }
+
   .conversation-bottom {
-    position: absolute;
-    inset-block-end: var(--space-2);
-    inset-inline-start: 50%;
-    z-index: 1;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -117,11 +212,17 @@
     background: var(--surface-1);
     color: var(--ink-2);
     cursor: pointer;
-    translate: -50% 0;
   }
 
   .conversation-bottom:hover {
     color: var(--ink-1);
+  }
+
+  @media (max-width: 40em) {
+    .conversation-bottom {
+      width: var(--height-touch);
+      height: var(--height-touch);
+    }
   }
 
   @keyframes conversation-pulse {
@@ -162,10 +263,11 @@
     margin-block-start: calc(var(--space-3) + (1lh - 0.5em) / 2);
   }
 
-  /* The strip holds this height whether or not the train is drawn inside it,
-   * so a turn starting or ending never shifts the composer under it. The three
-   * mixes are the sprite's own shades, each a step of one token toward the
-   * panel or toward the frame rather than a second colour. */
+  /* The engine's line is as tall as a line of the answer and the engine
+   * stands on its foot, rising into the gap above it: what is first written
+   * takes the line and moves nothing. The three mixes are the sprite's own
+   * shades, each a step of one token toward the panel or toward the frame
+   * rather than a second colour. */
   .conversation-waiting {
     --waiting-boiler-light: color-mix(
       in srgb,
@@ -188,8 +290,8 @@
       var(--surface-1)
     );
     position: relative;
-    height: 2.5em;
-    overflow: hidden;
+    height: var(--conversation-line);
+    overflow-x: clip;
   }
 
   /* The rail the engine runs on, still while the engine crosses it: the ground

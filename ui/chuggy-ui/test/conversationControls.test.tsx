@@ -243,6 +243,19 @@ describe("the way back to the foot of the column", () => {
     styleless();
   });
 
+  test("stands on a band of its own under the column, over no line of it", async () => {
+    const view = render(<Conversation exchanges={[first]} pane />);
+    const column = scrolling(view.container);
+    await frame();
+    act(column.away);
+    const scroller = view.container.querySelector(".overflow-y-auto");
+    const band = back()?.parentElement;
+    expect(band?.className).toBe("conversation-bottom-band");
+    expect(scroller?.contains(band ?? null)).toBe(false);
+    expect(band?.previousElementSibling).toBe(scroller);
+    styleless();
+  });
+
   test("returns them there when pressed, goes, and holds them there as more is written", async () => {
     const view = render(<Conversation exchanges={[first]} pane />);
     const column = scrolling(view.container);

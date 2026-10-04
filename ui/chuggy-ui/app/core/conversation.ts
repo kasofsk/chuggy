@@ -344,21 +344,76 @@ export interface ConversationExchange {
   readonly inputless?: true;
 }
 
-/** What the disclosure trigger is worded from, as counts rather than a
- * sentence: the component owns the words. */
+/** A step of the work, which a text is not: a text is drawn where it was
+ * written and never folded into the work around it. */
+export type ConversationWorkStep = Exclude<
+  ConversationStep,
+  { readonly step: "Text" }
+>;
+
+/**
+ * One piece of what an exchange's assistant wrote, in the order it wrote them:
+ * a text, or the work between two texts. The work between two texts is one
+ * part however many steps it took, which is what keeps a turn of many calls
+ * as long on the page as the texts written around them.
+ */
+export type ConversationPart =
+  | { readonly part: "Text"; readonly text: string }
+  | { readonly part: "Work"; readonly steps: readonly ConversationWorkStep[] };
+
+/**
+ * An exchange as it is drawn: every text where it was written, the work that
+ * followed it after it, and the answer last. A text the agent carried on past
+ * is a step of the work to the fold and a part of the answer here, so a step
+ * beginning, the turn settling and the record being read again each leave
+ * every part before the last where and as it was.
+ */
+export function conversationExchangeParts(
+  exchange: ConversationExchange,
+): readonly ConversationPart[] {
+  const parts: ConversationPart[] = [];
+  let steps: ConversationWorkStep[] | undefined;
+  for (const step of exchange.work) {
+    if (step.step === "Text") {
+      parts.push({ part: "Text", text: step.text });
+      steps = undefined;
+      continue;
+    }
+    if (steps === undefined) {
+      steps = [];
+      parts.push({ part: "Work", steps });
+    }
+    steps.push(step);
+  }
+  if (exchange.answer !== undefined)
+    parts.push({ part: "Text", text: exchange.answer });
+  return parts;
+}
+
+/** Everything an exchange's assistant wrote as text, as one text a reader
+ * can take away: its texts in order, a paragraph apart. */
+export function conversationExchangeSaid(
+  exchange: ConversationExchange,
+): string | undefined {
+  const texts = conversationExchangeParts(exchange).flatMap((part) =>
+    part.part === "Text" ? [part.text] : [],
+  );
+  return texts.length === 0 ? undefined : texts.join("\n\n");
+}
+
+/** What the line a part of the work is closed to is worded from, as counts
+ * rather than a sentence: the component owns the words. */
 export interface ConversationWorkSummary {
   readonly toolCalls: number;
-  readonly texts: number;
   readonly thought: boolean;
 }
 
 export function conversationWorkSummary(
-  work: readonly ConversationStep[],
+  steps: readonly ConversationWorkStep[],
 ): ConversationWorkSummary {
   return {
-    toolCalls: work.filter((step) => step.step === "ToolCall").length,
-    texts: work.filter((step) => step.step === "Text").length,
-    thought: work.some((step) => step.step === "Thinking"),
+    toolCalls: steps.filter((step) => step.step === "ToolCall").length,
+    thought: steps.some((step) => step.step === "Thinking"),
   };
 }
 
@@ -1328,10 +1383,51 @@ export function conversationExchangeQuiet(
   );
 }
 
+/** What a turn that is under way is heard to be doing that a part of its work
+ * is named by. */
+export type ConversationWorkActivity = Extract<
+  ConversationActivity,
+  { readonly activity: "Thinking" | "ToolUse" }
+>;
+
 /**
- * The one thing on a conversation that moves while a turn is out: the engine
- * above the composer until a running turn has words, and from then that turn's
- * own exchange, whose text or whose line under it shows what is under way.
+ * What an exchange is doing, as far as its page can tell, which says where on
+ * it the one thing that moves is drawn: nowhere for an `Unbegun` turn, and for
+ * one that has begun at the last part drawn of it, a `Text` more may be
+ * written after or `Work` on the step it is heard to be on. An `Unnamed` one
+ * has begun and has no such part.
+ */
+export type ConversationDoing =
+  | { readonly doing: "Settled" }
+  | { readonly doing: "Whole" }
+  | { readonly doing: "Unbegun" }
+  | {
+      readonly doing: "Work";
+      readonly activity: ConversationWorkActivity | undefined;
+    }
+  | { readonly doing: "Text" }
+  | { readonly doing: "Unnamed" };
+
+export function conversationExchangeDoing(
+  exchange: ConversationExchange,
+): ConversationDoing {
+  if (exchange.standing.standing !== "Running") return { doing: "Settled" };
+  const activity = exchange.activity;
+  if (activity?.activity === "Whole") return { doing: "Whole" };
+  if (!conversationExchangeBegun(exchange)) return { doing: "Unbegun" };
+  const last = conversationExchangeParts(exchange).at(-1);
+  if (last?.part === "Text") return { doing: "Text" };
+  if (last?.part === "Work" && activity?.activity !== "Writing")
+    return { doing: "Work", activity };
+  return { doing: "Unnamed" };
+}
+
+/**
+ * The one thing on a conversation that moves while a turn is out, which is in
+ * that turn's own exchange: where its answer is about to be until something of
+ * it is drawn, and from then wherever the newest of it is. `Engine` is a send
+ * still on its way that no exchange stands for, drawn at the foot of the
+ * column.
  */
 export type ConversationIndicator =
   | { readonly indicator: "None" }
@@ -1348,23 +1444,20 @@ function conversationExchangeOut(exchange: ConversationExchange): boolean {
 }
 
 /**
- * Which one it is. `engine` is whether the surface draws an engine at all and
- * whether a send is still on its way; with none drawn the first turn out moves
- * in its place, so a page with no composer still shows that something is.
+ * Which one it is: the turn out that has begun, and the first one out where
+ * none has. `engine` is whether the surface draws an engine at all and whether
+ * a send is still on its way.
  */
 export function conversationIndicator(
   exchanges: readonly ConversationExchange[],
   engine: { readonly drawn: boolean; readonly sending: boolean },
 ): ConversationIndicator {
   const out = exchanges.filter(conversationExchangeOut);
-  const said = out.find((exchange) => exchange.answer !== undefined);
-  if (said !== undefined) return { indicator: "Exchange", id: said.id };
-  if (engine.drawn && (engine.sending || out.length > 0))
-    return { indicator: "Engine" };
-  const first = out[0];
-  return first === undefined
-    ? { indicator: "None" }
-    : { indicator: "Exchange", id: first.id };
+  const moving = out.find(conversationExchangeBegun) ?? out[0];
+  if (moving !== undefined) return { indicator: "Exchange", id: moving.id };
+  return engine.drawn && engine.sending
+    ? { indicator: "Engine" }
+    : { indicator: "None" };
 }
 
 /** The exchanges with every queued turn read as waiting, for a surface whose

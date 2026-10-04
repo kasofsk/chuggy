@@ -3,29 +3,39 @@
  * record could not draw, and where the answer ended up.
  *
  * THE LINE UNDER AN ANSWER IS THERE FROM THE TURN'S FIRST MOMENT TO ITS LAST,
- * and is as tall with a glyph in it as with a control. While the turn is out
- * it says, in a member's word, what the turn is waiting on; once it settles it
- * says how, offers the answer to copy, and gives what it took — so the turn
- * settling moves nothing above it or below.
+ * and is as tall with a glyph in it as with a control, so the turn settling
+ * moves nothing above it or below.
  *
- * BETWEEN A TURN'S LAST WORD AND ITS SETTLING THE LINE SAYS NOTHING. The
- * runner goes on listening after the turn's last message is whole, and the
- * turn can still fail there, so the line neither goes on saying the turn is
- * working nor says how it ended. It keeps its place and what stood in it, out
- * of sight, until the mailbox says.
+ * IT SPEAKS ONLY WHERE NOTHING ELSE ON THE ANSWER DOES. While the engine runs,
+ * a part of the work names what is under way or text is being let out, that is
+ * where a reader is looking and the line shows nothing. It says `Working` for a
+ * turn that has begun and that nothing else is drawn as the doing of.
+ *
+ * A WORD FOR WAITING IS SAID ONCE THE WAIT HAS LASTED. A turn is queued and
+ * started in less than a reader takes to read either word on most sends, so
+ * each is drawn only when it has stood longer than a glance. A turn no runner
+ * can take now is not passing through that state, and says so at once.
+ *
+ * THE ANSWER IS THERE TO COPY AS SOON AS ITS LAST CHARACTER IS DRAWN. The
+ * runner goes on listening after a turn's last message is whole, and the turn
+ * can still fail there, so from then to its settling the line says neither
+ * that the turn is working nor how it ended; what it took arrives beside the
+ * control when the mailbox says.
  *
  * THE WORD IS A STATUS. A reader who cannot see the text arriving is told when
  * the turn begins to work and when it is answered, and of no word in between.
  */
 
-import { Fragment } from "react";
+import { Fragment, useEffect, useState } from "react";
 import type { ReactNode } from "react";
 
 import {
   conversationExchangeBegun,
-  conversationExchangeQuiet,
+  conversationExchangeDoing,
+  conversationExchangeSaid,
 } from "../../core/conversation.ts";
 import type {
+  ConversationDoing,
   ConversationExchange,
   ConversationMarker,
   ConversationMeasures,
@@ -137,6 +147,82 @@ function conversationMetaFigures(
   ];
 }
 
+/** How long a turn waits in one state before the line says which. */
+export const conversationWaitWordAfterMs = 3000;
+
+/** Whether the word a turn is waiting in has stood longer than a glance. */
+function useConversationWaitLasted(word: string | undefined): boolean {
+  const [lasted, setLasted] = useState<string | undefined>(undefined);
+  useEffect(() => {
+    if (word === undefined) return undefined;
+    const waiting = setTimeout(() => {
+      setLasted(word);
+    }, conversationWaitWordAfterMs);
+    return () => {
+      clearTimeout(waiting);
+      setLasted(undefined);
+    };
+  }, [word]);
+  return word !== undefined && lasted === word;
+}
+
+/** What stands at the head of the line: the answer to copy, a glyph that is
+ * or is not the one thing moving, or the place kept for either. */
+type ConversationMetaLead = "Copy" | "Live" | "Still" | "Kept";
+
+interface ConversationMetaDrawn {
+  readonly lead: ConversationMetaLead;
+  /** The status, and whether a reader who can see is shown it. */
+  readonly word: string | undefined;
+  readonly worded: boolean;
+}
+
+/** What the line says of a turn that is out, which is nothing a reader sees
+ * while something else on the answer shows what is under way. */
+function conversationMetaRunning(
+  doing: Exclude<ConversationDoing, { readonly doing: "Settled" }>,
+  word: string,
+  shown: {
+    readonly live: boolean;
+    readonly marked: boolean;
+    readonly engine: boolean;
+    readonly lasted: boolean;
+    readonly copies: boolean;
+  },
+): ConversationMetaDrawn {
+  const unsaid = { word: undefined, worded: false };
+  switch (doing.doing) {
+    case "Whole":
+      return {
+        lead: shown.copies && !shown.marked ? "Copy" : "Kept",
+        ...unsaid,
+      };
+    case "Unbegun": {
+      const said = shown.lasted ? { word, worded: true } : unsaid;
+      if (shown.live && !shown.engine) return { lead: "Live", ...said };
+      return { lead: shown.lasted ? "Still" : "Kept", ...said };
+    }
+    case "Work":
+    case "Text":
+      return { lead: "Kept", word, worded: false };
+    case "Unnamed":
+      if (shown.marked) return { lead: "Kept", word, worded: false };
+      return { lead: shown.live ? "Live" : "Still", word, worded: true };
+  }
+}
+
+function ConversationMetaLeadDrawn(props: {
+  readonly lead: ConversationMetaLead;
+  readonly said: string | undefined;
+  readonly running: boolean;
+}): ReactNode {
+  if (props.lead === "Copy" && props.said !== undefined)
+    return <CopyButton text={props.said} label="Copy answer" />;
+  return (
+    <ConversationGlyph filled={props.running} live={props.lead === "Live"} />
+  );
+}
+
 /**
  * Where the exchange stands and what it took, on one line under the answer. A
  * measure nothing recorded is left out rather than drawn as an absence: this is
@@ -145,34 +231,60 @@ function conversationMetaFigures(
 export function ConversationMetaLine(props: {
   readonly exchange: ConversationExchange;
   readonly standing: ConversationStandingDrawn;
-  /** Whether the glyph is the one thing on the surface that moves. */
+  /** Whether this exchange holds the one thing on the surface that moves. */
   readonly live: boolean;
+  /** Whether text of the answer is still being let out. */
+  readonly marked: boolean;
+  /** Whether the engine is what runs for a turn nothing is drawn of. */
+  readonly engine: boolean;
 }): ReactNode {
   const { exchange, standing } = props;
-  const running = standing.standing === "Running";
-  const quiet = conversationExchangeQuiet(exchange);
-  const copies = useCopyHeld() !== undefined && !running;
+  const doing = conversationExchangeDoing(exchange);
+  const said = conversationExchangeSaid(exchange);
+  const copies = useCopyHeld() !== undefined && said !== undefined;
+  const arm = conversationStandingArm(
+    standing,
+    conversationExchangeBegun(exchange),
+  );
+  const parked =
+    standing.standing === "Running" && standing.state === "Waiting";
+  const waited = useConversationWaitLasted(
+    doing.doing === "Unbegun" && !parked ? arm.word : undefined,
+  );
+  const lasted = waited || parked;
+  const drawn: ConversationMetaDrawn =
+    doing.doing === "Settled"
+      ? { lead: copies ? "Copy" : "Still", word: arm.word, worded: true }
+      : conversationMetaRunning(doing, arm.word, {
+          live: props.live,
+          marked: props.marked,
+          engine: props.engine,
+          lasted,
+          copies,
+        });
   return (
     <div className="conversation-meta text-ink-3 text-xs">
       <span
         className={
-          quiet ? "conversation-meta-lead invisible" : "conversation-meta-lead"
+          drawn.lead === "Kept"
+            ? "conversation-meta-lead invisible"
+            : "conversation-meta-lead"
         }
       >
-        {copies && exchange.answer !== undefined ? (
-          <CopyButton text={exchange.answer} label="Copy answer" />
-        ) : (
-          <ConversationGlyph filled={running} live={running && props.live} />
-        )}
+        <ConversationMetaLeadDrawn
+          lead={drawn.lead}
+          said={said}
+          running={standing.standing === "Running"}
+        />
       </span>
       <p className="flex flex-wrap items-baseline gap-2">
-        <span role="status" className={conversationStandingInk(standing)}>
-          {quiet
-            ? null
-            : conversationStandingArm(
-                standing,
-                conversationExchangeBegun(exchange),
-              ).word}
+        <span
+          role="status"
+          className={
+            drawn.worded ? conversationStandingInk(standing) : "visually-hidden"
+          }
+        >
+          {drawn.word ?? null}
         </span>
         {conversationMetaFigures(exchange.measures).map((figure, at) => (
           <Fragment key={at}>

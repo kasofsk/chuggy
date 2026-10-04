@@ -773,27 +773,6 @@ function conversationLiveActivity(
     : undefined;
 }
 
-/**
- * A running exchange with its latest text in the answer's place. The fold
- * moves a text into the work once a step follows it, which is right for a
- * turn that is over and takes the words from under a reader while it is not:
- * they stay until a newer text begins or the turn settles.
- */
-function conversationLiveTextKept(
-  exchange: ConversationExchange,
-): ConversationExchange {
-  if (exchange.standing.standing !== "Running") return exchange;
-  if (exchange.answer !== undefined) return exchange;
-  const at = exchange.work.findLastIndex((step) => step.step === "Text");
-  const text = exchange.work[at];
-  if (text?.step !== "Text") return exchange;
-  return {
-    ...exchange,
-    work: exchange.work.filter((_step, index) => index !== at),
-    answer: text.text,
-  };
-}
-
 /** The runs of a turn its own exchange does not say were abandoned: one is,
  * where the exchange holds a stored message that would have replaced it. */
 function conversationLiveRunsDrawn(
@@ -819,8 +798,7 @@ function conversationExchangeLive(
     live?.ended === true,
     runs.at(-1),
   );
-  const kept = conversationLiveTextKept(continued);
-  return activity === undefined ? kept : { ...kept, activity };
+  return activity === undefined ? continued : { ...continued, activity };
 }
 
 /**

@@ -21,8 +21,9 @@ export function running(
 }
 
 /** Everything on a conversation that is moving, each named by what it is: the
- * engine above the composer, the mark at the end of text being written, the
- * glyph on the line under an answer, and the glyph on the work's line. */
+ * engine where an answer is about to be, the mark at the end of text being
+ * written, the glyph on the line under an answer, and the glyph on the line of
+ * a part of the work. */
 export function moving(container: HTMLElement): readonly string[] {
   const named = (selector: string, name: string): readonly string[] =>
     Array.from(container.querySelectorAll(selector), () => name);
@@ -30,6 +31,6 @@ export function moving(container: HTMLElement): readonly string[] {
     ...named(".conversation-waiting-engine", "engine"),
     ...named(".conversation-writing .run-report-mark", "mark"),
     ...named(".conversation-meta .conversation-glyph-live", "glyph"),
-    ...named(".conversation-trigger .conversation-glyph-live", "card"),
+    ...named(".conversation-work-line .conversation-glyph-live", "card"),
   ];
 }

@@ -1,20 +1,22 @@
 /**
  * What the conversation surface holds still and what it lets move while a turn
- * is out: one indicator and never two, a place already there for whatever
- * arrives late, a member's word for where the turn stands, and what a reader
- * who cannot see the text arriving is told.
+ * is out: one indicator and never two, in one place; what is written later
+ * drawn after what was written before; a member's word for where the turn
+ * stands, said only where nothing else says it and only once it has lasted;
+ * and what a reader who cannot see the text arriving is told.
  *
  * The surface is handed exchanges and nothing else, so each case draws the
  * moments of a turn as the exchanges a page would hand it. jsdom lays nothing
- * out, so a place being held is asserted as the node that holds it being there
- * before and being the same node after; the offsets are measured in a browser.
+ * out, so a part keeping its place is asserted as its node being the same node
+ * after; the offsets are measured in a browser.
  */
 
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import { Conversation } from "../app/browser/conversation/Conversation.tsx";
+import { conversationWaitWordAfterMs } from "../app/browser/conversation/ConversationLines.tsx";
 import type {
   ConversationExchange,
   ConversationStep,
@@ -51,13 +53,26 @@ const read: ConversationStep = {
   name: "Read",
   input: undefined,
 };
+const reading = { activity: "ToolUse", name: "Read" } as const;
 const writing = { activity: "Writing" } as const;
 const answer = "It is blocked by 40.";
+const said: ConversationStep = { step: "Text", text: answer };
 
+/** The status under each answer, which a reader who cannot see is told. */
 function word(container: HTMLElement): readonly string[] {
   return Array.from(
     container.querySelectorAll('.conversation-meta p [role="status"]'),
     (status) => status.textContent,
+  );
+}
+
+/** The word under each answer a reader who can see is shown, and nothing for
+ * a line that shows none. */
+function shownWord(container: HTMLElement): readonly string[] {
+  return Array.from(
+    container.querySelectorAll('.conversation-meta p [role="status"]'),
+    (status) =>
+      status.classList.contains("visually-hidden") ? "" : status.textContent,
   );
 }
 
@@ -89,7 +104,7 @@ async function settledOn(
 }
 
 describe("one thing moves while a turn is out", () => {
-  test("the engine, until the turn has a word", async () => {
+  test("the engine, until something of the turn is drawn", async () => {
     await settledOn({ standing: { standing: "Running", state: "Queued" } }, [
       "engine",
     ]);
@@ -97,26 +112,25 @@ describe("one thing moves while a turn is out", () => {
       "engine",
     ]);
     await settledOn({}, ["engine"]);
-    await settledOn({ work: [thought], activity: { activity: "Thinking" } }, [
-      "engine",
-    ]);
-    await settledOn(
-      { work: [read], activity: { activity: "ToolUse", name: "Read" } },
-      ["engine"],
-    );
   });
 
-  test("the mark, while its text is being written", async () => {
+  test("the line of the work under way, while a thought or a tool is", async () => {
+    await settledOn({ work: [thought], activity: { activity: "Thinking" } }, [
+      "card",
+    ]);
+    await settledOn({ work: [read], activity: reading }, ["card"]);
+    await settledOn({ work: [said, read], activity: reading }, ["card"]);
+    await settledOn({ work: [read] }, ["card"]);
+  });
+
+  test("the mark at the end of the last text, while the turn is at it", async () => {
     await settledOn({ answer, activity: writing }, ["mark"]);
     await settledOn({ work: [thought], answer, activity: writing }, ["mark"]);
+    await settledOn({ answer }, ["mark"]);
   });
 
-  test("the glyph under the answer, once there are words and they are not what is being written", async () => {
-    await settledOn(
-      { work: [read], answer, activity: { activity: "ToolUse", name: "Read" } },
-      ["glyph"],
-    );
-    await settledOn({ answer }, ["glyph"]);
+  test("the glyph under the answer, where the turn has begun and nothing of it is drawn", async () => {
+    await settledOn({ activity: { activity: "Thinking" } }, ["glyph"]);
   });
 
   test("nothing, once the turn is heard to end, though the mailbox has yet to settle it", async () => {
@@ -149,7 +163,10 @@ describe("the one thing that moves, where it is not the only turn or the only pl
       );
     });
     expect(moving(view.container)).toEqual(["mark"]);
-    expect(word(view.container)).toEqual(["Working", "Queued"]);
+    expect(word(view.container)).toEqual(["Working", ""]);
+    expect(
+      view.container.querySelectorAll(".conversation-waiting"),
+    ).toHaveLength(0);
   });
 
   test("where no engine is drawn the glyph under the first turn out moves in its place", async () => {
@@ -165,30 +182,33 @@ describe("the one thing that moves, where it is not the only turn or the only pl
   });
 });
 
+const carried = `${answer} And 40 is waiting on a review of its own.`;
+
+const carriedOn: readonly ConversationStep[] = [
+  thought,
+  { step: "Text", text: carried },
+  read,
+];
+
 /** The moments of one turn, in the order a page hears them. */
 const throughMoments: readonly Partial<ConversationExchange>[] = [
   {},
+  { activity: { activity: "Thinking" } },
   { work: [thought], activity: { activity: "Thinking" } },
   { work: [thought], answer: "It is", activity: writing },
   { work: [thought], answer, activity: writing },
-  {
-    work: [thought, read],
-    answer: `${answer} And 40 is waiting on a review of its own.`,
-    activity: { activity: "ToolUse", name: "Read" },
-  },
-  {
-    work: [thought, read],
-    answer: `${answer} And 40 is waiting on a review of its own.`,
-    activity: { activity: "Whole" },
-  },
+  { work: carriedOn, activity: reading },
+  { work: carriedOn },
+  { work: carriedOn, answer: "So it waits." },
+  { work: carriedOn, answer: "So it waits.", activity: { activity: "Whole" } },
 ];
 
 describe("a turn drawn through", () => {
   test("never has two things moving at once, at any moment", async () => {
-    const seen: (readonly string[])[] = [];
     const view = render(
       drawn([running({ standing: { standing: "Running", state: "Queued" } })]),
     );
+    const seen: (readonly string[])[] = [moving(view.container)];
     const watching = new MutationObserver(() => {
       seen.push(moving(view.container));
     });
@@ -206,7 +226,7 @@ describe("a turn drawn through", () => {
       await new Promise((resolve) => setTimeout(resolve, 40));
     }
     await waitFor(() => {
-      expect(moving(view.container)).toEqual(["glyph"]);
+      expect(moving(view.container)).toEqual(["mark"]);
     });
     view.rerender(drawn([running(throughMoments.at(-1) ?? {})]));
     await waitFor(() => {
@@ -221,44 +241,75 @@ describe("a turn drawn through", () => {
     watching.disconnect();
     expect(seen.length).toBeGreaterThan(throughMoments.length);
     expect(seen.filter((live) => live.length > 1)).toEqual([]);
-    expect(new Set(seen.flat())).toEqual(new Set(["engine", "mark", "glyph"]));
+    expect(new Set(seen.flat())).toEqual(
+      new Set(["engine", "card", "mark", "glyph"]),
+    );
   });
 });
 
 describe("the word under an answer", () => {
-  function said(exchange: Partial<ConversationExchange>): string {
+  function words(exchange: Partial<ConversationExchange>): {
+    readonly told: string;
+    readonly shown: string;
+  } {
     const view = render(drawn([running(exchange)]));
-    const words = word(view.container);
+    const told = word(view.container);
+    const shown = shownWord(view.container);
     const text = view.container.textContent;
     cleanup();
-    expect(words).toHaveLength(1);
+    expect(told).toHaveLength(1);
     expect(text).not.toContain("Claimed");
-    return words[0] ?? "";
+    return { told: told[0] ?? "", shown: shown[0] ?? "" };
   }
 
   test("is a member's, and never the mailbox's for a turn a runner has", () => {
-    expect(said({ standing: { standing: "Running", state: "Queued" } })).toBe(
-      "Queued",
-    );
-    expect(said({ standing: { standing: "Running", state: "Waiting" } })).toBe(
-      "Waiting",
-    );
-    expect(said({})).toBe("Starting");
-    expect(said({ activity: { activity: "Thinking" } })).toBe("Working");
-    expect(said({ work: [read] })).toBe("Working");
-    expect(said({ answer, activity: writing })).toBe("Working");
-    expect(said({ answer, standing: { standing: "Answered" } })).toBe(
-      "Answered",
-    );
+    expect(
+      words({ standing: { standing: "Running", state: "Waiting" } }),
+    ).toEqual({ told: "Waiting", shown: "Waiting" });
+    expect(words({ activity: { activity: "Thinking" } })).toEqual({
+      told: "Working",
+      shown: "Working",
+    });
+    expect(words({ answer })).toEqual({ told: "Working", shown: "" });
+    expect(words({ work: [read] })).toEqual({ told: "Working", shown: "" });
+    expect(words({ answer, standing: { standing: "Answered" } })).toEqual({
+      told: "Answered",
+      shown: "Answered",
+    });
   });
 
+  test("is not shown while something else on the answer shows what is under way", () => {
+    for (const [moment, saysWorking] of [
+      [{ work: [thought], activity: { activity: "Thinking" } }, false],
+      [{ work: [read], activity: reading }, false],
+      [{ work: [read] }, true],
+      [{ answer, activity: writing }, false],
+    ] as const) {
+      const view = render(drawn([running(moment)]));
+      expect(word(view.container)).toEqual(["Working"]);
+      expect(shownWord(view.container)).toEqual([""]);
+      expect(
+        view.container
+          .querySelector(".conversation-meta-lead")
+          ?.classList.contains("invisible"),
+      ).toBe(true);
+      expect(
+        view.container.querySelector(".conversation-work-line")?.textContent ===
+          "Working",
+      ).toBe(saysWorking);
+      cleanup();
+    }
+  });
+});
+
+describe("what a reader who cannot see the answer arriving is told", () => {
   test("is one status that is there throughout, so a reader is told when it changes and of no word of the text", async () => {
     const view = render(drawn([running({})]));
     const status = found(
       view.container,
       '.conversation-meta p [role="status"]',
     );
-    expect(status.textContent).toBe("Starting");
+    expect(status.textContent).toBe("");
     view.rerender(drawn([running({ answer, activity: writing })]));
     await waitFor(() => {
       expect(view.container.querySelector(".run-report")?.textContent).toBe(
@@ -360,46 +411,108 @@ describe("the line under an answer, from the turn's last word to its settling", 
       expect(moving(view.container)).toEqual(["mark"]);
     });
     expect(quiet[2]?.textContent).toBe("Working");
-    expect(quiet[1]?.classList.contains("invisible")).toBe(false);
   });
 });
 
-describe("what arrives late lands in a place already held", () => {
-  test("a step that begins after the words have takes the place held above them", async () => {
+describe("a word for waiting", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function lasting(ms: number): void {
+    act(() => {
+      vi.advanceTimersByTime(ms);
+    });
+  }
+
+  const queued = {
+    standing: { standing: "Running", state: "Queued" },
+  } as const;
+
+  test("is said once the wait has lasted longer than a glance, and not before", () => {
+    for (const [moment, waited] of [
+      [queued, "Queued"],
+      [{}, "Starting"],
+    ] as const) {
+      const view = render(drawn([running(moment)]));
+      expect(shownWord(view.container)).toEqual([""]);
+      expect(moving(view.container)).toEqual(["engine"]);
+      lasting(conversationWaitWordAfterMs - 1);
+      expect(word(view.container)).toEqual([""]);
+      lasting(1);
+      expect(shownWord(view.container)).toEqual([waited]);
+      expect(moving(view.container)).toEqual(["engine"]);
+      cleanup();
+    }
+  });
+
+  test("is never said of a wait that ends within the glance, however many follow one another", () => {
+    const view = render(drawn([running(queued)]));
+    lasting(conversationWaitWordAfterMs - 1);
+    view.rerender(drawn([running({})]));
+    lasting(conversationWaitWordAfterMs - 1);
+    expect(word(view.container)).toEqual([""]);
+    view.rerender(
+      drawn([running({ work: [thought], activity: { activity: "Thinking" } })]),
+    );
+    lasting(conversationWaitWordAfterMs);
+    expect(shownWord(view.container)).toEqual([""]);
+  });
+
+  test("goes when the wait it named ends, and the next wait is timed from its own start", () => {
+    const view = render(drawn([running(queued)]));
+    lasting(conversationWaitWordAfterMs);
+    expect(shownWord(view.container)).toEqual(["Queued"]);
+    view.rerender(drawn([running({})]));
+    expect(shownWord(view.container)).toEqual([""]);
+    view.rerender(drawn([running(queued)]));
+    expect(shownWord(view.container)).toEqual([""]);
+    lasting(conversationWaitWordAfterMs);
+    expect(shownWord(view.container)).toEqual(["Queued"]);
+  });
+
+  test("a turn no runner can take now says so at once", () => {
+    const view = render(
+      drawn([running({ standing: { standing: "Running", state: "Waiting" } })]),
+    );
+    expect(shownWord(view.container)).toEqual(["Waiting"]);
+  });
+});
+
+describe("what is written later is drawn after what was written before", () => {
+  test("a step that begins after the words have is drawn under them, and they keep their node", async () => {
     const view = render(drawn([running({ answer, activity: writing })]));
     await waitFor(() => {
       expect(view.container.querySelector(".run-report")?.textContent).toBe(
         answer,
       );
     });
-    const place = found(view.container, ".conversation-work");
     const report = found(view.container, ".run-report");
-    expect(place.childElementCount).toBe(0);
-    expect(place.nextElementSibling?.contains(report)).toBe(true);
-    view.rerender(
-      drawn([
-        running({
-          work: [read],
-          answer,
-          activity: { activity: "ToolUse", name: "Read" },
-        }),
-      ]),
-    );
-    expect(found(view.container, ".conversation-work")).toBe(place);
-    expect(place.querySelector(".conversation-trigger")?.textContent).toBe(
-      "Read",
-    );
+    const root = found(view.container, ".conversation-answer");
+    expect(root.firstElementChild?.contains(report)).toBe(true);
+    view.rerender(drawn([running({ work: [said, read], activity: reading })]));
     expect(found(view.container, ".run-report")).toBe(report);
+    expect(report.textContent).toBe(answer);
+    expect(root.firstElementChild?.contains(report)).toBe(true);
+    const line = found(view.container, ".conversation-work-line");
+    expect(line.textContent).toBe("Read");
+    expect(
+      report.compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).not.toBe(0);
     styleless();
   });
 
-  test("the place is held above an answer that took no work, written or stored", () => {
+  test("an answer that took no work begins with its text, written or stored", () => {
     const view = render(
       drawn([running({ answer, standing: { standing: "Answered" } })]),
     );
-    expect(found(view.container, ".conversation-work").childElementCount).toBe(
-      0,
-    );
+    const root = found(view.container, ".conversation-answer");
+    expect(
+      root.firstElementChild?.contains(found(view.container, ".run-report")),
+    ).toBe(true);
   });
 
   test("the line under the answer is one line from the turn's first moment to its last", () => {

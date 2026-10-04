@@ -9,6 +9,7 @@
  */
 
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -18,6 +19,7 @@ import {
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { Conversation } from "../app/browser/conversation/Conversation.tsx";
+import { conversationWaitWordAfterMs } from "../app/browser/conversation/ConversationLines.tsx";
 import type {
   ConversationComposerProps,
   ConversationSent,
@@ -72,7 +74,10 @@ test("an exchange draws its ask, its standing and its answer", () => {
   styleless();
 });
 
-test("the viewport and the composer cap width at the column token, not a call-site width", () => {
+/** The sheet caps the column, at the width its mount says and otherwise the
+ * console's own, so what is asserted here is that the conversation and the
+ * composer are the same column and neither states a width at its call site. */
+test("the viewport and the composer are one column, and neither states a width of its own", () => {
   const onSend = vi.fn(() => Promise.resolve<ConversationSent>("Sent"));
   const view = render(
     <Conversation
@@ -81,10 +86,13 @@ test("the viewport and the composer cap width at the column token, not a call-si
       empty="No conversation"
     />,
   );
-  const wrappers = view.container.querySelectorAll(".max-w-column");
+  const wrappers = view.container.querySelectorAll(".conversation-column");
   expect(wrappers).toHaveLength(2);
+  expect(wrappers[0]?.contains(screen.getByText("what did it say"))).toBe(true);
+  expect(wrappers[1]?.contains(screen.getByRole("textbox"))).toBe(true);
   for (const wrapper of wrappers) {
-    expect(wrapper.classList.contains("max-w-column")).toBe(true);
+    expect(wrapper.className).not.toMatch(/\bmax-w-/u);
+    expect(wrapper.closest(".conversation")).not.toBe(null);
   }
   styleless();
 });
@@ -95,7 +103,7 @@ test("the scroller column takes its container's width, not its own cap", () => {
   const view = render(
     <Conversation exchanges={[answered]} empty="No conversation" pane />,
   );
-  const column = view.container.querySelector(".max-w-column");
+  const column = view.container.querySelector(".conversation-column");
   expect(column?.classList.contains("w-full")).toBe(true);
   styleless();
 });
@@ -127,7 +135,7 @@ test("every stack down an exchange is a column flex, so nothing widens past the 
     <Conversation exchanges={[answered]} empty="No conversation" pane />,
   );
   const stacks = [
-    view.container.querySelector(".max-w-column"),
+    view.container.querySelector(".conversation-column"),
     view.container.querySelector(".bg-bubble")?.parentElement,
     view.container.querySelector(".run-report")?.closest("[class*='flex-col']"),
   ];
@@ -167,12 +175,11 @@ test("only a pane caller carries the pane's own inset on the column and the comp
     />,
   );
   const [paneColumn, paneComposer] = [
-    ...paneView.container.querySelectorAll(".max-w-column"),
+    ...paneView.container.querySelectorAll(".conversation-column"),
   ];
   expect(paneColumn?.className).toContain("px-4");
   expect(paneColumn?.className).toContain("py-4");
-  expect(paneComposer?.className).toContain("px-4");
-  expect(paneComposer?.className).toContain("pb-4");
+  expect(paneComposer?.className).toContain("conversation-foot");
   paneView.unmount();
 
   const plainView = render(
@@ -182,10 +189,13 @@ test("only a pane caller carries the pane's own inset on the column and the comp
       empty="No conversation"
     />,
   );
-  const plainWrappers = plainView.container.querySelectorAll(".max-w-column");
+  const plainWrappers = plainView.container.querySelectorAll(
+    ".conversation-column",
+  );
   expect(plainWrappers).toHaveLength(2);
   for (const wrapper of plainWrappers) {
     expect(wrapper.className).not.toContain("px-4");
+    expect(wrapper.className).not.toContain("conversation-foot");
   }
   styleless();
 });
@@ -376,31 +386,53 @@ test("a result whose call was not read is titled Result, never its id", () => {
   styleless();
 });
 
-test("a running exchange's card says Working", () => {
+/** A page that only reads the record is told of no step under way, so the
+ * line of the work a running turn is at says the turn is working, and nothing
+ * else on the answer says it to a reader who can see. */
+test("a running exchange's card says Working, and nothing else does", () => {
   const running = exchangeOf({
     id: "x4",
     standing: { standing: "Running", state: "Claimed" },
     work: [{ step: "Thinking", text: "weighing it" }],
   });
-  render(<Conversation exchanges={[running]} empty="No conversation" />);
+  const view = render(
+    <Conversation exchanges={[running]} empty="No conversation" />,
+  );
   const trigger = screen.getByRole("button", { name: "Working" });
   fireEvent.click(trigger);
   expect(trigger.getAttribute("aria-expanded")).toBe("true");
   expect(screen.getByText("weighing it")).toBeDefined();
+  expect(
+    view.container.querySelector(
+      '.conversation-meta p [role="status"]:not(.visually-hidden)',
+    ),
+  ).toBeNull();
   styleless();
 });
 
-test("a running exchange draws its state word and no answer", () => {
-  const running = exchangeOf({
-    id: "x2",
-    standing: { standing: "Running", state: "Queued" },
-  });
-  const view = render(
-    <Conversation exchanges={[running]} empty="No conversation" />,
-  );
-  expect(screen.getByText("Queued")).toBeDefined();
-  expect(view.container.querySelector(".run-report")).toBeNull();
-  styleless();
+test("a running exchange nothing is drawn of says its state once that has lasted, and draws no answer", () => {
+  vi.useFakeTimers();
+  try {
+    const running = exchangeOf({
+      id: "x2",
+      standing: { standing: "Running", state: "Queued" },
+    });
+    const view = render(
+      <Conversation exchanges={[running]} empty="No conversation" />,
+    );
+    expect(screen.queryByText("Queued")).toBeNull();
+    expect(
+      view.container.querySelectorAll(".conversation-glyph-live"),
+    ).toHaveLength(1);
+    act(() => {
+      vi.advanceTimersByTime(conversationWaitWordAfterMs);
+    });
+    expect(screen.getByText("Queued")).toBeDefined();
+    expect(view.container.querySelector(".run-report")).toBeNull();
+    styleless();
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 test("a marker stands above the exchange it precedes", () => {

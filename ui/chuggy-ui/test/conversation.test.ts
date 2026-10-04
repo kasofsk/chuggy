@@ -22,6 +22,7 @@ import {
   conversationBlocksOf,
   conversationBlockUnreadable,
   conversationExchangeContinued,
+  conversationExchangeParts,
   conversationExchanges,
   conversationExchangesMax,
   conversationExchangesWaiting,
@@ -1826,19 +1827,154 @@ describe("the work summary", () => {
     expect(
       conversationWorkSummary([
         { step: "Thinking", text: "weighed" },
-        { step: "Text", text: "aside" },
         { step: "ToolCall", id: "call-1", name: "Read", input: {} },
         { step: "ToolCall", id: "call-2", name: "Grep", input: {} },
       ]),
-    ).toEqual({ toolCalls: 2, texts: 1, thought: true });
+    ).toEqual({ toolCalls: 2, thought: true });
   });
 
   test("no work is no counts", () => {
     expect(conversationWorkSummary([])).toEqual({
       toolCalls: 0,
-      texts: 0,
       thought: false,
     });
+  });
+});
+
+/** Every text a reader is shown of an exchange, in the order it is drawn. */
+function textsDrawn(exchange: ConversationExchange): readonly string[] {
+  return conversationExchangeParts(exchange).flatMap((part) =>
+    part.part === "Text" ? [part.text] : [],
+  );
+}
+
+/** The kinds of an exchange's parts, in the order they are drawn. */
+function kindsDrawn(exchange: ConversationExchange): readonly string[] {
+  return conversationExchangeParts(exchange).map((part) => part.part);
+}
+
+const open: ConversationExchange = {
+  id: "u1",
+  work: [],
+  standing: { standing: "Running", state: "Claimed" },
+  before: [],
+};
+
+describe("an answer in the order it was written", () => {
+  test("a text stays where it was written and the work that followed it comes after", () => {
+    const exchanges = conversationExchanges([
+      askOf("u1", "go"),
+      entryOf("a1", "Assistant", [{ block: "Thinking", text: "weighed" }]),
+      answerOf("a2", "Reading the file."),
+      entryOf("a3", "Assistant", [
+        { block: "ToolUse", id: "call-1", name: "Read", input: {} },
+      ]),
+      entryOf("a4", "Assistant", [
+        { block: "ToolUse", id: "call-2", name: "Grep", input: {} },
+      ]),
+      answerOf("a5", "It is open."),
+    ]);
+    expect(
+      conversationExchangeParts(exchanges[0] as ConversationExchange),
+    ).toEqual([
+      { part: "Work", steps: [{ step: "Thinking", text: "weighed" }] },
+      { part: "Text", text: "Reading the file." },
+      {
+        part: "Work",
+        steps: [
+          { step: "ToolCall", id: "call-1", name: "Read", input: {} },
+          { step: "ToolCall", id: "call-2", name: "Grep", input: {} },
+        ],
+      },
+      { part: "Text", text: "It is open." },
+    ]);
+  });
+
+  test("an exchange nothing was written in has no parts", () => {
+    expect(conversationExchangeParts(open)).toEqual([]);
+  });
+
+  test("tools with no text between them are one part however many there are", () => {
+    const calls: ConversationBlock[] = Array.from(
+      { length: 40 },
+      (_unused, at) => ({
+        block: "ToolUse",
+        id: `call-${String(at)}`,
+        name: "Read",
+        input: {},
+      }),
+    );
+    const worked = conversationExchangeContinued(open, [
+      { block: "Text", text: "Reading everything." },
+      ...calls,
+      { block: "Text", text: "Done." },
+    ]);
+    expect(kindsDrawn(worked)).toEqual(["Text", "Work", "Text"]);
+  });
+});
+
+describe("an answer as more of it is heard, and as it is read back", () => {
+  test("heard a few characters at a time, then a tool, then more: nothing drawn shrinks, moves or leaves", () => {
+    const first = "I am going to read the file.";
+    const second = "It says 41 waits on 40.";
+    const moments: (readonly ConversationBlock[])[] = [];
+    for (let chars = 3; chars < first.length; chars += 3)
+      moments.push([{ block: "Text", text: first.slice(0, chars) }]);
+    const tool: ConversationBlock = {
+      block: "ToolUse",
+      id: "",
+      name: "Read",
+      input: undefined,
+    };
+    moments.push([{ block: "Text", text: first }]);
+    moments.push([{ block: "Text", text: first }, tool]);
+    for (let chars = 3; chars <= second.length + 2; chars += 3)
+      moments.push([
+        { block: "Text", text: first },
+        tool,
+        { block: "Text", text: second.slice(0, chars) },
+      ]);
+    let before: readonly string[] = [];
+    let kinds: readonly string[] = [];
+    for (const heard of moments) {
+      const drawn = conversationExchangeContinued(open, heard);
+      const texts = textsDrawn(drawn);
+      expect(texts.length).toBeGreaterThanOrEqual(before.length);
+      before.forEach((text, at) => {
+        expect(texts[at]?.startsWith(text)).toBe(true);
+      });
+      expect(kindsDrawn(drawn).slice(0, kinds.length)).toEqual(kinds);
+      before = texts;
+      kinds = kindsDrawn(drawn);
+    }
+    expect(before).toEqual([first, second]);
+    expect(kinds).toEqual(["Text", "Work", "Text"]);
+  });
+
+  test("the stored answer read back whole draws what was heard, part for part", () => {
+    const heard = conversationExchangeContinued(open, [
+      { block: "Text", text: "I am going to read the file." },
+      { block: "ToolUse", id: "", name: "Read", input: undefined },
+      { block: "Text", text: "It says 41 waits on 40." },
+    ]);
+    const stored = conversationExchanges([
+      askOf("u1", "go"),
+      answerOf("a1", "I am going to read the file."),
+      entryOf("a2", "Assistant", [
+        { block: "ToolUse", id: "call-1", name: "Read", input: { path: "41" } },
+      ]),
+      entryOf("u2", "User", [
+        {
+          block: "ToolResult",
+          toolUse: "call-1",
+          text: "waits on 40",
+          isError: false,
+        },
+      ]),
+      answerOf("a3", "It says 41 waits on 40."),
+    ])[0] as ConversationExchange;
+    expect(textsDrawn(stored)).toEqual(textsDrawn(heard));
+    expect(kindsDrawn(stored)).toEqual(kindsDrawn(heard));
   });
 });
 

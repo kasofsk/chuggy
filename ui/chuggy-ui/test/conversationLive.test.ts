@@ -19,7 +19,10 @@ import type {
   ThreadLiveHeld,
   ThreadLiveStreamEvent,
 } from "../../../src/contract/threadLive.ts";
-import { conversationExchanges } from "../app/core/conversation.ts";
+import {
+  conversationExchangeParts,
+  conversationExchanges,
+} from "../app/core/conversation.ts";
 import type {
   ConversationBlock,
   ConversationExchange,
@@ -241,6 +244,18 @@ function texts(exchange: ConversationExchange | undefined): string {
   ].join("|");
 }
 
+/** The texts an exchange is drawn with, in the order they were written. */
+function written(exchange: ConversationExchange): readonly string[] {
+  return conversationExchangeParts(exchange).flatMap((part) =>
+    part.part === "Text" ? [part.text] : [],
+  );
+}
+
+/** The kinds of an exchange's parts, in the order they are drawn. */
+function kinds(exchange: ConversationExchange): readonly string[] {
+  return conversationExchangeParts(exchange).map((part) => part.part);
+}
+
 function only(moment: Moment): ConversationExchange {
   const exchanges = drawn(moment);
   expect(exchanges).toHaveLength(1);
@@ -287,7 +302,7 @@ test("a post heard again after a later one changes nothing held, and what is hel
   ])
     expect(conversationLiveHeard(held, late)).toBe(held);
   const exchange = only({ held, items: [asked] });
-  expect(exchange.answer).toBe("Hello there");
+  expect(written(exchange)).toEqual(["Hello there"]);
   expect(exchange.activity).toEqual({ activity: "ToolUse", name: "Read" });
 });
 
@@ -389,7 +404,7 @@ test("a block that begins after one a gap stopped is what the turn is doing", ()
     began("m1", 1, "ToolUse", "Read"),
   ]);
   const exchange = only({ held: gapped, items: [asked] });
-  expect(exchange.answer).toBe("Hello");
+  expect(written(exchange)).toEqual(["Hello"]);
   expect(exchange.activity).toEqual({ activity: "ToolUse", name: "Read" });
 });
 
@@ -463,10 +478,8 @@ test("a message heard before one the transcript holds part of is drawn from the 
     held,
     items: [asked, stored("m2", { block: "Text", text: "Kept" })],
   });
-  expect(exchange.answer).toBe("Kept");
-  expect(exchange.work).toEqual([
-    { step: "ToolCall", id: "", name: "Read", input: undefined },
-  ]);
+  expect(written(exchange)).toEqual(["Kept"]);
+  expect(kinds(exchange)).toEqual(["Text", "Work"]);
 });
 
 test("a settled turn keeps what was heard until the walk has read to the mark", () => {
@@ -586,7 +599,7 @@ test("a snapshot of nothing ends nothing: the hub forgetting a session mid-tool 
   expect(forgotten.ended).toBeUndefined();
   for (const items of [[asked], callStored]) {
     const exchange = only({ held: forgotten, items, reached: true });
-    expect(exchange.answer).toBe("Running the gates.");
+    expect(written(exchange)).toEqual(["Running the gates."]);
     expect(exchange.activity).toEqual({ activity: "ToolUse", name: "Bash" });
   }
 });
@@ -667,34 +680,34 @@ test("a call the transcript holds no result for is named with nothing heard", ()
   expect(returned.activity).toBeUndefined();
 });
 
-test("a running turn's latest text stays in the answer's place when work follows it", () => {
+test("a text a running turn carried on past stands where it was written, out and settled alike", () => {
   const held = heardAll([
     began("m1", 0, "Text"),
     wrote("m1", 0, 0, "Looking."),
     began("m1", 1, "ToolUse", "Read"),
   ]);
+  const written = [
+    { part: "Text", text: "Looking." },
+    {
+      part: "Work",
+      steps: [{ step: "ToolCall", id: "", name: "Read", input: undefined }],
+    },
+  ];
   const exchange = only({ held, items: [asked] });
-  expect(exchange.answer).toBe("Looking.");
-  expect(exchange.work).toEqual([
-    { step: "ToolCall", id: "", name: "Read", input: undefined },
-  ]);
+  expect(conversationExchangeParts(exchange)).toEqual(written);
   const settled = only({ held, items: [asked], state: "Answered" });
-  expect(settled.answer).toBeUndefined();
-  expect(settled.work).toEqual([
-    { step: "Text", text: "Looking." },
-    { step: "ToolCall", id: "", name: "Read", input: undefined },
-  ]);
+  expect(conversationExchangeParts(settled)).toEqual(written);
 });
 
-test("the stored transcript alone keeps a running turn's latest text in the answer's place", () => {
+test("the stored transcript alone draws a running turn's text before the work that followed it", () => {
   const items = [
     asked,
     stored("m1", { block: "Text", text: "Looking." }),
     stored("m1", { block: "ToolUse", id: "toolu_1", name: "Read", input: {} }),
   ];
   const exchange = only({ held: conversationLiveNothing, items });
-  expect(exchange.answer).toBe("Looking.");
-  expect(exchange.work.map((step) => step.step)).toEqual(["ToolCall"]);
+  expect(written(exchange)).toEqual(["Looking."]);
+  expect(kinds(exchange)).toEqual(["Text", "Work"]);
 });
 
 test("an exchange nothing was heard of and no turn runs in is handed back as it came", () => {
@@ -1124,8 +1137,8 @@ test("a message abandoned part way leaves once the transcript holds the one that
     resulted("toolu_1"),
   ];
   const later = only({ held: abandoned, items: called });
-  expect(later.answer).toBe("Hello, I will do it.");
-  expect(later.work.map((step) => step.step)).toEqual(["ToolCall"]);
+  expect(written(later)).toEqual(["Hello, I will do it."]);
+  expect(kinds(later)).toEqual(["Text", "Work"]);
 });
 
 test("a message is marked with what the transcript held when a page that had read it all first held it, and keeps that mark", () => {

@@ -9,10 +9,8 @@
  * would not see what is drawn between them.
  */
 
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, waitFor } from "@testing-library/react";
+import { cleanup, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import type { ReactNode } from "react";
 
 import type {
   ThreadResponse,
@@ -20,23 +18,16 @@ import type {
   ThreadTurnResponse,
 } from "../../../src/contract/responses.ts";
 import type { ThreadLiveBlock } from "../../../src/contract/threadLive.ts";
-import { SessionProvider } from "../app/browser/session.tsx";
-import { ProjectStreamProvider } from "../app/browser/stream.tsx";
 import { streamReopenDelayMsMin } from "../app/core/streamConnection.ts";
-import { ThreadConversation } from "../app/browser/thread/ThreadConversation.tsx";
 import { moving } from "./conversationMoving.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
-import { answer, holderDouble, settled } from "./screenHarness.tsx";
+import { answer, settled } from "./screenHarness.tsx";
 import { elementScrollToStubbed } from "./scrolling.ts";
 import { frame, streamServer } from "./streamDouble.ts";
 import type { StreamOpening, StreamServer } from "./streamDouble.ts";
 import { styleless } from "./styleless.ts";
-import {
-  threadBody,
-  threadPartition,
-  threadStream,
-  threadTurn,
-} from "./threadFixture.ts";
+import { threadConversationMounted } from "./threadConversationMount.tsx";
+import { threadBody, threadStream, threadTurn } from "./threadFixture.ts";
 
 type StoreEntry = ThreadTranscriptResponse["entries"][number];
 
@@ -164,32 +155,11 @@ function scripted(
       });
     });
   });
-  const holder = holderDouble();
-  const client = new QueryClient();
-  const drawn = (shown: ThreadResponse): ReactNode => (
-    <SessionProvider holder={holder}>
-      <QueryClientProvider client={client}>
-        <ProjectStreamProvider
-          partition={threadPartition}
-          transport={server.ports.fetch}
-        >
-          <ThreadConversation partition={threadPartition} thread={shown} />
-        </ProjectStreamProvider>
-      </QueryClientProvider>
-    </SessionProvider>
-  );
-  const view = render(drawn(thread));
   return {
     server,
     batches,
     gate,
-    container: view.container,
-    draw: (shown) => {
-      view.rerender(drawn(shown));
-    },
-    unmount: () => {
-      view.unmount();
-    },
+    ...threadConversationMounted(thread, server),
   };
 }
 
@@ -255,10 +225,25 @@ function wrote(message: string, index: number, offset: number, text: string) {
   return live({ live: "Text", message, index, offset, text });
 }
 
-/** What a reader is shown of the turn being answered. */
+/** The parts of an answer in the order they are drawn: a text as its words,
+ * and a line of the work as its words between brackets. */
+function partsDrawn(answer: Element): readonly string[] {
+  return Array.from(
+    answer.querySelectorAll(".run-report-bare, .conversation-work-line"),
+    (part) =>
+      part.classList.contains("conversation-work-line")
+        ? `[${part.textContent}]`
+        : part.textContent,
+  );
+}
+
+/** What a reader is shown of the turn being answered: the last text of its
+ * answer and the last line of its work, every part of it in order, what moves,
+ * and the word under it where one is shown. */
 function shown(container: HTMLElement): {
   readonly answer: string | undefined;
   readonly card: string | undefined;
+  readonly drawn: readonly string[];
   readonly moving: readonly string[];
   readonly writing: boolean;
   readonly engine: boolean;
@@ -266,18 +251,67 @@ function shown(container: HTMLElement): {
 } {
   const messages = container.querySelectorAll("[data-message-id]");
   const last = messages.item(messages.length - 1);
-  const card = last.querySelector(".conversation-trigger");
   return {
-    answer: last.querySelector(".run-report-bare")?.textContent ?? undefined,
-    card: card?.textContent ?? undefined,
+    answer:
+      Array.from(last.querySelectorAll(".run-report-bare")).at(-1)
+        ?.textContent ?? undefined,
+    card:
+      Array.from(last.querySelectorAll(".conversation-work-line")).at(-1)
+        ?.textContent ?? undefined,
+    drawn: partsDrawn(last),
     moving: moving(container),
     writing: last.querySelector(".conversation-writing") !== null,
     engine: container.querySelector(".conversation-waiting-engine") !== null,
     standing:
       last.querySelector(
-        '.conversation-meta [role="status"]:not(.visually-hidden)',
+        '.conversation-meta p [role="status"]:not(.visually-hidden)',
       )?.textContent ?? undefined,
   };
+}
+
+/** Every text of the newest answer under a root, read each time anything
+ * drawn under it changes. */
+function textsWatched(root: HTMLElement): {
+  readonly seen: readonly (readonly string[])[];
+  readonly stop: () => void;
+} {
+  const seen: (readonly string[])[] = [];
+  const read = (): void => {
+    const last = Array.from(root.querySelectorAll(".conversation-answer")).at(
+      -1,
+    );
+    seen.push(
+      Array.from(
+        last?.querySelectorAll(".run-report-bare") ?? [],
+        (text) => text.textContent,
+      ),
+    );
+  };
+  const watching = new MutationObserver(read);
+  watching.observe(root, {
+    childList: true,
+    subtree: true,
+    characterData: true,
+  });
+  return {
+    seen,
+    stop: () => {
+      read();
+      watching.disconnect();
+    },
+  };
+}
+
+/** Every text once drawn is still drawn at each later reading, in its place,
+ * beginning as it did and no shorter. */
+function onlyGrew(seen: readonly (readonly string[])[]): void {
+  seen.forEach((now, at) => {
+    const before = seen[at - 1] ?? [];
+    expect(now.length).toBeGreaterThanOrEqual(before.length);
+    before.forEach((text, place) => {
+      expect(now[place]?.startsWith(text)).toBe(true);
+    });
+  });
 }
 
 async function until(
@@ -328,47 +362,54 @@ test("a turn as it is written: the wait, the thought, the words and the tool", a
 
   script.draw(threadAt("Queued", 1));
   await until(script.container, {
-    answer: undefined,
-    card: undefined,
+    drawn: [],
     moving: ["engine"],
-    standing: "Queued",
+    standing: undefined,
   });
   expect(script.server.liveSeen).toHaveLength(1);
 
   script.draw(threadAt("Claimed", 1));
-  await until(script.container, { moving: ["engine"], standing: "Starting" });
+  await settled();
+  expect(shown(script.container)).toMatchObject({
+    drawn: [],
+    moving: ["engine"],
+    standing: undefined,
+  });
   script.server.pushLive(began("msg_a", 0, "Thinking"));
   await until(script.container, {
-    answer: undefined,
-    card: "Thinking",
-    moving: ["engine"],
-    standing: "Working",
+    drawn: ["[Thinking]"],
+    moving: ["card"],
+    engine: false,
+    standing: undefined,
   });
 
   script.server.pushLive(began("msg_a", 1, "Text"));
   script.server.pushLive(wrote("msg_a", 1, 0, "Looking "));
   script.server.pushLive(wrote("msg_a", 1, 8, "at 41."));
   await until(script.container, {
-    answer: "Looking at 41.",
-    card: "Thought",
+    drawn: ["[Thought]", "Looking at 41."],
     moving: ["mark"],
     writing: true,
-    standing: "Working",
+    standing: undefined,
   });
   const first = answerNode(script.container);
 
   script.server.pushLive(began("msg_a", 2, "ToolUse", "Read"));
   await until(script.container, {
-    answer: "Looking at 41.",
-    card: "Read",
-    moving: ["glyph"],
+    drawn: ["[Thought]", "Looking at 41.", "[Read]"],
+    moving: ["card"],
     writing: false,
+    standing: undefined,
   });
+  expect(answerNode(script.container)).toBe(first);
 
   script.batches.push(firstMessage);
   script.draw(threadAt("Claimed", 2));
-  await until(script.container, { card: "Working", moving: ["glyph"] });
-  expect(shown(script.container).answer).toBe("Looking at 41.");
+  await until(script.container, {
+    drawn: ["[Thought]", "Looking at 41.", "[Working]"],
+    moving: ["card"],
+    standing: undefined,
+  });
   expect(answerNode(script.container)).toBe(first);
   styleless();
 });
@@ -382,9 +423,14 @@ test("a turn as it ends: whole, then stored, then settled, and nothing moves", a
 
   script.server.pushLive(began("msg_b", 0, "Text"));
   script.server.pushLive(wrote("msg_b", 0, 0, "It is **blocked** by 40."));
+  const drawnWhole = [
+    "[Thought]",
+    "Looking at 41.",
+    "[1 tool]",
+    "It is blocked by 40.",
+  ];
   await until(script.container, {
-    answer: "It is blocked by 40.",
-    card: "Thought · 1 tool · 1 note",
+    drawn: drawnWhole,
     moving: ["mark"],
     writing: true,
   });
@@ -393,7 +439,7 @@ test("a turn as it ends: whole, then stored, then settled, and nothing moves", a
   await until(script.container, {
     writing: false,
     moving: [],
-    standing: "",
+    standing: undefined,
   });
   const whole = answerNode(script.container);
   const markup = script.container.innerHTML;
@@ -410,8 +456,7 @@ test("a turn as it ends: whole, then stored, then settled, and nothing moves", a
   expect(answerNode(script.container)).toBe(whole);
   expect(whole.outerHTML).toContain("<strong>blocked</strong>");
   expect(shown(script.container)).toMatchObject({
-    answer: "It is blocked by 40.",
-    card: "Thought · 1 tool · 1 note",
+    drawn: drawnWhole,
     moving: [],
     writing: false,
     standing: "Answered",
@@ -421,7 +466,82 @@ test("a turn as it ends: whole, then stored, then settled, and nothing moves", a
   styleless();
 });
 
-test("a reader who opens the thread part way through an answer starts from what is held", async () => {
+const plainSecond: readonly StoreEntry[] = [
+  entry("uuid-h", "assistant", {
+    id: "msg_b",
+    content: [{ type: "text", text: "It is blocked by 40." }],
+  }),
+];
+
+/** Says a text a few characters at a time, as a runner posts it. */
+function wroteByThrees(
+  script: Script,
+  message: string,
+  index: number,
+  text: string,
+): void {
+  for (let offset = 0; offset < text.length; offset += 3)
+    script.server.pushLive(
+      wrote(message, index, offset, text.slice(offset, offset + 3)),
+    );
+}
+
+test("an answer heard a few characters at a time around a tool, then stored, settled and read afresh: every text drawn only ever grows, and reads the same afresh", async () => {
+  const script = scripted(threadAt("Queued", 1), oneOpening);
+  await settled();
+  const watched = textsWatched(script.container);
+  const drawnWhole = [
+    "[Thought]",
+    "Looking at 41.",
+    "[1 tool]",
+    "It is blocked by 40.",
+  ];
+
+  script.draw(threadAt("Claimed", 1));
+  script.server.pushLive(began("msg_a", 0, "Thinking"));
+  script.server.pushLive(began("msg_a", 1, "Text"));
+  wroteByThrees(script, "msg_a", 1, "Looking at 41.");
+  await until(script.container, { drawn: ["[Thought]", "Looking at 41."] });
+  const first = script.container.querySelectorAll(".run-report-bare").item(1);
+
+  script.server.pushLive(began("msg_a", 2, "ToolUse", "Read"));
+  await until(script.container, { card: "Read" });
+  script.batches.push(firstMessage);
+  script.draw(threadAt("Claimed", 2));
+  await until(script.container, { card: "Working" });
+
+  script.server.pushLive(began("msg_b", 0, "Text"));
+  wroteByThrees(script, "msg_b", 0, "It is blocked by 40.");
+  await until(script.container, { drawn: drawnWhole, moving: ["mark"] });
+  script.server.pushLive(live({ live: "End" }));
+  await until(script.container, { moving: [] });
+  script.batches.push(plainSecond);
+  script.draw(threadAt("Claimed", 3));
+  await settled();
+  script.draw(threadAt("Answered", 3));
+  await until(script.container, { standing: "Answered" });
+  await settled();
+  watched.stop();
+
+  expect(watched.seen.length).toBeGreaterThan(drawnWhole.length);
+  onlyGrew(watched.seen);
+  expect(script.container.querySelectorAll(".run-report-bare").item(1)).toBe(
+    first,
+  );
+  expect(shown(script.container).drawn).toEqual(drawnWhole);
+
+  script.unmount();
+  const afresh = scripted(threadAt("Answered", 1), oneOpening, [
+    ...earlier,
+    ...firstMessage,
+    ...plainSecond,
+  ]);
+  await until(afresh.container, { drawn: drawnWhole, standing: "Answered" });
+  styleless();
+});
+
+test("a reader who opens the thread part way through an answer is shown what is held whole, and only what follows at a pace", async () => {
+  const watched = textsWatched(document.body);
   const script = scripted(threadAt("Claimed", 1), [
     {
       status: 200,
@@ -440,6 +560,11 @@ test("a reader who opens the thread part way through an answer starts from what 
   await until(script.container, { answer: "It is blo", writing: true });
   script.server.pushLive(wrote("msg_a", 0, 9, "cked."));
   await until(script.container, { answer: "It is blocked." });
+  watched.stop();
+  const texts = watched.seen.flatMap((seen) => seen.slice(0, 1));
+  expect(texts[0]).toBe("It is blo");
+  expect(new Set(texts).size).toBeGreaterThan(2);
+  onlyGrew(watched.seen);
 });
 
 test("a stream cut in the middle of an answer goes on from the snapshot of its next opening, and nothing is said of it", async () => {
@@ -475,7 +600,8 @@ test("a stream cut in the middle of an answer goes on from the snapshot of its n
   expect(script.container.textContent).toBe(words);
   expect(shown(script.container)).toMatchObject({
     answer: "It is blo",
-    standing: "Working",
+    moving: ["mark"],
+    standing: undefined,
   });
   await waitFor(
     () => {
@@ -501,9 +627,8 @@ test("a stream that is refused draws the thread as its transcript alone, and say
   script.batches.push(firstMessage);
   script.draw(threadAt("Claimed", 2));
   await until(script.container, {
-    answer: "Looking at 41.",
-    card: "Working",
-    moving: ["glyph"],
+    drawn: ["[Thought]", "Looking at 41.", "[Working]"],
+    moving: ["card"],
     writing: false,
   });
   expect(script.server.liveSeen).toHaveLength(1);
@@ -520,13 +645,16 @@ test("a block heard with a gap in it is never drawn as text", async () => {
   script.server.pushLive(wrote("msg_a", 0, 0, "It is "));
   await until(script.container, { answer: "It is", moving: ["mark"] });
   script.server.pushLive(wrote("msg_a", 0, 40, "by 40."));
-  await until(script.container, { answer: "It is", moving: ["glyph"] });
-  expect(shown(script.container).writing).toBe(false);
+  await settled();
+  expect(shown(script.container)).toMatchObject({
+    drawn: ["It is"],
+    moving: ["mark"],
+  });
   script.server.pushLive(began("msg_a", 1, "ToolUse", "Read"));
   await until(script.container, { card: "Read" });
   expect(shown(script.container)).toMatchObject({
-    answer: "It is",
-    moving: ["glyph"],
+    drawn: ["It is", "[Read]"],
+    moving: ["card"],
   });
 });
 
@@ -583,22 +711,20 @@ test("the hub forgetting a session in the middle of a tool does not draw the tur
   script.server.pushLive(began("msg_a", 0, "Text"));
   script.server.pushLive(wrote("msg_a", 0, 0, "Running the gates."));
   script.server.pushLive(began("msg_a", 1, "ToolUse", "Bash"));
-  await until(script.container, { card: "Bash", moving: ["glyph"] });
+  await until(script.container, { card: "Bash", moving: ["card"] });
   script.batches.push(toolRunning);
   script.draw(threadAt("Claimed", 2));
   await until(script.container, {
-    answer: "Running the gates.",
-    card: "Bash",
-    moving: ["glyph"],
+    drawn: ["Running the gates.", "[Bash]"],
+    moving: ["card"],
   });
   script.server.pushLive(nothingHeld);
   await settled();
   await settled();
   expect(shown(script.container)).toMatchObject({
-    answer: "Running the gates.",
-    card: "Bash",
-    moving: ["glyph"],
-    standing: "Working",
+    drawn: ["Running the gates.", "[Bash]"],
+    moving: ["card"],
+    standing: undefined,
   });
 });
 
@@ -663,7 +789,7 @@ test("text a failed turn never stored leaves at settle and does not return while
       kind: "Thinking",
     }),
   );
-  await until(script.container, { card: "Thinking", moving: ["engine"] });
+  await until(script.container, { card: "Thinking", moving: ["card"] });
   await readWithoutTheFailedText(script);
 });
 
@@ -682,7 +808,7 @@ test("a snapshot still naming a failed turn while the next is out brings none of
   expect(shown(script.container)).toMatchObject({
     answer: undefined,
     moving: ["engine"],
-    standing: "Starting",
+    standing: undefined,
   });
   await readWithoutTheFailedText(script);
 });
@@ -718,7 +844,7 @@ test("a failed turn's last words and its end, heard while the next is written, a
     answer: "Trying again",
     writing: true,
     moving: ["mark"],
-    standing: "Working",
+    standing: undefined,
   });
   await readWithoutTheFailedText(script);
   expect(shown(script.container)).toMatchObject({
@@ -758,12 +884,12 @@ test("a turn put back to wait after its attempt ended is drawn as waiting again"
     { status: 200, chunks: [nothingHeld], hold: true },
   ]);
   await settled();
-  await until(script.container, { engine: true, standing: "Queued" });
+  await until(script.container, { engine: true, moving: ["engine"] });
   script.draw(threadAt("Claimed", 1));
   script.server.pushLive(live({ live: "End" }));
-  await until(script.container, { engine: false });
+  await until(script.container, { engine: false, moving: [] });
   script.draw(threadAt("Queued", 1));
-  await until(script.container, { engine: true, standing: "Queued" });
+  await until(script.container, { engine: true, moving: ["engine"] });
   script.draw(threadAt("Claimed", 1));
   await settled();
   expect(shown(script.container)).toMatchObject({ engine: true });
@@ -793,7 +919,7 @@ function halves(
       [
         half.querySelector(".run-report-bare")?.textContent ?? undefined,
         half.querySelector(
-          '.conversation-meta [role="status"]:not(.visually-hidden)',
+          '.conversation-meta p [role="status"]:not(.visually-hidden)',
         )?.textContent ?? undefined,
       ] as const,
   );
@@ -947,7 +1073,7 @@ test("a turn put back to wait part way through its text, then taken again, is dr
   await until(script.container, { answer: "It is blo" });
   script.server.pushLive(live({ live: "End" }));
   script.draw(threadAt("Queued", 2));
-  await until(script.container, { answer: undefined, standing: "Queued" });
+  await until(script.container, { answer: undefined, engine: true });
   script.draw(threadAt("Claimed", 2));
   await settled();
   script.server.pushLive(began("msg_b", 0, "Text"));
@@ -981,16 +1107,15 @@ test("a turn that ran and failed keeps its stored words while the same thing is 
   await waitFor(() => {
     expect(halves(script.container).slice(1)).toEqual([
       failed,
-      [undefined, "Queued"],
+      [undefined, undefined],
     ]);
   });
   script.draw(of(2, "Claimed"));
-  await waitFor(() => {
-    expect(halves(script.container).slice(1)).toEqual([
-      failed,
-      [undefined, "Starting"],
-    ]);
-  });
+  await settled();
+  expect(halves(script.container).slice(1)).toEqual([
+    failed,
+    [undefined, undefined],
+  ]);
   const retry = { message: "msg_c", index: 0 };
   script.server.pushLive(
     liveOf("turn-3", { live: "Block", ...retry, kind: "Text" }),
@@ -998,7 +1123,7 @@ test("a turn that ran and failed keeps its stored words while the same thing is 
   script.server.pushLive(
     liveOf("turn-3", { live: "Text", ...retry, offset: 0, text: "Again." }),
   );
-  const written = [failed, ["Again.", "Working"]];
+  const written = [failed, ["Again.", undefined]];
   await waitFor(() => {
     expect(halves(script.container).slice(1)).toEqual(written);
   });
@@ -1022,24 +1147,22 @@ test("a turn its session reported failed keeps the words a page saw it store whi
   script.draw(threadAt("Claimed", 2));
   await waitFor(() => {
     expect(halves(script.container).slice(1)).toEqual([
-      ["Half an answer", "Working"],
+      ["Half an answer", undefined],
     ]);
   });
   const reported = { ...turnAt("Failed"), failure: "AgentFailed" as const };
   const failed = ["Half an answer", "Failed"];
-  for (const [state, word] of [
-    ["Queued", "Queued"],
-    ["Claimed", "Starting"],
-  ] as const) {
+  for (const state of ["Queued", "Claimed"] as const) {
     script.draw(
       threadBody({ batches: 2, turns: [before, reported, sentAgain(state)] }),
     );
     await waitFor(() => {
       expect(halves(script.container).slice(1)).toEqual([
         failed,
-        [undefined, word],
+        [undefined, undefined],
       ]);
     });
+    expect(shown(script.container).moving).toEqual(["engine"]);
   }
 });
 
@@ -1057,16 +1180,20 @@ test("the turn being answered keeps its own stored work when an older answered t
   script.batches.push(toolRunning);
   script.draw(of(2));
   await waitFor(() => {
-    expect(halves(script.container)).toEqual([
-      ["Running the gates.", "Working"],
-    ]);
+    expect(shown(script.container)).toMatchObject({
+      drawn: ["Running the gates.", "[Bash]"],
+      moving: ["card"],
+    });
   });
   script.server.pushLive(began("msg_b", 0, "Text"));
   script.server.pushLive(wrote("msg_b", 0, 0, "It is blocked by 40."));
-  const written = [["It is blocked by 40.", "Working"]];
+  const written = ["Running the gates.", "[1 tool]", "It is blocked by 40."];
   await waitFor(() => {
-    expect(halves(script.container)).toEqual(written);
+    expect(shown(script.container).drawn).toEqual(written);
   });
+  expect(
+    script.container.querySelectorAll(".conversation-answer"),
+  ).toHaveLength(1);
   script.batches.push([
     entry("uuid-h", "assistant", {
       id: "msg_b",
@@ -1076,7 +1203,7 @@ test("the turn being answered keeps its own stored work when an older answered t
   script.draw(of(3));
   await settled();
   await settled();
-  expect(halves(script.container)).toEqual(written);
+  expect(shown(script.container).drawn).toEqual(written);
 });
 
 /** The line under the newest answer: the box itself, its lead and its word. */
@@ -1086,15 +1213,18 @@ function lineUnder(container: HTMLElement): readonly (Element | null)[] {
   return [
     last.querySelector(".conversation-meta"),
     last.querySelector(".conversation-meta-lead"),
-    last.querySelector(
-      '.conversation-meta [role="status"]:not(.visually-hidden)',
-    ),
+    last.querySelector('.conversation-meta p [role="status"]'),
   ];
 }
 
 /** What a reader is shown of a turn heard to end that the mailbox still says a
  * runner has. */
-const quiet = { writing: false, moving: [], engine: false, standing: "" };
+const quiet = {
+  writing: false,
+  moving: [],
+  engine: false,
+  standing: undefined,
+};
 
 const lastWords = "It is blocked by 40.";
 
@@ -1109,7 +1239,7 @@ async function heardToEnd(
   await until(script.container, {
     answer: lastWords,
     moving: ["mark"],
-    standing: "Working",
+    standing: undefined,
   });
   const working = lineUnder(script.container);
   script.server.pushLive(live({ live: "End" }));
@@ -1169,18 +1299,17 @@ test("a turn heard to end that the mailbox settles failed shows its failure wher
   ).toBe("StoreRefused");
 });
 
-test("more heard of a turn after its end brings the word and the motion back", async () => {
+test("more heard of a turn after its end brings the motion back, on the line of the work it is now at", async () => {
   const script = scripted(threadAt("Claimed", 1), oneOpening);
   const working = await heardToEnd(script);
   script.server.pushLive(began("msg_b", 0, "ToolUse", "Read"));
   await until(script.container, {
-    answer: lastWords,
-    card: "Read",
-    moving: ["glyph"],
-    standing: "Working",
+    drawn: [lastWords, "[Read]"],
+    moving: ["card"],
+    standing: undefined,
   });
   sameLine(script, working);
-  expect(working[1]?.classList.contains("invisible")).toBe(false);
+  expect(working[2]?.textContent).toBe("Working");
 });
 
 test("a turn heard to end that the mailbox says is waiting, then taken again, is drawn as a turn that is out", async () => {
@@ -1190,10 +1319,14 @@ test("a turn heard to end that the mailbox says is waiting, then taken again, is
   await until(script.container, {
     answer: undefined,
     moving: ["engine"],
-    standing: "Queued",
+    standing: undefined,
   });
   script.draw(threadAt("Claimed", 2));
-  await until(script.container, { moving: ["engine"], standing: "Starting" });
+  await settled();
+  expect(shown(script.container)).toMatchObject({
+    answer: undefined,
+    moving: ["engine"],
+  });
 });
 
 test("an end heard of another turn, or heard twice, changes nothing drawn", async () => {
@@ -1204,7 +1337,7 @@ test("an end heard of another turn, or heard twice, changes nothing drawn", asyn
   await until(script.container, {
     answer: "It is blo",
     moving: ["mark"],
-    standing: "Working",
+    standing: undefined,
   });
   const written = script.container.innerHTML;
   script.server.pushLive(liveOf("turn-1", { live: "End" }));
@@ -1296,7 +1429,7 @@ test("a turn its session refused without running, sent again: the answer is the 
   await waitFor(() => {
     expect(halvesNoticed(script.container)).toEqual([
       refusedDrawn,
-      [undefined, "Queued", undefined],
+      [undefined, undefined, undefined],
     ]);
   });
   script.draw(of(1, [refused, retried("Claimed")]));
@@ -1321,7 +1454,7 @@ test("a turn its session refused without running, sent again: the answer is the 
       text: "Hi, I am here.",
     }),
   );
-  const written = [["Hi, I am here.", "Working", undefined], refusedDrawn];
+  const written = [["Hi, I am here.", undefined, undefined], refusedDrawn];
   await waitFor(() => {
     expect(halvesNoticed(script.container)).toEqual(written);
   });
@@ -1383,7 +1516,7 @@ test("a thread whose stream was replaced: the new turn's stored words, none of t
   await waitFor(() => {
     expect(halves(whole.container)).toEqual([
       ["New answer so far", "Answered"],
-      [undefined, "Starting"],
+      [undefined, undefined],
     ]);
   });
   whole.unmount();
@@ -1394,7 +1527,7 @@ test("a thread whose stream was replaced: the new turn's stored words, none of t
   );
   await waitFor(() => {
     expect(halves(replaced.container)).toEqual([
-      ["New answer so far", "Working"],
+      ["New answer so far", undefined],
     ]);
   });
 });
@@ -1466,7 +1599,7 @@ test("a burst of events is drawn at the next frame and not before, and a frame s
   expect(shown(script.container).card).toBeUndefined();
   expect(frames.pending()).toBe(owed + 1);
   frames.paint();
-  await until(script.container, { card: "Bash", moving: ["engine"] });
+  await until(script.container, { card: "Bash", moving: ["card"] });
 
   script.server.pushLive(began("msg_a", 3, "ToolUse", "Grep"));
   await settled();

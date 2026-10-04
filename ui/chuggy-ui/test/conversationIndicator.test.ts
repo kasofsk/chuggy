@@ -1,5 +1,6 @@
 /**
- * The one thing on a conversation that moves while a turn is out.
+ * The one thing on a conversation that moves while a turn is out, and what
+ * that turn is doing, which says where on its exchange the thing is drawn.
  *
  * Each case is a moment a thread can be in, and what is held to is that the
  * answer names one place or none: never the engine and an exchange together,
@@ -10,6 +11,7 @@ import { expect, test } from "vitest";
 
 import {
   conversationExchangeBegun,
+  conversationExchangeDoing,
   conversationExchangeQuiet,
   conversationIndicator,
 } from "../app/core/conversation.ts";
@@ -17,6 +19,7 @@ import type {
   ConversationActivity,
   ConversationExchange,
   ConversationRunningState,
+  ConversationStep,
 } from "../app/core/conversation.ts";
 
 const composing = { drawn: true, sending: false };
@@ -35,6 +38,7 @@ function running(
   id: string,
   state: ConversationRunningState,
   said: {
+    readonly work?: readonly ConversationStep[];
     readonly answer?: string;
     readonly activity?: ConversationActivity;
   } = {},
@@ -61,20 +65,18 @@ test("the engine runs while a send is on its way, before there is a turn to draw
   ).toEqual({ indicator: "Engine" });
 });
 
-test("the engine runs for a turn nobody has said a word of, whatever it is waiting on", () => {
+test("a turn nobody has said a word of is the one that moves, whatever it is waiting on", () => {
   for (const state of ["Queued", "Waiting", "Claimed"] as const)
-    expect(
-      conversationIndicator([answered("a"), running("b", state)], composing),
-    ).toEqual({ indicator: "Engine" });
-  expect(
-    conversationIndicator(
-      [running("b", "Claimed", { activity: { activity: "Thinking" } })],
-      composing,
-    ),
-  ).toEqual({ indicator: "Engine" });
+    for (const drawn of [true, false])
+      expect(
+        conversationIndicator([answered("a"), running("b", state)], {
+          drawn,
+          sending: false,
+        }),
+      ).toEqual({ indicator: "Exchange", id: "b" });
 });
 
-test("a turn with words takes it from the engine, and keeps it while a send is on its way", () => {
+test("a turn with words keeps it while a send is on its way and another waits behind it", () => {
   const written = running("b", "Claimed", { answer: "It is" });
   expect(conversationIndicator([answered("a"), written], composing)).toEqual({
     indicator: "Exchange",
@@ -86,6 +88,13 @@ test("a turn with words takes it from the engine, and keeps it while a send is o
       sending: true,
     }),
   ).toEqual({ indicator: "Exchange", id: "b" });
+});
+
+test("of two turns out the one that has begun moves, wherever it stands", () => {
+  const begun = running("c", "Claimed", { activity: { activity: "Thinking" } });
+  expect(
+    conversationIndicator([running("b", "Queued"), begun], composing),
+  ).toEqual({ indicator: "Exchange", id: "c" });
 });
 
 const whole = { activity: "Whole" } as const;
@@ -105,7 +114,8 @@ test("a turn heard to end leaves the indicator to what is still under way", () =
   const ended = running("b", "Claimed", { answer: "Done.", activity: whole });
   const next = running("c", "Queued");
   expect(conversationIndicator([ended, next], composing)).toEqual({
-    indicator: "Engine",
+    indicator: "Exchange",
+    id: "c",
   });
   expect(
     conversationIndicator([ended], { drawn: true, sending: true }),
@@ -160,4 +170,91 @@ test("a turn has begun once a step, a word or what it is doing has reached the p
       work: [{ step: "Thinking", text: "" }],
     }),
   ).toBe(true);
+});
+
+const thought: ConversationStep = { step: "Thinking", text: "" };
+const read: ConversationStep = {
+  step: "ToolCall",
+  id: "",
+  name: "Read",
+  input: undefined,
+};
+const reading = { activity: "ToolUse", name: "Read" } as const;
+
+test("a turn that is over or heard to end is doing nothing a page draws as under way", () => {
+  expect(conversationExchangeDoing(answered("a"))).toEqual({
+    doing: "Settled",
+  });
+  expect(
+    conversationExchangeDoing(
+      running("b", "Claimed", { work: [read], activity: whole }),
+    ),
+  ).toEqual({ doing: "Whole" });
+});
+
+test("a turn nothing is drawn of has not begun, whatever it is waiting on", () => {
+  for (const state of ["Queued", "Waiting", "Claimed"] as const)
+    expect(conversationExchangeDoing(running("b", state))).toEqual({
+      doing: "Unbegun",
+    });
+});
+
+test("a turn whose last part is work is at that work, on the step it is heard to be on where one is", () => {
+  expect(
+    conversationExchangeDoing(
+      running("b", "Claimed", {
+        work: [thought],
+        activity: { activity: "Thinking" },
+      }),
+    ),
+  ).toEqual({ doing: "Work", activity: { activity: "Thinking" } });
+  expect(
+    conversationExchangeDoing(
+      running("b", "Claimed", {
+        work: [{ step: "Text", text: "Looking." }, read],
+        activity: reading,
+      }),
+    ),
+  ).toEqual({ doing: "Work", activity: reading });
+  expect(
+    conversationExchangeDoing(running("b", "Claimed", { work: [read] })),
+  ).toEqual({ doing: "Work", activity: undefined });
+});
+
+test("a turn whose last part is text is at that text, whatever is heard of it", () => {
+  const text = { doing: "Text" };
+  expect(
+    conversationExchangeDoing(
+      running("b", "Claimed", {
+        work: [read],
+        answer: "It is",
+        activity: { activity: "Writing" },
+      }),
+    ),
+  ).toEqual(text);
+  expect(
+    conversationExchangeDoing(running("b", "Claimed", { answer: "It is" })),
+  ).toEqual(text);
+  expect(
+    conversationExchangeDoing(
+      running("b", "Claimed", { answer: "It is", activity: reading }),
+    ),
+  ).toEqual(text);
+});
+
+test("a turn that has begun and has no last part still going on is said to be working and no more", () => {
+  const unnamed = { doing: "Unnamed" };
+  expect(
+    conversationExchangeDoing(
+      running("b", "Claimed", { activity: { activity: "Thinking" } }),
+    ),
+  ).toEqual(unnamed);
+  expect(
+    conversationExchangeDoing(
+      running("b", "Claimed", {
+        work: [read],
+        activity: { activity: "Writing" },
+      }),
+    ),
+  ).toEqual(unnamed);
 });

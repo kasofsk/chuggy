@@ -2,20 +2,27 @@
  * One exchange drawn as a chat turn: the member's bubble on the right, the
  * assistant's answer flush left, and one quiet line under it.
  *
- * A TURN NOBODY HAS ANSWERED DRAWS NO ANSWER BLOCK. The parts primitive draws
- * an empty part where a running message holds no content, so the answer is
- * asked for only once there is one: an exchange still running is its work line
- * and its meta line, and nothing between them.
+ * AN ANSWER IS DRAWN IN THE ORDER IT WAS WRITTEN: a text, the work that
+ * followed it behind one line, the text after that. Each part keeps its place
+ * and its node as more is written, as the transcript's own copy takes the
+ * place of what was heard, and when the record is read again, so nothing a
+ * reader has read leaves, shrinks or moves except by more being written below
+ * it.
  *
- * WHAT ARRIVES LATE LANDS IN A PLACE ALREADY HELD. The work's line has its
- * place above every answer and the meta line its place below, whether or not
- * either has anything to say yet, so a step that begins after the words have,
- * and the turn settling, move nothing a reader is looking at.
+ * A TURN NOBODY HAS ANSWERED DRAWS NO ANSWER TEXT. Each text is asked of the
+ * library by its place among the message's texts, so a message holding none
+ * is asked for none, and an exchange nothing is drawn of yet is the engine on
+ * the line its first part will take and the line under that.
  *
- * ONE THING MOVES. The surface names the one exchange that may, and within it
- * the mark at the end of the text takes it from the glyph under the answer for
- * as long as text is being let out — which only the part drawing the text
- * knows, so it says so to the line through a state the answer holds.
+ * ONE THING MOVES, AT THE END OF WHAT IS DRAWN. The surface names the one
+ * exchange that may, and within it the turn is at its last part: the mark at
+ * the end of a text, or the line of the work. The glyph under the answer
+ * moves only where a turn has begun and has no part, and never while text is
+ * still being let out above it: only the part drawing a text knows that, so
+ * it says so to the line under the answer through a count the answer holds.
+ * The surface holds the same count over every answer, and the engine of a
+ * turn nothing is drawn of waits on it, so the turn before it has drawn its
+ * last character before anything moves for the next.
  *
  * Both halves stack with a column flex and neither draws a gutter beside the
  * text, so an exchange is the same shape in a pane as on a page and the words
@@ -26,21 +33,38 @@
  * arriving changes nothing a reader can see. What differs while more is coming
  * is the text handed to them: let out at an even pace, with the marks its last
  * line leaves open closed.
+ *
+ * ONLY WHAT ARRIVES IS LET OUT AT A PACE. A text is drawn whole as it is first
+ * drawn, whatever its turn is doing, so a page that opens on a turn part way
+ * through writes none of it again.
  */
 
 import { MessagePrimitive, useAuiState, useSmooth } from "@assistant-ui/react";
-import type { TextMessagePartComponent } from "@assistant-ui/react";
+import type {
+  MessagePartStatus,
+  TextMessagePartComponent,
+} from "@assistant-ui/react";
 import {
   createContext,
   Fragment,
+  useCallback,
   useContext,
   useLayoutEffect,
+  useReducer,
   useState,
 } from "react";
 import type { ReactNode } from "react";
 
 import { ticketReferenceSplit } from "../../../../../src/contract/ticketReference.ts";
-import type { ConversationExchange } from "../../core/conversation.ts";
+import {
+  conversationExchangeDoing,
+  conversationExchangeParts,
+} from "../../core/conversation.ts";
+import type {
+  ConversationDoing,
+  ConversationExchange,
+  ConversationPart,
+} from "../../core/conversation.ts";
 import { threadTurnKindWord } from "../../core/threads.ts";
 import { TicketReference } from "../ui/TicketReference.tsx";
 import { MarkdownReport } from "../ui/MarkdownReport.tsx";
@@ -52,6 +76,7 @@ import {
   conversationMarkerWords,
 } from "./ConversationLines.tsx";
 import type { ConversationStandingDrawn } from "./ConversationLines.tsx";
+import { ConversationWaiting } from "./ConversationWaiting.tsx";
 import { ConversationWorkCard } from "./ConversationWorkCard.tsx";
 
 import "./conversation.css";
@@ -63,27 +88,73 @@ export const ConversationWorkOpen = createContext(false);
  * pace. */
 export const ConversationPaced = createContext(false);
 
-/** The exchange whose answer holds the one thing on the surface that moves,
- * where there is one. */
-export const ConversationIndicated = createContext<string | undefined>(
-  undefined,
-);
+/** The exchange that holds the one thing on the surface that moves, where
+ * there is one, and whether the engine is what runs for a turn nothing is
+ * drawn of. */
+export interface ConversationIndicatedHeld {
+  readonly id: string | undefined;
+  readonly engine: boolean;
+}
+
+export const ConversationIndicated = createContext<ConversationIndicatedHeld>({
+  id: undefined,
+  engine: false,
+});
 
 const ConversationMarked = createContext(false);
 
-const ConversationMarkedSaid = createContext<(marked: boolean) => void>(
+const ConversationMarkedSaid = createContext<(by: number) => void>(
   () => undefined,
 );
 
-/** Holds whether an answer's text is carrying the mark, apart from the answer
- * itself so that saying so draws the line under it again and nothing else. */
+const ConversationLetting = createContext(false);
+
+const ConversationLettingSaid = createContext<(by: number) => void>(
+  () => undefined,
+);
+
+function conversationMarksCounted(held: number, by: number): number {
+  return held + by;
+}
+
+/** Holds how many texts anywhere on the surface are carrying the mark. */
+export function ConversationLettingHeld(props: {
+  readonly children: ReactNode;
+}): ReactNode {
+  const [marks, marked] = useReducer(conversationMarksCounted, 0);
+  return (
+    <ConversationLettingSaid.Provider value={marked}>
+      <ConversationLetting.Provider value={marks > 0}>
+        {props.children}
+      </ConversationLetting.Provider>
+    </ConversationLettingSaid.Provider>
+  );
+}
+
+/** Where a text stands in its answer: before a later part, the last part, or
+ * the last part of a turn that is still at it. */
+type ConversationTextPlace = "Earlier" | "Last" | "UnderWay";
+
+const ConversationTextPlaced = createContext<ConversationTextPlace>("Last");
+
+/** Holds how many of an answer's texts are carrying the mark, apart from the
+ * answer itself so that saying so draws its other parts again and no text,
+ * and tells the surface of each. */
 function ConversationMarkHeld(props: {
   readonly children: ReactNode;
 }): ReactNode {
-  const [marked, setMarked] = useState(false);
+  const [marks, counted] = useReducer(conversationMarksCounted, 0);
+  const surface = useContext(ConversationLettingSaid);
+  const marked = useCallback(
+    (by: number): void => {
+      counted(by);
+      surface(by);
+    },
+    [surface],
+  );
   return (
-    <ConversationMarkedSaid.Provider value={setMarked}>
-      <ConversationMarked.Provider value={marked}>
+    <ConversationMarkedSaid.Provider value={marked}>
+      <ConversationMarked.Provider value={marks > 0}>
         {props.children}
       </ConversationMarked.Provider>
     </ConversationMarkedSaid.Provider>
@@ -125,31 +196,48 @@ const ConversationSaid: TextMessagePartComponent = (props) => (
   </>
 );
 
+/** What the pace is told of every text: that it is whole. The pace begins a
+ * text its part says is running from nothing, which would write again what a
+ * reader had already read; told this it draws what it is first handed whole
+ * and lets out at its pace only what is added after. */
+const conversationPartWhole: MessagePartStatus = { type: "complete" };
+
 /**
  * The report gives up its own panel here: what it sits on is already a
  * surface, and a box inside a box is width the words need more. It is still
- * being written while its block is, and while the pace has yet to catch up
- * with what was heard of it.
+ * being written while its turn is at it, and while the pace has yet to catch
+ * up with what was heard of it.
+ *
+ * Only the last part of an answer is let out at a pace. A text something was
+ * written after is drawn whole from then on, so a part is never drawn under
+ * one still arriving and two texts never carry the mark at once.
  */
 const ConversationReport: TextMessagePartComponent = (props) => {
   const paced = useContext(ConversationPaced);
-  const activity = useConversationExchange()?.activity?.activity;
-  const shown = useSmooth(props, paced);
-  const writing =
-    activity === "Writing" || shown.text.length < props.text.length;
-  const markedSaid = useContext(ConversationMarkedSaid);
+  const place = useContext(ConversationTextPlaced);
+  const [followed, setFollowed] = useState(false);
+  if (place === "Earlier" && !followed) setFollowed(true);
+  const shown = useSmooth(
+    { ...props, status: conversationPartWhole },
+    paced && !followed,
+  );
+  const writing = place === "UnderWay" || shown.text.length < props.text.length;
+  const marked = useContext(ConversationMarkedSaid);
   useLayoutEffect(() => {
-    markedSaid(writing);
+    if (!writing) return undefined;
+    marked(1);
     return () => {
-      markedSaid(false);
+      marked(-1);
     };
-  }, [markedSaid, writing]);
+  }, [marked, writing]);
   return (
     <div className={writing ? "conversation-writing" : undefined}>
       <MarkdownReport text={shown.text} bare writing={writing} />
     </div>
   );
 };
+
+const conversationReportComponents = { Text: ConversationReport };
 
 /** The member's own words, on the right, as they were typed — with the block
  * the server composed in front of a thread's first message folded away above
@@ -229,53 +317,119 @@ export function ConversationAskMessage(): ReactNode {
   );
 }
 
-/** The line under an answer, its glyph moving where this exchange is the one
- * that may and its text is not carrying the mark. */
-function ConversationMeta(props: {
+function conversationTextPlace(
+  last: boolean,
+  underWay: boolean,
+): ConversationTextPlace {
+  if (!last) return "Earlier";
+  return underWay ? "UnderWay" : "Last";
+}
+
+/**
+ * The parts of an answer in the order they were written. A text is named by
+ * its place among the texts and a part of the work by the texts before it, so
+ * work the record comes to hold between two texts moves neither.
+ */
+function conversationPartsDrawn(
+  parts: readonly ConversationPart[],
+  doing: ConversationDoing,
+  shown: {
+    readonly open: boolean;
+    /** Whether this exchange holds the one thing that moves. */
+    readonly mine: boolean;
+  },
+): readonly ReactNode[] {
+  const drawn: ReactNode[] = [];
+  let texts = 0;
+  parts.forEach((part, at) => {
+    const last = at === parts.length - 1;
+    if (part.part === "Work") {
+      drawn.push(
+        <ConversationWorkCard
+          key={`work-${String(texts)}`}
+          steps={part.steps}
+          underWay={last && doing.doing === "Work" ? doing : undefined}
+          live={shown.mine}
+          open={shown.open}
+        />,
+      );
+      return;
+    }
+    drawn.push(
+      <ConversationTextPlaced.Provider
+        key={`text-${String(texts)}`}
+        value={conversationTextPlace(
+          last,
+          shown.mine && doing.doing === "Text",
+        )}
+      >
+        <MessagePrimitive.PartByIndex
+          index={texts}
+          components={conversationReportComponents}
+        />
+      </ConversationTextPlaced.Provider>,
+    );
+    texts += 1;
+  });
+  return drawn;
+}
+
+/** The engine of a turn nothing is drawn of, once no text on the surface is
+ * still being let out: until then the mark at the end of that text is the one
+ * thing moving. */
+function ConversationEngine(): ReactNode {
+  return useContext(ConversationLetting) ? null : <ConversationWaiting />;
+}
+
+/** What an answer holds: its parts, the engine where nothing of it is drawn
+ * yet, how it failed where it did, and the line under all of it. */
+function ConversationAnswerBody(props: {
   readonly exchange: ConversationExchange;
   readonly standing: ConversationStandingDrawn;
 }): ReactNode {
+  const { exchange, standing } = props;
   const indicated = useContext(ConversationIndicated);
   const marked = useContext(ConversationMarked);
+  const open = useContext(ConversationWorkOpen);
+  const doing = conversationExchangeDoing(exchange);
+  const mine = indicated.id === exchange.id;
   return (
-    <ConversationMetaLine
-      exchange={props.exchange}
-      standing={props.standing}
-      live={indicated === props.exchange.id && !marked}
-    />
+    <>
+      {conversationPartsDrawn(conversationExchangeParts(exchange), doing, {
+        open,
+        mine,
+      })}
+      {doing.doing === "Unbegun" && mine && indicated.engine ? (
+        <ConversationEngine />
+      ) : null}
+      {standing.standing === "Failed" && standing.failure !== undefined ? (
+        <Notice tone="danger" detail={standing.failure} />
+      ) : null}
+      <ConversationMetaLine
+        exchange={exchange}
+        standing={standing}
+        live={mine}
+        marked={marked}
+        engine={indicated.engine}
+      />
+    </>
   );
 }
 
-/** The answer half of one exchange: what it took, what came back, and where it
- * stands. It is marked busy for as long as its turn is out. */
+/** The answer half of one exchange: what was written of it, in order, and
+ * where it stands. It is marked busy for as long as its turn is out. */
 export function ConversationAnswerMessage(): ReactNode {
   const exchange = useConversationExchange();
-  const workOpen = useContext(ConversationWorkOpen);
   if (exchange === undefined) return null;
   const standing = exchange.standing;
   if (standing.standing === "Markers") return null;
-  const running = standing.standing === "Running";
   return (
     <MessagePrimitive.Root
       className="conversation-answer flex flex-col gap-3"
-      aria-busy={running}
+      aria-busy={standing.standing === "Running"}
     >
       <ConversationMarkHeld>
-        <div className="conversation-work text-sm">
-          <ConversationWorkCard
-            work={exchange.work}
-            running={running}
-            activity={exchange.activity}
-            open={workOpen}
-          />
-        </div>
-        {standing.standing === "Failed" && standing.failure !== undefined ? (
-          <Notice tone="danger" detail={standing.failure} />
-        ) : null}
-        {exchange.answer === undefined ? null : (
-          <MessagePrimitive.Parts components={{ Text: ConversationReport }} />
-        )}
-        <ConversationMeta exchange={exchange} standing={standing} />
+        <ConversationAnswerBody exchange={exchange} standing={standing} />
       </ConversationMarkHeld>
     </MessagePrimitive.Root>
   );

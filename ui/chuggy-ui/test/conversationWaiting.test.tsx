@@ -1,14 +1,15 @@
 /**
- * The train strip above the composer, mounted with no provider as
- * `conversationSurface.test.tsx` mounts the rest of the surface: the strip
- * holds its height with or without the engine, the engine is drawn while a
- * turn is out with nothing said for it yet and absent once it has answered or
- * every exchange has settled, the strip is never drawn where there is no
- * composer to run above, and the sprite states neither a colour nor a style of
- * its own so the theme and the served policy both hold.
+ * The engine, mounted with no provider as `conversationSurface.test.tsx`
+ * mounts the rest of the surface: it runs in the answer of a turn that is out
+ * with nothing drawn of it yet, on the line the first of the answer will take,
+ * and at the foot of the column for a send no exchange stands for; it is gone
+ * once anything of the turn is drawn or the turn settles, it holds no place
+ * while it is not drawn, it is never drawn where there is no composer, and the
+ * sprite states neither a colour nor a style of its own so the theme and the
+ * served policy both hold.
  */
 
-import { cleanup, render } from "@testing-library/react";
+import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { Conversation } from "../app/browser/conversation/Conversation.tsx";
@@ -48,21 +49,11 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
-test("the strip holds its height with no engine, and draws one when waiting", () => {
-  const idle = render(<ConversationWaiting waiting={false} />);
-  expect(idle.container.querySelector(".conversation-waiting")).not.toBeNull();
-  expect(
-    idle.container.querySelector(".conversation-waiting-engine"),
-  ).toBeNull();
-  idle.unmount();
+function engine(container: HTMLElement): Element | null {
+  return container.querySelector(".conversation-waiting-engine");
+}
 
-  const running = render(<ConversationWaiting waiting />);
-  expect(
-    running.container.querySelector(".conversation-waiting-engine"),
-  ).not.toBeNull();
-});
-
-test("a running exchange draws the engine on the strip above the composer", () => {
+test("a turn out with nothing drawn of it runs the engine in its own answer, above the line under it", () => {
   const running = exchangeOf({
     standing: { standing: "Running", state: "Claimed" },
   });
@@ -73,9 +64,14 @@ test("a running exchange draws the engine on the strip above the composer", () =
       empty="No conversation"
     />,
   );
+  const line = view.container.querySelector(".conversation-waiting");
+  expect(engine(view.container)).not.toBeNull();
+  expect(line?.parentElement?.classList.contains("conversation-answer")).toBe(
+    true,
+  );
   expect(
-    view.container.querySelector(".conversation-waiting-engine"),
-  ).not.toBeNull();
+    line?.nextElementSibling?.classList.contains("conversation-meta"),
+  ).toBe(true);
 });
 
 test("a running exchange already carrying its answer draws no engine", () => {
@@ -90,30 +86,38 @@ test("a running exchange already carrying its answer draws no engine", () => {
       empty="No conversation"
     />,
   );
-  expect(
-    view.container.querySelector(".conversation-waiting-engine"),
-  ).toBeNull();
+  expect(view.container.querySelector(".conversation-waiting")).toBeNull();
 });
 
-test("the strip shares the composer's own width rather than the pane's", () => {
-  const running = exchangeOf({
-    standing: { standing: "Running", state: "Claimed" },
-  });
+test("a send no exchange stands for yet runs the engine at the foot of the column, and nothing between the column and the composer", async () => {
+  const answered = exchangeOf({ answer: "done" });
   const view = render(
     <Conversation
-      exchanges={[running]}
-      composer={composerOf()}
+      exchanges={[answered]}
+      composer={{
+        ...composerOf(),
+        onSend: () => new Promise<ConversationSent>(() => undefined),
+      }}
       empty="No conversation"
     />,
   );
-  const strip = view.container.querySelector(".conversation-waiting");
+  const box = view.container.querySelector("textarea");
+  if (box === null) throw new Error("no composer is drawn");
+  fireEvent.change(box, { target: { value: "and 41" } });
+  fireEvent.keyDown(box, { key: "Enter" });
+  await waitFor(() => {
+    expect(engine(view.container)).not.toBeNull();
+  });
+  const line = view.container.querySelector(".conversation-waiting");
+  const column = view.container.querySelector(".conversation-column");
+  expect(line?.parentElement).toBe(column);
+  expect(column?.lastElementChild).toBe(line);
   const composer = view.container.querySelector(".conversation-field");
-  expect(strip?.parentElement?.className).toContain("max-w-column");
-  expect(strip?.parentElement).toBe(composer?.closest("form")?.parentElement);
+  expect(composer?.closest("form")?.parentElement?.childElementCount).toBe(1);
 });
 
 test("the engine runs a rail, and turns a wheel under every axle", () => {
-  const running = render(<ConversationWaiting waiting />);
+  const running = render(<ConversationWaiting />);
   expect(
     running.container.querySelector(".conversation-waiting-track"),
   ).not.toBeNull();
@@ -129,12 +133,12 @@ test("the engine runs a rail, and turns a wheel under every axle", () => {
 });
 
 test("the sprite states no colour and no style of its own", () => {
-  const running = render(<ConversationWaiting waiting />);
+  const running = render(<ConversationWaiting />);
   expect(running.container.querySelector("[style]")).toBeNull();
   expect(running.container.querySelector("[fill]")).toBeNull();
 });
 
-test("every exchange settled draws the strip with no engine", () => {
+test("every exchange settled draws no engine and holds no place for one", () => {
   const answered = exchangeOf({ answer: "done" });
   const view = render(
     <Conversation
@@ -143,13 +147,10 @@ test("every exchange settled draws the strip with no engine", () => {
       empty="No conversation"
     />,
   );
-  expect(view.container.querySelector(".conversation-waiting")).not.toBeNull();
-  expect(
-    view.container.querySelector(".conversation-waiting-engine"),
-  ).toBeNull();
+  expect(view.container.querySelector(".conversation-waiting")).toBeNull();
 });
 
-test("no composer draws no strip, running or settled alike", () => {
+test("no composer draws no engine, running or settled alike", () => {
   const running = exchangeOf({
     standing: { standing: "Running", state: "Claimed" },
   });

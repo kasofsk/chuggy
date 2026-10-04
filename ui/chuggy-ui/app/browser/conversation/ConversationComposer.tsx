@@ -88,15 +88,16 @@ export function ConversationComposer(
         {props.mentions === undefined ? null : (
           <ConversationMentions items={props.mentions} />
         )}
-        <div className="conversation-field bg-surface-1 border-edge-control rounded-3 flex flex-col gap-2 border p-3">
+        <div className="conversation-field bg-surface-1 border-edge-control rounded-3 border">
           <ComposerPrimitive.Input
-            className="conversation-input w-full min-w-0 resize-none border-0"
+            className="conversation-input w-full min-w-0 flex-1 resize-none border-0"
             minRows={1}
             maxRows={conversationRowsMax}
             maxLength={props.charsMax}
             readOnly={!props.takes}
             submitMode="enter"
             aria-label="Message"
+            placeholder="Message"
             autoFocus={props.focusOnMount === true}
             onChange={
               props.onEdit === undefined
@@ -107,14 +108,16 @@ export function ConversationComposer(
             }
           />
           <ComposerPrimitive.Send
-            className="rounded-circle bg-surface-inverse text-ink-inverse disabled:bg-surface-2 disabled:text-ink-3 ml-auto flex size-6 items-center justify-center border-0"
+            className="conversation-send"
             aria-busy={props.busy}
           >
-            <ConversationSendGlyph />
+            <span className="conversation-send-mark">
+              <ConversationSendGlyph />
+            </span>
             <span className="visually-hidden">Send</span>
           </ComposerPrimitive.Send>
         </div>
-        <div className="text-ink-3 flex flex-wrap items-baseline gap-3 text-xs">
+        <div className="conversation-note text-ink-3 flex flex-wrap items-baseline gap-3 text-xs">
           {props.note}
           {count < props.charsMax * conversationCounterShare ? null : (
             <span className="num ml-auto">
