@@ -6,6 +6,14 @@
  * or carries a frame the contract rejects costs a reader nothing the
  * transcript does not bring a moment later: the ladder reopens it, every
  * connection opens on a snapshot, and no status leaves this module.
+ *
+ * THE SERVER CUTS THIS STREAM AS A MATTER OF COURSE: at the greatest age it
+ * lets one reach, when the bearer it was opened with expires, and at any bound
+ * it holds. Only a server that is stopping ends one whole. So a read that
+ * fails is the ordinary way an open ends, and because every open begins with a
+ * snapshot, one that handed a frame over was a stream that worked: the
+ * transport is told so with `cut`, never counts such an open against its
+ * bound, and waits out the wait a server with no room names.
  */
 
 import { partitionPath } from "../../../../src/contract/http.ts";
@@ -53,6 +61,7 @@ export function openThreadLiveStream(
       url: threadLiveUrl(partition, session),
       headers: streamHeaders,
       refused: threadLiveRefused,
+      cut: true,
       opened: () => undefined,
       frame: (frame) => {
         onEvent(

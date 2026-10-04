@@ -6,6 +6,20 @@
  * What a frame means and what a refusal means are the caller's; what is here
  * is the open, the read and the ladder that opens the next one. Every wait is
  * bounded, and so is the number of consecutive opens that did not last.
+ *
+ * A READ THAT FAILS IS A CLOSE. A connection reset under a read and a body
+ * that ends are the same thing to the ladder: the open is over, nothing is
+ * thrown to the caller, and the next one is opened.
+ *
+ * WHAT MAKES AN OPEN ONE THAT LASTED IS THE STREAM'S TO SAY. Left unsaid, it
+ * is having stayed open for `streamStableMs`. A stream whose server cuts it
+ * as a matter of course says so with `cut`, and for it an open that handed a
+ * frame over lasted however soon it ended: it is never counted, and it is
+ * opened again at once where it had stayed open that long and after the
+ * ladder's floor where it had not, which is what keeps a server cutting every
+ * open from being asked in a loop. A server with no room for such a stream
+ * names a wait: the next open is no sooner than it, up to the ladder's own
+ * ceiling, and answers of that kind are counted apart under their own bound.
  */
 
 import { createStreamDecoder } from "./streamFrames.ts";
@@ -14,6 +28,8 @@ import type { StreamFrame } from "./streamFrames.ts";
 export const streamReopenDelayMsMin = 1_000;
 export const streamReopenDelayMsMax = 30_000;
 export const streamOpenFailuresMax = 6;
+/** The answers in a row naming a wait that a cut stream waits out. */
+export const streamBusyOpensMax = 32;
 export const streamStableMs = 30_000;
 export const streamMediaType = "text/event-stream";
 
@@ -32,6 +48,8 @@ export interface StreamBody {
 export interface StreamResponse {
   readonly status: number;
   readonly body: StreamBody | null;
+  /** The `retry-after` header as it was answered, where there was one. */
+  readonly retryAfter?: string | undefined;
 }
 
 export interface StreamPorts {
@@ -57,6 +75,10 @@ export interface StreamHandle {
 export interface StreamEnd {
   readonly stop?: string;
   readonly reason?: string;
+  /** Whether a frame was handed over before the open ended. */
+  readonly heard?: boolean;
+  /** The wait a server with no room named, in milliseconds. */
+  readonly waitMs?: number;
 }
 
 /** What one stream is, as the transport needs it said. */
@@ -70,6 +92,9 @@ export interface StreamAttempt {
   readonly opened: () => void;
   /** A frame this throws on ends the connection rather than being skipped. */
   readonly frame: (frame: StreamFrame) => void;
+  /** Whether the server cuts a stream it is still serving, and names a wait
+   * when it has no room for one. */
+  readonly cut?: boolean;
 }
 
 /** What the ladder says of itself as it climbs. */
@@ -111,11 +136,21 @@ async function streamDrained(
   }
 }
 
+/** The wait a server with no room named, where it answered that and named
+ * one in whole seconds. */
+function streamBusyWaitMs(response: StreamResponse): number | undefined {
+  const named = response.retryAfter?.trim();
+  if (response.status !== 503 || named === undefined) return undefined;
+  if (!/^\d+$/u.test(named)) return undefined;
+  return Math.min(Number(named) * 1_000, streamReopenDelayMsMax);
+}
+
 async function streamAttempted(
   ports: StreamPorts,
   attempt: StreamAttempt,
   signal: AbortSignal,
 ): Promise<StreamEnd> {
+  let heard = false;
   try {
     const response = await ports.fetch(attempt.url, {
       headers: attempt.headers(await ports.bearer()),
@@ -123,6 +158,10 @@ async function streamAttempted(
     });
     const refused = attempt.refused(response.status);
     if (refused !== undefined) return refused;
+    const waitMs =
+      attempt.cut === true ? streamBusyWaitMs(response) : undefined;
+    if (waitMs !== undefined)
+      return { reason: "the stream had no room", waitMs };
     if (
       response.status < 200 ||
       response.status >= 300 ||
@@ -130,13 +169,55 @@ async function streamAttempted(
     )
       return { reason: `the stream answered ${String(response.status)}` };
     attempt.opened();
-    await streamDrained(response.body, attempt.frame);
-    return { reason: "the stream closed" };
+    await streamDrained(response.body, (frame) => {
+      attempt.frame(frame);
+      heard = true;
+    });
+    return { reason: "the stream closed", heard };
   } catch (failure: unknown) {
     return {
       reason: failure instanceof Error ? failure.message : "the stream failed",
+      heard,
     };
   }
+}
+
+/** What the ladder is counting: the opens in a row that did not last, and the
+ * answers in a row that named a wait. */
+interface StreamCounts {
+  readonly failures: number;
+  readonly busy: number;
+}
+
+/**
+ * What follows one open that ended with no refusal: the counts as they now
+ * stand and the wait before the next open, or the reason there is none.
+ * `openMs` is how long the open lasted.
+ */
+function streamNext(
+  counts: StreamCounts,
+  end: StreamEnd,
+  openMs: number,
+  cut: boolean,
+):
+  | { readonly counts: StreamCounts; readonly delayMs: number }
+  | { readonly stop: string } {
+  if (end.waitMs !== undefined) {
+    const busy = counts.busy + 1;
+    if (busy >= streamBusyOpensMax) return { stop: "the stream had no room" };
+    const delayMs = Math.max(end.waitMs, streamDelayMs(busy));
+    return { counts: { ...counts, busy }, delayMs };
+  }
+  const stable = openMs >= streamStableMs;
+  if (cut && end.heard === true)
+    return {
+      counts: { failures: 0, busy: 0 },
+      delayMs: stable ? 0 : streamReopenDelayMsMin,
+    };
+  const failures = stable ? 1 : counts.failures + 1;
+  if (failures >= streamOpenFailuresMax)
+    return { stop: "the stream would not stay open" };
+  return { counts: { ...counts, failures }, delayMs: streamDelayMs(failures) };
 }
 
 /** One open after another until the signal aborts, an open is refused for
@@ -147,24 +228,29 @@ async function streamRun(
   ladder: StreamLadder,
   signal: AbortSignal,
 ): Promise<void> {
-  let failures = 0;
+  let counts: StreamCounts = { failures: 0, busy: 0 };
   while (!signal.aborted) {
     ladder.opening();
     const openedAtMs = ports.nowMs();
     const end = await streamAttempted(ports, attempt, signal);
     if (signal.aborted) return;
-    if (end.stop !== undefined) {
-      ladder.stopped(end.stop);
+    const next =
+      end.stop === undefined
+        ? streamNext(
+            counts,
+            end,
+            ports.nowMs() - openedAtMs,
+            attempt.cut === true,
+          )
+        : { stop: end.stop };
+    if ("stop" in next) {
+      ladder.stopped(next.stop);
       return;
     }
-    failures = ports.nowMs() - openedAtMs >= streamStableMs ? 1 : failures + 1;
-    if (failures >= streamOpenFailuresMax) {
-      ladder.stopped("the stream would not stay open");
-      return;
-    }
+    counts = next.counts;
     ladder.waiting(end.reason);
     try {
-      await ports.sleepMs(streamDelayMs(failures), signal);
+      await ports.sleepMs(next.delayMs, signal);
     } catch {
       return;
     }

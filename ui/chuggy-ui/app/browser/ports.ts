@@ -77,6 +77,7 @@ export async function streamFetch(
   return {
     status: response.status,
     body: body === null ? null : { getReader: () => body.getReader() },
+    retryAfter: response.headers.get("retry-after") ?? undefined,
   };
 }
 

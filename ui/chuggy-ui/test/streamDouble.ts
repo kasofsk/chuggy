@@ -9,6 +9,11 @@
  * A thread's live route is a second script beside the project's, told apart by
  * the address asked: a suite that scripts none has it answered as a thread that
  * is not there, which a client stops on without asking again.
+ *
+ * A server that cuts a stream is a read that fails: `cut` on an opening fails
+ * the read after its last chunk, and `cutLive` fails the read that is waiting.
+ * The clock moves only when the client sleeps, so `lastsMs` is how an opening
+ * is said to have stayed open.
  */
 
 import type {
@@ -21,6 +26,12 @@ export interface StreamOpening {
   readonly status: number;
   readonly chunks?: readonly string[];
   readonly hold?: boolean;
+  /** Whether the read after the last chunk fails, as a connection reset does. */
+  readonly cut?: boolean;
+  /** How long the opening has been open by the time its chunks are read. */
+  readonly lastsMs?: number;
+  /** The `retry-after` header the opening is answered with. */
+  readonly retryAfter?: string;
 }
 
 export interface StreamServer {
@@ -41,39 +52,54 @@ export interface StreamServer {
   readonly pushLive: (chunk: string) => void;
   /** Ends the live connection that is open, as a server closing it does. */
   readonly closeLive: () => void;
+  /** Fails the read the live connection is waiting on, as a reset does. */
+  readonly cutLive: () => void;
 }
 
 type StreamChunkRead =
   | { readonly done: false; readonly value: Uint8Array }
   | { readonly done: true };
 
-type StreamChunkWaiter = (read: StreamChunkRead) => void;
+type StreamChunkWaiter = (read: StreamChunkRead | Error) => void;
+
+/** What a read rejects with when the connection under it is reset. */
+function streamCut(): Error {
+  return new TypeError("network error");
+}
 
 const encoder = new TextEncoder();
 
 /** Which path a thread's live stream is asked on. */
 const liveRoutePattern = /\/threads\/[^/]+\/live$/u;
 
-function bodyOf(
-  queued: string[],
-  hold: boolean,
-  signal: AbortSignal,
-  aborts: number[],
-  held: () => void,
-  waiting: (waiter: StreamChunkWaiter | undefined) => void,
-): StreamBody {
+/** What one open body needs of the route it is answered on. */
+interface StreamBodyRoute {
+  readonly queued: string[];
+  readonly opening: StreamOpening;
+  readonly signal: AbortSignal;
+  readonly aborts: number[];
+  readonly held: () => void;
+  /** Called once the opening's chunks have all been read. */
+  readonly drained: () => void;
+  readonly waiting: (waiter: StreamChunkWaiter | undefined) => void;
+}
+
+function bodyOf(route: StreamBodyRoute): StreamBody {
+  const { queued, opening, signal, aborts, waiting } = route;
   return {
     getReader: () => ({
       read: async () => {
         const chunk = queued.shift();
         if (chunk !== undefined)
           return { done: false, value: encoder.encode(chunk) };
-        if (!hold) return { done: true };
+        route.drained();
+        if (opening.cut === true) throw streamCut();
+        if (opening.hold !== true) return { done: true };
         if (signal.aborted) {
           aborts.push(1);
           return { done: true };
         }
-        return new Promise<StreamChunkRead>((resolve) => {
+        return new Promise<StreamChunkRead>((resolve, reject) => {
           const abandoned = (): void => {
             aborts.push(1);
             waiting(undefined);
@@ -82,10 +108,11 @@ function bodyOf(
           waiting((read) => {
             waiting(undefined);
             signal.removeEventListener("abort", abandoned);
-            resolve(read);
+            if (read instanceof Error) reject(read);
+            else resolve(read);
           });
           signal.addEventListener("abort", abandoned, { once: true });
-          held();
+          route.held();
         });
       },
       cancel: () => Promise.resolve(),
@@ -99,6 +126,7 @@ interface StreamRoute {
   readonly answered: (signal: AbortSignal) => StreamResponse;
   readonly push: (chunk: string) => void;
   readonly close: () => void;
+  readonly cut: () => void;
 }
 
 function routeOf(
@@ -106,6 +134,7 @@ function routeOf(
   exhaustedStatus: number,
   aborts: number[],
   held: () => void,
+  lasted: (ms: number) => void,
 ): StreamRoute {
   let opened = 0;
   let pending: StreamChunkWaiter | undefined;
@@ -115,21 +144,25 @@ function routeOf(
       const opening = openings[opened] ?? { status: exhaustedStatus };
       opened += 1;
       queued = [...(opening.chunks ?? [])];
+      let drained = false;
+      const body = bodyOf({
+        queued,
+        opening,
+        signal,
+        aborts,
+        held,
+        drained: () => {
+          if (!drained) lasted(opening.lastsMs ?? 0);
+          drained = true;
+        },
+        waiting: (waiter) => {
+          pending = waiter;
+        },
+      });
       return {
         status: opening.status,
-        body:
-          opening.status >= 200 && opening.status < 300
-            ? bodyOf(
-                queued,
-                opening.hold ?? false,
-                signal,
-                aborts,
-                held,
-                (waiter) => {
-                  pending = waiter;
-                },
-              )
-            : null,
+        body: opening.status >= 200 && opening.status < 300 ? body : null,
+        retryAfter: opening.retryAfter,
       };
     },
     /** Handed straight to a read that is waiting, and queued for the next one
@@ -144,6 +177,9 @@ function routeOf(
     },
     close: () => {
       pending?.({ done: true });
+    },
+    cut: () => {
+      pending?.(streamCut());
     },
   };
 }
@@ -162,10 +198,19 @@ export function streamServer(
     held = resolve;
   });
   let clockMs = 0;
-  const project = routeOf(openings, 500, aborts, () => {
-    held();
-  });
-  const live = routeOf(liveOpenings, 404, aborts, () => undefined);
+  const lasted = (ms: number): void => {
+    clockMs += ms;
+  };
+  const project = routeOf(
+    openings,
+    500,
+    aborts,
+    () => {
+      held();
+    },
+    lasted,
+  );
+  const live = routeOf(liveOpenings, 404, aborts, () => undefined, lasted);
   const ports: StreamPorts = {
     fetch: (url, init) => {
       if (liveRoutePattern.test(url)) {
@@ -195,6 +240,7 @@ export function streamServer(
     push: project.push,
     pushLive: live.push,
     closeLive: live.close,
+    cutLive: live.cut,
   };
 }
 

@@ -145,6 +145,41 @@ test("opens that will not stay open are given up after the budget", async () => 
 });
 
 /**
+ * The thread live stream asks the shared transport for a ladder of its own,
+ * and this stream does not: an open that hands frames over and ends soon is
+ * still one that did not last, and a wait a 503 names is not read.
+ */
+test("opens that hand frames over and end soon are counted like any other, and given up after the budget", async () => {
+  const delivering = {
+    status: 200,
+    chunks: [frame("source", undefined, { version: 1, state: "live" })],
+    cut: true,
+  };
+  const server = streamServer(
+    Array.from({ length: streamOpenFailuresMax + 1 }, () => delivering),
+  );
+  const seen = collector();
+  await openProjectStream(server.ports, partition, seen.handlers).finished;
+  expect(server.headersSeen.length).toBe(streamOpenFailuresMax);
+  expect(server.delaysMs).toEqual(
+    Array.from({ length: streamOpenFailuresMax - 1 }, (_unused, at) =>
+      streamDelayMs(at + 1),
+    ),
+  );
+  expect(seen.statuses.at(-1)?.reason).toBe("the stream would not stay open");
+});
+
+test("a 503 naming a wait is waited on the ladder and not for what it names", async () => {
+  const server = streamServer([
+    { status: 503, retryAfter: "7" },
+    { status: 401 },
+  ]);
+  const seen = collector();
+  await openProjectStream(server.ports, partition, seen.handlers).finished;
+  expect(server.delaysMs).toEqual([streamDelayMs(1)]);
+});
+
+/**
  * The handling a representation the wire rejects gets, now that the contract
  * parses it: the connection ends and the reopen budget bounds the retrying.
  */

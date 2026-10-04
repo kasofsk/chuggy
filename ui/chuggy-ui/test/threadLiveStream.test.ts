@@ -5,6 +5,11 @@
  * no later open would be answered differently ends it without another ask,
  * and that everything else — a drop, a frame the contract rejects — is opened
  * again on the transport's ladder and begins from a snapshot.
+ *
+ * And that the ladder is the one a stream its server cuts needs: a read that
+ * fails is a close and throws nothing, an open that handed a frame over is
+ * never counted however often it is cut, and a server with no room is asked
+ * again no sooner than it said.
  */
 
 import { expect, test } from "vitest";
@@ -12,8 +17,12 @@ import { expect, test } from "vitest";
 import { nativeHttpRoutes } from "../../../src/contract/http.ts";
 import type { ThreadLiveStreamEvent } from "../../../src/contract/threadLive.ts";
 import {
+  streamBusyOpensMax,
   streamDelayMs,
   streamOpenFailuresMax,
+  streamReopenDelayMsMax,
+  streamReopenDelayMsMin,
+  streamStableMs,
 } from "../app/core/streamConnection.ts";
 import {
   openThreadLiveStream,
@@ -106,12 +115,157 @@ test("a connection that drops is opened again, and begins from a snapshot", asyn
   ]);
   await run.finished;
   expect(run.server.liveSeen).toHaveLength(3);
-  expect(run.server.delaysMs).toEqual([streamDelayMs(1), streamDelayMs(2)]);
+  expect(run.server.delaysMs).toEqual([
+    streamReopenDelayMsMin,
+    streamReopenDelayMsMin,
+  ]);
   expect(run.events.map((event) => event.event)).toEqual([
     "snapshot",
     "snapshot",
   ]);
 });
+
+const text = {
+  live: "Text",
+  message: "msg_1",
+  index: 0,
+  offset: 0,
+  text: "Hi",
+};
+
+test("a read that fails in the middle of a stream is a close: nothing is thrown, and the next open begins from a snapshot", async () => {
+  const run = heard([
+    { status: 200, chunks: [snapshot, live(text)], cut: true },
+    { status: 200, chunks: [snapshot] },
+    { status: 404 },
+  ]);
+  await expect(run.finished).resolves.toBeUndefined();
+  expect(run.server.liveSeen).toHaveLength(3);
+  expect(run.events.map((event) => event.event)).toEqual([
+    "snapshot",
+    "live",
+    "snapshot",
+  ]);
+});
+
+test("a stream cut every time after its frames is opened again every time, at the ladder's floor, and never given up on", async () => {
+  const cuts = streamOpenFailuresMax * 3;
+  const run = heard([
+    ...Array.from({ length: cuts }, () => ({
+      status: 200,
+      chunks: [snapshot, live(text)],
+      cut: true,
+    })),
+    { status: 404 },
+  ]);
+  await run.finished;
+  expect(run.server.liveSeen).toHaveLength(cuts + 1);
+  expect(run.server.delaysMs).toEqual(
+    Array.from({ length: cuts }, () => streamReopenDelayMsMin),
+  );
+  expect(run.events).toHaveLength(cuts * 2);
+});
+
+test("a stream cut once it had stayed open is opened again at once", async () => {
+  const run = heard([
+    {
+      status: 200,
+      chunks: [snapshot, live(text)],
+      cut: true,
+      lastsMs: streamStableMs,
+    },
+    { status: 200, chunks: [snapshot], lastsMs: streamStableMs },
+    { status: 404 },
+  ]);
+  await run.finished;
+  expect(run.server.delaysMs).toEqual([0, 0]);
+  expect(run.server.liveSeen).toHaveLength(3);
+});
+
+test("an open that handed a frame over forgets the opens that failed before it", async () => {
+  const failing = Array.from({ length: streamOpenFailuresMax - 1 }, () => ({
+    status: 500,
+  }));
+  const run = heard([
+    ...failing,
+    { status: 200, chunks: [snapshot], cut: true },
+    ...failing,
+    { status: 404 },
+  ]);
+  await run.finished;
+  expect(run.server.liveSeen).toHaveLength(failing.length * 2 + 2);
+  expect(run.server.delaysMs.at(-1)).toBe(streamDelayMs(failing.length));
+});
+
+test("an open cut before it handed anything over is one that failed", async () => {
+  const run = heard(
+    Array.from({ length: streamOpenFailuresMax + 1 }, () => ({
+      status: 200,
+      chunks: [],
+      cut: true,
+    })),
+  );
+  await run.finished;
+  expect(run.server.liveSeen).toHaveLength(streamOpenFailuresMax);
+  expect(run.events).toEqual([]);
+});
+
+const noRoom = { status: 503, retryAfter: "7" };
+
+test("a server with no room is asked again no sooner than it said, and the stream it then opens is heard", async () => {
+  const run = heard([
+    noRoom,
+    { status: 200, chunks: [snapshot, live(text)], cut: true },
+    { status: 404 },
+  ]);
+  await run.finished;
+  expect(run.server.delaysMs).toEqual([7_000, streamReopenDelayMsMin]);
+  expect(run.events.map((event) => event.event)).toEqual(["snapshot", "live"]);
+});
+
+test("a server with no room is not counted with the opens that failed, and is asked more slowly the longer it has none", async () => {
+  const full = streamOpenFailuresMax + 2;
+  const run = heard([
+    ...Array.from({ length: full }, () => ({ status: 503, retryAfter: "1" })),
+    { status: 200, chunks: [snapshot] },
+    { status: 404 },
+  ]);
+  await run.finished;
+  expect(run.server.liveSeen).toHaveLength(full + 2);
+  expect(run.server.delaysMs.slice(0, full)).toEqual(
+    Array.from({ length: full }, (_unused, at) => streamDelayMs(at + 1)),
+  );
+  expect(run.events.map((event) => event.event)).toEqual(["snapshot"]);
+});
+
+test("a wait named past the ladder's ceiling is waited to the ceiling", async () => {
+  const run = heard([{ status: 503, retryAfter: "86400" }, { status: 404 }]);
+  await run.finished;
+  expect(run.server.delaysMs).toEqual([streamReopenDelayMsMax]);
+});
+
+test("a server that has no room for long enough is given up on", async () => {
+  const run = heard(
+    Array.from({ length: streamBusyOpensMax + 1 }, () => noRoom),
+  );
+  await run.finished;
+  expect(run.server.liveSeen).toHaveLength(streamBusyOpensMax);
+  expect(run.server.delaysMs).toHaveLength(streamBusyOpensMax - 1);
+});
+
+test.each(["soon", "-1", "1.5", ""])(
+  "a 503 naming no wait in whole seconds (%j) is an open that failed",
+  async (retryAfter) => {
+    const run = heard(
+      Array.from({ length: streamOpenFailuresMax + 1 }, () => ({
+        status: 503,
+        retryAfter,
+      })),
+    );
+    await run.finished;
+    expect(run.server.liveSeen).toHaveLength(streamOpenFailuresMax);
+  },
+);
 
 test("a frame the contract rejects ends that connection and hands nothing over", async () => {
   const run = heard([
