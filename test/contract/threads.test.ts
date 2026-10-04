@@ -489,29 +489,29 @@ test("the message door takes a minted turn and a message inside its bound", () =
  * A stopped turn is an ended turn with nothing of an answer on it, and its
  * ending is the platform's to say: a pod that reported it would be believed.
  */
-test("a stopped turn is a turn a thread read carries, and no pod can name its ending", () => {
-  const stopped = {
-    turn: turn.turn,
-    ordinal: turn.ordinal,
-    inputKind: turn.inputKind,
-    input: turn.input,
-    state: "Abandoned",
-    failure: "TurnStopped",
-  };
-
-  assert.deepEqual(threadTurnResponseSchema.parse(stopped), stopped);
+test("a stopped turn is a turn a thread read carries, held or waiting, and no pod can name either ending", () => {
   assert.ok(
     sessionTurnFailureSchema.safeParse({
       turn: turn.turn,
       failure: agentReportedTurnFailures[0],
     }).success,
   );
-  assert.ok(
-    !sessionTurnFailureSchema.safeParse({
+  for (const failure of ["TurnStopped", "TurnStoppedQueued"]) {
+    const stopped = {
       turn: turn.turn,
-      failure: "TurnStopped",
-    }).success,
-  );
+      ordinal: turn.ordinal,
+      inputKind: turn.inputKind,
+      input: turn.input,
+      state: "Abandoned",
+      failure,
+    };
+
+    assert.deepEqual(threadTurnResponseSchema.parse(stopped), stopped);
+    assert.ok(
+      !sessionTurnFailureSchema.safeParse({ turn: turn.turn, failure }).success,
+      failure,
+    );
+  }
 });
 
 test("the stop door answers which of its endings this call met, and no other word", () => {

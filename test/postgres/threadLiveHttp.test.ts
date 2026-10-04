@@ -377,7 +377,8 @@ test("a member's stop ends the turn's stream for every reader, and what its runn
  * A runner that is writing posts as it writes, so the answer to its next post
  * is the soonest it can hear of a stop, and that answer is read from the
  * turn's own row. A runner built before the answer existed is answered as it
- * always was, as is a post of a turn that ended any other way.
+ * always was, as is a post of a turn that ended any other way, and of one
+ * stopped while it waited, which no runner held.
  */
 test("a live post of a turn its member stopped is answered with the turn, to a runner naming a release that reads the answer", async () => {
   const partition = await threadRigProject(rig, "live-told");
@@ -428,6 +429,12 @@ test("a live post of a turn its member stopped is answered with the turn, to a r
     "Answered",
   );
   assert.deepEqual(await post(next, ended, workerContractRelease), taken);
+
+  const waiting = await said(api, partition, thread.session, "live-told-wait");
+  await stoppedBy(api, partition, thread.session, waiting);
+  assert.deepEqual(await post(waiting, text, workerContractRelease), taken);
+  assert.deepEqual(await post(waiting, ended, workerContractRelease), taken);
+  assert.deepEqual(await post(turn, text, workerContractRelease), told);
 });
 
 test("a principal the project does not admit is answered as the thread read answers it, and is given no stream", async () => {

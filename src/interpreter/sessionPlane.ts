@@ -176,10 +176,10 @@ export type SessionTurnFailed =
 
 /**
  * Where a turn of its session stands for the live attempt asking after it: its
- * member stopped it, or it is still claimed, which a session's live attempt
- * alone holds. Nothing is answered where it is neither, which is a turn that
- * waits or ended some other way, one of another session, and a bearer that is
- * no live attempt's.
+ * member stopped it while an attempt held it, or it is still claimed, which a
+ * session's live attempt alone holds. Nothing is answered where it is neither,
+ * which is a turn that waits, was stopped waiting or ended some other way, one
+ * of another session, and a bearer that is no live attempt's.
  */
 export type SessionTurnWatched = "Stopped" | "Held";
 

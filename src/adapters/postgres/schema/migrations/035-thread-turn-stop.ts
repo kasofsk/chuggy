@@ -1,8 +1,17 @@
 /**
- * A member stops one turn of their own thread. The turn ends `Abandoned` with
- * `TurnStopped` in the door's own transaction, queued or claimed, and waits
- * for no runner: a queued one is never claimed, and a claimed one leaves its
- * attempt live, still holding its lease and charged nothing.
+ * A member stops one turn of their own thread. The turn ends `Abandoned` in
+ * the door's own transaction and waits for no runner: a queued one ends
+ * `TurnStoppedQueued` and is never claimed, and a claimed one ends
+ * `TurnStopped` and leaves its attempt live, still holding its lease and
+ * charged nothing.
+ *
+ * The two endings are kept apart for the thread's reader, which pairs a turn
+ * with what its runner stored: a turn no runner held stored nothing. KNOWN
+ * LIMIT: a turn that was claimed, lost its attempt and was put back to
+ * `Queued` before the stop ends `TurnStoppedQueued` too, although the attempt
+ * that held it may have stored its message. The row does not record that a
+ * turn was ever claimed: `attempts_spent` counts the attempts a turn was
+ * charged, and a withdrawn attempt gives its turn back uncharged.
  *
  * The door reads the thread and locks only the turn. A close takes the thread
  * and then its turns, so whichever of a close and a stop reaches a turn first
@@ -22,7 +31,8 @@
  * its settlement of that turn is answered `Stopped`: the row keeps its ending
  * and takes no result, and the attempt's idle clock starts as a settlement
  * starts it. A settlement of a turn that ended any other way is refused as it
- * was.
+ * was. Both read `TurnStopped` alone: no runner held a turn stopped while it
+ * waited, so none is told of it and none's settlement of it is taken.
  */
 
 import {
@@ -78,7 +88,7 @@ export const migration035: Migration = {
   statements: [
     `ALTER TABLE public.session_turn
        DROP CONSTRAINT session_turn_failure_is_known,
-       ADD CONSTRAINT session_turn_failure_is_known CHECK (((failure IS NULL) OR (failure = ANY (ARRAY['AgentFailed'::text, 'AgentRateLimited'::text, 'AgentTurnsExhausted'::text, 'AgentBudgetExhausted'::text, 'StoreRefused'::text, 'AttemptLost'::text, 'SessionClosed'::text, 'TurnWithdrawn'::text, 'TurnStopped'::text]))))`,
+       ADD CONSTRAINT session_turn_failure_is_known CHECK (((failure IS NULL) OR (failure = ANY (ARRAY['AgentFailed'::text, 'AgentRateLimited'::text, 'AgentTurnsExhausted'::text, 'AgentBudgetExhausted'::text, 'StoreRefused'::text, 'AttemptLost'::text, 'SessionClosed'::text, 'TurnWithdrawn'::text, 'TurnStopped'::text, 'TurnStoppedQueued'::text]))))`,
     `CREATE FUNCTION ${stop} RETURNS text
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'public', 'pg_temp'
@@ -100,7 +110,9 @@ export const migration035: Migration = {
          RETURN 'AlreadyEnded';
        END IF;
        UPDATE session_turn t
-          SET state='Abandoned',failure='TurnStopped',ended_at=now(),
+          SET state='Abandoned',ended_at=now(),
+              failure=CASE WHEN stored.state='Queued'
+                           THEN 'TurnStoppedQueued' ELSE 'TurnStopped' END,
               attempt=NULL,claim_generation=NULL,claimed_at=NULL
         WHERE t.tenant=in_tenant AND t.project=in_project
           AND t.session=in_session AND t.turn=in_turn;

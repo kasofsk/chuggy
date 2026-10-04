@@ -174,10 +174,9 @@ async function stored(turn: SessionTurnId): Promise<Record<string, unknown>> {
   return row;
 }
 
-/** What a stopped turn's row is, beside the instant it ended at. */
+/** What a stopped turn's row is, beside its ending and the instant it ended at. */
 const stoppedRow = {
   state: "Abandoned",
-  failure: "TurnStopped",
   attempt: null,
   claim_generation: null,
   claimed_at: null,
@@ -192,11 +191,21 @@ const stoppedRow = {
   tools: null,
 };
 
-async function endedStopped(turn: SessionTurnId): Promise<string> {
+/** Holds the row to a stop's ending, of a turn an attempt held unless the case says it waited. */
+async function endedStopped(
+  turn: SessionTurnId,
+  failure: "TurnStopped" | "TurnStoppedQueued" = "TurnStopped",
+  spent: Partial<typeof stoppedRow> = {},
+): Promise<string> {
   const { ended_at: endedAt, ...row } = await stored(turn);
-  assert.deepEqual(row, stoppedRow);
+  assert.deepEqual(row, { ...stoppedRow, ...spent, failure });
   assert.equal(typeof endedAt, "string", "a stopped turn has ended");
   return String(endedAt);
+}
+
+/** The same of a turn stopped while it waited, which no attempt held. */
+function endedStoppedQueued(turn: SessionTurnId): Promise<string> {
+  return endedStopped(turn, "TurnStoppedQueued");
 }
 
 /** The instant the attempt's idle clock started, or null where it has not. */
@@ -208,7 +217,12 @@ async function idleSince(held: SessionRigAttempt): Promise<unknown> {
   return rows[0]?.["idle_since"];
 }
 
-test("a stop ends a claimed turn and a queued one at once, with no result and no measurement", async () => {
+/**
+ * The door answers both the same and writes two endings, because a reader of
+ * the thread pairs a turn with what its runner stored and a turn that waited
+ * stored nothing.
+ */
+test("a stop ends a claimed turn and a queued one at once, each with its own ending and neither with a result or a measurement", async () => {
   const at = await threaded("ends");
   const first = await said(at, "ends-first");
   const second = await said(at, "ends-second");
@@ -218,7 +232,14 @@ test("a stop ends a claimed turn and a queued one at once, with no result and no
   assert.equal(await stop(at, first), "Stopped");
   await endedStopped(first);
   assert.equal(await stop(at, second), "Stopped");
-  await endedStopped(second);
+  await endedStoppedQueued(second);
+  for (const [turn, ending] of [
+    [first, "TurnStopped"],
+    [second, "TurnStoppedQueued"],
+  ] as const) {
+    assert.equal(await stop(at, turn), "AlreadyEnded");
+    await endedStopped(turn, ending);
+  }
 
   const standing = await rig.threads.standing({
     partition: at.partition,
@@ -229,7 +250,7 @@ test("a stop ends a claimed turn and a queued one at once, with no result and no
     standing?.turns.map((turn) => [turn.turn, turn.state, turn.failure]),
     [
       [first, "Abandoned", "TurnStopped"],
-      [second, "Abandoned", "TurnStopped"],
+      [second, "Abandoned", "TurnStoppedQueued"],
     ],
     "the thread read lists a stopped turn as it lists any ended one",
   );
@@ -244,7 +265,7 @@ test("a turn stopped while queued is never handed to a runner, and the one behin
 
   const held = await running(at, "unclaimed");
   assert.equal(await claimed(held), behind);
-  await endedStopped(stoppedTurn);
+  await endedStoppedQueued(stoppedTurn);
 });
 
 test("a stop of a turn that has ended answers that it had, and leaves the ending it has", async () => {
@@ -253,10 +274,10 @@ test("a stop of a turn that has ended answers that it had, and leaves the ending
   const answered = await said(at, "again-answered");
   const failed = await said(at, "again-failed");
   assert.equal(await stop(at, stoppedTurn), "Stopped");
-  const endedAt = await endedStopped(stoppedTurn);
+  const endedAt = await endedStoppedQueued(stoppedTurn);
 
   assert.equal(await stop(at, stoppedTurn), "AlreadyEnded");
-  assert.equal(await endedStopped(stoppedTurn), endedAt);
+  assert.equal(await endedStoppedQueued(stoppedTurn), endedAt);
 
   const held = await running(at, "again");
   assert.equal(await claimed(held), answered);
@@ -447,8 +468,94 @@ test("a close behind a stop closes the thread, and the stop is still the turn's 
     await api.query("ROLLBACK").catch(() => undefined);
     api.release();
   }
-  await endedStopped(turn);
+  await endedStoppedQueued(turn);
   assert.equal((await stored(behind))["failure"], "SessionClosed");
+});
+
+/** The mailbox's claim on a connection of the case's own, whose transaction the case can hold open. */
+async function claimOn(
+  client: pg.PoolClient,
+  held: SessionRigAttempt,
+): Promise<string | undefined> {
+  const taken = await client.query<{ turn: string }>(
+    `SELECT turn FROM claim_session_turn($1,$2)`,
+    [held.digest, held.attempt.generation],
+  );
+  return taken.rows[0]?.turn;
+}
+
+/**
+ * Which ending a stop writes is read from the turn under its row lock, and a
+ * claim takes the same lock. So a stop that reaches a waiting turn behind its
+ * claim ends a turn a runner holds, and a claim behind the stop is handed
+ * another turn or none.
+ */
+test("a stop behind a claim of its turn ends a turn a runner held, and that runner is told", async () => {
+  const at = await threaded("race-claim-first");
+  const turn = await said(at, "race-claim-first");
+  const held = await running(at, "race-claim-first");
+  const plane = await planePool.connect();
+  try {
+    await plane.query("BEGIN");
+    assert.equal(await claimOn(plane, held), turn);
+    const stopping = stop(at, turn);
+    await blocked();
+    await plane.query("COMMIT");
+    assert.equal(await stopping, "Stopped");
+  } finally {
+    await plane.query("ROLLBACK").catch(() => undefined);
+    plane.release();
+  }
+  await endedStopped(turn);
+  assert.equal(
+    await rig.sessions.plane.watched({
+      secret: held.secret,
+      generation: held.attempt.generation,
+      turn,
+    }),
+    "Stopped",
+  );
+});
+
+test("a claim behind a stop of a waiting turn is not handed it, and the turn ends as one no runner held", async () => {
+  const at = await threaded("race-wait-stop-first");
+  const turn = await said(at, "race-wait-stop-first");
+  const behind = await said(at, "race-wait-stop-first-behind");
+  const held = await running(at, "race-wait-stop-first");
+  const api = await rig.apiPool.connect();
+  try {
+    await api.query("BEGIN");
+    assert.equal(await stopOn(api, at, turn), "Stopped");
+    const claiming = claimed(held);
+    await blocked();
+    await api.query("COMMIT");
+    assert.notEqual(await claiming, turn);
+  } finally {
+    await api.query("ROLLBACK").catch(() => undefined);
+    api.release();
+  }
+  await endedStoppedQueued(turn);
+  assert.equal(await claimed(held), behind);
+});
+
+/**
+ * KNOWN LIMIT, held here so that it changes on purpose. A turn an attempt held
+ * and lost waits again, and its row does not say it was ever claimed, so a stop
+ * of it then writes the ending of a turn no runner held.
+ */
+test("a turn a lost attempt gave back and its member then stopped ends as one that waited", async () => {
+  const at = await threaded("given-back");
+  const turn = await said(at, "given-back");
+  const held = await running(at, "given-back");
+  assert.equal(await claimed(held), turn);
+  assert.equal(
+    await rig.sessions.scheduler.attemptEnded(held.attempt, "Vanished"),
+    true,
+  );
+  assert.equal((await stored(turn))["state"], "Queued");
+
+  assert.equal(await stop(at, turn), "Stopped");
+  await endedStopped(turn, "TurnStoppedQueued", { attempts_spent: "1" });
 });
 
 /** One claimed turn of a thread, stopped under the attempt that holds it. */
@@ -690,8 +797,9 @@ test("a late settlement of a turn that ended any other way is still refused", as
 
 /**
  * What the runner's held question reads. It is told of a stop of any turn of
- * its own session, told to go on asking only while it holds the turn claimed,
- * and told nothing of a turn that is neither or of a session not its own.
+ * its own session that an attempt held, told to go on asking only while it
+ * holds the turn claimed, and told nothing of a turn that is neither or of a
+ * session not its own.
  */
 test("the watch tells a live attempt its turn is held, then that it was stopped, and nothing of any other turn", async () => {
   const at = await threaded("watch");
@@ -1027,6 +1135,36 @@ test("a post that arrives behind a stop of its turn waits for it and reaches nob
     api.release();
     await lane.close();
   }
+});
+
+/**
+ * A turn stopped while it waited was no runner's, so the attempt on its thread
+ * learns nothing of it by any road: its watch reads nothing, what it posts of
+ * the turn is dropped as of any turn it does not hold, and its settlement is
+ * refused as of any other ended turn and starts no idle clock. The turn it did
+ * hold is beside it throughout, told and taken.
+ */
+test("no runner is told of a turn stopped while it waited, and a settlement naming it is refused", async () => {
+  const { at, turn, held } = await stoppedUnder("untold");
+  const waiting = await said(at, "untold-waiting");
+  assert.equal(await stop(at, waiting), "Stopped");
+  const endedAt = await endedStoppedQueued(waiting);
+  const watched = (named: SessionTurnId) =>
+    rig.sessions.plane.watched({
+      secret: held.secret,
+      generation: held.attempt.generation,
+      turn: named,
+    });
+
+  assert.equal(await watched(waiting), undefined);
+  assert.equal(await watched(turn), "Stopped");
+  assert.equal(await posted(at, waiting, [written("never held")]), "Unheld");
+  assert.deepEqual(await settledLate(held, waiting), ["Conflict", "Conflict"]);
+  assert.equal(await idleSince(held), null, "a refusal starts no idle clock");
+  assert.equal(await endedStoppedQueued(waiting), endedAt);
+
+  assert.deepEqual(await settledLate(held, turn), ["Stopped", "Stopped"]);
+  assert.notEqual(await idleSince(held), null);
 });
 
 /**

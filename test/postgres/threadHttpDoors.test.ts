@@ -310,12 +310,26 @@ async function sentTurn(
 /**
  * The stop route joined to its definer: the member's own turn ends by the
  * call, the thread read then answers it ended, and a second call says it had.
+ * The door answers a turn a runner held and one that waited the same, and the
+ * read is what tells them apart.
  */
-test("a stop ends my own turn through the door, and the thread read answers it stopped", async () => {
+test("a stop ends my own turn through the door, and the thread read answers whether a runner held it", async () => {
   const { partition, member } = await readableMember("stop");
   await using app = threadApp(member.principal);
   const opened = await openedThread(app, partition);
-  const turn = await sentTurn(app, partition, opened.session);
+  const held = await sentTurn(app, partition, opened.session);
+  const waiting = await sentTurn(app, partition, opened.session);
+  const attempt = await sessionRigAttempt(
+    rig.sessions,
+    partition,
+    asSessionId(opened.session),
+    "http-stop",
+  );
+  const claimed = await rig.sessions.plane.claim({
+    secret: attempt.secret,
+    generation: attempt.attempt.generation,
+  });
+  assert.equal(claimed?.turn, held);
   const stop = (named: string) =>
     app.inject({
       method: "POST",
@@ -324,21 +338,31 @@ test("a stop ends my own turn through the door, and the thread read answers it s
       payload: {},
     });
 
-  for (const stopped of ["Stopped", "AlreadyEnded"] as const) {
-    const answer = await stop(turn);
-    assert.equal(answer.statusCode, 200, answer.body);
-    assert.deepEqual(threadTurnStopResponseSchema.parse(answer.json()), {
-      stopped,
-    });
-  }
+  for (const turn of [held, waiting])
+    for (const stopped of ["Stopped", "AlreadyEnded"] as const) {
+      const answer = await stop(turn);
+      assert.equal(answer.statusCode, 200, answer.body);
+      assert.deepEqual(threadTurnStopResponseSchema.parse(answer.json()), {
+        stopped,
+      });
+    }
   const read = await app.inject({
     url: `${pathOf(partition)}/${opened.session}`,
     headers: authorized,
   });
-  const listed = threadResponseSchema.parse(read.json()).turns[0];
   assert.deepEqual(
-    [listed?.turn, listed?.state, listed?.failure, listed?.result],
-    [turn, "Abandoned", "TurnStopped", undefined],
+    threadResponseSchema
+      .parse(read.json())
+      .turns.map((listed) => [
+        listed.turn,
+        listed.state,
+        listed.failure,
+        listed.result,
+      ]),
+    [
+      [held, "Abandoned", "TurnStopped", undefined],
+      [waiting, "Abandoned", "TurnStoppedQueued", undefined],
+    ],
   );
   const absent = await stop(`thread-turn-${randomUUID()}`);
   assert.equal(absent.statusCode, 404, absent.body);

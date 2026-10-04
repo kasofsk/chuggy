@@ -34,9 +34,10 @@
  *   7. Closing a session abandons every `Queued` and `Claimed` turn it holds,
  *      with `SessionClosed`.
  *   8. A member stops one `Queued` or `Claimed` turn of their own thread, which
- *      abandons it with `TurnStopped` at once and waits for no pod. The attempt
- *      that held it stays live: what it then posts of that turn's stream is
- *      dropped, and its settlement of that turn is taken and recorded nowhere.
+ *      abandons it at once and waits for no pod: with `TurnStoppedQueued` where
+ *      it was `Queued`, and with `TurnStopped` where an attempt held it. That
+ *      attempt stays live: what it then posts of that turn's stream is dropped,
+ *      and its settlement of that turn is taken and recorded nowhere.
  */
 
 import {
@@ -228,7 +229,7 @@ export const allAgentReportedTurnFailures = [
 /**
  * Why one turn ended without an answer by the platform's own act. Rules 6 and 7
  * above write the first two, the selector's withdrawal and the scheduler's of
- * a turn no runner served write the third, and rule 8 writes the fourth, each
+ * a turn no runner served write the third, and rule 8 writes the last two, each
  * from a definer function; a pod naming one would be provenance nobody wrote,
  * and a pod claiming its own session closed would leave a row saying so while
  * the session is open.
@@ -238,6 +239,7 @@ export const allPlatformTurnFailures = [
   "SessionClosed",
   "TurnWithdrawn",
   "TurnStopped",
+  "TurnStoppedQueued",
 ] as const;
 
 /**
