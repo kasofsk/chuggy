@@ -26,6 +26,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 
+import { sessionLiveEventsMax } from "../../src/contract/http.ts";
+
 const root = mkdtempSync(join(tmpdir(), "chuggy-worker-plane-"));
 after(() => {
   rmSync(root, { recursive: true, force: true });
@@ -233,6 +235,9 @@ test("a session bound that is not a positive integer is refused by its own name"
     "CHUG_WORKER_PLANE_SESSION_TURN_POLL_INTERVAL_MS",
     "CHUG_WORKER_PLANE_SESSION_TURN_POLL_SECS_MAX",
     "CHUG_WORKER_PLANE_SESSION_POLLS_MAX",
+    "CHUG_WORKER_PLANE_SESSION_LIVE_EVENTS_PER_SEC_MAX",
+    "CHUG_WORKER_PLANE_SESSION_LIVE_EVENTS_BURST_MAX",
+    "CHUG_WORKER_PLANE_SESSION_LIVE_SESSIONS_TRACKED_MAX",
   ]) {
     const refused = await planeRefusal({
       ...planeEnvironment(port),
@@ -245,4 +250,19 @@ test("a session bound that is not a positive integer is refused by its own name"
       name,
     );
   }
+});
+
+test("a live burst smaller than one post is refused, because no session could ever publish under it", async () => {
+  const port = await freePort();
+  const refused = await planeRefusal({
+    ...planeEnvironment(port),
+    CHUG_WORKER_PLANE_SESSION_LIVE_EVENTS_BURST_MAX: String(
+      sessionLiveEventsMax - 1,
+    ),
+  });
+  assert.equal(refused.code, 1);
+  assert.match(
+    refused.stderr,
+    /eventsBurstMax must cover the events of one post/u,
+  );
 });

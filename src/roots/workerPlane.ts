@@ -42,6 +42,12 @@ import {
   githubForgeId,
   workerPodForgeApp,
 } from "../interpreter/forgeInstallation.ts";
+import {
+  sessionLiveAllowanceLimitsDefault,
+  sessionLivePublishAllowed,
+  type SessionLiveAllowanceLimits,
+} from "../interpreter/sessionLiveAllowance.ts";
+import type { SessionLivePublishPort } from "../interpreter/sessionPlane.ts";
 import { sessionSchedulerDefaults } from "../interpreter/sessionScheduler.ts";
 import {
   workerPlaneCredentialMinting,
@@ -74,13 +80,7 @@ function planeSessions(
     references: sessions,
     turns: sessions,
     settlements: sessions,
-    live: postgresSessionLivePublisher(pool, {
-      dropped: (droppedTotal) => {
-        process.stderr.write(
-          `worker plane: live events too heavy to publish: ${String(droppedTotal)}\n`,
-        );
-      },
-    }),
+    live: planeSessionLive(pool),
     holds: sessions,
     losses: sessions,
     records: sessions,
@@ -100,6 +100,48 @@ function planeSessions(
     ),
     pollsMax: positive("CHUG_WORKER_PLANE_SESSION_POLLS_MAX", 64),
   };
+}
+
+/** Each bound of a session's live allowance, from its own variable or the allowance's default. */
+function planeSessionLiveAllowanceLimits(): SessionLiveAllowanceLimits {
+  const defaults = sessionLiveAllowanceLimitsDefault;
+  return {
+    eventsPerSecondMax: positive(
+      "CHUG_WORKER_PLANE_SESSION_LIVE_EVENTS_PER_SEC_MAX",
+      defaults.eventsPerSecondMax,
+    ),
+    eventsBurstMax: positive(
+      "CHUG_WORKER_PLANE_SESSION_LIVE_EVENTS_BURST_MAX",
+      defaults.eventsBurstMax,
+    ),
+    sessionsTrackedMax: positive(
+      "CHUG_WORKER_PLANE_SESSION_LIVE_SESSIONS_TRACKED_MAX",
+      defaults.sessionsTrackedMax,
+    ),
+  };
+}
+
+/** The lane a session's live events are published on, behind each session's allowance, both reporting where this plane reports. */
+function planeSessionLive(
+  pool: ReturnType<typeof postgresPool>,
+): SessionLivePublishPort {
+  const told = (what: string, total: number): void => {
+    process.stderr.write(`worker plane: ${what}: ${String(total)}\n`);
+  };
+  return sessionLivePublishAllowed(
+    postgresSessionLivePublisher(pool, {
+      dropped: (droppedTotal) => {
+        told("live events too heavy to publish", droppedTotal);
+      },
+    }),
+    () => Date.now(),
+    {
+      refused: (refusedTotal) => {
+        told("live posts past their session's allowance", refusedTotal);
+      },
+    },
+    planeSessionLiveAllowanceLimits(),
+  );
 }
 
 /**

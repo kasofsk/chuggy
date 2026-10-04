@@ -387,12 +387,18 @@ const forgePairsProgram = `
 /** Every bound of the thread live stream under its own variable, each a value no other bound and no default holds. */
 const threadLiveNamed = {
   CHUG_API_THREAD_LIVE_CONNECTIONS_MAX: "11",
-  CHUG_API_THREAD_LIVE_MAX_AGE_MS: "12",
-  CHUG_API_THREAD_LIVE_HEARTBEAT_MS: "13",
-  CHUG_API_THREAD_LIVE_SLOW_CLIENT_WAIT_MS: "14",
-  CHUG_API_THREAD_LIVE_SESSIONS_HELD_MAX: "15",
-  CHUG_API_THREAD_LIVE_TEXT_HELD_CHARS_MAX: "16",
-  CHUG_API_THREAD_LIVE_SESSION_IDLE_MS: "17",
+  CHUG_API_THREAD_LIVE_SESSION_READERS_MAX: "12",
+  CHUG_API_THREAD_LIVE_MAX_AGE_MS: "13",
+  CHUG_API_THREAD_LIVE_HEARTBEAT_MS: "14",
+  CHUG_API_THREAD_LIVE_SLOW_CLIENT_WAIT_MS: "15",
+  CHUG_API_THREAD_LIVE_PENDING_BYTES_MAX: "16",
+  CHUG_API_THREAD_LIVE_SESSIONS_HELD_MAX: "17",
+  CHUG_API_THREAD_LIVE_HELD_BYTES_MAX: "18",
+  CHUG_API_THREAD_LIVE_SESSION_TEXT_BYTES_MAX: "19",
+  CHUG_API_THREAD_LIVE_SESSION_IDLE_MS: "20",
+  CHUG_API_THREAD_LIVE_WINDOW_MS: "21",
+  CHUG_API_THREAD_LIVE_WINDOW_EVENTS_MAX: "22",
+  CHUG_API_THREAD_LIVE_SENT_BYTES_MAX: "23",
 };
 
 /** What a root program prints under the variables one case names, and nothing else. */
@@ -454,12 +460,18 @@ test("each bound of the thread live stream is the one its own variable names, th
   assert.equal(named.code, 0, named.out);
   assert.deepEqual(JSON.parse(named.out), {
     connectionsMax: 11,
-    maxAgeMs: 12,
-    heartbeatMs: 13,
-    slowClientWaitMs: 14,
-    sessionsHeldMax: 15,
-    textHeldCharsMax: 16,
-    sessionIdleMs: 17,
+    sessionReadersMax: 12,
+    maxAgeMs: 13,
+    heartbeatMs: 14,
+    slowClientWaitMs: 15,
+    pendingBytesMax: 16,
+    sentBytesMax: 23,
+    sessionsHeldMax: 17,
+    heldBytesMax: 18,
+    sessionTextBytesMax: 19,
+    sessionIdleMs: 20,
+    windowMs: 21,
+    windowEventsMax: 22,
   });
   const refused = await rootRead(
     { CHUG_API_THREAD_LIVE_HEARTBEAT_MS: "0" },
@@ -470,6 +482,52 @@ test("each bound of the thread live stream is the one its own variable names, th
     refused.out,
     /CHUG_API_THREAD_LIVE_HEARTBEAT_MS must be a positive integer/u,
   );
+});
+
+/**
+ * The root's stopping wired to an app that serves nothing, two hubs and two
+ * pools that each record being closed, then stopped as `stop` stops it. What
+ * was closed is printed once the last pool has been.
+ */
+function stoppingProgram(stop: string): string {
+  return `
+  const root = await import('./src/roots/nativeHttp.ts');
+  const { default: fastify } = await import('fastify');
+  const closed = [];
+  const recording = (name, close) => ({
+    [close]: () => {
+      closed.push(name);
+      return Promise.resolve();
+    },
+  });
+  const app = fastify();
+  root.nativeStopping(
+    app,
+    { pool: recording('pool', 'end'), selectorReviewPool: recording('review pool', 'end') },
+    [recording('project stream', 'close'), recording('thread live', 'close')],
+  );
+  const asking = setInterval(() => {
+    if (!closed.includes('review pool')) return;
+    clearInterval(asking);
+    process.stdout.write(JSON.stringify(closed));
+  }, 10);
+  await app.ready();
+  ${stop}
+`;
+}
+
+test("the app closing closes every hub it was stopped with and then the pools, and a stop signal closes the hubs before the drain begins", async () => {
+  const hubs = ["project stream", "thread live"];
+  const pools = ["pool", "review pool"];
+  const closed = await rootRead({}, stoppingProgram("await app.close();"));
+  assert.equal(closed.code, 0, closed.out);
+  assert.deepEqual(JSON.parse(closed.out), [...hubs, ...pools]);
+  const signalled = await rootRead(
+    {},
+    stoppingProgram("process.kill(process.pid, 'SIGTERM');"),
+  );
+  assert.equal(signalled.code, 0, signalled.out);
+  assert.deepEqual(JSON.parse(signalled.out), [...hubs, ...hubs, ...pools]);
 });
 
 test("a pool site a runner would read is composed as named", async () => {

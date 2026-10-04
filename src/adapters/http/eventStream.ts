@@ -183,20 +183,67 @@ export const projectStreamHeaders: Readonly<Record<string, string>> = {
   "x-accel-buffering": "no",
 };
 
-/** A socket a hub writes frames through, each written as `frameOf` encodes it. */
+/**
+ * Resets the connection under a reply, which frees what its socket holds
+ * unwritten and what the kernel holds unread for it, where a socket that is
+ * only closed leaves that with the kernel for as long as its peer does not
+ * read. A socket already being shut down is closed instead, because one asked
+ * to reset then is never closed at all.
+ */
+function cut(raw: FastifyReply["raw"]): void {
+  const socket = raw.socket;
+  try {
+    if (socket?.writableEnded === true) socket.destroy();
+    else socket?.resetAndDestroy();
+  } catch {
+    socket?.destroy();
+  }
+  raw.destroy();
+}
+
+/** A socket a hub writes through, which also answers what it has been written and can be cut. */
+interface EventStreamSocket<Event> extends EventStreamSink<Event> {
+  sentBytes(): number;
+  cut(): void;
+}
+
+/**
+ * Has an open reply cut as its peer says it will send no more, before the
+ * server answers that in kind: a socket being shut down can no longer be reset,
+ * and would go on holding whatever that peer never read. A reply that is over
+ * is listened for no longer, so a connection the server keeps gathers nothing
+ * from the streams it carried.
+ */
+function cutWhenPeerEnds(raw: FastifyReply["raw"], cutting: () => void): void {
+  const socket = raw.socket;
+  socket?.prependOnceListener("end", cutting);
+  raw.once("close", () => socket?.removeListener("end", cutting));
+}
+
+/**
+ * A socket a hub writes frames through, each written as `frameOf` encodes it.
+ * It is cut where it is ended still holding bytes unwritten, which are what its
+ * peer is not taking, and where its peer says it will send no more.
+ */
 function eventStreamSocket<Event>(
   reply: FastifyReply,
   frameOf: (event: Event) => string,
-): EventStreamSink<Event> {
+): EventStreamSocket<Event> {
   const raw = reply.raw;
   let answered = false;
   let ended = false;
+  let sentBytes = 0;
+  cutWhenPeerEnds(raw, () => {
+    ended = true;
+    cut(raw);
+  });
   const write = (text: string): boolean => {
     if (ended || raw.writableEnded) return true;
     if (!answered) {
       answered = true;
       raw.writeHead(200, projectStreamHeaders);
     }
+    sentBytes += Buffer.byteLength(text);
     return raw.write(text);
   };
   return {
@@ -205,10 +252,16 @@ function eventStreamSocket<Event>(
     whenDrained: (drained) => {
       raw.once("drain", drained);
     },
+    sentBytes: () => sentBytes,
     end: () => {
       if (ended) return;
       ended = true;
       raw.end();
+      if (raw.writableLength > 0) cut(raw);
+    },
+    cut: () => {
+      ended = true;
+      cut(raw);
     },
   };
 }
@@ -218,10 +271,14 @@ export function projectStreamSocket(reply: FastifyReply): ProjectStreamSink {
 }
 
 /** A thread live frame carries no identity, because nothing of the stream is kept to resume from. */
-function threadLiveFrameOf(event: ThreadLiveStreamEvent): string {
+export function threadLiveFramed(event: ThreadLiveStreamEvent): string {
   return `event: ${event.event}\ndata: ${JSON.stringify(event.data)}\n\n`;
 }
 
+/** A socket the thread live hub writes through, taking each frame as the hub had it encoded. */
 export function threadLiveSocket(reply: FastifyReply): ThreadLiveSink {
-  return eventStreamSocket(reply, threadLiveFrameOf);
+  return {
+    ...eventStreamSocket(reply, (frame: string) => frame),
+    pendingBytes: () => reply.raw.writableLength,
+  };
 }
