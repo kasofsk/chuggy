@@ -17,9 +17,14 @@
  * the last block can carry it, that block does; where nothing can — no block
  * yet, or a rule — the report itself does, and a caller that pulses the mark
  * never has a text being written with nothing pulsing in it.
+ *
+ * A TEXT THAT IS DEAR TO READ IS DRAWN A STEP BEHIND ITS WRITER. Where the
+ * reading says it has stopped short or is resting, what it holds is drawn and
+ * the report draws itself again when the rest is over, so the page answers a
+ * reader between the steps.
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 
 import {
@@ -28,7 +33,11 @@ import {
   markdownMarkCarried,
   markdownMarkClassName,
 } from "./MarkdownBlocks.tsx";
-import { markdownReadingNext } from "./markdownReading.ts";
+import { useMarkdownHeld } from "./markdownHeld.ts";
+import {
+  markdownReadingCurrent,
+  markdownReadingNext,
+} from "./markdownReading.ts";
 import type { MarkdownReading } from "./markdownReading.ts";
 import { markdownLineJoined, markdownLineRead } from "./markdownTree.ts";
 
@@ -44,17 +53,38 @@ interface MarkdownReportProps {
   readonly writing?: boolean;
 }
 
+/** The longest a report waits before it reads a text again, in
+ * milliseconds. */
+export const markdownReportWaitMaxMs = 1_000;
+
 /**
- * A text read, going on from the reading this component last made of it.
+ * A text read, going on from the reading this component last made of it, and
+ * taken again when the rest of a reading that is not all of the text is over.
  * Setting state while rendering is how React is told a value derived from
  * props moved: it draws again at once, with the reading already made.
  */
 function useMarkdownReading(text: string, writing: boolean): MarkdownReading {
+  const clock = useMarkdownHeld().clock;
   const [held, setHeld] = useState(() =>
-    markdownReadingNext(undefined, text, writing),
+    markdownReadingNext(undefined, text, writing, clock),
   );
-  const next = markdownReadingNext(held, text, writing);
+  const [woken, setWoken] = useState(0);
+  const next = markdownReadingNext(held, text, writing, clock);
   if (next !== held) setHeld(next);
+  const waits = !markdownReadingCurrent(next, text, writing);
+  useEffect(() => {
+    if (!waits || clock === undefined) return undefined;
+    const wait = Math.min(
+      Math.max(next.until - clock(), 0),
+      markdownReportWaitMaxMs,
+    );
+    const timer = setTimeout(() => {
+      setWoken((count) => count + 1);
+    }, wait);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [waits, next, clock, woken]);
   return next;
 }
 

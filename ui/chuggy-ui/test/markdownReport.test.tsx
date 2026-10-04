@@ -8,8 +8,8 @@
  * report says a thing in: a column's side, and the mark.
  */
 
-import { cleanup, render } from "@testing-library/react";
-import { afterEach, describe, expect, test } from "vitest";
+import { act, cleanup, render } from "@testing-library/react";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import {
@@ -19,6 +19,7 @@ import {
   markdownTableRowsMax,
 } from "../app/browser/ui/MarkdownBlocks.tsx";
 import { markdownCodeLanguageCharsMax } from "../app/browser/ui/MarkdownCode.tsx";
+import { MarkdownProvider } from "../app/browser/ui/markdownHeld.ts";
 import {
   MarkdownLine,
   MarkdownReport,
@@ -33,6 +34,7 @@ import {
   corpusReview,
 } from "./markdownCorpus.ts";
 import { prefixes } from "./markdownShape.ts";
+import { syntaxDoubleHeld } from "./markdownSyntaxDouble.ts";
 import { styleless } from "./styleless.ts";
 
 function drawn(text: string, writing = false): HTMLElement {
@@ -718,5 +720,55 @@ describe("a list longer than one call may cost", () => {
       items += list.children.length;
     }
     expect(items).toBe(600);
+  });
+});
+
+describe("a text that is dear to read", () => {
+  const text = Array.from(
+    { length: 6 },
+    (_unused, at) => `Paragraph ${String(at)} ${"goes on ".repeat(40)}.`,
+  ).join("\n\n");
+
+  /** A report under a clock that moves by `time.step` each time it is
+   * read, which is what a reading that costs something is from inside. */
+  function mounted(
+    writing: boolean,
+    time: { now: number; step: number },
+  ): HTMLElement {
+    const clock = (): number => (time.now += time.step);
+    const view = render(
+      <MarkdownProvider clock={clock} syntax={syntaxDoubleHeld().open}>
+        <MarkdownReport text={text} bare writing={writing} />
+      </MarkdownProvider>,
+    );
+    return view.container;
+  }
+
+  test("is drawn a step behind while it is written, and to its end once its rest is over", () => {
+    vi.useFakeTimers();
+    try {
+      const time = { now: 0, step: 5 };
+      const container = mounted(true, time);
+      const first = all(container, "p").length;
+      expect(first).toBeGreaterThan(0);
+      expect(first).toBeLessThan(6);
+      time.step = 0;
+      act(() => {
+        vi.advanceTimersByTime(10);
+      });
+      expect(all(container, "p")).toHaveLength(first);
+      act(() => {
+        time.now += 60_000;
+        vi.advanceTimersByTime(1_000);
+      });
+      expect(all(container, "p")).toHaveLength(6);
+      expect(all(container, `.${markdownMarkClassName}`)).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("is drawn to its end at once when it is whole", () => {
+    expect(all(mounted(false, { now: 0, step: 5 }), "p")).toHaveLength(6);
   });
 });
