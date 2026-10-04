@@ -54,6 +54,7 @@ import {
   identities,
   payloads,
   reaches,
+  unreading,
   type Held,
 } from "./heldStream.ts";
 import { unreadableLeadReads } from "./leadReadFixtures.ts";
@@ -509,6 +510,31 @@ test("a stream ends when the bearer that opened it does", async () => {
     await reaches(() => opened.closed()),
     "the stream outlived its bearer",
   );
+});
+
+test("a stream whose reader says it will send no more is reset where it stands, and is not ended behind what was written for it", async () => {
+  const rig = await rigOf();
+  const reader = unreading(rig.port, streamPath, authorized);
+  let read = "";
+  reader.on("data", (chunk: Buffer) => {
+    read += chunk.toString();
+  });
+  const over = new Promise<string>((resolve) => {
+    reader.once("error", (failure: NodeJS.ErrnoException) => {
+      resolve(failure.code ?? "");
+    });
+    reader.once("end", () => {
+      resolve("end");
+    });
+  });
+  reader.resume();
+  try {
+    assert.ok(await reaches(() => read.includes("event: source")));
+    reader.end();
+    assert.equal(await over, "ECONNRESET");
+  } finally {
+    reader.destroy();
+  }
 });
 
 test("a stream whose bearer names no expiry runs to its own age", async () => {
