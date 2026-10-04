@@ -14,12 +14,17 @@
  * WHAT MAKES AN OPEN ONE THAT LASTED IS THE STREAM'S TO SAY. Left unsaid, it
  * is having stayed open for `streamStableMs`. A stream whose server cuts it
  * as a matter of course says so with `cut`, and for it an open that handed a
- * frame over lasted however soon it ended: it is never counted, and it is
- * opened again at once where it had stayed open that long and after the
- * ladder's floor where it had not, which is what keeps a server cutting every
- * open from being asked in a loop. A server with no room for such a stream
- * names a wait: the next open is no sooner than it, up to the ladder's own
- * ceiling, and answers of that kind are counted apart under their own bound.
+ * frame over is never counted towards giving up, however soon it ended. One
+ * that had stayed open that long is opened again at once. One that had not
+ * waits on the ladder, a rung higher for each such open in a row and back to
+ * the floor after one that stayed open, so a server cutting every open — or
+ * sending a frame that ends every open — is asked more and more rarely and
+ * is still never given up on. A server with no room for such a stream names
+ * a wait: the next open is no sooner than it, up to the ladder's own ceiling,
+ * and answers of that kind are counted apart under their own bound.
+ *
+ * A FRAME IS HANDED OVER ONCE THE CALLER HAS TAKEN IT. An open whose first
+ * frame the caller threw on handed nothing over and is one that failed.
  */
 
 import { createStreamDecoder } from "./streamFrames.ts";
@@ -182,11 +187,12 @@ async function streamAttempted(
   }
 }
 
-/** What the ladder is counting: the opens in a row that did not last, and the
- * answers in a row that named a wait. */
+/** What the ladder is counting, each a run of opens in a row: those that did
+ * not last, those answered with a wait, and those that worked and ended soon. */
 interface StreamCounts {
   readonly failures: number;
   readonly busy: number;
+  readonly brief: number;
 }
 
 /**
@@ -209,11 +215,13 @@ function streamNext(
     return { counts: { ...counts, busy }, delayMs };
   }
   const stable = openMs >= streamStableMs;
-  if (cut && end.heard === true)
+  if (cut && end.heard === true) {
+    const brief = stable ? 0 : counts.brief + 1;
     return {
-      counts: { failures: 0, busy: 0 },
-      delayMs: stable ? 0 : streamReopenDelayMsMin,
+      counts: { failures: 0, busy: 0, brief },
+      delayMs: stable ? 0 : streamDelayMs(brief),
     };
+  }
   const failures = stable ? 1 : counts.failures + 1;
   if (failures >= streamOpenFailuresMax)
     return { stop: "the stream would not stay open" };
@@ -228,7 +236,7 @@ async function streamRun(
   ladder: StreamLadder,
   signal: AbortSignal,
 ): Promise<void> {
-  let counts: StreamCounts = { failures: 0, busy: 0 };
+  let counts: StreamCounts = { failures: 0, busy: 0, brief: 0 };
   while (!signal.aborted) {
     ladder.opening();
     const openedAtMs = ports.nowMs();

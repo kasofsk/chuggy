@@ -13,7 +13,8 @@
  * fails is the ordinary way an open ends, and because every open begins with a
  * snapshot, one that handed a frame over was a stream that worked: the
  * transport is told so with `cut`, never counts such an open against its
- * bound, and waits out the wait a server with no room names.
+ * bound, asks more rarely the more of them in a row end soon, and waits out
+ * the wait a server with no room names.
  */
 
 import { partitionPath } from "../../../../src/contract/http.ts";
