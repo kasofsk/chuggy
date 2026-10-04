@@ -36,19 +36,17 @@
  * bound, and no stream the thread wrote to before the one drawn.
  *
  * THE ONE TURN OUT THAT MAY HAVE STORED ITS ASK IS THE OLDEST, since turns are
- * taken in order and one at a time. An exchange holding a message heard under
- * that turn is its own. One the page held while that turn waited, or before
- * the mailbox listed it, was stored before the turn was last taken, and is
- * asked about as though the turn still waited: a turn waiting again may have
- * stored it when it was taken before. Past those, a record that can be counted
- * says: an exchange more than the turns sure of one is a taken turn's, and a
- * waiting turn's only where the turns before it that may have stored cannot
- * account for it. Where the count means nothing the newest exchange is asked
- * instead. A turn still waiting has taken none, nor has any on a page that
- * says the end of the record is still to be read. After a turn that ran and
- * failed, only an exchange nothing has been written in is the taken turn's.
- * After an answered turn, the exchange is the taken turn's unless it reads as
- * the answer that turn ended on.
+ * taken in order and one at a time. An exchange the page held before the
+ * mailbox listed that turn was stored before the turn was sent and is never
+ * its own, and one holding a message heard under that turn always is. Past
+ * those, a record that can be counted says: an exchange more than the turns
+ * sure of one is a taken turn's, and a waiting turn's only where the turns
+ * before it that may have stored cannot account for it. Where the count means
+ * nothing the newest exchange is asked instead. A turn still waiting has taken
+ * none, nor has any on a page that says the end of the record is still to be
+ * read. After a turn that ran and failed, only an exchange nothing has been
+ * written in is the taken turn's. After an answered turn, the exchange is the
+ * taken turn's unless it reads as the answer that turn ended on.
  *
  * WHAT CANNOT BE TOLD APART GOES TO THE TURN THAT IS OUT. A turn its session
  * reported failed, the same ask taken again, one exchange holding words nobody
@@ -573,8 +571,8 @@ const conversationHeardNone: ReadonlySet<string> = new Set();
 
 const conversationHeardUnderNone: ReadonlyMap<string, string> = new Map();
 
-/** The ordinal of the newest turn not waiting when a page first held each
- * exchange, by the entry that opened it. */
+/** The ordinal of the newest turn the mailbox listed when a page first held
+ * each exchange, by the entry that opened it. */
 export type ConversationSeen = ReadonlyMap<string, number>;
 
 export const conversationSeenNothing: ConversationSeen = new Map();
@@ -870,8 +868,8 @@ function conversationEndsShortOf(
   return (turn.result?.trim() ?? "").length > 0 && built.answer === undefined;
 }
 
-/** Whether the page held an exchange while a turn waited or was not yet
- * listed, which is an exchange stored before the turn was last taken. */
+/** Whether the page held an exchange before the mailbox listed a turn, which
+ * is an exchange stored before that turn was sent. */
 function conversationSeenBefore(
   pairing: ConversationPairing,
   built: ConversationBuilt,
@@ -899,9 +897,8 @@ function conversationFrontierStored(
     (message) => pairing.heardUnder.get(message) === frontier.turn,
   );
   if (heard) return true;
-  const waiting =
-    frontier.state === "Queued" ||
-    conversationSeenBefore(pairing, newest, frontier);
+  if (conversationSeenBefore(pairing, newest, frontier)) return false;
+  const waiting = frontier.state === "Queued";
   const extra = exchanges.length - stored.length;
   if (pairing.whole && extra > 0) return !waiting || extra > unsure;
   if (pairing.behind || waiting) return false;
@@ -1246,10 +1243,10 @@ export function conversationExchanges(
 
 /**
  * What a page has seen once it holds these items under these turns: an
- * exchange it did not hold before is given the newest turn that is not still
- * waiting, and one it no longer holds is let go of. Nothing is added until
- * `reached` — the walk has nothing left to read — and what was seen is handed
- * back itself where nothing changed.
+ * exchange it did not hold before is given the newest turn listed now, and one
+ * it no longer holds is let go of. Nothing is added until `reached` — the walk
+ * has nothing left to read — and what was seen is handed back itself where
+ * nothing changed.
  */
 export function conversationSeenWith(
   seen: ConversationSeen,
@@ -1267,11 +1264,7 @@ export function conversationSeenWith(
     .slice(-conversationExchangesMax);
   if (opened.length === seen.size && opened.every((id) => seen.has(id)))
     return seen;
-  const newest = turns.reduce(
-    (most, turn) =>
-      turn.state === "Queued" ? most : Math.max(most, turn.ordinal),
-    0,
-  );
+  const newest = turns.reduce((most, turn) => Math.max(most, turn.ordinal), 0);
   return new Map(opened.map((id) => [id, seen.get(id) ?? newest]));
 }
 
