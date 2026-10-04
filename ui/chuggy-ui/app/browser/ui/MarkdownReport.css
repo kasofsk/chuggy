@@ -266,20 +266,36 @@
     color: var(--ink-1);
   }
 
-  /* a table scrolls inside itself, for the same reason code does */
+  /* a table's columns are set before any cell is read. The layout is fixed
+     and every column is one `col` of one width, so the columns share the
+     report's width evenly and a cell filling makes its row taller, never its
+     column wider: nothing written moves sideways while the rest arrives.
+     That width is a floor, a short line of prose in the report's own type
+     whatever size that is set in. Where the columns at the floor come to more
+     than the report has, the table is as wide as they are and scrolls inside
+     its own box, for the same reason code does: a column is never squeezed
+     to a letter a line, and the page never scrolls sideways for it. */
   .run-report-table {
     overflow-x: auto;
   }
 
   .run-report-table > table {
-    min-width: 100%;
+    width: 100%;
+    table-layout: fixed;
     border-collapse: collapse;
     line-height: var(--leading-dense);
   }
 
+  .run-report-column {
+    width: 10em;
+  }
+
+  /* a word longer than its column breaks inside it rather than run over the
+     next one, and so does a name set as code */
   .run-report-table :is(th, td) {
     padding: var(--space-2) var(--space-3);
     border-block-end: var(--hairline) solid var(--edge);
+    overflow-wrap: anywhere;
     text-align: start;
     vertical-align: top;
   }
@@ -294,21 +310,10 @@
     padding-inline-end: var(--space-1);
   }
 
-  /* a name in a cell stays in one piece: the table scrolls, the name does
-     not break */
-  .run-report-table code {
-    white-space: nowrap;
-  }
-
   .run-report-table th {
     border-block-end-color: var(--edge-strong);
     color: var(--ink-1);
     font-weight: var(--weight-strong);
-    white-space: nowrap;
-  }
-
-  .run-report-table td {
-    min-width: 8ch;
   }
 
   .run-report-table .run-report-align-left {

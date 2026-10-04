@@ -16,6 +16,17 @@
  * its writer leaves a blank line in it, and one that changed its elements or
  * its setting then would move everything already written in it.
  *
+ * A TABLE'S COLUMNS ARE SET BY HOW MANY ITS HEADER HAS, AND BY NOTHING A CELL
+ * HOLDS. Each column is a `col` of one class, which the sheet gives one width
+ * under a fixed layout, so a cell filling makes its row taller and moves no
+ * column: not while the table is written, not when the turn settles, and not
+ * when the stored answer is read back, because all three draw this.
+ *
+ * EVERY CELL A WRITER WROTE IS DRAWN. A table is as long and as wide as
+ * `markdownGuard.ts` let its text be, and a row with more cells than its
+ * header has columns keeps them in its last one, each after the pipe it was
+ * written behind.
+ *
  * THE MARK IS ON THE LAST THING WRITTEN, WHEREVER THAT IS. `mark` follows the
  * last block down to the paragraph, the cell or the line of code the text ends
  * in, so a caller that pulses it pulses the place the next word will land.
@@ -38,10 +49,8 @@ type ListItem = MarkdownNodeOf<"listItem">;
 type Table = MarkdownNodeOf<"table">;
 type TableRow = MarkdownNodeOf<"tableRow">;
 
-/** A table wider than this many columns, or with more body rows than this,
- * is cut rather than drawn in full — a wall of pipes stays bounded. */
-export const markdownTableColumnsMax = 32;
-export const markdownTableRowsMax = 100;
+/** The class each of a table's columns carries, which is all that sizes one. */
+export const markdownColumnClassName = "run-report-column";
 
 /** How deep blocks or marks may sit inside each other and still be drawn as
  * what they are; past it they are drawn as their words. */
@@ -265,7 +274,34 @@ const markdownAlignClassNames = {
   right: "run-report-align-right",
 };
 
-/** One row's cells, cut or padded to the header's own width. */
+/** What one cell of a row holds: its own runs, and in the row's last column
+ * the runs of every cell written past it, each behind its pipe. */
+function MarkdownCellRuns(props: {
+  readonly cells: TableRow["children"];
+  readonly at: number;
+  readonly columns: number;
+  readonly depth: number;
+}): ReactNode {
+  const runs = (nodes: readonly MarkdownInline[]): ReactNode => (
+    <MarkdownInlineRun nodes={nodes} depth={props.depth} linked={false} />
+  );
+  const own = runs(props.cells[props.at]?.children ?? []);
+  if (props.at < props.columns - 1 || props.cells.length <= props.columns)
+    return own;
+  return (
+    <>
+      {own}
+      {props.cells.slice(props.columns).map((cell, at) => (
+        <Fragment key={at}>
+          {" | "}
+          {runs(cell.children)}
+        </Fragment>
+      ))}
+    </>
+  );
+}
+
+/** One row's cells, as many as the header has columns. */
 function MarkdownTableRow(props: {
   readonly table: Table;
   readonly row: TableRow | undefined;
@@ -288,10 +324,11 @@ function MarkdownTableRow(props: {
             .join(" ")
             .trim() || undefined;
         const held = (
-          <MarkdownInlineRun
-            nodes={cells[at]?.children ?? []}
+          <MarkdownCellRuns
+            cells={cells}
+            at={at}
+            columns={props.columns}
             depth={props.depth}
-            linked={false}
           />
         );
         return props.header ? (
@@ -314,11 +351,7 @@ function MarkdownTable(props: {
   readonly mark: boolean;
 }): ReactNode {
   const [header, ...body] = props.table.children;
-  const columns = Math.min(
-    header?.children.length ?? 0,
-    markdownTableColumnsMax,
-  );
-  const rows = body.slice(0, markdownTableRowsMax);
+  const columns = header?.children.length ?? 0;
   const row = (held: TableRow | undefined, at: number): ReactNode => (
     <MarkdownTableRow
       key={at}
@@ -327,14 +360,19 @@ function MarkdownTable(props: {
       columns={columns}
       header={at === -1}
       depth={props.depth}
-      mark={props.mark && at === rows.length - 1}
+      mark={props.mark && at === body.length - 1}
     />
   );
   return (
     <div className="run-report-table">
       <table>
+        <colgroup>
+          {Array.from({ length: columns }, (_unused, at) => (
+            <col key={at} className={markdownColumnClassName} />
+          ))}
+        </colgroup>
         <thead>{row(header, -1)}</thead>
-        <tbody>{rows.map(row)}</tbody>
+        <tbody>{body.map(row)}</tbody>
       </table>
     </div>
   );

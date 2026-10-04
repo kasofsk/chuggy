@@ -28,7 +28,7 @@ import { syntaxDoubleReading } from "./markdownSyntaxDouble.ts";
 afterEach(cleanup);
 
 const tagsAllowed = new Set(
-  "div p h1 h2 h3 h4 h5 h6 ul ol li input em strong del code br a blockquote pre span table thead tbody tr th td hr button svg path rect".split(
+  "div p h1 h2 h3 h4 h5 h6 ul ol li input em strong del code br a blockquote pre span table colgroup col thead tbody tr th td hr button svg path rect".split(
     " ",
   ),
 );
