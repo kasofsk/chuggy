@@ -13,6 +13,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import {
   markdownSyntaxDeadlineMs,
   markdownSyntaxDesk,
+  markdownSyntaxReadyMs,
   markdownSyntaxRest,
 } from "../app/browser/ui/markdownSyntax.ts";
 import type {
@@ -217,7 +218,7 @@ describe("a reading that does not come back", () => {
     const block = sat(desk);
     block.seat.ask("[a](".repeat(5_000), "markdown");
     const [worker] = double.workers;
-    pass(60_000);
+    pass(markdownSyntaxReadyMs - 1);
     expect(worker?.ended).toBe(false);
     worker?.say({ ready: true });
     pass(2_999);
@@ -276,11 +277,12 @@ describe("a reading that does not come back", () => {
 });
 
 describe("a worker that breaks, or cannot be started", () => {
-  test("is ended where it says it failed, its block left unread and the next read by a new one", () => {
+  test("is ended where it says it failed while reading, its block left unread and the next read by a new one", () => {
     const { double, desk } = desked();
     const [broken, next] = [sat(desk), sat(desk)];
     broken.seat.ask("a", "typescript");
     next.seat.ask("b", "typescript");
+    double.workers[0]?.say({ ready: true });
     double.workers[0]?.say({ failed: true });
     expect(double.workers[0]?.ended).toBe(true);
     expect(codes(double.workers[1])).toEqual(["b"]);
@@ -304,6 +306,77 @@ describe("a worker that breaks, or cannot be started", () => {
       block.seat.ask("ab", "typescript");
     }).not.toThrow();
     expect(block.told).toEqual([]);
+  });
+
+  test("is asked for once where none can be started, however many blocks ask", () => {
+    let starts = 0;
+    const desk = markdownSyntaxDesk(
+      () => {
+        starts += 1;
+        throw new Error("no worker is to be had");
+      },
+      () => now,
+    );
+    const blocks = Array.from({ length: 20 }, () => sat(desk));
+    for (const block of blocks) block.seat.ask("a", "typescript");
+    pass(60_000);
+    for (const block of blocks) block.seat.ask("ab", "typescript");
+    desk.end();
+    sat(desk).seat.ask("abc", "typescript");
+    expect(starts).toBe(1);
+    expect(blocks.flatMap((block) => block.told)).toEqual([]);
+  });
+});
+
+describe("a worker that never comes to be ready", () => {
+  test("is the last the desk starts where it says it failed before it was ready", () => {
+    const { double, desk } = desked();
+    const blocks = Array.from({ length: 20 }, () => sat(desk));
+    for (const block of blocks) block.seat.ask("a", "typescript");
+    double.workers[0]?.say({ failed: true });
+    expect(double.workers[0]?.ended).toBe(true);
+    pass(60_000);
+    for (const block of blocks) block.seat.ask("ab", "typescript");
+    sat(desk).seat.ask("abc", "typescript");
+    expect(double.workers).toHaveLength(1);
+    expect(codes(double.workers[0])).toEqual(["a"]);
+    expect(blocks.flatMap((block) => block.told)).toEqual([]);
+  });
+
+  test("is ended where it has not said it is ready by its own deadline, and is the last the desk starts", () => {
+    expect(markdownSyntaxReadyMs).toBe(30_000);
+    const { double, desk } = desked();
+    const [first, next] = [sat(desk), sat(desk)];
+    first.seat.ask("a", "typescript");
+    next.seat.ask("b", "typescript");
+    const [worker] = double.workers;
+    pass(29_999);
+    expect(worker?.ended).toBe(false);
+    pass(1);
+    expect(worker?.ended).toBe(true);
+    worker?.say({ ready: true });
+    answer(worker, ["a"]);
+    next.seat.ask("bc", "typescript");
+    pass(60_000);
+    expect(double.workers).toHaveLength(1);
+    expect(codes(worker)).toEqual(["a"]);
+    expect([...first.told, ...next.told]).toEqual([]);
+  });
+
+  test("is not ended by the deadline on ready once it has said it is, however long it then waits to be asked", () => {
+    const { double, desk } = desked();
+    const block = sat(desk);
+    block.seat.ask("a", "typescript");
+    const [worker] = double.workers;
+    pass(29_999);
+    worker?.say({ ready: true });
+    answer(worker, ["a"]);
+    pass(600_000);
+    expect(worker?.ended).toBe(false);
+    block.seat.ask("ab", "typescript");
+    expect(double.workers).toHaveLength(1);
+    expect(codes(worker)).toEqual(["a", "ab"]);
+    expect(block.told.map((reading) => reading.code)).toEqual(["a"]);
   });
 
   test("is ended with the desk, and a block asking afterwards starts a new one", () => {
