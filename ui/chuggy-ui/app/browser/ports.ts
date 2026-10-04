@@ -10,7 +10,7 @@
 
 import type { FormRequest } from "../core/authorization.ts";
 import type { ApiFetchInit } from "../core/apiRequest.ts";
-import type { StreamResponse } from "../core/projectStream.ts";
+import type { StreamResponse } from "../core/streamConnection.ts";
 import { FetchJsonError } from "../core/sessionHolder.ts";
 import type { KeyValuePort, SessionLocation } from "../core/sessionHolder.ts";
 

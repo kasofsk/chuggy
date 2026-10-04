@@ -12,6 +12,7 @@ import { describe, expect, test } from "vitest";
 
 import {
   sessionTurnInputKinds,
+  sessionTurnStates,
   threadMessageRefusalCodes,
   threadStandings,
 } from "../../../src/contract/rosters.ts";
@@ -26,12 +27,14 @@ import {
   threadRefusalWord,
   threadSendFrom,
   threadSendStanding,
+  threadStoreDue,
   threadTakesMessages,
   threadTurnKindWord,
   threadTurnMinted,
   threadTurnRetained,
   threadTurnsWait,
   threadWakeDrawn,
+  threadWriting,
   threadsByStanding,
 } from "../app/core/threads.ts";
 import type { ThreadDoor } from "../app/core/threads.ts";
@@ -388,6 +391,55 @@ describe("whether a thread is still answering", () => {
       false,
     );
     expect(threadAnswering({ turns: [] })).toBe(false);
+  });
+});
+
+describe("whether a thread's session is writing", () => {
+  test("it is while the newest turn is unsettled, whatever order the turns are held in", () => {
+    const settled = turnOf({ turn: "thread-turn-1", ordinal: 1 });
+    for (const state of ["Queued", "Claimed"] as const) {
+      const newest = turnOf({ turn: "thread-turn-2", ordinal: 2, state });
+      expect(threadWriting({ turns: [settled, newest] })).toBe(true);
+      expect(threadWriting({ turns: [newest, settled] })).toBe(true);
+    }
+  });
+
+  test("it is not once the newest turn settled, though an older one never did", () => {
+    const stuck = turnOf({
+      turn: "thread-turn-1",
+      ordinal: 1,
+      state: "Claimed",
+    });
+    const newest = turnOf({ turn: "thread-turn-2", ordinal: 2 });
+    expect(threadWriting({ turns: [stuck, newest] })).toBe(false);
+    expect(threadWriting({ turns: [newest, stuck] })).toBe(false);
+    expect(threadWriting({ turns: [] })).toBe(false);
+  });
+});
+
+describe("whether a store the thread does not name is missing", () => {
+  test("a thread whose every turn is unsettled has not written one yet", () => {
+    expect(threadStoreDue({ turns: [] })).toBe(false);
+    expect(threadStoreDue({ turns: [turnOf({ state: "Queued" })] })).toBe(
+      false,
+    );
+    expect(threadStoreDue({ turns: [turnOf({ state: "Claimed" })] })).toBe(
+      false,
+    );
+  });
+
+  test("a thread with a settled turn should have one, however that turn ended", () => {
+    for (const state of sessionTurnStates) {
+      if (state === "Queued" || state === "Claimed") continue;
+      const settled = turnOf({ turn: "thread-turn-1", ordinal: 1, state });
+      const asked = turnOf({
+        turn: "thread-turn-2",
+        ordinal: 2,
+        state: "Queued",
+      });
+      expect(threadStoreDue({ turns: [settled] })).toBe(true);
+      expect(threadStoreDue({ turns: [settled, asked] })).toBe(true);
+    }
   });
 });
 

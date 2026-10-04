@@ -232,6 +232,25 @@ export function threadAnswering(
   );
 }
 
+/** Whether the thread's newest turn is one the mailbox has not settled, which
+ * is the only time its session is writing anything a reader could hear. */
+export function threadWriting(thread: Pick<ThreadResponse, "turns">): boolean {
+  const newest = thread.turns.reduce<ThreadTurnResponse | undefined>(
+    (latest, turn) =>
+      latest === undefined || turn.ordinal > latest.ordinal ? turn : latest,
+    undefined,
+  );
+  return newest?.state === "Queued" || newest?.state === "Claimed";
+}
+
+/** Whether the thread has a turn the mailbox settled, which is when a store it
+ * does not name is one that is missing rather than one not written yet. */
+export function threadStoreDue(thread: Pick<ThreadResponse, "turns">): boolean {
+  return thread.turns.some(
+    (turn) => turn.state !== "Queued" && turn.state !== "Claimed",
+  );
+}
+
 /**
  * The two fields a wake document is drawn from. Unknown keys are dropped rather
  * than refused, so a document carrying more than this reads as the notice it is.

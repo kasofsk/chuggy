@@ -138,6 +138,12 @@ function markdownLineKindOf(line: string): MarkdownLineKind {
   return { kind: "Text", rest: line };
 }
 
+/** Whether a line is one a paragraph is made of, which is also the only kind
+ * a table's rows are read from. */
+export function markdownLinePlain(line: string): boolean {
+  return markdownLineKindOf(line).kind === "Text";
+}
+
 /** Consecutive lines the same classifier keeps naming, each read down to its
  * own `rest` — the run a paragraph, a quote or a list is drawn from. */
 function markdownRunRead(
@@ -184,7 +190,9 @@ function markdownParagraphLines(lines: readonly string[]): MarkdownLines {
 
 /** A line's cells, stripped of the leading and trailing pipe a worker tends
  * to write. `undefined` when the line carries no pipe at all — not a row. */
-function markdownTableRowCells(line: string): readonly string[] | undefined {
+export function markdownTableRowCells(
+  line: string,
+): readonly string[] | undefined {
   if (!line.includes("|")) return undefined;
   const trimmed = line.trim().replace(/^\|/, "").replace(/\|$/, "");
   return trimmed.split("|").map((cell) => cell.trim());
@@ -194,7 +202,7 @@ const markdownTableDelimiterCellPattern = /^:?-+:?$/;
 
 /** Whether a line is only dashes, one per header column — the row that
  * turns a run of pipes into a table rather than leaving it a paragraph. */
-function markdownTableDelimiterRow(line: string): boolean {
+export function markdownTableDelimiterRow(line: string): boolean {
   const cells = markdownTableRowCells(line);
   return (
     cells !== undefined &&
