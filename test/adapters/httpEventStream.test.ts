@@ -570,3 +570,23 @@ test("closing the app ends every stream instead of draining behind one", async (
   assert.ok(Date.now() - started < 5_000);
   opened.close();
 });
+
+test("what a held stream carried is read a line at a time, and a line still arriving is not read", () => {
+  const arriving = (body: string): Held => ({
+    status: 200,
+    headers: {},
+    body: () => body,
+    closed: () => false,
+    failed: () => false,
+    close: () => undefined,
+  });
+  const whole = 'event: change\nid: 7\ndata: {"sequence":7}\n\n';
+  assert.deepEqual(payloads(arriving(whole)), [{ sequence: 7 }]);
+  assert.deepEqual(identities(arriving(whole)), ["event: change", "id: 7"]);
+  const cut = `${whole}event: change\nid: 8\ndata: {"sequence":8,"text":"\\u00`;
+  assert.deepEqual(payloads(arriving(cut)), [{ sequence: 7 }]);
+  assert.deepEqual(identities(arriving(`${whole}event: cha`)), [
+    "event: change",
+    "id: 7",
+  ]);
+});
