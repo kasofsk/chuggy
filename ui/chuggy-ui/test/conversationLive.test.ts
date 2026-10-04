@@ -31,6 +31,7 @@ import {
   conversationLiveHeard,
   conversationLiveHeardUnder,
   conversationLiveKept,
+  conversationLiveLeftMax,
   conversationLiveMessagesMax,
   conversationLiveNothing,
   conversationLiveRejoinedMax,
@@ -307,6 +308,23 @@ test("an end heard twice is heard once", () => {
   ]);
   expect(held.ended).toBe(turn);
   expect(conversationLiveHeard(held, ended)).toBe(held);
+});
+
+test("the end of another turn never takes the word from the turn a runner holds, and takes it from any other", () => {
+  const whole = heardAll([
+    began("m1", 0, "Text"),
+    wrote("m1", 0, 0, "Done."),
+    ended,
+  ]);
+  const other = live({ live: "End" }, "turn-9");
+  expect(conversationLiveHeard(whole, other).ended).toBe("turn-9");
+  const taken = conversationLiveKept(whole, turnsOf("Claimed"), true);
+  expect([taken.ended, taken.taken]).toEqual([turn, turn]);
+  expect(conversationLiveHeard(taken, other)).toBe(taken);
+  expect(conversationLiveHeard(taken, ended)).toBe(taken);
+  expect(only({ held: taken, items: [asked] }).activity).toEqual({
+    activity: "Whole",
+  });
 });
 
 test("a gap takes away nothing heard before it and draws nothing after it", () => {
@@ -966,6 +984,44 @@ test("no more messages are kept than the bound, and the oldest leaves first", ()
   expect(held.written[0]?.message).toBe("m2");
 });
 
+test("the messages remembered as heard are bounded, the oldest leaving first, and are forgotten with their turn", () => {
+  const heard = conversationLiveMessagesMax + conversationLiveLeftMax + 2;
+  const held = heardAll(
+    Array.from({ length: heard }, (_unused, at) =>
+      began(`m${String(at)}`, 0, "Text"),
+    ),
+  );
+  expect(held.left).toHaveLength(conversationLiveLeftMax);
+  expect(held.left?.[0]).toEqual({ turn, message: "m1" });
+  expect(conversationLiveHeardUnder(held)).toHaveLength(heard - 1);
+  expect(conversationLiveHeardUnder(held)[0]).toEqual(["m1", turn]);
+  const settled = conversationLiveKept(held, turnsOf("Answered"), true);
+  expect(settled.left).toBeUndefined();
+  expect(conversationLiveHeardUnder(settled)).toEqual([]);
+});
+
+test("more messages heard than are kept, the store behind them all: the text being written stays when the store catches up", () => {
+  const turns = turnsOf("Claimed");
+  const page = paged().see([asked], turns);
+  const items: ConversationItem[] = [asked];
+  for (let at = 0; at <= conversationLiveMessagesMax; at += 1) {
+    const call = `call-${String(at)}`;
+    page.hear(began(`m${String(at)}`, 0, "ToolUse", "Read"));
+    items.push(
+      stored(`m${String(at)}`, {
+        block: "ToolUse",
+        id: call,
+        name: "Read",
+        input: {},
+      }),
+      resulted(call),
+    );
+  }
+  page.hear(began("last", 0, "Text"), wrote("last", 0, 0, "It is blo"));
+  expect(texts(page.drawn()[0])).toBe("It is blo");
+  expect(texts(page.see(items, turns).drawn()[0])).toBe("It is blo");
+});
+
 function storeItems(entries: number): readonly ConversationItem[] {
   return sessionConversationItems({
     held: {
@@ -1284,6 +1340,66 @@ function turnAsking(
 ): ConversationTurn {
   return { turn: named, ordinal, inputKind: "UserMessage", input: text, state };
 }
+
+/** A page open since the turn before, at the next turn's first opening: its
+ * claim read and its snapshot heard in either order, then a message abandoned
+ * part way whose replacement nobody heard. */
+function nextTurnOpened(claimReadFirst: boolean): Paged {
+  const first = turnAsking(turn, 1, "one", "Claimed");
+  const page = paged()
+    .see([asking("one")], [first])
+    .hear(snapshot({ blocks: [] }));
+  page.hear(began("m1", 0, "Text"), wrote("m1", 0, 0, "First."), ended);
+  const done = [asking("one"), stored("m1", { block: "Text", text: "First." })];
+  const answered = turnAsking(turn, 1, "one", "Answered");
+  const taken = [answered, turnAsking("turn-2", 2, "two", "Claimed")];
+  page
+    .see(done, [answered])
+    .see(done, [answered, turnAsking("turn-2", 2, "two", "Queued")]);
+  if (claimReadFirst) page.see(done, taken).hear(snapshot({ blocks: [] }));
+  else page.hear(snapshot({ blocks: [] })).see(done, taken);
+  const items = [...done, asking("two")];
+  page
+    .see(items, taken)
+    .hear(
+      began("m2", 0, "Text", undefined, "turn-2"),
+      wrote("m2", 0, 0, "Hello, I wi", "turn-2"),
+    );
+  const replaced = stored("m3", {
+    block: "Text",
+    text: "Hello, I will do it.",
+  });
+  return page.see([...items, replaced], taken);
+}
+
+test("a later turn's first opening tells an abandoned message by what replaced it, whichever of its claim and its snapshot comes first", () => {
+  for (const claimReadFirst of [false, true])
+    expect(texts(nextTurnOpened(claimReadFirst).drawn()[1])).toBe(
+      "Hello, I will do it.",
+    );
+});
+
+test("the word that a snapshot was heard is let go of when the newest turn settles, and at no other time", () => {
+  const held = conversationLiveHeard(
+    conversationLiveNothing,
+    snapshot({ blocks: [] }),
+  );
+  expect(held.opened).toBe(true);
+  expect(conversationLiveKept(held, [], true)).toBe(held);
+  expect(conversationLiveKept(held, turnsOf("Claimed"), true).opened).toBe(
+    true,
+  );
+  const next = [
+    turnAsking(turn, 1, "one", "Answered"),
+    turnAsking("turn-2", 2, "two", "Queued"),
+  ];
+  expect(conversationLiveKept(held, next, true)).toBe(held);
+  const settled = conversationLiveKept(held, turnsOf("Answered"), false);
+  expect(settled.opened).toBeUndefined();
+  expect(conversationLiveKept(settled, turnsOf("Answered"), false)).toBe(
+    settled,
+  );
+});
 
 test("the answer of the turn before, stored a read after the mailbox settled it, does not hide the next turn's text", () => {
   const first = [asking("one")];

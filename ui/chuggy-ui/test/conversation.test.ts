@@ -25,6 +25,8 @@ import {
   conversationExchanges,
   conversationExchangesMax,
   conversationExchangesWaiting,
+  conversationSeenNothing,
+  conversationSeenWith,
   conversationStepsMax,
   conversationWorkSummary,
 } from "../app/core/conversation.ts";
@@ -32,6 +34,7 @@ import type {
   ConversationBlock,
   ConversationExchange,
   ConversationItem,
+  ConversationRecord,
   ConversationTurn,
 } from "../app/core/conversation.ts";
 import { conversationStoreItems } from "./conversationFixture.ts";
@@ -59,6 +62,30 @@ function turnOf(turn: Partial<ConversationTurn>): ConversationTurn {
     inputKind: "UserMessage",
     state: "Answered",
     ...turn,
+  };
+}
+
+/** The exchanges a page draws of these items under these turns, each with the
+ * turn it was paired with, given what the page knows of the record. */
+function pairedUnder(
+  items: readonly ConversationItem[],
+  turns: readonly ConversationTurn[],
+  record?: ConversationRecord,
+): readonly (readonly [string, string | undefined])[] {
+  return conversationExchanges(items, turns, undefined, undefined, record).map(
+    (exchange) => [exchange.id, exchange.turn] as const,
+  );
+}
+
+/** A page that held these exchanges while `newest` was the newest turn its
+ * mailbox listed. */
+function heldBefore(
+  newest: number,
+  ...exchanges: readonly string[]
+): ConversationRecord {
+  return {
+    seen: new Map(exchanges.map((id) => [id, newest])),
+    replaced: false,
   };
 }
 
@@ -426,6 +453,25 @@ describe("the mailbox overlay, on turns that asked the same thing", () => {
 });
 
 describe("the mailbox overlay, on the same thing asked of a turn that did not answer", () => {
+  test("a turn that failed before storing its ask does not keep the exchange of the same ask sent again", () => {
+    const failed = turnOf({
+      turn: "t1",
+      ordinal: 1,
+      input: "again",
+      state: "Failed",
+    });
+    for (const state of ["Claimed", "Answered"] as const) {
+      const exchanges = conversationExchanges(
+        [askOf("u2", "again"), answerOf("a2", "second")],
+        [failed, turnOf({ turn: "t2", ordinal: 2, input: "again", state })],
+      );
+      expect(exchanges.map((exchange) => exchange.turn)).toEqual(["t2", "t1"]);
+      expect(exchanges[0]?.answer).toBe("second");
+      expect(exchanges[1]?.standing).toEqual({ standing: "Failed" });
+      expect(exchanges[1]?.answer).toBeUndefined();
+    }
+  });
+
   test("a turn lost before it ran does not keep the exchange of the same ask sent again", () => {
     const failed = turnOf({
       turn: "t1",
@@ -464,7 +510,9 @@ describe("the mailbox overlay, on the same thing asked of a turn that did not an
       state: "Queued",
     });
   });
+});
 
+describe("the mailbox overlay, on the exchanges of one ask counted against its turns", () => {
   test("two answered turns of one ask and one exchange read so far: the older turn is the one that stored it", () => {
     const exchanges = conversationExchanges(
       [askOf("u1", "again"), answerOf("a1", "first")],
@@ -507,10 +555,13 @@ describe("the mailbox overlay, on the same thing asked again of a turn that ran 
         ...(failure === undefined ? {} : { failure }),
       });
       for (const state of ["Queued", "Claimed"] as const) {
-        const exchanges = conversationExchanges(half, [
-          failed,
-          turnOf({ turn: "t2", ordinal: 2, input: "go", state }),
-        ]);
+        const exchanges = conversationExchanges(
+          half,
+          [failed, turnOf({ turn: "t2", ordinal: 2, input: "go", state })],
+          undefined,
+          undefined,
+          heldBefore(1, "u1"),
+        );
         expect(exchanges.map((exchange) => exchange.turn)).toEqual([
           "t1",
           "t2",
@@ -520,6 +571,88 @@ describe("the mailbox overlay, on the same thing asked again of a turn that ran 
         expect(exchanges[1]?.work).toEqual([]);
         expect(exchanges[1]?.answer).toBeUndefined();
       }
+    }
+  });
+});
+
+describe("the mailbox overlay, on a turn its session reported failed and the same ask left waiting", () => {
+  test("its stored words stay its own on a page opened while the same ask waits, whatever failure it was reported in", () => {
+    for (const failure of ["AgentFailed", "StoreRefused", undefined] as const) {
+      const failed = turnOf({
+        turn: "t1",
+        ordinal: 1,
+        input: "go",
+        state: "Failed",
+        ...(failure === undefined ? {} : { failure }),
+      });
+      const waiting = turnOf({
+        turn: "t2",
+        ordinal: 2,
+        input: "go",
+        state: "Queued",
+      });
+      expect(pairedUnder(half, [failed, waiting])).toEqual([
+        ["u1", "t1"],
+        ["t2", "t2"],
+      ]);
+    }
+  });
+
+  test("one exchange left between a turn whose attempts were lost and a later one its session reported is the reported one's", () => {
+    const exchanges = pairedUnder(
+      [
+        askOf("u2", "go"),
+        answerOf("a2", "Half an answer"),
+        askOf("u3", "go"),
+        answerOf("a3", "Third."),
+      ],
+      [
+        turnOf({
+          turn: "t1",
+          ordinal: 1,
+          input: "go",
+          state: "Failed",
+          failure: "AttemptLost",
+        }),
+        turnOf({
+          turn: "t2",
+          ordinal: 2,
+          input: "go",
+          state: "Failed",
+          failure: "AgentFailed",
+        }),
+        turnOf({ turn: "t3", ordinal: 3, input: "go", result: "Third." }),
+      ],
+    );
+    expect(exchanges).toEqual([
+      ["u2", "t2"],
+      ["u3", "t3"],
+      ["t1", "t1"],
+    ]);
+  });
+});
+
+describe("the mailbox overlay, on a turn that ended on a failure only a run names", () => {
+  test("a failure only a run names keeps its exchange on a page opened while the same ask is taken", () => {
+    for (const failure of [
+      "AgentTurnsExhausted",
+      "AgentBudgetExhausted",
+      "AgentRateLimited",
+    ] as const) {
+      const exchanges = conversationExchanges(half, [
+        turnOf({
+          turn: "t1",
+          ordinal: 1,
+          input: "go",
+          state: "Failed",
+          failure,
+        }),
+        turnOf({ turn: "t2", ordinal: 2, input: "go", state: "Claimed" }),
+      ]);
+      expect(pairs(exchanges)).toEqual([
+        ["u1", "t1"],
+        ["t2", "t2"],
+      ]);
     }
   });
 
@@ -545,37 +678,474 @@ describe("the mailbox overlay, on the same thing asked again of a turn that ran 
 });
 
 describe("the mailbox overlay, on the same thing asked a third time", () => {
-  test("answered, failed with its ask stored, and asked a third time: each keeps its own", () => {
-    const exchanges = conversationExchanges(
-      [
-        askOf("u1", "go"),
-        answerOf("a1", "First answer."),
-        askOf("u2", "go"),
-        answerOf("a2", "Half a second"),
-      ],
-      [
-        turnOf({ turn: "t1", ordinal: 1, input: "go" }),
-        turnOf({
-          turn: "t2",
-          ordinal: 2,
-          input: "go",
-          state: "Failed",
-          failure: "AgentFailed",
-        }),
-        turnOf({ turn: "t3", ordinal: 3, input: "go", state: "Claimed" }),
-      ],
+  const items = [
+    askOf("u1", "go"),
+    answerOf("a1", "First answer."),
+    askOf("u2", "go"),
+    answerOf("a2", "Half a second"),
+  ];
+  const turns = [
+    turnOf({ turn: "t1", ordinal: 1, input: "go" }),
+    turnOf({
+      turn: "t2",
+      ordinal: 2,
+      input: "go",
+      state: "Failed",
+      failure: "AgentFailed",
+    }),
+    turnOf({ turn: "t3", ordinal: 3, input: "go", state: "Claimed" }),
+  ];
+  const drawn = (
+    record?: ConversationRecord,
+  ): readonly (readonly [string | undefined, string, string | undefined])[] =>
+    conversationExchanges(items, turns, undefined, undefined, record).map(
+      (exchange) =>
+        [exchange.turn, exchange.standing.standing, exchange.answer] as const,
     );
-    expect(
-      exchanges.map((exchange) => [
-        exchange.turn,
-        exchange.standing.standing,
-        exchange.answer,
-      ]),
-    ).toEqual([
+
+  test("answered, failed with its ask stored, and asked a third time: each keeps its own", () => {
+    expect(drawn(heldBefore(2, "u1", "u2"))).toEqual([
       ["t1", "Answered", "First answer."],
       ["t2", "Failed", "Half a second"],
       ["t3", "Running", undefined],
     ]);
+  });
+
+  test("on a page opened while the third is out, nothing says whose the second exchange is and the turn that is out takes it", () => {
+    expect(drawn()).toEqual([
+      ["t1", "Answered", "First answer."],
+      ["t3", "Running", "Half a second"],
+      ["t2", "Failed", undefined],
+    ]);
+  });
+});
+
+const hello = [askOf("u2", "hello"), answerOf("a2", "Hi, I am here.")];
+
+/** A turn its session reported failed, in the failure it named or, with
+ * `Unnamed`, in none. */
+function refusedAt(
+  ordinal: number,
+  failure: "AgentFailed" | "StoreRefused" | "Unnamed" = "AgentFailed",
+): ConversationTurn {
+  return turnOf({
+    turn: `t${String(ordinal)}`,
+    ordinal,
+    input: "hello",
+    state: "Failed",
+    ...(failure === "Unnamed" ? {} : { failure }),
+  });
+}
+
+function helloAnswered(ordinal: number, result: string): ConversationTurn {
+  return turnOf({
+    turn: `t${String(ordinal)}`,
+    ordinal,
+    input: "hello",
+    result,
+  });
+}
+
+describe("the mailbox overlay, on a turn its session refused without running", () => {
+  test("refused, sent again and answered: the answer is the second turn's and the refused one is its ask and its failure", () => {
+    for (const failure of ["AgentFailed", "StoreRefused", "Unnamed"] as const) {
+      const exchanges = conversationExchanges(hello, [
+        refusedAt(1, failure),
+        helloAnswered(2, "Hi, I am here."),
+      ]);
+      expect(pairs(exchanges)).toEqual([
+        ["u2", "t2"],
+        ["t1", "t1"],
+      ]);
+      expect(exchanges[0]?.standing).toEqual({ standing: "Answered" });
+      expect(exchanges[0]?.answer).toBe("Hi, I am here.");
+      expect(exchanges[1]?.standing.standing).toBe("Failed");
+      expect(exchanges[1]?.work).toEqual([]);
+      expect(exchanges[1]?.answer).toBeUndefined();
+    }
+  });
+
+  test("the same while the retry is being answered, on a page opened part way through it", () => {
+    const exchanges = conversationExchanges(
+      [askOf("u2", "hello"), answerOf("a2", "Hi, I am")],
+      [
+        refusedAt(1),
+        turnOf({ turn: "t2", ordinal: 2, input: "hello", state: "Claimed" }),
+      ],
+    );
+    expect(pairs(exchanges)).toEqual([
+      ["u2", "t2"],
+      ["t1", "t1"],
+    ]);
+    expect(exchanges[0]?.answer).toBe("Hi, I am");
+  });
+
+  test("three refusals then an answer: the one exchange is the answered turn's", () => {
+    const exchanges = conversationExchanges(
+      [askOf("u4", "hello"), answerOf("a4", "Hi, I am here.")],
+      [
+        refusedAt(1),
+        refusedAt(2),
+        refusedAt(3),
+        helloAnswered(4, "Hi, I am here."),
+      ],
+    );
+    expect(pairs(exchanges)).toEqual([
+      ["u4", "t4"],
+      ["t1", "t1"],
+      ["t2", "t2"],
+      ["t3", "t3"],
+    ]);
+  });
+});
+
+describe("the mailbox overlay, on a refused turn among answered ones that asked the same", () => {
+  const first = [askOf("u1", "hello"), answerOf("a1", "First.")];
+  const third = [askOf("u3", "hello"), answerOf("a3", "Third.")];
+
+  test("refused, then answered twice: each answered turn keeps its own", () => {
+    const exchanges = conversationExchanges(
+      [askOf("u2", "hello"), answerOf("a2", "Second."), ...third],
+      [refusedAt(1), helloAnswered(2, "Second."), helloAnswered(3, "Third.")],
+    );
+    expect(pairs(exchanges)).toEqual([
+      ["u2", "t2"],
+      ["u3", "t3"],
+      ["t1", "t1"],
+    ]);
+  });
+
+  test("refused between two answered turns: neither answered turn's exchange moves", () => {
+    const exchanges = conversationExchanges(
+      [...first, ...third],
+      [helloAnswered(1, "First."), refusedAt(2), helloAnswered(3, "Third.")],
+    );
+    expect(pairs(exchanges)).toEqual([
+      ["u1", "t1"],
+      ["u3", "t3"],
+      ["t2", "t2"],
+    ]);
+  });
+
+  test("its stored words reading as the answer before them are still its own where the count leaves one over", () => {
+    const exchanges = conversationExchanges(
+      [...first, askOf("u2", "hello"), answerOf("a2", "First.")],
+      [helloAnswered(1, "First."), refusedAt(2)],
+    );
+    expect(pairs(exchanges)).toEqual([
+      ["u1", "t1"],
+      ["u2", "t2"],
+    ]);
+  });
+
+  test("a turn that ran and was reported failed between two answered ones keeps the exchange left over", () => {
+    const exchanges = conversationExchanges(
+      [...first, askOf("u2", "hello"), answerOf("a2", "Half"), ...third],
+      [helloAnswered(1, "First."), refusedAt(2), helloAnswered(3, "Third.")],
+    );
+    expect(pairs(exchanges)).toEqual([
+      ["u1", "t1"],
+      ["u2", "t2"],
+      ["u3", "t3"],
+    ]);
+  });
+});
+
+describe("the mailbox overlay, on a turn its session reported failed in a record that cannot be counted", () => {
+  const fortieth = [askOf("u40", "hello"), answerOf("a40", "Fortieth.")];
+  const last = [askOf("u42", "hello"), answerOf("a42", "Forty-second.")];
+  const turns = [
+    helloAnswered(40, "Fortieth."),
+    refusedAt(41),
+    helloAnswered(42, "Forty-second."),
+  ];
+
+  test("it keeps the words it stored where no answered turn's answer reads as them", () => {
+    const items = [
+      dropped,
+      ...fortieth,
+      askOf("u41", "hello"),
+      answerOf("a41", "Half"),
+      ...last,
+    ];
+    expect(pairedUnder(items, turns)).toEqual([
+      ["u40", "t40"],
+      ["u41", "t41"],
+      ["u42", "t42"],
+    ]);
+    for (const failure of ["StoreRefused", "Unnamed"] as const) {
+      const named = [turns[0], refusedAt(41, failure), turns[2]].flatMap(
+        (turn) => (turn === undefined ? [] : [turn]),
+      );
+      expect(pairedUnder(items, named)[1]).toEqual(["u41", "t41"]);
+    }
+  });
+
+  test("refused after two answered turns, it leaves the exchange reading as the nearer one's answer to that one", () => {
+    const exchanges = conversationExchanges(
+      [dropped, ...fortieth],
+      [
+        helloAnswered(39, "Thirty-ninth."),
+        helloAnswered(40, "Fortieth."),
+        refusedAt(41),
+      ],
+    );
+    expect(pairs(exchanges)).toEqual([
+      ["u40", "t40"],
+      ["t41", "t41"],
+    ]);
+  });
+
+  test("refused, it takes no exchange that reads as the answer of the answered turn before it", () => {
+    const exchanges = conversationExchanges(
+      [dropped, ...fortieth, ...last],
+      turns,
+    );
+    expect(pairs(exchanges)).toEqual([
+      ["u40", "t40"],
+      ["u42", "t42"],
+      ["t41", "t41"],
+    ]);
+  });
+
+  test("with no answered turn before it, it takes the exchange that is there", () => {
+    const exchanges = conversationExchanges(
+      [dropped, askOf("u41", "hello"), answerOf("a41", "Half"), ...last],
+      turns.slice(1),
+    );
+    expect(pairs(exchanges)).toEqual([
+      ["u41", "t41"],
+      ["u42", "t42"],
+    ]);
+  });
+});
+
+describe("the mailbox overlay, on an exchange a page held before the turn that is out was listed", () => {
+  const out = turnOf({
+    turn: "t41",
+    ordinal: 41,
+    input: "go",
+    state: "Claimed",
+  });
+
+  test("in a record that cannot be counted, a reported turn's stored words stay its own while the same is taken", () => {
+    const turns = [
+      turnOf({
+        turn: "t40",
+        ordinal: 40,
+        input: "go",
+        state: "Failed",
+        failure: "AgentFailed",
+      }),
+      out,
+    ];
+    const items = [dropped, ...half];
+    expect(pairedUnder(items, turns)).toEqual([
+      ["u1", "t41"],
+      ["t40", "t40"],
+    ]);
+    expect(pairedUnder(items, turns, heldBefore(40, "u1"))).toEqual([
+      ["u1", "t40"],
+      ["t41", "t41"],
+    ]);
+  });
+
+  test("an answered turn's exchange read short of its last words stays its own", () => {
+    const short = [dropped, askOf("u1", "go"), answerOf("a1", "Looking.")];
+    const turns = [
+      turnOf({ turn: "t40", ordinal: 40, input: "go", result: "Fortieth." }),
+      out,
+    ];
+    expect(pairedUnder(short, turns)).toEqual([["u1", "t41"]]);
+    expect(pairedUnder(short, turns, heldBefore(40, "u1"))).toEqual([
+      ["u1", "t40"],
+      ["t41", "t41"],
+    ]);
+  });
+
+  test("a message heard under the turn that is out outweighs what the page held before", () => {
+    const exchanges = conversationExchanges(
+      [askOf("u1", "go"), storedOf("a1", "m1", "Half an answer")],
+      [
+        turnOf({ turn: "t1", ordinal: 1, input: "go", state: "Failed" }),
+        turnOf({ turn: "t2", ordinal: 2, input: "go", state: "Claimed" }),
+      ],
+      undefined,
+      new Map([["m1", "t2"]]),
+      heldBefore(1, "u1"),
+    );
+    expect(pairs(exchanges)).toEqual([
+      ["u1", "t2"],
+      ["t1", "t1"],
+    ]);
+  });
+});
+
+describe("what a page has seen of its exchanges", () => {
+  const first = turnOf({ turn: "t1", ordinal: 1, input: "go" });
+  const second = turnOf({ turn: "t2", ordinal: 2, input: "go" });
+
+  test("nothing is noted until the walk has nothing left to read", () => {
+    expect(
+      conversationSeenWith(conversationSeenNothing, half, [first], false),
+    ).toBe(conversationSeenNothing);
+  });
+
+  test("an exchange is given the newest turn listed when it was first held, and keeps it", () => {
+    const seen = conversationSeenWith(
+      conversationSeenNothing,
+      half,
+      [first],
+      true,
+    );
+    expect([...seen]).toEqual([["u1", 1]]);
+    const later = conversationSeenWith(
+      seen,
+      [...half, askOf("u2", "go")],
+      [first, second],
+      true,
+    );
+    expect([...later]).toEqual([
+      ["u1", 1],
+      ["u2", 2],
+    ]);
+  });
+
+  test("what was seen is handed back itself while the same exchanges are held", () => {
+    const seen = conversationSeenWith(
+      conversationSeenNothing,
+      half,
+      [first],
+      true,
+    );
+    expect(
+      conversationSeenWith(
+        seen,
+        [...half, answerOf("a2", "more")],
+        [first, second],
+        true,
+      ),
+    ).toBe(seen);
+  });
+
+  test("an exchange no longer held is let go of, and one held under no turn is held before every turn", () => {
+    const seen = conversationSeenWith(conversationSeenNothing, half, [], true);
+    expect([...seen]).toEqual([["u1", 0]]);
+    expect([
+      ...conversationSeenWith(seen, [askOf("u2", "go")], [first], true),
+    ]).toEqual([["u2", 1]]);
+  });
+
+  test("no more exchanges are remembered than a page draws, the oldest leaving first", () => {
+    const asks = Array.from(
+      { length: conversationExchangesMax + 1 },
+      (_unused, at) => askOf(`u${String(at)}`, `ask ${String(at)}`),
+    );
+    const seen = conversationSeenWith(
+      conversationSeenNothing,
+      asks,
+      [first],
+      true,
+    );
+    expect(seen.size).toBe(conversationExchangesMax);
+    expect(seen.has("u0")).toBe(false);
+    expect(seen.has(`u${String(conversationExchangesMax)}`)).toBe(true);
+  });
+});
+
+describe("the mailbox overlay, on a record that is not the thread's whole record", () => {
+  const replaced: ConversationRecord = {
+    seen: conversationSeenNothing,
+    replaced: true,
+  };
+  const old = turnOf({
+    turn: "t1",
+    ordinal: 1,
+    input: "go",
+    result: "Old answer.",
+  });
+  const paired = (
+    items: readonly ConversationItem[],
+    newer: ConversationTurn,
+    record?: ConversationRecord,
+  ): readonly (readonly [string, string | undefined])[] =>
+    pairedUnder(items, [old, newer], record);
+
+  test("a replaced stream holding the new turn's stored words, none heard: they are its own", () => {
+    const items = [askOf("u2", "go"), answerOf("a2", "New answer so far")];
+    const out = turnOf({
+      turn: "t2",
+      ordinal: 2,
+      input: "go",
+      state: "Claimed",
+    });
+    expect(paired(items, out, replaced)).toEqual([["u2", "t2"]]);
+    expect(paired(items, out)).toEqual([
+      ["u2", "t1"],
+      ["t2", "t2"],
+    ]);
+  });
+
+  test("a replaced stream, both answered: the newer answer is under its own turn whatever it reads as", () => {
+    const items = [
+      askOf("u2", "go"),
+      answerOf("a2", "New answer, with a secret."),
+    ];
+    const newer = turnOf({
+      turn: "t2",
+      ordinal: 2,
+      input: "go",
+      result: "New answer, with a [scrubbed].",
+    });
+    expect(paired(items, newer, replaced)).toEqual([["u2", "t2"]]);
+    expect(paired(items, newer)).toEqual([["u2", "t1"]]);
+  });
+
+  test("fewer exchanges than answered turns, the newest reading as the newest turn's answer: the page is not behind", () => {
+    const items = [askOf("u2", "go"), answerOf("a2", "New answer.")];
+    const newer = turnOf({
+      turn: "t2",
+      ordinal: 2,
+      input: "go",
+      result: "New answer.",
+    });
+    expect(paired(items, newer)).toEqual([["u2", "t2"]]);
+    expect(
+      paired([askOf("u1", "go"), answerOf("a1", "Old answer.")], newer),
+    ).toEqual([["u1", "t1"]]);
+  });
+});
+
+describe("the mailbox overlay, on a record holding more exchanges than a page draws", () => {
+  test("the one exchange of an ask left on the page is the turn's that is out, though the mailbox holds its first turn", () => {
+    const old = turnOf({
+      turn: "t1",
+      ordinal: 1,
+      input: "go",
+      result: "Old answer.",
+    });
+    const filling = Array.from(
+      { length: conversationExchangesMax - 1 },
+      (_unused, at) => askOf(`f${String(at)}`, `ask ${String(at)}`),
+    );
+    const items = [
+      askOf("u1", "go"),
+      answerOf("a1", "Old answer."),
+      ...filling,
+      askOf("u2", "go"),
+      answerOf("a2", "New answer so far"),
+    ];
+    const out = turnOf({
+      turn: "t2",
+      ordinal: 2,
+      input: "go",
+      state: "Claimed",
+    });
+    const exchanges = conversationExchanges(items, [old, out]);
+    expect(exchanges).toHaveLength(conversationExchangesMax);
+    expect(exchanges.at(-1)?.id).toBe("u2");
+    expect(exchanges.at(-1)?.turn).toBe("t2");
+    expect(exchanges.some((exchange) => exchange.turn === "t1")).toBe(false);
   });
 });
 

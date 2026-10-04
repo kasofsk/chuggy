@@ -392,8 +392,8 @@ test("a turn as it ends: whole, then stored, then settled, and nothing moves", a
   script.server.pushLive(live({ live: "End" }));
   await until(script.container, {
     writing: false,
-    moving: ["glyph"],
-    standing: "Working",
+    moving: [],
+    standing: "",
   });
   const whole = answerNode(script.container);
   const markup = script.container.innerHTML;
@@ -1009,6 +1009,40 @@ test("a turn that ran and failed keeps its stored words while the same thing is 
   expect(halves(script.container).slice(1)).toEqual(written);
 });
 
+test("a turn its session reported failed keeps the words a page saw it store while the same thing is sent again and taken", async () => {
+  const script = scripted(threadAt("Claimed", 1), oneOpening);
+  await settled();
+  script.batches.push([
+    entry("uuid-c", "user", { content: asked }),
+    entry("uuid-e", "assistant", {
+      id: "msg_a",
+      content: [{ type: "text", text: "Half an answer" }],
+    }),
+  ]);
+  script.draw(threadAt("Claimed", 2));
+  await waitFor(() => {
+    expect(halves(script.container).slice(1)).toEqual([
+      ["Half an answer", "Working"],
+    ]);
+  });
+  const reported = { ...turnAt("Failed"), failure: "AgentFailed" as const };
+  const failed = ["Half an answer", "Failed"];
+  for (const [state, word] of [
+    ["Queued", "Queued"],
+    ["Claimed", "Starting"],
+  ] as const) {
+    script.draw(
+      threadBody({ batches: 2, turns: [before, reported, sentAgain(state)] }),
+    );
+    await waitFor(() => {
+      expect(halves(script.container).slice(1)).toEqual([
+        failed,
+        [undefined, word],
+      ]);
+    });
+  }
+});
+
 test("the turn being answered keeps its own stored work when an older answered turn asked the same and its exchange is not on the page", async () => {
   const old = threadTurn({
     turn: "turn-1",
@@ -1043,6 +1077,326 @@ test("the turn being answered keeps its own stored work when an older answered t
   await settled();
   await settled();
   expect(halves(script.container)).toEqual(written);
+});
+
+/** The line under the newest answer: the box itself, its lead and its word. */
+function lineUnder(container: HTMLElement): readonly (Element | null)[] {
+  const answers = container.querySelectorAll(".conversation-answer");
+  const last = answers.item(answers.length - 1);
+  return [
+    last.querySelector(".conversation-meta"),
+    last.querySelector(".conversation-meta-lead"),
+    last.querySelector(
+      '.conversation-meta [role="status"]:not(.visually-hidden)',
+    ),
+  ];
+}
+
+/** What a reader is shown of a turn heard to end that the mailbox still says a
+ * runner has. */
+const quiet = { writing: false, moving: [], engine: false, standing: "" };
+
+const lastWords = "It is blocked by 40.";
+
+/** The turn written to its last word and heard to end, the mailbox still
+ * saying a runner has it. It answers with the line as it stood while written. */
+async function heardToEnd(
+  script: Script,
+): Promise<readonly (Element | null)[]> {
+  await askStored(script);
+  script.server.pushLive(began("msg_a", 0, "Text"));
+  script.server.pushLive(wrote("msg_a", 0, 0, lastWords));
+  await until(script.container, {
+    answer: lastWords,
+    moving: ["mark"],
+    standing: "Working",
+  });
+  const working = lineUnder(script.container);
+  script.server.pushLive(live({ live: "End" }));
+  await until(script.container, quiet);
+  return working;
+}
+
+function sameLine(script: Script, line: readonly (Element | null)[]): void {
+  lineUnder(script.container).forEach((node, at) => {
+    expect(node).not.toBeNull();
+    expect(node).toBe(line[at]);
+  });
+}
+
+test("from a turn's last word until the mailbox settles it, the line under it says nothing and keeps its place", async () => {
+  const script = scripted(threadAt("Claimed", 1), oneOpening);
+  const working = await heardToEnd(script);
+  sameLine(script, working);
+  expect(working[0]?.textContent).toBe("");
+  expect(working[1]?.classList.contains("invisible")).toBe(true);
+  script.batches.push([
+    entry("uuid-h", "assistant", {
+      id: "msg_a",
+      content: [{ type: "text", text: lastWords }],
+    }),
+  ]);
+  script.draw(threadAt("Claimed", 3));
+  await settled();
+  await settled();
+  expect(shown(script.container)).toMatchObject({
+    ...quiet,
+    answer: lastWords,
+  });
+  script.draw(threadAt("Answered", 3));
+  await until(script.container, { standing: "Answered", moving: [] });
+  sameLine(script, working);
+  expect(working[1]?.classList.contains("invisible")).toBe(false);
+  expect(working[2]?.textContent).toBe("Answered");
+  expect(working[2]?.parentElement?.childElementCount).toBeGreaterThan(1);
+  styleless();
+});
+
+test("a turn heard to end that the mailbox settles failed shows its failure where the line said nothing", async () => {
+  const script = scripted(threadAt("Claimed", 1), oneOpening);
+  const working = await heardToEnd(script);
+  const refusedStore: ThreadTurnResponse = {
+    ...turnAt("Failed"),
+    failure: "StoreRefused",
+  };
+  script.draw(threadBody({ batches: 2, turns: [before, refusedStore] }));
+  await until(script.container, { standing: "Failed", moving: [] });
+  sameLine(script, working);
+  const answers = script.container.querySelectorAll(".conversation-answer");
+  expect(
+    answers.item(answers.length - 1).querySelector(".notice-detail")
+      ?.textContent,
+  ).toBe("StoreRefused");
+});
+
+test("more heard of a turn after its end brings the word and the motion back", async () => {
+  const script = scripted(threadAt("Claimed", 1), oneOpening);
+  const working = await heardToEnd(script);
+  script.server.pushLive(began("msg_b", 0, "ToolUse", "Read"));
+  await until(script.container, {
+    answer: lastWords,
+    card: "Read",
+    moving: ["glyph"],
+    standing: "Working",
+  });
+  sameLine(script, working);
+  expect(working[1]?.classList.contains("invisible")).toBe(false);
+});
+
+test("a turn heard to end that the mailbox says is waiting, then taken again, is drawn as a turn that is out", async () => {
+  const script = scripted(threadAt("Claimed", 1), oneOpening);
+  await heardToEnd(script);
+  script.draw(threadAt("Queued", 2));
+  await until(script.container, {
+    answer: undefined,
+    moving: ["engine"],
+    standing: "Queued",
+  });
+  script.draw(threadAt("Claimed", 2));
+  await until(script.container, { moving: ["engine"], standing: "Starting" });
+});
+
+test("an end heard of another turn, or heard twice, changes nothing drawn", async () => {
+  const script = scripted(threadAt("Claimed", 1), oneOpening);
+  await askStored(script);
+  script.server.pushLive(began("msg_a", 0, "Text"));
+  script.server.pushLive(wrote("msg_a", 0, 0, "It is blo"));
+  await until(script.container, {
+    answer: "It is blo",
+    moving: ["mark"],
+    standing: "Working",
+  });
+  const written = script.container.innerHTML;
+  script.server.pushLive(liveOf("turn-1", { live: "End" }));
+  script.server.pushLive(liveOf("turn-9", { live: "End" }));
+  await settled();
+  await settled();
+  expect(script.container.innerHTML).toBe(written);
+
+  script.server.pushLive(live({ live: "End" }));
+  await until(script.container, quiet);
+  const ended = script.container.innerHTML;
+  script.server.pushLive(live({ live: "End" }));
+  script.server.pushLive(liveOf("turn-9", { live: "End" }));
+  script.server.pushLive(liveOf("turn-1", { live: "End" }));
+  await settled();
+  await settled();
+  expect(script.container.innerHTML).toBe(ended);
+});
+
+test("a reader who asked for less motion is shown the same line: nothing from the last word, and the settling in its place", async () => {
+  vi.stubGlobal("matchMedia", (query: string) => ({
+    matches: query.includes("prefers-reduced-motion"),
+    addEventListener: () => undefined,
+    removeEventListener: () => undefined,
+  }));
+  const script = scripted(threadAt("Claimed", 1), oneOpening);
+  const working = await heardToEnd(script);
+  sameLine(script, working);
+  script.draw(threadAt("Answered", 2));
+  await until(script.container, { standing: "Answered", moving: [] });
+  sameLine(script, working);
+});
+
+const hello = "hello";
+
+/** A turn its runner took and failed without running, which the mailbox says
+ * only that its session reported. */
+const refused: ThreadTurnResponse = {
+  turn: "turn-1",
+  ordinal: 1,
+  inputKind: "UserMessage",
+  input: hello,
+  state: "Failed",
+  failure: "AgentFailed",
+  tools: [],
+};
+
+function retried(state: ThreadTurnResponse["state"]): ThreadTurnResponse {
+  if (state === "Answered")
+    return threadTurn({
+      turn: "turn-2",
+      ordinal: 2,
+      input: hello,
+      result: "Hi, I am here.",
+    });
+  return {
+    turn: "turn-2",
+    ordinal: 2,
+    inputKind: "UserMessage",
+    input: hello,
+    state,
+    tools: [],
+  };
+}
+
+/** Every answer on the page: its text, the word under it and the failure it
+ * is drawn with. */
+function halvesNoticed(
+  container: HTMLElement,
+): readonly (readonly (string | undefined)[])[] {
+  const answers = container.querySelectorAll(".conversation-answer");
+  return halves(container).map((half, at) => [
+    ...half,
+    answers.item(at).querySelector(".notice-detail")?.textContent ?? undefined,
+  ]);
+}
+
+const refusedDrawn = [undefined, "Failed", "AgentFailed"];
+
+test("a turn its session refused without running, sent again: the answer is the retry's as it is written, stored and settled", async () => {
+  const of = (
+    batches: number,
+    turns: readonly ThreadTurnResponse[],
+  ): ThreadResponse => threadBody({ batches, turns });
+  const script = scripted(of(1, [refused]), oneOpening, []);
+  await settled();
+  expect(halvesNoticed(script.container)).toEqual([refusedDrawn]);
+  script.draw(of(1, [refused, retried("Queued")]));
+  await waitFor(() => {
+    expect(halvesNoticed(script.container)).toEqual([
+      refusedDrawn,
+      [undefined, "Queued", undefined],
+    ]);
+  });
+  script.draw(of(1, [refused, retried("Claimed")]));
+  await settled();
+  script.batches.push([entry("uuid-c", "user", { content: hello })]);
+  script.draw(of(2, [refused, retried("Claimed")]));
+  await settled();
+  script.server.pushLive(
+    liveOf("turn-2", {
+      live: "Block",
+      message: "msg_a",
+      index: 0,
+      kind: "Text",
+    }),
+  );
+  script.server.pushLive(
+    liveOf("turn-2", {
+      live: "Text",
+      message: "msg_a",
+      index: 0,
+      offset: 0,
+      text: "Hi, I am here.",
+    }),
+  );
+  const written = [["Hi, I am here.", "Working", undefined], refusedDrawn];
+  await waitFor(() => {
+    expect(halvesNoticed(script.container)).toEqual(written);
+  });
+  script.batches.push([
+    entry("uuid-d", "assistant", {
+      id: "msg_a",
+      content: [{ type: "text", text: "Hi, I am here." }],
+    }),
+  ]);
+  script.draw(of(3, [refused, retried("Claimed")]));
+  await settled();
+  await settled();
+  expect(halvesNoticed(script.container)).toEqual(written);
+  script.draw(of(3, [refused, retried("Answered")]));
+  await waitFor(() => {
+    expect(halvesNoticed(script.container)).toEqual([
+      ["Hi, I am here.", "Answered", undefined],
+      refusedDrawn,
+    ]);
+  });
+});
+
+test("a refused turn and its answered retry, on a page opened afterwards: the answer stands under Answered and no failure", async () => {
+  const script = scripted(
+    threadBody({ batches: 1, turns: [refused, retried("Answered")] }),
+    oneOpening,
+    [
+      entry("uuid-c", "user", { content: hello }),
+      entry("uuid-d", "assistant", {
+        id: "msg_a",
+        content: [{ type: "text", text: "Hi, I am here." }],
+      }),
+    ],
+  );
+  await waitFor(() => {
+    expect(halvesNoticed(script.container)).toEqual([
+      ["Hi, I am here.", "Answered", undefined],
+      refusedDrawn,
+    ]);
+  });
+});
+
+test("a thread whose stream was replaced: the new turn's stored words, none of them heard, are its own", async () => {
+  const old = threadTurn({
+    turn: "turn-1",
+    ordinal: 1,
+    input: asked,
+    result: "Old answer.",
+  });
+  const body = threadBody({ batches: 1, turns: [old, turnAt("Claimed")] });
+  const stored = [
+    entry("uuid-c", "user", { content: asked }),
+    entry("uuid-e", "assistant", {
+      id: "msg_a",
+      content: [{ type: "text", text: "New answer so far" }],
+    }),
+  ];
+  const whole = scripted(body, oneOpening, stored);
+  await waitFor(() => {
+    expect(halves(whole.container)).toEqual([
+      ["New answer so far", "Answered"],
+      [undefined, "Starting"],
+    ]);
+  });
+  whole.unmount();
+  const replaced = scripted(
+    { ...body, streams: [{ stream: "1a2b3c", batches: 4 }, ...body.streams] },
+    oneOpening,
+    stored,
+  );
+  await waitFor(() => {
+    expect(halves(replaced.container)).toEqual([
+      ["New answer so far", "Working"],
+    ]);
+  });
 });
 
 /** Frames asked for and not yet painted, each run only when a case says. */
