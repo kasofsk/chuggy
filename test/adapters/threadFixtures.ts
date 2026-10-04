@@ -23,8 +23,8 @@ function unserved(name: string): () => never {
 }
 
 /**
- * The six thread methods a suite that never asks for a thread still has to
- * supply, because the app takes one boundary and not six.
+ * The thread methods a suite that never asks for a thread still has to
+ * supply, because the app takes one boundary.
  */
 export const unservedThreads: Pick<
   NativeWeb,
@@ -33,6 +33,7 @@ export const unservedThreads: Pick<
   | "threadTranscript"
   | "openThread"
   | "sendThreadMessage"
+  | "stopThreadTurn"
   | "closeThread"
   | "renameThread"
   | "hideThread"
@@ -42,6 +43,7 @@ export const unservedThreads: Pick<
   threadTranscript: unserved("thread transcript"),
   openThread: unserved("open thread"),
   sendThreadMessage: unserved("thread message"),
+  stopThreadTurn: unserved("stop thread turn"),
   closeThread: unserved("close thread"),
   renameThread: unserved("rename thread"),
   hideThread: unserved("hide thread"),

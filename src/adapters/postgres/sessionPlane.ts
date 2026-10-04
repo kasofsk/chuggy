@@ -54,6 +54,8 @@ import type {
   SessionTurnClaimPort,
   SessionTurnFailed,
   SessionTurnSettlePort,
+  SessionTurnWatched,
+  SessionTurnWatchPort,
 } from "../../interpreter/sessionPlane.ts";
 import type { SessionStoreRecorded } from "../../interpreter/sessionStore.ts";
 import { projectRowCounter } from "./rows.ts";
@@ -76,6 +78,7 @@ export type SessionPlaneStore = SessionPlaneAuthority &
   SessionReferencePort &
   SessionTurnClaimPort &
   SessionTurnSettlePort &
+  SessionTurnWatchPort &
   SessionStoreRecordPort &
   SessionStoreQueryPort;
 
@@ -175,6 +178,7 @@ const referenceArms = [
 const answerArms = [
   "Answered",
   "AlreadyAnswered",
+  "Stopped",
   "Conflict",
   "Fenced",
 ] as const satisfies readonly SessionTurnAnswered[];
@@ -182,9 +186,15 @@ const answerArms = [
 const failureArms = [
   "Failed",
   "AlreadyFailed",
+  "Stopped",
   "Conflict",
   "Fenced",
 ] as const satisfies readonly SessionTurnFailed[];
+
+const watchedArms = [
+  "Stopped",
+  "Held",
+] as const satisfies readonly SessionTurnWatched[];
 
 const recordedArms = [
   "Stored",
@@ -339,6 +349,20 @@ async function sessionPlaneFail(
   return sessionVerdict(failureArms, failed.rows[0]?.failed, "failing a turn");
 }
 
+async function sessionPlaneWatched(
+  pool: pg.Pool,
+  input: Parameters<SessionTurnWatchPort["watched"]>[0],
+): Promise<SessionTurnWatched | undefined> {
+  const watched = await pool.query<{ watched: string | null }>(
+    sql`SELECT session_turn_stopped(${sessionSecretDigest(input.secret)},
+      ${input.generation},${input.turn})::text AS watched`,
+  );
+  const found = watched.rows[0]?.watched;
+  return found === null || found === undefined
+    ? undefined
+    : sessionVerdict(watchedArms, found, "watching a turn");
+}
+
 async function sessionPlaneRecord(
   pool: pg.Pool,
   input: Parameters<SessionStoreRecordPort["record"]>[0],
@@ -409,6 +433,8 @@ export function postgresSessionPlane(pool: pg.Pool): SessionPlaneStore {
     answer: (input) => sessionPlaneAnswer(pool, input),
 
     fail: (input) => sessionPlaneFail(pool, input),
+
+    watched: (input) => sessionPlaneWatched(pool, input),
 
     record: (input) => sessionPlaneRecord(pool, input),
 

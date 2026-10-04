@@ -608,7 +608,11 @@ export const agentReportedTurnFailures = [
 export type AgentReportedTurnFailure =
   (typeof agentReportedTurnFailures)[number];
 
-/** Why one turn ended without an answer. */
+/**
+ * Why one turn ended without an answer. A member's stop is `TurnStopped` of a
+ * turn a runner held and `TurnStoppedQueued` of one that still waited, which no
+ * runner was answering and no runner is told of.
+ */
 export const sessionTurnFailures = [
   "AgentFailed",
   "AgentRateLimited",
@@ -619,6 +623,7 @@ export const sessionTurnFailures = [
   "SessionClosed",
   "TurnWithdrawn",
   "TurnStopped",
+  "TurnStoppedQueued",
 ] as const;
 export type SessionTurnFailure = (typeof sessionTurnFailures)[number];
 

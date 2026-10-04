@@ -49,8 +49,14 @@ import {
   threadResponseSchema,
   threadTranscriptResponseSchema,
   threadTurnResponseSchema,
+  threadTurnStopResponseSchema,
   threadsResponseSchema,
 } from "../../src/contract/responses.ts";
+import {
+  agentReportedTurnFailures,
+  threadTurnStops,
+} from "../../src/contract/rosters.ts";
+import { sessionTurnFailureSchema } from "../../src/contract/sessionPlane.ts";
 
 const partition = partitionPath({ tenant: "acme", project: "atlas" });
 
@@ -84,6 +90,7 @@ test("every thread route hangs from the project it is scoped to", () => {
     nativeHttpRoutes.threadClose,
     nativeHttpRoutes.threadRename,
     nativeHttpRoutes.threadHide,
+    nativeHttpRoutes.threadTurnStop,
   ];
 
   assert.equal(new Set(routes).size, routes.length);
@@ -102,8 +109,13 @@ test("every thread route hangs from the project it is scoped to", () => {
     nativeHttpRoutes.threadClose,
     nativeHttpRoutes.threadRename,
     nativeHttpRoutes.threadHide,
+    nativeHttpRoutes.threadTurnStop,
   ])
     assert.ok(route.startsWith(`${nativeHttpRoutes.threads}/:session`), route);
+  assert.equal(
+    nativeHttpRoutes.threadTurnStop,
+    `${nativeHttpRoutes.thread}/turns/:turn/stop`,
+  );
 });
 
 /**
@@ -471,4 +483,43 @@ test("the message door takes a minted turn and a message inside its bound", () =
       .ordinal,
     12,
   );
+});
+
+/**
+ * A stopped turn is an ended turn with nothing of an answer on it, and its
+ * ending is the platform's to say: a pod that reported it would be believed.
+ */
+test("a stopped turn is a turn a thread read carries, held or waiting, and no pod can name either ending", () => {
+  assert.ok(
+    sessionTurnFailureSchema.safeParse({
+      turn: turn.turn,
+      failure: agentReportedTurnFailures[0],
+    }).success,
+  );
+  for (const failure of ["TurnStopped", "TurnStoppedQueued"]) {
+    const stopped = {
+      turn: turn.turn,
+      ordinal: turn.ordinal,
+      inputKind: turn.inputKind,
+      input: turn.input,
+      state: "Abandoned",
+      failure,
+    };
+
+    assert.deepEqual(threadTurnResponseSchema.parse(stopped), stopped);
+    assert.ok(
+      !sessionTurnFailureSchema.safeParse({ turn: turn.turn, failure }).success,
+      failure,
+    );
+  }
+});
+
+test("the stop door answers which of its endings this call met, and no other word", () => {
+  for (const stopped of threadTurnStops)
+    assert.deepEqual(threadTurnStopResponseSchema.parse({ stopped }), {
+      stopped,
+    });
+  assert.deepEqual(threadTurnStops, ["Stopped", "AlreadyEnded"]);
+  for (const body of [{}, { stopped: "Ended" }, { stopped: true }])
+    assert.throws(() => threadTurnStopResponseSchema.parse(body));
 });

@@ -162,13 +162,36 @@ export interface SessionTurnClaimPort {
   }): Promise<SessionTurnClaimed | undefined>;
 }
 
-/** What answering one turn found; answering twice with one result moves nothing. */
+/**
+ * What answering one turn found; answering twice with one result moves
+ * nothing. `Stopped` is a turn its member stopped: the answer is taken and
+ * recorded nowhere, and the turn keeps the ending the stop gave it.
+ */
 export type SessionTurnAnswered =
-  "Answered" | "AlreadyAnswered" | "Conflict" | "Fenced";
+  "Answered" | "AlreadyAnswered" | "Stopped" | "Conflict" | "Fenced";
 
-/** What failing one turn found, the same three refusals an answer has. */
+/** What failing one turn found, the same arms an answer has. */
 export type SessionTurnFailed =
-  "Failed" | "AlreadyFailed" | "Conflict" | "Fenced";
+  "Failed" | "AlreadyFailed" | "Stopped" | "Conflict" | "Fenced";
+
+/**
+ * Where a turn of its session stands for the live attempt asking after it: its
+ * member stopped it after an attempt had held it, or it is still claimed, which
+ * a session's live attempt alone holds. Nothing is answered where it is
+ * neither, which is a turn that waits, was stopped with no attempt ever holding
+ * it or ended some other way, one of another session, and a bearer that is no
+ * live attempt's.
+ */
+export type SessionTurnWatched = "Stopped" | "Held";
+
+/** The read a runner's watch on the turn it is answering is answered from. */
+export interface SessionTurnWatchPort {
+  watched(input: {
+    readonly secret: SessionBearerSecret;
+    readonly generation: number;
+    readonly turn: SessionTurnId;
+  }): Promise<SessionTurnWatched | undefined>;
+}
 
 export interface SessionTurnSettlePort {
   answer(input: {
@@ -255,12 +278,19 @@ export function sessionLiveKey(
   return `${String(tenant.length)}:${tenant}${String(project.length)}:${project}${session}`;
 }
 
-/** What publishing one post's live events found: handed over, or not now, which is no lane to hand them to or a session past what it may publish. */
-export type SessionLivePublished = "Published" | "Unavailable";
+/**
+ * What publishing one post's live events found: handed over, left out because
+ * the session does not hold the turn claimed, or not now, which is no lane to
+ * hand them to or a session past what it may publish.
+ */
+export type SessionLivePublished = "Published" | "Unheld" | "Unavailable";
 
 /**
- * Publishing what a session's runner reports of a turn in flight, to whoever
- * is reading that session now. Nothing keeps an event nobody heard.
+ * Publishing what a session's runner reports of a turn in flight to whoever
+ * is reading that session now, where nothing keeps an event nobody heard. Of
+ * a post naming a turn its session does not hold claimed, only the end of the
+ * turn's stream is handed over: a turn that ended has no stream for a late
+ * event to reopen, and an end reopens none.
  */
 export interface SessionLivePublishPort {
   publish(input: {

@@ -43,6 +43,12 @@ export const workerContractRunnerSessions: WorkerContractRange = {
   max: workerContractAccepted.max,
 };
 
+/** The versions in which a live post of a turn its member stopped is answered with that turn, which a runner of an earlier one has no reading of. */
+export const workerContractLiveStops: WorkerContractRange = {
+  min: { major: 1, minor: 5 },
+  max: workerContractAccepted.max,
+};
+
 /** The version this plane was built with, read off its release. */
 function workerContractServed(): WorkerContractVersion {
   const served = workerContractVersionOf(workerContractRelease);

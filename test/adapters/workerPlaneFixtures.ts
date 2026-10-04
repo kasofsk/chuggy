@@ -88,6 +88,7 @@ export function inertSessionPlane(
       answer: () => Promise.resolve("Answered"),
       fail: () => Promise.resolve("Failed"),
     },
+    watches: { watched: () => Promise.resolve(undefined) },
     live: { publish: () => Promise.resolve("Published") },
     holds: { hold: () => Promise.resolve(true) },
     losses: {

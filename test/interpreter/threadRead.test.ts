@@ -54,6 +54,7 @@ import {
   type ThreadHidden,
   type ThreadRenamed,
   type ThreadStore,
+  type ThreadTurnStopped,
 } from "../../src/interpreter/threadRead.ts";
 import {
   threadSystemPromptCharsMax,
@@ -116,6 +117,8 @@ interface ThreadDoubles {
   /** The principals the project no longer admits, which is what orphans a thread. */
   readonly unadmitted: readonly Principal[];
   readonly enqueued: ThreadMessageEnqueued;
+  /** What the stop door answers where a case sets it; else that it stopped the turn. */
+  readonly stopped?: ThreadTurnStopped;
   /** What the close door answers where a case sets it; else the record named, closed. */
   readonly closed?: ThreadClosed;
   /** What the rename door answers where a case sets it; else the record named. */
@@ -133,6 +136,13 @@ function enqueueDouble(doubles: ThreadDoubles): ThreadStore["enqueueMessage"] {
     doubles.calls.push(`enqueue:${input.turn}:${input.input}`);
     doubles.calls.push(`enqueue-route:${input.route}`);
     return Promise.resolve(doubles.enqueued);
+  };
+}
+
+function stopDouble(doubles: ThreadDoubles): ThreadStore["stopTurn"] {
+  return ({ principal, session, turn }) => {
+    doubles.calls.push(`stop:${principal}:${session}:${turn}`);
+    return Promise.resolve(doubles.stopped ?? "Stopped");
   };
 }
 
@@ -168,6 +178,7 @@ function threadStore(doubles: ThreadDoubles): ThreadStore {
       );
     },
     enqueueMessage: enqueueDouble(doubles),
+    stopTurn: stopDouble(doubles),
     close: ({ session }) => {
       doubles.calls.push(`close:${session}`);
       if (doubles.closed !== undefined) return Promise.resolve(doubles.closed);
@@ -606,6 +617,70 @@ test("closing a session that is no thread of this project's is not found", async
     { result: "NotFound" },
   );
   assert.ok(held.calls.includes("close:lead-atlas"));
+});
+
+/**
+ * The stop door asks the project's `Mutate` and nothing a send asks beyond it:
+ * the boundary here grants no hosted run and is placed on no runner, and the
+ * stop reaches the durable door all the same, under the caller's own
+ * principal.
+ */
+test("a stop is a mutation that asks for no grant and no route, and the door is handed the caller", async () => {
+  const turn = asSessionTurnId("turn-7");
+  const { web, held } = boundary({}, ["Read", "Mutate"]);
+
+  assert.deepEqual(
+    await web.stopThreadTurn(geoff, partition, { session: mine, turn }),
+    { result: "Stopped" },
+  );
+  assert.deepEqual(held.calls, [
+    "authorize:Mutate",
+    `stop:${geoff}:${mine}:${turn}`,
+  ]);
+  assert.deepEqual(
+    await web.sendThreadMessage(geoff, partition, {
+      session: mine,
+      turn,
+      message: "and then?",
+    }),
+    { result: "HostedRunsNotGranted" },
+    "the same member's send is what the grant refuses",
+  );
+});
+
+test("a member with Read alone cannot stop a turn, and no door is reached", async () => {
+  const { web, held } = boundary({}, ["Read"]);
+
+  assert.deepEqual(
+    await web.stopThreadTurn(geoff, partition, {
+      session: mine,
+      turn: asSessionTurnId("turn-7"),
+    }),
+    { result: "NotFound" },
+  );
+  assert.deepEqual(held.calls, ["authorize:Mutate"]);
+});
+
+test("each answer of the durable stop is the door's own, a missing thread and a missing turn both not found", async () => {
+  const answers: readonly [ThreadTurnStopped, string][] = [
+    ["Stopped", "Stopped"],
+    ["AlreadyEnded", "AlreadyEnded"],
+    ["NoThread", "NotFound"],
+    ["NoTurn", "NotFound"],
+    ["NotYourThread", "NotYourThread"],
+    ["Closed", "Closed"],
+  ];
+  for (const [stopped, result] of answers) {
+    const { web } = boundary({ stopped });
+    assert.deepEqual(
+      await web.stopThreadTurn(geoff, partition, {
+        session: mine,
+        turn: asSessionTurnId("turn-7"),
+      }),
+      { result },
+      stopped,
+    );
+  }
 });
 
 /**

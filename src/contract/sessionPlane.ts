@@ -205,7 +205,11 @@ export const sessionTurnFailureSchema = z.strictObject({
   failure: z.enum(agentReportedTurnFailures),
 });
 
-/** What a model is writing of one claimed turn, in the order it was written. */
+/**
+ * What a model is writing of one claimed turn, in the order it was written. A
+ * post of a turn its member stopped is answered with that turn, as the watch
+ * on it is, so a runner that is writing hears of the stop from its next post.
+ */
 export const sessionTurnLiveSchema = z.strictObject({
   turn: sessionIdentitySchema,
   events: z.array(sessionLiveEventSchema).min(1).max(sessionLiveEventsMax),
@@ -319,6 +323,7 @@ export const sessionPlaneAnswers = workerPlaneAnswersRefusingVersions({
     409: sessionSettleRefusalSchema,
   },
   turnLive: {
+    200: sessionTurnStoppedAnswerSchema,
     204: "empty",
     400: workerPlaneStopSchema,
     401: workerPlaneStopSchema,

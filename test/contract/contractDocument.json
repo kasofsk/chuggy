@@ -108,7 +108,8 @@
     "threadClose": "/api/v1/tenants/:tenant/projects/:project/threads/:session/close",
     "threadRename": "/api/v1/tenants/:tenant/projects/:project/threads/:session/rename",
     "threadHide": "/api/v1/tenants/:tenant/projects/:project/threads/:session/hide",
-    "threadLive": "/api/v1/tenants/:tenant/projects/:project/threads/:session/live"
+    "threadLive": "/api/v1/tenants/:tenant/projects/:project/threads/:session/live",
+    "threadTurnStop": "/api/v1/tenants/:tenant/projects/:project/threads/:session/turns/:turn/stop"
   },
   "schemas": {
     "publicMutation": {
