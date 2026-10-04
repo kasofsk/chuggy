@@ -42,10 +42,17 @@ function marked(marker: ConversationMarker): ConversationItem {
   return { item: "Marker", marker };
 }
 
-/** How a turn stands in a mailbox read: out, stopped, failed as its session
- * reported, or answered in these words. */
+/** How a turn stands in a mailbox read: out, stopped while a runner held it or
+ * while it still waited, failed as its session reported or with its attempt
+ * lost, or answered in these words. */
 type Ended =
-  "Queued" | "Claimed" | "Stopped" | "Reported" | { readonly answer: string };
+  | "Queued"
+  | "Claimed"
+  | "Stopped"
+  | "Waited"
+  | "Reported"
+  | "Lost"
+  | { readonly answer: string };
 
 function turnAt(
   ordinal: number,
@@ -58,8 +65,12 @@ function turnAt(
     return { ...asked, state: ended };
   if (ended === "Stopped")
     return { ...asked, state: "Abandoned", failure: "TurnStopped" };
+  if (ended === "Waited")
+    return { ...asked, state: "Abandoned", failure: "TurnStoppedQueued" };
   if (ended === "Reported")
     return { ...asked, state: "Failed", failure: "AgentFailed" };
+  if (ended === "Lost")
+    return { ...asked, state: "Failed", failure: "AttemptLost" };
   return { ...asked, state: "Answered", result: ended.answer };
 }
 
@@ -199,6 +210,149 @@ describe("a turn a member stopped whose words were said before it", () => {
   });
 });
 
+const answeredHalf: readonly Said[] = [
+  ...half,
+  ["u2", "User", asked],
+  ["a2", "Assistant", "Second answer."],
+];
+
+describe("a turn a member stopped while it still waited", () => {
+  test.each(records)(
+    "it is its message and Stopped, and takes no stored exchange of its words, in $record",
+    ({ oldest }) => {
+      const drawn = conversationExchanges(
+        entries(["u-old", "User", asked], ["a-old", "Assistant", "Long ago."]),
+        [turnAt(oldest, "waited", asked, "Waited")],
+      );
+      expect(drawn.map(said)).toEqual([
+        "u-old/-/Answered/Long ago.",
+        "waited/waited/Stopped/-",
+      ]);
+      expect(drawn[1]).toMatchObject({
+        ask: { ask: "Message", text: asked },
+        work: [],
+      });
+    },
+  );
+
+  test.each(records)(
+    "the half answer of the same words stopped before it stays that turn's, in $record",
+    ({ oldest }) => {
+      const drawn = conversationExchanges(entries(...half), [
+        turnAt(oldest, "first", asked, "Stopped"),
+        turnAt(oldest + 1, "waited", asked, "Waited"),
+      ]);
+      expect(drawn.map(said)).toEqual([
+        "u1/first/Stopped/Half an answer",
+        "waited/waited/Stopped/-",
+      ]);
+    },
+  );
+
+  test("a lost turn of the same words keeps the exchange a counted record holds to spare, which the stopped one is not counted against", () => {
+    const drawn = conversationExchanges(
+      entries(["u1", "User", asked], ["a1", "Assistant", "Half an answer"]),
+      [
+        turnAt(1, "lost", asked, "Lost"),
+        turnAt(2, "waited", asked, "Waited"),
+        turnAt(3, "waiting", asked, "Queued"),
+      ],
+    );
+    expect(drawn.map(said)).toEqual([
+      "u1/lost/Failed/Half an answer",
+      "waited/waited/Stopped/-",
+      "waiting/waiting/Queued/-",
+    ]);
+  });
+});
+
+describe("a turn stopped while it waited, among the same words answered", () => {
+  test.each(records)(
+    "it stands where it was sent, between the answers before and after it, in $record",
+    ({ oldest }) => {
+      const drawn = conversationExchanges(
+        entries(
+          ["u1", "User", asked],
+          ["a1", "Assistant", "First."],
+          ["u3", "User", asked],
+          ["a3", "Assistant", "Third."],
+        ),
+        [
+          turnAt(oldest, "first", asked, { answer: "First." }),
+          turnAt(oldest + 1, "waited", asked, "Waited"),
+          turnAt(oldest + 2, "third", asked, { answer: "Third." }),
+        ],
+      );
+      expect(drawn.map(said)).toEqual([
+        "u1/first/Answered/First.",
+        "waited/waited/Stopped/-",
+        "u3/third/Answered/Third.",
+      ]);
+    },
+  );
+});
+
+describe("a turn stopped just as a runner took it, the same words asked around it", () => {
+  test.each(records)(
+    "the answer the same words got before it stays under its own message, and the half answer before that under its own, in $record",
+    ({ oldest }) => {
+      const drawn = conversationExchanges(entries(...answeredHalf), [
+        turnAt(oldest, "first", asked, "Stopped"),
+        turnAt(oldest + 1, "second", asked, { answer: "Second answer." }),
+        turnAt(oldest + 2, "third", asked, "Stopped"),
+      ]);
+      expect(drawn.map(said)).toEqual([
+        "u1/first/Stopped/Half an answer",
+        "u2/second/Answered/Second answer.",
+        "third/third/Stopped/-",
+      ]);
+    },
+  );
+
+  test.each(records)(
+    "the same holds with the same words answered again after it, in $record",
+    ({ oldest }) => {
+      const drawn = conversationExchanges(
+        entries(
+          ...answeredHalf,
+          ["u4", "User", asked],
+          ["a4", "Assistant", "Fourth answer."],
+        ),
+        [
+          turnAt(oldest, "first", asked, "Stopped"),
+          turnAt(oldest + 1, "second", asked, { answer: "Second answer." }),
+          turnAt(oldest + 2, "third", asked, "Stopped"),
+          turnAt(oldest + 3, "fourth", asked, { answer: "Fourth answer." }),
+        ],
+      );
+      expect(drawn.map(said)).toEqual([
+        "u1/first/Stopped/Half an answer",
+        "u2/second/Answered/Second answer.",
+        "third/third/Stopped/-",
+        "u4/fourth/Answered/Fourth answer.",
+      ]);
+    },
+  );
+
+  test.each(records)(
+    "a page that held the stopped turn's half answer before the next was sent keeps it there, and one opened afterwards cannot tell the two apart, in $record",
+    ({ oldest }) => {
+      const first = turnAt(oldest, "first", asked, "Stopped");
+      const turns = [first, turnAt(oldest + 1, "second", asked, "Stopped")];
+      const page = pageOpened();
+      page(entries(...half), [first]);
+      expect(page(entries(...half), turns).map(said)).toEqual([
+        "u1/first/Stopped/Half an answer",
+        "second/second/Stopped/-",
+      ]);
+      expect(pageOpened()(entries(...half), turns).map(said)).toEqual([
+        "first/first/Stopped/-",
+        "u1/second/Stopped/Half an answer",
+      ]);
+    },
+  );
+});
+
 /** One read of a thread: what its store holds and what its mailbox lists. */
 interface Step {
   readonly step: string;
@@ -328,7 +482,7 @@ describe("a message stopped and another sent", () => {
 });
 
 /** The same turns with each one a member stopped read as one its session
- * reported failed, which the rule pairs alike and never moves. */
+ * reported failed, which these reads pair alike and nothing moves. */
 function reportedInstead(
   turns: readonly ConversationTurn[],
 ): readonly ConversationTurn[] {
@@ -466,6 +620,28 @@ describe("where a stopped turn that took no exchange is drawn", () => {
   );
 });
 
+test("a stopped turn stands under the answer its own words got before it, though a later turn holds an exchange stored earlier", () => {
+  const drawn = conversationExchanges(
+    entries(
+      ["u1", "User", "again"],
+      ["u2", "User", asked],
+      ["a2", "Assistant", "Second."],
+    ),
+    [
+      turnAt(1, "first", "again", "Stopped"),
+      turnAt(2, "second", asked, { answer: "Second." }),
+      turnAt(3, "waited", asked, "Waited"),
+      turnAt(4, "fourth", "again", "Claimed"),
+    ],
+  );
+  expect(drawn.map(said)).toEqual([
+    "first/first/Stopped/-",
+    "u1/fourth/Claimed/-",
+    "u2/second/Answered/Second.",
+    "waited/waited/Stopped/-",
+  ]);
+});
+
 describe("where a turn that took no exchange and was not stopped is drawn", () => {
   test("a turn its session reported failed that took none is still drawn at the foot", () => {
     const drawn = conversationExchanges(
@@ -476,6 +652,22 @@ describe("where a turn that took no exchange and was not stopped is drawn", () =
       ],
     );
     expect(drawn.map((exchange) => exchange.turn)).toEqual(["later", "failed"]);
+  });
+
+  test("it stays there with a stopped turn sent after it, which is drawn where that one was sent", () => {
+    const drawn = conversationExchanges(
+      entries(["u3", "User", "then this"], ["a3", "Assistant", "Third."]),
+      [
+        turnAt(1, "failed", asked, "Reported"),
+        turnAt(2, "stopped", "and this", "Stopped"),
+        turnAt(3, "later", "then this", { answer: "Third." }),
+      ],
+    );
+    expect(drawn.map((exchange) => exchange.turn)).toEqual([
+      "stopped",
+      "later",
+      "failed",
+    ]);
   });
 
   test("one carrying what the record could not draw stays at the foot with it", () => {

@@ -248,13 +248,15 @@ export function threadWriting(thread: Pick<ThreadResponse, "turns">): boolean {
 
 /** Whether the thread has a turn the mailbox settled, which is when a store it
  * does not name is one that is missing rather than one not written yet. A turn
- * a member stopped may never have been taken, so it is no sign of one. */
+ * a member stopped, held or still waiting, may have stored nothing, so it is
+ * no sign of one. */
 export function threadStoreDue(thread: Pick<ThreadResponse, "turns">): boolean {
   return thread.turns.some(
     (turn) =>
       turn.state !== "Queued" &&
       turn.state !== "Claimed" &&
-      turn.failure !== "TurnStopped",
+      turn.failure !== "TurnStopped" &&
+      turn.failure !== "TurnStoppedQueued",
   );
 }
 

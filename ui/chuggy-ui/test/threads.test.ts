@@ -579,6 +579,8 @@ describe("whether a store the thread does not name is missing", () => {
   test("a turn a member stopped is no sign of one, since it may never have been taken", () => {
     const stopped = turnOf({ state: "Abandoned", failure: "TurnStopped" });
     expect(threadStoreDue({ turns: [stopped] })).toBe(false);
+    const waited = turnOf({ state: "Abandoned", failure: "TurnStoppedQueued" });
+    expect(threadStoreDue({ turns: [waited] })).toBe(false);
     const withdrawn = turnOf({ state: "Abandoned", failure: "TurnWithdrawn" });
     expect(threadStoreDue({ turns: [withdrawn] })).toBe(true);
     expect(threadStoreDue({ turns: [stopped, turnOf({ ordinal: 2 })] })).toBe(

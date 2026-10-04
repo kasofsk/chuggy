@@ -25,9 +25,19 @@
  * which would be that turn's. One left with no exchange is drawn as its ask
  * and its failure.
  *
- * A TURN A MEMBER STOPPED IS READ AS ONE OF THOSE. It was stopped while it
- * waited, with nothing stored, or part way through its answer, and the mailbox
- * says the same of both.
+ * A TURN A MEMBER STOPPED WHILE A RUNNER HELD IT IS READ AS ONE OF THOSE. It
+ * was stopped before its ask was stored or part way through its answer, and
+ * the mailbox says the same of both. It takes no exchange that reads as the
+ * answer of the answered turn before it, in any record: a count says an
+ * exchange is to spare and not which stopped turn it belongs to, and that
+ * one is the answered turn's. Nor does it take one the page held before the
+ * mailbox listed it. One stopped with nothing stored, on a page that held
+ * nothing of the same words before it was sent, cannot be told from the
+ * stopped turn before it and is drawn with that turn's words.
+ *
+ * A TURN STOPPED WHILE IT STILL WAITED TAKES NONE. No runner was handed it and
+ * the mailbox says so in a failure of its own, so nothing of it is in the
+ * store: it is drawn as its ask and the word a stop is read as.
  *
  * A TURN THAT ENDED SAYING NOTHING OF ITSELF — its attempts lost, withdrawn,
  * its session closed — may never have had a runner. Such turns take nothing
@@ -81,8 +91,9 @@
  *
  * A TURN THAT TOOK NONE IS DRAWN AT THE FOOT, AND A STOPPED ONE WHERE IT WAS
  * SENT. A member stops a message and sends another as a matter of course, and
- * the one they stopped is not the newest thing in the column: it stands ahead
- * of the first exchange a later turn took.
+ * the one they stopped is not the newest thing in the column: it stands under
+ * what the turns before it took, ahead of the first exchange after those that
+ * a later turn took.
  */
 
 import { sessionTranscriptEntriesMax } from "../../../../src/contract/http.ts";
@@ -603,9 +614,19 @@ function conversationAskOf(
   }
 }
 
-/** Whether a turn ended by a member stopping it. */
-export function conversationTurnStopped(turn: ConversationTurn): boolean {
+/** Whether a member stopped a turn a runner held, which may have stored
+ * something of it. */
+function conversationTurnStoppedHeld(turn: ConversationTurn): boolean {
   return turn.state === "Abandoned" && turn.failure === "TurnStopped";
+}
+
+/** Whether a turn ended by a member stopping it, held by a runner or still
+ * waiting. */
+export function conversationTurnStopped(turn: ConversationTurn): boolean {
+  return (
+    conversationTurnStoppedHeld(turn) ||
+    (turn.state === "Abandoned" && turn.failure === "TurnStoppedQueued")
+  );
 }
 
 function conversationStandingOf(turn: ConversationTurn): ConversationStanding {
@@ -929,24 +950,25 @@ function conversationTurnOut(turn: ConversationTurn): boolean {
 /**
  * Whether a turn ended in a word that does not say whether it ran: one its
  * session reported failed, which a session refusing a turn reports too, or one
- * a member stopped. A failed turn the mailbox names no failure for is read as
- * one of these.
+ * a member stopped while a runner held it. A failed turn the mailbox names no
+ * failure for is read as one of these.
  */
 function conversationTurnReported(turn: ConversationTurn): boolean {
-  if (conversationTurnStopped(turn)) return true;
+  if (conversationTurnStoppedHeld(turn)) return true;
   if (turn.state !== "Failed" || conversationTurnStored(turn)) return false;
   return (
     turn.failure === undefined || conversationFailuresReported.has(turn.failure)
   );
 }
 
-/** Whether a turn ended with nothing saying a runner ever had it: its
+/** Whether a turn ended with nothing saying whether a runner ever had it: its
  * attempts were lost, it was withdrawn, or its session closed under it. */
 function conversationTurnLost(turn: ConversationTurn): boolean {
   return (
     !conversationTurnOut(turn) &&
     !conversationTurnStored(turn) &&
-    !conversationTurnReported(turn)
+    !conversationTurnReported(turn) &&
+    !conversationTurnStopped(turn)
   );
 }
 
@@ -1086,10 +1108,11 @@ function conversationAskBehind(
 }
 
 /**
- * Whether a turn its session reported failed takes the exchange the walk has
- * come to, `left` being how many are still untaken. A record that can be
- * counted says by one being left over the sure turns before it, and any other
- * by the exchange not reading as the answer of the nearest of those.
+ * Whether a turn that may not have run takes the exchange the walk has come
+ * to, `left` being how many are still untaken. A record that can be counted
+ * says by one being left over the sure turns before it and any other by the
+ * exchange not reading as the answer of the nearest of those; a stopped turn
+ * is asked both, and takes none the page held before it was listed.
  */
 function conversationReportedTakes(
   pairing: ConversationPairing,
@@ -1099,9 +1122,13 @@ function conversationReportedTakes(
   sure: readonly ConversationTurn[],
 ): boolean {
   const older = sure.filter((held) => held.ordinal < turn.ordinal);
-  if (pairing.whole) return left > older.length;
   const before = older.at(-1);
-  return before === undefined || !conversationReadsAs(built, before);
+  const answered = before !== undefined && conversationReadsAs(built, before);
+  const stopped = conversationTurnStopped(turn);
+  if (stopped && conversationSeenBefore(pairing, built, turn)) return false;
+  if (!pairing.whole) return !answered;
+  if (left <= older.length) return false;
+  return !(answered && stopped);
 }
 
 /** The turns paired from the newest exchange backwards, each sure turn taking
@@ -1205,8 +1232,9 @@ function conversationAppended(
 
 /**
  * Puts each exchange appended for a turn a member stopped where the turn was
- * sent: ahead of the first exchange a later turn took. One carrying markers
- * stays at the foot, where those belong, as does one nothing later follows.
+ * sent: under the last exchange an earlier turn took, ahead of the first after
+ * it that a later turn took. One carrying markers stays at the foot, where
+ * those belong, as does one nothing later follows.
  */
 function conversationStoppedPlaced(
   builder: ConversationBuilder,
@@ -1214,13 +1242,17 @@ function conversationStoppedPlaced(
   ordered: readonly ConversationTurn[],
 ): void {
   const ordinals = new Map(ordered.map((turn) => [turn.turn, turn.ordinal]));
+  const sent = (other: ConversationBuilt): number =>
+    (other.turn === undefined ? undefined : ordinals.get(other.turn)) ??
+    Number.NaN;
   for (const [built, turn] of appended) {
     if (!conversationTurnStopped(turn) || built.before.length > 0) continue;
     const from = builder.built.indexOf(built);
+    const under = builder.built.findLastIndex(
+      (other) => !appended.has(other) && sent(other) < turn.ordinal,
+    );
     const to = builder.built.findIndex(
-      (other) =>
-        other.turn !== undefined &&
-        (ordinals.get(other.turn) ?? 0) > turn.ordinal,
+      (other, at) => at > under && sent(other) > turn.ordinal,
     );
     if (from === -1 || to === -1 || to > from) continue;
     builder.built.splice(from, 1);

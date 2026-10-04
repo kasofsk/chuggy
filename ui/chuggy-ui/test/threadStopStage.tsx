@@ -68,7 +68,8 @@ export function stageInterrupted(
   return stageLine(uuid, "user", interruptionNote(sentence));
 }
 
-/** One mailbox turn as a read lists it: out, or ended as a case says. */
+/** One mailbox turn as a read lists it: out, or ended as a case says. `Waited`
+ * is one stopped before any runner had it. */
 export function stageTurn(
   ordinal: number,
   turn: string,
@@ -77,18 +78,19 @@ export function stageTurn(
     | "Queued"
     | "Claimed"
     | "Stopped"
+    | "Waited"
     | { readonly answer: string }
     | { readonly failure: NonNullable<ThreadTurnResponse["failure"]> },
 ): ThreadTurnResponse {
   const listed = { turn, ordinal, inputKind: "UserMessage", input, tools: [] };
   if (ended === "Queued" || ended === "Claimed")
     return { ...listed, inputKind: "UserMessage", state: ended };
-  if (ended === "Stopped")
+  if (ended === "Stopped" || ended === "Waited")
     return {
       ...listed,
       inputKind: "UserMessage",
       state: "Abandoned",
-      failure: "TurnStopped",
+      failure: ended === "Stopped" ? "TurnStopped" : "TurnStoppedQueued",
     };
   if ("failure" in ended)
     return {

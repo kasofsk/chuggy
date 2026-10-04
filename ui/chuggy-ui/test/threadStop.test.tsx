@@ -108,6 +108,16 @@ async function flushed(
   await settled();
 }
 
+/** A turn stopped while it was out: what the store is left holding of it, and
+ * how the mailbox then lists it. */
+function stoppedWhile(
+  out: "Queued" | "Claimed",
+): readonly [readonly StageEntry[], Ended] {
+  return out === "Queued"
+    ? [[], "Waited"]
+    : [[stageAsked("u-c", asked), stageInterrupted("u-e")], "Stopped"];
+}
+
 /** The ink the word under the last answer is drawn in. */
 function wordInk(container: HTMLElement): string | undefined {
   const words = container.querySelectorAll(
@@ -342,11 +352,7 @@ test.each(["Queued", "Claimed"] as const)(
     expect(stageButton()).toBe("Send");
 
     await stageAnswered(stage.stops[0], { stopped: "Stopped" });
-    const left =
-      out === "Queued"
-        ? []
-        : [stageAsked("u-c", asked), stageInterrupted("u-e")];
-    await flushed(stage, left, "Stopped");
+    await flushed(stage, ...stoppedWhile(out));
     expect(stageColumn(stage.container)).toStrictEqual(stopped);
     expect(stageAlarms(stage.container)).toStrictEqual([]);
     expect(stageButton()).toBe("Send");
@@ -544,11 +550,7 @@ test.each(["Queued", "Claimed"] as const)(
     const stage = await turnOut(out);
     expect(stageAlarms(stage.container)).toStrictEqual(["engine"]);
 
-    const left =
-      out === "Queued"
-        ? []
-        : [stageAsked("u-c", asked), stageInterrupted("u-e")];
-    await flushed(stage, left, "Stopped");
+    await flushed(stage, ...stoppedWhile(out));
     expect(stageColumn(stage.container)).toStrictEqual([
       ...opened,
       `> ${asked}`,
@@ -559,3 +561,50 @@ test.each(["Queued", "Claimed"] as const)(
     expect(stageButton()).toBe("Send");
   },
 );
+
+test("the same words sent again and stopped while they waited take no answer: each stays under its own message, on the page that watched and on one opened afterwards", async () => {
+  const words = "continue";
+  const store = [
+    stageAsked("u-1", words),
+    stageWrote("a-1", "msg_1", "Half of the first ans"),
+    stageInterrupted("i-1"),
+    stageAsked("u-2", words),
+    stageWrote("a-2", "msg_2", "The whole second answer."),
+  ];
+  const thread = (...more: readonly ReturnType<typeof stageTurn>[]) =>
+    threadBody({
+      turns: [
+        stageTurn(1, "turn-1", words, "Stopped"),
+        stageTurn(2, "turn-2", words, { answer: "The whole second answer." }),
+        ...more,
+      ],
+    });
+  const read = [
+    `> ${words}`,
+    "Half of the first ans (Stopped)",
+    `> ${words}`,
+    "The whole second answer. (Answered)",
+  ];
+  const stage = stageMounted(thread(), [store]);
+  await settled();
+  expect(stageColumn(stage.container)).toStrictEqual(read);
+
+  await stageSent(words);
+  const sent = stage.sends[0];
+  if (sent === undefined) throw new Error("nothing was sent");
+  await stageAnswered(sent, { turn: sent.turn, ordinal: 3 }, 202);
+  stage.draw(thread(stageTurn(3, sent.turn, words, "Queued")));
+  await settled();
+  await stageStopped();
+  await stageAnswered(stage.stops[0], { stopped: "Stopped" });
+  const ended = thread(stageTurn(3, sent.turn, words, "Waited"));
+  stage.draw(ended);
+  await settled();
+  const stopped = [...read, `> ${words}`, "(Stopped)"];
+  expect(stageColumn(stage.container)).toStrictEqual(stopped);
+
+  cleanup();
+  const afresh = stageMounted(ended, [store]);
+  await settled();
+  expect(stageColumn(afresh.container)).toStrictEqual(stopped);
+});
