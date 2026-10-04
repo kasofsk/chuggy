@@ -105,7 +105,7 @@ export function parseThreadLiveEvent(
 type SessionLiveText = Extract<SessionLiveEvent, { readonly live: "Text" }>;
 
 /**
- * A block after more of its text is heard. Text placed where the held text
+ * A block after more of its text is heard: text placed where the held text
  * ends is appended, and text placed inside it replaces what followed, which is
  * a sender sending again. Text placed past the end, text for a block that never
  * began, and text for a block that is not text each leave the block gapped.
