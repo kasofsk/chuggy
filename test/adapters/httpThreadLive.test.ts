@@ -8,6 +8,7 @@
 
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
+import type net from "node:net";
 import { after, test } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 import { promisify } from "node:util";
@@ -101,6 +102,9 @@ interface Served {
 
   /** How many sockets the server holds open. */
   connections(): Promise<number>;
+
+  /** How many listeners each connection the server still holds has for its peer saying it will send no more. */
+  endListeners(): number[];
 
   /** Closes the hub and leaves the server serving, which is the first thing a stopping root does. */
   stops(): Promise<void>;
@@ -213,6 +217,8 @@ async function served(serving: Serving = {}): Promise<Served> {
     threadWeb(options, asked),
     options.composed === false ? undefined : hub,
   );
+  const sockets: net.Socket[] = [];
+  app.server.on("connection", (socket) => sockets.push(socket));
   await app.listen({ host: "127.0.0.1", port: 0 });
   const address = app.server.address();
   assert.ok(address !== null && typeof address !== "string");
@@ -232,6 +238,10 @@ async function served(serving: Serving = {}): Promise<Served> {
           else reject(failure);
         });
       }),
+    endListeners: () =>
+      sockets
+        .filter((socket) => !socket.destroyed)
+        .map((socket) => socket.listenerCount("end")),
     stops: () => hub.close(),
     close: async () => {
       await hub.close();
@@ -733,6 +743,42 @@ test("closing the hub ends every stream instead of draining behind one, and a re
   assert.ok(await reaches(() => opened.closed()));
   assert.equal(opened.failed(), false);
   opened.close();
+});
+
+/** What a connection has read, once it is set reading. */
+function reading(socket: net.Socket): () => string {
+  let read = "";
+  socket.on("data", (chunk: Buffer) => {
+    read += chunk.toString("latin1");
+  });
+  socket.resume();
+  return () => read;
+}
+
+test("a stream ended whole leaves its connection as one that carried an ordinary request, so a connection kept alive gathers nothing from the streams it carried", async () => {
+  const rig = await rigOf();
+  const ordinary = unreading(rig.port, pathOf(), {});
+  const streamed = unreading(rig.port, pathOf(), authorized);
+  const [answer, stream] = [reading(ordinary), reading(streamed)];
+  try {
+    assert.ok(
+      await reaches(
+        () => answer().includes(" 401 ") && stream().includes("snapshot"),
+      ),
+    );
+    await rig.stops();
+    assert.ok(await reaches(() => stream().endsWith("0\r\n\r\n")));
+    assert.ok(
+      await reaches(() => {
+        const [one, other, ...more] = rig.endListeners();
+        return one !== undefined && one === other && more.length === 0;
+      }),
+      `listeners for a peer's end, by connection: ${rig.endListeners().join(", ")}`,
+    );
+  } finally {
+    ordinary.destroy();
+    streamed.destroy();
+  }
 });
 
 test("an app composed with no hub serves no thread live route", async () => {

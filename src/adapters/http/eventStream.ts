@@ -208,11 +208,22 @@ interface EventStreamSocket<Event> extends EventStreamSink<Event> {
 }
 
 /**
- * A socket a hub writes frames through, each written as `frameOf` encodes it,
- * and cut where it is ended still holding bytes unwritten, which are what its
- * peer is not taking. A peer that says it will send no more is cut before the
- * server answers it in kind, because a socket being shut down can no longer be
- * reset and would go on holding whatever that peer never read.
+ * Has an open reply cut as its peer says it will send no more, before the
+ * server answers that in kind: a socket being shut down can no longer be reset,
+ * and would go on holding whatever that peer never read. A reply that is over
+ * is listened for no longer, so a connection the server keeps gathers nothing
+ * from the streams it carried.
+ */
+function cutWhenPeerEnds(raw: FastifyReply["raw"], cutting: () => void): void {
+  const socket = raw.socket;
+  socket?.prependOnceListener("end", cutting);
+  raw.once("close", () => socket?.removeListener("end", cutting));
+}
+
+/**
+ * A socket a hub writes frames through, each written as `frameOf` encodes it.
+ * It is cut where it is ended still holding bytes unwritten, which are what its
+ * peer is not taking, and where its peer says it will send no more.
  */
 function eventStreamSocket<Event>(
   reply: FastifyReply,
@@ -222,7 +233,7 @@ function eventStreamSocket<Event>(
   let answered = false;
   let ended = false;
   let sentBytes = 0;
-  raw.socket?.prependOnceListener("end", () => {
+  cutWhenPeerEnds(raw, () => {
     ended = true;
     cut(raw);
   });
