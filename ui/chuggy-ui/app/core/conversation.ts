@@ -270,6 +270,9 @@ export interface ConversationExchange {
   readonly activity?: ConversationActivity;
   readonly measures?: ConversationMeasures;
   readonly before: readonly ConversationMarker[];
+  /** Set where the turn carries no input to find its work by, so nothing this
+   * exchange holds can say whether the turn has begun. */
+  readonly inputless?: true;
 }
 
 /** What the disclosure trigger is worded from, as counts rather than a
@@ -474,6 +477,7 @@ interface ConversationBuilt extends ConversationSaid {
   standing: ConversationStanding;
   measures: ConversationMeasures | undefined;
   matched: boolean;
+  inputless: boolean;
 }
 
 interface ConversationBuilder {
@@ -520,6 +524,7 @@ function conversationOpened(
     before: builder.pending,
     matched: false,
     stepsCut: 0,
+    inputless: false,
   };
   builder.pending = [];
   builder.built.push(built);
@@ -734,6 +739,7 @@ function conversationAppended(
   built.measures = conversationMeasuresOf(turn);
   built.askText = turn.input;
   built.ask = conversationAskOf(turn.inputKind, turn.input);
+  built.inputless = turn.input === undefined;
 }
 
 /**
@@ -792,6 +798,7 @@ function conversationDrawn(built: ConversationBuilt): ConversationExchange {
           : { standing: "Answered" },
     ...(built.measures === undefined ? {} : { measures: built.measures }),
     before,
+    ...(built.inputless ? { inputless: true as const } : {}),
   };
 }
 
@@ -865,12 +872,15 @@ export function conversationExchangeContinued(
   return saying;
 }
 
-/** Whether anything of an exchange's turn has reached this page: a step of its
- * work, a word of its answer, or what it is heard to be doing. */
+/** Whether an exchange's turn is read as begun: a step of its work, a word of
+ * its answer or what it is heard to be doing has reached this page. A turn with
+ * no input to find its work by is read as begun, since nothing drawn under it
+ * could ever say so. */
 export function conversationExchangeBegun(
   exchange: ConversationExchange,
 ): boolean {
   return (
+    exchange.inputless === true ||
     exchange.work.length > 0 ||
     exchange.answer !== undefined ||
     exchange.activity !== undefined
