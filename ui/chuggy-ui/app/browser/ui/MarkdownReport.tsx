@@ -1,188 +1,115 @@
 /**
- * A work report drawn as the blocks `markdownReport.ts` reads it into, rather
- * than the marked-up text a worker actually wrote. No mark ever becomes raw
- * HTML: every node is its own React element, so a report is never a place a
- * worker's own words could inject a script into the screen reading them.
+ * A model's text drawn as the report it is: a worker's report on a run, an
+ * agent's answer in a thread, a note in a card.
+ *
+ * WHAT IS DRAWN IS A READING, AND A READING IS KEPT. `markdownReading.ts` reads
+ * a text a block at a time, so a text that grows by a few characters a frame
+ * is parsed and drawn in its last block only. The reading is held between
+ * renders by the component under the one a caller mounts, so the one a caller
+ * mounts is drawn once for each text it is handed.
+ *
+ * A TEXT STILL BEING WRITTEN IS DRAWN BY WHAT DRAWS A FINISHED ONE. `writing`
+ * changes the text that is read — the marks its last block leaves open are
+ * closed — and puts the mark's class on the last thing written. It changes no
+ * element, so the moment a text is whole changes nothing a reader can see.
+ *
+ * WHILE A TEXT IS BEING WRITTEN EXACTLY ONE THING IN IT CARRIES THE MARK. Where
+ * the last block can carry it, that block does; where nothing can — no block
+ * yet, or a rule — the report itself does, and a caller that pulses the mark
+ * never has a text being written with nothing pulsing in it.
  */
 
-import { Fragment } from "react";
+import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
 
 import {
-  markdownInlineOf,
-  markdownReportBlocks,
-  type MarkdownBlock,
-  type MarkdownInline,
-  type MarkdownLines,
-} from "../../core/markdownReport.ts";
-import { markdownWritingText } from "../../core/markdownWriting.ts";
-import { TicketReference } from "./TicketReference.tsx";
-import { Table } from "./Table.tsx";
+  MarkdownBlockDrawn,
+  MarkdownInlineRun,
+  markdownMarkCarried,
+  markdownMarkClassName,
+} from "./MarkdownBlocks.tsx";
+import { markdownReadingNext } from "./markdownReading.ts";
+import type { MarkdownReading } from "./markdownReading.ts";
+import { markdownBlocksParsed } from "./markdownTree.ts";
 
-function MarkdownInlineRun(props: {
-  readonly nodes: readonly MarkdownInline[];
-}): ReactNode {
-  return props.nodes.map((node, at) => {
-    switch (node.kind) {
-      case "Text":
-        return node.text;
-      case "Bold":
-        return <strong key={at}>{node.text}</strong>;
-      case "Italic":
-        return <em key={at}>{node.text}</em>;
-      case "Code":
-        return <code key={at}>{node.text}</code>;
-      case "Link":
-        return (
-          <a key={at} href={node.href} target="_blank" rel="noreferrer">
-            {node.text}
-          </a>
-        );
-      case "Reference":
-        return <TicketReference key={at} ticket={node.ticket} />;
-    }
-  });
-}
+import "./MarkdownReport.css";
 
-/** Consecutive lines within one block, a line break between each — the mark
- * a worker's own newline leaves on the screen. */
-function MarkdownLineRun(props: { readonly lines: MarkdownLines }): ReactNode {
-  return props.lines.map((line, at) => (
-    <Fragment key={at}>
-      {at > 0 ? <br /> : null}
-      <MarkdownInlineRun nodes={line} />
-    </Fragment>
-  ));
-}
-
-function MarkdownHeading(props: {
-  readonly level: number;
-  readonly inline: readonly MarkdownInline[];
-}): ReactNode {
-  const body = <MarkdownInlineRun nodes={props.inline} />;
-  switch (Math.min(Math.max(props.level, 1), 6)) {
-    case 1:
-      return <h1>{body}</h1>;
-    case 2:
-      return <h2>{body}</h2>;
-    case 3:
-      return <h3>{body}</h3>;
-    case 4:
-      return <h4>{body}</h4>;
-    case 5:
-      return <h5>{body}</h5>;
-    default:
-      return <h6>{body}</h6>;
-  }
-}
-
-function MarkdownTable(props: {
-  readonly header: readonly (readonly MarkdownInline[])[];
-  readonly rows: readonly (readonly (readonly MarkdownInline[])[])[];
-}): ReactNode {
-  return (
-    <Table>
-      <thead>
-        <tr>
-          {props.header.map((cell, at) => (
-            <th key={at}>
-              <MarkdownInlineRun nodes={cell} />
-            </th>
-          ))}
-        </tr>
-      </thead>
-      <tbody>
-        {props.rows.map((row, at) => (
-          <tr key={at}>
-            {row.map((cell, cellAt) => (
-              <td key={cellAt}>
-                <MarkdownInlineRun nodes={cell} />
-              </td>
-            ))}
-          </tr>
-        ))}
-      </tbody>
-    </Table>
-  );
-}
-
-function MarkdownBlockView(props: {
-  readonly block: MarkdownBlock;
-}): ReactNode {
-  const block = props.block;
-  switch (block.kind) {
-    case "Heading":
-      return <MarkdownHeading level={block.level} inline={block.inline} />;
-    case "Paragraph":
-      return (
-        <p>
-          <MarkdownLineRun lines={block.lines} />
-        </p>
-      );
-    case "Quote":
-      return (
-        <blockquote>
-          <MarkdownLineRun lines={block.lines} />
-        </blockquote>
-      );
-    case "BulletList":
-      return (
-        <ul>
-          {block.items.map((item, at) => (
-            <li key={at}>
-              <MarkdownInlineRun nodes={item} />
-            </li>
-          ))}
-        </ul>
-      );
-    case "OrderedList":
-      return (
-        <ol>
-          {block.items.map((item, at) => (
-            <li key={at}>
-              <MarkdownInlineRun nodes={item} />
-            </li>
-          ))}
-        </ol>
-      );
-    case "CodeBlock":
-      return (
-        <pre>
-          <code>{block.text}</code>
-        </pre>
-      );
-    case "Table":
-      return <MarkdownTable header={block.header} rows={block.rows} />;
-  }
-}
-
-/** One line of a worker's prose with its inline marks, for a place that draws
- * a line rather than a report. */
-export function MarkdownLine(props: { readonly text: string }): ReactNode {
-  return <MarkdownInlineRun nodes={markdownInlineOf(props.text)} />;
-}
-
-/** The worker's report, laid out as the markdown it tends to write. `bare`
- * drops the panel it draws itself in, for a column with no width to spare. */
-export function MarkdownReport(props: {
+interface MarkdownReportProps {
   readonly text: string;
+  /** Whether the report gives up the panel it draws itself in, for a column
+   * with no width to spare. */
   readonly bare?: boolean;
-  /** Whether more of the text is still coming, so a mark its last line leaves
+  /** Whether more of the text is still coming, so a mark its last block leaves
    * open is drawn as what it is about to be. */
   readonly writing?: boolean;
-}): ReactNode {
-  const blocks = markdownReportBlocks(
-    props.writing === true ? markdownWritingText(props.text) : props.text,
+}
+
+/**
+ * A text read, going on from the reading this component last made of it.
+ * Setting state while rendering is how React is told a value derived from
+ * props moved: it draws again at once, with the reading already made.
+ */
+function useMarkdownReading(text: string, writing: boolean): MarkdownReading {
+  const [held, setHeld] = useState(() =>
+    markdownReadingNext(undefined, text, writing),
   );
+  if (held.text === text && held.writing === writing) return held;
+  const next = markdownReadingNext(held, text, writing);
+  setHeld(next);
+  return next;
+}
+
+function markdownReportClassName(bare: boolean, mark: boolean): string {
+  return [
+    "run-report",
+    ...(bare ? ["run-report-bare"] : []),
+    ...(mark ? [markdownMarkClassName] : []),
+  ].join(" ");
+}
+
+function MarkdownReportRead(props: MarkdownReportProps): ReactNode {
+  const reading = useMarkdownReading(props.text, props.writing === true);
+  const { settled, open, writing } = reading;
+  const above = useMemo(
+    () =>
+      settled.map((block, at) => (
+        <MarkdownBlockDrawn key={at} block={block} depth={0} mark={false} />
+      )),
+    [settled],
+  );
+  const last = open.at(-1);
+  const carried = writing && last !== undefined && markdownMarkCarried(last);
+  const below = open.map((block, at) => (
+    <MarkdownBlockDrawn
+      key={settled.length + at}
+      block={block}
+      depth={0}
+      mark={carried && at === open.length - 1}
+    />
+  ));
   return (
     <div
-      className={
-        props.bare === true ? "run-report run-report-bare" : "run-report"
-      }
+      className={markdownReportClassName(
+        props.bare === true,
+        writing && !carried,
+      )}
     >
-      {blocks.map((block, at) => (
-        <MarkdownBlockView key={at} block={block} />
-      ))}
+      {[...above, ...below]}
     </div>
   );
+}
+
+/** The text laid out as the markdown its writer tends to write. */
+export function MarkdownReport(props: MarkdownReportProps): ReactNode {
+  return <MarkdownReportRead {...props} />;
+}
+
+/** One line of a writer's prose with its marks, for a place that draws a line
+ * rather than a report: what is not one paragraph is drawn as it was written. */
+export function MarkdownLine(props: { readonly text: string }): ReactNode {
+  const line = props.text.replace(/\s*\n\s*/gu, " ");
+  const blocks = useMemo(() => markdownBlocksParsed(line), [line]);
+  const only = blocks?.length === 1 ? blocks[0] : undefined;
+  if (only?.type !== "paragraph") return line;
+  return <MarkdownInlineRun nodes={only.children} depth={0} linked={false} />;
 }

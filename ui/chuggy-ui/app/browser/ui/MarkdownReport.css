@@ -1,0 +1,325 @@
+/* MarkdownReport: a model's text set to be read — the rhythm between its
+   blocks, its lists and headings, code as a panel and as a chip, a quote, a
+   rule and a table.
+
+   Every gap is a margin above a block that follows another, so the first and
+   last blocks sit flush and a caller spaces the report as one thing. Nothing
+   here is sized by what is still being written: a list is set the same whether
+   its lines are close or spaced, and a code panel has its bar before it has a
+   language, so text arriving moves only what is below it. */
+
+@layer ui {
+  .run-report {
+    --report-inset: var(--surface-1);
+    min-width: 0;
+    padding: var(--space-2);
+    border: var(--hairline) solid var(--edge);
+    border-radius: var(--radius-2);
+    background: var(--surface-2);
+    line-height: var(--leading-prose);
+    overflow-wrap: break-word;
+  }
+
+  /* In a column too narrow for it, the report gives up its own panel: what it
+     sits on is already a surface, and the border and the inset are width the
+     words need more. */
+  .run-report-bare {
+    --report-inset: var(--surface-2);
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: none;
+  }
+
+  .run-report :where(h1, h2, h3, h4, h5, h6, blockquote, hr, pre, table) {
+    margin: 0;
+  }
+
+  .run-report > * + * {
+    margin-block-start: var(--space-3);
+  }
+
+  .run-report :is(li, blockquote) > * + *,
+  .run-report li + li {
+    margin-block-start: var(--space-2);
+  }
+
+  /* headings: four levels, each a step of the type scale or of weight */
+  .run-report :is(h1, h2, h3, h4, h5, h6) {
+    color: var(--ink-1);
+    font-weight: var(--weight-strong);
+    line-height: var(--leading-tight);
+  }
+
+  .run-report h1 {
+    font-size: var(--text-xl);
+  }
+
+  .run-report h2 {
+    font-size: var(--text-lg);
+  }
+
+  .run-report h3 {
+    font-size: var(--text-md);
+  }
+
+  .run-report :is(h4, h5, h6) {
+    color: var(--ink-3);
+    font-size: var(--text-md);
+    font-weight: var(--weight-medium);
+  }
+
+  .run-report > * + :is(h1, h2) {
+    margin-block-start: var(--space-5);
+  }
+
+  .run-report > * + :is(h3, h4, h5, h6) {
+    margin-block-start: var(--space-4);
+  }
+
+  .run-report > :is(h1, h2, h3, h4, h5, h6) + * {
+    margin-block-start: var(--space-2);
+  }
+
+  /* lists: the marker hangs in the indent, and each level has its own */
+  .run-report :is(ul, ol) {
+    padding-inline-start: 1.5em;
+  }
+
+  .run-report ul {
+    list-style: disc;
+  }
+
+  .run-report ul ul {
+    list-style: circle;
+  }
+
+  .run-report ul ul ul {
+    list-style: square;
+  }
+
+  .run-report ol {
+    list-style: decimal;
+  }
+
+  .run-report ol ol {
+    list-style: lower-alpha;
+  }
+
+  .run-report ol ol ol {
+    list-style: lower-roman;
+  }
+
+  .run-report li::marker {
+    color: var(--ink-3);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .run-report-task {
+    position: relative;
+    list-style: none;
+  }
+
+  .run-report-task > input {
+    position: absolute;
+    inset-block-start: calc((1lh - 1em) / 2);
+    inset-inline-start: -1.4em;
+    width: 1em;
+    height: 1em;
+    margin: 0;
+    accent-color: var(--ink-2);
+  }
+
+  /* marks */
+  .run-report strong {
+    color: var(--ink-1);
+    font-weight: var(--weight-strong);
+  }
+
+  .run-report del {
+    color: var(--ink-3);
+  }
+
+  .run-report a:not(.ticket-reference) {
+    color: var(--tone-live);
+    text-decoration-color: color-mix(in srgb, currentColor 40%, transparent);
+  }
+
+  .run-report a:not(.ticket-reference):hover {
+    text-decoration-color: currentColor;
+  }
+
+  /* a chip takes no leading of its own: a line holding one is as tall as a
+     line holding none, so a chip arriving or leaving a line moves nothing */
+  .run-report :not(pre) > code {
+    line-height: 1;
+    padding: 0.1em 0.35em;
+    border: var(--hairline) solid var(--edge);
+    border-radius: var(--radius-2);
+    background: var(--report-inset);
+    color: var(--ink-1);
+    -webkit-box-decoration-break: clone;
+    box-decoration-break: clone;
+  }
+
+  .run-report blockquote {
+    padding-inline-start: var(--space-3);
+    border-inline-start: var(--rail) solid var(--edge-strong);
+  }
+
+  .run-report hr {
+    border: 0;
+    border-block-start: var(--hairline) solid var(--edge);
+  }
+
+  .run-report > * + hr,
+  .run-report > hr + * {
+    margin-block-start: var(--space-5);
+  }
+
+  /* code: a panel whose own lines scroll, so a long one never widens the
+     column it sits in */
+  .run-report-code {
+    min-width: 0;
+    border: var(--hairline) solid var(--edge);
+    border-radius: var(--radius-2);
+    background: var(--report-inset);
+  }
+
+  .run-report-code-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    min-height: 2.5em;
+    padding-inline: var(--space-3) var(--space-1);
+    color: var(--ink-3);
+    font-size: var(--text-sm);
+    line-height: var(--leading-tight);
+  }
+
+  .run-report-code-language {
+    font-family: var(--font-mono);
+  }
+
+  .run-report-code > pre {
+    padding: 0 var(--space-3) var(--space-3);
+    overflow-x: auto;
+    color: var(--ink-1);
+    line-height: var(--leading-dense);
+    white-space: pre;
+    word-break: normal;
+    overflow-wrap: normal;
+    tab-size: 2;
+  }
+
+  .run-report-code code {
+    font-size: inherit;
+  }
+
+  /* code is coloured by what each run of it is, in the editor's own four
+     colours and in colour alone: a run coloured after it was drawn is the
+     same width it was, so colour arriving moves nothing */
+  .run-report-code :is(.hljs-comment, .hljs-quote, .hljs-meta, .hljs-doctag) {
+    color: var(--syntax-note);
+  }
+
+  .run-report-code
+    :is(.hljs-keyword, .hljs-literal, .hljs-number, .hljs-selector-pseudo) {
+    color: var(--syntax-value);
+  }
+
+  .run-report-code
+    :is(
+      .hljs-string,
+      .hljs-regexp,
+      .hljs-symbol,
+      .hljs-addition,
+      .hljs-bullet
+    ) {
+    color: var(--syntax-string);
+  }
+
+  .run-report-code
+    :is(
+      .hljs-title,
+      .hljs-attr,
+      .hljs-attribute,
+      .hljs-built_in,
+      .hljs-type,
+      .hljs-name,
+      .hljs-section,
+      .hljs-selector-tag,
+      .hljs-selector-class,
+      .hljs-selector-id,
+      .hljs-link
+    ) {
+    color: var(--syntax-key);
+  }
+
+  .run-report-code .hljs-deletion {
+    color: var(--tone-fail);
+  }
+
+  /* what a string holds that is not string is code again */
+  .run-report-code .hljs-subst {
+    color: var(--ink-1);
+  }
+
+  /* a table scrolls inside itself, for the same reason code does */
+  .run-report-table {
+    overflow-x: auto;
+  }
+
+  .run-report-table > table {
+    min-width: 100%;
+    border-collapse: collapse;
+    line-height: var(--leading-dense);
+  }
+
+  .run-report-table :is(th, td) {
+    padding: var(--space-2) var(--space-3);
+    border-block-end: var(--hairline) solid var(--edge);
+    text-align: start;
+    vertical-align: top;
+  }
+
+  .run-report-table :is(th, td):first-child {
+    padding-inline-start: 0;
+  }
+
+  /* the last cell keeps a sliver, so a slanted letter set to the right is
+     not cut by the box the table scrolls in */
+  .run-report-table :is(th, td):last-child {
+    padding-inline-end: var(--space-1);
+  }
+
+  /* a name in a cell stays in one piece: the table scrolls, the name does
+     not break */
+  .run-report-table code {
+    white-space: nowrap;
+  }
+
+  .run-report-table th {
+    border-block-end-color: var(--edge-strong);
+    color: var(--ink-1);
+    font-weight: var(--weight-strong);
+    white-space: nowrap;
+  }
+
+  .run-report-table td {
+    min-width: 8ch;
+  }
+
+  .run-report-table .run-report-align-left {
+    text-align: left;
+  }
+
+  .run-report-table .run-report-align-center {
+    text-align: center;
+  }
+
+  .run-report-table .run-report-align-right {
+    text-align: right;
+  }
+}

@@ -454,11 +454,11 @@ test("a block heard with a gap in it is never drawn as text", async () => {
   await settled();
   script.server.pushLive(began("msg_a", 0, "Text"));
   script.server.pushLive(wrote("msg_a", 0, 0, "It is "));
-  await until(script.container, { answer: "It is " });
+  await until(script.container, { answer: "It is" });
   script.server.pushLive(wrote("msg_a", 0, 40, "by 40."));
   script.server.pushLive(began("msg_a", 1, "ToolUse", "Read"));
   await until(script.container, { card: "Read" });
-  expect(shown(script.container).answer).toBe("It is ");
+  expect(shown(script.container).answer).toBe("It is");
 });
 
 test("a first turn being written says nothing of the store it has not written yet", async () => {

@@ -33,6 +33,7 @@ import {
   projectStreamCarrying,
   projectStreamUnanswered,
 } from "../core/projectStream.ts";
+import { clipboardWritten } from "./ports.ts";
 import { ChatPane } from "./shell/ChatPane.tsx";
 import { ChatPaneProvider, useChatPane } from "./shell/chatPaneHeld.tsx";
 import { DetailsPane } from "./shell/DetailsPane.tsx";
@@ -44,6 +45,7 @@ import {
   useProjectFallbackExhausted,
   useProjectStreamStatus,
 } from "./stream.tsx";
+import { CopyProvider } from "./ui/copyHeld.tsx";
 import { Notice } from "./ui/Notice.tsx";
 import "./shell/shell.css";
 
@@ -205,11 +207,13 @@ export function Shell(props: {
   const twoColumn = useViewportAtLeastEm(viewportTwoColumnEm);
   return (
     <ShellSlots>
-      <TicketReferenceWiring partition={props.partition}>
-        <ChatPaneProvider twoColumn={twoColumn}>
-          <ShellDrawn partition={props.partition} twoColumn={twoColumn} />
-        </ChatPaneProvider>
-      </TicketReferenceWiring>
+      <CopyProvider write={clipboardWritten}>
+        <TicketReferenceWiring partition={props.partition}>
+          <ChatPaneProvider twoColumn={twoColumn}>
+            <ShellDrawn partition={props.partition} twoColumn={twoColumn} />
+          </ChatPaneProvider>
+        </TicketReferenceWiring>
+      </CopyProvider>
     </ShellSlots>
   );
 }
