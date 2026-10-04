@@ -80,6 +80,7 @@ function planeSessions(
     references: sessions,
     turns: sessions,
     settlements: sessions,
+    watches: sessions,
     live: planeSessionLive(pool),
     holds: sessions,
     losses: sessions,

@@ -179,6 +179,21 @@ export type ThreadHidden =
   | { readonly hidden: "NoThread" };
 
 /**
+ * What the stop door's durable half answered: `Stopped` is a turn that was
+ * waiting or being answered and is ended by this call, and `AlreadyEnded` one
+ * that had ended, however it ended. `NoThread`, `NotYourThread` and `Closed`
+ * are the message door's own, answered before the turn is looked at, and
+ * `NoTurn` is a thread that holds no such turn.
+ */
+export type ThreadTurnStopped =
+  | "Stopped"
+  | "AlreadyEnded"
+  | "NoThread"
+  | "NotYourThread"
+  | "Closed"
+  | "NoTurn";
+
+/**
  * What the message door's durable half answered. `NoThread`, `Closed` and
  * `Backlogged` are each a mailbox that takes no message, and they are separate
  * arms because a member whose thread is closed reopens it, a member whose
@@ -238,6 +253,18 @@ export interface ThreadStore {
     /** The route the turn was admitted on, which it keeps whatever the thread's route becomes. */
     readonly route: PlacementRoute;
   }): Promise<ThreadMessageEnqueued>;
+  /**
+   * Ends one waiting or claimed turn of the principal's own open thread, and
+   * tells the thread's readers its stream ended. It takes the principal
+   * because the definer is what holds a stop to the caller's own thread, in
+   * the transaction that ends the turn.
+   */
+  stopTurn(input: {
+    readonly partition: Partition;
+    readonly principal: Principal;
+    readonly session: SessionId;
+    readonly turn: SessionTurnId;
+  }): Promise<ThreadTurnStopped>;
   /** Closes the thread named, abandoning the turns it still held; a closed thread stays readable. */
   close(input: {
     readonly partition: Partition;
@@ -384,6 +411,26 @@ export type ThreadMessageSent =
       readonly turn: SessionTurnId;
       readonly ordinal: number;
     };
+
+/**
+ * What the stop door answered. A thread or a turn the project does not hold is
+ * `NotFound`, and `NotYourThread` and `Closed` are the message door's own
+ * refusals, read before the turn is looked at.
+ */
+export type ThreadTurnStopping =
+  | { readonly result: "NotFound" }
+  | { readonly result: "NotYourThread" }
+  | { readonly result: "Closed" }
+  | { readonly result: "Stopped" | "AlreadyEnded" };
+
+/** What the durable stop answered, as the door answers it. */
+export function threadTurnStopping(
+  stopped: ThreadTurnStopped,
+): ThreadTurnStopping {
+  return stopped === "NoThread" || stopped === "NoTurn"
+    ? { result: "NotFound" }
+    : { result: stopped };
+}
 
 /**
  * What the durable enqueue answered, as the door answers it, and where the URL

@@ -28,6 +28,7 @@ import {
   threadTranscriptResponseSchema,
   threadEntryResponseSchema,
   threadMessageAcceptedSchema,
+  threadTurnStopResponseSchema,
   threadRenameResponseSchema,
   threadHideResponseSchema,
   leadInquiriesResponseSchema,
@@ -145,6 +146,12 @@ export const nativeHttpEndpoints = {
     path: nativeHttpRoutes.threadMessages,
     body: threadMessageSchema,
     response: threadMessageAcceptedSchema,
+  },
+  stopThreadTurn: {
+    method: "POST",
+    path: nativeHttpRoutes.threadTurnStop,
+    body: emptyBody,
+    response: threadTurnStopResponseSchema,
   },
   closeThread: {
     method: "POST",

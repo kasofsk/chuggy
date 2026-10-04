@@ -30,6 +30,7 @@ import {
   threadMessageAcceptedSchema,
   threadResponseSchema,
   threadTranscriptResponseSchema,
+  threadTurnStopResponseSchema,
   threadsResponseSchema,
 } from "../../src/contract/responses.ts";
 import {
@@ -287,6 +288,121 @@ test("the door refuses another member's mailbox and an ownerless one", async () 
     payload: { turn: `thread-turn-${randomUUID()}`, message: "still here?" },
   });
   assert.equal(orphaned.statusCode, 404, orphaned.body);
+});
+
+/** Sends one message through the door and answers the turn it minted. */
+async function sentTurn(
+  app: ReturnType<typeof threadApp>,
+  partition: Partition,
+  session: string,
+): Promise<string> {
+  const turn = `thread-turn-${randomUUID()}`;
+  const sent = await app.inject({
+    method: "POST",
+    url: `${pathOf(partition)}/${session}/messages`,
+    headers: versioned,
+    payload: { turn, message: "write me something long" },
+  });
+  assert.equal(sent.statusCode, 202, sent.body);
+  return turn;
+}
+
+/**
+ * The stop route joined to its definer: the member's own turn ends by the
+ * call, the thread read then answers it ended, and a second call says it had.
+ * The door answers a turn a runner held and one that waited the same, and the
+ * read is what tells them apart.
+ */
+test("a stop ends my own turn through the door, and the thread read answers whether a runner held it", async () => {
+  const { partition, member } = await readableMember("stop");
+  await using app = threadApp(member.principal);
+  const opened = await openedThread(app, partition);
+  const held = await sentTurn(app, partition, opened.session);
+  const waiting = await sentTurn(app, partition, opened.session);
+  const attempt = await sessionRigAttempt(
+    rig.sessions,
+    partition,
+    asSessionId(opened.session),
+    "http-stop",
+  );
+  const claimed = await rig.sessions.plane.claim({
+    secret: attempt.secret,
+    generation: attempt.attempt.generation,
+  });
+  assert.equal(claimed?.turn, held);
+  const stop = (named: string) =>
+    app.inject({
+      method: "POST",
+      url: `${pathOf(partition)}/${opened.session}/turns/${named}/stop`,
+      headers: versioned,
+      payload: {},
+    });
+
+  for (const turn of [held, waiting])
+    for (const stopped of ["Stopped", "AlreadyEnded"] as const) {
+      const answer = await stop(turn);
+      assert.equal(answer.statusCode, 200, answer.body);
+      assert.deepEqual(threadTurnStopResponseSchema.parse(answer.json()), {
+        stopped,
+      });
+    }
+  const read = await app.inject({
+    url: `${pathOf(partition)}/${opened.session}`,
+    headers: authorized,
+  });
+  assert.deepEqual(
+    threadResponseSchema
+      .parse(read.json())
+      .turns.map((listed) => [
+        listed.turn,
+        listed.state,
+        listed.failure,
+        listed.result,
+      ]),
+    [
+      [held, "Abandoned", "TurnStopped", undefined],
+      [waiting, "Abandoned", "TurnStoppedQueued", undefined],
+    ],
+  );
+  const absent = await stop(`thread-turn-${randomUUID()}`);
+  assert.equal(absent.statusCode, 404, absent.body);
+});
+
+test("the stop door refuses another member's thread, a closed one and a project the caller cannot change", async () => {
+  const { partition, member } = await readableMember("stop-refused");
+  const other = threadRigMember(rig, partition, "http-stop-refused-other");
+  await using theirs = threadApp(other.principal);
+  const theirThread = await openedThread(theirs, partition);
+  const theirTurn = await sentTurn(theirs, partition, theirThread.session);
+  await using app = threadApp(member.principal);
+  const mine = await openedThread(app, partition);
+  const turn = await sentTurn(app, partition, mine.session);
+  const stop = (session: string, named: string) =>
+    app.inject({
+      method: "POST",
+      url: `${pathOf(partition)}/${session}/turns/${named}/stop`,
+      headers: versioned,
+      payload: {},
+    });
+
+  const elsewhere = await stop(theirThread.session, theirTurn);
+  assert.equal(elsewhere.statusCode, 403, elsewhere.body);
+  assert.equal(elsewhere.json<HttpErrorEnvelope>().error.code, "NotYourThread");
+
+  const closed = await app.inject({
+    method: "POST",
+    url: `${pathOf(partition)}/${mine.session}/close`,
+    headers: versioned,
+    payload: {},
+  });
+  assert.equal(closed.statusCode, 200, closed.body);
+  const late = await stop(mine.session, turn);
+  assert.equal(late.statusCode, 409, late.body);
+  assert.equal(late.json<HttpErrorEnvelope>().error.code, "ThreadClosed");
+
+  threadRigRevoke(rig, partition, member);
+  const gated = await stop(mine.session, turn);
+  assert.equal(gated.statusCode, 404, gated.body);
 });
 
 /** A caller with no membership at all reads nothing, which is what gates every route. */

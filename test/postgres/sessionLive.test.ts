@@ -5,6 +5,10 @@
  * Each side runs as the role its process holds, so a privilege either lacked
  * would be a red here. What PostgreSQL does with a payload it will not carry,
  * and with one it is sent twice, is asked of the server rather than assumed.
+ *
+ * A post is carried for the turn its session holds claimed, so each case's
+ * turn is one a real attempt claimed. Which posts are left out for the turn
+ * they name is `threadTurnStop.test.ts`'s subject.
  */
 
 import assert from "node:assert/strict";
@@ -35,7 +39,10 @@ import type { SessionLiveEvent } from "../../src/contract/sessionLive.ts";
 import {
   asSessionId,
   asSessionTurnId,
+  type SessionId,
+  type SessionTurnId,
 } from "../../src/interpreter/agentSession.ts";
+import { asPrincipal } from "../../src/interpreter/principal.ts";
 import {
   asProjectId,
   asTenantId,
@@ -52,19 +59,71 @@ import {
   postgresHarnessRoleUrl,
   postgresHarnessUrl,
 } from "./harness.ts";
+import {
+  sessionRigAttempt,
+  sessionRigOpen,
+  type SessionRig,
+} from "./sessionHarness.ts";
 
 let ownerPool: pg.Pool;
 let planePool: pg.Pool;
+let rig: SessionRig;
 
-before(() => {
+before(async () => {
   ownerPool = postgresPool(postgresHarnessUrl());
   planePool = postgresHarnessRolePool(workerPlaneRole);
+  rig = await sessionRigOpen();
 });
 
 after(async () => {
+  await rig.close();
   await planePool.end();
   await ownerPool.end();
 });
+
+/** The cases whose turn has been claimed, by their project. */
+const holds = new Set<string>();
+
+/** The one session a case posts as, and its one turn, which no other case's are. */
+function sessionOf(partition: Partition): SessionId {
+  return asSessionId(`session-${partition.project}`);
+}
+
+function turnOf(partition: Partition): SessionTurnId {
+  return asSessionTurnId(`turn-${partition.project}`);
+}
+
+/**
+ * Makes the case's turn the one its session holds claimed, once: the project
+ * and the session are opened, the turn is enqueued, and an attempt claims it.
+ */
+async function holding(partition: Partition): Promise<void> {
+  if (holds.has(partition.project)) return;
+  const session = sessionOf(partition);
+  await rig.harness.store.createProject(partition);
+  await rig.sessions.open({
+    partition,
+    session,
+    kind: "Lead",
+    principal: asPrincipal("principal-live"),
+    capabilities: [],
+    credentialSlot: "claude-code",
+  });
+  await rig.sessions.enqueue({
+    partition,
+    session,
+    turn: turnOf(partition),
+    inputKind: "UserMessage",
+    input: "write",
+  });
+  const attempt = await sessionRigAttempt(rig, partition, session, "live");
+  const claimed = await rig.plane.claim({
+    secret: attempt.secret,
+    generation: attempt.attempt.generation,
+  });
+  assert.equal(claimed?.turn, turnOf(partition));
+  holds.add(partition.project);
+}
 
 /** A publisher over the plane's own role, and the running total it reported each time it reported one. */
 function publishing(): {
@@ -144,23 +203,27 @@ function partitionOf(label: string): Partition {
   };
 }
 
-const session = asSessionId("session-1");
-const turn = asSessionTurnId("turn-1");
 const ended: SessionLiveEvent = { live: "End" };
 
 function textAt(offset: number, text: string): SessionLiveEvent {
   return { live: "Text", message: "message-1", index: 0, offset, text };
 }
 
-/** Publishes one post that must be handed over, and waits until the lane has heard `heardTotal` events in all. */
+/** Publishes one post for the case's claimed turn, and waits until the lane has heard `heardTotal` events in all. */
 async function published(
   listened: Listened,
   partition: Partition,
   events: readonly SessionLiveEvent[],
   heardTotal: number,
 ): Promise<void> {
+  await holding(partition);
   assert.equal(
-    await publishing().publisher.publish({ partition, session, turn, events }),
+    await publishing().publisher.publish({
+      partition,
+      session: sessionOf(partition),
+      turn: turnOf(partition),
+      events,
+    }),
     "Published",
   );
   await reaches(
@@ -192,8 +255,8 @@ test("a post's events are heard one by one, in the order they were handed over, 
       listened.heard,
       [...first, ...second].map((event) => ({
         partition,
-        session,
-        turn,
+        session: sessionOf(partition),
+        turn: turnOf(partition),
         event,
       })),
     );
@@ -209,8 +272,8 @@ test("PostgreSQL delivers one of two payloads a statement sends alike, and two e
   try {
     const alike = JSON.stringify({
       ...partition,
-      session,
-      turn,
+      session: sessionOf(partition),
+      turn: turnOf(partition),
       ordinal: 0,
       event: ended,
     });
@@ -241,7 +304,17 @@ test("a payload that is not one event is counted and dropped, and the lane goes 
   try {
     await planePool.query(
       "SELECT pg_notify('chuggy_session_live', unread) FROM unnest($1::text[]) AS unread",
-      [["", "not json", JSON.stringify({ ...partition, session, turn })]],
+      [
+        [
+          "",
+          "not json",
+          JSON.stringify({
+            ...partition,
+            session: sessionOf(partition),
+            turn: turnOf(partition),
+          }),
+        ],
+      ],
     );
     await published(listened, partition, [ended], 1);
     assert.equal(listened.unread, 3);
@@ -262,11 +335,12 @@ test("a payload the watcher does not answer for is neither read nor counted as u
     await planePool.query("SELECT pg_notify('chuggy_session_live', $1)", [
       "not json",
     ]);
+    await holding(partition);
     assert.equal(
       await publishing().publisher.publish({
         partition,
-        session,
-        turn,
+        session: sessionOf(partition),
+        turn: turnOf(partition),
         events: [textAt(0, "unheard")],
       }),
       "Published",
@@ -297,9 +371,45 @@ function wide(chars: number): string {
 /** An event's text at its weight. */
 const textHeaviest = "a".repeat(sessionLiveTextBytesMax - jsonTextBytes(""));
 
+/**
+ * A publisher over the plane's own role that keeps every payload it handed
+ * the boundary. What the contract admits at its heaviest names identities no
+ * project of this database can have, so no turn of them is ever claimed, the
+ * boundary carries none of it and each post it is handed is answered
+ * `Unheld`: what the publisher weighed, left out and handed over is read
+ * here, and what the channel carries is asked of the server with the same
+ * payload.
+ */
+function handing(): {
+  readonly publisher: SessionLivePublishPort;
+  readonly drops: number[];
+  readonly handed: string[];
+} {
+  const drops: number[] = [];
+  const handed: string[] = [];
+  const recording = {
+    query: (asked: pg.QueryConfig) => {
+      const payloads: unknown = asked.values?.at(-1);
+      if (Array.isArray(payloads)) handed.push(...payloads.map(String));
+      return planePool.query(asked);
+    },
+  } as unknown as pg.Pool;
+  const publisher = postgresSessionLivePublisher(recording, {
+    dropped: (droppedTotal) => drops.push(droppedTotal),
+  });
+  return { publisher, drops, handed };
+}
+
+/** Sends one payload as the plane's role, as the boundary sends each it carries. */
+async function notified(payload: string): Promise<void> {
+  await planePool.query("SELECT pg_notify('chuggy_session_live', $1)", [
+    payload,
+  ]);
+}
+
 test("the heaviest event the contract admits is too heavy for the channel only where its identities need escaping, and is then left out, counted at the first and at each doubling, and fails nothing", async () => {
   const { lane, listened } = await listening("chuggy-live-heaviest");
-  const { publisher, drops } = publishing();
+  const { publisher, drops, handed } = handing();
   try {
     const carried = {
       partition: {
@@ -318,10 +428,12 @@ test("the heaviest event the contract admits is too heavy for the channel only w
         },
       ],
     } as const;
-    assert.equal(await publisher.publish(carried), "Published");
+    assert.equal(await publisher.publish(carried), "Unheld");
+    assert.equal(handed.length, 1);
+    assert.deepEqual(drops, []);
+    await notified(handed[0] ?? "");
     await reaches(() => listened.heard.length === 1, "the wide event");
     assert.deepEqual(listened.heard[0]?.event, carried.events[0]);
-    assert.deepEqual(drops, []);
 
     const heavy = {
       partition: {
@@ -335,7 +447,7 @@ test("the heaviest event the contract admits is too heavy for the channel only w
         ended,
       ],
     } as const;
-    assert.equal(await publisher.publish(heavy), "Published");
+    assert.equal(await publisher.publish(heavy), "Unheld");
     await reaches(() => listened.heard.length === 2, "the event beside it");
     assert.deepEqual(listened.heard[1], {
       partition: heavy.partition,
@@ -343,9 +455,10 @@ test("the heaviest event the contract admits is too heavy for the channel only w
       turn: heavy.turn,
       event: ended,
     });
+    assert.equal(handed.length, 2, "the event too heavy was handed over");
     assert.deepEqual(drops, [1]);
     for (let again = 0; again < 4; again += 1)
-      assert.equal(await publisher.publish(heavy), "Published");
+      assert.equal(await publisher.publish(heavy), "Unheld");
     assert.deepEqual(drops, [1, 2, 4]);
   } finally {
     await lane.close();
@@ -365,9 +478,9 @@ async function overheard(): Promise<{
   return { payloads, close: () => client.end() };
 }
 
-test("the publisher's bound is the server's: a payload at it is carried, and one byte past it is left out where the server would refuse it", async () => {
+test("the publisher's bound is the server's: a payload at it is handed over and carried, and one byte past it is left out where the server would refuse it", async () => {
   const listener = await overheard();
-  const { publisher, drops } = publishing();
+  const { publisher, drops, handed } = handing();
   try {
     const post = (turnText: string) =>
       publisher.publish({
@@ -390,34 +503,30 @@ test("the publisher's bound is the server's: a payload at it is carried, and one
     const weightOf = (payload: string | undefined): number =>
       Buffer.byteLength(payload ?? "", "utf8");
 
-    assert.equal(await post("a"), "Published");
-    await reaches(() => listener.payloads.length === 1, "the light payload");
-    const spare = sessionLivePayloadBytesMax - weightOf(listener.payloads[0]);
+    assert.equal(await post("a"), "Unheld");
+    const spare = sessionLivePayloadBytesMax - weightOf(handed[0]);
     const escapedBytes = weightOf(JSON.stringify(escaped(1))) - weightOf('""');
     const atBound = `a${escaped(Math.floor(spare / escapedBytes))}${"a".repeat(spare % escapedBytes)}`;
 
-    assert.equal(await post(atBound), "Published");
+    assert.equal(await post(atBound), "Unheld");
+    assert.equal(weightOf(handed[1]), sessionLivePayloadBytesMax);
+    assert.deepEqual(drops, []);
+    await notified(handed[1] ?? "");
     await reaches(
-      () => listener.payloads.length === 2,
+      () => listener.payloads.length === 1,
       "the payload at the bound",
     );
-    assert.equal(weightOf(listener.payloads[1]), sessionLivePayloadBytesMax);
-    assert.deepEqual(drops, []);
+    assert.equal(listener.payloads[0], handed[1]);
 
     await assert.rejects(
-      planePool.query("SELECT pg_notify('chuggy_session_live', $1)", [
-        `${listener.payloads[1] ?? ""} `,
-      ]),
+      notified(`${handed[1] ?? ""} `),
       /payload string too long/u,
     );
     assert.equal(await post(`${atBound}a`), "Published");
     assert.deepEqual(drops, [1]);
-    assert.equal(await post("b"), "Published");
-    await reaches(() => listener.payloads.length === 3, "the payload after");
-    assert.equal(
-      weightOf(listener.payloads[2]),
-      weightOf(listener.payloads[0]),
-    );
+    assert.equal(handed.length, 2, "a payload past the bound was handed over");
+    assert.equal(await post("b"), "Unheld");
+    assert.equal(weightOf(handed[2]), weightOf(handed[0]));
   } finally {
     await listener.close();
   }
@@ -432,8 +541,8 @@ test("a publish the server could not be asked for is answered as unavailable, ne
   assert.equal(
     await unreachable.publish({
       partition: partitionOf("gone"),
-      session,
-      turn,
+      session: sessionOf(partitionOf("gone")),
+      turn: turnOf(partitionOf("gone")),
       events: [ended],
     }),
     "Unavailable",
@@ -457,7 +566,12 @@ test("a listener whose connection is ended says it is lost, comes back, and hear
     );
     await published(listened, partition, [ended], 1);
     assert.deepEqual(listened.heard, [
-      { partition, session, turn, event: ended },
+      {
+        partition,
+        session: sessionOf(partition),
+        turn: turnOf(partition),
+        event: ended,
+      },
     ]);
   } finally {
     await lane.close();

@@ -53,6 +53,10 @@ import {
   type SessionPlaneRouteName,
 } from "../../src/contract/sessionPlane.ts";
 import {
+  workerContractHeader,
+  workerContractRelease,
+} from "../../src/contract/workerContract.ts";
+import {
   allPlatformTurnFailures,
   asSessionAttemptId,
   asSessionId,
@@ -130,6 +134,7 @@ const sessionCalls = [
     { turn: "turn-1", events: [{ live: "End" }] },
     {},
   ],
+  ["POST", "/v1/session/turn/stopped", { turn: "turn-1" }, {}],
   ["POST", "/v1/session/held", {}, {}],
   ["PUT", "/v1/session/store/1a2b/1", Buffer.from("{}\n"), octets],
   ["GET", "/v1/session/store/1a2b", undefined, {}],
@@ -482,6 +487,197 @@ test("a mailbox whose claim raises still gives its slot back", async () => {
   await app.close();
 });
 
+test("a watch waits while the caller holds its turn claimed, and answers the turn once its member stopped it", async () => {
+  const asked: unknown[] = [];
+  const app = sessionPlane({
+    turnPollIntervalMs: 5,
+    turnPollSecsMax: 1,
+    watches: {
+      watched: (input) => {
+        asked.push(input);
+        return Promise.resolve(asked.length < 3 ? "Held" : "Stopped");
+      },
+    },
+  });
+  const told = await app.inject({
+    method: "POST",
+    url: "/v1/session/turn/stopped",
+    headers: held,
+    payload: { turn: "turn-7" },
+  });
+  assert.equal(told.statusCode, 200);
+  assert.deepEqual(told.json(), { turn: "turn-7" });
+  assert.equal(asked.length, 3);
+  assert.deepEqual(asked[0], { secret, generation: 3, turn: "turn-7" });
+  await app.close();
+});
+
+/**
+ * A turn that ended any other way will never be stopped, and one the caller
+ * does not hold is not its to wait on: it is answered on the first asking, so
+ * a runner asking after a turn nobody will stop holds no slot for it.
+ */
+test("a watch on a turn the caller neither holds nor had stopped is answered empty at once", async () => {
+  let asked = 0;
+  const app = sessionPlane({
+    turnPollIntervalMs: 5,
+    turnPollSecsMax: 1,
+    watches: {
+      watched: () => {
+        asked += 1;
+        return Promise.resolve(undefined);
+      },
+    },
+  });
+  const answered = await app.inject({
+    method: "POST",
+    url: "/v1/session/turn/stopped",
+    headers: held,
+    payload: { turn: "turn-7" },
+  });
+  assert.equal(answered.statusCode, 204);
+  assert.equal(asked, 1);
+  await app.close();
+});
+
+test("a watch on a turn nobody stops answers empty when its window is spent", async () => {
+  let asked = 0;
+  const app = sessionPlane({
+    turnPollIntervalMs: 400,
+    turnPollSecsMax: 1,
+    watches: {
+      watched: () => {
+        asked += 1;
+        return Promise.resolve("Held");
+      },
+    },
+  });
+  const spent = await app.inject({
+    method: "POST",
+    url: "/v1/session/turn/stopped",
+    headers: held,
+    payload: { turn: "turn-7" },
+  });
+  assert.equal(spent.statusCode, 204);
+  assert.equal(asked, 3);
+  await app.close();
+});
+
+/**
+ * A session holds the mailbox or a watch and never both, so the two draw on
+ * one bound: a watch held is a mailbox slot taken, and the other way round.
+ * Were they bounded apart, a plane of running turns would hold twice the
+ * connections a plane of idle sessions is allowed.
+ */
+test("a watch and the mailbox share one bound on how many wait at once", async () => {
+  for (const first of ["watch", "mailbox"] as const) {
+    let arrived = () => undefined as void;
+    const entered = new Promise<void>((resolve) => {
+      arrived = resolve;
+    });
+    let claims = 0;
+    let watches = 0;
+    const app = sessionPlane({
+      pollsMax: 1,
+      turnPollIntervalMs: 1_000,
+      turnPollSecsMax: 1,
+      turns: {
+        claim: async () => {
+          claims += 1;
+          arrived();
+          await delay(50);
+          return undefined;
+        },
+      },
+      watches: {
+        watched: async () => {
+          watches += 1;
+          arrived();
+          await delay(50);
+          return "Held";
+        },
+      },
+    });
+    const watch = () =>
+      app.inject({
+        method: "POST",
+        url: "/v1/session/turn/stopped",
+        headers: held,
+        payload: { turn: "turn-7" },
+      });
+    const mailbox = () =>
+      app.inject({ method: "GET", url: "/v1/session/turn", headers: held });
+    const waiting = first === "watch" ? watch() : mailbox();
+    await entered;
+    const turned = await (first === "watch" ? mailbox() : watch());
+    assert.equal(turned.statusCode, 204, first);
+    assert.deepEqual(
+      [claims, watches],
+      first === "watch" ? [0, 1] : [1, 0],
+      first,
+    );
+    assert.equal((await waiting).statusCode, 204, first);
+    await app.close();
+  }
+});
+
+test("a watch whose read raises still gives its slot back", async () => {
+  let asked = 0;
+  const app = sessionPlane({
+    pollsMax: 1,
+    turnPollIntervalMs: 1_000,
+    turnPollSecsMax: 1,
+    watches: {
+      watched: () => {
+        asked += 1;
+        return Promise.reject(new Error("the durable side was unreachable"));
+      },
+    },
+  });
+  for (let request = 0; request < 3; request += 1) {
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/session/turn/stopped",
+      headers: held,
+      payload: { turn: "turn-7" },
+    });
+    assert.equal(response.statusCode, 500);
+  }
+  assert.equal(asked, 3);
+  await app.close();
+});
+
+test("a watch body that does not name exactly one turn a row could hold reaches no read", async () => {
+  let asked = 0;
+  const app = sessionPlane({
+    watches: {
+      watched: () => {
+        asked += 1;
+        return Promise.resolve("Stopped");
+      },
+    },
+  });
+  for (const payload of [
+    {},
+    { turn: "" },
+    { turn: "t".repeat(257) },
+    { turn: "lead\u0000one" },
+    { turn: 7 },
+    { turn: "turn-7", session: "session-2" },
+  ]) {
+    const refused = await app.inject({
+      method: "POST",
+      url: "/v1/session/turn/stopped",
+      headers: held,
+      payload,
+    });
+    assert.equal(refused.statusCode, 400, JSON.stringify(payload));
+    assert.deepEqual(refused.json(), { action: "stop" });
+  }
+  assert.equal(asked, 0);
+  await app.close();
+});
+
 /**
  * `asSessionTurnId` refuses more than a length, and a raise inside a handler is
  * a five-hundred carrying an internal message where the route's status map
@@ -533,6 +729,7 @@ test("a turn is answered or failed by the attempt that holds it, and refused oth
   for (const [answered, status] of [
     ["Answered", 204],
     ["AlreadyAnswered", 204],
+    ["Stopped", 204],
     ["Conflict", 409],
     ["Fenced", 409],
   ] as const) {
@@ -569,6 +766,33 @@ test("a turn is answered or failed by the attempt that holds it, and refused oth
     batchFirst: 12,
     batchLast: 14,
   });
+});
+
+test("a failure is taken or refused as an answer is, a stopped turn's among those taken", async () => {
+  for (const [failed, status] of [
+    ["Failed", 204],
+    ["AlreadyFailed", 204],
+    ["Stopped", 204],
+    ["Conflict", 409],
+    ["Fenced", 409],
+  ] as const) {
+    const app = sessionPlane({
+      settlements: {
+        answer: () => Promise.resolve("Answered"),
+        fail: () => Promise.resolve(failed),
+      },
+    });
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/session/turn/failure",
+      headers: held,
+      payload: { turn: "turn-7", failure: "AgentFailed" },
+    });
+    assert.equal(response.statusCode, status, failed);
+    if (status === 409)
+      assert.deepEqual(response.json(), { action: "stop", reason: failed });
+    await app.close();
+  }
 });
 
 test("a failed turn names a failure the pod itself witnessed and nothing else", async () => {
@@ -695,6 +919,89 @@ test("a publish that could not be made tells the runner to offer its next events
   assert.equal(refused.statusCode, 503);
   assert.deepEqual(refused.json(), { action: "retry" });
   assert.match(String(refused.headers["retry-after"]), /^[1-9][0-9]*$/u);
+  await app.close();
+});
+
+/** A plane whose publisher answers `published` and whose watch finds the turn `watched`, with every watch read it is asked. */
+function livePlaneOver(
+  published: "Published" | "Unheld" | "Unavailable",
+  watched: "Stopped" | "Held" | undefined,
+) {
+  const reads: unknown[] = [];
+  const app = sessionPlane({
+    live: { publish: () => Promise.resolve(published) },
+    watches: {
+      watched: (input) => {
+        reads.push(input);
+        return Promise.resolve(watched);
+      },
+    },
+  });
+  const posted = (release: string | undefined) =>
+    app.inject({
+      method: "POST",
+      url: "/v1/session/turn/live",
+      headers: {
+        ...held,
+        ...(release === undefined ? {} : { [workerContractHeader]: release }),
+      },
+      payload: livePost,
+    });
+  return { app, reads, posted };
+}
+
+/**
+ * A runner that is writing posts as it writes, so the answer to a post is the
+ * soonest it can hear of a stop: the watch is answered only when the plane
+ * next looks.
+ */
+test("a live post of a turn its member stopped is answered with the turn, read from the caller's own watch", async () => {
+  const { app, reads, posted } = livePlaneOver("Unheld", "Stopped");
+  const told = await posted(workerContractRelease);
+  assert.equal(told.statusCode, 200);
+  assert.deepEqual(told.json(), { turn: "turn-1" });
+  assert.deepEqual(reads, [
+    { secret, generation: identity.generation, turn: "turn-1" },
+  ]);
+  await app.close();
+});
+
+test("a live post of a turn that is held, or is over for any reason but a stop, is answered as taken", async () => {
+  const held = livePlaneOver("Published", "Stopped");
+  assert.equal((await held.posted(workerContractRelease)).statusCode, 204);
+  assert.deepEqual(held.reads, [], "a turn still held is not asked after");
+  await held.app.close();
+  for (const watched of ["Held", undefined] as const) {
+    const over = livePlaneOver("Unheld", watched);
+    const taken = await over.posted(workerContractRelease);
+    assert.equal(taken.statusCode, 204, String(watched));
+    assert.equal(taken.body, "", String(watched));
+    await over.app.close();
+  }
+});
+
+test("a live post the plane could not publish is told to come back, whatever became of its turn", async () => {
+  const { app, reads, posted } = livePlaneOver("Unavailable", "Stopped");
+  const refused = await posted(workerContractRelease);
+  assert.equal(refused.statusCode, 503);
+  assert.deepEqual(refused.json(), { action: "retry" });
+  assert.deepEqual(reads, []);
+  await app.close();
+});
+
+/**
+ * A runner built before the answer existed reads any status but the one it
+ * knows as a post the plane refused, and nothing says what it then does. So it
+ * is answered as it always was, and the turn is not asked after for it.
+ */
+test("a live post of a stopped turn from a runner naming an earlier release, or none, is answered as it always was", async () => {
+  const { app, reads, posted } = livePlaneOver("Unheld", "Stopped");
+  for (const release of ["1.4.0", "1.0.0", undefined]) {
+    const taken = await posted(release);
+    assert.equal(taken.statusCode, 204, String(release));
+    assert.equal(taken.body, "", String(release));
+  }
+  assert.deepEqual(reads, []);
   await app.close();
 });
 
@@ -1546,6 +1853,13 @@ const sessionHeaviest: Readonly<
     status: 204,
   },
   turnLive: { headers: json, payload: livePostHeaviest, status: 204 },
+  turnStopped: {
+    headers: json,
+    payload: planeJsonHeaviest({
+      turn: planeTextHeaviest(sessionIdentityCharsMax),
+    }),
+    status: 204,
+  },
   held: { headers: json, payload: "{}", status: 204 },
   storeStreams: undefined,
   storeBatch: {

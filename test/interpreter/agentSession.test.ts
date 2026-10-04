@@ -241,6 +241,8 @@ test("every roster holds its members in the order the schema iterates", () => {
     "AttemptLost",
     "SessionClosed",
     "TurnWithdrawn",
+    "TurnStopped",
+    "TurnStoppedQueued",
   ]);
 });
 

@@ -17,6 +17,7 @@ import type { TicketId } from "../../domain/ids.ts";
 import {
   asSessionId,
   asSessionStoreStream,
+  asSessionTurnId,
   type SessionBearerIdentity,
   type SessionId,
 } from "../../interpreter/agentSession.ts";
@@ -171,6 +172,7 @@ import {
   openThreadResponse,
   threadMessageResponse,
   threadResponse,
+  threadTurnStopResponse,
   threadsResponse,
   type NativeHttpResponse,
   authorityRetryAfterSeconds,
@@ -269,6 +271,7 @@ type InitialNativeWeb = Pick<
   | "threadTranscript"
   | "openThread"
   | "sendThreadMessage"
+  | "stopThreadTurn"
   | "closeThread"
   | "renameThread"
   | "hideThread"
@@ -1707,6 +1710,18 @@ function registerThreadWrites(
         ...parseThreadMessage(request.body),
       }),
     threadMessageResponse,
+  );
+  registerEndpoint(
+    app,
+    nativeHttpEndpoints.stopThreadTurn,
+    (request, principal, partition) => {
+      nativeHttpEndpoints.stopThreadTurn.body.parse(request.body);
+      return web.stopThreadTurn(principal, partition, {
+        session: registerEndpointSession(request),
+        turn: asSessionTurnId(textField(record(request.params), "turn")),
+      });
+    },
+    threadTurnStopResponse,
   );
   registerEndpoint(
     app,

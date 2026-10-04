@@ -64,6 +64,7 @@ test("bodyless thread commands retain empty and null-body compatibility", () => 
   for (const endpoint of [
     nativeHttpEndpoints.openThread,
     nativeHttpEndpoints.closeThread,
+    nativeHttpEndpoints.stopThreadTurn,
   ]) {
     for (const body of [undefined, null, {}])
       assert.deepEqual(endpoint.body.parse(body), {});

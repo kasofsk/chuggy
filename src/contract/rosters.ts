@@ -608,7 +608,11 @@ export const agentReportedTurnFailures = [
 export type AgentReportedTurnFailure =
   (typeof agentReportedTurnFailures)[number];
 
-/** Why one turn ended without an answer. */
+/**
+ * Why one turn ended without an answer. A member's stop is `TurnStopped` of a
+ * turn a runner held and `TurnStoppedQueued` of one that still waited, which no
+ * runner was answering and no runner is told of.
+ */
 export const sessionTurnFailures = [
   "AgentFailed",
   "AgentRateLimited",
@@ -618,5 +622,15 @@ export const sessionTurnFailures = [
   "AttemptLost",
   "SessionClosed",
   "TurnWithdrawn",
+  "TurnStopped",
+  "TurnStoppedQueued",
 ] as const;
 export type SessionTurnFailure = (typeof sessionTurnFailures)[number];
+
+/**
+ * What the stop door answers: the turn was waiting or being answered and this
+ * call ended it, or it had ended already, however it ended. Both are the
+ * member's wish met, so both are the door's success and neither is a refusal.
+ */
+export const threadTurnStops = ["Stopped", "AlreadyEnded"] as const;
+export type ThreadTurnStop = (typeof threadTurnStops)[number];

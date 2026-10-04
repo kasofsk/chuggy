@@ -325,7 +325,8 @@ Owned by the boundary owner; its composite key is `(tenant, project, session)`
 and its identity `(tenant, project, session, ordinal)`, the ordinal allocated
 from the session's own counter and the turn identity unique globally. It is
 changed by enqueuing, by a claim, by an answer or a failure, by an ending
-attempt returning it, and by a close abandoning it; a partial unique index
+attempt returning it, by a close abandoning it, and by `stop_thread_turn`, the
+API's door, abandoning the one turn a member stops; a partial unique index
 admits one claimed turn per session, which is what makes the claim a lease
 rather than a convention. Each turn carries the route it was admitted on,
 fixed at the enqueue. Unfinished work is found by selecting queued turns for a

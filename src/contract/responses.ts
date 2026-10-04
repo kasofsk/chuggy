@@ -109,6 +109,7 @@ import {
   sessionTurnInputKinds,
   sessionTurnStates,
   threadStandings,
+  threadTurnStops,
   forgeAccountKinds,
   forgeAccountProofs,
   forgeAppClaims,
@@ -1351,6 +1352,14 @@ export const threadMessageAcceptedSchema = z.object({
   ordinal: countSchema,
 });
 export type ThreadMessageAccepted = z.infer<typeof threadMessageAcceptedSchema>;
+
+/** What the stop door answers: whether this call ended the turn or found it ended. */
+export const threadTurnStopResponseSchema = z.object({
+  stopped: z.enum(threadTurnStops),
+});
+export type ThreadTurnStopResponse = z.infer<
+  typeof threadTurnStopResponseSchema
+>;
 /**
  * What the pod measured of the one turn an inquiry takes, reused from the
  * lead's own turn shape rather than respelled: a turn is measured the same way
