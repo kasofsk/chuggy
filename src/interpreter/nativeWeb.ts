@@ -187,6 +187,7 @@ import {
   threadEntry,
   threadMessageSent,
   threadSeeding,
+  threadTurnStopping,
   type ThreadClosing,
   type ThreadEntry,
   type ThreadHiding,
@@ -198,6 +199,7 @@ import {
   type ThreadRecord,
   type ThreadSeedingRead,
   type ThreadSessionMint,
+  type ThreadTurnStopping,
   type ThreadStore,
   type ThreadsRead,
 } from "./threadRead.ts";
@@ -740,6 +742,11 @@ export interface NativeWeb {
       readonly message: string;
     },
   ): Promise<ThreadMessageSent>;
+  stopThreadTurn(
+    principal: Principal,
+    partition: Partition,
+    input: { readonly session: SessionId; readonly turn: SessionTurnId },
+  ): Promise<ThreadTurnStopping>;
   closeThread(
     principal: Principal,
     partition: Partition,
@@ -1578,6 +1585,31 @@ function nativeSendThreadMessageMethod(
 }
 
 /**
+ * The stop door, which is `Mutate` and asks for no route and no grant: a stop
+ * spends nothing, so a member whose runner has gone or whose grant was taken
+ * can still end the turn they started. Whose thread it is, whether it is open
+ * and whether the turn is there are the durable door's to answer, in the
+ * transaction that ends the turn.
+ */
+function nativeStopThreadTurnMethod(
+  access: ProjectAccess,
+  threads?: NativeThreadPorts,
+): NativeWeb["stopThreadTurn"] {
+  return async (principal, partition, input) => {
+    if ((await access.authorize(principal, partition, "Mutate")) === undefined)
+      return { result: "NotFound" };
+    return threadTurnStopping(
+      await composedThreadPorts(threads).threads.stopTurn({
+        partition,
+        principal,
+        session: input.session,
+        turn: input.turn,
+      }),
+    );
+  };
+}
+
+/**
  * The close door, which is `Mutate` and reaches any thread the project holds:
  * a thread files drafts and does nothing else, so ending one takes nothing its
  * owner cannot file again from a new one, and the durable side is what refuses
@@ -1907,7 +1939,7 @@ function nativeLeadInquiryMethods(
   };
 }
 
-/** The thread side of the boundary, whose reads and whose five doors reach it as one. */
+/** The thread side of the boundary, whose reads and whose doors reach it as one. */
 function nativeThreadMethods(
   access: ProjectAccess,
   threads?: NativeThreadPorts,
@@ -1919,6 +1951,7 @@ function nativeThreadMethods(
   | "threadTranscript"
   | "openThread"
   | "sendThreadMessage"
+  | "stopThreadTurn"
   | "closeThread"
   | "renameThread"
   | "hideThread"
@@ -1928,6 +1961,7 @@ function nativeThreadMethods(
     ...nativeThreadViewMethods(access, threads),
     openThread: nativeOpenThreadMethod(access, threads, routes),
     sendThreadMessage: nativeSendThreadMessageMethod(access, threads, routes),
+    stopThreadTurn: nativeStopThreadTurnMethod(access, threads),
     closeThread: nativeCloseThreadMethod(access, threads),
   };
 }

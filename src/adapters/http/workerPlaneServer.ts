@@ -34,6 +34,7 @@ import {
   sessionTurnAnswerSchema,
   sessionTurnFailureSchema,
   sessionTurnLiveSchema,
+  sessionTurnStoppedSchema,
   type SessionPlaneRouteName,
 } from "../../contract/sessionPlane.ts";
 import { resultManifestTextCharsMax } from "../../contract/workerDocuments.ts";
@@ -71,6 +72,7 @@ import {
   type SessionTurnClaimPort,
   type SessionTurnFailed,
   type SessionTurnSettlePort,
+  type SessionTurnWatchPort,
 } from "../../interpreter/sessionPlane.ts";
 import type {
   SessionStoreReadPort,
@@ -292,6 +294,11 @@ export const sessionPlaneServed = {
     stored: false,
     bodyBytesMax: sessionTurnLiveBytesMax,
   },
+  turnStopped: {
+    caller: "Session",
+    stored: false,
+    bodyBytesMax: planeJsonObjectBytesMax(sessionIdentityCharsMax),
+  },
   held: { caller: "Session", ...workerPlaneBodyless },
   storeStreams: { caller: "Session", ...workerPlaneBodyless },
   storeBatch: {
@@ -437,16 +444,17 @@ export interface SessionPlaneService {
   readonly references: SessionReferencePort;
   readonly turns: SessionTurnClaimPort;
   readonly settlements: SessionTurnSettlePort;
+  readonly watches: SessionTurnWatchPort;
   readonly live: SessionLivePublishPort;
   readonly holds: SessionAttemptHoldPort;
   readonly losses: SessionAttemptLossPort;
   readonly records: SessionStoreRecordPort;
   readonly queries: SessionStoreQueryPort;
   readonly store: SessionStoreWritePort & SessionStoreReadPort;
-  /** How often a waiting mailbox asks again, and for how long one request waits. */
+  /** How often a waiting mailbox or a watch on a turn asks again, and for how long one request waits. */
   readonly turnPollIntervalMs: number;
   readonly turnPollSecsMax: number;
-  /** How many mailbox waits are held at once, above which a caller is answered empty. */
+  /** How many of those waits are held at once, above which a caller is answered empty. */
   readonly pollsMax: number;
 }
 
@@ -1075,7 +1083,7 @@ function sessionQueryCount(
     : undefined;
 }
 
-/** What a refused settlement answers with, a conflict and a fence read alike by the pod. */
+/** What a settlement answers with: a conflict and a fence refused, read alike by the pod, and every other arm taken, the settlement of a stopped turn among them. */
 function sessionSettled(
   reply: FastifyReply,
   settled: SessionReferenceBound | SessionTurnAnswered | SessionTurnFailed,
@@ -1140,37 +1148,82 @@ function sessionReferenceRoute(
   });
 }
 
+/** What one asking of a held request found: its answer, which may be that there is none, or nothing yet. */
+type SessionWaitAsked<Answer> =
+  { readonly answer: Answer | undefined } | undefined;
+
 /**
- * The mailbox. One request asks for a turn until the poll window is spent and
- * then answers empty, and only so many requests wait at once: over that a
- * caller is answered empty at once rather than queued, so a burst of pods
- * cannot hold every connection this plane has.
+ * One held request's wait: `ask` is asked until it answers or the poll window
+ * is spent, and only so many requests wait at once. Over that a caller is
+ * answered nothing at once rather than queued, so a burst of pods cannot hold
+ * every connection this plane has.
  */
-function sessionTurnRoute(
-  register: SessionRegistrar,
-  sessions: SessionPlaneService,
-): void {
+function sessionWaits(sessions: SessionPlaneService) {
   const polls = Math.max(
     1,
     Math.ceil((sessions.turnPollSecsMax * 1_000) / sessions.turnPollIntervalMs),
   );
   let waiting = 0;
-  register("turn", async (_request, reply, caller) => {
-    if (waiting >= sessions.pollsMax) return reply.code(204).send();
+  return async <Answer>(
+    ask: () => Promise<SessionWaitAsked<Answer>>,
+  ): Promise<Answer | undefined> => {
+    if (waiting >= sessions.pollsMax) return undefined;
     waiting += 1;
     try {
       for (let poll = 0; poll < polls; poll += 1) {
         if (poll > 0) await delay(sessions.turnPollIntervalMs);
-        const claimed = await sessions.turns.claim({
-          secret: caller.secret,
-          generation: caller.identity.generation,
-        });
-        if (claimed !== undefined) return reply.code(200).send(claimed);
+        const asked = await ask();
+        if (asked !== undefined) return asked.answer;
       }
     } finally {
       waiting -= 1;
     }
-    return reply.code(204).send();
+    return undefined;
+  };
+}
+
+/**
+ * The mailbox, and the watch on a turn it handed over, under one bound on how
+ * many wait at once: a session asks the mailbox while it holds no turn and
+ * the watch while it answers one, so a running turn holds what an idle
+ * session does. The watch waits for as long as the caller's attempt holds the
+ * turn claimed and answers the turn once its member stopped it, and a turn
+ * that is neither is answered empty at once, because nothing more is learned
+ * of it by waiting.
+ */
+function sessionTurnRoute(
+  register: SessionRegistrar,
+  sessions: SessionPlaneService,
+): void {
+  const waited = sessionWaits(sessions);
+  register("turn", async (_request, reply, caller) => {
+    const claimed = await waited(async () => {
+      const turn = await sessions.turns.claim({
+        secret: caller.secret,
+        generation: caller.identity.generation,
+      });
+      return turn === undefined ? undefined : { answer: turn };
+    });
+    return claimed === undefined
+      ? reply.code(204).send()
+      : reply.code(200).send(claimed);
+  });
+  register("turnStopped", async (request, reply, caller) => {
+    const offered = sessionTurnStoppedSchema.safeParse(request.body);
+    if (!offered.success) return reply.code(400).send({ action: "stop" });
+    const turn = asSessionTurnId(offered.data.turn);
+    const stopped = await waited(async () => {
+      const watched = await sessions.watches.watched({
+        secret: caller.secret,
+        generation: caller.identity.generation,
+        turn,
+      });
+      if (watched === "Held") return undefined;
+      return { answer: watched === undefined ? undefined : turn };
+    });
+    return stopped === undefined
+      ? reply.code(204).send()
+      : reply.code(200).send({ turn: stopped });
   });
 }
 
@@ -1224,8 +1277,10 @@ const sessionLiveRetryAfterSeconds = 1;
 
 /**
  * What a session's runner reports of a turn in flight, published under the
- * caller's own partition and session. The turn is the caller's to name: a
- * session can mislabel only its own stream, to a reader showing another turn.
+ * caller's own partition and session. A post naming a turn that session does
+ * not hold claimed is answered as one that was published, and nothing it
+ * wrote reaches a reader, so a runner still writing a turn its member stopped
+ * is told nothing it must handle.
  */
 function sessionTurnLiveRoute(
   register: SessionRegistrar,

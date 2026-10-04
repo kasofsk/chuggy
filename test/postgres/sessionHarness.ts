@@ -416,6 +416,7 @@ export function sessionRigPlaneService(
     references: rig.plane,
     turns: rig.plane,
     settlements: rig.plane,
+    watches: rig.plane,
     live: { publish: () => Promise.resolve("Published") },
     holds: rig.plane,
     losses: rig.plane,

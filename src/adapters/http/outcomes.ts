@@ -85,6 +85,7 @@ import type {
   ThreadOpening,
   ThreadRead,
   ThreadRenaming,
+  ThreadTurnStopping,
   ThreadTurnRecord,
   ThreadsRead,
 } from "../../interpreter/threadRead.ts";
@@ -2060,6 +2061,39 @@ export function threadMessageResponse(
     case "Sent":
     case "AlreadySent":
       return response(202, { turn: result.turn, ordinal: result.ordinal });
+  }
+}
+
+/**
+ * The stop door: both ways the member's wish is met are one status, each
+ * saying which it was, and the two refusals are the message door's own codes.
+ * A turn the thread does not hold is not found, as the thread is.
+ */
+export function threadTurnStopResponse(
+  result: ThreadTurnStopping,
+): NativeHttpResponse {
+  switch (result.result) {
+    case "NotFound":
+      return response(404, nativeHttpError("NotFound", "Resource not found."));
+    case "NotYourThread":
+      return response(
+        403,
+        nativeHttpError(
+          threadMessageRefusalCode.NotYourThread,
+          "The thread is not yours to stop.",
+        ),
+      );
+    case "Closed":
+      return response(
+        409,
+        nativeHttpError(
+          threadMessageRefusalCode.Closed,
+          "The thread takes no more turns.",
+        ),
+      );
+    case "Stopped":
+    case "AlreadyEnded":
+      return response(200, { stopped: result.result });
   }
 }
 

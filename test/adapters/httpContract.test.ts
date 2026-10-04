@@ -100,6 +100,7 @@ test("the versioned route and media contracts move together", () => {
     "/api/v1/tenants/:tenant/projects/:project/threads/:session/rename",
     "/api/v1/tenants/:tenant/projects/:project/threads/:session/hide",
     "/api/v1/tenants/:tenant/projects/:project/threads/:session/live",
+    "/api/v1/tenants/:tenant/projects/:project/threads/:session/turns/:turn/stop",
   ]);
 });
 

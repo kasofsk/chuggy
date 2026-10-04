@@ -101,6 +101,7 @@ import type {
   SessionStoreStreamRow,
   SessionTurnAnswered,
   SessionTurnFailed,
+  SessionTurnWatched,
 } from "../../src/interpreter/sessionPlane.ts";
 import type {
   SessionStoreRead,
@@ -825,6 +826,7 @@ const sessionPlaneCalls: Readonly<
     headers: json,
     payload: { turn: "turn", events: [{ live: "End" }] },
   },
+  turnStopped: { headers: json, payload: { turn: "turn" } },
   held: { headers: json, payload: {} },
   storeStreams: {},
   storeBatch: {
@@ -878,6 +880,7 @@ const sessionPlaneRequests: Readonly<
       },
     ],
   },
+  turnStopped: { schema: "sessionTurnStoppedSchema", bodies: [] },
   held: "Unparsed",
   storeStreams: "Unparsed",
   storeBatch: "Unparsed",
@@ -907,6 +910,7 @@ const referencesBound: Readonly<Record<SessionReferenceBound, true>> = {
 const turnsAnswered: Readonly<Record<SessionTurnAnswered, true>> = {
   Answered: true,
   AlreadyAnswered: true,
+  Stopped: true,
   Conflict: true,
   Fenced: true,
 };
@@ -914,8 +918,14 @@ const turnsAnswered: Readonly<Record<SessionTurnAnswered, true>> = {
 const turnsFailed: Readonly<Record<SessionTurnFailed, true>> = {
   Failed: true,
   AlreadyFailed: true,
+  Stopped: true,
   Conflict: true,
   Fenced: true,
+};
+
+const turnsWatched: Readonly<Record<SessionTurnWatched, true>> = {
+  Stopped: true,
+  Held: true,
 };
 
 const livePublished: Readonly<Record<SessionLivePublished, true>> = {
@@ -1077,6 +1087,17 @@ const sessionPlaneCases: Readonly<
       name: `a publish answering ${published}`,
       service: sessionPorts({
         live: { publish: () => Promise.resolve(published) },
+      }),
+    })),
+  ],
+  turnStopped: [
+    ...sessionPlaneStrangers,
+    workerPlaneMalformed,
+    { name: "a turn the caller neither holds nor had stopped" },
+    ...keysOf(turnsWatched).map((watched) => ({
+      name: `a watch finding its turn ${watched}`,
+      service: sessionPorts({
+        watches: { watched: () => Promise.resolve(watched) },
       }),
     })),
   ],

@@ -1,7 +1,6 @@
 /**
- * The six thread routes through the real app: the status map, the bounds the
- * door checks, the media type the three writes require, and the body each
- * answers.
+ * The thread routes through the real app: the status map, the bounds the door
+ * checks, the media type each write requires, and the body each answers.
  *
  * THE BOUNDARY IS A DOUBLE AND THE APP IS REAL, because what is being settled
  * here is the transport: which status one refusal reaches the wire as, which
@@ -33,6 +32,7 @@ import {
   threadMessageAcceptedSchema,
   threadResponseSchema,
   threadTranscriptResponseSchema,
+  threadTurnStopResponseSchema,
   threadsResponseSchema,
 } from "../../src/contract/responses.ts";
 import type { createNativeHttpApp } from "../../src/adapters/http/server.ts";
@@ -54,11 +54,12 @@ import type {
   ThreadOpening,
   ThreadMessageSent,
   ThreadRenaming,
+  ThreadTurnStopping,
 } from "../../src/interpreter/threadRead.ts";
 import { threadTurnInputCharsMax } from "../../src/interpreter/thread.ts";
 import { servedNativeHttpApp, unservedNativeWeb } from "./threadFixtures.ts";
 
-/** What the app takes, which is one boundary and not the five methods under test. */
+/** What the app takes, which is one boundary and not the methods under test. */
 type NativeThreadWeb = Parameters<typeof createNativeHttpApp>[0];
 
 const root = "/api/v1/tenants/acme/projects/atlas/threads";
@@ -126,6 +127,7 @@ const turn = {
 interface ThreadCase {
   readonly calls: string[];
   readonly sent?: ThreadMessageSent;
+  readonly stopped?: ThreadTurnStopping;
   readonly closed?: ThreadClosing;
   readonly renamed?: ThreadRenaming;
   readonly hid?: ThreadHiding;
@@ -203,11 +205,15 @@ function threadWeb(held: ThreadCase): NativeThreadWeb {
   };
 }
 
-/** The two doors a member's own view of a thread goes through. */
+/** The doors a member's own view of a thread goes through, and the one that stops a turn. */
 function threadWebMemberView(
   held: ThreadCase,
-): Pick<NativeThreadWeb, "renameThread" | "hideThread"> {
+): Pick<NativeThreadWeb, "renameThread" | "hideThread" | "stopThreadTurn"> {
   return {
+    stopThreadTurn: (_principal, _partition, input) => {
+      held.calls.push(`stop:${input.session}:${input.turn}`);
+      return Promise.resolve(held.stopped ?? { result: "Stopped" });
+    },
     renameThread: (_principal, _partition, input) => {
       held.calls.push(`rename:${input.session}:${input.title}`);
       return Promise.resolve(
@@ -570,6 +576,69 @@ test("closing a session that is no thread of this project's is not found", async
   assert.equal(answer.json<HttpErrorEnvelope>().error.code, "NotFound");
 });
 
+test("stopping a turn answers whether this call ended it or it had already ended", async () => {
+  for (const stopped of ["Stopped", "AlreadyEnded"] as const) {
+    const held: ThreadCase = { calls: [], stopped: { result: stopped } };
+    await using app = appOf(held);
+
+    const answer = await app.inject({
+      method: "POST",
+      url: `${root}/${mine}/turns/${turn.turn}/stop`,
+      headers: versioned,
+      payload: {},
+    });
+
+    assert.equal(answer.statusCode, 200, stopped);
+    assert.deepEqual(threadTurnStopResponseSchema.parse(answer.json()), {
+      stopped,
+    });
+    assert.deepEqual(held.calls, [`stop:${mine}:${turn.turn}`]);
+  }
+});
+
+test("stopping takes an empty body and refuses any other", async () => {
+  const held: ThreadCase = { calls: [] };
+  await using app = appOf(held);
+
+  assert.equal(
+    (
+      await app.inject({
+        method: "POST",
+        url: `${root}/${mine}/turns/${turn.turn}/stop`,
+        headers: versioned,
+        payload: { reason: "wrong" },
+      })
+    ).statusCode,
+    400,
+  );
+  assert.deepEqual(held.calls, []);
+});
+
+/**
+ * The stop door's refusals are the message door's own, by the codes a console
+ * already reads: a thread or a turn that is not there, a thread that is not the
+ * caller's, and a thread that is closed.
+ */
+test("every refusal the stop door can meet reaches the wire as the message door's status for it", async () => {
+  for (const [result, status, code] of [
+    ["NotFound", 404, "NotFound"],
+    ["NotYourThread", 403, threadMessageRefusalCodes[0]],
+    ["Closed", 409, threadMessageRefusalCodes[1]],
+  ] as const) {
+    await using app = appOf({ calls: [], stopped: { result } });
+
+    const answer = await app.inject({
+      method: "POST",
+      url: `${root}/${mine}/turns/${turn.turn}/stop`,
+      headers: versioned,
+      payload: {},
+    });
+
+    assert.equal(answer.statusCode, status, result);
+    assert.equal(answer.json<HttpErrorEnvelope>().error.code, code, result);
+  }
+});
+
 test("renaming a thread answers the entry as it now stands", async () => {
   const held: ThreadCase = { calls: [] };
   await using app = appOf(held);
@@ -735,6 +804,7 @@ test("every write door takes the versioned media type and nothing else", async (
   for (const url of [
     root,
     `${root}/${mine}/messages`,
+    `${root}/${mine}/turns/${turn.turn}/stop`,
     `${root}/${mine}/close`,
     `${root}/${mine}/rename`,
     `${root}/${mine}/hide`,
@@ -931,6 +1001,7 @@ test("every thread route needs a bearer", async () => {
   for (const url of [
     root,
     `${root}/${mine}/messages`,
+    `${root}/${mine}/turns/${turn.turn}/stop`,
     `${root}/${mine}/close`,
     `${root}/${mine}/rename`,
     `${root}/${mine}/hide`,
@@ -965,6 +1036,7 @@ test("every thread route the contract declares is one this server serves", async
     ["GET", nativeHttpRoutes.thread],
     ["GET", nativeHttpRoutes.threadTranscript],
     ["POST", nativeHttpRoutes.threadMessages],
+    ["POST", nativeHttpRoutes.threadTurnStop],
     ["POST", nativeHttpRoutes.threadClose],
     ["POST", nativeHttpRoutes.threadRename],
     ["POST", nativeHttpRoutes.threadHide],

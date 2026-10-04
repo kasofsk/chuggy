@@ -100,6 +100,7 @@ export const sessionBearerRouteClasses = {
   thread: partitionRead,
   threadTranscript: partitionRead,
   threadMessages: partitionWrite,
+  threadTurnStop: partitionWrite,
   threadClose: partitionWrite,
   threadRename: partitionWrite,
   threadHide: partitionWrite,

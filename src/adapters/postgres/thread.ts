@@ -1,8 +1,8 @@
 /**
  * A member's thread against PostgreSQL: the listing, the door that opens one,
  * the standing read behind a thread page, the door a message goes through, the
- * door that closes one, what a first turn is seeded from, and the bounded pass
- * that wakes a thread.
+ * door that stops a turn, the door that closes one, what a first turn is
+ * seeded from, and the bounded pass that wakes a thread.
  *
  * THIS FILE DECIDES NOTHING. `open_member_thread` takes no roster and
  * `enqueue_thread_message` takes no session, so neither the roster a thread
@@ -12,9 +12,9 @@
  * session itself would be a second opinion racing the definer that decides it.
  *
  * THE API AND THE SELECTOR REACH DIFFERENT DOORS, so they are different
- * factories over different pools. `postgresThreads` is the API's five reads and
- * three doors; `postgresThreadWakes` is the selector's cursor, candidate read
- * and wake door. A single factory over one pool would be a shape a deployment
+ * factories over different pools. `postgresThreads` is the API's reads and
+ * doors; `postgresThreadWakes` is the selector's cursor, candidate read and
+ * wake door. A single factory over one pool would be a shape a deployment
  * cannot supply, because no credential in it holds both roles.
  *
  * THE BOUNDS ARE THE CALLER'S ARGUMENTS. Every page limit arrives from
@@ -66,6 +66,7 @@ import type {
   ThreadStandingRecord,
   ThreadStore,
   ThreadTurnRecord,
+  ThreadTurnStopped,
 } from "../../interpreter/threadRead.ts";
 import { projectRowCounter } from "./rows.ts";
 import { sessionStoreStreamRows } from "./sessionStoreReads.ts";
@@ -367,6 +368,38 @@ async function threadEnqueue(
   return threadMessageEnqueued(row);
 }
 
+const stoppedArms: readonly ThreadTurnStopped[] = [
+  "Stopped",
+  "AlreadyEnded",
+  "NoThread",
+  "NotYourThread",
+  "Closed",
+  "NoTurn",
+];
+
+/** The stop door's verdict, which is all it answers: the turn is read again by whoever shows it. */
+async function threadTurnStop(
+  pool: pg.Pool,
+  input: {
+    readonly partition: Partition;
+    readonly principal: Principal;
+    readonly session: SessionId;
+    readonly turn: SessionTurnId;
+  },
+): Promise<ThreadTurnStopped> {
+  const answered = await pool.query<{ stopped: string | null }>(
+    sql`SELECT stop_thread_turn(
+          ${input.partition.tenant},${input.partition.project},
+          ${input.principal},${input.session},${input.turn})::text AS stopped`,
+  );
+  const stopped = stoppedArms.find((arm) => arm === answered.rows[0]?.stopped);
+  if (stopped === undefined)
+    throw new Error(
+      `postgres thread: stopping a turn answered ${String(answered.rows[0]?.stopped)}`,
+    );
+  return stopped;
+}
+
 /**
  * The close door's verdict, and the row read back through the standing read
  * where there is one, for the reason `threadOpen` reads its row back: the
@@ -485,6 +518,7 @@ export function postgresThreads(
         bounds.streamsMax,
       ),
     enqueueMessage: (input) => threadEnqueue(pool, input),
+    stopTurn: (input) => threadTurnStop(pool, input),
     close: (input) => threadClose(pool, bounds.streamsMax, input),
     rename: (input) => threadRename(pool, bounds.streamsMax, input),
     hide: (input) => threadHide(pool, bounds.streamsMax, input),

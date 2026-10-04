@@ -23,5 +23,10 @@
     "release": "1.4.0",
     "wire": "b4fcab3814cd39d94a5feac85a28c918e47c215ff57cf471396281efbb3c3476",
     "files": "8c209a9983617b7c211aad6b34b2944da3f860a0257ed6432a0ee0a00df7ac5b"
+  },
+  {
+    "release": "1.5.0",
+    "wire": "cedb574db0e3414e2d66f8e639e3335ba4dc62dd018aabf56190c3d4639e8513",
+    "files": "2fff7a8f9b407aab03cb33420e5fff863b1097dc5a795a909615c71edb62c31d"
   }
 ]
