@@ -201,7 +201,13 @@ export async function workerContractReleasePlane(
 export interface WorkerContractReleasePool {
   readonly release: string;
   readonly pollRoute: string;
-  readonly pollQuery: { readonly held: string; readonly wanted: string };
+
+  /** The names the release's poll goes under, `wantedSessions` being one only where its pool can ask for a session. */
+  readonly pollQuery: {
+    readonly held: string;
+    readonly wanted: string;
+    readonly wantedSessions?: string | undefined;
+  };
   readonly settlementRoutes: Readonly<Record<string, string>>;
   readonly settlementPath: (outcome: string, assignment: string) => string;
   readonly reconciliation: z.ZodType;
@@ -219,7 +225,11 @@ export async function workerContractReleasePool(
     pollRoute: await read("workerPoolPollRoute", z.string()),
     pollQuery: await read(
       "workerPoolPollQuery",
-      z.object({ held: z.string(), wanted: z.string() }),
+      z.object({
+        held: z.string(),
+        wanted: z.string(),
+        wantedSessions: z.string().optional(),
+      }),
     ),
     settlementRoutes: await read(
       "workerPoolSettlementRoutes",

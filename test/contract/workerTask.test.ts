@@ -27,6 +27,10 @@ import {
   type PolicyAuthorityGrant,
 } from "../../src/interpreter/taskAuthority.ts";
 import type { ExecutionProfile } from "../../src/interpreter/executionScheduler.ts";
+import {
+  contractVersionAccepted,
+  workerContractRunnerSessions,
+} from "../../src/interpreter/workerPlane.ts";
 import type {
   WorkerConfiguration,
   WorkerMode,
@@ -177,8 +181,12 @@ test("a pool-held session's answer names its site's API, bounds and model togeth
   }
 });
 
-for (const release of workerContractReplayed("session"))
-  test(`a ${release} harness reads a pod-placed session's answer as it did, and a pool-held one less what it does not name`, async () => {
+for (const release of workerContractReplayed("session")) {
+  const launches = contractVersionAccepted(
+    workerContractRunnerSessions,
+    release,
+  );
+  test(`a ${release} harness reads a pod-placed session's answer as it did, and a pool-held one ${launches ? "whole" : "less what it does not name"}`, async () => {
     const answer = await workerContractReleaseExport(
       release,
       "workerTask",
@@ -187,9 +195,10 @@ for (const release of workerContractReplayed("session"))
     );
     for (const { podPlaced, poolHeld } of sessionAnswers()) {
       assert.deepEqual(answer.parse(podPlaced), podPlaced);
-      assert.deepEqual(answer.parse(poolHeld), podPlaced);
+      assert.deepEqual(answer.parse(poolHeld), launches ? poolHeld : podPlaced);
     }
   });
+}
 
 test("a pool's envelope carries a session's bearer as it carries an attempt's", () => {
   const bearer = `chgs_${"a".repeat(240)}`;
