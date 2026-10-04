@@ -32,6 +32,16 @@
  * that draws a model's text can hand the parser one it has not reckoned: a
  * section `markdownPieces.ts` would not have made is drawn as its characters,
  * and so is one the parser gives up on.
+ *
+ * AND THE PARSER READS THE CHARACTERS THE GUARD RECKONED. Before it reads a
+ * text the parser rewrites three things in it: it drops a byte order mark the
+ * text opens with, reads a NUL as U+FFFD, and ends a line at a carriage
+ * return. `markdownNormalised` does all three first, to every such character
+ * and not only the first, because a piece opens wherever a section ends; and
+ * the doors turn away a text that still holds one. A tab is the fourth the
+ * parser treats apart, and the guard reads it as the columns the parser does.
+ * Every other character the parser sorts by what stands beside a mark, with
+ * the two patterns `markdownGuard.ts` sorts by.
  */
 
 import { fromMarkdown } from "mdast-util-from-markdown";
@@ -115,10 +125,25 @@ const markdownLineOptions: Options = {
   mdastExtensions: markdownOptions.mdastExtensions ?? [],
 };
 
-/** A text with every line ending the one the rest of this reader looks for:
- * a carriage return, alone or before a line feed, is a line's end. */
+const markdownRewrittenPattern = /[\r\0\uFEFF]/u;
+const markdownRewritePattern = /\r\n?|\0|\uFEFF/gu;
+
+/** Whether a text holds a character the parser rewrites before it reads. */
+function markdownRewritten(text: string): boolean {
+  return markdownRewrittenPattern.test(text);
+}
+
+/**
+ * A text as the parser reads it, which is the text the guard reckons: a
+ * carriage return, alone or before a line feed, is a line's end, a NUL is
+ * U+FFFD, and a byte order mark is gone wherever it stands.
+ */
 export function markdownNormalised(text: string): string {
-  return text.includes("\r") ? text.replace(/\r\n?/gu, "\n") : text;
+  if (!markdownRewritten(text)) return text;
+  return text.replace(markdownRewritePattern, (found) => {
+    if (found === "\0") return "\uFFFD";
+    return found === "\uFEFF" ? "" : "\n";
+  });
 }
 
 const markdownLinkSchemePattern = /^(?:https?:\/\/|mailto:)/iu;
@@ -295,8 +320,10 @@ export function markdownPlainBlocks(text: string): readonly MarkdownBlock[] {
   return blocks;
 }
 
-/** The parser, which nothing outside the two doors below may call. */
+/** The parser, which nothing outside the two doors below may call. A text
+ * that is not as `markdownNormalised` leaves one is not what was reckoned. */
 function markdownParsed(text: string, options: Options): Root | undefined {
+  if (markdownRewritten(text)) return undefined;
   try {
     const root: Root = fromMarkdown(text, options);
     markdownSettle(root, text, false);
@@ -380,10 +407,73 @@ export function markdownPieceBlocks(
   return read ?? markdownPlainBlocks(held);
 }
 
+/** What an ordered list a section ends in hands to a list that goes on from
+ * it in the section below: the mark its numbers end in, and its next number. */
+export interface MarkdownCount {
+  readonly delimiter: number;
+  readonly next: number;
+}
+
+/** A piece's blocks, and the count they hand to the piece below. */
+export interface MarkdownCounted {
+  readonly blocks: readonly MarkdownBlock[];
+  readonly count: MarkdownCount | undefined;
+}
+
+/** The mark an ordered list's numbers end in, read where a piece's text has
+ * its first item written. */
+function markdownListDelimiter(
+  text: string,
+  piece: MarkdownPiece,
+  list: MarkdownNodeOf<"list">,
+): number {
+  const offset = list.position?.start.offset;
+  let at = offset === undefined ? text.length : piece.start + offset;
+  while (text.charCodeAt(at) > 47 && text.charCodeAt(at) < 58) at += 1;
+  return text.charCodeAt(at);
+}
+
+/**
+ * A piece's blocks counted on from the piece above. Where that one ended in
+ * an ordered list and this one opens at the margin with an item of the same
+ * list, its numbers go on from that list's: one list read as several, which is
+ * what a list longer than one call may cost is, still counts as one.
+ */
+export function markdownPieceCounted(
+  text: string,
+  piece: MarkdownPiece,
+  read: readonly MarkdownBlock[],
+  carried: MarkdownCount | undefined,
+): MarkdownCounted {
+  if (piece.kind !== "read") return { blocks: read, count: undefined };
+  const first = read[0];
+  const goes =
+    carried !== undefined &&
+    first?.type === "list" &&
+    first.ordered === true &&
+    first.position?.start.offset === 0 &&
+    markdownListDelimiter(text, piece, first) === carried.delimiter;
+  const blocks = goes
+    ? [{ ...first, start: carried.next }, ...read.slice(1)]
+    : read;
+  const last = blocks.at(-1);
+  if (last?.type !== "list" || last.ordered !== true)
+    return { blocks, count: undefined };
+  const delimiter = markdownListDelimiter(text, piece, last);
+  const next = (last.start ?? 1) + last.children.length;
+  return { blocks, count: { delimiter, next } };
+}
+
 /** A whole text as the blocks it is drawn as. */
 export function markdownBlocksParsed(text: string): readonly MarkdownBlock[] {
   const read = markdownNormalised(text);
-  return markdownPiecesFrom(read, 0, 0).flatMap((piece) =>
-    markdownPieceBlocks(read, piece, false),
-  );
+  const blocks: MarkdownBlock[] = [];
+  let count: MarkdownCount | undefined;
+  for (const piece of markdownPiecesFrom(read, 0, 0)) {
+    const drawn = markdownPieceBlocks(read, piece, false);
+    const counted = markdownPieceCounted(read, piece, drawn, count);
+    blocks.push(...counted.blocks);
+    count = counted.count;
+  }
+  return blocks;
 }

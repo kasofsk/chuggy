@@ -16,6 +16,20 @@
  * its writer leaves a blank line in it, and one that changed its elements or
  * its setting then would move everything already written in it.
  *
+ * A TABLE'S COLUMNS ARE AS MANY AS ITS HEADER HAS, EACH A `col` OF ONE STEP.
+ * The step is the one `markdownColumns.ts` puts the column at for what is
+ * written in it, said in the `col`'s class and nowhere else, and the sheet
+ * gives each step a width under a fixed layout: so a cell filling makes its
+ * row taller, a column moves only when it steps, and the turn settling or the
+ * stored answer read back draws the same table, because all three draw this.
+ * Beside the table is a row of empty boxes of the same classes, which is what
+ * the sheet holds the table's least width to.
+ *
+ * EVERY CELL A WRITER WROTE IS DRAWN. A table is as long and as wide as
+ * `markdownGuard.ts` let its text be, and a row with more cells than its
+ * header has columns keeps them in its last one, each after the pipe it was
+ * written behind.
+ *
  * THE MARK IS ON THE LAST THING WRITTEN, WHEREVER THAT IS. `mark` follows the
  * last block down to the paragraph, the cell or the line of code the text ends
  * in, so a caller that pulses it pulses the place the next word will land.
@@ -26,6 +40,10 @@ import type { ReactNode } from "react";
 
 import { ticketReferenceSplit } from "../../../../../src/contract/ticketReference.ts";
 import { MarkdownCode } from "./MarkdownCode.tsx";
+import {
+  markdownColumnClassNames,
+  markdownColumnsStepped,
+} from "./markdownColumns.ts";
 import type {
   MarkdownBlock,
   MarkdownInline,
@@ -37,11 +55,6 @@ type List = MarkdownNodeOf<"list">;
 type ListItem = MarkdownNodeOf<"listItem">;
 type Table = MarkdownNodeOf<"table">;
 type TableRow = MarkdownNodeOf<"tableRow">;
-
-/** A table wider than this many columns, or with more body rows than this,
- * is cut rather than drawn in full — a wall of pipes stays bounded. */
-export const markdownTableColumnsMax = 32;
-export const markdownTableRowsMax = 100;
 
 /** How deep blocks or marks may sit inside each other and still be drawn as
  * what they are; past it they are drawn as their words. */
@@ -265,7 +278,34 @@ const markdownAlignClassNames = {
   right: "run-report-align-right",
 };
 
-/** One row's cells, cut or padded to the header's own width. */
+/** What one cell of a row holds: its own runs, and in the row's last column
+ * the runs of every cell written past it, each behind its pipe. */
+function MarkdownCellRuns(props: {
+  readonly cells: TableRow["children"];
+  readonly at: number;
+  readonly columns: number;
+  readonly depth: number;
+}): ReactNode {
+  const runs = (nodes: readonly MarkdownInline[]): ReactNode => (
+    <MarkdownInlineRun nodes={nodes} depth={props.depth} linked={false} />
+  );
+  const own = runs(props.cells[props.at]?.children ?? []);
+  if (props.at < props.columns - 1 || props.cells.length <= props.columns)
+    return own;
+  return (
+    <>
+      {own}
+      {props.cells.slice(props.columns).map((cell, at) => (
+        <Fragment key={at}>
+          {" | "}
+          {runs(cell.children)}
+        </Fragment>
+      ))}
+    </>
+  );
+}
+
+/** One row's cells, as many as the header has columns. */
 function MarkdownTableRow(props: {
   readonly table: Table;
   readonly row: TableRow | undefined;
@@ -288,10 +328,11 @@ function MarkdownTableRow(props: {
             .join(" ")
             .trim() || undefined;
         const held = (
-          <MarkdownInlineRun
-            nodes={cells[at]?.children ?? []}
+          <MarkdownCellRuns
+            cells={cells}
+            at={at}
+            columns={props.columns}
             depth={props.depth}
-            linked={false}
           />
         );
         return props.header ? (
@@ -314,11 +355,9 @@ function MarkdownTable(props: {
   readonly mark: boolean;
 }): ReactNode {
   const [header, ...body] = props.table.children;
-  const columns = Math.min(
-    header?.children.length ?? 0,
-    markdownTableColumnsMax,
-  );
-  const rows = body.slice(0, markdownTableRowsMax);
+  const columns = header?.children.length ?? 0;
+  const steps = markdownColumnsStepped(props.table, props.mark);
+  const classNames = steps.map((step) => markdownColumnClassNames[step]);
   const row = (held: TableRow | undefined, at: number): ReactNode => (
     <MarkdownTableRow
       key={at}
@@ -327,15 +366,27 @@ function MarkdownTable(props: {
       columns={columns}
       header={at === -1}
       depth={props.depth}
-      mark={props.mark && at === rows.length - 1}
+      mark={props.mark && at === body.length - 1}
     />
   );
   return (
     <div className="run-report-table">
-      <table>
-        <thead>{row(header, -1)}</thead>
-        <tbody>{rows.map(row)}</tbody>
-      </table>
+      <div className="run-report-table-fit">
+        <div className="run-report-table-floor" aria-hidden="true">
+          {classNames.map((className, at) => (
+            <span key={at} className={className} />
+          ))}
+        </div>
+        <table>
+          <colgroup>
+            {classNames.map((className, at) => (
+              <col key={at} className={className} />
+            ))}
+          </colgroup>
+          <thead>{row(header, -1)}</thead>
+          <tbody>{body.map(row)}</tbody>
+        </table>
+      </div>
     </div>
   );
 }

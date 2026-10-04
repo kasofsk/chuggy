@@ -20,20 +20,30 @@
  * a run where `markdownGuard.ts` ends one at a list's line. Either cut can
  * part a list in two: an odd drawing, and a safe one.
  *
- * WHERE A PIECE BEGINS IS DECIDED BY THE TEXT ABOVE IT AND NEVER MOVES. Every
- * verdict here is held to at each character, so a text that grows only ever
- * gains pieces after its last, and reading it again from where its last piece
- * begins comes to what reading all of it would.
+ * WHAT STANDS UNDER A LIST ITEM IS NOT PARTED FROM THE ITEM WHERE THAT CAN BE
+ * HELPED. A run that would not join and opens indented is some item's, so the
+ * section ends at the last run that began at the margin instead, and the item
+ * goes with what is under it. Only where no run since the section began did,
+ * one item dearer than a call, is it ended at the indented run, which is then
+ * read as if it stood at the margin. And code fenced under an item or in a
+ * quote is never parted at all: `markdownGuard.ts` ends no run among the lines
+ * of a fence `markdownNested.ts` follows, so no piece begins among them.
+ *
+ * A PLACE A PIECE BEGINS AT IS ONE HOWEVER THE TEXT GOES ON. Every verdict here
+ * is held to at each character and none is taken back, so a text that grows
+ * only ever gains such places after the one its last piece begins at, and
+ * reading it again from there comes to what reading all of it would.
  *
  * A WHOLE TEXT IS BOUNDED TOO. Past `markdownTextCharsMax`, or once its
  * sections have cost `markdownTextWorkMax` between them, what is left is plain.
  */
 
+import { markdownCost, markdownRunScanned } from "./markdownGuard.ts";
 import {
   markdownBlankCode,
-  markdownCost,
-  markdownRunScanned,
-} from "./markdownGuard.ts";
+  markdownBlankColumns,
+  markdownNestingBegun,
+} from "./markdownNested.ts";
 
 /** How much of a text is read as markdown, in characters. */
 export const markdownTextCharsMax = 65_536;
@@ -185,12 +195,32 @@ function markdownFencePiece(text: string, start: number): MarkdownPiece {
 }
 
 /** What the blank lines between two places cost the parser, which reads each
- * of them where a section goes on past it. */
-function markdownBlankWork(text: string, from: number, to: number): number {
+ * of them where a section goes on past it, and each of their columns, once
+ * more for every list item above that may be holding them. */
+function markdownBlankWork(
+  text: string,
+  from: number,
+  to: number,
+  held: number,
+): number {
   let lines = 0;
-  for (let at = text.indexOf("\n", from); at >= 0 && at < to; lines += 1)
-    at = text.indexOf("\n", at + 1);
-  return lines * markdownCost.blank + (to - from) * markdownCost.char;
+  let columns = 0;
+  for (let at = from; at < to; at += 1) {
+    const code = text.charCodeAt(at);
+    if (code === 10) lines += 1;
+    else columns += markdownBlankColumns(code);
+  }
+  const line =
+    markdownCost.blank + markdownCost.char + held * markdownCost.held;
+  return (
+    lines * line + columns * (markdownCost.char + held * markdownCost.sunk)
+  );
+}
+
+/** Where a section may be ended, and what it had cost by there. */
+interface Margin {
+  readonly at: number;
+  readonly work: number;
 }
 
 /**
@@ -198,24 +228,31 @@ function markdownBlankWork(text: string, from: number, to: number): number {
  * runs that are cheap together.
  */
 function markdownPieceAt(text: string, start: number): MarkdownPiece {
+  const nesting = markdownNestingBegun();
   let at = start;
   let work: number = markdownCost.call;
   let blanks = 0;
+  let margin: Margin | undefined;
   while (at < text.length) {
-    const run = markdownRunScanned(text, at, work + blanks, at - start);
+    const carried = work + blanks;
+    const run = markdownRunScanned(text, at, carried, at - start, nesting);
     const first = at === start;
     if (run.stop === "fence" && run.end === at)
       return first
         ? markdownFencePiece(text, at)
         : { kind: "read", start, end: at, work };
     const long = at - start >= markdownSectionCharsMin;
+    const under = markdownBlankCode(text.charCodeAt(at));
     if (!first && (run.apart || (run.fresh && long)))
-      return { kind: "read", start, end: at, work };
+      return under && margin !== undefined
+        ? { kind: "read", start, end: margin.at, work: margin.work }
+        : { kind: "read", start, end: at, work };
     const end = markdownBlankSkipped(text, run.end);
     if (run.plain) return { kind: "plain", start, end, work: 0 };
+    if (!first && !under) margin = { at, work };
     work += blanks + run.work + run.exits * markdownCost.exit * (at - start);
     if (run.stop === "cut") return { kind: "read", start, end, work };
-    blanks = markdownBlankWork(text, run.end, end);
+    blanks = markdownBlankWork(text, run.end, end, nesting.held);
     at = end;
   }
   return { kind: "read", start, end: text.length, work };

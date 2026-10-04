@@ -16,6 +16,7 @@ import {
   markdownRunCharsMax,
   markdownRunLinesMax,
   markdownRunScanned,
+  markdownSideOf,
   markdownWordsPass,
 } from "../app/browser/ui/markdownGuard.ts";
 import {
@@ -27,7 +28,14 @@ import {
   markdownReadingBlocks,
   markdownReadingNext,
 } from "../app/browser/ui/markdownReading.ts";
-import { markdownBlocksParsed } from "../app/browser/ui/markdownTree.ts";
+import {
+  markdownBlocksParsed,
+  markdownLineJoined,
+  markdownLineRead,
+  markdownNormalised,
+  markdownSectionRead,
+} from "../app/browser/ui/markdownTree.ts";
+import type { MarkdownNode } from "../app/browser/ui/markdownTree.ts";
 import { shape } from "./markdownShape.ts";
 
 /** The kinds of the pieces a text is split into, in order. */
@@ -88,6 +96,136 @@ describe("what one run may hold", () => {
   });
 });
 
+describe("a line that opens with many marks", () => {
+  const line = `${"- ".repeat(16)}a\n`;
+
+  test("costs what each of them does, so a run of such lines is read a few at a time", () => {
+    const pieces = markdownPiecesFrom(line.repeat(40), 0, 0);
+    expect(pieces.map((piece) => piece.kind)).toEqual(
+      Array.from({ length: 8 }, () => "read"),
+    );
+    for (const piece of pieces)
+      expect(piece.end - piece.start).toBe(line.length * 5);
+    expect(read(line.repeat(40)).split("<listItem>")).toHaveLength(641);
+    expect(markdownPiecesFrom("- a\n".repeat(40), 0, 0)).toHaveLength(1);
+  });
+
+  test.each([
+    ["list marks", "- ".repeat(16)],
+    ["numbers", "1) ".repeat(15)],
+    ["a list mark and then quote marks", `- ${"> ".repeat(15)}`],
+    ["quote and list marks", "> - ".repeat(8)],
+    ["list and quote marks", "- > ".repeat(8)],
+  ])(
+    "of %s, with no line that begins a block at the margin, is its characters once past what its length allows",
+    (_name, opening) => {
+      const indented = ` ${opening}a\n`;
+      expect(kinds(indented.repeat(4))).toEqual(["read"]);
+      expect(kinds(indented.repeat(40))).toEqual(["plain"]);
+    },
+  );
+
+  test("of quote marks and no list mark is a quote carried on from the line above, and is read as far as one", () => {
+    expect(kinds(` ${"> ".repeat(16)}a\n`.repeat(40))).toEqual(["read"]);
+    const quoted = `${"> > > a quoted line\n".repeat(60)}\n`.repeat(40);
+    const pieces = markdownPiecesFrom(quoted, 0, 0);
+    expect(pieces.map((piece) => piece.kind)).toEqual(
+      Array.from({ length: 40 }, () => "read"),
+    );
+    expect(read(quoted).split("<blockquote>")).toHaveLength(121);
+  });
+});
+
+describe("a word that holds an address", () => {
+  const heads: readonly (readonly [string, string])[] = [
+    ["one the grammar takes", "http://."],
+    ["one after a colon, which it does not", ":www.a.b/"],
+    ["one after a letter, which it does not", "xhttp://a/"],
+    ["one an escape writes", "www\\.a.b/"],
+    ["one a reference writes", "&#119;ww.a.b/"],
+  ];
+
+  test.each(heads)(
+    "%s, is its characters past a long run of what an address is cut back over",
+    (_name, head) => {
+      for (const mark of ["}", "!", "?", ")", ";", "'", '"', ":", ","]) {
+        expect(kinds(`${head}${mark.repeat(40)}x`), mark).toEqual(["read"]);
+        expect(kinds(`${head}${mark.repeat(8_000)}x`), mark).toEqual(["plain"]);
+        expect(markdownWordsPass(`${head}${mark.repeat(8_000)}x`), mark).toBe(
+          false,
+        );
+      }
+      expect(kinds(`${head}${"}".repeat(16_370)}x`)).toEqual(["plain"]);
+    },
+  );
+
+  test("the grammar leaves is linked by the tree all the same, and read with a run the size one taken is read with", () => {
+    for (const [, head] of heads.slice(1))
+      expect(kinds(`${head}${"}".repeat(7_000)}x`), head).toEqual(["read"]);
+    const address = `www.a.b/${"}".repeat(7_000)}x`;
+    expect(read(`:${address}`)).toBe(
+      `<paragraph>:<link http://${address}>${address}</link></paragraph>`,
+    );
+  });
+
+  test("written over and over by escapes is its characters before joining them is dear", () => {
+    expect(kinds(`${"www\\.".repeat(1_000)}_`)).toEqual(["read"]);
+    expect(kinds(`${"www\\.".repeat(2_000)}_`)).toEqual(["plain"]);
+    expect(kinds(`${"a\\@".repeat(600)}`)).toEqual(["read"]);
+    expect(kinds(`${"a\\@".repeat(2_000)}`)).toEqual(["plain"]);
+  });
+
+  test("and none is read with any run of them, a word and its dots apart", () => {
+    for (const mark of ["}", "!", "?", ")", ";"])
+      expect(kinds(`words${mark.repeat(16_000)}x`), mark).toEqual(["read"]);
+  });
+
+  test.each([
+    ["braces and an escaped one", "}}}\\}"],
+    ["braces then a reference", `${"}".repeat(100)}&gt;`],
+    ["names then an escaped dot", `${"a.".repeat(50)}\\.`],
+  ])(
+    "made of %s is its characters at the size a text may be",
+    (_name, unit) => {
+      const short = unit.repeat(Math.ceil(600 / unit.length));
+      const long = unit.repeat(Math.ceil(65_536 / unit.length));
+      expect(kinds(short)).toEqual(["read"]);
+      expect(kinds(long.slice(0, 16_000))).toEqual(["plain"]);
+    },
+  );
+});
+
+describe("one thing said over on a line", () => {
+  test.each<readonly [string, number, (count: number) => string]>([
+    [
+      "marks that may end an address the grammar took",
+      358,
+      (count) => `www.a.b${"!".repeat(count)}x`,
+    ],
+    [
+      "words that close emphasis none opened",
+      191,
+      (count) => "a* ".repeat(count),
+    ],
+    [
+      "words in brackets that link nothing",
+      1_103,
+      (count) => "[a] ".repeat(count),
+    ],
+    [
+      "words that may begin an address, after one that did",
+      2_163,
+      (count) => `www.a.b ${"www.".repeat(count)}`,
+    ],
+  ])(
+    "%s: is read at %i of them, and is its characters at one more",
+    (_name, count, build) => {
+      expect(kinds(build(count))).toEqual(["read"]);
+      expect(kinds(build(count + 1))).toEqual(["plain"]);
+    },
+  );
+});
+
 /** Where each piece of a text begins and ends, and its kind. */
 function cuts(text: string): readonly string[] {
   return markdownPiecesFrom(text, 0, 0).map(
@@ -138,6 +276,19 @@ describe("a run longer than one call may cost", () => {
     expect(cuts(`- an item\n${long}\n- another`)).toEqual([
       `plain 0 ${String(10 + 16_401 + 9)}`,
     ]);
+  });
+
+  test("is read where it is a list numbered on under a step's indented words, however many steps", () => {
+    const head = "1. Do it\n\n   This step needs a word more.\n";
+    for (const steps of [180, 185, 400, 1_200]) {
+      const numbered = Array.from(
+        { length: steps },
+        (_unused, at) => `${String(at + 2)}. step with **bold** words\n`,
+      );
+      const text = `${head}${numbered.join("")}`;
+      expect(new Set(kinds(text)), String(steps)).toEqual(new Set(["read"]));
+      expect(read(text).split("<listItem>")).toHaveLength(steps + 2);
+    }
   });
 
   test("ends where it did however much of the next line is written", () => {
@@ -334,6 +485,159 @@ describe("the verdict on a run", () => {
       reading = markdownReadingNext(reading, text.slice(0, length), true);
     reading = markdownReadingNext(reading, text, true);
     expect(shape(markdownReadingBlocks(reading))).toBe(read(text));
+  });
+});
+
+/** How deep the quotes and lists of some nodes go, one inside another. */
+function nesting(nodes: readonly MarkdownNode[]): number {
+  let most = 0;
+  for (const node of nodes) {
+    const own = node.type === "list" || node.type === "blockquote" ? 1 : 0;
+    const below = "children" in node ? nesting(node.children) : 0;
+    most = Math.max(most, own + below);
+  }
+  return most;
+}
+
+/** How many nodes of one kind some nodes hold, at any depth. */
+function counted(nodes: readonly MarkdownNode[], kind: string): number {
+  let count = 0;
+  for (const node of nodes) {
+    if (node.type === kind) count += 1;
+    if ("children" in node) count += counted(node.children, kind);
+  }
+  return count;
+}
+
+const mark = "\uFEFF";
+
+/** Every code unit from one to below another, but the byte order mark. */
+function units(from: number, to: number): readonly string[] {
+  const held: string[] = [];
+  for (let code = from; code < Math.min(to, 65_536); code += 1)
+    if (code !== mark.charCodeAt(0)) held.push(String.fromCharCode(code));
+  return held;
+}
+
+describe("a character the parser rewrites before it reads", () => {
+  const leads: Readonly<Record<string, string>> = {
+    "the text's start": "",
+    "a fence": "```\ncode\n```\n",
+    "a long paragraph and a blank line": `${"Some words go on. ".repeat(20)}\n\n`,
+    "a short paragraph and a blank line": "Some words.\n\n",
+  };
+
+  test("is rewritten wherever it stands, before the text is reckoned", () => {
+    expect(markdownNormalised(`${mark}a${mark}\r\nb\rc\0`)).toBe(
+      "a\nb\nc\uFFFD",
+    );
+    expect(markdownNormalised("words\nand more")).toBe("words\nand more");
+  });
+
+  test("left in a text has both doors turn the text away", () => {
+    expect(markdownSectionRead("- a")).toHaveLength(1);
+    expect(markdownLineRead("a *b*")).toHaveLength(2);
+    for (const held of [mark, "\0", "\r"]) {
+      const named = JSON.stringify(held);
+      expect(markdownSectionRead(`${held}- a`), named).toBeUndefined();
+      expect(markdownSectionRead(`- a${held}`), named).toBeUndefined();
+      expect(markdownLineRead(`${held}a *b*`), named).toBeUndefined();
+      expect(markdownLineRead(`a *b*${held}`), named).toBeUndefined();
+    }
+  });
+
+  test.each(["- ", "> - ", "> ", "1. ", "* ", "+ "])(
+    "a byte order mark before %j a thousand times over opens nothing the guard did not reckon",
+    (unit) => {
+      const marks = `${unit.repeat(1_000)}a`;
+      for (const [name, lead] of Object.entries(leads)) {
+        const text = `${lead}${mark}${marks}`;
+        expect(kinds(markdownNormalised(text)).at(-1), name).toBe("plain");
+        expect(read(text), name).toBe(read(`${lead}${marks}`));
+        expect(nesting(markdownBlocksParsed(text)), name).toBe(0);
+      }
+    },
+  );
+
+  test("four sections that each open with one are each their characters", () => {
+    const text = `${mark}${"- ".repeat(1_000)}a\n\n`.repeat(4);
+    expect(kinds(markdownNormalised(text))).toEqual(
+      Array.from({ length: 4 }, () => "plain"),
+    );
+    expect(nesting(markdownBlocksParsed(text))).toBe(0);
+    expect(read(text)).toBe(read(text.replaceAll(mark, "")));
+  });
+
+  test("one on every line of a list leaves the list it would be without it", () => {
+    const text = `${mark}- a\n`.repeat(40);
+    expect(read(text)).toBe(read("- a\n".repeat(40)));
+    expect(read(text).split("<listItem>")).toHaveLength(41);
+  });
+
+  test("one before marks read as a line of a note is the line without it", () => {
+    const text = `${mark}${"- ".repeat(1_000)}*a*`;
+    const line = markdownLineRead(markdownLineJoined(text));
+    expect(line).toEqual(markdownLineRead(markdownLineJoined(text.slice(1))));
+    expect(counted(line ?? [], "emphasis")).toBe(1);
+  });
+
+  test("one before marks is never drawn nested while the text is written", () => {
+    const text = `Some words.\n\n${mark}${"- ".repeat(200)}a\nand words under it\n`;
+    let reading = markdownReadingNext(undefined, "", true);
+    for (let length = 1; length <= text.length; length += 7) {
+      reading = markdownReadingNext(reading, text.slice(0, length), true);
+      expect(
+        nesting(markdownReadingBlocks(reading)),
+        String(length),
+      ).toBeLessThanOrEqual(markdownLineMarksMax);
+    }
+  });
+});
+
+describe("every character there is", () => {
+  const fence = "```\ncode\n```\n";
+
+  test("before a line's marks opens no more of them than the guard saw", () => {
+    for (const first of [...units(0, 128), mark])
+      for (const lead of ["", fence]) {
+        const text = `${lead}${first}${"- ".repeat(17)}a`;
+        expect(
+          nesting(markdownBlocksParsed(text)),
+          `${JSON.stringify(lead)} then ${JSON.stringify(first)}`,
+        ).toBeLessThanOrEqual(markdownLineMarksMax);
+      }
+  });
+
+  test("past the ASCII ones, but the byte order mark, stands before a mark as a word does", () => {
+    for (let from = 128; from < 65_536; from += 512) {
+      const firsts = units(from, from + 512);
+      const text = firsts.map((first) => `${first}- a`).join("\n\n");
+      const blocks = markdownBlocksParsed(text);
+      expect(blocks.map((block) => block.type)).toEqual(
+        firsts.map(() => "paragraph"),
+      );
+      expect(counted(blocks, "list"), from.toString(16)).toBe(0);
+    }
+  });
+
+  test("is sorted beside a mark by the grammar as the guard sorts it", () => {
+    const marks = new Set(["\0", "\n", "\r", "*", "_", "~", "\\", "`"]);
+    const wrong: string[] = [];
+    for (let from = 0; from < 65_536; from += 512) {
+      const sides = units(from, from + 512).filter((side) => !marks.has(side));
+      const text = sides.map((side) => `*${side}a* a*${side}b*`).join("\n\n");
+      const blocks = markdownBlocksParsed(text);
+      expect(blocks, from.toString(16)).toHaveLength(sides.length);
+      for (const [at, side] of sides.entries()) {
+        const block = blocks[at];
+        const stressed =
+          block === undefined ? -1 : counted([block], "emphasis");
+        const sorted = [1, 2, 0][stressed];
+        if (sorted !== markdownSideOf(side.charCodeAt(0)))
+          wrong.push(side.charCodeAt(0).toString(16));
+      }
+    }
+    expect(wrong).toEqual([]);
   });
 });
 

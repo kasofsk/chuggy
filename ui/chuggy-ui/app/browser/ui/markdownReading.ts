@@ -9,8 +9,8 @@
  * reads only what follows that place. A block kept is the same object from
  * then on, which is what lets the report skip drawing it again.
  *
- * WHERE A PIECE BEGINS IS `markdownPieces.ts`'s TO SAY, and it says so from
- * the text above the place alone. So a piece another has begun after is
+ * WHERE A PIECE BEGINS IS `markdownPieces.ts`'s TO SAY, and a place it has
+ * said is one however the text goes on. So a piece another has begun after is
  * final, the text read from where the last one begins reads as it would with
  * all of it read, and nothing is kept unless the place moves past it.
  *
@@ -25,25 +25,41 @@
  *
  * A BLOCK THAT READS THE SAME IS KEPT AS THE OBJECT IT WAS. The last piece is
  * read again whole each time, and a text that stops being written is read
- * once more, and either draws again only the blocks that changed.
+ * once more, and either draws again only the blocks that changed. The one
+ * block a text still being written ends in is kept only where it also ends
+ * where it did, so what is drawn of it is what the text so far is drawn as
+ * from nothing, however it came to be written.
  *
- * A READING GIVES THE FRAME BACK. A piece is never read in parts, but a text
- * still being written is not read past one once a frame's share is spent: the
- * rest is read by the next call, and where one reading cost more than that
- * share the next waits a multiple of the cost, so a text that is dear to read
- * arrives in steps and the page stays live between them. A text that is whole
- * is read at once.
+ * A READING GIVES THE FRAME BACK. A piece is never read in parts, and the
+ * first one a reading comes to is read whatever it costs, or a dear one would
+ * never be read at all. Past that, a text still being written is read no
+ * further once a frame's share is spent: not the next piece another has begun
+ * after, and not the one the text ends in either, so no frame reads two dear
+ * pieces. The rest is read by the next call, and where one reading cost more
+ * than that share the next waits a multiple of the cost, so a text that is dear
+ * to read arrives in steps and the page stays live between them. A text that
+ * is whole is read at once.
+ *
+ * BUT A SECTION PARTED IN TWO IS STILL READ IN ONE FRAME. Where a section goes
+ * past what one call may cost it is ended above the line that took it past,
+ * and what follows that place was drawn a frame ago as part of it. Left unread
+ * it would be gone from the page until the rest was over. So the piece a text
+ * ends in is read even in a spent frame where it and what the frame has read
+ * are together reckoned to cost what one run may and its floor more, which is
+ * what the two parts of one section come to and two dear pieces do not.
  */
 
+import { markdownWorkFloor, markdownWorkMax } from "./markdownGuard.ts";
 import { markdownPiecesFrom } from "./markdownPieces.ts";
 import type { MarkdownPiece } from "./markdownPieces.ts";
 import {
   markdownNodesAlike,
   markdownNormalised,
   markdownPieceBlocks,
+  markdownPieceCounted,
   markdownPlainBlocks,
 } from "./markdownTree.ts";
-import type { MarkdownBlock } from "./markdownTree.ts";
+import type { MarkdownBlock, MarkdownCount } from "./markdownTree.ts";
 import { markdownWritten } from "./markdownWriting.ts";
 
 /** What a reading may spend of one frame before it gives the rest back, in
@@ -73,8 +89,10 @@ export interface MarkdownReading {
   /** Where the piece the open blocks are read from begins, in the text with
    * its line ends made one: the start of a line. */
   readonly offset: number;
-  /** What the sections before that place cost between them. */
+  /** What the sections before that place cost between them, and the count
+   * the last of them hands to a numbered list that goes on from it. */
   readonly spent: number;
+  readonly count: MarkdownCount | undefined;
   /** Whether the reading stopped short of the text's end to give the frame
    * back. */
   readonly behind: boolean;
@@ -91,6 +109,7 @@ const markdownReadingEmpty: MarkdownReading = {
   open: [],
   offset: 0,
   spent: 0,
+  count: undefined,
   behind: false,
   since: 0,
   until: 0,
@@ -135,14 +154,37 @@ function markdownBlocksKept(
   });
 }
 
-/** The piece a text still being written ends in, as the blocks it is drawn. */
+/**
+ * The blocks a text still being written ends in, each the object held in its
+ * place where the two read the same, and the last of them only where it also
+ * ends where it did. Whether a pipe has closed a table's last cell is told by
+ * where the cell ends and by nothing it holds, and its column is sized by it.
+ */
+function markdownBlocksOpenKept(
+  blocks: readonly MarkdownBlock[],
+  held: readonly MarkdownBlock[],
+  from: number,
+): readonly MarkdownBlock[] {
+  const kept = markdownBlocksKept(blocks, held, from);
+  const last = blocks.at(-1);
+  const was = kept.at(-1);
+  if (last === undefined || was === undefined || was === last) return kept;
+  return was.position?.end.offset === last.position?.end.offset
+    ? kept
+    : [...kept.slice(0, -1), last];
+}
+
+/** The piece a text still being written ends in, as the blocks it is drawn,
+ * counted on from the piece above. */
 function markdownPieceWritten(
   text: string,
   piece: MarkdownPiece,
+  count: MarkdownCount | undefined,
 ): readonly MarkdownBlock[] {
   if (piece.kind !== "read") return markdownPieceBlocks(text, piece, true);
   const held = text.slice(piece.start, piece.end);
-  return markdownWritten(held) ?? markdownPlainBlocks(held);
+  const blocks = markdownWritten(held) ?? markdownPlainBlocks(held);
+  return markdownPieceCounted(text, piece, blocks, count).blocks;
 }
 
 /** Whether an earlier reading is one this text goes on from. */
@@ -192,29 +234,51 @@ export function markdownReadingNext(
   const read = markdownNormalised(text);
   const pieces = markdownPiecesFrom(read, from.offset, from.spent);
   const settled = [...from.settled];
-  let { offset, spent } = from;
+  let { offset, spent, count } = from;
   let taken = 0;
   let drawn = 0;
+  const over = (): boolean =>
+    writing && taken > 0 && clock() - began > markdownReadingShareMs;
   while (taken < pieces.length - (writing ? 1 : 0)) {
     const piece = pieces[taken];
-    if (piece === undefined) break;
-    if (writing && taken > 0 && clock() - began > markdownReadingShareMs) break;
-    const blocks = markdownPieceBlocks(read, piece, false);
-    settled.push(...markdownBlocksKept(blocks, held, drawn));
-    drawn += blocks.length;
+    if (piece === undefined || over()) break;
+    const parsed = markdownPieceBlocks(read, piece, false);
+    const counted = markdownPieceCounted(read, piece, parsed, count);
+    settled.push(...markdownBlocksKept(counted.blocks, held, drawn));
+    drawn += counted.blocks.length;
     offset = piece.end;
     spent += piece.work;
+    count = counted.count;
     taken += 1;
   }
   const last = pieces[taken];
-  const behind = last !== undefined && taken < pieces.length - 1;
+  const parted =
+    spent - from.spent + (last?.work ?? 0) <=
+    markdownWorkMax + markdownWorkFloor;
+  const behind =
+    last !== undefined && (taken < pieces.length - 1 || (!parted && over()));
   const open =
     last === undefined || behind
       ? []
-      : markdownBlocksKept(markdownPieceWritten(read, last), held, drawn);
+      : markdownBlocksOpenKept(
+          markdownPieceWritten(read, last, count),
+          held,
+          drawn,
+        );
   const since = clock();
   const cost = since - began;
   const until =
     cost > markdownReadingShareMs ? since + cost * markdownReadingRest : 0;
-  return { text, writing, settled, open, offset, spent, behind, since, until };
+  return {
+    text,
+    writing,
+    settled,
+    open,
+    offset,
+    spent,
+    count,
+    behind,
+    since,
+    until,
+  };
 }

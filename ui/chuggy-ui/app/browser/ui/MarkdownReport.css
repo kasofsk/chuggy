@@ -266,20 +266,112 @@
     color: var(--ink-1);
   }
 
-  /* a table scrolls inside itself, for the same reason code does */
+  /* a table's columns are sized by what is written in them, a step at a
+     time. The layout is fixed and every column is one `col` whose class is
+     its step, so a cell filling makes its row taller and never its column
+     wider: a column moves only when it steps, which it does seldom and only
+     upward. A step's width is what a cell of that step holds on a line, in
+     the report's own type whatever size that is set in, and the cell's
+     padding beside it.
+
+     The widest step is not a width but a floor: its column is unsized, and an
+     unsized column of a fixed table takes what the sized ones leave. So a
+     table of short columns and one of prose gives the short ones what they
+     hold and the prose the rest, and a table of short columns alone shares
+     what is over by their widths; either way a table that fits fills its box
+     and does not scroll.
+
+     What holds an unsized column to its floor is the row of empty boxes drawn
+     beside the table, one to a column and of the column's own classes. The
+     two sit in a box as wide as the report, or as the least those boxes come
+     to where that is more, and the table fills it: so where the steps come to
+     more than the report has, the table is as wide as they are and scrolls
+     inside its own box, for the same reason code does. A column is never
+     squeezed to a letter a line, and the page never scrolls sideways for
+     it.
+
+     The box is a container, because one step is a share of the report's
+     width: a word too long for a phrase's line is given a line of its own
+     where the report has the room, and where it has not breaks as it would
+     in a phrase's column. A container is sized without regard to what it
+     holds, so to a holder that is sized by what it holds, a prompt's bubble,
+     the box says what it is worth, a measure: with nothing said it is worth
+     nothing, and a table alone in a bubble would be given no width at
+     all. */
   .run-report-table {
     overflow-x: auto;
+    container-type: inline-size;
+    contain-intrinsic-inline-size: var(--measure);
   }
 
-  .run-report-table > table {
+  .run-report-table-fit {
+    width: min-content;
     min-width: 100%;
+  }
+
+  .run-report-table-floor {
+    display: flex;
+  }
+
+  .run-report-table table {
+    width: 100%;
+    table-layout: fixed;
     border-collapse: collapse;
     line-height: var(--leading-dense);
+  }
+
+  .run-report-column-mark {
+    --run-report-held: 2em;
+  }
+
+  .run-report-column-word {
+    --run-report-held: 4.25em;
+  }
+
+  .run-report-column-name {
+    --run-report-held: 6em;
+  }
+
+  .run-report-column-phrase {
+    --run-report-held: 7.75em;
+  }
+
+  .run-report-column-path {
+    --run-report-held: clamp(7.75em, 27cqw, 12.5em);
+  }
+
+  .run-report-column-prose {
+    --run-report-held: 8.75em;
+  }
+
+  /* a column is what it holds and its cells' padding, which the first and
+     the last of a row have less of: the four rules below are the four
+     paddings a cell is given further down */
+  .run-report-column {
+    flex: none;
+    width: calc(var(--run-report-held) + 2 * var(--space-3));
+  }
+
+  .run-report-column:where(:first-child) {
+    width: calc(var(--run-report-held) + var(--space-3));
+  }
+
+  .run-report-column:where(:last-child) {
+    width: calc(var(--run-report-held) + var(--space-3) + var(--space-1));
+  }
+
+  .run-report-column:where(:first-child:last-child) {
+    width: calc(var(--run-report-held) + var(--space-1));
+  }
+
+  col.run-report-column-prose {
+    width: auto;
   }
 
   .run-report-table :is(th, td) {
     padding: var(--space-2) var(--space-3);
     border-block-end: var(--hairline) solid var(--edge);
+    overflow-wrap: anywhere;
     text-align: start;
     vertical-align: top;
   }
@@ -294,21 +386,10 @@
     padding-inline-end: var(--space-1);
   }
 
-  /* a name in a cell stays in one piece: the table scrolls, the name does
-     not break */
-  .run-report-table code {
-    white-space: nowrap;
-  }
-
   .run-report-table th {
     border-block-end-color: var(--edge-strong);
     color: var(--ink-1);
     font-weight: var(--weight-strong);
-    white-space: nowrap;
-  }
-
-  .run-report-table td {
-    min-width: 8ch;
   }
 
   .run-report-table .run-report-align-left {

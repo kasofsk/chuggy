@@ -25,6 +25,13 @@
  * stays its characters for as long as it is drawn, and the next block is read
  * by a new one. The time is counted from when the worker said it was ready,
  * so a slow fetch of the grammars is not a slow reading.
+ *
+ * A WORKER THAT DOES NOT START IS THE LAST ONE ASKED FOR. One that cannot be
+ * started, that breaks before it says it is ready, or that has not said so
+ * `markdownSyntaxReadyMs` after it was started, is not a slow reading: nothing
+ * about the next block would start it. So the desk closes, every block stays
+ * its characters, and a page of many blocks has started one worker and not
+ * one for each.
  */
 
 import type { MarkdownClock } from "./markdownReading.ts";
@@ -38,6 +45,10 @@ export type { MarkdownSyntaxAsked, MarkdownSyntaxNode };
 /** How long a reading may be out before its worker is ended, in
  * milliseconds. */
 export const markdownSyntaxDeadlineMs = 3_000;
+
+/** How long a worker may take to say it is ready before the desk closes, in
+ * milliseconds: the fetch of its module on a slow line, and nothing slower. */
+export const markdownSyntaxReadyMs = 30_000;
 
 /** How many times the time its last reading was out a block rests for before
  * it is read again. */
@@ -77,7 +88,7 @@ export interface MarkdownSyntaxDesk {
     told: (reading: MarkdownSyntaxReading) => void,
   ) => MarkdownSyntaxSeat;
   /** Ends the worker and forgets what was out; a block asking afterwards
-   * starts a new one. */
+   * starts a new one, unless the desk has closed. */
   readonly end: () => void;
 }
 
@@ -184,6 +195,8 @@ interface Desk {
   /** Which worker this is, counted, so one already ended is not listened to. */
   born: number;
   ready: boolean;
+  /** Whether a worker failed to start, after which none is started. */
+  closed: boolean;
   out: Out | undefined;
   asked: number;
   deadline: Timer | undefined;
@@ -244,6 +257,12 @@ function markdownSyntaxGivenUp(desk: Desk, refused: boolean): void {
   }
 }
 
+/** The desk closes: its worker is ended, and no other is started. */
+function markdownSyntaxClosed(desk: Desk): void {
+  desk.closed = true;
+  markdownSyntaxGivenUp(desk, true);
+}
+
 function markdownSyntaxAnswered(desk: Desk, out: Out, runs: unknown): void {
   clearTimeout(desk.deadline);
   desk.deadline = undefined;
@@ -270,17 +289,18 @@ function markdownSyntaxHeard(desk: Desk, message: unknown): void {
     markdownSyntaxDeadlineSet(desk);
     return;
   }
-  if (failed === true) markdownSyntaxGivenUp(desk, true);
+  if (failed === true && !desk.ready) markdownSyntaxClosed(desk);
+  else if (failed === true) markdownSyntaxGivenUp(desk, true);
   else if (desk.out !== undefined && id === desk.out.id)
     markdownSyntaxAnswered(desk, desk.out, runs);
   else return;
   markdownSyntaxPumped(desk);
 }
 
-/** The desk's worker, started where there is none, or nothing where one
- * cannot be started. */
+/** The desk's worker, started where there is none and given its time to say
+ * it is ready, or nothing where one cannot be started. */
 function markdownSyntaxWorking(desk: Desk): MarkdownSyntaxWorker | undefined {
-  if (desk.worker !== undefined) return desk.worker;
+  if (desk.worker !== undefined || desk.closed) return desk.worker;
   desk.born += 1;
   const born = desk.born;
   try {
@@ -288,8 +308,11 @@ function markdownSyntaxWorking(desk: Desk): MarkdownSyntaxWorker | undefined {
       if (desk.born === born && desk.worker !== undefined)
         markdownSyntaxHeard(desk, message);
     });
+    desk.deadline = setTimeout(() => {
+      markdownSyntaxClosed(desk);
+    }, markdownSyntaxReadyMs);
   } catch {
-    desk.worker = undefined;
+    markdownSyntaxClosed(desk);
   }
   return desk.worker;
 }
@@ -371,6 +394,7 @@ export function markdownSyntaxDesk(
     worker: undefined,
     born: 0,
     ready: false,
+    closed: false,
     out: undefined,
     asked: 0,
     deadline: undefined,

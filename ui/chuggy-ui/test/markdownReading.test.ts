@@ -30,6 +30,7 @@ import {
   markdownBlocksParsed,
   markdownNodesAlike,
 } from "../app/browser/ui/markdownTree.ts";
+import type { MarkdownBlock } from "../app/browser/ui/markdownTree.ts";
 import {
   corpusAnswers,
   corpusComparison,
@@ -38,7 +39,7 @@ import {
   corpusLongAnswerCharsMin,
   corpusReview,
 } from "./markdownCorpus.ts";
-import { prefixes, shape } from "./markdownShape.ts";
+import { drawn, prefixes, shape, within } from "./markdownShape.ts";
 
 function shapeOf(reading: MarkdownReading): string {
   return shape(markdownReadingBlocks(reading));
@@ -368,6 +369,40 @@ describe("a text read in steps, where a run is longer than one call may cost", (
   });
 });
 
+describe("a numbered list longer than one call may cost", () => {
+  const text = "1. an item of the list, with `words` in it\n".repeat(900);
+
+  /** Where each list of a reading begins counting, and how many it holds. */
+  function counted(blocks: readonly MarkdownBlock[]): readonly number[][] {
+    return blocks.map((block) =>
+      block.type === "list" ? [block.start ?? 0, block.children.length] : [],
+    );
+  }
+
+  /** Whether each list counts on from the one above it, and how far. */
+  function countedOn(blocks: readonly MarkdownBlock[]): number {
+    let next = 1;
+    for (const [start, items] of counted(blocks)) {
+      expect(start).toBe(next);
+      next += items ?? 0;
+    }
+    return next;
+  }
+
+  test("counts on past each place it is parted at, though every item is written as the first", () => {
+    const whole = markdownBlocksParsed(text);
+    expect(whole.length).toBeGreaterThan(2);
+    expect(countedOn(whole)).toBe(901);
+  });
+
+  test("counts the same while it is written as once it is whole", () => {
+    const written = walked(text, 1_531, (reading) => {
+      countedOn(markdownReadingBlocks(reading));
+    });
+    expect(countedOn(markdownReadingBlocks(written))).toBe(901);
+  });
+});
+
 /** Six paragraphs, each long enough to be read on its own. */
 const dear = Array.from(
   { length: 6 },
@@ -465,6 +500,94 @@ describe("a reading under a clock that says every piece is dear", () => {
     expect(still.until).toBe(0);
     expect(shapeOf(still)).toBe(whole);
   });
+});
+
+/** Two paragraphs, each of them dear to read, and a list's line. */
+const twice = `${"*a* ".repeat(2_000).trimEnd()}\n\n`.repeat(2);
+const listed = "- an item of the list, with **words** in it\n";
+
+/** How much of a text has been written when it is first parted in two. */
+function partedAt(text: string): number {
+  let low = 0;
+  let high = text.length;
+  while (high - low > 1) {
+    const middle = (low + high) >> 1;
+    if (markdownPiecesFrom(text.slice(0, middle), 0, 0).length > 1)
+      high = middle;
+    else low = middle;
+  }
+  return high;
+}
+
+describe("the piece a text ends in, in a frame whose share is spent", () => {
+  test("is left for the next frame where it is a second dear piece", () => {
+    const pieces = markdownPiecesFrom(twice, 0, 0);
+    expect(pieces.map((piece) => piece.kind)).toEqual(["read", "read"]);
+    const time = { now: 0, step: 10 };
+    const clock = ticking(time);
+    const reading = markdownReadingNext(undefined, twice, true, clock);
+    expect(reading.behind).toBe(true);
+    expect(reading.open).toEqual([]);
+    expect(reading.settled).toHaveLength(1);
+    expect(reading.offset).toBe(pieces[1]?.start);
+    time.now = reading.until;
+    const next = markdownReadingNext(reading, twice, true, clock);
+    expect(next.behind).toBe(false);
+    expect(shapeOf(next)).toBe(shape(markdownBlocksParsed(twice)));
+  });
+
+  test("is read with the piece above it under no clock, and in a frame with share left", () => {
+    const still = markdownReadingNext(undefined, twice, true);
+    expect(still.behind).toBe(false);
+    expect(still.open).toHaveLength(1);
+    const clock = ticking({ now: 0, step: 1 });
+    const quick = markdownReadingNext(undefined, twice, true, clock);
+    expect(quick.behind).toBe(false);
+    expect(quick.open).toHaveLength(1);
+  });
+
+  test("is read all the same where it is the rest of a section parted in two", () => {
+    const text = listed.repeat(380);
+    expect(markdownPiecesFrom(text, 0, 0)).toHaveLength(2);
+    const clock = ticking({ now: 0, step: 1_000 });
+    const reading = markdownReadingNext(undefined, text, true, clock);
+    expect(reading.behind).toBe(false);
+    expect(reading.settled).toHaveLength(1);
+    expect(reading.open).toHaveLength(1);
+    expect(shapeOf(reading)).toBe(
+      shapeOf(markdownReadingNext(undefined, text, true)),
+    );
+  });
+
+  test.each([
+    ["a list", listed.repeat(800)],
+    ["a spaced list", `${listed.repeat(20)}\n`.repeat(45)],
+  ])(
+    "so %s loses nothing it has drawn in the frame it is parted in, however spent that frame",
+    (_name, text) => {
+      const length = partedAt(text);
+      const before = markdownReadingNext(
+        undefined,
+        text.slice(0, length - 1),
+        true,
+      );
+      expect(before.settled).toEqual([]);
+      const clock = ticking({ now: 0, step: 1_000 });
+      const after = markdownReadingNext(
+        before,
+        text.slice(0, length),
+        true,
+        clock,
+      );
+      expect(after.settled.length).toBeGreaterThan(0);
+      expect(after.offset).toBeLessThan(length - 1);
+      expect(after.behind).toBe(false);
+      const shown = drawn(markdownReadingBlocks(before)).characters;
+      const now = drawn(markdownReadingBlocks(after)).characters;
+      expect(shown.length).toBeGreaterThan(after.offset / 2);
+      expect(within(shown, now)).toBe(true);
+    },
+  );
 });
 
 describe("a reading within a frame's share", () => {
