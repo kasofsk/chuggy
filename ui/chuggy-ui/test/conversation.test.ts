@@ -24,8 +24,10 @@ import {
   conversationExchangeContinued,
   conversationExchangeParts,
   conversationExchanges,
+  conversationExchangeSent,
   conversationExchangesMax,
   conversationExchangesWaiting,
+  conversationExchangesWithSent,
   conversationSeenNothing,
   conversationSeenWith,
   conversationStepsMax,
@@ -2241,6 +2243,56 @@ describe("an exchange and the turn that speaks for it", () => {
       conversationExchangeContinued(first, more.slice(0, 1)).answer,
     ).toBeUndefined();
     expect(first.answer).toBe("Looking.");
+  });
+});
+
+describe("a message a page sent before its mailbox lists it", () => {
+  const sent = [
+    conversationExchangeSent({ turn: "t2", text: "second" }),
+    conversationExchangeSent({ turn: "t3", text: "third" }),
+  ];
+
+  test("is the queued exchange its turn is about to be listed as, under that turn's name", () => {
+    const listed = conversationExchanges(
+      [],
+      [turnOf({ turn: "t2", ordinal: 2, state: "Queued", input: "second" })],
+    );
+    expect(sent[0]).toStrictEqual(listed[0]);
+  });
+
+  test("stands at the foot of the column, in the order sent", () => {
+    const stored = conversationExchanges([
+      askOf("u1", "one"),
+      answerOf("a1", "done"),
+    ]);
+    expect(conversationExchangesWithSent(stored, sent)).toStrictEqual([
+      ...stored,
+      ...sent,
+    ]);
+  });
+
+  test("is left out once an exchange speaks for its turn, so it is drawn once", () => {
+    const listed = conversationExchanges(
+      [askOf("u1", "second")],
+      [turnOf({ turn: "t2", ordinal: 2, state: "Claimed", input: "second" })],
+    );
+    expect(listed.map((exchange) => exchange.turn)).toStrictEqual(["t2"]);
+    expect(conversationExchangesWithSent(listed, sent)).toStrictEqual([
+      ...listed,
+      ...sent.slice(1),
+    ]);
+  });
+
+  test("hands back the exchanges it was given where none is left to add", () => {
+    const listed = conversationExchanges(
+      [],
+      [
+        turnOf({ turn: "t2", ordinal: 2, state: "Queued", input: "second" }),
+        turnOf({ turn: "t3", ordinal: 3, state: "Queued", input: "third" }),
+      ],
+    );
+    expect(conversationExchangesWithSent(listed, sent)).toBe(listed);
+    expect(conversationExchangesWithSent(listed, [])).toBe(listed);
   });
 });
 

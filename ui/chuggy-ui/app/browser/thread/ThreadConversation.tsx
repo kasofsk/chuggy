@@ -17,6 +17,10 @@
  * written, every reader of the thread alike, and each block of it is drawn
  * from the transcript instead from the moment the transcript holds it.
  *
+ * A MESSAGE THE READER SENT IS DRAWN BEFORE THE MAILBOX LISTS IT, at the foot
+ * of the column and under its turn's name, and from the read that lists that
+ * turn the mailbox's own exchange stands in the same place.
+ *
  * THE COLUMN IS READ ONCE. A walk begins again when the runner names the
  * thread's store, which is in the middle of its first turn, and saying
  * `Loading…` over a turn being written would take the words away to say it.
@@ -29,7 +33,9 @@ import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import type { ThreadResponse } from "../../../../../src/contract/responses.ts";
 import {
   conversationExchanges,
+  conversationExchangeSent,
   conversationExchangesWaiting,
+  conversationExchangesWithSent,
   conversationSeenNothing,
   conversationSeenWith,
 } from "../../core/conversation.ts";
@@ -169,14 +175,22 @@ export function ThreadConversation(props: {
     stream: thread.agentReference,
     highWaterBatch: leadStreamBatches(thread),
   });
-  const composer = useThreadSend({
+  const sends = useThreadSend({
     partition: props.partition,
     session: thread.session,
     takes: threadTakesMessages(thread),
+    listed: thread.turns.map((turn) => turn.turn),
   });
+  const sent = useMemo(
+    () => sends.sending.map(conversationExchangeSent),
+    [sends.sending],
+  );
   const mentions = useConversationMentions(props.partition);
   const door = useThreadDoor(props.partition).door;
-  const exchanges = useThreadExchanges(props.partition, thread, walked);
+  const exchanges = conversationExchangesWithSent(
+    useThreadExchanges(props.partition, thread, walked),
+    sent,
+  );
   const [read, setRead] = useState(false);
   if (!walked.reading && !read) setRead(true);
   return (
@@ -195,7 +209,7 @@ export function ThreadConversation(props: {
         {...(thread.mine
           ? {
               composer: {
-                ...composer,
+                ...sends.composer,
                 focusOnMount: props.named === true,
                 mentions,
               },

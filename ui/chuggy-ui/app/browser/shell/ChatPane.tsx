@@ -14,7 +14,7 @@
  * every frame the project sends.
  */
 
-import { useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
@@ -42,6 +42,7 @@ import type {
   ChatPaneStart,
   ChatPaneState,
 } from "../../core/chatPane.ts";
+import { conversationExchangeSent } from "../../core/conversation.ts";
 import { panelReason } from "../../core/freshness.ts";
 import { leadSessionNamed } from "../../core/leadTranscript.ts";
 import {
@@ -282,9 +283,10 @@ function ChatPaneUnhosted(): ReactNode {
 
 /**
  * The composer a reader with no thread types in, whose first press opens one.
- * It stays drawn until that message is sent, so the thread it opened arriving
- * in the listing mid-send does not take the text away with it, and while it
- * holds text a door read as `unhosted` holds that text read-only.
+ * It stays drawn until that message is sent and the thread it opened has been
+ * read, so neither the thread arriving in the listing mid-send nor the read of
+ * it takes away the text or the message drawn above it, and while it holds
+ * text a door read as `unhosted` holds that text read-only.
  */
 function ChatPaneFirst(props: {
   readonly partition: PartitionIdentity;
@@ -293,12 +295,17 @@ function ChatPaneFirst(props: {
   readonly onStarted: (session: string) => void;
 }): ReactNode {
   const [typed, setTyped] = useState(false);
-  const composer = useThreadSend({
+  const sends = useThreadSend({
     partition: props.partition,
     session: undefined,
     takes: true,
     onStarted: props.onStarted,
   });
+  const composer = sends.composer;
+  const sent = useMemo(
+    () => sends.sending.map(conversationExchangeSent),
+    [sends.sending],
+  );
   if (props.unhosted && !typed) return <ChatPaneUnhosted />;
   return (
     <div
@@ -307,7 +314,7 @@ function ChatPaneFirst(props: {
       className="min-h-0 min-w-0 flex-1"
     >
       <Conversation
-        exchanges={[]}
+        exchanges={sent}
         composer={{
           ...composer,
           onSend: (text) => {
@@ -323,6 +330,22 @@ function ChatPaneFirst(props: {
       />
     </div>
   );
+}
+
+/** The read of a thread a first message opened, which says once it has
+ * answered and draws nothing: the pane draws the thread from then, in place of
+ * the composer that message was typed in. */
+function ChatPaneOpening(props: {
+  readonly partition: PartitionIdentity;
+  readonly session: string;
+  readonly onRead: () => void;
+}): ReactNode {
+  const pending = useThread(props.partition, props.session).state === "Pending";
+  const onRead = props.onRead;
+  useEffect(() => {
+    if (!pending) onRead();
+  }, [pending, onRead]);
+  return null;
 }
 
 /** The collapsed pane: the one control that brings it back, and nothing that
@@ -408,30 +431,69 @@ function useChatPaneDoor(partition: PartitionIdentity): {
   };
 }
 
+/**
+ * Which thread the open pane draws: the one the reader chose or the pane holds
+ * for them, kept off the screen while a first message is being sent and until
+ * the thread that message opened has been read.
+ */
+function useChatPaneOpenHeld(partition: PartitionIdentity): {
+  readonly threads: readonly ThreadEntryResponse[] | undefined;
+  readonly holding: ReturnType<typeof chatPaneHolding>;
+  readonly named: boolean;
+  readonly starting: boolean;
+  /** The thread a first message opened, while its read is awaited. */
+  readonly opening: string | undefined;
+  readonly chose: (session: string) => void;
+  readonly began: () => void;
+  readonly stayed: () => void;
+  readonly sent: (session: string) => void;
+  readonly read: () => void;
+} {
+  const threads = useChatPaneThreads(partition);
+  const mine = threads === undefined ? undefined : threadMine(threads);
+  const answering = useChatPaneAnswering(partition, mine?.session);
+  const [chosen, setChosen] = useState<string | undefined>(undefined);
+  const [starting, setStarting] = useState(false);
+  const [opening, setOpening] = useState<string | undefined>(undefined);
+  const read = useCallback(() => {
+    setStarting(false);
+    setOpening(undefined);
+  }, []);
+  return {
+    threads,
+    holding: chatPaneHolding(threads, answering, chosen),
+    named: chosen !== undefined,
+    starting,
+    opening,
+    chose: (session) => {
+      setChosen(session);
+      read();
+    },
+    began: () => {
+      setStarting(true);
+    },
+    stayed: () => {
+      setStarting(false);
+    },
+    sent: (session) => {
+      setChosen(session);
+      setOpening(session);
+    },
+    read,
+  };
+}
+
 function ChatPaneOpen(props: {
   readonly partition: PartitionIdentity;
   /** Whether the pane has the whole frame, and so sets its conversation as a
    * column to read. */
   readonly reading: boolean;
 }): ReactNode {
-  const threads = useChatPaneThreads(props.partition);
-  const mine = threads === undefined ? undefined : threadMine(threads);
-  const answering = useChatPaneAnswering(props.partition, mine?.session);
-  const [chosen, setChosen] = useState<string | undefined>(undefined);
-  const [starting, setStarting] = useState(false);
+  const pane = useChatPaneOpenHeld(props.partition);
   const door = useChatPaneDoor(props.partition);
-  const holding = chatPaneHolding(threads, answering, chosen);
-  const refuse = (answer: "Unhosted" | "NoRunner"): void => {
-    door.refused(answer);
-    setStarting(false);
-  };
-  const holdOpened = (session: string): void => {
-    setChosen(session);
-    setStarting(false);
-    door.opened();
-  };
+  const { threads, holding } = pane;
   const held = threads?.find((thread) => thread.session === holding.session);
-  const drawn = chatPaneThreadDrawn(holding.session, starting);
+  const drawn = chatPaneThreadDrawn(holding.session, pane.starting);
   return (
     <section
       aria-label="Chat"
@@ -446,18 +508,21 @@ function ChatPaneOpen(props: {
         <ChatPaneStartControl
           partition={props.partition}
           start={holding.start}
-          onOpened={holdOpened}
-          onRefused={refuse}
+          onOpened={(session) => {
+            pane.chose(session);
+            door.opened();
+          }}
+          onRefused={(answer) => {
+            door.refused(answer);
+            pane.stayed();
+          }}
           header={chatPaneHeaderDoor(door.door, drawn, held, door.refusal)}
         />
         {threads === undefined ? null : (
           <ChatPaneHistory
             threads={threads}
             session={holding.session}
-            onChoose={(session) => {
-              setChosen(session);
-              setStarting(false);
-            }}
+            onChoose={pane.chose}
           />
         )}
         <ChatPaneControls />
@@ -466,14 +531,22 @@ function ChatPaneOpen(props: {
         <ChatPaneBody
           partition={props.partition}
           session={holding.session}
-          named={chosen !== undefined}
-          starting={starting}
+          named={pane.named}
+          starting={pane.starting}
           unhosted={chatPaneUnhosted(door.door, door.refusal)}
-          onStarting={() => {
-            setStarting(true);
+          onStarting={pane.began}
+          onStarted={(session) => {
+            pane.sent(session);
+            door.opened();
           }}
-          onStarted={holdOpened}
         />
+        {pane.opening === undefined ? null : (
+          <ChatPaneOpening
+            partition={props.partition}
+            session={pane.opening}
+            onRead={pane.read}
+          />
+        )}
       </div>
     </section>
   );

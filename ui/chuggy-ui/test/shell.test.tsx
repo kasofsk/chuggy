@@ -574,6 +574,80 @@ test("New after a refused first message holds the thread it opens", async () => 
   styleless();
 });
 
+/** One answer a case holds back until it lets it go. */
+function heldBack(): {
+  readonly let: Promise<void>;
+  readonly go: () => void;
+} {
+  let go = (): void => undefined;
+  const held = new Promise<void>((resolve) => {
+    go = resolve;
+  });
+  return {
+    let: held,
+    go: () => {
+      go();
+    },
+  };
+}
+
+/** The asks the pane draws that say "hello". */
+function helloAsks(): readonly Element[] {
+  return Array.from(
+    chatDrawn()?.querySelectorAll('[data-message-id$="-ask"]') ?? [],
+  ).filter((ask) => ask.textContent === "hello");
+}
+
+/** A reader with no thread sees their first message from the press: through
+ * the open, the door taking it, and the read of the thread it opened, each
+ * held back in turn, with no line saying the pane is loading in its place. */
+test("a first message is drawn once from the press until its thread is read, and no loading line stands in for it", async () => {
+  const opening = heldBack();
+  const taking = heldBack();
+  const reading = heldBack();
+  const served = threadServed([]);
+  let turn = "";
+  await mounted(viewportDeskEm, ((
+    url: string,
+    init?: { readonly method?: string; readonly body?: string },
+  ) => {
+    if (init?.method === "POST" && url.endsWith("/messages")) {
+      turn = (JSON.parse(init.body ?? "") as { readonly turn: string }).turn;
+      return taking.let.then(() => answer({ turn, ordinal: 1 }, 202));
+    }
+    if (init?.method === "POST")
+      return opening.let.then(() => served(url, init));
+    if (url.endsWith(`/threads/${openedSession}`))
+      return reading.let.then(() =>
+        answer(
+          threadBody({
+            session: openedSession,
+            streamless: true,
+            turns: [threadTurn({ turn, input: "hello", state: "Queued" })],
+          }),
+        ),
+      );
+    return served(url, init);
+  }) as unknown as typeof fetch);
+  fireEvent.change(composerDrawn(), { target: { value: "hello" } });
+  await turned(() => {
+    screen.getByRole("button", { name: "Send" }).click();
+  });
+  const drawnOnce = (): void => {
+    expect(helloAsks()).toHaveLength(1);
+    expect(screen.queryByText("Loading…")).toBeNull();
+  };
+  drawnOnce();
+  for (const answered of [opening, taking, reading]) {
+    await turned(answered.go);
+    await settled();
+    drawnOnce();
+  }
+  expect(turn).not.toBe("");
+  expect(composerDrawn().value).toBe("");
+  styleless();
+});
+
 /** A server whose thread door refuses every open for the hosted grant. */
 function unhostedServed(): typeof fetch {
   const served = threadServed([]);

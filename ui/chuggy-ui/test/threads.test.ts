@@ -16,6 +16,7 @@ import {
   threadMessageRefusalCodes,
   threadStandings,
 } from "../../../src/contract/rosters.ts";
+import { threadBacklogMax } from "../../../src/contract/http.ts";
 import type { ThreadTurnResponse } from "../../../src/contract/responses.ts";
 import {
   threadActions,
@@ -26,6 +27,8 @@ import {
   threadRefusalCode,
   threadRefusalWord,
   threadSendFrom,
+  threadSendingWith,
+  threadSendingWithout,
   threadSendStanding,
   threadStoreDue,
   threadTakesMessages,
@@ -37,7 +40,7 @@ import {
   threadWriting,
   threadsByStanding,
 } from "../app/core/threads.ts";
-import type { ThreadDoor } from "../app/core/threads.ts";
+import type { ThreadDoor, ThreadSending } from "../app/core/threads.ts";
 import { threadEntry, threadWakeInput } from "./threadFixture.ts";
 
 function turnOf(turn: Partial<ThreadTurnResponse>): ThreadTurnResponse {
@@ -197,6 +200,32 @@ describe("the turn a press posts under", () => {
     expect(threadTurnRetained(held, "one more")).toBe("thread-turn-a");
     expect(threadTurnRetained(held, "one more, and")).toBeUndefined();
     expect(threadTurnRetained(undefined, "one more")).toBeUndefined();
+  });
+});
+
+describe("the messages a page sent that its mailbox does not list yet", () => {
+  const first = { turn: "thread-turn-a", text: "one" };
+  const second = { turn: "thread-turn-b", text: "two" };
+
+  test("are held in the order sent, each turn once", () => {
+    const held = threadSendingWith(threadSendingWith([], first), second);
+    expect(held).toStrictEqual([first, second]);
+    expect(threadSendingWith(held, first)).toStrictEqual([second, first]);
+  });
+
+  test("are no more than the mailbox takes turns, and a press past that is not held", () => {
+    let held: readonly ThreadSending[] = [];
+    for (let at = 0; at < threadBacklogMax; at += 1)
+      held = threadSendingWith(held, { turn: `turn-${at}`, text: "again" });
+    expect(held).toHaveLength(threadBacklogMax);
+    expect(threadSendingWith(held, first)).toBe(held);
+  });
+
+  test("leave with the turns named, and are the same list where none of theirs is", () => {
+    const held = [first, second];
+    expect(threadSendingWithout(held, [first.turn])).toStrictEqual([second]);
+    expect(threadSendingWithout(held, ["thread-turn-c"])).toBe(held);
+    expect(threadSendingWithout(held, [])).toBe(held);
   });
 });
 

@@ -64,7 +64,10 @@
 
 import { z } from "zod";
 
-import { identitySchema } from "../../../../src/contract/http.ts";
+import {
+  identitySchema,
+  threadBacklogMax,
+} from "../../../../src/contract/http.ts";
 import type {
   ThreadEntryResponse,
   ThreadMessageAccepted,
@@ -294,6 +297,34 @@ export function threadTurnRetained(
   text: string,
 ): string | undefined {
   return held !== undefined && held.text === text ? held.turn : undefined;
+}
+
+/** A message this page sent, under the turn identity it minted for it, held
+ * for as long as the mailbox read does not list that turn. */
+export interface ThreadSending {
+  readonly turn: string;
+  readonly text: string;
+}
+
+/** The messages sent with one more, last. A page holds no more of them than
+ * the mailbox takes turns, and a press past that is drawn when the mailbox
+ * lists it. */
+export function threadSendingWith(
+  sending: readonly ThreadSending[],
+  sent: ThreadSending,
+): readonly ThreadSending[] {
+  const others = sending.filter((held) => held.turn !== sent.turn);
+  return others.length >= threadBacklogMax ? sending : [...others, sent];
+}
+
+/** The messages sent less those of the turns named, and the same list where
+ * it holds none of them. */
+export function threadSendingWithout(
+  sending: readonly ThreadSending[],
+  turns: readonly string[],
+): readonly ThreadSending[] {
+  const left = sending.filter((held) => !turns.includes(held.turn));
+  return left.length === sending.length ? sending : left;
 }
 
 /** Where one press of `Send` got to, or before one, what its door would answer. */

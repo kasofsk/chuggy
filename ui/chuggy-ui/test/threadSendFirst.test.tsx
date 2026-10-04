@@ -81,13 +81,13 @@ test("a refused first message is sent again into the thread it opened", async ()
   );
   let first: unknown;
   await act(async () => {
-    first = await result.current.onSend("hello");
+    first = await result.current.composer.onSend("hello");
   });
   expect(first).toBe("Kept");
   expect(started).toStrictEqual([]);
   let second: unknown;
   await act(async () => {
-    second = await result.current.onSend("hello");
+    second = await result.current.composer.onSend("hello");
   });
   expect(second).toBe("Sent");
   expect(started).toStrictEqual(["thread-1"]);
@@ -98,6 +98,62 @@ test("a refused first message is sent again into the thread it opened", async ()
     true,
   ]);
   expect(messages[0]?.body).toStrictEqual(messages[1]?.body);
+});
+
+/** A press's message is held under the turn it is posted as, which is what
+ * lets the page draw it before the mailbox lists that turn. */
+test("a press is held from the press, under the turn it posts, until the mailbox lists that turn", async () => {
+  const posted = doorAnswering([202]);
+  const { result, rerender } = renderHook(
+    (listed: readonly string[]) =>
+      useThreadSend({
+        partition: threadPartition,
+        session: "thread-1",
+        takes: true,
+        listed,
+      }),
+    { wrapper, initialProps: [] as readonly string[] },
+  );
+  let sent: Promise<unknown> = Promise.resolve();
+  act(() => {
+    sent = result.current.composer.onSend("hello");
+  });
+  expect(result.current.sending.map((held) => held.text)).toStrictEqual([
+    "hello",
+  ]);
+  await act(async () => {
+    await sent;
+  });
+  const turn = (posted[0]?.body as { readonly turn: string }).turn;
+  expect(result.current.sending).toStrictEqual([{ turn, text: "hello" }]);
+  rerender(["some-other-turn"]);
+  expect(result.current.sending).toStrictEqual([{ turn, text: "hello" }]);
+  rerender([turn]);
+  expect(result.current.sending).toStrictEqual([]);
+  rerender([]);
+  expect(result.current.sending).toStrictEqual([]);
+});
+
+test("a press the door refuses is held no longer", async () => {
+  doorAnswering([400]);
+  const { result } = renderHook(
+    () =>
+      useThreadSend({
+        partition: threadPartition,
+        session: "thread-1",
+        takes: true,
+      }),
+    { wrapper },
+  );
+  let sent: Promise<unknown> = Promise.resolve();
+  act(() => {
+    sent = result.current.composer.onSend("hello");
+  });
+  expect(result.current.sending).toHaveLength(1);
+  await act(async () => {
+    expect(await sent).toBe("Kept");
+  });
+  expect(result.current.sending).toStrictEqual([]);
 });
 
 test("a send the hosted grant refuses keeps the text and stops the composer taking any more", async () => {
@@ -115,11 +171,11 @@ test("a send the hosted grant refuses keeps the text and stops the composer taki
   );
   let sent: unknown;
   await act(async () => {
-    sent = await result.current.onSend("hello");
+    sent = await result.current.composer.onSend("hello");
   });
   expect(sent).toBe("Kept");
-  expect(result.current.takes).toBe(false);
-  expect(result.current.holds).toBe(true);
+  expect(result.current.composer.takes).toBe(false);
+  expect(result.current.composer.holds).toBe(true);
 });
 
 /** A grant whose read says it is not given, the door posted to by nobody. */
@@ -147,10 +203,13 @@ test("a grant read as not given holds the composer before anything is typed", as
       }),
     { wrapper },
   );
-  expect(result.current.takes, "the box took text before the read").toBe(true);
+  expect(
+    result.current.composer.takes,
+    "the box took text before the read",
+  ).toBe(true);
   await settled();
-  expect(result.current.takes).toBe(false);
-  expect(result.current.holds).toBe(true);
+  expect(result.current.composer.takes).toBe(false);
+  expect(result.current.composer.holds).toBe(true);
   expect(posted).toStrictEqual([]);
 });
 
@@ -168,6 +227,6 @@ test("a thread that takes no messages is not held for the grant", async () => {
     { wrapper },
   );
   await settled();
-  expect(result.current.takes).toBe(false);
-  expect(result.current.holds).toBe(false);
+  expect(result.current.composer.takes).toBe(false);
+  expect(result.current.composer.holds).toBe(false);
 });

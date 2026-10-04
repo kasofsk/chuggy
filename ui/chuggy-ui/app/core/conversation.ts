@@ -90,6 +90,7 @@ import {
 } from "../../../../src/contract/threadSeeding.ts";
 import { runCountLabel } from "./runTotals.ts";
 import { threadWakeDrawn } from "./threads.ts";
+import type { ThreadSending } from "./threads.ts";
 
 /** The most blocks one entry is read for. */
 export const conversationBlocksMax = 256;
@@ -1458,6 +1459,34 @@ export function conversationIndicator(
   return engine.drawn && engine.sending
     ? { indicator: "Engine" }
     : { indicator: "None" };
+}
+
+/** A message this page sent, as the queued turn the mailbox is about to list
+ * it as: named by that turn, so the exchange the mailbox comes to list is the
+ * one already drawn. */
+export function conversationExchangeSent(
+  sent: ThreadSending,
+): ConversationExchange {
+  return {
+    id: sent.turn,
+    turn: sent.turn,
+    ask: conversationAskMessage(sent.text),
+    work: [],
+    standing: { standing: "Running", state: "Queued" },
+    before: [],
+  };
+}
+
+/** The exchanges with those sent at their foot, each only while no exchange
+ * speaks for its turn, so a message is drawn once whichever holds it. */
+export function conversationExchangesWithSent(
+  exchanges: readonly ConversationExchange[],
+  sent: readonly ConversationExchange[],
+): readonly ConversationExchange[] {
+  const unlisted = sent.filter(
+    (one) => !exchanges.some((exchange) => exchange.turn === one.turn),
+  );
+  return unlisted.length === 0 ? exchanges : [...exchanges, ...unlisted];
 }
 
 /** The exchanges with every queued turn read as waiting, for a surface whose
