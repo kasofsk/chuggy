@@ -144,6 +144,10 @@ export interface ConversationEntry {
   readonly id: string;
   readonly role: ConversationRole;
   readonly at?: string;
+  /** The model message this entry is a block of, where the store names one:
+   * the entries of one message share it and arrive one block each, in the
+   * message's own order. */
+  readonly message?: string;
   readonly blocks: readonly ConversationBlock[];
 }
 
@@ -237,13 +241,28 @@ export interface ConversationMeasures {
   readonly durationMs?: number;
 }
 
+/**
+ * What a running exchange is doing now, where a surface that follows its turns
+ * as they are written knows: thinking, a tool under way, its text being
+ * written, or `Whole` — a turn whose last message is written and which is
+ * waiting on nothing but its own settling.
+ */
+export type ConversationActivity =
+  | { readonly activity: "Thinking" }
+  | { readonly activity: "ToolUse"; readonly name: string }
+  | { readonly activity: "Writing" }
+  | { readonly activity: "Whole" };
+
 /** One ask, the work it took and the answer it ended on. */
 export interface ConversationExchange {
   readonly id: string;
+  /** The mailbox turn this exchange is, where one speaks for it. */
+  readonly turn?: string;
   readonly ask?: ConversationAsk;
   readonly work: readonly ConversationStep[];
   readonly answer?: string;
   readonly standing: ConversationStanding;
+  readonly activity?: ConversationActivity;
   readonly measures?: ConversationMeasures;
   readonly before: readonly ConversationMarker[];
 }
@@ -431,19 +450,25 @@ function conversationMeasuresOf(
   return Object.keys(measures).length === 0 ? undefined : measures;
 }
 
-/** One exchange while it is still being built, which is the only place any of
- * this is mutable. */
-interface ConversationBuilt {
-  readonly id: string;
-  askText: string | undefined;
-  ask: ConversationAsk | undefined;
+/** What an assistant's blocks are folded into: the work, the answer, and what
+ * the fold could not keep. */
+interface ConversationSaid {
   readonly work: ConversationStep[];
   answer: string | undefined;
+  readonly before: ConversationMarker[];
+  stepsCut: number;
+}
+
+/** One exchange while it is still being built, which is the only place any of
+ * this is mutable. */
+interface ConversationBuilt extends ConversationSaid {
+  readonly id: string;
+  turn: string | undefined;
+  askText: string | undefined;
+  ask: ConversationAsk | undefined;
   standing: ConversationStanding;
   measures: ConversationMeasures | undefined;
-  readonly before: ConversationMarker[];
   matched: boolean;
-  stepsCut: number;
 }
 
 interface ConversationBuilder {
@@ -455,6 +480,8 @@ interface ConversationBuilder {
 
 /** The identity of the exchange that carries markers nothing follows. */
 const conversationTrailingId = "trailing";
+
+const conversationHeardNone: ReadonlySet<string> = new Set();
 
 /** The one sentence a cut is ever said in, wherever the cut happens. */
 function conversationCappedSentence(noun: string, count: number): string {
@@ -478,6 +505,7 @@ function conversationOpened(
 ): ConversationBuilt {
   const built: ConversationBuilt = {
     id,
+    turn: undefined,
     askText: undefined,
     ask: undefined,
     work: [],
@@ -499,7 +527,7 @@ function conversationOpened(
 }
 
 function conversationStepped(
-  built: ConversationBuilt,
+  built: ConversationSaid,
   step: ConversationStep,
 ): void {
   if (built.work.length >= conversationStepsMax) {
@@ -513,7 +541,7 @@ function conversationStepped(
  * is the last text after the last piece of work, and never a text the agent
  * carried on past. */
 function conversationWorked(
-  built: ConversationBuilt,
+  built: ConversationSaid,
   step: ConversationStep,
 ): void {
   if (built.answer !== undefined) {
@@ -526,7 +554,7 @@ function conversationWorked(
 /** A result joins the call it names; a result whose call is not open stands as
  * a call of its own, unnamed, rather than vanishing. */
 function conversationResulted(
-  built: ConversationBuilt,
+  built: ConversationSaid,
   block: Extract<ConversationBlock, { block: "ToolResult" }>,
 ): void {
   const result = { text: block.text, isError: block.isError };
@@ -550,7 +578,7 @@ function conversationResulted(
 }
 
 function conversationBlockWorked(
-  built: ConversationBuilt,
+  built: ConversationSaid,
   block: ConversationBlock,
 ): void {
   switch (block.block) {
@@ -579,9 +607,21 @@ function conversationBlockWorked(
   }
 }
 
-function conversationAnswered(built: ConversationBuilt, text: string): void {
+function conversationAnswered(built: ConversationSaid, text: string): void {
   if (text.length === 0) return;
   built.answer = built.answer === undefined ? text : `${built.answer}\n${text}`;
+}
+
+/** An assistant's blocks in the order it wrote them: a text is the answer
+ * until something follows it, and everything else is work. */
+function conversationAssistantSaid(
+  built: ConversationSaid,
+  blocks: readonly ConversationBlock[],
+): void {
+  for (const block of blocks) {
+    if (block.block === "Text") conversationAnswered(built, block.text);
+    else conversationBlockWorked(built, block);
+  }
 }
 
 /** Whether an entry opens an exchange, which every entry does but one carrying
@@ -625,10 +665,7 @@ function conversationAssistantEntry(
   entry: ConversationEntry,
 ): void {
   const built = builder.open ?? conversationOpened(builder, entry.id);
-  for (const block of entry.blocks) {
-    if (block.block === "Text") conversationAnswered(built, block.text);
-    else conversationBlockWorked(built, block);
-  }
+  conversationAssistantSaid(built, entry.blocks);
 }
 
 /** The newest unmatched exchange whose ask is exactly this text. Turns are
@@ -650,30 +687,37 @@ function conversationApplied(
   turn: ConversationTurn,
 ): void {
   built.matched = true;
+  built.turn = turn.turn;
   built.standing = conversationStandingOf(turn);
   built.measures = conversationMeasuresOf(turn);
   if (built.askText !== undefined)
     built.ask = conversationAskOf(turn.inputKind, built.askText);
 }
 
-/** A turn the transcript does not hold, appended as an exchange with no work.
- * An answered one is not appended: the transcript is where its answer lives,
- * and a page that has not read that far says so with a marker. */
+/** A turn the transcript does not hold, appended as an exchange with no work. */
 function conversationAppended(
   builder: ConversationBuilder,
   turn: ConversationTurn,
 ): void {
   const built = conversationOpened(builder, turn.turn);
   built.matched = true;
+  built.turn = turn.turn;
   built.standing = conversationStandingOf(turn);
   built.measures = conversationMeasuresOf(turn);
   built.askText = turn.input;
   built.ask = conversationAskOf(turn.inputKind, turn.input);
 }
 
+/**
+ * The mailbox over the transcript: each turn paired with the exchange its
+ * input opened, and each one left over appended. An answered turn is left out
+ * unless a page heard some of it being written — the transcript is where its
+ * answer lives, and a page that has not read that far says so with a marker.
+ */
 function conversationOverlaid(
   builder: ConversationBuilder,
   turns: readonly ConversationTurn[],
+  heardTurns: ReadonlySet<string>,
 ): void {
   const ordered = [...turns].sort(
     (left, right) => left.ordinal - right.ordinal,
@@ -688,7 +732,8 @@ function conversationOverlaid(
     paired.add(turn.turn);
   }
   for (const turn of ordered) {
-    if (paired.has(turn.turn) || turn.state === "Answered") continue;
+    if (paired.has(turn.turn)) continue;
+    if (turn.state === "Answered" && !heardTurns.has(turn.turn)) continue;
     conversationAppended(builder, turn);
   }
 }
@@ -700,6 +745,7 @@ function conversationDrawn(built: ConversationBuilt): ConversationExchange {
       : [...built.before, conversationCappedMarker("Steps", built.stepsCut)];
   return {
     id: built.id,
+    ...(built.turn === undefined ? {} : { turn: built.turn }),
     ...(built.ask === undefined ? {} : { ask: built.ask }),
     work: built.work,
     ...(built.answer === undefined ? {} : { answer: built.answer }),
@@ -725,6 +771,7 @@ function conversationDrawn(built: ConversationBuilt): ConversationExchange {
 export function conversationExchanges(
   items: readonly ConversationItem[],
   turns?: readonly ConversationTurn[],
+  heardTurns: ReadonlySet<string> = conversationHeardNone,
 ): readonly ConversationExchange[] {
   const builder: ConversationBuilder = {
     built: [],
@@ -738,7 +785,7 @@ export function conversationExchanges(
       conversationUserEntry(builder, item.entry);
     else conversationAssistantEntry(builder, item.entry);
   }
-  if (turns !== undefined) conversationOverlaid(builder, turns);
+  if (turns !== undefined) conversationOverlaid(builder, turns, heardTurns);
   if (builder.pending.length > 0)
     conversationOpened(builder, conversationTrailingId, {
       standing: "Markers",
@@ -749,6 +796,39 @@ export function conversationExchanges(
       conversationCappedMarker("Exchanges", builder.exchangesCut),
     );
   return builder.built.map(conversationDrawn);
+}
+
+/** An exchange while what its assistant said is being put back on it. */
+type ConversationExchangeSaying = {
+  -readonly [Field in keyof ConversationExchange]: ConversationExchange[Field];
+};
+
+/**
+ * The exchange after more of its assistant's blocks, each read exactly as a
+ * stored entry's is — which is what lets a page draw a block it heard before
+ * the transcript held it and have the stored one change nothing. Steps past
+ * the bound are left to the transcript's own fold to count.
+ */
+export function conversationExchangeContinued(
+  exchange: ConversationExchange,
+  blocks: readonly ConversationBlock[],
+): ConversationExchange {
+  if (blocks.length === 0) return exchange;
+  const said: ConversationSaid = {
+    work: [...exchange.work],
+    answer: exchange.answer,
+    before: [...exchange.before],
+    stepsCut: 0,
+  };
+  conversationAssistantSaid(said, blocks);
+  const saying: ConversationExchangeSaying = {
+    ...exchange,
+    work: said.work,
+    before: said.before,
+  };
+  if (said.answer === undefined) delete saying.answer;
+  else saying.answer = said.answer;
+  return saying;
 }
 
 /** The exchanges with every queued turn read as waiting, for a surface whose

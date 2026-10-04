@@ -21,6 +21,7 @@ import {
   conversationBlocksMax,
   conversationBlocksOf,
   conversationBlockUnreadable,
+  conversationExchangeContinued,
   conversationExchanges,
   conversationExchangesMax,
   conversationExchangesWaiting,
@@ -769,6 +770,58 @@ describe("a block recorded before the boundary heading was written", () => {
 
 /** Only a queued turn waits on a runner: one a runner claimed is running on
  * it, and a settled one waits on nothing. */
+describe("an exchange and the turn that speaks for it", () => {
+  test("an exchange names the turn its ask was paired with, and an appended one its own", () => {
+    const exchanges = conversationExchanges(
+      [askOf("entry-1", "first"), answerOf("entry-2", "done")],
+      [
+        turnOf({ turn: "t1", ordinal: 1, input: "first" }),
+        turnOf({ turn: "t2", ordinal: 2, input: "second", state: "Queued" }),
+      ],
+    );
+    expect(exchanges.map((exchange) => exchange.turn)).toEqual(["t1", "t2"]);
+    expect(
+      conversationExchanges([askOf("entry-1", "first")])[0]?.turn,
+    ).toBeUndefined();
+  });
+
+  test("an answered turn the transcript does not hold is appended only where a page heard it", () => {
+    const turns = [turnOf({ turn: "t1", ordinal: 1, input: "first" })];
+    expect(conversationExchanges([], turns)).toEqual([]);
+    expect(conversationExchanges([], turns, new Set(["t9"]))).toEqual([]);
+    expect(conversationExchanges([], turns, new Set(["t1"]))).toEqual([
+      {
+        id: "t1",
+        turn: "t1",
+        ask: { ask: "Message", text: "first" },
+        work: [],
+        standing: { standing: "Answered" },
+        before: [],
+      },
+    ]);
+  });
+
+  test("more of an assistant's blocks continue an exchange as its stored entries would", () => {
+    const stored = [askOf("entry-1", "first"), answerOf("entry-2", "Looking.")];
+    const more: readonly ConversationBlock[] = [
+      { block: "ToolUse", id: "toolu_1", name: "Read", input: { path: "a" } },
+      { block: "Text", text: "Found it." },
+    ];
+    const whole = conversationExchanges([
+      ...stored,
+      entryOf("entry-3", "Assistant", more),
+    ])[0];
+    const first = conversationExchanges(stored)[0];
+    if (first === undefined) throw new Error("no exchange was drawn");
+    expect(conversationExchangeContinued(first, more)).toEqual(whole);
+    expect(conversationExchangeContinued(first, [])).toBe(first);
+    expect(
+      conversationExchangeContinued(first, more.slice(0, 1)).answer,
+    ).toBeUndefined();
+    expect(first.answer).toBe("Looking.");
+  });
+});
+
 test("a surface whose runner cannot take a turn reads its queued turns as waiting and nothing else", () => {
   const exchanges = conversationExchanges(
     [askOf("u1", "one"), answerOf("a1", "done")],

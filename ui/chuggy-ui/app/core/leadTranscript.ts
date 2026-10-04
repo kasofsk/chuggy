@@ -186,11 +186,27 @@ export function leadTranscriptNextAfter(
   pane: LeadTranscriptPane,
   highWaterBatch: number,
 ): number | undefined {
-  const fold = pane.fold;
+  return leadTranscriptFoldNextAfter(pane.fold, highWaterBatch);
+}
+
+function leadTranscriptFoldNextAfter(
+  fold: LeadTranscriptFold,
+  highWaterBatch: number,
+): number | undefined {
   if (fold.readTo === undefined) return highWaterBatch > 0 ? 0 : undefined;
   if (fold.stalledAt !== undefined && highWaterBatch <= fold.stalledAt)
     return undefined;
   return highWaterBatch > fold.readTo ? fold.readTo : undefined;
+}
+
+/** Whether a walk that gathered this fold has nothing left to ask below the
+ * mark: it read that far, or it waits at a cursor only a store written past
+ * the mark moves. */
+export function leadTranscriptReached(
+  fold: LeadTranscriptFold,
+  highWaterBatch: number,
+): boolean {
+  return leadTranscriptFoldNextAfter(fold, highWaterBatch) === undefined;
 }
 
 /** How many reads one walk keeps in flight, which is what a prediction the

@@ -92,6 +92,14 @@ function sessionConversationMarkers(
   return read.listed ? shortfalls : [...shortfalls, { marker: "Unlisted" }];
 }
 
+/** The id the model gave the message an entry is a block of, where the entry
+ * carries one. */
+function sessionConversationMessage(message: unknown): string | undefined {
+  if (typeof message !== "object" || message === null) return undefined;
+  const id = (message as Record<string, unknown>)["id"];
+  return typeof id === "string" && id.length > 0 ? id : undefined;
+}
+
 /** One entry, keyed by the uuid the store gave it and by its place in the chain
  * where it gave none. The route answers user and assistant lines and drops the
  * runtime's bookkeeping, which is why the role is a question with two answers. */
@@ -99,10 +107,12 @@ function sessionConversationEntry(
   entry: LeadTranscriptEntry,
   at: number,
 ): ConversationEntry {
+  const message = sessionConversationMessage(entry.message);
   return {
     id: entry.uuid ?? `entry-${String(at)}`,
     role: entry.type === "user" ? "User" : "Assistant",
     ...(entry.timestamp === undefined ? {} : { at: entry.timestamp }),
+    ...(message === undefined ? {} : { message }),
     blocks: conversationBlocksOf(entry.message),
   };
 }

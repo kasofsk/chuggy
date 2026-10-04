@@ -99,6 +99,29 @@ test("a chain becomes one entry per line, in the order the walk gathered them", 
   ]);
 });
 
+test("an entry carries the id of the model message it is a block of, where the store named one", () => {
+  const items = itemsOf({
+    entries: [
+      entryOf({ uuid: "uuid-a", type: "user", message: said("what of 41") }),
+      entryOf({
+        uuid: "uuid-b",
+        type: "assistant",
+        message: { id: "msg_1", content: [{ type: "text", text: "it waits" }] },
+      }),
+      entryOf({
+        uuid: "uuid-c",
+        type: "assistant",
+        message: { id: "", content: [{ type: "text", text: "on 40" }] },
+      }),
+    ],
+  });
+  expect(
+    items.map((item) =>
+      item.item === "Entry" ? item.entry.message : undefined,
+    ),
+  ).toStrictEqual([undefined, "msg_1", undefined]);
+});
+
 /** The ordinal is a position in what the pane holds, which is what an entry the
  * store gave no uuid can be keyed by and all it can be keyed by. */
 test("an entry with no uuid is keyed by its place in the chain", () => {
