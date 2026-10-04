@@ -12,6 +12,7 @@
 import { setTimeout as delay } from "node:timers/promises";
 
 import type {
+  EventStreamSink,
   ProjectChangeDoorbell,
   ProjectChangeLog,
   ProjectChangeRow,
@@ -19,7 +20,6 @@ import type {
   ProjectResourceReader,
   ProjectStreamNote,
   ProjectStreamReport,
-  ProjectStreamSink,
   ProjectStreamTimers,
 } from "../../src/interpreter/projectStream.ts";
 import type {
@@ -295,9 +295,9 @@ export function fakeReader(): FakeReader {
   };
 }
 
-export interface FakeSocket {
-  readonly sink: ProjectStreamSink;
-  readonly frames: ProjectStreamEvent[];
+export interface FakeSocket<Event = ProjectStreamEvent> {
+  readonly sink: EventStreamSink<Event>;
+  readonly frames: Event[];
   beats(): number;
   ended(): boolean;
   stall(): void;
@@ -307,8 +307,8 @@ export interface FakeSocket {
   mends(): void;
 }
 
-export function fakeSocket(): FakeSocket {
-  const frames: ProjectStreamEvent[] = [];
+export function fakeSocket<Event = ProjectStreamEvent>(): FakeSocket<Event> {
+  const frames: Event[] = [];
   let beats = 0;
   let ended = false;
   let draining = true;

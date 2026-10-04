@@ -1,5 +1,5 @@
 /**
- * Node's timers, as the project stream hub's clock.
+ * Node's timers, as the clock of the hubs that hold streams open.
  *
  * Every handle is unreferenced: a heartbeat or a lifetime is a bound on work
  * already in flight, never a reason for the process to stay alive.
