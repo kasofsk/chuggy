@@ -23,7 +23,7 @@ export const buttonVariants = [
   "quiet",
 ] as const;
 
-export const buttonSizes = ["md", "sm"] as const;
+export const buttonSizes = ["md", "sm", "icon"] as const;
 
 export type ButtonVariant = (typeof buttonVariants)[number];
 export type ButtonSize = (typeof buttonSizes)[number];
@@ -40,6 +40,7 @@ const buttonPillClassName =
 const buttonSizeClassNames: Record<ButtonSize, string> = {
   md: "px-4 py-2 text-md",
   sm: "px-3 py-1 text-sm",
+  icon: "btn-icon justify-center text-sm",
 };
 
 export function buttonLookClassName(look: ButtonLook): string {

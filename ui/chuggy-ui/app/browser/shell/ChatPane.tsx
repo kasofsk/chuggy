@@ -69,7 +69,7 @@ import { threadsListName, useThread } from "../thread/threadRead.ts";
 import { Button } from "../ui/Button.tsx";
 import { Notice } from "../ui/Notice.tsx";
 import { useChatPane } from "./chatPaneHeld.tsx";
-import { ChatPaneIconButton } from "./chatPaneIcons.tsx";
+import { ChatPaneHeaderRow, ChatPaneIconButton } from "./chatPaneIcons.tsx";
 import { ChatPaneHistory, ChatPaneThreadActions } from "./ChatPaneHistory.tsx";
 
 /** The list entry the pane keeps its answering read under, distinct from the
@@ -114,6 +114,30 @@ function useChatPaneThreads(
     (ports) => apiThreads(ports, partition),
   );
   return state.state === "Ready" ? state.value.threads : undefined;
+}
+
+/** What the door would answer a start, said under the header's row. */
+function ChatPaneStartDoor(props: {
+  readonly partition: PartitionIdentity;
+  readonly header: ChatPaneHeaderDoor;
+}): ReactNode {
+  return (
+    <>
+      {props.header.runner === undefined ? null : (
+        <ChatPaneHeaderRow>
+          <SessionRunnerNotice
+            partition={props.partition}
+            short={props.header.runner}
+          />
+        </ChatPaneHeaderRow>
+      )}
+      {props.header.unhosted ? (
+        <ChatPaneHeaderRow>
+          <ThreadUnhostedNotice />
+        </ChatPaneHeaderRow>
+      ) : null}
+    </>
+  );
 }
 
 /**
@@ -179,15 +203,11 @@ function ChatPaneStartControl(props: {
         }}
       />
       {refused === undefined ? null : (
-        <Notice tone="danger" inline detail={`Refused · ${refused}`} />
+        <ChatPaneHeaderRow>
+          <Notice tone="danger" inline detail={`Refused · ${refused}`} />
+        </ChatPaneHeaderRow>
       )}
-      {props.header.runner === undefined ? null : (
-        <SessionRunnerNotice
-          partition={props.partition}
-          short={props.header.runner}
-        />
-      )}
-      {props.header.unhosted ? <ThreadUnhostedNotice /> : null}
+      <ChatPaneStartDoor partition={props.partition} header={props.header} />
     </>
   );
 }
@@ -390,6 +410,9 @@ function useChatPaneDoor(partition: PartitionIdentity): {
 
 function ChatPaneOpen(props: {
   readonly partition: PartitionIdentity;
+  /** Whether the pane has the whole frame, and so sets its conversation as a
+   * column to read. */
+  readonly reading: boolean;
 }): ReactNode {
   const threads = useChatPaneThreads(props.partition);
   const mine = threads === undefined ? undefined : threadMine(threads);
@@ -412,34 +435,32 @@ function ChatPaneOpen(props: {
   return (
     <section
       aria-label="Chat"
-      className="bg-surface-1 relative grid min-h-0 min-w-0 grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] overflow-hidden"
+      className={`bg-surface-1 relative grid min-h-0 min-w-0 grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] overflow-hidden ${props.reading ? "chat-reading" : ""}`}
     >
-      <header className="border-edge grid min-w-0 border-b">
-        <div className="flex min-w-0 flex-wrap items-center justify-evenly gap-1 px-3 py-2">
-          <ChatPaneStartControl
-            partition={props.partition}
-            start={holding.start}
-            onOpened={holdOpened}
-            onRefused={refuse}
-            header={chatPaneHeaderDoor(door.door, drawn, held, door.refusal)}
-          />
-          {threads === undefined ? null : (
-            <ChatPaneHistory
-              threads={threads}
-              session={holding.session}
-              onChoose={(session) => {
-                setChosen(session);
-                setStarting(false);
-              }}
-            />
-          )}
-          <ChatPaneControls />
-        </div>
-        {held === undefined ? null : (
-          <div className="border-edge grid min-w-0 gap-1 border-t px-3 py-2">
-            <ChatPaneThreadActions partition={props.partition} thread={held} />
-          </div>
+      <header className="border-edge flex min-w-0 flex-wrap items-center border-b px-1 py-1">
+        {held === undefined ? (
+          <span className="flex-1" />
+        ) : (
+          <ChatPaneThreadActions partition={props.partition} thread={held} />
         )}
+        <ChatPaneStartControl
+          partition={props.partition}
+          start={holding.start}
+          onOpened={holdOpened}
+          onRefused={refuse}
+          header={chatPaneHeaderDoor(door.door, drawn, held, door.refusal)}
+        />
+        {threads === undefined ? null : (
+          <ChatPaneHistory
+            threads={threads}
+            session={holding.session}
+            onChoose={(session) => {
+              setChosen(session);
+              setStarting(false);
+            }}
+          />
+        )}
+        <ChatPaneControls />
       </header>
       <div className="bg-surface-0 grid min-h-0 min-w-0 grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)]">
         <ChatPaneBody
@@ -465,7 +486,10 @@ export function ChatPane(props: {
   return chatPaneStripped(props.chat) ? (
     <ChatPaneStrip />
   ) : (
-    <ChatPaneOpen partition={props.partition} />
+    <ChatPaneOpen
+      partition={props.partition}
+      reading={props.chat.presentation === "Full"}
+    />
   );
 }
 

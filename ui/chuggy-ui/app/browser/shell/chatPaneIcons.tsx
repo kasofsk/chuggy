@@ -2,6 +2,9 @@
  * The chat pane's controls are drawn as glyphs, each beside its name for a
  * reader who does not see it and, for the icon buttons among them, beside the
  * same name again as hover-and-focus text for a reader who does.
+ *
+ * THE HEADER IS ONE ROW of them beside the thread's title, and anything it has
+ * to say in words goes on a row of its own under that one.
  */
 
 import type { ReactNode } from "react";
@@ -70,7 +73,7 @@ export function ChatPaneIcon(props: {
 }
 
 /**
- * An icon button of the pane's own quiet, small look, its name spoken once and
+ * An icon button of the pane's own quiet look, its name spoken once and
  * read twice: as the hidden label that stays its accessible name, and as the
  * tooltip a pointer or a keyboard focus reveals. The tooltip wraps the button
  * rather than sitting on it, so it still opens on focus even where the button
@@ -87,10 +90,10 @@ export function ChatPaneIconButton(props: {
 }): ReactNode {
   return (
     <Tooltip text={props.label}>
-      <span>
+      <span className="flex">
         <Button
           variant="quiet"
-          size="sm"
+          size="icon"
           {...(props.pressed === undefined ? {} : { pressed: props.pressed })}
           {...(props.busy === undefined ? {} : { busy: props.busy })}
           {...(props.disabled === undefined
@@ -103,4 +106,12 @@ export function ChatPaneIconButton(props: {
       </span>
     </Tooltip>
   );
+}
+
+/** What the pane's header says under its one row, on a row of its own: a
+ * refusal, what a door asks, a question asked before closing. */
+export function ChatPaneHeaderRow(props: {
+  readonly children: ReactNode;
+}): ReactNode {
+  return <div className="order-last w-full min-w-0">{props.children}</div>;
 }

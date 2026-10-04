@@ -27,6 +27,7 @@ import { conversationWaitWordAfterMs } from "../app/browser/conversation/Convers
 import { DetailsSlot, TopBarSlot } from "../app/browser/shell/slots.tsx";
 import {
   viewportDeskEm,
+  viewportNarrowEm,
   viewportTwoColumnEm,
 } from "../app/browser/shell/viewport.ts";
 import { sessionPlacementResource } from "../app/browser/sessionPlacement.tsx";
@@ -326,6 +327,53 @@ test("pressing a screen leaves a collapsed pane collapsed", async () => {
   styleless();
 });
 
+function paneDocked(): void {
+  localStorage.setItem(
+    chatPaneStoreKey,
+    JSON.stringify({ placement: "Right", presentation: "Docked" }),
+  );
+}
+
+/** A phone's bar wraps to rows a conversation cannot spare, so a chat given
+ * the frame there takes them too. The banner's place stands through it, since
+ * what the banner says is true of the chat as well. */
+test("on a narrow viewport a full screen takes the bar's rows, and leaving it draws the bar again", async () => {
+  paneDocked();
+  await mounted(viewportNarrowEm - 1);
+  expect(navDrawn()).not.toBeNull();
+  await pressed("Full screen");
+  expect(chatDrawn()).not.toBeNull();
+  expect(navDrawn()).toBeNull();
+  expect(screen.queryByRole("button", { name: "Sign out" })).toBeNull();
+  expect(document.querySelector(".shell-banner")).not.toBeNull();
+  styleless();
+  await pressed("Exit full screen");
+  expect(navDrawn()).not.toBeNull();
+  expect(screen.queryByRole("button", { name: "Sign out" })).not.toBeNull();
+  styleless();
+});
+
+test("a viewport at the narrow width keeps the bar over a full screen", async () => {
+  paneDocked();
+  await mounted(viewportNarrowEm);
+  await pressed("Full screen");
+  expect(chatDrawn()).not.toBeNull();
+  expect(navDrawn()).not.toBeNull();
+  styleless();
+});
+
+/** A pane with the frame sets its conversation as a column to read, which the
+ * sheet does for the class the pane carries then and not beside the pages. */
+test("a pane given the whole frame is marked as one to read, and beside the pages it is not", async () => {
+  await mounted(viewportDeskEm);
+  expect(chatDrawn()?.classList.contains("chat-reading")).toBe(false);
+  await pressed("Full screen");
+  expect(chatDrawn()?.classList.contains("chat-reading")).toBe(true);
+  await pressed("Exit full screen");
+  expect(chatDrawn()?.classList.contains("chat-reading")).toBe(false);
+  styleless();
+});
+
 /** Where the pane sits is set once, so it lives behind the bar's gear rather
  * than in the pane's own header. */
 test("repositioning the pane divides the frame the other way and is remembered", async () => {
@@ -434,6 +482,51 @@ test("starting a thread holds it at once, and the box takes the caret", async ()
     document.activeElement,
     "a reader who started a thread had to click the box before typing in it",
   ).toBe(composerDrawn());
+  styleless();
+});
+
+/** The item of the pane's header an element stands in. */
+function headerItem(element: HTMLElement): Element | null {
+  const header = chatDrawn()?.querySelector("header");
+  let item: Element | null = element;
+  while (item !== null && item.parentElement !== header)
+    item = item.parentElement;
+  return item;
+}
+
+/** The header is one row: the thread's title with what is done to that thread
+ * beside it, then the pane's own controls, each an item of the same row, and
+ * the title the one item that gives way where the row is short. How tall that
+ * row is drawn is a browser's to say. */
+test("the pane's title and every control of it stand in the header's one row", async () => {
+  await mounted(
+    viewportDeskEm,
+    threadServed([
+      threadEntry({
+        session: openedSession,
+        owner: "geoff",
+        mine: true,
+        title: "held",
+      }),
+    ]),
+  );
+  const header = chatDrawn()?.querySelector("header");
+  expect(header?.classList.contains("flex")).toBe(true);
+  const title = headerItem(screen.getByRole("heading", { name: "held" }));
+  expect(title).not.toBeNull();
+  expect(title?.classList.contains("flex-1")).toBe(true);
+  expect(title?.classList.contains("min-w-0")).toBe(true);
+  const named = (name: string): Element | null =>
+    headerItem(screen.getByRole("button", { name }));
+  expect(named("Rename")).toBe(title);
+  expect(named("Close")).toBe(title);
+  const controls = ["New", "History", "Full screen", "Collapse"].map(named);
+  for (const control of controls) {
+    expect(control).not.toBeNull();
+    expect(control).not.toBe(title);
+  }
+  expect(new Set(controls).size).toBe(controls.length);
+  expect([...(header?.children ?? [])]).toStrictEqual([title, ...controls]);
   styleless();
 });
 

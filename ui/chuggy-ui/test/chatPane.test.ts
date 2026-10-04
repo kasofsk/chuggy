@@ -11,6 +11,7 @@ import { expect, test } from "vitest";
 
 import {
   chatPaneContentDrawn,
+  chatPaneCoversBar,
   chatPaneDefault,
   chatPaneDefaultAt,
   chatPaneFilled,
@@ -109,6 +110,15 @@ test("a viewport too narrow to divide stacks a docked pane under the pages", () 
   expect(chatPaneNarrowed(chatPaneDefault, true)).toStrictEqual(
     chatPaneDefault,
   );
+});
+
+test("only a pane over the whole frame of a narrow viewport takes the bar's rows", () => {
+  const full = chatPaneFilled(chatPaneDefault);
+  expect(chatPaneCoversBar(full, true)).toBe(true);
+  expect(chatPaneCoversBar(full, false)).toBe(false);
+  expect(chatPaneCoversBar(chatPaneDefault, true)).toBe(false);
+  expect(chatPaneCoversBar(chatPaneToggled(chatPaneDefault), true)).toBe(false);
+  expect(chatPaneCoversBar(chatPaneRestored(full), true)).toBe(false);
 });
 
 test("a full pane is left where the reader put it, and a strip stacks under the pages", () => {
