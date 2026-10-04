@@ -1364,6 +1364,90 @@ test("a refused turn and its answered retry, on a page opened afterwards: the an
   });
 });
 
+const reportedFailed = {
+  ...turnAt("Failed"),
+  failure: "AgentFailed" as const,
+};
+
+const halfStored: readonly StoreEntry[] = [
+  entry("uuid-c", "user", { content: asked }),
+  entry("uuid-e", "assistant", {
+    id: "msg_a",
+    content: [{ type: "text", text: "Half an answer" }],
+  }),
+];
+
+const earlierDrawn = ["40 is open.", "Answered", undefined];
+
+const failedDrawn = ["Half an answer", "Failed", "AgentFailed"];
+
+/** The page holding still at this drawing, over the frames a jump would take. */
+async function drawnStill(
+  script: Script,
+  drawn: readonly (readonly (string | undefined)[])[],
+): Promise<void> {
+  await waitFor(() => {
+    expect(halvesNoticed(script.container)).toEqual(drawn);
+  });
+  await settled();
+  await settled();
+  expect(halvesNoticed(script.container)).toEqual(drawn);
+}
+
+test("a thread opened while the same thing waits behind a turn reported failed: the failed turn's words stay under it when the retry is taken", async () => {
+  const of = (batches: number, state: ThreadTurnResponse["state"]) =>
+    threadBody({
+      batches,
+      turns: [before, reportedFailed, sentAgain(state)],
+    });
+  const script = scripted(of(1, "Queued"), oneOpening, [
+    ...earlier,
+    ...halfStored,
+  ]);
+  await drawnStill(script, [
+    earlierDrawn,
+    failedDrawn,
+    [undefined, "Queued", undefined],
+  ]);
+  const taken = [earlierDrawn, failedDrawn, [undefined, "Starting", undefined]];
+  script.draw(of(1, "Claimed"));
+  await drawnStill(script, taken);
+  script.batches.push([entry("uuid-x", "user", { content: asked })]);
+  script.draw(of(2, "Claimed"));
+  await drawnStill(script, taken);
+});
+
+test("the same thing sent twice before either is taken, the first heard, stored and reported failed: its words stay under it when the second is taken", async () => {
+  const of = (
+    batches: number,
+    first: ThreadTurnResponse,
+    second: ThreadTurnResponse["state"],
+  ) => threadBody({ batches, turns: [before, first, sentAgain(second)] });
+  const waiting = [undefined, "Queued", undefined];
+  const script = scripted(of(1, turnAt("Queued"), "Queued"), oneOpening);
+  await drawnStill(script, [earlierDrawn, waiting, waiting]);
+  script.draw(of(1, turnAt("Claimed"), "Queued"));
+  await settled();
+  script.server.pushLive(began("msg_a", 0, "Text"));
+  script.server.pushLive(wrote("msg_a", 0, 0, "Half an answer"));
+  await settled();
+  script.batches.push(halfStored);
+  script.draw(of(2, turnAt("Claimed"), "Queued"));
+  await drawnStill(script, [
+    earlierDrawn,
+    ["Half an answer", "Working", undefined],
+    waiting,
+  ]);
+  script.draw(of(2, reportedFailed, "Queued"));
+  await drawnStill(script, [earlierDrawn, failedDrawn, waiting]);
+  const taken = [earlierDrawn, failedDrawn, [undefined, "Starting", undefined]];
+  script.draw(of(2, reportedFailed, "Claimed"));
+  await drawnStill(script, taken);
+  script.batches.push([entry("uuid-x", "user", { content: asked })]);
+  script.draw(of(3, reportedFailed, "Claimed"));
+  await drawnStill(script, taken);
+});
+
 test("a thread whose stream was replaced: the new turn's stored words, none of them heard, are its own", async () => {
   const old = threadTurn({
     turn: "turn-1",

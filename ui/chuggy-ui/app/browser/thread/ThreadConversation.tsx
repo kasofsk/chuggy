@@ -92,8 +92,8 @@ function useHeardUnder(
 }
 
 /** What the page knows of the record that its items do not say: which
- * exchanges it held before each turn was listed, and whether the thread wrote
- * to a stream before the one drawn. */
+ * exchanges it held before each turn was last taken, and whether the thread
+ * wrote to a stream before the one drawn. */
 function useThreadRecord(
   thread: ThreadResponse,
   items: readonly ConversationItem[],

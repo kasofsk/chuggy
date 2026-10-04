@@ -77,8 +77,8 @@ function pairedUnder(
   );
 }
 
-/** A page that held these exchanges while `newest` was the newest turn its
- * mailbox listed. */
+/** A page that held these exchanges while `newest` was the newest turn not
+ * waiting. */
 function heldBefore(
   newest: number,
   ...exchanges: readonly string[]
@@ -991,7 +991,7 @@ describe("what a page has seen of its exchanges", () => {
     ).toBe(conversationSeenNothing);
   });
 
-  test("an exchange is given the newest turn listed when it was first held, and keeps it", () => {
+  test("an exchange is given the newest turn not waiting when it was first held, and keeps it", () => {
     const seen = conversationSeenWith(
       conversationSeenNothing,
       half,
@@ -1009,6 +1009,29 @@ describe("what a page has seen of its exchanges", () => {
       ["u1", 1],
       ["u2", 2],
     ]);
+  });
+});
+
+describe("what a page has seen of its exchanges, on what it keeps", () => {
+  const first = turnOf({ turn: "t1", ordinal: 1, input: "go" });
+  const second = turnOf({ turn: "t2", ordinal: 2, input: "go" });
+
+  test("a turn still waiting is not counted, whichever turns it waits behind", () => {
+    const waiting = turnOf({
+      turn: "t2",
+      ordinal: 2,
+      input: "go",
+      state: "Queued",
+    });
+    for (const turns of [[first, waiting], [waiting]]) {
+      const seen = conversationSeenWith(
+        conversationSeenNothing,
+        half,
+        turns,
+        true,
+      );
+      expect([...seen]).toEqual([["u1", turns.length - 1]]);
+    }
   });
 
   test("what was seen is handed back itself while the same exchanges are held", () => {
@@ -1050,6 +1073,117 @@ describe("what a page has seen of its exchanges", () => {
     expect(seen.size).toBe(conversationExchangesMax);
     expect(seen.has("u0")).toBe(false);
     expect(seen.has(`u${String(conversationExchangesMax)}`)).toBe(true);
+  });
+});
+
+/** One read a page makes: the items it holds and the turns its mailbox lists. */
+type PageRead = readonly [
+  readonly ConversationItem[],
+  readonly ConversationTurn[],
+];
+
+/** What a page draws at each of its reads, what it has seen folded over them
+ * as the page folds it. */
+function pairedThrough(
+  reads: readonly PageRead[],
+): readonly (readonly (readonly [string, string | undefined])[])[] {
+  let seen = conversationSeenNothing;
+  return reads.map(([items, turns]) => {
+    seen = conversationSeenWith(seen, items, turns, true);
+    return pairedUnder(items, turns, { seen, replaced: false });
+  });
+}
+
+function goAt(
+  ordinal: number,
+  state: ConversationTurn["state"],
+): ConversationTurn {
+  return turnOf({
+    turn: `t${String(ordinal)}`,
+    ordinal,
+    input: "go",
+    state,
+    ...(state === "Failed" ? { failure: "AgentFailed" as const } : {}),
+  });
+}
+
+describe("the mailbox overlay, on an exchange a page held while the turn that is out still waited", () => {
+  const kept = [
+    ["u1", "t1"],
+    ["t2", "t2"],
+  ];
+
+  test("opened while the same ask waits behind a turn reported failed: its words stay its own when the retry is taken", () => {
+    const failed = goAt(1, "Failed");
+    expect(
+      pairedThrough([
+        [half, [failed, goAt(2, "Queued")]],
+        [half, [failed, goAt(2, "Claimed")]],
+        [
+          [...half, askOf("u2", "go")],
+          [failed, goAt(2, "Claimed")],
+        ],
+      ]),
+    ).toEqual([
+      kept,
+      kept,
+      [
+        ["u1", "t1"],
+        ["u2", "t2"],
+      ],
+    ]);
+  });
+
+  test("the same sent twice before either is taken, the first stored and reported failed: its words stay its own when the second is taken", () => {
+    const waiting = goAt(2, "Queued");
+    expect(
+      pairedThrough([
+        [[], [goAt(1, "Queued"), waiting]],
+        [half, [goAt(1, "Claimed"), waiting]],
+        [half, [goAt(1, "Failed"), waiting]],
+        [half, [goAt(1, "Failed"), goAt(2, "Claimed")]],
+      ]),
+    ).toEqual([
+      [
+        ["t1", "t1"],
+        ["t2", "t2"],
+      ],
+      kept,
+      kept,
+      kept,
+    ]);
+  });
+});
+
+describe("the mailbox overlay, on an exchange only the turn that is out can account for", () => {
+  test("opened while a turn put back to wait holds what it stored: it keeps it waiting and taken again", () => {
+    expect(
+      pairedThrough([
+        [half, [goAt(1, "Queued")]],
+        [half, [goAt(1, "Claimed")]],
+      ]),
+    ).toEqual([[["u1", "t1"]], [["u1", "t1"]]]);
+  });
+
+  test("an ask read before the mailbox lists its turn is that turn's once it is listed, where the count leaves it over", () => {
+    const first = [askOf("u1", "go"), answerOf("a1", "First.")];
+    const answered = turnOf({
+      turn: "t1",
+      ordinal: 1,
+      input: "go",
+      result: "First.",
+    });
+    const ahead = [...first, askOf("u2", "go")];
+    expect(
+      pairedThrough([
+        [first, [answered]],
+        [ahead, [answered]],
+        [ahead, [answered, goAt(2, "Claimed")]],
+      ]).at(-1),
+    ).toEqual([
+      ["u1", "t1"],
+      ["u2", "t2"],
+    ]);
   });
 });
 
