@@ -108,13 +108,69 @@ test("text placed inside a block's text replaces what followed", () => {
   assert.equal(held.blocks[0]?.text, "Help me");
 });
 
+test("a post heard again after a later one changes nothing, and what is held is the same value", () => {
+  const earlier = [block(0), text(0, 0, "Hel")];
+  const held = heard([...earlier, text(0, 3, "lo"), block(1, "Thinking")]);
+  assert.equal(heard(earlier, "turn-1", held), held);
+  assert.equal(heard([text(0, 3, "lo")], "turn-1", held), held);
+  assert.equal(heard([text(0, 1, "ell")], "turn-1", held), held);
+  assert.equal(heard([block(1, "Thinking")], "turn-1", held), held);
+  assert.deepEqual(held.blocks[0], {
+    index: 0,
+    kind: "Text",
+    text: "Hello",
+    gapped: false,
+  });
+});
+
+test("a block said to begin as another kind, or under another name, begins again with nothing held", () => {
+  const tool = (name: string): SessionLiveEvent => ({
+    live: "Block",
+    message,
+    index: 0,
+    kind: "ToolUse",
+    name,
+  });
+  const held = heard([block(0), text(0, 0, "Hello")]);
+  assert.deepEqual(heard([block(0, "Thinking")], "turn-1", held).blocks, [
+    { index: 0, kind: "Thinking", text: "", gapped: false },
+  ]);
+  const read = heard([tool("Read")]);
+  assert.equal(heard([tool("Read")], "turn-1", read), read);
+  assert.deepEqual(heard([tool("Write")], "turn-1", read).blocks, [
+    { index: 0, kind: "ToolUse", name: "Write", text: "", gapped: false },
+  ]);
+});
+
+test("text the block already holds somewhere else is still written where it is placed", () => {
+  const held = heard([block(0), text(0, 0, "abab")]);
+  assert.equal(
+    heard([text(0, 4, "ab")], "turn-1", held).blocks[0]?.text,
+    "ababab",
+  );
+  assert.equal(
+    heard([text(0, 1, "ab")], "turn-1", held).blocks[0]?.text,
+    "aab",
+  );
+  assert.equal(heard([text(0, 2, "ab")], "turn-1", held), held);
+});
+
+test("a sender that writes a block again from an earlier place replaces what followed, once its text differs", () => {
+  const held = heard([block(0), text(0, 0, "Hello world")]);
+  const begunAgain = heard([block(0), text(0, 0, "Hello")], "turn-1", held);
+  assert.equal(begunAgain, held);
+  const rewritten = heard([text(0, 5, " there")], "turn-1", begunAgain);
+  assert.equal(rewritten.blocks[0]?.text, "Hello there");
+  const fromTheStart = heard([text(0, 0, "Bye")], "turn-1", rewritten);
+  assert.equal(fromTheStart.blocks[0]?.text, "Bye");
+});
+
 test("text placed past a block's end leaves it gapped until it begins again", () => {
   const gapped = heard([block(0), text(0, 0, "Hel"), text(0, 5, "lo")]);
   assert.deepEqual(gapped.blocks, [
     { index: 0, kind: "Text", text: "", gapped: true },
   ]);
-  const still = heard([text(0, 0, "Hello")], "turn-1", gapped);
-  assert.deepEqual(still.blocks, gapped.blocks);
+  assert.equal(heard([text(0, 0, "Hello")], "turn-1", gapped), gapped);
   const again = heard([block(0), text(0, 0, "Hello")], "turn-1", gapped);
   assert.deepEqual(again.blocks, [
     { index: 0, kind: "Text", text: "Hello", gapped: false },
@@ -165,7 +221,7 @@ test("an event of another message or another turn begins it with nothing held", 
 test("the end of the turn held leaves nothing, and the end of another turn changes nothing", () => {
   const held = heard([block(0), text(0, 0, "Hello")]);
   assert.deepEqual(heard([{ live: "End" }], "turn-1", held), threadLiveNothing);
-  assert.deepEqual(heard([{ live: "End" }], "turn-0", held), held);
+  assert.equal(heard([{ live: "End" }], "turn-0", held), held);
 });
 
 test("whatever is held after any events is a snapshot the stream can carry", () => {
