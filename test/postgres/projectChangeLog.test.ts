@@ -201,6 +201,37 @@ test("an appended change reaches the doorbell's own watcher", async () => {
   }
 });
 
+test("the doorbell rings as it comes to listen and each time it comes back, though nothing was appended", async () => {
+  const name = `chuggy-rings-unasked-${String(Date.now())}`;
+  const told: string[] = [];
+
+  /** What the watcher had been told by the end of the turn each `live` was said in, which no notification can reach into. */
+  const toldByLive: string[][] = [];
+  const doorbell = postgresProjectChangeDoorbell(doorbellUrl(name), {
+    reconnectBaseMs: 50,
+    reconnectMaxMs: 200,
+  });
+  doorbell.open({
+    rang: () => told.push("rang"),
+    sourced: (state) => {
+      told.push(state);
+      if (state === "live") queueMicrotask(() => toldByLive.push([...told]));
+    },
+  });
+  try {
+    await reaches(() => toldByLive.length === 1, "the doorbell connected");
+    assert.deepEqual(toldByLive[0], ["live", "rang"]);
+    await harness.query(
+      `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE application_name=$1`,
+      [name],
+    );
+    await reaches(() => toldByLive.length === 2, "the doorbell came back");
+    assert.deepEqual(toldByLive[1]?.slice(-2), ["live", "rang"]);
+  } finally {
+    await doorbell.close();
+  }
+});
+
 test("a close during a connect leaves no backend listening", async () => {
   const name = `chuggy-closes-${String(Date.now())}`;
   const heard: Heard = { rings: 0, states: [] };
