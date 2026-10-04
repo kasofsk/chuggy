@@ -362,11 +362,16 @@ export interface ConversationMeasures {
  * What a running exchange is doing now, where a surface that follows its turns
  * as they are written knows: thinking, a tool under way, its text being
  * written, or `Whole` — a turn whose last message is written and which is
- * waiting on nothing but its own settling.
+ * waiting on nothing but its own settling. `joined` is a step the page did not
+ * hear begin, which it found under way, so it cannot say how long it has been.
  */
 export type ConversationActivity =
-  | { readonly activity: "Thinking" }
-  | { readonly activity: "ToolUse"; readonly name: string }
+  | { readonly activity: "Thinking"; readonly joined?: true }
+  | {
+      readonly activity: "ToolUse";
+      readonly name: string;
+      readonly joined?: true;
+    }
   | { readonly activity: "Writing" }
   | { readonly activity: "Whole" };
 
@@ -1544,6 +1549,24 @@ export function conversationIndicator(
     : { indicator: "None" };
 }
 
+/** The name an exchange keeps while the transcript comes to hold its turn:
+ * the turn's where one speaks for it, and its own otherwise. */
+export function conversationExchangeNamed(
+  exchange: ConversationExchange,
+): string {
+  return exchange.turn ?? exchange.id;
+}
+
+/** The name of the exchange the indicator moves for, where it moves for one. */
+export function conversationIndicatedNamed(
+  exchanges: readonly ConversationExchange[],
+  indicator: ConversationIndicator,
+): string | undefined {
+  if (indicator.indicator !== "Exchange") return undefined;
+  const moving = exchanges.find((exchange) => exchange.id === indicator.id);
+  return moving === undefined ? undefined : conversationExchangeNamed(moving);
+}
+
 /** The turn one press of Stop ends: the one the indicator moves for, which is
  * none where nothing moves or what moves is no turn's. */
 export function conversationTurnStoppable(
@@ -1552,6 +1575,12 @@ export function conversationTurnStoppable(
 ): string | undefined {
   if (indicator.indicator !== "Exchange") return undefined;
   return exchanges.find((exchange) => exchange.id === indicator.id)?.turn;
+}
+
+/** The box with a message the page handed back in it: ahead of what was typed
+ * since, a blank line between, and alone where nothing was. */
+export function conversationTextRestored(kept: string, typed: string): string {
+  return typed.trim().length === 0 ? kept : `${kept}\n\n${typed}`;
 }
 
 /** A message this page sent, as the queued turn the mailbox is about to list

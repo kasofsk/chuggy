@@ -7,12 +7,13 @@
  *
  * THE MAILBOX HAS THE LAST WORD. A press says its turn stopped only while the
  * mailbox read lists that turn as out, and the read that lists it ended says
- * how: stopped, or answered where the answer's own end came first. A door that
- * says the turn had ended, or that its thread is closed, leaves the press
- * standing for that read.
+ * how. A door that says its thread is closed leaves the press standing for
+ * that read.
  *
- * A REFUSED STOP IS TAKEN BACK. The turn is still out, so it reads as out
- * again, and the refusal is counted so the page hears the turn afresh.
+ * A PRESS THAT STOPPED NOTHING IS TAKEN BACK AT ONCE, and counted so the page
+ * hears the turn afresh. A turn that had ended by itself reads as it would
+ * have, and nothing is said; a turn the door refused to stop is out again,
+ * and the page is told which and why.
  *
  * A STOP PRESSED BEFORE ITS MESSAGE WAS TAKEN FOLLOWS THE SEND. The door knows
  * no turn nobody has sent, so each send on its way is held under its turn, and
@@ -38,16 +39,17 @@ type ThreadStopFlight = Promise<string | undefined>;
 
 /** What one thread holds of its stops. */
 export interface ThreadStopHeld {
-  /** The turns a press named, less each the door refused to stop. */
+  /** The turns a press named, less each press taken back. */
   readonly stopping: ReadonlySet<string>;
-  /** How many stops the door refused. */
-  readonly refusals: number;
+  /** How many presses the door's answer took back. */
+  readonly takenBack: number;
   /** Holds one send under its turn while it is on its way, and answers as the
    * send does. */
   readonly flown: (turn: string, flight: ThreadStopFlight) => ThreadStopFlight;
   /** Stops one turn: on the thread its send reaches where that is on its way,
-   * and on `session` otherwise. */
-  readonly stop: (turn: string, session: string | undefined) => void;
+   * and on `session` otherwise. It answers once the door has, or once there
+   * is nothing to ask it. */
+  readonly stop: (turn: string, session: string | undefined) => Promise<void>;
 }
 
 /** One send held under its turn until the door answers it, where fewer are
@@ -68,14 +70,15 @@ async function threadStopFlown(
 
 export function useThreadStop(input: {
   readonly partition: PartitionIdentity;
-  /** Told the reason each time the door refuses a stop. */
-  readonly onRefused: (reason: string) => void;
+  /** Told the turn each time the door refuses to stop one, and the word for
+   * the cause where a member can act on it. */
+  readonly onRefused: (turn: string, cause: string | undefined) => void;
 }): ThreadStopHeld {
   const ports = useApiPorts();
   const { partition, onRefused } = input;
   const flights = useRef(new Map<string, ThreadStopFlight>());
   const [stopping, setStopping] = useState<readonly string[]>([]);
-  const [refusals, setRefusals] = useState(0);
+  const [takenBack, setTakenBack] = useState(0);
   const named = useMemo(() => new Set(stopping), [stopping]);
   const back = (turn: string): void => {
     setStopping((before) => threadStoppingWithout(before, turn));
@@ -91,16 +94,16 @@ export function useThreadStop(input: {
     );
     if (stop.stop === "Ended") return;
     back(turn);
-    setRefusals((count) => count + 1);
-    onRefused(stop.reason);
+    setTakenBack((count) => count + 1);
+    if (stop.stop === "Refused") onRefused(turn, stop.cause);
   };
   return {
     stopping: named,
-    refusals,
+    takenBack,
     flown: (turn, flight) => threadStopFlown(flights.current, turn, flight),
     stop: (turn, session) => {
       setStopping((before) => threadStoppingWith(before, turn));
-      void asked(turn, flights.current.get(turn) ?? Promise.resolve(session));
+      return asked(turn, flights.current.get(turn) ?? Promise.resolve(session));
     },
   };
 }

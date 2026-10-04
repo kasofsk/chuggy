@@ -24,8 +24,8 @@
  *
  * A TURN THE READER STOPPED IS TURNED AWAY FROM THE PRESS, as a settled one
  * is, so nothing written after the press is drawn. What it had heard stays,
- * and a stop the door refused opens the stream again, since the turn is still
- * being written and what was turned away meanwhile is in the snapshot.
+ * and a press taken back opens the stream again, since what was turned away
+ * meanwhile is in the snapshot.
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -57,10 +57,10 @@ export function useThreadLive(read: {
   /** What a message held and not yet marked is marked with, which is nothing
    * until the walk has read everything. */
   readonly known: ConversationLiveKnown;
-  /** The turns the reader stopped, less each the door refused to stop. */
+  /** The turns the reader stopped, less each press taken back. */
   readonly stopping: ReadonlySet<string>;
-  /** How many stops the door refused, each of which opens the stream again. */
-  readonly refusals: number;
+  /** How many presses were taken back, each of which opens the stream again. */
+  readonly takenBack: number;
 }): ConversationLiveHeld {
   const ports = useStreamPorts();
   const generation = useSessionGeneration();
@@ -69,7 +69,7 @@ export function useThreadLive(read: {
   const frame = useRef<number | undefined>(undefined);
   const [held, setHeld] = useState(conversationLiveNothing);
   const { tenant, project } = read.partition;
-  const { session, open, turns, reached, stopping, refusals } = read;
+  const { session, open, turns, reached, stopping, takenBack } = read;
   const kept = conversationLiveKept(held, turns, reached, read.known);
   if (kept !== held) setHeld(kept);
   const over = useMemo(
@@ -115,6 +115,6 @@ export function useThreadLive(read: {
     return () => {
       opened.stop();
     };
-  }, [ports, generation, tenant, project, session, open, refusals]);
+  }, [ports, generation, tenant, project, session, open, takenBack]);
   return kept;
 }

@@ -10,6 +10,12 @@
  * there was of it and no time, since the record holds none and reads the same
  * when it is read again.
  *
+ * A STEP THE PAGE FOUND UNDER WAY IS NAMED AND NOT TIMED. Nothing tells a page
+ * opened in the middle of a step when it began, and a count from the opening
+ * would read as the step's own. Which it was is settled when the step is first
+ * drawn, so one heard to begin goes on counting when the record comes to hold
+ * it.
+ *
  * IT IS A CONTROL ONLY WHERE IT OPENS TO SOMETHING. A thought the record keeps
  * no words of and a call nothing is held of yet have nothing behind them, so
  * the line of a part made only of those is a line and no more.
@@ -168,6 +174,18 @@ function conversationActivityLabel(
 
 const conversationSecondMs = 1000;
 
+/** The step under way where it is one to count: one the page heard begin, as
+ * that stood when the step was first drawn. */
+function useConversationStepTimed(
+  step: number | undefined,
+  joined: boolean,
+): number | undefined {
+  const [first, setFirst] = useState({ step, heard: !joined });
+  if (first.step !== step) setFirst({ step, heard: !joined });
+  const heard = first.step === step ? first.heard : !joined;
+  return heard ? step : undefined;
+}
+
 /** How long the step under way has been: counted from when this first drew
  * it, and from nothing again for each step that begins. */
 function useConversationStepElapsedMs(step: number | undefined): number {
@@ -234,8 +252,12 @@ export function ConversationWorkCard(props: {
       live={props.underWay !== undefined && props.live === true}
     />
   );
+  const activity = props.underWay?.activity;
   const elapsedMs = useConversationStepElapsedMs(
-    props.underWay?.activity === undefined ? undefined : props.steps.length,
+    useConversationStepTimed(
+      activity === undefined ? undefined : props.steps.length,
+      activity?.joined === true,
+    ),
   );
   const words = conversationWorkWords(props.steps, props.underWay, elapsedMs);
   if (said.length === 0)
@@ -259,7 +281,7 @@ export function ConversationWorkCard(props: {
         <ConversationChevron />
       </Collapsible.Trigger>
       <Collapsible.Content>
-        <ol className="border-edge flex flex-col gap-3 border-l pl-4">
+        <ol className="conversation-steps border-edge flex flex-col border-l pl-4">
           {said.map((step, at) => (
             <li key={at} className="flex flex-col gap-1">
               <ConversationWorkStepDrawn step={step} />

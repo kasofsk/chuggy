@@ -18,7 +18,10 @@ import {
 } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
-import { Conversation } from "../app/browser/conversation/Conversation.tsx";
+import {
+  Conversation,
+  conversationStopBeatMs,
+} from "../app/browser/conversation/Conversation.tsx";
 import { conversationWaitWordAfterMs } from "../app/browser/conversation/ConversationLines.tsx";
 import type {
   ConversationComposerProps,
@@ -64,7 +67,10 @@ beforeEach(() => {
   resizeObserverStubbed();
   elementScrollToStubbed();
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 
 test("an exchange draws its ask, its standing and its answer", () => {
   render(<Conversation exchanges={[answered]} empty="No conversation" />);
@@ -626,7 +632,7 @@ function buttonSaid(): readonly string[] {
 
 test("a page that takes a stop draws Stop while a turn is out, and one press hands it that turn", () => {
   const onSend = vi.fn(() => Promise.resolve<ConversationSent>("Sent"));
-  const onStop = vi.fn();
+  const onStop = vi.fn(() => Promise.resolve());
   const drawn = (standing: ConversationExchange["standing"]) => (
     <Conversation
       exchanges={[answered, exchangeOf({ id: "x3", turn: "turn-3", standing })]}
@@ -644,6 +650,29 @@ test("a page that takes a stop draws Stop while a turn is out, and one press han
   expect(buttonSaid()).toStrictEqual(["Send"]);
   view.rerender(drawn({ standing: "Running", state: "Queued" }));
   expect(buttonSaid()).toStrictEqual(["Stop"]);
+  styleless();
+});
+
+test("a stop that fails has been answered all the same, so past the beat the button takes the next press", async () => {
+  const clock = { ms: Math.floor(performance.now()) };
+  vi.spyOn(performance, "now").mockImplementation(() => clock.ms);
+  const onSend = vi.fn(() => Promise.resolve<ConversationSent>("Sent"));
+  const onStop = vi.fn(() => Promise.reject(new Error("the door fell over")));
+  const standing = { standing: "Running", state: "Claimed" } as const;
+  render(
+    <Conversation
+      exchanges={[exchangeOf({ id: "x3", turn: "turn-3", standing })]}
+      composer={{ ...composerOf({ onSend }), onStop }}
+      empty="No conversation"
+    />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Stop" }));
+  await act(async () => {
+    await Promise.resolve();
+  });
+  clock.ms += conversationStopBeatMs;
+  fireEvent.click(screen.getByRole("button", { name: "Stop" }));
+  expect(onStop).toHaveBeenCalledTimes(2);
   styleless();
 });
 
@@ -680,7 +709,7 @@ test("a closed door draws no box to type into", () => {
   styleless();
 });
 
-test("a door that takes nothing more and holds a kept message draws it read-only over the note", async () => {
+test("a door that takes nothing more and holds a kept message draws it read-only with the note", async () => {
   const onSend = vi.fn(() => Promise.resolve<ConversationSent>("Kept"));
   const { rerender } = render(
     <Conversation

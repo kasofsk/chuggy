@@ -10,10 +10,18 @@
  * WHILE A TURN CAN BE STOPPED THE BUTTON IS STOP, and Enter still sends, so a
  * message typed under an answer being written queues behind it. Escape stops
  * nothing: a stop is one press of the one control that says so.
+ *
+ * WHAT THE PAGE SAYS OF A PRESS IS SAID OVER THE BOX. The composer is held to
+ * the foot of its pane, so a line over the box takes its room from the column
+ * and the box and its button stay where they are as it comes and goes.
+ *
+ * A PRESS THE SURFACE SAYS TO IGNORE DOES NOTHING AND CHANGES NOTHING DRAWN.
+ * The button is asked at each press, so one too close behind a press of Stop
+ * neither stops the turn behind nor sends what is in the box.
  */
 
 import { ComposerPrimitive, useAuiState } from "@assistant-ui/react";
-import type { ReactNode } from "react";
+import type { MouseEvent, ReactNode } from "react";
 
 import { textCodePointsCount } from "../../../../../src/contract/http.ts";
 import type { ConversationMentionItem } from "../../core/conversationMention.ts";
@@ -24,14 +32,18 @@ import "./conversation.css";
 /** Whether the page took the message, or handed it back. */
 export type ConversationSent = "Sent" | "Kept";
 
+/** What the composer's one button is at a press. */
+export type ConversationComposerButton = "Stop" | "Send";
+
 export interface ConversationComposerProps {
   /** Whether the door still takes messages, so a closed thread is not a box a
    * member types into to learn that from the refusal. */
   readonly takes: boolean;
   readonly charsMax: number;
   readonly onSend: (text: string) => Promise<ConversationSent>;
-  /** Stops the turn named, on a page that can stop one. */
-  readonly onStop?: (turn: string) => void;
+  /** Stops the turn named, on a page that can stop one, and answers once the
+   * page's door has, whatever it said. */
+  readonly onStop?: (turn: string) => Promise<void>;
   /** The one line the last press is reported as, worded by the page. */
   readonly note?: ReactNode;
   /** Whether a box the door takes nothing more from stays drawn, read-only,
@@ -84,14 +96,30 @@ function ConversationStopGlyph(): ReactNode {
   );
 }
 
-/** The composer's one button: Stop while a turn can be stopped, and Send. */
-function ConversationComposerButton(props: {
+/** What the surface asks of the composer's button beyond what a page does. */
+interface ConversationComposerSurface {
   readonly busy: boolean;
+  /** Whether a turn the page can stop is the thing moving. */
   readonly stops: boolean;
-}): ReactNode {
+  /** Whether a press of the button now is one to do nothing for. */
+  readonly ignores: (button: ConversationComposerButton) => boolean;
+}
+
+/** The composer's one button: Stop while a turn can be stopped, and Send. */
+function ConversationComposerPressed(
+  props: ConversationComposerSurface,
+): ReactNode {
+  const pressed =
+    (button: ConversationComposerButton) =>
+    (event: MouseEvent<HTMLButtonElement>): void => {
+      if (props.ignores(button)) event.preventDefault();
+    };
   if (props.stops)
     return (
-      <ComposerPrimitive.Cancel className="conversation-send">
+      <ComposerPrimitive.Cancel
+        className="conversation-send"
+        onClick={pressed("Stop")}
+      >
         <span className="conversation-send-mark">
           <ConversationStopGlyph />
         </span>
@@ -102,6 +130,7 @@ function ConversationComposerButton(props: {
     <ComposerPrimitive.Send
       className="conversation-send"
       aria-busy={props.busy}
+      onClick={pressed("Send")}
     >
       <span className="conversation-send-mark">
         <ConversationSendGlyph />
@@ -112,11 +141,7 @@ function ConversationComposerButton(props: {
 }
 
 export function ConversationComposer(
-  props: ConversationComposerProps & {
-    readonly busy: boolean;
-    /** Whether a turn the page can stop is the thing moving. */
-    readonly stops: boolean;
-  },
+  props: ConversationComposerProps & ConversationComposerSurface,
 ): ReactNode {
   const written = useAuiState((state) => state.composer.text);
   const count = textCodePointsCount(written);
@@ -133,6 +158,14 @@ export function ConversationComposer(
         {props.mentions === undefined ? null : (
           <ConversationMentions items={props.mentions} />
         )}
+        <div className="conversation-note text-ink-3 flex flex-wrap items-baseline gap-3 text-xs">
+          {props.note}
+          {count < props.charsMax * conversationCounterShare ? null : (
+            <span className="num ml-auto">
+              {count} / {props.charsMax}
+            </span>
+          )}
+        </div>
         <div className="conversation-field bg-surface-1 border-edge-control rounded-3 border">
           <ComposerPrimitive.Input
             className="conversation-input w-full min-w-0 flex-1 resize-none border-0"
@@ -153,15 +186,11 @@ export function ConversationComposer(
                   }
             }
           />
-          <ConversationComposerButton busy={props.busy} stops={props.stops} />
-        </div>
-        <div className="conversation-note text-ink-3 flex flex-wrap items-baseline gap-3 text-xs">
-          {props.note}
-          {count < props.charsMax * conversationCounterShare ? null : (
-            <span className="num ml-auto">
-              {count} / {props.charsMax}
-            </span>
-          )}
+          <ConversationComposerPressed
+            busy={props.busy}
+            stops={props.stops}
+            ignores={props.ignores}
+          />
         </div>
       </ComposerPrimitive.Root>
     </ComposerPrimitive.Unstable_TriggerPopoverRoot>

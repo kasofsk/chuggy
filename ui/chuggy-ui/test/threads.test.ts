@@ -25,6 +25,7 @@ import {
   threadMine,
   threadUnhosted,
   threadRefusalCode,
+  threadRefusalLine,
   threadRefusalWord,
   threadSendFrom,
   threadSendingWith,
@@ -270,11 +271,13 @@ describe("the turns a mailbox read lists as ended", () => {
 });
 
 describe("what a press of Stop came to", () => {
-  test("a door that stopped the turn, or says it had ended, ends it", () => {
-    for (const stopped of ["Stopped", "AlreadyEnded"] as const)
-      expect(
-        threadStopFrom({ outcome: "Ok", value: { stopped } }),
-      ).toStrictEqual({ stop: "Ended" });
+  test("a door that stopped the turn ends it, and one that says it had ended stopped nothing", () => {
+    expect(
+      threadStopFrom({ outcome: "Ok", value: { stopped: "Stopped" } }),
+    ).toStrictEqual({ stop: "Ended" });
+    expect(
+      threadStopFrom({ outcome: "Ok", value: { stopped: "AlreadyEnded" } }),
+    ).toStrictEqual({ stop: "AlreadyEnded" });
   });
 
   test("a thread closed under the turn has nothing left to stop, and no other conflict says so", () => {
@@ -294,7 +297,7 @@ describe("what a press of Stop came to", () => {
     ).toMatchObject({ stop: "Refused" });
   });
 
-  test("any other answer leaves the turn out and says why", () => {
+  test("any other answer leaves the turn out, with a cause only where a member can act on one", () => {
     expect(
       threadStopFrom({
         outcome: "Rejected",
@@ -302,19 +305,32 @@ describe("what a press of Stop came to", () => {
         status: 403,
         body: undefined,
       }),
-    ).toStrictEqual({
-      stop: "Refused",
-      reason: "the API rejected this read as NotYourThread",
-    });
+    ).toStrictEqual({ stop: "Refused" });
     expect(
       threadStopFrom({ outcome: "Unreachable", reason: "offline" }),
-    ).toStrictEqual({
+    ).toStrictEqual({ stop: "Refused", cause: "Unreachable" });
+    expect(threadStopFrom({ outcome: "Unauthenticated" })).toStrictEqual({
       stop: "Refused",
-      reason: "the API could not be reached: offline",
+      cause: "Signed out",
     });
-    expect(threadStopFrom({ outcome: "Absent" })).toMatchObject({
+    expect(threadStopFrom({ outcome: "Absent" })).toStrictEqual({
       stop: "Refused",
     });
+  });
+});
+
+describe("the line a refusal is said in", () => {
+  test("it says what was not done, and the cause where there is one", () => {
+    expect(threadRefusalLine({ what: "Send" })).toBe("Not sent");
+    expect(threadRefusalLine({ what: "Stop", turn: "turn-2" })).toBe(
+      "Not stopped",
+    );
+    expect(threadRefusalLine({ what: "Send", cause: "Unreachable" })).toBe(
+      "Not sent · Unreachable",
+    );
+    expect(
+      threadRefusalLine({ what: "Stop", turn: "turn-2", cause: "Signed out" }),
+    ).toBe("Not stopped · Signed out");
   });
 });
 
@@ -476,17 +492,17 @@ describe("the door's own vocabulary", () => {
     ).toBe("Refused");
   });
 
-  test("every other rejection is one refusal with a reason", () => {
+  test("every other rejection is one refusal of a send, and carries no code", () => {
     const refused = threadSendFrom({
       outcome: "Rejected",
       code: "MessageTooLong",
       status: 400,
       body: undefined,
     });
-    expect(refused.send).toBe("Refused");
-    expect(refused.send === "Refused" ? refused.reason : "").toContain(
-      "MessageTooLong",
-    );
+    expect(refused).toStrictEqual({ send: "Refused", what: "Send" });
+    expect(
+      threadSendFrom({ outcome: "Unreachable", reason: "offline" }),
+    ).toStrictEqual({ send: "Refused", what: "Send", cause: "Unreachable" });
   });
 
   /** The mailbox tail is the only thing that says whether the turn landed. */
@@ -661,7 +677,7 @@ test("a composer on runners says the reader's runner where it cannot take a turn
   expect(
     threadSendStanding(idle, false, door("Pool", true, "Unregistered")),
   ).toStrictEqual(idle);
-  const refused = { send: "Refused", reason: "Bad" } as const;
+  const refused = { send: "Refused", what: "Send" } as const;
   expect(
     threadSendStanding(refused, true, door("Pool", true, "Offline")),
   ).toStrictEqual(refused);

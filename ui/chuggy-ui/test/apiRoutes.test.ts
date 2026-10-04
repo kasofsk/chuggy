@@ -6,7 +6,7 @@
  * here is the segment and the query this console puts after it.
  */
 
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 
 import {
   nativeHttpBasePath,
@@ -42,12 +42,15 @@ import {
   apiSelectorSettings,
   apiSelectorSettingsHistory,
   apiSelectorProposals,
+  apiStopThreadTurn,
+  apiStopTimeoutMs,
   apiTicket,
   apiTicketNativeActions,
   apiWriteProjectRepositoryLanding,
   apiWriteSelectorSettings,
   projectInventoryPagesMax,
 } from "../app/core/apiRoutes.ts";
+import { apiTimeoutMsDefault } from "../app/core/apiRequest.ts";
 import type { ApiFetchInit, ApiPorts } from "../app/core/apiRequest.ts";
 import { ticketInstants } from "./ticketInstants.ts";
 
@@ -668,4 +671,30 @@ test("a configuration step is asked for again by PUT at the bindings' own config
     repository: madeRepository,
   });
   expect(answered).toStrictEqual({ outcome: "Ok", value: configured });
+});
+
+/** A press reads as stopped until its door answers, so a door that never does
+ * is given up on sooner than any other. */
+test("a stop gives its door less time than another request is given, and is unreachable past it", async () => {
+  vi.useFakeTimers();
+  const ports: ApiPorts = {
+    fetch: (_url, init) =>
+      new Promise((_resolve, reject) => {
+        init.signal.addEventListener("abort", () => {
+          reject(new Error("aborted"));
+        });
+      }),
+    bearer: () => Promise.resolve("token"),
+    sleepMs: () => Promise.resolve(),
+  };
+  const outcomes: string[] = [];
+  void apiStopThreadTurn(ports, partition, "thread-1", "turn-2").then(
+    (answered) => outcomes.push(answered.outcome),
+  );
+  await vi.advanceTimersByTimeAsync(apiStopTimeoutMs - 1);
+  expect(outcomes).toStrictEqual([]);
+  await vi.advanceTimersByTimeAsync(1);
+  expect(outcomes).toStrictEqual(["Unreachable"]);
+  expect(apiStopTimeoutMs).toBeLessThan(apiTimeoutMsDefault);
+  vi.useRealTimers();
 });

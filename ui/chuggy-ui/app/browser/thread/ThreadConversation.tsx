@@ -52,11 +52,15 @@ import type {
 } from "../../core/conversation.ts";
 import {
   conversationExchangesLive,
+  conversationItemsHeard,
   conversationLiveHeardUnder,
+  conversationLiveNothing,
+  conversationLiveStoppedHeard,
   conversationLiveTurns,
   conversationLiveTurnsHeard,
   conversationStoredBlocks,
 } from "../../core/conversationLive.ts";
+import type { ConversationLiveHeld } from "../../core/conversationLive.ts";
 import {
   leadStreamBatches,
   leadStreamListed,
@@ -70,6 +74,7 @@ import {
 import {
   threadStoreDue,
   threadTakesMessages,
+  threadTurnsEnded,
   threadTurnsWait,
   threadWriting,
 } from "../../core/threads.ts";
@@ -103,6 +108,26 @@ function useHeardUnder(
   );
 }
 
+/** The transcript with what was heard of each stopped turn where its store
+ * holds less, the same items while the same was heard of those turns: a frame
+ * of another turn changes neither what is set aside nor a message being
+ * written that a stop turns frames away from. */
+function useItemsHeard(
+  items: readonly ConversationItem[],
+  heard: ConversationLiveHeld,
+  stopping: ReadonlySet<string>,
+): readonly ConversationItem[] {
+  const written = heard.written;
+  const stopped =
+    heard.writing.turn !== undefined && stopping.has(heard.writing.turn);
+  const writing = stopped ? heard.writing : conversationLiveNothing.writing;
+  const longer = useMemo(
+    () => conversationLiveStoppedHeard({ writing, written }, stopping),
+    [writing, written, stopping],
+  );
+  return useMemo(() => conversationItemsHeard(items, longer), [items, longer]);
+}
+
 /** What the page knows of the record that its items do not say: which
  * exchanges it held before each turn was listed, and whether the thread wrote
  * to a stream before the one drawn. */
@@ -132,13 +157,13 @@ function useThreadExchanges(
   partition: PartitionIdentity,
   thread: ThreadResponse,
   walked: LeadTranscriptWalk,
-  stops: Pick<ThreadSendHeld, "stopping" | "refusals">,
+  stops: Pick<ThreadSendHeld, "stopping" | "takenBack">,
 ): readonly ConversationExchange[] {
   const held = walked.held;
   const stream = thread.agentReference;
   const listed = leadStreamListed(thread);
   const turned = threadStoreDue(thread);
-  const items = useMemo(
+  const kept = useMemo(
     () => sessionConversationItems({ held, stream, listed, turned }),
     [held, stream, listed, turned],
   );
@@ -146,7 +171,7 @@ function useThreadExchanges(
     () => sessionConversationTurns(thread.turns),
     [thread.turns],
   );
-  const stored = useMemo(() => conversationStoredBlocks(items), [items]);
+  const stored = useMemo(() => conversationStoredBlocks(kept), [kept]);
   const reached =
     !walked.reading && leadTranscriptReached(held, leadStreamBatches(thread));
   const heard = useThreadLive({
@@ -157,8 +182,9 @@ function useThreadExchanges(
     reached,
     known: reached ? stored.messages.length : undefined,
     stopping: stops.stopping,
-    refusals: stops.refusals,
+    takenBack: stops.takenBack,
   });
+  const items = useItemsHeard(kept, heard, stops.stopping);
   const live = conversationLiveTurns(heard, stored);
   const heardTurns = useTurnsNamed(conversationLiveTurnsHeard(live));
   const heardUnder = useHeardUnder(conversationLiveHeardUnder(heard));
@@ -189,6 +215,7 @@ export function ThreadConversation(props: {
     session: thread.session,
     takes: threadTakesMessages(thread),
     listed: thread.turns.map((turn) => turn.turn),
+    ended: threadTurnsEnded(thread),
   });
   const sent = useMemo(
     () => sends.sending.map(conversationExchangeSent),

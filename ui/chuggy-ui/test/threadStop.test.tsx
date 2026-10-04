@@ -45,6 +45,9 @@ import {
   stageStopped,
   stageTurn,
   stageWrote,
+  stageFirstDrawn as opened,
+  stageFirstStored as earlier,
+  stageFirstTurn as before,
 } from "./threadStopStage.tsx";
 import type { Stage, StageEntry } from "./threadStopStage.tsx";
 
@@ -58,13 +61,6 @@ afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
 });
-
-const before = stageTurn(1, "turn-1", "is 40 open", { answer: "40 is open." });
-const earlier: readonly StageEntry[] = [
-  stageAsked("u-a", "is 40 open"),
-  stageWrote("u-b", "msg_before", "40 is open."),
-];
-const opened = ["> is 40 open", "40 is open. (Answered)"];
 
 const asked = "where does 41 stand";
 const heard = "It is blocked by 40, and 40 is";
@@ -291,6 +287,42 @@ test("what was heard of a stopped answer stays where the store holds less of it"
   expect(stageColumn(stage.container)).toStrictEqual(stopped);
 });
 
+test.each([
+  { said: "less of the text heard", stored: "It is blocked", read: heard },
+  {
+    said: "more of it",
+    stored: `${heard} waiting on a review.`,
+    read: `${heard} waiting on a review.`,
+  },
+  { said: "another text there", stored: "Stopped by", read: "Stopped by" },
+])(
+  "a stopped answer's text is read as the longer of what was heard and what is stored, where the store holds $said",
+  async ({ stored, read }) => {
+    const stage = await turnOut("Claimed");
+    await textHeard(stage);
+    await stageStopped();
+    await stageAnswered(stage.stops[0], { stopped: "Stopped" });
+
+    for (const listed of ["Claimed", "Stopped"] as const) {
+      stage.batches.splice(1);
+      await flushed(
+        stage,
+        [
+          stageAsked("u-c", asked),
+          stageWrote("u-d", "msg_a", stored),
+          stageInterrupted("u-e"),
+        ],
+        listed,
+      );
+      expect(
+        stageColumn(stage.container).at(-1),
+        `the mailbox lists the turn ${listed}`,
+      ).toBe(`${read} (Stopped)`);
+    }
+    expect(stageAlarms(stage.container)).toStrictEqual([]);
+  },
+);
+
 test.each(["Queued", "Claimed"] as const)(
   "a press before anything is written of a %s turn leaves its message and Stopped, and the mailbox's read changes nothing",
   async (out) => {
@@ -325,7 +357,7 @@ test.each([
   { refusal: "NotYourThread", status: 403 },
   { refusal: "NotFound", status: 404 },
 ])(
-  "a stop the door refuses as $refusal is taken back: the turn is out again, heard afresh, and the composer says why",
+  "a stop the door refuses as $refusal is taken back: the turn is out again, heard afresh, and the composer says so in one line with no code",
   async ({ refusal, status }) => {
     const more = `${heard} waiting on a review.`;
     const stage = await turnOut("Claimed", [
@@ -344,7 +376,8 @@ test.each([
     await stageColumnIs(stage.container, [...opened, `> ${asked}`, more]);
     expect(stage.server.liveSeen).toHaveLength(2);
     expect(stageButton()).toBe("Stop");
-    expect(screen.getByText(/^Refused · /u).className).toContain("notice");
+    expect(screen.getByText("Not stopped").className).toContain("notice");
+    expect(stage.container.textContent).not.toContain(refusal);
     expect(stageAlarms(stage.container)).not.toContain("notice");
   },
 );
@@ -361,19 +394,21 @@ test("a thread closed under the turn has nothing left to stop, which is no refus
     `${heard} (Stopped)`,
   ]);
   expect(stageAlarms(stage.container)).toStrictEqual([]);
-  expect(screen.queryByText(/Refused/u)).toBeNull();
+  expect(screen.queryByText(/^Not stopped/u)).toBeNull();
   expect(stage.server.liveSeen).toHaveLength(1);
 });
 
-test("a stop that raced the answer's own end leaves the answer as the mailbox has it", async () => {
+test("a stop that raced the answer's own end is taken back at once: nothing reads Stopped, nothing is said, and the answer is as the mailbox has it", async () => {
   const whole = `${heard} waiting on a review.`;
   const stage = await turnOut("Claimed");
   await textHeard(stage);
   await stageStopped();
+  expect(stageColumn(stage.container).at(-1)).toBe(`${heard} (Stopped)`);
 
   await stageAnswered(stage.stops[0], { stopped: "AlreadyEnded" });
-  expect(stageColumn(stage.container).at(-1)).toBe(`${heard} (Stopped)`);
-  expect(screen.queryByText(/Refused/u)).toBeNull();
+  expect(stageColumn(stage.container).at(-1)).toBe(heard);
+  expect(screen.queryByText(/^Not stopped/u)).toBeNull();
+  expect(stage.server.liveSeen, "the stream is opened again").toHaveLength(2);
 
   await flushed(
     stage,

@@ -11,8 +11,11 @@
  *
  * A TURN NOBODY HAS ANSWERED DRAWS NO ANSWER TEXT. Each text is asked of the
  * library by its place among the message's texts, so a message holding none
- * is asked for none, and an exchange nothing is drawn of yet is the engine on
- * the line its first part will take and the line under that.
+ * is asked for none, and an exchange nothing is drawn of yet is the line its
+ * first part will take and the line under that. The engine runs on the first
+ * where the turn is the one moving, and the line is kept where it is not, so
+ * a turn waiting behind another is the same shape before the engine reaches
+ * it as after.
  *
  * ONE THING MOVES, AT THE END OF WHAT IS DRAWN. The surface names the one
  * exchange that may, and within it the turn is at its last part: the mark at
@@ -58,6 +61,7 @@ import type { ReactNode } from "react";
 import { ticketReferenceSplit } from "../../../../../src/contract/ticketReference.ts";
 import {
   conversationExchangeDoing,
+  conversationExchangeNamed,
   conversationExchangeParts,
 } from "../../core/conversation.ts";
 import type {
@@ -89,15 +93,15 @@ export const ConversationWorkOpen = createContext(false);
 export const ConversationPaced = createContext(false);
 
 /** The exchange that holds the one thing on the surface that moves, where
- * there is one, and whether the engine is what runs for a turn nothing is
- * drawn of. */
+ * there is one, by the name it keeps while the transcript comes to hold its
+ * turn, and whether the engine is what runs for a turn nothing is drawn of. */
 export interface ConversationIndicatedHeld {
-  readonly id: string | undefined;
+  readonly named: string | undefined;
   readonly engine: boolean;
 }
 
 export const ConversationIndicated = createContext<ConversationIndicatedHeld>({
-  id: undefined,
+  named: undefined,
   engine: false,
 });
 
@@ -380,11 +384,17 @@ function conversationPartsDrawn(
   return drawn;
 }
 
-/** The engine of a turn nothing is drawn of, once no text on the surface is
- * still being let out: until then the mark at the end of that text is the one
- * thing moving. */
-function ConversationEngine(): ReactNode {
-  return useContext(ConversationLetting) ? null : <ConversationWaiting />;
+/** The line the first of an answer will take, on every turn nothing is drawn
+ * of: the engine runs on it where `mine`, once no text on the surface is still
+ * being let out, and until then it is kept, so the engine arriving moves
+ * nothing. */
+function ConversationEngine(props: { readonly mine: boolean }): ReactNode {
+  const letting = useContext(ConversationLetting);
+  return props.mine && !letting ? (
+    <ConversationWaiting />
+  ) : (
+    <div className="conversation-waiting-kept" aria-hidden="true" />
+  );
 }
 
 /** What an answer holds: its parts, the engine where nothing of it is drawn
@@ -398,7 +408,7 @@ function ConversationAnswerBody(props: {
   const marked = useContext(ConversationMarked);
   const open = useContext(ConversationWorkOpen);
   const doing = conversationExchangeDoing(exchange);
-  const mine = indicated.id === exchange.id;
+  const mine = indicated.named === conversationExchangeNamed(exchange);
   return (
     <>
       {conversationPartsDrawn(conversationExchangeParts(exchange), doing, {
@@ -406,8 +416,8 @@ function ConversationAnswerBody(props: {
         mine,
         stopped: standing.standing === "Stopped",
       })}
-      {doing.doing === "Unbegun" && mine && indicated.engine ? (
-        <ConversationEngine />
+      {doing.doing === "Unbegun" && indicated.engine ? (
+        <ConversationEngine mine={mine} />
       ) : null}
       {standing.standing === "Failed" && standing.failure !== undefined ? (
         <Notice tone="danger" detail={standing.failure} />

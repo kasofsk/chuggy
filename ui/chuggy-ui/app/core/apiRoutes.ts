@@ -176,6 +176,7 @@ function apiProjectEndpoint<
     readonly parameters: EndpointParameters<Path>;
     readonly query?: Query;
     readonly body?: Body;
+    readonly timeoutMs?: number;
   },
 ) {
   return (
@@ -193,6 +194,9 @@ function apiProjectEndpoint<
           request.query,
         ),
         ...(request.body === undefined ? {} : { body: request.body }),
+        ...(request.timeoutMs === undefined
+          ? {}
+          : { timeoutMs: request.timeoutMs }),
       },
       (value) => endpoint.response.parse(value),
     );
@@ -889,6 +893,11 @@ export const apiCloseThread = apiProjectEndpoint(
   }),
 );
 
+/** How long a stop waits on its door, which is less than any other request:
+ * the turn reads as stopped from the press, and a door that never answers
+ * leaves it reading so for as long as this. */
+export const apiStopTimeoutMs = 5_000;
+
 /**
  * Stops one turn of a thread, waiting or being answered. A turn that had ended
  * is the door's success too, and the body is an empty object for the reason
@@ -899,6 +908,7 @@ export const apiStopThreadTurn = apiProjectEndpoint(
   (partition, session: string, turn: string) => ({
     parameters: { ...partition, session, turn },
     body: {},
+    timeoutMs: apiStopTimeoutMs,
   }),
 );
 

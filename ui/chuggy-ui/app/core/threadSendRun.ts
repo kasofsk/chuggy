@@ -32,17 +32,18 @@ import type { z } from "zod";
 
 import { apiSendThreadMessage, apiThread, apiThreads } from "./apiRoutes.ts";
 import type { ApiPorts } from "./apiRequest.ts";
-import { panelReason } from "./freshness.ts";
-import { threadHeldTurn, threadMine, threadSendFrom } from "./threads.ts";
+import {
+  threadHeldTurn,
+  threadMine,
+  threadRefusalCause,
+  threadSendFrom,
+  threadSendRefused,
+} from "./threads.ts";
 import type { ThreadSend } from "./threads.ts";
 
-/** The one thing a settlement can look for and fail to find: a mailbox of the
- * caller's own on a listing it read. */
-const threadMailboxUnfound =
-  "this member has no open thread the message could have reached";
-
 /**
- * The mailbox the caller's own principal resolves to, as the listing marks it.
+ * The mailbox the caller's own principal resolves to, as the listing marks it,
+ * and a refusal where the listing does not answer or marks none.
  */
 async function threadMineSession(
   ports: ApiPorts,
@@ -50,11 +51,9 @@ async function threadMineSession(
 ): Promise<{ readonly session: string } | ThreadSend> {
   const listed = await apiThreads(ports, partition);
   if (listed.outcome !== "Ok")
-    return { send: "Refused", reason: panelReason(listed) };
+    return threadSendRefused(threadRefusalCause(listed));
   const mine = threadMine(listed.value.threads);
-  return mine === undefined
-    ? { send: "Refused", reason: threadMailboxUnfound }
-    : { session: mine.session };
+  return mine === undefined ? threadSendRefused() : { session: mine.session };
 }
 
 /**
@@ -71,15 +70,13 @@ async function threadSendSettled(
   if (!("session" in found)) return found;
   const standing = await apiThread(ports, partition, found.session);
   if (standing.outcome !== "Ok")
-    return { send: "Refused", reason: panelReason(standing) };
+    return threadSendRefused(threadRefusalCause(standing));
   const held = threadHeldTurn(standing.value, message.turn);
   if (held !== undefined) return { send: "Sent", ordinal: held.ordinal };
   const again = threadSendFrom(
     await apiSendThreadMessage(ports, partition, found.session, message),
   );
-  return again.send === "Unsettled"
-    ? { send: "Refused", reason: again.why }
-    : again;
+  return again.send === "Unsettled" ? threadSendRefused(again.why) : again;
 }
 
 /** One press, settled where the door's answer does not say what happened. */

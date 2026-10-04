@@ -12,6 +12,7 @@ import { Conversation } from "../app/browser/conversation/Conversation.tsx";
 import type { ConversationSent } from "../app/browser/conversation/Conversation.tsx";
 import conversationSheet from "../app/browser/conversation/conversation.css?raw";
 import { ChatPaneIconButton } from "../app/browser/shell/chatPaneIcons.tsx";
+import { CopyProvider } from "../app/browser/ui/copyHeld.tsx";
 import shellSheet from "../app/browser/shell/shell.css?raw";
 import buttonSheet from "../app/browser/ui/Button.css?raw";
 import type { ConversationExchange } from "../app/core/conversation.ts";
@@ -113,7 +114,7 @@ test("on a narrow screen the control is the least a finger is given", () => {
   expect(token("--height-touch")).toBe("44px");
 });
 
-test("a box with nothing to say under it has no line under it", () => {
+test("a box with nothing to say over it has no line over it", () => {
   const { input } = drawn("");
   const note = input.closest("form")?.querySelector(".conversation-note");
   if (note === null || note === undefined) throw new Error("no note line");
@@ -138,6 +139,113 @@ test("the way back to the foot is the least a finger is given on a narrow screen
   for (const side of ["width", "height"])
     expect(narrow(control, side)).toBe("var(--height-touch)");
   expect(wide(control, "position")).toBe("");
+});
+
+/** What the narrow sheet lays over an element for a press: what its rules
+ * declare for the element's `::after`. */
+function narrowOver(element: Element, property: string): string {
+  const after = "::after";
+  let declared = "";
+  for (const rule of rulesNarrow) {
+    const value = rule.style.getPropertyValue(property);
+    const over = rule.selectorText
+      .split(",")
+      .map((selector) => selector.trim())
+      .filter((selector) => selector.endsWith(after))
+      .map((selector) => selector.slice(0, -after.length));
+    if (value !== "" && over.some((selector) => element.matches(selector)))
+      declared = value;
+  }
+  return declared.replace(/\s+/gu, " ");
+}
+
+const called: ConversationExchange = {
+  ...answered,
+  ask: { ask: "Message", text: "what did it say", context: "The ticket." },
+  work: [
+    {
+      step: "ToolCall",
+      id: "toolu_1",
+      name: "Bash",
+      input: { command: "just check" },
+    },
+  ],
+};
+
+test("on a narrow screen the copy of an answer and a row that opens take a press over the least a finger is given, and no room for it", () => {
+  const view = render(
+    <CopyProvider write={() => Promise.resolve(true)}>
+      <Conversation exchanges={[called]} workOpen pane />
+    </CopyProvider>,
+  );
+  const copy = screen.getByRole("button", { name: "Copy answer" });
+  const steps = view.container.querySelector(".conversation-steps");
+  if (steps === null) throw new Error("no steps were drawn");
+  const rows = [...view.container.querySelectorAll(".conversation-trigger")];
+  expect(
+    rows.map((row) => steps.contains(row)),
+    "the context, the work's line and the call under it",
+  ).toStrictEqual([false, false, true]);
+  const least = "min(0px, calc((100% - var(--height-touch)) / 2))";
+  for (const control of [copy, ...rows]) {
+    expect(narrow(control, "position")).toBe("relative");
+    expect(narrowOver(control, "position")).toBe("absolute");
+    expect(narrowOver(control, "inset-block")).toBe(least);
+    expect(wide(control, "position")).toBe("");
+  }
+  for (const row of rows) expect(narrowOver(row, "inset-inline")).toBe(least);
+  expect(narrowOver(copy, "inset-inline")).toBe(
+    "calc(var(--space-1) - var(--space-4)) calc(100% - var(--height-touch) + var(--space-4) - var(--space-1))",
+  );
+});
+
+test("on a narrow screen a step that opens is itself a row as tall as a finger is given, within the room the list keeps for it", () => {
+  const view = render(<Conversation exchanges={[called]} workOpen pane />);
+  const steps = view.container.querySelector(".conversation-steps");
+  const [, line, step] = view.container.querySelectorAll(
+    ".conversation-trigger",
+  );
+  if (steps === null || line === undefined || step === undefined)
+    throw new Error("no opened work was drawn");
+  expect(wide(steps, "gap")).toBe("var(--space-3)");
+  expect(narrow(steps, "gap")).toBe("var(--space-3)");
+  expect(narrow(steps, "padding-block")).toBe("calc(var(--space-3) / 2)");
+  expect(narrow(step, "min-height")).toBe("var(--height-touch)");
+  expect(narrow(step, "margin-block")).toBe("calc(var(--space-3) / -2)");
+  expect(wide(step, "min-height")).toBe("");
+  expect(narrow(line, "min-height")).toBe("var(--conversation-line)");
+  expect(narrow(line, "margin-block")).toBe("");
+});
+
+test("the line a waiting turn keeps is as tall as the engine that comes to run on it", () => {
+  const lines = ["conversation-waiting-kept", "conversation-waiting"].map(
+    (named) => {
+      const line = document.createElement("div");
+      line.className = named;
+      return wide(line, "height");
+    },
+  );
+  expect(lines).toStrictEqual([
+    "var(--conversation-line)",
+    "var(--conversation-line)",
+  ]);
+});
+
+test("a word for waiting is brought in over a time reduced motion leaves it", () => {
+  const line = document.createElement("div");
+  line.className = "conversation-meta conversation-meta-waited";
+  const word = line.appendChild(document.createElement("p"));
+  expect(wide(word, "animation")).toBe(
+    "conversation-word-in var(--duration-word) var(--ease-in) both",
+  );
+  const still = sheetRules(tokenSheet, ["(prefers-reduced-motion: reduce)"]);
+  const duration = (rules: readonly CSSStyleRule[]): string =>
+    sheetDeclared(rules, document.documentElement, "--duration-word");
+  expect(duration(still)).toBe(token("--duration-word"));
+  expect(duration(still)).not.toBe("0ms");
+  expect(
+    sheetDeclared(still, document.documentElement, "--duration-pulse"),
+  ).toBe("0ms");
 });
 
 test("a pane given the whole frame sets the conversation as a column to read, and the composer with it", () => {

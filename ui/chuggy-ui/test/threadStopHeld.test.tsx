@@ -1,7 +1,7 @@
 /**
  * What one thread holds of its stops, read off the hook that keeps them: a
- * press stands whatever an ending door says, and one the door refused, or
- * whose message the door handed back, is taken back at once.
+ * press stands where the door ended the turn, and one that stopped nothing,
+ * or whose message the door handed back, is taken back at once.
  */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -46,7 +46,6 @@ function held(doors: StageDoors) {
 
 test.each([
   { said: "it stopped the turn", body: { stopped: "Stopped" }, status: 200 },
-  { said: "it had ended", body: { stopped: "AlreadyEnded" }, status: 200 },
   {
     said: "its thread is closed",
     body: { error: { code: "ThreadClosed" } },
@@ -58,33 +57,46 @@ test.each([
     const doors: StageDoors = { batches: [], sends: [], stops: [] };
     const { result } = held(doors);
     act(() => {
-      result.current.composer.onStop?.("turn-2");
+      void result.current.composer.onStop?.("turn-2");
     });
     expect([...result.current.stopping]).toStrictEqual(["turn-2"]);
     await settled();
 
     await stageAnswered(doors.stops[0], body, status);
     expect([...result.current.stopping]).toStrictEqual(["turn-2"]);
-    expect(result.current.refusals).toBe(0);
+    expect(result.current.takenBack).toBe(0);
   },
 );
+
+test("a stop of a turn that had ended by itself is taken back at once and counted", async () => {
+  const doors: StageDoors = { batches: [], sends: [], stops: [] };
+  const { result } = held(doors);
+  act(() => {
+    void result.current.composer.onStop?.("turn-2");
+  });
+  await settled();
+
+  await stageAnswered(doors.stops[0], { stopped: "AlreadyEnded" }, 200);
+  expect([...result.current.stopping]).toStrictEqual([]);
+  expect(result.current.takenBack).toBe(1);
+});
 
 test("a stop the door refuses is handed back at once and counted, and a turn pressed twice is held once", async () => {
   const doors: StageDoors = { batches: [], sends: [], stops: [] };
   const { result } = held(doors);
   act(() => {
-    result.current.composer.onStop?.("turn-2");
+    void result.current.composer.onStop?.("turn-2");
   });
   const before = result.current.stopping;
   act(() => {
-    result.current.composer.onStop?.("turn-2");
+    void result.current.composer.onStop?.("turn-2");
   });
   expect(result.current.stopping, "the same turn pressed twice").toBe(before);
   await settled();
 
   await stageAnswered(doors.stops[0], { error: { code: "Whatever" } }, 409);
   expect([...result.current.stopping]).toStrictEqual([]);
-  expect(result.current.refusals).toBe(1);
+  expect(result.current.takenBack).toBe(1);
 });
 
 test("a stop of a message the door hands back is taken back with it, so the same message sent again is out and not stopped", async () => {
@@ -99,13 +111,13 @@ test("a stop of a message the door hands back is taken back with it, so the same
   await settled();
   const turn = doors.sends[0]?.turn ?? "";
   act(() => {
-    result.current.composer.onStop?.(turn);
+    void result.current.composer.onStop?.(turn);
   });
   expect([...result.current.stopping]).toStrictEqual([turn]);
 
   await stageAnswered(doors.sends[0], { error: { code: "Invalid" } }, 400);
   expect([...result.current.stopping]).toStrictEqual([]);
-  expect(result.current.refusals, "nothing was refused a stop").toBe(0);
+  expect(result.current.takenBack, "nothing was refused a stop").toBe(0);
   expect(doors.stops).toStrictEqual([]);
 
   sent();

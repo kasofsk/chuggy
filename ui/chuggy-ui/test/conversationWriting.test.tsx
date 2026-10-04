@@ -204,6 +204,47 @@ describe("how long what is under way has been", () => {
   });
 });
 
+describe("how long a step the page did not hear begin has been", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  test("is not counted for a step the page found under way, and is for the step heard to begin after it", () => {
+    const found = { ...reading, joined: true } as const;
+    const view = render(
+      drawn(running({ work: [thought, read], activity: found })),
+    );
+    lasting(120_000);
+    expect(line(view.container)).toBe("Read");
+    view.rerender(
+      drawn(running({ work: [thought, read, read], activity: reading })),
+    );
+    lasting(2000);
+    expect(line(view.container)).toBe("Read2s");
+  });
+
+  test("goes on being counted for a step heard to begin once only the record names it", () => {
+    const view = render(
+      drawn(running({ work: [thought, read], activity: reading })),
+    );
+    lasting(5000);
+    expect(line(view.container)).toBe("Read5s");
+    view.rerender(
+      drawn(
+        running({
+          work: [thought, read],
+          activity: { ...reading, joined: true },
+        }),
+      ),
+    );
+    lasting(5000);
+    expect(line(view.container)).toBe("Read10s");
+  });
+});
+
 describe("a call a stop cut off", () => {
   beforeEach(() => {
     vi.useFakeTimers();

@@ -32,6 +32,16 @@
  * composer's button is Stop for as long as a turn is the thing moving, and one
  * press hands the page that turn through the library's own cancel.
  *
+ * ONE PRESS STOPS ONE TURN. The button stays under the pointer and can be Stop
+ * again at once, aimed at the turn behind, so a press that follows one of Stop
+ * within a beat is taken for the same press and does nothing, and so is a
+ * second Stop until the page's door has answered the first. The button is
+ * drawn the same throughout.
+ *
+ * A MESSAGE HANDED BACK IS PUT BACK. The words the page could not take go back
+ * in the box ahead of anything typed since, a blank line between, so neither
+ * is lost.
+ *
  * NOTHING STANDS BETWEEN THE COLUMN AND THE COMPOSER BUT WHAT A READER NEEDS
  * THERE. The engine runs where the answer is about to be and not on a strip of
  * its own, so the column ends where the composer begins.
@@ -66,17 +76,20 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
 import {
+  conversationExchangeNamed,
   conversationExchangeParts,
+  conversationIndicatedNamed,
   conversationIndicator,
+  conversationTextRestored,
   conversationTurnStoppable,
 } from "../../core/conversation.ts";
-import type {
-  ConversationExchange,
-  ConversationIndicator,
-} from "../../core/conversation.ts";
+import type { ConversationExchange } from "../../core/conversation.ts";
 import type { RunPrompt } from "../../core/runConfiguration.ts";
 import { ConversationComposer } from "./ConversationComposer.tsx";
-import type { ConversationComposerProps } from "./ConversationComposer.tsx";
+import type {
+  ConversationComposerButton,
+  ConversationComposerProps,
+} from "./ConversationComposer.tsx";
 import {
   ConversationAnswerMessage,
   ConversationAskMessage,
@@ -124,15 +137,13 @@ function conversationStatus(exchange: ConversationExchange): MessageStatus {
 /**
  * One exchange as the two messages the library holds a turn as: the ask, and
  * the answer it is still waiting for or already has, which holds each text of
- * the answer in the order it was written. They are named by the exchange's
- * turn where it has one, because that is the name that stays while the
- * transcript comes to hold the turn, and the library begins a message again
- * when its name changes.
+ * the answer in the order it was written. They are named as the exchange is,
+ * because the library begins a message again when its name changes.
  */
 function conversationExchangeMessages(
   exchange: ConversationExchange,
 ): readonly ThreadMessageLike[] {
-  const named = exchange.turn ?? exchange.id;
+  const named = conversationExchangeNamed(exchange);
   return [
     {
       id: `${named}-ask`,
@@ -196,11 +207,55 @@ function conversationAppendedText(message: AppendMessage): string {
     .join("");
 }
 
+/** How long after a press of Stop the composer's button takes no other: longer
+ * than a double click or a startled second tap, and shorter than a member
+ * takes to mean the turn behind. */
+export const conversationStopBeatMs = 700;
+
+/** The last press of Stop the surface took. */
+interface ConversationStopPress {
+  readonly atMs: number;
+  answered: boolean;
+}
+
+/** What the surface holds of its presses of Stop. */
+interface ConversationStopBeat {
+  /** Whether a press of `button` now is one to do nothing for. */
+  readonly ignores: (button: ConversationComposerButton) => boolean;
+  /** Notes a press of Stop as taken, answered when `stop` is. */
+  readonly pressed: (stop: Promise<void>) => void;
+}
+
+function useConversationStopBeat(): ConversationStopBeat {
+  const last = useRef<ConversationStopPress | undefined>(undefined);
+  return useMemo(
+    () => ({
+      ignores: (button) => {
+        const press = last.current;
+        if (press === undefined) return false;
+        if (performance.now() - press.atMs < conversationStopBeatMs)
+          return true;
+        return button === "Stop" && !press.answered;
+      },
+      pressed: (stop) => {
+        const press = { atMs: performance.now(), answered: false };
+        last.current = press;
+        const answered = (): void => {
+          press.answered = true;
+        };
+        stop.then(answered, answered);
+      },
+    }),
+    [],
+  );
+}
+
 function useConversationRuntime(props: {
   readonly exchanges: readonly ConversationExchange[];
   readonly composer: ConversationComposerProps | undefined;
   /** The turn a press of Stop ends, where there is one. */
   readonly stoppable: string | undefined;
+  readonly beat: ConversationStopBeat;
   /** Told whether a send is on its way, as one begins and as it ends. */
   readonly onSending: (sending: boolean) => void;
 }): AssistantRuntime {
@@ -231,7 +286,7 @@ function useConversationRuntime(props: {
     if (sent === "Kept") restoreRef.current(text);
   };
   const onStop = props.composer?.onStop;
-  const stoppable = props.stoppable;
+  const { stoppable, beat } = props;
   const runtime = useExternalStoreRuntime<ThreadMessageLike>({
     queue,
     messages: conversationMessages(props.exchanges),
@@ -243,7 +298,7 @@ function useConversationRuntime(props: {
       ? {}
       : {
           onCancel: () => {
-            if (stoppable !== undefined) onStop(stoppable);
+            if (stoppable !== undefined) beat.pressed(onStop(stoppable));
             return Promise.resolve();
           },
         }),
@@ -252,8 +307,7 @@ function useConversationRuntime(props: {
     dispatchRef.current = dispatch;
     restoreRef.current = (text) => {
       const box = runtime.thread.composer;
-      if (box.getState().text.trim().length > 0) return;
-      box.setText(text);
+      box.setText(conversationTextRestored(text, box.getState().text));
     };
   });
   return runtime;
@@ -337,13 +391,13 @@ function ConversationBody(props: {
 function ConversationDrawn(props: {
   readonly workOpen: boolean;
   readonly paced: boolean;
-  readonly indicator: ConversationIndicator;
+  /** The name of the exchange holding the one thing that moves. */
+  readonly named: string | undefined;
   readonly engine: boolean;
   readonly children: ReactNode;
 }): ReactNode {
-  const { indicator, engine } = props;
-  const id = indicator.indicator === "Exchange" ? indicator.id : undefined;
-  const indicated = useMemo(() => ({ id, engine }), [id, engine]);
+  const { named, engine } = props;
+  const indicated = useMemo(() => ({ named, engine }), [named, engine]);
   return (
     <ConversationWorkOpen.Provider value={props.workOpen}>
       <ConversationPaced.Provider value={props.paced}>
@@ -401,10 +455,12 @@ export function Conversation(props: ConversationProps): ReactNode {
     props.composer?.onStop === undefined
       ? undefined
       : conversationTurnStoppable(activeExchanges, indicator);
+  const beat = useConversationStopBeat();
   const runtime = useConversationRuntime({
     exchanges: activeExchanges,
     composer: props.composer,
     stoppable,
+    beat,
     onSending: setSending,
   });
   const composed = props.composer !== undefined;
@@ -425,7 +481,7 @@ export function Conversation(props: ConversationProps): ReactNode {
             <ConversationDrawn
               workOpen={props.workOpen === true}
               paced={props.paced === true}
-              indicator={indicator}
+              named={conversationIndicatedNamed(activeExchanges, indicator)}
               engine={composed}
             >
               <ConversationBody
@@ -447,6 +503,7 @@ export function Conversation(props: ConversationProps): ReactNode {
               {...props.composer}
               busy={sending}
               stops={stoppable !== undefined}
+              ignores={beat.ignores}
             />
           </div>
         )}

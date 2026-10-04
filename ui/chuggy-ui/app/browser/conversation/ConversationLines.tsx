@@ -13,8 +13,9 @@
  *
  * A WORD FOR WAITING IS SAID ONCE THE WAIT HAS LASTED. A turn is queued and
  * started in less than a reader takes to read either word on most sends, so
- * each is drawn only when it has stood longer than a glance. A turn no runner
- * can take now is not passing through that state, and says so at once.
+ * each is drawn only when it has stood longer than a glance, and comes in
+ * slowly then, so a wait that ends as its word is due shows no word. A turn no
+ * runner can take now is not passing through that state, and says so at once.
  *
  * THE ANSWER IS THERE TO COPY AS SOON AS ITS LAST CHARACTER IS DRAWN. The
  * runner goes on listening after a turn's last message is whole, and the turn
@@ -224,6 +225,12 @@ function ConversationMetaLeadDrawn(props: {
   );
 }
 
+const conversationMetaThere = "conversation-meta text-ink-3 text-xs";
+
+/** The line whose word came in after a wait, which the sheet brings in slowly. */
+const conversationMetaWaited =
+  "conversation-meta conversation-meta-waited text-ink-3 text-xs";
+
 /**
  * Where the exchange stands and what it took, on one line under the answer. A
  * measure nothing recorded is left out rather than drawn as an absence: this is
@@ -264,7 +271,7 @@ export function ConversationMetaLine(props: {
           copies,
         });
   return (
-    <div className="conversation-meta text-ink-3 text-xs">
+    <div className={waited ? conversationMetaWaited : conversationMetaThere}>
       <span
         className={
           drawn.lead === "Kept"

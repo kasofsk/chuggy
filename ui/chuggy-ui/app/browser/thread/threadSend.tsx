@@ -31,6 +31,11 @@
  * A MESSAGE CAN BE STOPPED FROM ITS PRESS. Each send on its way is handed to
  * the thread's stops for one to follow, so the button is Stop before the door
  * has answered, in a thread that press is opening as in one already open.
+ *
+ * A REFUSAL IS SAID IN ONE LINE AND FOR AS LONG AS IT IS ABOUT SOMETHING: what
+ * was not done, with no code of the API's. It goes when the reader edits the
+ * box or presses again, and a stop's goes when the mailbox lists its turn
+ * ended, since nothing is left to stop.
  */
 
 import { useQueryClient } from "@tanstack/react-query";
@@ -40,12 +45,14 @@ import type { ReactNode } from "react";
 import { threadMessageCharsMax } from "../../../../../src/contract/http.ts";
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import { apiHostedRuns, apiOpenThread } from "../../core/apiRoutes.ts";
-import { panelReason } from "../../core/freshness.ts";
 import { projectResourceKey } from "../../core/projectQueryKeys.ts";
 import { threadMessageSent } from "../../core/threadSendRun.ts";
 import {
+  threadRefusalCause,
+  threadRefusalLine,
   threadSendingWith,
   threadSendingWithout,
+  threadSendRefused,
   threadSendStanding,
   threadUnhosted,
   threadTurnIdBytesCount,
@@ -72,6 +79,7 @@ import {
 } from "../sessionPlacement.tsx";
 import { Notice } from "../ui/Notice.tsx";
 import { useThreadStop } from "./threadStop.ts";
+import type { ThreadStopHeld } from "./threadStop.ts";
 
 /** What the last press left behind, so the next one can tell a retry of the
  * same message from a message of its own. */
@@ -170,9 +178,7 @@ function ThreadSendNote(props: {
     case "Unsettled":
       return <Notice tone="parked" inline detail={send.why} />;
     case "Refused":
-      return (
-        <Notice tone="danger" inline detail={`Refused · ${send.reason}`} />
-      );
+      return <Notice tone="danger" inline detail={threadRefusalLine(send)} />;
   }
 }
 
@@ -181,10 +187,10 @@ function ThreadSendNote(props: {
 export interface ThreadSendHeld {
   readonly composer: ConversationComposerProps;
   readonly sending: readonly ThreadSending[];
-  /** The turns the reader stopped, less each the door refused to stop. */
+  /** The turns the reader stopped, less each press taken back. */
   readonly stopping: ReadonlySet<string>;
-  /** How many stops the door refused. */
-  readonly refusals: number;
+  /** How many presses of Stop the door's answer took back. */
+  readonly takenBack: number;
 }
 
 /** The thread a first press opens, or what the door refused opening one as. */
@@ -199,8 +205,7 @@ async function threadSendOpened(
     return door.refused();
   }
   if (sessionRefusedNoRunner(open)) return { send: "NoRunner" };
-  if (open.outcome !== "Ok")
-    return { send: "Refused", reason: panelReason(open) };
+  if (open.outcome !== "Ok") return threadSendRefused(threadRefusalCause(open));
   return { session: open.value.session };
 }
 
@@ -253,8 +258,39 @@ export interface ThreadSendInput {
   readonly takes: boolean;
   /** The turns the mailbox read lists, which a message sent is held until. */
   readonly listed?: readonly string[];
+  /** The turns that read lists as ended, which a stop's refusal is said
+   * until. */
+  readonly ended?: readonly string[];
   /** The thread a first press opened, once its message is sent. */
   readonly onStarted?: (session: string) => void;
+}
+
+/** The thread's stops, with one the door refused said in the composer's line
+ * until the turn it was about has ended. */
+function useThreadStopSaid(
+  partition: PartitionIdentity,
+  said: readonly [ThreadSend, (send: ThreadSend) => void],
+  ended: readonly string[] | undefined,
+): ThreadStopHeld {
+  const [send, setSend] = said;
+  const stops = useThreadStop({
+    partition,
+    onRefused: (turn, cause) => {
+      setSend({
+        send: "Refused",
+        what: "Stop",
+        turn,
+        ...(cause === undefined ? {} : { cause }),
+      });
+    },
+  });
+  if (
+    send.send === "Refused" &&
+    send.what === "Stop" &&
+    ended?.includes(send.turn) === true
+  )
+    setSend({ send: "Idle" });
+  return stops;
 }
 
 /**
@@ -272,12 +308,7 @@ export function useThreadSend(input: ThreadSendInput): ThreadSendHeld {
   const [send, setSend] = useState<ThreadSend>({ send: "Idle" });
   const [opened, setOpened] = useState<string | undefined>(undefined);
   const sends = useThreadSendSending(input.listed ?? threadSendNothingListed);
-  const stops = useThreadStop({
-    partition,
-    onRefused: (reason) => {
-      setSend({ send: "Refused", reason });
-    },
-  });
+  const stops = useThreadStopSaid(partition, [send, setSend], input.ended);
   const door = useThreadDoor(partition);
   const standing = threadSendStanding(send, input.takes, door.door);
   const pressed = async (sent: ThreadSending): Promise<string | undefined> => {
@@ -314,7 +345,8 @@ export function useThreadSend(input: ThreadSendInput): ThreadSendHeld {
       return taken === undefined ? "Kept" : "Sent";
     },
     onStop: (turn) => {
-      stops.stop(turn, input.session ?? opened);
+      if (send.send === "Refused") setSend({ send: "Idle" });
+      return stops.stop(turn, input.session ?? opened);
     },
     onEdit: () => {
       if (
@@ -331,6 +363,6 @@ export function useThreadSend(input: ThreadSendInput): ThreadSendHeld {
     composer,
     sending: sends.sending,
     stopping: stops.stopping,
-    refusals: stops.refusals,
+    takenBack: stops.takenBack,
   };
 }

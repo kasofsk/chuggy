@@ -119,7 +119,7 @@
     color: var(--ink-3);
   }
 
-  /* The line under the box is there only while it says something. */
+  /* The line over the box is there only while it says something. */
   .conversation-note:empty {
     display: none;
   }
@@ -167,6 +167,47 @@
     animation: conversation-pulse var(--duration-pulse) var(--ease-out) infinite;
   }
 
+  .conversation-steps {
+    gap: var(--space-3);
+  }
+
+  /* On a narrow screen a row that opens and the copy control answer a press
+   * over the least a finger is given: an area laid over the control that takes
+   * no room and draws nothing, so nothing drawn moves for it. */
+  @media (max-width: 40em) {
+    .conversation-trigger,
+    .conversation-meta .copy-button {
+      position: relative;
+    }
+
+    .conversation-trigger::after,
+    .conversation-meta .copy-button::after {
+      content: "";
+      position: absolute;
+      inset-block: min(0px, calc((100% - var(--height-touch)) / 2));
+      inset-inline: min(0px, calc((100% - var(--height-touch)) / 2));
+    }
+
+    /* The copy control stands a hang short of the column's gutter, so its
+     * area begins at the screen's edge rather than past it. */
+    .conversation-meta .copy-button::after {
+      inset-inline: calc(var(--space-1) - var(--space-4))
+        calc(100% - var(--height-touch) + var(--space-4) - var(--space-1));
+    }
+
+    /* A step that opens is a row that tall itself, reaching half the list's
+     * gap into the space either side of it, so none lies over another, over
+     * the line that opened the list or over what a step opened to. */
+    .conversation-steps {
+      padding-block: calc(var(--space-3) / 2);
+    }
+
+    .conversation-steps .conversation-trigger {
+      min-height: var(--height-touch);
+      margin-block: calc(var(--space-3) / -2);
+    }
+  }
+
   /* The line of a part of the work is as tall as a line of the answer's text,
    * whether or not it opens to anything, so the engine giving way to it and
    * the record coming to hold what it opens to both move nothing. */
@@ -190,6 +231,22 @@
     align-items: center;
     justify-content: center;
     width: calc(1em + 2 * var(--space-1));
+  }
+
+  /* A word for waiting comes in slowly, and its glyph with it, so a wait that
+   * ends just after the word is due leaves nothing on the line to catch. */
+  .conversation-meta-waited > * {
+    animation: conversation-word-in var(--duration-word) var(--ease-in) both;
+  }
+
+  @keyframes conversation-word-in {
+    from {
+      opacity: 0;
+    }
+
+    to {
+      opacity: 1;
+    }
   }
 
   /* The way back to the foot of the column: a round control on a band of its
@@ -292,6 +349,11 @@
     position: relative;
     height: var(--conversation-line);
     overflow-x: clip;
+  }
+
+  /* The engine's line kept where no engine runs yet. */
+  .conversation-waiting-kept {
+    height: var(--conversation-line);
   }
 
   /* The rail the engine runs on, still while the engine crosses it: the ground

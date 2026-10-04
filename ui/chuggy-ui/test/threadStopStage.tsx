@@ -106,6 +106,17 @@ export function stageTurn(
 }
 
 /** One post held until the case answers it. */
+/** A thread's first turn, answered: as the mailbox lists it, as the store
+ * holds it and as the column draws it. */
+export const stageFirstTurn = stageTurn(1, "turn-1", "is 40 open", {
+  answer: "40 is open.",
+});
+export const stageFirstStored: readonly StageEntry[] = [
+  stageAsked("u-a", "is 40 open"),
+  stageWrote("u-b", "msg_before", "40 is open."),
+];
+export const stageFirstDrawn = ["> is 40 open", "40 is open. (Answered)"];
+
 export interface StagePost {
   readonly session: string;
   readonly turn: string;

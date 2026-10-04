@@ -86,9 +86,8 @@ import type {
   ThreadMessageRefusalCode,
   ThreadStanding,
 } from "../../../../src/contract/rosters.ts";
-import type { ApiResult } from "./apiRequest.ts";
+import type { ApiFailure, ApiResult } from "./apiRequest.ts";
 import { base64urlFromBytes } from "./base64url.ts";
-import { panelReason } from "./freshness.ts";
 import {
   sessionRefusedNoRunner,
   sessionRunnerShort,
@@ -362,26 +361,51 @@ export function threadTurnsEnded(
   );
 }
 
-/** What one press of Stop came to: the turn is ended, or it is still out. */
+/** The word for what a member can do something about in a failed request,
+ * which no code the API answers with is. */
+export function threadRefusalCause(failure: ApiFailure): string | undefined {
+  if (failure.outcome === "Unauthenticated") return "Signed out";
+  return failure.outcome === "Unreachable" ? "Unreachable" : undefined;
+}
+
+/** A press a door refused: the send, or the stop of one turn, with the word
+ * for its cause where a member can act on one. */
+export type ThreadRefused =
+  | { readonly what: "Send"; readonly cause?: string }
+  | { readonly what: "Stop"; readonly turn: string; readonly cause?: string };
+
+/** The one line a refusal is said in: what was not done, and its cause where
+ * a member can act on it. */
+export function threadRefusalLine(refused: ThreadRefused): string {
+  const said = refused.what === "Send" ? "Not sent" : "Not stopped";
+  return refused.cause === undefined ? said : `${said} · ${refused.cause}`;
+}
+
+/** What one press of Stop came to: this press ended the turn, the turn had
+ * ended by itself, or it is still out. */
 export type ThreadStop =
   | { readonly stop: "Ended" }
-  | { readonly stop: "Refused"; readonly reason: string };
+  | { readonly stop: "AlreadyEnded" }
+  | { readonly stop: "Refused"; readonly cause?: string };
 
 /**
- * One stop, classified. The turn is ended where this press ended it, where it
- * had ended, and where its thread was closed under it, which ends every turn
- * of it; anything else leaves it out and is one refusal carrying its reason.
+ * One stop, classified. The turn is ended where this press ended it and where
+ * its thread was closed under it, which ends every turn of it; a turn that had
+ * ended was stopped by nothing; anything else leaves it out and is one refusal.
  */
 export function threadStopFrom(
   result: ApiResult<ThreadTurnStopResponse>,
 ): ThreadStop {
-  if (result.outcome === "Ok") return { stop: "Ended" };
+  if (result.outcome === "Ok")
+    return {
+      stop: result.value.stopped === "Stopped" ? "Ended" : "AlreadyEnded",
+    };
   const closed =
     result.outcome === "Conflict" &&
     threadRefusalCode(result.code) === "ThreadClosed";
-  return closed
-    ? { stop: "Ended" }
-    : { stop: "Refused", reason: panelReason(result) };
+  if (closed) return { stop: "Ended" };
+  const cause = threadRefusalCause(result);
+  return { stop: "Refused", ...(cause === undefined ? {} : { cause }) };
 }
 
 /** Where one press of `Send` got to, or before one, what its door would answer. */
@@ -399,7 +423,7 @@ export type ThreadSend =
   | { readonly send: "NoRunner" }
   /** The reader's runner has not polled lately, so a turn waits for it. */
   | { readonly send: "RunnerOffline" }
-  | { readonly send: "Refused"; readonly reason: string };
+  | ({ readonly send: "Refused" } & ThreadRefused);
 
 /**
  * What a composer reports: a press's own answer where it has one to say, and
@@ -479,10 +503,21 @@ export function threadRefusalWord(code: string): string {
   return known === undefined ? code : threadRosterWord(known);
 }
 
+/** A send a door refused, with the word for its cause where there is one. */
+export function threadSendRefused(
+  cause?: string,
+): ThreadSend & { readonly send: "Refused" } {
+  return {
+    send: "Refused",
+    what: "Send",
+    ...(cause === undefined ? {} : { cause }),
+  };
+}
+
 /**
  * One post, classified. A wait and an ended thread are each drawn as the word
  * the door's own code names, and neither is a fault the reader can press
- * through; everything else is one refusal carrying its reason.
+ * through; everything else is one refusal.
  */
 export function threadSendFrom(
   result: ApiResult<ThreadMessageAccepted>,
@@ -499,12 +534,12 @@ export function threadSendFrom(
       if (sessionRefusedNoRunner(result)) return { send: "NoRunner" };
       return threadRefusalCode(result.code) === "NotYourThread"
         ? { send: "Unsettled", why: threadRefusalWord(result.code) }
-        : { send: "Refused", reason: panelReason(result) };
+        : threadSendRefused(threadRefusalCause(result));
     case "Absent":
     case "Unauthenticated":
     case "Fault":
     case "Unreachable":
     case "Unreadable":
-      return { send: "Refused", reason: panelReason(result) };
+      return threadSendRefused(threadRefusalCause(result));
   }
 }

@@ -31,6 +31,7 @@ import type {
 } from "../app/core/conversation.ts";
 import {
   conversationExchangesLive,
+  conversationItemsHeard,
   conversationLiveHeard,
   conversationLiveHeardUnder,
   conversationLiveKept,
@@ -38,6 +39,7 @@ import {
   conversationLiveMessagesMax,
   conversationLiveNothing,
   conversationLiveRejoinedMax,
+  conversationLiveStoppedHeard,
   conversationLiveStoppedMax,
   conversationLiveTurns,
   conversationLiveTurnsHeard,
@@ -601,11 +603,112 @@ const callStored: readonly ConversationItem[] = [
 test("a snapshot of nothing ends nothing: the hub forgetting a session mid-tool leaves the tool under way", () => {
   const forgotten = heardAll([snapshot({ blocks: [] })], heardAll(calling));
   expect(forgotten.ended).toBeUndefined();
-  for (const items of [[asked], callStored]) {
+  const bash = { activity: "ToolUse", name: "Bash" };
+  for (const [items, activity] of [
+    [[asked], bash],
+    [callStored, { ...bash, joined: true }],
+  ] as const) {
     const exchange = only({ held: forgotten, items, reached: true });
     expect(written(exchange)).toEqual(["Running the gates."]);
-    expect(exchange.activity).toEqual({ activity: "ToolUse", name: "Bash" });
+    expect(exchange.activity).toEqual(activity);
   }
+});
+
+test("a step is one the page did not hear begin where a snapshot found it under way, or only the transcript names it", () => {
+  const underWay = (
+    held: ConversationLiveHeld,
+    items: readonly ConversationItem[] = [asked],
+  ) => only({ held, items, reached: true }).activity;
+  const bash = { activity: "ToolUse", name: "Bash" };
+  const found: ThreadLiveHeld = {
+    turn,
+    message: "m1",
+    blocks: [
+      { index: 0, kind: "Text", text: "Running the gates.", gapped: false },
+      { index: 1, kind: "ToolUse", name: "Bash", text: "", gapped: false },
+    ],
+  };
+  const heard = heardAll(calling);
+  expect(underWay(heard), "heard to begin").toStrictEqual(bash);
+  expect(
+    underWay(heardAll([snapshot(found)], heard)),
+    "heard to begin, and the stream opened again",
+  ).toStrictEqual(bash);
+
+  const joined = heardAll([snapshot(found)]);
+  expect(underWay(joined), "found under way").toStrictEqual({
+    ...bash,
+    joined: true,
+  });
+  expect(
+    underWay(heardAll([snapshot(found)], joined)),
+    "found under way, and the stream opened again",
+  ).toStrictEqual({ ...bash, joined: true });
+  expect(
+    underWay(heardAll([began("m1", 2, "Thinking")], joined)),
+    "the step after it is heard to begin",
+  ).toStrictEqual({ activity: "Thinking" });
+  expect(
+    underWay(conversationLiveNothing, callStored),
+    "only the transcript names it",
+  ).toStrictEqual({ ...bash, joined: true });
+});
+
+test("a stored text of a stopped turn the page heard more of is read as it was heard, and no other is touched", () => {
+  const heardText = "Running the gates, and then";
+  const held = heardAll([
+    began("m1", 0, "Thinking"),
+    began("m1", 1, "Text"),
+    wrote("m1", 1, 0, heardText),
+  ]);
+  const thought = stored("m1", { block: "Thinking", text: "" });
+  const text = (said: string): ConversationItem =>
+    stored("m1", { block: "Text", text: said });
+  const read = (
+    items: readonly ConversationItem[],
+    stopping: readonly string[],
+  ): readonly ConversationItem[] =>
+    conversationItemsHeard(
+      items,
+      conversationLiveStoppedHeard(held, new Set(stopping)),
+    );
+  const shorter = [asked, thought, text("Running")];
+  expect(read(shorter, [turn])).toStrictEqual([
+    asked,
+    thought,
+    text(heardText),
+  ]);
+  expect(read(shorter, []), "a turn nobody stopped").toBe(shorter);
+  for (const kept of [
+    [asked, thought, text(heardText)],
+    [asked, thought, text(`${heardText} the suite.`)],
+    [asked, thought, text("Another text")],
+    [asked, text("Running"), thought],
+    [asked, stored("m2", { block: "Text", text: "Running" })],
+  ])
+    expect(read(kept, [turn])).toBe(kept);
+
+  const listed = conversationLiveKept(
+    held,
+    [
+      {
+        turn,
+        ordinal: 1,
+        inputKind: "UserMessage",
+        input,
+        state: "Abandoned",
+        failure: "TurnStopped",
+      },
+    ],
+    true,
+  );
+  expect(
+    conversationItemsHeard(
+      shorter,
+      conversationLiveStoppedHeard(listed, new Set()),
+    ),
+    "a turn the mailbox says was stopped",
+  ).toStrictEqual([asked, thought, text(heardText)]);
 });
 
 test("an End is heard for a turn the fold is no longer holding", () => {
@@ -676,6 +779,7 @@ test("a call the transcript holds no result for is named with nothing heard", ()
   ).toEqual({
     activity: "ToolUse",
     name: "Read",
+    joined: true,
   });
   const returned = only({
     held: conversationLiveNothing,
@@ -1866,7 +1970,7 @@ function runOf(
   stopped: boolean,
   ...blocks: ConversationLiveRun["blocks"]
 ): ConversationLiveRun {
-  return { blocks, stopped, replacedIn: [] };
+  return { blocks, stopped, joined: false, replacedIn: [] };
 }
 
 function callOf(name: string): ConversationLiveRun["blocks"][number] {

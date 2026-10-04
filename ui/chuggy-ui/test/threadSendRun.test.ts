@@ -276,7 +276,7 @@ test("a second send the door disputes again is reported, not settled again", asy
   expect(
     answer,
     "a second dispute was settled rather than reported",
-  ).toStrictEqual({ send: "Refused", reason: "Elsewhere" });
+  ).toStrictEqual({ send: "Refused", what: "Send", cause: "Elsewhere" });
   expect(run.posted().length, "the settlement sent a third time").toBe(2);
 });
 
@@ -304,7 +304,7 @@ test("a second dispute is not reported as a mailbox nobody could find", async ()
     threadOtherSession,
     message,
   );
-  const reason = answer.send === "Refused" ? answer.reason : "";
+  const reason = answer.send === "Refused" ? answer.cause : "";
   expect(
     reason,
     "the reason named a mailbox the settlement had just read",

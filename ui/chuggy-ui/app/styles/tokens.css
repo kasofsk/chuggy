@@ -141,7 +141,11 @@
     --duration-travel: 800ms; /* one tile of the locomotive's ground */
     --duration-waiting-travel: 12000ms; /* one crossing of the waiting strip */
     --duration-chug: 800ms; /* one full cycle of the locomotive's sprite */
+    /* a word for waiting coming in: a fade, which reduced motion keeps */
+    --duration-word: 2000ms;
     --ease-out: cubic-bezier(0.2, 0, 0, 1);
+    /* late, for what comes in unhurried */
+    --ease-in: cubic-bezier(0.7, 0, 1, 1);
 
     /* layout */
     --width-page: 96rem;

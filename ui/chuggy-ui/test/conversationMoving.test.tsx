@@ -414,6 +414,24 @@ describe("the line under an answer, from the turn's last word to its settling", 
   });
 });
 
+/** The clock a case holds moved on by `ms`. */
+function lasting(ms: number): void {
+  act(() => {
+    vi.advanceTimersByTime(ms);
+  });
+}
+
+const queued = {
+  standing: { standing: "Running", state: "Queued" },
+} as const;
+
+/** Whether the line under the answer is one the sheet brings in slowly. */
+function slowly(container: HTMLElement): boolean {
+  return found(container, ".conversation-meta").classList.contains(
+    "conversation-meta-waited",
+  );
+}
+
 describe("a word for waiting", () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -421,16 +439,6 @@ describe("a word for waiting", () => {
   afterEach(() => {
     vi.useRealTimers();
   });
-
-  function lasting(ms: number): void {
-    act(() => {
-      vi.advanceTimersByTime(ms);
-    });
-  }
-
-  const queued = {
-    standing: { standing: "Running", state: "Queued" },
-  } as const;
 
   test("is said once the wait has lasted longer than a glance, and not before", () => {
     for (const [moment, waited] of [
@@ -479,6 +487,22 @@ describe("a word for waiting", () => {
       drawn([running({ standing: { standing: "Running", state: "Waiting" } })]),
     );
     expect(shownWord(view.container)).toEqual(["Waiting"]);
+    expect(slowly(view.container)).toBe(false);
+  });
+
+  test("comes in slowly where the wait has lasted, and a word that is not for waiting is there at once", () => {
+    const view = render(drawn([running(queued)]));
+    expect(slowly(view.container)).toBe(false);
+    lasting(conversationWaitWordAfterMs);
+    expect(shownWord(view.container)).toEqual(["Queued"]);
+    expect(slowly(view.container)).toBe(true);
+    view.rerender(drawn([running({ answer, activity: writing })]));
+    expect(slowly(view.container)).toBe(false);
+    view.rerender(
+      drawn([running({ answer, standing: { standing: "Answered" } })]),
+    );
+    expect(shownWord(view.container)).toEqual(["Answered"]);
+    expect(slowly(view.container)).toBe(false);
   });
 });
 
