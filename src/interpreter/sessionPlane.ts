@@ -31,6 +31,7 @@ import type {
   SessionTurnMeasured,
 } from "./agentSession.ts";
 import type { SessionContainerEnd } from "../contract/rosters.ts";
+import type { SessionLiveEvent } from "../contract/sessionLive.ts";
 import type { Partition } from "./projectStore.ts";
 import {
   sessionPodEvidence,
@@ -243,4 +244,20 @@ export interface SessionStoreQueryPort {
     readonly secret: SessionBearerSecret;
     readonly generation: number;
   }): Promise<readonly SessionStoreStreamRow[]>;
+}
+
+/** What publishing one post's live events found: handed over, or no lane was there to hand them to. */
+export type SessionLivePublished = "Published" | "Unavailable";
+
+/**
+ * Publishing what a session's runner reports of a turn in flight, to whoever
+ * is reading that session now. Nothing keeps an event nobody heard.
+ */
+export interface SessionLivePublishPort {
+  publish(input: {
+    readonly partition: Partition;
+    readonly session: SessionId;
+    readonly turn: SessionTurnId;
+    readonly events: readonly SessionLiveEvent[];
+  }): Promise<SessionLivePublished>;
 }
