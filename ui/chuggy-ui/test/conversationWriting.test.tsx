@@ -233,6 +233,25 @@ describe("what an answer being written is drawn as", () => {
   });
 });
 
+describe("the mark at the end of an answer", () => {
+  test("the mark stands on words already whole until the pace has let them all out", async () => {
+    const view = render(
+      drawn(running({ answer: "It is", activity: { activity: "Writing" } })),
+    );
+    await written(view.container, "It is");
+    const whole = "It is blocked by 40, and 40 is waiting on a review.";
+    view.rerender(
+      drawn(running({ answer: whole, activity: { activity: "Whole" } })),
+    );
+    expect(said(view.container).length).toBeLessThan(whole.length);
+    expect(view.container.querySelector(".conversation-writing")).not.toBe(
+      null,
+    );
+    await written(view.container, whole);
+    expect(view.container.querySelector(".conversation-writing")).toBe(null);
+  });
+});
+
 describe("the turn ending", () => {
   const answer = "It is blocked by 40.\n\n- claim 40\n- then 41";
   const work = [thought, { ...read, result: { text: "ok", isError: false } }];
