@@ -10,10 +10,12 @@
  *
  * WHAT IS HEARD IS DRAWN ONCE A FRAME. Every event is folded as it arrives and
  * the fold is handed to React at the next paint, so a burst of events is one
- * render and a tab nobody is looking at renders none.
+ * render and a tab nobody is looking at renders none. An event that changed
+ * nothing held owes no frame: a post heard again, or one turned away.
  *
  * NOTHING IS SAID WHEN IT FAILS. The stream reports no status and this draws
- * none: a thread that hears nothing is drawn from its transcript alone.
+ * none: a thread that hears nothing is drawn from its transcript alone, and a
+ * stream its server cut is opened again and goes on from the snapshot.
  *
  * WHAT THE MAILBOX SAYS IS OVER IS LET GO OF HERE, in what is drawn and in
  * what the next event is folded onto, and every event is asked whether its
@@ -81,12 +83,14 @@ export function useThreadLive(read: {
       { tenant, project },
       session,
       (event) => {
-        heard.current = conversationLiveHeard(
+        const next = conversationLiveHeard(
           heard.current,
           event,
           known.current,
           settled.current,
         );
+        if (next === heard.current) return;
+        heard.current = next;
         frame.current ??= requestAnimationFrame(() => {
           frame.current = undefined;
           setHeld(heard.current);

@@ -184,6 +184,44 @@ test("text sent again from inside what is held replaces what followed", () => {
   expect(only({ held, items: [asked] }).answer).toBe("Hello there");
 });
 
+test("a post heard again after a later one changes nothing held, and what is held is handed back itself", () => {
+  const held = heardAll([
+    began("m1", 0, "Text"),
+    wrote("m1", 0, 0, "Hello"),
+    wrote("m1", 0, 5, " there"),
+    began("m1", 1, "ToolUse", "Read"),
+  ]);
+  for (const late of [
+    began("m1", 0, "Text"),
+    wrote("m1", 0, 0, "Hello"),
+    wrote("m1", 0, 2, "llo th"),
+    began("m1", 1, "ToolUse", "Read"),
+  ])
+    expect(conversationLiveHeard(held, late)).toBe(held);
+  const exchange = only({ held, items: [asked] });
+  expect(exchange.answer).toBe("Hello there");
+  expect(exchange.activity).toEqual({ activity: "ToolUse", name: "Read" });
+});
+
+test("a block said to begin again as something else is that block, begun again", () => {
+  const held = heardAll([began("m1", 0, "Text"), wrote("m1", 0, 0, "Hello")]);
+  const again = conversationLiveHeard(held, began("m1", 0, "Thinking"));
+  expect(again).not.toBe(held);
+  expect(again.writing.blocks).toEqual([
+    { index: 0, kind: "Thinking", text: "", gapped: false },
+  ]);
+});
+
+test("an end heard twice is heard once", () => {
+  const held = heardAll([
+    began("m1", 0, "Text"),
+    wrote("m1", 0, 0, "Hello"),
+    ended,
+  ]);
+  expect(held.ended).toBe(turn);
+  expect(conversationLiveHeard(held, ended)).toBe(held);
+});
+
 test("a gap takes away nothing heard before it and draws nothing after it", () => {
   const before = heardAll([began("m1", 0, "Text"), wrote("m1", 0, 0, "Hello")]);
   const gapped = heardAll([wrote("m1", 0, 9, "lost")], before);

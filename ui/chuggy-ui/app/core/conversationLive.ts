@@ -221,7 +221,8 @@ const conversationTurnsNone: ReadonlySet<string> = new Set();
  * `settled`: a snapshot replaces the fold's account of the message being
  * written, an event is folded by the wire's fold, and a message heard for the
  * first time is marked with `known`. What was heard before is set aside
- * rather than dropped wherever the fold is left holding less than was heard.
+ * rather than dropped wherever the fold is left holding less than was heard,
+ * and an event the fold says changed nothing hands back what was held itself.
  */
 export function conversationLiveHeard(
   held: ConversationLiveHeld,
@@ -236,9 +237,10 @@ export function conversationLiveHeard(
     heard.event === "snapshot"
       ? heard.data.held
       : threadLiveHeard(held.writing, heard.data.turn, heard.data.event);
-  const continued =
-    heard.event === "live" && conversationLiveContinued(held.writing, writing);
   const ended = conversationLiveEnded(held, heard, writing);
+  const live = heard.event === "live";
+  if (live && writing === held.writing && ended === held.ended) return held;
+  const continued = live && conversationLiveContinued(held.writing, writing);
   const same =
     held.writing.turn === writing.turn &&
     held.writing.message === writing.message;

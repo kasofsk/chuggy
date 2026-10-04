@@ -22,6 +22,7 @@ import type {
 import type { ThreadLiveBlock } from "../../../src/contract/threadLive.ts";
 import { SessionProvider } from "../app/browser/session.tsx";
 import { ProjectStreamProvider } from "../app/browser/stream.tsx";
+import { streamReopenDelayMsMin } from "../app/core/streamConnection.ts";
 import { ThreadConversation } from "../app/browser/thread/ThreadConversation.tsx";
 import { moving } from "./conversationMoving.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
@@ -440,6 +441,60 @@ test("a reader who opens the thread part way through an answer starts from what 
   await until(script.container, { answer: "It is blocked." });
 });
 
+test("a stream cut in the middle of an answer goes on from the snapshot of its next opening, and nothing is said of it", async () => {
+  const failures: unknown[] = [];
+  const failed = (event: PromiseRejectionEvent | ErrorEvent): void => {
+    failures.push(event);
+  };
+  window.addEventListener("unhandledrejection", failed);
+  window.addEventListener("error", failed);
+  const script = scripted(threadAt("Claimed", 1), [
+    { status: 200, chunks: [nothingHeld], hold: true },
+    {
+      status: 200,
+      chunks: [
+        snapshot({
+          turn: "turn-2",
+          message: "msg_a",
+          blocks: [
+            { index: 0, kind: "Text", text: "It is blocked", gapped: false },
+          ],
+        }),
+      ],
+      hold: true,
+    },
+  ]);
+  await settled();
+  script.server.pushLive(began("msg_a", 0, "Text"));
+  script.server.pushLive(wrote("msg_a", 0, 0, "It is blo"));
+  await until(script.container, { answer: "It is blo", writing: true });
+  const words = script.container.textContent;
+  script.server.cutLive();
+  await settled();
+  expect(script.container.textContent).toBe(words);
+  expect(shown(script.container)).toMatchObject({
+    answer: "It is blo",
+    standing: "Working",
+  });
+  await waitFor(
+    () => {
+      expect(shown(script.container).answer).toBe("It is blocked");
+    },
+    { timeout: streamReopenDelayMsMin * 3 },
+  );
+  expect(script.server.liveSeen).toHaveLength(2);
+  script.server.pushLive(wrote("msg_a", 0, 13, " by 40."));
+  await until(script.container, {
+    answer: "It is blocked by 40.",
+    writing: true,
+    moving: ["mark"],
+  });
+  expect(script.container.querySelector('[role="alert"]')).toBeNull();
+  expect(failures).toEqual([]);
+  window.removeEventListener("unhandledrejection", failed);
+  window.removeEventListener("error", failed);
+});
+
 test("a stream that is refused draws the thread as its transcript alone, and says nothing", async () => {
   const script = scripted(threadAt("Claimed", 1), []);
   script.batches.push(firstMessage);
@@ -741,6 +796,28 @@ function framesHeld(): {
     cancelled,
   };
 }
+
+test("a post heard again, having changed nothing, owes no frame", async () => {
+  const frames = framesHeld();
+  const script = scripted(threadAt("Claimed", 1), [
+    { status: 200, chunks: [nothingHeld], hold: true },
+  ]);
+  await settled();
+  script.server.pushLive(began("msg_a", 0, "Thinking"));
+  script.server.pushLive(began("msg_a", 1, "ToolUse", "Read"));
+  await settled();
+  frames.paint();
+  await until(script.container, { card: "Read" });
+  const owed = frames.pending();
+  script.server.pushLive(began("msg_a", 0, "Thinking"));
+  script.server.pushLive(began("msg_a", 1, "ToolUse", "Read"));
+  await settled();
+  expect(frames.pending()).toBe(owed);
+  expect(shown(script.container).card).toBe("Read");
+  script.server.pushLive(began("msg_a", 2, "ToolUse", "Bash"));
+  await settled();
+  expect(frames.pending()).toBe(owed + 1);
+});
 
 test("a burst of events is drawn at the next frame and not before, and a frame still owed is given up with the page", async () => {
   const frames = framesHeld();
