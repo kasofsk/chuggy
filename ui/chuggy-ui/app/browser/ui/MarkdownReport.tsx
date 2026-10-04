@@ -15,6 +15,7 @@ import {
   type MarkdownInline,
   type MarkdownLines,
 } from "../../core/markdownReport.ts";
+import { markdownWritingText } from "../../core/markdownWriting.ts";
 import { TicketReference } from "./TicketReference.tsx";
 import { Table } from "./Table.tsx";
 
@@ -166,8 +167,13 @@ export function MarkdownLine(props: { readonly text: string }): ReactNode {
 export function MarkdownReport(props: {
   readonly text: string;
   readonly bare?: boolean;
+  /** Whether more of the text is still coming, so a mark its last line leaves
+   * open is drawn as what it is about to be. */
+  readonly writing?: boolean;
 }): ReactNode {
-  const blocks = markdownReportBlocks(props.text);
+  const blocks = markdownReportBlocks(
+    props.writing === true ? markdownWritingText(props.text) : props.text,
+  );
   return (
     <div
       className={
