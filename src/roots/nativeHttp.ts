@@ -917,24 +917,26 @@ const clientNotes: ReadonlySet<HubNote["note"]> = new Set([
   "SentClosed",
 ] as const);
 
-/** How long a kind of note must go unheard before its run begins again. */
+/** How long a kind of note must go unheard before its run begins again, and how long after its last line a kind still arriving is written again. */
 export const nativeNoteQuietMs = 60_000;
 
-/** One kind of note: how many there have been, how many in the run it is in, the place in that run of the next one written, and when the last came. */
+/** One kind of note: how many there have been, how many in the run it is in, the place in that run of the next one to double it, when the last came, and when one was last written. */
 interface NoteRun {
   readonly total: number;
   readonly run: number;
   readonly next: number;
   readonly atMs: number;
+  readonly writtenAtMs: number;
 }
 
 /**
  * Where a hub's notes are written: this process's own error stream, a line
  * each, where the rest of this root reports. A note of a kind a client causes
- * is written at the first of a run and at each that doubles the run, with how
- * many of its kind there have been in all, so that no client decides how much
- * this process writes; every other kind is paced by this process and written
- * every time.
+ * is written at the first of a run, at each that doubles the run, and at the
+ * first after the quiet span has passed since its kind was last written, with
+ * how many of its kind there have been in all, so that no client decides how
+ * much this process writes and a kind still arriving says its count each
+ * span; every other kind is paced by this process and written every time.
  */
 function nativeNotes<Note extends HubNote>(
   name: string,
@@ -954,13 +956,17 @@ function nativeNotes<Note extends HubNote>(
       const run = began ? 1 : before.run + 1;
       const next = began ? 1 : before.next;
       const total = (before?.total ?? 0) + 1;
+      const overdue =
+        before === undefined || atMs - before.writtenAtMs >= nativeNoteQuietMs;
+      const written = run === next || overdue;
       runs.set(note.note, {
         total,
         run,
         next: run === next ? 2 * next : next,
         atMs,
+        writtenAtMs: written ? atMs : before.writtenAtMs,
       });
-      if (run === next)
+      if (written)
         process.stderr.write(`${name}: ${text(note)} times=${String(total)}\n`);
     },
   };

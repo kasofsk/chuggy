@@ -661,6 +661,7 @@ test("a run goes on while each of its notes comes within the quiet span of the l
         nowMs += root.nativeNoteQuietMs - 1;
         live.noted(cut);
       }
+      for (let round = 0; round < 3; round += 1) live.noted(cut);
       out.short = written();
       nowMs += root.nativeNoteQuietMs;
       for (let round = 0; round < 4; round += 1) live.noted(cut);
@@ -669,8 +670,64 @@ test("a run goes on while each of its notes comes within the quiet span of the l
   );
   assert.equal(ran.code, 0, ran.out);
   const written = JSON.parse(ran.out) as { short: string[]; quiet: string[] };
-  assert.deepEqual(timesSaid(written.short), [1, 2, 4]);
-  assert.deepEqual(timesSaid(written.quiet), [8, 9, 11]);
+  assert.deepEqual(timesSaid(written.short), [1, 2, 4, 7, 8]);
+  assert.deepEqual(timesSaid(written.quiet), [11, 12, 14]);
+});
+
+test("a kind still arriving is written once the quiet span has passed since its last line, and its run is not begun again for it: a trickle says its count each span, and a surge inside it is said within one", async () => {
+  const ran = await rootRead(
+    {},
+    notesProgram(`
+      const refused = liveNote({ note: 'Refused' });
+      for (let round = 0; round < 40; round += 1) {
+        nowMs += root.nativeNoteQuietMs * 5 / 6;
+        live.noted(refused);
+      }
+      out.trickle = written();
+      for (let round = 0; round < 20; round += 1) {
+        nowMs += 1;
+        live.noted(refused);
+      }
+      nowMs += root.nativeNoteQuietMs - 21;
+      live.noted(refused);
+      out.surge = written();
+      nowMs += 1;
+      for (let round = 0; round < 3; round += 1) live.noted(refused);
+      out.span = written();
+    `),
+  );
+  assert.equal(ran.code, 0, ran.out);
+  const written = JSON.parse(ran.out) as {
+    trickle: string[];
+    surge: string[];
+    span: string[];
+  };
+  assert.deepEqual(timesSaid(written.trickle), [
+    1,
+    ...Array.from({ length: 20 }, (_unused, at) => 2 * (at + 1)),
+  ]);
+  assert.deepEqual(written.surge, []);
+  assert.deepEqual(timesSaid(written.span), [62, 64]);
+});
+
+test("a kind arriving far oftener than the quiet span is written at each doubling of its run and otherwise once a span, and no oftener", async () => {
+  const ran = await rootRead(
+    {},
+    notesProgram(`
+      const cut = liveNote({ note: 'SentClosed' });
+      for (let round = 0; round < 1000; round += 1) {
+        nowMs += root.nativeNoteQuietMs / 100;
+        live.noted(cut);
+      }
+      out.lines = written();
+    `),
+  );
+  assert.equal(ran.code, 0, ran.out);
+  const { lines } = JSON.parse(ran.out) as { lines: string[] };
+  assert.deepEqual(
+    timesSaid(lines),
+    [1, 2, 4, 8, 16, 32, 64, 128, 228, 256, 356, 456, 512, 612, 712, 812, 912],
+  );
 });
 
 test("a pool site a runner would read is composed as named", async () => {

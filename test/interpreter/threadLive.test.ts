@@ -640,43 +640,56 @@ test("text that takes a session past what one may hold leaves its block gapped, 
   assert.deepEqual(heldBy(reading(rig)), heldBy(socket));
 });
 
-test("text that takes a session past what one may hold again within a window of the last time leaves every block gapped, and its readers are sent that and not all it held", () => {
-  const unitsMax = 8;
-  const window = 1_000;
-  const rig = rigOf({
-    sessionTextBytesMax: 2 * unitsMax,
-    windowMs: window,
-    heartbeatMs: 100 * window,
-    sessionIdleMs: 100 * window,
+const pastWindowMs = 1_000;
+
+/** A hub whose sessions may each hold two blocks of four units, with no other bound of it near. */
+function boundedRig(): Rig {
+  return rigOf({
+    sessionTextBytesMax: 16,
+    windowMs: pastWindowMs,
+    heartbeatMs: 100 * pastWindowMs,
+    sessionIdleMs: 100 * pastWindowMs,
   });
+}
+
+/** Fills both blocks of a session to what one may hold, then writes one unit more to the second. */
+function past(rig: Rig, session: SessionId = one): void {
+  rig.hear(begun(), session);
+  rig.hear(text(0, "abcd"), session);
+  rig.hear(begun(1), session);
+  rig.hear(text(0, "efgh", 1), session);
+  rig.hear(text(4, "i", 1), session);
+}
+
+/** Each block a reader holds: its text, and whether it is gapped. */
+function textsOf(reader: Socket): (readonly [string, boolean])[] {
+  return heldBy(reader).blocks.map(
+    (block) => [block.text, block.gapped] as const,
+  );
+}
+
+const oneGapped = [
+  ["abcd", false],
+  ["", true],
+];
+const allGapped = [
+  ["", true],
+  ["", true],
+];
+
+test("text that takes a session past what one may hold again within a window of the last time leaves every block gapped, and its readers are sent that and not all it held", () => {
+  const window = pastWindowMs;
+  const rig = boundedRig();
   const socket = reading(rig);
   const other = reading(rig, two);
-  const texts = (reader: Socket): (readonly [string, boolean])[] =>
-    heldBy(reader).blocks.map((block) => [block.text, block.gapped] as const);
-  /** Fills both blocks to what the session may hold, then writes one unit more to the second. */
-  const past = (session: SessionId): void => {
-    rig.hear(begun(), session);
-    rig.hear(text(0, "abcd"), session);
-    rig.hear(begun(1), session);
-    rig.hear(text(0, "efgh", 1), session);
-    rig.hear(text(4, "i", 1), session);
-  };
-  const oneGapped = [
-    ["abcd", false],
-    ["", true],
-  ];
-  const allGapped = [
-    ["", true],
-    ["", true],
-  ];
 
-  past(one);
-  assert.deepEqual(texts(socket), oneGapped);
+  past(rig);
+  assert.deepEqual(textsOf(socket), oneGapped);
   rig.timers.advance(window - 1);
-  past(two);
-  assert.deepEqual(texts(other), oneGapped);
-  past(one);
-  assert.deepEqual(texts(socket), allGapped);
+  past(rig, two);
+  assert.deepEqual(textsOf(other), oneGapped);
+  past(rig);
+  assert.deepEqual(textsOf(socket), allGapped);
   assert.deepEqual(
     socket.frames.at(-1),
     snapshotOf({
@@ -695,12 +708,30 @@ test("text that takes a session past what one may hold again within a window of 
   assert.deepEqual(heldBy(reading(rig)), heldBy(socket));
 
   rig.timers.advance(window - 1);
-  past(one);
-  assert.deepEqual(texts(socket), allGapped);
+  past(rig);
+  assert.deepEqual(textsOf(socket), allGapped);
   rig.timers.advance(window);
-  past(one);
-  assert.deepEqual(texts(socket), oneGapped);
+  past(rig);
+  assert.deepEqual(textsOf(socket), oneGapped);
   assert.deepEqual(heldBy(reading(rig)), heldBy(socket));
+});
+
+test("a session is taken past what one may hold again when no time has passed since the last, and not when its turn ended between or the clock has stepped back", () => {
+  const rig = boundedRig();
+  rig.timers.setNowMs(50_000);
+  const socket = reading(rig);
+  past(rig);
+  past(rig);
+  assert.deepEqual(textsOf(socket), allGapped);
+  rig.hear(ended);
+  past(rig);
+  assert.deepEqual(textsOf(socket), oneGapped);
+  rig.timers.setNowMs(10_000);
+  past(rig);
+  assert.deepEqual(textsOf(socket), oneGapped);
+  rig.timers.advance(pastWindowMs - 1);
+  past(rig);
+  assert.deepEqual(textsOf(socket), allGapped);
 });
 
 test("a session nothing is heard from for the idle bound is dropped, whether a reader arrives or the heartbeat comes first", () => {

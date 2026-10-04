@@ -88,7 +88,7 @@ export interface ThreadLiveLimits {
   /** The text one session may hold across its blocks, which bounds its snapshot. */
   readonly sessionTextBytesMax: number;
   readonly sessionIdleMs: number;
-  /** The span the payloads that arrive are counted over, and within which text that takes a session past what one may hold a second time leaves all of it gapped. */
+  /** The span the payloads that arrive are counted over, and within which text that takes a session past what one may hold a second time, no `End` between, leaves all of it gapped. */
   readonly windowMs: number;
   /** The payloads read in one window, past which the hub is behind. */
   readonly windowEventsMax: number;
@@ -456,8 +456,9 @@ function evicted(state: HubState): void {
  * fold itself. The block the event wrote is kept in storage of its own, or is
  * left gapped where its text takes the session past what one may hold; every
  * block is left gapped where `again` says text took it past that less than a
- * window ago, so a session begun and written past it over and over has all it
- * may hold sent to its readers once a window and no oftener.
+ * window ago, so a turn begun and written past it over and over has all the
+ * session may hold sent to its readers once a window, and its turn's `End`,
+ * which forgets the session, forgets when that was.
  */
 function kept(
   state: HubState,
@@ -504,6 +505,7 @@ function heard(state: HubState, carried: ThreadLiveCarried): void {
   if (before === undefined && folded === threadLiveNothing) return;
   const again =
     before?.pastAtMs !== undefined &&
+    heardAtMs >= before.pastAtMs &&
     heardAtMs - before.pastAtMs < state.limits.windowMs;
   const { held, whole } =
     event.live === "Text"
