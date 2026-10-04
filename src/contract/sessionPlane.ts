@@ -93,6 +93,7 @@ export const sessionPlaneRoutes = {
   turnAnswer: { method: "POST", path: "/v1/session/turn/answer" },
   turnFailure: { method: "POST", path: "/v1/session/turn/failure" },
   turnLive: { method: "POST", path: "/v1/session/turn/live" },
+  turnStopped: { method: "POST", path: "/v1/session/turn/stopped" },
   held: { method: "POST", path: "/v1/session/held" },
   storeStreams: { method: "GET", path: "/v1/session/store" },
   storeBatch: { method: "PUT", path: "/v1/session/store/*" },
@@ -210,6 +211,15 @@ export const sessionTurnLiveSchema = z.strictObject({
   events: z.array(sessionLiveEventSchema).min(1).max(sessionLiveEventsMax),
 });
 
+/**
+ * The turn a runner asks after while it answers it: whether the member it is
+ * answering has stopped it. The plane holds the question as it holds the
+ * mailbox's, and answers it spent where no stop was recorded meanwhile.
+ */
+export const sessionTurnStoppedSchema = z.strictObject({
+  turn: sessionIdentitySchema,
+});
+
 /** How a pool's runner reports that the container its session ran in has ended, under that session's bearer. */
 export const sessionEndedSchema = z.strictObject({
   phase: z.enum(sessionContainerEnds),
@@ -236,6 +246,11 @@ export const sessionTurnClaimedSchema = z.object({
   ordinal: z.number().int().positive().max(sessionTurnSeriesMax),
   inputKind: z.enum(sessionTurnInputKinds),
   input: z.string().max(sessionTurnInputCharsMax),
+});
+
+/** The turn a member stopped, which is over: nothing its runner then offers of it is kept. */
+export const sessionTurnStoppedAnswerSchema = z.object({
+  turn: sessionIdentitySchema,
 });
 
 /** The streams a session's store holds under the prefix asked for, answered whole or refused. */
@@ -308,6 +323,12 @@ export const sessionPlaneAnswers = workerPlaneAnswersRefusingVersions({
     400: workerPlaneStopSchema,
     401: workerPlaneStopSchema,
     503: workerPlaneRetrySchema,
+  },
+  turnStopped: {
+    200: sessionTurnStoppedAnswerSchema,
+    204: "empty",
+    400: workerPlaneStopSchema,
+    401: workerPlaneStopSchema,
   },
   held: {
     204: "empty",

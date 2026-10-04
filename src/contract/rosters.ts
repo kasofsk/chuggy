@@ -618,5 +618,14 @@ export const sessionTurnFailures = [
   "AttemptLost",
   "SessionClosed",
   "TurnWithdrawn",
+  "TurnStopped",
 ] as const;
 export type SessionTurnFailure = (typeof sessionTurnFailures)[number];
+
+/**
+ * What the stop door answers: the turn was waiting or being answered and this
+ * call ended it, or it had ended already, however it ended. Both are the
+ * member's wish met, so both are the door's success and neither is a refusal.
+ */
+export const threadTurnStops = ["Stopped", "AlreadyEnded"] as const;
+export type ThreadTurnStop = (typeof threadTurnStops)[number];
