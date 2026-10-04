@@ -1,102 +1,175 @@
 /**
  * A report read while it is still being written.
  *
- * The cases say what each half-written mark draws as. The two properties walk
- * every prefix of one report that holds every shape the reader knows, because
- * a reader watches all of them go by: no block ever turns into another kind of
- * block, and no mark is ever drawn as the characters it is written in.
+ * The cases say what each half-written mark draws as. The properties walk
+ * every prefix of answers as a model writes them, because a reader watches
+ * every one go by: no block turns into another kind of block, and nothing a
+ * reader was drawn is taken away or loses the mark it was drawn in.
+ *
+ * Three things are allowed to arrive late, and each is pinned here as a case
+ * rather than left out of a property in silence: words a writer did mean in
+ * brackets, an underscore pair, and a table written without its leading pipe.
  */
 
 import { describe, expect, test } from "vitest";
 
-import { markdownReportBlocks } from "../app/core/markdownReport.ts";
-import type {
-  MarkdownBlock,
-  MarkdownInline,
-} from "../app/core/markdownReport.ts";
-import { markdownWritingText } from "../app/core/markdownWriting.ts";
+import { markdownBlocksParsed } from "../app/browser/ui/markdownTree.ts";
+import type { MarkdownBlock } from "../app/browser/ui/markdownTree.ts";
+import { markdownWritten } from "../app/browser/ui/markdownWriting.ts";
+import { corpusAnswers, corpusReview } from "./markdownCorpus.ts";
+import { drawn, prefixes, shape, skeleton, within } from "./markdownShape.ts";
+import type { Drawn } from "./markdownShape.ts";
 
-function written(text: string): readonly MarkdownBlock[] {
-  return markdownReportBlocks(markdownWritingText(text));
+function read(text: string): string {
+  return shape(markdownBlocksParsed(text) ?? []);
 }
 
-function words(text: string): readonly MarkdownInline[] {
-  const block = written(text).at(-1);
-  if (block?.kind !== "Paragraph") throw new Error("no paragraph was drawn");
-  return block.lines.at(-1) ?? [];
+function blocksWritten(text: string): readonly MarkdownBlock[] {
+  return markdownBlocksParsed(markdownWritten(text).text) ?? [];
 }
 
-describe("a mark left open on the last line", () => {
+function written(text: string): string {
+  return shape(blocksWritten(text));
+}
+
+function paragraph(held: string): string {
+  return `<paragraph>${held}</paragraph>`;
+}
+
+describe("a mark left open", () => {
   test("bold is drawn as bold from its first letter", () => {
-    expect(words("so **bo")).toEqual([
-      { kind: "Text", text: "so " },
-      { kind: "Bold", text: "bo" },
-    ]);
-    expect(words("so **bold*")).toEqual([
-      { kind: "Text", text: "so " },
-      { kind: "Bold", text: "bold" },
-    ]);
+    const bold = paragraph("so <strong>bold</strong>");
+    expect(written("so **bo")).toBe(paragraph("so <strong>bo</strong>"));
+    expect(written("so **bold")).toBe(bold);
+    expect(written("so **bold*")).toBe(bold);
+    expect(written("so **bold**")).toBe(bold);
   });
 
-  test("italic and code are closed the same way", () => {
-    expect(words("an *ita")).toEqual([
-      { kind: "Text", text: "an " },
-      { kind: "Italic", text: "ita" },
-    ]);
-    expect(words("an _ita")).toEqual([
-      { kind: "Text", text: "an " },
-      { kind: "Italic", text: "ita" },
-    ]);
-    expect(words("run `npm c")).toEqual([
-      { kind: "Text", text: "run " },
-      { kind: "Code", text: "npm c" },
-    ]);
+  test("italic, code and a strike are closed the same way", () => {
+    expect(written("an *ita")).toBe(paragraph("an <emphasis>ita</emphasis>"));
+    expect(written("run `npm c")).toBe(
+      paragraph("run <inlineCode>npm c</inlineCode>"),
+    );
+    expect(written("it is ~~gon")).toBe(
+      paragraph("it is <delete>gon</delete>"),
+    );
   });
 
   test("an opener nothing follows yet is held back", () => {
-    for (const opener of ["**", "*", "`", "_", "[", "[["])
-      expect(words(`so ${opener}`)).toEqual([{ kind: "Text", text: "so " }]);
+    for (const opener of ["**", "*", "`", "``", "_", "[", "[[", "~~", "~"])
+      expect(written(`so ${opener}`), opener).toBe(paragraph("so"));
+    for (const opener of ["\\", "!", "<", "&", "&am"])
+      expect(written(`so ${opener}`), opener).toBe(paragraph("so"));
   });
 
   test("a star a space follows opens nothing", () => {
-    expect(words("2 * 3")).toEqual([{ kind: "Text", text: "2 * 3" }]);
-    expect(words("2 ** 3")).toEqual([{ kind: "Text", text: "2 ** 3" }]);
-  });
-
-  test("an underscore inside a name opens nothing", () => {
-    expect(words("see count_wor")).toEqual([
-      { kind: "Text", text: "see count_wor" },
-    ]);
+    expect(written("2 * 3")).toBe(paragraph("2 * 3"));
+    expect(written("2 ** 3")).toBe(paragraph("2 ** 3"));
   });
 
   test("a mark already closed is left as the reader reads it", () => {
-    expect(words("a **b** and `c` d")).toEqual([
-      { kind: "Text", text: "a " },
-      { kind: "Bold", text: "b" },
-      { kind: "Text", text: " and " },
-      { kind: "Code", text: "c" },
-      { kind: "Text", text: " d" },
-    ]);
+    const text = "a **b** and `c` and ~~d~~ e";
+    expect(written(text)).toBe(read(text));
+  });
+
+  test("a mark is closed over the line it was opened on", () => {
+    expect(written("a **b\nc")).toBe(paragraph("a <strong>b\nc</strong>"));
   });
 });
 
-describe("a link or a reference left open on the last line", () => {
-  test("a link is its own words until its address is whole", () => {
-    const linked = [{ kind: "Text", text: "see the docs" }];
-    expect(words("see [the do")).toEqual([
-      { kind: "Text", text: "see the do" },
-    ]);
-    expect(words("see [the docs]")).toEqual(linked);
-    expect(words("see [the docs](")).toEqual(linked);
-    expect(words("see [the docs](https://exam")).toEqual(linked);
-    expect(words("see [the docs](https://example.test)")).toEqual([
-      { kind: "Text", text: "see " },
-      { kind: "Link", text: "the docs", href: "https://example.test" },
-    ]);
+describe("a mark left open inside another", () => {
+  test("each is closed, the inner one first", () => {
+    expect(written("**bold and *nes")).toBe(
+      paragraph("<strong>bold and <emphasis>nes</emphasis></strong>"),
+    );
+    expect(written("**bold `co")).toBe(
+      paragraph("<strong>bold <inlineCode>co</inlineCode></strong>"),
+    );
+    expect(written("***both")).toBe(
+      paragraph("<emphasis><strong>both</strong></emphasis>"),
+    );
+    expect(written("~~gone **and bo")).toBe(
+      paragraph("<delete>gone <strong>and bo</strong></delete>"),
+    );
   });
 
-  test("words that were meant in brackets keep them once more is written", () => {
-    expect(words("as [sic] ")).toEqual([{ kind: "Text", text: "as [sic] " }]);
+  test("a mark inside a link's words is closed inside them", () => {
+    expect(written("see [the **do")).toBe(
+      paragraph("see the <strong>do</strong>"),
+    );
+  });
+
+  test("code holding a backtick is closed with the pair that opened it", () => {
+    expect(written("use ``a ` b")).toBe(
+      paragraph("use <inlineCode>a ` b</inlineCode>"),
+    );
+  });
+});
+
+describe("an underscore", () => {
+  test("is never opened early, because a name is what it nearly always is", () => {
+    expect(written("see count_wor")).toBe(paragraph("see count_wor"));
+    expect(written("an _ita")).toBe(paragraph("an _ita"));
+    for (const prefix of prefixes("Set _private_thing and __init__ here."))
+      expect(written(prefix), prefix).not.toMatch(/<emphasis>|<strong>/u);
+  });
+
+  test("marks once its pair is whole, which takes back the one it opened with", () => {
+    expect(written("an _ita_")).toBe(paragraph("an _ita"));
+    expect(written("an _ita_ word")).toBe(
+      paragraph("an <emphasis>ita</emphasis> word"),
+    );
+  });
+});
+
+describe("a link left open", () => {
+  test("is its own words until its address is whole", () => {
+    const words = paragraph("see the docs");
+    expect(written("see [the do")).toBe(paragraph("see the do"));
+    expect(written("see [the docs]")).toBe(words);
+    expect(written("see [the docs](")).toBe(words);
+    expect(written("see [the docs](https://exam")).toBe(words);
+    expect(written("see [the docs](https://example.test)")).toBe(
+      paragraph("see <link https://example.test>the docs</link>"),
+    );
+  });
+
+  test("to nowhere a member could be sent never draws as a link or a bracket", () => {
+    const text = "See [the brief](./console/BRIEF.md) for the rest of it.";
+    let before = "";
+    for (const prefix of prefixes(text)) {
+      const now = drawn(blocksWritten(prefix)).characters;
+      expect(written(prefix), prefix).not.toContain("<link");
+      expect(now, prefix).not.toMatch(/[[\]()]/u);
+      expect(now.startsWith(before), prefix).toBe(true);
+      before = now;
+    }
+    expect(before).toBe("See the brief for the rest of it.");
+  });
+
+  test("a picture is its description, and its mark is never drawn", () => {
+    for (const prefix of prefixes("![a chart](https://example.test/a.png) x"))
+      expect(drawn(blocksWritten(prefix)).characters, prefix).not.toMatch(
+        /[![\]]/u,
+      );
+  });
+
+  test("an address between angle brackets is drawn without them", () => {
+    for (const prefix of prefixes("Go to <https://example.test/a_b> now."))
+      expect(drawn(blocksWritten(prefix)).characters, prefix).not.toMatch(
+        /[<>]/u,
+      );
+  });
+});
+
+describe("brackets that are not a link's", () => {
+  test("words that were meant in brackets gain them once more is written", () => {
+    expect(written("as [sic")).toBe(paragraph("as sic"));
+    expect(written("as [sic] ")).toBe(paragraph("as [sic]"));
+  });
+
+  test("a bracket a word runs into is the word's own", () => {
+    expect(written("take items[0")).toBe(paragraph("take items[0"));
   });
 
   test("a ticket's reference is drawn once it is whole and not before", () => {
@@ -107,194 +180,234 @@ describe("a link or a reference left open on the last line", () => {
       "[[ticket:41",
       "[[ticket:41]",
     ])
-      expect(words(`blocked by ${half}`)).toEqual([
-        { kind: "Text", text: "blocked by " },
-      ]);
-    expect(words("blocked by [[ticket:41]]")).toEqual([
-      { kind: "Text", text: "blocked by " },
-      { kind: "Reference", ticket: 41 },
-    ]);
+      expect(written(`blocked by ${half}`), half).toBe(paragraph("blocked by"));
+    expect(written("blocked by [[ticket:41]]")).toBe(
+      paragraph("blocked by [[ticket:41]]"),
+    );
+  });
+});
+
+describe("a listed line, half written", () => {
+  test("its marks are closed past what makes it a listed one", () => {
+    expect(written("- one\n- **tw")).toBe(
+      "<list><listItem><paragraph>one</paragraph></listItem><listItem><paragraph><strong>tw</strong></paragraph></listItem></list>",
+    );
   });
 
-  test("the marks are closed past what makes the line a listed one", () => {
-    expect(written("- one\n- **tw")).toEqual([
-      {
-        kind: "BulletList",
-        items: [
-          [{ kind: "Text", text: "one" }],
-          [{ kind: "Bold", text: "tw" }],
-        ],
-      },
-    ]);
+  test("and three lists deep exactly as at the margin", () => {
+    expect(written("- a\n  - b\n    1. **c and `d")).toContain(
+      "<list ordered from 1><listItem><paragraph><strong>c and <inlineCode>d</inlineCode></strong></paragraph></listItem></list>",
+    );
   });
 
-  test("only the last line is closed", () => {
-    expect(written("a **b\nc")).toEqual(markdownReportBlocks("a **b\nc"));
+  test("a line that is so far only its mark is held back", () => {
+    for (const start of ["-", "- ", "*", "+", "1", "1.", "1. ", "  -", "  2."])
+      expect(written(`- one\n${start}`), start).toBe(read("- one"));
+  });
+
+  test("a task is held until it has a word, so its box is never brackets", () => {
+    for (const start of [
+      "- [",
+      "- [x",
+      "- [x]",
+      "- [x] ",
+      "- [ ] `",
+      "- [x] *",
+    ])
+      expect(written(`- one\n${start}`), start).toBe(read("- one"));
+    expect(written("- one\n- [x] d")).toBe(
+      "<list><listItem><paragraph>one</paragraph></listItem><listItem ticked><paragraph>d</paragraph></listItem></list>",
+    );
   });
 });
 
 describe("a block's own mark, half written", () => {
   test("the start of a mark is held back until it is one", () => {
-    for (const start of ["#", "##", "-", "*", "1", "1.", "`", "``", "|"])
-      expect(written(`Before.\n\n${start}`)).toEqual(
-        markdownReportBlocks("Before."),
+    for (const start of ["#", "##", "#### ", "-", "*", "1", "1.", ">", "> #"])
+      expect(written(`Before.\n\n${start}`), start).toBe(read("Before."));
+    for (const start of ["`", "``", "|", "---", "***", "- - "])
+      expect(written(`Before.\n\n${start}`), start).toBe(read("Before."));
+  });
+
+  test("a heading's marks are closed like a paragraph's", () => {
+    expect(written("## The **fo")).toBe(
+      "<heading2>The <strong>fo</strong></heading>",
+    );
+  });
+
+  test("a quote's are too, over the lines it runs", () => {
+    expect(written("> a quoted **line\n> goes o")).toBe(
+      "<blockquote><paragraph>a quoted <strong>line\ngoes o</strong></paragraph></blockquote>",
+    );
+  });
+});
+
+describe("a fence, half written", () => {
+  test("reads as code to the end, without the fence it is closing on", () => {
+    const code = "<code ts>const a = 1;</code>";
+    for (const close of ["", "\n", "\n`", "\n``", "\n```"])
+      expect(written(`\`\`\`ts\nconst a = 1;${close}`), close).toBe(code);
+    expect(written("~~~\ncode\n~~")).toBe("<code>code</code>");
+  });
+
+  test("names its language once the line that says it is whole", () => {
+    for (const start of ["```", "```t", "```ts"])
+      expect(written(`Code:\n\n${start}`), start).toBe(
+        "<paragraph>Code:</paragraph><code></code>",
       );
+    expect(written("Code:\n\n```ts\n")).toBe(
+      "<paragraph>Code:</paragraph><code ts></code>",
+    );
   });
 
-  test("a listed line with nothing on it yet is a line of the list", () => {
-    expect(written("- one\n- ")).toEqual([
-      { kind: "BulletList", items: [[{ kind: "Text", text: "one" }], []] },
-    ]);
+  test("marks inside it are code and are left alone", () => {
+    expect(written("```\na **b and [c")).toBe("<code>a **b and [c</code>");
   });
 
-  test("a fence nothing closes reads as code to the end, without the fence it is closing on", () => {
-    const code = [{ kind: "CodeBlock", text: "const a = 1;" }];
-    expect(written("```ts\nconst a = 1;")).toEqual(code);
-    expect(written("```ts\nconst a = 1;\n`")).toEqual(code);
-    expect(written("```ts\nconst a = 1;\n``")).toEqual(code);
-    expect(written("```ts\nconst a = 1;\n```")).toEqual(code);
-  });
-
-  test("marks inside a fence are code and are left alone", () => {
-    expect(written("```\na **b")).toEqual([
-      { kind: "CodeBlock", text: "a **b" },
-    ]);
+  test("inside a listed line it is that line's", () => {
+    expect(written("1. step\n\n   ```sh\n   npm c")).toBe(
+      "<list ordered from 1><listItem><paragraph>step</paragraph><code sh>npm c</code></listItem></list>",
+    );
   });
 });
 
 describe("a table, half written", () => {
-  const cell = (text: string): readonly MarkdownInline[] => [
-    { kind: "Text", text },
-  ];
+  const head =
+    "<tableRow><tableCell>Ticket</tableCell><tableCell>State</tableCell></tableRow>";
 
   test("a header is a table from its first cell", () => {
-    expect(written("| Ticket")).toEqual([
-      { kind: "Table", header: [cell("Ticket")], rows: [] },
-    ]);
-    expect(written("| Ticket | State |")).toEqual([
-      { kind: "Table", header: [cell("Ticket"), cell("State")], rows: [] },
-    ]);
+    expect(written("| Ticket")).toBe(
+      "<table none><tableRow><tableCell>Ticket</tableCell></tableRow></table>",
+    );
+    expect(written("| Ticket | State |")).toBe(
+      `<table none,none>${head}</table>`,
+    );
   });
 
-  test("the header stands while the delimiter under it is written", () => {
-    const table = [
-      { kind: "Table", header: [cell("Ticket"), cell("State")], rows: [] },
-    ];
-    for (const under of [
-      "",
-      "|",
-      "| ",
-      "|:",
-      "| --",
-      "| --- |",
-      "| --- | :",
-      "| --- | --- |",
-    ])
-      expect(written(`| Ticket | State |\n${under}`)).toEqual(table);
+  test("the header stands while the row under it is written", () => {
+    for (const under of ["", "|", "| ", "|:", "| --", "| --- |", "| --- | :"])
+      expect(written(`| Ticket | State |\n${under}`), under).toBe(
+        `<table none,none>${head}</table>`,
+      );
+    expect(written("| Ticket | State |\n| --- | --: |\n")).toBe(
+      `<table none,right>${head}</table>`,
+    );
   });
 
-  test("a row is drawn as it is written, padded to the header", () => {
-    expect(written("| Ticket | State |\n| --- | --- |\n| 41")).toEqual([
-      {
-        kind: "Table",
-        header: [cell("Ticket"), cell("State")],
-        rows: [[cell("41"), []]],
-      },
-    ]);
+  test("a row is drawn as it is written, its marks closed", () => {
+    expect(written("| Ticket | State |\n| --- | --- |\n| 41 | **Bl")).toBe(
+      `<table none,none>${head}<tableRow><tableCell>41</tableCell><tableCell><strong>Bl</strong></tableCell></tableRow></table>`,
+    );
   });
 
-  test("pipes under a paragraph's own line stay the paragraph the reader draws", () => {
-    const text = "The shape:\n| a | b |";
-    expect(written(text)).toEqual(markdownReportBlocks(text));
+  test("under a paragraph's own line it is the table the grammar reads there", () => {
+    expect(written("The shape:\n| a | b")).toBe(
+      "<paragraph>The shape:</paragraph><table none,none><tableRow><tableCell>a</tableCell><tableCell>b</tableCell></tableRow></table>",
+    );
+  });
+
+  test("inside a listed line it is that line's", () => {
+    expect(written("- item\n\n  | a | b")).toBe(
+      "<list><listItem><paragraph>item</paragraph><table none,none><tableRow><tableCell>a</tableCell><tableCell>b</tableCell></tableRow></table></listItem></list>",
+    );
   });
 });
 
-const report = [
-  "# Where 41 stands",
-  "",
-  "It is **blocked** by [[ticket:40]], which *nobody* has claimed.",
-  "See `chug status` and [the runbook](https://example.test/runbook) first.",
-  "",
-  "- claim 40",
-  "- run _both_ gates",
-  "",
-  "1. then **merge**",
-  "2. then release",
-  "",
-  "> a quoted `line`",
-  "",
-  "```sh",
-  "just check",
-  "```",
-  "",
-  "| Ticket | State |",
-  "| --- | :-- |",
-  "| 40 | **Open** |",
-  "| 41 | Blocked |",
-  "",
-  "## Next",
-  "",
-  "Nothing until 40 lands.",
-].join("\n");
+/** Texts written to break the writing: marks that are not marks, marks inside
+ * each other, and blocks inside blocks. */
+const hostile: Readonly<Record<string, string>> = {
+  linked: "See [the brief](https://example.com/brief) for the rest.",
+  nested: "Pass `[[1, 2], [3, 4]]` and [[ticket:40]] to it.",
+  snake: "Set my_var_name and _private_thing and __init__ here.",
+  marks: "This is **bold and *nested* text** then *it* ends.",
+  hash: "Use C# and #1 priority\n#hashtag here",
+  table: "Here:\n\n| a | b |\n| --- | --- |\n| 1 | 2 |\n\nAfter the table.",
+  fence: "Code:\n\n```ts\nconst a = `x`;\nconst b = a * 2;\n```\n\nDone.",
+  tildes: "~~~\ncode *here*\n~~~\nafter",
+  ticks: "Use ``double `tick` code`` and `single` here.",
+  quote: "> a quoted **line\n> goes on** here",
+  dash: "Total\n-\nmore\n---\nrule",
+  emoji: "Done 🎉 and 👩‍👩‍👧 family and é combining é.",
+  address: "[wiki](https://en.wikipedia.org/wiki/A_(b)) end",
+  entity: "AT&T and a &amp; b &lt; c.",
+  strike: "This is ~~gone~~ and ~5 stays.",
+  listed: "- item\n\n  | a | b |\n  | - | - |\n  | 1 | *2* |\n",
+  task: "- [x] done\n- [ ] todo\n- [link](https://a.test) item",
+  stepped: "1. step\n\n   ```sh\n   npm ci\n   ```\n\n2. next",
+};
 
-const prefixes = Array.from({ length: report.length + 1 }, (_unused, length) =>
-  report.slice(0, length),
-);
-
-function inlineRuns(
-  block: MarkdownBlock,
-): readonly (readonly MarkdownInline[])[] {
-  switch (block.kind) {
-    case "Heading":
-      return [block.inline];
-    case "Paragraph":
-    case "Quote":
-      return block.lines;
-    case "BulletList":
-    case "OrderedList":
-      return block.items;
-    case "CodeBlock":
-      return [];
-    case "Table":
-      return [...block.header, ...block.rows.flat()];
+/** Every prefix of a text as it is drawn, with the one before it. */
+function moments(
+  text: string,
+  stride: number,
+  each: (before: Drawn, now: Drawn, bones: readonly string[]) => void,
+): void {
+  let before: Drawn = { characters: "", marks: "" };
+  for (const prefix of prefixes(text, stride)) {
+    const blocks = blocksWritten(prefix);
+    const now = drawn(blocks);
+    each(before, now, skeleton(blocks));
+    before = now;
   }
 }
 
-describe("every moment of one report", () => {
-  test("the whole of it reads as itself", () => {
-    expect(written(report)).toEqual(markdownReportBlocks(report));
+describe("every moment of an answer", () => {
+  test.each(Object.keys(corpusAnswers))(
+    "%s: whole, it reads as itself",
+    (name) => {
+      const text = corpusAnswers[name] ?? "";
+      expect(written(text)).toBe(read(text));
+    },
+  );
+
+  test.each(Object.keys(corpusAnswers))(
+    "%s: no block turns into another, and nothing drawn is taken back",
+    (name) => {
+      const text = corpusAnswers[name] ?? "";
+      let held: readonly string[] = [];
+      moments(text, name === "longLine" ? 23 : 1, (before, now, bones) => {
+        expect(bones.slice(0, held.length)).toEqual(held);
+        expect(now.characters.startsWith(before.characters)).toBe(true);
+        expect(now.marks.startsWith(before.marks)).toBe(true);
+        held = bones;
+      });
+    },
+  );
+
+  test("read without the writing, the same answer takes back what it drew", () => {
+    let before = "";
+    const taken = prefixes(corpusReview).some((prefix) => {
+      const now = drawn(markdownBlocksParsed(prefix) ?? []).characters;
+      const back = !now.startsWith(before);
+      before = now;
+      return back;
+    });
+    expect(taken).toBe(true);
+  });
+});
+
+describe("every moment of a text written to break it", () => {
+  test.each(Object.keys(hostile))("%s", (name) => {
+    const text = hostile[name] ?? "";
+    let held: readonly string[] = [];
+    moments(text, 1, (before, now, bones) => {
+      expect(bones.slice(0, held.length)).toEqual(held);
+      expect(within(before.characters, now.characters)).toBe(true);
+      held = bones;
+    });
   });
 
-  test("no block turns into another kind of block", () => {
-    let before: readonly string[] = [];
-    for (const prefix of prefixes) {
-      const kinds = written(prefix).map((block) => block.kind);
-      expect(kinds.slice(0, before.length), JSON.stringify(prefix)).toEqual(
-        before,
-      );
-      before = kinds;
-    }
-  });
-
-  test("no mark is drawn as the characters it is written in", () => {
-    for (const prefix of prefixes)
-      for (const block of written(prefix))
-        for (const run of inlineRuns(block))
-          for (const node of run)
-            if (node.kind === "Text")
-              expect(node.text, JSON.stringify(prefix)).not.toMatch(
-                /[*`_[\]|#]/u,
-              );
-  });
-
-  test("read without it, the same report shows its marks", () => {
-    const shown = prefixes.some((prefix) =>
-      markdownReportBlocks(prefix).some((block) =>
-        inlineRuns(block).some((run) =>
-          run.some((node) => node.kind === "Text" && /[*`[]/u.test(node.text)),
-        ),
-      ),
+  test("a table with no pipe before it is a paragraph until its second row is whole", () => {
+    expect(written("a | b\n--- | --")).toBe(paragraph("a | b"));
+    expect(written("a | b\n--- | ---\n")).toBe(
+      "<table none,none><tableRow><tableCell>a</tableCell><tableCell>b</tableCell></tableRow></table>",
     );
-    expect(shown).toBe(true);
+  });
+
+  test("a piped line under words is drawn as a table, and is words again if no row follows", () => {
+    expect(written("or a || b\n| not a table")).toContain("<table");
+    expect(written("or a || b\n| not a table\nm")).toBe(
+      paragraph("or a || b\n| not a table\nm"),
+    );
   });
 });
