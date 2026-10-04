@@ -188,6 +188,19 @@ const hostileOpenings: Readonly<Record<string, string>> = {
   ),
   "sixteen quote marks a line": costFill(`${"> ".repeat(16)}a\n`),
   "quote and list marks, sixteen a line": costFill(`${"> - ".repeat(8)}a\n`),
+  "list and quote marks, sixteen a line": costFill(`${"- > ".repeat(8)}a\n`),
+  "a list mark then fifteen quote marks a line": costFill(
+    `- ${"> ".repeat(15)}a\n`,
+  ),
+  "eight quote marks then eight list marks a line": costFill(
+    `${"> ".repeat(8)}${"- ".repeat(8)}a\n`,
+  ),
+  "sixteen quote marks a line, each closed by a list mark": costFill(
+    `${"> ".repeat(16)}a\n- b\n`,
+  ),
+  "sixteen quote marks a line, a blank line apart": costFill(
+    `${"> ".repeat(16)}a\n\n`,
+  ),
   "eight list marks a line": costFill(`${"- ".repeat(8)}a\n`),
 };
 

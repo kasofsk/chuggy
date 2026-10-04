@@ -111,18 +111,29 @@ describe("a line that opens with many marks", () => {
   });
 
   test.each([
-    ["list marks", "- ", 16],
-    ["numbers", "1) ", 15],
-    ["quote marks", "> ", 16],
-    ["quote and list marks", "> - ", 8],
+    ["list marks", "- ".repeat(16)],
+    ["numbers", "1) ".repeat(15)],
+    ["a list mark and then quote marks", `- ${"> ".repeat(15)}`],
+    ["quote and list marks", "> - ".repeat(8)],
+    ["list and quote marks", "- > ".repeat(8)],
   ])(
     "of %s, with no line that begins a block at the margin, is its characters once past what its length allows",
-    (_name, unit, count) => {
-      const indented = ` ${unit.repeat(count)}a\n`;
+    (_name, opening) => {
+      const indented = ` ${opening}a\n`;
       expect(kinds(indented.repeat(4))).toEqual(["read"]);
       expect(kinds(indented.repeat(40))).toEqual(["plain"]);
     },
   );
+
+  test("of quote marks and no list mark is a quote carried on from the line above, and is read as far as one", () => {
+    expect(kinds(` ${"> ".repeat(16)}a\n`.repeat(40))).toEqual(["read"]);
+    const quoted = `${"> > > a quoted line\n".repeat(60)}\n`.repeat(40);
+    const pieces = markdownPiecesFrom(quoted, 0, 0);
+    expect(pieces.map((piece) => piece.kind)).toEqual(
+      Array.from({ length: 40 }, () => "read"),
+    );
+    expect(read(quoted).split("<blockquote>")).toHaveLength(121);
+  });
 });
 
 describe("a word that holds an address", () => {

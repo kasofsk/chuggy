@@ -48,6 +48,10 @@
  * both are charged by the most items the lines so far can have left open,
  * which `markdownNested.ts` counts: a list nested deeper than one call may be
  * spent on is its characters, and so are blank lines enough under a deep one.
+ * Each mark a line opens with after its first list mark is charged a line as
+ * well: what such marks open the grammar closes and opens again on every line
+ * like it, where quote marks before any list mark are carried on from the line
+ * above and cost what their characters do.
  *
  * WHAT IS DONE TO THE TEXT ONCE IT IS READ IS CHARGED AS WELL. Bare addresses
  * are looked for again in the words the parser decoded, where an escape or a
@@ -834,8 +838,10 @@ interface Line {
    * and whether an ordered one is the number that may begin a list anywhere. */
   readonly mark: number;
   readonly one: boolean;
-  /** How many quote and list marks the line opens with. */
+  /** How many quote and list marks the line opens with, and how many of them
+   * stand after its first list mark. */
   readonly marks: number;
+  readonly nested: number;
 }
 
 function digit(code: number): boolean {
@@ -865,18 +871,25 @@ function markdownMarkEnd(text: string, at: number, end: number): number {
   return markdownBlankCode(text.charCodeAt(after)) ? after : markNone;
 }
 
-/** How many quote and list marks follow one another from a place. */
-function markdownMarksFrom(text: string, from: number, end: number): number {
+/** How many quote and list marks follow one another from a place, and how
+ * many of them stand after the first list mark. */
+function markdownMarksFrom(
+  text: string,
+  from: number,
+  end: number,
+): Pick<Line, "marks" | "nested"> {
   let marks = 0;
+  let listed = -1;
   let at = from;
   while (marks <= markdownLineMarksMax && at < end) {
     const after = markdownMarkEnd(text, at, end);
     if (after < 0) break;
+    if (listed < 0 && text.charCodeAt(at) !== 62) listed = marks;
     marks += 1;
     at = after;
     while (at < end && markdownBlankCode(text.charCodeAt(at))) at += 1;
   }
-  return marks;
+  return { marks, nested: listed < 0 ? 0 : marks - listed - 1 };
 }
 
 /**
@@ -902,7 +915,8 @@ function markdownLineRead(text: string, start: number, end: number): Line {
     tabbed = true;
     at += 1;
   }
-  const line = { indent, tabbed, at, words: at, mark: 0, one: false, marks: 0 };
+  const none = { mark: 0, one: false, marks: 0, nested: 0 };
+  const line = { indent, tabbed, at, words: at, ...none };
   if (at === end) return { ...line, kind: lineBlank };
   if (indent === 0 && !tabbed && markdownFenceOpens(text, at, end))
     return { ...line, kind: lineFence };
@@ -925,7 +939,7 @@ function markdownLineRead(text: string, start: number, end: number): Line {
     kind: code === 62 ? lineQuote : lineItem,
     mark: digit(code) ? text.charCodeAt(after - 1) : code,
     one: digit(code) && after - at === 2 && code === 49,
-    marks: 1 + markdownMarksFrom(text, words, end),
+    ...markdownMarksFrom(text, at, end),
   };
 }
 
@@ -1069,7 +1083,7 @@ function markdownScanLine(
   end: number,
 ): number {
   if (line.marks > markdownLineMarksMax) scan.plain = true;
-  if (line.marks > 1) scan.work += (line.marks - 1) * markdownCost.line;
+  scan.work += line.nested * markdownCost.line;
   const popped = markdownScanPopped(scan, line.indent);
   const near = line.indent - (scan.cols.at(-1) ?? 0) < 4;
   if (line.kind === lineItem && near) {
