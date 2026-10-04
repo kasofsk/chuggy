@@ -15,7 +15,10 @@ import {
   nativeHttpLimitsDefault,
   type PrincipalAuthentication,
 } from "../adapters/http/server.ts";
-import { projectResourceReader } from "../adapters/http/eventStream.ts";
+import {
+  projectResourceReader,
+  threadLiveFramed,
+} from "../adapters/http/eventStream.ts";
 import {
   postgresProjectChangeDoorbell,
   postgresProjectChangeLog,
@@ -953,16 +956,22 @@ function nativeStreamHub(
 }
 
 function threadLiveNoteText(note: ThreadLiveNote): string {
-  const totals = `connections=${String(note.connectionsOpen)} sessions=${String(note.sessionsHeld)} events=${String(note.eventsHeard)} unread=${String(note.payloadsUnread)}`;
+  const totals = `connections=${String(note.connectionsOpen)} sessions=${String(note.sessionsHeld)} heldBytes=${String(note.heldBytes)} pendingBytes=${String(note.pendingBytes)} sentBytes=${String(note.sentBytes)} events=${String(note.eventsHeard)} unread=${String(note.payloadsUnread)} shed=${String(note.payloadsShed)}`;
   switch (note.note) {
     case "Sourced":
       return `the lane is ${note.source}, ${totals}`;
     case "Refused":
       return `refused a connection at capacity, ${totals}`;
     case "SlowClientClosed":
-      return `closed a connection that stopped reading, ${totals}`;
+      return `cut a connection that stopped reading, ${totals}`;
+    case "PendingClosed":
+      return `cut a connection behind past what the connections behind may hold unwritten, ${totals}`;
+    case "SentClosed":
+      return `cut the connection written the most, past what the open connections may have been written, ${totals}`;
     case "Unread":
       return `dropped payloads that were not live events, ${totals}`;
+    case "Shed":
+      return `left payloads unread past what one window reads, and dropped what was held, ${totals}`;
     default:
       return assertNever(note);
   }
@@ -976,6 +985,10 @@ export function nativeThreadLiveLimits(): ThreadLiveLimits {
       "CHUG_API_THREAD_LIVE_CONNECTIONS_MAX",
       defaults.connectionsMax,
     ),
+    sessionReadersMax: positiveEnvironment(
+      "CHUG_API_THREAD_LIVE_SESSION_READERS_MAX",
+      defaults.sessionReadersMax,
+    ),
     maxAgeMs: positiveEnvironment(
       "CHUG_API_THREAD_LIVE_MAX_AGE_MS",
       defaults.maxAgeMs,
@@ -988,17 +1001,37 @@ export function nativeThreadLiveLimits(): ThreadLiveLimits {
       "CHUG_API_THREAD_LIVE_SLOW_CLIENT_WAIT_MS",
       defaults.slowClientWaitMs,
     ),
+    pendingBytesMax: positiveEnvironment(
+      "CHUG_API_THREAD_LIVE_PENDING_BYTES_MAX",
+      defaults.pendingBytesMax,
+    ),
+    sentBytesMax: positiveEnvironment(
+      "CHUG_API_THREAD_LIVE_SENT_BYTES_MAX",
+      defaults.sentBytesMax,
+    ),
     sessionsHeldMax: positiveEnvironment(
       "CHUG_API_THREAD_LIVE_SESSIONS_HELD_MAX",
       defaults.sessionsHeldMax,
     ),
-    textHeldCharsMax: positiveEnvironment(
-      "CHUG_API_THREAD_LIVE_TEXT_HELD_CHARS_MAX",
-      defaults.textHeldCharsMax,
+    heldBytesMax: positiveEnvironment(
+      "CHUG_API_THREAD_LIVE_HELD_BYTES_MAX",
+      defaults.heldBytesMax,
+    ),
+    sessionTextBytesMax: positiveEnvironment(
+      "CHUG_API_THREAD_LIVE_SESSION_TEXT_BYTES_MAX",
+      defaults.sessionTextBytesMax,
     ),
     sessionIdleMs: positiveEnvironment(
       "CHUG_API_THREAD_LIVE_SESSION_IDLE_MS",
       defaults.sessionIdleMs,
+    ),
+    windowMs: positiveEnvironment(
+      "CHUG_API_THREAD_LIVE_WINDOW_MS",
+      defaults.windowMs,
+    ),
+    windowEventsMax: positiveEnvironment(
+      "CHUG_API_THREAD_LIVE_WINDOW_EVENTS_MAX",
+      defaults.windowEventsMax,
     ),
   };
 }
@@ -1013,6 +1046,7 @@ function nativeThreadLiveHub(): ThreadLiveHub {
         process.stderr.write(`thread live: ${threadLiveNoteText(note)}\n`);
       },
     },
+    framed: threadLiveFramed,
     limits: nativeThreadLiveLimits(),
   });
 }
@@ -1058,7 +1092,7 @@ function nativeShutdownSignals(shutdown: () => Promise<void>): void {
 }
 
 /** Closes the hubs and then the pools as the app closes, and drains on either signal a supervisor stops it with. */
-function nativeStopping(
+export function nativeStopping(
   app: ReturnType<typeof createNativeHttpApp>,
   pools: NativePools,
   hubs: readonly Pick<ProjectStreamHub, "close">[],

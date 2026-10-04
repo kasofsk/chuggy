@@ -94,6 +94,10 @@ interface Listened {
   readonly heard: ThreadLiveCarried[];
   readonly sources: ThreadLiveSource[];
   unread: number;
+
+  /** How many payloads the watcher was asked about, and whether it answers for the next. */
+  arrived: number;
+  reads: boolean;
 }
 
 /** Where the API's listener connects: as the API's role, under a name its backend can be found by. */
@@ -107,12 +111,22 @@ function laneUrl(name: string): string {
 async function listening(
   name: string,
 ): Promise<{ readonly lane: ThreadLiveLane; readonly listened: Listened }> {
-  const listened: Listened = { heard: [], sources: [], unread: 0 };
+  const listened: Listened = {
+    heard: [],
+    sources: [],
+    unread: 0,
+    arrived: 0,
+    reads: true,
+  };
   const lane = postgresSessionLiveLane(laneUrl(name), {
     reconnectBaseMs: 50,
     reconnectMaxMs: 200,
   });
   lane.open({
+    arrived: () => {
+      listened.arrived += 1;
+      return listened.reads;
+    },
     heard: (carried) => listened.heard.push(carried),
     unread: () => {
       listened.unread += 1;
@@ -231,6 +245,36 @@ test("a payload that is not one event is counted and dropped, and the lane goes 
     );
     await published(listened, partition, [ended], 1);
     assert.equal(listened.unread, 3);
+    assert.deepEqual(
+      listened.heard.map((carried) => carried.event),
+      [ended],
+    );
+  } finally {
+    await lane.close();
+  }
+});
+
+test("a payload the watcher does not answer for is neither read nor counted as unread, and the lane goes on asking", async () => {
+  const partition = partitionOf("unasked");
+  const { lane, listened } = await listening("chuggy-live-unasked");
+  try {
+    listened.reads = false;
+    await planePool.query("SELECT pg_notify('chuggy_session_live', $1)", [
+      "not json",
+    ]);
+    assert.equal(
+      await publishing().publisher.publish({
+        partition,
+        session,
+        turn,
+        events: [textAt(0, "unheard")],
+      }),
+      "Published",
+    );
+    await reaches(() => listened.arrived === 2, "both payloads arriving");
+    listened.reads = true;
+    await published(listened, partition, [ended], 1);
+    assert.deepEqual([listened.arrived, listened.unread], [3, 0]);
     assert.deepEqual(
       listened.heard.map((carried) => carried.event),
       [ended],

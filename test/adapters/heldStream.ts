@@ -6,6 +6,7 @@
 
 import assert from "node:assert/strict";
 import http from "node:http";
+import net from "node:net";
 import { setTimeout as delay } from "node:timers/promises";
 
 export interface Held {
@@ -14,6 +15,9 @@ export interface Held {
   body(): string;
   /** Whether the server has ended the response, which is how a stream ends. */
   closed(): boolean;
+
+  /** Whether the connection failed under the response before it ended, which is what a reset is. */
+  failed(): boolean;
   close(): void;
 }
 
@@ -28,6 +32,10 @@ export function held(
       { host: "127.0.0.1", port, path, headers },
       (response) => {
         let ended = false;
+        let failed = false;
+        response.on("error", () => {
+          failed = true;
+        });
         response.setEncoding("utf8");
         response.on("data", (chunk: string) => {
           body += chunk;
@@ -40,6 +48,7 @@ export function held(
           headers: response.headers,
           body: () => body,
           closed: () => ended,
+          failed: () => failed,
           close: () => {
             request.destroy();
           },
@@ -61,6 +70,39 @@ export function abandoning(
   request.on("error", () => undefined);
   request.end();
   return request;
+}
+
+/** A connection that asks for a stream and never reads a byte of the answer, which is what a reader that has stopped reading is. */
+export function unreading(
+  port: number,
+  path: string,
+  headers: Readonly<Record<string, string>>,
+): net.Socket {
+  const socket = net.connect({ host: "127.0.0.1", port });
+  socket.pause();
+  socket.on("error", () => undefined);
+  const head = Object.entries({ host: "127.0.0.1", ...headers })
+    .map(([name, value]) => `${name}: ${value}\r\n`)
+    .join("");
+  socket.write(`GET ${path} HTTP/1.1\r\n${head}\r\n`);
+  return socket;
+}
+
+/** How many bytes a connection that had read nothing can still read, once it reads until its stream ends or fails. */
+export function readOut(socket: net.Socket): Promise<number> {
+  return new Promise((resolve) => {
+    let bytes = 0;
+    socket.on("data", (chunk: Buffer) => {
+      bytes += chunk.length;
+    });
+    socket.once("error", () => {
+      resolve(bytes);
+    });
+    socket.once("end", () => {
+      resolve(bytes);
+    });
+    socket.resume();
+  });
 }
 
 const pollAttemptsMax = 400;
