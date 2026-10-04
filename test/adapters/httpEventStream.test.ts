@@ -13,7 +13,6 @@
  */
 
 import assert from "node:assert/strict";
-import http from "node:http";
 import { after, test } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 
@@ -48,6 +47,15 @@ import {
   type FakeDoorbell,
   type FakeLog,
 } from "../interpreter/projectStreamHarness.ts";
+import {
+  abandoning,
+  assertServerBusy,
+  held,
+  identities,
+  payloads,
+  reaches,
+  type Held,
+} from "./heldStream.ts";
 import { unreadableLeadReads } from "./leadReadFixtures.ts";
 import { unservedLeadInquiries, unservedThreads } from "./threadFixtures.ts";
 
@@ -203,89 +211,6 @@ async function served(
       await app.close();
     },
   };
-}
-
-interface Held {
-  readonly status: number;
-  readonly headers: http.IncomingHttpHeaders;
-  body(): string;
-  /** Whether the server has ended the response, which is how a stream ends. */
-  closed(): boolean;
-  close(): void;
-}
-
-function held(
-  port: number,
-  path: string,
-  headers: Readonly<Record<string, string>>,
-): Promise<Held> {
-  return new Promise((resolve, reject) => {
-    let body = "";
-    const request = http.request(
-      { host: "127.0.0.1", port, path, headers },
-      (response) => {
-        let ended = false;
-        response.setEncoding("utf8");
-        response.on("data", (chunk: string) => {
-          body += chunk;
-        });
-        response.on("end", () => {
-          ended = true;
-        });
-        resolve({
-          status: response.statusCode ?? 0,
-          headers: response.headers,
-          body: () => body,
-          closed: () => ended,
-          close: () => {
-            request.destroy();
-          },
-        });
-      },
-    );
-    request.on("error", reject);
-    request.end();
-  });
-}
-
-/** A request the case abandons before any head arrives, which is what a flaky link does. */
-function abandoning(
-  port: number,
-  path: string,
-  headers: Readonly<Record<string, string>>,
-): http.ClientRequest {
-  const request = http.request({ host: "127.0.0.1", port, path, headers });
-  request.on("error", () => undefined);
-  request.end();
-  return request;
-}
-
-const pollAttemptsMax = 400;
-const pollIntervalMs = 10;
-
-async function reaches(reading: () => boolean): Promise<boolean> {
-  for (let attempt = 0; attempt < pollAttemptsMax; attempt += 1) {
-    if (reading()) return true;
-    await delay(pollIntervalMs);
-  }
-  return false;
-}
-
-/** Every `data:` payload the stream carried, in the order it carried them. */
-function payloads(found: Held): unknown[] {
-  return found
-    .body()
-    .split("\n")
-    .filter((line) => line.startsWith("data: "))
-    .map((line) => JSON.parse(line.slice("data: ".length)) as unknown);
-}
-
-function identities(found: Held): string[] {
-  return found
-    .body()
-    .split("\n")
-    .filter((line) => line.startsWith("event: ") || line.startsWith("id: "))
-    .map((line) => line.trim());
 }
 
 /** The representation the newest change frame carried. */
@@ -531,13 +456,7 @@ test("past the stream cap the answer is a refusal and not a stream", async () =>
   const rig = await rigOf({ limits: { connectionsMax: 1 } });
   const opened = await stream(rig);
   assert.ok(await reaches(() => opened.body().includes("event: source")));
-  const refused = await stream(rig);
-  assert.equal(refused.status, 503);
-  assert.equal(refused.headers["retry-after"], "1");
-  assert.ok(
-    (refused.headers["content-type"] ?? "").includes("vnd.chuggy.v1+json"),
-  );
-  assert.ok(await reaches(() => refused.body().includes("ServerBusy")));
+  await assertServerBusy(await stream(rig));
 });
 
 test("a client that goes away gives its stream back to the cap", async () => {

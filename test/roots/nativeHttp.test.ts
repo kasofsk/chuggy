@@ -33,6 +33,8 @@ import { join } from "node:path";
 import test, { type TestContext } from "node:test";
 import { promisify } from "node:util";
 
+import { threadLiveLimitsDefault } from "../../src/interpreter/threadLive.ts";
+
 const execute = promisify(execFile);
 
 const issuer = "https://auth.invalid";
@@ -382,6 +384,17 @@ const forgePairsProgram = `
   }))));
 `;
 
+/** Every bound of the thread live stream under its own variable, each a value no other bound and no default holds. */
+const threadLiveNamed = {
+  CHUG_API_THREAD_LIVE_CONNECTIONS_MAX: "11",
+  CHUG_API_THREAD_LIVE_MAX_AGE_MS: "12",
+  CHUG_API_THREAD_LIVE_HEARTBEAT_MS: "13",
+  CHUG_API_THREAD_LIVE_SLOW_CLIENT_WAIT_MS: "14",
+  CHUG_API_THREAD_LIVE_SESSIONS_HELD_MAX: "15",
+  CHUG_API_THREAD_LIVE_TEXT_HELD_CHARS_MAX: "16",
+  CHUG_API_THREAD_LIVE_SESSION_IDLE_MS: "17",
+};
+
 /** What a root program prints under the variables one case names, and nothing else. */
 async function rootRead(
   named: Readonly<Record<string, string>>,
@@ -398,6 +411,7 @@ async function rootRead(
     "CHUG_API_POOL_TOKEN_URL",
     "CHUG_API_POOL_PLANE_URL",
     "CHUG_API_POOL_REGISTRY_HOST",
+    ...Object.keys(threadLiveNamed),
   ])
     if (named[variable] === undefined) delete environment[variable];
   try {
@@ -426,6 +440,37 @@ const poolNamed = {
   CHUG_API_POOL_PLANE_URL: "http://127.0.0.1:4444",
   CHUG_API_POOL_REGISTRY_HOST: "chuggy-registry.chuggy.test:5000",
 };
+
+const threadLiveLimitsProgram = `
+  const root = await import('./src/roots/nativeHttp.ts');
+  process.stdout.write(JSON.stringify(root.nativeThreadLiveLimits()));
+`;
+
+test("each bound of the thread live stream is the one its own variable names, the hub's default where none does, and a refusal to start where it is not a count", async () => {
+  const unnamed = await rootRead({}, threadLiveLimitsProgram);
+  assert.equal(unnamed.code, 0, unnamed.out);
+  assert.deepEqual(JSON.parse(unnamed.out), threadLiveLimitsDefault);
+  const named = await rootRead(threadLiveNamed, threadLiveLimitsProgram);
+  assert.equal(named.code, 0, named.out);
+  assert.deepEqual(JSON.parse(named.out), {
+    connectionsMax: 11,
+    maxAgeMs: 12,
+    heartbeatMs: 13,
+    slowClientWaitMs: 14,
+    sessionsHeldMax: 15,
+    textHeldCharsMax: 16,
+    sessionIdleMs: 17,
+  });
+  const refused = await rootRead(
+    { CHUG_API_THREAD_LIVE_HEARTBEAT_MS: "0" },
+    threadLiveLimitsProgram,
+  );
+  assert.equal(refused.code, 1);
+  assert.match(
+    refused.out,
+    /CHUG_API_THREAD_LIVE_HEARTBEAT_MS must be a positive integer/u,
+  );
+});
 
 test("a pool site a runner would read is composed as named", async () => {
   const ran = await rootRead(poolNamed, poolSiteProgram);

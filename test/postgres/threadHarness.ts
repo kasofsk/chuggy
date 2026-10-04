@@ -51,6 +51,7 @@ import type {
   ThreadSessionMint,
   ThreadStore,
 } from "../../src/interpreter/threadRead.ts";
+import type { ThreadLiveHub } from "../../src/interpreter/threadLive.ts";
 import type { ThreadWakeStore } from "../../src/interpreter/threadWake.ts";
 import { leadRigOpen, leadRigProject, type LeadRig } from "./leadHarness.ts";
 import { postgresHarnessKeying } from "./harness.ts";
@@ -244,6 +245,7 @@ export function threadRigApp(input: {
   readonly principal: Principal;
   readonly access: ProjectAccess;
   readonly store: SessionStoreDouble;
+  readonly threadLive?: ThreadLiveHub;
 }) {
   const pool = input.rig.apiPool;
   const leads = postgresLeadReads(pool);
@@ -286,5 +288,16 @@ export function threadRigApp(input: {
     },
     { ready: () => Promise.resolve(true) },
     postgresInstallationAuthority(pool),
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    input.threadLive,
   );
 }

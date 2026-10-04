@@ -1,7 +1,8 @@
 /**
- * The server-sent-events transport for the project stream: the frame encoding,
- * the socket a hub writes through, and the read that turns a change row into
- * the representation the changed kind's own GET route would have answered with.
+ * The server-sent-events transport for the project stream and the thread live
+ * stream: each one's frame encoding, the socket a hub writes through, and the
+ * read that turns a change row into the representation the changed kind's own
+ * GET route would have answered with.
  *
  * THE RESPONSE HEAD IS WRITTEN BY THE FIRST FRAME, not by the handler. Every
  * refusal a stream can be given — no bearer, no access, no capacity, or a read
@@ -19,13 +20,16 @@ import type { FastifyReply } from "fastify";
 import { assertNever } from "../../domain/assertNever.ts";
 import { asTicketId, type TicketId } from "../../domain/ids.ts";
 import type { ProjectStreamEvent } from "../../contract/events.ts";
+import type { ThreadLiveStreamEvent } from "../../contract/threadLive.ts";
 import { asConfigurationRevisionId } from "../../interpreter/authoring.ts";
 import type { NativeWeb, Principal } from "../../interpreter/nativeWeb.ts";
 import { asOperationId } from "../../interpreter/operationInbox.ts";
 import type {
+  EventStreamSink,
   ProjectResourceReader,
   ProjectStreamSink,
 } from "../../interpreter/projectStream.ts";
+import type { ThreadLiveSink } from "../../interpreter/threadLive.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
 import { asExecutionId } from "../../interpreter/schedulerIdentity.ts";
 import {
@@ -179,7 +183,11 @@ export const projectStreamHeaders: Readonly<Record<string, string>> = {
   "x-accel-buffering": "no",
 };
 
-export function projectStreamSocket(reply: FastifyReply): ProjectStreamSink {
+/** A socket a hub writes frames through, each written as `frameOf` encodes it. */
+function eventStreamSocket<Event>(
+  reply: FastifyReply,
+  frameOf: (event: Event) => string,
+): EventStreamSink<Event> {
   const raw = reply.raw;
   let answered = false;
   let ended = false;
@@ -203,4 +211,17 @@ export function projectStreamSocket(reply: FastifyReply): ProjectStreamSink {
       raw.end();
     },
   };
+}
+
+export function projectStreamSocket(reply: FastifyReply): ProjectStreamSink {
+  return eventStreamSocket(reply, frameOf);
+}
+
+/** A thread live frame carries no identity, because nothing of the stream is kept to resume from. */
+function threadLiveFrameOf(event: ThreadLiveStreamEvent): string {
+  return `event: ${event.event}\ndata: ${JSON.stringify(event.data)}\n\n`;
+}
+
+export function threadLiveSocket(reply: FastifyReply): ThreadLiveSink {
+  return eventStreamSocket(reply, threadLiveFrameOf);
 }

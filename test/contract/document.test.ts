@@ -83,6 +83,7 @@ test("the golden names every route and not an empty stand-in", () => {
     "thread",
     "threadClose",
     "threadHide",
+    "threadLive",
     "threadMessages",
     "threadRename",
     "threadTranscript",

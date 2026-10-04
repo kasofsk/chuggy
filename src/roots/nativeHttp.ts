@@ -20,6 +20,7 @@ import {
   postgresProjectChangeDoorbell,
   postgresProjectChangeLog,
 } from "../adapters/postgres/projectChangeLog.ts";
+import { postgresSessionLiveLane } from "../adapters/postgres/sessionLive.ts";
 import { systemStreamTimers } from "../adapters/runtime/systemStreamTimers.ts";
 import {
   projectStreamHub,
@@ -29,6 +30,13 @@ import {
   type ProjectStreamNote,
   type ProjectStreamReport,
 } from "../interpreter/projectStream.ts";
+import {
+  threadLiveHub,
+  threadLiveLimitsDefault,
+  type ThreadLiveHub,
+  type ThreadLiveLimits,
+  type ThreadLiveNote,
+} from "../interpreter/threadLive.ts";
 import { assertNever } from "../domain/assertNever.ts";
 import {
   oidcAuthentication,
@@ -944,6 +952,71 @@ function nativeStreamHub(
   });
 }
 
+function threadLiveNoteText(note: ThreadLiveNote): string {
+  const totals = `connections=${String(note.connectionsOpen)} sessions=${String(note.sessionsHeld)} events=${String(note.eventsHeard)} unread=${String(note.payloadsUnread)}`;
+  switch (note.note) {
+    case "Sourced":
+      return `the lane is ${note.source}, ${totals}`;
+    case "Refused":
+      return `refused a connection at capacity, ${totals}`;
+    case "SlowClientClosed":
+      return `closed a connection that stopped reading, ${totals}`;
+    case "Unread":
+      return `dropped payloads that were not live events, ${totals}`;
+    default:
+      return assertNever(note);
+  }
+}
+
+/** Each bound of the thread live hub, from its own variable or the hub's default. */
+export function nativeThreadLiveLimits(): ThreadLiveLimits {
+  const defaults = threadLiveLimitsDefault;
+  return {
+    connectionsMax: positiveEnvironment(
+      "CHUG_API_THREAD_LIVE_CONNECTIONS_MAX",
+      defaults.connectionsMax,
+    ),
+    maxAgeMs: positiveEnvironment(
+      "CHUG_API_THREAD_LIVE_MAX_AGE_MS",
+      defaults.maxAgeMs,
+    ),
+    heartbeatMs: positiveEnvironment(
+      "CHUG_API_THREAD_LIVE_HEARTBEAT_MS",
+      defaults.heartbeatMs,
+    ),
+    slowClientWaitMs: positiveEnvironment(
+      "CHUG_API_THREAD_LIVE_SLOW_CLIENT_WAIT_MS",
+      defaults.slowClientWaitMs,
+    ),
+    sessionsHeldMax: positiveEnvironment(
+      "CHUG_API_THREAD_LIVE_SESSIONS_HELD_MAX",
+      defaults.sessionsHeldMax,
+    ),
+    textHeldCharsMax: positiveEnvironment(
+      "CHUG_API_THREAD_LIVE_TEXT_HELD_CHARS_MAX",
+      defaults.textHeldCharsMax,
+    ),
+    sessionIdleMs: positiveEnvironment(
+      "CHUG_API_THREAD_LIVE_SESSION_IDLE_MS",
+      defaults.sessionIdleMs,
+    ),
+  };
+}
+
+/** The thread live hub over a listening connection of its own, reporting where the project stream's hub does. */
+function nativeThreadLiveHub(): ThreadLiveHub {
+  return threadLiveHub({
+    lane: postgresSessionLiveLane(requiredEnvironment(databaseUrlVariable)),
+    timers: systemStreamTimers,
+    report: {
+      noted: (note) => {
+        process.stderr.write(`thread live: ${threadLiveNoteText(note)}\n`);
+      },
+    },
+    limits: nativeThreadLiveLimits(),
+  });
+}
+
 /**
  * Ends every stream before the drain begins, because a stream is a response
  * that never finishes and a drain that waited for one would wait out its
@@ -951,14 +1024,14 @@ function nativeStreamHub(
  */
 function nativeShutdown(
   app: ReturnType<typeof createNativeHttpApp>,
-  hub: ProjectStreamHub,
+  streamsClosed: () => Promise<void>,
   drainMs: number,
 ): () => Promise<void> {
   let started = false;
   return async () => {
     if (started) return;
     started = true;
-    await hub.close();
+    await streamsClosed();
     const force = setTimeout(() => {
       app.server.closeAllConnections();
     }, drainMs);
@@ -982,6 +1055,28 @@ function nativeShutdownSignals(shutdown: () => Promise<void>): void {
       });
     });
   }
+}
+
+/** Closes the hubs and then the pools as the app closes, and drains on either signal a supervisor stops it with. */
+function nativeStopping(
+  app: ReturnType<typeof createNativeHttpApp>,
+  pools: NativePools,
+  hubs: readonly Pick<ProjectStreamHub, "close">[],
+): void {
+  const streamsClosed = async (): Promise<void> => {
+    for (const hub of hubs) await hub.close();
+  };
+  app.addHook("onClose", async () => {
+    await streamsClosed();
+    await closePools(pools.pool, pools.selectorReviewPool);
+  });
+  nativeShutdownSignals(
+    nativeShutdown(
+      app,
+      streamsClosed,
+      positiveEnvironment("CHUG_API_SHUTDOWN_DRAIN_MS", 15_000),
+    ),
+  );
 }
 
 /**
@@ -1111,6 +1206,7 @@ async function main(): Promise<void> {
     nativeThreadPorts(pools, artifacts),
   );
   const hub = nativeStreamHub(pool, web);
+  const threadLive = nativeThreadLiveHub();
   const app = createNativeHttpApp(
     web,
     authentication,
@@ -1132,17 +1228,9 @@ async function main(): Promise<void> {
     composeExecutionPlacement(pool, access),
     composeSessionPlacement(pool, access),
     composeSelectorProposalReviews(selectorReviewPool, access),
+    threadLive,
   );
-  app.addHook("onClose", async () => {
-    await hub.close();
-    await closePools(pool, selectorReviewPool);
-  });
-  const shutdown = nativeShutdown(
-    app,
-    hub,
-    positiveEnvironment("CHUG_API_SHUTDOWN_DRAIN_MS", 15_000),
-  );
-  nativeShutdownSignals(shutdown);
+  nativeStopping(app, pools, [hub, threadLive]);
   await app.listen({
     host: process.env["CHUG_API_HOST"] ?? "127.0.0.1",
     port: positiveEnvironment("CHUG_API_PORT", 3_000),
