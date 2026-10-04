@@ -37,8 +37,9 @@ export interface SessionConversationRead {
   readonly held: LeadTranscriptHeld;
   readonly stream: string | undefined;
   readonly listed: boolean;
-  /** Whether anything has been asked of this session yet. A store is written by
-   * the first turn, so a session with none has no store to be missing. */
+  /** Whether a store is due of this session. The first turn writes it, so a
+   * session with no turn, or with none settled where its page can tell, has no
+   * store to be missing. */
   readonly turned: boolean;
 }
 

@@ -424,6 +424,24 @@ test("a block heard with a gap in it is never drawn as text", async () => {
   expect(shown(script.container).answer).toBe("It is ");
 });
 
+test("a first turn being written says nothing of the store it has not written yet", async () => {
+  const streamless = (state: ThreadTurnResponse["state"]): ThreadResponse =>
+    threadBody({ streamless: true, turns: [{ ...turnAt(state), ordinal: 1 }] });
+  const script = scripted(streamless("Queued"), [
+    { status: 200, chunks: [nothingHeld], hold: true },
+  ]);
+  await settled();
+  expect(script.container.textContent).not.toContain("No store");
+  script.draw(streamless("Claimed"));
+  script.server.pushLive(began("msg_a", 0, "Text"));
+  script.server.pushLive(wrote("msg_a", 0, 0, "Looking at 41."));
+  await until(script.container, { answer: "Looking at 41." });
+  expect(script.container.textContent).not.toContain("No store");
+  script.draw(streamless("Failed"));
+  await settled();
+  expect(script.container.textContent).toContain("No store");
+});
+
 test("the runner naming the thread's store mid-turn does not take the words away to say Loading", async () => {
   const streamless = (state: ThreadTurnResponse["state"]): ThreadResponse =>
     threadBody({ streamless: true, turns: [{ ...turnAt(state), ordinal: 1 }] });

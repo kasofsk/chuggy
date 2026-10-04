@@ -243,6 +243,14 @@ export function threadWriting(thread: Pick<ThreadResponse, "turns">): boolean {
   return newest?.state === "Queued" || newest?.state === "Claimed";
 }
 
+/** Whether the thread has a turn the mailbox settled, which is when a store it
+ * does not name is one that is missing rather than one not written yet. */
+export function threadStoreDue(thread: Pick<ThreadResponse, "turns">): boolean {
+  return thread.turns.some(
+    (turn) => turn.state !== "Queued" && turn.state !== "Claimed",
+  );
+}
+
 /**
  * The two fields a wake document is drawn from. Unknown keys are dropped rather
  * than refused, so a document carrying more than this reads as the notice it is.

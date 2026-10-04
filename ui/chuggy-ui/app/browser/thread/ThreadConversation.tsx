@@ -48,6 +48,7 @@ import {
   sessionConversationTurns,
 } from "../../core/sessionConversation.ts";
 import {
+  threadStoreDue,
   threadTakesMessages,
   threadTurnsWait,
   threadWriting,
@@ -83,7 +84,7 @@ function useThreadExchanges(
   const held = walked.held;
   const stream = thread.agentReference;
   const listed = leadStreamListed(thread);
-  const turned = thread.turns.length > 0;
+  const turned = threadStoreDue(thread);
   const items = useMemo(
     () => sessionConversationItems({ held, stream, listed, turned }),
     [held, stream, listed, turned],

@@ -12,6 +12,7 @@ import { describe, expect, test } from "vitest";
 
 import {
   sessionTurnInputKinds,
+  sessionTurnStates,
   threadMessageRefusalCodes,
   threadStandings,
 } from "../../../src/contract/rosters.ts";
@@ -26,6 +27,7 @@ import {
   threadRefusalWord,
   threadSendFrom,
   threadSendStanding,
+  threadStoreDue,
   threadTakesMessages,
   threadTurnKindWord,
   threadTurnMinted,
@@ -412,6 +414,32 @@ describe("whether a thread's session is writing", () => {
     expect(threadWriting({ turns: [stuck, newest] })).toBe(false);
     expect(threadWriting({ turns: [newest, stuck] })).toBe(false);
     expect(threadWriting({ turns: [] })).toBe(false);
+  });
+});
+
+describe("whether a store the thread does not name is missing", () => {
+  test("a thread whose every turn is unsettled has not written one yet", () => {
+    expect(threadStoreDue({ turns: [] })).toBe(false);
+    expect(threadStoreDue({ turns: [turnOf({ state: "Queued" })] })).toBe(
+      false,
+    );
+    expect(threadStoreDue({ turns: [turnOf({ state: "Claimed" })] })).toBe(
+      false,
+    );
+  });
+
+  test("a thread with a settled turn should have one, however that turn ended", () => {
+    for (const state of sessionTurnStates) {
+      if (state === "Queued" || state === "Claimed") continue;
+      const settled = turnOf({ turn: "thread-turn-1", ordinal: 1, state });
+      const asked = turnOf({
+        turn: "thread-turn-2",
+        ordinal: 2,
+        state: "Queued",
+      });
+      expect(threadStoreDue({ turns: [settled] })).toBe(true);
+      expect(threadStoreDue({ turns: [settled, asked] })).toBe(true);
+    }
   });
 });
 
