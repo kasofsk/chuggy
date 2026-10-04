@@ -374,10 +374,11 @@ const textHeaviest = "a".repeat(sessionLiveTextBytesMax - jsonTextBytes(""));
 /**
  * A publisher over the plane's own role that keeps every payload it handed
  * the boundary. What the contract admits at its heaviest names identities no
- * project of this database can have, so no turn of them is ever claimed and
- * the boundary carries none of it: what the publisher weighed, left out and
- * handed over is read here, and what the channel carries is asked of the
- * server with the same payload.
+ * project of this database can have, so no turn of them is ever claimed, the
+ * boundary carries none of it and each post it is handed is answered
+ * `Unheld`: what the publisher weighed, left out and handed over is read
+ * here, and what the channel carries is asked of the server with the same
+ * payload.
  */
 function handing(): {
   readonly publisher: SessionLivePublishPort;
@@ -427,7 +428,7 @@ test("the heaviest event the contract admits is too heavy for the channel only w
         },
       ],
     } as const;
-    assert.equal(await publisher.publish(carried), "Published");
+    assert.equal(await publisher.publish(carried), "Unheld");
     assert.equal(handed.length, 1);
     assert.deepEqual(drops, []);
     await notified(handed[0] ?? "");
@@ -446,7 +447,7 @@ test("the heaviest event the contract admits is too heavy for the channel only w
         ended,
       ],
     } as const;
-    assert.equal(await publisher.publish(heavy), "Published");
+    assert.equal(await publisher.publish(heavy), "Unheld");
     await reaches(() => listened.heard.length === 2, "the event beside it");
     assert.deepEqual(listened.heard[1], {
       partition: heavy.partition,
@@ -457,7 +458,7 @@ test("the heaviest event the contract admits is too heavy for the channel only w
     assert.equal(handed.length, 2, "the event too heavy was handed over");
     assert.deepEqual(drops, [1]);
     for (let again = 0; again < 4; again += 1)
-      assert.equal(await publisher.publish(heavy), "Published");
+      assert.equal(await publisher.publish(heavy), "Unheld");
     assert.deepEqual(drops, [1, 2, 4]);
   } finally {
     await lane.close();
@@ -502,12 +503,12 @@ test("the publisher's bound is the server's: a payload at it is handed over and 
     const weightOf = (payload: string | undefined): number =>
       Buffer.byteLength(payload ?? "", "utf8");
 
-    assert.equal(await post("a"), "Published");
+    assert.equal(await post("a"), "Unheld");
     const spare = sessionLivePayloadBytesMax - weightOf(handed[0]);
     const escapedBytes = weightOf(JSON.stringify(escaped(1))) - weightOf('""');
     const atBound = `a${escaped(Math.floor(spare / escapedBytes))}${"a".repeat(spare % escapedBytes)}`;
 
-    assert.equal(await post(atBound), "Published");
+    assert.equal(await post(atBound), "Unheld");
     assert.equal(weightOf(handed[1]), sessionLivePayloadBytesMax);
     assert.deepEqual(drops, []);
     await notified(handed[1] ?? "");
@@ -524,7 +525,7 @@ test("the publisher's bound is the server's: a payload at it is handed over and 
     assert.equal(await post(`${atBound}a`), "Published");
     assert.deepEqual(drops, [1]);
     assert.equal(handed.length, 2, "a payload past the bound was handed over");
-    assert.equal(await post("b"), "Published");
+    assert.equal(await post("b"), "Unheld");
     assert.equal(weightOf(handed[2]), weightOf(handed[0]));
   } finally {
     await listener.close();

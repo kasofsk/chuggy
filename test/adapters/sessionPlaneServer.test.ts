@@ -53,6 +53,10 @@ import {
   type SessionPlaneRouteName,
 } from "../../src/contract/sessionPlane.ts";
 import {
+  workerContractHeader,
+  workerContractRelease,
+} from "../../src/contract/workerContract.ts";
+import {
   allPlatformTurnFailures,
   asSessionAttemptId,
   asSessionId,
@@ -915,6 +919,89 @@ test("a publish that could not be made tells the runner to offer its next events
   assert.equal(refused.statusCode, 503);
   assert.deepEqual(refused.json(), { action: "retry" });
   assert.match(String(refused.headers["retry-after"]), /^[1-9][0-9]*$/u);
+  await app.close();
+});
+
+/** A plane whose publisher answers `published` and whose watch finds the turn `watched`, with every watch read it is asked. */
+function livePlaneOver(
+  published: "Published" | "Unheld" | "Unavailable",
+  watched: "Stopped" | "Held" | undefined,
+) {
+  const reads: unknown[] = [];
+  const app = sessionPlane({
+    live: { publish: () => Promise.resolve(published) },
+    watches: {
+      watched: (input) => {
+        reads.push(input);
+        return Promise.resolve(watched);
+      },
+    },
+  });
+  const posted = (release: string | undefined) =>
+    app.inject({
+      method: "POST",
+      url: "/v1/session/turn/live",
+      headers: {
+        ...held,
+        ...(release === undefined ? {} : { [workerContractHeader]: release }),
+      },
+      payload: livePost,
+    });
+  return { app, reads, posted };
+}
+
+/**
+ * A runner that is writing posts as it writes, so the answer to a post is the
+ * soonest it can hear of a stop: the watch is answered only when the plane
+ * next looks.
+ */
+test("a live post of a turn its member stopped is answered with the turn, read from the caller's own watch", async () => {
+  const { app, reads, posted } = livePlaneOver("Unheld", "Stopped");
+  const told = await posted(workerContractRelease);
+  assert.equal(told.statusCode, 200);
+  assert.deepEqual(told.json(), { turn: "turn-1" });
+  assert.deepEqual(reads, [
+    { secret, generation: identity.generation, turn: "turn-1" },
+  ]);
+  await app.close();
+});
+
+test("a live post of a turn that is held, or is over for any reason but a stop, is answered as taken", async () => {
+  const held = livePlaneOver("Published", "Stopped");
+  assert.equal((await held.posted(workerContractRelease)).statusCode, 204);
+  assert.deepEqual(held.reads, [], "a turn still held is not asked after");
+  await held.app.close();
+  for (const watched of ["Held", undefined] as const) {
+    const over = livePlaneOver("Unheld", watched);
+    const taken = await over.posted(workerContractRelease);
+    assert.equal(taken.statusCode, 204, String(watched));
+    assert.equal(taken.body, "", String(watched));
+    await over.app.close();
+  }
+});
+
+test("a live post the plane could not publish is told to come back, whatever became of its turn", async () => {
+  const { app, reads, posted } = livePlaneOver("Unavailable", "Stopped");
+  const refused = await posted(workerContractRelease);
+  assert.equal(refused.statusCode, 503);
+  assert.deepEqual(refused.json(), { action: "retry" });
+  assert.deepEqual(reads, []);
+  await app.close();
+});
+
+/**
+ * A runner built before the answer existed reads any status but the one it
+ * knows as a post the plane refused, and nothing says what it then does. So it
+ * is answered as it always was, and the turn is not asked after for it.
+ */
+test("a live post of a stopped turn from a runner naming an earlier release, or none, is answered as it always was", async () => {
+  const { app, reads, posted } = livePlaneOver("Unheld", "Stopped");
+  for (const release of ["1.4.0", "1.0.0", undefined]) {
+    const taken = await posted(release);
+    assert.equal(taken.statusCode, 204, String(release));
+    assert.equal(taken.body, "", String(release));
+  }
+  assert.deepEqual(reads, []);
   await app.close();
 });
 

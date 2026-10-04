@@ -872,7 +872,7 @@ test("what a runner writes of a turn is published while its session holds the tu
   const heard = () =>
     lane.heard.map((carried) => [carried.turn, carried.event]);
   try {
-    await posted(at, turn, [written("queued")]);
+    assert.equal(await posted(at, turn, [written("queued")]), "Unheld");
     assert.equal(await claimed(held), turn);
     await posted(at, turn, [written("a"), written("b")]);
     await posted(at, behind, [written("behind")]);
@@ -888,7 +888,7 @@ test("what a runner writes of a turn is published while its session holds the tu
     assert.deepEqual(heard(), whileClaimed);
 
     assert.equal(await stop(at, turn), "Stopped");
-    assert.equal(await posted(at, turn, [written("late")]), "Published");
+    assert.equal(await posted(at, turn, [written("late")]), "Unheld");
     assert.equal(await claimed(held), behind);
     await posted(at, turn, [written("later")]);
     await posted(at, behind, [written("next")]);
@@ -928,7 +928,7 @@ test("a runner's end of a turn's stream is published after the turn has ended, a
     );
     assert.equal(
       await posted(at, turn, [written("late"), ended, written("later")]),
-      "Published",
+      "Unheld",
     );
     await reaches(() => lane.heard.length >= 2, "the late end");
     const next = await said(at, "live-late-end-next");
@@ -1010,7 +1010,7 @@ test("a post that arrives behind a stop of its turn waits for it and reaches nob
     const posting = posted(at, turn, [written("too late")]);
     await blocked();
     await api.query("COMMIT");
-    assert.equal(await posting, "Published");
+    assert.equal(await posting, "Unheld");
     await reaches(() => lane.heard.length >= 1, "the stop's end");
     const next = await said(at, "live-race-stop-first-next");
     assert.equal(await stop(at, next), "Stopped");

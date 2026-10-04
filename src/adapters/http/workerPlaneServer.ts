@@ -55,6 +55,7 @@ import {
   asSessionTurnId,
   type SessionBearerSecret,
   type SessionStoreStream,
+  type SessionTurnId,
 } from "../../interpreter/agentSession.ts";
 import {
   sessionContainerEnded,
@@ -109,6 +110,7 @@ import {
 import {
   contractVersionAccepted,
   workerContractAccepted,
+  workerContractLiveStops,
   workerContractRunnerSessions,
   type WorkerArtifactReservationPort,
   type WorkerArtifactStored,
@@ -1276,11 +1278,38 @@ function sessionSettleRoutes(
 const sessionLiveRetryAfterSeconds = 1;
 
 /**
+ * Whether a live post of `turn`, which the caller's session does not hold
+ * claimed, is answered with the stop its member put on it. It is where there
+ * was one and the runner names a release that reads the answer: an earlier
+ * runner is told nothing, because nothing says what it would make of it.
+ */
+async function sessionLiveStopTold(
+  sessions: SessionPlaneService,
+  request: FastifyRequest,
+  caller: SessionCaller,
+  turn: SessionTurnId,
+): Promise<boolean> {
+  if (
+    !contractVersionAccepted(
+      workerContractLiveStops,
+      workerContractOffered(request),
+    )
+  )
+    return false;
+  const watched = await sessions.watches.watched({
+    secret: caller.secret,
+    generation: caller.identity.generation,
+    turn,
+  });
+  return watched === "Stopped";
+}
+
+/**
  * What a session's runner reports of a turn in flight, published under the
  * caller's own partition and session. A post naming a turn that session does
- * not hold claimed is answered as one that was published, and nothing it
- * wrote reaches a reader, so a runner still writing a turn its member stopped
- * is told nothing it must handle.
+ * not hold claimed reaches no reader and is answered as one that was
+ * published, unless its member stopped the turn: that is answered with the
+ * turn, so a runner that is writing hears of the stop from its next post.
  */
 function sessionTurnLiveRoute(
   register: SessionRegistrar,
@@ -1289,19 +1318,23 @@ function sessionTurnLiveRoute(
   register("turnLive", async (request, reply, caller) => {
     const offered = sessionTurnLiveSchema.safeParse(request.body);
     if (!offered.success) return reply.code(400).send({ action: "stop" });
+    const turn = asSessionTurnId(offered.data.turn);
     const published = await sessions.live.publish({
       partition: caller.identity.partition,
       session: caller.identity.session,
-      turn: asSessionTurnId(offered.data.turn),
+      turn,
       events: offered.data.events,
     });
-    return published === "Published"
-      ? reply.code(204).send()
-      : workerPlaneRefused(reply, {
-          status: 503,
-          body: { action: "retry" },
-          retryAfterSeconds: sessionLiveRetryAfterSeconds,
-        });
+    if (published === "Unavailable")
+      return workerPlaneRefused(reply, {
+        status: 503,
+        body: { action: "retry" },
+        retryAfterSeconds: sessionLiveRetryAfterSeconds,
+      });
+    return published === "Unheld" &&
+      (await sessionLiveStopTold(sessions, request, caller, turn))
+      ? reply.code(200).send({ turn })
+      : reply.code(204).send();
   });
 }
 

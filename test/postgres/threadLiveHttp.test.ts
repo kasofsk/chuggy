@@ -35,7 +35,14 @@ import {
   threadLiveNothing,
   threadLiveVersion,
 } from "../../src/contract/threadLive.ts";
-import type { SessionId } from "../../src/interpreter/agentSession.ts";
+import {
+  workerContractHeader,
+  workerContractRelease,
+} from "../../src/contract/workerContract.ts";
+import {
+  asSessionTurnId,
+  type SessionId,
+} from "../../src/interpreter/agentSession.ts";
 import { oidcPrincipal } from "../../src/interpreter/principal.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 import {
@@ -141,12 +148,13 @@ async function serving(principal: ThreadRigMember["principal"]) {
   };
 }
 
-/** The worker plane over the rig's own sessions, publishing as the plane's role. */
+/** The worker plane over the rig's own sessions, publishing as the plane's role and reading a turn's stop from its row. */
 function plane() {
   return createWorkerPlaneApp({
     ...inertWorkerPlane(1),
     sessions: {
       ...inertSessionPlane(rig.sessions.plane),
+      watches: rig.sessions.plane,
       live: postgresSessionLivePublisher(planePool, {
         dropped: () => undefined,
       }),
@@ -198,20 +206,57 @@ async function claimed(
   return turn?.turn;
 }
 
-/** One post of live events to the plane, under the attempt's own bearer. */
+/** What the plane answers one post of live events, under the attempt's own bearer and naming `release` where there is one. */
+async function answered(
+  workers: ReturnType<typeof plane>,
+  secret: string,
+  turn: string,
+  events: readonly SessionLiveEvent[],
+  release?: string,
+): Promise<{ readonly status: number; readonly body: string }> {
+  const answer = await workers.inject({
+    method: sessionPlaneRoutes.turnLive.method,
+    url: sessionPlaneRoutes.turnLive.path,
+    headers: {
+      authorization: `Bearer ${secret}`,
+      ...(release === undefined ? {} : { [workerContractHeader]: release }),
+    },
+    payload: { turn, events },
+  });
+  return { status: answer.statusCode, body: answer.body };
+}
+
+const taken = { status: 204, body: "" };
+
+/** One post of live events the plane takes, from a runner naming no release. */
 async function posted(
   workers: ReturnType<typeof plane>,
   secret: string,
   turn: string,
   events: readonly SessionLiveEvent[],
 ): Promise<void> {
-  const answer = await workers.inject({
-    method: sessionPlaneRoutes.turnLive.method,
-    url: sessionPlaneRoutes.turnLive.path,
-    headers: { authorization: `Bearer ${secret}` },
-    payload: { turn, events },
+  assert.deepEqual(await answered(workers, secret, turn, events), taken);
+}
+
+/** The member's stop of one turn of their thread, through their own door. */
+async function stoppedBy(
+  api: Awaited<ReturnType<typeof serving>>,
+  partition: Partition,
+  session: SessionId,
+  turn: string,
+): Promise<void> {
+  const stopped = await api.app.inject({
+    method: "POST",
+    url: threadPath(
+      nativeHttpRoutes.threadTurnStop,
+      partition,
+      session,
+    ).replace(":turn", turn),
+    headers: versioned,
+    payload: {},
   });
-  assert.equal(answer.statusCode, 204, answer.body);
+  assert.equal(stopped.statusCode, 200, stopped.body);
+  assert.deepEqual(stopped.json(), { stopped: "Stopped" });
 }
 
 test("what a session posts to the plane under its own bearer reaches a member reading its thread, and nobody reading another", async () => {
@@ -306,18 +351,7 @@ test("a member's stop ends the turn's stream for every reader, and what its runn
   await posted(workers, attempt.secret, turn, begun);
   assert.ok(await reaches(() => payloads(reader).length === 3));
 
-  const stopped = await api.app.inject({
-    method: "POST",
-    url: threadPath(
-      nativeHttpRoutes.threadTurnStop,
-      partition,
-      thread.session,
-    ).replace(":turn", turn),
-    headers: versioned,
-    payload: {},
-  });
-  assert.equal(stopped.statusCode, 200, stopped.body);
-  assert.deepEqual(stopped.json(), { stopped: "Stopped" });
+  await stoppedBy(api, partition, thread.session, turn);
   const end = { version: threadLiveVersion, turn, event: { live: "End" } };
   for (const each of [reader, beside]) {
     assert.ok(await reaches(() => payloads(each).length === 4));
@@ -337,6 +371,63 @@ test("a member's stop ends the turn's stream for every reader, and what its runn
     { version: threadLiveVersion, turn: next, event: begun[0] },
   ]);
   assert.deepEqual(payloads(reader).slice(4), payloads(late).slice(1));
+});
+
+/**
+ * A runner that is writing posts as it writes, so the answer to its next post
+ * is the soonest it can hear of a stop, and that answer is read from the
+ * turn's own row. A runner built before the answer existed is answered as it
+ * always was, as is a post of a turn that ended any other way.
+ */
+test("a live post of a turn its member stopped is answered with the turn, to a runner naming a release that reads the answer", async () => {
+  const partition = await threadRigProject(rig, "live-told");
+  const member = threadRigMember(rig, partition, "live-told");
+  const thread = await threadRigThread(rig, partition, member);
+  const text: SessionLiveEvent[] = [
+    { live: "Block", message: "message-1", index: 0, kind: "Text" },
+  ];
+  const ended: SessionLiveEvent[] = [{ live: "End" }];
+
+  await using api = await serving(member.principal);
+  await using workers = plane();
+  const turn = await said(api, partition, thread.session, "live-told");
+  const attempt = await sessionRigAttempt(
+    rig.sessions,
+    partition,
+    thread.session,
+    "live-told",
+  );
+  const post = (
+    of: string,
+    events: readonly SessionLiveEvent[],
+    release?: string,
+  ) => answered(workers, attempt.secret, of, events, release);
+  const told = { status: 200, body: JSON.stringify({ turn }) };
+  assert.equal(await claimed(attempt), turn);
+  assert.deepEqual(await post(turn, text, workerContractRelease), taken);
+
+  await stoppedBy(api, partition, thread.session, turn);
+
+  assert.deepEqual(await post(turn, text, workerContractRelease), told);
+  assert.deepEqual(await post(turn, ended, workerContractRelease), told);
+  assert.deepEqual(await post(turn, text, "1.4.0"), taken);
+  assert.deepEqual(await post(turn, text), taken);
+
+  const next = await said(api, partition, thread.session, "live-told-next");
+  assert.deepEqual(await post(next, text, workerContractRelease), taken);
+  assert.equal(await claimed(attempt), next);
+  assert.deepEqual(await post(next, text, workerContractRelease), taken);
+  assert.deepEqual(await post(turn, text, workerContractRelease), told);
+  assert.equal(
+    await rig.sessions.plane.answer({
+      secret: attempt.secret,
+      generation: attempt.attempt.generation,
+      turn: asSessionTurnId(next),
+      result: "done",
+    }),
+    "Answered",
+  );
+  assert.deepEqual(await post(next, ended, workerContractRelease), taken);
 });
 
 test("a principal the project does not admit is answered as the thread read answers it, and is given no stream", async () => {

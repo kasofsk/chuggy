@@ -78,10 +78,10 @@ export interface SessionLivePublishReport {
  * Publishes one post's events in one statement, in the order they were handed
  * over, through the boundary that publishes what was written of a turn only
  * while the session holds that turn claimed: of a post for any other turn,
- * only the end of its stream is carried. An event whose payload the channel
- * cannot carry is left out and counted, and the report hears of the first and
- * then of each doubling, so a session that sends nothing else cannot fill a
- * log.
+ * only the end of its stream is carried, and the post is answered `Unheld`.
+ * An event whose payload the channel cannot carry is left out and counted,
+ * and the report hears of the first and then of each doubling, so a session
+ * that sends nothing else cannot fill a log.
  */
 export function postgresSessionLivePublisher(
   pool: pg.Pool,
@@ -110,11 +110,11 @@ export function postgresSessionLivePublisher(
       }
       if (payloads.length === 0) return "Published";
       try {
-        await pool.query<{ published: boolean | null }>(
+        const { rows } = await pool.query<{ published: boolean | null }>(
           sql`SELECT publish_session_live(${partition.tenant},${partition.project},
                 ${session},${turn},${payloads}::text[])::boolean AS published`,
         );
-        return "Published";
+        return rows[0]?.published === false ? "Unheld" : "Published";
       } catch {
         return "Unavailable";
       }

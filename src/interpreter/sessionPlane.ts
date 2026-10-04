@@ -277,8 +277,12 @@ export function sessionLiveKey(
   return `${String(tenant.length)}:${tenant}${String(project.length)}:${project}${session}`;
 }
 
-/** What publishing one post's live events found: handed over, or not now, which is no lane to hand them to or a session past what it may publish. */
-export type SessionLivePublished = "Published" | "Unavailable";
+/**
+ * What publishing one post's live events found: handed over, left out because
+ * the session does not hold the turn claimed, or not now, which is no lane to
+ * hand them to or a session past what it may publish.
+ */
+export type SessionLivePublished = "Published" | "Unheld" | "Unavailable";
 
 /**
  * Publishing what a session's runner reports of a turn in flight to whoever

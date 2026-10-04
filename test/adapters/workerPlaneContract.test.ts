@@ -208,7 +208,13 @@ interface WorkerPlaneCall {
   readonly payload?: string | Buffer | object;
 }
 
-/** One way of driving a route: the ports it meets, how its call, its bearer and the release it names differ from the plane's own, and the status it must be answered with where it decides one. */
+/**
+ * One way of driving a route: the ports it meets, how its call, its bearer and
+ * the release it names differ from the plane's own, and the status it must be
+ * answered with where it decides one. A `named` case is of a caller that names
+ * the release it was built with, which is this tree's until an older release
+ * is the one driven.
+ */
 interface WorkerPlaneCase {
   readonly name: string;
   readonly service?: Partial<WorkerPlaneServerService>;
@@ -216,6 +222,7 @@ interface WorkerPlaneCase {
   readonly anonymous?: true;
   readonly bearer?: string;
   readonly release?: string;
+  readonly named?: true;
   readonly status?: number;
 }
 
@@ -930,6 +937,7 @@ const turnsWatched: Readonly<Record<SessionTurnWatched, true>> = {
 
 const livePublished: Readonly<Record<SessionLivePublished, true>> = {
   Published: true,
+  Unheld: true,
   Unavailable: true,
 };
 
@@ -1089,6 +1097,14 @@ const sessionPlaneCases: Readonly<
         live: { publish: () => Promise.resolve(published) },
       }),
     })),
+    {
+      name: "a post of a turn its member stopped",
+      named: true,
+      service: sessionPorts({
+        live: { publish: () => Promise.resolve("Unheld") },
+        watches: { watched: () => Promise.resolve("Stopped") },
+      }),
+    },
   ],
   turnStopped: [
     ...sessionPlaneStrangers,
@@ -1287,7 +1303,12 @@ function workerPlaneAnswersHeld<Name extends string>(
       const bodies = new Set<string>();
       const seen = new Map<string, Set<boolean>>();
       for (const driven of plane.cases[name]) {
-        const answered = await workerPlaneDriven(plane, name, driven);
+        const answered = await workerPlaneDriven(plane, name, {
+          ...driven,
+          ...(driven.named === true && driven.release === undefined
+            ? { release: workerContractRelease }
+            : {}),
+        });
         workerPlaneStatusHeld(driven, answered);
         const answer = answers[answered.status];
         assert.ok(
