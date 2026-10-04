@@ -294,16 +294,18 @@ test("the purpose says the draft is the job and the checkout is for reading", ()
 
 /**
  * An account of what was filed is owed by a turn that was asked for a change
- * and by no other, so an answer to a question ends as an answer.
+ * and by no other, so an answer to a question ends as an answer. A question
+ * that shows its owner wants the thing changed is the one that ends on an
+ * offer, or a want put as a question would be explained and left there.
  */
-test("the purpose asks a turn that was asked for a change what it filed, and a question for its answer alone", () => {
+test("the purpose asks a turn that was asked for a change what it filed, and a question for its answer and an offer only where it shows a want", () => {
   assert.match(
     threadPurposeStanding,
     /A turn asked for a change ends by saying what you filed, or why you filed nothing\.$/u,
   );
   assert.match(
     threadPurposeStanding,
-    /A question is answered from what you read, and that answer says nothing about filing: no line that nothing was filed, and no offer to file\./u,
+    /A question is answered from what you read, and that answer says nothing about filing: no line that nothing was filed, and no offer to file, unless the question itself shows your owner wants the thing changed, when the answer ends with one line offering to file it\./u,
   );
   assert.doesNotMatch(threadPurposeStanding, /every turn/iu);
 });
