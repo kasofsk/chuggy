@@ -3,28 +3,65 @@
  * coloured block is the same characters it was, and that colour arriving
  * changes nothing a reader copies or a mark sits on.
  *
- * The grammars are a chunk fetched when code is first drawn, so the component
- * cases wait for them once and are drawn coloured from then on.
+ * The reading itself is a pure function and is asserted as one. What draws a
+ * block is handed a worker by `MarkdownProvider`, and here that is
+ * `markdownSyntaxDouble.ts`'s: one that reads as the real worker does, or one
+ * that says only what a case has it say. The desk between the two has its own
+ * suite, `markdownSyntaxDesk.test.ts`.
+ *
+ * Every run of a grammar is counted, because the double runs them in the
+ * thread the page is drawn in and the page itself must run none.
  */
 
-import { cleanup, render, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, test } from "vitest";
+import { act, cleanup, render, waitFor } from "@testing-library/react";
+import type { RenderResult } from "@testing-library/react";
+import { afterEach, describe, expect, test, vi } from "vitest";
+import type * as Lowlight from "lowlight";
+import type { ReactNode } from "react";
 
 import { markdownMarkClassName } from "../app/browser/ui/MarkdownBlocks.tsx";
+import { MarkdownProvider } from "../app/browser/ui/markdownHeld.ts";
 import { MarkdownReport } from "../app/browser/ui/MarkdownReport.tsx";
 import {
-  markdownSyntaxCharsMax,
   markdownSyntaxLanguage,
   markdownSyntaxLanguages,
 } from "../app/browser/ui/markdownSyntax.ts";
 import type { MarkdownSyntaxNode } from "../app/browser/ui/markdownSyntax.ts";
 import {
+  markdownSyntaxAnswered,
   markdownSyntaxDepthMax,
   markdownSyntaxGrammarNames,
   markdownSyntaxRead,
+  markdownSyntaxScopesMax,
 } from "../app/browser/ui/markdownSyntaxRead.ts";
 import { corpusAnswers, corpusReview } from "./markdownCorpus.ts";
+import {
+  syntaxDoubleHeld,
+  syntaxDoubleReading,
+} from "./markdownSyntaxDouble.ts";
+import type { SyntaxDouble } from "./markdownSyntaxDouble.ts";
 import { styleless } from "./styleless.ts";
+
+/** How many times a grammar has been run in this thread, which for the page
+ * is the thread a reader is waiting on. */
+const grammars = vi.hoisted(() => ({ run: 0 }));
+
+vi.mock("lowlight", async (original) => {
+  const real = await original<typeof Lowlight>();
+  return {
+    ...real,
+    createLowlight: (...held: Parameters<typeof real.createLowlight>) => {
+      const made = real.createLowlight(...held);
+      return {
+        ...made,
+        highlight: (language: string, code: string) => {
+          grammars.run += 1;
+          return made.highlight(language, code);
+        },
+      };
+    },
+  };
+});
 
 function characters(nodes: readonly MarkdownSyntaxNode[]): string {
   return nodes
@@ -131,29 +168,109 @@ describe("a block read into its runs", () => {
   });
 
   test("nests no deeper than its bound, and loses no character past it", () => {
-    const levels = markdownSyntaxDepthMax * 2;
-    const code = `${"`a${".repeat(levels)}1${"}`".repeat(levels)};`;
+    expect(markdownSyntaxDepthMax).toBe(8);
+    const code = `${"`a${".repeat(16)}1${"}`".repeat(16)};`;
     const read = markdownSyntaxRead(code, "javascript") ?? [];
     expect(characters(read)).toBe(code);
-    expect(depth(read)).toBeLessThanOrEqual(markdownSyntaxDepthMax);
-    expect(depth(read)).toBeGreaterThan(2);
+    expect(depth(read)).toBe(8);
+  });
+
+  test("is coloured with no more scopes than its bound, and what follows them is one run of characters", () => {
+    expect(markdownSyntaxScopesMax).toBe(16_384);
+    const code = "1 ".repeat(20_000);
+    const read = markdownSyntaxRead(code, "typescript") ?? [];
+    expect(characters(read)).toBe(code);
+    expect(scopes(read)).toHaveLength(16_384);
+    expect(read.at(-1)).toBe(code.slice(16_384 * 2 - 1));
   });
 });
 
+describe("what a worker answers", () => {
+  test("is the runs of the block it was asked about, under the number it was asked with", () => {
+    const answer = markdownSyntaxAnswered({
+      id: 4,
+      code: "const wait = 250;",
+      language: "typescript",
+    });
+    expect(answer?.id).toBe(4);
+    expect(characters(answer?.runs ?? [])).toBe("const wait = 250;");
+    expect(scopes(answer?.runs ?? [])).toContainEqual([
+      "hljs-keyword",
+      "const",
+    ]);
+  });
+
+  test("is no runs for a language it has no grammar for", () => {
+    expect(
+      markdownSyntaxAnswered({ id: 5, code: "x", language: "quint" }),
+    ).toEqual({ id: 5, runs: undefined });
+  });
+
+  test("is nothing for a message that asks nothing", () => {
+    const messages: readonly unknown[] = [
+      undefined,
+      null,
+      "const wait = 250;",
+      { id: "4", code: "x", language: "typescript" },
+      { id: 4, code: 250, language: "typescript" },
+      { id: 4, code: "x" },
+    ];
+    for (const message of messages)
+      expect(markdownSyntaxAnswered(message)).toBeUndefined();
+  });
+});
+
+/** A report drawn under a provider whose workers are a double's. */
+function mounted(
+  double: SyntaxDouble,
+  text: string,
+  writing = false,
+): RenderResult {
+  const wrapper = (props: { readonly children: ReactNode }): ReactNode => (
+    <MarkdownProvider clock={() => performance.now()} syntax={double.open}>
+      {props.children}
+    </MarkdownProvider>
+  );
+  return render(<MarkdownReport text={text} bare writing={writing} />, {
+    wrapper,
+  });
+}
+
+function blocks(container: HTMLElement): readonly Element[] {
+  return Array.from(container.querySelectorAll("pre > code"));
+}
+
 async function coloured(text: string, writing = false): Promise<HTMLElement> {
-  const view = render(<MarkdownReport text={text} bare writing={writing} />);
+  const view = mounted(syntaxDoubleReading(), text, writing);
   await waitFor(() => {
-    expect(view.container.querySelector('[class^="hljs-"]')).not.toBeNull();
+    for (const block of blocks(view.container))
+      expect(block.querySelector('[class^="hljs-"]')).not.toBeNull();
   });
   return view.container;
+}
+
+/** The newest worker of a double answers the last thing it was asked, as the
+ * real one would. */
+function answered(double: SyntaxDouble): void {
+  const worker = double.workers.at(-1);
+  act(() => {
+    worker?.say({ ready: true });
+    worker?.say(markdownSyntaxAnswered(worker.asked.at(-1)));
+  });
 }
 
 describe("a block of code drawn", () => {
   const fenced = "Wait:\n\n```ts\nconst wait = 250;\nreturn wait;\n```";
 
-  test("is coloured by class once the grammars arrive, and is the same characters", async () => {
-    const container = await coloured(fenced);
-    const code = container.querySelector("pre > code");
+  test("is its characters at once, and coloured by class when its reading comes back, the same characters", async () => {
+    const view = mounted(syntaxDoubleReading(), fenced);
+    const [code] = blocks(view.container);
+    expect(code?.textContent).toBe("const wait = 250;\nreturn wait;");
+    expect(code?.childElementCount).toBe(0);
+    await waitFor(() => {
+      expect(code?.querySelector(".hljs-number")?.textContent).toBe("250");
+    });
+    expect(blocks(view.container)[0]).toBe(code);
     expect(code?.textContent).toBe("const wait = 250;\nreturn wait;");
     expect(
       Array.from(
@@ -161,11 +278,7 @@ describe("a block of code drawn", () => {
         (run) => run.textContent,
       ),
     ).toEqual(["const", "return"]);
-    expect(code?.querySelector(".hljs-number")?.textContent).toBe("250");
-    expect(container.querySelectorAll("[style]")).toHaveLength(0);
-    expect(
-      Array.from(code?.querySelectorAll("*") ?? [], (run) => run.tagName),
-    ).toEqual(expect.arrayContaining(["SPAN"]));
+    expect(view.container.querySelectorAll("[style]")).toHaveLength(0);
     expect(code?.querySelectorAll(":not(span)")).toHaveLength(0);
     styleless();
   });
@@ -181,43 +294,126 @@ describe("a block of code drawn", () => {
     expect(container.innerHTML).toBe(whole);
   });
 
-  test("in no language, or one that is not coloured, is drawn as its characters", async () => {
-    await coloured(fenced);
-    cleanup();
-    for (const named of ["", "quint", "text"]) {
-      const view = render(
-        <MarkdownReport
-          text={`\`\`\`${named}\nconst wait = 250;\n\`\`\``}
-          bare
-        />,
-      );
-      const code = view.container.querySelector("pre > code");
+  test("in no language, or one outside the table, is its characters and no worker is started for it", () => {
+    for (const named of ["", "quint", "text", "constructor"]) {
+      const double = syntaxDoubleHeld();
+      const view = mounted(double, `\`\`\`${named}\nconst wait = 250;\n\`\`\``);
+      const [code] = blocks(view.container);
       expect(code?.textContent).toBe("const wait = 250;");
       expect(code?.childElementCount).toBe(0);
+      expect(double.workers).toHaveLength(0);
       cleanup();
     }
   });
 
-  test("longer than the bound is drawn as its characters", async () => {
-    await coloured(fenced);
-    cleanup();
-    const line = "const wait = 250;\n";
-    const long = line.repeat(
-      Math.ceil(markdownSyntaxCharsMax / line.length) + 1,
-    );
-    const view = render(
-      <MarkdownReport text={`\`\`\`ts\n${long}\`\`\``} bare />,
-    );
-    const code = view.container.querySelector("pre > code");
-    expect(code?.textContent.length).toBeGreaterThan(markdownSyntaxCharsMax);
+  test("with nothing to have it read is its characters, and stays them", async () => {
+    const view = render(<MarkdownReport text={fenced} bare />);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const [code] = blocks(view.container);
+    expect(code?.textContent).toBe("const wait = 250;\nreturn wait;");
     expect(code?.childElementCount).toBe(0);
+  });
+
+  test("as long as an ordinary file is coloured to its last line", async () => {
+    const long = "const wait = 250;\n".repeat(2_000);
+    const container = await coloured(`\`\`\`ts\n${long}\`\`\``);
+    const [code] = blocks(container);
+    expect(code?.textContent).toBe(long.slice(0, -1));
+    expect(code?.querySelectorAll(".hljs-keyword")).toHaveLength(2_000);
   });
 
   test("of an answer as a model writes one is coloured in each language it names", async () => {
     const container = await coloured(corpusReview);
-    const blocks = Array.from(container.querySelectorAll("pre > code"));
-    expect(blocks).toHaveLength(3);
-    for (const block of blocks)
+    expect(blocks(container)).toHaveLength(3);
+    for (const block of blocks(container))
       expect(block.querySelector('[class^="hljs-"]')).not.toBeNull();
+  });
+});
+
+function keywords(code: Element | undefined): readonly string[] {
+  return Array.from(
+    code?.querySelectorAll(".hljs-keyword") ?? [],
+    (run) => run.textContent,
+  );
+}
+
+describe("the thread a block of code is drawn in", () => {
+  test("is handed to its worker, and no grammar is run where it is drawn", () => {
+    const double = syntaxDoubleHeld();
+    grammars.run = 0;
+    const view = mounted(
+      double,
+      "Wait:\n\n```ts\nconst wait = 250;\nreturn wait;\n```",
+    );
+    act(() => {
+      double.workers[0]?.say({ ready: true });
+    });
+    expect(double.workers[0]?.asked.map((asked) => asked.code)).toEqual([
+      "const wait = 250;\nreturn wait;",
+    ]);
+    expect(blocks(view.container)[0]?.childElementCount).toBe(0);
+    expect(grammars.run).toBe(0);
+    answered(double);
+    expect(grammars.run).toBe(1);
+    expect(blocks(view.container)[0]?.childElementCount).toBeGreaterThan(0);
+  });
+});
+
+describe("a block of code that moves under its reading", () => {
+  test("keeps the colours of what was read while it grows, and what was written since follows as characters", () => {
+    const double = syntaxDoubleHeld();
+    const view = mounted(double, "```ts\nconst a = 1;", true);
+    answered(double);
+    const [code] = blocks(view.container);
+    expect(keywords(code)).toEqual(["const"]);
+    view.rerender(
+      <MarkdownReport text={"```ts\nconst a = 1;\nlet b"} bare writing />,
+    );
+    expect(blocks(view.container)[0]).toBe(code);
+    expect(code?.textContent).toBe("const a = 1;\nlet b");
+    expect(keywords(code)).toEqual(["const"]);
+    expect(code?.lastChild?.textContent).toBe("\nlet b");
+    answered(double);
+    expect(code?.textContent).toBe("const a = 1;\nlet b");
+    expect(keywords(code)).toEqual(["const", "let"]);
+  });
+
+  test("drops a reading of a text it no longer begins with", () => {
+    const double = syntaxDoubleHeld();
+    const view = mounted(double, "```ts\nconst a = 1;\n```");
+    answered(double);
+    const [code] = blocks(view.container);
+    expect(keywords(code)).toEqual(["const"]);
+    view.rerender(<MarkdownReport text={"```ts\nlet b = 2;\n```"} bare />);
+    expect(blocks(view.container)[0]).toBe(code);
+    expect(code?.textContent).toBe("let b = 2;");
+    expect(code?.childElementCount).toBe(0);
+    answered(double);
+    expect(keywords(code)).toEqual(["let"]);
+  });
+
+  test("is not drawn in the colours of an answer to a text it has since left behind", () => {
+    const double = syntaxDoubleHeld();
+    const view = mounted(double, "```ts\nconst a = 1;\n```");
+    const worker = double.workers[0];
+    const first = worker?.asked[0];
+    view.rerender(<MarkdownReport text={"```ts\nlet b = 2;\n```"} bare />);
+    act(() => {
+      worker?.say({ ready: true });
+      worker?.say(markdownSyntaxAnswered(first));
+    });
+    const [code] = blocks(view.container);
+    expect(code?.textContent).toBe("let b = 2;");
+    expect(code?.childElementCount).toBe(0);
+  });
+
+  test("named in another language is not drawn in the colours of the one it was read in", () => {
+    const double = syntaxDoubleHeld();
+    const view = mounted(double, "```ts\nconst a = 1;\n```");
+    answered(double);
+    view.rerender(<MarkdownReport text={"```quint\nconst a = 1;\n```"} bare />);
+    const [code] = blocks(view.container);
+    expect(code?.textContent).toBe("const a = 1;");
+    expect(code?.childElementCount).toBe(0);
   });
 });

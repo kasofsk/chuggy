@@ -133,6 +133,9 @@ export default defineConfig({
   resolve: {
     alias: { "decode-named-character-reference": namedReferences },
   },
+  /** The worker that colours code is a module like the page's own, so its
+   * chunk is emitted as one. */
+  worker: { format: "es" },
   server: {
     fs: { allow: ["../.."] },
     ...(upstream === undefined ? {} : { proxy: proxy() }),

@@ -1,15 +1,18 @@
 /**
  * The grammars code is coloured with, and the reading of a block into runs.
  *
- * This module is the chunk `markdownSyntax.ts` fetches, and nothing else may
- * import it for more than a type: every grammar here is bundled with it. A
- * grammar is added by importing it here and naming it in that module's table.
- * It takes nothing from the rest of the console, so the chunk shares no module
- * with the page and the bundler has nothing to split out between them.
+ * This module is what `markdownSyntaxWorker.ts` runs, and nothing the page
+ * loads may import it for more than a type: every grammar here is bundled with
+ * it, and a grammar is patterns that can take a time out of all proportion to
+ * the text they are handed. A grammar is added by importing it here and naming
+ * it in `markdownSyntax.ts`'s table. It takes nothing from the rest of the
+ * console, so the worker shares no module with the page.
  *
  * The highlighter's own tree is read into `MarkdownSyntaxNode` here, so that
  * no mark of it reaches the page as markup: a run is characters, or a scope
- * naming the highlighter's own class and holding runs.
+ * naming the highlighter's own class and holding runs. A scope is an element
+ * the page has to draw, so a block is handed back with no more of them than
+ * `markdownSyntaxScopesMax`, however dense in them its text is.
  */
 
 import bash from "highlight.js/lib/languages/bash";
@@ -47,6 +50,10 @@ export type MarkdownSyntaxNode =
 /** How deep one coloured run may sit inside another; past it a scope is drawn
  * as its characters. */
 export const markdownSyntaxDepthMax = 8;
+
+/** How many scopes one block is coloured with; the code after them is drawn
+ * as its characters. */
+export const markdownSyntaxScopesMax = 16_384;
 
 const markdownSyntaxGrammars = createLowlight({
   bash,
@@ -107,19 +114,47 @@ function markdownSyntaxScope(names: unknown): string {
     .join(" ");
 }
 
+/** The scopes one block may still be coloured with. */
+interface MarkdownSyntaxLeft {
+  scopes: number;
+}
+
 function markdownSyntaxNode(
   node: SyntaxTreeNode,
   depth: number,
+  left: MarkdownSyntaxLeft,
 ): MarkdownSyntaxNode {
   if (node.type === "text") return node.value;
   if (node.type !== "element") return "";
-  if (depth >= markdownSyntaxDepthMax) return markdownSyntaxWords(node);
+  if (depth >= markdownSyntaxDepthMax || left.scopes === 0)
+    return markdownSyntaxWords(node);
+  left.scopes -= 1;
   return {
     scope: markdownSyntaxScope(node.properties.className),
-    children: node.children.map((child) =>
-      markdownSyntaxNode(child, depth + 1),
-    ),
+    children: markdownSyntaxNodes(node.children, depth + 1, left),
   };
+}
+
+/** Nodes as runs, with characters that stand together made one run. */
+function markdownSyntaxNodes(
+  nodes: readonly SyntaxTreeNode[],
+  depth: number,
+  left: MarkdownSyntaxLeft,
+): readonly MarkdownSyntaxNode[] {
+  const runs: MarkdownSyntaxNode[] = [];
+  let words: string[] = [];
+  for (const node of nodes) {
+    const run = markdownSyntaxNode(node, depth, left);
+    if (typeof run === "string") {
+      words.push(run);
+      continue;
+    }
+    if (words.length > 0) runs.push(words.join(""));
+    words = [];
+    runs.push(run);
+  }
+  if (words.length > 0) runs.push(words.join(""));
+  return runs;
 }
 
 /** The grammars this chunk carries, by the name the table reads each with. */
@@ -135,10 +170,39 @@ export function markdownSyntaxRead(
 ): readonly MarkdownSyntaxNode[] | undefined {
   if (!markdownSyntaxGrammars.registered(language)) return undefined;
   try {
-    return markdownSyntaxGrammars
-      .highlight(language, code)
-      .children.map((node) => markdownSyntaxNode(node, 0));
+    const read = markdownSyntaxGrammars.highlight(language, code);
+    return markdownSyntaxNodes(read.children, 0, {
+      scopes: markdownSyntaxScopesMax,
+    });
   } catch {
     return undefined;
   }
+}
+
+/** What the worker is asked: one block, and the number its answer carries. */
+export interface MarkdownSyntaxAsked {
+  readonly id: number;
+  readonly code: string;
+  readonly language: string;
+}
+
+/** What the worker answers: the block's runs, or nothing where it has none. */
+export interface MarkdownSyntaxAnswer {
+  readonly id: number;
+  readonly runs: readonly MarkdownSyntaxNode[] | undefined;
+}
+
+/** The answer to one message, or nothing where the message asks nothing. */
+export function markdownSyntaxAnswered(
+  message: unknown,
+): MarkdownSyntaxAnswer | undefined {
+  if (typeof message !== "object" || message === null) return undefined;
+  const { id, code, language } = message as {
+    readonly id?: unknown;
+    readonly code?: unknown;
+    readonly language?: unknown;
+  };
+  if (typeof id !== "number" || typeof code !== "string") return undefined;
+  if (typeof language !== "string") return undefined;
+  return { id, runs: markdownSyntaxRead(code, language) };
 }
