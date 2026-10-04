@@ -303,7 +303,7 @@ test("the purpose asks a turn that was asked for a change what it filed, and a q
   );
   assert.match(
     threadPurposeStanding,
-    /A question is answered from what you read, and the answer is all that turn needs\./u,
+    /A question is answered from what you read, and that answer says nothing about filing: no line that nothing was filed, and no offer to file\./u,
   );
   assert.doesNotMatch(threadPurposeStanding, /every turn/iu);
 });
