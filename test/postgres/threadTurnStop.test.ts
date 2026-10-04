@@ -44,6 +44,7 @@ import {
 import type { Principal } from "../../src/interpreter/principal.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 import { asPlacementId } from "../../src/interpreter/schedulerIdentity.ts";
+import { sessionPoolTurnDwellSecs } from "../../src/interpreter/sessionPlacement.ts";
 import type { ThreadLiveCarried } from "../../src/interpreter/threadLive.ts";
 import type { ThreadTurnStopped } from "../../src/interpreter/threadRead.ts";
 import {
@@ -56,6 +57,7 @@ import {
   sessionRigAttemptState,
   type SessionRigAttempt,
   sessionRigBoundless,
+  sessionRigQueuedFor,
   sessionRigSession,
   sessionRigTurn,
 } from "./sessionHarness.ts";
@@ -72,13 +74,16 @@ import {
 
 let rig: ThreadRig;
 let planePool: pg.Pool;
+let schedulerPool: pg.Pool;
 
 before(async () => {
   rig = await threadRigOpen();
   planePool = postgresHarnessRolePool(workerPlaneRole);
+  schedulerPool = postgresHarnessRolePool(schedulerRole);
 });
 
 after(async () => {
+  await schedulerPool.end();
   await planePool.end();
   await rig.close();
 });
@@ -97,8 +102,12 @@ async function threaded(label: string): Promise<Threaded> {
   return { partition, member, session: thread.session };
 }
 
-/** Sends one message to the thread, which is one queued turn. */
-async function said(at: Threaded, label: string): Promise<SessionTurnId> {
+/** Sends one message to the thread, which is one queued turn, for a pod unless the case routes it to a pool. */
+async function said(
+  at: Threaded,
+  label: string,
+  route: "InCluster" | "Pool" = "InCluster",
+): Promise<SessionTurnId> {
   const turn = asSessionTurnId(threadRigTurnId(label));
   const enqueued = await rig.threads.enqueueMessage({
     partition: at.partition,
@@ -106,7 +115,7 @@ async function said(at: Threaded, label: string): Promise<SessionTurnId> {
     session: at.session,
     turn,
     input: label,
-    route: "InCluster",
+    route,
   });
   assert.equal(enqueued.enqueued, "Enqueued");
   return turn;
@@ -203,7 +212,7 @@ async function endedStopped(
   return String(endedAt);
 }
 
-/** The same of a turn stopped while it waited, which no attempt held. */
+/** The same of a turn stopped before any attempt held it. */
 function endedStoppedQueued(turn: SessionTurnId): Promise<string> {
   return endedStopped(turn, "TurnStoppedQueued");
 }
@@ -219,8 +228,8 @@ async function idleSince(held: SessionRigAttempt): Promise<unknown> {
 
 /**
  * The door answers both the same and writes two endings, because a reader of
- * the thread pairs a turn with what its runner stored and a turn that waited
- * stored nothing.
+ * the thread pairs a turn with what its runner stored and a turn no attempt
+ * held stored nothing.
  */
 test("a stop ends a claimed turn and a queued one at once, each with its own ending and neither with a result or a measurement", async () => {
   const at = await threaded("ends");
@@ -538,26 +547,6 @@ test("a claim behind a stop of a waiting turn is not handed it, and the turn end
   assert.equal(await claimed(held), behind);
 });
 
-/**
- * KNOWN LIMIT, held here so that it changes on purpose. A turn an attempt held
- * and lost waits again, and its row does not say it was ever claimed, so a stop
- * of it then writes the ending of a turn no runner held.
- */
-test("a turn a lost attempt gave back and its member then stopped ends as one that waited", async () => {
-  const at = await threaded("given-back");
-  const turn = await said(at, "given-back");
-  const held = await running(at, "given-back");
-  assert.equal(await claimed(held), turn);
-  assert.equal(
-    await rig.sessions.scheduler.attemptEnded(held.attempt, "Vanished"),
-    true,
-  );
-  assert.equal((await stored(turn))["state"], "Queued");
-
-  assert.equal(await stop(at, turn), "Stopped");
-  await endedStopped(turn, "TurnStoppedQueued", { attempts_spent: "1" });
-});
-
 /** One claimed turn of a thread, stopped under the attempt that holds it. */
 async function stoppedUnder(label: string) {
   const at = await threaded(label);
@@ -725,6 +714,47 @@ test("a late settlement is taken from a live attempt alone", async () => {
 
   assert.deepEqual(await settledLate(held, turn), ["Fenced", "Fenced"]);
   assert.equal(await endedStopped(turn), endedAt);
+});
+
+/**
+ * A turn an attempt held and gave back waits again, and that attempt may have
+ * stored its message. The row's release stamp says it was held, charged or
+ * not, so a stop of it is the ending of a turn a runner held, and the attempt
+ * that had it is over and learns nothing of it.
+ */
+test("a turn an attempt held and gave back is stopped as one a runner held, and a turn none held as one that waited", async () => {
+  for (const given of ["lost", "withdrawn"] as const) {
+    const at = await threaded(`given-back-${given}`);
+    const turn = await said(at, `given-back-${given}`);
+    const never = await said(at, `given-back-${given}-never`);
+    const held = await running(at, `given-back-${given}`);
+    assert.equal(await claimed(held), turn);
+    assert.equal(
+      given === "lost"
+        ? await rig.sessions.scheduler.attemptEnded(held.attempt, "Vanished")
+        : await rig.sessions.plane.hold(held.secret, held.attempt.generation),
+      true,
+      given,
+    );
+    assert.equal((await stored(turn))["state"], "Queued", given);
+
+    assert.equal(await stop(at, turn), "Stopped", given);
+    assert.equal(await stop(at, never), "Stopped", given);
+    await endedStopped(turn, "TurnStopped", {
+      attempts_spent: given === "lost" ? "1" : "0",
+    });
+    await endedStoppedQueued(never);
+    assert.equal(
+      await rig.sessions.plane.watched({
+        secret: held.secret,
+        generation: held.attempt.generation,
+        turn,
+      }),
+      undefined,
+      given,
+    );
+    assert.deepEqual(await settledLate(held, turn), ["Fenced", "Fenced"]);
+  }
 });
 
 /**
@@ -1165,6 +1195,66 @@ test("no runner is told of a turn stopped while it waited, and a settlement nami
 
   assert.deepEqual(await settledLate(held, turn), ["Stopped", "Stopped"]);
   assert.notEqual(await idleSince(held), null);
+});
+
+/** One turn of a thread that waits for a pool's runner, and has waited past the dwell a sweep withdraws it at. */
+async function unserved(label: string) {
+  const at = await threaded(label);
+  const turn = await said(at, label, "Pool");
+  await sessionRigQueuedFor(rig.sessions, turn, 2 * sessionPoolTurnDwellSecs);
+  return { at, turn };
+}
+
+/**
+ * The scheduler withdraws a turn no runner served, and it chooses that turn by
+ * a read it makes before it reaches the turn's row. Whichever of it and a stop
+ * reaches the row first is the ending, and the other writes nothing and says
+ * so.
+ */
+test("a withdrawal of an unserved turn behind a stop of it withdraws nothing, and the stop is the ending", async () => {
+  const { at, turn } = await unserved("race-sweep-behind");
+  const api = await rig.apiPool.connect();
+  try {
+    await api.query("BEGIN");
+    assert.equal(await stopOn(api, at, turn), "Stopped");
+    const withdrawing = rig.sessions.scheduler.withdrawUnservedPoolTurns(
+      rig.sessions.epoch,
+      sessionPoolTurnDwellSecs,
+      sessionRigBoundless,
+    );
+    await blocked();
+    await api.query("COMMIT");
+    assert.equal(await withdrawing, 0);
+  } finally {
+    await api.query("ROLLBACK").catch(() => undefined);
+    api.release();
+  }
+  await endedStoppedQueued(turn);
+});
+
+test("a stop behind a withdrawal of an unserved turn finds it ended, and the withdrawal is the ending", async () => {
+  const { at, turn } = await unserved("race-sweep-first");
+  const scheduler = await schedulerPool.connect();
+  try {
+    await scheduler.query("BEGIN");
+    const withdrawn = await scheduler.query<{ withdrawn: string }>(
+      `SELECT withdraw_unserved_pool_turns($1,$2,$3)::text AS withdrawn`,
+      [rig.sessions.epoch, sessionPoolTurnDwellSecs, sessionRigBoundless],
+    );
+    assert.deepEqual(withdrawn.rows, [{ withdrawn: "1" }]);
+    const stopping = stop(at, turn);
+    await blocked();
+    await scheduler.query("COMMIT");
+    assert.equal(await stopping, "AlreadyEnded");
+  } finally {
+    await scheduler.query("ROLLBACK").catch(() => undefined);
+    scheduler.release();
+  }
+  const row = await stored(turn);
+  assert.deepEqual(
+    [row["state"], row["failure"]],
+    ["Abandoned", "TurnWithdrawn"],
+  );
 });
 
 /**

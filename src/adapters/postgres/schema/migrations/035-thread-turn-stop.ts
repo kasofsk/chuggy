@@ -1,17 +1,15 @@
 /**
  * A member stops one turn of their own thread. The turn ends `Abandoned` in
- * the door's own transaction and waits for no runner: a queued one ends
- * `TurnStoppedQueued` and is never claimed, and a claimed one ends
- * `TurnStopped` and leaves its attempt live, still holding its lease and
- * charged nothing.
+ * the door's own transaction and waits for no runner: a queued one is never
+ * claimed, and a claimed one leaves its attempt live, still holding its lease
+ * and charged nothing.
  *
- * The two endings are kept apart for the thread's reader, which pairs a turn
- * with what its runner stored: a turn no runner held stored nothing. KNOWN
- * LIMIT: a turn that was claimed, lost its attempt and was put back to
- * `Queued` before the stop ends `TurnStoppedQueued` too, although the attempt
- * that held it may have stored its message. The row does not record that a
- * turn was ever claimed: `attempts_spent` counts the attempts a turn was
- * charged, and a withdrawn attempt gives its turn back uncharged.
+ * The ending says whether an attempt ever held the turn, for the thread's
+ * reader, which pairs a turn with what its runner stored. `TurnStoppedQueued`
+ * is a turn none held, which stored nothing: it is `Queued` and its
+ * `released_at` is null, the stamp every return from `Claimed` to `Queued`
+ * leaves. Every other stop is `TurnStopped`: of a claimed turn, and of one
+ * given back and waiting again, whose attempt may have stored its message.
  *
  * The door reads the thread and locks only the turn. A close takes the thread
  * and then its turns, so whichever of a close and a stop reaches a turn first
@@ -31,17 +29,28 @@
  * its settlement of that turn is answered `Stopped`: the row keeps its ending
  * and takes no result, and the attempt's idle clock starts as a settlement
  * starts it. A settlement of a turn that ended any other way is refused as it
- * was. Both read `TurnStopped` alone: no runner held a turn stopped while it
- * waited, so none is told of it and none's settlement of it is taken.
+ * was. Both read `TurnStopped` alone, so no runner is told of a turn none
+ * held and no settlement of one is taken. A turn stopped after it was given
+ * back has no holder either: the attempt that had it ended as it gave the turn
+ * back, so it is told nothing and its settlement is fenced, and a later
+ * attempt never claimed the turn and so never asks after it.
+ *
+ * `withdraw_unserved_pool_turns` chose its turn by a read and wrote that turn
+ * whatever it had become, so a sweep waiting on a stop's row lock overwrote
+ * the stop's ending once the stop committed. It is replaced with the body it
+ * had and one more condition: the turn it writes is still `Queued`.
  */
 
 import {
   apiRole,
   boundaryOwnerRole,
+  sessionClaimableSinceFunction,
   sessionLivePublishFunction,
+  sessionPoolTurnWithdrawFunction,
   sessionTurnAnswerFunction,
   sessionTurnFailFunction,
   sessionTurnStoppedFunction,
+  sessionWaitingRouteFunction,
   threadTurnStopFunction,
   workerPlaneRole,
   type Migration,
@@ -56,6 +65,8 @@ const publish = `public.${sessionLivePublishFunction}(in_tenant text, in_project
 const answer = `public.${sessionTurnAnswerFunction}(in_secret_digest text, in_generation bigint, in_turn text, in_result text, in_batch_first bigint, in_batch_last bigint, in_model text, in_tokens bigint, in_cost_micros bigint, in_duration_ms bigint, in_tools text[])`;
 
 const fail = `public.${sessionTurnFailFunction}(in_secret_digest text, in_generation bigint, in_turn text, in_failure text)`;
+
+const unserved = `public.${sessionPoolTurnWithdrawFunction}(in_epoch text, in_dwell_secs bigint, in_max bigint)`;
 
 /** The lock a stop and a publication of one turn's live events both take. */
 const turnLiveLock = `hashtextextended('session-turn-live:'||in_turn,0)`;
@@ -102,7 +113,7 @@ export const migration035: Migration = {
        IF held.principal<>in_principal THEN RETURN 'NotYourThread'; END IF;
        IF held.state<>'Open' THEN RETURN 'Closed'; END IF;
        PERFORM pg_advisory_xact_lock(${turnLiveLock});
-       SELECT t.state INTO stored FROM session_turn t
+       SELECT t.state,t.released_at INTO stored FROM session_turn t
         WHERE t.tenant=in_tenant AND t.project=in_project
           AND t.session=in_session AND t.turn=in_turn FOR UPDATE;
        IF NOT FOUND THEN RETURN 'NoTurn'; END IF;
@@ -112,6 +123,7 @@ export const migration035: Migration = {
        UPDATE session_turn t
           SET state='Abandoned',ended_at=now(),
               failure=CASE WHEN stored.state='Queued'
+                            AND stored.released_at IS NULL
                            THEN 'TurnStoppedQueued' ELSE 'TurnStopped' END,
               attempt=NULL,claim_generation=NULL,claimed_at=NULL
         WHERE t.tenant=in_tenant AND t.project=in_project
@@ -240,6 +252,52 @@ export const migration035: Migration = {
           AND t.session=bound.session AND t.turn=in_turn;
        UPDATE session_attempt a SET idle_since=now() WHERE a.attempt=bound.attempt;
        RETURN 'Failed';
+     END $$`,
+    `CREATE OR REPLACE FUNCTION ${unserved} RETURNS bigint
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'public', 'pg_temp'
+    AS $$
+     DECLARE dwelt record; withdrawn bigint;
+     BEGIN
+       IF in_epoch<>(SELECT epoch FROM recovery_epoch ORDER BY ordinal DESC LIMIT 1) THEN RETURN 0; END IF;
+       withdrawn:=0;
+       FOR dwelt IN SELECT s.tenant,s.project,s.session FROM agent_session s
+            WHERE s.state='Open'
+              AND ${sessionWaitingRouteFunction}(s.tenant,s.project,s.session)='Pool'
+              AND NOT EXISTS(SELECT 1 FROM session_attempt a
+                              WHERE a.tenant=s.tenant AND a.project=s.project
+                                AND a.session=s.session
+                                AND a.state IN ('Placing','Running'))
+              AND ${sessionClaimableSinceFunction}(s.tenant,s.project,s.session)
+                    < now() - make_interval(secs => in_dwell_secs::double precision)
+            ORDER BY ${sessionClaimableSinceFunction}(s.tenant,s.project,s.session),
+                     s.tenant,s.project,s.session
+            LIMIT in_max LOOP
+         PERFORM 1 FROM agent_session s
+          WHERE s.tenant=dwelt.tenant AND s.project=dwelt.project
+            AND s.session=dwelt.session
+            FOR UPDATE;
+         UPDATE session_turn t
+            SET state='Abandoned',failure='TurnWithdrawn',ended_at=now()
+          WHERE t.tenant=dwelt.tenant AND t.project=dwelt.project
+            AND t.session=dwelt.session AND t.route='Pool'
+            AND t.state='Queued'
+            AND t.turn=(SELECT h.turn FROM session_turn h
+                         WHERE h.tenant=dwelt.tenant AND h.project=dwelt.project
+                           AND h.session=dwelt.session AND h.state='Queued'
+                         ORDER BY h.ordinal LIMIT 1)
+            AND EXISTS(SELECT 1 FROM agent_session s
+                        WHERE s.tenant=dwelt.tenant AND s.project=dwelt.project
+                          AND s.session=dwelt.session AND s.state='Open')
+            AND NOT EXISTS(SELECT 1 FROM session_attempt a
+                            WHERE a.tenant=dwelt.tenant AND a.project=dwelt.project
+                              AND a.session=dwelt.session
+                              AND a.state IN ('Placing','Running'))
+            AND ${sessionClaimableSinceFunction}(dwelt.tenant,dwelt.project,dwelt.session)
+                  < now() - make_interval(secs => in_dwell_secs::double precision);
+         IF FOUND THEN withdrawn:=withdrawn+1; END IF;
+       END LOOP;
+       RETURN withdrawn;
      END $$`,
   ],
 };

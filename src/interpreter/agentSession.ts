@@ -35,9 +35,9 @@
  *      with `SessionClosed`.
  *   8. A member stops one `Queued` or `Claimed` turn of their own thread, which
  *      abandons it at once and waits for no pod: with `TurnStoppedQueued` where
- *      it was `Queued`, and with `TurnStopped` where an attempt held it. That
- *      attempt stays live: what it then posts of that turn's stream is dropped,
- *      and its settlement of that turn is taken and recorded nowhere.
+ *      no attempt ever held it, and with `TurnStopped` where one did. An attempt
+ *      holding it stays live: what it then posts of that turn's stream is
+ *      dropped, and its settlement of that turn is taken and recorded nowhere.
  */
 
 import {
