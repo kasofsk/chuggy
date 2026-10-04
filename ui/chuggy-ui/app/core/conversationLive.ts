@@ -15,9 +15,10 @@
  *
  * THE TWO PATHS ARRIVE IN EITHER ORDER, so more is held here than the wire's
  * own fold holds: a message another followed, or whose turn ended, is kept
- * until the transcript has it. What is kept is bounded, and a message that
- * leaves at the bound is remembered as heard and as nothing more, so it is
- * never taken for one nobody heard.
+ * until the transcript has it. What is kept is bounded. A message that leaves
+ * at the bound is remembered as heard and as nothing more, so it is not taken
+ * for one nobody heard; that memory is bounded too, and a message that leaves
+ * it is forgotten.
  *
  * WHAT IS OVER IS FORGOTTEN, NOT HIDDEN. A turn the mailbox has settled is let
  * go of the first time the walk has nothing left to read, so text its store
