@@ -3,6 +3,11 @@
  * what the transcript cannot — a pending exchange nobody has claimed, the word a
  * failure ended on, the measures — and it finds its exchange by the input text
  * the worker handed the runtime verbatim, never by counting across two reads.
+ *
+ * TWO TURNS THAT ASKED THE SAME THING ARE TOLD APART BY WHAT THEY MUST HAVE
+ * STORED. The text alone cannot say which of them an exchange belongs to, and
+ * a page that draws a turn as it is written would draw the newer one's words
+ * under the older one's ask.
  */
 
 import { sessionTranscriptEntriesMax } from "../../../../src/contract/http.ts";
@@ -668,18 +673,41 @@ function conversationAssistantEntry(
   conversationAssistantSaid(built, entry.blocks);
 }
 
-/** The newest unmatched exchange whose ask is exactly this text. Turns are
- * matched newest first, so two identical inputs pair newest to newest. */
-function conversationMatch(
-  built: readonly ConversationBuilt[],
-  input: string,
-): ConversationBuilt | undefined {
-  for (let at = built.length - 1; at >= 0; at -= 1) {
-    const exchange = built[at];
-    if (exchange === undefined || exchange.matched) continue;
-    if (exchange.askText === input) return exchange;
+/**
+ * Which turns that asked the same thing take the exchanges the transcript
+ * holds of that ask: an answered turn stored its ask, so those take first,
+ * oldest first, then the turns a runner took, newest first, and last the ones
+ * still waiting. A turn that failed before storing its ask must not keep the
+ * exchange of the one that asked again after it, and a turn only just sent
+ * must not be drawn under the one that asked before it.
+ */
+function conversationTakers(
+  turns: readonly ConversationTurn[],
+  exchanges: number,
+): readonly ConversationTurn[] {
+  const answered = turns.filter((turn) => turn.state === "Answered");
+  const taken = turns.filter(
+    (turn) => turn.state !== "Answered" && turn.state !== "Queued",
+  );
+  const waiting = turns.filter((turn) => turn.state === "Queued");
+  return [...answered, ...taken.reverse(), ...waiting.reverse()]
+    .slice(0, exchanges)
+    .sort((left, right) => left.ordinal - right.ordinal);
+}
+
+/** The turns that carry an input, by that input, each group in the order the
+ * turns were taken. */
+function conversationTurnsAsking(
+  ordered: readonly ConversationTurn[],
+): ReadonlyMap<string, readonly ConversationTurn[]> {
+  const asking = new Map<string, ConversationTurn[]>();
+  for (const turn of ordered) {
+    if (turn.input === undefined) continue;
+    const same = asking.get(turn.input) ?? [];
+    same.push(turn);
+    asking.set(turn.input, same);
   }
-  return undefined;
+  return asking;
 }
 
 function conversationApplied(
@@ -710,9 +738,10 @@ function conversationAppended(
 
 /**
  * The mailbox over the transcript: each turn paired with the exchange its
- * input opened, and each one left over appended. An answered turn is left out
- * unless a page heard some of it being written — the transcript is where its
- * answer lives, and a page that has not read that far says so with a marker.
+ * input opened, in the order both were written, and each one left over
+ * appended. An answered turn is left out unless a page heard some of it being
+ * written — the transcript is where its answer lives, and a page that has not
+ * read that far says so with a marker.
  */
 function conversationOverlaid(
   builder: ConversationBuilder,
@@ -723,13 +752,18 @@ function conversationOverlaid(
     (left, right) => left.ordinal - right.ordinal,
   );
   const paired = new Set<string>();
-  for (let at = ordered.length - 1; at >= 0; at -= 1) {
-    const turn = ordered[at];
-    if (turn?.input === undefined) continue;
-    const built = conversationMatch(builder.built, turn.input);
-    if (built === undefined) continue;
-    conversationApplied(built, turn);
-    paired.add(turn.turn);
+  for (const [input, asking] of conversationTurnsAsking(ordered)) {
+    const stored = builder.built.filter(
+      (built) => !built.matched && built.askText === input,
+    );
+    const takers = conversationTakers(asking, stored.length);
+    const newest = stored.slice(stored.length - takers.length);
+    takers.forEach((turn, at) => {
+      const built = newest[at];
+      if (built === undefined) return;
+      conversationApplied(built, turn);
+      paired.add(turn.turn);
+    });
   }
   for (const turn of ordered) {
     if (paired.has(turn.turn)) continue;

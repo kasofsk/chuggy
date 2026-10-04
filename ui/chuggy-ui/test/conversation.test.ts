@@ -384,8 +384,8 @@ describe("the mailbox overlay", () => {
   });
 });
 
-describe("the mailbox overlay, on turns the transcript does not hold", () => {
-  test("two identical inputs match newest to newest", () => {
+describe("the mailbox overlay, on turns that asked the same thing", () => {
+  test("two identical inputs each take their own exchange, in the order written", () => {
     const exchanges = conversationExchanges(
       [
         askOf("u1", "again"),
@@ -402,6 +402,94 @@ describe("the mailbox overlay, on turns the transcript does not hold", () => {
     expect(exchanges[1]?.measures).toEqual({ tokens: 2 });
   });
 
+  test("the same thing asked again is not given the earlier ask's exchange while its own is unstored", () => {
+    const first = [askOf("u1", "again"), answerOf("a1", "first")];
+    const turns = [
+      turnOf({ turn: "t1", ordinal: 1, input: "again" }),
+      turnOf({ turn: "t2", ordinal: 2, input: "again", state: "Claimed" }),
+    ];
+    const before = conversationExchanges(first, turns);
+    expect(before.map((exchange) => exchange.turn)).toEqual(["t1", "t2"]);
+    expect(before.map((exchange) => exchange.answer)).toEqual([
+      "first",
+      undefined,
+    ]);
+    const after = conversationExchanges(
+      [...first, askOf("u2", "again"), answerOf("a2", "sec")],
+      turns,
+    );
+    expect(after.map((exchange) => exchange.turn)).toEqual(["t1", "t2"]);
+    expect(after.map((exchange) => exchange.answer)).toEqual(["first", "sec"]);
+    expect(after.map((exchange) => exchange.id)).toEqual(["u1", "u2"]);
+  });
+});
+
+describe("the mailbox overlay, on the same thing asked of a turn that did not answer", () => {
+  test("a turn that failed before storing its ask does not keep the exchange of the same ask sent again", () => {
+    const failed = turnOf({
+      turn: "t1",
+      ordinal: 1,
+      input: "again",
+      state: "Failed",
+    });
+    for (const state of ["Claimed", "Answered"] as const) {
+      const exchanges = conversationExchanges(
+        [askOf("u2", "again"), answerOf("a2", "second")],
+        [failed, turnOf({ turn: "t2", ordinal: 2, input: "again", state })],
+      );
+      expect(exchanges.map((exchange) => exchange.turn)).toEqual(["t2", "t1"]);
+      expect(exchanges[0]?.answer).toBe("second");
+      expect(exchanges[1]?.standing).toEqual({ standing: "Failed" });
+      expect(exchanges[1]?.answer).toBeUndefined();
+    }
+  });
+
+  test("a turn a runner took keeps its exchange from the same ask waiting behind it", () => {
+    const exchanges = conversationExchanges(
+      [askOf("u1", "again"), answerOf("a1", "so far")],
+      [
+        turnOf({ turn: "t1", ordinal: 1, input: "again", state: "Claimed" }),
+        turnOf({ turn: "t2", ordinal: 2, input: "again", state: "Queued" }),
+      ],
+    );
+    expect(exchanges.map((exchange) => exchange.turn)).toEqual(["t1", "t2"]);
+    expect(exchanges[0]?.answer).toBe("so far");
+    expect(exchanges[1]?.standing).toEqual({
+      standing: "Running",
+      state: "Queued",
+    });
+  });
+
+  test("two answered turns of one ask and one exchange read so far: the older turn is the one that stored it", () => {
+    const exchanges = conversationExchanges(
+      [askOf("u1", "again"), answerOf("a1", "first")],
+      [
+        turnOf({ turn: "t1", ordinal: 1, input: "again", tokens: 1 }),
+        turnOf({ turn: "t2", ordinal: 2, input: "again", tokens: 2 }),
+      ],
+    );
+    expect(exchanges.map((exchange) => exchange.turn)).toEqual(["t1"]);
+    expect(exchanges[0]?.measures).toEqual({ tokens: 1 });
+  });
+
+  test("more exchanges of one ask than turns leaves the oldest to the transcript", () => {
+    const exchanges = conversationExchanges(
+      [
+        askOf("u1", "again"),
+        answerOf("a1", "first"),
+        askOf("u2", "again"),
+        answerOf("a2", "second"),
+      ],
+      [turnOf({ turn: "t2", ordinal: 2, input: "again", tokens: 2 })],
+    );
+    expect(exchanges.map((exchange) => exchange.turn)).toEqual([
+      undefined,
+      "t2",
+    ]);
+  });
+});
+
+describe("the mailbox overlay, on turns the transcript does not hold", () => {
   test("an unmatched turn that is not answered appends in ordinal order", () => {
     const exchanges = conversationExchanges(
       [askOf("u1", "read"), answerOf("a1", "done")],
