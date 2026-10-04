@@ -13,6 +13,7 @@ import { after, before, test } from "node:test";
 
 import type pg from "pg";
 
+import { threadLiveFramed } from "../../src/adapters/http/eventStream.ts";
 import { createWorkerPlaneApp } from "../../src/adapters/http/workerPlaneServer.ts";
 import {
   apiRole,
@@ -79,6 +80,7 @@ before(async () => {
     lane: postgresSessionLiveLane(postgresHarnessRoleUrl(apiRole).toString()),
     timers: systemStreamTimers,
     report: { noted: (note) => notes.push(note) },
+    framed: threadLiveFramed,
   });
   assert.ok(
     await reaches(() =>

@@ -102,13 +102,36 @@ export function parseThreadLiveEvent(
   }
 }
 
+type SessionLiveBlock = Extract<SessionLiveEvent, { readonly live: "Block" }>;
 type SessionLiveText = Extract<SessionLiveEvent, { readonly live: "Text" }>;
 
+/** A block once it is said to begin: the block held where it is already that one and whole, and otherwise that block with no text. */
+function threadLiveBlockHeard(
+  block: ThreadLiveBlock | undefined,
+  event: SessionLiveBlock,
+): ThreadLiveBlock {
+  if (
+    block !== undefined &&
+    !block.gapped &&
+    block.kind === event.kind &&
+    block.name === event.name
+  )
+    return block;
+  return {
+    index: event.index,
+    kind: event.kind,
+    ...(event.name === undefined ? {} : { name: event.name }),
+    text: "",
+    gapped: false,
+  };
+}
+
 /**
- * A block after more of its text is heard: text placed where the held text
- * ends is appended, and text placed inside it replaces what followed, which is
- * a sender sending again. Text placed past the end, text for a block that never
- * began, and text for a block that is not text each leave the block gapped.
+ * A block after more of its text is heard: text the block already holds where
+ * it is placed changes nothing, text placed where the held text ends is
+ * appended, and any other text placed inside it replaces what followed. Text
+ * placed past the end, text for a block that never began, and text for a block
+ * that is not text each leave the block gapped.
  */
 function threadLiveTextHeard(
   block: ThreadLiveBlock | undefined,
@@ -117,14 +140,19 @@ function threadLiveTextHeard(
   if (block === undefined)
     return { index: event.index, kind: "Text", text: "", gapped: true };
   if (block.gapped || block.kind !== "Text" || event.offset > block.text.length)
-    return { ...block, text: "", gapped: true };
+    return block.gapped && block.text === ""
+      ? block
+      : { ...block, text: "", gapped: true };
+  if (block.text.startsWith(event.text, event.offset)) return block;
   return { ...block, text: block.text.slice(0, event.offset) + event.text };
 }
 
 /**
- * What is held once `event` of `turn` is heard. An event of another turn or
- * another message begins that message with nothing held of it, a block that
- * begins again is emptied, and the end of the turn held leaves nothing.
+ * What is held once `event` of `turn` is heard, which is `held` itself where
+ * the event changes nothing: a sender's posts can arrive out of order, and one
+ * heard again after a later one leaves what the later one wrote. An event of
+ * another turn or another message begins that message with nothing held of it,
+ * and the end of the turn held leaves nothing.
  */
 export function threadLiveHeard(
   held: ThreadLiveHeld,
@@ -135,19 +163,12 @@ export function threadLiveHeard(
     return held.turn === turn ? threadLiveNothing : held;
   const blocks =
     held.turn === turn && held.message === event.message ? held.blocks : [];
-  const heard: ThreadLiveBlock =
+  const before = blocks.find((block) => block.index === event.index);
+  const heard =
     event.live === "Block"
-      ? {
-          index: event.index,
-          kind: event.kind,
-          ...(event.name === undefined ? {} : { name: event.name }),
-          text: "",
-          gapped: false,
-        }
-      : threadLiveTextHeard(
-          blocks.find((block) => block.index === event.index),
-          event,
-        );
+      ? threadLiveBlockHeard(before, event)
+      : threadLiveTextHeard(before, event);
+  if (heard === before) return held;
   return {
     turn,
     message: event.message,

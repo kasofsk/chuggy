@@ -246,7 +246,16 @@ export interface SessionStoreQueryPort {
   }): Promise<readonly SessionStoreStreamRow[]>;
 }
 
-/** What publishing one post's live events found: handed over, or no lane was there to hand them to. */
+/** One session of one project, as a key no other session of any project shares. */
+export function sessionLiveKey(
+  partition: Partition,
+  session: SessionId,
+): string {
+  const { tenant, project } = partition;
+  return `${String(tenant.length)}:${tenant}${String(project.length)}:${project}${session}`;
+}
+
+/** What publishing one post's live events found: handed over, or not now, which is no lane to hand them to or a session past what it may publish. */
 export type SessionLivePublished = "Published" | "Unavailable";
 
 /**

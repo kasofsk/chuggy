@@ -1887,9 +1887,9 @@ function registerProjectEvents(
 
 /**
  * Who may listen to a thread is who may read it, so the thread read is what
- * admits. Every refusal is answered before the reply is hijacked, and the
- * handler that gives the slot back is attached before the read, which the
- * socket may not outlast.
+ * admits, and the hub asks it again for as long as the stream is open. Every
+ * refusal is answered before the reply is hijacked, and the handler that gives
+ * the slot back is attached before the read, which the socket may not outlast.
  */
 async function serveThreadLive(
   request: FastifyRequest,
@@ -1906,9 +1906,9 @@ async function serveThreadLive(
     listening.abandoned = true;
     listening.connection?.close();
   });
-  const standing = await web.thread(principalOf(request), partition, session, {
-    limit: 1,
-  });
+  const principal = principalOf(request);
+  const read = () => web.thread(principal, partition, session, { limit: 1 });
+  const standing = await read();
   if (standing.result !== "Found") {
     send(reply, threadResponse(standing));
     return;
@@ -1918,6 +1918,7 @@ async function serveThreadLive(
     partition,
     session,
     expiresAtMs: request.bearerExpiresAtMs,
+    admitted: async () => (await read()).result === "Found",
   });
   if (opened.opened === "AtCapacity") {
     await serverBusy(reply);

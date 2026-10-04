@@ -118,7 +118,7 @@ export function postgresSessionLivePublisher(
   };
 }
 
-/** The API's own listening connection, each payload read strictly before the hub hears of it. */
+/** The API's own listening connection, each payload the hub answers for read strictly before the hub hears of it. */
 export function postgresSessionLiveLane(
   url: string,
   limits: PostgresListenerLimits = postgresListenerLimitsDefault,
@@ -136,6 +136,7 @@ export function postgresSessionLiveLane(
           watcher.sourced("Lost");
         },
         notified: (payload) => {
+          if (!watcher.arrived()) return;
           const carried = sessionLiveCarried(payload);
           if (carried === undefined) watcher.unread();
           else watcher.heard(carried);
