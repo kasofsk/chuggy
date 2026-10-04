@@ -103,6 +103,7 @@ export const sessionBearerRouteClasses = {
   threadClose: partitionWrite,
   threadRename: partitionWrite,
   threadHide: partitionWrite,
+  threadLive: partitionRead,
 } as const satisfies Readonly<Record<NativeHttpRoute, SessionBearerRouteClass>>;
 
 /** The scope of each served method and path, keyed as `METHOD /path` with every public route left out. */

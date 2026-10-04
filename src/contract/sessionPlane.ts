@@ -20,6 +20,7 @@ import {
   repositoryIdentityCharsMax,
   sessionCapabilitiesMax,
   sessionIdentityCharsMax,
+  sessionLiveEventsMax,
   sessionStoreBatchBytesMax,
   sessionStoreBatchesMax,
   sessionStorePageBatchesMax,
@@ -43,6 +44,7 @@ import {
   sessionKinds,
   sessionTurnInputKinds,
 } from "./rosters.ts";
+import { sessionLiveEventSchema } from "./sessionLive.ts";
 import {
   workerCredentialAbsentSchema,
   workerCredentialAnswerSchema,
@@ -52,10 +54,16 @@ import {
   type WorkerPlaneRoute,
 } from "./workerPlane.ts";
 
-/** The bounds a session pod's identities, turns and store are written against, the failures a turn may name, and the capabilities a session may hold. */
+/** The bounds a session pod's identities, turns, live events and store are written against, the failures a turn may name, and the capabilities a session may hold. */
 export {
+  jsonTextBytes,
   repositoryIdentityCharsMax,
   sessionIdentityCharsMax,
+  sessionLiveBlockCharsMax,
+  sessionLiveBlocksMax,
+  sessionLiveEventsMax,
+  sessionLiveMessageCharsMax,
+  sessionLiveTextBytesMax,
   sessionStoreBatchBytesMax,
   sessionStoreBatchesMax,
   sessionStorePageBatchesMax,
@@ -70,6 +78,11 @@ export {
   sessionCapabilities,
   sessionContainerEnds,
 } from "./rosters.ts";
+export {
+  isSessionLiveText,
+  sessionLiveBlockKinds,
+  sessionLiveEventSchema,
+} from "./sessionLive.ts";
 
 /** The routes a session pod and the runner holding it call, which a plane composed without sessions does not serve. */
 export const sessionPlaneRoutes = {
@@ -79,6 +92,7 @@ export const sessionPlaneRoutes = {
   turn: { method: "GET", path: "/v1/session/turn" },
   turnAnswer: { method: "POST", path: "/v1/session/turn/answer" },
   turnFailure: { method: "POST", path: "/v1/session/turn/failure" },
+  turnLive: { method: "POST", path: "/v1/session/turn/live" },
   held: { method: "POST", path: "/v1/session/held" },
   storeStreams: { method: "GET", path: "/v1/session/store" },
   storeBatch: { method: "PUT", path: "/v1/session/store/*" },
@@ -190,6 +204,12 @@ export const sessionTurnFailureSchema = z.strictObject({
   failure: z.enum(agentReportedTurnFailures),
 });
 
+/** What a model is writing of one claimed turn, in the order it was written. */
+export const sessionTurnLiveSchema = z.strictObject({
+  turn: sessionIdentitySchema,
+  events: z.array(sessionLiveEventSchema).min(1).max(sessionLiveEventsMax),
+});
+
 /** How a pool's runner reports that the container its session ran in has ended, under that session's bearer. */
 export const sessionEndedSchema = z.strictObject({
   phase: z.enum(sessionContainerEnds),
@@ -282,6 +302,12 @@ export const sessionPlaneAnswers = workerPlaneAnswersRefusingVersions({
     400: workerPlaneStopSchema,
     401: workerPlaneStopSchema,
     409: sessionSettleRefusalSchema,
+  },
+  turnLive: {
+    204: "empty",
+    400: workerPlaneStopSchema,
+    401: workerPlaneStopSchema,
+    503: workerPlaneRetrySchema,
   },
   held: {
     204: "empty",
