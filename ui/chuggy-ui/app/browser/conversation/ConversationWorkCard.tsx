@@ -1,12 +1,18 @@
 /**
- * Everything the pod did between the ask and the answer, in one card the
- * reader opens: no work draws no card, and what there is is a timeline in the
+ * Everything the pod did between the ask and the answer, behind one line the
+ * reader opens: no work draws no line, and what there is is a timeline in the
  * order it happened.
  *
- * WHILE THE WORK GOES ON THE CARD SAYS WHAT IT IS. A page that hears its turn
+ * WHILE THE WORK GOES ON THE LINE SAYS WHAT IT IS. A page that hears its turn
  * names the thought or the tool under way, and one that does not says
- * `Working`. Once the answer is being written, or is whole, the card is no
+ * `Working`. Once the answer is being written, or is whole, the line is no
  * longer where the work is and says what there was of it.
+ *
+ * IT IS A LINE AND NOT A BOX, AND NOTHING ON IT MOVES. The place it takes is
+ * held above every answer, so work that begins after the words have does not
+ * push them down, and a held place the height of a box would be a hole above
+ * every answer that took no work. What moves while a turn is out is under the
+ * answer, where the next thing written lands.
  */
 
 import { Collapsible } from "radix-ui";
@@ -26,36 +32,12 @@ import type {
 import { runCountLabel } from "../../core/runTotals.ts";
 import { MarkdownReport } from "../ui/MarkdownReport.tsx";
 import {
-  ConversationCard,
   ConversationChevron,
+  ConversationGlyph,
   conversationTriggerClassName,
 } from "./ConversationCard.tsx";
 
 import "./conversation.css";
-
-/** Hollow while the work is over, filled and pulsing while it is not. */
-function ConversationGlyph(props: { readonly running: boolean }): ReactNode {
-  return (
-    <svg
-      viewBox="0 0 12 12"
-      aria-hidden="true"
-      className={
-        props.running
-          ? "conversation-glyph-live size-3 shrink-0"
-          : "size-3 shrink-0"
-      }
-    >
-      <circle
-        cx="6"
-        cy="6"
-        r="4"
-        fill={props.running ? "currentColor" : "none"}
-        stroke="currentColor"
-        strokeWidth="1.5"
-      />
-    </svg>
-  );
-}
 
 const conversationResultClassName =
   "bg-surface-2 rounded-2 max-h-(--height-clip) overflow-auto p-2 text-xs";
@@ -126,8 +108,8 @@ function conversationCountWords(count: number, noun: string): string {
   return `${runCountLabel(count)} ${noun}${count === 1 ? "" : "s"}`;
 }
 
-/** Whether the work is still going on in the card, which is what its glyph
- * pulses for. */
+/** Whether the work is still going on, which is what its glyph is filled
+ * for. */
 function conversationWorkUnderWay(
   running: boolean,
   activity: ConversationActivity | undefined,
@@ -174,25 +156,35 @@ export function ConversationWorkCard(props: {
   /** Whether the card first draws open. */
   readonly open?: boolean;
 }): ReactNode {
+  const [open, setOpen] = useState(props.open === true);
   if (props.work.length === 0) return null;
   const underWay = conversationWorkUnderWay(props.running, props.activity);
   return (
-    <ConversationCard
-      label={
-        underWay
-          ? conversationActivityLabel(props.activity)
-          : conversationWorkLabel(props.work)
-      }
-      glyph={<ConversationGlyph running={underWay} />}
-      defaultOpen={props.open === true}
+    <Collapsible.Root
+      className="flex flex-col gap-3"
+      open={open}
+      onOpenChange={setOpen}
     >
-      <ol className="border-edge flex flex-col gap-3 border-l pl-4">
-        {props.work.map((step, at) => (
-          <li key={at} className="flex flex-col gap-1">
-            <ConversationWorkStep step={step} />
-          </li>
-        ))}
-      </ol>
-    </ConversationCard>
+      <Collapsible.Trigger
+        className={`${conversationTriggerClassName} conversation-work-line text-ink-3 text-sm`}
+      >
+        <ConversationGlyph filled={underWay} live={false} />
+        <span className="min-w-0">
+          {underWay
+            ? conversationActivityLabel(props.activity)
+            : conversationWorkLabel(props.work)}
+        </span>
+        <ConversationChevron />
+      </Collapsible.Trigger>
+      <Collapsible.Content>
+        <ol className="border-edge flex flex-col gap-3 border-l pl-4">
+          {props.work.map((step, at) => (
+            <li key={at} className="flex flex-col gap-1">
+              <ConversationWorkStep step={step} />
+            </li>
+          ))}
+        </ol>
+      </Collapsible.Content>
+    </Collapsible.Root>
   );
 }

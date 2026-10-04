@@ -194,6 +194,46 @@ test("a gap takes away nothing heard before it and draws nothing after it", () =
   expect(only({ held: after, items: [asked] }).answer).toBe("Hello");
 });
 
+test("text a gap stopped is not said to be being written, until it is heard whole again", () => {
+  const before = heardAll([began("m1", 0, "Text"), wrote("m1", 0, 0, "Hello")]);
+  expect(only({ held: before, items: [asked] }).activity).toEqual({
+    activity: "Writing",
+  });
+  const gapped = heardAll([wrote("m1", 0, 9, "lost")], before);
+  const stopped = only({ held: gapped, items: [asked] });
+  expect(stopped.answer).toBe("Hello");
+  expect(stopped.activity).toBeUndefined();
+  const later = heardAll([wrote("m1", 0, 13, " more")], gapped);
+  expect(only({ held: later, items: [asked] }).activity).toBeUndefined();
+  const again = heardAll(
+    [
+      snapshot({
+        turn,
+        message: "m1",
+        blocks: [
+          { index: 0, kind: "Text", text: "Hello, all of it", gapped: false },
+        ],
+      }),
+    ],
+    later,
+  );
+  const whole = only({ held: again, items: [asked] });
+  expect(whole.answer).toBe("Hello, all of it");
+  expect(whole.activity).toEqual({ activity: "Writing" });
+});
+
+test("a block that begins after one a gap stopped is what the turn is doing", () => {
+  const gapped = heardAll([
+    began("m1", 0, "Text"),
+    wrote("m1", 0, 0, "Hello"),
+    wrote("m1", 0, 9, "lost"),
+    began("m1", 1, "ToolUse", "Read"),
+  ]);
+  const exchange = only({ held: gapped, items: [asked] });
+  expect(exchange.answer).toBe("Hello");
+  expect(exchange.activity).toEqual({ activity: "ToolUse", name: "Read" });
+});
+
 test("text for a block that never began is never drawn", () => {
   const held = heardAll([wrote("m1", 0, 40, "middle of something")]);
   const exchange = only({ held, items: [asked] });
@@ -340,7 +380,15 @@ test("a snapshot holding less than was heard takes nothing away", () => {
     {
       turn,
       message: "m1",
-      blocks: [{ index: 0, kind: "Text", text: "Hello", gapped: false }],
+      blocks: [
+        {
+          index: 0,
+          kind: "Text",
+          text: "Hello",
+          gapped: false,
+          stopped: true,
+        },
+      ],
     },
   ]);
 });

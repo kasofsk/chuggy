@@ -86,28 +86,47 @@ test("every execution status and every outcome draws a tone the pill knows", () 
 });
 
 test("each standing the arm draws is its own word and its own tone", () => {
-  expect(conversationStandingArm({ standing: "Answered" })).toEqual({
+  expect(conversationStandingArm({ standing: "Answered" }, true)).toEqual({
     word: "Answered",
     tone: "pass",
   });
   expect(
-    conversationStandingArm({ standing: "Running", state: "Queued" }),
+    conversationStandingArm({ standing: "Running", state: "Queued" }, false),
   ).toEqual({ word: "Queued", tone: "queued" });
   expect(
-    conversationStandingArm({ standing: "Running", state: "Claimed" }),
-  ).toEqual({ word: "Claimed", tone: "live" });
-  expect(
-    conversationStandingArm({ standing: "Running", state: "Waiting" }),
+    conversationStandingArm({ standing: "Running", state: "Waiting" }, false),
   ).toEqual({ word: "Waiting", tone: "parked" });
   expect(
-    conversationStandingArm({ standing: "Failed", failure: "AgentFailed" }),
+    conversationStandingArm(
+      { standing: "Failed", failure: "AgentFailed" },
+      true,
+    ),
   ).toEqual({ word: "Failed", tone: "fail" });
-  expect(conversationStandingArm({ standing: "Abandoned" })).toEqual({
+  expect(conversationStandingArm({ standing: "Abandoned" }, true)).toEqual({
     word: "Abandoned",
     tone: "retired",
   });
-  expect(conversationStandingArm({ standing: "Open" })).toEqual({
+  expect(conversationStandingArm({ standing: "Open" }, true)).toEqual({
     word: "Open",
     tone: "live",
   });
+});
+
+test("a turn a runner has is starting until something has come of it, and working from then", () => {
+  const claimed = { standing: "Running", state: "Claimed" } as const;
+  expect(conversationStandingArm(claimed, false)).toEqual({
+    word: "Starting",
+    tone: "live",
+  });
+  expect(conversationStandingArm(claimed, true)).toEqual({
+    word: "Working",
+    tone: "live",
+  });
+});
+
+test("a turn nobody has taken is called the same whatever was heard of it before", () => {
+  for (const state of ["Queued", "Waiting"] as const)
+    expect(
+      conversationStandingArm({ standing: "Running", state }, true).word,
+    ).toBe(state);
 });

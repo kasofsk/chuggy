@@ -64,6 +64,66 @@
     animation: conversation-pulse var(--duration-pulse) var(--ease-out) infinite;
   }
 
+  /* The answer sits a little into the gap above it, so the place it holds for
+   * the work's line reads as that gap and not as a hole under it. */
+  .conversation-answer {
+    margin-block-start: calc(-1 * var(--space-3));
+  }
+
+  /* The place the work's line takes, held whether or not there is work yet.
+   * The line is given its height rather than left to its words' leading, so
+   * the place is as tall empty as with the closed line in it, to the pixel. */
+  .conversation-work {
+    min-height: 1.5em;
+  }
+
+  .conversation-work-line {
+    height: 1.5em;
+  }
+
+  /* The line under an answer, as tall with a glyph in it as with the copy
+   * control, and its lead as wide — so the word beside it never shifts. It
+   * hangs by the control's own inset, which puts the mark on the text's edge. */
+  .conversation-meta {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-height: calc(1em + 2 * var(--space-1));
+    margin-inline-start: calc(-1 * var(--space-1));
+  }
+
+  .conversation-meta-lead {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: calc(1em + 2 * var(--space-1));
+  }
+
+  /* The way back to the foot of the column: a round control standing over it,
+   * which is not there at all while the reader is at the foot. */
+  .conversation-bottom {
+    position: absolute;
+    inset-block-end: var(--space-2);
+    inset-inline-start: 50%;
+    z-index: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2em;
+    height: 2em;
+    padding: 0;
+    border: var(--hairline) solid var(--edge-strong);
+    border-radius: var(--radius-circle);
+    background: var(--surface-1);
+    color: var(--ink-2);
+    cursor: pointer;
+    translate: -50% 0;
+  }
+
+  .conversation-bottom:hover {
+    color: var(--ink-1);
+  }
+
   @keyframes conversation-pulse {
     0%,
     100% {
@@ -77,17 +137,9 @@
 
   /* The mark sits after the last word of whatever is being written and takes
    * no room there: its margins give back its own width, so it never wraps a
-   * line, and nothing moves when it goes. Before the first word it stands
-   * alone, on the line that word is about to take. */
-  .conversation-writing > .run-report:empty::after,
-  .conversation-writing
-    > .run-report
-    > :is(p, h1, h2, h3, h4, h5, h6, blockquote):last-child::after,
-  .conversation-writing
-    > .run-report
-    > :is(ul, ol):last-child
-    > li:last-child::after,
-  .conversation-writing > .run-report > pre:last-child > code::after {
+   * line, and nothing moves when it goes. The report says where that is, by
+   * the one class it puts on the last thing written. */
+  .conversation-writing .run-report-mark::after {
     content: "";
     display: inline-block;
     width: 0.5em;
@@ -96,6 +148,18 @@
     border-radius: 50%;
     background: var(--ink-3);
     animation: conversation-pulse var(--duration-pulse) var(--ease-out) infinite;
+  }
+
+  /* Where nothing written can carry it the report does, and it stands alone
+   * on the line the next word is about to take. */
+  .conversation-writing .run-report.run-report-mark::after {
+    display: block;
+    margin-inline: 0.25em 0;
+    margin-block: calc((1lh - 0.5em) / 2);
+  }
+
+  .conversation-writing .run-report.run-report-mark:not(:empty)::after {
+    margin-block-start: calc(var(--space-3) + (1lh - 0.5em) / 2);
   }
 
   /* The strip holds this height whether or not the train is drawn inside it,

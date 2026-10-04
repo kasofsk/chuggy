@@ -4,8 +4,18 @@
  *
  * A TURN NOBODY HAS ANSWERED DRAWS NO ANSWER BLOCK. The parts primitive draws
  * an empty part where a running message holds no content, so the answer is
- * asked for only once there is one: an exchange still running is its work card
+ * asked for only once there is one: an exchange still running is its work line
  * and its meta line, and nothing between them.
+ *
+ * WHAT ARRIVES LATE LANDS IN A PLACE ALREADY HELD. The work's line has its
+ * place above every answer and the meta line its place below, whether or not
+ * either has anything to say yet, so a step that begins after the words have,
+ * and the turn settling, move nothing a reader is looking at.
+ *
+ * ONE THING MOVES. The surface names the one exchange that may, and within it
+ * the mark at the end of the text takes it from the glyph under the answer for
+ * as long as text is being let out — which only the part drawing the text
+ * knows, so it says so to the line through a state the answer holds.
  *
  * Both halves stack with a column flex and neither draws a gutter beside the
  * text, so an exchange is the same shape in a pane as on a page and the words
@@ -20,7 +30,13 @@
 
 import { MessagePrimitive, useAuiState, useSmooth } from "@assistant-ui/react";
 import type { TextMessagePartComponent } from "@assistant-ui/react";
-import { createContext, Fragment, useContext } from "react";
+import {
+  createContext,
+  Fragment,
+  useContext,
+  useLayoutEffect,
+  useState,
+} from "react";
 import type { ReactNode } from "react";
 
 import { ticketReferenceSplit } from "../../../../../src/contract/ticketReference.ts";
@@ -35,6 +51,7 @@ import {
   ConversationSystemLine,
   conversationMarkerWords,
 } from "./ConversationLines.tsx";
+import type { ConversationStandingDrawn } from "./ConversationLines.tsx";
 import { ConversationWorkCard } from "./ConversationWorkCard.tsx";
 
 import "./conversation.css";
@@ -45,6 +62,33 @@ export const ConversationWorkOpen = createContext(false);
 /** Whether the surface lets an answer still being written out at an even
  * pace. */
 export const ConversationPaced = createContext(false);
+
+/** The exchange whose answer holds the one thing on the surface that moves,
+ * where there is one. */
+export const ConversationIndicated = createContext<string | undefined>(
+  undefined,
+);
+
+const ConversationMarked = createContext(false);
+
+const ConversationMarkedSaid = createContext<(marked: boolean) => void>(
+  () => undefined,
+);
+
+/** Holds whether an answer's text is carrying the mark, apart from the answer
+ * itself so that saying so draws the line under it again and nothing else. */
+function ConversationMarkHeld(props: {
+  readonly children: ReactNode;
+}): ReactNode {
+  const [marked, setMarked] = useState(false);
+  return (
+    <ConversationMarkedSaid.Provider value={setMarked}>
+      <ConversationMarked.Provider value={marked}>
+        {props.children}
+      </ConversationMarked.Provider>
+    </ConversationMarkedSaid.Provider>
+  );
+}
 
 /** What one message carries of the exchange it is half of. */
 export interface ConversationCustom {
@@ -93,6 +137,13 @@ const ConversationReport: TextMessagePartComponent = (props) => {
   const shown = useSmooth(props, paced);
   const writing =
     activity === "Writing" || shown.text.length < props.text.length;
+  const markedSaid = useContext(ConversationMarkedSaid);
+  useLayoutEffect(() => {
+    markedSaid(writing);
+    return () => {
+      markedSaid(false);
+    };
+  }, [markedSaid, writing]);
   return (
     <div className={writing ? "conversation-writing" : undefined}>
       <MarkdownReport text={shown.text} bare writing={writing} />
@@ -178,29 +229,54 @@ export function ConversationAskMessage(): ReactNode {
   );
 }
 
+/** The line under an answer, its glyph moving where this exchange is the one
+ * that may and its text is not carrying the mark. */
+function ConversationMeta(props: {
+  readonly exchange: ConversationExchange;
+  readonly standing: ConversationStandingDrawn;
+}): ReactNode {
+  const indicated = useContext(ConversationIndicated);
+  const marked = useContext(ConversationMarked);
+  return (
+    <ConversationMetaLine
+      exchange={props.exchange}
+      standing={props.standing}
+      live={indicated === props.exchange.id && !marked}
+    />
+  );
+}
+
 /** The answer half of one exchange: what it took, what came back, and where it
- * ended up. */
+ * stands. It is marked busy for as long as its turn is out. */
 export function ConversationAnswerMessage(): ReactNode {
   const exchange = useConversationExchange();
   const workOpen = useContext(ConversationWorkOpen);
   if (exchange === undefined) return null;
   const standing = exchange.standing;
   if (standing.standing === "Markers") return null;
+  const running = standing.standing === "Running";
   return (
-    <MessagePrimitive.Root className="flex flex-col gap-3">
-      <ConversationWorkCard
-        work={exchange.work}
-        running={standing.standing === "Running"}
-        activity={exchange.activity}
-        open={workOpen}
-      />
-      {standing.standing === "Failed" && standing.failure !== undefined ? (
-        <Notice tone="danger" detail={standing.failure} />
-      ) : null}
-      {exchange.answer === undefined ? null : (
-        <MessagePrimitive.Parts components={{ Text: ConversationReport }} />
-      )}
-      <ConversationMetaLine standing={standing} measures={exchange.measures} />
+    <MessagePrimitive.Root
+      className="conversation-answer flex flex-col gap-3"
+      aria-busy={running}
+    >
+      <ConversationMarkHeld>
+        <div className="conversation-work text-sm">
+          <ConversationWorkCard
+            work={exchange.work}
+            running={running}
+            activity={exchange.activity}
+            open={workOpen}
+          />
+        </div>
+        {standing.standing === "Failed" && standing.failure !== undefined ? (
+          <Notice tone="danger" detail={standing.failure} />
+        ) : null}
+        {exchange.answer === undefined ? null : (
+          <MessagePrimitive.Parts components={{ Text: ConversationReport }} />
+        )}
+        <ConversationMeta exchange={exchange} standing={standing} />
+      </ConversationMarkHeld>
     </MessagePrimitive.Root>
   );
 }

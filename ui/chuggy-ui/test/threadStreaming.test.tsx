@@ -23,6 +23,7 @@ import type { ThreadLiveBlock } from "../../../src/contract/threadLive.ts";
 import { SessionProvider } from "../app/browser/session.tsx";
 import { ProjectStreamProvider } from "../app/browser/stream.tsx";
 import { ThreadConversation } from "../app/browser/thread/ThreadConversation.tsx";
+import { moving } from "./conversationMoving.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import { answer, holderDouble, settled } from "./screenHarness.tsx";
 import { elementScrollToStubbed } from "./scrolling.ts";
@@ -256,7 +257,7 @@ function wrote(message: string, index: number, offset: number, text: string) {
 function shown(container: HTMLElement): {
   readonly answer: string | undefined;
   readonly card: string | undefined;
-  readonly cardLive: boolean;
+  readonly moving: readonly string[];
   readonly writing: boolean;
   readonly engine: boolean;
   readonly standing: string | undefined;
@@ -267,11 +268,13 @@ function shown(container: HTMLElement): {
   return {
     answer: last.querySelector(".run-report-bare")?.textContent ?? undefined,
     card: card?.textContent ?? undefined,
-    cardLive: last.querySelector(".conversation-glyph-live") !== null,
+    moving: moving(container),
     writing: last.querySelector(".conversation-writing") !== null,
     engine: container.querySelector(".conversation-waiting-engine") !== null,
     standing:
-      last.lastElementChild?.firstElementChild?.textContent ?? undefined,
+      last.querySelector(
+        '.conversation-meta [role="status"]:not(.visually-hidden)',
+      )?.textContent ?? undefined,
   };
 }
 
@@ -325,18 +328,19 @@ test("a turn as it is written: the wait, the thought, the words and the tool", a
   await until(script.container, {
     answer: undefined,
     card: undefined,
-    engine: true,
+    moving: ["engine"],
     standing: "Queued",
   });
   expect(script.server.liveSeen).toHaveLength(1);
 
   script.draw(threadAt("Claimed", 1));
+  await until(script.container, { moving: ["engine"], standing: "Starting" });
   script.server.pushLive(began("msg_a", 0, "Thinking"));
   await until(script.container, {
     answer: undefined,
     card: "Thinking",
-    cardLive: true,
-    engine: true,
+    moving: ["engine"],
+    standing: "Working",
   });
 
   script.server.pushLive(began("msg_a", 1, "Text"));
@@ -345,9 +349,9 @@ test("a turn as it is written: the wait, the thought, the words and the tool", a
   await until(script.container, {
     answer: "Looking at 41.",
     card: "Thought",
-    cardLive: false,
+    moving: ["mark"],
     writing: true,
-    engine: false,
+    standing: "Working",
   });
   const first = answerNode(script.container);
 
@@ -355,13 +359,13 @@ test("a turn as it is written: the wait, the thought, the words and the tool", a
   await until(script.container, {
     answer: "Looking at 41.",
     card: "Read",
-    cardLive: true,
+    moving: ["glyph"],
     writing: false,
   });
 
   script.batches.push(firstMessage);
   script.draw(threadAt("Claimed", 2));
-  await until(script.container, { card: "Working", cardLive: true });
+  await until(script.container, { card: "Working", moving: ["glyph"] });
   expect(shown(script.container).answer).toBe("Looking at 41.");
   expect(answerNode(script.container)).toBe(first);
   styleless();
@@ -379,12 +383,16 @@ test("a turn as it ends: whole, then stored, then settled, and nothing moves", a
   await until(script.container, {
     answer: "It is blocked by 40.",
     card: "Thought · 1 tool · 1 note",
-    cardLive: false,
+    moving: ["mark"],
     writing: true,
   });
 
   script.server.pushLive(live({ live: "End" }));
-  await until(script.container, { writing: false, standing: "Claimed" });
+  await until(script.container, {
+    writing: false,
+    moving: ["glyph"],
+    standing: "Working",
+  });
   const whole = answerNode(script.container);
   const markup = script.container.innerHTML;
 
@@ -402,9 +410,9 @@ test("a turn as it ends: whole, then stored, then settled, and nothing moves", a
   expect(shown(script.container)).toMatchObject({
     answer: "It is blocked by 40.",
     card: "Thought · 1 tool · 1 note",
-    cardLive: false,
+    moving: [],
     writing: false,
-    engine: false,
+    standing: "Answered",
   });
   expect(script.server.aborts).toHaveLength(1);
   expect(script.server.liveSeen).toHaveLength(1);
@@ -439,7 +447,7 @@ test("a stream that is refused draws the thread as its transcript alone, and say
   await until(script.container, {
     answer: "Looking at 41.",
     card: "Working",
-    cardLive: true,
+    moving: ["glyph"],
     writing: false,
   });
   expect(script.server.liveSeen).toHaveLength(1);
@@ -454,11 +462,16 @@ test("a block heard with a gap in it is never drawn as text", async () => {
   await settled();
   script.server.pushLive(began("msg_a", 0, "Text"));
   script.server.pushLive(wrote("msg_a", 0, 0, "It is "));
-  await until(script.container, { answer: "It is" });
+  await until(script.container, { answer: "It is", moving: ["mark"] });
   script.server.pushLive(wrote("msg_a", 0, 40, "by 40."));
+  await until(script.container, { answer: "It is", moving: ["glyph"] });
+  expect(shown(script.container).writing).toBe(false);
   script.server.pushLive(began("msg_a", 1, "ToolUse", "Read"));
   await until(script.container, { card: "Read" });
-  expect(shown(script.container).answer).toBe("It is");
+  expect(shown(script.container)).toMatchObject({
+    answer: "It is",
+    moving: ["glyph"],
+  });
 });
 
 test("a first turn being written says nothing of the store it has not written yet", async () => {
@@ -514,13 +527,13 @@ test("the hub forgetting a session in the middle of a tool does not draw the tur
   script.server.pushLive(began("msg_a", 0, "Text"));
   script.server.pushLive(wrote("msg_a", 0, 0, "Running the gates."));
   script.server.pushLive(began("msg_a", 1, "ToolUse", "Bash"));
-  await until(script.container, { card: "Bash", cardLive: true });
+  await until(script.container, { card: "Bash", moving: ["glyph"] });
   script.batches.push(toolRunning);
   script.draw(threadAt("Claimed", 2));
   await until(script.container, {
     answer: "Running the gates.",
     card: "Bash",
-    cardLive: true,
+    moving: ["glyph"],
   });
   script.server.pushLive(nothingHeld);
   await settled();
@@ -528,16 +541,18 @@ test("the hub forgetting a session in the middle of a tool does not draw the tur
   expect(shown(script.container)).toMatchObject({
     answer: "Running the gates.",
     card: "Bash",
-    cardLive: true,
-    standing: "Claimed",
+    moving: ["glyph"],
+    standing: "Working",
   });
 });
 
-test("text a failed turn never stored leaves at settle and does not return while a later page is read", async () => {
-  const script = scripted(threadAt("Claimed", 1), [
-    { status: 200, chunks: [nothingHeld], hold: true },
-    { status: 200, chunks: [nothingHeld], hold: true },
-  ]);
+function liveOf(turn: string, event: unknown): string {
+  return frame("live", undefined, { version: 1, turn, event });
+}
+
+/** A turn that failed part way through its text, then the next one sent and
+ * taken while the page of the store holding its ask is still being read. */
+async function failedThenSentAgain(script: Script): Promise<void> {
   await settled();
   script.batches.push([entry("uuid-c", "user", { content: asked })]);
   script.draw(threadAt("Claimed", 2));
@@ -565,20 +580,35 @@ test("text a failed turn never stored leaves at settle and does not return while
   script.draw(threadBody({ batches: 3, turns: [before, failed, again] }));
   await settled();
   expect(script.server.liveSeen).toHaveLength(2);
-  script.server.pushLive(
-    frame("live", undefined, {
-      version: 1,
-      turn: "turn-3",
-      event: { live: "Block", message: "msg_c", index: 0, kind: "Thinking" },
-    }),
-  );
-  await until(script.container, { card: "Thinking", cardLive: true });
+}
+
+/** The page of the store that was held is read, and nothing of the failed
+ * turn's text has come back with it. */
+async function readWithoutTheFailedText(script: Script): Promise<void> {
   expect(script.container.textContent).not.toContain("Half an answ");
   script.gate.release();
   await settled();
   await settled();
   expect(script.container.textContent).not.toContain("Half an answ");
   expect(script.container.textContent).toContain("try again");
+}
+
+test("text a failed turn never stored leaves at settle and does not return while a later page is read", async () => {
+  const script = scripted(threadAt("Claimed", 1), [
+    { status: 200, chunks: [nothingHeld], hold: true },
+    { status: 200, chunks: [nothingHeld], hold: true },
+  ]);
+  await failedThenSentAgain(script);
+  script.server.pushLive(
+    liveOf("turn-3", {
+      live: "Block",
+      message: "msg_c",
+      index: 0,
+      kind: "Thinking",
+    }),
+  );
+  await until(script.container, { card: "Thinking", moving: ["engine"] });
+  await readWithoutTheFailedText(script);
 });
 
 test("a settled turn's answer stays while the page holding it is still being read", async () => {
@@ -668,7 +698,7 @@ test("a burst of events is drawn at the next frame and not before, and a frame s
   expect(shown(script.container).card).toBeUndefined();
   expect(frames.pending()).toBe(owed + 1);
   frames.paint();
-  await until(script.container, { card: "Bash", cardLive: true });
+  await until(script.container, { card: "Bash", moving: ["engine"] });
 
   script.server.pushLive(began("msg_a", 3, "ToolUse", "Grep"));
   await settled();

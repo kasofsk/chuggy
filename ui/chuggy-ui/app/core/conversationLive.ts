@@ -49,11 +49,17 @@ export type ConversationLiveKnown = number | undefined;
  * oldest leaves. */
 export const conversationLiveMessagesMax = 8;
 
+/** One block as it was heard. `stopped` is a block a gap has since been heard
+ * in: what is held of it is all that will be until the transcript has it. */
+export interface ConversationLiveBlock extends ThreadLiveBlock {
+  readonly stopped?: boolean;
+}
+
 /** One message as it was heard. */
 export interface ConversationLiveMessage {
   readonly turn: string;
   readonly message: string;
-  readonly blocks: readonly ThreadLiveBlock[];
+  readonly blocks: readonly ConversationLiveBlock[];
   readonly known?: number;
 }
 
@@ -90,16 +96,24 @@ function conversationLiveMessageOf(
 /**
  * Two hearings of one message as one. A later hearing of a block replaces an
  * earlier one unless it is gapped, so a message heard twice is drawn once and
- * a gap never takes away text heard before it.
+ * a gap never takes away text heard before it — it stops it.
  */
 function conversationLiveBlocksMerged(
-  earlier: readonly ThreadLiveBlock[],
-  later: readonly ThreadLiveBlock[],
-): readonly ThreadLiveBlock[] {
-  const kept = earlier.filter(
-    (block) =>
-      !later.some((heard) => heard.index === block.index && !heard.gapped),
-  );
+  earlier: readonly ConversationLiveBlock[],
+  later: readonly ConversationLiveBlock[],
+): readonly ConversationLiveBlock[] {
+  const gapped = (index: number): boolean =>
+    later.some((heard) => heard.index === index && heard.gapped);
+  const kept = earlier
+    .filter(
+      (block) =>
+        !later.some((heard) => heard.index === block.index && !heard.gapped),
+    )
+    .map((block) =>
+      !block.gapped && gapped(block.index)
+        ? { ...block, stopped: true }
+        : block,
+    );
   const added = later.filter(
     (block) =>
       !block.gapped || !earlier.some((heard) => heard.index === block.index),
@@ -271,6 +285,8 @@ export interface ConversationLiveTurn {
   readonly turn: string;
   /** The blocks the transcript does not hold yet, in the order written. */
   readonly blocks: readonly ConversationBlock[];
+  /** Whether the last of them is one no more will be heard of. */
+  readonly stopped: boolean;
   /** Whether the turn's last message is whole. */
   readonly ended: boolean;
 }
@@ -336,18 +352,16 @@ function conversationLiveTurnBlocks(
   held: ConversationLiveHeld,
   turn: string,
   stored: ConversationStored,
-): readonly ConversationBlock[] {
+): readonly ConversationLiveBlock[] {
   const heard = conversationLiveMessages(held);
   return heard.flatMap((message, at) => {
     if (message.turn !== turn || conversationLiveOver(heard, at, stored))
       return [];
-    return message.blocks
-      .filter(
-        (block) =>
-          block.index >= (stored.blocks.get(message.message) ?? 0) &&
-          conversationLiveBlockDrawn(block),
-      )
-      .map(conversationLiveBlockOf);
+    return message.blocks.filter(
+      (block) =>
+        block.index >= (stored.blocks.get(message.message) ?? 0) &&
+        conversationLiveBlockDrawn(block),
+    );
   });
 }
 
@@ -368,9 +382,11 @@ export function conversationLiveTurns(
   stored: ConversationStored,
 ): readonly ConversationLiveTurn[] {
   return conversationLiveTurnNames(held).flatMap((turn) => {
-    const blocks = conversationLiveTurnBlocks(held, turn, stored);
+    const heard = conversationLiveTurnBlocks(held, turn, stored);
     const ended = held.ended === turn;
-    return blocks.length === 0 && !ended ? [] : [{ turn, blocks, ended }];
+    if (heard.length === 0 && !ended) return [];
+    const blocks = heard.map(conversationLiveBlockOf);
+    return [{ turn, blocks, ended, stopped: heard.at(-1)?.stopped === true }];
   });
 }
 
@@ -408,7 +424,10 @@ function conversationLiveActivity(
   if (standing.standing !== "Running" || standing.state !== "Claimed")
     return undefined;
   if (live?.ended === true) return { activity: "Whole" };
-  const heard = conversationLiveBlockActivity(live?.blocks.at(-1));
+  const heard =
+    live?.stopped === true
+      ? undefined
+      : conversationLiveBlockActivity(live?.blocks.at(-1));
   if (heard !== undefined || exchange.answer !== undefined) return heard;
   const step = exchange.work.at(-1);
   return step?.step === "ToolCall" &&

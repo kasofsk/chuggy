@@ -1,7 +1,8 @@
 /**
- * The conversation surface while an answer is being written: what its card
- * says is going on, how its words come out, and what moves when the
- * transcript's own copy takes the place of what was heard.
+ * The conversation surface while an answer is being written: what the line
+ * over it says is going on, how its words come out, the one thing that moves,
+ * and what does not when the transcript's own copy takes the place of what was
+ * heard.
  *
  * The surface is handed exchanges and nothing else, so each case draws the
  * moments of a turn as the exchanges a page would hand it and reads the
@@ -17,23 +18,10 @@ import type {
   ConversationActivity,
   ConversationExchange,
 } from "../app/core/conversation.ts";
+import { running } from "./conversationMoving.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import { elementScrollToStubbed } from "./scrolling.ts";
 import { styleless } from "./styleless.ts";
-
-function running(
-  exchange: Partial<ConversationExchange>,
-): ConversationExchange {
-  return {
-    id: "turn-1",
-    turn: "turn-1",
-    ask: { ask: "Message", text: "where does 41 stand" },
-    work: [],
-    standing: { standing: "Running", state: "Claimed" },
-    before: [],
-    ...exchange,
-  };
-}
 
 function drawn(exchange: ConversationExchange, paced = true): ReactNode {
   return <Conversation exchanges={[exchange]} paced={paced} pane />;
@@ -72,10 +60,11 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("what the work card says is going on", () => {
+describe("what the work's line says is going on", () => {
   function label(activity: ConversationActivity | undefined): {
     readonly words: string;
-    readonly live: boolean;
+    readonly filled: boolean;
+    readonly moving: boolean;
     readonly named: string | undefined;
   } {
     const view = render(
@@ -89,7 +78,10 @@ describe("what the work card says is going on", () => {
     const trigger = view.container.querySelector(".conversation-trigger");
     const read_ = {
       words: trigger?.textContent ?? "",
-      live: trigger?.querySelector(".conversation-glyph-live") !== null,
+      filled:
+        trigger?.querySelector("circle")?.getAttribute("fill") ===
+        "currentColor",
+      moving: trigger?.querySelector(".conversation-glyph-live") !== null,
       named: trigger?.querySelector("code")?.textContent ?? undefined,
     };
     styleless();
@@ -100,7 +92,8 @@ describe("what the work card says is going on", () => {
   test("a thought under way is named", () => {
     expect(label({ activity: "Thinking" })).toEqual({
       words: "Thinking",
-      live: true,
+      filled: true,
+      moving: false,
       named: undefined,
     });
   });
@@ -108,7 +101,8 @@ describe("what the work card says is going on", () => {
   test("a tool under way is named as a step of the work names it", () => {
     expect(label({ activity: "ToolUse", name: "Read" })).toEqual({
       words: "Read",
-      live: true,
+      filled: true,
+      moving: false,
       named: "Read",
     });
   });
@@ -116,17 +110,19 @@ describe("what the work card says is going on", () => {
   test("work nothing more is known of is the word it always was", () => {
     expect(label(undefined)).toEqual({
       words: "Working",
-      live: true,
+      filled: true,
+      moving: false,
       named: undefined,
     });
     expect(label({ activity: "ToolUse", name: "" }).words).toBe("Working");
   });
 
-  test("once the answer is being written, or is whole, the card says what the work was and is still", () => {
+  test("once the answer is being written, or is whole, the line says what the work was", () => {
     for (const activity of ["Writing", "Whole"] as const)
       expect(label({ activity })).toEqual({
         words: "Thought · 1 tool",
-        live: false,
+        filled: false,
+        moving: false,
         named: undefined,
       });
   });

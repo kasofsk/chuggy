@@ -22,12 +22,21 @@
  * made of a message for as long as it is handed the same one, so each
  * exchange's two messages are made once and a page redrawing one exchange a
  * frame redraws that one.
+ *
+ * ONE THING MOVES WHILE A TURN IS OUT, and `conversationIndicator` says which:
+ * the engine above the composer until the turn has words, and that turn's own
+ * exchange from then on.
+ *
+ * A READER WHO HAS SCROLLED AWAY IS OFFERED THE WAY BACK. The library keeps
+ * the column pinned to its foot only while the reader is at it, and its own
+ * control returns them there and pins it again.
  */
 
 import {
   AssistantRuntimeProvider,
   ThreadPrimitive,
   useExternalStoreRuntime,
+  useThreadViewport,
 } from "@assistant-ui/react";
 import type {
   AppendMessage,
@@ -40,13 +49,18 @@ import type {
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
-import type { ConversationExchange } from "../../core/conversation.ts";
+import { conversationIndicator } from "../../core/conversation.ts";
+import type {
+  ConversationExchange,
+  ConversationIndicator,
+} from "../../core/conversation.ts";
 import type { RunPrompt } from "../../core/runConfiguration.ts";
 import { ConversationComposer } from "./ConversationComposer.tsx";
 import type { ConversationComposerProps } from "./ConversationComposer.tsx";
 import {
   ConversationAnswerMessage,
   ConversationAskMessage,
+  ConversationIndicated,
   ConversationPaced,
   ConversationWorkOpen,
 } from "./ConversationExchange.tsx";
@@ -152,21 +166,6 @@ function conversationRunning(
   return exchanges.some((exchange) => exchange.standing.standing === "Running");
 }
 
-/** Whether a turn is out with nothing said for it yet, the half of the waiting
- * predicate that outlives one send: an exchange already carrying its answer,
- * or heard to be whole, stops drawing the engine, however its turn stands in
- * the mailbox. */
-function conversationUnanswered(
-  exchanges: readonly ConversationExchange[],
-): boolean {
-  return exchanges.some(
-    (exchange) =>
-      exchange.standing.standing === "Running" &&
-      exchange.answer === undefined &&
-      exchange.activity?.activity !== "Whole",
-  );
-}
-
 function conversationAppendedText(message: AppendMessage): string {
   return message.content
     .flatMap((part) => (part.type === "text" ? [part.text] : []))
@@ -237,6 +236,30 @@ function conversationMessageDrawn(value: {
   );
 }
 
+/** The way back to the newest words, standing over the foot of the column for
+ * as long as the reader is not there. */
+function ConversationBottom(): ReactNode {
+  const atBottom = useThreadViewport((viewport) => viewport.isAtBottom);
+  if (atBottom) return null;
+  return (
+    <ThreadPrimitive.ScrollToBottom
+      className="conversation-bottom"
+      aria-label="Scroll to bottom"
+    >
+      <svg viewBox="0 0 16 16" aria-hidden="true" className="size-3">
+        <path
+          d="M8 3 L8 13 M4 9 L8 13 L12 9"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    </ThreadPrimitive.ScrollToBottom>
+  );
+}
+
 /** Nothing said yet: the column's own name and one line about it, held in the
  * middle of the empty space above the composer. */
 function ConversationEmpty(props: {
@@ -269,6 +292,28 @@ function ConversationBody(props: {
     <ThreadPrimitive.Messages>
       {conversationMessageDrawn}
     </ThreadPrimitive.Messages>
+  );
+}
+
+/** How every exchange under it is drawn: its work open or not, its text paced
+ * or not, and which of them holds the one thing that moves. */
+function ConversationDrawn(props: {
+  readonly workOpen: boolean;
+  readonly paced: boolean;
+  readonly indicator: ConversationIndicator;
+  readonly children: ReactNode;
+}): ReactNode {
+  const indicator = props.indicator;
+  return (
+    <ConversationWorkOpen.Provider value={props.workOpen}>
+      <ConversationPaced.Provider value={props.paced}>
+        <ConversationIndicated.Provider
+          value={indicator.indicator === "Exchange" ? indicator.id : undefined}
+        >
+          {props.children}
+        </ConversationIndicated.Provider>
+      </ConversationPaced.Provider>
+    </ConversationWorkOpen.Provider>
   );
 }
 
@@ -310,38 +355,46 @@ export function Conversation(props: {
     exchanges: activeExchanges,
     composer: props.composer,
   });
-  const waiting = held.sending || conversationUnanswered(activeExchanges);
+  const indicator = conversationIndicator(activeExchanges, {
+    drawn: props.composer !== undefined,
+    sending: held.sending,
+  });
   const inset = props.pane === true ? "px-4 py-4" : "";
   return (
     <AssistantRuntimeProvider runtime={held.runtime}>
       <ThreadPrimitive.Root className="flex h-full min-h-0 flex-col gap-4">
-        <ThreadPrimitive.Viewport className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto">
-          <div
-            className={`max-w-column mx-auto flex w-full flex-col gap-6 ${inset}`}
-          >
-            {props.prompt === undefined ? null : (
-              <ConversationPrompt prompt={props.prompt} />
-            )}
-            {props.earlier === undefined ? null : (
-              <ConversationEarlier {...props.earlier} />
-            )}
-            <ConversationWorkOpen.Provider value={props.workOpen === true}>
-              <ConversationPaced.Provider value={props.paced === true}>
+        <div className="relative flex min-h-0 flex-1 flex-col">
+          <ThreadPrimitive.Viewport className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto">
+            <div
+              className={`max-w-column mx-auto flex w-full flex-col gap-6 ${inset}`}
+            >
+              {props.prompt === undefined ? null : (
+                <ConversationPrompt prompt={props.prompt} />
+              )}
+              {props.earlier === undefined ? null : (
+                <ConversationEarlier {...props.earlier} />
+              )}
+              <ConversationDrawn
+                workOpen={props.workOpen === true}
+                paced={props.paced === true}
+                indicator={indicator}
+              >
                 <ConversationBody
                   reading={reading}
                   empty={props.exchanges.length === 0}
                   emptyTitle={props.emptyTitle}
                   sentence={props.empty}
                 />
-              </ConversationPaced.Provider>
-            </ConversationWorkOpen.Provider>
-          </div>
-        </ThreadPrimitive.Viewport>
+              </ConversationDrawn>
+            </div>
+          </ThreadPrimitive.Viewport>
+          <ConversationBottom />
+        </div>
         {props.composer === undefined ? null : (
           <div
             className={`max-w-column mx-auto w-full ${props.pane === true ? "px-4 pb-4" : ""}`}
           >
-            <ConversationWaiting waiting={waiting} />
+            <ConversationWaiting waiting={indicator.indicator === "Engine"} />
             <ConversationComposer {...props.composer} busy={held.sending} />
           </div>
         )}

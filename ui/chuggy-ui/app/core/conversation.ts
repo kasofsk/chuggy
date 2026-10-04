@@ -865,6 +865,55 @@ export function conversationExchangeContinued(
   return saying;
 }
 
+/** Whether anything of an exchange's turn has reached this page: a step of its
+ * work, a word of its answer, or what it is heard to be doing. */
+export function conversationExchangeBegun(
+  exchange: ConversationExchange,
+): boolean {
+  return (
+    exchange.work.length > 0 ||
+    exchange.answer !== undefined ||
+    exchange.activity !== undefined
+  );
+}
+
+/**
+ * The one thing on a conversation that moves while a turn is out: the engine
+ * above the composer until a running turn has words, and from then that turn's
+ * own exchange, whose text or whose line under it shows what is under way.
+ */
+export type ConversationIndicator =
+  | { readonly indicator: "None" }
+  | { readonly indicator: "Engine" }
+  | { readonly indicator: "Exchange"; readonly id: string };
+
+function conversationExchangeRunning(exchange: ConversationExchange): boolean {
+  return exchange.standing.standing === "Running";
+}
+
+/**
+ * Which one it is. `engine` is whether the surface draws an engine at all and
+ * whether a send is still on its way; with none drawn the first turn out moves
+ * in its place, so a page with no composer still shows that something is.
+ */
+export function conversationIndicator(
+  exchanges: readonly ConversationExchange[],
+  engine: { readonly drawn: boolean; readonly sending: boolean },
+): ConversationIndicator {
+  const running = exchanges.filter(conversationExchangeRunning);
+  const said = running.find(
+    (exchange) =>
+      exchange.answer !== undefined || exchange.activity?.activity === "Whole",
+  );
+  if (said !== undefined) return { indicator: "Exchange", id: said.id };
+  if (engine.drawn && (engine.sending || running.length > 0))
+    return { indicator: "Engine" };
+  const first = running[0];
+  return first === undefined
+    ? { indicator: "None" }
+    : { indicator: "Exchange", id: first.id };
+}
+
 /** The exchanges with every queued turn read as waiting, for a surface whose
  * turns go to a runner that cannot take one now. */
 export function conversationExchangesWaiting(
