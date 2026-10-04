@@ -88,7 +88,7 @@ export interface ThreadLiveLimits {
   /** The text one session may hold across its blocks, which bounds its snapshot. */
   readonly sessionTextBytesMax: number;
   readonly sessionIdleMs: number;
-  /** The span the payloads that arrive are counted over. */
+  /** The span the payloads that arrive are counted over, and within which text that takes a session past what one may hold a second time, no `End` between, leaves all of it gapped. */
   readonly windowMs: number;
   /** The payloads read in one window, past which the hub is behind. */
   readonly windowEventsMax: number;
@@ -223,11 +223,12 @@ function unshared(text: string): string {
   return [text.slice(0, middle), text.slice(middle)].join("");
 }
 
-/** What is held of one session: its fold, what that is counted as occupying, and when it was last heard from. */
+/** What is held of one session: its fold, what that is counted as occupying, when it was last heard from, and when text last took it past what one may hold. */
 interface HeldSession {
   readonly held: ThreadLiveHeld;
   readonly bytes: number;
   readonly heardAtMs: number;
+  readonly pastAtMs: number | undefined;
 }
 
 interface OpenConnection {
@@ -453,12 +454,17 @@ function evicted(state: HubState): void {
 /**
  * What the hub keeps of a fold a text event changed, and whether that is the
  * fold itself. The block the event wrote is kept in storage of its own, or is
- * left gapped where its text takes the session past what one may hold.
+ * left gapped where its text takes the session past what one may hold; every
+ * block is left gapped where `again` says text took it past that less than a
+ * window ago, so a turn begun and written past it over and over has all the
+ * session may hold sent to its readers once a window, and its turn's `End`,
+ * which forgets the session, forgets when that was.
  */
 function kept(
   state: HubState,
   folded: ThreadLiveHeld,
   index: number,
+  again: boolean,
 ): { readonly held: ThreadLiveHeld; readonly whole: boolean } {
   const whole = textBytes(folded) <= state.limits.sessionTextBytesMax;
   return {
@@ -466,11 +472,13 @@ function kept(
     held: {
       ...folded,
       blocks: folded.blocks.map((block) =>
-        block.index !== index || block.text === ""
-          ? block
-          : whole
-            ? { ...block, text: unshared(block.text) }
-            : { ...block, text: "", gapped: true },
+        !whole && again
+          ? { ...block, text: "", gapped: true }
+          : block.index !== index || block.text === ""
+            ? block
+            : whole
+              ? { ...block, text: unshared(block.text) }
+              : { ...block, text: "", gapped: true },
       ),
     },
   };
@@ -495,14 +503,23 @@ function heard(state: HubState, carried: ThreadLiveCarried): void {
     return;
   }
   if (before === undefined && folded === threadLiveNothing) return;
+  const again =
+    before?.pastAtMs !== undefined &&
+    heardAtMs >= before.pastAtMs &&
+    heardAtMs - before.pastAtMs < state.limits.windowMs;
   const { held, whole } =
     event.live === "Text"
-      ? kept(state, folded, event.index)
+      ? kept(state, folded, event.index, again)
       : { held: folded, whole: true };
   const bytes = held.turn === undefined ? 0 : threadLiveHeldBytes(key, held);
   state.heldBytes += bytes - (before?.bytes ?? 0);
   if (held.turn !== undefined)
-    state.sessions.set(key, { held, bytes, heardAtMs });
+    state.sessions.set(key, {
+      held,
+      bytes,
+      heardAtMs,
+      pastAtMs: whole ? before?.pastAtMs : heardAtMs,
+    });
   broadcast(state, key, () =>
     whole
       ? state.parts.framed({

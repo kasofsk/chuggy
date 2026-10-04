@@ -145,7 +145,7 @@ to start without the required ones.
 | `CHUG_API_THREAD_LIVE_SENT_BYTES_MAX` | | how much the open streams may have been written between them since each opened, past which the one written the most is reset and reconnects; nothing tells the process how much of it a reader has read, so this is what bounds what the kernel holds unread for them |
 | `CHUG_API_THREAD_LIVE_SESSIONS_HELD_MAX` | | how many sessions' messages in flight one process holds, past which the session heard from longest ago is dropped |
 | `CHUG_API_THREAD_LIVE_HELD_BYTES_MAX` | | how much memory those messages are counted as holding between them, past which the same session is dropped |
-| `CHUG_API_THREAD_LIVE_SESSION_TEXT_BYTES_MAX` | | how much text one session's message may hold, counted at two bytes a UTF-16 unit, past which the block being written is left gapped; it is what bounds one snapshot |
+| `CHUG_API_THREAD_LIVE_SESSION_TEXT_BYTES_MAX` | | how much text one session's message may hold, counted at two bytes a UTF-16 unit, past which the block being written is left gapped, and every block of the message when it is passed again within one `CHUG_API_THREAD_LIVE_WINDOW_MS` with no turn ended between; it is what bounds one snapshot |
 | `CHUG_API_THREAD_LIVE_SESSION_IDLE_MS` | | how long a session may report nothing before what is held of its message is dropped |
 | `CHUG_API_THREAD_LIVE_WINDOW_MS` | | the span the live events arriving from every session are counted over |
 | `CHUG_API_THREAD_LIVE_WINDOW_EVENTS_MAX` | | how many of them are read in one such span, past which the rest are left unread and everything held is dropped |

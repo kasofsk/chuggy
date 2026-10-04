@@ -39,6 +39,7 @@ import {
   type ThreadLiveHub,
   type ThreadLiveLimits,
   type ThreadLiveNote,
+  type ThreadLiveReport,
 } from "../interpreter/threadLive.ts";
 import { assertNever } from "../domain/assertNever.ts";
 import {
@@ -906,12 +907,78 @@ function streamNoteText(note: ProjectStreamNote): string {
   }
 }
 
-/** The stream hub reports where the rest of this root does: the process's own error stream. */
-const nativeStreamReport: ProjectStreamReport = {
-  noted: (note) => {
-    process.stderr.write(`project stream: ${streamNoteText(note)}\n`);
-  },
-};
+type HubNote = ProjectStreamNote | ThreadLiveNote;
+
+/** The notes a client causes as often as it asks: a stream it is refused, and a stream closed for what its reader did or left undone. */
+const clientNotes: ReadonlySet<HubNote["note"]> = new Set([
+  "Refused",
+  "SlowClientClosed",
+  "PendingClosed",
+  "SentClosed",
+] as const);
+
+/** How long a kind of note must go unheard before its run begins again, and how long after its last line a kind still arriving is written again. */
+export const nativeNoteQuietMs = 60_000;
+
+/** One kind of note: how many there have been, how many in the run it is in, the place in that run of the next one to double it, when the last came, and when one was last written. */
+interface NoteRun {
+  readonly total: number;
+  readonly run: number;
+  readonly next: number;
+  readonly atMs: number;
+  readonly writtenAtMs: number;
+}
+
+/**
+ * Where a hub's notes are written: this process's own error stream, a line
+ * each, where the rest of this root reports. A note of a kind a client causes
+ * is written at the first of a run, at each that doubles the run, and at the
+ * first after the quiet span has passed since its kind was last written, with
+ * how many of its kind there have been in all, so that no client decides how
+ * much this process writes and a kind still arriving says its count each
+ * span; every other kind is paced by this process and written every time.
+ */
+function nativeNotes<Note extends HubNote>(
+  name: string,
+  text: (note: Note) => string,
+): { noted(note: Note): void } {
+  const runs = new Map<string, NoteRun>();
+  return {
+    noted: (note) => {
+      if (!clientNotes.has(note.note)) {
+        process.stderr.write(`${name}: ${text(note)}\n`);
+        return;
+      }
+      const atMs = Date.now();
+      const before = runs.get(note.note);
+      const began =
+        before === undefined || atMs - before.atMs >= nativeNoteQuietMs;
+      const run = began ? 1 : before.run + 1;
+      const next = began ? 1 : before.next;
+      const total = (before?.total ?? 0) + 1;
+      const overdue =
+        before === undefined || atMs - before.writtenAtMs >= nativeNoteQuietMs;
+      const written = run === next || overdue;
+      runs.set(note.note, {
+        total,
+        run,
+        next: run === next ? 2 * next : next,
+        atMs,
+        writtenAtMs: written ? atMs : before.writtenAtMs,
+      });
+      if (written)
+        process.stderr.write(`${name}: ${text(note)} times=${String(total)}\n`);
+    },
+  };
+}
+
+export function nativeStreamReport(): ProjectStreamReport {
+  return nativeNotes("project stream", streamNoteText);
+}
+
+export function nativeThreadLiveReport(): ThreadLiveReport {
+  return nativeNotes("thread live", threadLiveNoteText);
+}
 
 function nativeStreamLimits(): ProjectStreamLimits {
   return {
@@ -939,7 +1006,7 @@ function nativeStreamLimits(): ProjectStreamLimits {
   };
 }
 
-function nativeStreamHub(
+export function nativeStreamHub(
   pool: ReturnType<typeof postgresPool>,
   web: Parameters<typeof projectResourceReader>[0],
 ): ProjectStreamHub {
@@ -950,7 +1017,7 @@ function nativeStreamHub(
     ),
     reader: projectResourceReader(web),
     timers: systemStreamTimers,
-    report: nativeStreamReport,
+    report: nativeStreamReport(),
     limits: nativeStreamLimits(),
   });
 }
@@ -1037,15 +1104,11 @@ export function nativeThreadLiveLimits(): ThreadLiveLimits {
 }
 
 /** The thread live hub over a listening connection of its own, reporting where the project stream's hub does. */
-function nativeThreadLiveHub(): ThreadLiveHub {
+export function nativeThreadLiveHub(): ThreadLiveHub {
   return threadLiveHub({
     lane: postgresSessionLiveLane(requiredEnvironment(databaseUrlVariable)),
     timers: systemStreamTimers,
-    report: {
-      noted: (note) => {
-        process.stderr.write(`thread live: ${threadLiveNoteText(note)}\n`);
-      },
-    },
+    report: nativeThreadLiveReport(),
     framed: threadLiveFramed,
     limits: nativeThreadLiveLimits(),
   });
