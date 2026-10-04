@@ -12,6 +12,9 @@ import {
   runTranscriptBatchBytesMax,
   runTranscriptBatchesMax,
   sessionIdentityCharsMax,
+  sessionLiveEventsMax,
+  sessionLiveMessageCharsMax,
+  sessionLiveTextBytesMax,
   sessionStoreBatchBytesMax,
   sessionStoreBatchesMax,
   sessionStorePageBatchesMax,
@@ -30,6 +33,7 @@ import {
   sessionReferenceSchema,
   sessionTurnAnswerSchema,
   sessionTurnFailureSchema,
+  sessionTurnLiveSchema,
   type SessionPlaneRouteName,
 } from "../../contract/sessionPlane.ts";
 import { resultManifestTextCharsMax } from "../../contract/workerDocuments.ts";
@@ -56,6 +60,7 @@ import {
   type SessionAttemptHoldPort,
   type SessionAttemptLossPort,
   type SessionHeartbeatPort,
+  type SessionLivePublishPort,
   type SessionPlaneAuthority,
   type SessionPlaneIdentity,
   type SessionReferenceBound,
@@ -253,6 +258,15 @@ const sessionTurnAnswerBytesMax =
   planeJsonObjectBytesMax(sessionTurnModelCharsMax) +
   sessionTurnToolsMax * planeJsonTextBytesMax(sessionTurnToolNameCharsMax);
 
+/** One post of live events: its turn, and each event naming its message and carrying a text that holds no more characters than it may weigh. */
+const sessionTurnLiveBytesMax =
+  planeJsonObjectBytesMax(sessionIdentityCharsMax) +
+  sessionLiveEventsMax *
+    planeJsonObjectBytesMax(
+      sessionLiveMessageCharsMax,
+      sessionLiveTextBytesMax,
+    );
+
 /** Every session route as it is served. */
 export const sessionPlaneServed = {
   facts: { caller: "Session", ...workerPlaneBodyless },
@@ -272,6 +286,11 @@ export const sessionPlaneServed = {
     caller: "Session",
     stored: false,
     bodyBytesMax: planeJsonObjectBytesMax(sessionIdentityCharsMax),
+  },
+  turnLive: {
+    caller: "Session",
+    stored: false,
+    bodyBytesMax: sessionTurnLiveBytesMax,
   },
   held: { caller: "Session", ...workerPlaneBodyless },
   storeStreams: { caller: "Session", ...workerPlaneBodyless },
@@ -418,6 +437,7 @@ export interface SessionPlaneService {
   readonly references: SessionReferencePort;
   readonly turns: SessionTurnClaimPort;
   readonly settlements: SessionTurnSettlePort;
+  readonly live: SessionLivePublishPort;
   readonly holds: SessionAttemptHoldPort;
   readonly losses: SessionAttemptLossPort;
   readonly records: SessionStoreRecordPort;
@@ -1199,6 +1219,37 @@ function sessionSettleRoutes(
   });
 }
 
+/** How long a runner leaves a plane that could not publish before offering its next live events. */
+const sessionLiveRetryAfterSeconds = 1;
+
+/**
+ * What a session's runner reports of a turn in flight, published under the
+ * caller's own partition and session. The turn is the caller's to name: a
+ * session can mislabel only its own stream, to a reader showing another turn.
+ */
+function sessionTurnLiveRoute(
+  register: SessionRegistrar,
+  sessions: SessionPlaneService,
+): void {
+  register("turnLive", async (request, reply, caller) => {
+    const offered = sessionTurnLiveSchema.safeParse(request.body);
+    if (!offered.success) return reply.code(400).send({ action: "stop" });
+    const published = await sessions.live.publish({
+      partition: caller.identity.partition,
+      session: caller.identity.session,
+      turn: asSessionTurnId(offered.data.turn),
+      events: offered.data.events,
+    });
+    return published === "Published"
+      ? reply.code(204).send()
+      : workerPlaneRefused(reply, {
+          status: 503,
+          body: { action: "retry" },
+          retryAfterSeconds: sessionLiveRetryAfterSeconds,
+        });
+  });
+}
+
 /** A runner's report that its session's container ended, which loses the attempt as the observation of a pod's end would. */
 function sessionEndedRoute(
   register: SessionRegistrar,
@@ -1456,6 +1507,7 @@ export function createWorkerPlaneApp(
     sessionReferenceRoute(registerSession, sessions);
     sessionTurnRoute(registerSession, sessions);
     sessionSettleRoutes(registerSession, sessions);
+    sessionTurnLiveRoute(registerSession, sessions);
     sessionEndedRoute(registerSession, sessions);
     sessionStoreWriteRoute(registerSession, sessions);
     sessionStoreReadRoute(registerSession, sessions);

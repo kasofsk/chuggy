@@ -48,6 +48,7 @@ import { inertWorkerPlane } from "../adapters/workerPlaneFixtures.ts";
 import {
   sessionRigAttempt,
   sessionRigOpen,
+  sessionRigPlaneService,
   sessionRigProject,
   sessionRigTurn,
   sessionRigTurnState,
@@ -110,25 +111,13 @@ async function provisionedSession(
 function resumePlane(rig: SessionRig): FastifyInstance {
   return createWorkerPlaneApp({
     ...inertWorkerPlane(sessionStoreBatchBytesMax),
-    sessions: {
-      authority: rig.plane,
-      heartbeats: rig.plane,
-      heartbeatLeaseSecs: 300,
-      references: rig.plane,
-      turns: rig.plane,
-      settlements: rig.plane,
-      holds: rig.plane,
-      losses: rig.plane,
-      records: rig.plane,
-      queries: rig.plane,
-      store: artifactStore({
+    sessions: sessionRigPlaneService(
+      rig,
+      artifactStore({
         root: artifactRoot,
         writeBytesMax: sessionStoreBatchBytesMax,
       }),
-      turnPollIntervalMs: 10,
-      turnPollSecsMax: 1,
-      pollsMax: 8,
-    },
+    ),
   });
 }
 

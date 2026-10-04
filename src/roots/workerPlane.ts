@@ -21,6 +21,7 @@ import { postgresForgeInstallations } from "../adapters/postgres/forgeInstallati
 import { postgresPool } from "../adapters/postgres/pool.ts";
 import { postgresProjectRepositoryBinding } from "../adapters/postgres/repositoryConfiguration.ts";
 import { workerPlaneRole } from "../adapters/postgres/schema.ts";
+import { postgresSessionLivePublisher } from "../adapters/postgres/sessionLive.ts";
 import { postgresSessionPlane } from "../adapters/postgres/sessionPlane.ts";
 import {
   postgresWorkerPlaneAuthority,
@@ -73,6 +74,13 @@ function planeSessions(
     references: sessions,
     turns: sessions,
     settlements: sessions,
+    live: postgresSessionLivePublisher(pool, {
+      dropped: (droppedTotal) => {
+        process.stderr.write(
+          `worker plane: live events too heavy to publish: ${String(droppedTotal)}\n`,
+        );
+      },
+    }),
     holds: sessions,
     losses: sessions,
     records: sessions,

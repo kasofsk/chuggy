@@ -95,6 +95,7 @@ import {
   type RunTurnsRecorded,
 } from "../../src/interpreter/runEvidence.ts";
 import type {
+  SessionLivePublished,
   SessionPlaneIdentity,
   SessionReferenceBound,
   SessionStoreStreamRow,
@@ -820,6 +821,10 @@ const sessionPlaneCalls: Readonly<
     headers: json,
     payload: { turn: "turn", failure: "AgentFailed" },
   },
+  turnLive: {
+    headers: json,
+    payload: { turn: "turn", events: [{ live: "End" }] },
+  },
   held: { headers: json, payload: {} },
   storeStreams: {},
   storeBatch: {
@@ -861,6 +866,18 @@ const sessionPlaneRequests: Readonly<
     ],
   },
   turnFailure: { schema: "sessionTurnFailureSchema", bodies: [] },
+  turnLive: {
+    schema: "sessionTurnLiveSchema",
+    bodies: [
+      {
+        turn: "turn",
+        events: [
+          { live: "Text", message: "message", index: 0, offset: 0, text: "a" },
+          { live: "End" },
+        ],
+      },
+    ],
+  },
   held: "Unparsed",
   storeStreams: "Unparsed",
   storeBatch: "Unparsed",
@@ -899,6 +916,11 @@ const turnsFailed: Readonly<Record<SessionTurnFailed, true>> = {
   AlreadyFailed: true,
   Conflict: true,
   Fenced: true,
+};
+
+const livePublished: Readonly<Record<SessionLivePublished, true>> = {
+  Published: true,
+  Unavailable: true,
 };
 
 const batchRefusals: Readonly<
@@ -1045,6 +1067,16 @@ const sessionPlaneCases: Readonly<
           answer: () => Promise.resolve("Answered"),
           fail: () => Promise.resolve(failed),
         },
+      }),
+    })),
+  ],
+  turnLive: [
+    ...sessionPlaneStrangers,
+    workerPlaneMalformed,
+    ...keysOf(livePublished).map((published) => ({
+      name: `a publish answering ${published}`,
+      service: sessionPorts({
+        live: { publish: () => Promise.resolve(published) },
       }),
     })),
   ],

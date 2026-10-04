@@ -32,6 +32,7 @@ import {
   type SessionKind,
   type SessionTurnId,
 } from "../../src/interpreter/agentSession.ts";
+import type { SessionPlaneService } from "../../src/adapters/http/workerPlaneServer.ts";
 import type { AgentSessionStore } from "../../src/interpreter/agentSession.ts";
 import { sessionBearerPrefix } from "../../src/contract/sessionPlane.ts";
 import {
@@ -398,4 +399,31 @@ export async function projectAccessProvision(
     const ran = failure as { code?: number; stderr?: string };
     return { code: ran.code ?? 1, output: ran.stderr ?? "" };
   }
+}
+
+/**
+ * The session plane a pod talks to: every port over the plane role's own
+ * store, the batch store a case supplies, and live events published to nobody.
+ */
+export function sessionRigPlaneService(
+  rig: SessionRig,
+  store: SessionPlaneService["store"],
+): SessionPlaneService {
+  return {
+    authority: rig.plane,
+    heartbeats: rig.plane,
+    heartbeatLeaseSecs: 300,
+    references: rig.plane,
+    turns: rig.plane,
+    settlements: rig.plane,
+    live: { publish: () => Promise.resolve("Published") },
+    holds: rig.plane,
+    losses: rig.plane,
+    records: rig.plane,
+    queries: rig.plane,
+    store,
+    turnPollIntervalMs: 10,
+    turnPollSecsMax: 1,
+    pollsMax: 8,
+  };
 }
