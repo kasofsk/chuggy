@@ -155,6 +155,9 @@ export function sessionConversationTurns(
     ...("input" in turn ? { input: turn.input } : {}),
     state: turn.state,
     ...(turn.failure === undefined ? {} : { failure: turn.failure }),
+    ...("result" in turn && turn.result !== undefined
+      ? { result: turn.result }
+      : {}),
     ...(turn.tokens === undefined ? {} : { tokens: turn.tokens }),
     ...(turn.costMicros === undefined ? {} : { costMicros: turn.costMicros }),
     ...(turn.durationMs === undefined ? {} : { durationMs: turn.durationMs }),

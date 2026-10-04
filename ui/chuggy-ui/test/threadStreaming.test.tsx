@@ -139,9 +139,10 @@ const nothingHeld = snapshot({ blocks: [] });
 function scripted(
   thread: ThreadResponse,
   liveOpenings: readonly StreamOpening[],
+  first: readonly StoreEntry[] = earlier,
 ): Script {
   const server = streamServer([held], "token", liveOpenings);
-  const batches: (readonly StoreEntry[])[] = [earlier];
+  const batches: (readonly StoreEntry[])[] = [first];
   const waiting: (() => void)[] = [];
   const gate: Gate = {
     held: false,
@@ -766,6 +767,282 @@ test("a turn put back to wait after its attempt ended is drawn as waiting again"
   script.draw(threadAt("Claimed", 1));
   await settled();
   expect(shown(script.container)).toMatchObject({ engine: true });
+});
+
+const oneOpening: readonly StreamOpening[] = [
+  { status: 200, chunks: [nothingHeld], hold: true },
+];
+
+const twoOpenings: readonly StreamOpening[] = [...oneOpening, ...oneOpening];
+
+/** The turn taken and its ask stored, with nothing written yet. */
+async function askStored(script: Script): Promise<void> {
+  await settled();
+  script.batches.push([entry("uuid-c", "user", { content: asked })]);
+  script.draw(threadAt("Claimed", 2));
+  await settled();
+}
+
+/** Every answer on the page: its text, and the word under it. */
+function halves(
+  container: HTMLElement,
+): readonly (readonly [string | undefined, string | undefined])[] {
+  return Array.from(
+    container.querySelectorAll(".conversation-answer"),
+    (half) =>
+      [
+        half.querySelector(".run-report-bare")?.textContent ?? undefined,
+        half.querySelector(
+          '.conversation-meta [role="status"]:not(.visually-hidden)',
+        )?.textContent ?? undefined,
+      ] as const,
+  );
+}
+
+/** What the store comes to hold of a message that went by while the stream
+ * was down: the thought heard before the cut, and a tool called and answered. */
+const missed: readonly StoreEntry[] = [
+  entry("uuid-d", "assistant", {
+    id: "msg_a",
+    content: [{ type: "thinking", thinking: "", signature: "sig" }],
+  }),
+  entry("uuid-f", "assistant", {
+    id: "msg_b",
+    content: [
+      { type: "tool_use", id: "toolu_1", name: "Read", input: { path: "41" } },
+    ],
+  }),
+  entry("uuid-g", "user", {
+    content: [
+      { type: "tool_result", tool_use_id: "toolu_1", content: "waits on 40" },
+    ],
+  }),
+];
+
+/** Every answer the newest exchange is drawn with from here on, in order. */
+function answersWatched(container: HTMLElement): {
+  readonly seen: readonly string[];
+  readonly stop: () => void;
+} {
+  const seen: string[] = [];
+  const watching = new MutationObserver(() => {
+    const now = shown(container).answer ?? "<none>";
+    if (seen.at(-1) !== now) seen.push(now);
+  });
+  watching.observe(container, {
+    childList: true,
+    subtree: true,
+    characterData: true,
+  });
+  return {
+    seen,
+    stop: () => {
+      watching.disconnect();
+    },
+  };
+}
+
+test("a stream cut while a message went by unheard: the answer being written stays when the store catches up with what was missed", async () => {
+  const script = scripted(threadAt("Claimed", 1), twoOpenings);
+  await askStored(script);
+  script.server.pushLive(began("msg_a", 0, "Thinking"));
+  await until(script.container, { card: "Thinking" });
+  script.server.cutLive();
+  await waitFor(
+    () => {
+      expect(script.server.liveSeen).toHaveLength(2);
+    },
+    { timeout: streamReopenDelayMsMin * 3 },
+  );
+  await settled();
+  script.server.pushLive(began("msg_c", 0, "Text"));
+  script.server.pushLive(wrote("msg_c", 0, 0, "It is blo"));
+  await until(script.container, { answer: "It is blo", writing: true });
+  const watched = answersWatched(script.container);
+  script.batches.push(missed);
+  script.draw(threadAt("Claimed", 3));
+  await until(script.container, { card: "Thought · 1 tool" });
+  script.server.pushLive(wrote("msg_c", 0, 9, "cked by 40."));
+  await until(script.container, { answer: "It is blocked by 40." });
+  script.batches.push([
+    entry("uuid-h", "assistant", {
+      id: "msg_c",
+      content: [{ type: "text", text: "It is blocked by 40." }],
+    }),
+  ]);
+  script.draw(threadAt("Claimed", 4));
+  await settled();
+  await settled();
+  watched.stop();
+  expect(watched.seen).not.toContain("<none>");
+  expect(shown(script.container).answer).toBe("It is blocked by 40.");
+});
+
+test("a message abandoned part way leaves once the transcript holds its replacement, which was never heard", async () => {
+  const script = scripted(threadAt("Claimed", 1), oneOpening);
+  await askStored(script);
+  script.server.pushLive(began("msg_x", 0, "Text"));
+  script.server.pushLive(wrote("msg_x", 0, 0, "Hello, I will"));
+  await until(script.container, { answer: "Hello, I will" });
+  script.batches.push([
+    entry("uuid-y", "assistant", {
+      id: "msg_y",
+      content: [{ type: "text", text: "Hello, I will do it." }],
+    }),
+  ]);
+  script.draw(threadAt("Claimed", 3));
+  await until(script.container, { answer: "Hello, I will do it." });
+});
+
+test("a message first heard while its ask's page was being read leaves for its replacement all the same", async () => {
+  const script = scripted(threadAt("Claimed", 1), oneOpening);
+  await settled();
+  script.gate.held = true;
+  script.batches.push([entry("uuid-c", "user", { content: asked })]);
+  script.draw(threadAt("Claimed", 2));
+  await settled();
+  script.server.pushLive(began("msg_x", 0, "Text"));
+  script.server.pushLive(wrote("msg_x", 0, 0, "Hello, I will"));
+  await until(script.container, { answer: "Hello, I will" });
+  script.gate.release();
+  await settled();
+  await settled();
+  script.batches.push([
+    entry("uuid-y", "assistant", {
+      id: "msg_y",
+      content: [{ type: "text", text: "Hello, I will do it." }],
+    }),
+  ]);
+  script.draw(threadAt("Claimed", 3));
+  await until(script.container, { answer: "Hello, I will do it." });
+  script.server.pushLive(began("msg_z", 0, "Thinking"));
+  await until(script.container, { card: "Thinking", writing: false });
+  expect(shown(script.container).answer).toBe("Hello, I will do it.");
+});
+
+test("a message heard while a page is being read stays when that page lands holding messages stored before it", async () => {
+  const script = scripted(threadAt("Claimed", 1), oneOpening);
+  await settled();
+  script.gate.held = true;
+  script.batches.push([entry("uuid-c", "user", { content: asked }), ...missed]);
+  script.draw(threadAt("Claimed", 2));
+  await settled();
+  script.server.pushLive(began("msg_c", 0, "Text"));
+  script.server.pushLive(wrote("msg_c", 0, 0, "It is blo"));
+  await until(script.container, { answer: "It is blo" });
+  const watched = answersWatched(script.container);
+  script.gate.release();
+  await until(script.container, { card: "Thought · 1 tool" });
+  await settled();
+  watched.stop();
+  expect(watched.seen).not.toContain("<none>");
+  expect(shown(script.container).answer).toBe("It is blo");
+});
+
+test("a turn put back to wait part way through its text, then taken again, is drawn with the next attempt's text alone", async () => {
+  const script = scripted(threadAt("Claimed", 1), oneOpening);
+  await askStored(script);
+  script.server.pushLive(began("msg_a", 0, "Text"));
+  script.server.pushLive(wrote("msg_a", 0, 0, "It is blo"));
+  await until(script.container, { answer: "It is blo" });
+  script.server.pushLive(live({ live: "End" }));
+  script.draw(threadAt("Queued", 2));
+  await until(script.container, { answer: undefined, standing: "Queued" });
+  script.draw(threadAt("Claimed", 2));
+  await settled();
+  script.server.pushLive(began("msg_b", 0, "Text"));
+  script.server.pushLive(wrote("msg_b", 0, 0, "It is blocked by 40."));
+  await until(script.container, { answer: "It is blocked by 40." });
+});
+
+const exhausted: ThreadTurnResponse = {
+  ...turnAt("Failed"),
+  failure: "AgentTurnsExhausted",
+};
+
+function sentAgain(state: ThreadTurnResponse["state"]): ThreadTurnResponse {
+  return { ...turnAt(state), turn: "turn-3", ordinal: 3 };
+}
+
+test("a turn that ran and failed keeps its stored words while the same thing is sent again, taken, written and stored", async () => {
+  const script = scripted(threadAt("Claimed", 1), twoOpenings);
+  await settled();
+  script.batches.push([
+    entry("uuid-c", "user", { content: asked }),
+    entry("uuid-e", "assistant", {
+      id: "msg_a",
+      content: [{ type: "text", text: "Half an answer" }],
+    }),
+  ]);
+  const failed = ["Half an answer", "Failed"];
+  const of = (batches: number, state: ThreadTurnResponse["state"]) =>
+    threadBody({ batches, turns: [before, exhausted, sentAgain(state)] });
+  script.draw(of(2, "Queued"));
+  await waitFor(() => {
+    expect(halves(script.container).slice(1)).toEqual([
+      failed,
+      [undefined, "Queued"],
+    ]);
+  });
+  script.draw(of(2, "Claimed"));
+  await waitFor(() => {
+    expect(halves(script.container).slice(1)).toEqual([
+      failed,
+      [undefined, "Starting"],
+    ]);
+  });
+  const retry = { message: "msg_c", index: 0 };
+  script.server.pushLive(
+    liveOf("turn-3", { live: "Block", ...retry, kind: "Text" }),
+  );
+  script.server.pushLive(
+    liveOf("turn-3", { live: "Text", ...retry, offset: 0, text: "Again." }),
+  );
+  const written = [failed, ["Again.", "Working"]];
+  await waitFor(() => {
+    expect(halves(script.container).slice(1)).toEqual(written);
+  });
+  script.batches.push([entry("uuid-x", "user", { content: asked })]);
+  script.draw(of(3, "Claimed"));
+  await settled();
+  await settled();
+  expect(halves(script.container).slice(1)).toEqual(written);
+});
+
+test("the turn being answered keeps its own stored work when an older answered turn asked the same and its exchange is not on the page", async () => {
+  const old = threadTurn({
+    turn: "turn-1",
+    ordinal: 1,
+    input: asked,
+    result: "Old answer.",
+  });
+  const of = (batches: number): ThreadResponse =>
+    threadBody({ batches, turns: [old, turnAt("Claimed")] });
+  const script = scripted(of(1), oneOpening, []);
+  await settled();
+  script.batches.push(toolRunning);
+  script.draw(of(2));
+  await waitFor(() => {
+    expect(halves(script.container)).toEqual([
+      ["Running the gates.", "Working"],
+    ]);
+  });
+  script.server.pushLive(began("msg_b", 0, "Text"));
+  script.server.pushLive(wrote("msg_b", 0, 0, "It is blocked by 40."));
+  const written = [["It is blocked by 40.", "Working"]];
+  await waitFor(() => {
+    expect(halves(script.container)).toEqual(written);
+  });
+  script.batches.push([
+    entry("uuid-h", "assistant", {
+      id: "msg_b",
+      content: [{ type: "text", text: "It is blocked by 40." }],
+    }),
+  ]);
+  script.draw(of(3));
+  await settled();
+  await settled();
+  expect(halves(script.container)).toEqual(written);
 });
 
 /** Frames asked for and not yet painted, each run only when a case says. */
