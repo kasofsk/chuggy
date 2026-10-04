@@ -13,15 +13,16 @@ import { afterEach, describe, expect, test } from "vitest";
 import type { ReactNode } from "react";
 
 import {
+  markdownDepthMax,
   markdownMarkClassName,
   markdownTableColumnsMax,
   markdownTableRowsMax,
 } from "../app/browser/ui/MarkdownBlocks.tsx";
+import { markdownCodeLanguageCharsMax } from "../app/browser/ui/MarkdownCode.tsx";
 import {
   MarkdownLine,
   MarkdownReport,
 } from "../app/browser/ui/MarkdownReport.tsx";
-import { markdownMarksMax } from "../app/browser/ui/markdownTree.ts";
 import {
   corpusAnswers,
   corpusComparison,
@@ -293,12 +294,16 @@ describe("one of everything", () => {
 });
 
 describe("one of everything, in its lists and after them", () => {
-  test("a link to nowhere a member could be sent is its words and no link", () => {
+  test("a link to nowhere a member could be sent is its words, where it pointed as code, and no link", () => {
     const line = all(drawn(corpusEverything), ":scope > ul > li")[2];
     expect(line?.querySelectorAll("a")).toHaveLength(0);
     expect(line?.textContent).toBe(
-      "three, with a relative link and a script that are not links",
+      "three, with a relative link ./console/BRIEF.md and a script javascript:alert(1) that are not links",
     );
+    expect(words(all(line ?? document.body, "code"))).toEqual([
+      "./console/BRIEF.md",
+      "javascript:alert(1)",
+    ]);
   });
 
   test("a numbered list starts at its number, a quote holds a list, and a rule is drawn", () => {
@@ -331,27 +336,46 @@ describe("what a wall of pipes is held to", () => {
     ]);
   });
 
-  test("a table past the column or the row bound is cut rather than drawn in full", () => {
-    const wide = markdownTableColumnsMax + 8;
-    const long = markdownTableRowsMax + 8;
-    const root = drawn(
-      [
-        cells(wide, "h"),
-        cells(wide, "-"),
-        ...Array.from({ length: long }, () => cells(wide, "c")),
-      ].join("\n"),
-    );
-    expect(all(root, "thead th")).toHaveLength(markdownTableColumnsMax);
-    expect(all(root, "tbody > tr")).toHaveLength(markdownTableRowsMax);
-    expect(all(root, "tbody > tr:last-child > td")).toHaveLength(
-      markdownTableColumnsMax,
-    );
+  function table(columns: number, rows: number): string {
+    return [
+      cells(columns, "h"),
+      cells(columns, "-"),
+      ...Array.from({ length: rows }, () => cells(columns, "c")),
+    ].join("\n");
+  }
+
+  test("a table past the column bound is cut to it in every row", () => {
+    expect(markdownTableColumnsMax).toBe(32);
+    const root = drawn(table(40, 3));
+    expect(all(root, "thead th")).toHaveLength(32);
+    expect(all(root, "tbody > tr")).toHaveLength(3);
+    for (const row of all(root, "tbody > tr"))
+      expect(row.children).toHaveLength(32);
+  });
+
+  test("a table past the row bound is cut to it", () => {
+    expect(markdownTableRowsMax).toBe(100);
+    const root = drawn(table(3, 120));
+    expect(all(root, "thead th")).toHaveLength(3);
+    expect(all(root, "tbody > tr")).toHaveLength(100);
+  });
+
+  test("a table of more cells than one call may cost is its characters, a line to a row", () => {
+    const text = table(40, 108);
+    const root = drawn(text);
+    expect(all(root, "table")).toHaveLength(0);
+    expect(tags(root.children)).toEqual(["p", "p"]);
+    expect(all(root, "br")).toHaveLength(108);
+    expect(
+      Array.from(root.children, (block) => block.textContent).join(""),
+    ).toBe(text.replaceAll("\n", ""));
   });
 
   test("a text of marks past what is read is its characters, in one paragraph", () => {
-    const hostile = "*a ".repeat(markdownMarksMax + 8);
+    const hostile = `${"a* ".repeat(4_000)}and **bold**`;
     const root = drawn(hostile);
     expect(tags(root.children)).toEqual(["p"]);
+    expect(root.querySelectorAll("strong, em")).toHaveLength(0);
     expect(root.textContent).toBe(hostile);
   });
 });
@@ -505,13 +529,194 @@ describe("a line of prose with its marks", () => {
     expect(line?.textContent).toBe("Filed #15 and moved on.");
   });
 
-  test("that is not one paragraph is the line as it was written", () => {
+  test.each([
+    "## Summary Filed [[ticket:15]] and **moved** `on`.",
+    "- Filed [[ticket:15]] and **moved** `on`.",
+    "1. Filed [[ticket:15]] and **moved** `on`.",
+    "> Filed [[ticket:15]] and **moved** `on`.",
+    "    Filed [[ticket:15]] and **moved** `on`.",
+    "| Filed [[ticket:15]] | and **moved** `on`.\n| - | - |",
+  ])(
+    "is its words, marks and references whatever it opens with: %j",
+    (note) => {
+      const view = render(
+        <p>
+          <MarkdownLine text={note} />
+        </p>,
+      );
+      const line = view.container.firstElementChild;
+      expect(words(all(line ?? view.container, ".num"))).toEqual(["#15"]);
+      expect(tags(line?.children ?? [])).toEqual(["span", "strong", "code"]);
+      expect(line?.textContent).toContain("Filed #15");
+      expect(line?.textContent).toContain("and moved on.");
+    },
+  );
+
+  test("keeps what it opens with as the characters they are", () => {
     const view = render(
       <p>
-        <MarkdownLine text="- one **two**" />
+        <MarkdownLine text={"## Summary\n\n- one **two**\r\n\t> three"} />
+      </p>,
+    );
+    expect(view.container.textContent).toBe("## Summary - one two > three");
+    expect(tags(view.container.firstElementChild?.children ?? [])).toEqual([
+      "strong",
+    ]);
+  });
+
+  test("past what a line may cost is the line as it was written", () => {
+    const note = `${"a* ".repeat(4_000)}and **bold**`;
+    const view = render(
+      <p>
+        <MarkdownLine text={note} />
       </p>,
     );
     expect(view.container.firstElementChild?.childElementCount).toBe(0);
-    expect(view.container.textContent).toBe("- one **two**");
+    expect(view.container.textContent).toBe(note);
+  });
+});
+
+/** How many of an element's ancestors, and itself, match a selector. */
+function nested(element: Element, selector: string): number {
+  let count = 0;
+  for (let at: Element | null = element; at !== null; at = at.parentElement)
+    if (at.matches(selector)) count += 1;
+  return count;
+}
+
+function deepest(root: Element, selector: string): number {
+  return Math.max(
+    0,
+    ...all(root, selector).map((element) => nested(element, selector)),
+  );
+}
+
+describe("a text nested past what is drawn", () => {
+  test("lists indented one under another are lists to the bound, and their words below it", () => {
+    expect(markdownDepthMax).toBe(16);
+    const text = Array.from(
+      { length: 40 },
+      (_unused, at) => `${"  ".repeat(at)}- item ${String(at)}.`,
+    ).join("\n");
+    for (const writing of [false, true]) {
+      const root = drawn(text, writing);
+      expect(deepest(root, "ul")).toBe(9);
+      for (let at = 0; at < 40; at += 1)
+        expect(root.textContent).toContain(`item ${String(at)}.`);
+      cleanup();
+    }
+  });
+
+  test("marks held one inside another are marks to the bound, and their words below it", () => {
+    const text = `${"*a **b ".repeat(11)}c${"***".repeat(11)}`;
+    for (const writing of [false, true]) {
+      const root = drawn(text, writing);
+      expect(deepest(root, "em, strong")).toBe(17);
+      expect(root.textContent).toBe(`${"a b ".repeat(11)}c`);
+      cleanup();
+    }
+  });
+
+  test.each([
+    `${">".repeat(3_000)} a`,
+    `${"- ".repeat(2_000)}a`,
+    `${"[".repeat(3_000)}a${"](https://a.test)".repeat(3_000)}`,
+    `${"~~a ".repeat(200)}b${" ~~".repeat(200)}`,
+  ])("a line of more marks than any text has is drawn, shallow: %#", (text) => {
+    for (const writing of [false, true]) {
+      const root = drawn(text, writing);
+      expect(deepest(root, "*")).toBeLessThan(40);
+      expect(root.textContent.length).toBeGreaterThan(0);
+      cleanup();
+    }
+  });
+});
+
+describe("a block of code's language", () => {
+  test("is said no longer than the bar has room for", () => {
+    expect(markdownCodeLanguageCharsMax).toBe(24);
+    const root = drawn(`\`\`\`${"quint".repeat(8)}\nval a = 1\n\`\`\``);
+    expect(languages(root)).toEqual(["quintquintquintquintquin"]);
+    expect(root.querySelector("pre > code")?.textContent).toBe("val a = 1");
+  });
+});
+
+describe("a text written a character at a time", () => {
+  function written(text: string, each: (root: Element) => void): Element {
+    const view = render(<MarkdownReport text="" bare writing />);
+    for (let length = 1; length <= text.length; length += 1) {
+      view.rerender(
+        <MarkdownReport text={text.slice(0, length)} bare writing />,
+      );
+      each(view.container.firstElementChild ?? view.container);
+    }
+    return view.container;
+  }
+
+  test.each([
+    "| Option | **Verdict** |\n| --- | --- |\n| A | **take it** |\n",
+    "| `code` | *why* | ~~not~~ | [link](https://a.test) |\n| - | - | - | - |\n| 1 | 2 | 3 | 4 |",
+    "| _name_ | \\| piped | `a\\|b` |\n|:-|-:|:-:|\n| x | y | z |",
+  ])(
+    "a table is a table from its header's first cell on, whatever a cell opens with: %#",
+    (text) => {
+      const seen = new Set<string>();
+      written(text, (root) => {
+        const first = root.firstElementChild;
+        if (first !== null && !first.matches("div.run-report-table"))
+          seen.add(`<${first.tagName.toLowerCase()}> ${first.textContent}`);
+      });
+      expect([...seen]).toEqual([]);
+    },
+  );
+
+  test.each(["\r", "\r\n", "\n"])(
+    "a heading ended by %j is drawn once, and what follows it under it",
+    (ending) => {
+      const text = `# Title${ending}The answer goes on${ending}and on, a word at a time.`;
+      const container = written(text, (root) => {
+        expect(all(root, "h1").length).toBeLessThanOrEqual(1);
+      });
+      expect(words(all(container, "h1"))).toEqual(["Title"]);
+      expect(tags(container.firstElementChild?.children ?? [])).toEqual([
+        "h1",
+        "p",
+      ]);
+    },
+  );
+
+  test("code ended by a lone carriage return is not what follows it", () => {
+    const text = "```ts\rconst a = 1;\r```\rAnd then **words**.\rMore.";
+    const container = written(text, () => undefined);
+    expect(words(all(container, "pre > code"))).toEqual(["const a = 1;"]);
+    expect(words(all(container, "strong"))).toEqual(["words"]);
+  });
+});
+
+describe("a list longer than one call may cost", () => {
+  test("is drawn as lists one under another, every item an item", () => {
+    const root = drawn(
+      "- an item of the list, with **words** in it\n".repeat(600),
+    );
+    expect(all(root, "ul").length).toBeGreaterThan(1);
+    expect(tags(root.children).every((tag) => tag === "ul")).toBe(true);
+    expect(all(root, "li")).toHaveLength(600);
+    expect(all(root, "li strong")).toHaveLength(600);
+  });
+
+  test("numbered, goes on from the number each part of it begins with", () => {
+    const text = Array.from(
+      { length: 600 },
+      (_unused, at) => `${String(at + 1)}. an item of the list, with words\n`,
+    ).join("");
+    const root = drawn(text);
+    const lists = all(root, "ol");
+    expect(lists.length).toBeGreaterThan(1);
+    let items = 0;
+    for (const list of lists) {
+      expect(list.getAttribute("start")).toBe(String(items + 1));
+      items += list.children.length;
+    }
+    expect(items).toBe(600);
   });
 });

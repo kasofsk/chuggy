@@ -11,7 +11,10 @@
 
 import { describe, expect, test } from "vitest";
 
-import { markdownBlocksParsed } from "../app/browser/ui/markdownTree.ts";
+import {
+  markdownBlocksParsed,
+  markdownLinkFollowed,
+} from "../app/browser/ui/markdownTree.ts";
 import {
   corpusEverything,
   corpusHowTo,
@@ -104,6 +107,51 @@ describe("an underscore", () => {
   });
 });
 
+describe("where a link may send a member", () => {
+  test("is followed only where its address opens with one of three schemes", () => {
+    for (const address of [
+      "https://example.test/a",
+      "http://example.test/a",
+      "HTTP://EXAMPLE.TEST",
+      "hTtPs://example.test",
+      "mailto:someone@example.test",
+      "MAILTO:someone@example.test",
+    ])
+      expect(markdownLinkFollowed(address), address).toBe(true);
+    for (const address of [
+      "javascript:alert(1)//https://a.test",
+      "javascript:alert(1)//mailto:a@b.test",
+      "javascript://https://a.test/%0aalert(1)",
+      "data:text/html,https://a.test",
+      "ftp://example.test/a",
+      "chrome://settings",
+      "file:///etc/passwd",
+      "x-https://a.test",
+      "xhttps://a.test",
+      "https:a.test",
+      "https:/a.test",
+      "http//a.test",
+      "mailto",
+      "//a.test/b",
+      " https://a.test",
+      "\thttps://a.test",
+      "\nhttps://a.test",
+      "",
+    ])
+      expect(markdownLinkFollowed(address), address).toBe(false);
+  });
+
+  test("with a followed address written inside another is not one", () => {
+    expect(read("[x](javascript:alert(1)//https://a.test)")).toBe(
+      "<paragraph>x <inlineCode>javascript:alert(1)//https://a.test</inlineCode></paragraph>",
+    );
+    for (const address of ["ftp://a.test/b", "chrome://settings"])
+      expect(read(`[x](${address}) and <${address}>`)).toBe(
+        `<paragraph>x <inlineCode>${address}</inlineCode> and <${address}></paragraph>`,
+      );
+  });
+});
+
 describe("a link", () => {
   test("to somewhere a member could be sent is a link", () => {
     for (const address of [
@@ -117,7 +165,7 @@ describe("a link", () => {
       );
   });
 
-  test("to anywhere else is the words it wore", () => {
+  test("to anywhere else is the words it wore, and then where it pointed as code", () => {
     for (const address of [
       "javascript:alert(1)",
       "./console/BRIEF.md",
@@ -128,8 +176,29 @@ describe("a link", () => {
       " javascript:alert(1)",
     ])
       expect(read(`see [the **brief**](${address}) first`)).toBe(
-        "<paragraph>see the <strong>brief</strong> first</paragraph>",
+        `<paragraph>see the <strong>brief</strong> <inlineCode>${address.trim()}</inlineCode> first</paragraph>`,
       );
+  });
+
+  test("whose words are where it pointed says it once", () => {
+    expect(read("Open [./console/BRIEF.md](./console/BRIEF.md) first")).toBe(
+      "<paragraph>Open ./console/BRIEF.md first</paragraph>",
+    );
+    expect(read("Open [the brief]() first")).toBe(
+      "<paragraph>Open the brief first</paragraph>",
+    );
+  });
+
+  test("holds no link: a picture or a link inside one is its words", () => {
+    expect(read("[![a chart](https://i.test/x.png)](https://h.test/)")).toBe(
+      "<paragraph><link https://h.test/>a chart</link></paragraph>",
+    );
+    expect(read("[see <https://a.test/b>](https://c.test/d)")).toBe(
+      "<paragraph><link https://c.test/d>see https://a.test/b</link></paragraph>",
+    );
+    expect(read("[![a chart](./x.png)](./page.md)")).toBe(
+      "<paragraph>a chart <inlineCode>./page.md</inlineCode></paragraph>",
+    );
   });
 
   test("written between angle brackets to nowhere is what was written", () => {
@@ -146,7 +215,7 @@ describe("a link", () => {
       "<paragraph><link https://example.test/a.png>a chart</link> above</paragraph>",
     );
     expect(read("![a chart](javascript:alert(1)) above")).toBe(
-      "<paragraph>a chart above</paragraph>",
+      "<paragraph>a chart <inlineCode>javascript:alert(1)</inlineCode> above</paragraph>",
     );
   });
 

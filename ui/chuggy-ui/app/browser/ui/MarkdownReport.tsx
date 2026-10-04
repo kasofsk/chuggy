@@ -30,7 +30,7 @@ import {
 } from "./MarkdownBlocks.tsx";
 import { markdownReadingNext } from "./markdownReading.ts";
 import type { MarkdownReading } from "./markdownReading.ts";
-import { markdownBlocksParsed } from "./markdownTree.ts";
+import { markdownLineJoined, markdownLineRead } from "./markdownTree.ts";
 
 import "./MarkdownReport.css";
 
@@ -53,9 +53,8 @@ function useMarkdownReading(text: string, writing: boolean): MarkdownReading {
   const [held, setHeld] = useState(() =>
     markdownReadingNext(undefined, text, writing),
   );
-  if (held.text === text && held.writing === writing) return held;
   const next = markdownReadingNext(held, text, writing);
-  setHeld(next);
+  if (next !== held) setHeld(next);
   return next;
 }
 
@@ -104,12 +103,15 @@ export function MarkdownReport(props: MarkdownReportProps): ReactNode {
   return <MarkdownReportRead {...props} />;
 }
 
-/** One line of a writer's prose with its marks, for a place that draws a line
- * rather than a report: what is not one paragraph is drawn as it was written. */
+/**
+ * One line of a writer's prose with its marks, for a place that draws a line
+ * rather than a report. No block is read in it, so whatever it opens with it
+ * is words, marks and references; only a line past what `markdownTree.ts` will
+ * read is drawn as it was written.
+ */
 export function MarkdownLine(props: { readonly text: string }): ReactNode {
-  const line = props.text.replace(/\s*\n\s*/gu, " ");
-  const blocks = useMemo(() => markdownBlocksParsed(line), [line]);
-  const only = blocks?.length === 1 ? blocks[0] : undefined;
-  if (only?.type !== "paragraph") return line;
-  return <MarkdownInlineRun nodes={only.children} depth={0} linked={false} />;
+  const line = useMemo(() => markdownLineJoined(props.text), [props.text]);
+  const read = useMemo(() => markdownLineRead(line), [line]);
+  if (read === undefined) return line;
+  return <MarkdownInlineRun nodes={read} depth={0} linked={false} />;
 }

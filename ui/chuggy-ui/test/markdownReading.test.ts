@@ -8,20 +8,27 @@
  * the first cut of this wrong on, and over a seeded soup of its own.
  *
  * The rest is what the report leans on: a block once kept is the same object
- * from then on, a whole text is read whole, and a text the parser cannot be
- * trusted with is drawn as its characters and stays that way.
+ * from then on and is the block the whole text reads in its place, a whole
+ * text is read whole, a text the parser cannot be trusted with is drawn as its
+ * characters and stays that way, and a reading that costs more than a frame's
+ * share stops short and rests, by a clock the cases hand it.
  */
 
 import { describe, expect, test } from "vitest";
 
+import { markdownPiecesFrom } from "../app/browser/ui/markdownPieces.ts";
 import {
   markdownReadingBlocks,
+  markdownReadingCurrent,
   markdownReadingNext,
+  markdownReadingRest,
+  markdownReadingRests,
+  markdownReadingShareMs,
 } from "../app/browser/ui/markdownReading.ts";
 import type { MarkdownReading } from "../app/browser/ui/markdownReading.ts";
 import {
   markdownBlocksParsed,
-  markdownMarkRunMax,
+  markdownNodesAlike,
 } from "../app/browser/ui/markdownTree.ts";
 import {
   corpusAnswers,
@@ -99,7 +106,7 @@ describe("a text read as it is written", () => {
   });
 
   test("a text that does not go on from the one before is read anew", () => {
-    const before = walked("one\n\ntwo\n\nthree\n\nfour", 1, () => undefined);
+    const before = walked(corpusComparison, 7, () => undefined);
     expect(before.settled.length).toBeGreaterThan(0);
     const next = markdownReadingNext(before, "five", true);
     expect(shapeOf(next)).toBe("<paragraph>five</paragraph>");
@@ -258,27 +265,218 @@ describe("a whole text", () => {
 });
 
 describe("a text the parser cannot be trusted with", () => {
-  const run = "*".repeat(markdownMarkRunMax + 1);
+  const run = "*".repeat(129);
   const text = `before\n\na ${run}b${run} c`;
 
-  test("is drawn as its characters, whole or written", () => {
+  const plain = `<paragraph>before</paragraph><paragraph>a ${run}b${run} c</paragraph>`;
+
+  test("is drawn as its characters where it cannot be, whole or written, and read above it", () => {
     for (const writing of [true, false])
       expect(shapeOf(markdownReadingNext(undefined, text, writing))).toBe(
-        `<paragraph>${text}</paragraph>`,
+        plain,
       );
   });
 
-  test("stays that way however it goes on", () => {
-    const last = walked(`${text}\n\n**bold** after`, 1, () => undefined);
+  test("stays that way however it goes on, and what follows it is read", () => {
+    const last = walked(`${text}\n\n**bold** after`, 1, sameInOneStep);
     expect(shapeOf(last)).toBe(
-      `<paragraph>${text}\n\n**bold** after</paragraph>`,
+      `${plain}<paragraph><strong>bold</strong> after</paragraph>`,
     );
-    expect(last.settled).toEqual([]);
+    expect(last.settled).toHaveLength(2);
   });
 
   test("is still read where the run is code", () => {
     expect(
       shapeOf(markdownReadingNext(undefined, `\`\`\`\n${run}\n\`\`\``, false)),
     ).toBe(`<code>${run}</code>`);
+  });
+});
+
+const endingTokens: readonly string[] = [
+  ...["\r", "\r", "\r\n", "\r\n", "a\rb", "\u00a0", "\n\u00a0\n", "\f"],
+  ...["\u2028", "\v", "  \r", "\\\r", "```\r", "# ", "- ", "> ", "end"],
+  ...["| a | b |", "| - | - |", "```", "~~~", "    ", "**", "`", "word "],
+];
+
+/** What is wrong with a text read in steps, or nothing: each reading against
+ * one made fresh, each block kept against the whole text's, and how far the
+ * place it reads from had moved when the block was kept. */
+function unsound(text: string, stride: number): string | undefined {
+  const whole = markdownBlocksParsed(text);
+  let before = markdownReadingNext(undefined, "", true);
+  for (const prefix of prefixes(text, stride)) {
+    const reading = markdownReadingNext(before, prefix, true);
+    const fresh = markdownReadingNext(undefined, prefix, true);
+    if (shapeOf(reading) !== shapeOf(fresh)) return `in steps: ${prefix}`;
+    if (reading.offset < before.offset) return `went back: ${prefix}`;
+    const kept = reading.settled.length > before.settled.length;
+    if (kept && reading.offset === before.offset) return `kept: ${prefix}`;
+    for (const [at, block] of reading.settled.entries()) {
+      const final = whole[at];
+      if (at < before.settled.length && block !== before.settled[at])
+        return `let go: ${prefix}`;
+      if (final === undefined || !markdownNodesAlike(block, final))
+        return `block ${String(at)}: ${prefix}`;
+    }
+    before = reading;
+  }
+  const last = markdownReadingNext(before, text, false);
+  return shapeOf(last) === shape(whole) ? undefined : "whole";
+}
+
+describe("a text read in steps, whatever its lines end in", () => {
+  test.each([
+    "# Title\rThe answer goes on\nand on.",
+    "```ts\rconst a = 1;\r```\rAnd then **words**.\rMore.",
+    "one\r\rtwo\r\n\r\nthree\n\rfour",
+    "a\n\u00a0\nb\n\nc\n\u00a0\n\nd",
+    "- a\r- b\r\r1. c\r\n   d\r\r> e\rf\r\rend",
+    "| a |\r| - |\r| b |\r\rend",
+  ])("%j keeps only what the whole text reads, and never twice", (text) => {
+    expect(unsound(text, 1)).toBeUndefined();
+  });
+
+  test("a seeded soup of marks, line ends and spaces that are not blank does too", () => {
+    const tokens = [...soupTokens, ...endingTokens];
+    const random = seeded(11);
+    for (let round = 0; round < 160; round += 1) {
+      const count = 4 + Math.floor(random() * 30);
+      const text = Array.from(
+        { length: count },
+        () => tokens[Math.floor(random() * tokens.length)] ?? "",
+      ).join("");
+      const stride = round % 2 === 0 ? 1 : 1 + Math.floor(random() * 9);
+      expect(unsound(text, stride), JSON.stringify(text)).toBeUndefined();
+    }
+  });
+});
+
+describe("a text read in steps, where a run is longer than one call may cost", () => {
+  test.each([
+    ["a list", "- an item of the list, with **words** in it\n"],
+    ["a numbered list", "1. an item of the list, with `words` in it\n"],
+    ["a quote", "> a line of the quote, which goes on and on\n"],
+    [
+      "headings over words",
+      "## A heading\nAnd words under it, no line between.\n",
+    ],
+  ])("%s keeps only what the whole text reads", (_name, unit) => {
+    const text = unit.repeat(Math.ceil(40_000 / unit.length));
+    expect(markdownPiecesFrom(text, 0, 0).length).toBeGreaterThan(2);
+    expect(unsound(text, 1_531)).toBeUndefined();
+    expect(shape(markdownBlocksParsed(text))).not.toContain(unit.slice(0, 6));
+  });
+});
+
+/** Six paragraphs, each long enough to be read on its own. */
+const dear = Array.from(
+  { length: 6 },
+  (_unused, at) => `Paragraph ${String(at)} ${"goes on ".repeat(40)}.`,
+).join("\n\n");
+
+/** A clock that moves by `step` each time it is read, which is what a
+ * reading that costs something is from inside. */
+function ticking(time: { now: number; step: number }): () => number {
+  return () => (time.now += time.step);
+}
+
+describe("a reading that costs more than a frame's share", () => {
+  test("stops short of the text's end while it is written, and says so", () => {
+    expect(markdownReadingShareMs).toBe(8);
+    const time = { now: 0, step: 5 };
+    const reading = markdownReadingNext(undefined, dear, true, ticking(time));
+    expect(reading.behind).toBe(true);
+    expect(markdownReadingCurrent(reading, dear, true)).toBe(false);
+    expect(reading.settled.length).toBeGreaterThan(0);
+    expect(reading.settled.length).toBeLessThan(6);
+    expect(reading.open).toEqual([]);
+    expect(shapeOf(reading)).toBe(
+      shape(markdownBlocksParsed(dear).slice(0, reading.settled.length)),
+    );
+  });
+
+  test("rests for a multiple of what it cost, and is the reading it was until then", () => {
+    expect(markdownReadingRest).toBe(3);
+    const time = { now: 0, step: 5 };
+    const clock = ticking(time);
+    const reading = markdownReadingNext(undefined, dear, true, clock);
+    const cost = reading.since - 5;
+    expect(reading.until).toBe(reading.since + cost * 3);
+    time.step = 0;
+    time.now = reading.until - 1;
+    expect(markdownReadingRests(reading, time.now)).toBe(true);
+    expect(markdownReadingNext(reading, `${dear} more`, true, clock)).toBe(
+      reading,
+    );
+    time.now = reading.until;
+    expect(markdownReadingRests(reading, time.now)).toBe(false);
+    const next = markdownReadingNext(reading, `${dear} more`, true, clock);
+    expect(next.behind).toBe(false);
+    expect(shapeOf(next)).toBe(shape(markdownBlocksParsed(`${dear} more`)));
+    next.settled.slice(0, reading.settled.length).forEach((block, at) => {
+      expect(block).toBe(reading.settled[at]);
+    });
+  });
+});
+
+describe("a reading under a clock that says every piece is dear", () => {
+  test("takes one piece each time its rest is over, so it always ends", () => {
+    const time = { now: 0, step: 1_000 };
+    const clock = ticking(time);
+    let reading = markdownReadingNext(undefined, dear, true, clock);
+    const kept = [reading.settled.length];
+    while (!markdownReadingCurrent(reading, dear, true) && kept.length < 20) {
+      expect(markdownReadingNext(reading, dear, true, clock)).toBe(reading);
+      time.now = reading.until;
+      const next = markdownReadingNext(reading, dear, true, clock);
+      expect(next.offset).toBeGreaterThan(reading.offset);
+      reading = next;
+      kept.push(reading.settled.length);
+    }
+    expect(kept).toEqual([1, 2, 3, 4, 5]);
+    expect(shapeOf(reading)).toBe(shape(markdownBlocksParsed(dear)));
+  });
+
+  test("does not rest by a clock that has gone back", () => {
+    const time = { now: 10_000, step: 5 };
+    const clock = ticking(time);
+    const reading = markdownReadingNext(undefined, dear, true, clock);
+    expect(reading.until).toBeGreaterThan(reading.since);
+    time.step = 0;
+    time.now = 3;
+    expect(markdownReadingRests(reading, time.now)).toBe(false);
+    expect(
+      markdownReadingNext(reading, dear, true, clock).offset,
+    ).toBeGreaterThan(reading.offset);
+  });
+
+  test("is read to its end at once when the text is whole, and when no clock is handed", () => {
+    const whole = shape(markdownBlocksParsed(dear));
+    const clock = ticking({ now: 0, step: 5 });
+    expect(shapeOf(markdownReadingNext(undefined, dear, false, clock))).toBe(
+      whole,
+    );
+    const resting = markdownReadingNext(undefined, dear, true, clock);
+    expect(shapeOf(markdownReadingNext(resting, dear, false, clock))).toBe(
+      whole,
+    );
+    const still = markdownReadingNext(undefined, dear, true);
+    expect(still.behind).toBe(false);
+    expect(still.until).toBe(0);
+    expect(shapeOf(still)).toBe(whole);
+  });
+});
+
+describe("a reading within a frame's share", () => {
+  test("does not rest, and is read again as soon as the text moves", () => {
+    const time = { now: 0, step: 1 };
+    const clock = ticking(time);
+    const reading = markdownReadingNext(undefined, "One **bo", true, clock);
+    expect(reading.until).toBe(0);
+    expect(markdownReadingRests(reading, time.now)).toBe(false);
+    const next = markdownReadingNext(reading, "One **bold**", true, clock);
+    expect(shapeOf(next)).toBe(
+      "<paragraph>One <strong>bold</strong></paragraph>",
+    );
   });
 });

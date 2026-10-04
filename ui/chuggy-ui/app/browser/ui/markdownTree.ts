@@ -23,16 +23,30 @@
  * `https` or `mailto` is no link: its words are drawn as words, and a picture
  * is drawn as a link wearing its description, never fetched.
  *
- * A TEXT NO WRITER WRITES IS DRAWN AS ITS CHARACTERS. The parser's cost grows
- * faster than a run of emphasis marks does, so a text carrying a longer run,
- * or more of them in one block, than `markdownGuardNext` allows is not parsed
- * at all, and neither is one the parser gives up on.
+ * A LINK NOBODY IS SENT DOWN STILL SAYS WHERE IT POINTED. A repository path is
+ * what a reader was being told, so the words are followed by the address as
+ * code, unless the words are the address already.
+ *
+ * THE PARSER IS REACHED THROUGH TWO DOORS IN THIS FILE AND NO OTHER. Each
+ * holds the text to `markdownGuard.ts` before the parser sees it, so nothing
+ * that draws a model's text can hand the parser one it has not reckoned: a
+ * section `markdownPieces.ts` would not have made is drawn as its characters,
+ * and so is one the parser gives up on.
  */
 
 import { fromMarkdown } from "mdast-util-from-markdown";
 import type { Options } from "mdast-util-from-markdown";
 import { gfmFromMarkdown } from "mdast-util-gfm";
 import { gfm } from "micromark-extension-gfm";
+
+import { markdownWordsPass } from "./markdownGuard.ts";
+import {
+  markdownBlank,
+  markdownBlankCut,
+  markdownFenceRead,
+  markdownPiecesFrom,
+} from "./markdownPieces.ts";
+import type { MarkdownFence, MarkdownPiece } from "./markdownPieces.ts";
 
 /** The tree a text is read into, named from what the reader returns so that
  * the console names no package it does not bundle. */
@@ -79,85 +93,32 @@ const markdownOptions: Options = {
   mdastExtensions: [gfmFromMarkdown()],
 };
 
-/** The longest run of emphasis marks a text may carry and still be parsed. */
-export const markdownMarkRunMax = 128;
-
-/** The most emphasis marks one run of lines with no blank line between them
- * may carry and still be parsed. */
-export const markdownMarksMax = 8192;
-
-/**
- * What a scan of a text's lines has come to: the fence it is inside, the marks
- * counted since the last blank line, and whether it is past parsing. It is
- * carried so a text being written is scanned from where its last scan ended.
- */
-export interface MarkdownGuard {
-  readonly fence: string | undefined;
-  readonly marks: number;
-  readonly unreadable: boolean;
-}
-
-export const markdownGuardInitial: MarkdownGuard = {
-  fence: undefined,
-  marks: 0,
-  unreadable: false,
+/** The blocks a line of words is never read as: with these off, a line is one
+ * paragraph whatever it opens with. */
+const markdownLineOptions: Options = {
+  extensions: [
+    ...(markdownOptions.extensions ?? []),
+    {
+      disable: {
+        null: [
+          "blockQuote",
+          "list",
+          "codeFenced",
+          "codeIndented",
+          "headingAtx",
+          "thematicBreak",
+          "table",
+        ],
+      },
+    },
+  ],
+  mdastExtensions: markdownOptions.mdastExtensions ?? [],
 };
 
-const markdownGuardUnreadable: MarkdownGuard = {
-  fence: undefined,
-  marks: 0,
-  unreadable: true,
-};
-
-const markdownFenceOpenPattern = /^(?:(`{3,})[^`]*|(~{3,}).*)$/u;
-
-function markdownFenceCloses(line: string, fence: string): boolean {
-  const run = line.trim();
-  return (
-    run.length >= fence.length &&
-    run === fence.charAt(0).repeat(run.length) &&
-    line.length - line.trimStart().length < 4
-  );
-}
-
-/** One line taken into the scan. A fence opened at the margin holds code, and
- * code is exempt: a banner of stars in it costs the parser nothing. */
-function markdownGuardLine(guard: MarkdownGuard, line: string): MarkdownGuard {
-  if (guard.fence !== undefined)
-    return markdownFenceCloses(line, guard.fence)
-      ? { ...guard, fence: undefined }
-      : guard;
-  const opened = markdownFenceOpenPattern.exec(line);
-  const fence = opened?.[1] ?? opened?.[2];
-  if (fence !== undefined) return { fence, marks: 0, unreadable: false };
-  if (line.trim() === "")
-    return guard.marks === 0 ? guard : { ...guard, marks: 0 };
-  let marks = guard.marks;
-  for (const run of line.match(/[*_]+/gu) ?? []) {
-    if (run.length > markdownMarkRunMax) return markdownGuardUnreadable;
-    marks += run.length;
-  }
-  if (marks > markdownMarksMax) return markdownGuardUnreadable;
-  return marks === guard.marks ? guard : { ...guard, marks };
-}
-
-/** The scan carried over the lines between two places in a text, the first of
- * which is the start of a line. */
-export function markdownGuardNext(
-  guard: MarkdownGuard,
-  text: string,
-  from: number,
-  to: number,
-): MarkdownGuard {
-  let next = guard;
-  let at = from;
-  while (at < to && !next.unreadable) {
-    const newline = text.indexOf("\n", at);
-    const end = newline === -1 || newline > to ? to : newline;
-    next = markdownGuardLine(next, text.slice(at, end));
-    at = end + 1;
-  }
-  return next;
+/** A text with every line ending the one the rest of this reader looks for:
+ * a carriage return, alone or before a line feed, is a line's end. */
+export function markdownNormalised(text: string): string {
+  return text.includes("\r") ? text.replace(/\r\n?/gu, "\n") : text;
 }
 
 const markdownLinkSchemePattern = /^(?:https?:\/\/|mailto:)/iu;
@@ -193,40 +154,83 @@ function markdownUnderscoreKept(
   return [markdownTextNode(mark), ...node.children, markdownTextNode(mark)];
 }
 
-/** A link nobody could follow, as the words it wore — or, where it was
- * written between angle brackets, as exactly what was written. */
+/** Everything a run says, without the marks it says it in. */
+function markdownWordsOf(nodes: readonly MarkdownNode[]): string {
+  const pending: MarkdownNode[] = nodes.toReversed();
+  const words: string[] = [];
+  for (let node = pending.pop(); node !== undefined; node = pending.pop()) {
+    if ("value" in node) words.push(node.value);
+    if ("children" in node) pending.push(...node.children.toReversed());
+  }
+  return words.join("");
+}
+
+/** The words a link wore and then where it pointed, as code, where that is
+ * not what the words already say. */
+function markdownAddressKept(
+  words: readonly MarkdownInline[],
+  url: string,
+): readonly MarkdownInline[] {
+  if (url === "" || markdownWordsOf(words) === url) return words;
+  return [...words, markdownTextNode(" "), { type: "inlineCode", value: url }];
+}
+
+/**
+ * A link as it is drawn. One nobody could follow is its words and its address
+ * or, written between angle brackets, exactly what was written; one inside
+ * another link is its words, because a link holds no link.
+ */
 function markdownLinkKept(
   node: MarkdownNodeOf<"link">,
   source: string,
+  linked: boolean,
 ): readonly MarkdownInline[] {
+  if (linked) return node.children;
   if (markdownLinkFollowed(node.url)) return [node];
   const written = markdownSourceOf(node, source);
-  return written.startsWith("<") ? [markdownTextNode(written)] : node.children;
+  if (written.startsWith("<")) return [markdownTextNode(written)];
+  return markdownAddressKept(node.children, node.url);
 }
 
-/** One node as the report draws it: itself, or what stands in its place. */
+/** A picture as it is drawn: a link wearing its description and never
+ * fetched, or inside a link the description alone. */
+function markdownImageKept(
+  node: MarkdownNodeOf<"image">,
+  linked: boolean,
+): readonly MarkdownInline[] {
+  const described = node.alt ?? "";
+  const words = markdownTextNode(described === "" ? node.url : described);
+  if (linked) return [words];
+  return markdownLinkFollowed(node.url)
+    ? [{ type: "link", url: node.url, children: [words] }]
+    : markdownAddressKept([words], node.url);
+}
+
+/** One node as the report draws it: itself, or what stands in its place.
+ * `linked` says it is inside a link's words. */
 function markdownChildKept(
   node: MarkdownNode,
   source: string,
+  linked: boolean,
 ): readonly MarkdownNode[] {
   if (node.type === "emphasis" || node.type === "strong")
     return markdownUnderscoreKept(node, source);
-  if (node.type === "link") return markdownLinkKept(node, source);
-  if (node.type !== "image") return [node];
-  const described = node.alt ?? "";
-  const words = markdownTextNode(described === "" ? node.url : described);
-  return markdownLinkFollowed(node.url)
-    ? [{ type: "link", url: node.url, children: [words] }]
-    : [words];
+  if (node.type === "link") return markdownLinkKept(node, source, linked);
+  return node.type === "image" ? markdownImageKept(node, linked) : [node];
 }
 
 /** Every node under a node put through `markdownChildKept`, children before
  * their parents, with the words that leaves side by side joined into one. */
-function markdownSettle(parent: MarkdownParent, source: string): void {
+function markdownSettle(
+  parent: MarkdownParent,
+  source: string,
+  linked: boolean,
+): void {
   const children: MarkdownNode[] = [];
+  const within = linked || parent.type === "link";
   for (const child of parent.children) {
-    if ("children" in child) markdownSettle(child, source);
-    for (const kept of markdownChildKept(child, source)) {
+    if ("children" in child) markdownSettle(child, source, within);
+    for (const kept of markdownChildKept(child, source, within)) {
       const last = children.at(-1);
       if (kept.type === "text" && last?.type === "text")
         children[children.length - 1] = markdownTextNode(
@@ -267,26 +271,119 @@ export function markdownNodesAlike(
   return true;
 }
 
-/** A text drawn as its characters: one paragraph holding all of it. */
-export function markdownPlainBlocks(text: string): readonly MarkdownBlock[] {
-  return text.trim() === ""
-    ? []
-    : [{ type: "paragraph", children: [markdownTextNode(text)] }];
-}
+/** How many lines of a text drawn as its characters one paragraph holds. */
+export const markdownPlainLinesMax = 64;
 
 /**
- * The blocks of a text, each carrying where in the text it was read from, or
- * nothing where the parser gave up on it — which a nesting deep enough to
- * exhaust its stack makes it do.
+ * A text drawn as its characters, every line break kept. It is a paragraph
+ * for each `markdownPlainLinesMax` lines, so one that grows is drawn again in
+ * its last paragraph only.
  */
-export function markdownBlocksParsed(
-  text: string,
-): readonly MarkdownBlock[] | undefined {
+export function markdownPlainBlocks(text: string): readonly MarkdownBlock[] {
+  const blocks: MarkdownBlock[] = [];
+  let from = 0;
+  while (from < text.length) {
+    let to = from;
+    for (let lines = 0; lines < markdownPlainLinesMax && to >= 0; lines += 1)
+      to = text.indexOf("\n", to) + 1 || -1;
+    const next = to < 0 ? text.length : to;
+    const value = text.slice(from, markdownBlankCut(text, from, next));
+    if (!markdownBlank(value))
+      blocks.push({ type: "paragraph", children: [markdownTextNode(value)] });
+    from = next;
+  }
+  return blocks;
+}
+
+/** The parser, which nothing outside the two doors below may call. */
+function markdownParsed(text: string, options: Options): Root | undefined {
   try {
-    const root: Root = fromMarkdown(text, markdownOptions);
-    markdownSettle(root, text);
-    return root.children;
+    const root: Root = fromMarkdown(text, options);
+    markdownSettle(root, text, false);
+    return root;
   } catch {
     return undefined;
   }
+}
+
+/**
+ * The blocks of one section, each carrying where in it it was read from, or
+ * nothing where the text is not one section by `markdownPieces.ts`'s own
+ * reckoning or the parser gave up on it.
+ */
+export function markdownSectionRead(
+  text: string,
+): readonly MarkdownBlock[] | undefined {
+  const pieces = markdownPiecesFrom(text, 0, 0);
+  if (pieces.length === 0) return [];
+  const only = pieces.length === 1 ? pieces[0] : undefined;
+  if (only?.kind !== "read") return undefined;
+  return markdownParsed(text, markdownOptions)?.children;
+}
+
+/** A text as one line: its lines, each without the spaces and tabs around
+ * it, joined by a space where they hold anything. */
+export function markdownLineJoined(text: string): string {
+  const lines: string[] = [];
+  for (const line of markdownNormalised(text).split("\n")) {
+    let from = 0;
+    let to = line.length;
+    while (from < to && " \t".includes(line.charAt(from))) from += 1;
+    while (to > from && " \t".includes(line.charAt(to - 1))) to -= 1;
+    if (to > from) lines.push(line.slice(from, to));
+  }
+  return lines.join(" ");
+}
+
+/**
+ * The runs of a text read as one line of words: no block is read in it, so
+ * it is one paragraph by construction. Nothing where it is past what a line
+ * may cost, or is not one paragraph after all.
+ */
+export function markdownLineRead(
+  text: string,
+): readonly MarkdownInline[] | undefined {
+  if (markdownBlank(text)) return [];
+  if (!markdownWordsPass(text)) return undefined;
+  const blocks = markdownParsed(text, markdownLineOptions)?.children;
+  const only = blocks?.length === 1 ? blocks[0] : undefined;
+  return only?.type === "paragraph" ? only.children : undefined;
+}
+
+/** A fence as the block of code it is: its language the first word its
+ * opening line says. */
+function markdownFenceBlock(fence: MarkdownFence): MarkdownBlock {
+  const space = fence.info.search(/[ \t]/u);
+  const lang = space < 0 ? fence.info : fence.info.slice(0, space);
+  const meta = space < 0 ? "" : fence.info.slice(space).trim();
+  return {
+    type: "code",
+    lang: lang === "" ? null : lang,
+    meta: meta === "" ? null : meta,
+    value: fence.value,
+  };
+}
+
+/** One piece of a text as the blocks it is drawn as, the blank lines a section
+ * closes on left off. `writing` says more of the text is coming, which only a
+ * fence reads differently here. */
+export function markdownPieceBlocks(
+  text: string,
+  piece: MarkdownPiece,
+  writing: boolean,
+): readonly MarkdownBlock[] {
+  if (piece.kind === "fence")
+    return [markdownFenceBlock(markdownFenceRead(text, piece, writing))];
+  const end = markdownBlankCut(text, piece.start, piece.end);
+  const held = text.slice(piece.start, end);
+  const read = piece.kind === "read" ? markdownSectionRead(held) : undefined;
+  return read ?? markdownPlainBlocks(held);
+}
+
+/** A whole text as the blocks it is drawn as. */
+export function markdownBlocksParsed(text: string): readonly MarkdownBlock[] {
+  const read = markdownNormalised(text);
+  return markdownPiecesFrom(read, 0, 0).flatMap((piece) =>
+    markdownPieceBlocks(read, piece, false),
+  );
 }
