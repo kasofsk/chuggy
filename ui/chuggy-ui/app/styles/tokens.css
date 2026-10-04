@@ -148,7 +148,9 @@
     --width-settings: 56rem; /* a settings page: form rows, not prose */
     --width-aside: 22rem;
     --width-chat: 25%; /* the frame a docked chat pane takes beside the pages */
-    --height-chat: 33%; /* and under them, where a quarter is too short to read */
+    /* and under them, where a quarter is too short to read: a third, and on a
+       short frame what still holds a few lines above the composer */
+    --height-chat: clamp(33%, 26rem, 80%);
     --width-chat-strip: 2.5rem; /* the collapsed pane, which its control expands */
     --col-label: 8.5rem; /* ledger: the row's label */
     --col-identity: 8rem; /* ledger: the identity chip */
