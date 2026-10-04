@@ -94,14 +94,17 @@ function useThreadExchanges(
     [thread.turns],
   );
   const stored = useMemo(() => conversationStoredBlocks(items), [items]);
+  const reached =
+    !walked.reading && leadTranscriptReached(held, leadStreamBatches(thread));
   const heard = useThreadLive({
     partition,
     session: thread.session,
     open: threadWriting(thread),
+    turns,
+    reached,
+    known: reached ? stored.messages.length : undefined,
   });
-  const reached =
-    !walked.reading && leadTranscriptReached(held, leadStreamBatches(thread));
-  const live = conversationLiveTurns(heard, stored, turns, reached);
+  const live = conversationLiveTurns(heard, stored);
   const heardTurns = useTurnsNamed(conversationLiveTurnsHeard(live));
   const exchanges = useMemo(
     () => conversationExchanges(items, turns, heardTurns),

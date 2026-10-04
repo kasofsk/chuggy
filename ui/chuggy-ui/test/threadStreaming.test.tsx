@@ -84,12 +84,20 @@ const secondMessage: readonly StoreEntry[] = [
   }),
 ];
 
+/** Holds every transcript read asked while it is held, until released. */
+interface Gate {
+  held: boolean;
+  readonly release: () => void;
+}
+
 interface Script {
   readonly server: StreamServer;
   /** The store's batches, which a case adds to as the session flushes. */
   readonly batches: (readonly StoreEntry[])[];
   readonly draw: (thread: ThreadResponse) => void;
   readonly container: HTMLElement;
+  readonly gate: Gate;
+  readonly unmount: () => void;
 }
 
 function page(
@@ -132,13 +140,26 @@ function scripted(
 ): Script {
   const server = streamServer([held], "token", liveOpenings);
   const batches: (readonly StoreEntry[])[] = [earlier];
+  const waiting: (() => void)[] = [];
+  const gate: Gate = {
+    held: false,
+    release: () => {
+      gate.held = false;
+      for (const read of waiting.splice(0)) read();
+    },
+  };
   vi.stubGlobal("fetch", (url: string) => {
     if (!url.includes("/transcript"))
       return Promise.resolve(answer({ code: "NotFound" }, 404));
     const after = Number(
       new URL(url, "http://console").searchParams.get("after"),
     );
-    return Promise.resolve(answer(page(batches, after)));
+    if (!gate.held) return Promise.resolve(answer(page(batches, after)));
+    return new Promise((resolve) => {
+      waiting.push(() => {
+        resolve(answer(page(batches, after)));
+      });
+    });
   });
   const holder = holderDouble();
   const client = new QueryClient();
@@ -158,9 +179,13 @@ function scripted(
   return {
     server,
     batches,
+    gate,
     container: view.container,
     draw: (shown) => {
       view.rerender(drawn(shown));
+    },
+    unmount: () => {
+      view.unmount();
     },
   };
 }
@@ -186,6 +211,18 @@ function turnAt(state: ThreadTurnResponse["state"]): ThreadTurnResponse {
     tools: [],
   };
 }
+
+const toolRunning: readonly StoreEntry[] = [
+  entry("uuid-c", "user", { content: asked }),
+  entry("uuid-e", "assistant", {
+    id: "msg_a",
+    content: [{ type: "text", text: "Running the gates." }],
+  }),
+  entry("uuid-f", "assistant", {
+    id: "msg_a",
+    content: [{ type: "tool_use", id: "toolu_1", name: "Bash", input: {} }],
+  }),
+];
 
 function threadAt(
   state: ThreadTurnResponse["state"] | undefined,
@@ -467,4 +504,176 @@ test("the runner naming the thread's store mid-turn does not take the words away
   expect(seen.some((text) => text.includes("Loading"))).toBe(false);
   expect(answerNode(script.container)).toBe(first);
   expect(shown(script.container).answer).toBe("Looking at 41.");
+});
+
+test("the hub forgetting a session in the middle of a tool does not draw the turn as finished", async () => {
+  const script = scripted(threadAt("Claimed", 1), [
+    { status: 200, chunks: [nothingHeld], hold: true },
+  ]);
+  await settled();
+  script.server.pushLive(began("msg_a", 0, "Text"));
+  script.server.pushLive(wrote("msg_a", 0, 0, "Running the gates."));
+  script.server.pushLive(began("msg_a", 1, "ToolUse", "Bash"));
+  await until(script.container, { card: "Bash", cardLive: true });
+  script.batches.push(toolRunning);
+  script.draw(threadAt("Claimed", 2));
+  await until(script.container, {
+    answer: "Running the gates.",
+    card: "Bash",
+    cardLive: true,
+  });
+  script.server.pushLive(nothingHeld);
+  await settled();
+  await settled();
+  expect(shown(script.container)).toMatchObject({
+    answer: "Running the gates.",
+    card: "Bash",
+    cardLive: true,
+    standing: "Claimed",
+  });
+});
+
+test("text a failed turn never stored leaves at settle and does not return while a later page is read", async () => {
+  const script = scripted(threadAt("Claimed", 1), [
+    { status: 200, chunks: [nothingHeld], hold: true },
+    { status: 200, chunks: [nothingHeld], hold: true },
+  ]);
+  await settled();
+  script.batches.push([entry("uuid-c", "user", { content: asked })]);
+  script.draw(threadAt("Claimed", 2));
+  await settled();
+  script.server.pushLive(began("msg_a", 0, "Text"));
+  script.server.pushLive(wrote("msg_a", 0, 0, "Half an answ"));
+  await until(script.container, { answer: "Half an answ", writing: true });
+
+  const failed: ThreadTurnResponse = {
+    ...turnAt("Failed"),
+    failure: "AgentFailed",
+  };
+  script.draw(threadBody({ batches: 2, turns: [before, failed] }));
+  await settled();
+  expect(script.container.textContent).not.toContain("Half an answ");
+
+  script.gate.held = true;
+  script.batches.push([entry("uuid-x", "user", { content: "try again" })]);
+  const again: ThreadTurnResponse = {
+    ...turnAt("Claimed"),
+    turn: "turn-3",
+    ordinal: 3,
+    input: "try again",
+  };
+  script.draw(threadBody({ batches: 3, turns: [before, failed, again] }));
+  await settled();
+  expect(script.server.liveSeen).toHaveLength(2);
+  script.server.pushLive(
+    frame("live", undefined, {
+      version: 1,
+      turn: "turn-3",
+      event: { live: "Block", message: "msg_c", index: 0, kind: "Thinking" },
+    }),
+  );
+  await until(script.container, { card: "Thinking", cardLive: true });
+  expect(script.container.textContent).not.toContain("Half an answ");
+  script.gate.release();
+  await settled();
+  await settled();
+  expect(script.container.textContent).not.toContain("Half an answ");
+  expect(script.container.textContent).toContain("try again");
+});
+
+test("a settled turn's answer stays while the page holding it is still being read", async () => {
+  const script = scripted(threadAt("Claimed", 1), [
+    { status: 200, chunks: [nothingHeld], hold: true },
+  ]);
+  await settled();
+  script.batches.push([entry("uuid-c", "user", { content: asked })]);
+  script.draw(threadAt("Claimed", 2));
+  await settled();
+  script.server.pushLive(began("msg_b", 0, "Text"));
+  script.server.pushLive(wrote("msg_b", 0, 0, "It is **blocked** by 40."));
+  script.server.pushLive(live({ live: "End" }));
+  await until(script.container, {
+    answer: "It is blocked by 40.",
+    writing: false,
+  });
+  script.gate.held = true;
+  script.batches.push(secondMessage);
+  script.draw(threadAt("Answered", 3));
+  await settled();
+  expect(shown(script.container).answer).toBe("It is blocked by 40.");
+  script.gate.release();
+  await settled();
+  await settled();
+  expect(shown(script.container).answer).toBe("It is blocked by 40.");
+});
+
+test("a turn put back to wait after its attempt ended is drawn as waiting again", async () => {
+  const script = scripted(threadAt("Queued", 1), [
+    { status: 200, chunks: [nothingHeld], hold: true },
+  ]);
+  await settled();
+  await until(script.container, { engine: true, standing: "Queued" });
+  script.draw(threadAt("Claimed", 1));
+  script.server.pushLive(live({ live: "End" }));
+  await until(script.container, { engine: false });
+  script.draw(threadAt("Queued", 1));
+  await until(script.container, { engine: true, standing: "Queued" });
+  script.draw(threadAt("Claimed", 1));
+  await settled();
+  expect(shown(script.container)).toMatchObject({ engine: true });
+});
+
+/** Frames asked for and not yet painted, each run only when a case says. */
+function framesHeld(): {
+  readonly paint: () => void;
+  readonly pending: () => number;
+  readonly cancelled: number[];
+} {
+  const asked = new Map<number, FrameRequestCallback>();
+  const cancelled: number[] = [];
+  let next = 1;
+  vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+    asked.set(next, callback);
+    next += 1;
+    return next - 1;
+  });
+  vi.stubGlobal("cancelAnimationFrame", (handle: number) => {
+    cancelled.push(handle);
+    asked.delete(handle);
+  });
+  return {
+    paint: () => {
+      const due = [...asked.values()];
+      asked.clear();
+      for (const callback of due) callback(performance.now());
+    },
+    pending: () => asked.size,
+    cancelled,
+  };
+}
+
+test("a burst of events is drawn at the next frame and not before, and a frame still owed is given up with the page", async () => {
+  const frames = framesHeld();
+  const script = scripted(threadAt("Claimed", 1), [
+    { status: 200, chunks: [nothingHeld], hold: true },
+  ]);
+  await settled();
+  frames.paint();
+  await settled();
+  const owed = frames.pending();
+  script.server.pushLive(began("msg_a", 0, "Thinking"));
+  script.server.pushLive(began("msg_a", 1, "ToolUse", "Read"));
+  script.server.pushLive(began("msg_a", 2, "ToolUse", "Bash"));
+  await settled();
+  expect(shown(script.container).card).toBeUndefined();
+  expect(frames.pending()).toBe(owed + 1);
+  frames.paint();
+  await until(script.container, { card: "Bash", cardLive: true });
+
+  script.server.pushLive(began("msg_a", 3, "ToolUse", "Grep"));
+  await settled();
+  expect(frames.pending()).toBeGreaterThan(0);
+  script.unmount();
+  expect(frames.cancelled.length).toBeGreaterThan(0);
+  expect(frames.pending()).toBe(0);
 });

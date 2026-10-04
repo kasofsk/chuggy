@@ -14,16 +14,24 @@
  *
  * NOTHING IS SAID WHEN IT FAILS. The stream reports no status and this draws
  * none: a thread that hears nothing is drawn from its transcript alone.
+ *
+ * WHAT THE MAILBOX SAYS IS OVER IS LET GO OF HERE, in what is drawn and in
+ * what the next event is folded onto, so nothing forgotten is heard again.
  */
 
 import { useEffect, useRef, useState } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
+import type { ConversationTurn } from "../../core/conversation.ts";
 import {
   conversationLiveHeard,
+  conversationLiveKept,
   conversationLiveNothing,
 } from "../../core/conversationLive.ts";
-import type { ConversationLiveHeld } from "../../core/conversationLive.ts";
+import type {
+  ConversationLiveHeld,
+  ConversationLiveKnown,
+} from "../../core/conversationLive.ts";
 import { openThreadLiveStream } from "../../core/threadLiveStream.ts";
 import { useSessionGeneration } from "../session.tsx";
 import { useStreamPorts } from "../stream.tsx";
@@ -33,14 +41,26 @@ export function useThreadLive(read: {
   readonly session: string;
   /** Whether the thread's newest turn is still out. */
   readonly open: boolean;
+  readonly turns: readonly ConversationTurn[];
+  /** Whether the transcript walk has nothing left to read. */
+  readonly reached: boolean;
+  /** What a message first heard now is marked with. */
+  readonly known: ConversationLiveKnown;
 }): ConversationLiveHeld {
   const ports = useStreamPorts();
   const generation = useSessionGeneration();
   const heard = useRef(conversationLiveNothing);
+  const known = useRef(read.known);
   const frame = useRef<number | undefined>(undefined);
   const [held, setHeld] = useState(conversationLiveNothing);
   const { tenant, project } = read.partition;
-  const { session, open } = read;
+  const { session, open, turns, reached } = read;
+  const kept = conversationLiveKept(held, turns, reached);
+  if (kept !== held) setHeld(kept);
+  useEffect(() => {
+    known.current = read.known;
+    heard.current = conversationLiveKept(heard.current, turns, reached);
+  });
   useEffect(
     () => () => {
       if (frame.current !== undefined) cancelAnimationFrame(frame.current);
@@ -55,7 +75,11 @@ export function useThreadLive(read: {
       { tenant, project },
       session,
       (event) => {
-        heard.current = conversationLiveHeard(heard.current, event);
+        heard.current = conversationLiveHeard(
+          heard.current,
+          event,
+          known.current,
+        );
         frame.current ??= requestAnimationFrame(() => {
           frame.current = undefined;
           setHeld(heard.current);
@@ -66,5 +90,5 @@ export function useThreadLive(read: {
       opened.stop();
     };
   }, [ports, generation, tenant, project, session, open]);
-  return held;
+  return kept;
 }

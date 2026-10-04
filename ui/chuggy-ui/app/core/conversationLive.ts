@@ -10,8 +10,16 @@
  *
  * THE TWO PATHS ARRIVE IN EITHER ORDER, so more is held here than the wire's
  * own fold holds: a message another followed, or whose turn ended, is kept
- * until the transcript has it. What is kept is bounded, and a turn the mailbox
- * has settled is dropped once the transcript walk has nothing left to read.
+ * until the transcript has it. What is kept is bounded.
+ *
+ * WHAT IS OVER IS FORGOTTEN, NOT HIDDEN. A turn the mailbox has settled is let
+ * go of the first time the walk has nothing left to read, so text its store
+ * never came to hold cannot return when the walk next falls behind.
+ *
+ * AN END IS HEARD AND NEVER GUESSED. The hub tells a reader it holds nothing
+ * whenever it forgets a session, which it does in the middle of a long tool as
+ * readily as at a turn's end, so only an `End`, or another turn being written,
+ * says a turn's last message is whole.
  */
 
 import { threadLiveHeard } from "../../../../src/contract/threadLive.ts";
@@ -29,6 +37,14 @@ import type {
   ConversationTurn,
 } from "./conversation.ts";
 
+/**
+ * How many messages the transcript held when a message was first heard, where
+ * the page had read all of it then. A message the transcript comes to hold
+ * past that count arrived after this one began, which is the only thing that
+ * places a message nobody heard after one nobody stored.
+ */
+export type ConversationLiveKnown = number | undefined;
+
 /** The most messages kept for the transcript to catch up with, past which the
  * oldest leaves. */
 export const conversationLiveMessagesMax = 8;
@@ -38,12 +54,15 @@ export interface ConversationLiveMessage {
   readonly turn: string;
   readonly message: string;
   readonly blocks: readonly ThreadLiveBlock[];
+  readonly known?: number;
 }
 
 /** What a page holds of what it heard. */
 export interface ConversationLiveHeld {
   /** The message being written, as the wire's own fold holds it. */
   readonly writing: ThreadLiveHeld;
+  /** What the transcript held when the message being written was first heard. */
+  readonly known?: number;
   /** Messages set aside for the transcript to catch up with, oldest first. */
   readonly written: readonly ConversationLiveMessage[];
   /** The turn whose last message is whole. */
@@ -57,9 +76,15 @@ export const conversationLiveNothing: ConversationLiveHeld = {
 
 function conversationLiveMessageOf(
   held: ThreadLiveHeld,
+  known: ConversationLiveKnown,
 ): ConversationLiveMessage | undefined {
   if (held.turn === undefined || held.message === undefined) return undefined;
-  return { turn: held.turn, message: held.message, blocks: held.blocks };
+  return {
+    turn: held.turn,
+    message: held.message,
+    blocks: held.blocks,
+    ...(known === undefined ? {} : { known }),
+  };
 }
 
 /**
@@ -119,10 +144,10 @@ function conversationLiveContinued(
 }
 
 function conversationLiveSetAside(
-  written: readonly ConversationLiveMessage[],
-  was: ThreadLiveHeld,
+  held: ConversationLiveHeld,
 ): readonly ConversationLiveMessage[] {
-  const message = conversationLiveMessageOf(was);
+  const written = held.written;
+  const message = conversationLiveMessageOf(held.writing, held.known);
   if (message === undefined) return written;
   return conversationLiveMessagesWith(written, message).slice(
     -conversationLiveMessagesMax,
@@ -130,9 +155,9 @@ function conversationLiveSetAside(
 }
 
 /**
- * The turn whose last message is whole: an `End` says so, and so does the turn
- * that was being written no longer being the one that is, which is how an end
- * nobody heard is read. More heard of that turn takes the word back.
+ * The turn whose last message is whole: an `End` says so, and so does another
+ * turn being written. Nothing held says nothing, and more heard of that turn
+ * takes the word back.
  */
 function conversationLiveEnded(
   held: ConversationLiveHeld,
@@ -142,7 +167,8 @@ function conversationLiveEnded(
   if (heard.event === "live" && heard.data.event.live === "End")
     return heard.data.turn;
   const was = held.writing.turn;
-  if (was !== undefined && was !== writing.turn) return was;
+  if (was !== undefined && writing.turn !== undefined && was !== writing.turn)
+    return was;
   return writing.turn !== undefined && writing.turn === held.ended
     ? undefined
     : held.ended;
@@ -152,11 +178,13 @@ function conversationLiveEnded(
  * What is held once one frame of the stream is heard: a snapshot replaces the
  * fold's account of the message being written with the server's, and an event
  * is folded by the wire's fold. What was heard before is set aside rather than
- * dropped wherever the fold is left holding less than was heard here.
+ * dropped wherever the fold is left holding less than was heard here, and a
+ * message heard for the first time is marked with `known`.
  */
 export function conversationLiveHeard(
   held: ConversationLiveHeld,
   heard: ThreadLiveStreamEvent,
+  known?: ConversationLiveKnown,
 ): ConversationLiveHeld {
   const writing =
     heard.event === "snapshot"
@@ -165,32 +193,77 @@ export function conversationLiveHeard(
   const continued =
     heard.event === "live" && conversationLiveContinued(held.writing, writing);
   const ended = conversationLiveEnded(held, heard, writing);
+  const same =
+    held.writing.turn === writing.turn &&
+    held.writing.message === writing.message;
+  const marked = same ? held.known : known;
   return {
     writing,
-    written: continued
-      ? held.written
-      : conversationLiveSetAside(held.written, held.writing),
+    ...(marked === undefined ? {} : { known: marked }),
+    written: continued ? held.written : conversationLiveSetAside(held),
     ...(ended === undefined ? {} : { ended }),
   };
 }
 
-/** How many blocks of each model message the transcript holds. */
+function conversationTurnSettled(
+  state: ConversationTurn["state"] | undefined,
+): boolean {
+  return state !== undefined && state !== "Queued" && state !== "Claimed";
+}
+
+/**
+ * What is held once what the mailbox says is over is forgotten: everything
+ * heard of a turn it has settled, once `reached` — the walk has nothing left
+ * to read — and the word that a turn ended, once that turn is waiting again.
+ * What is held is handed back itself where nothing is forgotten.
+ */
+export function conversationLiveKept(
+  held: ConversationLiveHeld,
+  turns: readonly ConversationTurn[],
+  reached: boolean,
+): ConversationLiveHeld {
+  const states = new Map(turns.map((turn) => [turn.turn, turn.state]));
+  const over = (turn: string | undefined): boolean =>
+    reached && turn !== undefined && conversationTurnSettled(states.get(turn));
+  const written = held.written.filter((message) => !over(message.turn));
+  const writingOver = over(held.writing.turn);
+  const endedOver =
+    held.ended !== undefined &&
+    (over(held.ended) || states.get(held.ended) === "Queued");
+  if (written.length === held.written.length && !writingOver && !endedOver)
+    return held;
+  return {
+    writing: writingOver ? { blocks: [] } : held.writing,
+    ...(writingOver || held.known === undefined ? {} : { known: held.known }),
+    written,
+    ...(endedOver || held.ended === undefined ? {} : { ended: held.ended }),
+  };
+}
+
+/** What the transcript holds of the model's messages. */
+export interface ConversationStored {
+  /** How many blocks of each message it holds. */
+  readonly blocks: ReadonlyMap<string, number>;
+  /** The messages in the order it came to hold them. */
+  readonly messages: readonly string[];
+}
+
 export function conversationStoredBlocks(
   items: readonly ConversationItem[],
-): ReadonlyMap<string, number> {
-  const stored = new Map<string, number>();
+): ConversationStored {
+  const blocks = new Map<string, number>();
   for (const item of items) {
     if (item.item !== "Entry" || item.entry.message === undefined) continue;
-    const blocks = item.entry.blocks.reduce(
+    const held = item.entry.blocks.reduce(
       (count, block) => count + (block.block === "Capped" ? block.count : 1),
       0,
     );
-    stored.set(
+    blocks.set(
       item.entry.message,
-      (stored.get(item.entry.message) ?? 0) + blocks,
+      (blocks.get(item.entry.message) ?? 0) + held,
     );
   }
-  return stored;
+  return { blocks, messages: [...blocks.keys()] };
 }
 
 /** What is still to draw of one turn from what was heard of it. */
@@ -224,44 +297,58 @@ function conversationLiveBlockDrawn(block: ThreadLiveBlock): boolean {
   return !block.gapped && (block.kind !== "Text" || block.text.length > 0);
 }
 
-/** One turn's messages in the order they were heard, each once. */
-function conversationLiveTurnMessages(
+/** Every message held, in the order they were heard, each once. */
+function conversationLiveMessages(
   held: ConversationLiveHeld,
-  turn: string,
 ): readonly ConversationLiveMessage[] {
-  const writing = conversationLiveMessageOf(held.writing);
-  const heard =
-    writing === undefined
-      ? held.written
-      : conversationLiveMessagesWith(held.written, writing);
-  return heard.filter((message) => message.turn === turn);
+  const writing = conversationLiveMessageOf(held.writing, held.known);
+  return writing === undefined
+    ? held.written
+    : conversationLiveMessagesWith(held.written, writing);
 }
 
 /**
- * The blocks of one turn the transcript does not hold. The store is written in
- * order, so a message heard before one the transcript already holds part of is
- * a message it will hold no more of, and nothing of it is drawn.
+ * Whether the transcript holds a block of a message later than the one heard
+ * at this place, which makes it a message the transcript will hold no more of:
+ * the store is written in order, and a message the model abandoned is never
+ * finished. A later message is one the transcript holds after this one, one
+ * heard after it, or one nobody heard that the transcript came to hold after
+ * this one began.
  */
+function conversationLiveOver(
+  heard: readonly ConversationLiveMessage[],
+  at: number,
+  stored: ConversationStored,
+): boolean {
+  const message = heard[at];
+  if (message === undefined) return false;
+  if (stored.blocks.has(message.message))
+    return stored.messages.at(-1) !== message.message;
+  if (heard.slice(at + 1).some((later) => stored.blocks.has(later.message)))
+    return true;
+  if (message.known === undefined) return false;
+  const before = new Set(heard.slice(0, at).map((earlier) => earlier.message));
+  return stored.messages.slice(message.known).some((held) => !before.has(held));
+}
+
+/** The blocks of one turn the transcript does not hold and is still to. */
 function conversationLiveTurnBlocks(
   held: ConversationLiveHeld,
   turn: string,
-  stored: ReadonlyMap<string, number>,
+  stored: ConversationStored,
 ): readonly ConversationBlock[] {
-  const messages = conversationLiveTurnMessages(held, turn);
-  const from = messages.findLastIndex(
-    (message) => (stored.get(message.message) ?? 0) > 0,
-  );
-  return messages
-    .slice(Math.max(from, 0))
-    .flatMap((message) =>
-      message.blocks
-        .filter(
-          (block) =>
-            block.index >= (stored.get(message.message) ?? 0) &&
-            conversationLiveBlockDrawn(block),
-        )
-        .map(conversationLiveBlockOf),
-    );
+  const heard = conversationLiveMessages(held);
+  return heard.flatMap((message, at) => {
+    if (message.turn !== turn || conversationLiveOver(heard, at, stored))
+      return [];
+    return message.blocks
+      .filter(
+        (block) =>
+          block.index >= (stored.blocks.get(message.message) ?? 0) &&
+          conversationLiveBlockDrawn(block),
+      )
+      .map(conversationLiveBlockOf);
+  });
 }
 
 function conversationLiveTurnNames(
@@ -275,23 +362,12 @@ function conversationLiveTurnNames(
   return [...new Set(named)];
 }
 
-/**
- * What a page draws from what it heard, turn by turn. A turn the mailbox has
- * settled is left out once `reached` — the walk has nothing left to read — so
- * what the store never came to hold does not outlive the turn it was heard in,
- * and what it is still to hold is not taken away before it arrives.
- */
+/** What a page draws from what it holds of what it heard, turn by turn. */
 export function conversationLiveTurns(
   held: ConversationLiveHeld,
-  stored: ReadonlyMap<string, number>,
-  turns: readonly ConversationTurn[],
-  reached: boolean,
+  stored: ConversationStored,
 ): readonly ConversationLiveTurn[] {
   return conversationLiveTurnNames(held).flatMap((turn) => {
-    const state = turns.find((known) => known.turn === turn)?.state;
-    if (state === undefined) return [];
-    const running = state === "Queued" || state === "Claimed";
-    if (reached && !running) return [];
     const blocks = conversationLiveTurnBlocks(held, turn, stored);
     const ended = held.ended === turn;
     return blocks.length === 0 && !ended ? [] : [{ turn, blocks, ended }];
@@ -318,16 +394,19 @@ function conversationLiveBlockActivity(
 }
 
 /**
- * What a running exchange is doing: its last message is whole, or what the
- * last block heard of it is, or — where nothing heard is left to draw — the
- * call its transcript holds no result for. Nothing is said where none of them
- * knows.
+ * What an exchange a runner has taken is doing: its last message is whole, or
+ * what the last block heard of it is, or — where nothing heard is left to
+ * draw — the call its transcript holds no result for. Nothing is said where
+ * none of them knows, nor of a turn that is waiting, whatever was heard of it
+ * before it went back to wait.
  */
 function conversationLiveActivity(
   exchange: ConversationExchange,
   live: ConversationLiveTurn | undefined,
 ): ConversationActivity | undefined {
-  if (exchange.standing.standing !== "Running") return undefined;
+  const standing = exchange.standing;
+  if (standing.standing !== "Running" || standing.state !== "Claimed")
+    return undefined;
   if (live?.ended === true) return { activity: "Whole" };
   const heard = conversationLiveBlockActivity(live?.blocks.at(-1));
   if (heard !== undefined || exchange.answer !== undefined) return heard;
