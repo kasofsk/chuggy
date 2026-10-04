@@ -530,6 +530,149 @@ test("the app closing closes every hub it was stopped with and then the pools, a
   assert.deepEqual(JSON.parse(signalled.out), [...hubs, ...hubs, ...pools]);
 });
 
+/**
+ * Both hubs' reports as the root composes them, each written to as its hub
+ * writes to it, under a clock the program sets. What `noting` leaves in `out`
+ * is printed, and `written()` is what has reached the error stream since it
+ * was last asked.
+ */
+function notesProgram(noting: string): string {
+  return `
+  const root = await import('./src/roots/nativeHttp.ts');
+  let nowMs = 0;
+  Date.now = () => nowMs;
+  const lines = [];
+  process.stderr.write = (line) => {
+    lines.push(line.trimEnd());
+    return true;
+  };
+  const written = () => lines.splice(0);
+  const live = root.nativeThreadLiveReport();
+  const stream = root.nativeStreamReport();
+  const liveNote = (note) => ({
+    ...note, connectionsOpen: 0, sessionsHeld: 0, heldBytes: 0, pendingBytes: 0,
+    sentBytes: 0, eventsHeard: 0, payloadsUnread: 0, payloadsShed: 0,
+  });
+  const streamNote = (note) => ({ ...note, streamsOpen: 0, rowsRead: 0 });
+  const out = {};
+  ${noting}
+  process.stdout.write(JSON.stringify(out));
+`;
+}
+
+/** How many of its kind each line says there have been, in the order the lines were written. */
+function timesSaid(lines: readonly string[]): number[] {
+  return lines.map((line) => Number(/ times=(\d+)$/u.exec(line)?.[1]));
+}
+
+test("a note a client causes is written at the first of a run and at each that doubles it, with how many of its kind there have been, each kind of each hub counted apart", async () => {
+  const ran = await rootRead(
+    {},
+    notesProgram(`
+      const kinds = [
+        ['live Refused', live, liveNote({ note: 'Refused' })],
+        ['live SlowClientClosed', live, liveNote({ note: 'SlowClientClosed' })],
+        ['live PendingClosed', live, liveNote({ note: 'PendingClosed' })],
+        ['live SentClosed', live, liveNote({ note: 'SentClosed' })],
+        ['stream Refused', stream, streamNote({ note: 'Refused' })],
+        ['stream SlowClientClosed', stream, streamNote({ note: 'SlowClientClosed' })],
+      ];
+      for (const [kind] of kinds) out[kind] = [];
+      for (let round = 0; round < 1000; round += 1)
+        for (const [kind, report, note] of kinds) {
+          report.noted(note);
+          out[kind].push(...written());
+        }
+    `),
+  );
+  assert.equal(ran.code, 0, ran.out);
+  const written = JSON.parse(ran.out) as Record<string, string[]>;
+  assert.equal(Object.keys(written).length, 6);
+  for (const [kind, lines] of Object.entries(written)) {
+    assert.deepEqual(
+      timesSaid(lines),
+      [1, 2, 4, 8, 16, 32, 64, 128, 256, 512],
+      kind,
+    );
+    const hub = kind.startsWith("live") ? "thread live: " : "project stream: ";
+    assert.ok(
+      lines.every((line) => line.startsWith(hub)),
+      kind,
+    );
+  }
+});
+
+test("the hubs this root composes report as these do: what a stopped hub refuses is written at the first and at each that doubles it", async () => {
+  const ran = await rootRead(
+    { CHUG_API_DATABASE_URL: "postgres://nobody@127.0.0.1:1/nothing" },
+    notesProgram(`
+      const liveHub = root.nativeThreadLiveHub();
+      const streamHub = root.nativeStreamHub({}, {});
+      await liveHub.close();
+      await streamHub.close();
+      const partition = { tenant: 'tenant', project: 'project' };
+      for (let round = 0; round < 8; round += 1) {
+        liveHub.open({ partition, session: 'thread-1', admitted: () => Promise.resolve(true) });
+        await streamHub.open({ partition, principal: 'issuer-subject' });
+      }
+      out.lines = written().filter((line) => line.includes(': refused a '));
+    `),
+  );
+  assert.equal(ran.code, 0, ran.out);
+  const { lines } = JSON.parse(ran.out) as { lines: string[] };
+  for (const hub of ["thread live: ", "project stream: "])
+    assert.deepEqual(
+      timesSaid(lines.filter((line) => line.startsWith(hub))),
+      [1, 2, 4, 8],
+      hub,
+    );
+  assert.equal(lines.length, 8);
+});
+
+test("a note this process paces is written every time it is noted, and says nothing of how many", async () => {
+  const ran = await rootRead(
+    {},
+    notesProgram(`
+      for (let round = 0; round < 5; round += 1) {
+        live.noted(liveNote({ note: 'Sourced', source: 'Lost' }));
+        live.noted(liveNote({ note: 'Unread' }));
+        live.noted(liveNote({ note: 'Shed' }));
+        stream.noted(streamNote({ note: 'Sourced', state: 'lost' }));
+        stream.noted(streamNote({ note: 'Swept', removed: 3 }));
+        stream.noted(streamNote({ note: 'ReadFailed', failure: 'refused' }));
+      }
+      out.lines = written();
+    `),
+  );
+  assert.equal(ran.code, 0, ran.out);
+  const { lines } = JSON.parse(ran.out) as { lines: string[] };
+  assert.equal(lines.length, 30);
+  assert.equal(new Set(lines).size, 6);
+  assert.ok(lines.every((line) => !line.includes("times=")));
+});
+
+test("a run goes on while each of its notes comes within the quiet span of the last, a kind unheard for that span begins its run again, and its lines go on saying how many there have been in all", async () => {
+  const ran = await rootRead(
+    {},
+    notesProgram(`
+      const cut = liveNote({ note: 'SentClosed' });
+      for (let round = 0; round < 5; round += 1) live.noted(cut);
+      for (let round = 0; round < 2; round += 1) {
+        nowMs += root.nativeNoteQuietMs - 1;
+        live.noted(cut);
+      }
+      out.short = written();
+      nowMs += root.nativeNoteQuietMs;
+      for (let round = 0; round < 4; round += 1) live.noted(cut);
+      out.quiet = written();
+    `),
+  );
+  assert.equal(ran.code, 0, ran.out);
+  const written = JSON.parse(ran.out) as { short: string[]; quiet: string[] };
+  assert.deepEqual(timesSaid(written.short), [1, 2, 4]);
+  assert.deepEqual(timesSaid(written.quiet), [8, 9, 11]);
+});
+
 test("a pool site a runner would read is composed as named", async () => {
   const ran = await rootRead(poolNamed, poolSiteProgram);
   assert.equal(ran.code, 0, ran.out);
