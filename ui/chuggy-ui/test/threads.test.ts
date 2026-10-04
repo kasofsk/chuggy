@@ -22,6 +22,9 @@ import {
   threadActions,
   threadAnswering,
   threadHeldTurn,
+  threadKeptClosed,
+  threadKeptWith,
+  threadKeptWithout,
   threadMine,
   threadUnhosted,
   threadRefusalCode,
@@ -586,6 +589,41 @@ describe("whether a store the thread does not name is missing", () => {
     expect(threadStoreDue({ turns: [stopped, turnOf({ ordinal: 2 })] })).toBe(
       true,
     );
+  });
+});
+
+describe("what is kept for a thread that is not drawn", () => {
+  const refused = { send: "Refused", what: "Send" } as const;
+  const one = { text: "one", turn: "t1", send: refused };
+  const two = { text: "two", turn: "t2", send: refused };
+
+  test("a thread is held one text, a second handed back going under the first as a text no one turn sent", () => {
+    const first = threadKeptWith(new Map(), "a", one);
+    expect([...first]).toStrictEqual([["a", one]]);
+    const both = threadKeptWith(threadKeptWith(first, "b", two), "a", two);
+    expect(both.get("a")).toStrictEqual({
+      text: "one\n\ntwo",
+      turn: undefined,
+      send: refused,
+    });
+    expect(both.get("b")).toBe(two);
+  });
+
+  test("what a box took is held no longer, and the same is handed back where nothing was held for it", () => {
+    const held = threadKeptWith(new Map(), "a", one);
+    expect(threadKeptWithout(held, ["b"])).toBe(held);
+    expect([...threadKeptWithout(held, ["a"])]).toStrictEqual([]);
+  });
+
+  test("a thread the listing says takes nothing more is one to hold nothing for", () => {
+    const held = threadKeptWith(threadKeptWith(new Map(), "a", one), "b", two);
+    expect(
+      threadKeptClosed(held, [
+        { session: "a", state: "Closed" },
+        { session: "b", state: "Open" },
+        { session: "c", state: "Closed" },
+      ]),
+    ).toStrictEqual(["a"]);
   });
 });
 

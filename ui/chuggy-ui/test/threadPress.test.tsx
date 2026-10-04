@@ -160,6 +160,32 @@ test("a press of the button that has turned to Send within the beat sends nothin
   expect(stage.sends.map((sent) => sent.message)).toStrictEqual(["and 42"]);
 });
 
+test("two clicks of Send a frame apart send once and stop nothing, and a click after the beat stops what was sent", async () => {
+  const stage = stageMounted(threadBody({ turns: [before] }), [earlier]);
+  await settled();
+  fireEvent.change(stageBox(), { target: { value: asked } });
+  await settled();
+  fireEvent.click(screen.getByRole("button", { name: "Send" }));
+  await settled();
+  buttonTakesStop();
+  await stageStopped();
+  buttonTakesStop();
+
+  const [sent] = stage.sends;
+  await stageAnswered(sent, { turn: sent?.turn, ordinal: 2 }, 202);
+  expect(stage.sends.map((post) => post.message)).toStrictEqual([asked]);
+  expect(stopped(stage)).toStrictEqual([]);
+  expect(stageColumn(stage.container)).toStrictEqual([
+    ...opened,
+    `> ${asked}`,
+    "",
+  ]);
+
+  clock.ms += conversationStopBeatMs;
+  await stageStopped();
+  expect(stopped(stage)).toStrictEqual([sent?.turn]);
+});
+
 test("Enter sends within the beat, since a key is no second press of the button", async () => {
   const stage = await answering();
   await stageStopped();
@@ -188,6 +214,34 @@ test("a send the door refuses with nothing typed since puts the words back alone
   await stageSent(asked);
   await stageAnswered(stage.sends[0], { error: { code: "Invalid" } }, 400);
   expect(stageBox().value).toBe(asked);
+});
+
+test("two sends refused while both were on their way come back in the order they were sent, ahead of what was typed since", async () => {
+  const stage = stageMounted(threadBody({ turns: [before] }), [earlier]);
+  await settled();
+  await stageSent("one");
+  await stageSent("two");
+  await stageAnswered(stage.sends[0], { error: { code: "Invalid" } }, 400);
+  expect(stageBox().value).toBe("one");
+  fireEvent.change(stageBox(), { target: { value: "one\n\nand three" } });
+  await settled();
+
+  await stageAnswered(stage.sends[1], { error: { code: "Invalid" } }, 400);
+  expect(stageBox().value).toBe("one\n\ntwo\n\nand three");
+  expect(stageColumn(stage.container)).toStrictEqual(opened);
+});
+
+test("a message handed back that the member has written in since is words typed, and the next handed back goes ahead of it", async () => {
+  const stage = stageMounted(threadBody({ turns: [before] }), [earlier]);
+  await settled();
+  await stageSent("one");
+  await stageSent("two");
+  await stageAnswered(stage.sends[0], { error: { code: "Invalid" } }, 400);
+  fireEvent.change(stageBox(), { target: { value: "one more" } });
+  await settled();
+
+  await stageAnswered(stage.sends[1], { error: { code: "Invalid" } }, 400);
+  expect(stageBox().value).toBe("two\n\none more");
 });
 
 test("what a refusal says goes when the member edits the box", async () => {

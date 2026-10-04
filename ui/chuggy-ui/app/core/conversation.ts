@@ -69,6 +69,10 @@
  * failed turn ran that is wrong until the retry's own ask is read, which is
  * the first thing a retry stores; the other way is wrong, where it was
  * refused, until something heard under the retry is stored or it settles.
+ * The turns before the one that is out take from the newest exchange
+ * backwards behind it, so for that moment each stands one exchange early: an
+ * answered turn of the same ask is drawn with the words of the turn before
+ * it, and has its own once the turn that is out has stored its ask.
  *
  * THE PAGE HOLDS THE NEWEST OF THEM, so the turns take from the newest
  * backwards: an older turn whose exchange has left the page takes none and
@@ -1613,6 +1617,32 @@ export function conversationTurnStoppable(
  * since, a blank line between, and alone where nothing was. */
 export function conversationTextRestored(kept: string, typed: string): string {
   return typed.trim().length === 0 ? kept : `${kept}\n\n${typed}`;
+}
+
+/** What a box holds, and the messages handed back that lead it. */
+export interface ConversationBox {
+  readonly text: string;
+  /** The messages handed back, as they stood when the last was put there. */
+  readonly back: string | undefined;
+}
+
+/**
+ * A box with one more message handed back: under those handed back before it
+ * that still lead the box untouched, and ahead of what was typed since. Ones
+ * the reader has written in since are words typed like any other.
+ */
+export function conversationBoxRestored(
+  box: ConversationBox,
+  kept: string,
+): ConversationBox & { readonly back: string } {
+  const before =
+    box.back !== undefined &&
+    (box.text === box.back || box.text.startsWith(`${box.back}\n\n`))
+      ? box.back
+      : undefined;
+  const back = before === undefined ? kept : `${before}\n\n${kept}`;
+  const typed = before === undefined ? box.text : box.text.slice(before.length);
+  return { text: conversationTextRestored(back, typed.trimStart()), back };
 }
 
 /** A message this page sent, as the queued turn the mailbox is about to list
