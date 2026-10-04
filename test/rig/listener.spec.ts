@@ -5,9 +5,9 @@
  * THE LISTENER HALF is #325's first and third clauses: the API's `LISTEN`
  * backend is terminated, the console says the change log behind its stream is
  * degraded, and a change made after the doorbell returns is drawn live. It is
- * terminated repeatedly across a window because `projectChangeBackoffMs`'s first
- * wait is `reconnectBaseMs` with a half-jitter — a fraction of a second — so a
- * single termination is a state too brief to have been observed.
+ * terminated repeatedly across a window because `postgresListenerBackoffMs`'s
+ * first wait is `reconnectBaseMs` with a half-jitter — a fraction of a second —
+ * so a single termination is a state too brief to have been observed.
  *
  * THE FALLBACK HALF cannot be built on that, and the arithmetic is why.
  * `runProjectFallback` sleeps `fallbackIntervalMs` BEFORE its first refetch, and

@@ -12,6 +12,7 @@
 import { setTimeout as delay } from "node:timers/promises";
 
 import type {
+  EventStreamSink,
   ProjectChangeDoorbell,
   ProjectChangeLog,
   ProjectChangeRow,
@@ -19,7 +20,6 @@ import type {
   ProjectResourceReader,
   ProjectStreamNote,
   ProjectStreamReport,
-  ProjectStreamSink,
   ProjectStreamTimers,
 } from "../../src/interpreter/projectStream.ts";
 import type {
@@ -295,27 +295,44 @@ export function fakeReader(): FakeReader {
   };
 }
 
-export interface FakeSocket {
-  readonly sink: ProjectStreamSink;
-  readonly frames: ProjectStreamEvent[];
+export interface FakeSocket<Event = ProjectStreamEvent> {
+  readonly sink: EventStreamSink<Event> & {
+    pendingBytes(): number;
+    sentBytes(): number;
+    cut(): void;
+  };
+  readonly frames: Event[];
   beats(): number;
   ended(): boolean;
+  /** Whether the socket was cut, which is not an end. */
+  wasCut(): boolean;
   stall(): void;
   drain(): void;
+  /** Sets what the socket answers it has taken and not yet written out. */
+  holds(bytes: number): void;
   /** Makes every later write throw, which is what a socket torn down mid-write does. */
   breaks(): void;
   mends(): void;
 }
 
-export function fakeSocket(): FakeSocket {
-  const frames: ProjectStreamEvent[] = [];
+/** What a socket here counts a heartbeat as having written. */
+export const fakeBeatBytes = 3;
+
+export function fakeSocket<Event = ProjectStreamEvent>(): FakeSocket<Event> {
+  const frames: Event[] = [];
   let beats = 0;
   let ended = false;
+  let cut = false;
   let draining = true;
   let broken = false;
+  let pendingBytes = 0;
+  let sentBytes = 0;
   let drained: (() => void) | undefined;
   return {
     frames,
+    holds: (bytes) => {
+      pendingBytes = bytes;
+    },
     breaks: () => {
       broken = true;
     },
@@ -324,6 +341,7 @@ export function fakeSocket(): FakeSocket {
     },
     beats: () => beats,
     ended: () => ended,
+    wasCut: () => cut,
     stall: () => {
       draining = false;
     },
@@ -337,10 +355,12 @@ export function fakeSocket(): FakeSocket {
       send: (event) => {
         if (broken) throw new Error("the socket is gone");
         frames.push(event);
+        sentBytes += typeof event === "string" ? event.length : 0;
         return draining;
       },
       beat: () => {
         beats += 1;
+        sentBytes += fakeBeatBytes;
         return draining;
       },
       whenDrained: (handler) => {
@@ -348,6 +368,11 @@ export function fakeSocket(): FakeSocket {
       },
       end: () => {
         ended = true;
+      },
+      pendingBytes: () => pendingBytes,
+      sentBytes: () => sentBytes,
+      cut: () => {
+        cut = true;
       },
     },
   };

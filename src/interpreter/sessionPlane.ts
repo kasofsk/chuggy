@@ -31,6 +31,7 @@ import type {
   SessionTurnMeasured,
 } from "./agentSession.ts";
 import type { SessionContainerEnd } from "../contract/rosters.ts";
+import type { SessionLiveEvent } from "../contract/sessionLive.ts";
 import type { Partition } from "./projectStore.ts";
 import {
   sessionPodEvidence,
@@ -243,4 +244,29 @@ export interface SessionStoreQueryPort {
     readonly secret: SessionBearerSecret;
     readonly generation: number;
   }): Promise<readonly SessionStoreStreamRow[]>;
+}
+
+/** One session of one project, as a key no other session of any project shares. */
+export function sessionLiveKey(
+  partition: Partition,
+  session: SessionId,
+): string {
+  const { tenant, project } = partition;
+  return `${String(tenant.length)}:${tenant}${String(project.length)}:${project}${session}`;
+}
+
+/** What publishing one post's live events found: handed over, or not now, which is no lane to hand them to or a session past what it may publish. */
+export type SessionLivePublished = "Published" | "Unavailable";
+
+/**
+ * Publishing what a session's runner reports of a turn in flight, to whoever
+ * is reading that session now. Nothing keeps an event nobody heard.
+ */
+export interface SessionLivePublishPort {
+  publish(input: {
+    readonly partition: Partition;
+    readonly session: SessionId;
+    readonly turn: SessionTurnId;
+    readonly events: readonly SessionLiveEvent[];
+  }): Promise<SessionLivePublished>;
 }

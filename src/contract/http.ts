@@ -59,6 +59,16 @@ export function isBoundedText(value: string, charsMax: number): boolean {
   return boundedTextRefusal(value, charsMax) === undefined;
 }
 
+/** What `text` weighs as a JSON string in UTF-8, its quotes included. */
+export function jsonTextBytes(text: string): number {
+  let bytes = 0;
+  for (const char of JSON.stringify(text)) {
+    const point = char.codePointAt(0) ?? 0;
+    bytes += point < 0x80 ? 1 : point < 0x800 ? 2 : point < 0x10000 ? 3 : 4;
+  }
+  return bytes;
+}
+
 /** What one character weighs once JSON escapes it, which a control character does. */
 const jsonEscapedCharChars = 6;
 
@@ -161,6 +171,21 @@ export const sessionTurnToolsMax = 64;
 
 /** The longest tool name one turn's measurement reports. */
 export const sessionTurnToolNameCharsMax = 128;
+
+/** The longest identity of a model's message, which a live event names its block by. */
+export const sessionLiveMessageCharsMax = 128;
+
+/** The most content blocks of one message a live stream carries, which a block's index is below. */
+export const sessionLiveBlocksMax = 64;
+
+/** The most text one live block holds, in the UTF-16 units an offset counts. */
+export const sessionLiveBlockCharsMax = 65_536;
+
+/** The most one live event's text weighs as `jsonTextBytes` reads it, so an event is one notification's worth. */
+export const sessionLiveTextBytesMax = 2_048;
+
+/** The most live events one post carries. */
+export const sessionLiveEventsMax = 16;
 
 /** The largest body one worker-plane upload carries, which an artifact is written against. */
 export const workerPlaneUploadBytesMax = 4_194_304;
@@ -439,6 +464,7 @@ export const nativeHttpRoutes = {
   threadClose: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/threads/:session/close`,
   threadRename: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/threads/:session/rename`,
   threadHide: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/threads/:session/hide`,
+  threadLive: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/threads/:session/live`,
 } as const;
 
 export type NativeHttpRoute = keyof typeof nativeHttpRoutes;

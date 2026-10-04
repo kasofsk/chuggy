@@ -187,15 +187,22 @@ export function postgresHarnessUrl(): string {
 }
 
 /**
- * A pool holding one deployment role, so a case drives a trigger as whoever
- * runs it rather than as the migration owner. The roles are `NOLOGIN`, so the
- * role is a startup option on a session the owner opened, which is the
- * authority a `SET ROLE` gives and survives being pooled.
+ * Where a connection holding one deployment role is opened. The roles are
+ * `NOLOGIN`, so the role is a startup option on a session the owner opened,
+ * which is the authority a `SET ROLE` gives and survives being pooled.
  */
-export function postgresHarnessRolePool(role: string): pg.Pool {
+export function postgresHarnessRoleUrl(role: string): URL {
   const url = new URL(postgresHarnessUrl());
   url.searchParams.set("options", `-c role=${role}`);
-  return postgresPool(url.toString());
+  return url;
+}
+
+/**
+ * A pool holding one deployment role, so a case drives a trigger as whoever
+ * runs it rather than as the migration owner.
+ */
+export function postgresHarnessRolePool(role: string): pg.Pool {
+  return postgresPool(postgresHarnessRoleUrl(role).toString());
 }
 
 /** One transaction a case drives itself, for the interleavings a port cannot be asked to produce. */

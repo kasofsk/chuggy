@@ -136,6 +136,19 @@ to start without the required ones.
 | `CHUG_API_STREAM_HEARTBEAT_MS` | | keeps a quiet stream from reading as idle to the Cloudflare edge in front of the rig, whose cutoff was measured by holding `curl -N` on the route until the edge closed it |
 | `CHUG_API_STREAM_SWEEP_MS` | | how often the API trims the change log, which is also how often it reads the log without being rung |
 | `CHUG_API_STREAM_SWEEP_ROWS_MAX` | | how many rows one trim may remove; this and the interval above are the whole of the log's retention, because the API is the only process that trims it, so their quotient must outpace the installation's appends — a sweeper that falls behind grows the log rather than resetting a consumer, which is the direction to fall behind in |
+| `CHUG_API_THREAD_LIVE_CONNECTIONS_MAX` | | how many thread live streams one process holds open at once |
+| `CHUG_API_THREAD_LIVE_SESSION_READERS_MAX` | | how many of those may read one thread, which is how many sockets one live event is written to |
+| `CHUG_API_THREAD_LIVE_MAX_AGE_MS` | | how long one lives before its connection is reset, which is what makes the client reconnect; a stream is ended rather than reset only by a process that is stopping |
+| `CHUG_API_THREAD_LIVE_HEARTBEAT_MS` | | how often a quiet one is written to, which is also how often the sessions gone quiet are dropped and each reader's access to its thread is asked again |
+| `CHUG_API_THREAD_LIVE_SLOW_CLIENT_WAIT_MS` | | how long a reader that stopped reading is waited for before its connection is reset |
+| `CHUG_API_THREAD_LIVE_PENDING_BYTES_MAX` | | how much the readers that stopped reading may leave unwritten between them, past which the one that just fell behind is reset at once |
+| `CHUG_API_THREAD_LIVE_SENT_BYTES_MAX` | | how much the open streams may have been written between them since each opened, past which the one written the most is reset and reconnects; nothing tells the process how much of it a reader has read, so this is what bounds what the kernel holds unread for them |
+| `CHUG_API_THREAD_LIVE_SESSIONS_HELD_MAX` | | how many sessions' messages in flight one process holds, past which the session heard from longest ago is dropped |
+| `CHUG_API_THREAD_LIVE_HELD_BYTES_MAX` | | how much memory those messages are counted as holding between them, past which the same session is dropped |
+| `CHUG_API_THREAD_LIVE_SESSION_TEXT_BYTES_MAX` | | how much text one session's message may hold, counted at two bytes a UTF-16 unit, past which the block being written is left gapped, and every block of the message when it is passed again within one `CHUG_API_THREAD_LIVE_WINDOW_MS` with no turn ended between; it is what bounds one snapshot |
+| `CHUG_API_THREAD_LIVE_SESSION_IDLE_MS` | | how long a session may report nothing before what is held of its message is dropped |
+| `CHUG_API_THREAD_LIVE_WINDOW_MS` | | the span the live events arriving from every session are counted over |
+| `CHUG_API_THREAD_LIVE_WINDOW_EVENTS_MAX` | | how many of them are read in one such span, past which the rest are left unread and everything held is dropped |
 | `CHUG_API_SELECTOR_FEEDBACK_MAX` | | how much review feedback one operational context carries |
 | `CHUG_SCHEDULER_PROJECT_BACKLOG_MAX` | | how much of a project's backlog it carries |
 | `CHUG_SCHEDULER_INSTALLATION_BACKLOG_MAX` | | how much of the installation's it carries |

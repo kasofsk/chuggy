@@ -607,21 +607,30 @@ const claims = {
   },
 } as const;
 
+/** Every poll a replayed pool makes: what it holds, how many executions and sessions it has room for, and what a claim returns it. */
+const poolReplayPolls = [
+  ["a pinned image", ["live", "gone"], 1, 0, claims.pinned],
+  ["a capability requirement", [], 1, 0, claims.capable],
+  ["no room", ["live"], 0, 0, claims.pinned],
+  ["nothing to claim", [], 1, 0, undefined],
+  ["room for a session", [], 0, 1, undefined],
+] as const;
+
 /**
  * Every poll a pool built with `older` makes, through the names its own
  * release exports, read by its own reconciliation schema. That schema is
- * strict, so an answer naming a field it does not, `sessions` among them, is
- * one such a pool refuses whole.
+ * strict, so an answer naming a field it does not is one such a pool refuses
+ * whole, and `sessions` is answered only to a release whose poll can ask for
+ * one.
  */
 function poolReplayPolled(older: WorkerContractReleasePool): void {
-  test(`a ${older.release} pool reads every reconciliation a poll answers it with, and is handed no session`, async () => {
+  const { wantedSessions } = older.pollQuery;
+  const polls = poolReplayPolls.filter(
+    ([, , , sessions]) => sessions === 0 || wantedSessions !== undefined,
+  );
+  test(`a ${older.release} pool reads every reconciliation a poll answers it with, and is handed a session only where its release asked for one`, async () => {
     const seen = new Map<string, Set<boolean>>();
-    for (const [what, held, wanted, claimed] of [
-      ["a pinned image", ["live", "gone"], 1, claims.pinned],
-      ["a capability requirement", [], 1, claims.capable],
-      ["no room", ["live"], 0, claims.pinned],
-      ["nothing to claim", [], 1, undefined],
-    ] as const) {
+    for (const [what, held, wanted, sessions, claimed] of polls) {
       const recorded = calls();
       const ports = {
         ...recorded.ports,
@@ -631,6 +640,9 @@ function poolReplayPolled(older: WorkerContractReleasePool): void {
       const query = new URLSearchParams([
         ...held.map((assignment) => [older.pollQuery.held, assignment]),
         [older.pollQuery.wanted, String(wanted)],
+        ...(wantedSessions === undefined || sessions === 0
+          ? []
+          : [[wantedSessions, String(sessions)]]),
       ]);
       const answered = await createPoolPlaneApp(
         plane(ports, authority("Allow"), offering.store),
@@ -645,8 +657,19 @@ function poolReplayPolled(older: WorkerContractReleasePool): void {
       assert.equal(answered.statusCode, 200, what);
       const body: unknown = answered.json();
       assert.deepEqual(older.reconciliation.parse(body), body, what);
-      assert.equal(Object.hasOwn(body as object, "sessions"), false, what);
-      assert.deepEqual(offering.made, [], what);
+      assert.equal(
+        Object.hasOwn(body as object, "sessions"),
+        wantedSessions !== undefined,
+        what,
+      );
+      if (wantedSessions === undefined)
+        assert.deepEqual(offering.made, [], what);
+      else
+        assert.deepEqual(
+          offering.made.filter((call) => (call as unknown[])[0] === "open"),
+          Array(sessions).fill(["open", "session-waiting", "minted-1"]),
+          what,
+        );
       workerContractOptionalsSeen(older.reconciliation, body, "answer", seen);
     }
     for (const [field, held] of seen)

@@ -92,12 +92,14 @@ export interface ProjectResourceReader {
 }
 
 /** One open socket, which answers false as soon as it stops keeping up. */
-export interface ProjectStreamSink {
-  send(event: ProjectStreamEvent): boolean;
+export interface EventStreamSink<Event> {
+  send(event: Event): boolean;
   beat(): boolean;
   whenDrained(drained: () => void): void;
   end(): void;
 }
+
+export type ProjectStreamSink = EventStreamSink<ProjectStreamEvent>;
 
 export interface ProjectStreamTimer {
   cancel(): void;

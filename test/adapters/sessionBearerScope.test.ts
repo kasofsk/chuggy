@@ -111,6 +111,7 @@ function scopedApp(reached: string[], web?: ServedNativeWeb) {
     recorded(reached, "placement"),
     recorded(reached, "sessionPlacement"),
     recorded(reached, "proposalReviews"),
+    recorded(reached, "threadLive"),
   );
 }
 

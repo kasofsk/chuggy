@@ -33,6 +33,8 @@ import { join } from "node:path";
 import test, { type TestContext } from "node:test";
 import { promisify } from "node:util";
 
+import { threadLiveLimitsDefault } from "../../src/interpreter/threadLive.ts";
+
 const execute = promisify(execFile);
 
 const issuer = "https://auth.invalid";
@@ -382,6 +384,23 @@ const forgePairsProgram = `
   }))));
 `;
 
+/** Every bound of the thread live stream under its own variable, each a value no other bound and no default holds. */
+const threadLiveNamed = {
+  CHUG_API_THREAD_LIVE_CONNECTIONS_MAX: "11",
+  CHUG_API_THREAD_LIVE_SESSION_READERS_MAX: "12",
+  CHUG_API_THREAD_LIVE_MAX_AGE_MS: "13",
+  CHUG_API_THREAD_LIVE_HEARTBEAT_MS: "14",
+  CHUG_API_THREAD_LIVE_SLOW_CLIENT_WAIT_MS: "15",
+  CHUG_API_THREAD_LIVE_PENDING_BYTES_MAX: "16",
+  CHUG_API_THREAD_LIVE_SESSIONS_HELD_MAX: "17",
+  CHUG_API_THREAD_LIVE_HELD_BYTES_MAX: "18",
+  CHUG_API_THREAD_LIVE_SESSION_TEXT_BYTES_MAX: "19",
+  CHUG_API_THREAD_LIVE_SESSION_IDLE_MS: "20",
+  CHUG_API_THREAD_LIVE_WINDOW_MS: "21",
+  CHUG_API_THREAD_LIVE_WINDOW_EVENTS_MAX: "22",
+  CHUG_API_THREAD_LIVE_SENT_BYTES_MAX: "23",
+};
+
 /** What a root program prints under the variables one case names, and nothing else. */
 async function rootRead(
   named: Readonly<Record<string, string>>,
@@ -398,6 +417,7 @@ async function rootRead(
     "CHUG_API_POOL_TOKEN_URL",
     "CHUG_API_POOL_PLANE_URL",
     "CHUG_API_POOL_REGISTRY_HOST",
+    ...Object.keys(threadLiveNamed),
   ])
     if (named[variable] === undefined) delete environment[variable];
   try {
@@ -426,6 +446,289 @@ const poolNamed = {
   CHUG_API_POOL_PLANE_URL: "http://127.0.0.1:4444",
   CHUG_API_POOL_REGISTRY_HOST: "chuggy-registry.chuggy.test:5000",
 };
+
+const threadLiveLimitsProgram = `
+  const root = await import('./src/roots/nativeHttp.ts');
+  process.stdout.write(JSON.stringify(root.nativeThreadLiveLimits()));
+`;
+
+test("each bound of the thread live stream is the one its own variable names, the hub's default where none does, and a refusal to start where it is not a count", async () => {
+  const unnamed = await rootRead({}, threadLiveLimitsProgram);
+  assert.equal(unnamed.code, 0, unnamed.out);
+  assert.deepEqual(JSON.parse(unnamed.out), threadLiveLimitsDefault);
+  const named = await rootRead(threadLiveNamed, threadLiveLimitsProgram);
+  assert.equal(named.code, 0, named.out);
+  assert.deepEqual(JSON.parse(named.out), {
+    connectionsMax: 11,
+    sessionReadersMax: 12,
+    maxAgeMs: 13,
+    heartbeatMs: 14,
+    slowClientWaitMs: 15,
+    pendingBytesMax: 16,
+    sentBytesMax: 23,
+    sessionsHeldMax: 17,
+    heldBytesMax: 18,
+    sessionTextBytesMax: 19,
+    sessionIdleMs: 20,
+    windowMs: 21,
+    windowEventsMax: 22,
+  });
+  const refused = await rootRead(
+    { CHUG_API_THREAD_LIVE_HEARTBEAT_MS: "0" },
+    threadLiveLimitsProgram,
+  );
+  assert.equal(refused.code, 1);
+  assert.match(
+    refused.out,
+    /CHUG_API_THREAD_LIVE_HEARTBEAT_MS must be a positive integer/u,
+  );
+});
+
+/**
+ * The root's stopping wired to an app that serves nothing, two hubs and two
+ * pools that each record being closed, then stopped as `stop` stops it. What
+ * was closed is printed once the last pool has been.
+ */
+function stoppingProgram(stop: string): string {
+  return `
+  const root = await import('./src/roots/nativeHttp.ts');
+  const { default: fastify } = await import('fastify');
+  const closed = [];
+  const recording = (name, close) => ({
+    [close]: () => {
+      closed.push(name);
+      return Promise.resolve();
+    },
+  });
+  const app = fastify();
+  root.nativeStopping(
+    app,
+    { pool: recording('pool', 'end'), selectorReviewPool: recording('review pool', 'end') },
+    [recording('project stream', 'close'), recording('thread live', 'close')],
+  );
+  const asking = setInterval(() => {
+    if (!closed.includes('review pool')) return;
+    clearInterval(asking);
+    process.stdout.write(JSON.stringify(closed));
+  }, 10);
+  await app.ready();
+  ${stop}
+`;
+}
+
+test("the app closing closes every hub it was stopped with and then the pools, and a stop signal closes the hubs before the drain begins", async () => {
+  const hubs = ["project stream", "thread live"];
+  const pools = ["pool", "review pool"];
+  const closed = await rootRead({}, stoppingProgram("await app.close();"));
+  assert.equal(closed.code, 0, closed.out);
+  assert.deepEqual(JSON.parse(closed.out), [...hubs, ...pools]);
+  const signalled = await rootRead(
+    {},
+    stoppingProgram("process.kill(process.pid, 'SIGTERM');"),
+  );
+  assert.equal(signalled.code, 0, signalled.out);
+  assert.deepEqual(JSON.parse(signalled.out), [...hubs, ...hubs, ...pools]);
+});
+
+/**
+ * Both hubs' reports as the root composes them, each written to as its hub
+ * writes to it, under a clock the program sets. What `noting` leaves in `out`
+ * is printed, and `written()` is what has reached the error stream since it
+ * was last asked.
+ */
+function notesProgram(noting: string): string {
+  return `
+  const root = await import('./src/roots/nativeHttp.ts');
+  let nowMs = 0;
+  Date.now = () => nowMs;
+  const lines = [];
+  process.stderr.write = (line) => {
+    lines.push(line.trimEnd());
+    return true;
+  };
+  const written = () => lines.splice(0);
+  const live = root.nativeThreadLiveReport();
+  const stream = root.nativeStreamReport();
+  const liveNote = (note) => ({
+    ...note, connectionsOpen: 0, sessionsHeld: 0, heldBytes: 0, pendingBytes: 0,
+    sentBytes: 0, eventsHeard: 0, payloadsUnread: 0, payloadsShed: 0,
+  });
+  const streamNote = (note) => ({ ...note, streamsOpen: 0, rowsRead: 0 });
+  const out = {};
+  ${noting}
+  process.stdout.write(JSON.stringify(out));
+`;
+}
+
+/** How many of its kind each line says there have been, in the order the lines were written. */
+function timesSaid(lines: readonly string[]): number[] {
+  return lines.map((line) => Number(/ times=(\d+)$/u.exec(line)?.[1]));
+}
+
+test("a note a client causes is written at the first of a run and at each that doubles it, with how many of its kind there have been, each kind of each hub counted apart", async () => {
+  const ran = await rootRead(
+    {},
+    notesProgram(`
+      const kinds = [
+        ['live Refused', live, liveNote({ note: 'Refused' })],
+        ['live SlowClientClosed', live, liveNote({ note: 'SlowClientClosed' })],
+        ['live PendingClosed', live, liveNote({ note: 'PendingClosed' })],
+        ['live SentClosed', live, liveNote({ note: 'SentClosed' })],
+        ['stream Refused', stream, streamNote({ note: 'Refused' })],
+        ['stream SlowClientClosed', stream, streamNote({ note: 'SlowClientClosed' })],
+      ];
+      for (const [kind] of kinds) out[kind] = [];
+      for (let round = 0; round < 1000; round += 1)
+        for (const [kind, report, note] of kinds) {
+          report.noted(note);
+          out[kind].push(...written());
+        }
+    `),
+  );
+  assert.equal(ran.code, 0, ran.out);
+  const written = JSON.parse(ran.out) as Record<string, string[]>;
+  assert.equal(Object.keys(written).length, 6);
+  for (const [kind, lines] of Object.entries(written)) {
+    assert.deepEqual(
+      timesSaid(lines),
+      [1, 2, 4, 8, 16, 32, 64, 128, 256, 512],
+      kind,
+    );
+    const hub = kind.startsWith("live") ? "thread live: " : "project stream: ";
+    assert.ok(
+      lines.every((line) => line.startsWith(hub)),
+      kind,
+    );
+  }
+});
+
+test("the hubs this root composes report as these do: what a stopped hub refuses is written at the first and at each that doubles it", async () => {
+  const ran = await rootRead(
+    { CHUG_API_DATABASE_URL: "postgres://nobody@127.0.0.1:1/nothing" },
+    notesProgram(`
+      const liveHub = root.nativeThreadLiveHub();
+      const streamHub = root.nativeStreamHub({}, {});
+      await liveHub.close();
+      await streamHub.close();
+      const partition = { tenant: 'tenant', project: 'project' };
+      for (let round = 0; round < 8; round += 1) {
+        liveHub.open({ partition, session: 'thread-1', admitted: () => Promise.resolve(true) });
+        await streamHub.open({ partition, principal: 'issuer-subject' });
+      }
+      out.lines = written().filter((line) => line.includes(': refused a '));
+    `),
+  );
+  assert.equal(ran.code, 0, ran.out);
+  const { lines } = JSON.parse(ran.out) as { lines: string[] };
+  for (const hub of ["thread live: ", "project stream: "])
+    assert.deepEqual(
+      timesSaid(lines.filter((line) => line.startsWith(hub))),
+      [1, 2, 4, 8],
+      hub,
+    );
+  assert.equal(lines.length, 8);
+});
+
+test("a note this process paces is written every time it is noted, and says nothing of how many", async () => {
+  const ran = await rootRead(
+    {},
+    notesProgram(`
+      for (let round = 0; round < 5; round += 1) {
+        live.noted(liveNote({ note: 'Sourced', source: 'Lost' }));
+        live.noted(liveNote({ note: 'Unread' }));
+        live.noted(liveNote({ note: 'Shed' }));
+        stream.noted(streamNote({ note: 'Sourced', state: 'lost' }));
+        stream.noted(streamNote({ note: 'Swept', removed: 3 }));
+        stream.noted(streamNote({ note: 'ReadFailed', failure: 'refused' }));
+      }
+      out.lines = written();
+    `),
+  );
+  assert.equal(ran.code, 0, ran.out);
+  const { lines } = JSON.parse(ran.out) as { lines: string[] };
+  assert.equal(lines.length, 30);
+  assert.equal(new Set(lines).size, 6);
+  assert.ok(lines.every((line) => !line.includes("times=")));
+});
+
+test("a run goes on while each of its notes comes within the quiet span of the last, a kind unheard for that span begins its run again, and its lines go on saying how many there have been in all", async () => {
+  const ran = await rootRead(
+    {},
+    notesProgram(`
+      const cut = liveNote({ note: 'SentClosed' });
+      for (let round = 0; round < 5; round += 1) live.noted(cut);
+      for (let round = 0; round < 2; round += 1) {
+        nowMs += root.nativeNoteQuietMs - 1;
+        live.noted(cut);
+      }
+      for (let round = 0; round < 3; round += 1) live.noted(cut);
+      out.short = written();
+      nowMs += root.nativeNoteQuietMs;
+      for (let round = 0; round < 4; round += 1) live.noted(cut);
+      out.quiet = written();
+    `),
+  );
+  assert.equal(ran.code, 0, ran.out);
+  const written = JSON.parse(ran.out) as { short: string[]; quiet: string[] };
+  assert.deepEqual(timesSaid(written.short), [1, 2, 4, 7, 8]);
+  assert.deepEqual(timesSaid(written.quiet), [11, 12, 14]);
+});
+
+test("a kind still arriving is written once the quiet span has passed since its last line, and its run is not begun again for it: a trickle says its count each span, and a surge inside it is said within one", async () => {
+  const ran = await rootRead(
+    {},
+    notesProgram(`
+      const refused = liveNote({ note: 'Refused' });
+      for (let round = 0; round < 40; round += 1) {
+        nowMs += root.nativeNoteQuietMs * 5 / 6;
+        live.noted(refused);
+      }
+      out.trickle = written();
+      for (let round = 0; round < 20; round += 1) {
+        nowMs += 1;
+        live.noted(refused);
+      }
+      nowMs += root.nativeNoteQuietMs - 21;
+      live.noted(refused);
+      out.surge = written();
+      nowMs += 1;
+      for (let round = 0; round < 3; round += 1) live.noted(refused);
+      out.span = written();
+    `),
+  );
+  assert.equal(ran.code, 0, ran.out);
+  const written = JSON.parse(ran.out) as {
+    trickle: string[];
+    surge: string[];
+    span: string[];
+  };
+  assert.deepEqual(timesSaid(written.trickle), [
+    1,
+    ...Array.from({ length: 20 }, (_unused, at) => 2 * (at + 1)),
+  ]);
+  assert.deepEqual(written.surge, []);
+  assert.deepEqual(timesSaid(written.span), [62, 64]);
+});
+
+test("a kind arriving far oftener than the quiet span is written at each doubling of its run and otherwise once a span, and no oftener", async () => {
+  const ran = await rootRead(
+    {},
+    notesProgram(`
+      const cut = liveNote({ note: 'SentClosed' });
+      for (let round = 0; round < 1000; round += 1) {
+        nowMs += root.nativeNoteQuietMs / 100;
+        live.noted(cut);
+      }
+      out.lines = written();
+    `),
+  );
+  assert.equal(ran.code, 0, ran.out);
+  const { lines } = JSON.parse(ran.out) as { lines: string[] };
+  assert.deepEqual(
+    timesSaid(lines),
+    [1, 2, 4, 8, 16, 32, 64, 128, 228, 256, 356, 456, 512, 612, 712, 812, 912],
+  );
+});
 
 test("a pool site a runner would read is composed as named", async () => {
   const ran = await rootRead(poolNamed, poolSiteProgram);

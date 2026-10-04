@@ -53,7 +53,11 @@ import type { SelectorProjectSettingsAdministration } from "../../interpreter/se
 import type { SelectorProposalReviews } from "../../interpreter/selectorReview.ts";
 import type { ForgeCredentialMinting } from "../../interpreter/forgeCredentials.ts";
 import type { RepositoryOnboarding } from "../../interpreter/repositoryOnboarding.ts";
-import { projectStreamSocket } from "./eventStream.ts";
+import type {
+  ThreadLiveConnection,
+  ThreadLiveHub,
+} from "../../interpreter/threadLive.ts";
+import { projectStreamSocket, threadLiveSocket } from "./eventStream.ts";
 import { nativeHttpContractDocument } from "../../contract/document.ts";
 import {
   selectorHistoryOrders,
@@ -66,6 +70,7 @@ import {
   nativeHttpHeaderBytesMax,
   nativeHttpMediaType,
   nativeHttpPathSegmentCharsMax,
+  nativeHttpRoutes,
   selectorHistoryLimitMax,
   selectorProposalDispatchesAnsweredMax,
 } from "../../contract/http.ts";
@@ -279,6 +284,15 @@ function send(reply: FastifyReply, result: NativeHttpResponse): void {
   void reply.code(result.status).send(result.body);
 }
 
+/** The refusal a server with no room answers, which names how soon to ask again. */
+function serverBusy(reply: FastifyReply): FastifyReply {
+  return reply
+    .code(503)
+    .header("retry-after", "1")
+    .type(nativeHttpMediaType)
+    .send(nativeHttpError("ServerBusy", "The server is at capacity."));
+}
+
 function bearer(authorization: string | undefined): string | undefined {
   if (authorization === undefined) return undefined;
   const matched = /^Bearer ([^ ]+)$/iu.exec(authorization);
@@ -440,11 +454,7 @@ function registerCapacity(app: FastifyInstance, requestsMax: number): void {
   app.addHook("onRequest", async (request, reply) => {
     if (request.routeOptions.config.streaming === true) return;
     if (active >= requestsMax) {
-      await reply
-        .code(503)
-        .header("retry-after", "1")
-        .type(nativeHttpMediaType)
-        .send(nativeHttpError("ServerBusy", "The server is at capacity."));
+      await serverBusy(reply);
       return reply;
     }
     active += 1;
@@ -1851,11 +1861,7 @@ async function serveProjectEvents(
     expiresAtMs: request.bearerExpiresAtMs,
   });
   if (opened.opened === "AtCapacity") {
-    await reply
-      .code(503)
-      .header("retry-after", "1")
-      .type(nativeHttpMediaType)
-      .send(nativeHttpError("ServerBusy", "The server is at capacity."));
+    await serverBusy(reply);
     return;
   }
   watching.stream = opened.stream;
@@ -1876,6 +1882,62 @@ function registerProjectEvents(
     "/api/v1/tenants/:tenant/projects/:project/events",
     { config: { streaming: true } },
     (request, reply) => serveProjectEvents(request, reply, web, hub),
+  );
+}
+
+/**
+ * Who may listen to a thread is who may read it, so the thread read is what
+ * admits, and the hub asks it again for as long as the stream is open. Every
+ * refusal is answered before the reply is hijacked, and the handler that gives
+ * the slot back is attached before the read, which the socket may not outlast.
+ */
+async function serveThreadLive(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  web: InitialNativeWeb,
+  hub: ThreadLiveHub,
+): Promise<void> {
+  const partition = partitionOf(request);
+  const session = registerEndpointSession(request);
+  const listening: { connection?: ThreadLiveConnection; abandoned: boolean } = {
+    abandoned: false,
+  };
+  request.raw.on("close", () => {
+    listening.abandoned = true;
+    listening.connection?.close();
+  });
+  const principal = principalOf(request);
+  const read = () => web.thread(principal, partition, session, { limit: 1 });
+  const standing = await read();
+  if (standing.result !== "Found") {
+    send(reply, threadResponse(standing));
+    return;
+  }
+  if (listening.abandoned) return;
+  const opened = hub.open({
+    partition,
+    session,
+    expiresAtMs: request.bearerExpiresAtMs,
+    admitted: async () => (await read()).result === "Found",
+  });
+  if (opened.opened === "AtCapacity") {
+    await serverBusy(reply);
+    return;
+  }
+  listening.connection = opened.connection;
+  reply.hijack();
+  opened.connection.begin(threadLiveSocket(reply));
+}
+
+function registerThreadLive(
+  app: FastifyInstance,
+  web: InitialNativeWeb,
+  hub: ThreadLiveHub,
+): void {
+  app.get(
+    nativeHttpRoutes.threadLive,
+    { config: { streaming: true } },
+    (request, reply) => serveThreadLive(request, reply, web, hub),
   );
 }
 
@@ -1941,6 +2003,7 @@ export function createNativeHttpApp(
   placement?: ExecutionPlacementAdministration,
   sessionPlacement?: SessionPlacementAdministration,
   proposalReviews?: SelectorProposalReviews,
+  threadLive?: ThreadLiveHub,
 ): FastifyInstance {
   const app = nativeHttpServer(limits);
   const partitionRoot = "/api/v1/tenants/:tenant/projects/:project";
@@ -1975,6 +2038,7 @@ export function createNativeHttpApp(
   registerConfigurations(app, web);
   registerDrafts(app, web);
   registerThreadReads(app, web);
+  if (threadLive !== undefined) registerThreadLive(app, web, threadLive);
   registerThreadWrites(app, web);
   registerLeadInquiries(app, web);
   registerDispatchView(app, web);

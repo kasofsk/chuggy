@@ -43,6 +43,7 @@ import { inertWorkerPlane } from "../adapters/workerPlaneFixtures.ts";
 import {
   sessionRigAttempt,
   sessionRigOpen,
+  sessionRigPlaneService,
   sessionRigProject,
   sessionRigSession,
   sessionRigTurn,
@@ -73,28 +74,13 @@ function forkPlane(rig: SessionRig): {
   const addressed: string[] = [];
   const app = createWorkerPlaneApp({
     ...inertWorkerPlane(sessionStoreBatchBytesMax),
-    sessions: {
-      authority: rig.plane,
-      heartbeats: rig.plane,
-      heartbeatLeaseSecs: 300,
-      references: rig.plane,
-      turns: rig.plane,
-      settlements: rig.plane,
-      holds: rig.plane,
-      losses: rig.plane,
-      records: rig.plane,
-      queries: rig.plane,
-      store: {
-        storeBatch: (object) => volume.storeBatch(object),
-        readBatch: (object) => {
-          addressed.push(`${object.session}/${String(object.batch)}`);
-          return volume.readBatch(object);
-        },
+    sessions: sessionRigPlaneService(rig, {
+      storeBatch: (object) => volume.storeBatch(object),
+      readBatch: (object) => {
+        addressed.push(`${object.session}/${String(object.batch)}`);
+        return volume.readBatch(object);
       },
-      turnPollIntervalMs: 10,
-      turnPollSecsMax: 1,
-      pollsMax: 8,
-    },
+    }),
   });
   return { app, addressed };
 }

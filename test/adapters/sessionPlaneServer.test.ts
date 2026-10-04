@@ -30,6 +30,11 @@ import {
   nativeHttpPageItemsMax,
   repositoryIdentityCharsMax,
   sessionIdentityCharsMax,
+  sessionLiveBlockCharsMax,
+  sessionLiveBlocksMax,
+  sessionLiveEventsMax,
+  sessionLiveMessageCharsMax,
+  sessionLiveTextBytesMax,
   sessionStoreBatchBytesMax,
   sessionStoreBatchesMax,
   sessionStorePageBatchesMax,
@@ -43,6 +48,7 @@ import {
   sessionContainerEnds,
 } from "../../src/contract/rosters.ts";
 import {
+  jsonTextBytes,
   sessionPlaneRoutes,
   type SessionPlaneRouteName,
 } from "../../src/contract/sessionPlane.ts";
@@ -116,6 +122,12 @@ const sessionCalls = [
     "POST",
     "/v1/session/turn/failure",
     { turn: "turn-1", failure: "StoreRefused" },
+    {},
+  ],
+  [
+    "POST",
+    "/v1/session/turn/live",
+    { turn: "turn-1", events: [{ live: "End" }] },
     {},
   ],
   ["POST", "/v1/session/held", {}, {}],
@@ -226,6 +238,12 @@ test("no session route answers a bearer that is not a live session", async () =>
       turns: { claim: counted },
       heartbeats: { heartbeat: taken },
       holds: { hold: taken },
+      live: {
+        publish: () => {
+          reached += 1;
+          return Promise.resolve("Published");
+        },
+      },
       losses: { lose: taken, turnFailure: counted },
       store: {
         storeBatch: () => {
@@ -622,6 +640,109 @@ test("a hold reaches the boundary under its own generation, and a fenced one is 
   });
   assert.equal(fenced.statusCode, 409);
   assert.deepEqual(fenced.json(), { action: "stop", reason: "Fenced" });
+  await app.close();
+});
+
+/** One post of live events as a runner sends it: a block begun, some of its text, and the turn's end. */
+const livePost = {
+  turn: "turn-1",
+  events: [
+    { live: "Block", message: "message-1", index: 0, kind: "Text" },
+    { live: "Text", message: "message-1", index: 0, offset: 0, text: "Hel" },
+    { live: "End" },
+  ],
+} as const;
+
+test("a post of live events is published whole and in order, under the caller's own partition and session", async () => {
+  const published: unknown[] = [];
+  const app = sessionPlane({
+    live: {
+      publish: (input) => {
+        published.push(input);
+        return Promise.resolve("Published");
+      },
+    },
+  });
+  const taken = await app.inject({
+    method: "POST",
+    url: "/v1/session/turn/live",
+    headers: held,
+    payload: livePost,
+  });
+  assert.equal(taken.statusCode, 204);
+  assert.equal(taken.body, "");
+  assert.deepEqual(published, [
+    {
+      partition: identity.partition,
+      session: identity.session,
+      turn: asSessionTurnId("turn-1"),
+      events: livePost.events,
+    },
+  ]);
+  await app.close();
+});
+
+test("a publish that could not be made tells the runner to offer its next events later", async () => {
+  const app = sessionPlane({
+    live: { publish: () => Promise.resolve("Unavailable") },
+  });
+  const refused = await app.inject({
+    method: "POST",
+    url: "/v1/session/turn/live",
+    headers: held,
+    payload: livePost,
+  });
+  assert.equal(refused.statusCode, 503);
+  assert.deepEqual(refused.json(), { action: "retry" });
+  assert.match(String(refused.headers["retry-after"]), /^[1-9][0-9]*$/u);
+  await app.close();
+});
+
+test("a live post naming whose it is, or carrying what no event may, reaches no lane", async () => {
+  let reached = 0;
+  const app = sessionPlane({
+    live: {
+      publish: () => {
+        reached += 1;
+        return Promise.resolve("Published");
+      },
+    },
+  });
+  const [begun, text] = livePost.events;
+  for (const payload of [
+    { ...livePost, session: "session-2" },
+    { ...livePost, tenant: "other", project: "other" },
+    { turn: "turn-1" },
+    { turn: "turn-1", events: [] },
+    { events: livePost.events },
+    {
+      turn: "turn-1",
+      events: Array.from({ length: sessionLiveEventsMax + 1 }, () => begun),
+    },
+    { turn: "turn-1", events: [{ ...begun, kind: "ToolUse" }] },
+    { turn: "turn-1", events: [{ ...begun, name: "Read" }] },
+    { turn: "turn-1", events: [{ ...begun, index: sessionLiveBlocksMax }] },
+    {
+      turn: "turn-1",
+      events: [{ ...text, text: "a".repeat(sessionLiveTextBytesMax - 1) }],
+    },
+    {
+      turn: "turn-1",
+      events: [{ ...text, offset: sessionLiveBlockCharsMax }],
+    },
+    { turn: "turn-1", events: [{ ...text, text: "\u0000" }] },
+    { turn: "turn-1", events: [{ live: "End", message: "message-1" }] },
+  ]) {
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/session/turn/live",
+      headers: held,
+      payload,
+    });
+    assert.equal(response.statusCode, 400, JSON.stringify(payload));
+    assert.deepEqual(response.json(), { action: "stop" });
+  }
+  assert.equal(reached, 0);
   await app.close();
 });
 
@@ -1361,6 +1482,26 @@ test("more streams than one answer holds is refused, never quietly cut", async (
  */
 const json = { "content-type": "application/json" };
 
+/** A live event's text at its weight, in characters a JSON writer can escape to weigh the most on the wire. */
+const liveTextHeaviest = "a".repeat(
+  sessionLiveTextBytesMax - jsonTextBytes(""),
+);
+
+/** The heaviest event a post carries: its message at its bound, and its text at its own, ending where a block's text may. */
+const liveEventHeaviest = {
+  live: "Text",
+  message: planeTextHeaviest(sessionLiveMessageCharsMax),
+  index: sessionLiveBlocksMax - 1,
+  offset: sessionLiveBlockCharsMax - liveTextHeaviest.length,
+  text: liveTextHeaviest,
+} as const;
+
+/** The heaviest post of live events, every character of every text written as its escape. */
+const livePostHeaviest = planeJsonHeaviest({
+  turn: planeTextHeaviest(sessionIdentityCharsMax),
+  events: Array.from({ length: sessionLiveEventsMax }, () => liveEventHeaviest),
+}).replaceAll(liveTextHeaviest, "\\u0061".repeat(liveTextHeaviest.length));
+
 /** The heaviest body each session route is sent, or nothing where the route reads none. */
 const sessionHeaviest: Readonly<
   Record<SessionPlaneRouteName, PlaneHeaviest | undefined>
@@ -1404,6 +1545,7 @@ const sessionHeaviest: Readonly<
     }),
     status: 204,
   },
+  turnLive: { headers: json, payload: livePostHeaviest, status: 204 },
   held: { headers: json, payload: "{}", status: 204 },
   storeStreams: undefined,
   storeBatch: {
