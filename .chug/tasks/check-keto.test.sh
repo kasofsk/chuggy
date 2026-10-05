@@ -4,16 +4,24 @@
 # WHAT IT HAS TO PROVE IS THAT ALL THREE EXITS ARE REACHABLE, because this gate
 # needs two servers and "could not run" is the likely answer on a machine that
 # has neither — and it is the answer most easily mistaken for a pass. So the
-# cases drive a missing suite, a missing docker, a read URL with no write URL
-# beside it, an authority that never answers, an authority that answers ready
-# while carrying some other model, a database that cannot be prepared, and a
-# red suite; each is required to answer with its own code.
+# cases drive a missing suite, a machine with neither docker nor a keto, a read
+# URL with no write URL beside it, an authority that never answers, an
+# authority that answers ready while carrying some other model, a database that
+# cannot be prepared, and a red suite; each is required to answer with its own
+# code.
 #
 # THE CASES SUPPLY THEIR OWN SERVERS AND THEIR FIXTURE SUITES IGNORE BOTH. What
 # is under test is the gate's sequencing and its verdict, not the adapter — the
 # adapter is tested against a real Keto by the gate itself. So the authority
 # here is a few lines of node answering the two paths the wait asks for, and
 # the database URL names a socket that accepts and says nothing.
+#
+# THE KETO ON PATH IS A DOUBLE AS WELL: a script that states a version, records
+# what it was started with and then is that same authority on the port it was
+# told. Its cases hold the process to what the container is held to — this
+# tree's model, ports of its own, a wait that needs both namespaces — and to
+# what only a process owes: loopback, an environment of its own, and being
+# gone when the run ends, however the run ends.
 #
 # THE MODEL CASE IS THE ONE THAT MATTERS MOST. A server carrying the wrong
 # namespaces answers every check `false`, so a gate that waited on readiness
@@ -34,13 +42,14 @@ R="$WORK/repo"
 KETO_PORT_FILE="$WORK/.keto-port"
 # An authority answering the two paths `_keto.sh` waits on, and nothing else.
 # The namespaces it admits are its argument, so a case can produce a server
-# that is ready and carries some other model.
-keto_double() { # <namespace>...
-	rm -f "$KETO_PORT_FILE"
-	node -e '
+# that is ready and carries some other model. Told a port something else holds,
+# it stays up and silent, which is what Keto does.
+AUTHORITY="$WORK/authority.cjs"
+cat >"$AUTHORITY" <<'JS'
 const fs = require("node:fs");
 const http = require("node:http");
-const known = new Set(process.argv.slice(2));
+const [portFile, port, ...namespaces] = process.argv.slice(2);
+const known = new Set(namespaces);
 const server = http.createServer((request, response) => {
   const at = new URL(request.url, "http://127.0.0.1");
   if (at.pathname === "/health/ready") {
@@ -59,10 +68,15 @@ const server = http.createServer((request, response) => {
   response.writeHead(404);
   response.end("{}");
 });
-server.listen(0, "127.0.0.1", () => {
-  fs.writeFileSync(process.argv[1], String(server.address().port));
+server.on("error", () => setInterval(() => undefined, 1000));
+server.listen(Number(port), "127.0.0.1", () => {
+  fs.writeFileSync(portFile, String(server.address().port));
 });
-' "$KETO_PORT_FILE" "$@" &
+JS
+
+keto_double() { # <namespace>...
+	rm -f "$KETO_PORT_FILE"
+	node "$AUTHORITY" "$KETO_PORT_FILE" 0 "$@" &
 	KETO_DOUBLE=$!
 	waited=0
 	until [ -s "$KETO_PORT_FILE" ]; do
@@ -134,12 +148,87 @@ SH
 
 # The gate against the doubled docker, with the authority double standing in
 # for the container it believes it started.
-run_gate_over_docker() {
+run_gate_over_docker() { # [env=value...]
 	run_gate "$R" "PATH=$DOCKER_BIN:$PATH" "CHUG_DOCKER_LOG=$DOCKER_LOG" \
 		"CHUG_DOCKER_LABEL=$DOCKER_LABEL" CHUG_DOCKER_IMAGE=oryd/keto:fixture \
 		"CHUG_KETO_READ_PORT=$KETO_PORT" "CHUG_KETO_WRITE_PORT=$KETO_PORT" \
 		CHUG_KETO_READ_URL= CHUG_KETO_WRITE_URL= \
-		"CHUG_PG_URL=$ANSWERS" "CHUG_PG_HELPER_LOG=$CHUG_PG_HELPER_LOG"
+		"CHUG_PG_URL=$ANSWERS" "CHUG_PG_HELPER_LOG=$CHUG_PG_HELPER_LOG" "$@"
+}
+
+# A keto on a PATH that holds no docker, beside the tools the gate needs there.
+# It is started with no PATH of its own, so everything it reaches is beside it:
+# the authority above, which it becomes on the port it is told when it is given
+# namespaces to admit, and a record of what it was started with. Given none, it
+# says why and stops.
+keto_binary_double() { # [<namespace>...]
+	KETO_BIN="$WORK/ketobin"
+	KETO_STARTED="$KETO_BIN/started"
+	rm -rf "$KETO_BIN"
+	mkdir -p "$KETO_BIN"
+	for tool in env rm sleep tail tr; do
+		ln -sf "$(command -v "$tool")" "$KETO_BIN/$tool"
+	done
+	ln -sf "$NODE_DIR/node" "$KETO_BIN/node"
+	ln -sf "$AUTHORITY" "$KETO_BIN/authority.cjs"
+	: >"$KETO_STARTED"
+	printf '%s\n' "$*" >"$KETO_BIN/namespaces"
+	cat >"$KETO_BIN/keto" <<'SH'
+#!/bin/sh
+here="${0%/*}"
+if [ "$1" = version ]; then
+	printf 'Version:\t\t\tv0.0.0-fixture\n'
+	exit 0
+fi
+{
+	echo "pid $$"
+	echo "arguments $*"
+	echo "model ${NAMESPACES_LOCATION-}"
+	echo "read ${SERVE_READ_HOST-}:${SERVE_READ_PORT-}"
+	echo "write ${SERVE_WRITE_HOST-}:${SERVE_WRITE_PORT-}"
+	echo "metrics ${SERVE_METRICS_HOST-}:${SERVE_METRICS_PORT-}"
+	echo "language ${SERVE_OPL_HOST-}:${SERVE_OPL_PORT-}"
+	echo "store ${DSN-the one the configuration names}"
+} >>"$here/started"
+read -r namespaces <"$here/namespaces"
+if [ -z "$namespaces" ]; then
+	echo "fixture keto: no model it can compile" >&2
+	exit 1
+fi
+# shellcheck disable=SC2086 # the namespaces are space-separated by construction
+exec "$here/node" "$here/authority.cjs" "$here/port" "$SERVE_READ_PORT" $namespaces
+SH
+	chmod +x "$KETO_BIN/keto"
+	KETO_PORT="$(node -e '
+const server = require("node:net").createServer();
+server.listen(0, "127.0.0.1", () => {
+  console.log(server.address().port);
+  server.close();
+});
+')"
+}
+
+# The gate with that keto on its PATH and no docker, on a port nothing holds
+# unless the case has put something there.
+run_gate_over_binary() { # [env=value...]
+	run_gate "$R" "PATH=$KETO_BIN:$BIN" \
+		"CHUG_KETO_READ_PORT=$KETO_PORT" "CHUG_KETO_WRITE_PORT=$KETO_PORT" \
+		CHUG_KETO_READ_URL= CHUG_KETO_WRITE_URL= \
+		"CHUG_PG_URL=$ANSWERS" "CHUG_PG_HELPER_LOG=$CHUG_PG_HELPER_LOG" "$@"
+}
+
+# Whether the keto the last run started is still running, as a line in $OUT. One
+# that is, is stopped here, so a failing case leaves nothing behind it.
+keto_binary_left() {
+	started_pid="$(sed -n 's/^pid //p' "$KETO_STARTED" | head -1)"
+	[ -n "$started_pid" ] || { echo "check-keto.test.sh: LINTER ERROR — no keto was started"; exit 2; }
+	OUT="$WORK/.left"
+	if kill -0 "$started_pid" 2>/dev/null; then
+		kill "$started_pid" 2>/dev/null || true
+		echo "the keto outlived the run" >"$OUT"
+	else
+		echo "the keto was stopped" >"$OUT"
+	fi
 }
 
 # --- A suite that is not there is a could-not-run ----------------------------
@@ -152,15 +241,16 @@ check "no test/keto directory is a could-not-run" 2 "$RC" "the glob matched noth
 
 # --- No authority and no way to start one is a could-not-run -----------------
 #
-# The gate is run with a PATH holding node and the shell's own tools and no
-# docker, and with both URLs emptied rather than inherited: an operator who had
-# set them would otherwise send this case down the branch it exists to avoid.
+# The gate is run with a PATH holding node and the shell's own tools and
+# neither docker nor a keto, and with both URLs emptied rather than inherited:
+# an operator who had set them would otherwise send this case down the branch
+# it exists to avoid.
 
 fixture
 passing_suite "$R/test/keto/one.test.ts"
 git -C "$R" add -A
 run_gate "$R" "PATH=$BIN" HOME="$HOME" CHUG_KETO_READ_URL= CHUG_KETO_WRITE_URL=
-check "no docker and no URL is a could-not-run" 2 "$RC" "no docker"
+check "no docker, no keto and no URL is a could-not-run" 2 "$RC" "no docker and no keto on PATH"
 
 # --- A read URL with no write URL beside it is a could-not-run ---------------
 
@@ -300,5 +390,109 @@ docker_double ""
 run_gate_over_docker
 keto_double_stop
 check "no model to start an authority from is a could-not-run" 2 "$RC" "no model to start an authority from"
+
+# --- With no docker, the keto on PATH is the server --------------------------
+#
+# The caller's environment names a store, because Keto reads its whole
+# configuration from the environment as readily as from the file: a store
+# named there would be the one the gate's server wrote its tuples to.
+
+fixture
+passing_suite "$R/test/keto/one.test.ts"
+git -C "$R" add -A
+ROOT="$(git -C "$R" rev-parse --show-toplevel)"
+keto_binary_double Project Tenant
+run_gate_over_binary DSN=postgres://somebody@127.0.0.1/theirs
+check "with no docker the keto on PATH is the server" 0 "$RC" "started keto v0.0.0-fixture from PATH on ports $KETO_PORT and $KETO_PORT"
+check "the clean line names the version the binary states" 0 "$RC" \
+	"1 suite(s) clean against keto v0.0.0-fixture from PATH and the server CHUG_PG_URL names"
+keto_binary_left
+check "a keto started for a run is stopped when the run ends" 0 0 "the keto was stopped"
+OUT="$KETO_STARTED"
+check "the keto is started from this tree's configuration" 0 0 \
+	"arguments serve --sqa-opt-out -c $ROOT/.chug/tasks/keto/keto.yml"
+check "the keto is pointed at this tree's model" 0 0 \
+	"model file://$ROOT/.chug/tasks/keto/namespaces.ts"
+check "its read API is on loopback, at the port the knob names" 0 0 "read 127.0.0.1:$KETO_PORT"
+check "its write API is on loopback, at the port the knob names" 0 0 "write 127.0.0.1:$KETO_PORT"
+check "its metrics are on loopback, at a port nothing else was promised" 0 0 "metrics 127.0.0.1:0"
+check "its language server is on loopback, at a port nothing else was promised" 0 0 "language 127.0.0.1:0"
+check "nothing the caller's environment names reaches the keto" 0 0 \
+	"store the one the configuration names"
+
+# --- A keto started before a server that never answers is still stopped ------
+#
+# The database is asked for after the authority, so this is the exit that
+# finds a process already running and nothing yet made.
+
+fixture
+passing_suite "$R/test/keto/one.test.ts"
+git -C "$R" add -A
+keto_binary_double Project Tenant
+run_gate_over_binary "CHUG_PG_URL=postgres://fixture@$SILENT/ignored" CHUG_PG_READY_SECS=0
+check "a database nothing answers is a could-not-run behind a started keto" 2 "$RC" "nothing answered at $SILENT"
+keto_binary_left
+check "the keto started before it is stopped" 0 0 "the keto was stopped"
+
+# --- A keto that will not start is a could-not-run ---------------------------
+
+fixture
+passing_suite "$R/test/keto/one.test.ts"
+git -C "$R" add -A
+keto_binary_double
+run_gate_over_binary CHUG_KETO_READY_SECS=1
+check "a keto that will not start is a could-not-run" 2 "$RC" \
+	"keto v0.0.0-fixture from PATH did not answer ready with both namespaces within 1s"
+check "the message says what was tried before it" 2 "$RC" \
+	"No CHUG_KETO_READ_URL and no docker, so $KETO_BIN/keto was started from $ROOT/.chug/tasks/keto."
+check "the message carries the last the keto said" 2 "$RC" "fixture keto: no model it can compile"
+
+# --- A keto that starts without the model is a could-not-run -----------------
+#
+# The wait is long enough for the double to be listening, so what refuses the
+# run is the namespace it does not carry and not a server that is not up yet.
+
+fixture
+passing_suite "$R/test/keto/one.test.ts"
+git -C "$R" add -A
+keto_binary_double Project
+run_gate_over_binary CHUG_KETO_READY_SECS=2
+check "a keto missing a namespace is a could-not-run" 2 "$RC" \
+	"did not answer ready with both namespaces within 2s"
+check "a keto that said nothing is reported as having said nothing" 2 "$RC" "It said nothing"
+keto_binary_left
+check "a keto that never answered is stopped" 0 0 "the keto was stopped"
+
+# --- A port something already listens on is a could-not-run ------------------
+#
+# What holds the port here carries the whole model, so a gate that started its
+# keto regardless would wait, be answered, and report a clean run against a
+# server it did not start.
+
+fixture
+passing_suite "$R/test/keto/one.test.ts"
+git -C "$R" add -A
+keto_binary_double Project Tenant
+keto_double Project Tenant
+run_gate_over_binary
+keto_double_stop
+check "a port something already listens on is a could-not-run" 2 "$RC" \
+	"something is already listening on port $KETO_PORT"
+OUT="$KETO_STARTED"
+refute "no keto is started on a port something holds" 0 0 "pid "
+
+# --- Where docker is present the container is what is used -------------------
+
+fixture
+passing_suite "$R/test/keto/one.test.ts"
+git -C "$R" add -A
+keto_binary_double Project Tenant
+keto_double Project Tenant
+docker_double ""
+run_gate_over_docker "PATH=$DOCKER_BIN:$KETO_BIN:$PATH"
+keto_double_stop
+check "with docker and a keto on PATH the container is started" 0 "$RC" "started chuggy-check-keto"
+OUT="$KETO_STARTED"
+refute "and the keto on PATH is not" 0 0 "pid "
 
 done_ "check-keto.test.sh"
