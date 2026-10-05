@@ -263,6 +263,32 @@ export function conversationMessageInterruption(message: unknown): boolean {
   );
 }
 
+/** What the runtime puts where a model's name goes on a line it wrote
+ * itself. */
+const conversationRuntimeModel = "<synthetic>";
+
+/** What the runtime writes for the assistant when it resumes a session whose
+ * last turn ended without an answer. */
+const conversationFillerSentence = "No response requested.";
+
+/**
+ * Whether a message is the runtime's filler for a turn that ended without an
+ * answer: its own mark where a model's name goes, over one text block that is
+ * exactly its sentence. The mark is also on its report of a request the API
+ * refused and the sentence under a model's name is something a model wrote, so
+ * neither alone is this.
+ */
+export function conversationMessageFiller(message: unknown): boolean {
+  const held = conversationRecord(message);
+  if (held?.["model"] !== conversationRuntimeModel) return false;
+  const content = held["content"];
+  if (!Array.isArray(content) || content.length !== 1) return false;
+  const block = conversationRecord(content[0]);
+  return (
+    block?.["type"] === "text" && block["text"] === conversationFillerSentence
+  );
+}
+
 export const conversationRoles = ["User", "Assistant"] as const;
 
 export type ConversationRole = (typeof conversationRoles)[number];

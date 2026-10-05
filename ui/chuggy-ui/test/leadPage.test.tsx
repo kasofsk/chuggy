@@ -57,6 +57,7 @@ import {
   leadUnstarted,
 } from "./leadFixture.ts";
 import type { LeadServed } from "./leadFixture.ts";
+import { fillerMessage, fillerSentence } from "./interruptionFixture.ts";
 import { sessionPlacementBody } from "./sessionPlacementFixture.ts";
 import type { LeadInquiriesResponse } from "../../../src/contract/responses.ts";
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
@@ -440,6 +441,25 @@ test("a lead turn a runner has taken reads Working from the claim, with its work
   const stored = screen.getByRole("region", { name: "Conversation" });
   expect(stored.textContent).toContain("an observation document");
   expect(standingWords(stored)).toEqual(["Open", "Working"]);
+});
+
+/** A lead's store is read by what reads a thread's, so what the runtime wrote
+ * there for a turn that ended without an answer is left out here too. */
+test("the runtime's filler in a lead's store is not drawn, and its sentence under a model's own name is", async () => {
+  const stored = async (model?: string): Promise<string> => {
+    leadTurnOut("Claimed", [
+      ...leadWorking,
+      storeEntry("uuid-e", "assistant", fillerMessage(model)),
+    ]);
+    await mountLead();
+    const drawn = screen.getByRole("region", { name: "Conversation" });
+    return drawn.textContent;
+  };
+  const left = await stored();
+  expect(left).toContain("an observation document");
+  expect(left).not.toContain(fillerSentence);
+  cleanup();
+  expect(await stored("claude-opus-5-5")).toContain(fillerSentence);
 });
 
 /**

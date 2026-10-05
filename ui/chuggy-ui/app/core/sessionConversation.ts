@@ -19,6 +19,7 @@ import type {
 } from "../../../../src/contract/responses.ts";
 import {
   conversationBlocksOf,
+  conversationMessageFiller,
   conversationMessageInterruption,
 } from "./conversation.ts";
 import type {
@@ -121,17 +122,17 @@ function sessionConversationEntry(
   };
 }
 
-/** Whether an entry is the runtime's own note that a turn was interrupted,
- * which is written in the member's role and is nothing a member said or a
- * call returned. */
-function sessionConversationInterruption(entry: LeadTranscriptEntry): boolean {
-  return (
-    entry.type === "user" && conversationMessageInterruption(entry.message)
-  );
+/** Whether an entry is a line the runtime wrote for itself, which nobody
+ * said: its note that a turn was interrupted, in the member's role, or its
+ * filler for a turn that ended without an answer, in the assistant's. */
+function sessionConversationUnsaid(entry: LeadTranscriptEntry): boolean {
+  return entry.type === "user"
+    ? conversationMessageInterruption(entry.message)
+    : conversationMessageFiller(entry.message);
 }
 
 /** The chain as items, with the seam above the entry the compaction cut at
- * and the runtime's note of an interruption left out. */
+ * and the lines the runtime wrote for itself left out. */
 export function sessionConversationItems(
   read: SessionConversationRead,
 ): readonly ConversationItem[] {
@@ -146,7 +147,7 @@ export function sessionConversationItems(
   read.held.entries.forEach((entry, at) => {
     if (entry.uuid !== undefined && entry.uuid === compaction?.boundary)
       said.push({ item: "Marker", marker: seam });
-    if (sessionConversationInterruption(entry)) return;
+    if (sessionConversationUnsaid(entry)) return;
     said.push({ item: "Entry", entry: sessionConversationEntry(entry, at) });
   });
   return said;

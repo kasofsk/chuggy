@@ -16,6 +16,10 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import type { ThreadResponse } from "../../../src/contract/responses.ts";
 import {
+  fillerMessage,
+  fillerModel,
+  fillerRefusedSentence,
+  fillerSentence,
   interruptionRefusal,
   interruptionResult,
   interruptionSentence,
@@ -672,6 +676,78 @@ test.each(cutPages)(
       emphasised: [],
       marks: 0,
     });
+  },
+);
+
+const next = "and 42";
+
+/** A page opened on the thread after its second turn was stopped following
+ * two calls and before a word, and its session resumed for a third: the store
+ * holds the line `written` in the assistant's role between the two. */
+async function resumedDrawn(written: unknown): Promise<Stage> {
+  const returned = (call: string): StageEntry =>
+    stageLine(`u-${call}`, "user", {
+      role: "user",
+      content: [{ type: "tool_result", tool_use_id: call, content: call }],
+    });
+  const stage = stageMounted(
+    threadBody({
+      batches: 2,
+      turns: [
+        before,
+        stageTurn(2, "turn-2", asked, "Stopped"),
+        stageTurn(3, "turn-3", next, { answer: "ready" }),
+      ],
+    }),
+    [
+      earlier,
+      [
+        stageAsked("u-c", asked),
+        callStored("u-d", "msg_a", "toolu_1", "echo alpha"),
+        returned("toolu_1"),
+        callStored("u-e", "msg_b", "toolu_2", "echo beta"),
+        returned("toolu_2"),
+        stageInterrupted("u-f"),
+        stageLine("u-g", "assistant", written),
+        stageAsked("u-h", next),
+        stageWrote("u-i", "msg_c", "ready"),
+      ],
+    ],
+  );
+  await settled();
+  return stage;
+}
+
+test("the runtime's filler for a stopped turn with no answer is drawn nowhere on a thread resumed after it, and the turn stays its work and Stopped", async () => {
+  const stage = await resumedDrawn(fillerMessage());
+  expect(stageColumn(stage.container)).toStrictEqual([
+    ...opened,
+    `> ${asked}`,
+    "[2 tools] (Stopped)",
+    `> ${next}`,
+    "ready (Answered)",
+  ]);
+  expect(stage.container.textContent).not.toContain(fillerSentence);
+});
+
+test.each([
+  {
+    wrote: "its sentence under a model's own name",
+    written: fillerMessage("claude-opus-5-5"),
+    text: fillerSentence,
+  },
+  {
+    wrote: "other words under the runtime's mark",
+    written: fillerMessage(fillerModel, fillerRefusedSentence),
+    text: fillerRefusedSentence,
+  },
+])(
+  "only the runtime's filler is left out of a thread: $wrote is drawn",
+  async ({ written, text }) => {
+    const stage = await resumedDrawn(written);
+    expect(stageColumn(stage.container).at(-3)).toBe(
+      `[2 tools] ${text} (Stopped)`,
+    );
   },
 );
 
