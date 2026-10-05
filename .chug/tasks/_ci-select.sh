@@ -3,22 +3,24 @@
 # library only resolves a diff and answers whether a gate or shell suite is in
 # its dependency cone.
 #
-# A GATE THAT READS THE TREE AS TEXT RUNS ON ANY CHANGE. Each holds every
-# tracked file to one rule and is quick, and a cone for one is a second list
-# of what it reads that falls behind the first: a figure in a recipe, a clone
-# in a sheet, a manifest only a page named. The static checks are the same for
-# code: the formatter and the linter own every kind of file they know, so
-# they run on any change but a page's.
+# A GATE THAT READS THE TREE AS TEXT RUNS ON ANY CHANGE. Each holds the tree's
+# own files to one rule and is quick, and a cone for one is a second list of
+# what it reads that falls behind the first: a figure in a recipe, a manifest
+# only a page named. The static checks and the clone detector are the same
+# for code: they own every kind of file their tools know, a page is the one
+# kind none of them reads, and so they run on any change but a page's.
 #
 # A MARKDOWN FILE IS IN NO CODE GATE'S CONE. The gates that prove something of
-# the code — the suites, the servers, the console, the model — select on the
-# directories they read, and a page kept in one of those directories is read
-# by none of them: the gates that read text hold it.
+# the code — the suites, the servers, the model — select on the directories
+# they read, and a page kept in one of those directories is read by none of
+# them: the gates that read text hold it.
 #
-# WHAT THAT CANNOT SEE is a suite that takes a tracked page as its input. One
-# that does asks for the page by name on its gate's line, with `ci_changed`,
-# which reads every changed file: the unit suites hold the runbook's table of
-# the API's variables to the root that reads them.
+# WHAT THAT CANNOT SEE is a gate that takes a tracked page as its input. One
+# that does asks for the page on its own line, with `ci_changed`, which reads
+# every changed file: the unit suites hold the runbook's table of the API's
+# variables to the root that reads them, and the console's build takes the
+# names of classes from every file under the console, a page among them, and
+# leaves out what the tree's ignore file names.
 #
 # A PATH THAT WENT AWAY IS A PATH THAT CHANGED. The list holds a deleted file
 # and both names of a renamed one, because an absence breaks what a gate
@@ -27,6 +29,12 @@
 # A NAME THAT IS NOT A LINE SELECTS EVERYTHING. Git writes a name holding a
 # tab, a quote, a backslash or a newline in quotes, which no pattern here
 # reads, so a change that carries one is run in full.
+#
+# A SUITE THAT RUNS ITS GATE OVER THE TREE ITSELF IS SELECTED WITH THE GATE.
+# Most suites hold a gate to fixtures, and are selected by the gate's script,
+# the harness and what else they copy. The replays', the generated API's and
+# the golden emitter's run over the sources and the model, so whatever selects
+# the gate selects them.
 #
 # THE MODEL'S GATE FOLLOWS QUINT, NOT THE PACKAGE FILES. Quint is all that
 # `check-model` takes from them, at an exact version it refuses to run
@@ -109,13 +117,13 @@ ci_code_changed() { # <shell pattern>...
 
 ci_toolchain_changed() {
 	ci_changed package.json package-lock.json tsconfig.json eslint.config.js \
-		.prettierrc.json .prettierignore .dependency-cruiser.cjs
+		.prettierrc.json .dependency-cruiser.cjs
 }
 
 # A gate's suite runs the gate over a copy of the tree's own configuration of
 # the tools, so that configuration is the suite's input as well as the gate's.
 ci_tools_configured_changed() {
-	ci_toolchain_changed || ci_changed 'tsconfig*.json' .jscpd.json
+	ci_toolchain_changed || ci_changed 'tsconfig*.json' .prettierignore .jscpd.json
 }
 
 # A diff of the package files that cannot be read is one that may have moved
@@ -134,22 +142,22 @@ ci_gate_selected() { # <gate id>
 	ci_changed .chug/tasks/ci.sh .chug/tasks/_ci-select.sh && return 0
 
 	case "$gate" in
-	doc-lint | check-figures | check-paths | check-shell-quoting | check-duplication | \
-		check-console-sheets | check-gates | check-comments | check-knowledge | check-vendored)
+	doc-lint | check-figures | check-paths | check-shell-quoting | check-console-sheets | \
+		check-gates | check-comments | check-knowledge | check-vendored)
 		[ -n "$CI_CHANGED_FILES" ]
 		;;
+	check-duplication | source-static) [ -n "$CI_CHANGED_CODE" ] ;;
 	check-roster) ci_changed CLAUDE.md '.agents/**' '.codex/**' .chug/tasks/check-roster.sh ;;
-	check-boundaries) ci_changed 'src/*.ts' 'src/**/*.ts' 'test/*.ts' 'test/**/*.ts' 'scripts/*.ts' 'scripts/**/*.ts' 'ui/*.js' 'ui/**/*.js' 'ui/**/*.ts' 'ui/**/*.tsx' .dependency-cruiser.cjs .chug/tasks/check-boundaries.sh || ci_toolchain_changed ;;
-	source-static) [ -n "$CI_CHANGED_CODE" ] ;;
+	check-boundaries) ci_code_changed 'src/**' 'test/**' 'scripts/**' 'ui/**' .chug/tasks/check-boundaries.sh || ci_toolchain_changed ;;
 	source-unit) ci_code_changed 'src/**' 'test/**' 'ui/**' 'images/**' 'scripts/**' 'deploy/**' 'model/**' '.chug/configurations/**' tsconfig.contract.json tsconfig.contract-pack.json .chug/tasks/check-source.sh .chug/tasks/check-console-sheets.sh || ci_changed deploy/rig/images/README.md || ci_toolchain_changed ;;
-	check-console) ci_code_changed 'ui/**' 'src/contract/**' '.chug/configurations/**' 'scripts/console-policy.ts' 'scripts/check-console-policy.ts' package.json package-lock.json .chug/tasks/check-console.sh ;;
+	check-console) ci_changed 'ui/**' .gitignore || ci_code_changed 'src/contract/**' '.chug/configurations/**' 'scripts/console-policy.ts' 'scripts/check-console-policy.ts' package.json package-lock.json .chug/tasks/check-console.sh ;;
 	check-conformance) ci_code_changed 'src/domain/**' 'src/generated/**' 'test/conformance/**' 'test/domain/**' 'test/itf/**' 'test/golden/**' 'model/**' .chug/tasks/check-conformance.sh ;;
 	check-random) ci_code_changed 'src/domain/**' 'src/generated/**' 'test/random/**' 'test/conformance/**' 'test/domain/**' 'test/itf/**' 'model/**' .chug/tasks/check-random.sh ;;
 	check-postgres) ci_code_changed 'src/**' 'test/**' deploy/rig/wipe-tickets.sql .chug/tasks/_postgres.sh .chug/tasks/postgres-databases.ts .chug/tasks/check-postgres.sh || ci_toolchain_changed ;;
 	check-queries) ci_code_changed 'src/**' eslint.config.js .chug/tasks/_postgres.sh .chug/tasks/check-queries.sh || ci_toolchain_changed ;;
 	check-keto) ci_code_changed 'src/**' 'test/**' '.chug/tasks/keto/**' .chug/tasks/_keto.sh .chug/tasks/_postgres.sh .chug/tasks/postgres-databases.ts .chug/tasks/check-keto.sh || ci_toolchain_changed ;;
 	check-model) ci_code_changed 'model/**' .chug/tasks/check-model.sh || ci_quint_moved ;;
-	check-model-api) ci_code_changed 'model/**' scripts/generate-model-api.ts src/generated/model-api.ts .chug/tasks/check-model-api.sh package.json package-lock.json ;;
+	check-model-api) ci_code_changed 'model/**' scripts/generate-model-api.ts 'src/generated/**' 'src/domain/generated/**' .chug/tasks/check-model-api.sh package.json package-lock.json ;;
 	*) return 0 ;;
 	esac
 }
@@ -163,9 +171,15 @@ ci_suite_selected() { # <suite path>
 	.chug/tasks/check-source.test.sh | .chug/tasks/check-boundaries.test.sh | .chug/tasks/check-duplication.test.sh)
 		ci_changed "${suite%.test.sh}.sh" '.chug/tasks/_*.sh' || ci_tools_configured_changed
 		;;
+	.chug/tasks/check-conformance.test.sh | .chug/tasks/check-random.test.sh | .chug/tasks/check-model-api.test.sh)
+		over="${suite##*/}"
+		ci_changed '.chug/tasks/_*.sh' || ci_gate_selected "${over%.test.sh}"
+		;;
+	.chug/tasks/emit-goldens.test.sh)
+		ci_changed .chug/tasks/emit-goldens.sh '.chug/tasks/_*.sh' || ci_gate_selected check-model
+		;;
 	.chug/tasks/*.test.sh)
-		gate="${suite%.test.sh}.sh"
-		ci_changed "$gate" '.chug/tasks/_*.sh'
+		ci_changed "${suite%.test.sh}.sh" '.chug/tasks/_*.sh'
 		;;
 	.githooks/pre-commit.test.sh) ci_changed .githooks/pre-commit .chug/tasks/_suite.sh ;;
 	*.test.sh) ci_changed "${suite%.test.sh}.sh" .chug/tasks/_suite.sh ;;
