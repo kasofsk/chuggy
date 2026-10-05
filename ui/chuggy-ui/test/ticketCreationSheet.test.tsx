@@ -20,6 +20,7 @@ import {
   creationSummary,
 } from "./ticketCreationFixture.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
+import { sheetDeclared, sheetNarrowCondition, sheetRules } from "./sheet.ts";
 
 beforeEach(resizeObserverStubbed);
 
@@ -28,56 +29,15 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-/** The container query the console's narrow width is, as tokens.css names it. */
-const narrowCondition = "(max-width: 40em)";
-
 /** A track that can give up all of its width: a share of what is left with no
  * floor, or one sized by content that can itself narrow. */
 const tracksShrinkable = ["minmax(0, 1fr)", "auto"];
 
-/** Every style rule in the sheet that holds at one width, in source order:
- * those outside any container query, and under the narrow width those inside
- * the narrow one as well. */
-function sheetRules(narrow: boolean): readonly CSSStyleRule[] {
-  const sheet = new CSSStyleSheet();
-  sheet.replaceSync(sheetText);
-  const rules: CSSStyleRule[] = [];
-  const walk = (list: CSSRuleList): void => {
-    for (const rule of Array.from(list)) {
-      if (rule instanceof CSSStyleRule) rules.push(rule);
-      else if (rule instanceof CSSContainerRule) {
-        if (narrow && rule.conditionText === narrowCondition)
-          walk(rule.cssRules);
-      } else if (rule instanceof CSSGroupingRule) walk(rule.cssRules);
-    }
-  };
-  walk(sheet.cssRules);
-  return rules;
-}
-
-const rulesWide = sheetRules(false);
-const rulesNarrow = sheetRules(true);
-
-/**
- * What the sheet declares for one element at one width: the last matching
- * declaration in source order. Every rule here that competes for a property is
- * one class against one class, so their order is the cascade.
- */
-function declaredAt(
-  rules: readonly CSSStyleRule[],
-  element: Element,
-  property: string,
-): string {
-  let declared = "";
-  for (const rule of rules) {
-    const value = rule.style.getPropertyValue(property);
-    if (value !== "" && element.matches(rule.selectorText)) declared = value;
-  }
-  return declared;
-}
+const rulesWide = sheetRules(sheetText, []);
+const rulesNarrow = sheetRules(sheetText, [sheetNarrowCondition]);
 
 function narrowDeclared(element: Element, property: string): string {
-  return declaredAt(rulesNarrow, element, property);
+  return sheetDeclared(rulesNarrow, element, property);
 }
 
 /** Tracks split at the spaces outside any brackets. */
@@ -185,7 +145,7 @@ test.each([
       expect(line).not.toBeNull();
       if (line === null) continue;
       expect(
-        tracks(declaredAt(rules, line, "grid-template-columns")),
+        tracks(sheetDeclared(rules, line, "grid-template-columns")),
         name,
       ).toEqual(["minmax(0, 1fr)", "auto"]);
     }

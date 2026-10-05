@@ -17,12 +17,56 @@
  * grid track sized `auto` does the opposite — it grows to its content's
  * min-content width — so one such track above the text pushes the whole thread
  * past the pane holding it.
+ *
+ * AN EXCHANGE THAT DID NOT CHANGE IS NOT DRAWN AGAIN. The library keeps what it
+ * made of a message for as long as it is handed the same one, so each
+ * exchange's two messages are made once and a page redrawing one exchange a
+ * frame redraws that one.
+ *
+ * ONE THING MOVES WHILE A TURN IS OUT, and `conversationIndicator` says where:
+ * in that turn's own exchange, and at the foot of the column for a send no
+ * exchange stands for yet. A turn heard to end is out no longer, whatever the
+ * mailbox still says of it, and nothing moves for it.
+ *
+ * THE TURN THAT MOVES IS THE ONE STOP ENDS. Where the page takes a stop the
+ * composer's button is Stop for as long as a turn is the thing moving, and one
+ * press hands the page that turn through the library's own cancel.
+ *
+ * ONE PRESS STOPS ONE TURN. The button stays under the pointer and can be Stop
+ * again at once, aimed at the turn behind, so a press that follows one of Stop
+ * within a beat is taken for the same press and does nothing, and so is a
+ * second Stop until the page's door has answered the first. The button is
+ * drawn the same throughout.
+ *
+ * A CLICK THAT SENDS BEGINS THE SAME BEAT. The button it leaves under the
+ * pointer is Stop for the message just sent, and the second click of a double
+ * click would end it.
+ *
+ * A MESSAGE HANDED BACK IS PUT BACK. The words the page could not take go back
+ * in the box ahead of anything typed since, a blank line between, so neither
+ * is lost, and a second handed back goes under the first.
+ *
+ * NOTHING STANDS BETWEEN THE COLUMN AND THE COMPOSER BUT WHAT A READER NEEDS
+ * THERE. The engine runs where the answer is about to be and not on a strip of
+ * its own, so the column ends where the composer begins.
+ *
+ * A READER WHO HAS SCROLLED AWAY IS OFFERED THE WAY BACK, on a band of its own
+ * under the column, which is there only while they are away from its foot and
+ * so never stands over a line of text. The library keeps the column pinned to
+ * its foot only while the reader is at it, and its own control returns them
+ * there and pins it again.
+ *
+ * HOW WIDE THE COLUMN IS AND HOW LARGE ITS TEXT ARE THE MOUNT'S TO SAY, through
+ * the custom properties `conversation.css` reads, so a pane that gives the
+ * conversation the whole frame sets it as a column to read and this file knows
+ * nothing of where it is mounted.
  */
 
 import {
   AssistantRuntimeProvider,
   ThreadPrimitive,
   useExternalStoreRuntime,
+  useThreadViewport,
 } from "@assistant-ui/react";
 import type {
   AppendMessage,
@@ -35,13 +79,27 @@ import type {
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
+import {
+  conversationExchangeNamed,
+  conversationExchangeParts,
+  conversationIndicatedNamed,
+  conversationIndicator,
+  conversationBoxRestored,
+  conversationTurnStoppable,
+} from "../../core/conversation.ts";
 import type { ConversationExchange } from "../../core/conversation.ts";
 import type { RunPrompt } from "../../core/runConfiguration.ts";
 import { ConversationComposer } from "./ConversationComposer.tsx";
-import type { ConversationComposerProps } from "./ConversationComposer.tsx";
+import type {
+  ConversationComposerButton,
+  ConversationComposerProps,
+} from "./ConversationComposer.tsx";
 import {
   ConversationAnswerMessage,
   ConversationAskMessage,
+  ConversationIndicated,
+  ConversationLettingHeld,
+  ConversationPaced,
   ConversationWorkOpen,
 } from "./ConversationExchange.tsx";
 import {
@@ -72,6 +130,7 @@ function conversationStatus(exchange: ConversationExchange): MessageStatus {
         error: standing.failure ?? null,
       };
     case "Abandoned":
+    case "Stopped":
       return { type: "incomplete", reason: "cancelled" };
     case "Open":
     case "Markers":
@@ -79,14 +138,19 @@ function conversationStatus(exchange: ConversationExchange): MessageStatus {
   }
 }
 
-/** One exchange as the two messages the library holds a turn as: the ask, and
- * the answer it is still waiting for or already has. */
-function conversationMessages(
-  exchanges: readonly ConversationExchange[],
+/**
+ * One exchange as the two messages the library holds a turn as: the ask, and
+ * the answer it is still waiting for or already has, which holds each text of
+ * the answer in the order it was written. They are named as the exchange is,
+ * because the library begins a message again when its name changes.
+ */
+function conversationExchangeMessages(
+  exchange: ConversationExchange,
 ): readonly ThreadMessageLike[] {
-  return exchanges.flatMap((exchange): ThreadMessageLike[] => [
+  const named = conversationExchangeNamed(exchange);
+  return [
     {
-      id: `${exchange.id}-ask`,
+      id: `${named}-ask`,
       role: exchange.ask?.ask === "Message" ? "user" : "system",
       content: [
         {
@@ -97,16 +161,40 @@ function conversationMessages(
       metadata: { custom: { exchange, side: "Ask" } },
     },
     {
-      id: `${exchange.id}-answer`,
+      id: `${named}-answer`,
       role: "assistant",
-      content:
-        exchange.answer === undefined
-          ? []
-          : [{ type: "text", text: exchange.answer }],
+      content: conversationExchangeParts(exchange).flatMap((part) =>
+        part.part === "Text"
+          ? [{ type: "text" as const, text: part.text }]
+          : [],
+      ),
       status: conversationStatus(exchange),
       metadata: { custom: { exchange, side: "Answer" } },
     },
-  ]);
+  ];
+}
+
+const conversationMessagesMade = new WeakMap<
+  ConversationExchange,
+  readonly ThreadMessageLike[]
+>();
+
+function conversationMessages(
+  exchanges: readonly ConversationExchange[],
+): readonly ThreadMessageLike[] {
+  return exchanges.flatMap((exchange) => {
+    const made =
+      conversationMessagesMade.get(exchange) ??
+      conversationExchangeMessages(exchange);
+    conversationMessagesMade.set(exchange, made);
+    return made;
+  });
+}
+
+function conversationMessageKept(
+  message: ThreadMessageLike,
+): ThreadMessageLike {
+  return message;
 }
 
 /** Whether any exchange is still being worked, which is what the library's own
@@ -117,34 +205,70 @@ function conversationRunning(
   return exchanges.some((exchange) => exchange.standing.standing === "Running");
 }
 
-/** Whether a turn is out with nothing said for it yet, the half of the waiting
- * predicate that outlives one send: an exchange already carrying its answer
- * stops drawing the engine, however its turn stands in the mailbox. */
-function conversationUnanswered(
-  exchanges: readonly ConversationExchange[],
-): boolean {
-  return exchanges.some(
-    (exchange) =>
-      exchange.standing.standing === "Running" && exchange.answer === undefined,
-  );
-}
-
 function conversationAppendedText(message: AppendMessage): string {
   return message.content
     .flatMap((part) => (part.type === "text" ? [part.text] : []))
     .join("");
 }
 
-interface ConversationHeld {
-  readonly runtime: AssistantRuntime;
-  readonly sending: boolean;
+/** How long after a press of Stop, or a click that sent, the composer's button
+ * takes no other: longer than a double click or a startled second tap, and
+ * shorter than a member takes to mean the turn behind. */
+export const conversationStopBeatMs = 700;
+
+/** The last press of its button the surface took. */
+interface ConversationStopPress {
+  readonly atMs: number;
+  answered: boolean;
+}
+
+/** What the surface holds of the presses of its button. */
+interface ConversationStopBeat {
+  /** Whether a press of `button` now is one to do nothing for. */
+  readonly ignores: (button: ConversationComposerButton) => boolean;
+  /** Notes a press of Stop as taken, answered when `stop` is. */
+  readonly pressed: (stop: Promise<void>) => void;
+  /** Notes a click that sent, which no door answers. */
+  readonly sent: () => void;
+}
+
+function useConversationStopBeat(): ConversationStopBeat {
+  const last = useRef<ConversationStopPress | undefined>(undefined);
+  return useMemo(
+    () => ({
+      ignores: (button) => {
+        const press = last.current;
+        if (press === undefined) return false;
+        if (performance.now() - press.atMs < conversationStopBeatMs)
+          return true;
+        return button === "Stop" && !press.answered;
+      },
+      pressed: (stop) => {
+        const press = { atMs: performance.now(), answered: false };
+        last.current = press;
+        const answered = (): void => {
+          press.answered = true;
+        };
+        stop.then(answered, answered);
+      },
+      sent: () => {
+        last.current = { atMs: performance.now(), answered: true };
+      },
+    }),
+    [],
+  );
 }
 
 function useConversationRuntime(props: {
   readonly exchanges: readonly ConversationExchange[];
   readonly composer: ConversationComposerProps | undefined;
-}): ConversationHeld {
-  const [sending, setSending] = useState(false);
+  /** The turn a press of Stop ends, where there is one. */
+  readonly stoppable: string | undefined;
+  readonly beat: ConversationStopBeat;
+  /** Told whether a send is on its way, as one begins and as it ends. */
+  readonly onSending: (sending: boolean) => void;
+}): AssistantRuntime {
+  const setSending = props.onSending;
   const dispatchRef = useRef<(message: AppendMessage) => Promise<void>>(() =>
     Promise.resolve(),
   );
@@ -170,23 +294,57 @@ function useConversationRuntime(props: {
     setSending(false);
     if (sent === "Kept") restoreRef.current(text);
   };
+  const onStop = props.composer?.onStop;
+  const { stoppable, beat } = props;
   const runtime = useExternalStoreRuntime<ThreadMessageLike>({
     queue,
     messages: conversationMessages(props.exchanges),
     isRunning: conversationRunning(props.exchanges),
     isSendDisabled: props.composer === undefined || !props.composer.takes,
-    convertMessage: (message) => message,
+    convertMessage: conversationMessageKept,
     onNew: dispatch,
+    ...(onStop === undefined
+      ? {}
+      : {
+          onCancel: () => {
+            if (stoppable !== undefined) beat.pressed(onStop(stoppable));
+            return Promise.resolve();
+          },
+        }),
   });
+  const led = useRef<string | undefined>(undefined);
   useEffect(() => {
     dispatchRef.current = dispatch;
     restoreRef.current = (text) => {
       const box = runtime.thread.composer;
-      if (box.getState().text.trim().length > 0) return;
-      box.setText(text);
+      const restored = conversationBoxRestored(
+        { text: box.getState().text, back: led.current },
+        text,
+      );
+      led.current = restored.back;
+      box.setText(restored.text);
     };
   });
-  return { runtime, sending };
+  useConversationBack(props.composer?.back, restoreRef);
+  return runtime;
+}
+
+/** Puts a message the page handed back while the box was not drawn into the
+ * box, once for each the page hands it. */
+function useConversationBack(
+  back: ConversationComposerProps["back"],
+  restore: { readonly current: (text: string) => void },
+): void {
+  const put = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (back === undefined || put.current === back.text) {
+      put.current = back?.text;
+      return;
+    }
+    put.current = back.text;
+    restore.current(back.text);
+    back.taken();
+  });
 }
 
 function conversationMessageDrawn(value: {
@@ -196,6 +354,32 @@ function conversationMessageDrawn(value: {
     <ConversationAnswerMessage />
   ) : (
     <ConversationAskMessage />
+  );
+}
+
+/** The way back to the newest words, on a band under the column for as long
+ * as the reader is not at its foot. */
+function ConversationBottom(): ReactNode {
+  const atBottom = useThreadViewport((viewport) => viewport.isAtBottom);
+  if (atBottom) return null;
+  return (
+    <div className="conversation-bottom-band">
+      <ThreadPrimitive.ScrollToBottom
+        className="conversation-bottom"
+        aria-label="Scroll to bottom"
+      >
+        <svg viewBox="0 0 16 16" aria-hidden="true" className="size-3">
+          <path
+            d="M8 3 L8 13 M4 9 L8 13 L12 9"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </ThreadPrimitive.ScrollToBottom>
+    </div>
   );
 }
 
@@ -234,13 +418,33 @@ function ConversationBody(props: {
   );
 }
 
-/**
- * The conversation as a page holds it: a column of exchanges that scrolls, and
- * the composer beneath it. A bounded height pins the composer to the foot of
- * it, and an unbounded one — a transcript inside a panel — leaves both in
- * normal flow.
- */
-export function Conversation(props: {
+/** How every exchange under it is drawn: its work open or not, its text paced
+ * or not, which of them holds the one thing that moves, whether an engine is
+ * what runs for a turn nothing is drawn of, and whether text of any of them is
+ * still being let out. */
+function ConversationDrawn(props: {
+  readonly workOpen: boolean;
+  readonly paced: boolean;
+  /** The name of the exchange holding the one thing that moves. */
+  readonly named: string | undefined;
+  readonly engine: boolean;
+  readonly children: ReactNode;
+}): ReactNode {
+  const { named, engine } = props;
+  const indicated = useMemo(() => ({ named, engine }), [named, engine]);
+  return (
+    <ConversationWorkOpen.Provider value={props.workOpen}>
+      <ConversationPaced.Provider value={props.paced}>
+        <ConversationIndicated.Provider value={indicated}>
+          <ConversationLettingHeld>{props.children}</ConversationLettingHeld>
+        </ConversationIndicated.Provider>
+      </ConversationPaced.Provider>
+    </ConversationWorkOpen.Provider>
+  );
+}
+
+/** What a page hands the surface to draw. */
+export interface ConversationProps {
   readonly exchanges: readonly ConversationExchange[];
   readonly composer?: ConversationComposerProps;
   /** The one line a column with nothing in it says. A caller that words none
@@ -262,21 +466,45 @@ export function Conversation(props: {
   /** Whether each exchange's work draws open, which is how a run is read:
    * its steps are the conversation rather than the way to an answer. */
   readonly workOpen?: boolean;
-}): ReactNode {
+  /** Whether an answer still being written is let out at an even pace, which
+   * is what a page that hears its turns as they are written asks for. */
+  readonly paced?: boolean;
+}
+
+/**
+ * The conversation as a page holds it: a column of exchanges that scrolls, and
+ * the composer beneath it. A bounded height pins the composer to the foot of
+ * it, and an unbounded one — a transcript inside a panel — leaves both in
+ * normal flow.
+ */
+export function Conversation(props: ConversationProps): ReactNode {
   const reading = props.reading === true;
   const activeExchanges = reading ? [] : props.exchanges;
-  const held = useConversationRuntime({
+  const [sending, setSending] = useState(false);
+  const indicator = conversationIndicator(activeExchanges, {
+    drawn: props.composer !== undefined,
+    sending,
+  });
+  const stoppable =
+    props.composer?.onStop === undefined
+      ? undefined
+      : conversationTurnStoppable(activeExchanges, indicator);
+  const beat = useConversationStopBeat();
+  const runtime = useConversationRuntime({
     exchanges: activeExchanges,
     composer: props.composer,
+    stoppable,
+    beat,
+    onSending: setSending,
   });
-  const waiting = held.sending || conversationUnanswered(activeExchanges);
+  const composed = props.composer !== undefined;
   const inset = props.pane === true ? "px-4 py-4" : "";
   return (
-    <AssistantRuntimeProvider runtime={held.runtime}>
-      <ThreadPrimitive.Root className="flex h-full min-h-0 flex-col gap-4">
+    <AssistantRuntimeProvider runtime={runtime}>
+      <ThreadPrimitive.Root className="conversation flex h-full min-h-0 flex-col">
         <ThreadPrimitive.Viewport className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto">
           <div
-            className={`max-w-column mx-auto flex w-full flex-col gap-6 ${inset}`}
+            className={`conversation-column mx-auto flex w-full flex-col gap-6 ${inset}`}
           >
             {props.prompt === undefined ? null : (
               <ConversationPrompt prompt={props.prompt} />
@@ -284,22 +512,34 @@ export function Conversation(props: {
             {props.earlier === undefined ? null : (
               <ConversationEarlier {...props.earlier} />
             )}
-            <ConversationWorkOpen.Provider value={props.workOpen === true}>
+            <ConversationDrawn
+              workOpen={props.workOpen === true}
+              paced={props.paced === true}
+              named={conversationIndicatedNamed(activeExchanges, indicator)}
+              engine={composed}
+            >
               <ConversationBody
                 reading={reading}
                 empty={props.exchanges.length === 0}
                 emptyTitle={props.emptyTitle}
                 sentence={props.empty}
               />
-            </ConversationWorkOpen.Provider>
+            </ConversationDrawn>
+            {indicator.indicator === "Engine" ? <ConversationWaiting /> : null}
           </div>
         </ThreadPrimitive.Viewport>
+        <ConversationBottom />
         {props.composer === undefined ? null : (
           <div
-            className={`max-w-column mx-auto w-full ${props.pane === true ? "px-4 pb-4" : ""}`}
+            className={`conversation-column mx-auto w-full ${props.pane === true ? "conversation-foot" : "pt-4"}`}
           >
-            <ConversationWaiting waiting={waiting} />
-            <ConversationComposer {...props.composer} busy={held.sending} />
+            <ConversationComposer
+              {...props.composer}
+              busy={sending}
+              stops={stoppable !== undefined}
+              ignores={beat.ignores}
+              onSendClick={beat.sent}
+            />
           </div>
         )}
       </ThreadPrimitive.Root>

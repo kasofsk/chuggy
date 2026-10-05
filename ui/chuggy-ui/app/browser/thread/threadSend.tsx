@@ -1,6 +1,7 @@
 /**
- * What one press of Send does on a member's own thread, which is the only part
- * of the conversation surface that knows the API.
+ * What one press of Send does on a member's own thread, which with
+ * `threadStop.ts` is the only part of the conversation surface that knows the
+ * API.
  *
  * THE TURN IDENTITY BELONGS TO THE TEXT. A press that ended in a backlogged
  * mailbox keeps the text and the identity it minted, so pressing again reaches
@@ -14,6 +15,11 @@
  * path here would be a second account of what the mailbox holds, and the one
  * that mattered would be the one that went wrong quietly.
  *
+ * UNTIL IT DOES, THE PAGE HOLDS IT. A press is drawn at once, under the turn
+ * it was minted, so the read that lists that turn finds its message already
+ * there; a press the door refused is held no longer, since its text is back
+ * in the box.
+ *
  * A READER WITH NO THREAD STILL HAS A COMPOSER. Their first press opens one and
  * sends to it, and a press after a failed send reaches the thread that press
  * opened rather than opening another.
@@ -21,26 +27,50 @@
  * THE GRANT IS ASKED ONLY WHERE THE THREAD RUNS IN CLUSTER. On runners the door
  * asks for a runner of the reader's own instead, so the box takes a message
  * whatever the grant and says when no runner of theirs could take the turn.
+ *
+ * A MESSAGE CAN BE STOPPED FROM ITS PRESS. Each send on its way is handed to
+ * the thread's stops for one to follow, so the button is Stop before the door
+ * has answered, in a thread that press is opening as in one already open.
+ *
+ * A REFUSAL THAT ARRIVES AFTER THE THREAD LEFT THE SCREEN IS KEPT FOR IT. The
+ * reader chose another thread while the door held the message, so the box
+ * that would take the words back is gone: they are handed to whoever mounted
+ * the thread, and the thread takes them as its own last press when it is next
+ * drawn.
+ *
+ * A REFUSAL IS SAID IN ONE LINE AND FOR AS LONG AS IT IS ABOUT SOMETHING: what
+ * was not done, with no code of the API's. It goes when the reader edits the
+ * box or presses again, and a stop's goes when the mailbox lists its turn
+ * ended, since nothing is left to stop.
  */
 
 import { useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
 import { threadMessageCharsMax } from "../../../../../src/contract/http.ts";
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import { apiHostedRuns, apiOpenThread } from "../../core/apiRoutes.ts";
-import { panelReason } from "../../core/freshness.ts";
 import { projectResourceKey } from "../../core/projectQueryKeys.ts";
 import { threadMessageSent } from "../../core/threadSendRun.ts";
 import {
+  threadRefusalCause,
+  threadRefusalLine,
+  threadSendingWith,
+  threadSendingWithout,
+  threadSendRefused,
   threadSendStanding,
   threadUnhosted,
   threadTurnIdBytesCount,
   threadTurnMinted,
   threadTurnRetained,
 } from "../../core/threads.ts";
-import type { ThreadDoor, ThreadSend } from "../../core/threads.ts";
+import type {
+  ThreadDoor,
+  ThreadKept,
+  ThreadSend,
+  ThreadSending,
+} from "../../core/threads.ts";
 import { sessionRefusedNoRunner } from "../../core/sessionRunners.ts";
 import { useApiPorts, usePanelResource } from "../api.ts";
 import type {
@@ -55,6 +85,8 @@ import {
   useSessionPlacementStale,
 } from "../sessionPlacement.tsx";
 import { Notice } from "../ui/Notice.tsx";
+import { useThreadStop } from "./threadStop.ts";
+import type { ThreadStopHeld } from "./threadStop.ts";
 
 /** What the last press left behind, so the next one can tell a retry of the
  * same message from a message of its own. */
@@ -153,10 +185,174 @@ function ThreadSendNote(props: {
     case "Unsettled":
       return <Notice tone="parked" inline detail={send.why} />;
     case "Refused":
-      return (
-        <Notice tone="danger" inline detail={`Refused · ${send.reason}`} />
-      );
+      return <Notice tone="danger" inline detail={threadRefusalLine(send)} />;
   }
+}
+
+/** What one thread hands the surface: its composer, the messages it sent that
+ * the mailbox read does not list yet, and what it holds of its stops. */
+export interface ThreadSendHeld {
+  readonly composer: ConversationComposerProps;
+  readonly sending: readonly ThreadSending[];
+  /** The turns the reader stopped, less each press taken back. */
+  readonly stopping: ReadonlySet<string>;
+  /** How many presses of Stop the door's answer took back. */
+  readonly takenBack: number;
+}
+
+/** The thread a first press opens, or what the door refused opening one as. */
+async function threadSendOpened(
+  ports: ReturnType<typeof useApiPorts>,
+  partition: PartitionIdentity,
+  door: ReturnType<typeof useThreadDoor>,
+): Promise<{ readonly session: string } | ThreadSend> {
+  const open = await apiOpenThread(ports, partition);
+  if (threadUnhosted(open)) {
+    door.learnt(false);
+    return door.refused();
+  }
+  if (sessionRefusedNoRunner(open)) return { send: "NoRunner" };
+  if (open.outcome !== "Ok") return threadSendRefused(threadRefusalCause(open));
+  return { session: open.value.session };
+}
+
+/** One message sent to a thread, as the door answered it, a refusal over the
+ * hosted grant being told to the door's own reads first. */
+async function threadSendAnswered(
+  ports: ReturnType<typeof useApiPorts>,
+  partition: PartitionIdentity,
+  door: ReturnType<typeof useThreadDoor>,
+  sent: { readonly session: string } & ThreadSending,
+): Promise<ThreadSend> {
+  const answered = await threadMessageSent(ports, partition, sent.session, {
+    turn: sent.turn,
+    message: sent.text,
+  });
+  if (answered.send !== "Unhosted") return answered;
+  door.learnt(false);
+  return door.refused();
+}
+
+/** The messages sent that no turn the mailbox read lists names yet: each held
+ * from its press, and no longer once a read lists its turn or the press ends
+ * with its text kept. */
+function useThreadSendSending(listed: readonly string[]): {
+  readonly sending: readonly ThreadSending[];
+  readonly pressed: (sent: ThreadSending) => void;
+  readonly kept: (turn: string) => void;
+} {
+  const [sending, setSending] = useState<readonly ThreadSending[]>([]);
+  const unlisted = threadSendingWithout(sending, listed);
+  if (unlisted !== sending) setSending(unlisted);
+  return {
+    sending: unlisted,
+    pressed: (sent) => {
+      setSending((before) => threadSendingWith(before, sent));
+    },
+    kept: (turn) => {
+      setSending((before) => threadSendingWithout(before, [turn]));
+    },
+  };
+}
+
+const threadSendNothingListed: readonly string[] = [];
+
+/** Where a thread hands a message its door refused once the thread is no
+ * longer drawn, and where it finds one handed there before. */
+export interface ThreadKeptAway {
+  readonly kept: ThreadKept | undefined;
+  readonly keep: (kept: ThreadKept) => void;
+  /** Said once the thread's box holds what was kept. */
+  readonly taken: () => void;
+}
+
+/**
+ * A thread's dealings with what is kept for it: `answered` hands a refusal on
+ * where the thread is no longer drawn, and one found kept becomes the thread's
+ * own last press and is handed to the box as `back`.
+ */
+function useThreadKeptAway(
+  away: ThreadKeptAway | undefined,
+  pressed: {
+    readonly setSend: (send: ThreadSend) => void;
+    readonly setHeld: (held: ThreadHeld | undefined) => void;
+  },
+): {
+  readonly answered: (sent: ThreadSending, send: ThreadSend) => void;
+  readonly back: ConversationComposerProps["back"];
+} {
+  const drawn = useRef(true);
+  useEffect(() => {
+    drawn.current = true;
+    return () => {
+      drawn.current = false;
+    };
+  }, []);
+  const kept = away?.kept;
+  const [last, setLast] = useState<ThreadKept | undefined>(undefined);
+  if (kept !== undefined && kept !== last) {
+    setLast(kept);
+    pressed.setSend(kept.send);
+    pressed.setHeld(
+      kept.turn === undefined
+        ? undefined
+        : { text: kept.text, turn: kept.turn },
+    );
+  }
+  return {
+    answered: (sent, send) => {
+      if (send.send !== "Sent" && !drawn.current) away?.keep({ ...sent, send });
+    },
+    back:
+      away === undefined || kept === undefined
+        ? undefined
+        : { text: kept.text, taken: away.taken },
+  };
+}
+
+/** What one thread's composer is made from. */
+export interface ThreadSendInput {
+  readonly partition: PartitionIdentity;
+  /** Absent where the reader has no thread, which the first press opens. */
+  readonly session: string | undefined;
+  readonly takes: boolean;
+  /** The turns the mailbox read lists, which a message sent is held until. */
+  readonly listed?: readonly string[];
+  /** The turns that read lists as ended, which a stop's refusal is said
+   * until. */
+  readonly ended?: readonly string[];
+  /** The thread a first press opened, once its message is sent. */
+  readonly onStarted?: (session: string) => void;
+  /** What is kept for the thread while it is not drawn. */
+  readonly away?: ThreadKeptAway | undefined;
+}
+
+/** The thread's stops, with one the door refused said in the composer's line
+ * until the turn it was about has ended. */
+function useThreadStopSaid(
+  partition: PartitionIdentity,
+  said: readonly [ThreadSend, (send: ThreadSend) => void],
+  ended: readonly string[] | undefined,
+): ThreadStopHeld {
+  const [send, setSend] = said;
+  const stops = useThreadStop({
+    partition,
+    onRefused: (turn, cause) => {
+      setSend({
+        send: "Refused",
+        what: "Stop",
+        turn,
+        ...(cause === undefined ? {} : { cause }),
+      });
+    },
+  });
+  if (
+    send.send === "Refused" &&
+    send.what === "Stop" &&
+    ended?.includes(send.turn) === true
+  )
+    setSend({ send: "Idle" });
+  return stops;
 }
 
 /**
@@ -167,22 +363,38 @@ function ThreadSendNote(props: {
  * in its read before anything is typed, takes nothing more until a read after
  * that says runners, and holds any text it handed back, read-only.
  */
-export function useThreadSend(input: {
-  readonly partition: PartitionIdentity;
-  /** Absent where the reader has no thread, which the first press opens. */
-  readonly session: string | undefined;
-  readonly takes: boolean;
-  /** The thread a first press opened, once its message is sent. */
-  readonly onStarted?: (session: string) => void;
-}): ConversationComposerProps {
+export function useThreadSend(input: ThreadSendInput): ThreadSendHeld {
   const ports = useApiPorts();
   const { partition } = input;
   const [held, setHeld] = useState<ThreadHeld | undefined>(undefined);
   const [send, setSend] = useState<ThreadSend>({ send: "Idle" });
   const [opened, setOpened] = useState<string | undefined>(undefined);
+  const sends = useThreadSendSending(input.listed ?? threadSendNothingListed);
+  const stops = useThreadStopSaid(partition, [send, setSend], input.ended);
   const door = useThreadDoor(partition);
+  const away = useThreadKeptAway(input.away, { setSend, setHeld });
   const standing = threadSendStanding(send, input.takes, door.door);
-  return {
+  const pressed = async (sent: ThreadSending): Promise<string | undefined> => {
+    let session = input.session ?? opened;
+    if (session === undefined) {
+      const open = await threadSendOpened(ports, partition, door);
+      if ("send" in open) {
+        setSend(open);
+        return undefined;
+      }
+      session = open.session;
+      setOpened(session);
+    }
+    const to = { session, ...sent };
+    const answered = await threadSendAnswered(ports, partition, door, to);
+    setSend(answered);
+    setHeld(answered.send === "Sent" ? undefined : sent);
+    away.answered(sent, answered);
+    if (answered.send !== "Sent") return undefined;
+    if (input.session === undefined) input.onStarted?.(session);
+    return session;
+  };
+  const composer: ConversationComposerProps = {
     takes:
       input.takes && standing.send !== "Ended" && standing.send !== "Unhosted",
     charsMax: threadMessageCharsMax,
@@ -191,38 +403,14 @@ export function useThreadSend(input: {
         threadTurnRetained(held, text) ??
         threadTurnMinted(drawBytes(threadTurnIdBytesCount));
       setSend({ send: "Sending" });
-      let session = input.session ?? opened;
-      if (session === undefined) {
-        const open = await apiOpenThread(ports, partition);
-        if (threadUnhosted(open)) {
-          door.learnt(false);
-          setSend(await door.refused());
-          return "Kept";
-        }
-        if (sessionRefusedNoRunner(open)) {
-          setSend({ send: "NoRunner" });
-          return "Kept";
-        }
-        if (open.outcome !== "Ok") {
-          setSend({ send: "Refused", reason: panelReason(open) });
-          return "Kept";
-        }
-        session = open.value.session;
-        setOpened(session);
-      }
-      const answered = await threadMessageSent(ports, partition, session, {
-        turn,
-        message: text,
-      });
-      if (answered.send === "Unhosted") door.learnt(false);
-      setSend(answered.send === "Unhosted" ? await door.refused() : answered);
-      if (answered.send === "Sent") {
-        setHeld(undefined);
-        if (input.session === undefined) input.onStarted?.(session);
-        return "Sent";
-      }
-      setHeld({ text, turn });
-      return "Kept";
+      sends.pressed({ turn, text });
+      const taken = await stops.flown(turn, pressed({ turn, text }));
+      if (taken === undefined) sends.kept(turn);
+      return taken === undefined ? "Kept" : "Sent";
+    },
+    onStop: (turn) => {
+      if (send.send === "Refused") setSend({ send: "Idle" });
+      return stops.stop(turn, input.session ?? opened);
     },
     onEdit: () => {
       if (
@@ -234,5 +422,12 @@ export function useThreadSend(input: {
     },
     note: <ThreadSendNote partition={partition} send={standing} />,
     holds: standing.send === "Unhosted",
+    ...(away.back === undefined ? {} : { back: away.back }),
+  };
+  return {
+    composer,
+    sending: sends.sending,
+    stopping: stops.stopping,
+    takenBack: stops.takenBack,
   };
 }

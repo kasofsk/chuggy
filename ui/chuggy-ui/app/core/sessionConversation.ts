@@ -17,7 +17,10 @@ import type {
   LeadTurnResponse,
   ThreadTurnResponse,
 } from "../../../../src/contract/responses.ts";
-import { conversationBlocksOf } from "./conversation.ts";
+import {
+  conversationBlocksOf,
+  conversationMessageInterruption,
+} from "./conversation.ts";
 import type {
   ConversationEntry,
   ConversationItem,
@@ -37,8 +40,9 @@ export interface SessionConversationRead {
   readonly held: LeadTranscriptHeld;
   readonly stream: string | undefined;
   readonly listed: boolean;
-  /** Whether anything has been asked of this session yet. A store is written by
-   * the first turn, so a session with none has no store to be missing. */
+  /** Whether a store is due of this session. The first turn writes it, so a
+   * session with no turn, or with none settled where its page can tell, has no
+   * store to be missing. */
   readonly turned: boolean;
 }
 
@@ -92,6 +96,14 @@ function sessionConversationMarkers(
   return read.listed ? shortfalls : [...shortfalls, { marker: "Unlisted" }];
 }
 
+/** The id the model gave the message an entry is a block of, where the entry
+ * carries one. */
+function sessionConversationMessage(message: unknown): string | undefined {
+  if (typeof message !== "object" || message === null) return undefined;
+  const id = (message as Record<string, unknown>)["id"];
+  return typeof id === "string" && id.length > 0 ? id : undefined;
+}
+
 /** One entry, keyed by the uuid the store gave it and by its place in the chain
  * where it gave none. The route answers user and assistant lines and drops the
  * runtime's bookkeeping, which is why the role is a question with two answers. */
@@ -99,15 +111,27 @@ function sessionConversationEntry(
   entry: LeadTranscriptEntry,
   at: number,
 ): ConversationEntry {
+  const message = sessionConversationMessage(entry.message);
   return {
     id: entry.uuid ?? `entry-${String(at)}`,
     role: entry.type === "user" ? "User" : "Assistant",
     ...(entry.timestamp === undefined ? {} : { at: entry.timestamp }),
+    ...(message === undefined ? {} : { message }),
     blocks: conversationBlocksOf(entry.message),
   };
 }
 
-/** The chain as items, with the seam above the entry the compaction cut at. */
+/** Whether an entry is the runtime's own note that a turn was interrupted,
+ * which is written in the member's role and is nothing a member said or a
+ * call returned. */
+function sessionConversationInterruption(entry: LeadTranscriptEntry): boolean {
+  return (
+    entry.type === "user" && conversationMessageInterruption(entry.message)
+  );
+}
+
+/** The chain as items, with the seam above the entry the compaction cut at
+ * and the runtime's note of an interruption left out. */
 export function sessionConversationItems(
   read: SessionConversationRead,
 ): readonly ConversationItem[] {
@@ -122,6 +146,7 @@ export function sessionConversationItems(
   read.held.entries.forEach((entry, at) => {
     if (entry.uuid !== undefined && entry.uuid === compaction?.boundary)
       said.push({ item: "Marker", marker: seam });
+    if (sessionConversationInterruption(entry)) return;
     said.push({ item: "Entry", entry: sessionConversationEntry(entry, at) });
   });
   return said;
@@ -144,6 +169,9 @@ export function sessionConversationTurns(
     ...("input" in turn ? { input: turn.input } : {}),
     state: turn.state,
     ...(turn.failure === undefined ? {} : { failure: turn.failure }),
+    ...("result" in turn && turn.result !== undefined
+      ? { result: turn.result }
+      : {}),
     ...(turn.tokens === undefined ? {} : { tokens: turn.tokens }),
     ...(turn.costMicros === undefined ? {} : { costMicros: turn.costMicros }),
     ...(turn.durationMs === undefined ? {} : { durationMs: turn.durationMs }),

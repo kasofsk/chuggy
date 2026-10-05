@@ -1,9 +1,49 @@
 /* What the conversation surface cannot say as a utility: the chevron's turn,
- * which is a Radix data-attribute; the glyph's pulse, which is a keyframe; and
+ * which is a Radix data-attribute; the glyph's pulse, which is a keyframe; the
+ * mark at the end of an answer being written, which is a pseudo-element; and
  * `bg-transparent`, which Tailwind writes as a raw hex the built-layer policy
  * refuses. */
 
 @layer page {
+  /* What a mount may say of the conversation it holds: how wide its column
+   * is, how large its text and how tall a line of it. Each has the console's
+   * own answer until a mount gives another, and a line of the answer is
+   * stated once here because three things are as tall as one: the engine, the
+   * line of a part of the work, and the text that takes the place of either. */
+  .conversation {
+    --conversation-line: calc(
+      var(--conversation-text, var(--text-md)) *
+        var(--conversation-leading, var(--leading-prose))
+    );
+    font-size: var(--conversation-text, inherit);
+  }
+
+  .conversation-column {
+    max-width: var(--conversation-width, var(--width-column));
+  }
+
+  /* The composer under a pane's column keeps the column's inset from the
+   * pane's edges, and less of it on a narrow screen. */
+  .conversation-foot {
+    padding: 0 var(--space-4) var(--space-4);
+  }
+
+  /* A phone zooms into any field typed smaller than this, and what is read on
+   * one is read at the size it is typed in. */
+  @media (max-width: 40em) {
+    .conversation {
+      --conversation-text: var(--text-unzoomed);
+    }
+
+    .conversation-foot {
+      padding: 0 var(--space-2) var(--space-2);
+    }
+  }
+
+  .conversation .run-report {
+    line-height: var(--conversation-leading, var(--leading-prose));
+  }
+
   .conversation-trigger {
     appearance: none;
     background: transparent;
@@ -14,6 +54,19 @@
     cursor: pointer;
   }
 
+  /* The box and its control are one row, a line tall until the text needs
+   * more: a line of the box is as tall as the control, whose own size is the
+   * least a finger is given on a narrow screen, and the text sits in the
+   * middle of it. The control's mark keeps one size, so on that screen the
+   * room around it is the control's and the field gives up its own. */
+  .conversation-field {
+    --conversation-control: var(--height-icon);
+    display: flex;
+    align-items: flex-end;
+    gap: var(--space-2);
+    padding: var(--space-1) var(--space-1) var(--space-1) var(--space-3);
+  }
+
   /* The ring is the field's, not the textarea's: a box drawn around a box is
    * two rings, and the outer one is the control the reader sees. */
   .conversation-field:focus-within {
@@ -21,11 +74,62 @@
   }
 
   .conversation-input {
+    padding: calc((var(--conversation-control) - 1lh) / 2) 0;
     background: transparent;
+  }
+
+  .conversation-input::placeholder {
+    color: var(--ink-3);
   }
 
   .conversation-input:focus-visible {
     box-shadow: none;
+  }
+
+  .conversation-send {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: var(--conversation-control);
+    height: var(--conversation-control);
+    padding: 0;
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+  }
+
+  .conversation-send-mark {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--height-icon);
+    height: var(--height-icon);
+    border-radius: var(--radius-circle);
+    background: var(--surface-inverse);
+    color: var(--ink-inverse);
+  }
+
+  .conversation-send:disabled {
+    cursor: default;
+  }
+
+  .conversation-send:disabled > .conversation-send-mark {
+    background: var(--surface-2);
+    color: var(--ink-3);
+  }
+
+  /* The line over the box is there only while it says something. */
+  .conversation-note:empty {
+    display: none;
+  }
+
+  @media (max-width: 40em) {
+    .conversation-field {
+      --conversation-control: var(--height-touch);
+      padding-block: 0;
+      padding-inline-end: 0;
+    }
   }
 
   /* The list stands over the thread rather than inside the composer, because
@@ -63,6 +167,121 @@
     animation: conversation-pulse var(--duration-pulse) var(--ease-out) infinite;
   }
 
+  .conversation-steps {
+    gap: var(--space-3);
+  }
+
+  /* On a narrow screen a row that opens and the copy control answer a press
+   * over the least a finger is given: an area laid over the control that takes
+   * no room and draws nothing, so nothing drawn moves for it. */
+  @media (max-width: 40em) {
+    .conversation-trigger,
+    .conversation-meta .copy-button {
+      position: relative;
+    }
+
+    .conversation-trigger::after,
+    .conversation-meta .copy-button::after {
+      content: "";
+      position: absolute;
+      inset-block: min(0px, calc((100% - var(--height-touch)) / 2));
+      inset-inline: min(0px, calc((100% - var(--height-touch)) / 2));
+    }
+
+    /* The copy control stands a hang short of the column's gutter, so its
+     * area begins at the screen's edge rather than past it. */
+    .conversation-meta .copy-button::after {
+      inset-inline: calc(var(--space-1) - var(--space-4))
+        calc(100% - var(--height-touch) + var(--space-4) - var(--space-1));
+    }
+
+    /* A step that opens is a row that tall itself, reaching half the list's
+     * gap into the space either side of it, so none lies over another, over
+     * the line that opened the list or over what a step opened to. */
+    .conversation-steps {
+      padding-block: calc(var(--space-3) / 2);
+    }
+
+    .conversation-steps .conversation-trigger {
+      min-height: var(--height-touch);
+      margin-block: calc(var(--space-3) / -2);
+    }
+  }
+
+  /* The line of a part of the work is as tall as a line of the answer's text,
+   * whether or not it opens to anything, so the engine giving way to it and
+   * the record coming to hold what it opens to both move nothing. */
+  .conversation-work-line {
+    min-height: var(--conversation-line);
+  }
+
+  /* The line under an answer, as tall with a glyph in it as with the copy
+   * control, and its lead as wide — so the word beside it never shifts. It
+   * hangs by the control's own inset, which puts the mark on the text's edge. */
+  .conversation-meta {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-height: calc(1em + 2 * var(--space-1));
+    margin-inline-start: calc(-1 * var(--space-1));
+  }
+
+  .conversation-meta-lead {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: calc(1em + 2 * var(--space-1));
+  }
+
+  /* A word for waiting comes in slowly, and its glyph with it, so a wait that
+   * ends just after the word is due leaves nothing on the line to catch. */
+  .conversation-meta-waited > * {
+    animation: conversation-word-in var(--duration-word) var(--ease-in) both;
+  }
+
+  @keyframes conversation-word-in {
+    from {
+      opacity: 0;
+    }
+
+    to {
+      opacity: 1;
+    }
+  }
+
+  /* The way back to the foot of the column: a round control on a band of its
+   * own, which is not there at all while the reader is at the foot. */
+  .conversation-bottom-band {
+    display: flex;
+    justify-content: center;
+    padding-block: var(--space-1);
+  }
+
+  .conversation-bottom {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2em;
+    height: 2em;
+    padding: 0;
+    border: var(--hairline) solid var(--edge-strong);
+    border-radius: var(--radius-circle);
+    background: var(--surface-1);
+    color: var(--ink-2);
+    cursor: pointer;
+  }
+
+  .conversation-bottom:hover {
+    color: var(--ink-1);
+  }
+
+  @media (max-width: 40em) {
+    .conversation-bottom {
+      width: var(--height-touch);
+      height: var(--height-touch);
+    }
+  }
+
   @keyframes conversation-pulse {
     0%,
     100% {
@@ -74,10 +293,38 @@
     }
   }
 
-  /* The strip holds this height whether or not the train is drawn inside it,
-   * so a turn starting or ending never shifts the composer under it. The three
-   * mixes are the sprite's own shades, each a step of one token toward the
-   * panel or toward the frame rather than a second colour. */
+  /* The mark sits after the last word of whatever is being written and takes
+   * no room there: its margins give back its own width, so it never wraps a
+   * line, and nothing moves when it goes. The report says where that is, by
+   * the one class it puts on the last thing written. */
+  .conversation-writing .run-report-mark::after {
+    content: "";
+    display: inline-block;
+    width: 0.5em;
+    height: 0.5em;
+    margin-inline: 0.25em -0.75em;
+    border-radius: 50%;
+    background: var(--ink-3);
+    animation: conversation-pulse var(--duration-pulse) var(--ease-out) infinite;
+  }
+
+  /* Where nothing written can carry it the report does, and it stands alone
+   * on the line the next word is about to take. */
+  .conversation-writing .run-report.run-report-mark::after {
+    display: block;
+    margin-inline: 0.25em 0;
+    margin-block: calc((1lh - 0.5em) / 2);
+  }
+
+  .conversation-writing .run-report.run-report-mark:not(:empty)::after {
+    margin-block-start: calc(var(--space-3) + (1lh - 0.5em) / 2);
+  }
+
+  /* The engine's line is as tall as a line of the answer and the engine
+   * stands on its foot, rising into the gap above it: what is first written
+   * takes the line and moves nothing. The three mixes are the sprite's own
+   * shades, each a step of one token toward the panel or toward the frame
+   * rather than a second colour. */
   .conversation-waiting {
     --waiting-boiler-light: color-mix(
       in srgb,
@@ -100,8 +347,13 @@
       var(--surface-1)
     );
     position: relative;
-    height: 2.5em;
-    overflow: hidden;
+    height: var(--conversation-line);
+    overflow-x: clip;
+  }
+
+  /* The engine's line kept where no engine runs yet. */
+  .conversation-waiting-kept {
+    height: var(--conversation-line);
   }
 
   /* The rail the engine runs on, still while the engine crosses it: the ground

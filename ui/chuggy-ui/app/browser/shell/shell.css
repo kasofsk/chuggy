@@ -2,9 +2,18 @@
    thing about the shell a utility on the shell cannot state: the width and the
    corners belong to the notice inside it. The thread the chat pane holds is
    marked in its history by a slow wash and an outline rather than a mark
-   beside it; with motion reduced the wash holds still. */
+   beside it; with motion reduced the wash holds still. A pane given the whole
+   frame sets its conversation as a column to read — narrower than the frame,
+   in larger text on a taller line — and beside the pages it leaves the
+   conversation the console's own. */
 
 @layer page {
+  .chat-reading {
+    --conversation-width: var(--width-reading);
+    --conversation-text: var(--text-lg);
+    --conversation-leading: var(--leading-reading);
+  }
+
   .shell-banner > .notice {
     max-width: none;
     border-radius: 0;

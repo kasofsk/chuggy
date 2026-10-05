@@ -11,6 +11,7 @@
 // jscpd:ignore-start -- the imports and vi.mock factories a case cannot hoist out
 import { QueryClient } from "@tanstack/react-query";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -22,9 +23,11 @@ import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import { Shell } from "../app/browser/Shell.tsx";
+import { conversationWaitWordAfterMs } from "../app/browser/conversation/ConversationLines.tsx";
 import { DetailsSlot, TopBarSlot } from "../app/browser/shell/slots.tsx";
 import {
   viewportDeskEm,
+  viewportNarrowEm,
   viewportTwoColumnEm,
 } from "../app/browser/shell/viewport.ts";
 import { sessionPlacementResource } from "../app/browser/sessionPlacement.tsx";
@@ -103,6 +106,7 @@ afterEach(() => {
   pageDrawn = () => null;
   localStorage.removeItem(chatPaneStoreKey);
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 function styleless(): void {
@@ -323,6 +327,53 @@ test("pressing a screen leaves a collapsed pane collapsed", async () => {
   styleless();
 });
 
+function paneDocked(): void {
+  localStorage.setItem(
+    chatPaneStoreKey,
+    JSON.stringify({ placement: "Right", presentation: "Docked" }),
+  );
+}
+
+/** A phone's bar wraps to rows a conversation cannot spare, so a chat given
+ * the frame there takes them too. The banner's place stands through it, since
+ * what the banner says is true of the chat as well. */
+test("on a narrow viewport a full screen takes the bar's rows, and leaving it draws the bar again", async () => {
+  paneDocked();
+  await mounted(viewportNarrowEm - 1);
+  expect(navDrawn()).not.toBeNull();
+  await pressed("Full screen");
+  expect(chatDrawn()).not.toBeNull();
+  expect(navDrawn()).toBeNull();
+  expect(screen.queryByRole("button", { name: "Sign out" })).toBeNull();
+  expect(document.querySelector(".shell-banner")).not.toBeNull();
+  styleless();
+  await pressed("Exit full screen");
+  expect(navDrawn()).not.toBeNull();
+  expect(screen.queryByRole("button", { name: "Sign out" })).not.toBeNull();
+  styleless();
+});
+
+test("a viewport at the narrow width keeps the bar over a full screen", async () => {
+  paneDocked();
+  await mounted(viewportNarrowEm);
+  await pressed("Full screen");
+  expect(chatDrawn()).not.toBeNull();
+  expect(navDrawn()).not.toBeNull();
+  styleless();
+});
+
+/** A pane with the frame sets its conversation as a column to read, which the
+ * sheet does for the class the pane carries then and not beside the pages. */
+test("a pane given the whole frame is marked as one to read, and beside the pages it is not", async () => {
+  await mounted(viewportDeskEm);
+  expect(chatDrawn()?.classList.contains("chat-reading")).toBe(false);
+  await pressed("Full screen");
+  expect(chatDrawn()?.classList.contains("chat-reading")).toBe(true);
+  await pressed("Exit full screen");
+  expect(chatDrawn()?.classList.contains("chat-reading")).toBe(false);
+  styleless();
+});
+
 /** Where the pane sits is set once, so it lives behind the bar's gear rather
  * than in the pane's own header. */
 test("repositioning the pane divides the frame the other way and is remembered", async () => {
@@ -370,8 +421,8 @@ function threadServed(listed: readonly unknown[]): typeof fetch {
   }) as unknown as typeof fetch;
 }
 
-function composerDrawn(): HTMLElement {
-  return screen.getByRole("textbox", { name: "Message" });
+function composerDrawn(): HTMLTextAreaElement {
+  return screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Message" });
 }
 
 /** A server holding the reader's own thread with a turn the mailbox has not
@@ -434,6 +485,51 @@ test("starting a thread holds it at once, and the box takes the caret", async ()
   styleless();
 });
 
+/** The item of the pane's header an element stands in. */
+function headerItem(element: HTMLElement): Element | null {
+  const header = chatDrawn()?.querySelector("header");
+  let item: Element | null = element;
+  while (item !== null && item.parentElement !== header)
+    item = item.parentElement;
+  return item;
+}
+
+/** The header is one row: the thread's title with what is done to that thread
+ * beside it, then the pane's own controls, each an item of the same row, and
+ * the title the one item that gives way where the row is short. How tall that
+ * row is drawn is a browser's to say. */
+test("the pane's title and every control of it stand in the header's one row", async () => {
+  await mounted(
+    viewportDeskEm,
+    threadServed([
+      threadEntry({
+        session: openedSession,
+        owner: "geoff",
+        mine: true,
+        title: "held",
+      }),
+    ]),
+  );
+  const header = chatDrawn()?.querySelector("header");
+  expect(header?.classList.contains("flex")).toBe(true);
+  const title = headerItem(screen.getByRole("heading", { name: "held" }));
+  expect(title).not.toBeNull();
+  expect(title?.classList.contains("flex-1")).toBe(true);
+  expect(title?.classList.contains("min-w-0")).toBe(true);
+  const named = (name: string): Element | null =>
+    headerItem(screen.getByRole("button", { name }));
+  expect(named("Rename")).toBe(title);
+  expect(named("Close")).toBe(title);
+  const controls = ["New", "History", "Full screen", "Collapse"].map(named);
+  for (const control of controls) {
+    expect(control).not.toBeNull();
+    expect(control).not.toBe(title);
+  }
+  expect(new Set(controls).size).toBe(controls.length);
+  expect([...(header?.children ?? [])]).toStrictEqual([title, ...controls]);
+  styleless();
+});
+
 /** The caret is for a thread the reader named, and arriving at the one they
  * already had is not naming it: a pane that grabbed focus on the first paint
  * would take it from whatever page the reader actually opened. */
@@ -475,6 +571,80 @@ test("New after a refused first message holds the thread it opens", async () => 
   expect(read.some((url) => url.includes(`/threads/${openedSession}`))).toBe(
     true,
   );
+  styleless();
+});
+
+/** One answer a case holds back until it lets it go. */
+function heldBack(): {
+  readonly let: Promise<void>;
+  readonly go: () => void;
+} {
+  let go = (): void => undefined;
+  const held = new Promise<void>((resolve) => {
+    go = resolve;
+  });
+  return {
+    let: held,
+    go: () => {
+      go();
+    },
+  };
+}
+
+/** The asks the pane draws that say "hello". */
+function helloAsks(): readonly Element[] {
+  return Array.from(
+    chatDrawn()?.querySelectorAll('[data-message-id$="-ask"]') ?? [],
+  ).filter((ask) => ask.textContent === "hello");
+}
+
+/** A reader with no thread sees their first message from the press: through
+ * the open, the door taking it, and the read of the thread it opened, each
+ * held back in turn, with no line saying the pane is loading in its place. */
+test("a first message is drawn once from the press until its thread is read, and no loading line stands in for it", async () => {
+  const opening = heldBack();
+  const taking = heldBack();
+  const reading = heldBack();
+  const served = threadServed([]);
+  let turn = "";
+  await mounted(viewportDeskEm, ((
+    url: string,
+    init?: { readonly method?: string; readonly body?: string },
+  ) => {
+    if (init?.method === "POST" && url.endsWith("/messages")) {
+      turn = (JSON.parse(init.body ?? "") as { readonly turn: string }).turn;
+      return taking.let.then(() => answer({ turn, ordinal: 1 }, 202));
+    }
+    if (init?.method === "POST")
+      return opening.let.then(() => served(url, init));
+    if (url.endsWith(`/threads/${openedSession}`))
+      return reading.let.then(() =>
+        answer(
+          threadBody({
+            session: openedSession,
+            streamless: true,
+            turns: [threadTurn({ turn, input: "hello", state: "Queued" })],
+          }),
+        ),
+      );
+    return served(url, init);
+  }) as unknown as typeof fetch);
+  fireEvent.change(composerDrawn(), { target: { value: "hello" } });
+  await turned(() => {
+    screen.getByRole("button", { name: "Send" }).click();
+  });
+  const drawnOnce = (): void => {
+    expect(helloAsks()).toHaveLength(1);
+    expect(screen.queryByText("Loading…")).toBeNull();
+  };
+  drawnOnce();
+  for (const answered of [opening, taking, reading]) {
+    await turned(answered.go);
+    await settled();
+    drawnOnce();
+  }
+  expect(turn).not.toBe("");
+  expect(composerDrawn().value).toBe("");
   styleless();
 });
 
@@ -1262,21 +1432,44 @@ test("New the hosted grant refuses where the read said runners reads the placeme
   styleless();
 });
 
+/** The word under the last answer of the conversation. */
+function lastWord(): string | undefined {
+  return Array.from(
+    conversationRegion().querySelectorAll(
+      '.conversation-meta p [role="status"]',
+    ),
+    (status) => status.textContent,
+  ).at(-1);
+}
+
+/** The word a waiting turn says once the wait has outlasted a glance. The
+ * clock is driven so the case does not wait it out. */
+async function waitedWord(): Promise<string | undefined> {
+  await act(() => vi.advanceTimersByTimeAsync(conversationWaitWordAfterMs));
+  return lastWord();
+}
+
 /** The reader's own queued turn on runners their runner cannot take now says
- * it is waiting rather than queued; the train still runs above the box. */
+ * it is waiting rather than queued, and says so at once; a turn that is only
+ * queued says so once that has lasted. The train runs in its answer's place. */
 test.each([
-  ["Offline", "Pool", "Waiting"],
-  ["Unregistered", "Pool", "Waiting"],
-  ["Live", "Pool", "Queued"],
-  ["Offline", "InCluster", "Queued"],
+  ["Offline", "Pool", "Waiting", "Waiting"],
+  ["Unregistered", "Pool", "Waiting", "Waiting"],
+  ["Live", "Pool", "", "Queued"],
+  ["Offline", "InCluster", "", "Queued"],
 ] as const)(
-  "a queued turn with the reader's runner %s on %s reads %s",
-  async (mine, thread, word) => {
+  "a queued turn with the reader's runner %s on %s reads %j at once and %s once it has lasted",
+  async (mine, thread, atOnce, lasted) => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
     await mounted(
       viewportDeskEm,
       placedServed(answeringThreadServed(), { thread, mine }),
     );
-    expect(within(conversationRegion()).getByText(word)).toBeTruthy();
+    expect(lastWord()).toBe(atOnce);
+    expect(
+      conversationRegion().querySelectorAll(".conversation-waiting-engine"),
+    ).toHaveLength(1);
+    expect(await waitedWord()).toBe(lasted);
     styleless();
   },
 );
@@ -1284,6 +1477,7 @@ test.each([
 /** No read says how another member's runner stands, so their queued turn is
  * queued whatever the reader's own runner is doing. */
 test("another member's queued turn reads Queued whatever the reader's runner", async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
   await mounted(
     viewportDeskEm,
     placedServed(
@@ -1321,7 +1515,7 @@ test("another member's queued turn reads Queued whatever the reader's runner", a
     fireEvent.click(row);
   });
   await settled();
-  expect(within(conversationRegion()).getByText("Queued")).toBeTruthy();
+  expect(await waitedWord()).toBe("Queued");
   expect(screen.queryByText("Waiting")).toBeNull();
   styleless();
 });

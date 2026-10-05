@@ -25,7 +25,11 @@ import { Confirm } from "../ui/Confirm.tsx";
 import { MenuContent, menuItemClassName } from "../ui/Menu.tsx";
 import { Notice } from "../ui/Notice.tsx";
 import { Tooltip } from "../ui/Tooltip.tsx";
-import { ChatPaneIcon, ChatPaneIconButton } from "./chatPaneIcons.tsx";
+import {
+  ChatPaneHeaderRow,
+  ChatPaneIcon,
+  ChatPaneIconButton,
+} from "./chatPaneIcons.tsx";
 import type { ChatPaneGlyphName } from "./chatPaneIcons.tsx";
 import {
   ThreadEntryRename,
@@ -118,7 +122,7 @@ export function ChatPaneHistory(props: {
     <DropdownMenu.Root modal={false}>
       <Tooltip text={chatPaneHistoryLabel}>
         <DropdownMenu.Trigger
-          className={buttonLookClassName({ size: "sm", variant: "quiet" })}
+          className={buttonLookClassName({ size: "icon", variant: "quiet" })}
         >
           <ChatPaneIcon glyph="history" label={chatPaneHistoryLabel} />
         </DropdownMenu.Trigger>
@@ -185,10 +189,10 @@ function ChatPaneCloseConfirm(props: {
 }
 
 /**
- * The thread the pane holds, on a row of its own under the pane's controls:
- * its title with Rename beside it, and Close at the row's end, which asks
- * before it closes. While a rename is open, the editor takes the title's place
- * and the buttons stand aside for it.
+ * The thread the pane holds, at the start of the pane's one row: its title,
+ * and beside it Rename and Close, which asks before it closes. While a rename
+ * is open the editor takes the title's place and the buttons stand aside for
+ * it; what closing asks and what either was refused for go under the row.
  */
 export function ChatPaneThreadActions(props: {
   readonly partition: PartitionIdentity;
@@ -198,7 +202,7 @@ export function ChatPaneThreadActions(props: {
   const [confirming, setConfirming] = useState(false);
   return (
     <>
-      <div className="flex w-full min-w-0 items-center gap-1">
+      <div className="flex min-w-0 flex-1 items-center pl-3">
         {actions.renaming ? (
           <ThreadEntryRename
             initial={props.thread.title ?? ""}
@@ -206,7 +210,7 @@ export function ChatPaneThreadActions(props: {
           />
         ) : (
           <>
-            <h2 className="text-ink-2 font-strong min-w-0 truncate text-sm">
+            <h2 className="text-ink-2 font-strong min-w-0 truncate pr-1 text-sm">
               {threadLabel(props.thread)}
             </h2>
             {actions.renameable ? (
@@ -217,35 +221,41 @@ export function ChatPaneThreadActions(props: {
               />
             ) : null}
             {actions.closable ? (
-              <span className="ml-auto">
-                <ChatPaneIconButton
-                  glyph="close"
-                  label="Close"
-                  pressed={confirming}
-                  onClick={() => {
-                    setConfirming(!confirming);
-                  }}
-                />
-              </span>
+              <ChatPaneIconButton
+                glyph="close"
+                label="Close"
+                pressed={confirming}
+                onClick={() => {
+                  setConfirming(!confirming);
+                }}
+              />
             ) : null}
           </>
         )}
       </div>
       {confirming && !actions.renaming ? (
-        <ChatPaneCloseConfirm
-          mine={props.thread.mine}
-          busy={actions.busy}
-          onConfirm={() => {
-            setConfirming(false);
-            actions.close();
-          }}
-          onCancel={() => {
-            setConfirming(false);
-          }}
-        />
+        <ChatPaneHeaderRow>
+          <ChatPaneCloseConfirm
+            mine={props.thread.mine}
+            busy={actions.busy}
+            onConfirm={() => {
+              setConfirming(false);
+              actions.close();
+            }}
+            onCancel={() => {
+              setConfirming(false);
+            }}
+          />
+        </ChatPaneHeaderRow>
       ) : null}
       {actions.refused === undefined ? null : (
-        <Notice tone="danger" inline detail={`Refused · ${actions.refused}`} />
+        <ChatPaneHeaderRow>
+          <Notice
+            tone="danger"
+            inline
+            detail={`Refused · ${actions.refused}`}
+          />
+        </ChatPaneHeaderRow>
       )}
     </>
   );

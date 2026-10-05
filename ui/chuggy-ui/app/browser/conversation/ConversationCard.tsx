@@ -34,6 +34,34 @@ export function ConversationChevron(): ReactNode {
   );
 }
 
+/** Filled while what it stands beside is going on and hollow once that is
+ * over; `live` pulses it, where it is the one thing on the surface moving. */
+export function ConversationGlyph(props: {
+  readonly filled: boolean;
+  readonly live: boolean;
+}): ReactNode {
+  return (
+    <svg
+      viewBox="0 0 12 12"
+      aria-hidden="true"
+      className={
+        props.live
+          ? "conversation-glyph-live size-3 shrink-0"
+          : "size-3 shrink-0"
+      }
+    >
+      <circle
+        cx="6"
+        cy="6"
+        r="4"
+        fill={props.filled ? "currentColor" : "none"}
+        stroke="currentColor"
+        strokeWidth="1.5"
+      />
+    </svg>
+  );
+}
+
 export function ConversationCard(props: {
   readonly label: ReactNode;
   readonly glyph?: ReactNode;

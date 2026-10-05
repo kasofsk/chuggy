@@ -35,6 +35,12 @@ import {
   runTranscriptStep,
   runTranscriptStepsMax,
 } from "../app/core/runTranscript.ts";
+import {
+  interruptionNote,
+  interruptionResult,
+  interruptionSentence,
+  interruptionToolSentence,
+} from "./interruptionFixture.ts";
 
 function page(
   batches: readonly number[],
@@ -365,6 +371,37 @@ test("a type the surface has no place for is dropped, and its elisions are not",
       }),
     ),
   ).toEqual([{ item: "Marker", marker: { marker: "Elision", bytes: 512 } }]);
+});
+
+test.each([
+  interruptionNote(interruptionSentence),
+  interruptionNote(interruptionToolSentence),
+  interruptionResult("call-1"),
+])(
+  "what the runtime writes of an interruption is bookkeeping, and its elisions are still said",
+  (message) => {
+    expect(
+      runTranscriptStep(1, JSON.stringify({ type: "user", message })),
+    ).toEqual([]);
+    expect(
+      runTranscriptStep(
+        2,
+        JSON.stringify({
+          type: "user",
+          message,
+          toolUseResult: { chuggy_truncated: { bytes: 512, digest: "d" } },
+        }),
+      ),
+    ).toEqual([{ item: "Marker", marker: { marker: "Elision", bytes: 512 } }]);
+  },
+);
+
+test("the runtime's words in a line it did not write are a step: typed, said by the assistant, or the result of a call that failed", () => {
+  const stepped = (type: string, message: unknown): number =>
+    runTranscriptStep(1, JSON.stringify({ type, message })).length;
+  expect(stepped("user", { content: interruptionSentence })).toBe(1);
+  expect(stepped("assistant", interruptionNote(interruptionSentence))).toBe(1);
+  expect(stepped("user", interruptionResult("call-1", "Exit code 1"))).toBe(1);
 });
 
 test("every held batch's lines are read in order and blank lines are not steps", () => {

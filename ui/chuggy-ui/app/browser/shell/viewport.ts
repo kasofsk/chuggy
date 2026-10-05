@@ -8,6 +8,7 @@
 import { useCallback, useSyncExternalStore } from "react";
 
 /** The console's breakpoints, in the `em` its sheets state them in. */
+export const viewportNarrowEm = 40;
 export const viewportTwoColumnEm = 60;
 export const viewportDeskEm = 80;
 

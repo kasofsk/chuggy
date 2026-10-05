@@ -186,11 +186,27 @@ export function leadTranscriptNextAfter(
   pane: LeadTranscriptPane,
   highWaterBatch: number,
 ): number | undefined {
-  const fold = pane.fold;
+  return leadTranscriptFoldNextAfter(pane.fold, highWaterBatch);
+}
+
+function leadTranscriptFoldNextAfter(
+  fold: LeadTranscriptFold,
+  highWaterBatch: number,
+): number | undefined {
   if (fold.readTo === undefined) return highWaterBatch > 0 ? 0 : undefined;
   if (fold.stalledAt !== undefined && highWaterBatch <= fold.stalledAt)
     return undefined;
   return highWaterBatch > fold.readTo ? fold.readTo : undefined;
+}
+
+/** Whether a walk that gathered this fold has nothing left to ask below the
+ * mark: it read that far, or it waits at a cursor only a store written past
+ * the mark moves. */
+export function leadTranscriptReached(
+  fold: LeadTranscriptFold,
+  highWaterBatch: number,
+): boolean {
+  return leadTranscriptFoldNextAfter(fold, highWaterBatch) === undefined;
 }
 
 /** How many reads one walk keeps in flight, which is what a prediction the
@@ -484,6 +500,20 @@ export function leadStreamListed(session: SessionStreams): boolean {
   const named = session.agentReference;
   if (named === undefined) return false;
   return session.streams.some((held) => held.stream === named);
+}
+
+/**
+ * Whether the store's listing carries a stream that is neither the one the
+ * session names nor a stream under it: the session wrote to another before,
+ * and the one it names is not its whole record. A listing cut short of such a
+ * stream reads as a session that never did.
+ */
+export function leadStreamReplaced(session: SessionStreams): boolean {
+  const named = session.agentReference;
+  if (named === undefined) return false;
+  return session.streams.some(
+    (held) => held.stream !== named && !held.stream.startsWith(`${named}/`),
+  );
 }
 
 /**

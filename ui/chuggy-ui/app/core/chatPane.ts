@@ -117,6 +117,19 @@ export function chatPaneNarrowed(
   return { placement: "Bottom", presentation: state.presentation };
 }
 
+/**
+ * Whether the pane takes the bar's rows as well as the body, which a pane over
+ * the whole frame does on a viewport too narrow to spare them: there the bar
+ * wraps to a share of the screen a conversation cannot give up, and leaving
+ * the full screen draws it again.
+ */
+export function chatPaneCoversBar(
+  state: ChatPaneState,
+  narrow: boolean,
+): boolean {
+  return narrow && state.presentation === "Full";
+}
+
 /** The pane moved to a placement the reader picked, keeping how it takes the
  * frame. */
 export function chatPaneRepositioned(

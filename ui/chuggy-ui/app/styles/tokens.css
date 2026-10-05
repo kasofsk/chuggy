@@ -106,6 +106,7 @@
     --leading-tight: 1.25;
     --leading-dense: 1.4; /* rows, pills, tables */
     --leading-prose: 1.55;
+    --leading-reading: 1.7; /* a conversation given the whole frame */
     --tracking-label: 0.06em;
     --measure: 66ch; /* nothing runs wider than this */
 
@@ -128,6 +129,7 @@
     --height-clip: 24em; /* the tallest a quoted block stands before it scrolls */
     --height-run-conversation: 70vh; /* a run's conversation, which scrolls itself */
     --height-touch: 44px; /* the least a finger is given to press */
+    --height-icon: 2rem; /* a control that is only its glyph */
 
     /* rings */
     --ring-focus: 0 0 0 2px var(--surface-1), 0 0 0 4px var(--focus);
@@ -139,16 +141,23 @@
     --duration-travel: 800ms; /* one tile of the locomotive's ground */
     --duration-waiting-travel: 12000ms; /* one crossing of the waiting strip */
     --duration-chug: 800ms; /* one full cycle of the locomotive's sprite */
+    /* a word for waiting coming in: a fade, which reduced motion keeps */
+    --duration-word: 2000ms;
     --ease-out: cubic-bezier(0.2, 0, 0, 1);
+    /* late, for what comes in unhurried */
+    --ease-in: cubic-bezier(0.7, 0, 1, 1);
 
     /* layout */
     --width-page: 96rem;
     --width-rail: 16rem; /* the shell's navigation */
     --width-column: 64rem; /* a conversation's reading column */
+    --width-reading: 48rem; /* that column where the conversation has the frame */
     --width-settings: 56rem; /* a settings page: form rows, not prose */
     --width-aside: 22rem;
     --width-chat: 25%; /* the frame a docked chat pane takes beside the pages */
-    --height-chat: 33%; /* and under them, where a quarter is too short to read */
+    /* and under them, where a quarter is too short to read: a third, and on a
+       short frame what still holds a few lines above the composer */
+    --height-chat: clamp(33%, 26rem, 80%);
     --width-chat-strip: 2.5rem; /* the collapsed pane, which its control expands */
     --col-label: 8.5rem; /* ledger: the row's label */
     --col-identity: 8rem; /* ledger: the identity chip */

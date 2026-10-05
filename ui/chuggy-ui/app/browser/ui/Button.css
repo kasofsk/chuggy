@@ -1,6 +1,8 @@
 /* Button and ButtonLink: the paint of four variants over one pill. The pill's
    shape, type and padding are utilities on the class string, so nothing here
-   states a property the utilities layer would win back. */
+   states a property the utilities layer would win back. A control that is only
+   its glyph is a square instead, which on a narrow screen is the least a
+   finger is given. */
 
 @layer ui {
   .btn {
@@ -86,5 +88,19 @@
   .btn-quiet:disabled,
   .btn-danger:disabled {
     border-color: transparent;
+  }
+
+  .btn-icon {
+    flex: none;
+    width: var(--height-icon);
+    height: var(--height-icon);
+    padding: 0;
+  }
+
+  @media (max-width: 40em) {
+    .btn-icon {
+      width: var(--height-touch);
+      height: var(--height-touch);
+    }
   }
 }

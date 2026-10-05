@@ -6,6 +6,7 @@ import type { ReactNode } from "react";
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import { viewportDeskEm } from "../app/browser/shell/viewport.ts";
 import {
+  assistantLine,
   configurationReads,
   runAttempt,
   runConfigurationRef,
@@ -145,6 +146,53 @@ test("a settled run's conversation opens in one press, and reads its prompt only
 
   await pressed("Hide conversation");
   expect(screen.queryByRole("group", { name: "Conversation" })).toBeNull();
+});
+
+/** The word under each exchange a conversation draws. */
+function standingWords(conversation: HTMLElement): readonly string[] {
+  return Array.from(
+    conversation.querySelectorAll('.conversation-meta p [role="status"]'),
+    (status) => status.textContent,
+  );
+}
+
+/** A tool call with no result yet, which is what a run in the middle of its
+ * work has last recorded. */
+function calling(batch: number): string {
+  if (batch === 1) return assistantLine("batch 1");
+  return JSON.stringify({
+    type: "assistant",
+    message: {
+      content: [{ type: "tool_use", id: "call-1", name: "Read", input: {} }],
+    },
+  });
+}
+
+/** A run has no mailbox to say a runner took it, so its exchange is never a
+ * turn that is starting: it is open while the attempt runs and settled by the
+ * attempt's own state. */
+test("a run in the middle of its work reads Open, and Answered once it has reported", async () => {
+  const words = async (state: string): Promise<readonly string[]> => {
+    const attempt = runAttempt("a1", {
+      state,
+      run: runEvidenceOf(2, { configuration: runConfigurationRef }),
+    });
+    await runPageDrawn(
+      atlas,
+      settledRun({
+        execution: { ...runSummary(), attempts: [attempt] },
+        transcripts: [runTranscriptPage([1, 2], true, calling)],
+      }),
+    );
+    await pressed("Conversation");
+    const drawn = standingWords(
+      screen.getByRole("group", { name: "Conversation" }),
+    );
+    cleanup();
+    return drawn;
+  };
+  expect(await words("Running")).toEqual(["Open"]);
+  expect(await words("Reported")).toEqual(["Answered"]);
 });
 
 /** A command stage records no transcript, and a button onto nothing would be

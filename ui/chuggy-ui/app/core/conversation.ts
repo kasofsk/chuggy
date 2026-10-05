@@ -2,10 +2,106 @@
  * The transcript is the spine and the mailbox is an overlay: a turn contributes
  * what the transcript cannot — a pending exchange nobody has claimed, the word a
  * failure ended on, the measures — and it finds its exchange by the input text
- * the worker handed the runtime verbatim, never by counting across two reads.
+ * the worker handed the runtime verbatim.
+ *
+ * TWO TURNS THAT ASKED THE SAME THING ARE TOLD APART BY WHICH OF THEM STORED
+ * THEIR ASK. The text alone cannot say which of them an exchange belongs to,
+ * and a page that draws a turn as it is written would draw the newer one's
+ * words under the older one's ask. The exchanges of one ask are stored in turn
+ * order by the turns that stored it, so the question is only who those are.
+ *
+ * AN ANSWERED TURN STORED ITS ASK, AND SO DID ONE THAT ENDED ON A FAILURE ONLY
+ * A RUN NAMES: its turns or its budget exhausted, or a rate limit, each read
+ * off the result the runtime gave for the turn. Those are sure of an exchange
+ * wherever the page holds one.
+ *
+ * A FAILURE A SESSION REPORTED ANY OTHER WAY IS NOT PROOF ITS ASK WAS STORED.
+ * A session refuses a turn it cannot run — a checkout it cannot resolve, a
+ * credential it is not granted — and reports it failed with nothing stored, in
+ * the word a turn that ran and broke is reported in. Such a turn takes only
+ * what the sure ones leave. A record that can be counted says what that is:
+ * an exchange more than the sure turns before it need. In any other, it is an
+ * exchange that does not read as the answer of the answered turn before it,
+ * which would be that turn's. One left with no exchange is drawn as its ask
+ * and its failure.
+ *
+ * A TURN A MEMBER STOPPED WHILE A RUNNER HELD IT IS READ AS ONE OF THOSE. It
+ * was stopped before its ask was stored or part way through its answer, and
+ * the mailbox says the same of both. It takes no exchange that reads as the
+ * answer of the answered turn before it, in any record: a count says an
+ * exchange is to spare and not which stopped turn it belongs to, and that
+ * one is the answered turn's. Nor does it take one the page held before the
+ * mailbox listed it. One stopped with nothing stored, on a page that held
+ * nothing of the same words before it was sent, cannot be told from the
+ * stopped turn before it and is drawn with that turn's words.
+ *
+ * A TURN STOPPED WHILE IT STILL WAITED TAKES NONE. No runner was handed it and
+ * the mailbox says so in a failure of its own, so nothing of it is in the
+ * store: it is drawn as its ask and the word a stop is read as.
+ *
+ * A TURN THAT ENDED SAYING NOTHING OF ITSELF — its attempts lost, withdrawn,
+ * its session closed — may never have had a runner. Such turns take nothing
+ * unless a record that can be counted holds an exchange to spare for each of
+ * them once every turn above could have one. A turn waiting behind another has
+ * stored nothing for certain.
+ *
+ * A RECORD CAN BE COUNTED where the page holds it from its start and the
+ * mailbox from its first turn: no entry cut from it, no exchange past the
+ * bound, and no stream the thread wrote to before the one drawn.
+ *
+ * THE ONE TURN OUT THAT MAY HAVE STORED ITS ASK IS THE OLDEST, since turns are
+ * taken in order and one at a time. An exchange the page held before the
+ * mailbox listed that turn was stored before the turn was sent and is never
+ * its own, and one holding a message heard under that turn always is. Past
+ * those, a record that can be counted says: an exchange more than the turns
+ * sure of one is a taken turn's, and a waiting turn's only where the turns
+ * before it that may have stored cannot account for it. Where the count means
+ * nothing the newest exchange is asked instead. A turn still waiting has taken
+ * none, nor has any on a page that says the end of the record is still to be
+ * read. After a turn that ran and failed, only an exchange nothing has been
+ * written in is the taken turn's. After an answered turn, the exchange is the
+ * taken turn's unless it reads as the answer that turn ended on.
+ *
+ * WHAT CANNOT BE TOLD APART GOES TO THE TURN THAT IS OUT. A turn its session
+ * reported failed, the same ask taken again, one exchange holding words nobody
+ * heard and nothing saying when it was stored: the words are the failed turn's
+ * if it ran and the retry's if it was refused. The retry takes them. Where the
+ * failed turn ran that is wrong until the retry's own ask is read, which is
+ * the first thing a retry stores; the other way is wrong, where it was
+ * refused, until something heard under the retry is stored or it settles.
+ * The turns before the one that is out take from the newest exchange
+ * backwards behind it, so for that moment each stands one exchange early: an
+ * answered turn of the same ask is drawn with the words of the turn before
+ * it, and has its own once the turn that is out has stored its ask.
+ *
+ * THE PAGE HOLDS THE NEWEST OF THEM, so the turns take from the newest
+ * backwards: an older turn whose exchange has left the page takes none and
+ * draws nothing. Only a record that can be counted and holds fewer exchanges
+ * than turns sure of one is a record the page is behind on: it holds the
+ * oldest instead, and there the turns take from the oldest forwards. The
+ * newest exchange reading as the answer the newest of those turns ended on
+ * says the page is not behind after all.
+ *
+ * A COUNT THAT CONTRADICTS WHAT IS DRAWN GIVES WAY TO IT IN ONE CASE: every
+ * turn sure of an exchange has one by the count, the newest of them ended on
+ * words, and the newest exchange ends on none. That exchange is not that
+ * turn's, so it is given to the turn that is out.
+ *
+ * WHAT STAYS UNDECIDED IS DRAWN AS TWO EXCHANGES AND NEVER AS NONE. An
+ * exchange no turn took stands as the transcript has it and a turn that took
+ * none is appended with no work, so a wrong answer above is either that or
+ * one turn's stored work under its neighbour's name, until a message heard
+ * under the turn is stored or the turn settles.
+ *
+ * A TURN THAT TOOK NONE IS DRAWN AT THE FOOT, AND A STOPPED ONE WHERE IT WAS
+ * SENT. A member stops a message and sends another as a matter of course, and
+ * the one they stopped is not the newest thing in the column: it stands under
+ * what the turns before it took, ahead of the first exchange after those that
+ * a later turn took.
  */
 
 import { sessionTranscriptEntriesMax } from "../../../../src/contract/http.ts";
+import { agentReportedTurnFailures } from "../../../../src/contract/rosters.ts";
 import type {
   SessionTurnFailure,
   SessionTurnInputKind,
@@ -18,6 +114,7 @@ import {
 } from "../../../../src/contract/threadSeeding.ts";
 import { runCountLabel } from "./runTotals.ts";
 import { threadWakeDrawn } from "./threads.ts";
+import type { ThreadSending } from "./threads.ts";
 
 /** The most blocks one entry is read for. */
 export const conversationBlocksMax = 256;
@@ -135,6 +232,37 @@ export function conversationBlocksOf(
   return cut === 0 ? read : [...read, { block: "Capped", count: cut }];
 }
 
+/** The sentences the runtime writes in the member's role where a turn is
+ * interrupted, which nobody typed. */
+const conversationInterruptionSentences: ReadonlySet<unknown> = new Set([
+  "[Request interrupted by user]",
+  "[Request interrupted by user for tool use]",
+]);
+
+/** What the runtime writes as the result of a call it cut off, which is an
+ * instruction to the model and nothing the call returned. */
+const conversationInterruptionResult =
+  "The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP what you are doing and wait for the user to tell you how to proceed.";
+
+/**
+ * Whether a message is the runtime's own note that a turn was interrupted: one
+ * block, holding one of its sentences as text or its refusal as the failed
+ * result of the call it cut off. A member's message is stored as a string, so
+ * the same words typed are a message and not this.
+ */
+export function conversationMessageInterruption(message: unknown): boolean {
+  const content = conversationRecord(message)?.["content"];
+  if (!Array.isArray(content) || content.length !== 1) return false;
+  const block = conversationRecord(content[0]);
+  if (block?.["type"] === "text")
+    return conversationInterruptionSentences.has(block["text"]);
+  return (
+    block?.["type"] === "tool_result" &&
+    block["is_error"] === true &&
+    block["content"] === conversationInterruptionResult
+  );
+}
+
 export const conversationRoles = ["User", "Assistant"] as const;
 
 export type ConversationRole = (typeof conversationRoles)[number];
@@ -144,6 +272,10 @@ export interface ConversationEntry {
   readonly id: string;
   readonly role: ConversationRole;
   readonly at?: string;
+  /** The model message this entry is a block of, where the store names one:
+   * the entries of one message share it and arrive one block each, in the
+   * message's own order. */
+  readonly message?: string;
   readonly blocks: readonly ConversationBlock[];
 }
 
@@ -178,6 +310,8 @@ export interface ConversationTurn {
   readonly input?: string;
   readonly state: SessionTurnState;
   readonly failure?: SessionTurnFailure;
+  /** The words an answered turn ended on, where the mailbox carries them. */
+  readonly result?: string;
   readonly tokens?: number;
   readonly costMicros?: number;
   readonly durationMs?: number;
@@ -217,9 +351,10 @@ export type ConversationStep =
 export type ConversationRunningState =
   Extract<SessionTurnState, "Queued" | "Claimed"> | "Waiting";
 
-/** Where one exchange stands: `Open` is a transcript exchange with no answer
- * that no turn speaks for, a run still going; `Markers` carries only the
- * markers ahead of it, with no ask, work, answer or measures. */
+/** Where one exchange stands: `Stopped` is a turn a member stopped, which is
+ * no failure; `Open` is a transcript exchange with no answer that no turn
+ * speaks for, a run still going; `Markers` carries only the markers ahead of
+ * it, with no ask, work, answer or measures. */
 export type ConversationStanding =
   | { readonly standing: "Answered" }
   | {
@@ -228,6 +363,7 @@ export type ConversationStanding =
     }
   | { readonly standing: "Failed"; readonly failure?: SessionTurnFailure }
   | { readonly standing: "Abandoned" }
+  | { readonly standing: "Stopped" }
   | { readonly standing: "Open" }
   | { readonly standing: "Markers" };
 
@@ -237,32 +373,110 @@ export interface ConversationMeasures {
   readonly durationMs?: number;
 }
 
+/**
+ * What a running exchange is doing now, where a surface that follows its turns
+ * as they are written knows: thinking, a tool under way, its text being
+ * written, or `Whole` — a turn whose last message is written and which is
+ * waiting on nothing but its own settling. `joined` is a step the page did not
+ * hear begin, which it found under way, so it cannot say how long it has been.
+ */
+export type ConversationActivity =
+  | { readonly activity: "Thinking"; readonly joined?: true }
+  | {
+      readonly activity: "ToolUse";
+      readonly name: string;
+      readonly joined?: true;
+    }
+  | { readonly activity: "Writing" }
+  | { readonly activity: "Whole" };
+
 /** One ask, the work it took and the answer it ended on. */
 export interface ConversationExchange {
   readonly id: string;
+  /** The mailbox turn this exchange is, where one speaks for it. */
+  readonly turn?: string;
   readonly ask?: ConversationAsk;
   readonly work: readonly ConversationStep[];
   readonly answer?: string;
   readonly standing: ConversationStanding;
+  readonly activity?: ConversationActivity;
   readonly measures?: ConversationMeasures;
   readonly before: readonly ConversationMarker[];
+  /** Set where the turn carries no input to find its work by, so nothing this
+   * exchange holds can say whether the turn has begun. */
+  readonly inputless?: true;
 }
 
-/** What the disclosure trigger is worded from, as counts rather than a
- * sentence: the component owns the words. */
+/** A step of the work, which a text is not: a text is drawn where it was
+ * written and never folded into the work around it. */
+export type ConversationWorkStep = Exclude<
+  ConversationStep,
+  { readonly step: "Text" }
+>;
+
+/**
+ * One piece of what an exchange's assistant wrote, in the order it wrote them:
+ * a text, or the work between two texts. The work between two texts is one
+ * part however many steps it took, which is what keeps a turn of many calls
+ * as long on the page as the texts written around them.
+ */
+export type ConversationPart =
+  | { readonly part: "Text"; readonly text: string }
+  | { readonly part: "Work"; readonly steps: readonly ConversationWorkStep[] };
+
+/**
+ * An exchange as it is drawn: every text where it was written, the work that
+ * followed it after it, and the answer last. A text the agent carried on past
+ * is a step of the work to the fold and a part of the answer here, so a step
+ * beginning, the turn settling and the record being read again each leave
+ * every part before the last where and as it was.
+ */
+export function conversationExchangeParts(
+  exchange: ConversationExchange,
+): readonly ConversationPart[] {
+  const parts: ConversationPart[] = [];
+  let steps: ConversationWorkStep[] | undefined;
+  for (const step of exchange.work) {
+    if (step.step === "Text") {
+      parts.push({ part: "Text", text: step.text });
+      steps = undefined;
+      continue;
+    }
+    if (steps === undefined) {
+      steps = [];
+      parts.push({ part: "Work", steps });
+    }
+    steps.push(step);
+  }
+  if (exchange.answer !== undefined)
+    parts.push({ part: "Text", text: exchange.answer });
+  return parts;
+}
+
+/** Everything an exchange's assistant wrote as text, as one text a reader
+ * can take away: its texts in order, a paragraph apart. */
+export function conversationExchangeSaid(
+  exchange: ConversationExchange,
+): string | undefined {
+  const texts = conversationExchangeParts(exchange).flatMap((part) =>
+    part.part === "Text" ? [part.text] : [],
+  );
+  return texts.length === 0 ? undefined : texts.join("\n\n");
+}
+
+/** What the line a part of the work is closed to is worded from, as counts
+ * rather than a sentence: the component owns the words. */
 export interface ConversationWorkSummary {
   readonly toolCalls: number;
-  readonly texts: number;
   readonly thought: boolean;
 }
 
 export function conversationWorkSummary(
-  work: readonly ConversationStep[],
+  steps: readonly ConversationWorkStep[],
 ): ConversationWorkSummary {
   return {
-    toolCalls: work.filter((step) => step.step === "ToolCall").length,
-    texts: work.filter((step) => step.step === "Text").length,
-    thought: work.some((step) => step.step === "Thinking"),
+    toolCalls: steps.filter((step) => step.step === "ToolCall").length,
+    thought: steps.some((step) => step.step === "Thinking"),
   };
 }
 
@@ -404,6 +618,21 @@ function conversationAskOf(
   }
 }
 
+/** Whether a member stopped a turn a runner held, which may have stored
+ * something of it. */
+function conversationTurnStoppedHeld(turn: ConversationTurn): boolean {
+  return turn.state === "Abandoned" && turn.failure === "TurnStopped";
+}
+
+/** Whether a turn ended by a member stopping it, held by a runner or still
+ * waiting. */
+export function conversationTurnStopped(turn: ConversationTurn): boolean {
+  return (
+    conversationTurnStoppedHeld(turn) ||
+    (turn.state === "Abandoned" && turn.failure === "TurnStoppedQueued")
+  );
+}
+
 function conversationStandingOf(turn: ConversationTurn): ConversationStanding {
   switch (turn.state) {
     case "Queued":
@@ -416,7 +645,9 @@ function conversationStandingOf(turn: ConversationTurn): ConversationStanding {
         ? { standing: "Failed" }
         : { standing: "Failed", failure: turn.failure };
     case "Abandoned":
-      return { standing: "Abandoned" };
+      return conversationTurnStopped(turn)
+        ? { standing: "Stopped" }
+        : { standing: "Abandoned" };
   }
 }
 
@@ -431,19 +662,30 @@ function conversationMeasuresOf(
   return Object.keys(measures).length === 0 ? undefined : measures;
 }
 
-/** One exchange while it is still being built, which is the only place any of
- * this is mutable. */
-interface ConversationBuilt {
-  readonly id: string;
-  askText: string | undefined;
-  ask: ConversationAsk | undefined;
+/** What an assistant's blocks are folded into: the work, the answer, and what
+ * the fold could not keep. */
+interface ConversationSaid {
   readonly work: ConversationStep[];
   answer: string | undefined;
+  readonly before: ConversationMarker[];
+  stepsCut: number;
+}
+
+/** One exchange while it is still being built, which is the only place any of
+ * this is mutable. */
+interface ConversationBuilt extends ConversationSaid {
+  readonly id: string;
+  turn: string | undefined;
+  askText: string | undefined;
+  ask: ConversationAsk | undefined;
   standing: ConversationStanding;
   measures: ConversationMeasures | undefined;
-  readonly before: ConversationMarker[];
   matched: boolean;
-  stepsCut: number;
+  /** Whether anything an assistant wrote is folded into it. */
+  said: boolean;
+  /** The model messages its stored entries are blocks of. */
+  readonly messages: string[];
+  inputless: boolean;
 }
 
 interface ConversationBuilder {
@@ -451,10 +693,38 @@ interface ConversationBuilder {
   open: ConversationBuilt | undefined;
   pending: ConversationMarker[];
   exchangesCut: number;
+  /** Whether a marker said entries the store holds are missing from the items. */
+  partial: boolean;
+  /** Whether a marker says the end of the record is still to be read. */
+  behind: boolean;
 }
 
 /** The identity of the exchange that carries markers nothing follows. */
 const conversationTrailingId = "trailing";
+
+const conversationHeardNone: ReadonlySet<string> = new Set();
+
+const conversationHeardUnderNone: ReadonlyMap<string, string> = new Map();
+
+/** The ordinal of the newest turn the mailbox listed when a page first held
+ * each exchange, by the entry that opened it. */
+export type ConversationSeen = ReadonlyMap<string, number>;
+
+export const conversationSeenNothing: ConversationSeen = new Map();
+
+/** What a page knows of the record its items are read from that the items do
+ * not say. */
+export interface ConversationRecord {
+  readonly seen: ConversationSeen;
+  /** Whether the thread wrote to a stream before the one the items are read
+   * from, whose exchanges they do not hold. */
+  readonly replaced: boolean;
+}
+
+export const conversationRecordPlain: ConversationRecord = {
+  seen: conversationSeenNothing,
+  replaced: false,
+};
 
 /** The one sentence a cut is ever said in, wherever the cut happens. */
 function conversationCappedSentence(noun: string, count: number): string {
@@ -478,6 +748,7 @@ function conversationOpened(
 ): ConversationBuilt {
   const built: ConversationBuilt = {
     id,
+    turn: undefined,
     askText: undefined,
     ask: undefined,
     work: [],
@@ -487,6 +758,9 @@ function conversationOpened(
     before: builder.pending,
     matched: false,
     stepsCut: 0,
+    said: false,
+    messages: [],
+    inputless: false,
   };
   builder.pending = [];
   builder.built.push(built);
@@ -499,7 +773,7 @@ function conversationOpened(
 }
 
 function conversationStepped(
-  built: ConversationBuilt,
+  built: ConversationSaid,
   step: ConversationStep,
 ): void {
   if (built.work.length >= conversationStepsMax) {
@@ -513,7 +787,7 @@ function conversationStepped(
  * is the last text after the last piece of work, and never a text the agent
  * carried on past. */
 function conversationWorked(
-  built: ConversationBuilt,
+  built: ConversationSaid,
   step: ConversationStep,
 ): void {
   if (built.answer !== undefined) {
@@ -526,7 +800,7 @@ function conversationWorked(
 /** A result joins the call it names; a result whose call is not open stands as
  * a call of its own, unnamed, rather than vanishing. */
 function conversationResulted(
-  built: ConversationBuilt,
+  built: ConversationSaid,
   block: Extract<ConversationBlock, { block: "ToolResult" }>,
 ): void {
   const result = { text: block.text, isError: block.isError };
@@ -550,7 +824,7 @@ function conversationResulted(
 }
 
 function conversationBlockWorked(
-  built: ConversationBuilt,
+  built: ConversationSaid,
   block: ConversationBlock,
 ): void {
   switch (block.block) {
@@ -579,9 +853,21 @@ function conversationBlockWorked(
   }
 }
 
-function conversationAnswered(built: ConversationBuilt, text: string): void {
+function conversationAnswered(built: ConversationSaid, text: string): void {
   if (text.length === 0) return;
   built.answer = built.answer === undefined ? text : `${built.answer}\n${text}`;
+}
+
+/** An assistant's blocks in the order it wrote them: a text is the answer
+ * until something follows it, and everything else is work. */
+function conversationAssistantSaid(
+  built: ConversationSaid,
+  blocks: readonly ConversationBlock[],
+): void {
+  for (const block of blocks) {
+    if (block.block === "Text") conversationAnswered(built, block.text);
+    else conversationBlockWorked(built, block);
+  }
 }
 
 /** Whether an entry opens an exchange, which every entry does but one carrying
@@ -592,6 +878,12 @@ function conversationOpensExchange(
   return blocks.some(
     (block) => block.block !== "ToolResult" && block.block !== "Capped",
   );
+}
+
+/** Whether an entry opens an exchange where one is already open, which is
+ * what puts every entry after it in that exchange and not the one before. */
+export function conversationEntryOpens(entry: ConversationEntry): boolean {
+  return entry.role === "User" && conversationOpensExchange(entry.blocks);
 }
 
 function conversationEntryAskText(
@@ -608,7 +900,7 @@ function conversationUserEntry(
   builder: ConversationBuilder,
   entry: ConversationEntry,
 ): void {
-  const opens = conversationOpensExchange(entry.blocks);
+  const opens = conversationEntryOpens(entry);
   const built =
     opens || builder.open === undefined
       ? conversationOpened(builder, entry.id)
@@ -625,24 +917,293 @@ function conversationAssistantEntry(
   entry: ConversationEntry,
 ): void {
   const built = builder.open ?? conversationOpened(builder, entry.id);
-  for (const block of entry.blocks) {
-    if (block.block === "Text") conversationAnswered(built, block.text);
-    else conversationBlockWorked(built, block);
-  }
+  built.said = true;
+  if (entry.message !== undefined && built.messages.at(-1) !== entry.message)
+    built.messages.push(entry.message);
+  conversationAssistantSaid(built, entry.blocks);
 }
 
-/** The newest unmatched exchange whose ask is exactly this text. Turns are
- * matched newest first, so two identical inputs pair newest to newest. */
-function conversationMatch(
-  built: readonly ConversationBuilt[],
-  input: string,
-): ConversationBuilt | undefined {
-  for (let at = built.length - 1; at >= 0; at -= 1) {
-    const exchange = built[at];
-    if (exchange === undefined || exchange.matched) continue;
-    if (exchange.askText === input) return exchange;
+/** The failures only a run of the turn ends on, each read off the result the
+ * runtime gave for it. */
+const conversationFailuresRan: ReadonlySet<SessionTurnFailure> =
+  new Set<SessionTurnFailure>([
+    "AgentRateLimited",
+    "AgentTurnsExhausted",
+    "AgentBudgetExhausted",
+  ]);
+
+const conversationFailuresReported: ReadonlySet<SessionTurnFailure> = new Set(
+  agentReportedTurnFailures,
+);
+
+/** Whether a turn stored its ask for certain: it was answered, or it ended on
+ * a failure only a run of it names. */
+function conversationTurnStored(turn: ConversationTurn): boolean {
+  if (turn.state === "Answered") return true;
+  return (
+    turn.state === "Failed" &&
+    turn.failure !== undefined &&
+    conversationFailuresRan.has(turn.failure)
+  );
+}
+
+function conversationTurnOut(turn: ConversationTurn): boolean {
+  return turn.state === "Queued" || turn.state === "Claimed";
+}
+
+/**
+ * Whether a turn ended in a word that does not say whether it ran: one its
+ * session reported failed, which a session refusing a turn reports too, or one
+ * a member stopped while a runner held it. A failed turn the mailbox names no
+ * failure for is read as one of these.
+ */
+function conversationTurnReported(turn: ConversationTurn): boolean {
+  if (conversationTurnStoppedHeld(turn)) return true;
+  if (turn.state !== "Failed" || conversationTurnStored(turn)) return false;
+  return (
+    turn.failure === undefined || conversationFailuresReported.has(turn.failure)
+  );
+}
+
+/** Whether a turn ended with nothing saying whether a runner ever had it: its
+ * attempts were lost, it was withdrawn, or its session closed under it. */
+function conversationTurnLost(turn: ConversationTurn): boolean {
+  return (
+    !conversationTurnOut(turn) &&
+    !conversationTurnStored(turn) &&
+    !conversationTurnReported(turn) &&
+    !conversationTurnStopped(turn)
+  );
+}
+
+/** What the pairing of one ask's turns is decided against. */
+interface ConversationPairing {
+  /** Whether exchanges can be counted against turns, which the module's
+   * header says when. */
+  readonly whole: boolean;
+  /** Whether the items say the end of the record is still to be read. */
+  readonly behind: boolean;
+  /** The oldest turn still out, the only one out that may have stored its ask. */
+  readonly frontier: ConversationTurn | undefined;
+  /** The turn each model message a page heard was heard under. */
+  readonly heardUnder: ReadonlyMap<string, string>;
+  readonly seen: ConversationSeen;
+}
+
+/** Whether an exchange reads as the answer a turn ended on. */
+function conversationReadsAs(
+  built: ConversationBuilt,
+  turn: ConversationTurn,
+): boolean {
+  const result = turn.result?.trim() ?? "";
+  return result.length > 0 && built.answer?.trim() === result;
+}
+
+/** Whether an exchange cannot be the one an answered turn stored: the turn
+ * ended on words and the exchange ends on none. */
+function conversationEndsShortOf(
+  built: ConversationBuilt,
+  turn: ConversationTurn,
+): boolean {
+  return (turn.result?.trim() ?? "").length > 0 && built.answer === undefined;
+}
+
+/** Whether the page held an exchange before the mailbox listed a turn, which
+ * is an exchange stored before that turn was sent. */
+function conversationSeenBefore(
+  pairing: ConversationPairing,
+  built: ConversationBuilt,
+  turn: ConversationTurn,
+): boolean {
+  const listed = pairing.seen.get(built.id);
+  return listed !== undefined && listed < turn.ordinal;
+}
+
+/**
+ * Whether the newest exchange of an ask is the one the turn that is out
+ * stored, where `unsure` turns before it may have stored one each. Each reason
+ * asked here is one the module's header gives.
+ */
+function conversationFrontierStored(
+  pairing: ConversationPairing,
+  frontier: ConversationTurn,
+  exchanges: readonly ConversationBuilt[],
+  stored: readonly ConversationTurn[],
+  unsure: number,
+): boolean {
+  const newest = exchanges.at(-1);
+  if (newest === undefined) return false;
+  const heard = newest.messages.some(
+    (message) => pairing.heardUnder.get(message) === frontier.turn,
+  );
+  if (heard) return true;
+  if (conversationSeenBefore(pairing, newest, frontier)) return false;
+  const waiting = frontier.state === "Queued";
+  const extra = exchanges.length - stored.length;
+  if (pairing.whole && extra > 0) return !waiting || extra > unsure;
+  if (pairing.behind || waiting) return false;
+  const prior = stored.at(-1);
+  if (prior === undefined) return true;
+  if (prior.state !== "Answered") return !pairing.whole && !newest.said;
+  return pairing.whole
+    ? extra === 0 && conversationEndsShortOf(newest, prior)
+    : !conversationReadsAs(newest, prior);
+}
+
+/** The turns of one ask that may take an exchange. */
+interface ConversationAskTakers {
+  /** Those that take one wherever the page holds one, oldest first. */
+  readonly sure: readonly ConversationTurn[];
+  /** Those a session reported failed, which take what the sure leave. */
+  readonly reported: readonly ConversationTurn[];
+  /** Whether the turn that is out is among the sure. */
+  readonly mine: boolean;
+}
+
+/**
+ * Who may take an exchange of one ask: the turns that stored it, the one that
+ * is out where it did, and the lost ones before it where a record that can be
+ * counted holds one to spare for each past every turn a session reported.
+ */
+function conversationAskTakers(
+  pairing: ConversationPairing,
+  asking: readonly ConversationTurn[],
+  exchanges: readonly ConversationBuilt[],
+): ConversationAskTakers {
+  const stored = asking.filter(conversationTurnStored);
+  const frontier = asking.find((turn) => turn === pairing.frontier);
+  const earlier = asking.filter(
+    (turn) => frontier === undefined || turn.ordinal < frontier.ordinal,
+  );
+  const reported = earlier.filter(conversationTurnReported);
+  const lost = earlier.filter(conversationTurnLost);
+  const mine =
+    frontier !== undefined &&
+    conversationFrontierStored(
+      pairing,
+      frontier,
+      exchanges,
+      stored,
+      reported.length + lost.length,
+    );
+  const taking = mine ? [...stored, frontier] : stored;
+  const spare = exchanges.length - taking.length - reported.length;
+  const ran = pairing.whole && spare >= lost.length ? lost : [];
+  const sure = asking.filter(
+    (turn) => taking.includes(turn) || ran.includes(turn),
+  );
+  return { sure, reported, mine };
+}
+
+/** Whether a record that can be counted holds fewer exchanges of an ask than
+ * turns sure of one because the page is behind on it. The newest exchange
+ * reading as the newest of those turns' answer says it is not. */
+function conversationAskBehind(
+  pairing: ConversationPairing,
+  takers: ConversationAskTakers,
+  exchanges: readonly ConversationBuilt[],
+): boolean {
+  if (!pairing.whole || takers.mine) return false;
+  if (exchanges.length >= takers.sure.length) return false;
+  const newest = exchanges.at(-1);
+  const last = takers.sure.at(-1);
+  if (newest === undefined || last === undefined) return true;
+  return !conversationReadsAs(newest, last);
+}
+
+/**
+ * Whether a turn that may not have run takes the exchange the walk has come
+ * to, `left` being how many are still untaken. A record that can be counted
+ * says by one being left over the sure turns before it and any other by the
+ * exchange not reading as the answer of the nearest of those; a stopped turn
+ * is asked both, and takes none the page held before it was listed.
+ */
+function conversationReportedTakes(
+  pairing: ConversationPairing,
+  turn: ConversationTurn,
+  built: ConversationBuilt,
+  left: number,
+  sure: readonly ConversationTurn[],
+): boolean {
+  const older = sure.filter((held) => held.ordinal < turn.ordinal);
+  const before = older.at(-1);
+  const answered = before !== undefined && conversationReadsAs(built, before);
+  const stopped = conversationTurnStopped(turn);
+  if (stopped && conversationSeenBefore(pairing, built, turn)) return false;
+  if (!pairing.whole) return !answered;
+  if (left <= older.length) return false;
+  return !(answered && stopped);
+}
+
+/** The turns paired from the newest exchange backwards, each sure turn taking
+ * the one the walk has come to and each reported one asked whether it does. */
+function conversationAskNewest(
+  pairing: ConversationPairing,
+  takers: ConversationAskTakers,
+  exchanges: readonly ConversationBuilt[],
+): readonly ConversationTurn[] {
+  const newestFirst = [...takers.sure, ...takers.reported].sort(
+    (left, right) => right.ordinal - left.ordinal,
+  );
+  const taking: ConversationTurn[] = [];
+  let at = exchanges.length - 1;
+  for (const turn of newestFirst) {
+    const built = exchanges[at];
+    if (built === undefined) break;
+    const takes =
+      takers.sure.includes(turn) ||
+      conversationReportedTakes(pairing, turn, built, at + 1, takers.sure);
+    if (!takes) continue;
+    conversationApplied(built, turn);
+    taking.push(turn);
+    at -= 1;
   }
-  return undefined;
+  return taking;
+}
+
+/** The turns sure of an exchange paired from the oldest forwards, which is the
+ * order a page behind on its record holds them in. */
+function conversationAskOldest(
+  sure: readonly ConversationTurn[],
+  exchanges: readonly ConversationBuilt[],
+): readonly ConversationTurn[] {
+  const taking = sure.slice(0, exchanges.length);
+  taking.forEach((turn, at) => {
+    const built = exchanges[at];
+    if (built !== undefined) conversationApplied(built, turn);
+  });
+  return taking;
+}
+
+/**
+ * One ask's turns given the exchanges the page holds of it, and the turns that
+ * took one. They take from the newest exchange backwards, and from the oldest
+ * forwards only where the page is behind on a record that can be counted.
+ */
+function conversationAskPaired(
+  pairing: ConversationPairing,
+  asking: readonly ConversationTurn[],
+  exchanges: readonly ConversationBuilt[],
+): readonly ConversationTurn[] {
+  const takers = conversationAskTakers(pairing, asking, exchanges);
+  return conversationAskBehind(pairing, takers, exchanges)
+    ? conversationAskOldest(takers.sure, exchanges)
+    : conversationAskNewest(pairing, takers, exchanges);
+}
+
+/** The turns that carry an input, by that input, each group in the order the
+ * turns were taken. */
+function conversationTurnsAsking(
+  ordered: readonly ConversationTurn[],
+): ReadonlyMap<string, readonly ConversationTurn[]> {
+  const asking = new Map<string, ConversationTurn[]>();
+  for (const turn of ordered) {
+    if (turn.input === undefined) continue;
+    const same = asking.get(turn.input) ?? [];
+    same.push(turn);
+    asking.set(turn.input, same);
+  }
+  return asking;
 }
 
 function conversationApplied(
@@ -650,47 +1211,146 @@ function conversationApplied(
   turn: ConversationTurn,
 ): void {
   built.matched = true;
+  built.turn = turn.turn;
   built.standing = conversationStandingOf(turn);
   built.measures = conversationMeasuresOf(turn);
   if (built.askText !== undefined)
     built.ask = conversationAskOf(turn.inputKind, built.askText);
 }
 
-/** A turn the transcript does not hold, appended as an exchange with no work.
- * An answered one is not appended: the transcript is where its answer lives,
- * and a page that has not read that far says so with a marker. */
+/** A turn the transcript does not hold, appended as an exchange with no work. */
 function conversationAppended(
   builder: ConversationBuilder,
   turn: ConversationTurn,
-): void {
+): ConversationBuilt {
   const built = conversationOpened(builder, turn.turn);
   built.matched = true;
+  built.turn = turn.turn;
   built.standing = conversationStandingOf(turn);
   built.measures = conversationMeasuresOf(turn);
   built.askText = turn.input;
   built.ask = conversationAskOf(turn.inputKind, turn.input);
+  built.inputless = turn.input === undefined;
+  return built;
 }
 
+/**
+ * Puts each exchange appended for a turn a member stopped where the turn was
+ * sent: under the last exchange an earlier turn took, ahead of the first after
+ * it that a later turn took. One carrying markers stays at the foot, where
+ * those belong, as does one nothing later follows.
+ */
+function conversationStoppedPlaced(
+  builder: ConversationBuilder,
+  appended: ReadonlyMap<ConversationBuilt, ConversationTurn>,
+  ordered: readonly ConversationTurn[],
+): void {
+  const ordinals = new Map(ordered.map((turn) => [turn.turn, turn.ordinal]));
+  const sent = (other: ConversationBuilt): number =>
+    (other.turn === undefined ? undefined : ordinals.get(other.turn)) ??
+    Number.NaN;
+  for (const [built, turn] of appended) {
+    if (!conversationTurnStopped(turn) || built.before.length > 0) continue;
+    const from = builder.built.indexOf(built);
+    const under = builder.built.findLastIndex(
+      (other) => !appended.has(other) && sent(other) < turn.ordinal,
+    );
+    const to = builder.built.findIndex(
+      (other, at) => at > under && sent(other) > turn.ordinal,
+    );
+    if (from === -1 || to === -1 || to > from) continue;
+    builder.built.splice(from, 1);
+    builder.built.splice(to, 0, built);
+  }
+}
+
+/** What a page that follows its turns as they are written heard of them. */
+interface ConversationHeard {
+  /** The turns something heard is still to be drawn for. */
+  readonly turns: ReadonlySet<string>;
+  readonly under: ReadonlyMap<string, string>;
+}
+
+/**
+ * The mailbox over the transcript: each turn paired with the exchange its
+ * input opened, and each one left over appended in the order it was sent. An
+ * answered turn is left out unless a page heard some of it being written — the
+ * transcript is where its answer lives, and a page that has not read that far
+ * says so with a marker.
+ */
 function conversationOverlaid(
   builder: ConversationBuilder,
   turns: readonly ConversationTurn[],
+  heard: ConversationHeard,
+  record: ConversationRecord,
 ): void {
   const ordered = [...turns].sort(
     (left, right) => left.ordinal - right.ordinal,
   );
+  const pairing: ConversationPairing = {
+    whole:
+      !builder.partial &&
+      builder.exchangesCut === 0 &&
+      !record.replaced &&
+      ordered[0]?.ordinal === 1,
+    behind: builder.behind,
+    frontier: ordered.find(conversationTurnOut),
+    heardUnder: heard.under,
+    seen: record.seen,
+  };
   const paired = new Set<string>();
-  for (let at = ordered.length - 1; at >= 0; at -= 1) {
-    const turn = ordered[at];
-    if (turn?.input === undefined) continue;
-    const built = conversationMatch(builder.built, turn.input);
-    if (built === undefined) continue;
-    conversationApplied(built, turn);
-    paired.add(turn.turn);
+  for (const [input, asking] of conversationTurnsAsking(ordered)) {
+    const exchanges = builder.built.filter(
+      (built) => !built.matched && built.askText === input,
+    );
+    for (const turn of conversationAskPaired(pairing, asking, exchanges))
+      paired.add(turn.turn);
   }
+  const appended = new Map<ConversationBuilt, ConversationTurn>();
   for (const turn of ordered) {
-    if (paired.has(turn.turn) || turn.state === "Answered") continue;
-    conversationAppended(builder, turn);
+    if (paired.has(turn.turn)) continue;
+    if (turn.state === "Answered" && !heard.turns.has(turn.turn)) continue;
+    appended.set(conversationAppended(builder, turn), turn);
   }
+  conversationStoppedPlaced(builder, appended, ordered);
+}
+
+/** What a marker says the items are short of: `Cut` is entries the store
+ * holds missing from their start or from among them, and `Behind` is the end
+ * of the record still to be read. */
+function conversationMarkerShort(
+  marker: ConversationMarker,
+): "Cut" | "Behind" | undefined {
+  switch (marker.marker) {
+    case "Dropped":
+    case "Truncated":
+    case "Capped":
+    case "Elision":
+    case "Unreadable":
+      return "Cut";
+    case "Failure":
+    case "Unreached":
+      return "Behind";
+    case "Compaction":
+    case "Unlisted":
+    case "NoStore":
+      return undefined;
+  }
+}
+
+function conversationItemBuilt(
+  builder: ConversationBuilder,
+  item: ConversationItem,
+): void {
+  if (item.item === "Entry") {
+    if (item.entry.role === "User") conversationUserEntry(builder, item.entry);
+    else conversationAssistantEntry(builder, item.entry);
+    return;
+  }
+  builder.pending.push(item.marker);
+  const short = conversationMarkerShort(item.marker);
+  if (short === "Cut") builder.partial = true;
+  if (short === "Behind") builder.behind = true;
 }
 
 function conversationDrawn(built: ConversationBuilt): ConversationExchange {
@@ -700,6 +1360,7 @@ function conversationDrawn(built: ConversationBuilt): ConversationExchange {
       : [...built.before, conversationCappedMarker("Steps", built.stepsCut)];
   return {
     id: built.id,
+    ...(built.turn === undefined ? {} : { turn: built.turn }),
     ...(built.ask === undefined ? {} : { ask: built.ask }),
     work: built.work,
     ...(built.answer === undefined ? {} : { answer: built.answer }),
@@ -712,6 +1373,7 @@ function conversationDrawn(built: ConversationBuilt): ConversationExchange {
           : { standing: "Answered" },
     ...(built.measures === undefined ? {} : { measures: built.measures }),
     before,
+    ...(built.inputless ? { inputless: true as const } : {}),
   };
 }
 
@@ -725,20 +1387,26 @@ function conversationDrawn(built: ConversationBuilt): ConversationExchange {
 export function conversationExchanges(
   items: readonly ConversationItem[],
   turns?: readonly ConversationTurn[],
+  heardTurns: ReadonlySet<string> = conversationHeardNone,
+  heardUnder: ReadonlyMap<string, string> = conversationHeardUnderNone,
+  record: ConversationRecord = conversationRecordPlain,
 ): readonly ConversationExchange[] {
   const builder: ConversationBuilder = {
     built: [],
     open: undefined,
     pending: [],
     exchangesCut: 0,
+    partial: false,
+    behind: false,
   };
-  for (const item of items) {
-    if (item.item === "Marker") builder.pending.push(item.marker);
-    else if (item.entry.role === "User")
-      conversationUserEntry(builder, item.entry);
-    else conversationAssistantEntry(builder, item.entry);
-  }
-  if (turns !== undefined) conversationOverlaid(builder, turns);
+  for (const item of items) conversationItemBuilt(builder, item);
+  if (turns !== undefined)
+    conversationOverlaid(
+      builder,
+      turns,
+      { turns: heardTurns, under: heardUnder },
+      record,
+    );
   if (builder.pending.length > 0)
     conversationOpened(builder, conversationTrailingId, {
       standing: "Markers",
@@ -749,6 +1417,299 @@ export function conversationExchanges(
       conversationCappedMarker("Exchanges", builder.exchangesCut),
     );
   return builder.built.map(conversationDrawn);
+}
+
+/**
+ * What a page has seen once it holds these items under these turns: an
+ * exchange it did not hold before is given the newest turn listed now, and one
+ * it no longer holds is let go of. Nothing is added until `reached` — the walk
+ * has nothing left to read — and what was seen is handed back itself where
+ * nothing changed.
+ */
+export function conversationSeenWith(
+  seen: ConversationSeen,
+  items: readonly ConversationItem[],
+  turns: readonly ConversationTurn[],
+  reached: boolean,
+): ConversationSeen {
+  if (!reached) return seen;
+  const opened = items
+    .flatMap((item) =>
+      item.item === "Entry" && conversationEntryOpens(item.entry)
+        ? [item.entry.id]
+        : [],
+    )
+    .slice(-conversationExchangesMax);
+  if (opened.length === seen.size && opened.every((id) => seen.has(id)))
+    return seen;
+  const newest = turns.reduce((most, turn) => Math.max(most, turn.ordinal), 0);
+  return new Map(opened.map((id) => [id, seen.get(id) ?? newest]));
+}
+
+/** An exchange while what its assistant said is being put back on it. */
+type ConversationExchangeSaying = {
+  -readonly [Field in keyof ConversationExchange]: ConversationExchange[Field];
+};
+
+/**
+ * The exchange after more of its assistant's blocks, each read exactly as a
+ * stored entry's is — which is what lets a page draw a block it heard before
+ * the transcript held it and have the stored one change nothing. Steps past
+ * the bound are left to the transcript's own fold to count.
+ */
+export function conversationExchangeContinued(
+  exchange: ConversationExchange,
+  blocks: readonly ConversationBlock[],
+): ConversationExchange {
+  if (blocks.length === 0) return exchange;
+  const said: ConversationSaid = {
+    work: [...exchange.work],
+    answer: exchange.answer,
+    before: [...exchange.before],
+    stepsCut: 0,
+  };
+  conversationAssistantSaid(said, blocks);
+  const saying: ConversationExchangeSaying = {
+    ...exchange,
+    work: said.work,
+    before: said.before,
+  };
+  if (said.answer === undefined) delete saying.answer;
+  else saying.answer = said.answer;
+  return saying;
+}
+
+/** Whether an exchange's turn is read as begun: a step of its work, a word of
+ * its answer or what it is heard to be doing has reached this page. A turn with
+ * no input to find its work by is read as begun, since nothing drawn under it
+ * could ever say so. */
+export function conversationExchangeBegun(
+  exchange: ConversationExchange,
+): boolean {
+  return (
+    exchange.inputless === true ||
+    exchange.work.length > 0 ||
+    exchange.answer !== undefined ||
+    exchange.activity !== undefined
+  );
+}
+
+/** Whether an exchange's turn was heard to end and the mailbox has yet to
+ * settle it. Nothing is said of such a turn and nothing moves for it, since
+ * how it ended is the mailbox's to say. */
+export function conversationExchangeQuiet(
+  exchange: ConversationExchange,
+): boolean {
+  return (
+    exchange.standing.standing === "Running" &&
+    exchange.activity?.activity === "Whole"
+  );
+}
+
+/** What a turn that is under way is heard to be doing that a part of its work
+ * is named by. */
+export type ConversationWorkActivity = Extract<
+  ConversationActivity,
+  { readonly activity: "Thinking" | "ToolUse" }
+>;
+
+/**
+ * What an exchange is doing, as far as its page can tell, which says where on
+ * it the one thing that moves is drawn: nowhere for an `Unbegun` turn, and for
+ * one that has begun at the last part drawn of it, a `Text` more may be
+ * written after or `Work` on the step it is heard to be on. An `Unnamed` one
+ * has begun and has no such part.
+ */
+export type ConversationDoing =
+  | { readonly doing: "Settled" }
+  | { readonly doing: "Whole" }
+  | { readonly doing: "Unbegun" }
+  | {
+      readonly doing: "Work";
+      readonly activity: ConversationWorkActivity | undefined;
+    }
+  | { readonly doing: "Text" }
+  | { readonly doing: "Unnamed" };
+
+export function conversationExchangeDoing(
+  exchange: ConversationExchange,
+): ConversationDoing {
+  if (exchange.standing.standing !== "Running") return { doing: "Settled" };
+  const activity = exchange.activity;
+  if (activity?.activity === "Whole") return { doing: "Whole" };
+  if (!conversationExchangeBegun(exchange)) return { doing: "Unbegun" };
+  const last = conversationExchangeParts(exchange).at(-1);
+  if (last?.part === "Text") return { doing: "Text" };
+  if (last?.part === "Work" && activity?.activity !== "Writing")
+    return { doing: "Work", activity };
+  return { doing: "Unnamed" };
+}
+
+/**
+ * The one thing on a conversation that moves while a turn is out, which is in
+ * that turn's own exchange: where its answer is about to be until something of
+ * it is drawn, and from then wherever the newest of it is. `Engine` is a send
+ * still on its way that no exchange stands for, drawn at the foot of the
+ * column.
+ */
+export type ConversationIndicator =
+  | { readonly indicator: "None" }
+  | { readonly indicator: "Engine" }
+  | { readonly indicator: "Exchange"; readonly id: string };
+
+/** Whether an exchange's turn is out for the indicator, which one heard to
+ * end no longer is. */
+function conversationExchangeOut(exchange: ConversationExchange): boolean {
+  return (
+    exchange.standing.standing === "Running" &&
+    !conversationExchangeQuiet(exchange)
+  );
+}
+
+/**
+ * Which one it is: the turn out that has begun, and the first one out where
+ * none has. `engine` is whether the surface draws an engine at all and whether
+ * a send is still on its way; one whose turn the reader stopped has that
+ * turn's exchange at the foot, and nothing runs under it.
+ */
+export function conversationIndicator(
+  exchanges: readonly ConversationExchange[],
+  engine: { readonly drawn: boolean; readonly sending: boolean },
+): ConversationIndicator {
+  const out = exchanges.filter(conversationExchangeOut);
+  const moving = out.find(conversationExchangeBegun) ?? out[0];
+  if (moving !== undefined) return { indicator: "Exchange", id: moving.id };
+  const stopped = exchanges.at(-1)?.standing.standing === "Stopped";
+  return engine.drawn && engine.sending && !stopped
+    ? { indicator: "Engine" }
+    : { indicator: "None" };
+}
+
+/** The name an exchange keeps while the transcript comes to hold its turn:
+ * the turn's where one speaks for it, and its own otherwise. */
+export function conversationExchangeNamed(
+  exchange: ConversationExchange,
+): string {
+  return exchange.turn ?? exchange.id;
+}
+
+/** The name of the exchange the indicator moves for, where it moves for one. */
+export function conversationIndicatedNamed(
+  exchanges: readonly ConversationExchange[],
+  indicator: ConversationIndicator,
+): string | undefined {
+  if (indicator.indicator !== "Exchange") return undefined;
+  const moving = exchanges.find((exchange) => exchange.id === indicator.id);
+  return moving === undefined ? undefined : conversationExchangeNamed(moving);
+}
+
+/** The turn one press of Stop ends: the one the indicator moves for, which is
+ * none where nothing moves or what moves is no turn's. */
+export function conversationTurnStoppable(
+  exchanges: readonly ConversationExchange[],
+  indicator: ConversationIndicator,
+): string | undefined {
+  if (indicator.indicator !== "Exchange") return undefined;
+  return exchanges.find((exchange) => exchange.id === indicator.id)?.turn;
+}
+
+/** The box with a message the page handed back in it: ahead of what was typed
+ * since, a blank line between, and alone where nothing was. */
+export function conversationTextRestored(kept: string, typed: string): string {
+  return typed.trim().length === 0 ? kept : `${kept}\n\n${typed}`;
+}
+
+/** What a box holds, and the messages handed back that lead it. */
+export interface ConversationBox {
+  readonly text: string;
+  /** The messages handed back, as they stood when the last was put there. */
+  readonly back: string | undefined;
+}
+
+/**
+ * A box with one more message handed back: under those handed back before it
+ * that still lead the box untouched, and ahead of what was typed since. Ones
+ * the reader has written in since are words typed like any other.
+ */
+export function conversationBoxRestored(
+  box: ConversationBox,
+  kept: string,
+): ConversationBox & { readonly back: string } {
+  const before =
+    box.back !== undefined &&
+    (box.text === box.back || box.text.startsWith(`${box.back}\n\n`))
+      ? box.back
+      : undefined;
+  const back = before === undefined ? kept : `${before}\n\n${kept}`;
+  const typed = before === undefined ? box.text : box.text.slice(before.length);
+  return { text: conversationTextRestored(back, typed.trimStart()), back };
+}
+
+/** A message this page sent, as the queued turn the mailbox is about to list
+ * it as: named by that turn, so the exchange the mailbox comes to list is the
+ * one already drawn. */
+export function conversationExchangeSent(
+  sent: ThreadSending,
+): ConversationExchange {
+  return {
+    id: sent.turn,
+    turn: sent.turn,
+    ask: conversationAskMessage(sent.text),
+    work: [],
+    standing: { standing: "Running", state: "Queued" },
+    before: [],
+  };
+}
+
+/** The exchanges with those sent at their foot, each only while no exchange
+ * speaks for its turn, so a message is drawn once whichever holds it. */
+export function conversationExchangesWithSent(
+  exchanges: readonly ConversationExchange[],
+  sent: readonly ConversationExchange[],
+): readonly ConversationExchange[] {
+  const unlisted = sent.filter(
+    (one) => !exchanges.some((exchange) => exchange.turn === one.turn),
+  );
+  return unlisted.length === 0 ? exchanges : [...exchanges, ...unlisted];
+}
+
+const conversationStoppedMade = new WeakMap<
+  ConversationExchange,
+  ConversationExchange
+>();
+
+function conversationExchangeStopped(
+  exchange: ConversationExchange,
+): ConversationExchange {
+  const made = conversationStoppedMade.get(exchange);
+  if (made !== undefined) return made;
+  const stopped: ConversationExchangeSaying = {
+    ...exchange,
+    standing: { standing: "Stopped" },
+  };
+  delete stopped.activity;
+  conversationStoppedMade.set(exchange, stopped);
+  return stopped;
+}
+
+/**
+ * The exchanges with each turn the reader stopped read as stopped from the
+ * press, where the mailbox still says it is out. One stopped exchange is the
+ * same exchange each time it is asked for, and the list is handed back itself
+ * where none of its turns was stopped.
+ */
+export function conversationExchangesStopped(
+  exchanges: readonly ConversationExchange[],
+  stopped: ReadonlySet<string>,
+): readonly ConversationExchange[] {
+  const pressed = (exchange: ConversationExchange): boolean =>
+    exchange.standing.standing === "Running" &&
+    exchange.turn !== undefined &&
+    stopped.has(exchange.turn);
+  if (!exchanges.some(pressed)) return exchanges;
+  return exchanges.map((exchange) =>
+    pressed(exchange) ? conversationExchangeStopped(exchange) : exchange,
+  );
 }
 
 /** The exchanges with every queued turn read as waiting, for a surface whose

@@ -12,29 +12,43 @@ import { describe, expect, test } from "vitest";
 
 import {
   sessionTurnInputKinds,
+  sessionTurnStates,
   threadMessageRefusalCodes,
   threadStandings,
 } from "../../../src/contract/rosters.ts";
+import { threadBacklogMax } from "../../../src/contract/http.ts";
 import type { ThreadTurnResponse } from "../../../src/contract/responses.ts";
 import {
   threadActions,
   threadAnswering,
   threadHeldTurn,
+  threadKeptClosed,
+  threadKeptWith,
+  threadKeptWithout,
   threadMine,
   threadUnhosted,
   threadRefusalCode,
+  threadRefusalLine,
   threadRefusalWord,
   threadSendFrom,
+  threadSendingWith,
+  threadSendingWithout,
   threadSendStanding,
+  threadStopFrom,
+  threadStoppingWith,
+  threadStoppingWithout,
+  threadStoreDue,
   threadTakesMessages,
   threadTurnKindWord,
   threadTurnMinted,
   threadTurnRetained,
+  threadTurnsEnded,
   threadTurnsWait,
   threadWakeDrawn,
+  threadWriting,
   threadsByStanding,
 } from "../app/core/threads.ts";
-import type { ThreadDoor } from "../app/core/threads.ts";
+import type { ThreadDoor, ThreadSending } from "../app/core/threads.ts";
 import { threadEntry, threadWakeInput } from "./threadFixture.ts";
 
 function turnOf(turn: Partial<ThreadTurnResponse>): ThreadTurnResponse {
@@ -197,6 +211,132 @@ describe("the turn a press posts under", () => {
   });
 });
 
+describe("the messages a page sent that its mailbox does not list yet", () => {
+  const first = { turn: "thread-turn-a", text: "one" };
+  const second = { turn: "thread-turn-b", text: "two" };
+
+  test("are held in the order sent, each turn once", () => {
+    const held = threadSendingWith(threadSendingWith([], first), second);
+    expect(held).toStrictEqual([first, second]);
+    expect(threadSendingWith(held, first)).toStrictEqual([second, first]);
+  });
+
+  test("are no more than the mailbox takes turns, and a press past that is not held", () => {
+    let held: readonly ThreadSending[] = [];
+    for (let at = 0; at < threadBacklogMax; at += 1)
+      held = threadSendingWith(held, { turn: `turn-${at}`, text: "again" });
+    expect(held).toHaveLength(threadBacklogMax);
+    expect(threadSendingWith(held, first)).toBe(held);
+  });
+
+  test("leave with the turns named, and are the same list where none of theirs is", () => {
+    const held = [first, second];
+    expect(threadSendingWithout(held, [first.turn])).toStrictEqual([second]);
+    expect(threadSendingWithout(held, ["thread-turn-c"])).toBe(held);
+    expect(threadSendingWithout(held, [])).toBe(held);
+  });
+});
+
+describe("the turns a press of Stop named", () => {
+  test("are held each once, in the order pressed", () => {
+    const held = threadStoppingWith(threadStoppingWith([], "a"), "b");
+    expect(held).toStrictEqual(["a", "b"]);
+    expect(threadStoppingWith(held, "a")).toBe(held);
+  });
+
+  test("are no more than the mailbox takes turns, the oldest leaving past that", () => {
+    let held: readonly string[] = [];
+    for (let at = 0; at <= threadBacklogMax; at += 1)
+      held = threadStoppingWith(held, `turn-${at}`);
+    expect(held).toHaveLength(threadBacklogMax);
+    expect(held[0]).toBe("turn-1");
+    expect(held.at(-1)).toBe(`turn-${threadBacklogMax}`);
+  });
+
+  test("are less the one a door refused to stop, and the same list where it is not held", () => {
+    const held = ["a", "b"];
+    expect(threadStoppingWithout(held, "a")).toStrictEqual(["b"]);
+    expect(threadStoppingWithout(held, "c")).toBe(held);
+  });
+});
+
+describe("the turns a mailbox read lists as ended", () => {
+  test("are every turn no runner has and none waits on, however it ended", () => {
+    const turns = sessionTurnStates.map((state) =>
+      turnOf({ turn: `turn-${state}`, state }),
+    );
+    expect(threadTurnsEnded({ turns })).toStrictEqual([
+      "turn-Answered",
+      "turn-Failed",
+      "turn-Abandoned",
+    ]);
+  });
+});
+
+describe("what a press of Stop came to", () => {
+  test("a door that stopped the turn ends it, and one that says it had ended stopped nothing", () => {
+    expect(
+      threadStopFrom({ outcome: "Ok", value: { stopped: "Stopped" } }),
+    ).toStrictEqual({ stop: "Ended" });
+    expect(
+      threadStopFrom({ outcome: "Ok", value: { stopped: "AlreadyEnded" } }),
+    ).toStrictEqual({ stop: "AlreadyEnded" });
+  });
+
+  test("a thread closed under the turn has nothing left to stop, and no other conflict says so", () => {
+    expect(
+      threadStopFrom({
+        outcome: "Conflict",
+        code: "ThreadClosed",
+        body: undefined,
+      }),
+    ).toStrictEqual({ stop: "Ended" });
+    expect(
+      threadStopFrom({
+        outcome: "Conflict",
+        code: "Whatever",
+        body: undefined,
+      }),
+    ).toMatchObject({ stop: "Refused" });
+  });
+
+  test("any other answer leaves the turn out, with a cause only where a member can act on one", () => {
+    expect(
+      threadStopFrom({
+        outcome: "Rejected",
+        code: "NotYourThread",
+        status: 403,
+        body: undefined,
+      }),
+    ).toStrictEqual({ stop: "Refused" });
+    expect(
+      threadStopFrom({ outcome: "Unreachable", reason: "offline" }),
+    ).toStrictEqual({ stop: "Refused", cause: "Unreachable" });
+    expect(threadStopFrom({ outcome: "Unauthenticated" })).toStrictEqual({
+      stop: "Refused",
+      cause: "Signed out",
+    });
+    expect(threadStopFrom({ outcome: "Absent" })).toStrictEqual({
+      stop: "Refused",
+    });
+  });
+});
+
+describe("the line a refusal is said in", () => {
+  test("it says what was not done, and the cause where there is one", () => {
+    expect(threadRefusalLine({ what: "Send" })).toBe("Not sent");
+    expect(threadRefusalLine({ what: "Stop", turn: "turn-2" })).toBe(
+      "Not stopped",
+    );
+    expect(threadRefusalLine({ what: "Send", cause: "Unreachable" })).toBe(
+      "Not sent · Unreachable",
+    );
+    expect(
+      threadRefusalLine({ what: "Stop", turn: "turn-2", cause: "Signed out" }),
+    ).toBe("Not stopped · Signed out");
+  });
+});
+
 describe("what a press ended as", () => {
   test("an accepted message answers the ordinal it took", () => {
     expect(
@@ -355,17 +495,17 @@ describe("the door's own vocabulary", () => {
     ).toBe("Refused");
   });
 
-  test("every other rejection is one refusal with a reason", () => {
+  test("every other rejection is one refusal of a send, and carries no code", () => {
     const refused = threadSendFrom({
       outcome: "Rejected",
       code: "MessageTooLong",
       status: 400,
       body: undefined,
     });
-    expect(refused.send).toBe("Refused");
-    expect(refused.send === "Refused" ? refused.reason : "").toContain(
-      "MessageTooLong",
-    );
+    expect(refused).toStrictEqual({ send: "Refused", what: "Send" });
+    expect(
+      threadSendFrom({ outcome: "Unreachable", reason: "offline" }),
+    ).toStrictEqual({ send: "Refused", what: "Send", cause: "Unreachable" });
   });
 
   /** The mailbox tail is the only thing that says whether the turn landed. */
@@ -388,6 +528,102 @@ describe("whether a thread is still answering", () => {
       false,
     );
     expect(threadAnswering({ turns: [] })).toBe(false);
+  });
+});
+
+describe("whether a thread's session is writing", () => {
+  test("it is while the newest turn is unsettled, whatever order the turns are held in", () => {
+    const settled = turnOf({ turn: "thread-turn-1", ordinal: 1 });
+    for (const state of ["Queued", "Claimed"] as const) {
+      const newest = turnOf({ turn: "thread-turn-2", ordinal: 2, state });
+      expect(threadWriting({ turns: [settled, newest] })).toBe(true);
+      expect(threadWriting({ turns: [newest, settled] })).toBe(true);
+    }
+  });
+
+  test("it is not once the newest turn settled, though an older one never did", () => {
+    const stuck = turnOf({
+      turn: "thread-turn-1",
+      ordinal: 1,
+      state: "Claimed",
+    });
+    const newest = turnOf({ turn: "thread-turn-2", ordinal: 2 });
+    expect(threadWriting({ turns: [stuck, newest] })).toBe(false);
+    expect(threadWriting({ turns: [newest, stuck] })).toBe(false);
+    expect(threadWriting({ turns: [] })).toBe(false);
+  });
+});
+
+describe("whether a store the thread does not name is missing", () => {
+  test("a thread whose every turn is unsettled has not written one yet", () => {
+    expect(threadStoreDue({ turns: [] })).toBe(false);
+    expect(threadStoreDue({ turns: [turnOf({ state: "Queued" })] })).toBe(
+      false,
+    );
+    expect(threadStoreDue({ turns: [turnOf({ state: "Claimed" })] })).toBe(
+      false,
+    );
+  });
+
+  test("a thread with a settled turn should have one, however that turn ended", () => {
+    for (const state of sessionTurnStates) {
+      if (state === "Queued" || state === "Claimed") continue;
+      const settled = turnOf({ turn: "thread-turn-1", ordinal: 1, state });
+      const asked = turnOf({
+        turn: "thread-turn-2",
+        ordinal: 2,
+        state: "Queued",
+      });
+      expect(threadStoreDue({ turns: [settled] })).toBe(true);
+      expect(threadStoreDue({ turns: [settled, asked] })).toBe(true);
+    }
+  });
+
+  test("a turn a member stopped is no sign of one, since it may never have been taken", () => {
+    const stopped = turnOf({ state: "Abandoned", failure: "TurnStopped" });
+    expect(threadStoreDue({ turns: [stopped] })).toBe(false);
+    const waited = turnOf({ state: "Abandoned", failure: "TurnStoppedQueued" });
+    expect(threadStoreDue({ turns: [waited] })).toBe(false);
+    const withdrawn = turnOf({ state: "Abandoned", failure: "TurnWithdrawn" });
+    expect(threadStoreDue({ turns: [withdrawn] })).toBe(true);
+    expect(threadStoreDue({ turns: [stopped, turnOf({ ordinal: 2 })] })).toBe(
+      true,
+    );
+  });
+});
+
+describe("what is kept for a thread that is not drawn", () => {
+  const refused = { send: "Refused", what: "Send" } as const;
+  const one = { text: "one", turn: "t1", send: refused };
+  const two = { text: "two", turn: "t2", send: refused };
+
+  test("a thread is held one text, a second handed back going under the first as a text no one turn sent", () => {
+    const first = threadKeptWith(new Map(), "a", one);
+    expect([...first]).toStrictEqual([["a", one]]);
+    const both = threadKeptWith(threadKeptWith(first, "b", two), "a", two);
+    expect(both.get("a")).toStrictEqual({
+      text: "one\n\ntwo",
+      turn: undefined,
+      send: refused,
+    });
+    expect(both.get("b")).toBe(two);
+  });
+
+  test("what a box took is held no longer, and the same is handed back where nothing was held for it", () => {
+    const held = threadKeptWith(new Map(), "a", one);
+    expect(threadKeptWithout(held, ["b"])).toBe(held);
+    expect([...threadKeptWithout(held, ["a"])]).toStrictEqual([]);
+  });
+
+  test("a thread the listing says takes nothing more is one to hold nothing for", () => {
+    const held = threadKeptWith(threadKeptWith(new Map(), "a", one), "b", two);
+    expect(
+      threadKeptClosed(held, [
+        { session: "a", state: "Closed" },
+        { session: "b", state: "Open" },
+        { session: "c", state: "Closed" },
+      ]),
+    ).toStrictEqual(["a"]);
   });
 });
 
@@ -481,7 +717,7 @@ test("a composer on runners says the reader's runner where it cannot take a turn
   expect(
     threadSendStanding(idle, false, door("Pool", true, "Unregistered")),
   ).toStrictEqual(idle);
-  const refused = { send: "Refused", reason: "Bad" } as const;
+  const refused = { send: "Refused", what: "Send" } as const;
   expect(
     threadSendStanding(refused, true, door("Pool", true, "Offline")),
   ).toStrictEqual(refused);

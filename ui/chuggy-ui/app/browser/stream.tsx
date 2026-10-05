@@ -33,10 +33,7 @@ import {
   openProjectStream,
   projectStreamCarrying,
 } from "../core/projectStream.ts";
-import type {
-  ProjectStreamPorts,
-  ProjectStreamStatus,
-} from "../core/projectStream.ts";
+import type { ProjectStreamStatus } from "../core/projectStream.ts";
 import { projectPartitionKey } from "../core/projectQueryKeys.ts";
 import type {
   ProjectList,
@@ -44,6 +41,7 @@ import type {
   ProjectListRefresh,
   ProjectQueryKey,
 } from "../core/projectQueryKeys.ts";
+import type { StreamPorts } from "../core/streamConnection.ts";
 import { nowMs, sleepMs, streamFetch } from "./ports.ts";
 import { useSessionGeneration, useSessionHolder } from "./session.tsx";
 
@@ -61,6 +59,7 @@ interface ProjectListRegistration {
 }
 
 interface ProjectStreamHeld {
+  readonly ports: StreamPorts;
   readonly folds: Set<ProjectListRegistration>;
   readonly status: ProjectStreamStatus;
   readonly fallbackExhausted: boolean;
@@ -172,9 +171,8 @@ function applyCommand(
 function useStreamConnection(
   partition: PartitionIdentity,
   folds: ReadonlySet<ProjectListRegistration>,
-  transport: ProjectStreamPorts["fetch"],
+  ports: StreamPorts,
 ): ProjectStreamStatus {
-  const holder = useSessionHolder();
   const client = useQueryClient();
   const generation = useSessionGeneration();
   const [status, setStatus] =
@@ -196,12 +194,7 @@ function useStreamConnection(
 
   useEffect(() => {
     const opened = openProjectStream(
-      {
-        fetch: transport,
-        bearer: () => holder.bearer(),
-        sleepMs,
-        nowMs,
-      },
+      ports,
       { tenant, project },
       {
         onEvent: (event) => {
@@ -221,7 +214,7 @@ function useStreamConnection(
     return () => {
       opened.stop();
     };
-  }, [holder, client, folds, transport, tenant, project, generation]);
+  }, [ports, client, folds, tenant, project, generation]);
   return status;
 }
 
@@ -267,16 +260,26 @@ function useStreamFallback(
 /** The transport is a parameter so a suite can drive the provider with a double. */
 export function ProjectStreamProvider(props: {
   readonly partition: PartitionIdentity;
-  readonly transport?: ProjectStreamPorts["fetch"];
+  readonly transport?: StreamPorts["fetch"];
   readonly children: ReactNode;
 }): ReactNode {
+  const holder = useSessionHolder();
   const folds = useMemo(() => new Set<ProjectListRegistration>(), []);
   const transport = props.transport ?? streamFetch;
-  const status = useStreamConnection(props.partition, folds, transport);
+  const ports = useMemo<StreamPorts>(
+    () => ({
+      fetch: transport,
+      bearer: () => holder.bearer(),
+      sleepMs,
+      nowMs,
+    }),
+    [transport, holder],
+  );
+  const status = useStreamConnection(props.partition, folds, ports);
   const fallbackExhausted = useStreamFallback(props.partition, status);
   const held = useMemo<ProjectStreamHeld>(
-    () => ({ folds, status, fallbackExhausted }),
-    [folds, status, fallbackExhausted],
+    () => ({ ports, folds, status, fallbackExhausted }),
+    [ports, folds, status, fallbackExhausted],
   );
   return (
     <ProjectStreamContext.Provider value={held}>
@@ -294,6 +297,12 @@ function useProjectStreamHeld(): ProjectStreamHeld {
 
 export function useProjectStreamStatus(): ProjectStreamStatus {
   return useProjectStreamHeld().status;
+}
+
+/** What a stream beside the project's own is opened through, so every stream
+ * this console holds reaches the network by one transport and one bearer. */
+export function useStreamPorts(): StreamPorts {
+  return useProjectStreamHeld().ports;
 }
 
 export function useProjectFallbackExhausted(): boolean {

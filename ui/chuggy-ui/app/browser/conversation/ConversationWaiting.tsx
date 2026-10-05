@@ -1,9 +1,11 @@
 /**
- * The strip above the composer, holding its height whether or not the train is
- * drawn in it, so the engine starting or stopping never shifts the composer
- * beneath it. It is drawn while a turn is out with nothing said for it yet,
- * and stops as soon as an answer is on the transcript or the turn settles,
- * whichever comes first.
+ * The engine, running where an answer is about to be: on the line the first
+ * of it will take, for as long as a turn is out and nothing of it is drawn.
+ *
+ * IT TAKES ONE LINE AND NO MORE. The sprite is taller than a line of text and
+ * stands on the foot of one, rising into the gap above, so whatever is drawn
+ * first of the answer takes the line the engine ran on and nothing above or
+ * below it is moved.
  *
  * The train is chuggernaut's own sprite, redrawn against the theme: not one
  * fill is stated here, each is a class `conversation.css` fills from a token,
@@ -137,23 +139,17 @@ function ConversationWaitingTrain(): ReactNode {
   );
 }
 
-export function ConversationWaiting(props: {
-  readonly waiting: boolean;
-}): ReactNode {
+export function ConversationWaiting(): ReactNode {
   return (
     <div className="conversation-waiting">
-      {props.waiting ? (
-        <>
-          <div className="conversation-waiting-track" aria-hidden="true" />
-          <div
-            className="conversation-waiting-engine"
-            role="img"
-            aria-label="chuggy is under way"
-          >
-            <ConversationWaitingTrain />
-          </div>
-        </>
-      ) : null}
+      <div className="conversation-waiting-track" aria-hidden="true" />
+      <div
+        className="conversation-waiting-engine"
+        role="img"
+        aria-label="chuggy is under way"
+      >
+        <ConversationWaitingTrain />
+      </div>
     </div>
   );
 }

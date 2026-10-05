@@ -64,12 +64,16 @@
 
 import { z } from "zod";
 
-import { identitySchema } from "../../../../src/contract/http.ts";
+import {
+  identitySchema,
+  threadBacklogMax,
+} from "../../../../src/contract/http.ts";
 import type {
   ThreadEntryResponse,
   ThreadMessageAccepted,
   ThreadResponse,
   ThreadTurnResponse,
+  ThreadTurnStopResponse,
 } from "../../../../src/contract/responses.ts";
 import {
   hostedRunsNotGrantedCode,
@@ -82,9 +86,8 @@ import type {
   ThreadMessageRefusalCode,
   ThreadStanding,
 } from "../../../../src/contract/rosters.ts";
-import type { ApiResult } from "./apiRequest.ts";
+import type { ApiFailure, ApiResult } from "./apiRequest.ts";
 import { base64urlFromBytes } from "./base64url.ts";
-import { panelReason } from "./freshness.ts";
 import {
   sessionRefusedNoRunner,
   sessionRunnerShort,
@@ -232,6 +235,31 @@ export function threadAnswering(
   );
 }
 
+/** Whether the thread's newest turn is one the mailbox has not settled, which
+ * is the only time its session is writing anything a reader could hear. */
+export function threadWriting(thread: Pick<ThreadResponse, "turns">): boolean {
+  const newest = thread.turns.reduce<ThreadTurnResponse | undefined>(
+    (latest, turn) =>
+      latest === undefined || turn.ordinal > latest.ordinal ? turn : latest,
+    undefined,
+  );
+  return newest?.state === "Queued" || newest?.state === "Claimed";
+}
+
+/** Whether the thread has a turn the mailbox settled, which is when a store it
+ * does not name is one that is missing rather than one not written yet. A turn
+ * a member stopped, held or still waiting, may have stored nothing, so it is
+ * no sign of one. */
+export function threadStoreDue(thread: Pick<ThreadResponse, "turns">): boolean {
+  return thread.turns.some(
+    (turn) =>
+      turn.state !== "Queued" &&
+      turn.state !== "Claimed" &&
+      turn.failure !== "TurnStopped" &&
+      turn.failure !== "TurnStoppedQueued",
+  );
+}
+
 /**
  * The two fields a wake document is drawn from. Unknown keys are dropped rather
  * than refused, so a document carrying more than this reads as the notice it is.
@@ -277,6 +305,159 @@ export function threadTurnRetained(
   return held !== undefined && held.text === text ? held.turn : undefined;
 }
 
+/** A message this page sent, under the turn identity it minted for it, held
+ * for as long as the mailbox read does not list that turn. */
+export interface ThreadSending {
+  readonly turn: string;
+  readonly text: string;
+}
+
+/** A message a thread's door handed back, and what the press ended as. */
+export interface ThreadKept {
+  readonly text: string;
+  /** The turn the text was sent as, where it is one message's. */
+  readonly turn: string | undefined;
+  readonly send: ThreadSend;
+}
+
+/** What each thread is held for, by session: one text a thread. */
+export type ThreadKeptHeld = ReadonlyMap<string, ThreadKept>;
+
+/** What is held with one more message handed back to `session`: under one held
+ * for it already, a blank line between, as a text no one turn sent. */
+export function threadKeptWith(
+  held: ThreadKeptHeld,
+  session: string,
+  kept: ThreadKept,
+): ThreadKeptHeld {
+  const before = held.get(session);
+  return new Map(held).set(
+    session,
+    before === undefined
+      ? kept
+      : { ...kept, text: `${before.text}\n\n${kept.text}`, turn: undefined },
+  );
+}
+
+/** What is held less the sessions named, and the same where it holds none. */
+export function threadKeptWithout(
+  held: ThreadKeptHeld,
+  sessions: readonly string[],
+): ThreadKeptHeld {
+  const left = [...held].filter(([session]) => !sessions.includes(session));
+  return left.length === held.size ? held : new Map(left);
+}
+
+/** The sessions held for whose thread the listing says takes nothing more. */
+export function threadKeptClosed(
+  held: ThreadKeptHeld,
+  threads: readonly Pick<ThreadEntryResponse, "session" | "state">[],
+): readonly string[] {
+  return threads
+    .filter(
+      (thread) => held.has(thread.session) && !threadTakesMessages(thread),
+    )
+    .map((thread) => thread.session);
+}
+
+/** The messages sent with one more, last. A page holds no more of them than
+ * the mailbox takes turns, and a press past that is drawn when the mailbox
+ * lists it. */
+export function threadSendingWith(
+  sending: readonly ThreadSending[],
+  sent: ThreadSending,
+): readonly ThreadSending[] {
+  const others = sending.filter((held) => held.turn !== sent.turn);
+  return others.length >= threadBacklogMax ? sending : [...others, sent];
+}
+
+/** The messages sent less those of the turns named, and the same list where
+ * it holds none of them. */
+export function threadSendingWithout(
+  sending: readonly ThreadSending[],
+  turns: readonly string[],
+): readonly ThreadSending[] {
+  const left = sending.filter((held) => !turns.includes(held.turn));
+  return left.length === sending.length ? sending : left;
+}
+
+/** The turns a press of Stop named, with one more. A page holds no more of
+ * them than the mailbox takes turns, the oldest leaving past that. */
+export function threadStoppingWith(
+  stopping: readonly string[],
+  turn: string,
+): readonly string[] {
+  if (stopping.includes(turn)) return stopping;
+  return [...stopping, turn].slice(-threadBacklogMax);
+}
+
+/** The turns a press of Stop named less `turn`, and the same list where it
+ * does not hold that one. */
+export function threadStoppingWithout(
+  stopping: readonly string[],
+  turn: string,
+): readonly string[] {
+  return stopping.includes(turn)
+    ? stopping.filter((held) => held !== turn)
+    : stopping;
+}
+
+/** The turns the mailbox read lists as ended, however each ended. */
+export function threadTurnsEnded(
+  thread: Pick<ThreadResponse, "turns">,
+): readonly string[] {
+  return thread.turns.flatMap((turn) =>
+    turn.state === "Queued" || turn.state === "Claimed" ? [] : [turn.turn],
+  );
+}
+
+/** The word for what a member can do something about in a failed request,
+ * which no code the API answers with is. */
+export function threadRefusalCause(failure: ApiFailure): string | undefined {
+  if (failure.outcome === "Unauthenticated") return "Signed out";
+  return failure.outcome === "Unreachable" ? "Unreachable" : undefined;
+}
+
+/** A press a door refused: the send, or the stop of one turn, with the word
+ * for its cause where a member can act on one. */
+export type ThreadRefused =
+  | { readonly what: "Send"; readonly cause?: string }
+  | { readonly what: "Stop"; readonly turn: string; readonly cause?: string };
+
+/** The one line a refusal is said in: what was not done, and its cause where
+ * a member can act on it. */
+export function threadRefusalLine(refused: ThreadRefused): string {
+  const said = refused.what === "Send" ? "Not sent" : "Not stopped";
+  return refused.cause === undefined ? said : `${said} · ${refused.cause}`;
+}
+
+/** What one press of Stop came to: this press ended the turn, the turn had
+ * ended by itself, or it is still out. */
+export type ThreadStop =
+  | { readonly stop: "Ended" }
+  | { readonly stop: "AlreadyEnded" }
+  | { readonly stop: "Refused"; readonly cause?: string };
+
+/**
+ * One stop, classified. The turn is ended where this press ended it and where
+ * its thread was closed under it, which ends every turn of it; a turn that had
+ * ended was stopped by nothing; anything else leaves it out and is one refusal.
+ */
+export function threadStopFrom(
+  result: ApiResult<ThreadTurnStopResponse>,
+): ThreadStop {
+  if (result.outcome === "Ok")
+    return {
+      stop: result.value.stopped === "Stopped" ? "Ended" : "AlreadyEnded",
+    };
+  const closed =
+    result.outcome === "Conflict" &&
+    threadRefusalCode(result.code) === "ThreadClosed";
+  if (closed) return { stop: "Ended" };
+  const cause = threadRefusalCause(result);
+  return { stop: "Refused", ...(cause === undefined ? {} : { cause }) };
+}
+
 /** Where one press of `Send` got to, or before one, what its door would answer. */
 export type ThreadSend =
   | { readonly send: "Idle" }
@@ -292,7 +473,7 @@ export type ThreadSend =
   | { readonly send: "NoRunner" }
   /** The reader's runner has not polled lately, so a turn waits for it. */
   | { readonly send: "RunnerOffline" }
-  | { readonly send: "Refused"; readonly reason: string };
+  | ({ readonly send: "Refused" } & ThreadRefused);
 
 /**
  * What a composer reports: a press's own answer where it has one to say, and
@@ -372,10 +553,21 @@ export function threadRefusalWord(code: string): string {
   return known === undefined ? code : threadRosterWord(known);
 }
 
+/** A send a door refused, with the word for its cause where there is one. */
+export function threadSendRefused(
+  cause?: string,
+): ThreadSend & { readonly send: "Refused" } {
+  return {
+    send: "Refused",
+    what: "Send",
+    ...(cause === undefined ? {} : { cause }),
+  };
+}
+
 /**
  * One post, classified. A wait and an ended thread are each drawn as the word
  * the door's own code names, and neither is a fault the reader can press
- * through; everything else is one refusal carrying its reason.
+ * through; everything else is one refusal.
  */
 export function threadSendFrom(
   result: ApiResult<ThreadMessageAccepted>,
@@ -392,12 +584,12 @@ export function threadSendFrom(
       if (sessionRefusedNoRunner(result)) return { send: "NoRunner" };
       return threadRefusalCode(result.code) === "NotYourThread"
         ? { send: "Unsettled", why: threadRefusalWord(result.code) }
-        : { send: "Refused", reason: panelReason(result) };
+        : threadSendRefused(threadRefusalCause(result));
     case "Absent":
     case "Unauthenticated":
     case "Fault":
     case "Unreachable":
     case "Unreadable":
-      return { send: "Refused", reason: panelReason(result) };
+      return threadSendRefused(threadRefusalCause(result));
   }
 }

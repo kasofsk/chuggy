@@ -258,6 +258,16 @@ export interface ConversationStandingArm {
   readonly tone: Tone;
 }
 
+/** What a member calls a turn that is out. The mailbox's `Claimed` is two
+ * things to them: a runner has it and nothing has come of it, or something has. */
+function conversationRunningWord(
+  state: ConversationRunningState,
+  begun: boolean,
+): string {
+  if (state !== "Claimed") return state;
+  return begun ? "Working" : "Starting";
+}
+
 /**
  * Where one exchange stands, in the one word and hue it is drawn in: `Open` is
  * the arm the mailbox has no word for — a transcript exchange no turn speaks
@@ -267,19 +277,22 @@ export interface ConversationStandingArm {
  */
 export function conversationStandingArm(
   standing: Exclude<ConversationStanding, { readonly standing: "Markers" }>,
+  begun: boolean,
 ): ConversationStandingArm {
   switch (standing.standing) {
     case "Answered":
       return { word: "Answered", tone: sessionTurnStateTone("Answered") };
     case "Running":
       return {
-        word: standing.state,
+        word: conversationRunningWord(standing.state, begun),
         tone: conversationRunningTone(standing.state),
       };
     case "Failed":
       return { word: "Failed", tone: sessionTurnStateTone("Failed") };
     case "Abandoned":
       return { word: "Abandoned", tone: sessionTurnStateTone("Abandoned") };
+    case "Stopped":
+      return { word: "Stopped", tone: sessionTurnStateTone("Abandoned") };
     case "Open":
       return { word: "Open", tone: "live" };
   }

@@ -2,10 +2,15 @@
  * One frame for every screen: the bar across the top, and under it the pages
  * and the chat dividing what is left.
  *
- * THE BAR SPANS THE FRAME AND OUTLIVES EVERY STATE OF IT. The nav reaches every
- * screen and the banner speaks for all of them, so the bar is neither something
- * the chat pane takes width from nor something a full screen covers — a reader
- * who filled the frame with the chat still has every screen one press away.
+ * THE BAR SPANS THE FRAME. The nav reaches every screen and the banner speaks
+ * for all of them, so the bar is not something the chat pane takes width from,
+ * and a reader who filled the frame with the chat still has every screen one
+ * press away.
+ *
+ * ON A NARROW VIEWPORT A FULL SCREEN IS THE WHOLE SCREEN. The bar wraps there
+ * to rows a conversation cannot spare, so a chat given the frame takes them
+ * too and leaving the full screen draws the bar again. The banner stands
+ * through it, since what it says is true of the chat as well.
  *
  * The chat pane is where the reader talks to the project, so it outlives every
  * navigation under it: the pages change beneath the bar and the conversation
@@ -25,6 +30,7 @@ import type { ReactNode } from "react";
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import {
   chatPaneContentDrawn,
+  chatPaneCoversBar,
   chatPaneNarrowed,
   chatPaneStripped,
 } from "../core/chatPane.ts";
@@ -33,17 +39,24 @@ import {
   projectStreamCarrying,
   projectStreamUnanswered,
 } from "../core/projectStream.ts";
+import { clipboardWritten, elapsedMs, syntaxWorkerOpened } from "./ports.ts";
 import { ChatPane } from "./shell/ChatPane.tsx";
 import { ChatPaneProvider, useChatPane } from "./shell/chatPaneHeld.tsx";
 import { DetailsPane } from "./shell/DetailsPane.tsx";
 import { TicketReferenceWiring } from "./ticket/TicketReferenceWiring.tsx";
 import { ShellSlots } from "./shell/slots.tsx";
 import { TopBar } from "./shell/TopBar.tsx";
-import { useViewportAtLeastEm, viewportTwoColumnEm } from "./shell/viewport.ts";
+import {
+  useViewportAtLeastEm,
+  viewportNarrowEm,
+  viewportTwoColumnEm,
+} from "./shell/viewport.ts";
 import {
   useProjectFallbackExhausted,
   useProjectStreamStatus,
 } from "./stream.tsx";
+import { CopyProvider } from "./ui/copyHeld.tsx";
+import { MarkdownProvider } from "./ui/markdownHeld.ts";
 import { Notice } from "./ui/Notice.tsx";
 import "./shell/shell.css";
 
@@ -124,19 +137,25 @@ export function ShellFrame(props: { readonly children: ReactNode }): ReactNode {
   );
 }
 
-/** The bar and what stands above it, across the whole frame and through every
- * state of it: the banner speaks for every screen and the nav reaches every one
- * of them, so neither is a thing the chat pane takes width from or covers. */
+/** The banner and the bar under it, across the whole frame: the banner speaks
+ * for every screen and the nav reaches every one of them, so neither is a
+ * thing the chat pane takes width from. The bar is not drawn where the pane
+ * covers it. */
 function ShellHeader(props: {
   readonly partition: PartitionIdentity;
+  readonly covered: boolean;
 }): ReactNode {
   return (
     <div className="grid grid-cols-[minmax(0,1fr)]">
       <div className="shell-banner">
         <StreamBanner />
       </div>
-      <TopBar partition={props.partition} />
-      <Separator.Root decorative className="h-px bg-edge" />
+      {props.covered ? null : (
+        <>
+          <TopBar partition={props.partition} />
+          <Separator.Root decorative className="h-px bg-edge" />
+        </>
+      )}
     </div>
   );
 }
@@ -161,6 +180,7 @@ function ShellDrawn(props: {
   readonly partition: PartitionIdentity;
   readonly twoColumn: boolean;
 }): ReactNode {
+  const narrow = !useViewportAtLeastEm(viewportNarrowEm);
   const chat = chatPaneNarrowed(useChatPane().state, props.twoColumn);
   const drawn = chatPaneContentDrawn(chat);
   const pages = drawn ? (
@@ -181,7 +201,10 @@ function ShellDrawn(props: {
   );
   return (
     <ShellFrame>
-      <ShellHeader partition={props.partition} />
+      <ShellHeader
+        partition={props.partition}
+        covered={chatPaneCoversBar(chat, narrow)}
+      />
       <ShellBody chat={chat}>
         {chat.placement === "Left" ? (
           <>
@@ -205,11 +228,15 @@ export function Shell(props: {
   const twoColumn = useViewportAtLeastEm(viewportTwoColumnEm);
   return (
     <ShellSlots>
-      <TicketReferenceWiring partition={props.partition}>
-        <ChatPaneProvider twoColumn={twoColumn}>
-          <ShellDrawn partition={props.partition} twoColumn={twoColumn} />
-        </ChatPaneProvider>
-      </TicketReferenceWiring>
+      <CopyProvider write={clipboardWritten}>
+        <MarkdownProvider clock={elapsedMs} syntax={syntaxWorkerOpened}>
+          <TicketReferenceWiring partition={props.partition}>
+            <ChatPaneProvider twoColumn={twoColumn}>
+              <ShellDrawn partition={props.partition} twoColumn={twoColumn} />
+            </ChatPaneProvider>
+          </TicketReferenceWiring>
+        </MarkdownProvider>
+      </CopyProvider>
     </ShellSlots>
   );
 }

@@ -33,6 +33,16 @@ const issuer = process.env["CHUG_UI_ISSUER"] ?? "";
 const audience = process.env["CHUG_UI_AUDIENCE"] ?? "";
 const clientId = process.env["CHUG_UI_CLIENT_ID"] ?? "";
 
+/**
+ * The markdown parser's reader of named references, as the build that looks a
+ * name up in a table. A bundle for a browser is otherwise handed the build
+ * that has a detached element parse the name as markup, and this console
+ * parses no markup from a string.
+ */
+const namedReferences = decodeURIComponent(
+  new URL(import.meta.resolve("decode-named-character-reference")).pathname,
+);
+
 const issuerPrefix = "/issuer";
 const discoveryPath = "/.well-known/openid-configuration";
 
@@ -120,6 +130,12 @@ export default defineConfig({
     tailwindcss(),
     ...(upstream === undefined ? [] : [localInstallation()]),
   ],
+  resolve: {
+    alias: { "decode-named-character-reference": namedReferences },
+  },
+  /** The worker that colours code is a module like the page's own, so its
+   * chunk is emitted as one. */
+  worker: { format: "es" },
   server: {
     fs: { allow: ["../.."] },
     ...(upstream === undefined ? {} : { proxy: proxy() }),

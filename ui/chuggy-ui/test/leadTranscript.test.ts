@@ -20,6 +20,7 @@ import {
   sessionChangeKindNamed,
   leadStreamBatches,
   leadStreamListed,
+  leadStreamReplaced,
   leadTranscriptCursorsFrom,
   leadTranscriptDrawn,
   leadTranscriptEntriesHeldMax,
@@ -27,6 +28,7 @@ import {
   leadTranscriptReadsInFlightMax,
   leadTranscriptStep,
   leadTranscriptNextAfter,
+  leadTranscriptReached,
 } from "../app/core/leadTranscript.ts";
 import {
   sessionStoreBatchesMax,
@@ -133,6 +135,17 @@ test("a full page below the mark is asked past, and one reaching it ends the wal
   expect(leadTranscriptDrawn(second).unreached).toBe(false);
   expect(leadTranscriptNextAfter(second, 2)).toBeUndefined();
   expect(leadTranscriptNextAfter(second, 3)).toBe(2);
+});
+
+test("a walk has reached the mark once it has nothing left to ask below it", () => {
+  const unread = leadTranscriptDrawn(leadTranscriptPaneEmpty);
+  expect(leadTranscriptReached(unread, 0)).toBe(true);
+  expect(leadTranscriptReached(unread, 2)).toBe(false);
+  const first = paged(leadTranscriptPaneEmpty, leadTranscriptPage(0, 2), 2);
+  expect(leadTranscriptReached(leadTranscriptDrawn(first), 2)).toBe(false);
+  const second = paged(first, leadTranscriptPage(1, 2), 2);
+  expect(leadTranscriptReached(leadTranscriptDrawn(second), 2)).toBe(true);
+  expect(leadTranscriptReached(leadTranscriptDrawn(second), 3)).toBe(false);
 });
 
 /**
@@ -592,6 +605,23 @@ test("a reference the store's listing does not carry is not a listed stream", ()
     }),
   ).toBe(false);
   expect(leadStreamListed(leadUnstarted())).toBe(false);
+});
+
+test("a store holding a stream that is neither the one named nor under it wrote to another before", () => {
+  const lead = leadBody(2, 1);
+  const under = { stream: `${leadStream}/subagent-1`, batches: 3 };
+  expect(leadStreamReplaced(lead)).toBe(false);
+  expect(
+    leadStreamReplaced({ ...lead, streams: [...lead.streams, under] }),
+  ).toBe(false);
+  expect(
+    leadStreamReplaced({
+      ...lead,
+      streams: [{ stream: `${leadStream}0`, batches: 9 }, ...lead.streams],
+    }),
+  ).toBe(true);
+  expect(leadStreamReplaced({ ...lead, streams: [] })).toBe(false);
+  expect(leadStreamReplaced(leadUnstarted())).toBe(false);
 });
 
 /**
