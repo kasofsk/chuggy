@@ -13,11 +13,21 @@
 # that does asks for the page by name on its gate's line, with `ci_changed`,
 # which reads every changed file: the unit suites hold the runbook's table of
 # the API's variables to the root that reads them.
+#
+# A PATH THAT WENT AWAY IS A PATH THAT CHANGED. The list holds a deleted file
+# and both names of a renamed one, because an absence breaks what a gate
+# proves as surely as an edit does: a suite imports the file, a page names it.
+#
+# THE MODEL'S GATE FOLLOWS QUINT, NOT THE PACKAGE FILES. Quint is all that
+# `check-model` takes from them, at an exact version it refuses to run
+# without, so a change to them selects it only where a line naming quint
+# moved. What that cannot see is a package quint depends on moving alone.
 
 ci_select_init() {
 	CI_SELECT_MODE=full
 	CI_CHANGED_FILES=""
 	CI_CHANGED_CODE=""
+	CI_MERGE_BASE=""
 
 	if [ "${CHUG_CI_FULL:-0}" = "1" ]; then
 		CI_SELECT_REASON="CHUG_CI_FULL=1"
@@ -45,12 +55,13 @@ ci_select_init() {
 		return 0
 	fi
 
+	CI_MERGE_BASE="$merge_base"
 	CI_CHANGED_FILES="$(
 		{
-			git diff --name-only --diff-filter=ACMR "$merge_base" HEAD
-			git diff --name-only --diff-filter=ACMR
-			git diff --cached --name-only --diff-filter=ACMR
-			git ls-files --others --exclude-standard
+			git -c core.quotePath=false diff --name-only --no-renames "$merge_base" HEAD
+			git -c core.quotePath=false diff --name-only --no-renames
+			git -c core.quotePath=false diff --cached --name-only --no-renames
+			git -c core.quotePath=false ls-files --others --exclude-standard
 		} 2>/dev/null | sort -u
 	)"
 	CI_CHANGED_CODE="$(printf '%s\n' "$CI_CHANGED_FILES" | grep -v '\.md$' || true)"
@@ -86,6 +97,16 @@ ci_toolchain_changed() {
 		.prettierrc.json .dependency-cruiser.cjs
 }
 
+# A diff of the package files that cannot be read is one that may have moved
+# quint, so it selects.
+ci_quint_moved() {
+	[ "$CI_SELECT_MODE" = "full" ] && return 0
+	ci_changed package.json package-lock.json || return 1
+	moved="$(git diff "$CI_MERGE_BASE" -- package.json package-lock.json 2>/dev/null || true)"
+	[ -n "$moved" ] || return 0
+	printf '%s\n' "$moved" | grep -q '^[-+].*@informalsystems/quint'
+}
+
 ci_gate_selected() { # <gate id>
 	gate="$1"
 	[ "$CI_SELECT_MODE" = "full" ] && return 0
@@ -105,14 +126,14 @@ ci_gate_selected() { # <gate id>
 	check-vendored) ci_changed 'model/task-contract/**' 'model/ticket-domain/**' model/vendored.sha256 .chug/tasks/check-vendored.sh ;;
 	check-boundaries) ci_changed 'src/*.ts' 'src/**/*.ts' 'test/*.ts' 'test/**/*.ts' 'scripts/*.ts' 'scripts/**/*.ts' 'ui/*.js' 'ui/**/*.js' 'ui/**/*.ts' 'ui/**/*.tsx' .dependency-cruiser.cjs .chug/tasks/check-boundaries.sh || ci_toolchain_changed ;;
 	source-static) ci_changed '*.ts' '*.tsx' '*.js' '*.json' '*.cjs' '*.yaml' '*.yml' .chug/tasks/check-source.sh || ci_toolchain_changed ;;
-	source-unit) ci_code_changed 'src/**' 'test/**' 'ui/**' 'images/**' 'scripts/**' '.chug/configurations/**' tsconfig.contract.json tsconfig.contract-pack.json .chug/tasks/check-source.sh || ci_changed deploy/rig/images/README.md || ci_toolchain_changed ;;
+	source-unit) ci_code_changed 'src/**' 'test/**' 'ui/**' 'images/**' 'scripts/**' 'deploy/**' 'model/**' '.chug/configurations/**' tsconfig.contract.json tsconfig.contract-pack.json .chug/tasks/check-source.sh .chug/tasks/check-console-sheets.sh || ci_changed deploy/rig/images/README.md || ci_toolchain_changed ;;
 	check-console) ci_code_changed 'ui/**' 'src/contract/**' '.chug/configurations/**' 'scripts/console-policy.ts' 'scripts/check-console-policy.ts' .chug/tasks/check-console.sh ;;
 	check-conformance) ci_code_changed 'src/domain/**' 'test/conformance/**' 'test/domain/**' 'test/itf/**' 'test/golden/**' 'model/domain.qnt' 'model/ticket.qnt' 'model/ticket-domain/**' 'model/task-contract/**' .chug/tasks/check-conformance.sh ;;
 	check-random) ci_code_changed 'src/domain/**' 'test/random/**' 'test/conformance/**' 'test/domain/**' 'test/itf/**' 'model/domain.qnt' 'model/ticket.qnt' 'model/ticket-domain/**' 'model/task-contract/**' 'model/mc/mc_chuggy.qnt' .chug/tasks/check-random.sh ;;
-	check-postgres) ci_code_changed 'src/**' 'test/postgres/**' .chug/tasks/_postgres.sh .chug/tasks/postgres-databases.ts .chug/tasks/check-postgres.sh || ci_toolchain_changed ;;
+	check-postgres) ci_code_changed 'src/**' 'test/postgres/**' deploy/rig/wipe-tickets.sql .chug/tasks/_postgres.sh .chug/tasks/postgres-databases.ts .chug/tasks/check-postgres.sh || ci_toolchain_changed ;;
 	check-queries) ci_code_changed 'src/adapters/postgres/**' 'src/domain/**' 'src/interpreter/**' eslint.config.js .chug/tasks/_postgres.sh .chug/tasks/check-queries.sh || ci_toolchain_changed ;;
 	check-keto) ci_code_changed 'src/**' 'test/keto/**' 'test/postgres/**' '.chug/tasks/keto/**' .chug/tasks/_keto.sh .chug/tasks/_postgres.sh .chug/tasks/postgres-databases.ts .chug/tasks/check-keto.sh || ci_toolchain_changed ;;
-	check-model) ci_code_changed 'model/**' .chug/tasks/check-model.sh package.json package-lock.json ;;
+	check-model) ci_code_changed 'model/**' .chug/tasks/check-model.sh || ci_quint_moved ;;
 	check-model-api) ci_code_changed 'model/**' scripts/generate-model-api.ts src/generated/model-api.ts .chug/tasks/check-model-api.sh package.json package-lock.json ;;
 	*) return 0 ;;
 	esac

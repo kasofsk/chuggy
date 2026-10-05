@@ -27,7 +27,7 @@ R="$WORK/repo"
 # and answers a question the case did not ask. These are ci.sh's own Env block
 # and the base `_ci-select.sh` reads, less CHUG_CI_SHELL_SUITES — the recursion
 # guard, which each case that reaches the suite stage sets for itself.
-unset CHUG_CI_FULL CHUG_CI_BASE GITHUB_BASE_REF CHUG_CI_SUITE_TIMEOUT_SECS
+unset CHUG_CI_FULL CHUG_CI_BASE GITHUB_BASE_REF CHUG_CI_SUITE_TIMEOUT_SECS CHUG_CI_NEEDS_GATE
 
 ROOT="$(cd "$HERE/../.." && pwd)"
 grep -F '    ./.chug/tasks/ci.sh' "$ROOT/justfile" >/dev/null
@@ -85,8 +85,22 @@ run_ci() {
 	set -e
 }
 
+# The last commit as the whole change, through the gate stage alone.
+commit_all() { # <message>
+	git -C "$R" add -A
+	git -C "$R" commit -qm "$1"
+}
+run_last_commit() {
+	OUT="$WORK/.out"
+	set +e
+	(cd "$R" && CHUG_CI_BASE=HEAD^ CHUG_CI_SHELL_SUITES=0 ./.chug/tasks/ci.sh) >"$OUT" 2>&1
+	RC=$?
+	set -e
+}
+
 stub_repo 0
 git -C "$R" commit -qm baseline
+printf '# a page\n' > "$R/PAGE.md"
 run_gates_only
 check "all gates clean exits 0" 0 "$RC" "all gates clean"
 check "CHUG_CI_SHELL_SUITES=0 skips the suite stage" 0 "$RC" "SKIPPED"
@@ -387,6 +401,88 @@ set -e
 check "a vendored change selects the pin" 0 "$RC" "stub check-vendored"
 check "a vendored change selects conformance" 0 "$RC" "stub check-conformance"
 check "a vendored change selects the random replay" 0 "$RC" "stub check-random"
+
+# A PATH THAT WENT AWAY IS A PATH THAT CHANGED: a deletion selects what read
+# the file, a rename selects by the name it left as well as the one it took,
+# and a name git would quote is read as it is spelled.
+stub_repo 0
+mkdir -p "$R/src/domain" "$R/notes"
+printf 'export const here = 1;\n' > "$R/src/domain/gone.ts"
+printf 'export const kept = 1;\n' > "$R/src/domain/moved.ts"
+commit_all baseline
+git -C "$R" rm -q src/domain/gone.ts
+commit_all deletion
+run_last_commit
+check "a deleted source selects the database" 0 "$RC" "stub check-postgres"
+refute "a deleted source selects the suites" 0 "$RC" "check-source unit: SKIPPED"
+git -C "$R" mv src/domain/moved.ts notes/moved.txt
+commit_all rename
+run_last_commit
+check "a file renamed out of the sources selects by the name it left" 0 "$RC" "stub check-postgres"
+printf 'export const spelled = 1;\n' > "$R/src/domain/$(printf 'caf\303\251').ts"
+commit_all accented
+run_last_commit
+check "a source whose name git would quote selects the database" 0 "$RC" "stub check-postgres"
+
+# A SUITE'S INPUT OUTSIDE THE SOURCES IS IN ITS GATE'S CONE. The unit suites
+# read the roles file, the model's text and one gate's script, and the
+# database suites read the wipe.
+stub_repo 0
+mkdir -p "$R/deploy/rig/postgres" "$R/model"
+printf -- '-- roles\n' > "$R/deploy/rig/postgres/postgres-roles.sql"
+printf -- '-- wipe\n' > "$R/deploy/rig/wipe-tickets.sql"
+printf 'module runner {}\n' > "$R/model/runner.qnt"
+commit_all baseline
+printf -- '-- roles, changed\n' > "$R/deploy/rig/postgres/postgres-roles.sql"
+commit_all roles
+run_last_commit
+refute "the roles file selects the suites that read it" 0 "$RC" "check-source unit: SKIPPED"
+check "the roles file skips the database" 0 "$RC" "check-postgres: SKIPPED"
+printf -- '-- wipe, changed\n' > "$R/deploy/rig/wipe-tickets.sql"
+commit_all wipe
+run_last_commit
+check "the wipe selects the database suites that read it" 0 "$RC" "stub check-postgres"
+printf 'module runner { val changed = 1 }\n' > "$R/model/runner.qnt"
+commit_all model
+run_last_commit
+refute "the model's text selects the suites that read it" 0 "$RC" "check-source unit: SKIPPED"
+printf '#!/bin/sh\necho stub check-console-sheets, changed\nexit 0\n' > "$R/.chug/tasks/check-console-sheets.sh"
+commit_all sheets
+run_last_commit
+refute "the console sheets' gate selects the suite that reads it" 0 "$RC" "check-source unit: SKIPPED"
+
+# THE MODEL'S GATE FOLLOWS QUINT: a package change that names no quint line
+# leaves it out, and one that moves quint's own line brings it in.
+package_at() { # <quint version> <other version>
+	printf '{\n  "devDependencies": {\n    "@informalsystems/quint": "%s",\n    "left-pad": "%s"\n  }\n}\n' "$1" "$2" > "$R/package.json"
+}
+stub_repo 0
+package_at 0.32.0 1.0.0
+commit_all baseline
+package_at 0.32.0 1.0.1
+commit_all other-package
+run_last_commit
+check "a package change that leaves quint alone skips Quint" 0 "$RC" "check-model: SKIPPED"
+check "a package change still reaches the model's generated API" 0 "$RC" "stub check-model-api"
+package_at 0.33.0 1.0.1
+commit_all quint
+run_last_commit
+refute "a package change that moves quint selects Quint" 0 "$RC" "check-model: SKIPPED"
+
+# A RUN THAT RAN NOTHING SAYS SO, and is a could-not-run to a caller that asks
+# for one; a caller that asks passes as any other does once a gate has run.
+stub_repo 0
+commit_all baseline
+run_gates_only
+check "a change that selects nothing says nothing ran" 0 "$RC" "no gate selected; nothing ran"
+refute "a run of nothing is not called clean" 0 "$RC" "all gates clean"
+export CHUG_CI_NEEDS_GATE=1
+run_gates_only
+check "a caller that needs a gate is told none ran" 2 "$RC" "the change selects no gate"
+printf '# a page\n' > "$R/PAGE.md"
+run_gates_only
+check "a caller that needs a gate passes once one ran" 0 "$RC" "all gates clean"
+unset CHUG_CI_NEEDS_GATE
 
 # An unresolvable base fails open to complete coverage, never to no coverage.
 stub_repo 0
