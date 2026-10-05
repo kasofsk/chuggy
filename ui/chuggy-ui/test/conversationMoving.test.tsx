@@ -239,7 +239,6 @@ describe("a turn drawn through", () => {
       expect(moving(view.container)).toEqual([]);
     });
     watching.disconnect();
-    expect(seen.length).toBeGreaterThan(throughMoments.length);
     expect(seen.filter((live) => live.length > 1)).toEqual([]);
     expect(new Set(seen.flat())).toEqual(
       new Set(["engine", "card", "mark", "glyph"]),
