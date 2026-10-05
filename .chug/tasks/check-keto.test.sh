@@ -715,8 +715,8 @@ check "a keto is started on the port of a listener stopped a moment ago" 0 "$RC"
 
 # --- A listener on another address of the box does not hold the port ---------
 #
-# The keto binds loopback and nothing else, so that is all the test asks about:
-# one that asked every address would refuse a port the keto can have.
+# The keto binds one loopback address and no other, so that is all the test asks
+# about: one that asked every address would refuse a port the keto can have.
 
 fixture
 passing_suite "$R/test/keto/one.test.ts"
