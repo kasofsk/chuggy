@@ -523,6 +523,13 @@ test("an answer heard a few characters at a time around a tool, then stored, set
   styleless();
 });
 
+/** What is held of an answer when a reader opens the thread part way through
+ * it, and what is written after in one piece: long enough that the pace spends
+ * on it all the time it gives a text, so a frame late by less than that lets
+ * out only part of it. */
+const heldPart = "It is blo";
+const restPart = "cked by 40, which is still open and waiting on review.";
+
 test("a reader who opens the thread part way through an answer is shown what is held whole, and only what follows at a pace", async () => {
   const watched = textsWatched(document.body);
   const script = scripted(threadAt("Claimed", 1), [
@@ -532,20 +539,18 @@ test("a reader who opens the thread part way through an answer is shown what is 
         snapshot({
           turn: "turn-2",
           message: "msg_a",
-          blocks: [
-            { index: 0, kind: "Text", text: "It is blo", gapped: false },
-          ],
+          blocks: [{ index: 0, kind: "Text", text: heldPart, gapped: false }],
         }),
       ],
       hold: true,
     },
   ]);
-  await until(script.container, { answer: "It is blo", writing: true });
-  script.server.pushLive(wrote("msg_a", 0, 9, "cked."));
-  await until(script.container, { answer: "It is blocked." });
+  await until(script.container, { answer: heldPart, writing: true });
+  script.server.pushLive(wrote("msg_a", 0, heldPart.length, restPart));
+  await until(script.container, { answer: `${heldPart}${restPart}` });
   watched.stop();
   const texts = watched.seen.flatMap((seen) => seen.slice(0, 1));
-  expect(texts[0]).toBe("It is blo");
+  expect(texts[0]).toBe(heldPart);
   expect(new Set(texts).size).toBeGreaterThan(2);
   onlyGrew(watched.seen);
 });
