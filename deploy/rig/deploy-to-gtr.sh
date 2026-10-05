@@ -48,15 +48,30 @@
 # releasing on it would be believing a control that never ran.
 #
 # `--merge` IS WHERE THE CLUSTER CHANGES, and it is a separate run so that a
-# reviewer can read the pull request in between. It refuses while an attempt
-# is live, because a rollout restarts the worker plane and drops a running
-# attempt's heartbeats. When the release carries a migration it takes a dump
-# first, into the directory the caller names — a ledger that has moved forward
-# is not walked back by reverting the fabric commit, and the dump is the only
-# way below it. Then it merges, asks Flux for the source and the applications
-# through the annotation the flux client itself writes, waits for the migrate
-# Job and every rollout, and requires each Deployment to run the image its
-# manifest names.
+# reviewer can read the pull request in between. When the release carries a
+# migration it takes a dump first, into the directory the caller names — a
+# ledger that has moved forward is not walked back by reverting the fabric
+# commit, and the dump is the only way below it. Then it merges, asks Flux for
+# the source and the applications through the annotation the flux client itself
+# writes, waits for the migrate Job and every rollout, and requires each
+# Deployment to run the image its manifest names.
+#
+# A RELEASE GOES OUT OVER LIVE ATTEMPTS, because nothing it restarts is owned by
+# one: an attempt keeps its lease through the worker plane, and that plane is
+# rolled with the old pod serving until the new one is ready. A landing refuses
+# while an attempt is live only where that does not hold. A release that
+# carries a migration has a plane serving on a schema that is not its image's
+# for the length of the roll, and a plane checks no schema when it starts. A
+# release that moves the rig back brings a plane that refuses a pod of a later
+# contract than its own. And a release branch that does not state a rolling
+# update with none unavailable for the worker plane may leave a moment with no
+# plane serving, which is the one thing a live attempt needs of a release; the
+# strategy is read from the branch about to be merged, so the premise is held
+# to and not assumed. Any other landing says how many attempts are live, and
+# once the rollout is done asks what became of each. One the database records
+# as lost is a finding, reported after everything else a landing does: the
+# release stands, and a loss is the evidence that it should not have gone out
+# over that attempt.
 #
 # `--console` IS BOTH PHASES IN ONE RUN, for a release in which only the
 # console moved. Every other manifest then takes an annotation and no
@@ -148,6 +163,16 @@ manifest_image() { # <manifest>
 manifest_job() {
 	sed -n 's|^[[:space:]]*name: \(chuggy-migrate-[a-z0-9-]*\)[[:space:]]*$|\1|p' "$apps/chuggy-migrate.yaml" | head -n 1
 }
+# The first `strategy:` mapping, joined onto one line without its comments.
+manifest_strategy() { # <manifest>
+	awk '
+		function depth() { match($0, /^ */); return RLENGTH }
+		/^[[:space:]]*(#|$)/ { next }
+		inside && depth() <= at { exit }
+		!inside && /^[[:space:]]*strategy:/ { inside = 1; at = depth() }
+		inside { sub(/[[:space:]]#.*$/, ""); printf "%s ", $0 }
+	' "$apps/$1"
+}
 
 # --- the commit ---------------------------------------------------------------
 
@@ -179,9 +204,11 @@ if [ "$(git rev-parse "$deployed^{commit}")" = "$commit" ]; then
 	say "the rig is already at $tag; nothing to release"
 	exit 0
 fi
+back=0
 if git merge-base --is-ancestor "$deployed" HEAD; then
 	say "releasing $tag over $deployed"
 else
+	back=1
 	say "releasing $tag, which is not ahead of the live $deployed: this moves the rig back"
 	# The gate runner diffs from the merge base, which is HEAD itself here, so
 	# there would be nothing to gate over and a clean verdict about nothing.
@@ -202,12 +229,30 @@ land() { # <pull request url>
 	job="$(manifest_job)"
 	[ -n "$job" ] || refuse "chuggy-migrate.yaml names no Job"
 
-	# A live attempt is a worker pod or a session pod, and those are the only
-	# pods in the namespace the scheduler stamps with these labels; anything
-	# else there has no heartbeat for a rollout to drop. A selector is
-	# conjunctive, so each label is asked for on its own. A console release
-	# restarts nothing that holds a heartbeat, so it does not ask.
+	# Whether this release may go out over a live attempt, which the header
+	# argues case by case. A console release restarts nothing an attempt
+	# reaches, so it asks after none.
+	unsafe=""
 	if [ "$console" -eq 0 ]; then
+		if [ -n "$migrations" ]; then
+			unsafe="this release carries a migration, across which a plane serves on a schema that is not its own"
+		elif [ "$back" -eq 1 ]; then
+			unsafe="this release moves the rig back, to a plane that refuses a pod of a later contract"
+		else
+			[ -f "$apps/chuggy-worker-plane.yaml" ] || refuse "$branch has no chuggy-worker-plane.yaml, so whether a plane serves throughout the roll is unknown"
+			strategy="$(manifest_strategy chuggy-worker-plane.yaml)"
+			if ! printf '%s\n' "$strategy" | grep -Eq 'type:[[:space:]]*RollingUpdate([[:space:],}]|$)' \
+				|| ! printf '%s\n' "$strategy" | grep -Eq 'maxUnavailable:[[:space:]]*0([[:space:],}]|$)'; then
+				unsafe="$branch does not state a rolling update with none unavailable for the worker plane, so a moment with no plane serving is not ruled out"
+			fi
+		fi
+	fi
+	live=""
+	live_count=0
+	if [ -n "$unsafe" ]; then
+		# A live attempt is a worker pod or a session pod, and those are the only
+		# pods in the namespace the scheduler stamps with these labels. A
+		# selector is conjunctive, so each label is asked for on its own.
 		newline='
 '
 		live_pods=""
@@ -218,10 +263,17 @@ land() { # <pull request url>
 			[ -n "$labelled_pods" ] || continue
 			live_pods="${live_pods:+$live_pods$newline}$labelled_pods"
 		done
-		[ -z "$live_pods" ] || fail "an attempt is live in chuggy-work; a rollout would drop its heartbeats"
+		[ -z "$live_pods" ] || fail "an attempt is live in chuggy-work, and $unsafe"
 		live_rows="$(sql 'select count(*) from execution where terminal_at is null' 2>/dev/null || true)"
 		printf '%s' "$live_rows" | grep -Eqx '[0-9]+' || refuse "the live execution count could not be read, so whether an attempt is live is unknown"
-		[ "$live_rows" -eq 0 ] || fail "$live_rows execution(s) are live; a rollout would drop their heartbeats"
+		[ "$live_rows" -eq 0 ] || fail "$live_rows execution(s) are live, and $unsafe"
+	elif [ "$console" -eq 0 ]; then
+		# What the release goes out over: every attempt of work or of a session
+		# that has not ended, each by the identity its row is asked after once
+		# the rollout is done.
+		live="$(sql 'select attempt from execution_attempt where ended_at is null union all select attempt from session_attempt where ended_at is null' 2>/dev/null)" || refuse "the live attempts could not be read, so what the release would go out over is unknown"
+		live_count="$(printf '%s\n' "$live" | grep -c . || true)"
+		[ "$live_count" -eq 0 ] || say "$live_count attempt(s) are live, and the release goes out over them"
 	fi
 
 	if [ -n "$migrations" ]; then
@@ -289,6 +341,32 @@ land() { # <pull request url>
 
 	ledger="$(sql 'select max(version) from schema_migration' 2>/dev/null || true)"
 	say "the rig is at $tag; ledger at ${ledger:-unknown}"
+	[ "$live_count" -gt 0 ] || exit 0
+
+	# What became of each attempt the release went out over, as its own row
+	# says: its state, and the evidence it ended with. A session records its
+	# ordinary end, a pod that drained its mailbox and stopped, as `Lost` with
+	# `SessionIdle`, so that one is no loss.
+	asked="$(printf '%s\n' "$live" | sed "s/'/''/g; s/.*/'&'/" | paste -sd, -)"
+	fates="$(sql "select state || ' ' || kind || ' attempt ' || attempt || ' in ' || tenant || '/' || project || coalesce(': ' || evidence, '') from (select 'work' as kind, tenant, project, attempt, state, evidence from execution_attempt union all select 'session', tenant, project, attempt, state, evidence from session_attempt) a where attempt in ($asked)" 2>/dev/null)" || refuse "what became of the $live_count attempt(s) live at the merge could not be read"
+	running=0
+	ended=0
+	lost=0
+	while read -r fate; do
+		case "$fate" in
+		"Placing "* | "Running "*) running=$((running + 1)) ;;
+		"Lost "*": SessionIdle" | "Reported "* | "Withdrawn "* | "Superseded "*) ended=$((ended + 1)) ;;
+		"Lost "*)
+			lost=$((lost + 1))
+			say "LOST — ${fate#Lost }"
+			;;
+		esac
+	done <<-FATES
+		$fates
+	FATES
+	[ $((running + ended + lost)) -eq "$live_count" ] || refuse "the database did not answer for each of the $live_count attempt(s) live at the merge, so what became of them is unknown"
+	[ "$lost" -eq 0 ] || fail "of $live_count attempt(s) live at the merge, $lost were lost across the rollout; $ended ended and $running still run"
+	say "of $live_count attempt(s) live at the merge, none was lost: $ended ended and $running still run"
 	exit 0
 }
 
