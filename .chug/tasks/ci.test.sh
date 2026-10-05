@@ -509,7 +509,7 @@ refute "what Prettier leaves out selects the static checks" 0 "$RC" "check-sourc
 # A GATE THAT READS THE TREE AS TEXT RUNS ON ANY CHANGE, and the static checks
 # on any change but a page's: a sheet outside the console is a kind none of
 # their old lists of suffixes held.
-text_gates="doc-lint check-figures check-paths check-shell-quoting check-duplication check-console-sheets check-gates check-comments check-knowledge check-vendored"
+text_gates="doc-lint check-figures check-paths check-shell-quoting check-console-sheets check-gates check-comments check-knowledge check-vendored"
 stub_repo 0
 mkdir -p "$R/notes"
 commit_all baseline
@@ -520,6 +520,7 @@ for gate in $text_gates; do
 	refute "a sheet outside the console selects $gate" 0 "$RC" "$gate: SKIPPED"
 done
 refute "a sheet outside the console selects the static checks" 0 "$RC" "check-source static: SKIPPED"
+refute "a sheet outside the console selects the clone detector" 0 "$RC" "check-duplication: SKIPPED"
 check "a sheet outside the console skips the suites" 0 "$RC" "check-source unit: SKIPPED"
 printf '# a page\n' > "$R/notes/PAGE.md"
 commit_all page
@@ -528,6 +529,23 @@ for gate in $text_gates; do
 	refute "a page selects $gate" 0 "$RC" "$gate: SKIPPED"
 done
 check "a page skips the static checks" 0 "$RC" "check-source static: SKIPPED"
+check "a page skips the clone detector" 0 "$RC" "check-duplication: SKIPPED"
+
+# The boundary gate walks directories, so a module of a kind its old list of
+# suffixes left out is in its cone, and the generated API's gate holds both
+# files its generator writes.
+stub_repo 0
+mkdir -p "$R/scripts" "$R/src/domain/generated"
+printf 'export type Entry = 1;\n' > "$R/src/domain/generated/modelTypes.ts"
+commit_all baseline
+printf 'export const answer = 42;\n' > "$R/scripts/orphan.js"
+commit_all orphan
+run_last_commit
+check "a script the boundary gate walks selects it" 0 "$RC" "stub check-boundaries"
+printf 'export type Entry = 2;\n' > "$R/src/domain/generated/modelTypes.ts"
+commit_all types
+run_last_commit
+refute "the generated types select the gate that regenerates them" 0 "$RC" "check-model-api: SKIPPED"
 
 # The replays read the model's generated API through the vocabulary they
 # share, and the query check types every source the adapter's reach.
@@ -546,6 +564,47 @@ commit_all contract
 run_last_commit
 check "a source outside the adapters selects the query check" 0 "$RC" "stub check-queries"
 
+# A SUITE THAT RUNS ITS GATE OVER THE TREE ITSELF IS SELECTED WITH THE GATE.
+stub_repo 0
+mkdir -p "$R/src/domain" "$R/scripts" "$R/model/mc"
+for suite in check-conformance check-random check-model-api emit-goldens check-postgres; do
+	printf '#!/bin/sh\nexit 0\n' > "$R/.chug/tasks/$suite.test.sh"
+done
+printf '#!/bin/sh\nexit 0\n' > "$R/.chug/tasks/emit-goldens.sh"
+printf '# harness\n' > "$R/.chug/tasks/_suite.sh"
+printf 'export const decide = 1;\n' > "$R/src/domain/deciders.ts"
+printf 'export const generate = 1;\n' > "$R/scripts/generate-model-api.ts"
+printf 'module mc {}\n' > "$R/model/mc/mc_chuggy.qnt"
+commit_all baseline
+printf 'export const decide = 2;\n' > "$R/src/domain/deciders.ts"
+commit_all decider
+run_last_commit 1
+check "a decider selects the replay's suite" 0 "$RC" "  - .chug/tasks/check-conformance.test.sh"
+check "a decider selects the random replay's suite" 0 "$RC" "  - .chug/tasks/check-random.test.sh"
+refute "a decider leaves a suite of fixtures alone" 0 "$RC" "  - .chug/tasks/check-postgres.test.sh"
+refute "a decider leaves the emitter's suite alone" 0 "$RC" "  - .chug/tasks/emit-goldens.test.sh"
+printf 'export const generate = 2;\n' > "$R/scripts/generate-model-api.ts"
+commit_all generator
+run_last_commit 1
+check "the generator selects the generated API's suite" 0 "$RC" "  - .chug/tasks/check-model-api.test.sh"
+printf 'module mc { val changed = 1 }\n' > "$R/model/mc/mc_chuggy.qnt"
+commit_all walked
+run_last_commit 1
+check "the model selects the emitter's suite" 0 "$RC" "  - .chug/tasks/emit-goldens.test.sh"
+printf '#!/bin/sh\nexit 0\n# changed\n' > "$R/.chug/tasks/emit-goldens.sh"
+commit_all emitter
+run_last_commit 1
+check "the emitter selects its suite" 0 "$RC" "  - .chug/tasks/emit-goldens.test.sh"
+printf '# harness, changed\n' > "$R/.chug/tasks/_suite.sh"
+commit_all harness
+run_last_commit 1
+check "the harness selects a suite that runs over the tree" 0 "$RC" "  - .chug/tasks/check-random.test.sh"
+check "the harness selects the emitter's suite" 0 "$RC" "  - .chug/tasks/emit-goldens.test.sh"
+printf '#!/bin/sh\necho stub check-postgres\nexit 0\n# changed\n' > "$R/.chug/tasks/check-postgres.sh"
+commit_all gate
+run_last_commit 1
+check "a gate selects its suite of fixtures" 0 "$RC" "  - .chug/tasks/check-postgres.test.sh"
+
 # A SUITE THAT READS A FILE BESIDE ITS GATE IS SELECTED BY IT: this suite holds
 # the justfile to the sequencer, three gates' suites run their gate over the
 # tree's own configuration of its tools, and a suite kept beside what it
@@ -556,6 +615,9 @@ for suite in .chug/tasks/ci .chug/tasks/check-source .chug/tasks/check-boundarie
 	.chug/tasks/check-duplication .githooks/pre-commit deploy/rig/deploy-to-gtr; do
 	printf '#!/bin/sh\nexit 0\n' > "$R/$suite.test.sh"
 done
+printf '#!/bin/sh\nexit 0\n' > "$R/.githooks/pre-commit"
+printf '#!/bin/sh\nexit 0\n' > "$R/deploy/rig/deploy-to-gtr.sh"
+printf 'model/\n' > "$R/.prettierignore"
 printf '# harness\n' > "$R/.chug/tasks/_suite.sh"
 printf 'module.exports = {};\n' > "$R/.dependency-cruiser.cjs"
 printf '{}\n' > "$R/tsconfig.contract.json"
@@ -580,6 +642,28 @@ commit_all harness
 run_last_commit 1
 check "the harness selects the hook's suite" 0 "$RC" "  - .githooks/pre-commit.test.sh"
 check "the harness selects a suite kept beside its script" 0 "$RC" "  - deploy/rig/deploy-to-gtr.test.sh"
+check "the harness selects the sequencer's suite" 0 "$RC" "  - .chug/tasks/ci.test.sh"
+check "the harness selects a suite that copies the tools' configuration" 0 "$RC" "  - .chug/tasks/check-boundaries.test.sh"
+printf 'dist/\n' > "$R/.prettierignore"
+commit_all ignored
+run_last_commit 1
+check "what the formatter leaves out selects the suite that copies it" 0 "$RC" "  - .chug/tasks/check-source.test.sh"
+printf '#!/bin/sh\necho stub check-duplication\nexit 0\n# changed\n' > "$R/.chug/tasks/check-duplication.sh"
+commit_all detector
+run_last_commit 1
+check "a gate selects its suite that copies the tools' configuration" 0 "$RC" "  - .chug/tasks/check-duplication.test.sh"
+printf '#!/bin/sh\nexit 0\n# changed\n' > "$R/.githooks/pre-commit"
+commit_all hook
+run_last_commit 1
+check "the hook selects its suite" 0 "$RC" "  - .githooks/pre-commit.test.sh"
+printf '#!/bin/sh\nexit 0\n# changed\n' > "$R/deploy/rig/deploy-to-gtr.sh"
+commit_all release
+run_last_commit 1
+check "a script selects the suite kept beside it" 0 "$RC" "  - deploy/rig/deploy-to-gtr.test.sh"
+printf '\n# changed\n' >> "$R/.chug/tasks/ci.sh"
+commit_all sequencer
+run_last_commit 1
+check "the sequencer selects its suite" 0 "$RC" "  - .chug/tasks/ci.test.sh"
 printf 'check:\n    true\n' > "$R/justfile"
 commit_all recipe
 run_last_commit 1
