@@ -63,7 +63,11 @@ import type pg from "pg";
 import { z } from "zod";
 
 import { assertNever } from "../../domain/assertNever.ts";
-import { textCodePointsCount } from "../../contract/http.ts";
+import type { TicketId } from "../../domain/ids.ts";
+import {
+  nativeHttpPageItemsMax,
+  textCodePointsCount,
+} from "../../contract/http.ts";
 import {
   allChangeProposalContradictions,
   allChangeProposalCreationsStored,
@@ -106,6 +110,8 @@ import {
   asRepositoryId,
   type FinalizationClaim,
 } from "../../interpreter/finalizer.ts";
+import type { TicketLanding } from "../../interpreter/nativeWeb.ts";
+import type { Partition } from "../../interpreter/projectStore.ts";
 import { projectRowCounter } from "./rows.ts";
 import { finalizerRowValue } from "./finalizerRows.ts";
 import { postgresOwnershipEpoch } from "./ownership.ts";
@@ -902,4 +908,41 @@ export function finalizerChangeProposalMergeRecord(
         record.claim,
         record.result.reconciled,
       );
+}
+
+/** One merged proposal as a ticket's read gathers it. */
+interface TicketLandingRow {
+  readonly repository: string;
+  readonly merge_commit: string;
+}
+
+/**
+ * The commits this ticket's merged proposals landed, in the order the journal
+ * requested their finalizations, each beside the repository its permit's
+ * attempt was prepared against. A proposal names a commit exactly when its
+ * merge is `Merged`, so the commit's presence is what selects it.
+ */
+export async function finalizerChangeProposalLandings(
+  pool: pg.Pool,
+  partition: Partition,
+  ticket: TicketId,
+): Promise<readonly TicketLanding[]> {
+  const found = await pool.query<TicketLandingRow>(
+    sql`SELECT a.repository, p.merge_commit
+          FROM finalization_change_proposal p
+          JOIN finalization_request f
+            ON f.tenant=p.tenant AND f.project=p.project AND f.request=p.request
+          JOIN commit_permit c
+            ON c.tenant=p.tenant AND c.project=p.project AND c.permit=p.permit
+          JOIN finalization_attempt a
+            ON a.tenant=c.tenant AND a.project=c.project AND a.attempt=c.attempt
+         WHERE p.tenant=${partition.tenant} AND p.project=${partition.project}
+           AND f.ticket=${ticket} AND p.merge_commit IS NOT NULL
+         ORDER BY f.authorizing_seq, f.effect_position
+         LIMIT ${nativeHttpPageItemsMax}`,
+  );
+  return found.rows.map((row) => ({
+    repository: asRepositoryId(row.repository),
+    commit: asGitObjectId(row.merge_commit),
+  }));
 }

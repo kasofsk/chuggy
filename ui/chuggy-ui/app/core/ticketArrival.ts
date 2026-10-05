@@ -5,7 +5,7 @@
  * row. The row is the narrower of the two, lacking every field marked below as
  * the own read's. Of those, the brief, the configuration and the program are
  * set by a release or an update and by nothing else, and an update moves the
- * revision; the run totals only lag.
+ * revision; the run totals and the landed commits only lag.
  *
  * So one rule serves both writers. An arrival older than what is held is
  * dropped. Over a held read of the same revision it is written with every
@@ -38,6 +38,7 @@ const ticketFieldOwnReadOnly = {
   configurationVersion: true,
   program: true,
   runTotals: true,
+  landedCommits: true,
 } as const satisfies Record<TicketField, boolean>;
 
 const ticketOwnReadFields: readonly TicketField[] = (

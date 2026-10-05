@@ -238,6 +238,12 @@ export const configurationVersionSchema = z.strictObject({
   number: ticketNumberSchema,
 });
 
+/** One commit a ticket's merge landed, and the repository it is in. */
+const ticketLandingSchema = z.object({
+  repository: identitySchema,
+  commit: identitySchema,
+});
+
 /**
  * A ticket as the project table and its own read both carry it. The title is
  * the one field of the brief the table carries, because a table of documents
@@ -290,6 +296,12 @@ export const ticketResponseSchema = z.object({
    */
   program: authoringResponseSchema.shape.program.optional(),
   runTotals: runTotalsSchema.optional(),
+  /**
+   * The commit each of this ticket's merged change proposals landed, in the
+   * order its finalizations were requested, beside the repository it targeted.
+   * Only the ticket's own read carries it, empty where nothing merged.
+   */
+  landedCommits: page(ticketLandingSchema).optional(),
 });
 export type TicketResponse = z.infer<typeof ticketResponseSchema>;
 

@@ -331,6 +331,17 @@ export interface TicketResource {
    */
   readonly program?: ReleaseAuthoringProgram;
   readonly runTotals?: RunTotals;
+  /**
+   * The commit each of this ticket's merged change proposals landed, in the
+   * order its finalizations were requested, beside the repository it targeted.
+   */
+  readonly landedCommits?: readonly TicketLanding[];
+}
+
+/** One commit a ticket's merge landed, and the repository it is in. */
+export interface TicketLanding {
+  readonly repository: RepositoryId;
+  readonly commit: GitObjectId;
 }
 
 /**

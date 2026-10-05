@@ -33,6 +33,7 @@ import { migration032 } from "./032-session-placement.ts";
 import { migration033 } from "./033-pool-sessions.ts";
 import { migration034 } from "./034-held-proposal-currency.ts";
 import { migration035 } from "./035-thread-turn-stop.ts";
+import { migration036 } from "./036-api-reads-ticket-landings.ts";
 import type { Migration } from "../shared.ts";
 
 export const migrations: readonly Migration[] = [
@@ -71,4 +72,5 @@ export const migrations: readonly Migration[] = [
   migration033,
   migration034,
   migration035,
+  migration036,
 ];

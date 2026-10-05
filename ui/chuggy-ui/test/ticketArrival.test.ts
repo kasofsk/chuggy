@@ -38,6 +38,7 @@ const ownRead = {
   configurationVersion: { name: "chuggy", number: 3 },
   program: [{ key: 1, evaluators: [{ key: 1 }] }],
   runTotals,
+  landedCommits: [{ repository: "site", commit: "a".repeat(40) }],
 };
 
 function ticketOf(body: Record<string, unknown>): TicketResponse {

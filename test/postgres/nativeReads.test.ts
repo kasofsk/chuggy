@@ -458,6 +458,7 @@ test("a ticket read carries the detail its project page carries", async () => {
     changedAt: seededEntryAt(4),
     revision: 1,
     revokedDependencies: [],
+    landedCommits: [],
   });
   const walled = await reads.ticket(partition, id(5));
   assert.deepEqual(walled?.escalation, {

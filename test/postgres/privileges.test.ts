@@ -1217,6 +1217,49 @@ test("the API reads a worker's artifact reservations and writes none", async () 
     );
 });
 
+/**
+ * What a ticket's landed commits are read from, and no more of it: a proposal's
+ * evidence and what it asked the forge for stay the finalizer's.
+ */
+test("the API reads the columns a ticket's landed commits are gathered from and writes none", async () => {
+  assert.deepEqual(
+    await harness.query(
+      `SELECT table_name, privilege_type,
+              string_agg(column_name, ',' ORDER BY column_name) AS columns
+         FROM information_schema.role_column_grants
+        WHERE grantee=$1 AND table_schema='public'
+          AND table_name IN ('finalization_change_proposal','commit_permit',
+                             'finalization_attempt','finalization_request')
+        GROUP BY table_name, privilege_type
+        ORDER BY table_name, privilege_type`,
+      [apiRole],
+    ),
+    [
+      {
+        table_name: "commit_permit",
+        privilege_type: "SELECT",
+        columns: "attempt,permit,project,tenant",
+      },
+      {
+        table_name: "finalization_attempt",
+        privilege_type: "SELECT",
+        columns: "attempt,project,repository,tenant",
+      },
+      {
+        table_name: "finalization_change_proposal",
+        privilege_type: "SELECT",
+        columns: "merge_commit,permit,project,request,tenant",
+      },
+      {
+        table_name: "finalization_request",
+        privilege_type: "SELECT",
+        columns:
+          "authorizing_seq,effect_position,held_since,hold_kind,hold_passes,project,request,tenant,ticket",
+      },
+    ],
+  );
+});
+
 test("the binding every evidence function opens with is nobody's to call", async () => {
   for (const role of [
     apiRole,

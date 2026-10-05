@@ -52,6 +52,7 @@ import {
   configurationVersionOf,
   type ConfigurationVersionRow,
 } from "./configurationVersion.ts";
+import { finalizerChangeProposalLandings } from "./finalizerChangeProposal.ts";
 import { projectRowCounter } from "./rows.ts";
 import { postgresTicketRunTotals } from "./runEvidence.ts";
 import { releasedBriefOf } from "./ticketBrief.ts";
@@ -585,7 +586,7 @@ async function readTicketRow(
   return found.rows[0];
 }
 
-/** One ticket with its brief and its run totals, which a project's page carries neither of. */
+/** One ticket with its brief, its run totals and its landed commits, which a project's page carries none of. */
 async function readTicket(
   pool: pg.Pool,
   partition: Partition,
@@ -596,6 +597,11 @@ async function readTicket(
   const brief = releasedBriefOf(row.brief);
   const configurationVersion = configurationVersionOf(row);
   const runTotals = await postgresTicketRunTotals(pool, partition, ticket);
+  const landedCommits = await finalizerChangeProposalLandings(
+    pool,
+    partition,
+    ticket,
+  );
   return {
     ...ticketResource(row),
     ...(brief === undefined ? {} : { brief }),
@@ -611,6 +617,7 @@ async function readTicket(
       ? {}
       : { program: parseDraftAuthoring(row.released_authoring).prog }),
     ...(runTotals === undefined ? {} : { runTotals }),
+    landedCommits,
   };
 }
 

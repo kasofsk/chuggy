@@ -117,7 +117,10 @@ import {
   selectorHandoffNoteBytesMax,
 } from "../../src/contract/http.ts";
 import { asTaskId, asTicketId } from "../../src/domain/ids.ts";
-import { asRepositoryId } from "../../src/interpreter/finalizer.ts";
+import {
+  asGitObjectId,
+  asRepositoryId,
+} from "../../src/interpreter/finalizer.ts";
 import {
   asForgeAccount,
   asForgeApp,
@@ -261,6 +264,7 @@ test("a ticket read emits exactly the keys the contract names", () => {
     configurationVersion,
     program: [{ key: 1, evaluators: [{ key: 1 }] }],
     runTotals,
+    landedCommits: [],
     ...ticketCarried,
   }).body as Record<string, unknown>;
   assert.deepEqual(
@@ -268,6 +272,52 @@ test("a ticket read emits exactly the keys the contract names", () => {
     Object.keys(ticketResponseSchema.shape).sort(),
   );
   assert.ok(ticketResponseSchema.safeParse(fullest).success);
+});
+
+/**
+ * A ticket reworked after a merge is finalized again, so it may land more than
+ * once, and a project binds more than one repository, so a commit alone does
+ * not say which tree it is in.
+ */
+test("a ticket read carries each commit its merges landed beside its repository", () => {
+  const landedCommits = [
+    {
+      repository: asRepositoryId("site"),
+      commit: asGitObjectId("a".repeat(40)),
+    },
+    {
+      repository: asRepositoryId("docs"),
+      commit: asGitObjectId("b".repeat(64)),
+    },
+  ];
+  const parsed = ticketResponseSchema.parse(
+    ticketResponse({
+      ticket: asTicketId(3),
+      phase: "Done",
+      sequence: 9,
+      landedCommits,
+      ...ticketCarried,
+    }).body,
+  );
+  assert.deepEqual(parsed.landedCommits, landedCommits);
+  assert.throws(() =>
+    ticketResponseSchema.parse({
+      ticket: 3,
+      phase: "Done",
+      sequence: 9,
+      landedCommits: ["a".repeat(40)],
+      ...ticketCarried,
+    }),
+  );
+  assert.throws(() =>
+    ticketResponseSchema.parse({
+      ticket: 3,
+      phase: "Done",
+      sequence: 9,
+      landedCommits: [{ commit: "a".repeat(40) }],
+      ...ticketCarried,
+    }),
+  );
 });
 
 test("a parked ticket names its wall and an unparked one names none", () => {
