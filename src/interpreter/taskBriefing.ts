@@ -92,7 +92,7 @@
 
 import {
   briefChecksMax,
-  briefIntentLinesMax,
+  briefIntentCharsMax,
   briefLinksMax,
 } from "../contract/brief.ts";
 import { resultReportCharsMax, textCodePointsCount } from "../contract/http.ts";
@@ -111,6 +111,7 @@ import {
   briefingLinesMax,
   firstCommandedCheckStage,
   taskConfigurationLineFault,
+  taskConfigurationLineUnreadable,
   type AuthoredTaskConfiguration,
   type PracticeId,
   type StageBlock,
@@ -153,7 +154,11 @@ import {
   type TaskPurpose,
 } from "./briefingTemplate.ts";
 export type { BriefingCarrier, TaskPurpose } from "./briefingTemplate.ts";
-import { briefIntentLines, type DraftBrief } from "./ticketBrief.ts";
+import {
+  briefIntentLines,
+  type BriefIntent,
+  type DraftBrief,
+} from "./ticketBrief.ts";
 import {
   resolveTaskAuthority,
   taskAuthorityGrant,
@@ -599,18 +604,33 @@ function briefingReportsFault(
   return undefined;
 }
 
+/**
+ * What the ticket's own intent has to be to render. It is one text bounded as a
+ * whole, so the bound is taken over all of it and a line of it is refused only
+ * for what it cannot print, however long it is and however many there are.
+ */
+function briefingTicketIntentFault(
+  intent: BriefIntent,
+): BriefingFault | undefined {
+  if (textCodePointsCount(intent) > briefIntentCharsMax) return "TextTooLong";
+  return briefIntentLines(intent).some(taskConfigurationLineUnreadable)
+    ? "TextUnreadable"
+    : undefined;
+}
+
 /** What the ticket's own brief has to be to render, which is bounded and printable. */
 function briefingTicketBriefFault(
   brief: DraftBrief | undefined,
 ): BriefingFault | undefined {
-  return brief === undefined
-    ? undefined
-    : briefingListsFault([
-        [briefingTicketTitleLines(brief), 1],
-        [briefIntentLines(brief.intent), briefIntentLinesMax],
-        [brief.links, briefLinksMax],
-        [brief.checks, briefChecksMax],
-      ]);
+  if (brief === undefined) return undefined;
+  return (
+    briefingListsFault([[briefingTicketTitleLines(brief), 1]]) ??
+    briefingTicketIntentFault(brief.intent) ??
+    briefingListsFault([
+      [brief.links, briefLinksMax],
+      [brief.checks, briefChecksMax],
+    ])
+  );
 }
 
 /** A title renders as one line, or as none where the brief named none. */

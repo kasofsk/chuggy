@@ -146,7 +146,7 @@ function TicketCard(props: {
   const row = props.row;
   return (
     <li className="overview-card flex flex-col gap-2 rounded-3 border border-edge bg-surface-1 p-3">
-      <div className="overview-card-title text-lg text-ink-1">
+      <div className="overview-card-title text-lg text-ink-1 wrap-anywhere">
         <TicketTitleWords
           partition={props.partition}
           ticket={row.ticket}

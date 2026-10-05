@@ -29,13 +29,23 @@ import {
   nativeHttpRoutes,
 } from "../../src/contract/http.ts";
 import { sessionBearerPrefix } from "../../src/contract/sessionPlane.ts";
-import { asSessionId } from "../../src/interpreter/agentSession.ts";
+import {
+  asSessionId,
+  type SessionKind,
+} from "../../src/interpreter/agentSession.ts";
+import { nativeWeb } from "../../src/interpreter/nativeWeb.ts";
+import {
+  asAuthorityKind,
+  asAuthoritySubject,
+  type Submission,
+} from "../../src/interpreter/operationInbox.ts";
 import { asPrincipal } from "../../src/interpreter/principal.ts";
 import {
   asProjectId,
   asTenantId,
   type Partition,
 } from "../../src/interpreter/projectStore.ts";
+import { openExecutionBacklogGuard } from "../../src/interpreter/schedulerContext.ts";
 import { routerServed } from "./routerFixtures.ts";
 import { unservedNativeWeb } from "./threadFixtures.ts";
 
@@ -73,7 +83,11 @@ function recorded(reached: string[], port: string): never {
 }
 
 /** The app as a deployment composes it, every optional port present so every route is served. */
-function scopedApp(reached: string[], web?: ServedNativeWeb) {
+function scopedApp(
+  reached: string[],
+  web?: ServedNativeWeb,
+  kind: SessionKind = "Lead",
+) {
   return createNativeHttpApp(
     web ?? recorded(reached, "web"),
     twoBearerAuthentication(
@@ -91,8 +105,8 @@ function scopedApp(reached: string[], web?: ServedNativeWeb) {
             secret === sessionToken
               ? {
                   partition: own,
-                  session: asSessionId("lead"),
-                  kind: "Lead" as const,
+                  session: asSessionId(kind),
+                  kind,
                   principal,
                 }
               : undefined,
@@ -331,6 +345,123 @@ test("a session bearer reads its own project's held proposals and may not answer
     headers: { authorization: `Bearer ${sessionToken}` },
   });
   assert.deepEqual(reached, ["proposalReviews.pending"]);
+});
+
+/**
+ * The interpreter's own submit behind the app, over a membership that reaches
+ * `own` and nothing else and an inbox that keeps what it was offered, so what
+ * is read is what the door let through and what it asked first.
+ */
+function revokingWeb(authorized: string[], accepted: Submission[]) {
+  const authority = {
+    kind: asAuthorityKind("User"),
+    subject: asAuthoritySubject("member"),
+  };
+  return nativeWeb(
+    {
+      authorize: (asked, partition, access) => {
+        authorized.push(
+          `${asked}:${partition.tenant}/${partition.project}:${access}`,
+        );
+        return Promise.resolve(
+          partition.tenant === own.tenant && partition.project === own.project
+            ? authority
+            : undefined,
+        );
+      },
+      authorizeTenant: () => Promise.resolve(undefined),
+    },
+    recorded([], "reads"),
+    {
+      accept: (submission) => {
+        accepted.push(submission);
+        return Promise.resolve({
+          accepted: "Accepted",
+          operation: {
+            partition: submission.partition,
+            operation: submission.operation,
+            ordinal: 1,
+            state: "Pending",
+            authorityKind: authority.kind,
+            admission: "CorrectnessReducing",
+            lifecycleGeneration: 1,
+          },
+        });
+      },
+      cancel: () => Promise.resolve({ cancelled: "Unknown" }),
+      operation: () => Promise.resolve(undefined),
+    },
+    recorded([], "authoring"),
+    recorded([], "notifications"),
+    openExecutionBacklogGuard,
+  );
+}
+
+/** The revocation of one ticket as a session's tool posts it, the operation being its own key. */
+function revocation(partition: Partition, token: string, ticket: number) {
+  const operation = `session-${String(ticket)}`;
+  return {
+    method: "POST" as const,
+    url: `${projectPath(partition)}/operations`,
+    headers: {
+      authorization: `Bearer ${token}`,
+      "content-type": nativeHttpMediaType,
+      "idempotency-key": operation,
+    },
+    payload: { operation, mutation: { mutation: "RevokeTicket", ticket } },
+  };
+}
+
+test("a thread's bearer revokes a ticket in its own project, as its member and through its session", async () => {
+  const authorized: string[] = [];
+  const accepted: Submission[] = [];
+  await using app = scopedApp([], revokingWeb(authorized, accepted), "Thread");
+  const answered = await app.inject(revocation(own, sessionToken, 26));
+  assert.equal(answered.statusCode, 202);
+  assert.deepEqual(answered.json(), {
+    operation: "session-26",
+    state: "Pending",
+  });
+  assert.deepEqual(authorized, [`${principal}:acme/atlas:Mutate`]);
+  assert.deepEqual(
+    accepted.map(({ partition, command, viaSession }) => ({
+      partition,
+      command,
+      viaSession,
+    })),
+    [
+      {
+        partition: own,
+        command: {
+          version: 1,
+          command: "Decide",
+          ticketCommand: { type: "RevokeTicket", value: 26 },
+        },
+        viaSession: asSessionId("Thread"),
+      },
+    ],
+  );
+});
+
+test("a thread's bearer revoking in another project is answered as a member who cannot reach it, and reaches nothing", async () => {
+  const authorized: string[] = [];
+  const accepted: Submission[] = [];
+  await using app = scopedApp([], revokingWeb(authorized, accepted), "Thread");
+  for (const partition of elsewhere) {
+    authorized.length = 0;
+    const confined = await app.inject(revocation(partition, sessionToken, 26));
+    assert.deepEqual(authorized, [], "the door asked the membership");
+    const unauthorized = await app.inject(revocation(partition, oidcToken, 26));
+    assert.equal(authorized.length, 1, "the member's own was never asked");
+    assert.equal(confined.statusCode, 404);
+    assert.equal(confined.statusCode, unauthorized.statusCode);
+    assert.equal(confined.body, unauthorized.body);
+    assert.equal(
+      confined.headers["content-type"],
+      unauthorized.headers["content-type"],
+    );
+  }
+  assert.deepEqual(accepted, []);
 });
 
 test("the admission reads the matched route, folds HEAD into GET and refuses what it cannot place", () => {

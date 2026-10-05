@@ -2,35 +2,53 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { test } from "node:test";
 
+import type pg from "pg";
+
 import { nativeHttpMediaType } from "../../src/contract/http.ts";
 import {
+  draftInitializationResponseSchema,
+  draftResponseSchema,
   leadInquiriesResponseSchema,
   leadInquiryAcceptedSchema,
   leadInquiryResponseSchema,
+  type DraftResponse,
 } from "../../src/contract/responses.ts";
 
 import { createNativeHttpApp } from "../../src/adapters/http/server.ts";
+import { postgresPinnedConfigurations } from "../../src/adapters/postgres/pinnedConfigurations.ts";
 import { postgresPool } from "../../src/adapters/postgres/pool.ts";
 import type { ProjectAccess } from "../../src/interpreter/projectAccess.ts";
 import { postgresExecutionBacklogGuard } from "../../src/adapters/postgres/schedulerContext.ts";
 import { apiRole } from "../../src/adapters/postgres/schema.ts";
+import { postgresTicketBrief } from "../../src/adapters/postgres/ticketBrief.ts";
 import { composeNativeWeb } from "../../src/compose.ts";
+import { asConfigurationRevisionId } from "../../src/interpreter/authoring.ts";
 import { asPrincipal } from "../../src/interpreter/nativeWeb.ts";
 import { postgresInstallationAuthority } from "../../src/adapters/postgres/installationAuthority.ts";
+import type { ConfigurationPin } from "../../src/interpreter/projectDecision.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 import {
   projectWriterDecide,
   projectWriterLoad,
 } from "../../src/interpreter/projectWriter.ts";
 import {
+  blessedPracticeCatalog,
+  composeTaskInvocation,
+} from "../../src/interpreter/taskBriefing.ts";
+import { plainAuthoring } from "../actor/harness.ts";
+import {
+  postgresHarnessBinding,
+  postgresHarnessConfiguration,
   postgresHarnessHeld,
   postgresHarnessKeying,
   postgresHarnessOpen,
   postgresHarnessProject,
+  postgresHarnessSubmission,
   postgresHarnessUrl,
   postgresHarnessWriter,
   type PostgresHarness,
 } from "./harness.ts";
+import { schedulerRolePool } from "./schedulerHarness.ts";
 
 function apiUrl(): string {
   const url = new URL(postgresHarnessUrl());
@@ -291,6 +309,182 @@ test("real HTTP ingress asks the lead a question and lists it back", async () =>
     );
   } finally {
     await app.close();
+    await pool.end();
+    await harness.close();
+  }
+});
+
+/** The headers a member's request carries, the media type the API reads a body as among them. */
+const ingressHeaders = {
+  authorization: "Bearer token",
+  "content-type": nativeHttpMediaType,
+};
+
+/** Files one draft through the real door with `intent` and reads it back over the wire. */
+async function ingressDraft(
+  root: string,
+  revision: string,
+  repository: string,
+  intent: string,
+): Promise<DraftResponse> {
+  const initialized = await fetch(`${root}/draft-initializations/${revision}`, {
+    headers: ingressHeaders,
+  });
+  assert.equal(initialized.status, 200);
+  const { fence } = draftInitializationResponseSchema.parse(
+    await initialized.json(),
+  );
+  const filed = await fetch(`${root}/drafts`, {
+    method: "POST",
+    headers: ingressHeaders,
+    body: JSON.stringify({
+      configurationRevision: revision,
+      configurationDigest: fence.configurationDigest,
+      expectedProjectSequence: fence.projectSequence,
+      authoring: {
+        dependencies: [...plainAuthoring.deps],
+        program: plainAuthoring.prog,
+      },
+      brief: { intent, links: [], repository },
+    }),
+  });
+  const answered = await filed.text();
+  assert.equal(filed.status, 201, answered);
+  const draft = draftResponseSchema.parse(JSON.parse(answered));
+  const read = await fetch(`${root}/drafts/${String(draft.ticket)}`, {
+    headers: ingressHeaders,
+  });
+  assert.equal(read.status, 200);
+  assert.equal(
+    draftResponseSchema.parse(await read.json()).brief?.intent,
+    intent,
+    "the draft's row holds the intent as it was written",
+  );
+  return draft;
+}
+
+/** Releases one draft through the real door, which is what freezes the brief a launch reads. */
+async function ingressRelease(root: string, draft: DraftResponse) {
+  const released = await fetch(`${root}/operations`, {
+    method: "POST",
+    headers: { ...ingressHeaders, "idempotency-key": `key-${randomUUID()}` },
+    body: JSON.stringify({
+      operation: `release-${randomUUID()}`,
+      mutation: {
+        mutation: "ReleaseDraft",
+        ticket: draft.ticket,
+        authoringVersion: draft.authoringVersion,
+        configurationRevision: draft.configurationRevision,
+      },
+    }),
+  });
+  assert.equal(released.status, 202, await released.text());
+}
+
+/** The lines the launch of `ticket` is briefed with as the ticket's own words, composed as the scheduler composes them: from the brief and the pinned configuration its own credential reads. */
+async function ingressBriefedIntent(
+  scheduler: pg.Pool,
+  partition: Partition,
+  ticket: number,
+  pin: ConfigurationPin,
+): Promise<readonly string[] | undefined> {
+  const brief = await postgresTicketBrief(scheduler).brief(partition, ticket);
+  const pinned = await postgresPinnedConfigurations(scheduler).configuration(
+    partition,
+    pin,
+  );
+  if (brief === undefined || pinned.read !== "Configuration")
+    assert.fail("the released ticket has no brief or no pinned configuration");
+  const composed = composeTaskInvocation(blessedPracticeCatalog, {
+    purpose: "Work",
+    pin,
+    configuration: pinned.configuration,
+    runtime: { changedFiles: [], handoff: [] },
+    priorWorkReports: { reports: [] },
+    priorEvaluationReports: { reports: [] },
+    brief,
+    grant: {
+      tools: [],
+      credentials: [],
+      network: false,
+      filesystem: "WriteWorkspace",
+      mayCompleteTask: false,
+    },
+  });
+  if (composed.composed !== "Composed")
+    assert.fail(`the launch is blocked: ${composed.fault}`);
+  return composed.invocation.briefing.sections.find(
+    (section) => section.section === "TicketIntent",
+  )?.lines;
+}
+
+/**
+ * An intent as its author wrote it, one paragraph on one line and one of many
+ * short lines, each past what a line and a count of lines used to admit.
+ */
+const ingressIntents = [
+  [`${"word ".repeat(399)}words`],
+  Array.from({ length: 40 }, (_, at) => `Line ${String(at)} of the statement.`),
+];
+
+/**
+ * The whole way an intent goes, over the REAL composition: in at the door, into
+ * the draft's row, out over the wire, through a release, and into the briefing
+ * a launch composes from what the release froze. A suite over a double settles
+ * each step and not that the same text survives all of them.
+ */
+test("real HTTP ingress admits an intent of one long line, and one of many lines, and a launch is briefed with each as written", async () => {
+  const harness = await postgresHarnessOpen();
+  const partition = await postgresHarnessProject(harness.store, "http-intent");
+  harness.access.grant({
+    partition,
+    principal,
+    access: new Set(["Read", "Mutate"]),
+  });
+  const repository = await postgresHarnessBinding(harness, partition);
+  const revision = asConfigurationRevisionId(`config-${randomUUID()}`);
+  const configured = await harness.authoring.createConfiguration({
+    partition,
+    authority: postgresHarnessSubmission(partition, "http-intent").authority,
+    revision,
+    canonical: postgresHarnessConfiguration,
+  });
+  assert.equal(configured.created, "Created");
+  const { pool, app } = composedIngress(harness.access);
+  const scheduler = schedulerRolePool();
+  const address = await app.listen({ host: "127.0.0.1", port: 0 });
+  const root = `${address}/api/v1/tenants/${partition.tenant}/projects/${partition.project}`;
+  try {
+    const writer = postgresHarnessWriter(harness);
+    let memory = await projectWriterLoad(
+      writer,
+      await postgresHarnessHeld(harness.store, partition, "http-intent"),
+    );
+    for (const lines of ingressIntents) {
+      const draft = await ingressDraft(
+        root,
+        revision,
+        repository,
+        lines.join("\n"),
+      );
+      await ingressRelease(root, draft);
+      const input = await harness.discovery.next(partition, 300);
+      assert.ok(input !== undefined);
+      const decision = await projectWriterDecide(writer, memory, input);
+      memory = decision.memory;
+      assert.equal(decision.decided.decided, "Committed");
+      assert.deepEqual(
+        await ingressBriefedIntent(scheduler, partition, draft.ticket, {
+          configurationRevision: revision,
+          configurationDigest:
+            configured.created === "Created" ? configured.revision.digest : "",
+        }),
+        lines,
+      );
+    }
+  } finally {
+    await app.close();
+    await scheduler.end();
     await pool.end();
     await harness.close();
   }

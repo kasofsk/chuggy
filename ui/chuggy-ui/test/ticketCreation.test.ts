@@ -14,7 +14,6 @@ import {
   briefBranchPrefix,
   briefChecksMax,
   briefIntentCharsMax,
-  briefIntentLinesMax,
   briefLineCharsMax,
   briefLinkScheme,
   briefLinksMax,
@@ -38,7 +37,6 @@ import {
   creationBranchPrefixedSentence,
   creationBootstrapLine,
   creationConfigurationLabel,
-  creationIntentLines,
   creationOffered,
   latestReadyConfiguration,
   creationReleaseMutation,
@@ -53,25 +51,16 @@ import {
   creationSummary,
 } from "./ticketCreationFixture.ts";
 
-/** An intent that prints exactly the given number of lines. */
-function intentOf(lines: number): string {
-  return Array.from({ length: lines }, (_, at) => `line ${String(at)}`).join(
-    "\n",
-  );
+/** An intent of the given character count, written as one line. */
+function intentOfChars(chars: number): string {
+  return "a".repeat(chars);
 }
 
-/**
- * The longest intent of the given character count, its newlines included: every
- * line but the last at the line bound, so the character bound is what the whole
- * turns on rather than either of the other two.
- */
-function intentOfChars(chars: number): string {
-  const filled = briefIntentLinesMax - 1;
-  const last = chars - filled * briefLineCharsMax - filled;
-  return [
-    ...Array.from({ length: filled }, () => "a".repeat(briefLineCharsMax)),
-    "a".repeat(last),
-  ].join("\n");
+/** An intent of the given character count, its newlines included, written a line to every character. */
+function intentOfLines(chars: number): string {
+  return Array.from({ length: Math.ceil(chars / 2) }, () => "a")
+    .join("\n")
+    .padEnd(chars, "a");
 }
 
 /** A project binding nothing, which is what every case but the repository
@@ -344,18 +333,16 @@ test("each bound the contract states is where the form's verdict turns", () => {
   const linkAt = `${briefLinkScheme}${"a".repeat(briefLineCharsMax - briefLinkScheme.length)}`;
   const branchAt = "b".repeat(briefBranchCharsMax - briefBranchPrefix.length);
   const atBound: readonly Partial<TicketCreationForm>[] = [
-    { intent: "x".repeat(briefLineCharsMax) },
-    { intent: intentOf(briefIntentLinesMax) },
     { intent: intentOfChars(briefIntentCharsMax) },
+    { intent: intentOfLines(briefIntentCharsMax) },
     { links: Array.from({ length: briefLinksMax }, () => "https://a.test") },
     { links: [linkAt] },
     { branchName: branchAt },
     { targetBranchName: branchAt },
   ];
   const overBound: readonly Partial<TicketCreationForm>[] = [
-    { intent: "x".repeat(briefLineCharsMax + 1) },
     { intent: intentOfChars(briefIntentCharsMax + 1) },
-    { intent: intentOf(briefIntentLinesMax + 1) },
+    { intent: intentOfLines(briefIntentCharsMax + 1) },
     {
       links: Array.from({ length: briefLinksMax + 1 }, () => "https://a.test"),
     },
@@ -413,43 +400,41 @@ test("the check lines a brief appends are bounded, trimmed and omitted when empt
   expect(none.assembled === "Body" && none.body.brief.checks).toBe(undefined);
 });
 
-test("an intent is required, and bounded in characters and in printed lines", () => {
+test("an intent is required, and bounded as a whole and by nothing a line at a time", () => {
   expect(faultFields(creationForm({ intent: "   " }))).toStrictEqual([
     "intent",
   ]);
-  expect(
-    faultFields(creationForm({ intent: intentOfChars(briefIntentCharsMax) })),
-  ).toStrictEqual([]);
-  expect(
-    faultFields(
-      creationForm({ intent: intentOfChars(briefIntentCharsMax + 1) }),
-    ),
-  ).toStrictEqual(["intent"]);
-  const tooManyLines = Array.from(
-    { length: briefIntentLinesMax + 1 },
-    (_, at) => `line ${String(at)}`,
-  ).join("\n");
-  expect(faultFields(creationForm({ intent: tooManyLines }))).toStrictEqual([
-    "intent",
+  for (const intent of [
+    intentOfChars(briefIntentCharsMax),
+    intentOfLines(briefIntentCharsMax),
+  ]) {
+    expect(intent).toHaveLength(briefIntentCharsMax);
+    expect(faultFields(creationForm({ intent }))).toStrictEqual([]);
+    expect(faultFields(creationForm({ intent: `${intent}a` }))).toStrictEqual([
+      "intent",
+    ]);
+  }
+});
+
+test("an intent refused for its length is told the whole bound, and nothing about its lines", () => {
+  const pasted = creationForm({
+    intent: intentOfChars(briefIntentCharsMax + 1),
+  });
+  expect(faultFields(pasted)).toStrictEqual(["intent"]);
+  expect(faultReasons(pasted)).toStrictEqual([
+    `state what this ticket is for, in at most ${String(briefIntentCharsMax)} characters`,
   ]);
 });
 
-test("an intent refused for one long line is told to break lines, not to shorten", () => {
-  const pasted = creationForm({ intent: "x".repeat(briefLineCharsMax + 88) });
-  expect(faultFields(pasted)).toStrictEqual(["intent"]);
-  expect(faultReasons(pasted)[0]).toContain(String(briefLineCharsMax));
-  expect(faultReasons(pasted)[0]).toContain(
-    "break the sentence across lines rather than shorten it",
+test("an intent is sent under one newline, with its blank lines as written", () => {
+  const assembled = creationBodyFrom(
+    creationInitialization,
+    creationForm({ intent: "a\r\n\r\n b \r" }),
+    noBindings,
   );
-});
-
-test("a line with nothing on it prints nothing, so it counts for nothing", () => {
-  expect(creationIntentLines("a\r\n\r\n b \n")).toStrictEqual(["a", " b "]);
-  const blankHeavy = Array.from(
-    { length: briefIntentLinesMax },
-    (_, at) => `line ${String(at)}`,
-  ).join("\n\n");
-  expect(faultFields(creationForm({ intent: blankHeavy }))).toStrictEqual([]);
+  expect(
+    assembled.assembled === "Body" && assembled.body.brief.intent,
+  ).toStrictEqual("a\n\n b");
 });
 
 test("a value the offered set does not hold is still offered as the one chosen", () => {
