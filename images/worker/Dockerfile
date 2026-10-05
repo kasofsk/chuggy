@@ -184,6 +184,24 @@ ENTRYPOINT ["node", "/usr/local/lib/chuggy/worker.mjs"]
 # The image this tree's own tickets run on.
 FROM worker-base AS worker
 
+# THE IMAGE SHIPS THE KETO `check-keto` STARTS. A pod has no docker and nothing
+# hands its gates an authority, so `.chug/tasks/_keto.sh` starts the `keto` on
+# PATH from the checkout's own model. The sqlite build of the release is the one
+# that runs, because `dsn: memory` in `.chug/tasks/keto/keto.yml` is an
+# in-memory sqlite, and the release's own container image carries a binary
+# linked against musl.
+USER 0:0
+ARG KETO_VERSION=26.2.0
+ARG KETO_SHA256=37aaa6248eccb337503d618978520b18df4cad979e175134a1b017c291457ad0
+RUN curl --proto '=https' --tlsv1.2 --fail --silent --show-error --location \
+    "https://github.com/ory/keto/releases/download/v${KETO_VERSION}/keto_${KETO_VERSION}-linux_sqlite_64bit.tar.gz" \
+    --output /tmp/keto.tgz \
+  && echo "${KETO_SHA256}  /tmp/keto.tgz" | sha256sum --check --quiet - \
+  && tar --extract --gzip --file /tmp/keto.tgz --directory /usr/local/bin keto \
+  && rm /tmp/keto.tgz \
+  && keto version
+USER 1000:1000
+
 # THE PRACTICES THE TREE DECLARES ARE INSTALLED FOR THE IMAGE'S USER. An agent
 # here is told to invoke them by name, and `check-roster` refuses a tree whose
 # roster does not resolve, so the roster is read off the tree's own
@@ -230,18 +248,15 @@ RUN cd /usr/local/lib/chuggy-core \
 # which is what makes the build depend on it. Nothing installed here ships: it
 # is a stage FROM the image, not the image.
 #
-# WHAT THIS PROVES IS THE IMAGE, NOT THE POD. The server gates are given
-# servers of the stage's own, because a build has no sidecars: Debian's
-# PostgreSQL, started as the image's own user, and Ory Keto from its release.
-# The sqlite build of Keto is the one that runs, because `dsn: memory` in
-# `.chug/tasks/keto/keto.yml` is an in-memory sqlite, and the release's own
-# container image carries a binary linked against musl. The URLs are the ones
-# `_postgres.sh` and `_keto.sh` accept in place of a container. In a pod the
-# servers are the site's: it names its PostgreSQL to the gates as `CHUG_PG_URL`
-# in its own environment, and nothing hands them a Keto yet
-# (kasofsk/chuggy#681), which a green build here does not say otherwise.
+# WHAT THIS PROVES IS THE IMAGE, NOT THE POD. A build has no sidecars, so the
+# PostgreSQL the server gates are given is the stage's own: Debian's, started
+# as the image's own user and named by the URL `_postgres.sh` accepts in place
+# of a container. In a pod it is the site's, which names it to the gates as
+# `CHUG_PG_URL` in its own environment. Keto is handed to the gates in neither
+# place: `_keto.sh` finds no docker and starts the `keto` the image ships, here
+# as it does in a pod.
 #
-# THE SERVERS' LOGS ARE PRINTED ON THE WAY OUT. A server that does not come up
+# THE POSTGRESQL LOG IS PRINTED ON THE WAY OUT. A server that does not come up
 # ends the stage with only the gate's could-not-run line.
 #
 # THE SERVER IS INITIALISED IN UTF-8 BY NAME. A build has no locale in its
@@ -262,19 +277,10 @@ RUN cd /usr/local/lib/chuggy-core \
 # Nothing in the step can read the allowance, so the count is stated.
 FROM worker AS roster
 USER 0:0
-ARG KETO_VERSION=26.2.0
-ARG KETO_SHA256=37aaa6248eccb337503d618978520b18df4cad979e175134a1b017c291457ad0
 RUN apt-get update \
   && apt-get install --yes --no-install-recommends postgresql-17 \
-  && curl --proto '=https' --tlsv1.2 --fail --silent --show-error --location \
-    "https://github.com/ory/keto/releases/download/v${KETO_VERSION}/keto_${KETO_VERSION}-linux_sqlite_64bit.tar.gz" \
-    --output /tmp/keto.tgz \
-  && echo "${KETO_SHA256}  /tmp/keto.tgz" | sha256sum --check --quiet - \
-  && tar --extract --gzip --file /tmp/keto.tgz --directory /usr/local/bin keto \
-  && rm /tmp/keto.tgz \
   && apt-get clean \
   && rm -rf /var/lib/apt/lists/*
-COPY .chug/tasks/keto/keto.yml .chug/tasks/keto/namespaces.ts /etc/keto/
 COPY --chown=1000:1000 . /workspace/tree
 USER 1000:1000
 RUN cd /workspace/tree \
@@ -282,7 +288,6 @@ RUN cd /workspace/tree \
   && initdb --pgdata /tmp/postgres --auth trust --username postgres \
     --encoding UTF8 --locale C >/dev/null \
   && pg_ctl --pgdata /tmp/postgres --log /tmp/postgres.log --options '-k /tmp' --wait start \
-  && (keto serve -c /etc/keto/keto.yml >/tmp/keto.log 2>&1 &) \
   && git init --quiet --initial-branch main \
   && git -c user.name=roster -c user.email=roster@chuggy.invalid add --all \
   && git -c user.name=roster -c user.email=roster@chuggy.invalid commit --quiet \
@@ -291,11 +296,9 @@ RUN cd /workspace/tree \
   && CHUG_CI_FULL=1 \
     VITEST_MAX_WORKERS=4 \
     CHUG_PG_URL=postgres://postgres@127.0.0.1:5432/postgres \
-    CHUG_KETO_READ_URL=http://127.0.0.1:4466/ \
-    CHUG_KETO_WRITE_URL=http://127.0.0.1:4467/ \
     ./.chug/tasks/ci.sh \
   && touch /workspace/roster-clean \
-  || { tail -n 50 /tmp/postgres.log /tmp/keto.log; exit 1; }
+  || { tail -n 50 /tmp/postgres.log; exit 1; }
 
 # The image any other tree runs on: the base and the toolchains a Python or Rust
 # tree builds with. Rust's belongs to the image's user, so an attempt can fill
