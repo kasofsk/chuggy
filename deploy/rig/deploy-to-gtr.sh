@@ -58,11 +58,38 @@
 # when anything under the migrations directory changed, whatever its name: the
 # list there is what the Job applies. When it does, the landing takes a dump
 # first, into the directory the caller names — a ledger that has moved forward
-# is not walked back by reverting the fabric commit, and the dump is the only
-# way below it. Then it merges, asks Flux for the source and the applications
-# through the annotation the flux client itself writes, waits for the migrate
-# Job and every rollout, and requires each Deployment to run the image its
+# is not walked back by reverting the fabric commit, and a dump is the only
+# way below it. The Job takes a dump of its own before it migrates and keeps
+# it in the cluster; the landing's is the copy outside it. Then it merges,
+# waits for the rollout as the fabric orders it, and holds the cluster to the
+# manifests: the migrate Job complete, and each Deployment on the image its
 # manifest names.
+#
+# THE FABRIC ORDERS THE ROLLOUT, AND A LANDING WAITS ON THE LAST OF IT. Flux
+# applies a fabric commit in layers, a Kustomization each: `apps`, then
+# `chuggy-migrate`, which applies the migrate Job, then `chuggy`, which
+# applies the services. Each waits for what it applied to be healthy, and
+# each after the first applies a commit only once the layer before it is
+# Ready at that same commit. So `chuggy` having applied the merge is the Job
+# complete and every service applied and healthy, and that is what a landing
+# waits for once the source has the merge. `apps` having applied it says
+# nothing of the release: the Job is made only after that.
+#
+# THE SOURCE IS ASKED TO RECONCILE AND NO LAYER IS. The source fetches on an
+# interval, and asking has it fetch the merge now. A layer needs no asking:
+# kustomize-controller queues every Kustomization that reads a source when the
+# source's revision moves, and one whose dependency has not yet applied that
+# revision puts itself off and asks again until it has. A request to such a
+# layer is put off the same way, and starts nothing the merge had not.
+#
+# A MIGRATION THAT FAILED IS NOT WAITED OUT AS IF IT WERE SLOW. When the Job
+# fails, `chuggy-migrate` has attempted the merge and reads not Ready, for the
+# reason `HealthCheckFailed` and with the Job named as `Failed` in the
+# message; `chuggy` then applies nothing, so every service is left on the
+# release before it. A landing reads that at each asking and ends on it as a
+# finding that names the Job's logs. The same reason over a Job the message
+# does not call `Failed` is the layer's own wait run out on a Job still
+# running, and the landing goes on waiting.
 #
 # A RELEASE GOES OUT OVER LIVE ATTEMPTS, because nothing it restarts is owned by
 # one: an attempt in a pod keeps its lease through the worker plane, and that
@@ -140,8 +167,9 @@
 #   CHUG_RELEASE_GATE     0 skips the gate, and the pull request says so;
 #                         full runs every gate; unset or empty runs the gates
 #                         the change affects. Any other value is refused.
-#   CHUG_RELEASE_WAIT_SECS  how long a landing run waits on each of Flux, the
-#                         migrate Job and a rollout
+#   CHUG_RELEASE_WAIT_SECS  how long a landing run waits on each of the
+#                         fabric's source, the last of its layers, the migrate
+#                         Job and a Deployment's rollout
 #   CHUG_RELEASE_HEARD_SECS  how long a landing waits to hear from an attempt
 #                         that still runs once the rollout is done. The default
 #                         is two of the worker core's heartbeat intervals
@@ -480,27 +508,42 @@ land() { # <pull request url>
 	printf '%s' "$merged" | grep -Eqx '[0-9a-f]{40}' || refuse "the merge commit of pull request $pr_number could not be read"
 	say "merged as $merged"
 
-	# The flux client's `reconcile --with-source` is this annotation on the
-	# source, a wait for its artifact, and the same annotation on the
-	# Kustomization.
-	wait_for() { # <what> <command...>  the command prints where it is, which must reach the merge
+	# A wait is for the command to print the merge, which it does once what it
+	# asks after has reached it; between askings the check may end the landing.
+	wait_for() { # <what> <check> <command...>
 		what="$1"
-		shift
+		unless="$2"
+		shift 2
 		waited=0
 		until "$@" 2>/dev/null | grep -Fq "$merged"; do
+			"$unless"
 			[ "$waited" -lt "$wait_secs" ] || fail "$what did not reach $merged within ${wait_secs}s"
 			sleep 5
 			waited=$((waited + 5))
 		done
 	}
-	source_name="$(kube -n flux-system get kustomization apps -o jsonpath='{.spec.sourceRef.name}' 2>/dev/null || true)"
-	[ -n "$source_name" ] || refuse "the apps Kustomization names no source, so there is nothing to reconcile"
+	# A migrate Job that failed, as kustomize-controller says it of the layer
+	# that applies the Job: the revision that layer attempted, the reason of
+	# its Ready condition, and a message naming what its health check found
+	# failed. The header argues each term.
+	unless_migration_failed() {
+		case "$(kube -n flux-system get kustomization chuggy-migrate -o jsonpath='{.status.lastAttemptedRevision} {.status.conditions[?(@.type=="Ready")].reason} {.status.conditions[?(@.type=="Ready")].message}' 2>/dev/null || true)" in
+		*"$merged HealthCheckFailed "*"Job/$namespace/$job status: 'Failed'"*)
+			fail "$job failed, so Flux applied no service of $tag and each is left on the release before it; read \`kubectl --context $context -n $namespace logs job/$job -c dump\`, and \`-c migrate\` if the dump completed"
+			;;
+		esac
+	}
+	# The source alone is asked to reconcile, as the header argues, through
+	# the annotation the flux client's own `reconcile` writes.
+	source_name="$(kube -n flux-system get kustomization chuggy -o jsonpath='{.spec.sourceRef.name}' 2>/dev/null || true)"
+	[ -n "$source_name" ] || refuse "the chuggy Kustomization names no source, so there is nothing to reconcile"
 	stamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 	kube -n flux-system annotate --overwrite "gitrepository/$source_name" "reconcile.fluxcd.io/requestedAt=$stamp" >/dev/null || refuse "the source could not be asked to reconcile"
-	wait_for "the fabric source" kube -n flux-system get "gitrepository/$source_name" -o jsonpath='{.status.artifact.revision}'
-	kube -n flux-system annotate --overwrite kustomization/apps "reconcile.fluxcd.io/requestedAt=$stamp" >/dev/null || refuse "the apps Kustomization could not be asked to reconcile"
-	wait_for "the apps Kustomization" kube -n flux-system get kustomization apps -o jsonpath='{.status.lastAppliedRevision}'
+	wait_for "the fabric source" true kube -n flux-system get "gitrepository/$source_name" -o jsonpath='{.status.artifact.revision}'
+	wait_for "the chuggy Kustomization" unless_migration_failed kube -n flux-system get kustomization chuggy -o jsonpath='{.status.lastAppliedRevision}'
 
+	# That is Flux's account of the release. The Job the manifest names is
+	# asked after itself, and then each Deployment.
 	kube -n "$namespace" wait --for=condition=complete "job/$job" "--timeout=${wait_secs}s" >/dev/null \
 		|| fail "$job did not complete; read its log before anything else"
 
@@ -767,7 +810,7 @@ done
 		printf '\nWhat moved under the migrations the Job applies, below which the only way back is a restore:\n'
 		printf '%s\n' "$migrations" | sed 's|^src/adapters/postgres/schema/migrations/|  |'
 	else
-		printf '\nNo migration: the migrate Job is a no-op.\n'
+		printf '\nNo migration: the migrate Job applies nothing.\n'
 	fi
 	printf '\nGate at %s: %s.\n' "$tag" "$gate"
 } >"$work/message"
