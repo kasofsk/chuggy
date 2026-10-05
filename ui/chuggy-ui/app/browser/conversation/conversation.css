@@ -110,11 +110,13 @@
     color: var(--ink-inverse);
   }
 
-  .conversation-send:disabled {
+  .conversation-send:disabled,
+  .conversation-send[aria-disabled="true"] {
     cursor: default;
   }
 
-  .conversation-send:disabled > .conversation-send-mark {
+  .conversation-send:disabled > .conversation-send-mark,
+  .conversation-send[aria-disabled="true"] > .conversation-send-mark {
     background: var(--surface-2);
     color: var(--ink-3);
   }

@@ -3,7 +3,7 @@
   "name": "chuggy-development-fable",
   "configuration": {
     "version": 1,
-    "image": "registry.chuggy.internal/chuggy/worker@sha256:8a5711bc6537a2d0d25c101294a125b430f9ff25efcb0d059c84a10a171d37e1",
+    "image": "registry.chuggy.internal/chuggy/worker@sha256:97cb5292d814c9790c5731898dd3e0e1f28487d5358058210109b2351e5d72fc",
     "authority": {
       "tools": ["claude-code", "shell"],
       "credentials": ["chuggy-github-worker", "claude-code"],

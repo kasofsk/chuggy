@@ -36,7 +36,7 @@
  * again at once, aimed at the turn behind, so a press that follows one of Stop
  * within a beat is taken for the same press and does nothing, and so is a
  * second Stop until the page's door has answered the first. The button is
- * drawn the same throughout.
+ * drawn as taking no press for exactly as long as it takes none.
  *
  * A CLICK THAT SENDS BEGINS THE SAME BEAT. The button it leaves under the
  * pointer is Stop for the message just sent, and the second click of a double
@@ -76,7 +76,7 @@ import type {
   MessageStatus,
   ThreadMessageLike,
 } from "@assistant-ui/react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
 import {
@@ -212,9 +212,9 @@ function conversationAppendedText(message: AppendMessage): string {
 }
 
 /** How long after a press of Stop, or a click that sent, the composer's button
- * takes no other: longer than a double click or a startled second tap, and
- * shorter than a member takes to mean the turn behind. */
-export const conversationStopBeatMs = 700;
+ * takes no other: the second press of a double click, and nothing a member
+ * pressed after seeing what the button had become. */
+export const conversationStopBeatMs = 300;
 
 /** The last press of its button the surface took. */
 interface ConversationStopPress {
@@ -226,36 +226,80 @@ interface ConversationStopPress {
 interface ConversationStopBeat {
   /** Whether a press of `button` now is one to do nothing for. */
   readonly ignores: (button: ConversationComposerButton) => boolean;
+  /** Whether `button` is drawn as one whose press does nothing. */
+  readonly rests: (button: ConversationComposerButton) => boolean;
   /** Notes a press of Stop as taken, answered when `stop` is. */
   readonly pressed: (stop: Promise<void>) => void;
   /** Notes a click that sent, which no door answers. */
   readonly sent: () => void;
 }
 
+/** What is drawn of the last press: its beat, and a stop no door has answered. */
+interface ConversationStopResting {
+  readonly beat: boolean;
+  readonly unanswered: boolean;
+}
+
+/** The presses the surface took of its button, and what is drawn of the last:
+ * an older stop's answer changes nothing drawn of a newer press. The beat is
+ * drawn as over by the clock a press is asked against, so a timer that fires
+ * ahead of that clock waits out what is left of it. */
 function useConversationStopBeat(): ConversationStopBeat {
   const last = useRef<ConversationStopPress | undefined>(undefined);
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const [resting, setResting] = useState<ConversationStopResting>({
+    beat: false,
+    unanswered: false,
+  });
+  useEffect(
+    () => () => {
+      clearTimeout(timer.current);
+    },
+    [],
+  );
+  const taken = useCallback((answered: boolean): ConversationStopPress => {
+    const press = { atMs: performance.now(), answered };
+    last.current = press;
+    const over = (): void => {
+      const leftMs = conversationStopBeatMs - (performance.now() - press.atMs);
+      if (leftMs > 0) timer.current = setTimeout(over, leftMs);
+      else setResting((was) => ({ ...was, beat: false }));
+    };
+    clearTimeout(timer.current);
+    timer.current = setTimeout(over, conversationStopBeatMs);
+    setResting({ beat: true, unanswered: !answered });
+    return press;
+  }, []);
+  const ignores = useCallback((button: ConversationComposerButton) => {
+    const press = last.current;
+    if (press === undefined) return false;
+    if (performance.now() - press.atMs < conversationStopBeatMs) return true;
+    return button === "Stop" && !press.answered;
+  }, []);
+  const pressed = useCallback(
+    (stop: Promise<void>) => {
+      const press = taken(false);
+      const answered = (): void => {
+        press.answered = true;
+        if (last.current === press)
+          setResting((was) => ({ ...was, unanswered: false }));
+      };
+      stop.then(answered, answered);
+    },
+    [taken],
+  );
+  const sent = useCallback(() => {
+    taken(true);
+  }, [taken]);
   return useMemo(
     () => ({
-      ignores: (button) => {
-        const press = last.current;
-        if (press === undefined) return false;
-        if (performance.now() - press.atMs < conversationStopBeatMs)
-          return true;
-        return button === "Stop" && !press.answered;
-      },
-      pressed: (stop) => {
-        const press = { atMs: performance.now(), answered: false };
-        last.current = press;
-        const answered = (): void => {
-          press.answered = true;
-        };
-        stop.then(answered, answered);
-      },
-      sent: () => {
-        last.current = { atMs: performance.now(), answered: true };
-      },
+      ignores,
+      rests: (button) =>
+        resting.beat || (button === "Stop" && resting.unanswered),
+      pressed,
+      sent,
     }),
-    [],
+    [ignores, pressed, sent, resting],
   );
 }
 
@@ -538,6 +582,7 @@ export function Conversation(props: ConversationProps): ReactNode {
               busy={sending}
               stops={stoppable !== undefined}
               ignores={beat.ignores}
+              rests={beat.rests(stoppable === undefined ? "Send" : "Stop")}
               onSendClick={beat.sent}
             />
           </div>

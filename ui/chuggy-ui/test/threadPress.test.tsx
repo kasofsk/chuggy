@@ -90,7 +90,7 @@ function stopped(stage: Stage): readonly string[] {
   return stage.stops.map((stop) => stop.turn);
 }
 
-/** The button as a press finds it: saying Stop, and not disabled. */
+/** The button as a press finds it: saying Stop, and one a press can land on. */
 function buttonTakesStop(): void {
   expect(stageButton()).toBe("Stop");
   const button = screen.getByRole<HTMLButtonElement>("button", {
@@ -99,7 +99,7 @@ function buttonTakesStop(): void {
   expect(button.disabled).toBe(false);
 }
 
-test("two presses of Stop a frame apart stop one turn, and the button is Stop throughout and never disabled", async () => {
+test("two presses of Stop a frame apart stop one turn, and the button is Stop throughout and one a press can land on", async () => {
   const stage = await answering("Queued");
   await stageStopped();
   buttonTakesStop();
