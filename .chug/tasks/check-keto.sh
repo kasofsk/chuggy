@@ -17,8 +17,10 @@
 #
 # THE SERVERS ARE ACQUIRED BY `_keto.sh` AND `_postgres.sh`, which this gate
 # sources. It migrates one database for the run and drops it before returning;
-# the authority holds its tuples in memory and is left running, so every suite
-# addresses objects nothing else does rather than trusting an empty server.
+# the authority holds its tuples in memory, and one that is a container is left
+# running, so every suite addresses objects nothing else does rather than
+# trusting an empty server. One that is a process is this run's own, and the
+# traps are set before either server is acquired so that no exit leaves it up.
 #
 # NO SERVER IS A COULD-NOT-RUN, NOT A PASS. Failure to acquire either, or to
 # migrate the database, means the suites did not execute and exits two. A suite
@@ -52,14 +54,8 @@ fi
 suite_count="$(printf '%s\n' "$suites" | grep -c '' || true)"
 
 . "$here/_keto.sh"
-keto_acquire "check-keto"
-
 . "$here/_postgres.sh"
-postgres_acquire "check-keto"
 
-run_id="$(printf '%s' "$$" | tr -cd '0-9')"
-database="chuggy_keto_${run_id}"
-database_helper="$root/.chug/tasks/postgres-databases.ts"
 made=0
 
 cleanup() {
@@ -68,6 +64,7 @@ cleanup() {
 		made=0
 	fi
 	postgres_drop_scratch
+	keto_release
 }
 interrupted() {
 	trap - EXIT INT TERM HUP
@@ -77,6 +74,13 @@ interrupted() {
 }
 trap interrupted INT TERM HUP
 trap 'cleanup' EXIT
+
+keto_acquire "check-keto"
+postgres_acquire "check-keto"
+
+run_id="$(printf '%s' "$$" | tr -cd '0-9')"
+database="chuggy_keto_${run_id}"
+database_helper="$root/.chug/tasks/postgres-databases.ts"
 
 made=1
 if ! node --experimental-strip-types "$database_helper" prepare "$base_url" "$database"; then
