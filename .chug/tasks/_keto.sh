@@ -8,9 +8,11 @@
 #   provides  $keto_read_url    the read API a client should ask
 #             $keto_write_url   the write API a client should write to
 #             $keto_subject     what the verdict line should name
+#             keto_release      for the caller's EXIT trap, set before the call
 #   exits     2 through the caller's shell when no server can be had
 #   claims    its working names — the knobs below, $keto_prefix, $keto_waited,
-#             $keto_model, $keto_digest, $keto_running, $keto_started_from —
+#             $keto_model, $keto_digest, $keto_running, $keto_started_from,
+#             $keto_binary, $keto_version, $keto_port, $keto_pid, $keto_log —
 #             in the sourcing gate's namespace
 #
 # THE SERVER IS A CONTAINER THE SOURCING GATES OWN, started under a name
@@ -18,6 +20,16 @@
 # a developer is running is never asked and never stopped. One already running
 # under that name is reused, because a gate that pays a cold start every run is
 # a gate that gets bypassed.
+#
+# WHERE THERE IS NO DOCKER IT IS THE `keto` ON PATH, STARTED FOR THIS RUN AND
+# STOPPED BY `keto_release`. A process has no cold start worth keeping it for,
+# and one that does not outlive its run cannot be answering about a model the
+# tree no longer states. It is started from the same two files, on the same
+# ports bound to loopback, and in an environment holding only what points it
+# there, so nothing the caller's environment names reaches it. A port something
+# already listens on is a could-not-run: the process could not bind it, and
+# the wait would be answered by whoever holds it. The verdict names the version
+# the binary states, and no version is refused.
 #
 # A REUSED CONTAINER IS ONE STARTED FROM THIS MODEL. Keto compiles
 # `keto/namespaces.ts` at start-up and the bind mount is not live, so a
@@ -39,13 +51,13 @@
 # only when both namespaces the model declares are listable.
 #
 # Env:
-#   CHUG_KETO_READ_URL   run against this read API instead, skipping the
-#                        container entirely; CHUG_KETO_WRITE_URL is then
-#                        required, because a suite writes the tuples it reads
+#   CHUG_KETO_READ_URL   run against this read API instead, starting nothing;
+#                        CHUG_KETO_WRITE_URL is then required, because a suite
+#                        writes the tuples it reads
 #   CHUG_KETO_WRITE_URL  the write API beside it
-#   CHUG_KETO_IMAGE      the image to start
-#   CHUG_KETO_READ_PORT  the host port its read API is published on
-#   CHUG_KETO_WRITE_PORT the host port its write API is published on
+#   CHUG_KETO_IMAGE      the image a container is started from
+#   CHUG_KETO_READ_PORT  the host port the read API of either is on
+#   CHUG_KETO_WRITE_PORT the host port the write API of either is on
 #   CHUG_KETO_READY_SECS how long to wait for the server to answer
 #
 # The container outlives the run so the next one is warm. To remove it:
@@ -58,6 +70,10 @@ keto_ready_secs="${CHUG_KETO_READY_SECS:-30}"
 keto_container="chuggy-check-keto"
 keto_model_label="chuggy.keto.model"
 keto_model_query="{{index .Config.Labels \"$keto_model_label\"}}"
+# How much of what a process said is printed when it never answers.
+keto_log_lines=5
+keto_pid=""
+keto_log=""
 
 # The digest of the model a container would be started from, printing nothing
 # when the model cannot be read.
@@ -106,6 +122,72 @@ keto_wait() { # <read url>
 	return 0
 }
 
+# Whether something accepts a connection on a loopback port.
+keto_port_taken() { # <port>
+	node -e '
+const net = require("node:net");
+const socket = net.connect(Number(process.argv[1]), "127.0.0.1");
+socket.setTimeout(2000);
+socket.on("connect", () => socket.destroy());
+socket.on("timeout", () => socket.destroy());
+socket.on("error", () => process.exit(1));
+' "$1" 2>/dev/null
+}
+
+# Stops the process this run started and removes its log. A container is left
+# running, and a run that started nothing has nothing to stop.
+keto_release() {
+	[ -n "$keto_pid" ] || return 0
+	kill "$keto_pid" 2>/dev/null || true
+	wait "$keto_pid" 2>/dev/null || true
+	rm -f "$keto_log"
+	keto_pid=""
+}
+
+keto_acquire_process() {
+	keto_model="$(git rev-parse --show-toplevel)/.chug/tasks/keto"
+	keto_version="$("$keto_binary" version 2>/dev/null | sed -n 's/^Version:[[:space:]]*//p')"
+	keto_subject="keto${keto_version:+ $keto_version} from PATH"
+	keto_read_url="http://127.0.0.1:$keto_read_port/"
+	keto_write_url="http://127.0.0.1:$keto_write_port/"
+
+	for keto_port in "$keto_read_port" "$keto_write_port"; do
+		if keto_port_taken "$keto_port"; then
+			echo "$keto_prefix: LINTER ERROR — something is already listening on port $keto_port, and this run did not start it."
+			echo "$keto_prefix:                No CHUG_KETO_READ_URL and no docker, so $keto_binary would be started there."
+			echo "$keto_prefix:                Stop what holds it, or set CHUG_KETO_READ_PORT and CHUG_KETO_WRITE_PORT."
+			exit 2
+		fi
+	done
+
+	if ! keto_log="$(mktemp 2>/dev/null)"; then
+		echo "$keto_prefix: LINTER ERROR — no temporary file for the log of $keto_binary"
+		exit 2
+	fi
+	env -i \
+		NAMESPACES_LOCATION="$(node -p 'require("node:url").pathToFileURL(process.argv[1]).href' "$keto_model/namespaces.ts")" \
+		SERVE_READ_HOST=127.0.0.1 SERVE_READ_PORT="$keto_read_port" \
+		SERVE_WRITE_HOST=127.0.0.1 SERVE_WRITE_PORT="$keto_write_port" \
+		SERVE_METRICS_HOST=127.0.0.1 SERVE_METRICS_PORT=0 \
+		SERVE_OPL_HOST=127.0.0.1 SERVE_OPL_PORT=0 \
+		"$keto_binary" serve --sqa-opt-out -c "$keto_model/keto.yml" \
+		>"$keto_log" 2>&1 </dev/null &
+	keto_pid=$!
+	echo "$keto_prefix: started $keto_subject on ports $keto_read_port and $keto_write_port"
+
+	if ! keto_wait "$keto_read_url"; then
+		echo "$keto_prefix: LINTER ERROR — $keto_subject did not answer ready with both namespaces within ${keto_ready_secs}s"
+		echo "$keto_prefix:                No CHUG_KETO_READ_URL and no docker, so $keto_binary was started from $keto_model."
+		if [ -s "$keto_log" ]; then
+			echo "$keto_prefix:                The last it said:"
+			tail -n "$keto_log_lines" "$keto_log"
+		else
+			echo "$keto_prefix:                It said nothing; the model is .chug/tasks/keto/namespaces.ts."
+		fi
+		exit 2
+	fi
+}
+
 keto_acquire() { # <message prefix>
 	keto_prefix="$1"
 
@@ -125,16 +207,21 @@ keto_acquire() { # <message prefix>
 		keto_subject="the server CHUG_KETO_READ_URL names"
 		if ! keto_wait "$keto_read_url"; then
 			echo "$keto_prefix: LINTER ERROR — nothing ready with both namespaces answered CHUG_KETO_READ_URL within ${keto_ready_secs}s"
-			echo "$keto_prefix:                Point it at a Keto running .chug/tasks/keto/namespaces.ts, or unset it to use a container."
+			echo "$keto_prefix:                Point it at a Keto running .chug/tasks/keto/namespaces.ts, or unset it to have one started."
 			exit 2
 		fi
 		return 0
 	fi
 
 	if ! command -v docker >/dev/null 2>&1; then
-		echo "$keto_prefix: LINTER ERROR — no docker, so no authority can be started."
-		echo "$keto_prefix:                Set CHUG_KETO_READ_URL and CHUG_KETO_WRITE_URL to test against one you have."
-		exit 2
+		keto_binary="$(command -v keto || true)"
+		if [ -z "$keto_binary" ]; then
+			echo "$keto_prefix: LINTER ERROR — no docker and no keto on PATH, so no authority can be started."
+			echo "$keto_prefix:                Set CHUG_KETO_READ_URL and CHUG_KETO_WRITE_URL to test against one you have."
+			exit 2
+		fi
+		keto_acquire_process
+		return 0
 	fi
 	if ! docker info >/dev/null 2>&1; then
 		echo "$keto_prefix: LINTER ERROR — docker is installed but not running."

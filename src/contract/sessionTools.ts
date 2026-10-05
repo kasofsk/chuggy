@@ -105,12 +105,14 @@ const chuggyToolRoster = {
     "release_draft",
   ],
   /**
-   * A member's own authorship, which no lead roster carries: a thread files the
-   * draft its owner asked for, against no parent, because the member asking is
-   * where the work came from. It is one tool and it is not in `DraftAuthor`,
-   * for the reason `DraftAuthor` exists.
+   * What a thread does on its member's own word, which no lead roster carries:
+   * it files the draft its owner asked for, against no parent, because the
+   * member asking is where the work came from, and it revokes the ticket its
+   * owner said to end. Neither tool is in `DraftAuthor`, for the reason
+   * `DraftAuthor` exists, and `revoke_ticket` is here because a thread holds
+   * this capability and a lead does not.
    */
-  DraftOriginate: ["create_draft"],
+  DraftOriginate: ["create_draft", "revoke_ticket"],
   LeadDecision: [
     "dispatch",
     "refuse",

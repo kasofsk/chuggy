@@ -20,6 +20,7 @@ import type {
 import type { RunTranscriptHeld } from "../app/core/runTranscript.ts";
 import { runTranscriptPageBatchesMax } from "../../../src/contract/http.ts";
 import {
+  runTranscriptBatchDraws,
   runTranscriptBatchesBefore,
   runTranscriptCapacityBatches,
   runTranscriptCapacityBatchesMax,
@@ -31,6 +32,7 @@ import {
   runTranscriptHighestBatch,
   runTranscriptMerged,
   runTranscriptNextAfter,
+  runTranscriptQuietAfter,
   runTranscriptRead,
   runTranscriptStep,
   runTranscriptStepsMax,
@@ -55,12 +57,29 @@ function page(
       recordedAt: "2026-08-27T00:00:00Z",
       bytes: 1,
       read: "Content" as const,
-      content: `{"type":"system","batch":${String(batch)}}`,
+      content: `{"type":"assistant","message":{"content":[{"type":"text","text":"batch ${String(batch)}"}]}}`,
     })),
     observedAt: "2026-08-27T00:00:00Z",
     complete: false,
     ...over,
   };
+}
+
+/** A page of batches each holding the one line the runtime writes while a
+ * tool is still running, which is bookkeeping and draws nothing. */
+function waiting(batches: readonly number[]): RunTranscriptResponse {
+  const still = page(batches);
+  return {
+    ...still,
+    batches: still.batches.map((batch) => ({
+      ...batch,
+      content: `{"type":"tool_progress","tool_name":"Bash","elapsed_time_seconds":${String(batch.batch * 30)}}`,
+    })),
+  };
+}
+
+function numbered(from: number, to: number): readonly number[] {
+  return Array.from({ length: to - from + 1 }, (_unused, at) => from + at);
 }
 
 test("a pane holding nothing asks from the beginning of a short run", () => {
@@ -125,6 +144,82 @@ test("a pane already at its cap still advances when the high-water mark rises", 
   const advanced = runTranscriptMerged(held, page([highest + 1]));
   expect(runTranscriptHighestBatch(advanced)).toBe(highest + 1);
   expect(runTranscriptNextAfter(advanced, highest + 1)).toBeUndefined();
+});
+
+/**
+ * A run waiting on a long command writes a batch every so often saying only
+ * that the command is still running. Counted against the cap, those pushed
+ * out everything the run had said, and the card over it went empty until the
+ * command returned.
+ */
+test("a run that records only that a tool is still running keeps what it last said", () => {
+  const said = runTranscriptMerged(runTranscriptHeldEmpty, page([1, 2, 3]));
+  const waited = numbered(4, 4 * runTranscriptCapacityBatches).reduce(
+    (previous, batch) => runTranscriptMerged(previous, waiting([batch])),
+    said,
+  );
+  const highest = 4 * runTranscriptCapacityBatches;
+  expect(waited.batches.map((batch) => batch.batch)).toEqual([
+    1,
+    2,
+    3,
+    highest,
+  ]);
+  expect(
+    runTranscriptRead(waited).items.filter((item) => item.item === "Entry"),
+  ).toHaveLength(3);
+  expect(runTranscriptNextAfter(waited, highest + 1)).toBe(highest);
+});
+
+test("only a batch that draws something counts against the cap", () => {
+  const drawing = runTranscriptCapacityBatches + 3;
+  const held = numbered(1, 2 * drawing).reduce(
+    (previous, batch) =>
+      runTranscriptMerged(
+        previous,
+        batch % 2 === 1 ? page([batch]) : waiting([batch]),
+      ),
+    runTranscriptHeldEmpty,
+  );
+  const kept = held.batches.filter(runTranscriptBatchDraws);
+  expect(kept.map((batch) => batch.batch)).toEqual(
+    Array.from(
+      { length: runTranscriptCapacityBatches },
+      (_unused, at) => 2 * (at + 3) + 1,
+    ),
+  );
+  expect(runTranscriptBatchesBefore(held)).toBe(6);
+  expect(runTranscriptHighestBatch(held)).toBe(2 * drawing);
+});
+
+/** A pane opened in the middle of the wait reads only that the tool is still
+ * running, and what the run last said is on a page beneath its window. */
+test("a pane holding nothing that draws asks for the page beneath it until one does", () => {
+  const opened = runTranscriptMerged(
+    runTranscriptHeldEmpty,
+    waiting(numbered(25, 40)),
+  );
+  expect(opened.batches.map((batch) => batch.batch)).toEqual([25, 40]);
+  expect(runTranscriptQuietAfter(opened)).toBe(
+    24 - runTranscriptPageBatchesMax,
+  );
+  const beneath = runTranscriptMerged(opened, waiting(numbered(17, 24)));
+  expect(runTranscriptQuietAfter(beneath)).toBe(
+    16 - runTranscriptPageBatchesMax,
+  );
+  const said = runTranscriptMerged(beneath, page(numbered(9, 16)));
+  expect(runTranscriptQuietAfter(said)).toBeUndefined();
+  expect(said.batches.map((batch) => batch.batch)).toEqual([
+    ...numbered(9, 16),
+    40,
+  ]);
+  expect(runTranscriptNextAfter(said, 40)).toBeUndefined();
+});
+
+test("a pane on the run's first batch, or holding none, asks for nothing beneath it", () => {
+  expect(runTranscriptQuietAfter(runTranscriptHeldEmpty)).toBeUndefined();
+  const first = runTranscriptMerged(runTranscriptHeldEmpty, waiting([1, 2]));
+  expect(runTranscriptQuietAfter(first)).toBeUndefined();
 });
 
 /** The batches below the window are offered as the page just beneath it, and
