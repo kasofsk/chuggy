@@ -7,10 +7,11 @@
 #
 # NOTHING HERE BUILDS, PUSHES OR REACHES A CLUSTER. `docker`, `ssh`, `kubectl`,
 # `gh` and `python3` are stubs on PATH that log every invocation and answer
-# from environment the case sets, and `sleep` is one that logs and returns; the
-# gate and the image builder are stubs inside a throwaway checkout; and the
-# fabric is a bare repository the `gh` stub clones, so what the script pushes
-# can be read back out of it.
+# from environment the case sets, and `sleep` is one that logs and returns;
+# `git` is the real one, behind a wrapper that fails an invocation carrying a
+# word the case names; the gate and the image builder are stubs inside a
+# throwaway checkout; and the fabric is a bare repository the `gh` stub
+# clones, so what the script pushes can be read back out of it.
 #
 # THE MIRROR CASES MATTER AS MUCH. A guard that refuses everything is the same
 # defect wearing the other face, so each refusal has a case where the thing
@@ -118,9 +119,13 @@ case "$args" in
 *' annotate '*) ;;
 *'{.status.artifact.revision}'* | *'{.status.lastAppliedRevision}'*) printf 'main@sha1:%s' "${CHUG_STUB_MERGED:-}" ;;
 *' wait '*) exit "${CHUG_STUB_JOB_RC:-0}" ;;
-*' get deployments '*) printf 'chuggy-api\nchuggy-ui\nunmanaged\n' ;;
+*' get deployments '*)
+	[ "${CHUG_STUB_DEPLOYMENTS_RC:-0}" -eq 0 ] || exit "$CHUG_STUB_DEPLOYMENTS_RC"
+	printf 'chuggy-api\nchuggy-ui\nunmanaged\n'
+	;;
 *' rollout status '*) exit "${CHUG_STUB_ROLLOUT_RC:-0}" ;;
 *' get deployment/'*)
+	[ "${CHUG_STUB_RUNNING_RC:-0}" -eq 0 ] || exit "$CHUG_STUB_RUNNING_RC"
 	name=""
 	for word in "$@"; do
 		case "$word" in deployment/*) name="${word#deployment/}" ;; esac
@@ -162,9 +167,22 @@ case "$1 $2" in
 	printf 'https://example.test/pull/7\n'
 	;;
 'pr merge') exit "${CHUG_STUB_MERGE_RC:-0}" ;;
-'pr view') printf '%s\n' "${CHUG_STUB_MERGED:-}" ;;
+'pr view')
+	[ "${CHUG_STUB_VIEW_RC:-0}" -eq 0 ] || exit "$CHUG_STUB_VIEW_RC"
+	printf '%s\n' "${CHUG_STUB_MERGED:-}"
+	;;
 esac
 exit 0
+STUB
+
+# The real git, but for an invocation carrying the word a case names, which
+# fails as that case says.
+cat >"$BIN/git" <<STUB
+#!/bin/sh
+for word in "\$@"; do
+	[ "\$word" != "\${CHUG_STUB_GIT_REFUSES:-}" ] || exit "\${CHUG_STUB_GIT_RC:-128}"
+done
+exec "$(command -v git)" "\$@"
 STUB
 
 cat >"$BIN/python3" <<'STUB'
@@ -179,7 +197,7 @@ cat >"$BIN/sleep" <<'STUB'
 printf 'sleep %s\n' "$*" >>"$CHUG_STUB_LOG"
 STUB
 
-chmod +x "$BIN/docker" "$BIN/ssh" "$BIN/kubectl" "$BIN/gh" "$BIN/python3" "$BIN/sleep"
+chmod +x "$BIN/docker" "$BIN/ssh" "$BIN/kubectl" "$BIN/gh" "$BIN/git" "$BIN/python3" "$BIN/sleep"
 
 # --- the checkout, with its gate and its builder stubbed inside it ---------------
 
@@ -290,6 +308,7 @@ fresh_case() {
 	unset CHUG_STUB_DUMP CHUG_STUB_NODE_RC CHUG_STUB_PUSH_DENIED
 	unset CHUG_STUB_ATTEMPTS CHUG_STUB_ATTEMPTS_RC CHUG_STUB_FATES CHUG_STUB_FATES_THEN CHUG_STUB_FATES_RC
 	unset CHUG_RELEASE_HEARD_SECS CHUG_CI_NEEDS_GATE
+	unset CHUG_STUB_GIT_REFUSES CHUG_STUB_GIT_RC CHUG_STUB_VIEW_RC CHUG_STUB_DEPLOYMENTS_RC CHUG_STUB_RUNNING_RC
 	export CHUG_RIG_SSH=nobody@no-such-host
 	export CHUG_STUB_DIGEST="$NEW"
 }
@@ -298,6 +317,7 @@ fresh_case() {
 # origin/main; the tag the release will carry is then HEAD's.
 advance() { # <path>...
 	for path in "$@"; do
+		mkdir -p "$REPO/${path%/*}"
 		printf 'changed\n' >>"$REPO/$path"
 	done
 	git -C "$REPO" add -A
@@ -479,6 +499,24 @@ run
 cp "$LOG.body" "$OUT"
 check "the pull request names the migration" 0 "$RC" "  050-b.ts"
 check "the pull request says a restore is the way back" 0 "$RC" "only way back is a restore"
+
+# The list is what the Job applies, and a migration may be a directory's
+# index: a change to either is a migration, whatever the file is called.
+LIST=src/adapters/postgres/schema/migrations/index.ts
+NESTED=src/adapters/postgres/schema/migrations/036-wide/index.ts
+fresh_case
+advance "$LIST"
+run
+cp "$LOG.body" "$OUT"
+check "a change to the list of migrations alone is named as one" 0 "$RC" "  index.ts"
+refute "a change to the list of migrations alone is not called no migration" 0 "$RC" "No migration"
+
+fresh_case
+advance "$NESTED" "$LIST"
+run
+cp "$LOG.body" "$OUT"
+check "a migration that is a directory's index is named by its directory" 0 "$RC" "  036-wide/index.ts"
+refute "a migration that is a directory's index is not called no migration" 0 "$RC" "No migration"
 
 # --- the gate ---------------------------------------------------------------------
 
@@ -673,6 +711,47 @@ run --merge
 check "an unreadable execution count could not run" 2 "$RC" "live execution count could not be read"
 check "an unreadable count is not merged over" 2 "$RC" "merges attempted: 0"
 
+# A session a runner holds has no pod in the work namespace and no execution:
+# its row is all that says it is live, so a release that asks reads the
+# attempts too, and refuses on one before it dumps or merges.
+open_release "$MIGRATION"
+export CHUG_RIG_ARCHIVE="$ARCHIVE" CHUG_STUB_ATTEMPTS="session session-attempt-1"
+run --merge
+check "a live session that no pod stands for refuses a migration's rollout" 1 "$RC" "1 attempt(s) are live, and this release carries a migration"
+check "a session that no pod stands for is not merged over" 1 "$RC" "merges attempted: 0"
+printf 'dumps taken: %s\n' "$(grep -c ' pg_dump ' "$LOG" || true)" >>"$OUT"
+check "a release refused for a live attempt takes no dump" 1 "$RC" "dumps taken: 0"
+
+open_release "$MIGRATION"
+export CHUG_STUB_ATTEMPTS_RC=1
+run --merge
+check "attempts that could not be read could not run a migration's rollout" 2 "$RC" "the live attempts could not be read"
+check "a migration is not merged over attempts that could not be read" 2 "$RC" "merges attempted: 0"
+
+# A migration is any change under the migrations directory: the list alone,
+# a directory's index alone, and the two together are each one a landing asks
+# over and dumps before.
+for moved in "$LIST" "$NESTED" "$NESTED $LIST"; do
+	# shellcheck disable=SC2086 # each word is a path the release moves
+	open_release $moved
+	export CHUG_RIG_ARCHIVE="$ARCHIVE" CHUG_STUB_WORKER_PODS=pod/chuggy-worker-1
+	run --merge
+	check "a live attempt refuses a release that moves \`$moved\`" 1 "$RC" "an attempt is live in chuggy-work, and this release carries a migration"
+	check "a release that moves \`$moved\` is not merged over a live attempt" 1 "$RC" "merges attempted: 0"
+
+	# shellcheck disable=SC2086 # each word is a path the release moves
+	open_release $moved
+	run --merge
+	check "a release that moves \`$moved\` with nowhere to keep the dump is refused" 2 "$RC" "CHUG_RIG_ARCHIVE names nowhere"
+
+	# shellcheck disable=SC2086 # each word is a path the release moves
+	open_release $moved
+	export CHUG_RIG_ARCHIVE="$ARCHIVE"
+	run --merge
+	check "a release that moves \`$moved\` dumps before it merges" 0 "$RC" "dump at $ARCHIVE/chuggy-pre-$TAG.dump"
+	check "a release that moves \`$moved\` with nothing live is landed" 0 "$RC" "merges attempted: 1"
+done
+
 # A release that moves the rig back is the second a landing may not put out
 # over a live attempt, and the mirror is the same move with nothing live.
 open_move_back() {
@@ -709,7 +788,7 @@ plane_edited() { # <command...>
 	run --merge
 }
 PLANE=chuggy-worker-plane.yaml
-asks="does not state a rolling update with none unavailable, so a moment with no plane serving is not ruled out"
+asks="does not state a rolling update with none unavailable, or states no replica, so a moment with no plane serving is not ruled out"
 
 # The strategy's type is edited with the unavailability left standing beside
 # it and the old type left in a comment above it and another after it, and
@@ -731,6 +810,14 @@ open_release src/a.ts
 release_edited sed -i 's/type: RollingUpdate/type: Recreate/' "$PLANE"
 run --merge
 check "a recreated plane with nothing live is landed" 0 "$RC" "the rig is at $TAG; ledger at 52"
+
+open_release src/a.ts
+release_edited sed -i 's/type: RollingUpdate/type: Recreate/' "$PLANE"
+export CHUG_STUB_ATTEMPTS="session session-attempt-1
+work attempt-2"
+run --merge
+check "attempts that no pod stands for refuse a rollout that recreates the worker plane" 1 "$RC" "2 attempt(s) are live, and the worker plane that merging release/chuggy-$TAG lands $asks"
+check "a recreated plane is not merged over attempts that no pod stands for" 1 "$RC" "merges attempted: 0"
 
 open_release src/a.ts
 release_edited rm "$PLANE"
@@ -850,15 +937,29 @@ for unavailable in 1 0% '"0"' 0.9 01; do
 	check "a live attempt is not rolled over a plane with $unavailable unavailable" 1 "$RC" "$asks"
 done
 
+# Nor is a plane of no replicas one that serves, however it would roll.
+for none in 0 00; do
+	plane_edited sed -i "s/^  strategy:\$/  replicas: $none\n&/" "$PLANE"
+	check "a live attempt is not rolled over a plane of $none replicas" 1 "$RC" "$asks"
+	check "a plane of $none replicas is not merged" 1 "$RC" "merges attempted: 0"
+done
+
 # What the reader does take is the statement however it is laid out: the
-# bounds a line each, a comment after a value, and another line ending.
+# bounds a line each, a comment after a value, another line ending, a replica
+# stated, and a document that starts with more than its dashes.
 bounds_a_line_each() {
 	sed -i 's/^\( *\)rollingUpdate: .*$/\1rollingUpdate:\n\1  maxSurge: 25%\n\1  maxUnavailable: 0 # none, for a live attempt/' "$PLANE"
 }
 carriage_returns() {
 	sed -i 's/$/\r/' "$PLANE"
 }
-for shape in bounds_a_line_each carriage_returns; do
+a_replica_stated() {
+	sed -i 's/^  strategy:$/  replicas: 1\n&/' "$PLANE"
+}
+a_start_with_a_comment() {
+	sed -i 's/^---$/& # the budget/' "$PLANE"
+}
+for shape in bounds_a_line_each carriage_returns a_replica_stated a_start_with_a_comment; do
 	plane_edited "$shape"
 	check "a live attempt is rolled over a plane that rolls with $shape" 0 "$RC" "merges attempted: 1"
 done
@@ -887,6 +988,36 @@ main_edited sed -i "s|^\( *image: registry.*\)@.*$|\1@$STALE|" "$PLANE"
 run --merge
 check "a release that does not merge cleanly could not run" 2 "$RC" "release/chuggy-$TAG could not be merged cleanly into the main of"
 check "a release that does not merge cleanly is not merged" 2 "$RC" "merges attempted: 0"
+
+# The merge is read only where it was made. A main that could not be fetched
+# and a tree that could not be read are each no reading, and neither leaves
+# the branch's own tree to be taken for the merge: main recreates the plane
+# in both, and the branch does not.
+for refused in refs/heads/main read-tree; do
+	open_release src/a.ts
+	main_edited sed -i 's/type: RollingUpdate/type: Recreate/' "$PLANE"
+	export CHUG_STUB_WORKER_PODS=pod/chuggy-worker-1 CHUG_STUB_GIT_REFUSES="$refused"
+	run --merge
+	case "$refused" in
+	read-tree) check "a merge whose tree could not be read could not run" 2 "$RC" "what merging release/chuggy-$TAG would land could not be read" ;;
+	*) check "a main that could not be fetched could not run" 2 "$RC" "the main of gdoteof/chuggy-fabric could not be fetched, so what the merge would land is unknown" ;;
+	esac
+	check "a landing git refused at $refused is not merged" 2 "$RC" "merges attempted: 0"
+done
+
+# A git that cannot make the merge is not a branch that conflicts, and is
+# told what it lacks.
+open_release src/a.ts
+export CHUG_STUB_GIT_REFUSES=--write-tree CHUG_STUB_GIT_RC=129
+run --merge
+check "a git that cannot make the merge is told so" 2 "$RC" "this git could not merge release/chuggy-$TAG into the main of gdoteof/chuggy-fabric to read what would land"
+refute "a git that cannot make the merge is not told of a conflict" 2 "$RC" "could not be merged cleanly"
+check "a git that cannot make the merge merges nothing" 2 "$RC" "merges attempted: 0"
+
+open_release src/a.ts
+export CHUG_STUB_GIT_REFUSES=checkout
+run --merge
+check "a release branch that could not be checked out could not run, and says so" 2 "$RC" "release/chuggy-$TAG could not be checked out of gdoteof/chuggy-fabric"
 
 # A release whose commit states an earlier worker contract than the live
 # commit does is a move back by another road: its plane refuses a pod of the
@@ -1046,6 +1177,14 @@ run
 check "a wait that is no number of seconds is refused" 2 "$RC" "CHUG_RELEASE_HEARD_SECS is \`soon\`, which is not a whole number of seconds"
 check "a wait that is no number reaches no tool" 2 "$RC" "$untouched"
 
+# A number the shell cannot compare would be a wait that never ends.
+fresh_case
+advance src/a.ts
+export CHUG_RELEASE_HEARD_SECS=99999999999999999999
+run
+check "a wait of more seconds than a shell counts is refused" 2 "$RC" "CHUG_RELEASE_HEARD_SECS is \`99999999999999999999\`, which is more seconds than a landing can count"
+check "a wait of more seconds than a shell counts reaches no tool" 2 "$RC" "$untouched"
+
 # A lease is written whole by whatever renews it, so one that reads earlier
 # than it did has been written as surely as one that reads later.
 open_release src/a.ts
@@ -1089,6 +1228,30 @@ export CHUG_STUB_FATES
 run --merge
 check "an attempt not yet started is counted apart" 0 "$RC" "none is recorded lost: 0 ended, 0 running and heard from since the rollout, 1 not yet started"
 check "an attempt not yet started is not waited for" 0 "$RC" "waits: 0"
+
+# One still being placed whose lease has already run out is what the scheduler
+# ends next, so it is not one not yet started: it is waited for, and what its
+# row says by then is what the landing says.
+open_release src/a.ts
+export CHUG_STUB_ATTEMPTS="work attempt-1
+work attempt-2"
+CHUG_STUB_FATES="$(
+	fate Placing work attempt-1 100 lapsed
+	fate Placing work attempt-2 100 unheld
+)"
+export CHUG_STUB_FATES CHUG_RELEASE_HEARD_SECS=5
+run --merge
+check "a placing attempt whose lease has run out is not vouched for" 2 "$RC" "1 running had no lease renewed within 5s of the rollout, and whether any such attempt outlasts the release is not known; 0 ended, 0 running and heard from since the rollout, 1 not yet started"
+check "the placing attempt whose lease has run out is the one named" 2 "$RC" "UNHEARD — work attempt attempt-1 in acme/site"
+check "a lease that has run out is told apart by the database's clock" 2 "$RC" "when lease_expires_at <= now() then 'lapsed'"
+
+open_release src/a.ts
+export CHUG_STUB_ATTEMPTS="work attempt-1"
+CHUG_STUB_FATES="$(fate Placing work attempt-1 100 lapsed)"
+CHUG_STUB_FATES_THEN="$(fate Lost work attempt-1 - unheld LeaseExpired)"
+export CHUG_STUB_FATES CHUG_STUB_FATES_THEN
+run --merge
+check "a placing attempt ended while the landing waits is the loss its row records" 1 "$RC" "LOST — work attempt attempt-1 in acme/site: LeaseExpired"
 
 # One lost is the finding, and it is the last thing a landing says: the
 # release is merged, rolled out and verified as any other first. It is said
@@ -1189,6 +1352,22 @@ export CHUG_STUB_ROLLOUT_RC=1
 run --merge
 refute "a rollout that fails over nothing live owes no asking" 1 "$RC" "were not asked after"
 
+# Nor does a read that fails after the merge end the landing without a word.
+open_release src/a.ts
+export CHUG_STUB_ATTEMPTS="work attempt-1" CHUG_STUB_VIEW_RC=1
+run --merge
+check "a merge commit that could not be asked for could not run, and says what is owed" 2 "$RC" "the merge commit of pull request 9 could not be read; the 1 attempt(s) live at the merge were not asked after"
+
+open_release src/a.ts
+export CHUG_STUB_ATTEMPTS="work attempt-1" CHUG_STUB_DEPLOYMENTS_RC=1
+run --merge
+check "Deployments that could not be listed could not run, and says what is owed" 2 "$RC" "no Deployment could be read in chuggy; the 1 attempt(s) live at the merge were not asked after"
+
+open_release src/a.ts
+export CHUG_STUB_ATTEMPTS="work attempt-1" CHUG_STUB_RUNNING_RC=1
+run --merge
+check "an image that could not be read could not run, and says what is owed" 2 "$RC" "what chuggy-api runs could not be read; the 1 attempt(s) live at the merge were not asked after"
+
 open_release src/adapters/postgres/schema/migrations/050-b.ts
 run --merge
 check "a migration with nowhere to keep the dump is refused" 2 "$RC" "CHUG_RIG_ARCHIVE names nowhere"
@@ -1217,6 +1396,7 @@ open_release src/a.ts
 run --merge
 check "a release with no migration merges without a dump" 0 "$RC" "the rig is at $TAG; ledger at 52"
 check "the merge is the fabric's" 0 "$RC" "gh pr merge 9 -R gdoteof/chuggy-fabric --merge --delete-branch --admin"
+check "the merge is of the branch head that was read, and of no other" 0 "$RC" "--admin --match-head-commit $(git --git-dir="$FABRIC_GIT" rev-parse "release/chuggy-$TAG")"
 check "the source is asked to reconcile" 0 "$RC" "annotate --overwrite gitrepository/fabric reconcile.fluxcd.io/requestedAt="
 check "then the applications are" 0 "$RC" "annotate --overwrite kustomization/apps reconcile.fluxcd.io/requestedAt="
 check "the migrate Job is waited on by its release name" 0 "$RC" "wait --for=condition=complete job/chuggy-migrate-$TAG-registry"
@@ -1298,7 +1478,7 @@ check "a move back is gated with every gate" 0 "$RC" "ci prefix=<> full=<1> base
 fresh_case
 advance ui/chuggy-ui/app.ts
 export CHUG_STUB_MERGED="$MERGED"
-export CHUG_STUB_WORKER_PODS=pod/chuggy-worker-1 CHUG_STUB_LIVE_ROWS=1
+export CHUG_STUB_WORKER_PODS=pod/chuggy-worker-1 CHUG_STUB_LIVE_ROWS=1 CHUG_STUB_ATTEMPTS="work attempt-1"
 run --console
 check "a console release lands in one run" 0 "$RC" "the rig is at $TAG; ledger at 52"
 check "a console release gates what moved since the live commit, and a range that selects nothing is not its pass" 0 "$RC" "ci prefix=<> full=<> base=<$DEPLOYED> needs=<1>"
@@ -1309,6 +1489,8 @@ check "a console release merges its own pull request" 0 "$RC" "gh pr merge 7 -R 
 check "a live attempt does not refuse a console release" 0 "$RC" "merges attempted: 1"
 printf 'attempts asked for: %s\n' "$(grep -c 'chuggy-work get pods' "$LOG" || true)" >>"$OUT"
 check "a console release does not ask after attempts" 0 "$RC" "attempts asked for: 0"
+check "a console release asks what became of none" 0 "$RC" "fates asked for: 0"
+refute "a console release counts no live attempt" 0 "$RC" "attempt(s) are live"
 check "a console release verifies the console rollout" 0 "$RC" "rollout status deployment/chuggy-ui"
 cp "$LOG.body" "$OUT"
 check "the pull request says what the gate covered" 0 "$RC" "Gate at $TAG: clean over the gates the change since $DEPLOYED affects"
