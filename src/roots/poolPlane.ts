@@ -36,6 +36,7 @@ import {
   planeEnvironmentPositive,
   planeEnvironmentRequired,
 } from "./planeEnvironment.ts";
+import { planeStopping } from "./planeStopping.ts";
 import { postgresProjectRepositoryBinding } from "../adapters/postgres/repositoryConfiguration.ts";
 import { poolPlaneRole } from "../adapters/postgres/schema.ts";
 import {
@@ -173,7 +174,7 @@ async function main(): Promise<void> {
       }
     },
   });
-  app.addHook("onClose", () => pool.end());
+  planeStopping(app, pool, "pool plane");
   await app.listen({
     host: process.env["CHUG_POOL_PLANE_HOST"] ?? "127.0.0.1",
     port: planeEnvironmentPositive("CHUG_POOL_PLANE_PORT", 3_002),
