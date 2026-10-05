@@ -23,9 +23,9 @@
  * is drawn as a button that takes no press, and it stays one a press can
  * land on, so the pointer and the caret are where they were when it ends.
  *
- * A PRESS OF THE BUTTON LEAVES THE CARET IN THE BOX. The button turns into
- * another or goes inert under the pointer, and focus it had taken would fall
- * to the page, where what a member types next goes nowhere.
+ * A POINTER'S PRESS OF THE BUTTON LEAVES THE CARET IN THE BOX. The button
+ * turns into another or goes inert under the pointer, and focus it had taken
+ * would fall to the page, where what a member types next goes nowhere.
  */
 
 import { ComposerPrimitive, useAuiState } from "@assistant-ui/react";
@@ -120,7 +120,7 @@ interface ConversationComposerSurface {
   readonly onSendClick: () => void;
 }
 
-/** A press of the button takes no focus, so the caret stays in the box. */
+/** A pointer's press of the button takes no focus, so the caret stays in the box. */
 function conversationCaretKept(event: MouseEvent<HTMLButtonElement>): void {
   event.preventDefault();
 }

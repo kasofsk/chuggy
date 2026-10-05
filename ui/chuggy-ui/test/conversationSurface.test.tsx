@@ -828,6 +828,130 @@ test("a click that sent begins the beat on the button it leaves under the pointe
   styleless();
 });
 
+/** A page whose stop door answers when a case says, and the turns it draws. */
+function heldDoors() {
+  const answers: (() => void)[] = [];
+  const onStop = vi.fn(
+    () =>
+      new Promise<void>((resolve) => {
+        answers.push(resolve);
+      }),
+  );
+  const onSend = vi.fn(() => Promise.resolve<ConversationSent>("Sent"));
+  const drawn = (...standings: ConversationExchange["standing"][]) => (
+    <Conversation
+      exchanges={standings.map((standing, index) =>
+        exchangeOf({
+          id: `x${String(index)}`,
+          turn: `turn-${String(index)}`,
+          standing,
+        }),
+      )}
+      composer={{ ...composerOf({ onSend }), onStop }}
+      empty="No conversation"
+    />
+  );
+  return { answers, onStop, onSend, drawn };
+}
+
+const turnOut = { standing: "Running", state: "Claimed" } as const;
+const turnBehind = { standing: "Running", state: "Queued" } as const;
+const turnStopped = { standing: "Stopped" } as const;
+
+function pressed(name: "Stop" | "Send"): void {
+  fireEvent.click(screen.getByRole("button", { name }));
+}
+
+function drafted(text: string): void {
+  fireEvent.change(screen.getByRole("textbox", { name: "Message" }), {
+    target: { value: text },
+  });
+}
+
+test("an older stop's late answer leaves a newer stop no door has answered saying it takes no press", async () => {
+  beatClock();
+  const { answers, onStop, onSend, drawn } = heldDoors();
+  const view = render(drawn(turnOut));
+  pressed("Stop");
+  view.rerender(drawn(turnStopped));
+  drafted("one more thing");
+  await beatPassed(conversationStopBeatMs);
+  pressed("Send");
+  await beatPassed(0);
+  expect(onSend).toHaveBeenCalledTimes(1);
+
+  view.rerender(drawn(turnStopped, turnBehind));
+  await beatPassed(conversationStopBeatMs);
+  pressed("Stop");
+  expect(onStop.mock.calls).toStrictEqual([["turn-0"], ["turn-1"]]);
+
+  view.rerender(drawn(turnStopped, turnStopped, turnBehind));
+  answers[0]?.();
+  await beatPassed(conversationStopBeatMs);
+  expect(buttonRests("Stop")).toBe(true);
+  pressed("Stop");
+  expect(onStop).toHaveBeenCalledTimes(2);
+
+  answers[1]?.();
+  await beatPassed(0);
+  expect(buttonRests("Stop")).toBe(false);
+  pressed("Stop");
+  expect(onStop.mock.calls[2]).toStrictEqual(["turn-2"]);
+  styleless();
+});
+
+test("a press 250 ms behind a click that sent is a double click's and does nothing, and the two an audit found ignored are taken: Stop at 516 ms, and Send 331 ms after Stop", async () => {
+  beatClock();
+  const { onStop, onSend, drawn } = heldDoors();
+  const view = render(drawn(turnStopped));
+  drafted("first");
+  await beatPassed(0);
+  pressed("Send");
+  await beatPassed(0);
+  view.rerender(drawn(turnStopped, turnBehind));
+  await beatPassed(250);
+  expect(buttonRests("Stop")).toBe(true);
+  pressed("Stop");
+  expect(onStop).not.toHaveBeenCalled();
+  await beatPassed(516 - 250);
+  expect(buttonRests("Stop")).toBe(false);
+  pressed("Stop");
+  expect(onStop.mock.calls).toStrictEqual([["turn-1"]]);
+
+  view.rerender(drawn(turnStopped, turnStopped));
+  drafted("second");
+  await beatPassed(331);
+  expect(buttonRests("Send")).toBe(false);
+  pressed("Send");
+  await beatPassed(0);
+  expect(onSend).toHaveBeenCalledTimes(2);
+  styleless();
+});
+
+test("a press taken as a beat ends leaves no older timer to end its own beat early", async () => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  const clock = { ms: Math.floor(performance.now()) };
+  vi.spyOn(performance, "now").mockImplementation(() => clock.ms);
+  const { answers, onStop, drawn } = heldDoors();
+  const view = render(drawn(turnOut, turnBehind));
+  pressed("Stop");
+  answers[0]?.();
+  await beatPassed(0);
+  view.rerender(drawn(turnStopped, turnBehind, turnBehind));
+  clock.ms += conversationStopBeatMs;
+  pressed("Stop");
+  expect(onStop.mock.calls).toStrictEqual([["turn-0"], ["turn-1"]]);
+  answers[1]?.();
+  await beatPassed(0);
+
+  view.rerender(drawn(turnStopped, turnStopped, turnBehind));
+  await beatPassed(conversationStopBeatMs);
+  expect(buttonRests("Stop")).toBe(true);
+  pressed("Stop");
+  expect(onStop).toHaveBeenCalledTimes(2);
+  styleless();
+});
+
 test("a press of the button takes no focus, so the caret stays in the box", () => {
   const drawn = oneTurnSurface(() => Promise.resolve());
   const view = render(drawn({ standing: "Running", state: "Claimed" }));

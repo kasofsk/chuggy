@@ -240,9 +240,10 @@ interface ConversationStopResting {
   readonly unanswered: boolean;
 }
 
-/** The presses the surface took of its button, and what is drawn of the last.
- * The beat is drawn as over by the clock a press is asked against, so a timer
- * that fires ahead of that clock waits out what is left of it. */
+/** The presses the surface took of its button, and what is drawn of the last:
+ * an older stop's answer changes nothing drawn of a newer press. The beat is
+ * drawn as over by the clock a press is asked against, so a timer that fires
+ * ahead of that clock waits out what is left of it. */
 function useConversationStopBeat(): ConversationStopBeat {
   const last = useRef<ConversationStopPress | undefined>(undefined);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -280,7 +281,8 @@ function useConversationStopBeat(): ConversationStopBeat {
       const press = taken(false);
       const answered = (): void => {
         press.answered = true;
-        setResting((was) => ({ ...was, unanswered: false }));
+        if (last.current === press)
+          setResting((was) => ({ ...was, unanswered: false }));
       };
       stop.then(answered, answered);
     },
