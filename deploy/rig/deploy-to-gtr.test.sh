@@ -9,7 +9,8 @@
 # `gh` and `python3` are stubs on PATH that log every invocation and answer
 # from environment the case sets, and `sleep` is one that logs and returns;
 # `git` is the real one, behind a wrapper that fails an invocation carrying a
-# word the case names; the gate and the image builder are stubs inside a
+# word the case names, or a fetch of the fabric's main where a case has the
+# forge not answer; the gate and the image builder are stubs inside a
 # throwaway checkout; and the fabric is a bare repository the `gh` stub
 # clones and merges into, so what the script pushes can be read back out of
 # it, and a revision `kubectl` says Flux is at is a commit of its history.
@@ -86,10 +87,11 @@ printf 'kubectl %s\n' "$*" >>"$CHUG_STUB_LOG"
 args=" $* "
 # A revision as Flux writes one, of the commit a case names: one of the three
 # about the merge, none, one the fabric does not have, or any the fabric's own
-# git names.
-revision() { # <before | merged | later | none | elsewhere | a revision of the fabric>
+# git names. Or what a case has it say, word for word.
+revision() { # <before | merged | later | none | elsewhere | raw:<words> | a revision of the fabric>
 	case "$1" in
 	none) ;;
+	raw:*) printf '%s' "${1#raw:}" ;;
 	elsewhere) printf 'main@sha1:%s' "$CHUG_STUB_ELSEWHERE" ;;
 	before | merged | later) printf 'main@sha1:%s' "$(git --git-dir="$CHUG_STUB_FABRIC" rev-parse -q --verify "refs/stub/$1")" ;;
 	*) printf 'main@sha1:%s' "$(git --git-dir="$CHUG_STUB_FABRIC" rev-parse -q --verify "$1^{commit}")" ;;
@@ -142,8 +144,9 @@ case "$args" in
 # merged the rig is as a case leaves it: the source holds the fabric's main,
 # and each layer that applies a release has applied it, is Ready and is not
 # suspended, unless the case says where that layer is, how its Ready condition
-# reads and whether it is suspended, or says it is absent. A layer names the
-# source, unless a case has the cluster not answer for it.
+# reads, the reason it gives and whether it is suspended, or says it is
+# absent. A layer names the source, unless a case has the cluster not answer
+# for it.
 #
 # After the merge the source holds the fabric's main still, unless a case
 # holds it at the commit before. A layer has applied the merge once it and
@@ -176,9 +179,9 @@ case "$args" in
 	*) exit 1 ;;
 	esac
 	[ "$rig" != absent ] || exit 1
-	# shellcheck disable=SC2086 # a revision, a status and whether it is suspended
+	# shellcheck disable=SC2086 # a revision, a status, a reason, suspended or not
 	set -- $rig
-	printf '%s|%s|%s' "$(revision "$1")" "$2" "${3:-}"
+	printf '%s|%s|%s|%s' "$(revision "$1")" "$2" "${3:-}" "${4:-}"
 	;;
 *' get kustomization '*'{.status.lastAppliedRevision}'*)
 	asked="$(asked_layer "$@")"
@@ -238,7 +241,9 @@ set -u
 printf 'gh %s\n' "$*" >>"$CHUG_STUB_LOG"
 case "$1 $2" in
 'repo clone')
-	git clone -q "$CHUG_STUB_FABRIC" "$4"
+	# Over the transport, as a clone of a forge is: a local one would carry
+	# every object the fabric has, reachable or left by another case.
+	git clone -q --no-local "$CHUG_STUB_FABRIC" "$4"
 	# The fabric's main gains a commit once it is cloned, where a case says so.
 	if [ -n "${CHUG_STUB_CLONE_BEHIND:-}" ]; then
 		git --git-dir="$CHUG_STUB_FABRIC" update-ref refs/heads/main \
@@ -293,12 +298,24 @@ exit 0
 STUB
 
 # The real git, but for an invocation carrying the word a case names, which
-# fails as that case says.
+# fails as that case says; and but for a fetch of the fabric's main where a
+# case has the forge not answer, always or once a release is merged, which
+# fails saying so.
 cat >"$BIN/git" <<STUB
 #!/bin/sh
 for word in "\$@"; do
 	[ "\$word" != "\${CHUG_STUB_GIT_REFUSES:-}" ] || exit "\${CHUG_STUB_GIT_RC:-128}"
 done
+gone="\${CHUG_STUB_FORGE_GONE:-}"
+case " \$* " in
+*" fetch "*" refs/heads/main "*)
+	[ "\$gone" != merged ] || "$(command -v git)" --git-dir="\$CHUG_STUB_FABRIC" rev-parse -q --verify refs/stub/merged >/dev/null || gone=""
+	[ -z "\$gone" ] || {
+		echo "fatal: unable to access the forge" >&2
+		exit 128
+	}
+	;;
+esac
 exec "$(command -v git)" "\$@"
 STUB
 
@@ -442,7 +459,7 @@ fresh_case() {
 	unset CHUG_STUB_GIT_REFUSES CHUG_STUB_GIT_RC CHUG_STUB_VIEW_RC CHUG_STUB_DEPLOYMENTS_RC CHUG_STUB_RUNNING_RC
 	unset CHUG_STUB_HELD_SOURCE CHUG_STUB_HELD_APPS CHUG_STUB_HELD_MIGRATE CHUG_STUB_HELD_CHUGGY
 	unset CHUG_STUB_GOES_APPS CHUG_STUB_GOES_MIGRATE CHUG_STUB_GOES_CHUGGY
-	unset CHUG_STUB_RIG_SOURCE CHUG_STUB_RIG_MIGRATE CHUG_STUB_RIG_CHUGGY CHUG_STUB_CLONE_BEHIND
+	unset CHUG_STUB_RIG_SOURCE CHUG_STUB_RIG_MIGRATE CHUG_STUB_RIG_CHUGGY CHUG_STUB_CLONE_BEHIND CHUG_STUB_FORGE_GONE
 	unset CHUG_STUB_MIGRATE CHUG_STUB_MIGRATE_AT CHUG_STUB_MIGRATE_AFTER CHUG_STUB_SOURCE_RC CHUG_RELEASE_WAIT_SECS
 	export CHUG_RIG_SSH=nobody@no-such-host
 	export CHUG_STUB_DIGEST="$NEW"
@@ -663,7 +680,10 @@ check "a console release over a release that is held merges nothing" 2 "$RC" "me
 # layer that reads Ready and has not applied what the source holds is a release
 # in flight; one that has never applied anything, one that is suspended, one
 # that reads not Ready where it is, and one the cluster does not answer for
-# are each refused for what they are.
+# are each refused for what they are. A layer that has applied what the source
+# holds is not said to make the fabric's manifests untrue of the rig, and one
+# that reads not Ready is refused with the reason it gives: a layer whose
+# dependency is reconciling reads so for a while.
 rig_behind() {
 	fresh_case
 	advance src/a.ts
@@ -685,15 +705,17 @@ for behind in MIGRATE:chuggy-migrate CHUGGY:chuggy; do
 	check "a $layer layer that has applied nothing could not be run over" 2 "$RC" "the $layer Kustomization $UNAPPLIED: it has applied no revision and the source is at $(fabric_at main), $NOT_LIVE"
 
 	rig_behind
-	export "$knob=main True true"
+	export "$knob=main True ReconciliationSucceeded true"
 	run
-	check "a $layer layer that is suspended could not be run over" 2 "$RC" "LINTER ERROR — the $layer Kustomization is suspended: it has applied $(fabric_at main) and the source is at $(fabric_at main), $NOT_LIVE"
+	check "a $layer layer that is suspended could not be run over" 2 "$RC" "LINTER ERROR — the $layer Kustomization is suspended: it has applied $(fabric_at main) and the source is at $(fabric_at main), and Flux applies nothing through it until it is resumed"
+	refute "a suspended $layer layer that has applied what the source holds is not said to leave the manifests untrue" 2 "$RC" "$NOT_LIVE"
 	check "a suspended $layer layer runs no gate" 2 "$RC" "gates run: 0"
 
 	rig_behind
-	export "$knob=main False"
+	export "$knob=main False DependencyNotReady"
 	run
-	check "a $layer layer that is not Ready where it is could not be run over" 2 "$RC" "LINTER ERROR — the $layer Kustomization is not Ready: it has applied $(fabric_at main) and the source is at $(fabric_at main), $NOT_LIVE"
+	check "a $layer layer that is not Ready where it is could not be run over, and the reason it gives is said" 2 "$RC" "LINTER ERROR — the $layer Kustomization is not Ready, for the reason DependencyNotReady, though it has applied what the fabric source holds: it has applied $(fabric_at main) and the source is at $(fabric_at main)"
+	refute "a $layer layer that is not Ready where it is is not said to leave the manifests untrue" 2 "$RC" "$NOT_LIVE"
 	check "a $layer layer that is not Ready runs no gate" 2 "$RC" "gates run: 0"
 
 	rig_behind
@@ -751,6 +773,53 @@ advance src/a.ts
 export CHUG_STUB_CLONE_BEHIND=1 CHUG_STUB_RIG_SOURCE=main~1
 run
 check "layers past the source as it was read are released to" 0 "$RC" "pull requests opened: 1"
+
+# What a layer is held to is the source and not the clone: the source holds
+# the commit the main gained, and a layer still at the commit that was cloned
+# is a release in flight.
+for behind in MIGRATE:chuggy-migrate CHUGGY:chuggy; do
+	layer="${behind#*:}"
+	fresh_case
+	advance src/a.ts
+	export CHUG_STUB_CLONE_BEHIND=1 "CHUG_STUB_RIG_${behind%:*}=main~1 True"
+	run
+	check "a $layer layer at the commit that was cloned, behind a source past it, could not be run over" 2 "$RC" "LINTER ERROR — the $layer Kustomization $UNAPPLIED: it has applied $(fabric_at main~1) and the source is at $(fabric_at main), $NOT_LIVE"
+	check "a $layer layer behind a source past the clone opens nothing" 2 "$RC" "pull requests opened: 0"
+done
+
+# A revision is a commit by its full hash. A name the clone would resolve and
+# a hash cut short are neither, though each would resolve there to the commit
+# the source holds.
+for cut in "a name" "a hash cut short"; do
+	rig_behind
+	case "$cut" in
+	"a name") said=HEAD ;;
+	*) said="main@sha1:$(git --git-dir="$FABRIC_GIT" rev-parse --short main)" ;;
+	esac
+	export CHUG_STUB_RIG_CHUGGY="raw:$said True"
+	run
+	check "a layer that answers $cut for a revision has not applied what the source holds" 2 "$RC" "the chuggy Kustomization $UNAPPLIED: it has applied $said and the source is at $(fabric_at main), $NOT_LIVE"
+done
+
+# A revision the clone could not get is not one it can hold anything to. The
+# forge not answering for a source past the clone is not a source that is
+# behind, and a layer at a commit the main does not hold is not one that has
+# not applied it: each could not be read, and says which.
+fresh_case
+advance src/a.ts
+export CHUG_STUB_CLONE_BEHIND=1 CHUG_STUB_FORGE_GONE=always
+run
+PAST="$(git --git-dir="$FABRIC_GIT" rev-parse main)"
+check "a source past the clone at a commit the forge does not give could not be read, and what git said is said" 2 "$RC" "LINTER ERROR — the fabric source is at main@sha1:$PAST, and whether that holds $(git --git-dir="$FABRIC_GIT" rev-parse main~1), which was cloned as the main of gdoteof/chuggy-fabric, could not be read: $PAST could not be fetched from the main of gdoteof/chuggy-fabric; git said: fatal: unable to access the forge"
+refute "a source past the clone is not said to be behind it" 2 "$RC" "has not fetched"
+check "a source that could not be read runs no gate" 2 "$RC" "gates run: 0"
+
+rig_behind
+export CHUG_STUB_RIG_CHUGGY="elsewhere True"
+run
+check "a layer at a revision the fabric's main does not have could not be read, and that is said" 2 "$RC" "LINTER ERROR — whether the chuggy Kustomization has applied what the fabric source holds could not be read: it has applied main@sha1:$ELSEWHERE and the source is at $(fabric_at main), and the main of gdoteof/chuggy-fabric does not hold $ELSEWHERE"
+refute "a layer at a revision the main does not have is not said to leave the manifests untrue" 2 "$RC" "$NOT_LIVE"
+check "a layer that could not be read runs no gate" 2 "$RC" "gates run: 0"
 
 # --- which images a change rebuilds ---------------------------------------------
 
@@ -1505,6 +1574,22 @@ run
 check "a wait of more seconds than a shell counts is refused" 2 "$RC" "CHUG_RELEASE_HEARD_SECS is \`99999999999999999999\`, which is more seconds than a landing can count"
 check "a wait of more seconds than a shell counts reaches no tool" 2 "$RC" "$untouched"
 
+# The cap on each wait of a landing is held to the same, and for the same
+# reason: it is counted towards after the merge.
+fresh_case
+advance src/a.ts
+export CHUG_RELEASE_WAIT_SECS=10m
+run
+check "a cap that is no number of seconds is refused" 2 "$RC" "CHUG_RELEASE_WAIT_SECS is \`10m\`, which is not a whole number of seconds"
+check "a cap that is no number reaches no tool" 2 "$RC" "$untouched"
+
+fresh_case
+advance src/a.ts
+export CHUG_RELEASE_WAIT_SECS=99999999999999999999
+run
+check "a cap of more seconds than a shell counts is refused" 2 "$RC" "CHUG_RELEASE_WAIT_SECS is \`99999999999999999999\`, which is more seconds than a landing can count"
+check "a cap of more seconds than a shell counts reaches no tool" 2 "$RC" "$untouched"
+
 # A lease is written whole by whatever renews it, so one that reads earlier
 # than it did has been written as surely as one that reads later.
 open_release src/a.ts
@@ -1821,16 +1906,44 @@ for held in $LAYERS; do
 	refute "a release the $layer layer holds asks after no Deployment" 1 "$RC" "rollout status"
 done
 
-# A revision the fabric's main does not have is not one that contains the
-# merge, whatever else it is: the layer is waited on as one before the merge
-# is, and the finding of a wait that runs out on it says the main has no such
-# commit. A layer that stops answering is said to have answered nothing.
+# A revision the clone could not get is not one that contains the merge,
+# whatever else it is: the layer is waited on as one before the merge is. A
+# wait that runs out on it could not be read, since the layer may be past the
+# merge, and says which it was: the main does not hold that commit, or the
+# forge did not answer for it, with what git said. A layer that stops
+# answering is said to have answered nothing.
 open_release src/a.ts
 export CHUG_STUB_GOES_CHUGGY=elsewhere CHUG_RELEASE_WAIT_SECS=10
 run --merge
-check "a layer at a revision the fabric's main does not have is not taken to have the merge, and the finding says so" 1 "$RC" "FAILED — the chuggy Kustomization did not reach $MERGED within 10s: it applies the services, and chuggy-migrate-$TAG-registry completed before them; it is at main@sha1:$ELSEWHERE, which the main of gdoteof/chuggy-fabric was not found to hold"
-check "a layer at a revision the fabric's main does not have is waited for as long as the landing is told" 1 "$RC" "waits: 2"
-refute "a layer at a revision the fabric's main does not have has no Deployment asked after" 1 "$RC" "rollout status"
+check "a wait that runs out on a revision the fabric's main does not have could not be read, and says so" 2 "$RC" "LINTER ERROR — whether the chuggy Kustomization reached $MERGED within 10s could not be read: it applies the services, and chuggy-migrate-$TAG-registry completed before them; it is at main@sha1:$ELSEWHERE, and the main of gdoteof/chuggy-fabric does not hold $ELSEWHERE"
+refute "a layer at a revision the fabric's main does not have is not said to be behind the merge" 2 "$RC" "did not reach"
+check "a layer at a revision the fabric's main does not have is waited for as long as the landing is told" 2 "$RC" "waits: 2"
+refute "a layer at a revision the fabric's main does not have has no Deployment asked after" 2 "$RC" "rollout status"
+
+# The forge stops answering once the release is merged, and the main gains a
+# commit the source goes on to: the clone cannot get it, so whether the source
+# is past the merge could not be read.
+open_release src/a.ts
+export CHUG_STUB_FORGE_GONE=merged CHUG_STUB_MAIN_GAINS=1 CHUG_RELEASE_WAIT_SECS=10
+run --merge
+check "a wait that runs out on a commit the forge does not give could not be read, and what git said is said" 2 "$RC" "LINTER ERROR — whether the fabric source reached $MERGED within 10s could not be read; it is at main@sha1:$LATER, and $LATER could not be fetched from the main of gdoteof/chuggy-fabric; git said: fatal: unable to access the forge"
+refute "a source at a commit the forge does not give is not said to be behind the merge" 2 "$RC" "did not reach"
+check "a source at a commit the forge does not give is waited for as long as the landing is told" 2 "$RC" "waits: 2"
+
+# The mirrors. The merge is known for itself with no clone to ask, so a rig
+# that goes to it lands though the forge is gone; and a commit the clone has
+# cannot descend from one it has not, so a layer that stays at the commit
+# before the merge is a finding and not a wait that could not be read.
+open_release src/a.ts
+export CHUG_STUB_FORGE_GONE=merged CHUG_STUB_HELD_APPS=2
+run --merge
+check "a release that rolled out lands though the forge stopped answering at the merge" 0 "$RC" "the rig is at $TAG; ledger at 52"
+check "a layer slow to the merge is waited for though the forge stopped answering" 0 "$RC" "waits: 2"
+
+open_release src/a.ts
+export CHUG_STUB_FORGE_GONE=merged CHUG_STUB_HELD_APPS=always CHUG_RELEASE_WAIT_SECS=10
+run --merge
+check "a layer that stays before the merge is a finding though the forge stopped answering" 1 "$RC" "FAILED — the apps Kustomization did not reach $MERGED within 10s: it applies what a release runs on and no part of one, and it holds this one, for Flux makes no migrate Job and applies no service of $TAG until it has; it is at main@sha1:$BEFORE"
 
 open_release src/a.ts
 export CHUG_STUB_GOES_MIGRATE=absent CHUG_RELEASE_WAIT_SECS=10
@@ -1909,6 +2022,16 @@ for says in "of the revision before the merge" "of a revision the fabric's main 
 	check "a layer that says a health check failed $says is waited on" 0 "$RC" "the rig is at $TAG; ledger at 52"
 	check "a layer that says so $says is waited on until the release has rolled" 0 "$RC" "waits: 2"
 done
+
+# How the layer's own revision was read is kept apart from how its Job's was.
+# Here the layer goes to a revision the main does not have and says its Job
+# failed of the commit before the merge: the second is decided, and the wait
+# that runs out is still one that could not be read.
+open_release src/a.ts
+CHUG_STUB_MIGRATE="$(migrate_says HealthCheckFailed "failed early due to stalled resources" "chuggy-migrate-$TAG-registry" Failed)"
+export CHUG_STUB_MIGRATE CHUG_STUB_MIGRATE_AT=before CHUG_STUB_GOES_MIGRATE=elsewhere CHUG_RELEASE_WAIT_SECS=10
+run --merge
+check "a layer that could not be read is not read by what its Job's revision was" 2 "$RC" "LINTER ERROR — whether the chuggy-migrate Kustomization reached $MERGED within 10s could not be read: it applies the migrate Job, and Flux applies no service of $TAG until chuggy-migrate-$TAG-registry completes; it is at main@sha1:$ELSEWHERE, and the main of gdoteof/chuggy-fabric does not hold $ELSEWHERE"
 
 open_release src/a.ts
 export CHUG_STUB_STALE=chuggy-api

@@ -22,11 +22,13 @@
 # release whose migrate Job failed leaves the fabric's main naming a commit no
 # service runs. So before anything is decided the rig is asked. The source
 # must hold the fabric's main as it was cloned, and each layer that applies a
-# release, `chuggy-migrate` and `chuggy`, must not be suspended, must have
-# applied what the source holds, and must not read as failing. Where that is
-# not so this could not run, and says which layer, what it has applied and
-# where the source is. The way on is the fabric's: Flux finishes a release
-# that is in flight, and one that is held is reverted there.
+# release, `chuggy-migrate` and `chuggy`, must have applied what the source
+# holds. Where that is not so this could not run, and says which layer, what
+# it has applied and where the source is. The way on is the fabric's: Flux
+# finishes a release that is in flight, and one that is held is reverted
+# there. A layer that is suspended, or that has applied what the source holds
+# and reads not Ready, is not released over either. Its manifests may well be
+# what is live, so it is refused for what it is, with the reason it gives.
 #
 # WHAT IS RELEASED IS HEAD, AND HEAD MUST BE ON MAIN. The tag is the short
 # commit, which `deploy/rig/images/build-and-import.sh` refuses to derive from
@@ -92,10 +94,13 @@
 # commit of the fabric's main that descends from it. That main may gain one
 # while a release rolls out, and a layer whose dependency was still busy when
 # the source fetched it applies that commit and never the merge by itself.
-# Which it is, is decided by ancestry in this run's clone of the fabric, which
-# fetches the main for a commit it has not got. A revision it still has not
-# got contains nothing: it is waited on like any other, and the finding of a
-# wait that runs out on one says so.
+# Which it is, is decided by ancestry in this run's clone of the fabric.
+# Revisions that are the same commit need no clone to say so, and a commit the
+# clone has cannot descend from one it has not, so the main is fetched only
+# for a revision the clone has not got. One it still has not got, the forge
+# not answering or the main not holding it, is not decided either way: it is
+# waited on like any other, and a wait that runs out on one could not be read,
+# and says which of the two it was.
 #
 # EACH WAIT IS CAPPED BY ITSELF, AND THERE IS NO TOTAL. A cap ends a wait on
 # something that hangs, so a layer that is slow has the whole of its own and
@@ -248,12 +253,15 @@ case "${CHUG_RELEASE_GATE:-}" in
 *) refuse "CHUG_RELEASE_GATE is \`$CHUG_RELEASE_GATE\`, and it takes 0, full or nothing" ;;
 esac
 heard_secs="${CHUG_RELEASE_HEARD_SECS:-150}"
-case "$heard_secs" in
-"" | *[!0-9]*) refuse "CHUG_RELEASE_HEARD_SECS is \`$heard_secs\`, which is not a whole number of seconds" ;;
-# More digits than every shell's arithmetic holds is a comparison that errors,
-# and so a wait that never ends.
-??????????*) refuse "CHUG_RELEASE_HEARD_SECS is \`$heard_secs\`, which is more seconds than a landing can count" ;;
-esac
+wait_secs="${CHUG_RELEASE_WAIT_SECS:-600}"
+for secs in "CHUG_RELEASE_HEARD_SECS=$heard_secs" "CHUG_RELEASE_WAIT_SECS=$wait_secs"; do
+	case "${secs#*=}" in
+	"" | *[!0-9]*) refuse "${secs%%=*} is \`${secs#*=}\`, which is not a whole number of seconds" ;;
+	# More digits than every shell's arithmetic holds is a comparison that
+	# errors, and so a wait that never ends.
+	??????????*) refuse "${secs%%=*} is \`${secs#*=}\`, which is more seconds than a landing can count" ;;
+	esac
+done
 
 for tool in git docker ssh kubectl gh python3; do
 	command -v "$tool" >/dev/null 2>&1 || refuse "no \`$tool\` on PATH, so nothing was released"
@@ -265,7 +273,6 @@ context="${CHUG_RIG_CONTEXT:-chuggy-fabric}"
 namespace="${CHUG_RIG_NAMESPACE:-chuggy}"
 database="${CHUG_RIG_DATABASE:-chuggy}"
 fabric_repo="${CHUG_FABRIC_REPO:-gdoteof/chuggy-fabric}"
-wait_secs="${CHUG_RELEASE_WAIT_SECS:-600}"
 registry_prefix=registry.chuggy.internal/chuggy
 
 kube() { kubectl --context "$context" "$@"; }
@@ -384,15 +391,27 @@ renewed() { # <lease then> <lease now>
 	[ "$2" != "$1" ]
 }
 
-# Whether a revision of the fabric's main contains another, each as Flux
-# writes one or as a bare commit: it is that commit or descends from it. The
-# clone decides it, as the header argues, and one it cannot decide is not one
-# that contains.
-contains() { # <revision> <revision>
+# Whether a revision read off the rig contains a commit of the fabric's main,
+# each as Flux writes one or as a bare commit: it is that commit or descends
+# from it. A commit is read by its full hash, and a revision that is anything
+# else contains nothing. The clone decides the rest, as the header argues. A
+# revision it could not get is not one that contains, and `undecided` says
+# why it could not.
+contains() { # <revision> <commit>
 	this="${1##*:}"
 	that="${2##*:}"
-	{ git -C "$fabric" cat-file -e "$this^{commit}" && git -C "$fabric" cat-file -e "$that^{commit}"; } 2>/dev/null \
-		|| git -C "$fabric" fetch -q origin refs/heads/main 2>/dev/null || return 1
+	undecided=""
+	printf '%s' "$this" | grep -Eqx '[0-9a-f]{40}' || return 1
+	[ "$this" != "$that" ] || return 0
+	if ! git -C "$fabric" cat-file -e "$this^{commit}" 2>/dev/null; then
+		if ! git -C "$fabric" fetch -q origin refs/heads/main 2>"$work/unfetched"; then
+			undecided="$this could not be fetched from the main of $fabric_repo; git said: $(grep -v '^$' "$work/unfetched" | head -n 1)"
+			return 1
+		elif ! git -C "$fabric" cat-file -e "$this^{commit}" 2>/dev/null; then
+			undecided="the main of $fabric_repo does not hold $this"
+			return 1
+		fi
+	fi
 	git -C "$fabric" merge-base --is-ancestor "$that" "$this" 2>/dev/null
 }
 
@@ -424,27 +443,37 @@ done
 
 # Whether Flux has applied those manifests, which the header argues, asked
 # before anything is decided from them. Ready is Unknown for the length of
-# every reconciliation, one over a revision already applied among them, so a
-# layer reads as failing only where it is neither that nor True.
+# every reconciliation, one over a revision already applied among them, so it
+# passes as True does. Any other status is refused with the reason the layer
+# gives, and may pass on a second run: a layer reads not Ready while the one
+# it depends on is reconciling.
 fabric_main="$(git -C "$fabric" rev-parse --verify HEAD)" || refuse "the main of $fabric_repo could not be read out of its clone"
 source_name="$(kube -n flux-system get kustomization chuggy -o jsonpath='{.spec.sourceRef.name}' 2>/dev/null || true)"
 [ -n "$source_name" ] || refuse "the chuggy Kustomization answered no source through context $context, so whether Flux has applied the fabric's manifests is unknown"
 source_at="$(kube -n flux-system get "gitrepository/$source_name" -o jsonpath='{.status.artifact.revision}' 2>/dev/null || true)"
 not_live="so the fabric's manifests do not say what is live, and nothing is decided from them"
-contains "$source_at" "$fabric_main" || refuse "the fabric source is at ${source_at:-no revision} and has not fetched $fabric_main, the main of $fabric_repo, $not_live"
+if ! contains "$source_at" "$fabric_main"; then
+	[ -z "$undecided" ] || refuse "the fabric source is at $source_at, and whether that holds $fabric_main, which was cloned as the main of $fabric_repo, could not be read: $undecided"
+	refuse "the fabric source is at ${source_at:-no revision} and has not fetched $fabric_main, the main of $fabric_repo, $not_live"
+fi
 for layer in chuggy-migrate chuggy; do
-	state="$(kube -n flux-system get kustomization "$layer" -o jsonpath='{.status.lastAppliedRevision}|{.status.conditions[?(@.type=="Ready")].status}|{.spec.suspend}' 2>/dev/null)" \
+	state="$(kube -n flux-system get kustomization "$layer" -o jsonpath='{.status.lastAppliedRevision}|{.status.conditions[?(@.type=="Ready")].status}|{.status.conditions[?(@.type=="Ready")].reason}|{.spec.suspend}' 2>/dev/null)" \
 		|| refuse "the $layer Kustomization could not be read through context $context, so whether Flux has applied the fabric's manifests is unknown"
 	has="${state%%|*}"
 	state="${state#*|}"
+	ready="${state%%|*}"
+	state="${state#*|}"
+	at="it has applied ${has:-no revision} and the source is at $source_at"
 	if [ "${state#*|}" = true ]; then
-		held="is suspended"
+		refuse "the $layer Kustomization is suspended: $at, and Flux applies nothing through it until it is resumed"
 	elif ! contains "$has" "$source_at"; then
-		held="has not applied what the fabric source holds"
-	else
-		case "${state%%|*}" in True | Unknown) held="" ;; *) held="is not Ready" ;; esac
+		[ -z "$undecided" ] || refuse "whether the $layer Kustomization has applied what the fabric source holds could not be read: $at, and $undecided"
+		refuse "the $layer Kustomization has not applied what the fabric source holds: $at, $not_live"
 	fi
-	[ -z "$held" ] || refuse "the $layer Kustomization $held: it has applied ${has:-no revision} and the source is at $source_at, $not_live"
+	case "$ready" in
+	True | Unknown) ;;
+	*) refuse "the $layer Kustomization is not Ready, for the reason ${state%%|*}, though it has applied what the fabric source holds: $at" ;;
+	esac
 done
 
 deployed="$(manifest_source_commit chuggy/chuggy-api.yaml)"
@@ -578,22 +607,26 @@ land() { # <pull request url>
 	say "merged as $merged"
 
 	# A wait is for the revision the command reads to contain the merge. Each
-	# wait is capped by itself, and one that runs out is the finding it was
-	# given and what was last read, said apart where the clone has no such
-	# commit. Between askings the check may end the landing.
-	wait_for() { # <the finding> <check> <command...>
-		finding="$1"
-		unless="$2"
-		shift 2
+	# wait is capped by itself, and one that runs out is a finding: what was
+	# waited on, what it holds and what was last read. Where that could not be
+	# told from the merge the wait could not be read, and says why. Between
+	# askings the check may end the landing.
+	wait_for() { # <what> <what it holds> <check> <command...>
+		what="$1"
+		holds="$2"
+		within="$merged within ${wait_secs}s"
+		unless="$3"
+		shift 3
 		waited=0
 		while :; do
 			reads="$("$@" 2>/dev/null || true)"
 			! contains "$reads" "$merged" || break
+			unread="$undecided"
 			"$unless"
 			if [ "$waited" -ge "$wait_secs" ]; then
-				[ -n "$reads" ] || fail "$finding; it answered no revision"
-				git -C "$fabric" cat-file -e "${reads##*:}^{commit}" 2>/dev/null || fail "$finding; it is at $reads, which the main of $fabric_repo was not found to hold"
-				fail "$finding; it is at $reads"
+				[ -n "$reads" ] || fail "$what did not reach $within$holds; it answered no revision"
+				[ -z "$unread" ] || refuse "whether $what reached $within could not be read$holds; it is at $reads, and $unread"
+				fail "$what did not reach $within$holds; it is at $reads"
 			fi
 			sleep 5
 			waited=$((waited + 5))
@@ -622,14 +655,13 @@ land() { # <pull request url>
 	# the `chuggy` layer was read to name before anything was decided.
 	stamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 	kube -n flux-system annotate --overwrite "gitrepository/$source_name" "reconcile.fluxcd.io/requestedAt=$stamp" >/dev/null || refuse "the source could not be asked to reconcile"
-	unreached="did not reach $merged within ${wait_secs}s"
-	wait_for "the fabric source $unreached" true kube -n flux-system get "gitrepository/$source_name" -o jsonpath='{.status.artifact.revision}'
+	wait_for "the fabric source" "" true kube -n flux-system get "gitrepository/$source_name" -o jsonpath='{.status.artifact.revision}'
 	# The layers, in the order Flux applies them. Whether the migrate Job
 	# failed is asked only while its layer is the one waited on, as the header
 	# argues.
-	wait_for "the apps Kustomization $unreached: it applies what a release runs on and no part of one, and it holds this one, for Flux makes no migrate Job and applies no service of $tag until it has" true applied apps
-	wait_for "the chuggy-migrate Kustomization $unreached: it applies the migrate Job, and Flux applies no service of $tag until $job completes" unless_migration_failed applied chuggy-migrate
-	wait_for "the chuggy Kustomization $unreached: it applies the services, and $job completed before them" true applied chuggy
+	wait_for "the apps Kustomization" ": it applies what a release runs on and no part of one, and it holds this one, for Flux makes no migrate Job and applies no service of $tag until it has" true applied apps
+	wait_for "the chuggy-migrate Kustomization" ": it applies the migrate Job, and Flux applies no service of $tag until $job completes" unless_migration_failed applied chuggy-migrate
+	wait_for "the chuggy Kustomization" ": it applies the services, and $job completed before them" true applied chuggy
 
 	# That is Flux's account of the release. The Job the manifest names is
 	# asked after itself, and then each Deployment.
