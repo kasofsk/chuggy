@@ -14,9 +14,15 @@
 # that "not part of this run" and "should have run and was not there" cannot
 # print the same.
 #
+# A RUN THAT RAN NOTHING SAYS SO. The gates that read text run on any change,
+# so a run no gate is selected for is a run with nothing changed: it exits 0
+# having proved nothing, and its last line is that and not a verdict. A caller
+# that must not pass on nothing asks for it to be a could-not-run.
+#
 # Env:
 #   CHUG_CI_BASE=<ref>            override the default origin/main or main base
 #   CHUG_CI_FULL=1                force every gate and shell suite
+#   CHUG_CI_NEEDS_GATE=1          a run that selects nothing could not run
 #   CHUG_CI_SHELL_SUITES=0        skip the shell-suite stage (set for the
 #                                 suites themselves, so ci.test.sh cannot
 #                                 recurse into a real run)
@@ -37,10 +43,12 @@ echo "ci: $CI_SELECT_MODE run ($CI_SELECT_REASON)"
 
 failed=0
 errored=0
+ran=0
 
 run_gate() { # <label> <script> [args...]
 	label="$1"
 	shift
+	ran=$((ran + 1))
 	printf '\n--- %s\n' "$label"
 	if [ ! -x "$1" ]; then
 		if [ -e "$1" ]; then why="is not executable"; else why="is missing"; fi
@@ -183,5 +191,13 @@ fi
 if [ "$failed" -gt 0 ]; then
 	echo "ci: $failed gate(s) failed"
 	exit 1
+fi
+if [ "$ran" -eq 0 ]; then
+	if [ "${CHUG_CI_NEEDS_GATE:-0}" = "1" ]; then
+		echo "ci: LINTER ERROR — the change selects no gate, so nothing ran; this is not a pass (CHUG_CI_FULL=1 runs every gate)"
+		exit 2
+	fi
+	echo "ci: no gate selected; nothing ran"
+	exit 0
 fi
 echo "ci: all gates clean"
