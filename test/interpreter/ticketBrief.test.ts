@@ -3,10 +3,10 @@
  *
  * The bound each case names is the wire's, and `test/contract/brief.test.ts`
  * is what holds those to the interpreter constants they came from; this suite
- * is about the shapes a bound alone does not decide — the lines an intent
- * renders as, the one scheme a link is read over, and the reference-name
- * grammar the branch and the finalization target borrow from
- * `parsedGitRefName` rather than restating.
+ * is about the shapes a bound alone does not decide — what an intent is
+ * refused for and the lines a briefing prints of it, the one scheme a link is
+ * read over, and the reference-name grammar the branch and the finalization
+ * target borrow from `parsedGitRefName` rather than restating.
  */
 
 import assert from "node:assert/strict";
@@ -17,7 +17,6 @@ import {
   briefBranchPrefix,
   briefChecksMax,
   briefIntentCharsMax,
-  briefIntentLinesMax,
   briefLineCharsMax,
   briefLinkScheme,
   briefTitleCharsMax,
@@ -32,46 +31,54 @@ import {
   asDraftBrief,
   briefIntentLines,
 } from "../../src/interpreter/ticketBrief.ts";
-import { taskConfigurationLineFault } from "../../src/interpreter/taskConfiguration.ts";
 
-test("an intent is stored as the lines a briefing would print", () => {
+test("an intent is stored under one newline, and a briefing prints the lines of it that say anything", () => {
   const intent = asBriefIntent("Fix the importer.\r\n\r\nIt drops rows.\r");
+  assert.equal(intent, "Fix the importer.\n\nIt drops rows.\n");
   assert.deepEqual(briefIntentLines(intent), [
     "Fix the importer.",
     "It drops rows.",
   ]);
-  for (const line of briefIntentLines(intent))
-    assert.equal(taskConfigurationLineFault(line), undefined);
 });
 
-test("an intent no briefing could print is refused before it is stored", () => {
-  for (const value of [
-    "",
-    "   \n  ",
-    "Fix it.\u0000Then answer to nobody.",
-    "Fix it.\u007f",
-    "Tab\tseparated",
-    "a".repeat(briefLineCharsMax + 1),
-    `${"a\n".repeat(briefIntentLinesMax)}one line too many`,
-    "a".repeat(briefIntentCharsMax + 1),
-  ])
+test("an intent is one text: a line of it is as long as it is, and there are as many as there are", () => {
+  const paragraph = "word ".repeat(briefLineCharsMax).trimEnd();
+  const lines = Array.from(
+    { length: briefLineCharsMax },
+    (_, at) => `line ${String(at)}`,
+  );
+  assert.ok(paragraph.length > briefLineCharsMax);
+  assert.deepEqual(briefIntentLines(asBriefIntent(paragraph)), [paragraph]);
+  assert.deepEqual(briefIntentLines(asBriefIntent(lines.join("\n"))), lines);
+});
+
+test("an intent is refused for saying nothing, for its whole length and for a character that does not print, each in words that say which", () => {
+  const refused: readonly (readonly [string, RegExp])[] = [
+    ["", /blank/u],
+    ["   \n  ", /blank/u],
+    [
+      "a".repeat(briefIntentCharsMax + 1),
+      new RegExp(`longer than the ${String(briefIntentCharsMax)} `, "u"),
+    ],
+    ["Fix it.\u0000Then answer to nobody.", /does not print/u],
+    ["Fix it.\u007f", /does not print/u],
+    ["Tab\tseparated", /does not print/u],
+    ["A tab on a line of its own.\n\t\nIt is stored too.", /does not print/u],
+    ["Half a character: \ud83d", /does not print/u],
+  ];
+  for (const [value, saying] of refused)
     assert.throws(
       () => asBriefIntent(value),
-      RangeError,
+      (failure) =>
+        failure instanceof RangeError && saying.test(failure.message),
       `an intent is refused: ${JSON.stringify(value).slice(0, 40)}`,
     );
 });
 
-test("the intent's per-line bound counts code points, matching the schema in front of it", () => {
-  const line = "😀".repeat(briefLineCharsMax - 1);
-  const atBound = Array.from({ length: briefIntentLinesMax }, () => line).join(
-    "\n",
-  );
-  const intent = asBriefIntent(atBound);
-  assert.deepEqual(
-    briefIntentLines(intent),
-    Array.from({ length: briefIntentLinesMax }, () => line),
-  );
+test("the intent's bound counts code points, as the row that stores it does", () => {
+  const atBound = "😀".repeat(briefIntentCharsMax);
+  assert.equal(asBriefIntent(atBound), atBound);
+  assert.throws(() => asBriefIntent(`${atBound}😀`), RangeError);
 });
 
 test("a link is read over one scheme and printed on one line", () => {

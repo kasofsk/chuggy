@@ -18,7 +18,7 @@ import {
   invalidRequestReasonCharsMax,
 } from "../../src/adapters/http/outcomes.ts";
 import type { NativeHttpResponse } from "../../src/adapters/http/outcomes.ts";
-import { briefLineCharsMax, briefSchema } from "../../src/contract/brief.ts";
+import { briefIntentCharsMax, briefSchema } from "../../src/contract/brief.ts";
 import { ProjectAccessUnavailable } from "../../src/interpreter/projectAccess.ts";
 import { asBriefIntent } from "../../src/interpreter/ticketBrief.ts";
 import {
@@ -126,7 +126,7 @@ test("a brand's refusal reaches the caller in the brand's own words", () => {
 test("a wire refusal names the field each issue was found at", () => {
   const failure = raised(() =>
     briefSchema.parse({
-      intent: "x".repeat(briefLineCharsMax + 1),
+      intent: "x".repeat(briefIntentCharsMax + 1),
       links: ["not a link"],
     }),
   );

@@ -13,13 +13,13 @@
 
 import { z } from "zod";
 
-import { repositoryIdentityCharsMax, textCodePointsCount } from "./http.ts";
+import { repositoryIdentityCharsMax } from "./http.ts";
 import { briefFinalizationProposes } from "./rosters.ts";
 
 /**
- * The longest line a briefing renders, which is the whole of what a brief is
- * measured in: an intent renders as lines and a link renders as one, so this
- * is the bound the wire publishes, the server enforces and the CHECK stores.
+ * The longest line a briefing renders, which bounds each thing a brief states
+ * as one line: a link and a check line. It is the bound the wire publishes,
+ * the server enforces and the CHECK stores.
  */
 export const briefLineCharsMax = 512;
 
@@ -30,11 +30,8 @@ export const briefLineCharsMax = 512;
  */
 export const briefTitleCharsMax = 256;
 
-/** The longest intent a draft stores, an intent being a paragraph and not a line. */
+/** The longest intent a draft stores, which is the whole of what bounds one. */
 export const briefIntentCharsMax = 16_384;
-
-/** The most lines an intent renders as, which is what the two bounds above divide out to. */
-export const briefIntentLinesMax = briefIntentCharsMax / briefLineCharsMax;
 
 /** The most links one brief carries, a link list being a briefing list like any other. */
 export const briefLinksMax = 8;
@@ -95,42 +92,12 @@ export const briefCheckSchema = z.string().min(1).max(briefLineCharsMax);
 export const briefTitleSchema = z.string().min(1).max(briefTitleCharsMax);
 
 /**
- * The lines an intent renders as, over the newline a browser sends as well as
- * the one this tree bounds. A blank line prints nothing, so it is neither
- * bounded nor counted.
+ * What this ticket is for, in its author's words: one text bounded as a whole
+ * and by nothing a line at a time, because whatever draws it breaks its lines
+ * at the width it draws at. The server decides the rest, which is that it says
+ * something and that every character of it prints.
  */
-function briefIntentWireLines(intent: string): readonly string[] {
-  return intent
-    .replaceAll("\r\n", "\n")
-    .replaceAll("\r", "\n")
-    .split("\n")
-    .filter((line) => line.trim().length > 0);
-}
-
-/**
- * What this ticket is for, stored as the lines a briefing prints. Each of them
- * takes the line rule an authored line takes, so a paragraph written as one long
- * line is refused here rather than branded and thrown on.
- */
-export const briefIntentSchema = z
-  .string()
-  .min(1)
-  .max(briefIntentCharsMax)
-  .refine(
-    (intent) =>
-      briefIntentWireLines(intent).every(
-        (line) => textCodePointsCount(line) <= briefLineCharsMax,
-      ),
-    {
-      error: `an intent line is longer than the ${String(briefLineCharsMax)} characters a briefing line renders: break the sentence across lines rather than shorten it`,
-    },
-  )
-  .refine(
-    (intent) => briefIntentWireLines(intent).length <= briefIntentLinesMax,
-    {
-      error: `an intent renders as more than the ${String(briefIntentLinesMax)} lines a briefing prints`,
-    },
-  );
+export const briefIntentSchema = z.string().min(1).max(briefIntentCharsMax);
 
 /**
  * How and where a finalization lands the work, as one variant per mode: a push
