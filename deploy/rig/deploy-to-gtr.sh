@@ -5,10 +5,16 @@
 # request that stands for HEAD and watch Flux roll it out.
 #
 # THE RIG FOLLOWS chuggy-fabric, NOT THIS REPOSITORY. Flux reconciles the
-# fabric's application manifests, which name every image by registry digest
-# and carry the source commit it was built from. Merging here deploys nothing;
-# a release is a fabric commit that moves those digests, and this script is the
-# whole of the path from a commit on main to that fabric commit.
+# fabric's manifests, which name every image by registry digest and carry the
+# source commit it was built from. Merging here deploys nothing; a release is
+# a fabric commit that moves those digests, and this script is the whole of
+# the path from a commit on main to that fabric commit.
+#
+# A RELEASE IS TWO DIRECTORIES OF THE FABRIC: the migrate Job under
+# `cluster/chuggy-migrate` and, under `cluster/chuggy`, the services that run
+# the release's images. The manifests edited there are all a release commits.
+# No other layout is released to: a fabric that does not keep the Job and the
+# api where a release has them is refused before anything is read from it.
 #
 # WHAT IS RELEASED IS HEAD, AND HEAD MUST BE ON MAIN. The tag is the short
 # commit, which `deploy/rig/images/build-and-import.sh` refuses to derive from
@@ -209,15 +215,16 @@ sql() { # <statement>
 
 # What a manifest carries, read by the same shapes the fabric's consistency
 # check reads, and nothing when the line is not there — so every caller has to
-# say what an absence means.
+# say what an absence means. A manifest is named as that check names it, by
+# its path under the fabric's `cluster/`.
 manifest_source_commit() { # <manifest>
-	sed -n 's|^[[:space:]]*fabric\.chuggy\.dev/source-commit:[[:space:]]*"\{0,1\}\([0-9a-f]\{7,40\}\)"\{0,1\}[[:space:]]*$|\1|p' "$apps/$1" | head -n 1
+	sed -n 's|^[[:space:]]*fabric\.chuggy\.dev/source-commit:[[:space:]]*"\{0,1\}\([0-9a-f]\{7,40\}\)"\{0,1\}[[:space:]]*$|\1|p' "$cluster/$1" | head -n 1
 }
 manifest_image() { # <manifest>
-	sed -n "s|^[[:space:]]*image: \($registry_prefix/[^[:space:]]*@sha256:[0-9a-f]*\)[[:space:]]*\$|\1|p" "$apps/$1" | head -n 1
+	sed -n "s|^[[:space:]]*image: \($registry_prefix/[^[:space:]]*@sha256:[0-9a-f]*\)[[:space:]]*\$|\1|p" "$cluster/$1" | head -n 1
 }
 manifest_job() {
-	sed -n 's|^[[:space:]]*name: \(chuggy-migrate-[a-z0-9-]*\)[[:space:]]*$|\1|p' "$apps/chuggy-migrate.yaml" | head -n 1
+	sed -n 's|^[[:space:]]*name: \(chuggy-migrate-[a-z0-9-]*\)[[:space:]]*$|\1|p' "$cluster/chuggy-migrate/chuggy-migrate.yaml" | head -n 1
 }
 # `rolling` when the Deployment named chuggy-worker-plane states, as its own
 # `spec.strategy`, a rolling update with none unavailable, and states no
@@ -298,7 +305,7 @@ worker_plane_rolls() {
 			closed()
 			if (found == 1 && stated) print "rolling"
 		}
-	' "$apps/chuggy-worker-plane.yaml" 2>/dev/null || true
+	' "$cluster/chuggy/chuggy-worker-plane.yaml" 2>/dev/null || true
 }
 # The worker contract a commit states, as the one file that carries it does:
 # the major and minor of its release, which are the version a plane serves and
@@ -336,11 +343,14 @@ trap 'rm -rf "$work"' EXIT
 # --- what is live ---------------------------------------------------------------
 
 fabric="$work/fabric"
-apps="$fabric/cluster/apps"
+cluster="$fabric/cluster"
 say "cloning $fabric_repo"
 gh repo clone "$fabric_repo" "$fabric" -- --quiet >/dev/null 2>&1 || refuse "$fabric_repo could not be cloned, so what is live is unknown"
+for kept in chuggy-migrate/chuggy-migrate.yaml chuggy/chuggy-api.yaml; do
+	[ -f "$cluster/$kept" ] || refuse "$fabric_repo has no cluster/$kept: a release is the migrate Job under cluster/chuggy-migrate and the services under cluster/chuggy, and a fabric laid out any other way is not released to"
+done
 
-deployed="$(manifest_source_commit chuggy-api.yaml)"
+deployed="$(manifest_source_commit chuggy/chuggy-api.yaml)"
 [ -n "$deployed" ] || refuse "the fabric's api manifest names no source commit, so what is live is unknown"
 git cat-file -e "$deployed^{commit}" 2>/dev/null || refuse "the live commit $deployed is not in this checkout, so what changed since it cannot be read"
 if [ "$(git rev-parse "$deployed^{commit}")" = "$commit" ]; then
@@ -373,7 +383,7 @@ land() { # <pull request url>
 	git -C "$fabric" fetch -q origin "refs/heads/$branch" || refuse "$branch could not be fetched from $fabric_repo"
 	git -C "$fabric" checkout -q --detach FETCH_HEAD || refuse "$branch could not be checked out of $fabric_repo"
 	read_head="$(git -C "$fabric" rev-parse HEAD)" || refuse "the head of $branch could not be read"
-	[ "$(manifest_source_commit chuggy-api.yaml)" = "$tag" ] || refuse "$branch does not select $tag, so it is not HEAD's release"
+	[ "$(manifest_source_commit chuggy/chuggy-api.yaml)" = "$tag" ] || refuse "$branch does not select $tag, so it is not HEAD's release"
 	# From here the tree is what the merge will produce: the branch merged into
 	# the fabric's main as it stands, which is what the cluster is given. The
 	# trial answers a conflict with a status of its own, and any other failure
@@ -401,7 +411,7 @@ land() { # <pull request url>
 		elif [ "${contract_head%.*}" -lt "${contract_live%.*}" ] || { [ "${contract_head%.*}" -eq "${contract_live%.*}" ] && [ "${contract_head#*.}" -lt "${contract_live#*.}" ]; }; then
 			unsafe="this release states worker contract $contract_head where the live commit states $contract_live, so its plane refuses a pod of the later one"
 		else
-			[ -f "$apps/chuggy-worker-plane.yaml" ] || refuse "merging $branch lands no chuggy-worker-plane.yaml, so whether a plane serves throughout the roll is unknown"
+			[ -f "$cluster/chuggy/chuggy-worker-plane.yaml" ] || refuse "merging $branch lands no chuggy-worker-plane.yaml, so whether a plane serves throughout the roll is unknown"
 			if [ "$(worker_plane_rolls)" != "rolling" ]; then
 				unsafe="the worker plane that merging $branch lands does not state a rolling update with none unavailable, or states no replica, so a moment with no plane serving is not ruled out"
 			fi
@@ -502,8 +512,8 @@ land() { # <pull request url>
 	wrong=0
 	while read -r name; do
 		[ -n "$name" ] || continue
-		[ -f "$apps/$name.yaml" ] || continue
-		expected="$(manifest_image "$name.yaml")"
+		[ -f "$cluster/chuggy/$name.yaml" ] || continue
+		expected="$(manifest_image "chuggy/$name.yaml")"
 		[ -n "$expected" ] || continue
 		kube -n "$namespace" rollout status "deployment/$name" "--timeout=${wait_secs}s" >/dev/null || fail "$name did not roll out"
 		running="$(kube -n "$namespace" get "deployment/$name" -o jsonpath='{.spec.template.spec.containers[*].image}')" || refuse "what $name runs could not be read"
@@ -703,13 +713,13 @@ if [ "$ui_moved" -eq 1 ]; then publish chuggy-ui web "chuggy-ui-$tag"; ui_digest
 
 # --- the manifests --------------------------------------------------------------
 
-api_manifests="chuggy-api.yaml chuggy-configuration-importer.yaml chuggy-finalizer.yaml chuggy-migrate.yaml chuggy-pool-plane.yaml chuggy-scheduler.yaml chuggy-selector.yaml chuggy-ticket-service.yaml chuggy-worker-plane.yaml"
-console_manifests="chuggy-ui.yaml"
+api_manifests="chuggy/chuggy-api.yaml chuggy/chuggy-configuration-importer.yaml chuggy/chuggy-finalizer.yaml chuggy-migrate/chuggy-migrate.yaml chuggy/chuggy-pool-plane.yaml chuggy/chuggy-scheduler.yaml chuggy/chuggy-selector.yaml chuggy/chuggy-ticket-service.yaml chuggy/chuggy-worker-plane.yaml"
+console_manifests="chuggy/chuggy-ui.yaml"
 
 rewrite() { # <manifest> <sed expression>
-	[ -f "$apps/$1" ] || refuse "the fabric has no $1 to edit"
-	sed "$2" "$apps/$1" >"$work/edited"
-	mv "$work/edited" "$apps/$1"
+	[ -f "$cluster/$1" ] || refuse "the fabric has no cluster/$1 to edit"
+	sed "$2" "$cluster/$1" >"$work/edited"
+	mv "$work/edited" "$cluster/$1"
 }
 image_line() { # <repository> <digest>
 	printf 's|^\\([[:space:]]*image: %s/%s@\\)sha256:[0-9a-f]*[[:space:]]*$|\\1%s|' "$registry_prefix" "$1" "$2"
@@ -717,7 +727,7 @@ image_line() { # <repository> <digest>
 for manifest in $api_manifests $console_manifests; do
 	rewrite "$manifest" "s|^\\([[:space:]]*fabric\\.chuggy\\.dev/source-commit:[[:space:]]*\\).*\$|\\1$tag|"
 done
-rewrite chuggy-migrate.yaml "s|^\\([[:space:]]*name: chuggy-migrate-\\)[a-z0-9-]*\$|\\1$tag-registry|"
+rewrite chuggy-migrate/chuggy-migrate.yaml "s|^\\([[:space:]]*name: chuggy-migrate-\\)[a-z0-9-]*\$|\\1$tag-registry|"
 if [ -n "$api_digest" ]; then
 	for manifest in $api_manifests; do
 		rewrite "$manifest" "$(image_line api "$api_digest")"
@@ -725,12 +735,12 @@ if [ -n "$api_digest" ]; then
 	done
 fi
 if [ -n "$ui_digest" ]; then
-	rewrite chuggy-ui.yaml "$(image_line web "$ui_digest")"
-	[ "$(manifest_image chuggy-ui.yaml)" = "$registry_prefix/web@$ui_digest" ] || fail "chuggy-ui.yaml does not carry the console digest after the edit"
+	rewrite chuggy/chuggy-ui.yaml "$(image_line web "$ui_digest")"
+	[ "$(manifest_image chuggy/chuggy-ui.yaml)" = "$registry_prefix/web@$ui_digest" ] || fail "chuggy-ui.yaml does not carry the console digest after the edit"
 fi
 git -C "$fabric" diff --quiet && fail "the edit changed no manifest, so there is no release to commit"
 set +e
-python3 "$fabric/scripts/check-release-consistency" "$apps"
+python3 "$fabric/scripts/check-release-consistency" "$cluster"
 consistent=$?
 set -e
 if [ "$consistent" -eq 3 ]; then
@@ -738,7 +748,11 @@ if [ "$consistent" -eq 3 ]; then
 elif [ "$consistent" -ne 0 ]; then
 	refuse "the fabric's consistency check did not run, and answered $consistent"
 fi
-kube kustomize "$apps" >/dev/null || fail "the edited manifests do not render"
+# Each of a release's directories is a kustomization, rendered by itself as
+# the Flux layer that applies it renders it.
+for layer in chuggy-migrate chuggy; do
+	kube kustomize "$cluster/$layer" >/dev/null || fail "the edited manifests under cluster/$layer do not render"
+done
 
 # --- the fabric change ----------------------------------------------------------
 
@@ -759,7 +773,11 @@ kube kustomize "$apps" >/dev/null || fail "the edited manifests do not render"
 } >"$work/message"
 
 git -C "$fabric" checkout -q -b "$branch"
-git -C "$fabric" add cluster/apps
+# The manifests that were edited are what is staged, by the lists they were
+# edited by: anything else a step above left in the clone is not the release.
+for manifest in $api_manifests $console_manifests; do
+	git -C "$fabric" add "cluster/$manifest"
+done
 git -C "$fabric" commit -q -F "$work/message" || fail "the fabric change did not commit"
 
 remote_ref="$(git -C "$fabric" ls-remote origin "refs/heads/$branch")"

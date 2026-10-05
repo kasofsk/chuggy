@@ -133,7 +133,7 @@ case "$args" in
 	if [ "$name" = "${CHUG_STUB_STALE:-}" ]; then
 		printf 'registry.chuggy.internal/chuggy/api@%s' "$CHUG_STUB_STALE_DIGEST"
 	else
-		git --git-dir="$CHUG_STUB_FABRIC" show "$CHUG_STUB_BRANCH:cluster/apps/$name.yaml" \
+		git --git-dir="$CHUG_STUB_FABRIC" show "$CHUG_STUB_BRANCH:cluster/chuggy/$name.yaml" \
 			| sed -n 's/^[[:space:]]*image: \(registry\.chuggy\.internal.*\)$/\1/p' | head -n 1
 	fi
 	;;
@@ -185,9 +185,13 @@ done
 exec "$(command -v git)" "\$@"
 STUB
 
+# The fabric's check, which leaves beside itself what a Python that imported a
+# module from there would: a file in the clone that is no part of a release.
 cat >"$BIN/python3" <<'STUB'
 #!/bin/sh
 printf 'python3 %s\n' "$*" >>"$CHUG_STUB_LOG"
+mkdir -p "${1%/*}/__pycache__"
+: >"${1%/*}/__pycache__/imported.pyc"
 exit "${CHUG_STUB_CONSISTENCY_RC:-0}"
 STUB
 
@@ -233,6 +237,9 @@ DEPLOYED="$(git -C "$REPO" rev-parse --short HEAD)"
 DEPLOYED_FULL="$(git -C "$REPO" rev-parse HEAD)"
 
 # --- the fabric, as a bare repository the gh stub clones ------------------------
+# It is laid out as the fabric lays a release out: the services in one
+# directory, the migrate Job in another beside the script its kustomization
+# generates from, and in `cluster/apps` what a release does not touch.
 
 manifest() { # <name> <kind> <repository> <digest>
 	cat <<-MANIFEST
@@ -251,12 +258,16 @@ manifest() { # <name> <kind> <repository> <digest>
 		          image: registry.chuggy.internal/chuggy/$3@$4
 	MANIFEST
 }
-mkdir -p "$FABRIC_SEED/cluster/apps" "$FABRIC_SEED/scripts"
+mkdir -p "$FABRIC_SEED/cluster/chuggy" "$FABRIC_SEED/cluster/chuggy-migrate" "$FABRIC_SEED/cluster/apps" "$FABRIC_SEED/scripts"
 for name in chuggy-api chuggy-configuration-importer chuggy-finalizer chuggy-pool-plane chuggy-scheduler \
 	chuggy-selector chuggy-ticket-service chuggy-worker-plane; do
-	manifest "$name" Deployment api "$OLD_API" >"$FABRIC_SEED/cluster/apps/$name.yaml"
+	manifest "$name" Deployment api "$OLD_API" >"$FABRIC_SEED/cluster/chuggy/$name.yaml"
 done
-manifest chuggy-ui Deployment web "$OLD_UI" >"$FABRIC_SEED/cluster/apps/chuggy-ui.yaml"
+manifest chuggy-ui Deployment web "$OLD_UI" >"$FABRIC_SEED/cluster/chuggy/chuggy-ui.yaml"
+printf 'kind: Kustomization\n' >"$FABRIC_SEED/cluster/chuggy/kustomization.yaml"
+printf 'kind: Kustomization\n' >"$FABRIC_SEED/cluster/chuggy-migrate/kustomization.yaml"
+printf 'pg_dump\n' >"$FABRIC_SEED/cluster/chuggy-migrate/dump.sh"
+printf 'kind: StatefulSet\n' >"$FABRIC_SEED/cluster/apps/postgres.yaml"
 # The worker plane states how it rolls, in the fabric's own shape but for a
 # blank line inside the mapping, and is followed by a document that bounds an
 # unavailability of its own: what a landing reads is the whole of the
@@ -269,7 +280,7 @@ manifest chuggy-ui Deployment web "$OLD_UI" >"$FABRIC_SEED/cluster/apps/chuggy-u
     rollingUpdate: { maxSurge: 1, maxUnavailable: 0 }|'
 	printf -- '---\napiVersion: policy/v1\nkind: PodDisruptionBudget\nmetadata:\n  name: chuggy-worker-plane\n'
 	printf 'spec:\n  maxUnavailable: 0\n'
-} >"$FABRIC_SEED/cluster/apps/chuggy-worker-plane.yaml"
+} >"$FABRIC_SEED/cluster/chuggy/chuggy-worker-plane.yaml"
 # The migrate manifest carries a ServiceAccount named after the Job's family,
 # an init container from a public repository, and then the Job: the release
 # must find the Job's name and the release image past both.
@@ -279,7 +290,7 @@ manifest chuggy-ui Deployment web "$OLD_UI" >"$FABRIC_SEED/cluster/apps/chuggy-u
 	printf '  annotations:\n    fabric.chuggy.dev/source-commit: %s\n' "$DEPLOYED"
 	printf 'spec:\n  template:\n    spec:\n      initContainers:\n        - name: wait\n          image: postgres:18\n'
 	printf '      containers:\n        - name: migrate\n          image: registry.chuggy.internal/chuggy/api@%s\n' "$OLD_API"
-} >"$FABRIC_SEED/cluster/apps/chuggy-migrate.yaml"
+} >"$FABRIC_SEED/cluster/chuggy-migrate/chuggy-migrate.yaml"
 printf 'stub\n' >"$FABRIC_SEED/scripts/check-release-consistency"
 git init -q -b main "$FABRIC_SEED"
 git -C "$FABRIC_SEED" config user.email t@example.com
@@ -334,11 +345,21 @@ rig_at() { # <short commit>
 	git clone -q "$FABRIC_GIT" "$WORK/rig-at"
 	git -C "$WORK/rig-at" config user.email t@example.com
 	git -C "$WORK/rig-at" config user.name t
-	for name in $(ls "$WORK/rig-at/cluster/apps"); do
-		sed -i "s|source-commit: $DEPLOYED|source-commit: $1|; s|chuggy-migrate-$DEPLOYED-|chuggy-migrate-$1-|" "$WORK/rig-at/cluster/apps/$name"
+	for manifest in "$WORK"/rig-at/cluster/chuggy-migrate/chuggy-*.yaml "$WORK"/rig-at/cluster/chuggy/chuggy-*.yaml; do
+		sed -i "s|source-commit: $DEPLOYED|source-commit: $1|; s|chuggy-migrate-$DEPLOYED-|chuggy-migrate-$1-|" "$manifest"
 	done
 	git -C "$WORK/rig-at" commit -qam "release: chuggy $1"
 	git -C "$WORK/rig-at" push -q origin main
+}
+
+# A branch of the fabric as another hand left it: the command runs in its
+# `cluster`, and what it changed is pushed over the branch.
+fabric_edited() { # <branch> <command...>
+	rm -rf "$WORK/edited"
+	git clone -q --branch "$1" "$FABRIC_GIT" "$WORK/edited"
+	(cd "$WORK/edited/cluster" && shift && "$@")
+	git -C "$WORK/edited" commit -qam edited
+	git -C "$WORK/edited" push -q origin "$1"
 }
 
 run() { # <argument...>
@@ -368,12 +389,14 @@ run() { # <argument...>
 
 # What the fabric now holds on the release branch, read out of the bare
 # repository the script pushed to rather than out of the script's own output.
+# A manifest is named by its path under the fabric's `cluster`, and a count is
+# over every file there.
 released() { # <manifest>
-	git --git-dir="$FABRIC_GIT" show "release/chuggy-$TAG:cluster/apps/$1" 2>/dev/null || true
+	git --git-dir="$FABRIC_GIT" show "release/chuggy-$TAG:cluster/$1" 2>/dev/null || true
 }
 count_in_release() { # <fixed string>
 	total=0
-	for name in $(git --git-dir="$FABRIC_GIT" ls-tree --name-only "release/chuggy-$TAG:cluster/apps" 2>/dev/null); do
+	for name in $(git --git-dir="$FABRIC_GIT" ls-tree -r --name-only "release/chuggy-$TAG:cluster" 2>/dev/null); do
 		total=$((total + $(released "$name" | grep -Fc "$1" || true)))
 	done
 	printf '%s' "$total"
@@ -436,6 +459,33 @@ advance src/a.ts
 run
 check "a push this identity may make is rehearsed dry and then gated" 0 "$RC" "gates run: 1"
 
+# A release is read and edited in the two directories the fabric keeps one in,
+# and nowhere else: a fabric that keeps either half in `cluster/apps`, or both,
+# is refused by the first manifest it does not have where a release has it.
+LAYOUT="a release is the migrate Job under cluster/chuggy-migrate and the services under cluster/chuggy, and a fabric laid out any other way is not released to"
+
+fresh_case
+advance src/a.ts
+fabric_edited main sh -c 'git mv chuggy-migrate/chuggy-migrate.yaml chuggy/chuggy-*.yaml apps/'
+run
+check "a fabric that keeps a release in cluster/apps is refused" 2 "$RC" "gdoteof/chuggy-fabric has no cluster/chuggy-migrate/chuggy-migrate.yaml: $LAYOUT"
+check "a fabric laid out another way is refused before the gate" 2 "$RC" "gates run: 0"
+check "a fabric laid out another way builds nothing" 2 "$RC" "builds attempted: 0"
+
+fresh_case
+advance src/a.ts
+fabric_edited main git mv chuggy-migrate/chuggy-migrate.yaml apps/
+run
+check "a fabric that keeps the migrate Job in cluster/apps is refused" 2 "$RC" "gdoteof/chuggy-fabric has no cluster/chuggy-migrate/chuggy-migrate.yaml: $LAYOUT"
+check "a migrate Job kept elsewhere is refused before the gate" 2 "$RC" "gates run: 0"
+
+fresh_case
+advance src/a.ts
+fabric_edited main sh -c 'git mv chuggy/chuggy-*.yaml apps/'
+run
+check "a fabric that keeps the services in cluster/apps is refused" 2 "$RC" "gdoteof/chuggy-fabric has no cluster/chuggy/chuggy-api.yaml: $LAYOUT"
+check "services kept elsewhere are refused before the gate" 2 "$RC" "gates run: 0"
+
 # --- which images a change rebuilds ---------------------------------------------
 
 fresh_case
@@ -447,19 +497,21 @@ check "a console change builds only the console" 0 "$RC" "builds attempted: 1"
 check "the console is published under the web repository" 0 "$RC" "images push --plain-http 10.0.0.1:5000/chuggy/web:chuggy-ui-$TAG"
 check "the release is not merged by this run" 0 "$RC" "not merged"
 OUT="$WORK/.release"
-released chuggy-ui.yaml >"$OUT"
+released chuggy/chuggy-ui.yaml >"$OUT"
 check "the console manifest selects the registry's digest" 0 "$RC" "chuggy/web@$NEW"
-released chuggy-api.yaml >"$OUT"
+released chuggy/chuggy-api.yaml >"$OUT"
 check "the api manifest keeps its digest" 0 "$RC" "chuggy/api@$OLD_API"
 printf 'source commits moved: %s\n' "$(count_in_release "source-commit: $TAG")" >"$OUT"
 check "the source commit moves on every manifest" 0 "$RC" "source commits moved: 10"
 printf 'stale source commits: %s\n' "$(count_in_release "source-commit: $DEPLOYED")" >"$OUT"
 check "no manifest keeps the old source commit" 0 "$RC" "stale source commits: 0"
-released chuggy-migrate.yaml >"$OUT"
+printf 'the release changes: <%s>\n' "$(git --git-dir="$FABRIC_GIT" diff --name-only main "release/chuggy-$TAG" | paste -sd' ' -)" >"$OUT"
+check "the release changes its manifests where the fabric keeps them, and nothing else" 0 "$RC" "the release changes: <cluster/chuggy-migrate/chuggy-migrate.yaml cluster/chuggy/chuggy-api.yaml cluster/chuggy/chuggy-configuration-importer.yaml cluster/chuggy/chuggy-finalizer.yaml cluster/chuggy/chuggy-pool-plane.yaml cluster/chuggy/chuggy-scheduler.yaml cluster/chuggy/chuggy-selector.yaml cluster/chuggy/chuggy-ticket-service.yaml cluster/chuggy/chuggy-ui.yaml cluster/chuggy/chuggy-worker-plane.yaml>"
+released chuggy-migrate/chuggy-migrate.yaml >"$OUT"
 check "the migrate Job is renamed after the release" 0 "$RC" "name: chuggy-migrate-$TAG-registry"
-printf 'service account intact: %s\n' "$(released chuggy-migrate.yaml | grep -c '^  name: chuggy-migrate$' || true)" >"$OUT"
+printf 'service account intact: %s\n' "$(released chuggy-migrate/chuggy-migrate.yaml | grep -c '^  name: chuggy-migrate$' || true)" >"$OUT"
 check "the migrate ServiceAccount is not renamed" 0 "$RC" "service account intact: 1"
-printf 'init image intact: %s\n' "$(released chuggy-migrate.yaml | grep -Fc 'image: postgres:18' || true)" >"$OUT"
+printf 'init image intact: %s\n' "$(released chuggy-migrate/chuggy-migrate.yaml | grep -Fc 'image: postgres:18' || true)" >"$OUT"
 check "the init container is left alone" 0 "$RC" "init image intact: 1"
 cp "$LOG.body" "$OUT"
 check "the pull request says the api did not move" 0 "$RC" "api: unchanged"
@@ -478,7 +530,7 @@ check "the gate is not handed the builder's prefix" 0 "$RC" "ci prefix=<>"
 OUT="$WORK/.release"
 printf 'api digests moved: %s\n' "$(count_in_release "chuggy/api@$NEW")" >"$OUT"
 check "every control-plane manifest selects the new api" 0 "$RC" "api digests moved: 9"
-released chuggy-ui.yaml >"$OUT"
+released chuggy/chuggy-ui.yaml >"$OUT"
 check "the console keeps its digest on a server change" 0 "$RC" "chuggy/web@$OLD_UI"
 
 fresh_case
@@ -620,6 +672,17 @@ export CHUG_STUB_RENDER_RC=1
 run
 check "manifests that do not render are a finding" 1 "$RC" "do not render"
 
+# The check names a release's manifests by path under the directory it is
+# given, which is the one both of a release's directories are in; and each of
+# those is what a layer of the fabric renders, so each is rendered.
+fresh_case
+advance src/a.ts
+run
+printf 'the check was given: <%s>\n' "$(sed -n 's|^python3 .*/fabric/scripts/check-release-consistency .*/fabric/||p' "$LOG")" >>"$OUT"
+check "the fabric's consistency check is given the directory a release's two are in" 0 "$RC" "the check was given: <cluster>"
+printf 'rendered: <%s>\n' "$(sed -n 's|^kubectl .* kustomize .*/fabric/cluster/||p' "$LOG" | paste -sd' ' -)" >>"$OUT"
+check "each directory of a release is rendered" 0 "$RC" "rendered: <chuggy-migrate chuggy>"
+
 # --- --merge: what it requires of the cluster ---------------------------------------
 
 fresh_case
@@ -649,15 +712,6 @@ open_release() { # <path>...
 	: >"$LOG"
 }
 
-# A branch of the fabric as another hand left it: the command runs in its
-# `cluster/apps`, and what it changed is pushed over the branch.
-fabric_edited() { # <branch> <command...>
-	rm -rf "$WORK/edited"
-	git clone -q --branch "$1" "$FABRIC_GIT" "$WORK/edited"
-	(cd "$WORK/edited/cluster/apps" && shift && "$@")
-	git -C "$WORK/edited" commit -qam edited
-	git -C "$WORK/edited" push -q origin "$1"
-}
 release_edited() { # <command...>
 	fabric_edited "release/chuggy-$TAG" "$@"
 }
@@ -787,7 +841,7 @@ plane_edited() { # <command...>
 	export CHUG_STUB_WORKER_PODS=pod/chuggy-worker-1
 	run --merge
 }
-PLANE=chuggy-worker-plane.yaml
+PLANE=chuggy/chuggy-worker-plane.yaml
 asks="does not state a rolling update with none unavailable, or states no replica, so a moment with no plane serving is not ruled out"
 
 # The strategy's type is edited with the unavailability left standing beside
@@ -1495,7 +1549,7 @@ check "a console release verifies the console rollout" 0 "$RC" "rollout status d
 cp "$LOG.body" "$OUT"
 check "the pull request says what the gate covered" 0 "$RC" "Gate at $TAG: clean over the gates the change since $DEPLOYED affects"
 OUT="$WORK/.release"
-released chuggy-ui.yaml >"$OUT"
+released chuggy/chuggy-ui.yaml >"$OUT"
 check "a console release selects the registry's digest" 0 "$RC" "chuggy/web@$NEW"
 
 # A console release rolls no plane, so how the worker plane would roll is not
