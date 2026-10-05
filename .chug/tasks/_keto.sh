@@ -12,8 +12,9 @@
 #   exits     2 through the caller's shell when no server can be had
 #   claims    its working names — the knobs below, $keto_prefix, $keto_waited,
 #             $keto_model, $keto_digest, $keto_running, $keto_started_from,
-#             $keto_binary, $keto_version, $keto_port, $keto_pid, $keto_log —
-#             in the sourcing gate's namespace
+#             $keto_binary, $keto_version, $keto_port, $keto_refusal,
+#             $keto_remedy, $keto_exit, $keto_pid, $keto_log — in the sourcing
+#             gate's namespace
 #
 # THE SERVER IS A CONTAINER THE SOURCING GATES OWN, started under a name
 # nothing else uses and on ports that are not the conventional ones, so a Keto
@@ -24,12 +25,26 @@
 # WHERE THERE IS NO DOCKER IT IS THE `keto` ON PATH, STARTED FOR THIS RUN AND
 # STOPPED BY `keto_release`. A process has no cold start worth keeping it for,
 # and one that does not outlive its run cannot be answering about a model the
-# tree no longer states. It is started from the same two files, on the same
-# ports bound to loopback, and in an environment holding only what points it
-# there, so nothing the caller's environment names reaches it. A port something
-# already listens on is a could-not-run: the process could not bind it, and
-# the wait would be answered by whoever holds it. The verdict names the version
-# the binary states, and no version is refused.
+# tree no longer states. It is started from the same two files, bound to
+# loopback, and in an environment holding only what points it there, so nothing
+# the caller's environment names reaches it. The verdict names the version the
+# binary states, and no version is refused.
+#
+# ITS PORTS ARE ITS OWN, BELOW THE RANGE THE KERNEL HANDS TO OUTGOING
+# CONNECTIONS (`net.ipv4.ip_local_port_range`, where a box has not widened it).
+# The container's are inside that range, and there a gate that ran just before
+# can have left one end of a loopback connection on one of them. Keto cannot
+# bind such a port; it stays up, serves its other API and says nothing until it
+# is stopped, so the run waits out its cap on a server that is never coming.
+# The container keeps its ports all the same: it outlives runs and every
+# worktree on a box shares it, so a tree with other defaults would wait on a
+# port the running one is not published on.
+#
+# A PORT THE PROCESS COULD NOT LISTEN ON IS A COULD-NOT-RUN, SAID BEFORE IT IS
+# STARTED. The test is the bind Keto itself makes. Asking whether something
+# answers there misses the port the paragraph above is about, which refuses a
+# listener and accepts nothing; a port something does answer on is refused for
+# a second reason, that the wait would be answered by whoever holds it.
 #
 # A REUSED CONTAINER IS ONE STARTED FROM THIS MODEL. Keto compiles
 # `keto/namespaces.ts` at start-up and the bind mount is not live, so a
@@ -88,11 +103,12 @@ console.log(digest.digest("hex"));
 ' "$1" 2>/dev/null
 }
 
-# Whether the read API answers ready AND carries both namespaces, printing
+# Whether an API answers ready AND carries every namespace named, printing
 # nothing: a message names the URL the caller already has.
-keto_probe() { # <read url>
+keto_probe() { # <url> [<namespace>...]
 	node -e '
-const at = new URL(process.argv[1]);
+const [url, ...namespaces] = process.argv.slice(1);
+const at = new URL(url);
 const ask = async (path) => {
   const response = await fetch(new URL(path, at), {
     signal: AbortSignal.timeout(2000),
@@ -101,18 +117,18 @@ const ask = async (path) => {
 };
 try {
   if (!(await ask("./health/ready"))) process.exit(1);
-  for (const namespace of ["Project", "Tenant"])
+  for (const namespace of namespaces)
     if (!(await ask(`./relation-tuples?namespace=${namespace}&page_size=1`)))
       process.exit(1);
 } catch {
   process.exit(1);
 }
-' "$1" 2>/dev/null
+' "$@" 2>/dev/null
 }
 
 keto_wait() { # <read url>
 	keto_waited=0
-	until keto_probe "$1"; do
+	until keto_probe "$1" Project Tenant; do
 		if [ "$keto_waited" -ge "$keto_ready_secs" ]; then
 			return 1
 		fi
@@ -120,6 +136,21 @@ keto_wait() { # <read url>
 		keto_waited=$((keto_waited + 1))
 	done
 	return 0
+}
+
+# Whether a loopback port can be listened on, printing why when it cannot.
+# Node's listener sets SO_REUSEADDR as Go's does, so this refuses what Keto
+# would be refused and nothing else: without it, the port of a listener stopped
+# a moment ago would be refused here and bound by Keto.
+keto_port_free() { # <port>
+	node -e '
+const server = require("node:net").createServer();
+server.on("error", (error) => {
+  console.log(error.code);
+  process.exit(1);
+});
+server.listen(Number(process.argv[1]), "127.0.0.1", () => server.close());
+' "$1" 2>/dev/null
 }
 
 # Whether something accepts a connection on a loopback port.
@@ -134,30 +165,50 @@ socket.on("error", () => process.exit(1));
 ' "$1" 2>/dev/null
 }
 
+keto_stop() {
+	kill "$keto_pid" 2>/dev/null || true
+	wait "$keto_pid" 2>/dev/null || true
+}
+
 # Stops the process this run started and removes its log. A container is left
 # running, and a run that started nothing has nothing to stop.
 keto_release() {
 	[ -n "$keto_pid" ] || return 0
-	kill "$keto_pid" 2>/dev/null || true
-	wait "$keto_pid" 2>/dev/null || true
+	keto_stop
 	rm -f "$keto_log"
 	keto_pid=""
+}
+
+keto_answer() { # <url>
+	if keto_probe "$1"; then echo "answers ready"; else echo "does not answer ready"; fi
 }
 
 keto_acquire_process() {
 	keto_model="$(git rev-parse --show-toplevel)/.chug/tasks/keto"
 	keto_version="$("$keto_binary" version 2>/dev/null | sed -n 's/^Version:[[:space:]]*//p')"
 	keto_subject="keto${keto_version:+ $keto_version} from PATH"
+	# From here on these are the process's own, so that the test, the start,
+	# the wait and every message name one pair of ports.
+	keto_read_port="${CHUG_KETO_READ_PORT:-24466}"
+	keto_write_port="${CHUG_KETO_WRITE_PORT:-24467}"
 	keto_read_url="http://127.0.0.1:$keto_read_port/"
 	keto_write_url="http://127.0.0.1:$keto_write_port/"
 
 	for keto_port in "$keto_read_port" "$keto_write_port"; do
-		if keto_port_taken "$keto_port"; then
-			echo "$keto_prefix: LINTER ERROR — something is already listening on port $keto_port, and this run did not start it."
-			echo "$keto_prefix:                No CHUG_KETO_READ_URL and no docker, so $keto_binary would be started there."
-			echo "$keto_prefix:                Stop what holds it, or set CHUG_KETO_READ_PORT and CHUG_KETO_WRITE_PORT."
-			exit 2
+		if keto_refusal="$(keto_port_free "$keto_port")"; then
+			continue
 		fi
+		if keto_port_taken "$keto_port"; then
+			keto_refusal="something is already listening on port $keto_port, and this run did not start it."
+			keto_remedy="Stop what holds it"
+		else
+			keto_refusal="port $keto_port cannot be listened on${keto_refusal:+ ($keto_refusal)}, and nothing listens there to stop."
+			keto_remedy="One end of a connection holds a port so while it is open and for a while after; run again then"
+		fi
+		echo "$keto_prefix: LINTER ERROR — $keto_refusal"
+		echo "$keto_prefix:                No CHUG_KETO_READ_URL and no docker, so $keto_binary would be started on ports $keto_read_port and $keto_write_port."
+		echo "$keto_prefix:                $keto_remedy, or set CHUG_KETO_READ_PORT and CHUG_KETO_WRITE_PORT."
+		exit 2
 	done
 
 	if ! keto_log="$(mktemp 2>/dev/null)"; then
@@ -178,11 +229,20 @@ keto_acquire_process() {
 	if ! keto_wait "$keto_read_url"; then
 		echo "$keto_prefix: LINTER ERROR — $keto_subject did not answer ready with both namespaces within ${keto_ready_secs}s"
 		echo "$keto_prefix:                No CHUG_KETO_READ_URL and no docker, so $keto_binary was started from $keto_model."
+		if kill -0 "$keto_pid" 2>/dev/null; then
+			echo "$keto_prefix:                It is still running: its read API $(keto_answer "$keto_read_url") and its write API $(keto_answer "$keto_write_url")."
+		else
+			keto_exit=0
+			wait "$keto_pid" 2>/dev/null || keto_exit=$?
+			echo "$keto_prefix:                It exited with status $keto_exit."
+		fi
+		# Stopped before its log is read: a port Keto could not bind is the last
+		# thing it says, and it says it only as it exits. A Keto that came up
+		# says nothing at all, so an empty log is not reported.
+		keto_stop
 		if [ -s "$keto_log" ]; then
 			echo "$keto_prefix:                The last it said:"
 			tail -n "$keto_log_lines" "$keto_log"
-		else
-			echo "$keto_prefix:                It said nothing; the model is .chug/tasks/keto/namespaces.ts."
 		fi
 		exit 2
 	fi
