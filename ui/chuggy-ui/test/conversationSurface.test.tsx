@@ -677,6 +677,20 @@ test("a stop that fails has been answered all the same, so past the beat the but
   styleless();
 });
 
+/** A surface of one turn a page can stop, drawn at whatever standing it is given. */
+function oneTurnSurface(
+  onStop: (turn: string) => Promise<void>,
+  onSend = vi.fn(() => Promise.resolve<ConversationSent>("Sent")),
+) {
+  return (standing: ConversationExchange["standing"]) => (
+    <Conversation
+      exchanges={[exchangeOf({ id: "x3", turn: "turn-3", standing })]}
+      composer={{ ...composerOf({ onSend }), onStop }}
+      empty="No conversation"
+    />
+  );
+}
+
 /** A clock the button's beat is both asked against and drawn by, moved by hand. */
 function beatClock(): void {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
@@ -696,15 +710,8 @@ async function beatPassed(ms: number): Promise<void> {
 
 test("for the beat after a press of Stop the button says it takes no press, whichever it has become, and no longer", async () => {
   beatClock();
-  const onSend = vi.fn(() => Promise.resolve<ConversationSent>("Sent"));
   const onStop = vi.fn(() => Promise.resolve());
-  const drawn = (standing: ConversationExchange["standing"]) => (
-    <Conversation
-      exchanges={[exchangeOf({ id: "x3", turn: "turn-3", standing })]}
-      composer={{ ...composerOf({ onSend }), onStop }}
-      empty="No conversation"
-    />
-  );
+  const drawn = oneTurnSurface(onStop);
   const view = render(drawn({ standing: "Running", state: "Claimed" }));
   expect(buttonRests("Stop")).toBe(false);
   fireEvent.click(screen.getByRole("button", { name: "Stop" }));
@@ -735,13 +742,7 @@ test("a stop no door has answered keeps Stop saying it takes no press past the b
         door.answer = resolve;
       }),
   );
-  const drawn = (standing: ConversationExchange["standing"]) => (
-    <Conversation
-      exchanges={[exchangeOf({ id: "x3", turn: "turn-3", standing })]}
-      composer={{ ...composerOf({ onSend }), onStop }}
-      empty="No conversation"
-    />
-  );
+  const drawn = oneTurnSurface(onStop, onSend);
   const view = render(drawn({ standing: "Running", state: "Claimed" }));
   fireEvent.click(screen.getByRole("button", { name: "Stop" }));
   await beatPassed(conversationStopBeatMs);
@@ -828,15 +829,7 @@ test("a click that sent begins the beat on the button it leaves under the pointe
 });
 
 test("a press of the button takes no focus, so the caret stays in the box", () => {
-  const onSend = vi.fn(() => Promise.resolve<ConversationSent>("Sent"));
-  const onStop = vi.fn(() => Promise.resolve());
-  const drawn = (standing: ConversationExchange["standing"]) => (
-    <Conversation
-      exchanges={[exchangeOf({ id: "x3", turn: "turn-3", standing })]}
-      composer={{ ...composerOf({ onSend }), onStop }}
-      empty="No conversation"
-    />
-  );
+  const drawn = oneTurnSurface(() => Promise.resolve());
   const view = render(drawn({ standing: "Running", state: "Claimed" }));
   const refused = (name: string): boolean =>
     !fireEvent.mouseDown(screen.getByRole("button", { name }));
