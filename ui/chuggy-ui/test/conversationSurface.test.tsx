@@ -952,7 +952,7 @@ test("a press taken as a beat ends leaves no older timer to end its own beat ear
   styleless();
 });
 
-test("a press of the button takes no focus, so the caret stays in the box", () => {
+test("a pointer's press of the button takes no focus, so the caret stays in the box", () => {
   const drawn = oneTurnSurface(() => Promise.resolve());
   const view = render(drawn({ standing: "Running", state: "Claimed" }));
   const refused = (name: string): boolean =>
