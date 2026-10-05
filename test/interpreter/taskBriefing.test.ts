@@ -31,7 +31,10 @@ import {
   type BriefingSectionId,
   type TaskPurpose,
 } from "../../src/interpreter/briefingTemplate.ts";
-import { briefChecksMax } from "../../src/contract/brief.ts";
+import {
+  briefChecksMax,
+  briefIntentCharsMax,
+} from "../../src/contract/brief.ts";
 import { resultReportCharsMax } from "../../src/contract/http.ts";
 import {
   briefingLineCharsMax,
@@ -1539,10 +1542,38 @@ test("a ticket cannot forge a section, whatever reaches its brief unbranded", ()
   assert.equal(
     blockedFault(
       viewOf({
-        ticketBrief: unbrandedBrief("a".repeat(briefingLineCharsMax + 1)),
+        ticketBrief: unbrandedBrief("a".repeat(briefIntentCharsMax + 1)),
       }),
     ),
     "TextTooLong",
+  );
+});
+
+test("an intent is briefed as written: a line longer than an authored line, and more lines than an authored list holds", () => {
+  const paragraph = "word ".repeat(briefingLineCharsMax).trimEnd();
+  const lines = Array.from(
+    { length: briefingLineCharsMax },
+    (_, at) => `line ${String(at)}`,
+  );
+  assert.ok(paragraph.length > briefingLineCharsMax);
+  assert.ok(lines.length > briefingLinesMax);
+  for (const written of [[paragraph], lines])
+    assert.deepEqual(
+      sectionLines(
+        viewOf({
+          ticketBrief: asDraftBrief({ intent: written.join("\n"), links: [] }),
+        }),
+        "TicketIntent",
+      ),
+      written,
+    );
+  const whole = "a".repeat(briefIntentCharsMax);
+  assert.deepEqual(
+    sectionLines(
+      viewOf({ ticketBrief: asDraftBrief({ intent: whole, links: [] }) }),
+      "TicketIntent",
+    ),
+    [whole],
   );
 });
 

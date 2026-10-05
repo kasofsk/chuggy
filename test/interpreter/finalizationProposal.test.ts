@@ -11,10 +11,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import {
-  briefIntentLinesMax,
-  briefLineCharsMax,
-} from "../../src/contract/brief.ts";
+import { briefIntentCharsMax } from "../../src/contract/brief.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
 import { textCodePointsCount } from "../../src/contract/http.ts";
 import {
@@ -668,15 +665,13 @@ test("a proposal is titled by the ticket's own title where its brief names one",
   );
 });
 
-/** The longest intent a draft stores, as the lines it is bounded in. */
-function longestIntent(line: string): ReturnType<typeof asBriefIntent> {
-  return asBriefIntent(
-    Array.from({ length: briefIntentLinesMax }, () => line).join("\n"),
-  );
+/** The longest intent a draft stores, written as one line of `character`. */
+function longestIntent(character: string): ReturnType<typeof asBriefIntent> {
+  return asBriefIntent(character.repeat(briefIntentCharsMax));
 }
 
 test("an intent no proposal could carry whole is bounded rather than refused", () => {
-  const long = longestIntent("w".repeat(briefLineCharsMax - 1));
+  const long = longestIntent("w");
   const title = finalizationProposalTitle(asTicketId(7), { intent: long });
   const body = finalizationProposalBody(long, marker);
   assert.equal(title.length, proposalTitleCharsMax);
@@ -686,7 +681,7 @@ test("an intent no proposal could carry whole is bounded rather than refused", (
 
 test("a bound falling inside a character keeps the words well formed", () => {
   const emoji = "\u{1f600}";
-  const paired = longestIntent(emoji.repeat(briefLineCharsMax / 2 - 1));
+  const paired = longestIntent(emoji);
   const title = finalizationProposalTitle(asTicketId(70), { intent: paired });
   assert.equal(
     title,

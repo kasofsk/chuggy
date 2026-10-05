@@ -19,10 +19,11 @@
  * reorder what the configuration named. So a ticket widens what its work is
  * held to and cannot narrow it.
  *
- * AN INTENT IS STORED AS IT RENDERS. Every value that gets this far has
- * already been split into the lines a briefing would print and refused unless
- * each of them passes the same line rule an authored line does, so a stored
- * brief cannot be one the scheduler will later be unable to render.
+ * AN INTENT IS ONE TEXT, BOUNDED AS A WHOLE. It is its author's words, and
+ * whatever draws it breaks its lines at the width it draws at, so no line of it
+ * is measured and its lines are not counted. A briefing holds an intent to the
+ * rule it is branded under and to no other, so a stored brief is not one the
+ * scheduler is later unable to render.
  *
  * A REPOSITORY IS NAMED BY THE TICKET AND NOT BY THE PROJECT. A project binds
  * several repositories and privileges none of them, so the one a ticket works
@@ -66,7 +67,6 @@ import {
   briefBranchCharsMax,
   briefChecksMax,
   briefIntentCharsMax,
-  briefIntentLinesMax,
   briefLandingIsWhole,
   briefLinkScheme,
   briefLinksMax,
@@ -84,7 +84,10 @@ import {
   type RepositoryId,
 } from "./finalizer.ts";
 import type { Partition } from "./projectStore.ts";
-import { taskConfigurationLineFault } from "./taskConfiguration.ts";
+import {
+  taskConfigurationLineFault,
+  taskConfigurationLineUnreadable,
+} from "./taskConfiguration.ts";
 
 declare const briefTitleBrand: unique symbol;
 declare const briefIntentBrand: unique symbol;
@@ -165,7 +168,7 @@ export type ReleaseBrief = Pick<
   "finalization" | "checks" | "repository"
 >;
 
-/** The lines one intent renders as, which is the form it is bounded and stored in. */
+/** The lines a briefing prints one intent as: a line with nothing on it prints nothing. */
 export function briefIntentLines(intent: BriefIntent): readonly string[] {
   return intent.split("\n").filter((line) => line.trim().length > 0);
 }
@@ -191,24 +194,26 @@ export function asBriefTitle(value: string): BriefTitle {
 }
 
 /**
- * Brands an intent, refusing anything a briefing could not print: an empty
- * statement, one longer than a draft stores, or one carrying a line no
- * authored line could carry.
+ * Brands an intent, each refusal in words its author can act on: a statement
+ * of nothing but blanks, one longer than a draft stores, and one carrying a
+ * character that does not print, a newline being the one control character an
+ * intent holds. Every line is read for that last one, the blank ones too,
+ * because the row stores them all.
  */
 export function asBriefIntent(value: string): BriefIntent {
   const normalized = briefIntentNormalized(value);
-  if (
-    normalized.length === 0 ||
-    textCodePointsCount(normalized) > briefIntentCharsMax
-  )
-    throw new RangeError("ticket intent: the statement is empty or too long");
-  const lines = briefIntentLines(normalized as BriefIntent);
-  if (lines.length === 0 || lines.length > briefIntentLinesMax)
-    throw new RangeError("ticket intent: the statement is empty or too long");
-  for (const line of lines) {
-    if (taskConfigurationLineFault(line) !== undefined)
-      throw new RangeError("ticket intent: a line does not render");
-  }
+  if (normalized.trim().length === 0)
+    throw new RangeError(
+      "ticket intent: the statement is blank, so say what the ticket is for",
+    );
+  if (textCodePointsCount(normalized) > briefIntentCharsMax)
+    throw new RangeError(
+      `ticket intent: the statement is longer than the ${String(briefIntentCharsMax)} characters an intent holds`,
+    );
+  if (normalized.split("\n").some(taskConfigurationLineUnreadable))
+    throw new RangeError(
+      "ticket intent: the statement carries a character that does not print: an intent holds no control character but a newline, so write a tab as spaces",
+    );
   return normalized as BriefIntent;
 }
 
