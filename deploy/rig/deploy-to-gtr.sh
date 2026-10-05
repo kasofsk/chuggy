@@ -62,16 +62,27 @@
 # while an attempt is live only where that does not hold. A release that
 # carries a migration has a plane serving on a schema that is not its image's
 # for the length of the roll, and a plane checks no schema when it starts. A
-# release that moves the rig back brings a plane that refuses a pod of a later
-# contract than its own. And a release branch that does not state a rolling
-# update with none unavailable for the worker plane may leave a moment with no
-# plane serving, which is the one thing a live attempt needs of a release; the
-# strategy is read from the branch about to be merged, so the premise is held
-# to and not assumed. Any other landing says how many attempts are live, and
-# once the rollout is done asks what became of each. One the database records
-# as lost is a finding, reported after everything else a landing does: the
-# release stands, and a loss is the evidence that it should not have gone out
-# over that attempt.
+# release that moves the rig back, or whose commit states an earlier worker
+# contract than the live commit does, brings a plane that refuses a pod of the
+# later contract; a commit that does not state its contract is taken to. And a
+# worker plane that does not state a rolling update with none unavailable may
+# leave a moment with no plane serving, which is the one thing a live attempt
+# needs of a release. That is read from the tree the merge will produce, the
+# release branch merged into the fabric's main as it stands, and there only
+# from the `spec.strategy` of the Deployment named chuggy-worker-plane; a
+# branch that does not merge cleanly could not be read. What either gains
+# between that reading and the merge is not read.
+#
+# WHAT BECAME OF THEM IS SAID ONLY AS FAR AS A ROW SAYS IT. Any other landing
+# says how many attempts are live, and once the rollout is done asks after
+# each. One that ended is counted by how it ended. One that still runs is
+# vouched for only once its lease has been written since the rollout, which is
+# its pod or its runner reaching a plane the release left serving, and the
+# landing waits for that. One still being placed, which no pool holds and
+# nothing has written, is not waited for and is counted apart. An attempt the
+# database records as lost is a finding, and one still running that was not
+# heard from is a could-not-run, each said after everything else a landing
+# does: the release stands, and no row says the rollout was the cause.
 #
 # `--console` IS BOTH PHASES IN ONE RUN, for a release in which only the
 # console moved. Every other manifest then takes an annotation and no
@@ -84,10 +95,13 @@
 #
 # THE GATE IS THE GATES THE CHANGE SINCE THE LIVE COMMIT AFFECTS. Each commit
 # in that range was gated against main when it merged; what a release adds is
-# their sum against what the rig runs, and the runner's selection over the
-# range is that sum, so a gate nothing in the range touches has nothing new to
-# say. A release that moves the rig back has no change ahead of the live
-# commit to select by, so it runs every gate, and `CHUG_RELEASE_GATE=full`
+# their sum against what the rig runs. Which gates that sum reaches is the
+# runner's selection over the range, and the selection is trusted for it: a
+# gate it does not select is not run, and the pull request says the release was
+# gated by what changed and not that every gate passed. A range that selects no
+# gate and no suite has gated nothing, which the runner is asked to answer as a
+# could-not-run. A release that moves the rig back has no change ahead of the
+# live commit to select by, so it runs every gate, and `CHUG_RELEASE_GATE=full`
 # asks for every gate of any release.
 #
 # Usage:
@@ -106,22 +120,33 @@
 #                         when the release carries a migration; no default.
 #   CHUG_FABRIC_REPO      the fabric repository, default gdoteof/chuggy-fabric
 #   CHUG_RELEASE_GATE     0 skips the gate, and the pull request says so;
-#                         full runs every gate
+#                         full runs every gate; unset or empty runs the gates
+#                         the change affects. Any other value is refused.
 #   CHUG_RELEASE_WAIT_SECS  how long a landing run waits on each of Flux, the
 #                         migrate Job and a rollout
+#   CHUG_RELEASE_HEARD_SECS  how long a landing waits to hear from an attempt
+#                         that still runs once the rollout is done. The default
+#                         is two of the worker core's heartbeat intervals
+#                         (`heartbeatIntervalMilliseconds` in its `lease.mjs`)
+#                         and a margin, so a pod is heard from though the
+#                         rollout cost it a beat.
 #
-# Exits 0 clean, 1 when something did not land, 2 when it could not run. Two
-# is not a pass.
+# Exits 0 clean. 1 is a finding: something did not land, or the release landed
+# and an attempt live at its merge is recorded lost. 2 is a could-not-run:
+# nothing was released, or the release landed and what became of an attempt
+# live at its merge could not be read or vouched for. Two is not a pass.
 set -eu
 export LC_ALL=C
 
+# What a landing that stops short still owes, said with whatever stops it.
+unasked=""
 say() { printf 'deploy-to-gtr: %s\n' "$*"; }
 refuse() {
-	printf 'deploy-to-gtr: LINTER ERROR — %s\n' "$*" >&2
+	printf 'deploy-to-gtr: LINTER ERROR — %s%s\n' "$*" "$unasked" >&2
 	exit 2
 }
 fail() {
-	printf 'deploy-to-gtr: FAILED — %s\n' "$*" >&2
+	printf 'deploy-to-gtr: FAILED — %s%s\n' "$*" "$unasked" >&2
 	exit 1
 }
 # A step's own protocol is kept: one is a finding, anything else could not run.
@@ -139,6 +164,14 @@ for argument in "$@"; do
 	esac
 done
 [ "$merge" -eq 0 ] || [ "$console" -eq 0 ] || refuse "--console lands its own release; it takes no --merge"
+case "${CHUG_RELEASE_GATE:-}" in
+"" | 0 | full) ;;
+*) refuse "CHUG_RELEASE_GATE is \`$CHUG_RELEASE_GATE\`, and it takes 0, full or nothing" ;;
+esac
+heard_secs="${CHUG_RELEASE_HEARD_SECS:-150}"
+case "$heard_secs" in
+"" | *[!0-9]*) refuse "CHUG_RELEASE_HEARD_SECS is \`$heard_secs\`, which is not a whole number of seconds" ;;
+esac
 
 for tool in git docker ssh kubectl gh python3; do
 	command -v "$tool" >/dev/null 2>&1 || refuse "no \`$tool\` on PATH, so nothing was released"
@@ -170,15 +203,100 @@ manifest_image() { # <manifest>
 manifest_job() {
 	sed -n 's|^[[:space:]]*name: \(chuggy-migrate-[a-z0-9-]*\)[[:space:]]*$|\1|p' "$apps/chuggy-migrate.yaml" | head -n 1
 }
-# The first `strategy:` mapping, joined onto one line without its comments.
-manifest_strategy() { # <manifest>
+# `rolling` when the Deployment named chuggy-worker-plane states, as its own
+# `spec.strategy`, a rolling update with none unavailable, and nothing
+# otherwise. The manifest is read as the block YAML the fabric writes, a
+# document at a time and each line under the lines it is indented beneath, and
+# only the exact lines are an answer. That Deployment in no document or in
+# more than one, a key on the way to the answer stated twice, and a line on
+# that way or in the strategy that this does not recognise are each nothing.
+worker_plane_rolls() {
 	awk '
-		function depth() { match($0, /^ */); return RLENGTH }
-		/^[[:space:]]*(#|$)/ { next }
-		inside && depth() <= at { exit }
-		!inside && /^[[:space:]]*strategy:/ { inside = 1; at = depth() }
-		inside { sub(/[[:space:]]#.*$/, ""); printf "%s ", $0 }
-	' "$apps/$1"
+		function fresh() {
+			kinds = 0; deployment = 0; names = 0; named = 0; specs = 0; strategies = 0
+			types = 0; rolling = 0; bounds = 0; unavailables = 0; none = 0; odd = 0; depth = 0
+		}
+		function closed() {
+			if (deployment && named) {
+				found++
+				if (kinds == 1 && names == 1 && specs == 1 && strategies == 1 && types == 1 && rolling &&
+					bounds == 1 && unavailables == 1 && none && !odd) stated++
+			}
+			fresh()
+		}
+		function keyof(text) {
+			sub(/:.*$/, "", text)
+			return text
+		}
+		function bound(entry) {
+			if (keyof(entry) == "maxUnavailable") {
+				unavailables++
+				if (entry == "maxUnavailable: 0") none = 1
+			} else if (entry !~ /^maxSurge: [0-9]+%?$/) odd = 1
+		}
+		BEGIN { fresh() }
+		{ sub(/\r$/, "") }
+		/^---([ \t]|$)/ { closed(); next }
+		{
+			sub(/(^|[ \t])#.*$/, "")
+			sub(/[ \t]+$/, "")
+			if ($0 == "") next
+			match($0, /^ */)
+			indent = RLENGTH
+			line = substr($0, indent + 1)
+			while (depth > 0 && at[depth] >= indent) depth--
+			under = ""
+			for (i = 1; i <= depth; i++) under = under held[i] "/"
+			depth++
+			at[depth] = indent
+			held[depth] = line
+			key = keyof(line)
+			if ((under == "" || under == "metadata:/" || under == "spec:/") && line !~ /^[A-Za-z]+:( |$)/) odd = 1
+			if (under == "") {
+				if (key == "kind") { kinds++; if (line == "kind: Deployment") deployment = 1 }
+				if (key == "spec") specs++
+			} else if (under == "metadata:/") {
+				if (key == "name") { names++; if (line == "name: chuggy-worker-plane") named = 1 }
+			} else if (under == "spec:/") {
+				if (key == "strategy") strategies++
+			} else if (under == "spec:/strategy:/") {
+				if (key == "type") {
+					types++
+					if (line == "type: RollingUpdate") rolling = 1
+				} else if (key == "rollingUpdate") {
+					bounds++
+					if (line ~ /^rollingUpdate: \{.*\}$/) {
+						sub(/^rollingUpdate: \{[ \t]*/, "", line)
+						sub(/[ \t]*\}$/, "", line)
+						parts = split(line, part, /[ \t]*,[ \t]*/)
+						for (i = 1; i <= parts; i++) bound(part[i])
+					}
+				} else odd = 1
+			} else if (under == "spec:/strategy:/rollingUpdate:/") {
+				bound(line)
+			} else if (index(under, "spec:/strategy:/") == 1) odd = 1
+		}
+		END {
+			closed()
+			if (found == 1 && stated) print "rolling"
+		}
+	' "$apps/chuggy-worker-plane.yaml" 2>/dev/null || true
+}
+# The worker contract a commit states, as the one file that carries it does:
+# the major and minor of its release, which are the version a plane serves and
+# a pod names. A commit states one where it says so once.
+contract_at() { # <commit>
+	git show "$1:src/contract/workerContract.ts" 2>/dev/null \
+		| sed -n 's/^export const workerContractRelease = "\([0-9]\{1,9\}\.[0-9]\{1,9\}\)\.[0-9]\{1,9\}";$/\1/p'
+}
+stated() { # <what a commit states>
+	case "$1" in "" | *[!0-9.]*) return 1 ;; esac
+}
+# Whether a lease has been written since it was read. One is whole
+# microseconds, or something else where the row has none.
+renewed() { # <lease then> <lease now>
+	case "$2" in "" | *[!0-9]*) return 1 ;; esac
+	[ "$2" != "$1" ]
 }
 
 # --- the commit ---------------------------------------------------------------
@@ -224,6 +342,8 @@ fi
 
 changed="$(git diff --name-only "$deployed" HEAD -- src/adapters/postgres/schema/migrations)" || refuse "the migrations since $deployed could not be read"
 migrations="$(printf '%s\n' "$changed" | grep -v '/index\.ts$' | grep . || true)"
+contract_live="$(contract_at "$deployed")"
+contract_head="$(contract_at HEAD)"
 
 # ================================================================================
 # Landing: the pull request that stands for HEAD is merged and rolled out.
@@ -233,6 +353,11 @@ land() { # <pull request url>
 	git -C "$fabric" fetch -q origin "refs/heads/$branch" || refuse "$branch could not be fetched from $fabric_repo"
 	git -C "$fabric" checkout -q --detach FETCH_HEAD
 	[ "$(manifest_source_commit chuggy-api.yaml)" = "$tag" ] || refuse "$branch does not select $tag, so it is not HEAD's release"
+	# From here the tree is what the merge will produce: the branch merged into
+	# the fabric's main as it stands, which is what the cluster is given.
+	git -C "$fabric" fetch -q origin refs/heads/main || refuse "the main of $fabric_repo could not be fetched, so what the merge would land is unknown"
+	landing="$(git -C "$fabric" merge-tree --write-tree FETCH_HEAD HEAD 2>/dev/null)" || refuse "$branch could not be merged cleanly into the main of $fabric_repo here, so what would land is unknown"
+	git -C "$fabric" read-tree -u --reset "$landing" || refuse "what merging $branch would land could not be read"
 	job="$(manifest_job)"
 	[ -n "$job" ] || refuse "chuggy-migrate.yaml names no Job"
 
@@ -245,23 +370,25 @@ land() { # <pull request url>
 			unsafe="this release carries a migration, across which a plane serves on a schema that is not its own"
 		elif [ "$back" -eq 1 ]; then
 			unsafe="this release moves the rig back, to a plane that refuses a pod of a later contract"
+		elif ! stated "$contract_live" || ! stated "$contract_head"; then
+			unsafe="the worker contract is not stated once at each of $deployed and $tag, so whether this release's plane refuses a live pod is unknown"
+		elif [ "${contract_head%.*}" -lt "${contract_live%.*}" ] || { [ "${contract_head%.*}" -eq "${contract_live%.*}" ] && [ "${contract_head#*.}" -lt "${contract_live#*.}" ]; }; then
+			unsafe="this release states worker contract $contract_head where the live commit states $contract_live, so its plane refuses a pod of the later one"
 		else
-			[ -f "$apps/chuggy-worker-plane.yaml" ] || refuse "$branch has no chuggy-worker-plane.yaml, so whether a plane serves throughout the roll is unknown"
-			strategy="$(manifest_strategy chuggy-worker-plane.yaml)"
-			if ! printf '%s\n' "$strategy" | grep -Eq 'type:[[:space:]]*RollingUpdate([[:space:],}]|$)' \
-				|| ! printf '%s\n' "$strategy" | grep -Eq 'maxUnavailable:[[:space:]]*0([[:space:],}]|$)'; then
-				unsafe="$branch does not state a rolling update with none unavailable for the worker plane, so a moment with no plane serving is not ruled out"
+			[ -f "$apps/chuggy-worker-plane.yaml" ] || refuse "merging $branch lands no chuggy-worker-plane.yaml, so whether a plane serves throughout the roll is unknown"
+			if [ "$(worker_plane_rolls)" != "rolling" ]; then
+				unsafe="the worker plane that merging $branch lands does not state a rolling update with none unavailable, so a moment with no plane serving is not ruled out"
 			fi
 		fi
 	fi
 	live=""
 	live_count=0
+	newline='
+'
 	if [ -n "$unsafe" ]; then
 		# A live attempt is a worker pod or a session pod, and those are the only
 		# pods in the namespace the scheduler stamps with these labels. A
 		# selector is conjunctive, so each label is asked for on its own.
-		newline='
-'
 		live_pods=""
 		for label in chuggy.dev/worker chuggy.dev/session; do
 			labelled_pods="$(kube -n chuggy-work get pods -l "$label=true" -o name 2>/dev/null)" || refuse "the work namespace could not be read, so whether an attempt is live is unknown"
@@ -276,11 +403,18 @@ land() { # <pull request url>
 		[ "$live_rows" -eq 0 ] || fail "$live_rows execution(s) are live, and $unsafe"
 	elif [ "$console" -eq 0 ]; then
 		# What the release goes out over: every attempt of work or of a session
-		# that has not ended, each by the identity its row is asked after once
-		# the rollout is done.
-		live="$(sql 'select attempt from execution_attempt where ended_at is null union all select attempt from session_attempt where ended_at is null' 2>/dev/null)" || refuse "the live attempts could not be read, so what the release would go out over is unknown"
-		live_count="$(printf '%s\n' "$live" | grep -c . || true)"
-		[ "$live_count" -eq 0 ] || say "$live_count attempt(s) are live, and the release goes out over them"
+		# that has not ended, each as the kind and the identity its row is asked
+		# after by once the rollout is done. An identity is the scheduler's own
+		# making, so an answer that is not a kind and such an identity on each
+		# line is one this cannot ask after, and nothing is merged on it.
+		live="$(sql "select 'work ' || attempt from execution_attempt where ended_at is null union all select 'session ' || attempt from session_attempt where ended_at is null" 2>/dev/null)" || refuse "the live attempts could not be read, so what the release would go out over is unknown"
+		if [ -n "$live" ]; then
+			if printf '%s\n' "$live" | grep -Evq '^(work|session) [A-Za-z0-9._-]+$'; then
+				refuse "the live attempts were not answered as a kind and an identity each, so what the release would go out over is unknown"
+			fi
+			live_count="$(printf '%s\n' "$live" | grep -c .)"
+			say "$live_count attempt(s) are live, and the release goes out over them"
+		fi
 	fi
 
 	if [ -n "$migrations" ]; then
@@ -296,6 +430,7 @@ land() { # <pull request url>
 	fi
 
 	gh pr merge "$pr_number" -R "$fabric_repo" --merge --delete-branch --admin || fail "pull request $pr_number did not merge"
+	[ "$live_count" -eq 0 ] || unasked="; the $live_count attempt(s) live at the merge were not asked after"
 	merged="$(gh pr view "$pr_number" -R "$fabric_repo" --json mergeCommit --jq '.mergeCommit.oid')"
 	printf '%s' "$merged" | grep -Eqx '[0-9a-f]{40}' || refuse "the merge commit of pull request $pr_number could not be read"
 	say "merged as $merged"
@@ -349,31 +484,72 @@ land() { # <pull request url>
 	ledger="$(sql 'select max(version) from schema_migration' 2>/dev/null || true)"
 	say "the rig is at $tag; ledger at ${ledger:-unknown}"
 	[ "$live_count" -gt 0 ] || exit 0
+	unasked=""
 
 	# What became of each attempt the release went out over, as its own row
-	# says: its state, and the evidence it ended with. A session records its
-	# ordinary end, a pod that drained its mailbox and stopped, as `Lost` with
-	# `SessionIdle`, so that one is no loss.
-	asked="$(printf '%s\n' "$live" | sed "s/'/''/g; s/.*/'&'/" | paste -sd, -)"
-	fates="$(sql "select state || ' ' || kind || ' attempt ' || attempt || ' in ' || tenant || '/' || project || coalesce(': ' || evidence, '') from (select 'work' as kind, tenant, project, attempt, state, evidence from execution_attempt union all select 'session', tenant, project, attempt, state, evidence from session_attempt) a where attempt in ($asked)" 2>/dev/null)" || refuse "what became of the $live_count attempt(s) live at the merge could not be read"
-	running=0
-	ended=0
-	lost=0
-	while read -r fate; do
-		case "$fate" in
-		"Placing "* | "Running "*) running=$((running + 1)) ;;
-		"Lost "*": SessionIdle" | "Reported "* | "Withdrawn "* | "Superseded "*) ended=$((ended + 1)) ;;
-		"Lost "*)
-			lost=$((lost + 1))
-			say "LOST — ${fate#Lost }"
-			;;
-		esac
-	done <<-FATES
-		$fates
-	FATES
-	[ $((running + ended + lost)) -eq "$live_count" ] || refuse "the database did not answer for each of the $live_count attempt(s) live at the merge, so what became of them is unknown"
-	[ "$lost" -eq 0 ] || fail "of $live_count attempt(s) live at the merge, the rollout lost $lost; $ended ended and $running still run"
-	say "of $live_count attempt(s) live at the merge, none was lost: $ended ended and $running still run"
+	# says and no further: its state, the evidence it ended with, its lease,
+	# and whether a pool holds it. A session records its ordinary end, a pod
+	# that drained its mailbox and stopped, as `Lost` with `SessionIdle`, so
+	# that one is no loss. A lease is written only by the pod's heartbeat or by
+	# the poll of the pool that holds the attempt, each through a plane, so one
+	# that is not what it was at the first reading is that attempt heard from
+	# since the rollout. A placing attempt its pod has not written and no pool
+	# holds has nothing renewing it, so it is not waited for.
+	asked="$(printf '%s\n' "$live" | sed "s/^\(.*\) \(.*\)$/('\1','\2')/" | paste -sd, -)"
+	sought="$(printf '%s\n' "$live" | sort)"
+	first=""
+	waited=0
+	while :; do
+		fates="$(sql "select state || ' ' || kind || ' ' || attempt || ' ' || coalesce((extract(epoch from lease_expires_at) * 1000000)::bigint::text, '-') || ' ' || case when pool is null then 'unheld' else 'held' end || ' in ' || tenant || '/' || project || coalesce(': ' || regexp_replace(evidence, '[[:space:]]+', ' ', 'g'), '') from (select 'work' as kind, tenant, project, attempt, state, evidence, lease_expires_at, pool from execution_attempt union all select 'session', tenant, project, attempt, state, evidence, lease_expires_at, pool from session_attempt) a where (kind, attempt) in ($asked)" 2>/dev/null)" || refuse "what became of the $live_count attempt(s) live at the merge could not be read"
+		[ -n "$first" ] || first="$fates"
+		answered=""
+		ended=0
+		heard=0
+		unstarted=0
+		lost=0
+		unheard=0
+		losses=""
+		silences=""
+		while read -r state kind attempt lease holder rest; do
+			case "$state $kind $rest" in
+			"Reported "* | "Withdrawn "* | "Superseded "* | "Lost session "*": SessionIdle") ended=$((ended + 1)) ;;
+			"Lost "*)
+				lost=$((lost + 1))
+				losses="${losses:+$losses$newline}LOST — $kind attempt $attempt $rest"
+				;;
+			"Running "* | "Placing "*)
+				if renewed "$(printf '%s\n' "$first" | awk -v kind="$kind" -v attempt="$attempt" '$2 == kind && $3 == attempt { print $4 }')" "$lease"; then
+					heard=$((heard + 1))
+				elif [ "$state $holder" = "Placing unheld" ]; then
+					unstarted=$((unstarted + 1))
+				else
+					unheard=$((unheard + 1))
+					silences="${silences:+$silences$newline}UNHEARD — $kind attempt $attempt $rest"
+				fi
+				;;
+			*) continue ;;
+			esac
+			answered="${answered:+$answered$newline}$kind $attempt"
+		done <<-FATES
+			$fates
+		FATES
+		[ "$(printf '%s\n' "$answered" | sort)" = "$sought" ] || refuse "the database did not answer for exactly the $live_count attempt(s) live at the merge, so what became of them is unknown"
+		if [ "$unheard" -eq 0 ] || [ "$waited" -ge "$heard_secs" ]; then break; fi
+		sleep 5
+		waited=$((waited + 5))
+	done
+	[ -z "$losses" ] || printf '%s\n' "$losses" | sed 's/^/deploy-to-gtr: /'
+	[ -z "$silences" ] || printf '%s\n' "$silences" | sed 's/^/deploy-to-gtr: /'
+	counts="$ended ended, $heard running and heard from since the rollout, $unstarted not yet started"
+	silent="$unheard running had no lease renewed within ${heard_secs}s of the rollout, and whether any such attempt outlasts the release is not known"
+	if [ "$lost" -gt 0 ] && [ "$unheard" -gt 0 ]; then
+		fail "of $live_count attempt(s) live at the merge, the database records $lost lost, and $silent; $counts"
+	elif [ "$lost" -gt 0 ]; then
+		fail "of $live_count attempt(s) live at the merge, the database records $lost lost; $counts"
+	elif [ "$unheard" -gt 0 ]; then
+		refuse "of $live_count attempt(s) live at the merge, $silent; $counts"
+	fi
+	say "of $live_count attempt(s) live at the merge, none is recorded lost: $counts"
 	exit 0
 }
 
@@ -418,10 +594,10 @@ fi
 
 # --- the gate -------------------------------------------------------------------
 
-if [ "${CHUG_RELEASE_GATE:-1}" = "0" ]; then
+if [ "${CHUG_RELEASE_GATE:-}" = "0" ]; then
 	gate="skipped by CHUG_RELEASE_GATE=0"
 	say "gate $gate; this release carries no verdict of its own"
-elif [ "${CHUG_RELEASE_GATE:-1}" = "full" ] || [ "$back" -eq 1 ]; then
+elif [ "${CHUG_RELEASE_GATE:-}" = "full" ] || [ "$back" -eq 1 ]; then
 	say "gating $tag with every gate"
 	set +e
 	CHUG_CI_FULL=1 ./.chug/tasks/ci.sh
@@ -433,11 +609,17 @@ else
 	say "gating $tag with the gates the change since $deployed affects"
 	set +e
 	# The runner selects by the base only when nothing asks it for every gate,
-	# and a full run in this environment would.
-	CHUG_CI_FULL= CHUG_CI_BASE="$deployed" ./.chug/tasks/ci.sh
+	# and a full run in this environment would. It is asked to answer a range
+	# that selects nothing as a could-not-run, because a verdict over no gate
+	# is not one about this release.
+	CHUG_CI_FULL= CHUG_CI_BASE="$deployed" CHUG_CI_NEEDS_GATE=1 ./.chug/tasks/ci.sh
 	gated=$?
 	set -e
-	[ "$gated" -eq 0 ] || leave_as "$gated" "the gate did not pass $tag, so it is not released"
+	if [ "$gated" -eq 1 ]; then
+		fail "the gate did not pass $tag, so it is not released"
+	elif [ "$gated" -ne 0 ]; then
+		refuse "the gate could not run over the change since $deployed, so $tag is not released; CHUG_RELEASE_GATE=full runs every gate"
+	fi
 	gate="clean over the gates the change since $deployed affects"
 fi
 

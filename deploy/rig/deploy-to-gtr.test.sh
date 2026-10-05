@@ -7,9 +7,10 @@
 #
 # NOTHING HERE BUILDS, PUSHES OR REACHES A CLUSTER. `docker`, `ssh`, `kubectl`,
 # `gh` and `python3` are stubs on PATH that log every invocation and answer
-# from environment the case sets; the gate and the image builder are stubs
-# inside a throwaway checkout; and the fabric is a bare repository the `gh` stub
-# clones, so what the script pushes can be read back out of it.
+# from environment the case sets, and `sleep` is one that logs and returns; the
+# gate and the image builder are stubs inside a throwaway checkout; and the
+# fabric is a bare repository the `gh` stub clones, so what the script pushes
+# can be read back out of it.
 #
 # THE MIRROR CASES MATTER AS MUCH. A guard that refuses everything is the same
 # defect wearing the other face, so each refusal has a case where the thing
@@ -95,15 +96,20 @@ case "$args" in
 	;;
 *' -n chuggy-work get pods '*) printf '%s' "${CHUG_STUB_UNLABELLED_PODS:-}" ;;
 *'terminal_at is null'*) printf '%s' "${CHUG_STUB_LIVE_ROWS-0}" ;;
-# The attempts that have not ended, one identity a line, and then what the rows
-# asked after by identity say became of them.
+# The attempts that have not ended, a kind and an identity a line, and then
+# what the rows asked after by both say became of them: one answer to the
+# first asking, and another to each asking after it where a case sets one.
 *'ended_at is null'*)
 	[ "${CHUG_STUB_ATTEMPTS_RC:-0}" -eq 0 ] || exit "$CHUG_STUB_ATTEMPTS_RC"
 	printf '%s' "${CHUG_STUB_ATTEMPTS:-}"
 	;;
-*' attempt in ('*)
+*'(kind, attempt) in ('*)
 	[ "${CHUG_STUB_FATES_RC:-0}" -eq 0 ] || exit "$CHUG_STUB_FATES_RC"
-	printf '%s' "${CHUG_STUB_FATES:-}"
+	if [ "$(grep -c '(kind, attempt) in (' "$CHUG_STUB_LOG")" -gt 1 ] && [ -n "${CHUG_STUB_FATES_THEN+set}" ]; then
+		printf '%s' "$CHUG_STUB_FATES_THEN"
+	else
+		printf '%s' "${CHUG_STUB_FATES:-}"
+	fi
 	;;
 *'max(version)'*) printf '52' ;;
 *' pg_dump '*) printf '%s' "${CHUG_STUB_DUMP:-PGDMP-archive}" ;;
@@ -167,7 +173,13 @@ printf 'python3 %s\n' "$*" >>"$CHUG_STUB_LOG"
 exit "${CHUG_STUB_CONSISTENCY_RC:-0}"
 STUB
 
-chmod +x "$BIN/docker" "$BIN/ssh" "$BIN/kubectl" "$BIN/gh" "$BIN/python3"
+# A wait is logged and not sat through, so a case can count the waits.
+cat >"$BIN/sleep" <<'STUB'
+#!/bin/sh
+printf 'sleep %s\n' "$*" >>"$CHUG_STUB_LOG"
+STUB
+
+chmod +x "$BIN/docker" "$BIN/ssh" "$BIN/kubectl" "$BIN/gh" "$BIN/python3" "$BIN/sleep"
 
 # --- the checkout, with its gate and its builder stubbed inside it ---------------
 
@@ -183,9 +195,10 @@ for file in src/a.ts src/contract/c.ts ui/chuggy-ui/app.ts images/api/Dockerfile
 	src/adapters/postgres/schema/migrations/001-a.ts src/adapters/postgres/schema/migrations/index.ts; do
 	printf 'fixture\n' >"$REPO/$file"
 done
+printf 'export const workerContractRelease = "1.6.0";\n' >"$REPO/src/contract/workerContract.ts"
 cat >"$REPO/.chug/tasks/ci.sh" <<'STUB'
 #!/bin/sh
-printf 'ci prefix=<%s> full=<%s> base=<%s>\n' "${CHUG_IMAGE_PREFIX:-}" "${CHUG_CI_FULL:-}" "${CHUG_CI_BASE:-}" >>"$CHUG_STUB_LOG"
+printf 'ci prefix=<%s> full=<%s> base=<%s> needs=<%s>\n' "${CHUG_IMAGE_PREFIX:-}" "${CHUG_CI_FULL:-}" "${CHUG_CI_BASE:-}" "${CHUG_CI_NEEDS_GATE:-}" >>"$CHUG_STUB_LOG"
 exit "${CHUG_STUB_GATE_RC:-0}"
 STUB
 cat >"$REPO/deploy/rig/images/build-and-import.sh" <<'STUB'
@@ -275,7 +288,8 @@ fresh_case() {
 	unset CHUG_STUB_WORKER_PODS CHUG_STUB_SESSION_PODS CHUG_STUB_UNLABELLED_PODS CHUG_STUB_WORK_PODS_RC
 	unset CHUG_STUB_MERGE_RC CHUG_STUB_MERGED CHUG_STUB_JOB_RC CHUG_STUB_ROLLOUT_RC CHUG_STUB_STALE CHUG_STUB_BRANCH
 	unset CHUG_STUB_DUMP CHUG_STUB_NODE_RC CHUG_STUB_PUSH_DENIED
-	unset CHUG_STUB_ATTEMPTS CHUG_STUB_ATTEMPTS_RC CHUG_STUB_FATES CHUG_STUB_FATES_RC
+	unset CHUG_STUB_ATTEMPTS CHUG_STUB_ATTEMPTS_RC CHUG_STUB_FATES CHUG_STUB_FATES_THEN CHUG_STUB_FATES_RC
+	unset CHUG_RELEASE_HEARD_SECS CHUG_CI_NEEDS_GATE
 	export CHUG_RIG_SSH=nobody@no-such-host
 	export CHUG_STUB_DIGEST="$NEW"
 }
@@ -324,6 +338,8 @@ run() { # <argument...>
 	printf 'pushes attempted: %s\n' "$(grep -c 'images push' "$LOG" || true)" >>"$OUT"
 	printf 'pull requests opened: %s\n' "$(grep -c '^gh pr create ' "$LOG" || true)" >>"$OUT"
 	printf 'merges attempted: %s\n' "$(grep -c '^gh pr merge ' "$LOG" || true)" >>"$OUT"
+	printf 'fates asked for: %s\n' "$(grep -c '(kind, attempt) in (' "$LOG" || true)" >>"$OUT"
+	printf 'waits: %s\n' "$(grep -c '^sleep ' "$LOG" || true)" >>"$OUT"
 	echo "--- the calls, in order" >>"$OUT"
 	cat "$LOG" >>"$OUT"
 	echo "--- the pull request body" >>"$OUT"
@@ -477,7 +493,31 @@ fresh_case
 advance src/a.ts
 export CHUG_STUB_GATE_RC=2
 run
-check "a gate that could not run is not a pass" 2 "$RC" "did not pass $TAG"
+check "a gate that could not run is not a pass, and is told what runs every gate" 2 "$RC" "the gate could not run over the change since $DEPLOYED, so $TAG is not released; CHUG_RELEASE_GATE=full runs every gate"
+check "a gate that could not run builds nothing" 2 "$RC" "builds attempted: 0"
+
+fresh_case
+advance src/a.ts
+export CHUG_STUB_GATE_RC=3
+run
+check "a gate that ended any other way is not a pass" 2 "$RC" "the gate could not run over the change since $DEPLOYED"
+
+# The variable takes what the header says it takes: a value it does not know
+# is refused before anything runs, and not taken for the gate by what changed.
+for value in FULL 1 changed; do
+	fresh_case
+	advance src/a.ts
+	export CHUG_RELEASE_GATE="$value"
+	run
+	check "a gate setting of $value is refused" 2 "$RC" "CHUG_RELEASE_GATE is \`$value\`, and it takes 0, full or nothing"
+	check "a gate setting of $value reaches no tool" 2 "$RC" "$untouched"
+done
+
+fresh_case
+advance src/a.ts
+export CHUG_RELEASE_GATE=
+run
+check "an empty gate setting is the gate by what changed" 0 "$RC" "base=<$DEPLOYED> needs=<1>"
 
 fresh_case
 advance src/a.ts
@@ -571,14 +611,17 @@ open_release() { # <path>...
 	: >"$LOG"
 }
 
-# The release branch as another hand left it: the command runs in its
+# A branch of the fabric as another hand left it: the command runs in its
 # `cluster/apps`, and what it changed is pushed over the branch.
-release_edited() { # <command...>
+fabric_edited() { # <branch> <command...>
 	rm -rf "$WORK/edited"
-	git clone -q --branch "release/chuggy-$TAG" "$FABRIC_GIT" "$WORK/edited"
-	(cd "$WORK/edited/cluster/apps" && "$@")
+	git clone -q --branch "$1" "$FABRIC_GIT" "$WORK/edited"
+	(cd "$WORK/edited/cluster/apps" && shift && "$@")
 	git -C "$WORK/edited" commit -qam edited
-	git -C "$WORK/edited" push -q origin "release/chuggy-$TAG"
+	git -C "$WORK/edited" push -q origin "$1"
+}
+release_edited() { # <command...>
+	fabric_edited "release/chuggy-$TAG" "$@"
 }
 
 # A release with a migration in it, which is one a landing may not put out over
@@ -655,69 +698,292 @@ open_move_back
 run --merge
 check "a move back with nothing live is landed" 0 "$RC" "the rig is at $TAG; ledger at 52"
 
-# The third is a release branch whose worker plane would leave a moment with no
-# plane serving. The fabric's main states a rolling update with none
-# unavailable throughout, so each of these is read from the branch about to be
-# merged. The strategy's type is edited with the unavailability left standing
-# beside it and the old type left in a comment above it and another after it,
-# and then the unavailability is edited with the type left standing.
-open_release src/a.ts
-release_edited sed -i 's/^\( *\)type: RollingUpdate$/\1# type: RollingUpdate, until the volume moved\n\1type: Recreate # type: RollingUpdate again once it is shared/' chuggy-worker-plane.yaml
-export CHUG_STUB_WORKER_PODS=pod/chuggy-worker-1
-run --merge
-check "a live attempt refuses a rollout that recreates the worker plane" 1 "$RC" "an attempt is live in chuggy-work, and release/chuggy-$TAG does not state a rolling update with none unavailable for the worker plane"
+# The third is a worker plane that would leave a moment with no plane serving,
+# and it is read from the tree the merge will produce. Each of these is a
+# landing over one live attempt of the release branch as another hand left it,
+# and whether the landing asked or went out is what the reader decided.
+plane_edited() { # <command...>
+	open_release src/a.ts
+	release_edited "$@"
+	export CHUG_STUB_WORKER_PODS=pod/chuggy-worker-1
+	run --merge
+}
+PLANE=chuggy-worker-plane.yaml
+asks="does not state a rolling update with none unavailable, so a moment with no plane serving is not ruled out"
+
+# The strategy's type is edited with the unavailability left standing beside
+# it and the old type left in a comment above it and another after it, and
+# then the unavailability is edited with the type left standing.
+plane_edited sed -i 's/^\( *\)type: RollingUpdate$/\1# type: RollingUpdate, until the volume moved\n\1type: Recreate # type: RollingUpdate again once it is shared/' "$PLANE"
+check "a live attempt refuses a rollout that recreates the worker plane" 1 "$RC" "an attempt is live in chuggy-work, and the worker plane that merging release/chuggy-$TAG lands $asks"
 check "a recreated plane is not merged over a live attempt" 1 "$RC" "merges attempted: 0"
 
 open_release src/a.ts
-release_edited sed -i '/rollingUpdate:/s/maxUnavailable: 0/maxUnavailable: 1/' chuggy-worker-plane.yaml
+release_edited sed -i '/rollingUpdate:/s/maxUnavailable: 0/maxUnavailable: 1/' "$PLANE"
 export CHUG_STUB_LIVE_ROWS=1
 run --merge
-check "a live attempt refuses a rollout that may leave the worker plane unavailable" 1 "$RC" "1 execution(s) are live, and release/chuggy-$TAG does not state a rolling update with none unavailable"
+check "a live attempt refuses a rollout that may leave the worker plane unavailable" 1 "$RC" "1 execution(s) are live, and the worker plane that merging release/chuggy-$TAG lands $asks"
+
+plane_edited sed -i '/strategy:/,/rollingUpdate:/d' "$PLANE"
+check "a worker plane that states no strategy is not one a live attempt is rolled over" 1 "$RC" "$asks"
 
 open_release src/a.ts
-release_edited sed -i '/strategy:/,/rollingUpdate:/d' chuggy-worker-plane.yaml
-export CHUG_STUB_WORKER_PODS=pod/chuggy-worker-1
-run --merge
-check "a worker plane that states no strategy is not one a live attempt is rolled over" 1 "$RC" "does not state a rolling update with none unavailable"
-
-open_release src/a.ts
-release_edited sed -i 's/type: RollingUpdate/type: Recreate/' chuggy-worker-plane.yaml
+release_edited sed -i 's/type: RollingUpdate/type: Recreate/' "$PLANE"
 run --merge
 check "a recreated plane with nothing live is landed" 0 "$RC" "the rig is at $TAG; ledger at 52"
 
 open_release src/a.ts
-release_edited rm chuggy-worker-plane.yaml
+release_edited rm "$PLANE"
 run --merge
-check "a release branch with no worker plane manifest could not run" 2 "$RC" "release/chuggy-$TAG has no chuggy-worker-plane.yaml"
+check "a release that lands no worker plane manifest could not run" 2 "$RC" "merging release/chuggy-$TAG lands no chuggy-worker-plane.yaml"
 check "an unread strategy is not merged over" 2 "$RC" "merges attempted: 0"
+
+# The answer is the worker plane Deployment's own `spec.strategy` and nothing
+# else in the file that reads like one. In each of these the plane recreates,
+# or states nothing, and the words of a rolling update stand somewhere a
+# reader of words would find them first.
+recreates() { sed 's/type: RollingUpdate/type: Recreate/; /rollingUpdate:/d' "$PLANE"; }
+another_deployment_first() {
+	{
+		printf 'apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: chuggy-worker-plane-canary\nspec:\n'
+		printf '  strategy:\n    type: RollingUpdate\n    rollingUpdate: { maxSurge: 1, maxUnavailable: 0 }\n---\n'
+		recreates
+	} >edited && mv edited "$PLANE"
+}
+a_block_of_text_first() {
+	{
+		printf 'apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: notes\ndata:\n  notes: |\n'
+		printf '    strategy:\n      type: RollingUpdate\n      rollingUpdate: { maxSurge: 1, maxUnavailable: 0 }\n---\n'
+		recreates
+	} >edited && mv edited "$PLANE"
+}
+no_deployment() {
+	sed -i 's/^kind: Deployment$/kind: ConfigMap/' "$PLANE"
+}
+a_key_that_ends_in_type() {
+	sed -i 's/^\( *\)type: RollingUpdate$/\1type: Recreate\n\1x-type: RollingUpdate/' "$PLANE"
+}
+a_later_strategy() {
+	sed -i 's/^  template:$/  strategy: { type: Recreate }\n&/' "$PLANE"
+}
+the_template_states_it() {
+	sed -i '/^  strategy:/,/rollingUpdate:/d' "$PLANE"
+	sed -i 's/^    spec:$/&\n      strategy:\n        type: RollingUpdate\n        rollingUpdate: { maxSurge: 1, maxUnavailable: 0 }/' "$PLANE"
+	sed -i 's/^---$/  strategy: { type: Recreate }\n&/' "$PLANE"
+}
+# And a Deployment that states it twice has not stated it: one key of two is
+# the one a cluster takes, and which is not this reader's to say.
+the_plane_twice() {
+	{
+		sed '/^---$/,$d' "$PLANE"
+		printf -- '---\n'
+		recreates
+	} >edited && mv edited "$PLANE"
+}
+an_empty_later_strategy() {
+	sed -i 's/^  template:$/  strategy:\n&/' "$PLANE"
+}
+a_later_type() {
+	sed -i 's/^\( *\)rollingUpdate: .*$/&\n\1type: Recreate/' "$PLANE"
+}
+a_later_bound() {
+	sed -i 's/^\( *\)rollingUpdate: .*$/&\n\1rollingUpdate: { maxSurge: 3 }/' "$PLANE"
+}
+a_later_unavailability() {
+	sed -i '/rollingUpdate:/s/maxUnavailable: 0/maxUnavailable: 0, maxUnavailable: 1/' "$PLANE"
+}
+a_later_spec() {
+	sed -i 's/^---$/spec:\n  replicas: 1\n&/' "$PLANE"
+}
+a_later_kind() {
+	sed -i 's/^---$/kind: StatefulSet\n&/' "$PLANE"
+}
+a_later_name() {
+	sed -i 's/^  name: chuggy-worker-plane$/&\n  name: chuggy-pool-plane/' "$PLANE"
+}
+another_name() {
+	sed -i 's/^  name: chuggy-worker-plane$/&-next/' "$PLANE"
+}
+# Nor has one that states it in a shape this reader does not know, or beside
+# a key written as this reader would not read it.
+a_later_kind_in_quotes() {
+	sed -i 's/^---$/"kind": StatefulSet\n&/' "$PLANE"
+}
+a_later_name_in_quotes() {
+	sed -i "s/^  name: chuggy-worker-plane\$/&\n  'name': chuggy-pool-plane/" "$PLANE"
+}
+a_later_strategy_in_quotes() {
+	sed -i 's/^  template:$/  "strategy": { type: Recreate }\n&/' "$PLANE"
+}
+a_line_it_does_not_know() {
+	sed -i 's/^\( *\)type: RollingUpdate$/&\n\1paused: true/' "$PLANE"
+}
+a_bound_it_does_not_know() {
+	sed -i '/rollingUpdate:/s/maxSurge: 1/maxSurge: 1, minReadySeconds: 5/' "$PLANE"
+}
+a_type_that_ends_in_the_word() {
+	sed -i 's/type: RollingUpdate$/type: NotRollingUpdate/' "$PLANE"
+}
+a_type_that_begins_with_the_word() {
+	sed -i 's/type: RollingUpdate$/&Later/' "$PLANE"
+}
+a_value_that_runs_on() {
+	sed -i 's/^\( *\)type: RollingUpdate$/&\n\1  OnDelete/' "$PLANE"
+}
+a_strategy_in_flow() {
+	sed -i '/^  strategy:/,/rollingUpdate:/d' "$PLANE"
+	sed -i 's/^spec:$/&\n  strategy: { type: RollingUpdate, rollingUpdate: { maxSurge: 1, maxUnavailable: 0 } }/' "$PLANE"
+}
+for shape in another_deployment_first a_block_of_text_first no_deployment a_key_that_ends_in_type a_later_strategy \
+	the_template_states_it another_name the_plane_twice an_empty_later_strategy a_later_type a_later_bound \
+	a_later_unavailability a_later_spec a_later_kind a_later_name a_later_kind_in_quotes \
+	a_later_name_in_quotes a_later_strategy_in_quotes a_line_it_does_not_know a_bound_it_does_not_know \
+	a_type_that_ends_in_the_word a_type_that_begins_with_the_word a_value_that_runs_on a_strategy_in_flow; do
+	plane_edited "$shape"
+	check "a live attempt is not rolled over a plane read as $shape" 1 "$RC" "$asks"
+	check "a plane read as $shape is not merged" 1 "$RC" "merges attempted: 0"
+done
+
+# None unavailable is the one value that says it.
+for unavailable in 1 0% '"0"' 0.9 01; do
+	plane_edited sed -i "/rollingUpdate:/s/maxUnavailable: 0/maxUnavailable: $unavailable/" "$PLANE"
+	check "a live attempt is not rolled over a plane with $unavailable unavailable" 1 "$RC" "$asks"
+done
+
+# What the reader does take is the statement however it is laid out: the
+# bounds a line each, a comment after a value, and another line ending.
+bounds_a_line_each() {
+	sed -i 's/^\( *\)rollingUpdate: .*$/\1rollingUpdate:\n\1  maxSurge: 25%\n\1  maxUnavailable: 0 # none, for a live attempt/' "$PLANE"
+}
+carriage_returns() {
+	sed -i 's/$/\r/' "$PLANE"
+}
+for shape in bounds_a_line_each carriage_returns; do
+	plane_edited "$shape"
+	check "a live attempt is rolled over a plane that rolls with $shape" 0 "$RC" "merges attempted: 1"
+done
+
+# What lands is the merge and not the branch. The fabric's main as another
+# hand left it once the release was open: a plane that recreates there is the
+# plane the cluster is given, whatever the branch says.
+main_edited() { # <command...>
+	fabric_edited main "$@"
+}
+open_release src/a.ts
+main_edited sed -i 's/type: RollingUpdate/type: Recreate/' "$PLANE"
+export CHUG_STUB_WORKER_PODS=pod/chuggy-worker-1
+run --merge
+check "a live attempt refuses a rollout whose plane the fabric's main has since recreated" 1 "$RC" "$asks"
+check "a plane recreated on main is not merged over a live attempt" 1 "$RC" "merges attempted: 0"
+
+open_release src/a.ts
+main_edited sed -i '1i # the worker plane' "$PLANE"
+export CHUG_STUB_WORKER_PODS=pod/chuggy-worker-1
+run --merge
+check "a main that moved and left the plane rolling is landed over a live attempt" 0 "$RC" "merges attempted: 1"
+
+open_release src/a.ts
+main_edited sed -i "s|^\( *image: registry.*\)@.*$|\1@$STALE|" "$PLANE"
+run --merge
+check "a release that does not merge cleanly could not run" 2 "$RC" "release/chuggy-$TAG could not be merged cleanly into the main of"
+check "a release that does not merge cleanly is not merged" 2 "$RC" "merges attempted: 0"
+
+# A release whose commit states an earlier worker contract than the live
+# commit does is a move back by another road: its plane refuses a pod of the
+# later contract. A patch is packaging and no contract, and a commit that
+# does not state one is not known to be safe.
+CONTRACT=src/contract/workerContract.ts
+contract_stated() { # <release>...
+	: >"$REPO/$CONTRACT"
+	for release in "$@"; do
+		printf 'export const workerContractRelease = "%s";\n' "$release" >>"$REPO/$CONTRACT"
+	done
+	advance src/a.ts
+}
+open_contract() { # <release>...
+	fresh_case
+	contract_stated "$@"
+	run
+	export CHUG_STUB_PR_HEAD="release/chuggy-$TAG" CHUG_STUB_PR_URL=https://example.test/pull/9 CHUG_STUB_MERGED="$MERGED"
+	: >"$LOG"
+}
+for lower in 1.5.9 0.7.0; do
+	open_contract "$lower"
+	export CHUG_STUB_WORKER_PODS=pod/chuggy-worker-1
+	run --merge
+	check "a live attempt refuses a release that lowers the worker contract to $lower" 1 "$RC" "an attempt is live in chuggy-work, and this release states worker contract ${lower%.*} where the live commit states 1.6"
+	check "a contract lowered to $lower is not merged over a live attempt" 1 "$RC" "merges attempted: 0"
+done
+
+open_contract 1.5.9
+run --merge
+check "a lowered contract with nothing live is landed" 0 "$RC" "the rig is at $TAG; ledger at 52"
+
+for kept in 1.6.1 1.10.0 2.0.0; do
+	open_contract "$kept"
+	export CHUG_STUB_WORKER_PODS=pod/chuggy-worker-1
+	run --merge
+	check "a release that states worker contract $kept goes out over a live attempt" 0 "$RC" "merges attempted: 1"
+done
+
+for unstated in "" 1.6 1.6.0-rc "1.6.0 1.7.0"; do
+	# shellcheck disable=SC2086 # each word is a release the file states
+	open_contract $unstated
+	export CHUG_STUB_WORKER_PODS=pod/chuggy-worker-1
+	run --merge
+	check "a live attempt refuses a release whose worker contract reads \`$unstated\`" 1 "$RC" "the worker contract is not stated once at each of $DEPLOYED and $TAG"
+done
+
+fresh_case
+contract_stated
+rig_at "$TAG"
+UNSTATED="$TAG"
+contract_stated 1.6.0
+run
+export CHUG_STUB_PR_HEAD="release/chuggy-$TAG" CHUG_STUB_PR_URL=https://example.test/pull/9 CHUG_STUB_MERGED="$MERGED"
+: >"$LOG"
+export CHUG_STUB_WORKER_PODS=pod/chuggy-worker-1
+run --merge
+check "a live attempt refuses a release over a live commit that states no worker contract" 1 "$RC" "the worker contract is not stated once at each of $UNSTATED and $TAG"
 
 # Any other release goes out over what is live: the pods and the executions are
 # not asked after, the attempts that have not ended are counted, and once the
-# rollout is done each is asked after by its identity.
-ALL_FATES="Placing work attempt attempt-1 in acme/site
-Running work attempt attempt-2 in acme/site
-Reported work attempt attempt-3 in acme/site
-Withdrawn work attempt attempt-4 in acme/site: RunRateLimited
-Superseded work attempt attempt-5 in acme/site: Fenced
-Lost session attempt session-attempt-6 in acme/site: SessionIdle"
-ALL_ATTEMPTS="$(printf '%s\n' "$ALL_FATES" | sed 's/^.* attempt \([^ ]*\) in .*$/\1/')"
+# rollout is done each is asked after by its kind and its identity. A fate is
+# a row's state, kind, identity and lease, whether a pool holds it, where it
+# is, and the evidence it ended on.
+fate() { # <state> <kind> <identity> <lease> <held|unheld> [evidence]
+	printf '%s %s %s %s %s in acme/site%s\n' "$1" "$2" "$3" "$4" "$5" "${6:+: $6}"
+}
+ALL_FATES="$(
+	fate Placing work attempt-1 100 unheld
+	fate Running work attempt-2 100 unheld
+	fate Reported work attempt-3 - unheld
+	fate Withdrawn work attempt-4 - unheld RunRateLimited
+	fate Superseded work attempt-5 - unheld Fenced
+	fate Lost session session-attempt-6 - unheld SessionIdle
+)"
+ALL_ATTEMPTS="$(printf '%s\n' "$ALL_FATES" | cut -d' ' -f2,3)"
 
+# One that still runs is vouched for once its lease is not what it was when
+# the rollout was done, and the landing waits to see that.
 open_release src/a.ts
 export CHUG_STUB_WORKER_PODS=pod/chuggy-worker-1 CHUG_STUB_SESSION_PODS=pod/chuggy-session-1 CHUG_STUB_LIVE_ROWS=1
 export CHUG_STUB_ATTEMPTS="$ALL_ATTEMPTS" CHUG_STUB_FATES="$ALL_FATES"
+CHUG_STUB_FATES_THEN="$(printf '%s\n' "$ALL_FATES" | sed 's/attempt-2 100/attempt-2 400/')"
+export CHUG_STUB_FATES_THEN
 run --merge
 check "a release with no migration goes out over live attempts, and says how many" 0 "$RC" "6 attempt(s) are live, and the release goes out over them"
 check "a release over live attempts is merged" 0 "$RC" "merges attempted: 1"
 printf 'attempts asked for: %s\n' "$(grep -c 'chuggy-work get pods' "$LOG" || true)" >>"$OUT"
 check "a release over live attempts asks after no pod" 0 "$RC" "attempts asked for: 0"
-check "each attempt is asked after by its identity" 0 "$RC" "where attempt in ('attempt-1','attempt-2','attempt-3','attempt-4','attempt-5','session-attempt-6')"
-check "none lost is clean, and each is counted as running or ended" 0 "$RC" "of 6 attempt(s) live at the merge, none was lost: 4 ended and 2 still run"
-printf 'first of rollout and asking: %s\n' "$(grep -o 'rollout status\|attempt in (' "$LOG" | head -n 1)" >>"$OUT"
+check "each attempt is asked after by its kind and its identity" 0 "$RC" "where (kind, attempt) in (('work','attempt-1'),('work','attempt-2'),('work','attempt-3'),('work','attempt-4'),('work','attempt-5'),('session','session-attempt-6'))"
+check "none lost is clean, and each is counted as it was read" 0 "$RC" "of 6 attempt(s) live at the merge, none is recorded lost: 4 ended, 1 running and heard from since the rollout, 1 not yet started"
+check "one heard from at the second asking is waited for once" 0 "$RC" "waits: 1"
+printf 'first of rollout and asking: %s\n' "$(grep -o 'rollout status\|attempt) in (' "$LOG" | head -n 1)" >>"$OUT"
 check "what became of them is asked once the rollout is done" 0 "$RC" "first of rollout and asking: rollout status"
 
 open_release src/a.ts
 run --merge
-printf 'fates asked for: %s\n' "$(grep -c 'attempt in (' "$LOG" || true)" >>"$OUT"
 check "a release over nothing live reports on nothing" 0 "$RC" "fates asked for: 0"
 
 open_release src/a.ts
@@ -726,48 +992,202 @@ run --merge
 check "unreadable live attempts could not run" 2 "$RC" "the live attempts could not be read"
 check "unread attempts are not merged over" 2 "$RC" "merges attempted: 0"
 
-# One lost is the finding, and it is the last thing a landing says: the
-# release is merged, rolled out and verified as any other first.
+# An attempt is asked after by what the scheduler names it, so an answer that
+# is not a kind and such a name on every line is refused while that is free.
+for answer in "   " "attempt-1" "work attempt-o'brien" "work attempt-1
+task attempt-2" "work attempt-1 attempt-2"; do
+	open_release src/a.ts
+	export CHUG_STUB_ATTEMPTS="$answer"
+	run --merge
+	check "live attempts answered as \`$(printf '%s' "$answer" | tr '\n' '|')\` could not run" 2 "$RC" "the live attempts were not answered as a kind and an identity each"
+	check "attempts answered so are not merged over" 2 "$RC" "merges attempted: 0"
+done
+
+# A lease that stands where it stood is an attempt nothing has heard from, and
+# one whose row has lost its lease is the same. Neither is vouched for: the
+# landing waits as long as it is told to, names each, and says what it does
+# not know.
 open_release src/a.ts
-export CHUG_STUB_ATTEMPTS="attempt-1
-attempt-2
-session-attempt-3"
-export CHUG_STUB_FATES="Running work attempt attempt-1 in acme/site
-Lost work attempt attempt-2 in acme/site: LeaseExpired
-Lost session attempt session-attempt-3 in acme/site: SessionIdle"
+export CHUG_STUB_ATTEMPTS="work attempt-1
+session session-attempt-2
+work attempt-3"
+CHUG_STUB_FATES="$(
+	fate Running work attempt-1 100 unheld
+	fate Running session session-attempt-2 100 unheld
+	fate Reported work attempt-3 - unheld
+)"
+CHUG_STUB_FATES_THEN="$(
+	fate Running work attempt-1 100 unheld
+	fate Running session session-attempt-2 - unheld
+	fate Reported work attempt-3 - unheld
+)"
+export CHUG_STUB_FATES CHUG_STUB_FATES_THEN CHUG_RELEASE_HEARD_SECS=10
 run --merge
-check "an attempt lost across the rollout is named with the evidence its row gives" 1 "$RC" "LOST — work attempt attempt-2 in acme/site: LeaseExpired"
-check "one lost is the landing's finding" 1 "$RC" "FAILED — of 3 attempt(s) live at the merge, the rollout lost 1; 1 ended and 1 still run"
-check "a release that lost an attempt is still landed" 1 "$RC" "the rig is at $TAG; ledger at 52"
-check "a release that lost an attempt is still verified" 1 "$RC" "rollout status deployment/chuggy-ui"
+check "an attempt not heard from is named" 2 "$RC" "deploy-to-gtr: UNHEARD — work attempt attempt-1 in acme/site"
+check "a session not heard from is named" 2 "$RC" "deploy-to-gtr: UNHEARD — session attempt session-attempt-2 in acme/site"
+check "one not heard from is a could-not-run that says what is not known" 2 "$RC" "LINTER ERROR — of 3 attempt(s) live at the merge, 2 running had no lease renewed within 10s of the rollout, and whether any such attempt outlasts the release is not known; 1 ended, 0 running and heard from since the rollout, 0 not yet started"
+check "one not heard from is waited for as long as the landing is told" 2 "$RC" "waits: 2"
+check "a release that could not vouch for an attempt is still landed" 2 "$RC" "the rig is at $TAG; ledger at 52"
+printf 'silences named: %s\n' "$(grep -c 'UNHEARD' "$OUT" || true)" >>"$OUT"
+check "each not heard from is named once" 2 "$RC" "silences named: 2"
+
+open_release src/a.ts
+export CHUG_STUB_ATTEMPTS="work attempt-1"
+CHUG_STUB_FATES="$(fate Running work attempt-1 100 unheld)"
+export CHUG_STUB_FATES
+run --merge
+check "the wait for an attempt has a length of its own where none is given" 2 "$RC" "1 running had no lease renewed within 150s of the rollout"
+check "that length is waited out" 2 "$RC" "waits: 30"
+
+fresh_case
+advance src/a.ts
+export CHUG_RELEASE_HEARD_SECS=soon
+run
+check "a wait that is no number of seconds is refused" 2 "$RC" "CHUG_RELEASE_HEARD_SECS is \`soon\`, which is not a whole number of seconds"
+check "a wait that is no number reaches no tool" 2 "$RC" "$untouched"
+
+# A lease is written whole by whatever renews it, so one that reads earlier
+# than it did has been written as surely as one that reads later.
+open_release src/a.ts
+export CHUG_STUB_ATTEMPTS="work attempt-1"
+CHUG_STUB_FATES="$(fate Running work attempt-1 400 unheld)"
+CHUG_STUB_FATES_THEN="$(fate Running work attempt-1 100 unheld)"
+export CHUG_STUB_FATES CHUG_STUB_FATES_THEN
+run --merge
+check "a lease written shorter is an attempt heard from" 0 "$RC" "none is recorded lost: 0 ended, 1 running and heard from since the rollout, 0 not yet started"
+
+# A placing attempt that a pool holds is a runner's whole run, and its lease is
+# the pool's to renew: it is waited for like one that runs. One no pool holds
+# has no pod to hear from, unless its lease says otherwise, and a lease where
+# there was none is a pool taking it up.
+open_release src/a.ts
+export CHUG_STUB_ATTEMPTS="work attempt-1
+work attempt-2
+session session-attempt-3
+work attempt-4"
+CHUG_STUB_FATES="$(
+	fate Placing work attempt-1 100 held
+	fate Placing work attempt-2 100 held
+	fate Placing session session-attempt-3 100 unheld
+	fate Placing work attempt-4 - unheld
+)"
+CHUG_STUB_FATES_THEN="$(
+	fate Placing work attempt-1 400 held
+	fate Placing work attempt-2 100 held
+	fate Placing session session-attempt-3 400 unheld
+	fate Placing work attempt-4 400 held
+)"
+export CHUG_STUB_FATES CHUG_STUB_FATES_THEN CHUG_RELEASE_HEARD_SECS=5
+run --merge
+check "a runner's attempt is heard from by its pool's renewal, and one not renewed is not" 2 "$RC" "1 running had no lease renewed within 5s of the rollout, and whether any such attempt outlasts the release is not known; 0 ended, 3 running and heard from since the rollout, 0 not yet started"
+check "the runner's attempt not renewed is the one named" 2 "$RC" "UNHEARD — work attempt attempt-2 in acme/site"
+
+open_release src/a.ts
+export CHUG_STUB_ATTEMPTS="work attempt-1"
+CHUG_STUB_FATES="$(fate Placing work attempt-1 100 unheld)"
+export CHUG_STUB_FATES
+run --merge
+check "an attempt not yet started is counted apart" 0 "$RC" "none is recorded lost: 0 ended, 0 running and heard from since the rollout, 1 not yet started"
+check "an attempt not yet started is not waited for" 0 "$RC" "waits: 0"
+
+# One lost is the finding, and it is the last thing a landing says: the
+# release is merged, rolled out and verified as any other first. It is said
+# as what the row records and no more, and a loss that comes while the landing
+# waits is one it sees.
+open_release src/a.ts
+export CHUG_STUB_ATTEMPTS="work attempt-1
+work attempt-2
+session session-attempt-3"
+CHUG_STUB_FATES="$(
+	fate Running work attempt-1 100 unheld
+	fate Running work attempt-2 100 unheld
+	fate Lost session session-attempt-3 - unheld SessionIdle
+)"
+CHUG_STUB_FATES_THEN="$(
+	fate Running work attempt-1 400 unheld
+	fate Lost work attempt-2 - unheld LeaseExpired
+	fate Lost session session-attempt-3 - unheld SessionIdle
+)"
+export CHUG_STUB_FATES CHUG_STUB_FATES_THEN
+run --merge
+check "an attempt recorded lost is named with the evidence its row gives" 1 "$RC" "deploy-to-gtr: LOST — work attempt attempt-2 in acme/site: LeaseExpired"
+check "one lost is the landing's finding, and no cause is given it" 1 "$RC" "FAILED — of 3 attempt(s) live at the merge, the database records 1 lost; 1 ended, 1 running and heard from since the rollout, 0 not yet started"
+check "a release with an attempt lost is still landed" 1 "$RC" "the rig is at $TAG; ledger at 52"
+refute "a landing that asked after its attempts does not say it did not" 1 "$RC" "were not asked after"
+check "a release with an attempt lost is still verified" 1 "$RC" "rollout status deployment/chuggy-ui"
 printf 'losses named: %s\n' "$(grep -c 'LOST' "$OUT" || true)" >>"$OUT"
 check "a session that drained its mailbox is not named as lost" 1 "$RC" "losses named: 1"
 
 open_release src/a.ts
-export CHUG_STUB_ATTEMPTS=session-attempt-1
-export CHUG_STUB_FATES="Lost session attempt session-attempt-1 in acme/site: TurnFailed"
+export CHUG_STUB_ATTEMPTS="work attempt-1
+work attempt-2"
+CHUG_STUB_FATES="$(
+	fate Lost work attempt-1 - unheld RunFailed
+	fate Running work attempt-2 100 unheld
+)"
+export CHUG_STUB_FATES CHUG_RELEASE_HEARD_SECS=5
+run --merge
+check "one lost beside one not heard from names the loss" 1 "$RC" "LOST — work attempt attempt-1 in acme/site: RunFailed"
+check "one lost beside one not heard from names the silence" 1 "$RC" "UNHEARD — work attempt attempt-2 in acme/site"
+check "one lost beside one not heard from is the finding, and says both" 1 "$RC" "FAILED — of 2 attempt(s) live at the merge, the database records 1 lost, and 1 running had no lease renewed within 5s of the rollout, and whether any such attempt outlasts the release is not known; 0 ended, 0 running and heard from since the rollout, 0 not yet started"
+
+open_release src/a.ts
+export CHUG_STUB_ATTEMPTS="session session-attempt-1"
+CHUG_STUB_FATES="$(fate Lost session session-attempt-1 - unheld TurnFailed)"
+export CHUG_STUB_FATES
 run --merge
 check "a session that ended any other way is lost" 1 "$RC" "LOST — session attempt session-attempt-1 in acme/site: TurnFailed"
 
-# What became of them is a read like any other: one that failed, or that
-# answered for fewer attempts than were live, has not said none was lost.
 open_release src/a.ts
-export CHUG_STUB_ATTEMPTS=attempt-1 CHUG_STUB_FATES_RC=1
+export CHUG_STUB_ATTEMPTS="work attempt-1"
+CHUG_STUB_FATES="$(fate Lost work attempt-1 - unheld SessionIdle)"
+export CHUG_STUB_FATES
+run --merge
+check "an idle end is a session's, and work that records one is lost" 1 "$RC" "LOST — work attempt attempt-1 in acme/site: SessionIdle"
+
+# What became of them is a read like any other: one that failed has not said
+# none was lost, and neither has one that answered for anything but exactly
+# the attempts asked after, each by its kind and in a state this knows.
+open_release src/a.ts
+export CHUG_STUB_ATTEMPTS="work attempt-1" CHUG_STUB_FATES_RC=1
 run --merge
 check "unreadable fates could not run" 2 "$RC" "what became of the 1 attempt(s) live at the merge could not be read"
 check "unreadable fates leave the release landed" 2 "$RC" "the rig is at $TAG; ledger at 52"
 
+inexactly() { # <what was answered for> <state kind identity>...
+	open_release src/a.ts
+	what="$1"
+	shift
+	export CHUG_STUB_ATTEMPTS="work attempt-1
+session attempt-2"
+	CHUG_STUB_FATES="$(for answer in "$@"; do
+		# shellcheck disable=SC2086 # an answer is three words of a fate
+		fate $answer - unheld
+	done)"
+	export CHUG_STUB_FATES
+	run --merge
+	check "fates that answer for $what could not run" 2 "$RC" "the database did not answer for exactly the 2 attempt(s) live at the merge, so what became of them is unknown"
+}
+inexactly "fewer attempts than were live" "Reported work attempt-1"
+inexactly "one attempt twice and one not at all" "Reported work attempt-1" "Reported work attempt-1"
+inexactly "an attempt that was not asked after" "Reported work attempt-1" "Reported session attempt-3"
+inexactly "more attempts than were asked after" "Reported work attempt-1" "Reported session attempt-2" "Reported work attempt-3"
+inexactly "an attempt of the other kind" "Reported work attempt-1" "Reported work attempt-2"
+inexactly "an attempt in a state this does not know" "Reported work attempt-1" "Evicted session attempt-2"
+
+# A landing that stops between the merge and the asking has not asked, and
+# says so with whatever stopped it.
 open_release src/a.ts
-export CHUG_STUB_ATTEMPTS="attempt-1
-attempt-2"
-export CHUG_STUB_FATES="Reported work attempt attempt-1 in acme/site"
+export CHUG_STUB_ATTEMPTS="work attempt-1
+work attempt-2" CHUG_STUB_ROLLOUT_RC=1
 run --merge
-check "fates that answer for fewer attempts than were live could not run" 2 "$RC" "the database did not answer for each of the 2 attempt(s) live at the merge"
+check "a rollout that fails says the live attempts were not asked after" 1 "$RC" "; the 2 attempt(s) live at the merge were not asked after"
+check "a rollout that fails asks after none" 1 "$RC" "fates asked for: 0"
 
 open_release src/a.ts
-export CHUG_STUB_ATTEMPTS="attempt-o'brien" CHUG_STUB_FATES="Reported work attempt attempt-o'brien in acme/site"
+export CHUG_STUB_ROLLOUT_RC=1
 run --merge
-check "an identity is quoted for the statement it is asked after in" 0 "$RC" "where attempt in ('attempt-o''brien')"
+refute "a rollout that fails over nothing live owes no asking" 1 "$RC" "were not asked after"
 
 open_release src/adapters/postgres/schema/migrations/050-b.ts
 run --merge
@@ -873,7 +1293,7 @@ git -C "$REPO" push -q -f origin main
 export CHUG_STUB_BRANCH="release/chuggy-$DEPLOYED"
 run
 check "the full route releases a move back" 0 "$RC" "this moves the rig back"
-check "a move back is gated with every gate" 0 "$RC" "ci prefix=<> full=<1> base=<>"
+check "a move back is gated with every gate" 0 "$RC" "ci prefix=<> full=<1> base=<> needs=<>"
 
 fresh_case
 advance ui/chuggy-ui/app.ts
@@ -881,7 +1301,7 @@ export CHUG_STUB_MERGED="$MERGED"
 export CHUG_STUB_WORKER_PODS=pod/chuggy-worker-1 CHUG_STUB_LIVE_ROWS=1
 run --console
 check "a console release lands in one run" 0 "$RC" "the rig is at $TAG; ledger at 52"
-check "a console release gates what moved since the live commit" 0 "$RC" "ci prefix=<> full=<> base=<$DEPLOYED>"
+check "a console release gates what moved since the live commit, and a range that selects nothing is not its pass" 0 "$RC" "ci prefix=<> full=<> base=<$DEPLOYED> needs=<1>"
 check "a console release runs one gate" 0 "$RC" "gates run: 1"
 check "a console release builds the console alone" 0 "$RC" "builds attempted: 1"
 check "a console release opens the pull request" 0 "$RC" "pull requests opened: 1"
@@ -896,6 +1316,16 @@ OUT="$WORK/.release"
 released chuggy-ui.yaml >"$OUT"
 check "a console release selects the registry's digest" 0 "$RC" "chuggy/web@$NEW"
 
+# A console release rolls no plane, so how the worker plane would roll is not
+# its question: one over a fabric whose plane recreates lands over a live
+# attempt all the same.
+fresh_case
+advance ui/chuggy-ui/app.ts
+main_edited sed -i 's/type: RollingUpdate/type: Recreate/' "$PLANE"
+export CHUG_STUB_MERGED="$MERGED" CHUG_STUB_WORKER_PODS=pod/chuggy-worker-1
+run --console
+check "a console release does not ask how the worker plane rolls" 0 "$RC" "merges attempted: 1"
+
 fresh_case
 advance ui/chuggy-ui/app.ts
 export CHUG_STUB_GATE_RC=1
@@ -907,16 +1337,29 @@ check "a failed console gate merges nothing" 1 "$RC" "merges attempted: 0"
 fresh_case
 advance src/a.ts
 run
-check "the full route gates what moved since the live commit" 0 "$RC" "ci prefix=<> full=<> base=<$DEPLOYED>"
+check "the full route gates what moved since the live commit, and a range that selects nothing is not its pass" 0 "$RC" "ci prefix=<> full=<> base=<$DEPLOYED> needs=<1>"
+
+fresh_case
+advance ui/chuggy-ui/app.ts
+export CHUG_STUB_GATE_RC=2
+run --console
+check "a console gate that could not run stops the release" 2 "$RC" "the gate could not run over the change since $DEPLOYED"
+check "a console gate that could not run merges nothing" 2 "$RC" "merges attempted: 0"
 
 # Every gate is run when a release asks for it, and the pull request says so.
 fresh_case
 advance src/a.ts
 export CHUG_RELEASE_GATE=full
 run
-check "a release that asks for every gate runs every gate" 0 "$RC" "ci prefix=<> full=<1> base=<>"
+check "a release that asks for every gate runs every gate" 0 "$RC" "ci prefix=<> full=<1> base=<> needs=<>"
 cp "$LOG.body" "$OUT"
 check "the pull request says every gate ran" 0 "$RC" "Gate at $TAG: clean over every gate"
+
+fresh_case
+advance src/a.ts
+export CHUG_RELEASE_GATE=full CHUG_STUB_GATE_RC=2
+run
+check "every gate that could not run is not a pass" 2 "$RC" "the gate did not pass $TAG"
 
 # A full run in the caller's environment, as a suite under the full gate has,
 # must not widen a release's gate to every gate, on either route.
