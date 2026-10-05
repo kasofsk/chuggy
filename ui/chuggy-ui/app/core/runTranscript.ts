@@ -39,7 +39,8 @@ import { freshnessLabel, panelObservedAtMs } from "./freshness.ts";
 import { runCountLabel } from "./runTotals.ts";
 
 /** The batches a pane keeps while it follows a run, past which the oldest
- * leave so a live run stays followable. */
+ * leave so a live run stays followable. Only a batch that draws something is
+ * counted. */
 export const runTranscriptCapacityBatches = 16;
 
 /** The most batches a reader's earlier reads may raise a pane's keep to. */
@@ -142,6 +143,53 @@ export function runTranscriptNextAfter(
     : highest;
 }
 
+const runTranscriptBatchDrawn = new WeakMap<RunTranscriptBatch, boolean>();
+
+/** Whether a batch puts anything on the surface: an entry, a marker, or the
+ * gap it stands for where its characters were not answered. A batch of
+ * bookkeeping alone does not, and the runtime's note that a tool is still
+ * running is one, written again and again for as long as the tool runs. */
+export function runTranscriptBatchDraws(batch: RunTranscriptBatch): boolean {
+  const known = runTranscriptBatchDrawn.get(batch);
+  if (known !== undefined) return known;
+  const draws = runTranscriptLines(batch).some(
+    (held) =>
+      held.line === undefined || runTranscriptStep(0, held.line).length > 0,
+  );
+  runTranscriptBatchDrawn.set(batch, draws);
+  return draws;
+}
+
+/**
+ * What a pane keeps of the batches it has read: the newest that draw
+ * something, as many as its capacity, and of those that draw nothing only the
+ * lowest and the highest in that span, where its two cursors stand. A run
+ * waiting on a long command records only that the command is still running, a
+ * batch at a time, and a pane that counted those kept nothing else once the
+ * wait outlasted its capacity.
+ */
+function runTranscriptKept(
+  ordered: readonly RunTranscriptBatch[],
+  capacity: number,
+): readonly RunTranscriptBatch[] {
+  let from = 0;
+  let drawing = 0;
+  for (let at = ordered.length - 1; at >= 0; at -= 1) {
+    const batch = ordered[at];
+    if (batch === undefined || !runTranscriptBatchDraws(batch)) continue;
+    drawing += 1;
+    if (drawing === capacity) {
+      from = at;
+      break;
+    }
+  }
+  const span = ordered.slice(from);
+  return span.filter(
+    (batch, at) =>
+      at === 0 || at === span.length - 1 || runTranscriptBatchDraws(batch),
+  );
+}
+
 /** Ascending by batch, each number once, and the oldest dropped past the
  * pane's capacity. */
 export function runTranscriptMerged(
@@ -155,12 +203,30 @@ export function runTranscriptMerged(
     left.batch === right.batch ? 0 : left.batch - right.batch,
   );
   return {
-    batches: ordered.slice(-held.capacity),
+    batches: runTranscriptKept(ordered, held.capacity),
     observedAt: page.observedAt,
     complete: page.complete,
     failure: undefined,
     capacity: held.capacity,
   };
+}
+
+/**
+ * The cursor of the page beneath a pane that has read up to the run's newest
+ * batch and holds nothing that draws, and nothing at all where it draws
+ * something or stands on the run's first batch. A pane opened while a run
+ * waits on a long command reads only that the command is still running, and
+ * what the run last said lies below it.
+ */
+export function runTranscriptQuietAfter(
+  held: RunTranscriptHeld,
+): number | undefined {
+  if (held.batches.length === 0) return undefined;
+  if (held.batches.some(runTranscriptBatchDraws)) return undefined;
+  const before = runTranscriptBatchesBefore(held);
+  return before === 0
+    ? undefined
+    : Math.max(before - runTranscriptPageBatchesMax, 0);
 }
 
 /** An earlier page raises the capacity by what it carries, so the batches a
