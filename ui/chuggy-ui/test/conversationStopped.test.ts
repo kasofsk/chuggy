@@ -16,11 +16,14 @@ import { describe, expect, test } from "vitest";
 
 import {
   conversationExchanges,
+  conversationExchangesStood,
   conversationExchangesStopped,
   conversationIndicator,
   conversationSeenNothing,
   conversationSeenWith,
   conversationTurnStoppable,
+  conversationWatchedNothing,
+  conversationWatchedWith,
 } from "../app/core/conversation.ts";
 import type {
   ConversationExchange,
@@ -777,5 +780,106 @@ describe("a turn read as stopped from the press", () => {
     expect(conversationExchangesStopped(exchanges, pressed)[0]).toBe(
       conversationExchangesStopped(exchanges, pressed)[0],
     );
+  });
+});
+
+const watchedDrawn = (
+  standing: ConversationExchange["standing"],
+  answer?: string,
+): ConversationExchange => ({
+  id: "e",
+  turn: "t",
+  work: [],
+  ...(answer === undefined ? {} : { answer }),
+  standing,
+  before: [],
+});
+const watchedRunning = watchedDrawn(
+  { standing: "Running", state: "Claimed" },
+  "Half",
+);
+const watchedStopped = (answer?: string): ConversationExchange =>
+  watchedDrawn({ standing: "Stopped" }, answer);
+const watchedOut = conversationWatchedWith(
+  conversationWatchedNothing,
+  [watchedRunning],
+  true,
+);
+const watchedAnswers = (
+  exchanges: readonly ConversationExchange[],
+  watched = watchedOut,
+  looking = true,
+): readonly (string | undefined)[] =>
+  conversationExchangesStood(
+    exchanges,
+    conversationWatchedWith(watched, exchanges, looking),
+  ).map((exchange) => exchange.answer);
+
+describe("a turn a page watched stop", () => {
+  test("says what it said when the page first drew it stopped, whatever its record holds since", () => {
+    const first = [watchedStopped("Half")];
+    const stood = conversationWatchedWith(watchedOut, first, true);
+    expect(conversationExchangesStood(first, stood)).toBe(first);
+    const later = [watchedStopped("Half of it")];
+    expect(conversationWatchedWith(stood, later, true)).toBe(stood);
+    expect(watchedAnswers(later, stood)).toStrictEqual(["Half"]);
+    const same = conversationExchangesStood(later, stood);
+    expect(conversationExchangesStood(later, stood)[0]).toBe(same[0]);
+  });
+
+  test("stays without a word where it was stopped before one was drawn", () => {
+    const waiting = conversationWatchedWith(
+      conversationWatchedNothing,
+      [watchedDrawn({ standing: "Running", state: "Queued" })],
+      true,
+    );
+    const stood = conversationWatchedWith(waiting, [watchedStopped()], true);
+    const later = conversationExchangesStood([watchedStopped("Half")], stood);
+    expect(later.map((exchange) => "answer" in exchange)).toStrictEqual([
+      false,
+    ]);
+  });
+
+  test("is drawn as its record has it by a page that first drew it stopped", () => {
+    const later = [watchedStopped("Half of it")];
+    expect(watchedAnswers(later, conversationWatchedNothing)).toStrictEqual([
+      "Half of it",
+    ]);
+    const seen = conversationWatchedWith(
+      conversationWatchedNothing,
+      [watchedStopped("Half")],
+      true,
+    );
+    expect(watchedAnswers(later, seen)).toStrictEqual(["Half of it"]);
+  });
+
+  test("is drawn as its record has it by a page nobody was looking at when it stopped, then and when somebody is", () => {
+    const hidden = conversationWatchedWith(
+      watchedOut,
+      [watchedStopped("Half")],
+      false,
+    );
+    expect(
+      watchedAnswers([watchedStopped("Half of it")], hidden, true),
+    ).toStrictEqual(["Half of it"]);
+  });
+
+  test("is let go of when its stop is taken back, out again or answered", () => {
+    const stood = conversationWatchedWith(
+      watchedOut,
+      [watchedStopped("Half")],
+      true,
+    );
+    const again = [
+      watchedDrawn({ standing: "Running", state: "Claimed" }, "Half of it"),
+    ];
+    expect(watchedAnswers(again, stood)).toStrictEqual(["Half of it"]);
+    expect(conversationExchangesStood(again, stood)).toBe(again);
+    const whole = [watchedDrawn({ standing: "Answered" }, "Half of it all")];
+    expect(watchedAnswers(whole, stood)).toStrictEqual(["Half of it all"]);
+    const after = conversationWatchedWith(stood, whole, true);
+    expect(watchedAnswers([watchedStopped("More")], after)).toStrictEqual([
+      "More",
+    ]);
   });
 });

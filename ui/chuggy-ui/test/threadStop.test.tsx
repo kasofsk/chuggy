@@ -297,17 +297,25 @@ test("what was heard of a stopped answer stays where the store holds less of it"
   expect(stageColumn(stage.container)).toStrictEqual(stopped);
 });
 
+const longer = `${heard} waiting on a review.`;
+
+/** What the store is left holding of the second turn where its text there is
+ * `stored`. */
+function storedAs(stored: string): readonly StageEntry[] {
+  return [
+    stageAsked("u-c", asked),
+    stageWrote("u-d", "msg_a", stored),
+    stageInterrupted("u-e"),
+  ];
+}
+
 test.each([
-  { said: "less of the text heard", stored: "It is blocked", read: heard },
-  {
-    said: "more of it",
-    stored: `${heard} waiting on a review.`,
-    read: `${heard} waiting on a review.`,
-  },
-  { said: "another text there", stored: "Stopped by", read: "Stopped by" },
+  { said: "less of the text heard", stored: "It is blocked" },
+  { said: "more of it", stored: longer },
+  { said: "another text there", stored: "Stopped by" },
 ])(
-  "a stopped answer's text is read as the longer of what was heard and what is stored, where the store holds $said",
-  async ({ stored, read }) => {
+  "a stopped answer's text stays as it stood at the press, where the store comes to hold $said",
+  async ({ stored }) => {
     const stage = await turnOut("Claimed");
     await textHeard(stage);
     await stageStopped();
@@ -315,23 +323,69 @@ test.each([
 
     for (const listed of ["Claimed", "Stopped"] as const) {
       stage.batches.splice(1);
-      await flushed(
-        stage,
-        [
-          stageAsked("u-c", asked),
-          stageWrote("u-d", "msg_a", stored),
-          stageInterrupted("u-e"),
-        ],
-        listed,
-      );
+      await flushed(stage, storedAs(stored), listed);
       expect(
         stageColumn(stage.container).at(-1),
         `the mailbox lists the turn ${listed}`,
-      ).toBe(`${read} (Stopped)`);
+      ).toBe(`${heard} (Stopped)`);
     }
     expect(stageAlarms(stage.container)).toStrictEqual([]);
   },
 );
+
+test("a tab that did not press keeps what it drew when the mailbox said Stopped: nothing heard afterwards and nothing the store then holds is added", async () => {
+  const stage = await turnOut("Claimed");
+  await textHeard(stage);
+  stage.draw(threadAt("Stopped"));
+  await settled();
+  const stopped = [...opened, `> ${asked}`, `${heard} (Stopped)`];
+  expect(stageColumn(stage.container)).toStrictEqual(stopped);
+
+  stageHeard(stage, "turn-2", {
+    live: "Text",
+    message: "msg_a",
+    index: 0,
+    offset: heard.length,
+    text: " waiting on a review.",
+  });
+  await settled();
+  expect(stageColumn(stage.container)).toStrictEqual(stopped);
+
+  await flushed(stage, storedAs(longer), "Stopped");
+  expect(stageColumn(stage.container)).toStrictEqual(stopped);
+  expect(stageAlarms(stage.container)).toStrictEqual([]);
+});
+
+test.each(["pressed", "watched"] as const)(
+  "a turn stopped before a word of it was drawn stays without one where the store comes to hold some, on the tab that %s",
+  async (tab) => {
+    const stage = await turnOut("Claimed");
+    if (tab === "pressed") await stageStopped();
+    else stage.draw(threadAt("Stopped"));
+    await settled();
+    const stopped = [...opened, `> ${asked}`, "(Stopped)"];
+    expect(stageColumn(stage.container)).toStrictEqual(stopped);
+
+    await flushed(stage, storedAs(heard), "Stopped");
+    expect(stageColumn(stage.container)).toStrictEqual(stopped);
+  },
+);
+
+test("a page opened after the stop draws what was stored of the turn, which the page that pressed did not", async () => {
+  const stage = await turnOut("Claimed");
+  await textHeard(stage);
+  await stageStopped();
+  await flushed(stage, storedAs(longer), "Stopped");
+  expect(stageColumn(stage.container).at(-1)).toBe(`${heard} (Stopped)`);
+
+  cleanup();
+  const afresh = stageMounted(threadAt("Stopped", 2), [
+    earlier,
+    storedAs(longer),
+  ]);
+  await settled();
+  expect(stageColumn(afresh.container).at(-1)).toBe(`${longer} (Stopped)`);
+});
 
 test.each(["Queued", "Claimed"] as const)(
   "a press before anything is written of a %s turn leaves its message and Stopped, and the mailbox's read changes nothing",
