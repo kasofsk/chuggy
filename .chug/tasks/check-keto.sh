@@ -20,7 +20,9 @@
 # the authority holds its tuples in memory, and one that is a container is left
 # running, so every suite addresses objects nothing else does rather than
 # trusting an empty server. One that is a process is this run's own, and the
-# traps are set before either server is acquired so that no exit leaves it up.
+# traps are set before either server is acquired so that an exit this shell
+# can catch does not leave it up; one left by a kill is refused by the next
+# run, which names the port it holds.
 #
 # NO SERVER IS A COULD-NOT-RUN, NOT A PASS. Failure to acquire either, or to
 # migrate the database, means the suites did not execute and exits two. A suite
