@@ -93,12 +93,16 @@ const python = [
   "",
 ];
 
-/** Numbered steps, each a line of words, a block of Python and a line more. */
-function steps(count: number, lines: number): Answer {
+/** Numbered steps, each a line of words and then the parts `held` gives for
+ * the blank its words stand at and the lines of its code. */
+function stepped(
+  count: number,
+  lines: number,
+  held: (pad: string, code: readonly string[]) => readonly Part[],
+): Answer {
   const parts: Part[] = [];
   for (let step = 0; step < count; step += 1) {
     const mark = `${String(step + 1)}. `;
-    const pad = " ".repeat(mark.length);
     const code = Array.from(
       { length: lines },
       (_unused, at) => python[at % python.length] ?? "",
@@ -108,14 +112,33 @@ function steps(count: number, lines: number): Answer {
         `${mark}Create \`step_${String(step)}\`:\n\n`,
         `Create step_${String(step)}:`,
       ),
-      fenced(pad, code, "```", "python"),
-      words(
-        `\n${pad}Then run it and check the \`exit_code\`.\n\n`,
-        "Then run it and check the exit_code.",
-      ),
+      ...held(" ".repeat(mark.length), code),
     );
   }
   return answer(parts);
+}
+
+/** Numbered steps, each a line of words, a block of Python and a line more. */
+function steps(count: number, lines: number): Answer {
+  return stepped(count, lines, (pad, code) => [
+    fenced(pad, code, "```", "python"),
+    words(
+      `\n${pad}Then run it and check the \`exit_code\`.\n\n`,
+      "Then run it and check the exit_code.",
+    ),
+  ]);
+}
+
+/** Numbered steps, each a line of its own, then a sentence under it and a
+ * block of Python under that. */
+function explained(count: number, lines: number): Answer {
+  const said =
+    "First edit the file so that it reads as below, keeping the rest.";
+  return stepped(count, lines, (pad, code) => [
+    words(`${pad}${said}\n\n`, said),
+    fenced(pad, code, "```", "python"),
+    words("\n", ""),
+  ]);
 }
 
 function mounted(text: string, writing: boolean): Element {
@@ -234,6 +257,72 @@ describe("an answer of more steps than one call may cost", () => {
       next += block.children.length;
     }
     expect(next).toBe(49);
+  });
+});
+
+describe("steps of a sentence and then a block of code, more than one call may cost", () => {
+  /** How many lines each step's code is, which moves the line a call's
+   * allowance is spent on from one part of a step to another. */
+  const lengths = [4, 6, 8, 12, 20];
+
+  test.each(lengths)(
+    "of %i lines of code each: are parted only where a step begins, never at a line under one",
+    (lines) => {
+      const built = explained(48, lines);
+      const pieces = markdownPiecesFrom(built.text, 0, 0);
+      expect(pieces.length).toBeGreaterThan(1);
+      for (const piece of pieces) {
+        expect(piece.kind).toBe("read");
+        expect(built.text.slice(piece.start).search(/^\d+\. Create/u)).toBe(0);
+      }
+    },
+  );
+
+  test.each(lengths)(
+    "of %i lines of code each: still hold every sentence as words and every block as it was written",
+    (lines) => {
+      const built = explained(48, lines);
+      const root = mounted(built.text, false);
+      expect(codes(root)).toEqual(built.codes);
+      expect(prose(root)).toBe(built.prose);
+      expect(root.querySelectorAll("li")).toHaveLength(48);
+    },
+  );
+});
+
+/** A file of markdown as it is written out under a step: lines of words with
+ * marks in them, blank lines, and a fence of three ticks every few lines. */
+function fileWritten(lines: number): readonly string[] {
+  return Array.from({ length: lines }, (_unused, at) =>
+    at % 9 === 3
+      ? ["```sh", `npm run build_${String(at)}`, "```", ""]
+      : [`What part ${String(at)} is for, with *a mark* and \`a_name\`.`, ""],
+  )
+    .flat()
+    .slice(0, -1);
+}
+
+describe("a step that holds a fence of four ticks, and in it fences of three", () => {
+  const built = answer([
+    words("1. Write this file:\n\n", "Write this file:"),
+    fenced("   ", fileWritten(400), "````", "md"),
+  ]);
+
+  test("is long enough that so many lines of words under a step would be parted", () => {
+    const wordy = built.text.replaceAll("`", "");
+    expect(markdownPiecesFrom(wordy, 0, 0).length).toBeGreaterThan(1);
+  });
+
+  test("is one piece, which no fence of three ticks inside the four ends", () => {
+    expect(kinds(built.text)).toEqual(["read"]);
+  });
+
+  test("holds the file as one block of code, its fences and blank lines and marks as they were written", () => {
+    expect(codesOf(markdownBlocksParsed(built.text))).toEqual(built.codes);
+    const root = mounted(built.text, false);
+    expect(codes(root)).toEqual(built.codes);
+    expect(prose(root)).toBe(built.prose);
+    expect(root.querySelectorAll("em, code:not(pre > code)")).toHaveLength(0);
   });
 });
 
