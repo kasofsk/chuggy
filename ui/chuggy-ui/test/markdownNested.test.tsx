@@ -326,6 +326,55 @@ describe("a step that holds a fence of four ticks, and in it fences of three", (
   });
 });
 
+/** A text with every line of it written inside one quote. */
+function quoted(text: string): string {
+  const lines = text.trimEnd().split("\n");
+  return `${lines.map((line) => (line === "" ? ">" : `> ${line}`)).join("\n")}\n`;
+}
+
+describe("a quote that holds steps, more than one call may cost", () => {
+  const shapes: Readonly<Record<string, Answer>> = {
+    "each a block of code": steps(40, 3),
+    "each a block of code with a blank line in it": steps(40, 6),
+    "each a sentence and then a block of code": explained(40, 4),
+    "each a sentence and then a longer block of code": explained(40, 12),
+  };
+
+  test.each(Object.keys(shapes))(
+    "%s: is parted only where a step begins, never at a line under one",
+    (name) => {
+      const text = quoted(shapes[name]?.text ?? "");
+      const pieces = markdownPiecesFrom(text, 0, 0);
+      expect(pieces.length).toBeGreaterThan(1);
+      for (const piece of pieces) {
+        expect(piece.kind).toBe("read");
+        expect(text.slice(piece.start).search(/^> \d+\. Create/u)).toBe(0);
+      }
+    },
+  );
+
+  test.each(Object.keys(shapes))(
+    "%s: still holds every block as it was written, in a quote, and the words as words",
+    (name) => {
+      const built = shapes[name] ?? answer([]);
+      const root = mounted(quoted(built.text), false);
+      expect(codes(root)).toEqual(built.codes);
+      expect(prose(root)).toBe(built.prose);
+      expect(root.querySelectorAll("blockquote > ol > li")).toHaveLength(40);
+    },
+  );
+
+  test("is parted under its one step where no line of it stands at the quote's own margin", () => {
+    const said = "   Open the page and check the value before you go on.\n\n";
+    const text = quoted(`1. Do all of this:\n\n${said.repeat(400)}`);
+    const pieces = markdownPiecesFrom(text, 0, 0);
+    expect(pieces.length).toBeGreaterThan(1);
+    expect(new Set(pieces.map((piece) => piece.kind))).toEqual(
+      new Set(["read"]),
+    );
+  });
+});
+
 const neighbours: Readonly<Record<string, Answer>> = {
   "a fence under a bullet": answer([
     words("- Install it:\n\n", "Install it:"),
