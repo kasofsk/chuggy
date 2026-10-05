@@ -7,9 +7,9 @@
  * highest it holds when the high-water mark on the `Execution` frame the
  * browser already receives rises — there is no poll and no follow control,
  * because neither would learn anything the frame does not already carry.
- * Earlier batches are read only when a reader asks. The conversation is
- * read-only: no turn overlay and no composer, because a run's own mailbox is
- * not this pane's to send into.
+ * Earlier batches are read when a reader asks, or while nothing held draws.
+ * The conversation is read-only: no turn overlay and no composer, because a
+ * run's own mailbox is not this pane's to send into.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -34,6 +34,7 @@ import {
   runTranscriptHeldEmpty,
   runTranscriptMerged,
   runTranscriptNextAfter,
+  runTranscriptQuietAfter,
   runTranscriptRead,
   runTranscriptReadsMax,
 } from "../core/runTranscript.ts";
@@ -72,8 +73,9 @@ function runTranscriptAnswered(
 }
 
 /** The read walk: the newest batches first, then those above what is held a
- * bounded number of pages at a time, abandoned when the pane goes away. A pane
- * follows one attempt for its whole life, so a caller keys it by the attempt. */
+ * bounded number of pages at a time, then, while nothing held draws, the pages
+ * beneath it, abandoned when the pane goes away. A pane follows one attempt for
+ * its whole life, so a caller keys it by the attempt. */
 export function useRunTranscript(props: {
   readonly partition: PartitionIdentity;
   readonly execution: string;
@@ -120,7 +122,9 @@ export function useRunTranscript(props: {
     let abandoned = false;
     const walk = async (): Promise<void> => {
       for (let read = 0; read < runTranscriptReadsMax; read += 1) {
-        const after = runTranscriptNextAfter(holding.current, highWaterBatch);
+        const after =
+          runTranscriptNextAfter(holding.current, highWaterBatch) ??
+          runTranscriptQuietAfter(holding.current);
         if (after === undefined || abandoned) return;
         if (!(await readPage(after, runTranscriptMerged, () => abandoned)))
           return;
