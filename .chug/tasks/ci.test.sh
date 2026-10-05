@@ -280,7 +280,7 @@ set +e
 	./.chug/tasks/ci.sh) >"$OUT" 2>&1
 RC=$?
 set -e
-check "a model change selects Quint" 0 "$RC" "stub check-model"
+refute "a model change selects Quint" 0 "$RC" "check-model: SKIPPED"
 check "a model change selects model API generation" 0 "$RC" "stub check-model-api"
 
 # A PAGE KEPT BESIDE THE CODE IS NOT THE CODE. The gates that prove something
@@ -327,7 +327,7 @@ set +e
 	./.chug/tasks/ci.sh) >"$OUT" 2>&1
 RC=$?
 set -e
-check "a model change beside a changed page selects Quint" 0 "$RC" "stub check-model"
+refute "a model change beside a changed page selects Quint" 0 "$RC" "check-model: SKIPPED"
 check "a model change beside a changed page still skips the database" 0 "$RC" "check-postgres: SKIPPED"
 
 # A file is a page by its last suffix alone: one that only carries the letters
@@ -497,20 +497,89 @@ printf '{ "lockfileVersion": 3 }\n' > "$R/package-lock.json"
 commit_all lock
 run_last_commit
 refute "a lockfile change selects the console" 0 "$RC" "check-console: SKIPPED"
+printf '{ "private": true }\n' > "$R/package.json"
+commit_all manifest
+run_last_commit
+refute "a package manifest change selects the console" 0 "$RC" "check-console: SKIPPED"
 printf 'dist/\n' > "$R/.prettierignore"
 commit_all ignore
 run_last_commit
 refute "what Prettier leaves out selects the static checks" 0 "$RC" "check-source static: SKIPPED"
 
-# A SUITE THAT READS A FILE BESIDE ITS GATE IS SELECTED BY IT: this suite holds
-# the justfile to the sequencer, and the source gate's proves the lint rules.
+# A GATE THAT READS THE TREE AS TEXT RUNS ON ANY CHANGE, and the static checks
+# on any change but a page's: a sheet outside the console is a kind none of
+# their old lists of suffixes held.
+text_gates="doc-lint check-figures check-paths check-shell-quoting check-duplication check-console-sheets check-gates check-comments check-knowledge check-vendored"
 stub_repo 0
-for suite in ci check-source; do
-	printf '#!/bin/sh\nexit 0\n' > "$R/.chug/tasks/$suite.test.sh"
+mkdir -p "$R/notes"
+commit_all baseline
+printf 'body { margin: 0 }\n' > "$R/notes/site.css"
+commit_all sheet
+run_last_commit
+for gate in $text_gates; do
+	refute "a sheet outside the console selects $gate" 0 "$RC" "$gate: SKIPPED"
 done
+refute "a sheet outside the console selects the static checks" 0 "$RC" "check-source static: SKIPPED"
+check "a sheet outside the console skips the suites" 0 "$RC" "check-source unit: SKIPPED"
+printf '# a page\n' > "$R/notes/PAGE.md"
+commit_all page
+run_last_commit
+for gate in $text_gates; do
+	refute "a page selects $gate" 0 "$RC" "$gate: SKIPPED"
+done
+check "a page skips the static checks" 0 "$RC" "check-source static: SKIPPED"
+
+# The replays read the model's generated API through the vocabulary they
+# share, and the query check types every source the adapter's reach.
+stub_repo 0
+mkdir -p "$R/src/generated" "$R/src/contract"
+printf 'export const api = 1;\n' > "$R/src/generated/model-api.ts"
+printf 'export const wire = 1;\n' > "$R/src/contract/http.ts"
+commit_all baseline
+printf 'export const api = 2;\n' > "$R/src/generated/model-api.ts"
+commit_all generated
+run_last_commit
+check "the generated API selects the replay that reads it" 0 "$RC" "stub check-conformance"
+check "the generated API selects the random replay" 0 "$RC" "stub check-random"
+printf 'export const wire = 2;\n' > "$R/src/contract/http.ts"
+commit_all contract
+run_last_commit
+check "a source outside the adapters selects the query check" 0 "$RC" "stub check-queries"
+
+# A SUITE THAT READS A FILE BESIDE ITS GATE IS SELECTED BY IT: this suite holds
+# the justfile to the sequencer, three gates' suites run their gate over the
+# tree's own configuration of its tools, and a suite kept beside what it
+# proves shares the harness.
+stub_repo 0
+mkdir -p "$R/.githooks" "$R/deploy/rig"
+for suite in .chug/tasks/ci .chug/tasks/check-source .chug/tasks/check-boundaries \
+	.chug/tasks/check-duplication .githooks/pre-commit deploy/rig/deploy-to-gtr; do
+	printf '#!/bin/sh\nexit 0\n' > "$R/$suite.test.sh"
+done
+printf '# harness\n' > "$R/.chug/tasks/_suite.sh"
+printf 'module.exports = {};\n' > "$R/.dependency-cruiser.cjs"
+printf '{}\n' > "$R/tsconfig.contract.json"
+printf '{}\n' > "$R/.jscpd.json"
 printf 'check:\n    ./.chug/tasks/ci.sh\n' > "$R/justfile"
 printf 'export default [];\n' > "$R/eslint.config.js"
 commit_all baseline
+printf 'module.exports = { forbidden: [] };\n' > "$R/.dependency-cruiser.cjs"
+commit_all boundaries
+run_last_commit 1
+check "the boundary rules select the suite that copies them" 0 "$RC" "  - .chug/tasks/check-boundaries.test.sh"
+printf '{ "include": [] }\n' > "$R/tsconfig.contract.json"
+commit_all browser
+run_last_commit 1
+check "the browser's compiler settings select the suite that copies them" 0 "$RC" "  - .chug/tasks/check-source.test.sh"
+printf '{ "ignore": [] }\n' > "$R/.jscpd.json"
+commit_all clones
+run_last_commit 1
+check "the clone detector's settings select the suite that copies them" 0 "$RC" "  - .chug/tasks/check-duplication.test.sh"
+printf '# harness, changed\n' > "$R/.chug/tasks/_suite.sh"
+commit_all harness
+run_last_commit 1
+check "the harness selects the hook's suite" 0 "$RC" "  - .githooks/pre-commit.test.sh"
+check "the harness selects a suite kept beside its script" 0 "$RC" "  - deploy/rig/deploy-to-gtr.test.sh"
 printf 'check:\n    true\n' > "$R/justfile"
 commit_all recipe
 run_last_commit 1
@@ -551,6 +620,10 @@ refute "a lockfile that moves quint selects Quint" 0 "$RC" "check-model: SKIPPED
 git -C "$R" config color.ui always
 run_last_commit
 refute "a quint bump is read through a git that colours its diffs" 0 "$RC" "check-model: SKIPPED"
+git -C "$R" config diff.external "echo rendered"
+run_last_commit
+refute "a quint bump is read past a diff program of the member's own" 0 "$RC" "check-model: SKIPPED"
+git -C "$R" config --unset diff.external
 stub_repo 0
 commit_all baseline
 package_at 0.32.0 1.0.0
