@@ -5,10 +5,30 @@
 # request that stands for HEAD and watch Flux roll it out.
 #
 # THE RIG FOLLOWS chuggy-fabric, NOT THIS REPOSITORY. Flux reconciles the
-# fabric's application manifests, which name every image by registry digest
-# and carry the source commit it was built from. Merging here deploys nothing;
-# a release is a fabric commit that moves those digests, and this script is the
-# whole of the path from a commit on main to that fabric commit.
+# fabric's manifests, which name every image by registry digest and carry the
+# source commit it was built from. Merging here deploys nothing; a release is
+# a fabric commit that moves those digests, and this script is the whole of
+# the path from a commit on main to that fabric commit.
+#
+# A RELEASE IS TWO DIRECTORIES OF THE FABRIC: the migrate Job under
+# `cluster/chuggy-migrate` and, under `cluster/chuggy`, the services that run
+# the release's images. The manifests edited there are all a release commits.
+# No other layout is released to: a fabric that does not keep the Job and the
+# api where a release has them is refused before anything is read from it.
+#
+# THE FABRIC'S MANIFESTS SAY WHAT IS LIVE ONLY ONCE FLUX HAS APPLIED THEM, and
+# everything decided here is decided from them: which commit is live, whether
+# there is anything to release, and whether a release carries a migration. A
+# release whose migrate Job failed leaves the fabric's main naming a commit no
+# service runs. So before anything is decided the rig is asked. The source
+# must hold the fabric's main as it was cloned, and each layer that applies a
+# release, `chuggy-migrate` and `chuggy`, must have applied what the source
+# holds. Where that is not so this could not run, and says which layer, what
+# it has applied and where the source is. The way on is the fabric's: Flux
+# finishes a release that is in flight, and one that is held is reverted
+# there. A layer that is suspended, or that has applied what the source holds
+# and reads not Ready, is not released over either. Its manifests may well be
+# what is live, so it is refused for what it is, with the reason it gives.
 #
 # WHAT IS RELEASED IS HEAD, AND HEAD MUST BE ON MAIN. The tag is the short
 # commit, which `deploy/rig/images/build-and-import.sh` refuses to derive from
@@ -52,11 +72,60 @@
 # when anything under the migrations directory changed, whatever its name: the
 # list there is what the Job applies. When it does, the landing takes a dump
 # first, into the directory the caller names — a ledger that has moved forward
-# is not walked back by reverting the fabric commit, and the dump is the only
-# way below it. Then it merges, asks Flux for the source and the applications
-# through the annotation the flux client itself writes, waits for the migrate
-# Job and every rollout, and requires each Deployment to run the image its
+# is not walked back by reverting the fabric commit, and a dump is the only
+# way below it. The Job takes a dump of its own before it migrates and keeps
+# it in the cluster; the landing's is the copy outside it. Then it merges,
+# waits for the rollout as the fabric orders it, and holds the cluster to the
+# manifests: the migrate Job complete, and each Deployment on the image its
 # manifest names.
+#
+# THE FABRIC ORDERS THE ROLLOUT, AND A LANDING WAITS ON EACH LAYER OF IT. Flux
+# applies a fabric commit in layers, a Kustomization each: `apps`, then
+# `chuggy-migrate`, which applies the migrate Job, then `chuggy`, which
+# applies the services. Each waits for what it applied to be healthy, and
+# each after the first applies a commit only once the layer before it is
+# Ready at that same commit. Once the source has the merge, a landing waits
+# for each layer in that order to have applied it. `apps` applies what a
+# release runs on and no part of one, and it is waited for all the same: a
+# release it holds is one Flux has not started, with no migrate Job made and
+# no service applied until `apps` is healthy at the merge.
+#
+# A LAYER HAS THE MERGE WHEN WHAT IT APPLIED CONTAINS IT: the merge, or a
+# commit of the fabric's main that descends from it. That main may gain one
+# while a release rolls out, and a layer whose dependency was still busy when
+# the source fetched it applies that commit and never the merge by itself.
+# Which it is, is decided by ancestry in this run's clone of the fabric.
+# Revisions that are the same commit need no clone to say so, and a commit the
+# clone has cannot descend from one it has not, so the main is fetched only
+# for a revision the clone has not got. One it still has not got, the forge
+# not answering or the main not holding it, is not decided either way: it is
+# waited on like any other, and a wait that runs out on one could not be read,
+# and says which of the two it was.
+#
+# EACH WAIT IS CAPPED BY ITSELF, AND THERE IS NO TOTAL. A cap ends a wait on
+# something that hangs, so a layer that is slow has the whole of its own and
+# is charged nothing for the layer before it. One that does not get there is
+# the one the finding names, with what it applies, so a release held by what
+# it runs on is not said to be a service's doing.
+#
+# THE SOURCE IS ASKED TO RECONCILE AND NO LAYER IS. The source fetches on an
+# interval, and asking has it fetch the merge now. A layer needs no asking:
+# kustomize-controller queues every Kustomization that reads a source when the
+# source's revision moves, and one whose dependency has not yet applied that
+# revision puts itself off and asks again until it has. A request to such a
+# layer is put off the same way, and starts nothing the merge had not.
+#
+# A MIGRATION THAT FAILED IS NOT WAITED OUT AS IF IT WERE SLOW. When the Job
+# fails, `chuggy-migrate` has attempted a revision that contains the merge and
+# reads not Ready, for the reason `HealthCheckFailed` and with the Job named
+# as `Failed` in the message; `chuggy` then applies nothing, so every service
+# is left on the release before it. A landing reads that at each asking while
+# that layer is the one it waits on, and ends on it as a finding that says how
+# to read the logs of whichever of the Job's containers failed.
+# While `apps` has not applied the merge that layer has attempted nothing of
+# it, and once the layer has applied it the Job is complete. The same reason
+# over a Job the message does not call `Failed` is the layer's own wait run
+# out on a Job still running, and the landing goes on waiting.
 #
 # A RELEASE GOES OUT OVER LIVE ATTEMPTS, because nothing it restarts is owned by
 # one: an attempt in a pod keeps its lease through the worker plane, and that
@@ -134,8 +203,10 @@
 #   CHUG_RELEASE_GATE     0 skips the gate, and the pull request says so;
 #                         full runs every gate; unset or empty runs the gates
 #                         the change affects. Any other value is refused.
-#   CHUG_RELEASE_WAIT_SECS  how long a landing run waits on each of Flux, the
-#                         migrate Job and a rollout
+#   CHUG_RELEASE_WAIT_SECS  the cap on each wait of a landing, default 600:
+#                         on the fabric's source, on each of its layers in
+#                         turn, on the migrate Job and on each Deployment's
+#                         rollout. Each has the whole of it; there is no total.
 #   CHUG_RELEASE_HEARD_SECS  how long a landing waits to hear from an attempt
 #                         that still runs once the rollout is done. The default
 #                         is two of the worker core's heartbeat intervals
@@ -182,12 +253,15 @@ case "${CHUG_RELEASE_GATE:-}" in
 *) refuse "CHUG_RELEASE_GATE is \`$CHUG_RELEASE_GATE\`, and it takes 0, full or nothing" ;;
 esac
 heard_secs="${CHUG_RELEASE_HEARD_SECS:-150}"
-case "$heard_secs" in
-"" | *[!0-9]*) refuse "CHUG_RELEASE_HEARD_SECS is \`$heard_secs\`, which is not a whole number of seconds" ;;
-# More digits than every shell's arithmetic holds is a comparison that errors,
-# and so a wait that never ends.
-??????????*) refuse "CHUG_RELEASE_HEARD_SECS is \`$heard_secs\`, which is more seconds than a landing can count" ;;
-esac
+wait_secs="${CHUG_RELEASE_WAIT_SECS:-600}"
+for secs in "CHUG_RELEASE_HEARD_SECS=$heard_secs" "CHUG_RELEASE_WAIT_SECS=$wait_secs"; do
+	case "${secs#*=}" in
+	"" | *[!0-9]*) refuse "${secs%%=*} is \`${secs#*=}\`, which is not a whole number of seconds" ;;
+	# More digits than every shell's arithmetic holds is a comparison that
+	# errors, and so a wait that never ends.
+	??????????*) refuse "${secs%%=*} is \`${secs#*=}\`, which is more seconds than a landing can count" ;;
+	esac
+done
 
 for tool in git docker ssh kubectl gh python3; do
 	command -v "$tool" >/dev/null 2>&1 || refuse "no \`$tool\` on PATH, so nothing was released"
@@ -199,7 +273,6 @@ context="${CHUG_RIG_CONTEXT:-chuggy-fabric}"
 namespace="${CHUG_RIG_NAMESPACE:-chuggy}"
 database="${CHUG_RIG_DATABASE:-chuggy}"
 fabric_repo="${CHUG_FABRIC_REPO:-gdoteof/chuggy-fabric}"
-wait_secs="${CHUG_RELEASE_WAIT_SECS:-600}"
 registry_prefix=registry.chuggy.internal/chuggy
 
 kube() { kubectl --context "$context" "$@"; }
@@ -209,15 +282,16 @@ sql() { # <statement>
 
 # What a manifest carries, read by the same shapes the fabric's consistency
 # check reads, and nothing when the line is not there — so every caller has to
-# say what an absence means.
+# say what an absence means. A manifest is named as that check names it, by
+# its path under the fabric's `cluster/`.
 manifest_source_commit() { # <manifest>
-	sed -n 's|^[[:space:]]*fabric\.chuggy\.dev/source-commit:[[:space:]]*"\{0,1\}\([0-9a-f]\{7,40\}\)"\{0,1\}[[:space:]]*$|\1|p' "$apps/$1" | head -n 1
+	sed -n 's|^[[:space:]]*fabric\.chuggy\.dev/source-commit:[[:space:]]*"\{0,1\}\([0-9a-f]\{7,40\}\)"\{0,1\}[[:space:]]*$|\1|p' "$cluster/$1" | head -n 1
 }
 manifest_image() { # <manifest>
-	sed -n "s|^[[:space:]]*image: \($registry_prefix/[^[:space:]]*@sha256:[0-9a-f]*\)[[:space:]]*\$|\1|p" "$apps/$1" | head -n 1
+	sed -n "s|^[[:space:]]*image: \($registry_prefix/[^[:space:]]*@sha256:[0-9a-f]*\)[[:space:]]*\$|\1|p" "$cluster/$1" | head -n 1
 }
 manifest_job() {
-	sed -n 's|^[[:space:]]*name: \(chuggy-migrate-[a-z0-9-]*\)[[:space:]]*$|\1|p' "$apps/chuggy-migrate.yaml" | head -n 1
+	sed -n 's|^[[:space:]]*name: \(chuggy-migrate-[a-z0-9-]*\)[[:space:]]*$|\1|p' "$cluster/chuggy-migrate/chuggy-migrate.yaml" | head -n 1
 }
 # `rolling` when the Deployment named chuggy-worker-plane states, as its own
 # `spec.strategy`, a rolling update with none unavailable, and states no
@@ -298,7 +372,7 @@ worker_plane_rolls() {
 			closed()
 			if (found == 1 && stated) print "rolling"
 		}
-	' "$apps/chuggy-worker-plane.yaml" 2>/dev/null || true
+	' "$cluster/chuggy/chuggy-worker-plane.yaml" 2>/dev/null || true
 }
 # The worker contract a commit states, as the one file that carries it does:
 # the major and minor of its release, which are the version a plane serves and
@@ -315,6 +389,30 @@ stated() { # <what a commit states>
 renewed() { # <lease then> <lease now>
 	case "$2" in "" | *[!0-9]*) return 1 ;; esac
 	[ "$2" != "$1" ]
+}
+
+# Whether a revision read off the rig contains a commit of the fabric's main,
+# each as Flux writes one or as a bare commit: it is that commit or descends
+# from it. A commit is read by its full hash, and a revision that is anything
+# else contains nothing. The clone decides the rest, as the header argues. A
+# revision it could not get is not one that contains, and `undecided` says
+# why it could not.
+contains() { # <revision> <commit>
+	this="${1##*:}"
+	that="${2##*:}"
+	undecided=""
+	printf '%s' "$this" | grep -Eqx '[0-9a-f]{40}' || return 1
+	[ "$this" != "$that" ] || return 0
+	if ! git -C "$fabric" cat-file -e "$this^{commit}" 2>/dev/null; then
+		if ! git -C "$fabric" fetch -q origin refs/heads/main 2>"$work/unfetched"; then
+			undecided="$this could not be fetched from the main of $fabric_repo; git said: $(grep -v '^$' "$work/unfetched" | head -n 1)"
+			return 1
+		elif ! git -C "$fabric" cat-file -e "$this^{commit}" 2>/dev/null; then
+			undecided="the main of $fabric_repo does not hold $this"
+			return 1
+		fi
+	fi
+	git -C "$fabric" merge-base --is-ancestor "$that" "$this" 2>/dev/null
 }
 
 # --- the commit ---------------------------------------------------------------
@@ -336,11 +434,49 @@ trap 'rm -rf "$work"' EXIT
 # --- what is live ---------------------------------------------------------------
 
 fabric="$work/fabric"
-apps="$fabric/cluster/apps"
+cluster="$fabric/cluster"
 say "cloning $fabric_repo"
 gh repo clone "$fabric_repo" "$fabric" -- --quiet >/dev/null 2>&1 || refuse "$fabric_repo could not be cloned, so what is live is unknown"
+for kept in chuggy-migrate/chuggy-migrate.yaml chuggy/chuggy-api.yaml; do
+	[ -f "$cluster/$kept" ] || refuse "$fabric_repo has no cluster/$kept: a release is the migrate Job under cluster/chuggy-migrate and the services under cluster/chuggy, and a fabric laid out any other way is not released to"
+done
 
-deployed="$(manifest_source_commit chuggy-api.yaml)"
+# Whether Flux has applied those manifests, which the header argues, asked
+# before anything is decided from them. Ready is Unknown for the length of
+# every reconciliation, one over a revision already applied among them, so it
+# passes as True does. Any other status is refused with the reason the layer
+# gives, and may pass on a second run: a layer reads not Ready while the one
+# it depends on is reconciling.
+fabric_main="$(git -C "$fabric" rev-parse --verify HEAD)" || refuse "the main of $fabric_repo could not be read out of its clone"
+source_name="$(kube -n flux-system get kustomization chuggy -o jsonpath='{.spec.sourceRef.name}' 2>/dev/null || true)"
+[ -n "$source_name" ] || refuse "the chuggy Kustomization answered no source through context $context, so whether Flux has applied the fabric's manifests is unknown"
+source_at="$(kube -n flux-system get "gitrepository/$source_name" -o jsonpath='{.status.artifact.revision}' 2>/dev/null || true)"
+not_live="so the fabric's manifests do not say what is live, and nothing is decided from them"
+if ! contains "$source_at" "$fabric_main"; then
+	[ -z "$undecided" ] || refuse "the fabric source is at $source_at, and whether that holds $fabric_main, which was cloned as the main of $fabric_repo, could not be read: $undecided"
+	refuse "the fabric source is at ${source_at:-no revision} and has not fetched $fabric_main, the main of $fabric_repo, $not_live"
+fi
+for layer in chuggy-migrate chuggy; do
+	state="$(kube -n flux-system get kustomization "$layer" -o jsonpath='{.status.lastAppliedRevision}|{.status.conditions[?(@.type=="Ready")].status}|{.status.conditions[?(@.type=="Ready")].reason}|{.spec.suspend}' 2>/dev/null)" \
+		|| refuse "the $layer Kustomization could not be read through context $context, so whether Flux has applied the fabric's manifests is unknown"
+	has="${state%%|*}"
+	state="${state#*|}"
+	ready="${state%%|*}"
+	state="${state#*|}"
+	at="it has applied ${has:-no revision} and the source is at $source_at"
+	if [ "${state#*|}" = true ]; then
+		refuse "the $layer Kustomization is suspended: $at, and Flux applies nothing through it until it is resumed"
+	elif ! contains "$has" "$source_at"; then
+		[ -z "$undecided" ] || refuse "whether the $layer Kustomization has applied what the fabric source holds could not be read: $at, and $undecided"
+		refuse "the $layer Kustomization has not applied what the fabric source holds: $at, $not_live"
+	fi
+	case "$ready" in
+	True | Unknown) ;;
+	*) refuse "the $layer Kustomization is not Ready, for the reason ${state%%|*}, though it has applied what the fabric source holds: $at" ;;
+	esac
+done
+
+deployed="$(manifest_source_commit chuggy/chuggy-api.yaml)"
 [ -n "$deployed" ] || refuse "the fabric's api manifest names no source commit, so what is live is unknown"
 git cat-file -e "$deployed^{commit}" 2>/dev/null || refuse "the live commit $deployed is not in this checkout, so what changed since it cannot be read"
 if [ "$(git rev-parse "$deployed^{commit}")" = "$commit" ]; then
@@ -373,7 +509,7 @@ land() { # <pull request url>
 	git -C "$fabric" fetch -q origin "refs/heads/$branch" || refuse "$branch could not be fetched from $fabric_repo"
 	git -C "$fabric" checkout -q --detach FETCH_HEAD || refuse "$branch could not be checked out of $fabric_repo"
 	read_head="$(git -C "$fabric" rev-parse HEAD)" || refuse "the head of $branch could not be read"
-	[ "$(manifest_source_commit chuggy-api.yaml)" = "$tag" ] || refuse "$branch does not select $tag, so it is not HEAD's release"
+	[ "$(manifest_source_commit chuggy/chuggy-api.yaml)" = "$tag" ] || refuse "$branch does not select $tag, so it is not HEAD's release"
 	# From here the tree is what the merge will produce: the branch merged into
 	# the fabric's main as it stands, which is what the cluster is given. The
 	# trial answers a conflict with a status of its own, and any other failure
@@ -401,7 +537,7 @@ land() { # <pull request url>
 		elif [ "${contract_head%.*}" -lt "${contract_live%.*}" ] || { [ "${contract_head%.*}" -eq "${contract_live%.*}" ] && [ "${contract_head#*.}" -lt "${contract_live#*.}" ]; }; then
 			unsafe="this release states worker contract $contract_head where the live commit states $contract_live, so its plane refuses a pod of the later one"
 		else
-			[ -f "$apps/chuggy-worker-plane.yaml" ] || refuse "merging $branch lands no chuggy-worker-plane.yaml, so whether a plane serves throughout the roll is unknown"
+			[ -f "$cluster/chuggy/chuggy-worker-plane.yaml" ] || refuse "merging $branch lands no chuggy-worker-plane.yaml, so whether a plane serves throughout the roll is unknown"
 			if [ "$(worker_plane_rolls)" != "rolling" ]; then
 				unsafe="the worker plane that merging $branch lands does not state a rolling update with none unavailable, or states no replica, so a moment with no plane serving is not ruled out"
 			fi
@@ -470,27 +606,65 @@ land() { # <pull request url>
 	printf '%s' "$merged" | grep -Eqx '[0-9a-f]{40}' || refuse "the merge commit of pull request $pr_number could not be read"
 	say "merged as $merged"
 
-	# The flux client's `reconcile --with-source` is this annotation on the
-	# source, a wait for its artifact, and the same annotation on the
-	# Kustomization.
-	wait_for() { # <what> <command...>  the command prints where it is, which must reach the merge
+	# A wait is for the revision the command reads to contain the merge. Each
+	# wait is capped by itself, and one that runs out is a finding: what was
+	# waited on, what it holds and what was last read. Where that could not be
+	# told from the merge the wait could not be read, and says why. Between
+	# askings the check may end the landing.
+	wait_for() { # <what> <what it holds> <check> <command...>
 		what="$1"
-		shift
+		holds="$2"
+		within="$merged within ${wait_secs}s"
+		unless="$3"
+		shift 3
 		waited=0
-		until "$@" 2>/dev/null | grep -Fq "$merged"; do
-			[ "$waited" -lt "$wait_secs" ] || fail "$what did not reach $merged within ${wait_secs}s"
+		while :; do
+			reads="$("$@" 2>/dev/null || true)"
+			! contains "$reads" "$merged" || break
+			unread="$undecided"
+			"$unless"
+			if [ "$waited" -ge "$wait_secs" ]; then
+				[ -n "$reads" ] || fail "$what did not reach $within$holds; it answered no revision"
+				[ -z "$unread" ] || refuse "whether $what reached $within could not be read$holds; it is at $reads, and $unread"
+				fail "$what did not reach $within$holds; it is at $reads"
+			fi
 			sleep 5
 			waited=$((waited + 5))
 		done
 	}
-	source_name="$(kube -n flux-system get kustomization apps -o jsonpath='{.spec.sourceRef.name}' 2>/dev/null || true)"
-	[ -n "$source_name" ] || refuse "the apps Kustomization names no source, so there is nothing to reconcile"
+	applied() { # <layer>  the revision its Kustomization last applied
+		kube -n flux-system get kustomization "$1" -o jsonpath='{.status.lastAppliedRevision}'
+	}
+	# A migrate Job that failed, as kustomize-controller says it of the layer
+	# that applies the Job: the revision that layer attempted, the reason of
+	# its Ready condition, and a message naming what its health check found
+	# failed. The header argues each term. The logs it names are every
+	# container's, an init container's among them, and a container that never
+	# started is an error kubectl is told not to stop at.
+	unless_migration_failed() {
+		said="$(kube -n flux-system get kustomization chuggy-migrate -o jsonpath='{.status.lastAttemptedRevision} {.status.conditions[?(@.type=="Ready")].reason} {.status.conditions[?(@.type=="Ready")].message}' 2>/dev/null || true)"
+		case "${said#* }" in
+		"HealthCheckFailed "*"Job/$namespace/$job status: 'Failed'"*) ;;
+		*) return 0 ;;
+		esac
+		contains "${said%% *}" "$merged" || return 0
+		fail "$job failed, so Flux applied no service of $tag and each is left on the release before it; \`kubectl --context $context -n $namespace logs job/$job --all-containers --prefix --ignore-errors\` shows which of its containers failed"
+	}
+	# The source alone is asked to reconcile, as the header argues, through
+	# the annotation the flux client's own `reconcile` writes. It is the one
+	# the `chuggy` layer was read to name before anything was decided.
 	stamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 	kube -n flux-system annotate --overwrite "gitrepository/$source_name" "reconcile.fluxcd.io/requestedAt=$stamp" >/dev/null || refuse "the source could not be asked to reconcile"
-	wait_for "the fabric source" kube -n flux-system get "gitrepository/$source_name" -o jsonpath='{.status.artifact.revision}'
-	kube -n flux-system annotate --overwrite kustomization/apps "reconcile.fluxcd.io/requestedAt=$stamp" >/dev/null || refuse "the apps Kustomization could not be asked to reconcile"
-	wait_for "the apps Kustomization" kube -n flux-system get kustomization apps -o jsonpath='{.status.lastAppliedRevision}'
+	wait_for "the fabric source" "" true kube -n flux-system get "gitrepository/$source_name" -o jsonpath='{.status.artifact.revision}'
+	# The layers, in the order Flux applies them. Whether the migrate Job
+	# failed is asked only while its layer is the one waited on, as the header
+	# argues.
+	wait_for "the apps Kustomization" ": it applies what a release runs on and no part of one, and it holds this one, for Flux makes no migrate Job and applies no service of $tag until it has" true applied apps
+	wait_for "the chuggy-migrate Kustomization" ": it applies the migrate Job, and Flux applies no service of $tag until $job completes" unless_migration_failed applied chuggy-migrate
+	wait_for "the chuggy Kustomization" ": it applies the services, and $job completed before them" true applied chuggy
 
+	# That is Flux's account of the release. The Job the manifest names is
+	# asked after itself, and then each Deployment.
 	kube -n "$namespace" wait --for=condition=complete "job/$job" "--timeout=${wait_secs}s" >/dev/null \
 		|| fail "$job did not complete; read its log before anything else"
 
@@ -502,8 +676,8 @@ land() { # <pull request url>
 	wrong=0
 	while read -r name; do
 		[ -n "$name" ] || continue
-		[ -f "$apps/$name.yaml" ] || continue
-		expected="$(manifest_image "$name.yaml")"
+		[ -f "$cluster/chuggy/$name.yaml" ] || continue
+		expected="$(manifest_image "chuggy/$name.yaml")"
 		[ -n "$expected" ] || continue
 		kube -n "$namespace" rollout status "deployment/$name" "--timeout=${wait_secs}s" >/dev/null || fail "$name did not roll out"
 		running="$(kube -n "$namespace" get "deployment/$name" -o jsonpath='{.spec.template.spec.containers[*].image}')" || refuse "what $name runs could not be read"
@@ -703,13 +877,13 @@ if [ "$ui_moved" -eq 1 ]; then publish chuggy-ui web "chuggy-ui-$tag"; ui_digest
 
 # --- the manifests --------------------------------------------------------------
 
-api_manifests="chuggy-api.yaml chuggy-configuration-importer.yaml chuggy-finalizer.yaml chuggy-migrate.yaml chuggy-pool-plane.yaml chuggy-scheduler.yaml chuggy-selector.yaml chuggy-ticket-service.yaml chuggy-worker-plane.yaml"
-console_manifests="chuggy-ui.yaml"
+api_manifests="chuggy/chuggy-api.yaml chuggy/chuggy-configuration-importer.yaml chuggy/chuggy-finalizer.yaml chuggy-migrate/chuggy-migrate.yaml chuggy/chuggy-pool-plane.yaml chuggy/chuggy-scheduler.yaml chuggy/chuggy-selector.yaml chuggy/chuggy-ticket-service.yaml chuggy/chuggy-worker-plane.yaml"
+console_manifests="chuggy/chuggy-ui.yaml"
 
 rewrite() { # <manifest> <sed expression>
-	[ -f "$apps/$1" ] || refuse "the fabric has no $1 to edit"
-	sed "$2" "$apps/$1" >"$work/edited"
-	mv "$work/edited" "$apps/$1"
+	[ -f "$cluster/$1" ] || refuse "the fabric has no cluster/$1 to edit"
+	sed "$2" "$cluster/$1" >"$work/edited"
+	mv "$work/edited" "$cluster/$1"
 }
 image_line() { # <repository> <digest>
 	printf 's|^\\([[:space:]]*image: %s/%s@\\)sha256:[0-9a-f]*[[:space:]]*$|\\1%s|' "$registry_prefix" "$1" "$2"
@@ -717,7 +891,7 @@ image_line() { # <repository> <digest>
 for manifest in $api_manifests $console_manifests; do
 	rewrite "$manifest" "s|^\\([[:space:]]*fabric\\.chuggy\\.dev/source-commit:[[:space:]]*\\).*\$|\\1$tag|"
 done
-rewrite chuggy-migrate.yaml "s|^\\([[:space:]]*name: chuggy-migrate-\\)[a-z0-9-]*\$|\\1$tag-registry|"
+rewrite chuggy-migrate/chuggy-migrate.yaml "s|^\\([[:space:]]*name: chuggy-migrate-\\)[a-z0-9-]*\$|\\1$tag-registry|"
 if [ -n "$api_digest" ]; then
 	for manifest in $api_manifests; do
 		rewrite "$manifest" "$(image_line api "$api_digest")"
@@ -725,12 +899,12 @@ if [ -n "$api_digest" ]; then
 	done
 fi
 if [ -n "$ui_digest" ]; then
-	rewrite chuggy-ui.yaml "$(image_line web "$ui_digest")"
-	[ "$(manifest_image chuggy-ui.yaml)" = "$registry_prefix/web@$ui_digest" ] || fail "chuggy-ui.yaml does not carry the console digest after the edit"
+	rewrite chuggy/chuggy-ui.yaml "$(image_line web "$ui_digest")"
+	[ "$(manifest_image chuggy/chuggy-ui.yaml)" = "$registry_prefix/web@$ui_digest" ] || fail "chuggy-ui.yaml does not carry the console digest after the edit"
 fi
 git -C "$fabric" diff --quiet && fail "the edit changed no manifest, so there is no release to commit"
 set +e
-python3 "$fabric/scripts/check-release-consistency" "$apps"
+python3 "$fabric/scripts/check-release-consistency" "$cluster"
 consistent=$?
 set -e
 if [ "$consistent" -eq 3 ]; then
@@ -738,7 +912,11 @@ if [ "$consistent" -eq 3 ]; then
 elif [ "$consistent" -ne 0 ]; then
 	refuse "the fabric's consistency check did not run, and answered $consistent"
 fi
-kube kustomize "$apps" >/dev/null || fail "the edited manifests do not render"
+# Each of a release's directories is a kustomization, rendered by itself as
+# the Flux layer that applies it renders it.
+for layer in chuggy-migrate chuggy; do
+	kube kustomize "$cluster/$layer" >/dev/null || fail "the edited manifests under cluster/$layer do not render"
+done
 
 # --- the fabric change ----------------------------------------------------------
 
@@ -753,13 +931,17 @@ kube kustomize "$apps" >/dev/null || fail "the edited manifests do not render"
 		printf '\nWhat moved under the migrations the Job applies, below which the only way back is a restore:\n'
 		printf '%s\n' "$migrations" | sed 's|^src/adapters/postgres/schema/migrations/|  |'
 	else
-		printf '\nNo migration: the migrate Job is a no-op.\n'
+		printf '\nNo migration: the migrate Job applies nothing.\n'
 	fi
 	printf '\nGate at %s: %s.\n' "$tag" "$gate"
 } >"$work/message"
 
 git -C "$fabric" checkout -q -b "$branch"
-git -C "$fabric" add cluster/apps
+# The manifests that were edited are what is staged, by the lists they were
+# edited by: anything else a step above left in the clone is not the release.
+for manifest in $api_manifests $console_manifests; do
+	git -C "$fabric" add "cluster/$manifest"
+done
 git -C "$fabric" commit -q -F "$work/message" || fail "the fabric change did not commit"
 
 remote_ref="$(git -C "$fabric" ls-remote origin "refs/heads/$branch")"
