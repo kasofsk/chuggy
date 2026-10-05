@@ -16,16 +16,20 @@ import { describe, expect, test } from "vitest";
 
 import {
   conversationExchanges,
+  conversationExchangesStood,
   conversationExchangesStopped,
   conversationIndicator,
   conversationSeenNothing,
   conversationSeenWith,
   conversationTurnStoppable,
+  conversationWatchedNothing,
+  conversationWatchedWith,
 } from "../app/core/conversation.ts";
 import type {
   ConversationExchange,
   ConversationItem,
   ConversationMarker,
+  ConversationStep,
   ConversationTurn,
 } from "../app/core/conversation.ts";
 
@@ -777,5 +781,201 @@ describe("a turn read as stopped from the press", () => {
     expect(conversationExchangesStopped(exchanges, pressed)[0]).toBe(
       conversationExchangesStopped(exchanges, pressed)[0],
     );
+  });
+});
+
+const watchedDrawn = (
+  standing: ConversationExchange["standing"],
+  answer?: string,
+): ConversationExchange => ({
+  id: "e",
+  turn: "t",
+  work: [],
+  ...(answer === undefined ? {} : { answer }),
+  standing,
+  before: [],
+});
+const watchedRunning = watchedDrawn(
+  { standing: "Running", state: "Claimed" },
+  "Half",
+);
+const watchedStopped = (answer?: string): ConversationExchange =>
+  watchedDrawn({ standing: "Stopped" }, answer);
+const watchedOut = conversationWatchedWith(
+  conversationWatchedNothing,
+  [watchedRunning],
+  true,
+);
+const watchedAnswers = (
+  exchanges: readonly ConversationExchange[],
+  watched = watchedOut,
+  looking = true,
+): readonly (string | undefined)[] =>
+  conversationExchangesStood(
+    exchanges,
+    conversationWatchedWith(watched, exchanges, looking),
+  ).map((exchange) => exchange.answer);
+
+describe("a turn a page watched stop", () => {
+  test("says what it said when the page first drew it stopped, whatever its record holds since", () => {
+    const first = [watchedStopped("Half")];
+    const stood = conversationWatchedWith(watchedOut, first, true);
+    expect(conversationExchangesStood(first, stood)).toBe(first);
+    const later = [watchedStopped("Half of it")];
+    expect(conversationWatchedWith(stood, later, true)).toBe(stood);
+    expect(watchedAnswers(later, stood)).toStrictEqual(["Half"]);
+    const same = conversationExchangesStood(later, stood);
+    expect(conversationExchangesStood(later, stood)[0]).toBe(same[0]);
+  });
+
+  test("stays without a word where it was stopped before one was drawn", () => {
+    const waiting = conversationWatchedWith(
+      conversationWatchedNothing,
+      [watchedDrawn({ standing: "Running", state: "Queued" })],
+      true,
+    );
+    const stood = conversationWatchedWith(waiting, [watchedStopped()], true);
+    const later = conversationExchangesStood([watchedStopped("Half")], stood);
+    expect(later.map((exchange) => "answer" in exchange)).toStrictEqual([
+      false,
+    ]);
+  });
+
+  test("is drawn as its record has it by a page that first drew it stopped", () => {
+    const later = [watchedStopped("Half of it")];
+    expect(watchedAnswers(later, conversationWatchedNothing)).toStrictEqual([
+      "Half of it",
+    ]);
+    const seen = conversationWatchedWith(
+      conversationWatchedNothing,
+      [watchedStopped("Half")],
+      true,
+    );
+    expect(watchedAnswers(later, seen)).toStrictEqual(["Half of it"]);
+  });
+
+  test("is drawn as its record has it by a page nobody was looking at when it stopped, then and when somebody is", () => {
+    const hidden = conversationWatchedWith(
+      watchedOut,
+      [watchedStopped("Half")],
+      false,
+    );
+    expect(
+      watchedAnswers([watchedStopped("Half of it")], hidden, true),
+    ).toStrictEqual(["Half of it"]);
+  });
+
+  test("is let go of when its stop is taken back, out again or answered", () => {
+    const stood = conversationWatchedWith(
+      watchedOut,
+      [watchedStopped("Half")],
+      true,
+    );
+    const again = [
+      watchedDrawn({ standing: "Running", state: "Claimed" }, "Half of it"),
+    ];
+    expect(watchedAnswers(again, stood)).toStrictEqual(["Half of it"]);
+    expect(conversationExchangesStood(again, stood)).toBe(again);
+    const whole = [watchedDrawn({ standing: "Answered" }, "Half of it all")];
+    expect(watchedAnswers(whole, stood)).toStrictEqual(["Half of it all"]);
+    const after = conversationWatchedWith(stood, whole, true);
+    expect(watchedAnswers([watchedStopped("More")], after)).toStrictEqual([
+      "More",
+    ]);
+  });
+});
+
+const callHeard: ConversationStep = {
+  step: "ToolCall",
+  id: "",
+  name: "Bash",
+  input: undefined,
+};
+
+function callStored(id: string, name = "Bash"): ConversationStep {
+  return {
+    step: "ToolCall",
+    id,
+    name,
+    input: { command: id },
+    result: { text: "done", isError: false },
+  };
+}
+
+function callsDrawn(
+  standing: ConversationExchange["standing"],
+  work: readonly ConversationStep[],
+  answer = "Half",
+): readonly ConversationExchange[] {
+  return [{ id: "e", turn: "t", work, answer, standing, before: [] }];
+}
+
+/** What a page that watched the turn stop over `work` reads of `later`. */
+function callsStood(
+  work: readonly ConversationStep[],
+  later: readonly ConversationStep[],
+  joined: readonly string[] = [],
+): readonly ConversationStep[] | undefined {
+  const out = conversationWatchedWith(
+    conversationWatchedNothing,
+    callsDrawn({ standing: "Running", state: "Claimed" }, work),
+    true,
+  );
+  const stood = conversationWatchedWith(
+    out,
+    callsDrawn({ standing: "Stopped" }, work),
+    true,
+    joined,
+  );
+  const [read] = conversationExchangesStood(
+    callsDrawn({ standing: "Stopped" }, later, "Half of it"),
+    stood,
+  );
+  expect(read?.answer).toBe("Half");
+  return read?.work;
+}
+
+describe("a call that stood on a page that watched its turn stop", () => {
+  test("takes what the record holds of the call at its place, where it was heard by name alone, and no step that did not stand", () => {
+    expect(
+      callsStood(
+        [callHeard],
+        [
+          callStored("toolu_1"),
+          { step: "Text", text: "Half of it" },
+          callStored("toolu_2"),
+        ],
+      ),
+    ).toStrictEqual([callStored("toolu_1")]);
+  });
+
+  test("takes what the record holds of the call of its id, where the record held it already", () => {
+    const begun: ConversationStep = {
+      step: "ToolCall",
+      id: "toolu_2",
+      name: "Bash",
+      input: { command: "toolu_2" },
+    };
+    expect(
+      callsStood([begun], [callStored("toolu_1"), callStored("toolu_2")]),
+    ).toStrictEqual([callStored("toolu_2")]);
+  });
+
+  test("stays as it was heard where the call at its place bears another name, or is itself only heard", () => {
+    expect(
+      callsStood([callHeard], [callStored("toolu_1", "Read")]),
+    ).toStrictEqual([callHeard]);
+    expect(callsStood([callHeard], [{ ...callHeard }])).toStrictEqual([
+      callHeard,
+    ]);
+  });
+
+  test("stays as it was heard on a page that joined its turn part way, which cannot place it", () => {
+    expect(
+      callsStood([callHeard], [callStored("toolu_1")], ["t"]),
+    ).toStrictEqual([callHeard]);
+    expect(
+      callsStood([callHeard], [callStored("toolu_1")], ["another"]),
+    ).toStrictEqual([callStored("toolu_1")]);
   });
 });

@@ -32,7 +32,9 @@
  * stopped turn itself says one of them was abandoned: the next turn's being
  * stored says nothing about it. Nor need the store hold all of a text it does
  * hold, so a text of such a turn heard past where its store ends is read as it
- * was heard: a stop takes nothing a member had read.
+ * was heard: a stop takes nothing a member had read. What the store holds
+ * past what was heard is not left out here: the page that watched the turn
+ * stop does that, over what this hands it.
  *
  * AND WHAT IS OVER IS NOT HEARD AGAIN. A runner whose turn failed sends the
  * turn's last words after it has settled it, and the hub goes on holding a

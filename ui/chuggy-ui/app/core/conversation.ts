@@ -263,6 +263,32 @@ export function conversationMessageInterruption(message: unknown): boolean {
   );
 }
 
+/** What the runtime puts where a model's name goes on a line it wrote
+ * itself. */
+const conversationRuntimeModel = "<synthetic>";
+
+/** What the runtime writes for the assistant when it resumes a session whose
+ * last turn ended without an answer. */
+const conversationFillerSentence = "No response requested.";
+
+/**
+ * Whether a message is the runtime's filler for a turn that ended without an
+ * answer: its own mark where a model's name goes, over one text block that is
+ * exactly its sentence. The mark is also on its report of a request the API
+ * refused and the sentence under a model's name is something a model wrote, so
+ * neither alone is this.
+ */
+export function conversationMessageFiller(message: unknown): boolean {
+  const held = conversationRecord(message);
+  if (held?.["model"] !== conversationRuntimeModel) return false;
+  const content = held["content"];
+  if (!Array.isArray(content) || content.length !== 1) return false;
+  const block = conversationRecord(content[0]);
+  return (
+    block?.["type"] === "text" && block["text"] === conversationFillerSentence
+  );
+}
+
 export const conversationRoles = ["User", "Assistant"] as const;
 
 export type ConversationRole = (typeof conversationRoles)[number];
@@ -1710,6 +1736,138 @@ export function conversationExchangesStopped(
   return exchanges.map((exchange) =>
     pressed(exchange) ? conversationExchangeStopped(exchange) : exchange,
   );
+}
+
+/** What an exchange's assistant said, as a page drew it. */
+interface ConversationStood {
+  readonly work: readonly ConversationStep[];
+  readonly answer: string | undefined;
+  /** Whether the page heard the turn from its beginning, which is what places
+   * a call it knows by name alone among the calls the record holds. */
+  readonly whole: boolean;
+}
+
+/** What a page holds of the turns it watched stop. */
+export interface ConversationWatched {
+  /** The turns it last drew out. */
+  readonly out: ReadonlySet<string>;
+  /** What each turn it had drawn out said when it first drew it stopped. */
+  readonly stood: ReadonlyMap<string, ConversationStood>;
+}
+
+export const conversationWatchedNothing: ConversationWatched = {
+  out: new Set(),
+  stood: new Map(),
+};
+
+/**
+ * What a page has watched once it draws these exchanges: a turn it drew out
+ * and now draws stopped is held as it stands, where the page had `shown` it
+ * to somebody, for as long as it is drawn stopped. `joined` names the turns
+ * the page began hearing part way through, and what was watched is handed back
+ * itself where nothing changed.
+ */
+export function conversationWatchedWith(
+  watched: ConversationWatched,
+  exchanges: readonly ConversationExchange[],
+  shown: boolean,
+  joined: readonly string[] = [],
+): ConversationWatched {
+  const out = new Set<string>();
+  const stood = new Map<string, ConversationStood>();
+  for (const { turn, standing, work, answer } of exchanges) {
+    if (turn === undefined) continue;
+    if (standing.standing === "Running") out.add(turn);
+    if (standing.standing !== "Stopped") continue;
+    const before = watched.stood.get(turn);
+    if (before !== undefined) stood.set(turn, before);
+    else if (shown && watched.out.has(turn))
+      stood.set(turn, { work, answer, whole: !joined.includes(turn) });
+  }
+  const same =
+    out.size === watched.out.size &&
+    stood.size === watched.stood.size &&
+    [...out].every((turn) => watched.out.has(turn)) &&
+    [...stood].every(([turn, held]) => watched.stood.get(turn) === held);
+  return same ? watched : { out, stood };
+}
+
+const conversationStoodMade = new WeakMap<
+  ConversationExchange,
+  { readonly stood: ConversationStood; readonly made: ConversationExchange }
+>();
+
+/**
+ * The work that stood, each call of it as the record has come to hold that
+ * call: the one of its id, or, for a call heard by name alone on a page that
+ * heard the turn whole, the one at its place among the turn's calls where
+ * that bears its name. No step that did not stand is added.
+ */
+function conversationWorkStood(
+  stood: ConversationStood,
+  work: readonly ConversationStep[],
+): readonly ConversationStep[] {
+  const calls = work.flatMap((step) =>
+    step.step === "ToolCall" ? [step] : [],
+  );
+  let place = -1;
+  let detailed = false;
+  const read = stood.work.map((step) => {
+    if (step.step !== "ToolCall") return step;
+    place += 1;
+    const placed = stood.whole ? calls[place] : undefined;
+    const own =
+      step.id === "" ? placed : calls.find((call) => call.id === step.id);
+    if (own === undefined || own === step) return step;
+    if (own.id === "" || own.name !== step.name) return step;
+    detailed = true;
+    return own;
+  });
+  return detailed ? read : stood.work;
+}
+
+function conversationExchangeStood(
+  exchange: ConversationExchange,
+  stood: ConversationStood,
+): ConversationExchange {
+  if (exchange.work === stood.work && exchange.answer === stood.answer)
+    return exchange;
+  const before = conversationStoodMade.get(exchange);
+  if (before?.stood === stood) return before.made;
+  const made: ConversationExchangeSaying = {
+    ...exchange,
+    work: conversationWorkStood(stood, exchange.work),
+  };
+  if (stood.answer === undefined) delete made.answer;
+  else made.answer = stood.answer;
+  conversationStoodMade.set(exchange, { stood, made });
+  return made;
+}
+
+/**
+ * The exchanges as a page that watched some of their turns stop draws them:
+ * each such turn says what it said when the page first drew it stopped,
+ * whatever its record or the stream has brought since but for what the record
+ * holds of a call that stood. The list is handed back itself where no exchange
+ * differs.
+ */
+export function conversationExchangesStood(
+  exchanges: readonly ConversationExchange[],
+  watched: ConversationWatched,
+): readonly ConversationExchange[] {
+  if (watched.stood.size === 0) return exchanges;
+  const read = exchanges.map((exchange) => {
+    const stood =
+      exchange.turn === undefined || exchange.standing.standing !== "Stopped"
+        ? undefined
+        : watched.stood.get(exchange.turn);
+    return stood === undefined
+      ? exchange
+      : conversationExchangeStood(exchange, stood);
+  });
+  return read.every((exchange, at) => exchange === exchanges[at])
+    ? exchanges
+    : read;
 }
 
 /** The exchanges with every queued turn read as waiting, for a surface whose

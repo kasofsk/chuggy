@@ -152,9 +152,10 @@ export default defineConfig({
      * also runs inside the worker image's build, where vitest runs the whole
      * suite's files against each other on the profile's few CPUs, and the
      * model walk past what a pane keeps went over vitest's default there
-     * while passing here in a fraction of it. What the cap is for is a test that
-     * hangs, and a hang is still caught at this one.
+     * while passing here in a fraction of it, as the reader's walk of every
+     * moment a text is written went over the cap first set for it. What the
+     * cap is for is a test that hangs, and a hang is still caught at this one.
      */
-    testTimeout: 60_000,
+    testTimeout: 300_000,
   },
 });

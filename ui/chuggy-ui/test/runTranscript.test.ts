@@ -36,6 +36,9 @@ import {
   runTranscriptStepsMax,
 } from "../app/core/runTranscript.ts";
 import {
+  fillerMessage,
+  fillerModel,
+  fillerRefusedSentence,
   interruptionNote,
   interruptionResult,
   interruptionSentence,
@@ -402,6 +405,14 @@ test("the runtime's words in a line it did not write are a step: typed, said by 
   expect(stepped("user", { content: interruptionSentence })).toBe(1);
   expect(stepped("assistant", interruptionNote(interruptionSentence))).toBe(1);
   expect(stepped("user", interruptionResult("call-1", "Exit code 1"))).toBe(1);
+});
+
+test("the runtime's filler for a turn that ended without an answer is bookkeeping, and only it: its sentence under a model's name and other words under its mark are steps", () => {
+  const stepped = (message: unknown): number =>
+    runTranscriptStep(1, JSON.stringify({ type: "assistant", message })).length;
+  expect(stepped(fillerMessage())).toBe(0);
+  expect(stepped(fillerMessage("claude-opus-5-5"))).toBe(1);
+  expect(stepped(fillerMessage(fillerModel, fillerRefusedSentence))).toBe(1);
 });
 
 test("every held batch's lines are read in order and blank lines are not steps", () => {

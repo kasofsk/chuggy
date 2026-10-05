@@ -12,6 +12,8 @@
  * changes the text that is read — the marks its last block leaves open are
  * closed — and puts the mark's class on the last thing written. It changes no
  * element, so the moment a text is whole changes nothing a reader can see.
+ * `cut` reads a text its writer was stopped part way through the same way and
+ * marks nothing, since no more of it is coming.
  *
  * WHILE A TEXT IS BEING WRITTEN EXACTLY ONE THING IN IT CARRIES THE MARK. Where
  * the last block can carry it, that block does; where nothing can — no block
@@ -51,6 +53,9 @@ interface MarkdownReportProps {
   /** Whether more of the text is still coming, so a mark its last block leaves
    * open is drawn as what it is about to be. */
   readonly writing?: boolean;
+  /** Whether the text was cut off part way, so what its last block leaves
+   * open is closed as it was while it was written, and nothing is marked. */
+  readonly cut?: boolean;
 }
 
 /** The longest a report waits before it reads a text again, in
@@ -97,8 +102,12 @@ function markdownReportClassName(bare: boolean, mark: boolean): string {
 }
 
 function MarkdownReportRead(props: MarkdownReportProps): ReactNode {
-  const reading = useMarkdownReading(props.text, props.writing === true);
-  const { settled, open, writing } = reading;
+  const reading = useMarkdownReading(
+    props.text,
+    props.writing === true || props.cut === true,
+  );
+  const { settled, open } = reading;
+  const writing = reading.writing && props.writing === true;
   const above = useMemo(
     () =>
       settled.map((block, at) => (

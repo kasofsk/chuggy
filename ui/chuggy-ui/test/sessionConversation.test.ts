@@ -24,6 +24,10 @@ import {
 } from "../app/core/sessionConversation.ts";
 import type { LeadTurnResponse } from "../../../src/contract/responses.ts";
 import {
+  fillerMessage,
+  fillerModel,
+  fillerRefusedSentence,
+  fillerSentence,
   interruptionNote,
   interruptionRefusal,
   interruptionResult,
@@ -442,6 +446,91 @@ test("only what the runtime writes is left out: its words among others, by the a
     ],
   });
   expect(ids(items)).toHaveLength(kept.length + 1);
+});
+
+function called(uuid: string, call: string): readonly LeadTranscriptEntry[] {
+  return [
+    entryOf({
+      uuid,
+      type: "assistant",
+      message: {
+        content: [{ type: "tool_use", id: call, name: "Bash", input: {} }],
+      },
+    }),
+    entryOf({
+      uuid: `${uuid}-result`,
+      type: "user",
+      message: {
+        content: [{ type: "tool_result", tool_use_id: call, content: call }],
+      },
+    }),
+  ];
+}
+
+/** What a store holds of a turn stopped after two calls and before a word,
+ * and of the session resumed after it: the line `written` in the assistant's
+ * role, then the next message and its answer. */
+function resumed(written: unknown): readonly LeadTranscriptEntry[] {
+  return [
+    entered("uuid-a", "run the gates"),
+    ...called("uuid-b", "toolu_1"),
+    ...called("uuid-c", "toolu_2"),
+    entryOf({
+      uuid: "uuid-d",
+      type: "user",
+      message: interruptionNote(interruptionSentence),
+    }),
+    entryOf({ uuid: "uuid-e", type: "assistant", message: written }),
+    entered("uuid-f", "and now"),
+    entryOf({ uuid: "uuid-g", type: "assistant", message: said("ready") }),
+  ];
+}
+
+test("the runtime's filler for a turn that ended without an answer is no entry, and the turn it follows keeps its work and no text", () => {
+  const items = itemsOf({ entries: resumed(fillerMessage()) });
+  expect(ids(items)).not.toContain("uuid-e");
+  const exchanges = conversationExchanges(items);
+  expect(exchanges.map(({ work, answer }) => [work.length, answer])).toEqual([
+    [2, undefined],
+    [0, "ready"],
+  ]);
+  expect(JSON.stringify(exchanges)).not.toContain(fillerSentence);
+});
+
+test.each([
+  {
+    wrote: "its sentence under a model's own name",
+    written: fillerMessage("claude-opus-5-5"),
+    text: fillerSentence,
+  },
+  {
+    wrote: "other words under the runtime's mark",
+    written: fillerMessage(fillerModel, fillerRefusedSentence),
+    text: fillerRefusedSentence,
+  },
+  {
+    wrote: "its sentence with more after it",
+    written: fillerMessage(fillerModel, `${fillerSentence} `),
+    text: `${fillerSentence} `,
+  },
+])(
+  "only the runtime's filler is left out: $wrote is an entry, and is the answer of the turn it follows",
+  ({ written, text }) => {
+    const items = itemsOf({ entries: resumed(written) });
+    expect(ids(items)).toContain("uuid-e");
+    expect(conversationExchanges(items)[0]?.answer).toBe(text);
+  },
+);
+
+test("the runtime's sentence beside another block, under its mark, is an entry", () => {
+  const two = {
+    model: fillerModel,
+    content: [
+      { type: "text", text: fillerSentence },
+      { type: "text", text: "and more" },
+    ],
+  };
+  expect(ids(itemsOf({ entries: resumed(two) }))).toContain("uuid-e");
 });
 
 test.each([

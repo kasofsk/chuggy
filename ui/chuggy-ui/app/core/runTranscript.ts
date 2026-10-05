@@ -32,6 +32,7 @@ import type {
 } from "./conversation.ts";
 import {
   conversationBlocksOf,
+  conversationMessageFiller,
   conversationMessageInterruption,
 } from "./conversation.ts";
 import { freshnessLabel, panelObservedAtMs } from "./freshness.ts";
@@ -246,7 +247,8 @@ function runTranscriptEntryId(ordinal: number, message: unknown): string {
  * surface has for it, and every other type is bookkeeping the surface has no
  * place for — its elisions still are, because those are a fact about the
  * bytes rather than about the type that carried them. The runtime's note that
- * a turn was interrupted is a user line nobody said, and is bookkeeping too. */
+ * a turn was interrupted and its filler for a turn that ended without an
+ * answer are lines nobody said, and are bookkeeping too. */
 export function runTranscriptStep(
   ordinal: number,
   line: string,
@@ -272,8 +274,11 @@ export function runTranscriptStep(
     ];
   const elisions = runTranscriptElisionItems(event);
   if (type !== "assistant" && type !== "user") return elisions;
-  if (type === "user" && conversationMessageInterruption(event["message"]))
-    return elisions;
+  const unsaid =
+    type === "user"
+      ? conversationMessageInterruption(event["message"])
+      : conversationMessageFiller(event["message"]);
+  if (unsaid) return elisions;
   return [
     ...elisions,
     {
