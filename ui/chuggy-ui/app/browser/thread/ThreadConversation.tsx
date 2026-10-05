@@ -25,6 +25,18 @@
  * everything heard of it and nothing heard after the press, and from the read
  * that lists it ended the mailbox's own word stands there.
  *
+ * A TURN THE PAGE WATCHED STOP STAYS AS IT STOOD. What the page drew of a turn
+ * when it first drew it stopped is all it draws of it from then on, whoever
+ * pressed: what stands at the stop is what the member stopped, so nothing the
+ * store comes to hold of the turn and nothing heard of it afterwards is added,
+ * and a turn stopped before a word of it was drawn stays without one. A call
+ * that stood is the one thing that goes on being read: the store's own account
+ * of it, what it was asked and what it answered, is what opening its line
+ * shows. A page opened afterwards draws what was stored, which may be a few
+ * words longer than the stopping page showed, and so does a page that had
+ * shown nobody the turn when it stopped: one nobody was looking at, or one
+ * still reading the thread for the first time.
+ *
  * THE COLUMN IS READ ONCE. A walk begins again when the runner names the
  * thread's store, which is in the middle of its first turn, and saying
  * `Loading…` over a turn being written would take the words away to say it.
@@ -38,11 +50,14 @@ import type { ThreadResponse } from "../../../../../src/contract/responses.ts";
 import {
   conversationExchanges,
   conversationExchangeSent,
+  conversationExchangesStood,
   conversationExchangesStopped,
   conversationExchangesWaiting,
   conversationExchangesWithSent,
   conversationSeenNothing,
   conversationSeenWith,
+  conversationWatchedNothing,
+  conversationWatchedWith,
 } from "../../core/conversation.ts";
 import type {
   ConversationExchange,
@@ -148,6 +163,15 @@ function useThreadRecord(
   return useMemo(() => ({ seen: next, replaced }), [next, replaced]);
 }
 
+/** The thread's exchanges, and the turns the page began hearing part way
+ * through. */
+interface ThreadExchanges {
+  readonly exchanges: readonly ConversationExchange[];
+  readonly joined: readonly string[];
+}
+
+const threadJoinedNone: readonly string[] = [];
+
 /**
  * The thread's exchanges: its transcript, its mailbox over that, and what is
  * heard of its newest turn over both. Everything but the last is kept between
@@ -159,7 +183,7 @@ function useThreadExchanges(
   thread: ThreadResponse,
   walked: LeadTranscriptWalk,
   stops: Pick<ThreadSendHeld, "stopping" | "takenBack">,
-): readonly ConversationExchange[] {
+): ThreadExchanges {
   const held = walked.held;
   const stream = thread.agentReference;
   const listed = leadStreamListed(thread);
@@ -194,7 +218,29 @@ function useThreadExchanges(
     () => conversationExchanges(items, turns, heardTurns, heardUnder, record),
     [items, turns, heardTurns, heardUnder, record],
   );
-  return conversationExchangesLive(exchanges, live);
+  return {
+    exchanges: conversationExchangesLive(exchanges, live),
+    joined: heard.rejoined ?? threadJoinedNone,
+  };
+}
+
+/** The exchanges with each turn this page watched stop left as it stood when
+ * the page first drew it stopped, where it is not still `reading` the thread
+ * for the first time. */
+function useThreadStood(
+  exchanges: readonly ConversationExchange[],
+  reading: boolean,
+  joined: readonly string[],
+): readonly ConversationExchange[] {
+  const [watched, setWatched] = useState(conversationWatchedNothing);
+  const next = conversationWatchedWith(
+    watched,
+    exchanges,
+    !reading && document.visibilityState !== "hidden",
+    joined,
+  );
+  if (next !== watched) setWatched(next);
+  return conversationExchangesStood(exchanges, next);
 }
 
 export function ThreadConversation(props: {
@@ -227,15 +273,17 @@ export function ThreadConversation(props: {
   );
   const mentions = useConversationMentions(props.partition);
   const door = useThreadDoor(props.partition).door;
-  const exchanges = conversationExchangesStopped(
-    conversationExchangesWithSent(
-      useThreadExchanges(props.partition, thread, walked, sends),
-      sent,
-    ),
-    sends.stopping,
-  );
+  const drawn = useThreadExchanges(props.partition, thread, walked, sends);
   const [read, setRead] = useState(false);
   if (!walked.reading && !read) setRead(true);
+  const exchanges = useThreadStood(
+    conversationExchangesStopped(
+      conversationExchangesWithSent(drawn.exchanges, sent),
+      sends.stopping,
+    ),
+    walked.reading && !read,
+    drawn.joined,
+  );
   return (
     <div
       role="region"

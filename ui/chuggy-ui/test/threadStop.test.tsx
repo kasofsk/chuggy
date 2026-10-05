@@ -16,16 +16,26 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import type { ThreadResponse } from "../../../src/contract/responses.ts";
 import {
+  fillerMessage,
+  fillerModel,
+  fillerRefusedSentence,
+  fillerSentence,
   interruptionRefusal,
   interruptionResult,
   interruptionSentence,
   interruptionToolSentence,
 } from "./interruptionFixture.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
-import { settled } from "./screenHarness.tsx";
+import { answer, settled } from "./screenHarness.tsx";
 import { elementScrollToStubbed } from "./scrolling.ts";
+import { streamServer } from "./streamDouble.ts";
 import { styleless } from "./styleless.ts";
-import { threadBody, threadMineSession } from "./threadFixture.ts";
+import { threadConversationMounted } from "./threadConversationMount.tsx";
+import {
+  threadBody,
+  threadMineSession,
+  threadStorePage,
+} from "./threadFixture.ts";
 import {
   stageAlarms,
   stageAnswered,
@@ -35,12 +45,14 @@ import {
   stageButton,
   stageColumn,
   stageColumnIs,
+  stageDoor,
   stageHeard,
   stageHeardBlock,
   stageInterrupted,
   stageLine,
   stageLiveOpening,
   stageMounted,
+  stageProjectOpening,
   stageSent,
   stageStopped,
   stageTurn,
@@ -49,7 +61,7 @@ import {
   stageFirstStored as earlier,
   stageFirstTurn as before,
 } from "./threadStopStage.tsx";
-import type { Stage, StageEntry } from "./threadStopStage.tsx";
+import type { Stage, StageDoors, StageEntry } from "./threadStopStage.tsx";
 
 beforeEach(() => {
   resizeObserverStubbed();
@@ -297,17 +309,25 @@ test("what was heard of a stopped answer stays where the store holds less of it"
   expect(stageColumn(stage.container)).toStrictEqual(stopped);
 });
 
+const longer = `${heard} waiting on a review.`;
+
+/** What the store is left holding of the second turn where its text there is
+ * `stored`. */
+function storedAs(stored: string): readonly StageEntry[] {
+  return [
+    stageAsked("u-c", asked),
+    stageWrote("u-d", "msg_a", stored),
+    stageInterrupted("u-e"),
+  ];
+}
+
 test.each([
-  { said: "less of the text heard", stored: "It is blocked", read: heard },
-  {
-    said: "more of it",
-    stored: `${heard} waiting on a review.`,
-    read: `${heard} waiting on a review.`,
-  },
-  { said: "another text there", stored: "Stopped by", read: "Stopped by" },
+  { said: "less of the text heard", stored: "It is blocked" },
+  { said: "more of it", stored: longer },
+  { said: "another text there", stored: "Stopped by" },
 ])(
-  "a stopped answer's text is read as the longer of what was heard and what is stored, where the store holds $said",
-  async ({ stored, read }) => {
+  "a stopped answer's text stays as it stood at the press, where the store comes to hold $said",
+  async ({ stored }) => {
     const stage = await turnOut("Claimed");
     await textHeard(stage);
     await stageStopped();
@@ -315,21 +335,419 @@ test.each([
 
     for (const listed of ["Claimed", "Stopped"] as const) {
       stage.batches.splice(1);
-      await flushed(
-        stage,
-        [
-          stageAsked("u-c", asked),
-          stageWrote("u-d", "msg_a", stored),
-          stageInterrupted("u-e"),
-        ],
-        listed,
-      );
+      await flushed(stage, storedAs(stored), listed);
       expect(
         stageColumn(stage.container).at(-1),
         `the mailbox lists the turn ${listed}`,
-      ).toBe(`${read} (Stopped)`);
+      ).toBe(`${heard} (Stopped)`);
     }
     expect(stageAlarms(stage.container)).toStrictEqual([]);
+  },
+);
+
+test("a tab that did not press keeps what it drew when the mailbox said Stopped: nothing heard afterwards and nothing the store then holds is added", async () => {
+  const stage = await turnOut("Claimed");
+  await textHeard(stage);
+  stage.draw(threadAt("Stopped"));
+  await settled();
+  const stopped = [...opened, `> ${asked}`, `${heard} (Stopped)`];
+  expect(stageColumn(stage.container)).toStrictEqual(stopped);
+
+  stageHeard(stage, "turn-2", {
+    live: "Text",
+    message: "msg_a",
+    index: 0,
+    offset: heard.length,
+    text: " waiting on a review.",
+  });
+  await settled();
+  expect(stageColumn(stage.container)).toStrictEqual(stopped);
+
+  await flushed(stage, storedAs(longer), "Stopped");
+  expect(stageColumn(stage.container)).toStrictEqual(stopped);
+  expect(stageAlarms(stage.container)).toStrictEqual([]);
+});
+
+test.each(["pressed", "watched"] as const)(
+  "a turn stopped before a word of it was drawn stays without one where the store comes to hold some, on the tab that %s",
+  async (tab) => {
+    const stage = await turnOut("Claimed");
+    if (tab === "pressed") await stageStopped();
+    else stage.draw(threadAt("Stopped"));
+    await settled();
+    const stopped = [...opened, `> ${asked}`, "(Stopped)"];
+    expect(stageColumn(stage.container)).toStrictEqual(stopped);
+
+    await flushed(stage, storedAs(heard), "Stopped");
+    expect(stageColumn(stage.container)).toStrictEqual(stopped);
+  },
+);
+
+test("a text stopped part way that the store then holds whole, with a call after it, is drawn once and as it stood", async () => {
+  const stage = await turnOut("Claimed");
+  await textHeard(stage);
+  await stageStopped();
+  await stageAnswered(stage.stops[0], { stopped: "Stopped" });
+
+  await flushed(
+    stage,
+    [
+      stageAsked("u-c", asked),
+      stageWrote("u-d", "msg_a", longer),
+      callStored("u-e", "msg_a", "toolu_1", "sleep 60"),
+      stageLine("u-f", "user", interruptionResult("toolu_1")),
+      stageInterrupted("u-g", interruptionToolSentence),
+    ],
+    "Stopped",
+  );
+  expect(stageColumn(stage.container)).toStrictEqual([
+    ...opened,
+    `> ${asked}`,
+    `${heard} (Stopped)`,
+  ]);
+});
+
+test("a page nobody is looking at when the mailbox says Stopped holds nothing of the turn, and draws what its store comes to hold", async () => {
+  const stage = await turnOut("Claimed");
+  await textHeard(stage);
+  Object.defineProperty(document, "visibilityState", {
+    configurable: true,
+    get: () => "hidden",
+  });
+  try {
+    stage.draw(threadAt("Stopped"));
+    await settled();
+  } finally {
+    Reflect.deleteProperty(document, "visibilityState");
+  }
+  expect(document.visibilityState).toBe("visible");
+  expect(stageColumn(stage.container).at(-1)).toBe(`${heard} (Stopped)`);
+
+  await flushed(stage, storedAs(longer), "Stopped");
+  expect(stageColumn(stage.container).at(-1)).toBe(`${longer} (Stopped)`);
+});
+
+/** A call of Bash as the store holds its beginning. */
+function callStored(
+  entry: string,
+  message: string,
+  call: string,
+  command: string,
+): StageEntry {
+  return stageBlock(entry, message, {
+    type: "tool_use",
+    id: call,
+    name: "Bash",
+    input: { command },
+  });
+}
+
+test("a call heard by name alone on a page that joined its turn part way stays bare, which cannot say which of the turn's calls it is", async () => {
+  const stage = await turnOut("Claimed", [
+    stageLiveOpening({
+      turn: "turn-2",
+      message: "msg_b",
+      blocks: [
+        { index: 0, kind: "ToolUse", name: "Bash", text: "", gapped: false },
+      ],
+    }),
+  ]);
+  const stopped = [...opened, `> ${asked}`, "[1 tool] (Stopped)"];
+  await stageColumnIs(stage.container, stopped.with(-1, "[Bash]"));
+  await stageStopped();
+  await stageAnswered(stage.stops[0], { stopped: "Stopped" });
+
+  await flushed(
+    stage,
+    [
+      stageAsked("u-c", asked),
+      callStored("u-d", "msg_a", "toolu_0", "gh issue view 39"),
+      stageLine("u-e", "user", interruptionResult("toolu_0", "39 CLOSED")),
+      callStored("u-f", "msg_b", "toolu_1", "sleep 60"),
+      stageLine("u-g", "user", interruptionResult("toolu_1")),
+      stageInterrupted("u-h", interruptionToolSentence),
+    ],
+    "Stopped",
+  );
+  expect(stageColumn(stage.container)).toStrictEqual(stopped);
+  expect(callsOpened(stage.container)).toHaveLength(1);
+  const said = stage.container.textContent;
+  expect(said).not.toContain("gh issue view 39");
+  expect(said).not.toContain("sleep 60");
+});
+
+/** A page opened on the thread while its second turn is out, whose read of
+ * the store is answered only once `read` is called. */
+function turnOutReading(store: readonly (readonly StageEntry[])[]): {
+  readonly stage: Stage;
+  readonly read: () => void;
+} {
+  const doors: StageDoors = { batches: [...store], sends: [], stops: [] };
+  let read = (): void => undefined;
+  const gate = new Promise<void>((resolve) => {
+    read = resolve;
+  });
+  vi.stubGlobal(
+    "fetch",
+    stageDoor(doors, (url) =>
+      url.pathname.endsWith("/transcript")
+        ? gate.then(() =>
+            answer(
+              threadStorePage(
+                doors.batches,
+                Number(url.searchParams.get("after")),
+              ),
+            ),
+          )
+        : undefined,
+    ),
+  );
+  const server = streamServer([stageProjectOpening], "token", [
+    stageLiveOpening(),
+  ]);
+  const mounted = threadConversationMounted(
+    threadAt("Claimed", doors.batches.length),
+    server,
+  );
+  return { stage: { ...doors, server, ...mounted }, read };
+}
+
+test("a page still reading the thread when the turn stops holds nothing of it, and draws what a page opened afterwards draws", async () => {
+  const first = [
+    stageAsked("u-c", asked),
+    stageWrote("u-d", "msg_a", "First,"),
+  ];
+  const rest = [
+    stageWrote("u-e", "msg_b", "second, 41 waits."),
+    stageInterrupted("u-f"),
+  ];
+  const afresh = stageMounted(threadAt("Stopped", 3), [earlier, first, rest]);
+  await settled();
+  const stored = stageColumn(afresh.container);
+  expect(stored.at(-1)).toContain("First,");
+  cleanup();
+
+  const { stage, read } = turnOutReading([earlier, first]);
+  await settled();
+  stageHeardBlock(stage, "turn-2", {
+    message: "msg_b",
+    index: 0,
+    kind: "Text",
+    text: "second,",
+  });
+  await settled();
+  stage.draw(threadAt("Stopped", 2));
+  await settled();
+  stage.batches.push(rest);
+  read();
+  await settled();
+  stage.draw(threadAt("Stopped", 3));
+  await stageColumnIs(stage.container, stored);
+});
+
+test("a call that stood takes what the store holds of it, its command and its output, and no word the page had not drawn", async () => {
+  const stage = await turnOut("Claimed");
+  stageHeardBlock(stage, "turn-2", {
+    message: "msg_a",
+    index: 0,
+    kind: "ToolUse",
+    name: "Bash",
+  });
+  await stageColumnIs(stage.container, [...opened, `> ${asked}`, "[Bash]"]);
+  stageHeardBlock(stage, "turn-2", {
+    message: "msg_b",
+    index: 0,
+    kind: "Text",
+    text: heard,
+  });
+  const stopped = [...opened, `> ${asked}`, `[1 tool] ${heard} (Stopped)`];
+  await stageColumnIs(stage.container, stopped.with(-1, `[1 tool] ${heard}`));
+  await stageStopped();
+  await stageAnswered(stage.stops[0], { stopped: "Stopped" });
+  expect(stageColumn(stage.container)).toStrictEqual(stopped);
+
+  await flushed(
+    stage,
+    [
+      ...cutOffCall("40 OPEN review-pending"),
+      stageWrote("u-f", "msg_b", longer),
+      stageInterrupted("u-g"),
+    ],
+    "Stopped",
+  );
+  expect(stageColumn(stage.container)).toStrictEqual(stopped);
+  expect(callsOpened(stage.container)).toHaveLength(1);
+  fireEvent.click(screen.getByRole("button", { name: /^Bash/u }));
+  const said = stage.container.textContent;
+  expect(said).toContain("sleep 60");
+  expect(said).toContain("40 OPEN review-pending");
+  expect(said).not.toContain("waiting on a review.");
+});
+
+test("a page opened after the stop draws what was stored of the turn, which the page that pressed did not", async () => {
+  const stage = await turnOut("Claimed");
+  await textHeard(stage);
+  await stageStopped();
+  await flushed(stage, storedAs(longer), "Stopped");
+  expect(stageColumn(stage.container).at(-1)).toBe(`${heard} (Stopped)`);
+
+  cleanup();
+  const afresh = stageMounted(threadAt("Stopped", 2), [
+    earlier,
+    storedAs(longer),
+  ]);
+  await settled();
+  expect(stageColumn(afresh.container).at(-1)).toBe(`${longer} (Stopped)`);
+});
+
+const cut = "It ships first as a *measu";
+const cutClosed = "It ships first as a measu";
+
+/** The last answer's text as its report draws it: the characters, the words
+ * it emphasises, and how many things in it carry the writing mark. */
+function reportRead(container: HTMLElement): {
+  readonly text: string;
+  readonly emphasised: readonly string[];
+  readonly marks: number;
+} {
+  const reports = container.querySelectorAll(
+    ".conversation-answer .run-report",
+  );
+  const report = reports.item(reports.length - 1);
+  return {
+    text: report.textContent,
+    emphasised: Array.from(
+      report.querySelectorAll("em"),
+      (word) => word.textContent,
+    ),
+    marks: container.querySelectorAll(".run-report-mark").length,
+  };
+}
+
+/** A page on the thread whose second turn wrote `cut` and ended as `ended`,
+ * either having watched it written or drawing it from the store alone. */
+async function cutDrawn(
+  page: "watched" | "stored",
+  ended: Ended,
+): Promise<Stage> {
+  const stored = [stageAsked("u-c", asked), stageWrote("u-d", "msg_a", cut)];
+  if (page === "stored") {
+    const stage = stageMounted(threadAt(ended, 2), [earlier, stored]);
+    await settled();
+    return stage;
+  }
+  const stage = await turnOut("Claimed");
+  stageHeardBlock(stage, "turn-2", {
+    message: "msg_a",
+    index: 0,
+    kind: "Text",
+    text: cut,
+  });
+  await stageColumnIs(stage.container, [...opened, `> ${asked}`, cutClosed]);
+  await flushed(stage, stored, ended);
+  return stage;
+}
+
+const cutPages = [
+  { page: "watched", said: "watched it written" },
+  { page: "stored", said: "draws it from the store" },
+] as const;
+
+test.each(cutPages)(
+  "a stopped answer cut off inside a mark is read as it was while it was written, the star closed and nothing marked, on a page that $said",
+  async ({ page }) => {
+    const stage = await cutDrawn(page, "Stopped");
+    expect(stageColumn(stage.container).at(-1)).toBe(`${cutClosed} (Stopped)`);
+    expect(reportRead(stage.container)).toStrictEqual({
+      text: cutClosed,
+      emphasised: ["measu"],
+      marks: 0,
+    });
+    expect(stageAlarms(stage.container)).toStrictEqual([]);
+  },
+);
+
+test.each(cutPages)(
+  "an answer that ended whole on an open star draws the star, on a page that $said",
+  async ({ page }) => {
+    const stage = await cutDrawn(page, { answer: cut });
+    expect(reportRead(stage.container)).toStrictEqual({
+      text: cut,
+      emphasised: [],
+      marks: 0,
+    });
+  },
+);
+
+const next = "and 42";
+
+/** A page opened on the thread after its second turn was stopped following
+ * two calls and before a word, and its session resumed for a third: the store
+ * holds the line `written` in the assistant's role between the two. */
+async function resumedDrawn(written: unknown): Promise<Stage> {
+  const returned = (call: string): StageEntry =>
+    stageLine(`u-${call}`, "user", {
+      role: "user",
+      content: [{ type: "tool_result", tool_use_id: call, content: call }],
+    });
+  const stage = stageMounted(
+    threadBody({
+      batches: 2,
+      turns: [
+        before,
+        stageTurn(2, "turn-2", asked, "Stopped"),
+        stageTurn(3, "turn-3", next, { answer: "ready" }),
+      ],
+    }),
+    [
+      earlier,
+      [
+        stageAsked("u-c", asked),
+        callStored("u-d", "msg_a", "toolu_1", "echo alpha"),
+        returned("toolu_1"),
+        callStored("u-e", "msg_b", "toolu_2", "echo beta"),
+        returned("toolu_2"),
+        stageInterrupted("u-f"),
+        stageLine("u-g", "assistant", written),
+        stageAsked("u-h", next),
+        stageWrote("u-i", "msg_c", "ready"),
+      ],
+    ],
+  );
+  await settled();
+  return stage;
+}
+
+test("the runtime's filler for a stopped turn with no answer is drawn nowhere on a thread resumed after it, and the turn stays its work and Stopped", async () => {
+  const stage = await resumedDrawn(fillerMessage());
+  expect(stageColumn(stage.container)).toStrictEqual([
+    ...opened,
+    `> ${asked}`,
+    "[2 tools] (Stopped)",
+    `> ${next}`,
+    "ready (Answered)",
+  ]);
+  expect(stage.container.textContent).not.toContain(fillerSentence);
+});
+
+test.each([
+  {
+    wrote: "its sentence under a model's own name",
+    written: fillerMessage("claude-opus-5-5"),
+    text: fillerSentence,
+  },
+  {
+    wrote: "other words under the runtime's mark",
+    written: fillerMessage(fillerModel, fillerRefusedSentence),
+    text: fillerRefusedSentence,
+  },
+])(
+  "only the runtime's filler is left out of a thread: $wrote is drawn",
+  async ({ written, text }) => {
+    const stage = await resumedDrawn(written);
+    expect(stageColumn(stage.container).at(-3)).toBe(
+      `[2 tools] ${text} (Stopped)`,
+    );
   },
 );
 

@@ -37,6 +37,11 @@
  * is the text handed to them: let out at an even pace, with the marks its last
  * line leaves open closed.
  *
+ * AN ANSWER STOPPED PART WAY IS READ AS IT WAS BEING WRITTEN. The text a
+ * stopped turn ends in is cut off, not finished, so the marks it leaves open
+ * stay closed as they were drawn, on the page that watched and on one drawing
+ * it from the store, with no mark that says more is coming.
+ *
  * ONLY WHAT ARRIVES IS LET OUT AT A PACE. A text is drawn whole as it is first
  * drawn, whatever its turn is doing, so a page that opens on a turn part way
  * through writes none of it again.
@@ -135,10 +140,10 @@ export function ConversationLettingHeld(props: {
   );
 }
 
-/** Where a text stands in its answer: one no more is written of, since a part
- * follows it or its turn was stopped, the last part, or the last part of a
- * turn that is still at it. */
-type ConversationTextPlace = "Closed" | "Last" | "UnderWay";
+/** Where a text stands in its answer: one a part follows, the last part of a
+ * turn that was stopped, the last part, or the last part of a turn that is
+ * still at it. */
+type ConversationTextPlace = "Closed" | "Cut" | "Last" | "UnderWay";
 
 const ConversationTextPlaced = createContext<ConversationTextPlace>("Last");
 
@@ -222,7 +227,7 @@ const ConversationReport: TextMessagePartComponent = (props) => {
   const paced = useContext(ConversationPaced);
   const place = useContext(ConversationTextPlaced);
   const [closed, setClosed] = useState(false);
-  if (place === "Closed" && !closed) setClosed(true);
+  if ((place === "Closed" || place === "Cut") && !closed) setClosed(true);
   const shown = useSmooth(
     { ...props, status: conversationPartWhole },
     paced && !closed,
@@ -238,7 +243,12 @@ const ConversationReport: TextMessagePartComponent = (props) => {
   }, [marked, writing]);
   return (
     <div className={writing ? "conversation-writing" : undefined}>
-      <MarkdownReport text={shown.text} bare writing={writing} />
+      <MarkdownReport
+        text={shown.text}
+        bare
+        writing={writing}
+        cut={place === "Cut"}
+      />
     </div>
   );
 };
@@ -328,7 +338,8 @@ function conversationTextPlace(
   underWay: boolean,
   stopped: boolean,
 ): ConversationTextPlace {
-  if (!last || stopped) return "Closed";
+  if (stopped) return last ? "Cut" : "Closed";
+  if (!last) return "Closed";
   return underWay ? "UnderWay" : "Last";
 }
 
