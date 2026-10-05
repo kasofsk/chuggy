@@ -16,10 +16,16 @@
  * the foot of its pane, so a line over the box takes its room from the column
  * and the box and its button stay where they are as it comes and goes.
  *
- * A PRESS THE SURFACE SAYS TO IGNORE DOES NOTHING AND CHANGES NOTHING DRAWN.
+ * A PRESS THE SURFACE SAYS TO IGNORE DOES NOTHING, AND THE BUTTON SAYS SO.
  * The button is asked at each press, so one too close behind a press of Stop
  * neither stops the turn behind nor sends what is in the box, and one too
- * close behind a click that sent does not stop what it sent.
+ * close behind a click that sent does not stop what it sent. For that long it
+ * is drawn as a button that takes no press, and it stays one a press can
+ * land on, so the pointer and the caret are where they were when it ends.
+ *
+ * A PRESS OF THE BUTTON LEAVES THE CARET IN THE BOX. The button turns into
+ * another or goes inert under the pointer, and focus it had taken would fall
+ * to the page, where what a member types next goes nowhere.
  */
 
 import { ComposerPrimitive, useAuiState } from "@assistant-ui/react";
@@ -108,8 +114,15 @@ interface ConversationComposerSurface {
   readonly stops: boolean;
   /** Whether a press of the button now is one to do nothing for. */
   readonly ignores: (button: ConversationComposerButton) => boolean;
+  /** Whether the button is drawn as one whose press does nothing. */
+  readonly rests: boolean;
   /** Told of a click of Send that was taken. */
   readonly onSendClick: () => void;
+}
+
+/** A press of the button takes no focus, so the caret stays in the box. */
+function conversationCaretKept(event: MouseEvent<HTMLButtonElement>): void {
+  event.preventDefault();
 }
 
 /** The composer's one button: Stop while a turn can be stopped, and Send. */
@@ -122,10 +135,13 @@ function ConversationComposerPressed(
       if (props.ignores(button)) event.preventDefault();
       else if (button === "Send") props.onSendClick();
     };
+  const rests = props.rests ? true : undefined;
   if (props.stops)
     return (
       <ComposerPrimitive.Cancel
         className="conversation-send"
+        aria-disabled={rests}
+        onMouseDown={conversationCaretKept}
         onClick={pressed("Stop")}
       >
         <span className="conversation-send-mark">
@@ -138,6 +154,8 @@ function ConversationComposerPressed(
     <ComposerPrimitive.Send
       className="conversation-send"
       aria-busy={props.busy}
+      aria-disabled={rests}
+      onMouseDown={conversationCaretKept}
       onClick={pressed("Send")}
     >
       <span className="conversation-send-mark">
@@ -198,6 +216,7 @@ export function ConversationComposer(
             busy={props.busy}
             stops={props.stops}
             ignores={props.ignores}
+            rests={props.rests}
             onSendClick={props.onSendClick}
           />
         </div>

@@ -69,6 +69,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   vi.restoreAllMocks();
 });
 
@@ -673,6 +674,178 @@ test("a stop that fails has been answered all the same, so past the beat the but
   clock.ms += conversationStopBeatMs;
   fireEvent.click(screen.getByRole("button", { name: "Stop" }));
   expect(onStop).toHaveBeenCalledTimes(2);
+  styleless();
+});
+
+/** A clock the button's beat is both asked against and drawn by, moved by hand. */
+function beatClock(): void {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
+}
+
+/** Whether the composer's button is drawn as one whose press does nothing. */
+function buttonRests(name: "Stop" | "Send"): boolean {
+  const button = screen.getByRole<HTMLButtonElement>("button", { name });
+  return button.getAttribute("aria-disabled") === "true";
+}
+
+async function beatPassed(ms: number): Promise<void> {
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(ms);
+  });
+}
+
+test("for the beat after a press of Stop the button says it takes no press, whichever it has become, and no longer", async () => {
+  beatClock();
+  const onSend = vi.fn(() => Promise.resolve<ConversationSent>("Sent"));
+  const onStop = vi.fn(() => Promise.resolve());
+  const drawn = (standing: ConversationExchange["standing"]) => (
+    <Conversation
+      exchanges={[exchangeOf({ id: "x3", turn: "turn-3", standing })]}
+      composer={{ ...composerOf({ onSend }), onStop }}
+      empty="No conversation"
+    />
+  );
+  const view = render(drawn({ standing: "Running", state: "Claimed" }));
+  expect(buttonRests("Stop")).toBe(false);
+  fireEvent.click(screen.getByRole("button", { name: "Stop" }));
+  await beatPassed(0);
+  expect(buttonRests("Stop")).toBe(true);
+
+  view.rerender(drawn({ standing: "Stopped" }));
+  expect(buttonRests("Send")).toBe(true);
+  await beatPassed(conversationStopBeatMs - 1);
+  expect(buttonRests("Send")).toBe(true);
+  await beatPassed(1);
+  expect(buttonRests("Send")).toBe(false);
+
+  view.rerender(drawn({ standing: "Running", state: "Queued" }));
+  expect(buttonRests("Stop")).toBe(false);
+  fireEvent.click(screen.getByRole("button", { name: "Stop" }));
+  expect(onStop).toHaveBeenCalledTimes(2);
+  styleless();
+});
+
+test("a stop no door has answered keeps Stop saying it takes no press past the beat, and Send takes one", async () => {
+  beatClock();
+  const onSend = vi.fn(() => Promise.resolve<ConversationSent>("Sent"));
+  const door: { answer: () => void } = { answer: () => undefined };
+  const onStop = vi.fn(
+    () =>
+      new Promise<void>((resolve) => {
+        door.answer = resolve;
+      }),
+  );
+  const drawn = (standing: ConversationExchange["standing"]) => (
+    <Conversation
+      exchanges={[exchangeOf({ id: "x3", turn: "turn-3", standing })]}
+      composer={{ ...composerOf({ onSend }), onStop }}
+      empty="No conversation"
+    />
+  );
+  const view = render(drawn({ standing: "Running", state: "Claimed" }));
+  fireEvent.click(screen.getByRole("button", { name: "Stop" }));
+  await beatPassed(conversationStopBeatMs);
+  expect(buttonRests("Stop")).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "Stop" }));
+  expect(onStop).toHaveBeenCalledTimes(1);
+
+  view.rerender(drawn({ standing: "Stopped" }));
+  expect(buttonRests("Send")).toBe(false);
+  view.rerender(drawn({ standing: "Running", state: "Claimed" }));
+  door.answer();
+  await beatPassed(0);
+  expect(buttonRests("Stop")).toBe(false);
+  styleless();
+});
+
+test("a timer that runs ahead of the clock a press is asked against does not end the beat early", async () => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  const clock = { ms: Math.floor(performance.now()) };
+  vi.spyOn(performance, "now").mockImplementation(() => clock.ms);
+  const onSend = vi.fn(() => Promise.resolve<ConversationSent>("Sent"));
+  const onStop = vi.fn(() => Promise.resolve());
+  render(
+    <Conversation
+      exchanges={[
+        exchangeOf({
+          id: "x3",
+          turn: "turn-3",
+          standing: { standing: "Running", state: "Claimed" },
+        }),
+      ]}
+      composer={{ ...composerOf({ onSend }), onStop }}
+      empty="No conversation"
+    />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Stop" }));
+  clock.ms += conversationStopBeatMs - 1;
+  await beatPassed(conversationStopBeatMs);
+  expect(buttonRests("Stop")).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "Stop" }));
+  expect(onStop).toHaveBeenCalledTimes(1);
+
+  clock.ms += 1;
+  await beatPassed(1);
+  expect(buttonRests("Stop")).toBe(false);
+  styleless();
+});
+
+test("a click that sent begins the beat on the button it leaves under the pointer", async () => {
+  beatClock();
+  const onSend = vi.fn(() => Promise.resolve<ConversationSent>("Sent"));
+  const onStop = vi.fn(() => Promise.resolve());
+  const drawn = (exchanges: readonly ConversationExchange[]) => (
+    <Conversation
+      exchanges={exchanges}
+      composer={{ ...composerOf({ onSend }), onStop }}
+      empty="No conversation"
+    />
+  );
+  const view = render(drawn([answered]));
+  fireEvent.change(screen.getByRole("textbox", { name: "Message" }), {
+    target: { value: "one more thing" },
+  });
+  await beatPassed(0);
+  expect(buttonRests("Send")).toBe(false);
+  fireEvent.click(screen.getByRole("button", { name: "Send" }));
+  await beatPassed(0);
+  expect(onSend).toHaveBeenCalledTimes(1);
+
+  const sent = exchangeOf({
+    id: "x3",
+    turn: "turn-3",
+    standing: { standing: "Running", state: "Queued" },
+  });
+  view.rerender(drawn([answered, sent]));
+  expect(buttonRests("Stop")).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "Stop" }));
+  expect(onStop).not.toHaveBeenCalled();
+  await beatPassed(conversationStopBeatMs);
+  expect(buttonRests("Stop")).toBe(false);
+  fireEvent.click(screen.getByRole("button", { name: "Stop" }));
+  expect(onStop.mock.calls).toStrictEqual([["turn-3"]]);
+  styleless();
+});
+
+test("a press of the button takes no focus, so the caret stays in the box", () => {
+  const onSend = vi.fn(() => Promise.resolve<ConversationSent>("Sent"));
+  const onStop = vi.fn(() => Promise.resolve());
+  const drawn = (standing: ConversationExchange["standing"]) => (
+    <Conversation
+      exchanges={[exchangeOf({ id: "x3", turn: "turn-3", standing })]}
+      composer={{ ...composerOf({ onSend }), onStop }}
+      empty="No conversation"
+    />
+  );
+  const view = render(drawn({ standing: "Running", state: "Claimed" }));
+  const refused = (name: string): boolean =>
+    !fireEvent.mouseDown(screen.getByRole("button", { name }));
+  expect(refused("Stop")).toBe(true);
+  view.rerender(drawn({ standing: "Stopped" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "Message" }), {
+    target: { value: "one more thing" },
+  });
+  expect(refused("Send")).toBe(true);
   styleless();
 });
 
