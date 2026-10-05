@@ -81,8 +81,6 @@
 keto_image="${CHUG_KETO_IMAGE:-oryd/keto:v26.2.0}"
 keto_read_port="${CHUG_KETO_READ_PORT:-54466}"
 keto_write_port="${CHUG_KETO_WRITE_PORT:-54467}"
-keto_process_read_port="${CHUG_KETO_READ_PORT:-24466}"
-keto_process_write_port="${CHUG_KETO_WRITE_PORT:-24467}"
 keto_ready_secs="${CHUG_KETO_READY_SECS:-30}"
 keto_container="chuggy-check-keto"
 keto_model_label="chuggy.keto.model"
@@ -189,10 +187,14 @@ keto_acquire_process() {
 	keto_model="$(git rev-parse --show-toplevel)/.chug/tasks/keto"
 	keto_version="$("$keto_binary" version 2>/dev/null | sed -n 's/^Version:[[:space:]]*//p')"
 	keto_subject="keto${keto_version:+ $keto_version} from PATH"
-	keto_read_url="http://127.0.0.1:$keto_process_read_port/"
-	keto_write_url="http://127.0.0.1:$keto_process_write_port/"
+	# From here on these are the process's own, so that the test, the start,
+	# the wait and every message name one pair of ports.
+	keto_read_port="${CHUG_KETO_READ_PORT:-24466}"
+	keto_write_port="${CHUG_KETO_WRITE_PORT:-24467}"
+	keto_read_url="http://127.0.0.1:$keto_read_port/"
+	keto_write_url="http://127.0.0.1:$keto_write_port/"
 
-	for keto_port in "$keto_process_read_port" "$keto_process_write_port"; do
+	for keto_port in "$keto_read_port" "$keto_write_port"; do
 		if keto_refusal="$(keto_port_free "$keto_port")"; then
 			continue
 		fi
@@ -204,7 +206,7 @@ keto_acquire_process() {
 			keto_remedy="One end of a connection holds a port so while it is open and for a while after; run again then"
 		fi
 		echo "$keto_prefix: LINTER ERROR — $keto_refusal"
-		echo "$keto_prefix:                No CHUG_KETO_READ_URL and no docker, so $keto_binary would be started on ports $keto_process_read_port and $keto_process_write_port."
+		echo "$keto_prefix:                No CHUG_KETO_READ_URL and no docker, so $keto_binary would be started on ports $keto_read_port and $keto_write_port."
 		echo "$keto_prefix:                $keto_remedy, or set CHUG_KETO_READ_PORT and CHUG_KETO_WRITE_PORT."
 		exit 2
 	done
@@ -215,14 +217,14 @@ keto_acquire_process() {
 	fi
 	env -i \
 		NAMESPACES_LOCATION="$(node -p 'require("node:url").pathToFileURL(process.argv[1]).href' "$keto_model/namespaces.ts")" \
-		SERVE_READ_HOST=127.0.0.1 SERVE_READ_PORT="$keto_process_read_port" \
-		SERVE_WRITE_HOST=127.0.0.1 SERVE_WRITE_PORT="$keto_process_write_port" \
+		SERVE_READ_HOST=127.0.0.1 SERVE_READ_PORT="$keto_read_port" \
+		SERVE_WRITE_HOST=127.0.0.1 SERVE_WRITE_PORT="$keto_write_port" \
 		SERVE_METRICS_HOST=127.0.0.1 SERVE_METRICS_PORT=0 \
 		SERVE_OPL_HOST=127.0.0.1 SERVE_OPL_PORT=0 \
 		"$keto_binary" serve --sqa-opt-out -c "$keto_model/keto.yml" \
 		>"$keto_log" 2>&1 </dev/null &
 	keto_pid=$!
-	echo "$keto_prefix: started $keto_subject on ports $keto_process_read_port and $keto_process_write_port"
+	echo "$keto_prefix: started $keto_subject on ports $keto_read_port and $keto_write_port"
 
 	if ! keto_wait "$keto_read_url"; then
 		echo "$keto_prefix: LINTER ERROR — $keto_subject did not answer ready with both namespaces within ${keto_ready_secs}s"

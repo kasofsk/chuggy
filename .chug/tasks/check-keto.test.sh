@@ -297,6 +297,27 @@ SH
 	KETO_PORT="$(free_port)"
 }
 
+# The node beside that keto, recording what the gate asked with it: the operands
+# after each inline script, one question to a line. What the gate tests before
+# a start and waits on after it is then read where it is asked, and not off the
+# line the gate prints about it.
+node_recording() {
+	KETO_ASKED="$KETO_BIN/asked"
+	: >"$KETO_ASKED"
+	rm -f "$KETO_BIN/node"
+	cat >"$KETO_BIN/node" <<SH
+#!/bin/sh
+if [ "\$1" = -e ]; then
+	script="\$2"
+	shift 2
+	printf '%s\n' "\$*" >>"$KETO_ASKED"
+	set -- -e "\$script" "\$@"
+fi
+exec "$NODE_DIR/node" "\$@"
+SH
+	chmod +x "$KETO_BIN/node"
+}
+
 # The gate with that keto on its PATH and no docker, on a port nothing holds
 # unless the case has put something there.
 run_gate_over_binary() { # [env=value...]
@@ -594,24 +615,44 @@ check "a keto without its read API is stopped" 0 0 "the keto was stopped"
 
 # --- A keto started for a run has ports no outgoing connection is given ------
 #
-# No port is named, so the gate names the process's own, and the case reads
-# them off whichever line it prints: the start, or the refusal of a port that
-# something on this box holds. The keto is one that stops without listening, so
-# two checkouts running this suite at once do not meet on those ports.
+# No port is named, so the ports are the process's own, and each is read where
+# it is used: what the keto was told, what the gate asked before the start and
+# after it, and what it printed. The keto is one that stops without listening,
+# so two checkouts running this suite at once meet on those ports only for the
+# instant the gate's own test takes, and a run refused in that instant is run
+# again.
 
 fixture
 passing_suite "$R/test/keto/one.test.ts"
 git -C "$R" add -A
 keto_binary_double
-run_gate_over_binary CHUG_KETO_READ_PORT= CHUG_KETO_WRITE_PORT= CHUG_KETO_READY_SECS=0
+node_recording
+attempts=0
+while :; do
+	: >"$KETO_STARTED"
+	: >"$KETO_ASKED"
+	run_gate_over_binary CHUG_KETO_READ_PORT= CHUG_KETO_WRITE_PORT= CHUG_KETO_READY_SECS=0
+	attempts=$((attempts + 1))
+	if grep -q "pid " "$KETO_STARTED" || [ "$attempts" -ge 10 ]; then
+		break
+	fi
+	sleep 1
+done
 PROCESS_PORTS="$(sed -n 's/.* on ports \([0-9]*\) and \([0-9]*\).*/\1 \2/p' "$OUT" | head -1)"
+READ_PORT="${PROCESS_PORTS% *}"
+WRITE_PORT="${PROCESS_PORTS#* }"
 OUT="$WORK/.ports"
 {
-	echo "the read port is $(port_place "${PROCESS_PORTS% *}"): ${PROCESS_PORTS% *}"
-	echo "the write port is $(port_place "${PROCESS_PORTS#* }"): ${PROCESS_PORTS#* }"
+	echo "the read port is $(port_place "$READ_PORT"): $READ_PORT"
+	echo "the write port is $(port_place "$WRITE_PORT"): $WRITE_PORT"
+	echo "told $(sed -n 's/^read 127\.0\.0\.1://p' "$KETO_STARTED") and $(sed -n 's/^write 127\.0\.0\.1://p' "$KETO_STARTED")."
+	echo "asked $(sort -u "$KETO_ASKED" | tr '\n' ';')"
 } >"$OUT"
 check "a keto's read port is one no outgoing connection is given" 2 "$RC" "the read port is its own"
 check "a keto's write port is one no outgoing connection is given" 2 "$RC" "the write port is its own"
+check "the keto is told the two ports the gate names" 2 "$RC" "told $READ_PORT and $WRITE_PORT."
+check "the gate tests those two ports, waits on the read one and asks about no other" 2 "$RC" \
+	"asked $READ_PORT;$WRITE_PORT;http://127.0.0.1:$READ_PORT/ Project Tenant;"
 
 # --- A port something already listens on is a could-not-run ------------------
 #
@@ -670,6 +711,30 @@ port_end stopped
 run_gate_over_binary
 port_end_stop
 check "a keto is started on the port of a listener stopped a moment ago" 0 "$RC" \
+	"started keto v0.0.0-fixture from PATH on ports $KETO_PORT and $KETO_PORT"
+
+# --- A listener on another address of the box does not hold the port ---------
+#
+# The keto binds loopback and nothing else, so that is all the test asks about:
+# one that asked every address would refuse a port the keto can have.
+
+fixture
+passing_suite "$R/test/keto/one.test.ts"
+git -C "$R" add -A
+keto_binary_double Project Tenant
+rm -f "$KETO_PORT_FILE"
+node -e '
+const fs = require("node:fs");
+const [portFile, port] = process.argv.slice(1);
+const server = require("node:net").createServer((socket) => socket.destroy());
+server.listen(Number(port), "127.0.0.2", () => fs.writeFileSync(portFile, port));
+' "$KETO_PORT_FILE" "$KETO_PORT" &
+ELSEWHERE=$!
+port_written "listener on another address"
+run_gate_over_binary
+kill "$ELSEWHERE" 2>/dev/null || true
+wait "$ELSEWHERE" 2>/dev/null || true
+check "a keto is started on a port something listens on at another address" 0 "$RC" \
 	"started keto v0.0.0-fixture from PATH on ports $KETO_PORT and $KETO_PORT"
 
 # --- Where docker is present the container is what is used -------------------
