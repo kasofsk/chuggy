@@ -97,7 +97,12 @@ export const briefTitleSchema = z.string().min(1).max(briefTitleCharsMax);
  * at the width it draws at. The server decides the rest, which is that it says
  * something and that every character of it prints.
  */
-export const briefIntentSchema = z.string().min(1).max(briefIntentCharsMax);
+export const briefIntentSchema = z
+  .string()
+  .min(1, { error: "the statement is empty, so say what the ticket is for" })
+  .max(briefIntentCharsMax, {
+    error: `the statement is longer than the ${String(briefIntentCharsMax)} characters an intent holds`,
+  });
 
 /**
  * How and where a finalization lands the work, as one variant per mode: a push

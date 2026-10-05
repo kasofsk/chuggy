@@ -1390,10 +1390,13 @@ test("a draft refused for its intent is told the field and what to change", asyn
   const calls: string[] = [];
   await using app = appOf(calls);
   const refused: readonly (readonly [string, RegExp])[] = [
-    ["", /^brief\.intent: /mu],
+    ["", /^brief\.intent: the statement is empty, so say what/mu],
     [
       "x".repeat(briefIntentCharsMax + 1),
-      new RegExp(`^brief\\.intent: .*${String(briefIntentCharsMax)}`, "mu"),
+      new RegExp(
+        `^brief\\.intent: the statement is longer than the ${String(briefIntentCharsMax)} `,
+        "mu",
+      ),
     ],
     ["  \n  ", /intent: the statement is blank/u],
     ["Tab\tseparated", /intent: .*does not print/u],
