@@ -29,6 +29,7 @@ import type {
   ConversationExchange,
   ConversationItem,
   ConversationMarker,
+  ConversationStep,
   ConversationTurn,
 } from "../app/core/conversation.ts";
 
@@ -881,5 +882,100 @@ describe("a turn a page watched stop", () => {
     expect(watchedAnswers([watchedStopped("More")], after)).toStrictEqual([
       "More",
     ]);
+  });
+});
+
+const callHeard: ConversationStep = {
+  step: "ToolCall",
+  id: "",
+  name: "Bash",
+  input: undefined,
+};
+
+function callStored(id: string, name = "Bash"): ConversationStep {
+  return {
+    step: "ToolCall",
+    id,
+    name,
+    input: { command: id },
+    result: { text: "done", isError: false },
+  };
+}
+
+function callsDrawn(
+  standing: ConversationExchange["standing"],
+  work: readonly ConversationStep[],
+  answer = "Half",
+): readonly ConversationExchange[] {
+  return [{ id: "e", turn: "t", work, answer, standing, before: [] }];
+}
+
+/** What a page that watched the turn stop over `work` reads of `later`. */
+function callsStood(
+  work: readonly ConversationStep[],
+  later: readonly ConversationStep[],
+  joined: readonly string[] = [],
+): readonly ConversationStep[] | undefined {
+  const out = conversationWatchedWith(
+    conversationWatchedNothing,
+    callsDrawn({ standing: "Running", state: "Claimed" }, work),
+    true,
+  );
+  const stood = conversationWatchedWith(
+    out,
+    callsDrawn({ standing: "Stopped" }, work),
+    true,
+    joined,
+  );
+  const [read] = conversationExchangesStood(
+    callsDrawn({ standing: "Stopped" }, later, "Half of it"),
+    stood,
+  );
+  expect(read?.answer).toBe("Half");
+  return read?.work;
+}
+
+describe("a call that stood on a page that watched its turn stop", () => {
+  test("takes what the record holds of the call at its place, where it was heard by name alone, and no step that did not stand", () => {
+    expect(
+      callsStood(
+        [callHeard],
+        [
+          callStored("toolu_1"),
+          { step: "Text", text: "Half of it" },
+          callStored("toolu_2"),
+        ],
+      ),
+    ).toStrictEqual([callStored("toolu_1")]);
+  });
+
+  test("takes what the record holds of the call of its id, where the record held it already", () => {
+    const begun: ConversationStep = {
+      step: "ToolCall",
+      id: "toolu_2",
+      name: "Bash",
+      input: { command: "toolu_2" },
+    };
+    expect(
+      callsStood([begun], [callStored("toolu_1"), callStored("toolu_2")]),
+    ).toStrictEqual([callStored("toolu_2")]);
+  });
+
+  test("stays as it was heard where the call at its place bears another name, or is itself only heard", () => {
+    expect(
+      callsStood([callHeard], [callStored("toolu_1", "Read")]),
+    ).toStrictEqual([callHeard]);
+    expect(callsStood([callHeard], [{ ...callHeard }])).toStrictEqual([
+      callHeard,
+    ]);
+  });
+
+  test("stays as it was heard on a page that joined its turn part way, which cannot place it", () => {
+    expect(
+      callsStood([callHeard], [callStored("toolu_1")], ["t"]),
+    ).toStrictEqual([callHeard]);
+    expect(
+      callsStood([callHeard], [callStored("toolu_1")], ["another"]),
+    ).toStrictEqual([callStored("toolu_1")]);
   });
 });

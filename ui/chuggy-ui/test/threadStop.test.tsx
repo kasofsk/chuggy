@@ -22,10 +22,16 @@ import {
   interruptionToolSentence,
 } from "./interruptionFixture.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
-import { settled } from "./screenHarness.tsx";
+import { answer, settled } from "./screenHarness.tsx";
 import { elementScrollToStubbed } from "./scrolling.ts";
+import { streamServer } from "./streamDouble.ts";
 import { styleless } from "./styleless.ts";
-import { threadBody, threadMineSession } from "./threadFixture.ts";
+import { threadConversationMounted } from "./threadConversationMount.tsx";
+import {
+  threadBody,
+  threadMineSession,
+  threadStorePage,
+} from "./threadFixture.ts";
 import {
   stageAlarms,
   stageAnswered,
@@ -35,12 +41,14 @@ import {
   stageButton,
   stageColumn,
   stageColumnIs,
+  stageDoor,
   stageHeard,
   stageHeardBlock,
   stageInterrupted,
   stageLine,
   stageLiveOpening,
   stageMounted,
+  stageProjectOpening,
   stageSent,
   stageStopped,
   stageTurn,
@@ -49,7 +57,7 @@ import {
   stageFirstStored as earlier,
   stageFirstTurn as before,
 } from "./threadStopStage.tsx";
-import type { Stage, StageEntry } from "./threadStopStage.tsx";
+import type { Stage, StageDoors, StageEntry } from "./threadStopStage.tsx";
 
 beforeEach(() => {
   resizeObserverStubbed();
@@ -370,6 +378,207 @@ test.each(["pressed", "watched"] as const)(
     expect(stageColumn(stage.container)).toStrictEqual(stopped);
   },
 );
+
+test("a text stopped part way that the store then holds whole, with a call after it, is drawn once and as it stood", async () => {
+  const stage = await turnOut("Claimed");
+  await textHeard(stage);
+  await stageStopped();
+  await stageAnswered(stage.stops[0], { stopped: "Stopped" });
+
+  await flushed(
+    stage,
+    [
+      stageAsked("u-c", asked),
+      stageWrote("u-d", "msg_a", longer),
+      callStored("u-e", "msg_a", "toolu_1", "sleep 60"),
+      stageLine("u-f", "user", interruptionResult("toolu_1")),
+      stageInterrupted("u-g", interruptionToolSentence),
+    ],
+    "Stopped",
+  );
+  expect(stageColumn(stage.container)).toStrictEqual([
+    ...opened,
+    `> ${asked}`,
+    `${heard} (Stopped)`,
+  ]);
+});
+
+test("a page nobody is looking at when the mailbox says Stopped holds nothing of the turn, and draws what its store comes to hold", async () => {
+  const stage = await turnOut("Claimed");
+  await textHeard(stage);
+  Object.defineProperty(document, "visibilityState", {
+    configurable: true,
+    get: () => "hidden",
+  });
+  try {
+    stage.draw(threadAt("Stopped"));
+    await settled();
+  } finally {
+    Reflect.deleteProperty(document, "visibilityState");
+  }
+  expect(document.visibilityState).toBe("visible");
+  expect(stageColumn(stage.container).at(-1)).toBe(`${heard} (Stopped)`);
+
+  await flushed(stage, storedAs(longer), "Stopped");
+  expect(stageColumn(stage.container).at(-1)).toBe(`${longer} (Stopped)`);
+});
+
+/** A call of Bash as the store holds its beginning. */
+function callStored(
+  entry: string,
+  message: string,
+  call: string,
+  command: string,
+): StageEntry {
+  return stageBlock(entry, message, {
+    type: "tool_use",
+    id: call,
+    name: "Bash",
+    input: { command },
+  });
+}
+
+test("a call heard by name alone on a page that joined its turn part way stays bare, which cannot say which of the turn's calls it is", async () => {
+  const stage = await turnOut("Claimed", [
+    stageLiveOpening({
+      turn: "turn-2",
+      message: "msg_b",
+      blocks: [
+        { index: 0, kind: "ToolUse", name: "Bash", text: "", gapped: false },
+      ],
+    }),
+  ]);
+  const stopped = [...opened, `> ${asked}`, "[1 tool] (Stopped)"];
+  await stageColumnIs(stage.container, stopped.with(-1, "[Bash]"));
+  await stageStopped();
+  await stageAnswered(stage.stops[0], { stopped: "Stopped" });
+
+  await flushed(
+    stage,
+    [
+      stageAsked("u-c", asked),
+      callStored("u-d", "msg_a", "toolu_0", "gh issue view 39"),
+      stageLine("u-e", "user", interruptionResult("toolu_0", "39 CLOSED")),
+      callStored("u-f", "msg_b", "toolu_1", "sleep 60"),
+      stageLine("u-g", "user", interruptionResult("toolu_1")),
+      stageInterrupted("u-h", interruptionToolSentence),
+    ],
+    "Stopped",
+  );
+  expect(stageColumn(stage.container)).toStrictEqual(stopped);
+  expect(callsOpened(stage.container)).toHaveLength(1);
+  const said = stage.container.textContent;
+  expect(said).not.toContain("gh issue view 39");
+  expect(said).not.toContain("sleep 60");
+});
+
+/** A page opened on the thread while its second turn is out, whose read of
+ * the store is answered only once `read` is called. */
+function turnOutReading(store: readonly (readonly StageEntry[])[]): {
+  readonly stage: Stage;
+  readonly read: () => void;
+} {
+  const doors: StageDoors = { batches: [...store], sends: [], stops: [] };
+  let read = (): void => undefined;
+  const gate = new Promise<void>((resolve) => {
+    read = resolve;
+  });
+  vi.stubGlobal(
+    "fetch",
+    stageDoor(doors, (url) =>
+      url.pathname.endsWith("/transcript")
+        ? gate.then(() =>
+            answer(
+              threadStorePage(
+                doors.batches,
+                Number(url.searchParams.get("after")),
+              ),
+            ),
+          )
+        : undefined,
+    ),
+  );
+  const server = streamServer([stageProjectOpening], "token", [
+    stageLiveOpening(),
+  ]);
+  const mounted = threadConversationMounted(
+    threadAt("Claimed", doors.batches.length),
+    server,
+  );
+  return { stage: { ...doors, server, ...mounted }, read };
+}
+
+test("a page still reading the thread when the turn stops holds nothing of it, and draws what a page opened afterwards draws", async () => {
+  const first = [
+    stageAsked("u-c", asked),
+    stageWrote("u-d", "msg_a", "First,"),
+  ];
+  const rest = [
+    stageWrote("u-e", "msg_b", "second, 41 waits."),
+    stageInterrupted("u-f"),
+  ];
+  const afresh = stageMounted(threadAt("Stopped", 3), [earlier, first, rest]);
+  await settled();
+  const stored = stageColumn(afresh.container);
+  expect(stored.at(-1)).toContain("First,");
+  cleanup();
+
+  const { stage, read } = turnOutReading([earlier, first]);
+  await settled();
+  stageHeardBlock(stage, "turn-2", {
+    message: "msg_b",
+    index: 0,
+    kind: "Text",
+    text: "second,",
+  });
+  await settled();
+  stage.draw(threadAt("Stopped", 2));
+  await settled();
+  stage.batches.push(rest);
+  read();
+  await settled();
+  stage.draw(threadAt("Stopped", 3));
+  await stageColumnIs(stage.container, stored);
+});
+
+test("a call that stood takes what the store holds of it, its command and its output, and no word the page had not drawn", async () => {
+  const stage = await turnOut("Claimed");
+  stageHeardBlock(stage, "turn-2", {
+    message: "msg_a",
+    index: 0,
+    kind: "ToolUse",
+    name: "Bash",
+  });
+  await stageColumnIs(stage.container, [...opened, `> ${asked}`, "[Bash]"]);
+  stageHeardBlock(stage, "turn-2", {
+    message: "msg_b",
+    index: 0,
+    kind: "Text",
+    text: heard,
+  });
+  const stopped = [...opened, `> ${asked}`, `[1 tool] ${heard} (Stopped)`];
+  await stageColumnIs(stage.container, stopped.with(-1, `[1 tool] ${heard}`));
+  await stageStopped();
+  await stageAnswered(stage.stops[0], { stopped: "Stopped" });
+  expect(stageColumn(stage.container)).toStrictEqual(stopped);
+
+  await flushed(
+    stage,
+    [
+      ...cutOffCall("40 OPEN review-pending"),
+      stageWrote("u-f", "msg_b", longer),
+      stageInterrupted("u-g"),
+    ],
+    "Stopped",
+  );
+  expect(stageColumn(stage.container)).toStrictEqual(stopped);
+  expect(callsOpened(stage.container)).toHaveLength(1);
+  fireEvent.click(screen.getByRole("button", { name: /^Bash/u }));
+  const said = stage.container.textContent;
+  expect(said).toContain("sleep 60");
+  expect(said).toContain("40 OPEN review-pending");
+  expect(said).not.toContain("waiting on a review.");
+});
 
 test("a page opened after the stop draws what was stored of the turn, which the page that pressed did not", async () => {
   const stage = await turnOut("Claimed");

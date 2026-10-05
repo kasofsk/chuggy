@@ -1716,6 +1716,9 @@ export function conversationExchangesStopped(
 interface ConversationStood {
   readonly work: readonly ConversationStep[];
   readonly answer: string | undefined;
+  /** Whether the page heard the turn from its beginning, which is what places
+   * a call it knows by name alone among the calls the record holds. */
+  readonly whole: boolean;
 }
 
 /** What a page holds of the turns it watched stop. */
@@ -1733,14 +1736,16 @@ export const conversationWatchedNothing: ConversationWatched = {
 
 /**
  * What a page has watched once it draws these exchanges: a turn it drew out
- * and now draws stopped is held as it stands, where the page is one somebody
- * is `looking` at, for as long as it is drawn stopped. What was watched is
- * handed back itself where nothing changed.
+ * and now draws stopped is held as it stands, where the page had `shown` it
+ * to somebody, for as long as it is drawn stopped. `joined` names the turns
+ * the page began hearing part way through, and what was watched is handed back
+ * itself where nothing changed.
  */
 export function conversationWatchedWith(
   watched: ConversationWatched,
   exchanges: readonly ConversationExchange[],
-  looking: boolean,
+  shown: boolean,
+  joined: readonly string[] = [],
 ): ConversationWatched {
   const out = new Set<string>();
   const stood = new Map<string, ConversationStood>();
@@ -1750,8 +1755,8 @@ export function conversationWatchedWith(
     if (standing.standing !== "Stopped") continue;
     const before = watched.stood.get(turn);
     if (before !== undefined) stood.set(turn, before);
-    else if (looking && watched.out.has(turn))
-      stood.set(turn, { work, answer });
+    else if (shown && watched.out.has(turn))
+      stood.set(turn, { work, answer, whole: !joined.includes(turn) });
   }
   const same =
     out.size === watched.out.size &&
@@ -1766,6 +1771,35 @@ const conversationStoodMade = new WeakMap<
   { readonly stood: ConversationStood; readonly made: ConversationExchange }
 >();
 
+/**
+ * The work that stood, each call of it as the record has come to hold that
+ * call: the one of its id, or, for a call heard by name alone on a page that
+ * heard the turn whole, the one at its place among the turn's calls where
+ * that bears its name. No step that did not stand is added.
+ */
+function conversationWorkStood(
+  stood: ConversationStood,
+  work: readonly ConversationStep[],
+): readonly ConversationStep[] {
+  const calls = work.flatMap((step) =>
+    step.step === "ToolCall" ? [step] : [],
+  );
+  let place = -1;
+  let detailed = false;
+  const read = stood.work.map((step) => {
+    if (step.step !== "ToolCall") return step;
+    place += 1;
+    const placed = stood.whole ? calls[place] : undefined;
+    const own =
+      step.id === "" ? placed : calls.find((call) => call.id === step.id);
+    if (own === undefined || own === step) return step;
+    if (own.id === "" || own.name !== step.name) return step;
+    detailed = true;
+    return own;
+  });
+  return detailed ? read : stood.work;
+}
+
 function conversationExchangeStood(
   exchange: ConversationExchange,
   stood: ConversationStood,
@@ -1774,7 +1808,10 @@ function conversationExchangeStood(
     return exchange;
   const before = conversationStoodMade.get(exchange);
   if (before?.stood === stood) return before.made;
-  const made: ConversationExchangeSaying = { ...exchange, work: stood.work };
+  const made: ConversationExchangeSaying = {
+    ...exchange,
+    work: conversationWorkStood(stood, exchange.work),
+  };
   if (stood.answer === undefined) delete made.answer;
   else made.answer = stood.answer;
   conversationStoodMade.set(exchange, { stood, made });
@@ -1784,8 +1821,9 @@ function conversationExchangeStood(
 /**
  * The exchanges as a page that watched some of their turns stop draws them:
  * each such turn says what it said when the page first drew it stopped,
- * whatever its record or the stream has brought since. The list is handed
- * back itself where no exchange differs.
+ * whatever its record or the stream has brought since but for what the record
+ * holds of a call that stood. The list is handed back itself where no exchange
+ * differs.
  */
 export function conversationExchangesStood(
   exchanges: readonly ConversationExchange[],
