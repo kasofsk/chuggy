@@ -5,7 +5,10 @@ import { test } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 
 import type { HttpErrorEnvelope } from "../../src/contract/http.ts";
-import { briefLineCharsMax } from "../../src/contract/brief.ts";
+import {
+  briefIntentCharsMax,
+  briefLineCharsMax,
+} from "../../src/contract/brief.ts";
 import {
   createNativeHttpApp,
   type NativeHttpLimits,
@@ -1357,30 +1360,54 @@ test("authoring and dispatch routes remain thin NativeWeb adapters", async () =>
   ]);
 });
 
-test("a draft refused for an over-long intent line is told the field and the rule", async () => {
-  const calls: string[] = [];
-  await using app = appOf(calls);
-  const refused = await app.inject({
-    method: "POST",
+/** A draft creation carrying `intent`, as a member's console or a session's tool sends it. */
+function draftCreationOf(intent: string) {
+  return {
+    method: "POST" as const,
     url: "/api/v1/tenants/tenant/projects/project/drafts",
     headers: {
       authorization: "Bearer valid",
       "content-type": "application/vnd.chuggy.v1+json",
     },
-    body: {
-      ...publicDraftCreation,
-      brief: { ...publicBrief, intent: "x".repeat(briefLineCharsMax + 1) },
-    },
-  });
+    body: { ...publicDraftCreation, brief: { ...publicBrief, intent } },
+  };
+}
 
-  assert.equal(refused.statusCode, 400);
-  const envelope = refused.json<HttpErrorEnvelope>();
-  assert.equal(envelope.error.code, "InvalidRequest");
-  assert.match(envelope.error.message, /^brief\.intent: /mu);
-  assert.match(
-    envelope.error.message,
-    new RegExp(String(briefLineCharsMax), "u"),
-  );
+test("a draft whose intent is one long line, or many lines, is admitted and reaches the store", async () => {
+  const calls: string[] = [];
+  await using app = appOf(calls);
+  const paragraph = "word ".repeat(briefLineCharsMax).trimEnd();
+  const lines = Array.from({ length: briefLineCharsMax }, () => "a line");
+  assert.ok(paragraph.length > briefLineCharsMax);
+  for (const intent of [paragraph, lines.join("\n")]) {
+    const admitted = await app.inject(draftCreationOf(intent));
+    assert.notEqual(admitted.statusCode, 400);
+  }
+  assert.deepEqual(calls, ["createDraft", "createDraft"]);
+});
+
+test("a draft refused for its intent is told the field and what to change", async () => {
+  const calls: string[] = [];
+  await using app = appOf(calls);
+  const refused: readonly (readonly [string, RegExp])[] = [
+    ["", /^brief\.intent: the statement is empty, so say what/mu],
+    [
+      "x".repeat(briefIntentCharsMax + 1),
+      new RegExp(
+        `^brief\\.intent: the statement is longer than the ${String(briefIntentCharsMax)} `,
+        "mu",
+      ),
+    ],
+    ["  \n  ", /intent: the statement is blank/u],
+    ["Tab\tseparated", /intent: .*does not print/u],
+  ];
+  for (const [intent, saying] of refused) {
+    const answered = await app.inject(draftCreationOf(intent));
+    assert.equal(answered.statusCode, 400);
+    const envelope = answered.json<HttpErrorEnvelope>();
+    assert.equal(envelope.error.code, "InvalidRequest");
+    assert.match(envelope.error.message, saying);
+  }
   assert.deepEqual(calls, []);
 });
 

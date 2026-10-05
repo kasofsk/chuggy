@@ -7,12 +7,6 @@
  * assembled body is handed to the wire's own `draftCreationSchema` rather than
  * measured against a second spelling of its bounds, which is why a fault names
  * the field it belongs to instead of restating a limit.
- *
- * THE LINE COUNT IS THE ONE BOUND THE WIRE'S PARSER DOES NOT CARRY. A brief is
- * stored as the lines a briefing prints, and that count is bounded where it is
- * stored; `test/ui/ticketBriefLines.test.ts` holds the counter below against
- * the one the interpreter stores by, the arrangement `no-console-sees-another`
- * names for a rule two trees both need.
  */
 
 import {
@@ -20,7 +14,6 @@ import {
   briefBranchPrefix,
   briefChecksMax,
   briefIntentCharsMax,
-  briefIntentLinesMax,
   briefLandingIsWhole,
   briefLineCharsMax,
   briefLinkScheme,
@@ -224,16 +217,9 @@ export function creationRepositoryChosen(
   };
 }
 
-/** A browser's newline, as the one newline this tree bounds an intent by. */
+/** A browser's newline, as the one newline this tree stores an intent under. */
 function creationIntentNormalized(intent: string): string {
   return intent.replaceAll("\r\n", "\n").replaceAll("\r", "\n");
-}
-
-/** The lines an intent renders as: a line with nothing on it prints nothing. */
-export function creationIntentLines(intent: string): readonly string[] {
-  return creationIntentNormalized(intent)
-    .split("\n")
-    .filter((line) => line.trim().length > 0);
 }
 
 /**
@@ -317,7 +303,7 @@ export function creationFaultSentence(field: CreationField): string {
     case "title":
       return `name this ticket in one line of at most ${String(briefTitleCharsMax)} characters`;
     case "intent":
-      return `state what this ticket is for on at least one line, at most ${String(briefLineCharsMax)} characters a line — break the sentence across lines rather than shorten it — and at most ${String(briefIntentLinesMax)} printed lines and ${String(briefIntentCharsMax)} characters in all`;
+      return `state what this ticket is for, in at most ${String(briefIntentCharsMax)} characters`;
     case "links":
       return `each link is an ${briefLinkScheme} URL of at most ${String(briefLineCharsMax)} characters, and one ticket carries at most ${String(briefLinksMax)}`;
     case "checks":
@@ -431,8 +417,6 @@ function creationStatedFaults(
   repositories: readonly ProjectRepositoryResponse[],
 ): readonly CreationFault[] {
   const stated: CreationFault[] = [];
-  if (creationIntentLines(form.intent).length > briefIntentLinesMax)
-    stated.push({ field: "intent", reason: creationFaultSentence("intent") });
   if (creationRepositoryRequired(repositories) && form.repository.trim() === "")
     stated.push({
       field: "repository",

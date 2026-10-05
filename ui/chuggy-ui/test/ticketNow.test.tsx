@@ -188,6 +188,53 @@ test("a stage with no transcript says it is running and offers nothing to open",
   expect(transcriptReads(drawn.reads)).toEqual([]);
 });
 
+function stillRunning(batch: number): string {
+  return JSON.stringify({
+    type: "tool_progress",
+    tool_name: "Bash",
+    elapsed_time_seconds: batch * 30,
+  });
+}
+
+/**
+ * A card opened while the run waits on a long command. The run has written
+ * nothing since but that the command is still running, a batch at a time, so
+ * the newest batches the card reads draw nothing, and what the run last said
+ * and the call it is waiting on are beneath them.
+ */
+test("a card opened while a long command runs reads back to what the run last said", async () => {
+  const page = (from: number, said: boolean): Record<string, unknown> =>
+    runTranscriptPage(
+      Array.from({ length: 8 }, (_, at) => from + at),
+      false,
+      said ? (batch) => String(recorded[batch - 8]) : stillRunning,
+    );
+  const drawn = await runPageDrawn(
+    atlas,
+    runningRun(runEvidenceOf(40, { configuration: runConfigurationRef }), {
+      transcripts: [
+        page(25, false),
+        page(33, false),
+        page(17, false),
+        page(9, true),
+      ],
+    }),
+  );
+  expect(transcriptReads(drawn.reads)).toEqual([
+    "?after=24",
+    "?after=32",
+    "?after=16",
+    "?after=8",
+  ]);
+  const card = nowCard();
+  expect(card.querySelector(".ticket-now-line")?.textContent).toBe(
+    "Sixth note",
+  );
+  expect(
+    card.querySelector(".ticket-now-call .ticket-now-call-name")?.textContent,
+  ).toBe("Read");
+});
+
 /** A long run opens on its newest batches, and a reader who wants the ones
  * under them asks for a page at a time from the top. */
 test("a long run opens on its newest batches and reads earlier ones on asking", async () => {

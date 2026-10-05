@@ -183,6 +183,12 @@ test("the title is on the card whole and unclipped, links, and leads the ticket 
   expect(screen.queryByRole("tooltip")).toBeNull();
 });
 
+test("the card's title is broken where it has no break of its own, the title being drawn whole", async () => {
+  await drawTable();
+  const drawn = screen.getByText(title).closest(".overview-card-title");
+  expect(drawn?.className.split(" ")).toContain("wrap-anywhere");
+});
+
 test("a row's phase, execution, runs-on and activity annotations are all on the one card its title heads", async () => {
   await drawTable();
   expect(document.querySelectorAll("table").length).toBe(0);
