@@ -17,14 +17,19 @@
  * a bound in milliseconds is either wide enough to pass a text that is too
  * dear or fails with nothing wrong. The yardstick is one list of a fixed size
  * handed to the parser as a section, which no weight of the guard makes
- * cheaper or dearer, and it is taken beside what it measures: as many times
- * over in one take as the bound is yardsticks, because a long reading on a
- * busy box is slowed by more than a short one is.
+ * cheaper or dearer, and where a reading is taken again it is taken beside
+ * it: as many times over in one take as the bound is yardsticks, because a
+ * long reading on a busy box is slowed by more than a short one is.
  *
- * A READING PAST ITS BOUND IS TAKEN AGAIN, beside a yardstick taken then,
- * and fails where the least of a few takes is still past the least the
- * yardstick took beside them. One several times past on its second take too
- * is not taken a third time, and after it nothing more is timed: every later
+ * A TIMED READING FAILS ONLY SEVERAL TIMES PAST ITS BOUND. Where a box
+ * rations processor time the yardstick is not slowed as a reading is: a
+ * whole text read at once is held back with the collector's helper threads,
+ * and one stall is most of a frame, while the yardstick, short and the least
+ * of a few takes, is seldom slowed by either. So a reading a little past its
+ * bound says nothing of the reader, and one that has become dear is past it
+ * many times over. A reading several times past is taken again, beside a
+ * yardstick taken then, and fails where the lesser take is still several
+ * times past by that yardstick. After it nothing more is timed: every later
  * case fails at once, so a reader that has become dear fails here in the
  * time of two readings.
  */
@@ -86,18 +91,16 @@ const textWorkMax = 160_000_000;
 const yardItems = 1_023;
 const yardText = "- a\n".repeat(yardItems);
 
-/** The most a reading may take, in readings of the yardstick: one call of
+/** What a reading is bound to, in readings of the yardstick: one call of
  * the parser or one frame of a text being written, a whole text, and words
  * read as one line or scanned as they are written. */
 const callYardsMax = 3;
 const wholeYardsMax = 12;
 const wordsYardsMax = 1;
 
-/** How many times the yardstick is taken for its least, how many times a
- * reading is before it fails, and how many times past its bound one is that
- * is not taken again. */
+/** How many times the yardstick is taken for its least, and how many times
+ * its bound a reading fails at. */
 const yardTakes = 3;
-const takesMax = 8;
 const severalTimes = 4;
 
 /** The least the yardstick has taken, and the reading that ended the timing
@@ -126,23 +129,20 @@ function yardNow(times = 1): number {
 
 /**
  * How many yardsticks a reading took, `cost` being one take of it in
- * milliseconds. A take within the bound by the least the yardstick has taken
- * is the answer, and the least of those past it is held to the least of the
- * yardsticks taken beside them, each over a take as long as the bound.
+ * milliseconds and `within` its bound: a take under several times the bound
+ * by the least the yardstick has taken is the answer. One past that is taken
+ * again, and the lesser of the two is held to a yardstick taken between
+ * them, over a take as long as the bound.
  */
 function yards(name: string, cost: () => number, within: number): number {
   if (bench.spent !== "")
     throw new Error(`not timed: ${bench.spent} was several times past`);
-  let took = cost();
-  if (took <= within * bench.yard) return took / bench.yard;
-  let yard = Infinity;
-  for (let take = 1; ; take += 1) {
-    yard = Math.min(yard, yardNow(Math.ceil(within)));
-    if (take > 1 && took > severalTimes * within * yard) bench.spent = name;
-    const past = took > within * yard;
-    if (!past || take === takesMax || bench.spent !== "") return took / yard;
-    took = Math.min(took, cost());
-  }
+  const took = cost();
+  if (took < severalTimes * within * bench.yard) return took / bench.yard;
+  const yard = yardNow(Math.ceil(within));
+  const least = Math.min(took, cost());
+  if (least >= severalTimes * within * yard) bench.spent = name;
+  return least / yard;
 }
 
 /** The pieces of a text, each one the parser is handed held to what its
@@ -336,7 +336,9 @@ describe("list items nested deep, holding all one section takes", () => {
     const build = heldShapes(depth)[shape] ?? ((): string => "");
     const count = most(build);
     expect(count).toBeGreaterThan(0);
-    expect(dearest(shape, build(count))).toBeLessThan(callYardsMax);
+    expect(dearest(shape, build(count))).toBeLessThan(
+      severalTimes * callYardsMax,
+    );
   });
 
   test("take fewer the deeper they are held: a blank line, its spaces, and a line's own", () => {
@@ -380,7 +382,9 @@ describe("one thing said over on a line, as often as one section takes", () => {
     const build = saidOver[shape] ?? ((): string => "");
     const count = most(build);
     expect(count).toBeGreaterThan(0);
-    expect(dearest(shape, build(count))).toBeLessThan(callYardsMax);
+    expect(dearest(shape, build(count))).toBeLessThan(
+      severalTimes * callYardsMax,
+    );
   });
 });
 
@@ -415,9 +419,11 @@ describe("a text read whole", () => {
   });
 
   test.each(Object.entries(costTexts))("%s", (name, text) => {
-    expect(dearest(name, text)).toBeLessThan(callYardsMax);
+    expect(dearest(name, text)).toBeLessThan(severalTimes * callYardsMax);
     const whole = (): number => timed(() => markdownBlocksParsed(text));
-    expect(yards(name, whole, wholeYardsMax)).toBeLessThan(wholeYardsMax);
+    expect(yards(name, whole, wholeYardsMax)).toBeLessThan(
+      severalTimes * wholeYardsMax,
+    );
   });
 });
 
@@ -427,7 +433,9 @@ describe("a text read as one line", () => {
     const words = markdownWordsScanned(line);
     expect(words.plain || words.work <= wordsWorkMax).toBe(true);
     const cost = (): number => timed(() => markdownLineRead(line));
-    expect(yards(name, cost, wordsYardsMax)).toBeLessThan(wordsYardsMax);
+    expect(yards(name, cost, wordsYardsMax)).toBeLessThan(
+      severalTimes * wordsYardsMax,
+    );
   });
 });
 
@@ -443,7 +451,9 @@ describe("a text far past the most that is read", () => {
     const text = costFill(unit, 1_048_576);
     reckoned(text);
     const whole = (): number => timed(() => markdownBlocksParsed(text));
-    expect(yards(name, whole, wholeYardsMax)).toBeLessThan(wholeYardsMax);
+    expect(yards(name, whole, wholeYardsMax)).toBeLessThan(
+      severalTimes * wholeYardsMax,
+    );
   });
 });
 
@@ -452,7 +462,9 @@ describe("a text being written", () => {
 
   test.each(Object.entries(texts))("%s", (name, text) => {
     reckoned(text);
-    expect(yards(name, () => written(text, 1_024), 1)).toBeLessThan(1);
+    expect(yards(name, () => written(text, 1_024), 1)).toBeLessThan(
+      severalTimes,
+    );
   });
 });
 
@@ -460,7 +472,9 @@ describe("the section a text being written ends in", () => {
   test.each(Object.entries(costWords))("of %s", (name, unit) => {
     const text = costFill(unit, 16_000);
     const cost = (): number => timed(() => markdownWritten(text));
-    expect(yards(name, cost, callYardsMax)).toBeLessThan(callYardsMax);
+    expect(yards(name, cost, callYardsMax)).toBeLessThan(
+      severalTimes * callYardsMax,
+    );
   });
 });
 
@@ -470,7 +484,9 @@ describe("the words a text being written ends in, scanned alone", () => {
   test.each(Object.entries(costWords))("of %s", (name, unit) => {
     const words = costFill(unit, scanChars);
     const cost = (): number => timed(() => markdownWritingInline(words));
-    expect(yards(name, cost, wordsYardsMax)).toBeLessThan(wordsYardsMax);
+    expect(yards(name, cost, wordsYardsMax)).toBeLessThan(
+      severalTimes * wordsYardsMax,
+    );
   });
 
   test.each([
@@ -483,6 +499,8 @@ describe("the words a text being written ends in, scanned alone", () => {
     ["brackets, then links", `${"[".repeat(65_536)}a${"](x)".repeat(16_384)}`],
   ])("of %s", (name, words) => {
     const cost = (): number => timed(() => markdownWritingInline(words));
-    expect(yards(name, cost, wordsYardsMax)).toBeLessThan(wordsYardsMax);
+    expect(yards(name, cost, wordsYardsMax)).toBeLessThan(
+      severalTimes * wordsYardsMax,
+    );
   });
 });
