@@ -116,7 +116,9 @@ function migrationLedgerReaders(): ReadonlySet<string> {
 /** Every group role a command under `src/roots/` names, which is the one it refuses to serve without. */
 function rootAssertedRoles(): ReadonlySet<string> {
   const found = new Set<string>();
-  for (const entry of readdirSync(rootsDirectory)) {
+  for (const entry of readdirSync(rootsDirectory).filter((name) =>
+    name.endsWith(".ts"),
+  )) {
     const source = readFileSync(
       `${rootsDirectory}/${entry}`,
       "utf8",

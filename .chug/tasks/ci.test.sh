@@ -27,7 +27,7 @@ R="$WORK/repo"
 # and answers a question the case did not ask. These are ci.sh's own Env block
 # and the base `_ci-select.sh` reads, less CHUG_CI_SHELL_SUITES — the recursion
 # guard, which each case that reaches the suite stage sets for itself.
-unset CHUG_CI_FULL CHUG_CI_BASE GITHUB_BASE_REF CHUG_CI_SUITE_TIMEOUT_SECS
+unset CHUG_CI_FULL CHUG_CI_BASE GITHUB_BASE_REF CHUG_CI_SUITE_TIMEOUT_SECS CHUG_CI_NEEDS_GATE
 
 ROOT="$(cd "$HERE/../.." && pwd)"
 grep -F '    ./.chug/tasks/ci.sh' "$ROOT/justfile" >/dev/null
@@ -85,8 +85,22 @@ run_ci() {
 	set -e
 }
 
+# The last commit as the whole change, through the gate stage alone.
+commit_all() { # <message>
+	git -C "$R" add -A
+	git -C "$R" commit -qm "$1"
+}
+run_last_commit() { # [1 to run the suite stage too]
+	OUT="$WORK/.out"
+	set +e
+	(cd "$R" && CHUG_CI_BASE=HEAD^ CHUG_CI_SHELL_SUITES="${1:-0}" ./.chug/tasks/ci.sh) >"$OUT" 2>&1
+	RC=$?
+	set -e
+}
+
 stub_repo 0
 git -C "$R" commit -qm baseline
+printf '# a page\n' > "$R/PAGE.md"
 run_gates_only
 check "all gates clean exits 0" 0 "$RC" "all gates clean"
 check "CHUG_CI_SHELL_SUITES=0 skips the suite stage" 0 "$RC" "SKIPPED"
@@ -266,8 +280,107 @@ set +e
 	./.chug/tasks/ci.sh) >"$OUT" 2>&1
 RC=$?
 set -e
-check "a model change selects Quint" 0 "$RC" "stub check-model"
+refute "a model change selects Quint" 0 "$RC" "check-model: SKIPPED"
 check "a model change selects model API generation" 0 "$RC" "stub check-model-api"
+
+# A PAGE KEPT BESIDE THE CODE IS NOT THE CODE. The gates that prove something
+# of a directory select on the directory, and a page in it is read by none of
+# them, so a changed page under the model, the sources or the console selects
+# the documentation gates and nothing slower.
+stub_repo 0
+mkdir -p "$R/model" "$R/src/adapters/postgres" "$R/ui/chuggy-ui/dev"
+printf 'module model {}\n' > "$R/model/domain.qnt"
+printf '# before\n' > "$R/model/AGENTS.md"
+printf '# before\n' > "$R/src/adapters/postgres/AGENTS.md"
+printf '# before\n' > "$R/ui/chuggy-ui/dev/README.md"
+git -C "$R" add -A
+git -C "$R" commit -qm baseline
+printf '# after\n' > "$R/model/AGENTS.md"
+printf '# after\n' > "$R/src/adapters/postgres/AGENTS.md"
+printf '# after\n' > "$R/ui/chuggy-ui/dev/README.md"
+git -C "$R" add -A
+git -C "$R" commit -qm pages
+OUT="$WORK/.out"
+set +e
+(cd "$R" && CHUG_CI_BASE=HEAD^ CHUG_CI_SHELL_SUITES=0 \
+	./.chug/tasks/ci.sh) >"$OUT" 2>&1
+RC=$?
+set -e
+check "a page under the model skips Quint" 0 "$RC" "check-model: SKIPPED"
+check "a page under the model skips model API generation" 0 "$RC" "check-model-api: SKIPPED"
+check "a page under the sources skips the suites" 0 "$RC" "check-source unit: SKIPPED"
+check "a page under the sources skips the database" 0 "$RC" "check-postgres: SKIPPED"
+check "a page under the sources skips the query check" 0 "$RC" "check-queries: SKIPPED"
+check "a page under the sources skips the authority" 0 "$RC" "check-keto: SKIPPED"
+check "a page under the console skips the console" 0 "$RC" "check-console: SKIPPED"
+check "a page beside the code still runs doc-lint" 0 "$RC" "stub doc-lint"
+
+# A page changed with the code beside it hides none of the code: the cone is
+# asked of what is left once the pages are set aside, not of nothing.
+printf 'module changed {}\n' > "$R/model/domain.qnt"
+printf '# again\n' > "$R/model/AGENTS.md"
+git -C "$R" add -A
+git -C "$R" commit -qm model-and-page
+OUT="$WORK/.out"
+set +e
+(cd "$R" && CHUG_CI_BASE=HEAD^ CHUG_CI_SHELL_SUITES=0 \
+	./.chug/tasks/ci.sh) >"$OUT" 2>&1
+RC=$?
+set -e
+refute "a model change beside a changed page selects Quint" 0 "$RC" "check-model: SKIPPED"
+check "a model change beside a changed page still skips the database" 0 "$RC" "check-postgres: SKIPPED"
+
+# A file is a page by its last suffix alone: one that only carries the letters
+# is code, and one kept under the replayed corpus is still a page.
+stub_repo 0
+mkdir -p "$R/src/domain" "$R/test/conformance" "$R/test/random"
+printf 'export const before = 1;\n' > "$R/src/domain/notes.md.ts"
+printf '# before\n' > "$R/test/conformance/README.md"
+printf '# before\n' > "$R/test/random/README.md"
+git -C "$R" add -A
+git -C "$R" commit -qm baseline
+printf '# after\n' > "$R/test/conformance/README.md"
+printf '# after\n' > "$R/test/random/README.md"
+git -C "$R" add -A
+git -C "$R" commit -qm corpus-pages
+OUT="$WORK/.out"
+set +e
+(cd "$R" && CHUG_CI_BASE=HEAD^ CHUG_CI_SHELL_SUITES=0 \
+	./.chug/tasks/ci.sh) >"$OUT" 2>&1
+RC=$?
+set -e
+check "a page under the replayed corpus skips conformance" 0 "$RC" "check-conformance: SKIPPED"
+check "a page under the random walks skips them" 0 "$RC" "check-random: SKIPPED"
+printf 'export const after = 2;\n' > "$R/src/domain/notes.md.ts"
+git -C "$R" add -A
+git -C "$R" commit -qm code-named-like-a-page
+OUT="$WORK/.out"
+set +e
+(cd "$R" && CHUG_CI_BASE=HEAD^ CHUG_CI_SHELL_SUITES=0 \
+	./.chug/tasks/ci.sh) >"$OUT" 2>&1
+RC=$?
+set -e
+check "code whose name only carries a page's suffix selects conformance" 0 "$RC" "stub check-conformance"
+refute "code whose name only carries a page's suffix selects the suites" 0 "$RC" "check-source unit: SKIPPED"
+
+# A PAGE A SUITE READS IS ASKED FOR BY NAME. The unit suites hold the runbook's
+# table to the API's root, so that page selects them and no other code gate.
+stub_repo 0
+mkdir -p "$R/deploy/rig/images"
+printf '# before\n' > "$R/deploy/rig/images/README.md"
+git -C "$R" add -A
+git -C "$R" commit -qm baseline
+printf '# after\n' > "$R/deploy/rig/images/README.md"
+git -C "$R" add -A
+git -C "$R" commit -qm runbook
+OUT="$WORK/.out"
+set +e
+(cd "$R" && CHUG_CI_BASE=HEAD^ CHUG_CI_SHELL_SUITES=0 \
+	./.chug/tasks/ci.sh) >"$OUT" 2>&1
+RC=$?
+set -e
+check "the runbook's page selects the suites that read it" 0 "$RC" "stub check-source"
+check "the runbook's page skips the database" 0 "$RC" "check-postgres: SKIPPED"
 
 # The vendored package is the model's text and the corpus the harness replays,
 # so a change to it reaches the replay gates and the pin, not only Quint.
@@ -288,6 +401,249 @@ set -e
 check "a vendored change selects the pin" 0 "$RC" "stub check-vendored"
 check "a vendored change selects conformance" 0 "$RC" "stub check-conformance"
 check "a vendored change selects the random replay" 0 "$RC" "stub check-random"
+
+# A PATH THAT WENT AWAY IS A PATH THAT CHANGED: a deletion selects what read
+# the file, whether committed, staged or only left in the tree, a rename
+# selects by the name it left as well as the one it took, and a name git
+# writes in octal is read as it is spelled.
+stub_repo 0
+mkdir -p "$R/src/domain" "$R/notes" "$R/deploy/rig"
+printf 'kind: Probe\n' > "$R/deploy/rig/probe.yaml"
+printf 'export const here = 1;\n' > "$R/src/domain/gone.ts"
+printf 'export const kept = 1;\n' > "$R/src/domain/moved.ts"
+commit_all baseline
+git -C "$R" rm -q src/domain/gone.ts
+commit_all deletion
+run_last_commit
+check "a deleted source selects the database" 0 "$RC" "stub check-postgres"
+refute "a deleted source selects the suites" 0 "$RC" "check-source unit: SKIPPED"
+git -C "$R" mv src/domain/moved.ts notes/moved.txt
+commit_all rename
+run_last_commit
+check "a file renamed out of the sources selects by the name it left" 0 "$RC" "stub check-postgres"
+printf 'export const spelled = 1;\n' > "$R/src/domain/$(printf 'caf\303\251').ts"
+commit_all accented
+run_last_commit
+check "a source whose name git would quote selects the database" 0 "$RC" "stub check-postgres"
+git -C "$R" rm -q deploy/rig/probe.yaml
+commit_all manifest-gone
+run_last_commit
+check "a deleted manifest selects the gate that resolves what pages name" 0 "$RC" "stub check-paths"
+rm "$R/notes/moved.txt"
+run_gates_only
+check "a deletion left in the tree selects the paths gate" 0 "$RC" "stub check-paths"
+git -C "$R" rm -q notes/moved.txt
+run_gates_only
+check "a staged deletion selects the paths gate" 0 "$RC" "stub check-paths"
+
+# A NAME THAT IS NOT A LINE SELECTS EVERYTHING: git writes it in quotes, which
+# no pattern reads.
+stub_repo 0
+mkdir -p "$R/src/domain"
+commit_all baseline
+printf 'export const tabbed = 1;\n' > "$R/src/domain/$(printf 'tab\there').ts"
+commit_all tabbed
+run_last_commit
+check "a change whose name holds a tab is run in full" 0 "$RC" "full run (a changed path's name cannot be read as a line)"
+refute "the full run reaches Quint" 0 "$RC" "check-model: SKIPPED"
+
+# A SUITE'S INPUT OUTSIDE THE SOURCES IS IN ITS GATE'S CONE. The unit suites
+# read the roles file, the model's text and one gate's script; the database
+# and authority suites read the wipe and import helpers from all over the
+# tests; the replays read the directed model.
+stub_repo 0
+mkdir -p "$R/deploy/rig/postgres" "$R/model/mc" "$R/test/actor"
+printf 'export const harness = 1;\n' > "$R/test/actor/harness.ts"
+printf 'module directed {}\n' > "$R/model/mc/mc_chuggy_directed.qnt"
+printf -- '-- roles\n' > "$R/deploy/rig/postgres/postgres-roles.sql"
+printf -- '-- wipe\n' > "$R/deploy/rig/wipe-tickets.sql"
+printf 'module runner {}\n' > "$R/model/runner.qnt"
+commit_all baseline
+printf -- '-- roles, changed\n' > "$R/deploy/rig/postgres/postgres-roles.sql"
+commit_all roles
+run_last_commit
+refute "the roles file selects the suites that read it" 0 "$RC" "check-source unit: SKIPPED"
+check "the roles file skips the database" 0 "$RC" "check-postgres: SKIPPED"
+printf -- '-- wipe, changed\n' > "$R/deploy/rig/wipe-tickets.sql"
+commit_all wipe
+run_last_commit
+check "the wipe selects the database suites that read it" 0 "$RC" "stub check-postgres"
+printf 'module runner { val changed = 1 }\n' > "$R/model/runner.qnt"
+commit_all model
+run_last_commit
+refute "the model's text selects the suites that read it" 0 "$RC" "check-source unit: SKIPPED"
+printf '#!/bin/sh\necho stub check-console-sheets, changed\nexit 0\n' > "$R/.chug/tasks/check-console-sheets.sh"
+commit_all sheets
+run_last_commit
+refute "the console sheets' gate selects the suite that reads it" 0 "$RC" "check-source unit: SKIPPED"
+printf 'export const harness = 2;\n' > "$R/test/actor/harness.ts"
+commit_all helper
+run_last_commit
+check "a helper the database suites import selects them" 0 "$RC" "stub check-postgres"
+check "a helper the authority's suites import selects them" 0 "$RC" "stub check-keto"
+printf 'module directed { val changed = 1 }\n' > "$R/model/mc/mc_chuggy_directed.qnt"
+commit_all directed
+run_last_commit
+check "the directed model selects the replay that reads it" 0 "$RC" "stub check-conformance"
+check "the directed model selects the random replay" 0 "$RC" "stub check-random"
+
+# The console is a workspace the root lockfile pins, and what Prettier leaves
+# out is part of what it checks.
+stub_repo 0
+printf '{}\n' > "$R/package-lock.json"
+printf 'model/\n' > "$R/.prettierignore"
+commit_all baseline
+printf '{ "lockfileVersion": 3 }\n' > "$R/package-lock.json"
+commit_all lock
+run_last_commit
+refute "a lockfile change selects the console" 0 "$RC" "check-console: SKIPPED"
+printf '{ "private": true }\n' > "$R/package.json"
+commit_all manifest
+run_last_commit
+refute "a package manifest change selects the console" 0 "$RC" "check-console: SKIPPED"
+printf 'dist/\n' > "$R/.prettierignore"
+commit_all ignore
+run_last_commit
+refute "what Prettier leaves out selects the static checks" 0 "$RC" "check-source static: SKIPPED"
+
+# A GATE THAT READS THE TREE AS TEXT RUNS ON ANY CHANGE, and the static checks
+# on any change but a page's: a sheet outside the console is a kind none of
+# their old lists of suffixes held.
+text_gates="doc-lint check-figures check-paths check-shell-quoting check-duplication check-console-sheets check-gates check-comments check-knowledge check-vendored"
+stub_repo 0
+mkdir -p "$R/notes"
+commit_all baseline
+printf 'body { margin: 0 }\n' > "$R/notes/site.css"
+commit_all sheet
+run_last_commit
+for gate in $text_gates; do
+	refute "a sheet outside the console selects $gate" 0 "$RC" "$gate: SKIPPED"
+done
+refute "a sheet outside the console selects the static checks" 0 "$RC" "check-source static: SKIPPED"
+check "a sheet outside the console skips the suites" 0 "$RC" "check-source unit: SKIPPED"
+printf '# a page\n' > "$R/notes/PAGE.md"
+commit_all page
+run_last_commit
+for gate in $text_gates; do
+	refute "a page selects $gate" 0 "$RC" "$gate: SKIPPED"
+done
+check "a page skips the static checks" 0 "$RC" "check-source static: SKIPPED"
+
+# The replays read the model's generated API through the vocabulary they
+# share, and the query check types every source the adapter's reach.
+stub_repo 0
+mkdir -p "$R/src/generated" "$R/src/contract"
+printf 'export const api = 1;\n' > "$R/src/generated/model-api.ts"
+printf 'export const wire = 1;\n' > "$R/src/contract/http.ts"
+commit_all baseline
+printf 'export const api = 2;\n' > "$R/src/generated/model-api.ts"
+commit_all generated
+run_last_commit
+check "the generated API selects the replay that reads it" 0 "$RC" "stub check-conformance"
+check "the generated API selects the random replay" 0 "$RC" "stub check-random"
+printf 'export const wire = 2;\n' > "$R/src/contract/http.ts"
+commit_all contract
+run_last_commit
+check "a source outside the adapters selects the query check" 0 "$RC" "stub check-queries"
+
+# A SUITE THAT READS A FILE BESIDE ITS GATE IS SELECTED BY IT: this suite holds
+# the justfile to the sequencer, three gates' suites run their gate over the
+# tree's own configuration of its tools, and a suite kept beside what it
+# proves shares the harness.
+stub_repo 0
+mkdir -p "$R/.githooks" "$R/deploy/rig"
+for suite in .chug/tasks/ci .chug/tasks/check-source .chug/tasks/check-boundaries \
+	.chug/tasks/check-duplication .githooks/pre-commit deploy/rig/deploy-to-gtr; do
+	printf '#!/bin/sh\nexit 0\n' > "$R/$suite.test.sh"
+done
+printf '# harness\n' > "$R/.chug/tasks/_suite.sh"
+printf 'module.exports = {};\n' > "$R/.dependency-cruiser.cjs"
+printf '{}\n' > "$R/tsconfig.contract.json"
+printf '{}\n' > "$R/.jscpd.json"
+printf 'check:\n    ./.chug/tasks/ci.sh\n' > "$R/justfile"
+printf 'export default [];\n' > "$R/eslint.config.js"
+commit_all baseline
+printf 'module.exports = { forbidden: [] };\n' > "$R/.dependency-cruiser.cjs"
+commit_all boundaries
+run_last_commit 1
+check "the boundary rules select the suite that copies them" 0 "$RC" "  - .chug/tasks/check-boundaries.test.sh"
+printf '{ "include": [] }\n' > "$R/tsconfig.contract.json"
+commit_all browser
+run_last_commit 1
+check "the browser's compiler settings select the suite that copies them" 0 "$RC" "  - .chug/tasks/check-source.test.sh"
+printf '{ "ignore": [] }\n' > "$R/.jscpd.json"
+commit_all clones
+run_last_commit 1
+check "the clone detector's settings select the suite that copies them" 0 "$RC" "  - .chug/tasks/check-duplication.test.sh"
+printf '# harness, changed\n' > "$R/.chug/tasks/_suite.sh"
+commit_all harness
+run_last_commit 1
+check "the harness selects the hook's suite" 0 "$RC" "  - .githooks/pre-commit.test.sh"
+check "the harness selects a suite kept beside its script" 0 "$RC" "  - deploy/rig/deploy-to-gtr.test.sh"
+printf 'check:\n    true\n' > "$R/justfile"
+commit_all recipe
+run_last_commit 1
+check "the justfile selects the sequencer's suite" 0 "$RC" "  - .chug/tasks/ci.test.sh"
+printf 'export default [{}];\n' > "$R/eslint.config.js"
+commit_all rules
+run_last_commit 1
+check "the lint rules select the suite that proves them" 0 "$RC" "  - .chug/tasks/check-source.test.sh"
+
+# THE MODEL'S GATE FOLLOWS QUINT: a package change that names no quint line
+# leaves it out, and one that moves quint's own line brings it in.
+package_at() { # <quint version> <other version>
+	printf '{\n  "devDependencies": {\n    "@informalsystems/quint": "%s",\n    "left-pad": "%s"\n  }\n}\n' "$1" "$2" > "$R/package.json"
+}
+stub_repo 0
+package_at 0.32.0 1.0.0
+commit_all baseline
+package_at 0.32.0 1.0.1
+commit_all other-package
+run_last_commit
+check "a package change that leaves quint alone skips Quint" 0 "$RC" "check-model: SKIPPED"
+check "a package change still reaches the model's generated API" 0 "$RC" "stub check-model-api"
+package_at 0.33.0 1.0.1
+run_last_commit
+refute "a quint bump not yet committed selects Quint" 0 "$RC" "check-model: SKIPPED"
+commit_all quint
+run_last_commit
+refute "a package change that moves quint selects Quint" 0 "$RC" "check-model: SKIPPED"
+lock_at() { # <quint version>
+	printf '{\n  "packages": {\n    "node_modules/@informalsystems/quint": {\n      "resolved": "https://registry.npmjs.org/@informalsystems/quint/-/quint-%s.tgz"\n    }\n  }\n}\n' "$1" > "$R/package-lock.json"
+}
+lock_at 0.33.0
+commit_all lock-baseline
+lock_at 0.34.0
+commit_all lock-quint
+run_last_commit
+refute "a lockfile that moves quint selects Quint" 0 "$RC" "check-model: SKIPPED"
+git -C "$R" config color.ui always
+run_last_commit
+refute "a quint bump is read through a git that colours its diffs" 0 "$RC" "check-model: SKIPPED"
+git -C "$R" config diff.external "echo rendered"
+run_last_commit
+refute "a quint bump is read past a diff program of the member's own" 0 "$RC" "check-model: SKIPPED"
+git -C "$R" config --unset diff.external
+stub_repo 0
+commit_all baseline
+package_at 0.32.0 1.0.0
+run_gates_only
+refute "package files git cannot diff select Quint" 0 "$RC" "check-model: SKIPPED"
+
+# A RUN THAT RAN NOTHING SAYS SO, and is a could-not-run to a caller that asks
+# for one; a caller that asks passes as any other does once a gate has run.
+stub_repo 0
+commit_all baseline
+run_gates_only
+check "a change that selects nothing says nothing ran" 0 "$RC" "no gate selected; nothing ran"
+refute "a run of nothing is not called clean" 0 "$RC" "all gates clean"
+export CHUG_CI_NEEDS_GATE=1
+run_gates_only
+check "a caller that needs a gate is told none ran" 2 "$RC" "the change selects no gate"
+printf '# a page\n' > "$R/PAGE.md"
+run_gates_only
+check "a caller that needs a gate passes once one ran" 0 "$RC" "all gates clean"
+unset CHUG_CI_NEEDS_GATE
 
 # An unresolvable base fails open to complete coverage, never to no coverage.
 stub_repo 0

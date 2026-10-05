@@ -173,7 +173,7 @@ test("the settings grid reads the model off its own flag and the tools off the a
 });
 
 const workText =
-  "Implement the requested change, add focused regression coverage, and run the checks relevant to the files changed.";
+  "Implement the requested change and add focused regression coverage.";
 const reviewText =
   "Read .chug/tasks/review-change.md and review the change exactly as that brief requires.";
 
