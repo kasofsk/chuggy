@@ -16,6 +16,18 @@
 # No other layout is released to: a fabric that does not keep the Job and the
 # api where a release has them is refused before anything is read from it.
 #
+# THE FABRIC'S MANIFESTS SAY WHAT IS LIVE ONLY ONCE FLUX HAS APPLIED THEM, and
+# everything decided here is decided from them: which commit is live, whether
+# there is anything to release, and whether a release carries a migration. A
+# release whose migrate Job failed leaves the fabric's main naming a commit no
+# service runs. So before anything is decided the rig is asked. The source
+# must hold the fabric's main as it was cloned, and each layer that applies a
+# release, `chuggy-migrate` and `chuggy`, must not be suspended, must have
+# applied what the source holds, and must not read as failing. Where that is
+# not so this could not run, and says which layer, what it has applied and
+# where the source is. The way on is the fabric's: Flux finishes a release
+# that is in flight, and one that is held is reverted there.
+#
 # WHAT IS RELEASED IS HEAD, AND HEAD MUST BE ON MAIN. The tag is the short
 # commit, which `deploy/rig/images/build-and-import.sh` refuses to derive from
 # a dirty tree; and a commit main does not have is one the configuration
@@ -76,6 +88,15 @@
 # release it holds is one Flux has not started, with no migrate Job made and
 # no service applied until `apps` is healthy at the merge.
 #
+# A LAYER HAS THE MERGE WHEN WHAT IT APPLIED CONTAINS IT: the merge, or a
+# commit of the fabric's main that descends from it. That main may gain one
+# while a release rolls out, and a layer whose dependency was still busy when
+# the source fetched it applies that commit and never the merge by itself.
+# Which it is, is decided by ancestry in this run's clone of the fabric, which
+# fetches the main for a commit it has not got. A revision it still has not
+# got contains nothing: it is waited on like any other, and the finding of a
+# wait that runs out on one says so.
+#
 # EACH WAIT IS CAPPED BY ITSELF, AND THERE IS NO TOTAL. A cap ends a wait on
 # something that hangs, so a layer that is slow has the whole of its own and
 # is charged nothing for the layer before it. One that does not get there is
@@ -90,11 +111,12 @@
 # layer is put off the same way, and starts nothing the merge had not.
 #
 # A MIGRATION THAT FAILED IS NOT WAITED OUT AS IF IT WERE SLOW. When the Job
-# fails, `chuggy-migrate` has attempted the merge and reads not Ready, for the
-# reason `HealthCheckFailed` and with the Job named as `Failed` in the
-# message; `chuggy` then applies nothing, so every service is left on the
-# release before it. A landing reads that at each asking while that layer is
-# the one it waits on, and ends on it as a finding that names the Job's logs.
+# fails, `chuggy-migrate` has attempted a revision that contains the merge and
+# reads not Ready, for the reason `HealthCheckFailed` and with the Job named
+# as `Failed` in the message; `chuggy` then applies nothing, so every service
+# is left on the release before it. A landing reads that at each asking while
+# that layer is the one it waits on, and ends on it as a finding that says how
+# to read the logs of whichever of the Job's containers failed.
 # While `apps` has not applied the merge that layer has attempted nothing of
 # it, and once the layer has applied it the Job is complete. The same reason
 # over a Job the message does not call `Failed` is the layer's own wait run
@@ -362,6 +384,18 @@ renewed() { # <lease then> <lease now>
 	[ "$2" != "$1" ]
 }
 
+# Whether a revision of the fabric's main contains another, each as Flux
+# writes one or as a bare commit: it is that commit or descends from it. The
+# clone decides it, as the header argues, and one it cannot decide is not one
+# that contains.
+contains() { # <revision> <revision>
+	this="${1##*:}"
+	that="${2##*:}"
+	{ git -C "$fabric" cat-file -e "$this^{commit}" && git -C "$fabric" cat-file -e "$that^{commit}"; } 2>/dev/null \
+		|| git -C "$fabric" fetch -q origin refs/heads/main 2>/dev/null || return 1
+	git -C "$fabric" merge-base --is-ancestor "$that" "$this" 2>/dev/null
+}
+
 # --- the commit ---------------------------------------------------------------
 
 root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
@@ -386,6 +420,31 @@ say "cloning $fabric_repo"
 gh repo clone "$fabric_repo" "$fabric" -- --quiet >/dev/null 2>&1 || refuse "$fabric_repo could not be cloned, so what is live is unknown"
 for kept in chuggy-migrate/chuggy-migrate.yaml chuggy/chuggy-api.yaml; do
 	[ -f "$cluster/$kept" ] || refuse "$fabric_repo has no cluster/$kept: a release is the migrate Job under cluster/chuggy-migrate and the services under cluster/chuggy, and a fabric laid out any other way is not released to"
+done
+
+# Whether Flux has applied those manifests, which the header argues, asked
+# before anything is decided from them. Ready is Unknown for the length of
+# every reconciliation, one over a revision already applied among them, so a
+# layer reads as failing only where it is neither that nor True.
+fabric_main="$(git -C "$fabric" rev-parse --verify HEAD)" || refuse "the main of $fabric_repo could not be read out of its clone"
+source_name="$(kube -n flux-system get kustomization chuggy -o jsonpath='{.spec.sourceRef.name}' 2>/dev/null || true)"
+[ -n "$source_name" ] || refuse "the chuggy Kustomization answered no source through context $context, so whether Flux has applied the fabric's manifests is unknown"
+source_at="$(kube -n flux-system get "gitrepository/$source_name" -o jsonpath='{.status.artifact.revision}' 2>/dev/null || true)"
+not_live="so the fabric's manifests do not say what is live, and nothing is decided from them"
+contains "$source_at" "$fabric_main" || refuse "the fabric source is at ${source_at:-no revision} and has not fetched $fabric_main, the main of $fabric_repo, $not_live"
+for layer in chuggy-migrate chuggy; do
+	state="$(kube -n flux-system get kustomization "$layer" -o jsonpath='{.status.lastAppliedRevision}|{.status.conditions[?(@.type=="Ready")].status}|{.spec.suspend}' 2>/dev/null)" \
+		|| refuse "the $layer Kustomization could not be read through context $context, so whether Flux has applied the fabric's manifests is unknown"
+	has="${state%%|*}"
+	state="${state#*|}"
+	if [ "${state#*|}" = true ]; then
+		held="is suspended"
+	elif ! contains "$has" "$source_at"; then
+		held="has not applied what the fabric source holds"
+	else
+		case "${state%%|*}" in True | Unknown) held="" ;; *) held="is not Ready" ;; esac
+	fi
+	[ -z "$held" ] || refuse "the $layer Kustomization $held: it has applied ${has:-no revision} and the source is at $source_at, $not_live"
 done
 
 deployed="$(manifest_source_commit chuggy/chuggy-api.yaml)"
@@ -518,18 +577,24 @@ land() { # <pull request url>
 	printf '%s' "$merged" | grep -Eqx '[0-9a-f]{40}' || refuse "the merge commit of pull request $pr_number could not be read"
 	say "merged as $merged"
 
-	# A wait is for the command to print the merge, which it does once what it
-	# asks after has reached it. Each wait is capped by itself, and one that
-	# runs out is the finding it was given. Between askings the check may end
-	# the landing.
+	# A wait is for the revision the command reads to contain the merge. Each
+	# wait is capped by itself, and one that runs out is the finding it was
+	# given and what was last read, said apart where the clone has no such
+	# commit. Between askings the check may end the landing.
 	wait_for() { # <the finding> <check> <command...>
 		finding="$1"
 		unless="$2"
 		shift 2
 		waited=0
-		until "$@" 2>/dev/null | grep -Fq "$merged"; do
+		while :; do
+			reads="$("$@" 2>/dev/null || true)"
+			! contains "$reads" "$merged" || break
 			"$unless"
-			[ "$waited" -lt "$wait_secs" ] || fail "$finding"
+			if [ "$waited" -ge "$wait_secs" ]; then
+				[ -n "$reads" ] || fail "$finding; it answered no revision"
+				git -C "$fabric" cat-file -e "${reads##*:}^{commit}" 2>/dev/null || fail "$finding; it is at $reads, which the main of $fabric_repo was not found to hold"
+				fail "$finding; it is at $reads"
+			fi
 			sleep 5
 			waited=$((waited + 5))
 		done
@@ -540,18 +605,21 @@ land() { # <pull request url>
 	# A migrate Job that failed, as kustomize-controller says it of the layer
 	# that applies the Job: the revision that layer attempted, the reason of
 	# its Ready condition, and a message naming what its health check found
-	# failed. The header argues each term.
+	# failed. The header argues each term. The logs it names are every
+	# container's, an init container's among them, and a container that never
+	# started is an error kubectl is told not to stop at.
 	unless_migration_failed() {
-		case "$(kube -n flux-system get kustomization chuggy-migrate -o jsonpath='{.status.lastAttemptedRevision} {.status.conditions[?(@.type=="Ready")].reason} {.status.conditions[?(@.type=="Ready")].message}' 2>/dev/null || true)" in
-		*"$merged HealthCheckFailed "*"Job/$namespace/$job status: 'Failed'"*)
-			fail "$job failed, so Flux applied no service of $tag and each is left on the release before it; read \`kubectl --context $context -n $namespace logs job/$job -c dump\`, and \`-c migrate\` if the dump completed"
-			;;
+		said="$(kube -n flux-system get kustomization chuggy-migrate -o jsonpath='{.status.lastAttemptedRevision} {.status.conditions[?(@.type=="Ready")].reason} {.status.conditions[?(@.type=="Ready")].message}' 2>/dev/null || true)"
+		case "${said#* }" in
+		"HealthCheckFailed "*"Job/$namespace/$job status: 'Failed'"*) ;;
+		*) return 0 ;;
 		esac
+		contains "${said%% *}" "$merged" || return 0
+		fail "$job failed, so Flux applied no service of $tag and each is left on the release before it; \`kubectl --context $context -n $namespace logs job/$job --all-containers --prefix --ignore-errors\` shows which of its containers failed"
 	}
 	# The source alone is asked to reconcile, as the header argues, through
-	# the annotation the flux client's own `reconcile` writes.
-	source_name="$(kube -n flux-system get kustomization chuggy -o jsonpath='{.spec.sourceRef.name}' 2>/dev/null || true)"
-	[ -n "$source_name" ] || refuse "the chuggy Kustomization names no source, so there is nothing to reconcile"
+	# the annotation the flux client's own `reconcile` writes. It is the one
+	# the `chuggy` layer was read to name before anything was decided.
 	stamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 	kube -n flux-system annotate --overwrite "gitrepository/$source_name" "reconcile.fluxcd.io/requestedAt=$stamp" >/dev/null || refuse "the source could not be asked to reconcile"
 	unreached="did not reach $merged within ${wait_secs}s"
