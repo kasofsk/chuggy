@@ -65,15 +65,22 @@
 # manifests: the migrate Job complete, and each Deployment on the image its
 # manifest names.
 #
-# THE FABRIC ORDERS THE ROLLOUT, AND A LANDING WAITS ON THE LAST OF IT. Flux
+# THE FABRIC ORDERS THE ROLLOUT, AND A LANDING WAITS ON EACH LAYER OF IT. Flux
 # applies a fabric commit in layers, a Kustomization each: `apps`, then
 # `chuggy-migrate`, which applies the migrate Job, then `chuggy`, which
 # applies the services. Each waits for what it applied to be healthy, and
 # each after the first applies a commit only once the layer before it is
-# Ready at that same commit. So `chuggy` having applied the merge is the Job
-# complete and every service applied and healthy, and that is what a landing
-# waits for once the source has the merge. `apps` having applied it says
-# nothing of the release: the Job is made only after that.
+# Ready at that same commit. Once the source has the merge, a landing waits
+# for each layer in that order to have applied it. `apps` applies what a
+# release runs on and no part of one, and it is waited for all the same: a
+# release it holds is one Flux has not started, with no migrate Job made and
+# no service applied until `apps` is healthy at the merge.
+#
+# EACH WAIT IS CAPPED BY ITSELF, AND THERE IS NO TOTAL. A cap ends a wait on
+# something that hangs, so a layer that is slow has the whole of its own and
+# is charged nothing for the layer before it. One that does not get there is
+# the one the finding names, with what it applies, so a release held by what
+# it runs on is not said to be a service's doing.
 #
 # THE SOURCE IS ASKED TO RECONCILE AND NO LAYER IS. The source fetches on an
 # interval, and asking has it fetch the merge now. A layer needs no asking:
@@ -86,10 +93,12 @@
 # fails, `chuggy-migrate` has attempted the merge and reads not Ready, for the
 # reason `HealthCheckFailed` and with the Job named as `Failed` in the
 # message; `chuggy` then applies nothing, so every service is left on the
-# release before it. A landing reads that at each asking and ends on it as a
-# finding that names the Job's logs. The same reason over a Job the message
-# does not call `Failed` is the layer's own wait run out on a Job still
-# running, and the landing goes on waiting.
+# release before it. A landing reads that at each asking while that layer is
+# the one it waits on, and ends on it as a finding that names the Job's logs.
+# While `apps` has not applied the merge that layer has attempted nothing of
+# it, and once the layer has applied it the Job is complete. The same reason
+# over a Job the message does not call `Failed` is the layer's own wait run
+# out on a Job still running, and the landing goes on waiting.
 #
 # A RELEASE GOES OUT OVER LIVE ATTEMPTS, because nothing it restarts is owned by
 # one: an attempt in a pod keeps its lease through the worker plane, and that
@@ -167,9 +176,10 @@
 #   CHUG_RELEASE_GATE     0 skips the gate, and the pull request says so;
 #                         full runs every gate; unset or empty runs the gates
 #                         the change affects. Any other value is refused.
-#   CHUG_RELEASE_WAIT_SECS  how long a landing run waits on each of the
-#                         fabric's source, the last of its layers, the migrate
-#                         Job and a Deployment's rollout
+#   CHUG_RELEASE_WAIT_SECS  the cap on each wait of a landing, default 600:
+#                         on the fabric's source, on each of its layers in
+#                         turn, on the migrate Job and on each Deployment's
+#                         rollout. Each has the whole of it; there is no total.
 #   CHUG_RELEASE_HEARD_SECS  how long a landing waits to hear from an attempt
 #                         that still runs once the rollout is done. The default
 #                         is two of the worker core's heartbeat intervals
@@ -509,18 +519,23 @@ land() { # <pull request url>
 	say "merged as $merged"
 
 	# A wait is for the command to print the merge, which it does once what it
-	# asks after has reached it; between askings the check may end the landing.
-	wait_for() { # <what> <check> <command...>
-		what="$1"
+	# asks after has reached it. Each wait is capped by itself, and one that
+	# runs out is the finding it was given. Between askings the check may end
+	# the landing.
+	wait_for() { # <the finding> <check> <command...>
+		finding="$1"
 		unless="$2"
 		shift 2
 		waited=0
 		until "$@" 2>/dev/null | grep -Fq "$merged"; do
 			"$unless"
-			[ "$waited" -lt "$wait_secs" ] || fail "$what did not reach $merged within ${wait_secs}s"
+			[ "$waited" -lt "$wait_secs" ] || fail "$finding"
 			sleep 5
 			waited=$((waited + 5))
 		done
+	}
+	applied() { # <layer>  the revision its Kustomization last applied
+		kube -n flux-system get kustomization "$1" -o jsonpath='{.status.lastAppliedRevision}'
 	}
 	# A migrate Job that failed, as kustomize-controller says it of the layer
 	# that applies the Job: the revision that layer attempted, the reason of
@@ -539,8 +554,14 @@ land() { # <pull request url>
 	[ -n "$source_name" ] || refuse "the chuggy Kustomization names no source, so there is nothing to reconcile"
 	stamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 	kube -n flux-system annotate --overwrite "gitrepository/$source_name" "reconcile.fluxcd.io/requestedAt=$stamp" >/dev/null || refuse "the source could not be asked to reconcile"
-	wait_for "the fabric source" true kube -n flux-system get "gitrepository/$source_name" -o jsonpath='{.status.artifact.revision}'
-	wait_for "the chuggy Kustomization" unless_migration_failed kube -n flux-system get kustomization chuggy -o jsonpath='{.status.lastAppliedRevision}'
+	unreached="did not reach $merged within ${wait_secs}s"
+	wait_for "the fabric source $unreached" true kube -n flux-system get "gitrepository/$source_name" -o jsonpath='{.status.artifact.revision}'
+	# The layers, in the order Flux applies them. Whether the migrate Job
+	# failed is asked only while its layer is the one waited on, as the header
+	# argues.
+	wait_for "the apps Kustomization $unreached: it applies what a release runs on and no part of one, and it holds this one, for Flux makes no migrate Job and applies no service of $tag until it has" true applied apps
+	wait_for "the chuggy-migrate Kustomization $unreached: it applies the migrate Job, and Flux applies no service of $tag until $job completes" unless_migration_failed applied chuggy-migrate
+	wait_for "the chuggy Kustomization $unreached: it applies the services, and $job completed before them" true applied chuggy
 
 	# That is Flux's account of the release. The Job the manifest names is
 	# asked after itself, and then each Deployment.

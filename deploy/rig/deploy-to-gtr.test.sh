@@ -117,34 +117,44 @@ case "$args" in
 *' pg_dump '*) printf '%s' "${CHUG_STUB_DUMP:-PGDMP-archive}" ;;
 *' pg_dumpall '*) printf 'globals\n' ;;
 # The fabric's source and its layers, each asked after by its own name. A
-# layer names the source, unless a case has the cluster not answer for it. The
-# source has the merge, and so does `apps`, the first layer to apply it. The
-# `chuggy` layer has it too, unless a case holds it at the commit before: for
-# as many askings as the case says, or for good. The `chuggy-migrate` layer
-# answers the revision it attempted and then the reason and the message of its
-# Ready condition: those of the merge applied, or what a case has it say, from
-# the first asking or after as many as the case says of a reconciliation
-# still in progress.
+# layer names the source, unless a case has the cluster not answer for it, and
+# the source has the merge. A layer has applied the merge once it and every
+# layer before it have got there, as Flux orders them: each does at once
+# unless a case holds it at the commit before, for as many askings of that
+# layer as the case says or for good. A layer the fabric does not have is not
+# found. Asked what became of its Job, the `chuggy-migrate` layer answers the
+# revision it attempted and then the reason and the message of its Ready
+# condition: those of the merge applied, or what a case has it say, from the
+# first asking or after as many as the case says of a reconciliation still in
+# progress.
 *' get kustomization '*'{.spec.sourceRef.name}'*)
 	[ "${CHUG_STUB_SOURCE_RC:-0}" -eq 0 ] || exit "$CHUG_STUB_SOURCE_RC"
 	printf 'fabric'
 	;;
 *' annotate '*) ;;
-*' get gitrepository/fabric '*'{.status.artifact.revision}'* | *' get kustomization apps '*'{.status.lastAppliedRevision}'*)
-	printf 'main@sha1:%s' "${CHUG_STUB_MERGED:-}"
+*' get gitrepository/fabric '*'{.status.artifact.revision}'*) printf 'main@sha1:%s' "${CHUG_STUB_MERGED:-}" ;;
+*' get kustomization '*'{.status.lastAppliedRevision}'*)
+	asked="" previous=""
+	for word in "$@"; do
+		[ "$previous" != kustomization ] || asked="$word"
+		previous="$word"
+	done
+	at="${CHUG_STUB_MERGED:-}"
+	for layer in "apps ${CHUG_STUB_HELD_APPS:-0}" "chuggy-migrate ${CHUG_STUB_HELD_MIGRATE:-0}" "chuggy ${CHUG_STUB_HELD_CHUGGY:-0}" none; do
+		[ "$layer" != none ] || exit 1
+		held="${layer#* }"
+		if [ "$held" = always ] \
+			|| { [ "$held" -gt 0 ] && [ "$(grep -c " get kustomization ${layer% *} .*lastAppliedRevision" "$CHUG_STUB_LOG")" -le "$held" ]; }; then
+			at="$CHUG_STUB_BEFORE"
+		fi
+		[ "${layer% *}" != "$asked" ] || break
+	done
+	printf 'main@sha1:%s' "$at"
 	;;
-*' get kustomization chuggy '*'{.status.lastAppliedRevision}'*)
-	if [ "${CHUG_STUB_HELD:-0}" = always ] \
-		|| [ "$(grep -c ' get kustomization chuggy .*lastAppliedRevision' "$CHUG_STUB_LOG")" -le "${CHUG_STUB_HELD:-0}" ]; then
-		printf 'main@sha1:%s' "$CHUG_STUB_BEFORE"
-	else
-		printf 'main@sha1:%s' "${CHUG_STUB_MERGED:-}"
-	fi
-	;;
-*' get kustomization chuggy-migrate '*)
+*' get kustomization chuggy-migrate '*'{.status.lastAttemptedRevision}'*)
 	if [ -z "${CHUG_STUB_MIGRATE+set}" ]; then
 		printf 'main@sha1:%s ReconciliationSucceeded Applied revision: main@sha1:%s' "${CHUG_STUB_MERGED:-}" "${CHUG_STUB_MERGED:-}"
-	elif [ "$(grep -c ' get kustomization chuggy-migrate ' "$CHUG_STUB_LOG")" -le "${CHUG_STUB_MIGRATE_AFTER:-0}" ]; then
+	elif [ "$(grep -c ' get kustomization chuggy-migrate .*lastAttemptedRevision' "$CHUG_STUB_LOG")" -le "${CHUG_STUB_MIGRATE_AFTER:-0}" ]; then
 		printf 'main@sha1:%s Progressing Reconciliation in progress' "${CHUG_STUB_MERGED:-}"
 	else
 		printf '%s' "$CHUG_STUB_MIGRATE"
@@ -352,7 +362,8 @@ fresh_case() {
 	unset CHUG_STUB_ATTEMPTS CHUG_STUB_ATTEMPTS_RC CHUG_STUB_FATES CHUG_STUB_FATES_THEN CHUG_STUB_FATES_RC
 	unset CHUG_RELEASE_HEARD_SECS CHUG_CI_NEEDS_GATE
 	unset CHUG_STUB_GIT_REFUSES CHUG_STUB_GIT_RC CHUG_STUB_VIEW_RC CHUG_STUB_DEPLOYMENTS_RC CHUG_STUB_RUNNING_RC
-	unset CHUG_STUB_HELD CHUG_STUB_MIGRATE CHUG_STUB_MIGRATE_AFTER CHUG_STUB_SOURCE_RC CHUG_RELEASE_WAIT_SECS
+	unset CHUG_STUB_HELD_APPS CHUG_STUB_HELD_MIGRATE CHUG_STUB_HELD_CHUGGY
+	unset CHUG_STUB_MIGRATE CHUG_STUB_MIGRATE_AFTER CHUG_STUB_SOURCE_RC CHUG_RELEASE_WAIT_SECS
 	export CHUG_RIG_SSH=nobody@no-such-host
 	export CHUG_STUB_DIGEST="$NEW"
 }
@@ -1487,6 +1498,8 @@ check "the merge is of the branch head that was read, and of no other" 0 "$RC" "
 check "the source is asked to reconcile" 0 "$RC" "annotate --overwrite gitrepository/fabric reconcile.fluxcd.io/requestedAt="
 check "the source asked is the one the chuggy layer reads" 0 "$RC" "get kustomization chuggy -o jsonpath={.spec.sourceRef.name}"
 refute "no layer is asked to reconcile" 0 "$RC" "annotate --overwrite kustomization/"
+printf 'layers asked after: <%s>\n' "$(sed -n 's|^kubectl .* get kustomization \([a-z-]*\) .*lastAppliedRevision.*|\1|p' "$LOG" | paste -sd' ' -)" >>"$OUT"
+check "each layer is asked after, in the order Flux applies them" 0 "$RC" "layers asked after: <apps chuggy-migrate chuggy>"
 check "the migrate Job is waited on by its release name" 0 "$RC" "wait --for=condition=complete job/chuggy-migrate-$TAG-registry"
 check "each managed Deployment is rolled out" 0 "$RC" "rollout status deployment/chuggy-ui"
 printf 'unmanaged rollouts: %s\n' "$(grep -c 'rollout status deployment/unmanaged' "$LOG" || true)" >>"$OUT"
@@ -1494,29 +1507,66 @@ check "a Deployment with no manifest is not held to one" 0 "$RC" "unmanaged roll
 printf 'first of merge and reconcile: %s\n' "$(grep -o 'gh pr merge\|annotate' "$LOG" | head -n 1)" >>"$OUT"
 check "the merge precedes the reconcile" 0 "$RC" "first of merge and reconcile: gh pr merge"
 
-# The fabric rolls a release out in layers, and a landing waits on the last of
-# them. `apps` has the merge at every asking here, so a landing that took that
-# layer for the release would wait for nothing and go on to a Job that is not
-# yet made.
-open_release src/a.ts
-export CHUG_STUB_HELD=2
-run --merge
-check "a landing waits until the chuggy layer has applied the merge" 0 "$RC" "the rig is at $TAG; ledger at 52"
-check "a layer that has the merge at the third asking is waited for twice" 0 "$RC" "waits: 2"
-printf 'askings before the Job: %s\n' "$(sed '/ wait --for=condition=complete /q' "$LOG" | grep -c ' get kustomization chuggy .*lastAppliedRevision')" >>"$OUT"
-check "the Job is asked after only once that layer has the merge" 0 "$RC" "askings before the Job: 3"
+# The fabric rolls a release out in layers, and a landing waits on each in
+# turn. One that is slow is waited for, whichever it is, and nothing past it
+# is asked after until it has the merge. Whether the migrate Job failed is
+# asked only while its own layer is the one waited on.
+LAYERS="APPS:apps MIGRATE:chuggy-migrate CHUGGY:chuggy"
+for held in $LAYERS; do
+	layer="${held#*:}"
+	open_release src/a.ts
+	export "CHUG_STUB_HELD_${held%:*}=2"
+	run --merge
+	check "a landing waits for the $layer layer when it is slow" 0 "$RC" "the rig is at $TAG; ledger at 52"
+	check "the $layer layer, with the merge at the third asking, is waited for twice" 0 "$RC" "waits: 2"
+	printf 'askings before the Job: %s\n' "$(sed '/ wait --for=condition=complete /q' "$LOG" | grep -c " get kustomization $layer .*lastAppliedRevision")" >>"$OUT"
+	check "the Job is asked after only once the $layer layer has the merge" 0 "$RC" "askings before the Job: 3"
+	case "$layer" in chuggy-migrate) asked=2 ;; *) asked=0 ;; esac
+	printf 'asked whether the Job failed: %s\n' "$(grep -c 'lastAttemptedRevision' "$LOG" || true)" >>"$OUT"
+	check "whether the Job failed is asked only while its layer is waited on (the $layer layer slow)" 0 "$RC" "asked whether the Job failed: $asked"
+done
 
+# Each wait is capped by itself: here every layer is slow, each within the cap,
+# and together they pass it.
 open_release src/a.ts
-export CHUG_STUB_HELD=always CHUG_RELEASE_WAIT_SECS=10 CHUG_STUB_ATTEMPTS="work attempt-1"
+export CHUG_STUB_HELD_APPS=2 CHUG_STUB_HELD_MIGRATE=2 CHUG_STUB_HELD_CHUGGY=2 CHUG_RELEASE_WAIT_SECS=10
 run --merge
-check "a release the chuggy layer does not apply is a finding, whatever apps has applied" 1 "$RC" "the chuggy Kustomization did not reach $MERGED within 10s; the 1 attempt(s) live at the merge were not asked after"
-check "a layer that does not apply the merge is waited for as long as the landing is told" 1 "$RC" "waits: 2"
-printf 'jobs asked after: %s\n' "$(grep -c ' wait --for=condition=complete ' "$LOG" || true)" >>"$OUT"
-check "a release that did not roll out asks after no Job" 1 "$RC" "jobs asked after: 0"
-refute "a release that did not roll out asks after no Deployment" 1 "$RC" "rollout status"
+check "layers each slow within the cap land, though together they pass it" 0 "$RC" "the rig is at $TAG; ledger at 52"
+check "each slow layer was waited for by itself" 0 "$RC" "waits: 6"
 
-# A cluster that does not answer for that layer is one a landing cannot wait
-# on, and it asks nothing there to reconcile.
+# A layer that does not get there is the one named, with what it applies, and
+# no layer after it, Job or Deployment is asked after: a release held by what
+# it runs on is not said to be the services' doing.
+for held in $LAYERS; do
+	layer="${held#*:}"
+	open_release src/a.ts
+	export "CHUG_STUB_HELD_${held%:*}=always" CHUG_RELEASE_WAIT_SECS=10 CHUG_STUB_ATTEMPTS="work attempt-1"
+	run --merge
+	case "$layer" in
+	apps)
+		applies="it applies what a release runs on and no part of one, and it holds this one, for Flux makes no migrate Job and applies no service of $TAG until it has"
+		reached="apps"
+		;;
+	chuggy-migrate)
+		applies="it applies the migrate Job, and Flux applies no service of $TAG until chuggy-migrate-$TAG-registry completes"
+		reached="apps chuggy-migrate"
+		;;
+	chuggy)
+		applies="it applies the services, and chuggy-migrate-$TAG-registry completed before them"
+		reached="apps chuggy-migrate chuggy"
+		;;
+	esac
+	check "a release the $layer layer does not apply is a finding that names it and what it applies" 1 "$RC" "FAILED — the $layer Kustomization did not reach $MERGED within 10s: $applies; the 1 attempt(s) live at the merge were not asked after"
+	check "the $layer layer is waited for as long as the landing is told" 1 "$RC" "waits: 2"
+	printf 'layers asked after: <%s>\n' "$(sed -n 's|^kubectl .* get kustomization \([a-z-]*\) .*lastAppliedRevision.*|\1|p' "$LOG" | uniq | paste -sd' ' -)" >>"$OUT"
+	check "no layer after the $layer layer is asked after" 1 "$RC" "layers asked after: <$reached>"
+	printf 'jobs asked after: %s\n' "$(grep -c ' wait --for=condition=complete ' "$LOG" || true)" >>"$OUT"
+	check "a release the $layer layer holds asks after no Job" 1 "$RC" "jobs asked after: 0"
+	refute "a release the $layer layer holds asks after no Deployment" 1 "$RC" "rollout status"
+done
+
+# A cluster that does not answer for the layer the source is read from is one
+# a landing cannot wait on, and it asks nothing there to reconcile.
 open_release src/a.ts
 export CHUG_STUB_SOURCE_RC=1
 run --merge
@@ -1534,7 +1584,7 @@ migrate_says() { # <revision> <reason> <how its wait ended> <job> <the job's sta
 for ended in "failed early due to stalled resources" "timeout waiting for"; do
 	open_release src/a.ts
 	CHUG_STUB_MIGRATE="$(migrate_says "$MERGED" HealthCheckFailed "$ended" "chuggy-migrate-$TAG-registry" Failed)"
-	export CHUG_STUB_MIGRATE CHUG_STUB_HELD=always CHUG_STUB_ATTEMPTS="work attempt-1"
+	export CHUG_STUB_MIGRATE CHUG_STUB_HELD_MIGRATE=always CHUG_STUB_ATTEMPTS="work attempt-1"
 	run --merge
 	check "a migrate Job that failed is a finding that says where the services are left and where its logs are ($ended)" 1 "$RC" "FAILED — chuggy-migrate-$TAG-registry failed, so Flux applied no service of $TAG and each is left on the release before it; read \`kubectl --context chuggy-fabric -n chuggy logs job/chuggy-migrate-$TAG-registry -c dump\`, and \`-c migrate\` if the dump completed; the 1 attempt(s) live at the merge were not asked after"
 	check "a migration that failed is not waited out ($ended)" 1 "$RC" "waits: 0"
@@ -1546,7 +1596,7 @@ done
 # it says its reconciliation is in progress until the third.
 open_release src/a.ts
 CHUG_STUB_MIGRATE="$(migrate_says "$MERGED" HealthCheckFailed "failed early due to stalled resources" "chuggy-migrate-$TAG-registry" Failed)"
-export CHUG_STUB_MIGRATE CHUG_STUB_MIGRATE_AFTER=2 CHUG_STUB_HELD=always
+export CHUG_STUB_MIGRATE CHUG_STUB_MIGRATE_AFTER=2 CHUG_STUB_HELD_MIGRATE=always
 run --merge
 check "a migrate Job that fails while it is waited on ends the landing" 1 "$RC" "FAILED — chuggy-migrate-$TAG-registry failed, so Flux applied no service of $TAG"
 check "a migrate Job that fails at the third asking was waited on twice" 1 "$RC" "waits: 2"
@@ -1564,7 +1614,7 @@ for says in "of another revision" "of a Job still running" "for another reason" 
 	"of another Job") job="chuggy-migrate-$DEPLOYED-registry" ;;
 	esac
 	CHUG_STUB_MIGRATE="$(migrate_says "$revision" "$reason" "$ended" "$job" "$status")"
-	export CHUG_STUB_MIGRATE CHUG_STUB_HELD=2
+	export CHUG_STUB_MIGRATE CHUG_STUB_HELD_MIGRATE=2
 	run --merge
 	check "a layer that says a health check failed $says is waited on" 0 "$RC" "the rig is at $TAG; ledger at 52"
 	check "a layer that says so $says is waited on until the release has rolled" 0 "$RC" "waits: 2"
