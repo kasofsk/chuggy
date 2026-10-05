@@ -90,10 +90,10 @@ commit_all() { # <message>
 	git -C "$R" add -A
 	git -C "$R" commit -qm "$1"
 }
-run_last_commit() {
+run_last_commit() { # [1 to run the suite stage too]
 	OUT="$WORK/.out"
 	set +e
-	(cd "$R" && CHUG_CI_BASE=HEAD^ CHUG_CI_SHELL_SUITES=0 ./.chug/tasks/ci.sh) >"$OUT" 2>&1
+	(cd "$R" && CHUG_CI_BASE=HEAD^ CHUG_CI_SHELL_SUITES="${1:-0}" ./.chug/tasks/ci.sh) >"$OUT" 2>&1
 	RC=$?
 	set -e
 }
@@ -403,10 +403,12 @@ check "a vendored change selects conformance" 0 "$RC" "stub check-conformance"
 check "a vendored change selects the random replay" 0 "$RC" "stub check-random"
 
 # A PATH THAT WENT AWAY IS A PATH THAT CHANGED: a deletion selects what read
-# the file, a rename selects by the name it left as well as the one it took,
-# and a name git would quote is read as it is spelled.
+# the file, whether committed, staged or only left in the tree, a rename
+# selects by the name it left as well as the one it took, and a name git
+# writes in octal is read as it is spelled.
 stub_repo 0
-mkdir -p "$R/src/domain" "$R/notes"
+mkdir -p "$R/src/domain" "$R/notes" "$R/deploy/rig"
+printf 'kind: Probe\n' > "$R/deploy/rig/probe.yaml"
 printf 'export const here = 1;\n' > "$R/src/domain/gone.ts"
 printf 'export const kept = 1;\n' > "$R/src/domain/moved.ts"
 commit_all baseline
@@ -423,12 +425,36 @@ printf 'export const spelled = 1;\n' > "$R/src/domain/$(printf 'caf\303\251').ts
 commit_all accented
 run_last_commit
 check "a source whose name git would quote selects the database" 0 "$RC" "stub check-postgres"
+git -C "$R" rm -q deploy/rig/probe.yaml
+commit_all manifest-gone
+run_last_commit
+check "a deleted manifest selects the gate that resolves what pages name" 0 "$RC" "stub check-paths"
+rm "$R/notes/moved.txt"
+run_gates_only
+check "a deletion left in the tree selects the paths gate" 0 "$RC" "stub check-paths"
+git -C "$R" rm -q notes/moved.txt
+run_gates_only
+check "a staged deletion selects the paths gate" 0 "$RC" "stub check-paths"
+
+# A NAME THAT IS NOT A LINE SELECTS EVERYTHING: git writes it in quotes, which
+# no pattern reads.
+stub_repo 0
+mkdir -p "$R/src/domain"
+commit_all baseline
+printf 'export const tabbed = 1;\n' > "$R/src/domain/$(printf 'tab\there').ts"
+commit_all tabbed
+run_last_commit
+check "a change whose name holds a tab is run in full" 0 "$RC" "full run (a changed path's name cannot be read as a line)"
+refute "the full run reaches Quint" 0 "$RC" "check-model: SKIPPED"
 
 # A SUITE'S INPUT OUTSIDE THE SOURCES IS IN ITS GATE'S CONE. The unit suites
-# read the roles file, the model's text and one gate's script, and the
-# database suites read the wipe.
+# read the roles file, the model's text and one gate's script; the database
+# and authority suites read the wipe and import helpers from all over the
+# tests; the replays read the directed model.
 stub_repo 0
-mkdir -p "$R/deploy/rig/postgres" "$R/model"
+mkdir -p "$R/deploy/rig/postgres" "$R/model/mc" "$R/test/actor"
+printf 'export const harness = 1;\n' > "$R/test/actor/harness.ts"
+printf 'module directed {}\n' > "$R/model/mc/mc_chuggy_directed.qnt"
 printf -- '-- roles\n' > "$R/deploy/rig/postgres/postgres-roles.sql"
 printf -- '-- wipe\n' > "$R/deploy/rig/wipe-tickets.sql"
 printf 'module runner {}\n' > "$R/model/runner.qnt"
@@ -450,6 +476,49 @@ printf '#!/bin/sh\necho stub check-console-sheets, changed\nexit 0\n' > "$R/.chu
 commit_all sheets
 run_last_commit
 refute "the console sheets' gate selects the suite that reads it" 0 "$RC" "check-source unit: SKIPPED"
+printf 'export const harness = 2;\n' > "$R/test/actor/harness.ts"
+commit_all helper
+run_last_commit
+check "a helper the database suites import selects them" 0 "$RC" "stub check-postgres"
+check "a helper the authority's suites import selects them" 0 "$RC" "stub check-keto"
+printf 'module directed { val changed = 1 }\n' > "$R/model/mc/mc_chuggy_directed.qnt"
+commit_all directed
+run_last_commit
+check "the directed model selects the replay that reads it" 0 "$RC" "stub check-conformance"
+check "the directed model selects the random replay" 0 "$RC" "stub check-random"
+
+# The console is a workspace the root lockfile pins, and what Prettier leaves
+# out is part of what it checks.
+stub_repo 0
+printf '{}\n' > "$R/package-lock.json"
+printf 'model/\n' > "$R/.prettierignore"
+commit_all baseline
+printf '{ "lockfileVersion": 3 }\n' > "$R/package-lock.json"
+commit_all lock
+run_last_commit
+refute "a lockfile change selects the console" 0 "$RC" "check-console: SKIPPED"
+printf 'dist/\n' > "$R/.prettierignore"
+commit_all ignore
+run_last_commit
+refute "what Prettier leaves out selects the static checks" 0 "$RC" "check-source static: SKIPPED"
+
+# A SUITE THAT READS A FILE BESIDE ITS GATE IS SELECTED BY IT: this suite holds
+# the justfile to the sequencer, and the source gate's proves the lint rules.
+stub_repo 0
+for suite in ci check-source; do
+	printf '#!/bin/sh\nexit 0\n' > "$R/.chug/tasks/$suite.test.sh"
+done
+printf 'check:\n    ./.chug/tasks/ci.sh\n' > "$R/justfile"
+printf 'export default [];\n' > "$R/eslint.config.js"
+commit_all baseline
+printf 'check:\n    true\n' > "$R/justfile"
+commit_all recipe
+run_last_commit 1
+check "the justfile selects the sequencer's suite" 0 "$RC" "  - .chug/tasks/ci.test.sh"
+printf 'export default [{}];\n' > "$R/eslint.config.js"
+commit_all rules
+run_last_commit 1
+check "the lint rules select the suite that proves them" 0 "$RC" "  - .chug/tasks/check-source.test.sh"
 
 # THE MODEL'S GATE FOLLOWS QUINT: a package change that names no quint line
 # leaves it out, and one that moves quint's own line brings it in.
@@ -465,9 +534,28 @@ run_last_commit
 check "a package change that leaves quint alone skips Quint" 0 "$RC" "check-model: SKIPPED"
 check "a package change still reaches the model's generated API" 0 "$RC" "stub check-model-api"
 package_at 0.33.0 1.0.1
+run_last_commit
+refute "a quint bump not yet committed selects Quint" 0 "$RC" "check-model: SKIPPED"
 commit_all quint
 run_last_commit
 refute "a package change that moves quint selects Quint" 0 "$RC" "check-model: SKIPPED"
+lock_at() { # <quint version>
+	printf '{\n  "packages": {\n    "node_modules/@informalsystems/quint": {\n      "resolved": "https://registry.npmjs.org/@informalsystems/quint/-/quint-%s.tgz"\n    }\n  }\n}\n' "$1" > "$R/package-lock.json"
+}
+lock_at 0.33.0
+commit_all lock-baseline
+lock_at 0.34.0
+commit_all lock-quint
+run_last_commit
+refute "a lockfile that moves quint selects Quint" 0 "$RC" "check-model: SKIPPED"
+git -C "$R" config color.ui always
+run_last_commit
+refute "a quint bump is read through a git that colours its diffs" 0 "$RC" "check-model: SKIPPED"
+stub_repo 0
+commit_all baseline
+package_at 0.32.0 1.0.0
+run_gates_only
+refute "package files git cannot diff select Quint" 0 "$RC" "check-model: SKIPPED"
 
 # A RUN THAT RAN NOTHING SAYS SO, and is a could-not-run to a caller that asks
 # for one; a caller that asks passes as any other does once a gate has run.

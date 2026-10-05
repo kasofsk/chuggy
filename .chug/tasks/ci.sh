@@ -14,9 +14,10 @@
 # that "not part of this run" and "should have run and was not there" cannot
 # print the same.
 #
-# A RUN THAT RAN NOTHING SAYS SO. A change no gate and no suite selects ends
-# clean having proved nothing, and its last line is that and not a verdict. A
-# caller that must not pass on nothing asks for it to be a could-not-run.
+# A RUN THAT RAN NOTHING SAYS SO. One gate runs on any change, so a run no gate
+# is selected for is a run with nothing changed: it exits 0 having proved
+# nothing, and its last line is that and not a verdict. A caller that must not
+# pass on nothing asks for it to be a could-not-run.
 #
 # Env:
 #   CHUG_CI_BASE=<ref>            override the default origin/main or main base
@@ -144,7 +145,6 @@ else
 		IFS='
 '
 		for suite in $suites; do
-			ran=$((ran + 1))
 			printf '  - %s\n' "$suite"
 			set +e
 			if [ -n "$timeout_cmd" ]; then
