@@ -253,6 +253,13 @@ RUN cd /usr/local/lib/chuggy-core \
 # THE TREE IS COMMITTED BEFORE THE ROSTER RUNS. `.dockerignore` keeps `.git`
 # out of the context and every gate reads git, so the stage makes a repository
 # of what it was handed; a full run needs no base.
+#
+# THE CONSOLE SUITE IS TOLD HOW MANY WORKERS TO START. A build step sees every
+# core of the node it runs on and nothing of the allowance the builder meters
+# it by, so the suite's runner starts a worker a core and they share a
+# fraction of that. A test that watches text arrive at a pace then gets too
+# few turns to see it paced, and fails on a tree that passes anywhere else.
+# Nothing in the step can read the allowance, so the count is stated.
 FROM worker AS roster
 USER 0:0
 ARG KETO_VERSION=26.2.0
@@ -282,6 +289,7 @@ RUN cd /workspace/tree \
     --message 'the tree this image is held to' \
   && npm ci \
   && CHUG_CI_FULL=1 \
+    VITEST_MAX_WORKERS=4 \
     CHUG_PG_URL=postgres://postgres@127.0.0.1:5432/postgres \
     CHUG_KETO_READ_URL=http://127.0.0.1:4466/ \
     CHUG_KETO_WRITE_URL=http://127.0.0.1:4467/ \
