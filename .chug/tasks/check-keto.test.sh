@@ -20,8 +20,9 @@
 # what it was started with and then is that same authority on the port it was
 # told. Its cases hold the process to what the container is held to — this
 # tree's model, ports of its own, a wait that needs both namespaces — and to
-# what only a process owes: loopback, an environment of its own, and being
-# gone when the run ends, however the run ends.
+# what only a process owes: loopback, an environment of its own, ports it can
+# bind and no outgoing connection is given, a failure that says what is known
+# of it, and being gone when the run ends, however the run ends.
 #
 # THE MODEL CASE IS THE ONE THAT MATTERS MOST. A server carrying the wrong
 # namespaces answers every check `false`, so a gate that waited on readiness
@@ -43,13 +44,21 @@ KETO_PORT_FILE="$WORK/.keto-port"
 # An authority answering the two paths `_keto.sh` waits on, and nothing else.
 # The namespaces it admits are its argument, so a case can produce a server
 # that is ready and carries some other model. Told a port something else holds,
-# it stays up and silent, which is what Keto does.
+# or told with `refused=<port>` that it could not have another, it stays up and
+# silent and says why only as it is stopped, which is what Keto does.
 AUTHORITY="$WORK/authority.cjs"
 cat >"$AUTHORITY" <<'JS'
 const fs = require("node:fs");
 const http = require("node:http");
 const [portFile, port, ...namespaces] = process.argv.slice(2);
 const known = new Set(namespaces);
+const refuse = (at) => `unable to listen on "127.0.0.1:${at}": address already in use`;
+const told = namespaces.find((name) => name.startsWith("refused="));
+let refusal = told ? refuse(told.slice("refused=".length)) : "";
+process.on("SIGTERM", () => {
+  if (refusal) console.error(refusal);
+  process.exit(refusal ? 1 : 0);
+});
 const server = http.createServer((request, response) => {
   const at = new URL(request.url, "http://127.0.0.1");
   if (at.pathname === "/health/ready") {
@@ -68,26 +77,34 @@ const server = http.createServer((request, response) => {
   response.writeHead(404);
   response.end("{}");
 });
-server.on("error", () => setInterval(() => undefined, 1000));
+server.on("error", () => {
+  refusal = refuse(port);
+  setInterval(() => undefined, 1000);
+});
 server.listen(Number(port), "127.0.0.1", () => {
   fs.writeFileSync(portFile, String(server.address().port));
 });
 JS
 
-keto_double() { # <namespace>...
-	rm -f "$KETO_PORT_FILE"
-	node "$AUTHORITY" "$KETO_PORT_FILE" 0 "$@" &
-	KETO_DOUBLE=$!
+# The port a fixture started in the background wrote to that file, as $KETO_PORT.
+port_written() { # <what the fixture is>
 	waited=0
 	until [ -s "$KETO_PORT_FILE" ]; do
 		if [ "$waited" -ge 10 ]; then
-			echo "check-keto.test.sh: LINTER ERROR — the fixture authority never opened"
+			echo "check-keto.test.sh: LINTER ERROR — the fixture $1 never opened"
 			exit 2
 		fi
 		sleep 1
 		waited=$((waited + 1))
 	done
 	KETO_PORT="$(cat "$KETO_PORT_FILE")"
+}
+
+keto_double() { # <namespace>...
+	rm -f "$KETO_PORT_FILE"
+	node "$AUTHORITY" "$KETO_PORT_FILE" 0 "$@" &
+	KETO_DOUBLE=$!
+	port_written authority
 	KETO_ANSWERS="http://127.0.0.1:$KETO_PORT/"
 }
 
@@ -96,6 +113,78 @@ keto_double_stop() {
 	kill "$KETO_DOUBLE" 2>/dev/null || true
 	wait "$KETO_DOUBLE" 2>/dev/null || true
 	KETO_DOUBLE=""
+}
+
+# One end of a loopback connection, on a port the kernel gave it as it gives any
+# client one: `open`, or `closed` by this end first, which leaves the port held
+# for a while with nothing connected to it. Nothing listens on it either way.
+# `stopped` is the other end's port: a listener that closed a connection it had
+# accepted and then stopped, which holds its port the same way, but as a
+# listener's port is held, so that the next listener may have it.
+PORT_END="$WORK/port-end.cjs"
+cat >"$PORT_END" <<'JS'
+const fs = require("node:fs");
+const net = require("node:net");
+const [portFile, state] = process.argv.slice(2);
+const held = (port) => fs.writeFileSync(portFile, String(port));
+const server = net.createServer((accepted) => {
+  accepted.resume();
+  if (state !== "stopped") return;
+  const { port } = server.address();
+  accepted.on("close", () => server.close(() => held(port)));
+  accepted.end();
+});
+server.listen(0, "127.0.0.1", () => {
+  const client = net.connect(server.address().port, "127.0.0.1", () => {
+    const port = client.localPort;
+    if (state === "open") held(port);
+    if (state === "closed") {
+      client.on("close", () => held(port));
+      client.end();
+    }
+  });
+  client.resume();
+});
+JS
+
+port_end() { # <open|closed|stopped>
+	rm -f "$KETO_PORT_FILE"
+	node "$PORT_END" "$KETO_PORT_FILE" "$1" &
+	PORT_END_HELD=$!
+	port_written connection
+}
+
+port_end_stop() {
+	kill "$PORT_END_HELD" 2>/dev/null || true
+	wait "$PORT_END_HELD" 2>/dev/null || true
+}
+
+# A loopback port nothing holds.
+free_port() {
+	node -e '
+const server = require("node:net").createServer();
+server.listen(0, "127.0.0.1", () => {
+  console.log(server.address().port);
+  server.close();
+});
+'
+}
+
+# The lowest port the kernel hands an outgoing connection on this box, and its
+# default where the box does not say.
+LOWEST_OUTGOING="$(sed -n 's/^\([0-9][0-9]*\).*/\1/p' /proc/sys/net/ipv4/ip_local_port_range 2>/dev/null || true)"
+LOWEST_OUTGOING="${LOWEST_OUTGOING:-32768}"
+
+port_place() { # <port, or nothing>
+	if [ -z "$1" ]; then
+		echo "not named"
+	elif [ "$1" -ge "$LOWEST_OUTGOING" ]; then
+		echo "one an outgoing connection is given"
+	elif [ "$1" -eq 4466 ] || [ "$1" -eq 4467 ]; then
+		echo "a conventional one"
+	else
+		echo "its own"
+	fi
 }
 
 fixture() { # a throwaway repo with a test/keto directory and a model
@@ -107,7 +196,8 @@ fixture() { # a throwaway repo with a test/keto directory and a model
 }
 
 # A docker whose containers are one label in a file: enough to answer the three
-# questions the acquire asks it, and to record what it was told to start.
+# questions the acquire asks it, to record what it was told to start, and to
+# refuse the start when CHUG_DOCKER_FAIL says so.
 docker_double() { # <label the container is running under, or empty for none>
 	DOCKER_BIN="$WORK/dockerbin"
 	DOCKER_LOG="$WORK/.docker"
@@ -133,6 +223,7 @@ inspect)
 	esac
 	;;
 run)
+	if [ "${CHUG_DOCKER_FAIL-}" = run ]; then exit 1; fi
 	for arg in "$@"; do
 		case "$arg" in
 		chuggy.keto.model=*) printf '%s' "${arg#chuggy.keto.model=}" >"$CHUG_DOCKER_LABEL" ;;
@@ -160,7 +251,8 @@ run_gate_over_docker() { # [env=value...]
 # It is started with no PATH of its own, so everything it reaches is beside it:
 # the authority above, which it becomes on the port it is told when it is given
 # namespaces to admit, and a record of what it was started with. Given none, it
-# says why and stops.
+# says why and stops. With a file named `unbound` beside it, it is a Keto that
+# could not bind its read port: only its write API is there.
 keto_binary_double() { # [<namespace>...]
 	KETO_BIN="$WORK/ketobin"
 	KETO_STARTED="$KETO_BIN/started"
@@ -195,17 +287,14 @@ if [ -z "$namespaces" ]; then
 	echo "fixture keto: no model it can compile" >&2
 	exit 1
 fi
+if [ -e "$here/unbound" ]; then
+	exec "$here/node" "$here/authority.cjs" "$here/port" "$SERVE_WRITE_PORT" "refused=$SERVE_READ_PORT"
+fi
 # shellcheck disable=SC2086 # the namespaces are space-separated by construction
 exec "$here/node" "$here/authority.cjs" "$here/port" "$SERVE_READ_PORT" $namespaces
 SH
 	chmod +x "$KETO_BIN/keto"
-	KETO_PORT="$(node -e '
-const server = require("node:net").createServer();
-server.listen(0, "127.0.0.1", () => {
-  console.log(server.address().port);
-  server.close();
-});
-')"
+	KETO_PORT="$(free_port)"
 }
 
 # The gate with that keto on its PATH and no docker, on a port nothing holds
@@ -346,6 +435,7 @@ keto_double_stop
 check "a container started from another model is not reused" 0 "$RC" "carries another model"
 OUT="$DOCKER_LOG"
 check "the container carrying it is removed" 0 0 "rm -f chuggy-check-keto"
+check "a container is published on the ports the knobs name" 0 0 "-p $KETO_PORT:4466 -p $KETO_PORT:4467"
 check "the model a container starts from is a label on it" 0 0 "--label chuggy.keto.model="
 
 # --- A container started from this model is reused ---------------------------
@@ -378,6 +468,23 @@ docker_double ""
 KETO_PORT=1
 run_gate_over_docker
 check "a container that never answers is a could-not-run" 2 "$RC" "did not answer ready with both namespaces"
+
+# --- A container that cannot be started is a could-not-run --------------------
+#
+# It is asked for with no port named, so what the double records is where a
+# container goes by default: where the one every worktree on a box shares is
+# already published. The start is refused so that nothing waits on that port,
+# which on such a box answers.
+
+fixture
+passing_suite "$R/test/keto/one.test.ts"
+git -C "$R" add -A
+docker_double ""
+run_gate_over_docker CHUG_KETO_READ_PORT= CHUG_KETO_WRITE_PORT= CHUG_DOCKER_FAIL=run
+check "a container that cannot be started is a could-not-run" 2 "$RC" "as chuggy-check-keto"
+OUT="$DOCKER_LOG"
+check "a container's ports are the ones the shared one is published on" 0 0 \
+	"-p 54466:4466 -p 54467:4467"
 
 # --- No model to start a container from is a could-not-run -------------------
 
@@ -445,6 +552,7 @@ check "a keto that will not start is a could-not-run" 2 "$RC" \
 	"keto v0.0.0-fixture from PATH did not answer ready with both namespaces within 1s"
 check "the message says what was tried before it" 2 "$RC" \
 	"No CHUG_KETO_READ_URL and no docker, so $KETO_BIN/keto was started from $ROOT/.chug/tasks/keto."
+check "the message says it exited, and with what" 2 "$RC" "It exited with status 1."
 check "the message carries the last the keto said" 2 "$RC" "fixture keto: no model it can compile"
 
 # --- A keto that starts without the model is a could-not-run -----------------
@@ -459,9 +567,51 @@ keto_binary_double Project
 run_gate_over_binary CHUG_KETO_READY_SECS=2
 check "a keto missing a namespace is a could-not-run" 2 "$RC" \
 	"did not answer ready with both namespaces within 2s"
-check "a keto that said nothing is reported as having said nothing" 2 "$RC" "It said nothing"
+check "the message says it is running and which of its APIs answer" 2 "$RC" \
+	"It is still running: its read API answers ready and its write API answers ready."
+refute "a keto that said nothing is not reported for its silence" 2 "$RC" " said"
 keto_binary_left
 check "a keto that never answered is stopped" 0 0 "the keto was stopped"
+
+# --- A keto that could not bind its read port is a could-not-run -------------
+#
+# A port taken between the test and the start is one no test refuses. Keto
+# then stays up and serves its write API, and the reason is in its log only
+# once it has been stopped.
+
+fixture
+passing_suite "$R/test/keto/one.test.ts"
+git -C "$R" add -A
+keto_binary_double Project Tenant
+: >"$KETO_BIN/unbound"
+run_gate_over_binary "CHUG_KETO_WRITE_PORT=$(free_port)" CHUG_KETO_READY_SECS=2
+check "a keto without its read API is a could-not-run that says which API answers" 2 "$RC" \
+	"It is still running: its read API does not answer ready and its write API answers ready."
+check "the message carries what the keto said only as it was stopped" 2 "$RC" \
+	"unable to listen on \"127.0.0.1:$KETO_PORT\""
+keto_binary_left
+check "a keto without its read API is stopped" 0 0 "the keto was stopped"
+
+# --- A keto started for a run has ports no outgoing connection is given ------
+#
+# No port is named, so the gate names the process's own, and the case reads
+# them off whichever line it prints: the start, or the refusal of a port that
+# something on this box holds. The keto is one that stops without listening, so
+# two checkouts running this suite at once do not meet on those ports.
+
+fixture
+passing_suite "$R/test/keto/one.test.ts"
+git -C "$R" add -A
+keto_binary_double
+run_gate_over_binary CHUG_KETO_READ_PORT= CHUG_KETO_WRITE_PORT= CHUG_KETO_READY_SECS=0
+PROCESS_PORTS="$(sed -n 's/.* on ports \([0-9]*\) and \([0-9]*\).*/\1 \2/p' "$OUT" | head -1)"
+OUT="$WORK/.ports"
+{
+	echo "the read port is $(port_place "${PROCESS_PORTS% *}"): ${PROCESS_PORTS% *}"
+	echo "the write port is $(port_place "${PROCESS_PORTS#* }"): ${PROCESS_PORTS#* }"
+} >"$OUT"
+check "a keto's read port is one no outgoing connection is given" 2 "$RC" "the read port is its own"
+check "a keto's write port is one no outgoing connection is given" 2 "$RC" "the write port is its own"
 
 # --- A port something already listens on is a could-not-run ------------------
 #
@@ -480,6 +630,47 @@ check "a port something already listens on is a could-not-run" 2 "$RC" \
 	"something is already listening on port $KETO_PORT"
 OUT="$KETO_STARTED"
 refute "no keto is started on a port something holds" 0 0 "pid "
+
+# --- A port one end of a connection is on is a could-not-run -----------------
+#
+# Nothing listens on such a port, so a test that asked whether something
+# accepts there would read it as free, and the keto started on it could not
+# bind it. One case holds the read port and the other the write port, each
+# beside a port nothing holds. The wait is set to nothing so that a gate which
+# did start one is told apart by its verdict and not by its patience.
+
+for held in "open READ WRITE" "closed WRITE READ"; do
+	# shellcheck disable=SC2086 # the three words are space-separated by construction
+	set -- $held
+	fixture
+	passing_suite "$R/test/keto/one.test.ts"
+	git -C "$R" add -A
+	keto_binary_double Project Tenant
+	port_end "$1"
+	run_gate_over_binary "CHUG_KETO_${2}_PORT=$KETO_PORT" "CHUG_KETO_${3}_PORT=$(free_port)" \
+		CHUG_KETO_READY_SECS=0
+	port_end_stop
+	check "a port a connection's own end is on, $1, is a could-not-run" 2 "$RC" \
+		"port $KETO_PORT cannot be listened on (EADDRINUSE), and nothing listens there to stop."
+	OUT="$KETO_STARTED"
+	refute "no keto is started beside a port a connection's end is on, $1" 0 0 "pid "
+done
+
+# --- The port of a listener stopped a moment ago is one a keto can have ------
+#
+# A keto the run before stopped leaves its own ends of the connections it had
+# accepted on its ports for a while, and Keto binds over them. A test that
+# refused them would refuse every run that follows another closely.
+
+fixture
+passing_suite "$R/test/keto/one.test.ts"
+git -C "$R" add -A
+keto_binary_double Project Tenant
+port_end stopped
+run_gate_over_binary
+port_end_stop
+check "a keto is started on the port of a listener stopped a moment ago" 0 "$RC" \
+	"started keto v0.0.0-fixture from PATH on ports $KETO_PORT and $KETO_PORT"
 
 # --- Where docker is present the container is what is used -------------------
 
