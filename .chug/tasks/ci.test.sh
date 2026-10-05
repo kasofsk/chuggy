@@ -347,7 +347,7 @@ set +e
 RC=$?
 set -e
 check "code whose name only carries a page's suffix selects conformance" 0 "$RC" "stub check-conformance"
-check "code whose name only carries a page's suffix selects the suites" 0 "$RC" "stub check-source"
+refute "code whose name only carries a page's suffix selects the suites" 0 "$RC" "check-source unit: SKIPPED"
 
 # A PAGE A SUITE READS IS ASKED FOR BY NAME. The unit suites hold the runbook's
 # table to the API's root, so that page selects them and no other code gate.
