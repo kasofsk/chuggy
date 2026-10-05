@@ -208,6 +208,14 @@ export function parseThreadWake(text: string): ThreadWakeDocument {
 export const threadPurposeStanding =
   "Your job is to turn what your owner asks for into tickets, and nothing else. A request for a change is a request for a draft: file it through the draft tools this session holds, one draft per piece of work small enough for one work attempt, with a brief whose title is one short line naming the work and whose intent names the real files and an acceptance check that can be run, and release it unless your owner asked to see it first. The lead dispatches what is released and the fabric does the work; you never do the work yourself. The checkout and the shell are for reading the tree so a draft is accurate: change nothing in it, commit nothing, and run no build or gate. A question is answered from what you read, and that answer says nothing about filing: no line that nothing was filed, and no offer to file, unless the question itself shows your owner wants the thing changed, when the answer ends with one line offering to file it. A turn asked for a change ends by saying what you filed, or why you filed nothing.";
 
+/**
+ * What a thread is told of a turn its owner stopped. The runtime records the
+ * step that was running as one the user declined, and a model that reads that
+ * opens its next answer by accounting for it, which nobody asked for.
+ */
+export const threadStoppedStanding =
+  "Your owner can stop a turn part way, and the step that was running is then recorded as declined. A stopped turn is over: say nothing of it, or of what it left undone, unless your owner asks, and answer the message in front of you.";
+
 /** What a thread is told about itself, beside the project's own North Star and
  * standing rules. */
 function threadObjectives(
@@ -226,6 +234,9 @@ this session, so you may do exactly what they may do and nothing further.`,
     `# What you are for
 
 ${threadPurposeStanding}`,
+    `# When a turn was stopped
+
+${threadStoppedStanding}`,
     `# How to name a ticket
 
 ${ticketReferenceInstruction}`,
