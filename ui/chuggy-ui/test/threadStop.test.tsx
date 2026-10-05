@@ -596,6 +596,85 @@ test("a page opened after the stop draws what was stored of the turn, which the 
   expect(stageColumn(afresh.container).at(-1)).toBe(`${longer} (Stopped)`);
 });
 
+const cut = "It ships first as a *measu";
+const cutClosed = "It ships first as a measu";
+
+/** The last answer's text as its report draws it: the characters, the words
+ * it emphasises, and how many things in it carry the writing mark. */
+function reportRead(container: HTMLElement): {
+  readonly text: string;
+  readonly emphasised: readonly string[];
+  readonly marks: number;
+} {
+  const reports = container.querySelectorAll(
+    ".conversation-answer .run-report",
+  );
+  const report = reports.item(reports.length - 1);
+  return {
+    text: report.textContent,
+    emphasised: Array.from(
+      report.querySelectorAll("em"),
+      (word) => word.textContent,
+    ),
+    marks: container.querySelectorAll(".run-report-mark").length,
+  };
+}
+
+/** A page on the thread whose second turn wrote `cut` and ended as `ended`,
+ * either having watched it written or drawing it from the store alone. */
+async function cutDrawn(
+  page: "watched" | "stored",
+  ended: Ended,
+): Promise<Stage> {
+  const stored = [stageAsked("u-c", asked), stageWrote("u-d", "msg_a", cut)];
+  if (page === "stored") {
+    const stage = stageMounted(threadAt(ended, 2), [earlier, stored]);
+    await settled();
+    return stage;
+  }
+  const stage = await turnOut("Claimed");
+  stageHeardBlock(stage, "turn-2", {
+    message: "msg_a",
+    index: 0,
+    kind: "Text",
+    text: cut,
+  });
+  await stageColumnIs(stage.container, [...opened, `> ${asked}`, cutClosed]);
+  await flushed(stage, stored, ended);
+  return stage;
+}
+
+const cutPages = [
+  { page: "watched", said: "watched it written" },
+  { page: "stored", said: "draws it from the store" },
+] as const;
+
+test.each(cutPages)(
+  "a stopped answer cut off inside a mark is read as it was while it was written, the star closed and nothing marked, on a page that $said",
+  async ({ page }) => {
+    const stage = await cutDrawn(page, "Stopped");
+    expect(stageColumn(stage.container).at(-1)).toBe(`${cutClosed} (Stopped)`);
+    expect(reportRead(stage.container)).toStrictEqual({
+      text: cutClosed,
+      emphasised: ["measu"],
+      marks: 0,
+    });
+    expect(stageAlarms(stage.container)).toStrictEqual([]);
+  },
+);
+
+test.each(cutPages)(
+  "an answer that ended whole on an open star draws the star, on a page that $said",
+  async ({ page }) => {
+    const stage = await cutDrawn(page, { answer: cut });
+    expect(reportRead(stage.container)).toStrictEqual({
+      text: cut,
+      emphasised: [],
+      marks: 0,
+    });
+  },
+);
+
 test.each(["Queued", "Claimed"] as const)(
   "a press before anything is written of a %s turn leaves its message and Stopped, and the mailbox's read changes nothing",
   async (out) => {
