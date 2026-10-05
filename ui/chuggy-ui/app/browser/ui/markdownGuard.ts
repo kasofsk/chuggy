@@ -31,10 +31,13 @@
  * A LONG LIST IS NOT A RUN PAST ITS ALLOWANCE. Where a run goes past it on a
  * line below one that begins a block at the margin whatever stands above it, a
  * list's line, a quote's or a heading, the run ends at the last such line and
- * the rest is reckoned as a run of its own. So a list longer than one call may
- * cost is read as several, one under another, and only a run with no such line
- * in it is its characters. The line it ends at is above the one that took it
- * past, so every line that decides where is whole and the place never moves.
+ * the rest is reckoned as a run of its own. A quote's line whose words are
+ * blank or indented past its mark may stand under a list item the quote holds,
+ * so the run ends at the last line that is not one, and at one of those only
+ * for want of any other. So a list longer than one call may cost is read as
+ * several, one under another, and only a run with no such line in it is its
+ * characters. The line it ends at is above the one that took it past, so every
+ * line that decides where is whole and the place never moves.
  *
  * CODE FENCED UNDER A LIST ITEM OR IN A QUOTE IS CHARGED AS CODE. Which lines
  * are such a fence's own is `markdownNested.ts`'s to say. Each is charged for
@@ -1173,6 +1176,14 @@ interface Cut {
   readonly exits: number;
 }
 
+/** Whether a line is a quote's whose words are blank or indented past its
+ * mark, and so may be under a list item the quote holds. */
+function markdownQuoteUnder(text: string, at: number, end: number): boolean {
+  if (text.charCodeAt(at) !== 62) return false;
+  const after = at + (text.charCodeAt(at + 1) === 32 ? 2 : 1);
+  return after >= end || markdownBlankCode(text.charCodeAt(after));
+}
+
 /** A run ended at a place above the line that took it past its allowance.
  * Whether it stands apart is what the scan had said by that line, so a run
  * once apart stays so when more of it arrives. */
@@ -1269,6 +1280,7 @@ export function markdownRunScanned(
   );
   let fresh = false;
   let cut: Cut | undefined;
+  let under: Cut | undefined;
   let at = from;
   while (at < text.length) {
     const newline = text.indexOf("\n", at);
@@ -1297,9 +1309,13 @@ export function markdownRunScanned(
       markdownScanSunk(scan, at, held);
       markdownScanTaken(scan, line, at, end);
     }
-    if (scan.plain && cut !== undefined)
-      return markdownRunCut(scan, cut, fresh);
-    if (scan.sure && at > from) cut = { at, work, exits };
+    const ended = cut ?? under;
+    if (scan.plain && ended !== undefined)
+      return markdownRunCut(scan, ended, fresh);
+    if (scan.sure && at > from) {
+      if (markdownQuoteUnder(text, at, end)) under = { at, work, exits };
+      else cut = { at, work, exits };
+    }
     at = newline < 0 ? end : end + 1;
   }
   return markdownRunOf(scan, text.length, "end", fresh);
