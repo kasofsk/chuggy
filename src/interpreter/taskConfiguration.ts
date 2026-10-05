@@ -258,22 +258,27 @@ const briefingLastUpperControl = 0x9f;
 const workerEntriesMax = 64;
 const workerContentCharsMax = 65_536;
 
-/** Returns the bounded text fault one authored line earns, if any. */
-export function taskConfigurationLineFault(
-  line: string,
-): BriefingTextFault | undefined {
-  if (line.length === 0) return "EmptyLine";
-  if (textCodePointsCount(line) > briefingLineCharsMax) return "TextTooLong";
-  if (!line.isWellFormed()) return "TextUnreadable";
+/** Whether a line carries what a briefing cannot print: half a character, or a control character. */
+export function taskConfigurationLineUnreadable(line: string): boolean {
+  if (!line.isWellFormed()) return true;
   for (const character of line) {
     const code = character.codePointAt(0) ?? 0;
     if (
       code < briefingFirstPrintable ||
       (code >= briefingFirstUpperControl && code <= briefingLastUpperControl)
     )
-      return "TextUnreadable";
+      return true;
   }
-  return undefined;
+  return false;
+}
+
+/** Returns the bounded text fault one authored line earns, if any. */
+export function taskConfigurationLineFault(
+  line: string,
+): BriefingTextFault | undefined {
+  if (line.length === 0) return "EmptyLine";
+  if (textCodePointsCount(line) > briefingLineCharsMax) return "TextTooLong";
+  return taskConfigurationLineUnreadable(line) ? "TextUnreadable" : undefined;
 }
 
 function authoredTaskConfigurationStringArray(
