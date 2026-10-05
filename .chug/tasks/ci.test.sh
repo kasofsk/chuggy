@@ -285,8 +285,9 @@ check "a model change selects model API generation" 0 "$RC" "stub check-model-ap
 
 # A PAGE KEPT BESIDE THE CODE IS NOT THE CODE. The gates that prove something
 # of a directory select on the directory, and a page in it is read by none of
-# them, so a changed page under the model, the sources or the console selects
-# the documentation gates and nothing slower.
+# them, so a changed page under the model or the sources selects the gates
+# that read text and nothing slower. The console's build is the one that
+# reads a page: it takes the names of classes from every file under it.
 stub_repo 0
 mkdir -p "$R/model" "$R/src/adapters/postgres" "$R/ui/chuggy-ui/dev"
 printf 'module model {}\n' > "$R/model/domain.qnt"
@@ -312,7 +313,7 @@ check "a page under the sources skips the suites" 0 "$RC" "check-source unit: SK
 check "a page under the sources skips the database" 0 "$RC" "check-postgres: SKIPPED"
 check "a page under the sources skips the query check" 0 "$RC" "check-queries: SKIPPED"
 check "a page under the sources skips the authority" 0 "$RC" "check-keto: SKIPPED"
-check "a page under the console skips the console" 0 "$RC" "check-console: SKIPPED"
+refute "a page under the console selects the console, whose build reads it" 0 "$RC" "check-console: SKIPPED"
 check "a page beside the code still runs doc-lint" 0 "$RC" "stub doc-lint"
 
 # A page changed with the code beside it hides none of the code: the cone is
@@ -542,6 +543,20 @@ printf 'export const answer = 42;\n' > "$R/scripts/orphan.js"
 commit_all orphan
 run_last_commit
 check "a script the boundary gate walks selects it" 0 "$RC" "stub check-boundaries"
+check "a script leaves the console alone" 0 "$RC" "check-console: SKIPPED"
+mkdir -p "$R/test" "$R/ui/chuggy-ui"
+printf 'export const helper = 1;\n' > "$R/test/helper.cjs"
+commit_all helper
+run_last_commit
+check "a test module the boundary gate walks selects it" 0 "$RC" "stub check-boundaries"
+printf 'export default {};\n' > "$R/ui/chuggy-ui/settings.mjs"
+commit_all settings
+run_last_commit
+check "a console module the boundary gate walks selects it" 0 "$RC" "stub check-boundaries"
+printf 'dist/\n' > "$R/.gitignore"
+commit_all ignored
+run_last_commit
+refute "what the tree ignores selects the console, whose build leaves it out" 0 "$RC" "check-console: SKIPPED"
 printf 'export type Entry = 2;\n' > "$R/src/domain/generated/modelTypes.ts"
 commit_all types
 run_last_commit
@@ -559,6 +574,7 @@ commit_all generated
 run_last_commit
 check "the generated API selects the replay that reads it" 0 "$RC" "stub check-conformance"
 check "the generated API selects the random replay" 0 "$RC" "stub check-random"
+refute "the generated API selects the gate that regenerates it" 0 "$RC" "check-model-api: SKIPPED"
 printf 'export const wire = 2;\n' > "$R/src/contract/http.ts"
 commit_all contract
 run_last_commit
@@ -587,6 +603,7 @@ printf 'export const generate = 2;\n' > "$R/scripts/generate-model-api.ts"
 commit_all generator
 run_last_commit 1
 check "the generator selects the generated API's suite" 0 "$RC" "  - .chug/tasks/check-model-api.test.sh"
+refute "the generator leaves the replay's suite alone" 0 "$RC" "  - .chug/tasks/check-conformance.test.sh"
 printf 'module mc { val changed = 1 }\n' > "$R/model/mc/mc_chuggy.qnt"
 commit_all walked
 run_last_commit 1
