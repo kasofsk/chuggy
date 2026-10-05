@@ -121,7 +121,7 @@ test("a tree carrying two actions imports both, at addresses every import of the
     {
       source,
       commit,
-      path: ".chug/actions/build.json",
+      path: `${repositoryActionRoot}build.json`,
       action: "build",
       name: "Build",
       repository: source,
@@ -132,7 +132,7 @@ test("a tree carrying two actions imports both, at addresses every import of the
     {
       source,
       commit,
-      path: ".chug/actions/deploy.json",
+      path: `${repositoryActionRoot}deploy.json`,
       action: "deploy-staging",
       name: "Deploy to staging",
       repository: site,
@@ -159,7 +159,10 @@ test("a document naming a repository the project does not bind is refused at imp
     {
       result: "DeclarationsRefused",
       faults: [
-        { path: ".chug/actions/deploy.json", fault: "RepositoryUnbound" },
+        {
+          path: `${repositoryActionRoot}deploy.json`,
+          fault: "RepositoryUnbound",
+        },
       ],
     },
   );
@@ -185,7 +188,10 @@ test("two documents of one identity are refused, and nothing of the commit is st
     {
       result: "DeclarationsRefused",
       faults: [
-        { path: ".chug/actions/build-again.json", fault: "DuplicateAction" },
+        {
+          path: `${repositoryActionRoot}build-again.json`,
+          fault: "DuplicateAction",
+        },
       ],
     },
   );
