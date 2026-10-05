@@ -6,9 +6,9 @@
  * The high-water mark rides the `Execution` frame the browser already receives,
  * so the only question here is which batches sit above the highest one held —
  * nothing polls and nothing follows. A pane opens on the newest batches and
- * reads earlier ones only when a reader asks, because the plane numbers a
- * run's batches from one without a gap and so what lies below the held window
- * is a count rather than a guess. An assistant or user line becomes the
+ * reads earlier ones when a reader asks, or while nothing it holds draws,
+ * because the plane numbers a run's batches from one without a gap and so what
+ * lies below the held window is a count rather than a guess. An assistant or user line becomes the
  * entry the surface's own block parser reads it as; a payload the run elided,
  * a cap the run hit or a line this console cannot parse becomes the marker the
  * surface has a place for; a batch whose bytes are gone or fail their digest
@@ -101,7 +101,8 @@ export interface RunTranscriptHeld {
   readonly observedAt: string | undefined;
   readonly complete: boolean;
   readonly failure: string | undefined;
-  /** How many batches the pane keeps, raised a page by each earlier read. */
+  /** How many batches that draw the pane keeps, raised a page by each earlier
+   * read. */
   readonly capacity: number;
 }
 

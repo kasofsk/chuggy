@@ -7,9 +7,9 @@
  * highest it holds when the high-water mark on the `Execution` frame the
  * browser already receives rises — there is no poll and no follow control,
  * because neither would learn anything the frame does not already carry.
- * Earlier batches are read only when a reader asks. The conversation is
- * read-only: no turn overlay and no composer, because a run's own mailbox is
- * not this pane's to send into.
+ * Earlier batches are read when a reader asks, or while nothing held draws.
+ * The conversation is read-only: no turn overlay and no composer, because a
+ * run's own mailbox is not this pane's to send into.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
