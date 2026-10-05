@@ -28,11 +28,6 @@
  * confinement of a session bearer to its own session's tenant and project. A
  * control described as stronger than it is, is worse than none.
  *
- * THE ROSTER NAMES READS THE TREE DOES NOT YET SERVE, because a roster is what
- * a session may ask for and a route is what answers. The image's
- * `chuggyToolsNotYetServed` is where each says so to a caller, and an entry
- * there is deleted by the change that registers its route.
- *
  * DERIVED WORK IS A FACT ABOUT THE MAP. `DraftAuthor` carries no bare create: a
  * dependent is filed against a parent that already exists, and a roster holding
  * only it cannot originate work. `create_draft` is admitted by `DraftOriginate`
@@ -188,7 +183,7 @@ export const dependentRelationsAdmitted = ["FollowUp"] as const;
 /** How many tickets one decision may refuse, and how many it may lift. */
 export const leadRefusalsPerDecisionMax = 16;
 
-/** The public API routes the project tools call, including the tools the image refuses until the API serves them; each is the route table's own entry. */
+/** The public API routes the project tools call; each is the route table's own entry. */
 export const chuggyToolRoutes = {
   project: nativeHttpRoutes.project,
   ticket: nativeHttpRoutes.ticket,
