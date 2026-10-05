@@ -29,6 +29,7 @@ import {
   allThreadWakeReasons,
   parseThreadWake,
   threadCapabilitiesDefault,
+  threadConfigurationStanding,
   threadPurposeStanding,
   threadStoppedStanding,
   threadSeedingText,
@@ -291,6 +292,53 @@ test("the purpose says the draft is the job and the checkout is for reading", ()
   assert.match(threadPurposeStanding, /never do the work yourself/u);
   assert.match(threadPurposeStanding, /change nothing/u);
   assert.match(threadPurposeStanding, /what you filed/u);
+});
+
+/**
+ * Revoking ends a ticket for good, and the roster cannot say when: the tool is
+ * held on a wake as on a message. What can be checked is that the purpose says
+ * whose word it takes.
+ */
+test("the purpose lets a thread revoke a ticket on its owner's word and on nothing else", () => {
+  assert.match(
+    threadPurposeStanding,
+    /You revoke a ticket only on your owner's word: their instruction, or their yes to one line from you naming the tickets\./u,
+  );
+});
+
+/**
+ * A ticket runs on the agent of the configuration it was released against, so
+ * the choice of one is where a thread decides who does the work. The telling
+ * names no configuration, and stands after the purpose it qualifies.
+ */
+test("the objectives tell a thread a configuration is who does the work, and to choose one for each ticket", () => {
+  const prompt = threadSystemPrompt({
+    partition,
+    owner: "geoff",
+    standingRules: threadStandingRulesDefault,
+  });
+
+  for (const said of [
+    /A configuration is also who does the work/u,
+    /read each and choose for every ticket/u,
+    /the strongest agent for work that needs design judgement/u,
+    /a cheaper one for work that is mechanical and fully specified/u,
+    /the stronger when unsure/u,
+    /names the configuration beside each ticket/u,
+    /before anything is released\.$/u,
+  ])
+    assert.match(threadConfigurationStanding, said);
+  assert.ok(prompt.includes(threadConfigurationStanding));
+  assert.ok(
+    prompt.indexOf(threadPurposeStanding) <
+      prompt.indexOf(threadConfigurationStanding),
+    "the purpose stands before who does the work",
+  );
+  assert.ok(
+    prompt.indexOf(threadConfigurationStanding) <
+      prompt.indexOf(threadStandingRulesDefault),
+    "who does the work stands before the rules",
+  );
 });
 
 /**

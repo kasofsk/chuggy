@@ -39,21 +39,25 @@ const settings = (
  * about the roster: the one tool that files from nothing exists, and the lead's
  * own roster is what does not admit it. Asserting membership of the thread's
  * roster rather than absence from the whole is the point — a `create_draft`
- * silently dropped from every capability would pass an absence check.
+ * silently dropped from every capability would pass an absence check — and
+ * revoking is held the same way, by the same capability.
  */
-test("origination is admitted for a thread's roster and refused for a lead's", () => {
-  const originating = `${chuggyToolPrefix}create_draft`;
+test("origination and revoking are admitted for a thread's roster and refused for a lead's", () => {
+  const memberOnly = ["create_draft", "revoke_ticket"] as const;
 
-  assert.deepEqual(chuggyToolCapabilities.DraftOriginate, ["create_draft"]);
-  assert.ok(
-    chuggyToolNames(threadCapabilitiesDefault).includes(originating),
-    "a thread's own roster does not admit the tool it exists for",
-  );
-  assert.ok(!chuggyToolNames(leadSessionCapabilities).includes(originating));
+  assert.deepEqual(chuggyToolCapabilities.DraftOriginate, memberOnly);
+  for (const tool of memberOnly) {
+    const named = `${chuggyToolPrefix}${tool}`;
+    assert.ok(
+      chuggyToolNames(threadCapabilitiesDefault).includes(named),
+      `a thread's own roster does not admit ${tool}`,
+    );
+    assert.ok(!chuggyToolNames(leadSessionCapabilities).includes(named), tool);
+  }
   assert.deepEqual(
     chuggyToolNames(leadSessionCapabilities),
     allChuggyTools
-      .filter((tool) => tool !== "create_draft")
+      .filter((tool) => !(memberOnly as readonly string[]).includes(tool))
       .map((tool) => `${chuggyToolPrefix}${tool}`),
   );
 });
