@@ -5,7 +5,7 @@
 check:
     ./.chug/tasks/ci.sh
 
-# Every gate, for release qualification and periodic coverage.
+# Every gate, for periodic coverage.
 check-full:
     CHUG_CI_FULL=1 ./.chug/tasks/ci.sh
 

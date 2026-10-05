@@ -429,7 +429,7 @@ cp "$LOG.body" "$OUT"
 check "the pull request says the api did not move" 0 "$RC" "api: unchanged"
 check "the pull request carries the commits" 0 "$RC" "touch ui/chuggy-ui/app.ts"
 check "the pull request says no migration is applied" 0 "$RC" "No migration"
-check "the pull request reports the gate" 0 "$RC" "Gate at $TAG: clean"
+check "the pull request reports the gate" 0 "$RC" "Gate at $TAG: clean over the gates the change since $DEPLOYED affects"
 
 fresh_case
 advance src/a.ts
@@ -903,19 +903,34 @@ run --console
 check "a console gate finding stops the release" 1 "$RC" "did not pass $TAG"
 check "a failed console gate merges nothing" 1 "$RC" "merges attempted: 0"
 
-# The full route still gates with every gate, so the two cannot be confused.
+# The full route gates the same way: by what moved since the live commit.
 fresh_case
-advance ui/chuggy-ui/app.ts
+advance src/a.ts
 run
-check "the full route gates with every gate" 0 "$RC" "ci prefix=<> full=<1> base=<>"
+check "the full route gates what moved since the live commit" 0 "$RC" "ci prefix=<> full=<> base=<$DEPLOYED>"
+
+# Every gate is run when a release asks for it, and the pull request says so.
+fresh_case
+advance src/a.ts
+export CHUG_RELEASE_GATE=full
+run
+check "a release that asks for every gate runs every gate" 0 "$RC" "ci prefix=<> full=<1> base=<>"
+cp "$LOG.body" "$OUT"
+check "the pull request says every gate ran" 0 "$RC" "Gate at $TAG: clean over every gate"
 
 # A full run in the caller's environment, as a suite under the full gate has,
-# must not widen a console release's gate to every gate.
+# must not widen a release's gate to every gate, on either route.
 fresh_case
 advance ui/chuggy-ui/app.ts
 export CHUG_STUB_MERGED="$MERGED" CHUG_CI_FULL=1
 run --console
 check "an inherited full-run flag does not widen a console release's gate" 0 "$RC" "ci prefix=<> full=<> base=<$DEPLOYED>"
+
+fresh_case
+advance src/a.ts
+export CHUG_CI_FULL=1
+run
+check "an inherited full-run flag does not widen a release's gate" 0 "$RC" "ci prefix=<> full=<> base=<$DEPLOYED>"
 
 # --- the tools that have to be there --------------------------------------------------
 

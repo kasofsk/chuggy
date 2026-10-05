@@ -76,13 +76,19 @@
 # `--console` IS BOTH PHASES IN ONE RUN, for a release in which only the
 # console moved. Every other manifest then takes an annotation and no
 # new image, so nothing that carries a heartbeat restarts and the live-attempt
-# refusal is not consulted; the gate is the gates the change since the live
-# commit affects rather than every gate; and the pull request is opened,
-# merged and rolled out without a pause, because a diff that is digests and
-# annotations is read mechanically and not reviewed. A change that also moves
-# the api is refused under it and goes the long way, and a migration is under
-# `src/`, so it moves the api. So is a release that moves the rig back, because
-# it has no change since the live commit to gate over.
+# refusal is not consulted; and the pull request is opened, merged and rolled
+# out without a pause, because a diff that is digests and annotations is read
+# mechanically and not reviewed. A change that also moves the api is refused
+# under it and goes the long way, and a migration is under `src/`, so it moves
+# the api. So is a release that moves the rig back.
+#
+# THE GATE IS THE GATES THE CHANGE SINCE THE LIVE COMMIT AFFECTS. Each commit
+# in that range was gated against main when it merged; what a release adds is
+# their sum against what the rig runs, and the runner's selection over the
+# range is that sum, so a gate nothing in the range touches has nothing new to
+# say. A release that moves the rig back has no change ahead of the live
+# commit to select by, so it runs every gate, and `CHUG_RELEASE_GATE=full`
+# asks for every gate of any release.
 #
 # Usage:
 #   deploy/rig/deploy-to-gtr.sh            gate, build, publish, open the PR
@@ -99,7 +105,8 @@
 #   CHUG_RIG_ARCHIVE      where a pre-merge dump is kept. Required by --merge
 #                         when the release carries a migration; no default.
 #   CHUG_FABRIC_REPO      the fabric repository, default gdoteof/chuggy-fabric
-#   CHUG_RELEASE_GATE     0 skips the gate, and the pull request says so
+#   CHUG_RELEASE_GATE     0 skips the gate, and the pull request says so;
+#                         full runs every gate
 #   CHUG_RELEASE_WAIT_SECS  how long a landing run waits on each of Flux, the
 #                         migrate Job and a rollout
 #
@@ -414,7 +421,15 @@ fi
 if [ "${CHUG_RELEASE_GATE:-1}" = "0" ]; then
 	gate="skipped by CHUG_RELEASE_GATE=0"
 	say "gate $gate; this release carries no verdict of its own"
-elif [ "$console" -eq 1 ]; then
+elif [ "${CHUG_RELEASE_GATE:-1}" = "full" ] || [ "$back" -eq 1 ]; then
+	say "gating $tag with every gate"
+	set +e
+	CHUG_CI_FULL=1 ./.chug/tasks/ci.sh
+	gated=$?
+	set -e
+	[ "$gated" -eq 0 ] || leave_as "$gated" "the gate did not pass $tag, so it is not released"
+	gate="clean over every gate"
+else
 	say "gating $tag with the gates the change since $deployed affects"
 	set +e
 	# The runner selects by the base only when nothing asks it for every gate,
@@ -424,14 +439,6 @@ elif [ "$console" -eq 1 ]; then
 	set -e
 	[ "$gated" -eq 0 ] || leave_as "$gated" "the gate did not pass $tag, so it is not released"
 	gate="clean over the gates the change since $deployed affects"
-else
-	say "gating $tag with every gate"
-	set +e
-	CHUG_CI_FULL=1 ./.chug/tasks/ci.sh
-	gated=$?
-	set -e
-	[ "$gated" -eq 0 ] || leave_as "$gated" "the gate did not pass $tag, so it is not released"
-	gate="clean"
 fi
 
 # --- the images -----------------------------------------------------------------
