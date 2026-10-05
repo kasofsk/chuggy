@@ -30,6 +30,7 @@ import {
   parseThreadWake,
   threadCapabilitiesDefault,
   threadPurposeStanding,
+  threadStoppedStanding,
   threadSeedingText,
   threadStanding,
   threadSystemPrompt,
@@ -290,6 +291,35 @@ test("the purpose says the draft is the job and the checkout is for reading", ()
   assert.match(threadPurposeStanding, /never do the work yourself/u);
   assert.match(threadPurposeStanding, /change nothing/u);
   assert.match(threadPurposeStanding, /what you filed/u);
+});
+
+/**
+ * A stop reaches the model as a step its user declined, and unprompted it
+ * opens the next answer by explaining that. What can be checked is that the
+ * thread is told a stopped turn is over and is not to be spoken of, and that
+ * the telling stands apart from the purpose and after it.
+ */
+test("the objectives tell a thread to say nothing of a turn its owner stopped", () => {
+  const prompt = threadSystemPrompt({
+    partition,
+    owner: "geoff",
+    standingRules: threadStandingRulesDefault,
+  });
+
+  assert.match(threadStoppedStanding, /A stopped turn is over/u);
+  assert.match(threadStoppedStanding, /say nothing of it/u);
+  assert.match(threadStoppedStanding, /unless your owner asks/u);
+  assert.ok(prompt.includes(threadStoppedStanding));
+  assert.ok(
+    prompt.indexOf(threadPurposeStanding) <
+      prompt.indexOf(threadStoppedStanding),
+    "the purpose stands before what is said of a stop",
+  );
+  assert.ok(
+    prompt.indexOf(threadStoppedStanding) <
+      prompt.indexOf(threadStandingRulesDefault),
+    "what is said of a stop stands before the rules",
+  );
 });
 
 /**
