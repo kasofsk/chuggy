@@ -164,7 +164,7 @@ A finding that turns out to be false and a finding that is really a preference
 are both worse than missing a bug, because both train the author to stop
 reading you. Prefer to be quiet and right.
 
-**Read; do not run.** `just check` runs every gate over the whole tree and the
+**Read; do not run.** `just check` runs every gate the change affects and the
 author is expected to have run it. Read the code instead: whether the change is
 *correct* is the part no gate can decide, and it is the whole reason a reviewer
 is worth the time. If you believe a gate would fail, say which one and why, and

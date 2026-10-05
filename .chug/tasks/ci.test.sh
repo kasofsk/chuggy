@@ -269,6 +269,105 @@ set -e
 check "a model change selects Quint" 0 "$RC" "stub check-model"
 check "a model change selects model API generation" 0 "$RC" "stub check-model-api"
 
+# A PAGE KEPT BESIDE THE CODE IS NOT THE CODE. The gates that prove something
+# of a directory select on the directory, and a page in it is read by none of
+# them, so a changed page under the model, the sources or the console selects
+# the documentation gates and nothing slower.
+stub_repo 0
+mkdir -p "$R/model" "$R/src/adapters/postgres" "$R/ui/chuggy-ui/dev"
+printf 'module model {}\n' > "$R/model/domain.qnt"
+printf '# before\n' > "$R/model/AGENTS.md"
+printf '# before\n' > "$R/src/adapters/postgres/AGENTS.md"
+printf '# before\n' > "$R/ui/chuggy-ui/dev/README.md"
+git -C "$R" add -A
+git -C "$R" commit -qm baseline
+printf '# after\n' > "$R/model/AGENTS.md"
+printf '# after\n' > "$R/src/adapters/postgres/AGENTS.md"
+printf '# after\n' > "$R/ui/chuggy-ui/dev/README.md"
+git -C "$R" add -A
+git -C "$R" commit -qm pages
+OUT="$WORK/.out"
+set +e
+(cd "$R" && CHUG_CI_BASE=HEAD^ CHUG_CI_SHELL_SUITES=0 \
+	./.chug/tasks/ci.sh) >"$OUT" 2>&1
+RC=$?
+set -e
+check "a page under the model skips Quint" 0 "$RC" "check-model: SKIPPED"
+check "a page under the model skips model API generation" 0 "$RC" "check-model-api: SKIPPED"
+check "a page under the sources skips the suites" 0 "$RC" "check-source unit: SKIPPED"
+check "a page under the sources skips the database" 0 "$RC" "check-postgres: SKIPPED"
+check "a page under the sources skips the query check" 0 "$RC" "check-queries: SKIPPED"
+check "a page under the sources skips the authority" 0 "$RC" "check-keto: SKIPPED"
+check "a page under the console skips the console" 0 "$RC" "check-console: SKIPPED"
+check "a page beside the code still runs doc-lint" 0 "$RC" "stub doc-lint"
+
+# A page changed with the code beside it hides none of the code: the cone is
+# asked of what is left once the pages are set aside, not of nothing.
+printf 'module changed {}\n' > "$R/model/domain.qnt"
+printf '# again\n' > "$R/model/AGENTS.md"
+git -C "$R" add -A
+git -C "$R" commit -qm model-and-page
+OUT="$WORK/.out"
+set +e
+(cd "$R" && CHUG_CI_BASE=HEAD^ CHUG_CI_SHELL_SUITES=0 \
+	./.chug/tasks/ci.sh) >"$OUT" 2>&1
+RC=$?
+set -e
+check "a model change beside a changed page selects Quint" 0 "$RC" "stub check-model"
+check "a model change beside a changed page still skips the database" 0 "$RC" "check-postgres: SKIPPED"
+
+# A file is a page by its last suffix alone: one that only carries the letters
+# is code, and one kept under the replayed corpus is still a page.
+stub_repo 0
+mkdir -p "$R/src/domain" "$R/test/conformance" "$R/test/random"
+printf 'export const before = 1;\n' > "$R/src/domain/notes.md.ts"
+printf '# before\n' > "$R/test/conformance/README.md"
+printf '# before\n' > "$R/test/random/README.md"
+git -C "$R" add -A
+git -C "$R" commit -qm baseline
+printf '# after\n' > "$R/test/conformance/README.md"
+printf '# after\n' > "$R/test/random/README.md"
+git -C "$R" add -A
+git -C "$R" commit -qm corpus-pages
+OUT="$WORK/.out"
+set +e
+(cd "$R" && CHUG_CI_BASE=HEAD^ CHUG_CI_SHELL_SUITES=0 \
+	./.chug/tasks/ci.sh) >"$OUT" 2>&1
+RC=$?
+set -e
+check "a page under the replayed corpus skips conformance" 0 "$RC" "check-conformance: SKIPPED"
+check "a page under the random walks skips them" 0 "$RC" "check-random: SKIPPED"
+printf 'export const after = 2;\n' > "$R/src/domain/notes.md.ts"
+git -C "$R" add -A
+git -C "$R" commit -qm code-named-like-a-page
+OUT="$WORK/.out"
+set +e
+(cd "$R" && CHUG_CI_BASE=HEAD^ CHUG_CI_SHELL_SUITES=0 \
+	./.chug/tasks/ci.sh) >"$OUT" 2>&1
+RC=$?
+set -e
+check "code whose name only carries a page's suffix selects conformance" 0 "$RC" "stub check-conformance"
+refute "code whose name only carries a page's suffix selects the suites" 0 "$RC" "check-source unit: SKIPPED"
+
+# A PAGE A SUITE READS IS ASKED FOR BY NAME. The unit suites hold the runbook's
+# table to the API's root, so that page selects them and no other code gate.
+stub_repo 0
+mkdir -p "$R/deploy/rig/images"
+printf '# before\n' > "$R/deploy/rig/images/README.md"
+git -C "$R" add -A
+git -C "$R" commit -qm baseline
+printf '# after\n' > "$R/deploy/rig/images/README.md"
+git -C "$R" add -A
+git -C "$R" commit -qm runbook
+OUT="$WORK/.out"
+set +e
+(cd "$R" && CHUG_CI_BASE=HEAD^ CHUG_CI_SHELL_SUITES=0 \
+	./.chug/tasks/ci.sh) >"$OUT" 2>&1
+RC=$?
+set -e
+check "the runbook's page selects the suites that read it" 0 "$RC" "stub check-source"
+check "the runbook's page skips the database" 0 "$RC" "check-postgres: SKIPPED"
+
 # The vendored package is the model's text and the corpus the harness replays,
 # so a change to it reaches the replay gates and the pin, not only Quint.
 stub_repo 0
