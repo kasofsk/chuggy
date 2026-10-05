@@ -59,6 +59,7 @@ port="${CHUG_PG_PORT:-55432}"
 ready_secs="${CHUG_PG_READY_SECS:-30}"
 container="chuggy-check-postgres"
 password="chuggy-check"
+scratch=""
 # How long one connect attempt may hang before the wait asks again.
 probe_attempt_ms=1000
 
