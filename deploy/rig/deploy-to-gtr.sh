@@ -372,7 +372,7 @@ land() { # <pull request url>
 		$fates
 	FATES
 	[ $((running + ended + lost)) -eq "$live_count" ] || refuse "the database did not answer for each of the $live_count attempt(s) live at the merge, so what became of them is unknown"
-	[ "$lost" -eq 0 ] || fail "of $live_count attempt(s) live at the merge, $lost were lost across the rollout; $ended ended and $running still run"
+	[ "$lost" -eq 0 ] || fail "of $live_count attempt(s) live at the merge, the rollout lost $lost; $ended ended and $running still run"
 	say "of $live_count attempt(s) live at the merge, none was lost: $ended ended and $running still run"
 	exit 0
 }

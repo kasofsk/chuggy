@@ -737,7 +737,7 @@ Lost work attempt attempt-2 in acme/site: LeaseExpired
 Lost session attempt session-attempt-3 in acme/site: SessionIdle"
 run --merge
 check "an attempt lost across the rollout is named with the evidence its row gives" 1 "$RC" "LOST — work attempt attempt-2 in acme/site: LeaseExpired"
-check "one lost is the landing's finding" 1 "$RC" "FAILED — of 3 attempt(s) live at the merge, 1 were lost across the rollout; 1 ended and 1 still run"
+check "one lost is the landing's finding" 1 "$RC" "FAILED — of 3 attempt(s) live at the merge, the rollout lost 1; 1 ended and 1 still run"
 check "a release that lost an attempt is still landed" 1 "$RC" "the rig is at $TAG; ledger at 52"
 check "a release that lost an attempt is still verified" 1 "$RC" "rollout status deployment/chuggy-ui"
 printf 'losses named: %s\n' "$(grep -c 'LOST' "$OUT" || true)" >>"$OUT"
