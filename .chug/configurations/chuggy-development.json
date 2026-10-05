@@ -38,7 +38,7 @@
     "work": {
       "instructions": [
         "Implement the requested change and add focused regression coverage.",
-        "`.chug/tasks/ci.sh` runs the gates the change affects and no others. Run it once the change is complete and not while you work, when the test file or the single gate in hand is enough; after a red run, fix it, run the gates that were red, and run `ci.sh` once more before you report."
+        "`.chug/tasks/ci.sh` runs the gates the change affects and no others. While you work, the test file or the single gate in hand is enough. Run `ci.sh` once the change is complete; if a gate is red, fix it, run that gate until it is clean, and run `ci.sh` again. Report the work as passing only after a run of `ci.sh` that ends clean: a gate that could not run is not a pass."
       ]
     },
     "review": {

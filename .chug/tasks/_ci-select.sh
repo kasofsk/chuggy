@@ -7,13 +7,12 @@
 # the code — the suites, the servers, the console, the model — select on the
 # directories they read, and a page kept in one of those directories is read
 # by none of them: the documentation gates hold it, and they select on it
-# wherever it is. Selected by directory alone, a changed page under `model/`
-# ran the model's proofs and one under `src/` every server suite, each over a
-# change it could find nothing in.
+# wherever it is.
 #
 # WHAT THAT CANNOT SEE is a suite that takes a tracked page as its input. One
 # that does asks for the page by name on its gate's line, with `ci_changed`,
-# which reads every changed file.
+# which reads every changed file: the unit suites hold the runbook's table of
+# the API's variables to the root that reads them.
 
 ci_select_init() {
 	CI_SELECT_MODE=full
@@ -106,7 +105,7 @@ ci_gate_selected() { # <gate id>
 	check-vendored) ci_changed 'model/task-contract/**' 'model/ticket-domain/**' model/vendored.sha256 .chug/tasks/check-vendored.sh ;;
 	check-boundaries) ci_changed 'src/*.ts' 'src/**/*.ts' 'test/*.ts' 'test/**/*.ts' 'scripts/*.ts' 'scripts/**/*.ts' 'ui/*.js' 'ui/**/*.js' 'ui/**/*.ts' 'ui/**/*.tsx' .dependency-cruiser.cjs .chug/tasks/check-boundaries.sh || ci_toolchain_changed ;;
 	source-static) ci_changed '*.ts' '*.tsx' '*.js' '*.json' '*.cjs' '*.yaml' '*.yml' .chug/tasks/check-source.sh || ci_toolchain_changed ;;
-	source-unit) ci_code_changed 'src/**' 'test/**' 'ui/**' 'images/**' 'scripts/**' '.chug/configurations/**' tsconfig.contract.json tsconfig.contract-pack.json .chug/tasks/check-source.sh || ci_toolchain_changed ;;
+	source-unit) ci_code_changed 'src/**' 'test/**' 'ui/**' 'images/**' 'scripts/**' '.chug/configurations/**' tsconfig.contract.json tsconfig.contract-pack.json .chug/tasks/check-source.sh || ci_changed deploy/rig/images/README.md || ci_toolchain_changed ;;
 	check-console) ci_code_changed 'ui/**' 'src/contract/**' '.chug/configurations/**' 'scripts/console-policy.ts' 'scripts/check-console-policy.ts' .chug/tasks/check-console.sh ;;
 	check-conformance) ci_code_changed 'src/domain/**' 'test/conformance/**' 'test/domain/**' 'test/itf/**' 'test/golden/**' 'model/domain.qnt' 'model/ticket.qnt' 'model/ticket-domain/**' 'model/task-contract/**' .chug/tasks/check-conformance.sh ;;
 	check-random) ci_code_changed 'src/domain/**' 'test/random/**' 'test/conformance/**' 'test/domain/**' 'test/itf/**' 'model/domain.qnt' 'model/ticket.qnt' 'model/ticket-domain/**' 'model/task-contract/**' 'model/mc/mc_chuggy.qnt' .chug/tasks/check-random.sh ;;
