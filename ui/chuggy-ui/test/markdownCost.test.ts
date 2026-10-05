@@ -180,20 +180,30 @@ function dearest(name: string, text: string): number {
 
 /**
  * A text written a stride at a time under the clock a page reads it by: how
- * many times its bound the dearer of its dearest frame and the reading at
- * its stop took, in milliseconds a yardstick of the bound.
+ * many times its bound the dearest of its dearest frame, its frames between
+ * them and the reading at its stop took, in milliseconds a yardstick of the
+ * bound. The frames between them are held to what the text read whole is,
+ * which a reader that reads it again at every stride is many times past
+ * though no frame of its costs more than the text read whole does.
  */
 function written(text: string, stride: number): number {
   const clock = (): number => performance.now();
   let reading: MarkdownReading | undefined;
   let frame = 0;
+  let frames = 0;
   for (let length = stride; length < text.length; length += stride) {
     const from = performance.now();
     reading = markdownReadingNext(reading, text.slice(0, length), true, clock);
-    frame = Math.max(frame, performance.now() - from);
+    const took = performance.now() - from;
+    frame = Math.max(frame, took);
+    frames += took;
   }
   const stop = timed(() => markdownReadingNext(reading, text, false, clock));
-  return Math.max(frame / callYardsMax, stop / wholeYardsMax);
+  return Math.max(
+    frame / callYardsMax,
+    frames / wholeYardsMax,
+    stop / wholeYardsMax,
+  );
 }
 
 beforeAll(() => {
