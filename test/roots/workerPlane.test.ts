@@ -170,6 +170,27 @@ test("a started plane answers its session routes and refuses each without a bear
   }
 });
 
+test("a started plane ends when its supervisor asks it to, with nothing left to report", async () => {
+  const port = await freePort();
+  const child = planeProcess(planeEnvironment(port));
+  const gaveUp = setTimeout(() => child.kill("SIGKILL"), refusalMsMax);
+  try {
+    await planeListening(port, child);
+    const ended = new Promise<[number | null, NodeJS.Signals | null]>(
+      (resolve) => {
+        child.on("exit", (code, signal) => {
+          resolve([code, signal]);
+        });
+      },
+    );
+    child.kill("SIGTERM");
+    assert.deepEqual(await ended, [0, null]);
+  } finally {
+    clearTimeout(gaveUp);
+    child.kill("SIGKILL");
+  }
+});
+
 test("every prerequisite variable is refused by its own name", async () => {
   const port = await freePort();
   for (const name of required) {

@@ -57,6 +57,7 @@ import {
   planeEnvironmentPositive as positive,
   planeEnvironmentRequired as required,
 } from "./planeEnvironment.ts";
+import { planeStopping } from "./planeStopping.ts";
 
 /**
  * The session half of this plane, over the same pool and the same artifact
@@ -260,7 +261,7 @@ async function main(): Promise<void> {
       }
     },
   });
-  app.addHook("onClose", () => pool.end());
+  planeStopping(app, pool, "worker plane");
   await app.listen({
     host: process.env["CHUG_WORKER_PLANE_HOST"] ?? "127.0.0.1",
     port: positive("CHUG_WORKER_PLANE_PORT", 3_001),
