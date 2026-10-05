@@ -5,7 +5,8 @@
  * A REFUSED SEND HANDS THE TEXT BACK. The composer clears at dispatch and the
  * page's answer arrives after that, so a page that could not take the message
  * says `Kept` and the characters are put back in the box the reader is still
- * looking at.
+ * looking at. A box that was not drawn when the answer came is handed them as
+ * `back` when it next is.
  *
  * WHILE A TURN CAN BE STOPPED THE BUTTON IS STOP, and Enter still sends, so a
  * message typed under an answer being written queues behind it. Escape stops
@@ -17,7 +18,8 @@
  *
  * A PRESS THE SURFACE SAYS TO IGNORE DOES NOTHING AND CHANGES NOTHING DRAWN.
  * The button is asked at each press, so one too close behind a press of Stop
- * neither stops the turn behind nor sends what is in the box.
+ * neither stops the turn behind nor sends what is in the box, and one too
+ * close behind a click that sent does not stop what it sent.
  */
 
 import { ComposerPrimitive, useAuiState } from "@assistant-ui/react";
@@ -54,6 +56,9 @@ export interface ConversationComposerProps {
    * note about a press this text has since moved past. Fired on the box's own
    * change event, not on a programmatic restore of a kept message. */
   readonly onEdit?: (text: string) => void;
+  /** A message the page handed back while this box was not drawn, which goes
+   * in the box as a refused send's does; `taken` is called once it has. */
+  readonly back?: { readonly text: string; readonly taken: () => void };
   /** Whether this box takes the caret as it mounts, which is for a thread the
    * reader just named — one they started, or picked out of the history. A box
    * that took focus on every mount would take it from the page on the first
@@ -103,6 +108,8 @@ interface ConversationComposerSurface {
   readonly stops: boolean;
   /** Whether a press of the button now is one to do nothing for. */
   readonly ignores: (button: ConversationComposerButton) => boolean;
+  /** Told of a click of Send that was taken. */
+  readonly onSendClick: () => void;
 }
 
 /** The composer's one button: Stop while a turn can be stopped, and Send. */
@@ -113,6 +120,7 @@ function ConversationComposerPressed(
     (button: ConversationComposerButton) =>
     (event: MouseEvent<HTMLButtonElement>): void => {
       if (props.ignores(button)) event.preventDefault();
+      else if (button === "Send") props.onSendClick();
     };
   if (props.stops)
     return (
@@ -190,6 +198,7 @@ export function ConversationComposer(
             busy={props.busy}
             stops={props.stops}
             ignores={props.ignores}
+            onSendClick={props.onSendClick}
           />
         </div>
       </ComposerPrimitive.Root>

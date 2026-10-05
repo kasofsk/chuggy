@@ -32,6 +32,12 @@
  * the thread's stops for one to follow, so the button is Stop before the door
  * has answered, in a thread that press is opening as in one already open.
  *
+ * A REFUSAL THAT ARRIVES AFTER THE THREAD LEFT THE SCREEN IS KEPT FOR IT. The
+ * reader chose another thread while the door held the message, so the box
+ * that would take the words back is gone: they are handed to whoever mounted
+ * the thread, and the thread takes them as its own last press when it is next
+ * drawn.
+ *
  * A REFUSAL IS SAID IN ONE LINE AND FOR AS LONG AS IT IS ABOUT SOMETHING: what
  * was not done, with no code of the API's. It goes when the reader edits the
  * box or presses again, and a stop's goes when the mailbox lists its turn
@@ -39,7 +45,7 @@
  */
 
 import { useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
 import { threadMessageCharsMax } from "../../../../../src/contract/http.ts";
@@ -61,6 +67,7 @@ import {
 } from "../../core/threads.ts";
 import type {
   ThreadDoor,
+  ThreadKept,
   ThreadSend,
   ThreadSending,
 } from "../../core/threads.ts";
@@ -250,6 +257,59 @@ function useThreadSendSending(listed: readonly string[]): {
 
 const threadSendNothingListed: readonly string[] = [];
 
+/** Where a thread hands a message its door refused once the thread is no
+ * longer drawn, and where it finds one handed there before. */
+export interface ThreadKeptAway {
+  readonly kept: ThreadKept | undefined;
+  readonly keep: (kept: ThreadKept) => void;
+  /** Said once the thread's box holds what was kept. */
+  readonly taken: () => void;
+}
+
+/**
+ * A thread's dealings with what is kept for it: `answered` hands a refusal on
+ * where the thread is no longer drawn, and one found kept becomes the thread's
+ * own last press and is handed to the box as `back`.
+ */
+function useThreadKeptAway(
+  away: ThreadKeptAway | undefined,
+  pressed: {
+    readonly setSend: (send: ThreadSend) => void;
+    readonly setHeld: (held: ThreadHeld | undefined) => void;
+  },
+): {
+  readonly answered: (sent: ThreadSending, send: ThreadSend) => void;
+  readonly back: ConversationComposerProps["back"];
+} {
+  const drawn = useRef(true);
+  useEffect(() => {
+    drawn.current = true;
+    return () => {
+      drawn.current = false;
+    };
+  }, []);
+  const kept = away?.kept;
+  const [last, setLast] = useState<ThreadKept | undefined>(undefined);
+  if (kept !== undefined && kept !== last) {
+    setLast(kept);
+    pressed.setSend(kept.send);
+    pressed.setHeld(
+      kept.turn === undefined
+        ? undefined
+        : { text: kept.text, turn: kept.turn },
+    );
+  }
+  return {
+    answered: (sent, send) => {
+      if (send.send !== "Sent" && !drawn.current) away?.keep({ ...sent, send });
+    },
+    back:
+      away === undefined || kept === undefined
+        ? undefined
+        : { text: kept.text, taken: away.taken },
+  };
+}
+
 /** What one thread's composer is made from. */
 export interface ThreadSendInput {
   readonly partition: PartitionIdentity;
@@ -263,6 +323,8 @@ export interface ThreadSendInput {
   readonly ended?: readonly string[];
   /** The thread a first press opened, once its message is sent. */
   readonly onStarted?: (session: string) => void;
+  /** What is kept for the thread while it is not drawn. */
+  readonly away?: ThreadKeptAway | undefined;
 }
 
 /** The thread's stops, with one the door refused said in the composer's line
@@ -310,6 +372,7 @@ export function useThreadSend(input: ThreadSendInput): ThreadSendHeld {
   const sends = useThreadSendSending(input.listed ?? threadSendNothingListed);
   const stops = useThreadStopSaid(partition, [send, setSend], input.ended);
   const door = useThreadDoor(partition);
+  const away = useThreadKeptAway(input.away, { setSend, setHeld });
   const standing = threadSendStanding(send, input.takes, door.door);
   const pressed = async (sent: ThreadSending): Promise<string | undefined> => {
     let session = input.session ?? opened;
@@ -326,6 +389,7 @@ export function useThreadSend(input: ThreadSendInput): ThreadSendHeld {
     const answered = await threadSendAnswered(ports, partition, door, to);
     setSend(answered);
     setHeld(answered.send === "Sent" ? undefined : sent);
+    away.answered(sent, answered);
     if (answered.send !== "Sent") return undefined;
     if (input.session === undefined) input.onStarted?.(session);
     return session;
@@ -358,6 +422,7 @@ export function useThreadSend(input: ThreadSendInput): ThreadSendHeld {
     },
     note: <ThreadSendNote partition={partition} send={standing} />,
     holds: standing.send === "Unhosted",
+    ...(away.back === undefined ? {} : { back: away.back }),
   };
   return {
     composer,

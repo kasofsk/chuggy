@@ -84,6 +84,7 @@ import type { LeadTranscriptWalk } from "../lead/LeadTranscript.tsx";
 import { useThreadLive } from "./threadLive.ts";
 import { useConversationMentions } from "./threadMentions.ts";
 import { useThreadDoor, useThreadSend } from "./threadSend.tsx";
+import type { ThreadKeptAway } from "./threadSend.tsx";
 import type { ThreadSendHeld } from "./threadSend.tsx";
 
 /** The turns named, as one set that is the same set while they are the same
@@ -202,6 +203,8 @@ export function ThreadConversation(props: {
   /** Whether the reader named this thread rather than arriving at it, which is
    * what puts the caret in the composer as it mounts. */
   readonly named?: boolean;
+  /** What whoever mounts the thread keeps for it while it is not drawn. */
+  readonly away?: ThreadKeptAway;
 }): ReactNode {
   const thread = props.thread;
   const walked = useLeadTranscript({
@@ -216,6 +219,7 @@ export function ThreadConversation(props: {
     takes: threadTakesMessages(thread),
     listed: thread.turns.map((turn) => turn.turn),
     ended: threadTurnsEnded(thread),
+    away: props.away,
   });
   const sent = useMemo(
     () => sends.sending.map(conversationExchangeSent),

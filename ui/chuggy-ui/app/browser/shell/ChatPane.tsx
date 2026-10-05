@@ -54,11 +54,18 @@ import {
 } from "../../core/projectQueryKeys.ts";
 import {
   threadAnswering,
+  threadKeptClosed,
+  threadKeptWith,
+  threadKeptWithout,
   threadMine,
   threadTurnsEnded,
   threadUnhosted,
 } from "../../core/threads.ts";
-import type { ThreadDoor, ThreadSend } from "../../core/threads.ts";
+import type {
+  ThreadDoor,
+  ThreadKeptHeld,
+  ThreadSend,
+} from "../../core/threads.ts";
 import { sessionRefusedNoRunner } from "../../core/sessionRunners.ts";
 import { useApiPorts, usePanelList } from "../api.ts";
 import { PanelUnready } from "../DataPanel.tsx";
@@ -70,6 +77,7 @@ import {
   useThreadDoor,
   useThreadSend,
 } from "../thread/threadSend.tsx";
+import type { ThreadKeptAway } from "../thread/threadSend.tsx";
 import { threadsListName, useThread } from "../thread/threadRead.ts";
 import { Button } from "../ui/Button.tsx";
 import { Notice } from "../ui/Notice.tsx";
@@ -259,6 +267,7 @@ function ChatPaneThread(props: {
   readonly partition: PartitionIdentity;
   readonly session: string;
   readonly named: boolean;
+  readonly away: ThreadKeptAway;
 }): ReactNode {
   const state = useThread(props.partition, props.session);
   if (state.state !== "Ready") return <PanelUnready state={state} />;
@@ -267,8 +276,33 @@ function ChatPaneThread(props: {
       partition={props.partition}
       thread={state.value}
       named={props.named}
+      away={props.away}
     />
   );
+}
+
+const chatPaneKeptNothing: ThreadKeptHeld = new Map();
+
+/**
+ * The messages a thread's door handed back while the pane drew another, one
+ * text a thread: each is held until that thread's box takes it or the listing
+ * says the thread takes nothing more, and all of it goes with the pane.
+ */
+function useChatPaneKept(
+  threads: readonly ThreadEntryResponse[] | undefined,
+): (session: string) => ThreadKeptAway {
+  const [held, setHeld] = useState(chatPaneKeptNothing);
+  const closed = threadKeptClosed(held, threads ?? []);
+  if (closed.length > 0) setHeld(threadKeptWithout(held, closed));
+  return (session) => ({
+    kept: held.get(session),
+    keep: (kept) => {
+      setHeld((before) => threadKeptWith(before, session, kept));
+    },
+    taken: () => {
+      setHeld((before) => threadKeptWithout(before, [session]));
+    },
+  });
 }
 
 /** What stands where the composer would, for a reader whose thread door asks a
@@ -414,6 +448,7 @@ function ChatPaneBody(props: {
   readonly starting: boolean;
   readonly unhosted: boolean;
   readonly opening: string | undefined;
+  readonly kept: (session: string) => ThreadKeptAway;
   readonly onStarting: () => void;
   readonly onStarted: (session: string) => void;
   readonly onRead: () => void;
@@ -425,6 +460,7 @@ function ChatPaneBody(props: {
         partition={props.partition}
         session={props.session}
         named={props.named}
+        away={props.kept(props.session)}
       />
     );
   return (
@@ -527,6 +563,7 @@ function ChatPaneOpen(props: {
   const pane = useChatPaneOpenHeld(props.partition);
   const door = useChatPaneDoor(props.partition);
   const { threads, holding } = pane;
+  const kept = useChatPaneKept(threads);
   const held = threads?.find((thread) => thread.session === holding.session);
   const drawn = chatPaneThreadDrawn(holding.session, pane.starting);
   return (
@@ -570,6 +607,7 @@ function ChatPaneOpen(props: {
           starting={pane.starting}
           unhosted={chatPaneUnhosted(door.door, door.refusal)}
           opening={pane.opening}
+          kept={kept}
           onStarting={pane.began}
           onStarted={(session) => {
             pane.sent(session);

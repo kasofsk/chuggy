@@ -38,9 +38,13 @@
  * second Stop until the page's door has answered the first. The button is
  * drawn the same throughout.
  *
+ * A CLICK THAT SENDS BEGINS THE SAME BEAT. The button it leaves under the
+ * pointer is Stop for the message just sent, and the second click of a double
+ * click would end it.
+ *
  * A MESSAGE HANDED BACK IS PUT BACK. The words the page could not take go back
  * in the box ahead of anything typed since, a blank line between, so neither
- * is lost.
+ * is lost, and a second handed back goes under the first.
  *
  * NOTHING STANDS BETWEEN THE COLUMN AND THE COMPOSER BUT WHAT A READER NEEDS
  * THERE. The engine runs where the answer is about to be and not on a strip of
@@ -80,7 +84,7 @@ import {
   conversationExchangeParts,
   conversationIndicatedNamed,
   conversationIndicator,
-  conversationTextRestored,
+  conversationBoxRestored,
   conversationTurnStoppable,
 } from "../../core/conversation.ts";
 import type { ConversationExchange } from "../../core/conversation.ts";
@@ -207,23 +211,25 @@ function conversationAppendedText(message: AppendMessage): string {
     .join("");
 }
 
-/** How long after a press of Stop the composer's button takes no other: longer
- * than a double click or a startled second tap, and shorter than a member
- * takes to mean the turn behind. */
+/** How long after a press of Stop, or a click that sent, the composer's button
+ * takes no other: longer than a double click or a startled second tap, and
+ * shorter than a member takes to mean the turn behind. */
 export const conversationStopBeatMs = 700;
 
-/** The last press of Stop the surface took. */
+/** The last press of its button the surface took. */
 interface ConversationStopPress {
   readonly atMs: number;
   answered: boolean;
 }
 
-/** What the surface holds of its presses of Stop. */
+/** What the surface holds of the presses of its button. */
 interface ConversationStopBeat {
   /** Whether a press of `button` now is one to do nothing for. */
   readonly ignores: (button: ConversationComposerButton) => boolean;
   /** Notes a press of Stop as taken, answered when `stop` is. */
   readonly pressed: (stop: Promise<void>) => void;
+  /** Notes a click that sent, which no door answers. */
+  readonly sent: () => void;
 }
 
 function useConversationStopBeat(): ConversationStopBeat {
@@ -244,6 +250,9 @@ function useConversationStopBeat(): ConversationStopBeat {
           press.answered = true;
         };
         stop.then(answered, answered);
+      },
+      sent: () => {
+        last.current = { atMs: performance.now(), answered: true };
       },
     }),
     [],
@@ -303,14 +312,39 @@ function useConversationRuntime(props: {
           },
         }),
   });
+  const led = useRef<string | undefined>(undefined);
   useEffect(() => {
     dispatchRef.current = dispatch;
     restoreRef.current = (text) => {
       const box = runtime.thread.composer;
-      box.setText(conversationTextRestored(text, box.getState().text));
+      const restored = conversationBoxRestored(
+        { text: box.getState().text, back: led.current },
+        text,
+      );
+      led.current = restored.back;
+      box.setText(restored.text);
     };
   });
+  useConversationBack(props.composer?.back, restoreRef);
   return runtime;
+}
+
+/** Puts a message the page handed back while the box was not drawn into the
+ * box, once for each the page hands it. */
+function useConversationBack(
+  back: ConversationComposerProps["back"],
+  restore: { readonly current: (text: string) => void },
+): void {
+  const put = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (back === undefined || put.current === back.text) {
+      put.current = back?.text;
+      return;
+    }
+    put.current = back.text;
+    restore.current(back.text);
+    back.taken();
+  });
 }
 
 function conversationMessageDrawn(value: {
@@ -504,6 +538,7 @@ export function Conversation(props: ConversationProps): ReactNode {
               busy={sending}
               stops={stoppable !== undefined}
               ignores={beat.ignores}
+              onSendClick={beat.sent}
             />
           </div>
         )}

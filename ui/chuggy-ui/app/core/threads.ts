@@ -312,6 +312,54 @@ export interface ThreadSending {
   readonly text: string;
 }
 
+/** A message a thread's door handed back, and what the press ended as. */
+export interface ThreadKept {
+  readonly text: string;
+  /** The turn the text was sent as, where it is one message's. */
+  readonly turn: string | undefined;
+  readonly send: ThreadSend;
+}
+
+/** What each thread is held for, by session: one text a thread. */
+export type ThreadKeptHeld = ReadonlyMap<string, ThreadKept>;
+
+/** What is held with one more message handed back to `session`: under one held
+ * for it already, a blank line between, as a text no one turn sent. */
+export function threadKeptWith(
+  held: ThreadKeptHeld,
+  session: string,
+  kept: ThreadKept,
+): ThreadKeptHeld {
+  const before = held.get(session);
+  return new Map(held).set(
+    session,
+    before === undefined
+      ? kept
+      : { ...kept, text: `${before.text}\n\n${kept.text}`, turn: undefined },
+  );
+}
+
+/** What is held less the sessions named, and the same where it holds none. */
+export function threadKeptWithout(
+  held: ThreadKeptHeld,
+  sessions: readonly string[],
+): ThreadKeptHeld {
+  const left = [...held].filter(([session]) => !sessions.includes(session));
+  return left.length === held.size ? held : new Map(left);
+}
+
+/** The sessions held for whose thread the listing says takes nothing more. */
+export function threadKeptClosed(
+  held: ThreadKeptHeld,
+  threads: readonly Pick<ThreadEntryResponse, "session" | "state">[],
+): readonly string[] {
+  return threads
+    .filter(
+      (thread) => held.has(thread.session) && !threadTakesMessages(thread),
+    )
+    .map((thread) => thread.session);
+}
+
 /** The messages sent with one more, last. A page holds no more of them than
  * the mailbox takes turns, and a press past that is drawn when the mailbox
  * lists it. */
