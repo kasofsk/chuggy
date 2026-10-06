@@ -29,6 +29,11 @@ import type { Authority } from "./operationInbox.ts";
 import type { Partition } from "./projectStore.ts";
 import { assertNever } from "../domain/assertNever.ts";
 import {
+  importRepositoryActions,
+  type RepositoryActionImportOutcome,
+  type RepositoryActionImportPorts,
+} from "./repositoryAction.ts";
+import {
   asRepositoryConfigurationName,
   asRepositoryConfigurationPath,
   repositoryConfigurationRoot,
@@ -306,18 +311,23 @@ export type BoundRepositoryImportSkip =
   | "CommitAbsent"
   | "ConfigurationDirectoryAbsent";
 
+/** Why a bound repository's actions were passed over, which is never a directory its head lacks: such a head declares none. */
+export type BoundRepositoryActionImportSkip = Exclude<
+  BoundRepositoryImportSkip,
+  "ConfigurationDirectoryAbsent"
+>;
+
 /**
  * Why one bound repository could not be imported. Every term is a variant but a
  * refused declaration's `path`, which is the tree path `ls-tree` answered and is
  * the one value here a forge supplied.
  */
-export type BoundRepositoryImportFailure =
+export type BoundRepositoryImportFailure<
+  Outcome = RepositoryConfigurationImportOutcome,
+> =
   | { readonly failure: "HeadUnavailable" }
   | { readonly failure: "Raised" }
-  | {
-      readonly failure: "Import";
-      readonly outcome: RepositoryConfigurationImportOutcome;
-    };
+  | { readonly failure: "Import"; readonly outcome: Outcome };
 
 /**
  * What one bound repository came to. A skip is not a failure: a repository
@@ -325,27 +335,104 @@ export type BoundRepositoryImportFailure =
  * repository this run has nothing to do with, and the bootstrap that seeds one
  * belongs to the bind and to the configuration route that runs its step again.
  */
-export type BoundRepositoryImportResult =
+export type BoundRepositoryImportResult<
+  Skip = BoundRepositoryImportSkip,
+  Outcome = RepositoryConfigurationImportOutcome,
+> =
   | {
       readonly result: "Imported";
       readonly commit: GitObjectId;
       readonly declarations: number;
     }
-  | { readonly result: "Skipped"; readonly why: BoundRepositoryImportSkip }
+  | { readonly result: "Skipped"; readonly why: Skip }
   | {
       readonly result: "Failed";
-      readonly failure: BoundRepositoryImportFailure;
+      readonly failure: BoundRepositoryImportFailure<Outcome>;
     };
 
+/** What one bound repository's actions came to, in the terms its configurations are reported in. */
+export type BoundRepositoryActionImportResult = BoundRepositoryImportResult<
+  BoundRepositoryActionImportSkip,
+  RepositoryActionImportOutcome
+>;
+
+/** One binding's two imports at one head: `result` is its configurations' and `actions` its actions'. */
 export interface BoundRepositoryImport {
   readonly partition: Partition;
   readonly repository: RepositoryId;
   readonly result: BoundRepositoryImportResult;
+  readonly actions: BoundRepositoryActionImportResult;
 }
 
-export interface BoundRepositoryImportPorts extends RepositoryConfigurationImportPorts {
+export interface BoundRepositoryImportPorts
+  extends RepositoryConfigurationImportPorts, RepositoryActionImportPorts {
   readonly listing: RepositoryBindingListing;
   readonly heads: RepositoryDefaultBranchPort;
+}
+
+/** The head one binding is imported at, or what the run reports of everything it would have imported there. */
+type BoundRepositoryHead =
+  | {
+      readonly head: "Commit";
+      readonly binding: RepositoryBinding;
+      readonly commit: GitObjectId;
+    }
+  | {
+      readonly head: "None";
+      readonly result: BoundRepositoryImportResult<
+        "Unbound" | "RepositoryEmpty",
+        never
+      >;
+    };
+
+const importBoundRepositoryRaised = {
+  result: "Failed",
+  failure: { failure: "Raised" },
+} as const;
+
+/** Where one binding's own default branch points now, read through ports each of which may raise. */
+async function importBoundRepositoryHead(
+  bound: RepositoryBindingListed,
+  ports: BoundRepositoryImportPorts,
+): Promise<BoundRepositoryHead> {
+  try {
+    const binding = await ports.bindings.binding(
+      bound.partition,
+      bound.repository,
+    );
+    if (binding === undefined)
+      return { head: "None", result: { result: "Skipped", why: "Unbound" } };
+    const head = await ports.heads.defaultBranch(binding);
+    switch (head.read) {
+      case "Absent":
+        return {
+          head: "None",
+          result: { result: "Skipped", why: "RepositoryEmpty" },
+        };
+      case "Unavailable":
+        return {
+          head: "None",
+          result: { result: "Failed", failure: { failure: "HeadUnavailable" } },
+        };
+      case "Branch":
+        return { head: "Commit", binding, commit: head.commit };
+      default:
+        return assertNever(head);
+    }
+  } catch {
+    return { head: "None", result: importBoundRepositoryRaised };
+  }
+}
+
+/** One import's result, where a port that raised is that import's failure and carries nothing of what it raised with. */
+async function importBoundRepositoryAttempted<Result>(
+  attempt: () => Promise<Result>,
+): Promise<Result | typeof importBoundRepositoryRaised> {
+  try {
+    return await attempt();
+  } catch {
+    return importBoundRepositoryRaised;
+  }
 }
 
 /** One import's outcome in the terms a run over every binding reports. */
@@ -366,54 +453,52 @@ function boundRepositoryImportResult(
   return { result: "Failed", failure: { failure: "Import", outcome } };
 }
 
+/** One action import's outcome in the terms a run over every binding reports. */
+function boundRepositoryActionImportResult(
+  commit: GitObjectId,
+  outcome: RepositoryActionImportOutcome,
+): BoundRepositoryActionImportResult {
+  if (outcome.result === "Imported")
+    return { result: "Imported", commit, declarations: outcome.declarations };
+  if (outcome.result === "CommitAbsent")
+    return { result: "Skipped", why: "CommitAbsent" };
+  return { result: "Failed", failure: { failure: "Import", outcome } };
+}
+
 /**
  * One bound repository, imported at whatever its own default branch points at
- * now. A port that raised is this binding's failure and not the run's, and
- * carries nothing of what it raised with.
+ * now. Its configurations and its actions are each attempted for themselves, so
+ * what one is refused for or raised with is never the other's result.
  */
 async function importBoundRepository(
   bound: RepositoryBindingListed,
   authority: Authority,
   ports: BoundRepositoryImportPorts,
-): Promise<BoundRepositoryImportResult> {
-  try {
-    return await importBoundRepositoryAttempt(bound, authority, ports);
-  } catch {
-    return { result: "Failed", failure: { failure: "Raised" } };
-  }
-}
-
-/** The ports one binding is imported through, each of which may raise. */
-async function importBoundRepositoryAttempt(
-  bound: RepositoryBindingListed,
-  authority: Authority,
-  ports: BoundRepositoryImportPorts,
-): Promise<BoundRepositoryImportResult> {
-  const binding = await ports.bindings.binding(
-    bound.partition,
-    bound.repository,
-  );
-  if (binding === undefined) return { result: "Skipped", why: "Unbound" };
-  const head = await ports.heads.defaultBranch(binding);
-  switch (head.read) {
-    case "Absent":
-      return { result: "Skipped", why: "RepositoryEmpty" };
-    case "Unavailable":
-      return { result: "Failed", failure: { failure: "HeadUnavailable" } };
-    case "Branch":
-      return boundRepositoryImportResult(
-        head.commit,
+): Promise<Pick<BoundRepositoryImport, "result" | "actions">> {
+  const head = await importBoundRepositoryHead(bound, ports);
+  if (head.head === "None")
+    return { result: head.result, actions: head.result };
+  const { binding, commit } = head;
+  return {
+    result: await importBoundRepositoryAttempted(async () =>
+      boundRepositoryImportResult(
+        commit,
         await importRepositoryConfigurations({
           partition: bound.partition,
           repository: bound.repository,
-          commit: head.commit,
+          commit,
           authority,
           ports,
         }),
-      );
-    default:
-      return assertNever(head);
-  }
+      ),
+    ),
+    actions: await importBoundRepositoryAttempted(async () =>
+      boundRepositoryActionImportResult(
+        commit,
+        await importRepositoryActions({ binding, commit, ports }),
+      ),
+    ),
+  };
 }
 
 /**
@@ -432,7 +517,7 @@ export interface BoundRepositoryImportRun {
  * owner, or a repository whose declarations are refused, leaves every other
  * binding imported and is reported on its own line.
  */
-export async function importBoundRepositoryConfigurations(input: {
+export async function importBoundRepositories(input: {
   readonly authority: Authority;
   readonly ports: BoundRepositoryImportPorts;
   readonly bindingsMax?: number;
@@ -444,41 +529,82 @@ export async function importBoundRepositoryConfigurations(input: {
     imports.push({
       partition: bound.partition,
       repository: bound.repository,
-      result: await importBoundRepository(bound, input.authority, input.ports),
+      ...(await importBoundRepository(bound, input.authority, input.ports)),
     });
   return { imports, truncated: listed.length >= bindingsMax };
 }
 
-/**
- * One binding's outcome as a line. Every term is a variant of the run's own
- * types but a refused declaration's path, which `JSON.stringify` escapes.
- */
-export function boundRepositoryImportLine(
-  bound: BoundRepositoryImport,
-): string {
-  const where = `${bound.partition.tenant}/${bound.partition.project} ${bound.repository}`;
-  switch (bound.result.result) {
-    case "Imported":
-      return `${where} imported at ${bound.result.commit}`;
-    case "Skipped":
-      return `${where} skipped: ${bound.result.why}`;
-    case "Failed":
-      return `${where} failed: ${JSON.stringify(bound.result.failure)}`;
-    default:
-      return assertNever(bound.result);
-  }
+/** The binding a line is about. */
+function boundRepositoryImportLineWhere(bound: BoundRepositoryImport): string {
+  return `${bound.partition.tenant}/${bound.partition.project} ${bound.repository}`;
 }
 
 /**
- * Why a run may not leave zero: a binding it could not import, or a listing it
- * filled, which leaves every binding past the bound unimported.
+ * One result as the words a line ends in. Every term is a variant of the run's
+ * own types but a refused declaration's path, which `JSON.stringify` escapes.
+ */
+function boundRepositoryImportLineWords(
+  result: BoundRepositoryImportResult<string, unknown>,
+): string {
+  switch (result.result) {
+    case "Imported":
+      return `imported at ${result.commit}`;
+    case "Skipped":
+      return `skipped: ${result.why}`;
+    case "Failed":
+      return `failed: ${JSON.stringify(result.failure)}`;
+    default:
+      return assertNever(result);
+  }
+}
+
+/** One binding's configurations as a line. */
+export function boundRepositoryImportLine(
+  bound: BoundRepositoryImport,
+): string {
+  return `${boundRepositoryImportLineWhere(bound)} ${boundRepositoryImportLineWords(bound.result)}`;
+}
+
+/** One binding's actions as a line, which one word tells from its configurations' line. */
+export function boundRepositoryActionImportLine(
+  bound: BoundRepositoryImport,
+): string {
+  return `${boundRepositoryImportLineWhere(bound)} actions ${boundRepositoryImportLineWords(bound.actions)}`;
+}
+
+/** One line of what a run reports, and whether it is a failure's. */
+export interface BoundRepositoryImportReported {
+  readonly line: string;
+  readonly failed: boolean;
+}
+
+/** What a run reports of one binding: its configurations and then its actions, each on a line its own result marks. */
+export function boundRepositoryImportReport(
+  bound: BoundRepositoryImport,
+): readonly BoundRepositoryImportReported[] {
+  return [
+    {
+      line: boundRepositoryImportLine(bound),
+      failed: bound.result.result === "Failed",
+    },
+    {
+      line: boundRepositoryActionImportLine(bound),
+      failed: bound.actions.result === "Failed",
+    },
+  ];
+}
+
+/**
+ * Why a run may not leave zero: a binding it could not import whole, or a
+ * listing it filled, which leaves every binding past the bound unimported.
  */
 export function boundRepositoryImportRefusal(
   run: BoundRepositoryImportRun,
   bindingsMax: number,
 ): string | undefined {
   const failed = run.imports.filter(
-    (bound) => bound.result.result === "Failed",
+    (bound) =>
+      bound.result.result === "Failed" || bound.actions.result === "Failed",
   ).length;
   const refusals = [
     ...(failed === 0

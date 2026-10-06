@@ -10,11 +10,16 @@
  * from, so each repository is imported at whatever its own default branch
  * points at when the run reaches it.
  *
+ * CONFIGURATIONS AND ACTIONS ARE IMPORTED AT ONE HEAD AND REPORTED APART. Each
+ * is attempted for itself and written on its own line, so what one is refused
+ * for leaves the other imported.
+ *
  * A SKIP IS NOT A FAILURE AND A FAILURE IS NOT THE RUN'S END. A repository
  * holding no commit, or no configuration directory at its head, is passed over
- * — seeding one belongs to the bind and to the configuration route. Everything
- * else is reported on its own line, every other binding is still attempted, and
- * the run exits non-zero if any failed.
+ * — seeding one belongs to the bind and to the configuration route — and a
+ * head holding no action directory declares none, which is imported as that.
+ * Everything else is reported on its own line, every other binding is still
+ * attempted, and the run exits non-zero if any failed.
  *
  * A RUN THAT FILLED ITS BOUND DID NOT IMPORT THE ESTATE, and leaves non-zero
  * saying so. The listing is ordered by age, so a deployment holding more
@@ -25,6 +30,7 @@
 import { gitRepositoryConfiguration } from "../adapters/git/gitRepositoryConfiguration.ts";
 import { postgresAuthoring } from "../adapters/postgres/authoring.ts";
 import { postgresPool } from "../adapters/postgres/pool.ts";
+import { postgresRepositoryActions } from "../adapters/postgres/repositoryAction.ts";
 import { postgresRepositoryBindingListing } from "../adapters/postgres/repositoryBinding.ts";
 import { postgresProjectRepositoryBinding } from "../adapters/postgres/repositoryConfiguration.ts";
 import { configurationImporterRole } from "../adapters/postgres/schema.ts";
@@ -41,9 +47,9 @@ import {
   asAuthoritySubject,
 } from "../interpreter/operationInbox.ts";
 import {
-  boundRepositoryImportLine,
   boundRepositoryImportRefusal,
-  importBoundRepositoryConfigurations,
+  boundRepositoryImportReport,
+  importBoundRepositories,
   repositoryBindingsPerImportMax,
 } from "../interpreter/repositoryConfiguration.ts";
 import { schemaCompatibilityPrecondition } from "../interpreter/serviceRuntime.ts";
@@ -79,7 +85,7 @@ async function importerDatabaseReady(
 function configurationImporterPorts(
   config: ReturnType<typeof configurationImporterConfig>,
   pool: ReturnType<typeof postgresPool>,
-): Parameters<typeof importBoundRepositoryConfigurations>[0]["ports"] {
+): Parameters<typeof importBoundRepositories>[0]["ports"] {
   const environment = Object.fromEntries(
     finalizerGitEnvironmentNames
       .filter((name) => process.env[name] !== undefined)
@@ -112,6 +118,8 @@ function configurationImporterPorts(
     heads: snapshots,
     snapshots,
     store: postgresAuthoring(pool),
+    actionSnapshots: snapshots,
+    actionStore: postgresRepositoryActions(pool),
   };
 }
 
@@ -123,16 +131,14 @@ async function main(): Promise<void> {
       throw new Error(
         `database must connect as ${configurationImporterLoginRole} with a current schema`,
       );
-    const run = await importBoundRepositoryConfigurations({
+    const run = await importBoundRepositories({
       authority,
       ports: configurationImporterPorts(config, pool),
       bindingsMax: repositoryBindingsPerImportMax,
     });
-    for (const bound of run.imports) {
-      const line = `${boundRepositoryImportLine(bound)}\n`;
-      if (bound.result.result === "Failed") process.stderr.write(line);
-      else process.stdout.write(line);
-    }
+    for (const bound of run.imports)
+      for (const { line, failed } of boundRepositoryImportReport(bound))
+        (failed ? process.stderr : process.stdout).write(`${line}\n`);
     const refused = boundRepositoryImportRefusal(
       run,
       repositoryBindingsPerImportMax,
