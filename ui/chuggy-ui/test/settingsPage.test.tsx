@@ -1,7 +1,7 @@
 /**
  * The settings index: the project's settings groups, each one line linking to
  * its own page — the shape `/repositories` has over `/repositories/$repository`,
- * with one group drawn today and room for the rest to arrive beside it.
+ * with two groups drawn today and room for the rest to arrive beside them.
  */
 
 import {
@@ -46,10 +46,15 @@ async function drawnSettingsPage(): Promise<void> {
     path: "/settings/lead",
     component: () => <p>the lead settings page</p>,
   });
+  const settingsPlacement = createRoute({
+    getParentRoute: () => partition,
+    path: "/settings/placement",
+    component: () => <p>the placement settings page</p>,
+  });
   const router = createRouter({
     history: createMemoryHistory({ initialEntries: ["/acme/atlas/settings"] }),
     routeTree: root.addChildren([
-      partition.addChildren([settings, settingsLead]),
+      partition.addChildren([settings, settingsLead, settingsPlacement]),
     ]),
   });
   render(<RouterProvider router={router} />);
@@ -60,4 +65,10 @@ test("the index names the Lead group and links to its own page", async () => {
   await drawnSettingsPage();
   fireEvent.click(screen.getByRole("link", { name: "Lead" }));
   expect(await screen.findByText("the lead settings page")).toBeDefined();
+});
+
+test("the index names the Placement group and links to its own page", async () => {
+  await drawnSettingsPage();
+  fireEvent.click(screen.getByRole("link", { name: "Placement" }));
+  expect(await screen.findByText("the placement settings page")).toBeDefined();
 });
