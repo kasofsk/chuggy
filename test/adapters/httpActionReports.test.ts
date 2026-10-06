@@ -144,6 +144,7 @@ test("each answer of the service is sent as the status a reporter acts on", asyn
   for (const [result, status, body, retryAfter] of [
     [{ result: "Recorded" }, 200, { report: "Recorded" }, undefined],
     [{ result: "Repeated" }, 200, { report: "Repeated" }, undefined],
+    [{ result: "Ignored" }, 200, { report: "Ignored" }, undefined],
     [
       { result: "NotFound" },
       404,

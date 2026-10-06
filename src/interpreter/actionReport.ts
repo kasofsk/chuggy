@@ -178,9 +178,13 @@ export interface ActionReport {
   readonly link?: string;
 }
 
-/** What a verified request says: a report, or a body no report can be read from. */
+/**
+ * What a verified request says: a report, a body its scheme reads as saying
+ * nothing an action's history holds, or a body no report can be read from.
+ */
 export type ActionReportSaid =
   | { readonly said: "Report"; readonly report: ActionReport }
+  | { readonly said: "Ignored" }
   | { readonly said: "Refused" };
 
 /** The reporter one request verified as, and what it said. */
@@ -267,10 +271,14 @@ export interface ActionReportPorts {
   readonly observations: ActionObservationStore;
 }
 
-/** What one request came to. `Refused` is a verified reporter's body, and `Unavailable` a row that could not be written. */
+/**
+ * What one request came to. `Ignored` and `Refused` are each a verified
+ * reporter's body, and `Unavailable` is a row that could not be written.
+ */
 export type ActionReported =
   | { readonly result: "Recorded" }
   | { readonly result: "Repeated" }
+  | { readonly result: "Ignored" }
   | { readonly result: "NotFound" }
   | { readonly result: "Refused" }
   | { readonly result: "Unavailable" };
@@ -300,7 +308,7 @@ async function actionReportsRecorded(
   }
 }
 
-/** Records what a verified reporter says of an action it may report. */
+/** Records what a verified reporter says of an action it may report, and asks the store nothing where it says no report. */
 export function actionReports(ports: ActionReportPorts): ActionReports {
   return {
     report: async (request) => {
@@ -308,13 +316,21 @@ export function actionReports(ports: ActionReportPorts): ActionReports {
       if (verified === undefined) return { result: "NotFound" };
       const action = actionReportClaimed(verified.claims, request);
       if (action === undefined) return { result: "NotFound" };
-      if (verified.said.said === "Refused") return { result: "Refused" };
-      return actionReportsRecorded(ports.observations, {
-        partition: verified.claims.partition,
-        action,
-        reporter: verified.claims.reporter,
-        report: verified.said.report,
-      });
+      const { said } = verified;
+      switch (said.said) {
+        case "Ignored":
+        case "Refused":
+          return { result: said.said };
+        case "Report":
+          return actionReportsRecorded(ports.observations, {
+            partition: verified.claims.partition,
+            action,
+            reporter: verified.claims.reporter,
+            report: said.report,
+          });
+        default:
+          return assertNever(said);
+      }
     },
   };
 }

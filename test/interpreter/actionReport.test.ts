@@ -397,23 +397,28 @@ test("a request verified as nobody is not found, and nothing is recorded", async
   assert.deepEqual(stored, []);
 });
 
-test("a reporter is held to its claims: one named for another tenant, project or action records nothing here", async () => {
+test("a reporter is held to its claims: one named for another tenant, project or action records nothing here, and is told nothing of what it said", async () => {
   for (const claimed of [
     { ...build, tenant: "acme" },
     { ...build, project: "console" },
     { ...build, actions: ["build-api", "build-console"] },
     { ...build, actions: [] },
-  ]) {
-    const stored: ActionObservation[] = [];
-    assert.deepEqual(
-      await reportsOver(verifiedAs(claimed), "Recorded", stored).report(
-        request(),
-      ),
-      { result: "NotFound" },
-      JSON.stringify(claimed),
-    );
-    assert.deepEqual(stored, []);
-  }
+  ])
+    for (const said of [
+      saidReport,
+      { said: "Ignored" },
+      { said: "Refused" },
+    ] as const) {
+      const stored: ActionObservation[] = [];
+      assert.deepEqual(
+        await reportsOver(verifiedAs(claimed, said), "Recorded", stored).report(
+          request(),
+        ),
+        { result: "NotFound" },
+        `${JSON.stringify(claimed)} ${said.said}`,
+      );
+      assert.deepEqual(stored, []);
+    }
 });
 
 test("a verified body no report can be read from is refused, and nothing is recorded", async () => {
@@ -427,6 +432,26 @@ test("a verified body no report can be read from is refused, and nothing is reco
     { result: "Refused" },
   );
   assert.deepEqual(stored, []);
+});
+
+test("a verified event no outcome is read in is ignored, and the store is asked nothing", async () => {
+  for (const recorded of [
+    "Recorded",
+    "Undeclared",
+    new Error("the database is not there"),
+  ] as const) {
+    const stored: ActionObservation[] = [];
+    assert.deepEqual(
+      await reportsOver(
+        verifiedAs(build, { said: "Ignored" }),
+        recorded,
+        stored,
+      ).report(request()),
+      { result: "Ignored" },
+      String(recorded),
+    );
+    assert.deepEqual(stored, []);
+  }
 });
 
 test("a row that could not be written is answered as unavailable", async () => {
