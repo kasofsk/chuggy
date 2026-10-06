@@ -15,6 +15,11 @@
  * script named `git` stands in front of the real one on the adapter's path
  * alone. What the adapter did is then read off the calls it made rather than
  * off how long it took.
+ *
+ * A WAIT PASSES BY A CLOCK THE SUITE MOVES. A case in which a fetch fails and
+ * another is then to be begun, or not, hands the adapter a clock and moves it
+ * by hand, so what a wait held back is read off the fetches counted and never
+ * off time that went by.
  */
 
 import assert from "node:assert/strict";
@@ -38,6 +43,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 
 import {
   gitCommitAncestry,
+  gitCommitAncestryDefaults,
   type GitCommitAncestryOptions,
 } from "../../src/adapters/git/gitCommitAncestry.ts";
 import type { GitEnvironment } from "../../src/adapters/git/gitRun.ts";
@@ -474,6 +480,40 @@ function fixtureCredentials(
   return { credential: () => Promise.resolve(resolved) };
 }
 
+/** A credential source that refuses every repository one and counts how often it was asked, which is once for each fetch begun. */
+function fixtureCounted(): {
+  readonly credentials: RepositoryCredentialPort;
+  readonly asked: () => number;
+} {
+  let asked = 0;
+  return {
+    credentials: {
+      credential: () => {
+        asked += 1;
+        return Promise.resolve({ resolved: "Denied" });
+      },
+    },
+    asked: () => asked,
+  };
+}
+
+/** A clock that stands still until a test moves it on, which is the one way a wait passes here. */
+function fixtureClock(): {
+  readonly monotonicNowMs: () => number;
+  readonly pass: (ms: number) => void;
+} {
+  let nowMs = 0;
+  return {
+    monotonicNowMs: () => nowMs,
+    pass: (ms) => {
+      nowMs += ms;
+    },
+  };
+}
+
+/** The wait a port naming none gives a tip whose fetch failed, as its clock counts it. */
+const fixtureRefetchWaitMs = gitCommitAncestryDefaults.refetchWaitSecs * 1000;
+
 function fixturePort(
   fixture: Fixture,
   chosen: Partial<GitCommitAncestryOptions> = {},
@@ -868,8 +908,10 @@ test("a git that cannot be run is unknown and raises nothing, for a tip held, a 
   };
   const found = environment["PATH"];
   let lostAtFetch = false;
+  const clock = fixtureClock();
   const port = fixturePort(fixture, {
     environment,
+    monotonicNowMs: clock.monotonicNowMs,
     credentials: {
       credential: () => {
         if (lostAtFetch) environment["PATH"] = fixture.directory;
@@ -893,6 +935,7 @@ test("a git that cannot be run is unknown and raises nothing, for a tip held, a 
   assert.equal(await port.ancestry(twin), "Unknown");
   environment["PATH"] = found;
   lostAtFetch = false;
+  clock.pass(fixtureRefetchWaitMs);
 
   assert.equal(await port.ancestry(twin), "Ancestor");
   assert.equal(await port.ancestry(held), "Ancestor");
@@ -980,9 +1023,13 @@ test("the fetch carries the credential the source resolved", async (t) => {
   );
 });
 
-test("a fetch stopped part-way writes no ref for its tip, and the next ask answers from a whole one", async (t) => {
+test("a fetch stopped part-way writes no ref for its tip, and an ask once its wait has passed answers from a whole one", async (t) => {
   const fixture = fixtureOpen(t);
-  const port = fixturePort(fixture, { remoteTimeoutSecsMax: 2 });
+  const clock = fixtureClock();
+  const port = fixturePort(fixture, {
+    remoteTimeoutSecsMax: 2,
+    monotonicNowMs: clock.monotonicNowMs,
+  });
   fixtureServe(fixture, "Stalled");
   assert.equal(
     await port.ancestry(fixtureQuestion(fixture, fixture.candidate)),
@@ -994,6 +1041,7 @@ test("a fetch stopped part-way writes no ref for its tip, and the next ask answe
   );
 
   fixtureServe(fixture, "Whole");
+  clock.pass(fixtureRefetchWaitMs);
   assert.equal(
     await port.ancestry(fixtureQuestion(fixture, fixture.candidate)),
     "Ancestor",
@@ -1341,23 +1389,181 @@ test("the wait for a credential comes out of the time the transfer is given", as
   assert.ok(!fixtureHistoryHeld(fixture, fixture.tip));
 });
 
-test("a repository that could not be reached is asked again once it can be", async (t) => {
-  const fixture = fixtureOpen(t);
-  const port = fixturePort(fixture);
-  const later = join(fixture.directory, "later.git");
-  const question = fixtureQuestion(
+/** A question about the fixture's tip in a repository that is not there until `fixtureLaterComes` has made it. */
+function fixtureLater(fixture: Fixture): CommitAncestryQuestion {
+  return fixtureQuestion(
     fixture,
     fixture.candidate,
     fixture.tip,
-    later,
+    join(fixture.directory, "later.git"),
   );
-  assert.equal(await port.ancestry(question), "Unknown");
+}
 
-  execFileSync("git", ["clone", "-q", "--bare", fixture.remote, later]);
+function fixtureLaterComes(fixture: Fixture): void {
+  execFileSync("git", [
+    "clone",
+    "-q",
+    "--bare",
+    fixture.remote,
+    join(fixture.directory, "later.git"),
+  ]);
+}
+
+test("a tip whose fetch failed is asked of no remote and no credential source until its wait has passed, and is fetched then", async (t) => {
+  const fixture = fixtureOpen(t);
+  const clock = fixtureClock();
+  const counted = fixtureCounted();
+  const port = fixturePort(fixture, {
+    refetchWaitSecs: 7,
+    monotonicNowMs: clock.monotonicNowMs,
+    credentials: counted.credentials,
+  });
+  const question = fixtureLater(fixture);
+  assert.equal(await port.ancestry(question), "Unknown");
+  fixtureLaterComes(fixture);
+  clock.pass(7 * 1000 - 1);
+  assert.equal(await port.ancestry(question), "Unknown");
+  assert.deepEqual([counted.asked(), fixtureServed(fixture)], [1, 0]);
+
+  clock.pass(1);
   assert.equal(await port.ancestry(question), "Ancestor");
+  assert.deepEqual([counted.asked(), fixtureServed(fixture)], [2, 1]);
 });
 
-test("a bound of the adapter's own that is no positive integer is refused", (t) => {
+test("a wait is its own tip's in its own repository, and another tip or another repository is fetched inside it", async (t) => {
+  const fixture = fixtureOpen(t);
+  const counted = fixtureCounted();
+  const port = fixturePort(fixture, {
+    monotonicNowMs: fixtureClock().monotonicNowMs,
+    credentials: counted.credentials,
+  });
+  assert.equal(await port.ancestry(fixtureLater(fixture)), "Unknown");
+  assert.equal(
+    await port.ancestry(
+      fixtureQuestion(fixture, fixture.candidate, fixture.stray),
+    ),
+    "Unknown",
+  );
+  assert.equal(counted.asked(), 2);
+
+  assert.equal(
+    await port.ancestry(fixtureQuestion(fixture, fixture.candidate)),
+    "Ancestor",
+  );
+  assert.equal(counted.asked(), 3);
+});
+
+test("an asker waiting behind a fetch that fails for another tip goes on to a fetch of its own", async (t) => {
+  const fixture = fixtureOpen(t);
+  let asked = 0;
+  const port = fixturePort(fixture, {
+    monotonicNowMs: fixtureClock().monotonicNowMs,
+    credentials: {
+      credential: async () => {
+        asked += 1;
+        if (asked === 1) await sleep(500);
+        return { resolved: "Denied" };
+      },
+    },
+  });
+  const first = port.ancestry(
+    fixtureQuestion(fixture, fixture.candidate, fixture.stray),
+  );
+  await fixtureUntil("the fetch", () => asked === 1);
+  const second = port.ancestry(fixtureQuestion(fixture, fixture.candidate));
+
+  assert.deepEqual(await Promise.all([first, second]), ["Unknown", "Ancestor"]);
+  assert.equal(asked, 2);
+});
+
+test("an ask inside its tip's wait is answered at once while another tip of its repository is being fetched", async (t) => {
+  const fixture = fixtureOpen(t);
+  const port = fixturePort(fixture, {
+    monotonicNowMs: fixtureClock().monotonicNowMs,
+  });
+  const unserved = fixtureQuestion(fixture, fixture.candidate, fixture.stray);
+  assert.equal(await port.ancestry(unserved), "Unknown");
+  const served = fixtureServed(fixture);
+  fixtureServe(fixture, "Slowed");
+  const slowed = port.ancestry(fixtureQuestion(fixture, fixture.candidate));
+  await fixtureServing(fixture, served + 1);
+
+  assert.equal(await port.ancestry(unserved), "Unknown");
+  assert.ok(!fixtureHistoryHeld(fixture, fixture.tip));
+  assert.equal(await slowed, "Ancestor");
+});
+
+test("a tip that came to be held inside its wait is answered from the scratch", async (t) => {
+  const fixture = fixtureOpen(t);
+  const counted = fixtureCounted();
+  const waiting = fixturePort(fixture, {
+    monotonicNowMs: fixtureClock().monotonicNowMs,
+    credentials: counted.credentials,
+  });
+  const question = fixtureLater(fixture);
+  assert.equal(await waiting.ancestry(question), "Unknown");
+  fixtureLaterComes(fixture);
+  assert.equal(await fixturePort(fixture).ancestry(question), "Ancestor");
+
+  assert.equal(await waiting.ancestry(question), "Ancestor");
+  assert.equal(counted.asked(), 1);
+});
+
+test("a fetch that landed once its tip's wait had passed leaves no wait, and the tip is fetched at once when it stops being held", async (t) => {
+  const fixture = fixtureOpen(t);
+  const clock = fixtureClock();
+  const counted = fixtureCounted();
+  const port = fixturePort(fixture, {
+    monotonicNowMs: clock.monotonicNowMs,
+    credentials: counted.credentials,
+  });
+  const question = fixtureLater(fixture);
+  assert.equal(await port.ancestry(question), "Unknown");
+  fixtureLaterComes(fixture);
+  clock.pass(fixtureRefetchWaitMs);
+  assert.equal(await port.ancestry(question), "Ancestor");
+  fixtureGit(
+    fixtureScratchRepository(fixture, question.repository.repository),
+    "update-ref",
+    "-d",
+    `refs/chuggy/history/${fixture.tip}`,
+  );
+
+  assert.equal(await port.ancestry(question), "Ancestor");
+  assert.equal(counted.asked(), 3);
+});
+
+test("the waits kept are as many as may be, and the one begun before the others is forgotten for one more", async (t) => {
+  const fixture = fixtureOpen(t);
+  const clock = fixtureClock();
+  const counted = fixtureCounted();
+  const port = fixturePort(fixture, {
+    refetchWaitsMax: 3,
+    monotonicNowMs: clock.monotonicNowMs,
+    credentials: counted.credentials,
+  });
+  const asks = async (...tips: readonly GitObjectId[]): Promise<number> => {
+    for (const tip of tips) {
+      const question = fixtureQuestion(
+        fixture,
+        fixture.candidate,
+        tip,
+        join(fixture.directory, "missing.git"),
+      );
+      assert.equal(await port.ancestry(question), "Unknown");
+    }
+    return counted.asked();
+  };
+  const { base: first, candidate: second, stray: third, tip: fourth } = fixture;
+  assert.equal(await asks(first, second), 2);
+  clock.pass(fixtureRefetchWaitMs);
+  assert.equal(await asks(first, third, fourth), 5);
+  assert.equal(await asks(first, third, fourth), 5);
+
+  assert.equal(await asks(second, first), 7);
+});
+
+test("a bound or a wait of the adapter's own that is no positive integer is refused", (t) => {
   const fixture = fixtureOpen(t);
   for (const bound of [0, -1, 1.5, Number.NaN]) {
     assert.throws(
@@ -1370,6 +1576,14 @@ test("a bound of the adapter's own that is no positive integer is refused", (t) 
     );
     assert.throws(
       () => fixturePort(fixture, { fetchWaitersMax: bound }),
+      RangeError,
+    );
+    assert.throws(
+      () => fixturePort(fixture, { refetchWaitSecs: bound }),
+      RangeError,
+    );
+    assert.throws(
+      () => fixturePort(fixture, { refetchWaitsMax: bound }),
       RangeError,
     );
   }
