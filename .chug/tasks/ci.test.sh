@@ -402,6 +402,25 @@ set -e
 check "the action directory's page selects the suites that read it" 0 "$RC" "stub check-source"
 check "the action directory's page skips the database" 0 "$RC" "check-postgres: SKIPPED"
 
+# So is a document in it: the unit suites put every action this repository
+# declares through the importer.
+stub_repo 0
+mkdir -p "$R/.chug/actions"
+printf '{"before": 1}\n' > "$R/.chug/actions/build.json"
+git -C "$R" add -A
+git -C "$R" commit -qm baseline
+printf '{"after": 1}\n' > "$R/.chug/actions/build.json"
+git -C "$R" add -A
+git -C "$R" commit -qm actions
+OUT="$WORK/.out"
+set +e
+(cd "$R" && CHUG_CI_BASE=HEAD^ CHUG_CI_SHELL_SUITES=0 \
+	./.chug/tasks/ci.sh) >"$OUT" 2>&1
+RC=$?
+set -e
+refute "an action's document selects the suites that read it" 0 "$RC" "check-source unit: SKIPPED"
+check "an action's document skips the database" 0 "$RC" "check-postgres: SKIPPED"
+
 # The vendored package is the model's text and the corpus the harness replays,
 # so a change to it reaches the replay gates and the pin, not only Quint.
 stub_repo 0
