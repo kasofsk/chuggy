@@ -1,6 +1,7 @@
 /**
  * The commit ancestry adapter against real repositories: a remote that serves a
- * pack whole, one that stalls part-way through it, and askers that overlap.
+ * pack whole, one that stalls part-way through it, askers that overlap, and a
+ * scratch whose objects stop being readable under the refs that name them.
  *
  * THE REMOTE IS SLOWED WHERE GIT ITSELF HANDS OVER A PACK. `uploadpack`'s own
  * hook stands between the remote's objects and the fetch, so a stalled or
@@ -14,9 +15,12 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import {
+  chmodSync,
   existsSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
+  renameSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -217,6 +221,79 @@ async function fixtureTipArrived(
   assert.fail("the fetch never brought the tip in");
 }
 
+/**
+ * Leaves the scratch as a long-lived one comes to be, the first tip's history
+ * in one pack and a newer tip arrived loose over it, and answers that newer
+ * tip.
+ */
+async function fixtureAged(
+  fixture: Fixture,
+  port: CommitAncestryPort,
+): Promise<GitObjectId> {
+  await port.ancestry(fixtureQuestion(fixture, fixture.candidate));
+  fixtureGit(fixtureScratchRepository(fixture), "repack", "-adq");
+  const newer = fixtureCommit(fixture.seed, "newer");
+  fixtureGit(fixture.seed, "push", "-q", fixture.remote, "main:main");
+  assert.equal(
+    await port.ancestry(fixtureQuestion(fixture, fixture.candidate, newer)),
+    "Ancestor",
+  );
+  return newer;
+}
+
+/** The one pack an aged scratch keeps its older history in: its directory and the files of it by their endings. */
+function fixturePack(fixture: Fixture): {
+  readonly directory: string;
+  readonly ending: (ending: string) => string;
+} {
+  const directory = join(fixtureScratchRepository(fixture), "objects", "pack");
+  return {
+    directory,
+    ending: (ending) => {
+      const named = readdirSync(directory).find((name) =>
+        name.endsWith(ending),
+      );
+      assert.ok(named !== undefined);
+      return join(directory, named);
+    },
+  };
+}
+
+/** The ways an aged scratch's packed history stops being readable while its refs stand, each returning what undoes it. */
+const fixtureFaults: Readonly<
+  Record<string, (fixture: Fixture) => () => void>
+> = {
+  "its pack's index cannot be read": (fixture) => {
+    const index = fixturePack(fixture).ending(".idx");
+    chmodSync(index, 0o000);
+    return () => {
+      chmodSync(index, 0o600);
+    };
+  },
+  "its pack cannot be read": (fixture) => {
+    const pack = fixturePack(fixture).ending(".pack");
+    chmodSync(pack, 0o000);
+    return () => {
+      chmodSync(pack, 0o600);
+    };
+  },
+  "its pack directory cannot be read": (fixture) => {
+    const { directory } = fixturePack(fixture);
+    chmodSync(directory, 0o000);
+    return () => {
+      chmodSync(directory, 0o700);
+    };
+  },
+  "its pack is gone": (fixture) => {
+    const { directory } = fixturePack(fixture);
+    const aside = join(fixture.directory, "aside");
+    renameSync(directory, aside);
+    return () => {
+      renameSync(aside, directory);
+    };
+  },
+};
+
 /** A second remote holding the same history, which is a second repository to the adapter. */
 function fixtureTwin(fixture: Fixture): string {
   const twin = join(fixture.directory, "twin.git");
@@ -397,7 +474,7 @@ test("a tip that names no commit is unknown", async (t) => {
   );
 });
 
-test("a candidate that names no commit is unknown", async (t) => {
+test("a candidate the scratch holds as something other than a commit is unknown", async (t) => {
   const fixture = fixtureOpen(t);
   const tree = fixtureGit(fixture.seed, "rev-parse", `${fixture.tip}^{tree}`);
   assert.equal(
@@ -406,6 +483,89 @@ test("a candidate that names no commit is unknown", async (t) => {
     ),
     "Unknown",
   );
+});
+
+test("a tag is never answered for the commit it peels to, held or not", async (t) => {
+  const fixture = fixtureOpen(t);
+  const port = fixturePort(fixture);
+  fixtureGit(fixture.seed, "tag", "-a", "-m", "tagged", "tagged", fixture.base);
+  fixtureGit(fixture.seed, "push", "-q", fixture.remote, "tagged");
+  const tag = asGitObjectId(fixtureGit(fixture.seed, "rev-parse", "tagged"));
+  const scratch = fixtureScratchRepository(fixture);
+
+  assert.equal(
+    await port.ancestry(fixtureQuestion(fixture, tag)),
+    "NotAncestor",
+  );
+  await port.ancestry(fixtureQuestion(fixture, fixture.candidate, tag));
+  assert.ok(fixtureAnswers(scratch, "cat-file", "-e", tag));
+  assert.equal(await port.ancestry(fixtureQuestion(fixture, tag)), "Unknown");
+});
+
+for (const [fault, inflict] of Object.entries(fixtureFaults)) {
+  test(`a commit in the tip's history is unknown while ${fault}, and an ancestor once that has passed`, async (t) => {
+    const fixture = fixtureOpen(t);
+    const port = fixturePort(fixture);
+    const question = fixtureQuestion(
+      fixture,
+      fixture.candidate,
+      await fixtureAged(fixture, port),
+    );
+    const undo = inflict(fixture);
+    try {
+      assert.equal(await port.ancestry(question), "Unknown");
+    } finally {
+      undo();
+    }
+    assert.equal(await port.ancestry(question), "Ancestor");
+  });
+}
+
+test("a commit-graph left over a pack that is gone does not answer for the commits in it", async (t) => {
+  const fixture = fixtureOpen(t);
+  const port = fixturePort(fixture);
+  const newer = await fixtureAged(fixture, port);
+  const scratch = fixtureScratchRepository(fixture);
+  fixtureGit(scratch, "commit-graph", "write", "--reachable");
+  rmSync(join(scratch, "objects", "pack"), { recursive: true, force: true });
+  assert.ok(fixtureAnswers(scratch, "rev-list", "--count", newer));
+
+  assert.equal(
+    await port.ancestry(fixtureQuestion(fixture, fixture.candidate, newer)),
+    "Unknown",
+  );
+});
+
+test("a tip another ref named before its history arrived is unknown", async (t) => {
+  const fixture = fixtureOpen(t);
+  const scratch = fixtureScratchRepository(fixture);
+  execFileSync("git", ["init", "-q", "--bare", scratch]);
+  execFileSync(
+    "git",
+    ["-C", scratch, "hash-object", "-t", "commit", "-w", "--stdin"],
+    {
+      input: execFileSync("git", [
+        "-C",
+        fixture.seed,
+        "cat-file",
+        "commit",
+        fixture.tip,
+      ]),
+    },
+  );
+  fixtureGit(scratch, "update-ref", "refs/chuggy/candidate/tip", fixture.tip);
+
+  assert.equal(
+    await fixturePort(fixture).ancestry(
+      fixtureQuestion(fixture, fixture.candidate),
+    ),
+    "Unknown",
+  );
+  assert.equal(
+    fixtureGit(scratch, "rev-parse", `refs/chuggy/history/${fixture.tip}`),
+    fixture.tip,
+  );
+  assert.equal(fixtureServed(fixture), 0);
 });
 
 test("a credential source that could not answer is unknown", async (t) => {

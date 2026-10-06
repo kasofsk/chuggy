@@ -118,6 +118,13 @@ export type ScratchMerged =
     }
   | { readonly merged: "Failed" };
 
+/**
+ * What one object identity names in a scratch. `Unresolved` is an object not
+ * held and an object store that could not be read alike: git reports the two
+ * the same way, so neither is a finding by itself.
+ */
+export type ScratchNamed = "Commit" | "Other" | "Unresolved";
+
 /** What the one irreversible act came to, read off the porcelain flag rather than off prose. */
 export type ScratchPushed =
   | { readonly pushed: "Advanced" }
@@ -332,7 +339,11 @@ export async function scratchFetchRef(
   return ran.ran === "Exited" && ran.code === 0;
 }
 
-/** The ref a fetch of one commit's whole history writes, which git creates only once every object that commit reaches has arrived. */
+/**
+ * The ref a completed fetch of one commit's history writes. git writes it once
+ * that fetch's connectivity check has passed, and the check takes whatever
+ * another ref already reaches as whole without reading it.
+ */
 function scratchHistoryRef(commit: GitObjectId): string {
   return `refs/chuggy/history/${commit}`;
 }
@@ -384,21 +395,37 @@ export async function scratchHoldsHistory(
   return ran.ran === "Exited" && ran.code === 0 && ran.stdout.trim() === commit;
 }
 
-/** Whether the scratch holds one object, and `undefined` where git could not say, so a call that failed is never read as an object that is absent. */
-export async function scratchHoldsObject(
+/** What one identity names here, read off the object's own type so a tag is never taken for the commit it peels to. */
+export async function scratchNamed(
   scratch: GitScratch,
   repository: RepositoryId,
   object: GitObjectId,
-): Promise<boolean | undefined> {
+): Promise<ScratchNamed> {
   const ran = await scratchRun(scratch, {
     repository,
     timeoutSecsMax: scratch.options.localTimeoutSecsMax,
-    argv: ["cat-file", "-e", object],
+    argv: ["cat-file", "-t", object],
   });
-  if (ran.ran === "Stopped") return undefined;
-  if (ran.code === 0) return true;
-  if (ran.code === 1) return false;
-  return undefined;
+  if (ran.ran === "Stopped" || ran.code !== 0) return "Unresolved";
+  return ran.stdout.trim() === "commit" ? "Commit" : "Other";
+}
+
+/**
+ * Whether every commit one commit descends from could be read, each from the
+ * object store itself. A commit-graph is set aside for the walk, because it
+ * goes on answering for commits whose objects have since been lost.
+ */
+export async function scratchWalksHistory(
+  scratch: GitScratch,
+  repository: RepositoryId,
+  commit: GitObjectId,
+): Promise<boolean> {
+  const ran = await scratchRun(scratch, {
+    repository,
+    timeoutSecsMax: scratch.options.localTimeoutSecsMax,
+    argv: ["-c", "core.commitGraph=false", "rev-list", "--count", commit],
+  });
+  return ran.ran === "Exited" && ran.code === 0;
 }
 
 /** Whether the scratch holds one commit, which is what makes an ancestry question answerable at all. */

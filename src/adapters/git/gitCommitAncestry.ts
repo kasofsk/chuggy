@@ -6,8 +6,17 @@
  * small fetch object by object and writes the ref last, so a fetch stopped
  * part-way can leave the tip standing without what it descends from. Taking
  * the object's existence for the history would then answer `NotAncestor` for a
- * candidate that had only not arrived yet, so `NotAncestor` is given against a
- * history a ref proves whole and against nothing else.
+ * candidate that had only not arrived yet, so nothing is decided against a tip
+ * no such ref names.
+ *
+ * ABSENCE IS A FINDING ONLY OVER A HISTORY READ TO ITS END. git reports a
+ * lookup it could not complete exactly as it reports an object that is not
+ * there, and the ref says only that a fetch completed once: the objects under
+ * it can since have become unreadable, and may never have arrived where another
+ * ref already named the tip. So a candidate the scratch does not resolve is
+ * `NotAncestor` only once every commit of the tip's history has been read from
+ * the object store. A candidate it does resolve must be a commit by its own
+ * name, because git would otherwise answer for the commit a tag peels to.
  *
  * ONE FETCH IS IN FLIGHT PER REPOSITORY AND TIP, AND A STATED COUNT OF THEM AT
  * ONCE. Every asker of a tip not yet held waits on the same fetch and reads the
@@ -40,9 +49,10 @@ import type { GitEnvironment } from "./gitRun.ts";
 import {
   scratchFetchHistory,
   scratchHoldsHistory,
-  scratchHoldsObject,
   scratchIsAncestor,
+  scratchNamed,
   scratchOpen,
+  scratchWalksHistory,
   type GitCommitIdentity,
   type GitScratch,
 } from "./gitScratch.ts";
@@ -145,27 +155,44 @@ async function gitCommitAncestryHeld(
   return gitCommitAncestryFlight(own, question);
 }
 
-/** Decides against a history already proved whole: a candidate it does not hold is not in it, and a call git could not answer decides nothing. */
-async function gitCommitAncestryDecide(
+/** What git says of a candidate that is a commit here, a call it could not answer deciding nothing. */
+async function gitCommitAncestryDecideHeld(
   own: GitCommitAncestryState,
   question: CommitAncestryQuestion,
 ): Promise<CommitAncestry> {
-  const repository = question.repository.repository;
-  const present = await scratchHoldsObject(
-    own.scratch,
-    repository,
-    question.candidate,
-  );
-  if (present === undefined) return "Unknown";
-  if (!present) return "NotAncestor";
   const ancestor = await scratchIsAncestor(
     own.scratch,
-    repository,
+    question.repository.repository,
     question.candidate,
     question.tip,
   );
   if (ancestor === undefined) return "Unknown";
   return ancestor ? "Ancestor" : "NotAncestor";
+}
+
+/**
+ * Decides against a tip a ref names. The tip's width is the repository's, so a
+ * candidate of another width names nothing it could hold and decides nothing.
+ */
+async function gitCommitAncestryDecide(
+  own: GitCommitAncestryState,
+  question: CommitAncestryQuestion,
+): Promise<CommitAncestry> {
+  if (question.candidate.length !== question.tip.length) return "Unknown";
+  const repository = question.repository.repository;
+  const named = await scratchNamed(own.scratch, repository, question.candidate);
+  switch (named) {
+    case "Commit":
+      return gitCommitAncestryDecideHeld(own, question);
+    case "Other":
+      return "Unknown";
+    case "Unresolved":
+      return (await scratchWalksHistory(own.scratch, repository, question.tip))
+        ? "NotAncestor"
+        : "Unknown";
+    default:
+      return assertNever(named);
+  }
 }
 
 async function gitCommitAncestryAsk(
