@@ -1,17 +1,18 @@
 # The rig's container images
 
-Two images and the one way they reach the rig. `images/api/Dockerfile` is the
-native HTTP API; `images/chuggy-ui/Dockerfile` bundles the console and serves
-the bundle from an nginx that does nothing else. Each argues itself in its own
-header, and this is the procedure.
+Two images. `images/api/Dockerfile` is the native HTTP API;
+`images/chuggy-ui/Dockerfile` bundles the console and serves the bundle from an
+nginx that does nothing else. Each argues itself in its own header.
 
-The rig has no registry, and on a single-node k3s it does not need one: the
-kubelet reads the node's own containerd, so an archive imported there is an
-image already present. `deploy/rig/images/build-and-import.sh` is the build and
-that import, end to end.
+A release is not made here. The fabric's trigger starts one, which is built
+from these Dockerfiles and applied by Flux; the README of
+`gdoteof/chuggy-fabric` is where that is written, and the manifests live there
+too.
 
-The manifests are not here. They live in the `gdoteof/chuggy-fabric` repository
-and reference these images by the tag this procedure puts on the node.
+This is the procedure for an image built by hand. The kubelet reads the node's
+own containerd, so an archive imported there is an image already present, and
+`deploy/rig/images/build-and-import.sh` is the build and that import, end to
+end.
 
 ## Before you start
 
@@ -54,7 +55,7 @@ on are these:
 Every other unresolved path answers with the document root's `index.html`,
 because the routes belong to the client.
 
-## What the manifests must reference
+## What a manifest of an imported image must reference
 
 | Image | Reference | Serves on | Liveness | Readiness |
 |---|---|---|---|---|
@@ -316,9 +317,9 @@ sudo k3s ctr --namespace k8s.io images ls -q | grep chuggy.invalid
 
 ### What none of that is evidence of
 
-- **One node.** There is no registry, so nothing replicates the image. A second
-  node would not have it, and neither would this one after the node's image
-  store is reset.
+- **One node.** The import reaches no registry, so nothing replicates the image.
+  A second node would not have it, and neither would this one after the node's
+  image store is reset.
 - **One architecture, named rather than checked.** The build says
   `--platform linux/amd64`, which is the rig node's, because `docker save`
   writes the build host's platform alone and `ctr images import` takes a

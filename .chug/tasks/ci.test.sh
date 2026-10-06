@@ -667,11 +667,11 @@ check "a gate selects its suite of fixtures" 0 "$RC" "  - .chug/tasks/check-post
 stub_repo 0
 mkdir -p "$R/.githooks" "$R/deploy/rig"
 for suite in .chug/tasks/ci .chug/tasks/check-source .chug/tasks/check-boundaries \
-	.chug/tasks/check-duplication .githooks/pre-commit deploy/rig/deploy-to-gtr; do
+	.chug/tasks/check-duplication .githooks/pre-commit deploy/rig/drill; do
 	printf '#!/bin/sh\nexit 0\n' > "$R/$suite.test.sh"
 done
 printf '#!/bin/sh\nexit 0\n' > "$R/.githooks/pre-commit"
-printf '#!/bin/sh\nexit 0\n' > "$R/deploy/rig/deploy-to-gtr.sh"
+printf '#!/bin/sh\nexit 0\n' > "$R/deploy/rig/drill.sh"
 printf 'model/\n' > "$R/.prettierignore"
 printf '# harness\n' > "$R/.chug/tasks/_suite.sh"
 printf 'module.exports = {};\n' > "$R/.dependency-cruiser.cjs"
@@ -696,7 +696,7 @@ printf '# harness, changed\n' > "$R/.chug/tasks/_suite.sh"
 commit_all harness
 run_last_commit 1
 check "the harness selects the hook's suite" 0 "$RC" "  - .githooks/pre-commit.test.sh"
-check "the harness selects a suite kept beside its script" 0 "$RC" "  - deploy/rig/deploy-to-gtr.test.sh"
+check "the harness selects a suite kept beside its script" 0 "$RC" "  - deploy/rig/drill.test.sh"
 check "the harness selects the sequencer's suite" 0 "$RC" "  - .chug/tasks/ci.test.sh"
 check "the harness selects a suite that copies the tools' configuration" 0 "$RC" "  - .chug/tasks/check-boundaries.test.sh"
 printf 'dist/\n' > "$R/.prettierignore"
@@ -711,10 +711,10 @@ printf '#!/bin/sh\nexit 0\n# changed\n' > "$R/.githooks/pre-commit"
 commit_all hook
 run_last_commit 1
 check "the hook selects its suite" 0 "$RC" "  - .githooks/pre-commit.test.sh"
-printf '#!/bin/sh\nexit 0\n# changed\n' > "$R/deploy/rig/deploy-to-gtr.sh"
-commit_all release
+printf '#!/bin/sh\nexit 0\n# changed\n' > "$R/deploy/rig/drill.sh"
+commit_all script
 run_last_commit 1
-check "a script selects the suite kept beside it" 0 "$RC" "  - deploy/rig/deploy-to-gtr.test.sh"
+check "a script selects the suite kept beside it" 0 "$RC" "  - deploy/rig/drill.test.sh"
 printf '\n# changed\n' >> "$R/.chug/tasks/ci.sh"
 commit_all sequencer
 run_last_commit 1
