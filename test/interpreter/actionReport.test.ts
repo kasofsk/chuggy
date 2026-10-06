@@ -230,6 +230,59 @@ test("an action has at most one reporter", () => {
     );
 });
 
+test("no two reporters proving themselves by a signature over the body name one secret file, wherever each reports", () => {
+  const canary = { ...flux, reporter: "canary-flux", actions: ["rig-canary"] };
+  const sharing =
+    "names one secret file for the FluxSignature reporters rig-flux and canary-flux";
+  for (const second of [
+    canary,
+    { ...canary, project: "console" },
+    { ...canary, tenant: "acme" },
+    { ...canary, tenant: "acme", actions: ["rig"] },
+  ])
+    assert.equal(refused([flux, second]), sharing, JSON.stringify(second));
+  assert.equal(
+    refused([
+      build,
+      flux,
+      { ...build, reporter: "deploys", actions: [] },
+      {
+        ...flux,
+        reporter: "staging-flux",
+        actions: ["staging"],
+        secretFile: `${flux.secretFile}-staging`,
+      },
+      canary,
+    ]),
+    sharing,
+    "with other reporters between them, one of them signing with a file of its own",
+  );
+  assert.ok(!sharing.includes(flux.secretFile));
+});
+
+test("a secret file is shared by any other two reporters, and is told from another by its path as written", () => {
+  const canary = { ...flux, reporter: "canary-flux", actions: ["rig-canary"] };
+  for (const [roster, why] of [
+    [
+      [flux, { ...canary, secretFile: `${flux.secretFile}-canary` }],
+      "a file each",
+    ],
+    [[flux, { ...build, secretFile: flux.secretFile }], "one of each scheme"],
+    [
+      [build, { ...build, reporter: "deploys", actions: ["deploy"] }],
+      "two presenting the secret itself",
+    ],
+    [
+      [
+        flux,
+        { ...canary, secretFile: flux.secretFile.replace("/var/", "/var//") },
+      ],
+      "one file written two ways",
+    ],
+  ] as const)
+    assert.equal(named(roster).length, roster.length, why);
+});
+
 test("an action is one project's: a namesake elsewhere has a reporter of its own, and a name or a file may be used again", () => {
   assert.equal(
     named([

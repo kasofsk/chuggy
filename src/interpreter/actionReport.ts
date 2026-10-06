@@ -105,11 +105,41 @@ function actionReporterRosterRefused(why: string): ActionReporterRosterRead {
   return { read: "Refused", why };
 }
 
+type ActionReporterRosterEntry = z.infer<
+  typeof actionReporterRosterSchema
+>[number];
+
 /**
- * Reads a deployment's roster without reading its files. A reporter proving
- * itself by a signature over the body alone is named for one action, because
- * such a signature verifies at any address its reporter may post to.
+ * Why a roster every entry of which is well formed is refused, or nothing. A
+ * signature over the body alone verifies at any address its key is behind, so
+ * a reporter proving itself by one is named for one action, and no two such
+ * reporters name one secret file, a file being told from another by its path
+ * as written.
  */
+function actionReporterRosterBroken(
+  entries: readonly ActionReporterRosterEntry[],
+): string | undefined {
+  const reported = new Set<string>();
+  const signing = new Map<string, string>();
+  for (const entry of entries) {
+    if (entry.scheme === "FluxSignature" && entry.actions.length !== 1)
+      return `names the FluxSignature reporter ${entry.reporter} for other than one action`;
+    for (const action of entry.actions) {
+      const identity = JSON.stringify([entry.tenant, entry.project, action]);
+      if (reported.has(identity))
+        return `names the action ${action} of ${entry.tenant}/${entry.project} twice`;
+      reported.add(identity);
+    }
+    if (entry.scheme !== "FluxSignature") continue;
+    const sharing = signing.get(entry.secretFile);
+    if (sharing !== undefined)
+      return `names one secret file for the FluxSignature reporters ${sharing} and ${entry.reporter}`;
+    signing.set(entry.secretFile, entry.reporter);
+  }
+  return undefined;
+}
+
+/** Reads a deployment's roster without reading its files. */
 export function actionReporterRoster(
   encoded: string,
 ): ActionReporterRosterRead {
@@ -124,21 +154,8 @@ export function actionReporterRoster(
     return actionReporterRosterRefused(
       `is not a roster of reporters at ${JSON.stringify(parsed.error.issues[0]?.path ?? [])}`,
     );
-  const reported = new Set<string>();
-  for (const entry of parsed.data) {
-    if (entry.scheme === "FluxSignature" && entry.actions.length !== 1)
-      return actionReporterRosterRefused(
-        `names the FluxSignature reporter ${entry.reporter} for other than one action`,
-      );
-    for (const action of entry.actions) {
-      const identity = JSON.stringify([entry.tenant, entry.project, action]);
-      if (reported.has(identity))
-        return actionReporterRosterRefused(
-          `names the action ${action} of ${entry.tenant}/${entry.project} twice`,
-        );
-      reported.add(identity);
-    }
-  }
+  const broken = actionReporterRosterBroken(parsed.data);
+  if (broken !== undefined) return actionReporterRosterRefused(broken);
   return {
     read: "Roster",
     reporters: parsed.data.map((entry) => ({
