@@ -349,14 +349,17 @@ test("a repository nothing can reach is unknown", async (t) => {
   );
 });
 
-test("a scratch removed under the live adapter is unknown", async (t) => {
+test("a scratch removed under the live adapter is unknown, for a question it had answered too", async (t) => {
   const fixture = fixtureOpen(t);
   const port = fixturePort(fixture);
-  await port.ancestry(fixtureQuestion(fixture, fixture.candidate));
+  assert.equal(
+    await port.ancestry(fixtureQuestion(fixture, fixture.candidate)),
+    "Ancestor",
+  );
   rmSync(fixture.scratch, { recursive: true, force: true });
 
   assert.equal(
-    await port.ancestry(fixtureQuestion(fixture, fixture.stray)),
+    await port.ancestry(fixtureQuestion(fixture, fixture.candidate)),
     "Unknown",
   );
 });
@@ -573,7 +576,7 @@ test("a remote that stalls is unknown once the bound the adapter was given has p
   assert.ok(waitedMs < gitCommitAncestryDefaults.remoteTimeoutSecsMax * 1000);
 });
 
-test("an unknown is not remembered", async (t) => {
+test("a repository that could not be reached is asked again once it can be", async (t) => {
   const fixture = fixtureOpen(t);
   const port = fixturePort(fixture);
   const later = join(fixture.directory, "later.git");
@@ -589,67 +592,11 @@ test("an unknown is not remembered", async (t) => {
   assert.equal(await port.ancestry(question), "Ancestor");
 });
 
-test("a decided answer outlives the scratch it was read from", async (t) => {
-  const fixture = fixtureOpen(t);
-  const port = fixturePort(fixture);
-  await port.ancestry(fixtureQuestion(fixture, fixture.candidate));
-  await port.ancestry(fixtureQuestion(fixture, fixture.stray));
-  rmSync(fixture.scratch, { recursive: true, force: true });
-
-  assert.equal(
-    await port.ancestry(fixtureQuestion(fixture, fixture.candidate)),
-    "Ancestor",
-  );
-  assert.equal(
-    await port.ancestry(fixtureQuestion(fixture, fixture.stray)),
-    "NotAncestor",
-  );
-});
-
-test("an answer is remembered for the repository it was read from and no other", async (t) => {
-  const fixture = fixtureOpen(t);
-  const port = fixturePort(fixture);
-  await port.ancestry(fixtureQuestion(fixture, fixture.candidate));
-
-  assert.equal(
-    await port.ancestry(
-      fixtureQuestion(
-        fixture,
-        fixture.candidate,
-        fixture.tip,
-        join(fixture.directory, "missing.git"),
-      ),
-    ),
-    "Unknown",
-  );
-});
-
-test("the oldest remembered answer leaves once the count is past its bound", async (t) => {
-  const fixture = fixtureOpen(t);
-  const port = fixturePort(fixture, { rememberedAnswersMax: 1 });
-  await port.ancestry(fixtureQuestion(fixture, fixture.candidate));
-  await port.ancestry(fixtureQuestion(fixture, fixture.stray));
-  rmSync(fixture.scratch, { recursive: true, force: true });
-
-  assert.equal(
-    await port.ancestry(fixtureQuestion(fixture, fixture.stray)),
-    "NotAncestor",
-  );
-  assert.equal(
-    await port.ancestry(fixtureQuestion(fixture, fixture.candidate)),
-    "Unknown",
-  );
-});
-
 test("a count that is no positive integer is refused", (t) => {
   const fixture = fixtureOpen(t);
   for (const count of [0, -1, 1.5, Number.NaN]) {
     assert.throws(
       () => fixturePort(fixture, { fetchesInFlightMax: count }),
-      RangeError,
-    );
-    assert.throws(
-      () => fixturePort(fixture, { rememberedAnswersMax: count }),
       RangeError,
     );
   }

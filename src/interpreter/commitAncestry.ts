@@ -3,9 +3,9 @@
  * in.
  *
  * THE ANSWER IS ABOUT TWO IMMUTABLE COMMITS, so `Ancestor` and `NotAncestor`
- * cannot change once given. `Unknown` says nothing about the commits: it is a
- * port that could not find out this time, and the same question is worth
- * asking again.
+ * are true for good. `Unknown` says nothing about the commits: it is a port
+ * that could not find out this time, and the same question is worth asking
+ * again.
  *
  * THE TWO COMMITS ARE NAMED AND NOT POSITIONED. Both are object identities, so
  * a question taken as two arguments could be asked backwards and still compile.

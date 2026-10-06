@@ -21,10 +21,9 @@
  * the answer is `Unknown`; nothing of that fetch is trusted afterwards, so the
  * next ask begins again.
  *
- * ONLY WHAT CANNOT CHANGE IS REMEMBERED. Two commits' ancestry is fixed, so
- * `Ancestor` and `NotAncestor` are kept for the life of the process up to a
- * stated count, the oldest leaving first. `Unknown` is a fact about one
- * attempt and is never kept.
+ * NOTHING IS REMEMBERED BETWEEN ASKS. The scratch is the memory: a tip it
+ * holds is answered from it by local calls alone, and an answer read afresh
+ * each time is one a wrong reading cannot outlive.
  */
 
 import { assertNever } from "../../domain/assertNever.ts";
@@ -58,7 +57,6 @@ export interface GitCommitAncestryOptions {
   readonly localTimeoutSecsMax?: number;
   readonly remoteTimeoutSecsMax?: number;
   readonly fetchesInFlightMax?: number;
-  readonly rememberedAnswersMax?: number;
 }
 
 /**
@@ -71,20 +69,14 @@ export const gitCommitAncestryDefaults = {
   localTimeoutSecsMax: 5,
   remoteTimeoutSecsMax: 10,
   fetchesInFlightMax: 4,
-  rememberedAnswersMax: 4096,
 } as const;
 
-/** An answer that is about the two commits, and so the only kind worth keeping. */
-type GitCommitAncestryDecided = Exclude<CommitAncestry, "Unknown">;
-
-/** What the adapter holds across asks: its scratch, its credential source, the fetches in flight and the answers that cannot change. */
+/** What the adapter holds across asks: its scratch, its credential source and the fetches in flight. */
 interface GitCommitAncestryState {
   readonly scratch: GitScratch;
   readonly credentials: RepositoryCredentialPort;
   readonly fetching: Map<string, Promise<boolean>>;
   readonly fetchesInFlightMax: number;
-  readonly remembered: Map<string, GitCommitAncestryDecided>;
-  readonly rememberedAnswersMax: number;
 }
 
 /** Fetches the tip's whole history and answers whether its ref now says a commit by that identity is held. */
@@ -157,14 +149,14 @@ async function gitCommitAncestryHeld(
 async function gitCommitAncestryDecide(
   own: GitCommitAncestryState,
   question: CommitAncestryQuestion,
-): Promise<GitCommitAncestryDecided | undefined> {
+): Promise<CommitAncestry> {
   const repository = question.repository.repository;
   const present = await scratchHoldsObject(
     own.scratch,
     repository,
     question.candidate,
   );
-  if (present === undefined) return undefined;
+  if (present === undefined) return "Unknown";
   if (!present) return "NotAncestor";
   const ancestor = await scratchIsAncestor(
     own.scratch,
@@ -172,49 +164,29 @@ async function gitCommitAncestryDecide(
     question.candidate,
     question.tip,
   );
-  if (ancestor === undefined) return undefined;
+  if (ancestor === undefined) return "Unknown";
   return ancestor ? "Ancestor" : "NotAncestor";
-}
-
-/** Keeps one decided answer, the oldest kept leaving once the count is past its bound. */
-function gitCommitAncestryRemember(
-  own: GitCommitAncestryState,
-  key: string,
-  decided: GitCommitAncestryDecided,
-): void {
-  own.remembered.set(key, decided);
-  if (own.remembered.size <= own.rememberedAnswersMax) return;
-  const oldest = own.remembered.keys().next();
-  if (oldest.done !== true) own.remembered.delete(oldest.value);
 }
 
 async function gitCommitAncestryAsk(
   own: GitCommitAncestryState,
   question: CommitAncestryQuestion,
 ): Promise<CommitAncestry> {
-  const key = `${question.candidate} ${question.tip} ${question.repository.repository}`;
-  const remembered = own.remembered.get(key);
-  if (remembered !== undefined) return remembered;
   if (!(await gitCommitAncestryHeld(own, question))) return "Unknown";
-  const decided = await gitCommitAncestryDecide(own, question);
-  if (decided === undefined) return "Unknown";
-  gitCommitAncestryRemember(own, key, decided);
-  return decided;
+  return gitCommitAncestryDecide(own, question);
 }
 
 export function gitCommitAncestry(
   options: GitCommitAncestryOptions,
 ): CommitAncestryPort {
   const resolved = { ...gitCommitAncestryDefaults, ...options };
-  for (const count of [
-    resolved.fetchesInFlightMax,
-    resolved.rememberedAnswersMax,
-  ]) {
-    if (!Number.isSafeInteger(count) || count <= 0) {
-      throw new RangeError(
-        "git commit ancestry: a count is not a positive integer",
-      );
-    }
+  if (
+    !Number.isSafeInteger(resolved.fetchesInFlightMax) ||
+    resolved.fetchesInFlightMax <= 0
+  ) {
+    throw new RangeError(
+      "git commit ancestry: a count is not a positive integer",
+    );
   }
   const own: GitCommitAncestryState = {
     scratch: scratchOpen({
@@ -229,8 +201,6 @@ export function gitCommitAncestry(
     credentials: resolved.credentials,
     fetching: new Map(),
     fetchesInFlightMax: resolved.fetchesInFlightMax,
-    remembered: new Map(),
-    rememberedAnswersMax: resolved.rememberedAnswersMax,
   };
   return { ancestry: (question) => gitCommitAncestryAsk(own, question) };
 }
