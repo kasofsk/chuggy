@@ -743,6 +743,22 @@ test("a project with no lead is a page saying so and how its tickets run, not fi
   );
 });
 
+/**
+ * THE SELECTOR'S SETTINGS SAY HOW A LEAD WOULD DISPATCH, NOT WHETHER THIS
+ * PROJECT HAS ONE. A project with no lead still has settings a strip reads and
+ * writes, so the strip draws from its own independent read rather than from
+ * the lead's presence.
+ */
+test("a project with no lead still draws the strip that leads the page", async () => {
+  leadlessServed();
+  await mountLead();
+  expect(screen.getByRole("heading", { name: "No lead" })).toBeDefined();
+  expect(screen.getByRole("button", { name: "Pause" })).toBeDefined();
+  expect(
+    screen.getByRole("button", { name: "Require approval" }),
+  ).toBeDefined();
+});
+
 /** The lead waits on any of the project's runners, so where none is live the
  * page says why under `No lead`, with where one is added. */
 test("a project with no lead on runners none of its own has says so under the line", async () => {

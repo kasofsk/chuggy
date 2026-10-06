@@ -35,7 +35,6 @@ import { useApiPorts } from "./api.ts";
 /** No frame names either read, so the partition's own refetch is what reaches
  * them. */
 export const selectorSettingsResource = "selector-settings";
-export const selectorSettingsHistoryResource = "selector-settings-history";
 
 export interface SelectorSettingsHeld {
   readonly draft: SelectorSettingsDraft;

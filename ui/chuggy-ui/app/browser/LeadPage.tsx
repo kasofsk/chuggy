@@ -314,11 +314,9 @@ function LeadBody(props: {
   return (
     <>
       {lead === undefined ? null : (
-        <>
-          <LeadTopBar lead={lead} runner={props.runner} />
-          <LeadSelectorStrip partition={props.partition} />
-        </>
+        <LeadTopBar lead={lead} runner={props.runner} />
       )}
+      <LeadSelectorStrip partition={props.partition} />
       <LeadDetails
         partition={props.partition}
         state={props.state}
@@ -359,15 +357,20 @@ export function LeadPage(): ReactNode {
       runner === undefined ? undefined : (
         <SessionRunnerNotice partition={partition} short={runner} />
       );
-    return projectLeadPresent(read) === false ? (
-      <EmptyState
-        label="No lead"
-        variant="page"
-        detail="Tickets are dispatched by hand"
-        action={action}
-      />
-    ) : (
-      <EmptyState label="No lead" variant="page" action={action} />
+    return (
+      <>
+        <LeadSelectorStrip partition={partition} />
+        {projectLeadPresent(read) === false ? (
+          <EmptyState
+            label="No lead"
+            variant="page"
+            detail="Tickets are dispatched by hand"
+            action={action}
+          />
+        ) : (
+          <EmptyState label="No lead" variant="page" action={action} />
+        )}
+      </>
     );
   }
   return (
