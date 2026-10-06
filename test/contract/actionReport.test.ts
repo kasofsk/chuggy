@@ -207,7 +207,7 @@ test("a link is https, bounded, written as it travels and carries no credential"
   }
 });
 
-test("no link a report may carry reads as holding a credential, however its host is approached", () => {
+test("no link a report may carry reads as holding a credential, however its host is approached or spelled", () => {
   const carried = linksWrittenEveryWay.filter(isActionReportLink);
   assert.ok(carried.length > 0, "some link written every way is carried");
   assert.ok(

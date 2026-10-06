@@ -743,7 +743,7 @@ async function linksHeld(
   }
 }
 
-test("the relation holds every link a report may carry and none that reads as holding a credential, however its host is approached", async () => {
+test("the relation holds every link a report may carry and none that reads as holding a credential, however its host is approached or spelled", async () => {
   const { partition } = await declaringProject("links", ["build"]);
   const held = await linksHeld(partition, linksWrittenEveryWay);
   const carried = linksWrittenEveryWay.filter(isActionReportLink);
