@@ -2,12 +2,12 @@
  * Whether one commit is in another's history, answered from the bare scratch
  * kept per repository.
  *
- * A TIP IS HELD ONLY BY THE REF ITS OWN COMPLETED FETCH WROTE. git unpacks a
- * small fetch object by object and writes the ref last, so a fetch stopped
- * part-way can leave the tip standing without what it descends from. Taking
- * the object's existence for the history would then answer `NotAncestor` for a
- * candidate that had only not arrived yet, so nothing is decided against a tip
- * no such ref names.
+ * A TIP IS HELD ONLY BY THE REF ITS OWN COMPLETED FETCH WROTE. A git a scratch
+ * admits may unpack a small fetch object by object and write the ref last, so
+ * a fetch stopped part-way can leave the tip standing without what it descends
+ * from. Taking the object's existence for the history would then answer
+ * `NotAncestor` for a candidate that had only not arrived yet, so nothing is
+ * decided against a tip no such ref names.
  *
  * AN ANSWER RESTS ONLY ON READS THAT LOOKED. The scratch is asked whether the
  * candidate is a commit here, whether git reaches it from the tip, and whether

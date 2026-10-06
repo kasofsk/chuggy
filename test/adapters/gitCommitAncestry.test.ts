@@ -68,10 +68,9 @@ const fixtureSecret = "fixture-secret-a1b2c3";
 type FixtureServing = "Whole" | "Stalled" | "Slowed";
 
 /**
- * What the remote runs in place of building a pack directly. It lets the
- * pack's opening through and then stalls or pauses, which is far enough for
- * the tip commit and not for what it descends from — the stopped-fetch test
- * reads that off the scratch rather than taking it from here.
+ * What the remote runs in place of building a pack directly. It writes that it
+ * has begun, lets the pack's opening through and then stalls or pauses, which
+ * leaves the fetch that asked part-way through its transfer.
  */
 const fixtureServeText = [
   "#!/bin/sh",
@@ -342,15 +341,9 @@ async function fixtureUntil(
   assert.fail(`${awaited} never came`);
 }
 
-/** Waits for the tip commit to stand in one remote's scratch, which is the middle of a slowed fetch. */
-function fixtureTipArrived(
-  fixture: Fixture,
-  repository: string = fixture.remote,
-): Promise<void> {
-  const scratch = fixtureScratchRepository(fixture, repository);
-  return fixtureUntil("the tip", () =>
-    fixtureAnswers(scratch, "cat-file", "-e", fixture.tip),
-  );
+/** Waits for the remote to have begun handing over as many packs as given, which for a slowed fetch is its middle. */
+function fixtureServing(fixture: Fixture, served: number): Promise<void> {
+  return fixtureUntil("the fetch", () => fixtureServed(fixture) === served);
 }
 
 /** Whether a completed fetch has written the ref that says one tip's history is held. */
@@ -930,18 +923,18 @@ test("the fetch carries the credential the source resolved", async (t) => {
   );
 });
 
-test("a fetch stopped part-way leaves the tip without its history, and the next ask answers from a whole one", async (t) => {
+test("a fetch stopped part-way writes no ref for its tip, and the next ask answers from a whole one", async (t) => {
   const fixture = fixtureOpen(t);
   const port = fixturePort(fixture, { remoteTimeoutSecsMax: 2 });
-  const scratch = fixtureScratchRepository(fixture);
   fixtureServe(fixture, "Stalled");
   assert.equal(
     await port.ancestry(fixtureQuestion(fixture, fixture.candidate)),
     "Unknown",
   );
-  assert.ok(fixtureAnswers(scratch, "cat-file", "-e", fixture.tip));
-  assert.ok(!fixtureAnswers(scratch, "cat-file", "-e", fixture.candidate));
-  assert.equal(fixtureGit(scratch, "for-each-ref"), "");
+  assert.equal(
+    fixtureGit(fixtureScratchRepository(fixture), "for-each-ref"),
+    "",
+  );
 
   fixtureServe(fixture, "Whole");
   assert.equal(
@@ -955,7 +948,7 @@ test("a second asker during a slowed fetch waits on it without reading the scrat
   const port = fixturePort(fixture, { environment: fixtureRecorded(fixture) });
   fixtureServe(fixture, "Slowed");
   const first = port.ancestry(fixtureQuestion(fixture, fixture.candidate));
-  await fixtureTipArrived(fixture);
+  await fixtureServing(fixture, 1);
   assert.equal(
     fixtureGit(fixtureScratchRepository(fixture), "for-each-ref"),
     "",
@@ -1044,7 +1037,7 @@ test("a tip asked for while as many fetches as may run already are is unknown un
   );
   fixtureServe(fixture, "Slowed");
   const first = port.ancestry(fixtureQuestion(fixture, fixture.candidate));
-  await fixtureTipArrived(fixture);
+  await fixtureServing(fixture, 1);
 
   assert.equal(await port.ancestry(twin), "Unknown");
   assert.equal(await first, "Ancestor");
@@ -1061,7 +1054,7 @@ test("a tip already held is answered while as many fetches as may run already ar
   const slowed = port.ancestry(
     fixtureQuestion(fixture, fixture.candidate, fixture.tip, twin),
   );
-  await fixtureTipArrived(fixture, twin);
+  await fixtureServing(fixture, 2);
 
   assert.equal(
     await port.ancestry(fixtureQuestion(fixture, fixture.stray)),
@@ -1080,7 +1073,7 @@ test("a second tip of a repository waits for the fetch of the first before its o
   const newer = fixtureNewer(fixture);
   fixtureServe(fixture, "Slowed");
   const first = port.ancestry(fixtureQuestion(fixture, fixture.candidate));
-  await fixtureTipArrived(fixture);
+  await fixtureServing(fixture, 1);
   fixtureServe(fixture, "Whole");
   const second = port.ancestry(
     fixtureQuestion(fixture, fixture.candidate, newer),
@@ -1104,7 +1097,7 @@ test("a tip already held is answered while another tip of its repository is bein
   const slowed = port.ancestry(
     fixtureQuestion(fixture, fixture.candidate, newer),
   );
-  await fixtureUntil("the second fetch", () => fixtureServed(fixture) === 2);
+  await fixtureServing(fixture, 2);
 
   assert.equal(
     await port.ancestry(fixtureQuestion(fixture, fixture.stray)),
@@ -1189,7 +1182,7 @@ test("a fetch takes as many waiters as may wait on one, and an asker past them i
   const question = fixtureQuestion(fixture, fixture.candidate);
   fixtureServe(fixture, "Slowed");
   const waiting = [port.ancestry(question), port.ancestry(question)];
-  await fixtureTipArrived(fixture);
+  await fixtureServing(fixture, 1);
 
   assert.equal(await port.ancestry(question), "Unknown");
   assert.ok(!fixtureHistoryHeld(fixture, fixture.tip));
@@ -1199,11 +1192,11 @@ test("a fetch takes as many waiters as may wait on one, and an asker past them i
 test("an asker whose bound has passed leaves its place among a fetch's waiters to another", async (t) => {
   const fixture = fixtureOpen(t);
   const port = fixturePort(fixture, {
-    answerTimeoutSecsMax: 3,
+    answerTimeoutSecsMax: 4,
     fetchWaitersMax: 1,
   });
   const question = fixtureQuestion(fixture, fixture.candidate);
-  fixtureServe(fixture, "Slowed", 4);
+  fixtureServe(fixture, "Slowed", 5);
   assert.equal(await port.ancestry(question), "Unknown");
 
   assert.equal(await port.ancestry(question), "Ancestor");
@@ -1230,7 +1223,7 @@ test("an asker whose bound passed while another tip was being fetched begins no 
   const newer = fixtureNewer(fixture);
   fixtureServe(fixture, "Slowed");
   const first = port.ancestry(fixtureQuestion(fixture, fixture.candidate));
-  await fixtureTipArrived(fixture);
+  await fixtureServing(fixture, 1);
   fixtureServe(fixture, "Whole");
   const second = port.ancestry(
     fixtureQuestion(fixture, fixture.candidate, newer),
