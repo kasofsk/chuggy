@@ -68,16 +68,17 @@ const fixtureSecret = "fixture-secret-a1b2c3";
 type FixtureServing = "Whole" | "Stalled" | "Slowed";
 
 /**
- * What the remote runs in place of building a pack directly. It writes that it
- * has begun, lets the pack's opening through and then stalls or pauses, which
- * leaves the fetch that asked part-way through its transfer.
+ * What the remote runs in place of building a pack directly. It takes how it is
+ * to serve, writes that it has begun, lets the pack's opening through and then
+ * stalls or pauses, which leaves the fetch that asked part-way through its
+ * transfer.
  */
 const fixtureServeText = [
   "#!/bin/sh",
   'here=$(dirname "$0")',
+  'read serving secs < "$here/serving"',
   'echo served >> "$here/served"',
   '"$here/scratch/credential-helper" get > "$here/credential"',
-  'read serving secs < "$here/serving"',
   'case "$serving" in',
   'Stalled) "$@" | { dd bs=1 count=600 2>/dev/null; sleep 60; } ;;',
   'Slowed) "$@" | { dd bs=1 count=600 2>/dev/null; sleep "$secs"; cat; } ;;',
@@ -341,7 +342,11 @@ async function fixtureUntil(
   assert.fail(`${awaited} never came`);
 }
 
-/** Waits for the remote to have begun handing over as many packs as given, which for a slowed fetch is its middle. */
+/**
+ * Waits for the remote to have begun handing over as many packs as given, which
+ * for a slowed fetch is its middle. The remote has taken how it serves that
+ * pack by then, so a test may say how the next is served.
+ */
 function fixtureServing(fixture: Fixture, served: number): Promise<void> {
   return fixtureUntil("the fetch", () => fixtureServed(fixture) === served);
 }
