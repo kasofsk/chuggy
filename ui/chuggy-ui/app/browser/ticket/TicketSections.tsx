@@ -84,6 +84,7 @@ export function ticketSections(
   ticket: TicketResponse,
   facts: TicketPageFacts,
   delivery: TicketDeliveryState,
+  nowMs: number,
 ): readonly SectionEntry[] {
   const ledger = facts.ledger;
   const totals = ticket.runTotals;
@@ -111,7 +112,7 @@ export function ticketSections(
           {
             id: "delivery",
             label: "Delivery",
-            note: ticketDeliverySummary(delivery),
+            note: ticketDeliverySummary(delivery, nowMs),
           },
         ]
       : []),
@@ -206,7 +207,7 @@ export function TicketSections(props: {
         <SectionRow
           id="delivery"
           label="Delivery"
-          summary={ticketDeliverySummary(props.delivery)}
+          summary={ticketDeliverySummary(props.delivery, props.nowMs)}
         >
           <TicketDelivery state={props.delivery} />
         </SectionRow>

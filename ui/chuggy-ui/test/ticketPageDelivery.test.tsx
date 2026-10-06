@@ -17,6 +17,7 @@ import { TicketPage } from "../app/browser/TicketPage.tsx";
 import { SessionProvider } from "../app/browser/session.tsx";
 import { viewportDeskEm } from "../app/browser/shell/viewport.ts";
 import { useTicketDelivery } from "../app/browser/ticket/TicketDelivery.tsx";
+import { apiTimeoutMsDefault } from "../app/core/apiRequest.ts";
 import { ticketDeliveryPolledMs } from "../app/core/ticketDelivery.ts";
 import {
   answer,
@@ -47,20 +48,24 @@ import { viewportAtEm } from "./viewport.ts";
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
 
+/** The ticket the page's address names, which `addressedAt` moves. */
+const addressed = vi.hoisted(() => ({ ticket: "11" }));
+
 vi.mock("@tanstack/react-router", () => ({
   createLink: (component: unknown) => component,
   Link: (props: { readonly children?: ReactNode }) => (
     <a href="/">{props.children}</a>
   ),
-  useParams: () => ({ ...atlas, ticket: "11" }),
+  useParams: () => ({ ...atlas, ticket: addressed.ticket }),
 }));
 // jscpd:ignore-end
 
 /**
  * The Delivery row on a ticket's page, over what the read of the ticket's
- * action reach answers: which answers draw a row, what a line of it says, and
- * that a read which fails, is slow or is asked again leaves the rest of the
- * page as it stood.
+ * action reach answers: which answers draw a row, what a line of it says, that
+ * a read which fails, is slow or is asked again leaves the rest of the page as
+ * it stood, that an answer kept until it is stale says so, and that each
+ * ticket's page draws its own.
  */
 
 beforeEach(() => {
@@ -70,6 +75,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  addressed.ticket = "11";
   history.replaceState(null, "", "/");
   vi.useRealTimers();
   vi.unstubAllGlobals();
@@ -99,9 +105,13 @@ let reachAsked: string[] = [];
 /** The stream the last drawn page is listening on, for a case to push at. */
 let stream = openedStream();
 
+/** Moves the last drawn page to another ticket's address, as following a link
+ * to that ticket does: the same page on the same client, drawn again. */
+let addressedAt: (ticket: number) => Promise<void> = () => Promise.resolve();
+
 /** The ticket's page over a reach read that answers what the case says. */
 async function drawn(
-  reach: () => Response | Promise<Response>,
+  reach: (url: string) => Response | Promise<Response>,
 ): Promise<HTMLElement> {
   reachAsked = [];
   const api = apiDouble({
@@ -109,20 +119,24 @@ async function drawn(
     route: pageRoute,
     reach: (url) => {
       reachAsked.push(url);
-      return reach();
+      return reach(url);
     },
   });
   vi.stubGlobal("fetch", api.fetch);
   stream = openedStream();
-  const view = render(
-    <ScreenHarness
-      partition={atlas}
-      client={new QueryClient()}
-      transport={stream.ports.fetch}
-    >
+  const client = new QueryClient();
+  const transport = stream.ports.fetch;
+  const page = (): ReactNode => (
+    <ScreenHarness partition={atlas} client={client} transport={transport}>
       <TicketPage />
-    </ScreenHarness>,
+    </ScreenHarness>
   );
+  const view = render(page());
+  addressedAt = async (ticket) => {
+    addressed.ticket = String(ticket);
+    view.rerender(page());
+    await settled();
+  };
   await settled();
   return view.container;
 }
@@ -148,6 +162,12 @@ async function deliveryOpened(container: HTMLElement): Promise<HTMLElement> {
   });
   await settled();
   return row;
+}
+
+/** What the details pane's anchor to the row reads as, where it has one. */
+function anchorSaid(container: HTMLElement): string | null | undefined {
+  return container.querySelector('nav.sections a[href="#delivery"]')
+    ?.textContent;
 }
 
 function linesDrawn(row: HTMLElement): readonly HTMLElement[] {
@@ -385,6 +405,40 @@ test("a re-read the page makes for another reason asks again whatever the row la
   expect(trigger.textContent).toBe("Delivery1 Reached");
 });
 
+/** What the read answers of a landed ticket whose one action has reached it. */
+const reachedOnce = (): Response =>
+  answer(deliveryLandedWith([deliveryAction("rig", "Rig", "Reached")]));
+
+test("another ticket's page on the same client starts unread, asks its own route and draws its own lines, and the first ticket's still draws its own", async () => {
+  const route = (ticket: number): string =>
+    `${nativeHttpBasePath}/tenants/acme/projects/atlas/tickets/${String(ticket)}/action-reach`;
+  let answering: (response: Response) => void = () => undefined;
+  const container = await drawn((url) =>
+    url === route(11)
+      ? reachedOnce()
+      : new Promise<Response>((resolve) => {
+          answering = resolve;
+        }),
+  );
+  const said = (): string | null =>
+    within(deliveryRow(container)).getByRole("button").textContent;
+  expect(said()).toBe("Delivery1 Reached");
+
+  await addressedAt(12);
+  expect(rowsDrawn(container)).toEqual(["brief", "usage", "provenance"]);
+  expect(anchorSaid(container)).toBeUndefined();
+  expect(reachAsked).toEqual([route(11), route(12)]);
+  await turned(() => {
+    answering(answer(deliveryLandedWith([deliveryFailedBare])));
+  });
+  await settled();
+  expect(said()).toBe("Delivery1 Failed");
+  expect(anchorSaid(container)).toBe("Delivery1 Failed");
+
+  await addressedAt(11);
+  expect(said()).toBe("Delivery1 Reached");
+});
+
 /** The read alone, asked by nothing but its own clock. */
 function polled(reach: () => Response | Promise<Response>): {
   readonly asked: () => number;
@@ -471,4 +525,66 @@ test("the row keeps what it showed while a poll is out, and after one that faile
   await settled();
   expect(held.asked()).toBe(3);
   expect(held.lines()).toEqual(["Rig Reached"]);
+});
+
+test("an answer kept while every later read fails is said to be stale on the closed row and the anchor, its lines kept, until a read answers", async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  let next: () => Response = reachedOnce;
+  const container = await drawn(() => next());
+  const trigger = within(deliveryRow(container)).getByRole("button");
+  expect(trigger.textContent).toBe("Delivery1 Reached");
+  expect(anchorSaid(container)).toBe("Delivery1 Reached");
+
+  next = () => answer({ error: { code: "InternalError" } }, 500);
+  await clockMoved(ticketDeliveryPolledMs);
+  await settled();
+  expect(reachAsked).toHaveLength(2);
+  expect(trigger.textContent).toBe("Delivery1 Reached");
+  expect(anchorSaid(container)).toBe("Delivery1 Reached");
+
+  for (let poll = 1; poll < 20; poll += 1)
+    await clockMoved(ticketDeliveryPolledMs);
+  await settled();
+  expect(reachAsked).toHaveLength(21);
+  expect(trigger.textContent).toBe("DeliveryStale · 1 Reached");
+  expect(anchorSaid(container)).toBe("DeliveryStale · 1 Reached");
+  const row = await deliveryOpened(container);
+  expect(linesDrawn(row).map(lineSaid)).toEqual([
+    ["Rig", "Reached", "pill pill-pass", "43a251a"],
+  ]);
+  expect(row.querySelector(".freshness")?.className).toBe(
+    "freshness freshness-stale",
+  );
+
+  next = () => answer(deliveryLandedWith([deliveryFailedBare]));
+  await clockMoved(ticketDeliveryPolledMs);
+  await settled();
+  expect(trigger.textContent).toBe("Delivery1 Failed");
+  expect(anchorSaid(container)).toBe("Delivery1 Failed");
+});
+
+test("a page whose every read answers, each as slowly as a read that answers can, never says its answer is stale", async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  const slowestMs = apiTimeoutMsDefault - 1;
+  const container = await drawn(
+    () =>
+      new Promise<Response>((resolve) => {
+        setTimeout(() => {
+          resolve(reachedOnce());
+        }, slowestMs);
+      }),
+  );
+  await clockMoved(slowestMs);
+  await settled();
+  const trigger = within(deliveryRow(container)).getByRole("button");
+  const said = new Set<string | null | undefined>();
+  const pollsWatched = 4;
+  const watchedMs = pollsWatched * (ticketDeliveryPolledMs + slowestMs);
+  for (let passedMs = 0; passedMs < watchedMs; passedMs += 1_000) {
+    await clockMoved(1_000);
+    said.add(trigger.textContent).add(anchorSaid(container));
+  }
+  await settled();
+  expect(reachAsked).toHaveLength(1 + pollsWatched);
+  expect([...said]).toEqual(["Delivery1 Reached"]);
 });

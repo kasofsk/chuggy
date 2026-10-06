@@ -10,9 +10,15 @@ import {
   allActionReaches,
   ticketActionReachResponseSchema,
 } from "../../../src/contract/actionReach.ts";
+import { apiTimeoutMsDefault } from "../app/core/apiRequest.ts";
+import {
+  freshnessIsStale,
+  freshnessStaleAfterMs,
+} from "../app/core/freshness.ts";
 import {
   ticketDeliveryDrawn,
   ticketDeliveryLines,
+  ticketDeliveryPolledMs,
   ticketDeliveryRead,
   ticketDeliveryResource,
   ticketDeliverySummary,
@@ -34,13 +40,24 @@ import {
 const reported = { text: "43a251a", title: deliveryReported };
 const linked = { href: deliveryLink, host: "grafana.example.test" };
 
-/** The state a read that answered `body` is in. */
-function answered(body: unknown): TicketDeliveryState {
+/** The state a read is in once it answered `body` at `observedAtMs`. */
+function answeredAt(
+  body: unknown,
+  observedAtMs: number | undefined,
+): TicketDeliveryState {
   return ticketDeliveryRead({
     state: "Ready",
     value: ticketActionReachResponseSchema.parse(body),
-    observedAtMs: 7,
+    observedAtMs,
   });
+}
+
+/** When a case that says nothing of its answer's age read it. */
+const answeredAtMs = 7;
+
+/** The state a read that answered `body` is in. */
+function answered(body: unknown): TicketDeliveryState {
+  return answeredAt(body, answeredAtMs);
 }
 
 test("every body the suites draw from is one the read can answer", () => {
@@ -159,7 +176,7 @@ test("a row is drawn for a line to show and for a read that did not answer, and 
 });
 
 test("a closed row counts its lines by mark, what went wrong first", () => {
-  expect(ticketDeliverySummary(answered(deliveryEveryMark))).toBe(
+  expect(ticketDeliverySummary(answered(deliveryEveryMark), answeredAtMs)).toBe(
     "1 Failed · 1 Rolled back · 1 Unknown · 1 Waiting · 1 Reached",
   );
   expect(
@@ -172,26 +189,72 @@ test("a closed row counts its lines by mark, what went wrong first", () => {
           deliveryAction("d", "D", "Reached"),
         ]),
       ),
+      answeredAtMs,
     ),
   ).toBe("1 Waiting · 3 Reached");
 });
 
-test("a closed row says a read that did not answer was not read, and a row not drawn says nothing", () => {
-  expect(ticketDeliverySummary({ state: "Failed", reason: "Fault" })).toBe(
-    "Not read",
+test("a closed row says an answer kept past the console's stale wait is stale, before its counts", () => {
+  const kept = answered(
+    deliveryLandedWith([
+      deliveryAction("a", "A", "Reached"),
+      deliveryAction("b", "B", "NotYet"),
+    ]),
   );
-  expect(ticketDeliverySummary({ state: "Absent", reason: "Absent" })).toBe(
-    "Not read",
+  const staleAtMs = answeredAtMs + freshnessStaleAfterMs;
+  expect(ticketDeliverySummary(kept, staleAtMs - 1)).toBe(
+    "1 Waiting · 1 Reached",
   );
-  expect(ticketDeliverySummary({ state: "Pending" })).toBeUndefined();
-  expect(ticketDeliverySummary(answered(ticketLandedNowhere))).toBeUndefined();
+  expect(ticketDeliverySummary(kept, staleAtMs)).toBe(
+    "Stale · 1 Waiting · 1 Reached",
+  );
+});
+
+test("an answer is stale to a closed row exactly when the console's own rule says it is", () => {
+  const nowMs = 10 * freshnessStaleAfterMs;
+  for (const at of [
+    undefined,
+    0,
+    nowMs - freshnessStaleAfterMs,
+    nowMs - freshnessStaleAfterMs + 1,
+    nowMs,
+    nowMs + 1,
+  ])
+    expect(
+      ticketDeliverySummary(
+        answeredAt(deliveryEveryMark, at),
+        nowMs,
+      )?.startsWith("Stale · "),
+      String(at),
+    ).toBe(freshnessIsStale(nowMs, at));
+});
+
+test("the slowest read that answers lands before the answer it replaces is stale", () => {
+  expect(ticketDeliveryPolledMs + apiTimeoutMsDefault).toBeLessThan(
+    freshnessStaleAfterMs,
+  );
+});
+
+test("a closed row says a read that did not answer was not read, and a row not drawn says nothing, whatever the clock", () => {
+  for (const nowMs of [answeredAtMs, answeredAtMs + freshnessStaleAfterMs]) {
+    expect(
+      ticketDeliverySummary({ state: "Failed", reason: "Fault" }, nowMs),
+    ).toBe("Not read");
+    expect(
+      ticketDeliverySummary({ state: "Absent", reason: "Absent" }, nowMs),
+    ).toBe("Not read");
+    expect(ticketDeliverySummary({ state: "Pending" }, nowMs)).toBeUndefined();
+    expect(
+      ticketDeliverySummary(answered(ticketLandedNowhere), nowMs),
+    ).toBeUndefined();
+  }
 });
 
 test("the read's state is kept as it stands, its answer alone turned into lines", () => {
   expect(answered(deliveryLandedWith([deliveryFailedBare]))).toEqual({
     state: "Ready",
     value: ticketDeliveryLines(deliveryLandedWith([deliveryFailedBare])),
-    observedAtMs: 7,
+    observedAtMs: answeredAtMs,
   });
   const failed = { state: "Failed", reason: "Unreachable" } as const;
   expect(ticketDeliveryRead(failed)).toBe(failed);

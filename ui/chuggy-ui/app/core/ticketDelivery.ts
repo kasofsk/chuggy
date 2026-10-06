@@ -20,9 +20,14 @@
  * The detail is carried for a failure alone.
  *
  * THE READ IS ASKED AGAIN ON A CLOCK, because no frame says a report arrived.
+ *
+ * A KEPT ANSWER THAT HAS GONE STALE IS SAID TO BE. The read's last answer
+ * stands across a read that failed, so its lines are kept; once the console's
+ * own rule calls that answer stale, a closed row says so before its counts.
  */
 
 import type { TicketActionReachResponse } from "../../../../src/contract/actionReach.ts";
+import { freshnessIsStale } from "./freshness.ts";
 import type { PanelState } from "./freshness.ts";
 import { commitLabel } from "./labels.ts";
 import type { Label } from "./labels.ts";
@@ -124,8 +129,13 @@ const ticketDeliveryConcern: Readonly<Record<ActionReach, number>> = {
   Reached: 4,
 };
 
+/** What a closed row says before the counts of an answer that has gone stale. */
+const ticketDeliveryStale = "Stale";
+
 /** How many lines stand at each mark, as one counted word a mark. */
-function ticketDeliveryCounts(lines: readonly TicketDeliveryLine[]): string {
+function ticketDeliveryCounts(
+  lines: readonly TicketDeliveryLine[],
+): readonly string[] {
   const counted = new Map<ActionReach, number>();
   for (const line of lines)
     counted.set(line.reach, (counted.get(line.reach) ?? 0) + 1);
@@ -134,16 +144,21 @@ function ticketDeliveryCounts(lines: readonly TicketDeliveryLine[]): string {
       ([left], [right]) =>
         ticketDeliveryConcern[left] - ticketDeliveryConcern[right],
     )
-    .map(([reach, count]) => `${String(count)} ${actionReachArm(reach).word}`)
-    .join(" · ");
+    .map(([reach, count]) => `${String(count)} ${actionReachArm(reach).word}`);
 }
 
-/** What the closed row says on the right, and nothing where no row is drawn. */
+/** What the closed row says on the right at `nowMs`, and nothing where no row
+ * is drawn. */
 export function ticketDeliverySummary(
   state: TicketDeliveryState,
+  nowMs: number,
 ): string | undefined {
   if (!ticketDeliveryDrawn(state)) return undefined;
-  return state.state === "Ready"
-    ? ticketDeliveryCounts(state.value)
-    : ticketDeliveryUnread;
+  if (state.state !== "Ready") return ticketDeliveryUnread;
+  return [
+    ...(freshnessIsStale(nowMs, state.observedAtMs)
+      ? [ticketDeliveryStale]
+      : []),
+    ...ticketDeliveryCounts(state.value),
+  ].join(" · ");
 }

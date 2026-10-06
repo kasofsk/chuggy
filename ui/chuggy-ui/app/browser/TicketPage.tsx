@@ -96,6 +96,7 @@ function TicketPortals(props: {
   readonly ticket: TicketResponse | undefined;
   readonly facts: TicketPageFacts;
   readonly delivery: TicketDeliveryState;
+  readonly nowMs: number;
   readonly onChoose: (id: string) => void;
 }): ReactNode {
   const ticket = props.ticket;
@@ -107,7 +108,12 @@ function TicketPortals(props: {
       </TopBarSlot>
       <DetailsSlot>
         <TicketPageDetails
-          sections={ticketSections(ticket, props.facts, props.delivery)}
+          sections={ticketSections(
+            ticket,
+            props.facts,
+            props.delivery,
+            props.nowMs,
+          )}
           onChoose={props.onChoose}
         />
       </DetailsSlot>
@@ -223,6 +229,7 @@ function TicketBody(props: {
         ticket={ticket}
         facts={facts}
         delivery={props.reads.deliveryState}
+        nowMs={props.nowMs}
         onChoose={choose}
       />
       <div data-fills-width className="grid min-w-0 gap-4">
