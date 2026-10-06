@@ -332,6 +332,75 @@ export async function scratchFetchRef(
   return ran.ran === "Exited" && ran.code === 0;
 }
 
+/** The ref a fetch of one commit's whole history writes, which git creates only once every object that commit reaches has arrived. */
+function scratchHistoryRef(commit: GitObjectId): string {
+  return `refs/chuggy/history/${commit}`;
+}
+
+/** Brings one commit and everything it descends from into the scratch by its hash, neither shallow nor filtered. */
+export async function scratchFetchHistory(
+  scratch: GitScratch,
+  repository: RepositoryId,
+  credential: RepositoryCredential | undefined,
+  commit: GitObjectId,
+): Promise<boolean> {
+  const ran = await scratchRun(scratch, {
+    repository,
+    ...(credential === undefined ? {} : { credential }),
+    timeoutSecsMax: scratch.options.remoteTimeoutSecsMax,
+    argv: [
+      "fetch",
+      "--quiet",
+      "--no-tags",
+      ...scratchRemoteArguments(
+        repository,
+        `+${commit}:${scratchHistoryRef(commit)}`,
+      ),
+    ],
+  });
+  return ran.ran === "Exited" && ran.code === 0;
+}
+
+/**
+ * Whether a fetch of one commit's whole history completed here, read off the
+ * ref that fetch wrote. The commit object existing says less: a fetch stopped
+ * part-way leaves it behind without what it descends from.
+ */
+export async function scratchHoldsHistory(
+  scratch: GitScratch,
+  repository: RepositoryId,
+  commit: GitObjectId,
+): Promise<boolean> {
+  const ran = await scratchRun(scratch, {
+    repository,
+    timeoutSecsMax: scratch.options.localTimeoutSecsMax,
+    argv: [
+      "rev-parse",
+      "--quiet",
+      "--verify",
+      `${scratchHistoryRef(commit)}^{commit}`,
+    ],
+  });
+  return ran.ran === "Exited" && ran.code === 0 && ran.stdout.trim() === commit;
+}
+
+/** Whether the scratch holds one object, and `undefined` where git could not say, so a call that failed is never read as an object that is absent. */
+export async function scratchHoldsObject(
+  scratch: GitScratch,
+  repository: RepositoryId,
+  object: GitObjectId,
+): Promise<boolean | undefined> {
+  const ran = await scratchRun(scratch, {
+    repository,
+    timeoutSecsMax: scratch.options.localTimeoutSecsMax,
+    argv: ["cat-file", "-e", object],
+  });
+  if (ran.ran === "Stopped") return undefined;
+  if (ran.code === 0) return true;
+  if (ran.code === 1) return false;
+  return undefined;
+}
+
 /** Whether the scratch holds one commit, which is what makes an ancestry question answerable at all. */
 export async function scratchHasCommit(
   scratch: GitScratch,
