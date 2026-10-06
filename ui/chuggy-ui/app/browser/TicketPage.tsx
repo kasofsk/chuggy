@@ -1,7 +1,8 @@
 /**
  * One ticket: where it stands and what may be done to it, the run going now or
  * the question it waits on, what has run for it, and — a click away — its
- * brief, what it has cost and where it came from.
+ * brief, what it has cost, where it came from and what became of it once it
+ * landed.
  *
  * The brief, the configuration and the program the ledger groups by are the
  * ticket's own, which is what it runs, and not the draft's, which a Pending
@@ -30,6 +31,7 @@ import {
   apiTicketNativeActions,
 } from "../core/apiRoutes.ts";
 import type { PanelState } from "../core/freshness.ts";
+import type { TicketDeliveryState } from "../core/ticketDelivery.ts";
 import { projectLeadPresent } from "../core/projectLead.ts";
 import {
   manualDispatchAction,
@@ -56,6 +58,7 @@ import {
   TicketBarActions,
 } from "./TicketActions.tsx";
 import type { TicketActing } from "./TicketActions.tsx";
+import { useTicketDelivery } from "./ticket/TicketDelivery.tsx";
 import { TicketTopBar } from "./ticket/TicketHead.tsx";
 import {
   TicketLedgerPanel,
@@ -79,6 +82,7 @@ export interface TicketReads {
   readonly dispatchState: PanelState<DispatchViewResponse>;
   readonly pageState: PanelState<ExecutionsResponse>;
   readonly leadState: PanelState<LeadReadResponse>;
+  readonly deliveryState: TicketDeliveryState;
 }
 
 function readValue<T>(state: PanelState<T>): T | undefined {
@@ -91,6 +95,7 @@ function TicketPortals(props: {
   readonly partition: PartitionIdentity;
   readonly ticket: TicketResponse | undefined;
   readonly facts: TicketPageFacts;
+  readonly delivery: TicketDeliveryState;
   readonly onChoose: (id: string) => void;
 }): ReactNode {
   const ticket = props.ticket;
@@ -102,7 +107,7 @@ function TicketPortals(props: {
       </TopBarSlot>
       <DetailsSlot>
         <TicketPageDetails
-          sections={ticketSections(ticket, props.facts)}
+          sections={ticketSections(ticket, props.facts, props.delivery)}
           onChoose={props.onChoose}
         />
       </DetailsSlot>
@@ -217,6 +222,7 @@ function TicketBody(props: {
         partition={props.partition}
         ticket={ticket}
         facts={facts}
+        delivery={props.reads.deliveryState}
         onChoose={choose}
       />
       <div data-fills-width className="grid min-w-0 gap-4">
@@ -244,6 +250,7 @@ function TicketBody(props: {
           partition={props.partition}
           ticketState={props.reads.ticketState}
           draftState={props.reads.draftState}
+          delivery={props.reads.deliveryState}
           page={page}
           open={open}
           onOpenChange={setOpen}
@@ -290,6 +297,7 @@ export function TicketPage(): ReactNode {
   );
   const pageState = useTicketExecutions(partition, ticket);
   const leadState = useLead(partition);
+  const deliveryState = useTicketDelivery(partition, ticket);
   if (!Number.isSafeInteger(ticket) || ticket <= 0)
     return <EmptyState label="No such ticket" variant="page" />;
   return (
@@ -303,6 +311,7 @@ export function TicketPage(): ReactNode {
         dispatchState,
         pageState,
         leadState,
+        deliveryState,
       }}
       nowMs={nowMs}
     />

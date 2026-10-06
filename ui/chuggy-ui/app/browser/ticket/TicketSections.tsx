@@ -1,6 +1,7 @@
 /**
  * The detail under the ledger — the brief, what the ticket has cost, where it
- * came from — as rows closed until asked for, each with its one-line summary.
+ * came from, what became of it once it landed — as rows closed until asked
+ * for, each with its one-line summary.
  *
  * Which rows are open is the page's rather than the rows', so an anchor in the
  * details pane can open the row it points at; each row keeps the id the anchor
@@ -19,6 +20,11 @@ import type {
 import { costFigure } from "../../core/figures.ts";
 import type { PanelState } from "../../core/freshness.ts";
 import { countedLabel } from "../../core/runTotals.ts";
+import {
+  ticketDeliveryDrawn,
+  ticketDeliverySummary,
+} from "../../core/ticketDelivery.ts";
+import type { TicketDeliveryState } from "../../core/ticketDelivery.ts";
 import type { TicketPageFacts } from "../../core/ticketPageFacts.ts";
 import { useShellDetailsShow } from "../shell/slots.tsx";
 import { useViewportAtLeastEm, viewportDeskEm } from "../shell/viewport.ts";
@@ -27,12 +33,18 @@ import { Figure } from "../ui/Figure.tsx";
 import { Panel } from "../ui/Panel.tsx";
 import { SectionList } from "../ui/SectionList.tsx";
 import type { SectionEntry } from "../ui/SectionList.tsx";
+import { TicketDelivery } from "./TicketDelivery.tsx";
 import { TicketUsage } from "./TicketUsage.tsx";
 
 import "./ticket.css";
 
 /** The rows that open, in the order the page draws them. */
-export const ticketSectionRows = ["brief", "usage", "provenance"] as const;
+export const ticketSectionRows = [
+  "brief",
+  "usage",
+  "provenance",
+  "delivery",
+] as const;
 
 /** The rows open once `id` is followed: that one added where it is a row. */
 export function ticketSectionsOpened(
@@ -66,10 +78,12 @@ function briefSummary(ticket: TicketResponse | undefined): string | null {
     .join(" · ");
 }
 
-/** One anchor per region of the page, each with the one figure it is about. */
+/** One anchor per region of the page, each with the one figure it is about;
+ * Delivery has one only while its row is drawn. */
 export function ticketSections(
   ticket: TicketResponse,
   facts: TicketPageFacts,
+  delivery: TicketDeliveryState,
 ): readonly SectionEntry[] {
   const ledger = facts.ledger;
   const totals = ticket.runTotals;
@@ -92,6 +106,15 @@ export function ticketSections(
           : costFigure(totals.costUsdMicros, totals.costBasis),
     },
     { id: "provenance", label: "Provenance" },
+    ...(ticketDeliveryDrawn(delivery)
+      ? [
+          {
+            id: "delivery",
+            label: "Delivery",
+            note: ticketDeliverySummary(delivery),
+          },
+        ]
+      : []),
   ];
 }
 
@@ -144,6 +167,7 @@ export function TicketSections(props: {
   readonly partition: PartitionIdentity;
   readonly ticketState: PanelState<TicketResponse>;
   readonly draftState: PanelState<DraftResponse>;
+  readonly delivery: TicketDeliveryState;
   readonly page: ExecutionsResponse | undefined;
   readonly open: readonly string[];
   readonly onOpenChange: (open: readonly string[]) => void;
@@ -178,6 +202,15 @@ export function TicketSections(props: {
           nowMs={props.nowMs}
         />
       </SectionRow>
+      {ticketDeliveryDrawn(props.delivery) ? (
+        <SectionRow
+          id="delivery"
+          label="Delivery"
+          summary={ticketDeliverySummary(props.delivery)}
+        >
+          <TicketDelivery state={props.delivery} />
+        </SectionRow>
+      ) : null}
     </Accordion.Root>
   );
 }

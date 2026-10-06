@@ -10,6 +10,7 @@
  * link, a button or a focus ring.
  */
 
+import type { allActionReaches } from "../../../../src/contract/actionReach.ts";
 import type {
   ExecutionOutcome,
   ExecutionStatus,
@@ -225,6 +226,35 @@ export function leadDispatchArm(dispatch: LeadDispatch): LeadDispatchArm {
       return dispatch.outcome === undefined
         ? { word: leadDispatchUnread, tone: "neutral" }
         : { word: dispatch.outcome, tone: "fail" };
+  }
+}
+
+/** Where one action a repository declares stands for a landed ticket. */
+export type ActionReach = (typeof allActionReaches)[number];
+
+/** One status word and its tone for where a declared action stands. */
+export interface ActionReachArm {
+  readonly word: string;
+  readonly tone: Tone;
+}
+
+/**
+ * Where a declared action stands for a ticket's landed commit, in the one word
+ * and hue it is drawn in. `NotYet` is `Waiting` and `Reached` is its own word
+ * because `Pending` and `Done` are the ticket's phase on the same page.
+ */
+export function actionReachArm(reach: ActionReach): ActionReachArm {
+  switch (reach) {
+    case "Reached":
+      return { word: "Reached", tone: "pass" };
+    case "NotYet":
+      return { word: "Waiting", tone: "queued" };
+    case "Failed":
+      return { word: "Failed", tone: "fail" };
+    case "RolledBack":
+      return { word: "Rolled back", tone: "retired" };
+    case "Unknown":
+      return { word: "Unknown", tone: "neutral" };
   }
 }
 

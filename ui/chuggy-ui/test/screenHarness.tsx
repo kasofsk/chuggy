@@ -76,23 +76,39 @@ interface ApiDoubleInit {
   readonly body?: string;
 }
 
+/** What the read of a ticket's action reach answers for one that has landed
+ * nowhere, which draws no row. */
+export const ticketLandedNowhere = {
+  repository: null,
+  commit: null,
+  actions: [],
+};
+
 /**
  * The API as a case scripts it: every submission accepted and remembered, the
- * operation route answering one standing, and every other route the case's own.
+ * operation route answering one standing, a ticket's action reach answering
+ * that it landed nowhere unless the case says what it answers, and every other
+ * route the case's own.
  */
 export function apiDouble(served: {
   readonly operation: unknown;
   readonly route: (url: string) => Response;
+  readonly reach?: (url: string) => Response | Promise<Response>;
 }): ApiDouble {
   let submissions = 0;
   let submitted: unknown;
-  const respond = (url: string, init?: ApiDoubleInit): Response => {
+  const respond = (
+    url: string,
+    init?: ApiDoubleInit,
+  ): Response | Promise<Response> => {
     if (init?.method === "POST") {
       submissions += 1;
       submitted = JSON.parse(init.body ?? "null");
       return answer({ operation: "op-one", state: "Pending" }, 202);
     }
     if (url.includes("/operations/")) return answer(served.operation);
+    if (url.includes("/action-reach"))
+      return served.reach?.(url) ?? answer(ticketLandedNowhere);
     return served.route(url);
   };
   return {

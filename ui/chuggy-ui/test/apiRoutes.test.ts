@@ -45,6 +45,7 @@ import {
   apiStopThreadTurn,
   apiStopTimeoutMs,
   apiTicket,
+  apiTicketActionReach,
   apiTicketNativeActions,
   apiWriteProjectRepositoryLanding,
   apiWriteSelectorSettings,
@@ -52,6 +53,7 @@ import {
 } from "../app/core/apiRoutes.ts";
 import { apiTimeoutMsDefault } from "../app/core/apiRequest.ts";
 import type { ApiFetchInit, ApiPorts } from "../app/core/apiRequest.ts";
+import { deliveryEveryMark } from "./ticketDeliveryFixture.ts";
 import { ticketInstants } from "./ticketInstants.ts";
 
 const partition = { tenant: "acme", project: "at las" };
@@ -100,6 +102,20 @@ function recordingRequests(
       bearer: () => Promise.resolve("token"),
       sleepMs: () => Promise.resolve(),
     },
+  };
+}
+
+/** A server that never answers, which only a request's own deadline ends. */
+function neverAnswering(): ApiPorts {
+  return {
+    fetch: (_url, init) =>
+      new Promise((_resolve, reject) => {
+        init.signal.addEventListener("abort", () => {
+          reject(new Error("aborted"));
+        });
+      }),
+    bearer: () => Promise.resolve("token"),
+    sleepMs: () => Promise.resolve(),
   };
 }
 
@@ -244,6 +260,38 @@ test("a ticket's open questions hang from that ticket's own segment", async () =
   expect(held.urls[0]).toBe(
     `${nativeHttpBasePath}/tenants/acme/projects/at%20las/tickets/12/native-actions`,
   );
+});
+
+test("a ticket's action reach hangs from that ticket's own segment and is read whole", async () => {
+  const held = recording(() => deliveryEveryMark);
+  const answered = await apiTicketActionReach(held.ports, partition, 12);
+  expect(held.urls).toStrictEqual([
+    `${nativeHttpBasePath}/tenants/acme/projects/at%20las/tickets/12/action-reach`,
+  ]);
+  expect(answered).toStrictEqual({ outcome: "Ok", value: deliveryEveryMark });
+});
+
+test("an action reach that is not the read's answer is unreadable rather than half read", async () => {
+  const held = recording(() => ({
+    ...deliveryEveryMark,
+    actions: [{ action: "rig", name: "Rig", reach: "Reached" }],
+  }));
+  const answered = await apiTicketActionReach(held.ports, partition, 12);
+  expect(answered.outcome).toBe("Unreadable");
+});
+
+test("an action reach that outlives the console's own deadline is a read that failed", async () => {
+  vi.useFakeTimers();
+  const ports = neverAnswering();
+  const outcomes: string[] = [];
+  void apiTicketActionReach(ports, partition, 12).then((answered) =>
+    outcomes.push(answered.outcome),
+  );
+  await vi.advanceTimersByTimeAsync(apiTimeoutMsDefault - 1);
+  expect(outcomes).toStrictEqual([]);
+  await vi.advanceTimersByTimeAsync(1);
+  expect(outcomes).toStrictEqual(["Unreachable"]);
+  vi.useRealTimers();
 });
 
 test("the project's open questions are one segment under the partition", async () => {
@@ -677,16 +725,7 @@ test("a configuration step is asked for again by PUT at the bindings' own config
  * is given up on sooner than any other. */
 test("a stop gives its door less time than another request is given, and is unreachable past it", async () => {
   vi.useFakeTimers();
-  const ports: ApiPorts = {
-    fetch: (_url, init) =>
-      new Promise((_resolve, reject) => {
-        init.signal.addEventListener("abort", () => {
-          reject(new Error("aborted"));
-        });
-      }),
-    bearer: () => Promise.resolve("token"),
-    sleepMs: () => Promise.resolve(),
-  };
+  const ports = neverAnswering();
   const outcomes: string[] = [];
   void apiStopThreadTurn(ports, partition, "thread-1", "turn-2").then(
     (answered) => outcomes.push(answered.outcome),

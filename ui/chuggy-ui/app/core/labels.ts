@@ -75,6 +75,12 @@ export function configurationCommitShort(
     : provenance.commit.slice(0, commitCharsShort);
 }
 
+/** A commit as short as a repository prints one, the whole of it kept for
+ * the hover. */
+export function commitLabel(commit: string): Label {
+  return { text: commit.slice(0, commitCharsShort), title: commit };
+}
+
 /**
  * An image reference at a glance: its last path segment, with a digest cut to
  * the head that distinguishes it. A tag reference is already that short, so it

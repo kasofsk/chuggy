@@ -9,12 +9,14 @@
 
 import { expect, test } from "vitest";
 
+import { allActionReaches } from "../../../src/contract/actionReach.ts";
 import {
   executionOutcomes,
   executionStatuses,
   phaseRoster,
 } from "../../../src/contract/rosters.ts";
 import {
+  actionReachArm,
   conversationStandingArm,
   executionTone,
   pillTones,
@@ -136,4 +138,22 @@ test("a turn nobody has taken is called the same whatever was heard of it before
     expect(
       conversationStandingArm({ standing: "Running", state }, true).word,
     ).toBe(state);
+});
+
+test("each place a declared action stands is its own word in its own tone", () => {
+  expect(actionReachArm("Reached")).toEqual({ word: "Reached", tone: "pass" });
+  expect(actionReachArm("NotYet")).toEqual({ word: "Waiting", tone: "queued" });
+  expect(actionReachArm("Failed")).toEqual({ word: "Failed", tone: "fail" });
+  expect(actionReachArm("RolledBack")).toEqual({
+    word: "Rolled back",
+    tone: "retired",
+  });
+  expect(actionReachArm("Unknown")).toEqual({
+    word: "Unknown",
+    tone: "neutral",
+  });
+  const arms = allActionReaches.map(actionReachArm);
+  expect(new Set(arms.map((arm) => arm.word)).size).toBe(arms.length);
+  expect(new Set(arms.map((arm) => arm.tone)).size).toBe(arms.length);
+  for (const arm of arms) expect(pillTones).toContain(arm.tone);
 });
