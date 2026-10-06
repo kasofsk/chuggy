@@ -309,6 +309,51 @@ test("Pause writes the paused mode beside every other override", async () => {
   });
 });
 
+/**
+ * A PROJECT THAT WAS NEVER PAUSED OF ITS OWN MUST NOT ACQUIRE AN OVERRIDE BY
+ * BEING RESUMED. Writing `Running` where the installation already runs pins the
+ * project against an installation-wide pause it should have followed.
+ */
+test("Resume clears the override where the installation is running", async () => {
+  const server = await drawLeadSelector(() => ({
+    ...opening,
+    settings: leadSelectorSettingsBody(
+      12,
+      { mode: "Paused" },
+      { mode: "Paused" },
+    ),
+  }));
+  await turned(() => {
+    fireEvent.click(screen.getByRole("button", { name: "Resume" }));
+  });
+  await settled();
+  expect(server.written()).toStrictEqual({
+    expectedRevision: 12,
+    overrides: {},
+  });
+});
+
+/** Where the installation is paused, clearing would leave the project paused by
+ * inheritance, so Resume writes the mode instead. */
+test("Resume writes Running where the installation is paused", async () => {
+  const server = await drawLeadSelector(() => ({
+    ...opening,
+    settings: leadSelectorSettingsBody(
+      12,
+      {},
+      { mode: "Paused", installationMode: "Paused" },
+    ),
+  }));
+  await turned(() => {
+    fireEvent.click(screen.getByRole("button", { name: "Resume" }));
+  });
+  await settled();
+  expect(server.written()).toStrictEqual({
+    expectedRevision: 12,
+    overrides: { mode: "Running" },
+  });
+});
+
 test("Require approval writes the dispatch mode the other press undoes", async () => {
   const server = await drawLeadSelector(() => opening);
   await turned(() => {

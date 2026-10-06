@@ -310,12 +310,13 @@ const leadSelectorSettingsLimits = {
  * `dispatchMode` the two fields a case moves. */
 export function leadSelectorSettingsBody(
   revision = 12,
+  overrides: Readonly<Record<string, unknown>> = {},
   resolved: Readonly<Record<string, unknown>> = {},
 ): unknown {
   return {
     partition: leadPartition,
     revision,
-    overrides: {},
+    overrides,
     effective: {
       revision,
       projectRevision: revision,
