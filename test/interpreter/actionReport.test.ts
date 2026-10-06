@@ -230,6 +230,84 @@ test("an action has at most one reporter", () => {
     );
 });
 
+/** Why a roster is refused for naming the secret file of `rig-flux` for a second reporter. */
+function sharedWith(other: string): string {
+  return `names the secret file of the FluxSignature reporter rig-flux for the reporter ${other} as well`;
+}
+
+test("the secret file of a reporter proving itself by a signature is named by no other that signs, wherever each reports", () => {
+  const canary = { ...flux, reporter: "canary-flux", actions: ["rig-canary"] };
+  for (const second of [
+    canary,
+    { ...canary, project: "console" },
+    { ...canary, tenant: "acme" },
+    { ...canary, tenant: "acme", actions: ["rig"] },
+  ])
+    assert.equal(
+      refused([flux, second]),
+      sharedWith("canary-flux"),
+      JSON.stringify(second),
+    );
+  assert.equal(
+    refused([
+      build,
+      flux,
+      { ...build, reporter: "deploys", actions: [] },
+      {
+        ...flux,
+        reporter: "staging-flux",
+        actions: ["staging"],
+        secretFile: `${flux.secretFile}-staging`,
+      },
+      canary,
+    ]),
+    sharedWith("canary-flux"),
+    "with other reporters between them, one of them signing with a file of its own",
+  );
+  assert.ok(!sharedWith("canary-flux").includes(flux.secretFile));
+});
+
+test("the secret file of a reporter proving itself by a signature is named by none presenting a bearer, whichever is named first", () => {
+  const bearing = { ...build, secretFile: flux.secretFile };
+  const deploys = { ...bearing, reporter: "deploys", actions: ["deploy"] };
+  for (const [roster, other, why] of [
+    [[flux, bearing], "rig-build", "the signing reporter first"],
+    [[bearing, flux], "rig-build", "the signing reporter second"],
+    [[flux, { ...bearing, project: "console" }], "rig-build", "in a project"],
+    [[{ ...bearing, tenant: "acme" }, flux], "rig-build", "in a tenant"],
+    [[flux, { ...bearing, actions: [] }], "rig-build", "named for no action"],
+    [[bearing, deploys, flux], "rig-build", "after two that share it"],
+    [[build, flux, deploys], "deploys", "with a reporter between them"],
+  ] as const)
+    assert.equal(refused(roster), sharedWith(other), why);
+});
+
+test("reporters each presenting a bearer may name one secret file, and a file is told from another by its path as written", () => {
+  const canary = { ...flux, reporter: "canary-flux", actions: ["rig-canary"] };
+  const deploys = { ...build, reporter: "deploys", actions: ["deploy"] };
+  for (const [roster, why] of [
+    [
+      [flux, { ...canary, secretFile: `${flux.secretFile}-canary` }, build],
+      "a file each",
+    ],
+    [[build, deploys], "two presenting the secret itself"],
+    [
+      [build, deploys, { ...build, reporter: "pages", actions: ["pages"] }],
+      "and a third",
+    ],
+    [[flux, build, deploys], "beside one that signs with a file of its own"],
+    [
+      [
+        flux,
+        { ...canary, secretFile: flux.secretFile.replace("/var/", "/var//") },
+        { ...build, secretFile: `${flux.secretFile}/` },
+      ],
+      "one file written three ways",
+    ],
+  ] as const)
+    assert.equal(named(roster).length, roster.length, why);
+});
+
 test("an action is one project's: a namesake elsewhere has a reporter of its own, and a name or a file may be used again", () => {
   assert.equal(
     named([
@@ -397,23 +475,28 @@ test("a request verified as nobody is not found, and nothing is recorded", async
   assert.deepEqual(stored, []);
 });
 
-test("a reporter is held to its claims: one named for another tenant, project or action records nothing here", async () => {
+test("a reporter is held to its claims: one named for another tenant, project or action records nothing here, and is told nothing of what it said", async () => {
   for (const claimed of [
     { ...build, tenant: "acme" },
     { ...build, project: "console" },
     { ...build, actions: ["build-api", "build-console"] },
     { ...build, actions: [] },
-  ]) {
-    const stored: ActionObservation[] = [];
-    assert.deepEqual(
-      await reportsOver(verifiedAs(claimed), "Recorded", stored).report(
-        request(),
-      ),
-      { result: "NotFound" },
-      JSON.stringify(claimed),
-    );
-    assert.deepEqual(stored, []);
-  }
+  ])
+    for (const said of [
+      saidReport,
+      { said: "Ignored" },
+      { said: "Refused" },
+    ] as const) {
+      const stored: ActionObservation[] = [];
+      assert.deepEqual(
+        await reportsOver(verifiedAs(claimed, said), "Recorded", stored).report(
+          request(),
+        ),
+        { result: "NotFound" },
+        `${JSON.stringify(claimed)} ${said.said}`,
+      );
+      assert.deepEqual(stored, []);
+    }
 });
 
 test("a verified body no report can be read from is refused, and nothing is recorded", async () => {
@@ -427,6 +510,26 @@ test("a verified body no report can be read from is refused, and nothing is reco
     { result: "Refused" },
   );
   assert.deepEqual(stored, []);
+});
+
+test("a verified event no outcome is read in is ignored, and the store is asked nothing", async () => {
+  for (const recorded of [
+    "Recorded",
+    "Undeclared",
+    new Error("the database is not there"),
+  ] as const) {
+    const stored: ActionObservation[] = [];
+    assert.deepEqual(
+      await reportsOver(
+        verifiedAs(build, { said: "Ignored" }),
+        recorded,
+        stored,
+      ).report(request()),
+      { result: "Ignored" },
+      String(recorded),
+    );
+    assert.deepEqual(stored, []);
+  }
 });
 
 test("a row that could not be written is answered as unavailable", async () => {

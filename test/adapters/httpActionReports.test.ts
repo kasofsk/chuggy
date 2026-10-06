@@ -12,7 +12,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { createNativeHttpApp } from "../../src/adapters/http/server.ts";
 import { actionReportResponseSchema } from "../../src/contract/actionReport.ts";
 import {
   nativeHttpBodyBytesMax,
@@ -23,21 +22,9 @@ import type {
   ActionReported,
   ActionReportRequest,
 } from "../../src/interpreter/actionReport.ts";
+import { actionReportsApp } from "./actionReportFixtures.ts";
 
 const reportsPath = "/api/v1/tenants/acme/projects/atlas/actions/build/reports";
-
-/** A port no case here reaches, failing whatever is asked of it and saying so. */
-function unserved(calls: string[], port: string): never {
-  return new Proxy(
-    {},
-    {
-      get: (_target, method) => () => {
-        calls.push(`${port}.${String(method)}`);
-        return Promise.reject(new Error(`${port} is not served here`));
-      },
-    },
-  ) as never;
-}
 
 /** The app with the report route over a service answering as told, every request it was asked and every other port reached recorded. */
 function reportsApp(
@@ -45,34 +32,12 @@ function reportsApp(
   asked: ActionReportRequest[],
   result: ActionReported = { result: "Recorded" },
 ) {
-  return createNativeHttpApp(
-    unserved(calls, "web"),
-    {
-      authenticateBearer: (token) => {
-        calls.push(`authentication:${token}`);
-        return Promise.resolve({ authenticated: "InvalidToken" as const });
-      },
+  return actionReportsApp(calls, {
+    report: (request) => {
+      asked.push(request);
+      return Promise.resolve(result);
     },
-    unserved(calls, "readiness"),
-    unserved(calls, "installation"),
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    unserved(calls, "workerPools"),
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    {
-      report: (request) => {
-        asked.push(request);
-        return Promise.resolve(result);
-      },
-    },
-  );
+  });
 }
 
 test("the route is the one the route table names", () => {
@@ -144,6 +109,7 @@ test("each answer of the service is sent as the status a reporter acts on", asyn
   for (const [result, status, body, retryAfter] of [
     [{ result: "Recorded" }, 200, { report: "Recorded" }, undefined],
     [{ result: "Repeated" }, 200, { report: "Repeated" }, undefined],
+    [{ result: "Ignored" }, 200, { report: "Ignored" }, undefined],
     [
       { result: "NotFound" },
       404,

@@ -207,7 +207,7 @@ test("a link is https, bounded, written as it travels and carries no credential"
   }
 });
 
-test("no link a report may carry reads as holding a credential, however its host is approached", () => {
+test("no link a report may carry reads as holding a credential, however its host is approached or spelled", () => {
   const carried = linksWrittenEveryWay.filter(isActionReportLink);
   assert.ok(carried.length > 0, "some link written every way is carried");
   assert.ok(
@@ -220,8 +220,8 @@ test("no link a report may carry reads as holding a credential, however its host
   }
 });
 
-test("a report is answered as a row or as a repeat of the newest", () => {
-  assert.deepEqual(allActionReportResults, ["Recorded", "Repeated"]);
+test("a report is answered as a row, as a repeat of the newest or as an event no outcome is read in", () => {
+  assert.deepEqual(allActionReportResults, ["Recorded", "Repeated", "Ignored"]);
   for (const report of allActionReportResults)
     assert.deepEqual(actionReportResponseSchema.parse({ report }), { report });
   for (const report of ["Undeclared", "NotFound", ""])

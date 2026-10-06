@@ -11,17 +11,28 @@
  * history, and two reporters would each write their own account into it. It is
  * also what lets the address a report is sent to say which scheme reads it.
  *
+ * A SIGNING KEY IS ONE REPORTER'S AND ONE ACTION'S. A signature over the body
+ * alone says nothing of where its request was sent, so a reporter proving
+ * itself by one is named for a single action, and the file its key is in is
+ * named by no other reporter. Another that signs would have its events verify
+ * at both addresses. One that presents its secret as a bearer presents it
+ * whole on every request, so whoever holds or sees it could sign with it,
+ * where a signing key is never presented. A file is told from another by its
+ * path as written.
+ *
  * A REPORTER IS ANSWERED AS ITS CLAIMS AND NOT AS A YES. Whether it may report
  * the action a request names is decided here from the claims, so a scheme
  * whose claims come from what a request carries is held to the rule a
  * rostered one is.
  *
  * NOTHING IS SAID TO A REQUEST THAT DID NOT VERIFY. An action no reporter is
- * named for, a secret that does not verify and an action no repository
- * declares are all `NotFound`, and only a verified reporter is told its report
- * was refused. An action a reporter is named for costs a file read and a
- * digest that one nobody is named for does not, so the two are told apart by
- * how long the answer takes and by nothing in it.
+ * named for and a secret that does not verify are `NotFound`, and so is a
+ * report of an action no repository declares. Only a verified reporter is told
+ * its request was refused or held no report, and it is told before the
+ * declaration is asked for, so neither answer says the action is declared. An
+ * action a reporter is named for costs a file read and a digest that one
+ * nobody is named for does not, so the two are told apart by how long the
+ * answer takes and by nothing in it.
  */
 
 import { z } from "zod";
@@ -105,11 +116,41 @@ function actionReporterRosterRefused(why: string): ActionReporterRosterRead {
   return { read: "Refused", why };
 }
 
-/**
- * Reads a deployment's roster without reading its files. A reporter proving
- * itself by a signature over the body alone is named for one action, because
- * such a signature verifies at any address its reporter may post to.
- */
+type ActionReporterRosterEntry = z.infer<
+  typeof actionReporterRosterSchema
+>[number];
+
+/** Why a roster is refused where the reporter `other` names the file the key of the signing reporter `signing` is in, said without the path. */
+function actionReporterKeyShared(signing: string, other: string): string {
+  return `names the secret file of the FluxSignature reporter ${signing} for the reporter ${other} as well`;
+}
+
+/** Why a roster every entry of which is well formed is refused, or nothing. */
+function actionReporterRosterBroken(
+  entries: readonly ActionReporterRosterEntry[],
+): string | undefined {
+  const reported = new Set<string>();
+  const keyed = new Map<string, ActionReporterRosterEntry>();
+  for (const entry of entries) {
+    if (entry.scheme === "FluxSignature" && entry.actions.length !== 1)
+      return `names the FluxSignature reporter ${entry.reporter} for other than one action`;
+    for (const action of entry.actions) {
+      const identity = JSON.stringify([entry.tenant, entry.project, action]);
+      if (reported.has(identity))
+        return `names the action ${action} of ${entry.tenant}/${entry.project} twice`;
+      reported.add(identity);
+    }
+    const sharing = keyed.get(entry.secretFile);
+    if (sharing === undefined) keyed.set(entry.secretFile, entry);
+    else if (sharing.scheme === "FluxSignature")
+      return actionReporterKeyShared(sharing.reporter, entry.reporter);
+    else if (entry.scheme === "FluxSignature")
+      return actionReporterKeyShared(entry.reporter, sharing.reporter);
+  }
+  return undefined;
+}
+
+/** Reads a deployment's roster without reading its files. */
 export function actionReporterRoster(
   encoded: string,
 ): ActionReporterRosterRead {
@@ -124,21 +165,8 @@ export function actionReporterRoster(
     return actionReporterRosterRefused(
       `is not a roster of reporters at ${JSON.stringify(parsed.error.issues[0]?.path ?? [])}`,
     );
-  const reported = new Set<string>();
-  for (const entry of parsed.data) {
-    if (entry.scheme === "FluxSignature" && entry.actions.length !== 1)
-      return actionReporterRosterRefused(
-        `names the FluxSignature reporter ${entry.reporter} for other than one action`,
-      );
-    for (const action of entry.actions) {
-      const identity = JSON.stringify([entry.tenant, entry.project, action]);
-      if (reported.has(identity))
-        return actionReporterRosterRefused(
-          `names the action ${action} of ${entry.tenant}/${entry.project} twice`,
-        );
-      reported.add(identity);
-    }
-  }
+  const broken = actionReporterRosterBroken(parsed.data);
+  if (broken !== undefined) return actionReporterRosterRefused(broken);
   return {
     read: "Roster",
     reporters: parsed.data.map((entry) => ({
@@ -178,9 +206,13 @@ export interface ActionReport {
   readonly link?: string;
 }
 
-/** What a verified request says: a report, or a body no report can be read from. */
+/**
+ * What a verified request says: a report, a body its scheme reads as saying
+ * nothing an action's history holds, or a body no report can be read from.
+ */
 export type ActionReportSaid =
   | { readonly said: "Report"; readonly report: ActionReport }
+  | { readonly said: "Ignored" }
   | { readonly said: "Refused" };
 
 /** The reporter one request verified as, and what it said. */
@@ -267,10 +299,14 @@ export interface ActionReportPorts {
   readonly observations: ActionObservationStore;
 }
 
-/** What one request came to. `Refused` is a verified reporter's body, and `Unavailable` a row that could not be written. */
+/**
+ * What one request came to. `Ignored` and `Refused` are each a verified
+ * reporter's body, and `Unavailable` is a row that could not be written.
+ */
 export type ActionReported =
   | { readonly result: "Recorded" }
   | { readonly result: "Repeated" }
+  | { readonly result: "Ignored" }
   | { readonly result: "NotFound" }
   | { readonly result: "Refused" }
   | { readonly result: "Unavailable" };
@@ -300,7 +336,7 @@ async function actionReportsRecorded(
   }
 }
 
-/** Records what a verified reporter says of an action it may report. */
+/** Records what a verified reporter says of an action it may report, and asks the store nothing where it says no report. */
 export function actionReports(ports: ActionReportPorts): ActionReports {
   return {
     report: async (request) => {
@@ -308,13 +344,21 @@ export function actionReports(ports: ActionReportPorts): ActionReports {
       if (verified === undefined) return { result: "NotFound" };
       const action = actionReportClaimed(verified.claims, request);
       if (action === undefined) return { result: "NotFound" };
-      if (verified.said.said === "Refused") return { result: "Refused" };
-      return actionReportsRecorded(ports.observations, {
-        partition: verified.claims.partition,
-        action,
-        reporter: verified.claims.reporter,
-        report: verified.said.report,
-      });
+      const { said } = verified;
+      switch (said.said) {
+        case "Ignored":
+        case "Refused":
+          return { result: said.said };
+        case "Report":
+          return actionReportsRecorded(ports.observations, {
+            partition: verified.claims.partition,
+            action,
+            reporter: verified.claims.reporter,
+            report: said.report,
+          });
+        default:
+          return assertNever(said);
+      }
     },
   };
 }

@@ -1,0 +1,10 @@
+POST /proposed/api/v1/tenants/vteng/projects/chuggy/actions/rig/reports HTTP/1.1
+Host: 172.27.0.3:8080
+User-Agent: Go-http-client/1.1
+Content-Length: 699
+Content-Type: application/json
+Gotk-Component: kustomize-controller
+X-Signature: sha256=e345e20e9c55b5a31203e2a783e1e8d93bb3afe4ecfba9542b9cb486f381250c
+Accept-Encoding: gzip
+
+{"involvedObject":{"kind":"Kustomization","namespace":"flux-system","name":"chuggy","uid":"e83388c9-0eca-4cbf-b162-700fd5dfaa17","apiVersion":"kustomize.toolkit.fluxcd.io/v1","resourceVersion":"2832"},"severity":"error","timestamp":"2026-10-05T22:49:41Z","message":"health check failed after 1m30.00664574s: timeout waiting for: [Deployment/chuggy/chuggy-api status: 'InProgress']","reason":"HealthCheckFailed","metadata":{"originRevision":"main@sha1:500a9eed707289ca16595e96ec4de991cfdc96cb","revision":"1791240442.0.0@sha256:b9141a7f182d5fa16dd0194b5ba7261b02b4fc75dd2f5e34b3f3435077a92db5"},"reportingController":"kustomize-controller","reportingInstance":"kustomize-controller-568cc69c98-2kbwx"}

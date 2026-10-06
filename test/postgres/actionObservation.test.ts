@@ -8,10 +8,16 @@
  * A REPORT IS RECORDED THROUGH THE STORE. Only the cases about what the door
  * itself refuses, and those that hold a report or an import open, call a door
  * with statements of their own.
+ *
+ * WHAT A SCHEME HANDS ON IS HELD TO THE RELATION AND NOT TO A PREDICATE. A
+ * scheme that reads another system's events promises the door nothing it
+ * refuses, and only a server says what that is, so the Flux scheme's reports
+ * are recorded here: of events written in every character, and of the
+ * requests Flux itself sent.
  */
 
 import assert from "node:assert/strict";
-import { after, before, test } from "node:test";
+import { after, before, test, type TestContext } from "node:test";
 import type pg from "pg";
 
 import { postgresActionObservations } from "../../src/adapters/postgres/actionObservation.ts";
@@ -32,18 +38,23 @@ import {
   ticketServiceRole,
   workerPlaneRole,
 } from "../../src/adapters/postgres/schema.ts";
+import { fluxSignatureReporters } from "../../src/adapters/reporters/fluxSignature.ts";
 import {
   actionReportDetailCharsMax,
   actionReportLinkCharsMax,
   allActionReportOutcomes,
   isActionReportLink,
 } from "../../src/contract/actionReport.ts";
+import { textCodePointsCount } from "../../src/contract/http.ts";
 import {
   actionReporterNameCharsMax,
   actionReporterRoster,
+  actionReports,
+  rosterActionReporters,
   type ActionObservationRecorded,
   type ActionObservationStore,
   type ActionReport,
+  type ActionReports,
 } from "../../src/interpreter/actionReport.ts";
 import {
   asGitObjectId,
@@ -55,6 +66,13 @@ import {
   asTenantId,
   type Partition,
 } from "../../src/interpreter/projectStore.ts";
+import {
+  fluxDelivery,
+  fluxDeliveryKey,
+  fluxDeliveryRequest,
+  fluxDeliverySignature,
+  fluxKeyFile,
+} from "../adapters/fluxDeliveryFixtures.ts";
 import {
   linkCredentialRead,
   linksWrittenEveryWay,
@@ -743,7 +761,7 @@ async function linksHeld(
   }
 }
 
-test("the relation holds every link a report may carry and none that reads as holding a credential, however its host is approached", async () => {
+test("the relation holds every link a report may carry and none that reads as holding a credential, however its host is approached or spelled", async () => {
   const { partition } = await declaringProject("links", ["build"]);
   const held = await linksHeld(partition, linksWrittenEveryWay);
   const carried = linksWrittenEveryWay.filter(isActionReportLink);
@@ -760,6 +778,259 @@ test("the relation holds every link a report may carry and none that reads as ho
     "no row holds a credential",
   );
   assert.deepEqual(await logged(partition, "build"), []);
+});
+
+const fluxAtMs = Date.parse("2026-10-05T22:49:41Z");
+
+/** What the Flux scheme reads from a Kustomization's error at a commit, described by `message` and linking where a case says. */
+async function fluxRead(
+  keyFile: string,
+  commit: string,
+  message: string,
+  link?: string,
+): Promise<ActionReport> {
+  const body = new TextEncoder().encode(
+    JSON.stringify({
+      involvedObject: { kind: "Kustomization" },
+      severity: "error",
+      timestamp: new Date(fluxAtMs).toISOString(),
+      message,
+      metadata: { originRevision: `main@sha1:${commit}`, link },
+    }),
+  );
+  const said = await fluxSignatureReporters(() => fluxAtMs).said(keyFile, {
+    tenant: "vteng",
+    project: "chuggy",
+    action: "rig",
+    headers: { "x-signature": fluxDeliverySignature(body) },
+    body,
+  });
+  assert.ok(said?.said === "Report", "the event is a report");
+  return said.report;
+}
+
+/** Records what the Flux scheme read as the next row of an action, and answers what that row holds describing it, as whoever migrated reads it. */
+async function fluxRecorded(
+  partition: Partition,
+  report: ActionReport,
+): Promise<{
+  detail: string | null;
+  chars: number | null;
+  link: string | null;
+}> {
+  assert.equal(await reported(partition, "rig", report), "Recorded");
+  const found = await harness.pool.query<{
+    detail: string | null;
+    chars: number | null;
+    link: string | null;
+  }>(
+    `SELECT detail,length(detail) AS chars,link FROM action_observation
+      WHERE tenant=$1 AND project=$2 AND action='rig' ORDER BY ordinal DESC LIMIT 1`,
+    [partition.tenant, partition.project],
+  );
+  const [row] = found.rows;
+  assert.ok(row !== undefined);
+  return row;
+}
+
+/** A commit of a case's own for each report it records, so none repeats the newest. */
+function fluxCommit(index: number): string {
+  return index.toString(16).padStart(40, "0");
+}
+
+/** Text holding each UTF-16 unit from `from` up to `to`, a surrogate with no partner among them where the span has one. */
+function unitsBetween(from: number, to: number): string {
+  return Array.from({ length: to - from }, (_, index) =>
+    String.fromCharCode(from + index),
+  ).join("");
+}
+
+/** Messages that between them hold every character JSON can spell, and several past the bound a row holds. */
+function fluxMessages(): readonly string[] {
+  const bound = actionReportDetailCharsMax;
+  const astral = String.fromCodePoint(0x1f680);
+  const planes = Array.from({ length: bound }, (_, index) =>
+    String.fromCodePoint(0x10000 + index * 0x400),
+  ).join("");
+  return [
+    ...Array.from({ length: 0x10000 / bound }, (_, index) =>
+      unitsBetween(index * bound, (index + 1) * bound),
+    ),
+    planes,
+    `${planes}${String.fromCodePoint(0x10ffff)}`,
+    astral.repeat(bound + 1),
+    `${"x".repeat(bound - 1)}${astral}${astral}`,
+    String.fromCodePoint(0).repeat(bound + 1),
+    String.fromCharCode(0xdc00).repeat(bound + 1),
+    "x".repeat(4 * bound),
+    "'; DROP TABLE action_observation; --\\x00 $1 %s",
+    "line one\nline two\r\n\tindented",
+    "",
+  ];
+}
+
+test("a report the Flux scheme reads is a row holding what the scheme handed on, whatever its event is written in", async (t) => {
+  const { partition } = await declaringProject("flux-text", ["rig"]);
+  const keyFile = fluxKeyFile(t, fluxDeliveryKey);
+  const bound = actionReportDetailCharsMax;
+  const cut: number[] = [];
+  for (const [index, message] of fluxMessages().entries()) {
+    const report = await fluxRead(keyFile, fluxCommit(index), message);
+    const row = await fluxRecorded(partition, report);
+    const why = `message ${String(index)}`;
+    assert.equal(row.detail, report.detail ?? null, why);
+    assert.equal(
+      row.chars,
+      report.detail === undefined ? null : textCodePointsCount(report.detail),
+      why,
+    );
+    assert.ok((row.chars ?? 0) <= bound, why);
+    if (row.chars === bound && report.detail !== message) cut.push(index);
+    assert.equal(row.detail === null, message === "", why);
+  }
+  assert.ok(cut.length > 1, "several messages were past the bound and cut");
+});
+
+test("a link the Flux scheme hands on is one the relation holds, and one it leaves out leaves its report a row", async (t) => {
+  const { partition } = await declaringProject("flux-link", ["rig"]);
+  const keyFile = fluxKeyFile(t, fluxDeliveryKey);
+  const links = [
+    "https://grafana.example.test/d/release?orgId=1#panel-4",
+    "https://H.Example.TEST:8443/%7Erun/~x",
+    "https://[::1]/run",
+    `https://example.test/${"x".repeat(actionReportLinkCharsMax)}`.slice(
+      0,
+      actionReportLinkCharsMax,
+    ),
+    `https://example.test/${"x".repeat(actionReportLinkCharsMax)}`,
+    "http://grafana.example.test/d/release",
+    "https://user:secret@grafana.example.test/",
+    "https:///grafana.example.test/",
+    `https://grafana.example.test/${String.fromCodePoint(0x1f680)}`,
+    "https://grafana.example.test/a b",
+    "",
+  ];
+  const held: (string | null)[] = [];
+  for (const [index, link] of links.entries()) {
+    const report = await fluxRead(keyFile, fluxCommit(index), "failed", link);
+    assert.equal(report.link, isActionReportLink(link) ? link : undefined);
+    held.push((await fluxRecorded(partition, report)).link);
+  }
+  assert.deepEqual(
+    held,
+    links.map((link) => (isActionReportLink(link) ? link : null)),
+  );
+  assert.ok(held.includes(null) && held.some((link) => link !== null));
+});
+
+/** The report service over the Flux scheme and the API's store, its one reporter named for `rig` of a project and its clock a case's to set. */
+function fluxReports(
+  t: TestContext,
+  partition: Partition,
+): { readonly clock: { nowMs: number }; readonly service: ActionReports } {
+  const roster = actionReporterRoster(
+    JSON.stringify([
+      {
+        reporter: "rig-flux",
+        scheme: "FluxSignature",
+        secretFile: fluxKeyFile(t, fluxDeliveryKey),
+        tenant: partition.tenant,
+        project: partition.project,
+        actions: ["rig"],
+      },
+    ]),
+  );
+  assert.ok(roster.read === "Roster");
+  const clock = { nowMs: 0 };
+  const service = actionReports({
+    reporters: rosterActionReporters(roster.reporters, {
+      FluxSignature: fluxSignatureReporters(() => clock.nowMs),
+    }),
+    observations,
+  });
+  return { clock, service };
+}
+
+/** What the rows of `rig` hold once Flux's deliveries are recorded in the order a case sends them. */
+const fluxSentRows = [
+  {
+    ordinal: "1",
+    repository_commit: "8b2114bfd2a7d359dd13299f2ae5fc91d6cc6a8b",
+    outcome: "Succeeded",
+    reporter: "rig-flux",
+    detail:
+      "1791239720.0.0@sha256:ba156c26ba34282008d7f929c9fbeb7e908a6bbf0e2903ca105de231cfa83cb2",
+    link: null,
+    observed: "2026-10-05T22:36:19",
+  },
+  {
+    ordinal: "2",
+    repository_commit: "5c720e5ca64a2fc7cda1bd8b9b2e72132353eac6",
+    outcome: "Succeeded",
+    reporter: "rig-flux",
+    detail:
+      "1791240292.0.0@sha256:5d0d8d68b6df6d9cfdea76619883b875793304f3999deef901db4b38cfa3f587",
+    link: null,
+    observed: "2026-10-05T22:45:50",
+  },
+  {
+    ordinal: "3",
+    repository_commit: "500a9eed707289ca16595e96ec4de991cfdc96cb",
+    outcome: "Failed",
+    reporter: "rig-flux",
+    detail:
+      "health check failed after 1m30.00664574s: timeout waiting for: [Deployment/chuggy/chuggy-api status: 'InProgress']",
+    link: null,
+    observed: "2026-10-05T22:49:41",
+  },
+];
+
+test("a delivery Flux retried is one row, and what Flux sent of an action is a row to each outcome in the order it arrived", async (t) => {
+  const { partition } = await declaringProject("flux-sent", ["rig"]);
+  const { clock, service } = fluxReports(t, partition);
+  const answered: string[] = [];
+  for (const name of [
+    "retried",
+    "dependency-not-ready",
+    "progressing",
+    "reconciliation-succeeded",
+    "constructed-bare-origin",
+    "unsigned",
+    "health-check-failed",
+    "constructed-escaped",
+    "constructed-no-origin",
+  ] as const) {
+    const delivery = fluxDelivery(name);
+    for (const atMs of delivery.arrivedAtMs) {
+      clock.nowMs = atMs;
+      const { result } = await service.report(
+        fluxDeliveryRequest(delivery, { ...partition, action: "rig" }),
+      );
+      answered.push(`${name} ${result}`);
+    }
+  }
+  assert.deepEqual(answered, [
+    "retried Recorded",
+    "retried Repeated",
+    "retried Repeated",
+    "retried Repeated",
+    "dependency-not-ready Ignored",
+    "progressing Ignored",
+    "reconciliation-succeeded Recorded",
+    "constructed-bare-origin Repeated",
+    "unsigned NotFound",
+    "health-check-failed Recorded",
+    "constructed-escaped Repeated",
+    "constructed-no-origin Refused",
+  ]);
+  const rows = await harness.pool.query(
+    `SELECT ordinal::text AS ordinal,repository_commit,outcome,reporter,detail,link,
+            to_char(observed_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS') AS observed
+       FROM action_observation
+      WHERE tenant=$1 AND project=$2 AND action='rig' ORDER BY ordinal`,
+    [partition.tenant, partition.project],
+  );
+  assert.deepEqual(rows.rows, fluxSentRows);
 });
 
 test("behind its door the relation holds one row to an ordinal of an action, and none for a project that is not there", async () => {

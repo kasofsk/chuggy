@@ -92,8 +92,15 @@ export const actionReportDocumentSchema = z.strictObject({
 });
 export type ActionReportDocument = z.infer<typeof actionReportDocumentSchema>;
 
-/** What a report came to: a row, or nothing because the action's newest row already says it. */
-export const allActionReportResults = ["Recorded", "Repeated"] as const;
+/**
+ * What a report came to: a row, nothing because the action's newest row
+ * already says it, or nothing because it is an event no outcome is read in.
+ */
+export const allActionReportResults = [
+  "Recorded",
+  "Repeated",
+  "Ignored",
+] as const;
 
 export const actionReportResponseSchema = z.object({
   report: z.enum(allActionReportResults),
