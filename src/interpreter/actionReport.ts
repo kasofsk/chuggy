@@ -19,7 +19,9 @@
  * NOTHING IS SAID TO A REQUEST THAT DID NOT VERIFY. An action no reporter is
  * named for, a secret that does not verify and an action no repository
  * declares are all `NotFound`, and only a verified reporter is told its report
- * was refused.
+ * was refused. An action a reporter is named for costs a file read and a
+ * digest that one nobody is named for does not, so the two are told apart by
+ * how long the answer takes and by nothing in it.
  */
 
 import { z } from "zod";
