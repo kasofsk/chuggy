@@ -27,7 +27,7 @@ R="$WORK/repo"
 # and answers a question the case did not ask. These are ci.sh's own Env block
 # and the base `_ci-select.sh` reads, less CHUG_CI_SHELL_SUITES — the recursion
 # guard, which each case that reaches the suite stage sets for itself.
-unset CHUG_CI_FULL CHUG_CI_BASE GITHUB_BASE_REF CHUG_CI_SUITE_TIMEOUT_SECS CHUG_CI_NEEDS_GATE
+unset CHUG_CI_FULL CHUG_CI_BASE GITHUB_BASE_REF CHUG_CI_SUITE_TIMEOUT_SECS
 
 ROOT="$(cd "$HERE/../.." && pwd)"
 grep -F '    ./.chug/tasks/ci.sh' "$ROOT/justfile" >/dev/null
@@ -769,20 +769,12 @@ package_at 0.32.0 1.0.0
 run_gates_only
 refute "package files git cannot diff select Quint" 0 "$RC" "check-model: SKIPPED"
 
-# A RUN THAT RAN NOTHING SAYS SO, and is a could-not-run to a caller that asks
-# for one; a caller that asks passes as any other does once a gate has run.
+# A RUN THAT RAN NOTHING SAYS SO.
 stub_repo 0
 commit_all baseline
 run_gates_only
 check "a change that selects nothing says nothing ran" 0 "$RC" "no gate selected; nothing ran"
 refute "a run of nothing is not called clean" 0 "$RC" "all gates clean"
-export CHUG_CI_NEEDS_GATE=1
-run_gates_only
-check "a caller that needs a gate is told none ran" 2 "$RC" "the change selects no gate"
-printf '# a page\n' > "$R/PAGE.md"
-run_gates_only
-check "a caller that needs a gate passes once one ran" 0 "$RC" "all gates clean"
-unset CHUG_CI_NEEDS_GATE
 
 # An unresolvable base fails open to complete coverage, never to no coverage.
 stub_repo 0
