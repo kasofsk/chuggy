@@ -68,14 +68,20 @@ export const actionReachAncestryDefaults = {
   asksInFlightMax: 4,
 } as const;
 
+/** What one asking came to: its answer, which never rejects, and whether this asking put the question to the port. */
+export interface ActionReachAncestryAsked {
+  readonly put: boolean;
+  readonly answer: Promise<CommitAncestry>;
+}
+
 /** Ancestry as the reads of action reach are given it. */
 export interface ActionReachAncestry {
   /** The answer kept for a question decided earlier, and nothing where none is. */
   decided(
     question: CommitAncestryQuestion,
   ): ActionReachAncestryDecided | undefined;
-  /** Answers from what is kept, joins the asking in flight, asks the port, or is `Unknown` at once where asking is not due. It never rejects. */
-  ask(question: CommitAncestryQuestion): Promise<CommitAncestry>;
+  /** Answers from what is kept, joins the asking in flight, asks the port, or is `Unknown` at once where asking is not due. Only the third puts anything to the port. */
+  ask(question: CommitAncestryQuestion): ActionReachAncestryAsked;
 }
 
 /** One undecided question's wait: the repository it was asked of and the reading of the clock the wait ends at. */
@@ -176,25 +182,26 @@ function actionReachAncestryAnswered(
 function actionReachAncestryAsk(
   own: ActionReachAncestryState,
   question: CommitAncestryQuestion,
-): Promise<CommitAncestry> {
+): ActionReachAncestryAsked {
   const key = actionReachAncestryKey(question);
   const { repository } = question.repository;
   const decided = own.decided.get(key);
-  if (decided !== undefined) return Promise.resolve(decided);
+  if (decided !== undefined)
+    return { put: false, answer: Promise.resolve(decided) };
   const joined = own.asking.get(key);
-  if (joined !== undefined) return joined.asked;
+  if (joined !== undefined) return { put: false, answer: joined.asked };
   actionReachAncestryWaitsPassed(own);
   if (
     own.waits.has(key) ||
     actionReachAncestryUndecidedFull(own, repository) ||
     own.asking.size >= own.asksInFlightMax
   )
-    return Promise.resolve("Unknown");
+    return { put: false, answer: Promise.resolve("Unknown") };
   const asked = actionReachAncestryPut(own, question).then((answer) =>
     actionReachAncestryAnswered(own, key, repository, answer),
   );
   own.asking.set(key, { repository, asked });
-  return asked;
+  return { put: true, answer: asked };
 }
 
 /** Composes what one process keeps, over the port it asks and the clock its waits are read on. */

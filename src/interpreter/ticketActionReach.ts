@@ -7,12 +7,24 @@
  * not read is answered as one that does not exist.
  *
  * ONE READ'S WHOLE ANSWER IS BOUNDED, in what it asks and in how long it
- * waits. Over all its actions it puts at most a stated count of questions to
- * the ancestry its process keeps, and it waits on them for at most a stated
- * time, which outlasts one asking's own bound and ends inside the console's
- * read timeout. An action whose mark was not read inside both is `Unknown`.
- * An answer already kept costs neither, and whatever a read asked stays kept,
- * so a read cut short is finished by the reads after it.
+ * waits. Over all its actions it puts at most `ticketActionReachAsksMax`
+ * questions to the port beneath the ancestry its process keeps, and it waits
+ * on them for at most a stated time, which outlasts one asking's own bound
+ * and ends inside the console's read timeout. An action whose mark was not
+ * read inside both is `Unknown`. Only a question put to the port is counted:
+ * one answered from what is kept, one that joined an asking in flight and one
+ * refused at once because asking was not due cost a read none of its count.
+ *
+ * A READ CUT SHORT IS FINISHED BY THE READS AFTER IT, EXCEPT BEHIND QUESTIONS
+ * THAT CANNOT BE DECIDED. Whatever a read asked stays kept. A decided answer
+ * costs the reads after it nothing, and neither does an undecided one inside
+ * its wait, so they begin past both. But an undecided question whose wait has
+ * passed is put again and counted again. So an action with as many questions
+ * that cannot be decided ahead of it, in the order of the actions'
+ * identities, as one read may put is asked about only by a read that comes
+ * inside their waits, and is `Unknown` on every read that comes after them.
+ * And a question refused because the undecided places are taken
+ * (`./actionReachAncestry.ts`) is put by no read while they stay taken.
  *
  * THE COMMITS ASKED ABOUT ARE THE SERVER'S OWN: the ticket's from where it
  * landed, each tip from the action's log. A caller names a ticket and nothing
@@ -50,7 +62,7 @@ import type {
 import { repositoryDeclarationsMax } from "./repositoryDeclaration.ts";
 import type { RuntimePacing } from "./serviceRuntime.ts";
 
-/** How many questions one read puts to the ancestry its process keeps, over all its actions. */
+/** How many questions one read puts to the port beneath the ancestry its process keeps, over all its actions. */
 export const ticketActionReachAsksMax = 16;
 
 /** How long one read waits on the questions it put before answering `Unknown` for the rest. */
@@ -170,8 +182,9 @@ async function ticketActionReachAnswer(
   const decided = ports.ancestry.decided(question);
   if (decided !== undefined) return decided;
   if (reading.timePassed || reading.asksLeft < 1) return "Unknown";
-  reading.asksLeft -= 1;
-  return Promise.race([ports.ancestry.ask(question), reading.bound]);
+  const asked = ports.ancestry.ask(question);
+  if (asked.put) reading.asksLeft -= 1;
+  return Promise.race([asked.answer, reading.bound]);
 }
 
 /** Reads one action's mark, gathering what the reading asks for until it has one. */

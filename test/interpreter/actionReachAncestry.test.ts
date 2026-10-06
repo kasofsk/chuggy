@@ -119,11 +119,11 @@ const waitMs = actionReachAncestryDefaults.undecidedWaitSecs * 1000;
 test("a decided answer is kept and the port is not asked again", async () => {
   const { kept, asked } = fixture({ a: "Ancestor", b: "NotAncestor" });
   assert.equal(kept.decided(question("a")), undefined);
-  assert.equal(await kept.ask(question("a")), "Ancestor");
-  assert.equal(await kept.ask(question("b")), "NotAncestor");
+  assert.equal(await kept.ask(question("a")).answer, "Ancestor");
+  assert.equal(await kept.ask(question("b")).answer, "NotAncestor");
   for (let again = 0; again < 3; again += 1) {
-    assert.equal(await kept.ask(question("a")), "Ancestor");
-    assert.equal(await kept.ask(question("b")), "NotAncestor");
+    assert.equal(await kept.ask(question("a")).answer, "Ancestor");
+    assert.equal(await kept.ask(question("b")).answer, "NotAncestor");
   }
   assert.equal(kept.decided(question("a")), "Ancestor");
   assert.equal(kept.decided(question("b")), "NotAncestor");
@@ -132,55 +132,56 @@ test("a decided answer is kept and the port is not asked again", async () => {
 
 test("a question is kept under its repository and both its commits", async () => {
   const { kept, asked } = fixture({ a: "Ancestor", b: "NotAncestor" });
-  await kept.ask(question("a"));
+  await kept.ask(question("a")).answer;
   assert.equal(kept.decided(question("a", "d")), undefined);
   assert.equal(kept.decided(question("b")), undefined);
   assert.equal(
     kept.decided(question("a", "c", "https://forge.example/acme/other.git")),
     undefined,
   );
-  await kept.ask(question("a", "d"));
-  await kept.ask(question("a", "c", "https://forge.example/acme/other.git"));
+  await kept.ask(question("a", "d")).answer;
+  await kept.ask(question("a", "c", "https://forge.example/acme/other.git"))
+    .answer;
   assert.deepEqual(asked, ["a", "a", "a"]);
 });
 
 test("an undecided question is unknown at once, with nothing asked, until its wait has passed", async () => {
   const { kept, asked, pass } = fixture({ a: "Unknown" });
-  assert.equal(await kept.ask(question("a")), "Unknown");
+  assert.equal(await kept.ask(question("a")).answer, "Unknown");
   assert.equal(kept.decided(question("a")), undefined);
   for (let again = 0; again < 5; again += 1)
-    assert.equal(await kept.ask(question("a")), "Unknown");
+    assert.equal(await kept.ask(question("a")).answer, "Unknown");
   assert.deepEqual(asked, ["a"]);
   pass(waitMs - 1);
-  assert.equal(await kept.ask(question("a")), "Unknown");
+  assert.equal(await kept.ask(question("a")).answer, "Unknown");
   assert.deepEqual(asked, ["a"]);
   pass(1);
-  assert.equal(await kept.ask(question("a")), "Unknown");
+  assert.equal(await kept.ask(question("a")).answer, "Unknown");
   assert.deepEqual(asked, ["a", "a"]);
-  assert.equal(await kept.ask(question("a")), "Unknown");
+  assert.equal(await kept.ask(question("a")).answer, "Unknown");
   assert.deepEqual(asked, ["a", "a"]);
 });
 
 test("a question undecided once and decided after its wait is kept from then on", async () => {
   const { kept, asked, release, pass } = fixture({});
-  const first = kept.ask(question("a"));
+  const first = kept.ask(question("a")).answer;
   release("Unknown");
   assert.equal(await first, "Unknown");
   pass(waitMs);
-  const second = kept.ask(question("a"));
+  const second = kept.ask(question("a")).answer;
   release("Ancestor");
   assert.equal(await second, "Ancestor");
-  assert.equal(await kept.ask(question("a")), "Ancestor");
+  assert.equal(await kept.ask(question("a")).answer, "Ancestor");
   assert.deepEqual(asked, ["a", "a"]);
 });
 
 test("a port that raises is unknown and never a rejection, and is not asked again inside the wait", async () => {
   const { kept, asked, pass } = fixture({ a: new Error("no credential") });
-  assert.equal(await kept.ask(question("a")), "Unknown");
-  assert.equal(await kept.ask(question("a")), "Unknown");
+  assert.equal(await kept.ask(question("a")).answer, "Unknown");
+  assert.equal(await kept.ask(question("a")).answer, "Unknown");
   assert.deepEqual(asked, ["a"]);
   pass(waitMs);
-  assert.equal(await kept.ask(question("a")), "Unknown");
+  assert.equal(await kept.ask(question("a")).answer, "Unknown");
   assert.deepEqual(asked, ["a", "a"]);
 });
 
@@ -196,17 +197,17 @@ test("a port that throws before it answers is unknown too, and is asked again on
     },
     monotonicNowMs: () => nowMs,
   });
-  assert.equal(await kept.ask(question("a")), "Unknown");
-  assert.equal(await kept.ask(question("a")), "Unknown");
+  assert.equal(await kept.ask(question("a")).answer, "Unknown");
+  assert.equal(await kept.ask(question("a")).answer, "Unknown");
   assert.deepEqual(asked, ["a"]);
   nowMs += waitMs;
-  assert.equal(await kept.ask(question("a")), "Unknown");
+  assert.equal(await kept.ask(question("a")).answer, "Unknown");
   assert.deepEqual(asked, ["a", "a"]);
 });
 
 test("a question asked again while in flight joins that asking", async () => {
   const { kept, asked, release } = fixture({});
-  const askers = [1, 2, 3].map(() => kept.ask(question("a")));
+  const askers = [1, 2, 3].map(() => kept.ask(question("a")).answer);
   assert.deepEqual(asked, ["a"]);
   release("Ancestor");
   assert.deepEqual(await Promise.all(askers), [
@@ -219,13 +220,16 @@ test("a question asked again while in flight joins that asking", async () => {
 
 test("a question past those in flight is unknown at once, asks nothing, and begins no wait", async () => {
   const { kept, asked, release } = fixture({}, { asksInFlightMax: 2 });
-  const flying = [kept.ask(question("a")), kept.ask(question("b"))];
-  assert.equal(await kept.ask(question("d")), "Unknown");
+  const flying = [
+    kept.ask(question("a")).answer,
+    kept.ask(question("b")).answer,
+  ];
+  assert.equal(await kept.ask(question("d")).answer, "Unknown");
   assert.deepEqual(asked, ["a", "b"]);
   release("Ancestor");
   release("NotAncestor");
   await Promise.all(flying);
-  const due = kept.ask(question("d"));
+  const due = kept.ask(question("d")).answer;
   assert.deepEqual(asked, ["a", "b", "d"]);
   release("Ancestor");
   assert.equal(await due, "Ancestor");
@@ -233,19 +237,19 @@ test("a question past those in flight is unknown at once, asks nothing, and begi
 
 test("a question past those undecided is unknown at once and asks nothing, those in flight counted among them", async () => {
   const { kept, asked, release, pass } = fixture({}, { undecidedMax: 2 });
-  const first = kept.ask(question("a"));
+  const first = kept.ask(question("a")).answer;
   release("Unknown");
   await first;
-  const flying = kept.ask(question("b"));
+  const flying = kept.ask(question("b")).answer;
   for (const tip of ["d", "e"])
-    assert.equal(await kept.ask(question(tip)), "Unknown");
+    assert.equal(await kept.ask(question(tip)).answer, "Unknown");
   assert.deepEqual(asked, ["a", "b"]);
   release("Unknown");
   await flying;
-  assert.equal(await kept.ask(question("d")), "Unknown");
+  assert.equal(await kept.ask(question("d")).answer, "Unknown");
   assert.deepEqual(asked, ["a", "b"]);
   pass(waitMs);
-  const due = kept.ask(question("d"));
+  const due = kept.ask(question("d")).answer;
   assert.deepEqual(asked, ["a", "b", "d"]);
   release("Ancestor");
   assert.equal(await due, "Ancestor");
@@ -254,8 +258,11 @@ test("a question past those undecided is unknown at once and asks nothing, those
 test("one repository's undecided questions, as many as may be undecided at once, leave another repository's question asked", async () => {
   const { kept, asked } = fixture({ a: "Unknown", b: "Ancestor" });
   for (let at = 0; at < actionReachAncestryDefaults.undecidedMax; at += 1)
-    assert.equal(await kept.ask(numbered(at, "a")), "Unknown");
-  assert.equal(await kept.ask(question("b", "c", otherRepository)), "Ancestor");
+    assert.equal(await kept.ask(numbered(at, "a")).answer, "Unknown");
+  assert.equal(
+    await kept.ask(question("b", "c", otherRepository)).answer,
+    "Ancestor",
+  );
   assert.equal(asked.filter((tip) => tip === "b").length, 1);
 });
 
@@ -264,22 +271,22 @@ test("a question past those of its repository undecided is unknown at once and a
     {},
     { undecidedRepositoryMax: 2 },
   );
-  const first = kept.ask(question("a"));
+  const first = kept.ask(question("a")).answer;
   release("Unknown");
   await first;
-  const flying = kept.ask(question("b"));
-  assert.equal(await kept.ask(question("d")), "Unknown");
+  const flying = kept.ask(question("b")).answer;
+  assert.equal(await kept.ask(question("d")).answer, "Unknown");
   assert.deepEqual(asked, ["a", "b"]);
-  const other = kept.ask(question("d", "c", otherRepository));
+  const other = kept.ask(question("d", "c", otherRepository)).answer;
   assert.deepEqual(asked, ["a", "b", "d"]);
   release("Unknown");
   await flying;
-  assert.equal(await kept.ask(question("e")), "Unknown");
+  assert.equal(await kept.ask(question("e")).answer, "Unknown");
   release("Ancestor");
   assert.equal(await other, "Ancestor");
   assert.deepEqual(asked, ["a", "b", "d"]);
   pass(waitMs);
-  const due = kept.ask(question("e"));
+  const due = kept.ask(question("e")).answer;
   assert.deepEqual(asked, ["a", "b", "d", "e"]);
   release("Ancestor");
   assert.equal(await due, "Ancestor");
@@ -294,8 +301,32 @@ test("the count over every repository holds whatever room each repository's own 
     (named) => `https://forge.example/acme/${named}.git`,
   );
   for (const repository of repositories)
-    assert.equal(await kept.ask(question("a", "c", repository)), "Unknown");
+    assert.equal(
+      await kept.ask(question("a", "c", repository)).answer,
+      "Unknown",
+    );
   assert.deepEqual(asked, ["a", "a"]);
+});
+
+test("an asking says whether it put its question to the port: the one that began it did, and one joined, kept, inside its wait or refused for a count did not", async () => {
+  const { kept, asked, release } = fixture(
+    { b: "Unknown" },
+    { asksInFlightMax: 1, undecidedRepositoryMax: 2 },
+  );
+  const began = kept.ask(question("a"));
+  assert.equal(began.put, true);
+  assert.equal(kept.ask(question("a")).put, false, "joined");
+  assert.equal(kept.ask(question("d")).put, false, "past those in flight");
+  release("Ancestor");
+  await began.answer;
+  assert.equal(kept.ask(question("a")).put, false, "kept");
+  const undecided = kept.ask(question("b"));
+  assert.equal(undecided.put, true);
+  await undecided.answer;
+  assert.equal(kept.ask(question("b")).put, false, "inside its wait");
+  await kept.ask(numbered(1, "b")).answer;
+  assert.equal(kept.ask(question("d")).put, false, "past those undecided");
+  assert.deepEqual(asked, ["a", "b", "b"]);
 });
 
 test("a decided question leaves both undecided counts, so deciding makes room", async () => {
@@ -304,7 +335,7 @@ test("a decided question leaves both undecided counts, so deciding makes room", 
       { a: "Ancestor", b: "NotAncestor", d: "Ancestor" },
       chosen,
     );
-    for (const tip of ["a", "b", "d"]) await kept.ask(question(tip));
+    for (const tip of ["a", "b", "d"]) await kept.ask(question(tip)).answer;
     assert.deepEqual(asked, ["a", "b", "d"], JSON.stringify(chosen));
   }
 });
@@ -314,11 +345,11 @@ test("the decided answers kept are held to their count, the one decided first fo
     { a: "Ancestor", b: "NotAncestor", d: "Ancestor" },
     { decidedMax: 2 },
   );
-  for (const tip of ["a", "b", "d"]) await kept.ask(question(tip));
+  for (const tip of ["a", "b", "d"]) await kept.ask(question(tip)).answer;
   assert.equal(kept.decided(question("a")), undefined);
   assert.equal(kept.decided(question("b")), "NotAncestor");
   assert.equal(kept.decided(question("d")), "Ancestor");
-  await kept.ask(question("a"));
+  await kept.ask(question("a")).answer;
   assert.deepEqual(asked, ["a", "b", "d", "a"]);
   assert.equal(kept.decided(question("b")), undefined);
 });

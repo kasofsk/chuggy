@@ -16,7 +16,10 @@ import {
   type ActionReachNewest,
   type ActionReachObservation,
 } from "../../src/interpreter/actionReach.ts";
-import { actionReachAncestry } from "../../src/interpreter/actionReachAncestry.ts";
+import {
+  actionReachAncestry,
+  actionReachAncestryDefaults,
+} from "../../src/interpreter/actionReachAncestry.ts";
 import type {
   CommitAncestry,
   CommitAncestryQuestion,
@@ -119,6 +122,8 @@ interface Fixture {
   /** Answers the oldest question the port is still holding. */
   readonly release: (answer: CommitAncestry) => void;
   readonly deny: () => void;
+  /** Moves on the clock the kept answers read their waits on, which no read moves. */
+  readonly pass: (ms: number) => void;
 }
 
 /** A store answering as a case told it, each read recorded by its name and each read of earlier successes whole. */
@@ -178,6 +183,7 @@ function fixture(
   const waits: Fixture["waits"] = [];
   const held: ((answer: CommitAncestry) => void)[] = [];
   let allowed = true;
+  let nowMs = 0;
   const table = new Map(
     Object.entries(answers).map(([named, answer]) => [commitOf(named), answer]),
   );
@@ -200,7 +206,7 @@ function fixture(
             : Promise.resolve(answer);
         },
       },
-      monotonicNowMs: () => 0,
+      monotonicNowMs: () => nowMs,
     }),
     pacing: fixturePacing(waits),
   });
@@ -218,6 +224,9 @@ function fixture(
     },
     deny: () => {
       allowed = false;
+    },
+    pass: (ms) => {
+      nowMs += ms;
     },
   };
 }
@@ -379,6 +388,51 @@ test("an answer already kept costs a read none of its questions, so the reads af
   assert.equal(own.asked.length, declares.length);
   await read(own);
   assert.equal(own.asked.length, declares.length);
+});
+
+/** As many actions as one read may ask about, each with a newest success at a tip of its own that cannot be decided, ahead by identity of one whose tip holds the ticket's commit. */
+function undecidedAhead(): {
+  readonly declares: readonly ActionReachDeclared[];
+  readonly answers: Record<string, CommitAncestry>;
+  readonly held: GitObjectId;
+} {
+  const lost = Array.from({ length: ticketActionReachAsksMax }, (_, at) =>
+    (at + 1).toString(16).padStart(4, "d"),
+  );
+  return {
+    declares: [
+      ...lost.map((tip) => declared(`action-${tip}`, tip)),
+      declared("zone", "eeee"),
+    ],
+    answers: {
+      ...Object.fromEntries(lost.map((tip) => [tip, "Unknown" as const])),
+      eeee: "Ancestor",
+    },
+    held: commitOf("eeee"),
+  };
+}
+
+test("a question answered at once from its wait costs a read none of its questions, so the action past as many undecided as a read may put is asked about by a read that comes inside their waits", async () => {
+  const { declares, answers, held } = undecidedAhead();
+  const own = fixture(landedAt, declares, answers);
+  assert.equal(marks(await read(own))["zone"], "Unknown");
+  assert.equal(own.asked.length, ticketActionReachAsksMax);
+  assert.equal(marks(await read(own))["zone"], "Reached");
+  assert.deepEqual(
+    own.asked.slice(ticketActionReachAsksMax).map((put) => put.tip),
+    [held],
+  );
+});
+
+test("the exception: reads that come no sooner than the waits pass put the same undecided questions again each time, and the action past them stays unknown", async () => {
+  const { declares, answers, held } = undecidedAhead();
+  const own = fixture(landedAt, declares, answers);
+  for (const reads of [1, 2, 3]) {
+    assert.equal(marks(await read(own))["zone"], "Unknown");
+    assert.equal(own.asked.length, reads * ticketActionReachAsksMax);
+    own.pass(actionReachAncestryDefaults.undecidedWaitSecs * 1000);
+  }
+  assert.ok(own.asked.every((put) => put.tip !== held));
 });
 
 test("the longest reading an action can ask for is taken to its end across reads, and is unknown where a commit past those it may weigh lay beneath it", async () => {
