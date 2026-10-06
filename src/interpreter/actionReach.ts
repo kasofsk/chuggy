@@ -17,12 +17,22 @@
  *
  * WHAT COULD NOT BE FOUND OUT IS `Unknown` AND NEVER `NotYet`. A commit whose
  * ancestry came back unknown ends the reading there, and so does a walk that
- * weighed as many successes as it may with more beneath them: a ticket once
- * shown reached is not shown waiting because the reading gave up.
+ * gave up while a commit it had not weighed could still lie beneath it: a
+ * ticket once shown reached is not shown waiting because the reading gave up.
  *
- * A COMMIT IS WEIGHED ONCE. The successes are walked row by row, and one at a
- * commit already found not to hold the ticket's is passed over, so each
- * distinct commit among them is asked about once.
+ * THE WALK WEIGHS COMMITS AND READS ROWS, EACH TO A COUNT OF ITS OWN. No index
+ * bounds a count of distinct commits, so the successes beneath the newest are
+ * read once as a window of rows, the newest `actionReachEarlierReadMax` by
+ * ordinal, and the distinct commits are taken from it in order. A row at a
+ * commit already weighed is passed over, whether the walk weighed it or the
+ * newest success or failure did, so a commit is asked about once and one
+ * reported again and again costs the walk nothing. The walk gives up in two
+ * places, each `Unknown`: at a row since the ticket landed whose commit is
+ * one more than the `actionReachEarlierSuccessesMax` it may weigh, and at the
+ * window's end where the row past the `actionReachEarlierRowsMax` it walks
+ * was reported since the ticket landed, because a commit not yet weighed
+ * could lie there or beneath. That row is read and never weighed. A walk that
+ * ends anywhere else left no success since the ticket landed unweighed.
  *
  * WHAT THE MARKS CANNOT SAY, each because a mark reads reports and no cause:
  *
@@ -63,11 +73,14 @@ import type { PublicInstant } from "./publicResource.ts";
 /** Where an action stands for one landed ticket. */
 export type ActionReach = (typeof allActionReaches)[number];
 
-/** How many successes beneath an action's newest one reading weighs. */
+/** How many distinct commits one reading weighs among the successes beneath an action's newest. */
 export const actionReachEarlierSuccessesMax = 16;
 
-/** How many it reads: those it weighs and the one past them, which says whether more lie beneath. */
-export const actionReachEarlierReadMax = actionReachEarlierSuccessesMax + 1;
+/** How many successes beneath an action's newest one reading walks, those at a commit already weighed among them. */
+export const actionReachEarlierRowsMax = 256;
+
+/** How many it reads: those it walks and the one past them, which says whether more lie beneath. */
+export const actionReachEarlierReadMax = actionReachEarlierRowsMax + 1;
 
 /** One report of an action as its log holds it, the ordinal being its place there. */
 export interface ActionReachObservation {
@@ -163,6 +176,32 @@ function actionReachWeighed(
   }
 }
 
+/** What the successes beneath the newest decide, walked newest first: `before` names the commits already found not to hold the ticket's, and each commit the walk weighs joins them. */
+function actionReachWalked(
+  view: ActionReachView,
+  earlier: readonly ActionReachEarlierSuccess[],
+  before: readonly GitObjectId[],
+): ActionReachNext {
+  const weighed = new Set(before);
+  const weighedMax = weighed.size + actionReachEarlierSuccessesMax;
+  for (const { observation, sinceLanded } of earlier.slice(
+    0,
+    actionReachEarlierRowsMax,
+  )) {
+    if (!sinceLanded || weighed.has(observation.commit)) continue;
+    if (weighed.size >= weighedMax)
+      return { next: "Marked", mark: { reach: "Unknown" } };
+    const rolledBack = actionReachWeighed(view, observation, "RolledBack");
+    if (rolledBack !== undefined) return rolledBack;
+    weighed.add(observation.commit);
+  }
+  const past = earlier[actionReachEarlierRowsMax];
+  return {
+    next: "Marked",
+    mark: { reach: past?.sinceLanded === true ? "Unknown" : "NotYet" },
+  };
+}
+
 /** The one thing a reading does next, a pure function of what it has gathered. */
 export function actionReachNext(view: ActionReachView): ActionReachNext {
   actionReachViewAsserted(view);
@@ -172,10 +211,11 @@ export function actionReachNext(view: ActionReachView): ActionReachNext {
       ? undefined
       : actionReachWeighed(view, success, "Reached");
   if (reached !== undefined) return reached;
+  const failure = report?.outcome === "Failed" ? report : undefined;
   const failed =
-    report?.outcome === "Failed"
-      ? actionReachWeighed(view, report, "Failed")
-      : undefined;
+    failure === undefined
+      ? undefined
+      : actionReachWeighed(view, failure, "Failed");
   if (failed !== undefined) return failed;
   if (success === undefined)
     return { next: "Marked", mark: { reach: "NotYet" } };
@@ -185,15 +225,9 @@ export function actionReachNext(view: ActionReachView): ActionReachNext {
       beneath: success.ordinal,
       count: actionReachEarlierReadMax,
     };
-  for (const earlier of view.earlier.slice(0, actionReachEarlierSuccessesMax)) {
-    const rolledBack = earlier.sinceLanded
-      ? actionReachWeighed(view, earlier.observation, "RolledBack")
-      : undefined;
-    if (rolledBack !== undefined) return rolledBack;
-  }
-  const past = view.earlier[actionReachEarlierSuccessesMax];
-  return {
-    next: "Marked",
-    mark: { reach: past?.sinceLanded === true ? "Unknown" : "NotYet" },
-  };
+  return actionReachWalked(
+    view,
+    view.earlier,
+    failure === undefined ? [success.commit] : [success.commit, failure.commit],
+  );
 }

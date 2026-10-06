@@ -11,6 +11,7 @@ import { test } from "node:test";
 import { asTicketId } from "../../src/domain/ids.ts";
 import {
   actionReachEarlierReadMax,
+  actionReachEarlierSuccessesMax,
   type ActionReachEarlierSuccess,
   type ActionReachNewest,
   type ActionReachObservation,
@@ -380,11 +381,11 @@ test("an answer already kept costs a read none of its questions, so the reads af
   assert.equal(own.asked.length, declares.length);
 });
 
-test("the longest reading an action can ask for is taken to its end across reads, and is unknown where more successes lay beneath it", async () => {
+test("the longest reading an action can ask for is taken to its end across reads, and is unknown where a commit past those it may weigh lay beneath it", async () => {
   const success = reported(40, "Succeeded", "a0");
   const failure = reported(41, "Failed", "f0");
   const earlier = Array.from(
-    { length: actionReachEarlierReadMax },
+    { length: actionReachEarlierSuccessesMax + 1 },
     (_, at): ActionReachEarlierSuccess => ({
       observation: reported(39 - at, "Succeeded", `e${String(at + 10)}`),
       sinceLanded: true,

@@ -10,6 +10,7 @@ import { test } from "node:test";
 
 import {
   actionReachEarlierReadMax,
+  actionReachEarlierRowsMax,
   actionReachEarlierSuccessesMax,
   actionReachNext,
   type ActionReachEarlierSuccess,
@@ -89,7 +90,7 @@ function reading(
     if (next.next === "Marked") return { mark: next.mark, asked, read };
     if (next.next === "ReadEarlier") {
       read.push({ beneath: next.beneath, count: next.count });
-      earlier = earlierRows;
+      earlier = earlierRows.slice(0, next.count);
       continue;
     }
     const digit = next.tip.slice(0, 1);
@@ -271,102 +272,209 @@ test("a commit is asked about once, however many reports name it", () => {
   );
 });
 
-/** As many successes beneath the newest as a reading weighs, each at a commit of its own that does not hold the ticket's, and the answers that say so. */
-function weighedInFull(): {
-  readonly rows: readonly ActionReachEarlierSuccess[];
-  readonly answers: Record<string, CommitAncestry>;
-} {
-  const digits = "0123456789abcdef".slice(0, actionReachEarlierSuccessesMax);
-  assert.equal(digits.length, actionReachEarlierSuccessesMax);
-  const top = actionReachEarlierSuccessesMax + 1;
-  return {
-    rows: [...digits].map((digit, at) => beneath(top - at, digit)),
-    answers: Object.fromEntries(
-      [...digits].map((digit) => [digit, "NotAncestor" as const]),
+/** One commit succeeded at over and over since the ticket landed, the newest of those rows at the ordinal given. */
+function repeated(
+  top: number,
+  digit: string,
+  count: number,
+): readonly ActionReachEarlierSuccess[] {
+  return Array.from({ length: count }, (_, at) => beneath(top - at, digit));
+}
+
+test("successes at the commit of the newest, however many, cost a reading none of the commits it may weigh", () => {
+  const repeats = actionReachEarlierSuccessesMax + 1;
+  assert.deepEqual(
+    reading(
+      newestSucceeded(repeats + 1, "a"),
+      { a: "NotAncestor" },
+      repeated(repeats, "a", repeats),
     ),
-  };
+    {
+      mark: { reach: "NotYet" },
+      asked: ["a"],
+      read: [{ beneath: repeats + 1, count: actionReachEarlierRowsMax + 1 }],
+    },
+  );
+});
+
+test("a success holding the ticket's commit is found beneath more successes at one commit than a reading may weigh commits", () => {
+  const repeats = actionReachEarlierSuccessesMax + 1;
+  const held = beneath(1, "b");
+  assert.deepEqual(
+    reading(
+      newestSucceeded(repeats + 2, "a"),
+      { a: "NotAncestor", b: "Ancestor" },
+      [...repeated(repeats + 1, "a", repeats), held],
+    ),
+    {
+      mark: { reach: "RolledBack", observation: held.observation },
+      asked: ["a", "b"],
+      read: [{ beneath: repeats + 2, count: actionReachEarlierReadMax }],
+    },
+  );
+});
+
+test("a reading asks for the row past those it walks, and more successes since the ticket landed than it walks is unknown", () => {
+  const rows = actionReachEarlierRowsMax + 1;
+  assert.deepEqual(
+    reading(
+      newestSucceeded(rows + 1, "a"),
+      { a: "NotAncestor" },
+      repeated(rows, "a", rows),
+    ).mark,
+    { reach: "Unknown" },
+  );
+});
+
+/** A commit of the second width, which no single-digit fixture commit is. */
+function wideOf(digit: string): GitObjectId {
+  return asGitObjectId(digit.repeat(64));
 }
 
-/** A commit of a second width, which no single-digit fixture commit is. */
-const newestWide = asGitObjectId("f".repeat(64));
+const newestWide = wideOf("f");
+const failedWide = wideOf("d");
+const pastWide = wideOf("e");
 
-/** The newest success of a log `weighedInFull` lies beneath, at a commit none of those rows is at. */
-function newestOverFull(): ActionReachNewest {
-  const success = {
-    ...succeeded(actionReachEarlierSuccessesMax + 2, "f"),
-    commit: newestWide,
-  };
-  return { success, report: success };
+/** As many commits as a reading weighs beneath an action's newest, each named by a digit of its own. */
+function weighable(): readonly GitObjectId[] {
+  const commits = [..."0123456789abcdef"].map(commitOf);
+  assert.equal(commits.length, actionReachEarlierSuccessesMax);
+  return commits;
 }
 
-/** Drives a reading over `weighedInFull` and whatever row a case puts past it, the newest success answered no. */
-function readingOverFull(past: readonly ActionReachEarlierSuccess[]): {
+/** Successes one beneath another, newest first, at the commits given in order, each reported since the ticket landed unless a case says the last was not. */
+function successesAt(
+  commits: readonly GitObjectId[],
+  lastSinceLanded = true,
+): readonly ActionReachEarlierSuccess[] {
+  return commits.map((commit, at) => ({
+    observation: { ...succeeded(commits.length - at, "0"), commit },
+    sinceLanded: lastSinceLanded || at < commits.length - 1,
+  }));
+}
+
+/** What a walk came to: its mark and each commit it asked about, in order. */
+interface Walk {
   readonly mark: ActionReachMark;
-  readonly asked: number;
-} {
-  const { rows, answers } = weighedInFull();
-  const known = new Map<GitObjectId, CommitAncestry>([
-    [newestWide, "NotAncestor"],
-  ]);
-  let asked = 0;
-  for (let turn = 0; turn < actionReachEarlierReadMax + 8; turn += 1) {
-    const next = actionReachNext({
-      newest: newestOverFull(),
-      earlier: [...rows, ...past],
-      answers: known,
-    });
+  readonly asked: readonly GitObjectId[];
+}
+
+/**
+ * Drives a reading over the rows given as its earlier successes, beneath a
+ * newest success at `newestWide` and, where a case says so, a newer failure at
+ * `failedWide`. Every commit asked about is answered as not holding the
+ * ticket's but those `holding` names, and a reading that takes more turns than
+ * its newest reports and the commits it may weigh allow fails the case.
+ */
+function walked(
+  rows: readonly ActionReachEarlierSuccess[],
+  chosen: { failed?: boolean; holding?: readonly GitObjectId[] } = {},
+): Walk {
+  const success = { ...succeeded(rows.length + 1, "0"), commit: newestWide };
+  const failure = { ...failed(rows.length + 2, "0"), commit: failedWide };
+  const newest: ActionReachNewest =
+    chosen.failed === true
+      ? { success, report: failure }
+      : { success, report: success };
+  const known = new Map<GitObjectId, CommitAncestry>();
+  const asked: GitObjectId[] = [];
+  for (let turn = 0; turn < actionReachEarlierSuccessesMax + 3; turn += 1) {
+    const next = actionReachNext({ newest, earlier: rows, answers: known });
     if (next.next === "Marked") return { mark: next.mark, asked };
     if (next.next !== "Ask")
       return assert.fail("the successes were read twice");
-    const answer = answers[next.tip.slice(0, 1)];
-    assert.ok(answer !== undefined, "a commit past the walk was asked about");
-    asked += 1;
-    known.set(next.tip, answer);
+    asked.push(next.tip);
+    known.set(
+      next.tip,
+      chosen.holding?.includes(next.tip) === true ? "Ancestor" : "NotAncestor",
+    );
   }
   return assert.fail("the reading did not end");
 }
 
-test("as many successes weighed as a reading may, with one more since the ticket landed beneath them, is unknown and never not yet", () => {
-  assert.deepEqual(readingOverFull([beneath(1, "a")]), {
+test("as many commits weighed as a reading may, with a success at one more since the ticket landed beneath them, is unknown and never not yet", () => {
+  assert.deepEqual(walked(successesAt([...weighable(), pastWide])), {
     mark: { reach: "Unknown" },
-    asked: actionReachEarlierSuccessesMax,
+    asked: [newestWide, ...weighable()],
   });
 });
 
-test("the walk ending on its last row, or on one from before the ticket landed, is not yet", () => {
-  assert.deepEqual(readingOverFull([]), {
+test("the walk ending on its last row, or on a commit past those it may weigh reported before the ticket landed, is not yet", () => {
+  assert.deepEqual(walked(successesAt(weighable())), {
     mark: { reach: "NotYet" },
-    asked: actionReachEarlierSuccessesMax,
+    asked: [newestWide, ...weighable()],
   });
-  assert.deepEqual(readingOverFull([beneath(1, "a", false)]), {
+  assert.deepEqual(walked(successesAt([...weighable(), pastWide], false)), {
     mark: { reach: "NotYet" },
-    asked: actionReachEarlierSuccessesMax,
+    asked: [newestWide, ...weighable()],
   });
 });
 
-test("the success past the walk is never weighed, though its commit holds the ticket's", () => {
-  const { rows } = weighedInFull();
-  const past = { ...beneath(1, "a"), commit: asGitObjectId("e".repeat(64)) };
-  const row = {
-    ...past,
-    observation: { ...past.observation, commit: past.commit },
-  };
-  const answers = new Map<GitObjectId, CommitAncestry>([
-    [newestWide, "NotAncestor"],
-    [past.commit, "Ancestor"],
-    ...rows.map((each): [GitObjectId, CommitAncestry] => [
-      each.observation.commit,
-      "NotAncestor",
-    ]),
-  ]);
+test("the commit past those a reading may weigh is never weighed, though it holds the ticket's", () => {
   assert.deepEqual(
-    actionReachNext({
-      newest: newestOverFull(),
-      earlier: [...rows, row],
-      answers,
-    }),
-    { next: "Marked", mark: { reach: "Unknown" } },
+    walked(successesAt([...weighable(), pastWide]), { holding: [pastWide] }),
+    { mark: { reach: "Unknown" }, asked: [newestWide, ...weighable()] },
   );
+});
+
+test("a commit the walk weighed is passed over wherever it succeeded again, so as many commits as a reading may weigh are each weighed however often each is reported", () => {
+  const commits = weighable();
+  assert.deepEqual(walked(successesAt([...commits, ...commits, ...commits])), {
+    mark: { reach: "NotYet" },
+    asked: [newestWide, ...commits],
+  });
+  const last = successesAt([...commits, ...commits, pastWide]);
+  assert.deepEqual(walked(last, { holding: [pastWide] }), {
+    mark: { reach: "Unknown" },
+    asked: [newestWide, ...commits],
+  });
+});
+
+test("a success at the commit of the newest success, or of the failure after it, costs the walk none of the commits it may weigh", () => {
+  assert.deepEqual(walked(successesAt([newestWide, ...weighable()])), {
+    mark: { reach: "NotYet" },
+    asked: [newestWide, ...weighable()],
+  });
+  assert.deepEqual(
+    walked(successesAt([newestWide, failedWide, ...weighable()]), {
+      failed: true,
+    }),
+    {
+      mark: { reach: "NotYet" },
+      asked: [newestWide, failedWide, ...weighable()],
+    },
+  );
+});
+
+/** As many successes as a reading walks, every one at the commit of the newest. */
+function walkedInFull(): readonly GitObjectId[] {
+  return Array.from({ length: actionReachEarlierRowsMax }, () => newestWide);
+}
+
+test("the row past those a reading walks is never weighed though its commit holds the ticket's, and one reported since the ticket landed is unknown", () => {
+  assert.deepEqual(
+    walked(successesAt([...walkedInFull(), pastWide]), { holding: [pastWide] }),
+    { mark: { reach: "Unknown" }, asked: [newestWide] },
+  );
+});
+
+test("a walk that ends on the last row it may walk, or with the row past it reported before the ticket landed, is not yet", () => {
+  assert.deepEqual(walked(successesAt(walkedInFull())), {
+    mark: { reach: "NotYet" },
+    asked: [newestWide],
+  });
+  assert.deepEqual(walked(successesAt([...walkedInFull(), pastWide], false)), {
+    mark: { reach: "NotYet" },
+    asked: [newestWide],
+  });
+});
+
+test("the last row a reading may walk is weighed", () => {
+  const rows = successesAt([...walkedInFull().slice(1), pastWide]);
+  assert.deepEqual(walked(rows, { holding: [pastWide] }), {
+    mark: { reach: "RolledBack", observation: rows.at(-1)?.observation },
+    asked: [newestWide, pastWide],
+  });
 });
 
 const none = new Map<GitObjectId, CommitAncestry>();
