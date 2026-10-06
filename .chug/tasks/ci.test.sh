@@ -383,6 +383,25 @@ set -e
 check "the runbook's page selects the suites that read it" 0 "$RC" "stub check-source"
 check "the runbook's page skips the database" 0 "$RC" "check-postgres: SKIPPED"
 
+# The action directory's page is asked for the same way: the unit suites put
+# the example it gives through the importer.
+stub_repo 0
+mkdir -p "$R/.chug/actions"
+printf '# before\n' > "$R/.chug/actions/README.md"
+git -C "$R" add -A
+git -C "$R" commit -qm baseline
+printf '# after\n' > "$R/.chug/actions/README.md"
+git -C "$R" add -A
+git -C "$R" commit -qm actions
+OUT="$WORK/.out"
+set +e
+(cd "$R" && CHUG_CI_BASE=HEAD^ CHUG_CI_SHELL_SUITES=0 \
+	./.chug/tasks/ci.sh) >"$OUT" 2>&1
+RC=$?
+set -e
+check "the action directory's page selects the suites that read it" 0 "$RC" "stub check-source"
+check "the action directory's page skips the database" 0 "$RC" "check-postgres: SKIPPED"
+
 # The vendored package is the model's text and the corpus the harness replays,
 # so a change to it reaches the replay gates and the pin, not only Quint.
 stub_repo 0
