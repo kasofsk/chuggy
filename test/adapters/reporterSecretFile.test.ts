@@ -2,6 +2,10 @@
  * The read every reporter scheme takes its secret through, against real
  * files: what a regular file answers, and every other thing a path can name.
  *
+ * NO REAL FILE COMES BACK SHORT WHEN A CASE NEEDS IT TO. How a file's reads are
+ * joined is therefore asked of a file a case scripts, which holds bytes as a
+ * real one does and brings a few of them to a read.
+ *
  * A PIPE IS THE CASE THAT CANNOT BE LEFT TO FAIL BY ITSELF. Opening one nobody
  * writes to waits for a writer that never comes, so the case allows the read a
  * span, and then opens the pipe's other end so that a read which did wait
@@ -29,6 +33,8 @@ import { test, type TestContext } from "node:test";
 import {
   reporterSecretBytes,
   reporterSecretBytesMax,
+  reporterSecretBytesRead,
+  type ReporterSecretReadable,
 } from "../../src/adapters/reporters/secretFile.ts";
 
 function directory(t: TestContext): string {
@@ -93,6 +99,81 @@ test("a file is read to the bound and is nothing past it", async (t) => {
     ),
     undefined,
   );
+});
+
+/** A file holding `written` whose reads each bring at most `bytesMax` bytes of what was asked, every position asked from recorded. */
+function fileBringing(
+  written: Buffer,
+  bytesMax: number,
+  asked: number[],
+): ReporterSecretReadable {
+  return {
+    read: (buffer, offset, length, position) => {
+      asked.push(position);
+      const until = Math.min(
+        position + Math.min(length, bytesMax),
+        written.length,
+      );
+      const bytesRead =
+        position < until ? written.copy(buffer, offset, position, until) : 0;
+      return Promise.resolve({ bytesRead });
+    },
+  };
+}
+
+/** Bytes that differ along their length, so a part of them is never mistaken for the whole. */
+function bytesOf(length: number): Buffer {
+  return Buffer.from(Array.from({ length }, (_, index) => index % 251));
+}
+
+test("a file whose reads come back short is read to its end, each read taking up where the last stopped", async () => {
+  const written = bytesOf(10);
+  const asked: number[] = [];
+  assert.deepEqual(
+    await reporterSecretBytesRead(fileBringing(written, 4, asked)),
+    written,
+  );
+  assert.deepEqual(asked, [0, 4, 8, 10]);
+  for (const bytesMax of [
+    1,
+    reporterSecretBytesMax - 1,
+    reporterSecretBytesMax,
+  ])
+    assert.deepEqual(
+      await reporterSecretBytesRead(
+        fileBringing(bytesOf(reporterSecretBytesMax), bytesMax, []),
+      ),
+      bytesOf(reporterSecretBytesMax),
+      `a file at the bound, ${String(bytesMax)} bytes a read`,
+    );
+  assert.deepEqual(
+    await reporterSecretBytesRead(fileBringing(Buffer.alloc(0), 4, [])),
+    Buffer.alloc(0),
+    "a file holding nothing",
+  );
+});
+
+test("a file past the bound is nothing however its reads come back, and never its beginning", async () => {
+  for (const past of [1, 2, reporterSecretBytesMax])
+    for (const bytesMax of [
+      1,
+      reporterSecretBytesMax - 1,
+      reporterSecretBytesMax,
+      reporterSecretBytesMax + 1,
+    ]) {
+      const asked: number[] = [];
+      assert.equal(
+        await reporterSecretBytesRead(
+          fileBringing(bytesOf(reporterSecretBytesMax + past), bytesMax, asked),
+        ),
+        undefined,
+        `${String(past)} past the bound, ${String(bytesMax)} bytes a read`,
+      );
+      assert.ok(
+        asked.length <= reporterSecretBytesMax + 1,
+        "no more reads than bytes the buffer holds",
+      );
+    }
 });
 
 test("a path that names no file is nothing", async (t) => {
