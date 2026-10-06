@@ -1,5 +1,5 @@
 /**
- * The selector settings page: what the project runs under, the section a reader
+ * The lead settings page: what the project runs under, the section a reader
  * opens one at a time, and what a write the revision moved under does.
  *
  * THE CONFLICT CASE IS THE ONE WITH TEETH. The settings are written whole, so a
@@ -8,8 +8,9 @@
  * the settings that moved, and the section names that revision and stops.
  *
  * EVERY WRITE HERE IS THE WHOLE OVERRIDE SET, so a case that presses one button
- * asserts the whole body: the strip, a section's Save and a Restore each carry
- * every override the page draws no box for or delete it.
+ * asserts the whole body: a section's Save and a Restore each carry every
+ * override the page draws no box for or delete it. The strip's own press is
+ * covered beside `leadPage.test.tsx`, where it now lives.
  */
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
@@ -24,22 +25,22 @@ import {
 import { afterEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
-import { SelectorSettingsPage } from "../app/browser/SelectorSettingsPage.tsx";
-import { leadDispatchesMax } from "../../../src/contract/http.ts";
-import { selectorProjectOverridesSchema } from "../../../src/contract/requests.ts";
-import { selectorSettingsLimitNames } from "../app/core/selectorSettingsForm.ts";
+import { LeadSettingsPage } from "../../app/browser/settings/LeadSettingsPage.tsx";
+import { leadDispatchesMax } from "../../../../src/contract/http.ts";
+import { selectorProjectOverridesSchema } from "../../../../src/contract/requests.ts";
+import { selectorSettingsLimitNames } from "../../app/core/selectorSettingsForm.ts";
 import {
   answer,
   openedStream,
   ScreenHarness,
   settled,
   turned,
-} from "./screenHarness.tsx";
-import { leadBody, leadPartition } from "./leadFixture.ts";
-import { styleless } from "./styleless.ts";
-import type * as BrowserPorts from "../app/browser/ports.ts";
+} from "../screenHarness.tsx";
+import { leadBody, leadPartition } from "../leadFixture.ts";
+import { styleless } from "../styleless.ts";
+import type * as BrowserPorts from "../../app/browser/ports.ts";
 
-vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
+vi.mock("../../app/browser/ports.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof BrowserPorts>()),
   sleepMs: () => Promise.resolve(),
 }));
@@ -165,7 +166,7 @@ async function drawSettings(
       client={new QueryClient()}
       transport={openedStream().ports.fetch}
     >
-      <SelectorSettingsPage />
+      <LeadSettingsPage />
     </ScreenHarness>,
   );
   await settled();
@@ -220,7 +221,7 @@ test("a project with a lead is told nothing of the hand", async () => {
 test("the top bar names the revision the settings were read at", async () => {
   await drawSettings();
   const revision = screen.getByRole("heading", {
-    name: "Selector",
+    name: "Lead",
   }).nextElementSibling;
   expect(revision?.textContent).toBe("Revision 12");
 });
@@ -330,121 +331,6 @@ test("saving a section writes every override whole, under the read revision", as
   });
   expect(within(sectionOf("North Star")).getByText("Written · 13"));
   expect(screen.queryByRole("button", { name: "Save changes" })).toBeNull();
-});
-
-/**
- * THE STRIP IS A WRITE, NOT A SETTING. Mode and Dispatch are operational, so
- * each has one press and no edit mode — and because the write replaces the whole
- * override set, that press has to carry every other override the project has.
- */
-test("Pause writes the paused mode beside every other override", async () => {
-  const server = await drawSettings({
-    answering: () => ({ body: settingsBody(13, {}), status: 200 }),
-    read: settingsBody(12, {
-      northStar: "ship the console",
-      toolAllowlist: ["Read"],
-    }),
-  });
-  await turned(() => {
-    press("Pause");
-  });
-  await settled();
-  expect(server.written()).toStrictEqual({
-    expectedRevision: 12,
-    overrides: {
-      northStar: "ship the console",
-      toolAllowlist: ["Read"],
-      mode: "Paused",
-    },
-  });
-});
-
-/**
- * A PROJECT THAT WAS NEVER PAUSED OF ITS OWN MUST NOT ACQUIRE AN OVERRIDE BY
- * BEING RESUMED. Writing `Running` where the installation already runs pins the
- * project against an installation-wide pause it should have followed.
- */
-test("Resume clears the override where the installation is running", async () => {
-  const server = await drawSettings({
-    answering: () => ({ body: settingsBody(13, {}), status: 200 }),
-    read: settingsBody(12, { mode: "Paused" }, { mode: "Paused" }),
-  });
-  await turned(() => {
-    press("Resume");
-  });
-  await settled();
-  expect(server.written()).toStrictEqual({
-    expectedRevision: 12,
-    overrides: {},
-  });
-});
-
-/** Where the installation is paused, clearing would leave the project paused by
- * inheritance, so Resume writes the mode instead. */
-test("Resume writes Running where the installation is paused", async () => {
-  const server = await drawSettings({
-    answering: () => ({ body: settingsBody(13, {}), status: 200 }),
-    read: settingsBody(12, {}, { mode: "Paused", installationMode: "Paused" }),
-  });
-  await turned(() => {
-    press("Resume");
-  });
-  await settled();
-  expect(server.written()).toStrictEqual({
-    expectedRevision: 12,
-    overrides: { mode: "Running" },
-  });
-});
-
-test("Require approval writes the dispatch mode the other press undoes", async () => {
-  const server = await drawSettings({
-    answering: () => ({ body: settingsBody(13, {}), status: 200 }),
-    read: settingsBody(12, {}),
-  });
-  await turned(() => {
-    press("Require approval");
-  });
-  await settled();
-  expect(server.written()).toStrictEqual({
-    expectedRevision: 12,
-    overrides: { dispatchMode: "ApprovalRequired" },
-  });
-});
-
-/** The strip has no edit mode of its own, so its press cannot be told apart
- * from a section's Save except by disabling it while one is open — the one
- * way an open section's unsaved text could otherwise ride a press about
- * something else entirely. */
-test("the strip is disabled while a section is open", async () => {
-  const server = await drawSettings();
-  await turned(() => {
-    edit("North Star");
-  });
-  await turned(() => {
-    fireEvent.change(box("North Star"), {
-      target: { value: "SECRET UNSAVED DRAFT" },
-    });
-  });
-  expect(
-    screen.getByRole("button", { name: "Pause" }).hasAttribute("disabled"),
-  ).toBe(true);
-  fireEvent.click(screen.getByRole("button", { name: "Pause" }));
-  await settled();
-  expect(server.writes()).toHaveLength(0);
-});
-
-/** The strip owns its own write, so a refusal is said beside the strip and
- * not silently dropped where no section is reading for it. */
-test("a strip press that fails says so beside the strip", async () => {
-  const server = await drawSettings({
-    answering: () => ({ body: {}, status: 500 }),
-  });
-  await turned(() => {
-    press("Pause");
-  });
-  await settled();
-  expect(screen.getByText(/Failed/)).toBeDefined();
-  expect(server.writes()).toHaveLength(1);
 });
 
 /** A limit is read in the unit a person states it in, and never in the wire's

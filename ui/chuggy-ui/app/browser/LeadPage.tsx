@@ -24,8 +24,9 @@ import type {
   LeadReadResponse,
   LeadResponse,
   LeadTurnResponse,
+  SelectorProjectSettingsResponse,
 } from "../../../../src/contract/responses.ts";
-import { apiLead } from "../core/apiRoutes.ts";
+import { apiLead, apiSelectorSettings } from "../core/apiRoutes.ts";
 import { conversationExchanges } from "../core/conversation.ts";
 import {
   costFigure,
@@ -57,15 +58,21 @@ import {
   sessionStateTone,
   sessionTurnStateTone,
 } from "../core/tones.ts";
-import { usePanelList } from "./api.ts";
+import { usePanelList, usePanelResource } from "./api.ts";
 import { Conversation } from "./conversation/Conversation.tsx";
-import { DataPanel } from "./DataPanel.tsx";
+import { DataPanel, PanelUnready } from "./DataPanel.tsx";
 import { useNowMs } from "./Freshness.tsx";
 import { LeadDecisions } from "./lead/LeadDecisions.tsx";
 import { LeadInquiries, useInquiryBoxes } from "./lead/LeadInquiries.tsx";
 import type { InquiryBoxesHeld } from "./lead/LeadInquiries.tsx";
 import { LeadRefusals } from "./lead/LeadRefusals.tsx";
 import { LeadNote, useLeadTranscript } from "./lead/LeadTranscript.tsx";
+import { SelectorStrip } from "./lead/SelectorStrip.tsx";
+import {
+  selectorSettingsResource,
+  useSelectorSettingsDraft,
+  useSelectorSettingsWriting,
+} from "./selectorSettingsWriting.ts";
 import {
   SessionRunnerNotice,
   useSessionRunnerShort,
@@ -136,6 +143,49 @@ function LeadTopBar(props: {
         </span>
       </div>
     </TopBarSlot>
+  );
+}
+
+/**
+ * The strip once its own read is ready: a draft seeded from it and the one
+ * door its press writes through, held here rather than above so a loading or
+ * failed read says so in the strip's own place beside the standing.
+ */
+function LeadSelectorStripReady(props: {
+  readonly partition: PartitionIdentity;
+  readonly settings: SelectorProjectSettingsResponse;
+}): ReactNode {
+  const held = useSelectorSettingsDraft(props.settings);
+  const writing = useSelectorSettingsWriting<"strip">(props.partition, held);
+  return (
+    <SelectorStrip
+      draft={held.draft}
+      settings={props.settings}
+      editable
+      busy={writing.saved.saved === "Writing"}
+      saved={writing.saved}
+      onPress={(overrides) => {
+        writing.write("strip", overrides, () => undefined);
+      }}
+    />
+  );
+}
+
+/** What the selector is doing for this project right now, which leads the page
+ * because a paused selector is the first thing an operator needs to see. */
+function LeadSelectorStrip(props: {
+  readonly partition: PartitionIdentity;
+}): ReactNode {
+  const partition = props.partition;
+  const state = usePanelResource(
+    partition,
+    "Project",
+    selectorSettingsResource,
+    (ports) => apiSelectorSettings(ports, partition),
+  );
+  if (state.state !== "Ready") return <PanelUnready state={state} />;
+  return (
+    <LeadSelectorStripReady partition={partition} settings={state.value} />
   );
 }
 
@@ -266,6 +316,7 @@ function LeadBody(props: {
       {lead === undefined ? null : (
         <LeadTopBar lead={lead} runner={props.runner} />
       )}
+      <LeadSelectorStrip partition={props.partition} />
       <LeadDetails
         partition={props.partition}
         state={props.state}
@@ -306,15 +357,20 @@ export function LeadPage(): ReactNode {
       runner === undefined ? undefined : (
         <SessionRunnerNotice partition={partition} short={runner} />
       );
-    return projectLeadPresent(read) === false ? (
-      <EmptyState
-        label="No lead"
-        variant="page"
-        detail="Tickets are dispatched by hand"
-        action={action}
-      />
-    ) : (
-      <EmptyState label="No lead" variant="page" action={action} />
+    return (
+      <>
+        <LeadSelectorStrip partition={partition} />
+        {projectLeadPresent(read) === false ? (
+          <EmptyState
+            label="No lead"
+            variant="page"
+            detail="Tickets are dispatched by hand"
+            action={action}
+          />
+        ) : (
+          <EmptyState label="No lead" variant="page" action={action} />
+        )}
+      </>
     );
   }
   return (

@@ -51,6 +51,7 @@ import {
   leadPartition,
   leadRefusals,
   leadRouteAnswer,
+  leadSelectorSettingsBody,
   leadSession,
   leadSessionResource,
   leadStream,
@@ -126,6 +127,43 @@ async function drawLead(
   });
   vi.stubGlobal("fetch", api.fetch);
   return mountLead();
+}
+
+/** What a strip press wrote, over a server that otherwise answers from the
+ * held state like `drawLead`'s own. */
+interface LeadSelectorWrites {
+  readonly written: () => unknown;
+  readonly writes: () => readonly unknown[];
+}
+
+/** The page over a server whose write of the selector settings the case
+ * decides, so a strip press can be asserted on the body it sent. */
+async function drawLeadSelector(
+  holding: () => LeadServed,
+  answering: () => {
+    readonly body: unknown;
+    readonly status: number;
+  } = () => ({ body: leadSelectorSettingsBody(13), status: 200 }),
+): Promise<LeadSelectorWrites> {
+  const writes: unknown[] = [];
+  const fetching = ((
+    url: string,
+    init?: { readonly method?: string; readonly body?: string },
+  ) => {
+    if (init?.method === "PUT" && url.includes("/selector-settings")) {
+      writes.push(JSON.parse(init.body ?? "null"));
+      const found = answering();
+      return Promise.resolve(answer(found.body, found.status));
+    }
+    const found = leadRouteAnswer(url, holding());
+    return Promise.resolve(answer(found.body, found.status));
+  }) as unknown as typeof fetch;
+  vi.stubGlobal("fetch", fetching);
+  await mountLead();
+  return {
+    written: () => writes[writes.length - 1],
+    writes: () => writes,
+  };
 }
 
 const opening: LeadServed = {
@@ -246,6 +284,104 @@ test("the bar's chips wrap on their own rather than crowd the title", async () =
     name: "Lead",
   }).nextElementSibling;
   expect(chips?.className).toContain("flex-wrap");
+});
+
+/**
+ * THE STRIP LEADS THE PAGE. Mode and Dispatch are operational, so each has one
+ * press and no edit mode — and because the write replaces the whole override
+ * set, that press has to carry every other override the project has.
+ */
+test("Pause writes the paused mode beside every other override", async () => {
+  const server = await drawLeadSelector(
+    () => opening,
+    () => ({
+      body: leadSelectorSettingsBody(13),
+      status: 200,
+    }),
+  );
+  await turned(() => {
+    fireEvent.click(screen.getByRole("button", { name: "Pause" }));
+  });
+  await settled();
+  expect(server.written()).toStrictEqual({
+    expectedRevision: 12,
+    overrides: { mode: "Paused" },
+  });
+});
+
+/**
+ * A PROJECT THAT WAS NEVER PAUSED OF ITS OWN MUST NOT ACQUIRE AN OVERRIDE BY
+ * BEING RESUMED. Writing `Running` where the installation already runs pins the
+ * project against an installation-wide pause it should have followed.
+ */
+test("Resume clears the override where the installation is running", async () => {
+  const server = await drawLeadSelector(() => ({
+    ...opening,
+    settings: leadSelectorSettingsBody(
+      12,
+      { mode: "Paused" },
+      { mode: "Paused" },
+    ),
+  }));
+  await turned(() => {
+    fireEvent.click(screen.getByRole("button", { name: "Resume" }));
+  });
+  await settled();
+  expect(server.written()).toStrictEqual({
+    expectedRevision: 12,
+    overrides: {},
+  });
+});
+
+/** Where the installation is paused, clearing would leave the project paused by
+ * inheritance, so Resume writes the mode instead. */
+test("Resume writes Running where the installation is paused", async () => {
+  const server = await drawLeadSelector(() => ({
+    ...opening,
+    settings: leadSelectorSettingsBody(
+      12,
+      {},
+      { mode: "Paused", installationMode: "Paused" },
+    ),
+  }));
+  await turned(() => {
+    fireEvent.click(screen.getByRole("button", { name: "Resume" }));
+  });
+  await settled();
+  expect(server.written()).toStrictEqual({
+    expectedRevision: 12,
+    overrides: { mode: "Running" },
+  });
+});
+
+test("Require approval writes the dispatch mode the other press undoes", async () => {
+  const server = await drawLeadSelector(() => opening);
+  await turned(() => {
+    fireEvent.click(screen.getByRole("button", { name: "Require approval" }));
+  });
+  await settled();
+  expect(server.written()).toStrictEqual({
+    expectedRevision: 12,
+    overrides: { dispatchMode: "ApprovalRequired" },
+  });
+});
+
+/** The strip owns its own write, so a refusal is said beside the strip and
+ * not silently dropped where nothing else on the page is reading for it. */
+test("a strip press that fails says so beside the strip", async () => {
+  const server = await drawLeadSelector(
+    () => opening,
+    () => ({
+      body: {},
+      status: 500,
+    }),
+  );
+  await turned(() => {
+    fireEvent.click(screen.getByRole("button", { name: "Pause" }));
+  });
+  await settled();
+  expect(screen.getByText(/Failed/)).toBeDefined();
+  expect(server.writes()).toHaveLength(1);
 });
 
 test("the mailbox tail draws what the pod measured of each turn", async () => {
@@ -650,6 +786,22 @@ test("a project with no lead is a page saying so and how its tickets run, not fi
   expect(heading.nextElementSibling?.textContent).toBe(
     "Tickets are dispatched by hand",
   );
+});
+
+/**
+ * THE SELECTOR'S SETTINGS SAY HOW A LEAD WOULD DISPATCH, NOT WHETHER THIS
+ * PROJECT HAS ONE. A project with no lead still has settings a strip reads and
+ * writes, so the strip draws from its own independent read rather than from
+ * the lead's presence.
+ */
+test("a project with no lead still draws the strip that leads the page", async () => {
+  leadlessServed();
+  await mountLead();
+  expect(screen.getByRole("heading", { name: "No lead" })).toBeDefined();
+  expect(screen.getByRole("button", { name: "Pause" })).toBeDefined();
+  expect(
+    screen.getByRole("button", { name: "Require approval" }),
+  ).toBeDefined();
 });
 
 /** The lead waits on any of the project's runners, so where none is live the

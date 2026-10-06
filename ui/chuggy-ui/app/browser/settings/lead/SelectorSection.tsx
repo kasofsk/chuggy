@@ -8,14 +8,14 @@
 
 import type { ReactNode } from "react";
 
-import { instantFigure } from "../../core/figures.ts";
-import type { SelectorSettingsSaved } from "../../core/selectorSettingsForm.ts";
-import { useNowMs } from "../Freshness.tsx";
-import { Figure } from "../ui/Figure.tsx";
-import { Identity } from "../ui/Identity.tsx";
-import { Notice } from "../ui/Notice.tsx";
-import { Pill } from "../ui/Pill.tsx";
-import { SettingsSection } from "../ui/SettingsSection.tsx";
+import { instantFigure } from "../../../core/figures.ts";
+import type { SelectorSettingsSaved } from "../../../core/selectorSettingsForm.ts";
+import { useNowMs } from "../../Freshness.tsx";
+import { Figure } from "../../ui/Figure.tsx";
+import { Identity } from "../../ui/Identity.tsx";
+import { Notice } from "../../ui/Notice.tsx";
+import { Pill } from "../../ui/Pill.tsx";
+import { SettingsSection } from "../../ui/SettingsSection.tsx";
 
 import "./selector.css";
 

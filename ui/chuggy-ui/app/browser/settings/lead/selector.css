@@ -1,7 +1,7 @@
-/* The selector settings page: the status strip, the shape a prose setting is
-   read in, the limits grid and the revisions list. Everything a utility can
-   state is stated as one; what is here is the grids and the states a data
-   attribute carries. */
+/* The lead's settings and the strip that leads its own page: the status
+   strip, the shape a prose setting is read in, the limits grid and the
+   revisions list. Everything a utility can state is stated as one; what is
+   here is the grids and the states a data attribute carries. */
 
 @layer page {
   .selector-strip {
