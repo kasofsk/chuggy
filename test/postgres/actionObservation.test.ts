@@ -36,6 +36,7 @@ import {
   actionReportDetailCharsMax,
   actionReportLinkCharsMax,
   allActionReportOutcomes,
+  isActionReportLink,
 } from "../../src/contract/actionReport.ts";
 import {
   actionReporterNameCharsMax,
@@ -54,6 +55,10 @@ import {
   asTenantId,
   type Partition,
 } from "../../src/interpreter/projectStore.ts";
+import {
+  linkCredentialRead,
+  linksWrittenEveryWay,
+} from "../contract/actionReportLinkCases.ts";
 import {
   postgresHarnessDenial,
   postgresHarnessOpen,
@@ -630,6 +635,8 @@ test("the door records a row at each bound a report is read under", async () => 
     { commit: first, link: link.slice(0, actionReportLinkCharsMax) },
     { commit: second, link: "https://example.test/@run?at=@#@" },
     { commit: first, link: "https://x" },
+    { commit: second, link: "https://example.test?at=@" },
+    { commit: first, link: "https://example.test#@" },
   ];
   for (const said of accepted)
     assert.equal(
@@ -667,12 +674,20 @@ test("the door refuses each value a row may not hold, by the bound it breaks", a
     [{ link: link.slice(0, actionReportLinkCharsMax + 1) }, "link_is_https"],
     [{ link: "http://example.test/" }, "link_is_https"],
     [{ link: "example.test/run" }, "link_is_https"],
+    [{ link: "see-https://example.test/" }, "link_is_https"],
     [{ link: "https://" }, "link_is_https"],
     [{ link: "https://example.test/a run" }, "link_is_https"],
     [{ link: "https://example.test/é" }, "link_is_https"],
     [{ link: "https://example.test/\n" }, "link_is_https"],
     [{ link: "https://user@example.test/" }, "link_is_https"],
     [{ link: "https://user:secret@example.test/" }, "link_is_https"],
+    [{ link: "https://@example.test/" }, "link_is_https"],
+    [{ link: "https:///example.test/" }, "link_is_https"],
+    [{ link: "https:///user:secret@example.test/" }, "link_is_https"],
+    [{ link: "https://\\/user:secret@example.test/" }, "link_is_https"],
+    [{ link: "https://example.test\\run" }, "link_is_https"],
+    [{ link: "https://?at=1" }, "link_is_https"],
+    [{ link: "https://#top" }, "link_is_https"],
   ] as const)
     await assert.rejects(
       recording(apiPool, partition, "build", said),
@@ -688,6 +703,61 @@ test("the door refuses each value a row may not hold, by the bound it breaks", a
   assert.equal(
     (await recording(apiPool, partition, null)).rows[0]?.recorded,
     "Undeclared",
+  );
+  assert.deepEqual(await logged(partition, "build"), []);
+});
+
+/** Which of the links given the relation holds, each tried as a row of its own in a transaction that is rolled back. */
+async function linksHeld(
+  partition: Partition,
+  links: readonly string[],
+): Promise<ReadonlySet<string>> {
+  const client = await harness.pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(
+      `CREATE FUNCTION pg_temp.links_held(in_tenant text, in_project text, in_links text[])
+       RETURNS SETOF text LANGUAGE plpgsql AS $$
+       DECLARE tried text; at bigint := 0;
+       BEGIN
+         FOREACH tried IN ARRAY in_links LOOP
+           at := at + 1;
+           BEGIN
+             INSERT INTO action_observation
+               (tenant,project,action,ordinal,repository_commit,outcome,reporter,link)
+             VALUES(in_tenant,in_project,'build',at,repeat('a',40),'Failed','rig-build',tried);
+             RETURN NEXT tried;
+           EXCEPTION WHEN check_violation THEN NULL;
+           END;
+         END LOOP;
+       END $$`,
+    );
+    const held = await client.query<{ held: string }>(
+      "SELECT pg_temp.links_held($1,$2,$3) AS held",
+      [partition.tenant, partition.project, [...links]],
+    );
+    return new Set(held.rows.map((row) => row.held));
+  } finally {
+    await client.query("ROLLBACK").catch(() => undefined);
+    client.release();
+  }
+}
+
+test("the relation holds every link a report may carry and none that reads as holding a credential, however its host is approached", async () => {
+  const { partition } = await declaringProject("links", ["build"]);
+  const held = await linksHeld(partition, linksWrittenEveryWay);
+  const carried = linksWrittenEveryWay.filter(isActionReportLink);
+
+  assert.ok(carried.length > 0, "some link written every way is carried");
+  assert.deepEqual(
+    carried.filter((link) => !held.has(link)),
+    [],
+    "a link the document admits is one a row holds",
+  );
+  assert.deepEqual(
+    [...held].filter((link) => linkCredentialRead(link) === true),
+    [],
+    "no row holds a credential",
   );
   assert.deepEqual(await logged(partition, "build"), []);
 });

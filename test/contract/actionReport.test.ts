@@ -12,6 +12,10 @@ import {
   allActionReportResults,
   isActionReportLink,
 } from "../../src/contract/actionReport.ts";
+import {
+  linkCredentialRead,
+  linksWrittenEveryWay,
+} from "./actionReportLinkCases.ts";
 
 const least = {
   version: actionReportVersion,
@@ -174,6 +178,7 @@ test("a link is https, bounded, written as it travels and carries no credential"
     "ftp://example.test/",
     "example.test/run",
     "//example.test/run",
+    "see-https://example.test/",
     "javascript:alert(1)",
     "https://",
     "",
@@ -187,6 +192,12 @@ test("a link is https, bounded, written as it travels and carries no credential"
     "https://:secret@example.test/",
     "https://@example.test/",
     "https://example.test\\@elsewhere.test/",
+    "https://example.test\\run",
+    "https:///example.test/",
+    "https:///user:secret@example.test/",
+    "https:////user@example.test/",
+    "https://\\/user:secret@example.test/",
+    "https://\\\\user:secret@example.test/",
     "https://[",
     "https://%zz/",
     "https://:443/",
@@ -196,11 +207,16 @@ test("a link is https, bounded, written as it travels and carries no credential"
   }
 });
 
-test("no link a report may carry reads as holding a credential", () => {
-  for (const link of linksAdmitted) {
-    const read = new URL(link);
-    assert.equal(read.protocol, "https:", link.slice(0, 80));
-    assert.equal(read.username + read.password, "", link.slice(0, 80));
+test("no link a report may carry reads as holding a credential, however its host is approached", () => {
+  const carried = linksWrittenEveryWay.filter(isActionReportLink);
+  assert.ok(carried.length > 0, "some link written every way is carried");
+  assert.ok(
+    linksWrittenEveryWay.some((link) => linkCredentialRead(link) === true),
+    "some link written every way reads as holding a credential",
+  );
+  for (const link of [...linksAdmitted, ...carried]) {
+    assert.equal(new URL(link).protocol, "https:", link.slice(0, 80));
+    assert.equal(linkCredentialRead(link), false, link.slice(0, 80));
   }
 });
 

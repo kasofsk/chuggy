@@ -1165,7 +1165,16 @@
           "type": "string"
         },
         "link": {
-          "type": "string"
+          "type": "string",
+          "maxLength": 2048,
+          "allOf": [
+            {
+              "pattern": "^[!-~]+$"
+            },
+            {
+              "pattern": "^https:\\/\\/[^/\\\\?#@]+(?:[/?#]|$)"
+            }
+          ]
         }
       },
       "required": ["version", "commit", "outcome"],

@@ -10,12 +10,16 @@
  * action document refuses one.
  *
  * A LINK IS WHAT A PERSON OPENS FROM A TICKET, so it is held to one rule
- * whoever reports it: https, bounded, and carrying no credentials.
+ * whoever reports it: https, bounded, and carrying no credentials. Its host is
+ * written straight after `https://` and runs to the first `/`, `?` or `#`
+ * with no `@` or backslash in it, because a URL parser also finds a host
+ * behind further slashes or a backslash and reads what stands before an `@`
+ * there as a credential. Whether it carries one is then the parser's to say.
  */
 
 import { z } from "zod";
 
-import { isBoundedText, textCodePointsCount } from "./http.ts";
+import { isBoundedText } from "./http.ts";
 
 /** The one document version this tree reads. */
 export const actionReportVersion = 1;
@@ -35,20 +39,34 @@ export const actionReportLinkCharsMax = 2_048;
 /** A commit, at either width git addresses an object at. */
 const actionReportCommit = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u;
 
-/** An https URL written in visible ASCII, as one is on the wire. */
-const actionReportLinkWritten = /^https:\/\/[!-~]+$/u;
+/** Text written in visible ASCII, as a URL is on the wire. */
+const actionReportLinkVisible = /^[!-~]+$/u;
 
-/** An https URL whose authority carries a credential. */
-const actionReportLinkCredential = /^https:\/\/[^/?#]*@/u;
+/** An https URL whose host is written where every reader finds it. */
+const actionReportLinkWritten = /^https:\/\/[^/\\?#@]+(?:[/?#]|$)/u;
+
+/** Whether a URL parser reads the text, and reads no credential in it. */
+function actionReportLinkReadsBare(text: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(text);
+  } catch {
+    return false;
+  }
+  return url.username === "" && url.password === "";
+}
+
+/** A link a report may carry, its bound and its form stated as a published schema states them. */
+const actionReportLinkSchema = z
+  .string()
+  .max(actionReportLinkCharsMax)
+  .regex(actionReportLinkVisible)
+  .regex(actionReportLinkWritten)
+  .refine(actionReportLinkReadsBare);
 
 /** Whether a link is one a report may carry. */
 export function isActionReportLink(text: string): boolean {
-  return (
-    textCodePointsCount(text) <= actionReportLinkCharsMax &&
-    actionReportLinkWritten.test(text) &&
-    !actionReportLinkCredential.test(text) &&
-    URL.canParse(text)
-  );
+  return actionReportLinkSchema.safeParse(text).success;
 }
 
 /**
@@ -68,7 +86,7 @@ export const actionReportDocumentSchema = z.strictObject({
     .string()
     .refine((value) => isBoundedText(value, actionReportDetailCharsMax))
     .optional(),
-  link: z.string().refine(isActionReportLink).optional(),
+  link: actionReportLinkSchema.optional(),
 });
 export type ActionReportDocument = z.infer<typeof actionReportDocumentSchema>;
 

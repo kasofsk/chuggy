@@ -59,8 +59,8 @@ export const migration037: Migration = {
          CHECK (length(detail) BETWEEN 1 AND 1024),
        link text
          CONSTRAINT action_observation_link_is_https
-         CHECK (length(link) <= 2048 AND link ~ '^https://[!-~]+$'
-                AND link !~ '^https://[^/?#]*@'),
+         CHECK (length(link) <= 2048 AND link ~ '^[!-~]+$'
+                AND link ~ '^https://[^/\\\\?#@]+([/?#]|$)'),
        PRIMARY KEY (tenant,project,action,ordinal),
        CONSTRAINT action_observation_names_a_project
          FOREIGN KEY (tenant,project) REFERENCES public.project(tenant,project))`,
