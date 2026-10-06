@@ -1,0 +1,10 @@
+POST /proposed/api/v1/tenants/vteng/projects/chuggy/actions/rig/reports HTTP/1.1
+Host: 172.27.0.3:8080
+User-Agent: Go-http-client/1.1
+Content-Length: 672
+Content-Type: application/json
+Gotk-Component: kustomize-controller
+X-Signature: sha256=5a54eaad20a4bad4eaec337d07e70226205b74345811a571b27a62bb041a9dee
+Accept-Encoding: gzip
+
+{"involvedObject":{"kind":"Kustomization","namespace":"flux-system","name":"chuggy","uid":"e83388c9-0eca-4cbf-b162-700fd5dfaa17","apiVersion":"kustomize.toolkit.fluxcd.io/v1","resourceVersion":"2121"},"severity":"info","timestamp":"2026-10-05T22:45:50Z","message":"Reconciliation finished in 5.115134568s, next run in 5m0s","reason":"ReconciliationSucceeded","metadata":{"commit_status":"update","originRevision":"main@sha1:5c720e5ca64a2fc7cda1bd8b9b2e72132353eac6","revision":"1791240292.0.0@sha256:5d0d8d68b6df6d9cfdea76619883b875793304f3999deef901db4b38cfa3f587"},"reportingController":"kustomize-controller","reportingInstance":"kustomize-controller-568cc69c98-2kbwx"}

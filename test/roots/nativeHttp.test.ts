@@ -33,6 +33,7 @@ import { join } from "node:path";
 import test, { type TestContext } from "node:test";
 import { promisify } from "node:util";
 
+import { fluxSignatureToleranceSecs } from "../../src/adapters/reporters/fluxSignature.ts";
 import { threadLiveLimitsDefault } from "../../src/interpreter/threadLive.ts";
 
 const execute = promisify(execFile);
@@ -1081,11 +1082,12 @@ test("a token of the issuer's language never reaches the session authority", asy
 /**
  * The root's own report service over the reporters its variable names and two
  * pools told apart, answering one report of an action of `vteng/chuggy` that
- * presents `bearer`.
+ * carries the headers and the body `carried` evaluates to.
  */
-function actionReportsProgram(action: string, bearer: string): string {
+function actionReportsProgram(action: string, carried: string): string {
   return `
     const root = await import('./src/roots/nativeHttp.ts');
+    const { createHmac } = await import('node:crypto');
     const asked = [];
     const pooled = (named) => ({
       query: async () => {
@@ -1101,13 +1103,40 @@ function actionReportsProgram(action: string, bearer: string): string {
       tenant: 'vteng',
       project: 'chuggy',
       action: ${JSON.stringify(action)},
-      headers: { authorization: ${JSON.stringify(`Bearer ${bearer}`)} },
-      body: new TextEncoder().encode(JSON.stringify({
-        version: 1, commit: 'a'.repeat(40), outcome: 'Succeeded',
-      })),
+      ...(${carried}),
     });
     process.stdout.write(JSON.stringify({ reported, asked }));
   `;
+}
+
+/** A report document presenting `bearer`, as the program's source. */
+function bearerCarried(bearer: string): string {
+  return `{
+    headers: { authorization: ${JSON.stringify(`Bearer ${bearer}`)} },
+    body: new TextEncoder().encode(JSON.stringify({
+      version: 1, commit: 'a'.repeat(40), outcome: 'Succeeded',
+    })),
+  }`;
+}
+
+/**
+ * A Kustomization's event of `reason`, stamped `agoMs` before the program's
+ * own clock reads and signed under `key`, as the program's source. The root is
+ * where this process's clock is handed to the scheme, so the event is stamped
+ * from that clock and never from an instant written here.
+ */
+function fluxCarried(key: string, reason: string, agoMs: number): string {
+  return `(() => {
+    const body = new TextEncoder().encode(JSON.stringify({
+      involvedObject: { kind: 'Kustomization' },
+      severity: 'info',
+      reason: ${JSON.stringify(reason)},
+      timestamp: new Date(Date.now() - ${String(agoMs)}).toISOString(),
+      metadata: { originRevision: 'main@sha1:' + 'a'.repeat(40) },
+    }));
+    const digest = createHmac('sha256', ${JSON.stringify(key)}).update(body).digest('hex');
+    return { headers: { 'x-signature': 'sha256=' + digest }, body };
+  })()`;
 }
 
 const actionReportersVariable = "CHUG_API_ACTION_REPORTERS";
@@ -1126,15 +1155,24 @@ function actionReporterRoster(secretFile: string): string {
   ]);
 }
 
-/** What one report came to under the variables a case names, and which pools were asked. */
-async function actionReported(
+/** What a report carrying `carried` came to under the variables a case names, and which pools were asked. */
+async function actionCarried(
+  named: Readonly<Record<string, string>>,
+  action: string,
+  carried: string,
+): Promise<unknown> {
+  const ran = await rootRead(named, actionReportsProgram(action, carried));
+  assert.equal(ran.code, 0, ran.out);
+  return JSON.parse(ran.out);
+}
+
+/** What one report presenting a bearer came to under the variables a case names, and which pools were asked. */
+function actionReported(
   named: Readonly<Record<string, string>>,
   action = "publish",
   bearer = "a-client-secret",
 ): Promise<unknown> {
-  const ran = await rootRead(named, actionReportsProgram(action, bearer));
-  assert.equal(ran.code, 0, ran.out);
-  return JSON.parse(ran.out);
+  return actionCarried(named, action, bearerCarried(bearer));
 }
 
 test("a deployment naming no reporters starts, and answers every report as not found without asking the database", async () => {
@@ -1182,14 +1220,42 @@ test("a reporter whose secret's file holds no secret is a deployment that starts
     );
 });
 
-test("a reporter of a scheme this deployment holds no adapter for is named and verifies nothing", async (t) => {
+/** As far past the tolerance a signed event is weighed under as the tolerance is wide. */
+const fluxStaleMs = 2 * fluxSignatureToleranceSecs * 1_000;
+
+test("a reporter proving itself by a signature is verified by its secret's file and this process's clock, and recorded over the API pool", async (t) => {
   const files = forgeSecretFiles(t);
+  const named = {
+    [actionReportersVariable]: actionReporterRoster(files.present),
+  };
+  const flux = (key: string, reason: string, agoMs: number) =>
+    actionCarried(named, "rig", fluxCarried(key, reason, agoMs));
+
   assert.deepEqual(
-    await actionReported(
-      { [actionReportersVariable]: actionReporterRoster(files.present) },
-      "rig",
-    ),
+    await flux("a-client-secret", "ReconciliationSucceeded", 0),
+    {
+      reported: { result: "Recorded" },
+      asked: ["pool"],
+    },
+  );
+  assert.deepEqual(await flux("a-client-secret", "Progressing", 0), {
+    reported: { result: "Ignored" },
+    asked: [],
+  });
+  for (const [key, agoMs] of [
+    ["another-secret", 0],
+    ["a-client-secret", fluxStaleMs],
+    ["a-client-secret", -fluxStaleMs],
+  ] as const)
+    assert.deepEqual(
+      await flux(key, "ReconciliationSucceeded", agoMs),
+      { reported: { result: "NotFound" }, asked: [] },
+      `${key} ${String(agoMs)}`,
+    );
+  assert.deepEqual(
+    await actionReported(named, "rig"),
     { reported: { result: "NotFound" }, asked: [] },
+    "its secret presented as a bearer",
   );
 });
 
@@ -1213,10 +1279,17 @@ test("a roster that cannot be read refuses the start, naming the variable and th
       JSON.stringify([build, { ...flux, actions: ["publish"] }]),
       /CHUG_API_ACTION_REPORTERS names the action publish of vteng\/chuggy twice/u,
     ],
+    [
+      JSON.stringify([
+        flux,
+        { ...flux, reporter: "flux-canary", actions: ["rig-canary"] },
+      ]),
+      /CHUG_API_ACTION_REPORTERS names one secret file for the FluxSignature reporters flux and flux-canary/u,
+    ],
   ] as const) {
     const ran = await rootRead(
       { [actionReportersVariable]: roster },
-      actionReportsProgram("publish", "a-client-secret"),
+      actionReportsProgram("publish", bearerCarried("a-client-secret")),
     );
     assert.notEqual(ran.code, 0, roster);
     assert.match(ran.out, why, roster);
