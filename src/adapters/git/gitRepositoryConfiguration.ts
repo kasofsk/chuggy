@@ -1,11 +1,15 @@
 /**
- * Git-backed immutable repository configuration snapshots, read without a
- * checkout, and where the repository's own HEAD points.
+ * Git-backed immutable snapshots of the directories a repository declares in,
+ * read without a checkout, and where the repository's own HEAD points.
  *
- * THE TWO READS SHARE ONE SCRATCH AND ONE CREDENTIAL RULE, because the second
- * is what the first is asked at: a caller holding no commit reads the head to
+ * THE READS SHARE ONE SCRATCH AND ONE CREDENTIAL RULE, because the head is
+ * what a snapshot is asked at: a caller holding no commit reads the head to
  * get one. A remote that answers the head and refuses the fetch is the same
  * remote, so a second scratch would be a second set of bounds to keep in step.
+ *
+ * ONE READ SERVES EVERY DIRECTORY, and only what an empty one means differs:
+ * a tree declaring no configuration has no configuration directory to import,
+ * and a tree declaring no action declares none.
  */
 
 import { textCodePointsCount } from "../../contract/http.ts";
@@ -15,6 +19,10 @@ import type {
   RepositoryCredential,
   RepositoryCredentialPort,
 } from "../../interpreter/finalizer.ts";
+import {
+  repositoryActionRoot,
+  type RepositoryActionSnapshotPort,
+} from "../../interpreter/repositoryAction.ts";
 import {
   repositoryConfigurationRoot,
   type RepositoryConfigurationSnapshotPort,
@@ -27,7 +35,10 @@ import {
   repositoryDeclarationsMax,
   type RepositoryDeclarationFile,
 } from "../../interpreter/repositoryDeclaration.ts";
-import type { RepositoryDeclarationSnapshotRequest } from "../../interpreter/repositoryDeclarationSnapshot.ts";
+import type {
+  RepositoryDeclarationSnapshotRead,
+  RepositoryDeclarationSnapshotRequest,
+} from "../../interpreter/repositoryDeclarationSnapshot.ts";
 import {
   scratchObserveHead,
   scratchOpen,
@@ -152,19 +163,12 @@ function gitRepositoryConfigurationEntries(
 async function gitRepositoryConfigurationTree(
   own: GitRepositoryConfigurationState,
   request: RepositoryDeclarationSnapshotRequest,
+  root: string,
 ): Promise<readonly GitRepositoryConfigurationEntry[] | "Refused"> {
   const ran = await scratchRun(own.scratch, {
     repository: request.repository.repository,
     timeoutSecsMax: own.scratch.options.localTimeoutSecsMax,
-    argv: [
-      "ls-tree",
-      "-r",
-      "-z",
-      "--long",
-      request.commit,
-      "--",
-      repositoryConfigurationRoot,
-    ],
+    argv: ["ls-tree", "-r", "-z", "--long", request.commit, "--", root],
     outputBytesMax: gitRepositoryConfigurationTreeOutputBytesMax,
   });
   if (!gitRepositoryConfigurationExited(ran)) return "Refused";
@@ -212,10 +216,12 @@ async function gitRepositoryConfigurationFiles(
   return files;
 }
 
-async function gitRepositoryConfigurationSnapshot(
+/** The JSON blobs one commit's tree holds under `root`, which are none where it holds no such directory. */
+async function gitRepositoryConfigurationDirectory(
   own: GitRepositoryConfigurationState,
   request: RepositoryDeclarationSnapshotRequest,
-): Promise<RepositoryConfigurationSnapshotRead> {
+  root: string,
+): Promise<RepositoryDeclarationSnapshotRead> {
   const authorization = await gitRepositoryConfigurationCredential(
     own,
     request.repository,
@@ -231,15 +237,33 @@ async function gitRepositoryConfigurationSnapshot(
   );
   if (fetched === "Unavailable")
     return { read: "Unavailable", unavailable: "Repository" };
-  if (fetched === "Absent") return { read: "Absent", absent: "Commit" };
-  const entries = await gitRepositoryConfigurationTree(own, request);
-  if (entries === "Refused") return { read: "Refused", refused: "Snapshot" };
-  if (entries.length === 0)
-    return { read: "Absent", absent: "ConfigurationDirectory" };
+  if (fetched === "Absent") return { read: "Absent" };
+  const entries = await gitRepositoryConfigurationTree(own, request, root);
+  if (entries === "Refused") return { read: "Refused" };
   const files = await gitRepositoryConfigurationFiles(own, request, entries);
   return files === undefined
-    ? { read: "Refused", refused: "Snapshot" }
+    ? { read: "Refused" }
     : { read: "Snapshot", files };
+}
+
+/** One directory's read in the configuration port's terms, where a tree declaring none has no directory to import. */
+function gitRepositoryConfigurationSnapshot(
+  read: RepositoryDeclarationSnapshotRead,
+): RepositoryConfigurationSnapshotRead {
+  switch (read.read) {
+    case "Snapshot":
+      return read.files.length === 0
+        ? { read: "Absent", absent: "ConfigurationDirectory" }
+        : read;
+    case "Absent":
+      return { read: "Absent", absent: "Commit" };
+    case "Unavailable":
+      return read;
+    case "Refused":
+      return { read: "Refused", refused: "Snapshot" };
+    default:
+      return assertNever(read);
+  }
 }
 
 /**
@@ -282,7 +306,9 @@ async function gitRepositoryDefaultBranch(
 
 export function gitRepositoryConfiguration(
   options: GitRepositoryConfigurationOptions,
-): RepositoryConfigurationSnapshotPort & RepositoryDefaultBranchPort {
+): RepositoryConfigurationSnapshotPort &
+  RepositoryActionSnapshotPort &
+  RepositoryDefaultBranchPort {
   const own: GitRepositoryConfigurationState = {
     scratch: scratchOpen({
       directory: options.scratchDirectory,
@@ -304,7 +330,16 @@ export function gitRepositoryConfiguration(
     credentials: options.credentials,
   };
   return {
-    snapshot: (request) => gitRepositoryConfigurationSnapshot(own, request),
+    snapshot: async (request) =>
+      gitRepositoryConfigurationSnapshot(
+        await gitRepositoryConfigurationDirectory(
+          own,
+          request,
+          repositoryConfigurationRoot,
+        ),
+      ),
+    actionSnapshot: (request) =>
+      gitRepositoryConfigurationDirectory(own, request, repositoryActionRoot),
     defaultBranch: (repository) => gitRepositoryDefaultBranch(own, repository),
   };
 }
