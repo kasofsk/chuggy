@@ -702,6 +702,21 @@ for (const [fault, inflict] of Object.entries(fixtureFaults)) {
   });
 }
 
+test("a tip whose ref stands over history that is gone is fetched again, and held again", async (t) => {
+  const fixture = fixtureOpen(t);
+  const port = fixturePort(fixture, { environment: fixtureRecorded(fixture) });
+  const question = fixtureQuestion(fixture, fixture.candidate);
+  assert.equal(await port.ancestry(question), "Ancestor");
+  const scratch = fixtureScratchRepository(fixture);
+  fixtureGit(scratch, "repack", "-adq");
+  rmSync(join(scratch, "objects", "pack"), { recursive: true, force: true });
+  assert.ok(fixtureHistoryHeld(fixture, fixture.tip));
+  assert.ok(!fixtureAnswers(scratch, "cat-file", "-e", fixture.tip));
+
+  assert.equal(await port.ancestry(question), "Ancestor");
+  assert.equal(fixtureRecordedCount(fixture, "fetch"), 2);
+});
+
 test("a commit-graph left over a pack that is gone does not answer for the commits in it", async (t) => {
   const fixture = fixtureOpen(t);
   const port = fixturePort(fixture);

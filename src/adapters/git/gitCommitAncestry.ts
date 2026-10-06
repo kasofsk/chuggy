@@ -5,9 +5,9 @@
  * A TIP IS HELD ONLY BY THE REF ITS OWN COMPLETED FETCH WROTE. A git a scratch
  * admits may unpack a small fetch object by object and write the ref last, so
  * a fetch stopped part-way can leave the tip standing without what it descends
- * from. Taking the object's existence for the history would then answer
- * `NotAncestor` for a candidate that had only not arrived yet, so nothing is
- * decided against a tip no such ref names.
+ * from. A tip taken as held on its object alone would never be fetched again,
+ * and a candidate that had only not arrived yet would be `Unknown` for good, so
+ * only such a ref says a tip is held.
  *
  * AN ANSWER RESTS ONLY ON READS THAT LOOKED. The scratch is asked whether the
  * candidate is a commit here, whether git reaches it from the tip, and whether
@@ -16,8 +16,10 @@
  * is a no to either and then a yes to the third, because git also gives each
  * of those noes where it could not read what the scratch holds. A read that
  * did not look decides nothing, whichever it was. Each no walks its tip's
- * whole history for itself, so many at once over a long history pass the local
- * bound and are `Unknown`.
+ * whole history for itself and each yes walks down to where its candidate
+ * lies, so one asker alone over a long enough history passes the local bound
+ * and is `Unknown`, as many at once are over a shorter one. Asking again under
+ * the same load does not resolve it, because each ask walks afresh.
  *
  * THE ASKER'S WAIT IS BOUNDED AND THE FETCH IS NOT STOPPED FOR IT. An asker is
  * answered `Unknown` once a bound short enough for a page being read has
@@ -264,8 +266,8 @@ function gitCommitAncestryRead(
  * Whether the tip's whole history came to be held while the asker waited: by a
  * fetch that completed earlier, by the one in flight for it, or by one begun
  * once the repository's fetch of another tip has ended. An asker of the tip in
- * flight joins that fetch without reading the scratch, and a fetch is begun
- * only on a read that looked and found no ref.
+ * flight joins that fetch without reading the scratch, and any other begins or
+ * waits on a fetch only on git's no to the tip's ref.
  */
 async function gitCommitAncestryHeld(
   own: GitCommitAncestryState,

@@ -435,8 +435,10 @@ async function scratchFind(
 
 /**
  * Whether a fetch of one commit's whole history completed here, read off the
- * ref that fetch wrote. The commit object existing says less: a fetch stopped
- * part-way leaves it behind without what it descends from.
+ * ref that fetch wrote and never off the commit existing, which a fetch stopped
+ * part-way leaves behind without what it descends from. Its no is git finding
+ * no commit by that ref, which it says where none stands and also where one
+ * stands over nothing it could read as a commit.
  */
 export function scratchHoldsHistory(
   scratch: GitScratch,
