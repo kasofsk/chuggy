@@ -485,6 +485,8 @@ test("a set that is no array is refused, and is not the set of none", async () =
   await imported(binding, first, tree({ build: "Build" }));
 
   await assert.rejects(door(binding, second, null, null), /an import names/u);
+  await assert.rejects(door(binding, second, null, []), /an import names/u);
+  await assert.rejects(door(binding, second, [], null), /an import names/u);
   assert.deepEqual(await declared(partition), [
     line(binding, first, "build", "Build"),
   ]);
@@ -516,7 +518,6 @@ test("a row holds an identity, a name and a commit to the bounds a document is r
   ]);
 });
 
-/** Every role a deployment runs as but the two this relation is for. */
 test("behind its door the relation holds one row to an identity within a project, and none for a repository not bound there", async () => {
   const partition = await postgresHarnessProject(harness.store, "key");
   const holder = await bound(partition, "key-holder");
@@ -561,6 +562,7 @@ test("the door runs as the boundary owner, on a search path it names", async () 
   );
 });
 
+/** Every role a deployment runs as but the two this relation is for. */
 const bystanders = [
   ticketServiceRole,
   selectorServiceRole,

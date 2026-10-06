@@ -424,7 +424,7 @@ compared as written, so a project holds an identity once whichever of its
 repositories declares it, and it points at `project_repository`. It is changed
 by that door alone, which replaces one repository's rows whole under an
 advisory lock on the project, refuses a set naming an identity another live
-repository of the project holds, and lets a live repository take an identity
-only a retired binding still holds. It has no unfinished work: an import
+repository of the project holds, and lets a repository take an identity only a
+retired binding still holds. It has no unfinished work: an import
 replaced the set or changed nothing, and a repository whose head is not
 imported yet declares what its last imported head did.
