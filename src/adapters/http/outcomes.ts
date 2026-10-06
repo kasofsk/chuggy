@@ -1040,7 +1040,8 @@ export function actionReportResponse(
 ): NativeHttpResponse {
   switch (result.result) {
     case "Recorded":
-    case "Repeated": {
+    case "Repeated":
+    case "Ignored": {
       const body: ActionReportResponse = { report: result.result };
       return response(200, body);
     }

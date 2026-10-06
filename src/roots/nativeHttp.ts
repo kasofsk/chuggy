@@ -175,6 +175,7 @@ import {
 } from "../interpreter/actionReport.ts";
 import { postgresActionObservations } from "../adapters/postgres/actionObservation.ts";
 import { bearerSecretReporters } from "../adapters/reporters/bearerSecret.ts";
+import { fluxSignatureReporters } from "../adapters/reporters/fluxSignature.ts";
 
 const databaseUrlVariable = "CHUG_API_DATABASE_URL";
 const idempotencyKeyingVariable = "CHUG_API_IDEMPOTENCY_KEYING";
@@ -344,9 +345,10 @@ export function nativeActionReporters(): readonly ActionReporter[] {
 
 /**
  * The report route's service over the reporters named, recording over the API
- * pool and verifying by the one scheme this deployment holds an adapter for.
- * It is composed whoever is named, because a path nothing serves is answered
- * by the authentication hook and not as a resource that is not there.
+ * pool and verifying by each scheme a roster may name, a signed event's
+ * timestamp weighed against this process's clock. It is composed whoever is
+ * named, because a path nothing serves is answered by the authentication hook
+ * and not as a resource that is not there.
  */
 export function nativeActionReports(
   pools: Pick<NativePools, "pool">,
@@ -355,6 +357,7 @@ export function nativeActionReports(
   return actionReports({
     reporters: rosterActionReporters(reporters, {
       BearerSecret: bearerSecretReporters(),
+      FluxSignature: fluxSignatureReporters(() => Date.now()),
     }),
     observations: postgresActionObservations(pools.pool),
   });

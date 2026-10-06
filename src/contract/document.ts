@@ -141,7 +141,7 @@ export function nativeHttpContractDocument(): unknown {
     workerPoolRegistration:
       "an administrator mints a single-use token for one project; redeeming it registers the pool and answers once with the file a runner keeps, its secret included",
     actionReports:
-      "a reporter this deployment names reports what one declared action did at one commit, to the action's own address and proving itself by its own scheme rather than a bearer of this server's; a report repeating the commit and outcome of the action's newest is answered Repeated and records nothing, and a request that proves nothing is not found",
+      "a reporter this deployment names reports what one declared action did at one commit, to the action's own address and proving itself by its own scheme rather than a bearer of this server's; a report repeating the commit and outcome of the action's newest is answered Repeated and records nothing, a verified request its scheme reads no outcome in is answered Ignored and records nothing, and a request that proves nothing is not found",
     routes: nativeHttpRoutes,
     schemas: nativeHttpContractDocumentSchemas(),
   };
