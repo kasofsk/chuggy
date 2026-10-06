@@ -417,7 +417,7 @@ test("the commit past those a reading may weigh is never weighed, though it hold
   );
 });
 
-test("a commit the walk weighed is passed over wherever it succeeded again, so as many commits as a reading may weigh are each weighed however often each is reported", () => {
+test("a commit the walk weighed is passed over wherever it succeeded again, so as many commits as a reading may weigh are each weighed though each is reported three times", () => {
   const commits = weighable();
   assert.deepEqual(walked(successesAt([...commits, ...commits, ...commits])), {
     mark: { reach: "NotYet" },

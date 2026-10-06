@@ -25,14 +25,15 @@
  * read once as a window of rows, the newest `actionReachEarlierReadMax` by
  * ordinal, and the distinct commits are taken from it in order. A row at a
  * commit already weighed is passed over, whether the walk weighed it or the
- * newest success or failure did, so a commit is asked about once and one
- * reported again and again costs the walk nothing. The walk gives up in two
- * places, each `Unknown`: at a row since the ticket landed whose commit is
- * one more than the `actionReachEarlierSuccessesMax` it may weigh, and at the
- * window's end where the row past the `actionReachEarlierRowsMax` it walks
- * was reported since the ticket landed, because a commit not yet weighed
- * could lie there or beneath. That row is read and never weighed. A walk that
- * ends anywhere else left no success since the ticket landed unweighed.
+ * newest success or failure did, so a commit is asked about once: such a row
+ * costs the walk none of the commits it may weigh, and one of the rows it
+ * walks. The walk gives up in two places, each `Unknown`: at a row since the
+ * ticket landed whose commit is one more than the
+ * `actionReachEarlierSuccessesMax` it may weigh, and at the window's end
+ * where the row past the `actionReachEarlierRowsMax` it walks was reported
+ * since the ticket landed, because a commit not yet weighed could lie there
+ * or beneath. That row is read and never weighed. A walk that ends anywhere
+ * else left no success since the ticket landed unweighed.
  *
  * WHAT THE MARKS CANNOT SAY, each because a mark reads reports and no cause:
  *
