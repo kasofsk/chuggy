@@ -8,10 +8,10 @@
  * the file holds. Its first line names the receiver that captured it, which
  * is the one thing a suite replaces to send it to the report route.
  *
- * TWO ARE CONSTRUCTED, AND NAMED SO. No capture holds a byte Go writes as an
- * escape and none holds an outcome with no origin revision, so each of the
- * two is a captured event changed, written by Go's own encoder and signed as
- * Flux signs.
+ * SOME ARE CONSTRUCTED, AND NAMED SO. No capture holds a byte Go writes as an
+ * escape, an outcome with no origin revision, or an origin revision naming its
+ * commit with no pointer before it, so each of those is a captured event
+ * changed, written by Go's own encoder and signed as Flux signs.
  *
  * THE KEY NEVER GUARDED ANYTHING. Every signed delivery is signed with the one
  * key of the receiver that captured them, and it is written here.
@@ -51,6 +51,7 @@ const fluxDeliveryArrivals = {
   "unsigned-new-artifact": ["2026-10-05T22:22:42.654Z"],
   "constructed-escaped": ["2026-10-05T22:49:41.000Z"],
   "constructed-no-origin": ["2026-10-05T22:45:50.000Z"],
+  "constructed-bare-origin": ["2026-10-05T22:45:50.000Z"],
 } as const;
 
 export type FluxDeliveryName = keyof typeof fluxDeliveryArrivals;

@@ -397,8 +397,9 @@ test("every other event is ignored, and is asked for no commit", async (t) => {
       );
 });
 
-test("the commit is the one the origin revision ends in after `@sha1:`, and is looked for nowhere else", async (t) => {
+test("the commit is the one the origin revision ends in after `sha1:`, behind a pointer's name or alone, and is looked for nowhere else", async (t) => {
   const named = `main@sha1:${elsewhere}`;
+  const alone = `sha1:${elsewhere}`;
   const quoting = `stored artifact, origin revision '${named}'`;
   for (const severity of ["info", "error"]) {
     const outcome = severity === "info" ? succeeded : failed;
@@ -408,6 +409,8 @@ test("the commit is the one the origin revision ends in after `@sha1:`, and is l
       `feature/a@b@sha1:${commit}`,
       `main@sha1:${elsewhere}@sha1:${commit}`,
       `@sha1:${commit}`,
+      `sha1:${commit}`,
+      `sha1:${elsewhere}@sha1:${commit}`,
     ])
       assert.deepEqual(
         await read(t, event({ severity }, { originRevision })),
@@ -417,7 +420,9 @@ test("the commit is the one the origin revision ends in after `@sha1:`, and is l
     for (const [fields, metadata] of [
       [{ message: quoting }, {}],
       [{ message: named }, {}],
+      [{ message: alone }, {}],
       [{}, { revision: named }],
+      [{}, { revision: alone }],
       [{}, { "kustomize.toolkit.fluxcd.io/originRevision": named }],
       [{}, { OriginRevision: named, origin_revision: named }],
       [{ originRevision: named, revision: named }, {}],
@@ -447,7 +452,7 @@ test("the commit is the one the origin revision ends in after `@sha1:`, and is l
   }
 });
 
-test("an outcome whose origin revision names no commit after `@sha1:` is refused", async (t) => {
+test("an outcome whose origin revision names no commit after a `sha1:` at its start or behind an `@` is refused", async (t) => {
   for (const originRevision of [
     undefined,
     null,
@@ -455,9 +460,25 @@ test("an outcome whose origin revision names no commit after `@sha1:` is refused
     "",
     "main",
     commit,
-    `sha1:${commit}`,
     `main:${commit}`,
     `main/sha1:${commit}`,
+    `mainsha1:${commit}`,
+    `main-sha1:${commit}`,
+    `main.sha1:${commit}`,
+    `main:sha1:${commit}`,
+    `main@ sha1:${commit}`,
+    ` sha1:${commit}`,
+    `\nsha1:${commit}`,
+    `main\nsha1:${commit}`,
+    `sha1:${commit.slice(0, -1)}`,
+    `sha1:${commit}0`,
+    `sha1:${commit.toUpperCase()}`,
+    `SHA1:${commit}`,
+    `sha256:${commit}${commit.slice(0, 24)}`,
+    `sha1:${commit}\n`,
+    `sha1:${commit} `,
+    `sha1: ${commit}`,
+    `sha1${commit}`,
     `main@${commit}`,
     `main@sha1:${commit.slice(0, -1)}`,
     `main@sha1:${commit}0`,

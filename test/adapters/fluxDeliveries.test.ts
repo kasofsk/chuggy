@@ -61,22 +61,22 @@ const refused: FluxDeliveryAnswered = {
 const rolledOut = "5c720e5ca64a2fc7cda1bd8b9b2e72132353eac6";
 const unhealthy = "500a9eed707289ca16595e96ec4de991cfdc96cb";
 
+/** What the rollout of `rolledOut` reconciling is recorded as. */
+const reconciled = {
+  commit: rolledOut,
+  outcome: "Succeeded",
+  observedAtMs: Date.UTC(2026, 9, 5, 22, 45, 50),
+  detail:
+    "1791240292.0.0@sha256:5d0d8d68b6df6d9cfdea76619883b875793304f3999deef901db4b38cfa3f587",
+} as ActionReport;
+
 /** What each delivery is answered, and the report it is where it is one. */
 const expected: Readonly<
   Record<FluxDeliveryName, readonly [FluxDeliveryAnswered, ActionReport?]>
 > = {
   "dependency-not-ready": [ignored],
   progressing: [ignored],
-  "reconciliation-succeeded": [
-    recorded,
-    {
-      commit: rolledOut,
-      outcome: "Succeeded",
-      observedAtMs: Date.UTC(2026, 9, 5, 22, 45, 50),
-      detail:
-        "1791240292.0.0@sha256:5d0d8d68b6df6d9cfdea76619883b875793304f3999deef901db4b38cfa3f587",
-    } as ActionReport,
-  ],
+  "reconciliation-succeeded": [recorded, reconciled],
   "health-check-failed": [
     recorded,
     {
@@ -110,6 +110,7 @@ const expected: Readonly<
     } as ActionReport,
   ],
   "constructed-no-origin": [refused],
+  "constructed-bare-origin": [recorded, reconciled],
 };
 
 /** A server whose one reporter is Flux's for the action addressed, under the key given: what it answers a delivery arriving at an instant, and every report that reached its store. */
@@ -239,6 +240,25 @@ test("an event unsigned as it arrived is read as its kind once it is signed, and
       recorded,
     );
   assert.deepEqual(stored, [expected["reconciliation-succeeded"][1]]);
+});
+
+test("an origin revision naming its commit with no pointer before it is the event it was constructed from, less the pointer", () => {
+  const pointed = fluxDelivery("reconciliation-succeeded").body.toString(
+    "utf8",
+  );
+  const bare = fluxDelivery("constructed-bare-origin").body.toString("utf8");
+  assert.ok(pointed.includes(`"originRevision":"main@sha1:${rolledOut}"`));
+  assert.equal(
+    bare,
+    pointed.replace(
+      `"originRevision":"main@sha1:${rolledOut}"`,
+      `"originRevision":"sha1:${rolledOut}"`,
+    ),
+  );
+  assert.deepEqual(
+    expected["constructed-bare-origin"],
+    expected["reconciliation-succeeded"],
+  );
 });
 
 test("a delivery is its reporter's under the key it was signed with and no other", async (t) => {

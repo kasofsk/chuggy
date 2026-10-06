@@ -22,10 +22,11 @@
  *
  * ONLY WHAT A RECONCILIATION CAME TO IS A REPORT. A Kustomization that
  * reconciled succeeded, a Kustomization's error failed, and every other event
- * is verified and ignored. The commit is the one `metadata.originRevision`
- * ends in after `@sha1:` and is looked for nowhere else, because a message
- * quotes the revisions of other things; an outcome with no such commit is
- * refused.
+ * is verified and ignored. The commit is the hex `metadata.originRevision`
+ * ends in after `sha1:`, where that begins the revision or follows the `@`
+ * after the pointer it names, and is looked for nowhere else, because a
+ * message quotes the revisions of other things; an outcome with no such commit
+ * is refused.
  *
  * NOTHING IS HANDED ON THAT A ROW CANNOT HOLD. A detail is cut to the bound a
  * row holds, counted as the relation counts it, with what no text column holds
@@ -56,8 +57,8 @@ export const fluxSignatureToleranceSecs = 300;
 /** A signature as Flux writes one: the scheme's name and a digest in lower-case hex. */
 const fluxSignatureWritten = /^sha256=([0-9a-f]{64})$/u;
 
-/** The commit a revision names: the hex it ends in after `@sha1:`. */
-const fluxSignatureRevisionCommit = /@sha1:([0-9a-f]{40})$/u;
+/** The commit a revision names: the hex it ends in after `sha1:`, which begins it or follows the `@` after a pointer's name. */
+const fluxSignatureRevisionCommit = /(?:^|@)sha1:([0-9a-f]{40})$/u;
 
 /** Each character Go's `unicode.IsSpace` holds, which is each Unicode calls white space, as the bytes a file holds it in. */
 const fluxSignatureBlanks: readonly Buffer[] = [
