@@ -28,6 +28,7 @@ import {
   asRecoveryEpoch,
   asTenantId,
 } from "../../src/interpreter/projectStore.ts";
+import { ticketActionReachAsksMax } from "../../src/interpreter/ticketActionReach.ts";
 
 /** One question, its commits named by a hex digit apiece. */
 function question(
@@ -46,6 +47,20 @@ function question(
     },
     candidate: asGitObjectId(candidate.repeat(40)),
     tip: asGitObjectId(tip.repeat(40)),
+  };
+}
+
+const otherRepository = "https://forge.example/acme/other.git";
+
+/** A question of its own for each number: the tip named, in the repository named, about a candidate no other number names. */
+function numbered(
+  at: number,
+  tip: string,
+  repository?: string,
+): CommitAncestryQuestion {
+  return {
+    ...question(tip, "c", repository),
+    candidate: asGitObjectId(at.toString(16).padStart(40, "0")),
   };
 }
 
@@ -236,13 +251,62 @@ test("a question past those undecided is unknown at once and asks nothing, those
   assert.equal(await due, "Ancestor");
 });
 
-test("a decided question leaves the undecided count, so deciding makes room", async () => {
-  const { kept, asked } = fixture(
-    { a: "Ancestor", b: "NotAncestor", d: "Ancestor" },
-    { undecidedMax: 1 },
+test("one repository's undecided questions, as many as may be undecided at once, leave another repository's question asked", async () => {
+  const { kept, asked } = fixture({ a: "Unknown", b: "Ancestor" });
+  for (let at = 0; at < actionReachAncestryDefaults.undecidedMax; at += 1)
+    assert.equal(await kept.ask(numbered(at, "a")), "Unknown");
+  assert.equal(await kept.ask(question("b", "c", otherRepository)), "Ancestor");
+  assert.equal(asked.filter((tip) => tip === "b").length, 1);
+});
+
+test("a question past those of its repository undecided is unknown at once and asks nothing, those in flight counted among them, and another repository's is asked", async () => {
+  const { kept, asked, release, pass } = fixture(
+    {},
+    { undecidedRepositoryMax: 2 },
   );
-  for (const tip of ["a", "b", "d"]) await kept.ask(question(tip));
+  const first = kept.ask(question("a"));
+  release("Unknown");
+  await first;
+  const flying = kept.ask(question("b"));
+  assert.equal(await kept.ask(question("d")), "Unknown");
+  assert.deepEqual(asked, ["a", "b"]);
+  const other = kept.ask(question("d", "c", otherRepository));
   assert.deepEqual(asked, ["a", "b", "d"]);
+  release("Unknown");
+  await flying;
+  assert.equal(await kept.ask(question("e")), "Unknown");
+  release("Ancestor");
+  assert.equal(await other, "Ancestor");
+  assert.deepEqual(asked, ["a", "b", "d"]);
+  pass(waitMs);
+  const due = kept.ask(question("e"));
+  assert.deepEqual(asked, ["a", "b", "d", "e"]);
+  release("Ancestor");
+  assert.equal(await due, "Ancestor");
+});
+
+test("the count over every repository holds whatever room each repository's own leaves", async () => {
+  const { kept, asked } = fixture(
+    { a: "Unknown" },
+    { undecidedMax: 2, undecidedRepositoryMax: 1 },
+  );
+  const repositories = ["one", "two", "three"].map(
+    (named) => `https://forge.example/acme/${named}.git`,
+  );
+  for (const repository of repositories)
+    assert.equal(await kept.ask(question("a", "c", repository)), "Unknown");
+  assert.deepEqual(asked, ["a", "a"]);
+});
+
+test("a decided question leaves both undecided counts, so deciding makes room", async () => {
+  for (const chosen of [{ undecidedMax: 1 }, { undecidedRepositoryMax: 1 }]) {
+    const { kept, asked } = fixture(
+      { a: "Ancestor", b: "NotAncestor", d: "Ancestor" },
+      chosen,
+    );
+    for (const tip of ["a", "b", "d"]) await kept.ask(question(tip));
+    assert.deepEqual(asked, ["a", "b", "d"], JSON.stringify(chosen));
+  }
 });
 
 test("the decided answers kept are held to their count, the one decided first forgotten for one more", async () => {
@@ -263,10 +327,12 @@ test("a bound or a wait that is not a positive integer refuses the composition",
   for (const chosen of [
     { decidedMax: 0 },
     { undecidedMax: 0 },
+    { undecidedRepositoryMax: 0 },
     { undecidedWaitSecs: 0 },
     { asksInFlightMax: 0 },
     { decidedMax: 1.5 },
     { undecidedMax: -1 },
+    { undecidedRepositoryMax: 1.5 },
     { undecidedWaitSecs: Number.NaN },
     { asksInFlightMax: Number.POSITIVE_INFINITY },
   ])
@@ -289,4 +355,17 @@ test("the tips put to the adapter inside one of its waits are fewer than the wai
   const { refetchWaitSecs, refetchWaitsMax } = gitCommitAncestryDefaults;
   const turns = Math.ceil(refetchWaitSecs / undecidedWaitSecs) + 1;
   assert.ok(undecidedMax * turns <= refetchWaitsMax);
+});
+
+/**
+ * A read's questions are all of one repository, so a count of that
+ * repository's own above what one read may put leaves a place for the
+ * questions past a read's worth that could not be decided. What it leaves of
+ * the count over all is no fewer than one read may put, so one repository at
+ * its count is never what refuses a read of another.
+ */
+test("one repository's undecided questions may be more than one read puts, and leave the rest no fewer places than one read puts", () => {
+  const { undecidedMax, undecidedRepositoryMax } = actionReachAncestryDefaults;
+  assert.ok(undecidedRepositoryMax > ticketActionReachAsksMax);
+  assert.ok(undecidedMax - undecidedRepositoryMax >= ticketActionReachAsksMax);
 });
