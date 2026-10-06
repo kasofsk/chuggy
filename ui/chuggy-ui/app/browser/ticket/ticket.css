@@ -314,6 +314,71 @@
     color: var(--ink-3);
   }
 
+  /* Delivery: one line a declared action — its name, its mark and the report
+     the mark was read from — with a failure's own words beneath. */
+
+  .ticket-delivery {
+    display: grid;
+    grid-template-columns: fit-content(50%) max-content minmax(0, 1fr);
+    column-gap: var(--space-4);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .ticket-delivery-line {
+    display: grid;
+    grid-column: 1 / -1;
+    grid-template-columns: subgrid;
+    align-items: baseline;
+    row-gap: var(--space-1);
+    padding: var(--space-2) 0;
+    border-top: var(--hairline) solid var(--edge);
+  }
+
+  .ticket-delivery-name {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    color: var(--ink-1);
+  }
+
+  .ticket-delivery-report {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    column-gap: var(--space-3);
+    min-width: 0;
+    color: var(--ink-3);
+  }
+
+  .ticket-delivery-report a {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .ticket-delivery-detail {
+    grid-column: 1 / -1;
+    min-width: 0;
+    margin: 0;
+    overflow-wrap: anywhere;
+    color: var(--ink-2);
+    font-size: var(--text-sm);
+  }
+
+  @container (max-width: 40em) {
+    .ticket-delivery {
+      grid-template-columns: minmax(0, 1fr) max-content;
+    }
+
+    .ticket-delivery-mark {
+      justify-self: end;
+    }
+
+    .ticket-delivery-report {
+      grid-column: 1 / -1;
+    }
+  }
+
   /* The Configuration panel: settings, Instructions tabs, Evaluation. */
 
   .ticket-config {

@@ -14,8 +14,10 @@ import { Field, Fields, fieldsVariants } from "../app/browser/ui/Fields.tsx";
 import { EmptyState, emptyVariants } from "../app/browser/ui/EmptyState.tsx";
 import { Identity, identityForms } from "../app/browser/ui/Identity.tsx";
 import { SectionList } from "../app/browser/ui/SectionList.tsx";
+import sectionListSheet from "../app/browser/ui/SectionList.css?raw";
 import { Table } from "../app/browser/ui/Table.tsx";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
+import { sheetDeclared, sheetRules } from "./sheet.ts";
 import { styleless } from "./styleless.ts";
 
 beforeEach(resizeObserverStubbed);
@@ -142,4 +144,34 @@ test("a section list is anchors, with a figure or a note and never both invented
   expect(screen.getByText("$2.74")).toBeDefined();
   expect(links[2]?.textContent).toBe("Brief");
   styleless();
+});
+
+/**
+ * Whether a note then fits the pane it is drawn in is a browser's to say, and
+ * no suite here runs one; what this holds is that the list's sheet lets a note
+ * wrap, sets it against the list's far edge, and keeps a figure on one line.
+ */
+test("a section list's sheet lets a note wrap against the far edge and holds a figure to one line", () => {
+  const { container } = render(
+    <SectionList
+      entries={[
+        { id: "delivery", label: "Delivery", note: "1 Failed · 3 Reached" },
+        {
+          id: "usage",
+          label: "Usage",
+          figure: { kind: "Cost", text: "$2.74", basis: "list" },
+        },
+      ]}
+    />,
+  );
+  const rules = sheetRules(sectionListSheet, []);
+  const note = container.querySelector(".sections-note");
+  const figure = container.querySelector(".sections .fig");
+  expect(note).not.toBeNull();
+  expect(figure).not.toBeNull();
+  if (note === null || figure === null) return;
+  for (let at: Element | null = note; at !== null; at = at.parentElement)
+    expect(sheetDeclared(rules, at, "white-space")).toBe("");
+  expect(sheetDeclared(rules, note, "text-align")).toBe("right");
+  expect(sheetDeclared(rules, figure, "white-space")).toBe("nowrap");
 });

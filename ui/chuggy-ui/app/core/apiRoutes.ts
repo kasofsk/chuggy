@@ -580,6 +580,13 @@ export function apiTicketNativeActions(
   );
 }
 
+/** Where each action the ticket's repository declares stands for the commit
+ * the ticket landed at, which the ticket read omits. */
+export const apiTicketActionReach = apiProjectEndpoint(
+  nativeHttpEndpoints.ticketActionReach,
+  (partition, ticket: number) => ({ parameters: { ...partition, ticket } }),
+);
+
 export interface NativeActionsPage {
   readonly cursor?: string | undefined;
   readonly limit?: number | undefined;

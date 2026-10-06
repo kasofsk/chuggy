@@ -28,6 +28,13 @@
   .sections-note {
     color: var(--ink-3);
     font-size: var(--text-sm);
+  }
+
+  .sections .fig {
     white-space: nowrap;
+  }
+
+  .sections-note {
+    text-align: right;
   }
 }
