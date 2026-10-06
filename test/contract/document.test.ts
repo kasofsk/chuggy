@@ -91,6 +91,7 @@ test("the golden names every route and not an empty stand-in", () => {
     "threadTurnStop",
     "threads",
     "ticket",
+    "ticketActionReach",
     "ticketAgenticRefusals",
     "ticketNativeActions",
     "tickets",

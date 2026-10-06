@@ -545,12 +545,17 @@ export async function finalizerEntering(
   rig: FinalizerRig,
   label: string,
   repository?: string,
+  named?: Partition,
 ): Promise<{
   partition: Partition;
   repository: string;
   memory: ProjectMemory;
 }> {
-  const partition = await postgresHarnessProject(rig.harness.store, label);
+  const partition = await postgresHarnessProject(
+    rig.harness.store,
+    label,
+    named,
+  );
   const bound = await finalizerBindRepository(
     rig,
     partition,
@@ -618,13 +623,14 @@ export async function finalizerProject(
   label: string,
   repository?: string,
   reworks = 0,
+  named?: Partition,
 ): Promise<FinalizerProject> {
   if (reworks > finalizerReworksMax) {
     throw new Error(
       "finalizer harness: the released ticket cannot rework that often",
     );
   }
-  const entering = await finalizerEntering(rig, label, repository);
+  const entering = await finalizerEntering(rig, label, repository, named);
   const partition = entering.partition;
   let carried = entering.memory;
   let cycle = 1;

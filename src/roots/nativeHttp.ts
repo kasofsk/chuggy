@@ -174,6 +174,15 @@ import {
   type ActionReports,
 } from "../interpreter/actionReport.ts";
 import { postgresActionObservations } from "../adapters/postgres/actionObservation.ts";
+import { postgresTicketActionReach } from "../adapters/postgres/actionReach.ts";
+import { gitCommitAncestry } from "../adapters/git/gitCommitAncestry.ts";
+import { systemPacing } from "../adapters/runtime/systemPacing.ts";
+import { actionReachAncestry } from "../interpreter/actionReachAncestry.ts";
+import type { CommitAncestryPort } from "../interpreter/commitAncestry.ts";
+import {
+  ticketActionReaches,
+  type TicketActionReaches,
+} from "../interpreter/ticketActionReach.ts";
 import { bearerSecretReporters } from "../adapters/reporters/bearerSecret.ts";
 import { fluxSignatureReporters } from "../adapters/reporters/fluxSignature.ts";
 
@@ -569,25 +578,66 @@ function nativeRepositoryCredentials(
   return composeApiRepositoryCredentials({ sources }, minting);
 }
 
-function repositoryConfigurationSnapshots(
-  credentials: RepositoryCredentialPort,
-) {
+/**
+ * The scratch this process's git adapters open, or nothing where the
+ * deployment names no root. A git child is given the variables the finalizer's
+ * settings name and never this process's own, which is where its database URL
+ * is and where a shallow file or a graft, once named, would be believed.
+ */
+function nativeGitScratch() {
   const scratchDirectory = process.env[gitScratchRootVariable];
   if (scratchDirectory === undefined || scratchDirectory.length === 0)
     return undefined;
-  const environment = Object.fromEntries(
-    finalizerGitEnvironmentNames
-      .filter((name) => process.env[name] !== undefined)
-      .map((name) => [name, process.env[name]]),
-  );
-  return gitRepositoryConfiguration({
+  return {
     scratchDirectory,
     identity: {
       name: "Chuggy configuration importer",
       email: "configuration-importer@chuggy.invalid",
     },
-    environment,
-    credentials,
+    environment: Object.fromEntries(
+      finalizerGitEnvironmentNames
+        .filter((name) => process.env[name] !== undefined)
+        .map((name) => [name, process.env[name]]),
+    ),
+  };
+}
+
+function repositoryConfigurationSnapshots(
+  credentials: RepositoryCredentialPort,
+) {
+  const scratch = nativeGitScratch();
+  return scratch === undefined
+    ? undefined
+    : gitRepositoryConfiguration({ ...scratch, credentials });
+}
+
+/**
+ * The reach route's service: where a ticket landed and what was reported are
+ * read over the API pool, and ancestry is asked of one adapter for the whole
+ * process, over the scratch the configuration reader opens and behind what the
+ * reads keep of its answers. A deployment naming no scratch root can ask
+ * nothing, so every commit is `Unknown` there; the route is composed either
+ * way, because a path nothing serves is answered by the authentication hook
+ * and not as a resource that is not there.
+ */
+export function nativeActionReach(
+  pools: Pick<NativePools, "pool">,
+  access: ProjectAccess,
+  credentials: RepositoryCredentialPort,
+): TicketActionReaches {
+  const scratch = nativeGitScratch();
+  const port: CommitAncestryPort =
+    scratch === undefined
+      ? { ancestry: () => Promise.resolve("Unknown") }
+      : gitCommitAncestry({ ...scratch, credentials });
+  return ticketActionReaches({
+    access,
+    store: postgresTicketActionReach(pools.pool),
+    ancestry: actionReachAncestry({
+      port,
+      monotonicNowMs: () => performance.now(),
+    }),
+    pacing: systemPacing,
   });
 }
 
@@ -1378,6 +1428,7 @@ async function main(): Promise<void> {
     composeSelectorProposalReviews(selectorReviewPool, access),
     threadLive,
     nativeActionReports(pools, reporters),
+    nativeActionReach(pools, access, forge.credentials),
   );
   nativeStopping(app, pools, [hub, threadLive]);
   await app.listen({

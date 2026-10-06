@@ -127,6 +127,7 @@ function scopedApp(
     recorded(reached, "proposalReviews"),
     recorded(reached, "threadLive"),
     recorded(reached, "actionReports"),
+    recorded(reached, "actionReach"),
   );
 }
 

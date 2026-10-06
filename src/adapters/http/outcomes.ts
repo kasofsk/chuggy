@@ -152,6 +152,11 @@ import type {
 
 import type { ActionReportResponse } from "../../contract/actionReport.ts";
 import type { ActionReported } from "../../interpreter/actionReport.ts";
+import type { TicketActionReachResponse } from "../../contract/actionReach.ts";
+import type {
+  ActionReachRead,
+  TicketActionReach,
+} from "../../interpreter/ticketActionReach.ts";
 
 export interface NativeHttpResponse {
   readonly status: number;
@@ -1057,6 +1062,55 @@ export function actionReportResponse(
     default:
       return assertNever(result);
   }
+}
+
+/** One action's mark as the wire says it: the report it was read from without its place in the log, and `null` where it was read from none. */
+function ticketActionReachAction(
+  read: ActionReachRead,
+): TicketActionReachResponse["actions"][number] {
+  const { mark } = read;
+  const declared = { action: read.action, name: read.name };
+  switch (mark.reach) {
+    case "NotYet":
+    case "Unknown":
+      return { ...declared, reach: mark.reach, observation: null };
+    case "Reached":
+    case "Failed":
+    case "RolledBack": {
+      const { outcome, commit, observedAt, receivedAt, detail, link } =
+        mark.observation;
+      return {
+        ...declared,
+        reach: mark.reach,
+        observation: {
+          outcome,
+          commit,
+          receivedAt,
+          ...(observedAt === undefined ? {} : { observedAt }),
+          ...(detail === undefined ? {} : { detail }),
+          ...(link === undefined ? {} : { link }),
+        },
+      };
+    }
+    default:
+      return assertNever(mark);
+  }
+}
+
+/** A ticket the caller may not read and one that does not exist answer alike, as the ticket's own read answers them. */
+export function ticketActionReachResponse(
+  reach: TicketActionReach | undefined,
+): NativeHttpResponse {
+  if (reach === undefined) return notFound();
+  const body: TicketActionReachResponse =
+    reach.landed === "Nowhere"
+      ? { repository: null, commit: null, actions: [] }
+      : {
+          repository: reach.repository,
+          commit: reach.commit,
+          actions: reach.actions.map(ticketActionReachAction),
+        };
+  return response(200, body);
 }
 
 /** The path one tenant-scoped resource is addressed by, beside `resourcePath`'s. */
