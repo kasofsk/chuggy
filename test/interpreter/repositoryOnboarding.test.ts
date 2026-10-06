@@ -106,9 +106,9 @@ import { bootstrapConfiguration } from "../../src/interpreter/bootstrapConfigura
 import type {
   RepositoryConfigurationsImported,
   RepositoryConfigurationSnapshotRead,
-  RepositoryConfigurationSnapshotRequest,
   RepositoryDefaultBranchRead,
 } from "../../src/interpreter/repositoryConfiguration.ts";
+import type { RepositoryDeclarationSnapshotRequest } from "../../src/interpreter/repositoryDeclarationSnapshot.ts";
 import type {
   ForgeRepositoryCreated,
   ForgeRepositoryCreationRequest,
@@ -276,7 +276,7 @@ interface FixtureWrites {
   readonly grants: ForgeAuthorizationGrant[];
   readonly listed: ForgeApp[];
   readonly heads: RepositoryBinding[];
-  readonly snapshots: RepositoryConfigurationSnapshotRequest[];
+  readonly snapshots: RepositoryDeclarationSnapshotRequest[];
   readonly authored: ConfigurationRevisionId[];
   readonly authoredCanonical: string[];
   readonly creations: ForgeRepositoryCreationRequest[];

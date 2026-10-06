@@ -40,13 +40,8 @@ import {
   repositoryDeclarationsMax,
   type RepositoryDeclarationFile,
 } from "./repositoryDeclaration.ts";
+import type { RepositoryDeclarationSnapshotRequest } from "./repositoryDeclarationSnapshot.ts";
 export * from "./repositoryConfigurationIdentity.ts";
-
-/** One immutable repository view the application asks an outer adapter to read. */
-export interface RepositoryConfigurationSnapshotRequest {
-  readonly repository: RepositoryBinding;
-  readonly commit: GitObjectId;
-}
 
 /** What reading an immutable repository view found before its declarations are interpreted. */
 export type RepositoryConfigurationSnapshotRead =
@@ -70,7 +65,7 @@ export type RepositoryConfigurationSnapshotRead =
 /** Reads repository configuration bytes at exactly the commit the application pins. */
 export interface RepositoryConfigurationSnapshotPort {
   snapshot(
-    request: RepositoryConfigurationSnapshotRequest,
+    request: RepositoryDeclarationSnapshotRequest,
   ): Promise<RepositoryConfigurationSnapshotRead>;
 }
 

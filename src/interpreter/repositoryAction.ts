@@ -1,6 +1,6 @@
 /**
- * The actions one commit of a repository declares, read from files already in
- * hand: nothing here reaches a repository or a database.
+ * The actions a repository declares: what one commit's documents read as, and
+ * the import that stores them through ports this module only declares.
  *
  * AN ACTION BELONGS TO THE REPOSITORY ITS DOCUMENT IS READ FROM, as a
  * configuration belongs to the repository it was imported from. A document
@@ -9,16 +9,34 @@
  *
  * ONE REFUSED DOCUMENT REFUSES THE COMMIT, exactly as one refused configuration
  * declaration does, so a caller is never handed part of what a commit declares.
+ *
+ * WHAT A REPOSITORY DECLARES IS WHAT ITS NEWEST IMPORTED HEAD DECLARES. An
+ * import replaces the set whole, so a document a head no longer holds is no
+ * longer declared, and a tree holding no action directory declares nothing:
+ * that is a set to store like any other and not a repository to pass over.
+ *
+ * AN IDENTITY IS THE PROJECT'S, exactly as written. Two repositories of one
+ * project may not both declare one, so the repository that holds it keeps it
+ * and the other's import is refused whole.
  */
 
 import { actionDocumentSchema } from "../contract/actionDocument.ts";
-import type { GitObjectId, RepositoryId } from "./finalizer.ts";
+import { assertNever } from "../domain/assertNever.ts";
+import type {
+  GitObjectId,
+  RepositoryBinding,
+  RepositoryId,
+} from "./finalizer.ts";
 import {
   isRepositoryDeclarationPath,
   repositoryDeclarationContent,
   repositoryDeclarationsMax,
   type RepositoryDeclarationFile,
 } from "./repositoryDeclaration.ts";
+import type {
+  RepositoryDeclarationSnapshotRead,
+  RepositoryDeclarationSnapshotRequest,
+} from "./repositoryDeclarationSnapshot.ts";
 import { taskConfigurationLineFault } from "./taskConfiguration.ts";
 
 declare const repositoryActionIdBrand: unique symbol;
@@ -156,4 +174,96 @@ export function repositoryActionImportReadiness(input: {
   return faults.length === 0
     ? { readiness: "Ready", declarations }
     : { readiness: "Refused", faults };
+}
+
+/** Reads the action documents a repository's tree holds at exactly the commit named. */
+export interface RepositoryActionSnapshotPort {
+  actionSnapshot(
+    request: RepositoryDeclarationSnapshotRequest,
+  ): Promise<RepositoryDeclarationSnapshotRead>;
+}
+
+/**
+ * What storing one commit's declarations came to. `IdentityConflict` is an
+ * identity another repository of the project holds, and `StaleBinding` a
+ * binding that is no longer the one the caller read; neither changes a row.
+ */
+export type RepositoryActionsImported =
+  | { readonly imported: "Imported" }
+  | { readonly imported: "IdentityConflict" }
+  | { readonly imported: "StaleBinding" };
+
+export interface RepositoryActionStore {
+  /** Replaces what one bound repository declares with one commit's declarations, wholly or not at all. */
+  importRepositoryActions(input: {
+    readonly binding: RepositoryBinding;
+    readonly commit: GitObjectId;
+    readonly declarations: readonly RepositoryActionDeclaration[];
+  }): Promise<RepositoryActionsImported>;
+}
+
+export interface RepositoryActionImportPorts {
+  readonly actionSnapshots: RepositoryActionSnapshotPort;
+  readonly actionStore: RepositoryActionStore;
+}
+
+export type RepositoryActionImportOutcome =
+  | { readonly result: "CommitAbsent" }
+  | {
+      readonly result: "Unavailable";
+      readonly unavailable: "Credential" | "Repository";
+    }
+  | { readonly result: "SnapshotRefused" }
+  | {
+      readonly result: "DeclarationsRefused";
+      readonly faults: readonly RepositoryActionRefusal[];
+    }
+  | { readonly result: "IdentityConflict" }
+  | { readonly result: "StaleBinding" }
+  | { readonly result: "Imported"; readonly declarations: number };
+
+/** Replaces what one bound repository declares with what its tree declares at one exact commit. */
+export async function importRepositoryActions(input: {
+  readonly binding: RepositoryBinding;
+  readonly commit: GitObjectId;
+  readonly ports: RepositoryActionImportPorts;
+}): Promise<RepositoryActionImportOutcome> {
+  const snapshot = await input.ports.actionSnapshots.actionSnapshot({
+    repository: input.binding,
+    commit: input.commit,
+  });
+  switch (snapshot.read) {
+    case "Absent":
+      return { result: "CommitAbsent" };
+    case "Unavailable":
+      return { result: "Unavailable", unavailable: snapshot.unavailable };
+    case "Refused":
+      return { result: "SnapshotRefused" };
+    case "Snapshot":
+      return importRepositoryActionsStored(input, snapshot.files);
+    default:
+      return assertNever(snapshot);
+  }
+}
+
+/** One snapshot's files, stored where every one of them is read and nowhere otherwise. */
+async function importRepositoryActionsStored(
+  input: Parameters<typeof importRepositoryActions>[0],
+  files: readonly RepositoryDeclarationFile[],
+): Promise<RepositoryActionImportOutcome> {
+  const readiness = repositoryActionImportReadiness({
+    repository: input.binding.repository,
+    commit: input.commit,
+    files,
+  });
+  if (readiness.readiness === "Refused")
+    return { result: "DeclarationsRefused", faults: readiness.faults };
+  const { imported } = await input.ports.actionStore.importRepositoryActions({
+    binding: input.binding,
+    commit: input.commit,
+    declarations: readiness.declarations,
+  });
+  return imported === "Imported"
+    ? { result: "Imported", declarations: readiness.declarations.length }
+    : { result: imported };
 }

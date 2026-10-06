@@ -414,3 +414,17 @@ read through `session_route`, which resolves a session's kind against it and
 published. It has no unfinished work: the resolution is read when a turn is
 admitted and stamped on it, so a newer publish moves what is admitted after
 it.
+
+`repository_action` — the actions each bound repository's newest imported head
+declares, each with its name and the commit it was read at. Owned by the
+boundary owner, which is what `import_repository_actions` runs as; the
+configuration importer reaches it through that door alone, and the API role
+reads it. Its key and identity are `(tenant, project, action)`, the action
+compared as written, so a project holds an identity once whichever of its
+repositories declares it, and it points at `project_repository`. It is changed
+by that door alone, which replaces one repository's rows whole under an
+advisory lock on the project, refuses a set naming an identity another live
+repository of the project holds, and lets a live repository take an identity
+only a retired binding still holds. It has no unfinished work: an import
+replaced the set or changed nothing, and a repository whose head is not
+imported yet declares what its last imported head did.

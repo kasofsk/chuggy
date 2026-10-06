@@ -19,7 +19,6 @@ import {
   repositoryConfigurationRoot,
   type RepositoryConfigurationSnapshotPort,
   type RepositoryConfigurationSnapshotRead,
-  type RepositoryConfigurationSnapshotRequest,
   type RepositoryDefaultBranchPort,
   type RepositoryDefaultBranchRead,
 } from "../../interpreter/repositoryConfiguration.ts";
@@ -28,6 +27,7 @@ import {
   repositoryDeclarationsMax,
   type RepositoryDeclarationFile,
 } from "../../interpreter/repositoryDeclaration.ts";
+import type { RepositoryDeclarationSnapshotRequest } from "../../interpreter/repositoryDeclarationSnapshot.ts";
 import {
   scratchObserveHead,
   scratchOpen,
@@ -103,7 +103,7 @@ function gitRepositoryConfigurationExited(
 
 async function gitRepositoryConfigurationFetch(
   own: GitRepositoryConfigurationState,
-  request: RepositoryConfigurationSnapshotRequest,
+  request: RepositoryDeclarationSnapshotRequest,
   credential: RepositoryCredential | undefined,
 ): Promise<"Fetched" | "Absent" | "Unavailable"> {
   const repository = request.repository.repository;
@@ -151,7 +151,7 @@ function gitRepositoryConfigurationEntries(
 
 async function gitRepositoryConfigurationTree(
   own: GitRepositoryConfigurationState,
-  request: RepositoryConfigurationSnapshotRequest,
+  request: RepositoryDeclarationSnapshotRequest,
 ): Promise<readonly GitRepositoryConfigurationEntry[] | "Refused"> {
   const ran = await scratchRun(own.scratch, {
     repository: request.repository.repository,
@@ -173,7 +173,7 @@ async function gitRepositoryConfigurationTree(
 
 async function gitRepositoryConfigurationFile(
   own: GitRepositoryConfigurationState,
-  request: RepositoryConfigurationSnapshotRequest,
+  request: RepositoryDeclarationSnapshotRequest,
   entry: GitRepositoryConfigurationEntry,
 ): Promise<RepositoryDeclarationFile | undefined> {
   if (
@@ -200,7 +200,7 @@ async function gitRepositoryConfigurationFile(
 
 async function gitRepositoryConfigurationFiles(
   own: GitRepositoryConfigurationState,
-  request: RepositoryConfigurationSnapshotRequest,
+  request: RepositoryDeclarationSnapshotRequest,
   entries: readonly GitRepositoryConfigurationEntry[],
 ): Promise<readonly RepositoryDeclarationFile[] | undefined> {
   const files: RepositoryDeclarationFile[] = [];
@@ -214,7 +214,7 @@ async function gitRepositoryConfigurationFiles(
 
 async function gitRepositoryConfigurationSnapshot(
   own: GitRepositoryConfigurationState,
-  request: RepositoryConfigurationSnapshotRequest,
+  request: RepositoryDeclarationSnapshotRequest,
 ): Promise<RepositoryConfigurationSnapshotRead> {
   const authorization = await gitRepositoryConfigurationCredential(
     own,
