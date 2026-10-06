@@ -10,10 +10,15 @@
  * answers nothing for is a reporter nobody can be; so is one holding only
  * blanks, because no bearer is the empty string.
  *
+ * A SECRET IS BYTES AND IS NEVER READ AS TEXT. It is what its file holds
+ * between the spaces, tabs and line ends at its two ends, and no other byte is
+ * a blank: what a decoder trims includes the byte some characters end in. A
+ * header arrives as its bytes, one to a character, so a bearer is turned back
+ * into them.
+ *
  * WHAT IS COMPARED IS A DIGEST OF EACH, in time that depends on neither, so a
  * refusal says nothing of how much of a guess was right or how long the secret
- * is. A header arrives as its bytes, one to a character, so the file is read
- * the same way and the two are compared as the bytes they are.
+ * is.
  */
 
 import { createHash, timingSafeEqual } from "node:crypto";
@@ -36,13 +41,22 @@ function bearerSecretPresented(
   return /^Bearer ([^ ]+)$/iu.exec(authorization)?.[1];
 }
 
-/** The secret a file's bytes hold, without the blanks around it. */
-function bearerSecretHeld(written: Buffer): string {
-  return written.toString("latin1").trim();
+/** Whether a byte is a space, a tab, a carriage return or a line feed. */
+function bearerSecretBlank(byte: number | undefined): boolean {
+  return byte === 0x20 || byte === 0x09 || byte === 0x0d || byte === 0x0a;
 }
 
-function bearerSecretDigest(secret: string): Buffer {
-  return createHash("sha256").update(secret, "latin1").digest();
+/** The secret a file's bytes hold: what stands between the blanks at their two ends. */
+function bearerSecretHeld(written: Buffer): Buffer {
+  let start = 0;
+  while (bearerSecretBlank(written[start])) start += 1;
+  let end = written.length;
+  while (bearerSecretBlank(written[end - 1])) end -= 1;
+  return written.subarray(start, end);
+}
+
+function bearerSecretDigest(secret: Uint8Array): Buffer {
+  return createHash("sha256").update(secret).digest();
 }
 
 /** What a body holding this tree's own report document says, read from its bytes. */
@@ -80,7 +94,7 @@ export function bearerSecretReporters(): ActionReporterSchemePort {
       const written = await reporterSecretBytes(secretFile);
       if (written === undefined) return undefined;
       return timingSafeEqual(
-        bearerSecretDigest(presented),
+        bearerSecretDigest(Buffer.from(presented, "latin1")),
         bearerSecretDigest(bearerSecretHeld(written)),
       )
         ? bearerSecretDocumentSaid(request.body)

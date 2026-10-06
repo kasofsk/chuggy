@@ -171,10 +171,71 @@ test("a bearer is one token, so a secret written with a blank inside it is one n
 });
 
 test("the blanks around a file's secret are not part of it", async (t) => {
-  for (const held of [`${secret}\n`, `  ${secret}\r\n`, `\n${secret}\t`]) {
-    const path = fileHolding(t, held);
-    assert.deepEqual(await asked(path, `Bearer ${secret}`), said, held);
-  }
+  for (const blank of [" ", "\t", "\r", "\n"])
+    for (const held of [
+      `${blank}${secret}`,
+      `${secret}${blank}`,
+      `${blank}${blank}${secret}${blank}${blank}`,
+    ]) {
+      const path = fileHolding(t, held);
+      assert.deepEqual(
+        await asked(path, `Bearer ${secret}`),
+        said,
+        JSON.stringify(held),
+      );
+    }
+  assert.deepEqual(
+    await asked(fileHolding(t, ` \t${secret}\r\n`), `Bearer ${secret}`),
+    said,
+  );
+});
+
+/** Secrets beginning or ending in a byte a decoder trims and this scheme does not, each beside what it is without that byte. */
+function edgedSecrets(): readonly (readonly [
+  written: Buffer,
+  without: Buffer,
+])[] {
+  const within = Buffer.from(secret);
+  const accented = Buffer.from("pass\u00e0", "utf8");
+  return [
+    [accented, accented.subarray(0, -1)],
+    ...[0xa0, 0x0b, 0x0c].flatMap(
+      (byte) =>
+        [
+          [Buffer.from([...within, byte]), within],
+          [Buffer.from([byte, ...within]), within],
+        ] as const,
+    ),
+  ];
+}
+
+/** A file holding one such secret and a line end after it. */
+function fileEnding(t: TestContext, written: Buffer): string {
+  return fileHolding(t, Buffer.concat([written, Buffer.from("\n")]));
+}
+
+test("no other byte is a blank: a secret that begins or ends in one a decoder trims is presented with it", async (t) => {
+  for (const [written] of edgedSecrets())
+    assert.deepEqual(
+      await asked(
+        fileEnding(t, written),
+        `Bearer ${written.toString("latin1")}`,
+      ),
+      said,
+      written.toString("hex"),
+    );
+});
+
+test("a secret that begins or ends in a byte a decoder trims is not the secret without it", async (t) => {
+  for (const [written, without] of edgedSecrets())
+    assert.equal(
+      await asked(
+        fileEnding(t, written),
+        `Bearer ${without.toString("latin1")}`,
+      ),
+      undefined,
+      written.toString("hex"),
+    );
 });
 
 test("a file that holds no secret verifies nobody, whatever is presented", async (t) => {
