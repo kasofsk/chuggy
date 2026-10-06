@@ -402,6 +402,25 @@ set -e
 check "the action directory's page selects the suites that read it" 0 "$RC" "stub check-source"
 check "the action directory's page skips the database" 0 "$RC" "check-postgres: SKIPPED"
 
+# So is a document in it: the unit suites put every action this repository
+# declares through the importer.
+stub_repo 0
+mkdir -p "$R/.chug/actions"
+printf '{"before": 1}\n' > "$R/.chug/actions/build.json"
+git -C "$R" add -A
+git -C "$R" commit -qm baseline
+printf '{"after": 1}\n' > "$R/.chug/actions/build.json"
+git -C "$R" add -A
+git -C "$R" commit -qm actions
+OUT="$WORK/.out"
+set +e
+(cd "$R" && CHUG_CI_BASE=HEAD^ CHUG_CI_SHELL_SUITES=0 \
+	./.chug/tasks/ci.sh) >"$OUT" 2>&1
+RC=$?
+set -e
+refute "an action's document selects the suites that read it" 0 "$RC" "check-source unit: SKIPPED"
+check "an action's document skips the database" 0 "$RC" "check-postgres: SKIPPED"
+
 # The vendored package is the model's text and the corpus the harness replays,
 # so a change to it reaches the replay gates and the pin, not only Quint.
 stub_repo 0
@@ -648,11 +667,11 @@ check "a gate selects its suite of fixtures" 0 "$RC" "  - .chug/tasks/check-post
 stub_repo 0
 mkdir -p "$R/.githooks" "$R/deploy/rig"
 for suite in .chug/tasks/ci .chug/tasks/check-source .chug/tasks/check-boundaries \
-	.chug/tasks/check-duplication .githooks/pre-commit deploy/rig/deploy-to-gtr; do
+	.chug/tasks/check-duplication .githooks/pre-commit deploy/rig/drill; do
 	printf '#!/bin/sh\nexit 0\n' > "$R/$suite.test.sh"
 done
 printf '#!/bin/sh\nexit 0\n' > "$R/.githooks/pre-commit"
-printf '#!/bin/sh\nexit 0\n' > "$R/deploy/rig/deploy-to-gtr.sh"
+printf '#!/bin/sh\nexit 0\n' > "$R/deploy/rig/drill.sh"
 printf 'model/\n' > "$R/.prettierignore"
 printf '# harness\n' > "$R/.chug/tasks/_suite.sh"
 printf 'module.exports = {};\n' > "$R/.dependency-cruiser.cjs"
@@ -677,7 +696,7 @@ printf '# harness, changed\n' > "$R/.chug/tasks/_suite.sh"
 commit_all harness
 run_last_commit 1
 check "the harness selects the hook's suite" 0 "$RC" "  - .githooks/pre-commit.test.sh"
-check "the harness selects a suite kept beside its script" 0 "$RC" "  - deploy/rig/deploy-to-gtr.test.sh"
+check "the harness selects a suite kept beside its script" 0 "$RC" "  - deploy/rig/drill.test.sh"
 check "the harness selects the sequencer's suite" 0 "$RC" "  - .chug/tasks/ci.test.sh"
 check "the harness selects a suite that copies the tools' configuration" 0 "$RC" "  - .chug/tasks/check-boundaries.test.sh"
 printf 'dist/\n' > "$R/.prettierignore"
@@ -692,10 +711,10 @@ printf '#!/bin/sh\nexit 0\n# changed\n' > "$R/.githooks/pre-commit"
 commit_all hook
 run_last_commit 1
 check "the hook selects its suite" 0 "$RC" "  - .githooks/pre-commit.test.sh"
-printf '#!/bin/sh\nexit 0\n# changed\n' > "$R/deploy/rig/deploy-to-gtr.sh"
-commit_all release
+printf '#!/bin/sh\nexit 0\n# changed\n' > "$R/deploy/rig/drill.sh"
+commit_all script
 run_last_commit 1
-check "a script selects the suite kept beside it" 0 "$RC" "  - deploy/rig/deploy-to-gtr.test.sh"
+check "a script selects the suite kept beside it" 0 "$RC" "  - deploy/rig/drill.test.sh"
 printf '\n# changed\n' >> "$R/.chug/tasks/ci.sh"
 commit_all sequencer
 run_last_commit 1

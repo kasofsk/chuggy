@@ -1,14 +1,13 @@
 #!/bin/sh
-# Build the images under `images/` and put them where the rig's kubelet will
-# find them. The rig has no registry, and on a single-node k3s it does not need
-# one: the kubelet reads the node's own containerd, and an archive imported
+# Build the images under `images/` by hand and put them where the rig's kubelet
+# will find them: it reads the node's own containerd, and an archive imported
 # there is an image already present, which `imagePullPolicy: IfNotPresent`
-# never tries to fetch.
+# never tries to fetch. A release's images are not these: the fabric builds its
+# own from the same Dockerfiles.
 #
 # THE TAG NAMES A COMMIT AND MUST NOT LIE ABOUT ONE. A build context is the
 # working tree, not HEAD, so a tag derived from HEAD over a dirty tree names a
-# commit the image is not built from — and the manifests in chuggy-fabric
-# reference these images by that tag. So a dirty tree is refused, and
+# commit the image is not built from. So a dirty tree is refused, and
 # `CHUG_IMAGE_TAG` is how a build says out loud that it is naming something
 # else.
 #
@@ -42,10 +41,10 @@
 # reference is there is then unknown, and unknown exits 2.
 #
 # WHAT IT DOES NOT DO. It deploys nothing: the Deployments, Services and probes
-# live in chuggy-fabric and reference these tags. It removes no earlier tag
-# from the node either, so a rollback target stays where it was until someone
-# takes it away. `deploy/rig/images/README.md` is the procedure and says what
-# each half is and is not evidence of.
+# live in chuggy-fabric. It removes no earlier tag from the node either, so an
+# earlier build stays where it was until someone takes it away.
+# `deploy/rig/images/README.md` is the procedure and says what each half is and
+# is not evidence of.
 #
 # Usage:
 #   deploy/rig/images/build-and-import.sh api
