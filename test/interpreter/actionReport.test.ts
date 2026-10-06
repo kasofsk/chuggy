@@ -230,17 +230,24 @@ test("an action has at most one reporter", () => {
     );
 });
 
-test("no two reporters proving themselves by a signature over the body name one secret file, wherever each reports", () => {
+/** Why a roster is refused for naming the secret file of `rig-flux` for a second reporter. */
+function sharedWith(other: string): string {
+  return `names the secret file of the FluxSignature reporter rig-flux for the reporter ${other} as well`;
+}
+
+test("the secret file of a reporter proving itself by a signature is named by no other that signs, wherever each reports", () => {
   const canary = { ...flux, reporter: "canary-flux", actions: ["rig-canary"] };
-  const sharing =
-    "names one secret file for the FluxSignature reporters rig-flux and canary-flux";
   for (const second of [
     canary,
     { ...canary, project: "console" },
     { ...canary, tenant: "acme" },
     { ...canary, tenant: "acme", actions: ["rig"] },
   ])
-    assert.equal(refused([flux, second]), sharing, JSON.stringify(second));
+    assert.equal(
+      refused([flux, second]),
+      sharedWith("canary-flux"),
+      JSON.stringify(second),
+    );
   assert.equal(
     refused([
       build,
@@ -254,30 +261,48 @@ test("no two reporters proving themselves by a signature over the body name one 
       },
       canary,
     ]),
-    sharing,
+    sharedWith("canary-flux"),
     "with other reporters between them, one of them signing with a file of its own",
   );
-  assert.ok(!sharing.includes(flux.secretFile));
+  assert.ok(!sharedWith("canary-flux").includes(flux.secretFile));
 });
 
-test("a secret file is shared by any other two reporters, and is told from another by its path as written", () => {
+test("the secret file of a reporter proving itself by a signature is named by none presenting a bearer, whichever is named first", () => {
+  const bearing = { ...build, secretFile: flux.secretFile };
+  const deploys = { ...bearing, reporter: "deploys", actions: ["deploy"] };
+  for (const [roster, other, why] of [
+    [[flux, bearing], "rig-build", "the signing reporter first"],
+    [[bearing, flux], "rig-build", "the signing reporter second"],
+    [[flux, { ...bearing, project: "console" }], "rig-build", "in a project"],
+    [[{ ...bearing, tenant: "acme" }, flux], "rig-build", "in a tenant"],
+    [[flux, { ...bearing, actions: [] }], "rig-build", "named for no action"],
+    [[bearing, deploys, flux], "rig-build", "after two that share it"],
+    [[build, flux, deploys], "deploys", "with a reporter between them"],
+  ] as const)
+    assert.equal(refused(roster), sharedWith(other), why);
+});
+
+test("reporters each presenting a bearer may name one secret file, and a file is told from another by its path as written", () => {
   const canary = { ...flux, reporter: "canary-flux", actions: ["rig-canary"] };
+  const deploys = { ...build, reporter: "deploys", actions: ["deploy"] };
   for (const [roster, why] of [
     [
-      [flux, { ...canary, secretFile: `${flux.secretFile}-canary` }],
+      [flux, { ...canary, secretFile: `${flux.secretFile}-canary` }, build],
       "a file each",
     ],
-    [[flux, { ...build, secretFile: flux.secretFile }], "one of each scheme"],
+    [[build, deploys], "two presenting the secret itself"],
     [
-      [build, { ...build, reporter: "deploys", actions: ["deploy"] }],
-      "two presenting the secret itself",
+      [build, deploys, { ...build, reporter: "pages", actions: ["pages"] }],
+      "and a third",
     ],
+    [[flux, build, deploys], "beside one that signs with a file of its own"],
     [
       [
         flux,
         { ...canary, secretFile: flux.secretFile.replace("/var/", "/var//") },
+        { ...build, secretFile: `${flux.secretFile}/` },
       ],
-      "one file written two ways",
+      "one file written three ways",
     ],
   ] as const)
     assert.equal(named(roster).length, roster.length, why);

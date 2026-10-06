@@ -11,6 +11,15 @@
  * history, and two reporters would each write their own account into it. It is
  * also what lets the address a report is sent to say which scheme reads it.
  *
+ * A SIGNING KEY IS ONE REPORTER'S AND ONE ACTION'S. A signature over the body
+ * alone says nothing of where its request was sent, so a reporter proving
+ * itself by one is named for a single action, and the file its key is in is
+ * named by no other reporter. Another that signs would have its events verify
+ * at both addresses. One that presents its secret as a bearer presents it
+ * whole on every request, so whoever holds or sees it could sign with it,
+ * where a signing key is never presented. A file is told from another by its
+ * path as written.
+ *
  * A REPORTER IS ANSWERED AS ITS CLAIMS AND NOT AS A YES. Whether it may report
  * the action a request names is decided here from the claims, so a scheme
  * whose claims come from what a request carries is held to the rule a
@@ -109,18 +118,17 @@ type ActionReporterRosterEntry = z.infer<
   typeof actionReporterRosterSchema
 >[number];
 
-/**
- * Why a roster every entry of which is well formed is refused, or nothing. A
- * signature over the body alone verifies at any address its key is behind, so
- * a reporter proving itself by one is named for one action, and no two such
- * reporters name one secret file, a file being told from another by its path
- * as written.
- */
+/** Why a roster is refused where the reporter `other` names the file the key of the signing reporter `signing` is in, said without the path. */
+function actionReporterKeyShared(signing: string, other: string): string {
+  return `names the secret file of the FluxSignature reporter ${signing} for the reporter ${other} as well`;
+}
+
+/** Why a roster every entry of which is well formed is refused, or nothing. */
 function actionReporterRosterBroken(
   entries: readonly ActionReporterRosterEntry[],
 ): string | undefined {
   const reported = new Set<string>();
-  const signing = new Map<string, string>();
+  const keyed = new Map<string, ActionReporterRosterEntry>();
   for (const entry of entries) {
     if (entry.scheme === "FluxSignature" && entry.actions.length !== 1)
       return `names the FluxSignature reporter ${entry.reporter} for other than one action`;
@@ -130,11 +138,12 @@ function actionReporterRosterBroken(
         return `names the action ${action} of ${entry.tenant}/${entry.project} twice`;
       reported.add(identity);
     }
-    if (entry.scheme !== "FluxSignature") continue;
-    const sharing = signing.get(entry.secretFile);
-    if (sharing !== undefined)
-      return `names one secret file for the FluxSignature reporters ${sharing} and ${entry.reporter}`;
-    signing.set(entry.secretFile, entry.reporter);
+    const sharing = keyed.get(entry.secretFile);
+    if (sharing === undefined) keyed.set(entry.secretFile, entry);
+    else if (sharing.scheme === "FluxSignature")
+      return actionReporterKeyShared(sharing.reporter, entry.reporter);
+    else if (entry.scheme === "FluxSignature")
+      return actionReporterKeyShared(entry.reporter, sharing.reporter);
   }
   return undefined;
 }

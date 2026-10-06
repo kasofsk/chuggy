@@ -965,9 +965,10 @@ async function forgeSecretRead(
   };
 }
 
-/** A mounted secret, one that is not there, one holding only a newline, and one that is a directory. */
+/** A mounted secret, another mounted beside it, one that is not there, one holding only a newline, and one that is a directory. */
 function forgeSecretFiles(t: TestContext): {
   readonly present: string;
+  readonly another: string;
   readonly missing: string;
   readonly empty: string;
   readonly unreadable: string;
@@ -978,11 +979,19 @@ function forgeSecretFiles(t: TestContext): {
   });
   const present = join(root, "client-secret");
   writeFileSync(present, "a-client-secret\n");
+  const another = join(root, "signing-key");
+  writeFileSync(another, "a-signing-key\n");
   const empty = join(root, "empty");
   writeFileSync(empty, "\n");
   const unreadable = join(root, "directory");
   mkdirSync(unreadable);
-  return { present, missing: join(root, "missing"), empty, unreadable };
+  return {
+    present,
+    another,
+    missing: join(root, "missing"),
+    empty,
+    unreadable,
+  };
 }
 
 /**
@@ -1141,17 +1150,24 @@ function fluxCarried(key: string, reason: string, agoMs: number): string {
 
 const actionReportersVariable = "CHUG_API_ACTION_REPORTERS";
 
-/** A roster naming one reporter of each scheme, each proving itself by the secret in `secretFile`. */
-function actionReporterRoster(secretFile: string): string {
-  const named = { secretFile, tenant: "vteng", project: "chuggy" };
+/** A roster naming one reporter of each scheme: `build` presenting the secret in `secretFile`, and `flux` signing with the key in `keyFile`. */
+function actionReporterRoster(secretFile: string, keyFile: string): string {
+  const named = { tenant: "vteng", project: "chuggy" };
   return JSON.stringify([
     {
       ...named,
       reporter: "build",
       scheme: "BearerSecret",
+      secretFile,
       actions: ["publish"],
     },
-    { ...named, reporter: "flux", scheme: "FluxSignature", actions: ["rig"] },
+    {
+      ...named,
+      reporter: "flux",
+      scheme: "FluxSignature",
+      secretFile: keyFile,
+      actions: ["rig"],
+    },
   ]);
 }
 
@@ -1186,7 +1202,10 @@ test("a deployment naming no reporters starts, and answers every report as not f
 test("a named reporter's report is verified by its secret's file and recorded over the API pool", async (t) => {
   const files = forgeSecretFiles(t);
   const named = {
-    [actionReportersVariable]: actionReporterRoster(files.present),
+    [actionReportersVariable]: actionReporterRoster(
+      files.present,
+      files.another,
+    ),
   };
   assert.deepEqual(await actionReported(named), {
     reported: { result: "Recorded" },
@@ -1213,7 +1232,10 @@ test("a reporter whose secret's file holds no secret is a deployment that starts
   for (const secretFile of [files.missing, files.empty, files.unreadable])
     assert.deepEqual(
       await actionReported({
-        [actionReportersVariable]: actionReporterRoster(secretFile),
+        [actionReportersVariable]: actionReporterRoster(
+          secretFile,
+          files.another,
+        ),
       }),
       { reported: { result: "NotFound" }, asked: [] },
       secretFile,
@@ -1226,26 +1248,26 @@ const fluxStaleMs = 2 * fluxSignatureToleranceSecs * 1_000;
 test("a reporter proving itself by a signature is verified by its secret's file and this process's clock, and recorded over the API pool", async (t) => {
   const files = forgeSecretFiles(t);
   const named = {
-    [actionReportersVariable]: actionReporterRoster(files.present),
+    [actionReportersVariable]: actionReporterRoster(
+      files.present,
+      files.another,
+    ),
   };
   const flux = (key: string, reason: string, agoMs: number) =>
     actionCarried(named, "rig", fluxCarried(key, reason, agoMs));
 
-  assert.deepEqual(
-    await flux("a-client-secret", "ReconciliationSucceeded", 0),
-    {
-      reported: { result: "Recorded" },
-      asked: ["pool"],
-    },
-  );
-  assert.deepEqual(await flux("a-client-secret", "Progressing", 0), {
+  assert.deepEqual(await flux("a-signing-key", "ReconciliationSucceeded", 0), {
+    reported: { result: "Recorded" },
+    asked: ["pool"],
+  });
+  assert.deepEqual(await flux("a-signing-key", "Progressing", 0), {
     reported: { result: "Ignored" },
     asked: [],
   });
   for (const [key, agoMs] of [
-    ["another-secret", 0],
-    ["a-client-secret", fluxStaleMs],
-    ["a-client-secret", -fluxStaleMs],
+    ["a-client-secret", 0],
+    ["a-signing-key", fluxStaleMs],
+    ["a-signing-key", -fluxStaleMs],
   ] as const)
     assert.deepEqual(
       await flux(key, "ReconciliationSucceeded", agoMs),
@@ -1253,18 +1275,17 @@ test("a reporter proving itself by a signature is verified by its secret's file 
       `${key} ${String(agoMs)}`,
     );
   assert.deepEqual(
-    await actionReported(named, "rig"),
+    await actionReported(named, "rig", "a-signing-key"),
     { reported: { result: "NotFound" }, asked: [] },
-    "its secret presented as a bearer",
+    "its key presented as a bearer",
   );
 });
 
 test("a roster that cannot be read refuses the start, naming the variable and the rule", async (t) => {
   const files = forgeSecretFiles(t);
-  const [build, flux] = JSON.parse(actionReporterRoster(files.present)) as [
-    Record<string, unknown>,
-    Record<string, unknown>,
-  ];
+  const [build, flux] = JSON.parse(
+    actionReporterRoster(files.present, files.another),
+  ) as [Record<string, unknown>, Record<string, unknown>];
   for (const [roster, why] of [
     ["[{", /CHUG_API_ACTION_REPORTERS is not JSON/u],
     [
@@ -1284,7 +1305,11 @@ test("a roster that cannot be read refuses the start, naming the variable and th
         flux,
         { ...flux, reporter: "flux-canary", actions: ["rig-canary"] },
       ]),
-      /CHUG_API_ACTION_REPORTERS names one secret file for the FluxSignature reporters flux and flux-canary/u,
+      /CHUG_API_ACTION_REPORTERS names the secret file of the FluxSignature reporter flux for the reporter flux-canary as well/u,
+    ],
+    [
+      JSON.stringify([{ ...build, secretFile: flux["secretFile"] }, flux]),
+      /CHUG_API_ACTION_REPORTERS names the secret file of the FluxSignature reporter flux for the reporter build as well/u,
     ],
   ] as const) {
     const ran = await rootRead(
