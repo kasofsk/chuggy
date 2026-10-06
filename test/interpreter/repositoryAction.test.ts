@@ -207,7 +207,8 @@ test("only a JSON file directly in the action directory is a declaration", () =>
 });
 
 test("the longest path is read and one character more is refused", () => {
-  const fileOf = (chars: number) => "a".repeat(chars - pathOf("").length);
+  const fileOf = (chars: number) =>
+    "\u{1f680}".repeat(chars - pathOf("").length);
   assert.equal(
     read([actionFile(fileOf(repositoryActionPathCharsMax), build)]).readiness,
     "Ready",
@@ -228,7 +229,9 @@ test("a symlink is refused, whatever its content", () => {
 });
 
 test("the largest document is read and one character more is refused", () => {
-  const padded = (chars: number) => JSON.stringify(build).padEnd(chars, " ");
+  const written = JSON.stringify({ ...build, name: "Build \u{1f680}" });
+  const padded = (chars: number) =>
+    `${written}${" ".repeat(chars - [...written].length)}`;
   assert.equal(
     read([
       {

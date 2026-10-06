@@ -13,10 +13,10 @@ declares one action, as a strict document:
 }
 ```
 
-`action` is the action's identity and is unique across the directory: letters
-and digits, with `.`, `_` and `-` only between them. `name` is what a reader is
-shown, as one printable line. A field the document does not declare is refused,
-never ignored.
+`action` is the action's identity and is unique across the directory: ASCII
+letters and digits, with `.`, `_` and `-` only between them. `name` is what a
+reader is shown, as one printable line. A field the document does not declare
+is refused, never ignored.
 
 An action belongs to the repository its document is read from, so a document
 names no repository.

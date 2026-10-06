@@ -26,8 +26,8 @@ export const actionIdentityCharsMax = 128;
 export const actionNameCharsMax = 256;
 
 /**
- * One action: `action` is its identity, letters and digits with `.`, `_` and
- * `-` only between them, which makes it one URL path segment exactly as
+ * One action: `action` is its identity, ASCII letters and digits with `.`, `_`
+ * and `-` only between them, which makes it one URL path segment exactly as
  * written. `name` is what a reader is shown, bounded here and held to one
  * printable line where the document is read.
  */
