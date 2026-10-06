@@ -1,4 +1,4 @@
-/* SectionList: a page's table of contents, one line per section. */
+/* SectionList: a page's table of contents, one entry per section. */
 
 @layer ui {
   .sections {
