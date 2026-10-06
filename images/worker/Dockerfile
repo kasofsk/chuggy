@@ -4,12 +4,11 @@
 ARG ZOD_VERSION=4.5.4
 
 # The base every stage builds from. The image one attempt runs in is built by
-# the fabric rather than by hand: `builds/` in gdoteof/chuggy-fabric holds the
-# request, and the profile it names permits public HTTPS on 443 and nothing
-# else outbound.
+# the fabric, in a pod whose only way out of the cluster is public HTTPS on
+# 443.
 #
 # THAT IS WHY THE BASE IS NOT THE SLIM ONE, AND WHY THE SOURCES ARE REWRITTEN.
-# Debian's apt fetches over port 80, which that profile refuses — the packages
+# Debian's apt fetches over port 80, which that pod cannot reach — the packages
 # below resolve and then fail to connect. Fetching them over 443 instead needs a
 # CA store to verify the server with, and the slim base has none at all: no
 # ca-certificates package, no /etc/ssl/certs. So the base is the one that ships

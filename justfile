@@ -73,14 +73,6 @@ acceptance *ARGS:
     [ "$unreached" -eq 0 ] || exit "$unreached"
     exit "$ran"
 
-# Release HEAD to the rig: gate it, build and publish what changed, and open
-# the chuggy-fabric pull request that selects it. `just deploy-to-gtr --merge`
-# lands that pull request and watches the rollout, and `just deploy-to-gtr
-# --console` does both in one run for a release that moves only the console.
-# The script's header is the procedure and names what it needs.
-deploy-to-gtr *ARGS:
-    ./deploy/rig/deploy-to-gtr.sh {{ ARGS }}
-
 # The console of a running installation, served from this machine, so a change
 # to it is a reload rather than a release. `ui/chuggy-ui/dev/README.md` is the
 # procedure and says which installation it reaches and what that installation
