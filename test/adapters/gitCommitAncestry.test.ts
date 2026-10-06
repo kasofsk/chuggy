@@ -717,17 +717,54 @@ test("a tip whose ref stands over history that is gone is fetched again, and hel
   assert.equal(fixtureRecordedCount(fixture, "fetch"), 2);
 });
 
-test("a commit-graph left over a pack that is gone does not answer for the commits in it", async (t) => {
+for (const [told, inherited] of [
+  ["left to itself", {}],
+  ["told by its environment to read one", { GIT_TEST_COMMIT_GRAPH: "1" }],
+] as const) {
+  test(`a commit-graph left over a pack that is gone does not answer for the commits in it, git ${told}`, async (t) => {
+    const fixture = fixtureOpen(t);
+    const port = fixturePort(fixture, {
+      environment: {
+        ...process.env,
+        GIT_CONFIG_GLOBAL: join(fixture.directory, "gitconfig"),
+        ...inherited,
+      },
+    });
+    const newer = await fixtureAged(fixture, port);
+    const scratch = fixtureScratchRepository(fixture);
+    fixtureGit(scratch, "commit-graph", "write", "--reachable");
+    rmSync(join(scratch, "objects", "pack"), { recursive: true, force: true });
+
+    assert.equal(
+      await port.ancestry(fixtureQuestion(fixture, fixture.candidate, newer)),
+      "Unknown",
+    );
+  });
+}
+
+test("a replace ref giving the tip another commit's history is not what an answer is read through", async (t) => {
   const fixture = fixtureOpen(t);
   const port = fixturePort(fixture);
-  const newer = await fixtureAged(fixture, port);
-  const scratch = fixtureScratchRepository(fixture);
-  fixtureGit(scratch, "commit-graph", "write", "--reachable");
-  rmSync(join(scratch, "objects", "pack"), { recursive: true, force: true });
+  assert.equal(
+    await port.ancestry(fixtureQuestion(fixture, fixture.candidate)),
+    "Ancestor",
+  );
+  fixtureAlone(fixture, fixture.stray);
+  fixtureGit(
+    fixtureScratchRepository(fixture),
+    "replace",
+    "--graft",
+    fixture.tip,
+    fixture.stray,
+  );
 
   assert.equal(
-    await port.ancestry(fixtureQuestion(fixture, fixture.candidate, newer)),
-    "Unknown",
+    await port.ancestry(fixtureQuestion(fixture, fixture.candidate)),
+    "Ancestor",
+  );
+  assert.equal(
+    await port.ancestry(fixtureQuestion(fixture, fixture.stray)),
+    "NotAncestor",
   );
 });
 

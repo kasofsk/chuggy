@@ -407,10 +407,11 @@ function scratchSaid(
 }
 
 /**
- * Makes one read of a repository's scratch with the commit-graph set aside,
- * because git trusts that file unchecked and it goes on answering for commits
- * whose objects are gone. A yes for a commit far under another is therefore a
- * walk that reads every commit down to where it lies.
+ * Makes one read of a repository's scratch with the commit-graph and every
+ * replace ref set aside, because git trusts both unchecked: the file goes on
+ * answering for commits whose objects are gone, and such a ref answers for one
+ * commit with another's history. A yes for a commit far under another is
+ * therefore a walk that reads every commit down to where it lies.
  */
 async function scratchFind(
   scratch: GitScratch,
@@ -422,7 +423,12 @@ async function scratchFind(
     ran = await scratchRun(scratch, {
       repository,
       timeoutSecsMax: scratch.options.localTimeoutSecsMax,
-      argv: ["-c", "core.commitGraph=false", ...asked.argv],
+      argv: [
+        "--no-replace-objects",
+        "-c",
+        "core.commitGraph=false",
+        ...asked.argv,
+      ],
       ...(asked.input === undefined ? {} : { input: asked.input }),
     });
   } catch {

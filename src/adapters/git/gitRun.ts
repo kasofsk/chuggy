@@ -54,7 +54,7 @@ const gitRunDrainSecs = 1;
 /** How long a stopped call's process group is given to end on its own before it is killed outright. */
 const gitRunKillGraceSecs = 5;
 
-/** The variables an ambient environment would otherwise point a call at another repository, another index or another object store with. */
+/** The variables an ambient environment would otherwise point a call at another repository, another index or another object store with, or have it read history through a commit-graph the call itself set aside. */
 const gitRunAmbientOverrides: readonly string[] = [
   "GIT_DIR",
   "GIT_WORK_TREE",
@@ -62,6 +62,7 @@ const gitRunAmbientOverrides: readonly string[] = [
   "GIT_OBJECT_DIRECTORY",
   "GIT_ALTERNATE_OBJECT_DIRECTORIES",
   "GIT_NAMESPACE",
+  "GIT_TEST_COMMIT_GRAPH",
 ];
 
 /** The environment name the credential helper reads the user from. */
