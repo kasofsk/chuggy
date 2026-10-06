@@ -40,6 +40,7 @@ export const dispatchAcceptanceFunction = "accept_dispatch_operation";
 export const configurationCreateFunction = "create_configuration_revision";
 export const repositoryConfigurationImportFunction =
   "import_repository_configuration";
+export const repositoryActionImportFunction = "import_repository_actions";
 export const projectCreateFunction = "create_project";
 export const projectCreationGrantsFunction = "record_project_creation_grants";
 export const repositoryBindingReadFunction = "read_project_repository_binding";

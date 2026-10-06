@@ -2,6 +2,7 @@ import {
   repositoryConfigurationNameCharsMax,
   textCodePointsCount,
 } from "../contract/http.ts";
+import { isRepositoryDeclarationPath } from "./repositoryDeclaration.ts";
 declare const repositoryConfigurationNameBrand: unique symbol;
 declare const repositoryConfigurationPathBrand: unique symbol;
 
@@ -22,11 +23,8 @@ export interface ConfigurationVersion {
   readonly number: number;
 }
 
-export const repositoryConfigurationDeclarationsMax = 100;
 /** The configuration name bound, surfaced where every branding of one reads it. */
 export { repositoryConfigurationNameCharsMax };
-export const repositoryConfigurationPathCharsMax = 256;
-export const repositoryConfigurationFileCharsMax = 65_536;
 export const repositoryConfigurationRoot = ".chug/configurations/";
 
 export function asRepositoryConfigurationName(
@@ -57,19 +55,7 @@ export function asConfigurationVersion(value: {
 export function asRepositoryConfigurationPath(
   value: string,
 ): RepositoryConfigurationPath | undefined {
-  if (
-    value.length === 0 ||
-    textCodePointsCount(value) > repositoryConfigurationPathCharsMax ||
-    !value.isWellFormed() ||
-    value.includes("\\") ||
-    value.includes("\0")
-  )
-    return undefined;
-  const relative = value.slice(repositoryConfigurationRoot.length);
-  return value.startsWith(repositoryConfigurationRoot) &&
-    relative.endsWith(".json") &&
-    relative.length > ".json".length &&
-    !relative.slice(0, -".json".length).includes("/")
+  return isRepositoryDeclarationPath(repositoryConfigurationRoot, value)
     ? (value as RepositoryConfigurationPath)
     : undefined;
 }

@@ -6213,6 +6213,7 @@ const wipeKept = [
   "project_repository_bind_operation",
   "project_session_placement",
   "recovery_epoch",
+  "repository_action",
   "repository_configuration_provenance",
   "repository_configuration_version",
   "schema_migration",
