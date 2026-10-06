@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync, readlinkSync } from "node:fs";
+import { join } from "node:path";
 import { test } from "node:test";
 
 import { actionNameCharsMax } from "../../src/contract/actionDocument.ts";
@@ -317,4 +318,20 @@ test("the example the directory's README gives is a document that is read", () =
       .readiness,
     "Ready",
   );
+});
+
+test("every action this repository declares is a document that is read", () => {
+  const files = readdirSync(repositoryActionRoot, {
+    withFileTypes: true,
+    recursive: true,
+  })
+    .filter((entry) => !entry.isDirectory() && entry.name.endsWith(".json"))
+    .map((entry): RepositoryDeclarationFile => {
+      const path = join(entry.parentPath, entry.name);
+      return entry.isSymbolicLink()
+        ? { path, kind: "Symlink", content: readlinkSync(path) }
+        : { path, kind: "File", content: readFileSync(path, "utf8") };
+    });
+  assert.ok(files.length > 0, "the repository declares an action");
+  assert.equal(read(files).readiness, "Ready");
 });
