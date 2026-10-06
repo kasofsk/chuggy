@@ -44,7 +44,8 @@ import { ProjectTable } from "./ProjectTable.tsx";
 import { RepositoriesPage } from "./RepositoriesPage.tsx";
 import { RepositoryPage } from "./repositories/RepositoryPage.tsx";
 import { RunnersPage } from "./RunnersPage.tsx";
-import { SelectorSettingsPage } from "./SelectorSettingsPage.tsx";
+import { SettingsPage } from "./SettingsPage.tsx";
+import { LeadSettingsPage } from "./settings/LeadSettingsPage.tsx";
 import { Shell } from "./Shell.tsx";
 import { ProjectStreamProvider } from "./stream.tsx";
 import { TicketCreation } from "./TicketCreation.tsx";
@@ -132,10 +133,17 @@ const leadRoute = createRoute({
   component: LeadPage,
 });
 
-const selectorRoute = createRoute({
+const settingsRoute = createRoute({
   getParentRoute: () => partitionRoute,
-  path: "/selector",
-  component: SelectorSettingsPage,
+  path: "/settings",
+  component: SettingsPage,
+});
+
+/** One settings group's own page. */
+const settingsLeadRoute = createRoute({
+  getParentRoute: () => partitionRoute,
+  path: "/settings/lead",
+  component: LeadSettingsPage,
 });
 
 const repositoriesRoute = createRoute({
@@ -220,7 +228,8 @@ const routeTree = rootRoute.addChildren([
     projectRoute,
     inboxRoute,
     leadRoute,
-    selectorRoute,
+    settingsRoute,
+    settingsLeadRoute,
     repositoriesRoute,
     repositoryRoute,
     runnersRoute,

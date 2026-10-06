@@ -11,7 +11,7 @@
 import type { ReactNode } from "react";
 import { useId } from "react";
 
-import { countFigure } from "../../core/figures.ts";
+import { countFigure } from "../../../core/figures.ts";
 import {
   selectorSettingsLimitEdited,
   selectorSettingsLimitFigure,
@@ -23,17 +23,17 @@ import {
   selectorSettingsSection,
   selectorSettingsSectionChangedCount,
   selectorSettingsSectionInherited,
-} from "../../core/selectorSettingsForm.ts";
+} from "../../../core/selectorSettingsForm.ts";
 import type {
   SelectorSettingsDraft,
   SelectorSettingsLimitName,
   SelectorSettingsSaved,
-} from "../../core/selectorSettingsForm.ts";
-import type { SelectorProjectSettingsResponse } from "../../../../../src/contract/responses.ts";
-import { Button } from "../ui/Button.tsx";
-import { Figure } from "../ui/Figure.tsx";
-import { Input } from "../ui/Input.tsx";
-import { Pill } from "../ui/Pill.tsx";
+} from "../../../core/selectorSettingsForm.ts";
+import type { SelectorProjectSettingsResponse } from "../../../../../../src/contract/responses.ts";
+import { Button } from "../../ui/Button.tsx";
+import { Figure } from "../../ui/Figure.tsx";
+import { Input } from "../../ui/Input.tsx";
+import { Pill } from "../../ui/Pill.tsx";
 import { SelectorSection } from "./SelectorSection.tsx";
 
 import "./selector.css";

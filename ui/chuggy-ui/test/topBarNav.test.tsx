@@ -55,7 +55,7 @@ async function drawnAt(path: string): Promise<readonly string[]> {
         leaf("/"),
         leaf("/inbox"),
         leaf("/lead"),
-        leaf("/selector"),
+        leaf("/settings"),
         leaf("/repositories"),
         leaf("/runners"),
         leaf("/tickets/new"),

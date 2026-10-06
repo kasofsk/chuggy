@@ -23,9 +23,9 @@ import type {
 import type { SelectorProjectOverrides } from "../../core/selectorSettingsForm.ts";
 import { Button } from "../ui/Button.tsx";
 import { Pill } from "../ui/Pill.tsx";
-import { SelectorSettingsSavedNotice } from "./SelectorSection.tsx";
+import { SelectorSettingsSavedNotice } from "../settings/lead/SelectorSection.tsx";
 
-import "./selector.css";
+import "../settings/lead/selector.css";
 
 function SelectorStripCell(props: {
   readonly cell: SelectorSettingsStripCell;

@@ -10,14 +10,14 @@ import {
   selectorSettingsSectionInherited,
   selectorSettingsTextOverriddenAtRead,
   selectorSettingsTextTyped,
-} from "../../core/selectorSettingsForm.ts";
+} from "../../../core/selectorSettingsForm.ts";
 import type {
   SelectorSettingsDraft,
   SelectorSettingsSaved,
   SelectorSettingsTextName,
-} from "../../core/selectorSettingsForm.ts";
-import { Button } from "../ui/Button.tsx";
-import { Textarea } from "../ui/Textarea.tsx";
+} from "../../../core/selectorSettingsForm.ts";
+import { Button } from "../../ui/Button.tsx";
+import { Textarea } from "../../ui/Textarea.tsx";
 import { SelectorSection } from "./SelectorSection.tsx";
 
 import "./selector.css";

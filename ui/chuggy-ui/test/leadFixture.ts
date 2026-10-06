@@ -295,6 +295,46 @@ export const leadHistory: SelectorHistoryResponse = {
   decisions: [leadDecisionDispatching, leadDecisionRefusing],
 };
 
+const leadSelectorSettingsLimits = {
+  tokensPerDecision: 200_000,
+  millisecondsPerDecision: 900_000,
+  toolCallsPerDecision: 40,
+  dispatchesPerDecision: 3,
+  inputBytesPerDecision: 1_048_576,
+  candidatePagesPerDecision: 4,
+  concurrentDecisions: 2,
+  selectionsPerMinute: 6,
+};
+
+/** What the strip reads: the project's selector settings, with `mode` and
+ * `dispatchMode` the two fields a case moves. */
+export function leadSelectorSettingsBody(
+  revision = 12,
+  resolved: Readonly<Record<string, unknown>> = {},
+): unknown {
+  return {
+    partition: leadPartition,
+    revision,
+    overrides: {},
+    effective: {
+      revision,
+      projectRevision: revision,
+      mode: "Running",
+      installationMode: "Running",
+      dispatchMode: "Automatic",
+      basePrompt: "choose the next ticket",
+      northStar: "ship the console",
+      threadStandingRules: "- You act through your owner's own commands.",
+      modelAllowlist: [],
+      toolAllowlist: [],
+      limits: leadSelectorSettingsLimits,
+      installationLimits: leadSelectorSettingsLimits,
+      operationalContextMaxAgeMs: 60_000,
+      ...resolved,
+    },
+  };
+}
+
 export function leadRefusals(
   superseded: boolean,
   reason = "the brief names no reference",
@@ -357,6 +397,7 @@ export interface LeadServed {
   readonly note?: LeadResponse["handoffNote"];
   readonly inquiries?: LeadInquiriesResponse;
   readonly placement?: SessionPlacementResponse;
+  readonly settings?: unknown;
 }
 
 /** The body and status every route the lead page reads answers with, so a case
@@ -382,6 +423,8 @@ export function leadRouteAnswer(
         served.note ?? leadHandoffNote(false),
       ),
     );
+  if (url.includes("/selector-settings"))
+    return found(served.settings ?? leadSelectorSettingsBody());
   if (url.includes("/selector-history")) return found(leadHistory);
   if (url.includes("/agentic-refusals")) return found(served.refusals);
   if (url.includes("/native-actions")) return found({ actions: [] });

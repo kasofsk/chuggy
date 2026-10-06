@@ -12,23 +12,23 @@ import { Collapsible } from "radix-ui";
 import { useState } from "react";
 import type { ReactNode } from "react";
 
-import type { SelectorSettingsHistoryResponse } from "../../../../../src/contract/responses.ts";
-import { instantFigure } from "../../core/figures.ts";
-import type { PanelState } from "../../core/freshness.ts";
-import { selectorSettingsHistoryDiffs } from "../../core/selectorSettingsHistory.ts";
+import type { SelectorSettingsHistoryResponse } from "../../../../../../src/contract/responses.ts";
+import { instantFigure } from "../../../core/figures.ts";
+import type { PanelState } from "../../../core/freshness.ts";
+import { selectorSettingsHistoryDiffs } from "../../../core/selectorSettingsHistory.ts";
 import type {
   SelectorSettingsFieldChange,
   SelectorSettingsRevisionDiff,
-} from "../../core/selectorSettingsHistory.ts";
+} from "../../../core/selectorSettingsHistory.ts";
 import type {
   SelectorProjectOverrides,
   SelectorSettingsSaved,
-} from "../../core/selectorSettingsForm.ts";
-import { PanelUnready } from "../DataPanel.tsx";
-import { Button, buttonLookClassName } from "../ui/Button.tsx";
-import { EmptyState } from "../ui/EmptyState.tsx";
-import { Figure } from "../ui/Figure.tsx";
-import { Panel } from "../ui/Panel.tsx";
+} from "../../../core/selectorSettingsForm.ts";
+import { PanelUnready } from "../../DataPanel.tsx";
+import { Button, buttonLookClassName } from "../../ui/Button.tsx";
+import { EmptyState } from "../../ui/EmptyState.tsx";
+import { Figure } from "../../ui/Figure.tsx";
+import { Panel } from "../../ui/Panel.tsx";
 import { SelectorSettingsSavedNotice } from "./SelectorSection.tsx";
 
 import "./selector.css";

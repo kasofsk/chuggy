@@ -25,7 +25,7 @@ test("every entry names a route of the partition and carries its params", () => 
     "overview",
     "inbox",
     "lead",
-    "selector",
+    "settings",
     "repositories",
     "runners",
     "ticket-new",
@@ -58,7 +58,7 @@ test("each screen is current on its own address alone", () => {
   expect(currentAt("/acme/atlas")).toStrictEqual(["overview"]);
   expect(currentAt("/acme/atlas/inbox")).toStrictEqual(["inbox"]);
   expect(currentAt("/acme/atlas/lead")).toStrictEqual(["lead"]);
-  expect(currentAt("/acme/atlas/selector")).toStrictEqual(["selector"]);
+  expect(currentAt("/acme/atlas/settings")).toStrictEqual(["settings"]);
   expect(currentAt("/acme/atlas/runners")).toStrictEqual(["runners"]);
   expect(currentAt("/acme/atlas/repositories")).toStrictEqual(["repositories"]);
   expect(currentAt("/acme/atlas/repositories/a%2Fb")).toStrictEqual([
