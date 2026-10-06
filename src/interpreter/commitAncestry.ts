@@ -23,7 +23,11 @@ export interface CommitAncestryQuestion {
 /** What one question came to, `NotAncestor` being a finding about a history read whole and never a commit that could not be read. */
 export type CommitAncestry = "Ancestor" | "NotAncestor" | "Unknown";
 
-/** Answers ancestry, a repository or a commit that could not be read being `Unknown` and never a raise. */
+/**
+ * Answers ancestry, `Unknown` being whatever it could not find out this time.
+ * It raises only where it cannot work at all, which says nothing about the
+ * commits asked about.
+ */
 export interface CommitAncestryPort {
   ancestry(question: CommitAncestryQuestion): Promise<CommitAncestry>;
 }

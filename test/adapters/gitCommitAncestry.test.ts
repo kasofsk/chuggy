@@ -31,7 +31,6 @@ import { setTimeout as sleep } from "node:timers/promises";
 
 import {
   gitCommitAncestry,
-  gitCommitAncestryDefaults,
   type GitCommitAncestryOptions,
 } from "../../src/adapters/git/gitCommitAncestry.ts";
 import { scratchDigestOf } from "../../src/adapters/git/gitScratch.ts";
@@ -208,17 +207,45 @@ function fixtureScratchRepository(
   return join(fixture.scratch, scratchDigestOf(repository));
 }
 
+/** Waits for something a fetch in flight brings about, failing where it never comes. */
+async function fixtureUntil(
+  awaited: string,
+  came: () => boolean,
+): Promise<void> {
+  for (let waits = 0; waits < 400; waits += 1) {
+    if (came()) return;
+    await sleep(25);
+  }
+  assert.fail(`${awaited} never came`);
+}
+
 /** Waits for the tip commit to stand in one remote's scratch, which is the middle of a slowed fetch. */
-async function fixtureTipArrived(
+function fixtureTipArrived(
   fixture: Fixture,
   repository: string = fixture.remote,
 ): Promise<void> {
   const scratch = fixtureScratchRepository(fixture, repository);
-  for (let waits = 0; waits < 400; waits += 1) {
-    if (fixtureAnswers(scratch, "cat-file", "-e", fixture.tip)) return;
-    await sleep(25);
-  }
-  assert.fail("the fetch never brought the tip in");
+  return fixtureUntil("the tip", () =>
+    fixtureAnswers(scratch, "cat-file", "-e", fixture.tip),
+  );
+}
+
+/** Whether a completed fetch has written the ref that says one tip's history is held. */
+function fixtureHistoryHeld(fixture: Fixture, tip: GitObjectId): boolean {
+  return fixtureAnswers(
+    fixtureScratchRepository(fixture),
+    "rev-parse",
+    "--quiet",
+    "--verify",
+    `refs/chuggy/history/${tip}`,
+  );
+}
+
+/** One more commit on the remote's branch, which is a second tip of the same repository. */
+function fixtureNewer(fixture: Fixture): GitObjectId {
+  const newer = fixtureCommit(fixture.seed, "newer");
+  fixtureGit(fixture.seed, "push", "-q", fixture.remote, "main:main");
+  return newer;
 }
 
 /**
@@ -232,8 +259,7 @@ async function fixtureAged(
 ): Promise<GitObjectId> {
   await port.ancestry(fixtureQuestion(fixture, fixture.candidate));
   fixtureGit(fixtureScratchRepository(fixture), "repack", "-adq");
-  const newer = fixtureCommit(fixture.seed, "newer");
-  fixtureGit(fixture.seed, "push", "-q", fixture.remote, "main:main");
+  const newer = fixtureNewer(fixture);
   assert.equal(
     await port.ancestry(fixtureQuestion(fixture, fixture.candidate, newer)),
     "Ancestor",
@@ -722,18 +748,132 @@ test("a tip already held is answered while as many fetches as may run already ar
   assert.equal(await slowed, "Ancestor");
 });
 
-test("a remote that stalls is unknown once the bound the adapter was given has passed", async (t) => {
+test("a second tip of a repository waits for the fetch of the first before its own begins", async (t) => {
   const fixture = fixtureOpen(t);
-  const port = fixturePort(fixture, { remoteTimeoutSecsMax: 1 });
+  const port = fixturePort(fixture);
+  const newer = fixtureNewer(fixture);
+  fixtureServe(fixture, "Slowed");
+  const first = port.ancestry(fixtureQuestion(fixture, fixture.candidate));
+  await fixtureTipArrived(fixture);
+  fixtureServe(fixture, "Whole");
+  const second = port.ancestry(
+    fixtureQuestion(fixture, fixture.candidate, newer),
+  );
+  await sleep(500);
+  assert.equal(fixtureServed(fixture), 1);
+
+  assert.deepEqual(await Promise.all([first, second]), [
+    "Ancestor",
+    "Ancestor",
+  ]);
+  assert.equal(fixtureServed(fixture), 2);
+});
+
+test("a tip already held is answered while another tip of its repository is being fetched", async (t) => {
+  const fixture = fixtureOpen(t);
+  const port = fixturePort(fixture);
+  await port.ancestry(fixtureQuestion(fixture, fixture.candidate));
+  const newer = fixtureNewer(fixture);
+  fixtureServe(fixture, "Slowed");
+  const slowed = port.ancestry(
+    fixtureQuestion(fixture, fixture.candidate, newer),
+  );
+  await fixtureUntil("the second fetch", () => fixtureServed(fixture) === 2);
+
+  assert.equal(
+    await port.ancestry(fixtureQuestion(fixture, fixture.stray)),
+    "NotAncestor",
+  );
+  assert.ok(!fixtureHistoryHeld(fixture, newer));
+  assert.equal(await slowed, "Ancestor");
+});
+
+test("an asker is answered unknown at its own bound, and the fetch it began goes on to hold the tip", async (t) => {
+  const fixture = fixtureOpen(t);
+  const port = fixturePort(fixture, { answerTimeoutSecsMax: 1 });
+  fixtureServe(fixture, "Slowed");
+  assert.equal(
+    await port.ancestry(fixtureQuestion(fixture, fixture.candidate)),
+    "Unknown",
+  );
+  assert.ok(!fixtureHistoryHeld(fixture, fixture.tip));
+
+  await fixtureUntil("the tip's history", () =>
+    fixtureHistoryHeld(fixture, fixture.tip),
+  );
+  assert.equal(
+    await port.ancestry(fixtureQuestion(fixture, fixture.candidate)),
+    "Ancestor",
+  );
+  assert.equal(fixtureServed(fixture), 1);
+});
+
+test("an asker whose bound passed while another tip was being fetched begins no fetch of its own", async (t) => {
+  const fixture = fixtureOpen(t);
+  const port = fixturePort(fixture, { answerTimeoutSecsMax: 1 });
+  const newer = fixtureNewer(fixture);
+  fixtureServe(fixture, "Slowed");
+  const first = port.ancestry(fixtureQuestion(fixture, fixture.candidate));
+  await fixtureTipArrived(fixture);
+  fixtureServe(fixture, "Whole");
+  const second = port.ancestry(
+    fixtureQuestion(fixture, fixture.candidate, newer),
+  );
+  assert.deepEqual(await Promise.all([first, second]), ["Unknown", "Unknown"]);
+
+  await fixtureUntil("the tip's history", () =>
+    fixtureHistoryHeld(fixture, fixture.tip),
+  );
+  await sleep(500);
+  assert.equal(fixtureServed(fixture), 1);
+});
+
+test("a credential source that never answers gives its repository's turn back once the remote bound has passed", async (t) => {
+  const fixture = fixtureOpen(t);
+  const twin = fixtureTwin(fixture);
+  const port = fixturePort(fixture, {
+    remoteTimeoutSecsMax: 1,
+    answerTimeoutSecsMax: 3,
+    fetchesInFlightMax: 1,
+    credentials: {
+      credential: (binding) =>
+        binding.repository === fixture.remote
+          ? new Promise<never>(() => undefined)
+          : Promise.resolve({ resolved: "Denied" }),
+    },
+  });
+  assert.equal(
+    await port.ancestry(fixtureQuestion(fixture, fixture.candidate)),
+    "Unknown",
+  );
+
+  assert.equal(
+    await port.ancestry(
+      fixtureQuestion(fixture, fixture.candidate, fixture.tip, twin),
+    ),
+    "Ancestor",
+  );
+});
+
+test("the wait for a credential comes out of the time the transfer is given", async (t) => {
+  const fixture = fixtureOpen(t);
+  const port = fixturePort(fixture, {
+    remoteTimeoutSecsMax: 2,
+    credentials: {
+      credential: async () => {
+        await sleep(1000);
+        return { resolved: "Denied" };
+      },
+    },
+  });
   fixtureServe(fixture, "Stalled");
   const asked = performance.now();
   assert.equal(
     await port.ancestry(fixtureQuestion(fixture, fixture.candidate)),
     "Unknown",
   );
-  const waitedMs = performance.now() - asked;
-  assert.ok(waitedMs >= 1000);
-  assert.ok(waitedMs < gitCommitAncestryDefaults.remoteTimeoutSecsMax * 1000);
+  assert.equal(fixtureServed(fixture), 1);
+  assert.ok(performance.now() - asked < 2750);
 });
 
 test("a repository that could not be reached is asked again once it can be", async (t) => {
@@ -752,11 +892,15 @@ test("a repository that could not be reached is asked again once it can be", asy
   assert.equal(await port.ancestry(question), "Ancestor");
 });
 
-test("a count that is no positive integer is refused", (t) => {
+test("a bound of the adapter's own that is no positive integer is refused", (t) => {
   const fixture = fixtureOpen(t);
-  for (const count of [0, -1, 1.5, Number.NaN]) {
+  for (const bound of [0, -1, 1.5, Number.NaN]) {
     assert.throws(
-      () => fixturePort(fixture, { fetchesInFlightMax: count }),
+      () => fixturePort(fixture, { fetchesInFlightMax: bound }),
+      RangeError,
+    );
+    assert.throws(
+      () => fixturePort(fixture, { answerTimeoutSecsMax: bound }),
       RangeError,
     );
   }
