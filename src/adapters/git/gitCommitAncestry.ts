@@ -134,14 +134,13 @@ async function gitCommitAncestryFetchWith(
   timeoutSecsMax: number,
 ): Promise<boolean> {
   const repository = question.repository.repository;
-  const fetched = await scratchFetchHistory(
+  await scratchFetchHistory(
     own.scratch,
     repository,
     credential,
     question.tip,
     timeoutSecsMax,
   );
-  if (!fetched) return false;
   return scratchHoldsHistory(own.scratch, repository, question.tip);
 }
 
@@ -202,8 +201,9 @@ function gitCommitAncestryFlight(
 /**
  * Whether the tip's whole history is held: by a fetch that completed earlier,
  * by the one in flight for it, or by one begun once the repository's fetch of
- * another tip has ended. Each further round follows a fetch that ended, and an
- * asker whose bound has passed takes none.
+ * another tip has ended. A round that found the tip's own fetch begun is
+ * followed by the one that joins it, any other follows a fetch that ended, and
+ * an asker whose bound has passed takes none.
  */
 async function gitCommitAncestryHeld(
   own: GitCommitAncestryState,
@@ -217,9 +217,10 @@ async function gitCommitAncestryHeld(
     return true;
   const flying = own.flights.get(repository);
   if (flying === undefined) return gitCommitAncestryFlight(own, question);
-  if (flying.tip === question.tip) return flying.landed;
-  await flying.landed;
-  if (performance.now() >= untilMs) return false;
+  if (flying.tip !== question.tip) {
+    await flying.landed;
+    if (performance.now() >= untilMs) return false;
+  }
   return gitCommitAncestryHeld(own, question, untilMs);
 }
 

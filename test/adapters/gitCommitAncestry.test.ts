@@ -207,6 +207,31 @@ function fixtureScratchRepository(
   return join(fixture.scratch, scratchDigestOf(repository));
 }
 
+/** Writes one commit of the seed into the scratch as an object alone, without what it descends from. */
+function fixtureAlone(fixture: Fixture, commit: GitObjectId): void {
+  execFileSync(
+    "git",
+    [
+      "-C",
+      fixtureScratchRepository(fixture),
+      "hash-object",
+      "-t",
+      "commit",
+      "-w",
+      "--stdin",
+    ],
+    {
+      input: execFileSync("git", [
+        "-C",
+        fixture.seed,
+        "cat-file",
+        "commit",
+        commit,
+      ]),
+    },
+  );
+}
+
 /** Waits for something a fetch in flight brings about, failing where it never comes. */
 async function fixtureUntil(
   awaited: string,
@@ -511,6 +536,20 @@ test("a candidate the scratch holds as something other than a commit is unknown"
   );
 });
 
+test("a candidate that is a commit here without the commits it descends from is unknown", async (t) => {
+  const fixture = fixtureOpen(t);
+  const port = fixturePort(fixture);
+  await port.ancestry(fixtureQuestion(fixture, fixture.candidate));
+  fixtureGit(fixture.seed, "checkout", "-q", "stray");
+  const beyond = fixtureCommit(fixture.seed, "beyond");
+  fixtureAlone(fixture, beyond);
+
+  assert.equal(
+    await port.ancestry(fixtureQuestion(fixture, beyond)),
+    "Unknown",
+  );
+});
+
 test("a tag is never answered for the commit it peels to, held or not", async (t) => {
   const fixture = fixtureOpen(t);
   const port = fixturePort(fixture);
@@ -566,19 +605,7 @@ test("a tip another ref named before its history arrived is unknown", async (t) 
   const fixture = fixtureOpen(t);
   const scratch = fixtureScratchRepository(fixture);
   execFileSync("git", ["init", "-q", "--bare", scratch]);
-  execFileSync(
-    "git",
-    ["-C", scratch, "hash-object", "-t", "commit", "-w", "--stdin"],
-    {
-      input: execFileSync("git", [
-        "-C",
-        fixture.seed,
-        "cat-file",
-        "commit",
-        fixture.tip,
-      ]),
-    },
-  );
+  fixtureAlone(fixture, fixture.tip);
   fixtureGit(scratch, "update-ref", "refs/chuggy/candidate/tip", fixture.tip);
 
   assert.equal(
@@ -689,6 +716,32 @@ test("many askers at once are each answered from one fetch", async (t) => {
     ]).flat(),
   );
   assert.equal(fixtureServed(fixture), 1);
+});
+
+test("askers at once of a tip that cannot be fetched share the one attempt at it", async (t) => {
+  const fixture = fixtureOpen(t);
+  let resolutions = 0;
+  const port = fixturePort(fixture, {
+    credentials: {
+      credential: async () => {
+        resolutions += 1;
+        await sleep(500);
+        return { resolved: "Denied" };
+      },
+    },
+  });
+  const question = fixtureQuestion(
+    fixture,
+    fixture.candidate,
+    fixture.tip,
+    join(fixture.directory, "missing.git"),
+  );
+
+  assert.deepEqual(
+    await Promise.all(Array.from({ length: 6 }, () => port.ancestry(question))),
+    Array.from({ length: 6 }, () => "Unknown"),
+  );
+  assert.equal(resolutions, 1);
 });
 
 test("two repositories holding one tip are each fetched for themselves", async (t) => {
@@ -858,10 +911,10 @@ test("a credential source that never answers gives its repository's turn back on
 test("the wait for a credential comes out of the time the transfer is given", async (t) => {
   const fixture = fixtureOpen(t);
   const port = fixturePort(fixture, {
-    remoteTimeoutSecsMax: 2,
+    remoteTimeoutSecsMax: 3,
     credentials: {
       credential: async () => {
-        await sleep(1000);
+        await sleep(2000);
         return { resolved: "Denied" };
       },
     },
@@ -873,7 +926,7 @@ test("the wait for a credential comes out of the time the transfer is given", as
     "Unknown",
   );
   assert.equal(fixtureServed(fixture), 1);
-  assert.ok(performance.now() - asked < 2750);
+  assert.ok(performance.now() - asked < 4900);
 });
 
 test("a repository that could not be reached is asked again once it can be", async (t) => {

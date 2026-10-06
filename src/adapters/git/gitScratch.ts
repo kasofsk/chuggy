@@ -348,15 +348,20 @@ function scratchHistoryRef(commit: GitObjectId): string {
   return `refs/chuggy/history/${commit}`;
 }
 
-/** Brings one commit and everything it descends from into the scratch by its hash, neither shallow nor filtered, in the time its caller has for it. */
+/**
+ * Brings one commit and everything it descends from into the scratch by its
+ * hash, neither shallow nor filtered, in the time its caller has for it. How it
+ * ended is not reported, because the ref it writes last is what says it
+ * completed.
+ */
 export async function scratchFetchHistory(
   scratch: GitScratch,
   repository: RepositoryId,
   credential: RepositoryCredential | undefined,
   commit: GitObjectId,
   timeoutSecsMax: number,
-): Promise<boolean> {
-  const ran = await scratchRun(scratch, {
+): Promise<void> {
+  await scratchRun(scratch, {
     repository,
     ...(credential === undefined ? {} : { credential }),
     timeoutSecsMax,
@@ -370,7 +375,6 @@ export async function scratchFetchHistory(
       ),
     ],
   });
-  return ran.ran === "Exited" && ran.code === 0;
 }
 
 /**
