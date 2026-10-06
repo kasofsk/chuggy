@@ -1,4 +1,5 @@
 /** Shared conversation and run-evidence endpoints for the server, browser, and contract document. */
+import { ticketActionReachResponseSchema } from "./actionReach.ts";
 import { fieldsOnly, integerField, textField } from "./fields.ts";
 import { z } from "zod";
 import {
@@ -197,6 +198,11 @@ export const nativeHttpEndpoints = {
     path: nativeHttpRoutes.selectorProposalReview,
     body: selectorProposalReviewSchema,
     response: selectorProposalReviewResponseSchema,
+  },
+  ticketActionReach: {
+    method: "GET",
+    path: nativeHttpRoutes.ticketActionReach,
+    response: ticketActionReachResponseSchema,
   },
 } as const;
 

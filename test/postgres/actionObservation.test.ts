@@ -1,9 +1,9 @@
 /**
  * What each declared action was reported to have done, against a real server
  * and as the roles that hold the doors: the importer declares, and the API
- * binds, retires and records. The API is granted no read of what it records,
- * so whoever migrated is asked what the relation holds as well as what the
- * catalog says of the door.
+ * binds, retires and records. The API reads what was reported and not who
+ * reported it, so whoever migrated is asked what the relation holds as well as
+ * what the catalog says of the door.
  *
  * A REPORT IS RECORDED THROUGH THE STORE. Only the cases about what the door
  * itself refuses, and those that hold a report or an import open, call a door
@@ -1106,12 +1106,19 @@ const bystanders = [
   poolPlaneRole,
 ];
 
-test("only the API records and only through the door, and no role reads or writes the relation itself", async () => {
+test("only the API records and only through the door, only the API reads and never who reported, and no role writes the relation itself", async () => {
   const { partition } = await declaringProject("privileges", ["build"]);
   const row = `'${partition.tenant}','${partition.project}','build'`;
   const call = `SELECT ${actionObservationRecordFunction}(${row},'${first}','Succeeded',NULL,'${reporter}',NULL,NULL)`;
-  const statements = [
-    "SELECT action FROM action_observation",
+  const reported = `SELECT tenant,project,action,ordinal,repository_commit,outcome,
+                           observed_at,received_at,detail,link FROM action_observation`;
+  const reads = [
+    reported,
+    "SELECT reporter FROM action_observation",
+    "SELECT * FROM action_observation",
+    "SELECT count(*) FROM action_observation WHERE reporter IS NOT NULL",
+  ];
+  const writes = [
     `INSERT INTO action_observation(tenant,project,action,ordinal,repository_commit,outcome,reporter)
        VALUES(${row},1,'${first}','Succeeded','${reporter}')`,
     "UPDATE action_observation SET outcome='Failed'",
@@ -1126,10 +1133,16 @@ test("only the API records and only through the door, and no role reads or write
   };
 
   assert.equal(await harness.attemptAs(apiRole, call), undefined);
+  assert.equal(await harness.attemptAs(apiRole, reported), undefined);
   for (const role of bystanders)
     await refused(role, call, actionObservationRecordFunction);
+  for (const statement of reads.filter((read) => read !== reported))
+    await refused(apiRole, statement, "action_observation");
+  for (const role of bystanders)
+    for (const statement of reads)
+      await refused(role, statement, "action_observation");
   for (const role of [apiRole, ...bystanders])
-    for (const statement of statements)
+    for (const statement of writes)
       await refused(role, statement, "action_observation");
 });
 

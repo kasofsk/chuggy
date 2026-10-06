@@ -25,7 +25,7 @@
  */
 
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import { generateKeyPairSync } from "node:crypto";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -419,6 +419,7 @@ async function rootRead(
     "CHUG_API_POOL_PLANE_URL",
     "CHUG_API_POOL_REGISTRY_HOST",
     "CHUG_API_ACTION_REPORTERS",
+    "CHUG_API_GIT_SCRATCH_ROOT",
     ...Object.keys(threadLiveNamed),
   ])
     if (named[variable] === undefined) delete environment[variable];
@@ -1318,5 +1319,269 @@ test("a roster that cannot be read refuses the start, naming the variable and th
     );
     assert.notEqual(ran.code, 0, roster);
     assert.match(ran.out, why, roster);
+  }
+});
+
+/** A remote of one line of history, base then landed then tip, with where a scratch would be opened beside it. */
+interface ReachRepository {
+  readonly directory: string;
+  readonly remote: string;
+  readonly scratch: string;
+  readonly base: string;
+  readonly landed: string;
+  readonly tip: string;
+}
+
+/** A real remote for the reach service's git, built by a git that reads nothing of this process's own. */
+function reachRepository(t: TestContext): ReachRepository {
+  const directory = mkdtempSync(join(tmpdir(), "chuggy-root-reach-"));
+  t.after(() => {
+    rmSync(directory, { recursive: true, force: true });
+  });
+  const seed = join(directory, "seed");
+  const remote = join(directory, "origin.git");
+  const git = (...args: string[]): string =>
+    execFileSync("git", args, {
+      encoding: "utf8",
+      env: { PATH: process.env["PATH"], HOME: directory },
+    }).trim();
+  const committed = (message: string): string => {
+    git(
+      ...["-C", seed, "-c", "user.name=fixture"],
+      ...[
+        "-c",
+        "user.email=fixture@example.test",
+        "-c",
+        "commit.gpgsign=false",
+      ],
+      ...["commit", "-q", "--allow-empty", "-m", message],
+    );
+    return git("-C", seed, "rev-parse", "HEAD");
+  };
+  git("init", "-q", "-b", "main", seed);
+  const [base, landed, tip] = ["base", "landed", "tip"].map(committed);
+  git("clone", "-q", "--bare", seed, remote);
+  assert.ok(base !== undefined && landed !== undefined && tip !== undefined);
+  return {
+    directory,
+    remote,
+    scratch: join(directory, "scratch"),
+    base,
+    landed,
+    tip,
+  };
+}
+
+/** A commit no remote holds. */
+const reachNowhere = "0".repeat(40);
+
+/** One row of the read of what a repository declares: an action beside one of its newest reports, or beside none. */
+function reachDeclaredRow(
+  action: string,
+  newest: string | null,
+  outcome: string | null,
+  commit: string | null,
+): Readonly<Record<string, string | null>> {
+  return {
+    action,
+    name: `Run ${action}`,
+    newest,
+    ordinal: newest === null ? null : "1",
+    outcome,
+    repository_commit: commit,
+    observed_at: null,
+    received_at: newest === null ? null : "2026-10-05T22:45:51.000000Z",
+    detail: null,
+    link: null,
+  };
+}
+
+/**
+ * The root's own reach service over a pool answering as the three reads would
+ * of a ticket landed in `from`: `build` succeeded at the tip, `deploy` at the
+ * base, `idle` was never reported, and `lost` failed at a commit the remote
+ * does not hold. It reads the ticket, removes the remote and the scratch, and
+ * reads it again.
+ */
+function actionReachProgram(from: ReachRepository): string {
+  const declared = [
+    reachDeclaredRow("build", "success", "Succeeded", from.tip),
+    reachDeclaredRow("build", "report", "Succeeded", from.tip),
+    reachDeclaredRow("deploy", "success", "Succeeded", from.base),
+    reachDeclaredRow("deploy", "report", "Succeeded", from.base),
+    reachDeclaredRow("idle", null, null, null),
+    reachDeclaredRow("lost", "report", "Failed", reachNowhere),
+  ];
+  const landed = {
+    repository: from.remote,
+    recovery_epoch: "epoch",
+    retired: false,
+    repository_commit: from.landed,
+    landed_after: "2026-10-05 22:00:00+00",
+  };
+  return `
+    const root = await import('./src/roots/nativeHttp.ts');
+    const { existsSync, rmSync } = await import('node:fs');
+    const asked = [];
+    const pooled = (named) => ({
+      query: async (query) => {
+        const text = String(query.text);
+        const read = text.includes('read_ticket_landed_commit')
+          ? 'landed'
+          : text.includes('repository_action') ? 'declared' : 'earlier';
+        asked.push(named + ' ' + read);
+        if (read === 'landed') return { rows: [${JSON.stringify(landed)}] };
+        return { rows: read === 'declared' ? ${JSON.stringify(declared)} : [] };
+      },
+    });
+    const reach = root.nativeActionReach(
+      { pool: pooled('pool'), selectorReviewPool: pooled('selectorReviewPool') },
+      {
+        authorize: async (_principal, _partition, kind) => {
+          asked.push('access ' + kind);
+          return { kind: 'User', subject: 'reader' };
+        },
+      },
+      {
+        credential: async (binding) => {
+          asked.push('credential ' + binding.repository);
+          return { resolved: 'Credential', credential: 'fixture-secret' };
+        },
+      },
+    );
+    const read = async () => {
+      const found = await reach.read(
+        'reader', { tenant: 'vteng', project: 'chuggy' }, 7,
+      );
+      return {
+        landed: [found.landed, found.repository, found.commit],
+        marks: Object.fromEntries(found.actions.map((each) => [
+          each.action,
+          [each.mark.reach, each.mark.observation?.commit].filter(Boolean),
+        ])),
+      };
+    };
+    const first = await read();
+    const firstAsked = asked.splice(0);
+    const scratchOpened = existsSync(${JSON.stringify(from.scratch)});
+    for (const gone of ${JSON.stringify([from.remote, from.scratch])})
+      rmSync(gone, { recursive: true, force: true });
+    const second = await read();
+    process.stdout.write(
+      JSON.stringify({ first, firstAsked, scratchOpened, second, asked }),
+    );
+  `;
+}
+
+interface ReachRead {
+  readonly landed: readonly unknown[];
+  readonly marks: Readonly<Record<string, readonly string[]>>;
+}
+
+/** What the program's two reads came to under the variables a case names, and what each asked of its doubles. */
+async function actionReached(
+  named: Readonly<Record<string, string>>,
+  from: ReachRepository,
+): Promise<{
+  readonly first: ReachRead;
+  readonly firstAsked: readonly string[];
+  readonly scratchOpened: boolean;
+  readonly second: ReachRead;
+  readonly asked: readonly string[];
+}> {
+  const ran = await rootRead(
+    { HOME: from.directory, ...named },
+    actionReachProgram(from),
+  );
+  assert.equal(ran.code, 0, ran.out);
+  return JSON.parse(ran.out) as Awaited<ReturnType<typeof actionReached>>;
+}
+
+const gitScratchRootVariable = "CHUG_API_GIT_SCRATCH_ROOT";
+
+/** The reads one ticket's reach makes of the API pool once the caller may read it, the last made once for the action whose newest success does not hold the commit. */
+const reachPoolReads = [
+  "access Read",
+  "pool landed",
+  "pool declared",
+  "pool earlier",
+];
+
+test("a ticket's action reach is read over the API pool and asked of git in the scratch the deployment names, and what one read found out the next does not ask again", async (t) => {
+  const from = reachRepository(t);
+  const ran = await actionReached(
+    { [gitScratchRootVariable]: from.scratch },
+    from,
+  );
+  const answered = {
+    landed: ["At", from.remote, from.landed],
+    marks: {
+      build: ["Reached", from.tip],
+      deploy: ["NotYet"],
+      idle: ["NotYet"],
+      lost: ["Unknown"],
+    },
+  };
+  assert.deepEqual(ran.first, answered);
+  const fetched = `credential ${from.remote}`;
+  assert.deepEqual(
+    ran.firstAsked.filter((each) => each !== fetched).sort(),
+    [...reachPoolReads].sort(),
+  );
+  assert.ok(
+    ran.firstAsked.includes(fetched),
+    "the first read fetched, with the credential the root's source resolved",
+  );
+  assert.equal(ran.scratchOpened, true, "git ran in the scratch it was named");
+  assert.deepEqual(
+    ran.second,
+    answered,
+    "with the remote and the scratch gone, the second read answers from what the process kept",
+  );
+  assert.deepEqual([...ran.asked].sort(), [...reachPoolReads].sort());
+});
+
+test("the reach service's git is given the variables the finalizer's settings name and never this process's own", async (t) => {
+  const from = reachRepository(t);
+  const cut = join(from.directory, "cut");
+  writeFileSync(cut, `${from.tip}\n`);
+  const ran = await actionReached(
+    {
+      [gitScratchRootVariable]: from.scratch,
+      GIT_SHALLOW_FILE: cut,
+      GIT_GRAFT_FILE: cut,
+      GIT_DIR: join(from.directory, "nowhere"),
+    },
+    from,
+  );
+  assert.deepEqual(
+    ran.first.marks["build"],
+    ["Reached", from.tip],
+    "a tip this process's environment says has no parents is still read with them",
+  );
+});
+
+test("a deployment naming no scratch root serves the reach route, runs no git, and finds out nothing of a reported commit", async (t) => {
+  const from = reachRepository(t);
+  for (const named of [{}, { [gitScratchRootVariable]: "" }]) {
+    const ran = await actionReached(named, from);
+    const answered = {
+      landed: ["At", from.remote, from.landed],
+      marks: {
+        build: ["Unknown"],
+        deploy: ["Unknown"],
+        idle: ["NotYet"],
+        lost: ["Unknown"],
+      },
+    };
+    assert.deepEqual(ran.first, answered);
+    assert.deepEqual(ran.second, answered);
+    assert.equal(ran.scratchOpened, false);
+    assert.deepEqual(
+      [...ran.firstAsked, ...ran.asked].filter((each) =>
+        each.startsWith("credential"),
+      ),
+      [],
+    );
   }
 });

@@ -386,7 +386,7 @@ test("recovery finds the live claims under a stale epoch, and none under the cur
   ]);
 });
 
-test("each relation carries exactly the indexes its recovery and its identities need", async () => {
+test("each relation carries exactly the indexes its recovery, its identities and the read of where a ticket landed need", async () => {
   const held = (await rig.as(
     `SELECT tablename AS relation, indexname AS held FROM pg_indexes
       WHERE schemaname='public' AND tablename IN
@@ -403,6 +403,7 @@ test("each relation carries exactly the indexes its recovery and its identities 
       "commit_permit_pkey",
       "commit_permit_unconcluded",
       "finalization_attempt_by_request",
+      "finalization_attempt_by_ticket",
       "finalization_attempt_identity_is_never_reused",
       "finalization_attempt_pkey",
       "finalization_reconciliation_held",

@@ -392,8 +392,8 @@ export function postgresHarnessOwner(label: string): OwnerId {
 export async function postgresHarnessProject(
   store: ProjectStore,
   label: string,
+  partition: Partition = postgresHarnessPartition(label),
 ): Promise<Partition> {
-  const partition = postgresHarnessPartition(label);
   await store.createProject(partition);
   return partition;
 }

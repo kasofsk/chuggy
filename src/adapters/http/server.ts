@@ -186,8 +186,10 @@ import {
   notFound,
   sessionBearerRefusedResponse,
   actionReportResponse,
+  ticketActionReachResponse,
 } from "./outcomes.ts";
 import type { ActionReports } from "../../interpreter/actionReport.ts";
+import type { TicketActionReaches } from "../../interpreter/ticketActionReach.ts";
 import type { WorkerPoolRegistrationService } from "../../interpreter/workerPoolRegistrationToken.ts";
 import type { ExecutionPlacementAdministration } from "../../interpreter/executionPlacement.ts";
 import type { PlacementAdministration } from "../../interpreter/placementRoute.ts";
@@ -1680,6 +1682,23 @@ function registerEndpoint<Value>(
   });
 }
 
+function registerActionReach(
+  app: FastifyInstance,
+  reach: TicketActionReaches,
+): void {
+  registerEndpoint(
+    app,
+    nativeHttpEndpoints.ticketActionReach,
+    (request, principal, partition) =>
+      reach.read(
+        principal,
+        partition,
+        asTicketIdField(record(request.params), "ticket"),
+      ),
+    ticketActionReachResponse,
+  );
+}
+
 function registerEndpointSession(request: FastifyRequest): SessionId {
   return asSessionId(textField(record(request.params), "session"));
 }
@@ -2067,6 +2086,7 @@ export function createNativeHttpApp(
   proposalReviews?: SelectorProposalReviews,
   threadLive?: ThreadLiveHub,
   actionReports?: ActionReports,
+  actionReach?: TicketActionReaches,
 ): FastifyInstance {
   const app = nativeHttpServer(limits);
   const partitionRoot = "/api/v1/tenants/:tenant/projects/:project";
@@ -2109,6 +2129,7 @@ export function createNativeHttpApp(
     registerWorkerPools(app, workerPools, partitionRoot);
   registerPlacements(app, partitionRoot, placement, sessionPlacement);
   if (actionReports !== undefined) registerActionReports(app, actionReports);
+  if (actionReach !== undefined) registerActionReach(app, actionReach);
   app.setErrorHandler((failure, _request, reply) => {
     send(reply, failureResponse(failure));
   });
