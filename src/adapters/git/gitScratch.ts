@@ -118,6 +118,28 @@ export type ScratchMerged =
     }
   | { readonly merged: "Failed" };
 
+/**
+ * What one read of a scratch found: its yes, its no, or `Unread` for a call
+ * that came to neither. A call that could not be made, was stopped at its bound
+ * or ended by a signal, or exited any other way, is `Unread` whichever read it
+ * was, and says nothing about what was asked.
+ */
+export type ScratchFound = "Yes" | "No" | "Unread";
+
+/** How git gives one answer to a read: the code it exits with, and what it prints where the code alone does not say it. */
+interface ScratchSaid {
+  readonly code: number;
+  readonly stdout?: string;
+}
+
+/** One read of a scratch: what git is asked, and how it says the read's yes and its no, a read with no `no` having only a yes to give. */
+interface ScratchAsked {
+  readonly argv: readonly string[];
+  readonly input?: string;
+  readonly yes: ScratchSaid;
+  readonly no?: ScratchSaid;
+}
+
 /** What the one irreversible act came to, read off the porcelain flag rather than off prose. */
 export type ScratchPushed =
   | { readonly pushed: "Advanced" }
@@ -330,6 +352,168 @@ export async function scratchFetchRef(
     ],
   });
   return ran.ran === "Exited" && ran.code === 0;
+}
+
+/**
+ * The ref a completed fetch of one commit's history writes. git writes it once
+ * that fetch's connectivity check has passed, and the check takes whatever
+ * another ref already reaches as whole without reading it.
+ */
+function scratchHistoryRef(commit: GitObjectId): string {
+  return `refs/chuggy/history/${commit}`;
+}
+
+/**
+ * Brings one commit and everything it descends from into the scratch by its
+ * hash, neither shallow nor filtered, in the time its caller has for it. How it
+ * ended is not reported, a fetch that could not be made included, because the
+ * ref it writes last is what says it completed.
+ */
+export async function scratchFetchHistory(
+  scratch: GitScratch,
+  repository: RepositoryId,
+  credential: RepositoryCredential | undefined,
+  commit: GitObjectId,
+  timeoutSecsMax: number,
+): Promise<void> {
+  try {
+    await scratchRun(scratch, {
+      repository,
+      ...(credential === undefined ? {} : { credential }),
+      timeoutSecsMax,
+      argv: [
+        "fetch",
+        "--quiet",
+        "--no-tags",
+        ...scratchRemoteArguments(
+          repository,
+          `+${commit}:${scratchHistoryRef(commit)}`,
+        ),
+      ],
+    });
+  } catch {
+    return;
+  }
+}
+
+/** Whether git exited and printed the way one answer of a read is said. */
+function scratchSaid(
+  code: number,
+  stdout: string,
+  said: ScratchSaid | undefined,
+): boolean {
+  if (said?.code !== code) return false;
+  return said.stdout === undefined || said.stdout === stdout.trim();
+}
+
+/**
+ * Makes one read of a repository's scratch with the commit-graph and every
+ * replace ref set aside, because git trusts both unchecked: the file goes on
+ * answering for commits whose objects are gone, and such a ref answers for one
+ * commit with another's history. A yes for a commit far under another is
+ * therefore a walk that reads every commit down to where it lies.
+ */
+async function scratchFind(
+  scratch: GitScratch,
+  repository: RepositoryId,
+  asked: ScratchAsked,
+): Promise<ScratchFound> {
+  let ran: GitRan;
+  try {
+    ran = await scratchRun(scratch, {
+      repository,
+      timeoutSecsMax: scratch.options.localTimeoutSecsMax,
+      argv: [
+        "--no-replace-objects",
+        "-c",
+        "core.commitGraph=false",
+        ...asked.argv,
+      ],
+      ...(asked.input === undefined ? {} : { input: asked.input }),
+    });
+  } catch {
+    return "Unread";
+  }
+  if (ran.ran !== "Exited") return "Unread";
+  if (scratchSaid(ran.code, ran.stdout, asked.yes)) return "Yes";
+  return scratchSaid(ran.code, ran.stdout, asked.no) ? "No" : "Unread";
+}
+
+/**
+ * Whether a fetch of one commit's whole history completed here, read off the
+ * ref that fetch wrote and never off the commit existing, which a fetch stopped
+ * part-way leaves behind without what it descends from. Its no is git finding
+ * no commit by that ref, which it says where none stands and also where one
+ * stands over nothing it could read as a commit.
+ */
+export function scratchHoldsHistory(
+  scratch: GitScratch,
+  repository: RepositoryId,
+  commit: GitObjectId,
+): Promise<ScratchFound> {
+  return scratchFind(scratch, repository, {
+    argv: [
+      "rev-parse",
+      "--quiet",
+      "--verify",
+      `${scratchHistoryRef(commit)}^{commit}`,
+    ],
+    yes: { code: 0, stdout: commit },
+    no: { code: 1 },
+  });
+}
+
+/**
+ * Whether one identity is a commit here, read off the object's own type so a
+ * tag is never taken for the commit it peels to. Its no is git naming the
+ * identity missing, which git also says of an object in a pack it could not
+ * open, and an identity held as anything else is neither answer.
+ */
+export function scratchNamesCommit(
+  scratch: GitScratch,
+  repository: RepositoryId,
+  object: GitObjectId,
+): Promise<ScratchFound> {
+  return scratchFind(scratch, repository, {
+    argv: ["cat-file", "--batch-check=%(objecttype)"],
+    input: `${object}\n`,
+    yes: { code: 0, stdout: "commit" },
+    no: { code: 0, stdout: `${object} missing` },
+  });
+}
+
+/**
+ * Whether git finds a path from one commit down to another. Its no is a walk
+ * that ended without meeting the candidate, which a git the scratch admits
+ * also says of a walk that met a commit it could not read.
+ */
+export function scratchReaches(
+  scratch: GitScratch,
+  repository: RepositoryId,
+  candidate: GitObjectId,
+  tip: GitObjectId,
+): Promise<ScratchFound> {
+  return scratchFind(scratch, repository, {
+    argv: ["merge-base", "--is-ancestor", candidate, tip],
+    yes: { code: 0 },
+    no: { code: 1 },
+  });
+}
+
+/**
+ * Whether every commit one commit descends from could be read from the object
+ * store. It has no no to give: a history that was not read to its end was not
+ * read.
+ */
+export function scratchWalksHistory(
+  scratch: GitScratch,
+  repository: RepositoryId,
+  commit: GitObjectId,
+): Promise<ScratchFound> {
+  return scratchFind(scratch, repository, {
+    argv: ["rev-list", "--count", commit],
+    yes: { code: 0 },
+  });
 }
 
 /** Whether the scratch holds one commit, which is what makes an ancestry question answerable at all. */
