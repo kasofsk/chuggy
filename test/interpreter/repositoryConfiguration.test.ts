@@ -8,14 +8,16 @@ import {
 } from "../../src/interpreter/finalizer.ts";
 import {
   importRepositoryConfigurationPartitions,
-  repositoryConfigurationDeclarationsMax,
   repositoryConfigurationImportReadiness,
   repositoryConfigurationRoot,
   type ProjectRepositoryBindingRead,
-  type RepositoryConfigurationFile,
   type RepositoryConfigurationImportOutcome,
   type RepositoryConfigurationImportPorts,
 } from "../../src/interpreter/repositoryConfiguration.ts";
+import {
+  repositoryDeclarationsMax,
+  type RepositoryDeclarationFile,
+} from "../../src/interpreter/repositoryDeclaration.ts";
 import {
   asAuthorityKind,
   asAuthoritySubject,
@@ -49,7 +51,7 @@ const configuration = {
 function declaration(
   name: string,
   path = `${repositoryConfigurationRoot}${name}.json`,
-): RepositoryConfigurationFile {
+): RepositoryDeclarationFile {
   return {
     path,
     kind: "File",
@@ -171,7 +173,7 @@ test("paths, symlinks, names, envelopes, and duplicates are refused", () => {
 
 test("the declaration collection is explicitly bounded", () => {
   const files = Array.from(
-    { length: repositoryConfigurationDeclarationsMax + 1 },
+    { length: repositoryDeclarationsMax + 1 },
     (_, index) => declaration(`configuration-${String(index)}`),
   );
   assert.deepEqual(

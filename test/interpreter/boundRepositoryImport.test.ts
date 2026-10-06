@@ -15,6 +15,10 @@
  * A RUN THAT FILLED ITS BOUND IS NOT A RUN THAT IMPORTED THE ESTATE, and says
  * so in what it leaves with. A clean exit from one would be the only thing
  * telling anyone the newest bindings were never reached.
+ *
+ * A BINDING'S ACTIONS ARE IMPORTED AT THE HEAD ITS CONFIGURATIONS ARE, AND FOR
+ * THEMSELVES. The head is read once, and what either import is refused for or
+ * raised with is that import's result and never the other's.
  */
 
 import assert from "node:assert/strict";
@@ -38,10 +42,17 @@ import {
   type Partition,
 } from "../../src/interpreter/projectStore.ts";
 import {
+  repositoryActionRoot,
+  type RepositoryActionsImported,
+} from "../../src/interpreter/repositoryAction.ts";
+import {
+  boundRepositoryActionImportLine,
   boundRepositoryImportLine,
   boundRepositoryImportRefusal,
-  importBoundRepositoryConfigurations,
+  boundRepositoryImportReport,
+  importBoundRepositories,
   repositoryBindingsPerImportMax,
+  type BoundRepositoryActionImportResult,
   type BoundRepositoryImport,
   type BoundRepositoryImportPorts,
   type BoundRepositoryImportResult,
@@ -49,6 +60,7 @@ import {
   type RepositoryConfigurationSnapshotRead,
   type RepositoryDefaultBranchRead,
 } from "../../src/interpreter/repositoryConfiguration.ts";
+import type { RepositoryDeclarationSnapshotRead } from "../../src/interpreter/repositoryDeclarationSnapshot.ts";
 
 const authority = {
   kind: asAuthorityKind("Service"),
@@ -72,10 +84,52 @@ function listed(project: string, name: string): RepositoryBindingListed {
 interface Fixture {
   readonly ports: BoundRepositoryImportPorts;
   readonly asked: string[];
+  readonly actionsAsked: string[];
   readonly maxima: number[];
 }
 
-function fixture(input: {
+interface FixtureActions {
+  readonly actionSnapshots?: (
+    repository: RepositoryId,
+  ) => RepositoryDeclarationSnapshotRead;
+  readonly actionStore?: (
+    repository: RepositoryId,
+  ) => RepositoryActionsImported["imported"];
+}
+
+/** The action ports of a fixture, which record what they were asked apart from the configuration ports. */
+function fixtureActionPorts(
+  input: FixtureActions,
+  actionsAsked: string[],
+): Pick<BoundRepositoryImportPorts, "actionSnapshots" | "actionStore"> {
+  return {
+    actionSnapshots: {
+      actionSnapshot: (request) => {
+        const { repository } = request.repository;
+        actionsAsked.push(`snapshot ${repository} ${request.commit}`);
+        return Promise.resolve(
+          input.actionSnapshots?.(repository) ?? {
+            read: "Snapshot",
+            files: [],
+          },
+        );
+      },
+    },
+    actionStore: {
+      importRepositoryActions: (stored) => {
+        const { repository } = stored.binding;
+        actionsAsked.push(
+          `store ${repository} ${stored.commit} ${stored.declarations.map((declared) => declared.action).join(",")}`,
+        );
+        return Promise.resolve({
+          imported: input.actionStore?.(repository) ?? "Imported",
+        });
+      },
+    },
+  };
+}
+
+interface FixtureInput extends FixtureActions {
   readonly bindings: readonly RepositoryBindingListed[];
   readonly heads?: (
     repository: RepositoryId,
@@ -84,11 +138,15 @@ function fixture(input: {
     repository: RepositoryId,
   ) => RepositoryConfigurationSnapshotRead;
   readonly unbound?: readonly RepositoryId[];
-}): Fixture {
+}
+
+function fixture(input: FixtureInput): Fixture {
   const asked: string[] = [];
+  const actionsAsked: string[] = [];
   const maxima: number[] = [];
   return {
     asked,
+    actionsAsked,
     maxima,
     ports: {
       listing: {
@@ -142,6 +200,7 @@ function fixture(input: {
           return Promise.resolve({ imported: "Imported" as const });
         },
       },
+      ...fixtureActionPorts(input, actionsAsked),
     },
   };
 }
@@ -150,7 +209,7 @@ test("every binding is imported at its own head, in the order listed", async () 
   const bindings = [listed("atlas", "atlas"), listed("beacon", "beacon")];
   const { ports, asked, maxima } = fixture({ bindings });
 
-  const { imports } = await importBoundRepositoryConfigurations({
+  const { imports } = await importBoundRepositories({
     authority,
     ports,
   });
@@ -198,7 +257,7 @@ test("a repository with nothing at its head is skipped and not failed", async ()
         : { read: "Snapshot", files: [] },
   });
 
-  const { imports } = await importBoundRepositoryConfigurations({
+  const { imports } = await importBoundRepositories({
     authority,
     ports,
   });
@@ -223,7 +282,7 @@ test("one binding's failure leaves every other binding imported", async () => {
         : { read: "Snapshot", files: [] },
   });
 
-  const { imports } = await importBoundRepositoryConfigurations({
+  const { imports } = await importBoundRepositories({
     authority,
     ports,
   });
@@ -244,7 +303,7 @@ test("a forge that could not be reached for a head is that binding's failure", a
     heads: () => ({ read: "Unavailable" }),
   });
 
-  const { imports } = await importBoundRepositoryConfigurations({
+  const { imports } = await importBoundRepositories({
     authority,
     ports,
   });
@@ -262,7 +321,7 @@ test("a binding unbound between the listing and the read is skipped", async () =
     unbound: [atlas.repository],
   });
 
-  const { imports } = await importBoundRepositoryConfigurations({
+  const { imports } = await importBoundRepositories({
     authority,
     ports,
   });
@@ -274,7 +333,7 @@ test("a binding unbound between the listing and the read is skipped", async () =
 test("the run asks the listing for no more than the bound it was given", async () => {
   const { ports, maxima } = fixture({ bindings: [] });
 
-  const { imports } = await importBoundRepositoryConfigurations({
+  const { imports } = await importBoundRepositories({
     authority,
     ports,
     bindingsMax: 3,
@@ -298,7 +357,7 @@ test("a port that raised is that binding's failure and not the run's", async () 
           },
   });
 
-  const { imports } = await importBoundRepositoryConfigurations({
+  const { imports } = await importBoundRepositories({
     authority,
     ports,
   });
@@ -313,12 +372,12 @@ test("a port that raised is that binding's failure and not the run's", async () 
 test("a listing that came back at the bound is a run that did not read the estate", async () => {
   const bindings = [listed("atlas", "atlas"), listed("beacon", "beacon")];
 
-  const filled = await importBoundRepositoryConfigurations({
+  const filled = await importBoundRepositories({
     authority,
     ports: fixture({ bindings }).ports,
     bindingsMax: 2,
   });
-  const short = await importBoundRepositoryConfigurations({
+  const short = await importBoundRepositories({
     authority,
     ports: fixture({ bindings }).ports,
     bindingsMax: 3,
@@ -329,11 +388,19 @@ test("a listing that came back at the bound is a run that did not read the estat
 });
 
 /** One binding's outcome, which is what a run reports and leaves on. */
-function reported(result: BoundRepositoryImportResult): BoundRepositoryImport {
+function reported(
+  result: BoundRepositoryImportResult,
+  actions: BoundRepositoryActionImportResult = {
+    result: "Imported",
+    commit: head,
+    declarations: 0,
+  },
+): BoundRepositoryImport {
   return {
     partition: partitionOf("atlas"),
     repository: asRepositoryId("https://github.com/acme/atlas.git"),
     result,
+    actions,
   };
 }
 
@@ -404,4 +471,309 @@ test("a refused declaration's path reaches its line escaped and not raw", () => 
 
   assert.equal(line.includes("\n"), false);
   assert.match(line, /one\\nfailed/u);
+});
+
+function actionFile(action: string) {
+  return {
+    path: `${repositoryActionRoot}${action}.json`,
+    kind: "File" as const,
+    content: JSON.stringify({ version: 1, action, name: action }),
+  };
+}
+
+const atlasRepository = "https://github.com/acme/atlas.git";
+
+test("a binding's actions are imported at the head its configurations are, read once", async () => {
+  const { ports, asked, actionsAsked } = fixture({
+    bindings: [listed("atlas", "atlas")],
+    actionSnapshots: () => ({
+      read: "Snapshot",
+      files: [actionFile("build"), actionFile("deploy")],
+    }),
+  });
+
+  const { imports } = await importBoundRepositories({ authority, ports });
+
+  assert.deepEqual(imports[0]?.actions, {
+    result: "Imported",
+    commit: head,
+    declarations: 2,
+  });
+  assert.deepEqual(actionsAsked, [
+    `snapshot ${atlasRepository} ${head}`,
+    `store ${atlasRepository} ${head} build,deploy`,
+  ]);
+  assert.deepEqual(
+    asked.filter((port) => port.startsWith("head")),
+    [`head ${atlasRepository}`],
+  );
+});
+
+test("a head holding no action document declares none, whatever became of its configurations", async () => {
+  const { ports, actionsAsked } = fixture({
+    bindings: [listed("atlas", "atlas")],
+    snapshots: () => ({ read: "Absent", absent: "ConfigurationDirectory" }),
+  });
+
+  const { imports } = await importBoundRepositories({ authority, ports });
+
+  assert.deepEqual(imports[0]?.result, {
+    result: "Skipped",
+    why: "ConfigurationDirectoryAbsent",
+  });
+  assert.deepEqual(imports[0]?.actions, {
+    result: "Imported",
+    commit: head,
+    declarations: 0,
+  });
+  assert.equal(actionsAsked[1], `store ${atlasRepository} ${head} `);
+});
+
+test("what a binding's actions are refused for or raise with leaves its configurations imported", async () => {
+  const refusedDocument = {
+    ...actionFile("build"),
+    kind: "Symlink" as const,
+  };
+  const failures: readonly [FixtureInput, BoundRepositoryActionImportResult][] =
+    [
+      [
+        {
+          bindings: [],
+          actionSnapshots: () => ({
+            read: "Snapshot",
+            files: [refusedDocument],
+          }),
+        },
+        {
+          result: "Failed",
+          failure: {
+            failure: "Import",
+            outcome: {
+              result: "DeclarationsRefused",
+              faults: [{ path: refusedDocument.path, fault: "SymlinkRefused" }],
+            },
+          },
+        },
+      ],
+      [
+        { bindings: [], actionStore: () => "IdentityConflict" },
+        {
+          result: "Failed",
+          failure: {
+            failure: "Import",
+            outcome: { result: "IdentityConflict" },
+          },
+        },
+      ],
+      [
+        {
+          bindings: [],
+          actionSnapshots: () => {
+            throw new Error("the forge is down");
+          },
+        },
+        { result: "Failed", failure: { failure: "Raised" } },
+      ],
+    ];
+  for (const [ports, actions] of failures) {
+    const { imports } = await importBoundRepositories({
+      authority,
+      ports: fixture({ ...ports, bindings: [listed("atlas", "atlas")] }).ports,
+    });
+
+    assert.deepEqual(imports[0]?.actions, actions);
+    assert.deepEqual(imports[0]?.result, {
+      result: "Imported",
+      commit: head,
+      declarations: 0,
+    });
+  }
+});
+
+test("what a binding's configurations are refused for or raise with leaves its actions imported", async () => {
+  const failures: readonly [
+    () => RepositoryConfigurationSnapshotRead,
+    BoundRepositoryImportResult,
+  ][] = [
+    [
+      () => ({ read: "Unavailable", unavailable: "Repository" }),
+      {
+        result: "Failed",
+        failure: {
+          failure: "Import",
+          outcome: { result: "Unavailable", unavailable: "Repository" },
+        },
+      },
+    ],
+    [
+      () => {
+        throw new Error("the forge is down");
+      },
+      { result: "Failed", failure: { failure: "Raised" } },
+    ],
+  ];
+  for (const [snapshots, result] of failures) {
+    const { ports } = fixture({
+      bindings: [listed("atlas", "atlas")],
+      snapshots,
+      actionSnapshots: () => ({
+        read: "Snapshot",
+        files: [actionFile("build")],
+      }),
+    });
+
+    const { imports } = await importBoundRepositories({ authority, ports });
+
+    assert.deepEqual(imports[0]?.result, result);
+    assert.deepEqual(imports[0]?.actions, {
+      result: "Imported",
+      commit: head,
+      declarations: 1,
+    });
+  }
+});
+
+test("a binding with no head to import at reports that of its actions too, and asks their ports nothing", async () => {
+  const atlas = listed("atlas", "atlas");
+  const headless: readonly [
+    Pick<FixtureInput, "heads" | "unbound">,
+    BoundRepositoryActionImportResult,
+  ][] = [
+    [{ unbound: [atlas.repository] }, { result: "Skipped", why: "Unbound" }],
+    [
+      { heads: () => ({ read: "Absent" }) },
+      { result: "Skipped", why: "RepositoryEmpty" },
+    ],
+    [
+      { heads: () => ({ read: "Unavailable" }) },
+      { result: "Failed", failure: { failure: "HeadUnavailable" } },
+    ],
+    [
+      { heads: () => Promise.reject(new Error("the forge is down")) },
+      { result: "Failed", failure: { failure: "Raised" } },
+    ],
+  ];
+  for (const [ports, result] of headless) {
+    const { ports: given, actionsAsked } = fixture({
+      bindings: [atlas],
+      ...ports,
+    });
+
+    const { imports } = await importBoundRepositories({
+      authority,
+      ports: given,
+    });
+
+    assert.deepEqual(imports[0]?.actions, result);
+    assert.deepEqual(imports[0]?.result, result);
+    assert.deepEqual(actionsAsked, []);
+  }
+});
+
+test("a head the repository no longer holds when its actions are read is skipped", async () => {
+  const { ports } = fixture({
+    bindings: [listed("atlas", "atlas")],
+    actionSnapshots: () => ({ read: "Absent" }),
+  });
+
+  const { imports } = await importBoundRepositories({ authority, ports });
+
+  assert.deepEqual(imports[0]?.actions, {
+    result: "Skipped",
+    why: "CommitAbsent",
+  });
+});
+
+const actionsRefused: BoundRepositoryActionImportResult = {
+  result: "Failed",
+  failure: {
+    failure: "Import",
+    outcome: {
+      result: "DeclarationsRefused",
+      faults: [
+        {
+          path: `${repositoryActionRoot}one\nfailed: acme/atlas`,
+          fault: "PathInvalid",
+        },
+      ],
+    },
+  },
+};
+
+test("a binding whose actions alone failed leaves non-zero, and one failing twice is one binding", () => {
+  const raised = { result: "Failed", failure: { failure: "Raised" } } as const;
+  assert.equal(
+    boundRepositoryImportRefusal(
+      {
+        imports: [
+          reported(importedAtHead.result, actionsRefused),
+          importedAtHead,
+        ],
+        truncated: false,
+      },
+      1000,
+    ),
+    "1 of 2 bindings",
+  );
+  assert.equal(
+    boundRepositoryImportRefusal(
+      { imports: [reported(raised, raised), importedAtHead], truncated: false },
+      1000,
+    ),
+    "1 of 2 bindings",
+  );
+});
+
+test("a binding's actions are a line of their own, told from its configurations' by one word", () => {
+  const where = `acme/atlas ${atlasRepository}`;
+  assert.equal(
+    boundRepositoryActionImportLine(importedAtHead),
+    `${where} actions imported at ${head}`,
+  );
+  assert.equal(
+    boundRepositoryImportLine(importedAtHead),
+    `${where} imported at ${head}`,
+  );
+  assert.equal(
+    boundRepositoryActionImportLine(
+      reported(importedAtHead.result, { result: "Skipped", why: "Unbound" }),
+    ),
+    `${where} actions skipped: Unbound`,
+  );
+  assert.equal(
+    boundRepositoryActionImportLine(
+      reported(importedAtHead.result, {
+        result: "Failed",
+        failure: { failure: "Import", outcome: { result: "IdentityConflict" } },
+      }),
+    ),
+    `${where} actions failed: {"failure":"Import","outcome":{"result":"IdentityConflict"}}`,
+  );
+});
+
+test("a refused action document's path reaches its line escaped and not raw", () => {
+  const line = boundRepositoryActionImportLine(
+    reported(importedAtHead.result, actionsRefused),
+  );
+
+  assert.equal(line.includes("\n"), false);
+  assert.match(line, /one\\nfailed/u);
+});
+
+test("a binding is reported on two lines, its configurations' and then its actions', each a failure's by its own result", () => {
+  const raised = { result: "Failed", failure: { failure: "Raised" } } as const;
+  const actionsFailed = reported(importedAtHead.result, actionsRefused);
+  const configurationsFailed = reported(raised);
+
+  assert.deepEqual(boundRepositoryImportReport(actionsFailed), [
+    { line: boundRepositoryImportLine(actionsFailed), failed: false },
+    { line: boundRepositoryActionImportLine(actionsFailed), failed: true },
+  ]);
+  assert.deepEqual(boundRepositoryImportReport(configurationsFailed), [
+    { line: boundRepositoryImportLine(configurationsFailed), failed: true },
+    {
+      line: boundRepositoryActionImportLine(configurationsFailed),
+      failed: false,
+    },
+  ]);
 });

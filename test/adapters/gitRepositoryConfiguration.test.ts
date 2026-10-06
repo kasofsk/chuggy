@@ -27,11 +27,12 @@ import {
   asRecoveryEpoch,
   asTenantId,
 } from "../../src/interpreter/projectStore.ts";
+import { repositoryActionRoot } from "../../src/interpreter/repositoryAction.ts";
+import { repositoryConfigurationRoot } from "../../src/interpreter/repositoryConfiguration.ts";
 import {
-  repositoryConfigurationDeclarationsMax,
-  repositoryConfigurationFileCharsMax,
-  repositoryConfigurationRoot,
-} from "../../src/interpreter/repositoryConfiguration.ts";
+  repositoryDeclarationFileCharsMax,
+  repositoryDeclarationsMax,
+} from "../../src/interpreter/repositoryDeclaration.ts";
 
 interface Fixture {
   readonly directory: string;
@@ -247,11 +248,7 @@ test("an unmapped repository needs no credential while an outage remains distinc
 
 test("the adapter refuses snapshots beyond either collection or content bound", async (t) => {
   const tooMany = fixtureOpen(t);
-  for (
-    let index = 0;
-    index <= repositoryConfigurationDeclarationsMax;
-    index += 1
-  ) {
+  for (let index = 0; index <= repositoryDeclarationsMax; index += 1) {
     fixtureWrite(
       tooMany,
       `.chug/configurations/${String(index).padStart(3, "0")}.json`,
@@ -271,7 +268,7 @@ test("the adapter refuses snapshots beyond either collection or content bound", 
   fixtureWrite(
     tooLarge,
     `${repositoryConfigurationRoot}large.json`,
-    "x".repeat(repositoryConfigurationFileCharsMax + 1),
+    "x".repeat(repositoryDeclarationFileCharsMax + 1),
   );
   const tooLargeCommit = fixtureCommit(tooLarge, "large declaration");
   assert.deepEqual(
@@ -336,5 +333,136 @@ test("a credential source that could not answer stops the head read", async (t) 
       fixtureBinding(fixture.remote),
     ),
     { read: "Unavailable" },
+  );
+});
+
+/** What the action directory holds at one commit of the fixture's remote. */
+function fixtureActions(fixture: Fixture, commit: string) {
+  return fixturePort(fixture).actionSnapshot({
+    repository: fixtureBinding(fixture.remote),
+    commit: asGitObjectId(commit),
+  });
+}
+
+test("a tree holding no action directory declares none, and neither does one holding only its page", async (t) => {
+  const fixture = fixtureOpen(t);
+  fixtureWrite(fixture, `${repositoryConfigurationRoot}work.json`, "work\n");
+  const bare = fixtureCommit(fixture, "no action directory");
+  fixtureWrite(fixture, `${repositoryActionRoot}README.md`, "Actions.\n");
+  const documented = fixtureCommit(fixture, "only the page");
+
+  for (const commit of [bare, documented])
+    assert.deepEqual(await fixtureActions(fixture, commit), {
+      read: "Snapshot",
+      files: [],
+    });
+});
+
+test("each directory is read for itself, at the commit named", async (t) => {
+  const fixture = fixtureOpen(t);
+  fixtureWrite(fixture, `${repositoryConfigurationRoot}work.json`, "work\n");
+  fixtureWrite(fixture, `${repositoryActionRoot}build.json`, "old\n");
+  const pinned = fixtureCommit(fixture, "one of each");
+  fixtureWrite(fixture, `${repositoryActionRoot}build.json`, "new\n");
+  fixtureWrite(fixture, `${repositoryActionRoot}deploy.json`, "deploy\n");
+  fixtureCommit(fixture, "the actions moved");
+
+  assert.deepEqual(await fixtureActions(fixture, pinned), {
+    read: "Snapshot",
+    files: [
+      {
+        path: `${repositoryActionRoot}build.json`,
+        kind: "File",
+        content: "old\n",
+      },
+    ],
+  });
+  const configurations = await fixturePort(fixture).snapshot({
+    repository: fixtureBinding(fixture.remote),
+    commit: asGitObjectId(pinned),
+  });
+  assert.deepEqual(
+    configurations.read === "Snapshot"
+      ? configurations.files.map((file) => file.path)
+      : configurations,
+    [`${repositoryConfigurationRoot}work.json`],
+  );
+});
+
+test("a symlink and a nested document under the action directory reach its reader as they are", async (t) => {
+  const fixture = fixtureOpen(t);
+  fixtureWrite(fixture, `${repositoryActionRoot}nested/build.json`, "nested\n");
+  symlinkSync(
+    "nested/build.json",
+    join(fixture.seed, `${repositoryActionRoot}link.json`),
+  );
+  const commit = fixtureCommit(fixture, "path shapes");
+
+  const read = await fixtureActions(fixture, commit);
+  assert.deepEqual(
+    read.read === "Snapshot"
+      ? read.files.map((file) => `${file.kind} ${file.path}`)
+      : read,
+    [
+      `Symlink ${repositoryActionRoot}link.json`,
+      `File ${repositoryActionRoot}nested/build.json`,
+    ],
+  );
+});
+
+test("a commit the repository does not hold, and a repository or a credential that cannot be reached, are told apart for the action directory", async (t) => {
+  const fixture = fixtureOpen(t);
+  fixtureWrite(fixture, `${repositoryActionRoot}build.json`, "build\n");
+  fixtureCommit(fixture, "one action");
+  const request = {
+    repository: fixtureBinding(fixture.remote),
+    commit: asGitObjectId("f".repeat(40)),
+  };
+
+  assert.deepEqual(await fixturePort(fixture).actionSnapshot(request), {
+    read: "Absent",
+  });
+  assert.deepEqual(
+    await fixturePort(fixture).actionSnapshot({
+      ...request,
+      repository: fixtureBinding(join(fixture.directory, "missing.git")),
+    }),
+    { read: "Unavailable", unavailable: "Repository" },
+  );
+  assert.deepEqual(
+    await fixturePort(fixture, { resolved: "Unavailable" }).actionSnapshot(
+      request,
+    ),
+    { read: "Unavailable", unavailable: "Credential" },
+  );
+});
+
+test("an action directory past either bound of one read is refused", async (t) => {
+  const tooMany = fixtureOpen(t);
+  for (let index = 0; index <= repositoryDeclarationsMax; index += 1)
+    fixtureWrite(tooMany, `${repositoryActionRoot}${String(index)}.json`, "{}");
+  const tooLarge = fixtureOpen(t);
+  fixtureWrite(
+    tooLarge,
+    `${repositoryActionRoot}large.json`,
+    "x".repeat(repositoryDeclarationFileCharsMax + 1),
+  );
+
+  for (const fixture of [tooMany, tooLarge])
+    assert.deepEqual(
+      await fixtureActions(fixture, fixtureCommit(fixture, "past a bound")),
+      { read: "Refused" },
+    );
+});
+
+test("an action directory holding as many documents as one read takes is read whole", async (t) => {
+  const fixture = fixtureOpen(t);
+  for (let index = 0; index < repositoryDeclarationsMax; index += 1)
+    fixtureWrite(fixture, `${repositoryActionRoot}${String(index)}.json`, "{}");
+
+  const read = await fixtureActions(fixture, fixtureCommit(fixture, "full"));
+  assert.equal(
+    read.read === "Snapshot" ? read.files.length : read.read,
+    repositoryDeclarationsMax,
   );
 });

@@ -8,15 +8,17 @@ import {
   asRepositoryId,
 } from "../../src/interpreter/finalizer.ts";
 import {
-  repositoryActionDeclarationsMax,
-  repositoryActionFileCharsMax,
   repositoryActionImportReadiness,
-  repositoryActionPathCharsMax,
   repositoryActionRoot,
   type RepositoryActionFault,
   type RepositoryActionImportReadiness,
 } from "../../src/interpreter/repositoryAction.ts";
-import type { RepositoryConfigurationFile } from "../../src/interpreter/repositoryConfiguration.ts";
+import {
+  repositoryDeclarationFileCharsMax,
+  repositoryDeclarationPathCharsMax,
+  repositoryDeclarationsMax,
+  type RepositoryDeclarationFile,
+} from "../../src/interpreter/repositoryDeclaration.ts";
 import { asBriefTitle } from "../../src/interpreter/ticketBrief.ts";
 
 const repository = asRepositoryId("https://forge.example/acme/engine.git");
@@ -38,7 +40,7 @@ function pathOf(file: string): string {
 function actionFile(
   file: string,
   document: unknown,
-): RepositoryConfigurationFile {
+): RepositoryDeclarationFile {
   return {
     path: pathOf(file),
     kind: "File",
@@ -47,7 +49,7 @@ function actionFile(
 }
 
 function read(
-  files: readonly RepositoryConfigurationFile[],
+  files: readonly RepositoryDeclarationFile[],
 ): RepositoryActionImportReadiness {
   return repositoryActionImportReadiness({ repository, commit, files });
 }
@@ -210,12 +212,13 @@ test("the longest path is read and one character more is refused", () => {
   const fileOf = (chars: number) =>
     "\u{1f680}".repeat(chars - pathOf("").length);
   assert.equal(
-    read([actionFile(fileOf(repositoryActionPathCharsMax), build)]).readiness,
+    read([actionFile(fileOf(repositoryDeclarationPathCharsMax), build)])
+      .readiness,
     "Ready",
   );
   assert.deepEqual(
-    read([actionFile(fileOf(repositoryActionPathCharsMax + 1), build)]),
-    refusal(fileOf(repositoryActionPathCharsMax + 1), "PathInvalid"),
+    read([actionFile(fileOf(repositoryDeclarationPathCharsMax + 1), build)]),
+    refusal(fileOf(repositoryDeclarationPathCharsMax + 1), "PathInvalid"),
   );
 });
 
@@ -236,7 +239,7 @@ test("the largest document is read and one character more is refused", () => {
     read([
       {
         ...actionFile("build", build),
-        content: padded(repositoryActionFileCharsMax),
+        content: padded(repositoryDeclarationFileCharsMax),
       },
     ]).readiness,
     "Ready",
@@ -245,7 +248,7 @@ test("the largest document is read and one character more is refused", () => {
     read([
       {
         ...actionFile("build", build),
-        content: padded(repositoryActionFileCharsMax + 1),
+        content: padded(repositoryDeclarationFileCharsMax + 1),
       },
     ]),
     refusal("build", "ContentTooLarge"),
@@ -293,11 +296,11 @@ test("a commit declares as many actions as the bound and no more", () => {
         action: `action-${String(index)}`,
       }),
     );
-  const atBound = read(filesOf(repositoryActionDeclarationsMax));
+  const atBound = read(filesOf(repositoryDeclarationsMax));
   assert.equal(atBound.readiness, "Ready");
   if (atBound.readiness !== "Ready") return;
-  assert.equal(atBound.declarations.length, repositoryActionDeclarationsMax);
-  assert.deepEqual(read(filesOf(repositoryActionDeclarationsMax + 1)), {
+  assert.equal(atBound.declarations.length, repositoryDeclarationsMax);
+  assert.deepEqual(read(filesOf(repositoryDeclarationsMax + 1)), {
     readiness: "Refused",
     faults: [{ path: repositoryActionRoot, fault: "TooManyDeclarations" }],
   });
