@@ -84,6 +84,8 @@ export const actionReportDocumentSchema = z.strictObject({
     .optional(),
   detail: z
     .string()
+    .min(1)
+    .max(actionReportDetailCharsMax)
     .refine((value) => isBoundedText(value, actionReportDetailCharsMax))
     .optional(),
   link: actionReportLinkSchema.optional(),
