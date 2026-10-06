@@ -339,10 +339,10 @@ function fixtureAlone(fixture: Fixture, commit: GitObjectId): void {
 /** Waits for something a fetch in flight brings about, failing where it never comes. */
 async function fixtureUntil(
   awaited: string,
-  came: () => boolean,
+  came: () => boolean | Promise<boolean>,
 ): Promise<void> {
   for (let waits = 0; waits < 400; waits += 1) {
-    if (came()) return;
+    if (await came()) return;
     await sleep(25);
   }
   assert.fail(`${awaited} never came`);
@@ -480,8 +480,12 @@ function fixtureCredentials(
   return { credential: () => Promise.resolve(resolved) };
 }
 
-/** A credential source that refuses every repository one and counts how often it was asked, which is once for each fetch begun. */
-function fixtureCounted(): {
+/**
+ * A credential source that counts how often it was asked, which is once for
+ * each fetch begun. It refuses every repository a credential, the first ask
+ * answered instead with what a test hands it.
+ */
+function fixtureCounted(first?: Promise<CredentialResolved>): {
   readonly credentials: RepositoryCredentialPort;
   readonly asked: () => number;
 } {
@@ -490,6 +494,7 @@ function fixtureCounted(): {
     credentials: {
       credential: () => {
         asked += 1;
+        if (asked === 1 && first !== undefined) return first;
         return Promise.resolve({ resolved: "Denied" });
       },
     },
@@ -1430,6 +1435,84 @@ test("a tip whose fetch failed is asked of no remote and no credential source un
   assert.deepEqual([counted.asked(), fixtureServed(fixture)], [2, 1]);
 });
 
+/**
+ * Waits for the one fetch a port may run at once to have ended, by asking about
+ * a second repository until that one is fetched in its turn. An ask about the
+ * tip in flight would wait on the fetch and be told its end, which a case about
+ * a fetch nobody is waiting on cannot have.
+ */
+function fixtureTurnGivenBack(
+  port: CommitAncestryPort,
+  twin: CommitAncestryQuestion,
+): Promise<void> {
+  return fixtureUntil(
+    "the turn a fetch gives back at its end",
+    async () => (await port.ancestry(twin)) === "Ancestor",
+  );
+}
+
+test("a fetch that fails with no asker left waiting on it begins its tip's wait all the same", async (t) => {
+  const fixture = fixtureOpen(t);
+  const clock = fixtureClock();
+  const counted = fixtureCounted();
+  const port = fixturePort(fixture, {
+    answerTimeoutSecsMax: 2,
+    remoteTimeoutSecsMax: 3,
+    fetchesInFlightMax: 1,
+    monotonicNowMs: clock.monotonicNowMs,
+    credentials: counted.credentials,
+  });
+  const question = fixtureQuestion(fixture, fixture.candidate);
+  const twin = fixtureQuestion(
+    fixture,
+    fixture.candidate,
+    fixture.tip,
+    fixtureTwin(fixture),
+  );
+  fixtureServe(fixture, "Stalled");
+  const stalled = port.ancestry(question);
+  await fixtureServing(fixture, 1);
+  fixtureServe(fixture, "Whole");
+  assert.equal(await stalled, "Unknown");
+  await fixtureTurnGivenBack(port, twin);
+
+  assert.equal(await port.ancestry(question), "Unknown");
+  assert.deepEqual([counted.asked(), fixtureServed(fixture)], [2, 2]);
+  clock.pass(fixtureRefetchWaitMs);
+  assert.equal(await port.ancestry(question), "Ancestor");
+  assert.deepEqual([counted.asked(), fixtureServed(fixture)], [3, 3]);
+});
+
+for (const [failing, first] of [
+  [
+    "could not answer",
+    Promise.resolve<CredentialResolved>({ resolved: "Unavailable" }),
+  ],
+  [
+    "never answered inside the remote bound",
+    new Promise<never>(() => undefined),
+  ],
+] as const) {
+  test(`a credential source that ${failing} begins its tip's wait, and is asked again once that has passed`, async (t) => {
+    const fixture = fixtureOpen(t);
+    const clock = fixtureClock();
+    const counted = fixtureCounted(first);
+    const port = fixturePort(fixture, {
+      remoteTimeoutSecsMax: 2,
+      monotonicNowMs: clock.monotonicNowMs,
+      credentials: counted.credentials,
+    });
+    const question = fixtureQuestion(fixture, fixture.candidate);
+    assert.equal(await port.ancestry(question), "Unknown");
+    assert.equal(await port.ancestry(question), "Unknown");
+    assert.equal(counted.asked(), 1);
+
+    clock.pass(fixtureRefetchWaitMs);
+    assert.equal(await port.ancestry(question), "Ancestor");
+    assert.equal(counted.asked(), 2);
+  });
+}
+
 test("a wait is its own tip's in its own repository, and another tip or another repository is fetched inside it", async (t) => {
   const fixture = fixtureOpen(t);
   const counted = fixtureCounted();
@@ -1507,6 +1590,42 @@ test("a tip that came to be held inside its wait is answered from the scratch", 
 
   assert.equal(await waiting.ancestry(question), "Ancestor");
   assert.equal(counted.asked(), 1);
+});
+
+test("an ask inside its tip's wait is unknown though a later tip's fetch has brought that tip's whole history, and is answered once the wait has passed", async (t) => {
+  const fixture = fixtureOpen(t);
+  const clock = fixtureClock();
+  const counted = fixtureCounted();
+  const port = fixturePort(fixture, {
+    monotonicNowMs: clock.monotonicNowMs,
+    credentials: counted.credentials,
+  });
+  const question = fixtureLater(fixture);
+  const { repository } = question.repository;
+  assert.equal(await port.ancestry(question), "Unknown");
+  const newer = fixtureNewer(fixture);
+  fixtureLaterComes(fixture);
+  assert.equal(
+    await port.ancestry(
+      fixtureQuestion(fixture, fixture.candidate, newer, repository),
+    ),
+    "Ancestor",
+  );
+  assert.ok(
+    fixtureAnswers(
+      fixtureScratchRepository(fixture, repository),
+      "merge-base",
+      "--is-ancestor",
+      fixture.candidate,
+      fixture.tip,
+    ),
+  );
+
+  assert.equal(await port.ancestry(question), "Unknown");
+  assert.equal(counted.asked(), 2);
+  clock.pass(fixtureRefetchWaitMs);
+  assert.equal(await port.ancestry(question), "Ancestor");
+  assert.equal(counted.asked(), 3);
 });
 
 test("a fetch that landed once its tip's wait had passed leaves no wait, and the tip is fetched at once when it stops being held", async (t) => {
