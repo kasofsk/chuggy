@@ -27,11 +27,11 @@ import {
   asRecoveryEpoch,
   asTenantId,
 } from "../../src/interpreter/projectStore.ts";
+import { repositoryConfigurationRoot } from "../../src/interpreter/repositoryConfiguration.ts";
 import {
-  repositoryConfigurationDeclarationsMax,
-  repositoryConfigurationFileCharsMax,
-  repositoryConfigurationRoot,
-} from "../../src/interpreter/repositoryConfiguration.ts";
+  repositoryDeclarationFileCharsMax,
+  repositoryDeclarationsMax,
+} from "../../src/interpreter/repositoryDeclaration.ts";
 
 interface Fixture {
   readonly directory: string;
@@ -247,11 +247,7 @@ test("an unmapped repository needs no credential while an outage remains distinc
 
 test("the adapter refuses snapshots beyond either collection or content bound", async (t) => {
   const tooMany = fixtureOpen(t);
-  for (
-    let index = 0;
-    index <= repositoryConfigurationDeclarationsMax;
-    index += 1
-  ) {
+  for (let index = 0; index <= repositoryDeclarationsMax; index += 1) {
     fixtureWrite(
       tooMany,
       `.chug/configurations/${String(index).padStart(3, "0")}.json`,
@@ -271,7 +267,7 @@ test("the adapter refuses snapshots beyond either collection or content bound", 
   fixtureWrite(
     tooLarge,
     `${repositoryConfigurationRoot}large.json`,
-    "x".repeat(repositoryConfigurationFileCharsMax + 1),
+    "x".repeat(repositoryDeclarationFileCharsMax + 1),
   );
   const tooLargeCommit = fixtureCommit(tooLarge, "large declaration");
   assert.deepEqual(

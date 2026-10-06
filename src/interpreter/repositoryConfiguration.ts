@@ -28,23 +28,19 @@ import type {
 import type { Authority } from "./operationInbox.ts";
 import type { Partition } from "./projectStore.ts";
 import { assertNever } from "../domain/assertNever.ts";
-import { textCodePointsCount } from "../contract/http.ts";
 import {
   asRepositoryConfigurationName,
   asRepositoryConfigurationPath,
-  repositoryConfigurationDeclarationsMax,
-  repositoryConfigurationFileCharsMax,
   repositoryConfigurationRoot,
   type RepositoryConfigurationName,
   type RepositoryConfigurationPath,
 } from "./repositoryConfigurationIdentity.ts";
+import {
+  repositoryDeclarationContent,
+  repositoryDeclarationsMax,
+  type RepositoryDeclarationFile,
+} from "./repositoryDeclaration.ts";
 export * from "./repositoryConfigurationIdentity.ts";
-
-export interface RepositoryConfigurationFile {
-  readonly path: string;
-  readonly kind: "File" | "Symlink";
-  readonly content: string;
-}
 
 /** One immutable repository view the application asks an outer adapter to read. */
 export interface RepositoryConfigurationSnapshotRequest {
@@ -56,7 +52,7 @@ export interface RepositoryConfigurationSnapshotRequest {
 export type RepositoryConfigurationSnapshotRead =
   | {
       readonly read: "Snapshot";
-      readonly files: readonly RepositoryConfigurationFile[];
+      readonly files: readonly RepositoryDeclarationFile[];
     }
   | {
       readonly read: "Absent";
@@ -510,22 +506,16 @@ function repositoryConfigurationRevision(
 }
 
 function repositoryConfigurationEnvelope(
-  file: RepositoryConfigurationFile,
+  file: RepositoryDeclarationFile,
   repository: RepositoryId,
   commit: GitObjectId,
 ): RepositoryConfigurationDeclaration | RepositoryConfigurationRefusal {
   const path = asRepositoryConfigurationPath(file.path);
   if (path === undefined) return { path: file.path, fault: "PathInvalid" };
-  if (file.kind === "Symlink")
-    return { path: file.path, fault: "SymlinkRefused" };
-  if (textCodePointsCount(file.content) > repositoryConfigurationFileCharsMax)
-    return { path: file.path, fault: "ContentTooLarge" };
-  let value: unknown;
-  try {
-    value = JSON.parse(file.content);
-  } catch {
-    return { path: file.path, fault: "DocumentUnreadable" };
-  }
+  const content = repositoryDeclarationContent(file);
+  if (content.content === "Refused")
+    return { path: file.path, fault: content.fault };
+  const value = content.document;
   if (typeof value !== "object" || value === null || Array.isArray(value))
     return { path: file.path, fault: "EnvelopeInvalid" };
   const record = value as Record<string, unknown>;
@@ -564,9 +554,9 @@ function repositoryConfigurationEnvelope(
 export function repositoryConfigurationImportReadiness(input: {
   readonly repository: RepositoryId;
   readonly commit: GitObjectId;
-  readonly files: readonly RepositoryConfigurationFile[];
+  readonly files: readonly RepositoryDeclarationFile[];
 }): RepositoryConfigurationImportReadiness {
-  if (input.files.length > repositoryConfigurationDeclarationsMax)
+  if (input.files.length > repositoryDeclarationsMax)
     return {
       readiness: "Refused",
       faults: [

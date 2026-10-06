@@ -41,8 +41,8 @@ import {
 import {
   asRepositoryConfigurationName,
   asRepositoryConfigurationPath,
-  repositoryConfigurationDeclarationsMax,
 } from "../../interpreter/repositoryConfigurationIdentity.ts";
+import { repositoryDeclarationsMax } from "../../interpreter/repositoryDeclaration.ts";
 import type {
   RepositoryConfigurationsHeld,
   RepositoryConfigurationsHeldRead,
@@ -515,7 +515,7 @@ async function importRepositoryConfigurations(
   pool: pg.Pool,
   input: ImportRepositoryConfigurationsInput,
 ): Promise<RepositoryConfigurationsImported> {
-  if (input.declarations.length > repositoryConfigurationDeclarationsMax)
+  if (input.declarations.length > repositoryDeclarationsMax)
     throw new RangeError("repository configuration import exceeds its bound");
   const client = await pool.connect();
   try {

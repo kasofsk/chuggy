@@ -12,9 +12,13 @@
  */
 
 import { actionDocumentSchema } from "../contract/actionDocument.ts";
-import { textCodePointsCount } from "../contract/http.ts";
 import type { GitObjectId, RepositoryId } from "./finalizer.ts";
-import type { RepositoryConfigurationFile } from "./repositoryConfiguration.ts";
+import {
+  isRepositoryDeclarationPath,
+  repositoryDeclarationContent,
+  repositoryDeclarationsMax,
+  type RepositoryDeclarationFile,
+} from "./repositoryDeclaration.ts";
 import { taskConfigurationLineFault } from "./taskConfiguration.ts";
 
 declare const repositoryActionIdBrand: unique symbol;
@@ -37,9 +41,6 @@ export type RepositoryActionPath = string & {
 };
 
 export const repositoryActionRoot = ".chug/actions/";
-export const repositoryActionDeclarationsMax = 100;
-export const repositoryActionPathCharsMax = 256;
-export const repositoryActionFileCharsMax = 65_536;
 
 export interface RepositoryActionDeclaration {
   readonly repository: RepositoryId;
@@ -77,15 +78,7 @@ export type RepositoryActionImportReadiness =
 function asRepositoryActionPath(
   value: string,
 ): RepositoryActionPath | undefined {
-  const file = value.slice(repositoryActionRoot.length);
-  return value.startsWith(repositoryActionRoot) &&
-    textCodePointsCount(value) <= repositoryActionPathCharsMax &&
-    value.isWellFormed() &&
-    !value.includes("\\") &&
-    !value.includes("\0") &&
-    file.endsWith(".json") &&
-    file.length > ".json".length &&
-    !file.includes("/")
+  return isRepositoryDeclarationPath(repositoryActionRoot, value)
     ? (value as RepositoryActionPath)
     : undefined;
 }
@@ -101,23 +94,16 @@ function asRepositoryActionName(
 }
 
 function repositoryActionDeclaration(
-  file: RepositoryConfigurationFile,
+  file: RepositoryDeclarationFile,
   repository: RepositoryId,
   commit: GitObjectId,
 ): RepositoryActionDeclaration | RepositoryActionRefusal {
   const path = asRepositoryActionPath(file.path);
   if (path === undefined) return { path: file.path, fault: "PathInvalid" };
-  if (file.kind === "Symlink")
-    return { path: file.path, fault: "SymlinkRefused" };
-  if (textCodePointsCount(file.content) > repositoryActionFileCharsMax)
-    return { path: file.path, fault: "ContentTooLarge" };
-  let value: unknown;
-  try {
-    value = JSON.parse(file.content);
-  } catch {
-    return { path: file.path, fault: "DocumentUnreadable" };
-  }
-  const parsed = actionDocumentSchema.safeParse(value);
+  const content = repositoryDeclarationContent(file);
+  if (content.content === "Refused")
+    return { path: file.path, fault: content.fault };
+  const parsed = actionDocumentSchema.safeParse(content.document);
   if (!parsed.success) return { path: file.path, fault: "DocumentInvalid" };
   const name = asRepositoryActionName(parsed.data.name);
   if (name === undefined) return { path: file.path, fault: "DocumentInvalid" };
@@ -134,9 +120,9 @@ function repositoryActionDeclaration(
 export function repositoryActionImportReadiness(input: {
   readonly repository: RepositoryId;
   readonly commit: GitObjectId;
-  readonly files: readonly RepositoryConfigurationFile[];
+  readonly files: readonly RepositoryDeclarationFile[];
 }): RepositoryActionImportReadiness {
-  if (input.files.length > repositoryActionDeclarationsMax)
+  if (input.files.length > repositoryDeclarationsMax)
     return {
       readiness: "Refused",
       faults: [{ path: repositoryActionRoot, fault: "TooManyDeclarations" }],

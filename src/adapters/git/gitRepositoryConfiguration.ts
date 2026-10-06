@@ -16,16 +16,18 @@ import type {
   RepositoryCredentialPort,
 } from "../../interpreter/finalizer.ts";
 import {
-  repositoryConfigurationDeclarationsMax,
-  repositoryConfigurationFileCharsMax,
   repositoryConfigurationRoot,
-  type RepositoryConfigurationFile,
   type RepositoryConfigurationSnapshotPort,
   type RepositoryConfigurationSnapshotRead,
   type RepositoryConfigurationSnapshotRequest,
   type RepositoryDefaultBranchPort,
   type RepositoryDefaultBranchRead,
 } from "../../interpreter/repositoryConfiguration.ts";
+import {
+  repositoryDeclarationFileCharsMax,
+  repositoryDeclarationsMax,
+  type RepositoryDeclarationFile,
+} from "../../interpreter/repositoryDeclaration.ts";
 import {
   scratchObserveHead,
   scratchOpen,
@@ -72,9 +74,9 @@ type GitRepositoryConfigurationAuthorization =
   | { readonly authorized: "Unavailable" };
 
 const gitRepositoryConfigurationTreeOutputBytesMax =
-  (repositoryConfigurationDeclarationsMax + 1) * 512;
+  (repositoryDeclarationsMax + 1) * 512;
 const gitRepositoryConfigurationBlobOutputBytesMax =
-  repositoryConfigurationFileCharsMax * 4 + 1;
+  repositoryDeclarationFileCharsMax * 4 + 1;
 
 async function gitRepositoryConfigurationCredential(
   own: GitRepositoryConfigurationState,
@@ -142,8 +144,7 @@ function gitRepositoryConfigurationEntries(
       return undefined;
     if (!path.endsWith(".json")) continue;
     entries.push({ mode, object, path });
-    if (entries.length > repositoryConfigurationDeclarationsMax)
-      return undefined;
+    if (entries.length > repositoryDeclarationsMax) return undefined;
   }
   return entries;
 }
@@ -174,7 +175,7 @@ async function gitRepositoryConfigurationFile(
   own: GitRepositoryConfigurationState,
   request: RepositoryConfigurationSnapshotRequest,
   entry: GitRepositoryConfigurationEntry,
-): Promise<RepositoryConfigurationFile | undefined> {
+): Promise<RepositoryDeclarationFile | undefined> {
   if (
     entry.mode !== "100644" &&
     entry.mode !== "100755" &&
@@ -188,7 +189,7 @@ async function gitRepositoryConfigurationFile(
     outputBytesMax: gitRepositoryConfigurationBlobOutputBytesMax,
   });
   if (!gitRepositoryConfigurationExited(ran)) return undefined;
-  if (textCodePointsCount(ran.stdout) > repositoryConfigurationFileCharsMax)
+  if (textCodePointsCount(ran.stdout) > repositoryDeclarationFileCharsMax)
     return undefined;
   return {
     path: entry.path,
@@ -201,8 +202,8 @@ async function gitRepositoryConfigurationFiles(
   own: GitRepositoryConfigurationState,
   request: RepositoryConfigurationSnapshotRequest,
   entries: readonly GitRepositoryConfigurationEntry[],
-): Promise<readonly RepositoryConfigurationFile[] | undefined> {
-  const files: RepositoryConfigurationFile[] = [];
+): Promise<readonly RepositoryDeclarationFile[] | undefined> {
+  const files: RepositoryDeclarationFile[] = [];
   for (const entry of entries) {
     const file = await gitRepositoryConfigurationFile(own, request, entry);
     if (file === undefined) return undefined;
