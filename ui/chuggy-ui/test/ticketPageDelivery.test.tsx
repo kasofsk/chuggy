@@ -563,7 +563,7 @@ test("an answer kept while every later read fails is said to be stale on the clo
   expect(anchorSaid(container)).toBe("Delivery1 Failed");
 });
 
-test("a page whose every read answers, each as slowly as a read that answers can, never says its answer is stale", async () => {
+test("a page whose every read answers in one request, each as slowly as one request can, never says its answer is stale", async () => {
   vi.useFakeTimers({ shouldAdvanceTime: true });
   const slowestMs = apiTimeoutMsDefault - 1;
   const container = await drawn(

@@ -229,7 +229,7 @@ test("an answer is stale to a closed row exactly when the console's own rule say
     ).toBe(freshnessIsStale(nowMs, at));
 });
 
-test("the slowest read that answers lands before the answer it replaces is stale", () => {
+test("a read that answers in one request lands before the answer it replaces is stale", () => {
   expect(ticketDeliveryPolledMs + apiTimeoutMsDefault).toBeLessThan(
     freshnessStaleAfterMs,
   );
