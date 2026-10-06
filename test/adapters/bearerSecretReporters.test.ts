@@ -14,10 +14,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
 
-import {
-  bearerSecretBytesMax,
-  bearerSecretReporters,
-} from "../../src/adapters/reporters/bearerSecret.ts";
+import { bearerSecretReporters } from "../../src/adapters/reporters/bearerSecret.ts";
+import { reporterSecretBytesMax } from "../../src/adapters/reporters/secretFile.ts";
 import type {
   ActionReportRequest,
   ActionReportSaid,
@@ -205,7 +203,7 @@ test("a file that holds no secret verifies nobody, whatever is presented", async
 });
 
 test("a file is read to the bound a secret may be and refused past it", async (t) => {
-  const atBound = "s".repeat(bearerSecretBytesMax);
+  const atBound = "s".repeat(reporterSecretBytesMax);
   assert.deepEqual(
     await asked(fileHolding(t, atBound), `Bearer ${atBound}`),
     said,
