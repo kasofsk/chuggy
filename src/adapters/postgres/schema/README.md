@@ -428,3 +428,17 @@ repository of the project holds, and lets a repository take an identity only a
 retired binding still holds. It has no unfinished work: an import
 replaced the set or changed nothing, and a repository whose head is not
 imported yet declares what its last imported head did.
+
+`action_observation` — what each declared action was reported to have done at
+a commit, a row to a report, in the order the reports were weighed. Owned by
+the boundary owner, which is what `record_action_observation` runs as; the API
+role reaches it through that door alone and is granted no read of it. Its key
+and identity are `(tenant, project, action, ordinal)`, the ordinal counting an
+action's rows from one, and it points at `project` and not at
+`repository_action`, whose rows an import removes and inserts. It is changed by
+that door alone, which takes an advisory lock on the action, records nothing
+for an action no repository the project still binds declares, and nothing for a
+report repeating the commit and outcome of the action's newest row; a row once
+written is neither changed nor removed, which
+`action_observation_is_written_once` refuses. It has no unfinished work: a
+report is a row or it is nothing, and no later step completes one.

@@ -185,7 +185,9 @@ import {
   sessionPlacementBody,
   notFound,
   sessionBearerRefusedResponse,
+  actionReportResponse,
 } from "./outcomes.ts";
+import type { ActionReports } from "../../interpreter/actionReport.ts";
 import type { WorkerPoolRegistrationService } from "../../interpreter/workerPoolRegistrationToken.ts";
 import type { ExecutionPlacementAdministration } from "../../interpreter/executionPlacement.ts";
 import type { PlacementAdministration } from "../../interpreter/placementRoute.ts";
@@ -1084,6 +1086,51 @@ function registerWorkerPools(
       );
     },
   );
+}
+
+/**
+ * What a system outside this one reports of a declared action, `public`
+ * because each reporter proves itself by its own scheme. It is registered in a
+ * scope of its own so that its parsers are its own: a scheme may verify a
+ * signature over the body as sent, so the body is handed over as bytes under
+ * either media type and read by nobody first.
+ */
+function registerActionReports(
+  app: FastifyInstance,
+  reports: ActionReports,
+): void {
+  void app.register((scope, _options, registered) => {
+    scope.removeAllContentTypeParsers();
+    scope.addContentTypeParser(
+      [nativeHttpMediaType, "application/json"],
+      { parseAs: "buffer" },
+      (_request, body, parsed) => {
+        parsed(null, body);
+      },
+    );
+    scope.post(
+      nativeHttpRoutes.actionReports,
+      { config: { public: true } },
+      async (request, reply) => {
+        const address = record(request.params);
+        send(
+          reply,
+          actionReportResponse(
+            await reports.report({
+              tenant: textField(address, "tenant"),
+              project: textField(address, "project"),
+              action: textField(address, "action"),
+              headers: request.headers,
+              body: Buffer.isBuffer(request.body)
+                ? request.body
+                : new Uint8Array(),
+            }),
+          ),
+        );
+      },
+    );
+    registered();
+  });
 }
 
 /**
@@ -2019,6 +2066,7 @@ export function createNativeHttpApp(
   sessionPlacement?: SessionPlacementAdministration,
   proposalReviews?: SelectorProposalReviews,
   threadLive?: ThreadLiveHub,
+  actionReports?: ActionReports,
 ): FastifyInstance {
   const app = nativeHttpServer(limits);
   const partitionRoot = "/api/v1/tenants/:tenant/projects/:project";
@@ -2060,6 +2108,7 @@ export function createNativeHttpApp(
   if (workerPools !== undefined)
     registerWorkerPools(app, workerPools, partitionRoot);
   registerPlacements(app, partitionRoot, placement, sessionPlacement);
+  if (actionReports !== undefined) registerActionReports(app, actionReports);
   app.setErrorHandler((failure, _request, reply) => {
     send(reply, failureResponse(failure));
   });
