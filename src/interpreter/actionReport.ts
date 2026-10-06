@@ -26,11 +26,13 @@
  * rostered one is.
  *
  * NOTHING IS SAID TO A REQUEST THAT DID NOT VERIFY. An action no reporter is
- * named for, a secret that does not verify and an action no repository
- * declares are all `NotFound`, and only a verified reporter is told its report
- * was refused. An action a reporter is named for costs a file read and a
- * digest that one nobody is named for does not, so the two are told apart by
- * how long the answer takes and by nothing in it.
+ * named for and a secret that does not verify are `NotFound`, and so is a
+ * report of an action no repository declares. Only a verified reporter is told
+ * its request was refused or held no report, and it is told before the
+ * declaration is asked for, so neither answer says the action is declared. An
+ * action a reporter is named for costs a file read and a digest that one
+ * nobody is named for does not, so the two are told apart by how long the
+ * answer takes and by nothing in it.
  */
 
 import { z } from "zod";
