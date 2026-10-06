@@ -166,6 +166,15 @@ import {
   workerPoolEndpointSchema,
   workerPoolRegistryHostSchema,
 } from "../contract/responses.ts";
+import {
+  actionReporterRoster,
+  actionReports,
+  rosterActionReporters,
+  type ActionReporter,
+  type ActionReports,
+} from "../interpreter/actionReport.ts";
+import { postgresActionObservations } from "../adapters/postgres/actionObservation.ts";
+import { bearerSecretReporters } from "../adapters/reporters/bearerSecret.ts";
 
 const databaseUrlVariable = "CHUG_API_DATABASE_URL";
 const idempotencyKeyingVariable = "CHUG_API_IDEMPOTENCY_KEYING";
@@ -241,6 +250,12 @@ const forgeClientSecretFileVariable = "CHUG_API_FORGE_APP_CLIENT_SECRET_FILE";
  */
 const bootstrapWorkerImageVariable = "CHUG_API_BOOTSTRAP_WORKER_IMAGE";
 const forgeTemplateRepositoryVariable = "CHUG_API_FORGE_TEMPLATE_REPOSITORY";
+/**
+ * Who may report what a declared action did: a JSON roster of reporters, each
+ * a scheme, the file its secret is in, a project and the actions it may report
+ * there. A deployment naming none answers every report as not found.
+ */
+const actionReportersVariable = "CHUG_API_ACTION_REPORTERS";
 
 /** One pool address, refused at start where a runner would refuse it in the pool file. */
 function poolEndpointSetting(variable: string): string {
@@ -310,6 +325,38 @@ function nativeWorkerPools(
       grants,
       clientId: () => `chuggy-pool-${randomUUID()}`,
     },
+  });
+}
+
+/**
+ * The reporters this deployment names, none where it names no roster, and a
+ * refusal to start where the roster cannot be read. No secret's file is read
+ * here: one that is absent or empty is a reporter no request verifies as.
+ */
+export function nativeActionReporters(): readonly ActionReporter[] {
+  const encoded = process.env[actionReportersVariable];
+  if (encoded === undefined || encoded.length === 0) return [];
+  const roster = actionReporterRoster(encoded);
+  if (roster.read === "Refused")
+    throw new Error(`${actionReportersVariable} ${roster.why}`);
+  return roster.reporters;
+}
+
+/**
+ * The report route's service over the reporters named, recording over the API
+ * pool and verifying by the one scheme this deployment holds an adapter for.
+ * It is composed whoever is named, because a path nothing serves is answered
+ * by the authentication hook and not as a resource that is not there.
+ */
+export function nativeActionReports(
+  pools: Pick<NativePools, "pool">,
+  reporters: readonly ActionReporter[],
+): ActionReports {
+  return actionReports({
+    reporters: rosterActionReporters(reporters, {
+      BearerSecret: bearerSecretReporters(),
+    }),
+    observations: postgresActionObservations(pools.pool),
   });
 }
 
@@ -1274,6 +1321,7 @@ export function nativeThreadPorts(
 async function main(): Promise<void> {
   const keying = idempotencyKeying();
   const authenticationConfig = oidcConfig();
+  const reporters = nativeActionReporters();
   const pools = nativePools();
   const { pool, selectorReviewPool } = pools;
   await nativeDatabasesReady(pool, selectorReviewPool);
@@ -1326,6 +1374,7 @@ async function main(): Promise<void> {
     composeSessionPlacement(pool, access),
     composeSelectorProposalReviews(selectorReviewPool, access),
     threadLive,
+    nativeActionReports(pools, reporters),
   );
   nativeStopping(app, pools, [hub, threadLive]);
   await app.listen({

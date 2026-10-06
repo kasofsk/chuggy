@@ -37,6 +37,7 @@ import {
   workerPoolRedemptionSchema,
   workerPoolRegistrationTokenRequestSchema,
 } from "./workerPool.ts";
+import { actionReportDocumentSchema } from "./actionReport.ts";
 
 /** Every request body the document publishes, as the JSON Schema its own parser induces. */
 function nativeHttpContractDocumentSchemas(): unknown {
@@ -74,6 +75,7 @@ function nativeHttpContractDocumentSchemas(): unknown {
       workerPoolRegistrationTokenRequestSchema,
     ),
     workerPoolRedemption: z.toJSONSchema(workerPoolRedemptionSchema),
+    actionReport: z.toJSONSchema(actionReportDocumentSchema),
   };
 }
 
@@ -138,6 +140,8 @@ export function nativeHttpContractDocument(): unknown {
       "where a project's threads and its lead run is decided the same way, and an inquiry runs where the lead does; a turn admitted InCluster spends the tenant's hosted grant and one admitted on Pool is offered to runners instead, the member's own for a thread and any of the project's for the lead, so a member with no runner registered on the project is refused NoRunner; a turn runs where it was admitted, so a change moves the next turn and never one already queued, and one offered to runners that none takes within the scheduler's dwell is withdrawn; the read says whether such a runner is registered and has polled lately",
     workerPoolRegistration:
       "an administrator mints a single-use token for one project; redeeming it registers the pool and answers once with the file a runner keeps, its secret included",
+    actionReports:
+      "a reporter this deployment names reports what one declared action did at one commit, to the action's own address and proving itself by its own scheme rather than a bearer of this server's; a report repeating the commit and outcome of the action's newest is answered Repeated and records nothing, and a request that proves nothing is not found",
     routes: nativeHttpRoutes,
     schemas: nativeHttpContractDocumentSchemas(),
   };
