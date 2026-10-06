@@ -9,14 +9,17 @@
  * candidate that had only not arrived yet, so nothing is decided against a tip
  * no such ref names.
  *
- * ABSENCE IS A FINDING ONLY OVER A HISTORY READ TO ITS END. git reports a
- * lookup it could not complete exactly as it reports an object that is not
- * there, and the ref says only that a fetch completed once: the objects under
- * it can since have become unreadable, and may never have arrived where another
- * ref already named the tip. So a candidate the scratch does not resolve is
- * `NotAncestor` only once every commit of the tip's history has been read from
- * the object store. A candidate it does resolve must be a commit by its own
- * name, because git would otherwise answer for the commit a tag peels to.
+ * A NO IS A FINDING ONLY OVER A HISTORY READ TO ITS END. git reports a lookup
+ * it could not complete exactly as it reports an object that is not there, and
+ * a git the scratch admits reports a walk that met a commit it could not read
+ * exactly as one that ended without meeting the candidate. The ref says only
+ * that a fetch completed once: the objects under it can since have become
+ * unreadable, and may never have arrived where another ref already named the
+ * tip. So `NotAncestor` is answered, for a candidate the scratch does not
+ * resolve and for one git walked from and did not reach alike, only once every
+ * commit of the tip's history has been read from the object store. A candidate
+ * the scratch does resolve must be a commit by its own name, because git would
+ * otherwise answer for the commit a tag peels to.
  *
  * THE ASKER'S WAIT IS BOUNDED AND THE FETCH IS NOT STOPPED FOR IT. An asker is
  * answered `Unknown` once a bound short enough for a page being read has
@@ -224,7 +227,20 @@ async function gitCommitAncestryHeld(
   return gitCommitAncestryHeld(own, question, untilMs);
 }
 
-/** What git says of a candidate that is a commit here, a call it could not answer deciding nothing. */
+/** `NotAncestor` where every commit of the tip's history could be read, and `Unknown` where one could not. */
+async function gitCommitAncestryNot(
+  own: GitCommitAncestryState,
+  question: CommitAncestryQuestion,
+): Promise<CommitAncestry> {
+  const walked = await scratchWalksHistory(
+    own.scratch,
+    question.repository.repository,
+    question.tip,
+  );
+  return walked ? "NotAncestor" : "Unknown";
+}
+
+/** What git says of a candidate that is a commit here: its yes is a path it found, its no is held to the walk, and a call it could not answer decides nothing. */
 async function gitCommitAncestryDecideHeld(
   own: GitCommitAncestryState,
   question: CommitAncestryQuestion,
@@ -236,7 +252,7 @@ async function gitCommitAncestryDecideHeld(
     question.tip,
   );
   if (ancestor === undefined) return "Unknown";
-  return ancestor ? "Ancestor" : "NotAncestor";
+  return ancestor ? "Ancestor" : gitCommitAncestryNot(own, question);
 }
 
 /**
@@ -256,9 +272,7 @@ async function gitCommitAncestryDecide(
     case "Other":
       return "Unknown";
     case "Unresolved":
-      return (await scratchWalksHistory(own.scratch, repository, question.tip))
-        ? "NotAncestor"
-        : "Unknown";
+      return gitCommitAncestryNot(own, question);
     default:
       return assertNever(named);
   }

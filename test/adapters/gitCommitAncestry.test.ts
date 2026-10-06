@@ -12,7 +12,7 @@
  */
 
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import {
   chmodSync,
@@ -266,9 +266,9 @@ function fixtureHistoryHeld(fixture: Fixture, tip: GitObjectId): boolean {
   );
 }
 
-/** One more commit on the remote's branch, which is a second tip of the same repository. */
-function fixtureNewer(fixture: Fixture): GitObjectId {
-  const newer = fixtureCommit(fixture.seed, "newer");
+/** One more commit on the remote's branch, which is a further tip of the same repository. */
+function fixtureNewer(fixture: Fixture, file = "newer"): GitObjectId {
+  const newer = fixtureCommit(fixture.seed, file);
   fixtureGit(fixture.seed, "push", "-q", fixture.remote, "main:main");
   return newer;
 }
@@ -598,6 +598,48 @@ test("a commit-graph left over a pack that is gone does not answer for the commi
   assert.equal(
     await port.ancestry(fixtureQuestion(fixture, fixture.candidate, newer)),
     "Unknown",
+  );
+});
+
+test("a no from git is unknown while a commit far under the tip cannot be read, and a finding once it can", async (t) => {
+  const fixture = fixtureOpen(t);
+  const port = fixturePort(fixture);
+  const newer = fixtureNewer(fixture);
+  const newest = fixtureNewer(fixture, "newest");
+  await port.ancestry(fixtureQuestion(fixture, fixture.candidate, newest));
+  await port.ancestry(fixtureQuestion(fixture, fixture.candidate, newer));
+  const scratch = fixtureScratchRepository(fixture);
+  const under = join(
+    scratch,
+    "objects",
+    fixture.candidate.slice(0, 2),
+    fixture.candidate.slice(2),
+  );
+  const aside = join(fixture.directory, "aside");
+  renameSync(under, aside);
+  assert.equal(
+    spawnSync("git", [
+      "-C",
+      scratch,
+      "merge-base",
+      "--is-ancestor",
+      newest,
+      newer,
+    ]).status,
+    1,
+  );
+
+  try {
+    assert.equal(
+      await port.ancestry(fixtureQuestion(fixture, newest, newer)),
+      "Unknown",
+    );
+  } finally {
+    renameSync(aside, under);
+  }
+  assert.equal(
+    await port.ancestry(fixtureQuestion(fixture, newest, newer)),
+    "NotAncestor",
   );
 });
 
