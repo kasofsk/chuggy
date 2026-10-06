@@ -9,14 +9,21 @@
  * one. It runs inside the fetch that asked, so every pack the remote built is
  * a line the suite can count and the credential that fetch was given is there
  * to be read.
+ *
+ * THE ADAPTER'S OWN CALLS ARE COUNTED AND FAULTED AT ITS GIT. Where a test says
+ * how many reads were made, or has one of them die or outlast its bound, a
+ * script named `git` stands in front of the real one on the adapter's path
+ * alone. What the adapter did is then read off the calls it made rather than
+ * off how long it took.
  */
 
 import assert from "node:assert/strict";
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import {
   chmodSync,
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
@@ -33,8 +40,10 @@ import {
   gitCommitAncestry,
   type GitCommitAncestryOptions,
 } from "../../src/adapters/git/gitCommitAncestry.ts";
+import type { GitEnvironment } from "../../src/adapters/git/gitRun.ts";
 import { scratchDigestOf } from "../../src/adapters/git/gitScratch.ts";
 import type {
+  CommitAncestry,
   CommitAncestryPort,
   CommitAncestryQuestion,
 } from "../../src/interpreter/commitAncestry.ts";
@@ -69,13 +78,49 @@ const fixtureServeText = [
   'here=$(dirname "$0")',
   'echo served >> "$here/served"',
   '"$here/scratch/credential-helper" get > "$here/credential"',
-  'case "$(cat "$here/serving")" in',
+  'read serving secs < "$here/serving"',
+  'case "$serving" in',
   'Stalled) "$@" | { dd bs=1 count=600 2>/dev/null; sleep 60; } ;;',
-  'Slowed) "$@" | { dd bs=1 count=600 2>/dev/null; sleep 2; cat; } ;;',
+  'Slowed) "$@" | { dd bs=1 count=600 2>/dev/null; sleep "$secs"; cat; } ;;',
   '*) exec "$@" ;;',
   "esac",
   "",
 ].join("\n");
+
+/** The verbs the adapter reads and fills a scratch with, which are the calls a recording git counts. */
+type FixtureVerb =
+  "fetch" | "rev-parse" | "cat-file" | "merge-base" | "rev-list";
+
+/** How one verb's calls go through a recording git: as git has them, ended by a signal or by git's own code for a failure before git ran, or begun only after a pause. */
+type FixtureFault = "Whole" | "Killed" | "Failed" | "Stalled";
+
+/**
+ * A git in front of the real one. It writes the verb of every call the adapter
+ * makes as a line, and the calls of the one verb the fixture names die before
+ * git has run or reach it late, a late one writing a line once it has ended.
+ */
+function fixtureRecordingText(git: string): string {
+  return [
+    "#!/bin/sh",
+    'here=$(dirname "$0")',
+    'read faulted fault < "$here/faulted"',
+    'for arg in "$@"; do',
+    '  case "$arg" in',
+    "  fetch | rev-parse | cat-file | merge-base | rev-list)",
+    '    echo "$arg" >> "$here/calls"',
+    '    [ "$arg" = "$faulted" ] || break',
+    '    case "$fault" in',
+    "    Killed) kill -KILL $$ ;;",
+    "    Failed) exit 128 ;;",
+    `    Stalled) sleep 3; '${git}' "$@"; code=$?; echo ended >> "$here/calls"; exit $code ;;`,
+    "    esac",
+    "    break ;;",
+    "  esac",
+    "done",
+    `exec '${git}' "$@"`,
+    "",
+  ].join("\n");
+}
 
 /** One fixture: a bare origin holding a merge of one branch, a commit it never received, and the scratch the adapter opens. */
 interface Fixture {
@@ -174,7 +219,7 @@ function fixtureConfigurationText(directory: string): string {
 function fixtureOpen(t: TestContext): Fixture {
   const { directory, remote, seed } = fixtureRepositories(t);
   writeFileSync(join(directory, "serve"), fixtureServeText, { mode: 0o755 });
-  writeFileSync(join(directory, "serving"), "Whole");
+  writeFileSync(join(directory, "serving"), "Whole\n");
   writeFileSync(
     join(directory, "gitconfig"),
     fixtureConfigurationText(directory),
@@ -188,8 +233,61 @@ function fixtureOpen(t: TestContext): Fixture {
   };
 }
 
-function fixtureServe(fixture: Fixture, serving: FixtureServing): void {
-  writeFileSync(join(fixture.directory, "serving"), serving);
+/** Has the remote hand its packs over one way from here on, a slowed one pausing for the seconds given. */
+function fixtureServe(
+  fixture: Fixture,
+  serving: FixtureServing,
+  slowedSecs = 2,
+): void {
+  writeFileSync(
+    join(fixture.directory, "serving"),
+    `${serving} ${String(slowedSecs)}\n`,
+  );
+}
+
+/** Has the calls of one verb go through the recording git one way from here on. */
+function fixtureFaulted(
+  fixture: Fixture,
+  verb: FixtureVerb,
+  fault: FixtureFault,
+): void {
+  writeFileSync(
+    join(fixture.directory, "recording", "faulted"),
+    `${verb} ${fault}\n`,
+  );
+}
+
+/** The environment of a port whose every git call goes through a recording git, which nothing is faulted at until a test says so. */
+function fixtureRecorded(fixture: Fixture): GitEnvironment {
+  const recording = join(fixture.directory, "recording");
+  mkdirSync(recording);
+  const git = execFileSync("sh", ["-c", "command -v git"], {
+    encoding: "utf8",
+  }).trim();
+  writeFileSync(join(recording, "git"), fixtureRecordingText(git), {
+    mode: 0o755,
+  });
+  fixtureFaulted(fixture, "fetch", "Whole");
+  return {
+    ...process.env,
+    GIT_CONFIG_GLOBAL: join(fixture.directory, "gitconfig"),
+    PATH: `${recording}:${process.env["PATH"] ?? ""}`,
+  };
+}
+
+/** What the recording git has written, in order: the verb of each call, and `ended` for each late call that has ended. */
+function fixtureRecordedLines(fixture: Fixture): readonly string[] {
+  const calls = join(fixture.directory, "recording", "calls");
+  if (!existsSync(calls)) return [];
+  return readFileSync(calls, "utf8").split("\n").filter(Boolean);
+}
+
+function fixtureRecordedCount(
+  fixture: Fixture,
+  line: FixtureVerb | "ended",
+): number {
+  return fixtureRecordedLines(fixture).filter((written) => written === line)
+    .length;
 }
 
 /** How many packs the remote has built, which is how many fetches actually transferred anything. */
@@ -351,6 +449,26 @@ function fixtureTwin(fixture: Fixture): string {
   execFileSync("git", ["clone", "-q", "--bare", fixture.remote, twin]);
   return twin;
 }
+
+/** The reads an ask makes of a held tip, in the order it makes them: for a candidate in the tip's history, and for one the scratch does not hold. */
+const fixtureAskReads: Readonly<
+  Record<"candidate" | "stray", readonly FixtureVerb[]>
+> = {
+  candidate: ["rev-parse", "cat-file", "merge-base"],
+  stray: ["rev-parse", "cat-file", "rev-list"],
+};
+
+/** Each read the adapter makes of a scratch, beside a candidate whose answer rests on that read and the answer. */
+const fixtureReads: readonly (readonly [
+  FixtureVerb,
+  "candidate" | "stray",
+  CommitAncestry,
+])[] = [
+  ["rev-parse", "candidate", "Ancestor"],
+  ["cat-file", "candidate", "Ancestor"],
+  ["merge-base", "candidate", "Ancestor"],
+  ["rev-list", "stray", "NotAncestor"],
+];
 
 function fixtureCredentials(
   resolved: CredentialResolved,
@@ -593,12 +711,35 @@ test("a commit-graph left over a pack that is gone does not answer for the commi
   const scratch = fixtureScratchRepository(fixture);
   fixtureGit(scratch, "commit-graph", "write", "--reachable");
   rmSync(join(scratch, "objects", "pack"), { recursive: true, force: true });
-  assert.ok(fixtureAnswers(scratch, "rev-list", "--count", newer));
 
   assert.equal(
     await port.ancestry(fixtureQuestion(fixture, fixture.candidate, newer)),
     "Unknown",
   );
+});
+
+test("a commit-graph that names a commit of the tip's history wrongly is not what the answer is read from", async (t) => {
+  const fixture = fixtureOpen(t);
+  const port = fixturePort(fixture);
+  fixtureNewer(fixture);
+  const question = fixtureQuestion(
+    fixture,
+    fixture.candidate,
+    fixtureNewer(fixture, "newest"),
+  );
+  assert.equal(await port.ancestry(question), "Ancestor");
+  const scratch = fixtureScratchRepository(fixture);
+  fixtureGit(scratch, "commit-graph", "write", "--reachable");
+  const graph = join(scratch, "objects", "info", "commit-graph");
+  const damaged = readFileSync(graph);
+  const identity = Buffer.from(fixture.candidate, "hex");
+  const last = damaged.indexOf(identity) + identity.length - 1;
+  assert.ok(last >= identity.length);
+  damaged.writeUInt8(damaged.readUInt8(last) ^ 1, last);
+  rmSync(graph);
+  writeFileSync(graph, damaged);
+
+  assert.equal(await port.ancestry(question), "Ancestor");
 });
 
 test("a no from git is unknown while a commit far under the tip cannot be read, and a finding once it can", async (t) => {
@@ -617,17 +758,6 @@ test("a no from git is unknown while a commit far under the tip cannot be read, 
   );
   const aside = join(fixture.directory, "aside");
   renameSync(under, aside);
-  assert.equal(
-    spawnSync("git", [
-      "-C",
-      scratch,
-      "merge-base",
-      "--is-ancestor",
-      newest,
-      newer,
-    ]).status,
-    1,
-  );
 
   try {
     assert.equal(
@@ -641,6 +771,81 @@ test("a no from git is unknown while a commit far under the tip cannot be read, 
     await port.ancestry(fixtureQuestion(fixture, newest, newer)),
     "NotAncestor",
   );
+});
+
+for (const [verb, asked, answer] of fixtureReads) {
+  for (const [fault, ending] of [
+    ["Killed", "ended by a signal before it looked"],
+    ["Failed", "that exited as neither its yes nor its no"],
+  ] as const) {
+    test(`a ${verb} ${ending} decides nothing and begins no fetch, and the next ask answers`, async (t) => {
+      const fixture = fixtureOpen(t);
+      const port = fixturePort(fixture, {
+        environment: fixtureRecorded(fixture),
+      });
+      const question = fixtureQuestion(fixture, fixture[asked]);
+      assert.equal(await port.ancestry(question), answer);
+      fixtureFaulted(fixture, verb, fault);
+      assert.equal(await port.ancestry(question), "Unknown");
+      fixtureFaulted(fixture, verb, "Whole");
+
+      assert.equal(await port.ancestry(question), answer);
+      assert.equal(fixtureRecordedCount(fixture, "fetch"), 1);
+    });
+  }
+}
+
+test("a lookup of the candidate stopped at its bound decides nothing, and the next ask answers", async (t) => {
+  const fixture = fixtureOpen(t);
+  const port = fixturePort(fixture, {
+    environment: fixtureRecorded(fixture),
+    localTimeoutSecsMax: 1,
+  });
+  const question = fixtureQuestion(fixture, fixture.candidate);
+  assert.equal(await port.ancestry(question), "Ancestor");
+  fixtureFaulted(fixture, "cat-file", "Stalled");
+  assert.equal(await port.ancestry(question), "Unknown");
+  fixtureFaulted(fixture, "cat-file", "Whole");
+
+  assert.equal(await port.ancestry(question), "Ancestor");
+});
+
+test("a git that cannot be run is unknown and raises nothing, for a tip held, a repository not yet opened and a fetch alike", async (t) => {
+  const fixture = fixtureOpen(t);
+  const environment: Record<string, string | undefined> = {
+    ...process.env,
+    GIT_CONFIG_GLOBAL: join(fixture.directory, "gitconfig"),
+  };
+  const found = environment["PATH"];
+  let lostAtFetch = false;
+  const port = fixturePort(fixture, {
+    environment,
+    credentials: {
+      credential: () => {
+        if (lostAtFetch) environment["PATH"] = fixture.directory;
+        return Promise.resolve({ resolved: "Denied" });
+      },
+    },
+  });
+  const held = fixtureQuestion(fixture, fixture.candidate);
+  const twin = fixtureQuestion(
+    fixture,
+    fixture.candidate,
+    fixture.tip,
+    fixtureTwin(fixture),
+  );
+  assert.equal(await port.ancestry(held), "Ancestor");
+  environment["PATH"] = fixture.directory;
+  assert.equal(await port.ancestry(held), "Unknown");
+  assert.equal(await port.ancestry(twin), "Unknown");
+  environment["PATH"] = found;
+  lostAtFetch = true;
+  assert.equal(await port.ancestry(twin), "Unknown");
+  environment["PATH"] = found;
+  lostAtFetch = false;
+
+  assert.equal(await port.ancestry(twin), "Ancestor");
+  assert.equal(await port.ancestry(held), "Ancestor");
 });
 
 test("a tip another ref named before its history arrived is unknown", async (t) => {
@@ -672,6 +877,31 @@ test("a credential source that could not answer is unknown", async (t) => {
     await port.ancestry(fixtureQuestion(fixture, fixture.candidate)),
     "Unknown",
   );
+});
+
+test("a credential source that raises is what every asker waiting on that fetch is raised, and the next ask fetches", async (t) => {
+  const fixture = fixtureOpen(t);
+  let down = true;
+  const port = fixturePort(fixture, {
+    credentials: {
+      credential: () =>
+        down
+          ? Promise.reject(new Error("source down"))
+          : Promise.resolve({ resolved: "Denied" }),
+    },
+  });
+  const question = fixtureQuestion(fixture, fixture.candidate);
+  const raised = await Promise.allSettled([
+    port.ancestry(question),
+    port.ancestry(question),
+  ]);
+  assert.deepEqual(
+    raised.map((asked) => asked.status === "rejected" && String(asked.reason)),
+    ["Error: source down", "Error: source down"],
+  );
+  down = false;
+
+  assert.equal(await port.ancestry(question), "Ancestor");
 });
 
 test("a repository the source refuses a credential for is fetched without one", async (t) => {
@@ -720,9 +950,9 @@ test("a fetch stopped part-way leaves the tip without its history, and the next 
   );
 });
 
-test("a second asker during a slowed fetch waits on it and starts no other", async (t) => {
+test("a second asker during a slowed fetch waits on it without reading the scratch and starts no other", async (t) => {
   const fixture = fixtureOpen(t);
-  const port = fixturePort(fixture);
+  const port = fixturePort(fixture, { environment: fixtureRecorded(fixture) });
   fixtureServe(fixture, "Slowed");
   const first = port.ancestry(fixtureQuestion(fixture, fixture.candidate));
   await fixtureTipArrived(fixture);
@@ -737,6 +967,7 @@ test("a second asker during a slowed fetch waits on it and starts no other", asy
     "Ancestor",
   ]);
   assert.equal(fixtureServed(fixture), 1);
+  assert.equal(fixtureRecordedCount(fixture, "rev-parse"), 2);
 });
 
 test("many askers at once are each answered from one fetch", async (t) => {
@@ -885,8 +1116,8 @@ test("a tip already held is answered while another tip of its repository is bein
 
 test("an asker is answered unknown at its own bound, and the fetch it began goes on to hold the tip", async (t) => {
   const fixture = fixtureOpen(t);
-  const port = fixturePort(fixture, { answerTimeoutSecsMax: 1 });
-  fixtureServe(fixture, "Slowed");
+  const port = fixturePort(fixture, { answerTimeoutSecsMax: 2 });
+  fixtureServe(fixture, "Slowed", 3);
   assert.equal(
     await port.ancestry(fixtureQuestion(fixture, fixture.candidate)),
     "Unknown",
@@ -901,6 +1132,96 @@ test("an asker is answered unknown at its own bound, and the fetch it began goes
     "Ancestor",
   );
   assert.equal(fixtureServed(fixture), 1);
+});
+
+for (const [verb, asked, answer] of fixtureReads) {
+  test(`an asker is answered unknown at its own bound while its ${verb} is still running, and nothing more is read for it`, async (t) => {
+    const fixture = fixtureOpen(t);
+    const environment = fixtureRecorded(fixture);
+    const patient = fixturePort(fixture, { environment });
+    const port = fixturePort(fixture, { environment, answerTimeoutSecsMax: 1 });
+    const question = fixtureQuestion(fixture, fixture[asked]);
+    const reads = fixtureAskReads[asked];
+    assert.equal(await patient.ancestry(question), answer);
+    const before = fixtureRecordedLines(fixture).length;
+    fixtureFaulted(fixture, verb, "Stalled");
+    assert.equal(await port.ancestry(question), "Unknown");
+    fixtureFaulted(fixture, verb, "Whole");
+    await fixtureUntil(
+      "the read's end",
+      () => fixtureRecordedCount(fixture, "ended") === 1,
+    );
+
+    assert.equal(await patient.ancestry(question), answer);
+    assert.deepEqual(fixtureRecordedLines(fixture).slice(before), [
+      ...reads.slice(0, reads.indexOf(verb) + 1),
+      "ended",
+      ...reads,
+    ]);
+  });
+}
+
+test("askers whose bound has passed read nothing once the fetch they waited on lands", async (t) => {
+  const fixture = fixtureOpen(t);
+  const environment = fixtureRecorded(fixture);
+  const port = fixturePort(fixture, { environment, answerTimeoutSecsMax: 1 });
+  const question = fixtureQuestion(fixture, fixture.candidate);
+  fixtureServe(fixture, "Slowed");
+  assert.deepEqual(
+    await Promise.all(Array.from({ length: 5 }, () => port.ancestry(question))),
+    Array.from({ length: 5 }, () => "Unknown"),
+  );
+  await fixtureUntil("the tip's history", () =>
+    fixtureHistoryHeld(fixture, fixture.tip),
+  );
+
+  assert.equal(
+    await fixturePort(fixture, { environment }).ancestry(question),
+    "Ancestor",
+  );
+  assert.equal(fixtureRecordedCount(fixture, "cat-file"), 1);
+  assert.equal(fixtureRecordedCount(fixture, "merge-base"), 1);
+});
+
+test("a fetch takes as many waiters as may wait on one, and an asker past them is unknown at once", async (t) => {
+  const fixture = fixtureOpen(t);
+  const port = fixturePort(fixture, { fetchWaitersMax: 2 });
+  const question = fixtureQuestion(fixture, fixture.candidate);
+  fixtureServe(fixture, "Slowed");
+  const waiting = [port.ancestry(question), port.ancestry(question)];
+  await fixtureTipArrived(fixture);
+
+  assert.equal(await port.ancestry(question), "Unknown");
+  assert.ok(!fixtureHistoryHeld(fixture, fixture.tip));
+  assert.deepEqual(await Promise.all(waiting), ["Ancestor", "Ancestor"]);
+});
+
+test("an asker whose bound has passed leaves its place among a fetch's waiters to another", async (t) => {
+  const fixture = fixtureOpen(t);
+  const port = fixturePort(fixture, {
+    answerTimeoutSecsMax: 3,
+    fetchWaitersMax: 1,
+  });
+  const question = fixtureQuestion(fixture, fixture.candidate);
+  fixtureServe(fixture, "Slowed", 4);
+  assert.equal(await port.ancestry(question), "Unknown");
+
+  assert.equal(await port.ancestry(question), "Ancestor");
+  assert.equal(fixtureServed(fixture), 1);
+});
+
+test("an ask that has been answered leaves no timer of its own running", async (t) => {
+  const fixture = fixtureOpen(t);
+  const port = fixturePort(fixture);
+  const question = fixtureQuestion(fixture, fixture.candidate);
+  const timers = (): number =>
+    process.getActiveResourcesInfo().filter((held) => held === "Timeout")
+      .length;
+  const before = timers();
+  assert.equal(await port.ancestry(question), "Ancestor");
+  assert.equal(await port.ancestry(question), "Ancestor");
+
+  assert.equal(timers(), before);
 });
 
 test("an asker whose bound passed while another tip was being fetched begins no fetch of its own", async (t) => {
@@ -953,7 +1274,7 @@ test("a credential source that never answers gives its repository's turn back on
 test("the wait for a credential comes out of the time the transfer is given", async (t) => {
   const fixture = fixtureOpen(t);
   const port = fixturePort(fixture, {
-    remoteTimeoutSecsMax: 3,
+    remoteTimeoutSecsMax: 4,
     credentials: {
       credential: async () => {
         await sleep(2000);
@@ -961,14 +1282,13 @@ test("the wait for a credential comes out of the time the transfer is given", as
       },
     },
   });
-  fixtureServe(fixture, "Stalled");
-  const asked = performance.now();
+  fixtureServe(fixture, "Slowed", 3);
   assert.equal(
     await port.ancestry(fixtureQuestion(fixture, fixture.candidate)),
     "Unknown",
   );
   assert.equal(fixtureServed(fixture), 1);
-  assert.ok(performance.now() - asked < 4900);
+  assert.ok(!fixtureHistoryHeld(fixture, fixture.tip));
 });
 
 test("a repository that could not be reached is asked again once it can be", async (t) => {
@@ -996,6 +1316,10 @@ test("a bound of the adapter's own that is no positive integer is refused", (t) 
     );
     assert.throws(
       () => fixturePort(fixture, { answerTimeoutSecsMax: bound }),
+      RangeError,
+    );
+    assert.throws(
+      () => fixturePort(fixture, { fetchWaitersMax: bound }),
       RangeError,
     );
   }

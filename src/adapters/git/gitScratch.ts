@@ -119,11 +119,26 @@ export type ScratchMerged =
   | { readonly merged: "Failed" };
 
 /**
- * What one object identity names in a scratch. `Unresolved` is an object not
- * held and an object store that could not be read alike: git reports the two
- * the same way, so neither is a finding by itself.
+ * What one read of a scratch found: its yes, its no, or `Unread` for a call
+ * that came to neither. A call that could not be made, was stopped at its bound
+ * or ended by a signal, or exited any other way, is `Unread` whichever read it
+ * was, and says nothing about what was asked.
  */
-export type ScratchNamed = "Commit" | "Other" | "Unresolved";
+export type ScratchFound = "Yes" | "No" | "Unread";
+
+/** How git gives one answer to a read: the code it exits with, and what it prints where the code alone does not say it. */
+interface ScratchSaid {
+  readonly code: number;
+  readonly stdout?: string;
+}
+
+/** One read of a scratch: what git is asked, and how it says the read's yes and its no, a read with no `no` having only a yes to give. */
+interface ScratchAsked {
+  readonly argv: readonly string[];
+  readonly input?: string;
+  readonly yes: ScratchSaid;
+  readonly no?: ScratchSaid;
+}
 
 /** What the one irreversible act came to, read off the porcelain flag rather than off prose. */
 export type ScratchPushed =
@@ -351,8 +366,8 @@ function scratchHistoryRef(commit: GitObjectId): string {
 /**
  * Brings one commit and everything it descends from into the scratch by its
  * hash, neither shallow nor filtered, in the time its caller has for it. How it
- * ended is not reported, because the ref it writes last is what says it
- * completed.
+ * ended is not reported, a fetch that could not be made included, because the
+ * ref it writes last is what says it completed.
  */
 export async function scratchFetchHistory(
   scratch: GitScratch,
@@ -361,20 +376,61 @@ export async function scratchFetchHistory(
   commit: GitObjectId,
   timeoutSecsMax: number,
 ): Promise<void> {
-  await scratchRun(scratch, {
-    repository,
-    ...(credential === undefined ? {} : { credential }),
-    timeoutSecsMax,
-    argv: [
-      "fetch",
-      "--quiet",
-      "--no-tags",
-      ...scratchRemoteArguments(
-        repository,
-        `+${commit}:${scratchHistoryRef(commit)}`,
-      ),
-    ],
-  });
+  try {
+    await scratchRun(scratch, {
+      repository,
+      ...(credential === undefined ? {} : { credential }),
+      timeoutSecsMax,
+      argv: [
+        "fetch",
+        "--quiet",
+        "--no-tags",
+        ...scratchRemoteArguments(
+          repository,
+          `+${commit}:${scratchHistoryRef(commit)}`,
+        ),
+      ],
+    });
+  } catch {
+    return;
+  }
+}
+
+/** Whether git exited and printed the way one answer of a read is said. */
+function scratchSaid(
+  code: number,
+  stdout: string,
+  said: ScratchSaid | undefined,
+): boolean {
+  if (said?.code !== code) return false;
+  return said.stdout === undefined || said.stdout === stdout.trim();
+}
+
+/**
+ * Makes one read of a repository's scratch with the commit-graph set aside,
+ * because git trusts that file unchecked and it goes on answering for commits
+ * whose objects are gone. A yes for a commit far under another is therefore a
+ * walk that reads every commit down to where it lies.
+ */
+async function scratchFind(
+  scratch: GitScratch,
+  repository: RepositoryId,
+  asked: ScratchAsked,
+): Promise<ScratchFound> {
+  let ran: GitRan;
+  try {
+    ran = await scratchRun(scratch, {
+      repository,
+      timeoutSecsMax: scratch.options.localTimeoutSecsMax,
+      argv: ["-c", "core.commitGraph=false", ...asked.argv],
+      ...(asked.input === undefined ? {} : { input: asked.input }),
+    });
+  } catch {
+    return "Unread";
+  }
+  if (ran.ran !== "Exited") return "Unread";
+  if (scratchSaid(ran.code, ran.stdout, asked.yes)) return "Yes";
+  return scratchSaid(ran.code, ran.stdout, asked.no) ? "No" : "Unread";
 }
 
 /**
@@ -382,55 +438,74 @@ export async function scratchFetchHistory(
  * ref that fetch wrote. The commit object existing says less: a fetch stopped
  * part-way leaves it behind without what it descends from.
  */
-export async function scratchHoldsHistory(
+export function scratchHoldsHistory(
   scratch: GitScratch,
   repository: RepositoryId,
   commit: GitObjectId,
-): Promise<boolean> {
-  const ran = await scratchRun(scratch, {
-    repository,
-    timeoutSecsMax: scratch.options.localTimeoutSecsMax,
+): Promise<ScratchFound> {
+  return scratchFind(scratch, repository, {
     argv: [
       "rev-parse",
       "--quiet",
       "--verify",
       `${scratchHistoryRef(commit)}^{commit}`,
     ],
+    yes: { code: 0, stdout: commit },
+    no: { code: 1 },
   });
-  return ran.ran === "Exited" && ran.code === 0 && ran.stdout.trim() === commit;
-}
-
-/** What one identity names here, read off the object's own type so a tag is never taken for the commit it peels to. */
-export async function scratchNamed(
-  scratch: GitScratch,
-  repository: RepositoryId,
-  object: GitObjectId,
-): Promise<ScratchNamed> {
-  const ran = await scratchRun(scratch, {
-    repository,
-    timeoutSecsMax: scratch.options.localTimeoutSecsMax,
-    argv: ["cat-file", "-t", object],
-  });
-  if (ran.ran === "Stopped" || ran.code !== 0) return "Unresolved";
-  return ran.stdout.trim() === "commit" ? "Commit" : "Other";
 }
 
 /**
- * Whether every commit one commit descends from could be read, each from the
- * object store itself. A commit-graph is set aside for the walk, because it
- * goes on answering for commits whose objects have since been lost.
+ * Whether one identity is a commit here, read off the object's own type so a
+ * tag is never taken for the commit it peels to. Its no is git naming the
+ * identity missing, which git also says of an object in a pack it could not
+ * open, and an identity held as anything else is neither answer.
  */
-export async function scratchWalksHistory(
+export function scratchNamesCommit(
+  scratch: GitScratch,
+  repository: RepositoryId,
+  object: GitObjectId,
+): Promise<ScratchFound> {
+  return scratchFind(scratch, repository, {
+    argv: ["cat-file", "--batch-check=%(objecttype)"],
+    input: `${object}\n`,
+    yes: { code: 0, stdout: "commit" },
+    no: { code: 0, stdout: `${object} missing` },
+  });
+}
+
+/**
+ * Whether git finds a path from one commit down to another. Its no is a walk
+ * that ended without meeting the candidate, which a git the scratch admits
+ * also says of a walk that met a commit it could not read.
+ */
+export function scratchReaches(
+  scratch: GitScratch,
+  repository: RepositoryId,
+  candidate: GitObjectId,
+  tip: GitObjectId,
+): Promise<ScratchFound> {
+  return scratchFind(scratch, repository, {
+    argv: ["merge-base", "--is-ancestor", candidate, tip],
+    yes: { code: 0 },
+    no: { code: 1 },
+  });
+}
+
+/**
+ * Whether every commit one commit descends from could be read from the object
+ * store. It has no no to give: a history that was not read to its end was not
+ * read.
+ */
+export function scratchWalksHistory(
   scratch: GitScratch,
   repository: RepositoryId,
   commit: GitObjectId,
-): Promise<boolean> {
-  const ran = await scratchRun(scratch, {
-    repository,
-    timeoutSecsMax: scratch.options.localTimeoutSecsMax,
-    argv: ["-c", "core.commitGraph=false", "rev-list", "--count", commit],
+): Promise<ScratchFound> {
+  return scratchFind(scratch, repository, {
+    argv: ["rev-list", "--count", commit],
+    yes: { code: 0 },
   });
-  return ran.ran === "Exited" && ran.code === 0;
 }
 
 /** Whether the scratch holds one commit, which is what makes an ancestry question answerable at all. */

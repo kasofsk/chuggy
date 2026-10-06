@@ -9,22 +9,20 @@
  * candidate that had only not arrived yet, so nothing is decided against a tip
  * no such ref names.
  *
- * A NO IS A FINDING ONLY OVER A HISTORY READ TO ITS END. git reports a lookup
- * it could not complete exactly as it reports an object that is not there, and
- * a git the scratch admits reports a walk that met a commit it could not read
- * exactly as one that ended without meeting the candidate. The ref says only
- * that a fetch completed once: the objects under it can since have become
- * unreadable, and may never have arrived where another ref already named the
- * tip. So `NotAncestor` is answered, for a candidate the scratch does not
- * resolve and for one git walked from and did not reach alike, only once every
- * commit of the tip's history has been read from the object store. A candidate
- * the scratch does resolve must be a commit by its own name, because git would
- * otherwise answer for the commit a tag peels to.
+ * AN ANSWER RESTS ONLY ON READS THAT LOOKED. The scratch is asked whether the
+ * candidate is a commit here, whether git reaches it from the tip, and whether
+ * every commit of the tip's history can be read, and each read answers yes, no,
+ * or that it did not look. `Ancestor` is a yes to the first two. `NotAncestor`
+ * is a no to either and then a yes to the third, because git also gives each
+ * of those noes where it could not read what the scratch holds. A read that
+ * did not look decides nothing, whichever it was. Each no walks its tip's
+ * whole history for itself, so many at once over a long history pass the local
+ * bound and are `Unknown`.
  *
  * THE ASKER'S WAIT IS BOUNDED AND THE FETCH IS NOT STOPPED FOR IT. An asker is
  * answered `Unknown` once a bound short enough for a page being read has
- * passed, whatever its answer was still waiting on. The fetch it began runs on
- * under the bound the scratch's other readers fetch under, the wait for its
+ * passed, and from then on no read is begun for it and it waits on no fetch.
+ * The fetch it began runs on under the remote bound, the wait for its
  * credential included, so a history too slow for one read is held by a later
  * one. A fetch stopped at that longer bound leaves its partial pack in the
  * scratch, as a stopped fetch of any reader of a scratch does. Nothing here
@@ -37,16 +35,16 @@
  * during a slow remote starts no second transfer and reads no half of the
  * first. An asker of another tip of that repository waits for the fetch to end
  * and then begins its own, which after a fetch that landed brings only what
- * that one left out, where two at once would each transfer the history. A tip
- * asked for while that count of repositories is being fetched is `Unknown`,
- * and a tip already held is answered whatever is in flight.
+ * that one left out, where two at once would each transfer the history. The
+ * askers waiting on one fetch are held to a stated count as well, and one past
+ * it is `Unknown` at once, as is a tip asked for while as many repositories as
+ * may be are being fetched. A tip already held is answered whatever is in
+ * flight.
  *
  * NOTHING IS REMEMBERED BETWEEN ASKS. The scratch is the memory: a tip it
  * holds is answered from it by local calls alone, and an answer read afresh
  * each time is one a wrong reading cannot outlive.
  */
-
-import { setTimeout as delay } from "node:timers/promises";
 
 import { assertNever } from "../../domain/assertNever.ts";
 import type {
@@ -64,12 +62,13 @@ import type { GitEnvironment } from "./gitRun.ts";
 import {
   scratchFetchHistory,
   scratchHoldsHistory,
-  scratchIsAncestor,
-  scratchNamed,
+  scratchNamesCommit,
   scratchOpen,
+  scratchReaches,
   scratchWalksHistory,
   type GitCommitIdentity,
   type GitScratch,
+  type ScratchFound,
 } from "./gitScratch.ts";
 
 /** What the adapter is composed over, each bound optional because each has a default. */
@@ -83,6 +82,7 @@ export interface GitCommitAncestryOptions {
   readonly remoteTimeoutSecsMax?: number;
   readonly answerTimeoutSecsMax?: number;
   readonly fetchesInFlightMax?: number;
+  readonly fetchWaitersMax?: number;
 }
 
 /**
@@ -96,36 +96,47 @@ export const gitCommitAncestryDefaults = {
   remoteTimeoutSecsMax: 300,
   answerTimeoutSecsMax: 10,
   fetchesInFlightMax: 4,
+  fetchWaitersMax: 100,
 } as const;
 
-/** The one fetch a repository has in flight: the tip it is for, and whether that tip's history came to be held. */
-interface GitCommitAncestryFlight {
-  readonly tip: GitObjectId;
-  readonly landed: Promise<boolean>;
+/** A bound as whoever waits under it sees it: it resolves once the bound has passed, and never where what it bounded ended first. */
+type GitCommitAncestryBound = Promise<undefined>;
+
+/** One asker waiting on a fetch: how it is told the fetch ended and whether the tip came to be held, and how it is told the fetch raised. */
+interface GitCommitAncestryWaiter {
+  readonly ended: (landed: boolean) => void;
+  readonly raised: (failure: unknown) => void;
 }
 
-/** What the adapter holds across asks: its scratch, its credential source, the fetch each repository has in flight, and the two bounds that are its own. */
+/** The one fetch a repository has in flight: the tip it is for, and the askers still waiting for it to end. */
+interface GitCommitAncestryFlight {
+  readonly tip: GitObjectId;
+  readonly waiters: Set<GitCommitAncestryWaiter>;
+}
+
+/** What the adapter holds across asks: its scratch, its credential source, the fetch each repository has in flight, and the bounds that are its own. */
 interface GitCommitAncestryState {
   readonly scratch: GitScratch;
   readonly credentials: RepositoryCredentialPort;
   readonly flights: Map<RepositoryId, GitCommitAncestryFlight>;
   readonly fetchesInFlightMax: number;
+  readonly fetchWaitersMax: number;
   readonly answerTimeoutSecsMax: number;
 }
 
-/** What a wait came to within its bound, and `undefined` once the bound passed first; what was waited on is left running. */
-async function gitCommitAncestryWithin<Value>(
-  waited: Promise<Value>,
+/** Runs one wait under a bound of its own, which the wait is handed so that it can give way to it. The bound's timer is gone once the wait has ended. */
+async function gitCommitAncestryBounded<Value>(
   timeoutSecsMax: number,
-): Promise<Value | undefined> {
-  const bound = new AbortController();
+  waits: (bound: GitCommitAncestryBound) => Promise<Value>,
+): Promise<Value> {
+  const bound = Promise.withResolvers<undefined>();
+  const timer = setTimeout(() => {
+    bound.resolve(undefined);
+  }, timeoutSecsMax * 1000);
   try {
-    return await Promise.race([
-      waited,
-      delay(timeoutSecsMax * 1000, undefined, { signal: bound.signal }),
-    ]);
+    return await waits(bound.promise);
   } finally {
-    bound.abort();
+    clearTimeout(timer);
   }
 }
 
@@ -144,7 +155,8 @@ async function gitCommitAncestryFetchWith(
     question.tip,
     timeoutSecsMax,
   );
-  return scratchHoldsHistory(own.scratch, repository, question.tip);
+  const held = await scratchHoldsHistory(own.scratch, repository, question.tip);
+  return held === "Yes";
 }
 
 /**
@@ -158,9 +170,8 @@ async function gitCommitAncestryFetch(
 ): Promise<boolean> {
   const timeoutSecsMax = own.scratch.options.remoteTimeoutSecsMax;
   const beganMs = performance.now();
-  const resolved = await gitCommitAncestryWithin(
-    own.credentials.credential(question.repository),
-    timeoutSecsMax,
+  const resolved = await gitCommitAncestryBounded(timeoutSecsMax, (bound) =>
+    Promise.race([own.credentials.credential(question.repository), bound]),
   );
   if (resolved === undefined) return false;
   const transferTimeoutSecsMax =
@@ -187,124 +198,154 @@ async function gitCommitAncestryFetch(
   }
 }
 
-/** Begins the one fetch a repository has in flight, and none while as many repositories as may be fetched at once already are. */
+/** Begins the one fetch a repository has in flight, which tells whoever is still waiting on it how it ended. None is begun while as many repositories as may be fetched at once already are. */
 function gitCommitAncestryFlight(
   own: GitCommitAncestryState,
   question: CommitAncestryQuestion,
-): Promise<boolean> {
+): GitCommitAncestryFlight | undefined {
   const repository = question.repository.repository;
-  if (own.flights.size >= own.fetchesInFlightMax) return Promise.resolve(false);
-  const landed = gitCommitAncestryFetch(own, question).finally(() => {
+  if (own.flights.size >= own.fetchesInFlightMax) return undefined;
+  const flight: GitCommitAncestryFlight = {
+    tip: question.tip,
+    waiters: new Set(),
+  };
+  const ends = (tell: (waiter: GitCommitAncestryWaiter) => void): void => {
     own.flights.delete(repository);
-  });
-  own.flights.set(repository, { tip: question.tip, landed });
-  return landed;
+    flight.waiters.forEach(tell);
+  };
+  own.flights.set(repository, flight);
+  gitCommitAncestryFetch(own, question).then(
+    (landed) => {
+      ends((waiter) => {
+        waiter.ended(landed);
+      });
+    },
+    (failure: unknown) => {
+      ends((waiter) => {
+        waiter.raised(failure);
+      });
+    },
+  );
+  return flight;
 }
 
 /**
- * Whether the tip's whole history is held: by a fetch that completed earlier,
- * by the one in flight for it, or by one begun once the repository's fetch of
- * another tip has ended. A round that found the tip's own fetch begun is
- * followed by the one that joins it, any other follows a fetch that ended, and
- * an asker whose bound has passed takes none.
+ * Waits on a fetch for one asker and answers whether the tip came to be held,
+ * or `undefined` where the asker did not see the fetch end. That is an asker
+ * whose bound passed first, which is a waiter no longer from then, and one that
+ * found as many waiting as may.
+ */
+function gitCommitAncestryWaits(
+  own: GitCommitAncestryState,
+  flight: GitCommitAncestryFlight,
+  asker: GitCommitAncestryBound,
+): Promise<boolean | undefined> {
+  if (flight.waiters.size >= own.fetchWaitersMax)
+    return Promise.resolve(undefined);
+  return new Promise((resolve, reject) => {
+    const waiter: GitCommitAncestryWaiter = { ended: resolve, raised: reject };
+    flight.waiters.add(waiter);
+    void asker.then(() => {
+      flight.waiters.delete(waiter);
+      resolve(undefined);
+    });
+  });
+}
+
+/** What a read found for an asker still waiting, and `Unread` once its bound has passed first, so that nothing is decided or begun on it. */
+function gitCommitAncestryRead(
+  asker: GitCommitAncestryBound,
+  found: Promise<ScratchFound>,
+): Promise<ScratchFound> {
+  return Promise.race([found, asker.then((): ScratchFound => "Unread")]);
+}
+
+/**
+ * Whether the tip's whole history came to be held while the asker waited: by a
+ * fetch that completed earlier, by the one in flight for it, or by one begun
+ * once the repository's fetch of another tip has ended. An asker of the tip in
+ * flight joins that fetch without reading the scratch, and a fetch is begun
+ * only on a read that looked and found no ref.
  */
 async function gitCommitAncestryHeld(
   own: GitCommitAncestryState,
   question: CommitAncestryQuestion,
-  untilMs: number,
+  asker: GitCommitAncestryBound,
 ): Promise<boolean> {
   const repository = question.repository.repository;
-  const joined = own.flights.get(repository);
-  if (joined?.tip === question.tip) return joined.landed;
-  if (await scratchHoldsHistory(own.scratch, repository, question.tip))
-    return true;
-  const flying = own.flights.get(repository);
-  if (flying === undefined) return gitCommitAncestryFlight(own, question);
-  if (flying.tip !== question.tip) {
-    await flying.landed;
-    if (performance.now() >= untilMs) return false;
+  let flight = own.flights.get(repository);
+  if (flight?.tip !== question.tip) {
+    const held = await gitCommitAncestryRead(
+      asker,
+      scratchHoldsHistory(own.scratch, repository, question.tip),
+    );
+    if (held !== "No") return held === "Yes";
+    flight =
+      own.flights.get(repository) ?? gitCommitAncestryFlight(own, question);
+    if (flight === undefined) return false;
   }
-  return gitCommitAncestryHeld(own, question, untilMs);
-}
-
-/** `NotAncestor` where every commit of the tip's history could be read, and `Unknown` where one could not. */
-async function gitCommitAncestryNot(
-  own: GitCommitAncestryState,
-  question: CommitAncestryQuestion,
-): Promise<CommitAncestry> {
-  const walked = await scratchWalksHistory(
-    own.scratch,
-    question.repository.repository,
-    question.tip,
-  );
-  return walked ? "NotAncestor" : "Unknown";
-}
-
-/** What git says of a candidate that is a commit here: its yes is a path it found, its no is held to the walk, and a call it could not answer decides nothing. */
-async function gitCommitAncestryDecideHeld(
-  own: GitCommitAncestryState,
-  question: CommitAncestryQuestion,
-): Promise<CommitAncestry> {
-  const ancestor = await scratchIsAncestor(
-    own.scratch,
-    question.repository.repository,
-    question.candidate,
-    question.tip,
-  );
-  if (ancestor === undefined) return "Unknown";
-  return ancestor ? "Ancestor" : gitCommitAncestryNot(own, question);
+  const landed = await gitCommitAncestryWaits(own, flight, asker);
+  if (landed === undefined) return false;
+  if (flight.tip === question.tip) return landed;
+  return gitCommitAncestryHeld(own, question, asker);
 }
 
 /**
- * Decides against a tip a ref names. The tip's width is the repository's, so a
- * candidate of another width names nothing it could hold and decides nothing.
+ * Decides against a tip a ref names, in the one place what the reads found is
+ * put together. The tip's width is the repository's, so a candidate of another
+ * width names nothing it could hold and decides nothing.
  */
 async function gitCommitAncestryDecide(
   own: GitCommitAncestryState,
   question: CommitAncestryQuestion,
+  asker: GitCommitAncestryBound,
 ): Promise<CommitAncestry> {
-  if (question.candidate.length !== question.tip.length) return "Unknown";
+  const { candidate, tip } = question;
+  if (candidate.length !== tip.length) return "Unknown";
+  const { scratch } = own;
   const repository = question.repository.repository;
-  const named = await scratchNamed(own.scratch, repository, question.candidate);
-  switch (named) {
-    case "Commit":
-      return gitCommitAncestryDecideHeld(own, question);
-    case "Other":
+  const named = await gitCommitAncestryRead(
+    asker,
+    scratchNamesCommit(scratch, repository, candidate),
+  );
+  const reached =
+    named === "Yes"
+      ? await gitCommitAncestryRead(
+          asker,
+          scratchReaches(scratch, repository, candidate, tip),
+        )
+      : named;
+  switch (reached) {
+    case "Yes":
+      return "Ancestor";
+    case "Unread":
       return "Unknown";
-    case "Unresolved":
-      return gitCommitAncestryNot(own, question);
+    case "No": {
+      const walked = await gitCommitAncestryRead(
+        asker,
+        scratchWalksHistory(scratch, repository, tip),
+      );
+      return walked === "Yes" ? "NotAncestor" : "Unknown";
+    }
     default:
-      return assertNever(named);
+      return assertNever(reached);
   }
 }
 
-/** Answers from the scratch once the tip is held, and `Unknown` where it did not come to be. */
+/** Answers from the scratch once the tip is held, and `Unknown` where it did not come to be while the asker waited. */
 async function gitCommitAncestryAnswer(
   own: GitCommitAncestryState,
   question: CommitAncestryQuestion,
-  untilMs: number,
+  asker: GitCommitAncestryBound,
 ): Promise<CommitAncestry> {
-  if (!(await gitCommitAncestryHeld(own, question, untilMs))) return "Unknown";
-  return gitCommitAncestryDecide(own, question);
-}
-
-/** One ask, answered `Unknown` once the asker's bound has passed whatever the answer was still waiting on. */
-async function gitCommitAncestryAsk(
-  own: GitCommitAncestryState,
-  question: CommitAncestryQuestion,
-): Promise<CommitAncestry> {
-  const untilMs = performance.now() + own.answerTimeoutSecsMax * 1000;
-  const answered = await gitCommitAncestryWithin(
-    gitCommitAncestryAnswer(own, question, untilMs),
-    own.answerTimeoutSecsMax,
-  );
-  return answered ?? "Unknown";
+  if (!(await gitCommitAncestryHeld(own, question, asker))) return "Unknown";
+  return gitCommitAncestryDecide(own, question, asker);
 }
 
 /**
  * Composes the adapter over a scratch of its own opening. An ask rejects only
- * where a scratch cannot be used at all or the credential source itself
- * raises; whatever else it could not find out is `Unknown`.
+ * where the credential source itself raises; whatever else it could not find
+ * out, a git that could not be run included, is `Unknown`.
  */
 export function gitCommitAncestry(
   options: GitCommitAncestryOptions,
@@ -313,6 +354,7 @@ export function gitCommitAncestry(
   for (const bound of [
     resolved.answerTimeoutSecsMax,
     resolved.fetchesInFlightMax,
+    resolved.fetchWaitersMax,
   ]) {
     if (!Number.isSafeInteger(bound) || bound <= 0) {
       throw new RangeError(
@@ -333,7 +375,13 @@ export function gitCommitAncestry(
     credentials: resolved.credentials,
     flights: new Map(),
     fetchesInFlightMax: resolved.fetchesInFlightMax,
+    fetchWaitersMax: resolved.fetchWaitersMax,
     answerTimeoutSecsMax: resolved.answerTimeoutSecsMax,
   };
-  return { ancestry: (question) => gitCommitAncestryAsk(own, question) };
+  return {
+    ancestry: (question) =>
+      gitCommitAncestryBounded(own.answerTimeoutSecsMax, (asker) =>
+        gitCommitAncestryAnswer(own, question, asker),
+      ),
+  };
 }
