@@ -45,6 +45,7 @@
   "executionPlacement": "where a project's work and evaluations run is decided per kind by the deployment's override for the project, else the project's own placement, else the deployment's default; an administrator writes both routes whole, and choosing InCluster needs the tenant's hosted grant, as a session on that route does",
   "sessionPlacement": "where a project's threads and its lead run is decided the same way, and an inquiry runs where the lead does; a turn admitted InCluster spends the tenant's hosted grant and one admitted on Pool is offered to runners instead, the member's own for a thread and any of the project's for the lead, so a member with no runner registered on the project is refused NoRunner; a turn runs where it was admitted, so a change moves the next turn and never one already queued, and one offered to runners that none takes within the scheduler's dwell is withdrawn; the read says whether such a runner is registered and has polled lately",
   "workerPoolRegistration": "an administrator mints a single-use token for one project; redeeming it registers the pool and answers once with the file a runner keeps, its secret included",
+  "actionReports": "a reporter this deployment names reports what one declared action did at one commit, to the action's own address and proving itself by its own scheme rather than a bearer of this server's; a report repeating the commit and outcome of the action's newest is answered Repeated and records nothing, and a request that proves nothing is not found",
   "routes": {
     "contract": "/api/v1/contract",
     "installation": "/api/v1/installation",
@@ -97,6 +98,7 @@
     "workerPools": "/api/v1/tenants/:tenant/projects/:project/worker-pools",
     "workerPoolRegistrationTokens": "/api/v1/tenants/:tenant/projects/:project/worker-pool-registration-tokens",
     "workerPoolRegistrations": "/api/v1/worker-pool-registrations",
+    "actionReports": "/api/v1/tenants/:tenant/projects/:project/actions/:action/reports",
     "drafts": "/api/v1/tenants/:tenant/projects/:project/drafts",
     "draftInitialization": "/api/v1/tenants/:tenant/projects/:project/draft-initializations/:revision",
     "draft": "/api/v1/tenants/:tenant/projects/:project/drafts/:ticket",
@@ -1135,6 +1137,49 @@
         }
       },
       "required": ["token", "pool", "capabilities"],
+      "additionalProperties": false
+    },
+    "actionReport": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "version": {
+          "type": "number",
+          "const": 1
+        },
+        "commit": {
+          "type": "string",
+          "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+        },
+        "outcome": {
+          "type": "string",
+          "enum": ["Succeeded", "Failed"]
+        },
+        "observedAt": {
+          "type": "string",
+          "maxLength": 64,
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+        },
+        "detail": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "link": {
+          "type": "string",
+          "maxLength": 2048,
+          "allOf": [
+            {
+              "pattern": "^[!-~]+$"
+            },
+            {
+              "pattern": "^https:\\/\\/[^/\\\\?#@]+(?:[/?#]|$)"
+            }
+          ]
+        }
+      },
+      "required": ["version", "commit", "outcome"],
       "additionalProperties": false
     }
   }

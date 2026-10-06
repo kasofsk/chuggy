@@ -6195,8 +6195,9 @@ function wipeTruncated(script: string): readonly string[] {
   );
 }
 
-/** What the wipe keeps: what a project is, rather than what it has done. */
+/** What the wipe keeps: what a project is, rather than what it has done, and what was reported of its repositories' commits. */
 const wipeKept = [
+  "action_observation",
   "admitted_worker",
   "capacity_account",
   "configuration_revision",

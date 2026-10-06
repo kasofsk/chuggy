@@ -32,6 +32,7 @@ const document = golden as {
 
 test("the golden names every route and not an empty stand-in", () => {
   assert.deepEqual(Object.keys(document.routes).sort(), [
+    "actionReports",
     "agenticRefusals",
     "configuration",
     "configurationImports",
@@ -101,6 +102,7 @@ test("the golden names every route and not an empty stand-in", () => {
 
 test("the golden names every request schema", () => {
   assert.deepEqual(Object.keys(document.schemas).sort(), [
+    "actionReport",
     "configurationCreation",
     "draftCreation",
     "draftRevision",

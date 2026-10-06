@@ -150,6 +150,9 @@ import type {
   WorkerPoolsResponse,
 } from "../../contract/responses.ts";
 
+import type { ActionReportResponse } from "../../contract/actionReport.ts";
+import type { ActionReported } from "../../interpreter/actionReport.ts";
+
 export interface NativeHttpResponse {
   readonly status: number;
   readonly headers: Readonly<Record<string, string>>;
@@ -1023,6 +1026,33 @@ export function workerPoolRedemptionResponse(
       );
     case "Registered":
       return response(201, workerPoolCredentialsBody(result.value));
+    default:
+      return assertNever(result);
+  }
+}
+
+/**
+ * What a report is answered. Only a row that could not be written is worth
+ * sending again, so only that answer says when to.
+ */
+export function actionReportResponse(
+  result: ActionReported,
+): NativeHttpResponse {
+  switch (result.result) {
+    case "Recorded":
+    case "Repeated": {
+      const body: ActionReportResponse = { report: result.result };
+      return response(200, body);
+    }
+    case "NotFound":
+      return notFound();
+    case "Refused":
+      return response(
+        422,
+        nativeHttpError("ReportRefused", "The report could not be read."),
+      );
+    case "Unavailable":
+      return retry(503, authorityRetryAfterSeconds, "ReportUnavailable");
     default:
       return assertNever(result);
   }

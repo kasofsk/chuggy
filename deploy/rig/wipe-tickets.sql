@@ -21,7 +21,8 @@
 -- routing the scheduler published, the execution cluster, the capacity
 -- entitlements drawn on it, admitted workers and the recovery epochs.
 -- Re-onboarding a project is not part of the release, so none of that is in
--- the list below.
+-- the list below. Nor is what each declared action was reported to have done:
+-- it is a record of a repository's commits and names no ticket.
 --
 -- WHY THE SEEDED SINGLETONS ARE NOT IN IT. `thread_wake_cursor`,
 -- `selector_inventory_state` and `selector_runtime_readiness` hold one row

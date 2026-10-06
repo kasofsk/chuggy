@@ -417,6 +417,7 @@ async function rootRead(
     "CHUG_API_POOL_TOKEN_URL",
     "CHUG_API_POOL_PLANE_URL",
     "CHUG_API_POOL_REGISTRY_HOST",
+    "CHUG_API_ACTION_REPORTERS",
     ...Object.keys(threadLiveNamed),
   ])
     if (named[variable] === undefined) delete environment[variable];
@@ -1075,4 +1076,149 @@ test("a token of the issuer's language never reaches the session authority", asy
   assert.deepEqual(found.asked.oidc, [issuerToken]);
   assert.deepEqual(found.asked.pool, []);
   assert.deepEqual(found.asked.selectorReviewPool, []);
+});
+
+/**
+ * The root's own report service over the reporters its variable names and two
+ * pools told apart, answering one report of an action of `vteng/chuggy` that
+ * presents `bearer`.
+ */
+function actionReportsProgram(action: string, bearer: string): string {
+  return `
+    const root = await import('./src/roots/nativeHttp.ts');
+    const asked = [];
+    const pooled = (named) => ({
+      query: async () => {
+        asked.push(named);
+        return { rows: [{ result: 'Recorded' }] };
+      },
+    });
+    const reports = root.nativeActionReports(
+      { pool: pooled('pool'), selectorReviewPool: pooled('selectorReviewPool') },
+      root.nativeActionReporters(),
+    );
+    const reported = await reports.report({
+      tenant: 'vteng',
+      project: 'chuggy',
+      action: ${JSON.stringify(action)},
+      headers: { authorization: ${JSON.stringify(`Bearer ${bearer}`)} },
+      body: new TextEncoder().encode(JSON.stringify({
+        version: 1, commit: 'a'.repeat(40), outcome: 'Succeeded',
+      })),
+    });
+    process.stdout.write(JSON.stringify({ reported, asked }));
+  `;
+}
+
+const actionReportersVariable = "CHUG_API_ACTION_REPORTERS";
+
+/** A roster naming one reporter of each scheme, each proving itself by the secret in `secretFile`. */
+function actionReporterRoster(secretFile: string): string {
+  const named = { secretFile, tenant: "vteng", project: "chuggy" };
+  return JSON.stringify([
+    {
+      ...named,
+      reporter: "build",
+      scheme: "BearerSecret",
+      actions: ["publish"],
+    },
+    { ...named, reporter: "flux", scheme: "FluxSignature", actions: ["rig"] },
+  ]);
+}
+
+/** What one report came to under the variables a case names, and which pools were asked. */
+async function actionReported(
+  named: Readonly<Record<string, string>>,
+  action = "publish",
+  bearer = "a-client-secret",
+): Promise<unknown> {
+  const ran = await rootRead(named, actionReportsProgram(action, bearer));
+  assert.equal(ran.code, 0, ran.out);
+  return JSON.parse(ran.out);
+}
+
+test("a deployment naming no reporters starts, and answers every report as not found without asking the database", async () => {
+  for (const named of [{}, { [actionReportersVariable]: "" }])
+    assert.deepEqual(await actionReported(named), {
+      reported: { result: "NotFound" },
+      asked: [],
+    });
+});
+
+test("a named reporter's report is verified by its secret's file and recorded over the API pool", async (t) => {
+  const files = forgeSecretFiles(t);
+  const named = {
+    [actionReportersVariable]: actionReporterRoster(files.present),
+  };
+  assert.deepEqual(await actionReported(named), {
+    reported: { result: "Recorded" },
+    asked: ["pool"],
+  });
+  for (const [action, bearer] of [
+    ["publish", "another-secret"],
+    ["build-api", "a-client-secret"],
+  ] as const)
+    assert.deepEqual(
+      await actionReported(named, action, bearer),
+      { reported: { result: "NotFound" }, asked: [] },
+      `${action} ${bearer}`,
+    );
+});
+
+/**
+ * A reporter's Secret is optional on the rig, so a file that is not there, or
+ * holds nothing but the newline a mount leaves, is a deployment that starts
+ * and takes no report from that reporter.
+ */
+test("a reporter whose secret's file holds no secret is a deployment that starts, and no request is that reporter's", async (t) => {
+  const files = forgeSecretFiles(t);
+  for (const secretFile of [files.missing, files.empty, files.unreadable])
+    assert.deepEqual(
+      await actionReported({
+        [actionReportersVariable]: actionReporterRoster(secretFile),
+      }),
+      { reported: { result: "NotFound" }, asked: [] },
+      secretFile,
+    );
+});
+
+test("a reporter of a scheme this deployment holds no adapter for is named and verifies nothing", async (t) => {
+  const files = forgeSecretFiles(t);
+  assert.deepEqual(
+    await actionReported(
+      { [actionReportersVariable]: actionReporterRoster(files.present) },
+      "rig",
+    ),
+    { reported: { result: "NotFound" }, asked: [] },
+  );
+});
+
+test("a roster that cannot be read refuses the start, naming the variable and the rule", async (t) => {
+  const files = forgeSecretFiles(t);
+  const [build, flux] = JSON.parse(actionReporterRoster(files.present)) as [
+    Record<string, unknown>,
+    Record<string, unknown>,
+  ];
+  for (const [roster, why] of [
+    ["[{", /CHUG_API_ACTION_REPORTERS is not JSON/u],
+    [
+      JSON.stringify([{ ...build, secret: "a-client-secret" }]),
+      /CHUG_API_ACTION_REPORTERS is not a roster of reporters at \[0\]/u,
+    ],
+    [
+      JSON.stringify([{ ...flux, actions: ["rig", "rig-canary"] }]),
+      /CHUG_API_ACTION_REPORTERS names the FluxSignature reporter flux for other than one action/u,
+    ],
+    [
+      JSON.stringify([build, { ...flux, actions: ["publish"] }]),
+      /CHUG_API_ACTION_REPORTERS names the action publish of vteng\/chuggy twice/u,
+    ],
+  ] as const) {
+    const ran = await rootRead(
+      { [actionReportersVariable]: roster },
+      actionReportsProgram("publish", "a-client-secret"),
+    );
+    assert.notEqual(ran.code, 0, roster);
+    assert.match(ran.out, why, roster);
+  }
 });
