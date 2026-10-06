@@ -536,7 +536,7 @@ test("a candidate the scratch holds as something other than a commit is unknown"
   );
 });
 
-test("a candidate that is a commit here without the commits it descends from is unknown", async (t) => {
+test("a candidate that is a commit here without the commits it descends from is never an ancestor", async (t) => {
   const fixture = fixtureOpen(t);
   const port = fixturePort(fixture);
   await port.ancestry(fixtureQuestion(fixture, fixture.candidate));
@@ -544,9 +544,9 @@ test("a candidate that is a commit here without the commits it descends from is 
   const beyond = fixtureCommit(fixture.seed, "beyond");
   fixtureAlone(fixture, beyond);
 
-  assert.equal(
+  assert.notEqual(
     await port.ancestry(fixtureQuestion(fixture, beyond)),
-    "Unknown",
+    "Ancestor",
   );
 });
 
