@@ -148,3 +148,54 @@ test("a stored brief is read back only as the one its release's content digest n
   );
   assert.throws(() => releasedTicketBrief(undefined, released.content.digest));
 });
+
+/** What a release stored for a brief before a brief could name an image. */
+const briefBeforeImages = {
+  intent: "Do the one thing.",
+  links: [],
+  checks: [],
+};
+
+/** The content digest the release of `briefBeforeImages` stored then. */
+const digestBeforeImages =
+  "8f351dc47e8a518256a965b2a205ed789eeb1da4e1a036717370a46f5c2aa2e9";
+
+test("a brief released before a brief could name an image is still the one its content names", () => {
+  assert.deepEqual(
+    releasedTicketBrief(briefBeforeImages, digestBeforeImages),
+    asDraftBrief(briefBeforeImages),
+  );
+  assert.equal(
+    ticketDefinitionMaterial({
+      authoring,
+      configuration,
+      brief: asDraftBrief(briefBeforeImages),
+    }).content.digest,
+    digestBeforeImages,
+  );
+});
+
+test("the images a brief names are part of the content its release names", () => {
+  const brief = asDraftBrief({
+    ...briefBeforeImages,
+    images: ["image/png:one"],
+  });
+  const released = ticketDefinitionMaterial({
+    authoring,
+    configuration,
+    brief,
+  });
+  assert.notEqual(released.content.digest, digestBeforeImages);
+  assert.deepEqual(
+    releasedTicketBrief(
+      JSON.parse(JSON.stringify(brief)) as unknown,
+      released.content.digest,
+    ),
+    brief,
+  );
+  for (const images of [[], ["image/png:another"]])
+    assert.throws(
+      () => releasedTicketBrief({ ...brief, images }, released.content.digest),
+      /not the one the released content names/,
+    );
+});

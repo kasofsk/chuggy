@@ -80,7 +80,10 @@ import { postgresFinalizer } from "../../src/adapters/postgres/finalizer.ts";
 import type { BriefFinalizationMode } from "../../src/contract/rosters.ts";
 import type { ChangeProposalForges } from "../../src/interpreter/changeProposal.ts";
 import { postgresTicketBrief } from "../../src/adapters/postgres/ticketBrief.ts";
-import { materialDigest } from "../../src/interpreter/ticketDefinition.ts";
+import {
+  briefContentDigest,
+  materialDigest,
+} from "../../src/interpreter/ticketDefinition.ts";
 import { gitPromotion } from "../../src/adapters/git/gitPromotion.ts";
 import {
   finalizerPass,
@@ -692,7 +695,7 @@ function finalizerReleasedMaterial(
   const finalization = brief["finalization"] as StoredBrief | undefined;
   const material = {
     ...rest,
-    content: { digest: materialDigest(brief) },
+    content: { digest: briefContentDigest(brief) },
     finalization: {
       ...finalization,
       digest: materialDigest(finalization ?? {}),

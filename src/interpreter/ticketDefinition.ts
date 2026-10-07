@@ -97,6 +97,22 @@ export function materialDigest(value: unknown): string {
   return createHash("sha256").update(canonicalBytes(value)).digest("hex");
 }
 
+/**
+ * The digest a release stores for its brief, and a stored brief is held to. A
+ * brief that names no image is digested without an image list, so one released
+ * before a brief could name any still digests to what its release stored.
+ */
+export function briefContentDigest(
+  brief: { readonly images?: readonly unknown[] } | undefined,
+): string {
+  if (brief === undefined) return materialDigest({});
+  const images = brief.images ?? [];
+  return materialDigest({
+    ...brief,
+    images: images.length === 0 ? undefined : images,
+  });
+}
+
 /** How an evaluation stage's key is spelled, which is what the requirement is qualified by. */
 const evaluationKeyPrefix = "Evaluation:";
 
@@ -174,7 +190,7 @@ export function ticketDefinitionMaterial(input: {
     ...input.authoring.prog.map((stage) => evaluationTaskKey(stage.key)),
   ];
   return {
-    content: { digest: materialDigest(input.brief ?? {}) },
+    content: { digest: briefContentDigest(input.brief) },
     finalization: {
       ...(finalization === undefined ? {} : finalization),
       digest: materialDigest(finalization ?? {}),
@@ -251,7 +267,7 @@ export function releasedTicketBrief(
     stored === undefined
       ? undefined
       : asDraftBrief(stored as Parameters<typeof asDraftBrief>[0]);
-  if (materialDigest(brief ?? {}) !== contentDigest)
+  if (briefContentDigest(brief) !== contentDigest)
     throw new Error(
       "ticket definition: the stored brief is not the one the released content names",
     );
