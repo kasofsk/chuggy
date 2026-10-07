@@ -107,6 +107,21 @@ function repositoryOffersWithheldUnconnected(
   }
 }
 
+/**
+ * Whether the line Add and Create withhold points at the tenant's own
+ * accounts page — true only where this reader has read a tenant holding no
+ * account, since every other reason the line withholds (no admin, a read that
+ * failed) is not something that page would answer either, and it is the one
+ * place that connects one.
+ */
+export function repositoryOffersPointsAtAccounts(
+  accounts: PanelState<ForgeInstallationsResponse>,
+): boolean {
+  return (
+    accounts.state === "Ready" && accounts.value.installations.length === 0
+  );
+}
+
 /** Add reads under a portal claim and Create needs both apps on one account,
  * which are the tests each button is disabled by. */
 function repositoryOffersWithheldClaimed(

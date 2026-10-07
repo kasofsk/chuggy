@@ -27,6 +27,7 @@ import {
   repositoryConfigureStatus,
   repositoryDeferrals,
   repositoryLabel,
+  repositoryOffersPointsAtAccounts,
   repositoryOffersWithheld,
   type RepositoryNote,
   type RepositoryStepStatus,
@@ -327,4 +328,25 @@ test("Add and Create withheld say why, and name a step only where it is offered"
     expect(repositoryOffersWithheld(accounts, apps)).toBe(line);
     expect((line ?? "").length).toBeLessThanOrEqual(60);
   }
+});
+
+/**
+ * The tenant's own accounts page is the one place that connects an account,
+ * so the line points there only where a read that succeeded says this tenant
+ * holds none — not where the reason is something that page would not answer
+ * either: no admin, a read that is loading or failed, or an account held that
+ * is merely short of a claim.
+ */
+test("the withheld line points at the tenant's accounts page only where it read zero accounts", () => {
+  expect(repositoryOffersPointsAtAccounts({ state: "Pending" })).toBe(false);
+  expect(
+    repositoryOffersPointsAtAccounts({ state: "Absent", reason: "withheld" }),
+  ).toBe(false);
+  expect(
+    repositoryOffersPointsAtAccounts({ state: "Failed", reason: "down" }),
+  ).toBe(false);
+  expect(
+    repositoryOffersPointsAtAccounts(claimed(claim("worker", "kasofsk"))),
+  ).toBe(false);
+  expect(repositoryOffersPointsAtAccounts(claimed())).toBe(true);
 });

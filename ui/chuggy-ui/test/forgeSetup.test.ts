@@ -17,7 +17,6 @@ const transaction: ForgeInstallTransaction = {
   state: "a-state",
   app: "worker",
   tenant: "vteng",
-  project: "chuggy",
   returnPath: "/vteng/chuggy/repositories",
 };
 

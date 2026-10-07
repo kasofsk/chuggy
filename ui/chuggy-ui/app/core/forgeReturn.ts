@@ -1,10 +1,8 @@
 /**
  * The one word a person brings back from the forge to the page they started
  * on, where the return did not simply connect. It is held in tab storage for
- * one project and taken once, by the page it returns to.
+ * one tenant and taken once, by the page it returns to.
  */
-
-import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 
 import type { KeyValuePort } from "./sessionHolder.ts";
 
@@ -27,24 +25,23 @@ export interface ForgeReturnWord {
 
 export function forgeReturnHold(
   store: KeyValuePort,
-  partition: PartitionIdentity,
+  tenant: string,
   word: ForgeReturnWord,
 ): void {
   store.write(
     forgeReturnKey,
     JSON.stringify({
-      tenant: partition.tenant,
-      project: partition.project,
+      tenant,
       standing: word.standing,
       status: word.status,
     }),
   );
 }
 
-/** Read once and removed, and a word held for another project is dropped unread. */
+/** Read once and removed, and a word held for another tenant is dropped unread. */
 export function forgeReturnTake(
   store: KeyValuePort,
-  partition: PartitionIdentity,
+  tenant: string,
 ): ForgeReturnWord | undefined {
   const stored = store.read(forgeReturnKey);
   store.remove(forgeReturnKey);
@@ -53,8 +50,7 @@ export function forgeReturnTake(
     const parsed: unknown = JSON.parse(stored);
     if (typeof parsed !== "object" || parsed === null) return undefined;
     const fields = parsed as Record<string, unknown>;
-    if (fields["tenant"] !== partition.tenant) return undefined;
-    if (fields["project"] !== partition.project) return undefined;
+    if (fields["tenant"] !== tenant) return undefined;
     const standing = forgeReturnStandings.find(
       (known) => known === fields["standing"],
     );

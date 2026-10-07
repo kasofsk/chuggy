@@ -33,7 +33,6 @@ export const forgeCallbackRoutePath = "/forge/github/callback";
 /** Where the person goes, and comes back to, and what redeems the code. */
 export interface ForgeAuthorizeTarget {
   readonly tenant: string;
-  readonly project: string;
   readonly returnPath: string;
 }
 
@@ -91,13 +90,12 @@ export function forgeAuthorizeTake(
     const parsed: unknown = JSON.parse(stored);
     if (typeof parsed !== "object" || parsed === null) return undefined;
     const fields = parsed as Record<string, unknown>;
-    const { state, verifier, tenant, project, returnPath } = fields;
+    const { state, verifier, tenant, returnPath } = fields;
     if (typeof state !== "string" || typeof verifier !== "string")
       return undefined;
-    if (typeof tenant !== "string" || typeof project !== "string")
+    if (typeof tenant !== "string" || typeof returnPath !== "string")
       return undefined;
-    if (typeof returnPath !== "string") return undefined;
-    return { state, verifier, tenant, project, returnPath };
+    return { state, verifier, tenant, returnPath };
   } catch {
     return undefined;
   }

@@ -29,7 +29,6 @@ const transaction: ForgeInstallTransaction = {
   state: "a-state",
   app: "portal",
   tenant: "vteng",
-  project: "chuggy",
   returnPath: "/vteng/chuggy/repositories",
 };
 

@@ -153,6 +153,7 @@ export const reservedTenantNames = [
   "forge",
   "health",
   "projects",
+  "tenants",
 ] as const;
 
 export function tenantNameReserved(name: string): boolean {

@@ -35,6 +35,7 @@ import type { PanelState } from "../core/freshness.ts";
 import {
   projectResourceKey,
   projectsInventoryKey,
+  tenantResourceKey,
 } from "../core/projectQueryKeys.ts";
 import type { ProjectList, ProjectQueryKey } from "../core/projectQueryKeys.ts";
 import { apiFetch, sleepMs } from "./ports.ts";
@@ -184,4 +185,15 @@ export function usePanelList<T>(
  */
 export function usePanelInventory<T>(read: PanelRead<T>): PanelState<T> {
   return usePanelQuery(projectsInventoryKey(), read);
+}
+
+/** One tenant's own resource, shared by every project under it and so outside
+ * any one partition's refresh path — the same arrangement as `usePanelInventory`,
+ * for a read that belongs to the tenant rather than to no partition at all. */
+export function usePanelTenantResource<T>(
+  tenant: string,
+  resource: string,
+  read: PanelRead<T>,
+): PanelState<T> {
+  return usePanelQuery(tenantResourceKey(tenant, resource), read);
 }
