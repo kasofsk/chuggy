@@ -36,9 +36,15 @@
  * THE SEEDING BLOCK IS COMPOSED HERE AND BOUNDED IN `thread.ts`. The first turn
  * of a thread with no agent reference carries the project's North Star and
  * standing rules, the member's own open drafts and what stands against them;
- * every later turn is the message alone. What sheds and what never sheds is
- * `threadTurnInput`'s rule, and an input that will not fit without shedding one
- * of the project's two texts is refused rather than quietly shortened.
+ * every later turn is the message alone, unless it names an image. What sheds
+ * and what never sheds is `threadTurnInput`'s rule, and an input that will not
+ * fit without shedding one of the project's two texts, or the images section,
+ * is refused rather than quietly shortened.
+ *
+ * AN IMAGE IS CHECKED AGAINST THIS PROJECT'S OWN ARTIFACTS BEFORE THE TURN IS
+ * COMPOSED, by `threadMessageImages`: an identity this project never wrote and
+ * one another project's upload minted both refuse the whole message, because
+ * which of the two it was is not this door's to say.
  */
 
 import {
@@ -46,6 +52,7 @@ import {
   nativeHttpPageItemsMax,
   textCodePointsCount,
   threadMessageCharsMax,
+  threadMessageImagesMax,
   threadTitleCharsMax,
   threadTurnsAnsweredMax,
   threadsAnsweredMax,
@@ -61,11 +68,17 @@ import type {
   SessionTurnMeasured,
   SessionTurnState,
 } from "./agentSession.ts";
+import {
+  asProjectArtifactId,
+  type ProjectArtifactPort,
+} from "./finalizerPreparation.ts";
 import type { Authority } from "./operationInbox.ts";
 import type { Principal } from "./principal.ts";
 import type { Partition } from "./projectStore.ts";
+import { projectArtifactFetched } from "./projectArtifact.ts";
 import type { PublicInstant } from "./publicResource.ts";
 import type { SessionStoreStreamRow } from "./sessionPlane.ts";
+import { threadImageFetchPath, type ThreadSeededImage } from "./thread.ts";
 import {
   threadStanding,
   type ThreadProjectTexts,
@@ -406,6 +419,10 @@ export type ThreadMessageSent =
   /** The first turn's seeding block and the message will not fit one turn together. */
   | { readonly result: "TooLarge"; readonly charsMax: number }
   | { readonly result: "Backlogged"; readonly retryAfterSeconds: number }
+  /** An image the message named is not an artifact this project holds. */
+  | { readonly result: "ImageUnknown" }
+  /** The project's own artifact store could not answer whether an image named is one of this project's. */
+  | { readonly result: "ImagesUnavailable"; readonly retryAfterSeconds: number }
   | {
       readonly result: "Sent" | "AlreadySent";
       readonly turn: SessionTurnId;
@@ -585,6 +602,61 @@ export function checkedThreadMessage(message: string): string {
       `a thread message must be at most ${String(threadMessageCharsMax)} characters`,
     );
   return message;
+}
+
+/**
+ * The images a message names, as the door accepts them. The schema at the
+ * boundary bounds the count too; this is the bound for every other caller of
+ * the door, for `checkedThreadMessage`'s own reason.
+ */
+export function checkedThreadMessageImages(
+  images: readonly string[],
+): readonly string[] {
+  if (images.length > threadMessageImagesMax)
+    throw new RangeError(
+      `a thread message names at most ${String(threadMessageImagesMax)} images`,
+    );
+  return images;
+}
+
+/** What checking a message's named images against this project's own artifacts came to. */
+export type ThreadMessageImagesChecked =
+  | {
+      readonly checked: "Images";
+      readonly images: readonly ThreadSeededImage[];
+    }
+  | { readonly checked: "Unknown" }
+  | { readonly checked: "Unavailable"; readonly retryAfterSeconds: number };
+
+/**
+ * Each image a message named, checked against this project's own artifacts and
+ * turned into what the turn names: its media type and where the session
+ * fetches it. `NotFound` folds an artifact never written and one another
+ * project's upload minted, for `projectArtifactFetched`'s own reason — a
+ * member naming either is refused the same way, without being told which.
+ */
+export async function threadMessageImages(
+  store: ProjectArtifactPort,
+  partition: Partition,
+  images: readonly string[],
+): Promise<ThreadMessageImagesChecked> {
+  const named: ThreadSeededImage[] = [];
+  for (const raw of images) {
+    const artifact = asProjectArtifactId(raw);
+    const fetched = await projectArtifactFetched(store, partition, artifact);
+    if (fetched.fetched === "NotFound") return { checked: "Unknown" };
+    if (fetched.fetched === "Unavailable")
+      return {
+        checked: "Unavailable",
+        retryAfterSeconds: fetched.retryAfterSeconds,
+      };
+    named.push({
+      artifact,
+      mediaType: fetched.mediaType,
+      path: threadImageFetchPath(partition, artifact),
+    });
+  }
+  return { checked: "Images", images: named };
 }
 
 /**

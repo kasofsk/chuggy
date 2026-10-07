@@ -28,10 +28,20 @@
  * message turn. What IS a control is that everything a thread does is an
  * operation row naming its author and the session it came through, so a thread
  * that originated work on a wake is visible in the record afterwards.
+ *
+ * AN IMAGE IS NAMED, NOT CARRIED. The turn names an image's identity, its
+ * media type and where to fetch it, rather than putting bytes in the prompt,
+ * because the pod a thread runs in is launched by `kasofsk/chuggy-common`'s
+ * harness — a repository this project does not bind and no ticket here can
+ * change — so there is no multimodal channel to hand one through. The
+ * session's own Bash and Read are what it takes from there: it fetches the
+ * bytes at the path named and reads them off disk, which the agent runtime
+ * already does for any file.
  */
 
 import {
   nativeHttpPathSegmentCharsMax,
+  partitionPath,
   selectorSettingsTextCharsMax,
   textCodePointsCount,
   threadMessageCharsMax,
@@ -41,6 +51,7 @@ import {
 import {
   resolvedThreadStandingRules,
   threadDraftsHeading,
+  threadImagesHeading,
   threadNorthStarHeading,
   threadRefusalsHeading,
   threadStandingSection,
@@ -363,33 +374,78 @@ export function threadSeedingText(seeding: ThreadSeeding): string {
   ].join("\n\n");
 }
 
+/**
+ * One image a message named, checked against the project's own artifacts: its
+ * identity, the media type its upload was admitted under, and the path a
+ * session fetches it at, for the reason the module header gives.
+ */
+export interface ThreadSeededImage {
+  readonly artifact: string;
+  readonly mediaType: string;
+  readonly path: string;
+}
+
+/** Where a session fetches one named image back: the project artifact route, filled in. */
+export function threadImageFetchPath(
+  partition: Partition,
+  artifact: string,
+): string {
+  return `${partitionPath(partition)}/artifacts/${encodeURIComponent(artifact)}`;
+}
+
+/** The images section a turn carries in front of its message, naming each one's media type and where to fetch it. */
+export function threadImagesSection(
+  images: readonly ThreadSeededImage[],
+): string {
+  return `${threadImagesHeading}\n\n${images
+    .map(
+      ({ artifact, mediaType, path }) =>
+        `- ${artifact} — ${mediaType} — fetch at ${path}`,
+    )
+    .join("\n")}`;
+}
+
 /** The most one turn's input weighs: the member's message and the block in front of it. */
 export const threadTurnInputCharsMax =
   threadMessageCharsMax + threadSeedingCharsMax;
 
 /**
- * The whole of one turn's input: the seeding block where the turn has one, the
- * boundary the console splits on, then the member's message, with the drafts
- * shed oldest-first and then the refusals until the two fit together. The North
- * Star and the standing rules are never shed, because they are what the turn is
- * bound by, and an input that will not fit without shedding one of them is
+ * The whole of one turn's input: the seeding block where the turn has one,
+ * the images section where the message names any, the boundary the console
+ * splits on, then the member's message, with the drafts shed oldest-first and
+ * then the refusals until the two fit together. The North Star, the standing
+ * rules and the images section are never shed, because they are what the turn
+ * is bound by, and an input that will not fit without shedding one of them is
  * refused instead.
  */
 export function threadTurnInput(
   message: string,
   seeding?: ThreadSeeding,
+  images?: readonly ThreadSeededImage[],
 ): string {
+  const imagesSection =
+    images === undefined || images.length === 0
+      ? undefined
+      : threadImagesSection(images);
   if (seeding === undefined) {
-    if (textCodePointsCount(message) > threadTurnInputCharsMax)
+    const input =
+      imagesSection === undefined
+        ? message
+        : `${imagesSection}\n\n${threadTurnBoundaryHeading}\n\n${message}`;
+    if (textCodePointsCount(input) > threadTurnInputCharsMax)
       throw new RangeError(
         `a thread turn's input must be at most ${String(threadTurnInputCharsMax)} characters`,
       );
-    return message;
+    return input;
   }
   let drafts = seeding.drafts;
   let refusals = seeding.refusals;
   for (;;) {
-    const input = `${threadSeedingText({ ...seeding, drafts, refusals })}\n\n${threadTurnBoundaryHeading}\n\n${message}`;
+    const block = [
+      threadSeedingText({ ...seeding, drafts, refusals }),
+      ...(imagesSection === undefined ? [] : [imagesSection]),
+    ].join("\n\n");
+    const input = `${block}\n\n${threadTurnBoundaryHeading}\n\n${message}`;
     if (textCodePointsCount(input) <= threadTurnInputCharsMax) return input;
     if (drafts.length > 0) drafts = drafts.slice(1);
     else if (refusals.length > 0) refusals = refusals.slice(1);

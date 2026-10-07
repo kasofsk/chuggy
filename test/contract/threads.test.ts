@@ -28,6 +28,7 @@ import {
   sessionTurnSeriesMax,
   threadBacklogMax,
   threadMessageCharsMax,
+  threadMessageImagesMax,
   threadSeedingCharsMax,
   threadWakeCharsMax,
   threadSeedingFixedCharsMax,
@@ -483,6 +484,33 @@ test("the message door takes a minted turn and a message inside its bound", () =
       .ordinal,
     12,
   );
+});
+
+/**
+ * A message names images by the identity the parent ticket's upload answered,
+ * bounded the way every list on this wire is; naming none is still the message
+ * alone, which is the one shape an attachment-less thread must keep.
+ */
+test("a message may name the images it carries, bounded, and none is still a message alone", () => {
+  const message = { turn: "thread-turn-2", message: "look at this" };
+  const atBound = Array.from(
+    { length: threadMessageImagesMax },
+    (_unused, index) => `image/png:token-${String(index + 1)}`,
+  );
+
+  assert.deepEqual(
+    threadMessageSchema.parse({ ...message, images: atBound }).images,
+    atBound,
+  );
+  assert.deepEqual(threadMessageSchema.parse(message).images, undefined);
+  assert.throws(() =>
+    threadMessageSchema.parse({
+      ...message,
+      images: [...atBound, "image/png:token-overflow"],
+    }),
+  );
+  assert.throws(() => threadMessageSchema.parse({ ...message, images: [""] }));
+  assert.throws(() => threadMessageSchema.parse({ ...message, images: [1] }));
 });
 
 /**
