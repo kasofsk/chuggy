@@ -25,6 +25,7 @@ export type { AuthorizedResult } from "./authorizedProject.ts";
 
 import type { Principal } from "./principal.ts";
 import type { ReleaseAuthoringProgram } from "../contract/authoring.ts";
+import type { ConfigurationOverrides } from "../contract/configurationOverrides.ts";
 import type { EscalationKind, ResumePoint } from "../contract/rosters.ts";
 import { assertNever } from "../domain/assertNever.ts";
 import { phaseTags, type Phase } from "../domain/phase.ts";
@@ -340,6 +341,8 @@ export interface TicketResource {
   /** The configuration the ticket's last release or update pinned, which is what it runs under. */
   readonly configurationRevision?: ConfigurationRevisionId;
   readonly configurationVersion?: ConfigurationVersion;
+  /** What the ticket's last release or update replaced of that configuration. */
+  readonly overrides?: ConfigurationOverrides;
   /**
    * The evaluation program the ticket's last release or update was resolved
    * from, which is what its evaluation runs; its draft may since hold another.
@@ -688,6 +691,7 @@ export interface NativeWeb {
       readonly expectedProjectSequence: number;
       readonly authoring: ReleaseAuthoring;
       readonly brief: DraftBrief;
+      readonly overrides?: ConfigurationOverrides;
     },
   ): Promise<AuthorizedResult<DraftCreated>>;
   initializeDraft(
@@ -704,6 +708,7 @@ export interface NativeWeb {
       readonly configurationRevision: ConfigurationRevisionId;
       readonly authoring: ReleaseAuthoring;
       readonly brief: DraftBrief;
+      readonly overrides?: ConfigurationOverrides;
     },
   ): Promise<AuthorizedResult<DraftRevised>>;
   deleteDraft(

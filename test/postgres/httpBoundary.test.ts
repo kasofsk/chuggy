@@ -4,6 +4,7 @@ import { test } from "node:test";
 
 import type pg from "pg";
 
+import type { ConfigurationOverrides } from "../../src/contract/configurationOverrides.ts";
 import { nativeHttpMediaType } from "../../src/contract/http.ts";
 import {
   draftInitializationResponseSchema,
@@ -11,6 +12,7 @@ import {
   leadInquiriesResponseSchema,
   leadInquiryAcceptedSchema,
   leadInquiryResponseSchema,
+  ticketResponseSchema,
   type DraftResponse,
 } from "../../src/contract/responses.ts";
 
@@ -326,6 +328,7 @@ async function ingressDraft(
   revision: string,
   repository: string,
   intent: string,
+  overrides?: ConfigurationOverrides,
 ): Promise<DraftResponse> {
   const initialized = await fetch(`${root}/draft-initializations/${revision}`, {
     headers: ingressHeaders,
@@ -346,6 +349,7 @@ async function ingressDraft(
         program: plainAuthoring.prog,
       },
       brief: { intent, links: [], repository },
+      ...(overrides === undefined ? {} : { overrides }),
     }),
   });
   const answered = await filed.text();
@@ -355,11 +359,13 @@ async function ingressDraft(
     headers: ingressHeaders,
   });
   assert.equal(read.status, 200);
+  const held = draftResponseSchema.parse(await read.json());
   assert.equal(
-    draftResponseSchema.parse(await read.json()).brief?.intent,
+    held.brief?.intent,
     intent,
     "the draft's row holds the intent as it was written",
   );
+  assert.deepEqual(held.overrides, overrides);
   return draft;
 }
 
@@ -391,7 +397,7 @@ async function ingressBriefedIntent(
   const brief = await postgresTicketBrief(scheduler).brief(partition, ticket);
   const pinned = await postgresPinnedConfigurations(scheduler).configuration(
     partition,
-    pin,
+    { ...pin, ticket },
   );
   if (brief === undefined || pinned.read !== "Configuration")
     assert.fail("the released ticket has no brief or no pinned configuration");
@@ -485,6 +491,70 @@ test("real HTTP ingress admits an intent of one long line, and one of many lines
   } finally {
     await app.close();
     await scheduler.end();
+    await pool.end();
+    await harness.close();
+  }
+});
+
+/**
+ * The overrides a draft is filed with, over the REAL composition: in at the
+ * door, back out with the draft, through a release, and out again with the
+ * ticket's own read, which is what a ticket's page fetches.
+ */
+test("real HTTP ingress files a draft's overrides and a released ticket's read answers them", async () => {
+  const harness = await postgresHarnessOpen();
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "http-overrides",
+  );
+  harness.access.grant({
+    partition,
+    principal,
+    access: new Set(["Read", "Mutate"]),
+  });
+  const repository = await postgresHarnessBinding(harness, partition);
+  const revision = asConfigurationRevisionId(`config-${randomUUID()}`);
+  const configured = await harness.authoring.createConfiguration({
+    partition,
+    authority: postgresHarnessSubmission(partition, "http-overrides").authority,
+    revision,
+    canonical: postgresHarnessConfiguration,
+  });
+  assert.equal(configured.created, "Created");
+  const { pool, app } = composedIngress(harness.access);
+  const address = await app.listen({ host: "127.0.0.1", port: 0 });
+  const root = `${address}/api/v1/tenants/${partition.tenant}/projects/${partition.project}`;
+  const overrides = { work: { instructions: ["Do it this way."] } };
+  try {
+    const writer = postgresHarnessWriter(harness);
+    const memory = await projectWriterLoad(
+      writer,
+      await postgresHarnessHeld(harness.store, partition, "http-overrides"),
+    );
+    const draft = await ingressDraft(
+      root,
+      revision,
+      repository,
+      "Do it.",
+      overrides,
+    );
+    await ingressRelease(root, draft);
+    const input = await harness.discovery.next(partition, 300);
+    assert.ok(input !== undefined);
+    assert.equal(
+      (await projectWriterDecide(writer, memory, input)).decided.decided,
+      "Committed",
+    );
+    const read = await fetch(`${root}/tickets/${String(draft.ticket)}`, {
+      headers: ingressHeaders,
+    });
+    assert.equal(read.status, 200);
+    assert.deepEqual(
+      ticketResponseSchema.parse(await read.json()).overrides,
+      overrides,
+    );
+  } finally {
+    await app.close();
     await pool.end();
     await harness.close();
   }

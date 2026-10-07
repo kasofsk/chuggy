@@ -8,6 +8,7 @@
 
 import { z } from "zod";
 import { nativeHttpEndpoints } from "../../contract/endpoints.ts";
+import type { ConfigurationOverrides } from "../../contract/configurationOverrides.ts";
 
 import {
   resumeTicketCommand,
@@ -306,6 +307,7 @@ export interface ParsedDraftCreation {
   readonly expectedProjectSequence: number;
   readonly authoring: ReleaseAuthoring;
   readonly brief: DraftBrief;
+  readonly overrides?: ConfigurationOverrides;
 }
 
 export interface ParsedDraftRevision {
@@ -313,6 +315,7 @@ export interface ParsedDraftRevision {
   readonly configurationRevision: ConfigurationRevisionId;
   readonly authoring: ReleaseAuthoring;
   readonly brief: DraftBrief;
+  readonly overrides?: ConfigurationOverrides;
 }
 
 function releaseAuthoring(value: ReleaseAuthoringBody): ReleaseAuthoring {
@@ -400,6 +403,7 @@ export function parseDraftCreation(body: unknown): ParsedDraftCreation {
     expectedProjectSequence: value.expectedProjectSequence,
     authoring: releaseAuthoring(value.authoring),
     brief: releaseBrief(value.brief),
+    ...(value.overrides === undefined ? {} : { overrides: value.overrides }),
   };
 }
 
@@ -412,6 +416,7 @@ export function parseDraftRevision(body: unknown): ParsedDraftRevision {
     ),
     authoring: releaseAuthoring(value.authoring),
     brief: releaseBrief(value.brief),
+    ...(value.overrides === undefined ? {} : { overrides: value.overrides }),
   };
 }
 

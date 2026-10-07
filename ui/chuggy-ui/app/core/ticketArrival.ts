@@ -3,8 +3,8 @@
  * there, whichever writer brought it: a `Ticket` frame, which carries the
  * ticket's own read, or an action's confirmation, which carries the project's
  * row. The row is the narrower of the two, lacking every field marked below as
- * the own read's. Of those, the brief, the configuration and the program are
- * set by a release or an update and by nothing else, and an update moves the
+ * the own read's. Of those, the brief, the configuration, its overrides and the
+ * program are set by a release or an update and by nothing else, and an update moves the
  * revision; the run totals only lag.
  *
  * So one rule serves both writers. An arrival older than what is held is
@@ -36,6 +36,7 @@ const ticketFieldOwnReadOnly = {
   brief: true,
   configurationRevision: true,
   configurationVersion: true,
+  overrides: true,
   program: true,
   runTotals: true,
 } as const satisfies Record<TicketField, boolean>;

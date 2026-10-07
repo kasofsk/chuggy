@@ -261,6 +261,7 @@ test("a ticket read emits exactly the keys the contract names", () => {
     brief,
     configurationRevision: revision,
     configurationVersion,
+    overrides: { work: { instructions: ["Do it this way."] } },
     program: [{ key: 1, evaluators: [{ key: 1 }] }],
     runTotals,
     ...ticketCarried,
@@ -1301,6 +1302,24 @@ test("a body the contract does not name is a parse failure, not a default", () =
       accountMaximum: 8,
       accountActive: 0,
     }),
+  );
+});
+
+test("a draft read carries the overrides its revision names, and one naming none omits them", () => {
+  const overrides = {
+    worker: { setup: ["npm ci"] },
+    practices: [],
+  };
+  assert.deepEqual(
+    draftResponseSchema.parse(
+      draftResponse({ ...briefedDraft, overrides }).body,
+    ).overrides,
+    overrides,
+  );
+  assert.equal(
+    "overrides" in
+      (draftResponse(briefedDraft).body as Record<string, unknown>),
+    false,
   );
 });
 

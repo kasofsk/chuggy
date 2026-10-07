@@ -840,6 +840,7 @@ function draftBody(draft: DraftResource): unknown {
       program: draft.authoring.prog,
     },
     ...(draft.brief === undefined ? {} : { brief: briefBody(draft.brief) }),
+    ...(draft.overrides === undefined ? {} : { overrides: draft.overrides }),
   };
 }
 

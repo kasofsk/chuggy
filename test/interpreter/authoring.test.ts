@@ -28,6 +28,7 @@ import { createTicketCommand } from "../../src/actor/command.ts";
 import { encodeTicketCommand } from "../../src/generated/model-api.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
 import { nativeHttpPageItemsMax } from "../../src/contract/http.ts";
+import { briefingLineCharsMax } from "../../src/contract/workerTask.ts";
 import {
   encodeProjectCommand,
   parseProjectCommand,
@@ -293,15 +294,21 @@ test("a release refuses a brief that names no repository at all", () => {
       readyConfiguration,
       { checks: [], repository: firstRepository },
       undefined,
+      undefined,
     ).readiness,
     "Ready",
   );
   assert.deepEqual(
-    draftReleaseReadiness(readyConfiguration, { checks: [] }, undefined),
+    draftReleaseReadiness(
+      readyConfiguration,
+      { checks: [] },
+      undefined,
+      undefined,
+    ),
     { readiness: "Incomplete", fault: "BriefNamesNoRepository" },
   );
   assert.deepEqual(
-    draftReleaseReadiness(readyConfiguration, undefined, undefined),
+    draftReleaseReadiness(readyConfiguration, undefined, undefined, undefined),
     { readiness: "Incomplete", fault: "BriefNamesNoRepository" },
     "a draft written before briefs existed names none either",
   );
@@ -313,6 +320,7 @@ test("a release refuses a configuration imported from another repository", () =>
       readyConfiguration,
       { checks: [], repository: firstRepository },
       secondRepository,
+      undefined,
     ),
     { readiness: "Incomplete", fault: "ConfigurationFromAnotherRepository" },
   );
@@ -322,6 +330,7 @@ test("a release refuses a configuration imported from another repository", () =>
         readyConfiguration,
         { checks: [], repository },
         repository,
+        undefined,
       ).readiness,
       "Ready",
       "an imported configuration releases from the repository it was read in",
@@ -330,6 +339,7 @@ test("a release refuses a configuration imported from another repository", () =>
       draftReleaseReadiness(
         readyConfiguration,
         { checks: [], repository },
+        undefined,
         undefined,
       ).readiness,
       "Ready",
@@ -348,6 +358,7 @@ test("the configuration's own refusals are answered before the repository's", ()
       readyConfiguration,
       { checks: [asBriefCheckLine("npm test")] },
       undefined,
+      undefined,
     ),
     uncommanded,
     "before a brief that names no repository",
@@ -357,6 +368,7 @@ test("the configuration's own refusals are answered before the repository's", ()
       readyConfiguration,
       { checks: [asBriefCheckLine("npm test")], repository: firstRepository },
       secondRepository,
+      undefined,
     ),
     uncommanded,
     "and before a configuration read in another repository",
@@ -535,4 +547,40 @@ test("a draft page is refused outside the wire's own page bound", () => {
   for (const limit of [0, -1, 1.5, nativeHttpPageItemsMax + 1])
     assert.throws(() => checkedDraftPageQuery({ limit }), RangeError);
   assert.ok(draftPageLimitDefault <= nativeHttpPageItemsMax);
+});
+
+test("a release judges the configuration its overrides make, and refuses one they leave unready", () => {
+  const brief = { checks: [], repository: firstRepository };
+  const codex = {
+    type: "SingleAgent" as const,
+    agent: "Codex" as const,
+    arguments: [],
+    model: "gpt-5-codex",
+  };
+  const overridden = draftReleaseReadiness(
+    readyConfiguration,
+    brief,
+    undefined,
+    { worker: { mode: codex } },
+  );
+  assert.equal(overridden.readiness, "Ready");
+  if (overridden.readiness === "Ready")
+    assert.deepEqual(overridden.configuration.worker, {
+      files: [],
+      mode: codex,
+      setup: [],
+    });
+  assert.deepEqual(
+    draftReleaseReadiness(readyConfiguration, brief, undefined, {
+      work: { instructions: ["x".repeat(briefingLineCharsMax + 1)] },
+    }),
+    { readiness: "Incomplete", fault: "TextTooLong" },
+    "a line over the bound is unready whichever of the two said it",
+  );
+  assert.deepEqual(
+    draftReleaseReadiness(readyConfiguration, brief, undefined, {
+      brief: { motivation: [], acceptanceCriteria: [] },
+    }),
+    { readiness: "Incomplete", fault: "EmptyBrief" },
+  );
 });

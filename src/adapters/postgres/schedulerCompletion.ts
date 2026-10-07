@@ -153,7 +153,8 @@ export async function schedulerLockExecution(
           q.effect_position::text AS source_effect,
           q.ticket_version::text AS ticket_version, e.account, e.cluster,
           e.configuration_revision, e.configuration_digest,
-          c.canonical AS configuration_canonical, e.requirement_identity,
+          c.canonical AS configuration_canonical,
+            d.overrides::text AS configuration_overrides, e.requirement_identity,
           e.requirement_value::text AS requirement_value, e.requirement_digest, e.requirement_source,
           e.platform_default_version::text AS platform_default_version, e.status, e.outcome,
           e.result_manifest, e.completion_operation,
@@ -169,6 +170,8 @@ export async function schedulerLockExecution(
         JOIN configuration_revision c
           ON c.tenant = e.tenant AND c.project = e.project
          AND c.revision = e.configuration_revision AND c.digest = e.configuration_digest
+        LEFT JOIN ticket_definition d
+          ON d.tenant = e.tenant AND d.project = e.project AND d.ticket = e.ticket
         WHERE e.tenant = ${partition.tenant} AND e.project = ${partition.project}
           AND e.execution = ${execution}
         FOR UPDATE OF e`,
