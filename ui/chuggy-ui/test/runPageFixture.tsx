@@ -180,6 +180,8 @@ export interface RunPageServed {
   readonly configuration?: Record<string, unknown>;
   /** The text the run's worker left, and a `404` where it left none. */
   readonly error?: Record<string, unknown>;
+  /** An artifact's own content, read where a case opens its preview. */
+  readonly artifactContent?: Record<string, unknown>;
 }
 
 export interface RunPageDrawn {
@@ -210,6 +212,10 @@ function runPageRoute(
         : answer(served.error);
     if (url.includes("/dispatch-view")) return answer({ result: "Reset" });
     if (url.includes("/native-actions")) return answer({ actions: [] });
+    if (url.includes("/artifacts/"))
+      return served.artifactContent === undefined
+        ? answer({}, 404)
+        : answer(served.artifactContent);
     if (url.includes("/executions/")) return answer(served.execution);
     if (url.includes("/executions"))
       return answer({ executions: served.executions });
