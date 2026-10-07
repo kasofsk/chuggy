@@ -132,18 +132,18 @@ async function creationOffersRead(
   const read = await Promise.all(
     offered.map(async (one) => ({
       one,
-      initialized: await apiDraftInitialization(
-        ports,
-        partition,
-        one.listed.revision,
-      ),
+      initialized: await apiDraftInitialization(ports, partition, one.revision),
     })),
   );
   const offers: CreationOffer[] = [];
   let failed: ApiFailure | undefined;
   for (const { one, initialized } of read) {
     if (initialized.outcome === "Ok")
-      offers.push({ ...one, initialization: initialized.value });
+      offers.push({
+        name: one.name,
+        listed: one.listed,
+        initialization: initialized.value,
+      });
     else failed ??= initialized;
   }
   if (failed !== undefined && offers.length === 0) return failed;

@@ -16,7 +16,7 @@ import {
   panelObservedAtMs,
   panelReason,
   panelStateFromQuery,
-  panelStateHeld,
+  panelStatePolled,
 } from "../app/core/freshness.ts";
 
 const nowMs = Date.parse("2026-08-26T12:00:00Z");
@@ -118,7 +118,7 @@ test("a polled read keeps its last answer across a failed poll, and only that", 
     status: 500,
   } as const;
   const error = new ApiOutcomeError(fault, panelReason(fault));
-  const kept = panelStateHeld({
+  const kept = panelStatePolled({
     data: { route: "Pool" },
     error,
     isPending: false,
@@ -130,7 +130,7 @@ test("a polled read keeps its last answer across a failed poll, and only that", 
     observedAtMs: nowMs,
   });
   expect(
-    panelStateHeld({
+    panelStatePolled({
       data: undefined,
       error,
       isPending: false,

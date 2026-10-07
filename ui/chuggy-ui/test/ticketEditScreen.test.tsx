@@ -29,7 +29,6 @@ import { creationFaultSentence } from "../app/core/ticketCreation.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import {
   answer,
-  configurationMoved,
   openedStream,
   press,
   ScreenHarness,
@@ -43,6 +42,7 @@ import {
   creationDeclared,
   creationDraft,
   creationInitialization,
+  creationListed,
   creationPartition,
 } from "./ticketCreationFixture.ts";
 import { ticketInstants } from "./ticketInstants.ts";
@@ -189,7 +189,7 @@ function routed(drawing: Drawing): (request: SentRequest) => Response {
     if (url.includes("/configurations")) return answer(listing);
     if (url.endsWith("/repositories"))
       return answer({
-        repositories: [{ ...creationBinding(chuggy), configured: true }],
+        repositories: [creationListed(creationBinding(chuggy), "Imported")],
       });
     if (url.includes("/drafts/")) return answer(draft);
     if (url.includes("/tickets/")) return answer(ticket);
@@ -201,17 +201,14 @@ function routed(drawing: Drawing): (request: SentRequest) => Response {
   };
 }
 
-async function drawEdit(
-  drawing: Drawing,
-  server = openedStream(),
-): Promise<readonly SentRequest[]> {
+async function drawEdit(drawing: Drawing): Promise<readonly SentRequest[]> {
   const scripted = scriptedFetch(routed(drawing));
   vi.stubGlobal("fetch", scripted.fetch);
   render(
     <ScreenHarness
       partition={creationPartition}
       client={new QueryClient()}
-      transport={server.ports.fetch}
+      transport={openedStream().ports.fetch}
     >
       <TicketEdit />
     </ScreenHarness>,
@@ -351,34 +348,4 @@ test("an offer that could not be read is left out of an edit, and said", async (
   expect(screen.getByText(/^Configuration · /u).textContent).toContain(
     "development",
   );
-});
-
-/**
- * The project's configurations are read again whenever one of them moves, by
- * a frame nobody at this form sent. One of those reads failing leaves the edit
- * standing over the answer it was drawn from, and the typing in it.
- */
-test("a re-read of the project that fails leaves the edit standing, with what was typed in it", async () => {
-  const failing = { on: false };
-  const server = openedStream();
-  const sent = await drawEdit(
-    {
-      draft: pinned("development", "o-development"),
-      unread: () => (failing.on ? unreadable() : undefined),
-    },
-    server,
-  );
-  const title = (): string | undefined =>
-    screen.queryByPlaceholderText<HTMLInputElement>(
-      "what this ticket is called",
-    )?.value;
-  fireEvent.change(screen.getByPlaceholderText("what this ticket is called"), {
-    target: { value: "Renamed" },
-  });
-  const before = initializationsRead(sent).length;
-  failing.on = true;
-  await configurationMoved(server, creationPartition, 43);
-  expect(initializationsRead(sent).length).toBeGreaterThan(before);
-  expect(title()).toBe("Renamed");
-  expect(screen.queryByText(/^Failed to load · /u)).toBeNull();
 });

@@ -775,10 +775,8 @@ export function TicketCreation(): ReactNode {
   const guard = useAuthoringGuards(dirty);
   const list = creationContextList(partition);
   const queryKey = list.key;
-  const state = usePanelList(
-    list,
-    (readPorts) => readCreationContext(readPorts, partition),
-    { held: true },
+  const state = usePanelList(list, (readPorts) =>
+    readCreationContext(readPorts, partition),
   );
   return (
     <>

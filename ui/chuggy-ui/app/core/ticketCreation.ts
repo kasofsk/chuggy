@@ -35,6 +35,7 @@ import type {
   ConfigurationSummary,
   DraftInitializationResponse,
   DraftResponse,
+  ProjectRepositoryListedResponse,
   ProjectRepositoryResponse,
 } from "../../../../src/contract/responses.ts";
 import type { z } from "zod";
@@ -108,11 +109,15 @@ export function latestReadyConfiguration(
   return configurations.find((summary) => summary.readiness === "Ready");
 }
 
-/** An offer before its initialization is read: a listed revision, and the name
- * a reader chooses it by. */
+/**
+ * An offer before its initialization is read: the name a reader chooses it
+ * by, the revision that read asks for, and its row in the listing. A bootstrap
+ * is offered on a binding's word and not looked for there, so it has no row.
+ */
 export interface CreationOfferListed {
   readonly name: string;
-  readonly listed: ConfigurationSummary;
+  readonly revision: string;
+  readonly listed: ConfigurationSummary | undefined;
 }
 
 /**
@@ -122,7 +127,8 @@ export interface CreationOfferListed {
 export interface CreationOffer {
   /** What a reader chooses it by, which is what the form holds once they have. */
   readonly name: string;
-  /** Its row in the listing, which a revision only a draft still holds has not. */
+  /** Its row in the listing, which neither a bootstrap nor a revision only a
+   * draft still holds has. */
   readonly listed: ConfigurationSummary | undefined;
   readonly initialization: DraftInitializationResponse;
 }
@@ -163,119 +169,110 @@ const creationNameSpellings: readonly CreationNameSpelling[] = [
 /**
  * The name one offered revision is chosen by: its own, and beside its
  * repository where two repositories declare one name — short where that tells
- * them apart, whole where the two shorten alike.
+ * them apart, whole where the two shorten alike. A name in `taken` is a
+ * bootstrap's, which no declared revision is offered under.
  */
 function creationOfferName(
   configuration: ConfigurationSummary,
   offered: readonly ConfigurationSummary[],
+  taken: readonly string[],
 ): string {
-  const apart = creationNameSpellings.find((spelling) =>
-    offered.every(
-      (other) =>
-        other === configuration || spelling(other) !== spelling(configuration),
-    ),
+  const apart = creationNameSpellings.find(
+    (spelling) =>
+      !taken.includes(spelling(configuration)) &&
+      offered.every(
+        (other) =>
+          other === configuration ||
+          spelling(other) !== spelling(configuration),
+      ),
   );
   return (apart ?? creationConfigurationName)(configuration);
 }
 
 /**
- * The project's own bootstrap where it stands ready, which is the revision its
- * name itself is. No repository declared it, so it is what a ticket for a
- * repository declaring nothing is released under, a declared revision
- * releasing for its own repository alone.
+ * What the project holds for its live bindings, as the listing of them says:
+ * the ones whose repositories declared names into it, and the bootstrap
+ * revisions the ones declaring none are released under.
  */
-function creationBootstrapAuthored(
-  configurations: readonly ConfigurationSummary[],
-): ConfigurationSummary | undefined {
-  return configurations.find(
-    (summary) =>
-      summary.revision === bootstrapConfigurationName &&
-      summary.readiness === "Ready",
+function creationHeld(
+  repositories: readonly ProjectRepositoryListedResponse[],
+): {
+  readonly imported: readonly ProjectRepositoryListedResponse[];
+  readonly bootstraps: readonly string[];
+} {
+  const live = creationRepositories(repositories);
+  const bootstraps = live.flatMap(({ configurationsHeld: held }) =>
+    held?.result === "Bootstrapped" ? [held.revision] : [],
   );
-}
-
-/**
- * The revisions a ticket may be drawn under, before they are named: what each
- * live binding's newest commit declares ready, and the project's bootstrap
- * beside them while one of those bindings declares nothing. A project where no
- * live binding declares one has its newest ready revision and nothing else,
- * whichever binding or author that came from.
- */
-function creationConfigurationsDeclared(
-  configurations: readonly ConfigurationSummary[],
-  repositories: readonly ProjectRepositoryResponse[],
-): readonly ConfigurationSummary[] {
-  const held = creationRepositories(repositories).map((binding) =>
-    repositoryConfigurations(configurations, binding.repository),
-  );
-  const declared = held.flat();
-  if (declared.length === 0) {
-    const newest = latestReadyConfiguration(configurations);
-    return newest === undefined ? [] : [newest];
-  }
-  const ready = declared.filter((summary) => summary.readiness === "Ready");
-  const bootstrap = held.some((rows) => rows.length === 0)
-    ? creationBootstrapAuthored(configurations)
-    : undefined;
-  return bootstrap === undefined ? ready : [...ready, bootstrap];
+  return {
+    imported: live.filter(
+      (binding) => binding.configurationsHeld?.result === "Imported",
+    ),
+    bootstraps: [...new Set(bootstraps)],
+  };
 }
 
 /**
  * The configurations a new ticket may be drawn under, by name and in name
- * order. A name a repository's newest commit dropped is not among them, and
- * neither is what a retired binding declared while a live one declares any.
+ * order: what the newest commit of each live binding that declares has ready,
+ * and the bootstrap of each that declares nothing. A project whose live
+ * bindings hold neither has its newest ready revision and nothing else,
+ * whichever binding or author that came from.
  */
 export function creationConfigurationsOffered(
   configurations: readonly ConfigurationSummary[],
-  repositories: readonly ProjectRepositoryResponse[],
+  repositories: readonly ProjectRepositoryListedResponse[],
 ): readonly CreationOfferListed[] {
-  const offered = creationConfigurationsDeclared(configurations, repositories);
-  return offered
-    .map((listed) => ({ name: creationOfferName(listed, offered), listed }))
-    .sort((left, right) => {
-      if (left.name === right.name) return 0;
-      return left.name < right.name ? -1 : 1;
-    });
-}
-
-/**
- * Whether the listing read so far says all one binding declares now. Its
- * newest commit is whole once a row that is not its own follows it; a binding
- * with no row yet declares nothing once a row older than its bind is read,
- * since a repository is imported only after it is bound.
- */
-function creationBindingDecided(
-  configurations: readonly ConfigurationSummary[],
-  binding: ProjectRepositoryResponse,
-  newest: readonly ConfigurationSummary[],
-): boolean {
-  const last = configurations.at(-1);
-  if (newest.length > 0) return newest.at(-1) !== last;
-  return (
-    last !== undefined &&
-    Date.parse(last.createdAt) < Date.parse(binding.boundAt)
-  );
+  const { imported, bootstraps } = creationHeld(repositories);
+  const newest = latestReadyConfiguration(configurations);
+  const fallback = newest === undefined ? [] : [newest];
+  const declared = imported
+    .flatMap((binding) =>
+      repositoryConfigurations(configurations, binding.repository),
+    )
+    .filter((summary) => summary.readiness === "Ready");
+  const listed =
+    imported.length === 0 && bootstraps.length === 0 ? fallback : declared;
+  const offered: readonly CreationOfferListed[] = [
+    ...listed.map((one) => ({
+      name: creationOfferName(one, listed, bootstraps),
+      revision: one.revision,
+      listed: one,
+    })),
+    ...bootstraps.map((revision) => ({
+      name: revision,
+      revision,
+      listed: undefined,
+    })),
+  ];
+  return offered.toSorted((left, right) => {
+    if (left.name === right.name) return 0;
+    return left.name < right.name ? -1 : 1;
+  });
 }
 
 /**
  * Whether the listing read so far already decides what is offered, so a walk
- * of it may stop: every live binding is decided, and where none of them
- * declares anything the project's first ready revision has been read.
+ * of it may stop. A live binding that declares holds it open until the rows
+ * of its newest commit are read, which they are once a row not its own
+ * follows them; with none declaring, one that holds a bootstrap needs no row,
+ * and otherwise the project's first ready revision is what the walk is for.
  */
 export function creationConfigurationsDecided(
   configurations: readonly ConfigurationSummary[],
-  repositories: readonly ProjectRepositoryResponse[],
+  repositories: readonly ProjectRepositoryListedResponse[],
 ): boolean {
-  const held = creationRepositories(repositories).map((binding) => ({
-    binding,
-    newest: repositoryConfigurations(configurations, binding.repository),
-  }));
-  const decided = held.every(({ binding, newest }) =>
-    creationBindingDecided(configurations, binding, newest),
-  );
-  if (!decided) return false;
+  const { imported, bootstraps } = creationHeld(repositories);
+  if (imported.length > 0)
+    return imported.every((binding) => {
+      const newest = repositoryConfigurations(
+        configurations,
+        binding.repository,
+      );
+      return newest.length > 0 && newest.at(-1) !== configurations.at(-1);
+    });
   return (
-    held.some(({ newest }) => newest.length > 0) ||
+    bootstraps.length > 0 ||
     latestReadyConfiguration(configurations) !== undefined
   );
 }
@@ -355,9 +352,9 @@ export function creationBootstrapLine(
  * stopped reading and the authority refuses a brief against, so the form neither
  * offers it nor seeds itself with it.
  */
-export function creationRepositories(
-  bound: readonly ProjectRepositoryResponse[],
-): readonly ProjectRepositoryResponse[] {
+export function creationRepositories<Binding extends ProjectRepositoryResponse>(
+  bound: readonly Binding[],
+): readonly Binding[] {
   return bound.filter((binding) => binding.retiredAt === undefined);
 }
 

@@ -90,13 +90,10 @@ export function panelStateFromQuery<T>(query: PanelQuery<T>): PanelState<T> {
   };
 }
 
-/**
- * A read's state where its last answer stands across a re-read that failed,
- * so only a read that has never answered is unread. A poll is read so, being
- * asked on a clock rather than because anything moved, and so is what a form
- * is typed over, which a failed re-read would otherwise take the form with.
- */
-export function panelStateHeld<T>(query: PanelQuery<T>): PanelState<T> {
+/** A polled read's state: its last answer stands across a poll that failed,
+ * since a poll is asked on a clock rather than because anything moved, so only
+ * a read that has never answered is unread. */
+export function panelStatePolled<T>(query: PanelQuery<T>): PanelState<T> {
   return panelStateFromQuery(
     query.data === undefined ? query : { ...query, error: null },
   );

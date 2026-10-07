@@ -6,10 +6,12 @@
  * here rather than in one suite that happened to be updated.
  */
 
+import { bootstrapConfigurationName } from "../../../src/contract/responses.ts";
 import type {
   ConfigurationSummary,
   DraftInitializationResponse,
   DraftResponse,
+  ProjectRepositoryListedResponse,
   ProjectRepositoryResponse,
 } from "../../../src/contract/responses.ts";
 import type { BriefFinalizationMode } from "../../../src/contract/rosters.ts";
@@ -112,6 +114,25 @@ export function creationBinding(
     boundAt: "2026-08-26T00:00:00Z",
     landing: { mode },
     ...(retiredAt === undefined ? {} : { retiredAt }),
+  };
+}
+
+/**
+ * One binding beside what the project holds for its repository, as the
+ * listing answers it: the names it declared, the bootstrap, or nothing.
+ */
+export function creationListed(
+  binding: ProjectRepositoryResponse,
+  held?: "Imported" | "Bootstrapped",
+): ProjectRepositoryListedResponse {
+  if (held === undefined) return { ...binding, configured: false };
+  return {
+    ...binding,
+    configured: true,
+    configurationsHeld:
+      held === "Imported"
+        ? { result: "Imported", count: 2 }
+        : { result: "Bootstrapped", revision: bootstrapConfigurationName },
   };
 }
 

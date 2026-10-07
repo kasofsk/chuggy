@@ -11,6 +11,7 @@
 import { expect, test } from "vitest";
 
 import { nativeHttpBasePath } from "../../../src/contract/http.ts";
+import type { ProjectRepositoryListedResponse } from "../../../src/contract/responses.ts";
 import type { ApiPorts } from "../app/core/apiRequest.ts";
 import { configurationPagesMax } from "../app/core/apiRoutes.ts";
 import {
@@ -21,9 +22,11 @@ import {
   reviseAndUpdateTicket,
 } from "../app/core/ticketCreationRun.ts";
 import {
+  creationBinding,
   creationDeclared,
   creationDraft,
   creationInitialization,
+  creationListed,
   creationPartition,
   creationSummary,
 } from "./ticketCreationFixture.ts";
@@ -84,15 +87,26 @@ function creationAnswers(
 const chuggy = "https://forge.test/kasofsk/chuggy";
 const scratch = "https://forge.test/gdoteof/scratch";
 
-function bindings(...repositories: readonly string[]): Answer {
-  return ok({
-    repositories: repositories.map((repository) => ({
-      repository,
-      boundAt: "2026-08-26T00:00:00Z",
-      landing: { mode: "Push" },
-      configured: true,
-    })),
-  });
+/** A binding whose repository declared names into the project. */
+function imported(repository: string): ProjectRepositoryListedResponse {
+  return creationListed(creationBinding(repository), "Imported");
+}
+
+/** A binding whose repository declares nothing, bound when the case says. */
+function bootstrapped(
+  repository: string,
+  boundAt: string,
+): ProjectRepositoryListedResponse {
+  return {
+    ...creationListed(creationBinding(repository), "Bootstrapped"),
+    boundAt,
+  };
+}
+
+function bindings(
+  ...repositories: readonly ProjectRepositoryListedResponse[]
+): Answer {
+  return ok({ repositories });
 }
 
 /** The initialization of whichever revision the path names. */
@@ -164,7 +178,7 @@ const declaredPage = {
  * one a context holding a single configuration took for every ticket.
  */
 test("a repository declaring several is read as each of them, with its own initialization", async () => {
-  const held = project(() => declaredPage, bindings(chuggy));
+  const held = project(() => declaredPage, bindings(imported(chuggy)));
   const read = await readCreationContext(held.ports, creationPartition);
   if (read.outcome !== "Ok" || read.value.context !== "Ready")
     throw new Error("the context was not ready");
@@ -190,26 +204,19 @@ test("a repository declaring several is read as each of them, with its own initi
  * for a repository and what landing it starts on are both theirs to say, and
  * neither is the initialization's. */
 test("the context carries what the project binds", async () => {
-  const held = project(() => configurationsPage, bindings(chuggy));
+  const held = project(() => declaredPage, bindings(imported(chuggy)));
   const read = await readCreationContext(held.ports, creationPartition);
   expect(
     read.outcome === "Ok" && read.value.context === "Ready"
       ? read.value.repositories
       : undefined,
-  ).toStrictEqual([
-    {
-      repository: chuggy,
-      boundAt: "2026-08-26T00:00:00Z",
-      landing: { mode: "Push" },
-      configured: true,
-    },
-  ]);
+  ).toStrictEqual([imported(chuggy)]);
 });
 
 test("a project with a repository and no ready revision says exactly that", async () => {
   const held = project(
     () => ({ configurations: [creationSummary("r4", "Incomplete")] }),
-    bindings(chuggy),
+    bindings(imported(chuggy)),
   );
   const read = await readCreationContext(held.ports, creationPartition);
   expect(read.outcome === "Ok" && read.value.context).toBe(
@@ -240,66 +247,119 @@ test("a walk that runs out of budget knows nothing about the project", async () 
   ).toBe(configurationPagesMax);
 });
 
+function offeredOf(
+  read: Awaited<ReturnType<typeof readCreationContext>>,
+): unknown {
+  return read.outcome === "Ok" && read.value.context === "Ready"
+    ? [read.value.partial, read.value.offers.map((offer) => offer.name)]
+    : read;
+}
+
 /**
- * A second bound repository whose declarations the budget never reached is
- * indistinguishable from one that declares nothing, so the offers drawn from
- * the first are handed over with the walk's shortfall beside them.
+ * A second bound repository that declares, whose rows the budget never
+ * reached, may declare anything: the offers drawn from the first are handed
+ * over with the walk's shortfall beside them.
  */
-test("a walk the budget stopped with something to offer says it stopped", async () => {
+test("a declaring binding the budget never reached leaves the read short, and says so", async () => {
   const held = project(
     (path) =>
       path.includes("cursor=")
         ? { configurations: [], nextCursor: "next" }
         : declaredPage,
-    bindings(chuggy, scratch),
+    bindings(imported(chuggy), imported(scratch)),
   );
   const read = await readCreationContext(held.ports, creationPartition);
+  expect(offeredOf(read)).toStrictEqual([
+    true,
+    ["development", "development-sonnet"],
+  ]);
   expect(
-    read.outcome === "Ok" && read.value.context === "Ready"
-      ? [read.value.partial, read.value.offers.map((offer) => offer.name)]
-      : undefined,
-  ).toStrictEqual([true, ["development", "development-sonnet"]]);
+    held.calls.filter((call) => call.includes("/configurations")).length,
+  ).toBe(configurationPagesMax);
+});
+
+const fabric = "https://forge.test/gdoteof/chuggy-fabric";
+
+/**
+ * One project's listing, whose first page is the declaring repository's two
+ * newest imports, written when the case says, and whose bootstrap is its
+ * oldest row, pages on. Nothing here reads past the first page, so the pages
+ * after it are not written.
+ */
+function declaringProject(
+  bound: readonly ProjectRepositoryListedResponse[],
+  createdAt: string,
+  bootstrap: Answer | undefined = undefined,
+): ReturnType<typeof answering> {
+  const page = {
+    configurations: declaredPage.configurations.map((row) => ({
+      ...row,
+      createdAt,
+    })),
+    nextCursor: "next",
+  };
+  return answering((_method, path) => {
+    if (path.endsWith("/repositories")) return bindings(...bound);
+    if (path.includes("/configurations")) return ok(page);
+    return path.endsWith("/bootstrap") && bootstrap !== undefined
+      ? bootstrap
+      : initialization(path);
+  });
+}
+
+const firstPageAndOffers = [
+  `GET ${partitionBase}/repositories`,
+  `GET ${partitionBase}/configurations`,
+  `GET ${partitionBase}/draft-initializations/bootstrap`,
+  `GET ${partitionBase}/draft-initializations/n-development`,
+  `GET ${partitionBase}/draft-initializations/n-sonnet`,
+];
+
+/**
+ * One repository declaring, one bound declaring nothing long before any row
+ * the first page holds, and three bound today. None that declares nothing is
+ * waited on, so the walk is one page, and the bootstrap they share is read once.
+ */
+test("bindings that declare nothing, however old, cost the walk nothing and are offered the bootstrap", async () => {
+  const today = "2026-10-07 08:00:00.5+00";
+  const held = declaringProject(
+    [
+      imported(chuggy),
+      bootstrapped(fabric, "2026-09-10 00:00:00+00"),
+      bootstrapped(scratch, today),
+      bootstrapped("https://forge.test/kasofsk/chuggy-common", today),
+      bootstrapped("https://forge.test/kasofsk/chuggy-linux", today),
+    ],
+    "2026-10-07 09:00:00.123456+00",
+  );
+  const read = await readCreationContext(held.ports, creationPartition);
+  expect(offeredOf(read)).toStrictEqual([
+    false,
+    ["bootstrap", "development", "development-sonnet"],
+  ]);
+  expect(held.calls).toStrictEqual(firstPageAndOffers);
 });
 
 /**
- * A second repository bound declaring nothing, after everything the first
- * declared but its newest import: the bind's bootstrap is offered beside the
- * declared names, and the first page says all there is to say of both.
+ * A project whose first repository was bound declaring nothing, so that its
+ * bootstrap was authored then, and declares now; a second is bound declaring
+ * nothing. The bootstrap is older than every row the walk reads, and is read
+ * by the revision the second binding's answer names and not looked for.
  */
-test("a binding that declares nothing is read as the bootstrap, and holds the walk no further than its bind", async () => {
-  const boundLater = "2026-09-01 00:00:00.123456+00";
-  const since = "2026-09-02 00:00:00.5+00";
-  const [sonnet, development, ...before] = declaredPage.configurations;
-  const held = project(
-    () => ({
-      configurations: [
-        { ...creationSummary("bootstrap", "Ready"), createdAt: since },
-        { ...sonnet, createdAt: since },
-        { ...development, createdAt: since },
-        ...before,
-      ],
-      nextCursor: "next",
-    }),
-    ok({
-      repositories: [
-        { repository: chuggy, boundAt: "2026-08-26T00:00:00Z" },
-        { repository: scratch, boundAt: boundLater },
-      ].map((bound) => ({
-        ...bound,
-        landing: { mode: "Push" },
-        configured: true,
-      })),
-    }),
+test("a bootstrap older than everything the walk reads is still what a later binding is offered", async () => {
+  const held = declaringProject(
+    [
+      { ...imported(chuggy), boundAt: "2026-08-01 00:00:00+00" },
+      bootstrapped(scratch, "2026-10-07 00:00:00+00"),
+    ],
+    "2026-09-10 00:00:00+00",
   );
   const read = await readCreationContext(held.ports, creationPartition);
-  expect(
-    read.outcome === "Ok" && read.value.context === "Ready"
-      ? [read.value.partial, read.value.offers.map((offer) => offer.name)]
-      : undefined,
-  ).toStrictEqual([false, ["bootstrap", "development", "development-sonnet"]]);
-  expect(
-    held.calls.filter((call) => call.includes("/configurations")),
-  ).toStrictEqual([`GET ${partitionBase}/configurations`]);
+  expect(offeredOf(read)).toStrictEqual([
+    false,
+    ["bootstrap", "development", "development-sonnet"],
+  ]);
+  expect(held.calls).toStrictEqual(firstPageAndOffers);
 });
 
 /** Every offer is a request, so a repository declaring more than one read
@@ -315,7 +375,7 @@ test("a read draws no more offers than its bound, and says so past it", async ()
         .toReversed()
         .map((name) => creationDeclared(`n-${name}`, chuggy, name)),
     }),
-    bindings(chuggy),
+    bindings(imported(chuggy)),
   );
   const read = await readCreationContext(held.ports, creationPartition);
   if (read.outcome !== "Ok" || read.value.context !== "Ready")
@@ -345,34 +405,58 @@ test("not knowing, there being none and there being nowhere are drawn as three w
   expect(sentences[2]).toContain(String(configurationPagesMax));
 });
 
-const unavailable: Answer = {
-  status: 503,
-  body: { error: { code: "Unavailable" } },
-};
+const refusal = (status: number, code: string): Answer => ({
+  status,
+  body: { error: { code } },
+});
+
+const unavailable = refusal(503, "Unavailable");
 
 /** A form is as drawable under the offers that were read as under all of
  * them, so one that was not is left out and the shortfall said. */
 test("an offer whose initialization cannot be read is left out, and the read says so", async () => {
   const held = answering((_method, path) => {
-    if (path.endsWith("/repositories")) return bindings(chuggy);
+    if (path.endsWith("/repositories")) return bindings(imported(chuggy));
     if (path.includes("/configurations")) return ok(declaredPage);
     return path.endsWith("/n-sonnet") ? unavailable : initialization(path);
   });
   const read = await readCreationContext(held.ports, creationPartition);
-  expect(
-    read.outcome === "Ok" && read.value.context === "Ready"
-      ? [read.value.partial, read.value.offers.map((offer) => offer.name)]
-      : undefined,
-  ).toStrictEqual([true, ["development"]]);
+  expect(offeredOf(read)).toStrictEqual([true, ["development"]]);
 });
 
-test("offers of which none can be read are the failure, not a form with nothing to choose", async () => {
+/** The listing of bindings said the project holds a bootstrap, so one that
+ * cannot be read is an offer left out like any other, whatever the refusal. */
+test.each([
+  ["is unavailable", unavailable],
+  ["is not found", refusal(404, "NotFound")],
+])(
+  "a bootstrap whose read %s is left out, and the read says so",
+  async (_ending, answered) => {
+    const held = declaringProject(
+      [imported(chuggy), bootstrapped(scratch, "2026-10-07 00:00:00+00")],
+      "2026-09-10 00:00:00+00",
+      answered,
+    );
+    const read = await readCreationContext(held.ports, creationPartition);
+    expect(offeredOf(read)).toStrictEqual([
+      true,
+      ["development", "development-sonnet"],
+    ]);
+  },
+);
+
+/** With nothing to draw a form under, why is the first offer's to say: the
+ * offers are read in name order, and so is what went wrong with them. */
+test("offers of which none can be read are the first one's failure, not a form with nothing to choose", async () => {
   const held = answering((_method, path) => {
-    if (path.endsWith("/repositories")) return bindings(chuggy);
-    return path.includes("/configurations") ? ok(declaredPage) : unavailable;
+    if (path.endsWith("/repositories")) return bindings(imported(chuggy));
+    if (path.includes("/configurations")) return ok(declaredPage);
+    return path.endsWith("/n-development")
+      ? refusal(500, "InternalError")
+      : refusal(404, "NotFound");
   });
   const read = await readCreationContext(held.ports, creationPartition);
-  expect(read.outcome).toBe("Retryable");
+  expect(read.outcome).toBe("Fault");
 });
 
 /** A project whose bindings went unread is not one that binds nothing: read

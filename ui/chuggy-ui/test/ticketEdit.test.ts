@@ -30,6 +30,7 @@ import {
   creationDeclared,
   creationDraft,
   creationInitialization,
+  creationListed,
   creationOffer,
   creationOffers,
   creationSummary,
@@ -266,7 +267,9 @@ test("an edit of a draft at an offered revision starts on the name that offer is
       creationDeclared("s-development", elsewhere, "development"),
       creationDeclared("n-development", repository, "development"),
     ],
-    [creationBinding(repository), creationBinding(elsewhere)],
+    [repository, elsewhere].map((one) =>
+      creationListed(creationBinding(one), "Imported"),
+    ),
   );
   const shared = offered.map((one) => ({
     ...creationOffer(one.listed),
