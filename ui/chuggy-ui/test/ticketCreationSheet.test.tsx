@@ -7,6 +7,7 @@
  * no suite here runs one.
  */
 
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
@@ -17,8 +18,10 @@ import {
   creationBinding,
   creationForm,
   creationInitialization,
+  creationPartition,
   creationSummary,
 } from "./ticketCreationFixture.ts";
+import { answeringApi } from "./answeringApi.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import { sheetDeclared, sheetNarrowCondition, sheetRules } from "./sheet.ts";
 
@@ -70,17 +73,23 @@ function drawEveryRow(dependenciesLocked: boolean): HTMLElement {
     [binding],
   );
   const { container } = render(
-    <div className="creation">
-      <CreationFields
-        form={form}
-        onChange={() => undefined}
-        faults={[]}
-        configuration={creationSummary("r3", "Ready")}
-        initialization={{ ...creationInitialization, commandedCheckStage: 1 }}
-        repositories={[binding]}
-        dependenciesLocked={dependenciesLocked}
-      />
-    </div>,
+    <QueryClientProvider client={new QueryClient()}>
+      <div className="creation">
+        <CreationFields
+          form={form}
+          onChange={() => undefined}
+          faults={[]}
+          configuration={creationSummary("r3", "Ready")}
+          initialization={{ ...creationInitialization, commandedCheckStage: 1 }}
+          repositories={[binding]}
+          dependenciesLocked={dependenciesLocked}
+          api={{
+            ports: answeringApi(() => ({ status: 404, body: {} })).ports,
+            partition: creationPartition,
+          }}
+        />
+      </div>
+    </QueryClientProvider>,
   );
   fireEvent.click(screen.getByRole("button", { name: "Advanced" }));
   return container;

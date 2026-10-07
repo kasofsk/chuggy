@@ -24,6 +24,7 @@ const context: TicketYamlContext = {
   initialization: creationInitialization,
   repositories: [],
   dependenciesLocked: false,
+  images: [],
 };
 
 function readForm(text: string, over: Partial<TicketYamlContext> = {}) {
@@ -198,6 +199,36 @@ test("a dependency named twice is refused at the dependencies", () => {
       from: text.indexOf("[7"),
       to: text.indexOf("]") + 1,
       message: "ticket 7 is named twice",
+    },
+  ]);
+});
+
+/** The YAML carries what the form attached, by identity, and nothing else:
+ * an identity the screen never held is refused at its key. */
+test("images are written by identity and read back as the same form", () => {
+  const over = { ...context, images: ["artifact-1", "artifact-2"] };
+  const form = creationForm({ images: ["artifact-2", "artifact-1"] });
+  const text = ticketYamlOf(form, over);
+  expect(text).toContain("images:\n  - artifact-2\n  - artifact-1\n");
+  const read = ticketYamlRead(text, over);
+  expect(read.problems).toStrictEqual([]);
+  expect(read.form).toStrictEqual(form);
+  expect(
+    ticketYamlRead(text.replace("  - artifact-1\n", ""), over).form?.images,
+  ).toStrictEqual(["artifact-2"]);
+  expect(readForm("intent: y\n", over).form?.images).toStrictEqual([]);
+});
+
+test("an image the screen does not hold is a problem at that key", () => {
+  const text = "intent: y\nimages:\n  - artifact-9\n";
+  const read = readForm(text, { images: ["artifact-1"] });
+  expect(read.form).toBeUndefined();
+  expect(read.problems).toStrictEqual([
+    {
+      from: text.indexOf("- artifact-9"),
+      to: text.length,
+      message:
+        "`artifact-9` names no image attached to this ticket; attach images in the form",
     },
   ]);
 });
