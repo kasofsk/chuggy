@@ -13,6 +13,7 @@ import {
   briefBranchCharsMax,
   briefBranchPrefix,
   briefChecksMax,
+  briefImagesMax,
   briefIntentCharsMax,
   briefLineCharsMax,
   briefLinkScheme,
@@ -762,4 +763,31 @@ test("a form landing on None is not refused for a target it neither draws nor se
   expect(draftCreationSchema.parse(assembled.body)).toStrictEqual(
     assembled.body,
   );
+});
+
+/** An image is carried by the identity its upload answered, and a form
+ * attaching none sends no list. */
+test("the images a form holds are the brief's, by identity, and bounded", () => {
+  const assembled = creationBodyFrom(
+    creationInitialization,
+    creationForm({ images: ["artifact-1", "artifact-2"] }),
+    noBindings,
+  );
+  expect(
+    assembled.assembled === "Body" && assembled.body.brief.images,
+  ).toStrictEqual(["artifact-1", "artifact-2"]);
+  const none = creationBodyFrom(
+    creationInitialization,
+    creationForm(),
+    noBindings,
+  );
+  expect(none.assembled === "Body" && "images" in none.body.brief).toBe(false);
+  const many = Array.from(
+    { length: briefImagesMax + 1 },
+    (_, at) => `artifact-${String(at)}`,
+  );
+  expect(faultFields(creationForm({ images: many }))).toStrictEqual(["images"]);
+  expect(faultReasons(creationForm({ images: many }))).toStrictEqual([
+    `one ticket carries at most ${String(briefImagesMax)} images`,
+  ]);
 });

@@ -3,9 +3,9 @@
  * asked about.
  *
  * What is visible is what only a person can state — the title, the intent, what
- * to read first, the check lines this ticket adds where its configuration
- * commands a stage for them, the branch the work happens on and the one it
- * lands on; the rest is prefilled behind the disclosure. Submit creates the
+ * to read first, the images it carries, the check lines this ticket adds where
+ * its configuration commands a stage for them, the branch the work happens on
+ * and the one it lands on; the rest is prefilled behind the disclosure. Submit creates the
  * draft and releases it in one motion, and the navigation happens on a settled
  * success alone, so a screen never hands a reader a ticket the projection has
  * not got to yet. Every other ending is drawn here with its reason and the form
@@ -72,6 +72,8 @@ import { drawBytes } from "./ports.ts";
 import { operationIdBytesCount } from "../core/operationFollow.ts";
 import { TopBarSlot } from "./shell/slots.tsx";
 import { TicketCreationAdvanced } from "./TicketCreationAdvanced.tsx";
+import { CreationImages } from "./TicketCreationImages.tsx";
+import type { CreationImagesApi } from "./TicketCreationImages.tsx";
 import { Button } from "./ui/Button.tsx";
 import { EmptyState } from "./ui/EmptyState.tsx";
 import { Notice } from "./ui/Notice.tsx";
@@ -433,6 +435,7 @@ export function CreationFields(
     readonly initialization: DraftInitializationResponse;
     readonly repositories: readonly ProjectRepositoryResponse[];
     readonly dependenciesLocked?: boolean;
+    readonly api: CreationImagesApi;
   },
 ): ReactNode {
   const { faults, form, initialization, onChange } = props;
@@ -452,6 +455,8 @@ export function CreationFields(
       <Fault field="intent" faults={faults} />
       <Links form={form} onChange={onChange} />
       <Fault field="links" faults={faults} />
+      <CreationImages form={form} onChange={onChange} api={props.api} />
+      <Fault field="images" faults={faults} />
       {initialization.commandedCheckStage === undefined ? null : (
         <>
           <Checks form={form} onChange={onChange} />
@@ -646,6 +651,7 @@ export function CreationForm(props: {
             configuration={props.context.configuration}
             initialization={initialization}
             repositories={repositories}
+            api={props}
           />
         }
       />

@@ -8,8 +8,9 @@
  * must not reach back into this document.
  */
 
-import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, expect, test } from "vitest";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, expect, test, vi } from "vitest";
 
 import {
   ticketResponseSchema,
@@ -17,11 +18,18 @@ import {
 } from "../../../src/contract/responses.ts";
 import type { PanelState } from "../app/core/freshness.ts";
 import { TicketBrief } from "../app/browser/TicketProvenance.tsx";
+import { SessionProvider } from "../app/browser/session.tsx";
+import { answer, holderDouble } from "./screenHarness.tsx";
 import { ticketInstants } from "./ticketInstants.ts";
 
 /** The runner has no globals, so the tree one case rendered is torn down here
  * rather than by the library's own hook. */
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
+
+const briefPartition = { tenant: "acme", project: "atlas" };
 
 /** Ticket 7 as its own read answers it, with the brief it was released with. */
 function released(brief?: TicketResponse["brief"]): PanelState<TicketResponse> {
@@ -42,6 +50,7 @@ function released(brief?: TicketResponse["brief"]): PanelState<TicketResponse> {
 test("a brief is drawn as its intent, its links and its branch", () => {
   render(
     <TicketBrief
+      partition={briefPartition}
       state={released({
         intent: "make the console show a ticket",
         links: ["https://example.test/one", "https://example.test/two"],
@@ -61,6 +70,7 @@ test("a brief is drawn as its intent, its links and its branch", () => {
 test("a link this console did not write cannot reach back through what it opens", () => {
   render(
     <TicketBrief
+      partition={briefPartition}
       state={released({
         intent: "an intent",
         links: ["https://example.test/one"],
@@ -74,6 +84,7 @@ test("a link this console did not write cannot reach back through what it opens"
 test("the check lines a brief appends are drawn one per line, in order", () => {
   render(
     <TicketBrief
+      partition={briefPartition}
       state={released({
         intent: "an intent",
         links: [],
@@ -105,6 +116,7 @@ test("the lines a brief appends survive the wire's own parse into the panel", ()
   };
   render(
     <TicketBrief
+      partition={briefPartition}
       state={{
         state: "Ready",
         observedAtMs: 0,
@@ -119,14 +131,24 @@ test("the lines a brief appends survive the wire's own parse into the panel", ()
 });
 
 test("a brief appending no check lines says so rather than drawing an empty list", () => {
-  render(<TicketBrief state={released({ intent: "an intent", links: [] })} />);
+  render(
+    <TicketBrief
+      partition={briefPartition}
+      state={released({ intent: "an intent", links: [] })}
+    />,
+  );
   expect(screen.getByText("checks").nextElementSibling?.textContent).toBe(
     "none",
   );
 });
 
 test("a brief with no branch says so rather than drawing an empty field", () => {
-  render(<TicketBrief state={released({ intent: "an intent", links: [] })} />);
+  render(
+    <TicketBrief
+      partition={briefPartition}
+      state={released({ intent: "an intent", links: [] })}
+    />,
+  );
   expect(screen.queryAllByRole("link")).toEqual([]);
   expect(screen.getByText("branch").nextElementSibling?.textContent).toBe(
     "none",
@@ -142,6 +164,7 @@ function landingLine(): string | undefined {
 test("a brief that names where its work lands draws that reference too", () => {
   render(
     <TicketBrief
+      partition={briefPartition}
       state={released({
         intent: "an intent",
         links: [],
@@ -158,6 +181,7 @@ test("a brief that names where its work lands draws that reference too", () => {
 test("a brief proposing its work into a reference does not say it lands there", () => {
   render(
     <TicketBrief
+      partition={briefPartition}
       state={released({
         intent: "an intent",
         links: [],
@@ -175,6 +199,7 @@ test("a brief proposing its work into a reference does not say it lands there", 
 test("a brief carrying no finalization draws no landing at all", () => {
   render(
     <TicketBrief
+      partition={briefPartition}
       state={released({
         intent: "an intent",
         links: [],
@@ -190,6 +215,7 @@ test("a brief carrying no finalization draws no landing at all", () => {
 test("a finalization naming no reference is still read back as its mode", () => {
   render(
     <TicketBrief
+      partition={briefPartition}
       state={released({
         intent: "an intent",
         links: [],
@@ -202,8 +228,45 @@ test("a finalization naming no reference is still read back as its mode", () => 
 });
 
 test("a ticket with no brief says why, and draws no empty intent", () => {
-  render(<TicketBrief state={released()} />);
+  render(<TicketBrief partition={briefPartition} state={released()} />);
   expect(screen.getByText(/released before a brief was kept/u)).toBeDefined();
   expect(screen.queryByText("intent")).toBeNull();
   expect(screen.queryAllByRole("link")).toEqual([]);
+});
+
+/** Each image is read through the project's own authenticated read and drawn
+ * from a `data:` URI of what it answered, the only image source the console's
+ * document admits. */
+test("a brief's images are drawn as images, from the project's read of each", async () => {
+  const read: string[] = [];
+  vi.stubGlobal("fetch", (url: string) => {
+    read.push(url);
+    return Promise.resolve(
+      answer({ content: "AQID", mediaType: "image/png", encoding: "base64" }),
+    );
+  });
+  render(
+    <SessionProvider holder={holderDouble()}>
+      <QueryClientProvider client={new QueryClient()}>
+        <TicketBrief
+          partition={briefPartition}
+          state={released({
+            intent: "an intent",
+            links: [],
+            images: ["artifact-1", "artifact-2"],
+          })}
+        />
+      </QueryClientProvider>
+    </SessionProvider>,
+  );
+  await waitFor(() => {
+    expect(screen.getAllByRole("img")).toHaveLength(2);
+  });
+  expect(
+    screen.getAllByRole("img").map((image) => image.getAttribute("src")),
+  ).toStrictEqual(["data:image/png;base64,AQID", "data:image/png;base64,AQID"]);
+  expect(read.map((url) => url.split("/").at(-1))).toStrictEqual([
+    "artifact-1",
+    "artifact-2",
+  ]);
 });
