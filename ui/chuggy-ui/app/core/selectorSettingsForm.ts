@@ -366,7 +366,8 @@ export function selectorSettingsSection(
     case "basePrompt":
       return {
         title: "Base prompt",
-        about: "The lead's instructions at the start of every turn.",
+        about:
+          "The lead's system prompt. An edit replaces the lead at its next decision.",
       };
     case "limits":
       return { title: "Limits", about: "What one decision may spend." };

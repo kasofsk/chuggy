@@ -43,6 +43,7 @@ import { migration028 } from "../../src/adapters/postgres/schema/migrations/028-
 import { migration029 } from "../../src/adapters/postgres/schema/migrations/029-project-execution-placement.ts";
 import { migration032 } from "../../src/adapters/postgres/schema/migrations/032-session-placement.ts";
 import { migration034 } from "../../src/adapters/postgres/schema/migrations/034-held-proposal-currency.ts";
+import { migration042 } from "../../src/adapters/postgres/schema/migrations/042-lead-succession.ts";
 import {
   postgresForgeInstallationClaims,
   postgresForgeInstallations,
@@ -65,6 +66,8 @@ import {
   acceptanceFunction,
   apiRole,
   boundaryOwnerRole,
+  leadCloseFunction,
+  leadSessionFunction,
   configurationImporterRole,
   draftCreateFunction,
   draftReleaseFunction,
@@ -9661,6 +9664,87 @@ test("034 ends every held row of a decision naming a ticket that already moved, 
       (await subject.query(`SELECT 1 FROM selector_proposal_review`)).rows,
       [],
       "a review nobody gave",
+    );
+  });
+});
+
+/** A lead holding objectives and two answered decision turns, as an installation before 042 holds it. */
+const measuredLeadSeed = `
+  ${tenantSeed("tenant-42")}
+  INSERT INTO project(tenant,project,lifecycle) VALUES('tenant-42','project-42','Active');
+  INSERT INTO execution_cluster(cluster,slots_max,policy_revision)
+  VALUES('cluster-42',1,1);
+  INSERT INTO capacity_account(account,cluster,reserved,maximum,policy_revision)
+  VALUES('account-42','cluster-42',0,1,1);
+  INSERT INTO agent_session
+    (tenant,project,session,kind,principal,capabilities,credential_slot,account,
+     cluster,system_prompt)
+  VALUES('tenant-42','project-42','lead-42','Lead','principal-42','{}',
+         'slot-42','account-42','cluster-42','objectives-42');
+  INSERT INTO session_turn(tenant,project,session,turn,ordinal,input_kind,input,
+    route,state,ended_at,result,model,tokens,cost_micros,duration_ms,tools)
+  VALUES
+    ('tenant-42','project-42','lead-42','turn-42-a',1,'Observation','{}',
+     'InCluster','Answered',now(),'{}','model-42',700,1,1,'{}'),
+    ('tenant-42','project-42','lead-42','turn-42-b',2,'Observation','{}',
+     'InCluster','Answered',now(),'{}','model-42',900,1,1,'{}')`;
+
+test("042 widens the lead read to its objectives and newest decision measure, and grants the selector its closing door alone", async () => {
+  await migrationDatabase("lead_succession", async (subject) => {
+    const close = `${leadCloseFunction}(text,text,text)`;
+    await installationBefore(subject, migration042.version);
+    await subject.query(measuredLeadSeed);
+    assert.equal(await migrationHasFunction(subject, close), false);
+    assert.ok((await postgresMigrate(subject)).includes(migration042.version));
+    assert.deepEqual(
+      (
+        await subject.query(
+          `SELECT session,state,agent_reference,system_prompt,tokens::int
+             FROM ${leadSessionFunction}('tenant-42','project-42')`,
+        )
+      ).rows,
+      [
+        {
+          session: "lead-42",
+          state: "Open",
+          agent_reference: null,
+          system_prompt: "objectives-42",
+          tokens: 900,
+        },
+      ],
+    );
+    assert.deepEqual(
+      (
+        await subject.query(
+          `SELECT p.oid::regprocedure::text AS signature,
+                  pg_get_userbyid(p.proowner) AS owner, p.prosecdef AS definer,
+                  array_to_string(p.proconfig,',') AS settings,
+                  has_function_privilege($2,p.oid,'EXECUTE') AS selector,
+                  has_function_privilege($3,p.oid,'EXECUTE') AS api,
+                  has_function_privilege($4,p.oid,'EXECUTE') AS scheduler,
+                  has_function_privilege('public',p.oid,'EXECUTE') AS public
+             FROM pg_proc p
+            WHERE p.oid IN (to_regprocedure($1), to_regprocedure($5))
+            ORDER BY p.proname`,
+          [
+            close,
+            selectorServiceRole,
+            apiRole,
+            schedulerRole,
+            `${leadSessionFunction}(text,text)`,
+          ],
+        )
+      ).rows,
+      [close, `${leadSessionFunction}(text,text)`].map((signature) => ({
+        signature,
+        owner: boundaryOwnerRole,
+        definer: true,
+        settings: "search_path=pg_catalog, public, pg_temp",
+        selector: true,
+        api: false,
+        scheduler: false,
+        public: false,
+      })),
     );
   });
 });

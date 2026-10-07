@@ -570,6 +570,12 @@ export const dispatchViewPageLimitMax = 100;
 /** How many of its own past decisions a fresh lead is seeded with. */
 export const leadSeedingDecisionsMax = 16;
 
+/**
+ * What a lead's newest decision turn may spend before the lead is replaced by
+ * a seeded successor, as the pod measures it.
+ */
+export const leadTurnTokensMax = 1_000_000;
+
 /** How many decisions may fail on one dispatch view, the last of which consumes it unanswered. */
 export const selectorFailedDecisionsPerViewMax = 3;
 

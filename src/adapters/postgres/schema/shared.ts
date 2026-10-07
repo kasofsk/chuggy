@@ -159,6 +159,7 @@ export const agenticRefusalStandingAmongFunction =
   "standing_agentic_refusals_among";
 export const leadOpenFunction = "open_project_lead";
 export const leadSessionFunction = "lead_session";
+export const leadCloseFunction = "close_project_lead";
 export const leadTurnEnqueueFunction = "enqueue_lead_turn";
 export const leadTurnReadFunction = "read_lead_turn";
 export const leadTurnWithdrawFunction = "withdraw_lead_turn";

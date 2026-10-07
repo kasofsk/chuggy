@@ -15,12 +15,15 @@ import { after, before, test } from "node:test";
 import { leadSessionMint } from "../../src/adapters/crypto/leadSessionMint.ts";
 import { postgresSelectorState } from "../../src/adapters/postgres/selector.ts";
 import { postgresSessionRouteReads } from "../../src/adapters/postgres/sessionPlacement.ts";
+import { leadTurnTokensMax } from "../../src/contract/http.ts";
+import type { SessionId } from "../../src/interpreter/agentSession.ts";
 import { threadStandingRulesDefault } from "../../src/contract/threadSeeding.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
 import {
   leadSelectorPolicy,
   type LeadPolicyClock,
 } from "../../src/interpreter/leadPolicyHost.ts";
+import { leadSystemPrompt } from "../../src/interpreter/leadTools.ts";
 import { parseLeadObservation } from "../../src/interpreter/leadTurn.ts";
 import { asOperationId } from "../../src/interpreter/operationInbox.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
@@ -34,10 +37,15 @@ import {
 import { selectorPolicyHost } from "../../src/interpreter/selectorPolicyHost.ts";
 import { postgresHarnessSelectorContext } from "./harness.ts";
 import {
+  leadRigDecision,
   leadRigOpen,
   leadRigPod,
+  leadRigPodAttempt,
+  leadRigPodTurn,
   leadRigHostedAccess,
+  leadRigMeasured,
   leadRigProject,
+  leadRigSuccessor,
   type LeadRig,
 } from "./leadHarness.ts";
 import {
@@ -197,6 +205,9 @@ async function leadProject(label: string) {
   const partition = await leadRigProject(rig, label);
   const session = await sessionRigSession(rig.sessions, partition, label, {
     kind: "Lead",
+    systemPrompt: leadSystemPrompt({
+      basePrompt: "choose a dispatchable ticket",
+    }),
   });
   return { partition, session };
 }
@@ -218,6 +229,7 @@ async function runOneDecision(
   label: string,
   observation: SelectorObservation,
   dispatchesPerDecision = 1,
+  state: SelectorProjectState = initialState(partition),
 ) {
   const store = postgresSelectorState(rig.selectorPool);
   const identity = {
@@ -237,7 +249,7 @@ async function runOneDecision(
     projectSettingsRevision: settings.projectRevision,
   });
   const proposal = await runObservedSelectorCycle(
-    initialState(partition),
+    state,
     observation,
     readOnce,
     rig.writes,
@@ -279,9 +291,10 @@ test("a moved project takes one turn, and the decision lands whole", async () =>
       "the lead is shown the window that triggered its turn",
     );
     assert.deepEqual(observed.handoffNote, observation.handoffNote);
-    assert.ok(
-      observed.instructions?.content.includes("choose a dispatchable ticket"),
-      "the composed objectives carry the project's own base prompt",
+    assert.equal(
+      observed.instructions,
+      undefined,
+      "the composed objectives are the lead's system prompt and not the turn's",
     );
     return {
       version: 1,
@@ -459,5 +472,91 @@ test("a withdrawn turn cannot be answered, and reconciles with a proof", async (
     termination.status === "Terminated" ? termination.proof : "",
     /AlreadyEnded/u,
     "a process that never offered the turn still settles it from the row",
+  );
+});
+
+/**
+ * A lead whose one decision turn spent over the bound, and the record its
+ * project holds beside it: a cursor and one standing refusal.
+ */
+async function leadSpentWithARecord(
+  partition: Partition,
+  session: SessionId,
+): Promise<void> {
+  await rig.mailbox.offer({
+    partition,
+    turn: sessionRigTurnId("replaced-spent"),
+    input: "{}",
+    route: "InCluster",
+  });
+  const pod = await leadRigPodAttempt(rig, partition, session, "replaced");
+  await leadRigPodTurn(rig, pod, "replaced", () => ({}), {
+    ...leadRigMeasured,
+    tokens: leadTurnTokensMax + 1,
+  });
+  const first = await leadRigDecision(rig, partition, "replaced", {
+    notificationCursor: 12,
+  });
+  await rig.writes.record({
+    partition,
+    decision: first,
+    refusals: [{ ticket: asTicketId(43), ticketVersion: 1, reason: "not yet" }],
+    lifts: [],
+  });
+}
+
+test("a decision after a replacement is recorded as any is, on the cursor and refusals its predecessor left", async () => {
+  const { partition, session } = await leadProject("replaced");
+  await leadSpentWithARecord(partition, session);
+  const store = postgresSelectorState(rig.selectorPool);
+  const left = await store.project(partition);
+  assert.equal(left?.notificationCursor, 12);
+
+  const observation = {
+    ...observationOf(partition, 13),
+    refusals: await rig.selectorStanding.standingAmong(partition, [
+      asTicketId(43),
+    ]),
+  };
+  const answering = (async () => {
+    const successor = await leadRigSuccessor(rig, partition, session);
+    await leadRigPod(rig, partition, successor, "replaced-heir", (input) => {
+      assert.deepEqual(
+        parseLeadObservation(input).seeding?.refusals.map(
+          (refusal) => refusal.ticket,
+        ),
+        [43],
+        "the successor is shown the refusal its predecessor left",
+      );
+      return {
+        version: 1,
+        dispatches: [{ ticket: 41, expectedTicketVersion: 3 }],
+        refusals: [],
+        lifts: [],
+        attention: "Monitoring",
+        handoffNote: {},
+      };
+    });
+  })();
+  const { proposal } = await runOneDecision(
+    partition,
+    "replaced",
+    observation,
+    1,
+    left ?? initialState(partition),
+  );
+  await answering;
+  assert.deepEqual(
+    proposal?.proposals.dispatches.map((dispatch) => dispatch.command.ticket),
+    [41],
+  );
+  assert.equal((await store.history(partition, undefined, 10)).length, 2);
+  assert.equal((await store.project(partition))?.notificationCursor, 13);
+  assert.deepEqual(
+    (await rig.selectorStanding.standingAmong(partition, [asTicketId(43)])).map(
+      (refusal) => refusal.ticket,
+    ),
+    [43],
+    "the ledger is the project's and outlives the lead that wrote it",
   );
 });

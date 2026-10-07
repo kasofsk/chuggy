@@ -1,5 +1,5 @@
 /**
- * The doors the selector's own role has onto one project's lead: the four its
+ * The doors the selector's own role has onto one project's lead: the ones its
  * mailbox is, and the one that moves the objectives the lead holds. Every port
  * here is declared in `src/interpreter/`; this module says how PostgreSQL
  * answers them and declares nothing of its own.
@@ -11,6 +11,8 @@
  * granted here. `open_project_lead` names the identity it is about to write and
  * no other: it inserts under a kind and a roster of its own, so an identity
  * already taken is refused by the row rather than reached through.
+ * `close_project_lead` names the lead the caller read, and closes it only where
+ * it is still this project's open `Lead`.
  *
  * A TURN'S IDENTITY IS THE DECISION'S, so `offer` is idempotent without this
  * file doing anything: a retry of one decision finds the turn it already
@@ -35,6 +37,7 @@ import {
   type LeadSystemPromptSet,
 } from "../../interpreter/agentSession.ts";
 import type {
+  LeadClosed,
   LeadMailbox,
   LeadOpened,
   LeadOpening,
@@ -71,6 +74,8 @@ interface LeadSessionRow {
   readonly session: string | null;
   readonly state: string | null;
   readonly agent_reference: string | null;
+  readonly system_prompt: string | null;
+  readonly tokens: string | null;
 }
 
 /** One `read_lead_turn` row: where the turn stands and everything it has produced. */
@@ -86,6 +91,14 @@ const openedArms = ["Opened", "AlreadyOpen"] as const;
 /** The arms the mailbox holds an ordinal for, and the arms it does not. */
 const offeredWithOrdinal = ["Enqueued", "AlreadyEnqueued"] as const;
 const offeredWithoutOrdinal = ["NoLead", "Closed", "Backlogged"] as const;
+
+const closedArms: readonly LeadClosed[] = [
+  "Closed",
+  "AlreadyClosed",
+  "NotLead",
+  "TurnInFlight",
+  "InquiryOpen",
+];
 
 const withdrawnArms: readonly LeadTurnWithdrawn[] = [
   "Withdrawn",
@@ -112,6 +125,15 @@ function leadSessionOf(row: LeadSessionRow): LeadSessionStanding {
     ...(row.agent_reference === null
       ? {}
       : { agentReference: row.agent_reference }),
+    ...(row.system_prompt === null ? {} : { systemPrompt: row.system_prompt }),
+    ...(row.tokens === null
+      ? {}
+      : {
+          decisionTurnTokens: projectRowCounter(
+            row.tokens,
+            "lead decision turn tokens",
+          ),
+        }),
   };
 }
 
@@ -160,7 +182,8 @@ export function postgresLeadMailbox(pool: pg.Pool): LeadMailbox {
   return {
     lead: async (partition) => {
       const found = await pool.query<LeadSessionRow>(
-        sql`SELECT session,state,agent_reference
+        sql`SELECT session,state,agent_reference,system_prompt,
+                   tokens::text AS tokens
               FROM lead_session(${partition.tenant},${partition.project})`,
       );
       const row = found.rows[0];
@@ -168,6 +191,14 @@ export function postgresLeadMailbox(pool: pg.Pool): LeadMailbox {
     },
 
     openLead: (opening) => leadOpen(pool, opening),
+
+    closeLead: async (partition, session) => {
+      const closed = await pool.query<{ closed: string | null }>(
+        sql`SELECT close_project_lead(
+              ${partition.tenant},${partition.project},${session})::text AS closed`,
+      );
+      return leadVerdict(closedArms, closed.rows[0]?.closed, "closing a lead");
+    },
 
     offer: async (input) => {
       const offered = await pool.query<{
@@ -230,9 +261,9 @@ const promptArms = [
 ] as const satisfies readonly LeadSystemPromptSet[];
 
 /**
- * The objectives door over the same pool, which the lead host calls before it
- * offers a turn — a caller a later unit wires, so nothing in `src/` reaches this
- * yet. `Unchanged` is what makes comparing on every pass cost one read.
+ * The objectives door over the same pool, which nothing in `src/` calls: the
+ * lead host replaces a lead whose objectives moved rather than moving them.
+ * `Unchanged` is what makes comparing cost one read.
  */
 export function postgresLeadSystemPrompt(pool: pg.Pool): LeadSystemPromptPort {
   return {

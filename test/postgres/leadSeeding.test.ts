@@ -21,6 +21,12 @@ import {
   leadSelectorPolicy,
   type LeadPolicyClock,
 } from "../../src/interpreter/leadPolicyHost.ts";
+import { leadTurnTokensMax } from "../../src/contract/http.ts";
+import {
+  asSessionTurnId,
+  type SessionId,
+} from "../../src/interpreter/agentSession.ts";
+import { leadSystemPrompt } from "../../src/interpreter/leadTools.ts";
 import { parseLeadObservation } from "../../src/interpreter/leadTurn.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 import type {
@@ -37,6 +43,7 @@ import {
   leadRigPodAttempt,
   leadRigPodTurn,
   leadRigHostedAccess,
+  leadRigMeasured,
   leadRigProject,
   leadRigSuccessor,
   type LeadRig,
@@ -81,6 +88,12 @@ function seedingPolicy() {
     },
   );
 }
+
+/** The system prompt `requestFor` composes, which a lead opened for it holds. */
+const composedPrompt = leadSystemPrompt({
+  basePrompt: "choose one",
+  northStar: "ship",
+});
 
 function requestFor(
   partition: Partition,
@@ -200,6 +213,7 @@ test("a session with no agent reference is seeded from the record", async () => 
   const partition = await leadRigProject(rig, "seeded");
   const session = await sessionRigSession(rig.sessions, partition, "seeded", {
     kind: "Lead",
+    systemPrompt: composedPrompt,
   });
   const first = await seedingDecision(partition, "seeded-old", 100);
   const second = await seedingDecision(partition, "seeded-new", 200);
@@ -259,6 +273,7 @@ test("a session that has bound a runtime session is not seeded again", async () 
   const partition = await leadRigProject(rig, "bound");
   const session = await sessionRigSession(rig.sessions, partition, "bound", {
     kind: "Lead",
+    systemPrompt: composedPrompt,
   });
   const first = `selector-decision-bound-first-${String(Date.now())}`;
   const seeding = seedingPolicy().execute(
@@ -294,7 +309,7 @@ test("a successor the runtime opens is seeded, and records a transcript of its o
     rig.sessions,
     partition,
     "successor",
-    { kind: "Lead" },
+    { kind: "Lead", systemPrompt: composedPrompt },
   );
   const first = `selector-decision-successor-first-${String(Date.now())}`;
   const ran = seedingPolicy().execute(
@@ -406,5 +421,179 @@ test("a failed decision's record answers the view token it was written with", as
     newest?.observedToken,
     token,
     "and the token comes back whole, since a field the read drops is a failure the bound cannot count",
+  );
+});
+
+/** One row's state and objectives, for the columns the standing does not answer of a closed lead. */
+async function sessionRow(session: string): Promise<unknown> {
+  return (
+    await rig.sessions.harness.query(
+      `SELECT state,system_prompt FROM agent_session WHERE session=$1`,
+      [session],
+    )
+  )[0];
+}
+
+/**
+ * A lead that has taken one decision, its pod measuring what the case says,
+ * and the pod attempt it still holds for the next.
+ */
+async function leadThatDecided(
+  label: string,
+  tokens: number | null,
+): Promise<{
+  partition: Partition;
+  lead: SessionId;
+  pod: Awaited<ReturnType<typeof leadRigPodAttempt>>;
+}> {
+  const partition = await leadRigProject(rig, label);
+  const lead = await sessionRigSession(rig.sessions, partition, label, {
+    kind: "Lead",
+    systemPrompt: composedPrompt,
+  });
+  const deciding = seedingPolicy().execute(
+    requestFor(partition, `selector-decision-${label}-first-${Date.now()}`),
+    new AbortController().signal,
+  );
+  const pod = await leadRigPodAttempt(rig, partition, lead, label);
+  await leadRigPodTurn(
+    rig,
+    pod,
+    label,
+    () => aDecision,
+    tokens === null ? null : { ...leadRigMeasured, tokens },
+  );
+  await deciding;
+  return { partition, lead, pod };
+}
+
+test("a lead whose last decision spent over the bound is replaced by a seeded successor", async () => {
+  const { partition, lead } = await leadThatDecided(
+    "spent",
+    leadTurnTokensMax + 1,
+  );
+  assert.equal(
+    (await rig.mailbox.lead(partition))?.decisionTurnTokens,
+    leadTurnTokensMax + 1,
+  );
+  const second = `selector-decision-spent-second-${String(Date.now())}`;
+  const deciding = seedingPolicy().execute(
+    requestFor(partition, second),
+    new AbortController().signal,
+  );
+  const successor = await leadRigSuccessor(rig, partition, lead);
+  const heir = await leadRigPodAttempt(rig, partition, successor, "spent-heir");
+  await leadRigPodTurn(rig, heir, "spent-heir", () => aDecision);
+  await deciding;
+  assert.deepEqual(await sessionRow(lead), {
+    state: "Closed",
+    system_prompt: composedPrompt,
+  });
+  assert.notEqual(
+    parseLeadObservation(await turnInput(second)).seeding,
+    undefined,
+    "the successor's first turn is told the record",
+  );
+  const turns = await rig.sessions.harness.query(
+    `SELECT session,state FROM session_turn WHERE turn=$1`,
+    [second],
+  );
+  assert.deepEqual(turns, [{ session: successor, state: "Answered" }]);
+});
+
+test("a lead at the bound, or whose last decision measured nothing, takes the next itself", async () => {
+  for (const [label, tokens] of [
+    ["at-bound", leadTurnTokensMax],
+    ["unmeasured", null],
+  ] as const) {
+    const { partition, lead, pod } = await leadThatDecided(label, tokens);
+    const second = `selector-decision-${label}-second-${String(Date.now())}`;
+    const deciding = seedingPolicy().execute(
+      requestFor(partition, second),
+      new AbortController().signal,
+    );
+    await leadRigPodTurn(rig, pod, label, () => aDecision);
+    await deciding;
+    assert.equal((await rig.mailbox.lead(partition))?.session, lead, label);
+    assert.equal(
+      parseLeadObservation(await turnInput(second)).seeding,
+      undefined,
+      label,
+    );
+  }
+});
+
+test("a lead told another prompt, or none, is replaced by one holding the composed prompt", async () => {
+  for (const [label, systemPrompt] of [
+    ["reinstructed", "the objectives before an edit"],
+    ["unprompted", undefined],
+  ] as const) {
+    const partition = await leadRigProject(rig, label);
+    const lead = await sessionRigSession(rig.sessions, partition, label, {
+      kind: "Lead",
+      ...(systemPrompt === undefined ? {} : { systemPrompt }),
+    });
+    assert.equal(
+      (await rig.mailbox.lead(partition))?.systemPrompt,
+      systemPrompt,
+      "the read answers what the lead was opened holding",
+    );
+    const decision = `selector-decision-${label}-${String(Date.now())}`;
+    const deciding = seedingPolicy().execute(
+      requestFor(partition, decision),
+      new AbortController().signal,
+    );
+    const successor = await leadRigSuccessor(rig, partition, lead);
+    await leadRigPod(rig, partition, successor, label, () => aDecision);
+    await deciding;
+    assert.deepEqual(await sessionRow(lead), {
+      state: "Closed",
+      system_prompt: systemPrompt ?? null,
+    });
+    assert.deepEqual(await sessionRow(successor), {
+      state: "Open",
+      system_prompt: composedPrompt,
+    });
+  }
+});
+
+test("a lead with this decision's turn in flight is not closed, and takes the decision", async () => {
+  const partition = await leadRigProject(rig, "in-flight");
+  const lead = await sessionRigSession(rig.sessions, partition, "in-flight", {
+    kind: "Lead",
+    systemPrompt: "the objectives before an edit",
+  });
+  const decision = `selector-decision-in-flight-${String(Date.now())}`;
+  const request = requestFor(partition, decision);
+  assert.equal(
+    (
+      await rig.mailbox.offer({
+        partition,
+        turn: asSessionTurnId(decision),
+        input: "{}",
+        route: "InCluster",
+      })
+    ).offered,
+    "Enqueued",
+    "a predecessor process offered this decision's turn and did not survive",
+  );
+  const deciding = seedingPolicy().execute(
+    request,
+    new AbortController().signal,
+  );
+  await leadRigPod(rig, partition, lead, "in-flight", () => aDecision);
+  await deciding;
+  assert.deepEqual(await sessionRow(lead), {
+    state: "Open",
+    system_prompt: "the objectives before an edit",
+  });
+  assert.deepEqual(
+    await rig.sessions.harness.query(
+      `SELECT session,state FROM session_turn
+        WHERE tenant=$1 AND project=$2`,
+      [partition.tenant, partition.project],
+    ),
+    [{ session: lead, state: "Answered" }],
+    "the turn in flight is answered by the lead that holds it, and nothing is abandoned",
   );
 });

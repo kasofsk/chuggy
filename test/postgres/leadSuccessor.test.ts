@@ -26,7 +26,10 @@ import {
   selectorReviewRole,
   selectorServiceRole,
 } from "../../src/adapters/postgres/schema.ts";
-import { leadOpenFunction } from "../../src/adapters/postgres/schema/shared.ts";
+import {
+  leadCloseFunction,
+  leadOpenFunction,
+} from "../../src/adapters/postgres/schema/shared.ts";
 import {
   asSessionId,
   asSessionTurnId,
@@ -35,14 +38,31 @@ import { leadSessionCapabilities } from "../../src/interpreter/leadTools.ts";
 import { asPrincipal } from "../../src/interpreter/principal.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 import { postgresHarnessDenial, postgresHarnessRolePool } from "./harness.ts";
-import { leadRigOpen, leadRigProject, type LeadRig } from "./leadHarness.ts";
-import { sessionRigSession } from "./sessionHarness.ts";
+import { leadInquiryTurnInput } from "../../src/interpreter/leadInquiry.ts";
+import {
+  inquiryRigIdentities,
+  inquiryRigLead,
+  inquiryRigMember,
+  inquiryRigOpen,
+  type InquiryRig,
+} from "./inquiryHarness.ts";
+import {
+  leadRigMeasured,
+  leadRigPodTurn,
+  leadRigProject,
+} from "./leadHarness.ts";
+import {
+  sessionRigAttempt,
+  sessionRigSession,
+  sessionRigTurn,
+  sessionRigTurnState,
+} from "./sessionHarness.ts";
 
-let rig: LeadRig;
+let rig: InquiryRig;
 let apiPool: pg.Pool;
 
 before(async () => {
-  rig = await leadRigOpen();
+  rig = await inquiryRigOpen();
   apiPool = postgresHarnessRolePool(apiRole);
 });
 
@@ -329,5 +349,191 @@ test("the successor door is the selector service's own and no other role's", asy
     )) ?? "the API executed the door",
     postgresHarnessDenial(leadOpenFunction),
     "and the refusal is the server's, not a privilege the case only asked about",
+  );
+});
+
+/** A project's lead opened by the administrative door, as the selector then reads it. */
+async function projectWithAnOpenLead(label: string) {
+  const partition = await leadRigProject(rig, label);
+  const lead = await sessionRigSession(rig.sessions, partition, label, {
+    kind: "Lead",
+  });
+  return { partition, lead };
+}
+
+/** One session's state as the row holds it. */
+async function stateOf(session: string): Promise<unknown> {
+  return (
+    await rig.sessions.harness.query(
+      `SELECT state FROM agent_session WHERE session=$1`,
+      [session],
+    )
+  )[0]?.["state"];
+}
+
+test("the closing door closes the project's open lead, and then has nothing to close", async () => {
+  const { partition, lead } = await projectWithAnOpenLead("close");
+  assert.equal(await rig.mailbox.closeLead(partition, lead), "Closed");
+  assert.equal(await stateOf(lead), "Closed");
+  assert.equal(
+    await rig.mailbox.closeLead(partition, lead),
+    "AlreadyClosed",
+    "a caller that read a lead another closed is told so, not refused",
+  );
+  const opened = await openSuccessor(partition, `lead-close-${Date.now()}`);
+  assert.equal(opened.opened, "Opened", "and the project takes a successor");
+});
+
+test("the closing door closes no thread, no other project's lead and no lead that is not open", async () => {
+  const { partition, lead } = await projectWithAnOpenLead("fenced");
+  const thread = await sessionRigSession(rig.sessions, partition, "fenced", {
+    kind: "Thread",
+  });
+  const other = await projectWithAnOpenLead("fenced-other");
+  assert.deepEqual(
+    [
+      await rig.mailbox.closeLead(partition, thread),
+      await rig.mailbox.closeLead(other.partition, lead),
+      await rig.mailbox.closeLead(partition, other.lead),
+      await rig.mailbox.closeLead(
+        partition,
+        asSessionId(`lead-nobody-${Date.now()}`),
+      ),
+    ],
+    ["NotLead", "NotLead", "NotLead", "NotLead"],
+  );
+  assert.deepEqual(
+    [await stateOf(lead), await stateOf(thread), await stateOf(other.lead)],
+    ["Open", "Open", "Open"],
+    "nothing the door was not asked for, and nothing outside its project, is closed",
+  );
+});
+
+test("a caller that read a lead since replaced closes nothing", async () => {
+  const { partition, closed } = await projectWithAClosedLead("stale");
+  const opened = await openSuccessor(partition, `lead-stale-${Date.now()}`);
+  assert.equal(
+    await rig.mailbox.closeLead(partition, asSessionId(closed)),
+    "AlreadyClosed",
+  );
+  assert.equal(
+    await stateOf(opened.session),
+    "Open",
+    "the successor that stands is not the session the stale read named",
+  );
+});
+
+test("the closing door refuses a lead with a turn in flight, and abandons nothing", async () => {
+  const { partition, lead } = await projectWithAnOpenLead("in-flight");
+  const turn = await sessionRigTurn(rig.sessions, partition, lead, "in-flight");
+  assert.equal(await rig.mailbox.closeLead(partition, lead), "TurnInFlight");
+  assert.equal(await stateOf(lead), "Open");
+  assert.equal(
+    (await sessionRigTurnState(rig.sessions, partition, lead, turn))["state"],
+    "Queued",
+    "a decision in flight is never ended by this door",
+  );
+});
+
+test("the closing door refuses a lead an inquiry is still forked from", async () => {
+  const partition = await leadRigProject(rig, "inquired");
+  const lead = await inquiryRigLead(rig, partition, "inquired");
+  const member = inquiryRigMember(rig, partition, "inquired");
+  const identities = inquiryRigIdentities("inquired");
+  const asked = await rig.inquiries.open({
+    partition,
+    principal: member.principal,
+    ...identities,
+    question: leadInquiryTurnInput({
+      question: "why was 41 refused?",
+      asker: member.authority.subject,
+    }),
+    route: "InCluster",
+  });
+  assert.equal(asked.opened, "Opened");
+  assert.equal(
+    await rig.mailbox.closeLead(partition, lead.session),
+    "InquiryOpen",
+  );
+  assert.deepEqual(
+    [await stateOf(lead.session), await stateOf(identities.session)],
+    ["Open", "Open"],
+    "neither the lead nor the question asked of it is ended",
+  );
+});
+
+test("the lead read answers the stored prompt and the newest answered decision turn's measure", async () => {
+  const partition = await leadRigProject(rig, "measured");
+  const lead = await sessionRigSession(rig.sessions, partition, "measured", {
+    kind: "Lead",
+    systemPrompt: "the measured objectives",
+  });
+  const unmeasured = await rig.mailbox.lead(partition);
+  assert.deepEqual(
+    [unmeasured?.systemPrompt, unmeasured?.decisionTurnTokens],
+    ["the measured objectives", undefined],
+    "a lead with no answered turn has spent nothing the read can name",
+  );
+  const offer = (label: string) =>
+    rig.mailbox.offer({
+      partition,
+      turn: asSessionTurnId(`turn-measured-${label}-${Date.now()}`),
+      input: "{}",
+      route: "InCluster",
+    });
+  await offer("first");
+  const pod = await sessionRigAttempt(
+    rig.sessions,
+    partition,
+    lead,
+    "measured",
+  );
+  for (const tokens of [700, 900]) {
+    if (tokens !== 700) await offer(String(tokens));
+    await leadRigPodTurn(rig, pod, "measured", () => ({}), {
+      ...leadRigMeasured,
+      tokens,
+    });
+  }
+  await offer("failed");
+  const failing = await rig.sessions.plane.claim({
+    secret: pod.secret,
+    generation: pod.attempt.generation,
+  });
+  assert.ok(failing !== undefined);
+  assert.equal(
+    await rig.sessions.plane.fail({
+      secret: pod.secret,
+      generation: pod.attempt.generation,
+      turn: failing.turn,
+      failure: "AgentFailed",
+    }),
+    "Failed",
+  );
+  assert.equal(
+    (await rig.mailbox.lead(partition))?.decisionTurnTokens,
+    900,
+    "the newest answered decision turn, and not a failed one after it",
+  );
+});
+
+test("the closing door is the selector service's own and no other role's", async () => {
+  const roster = (await rig.sessions.harness.query(
+    `SELECT r.rolname,
+            has_function_privilege(r.rolname,$1,'EXECUTE') AS permitted
+       FROM pg_roles r WHERE r.rolname LIKE 'chuggy\\_%'
+      ORDER BY r.rolname`,
+    [`${leadCloseFunction}(text,text,text)`],
+  )) as readonly { rolname: string; permitted: boolean }[];
+  assert.deepEqual(
+    roster.filter(({ permitted }) => permitted).map(({ rolname }) => rolname),
+    [boundaryOwnerRole, selectorServiceRole],
+  );
+  assert.match(
+    (await rig.sessions.harness.attemptAs(
+      apiRole,
+      `SELECT ${leadCloseFunction}('t','p','s')`,
+    )) ?? "the API executed the door",
+    postgresHarnessDenial(leadCloseFunction),
   );
 });
