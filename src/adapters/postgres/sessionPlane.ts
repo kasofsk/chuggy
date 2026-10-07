@@ -63,7 +63,7 @@ import {
   sessionRowCapabilities,
   sessionRowMember,
   sessionRowText,
-  sessionTurnFailureOf,
+  sessionPodEndingOf,
 } from "./sessionRows.ts";
 
 /**
@@ -401,11 +401,14 @@ export function postgresSessionPlane(pool: pg.Pool): SessionPlaneStore {
     },
 
     turnFailure: async (secret, generation) => {
-      const found = await pool.query<{ failure: string | null }>(
-        sql`SELECT session_bearer_turn_failure(${sessionSecretDigest(secret)},
-          ${generation})::text AS failure`,
+      const found = await pool.query<{
+        failure: string | null;
+        closed: boolean | null;
+      }>(
+        sql`SELECT failure,closed FROM session_bearer_turn_failure(
+          ${sessionSecretDigest(secret)},${generation})`,
       );
-      return sessionTurnFailureOf(found.rows[0]?.failure);
+      return sessionPodEndingOf(found.rows[0]);
     },
 
     hold: async (secret, generation) => {

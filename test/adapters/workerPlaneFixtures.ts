@@ -96,7 +96,8 @@ export function inertSessionPlane(
     holds: { hold: () => Promise.resolve(true) },
     losses: {
       lose: () => Promise.resolve(true),
-      turnFailure: () => Promise.resolve(undefined),
+      turnFailure: () =>
+        Promise.resolve({ turnFailure: undefined, sessionClosed: false }),
     },
     records: { record: () => Promise.resolve("Stored") },
     queries: {

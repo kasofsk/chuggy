@@ -716,6 +716,40 @@ test("a runner's heartbeat on a pool-held attempt answers whether the pool's lea
   );
 });
 
+/**
+ * Neither reaper filters on the pool, and the cluster observes no pod a pool
+ * holds, so on a closed session the reapers are what end its attempt.
+ */
+test("a held session that closes is ended SessionClosed by whichever reaper reaches it", async () => {
+  for (const [column, reaped] of [
+    [
+      "idle_since",
+      () =>
+        rig.scheduler.reapIdleAttempts(rig.epoch, 1800, sessionRigBoundless),
+    ],
+    [
+      "lease_expires_at",
+      () => rig.scheduler.reapLapsedAttempts(rig.epoch, sessionRigBoundless),
+    ],
+  ] as const) {
+    const label = `pool-reaped-closed-${column}`.replaceAll("_", "-");
+    const { partition, member, pool } = await routedProject(label);
+    const { session } = await waiting(partition, label, "Lead", member);
+    const held = await claimedOne(pool);
+    await rig.sessions.close(partition, session);
+    await backdated(held.assignment, column, 3600);
+    assert.equal(await reaped(), 1, column);
+    assert.deepEqual(
+      [
+        (await attemptOf(held.assignment))["state"],
+        (await attemptOf(held.assignment))["evidence"],
+      ],
+      ["Lost", "SessionClosed"],
+      column,
+    );
+  }
+});
+
 test("an accepted session writes nothing, an unavailable one is withdrawn with its turn uncharged, and a refused one ends charged with its refusal recorded", async () => {
   const { partition, member, pool } = await routedProject("pool-settle");
   const lead = await waiting(partition, "settle-lead", "Lead", member);

@@ -16,7 +16,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { sessionContainerEnds } from "../../src/contract/rosters.ts";
+import {
+  sessionContainerEnds,
+  type SessionContainerEnd,
+} from "../../src/contract/rosters.ts";
 import {
   allSessionTurnFailures,
   asSessionAttemptId,
@@ -139,6 +142,8 @@ interface StoreAnswers {
    */
   readonly turnFailure?: SessionTurnFailure;
   readonly turnFailureFrom?: "AfterTheObservation";
+  /** Whether the store answers the attempt's session closed. */
+  readonly sessionClosed?: boolean;
   /** Where every opening the store is asked for is kept, for a case about what an attempt records. */
   readonly openings?: SessionAttemptOpening[];
 }
@@ -174,12 +179,14 @@ function recordingStore(
     },
     attemptTurnFailure: (asked) => {
       calls.push(`attemptTurnFailure ${asked.attempt}`);
-      return Promise.resolve(
-        answers.turnFailureFrom === "AfterTheObservation" &&
+      return Promise.resolve({
+        turnFailure:
+          answers.turnFailureFrom === "AfterTheObservation" &&
           !calls.includes(`observe ${asked.attempt}`)
-          ? undefined
-          : answers.turnFailure,
-      );
+            ? undefined
+            : answers.turnFailure,
+        sessionClosed: answers.sessionClosed ?? false,
+      });
     },
     reapLapsedAttempts: (_epoch, attemptsMax) => {
       calls.push(`reapLapsedAttempts ${String(attemptsMax)}`);
@@ -359,6 +366,48 @@ for (const [observed, turnFailure, evidence] of podEndings) {
 }
 
 /**
+ * A closed session's pod ends its attempt `SessionClosed` whichever way it
+ * exited and whatever its turns did, a refused store included.
+ */
+const closedPodEndings: readonly (readonly [
+  SessionContainerEnd,
+  SessionTurnFailure | undefined,
+])[] = [
+  ["Failed", undefined],
+  ["Succeeded", undefined],
+  ["Failed", "StoreRefused"],
+  ["Succeeded", "StoreRefused"],
+  ["Failed", "AgentFailed"],
+  ["Succeeded", "SessionClosed"],
+];
+
+for (const [phase, turnFailure] of closedPodEndings) {
+  test(`a closed session's pod that ended ${phase} after ${String(turnFailure)} ends its attempt SessionClosed`, async () => {
+    const calls: StoreCall[] = [];
+    const report = await sessionSchedulerPass(
+      service(
+        calls,
+        {
+          observable: [attempt],
+          observed: { observed: "Ended", phase },
+          ...(turnFailure === undefined ? {} : { turnFailure }),
+          sessionClosed: true,
+        },
+        { placed: "Unavailable" },
+      ),
+      epoch,
+    );
+    assert.equal(report.observed, 1);
+    assert.deepEqual(calls.slice(2, 6), [
+      `attemptsAwaitingObservation ${String(sessionSchedulerDefaults.attemptsPerPassMax)}`,
+      `observe ${attempt.attempt}`,
+      `attemptTurnFailure ${attempt.attempt}`,
+      "attemptEnded SessionClosed",
+    ]);
+  });
+}
+
+/**
  * The turn the pod failed on its way out is written after the batch of
  * attempts was answered and before this attempt's pod is asked about — the
  * window every backend round trip ahead of it opens. The evidence is the
@@ -389,42 +438,44 @@ test("a turn failed while the pass worked the rows ahead is still the attempt's 
  * driven through the observation too, so the two are one derivation rather
  * than two that agree on the cases someone thought of.
  */
-test("a runner's report of its container's end is charged as the observed end of the same pod", async () => {
+test("a runner's report of its container's end is charged as the observed end of the same pod, on an open session and a closed one", async () => {
   for (const phase of sessionContainerEnds) {
     for (const turnFailure of [undefined, ...allSessionTurnFailures]) {
-      const calls: StoreCall[] = [];
-      await sessionSchedulerObserve(
-        service(
-          calls,
+      for (const sessionClosed of [false, true]) {
+        const named = `${phase} after ${String(turnFailure)}, closed ${String(sessionClosed)}`;
+        const calls: StoreCall[] = [];
+        await sessionSchedulerObserve(
+          service(
+            calls,
+            {
+              observable: [attempt],
+              observed: { observed: "Ended", phase },
+              ...(turnFailure === undefined ? {} : { turnFailure }),
+              sessionClosed,
+            },
+            { placed: "Unavailable" },
+          ),
+          epoch,
+        );
+        const reported: StoreCall[] = [];
+        await sessionContainerEnded(
           {
-            observable: [attempt],
-            observed: { observed: "Ended", phase },
-            ...(turnFailure === undefined ? {} : { turnFailure }),
+            turnFailure: () => Promise.resolve({ turnFailure, sessionClosed }),
+            lose: (_secret, _generation, evidence) => {
+              reported.push(`attemptEnded ${evidence}`);
+              return Promise.resolve(true);
+            },
           },
-          { placed: "Unavailable" },
-        ),
-        epoch,
-      );
-      const reported: StoreCall[] = [];
-      await sessionContainerEnded(
-        {
-          turnFailure: () => Promise.resolve(turnFailure),
-          lose: (_secret, _generation, evidence) => {
-            reported.push(`attemptEnded ${evidence}`);
-            return Promise.resolve(true);
-          },
-        },
-        bearers.mint().bearer.secret,
-        attempt.generation,
-        phase,
-      );
-      const observed = calls.filter((call) => call.startsWith("attemptEnded"));
-      assert.equal(observed.length, 1, `${phase} after ${String(turnFailure)}`);
-      assert.deepEqual(
-        reported,
-        observed,
-        `${phase} after ${String(turnFailure)}`,
-      );
+          bearers.mint().bearer.secret,
+          attempt.generation,
+          phase,
+        );
+        const observed = calls.filter((call) =>
+          call.startsWith("attemptEnded"),
+        );
+        assert.equal(observed.length, 1, named);
+        assert.deepEqual(reported, observed, named);
+      }
     }
   }
 });

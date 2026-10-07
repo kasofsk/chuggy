@@ -603,7 +603,7 @@ test("a stop leaves the attempt that held the turn live, holding its lease and c
     "a session with a runner on it is placed nowhere else for the turn behind",
   );
   assert.equal(
-    await rig.sessions.scheduler.attemptTurnFailure(held.attempt),
+    (await rig.sessions.scheduler.attemptTurnFailure(held.attempt)).turnFailure,
     undefined,
     "a stop is no failure of the attempt's",
   );

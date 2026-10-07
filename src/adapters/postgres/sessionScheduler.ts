@@ -20,7 +20,6 @@ import {
   asSessionAttemptId,
   asSessionId,
   type AgentSession,
-  type SessionTurnFailure,
 } from "../../interpreter/agentSession.ts";
 import type { RecoveryEpoch } from "../../interpreter/projectStore.ts";
 import { asProjectId, asTenantId } from "../../interpreter/projectStore.ts";
@@ -30,12 +29,13 @@ import type {
   SessionAttemptEvidence,
   SessionAttemptOpened,
   SessionAttemptOpening,
+  SessionPodEnding,
   SessionSchedulerStore,
 } from "../../interpreter/sessionScheduler.ts";
 import {
   agentSessionRowOf,
   sessionRowText,
-  sessionTurnFailureOf,
+  sessionPodEndingOf,
   type AgentSessionRow,
 } from "./sessionRows.ts";
 import { projectRowCounter } from "./rows.ts";
@@ -169,12 +169,15 @@ async function sessionAwaitingObservation(
 async function sessionTurnFailure(
   pool: pg.Pool,
   attempt: FencedSessionAttempt,
-): Promise<SessionTurnFailure | undefined> {
-  const found = await pool.query<{ failure: string | null }>(
-    sql`SELECT session_attempt_turn_failure(
-      ${attempt.attempt})::text AS failure`,
+): Promise<SessionPodEnding> {
+  const found = await pool.query<{
+    failure: string | null;
+    closed: boolean | null;
+  }>(
+    sql`SELECT failure,closed FROM session_attempt_turn_failure(
+      ${attempt.attempt})`,
   );
-  return sessionTurnFailureOf(found.rows[0]?.failure);
+  return sessionPodEndingOf(found.rows[0]);
 }
 
 /** How many rows one bounded sweep moved, refusing an answer that is not a count. */

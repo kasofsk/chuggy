@@ -35,6 +35,7 @@ import {
 } from "../../interpreter/agentSession.ts";
 import { asPrincipal } from "../../interpreter/principal.ts";
 import type { SessionStoreStreamRow } from "../../interpreter/sessionPlane.ts";
+import type { SessionPodEnding } from "../../interpreter/sessionScheduler.ts";
 import { asProjectId, asTenantId } from "../../interpreter/projectStore.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
 import {
@@ -109,6 +110,16 @@ export function sessionTurnFailureOf(
         value,
         "session turn failure",
       );
+}
+
+/** Reads what an ended pod's attempt is labelled from, and a read that found no attempt as no failure on an open session. */
+export function sessionPodEndingOf(
+  row: { failure: string | null; closed: boolean | null } | undefined,
+): SessionPodEnding {
+  return {
+    turnFailure: sessionTurnFailureOf(row?.failure),
+    sessionClosed: row?.closed === true,
+  };
 }
 
 /** Reads the row's capability roster, refusing a member the CHECK should have stopped. */
