@@ -98,16 +98,17 @@ export function materialDigest(value: unknown): string {
 }
 
 /**
- * What of a brief its content digest is taken over. A brief that names no
- * image carries no image list here, so one released before a brief could name
- * any still digests to the content its journal names.
+ * The digest a release journals for its brief, and a stored brief is held to.
+ * A brief that names no image is digested without an image list, so one
+ * released before a brief could name any still digests to the content its
+ * journal names.
  */
-function briefContent(brief: DraftBrief | undefined): unknown {
-  if (brief === undefined) return {};
-  return {
+export function briefContentDigest(brief: DraftBrief | undefined): string {
+  if (brief === undefined) return materialDigest({});
+  return materialDigest({
     ...brief,
     images: brief.images.length === 0 ? undefined : brief.images,
-  };
+  });
 }
 
 /** How an evaluation stage's key is spelled, which is what the requirement is qualified by. */
@@ -187,7 +188,7 @@ export function ticketDefinitionMaterial(input: {
     ...input.authoring.prog.map((stage) => evaluationTaskKey(stage.key)),
   ];
   return {
-    content: { digest: materialDigest(briefContent(input.brief)) },
+    content: { digest: briefContentDigest(input.brief) },
     finalization: {
       ...(finalization === undefined ? {} : finalization),
       digest: materialDigest(finalization ?? {}),
@@ -264,7 +265,7 @@ export function releasedTicketBrief(
     stored === undefined
       ? undefined
       : asDraftBrief(stored as Parameters<typeof asDraftBrief>[0]);
-  if (materialDigest(briefContent(brief)) !== contentDigest)
+  if (briefContentDigest(brief) !== contentDigest)
     throw new Error(
       "ticket definition: the stored brief is not the one the released content names",
     );
