@@ -218,6 +218,10 @@ const moved: readonly (readonly [string, Body])[] = [
   ["another intent", changed],
   ["an image", { ...first, brief: { ...first.brief, images: ["artifact-1"] } }],
   [
+    "an override",
+    { ...first, overrides: { worker: { setup: ["npm ci --omit=dev"] } } },
+  ],
+  [
     "another program",
     {
       ...first,
@@ -260,6 +264,9 @@ test.each(moved)(
           configurationRevision: body.configurationRevision,
           authoring: body.authoring,
           brief: body.brief,
+          ...(body.overrides === undefined
+            ? {}
+            : { overrides: body.overrides }),
         },
       ],
       [
@@ -720,3 +727,64 @@ test.each(
     });
   },
 );
+
+/** A release refused over an override, which the form corrects and nothing
+ * else: the revision is what decides whether the form changed, so an override
+ * left out of it would ask the refused operation again. */
+test("a release refused over an override is released again once the override alone is corrected", async () => {
+  const overridden = (setup: string): Body => ({
+    ...first,
+    overrides: { worker: { setup: [setup] } },
+  });
+  const api = answeringApi(ticketDoorAnswers(ticketDoor(), ticketRefusedFirst));
+  const submit = async (
+    body: Body,
+    operation: string,
+    held?: CreationDraftHeld,
+  ) =>
+    createAndReleaseTicket(
+      api.ports,
+      creationPartition,
+      { body, operation, held },
+      () => undefined,
+    );
+  const refused = await submit(overridden("x".repeat(9)), "op-1");
+  const held = "held" in refused ? refused.held : undefined;
+  const from = api.sent.length;
+  await submit(overridden("x".repeat(9)), "op-2", held);
+  expect(lines(api.sent.slice(from))).toStrictEqual([
+    "POST /operations op-1 at 3",
+    "GET /operations/op-1",
+  ]);
+
+  const again = answeringApi(
+    ticketDoorAnswers(ticketDoor(), ticketRefusedFirst),
+  );
+  const refusedAgain = await createAndReleaseTicket(
+    again.ports,
+    creationPartition,
+    { body: overridden("x".repeat(9)), operation: "op-1" },
+    () => undefined,
+  );
+  const since = again.sent.length;
+  const corrected = await createAndReleaseTicket(
+    again.ports,
+    creationPartition,
+    {
+      body: overridden("npm ci"),
+      operation: "op-2",
+      held: "held" in refusedAgain ? refusedAgain.held : undefined,
+    },
+    () => undefined,
+  );
+  expect(corrected).toStrictEqual({ created: "Created", ticket: 12 });
+  const sent = again.sent.slice(since);
+  expect(lines(sent)).toStrictEqual([
+    draftRead,
+    "PUT /drafts/12 at 3 saying ship it",
+    ...released("op-2", 4),
+  ]);
+  expect(
+    (sent[1]?.body as { readonly overrides?: unknown }).overrides,
+  ).toStrictEqual({ worker: { setup: ["npm ci"] } });
+});

@@ -1,8 +1,14 @@
 /**
  * Where this ticket came from: the brief, a summary of the live revision and
- * the draft beside it, and the configuration the live revision pins — its
+ * the draft beside it, and the configuration the live revision runs under — its
  * settings, the brief and instructions each role is briefed with, and its
  * declared evaluation stages.
+ *
+ * What a ticket runs under is the configuration it pinned with its overrides
+ * applied. A field it overrode is drawn as the override and marked so, in the
+ * place the panel has for it, and listed under the panel by name where the
+ * panel has none; the foot stays the pinned document's, which no override
+ * changes.
  *
  * A configuration is named where the wire names it and drawn as its revision
  * where it is not. Dependencies cannot change once a ticket is released, so
@@ -28,12 +34,12 @@ import type {
   ConfigurationEvaluation,
   ConfigurationRole,
   ConfigurationSettings,
+  ConfigurationView,
 } from "../core/configurationView.ts";
-import {
-  configurationViewOf,
-  practiceLabel,
-} from "../core/configurationView.ts";
+import { practiceLabel } from "../core/configurationView.ts";
 import { agoFigure } from "../core/figures.ts";
+import { overrideFieldOf, overriddenViewOf } from "../core/ticketOverrides.ts";
+import type { OverrideField } from "../core/ticketOverrides.ts";
 import type { PanelState } from "../core/freshness.ts";
 import { configurationLabel, digestShortened } from "../core/labels.ts";
 import { draftReleaseOf, draftUnreleasedLabel } from "../core/ticketEdit.ts";
@@ -175,10 +181,14 @@ function SummaryCell(props: {
   readonly value: ReactNode;
   readonly meta?: ReactNode;
   readonly large?: boolean;
+  readonly overridden?: boolean;
 }): ReactNode {
   return (
     <div className="ticket-config-cell">
-      <span className="eyebrow">{props.name}</span>
+      <span className="eyebrow">
+        {props.name}
+        {props.overridden === true ? <OverriddenMark /> : null}
+      </span>
       <span
         className={
           props.large === true
@@ -196,6 +206,19 @@ function SummaryCell(props: {
 }
 
 const absentMark = <span className="ticket-config-absent">—</span>;
+
+/** What a field the ticket overrode carries beside its name. */
+function OverriddenMark(): ReactNode {
+  return (
+    <>
+      {" "}
+      <span className="ticket-config-chip">Overridden</span>
+    </>
+  );
+}
+
+/** The fields a ticket overrode, which the panel marks where it draws them. */
+type ConfigurationOverridden = ReadonlySet<OverrideField>;
 
 /** The live revision and when it released, the draft beside it, its
  * dependencies, and where the finished work lands. */
@@ -264,12 +287,16 @@ function ConfigurationChips(props: {
 function ConfigurationText(props: {
   readonly heading?: string;
   readonly lines: readonly string[];
+  readonly overridden?: boolean;
 }): ReactNode {
   if (props.lines.length === 0) return null;
   return (
     <div className="ticket-config-text">
       {props.heading === undefined ? null : (
-        <h3 className="eyebrow">{props.heading}</h3>
+        <h3 className="eyebrow">
+          {props.heading}
+          {props.overridden === true ? <OverriddenMark /> : null}
+        </h3>
       )}
       {props.lines.map((line, index) => (
         <p key={`${String(index)}:${line}`} className="ticket-config-doc">
@@ -286,18 +313,27 @@ function ConfigurationText(props: {
 function ConfigurationRoleBody(props: {
   readonly brief: ConfigurationBrief;
   readonly role: ConfigurationRole;
+  readonly overridden: ConfigurationOverridden;
+  /** Whether this is the work role, whose instructions a ticket may override. */
+  readonly work: boolean;
 }): ReactNode {
-  const role = props.role;
+  const { role, overridden } = props;
   return (
     <article className="ticket-config-role">
-      <ConfigurationText heading="Motivation" lines={props.brief.motivation} />
+      <ConfigurationText
+        heading="Motivation"
+        lines={props.brief.motivation}
+        overridden={overridden.has("brief.motivation")}
+      />
       <ConfigurationText
         heading="Acceptance criteria"
         lines={props.brief.acceptanceCriteria}
+        overridden={overridden.has("brief.acceptanceCriteria")}
       />
       <ConfigurationText
         heading="Constraints"
         lines={props.brief.constraints}
+        overridden={overridden.has("brief.constraints")}
       />
       {role.instructions === undefined ? (
         role.commands === undefined ? null : (
@@ -314,11 +350,18 @@ function ConfigurationRoleBody(props: {
           </div>
         )
       ) : (
-        <ConfigurationText heading="Instructions" lines={role.instructions} />
+        <ConfigurationText
+          heading="Instructions"
+          lines={role.instructions}
+          overridden={props.work && overridden.has("work.instructions")}
+        />
       )}
       {role.practices === undefined || role.practices.length === 0 ? null : (
         <div className="ticket-config-text">
-          <h3 className="eyebrow">Practices</h3>
+          <h3 className="eyebrow">
+            Practices
+            {overridden.has("practices") ? <OverriddenMark /> : null}
+          </h3>
           <ConfigurationChips items={role.practices.map(practiceLabel)} />
         </div>
       )}
@@ -326,15 +369,30 @@ function ConfigurationRoleBody(props: {
   );
 }
 
+/** The fields drawn under Instructions, which decide what its caption may say. */
+const instructionsOverridable: readonly OverrideField[] = [
+  "brief.motivation",
+  "brief.acceptanceCriteria",
+  "brief.constraints",
+  "practices",
+  "work.instructions",
+];
+
 function ConfigurationInstructionsBar(props: {
   readonly tabs: ReactNode;
+  readonly overridden: ConfigurationOverridden;
 }): ReactNode {
+  const configured = instructionsOverridable.every(
+    (field) => !props.overridden.has(field),
+  );
   return (
     <div className="ticket-config-instructions-bar">
       <span className="panel-title">Instructions</span>
       {props.tabs}
       <span className="ticket-config-instructions-caption">
-        As configured · a run's exact prompt is in its conversation
+        {configured
+          ? "As configured · a run's exact prompt is in its conversation"
+          : "As configured with this ticket's overrides · a run's exact prompt is in its conversation"}
       </span>
     </div>
   );
@@ -349,18 +407,25 @@ function ConfigurationInstructions(props: {
   readonly brief: ConfigurationBrief;
   readonly work: ConfigurationRole;
   readonly review: ConfigurationRole | undefined;
+  readonly overridden: ConfigurationOverridden;
 }): ReactNode {
-  const review = props.review;
+  const { review, overridden } = props;
   if (review === undefined)
     return (
       <div className="ticket-config-instructions">
-        <ConfigurationInstructionsBar tabs={null} />
-        <ConfigurationRoleBody brief={props.brief} role={props.work} />
+        <ConfigurationInstructionsBar tabs={null} overridden={overridden} />
+        <ConfigurationRoleBody
+          brief={props.brief}
+          role={props.work}
+          overridden={overridden}
+          work
+        />
       </div>
     );
   return (
     <Tabs.Root className="ticket-config-instructions" defaultValue="Work">
       <ConfigurationInstructionsBar
+        overridden={overridden}
         tabs={
           <Tabs.List
             className="ticket-config-tabs"
@@ -379,6 +444,8 @@ function ConfigurationInstructions(props: {
           <ConfigurationRoleBody
             brief={props.brief}
             role={tab === "Work" ? props.work : review}
+            overridden={overridden}
+            work={tab === "Work"}
           />
         </Tabs.Content>
       ))}
@@ -446,14 +513,22 @@ function joinedOrAbsent(items: readonly string[] | undefined): ReactNode {
     : items.join(" · ");
 }
 
+function yesOrNoOrAbsent(value: boolean | undefined): ReactNode {
+  if (value === undefined) return absentMark;
+  return value ? "Yes" : "No";
+}
+
 function ConfigurationSettingsGrid(props: {
   readonly settings: ConfigurationSettings;
+  readonly overridden: ConfigurationOverridden;
 }): ReactNode {
   const settings = props.settings;
+  const mode = props.overridden.has("worker.mode");
   return (
     <div className="ticket-config-settings">
       <SummaryCell
         name="Model"
+        overridden={mode}
         large
         value={settings.model.label}
         meta={
@@ -464,6 +539,7 @@ function ConfigurationSettingsGrid(props: {
       />
       <SummaryCell
         name="Agent"
+        overridden={mode}
         value={settings.agent ?? absentMark}
         meta={settings.agentDetail}
       />
@@ -479,7 +555,11 @@ function ConfigurationSettingsGrid(props: {
           )
         }
       />
-      <SummaryCell name="Tools" value={joinedOrAbsent(settings.tools)} />
+      <SummaryCell
+        name="Tools"
+        overridden={mode}
+        value={joinedOrAbsent(settings.tools)}
+      />
       <SummaryCell
         name="Credentials"
         value={joinedOrAbsent(settings.credentials)}
@@ -487,6 +567,7 @@ function ConfigurationSettingsGrid(props: {
       <SummaryCell name="Access" value={settings.access ?? absentMark} />
       <SummaryCell
         name="Setup"
+        overridden={props.overridden.has("worker.setup")}
         value={
           settings.setup === undefined ? (
             absentMark
@@ -497,13 +578,7 @@ function ConfigurationSettingsGrid(props: {
       />
       <SummaryCell
         name="Completes task"
-        value={
-          settings.completesTask === undefined
-            ? absentMark
-            : settings.completesTask
-              ? "Yes"
-              : "No"
-        }
+        value={yesOrNoOrAbsent(settings.completesTask)}
       />
     </div>
   );
@@ -533,10 +608,14 @@ function ConfigurationFoot(props: {
   readonly revision: string;
   readonly digest: string;
   readonly canonical: string;
+  /** Whether the ticket overrode any of it, so the foot says it is the
+   * pinned document's and not what the ticket runs. */
+  readonly overridden: boolean;
 }): ReactNode {
   const [open, setOpen] = useState(false);
   return (
     <div className="ticket-config-foot">
+      {props.overridden ? <span>Pinned ·</span> : null}
       <span>Digest</span>
       <Tooltip text={props.digest}>
         <code>{digestShortened(props.digest)}</code>
@@ -548,7 +627,7 @@ function ConfigurationFoot(props: {
       <Disclosure
         open={open}
         onOpenChange={setOpen}
-        label="Canonical JSON"
+        label={props.overridden ? "Pinned canonical JSON" : "Canonical JSON"}
         look={{ variant: "quiet", size: "sm" }}
       >
         <pre className="ticket-config-canonical">{props.canonical}</pre>
@@ -557,24 +636,92 @@ function ConfigurationFoot(props: {
   );
 }
 
+/** Whether the panel draws an overridden field in a place of its own: a
+ * settings cell is always drawn, and a text only where it holds a line. */
+function configurationPanelPlaces(
+  view: ConfigurationView,
+  field: OverrideField,
+): boolean {
+  switch (field) {
+    case "worker.mode":
+    case "worker.setup":
+      return true;
+    case "worker.files":
+      return false;
+    case "practices":
+      return [view.work.practices, view.review?.practices].some(
+        (practices) => practices !== undefined && practices.length > 0,
+      );
+    case "brief.motivation":
+      return view.brief.motivation.length > 0;
+    case "brief.acceptanceCriteria":
+      return view.brief.acceptanceCriteria.length > 0;
+    case "brief.constraints":
+      return view.brief.constraints.length > 0;
+    case "work.instructions":
+      return (view.work.instructions?.length ?? 0) > 0;
+  }
+}
+
+/** The overrides the panel has no place for, each by its field name with its
+ * value, so nothing the ticket runs under is missing from its page. */
+function ConfigurationOverridesUnplaced(props: {
+  readonly fields: readonly OverrideField[];
+  readonly overrides: TicketResponse["overrides"];
+}): ReactNode {
+  if (props.fields.length === 0) return null;
+  return (
+    <div className="ticket-config-text">
+      <span className="panel-title">Also overridden</span>
+      {props.fields.map((field) => (
+        <div key={field}>
+          <h3 className="eyebrow">
+            <code>{field}</code>
+            <OverriddenMark />
+          </h3>
+          <pre className="ticket-config-canonical">
+            {JSON.stringify(overrideFieldOf(props.overrides, field), null, 2)}
+          </pre>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function ConfigurationBody(props: {
   readonly configuration: ConfigurationResponse;
+  readonly overrides: TicketResponse["overrides"];
 }): ReactNode {
   const configuration = props.configuration;
-  const view = configurationViewOf(configuration.canonical);
+  const { view, overridden: fields } = overriddenViewOf(
+    configuration.canonical,
+    props.overrides,
+  );
+  const overridden = new Set(fields);
   return (
     <div className="ticket-config">
-      <ConfigurationSettingsGrid settings={view.settings} />
+      <ConfigurationSettingsGrid
+        settings={view.settings}
+        overridden={overridden}
+      />
       <ConfigurationInstructions
         brief={view.brief}
         work={view.work}
         review={view.review}
+        overridden={overridden}
       />
       <ConfigurationEvaluations evaluations={view.evaluations} />
+      <ConfigurationOverridesUnplaced
+        fields={fields.filter(
+          (field) => !configurationPanelPlaces(view, field),
+        )}
+        overrides={props.overrides}
+      />
       <ConfigurationFoot
         revision={configuration.revision}
         digest={configuration.digest}
         canonical={configuration.canonical}
+        overridden={fields.length > 0}
       />
     </div>
   );
@@ -586,6 +733,7 @@ function ConfigurationPanel(props: {
   readonly partition: PartitionIdentity;
   readonly revision: string;
   readonly version: TicketResponse["configurationVersion"];
+  readonly overrides: TicketResponse["overrides"];
 }): ReactNode {
   const state = usePanelResource(
     props.partition,
@@ -613,7 +761,10 @@ function ConfigurationPanel(props: {
     >
       <PanelUnready state={state} />
       {state.state === "Ready" ? (
-        <ConfigurationBody configuration={state.value} />
+        <ConfigurationBody
+          configuration={state.value}
+          overrides={props.overrides}
+        />
       ) : null}
     </Panel>
   );
@@ -643,6 +794,7 @@ export function TicketProvenance(props: {
           partition={props.partition}
           revision={released}
           version={props.ticket?.configurationVersion}
+          overrides={props.ticket?.overrides}
         />
       )}
     </>
