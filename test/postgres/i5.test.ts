@@ -760,6 +760,71 @@ test("selector state fencing and audit ordinals survive out-of-order identities"
   }
 });
 
+/**
+ * A quiet cycle writes the project's state alone, as the selector's own role,
+ * under the revision fence a decision's write is held to: nothing is added to
+ * the decision log or the planning intent, and a pass whose revision is stale
+ * writes nothing at all.
+ */
+test("a quiet cycle writes the selector state alone and a stale one writes nothing", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "i5-selector-quiet",
+  );
+  const pool = postgresRolePool(selectorServiceRole);
+  const state = postgresSelectorState(pool);
+  const token = {
+    ...partition,
+    recoveryEpoch: "epoch",
+    schemaVersion: 1,
+    watermark: 7,
+    digest: "c".repeat(64),
+  } as const;
+  try {
+    assert.equal(
+      await state.recordInteraction(
+        selectorTestInteraction(partition, `quiet-${crypto.randomUUID()}`),
+        {
+          ...selectorTestState(partition, 0, 4),
+          attention: "Attention",
+          handoffNote: { left: "for a successor" },
+        },
+        selectorTestFence,
+        { tickets: [3] },
+      ),
+      true,
+    );
+    const decided = await state.project(partition);
+    assert.ok(decided !== undefined);
+    const quiet = {
+      ...decided,
+      notificationCursor: 9,
+      recoveryEpoch: "epoch",
+      candidateScan: { state: "Exhausted", token },
+    } as const;
+    assert.equal(await state.recordQuietCycle(quiet), true);
+    assert.deepEqual(await state.project(partition), {
+      ...quiet,
+      revision: decided.revision + 1,
+    });
+    assert.equal(
+      await state.recordQuietCycle({ ...quiet, notificationCursor: 99 }),
+      false,
+    );
+    assert.equal((await state.project(partition))?.notificationCursor, 9);
+    assert.equal(
+      (await state.project(partition))?.revision,
+      decided.revision + 1,
+    );
+    assert.equal((await state.history(partition, undefined, 10)).length, 1);
+    assert.deepEqual((await state.planningIntent(partition))?.intent, {
+      tickets: [3],
+    });
+  } finally {
+    await pool.end();
+  }
+});
+
 test("a database-linearized pause suppresses proposal creation", async () => {
   const partition = await postgresHarnessProject(
     harness.store,

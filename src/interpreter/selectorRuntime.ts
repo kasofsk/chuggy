@@ -15,6 +15,7 @@ import {
   type SelectorPolicyHost,
   selectorProjectMoved,
   type SelectorProjectState,
+  selectorQuietCycle,
   type SelectorProposedDecision,
   selectorSettingsFence,
   selectorSettingsFenceHolds,
@@ -68,6 +69,8 @@ export interface SelectorRunResult {
   /** The projects the sweep reached, whether it served them, passed them over or failed on them. */
   readonly reached: readonly Partition[];
   readonly observed: number;
+  /** The projects whose observation held nothing for the lead, and whose state moved without a turn. */
+  readonly quiet: number;
   readonly proposed: number;
   readonly dispatched: number;
   readonly delivered: number;
@@ -112,16 +115,11 @@ async function observeProjects(
   policy: SelectorPolicyHost,
   identities: SelectorIdentityFactory,
   control: SelectorRuntimeSettingsSource,
-): Promise<{
-  readonly reached: readonly Partition[];
-  readonly observed: number;
-  readonly proposed: number;
-  readonly dispatched: number;
-  readonly failures: readonly SelectorRunFailure[];
-}> {
+): Promise<SelectorSweepProgress> {
   let proposed = 0;
   let dispatched = 0;
   let observed = 0;
+  let quiet = 0;
   const reached: Partition[] = [];
   const failures: SelectorRunFailure[] = [];
   for (const partition of projects) {
@@ -138,15 +136,23 @@ async function observeProjects(
     if (result.stop) break;
     reached.push(partition);
     if (result.observed) observed += 1;
+    if (result.quiet) quiet += 1;
     if (result.proposed) proposed += 1;
     dispatched += result.dispatched;
   }
-  return { reached, observed, proposed, dispatched, failures };
+  return { reached, observed, quiet, proposed, dispatched, failures };
 }
+
+type SelectorSweepProgress = Pick<
+  SelectorRunResult,
+  "reached" | "observed" | "quiet" | "proposed" | "dispatched" | "failures"
+>;
 
 interface ProjectObservationResult {
   readonly stop: boolean;
   readonly observed: boolean;
+  /** Whether this project's observation was stored as a quiet cycle rather than offered as a turn. */
+  readonly quiet: boolean;
   /** Whether this project's turn left a decision in the relation for the writer to answer. */
   readonly proposed: boolean;
   /** The delivery rows this project's decision left, which a decision that proposed nothing makes zero. */
@@ -156,14 +162,15 @@ interface ProjectObservationResult {
 
 /**
  * Runs one swept project, taking its permit only once the observation the
- * decision would stand on exists — a change log that moved is not by itself
- * something to decide about, and the notification cursor is saved by a
- * completed cycle alone, so allocating on the trigger charges a decision
- * reference, a `selector_interaction` row and a selections-per-minute slot to
- * every pass of a project whose changes leave the dispatch view where it was.
- * A project with nothing to decide therefore costs its bounded reads and
- * nothing else — no permit, no decision reference, no turn and no quota — and
- * the sweep still counts it as scanned, so discovery goes on.
+ * decision would stand on exists and holds something the lead can judge — a
+ * change log that moved is not by itself something to decide about, so
+ * allocating on the trigger charges a decision reference, a
+ * `selector_interaction` row and a selections-per-minute slot to every pass of
+ * a project whose changes leave the lead nothing to answer. A project with
+ * nothing to decide therefore costs its bounded reads and at most the quiet
+ * cycle's one write of its cursor and scan — no permit, no decision
+ * reference, no turn and no quota — and the sweep still counts it as scanned,
+ * so discovery goes on.
  */
 async function observeProject(
   partition: Partition,
@@ -197,6 +204,8 @@ async function observeProject(
     return projectObservationFailure("Observation", partition);
   }
   if (observation === undefined) return emptyProjectObservation;
+  const quiet = selectorQuietCycle(state, observation);
+  if (quiet !== undefined) return observeQuietProject(partition, store, quiet);
   const passedOver = await observeProjectAdmission(partition, policy);
   if (passedOver !== undefined) return passedOver;
   const identity = identities.next(partition);
@@ -229,12 +238,28 @@ async function observeProject(
   );
 }
 
+/** Stores a quiet cycle's state, which a pass whose revision is stale leaves unwritten. */
+async function observeQuietProject(
+  partition: Partition,
+  store: SelectorStateStore,
+  quiet: SelectorProjectState,
+): Promise<ProjectObservationResult> {
+  try {
+    return (await store.recordQuietCycle(quiet))
+      ? { ...emptyProjectObservation, quiet: true }
+      : emptyProjectObservation;
+  } catch {
+    return projectObservationFailure("Observation", partition);
+  }
+}
+
 /**
  * Why a project with something to decide is passed over before its permit, or
  * nothing where its lead may take a turn now: a refusal, or a read that could
- * not say. Neither is kept, because the notification cursor moves only with a
- * completed cycle, so the next pass that reaches the project asks again and
- * finds its changes waiting.
+ * not say. Neither is kept: the notification cursor moves only with a
+ * completed, failed or quiet cycle, and a project passed over here took none
+ * of them, so the next pass that reaches it asks again and finds its changes
+ * waiting.
  */
 async function observeProjectAdmission(
   partition: Partition,
@@ -283,6 +308,7 @@ async function projectObservation(
 const emptyProjectObservation: ProjectObservationResult = {
   stop: false,
   observed: false,
+  quiet: false,
   proposed: false,
   dispatched: 0,
   failures: [],
@@ -399,6 +425,7 @@ async function observePermittedProject(
   return {
     stop,
     observed,
+    quiet: false,
     proposed: proposal !== undefined,
     dispatched: proposal?.dispatched.length ?? 0,
     failures,
@@ -413,13 +440,7 @@ async function observeInventory(
   identities: SelectorIdentityFactory,
   control: SelectorRuntimeSettingsSource,
   projectsMax: number,
-): Promise<{
-  readonly reached: readonly Partition[];
-  readonly observed: number;
-  readonly proposed: number;
-  readonly dispatched: number;
-  readonly failures: readonly SelectorRunFailure[];
-}> {
+): Promise<SelectorSweepProgress> {
   await store.setAutomaticReadiness(policy.productionReady);
   if ((await control.settings()).mode === "Paused") return pausedInventory;
   const inventory = await source.projects(
@@ -443,6 +464,7 @@ async function observeInventory(
 const pausedInventory = {
   reached: [],
   observed: 0,
+  quiet: 0,
   proposed: 0,
   dispatched: 0,
   failures: [],
@@ -487,6 +509,7 @@ export async function selectorRunOnce(
   );
   let reached: readonly Partition[] = [];
   let observed = 0;
+  let quiet = 0;
   let proposed = 0;
   let dispatched = 0;
   const failures: SelectorRunFailure[] = [];
@@ -502,6 +525,7 @@ export async function selectorRunOnce(
     );
     reached = progress.reached;
     observed = progress.observed;
+    quiet = progress.quiet;
     proposed = progress.proposed;
     dispatched = progress.dispatched;
     failures.push(...progress.failures);
@@ -528,6 +552,7 @@ export async function selectorRunOnce(
   return {
     reached,
     observed,
+    quiet,
     proposed,
     dispatched,
     delivered: delivery.delivered,

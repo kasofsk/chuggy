@@ -156,6 +156,11 @@ export interface SelectorStateStore {
     proposals: SelectorDecisionProposals,
     state: SelectorProjectState,
   ): Promise<SelectorRecordedDecision>;
+  /**
+   * Writes a quiet cycle's state alone, fenced on its revision: no interaction,
+   * no attempt and no planning intent. False where the project moved under it.
+   */
+  recordQuietCycle(state: SelectorProjectState): Promise<boolean>;
   pending(limit: number): Promise<readonly SelectorDelivery[]>;
   submittedDeliveries(limit: number): Promise<readonly SelectorDelivery[]>;
   /** One delivery of one decision settles alone, which is what partial failure is. */
@@ -1696,6 +1701,34 @@ export function selectorProjectMoved(
     changes.events.length > 0 ||
     changes.cursor !== state.notificationCursor
   );
+}
+
+/**
+ * The state a pass stores in place of a turn — the cursor, scan and recovery
+ * epoch moved as a decision that dispatched nothing moves them, the attention
+ * and handoff note kept — or nothing where the lead has something to judge: a
+ * candidate, a standing refusal only the lead lifts, or an attention only a
+ * completed decision lowers. An observation over its resource limit is never
+ * quiet, because its next scan is already past the candidate that was too
+ * large and only a recorded failure may pass over it.
+ */
+export function selectorQuietCycle(
+  state: SelectorProjectState,
+  observation: SelectorObservation,
+): SelectorProjectState | undefined {
+  if (
+    observation.resourceLimit !== undefined ||
+    observation.candidates.length > 0 ||
+    observation.refusals.length > 0 ||
+    state.attention !== "Monitoring"
+  )
+    return undefined;
+  return {
+    ...state,
+    notificationCursor: observation.notificationCursor,
+    recoveryEpoch: observation.token.recoveryEpoch,
+    candidateScan: observation.nextCandidateScan,
+  };
 }
 
 /**
