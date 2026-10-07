@@ -95,7 +95,12 @@ const leadStandingInstructions = `# How you act on this project
   dependencies that are immutable once released. A prerequisite of a draft is
   a revision of that draft's own dependencies.
 - \`release_draft\` answers an accepted operation rather than an outcome. Read
-  the operation to learn what happened.`;
+  the operation to learn what happened.
+- Your memory of earlier turns can end between any two turns. Your successor
+  is given the handoff note, a summary of your recent decisions (which tickets
+  each dispatched and refused), the standing refusals and the cursor, and
+  nothing of what you read or reasoned. What a later turn will need goes in the
+  note.`;
 
 /** The objectives themselves, before the bound they are checked against is known. */
 function leadObjectives(

@@ -11,6 +11,7 @@ import {
 import type { AgenticRefusalRecord } from "../../src/interpreter/agenticRefusal.ts";
 import { leadSystemPrompt } from "../../src/interpreter/leadTools.ts";
 import type {
+  LeadClosed,
   LeadMailbox,
   LeadOpening,
   LeadSessionMint,
@@ -21,6 +22,7 @@ import type {
 } from "../../src/interpreter/leadMailbox.ts";
 import {
   leadSelectorPolicy,
+  leadStandingReplaced,
   leadTurnInput,
   type LeadDecisionTail,
   type LeadPolicyClock,
@@ -58,6 +60,7 @@ import {
 } from "./sessionRoutesFixture.ts";
 import {
   agenticRefusalReasonCharsMax,
+  leadTurnTokensMax,
   selectorHandoffNoteBytesMax,
   selectorSettingsTextCharsMax,
 } from "../../src/contract/http.ts";
@@ -139,6 +142,14 @@ const request: SelectorPolicyRequest = {
   },
 };
 
+/** The system prompt `request` composes, which a lead opened for it holds. */
+const composedPrompt = leadSystemPrompt({
+  basePrompt: request.instructions.content,
+  ...(request.instructions.northStar === undefined
+    ? {}
+    : { northStar: request.instructions.northStar }),
+});
+
 const measured: SessionTurnMeasured = {
   model: "claude-opus-5",
   tokens: 4_096,
@@ -181,44 +192,74 @@ interface MailboxOptions {
   readonly withdrawn?: LeadTurnWithdrawn;
   /** A door that answers and leaves no open lead, which is what the host refuses to decide on. */
   readonly openLeavesNothing?: boolean;
+  /** The lead's stored system prompt, the composed one unless a case says otherwise; null is none. */
+  readonly systemPrompt?: string | null;
+  readonly decisionTurnTokens?: number;
+  /** What the closing door answers, which closes the lead only where it is `Closed`. */
+  readonly closed?: LeadClosed;
 }
 
 interface MailboxDouble {
   readonly mailbox: LeadMailbox;
   readonly offers: { readonly input: string }[];
   readonly openings: LeadOpening[];
+  readonly closings: string[];
   readonly reads: () => number;
+}
+
+/** The lead the double's mailbox answers before anything moves it. */
+function mailboxStanding(
+  options: MailboxOptions,
+): LeadSessionStanding | undefined {
+  if (options.absent === true) return undefined;
+  const systemPrompt =
+    options.systemPrompt === undefined ? composedPrompt : options.systemPrompt;
+  return {
+    session: asSessionId("lead-session"),
+    state: options.state ?? "Open",
+    ...(options.agentReference === undefined
+      ? {}
+      : { agentReference: options.agentReference }),
+    ...(systemPrompt === null ? {} : { systemPrompt }),
+    ...(options.decisionTurnTokens === undefined
+      ? {}
+      : { decisionTurnTokens: options.decisionTurnTokens }),
+  };
 }
 
 function mailboxDouble(options: MailboxOptions = {}): MailboxDouble {
   const offers: { readonly input: string }[] = [];
   const openings: LeadOpening[] = [];
+  const closings: string[] = [];
   const states = options.turnStates ?? (["Answered"] as const);
   let read = 0;
-  let standing: LeadSessionStanding | undefined =
-    options.absent === true
-      ? undefined
-      : {
-          session: asSessionId("lead-session"),
-          state: options.state ?? "Open",
-          ...(options.agentReference === undefined
-            ? {}
-            : { agentReference: options.agentReference }),
-        };
+  let standing = mailboxStanding(options);
   return {
     offers,
     openings,
+    closings,
     reads: () => read,
     mailbox: {
       lead: () => Promise.resolve(standing),
       openLead: (opening) => {
         openings.push(opening);
         if (options.openLeavesNothing !== true)
-          standing = { session: opening.session, state: "Open" };
+          standing = {
+            session: opening.session,
+            state: "Open",
+            systemPrompt: opening.systemPrompt,
+          };
         return Promise.resolve({
           opened: "Opened" as const,
           session: opening.session,
         });
+      },
+      closeLead: (_partition, session) => {
+        closings.push(session);
+        const closed = options.closed ?? "Closed";
+        if (closed === "Closed" && standing !== undefined)
+          standing = { ...standing, state: "Closed" };
+        return Promise.resolve(closed);
       },
       offer: (input) => {
         offers.push({ input: input.input });
@@ -332,6 +373,11 @@ test("a decision is one turn, and the turn's result is the decision", async () =
   assert.deepEqual(observed.changes, observation.changes);
   assert.deepEqual(observed.handoffNote, observation.handoffNote);
   assert.equal(observed.seeding, undefined);
+  assert.equal(
+    observed.instructions,
+    undefined,
+    "a lead's instructions are its system prompt and nothing else",
+  );
   assert.deepEqual(
     observed.refusals.map((refusal) => [refusal.ticket, refusal.superseded]),
     [
@@ -418,6 +464,127 @@ test("a lead already open is decided through rather than replaced", async () => 
   const double = mailboxDouble({ agentReference: "agent-session-9" });
   await policyOf(double).execute(request, new AbortController().signal);
   assert.deepEqual(double.openings, []);
+});
+
+test("a lead is replaced where it is spent or its prompt is not the composed one, and only there", () => {
+  const open = { session: asSessionId("lead-session"), state: "Open" } as const;
+  const cases: readonly (readonly [string, LeadSessionStanding, boolean])[] = [
+    ["composed, unmeasured", { ...open, systemPrompt: composedPrompt }, false],
+    [
+      "composed, at the bound",
+      {
+        ...open,
+        systemPrompt: composedPrompt,
+        decisionTurnTokens: leadTurnTokensMax,
+      },
+      false,
+    ],
+    [
+      "composed, over the bound",
+      {
+        ...open,
+        systemPrompt: composedPrompt,
+        decisionTurnTokens: leadTurnTokensMax + 1,
+      },
+      true,
+    ],
+    ["another prompt", { ...open, systemPrompt: "an older prompt" }, true],
+    ["no prompt", open, true],
+  ];
+  for (const [label, standing, replaced] of cases)
+    assert.equal(
+      leadStandingReplaced(standing, composedPrompt),
+      replaced,
+      label,
+    );
+});
+
+test("a spent lead is closed before the decision, and a seeded successor takes it", async () => {
+  const double = mailboxDouble({
+    agentReference: "agent-session-9",
+    decisionTurnTokens: leadTurnTokensMax + 1,
+  });
+  const execution = (await policyOf(double).execute(
+    request,
+    new AbortController().signal,
+  )) as SelectorPolicyExecution;
+  assert.deepEqual(double.closings, ["lead-session"]);
+  assert.deepEqual(
+    double.openings.map((opening) => [opening.session, opening.systemPrompt]),
+    [["lead-successor-1", composedPrompt]],
+  );
+  assert.ok(
+    parseLeadObservation(double.offers[0]?.input ?? "").seeding !== undefined,
+    "the successor's first turn is told the record",
+  );
+  assert.equal(execution.policyRevision, "Unbound");
+});
+
+test("a lead at the bound, or with nothing measured, takes the decision itself", async () => {
+  for (const decisionTurnTokens of [leadTurnTokensMax, undefined]) {
+    const double = mailboxDouble({
+      agentReference: "agent-session-9",
+      ...(decisionTurnTokens === undefined ? {} : { decisionTurnTokens }),
+    });
+    await policyOf(double).execute(request, new AbortController().signal);
+    assert.deepEqual([double.closings, double.openings], [[], []]);
+    assert.equal(
+      parseLeadObservation(double.offers[0]?.input ?? "").seeding,
+      undefined,
+    );
+  }
+});
+
+test("a lead holding another prompt, or none, is replaced by one holding the composed prompt", async () => {
+  for (const systemPrompt of ["an older prompt", null]) {
+    const double = mailboxDouble({
+      agentReference: "agent-session-9",
+      systemPrompt,
+    });
+    await policyOf(double).execute(request, new AbortController().signal);
+    assert.deepEqual(double.closings, ["lead-session"]);
+    assert.deepEqual(
+      double.openings.map((opening) => opening.systemPrompt),
+      [composedPrompt],
+    );
+  }
+});
+
+test("a lead the door will not close takes the decision itself, under the prompt it holds", async () => {
+  for (const closed of ["TurnInFlight", "InquiryOpen"] as const) {
+    const double = mailboxDouble({
+      agentReference: "agent-session-9",
+      decisionTurnTokens: leadTurnTokensMax + 1,
+      closed,
+    });
+    const execution = (await policyOf(double).execute(
+      request,
+      new AbortController().signal,
+    )) as SelectorPolicyExecution;
+    assert.deepEqual(double.closings, ["lead-session"], closed);
+    assert.deepEqual(double.openings, [], "no successor is opened");
+    assert.equal(execution.policyRevision, "agent-session-9");
+    assert.equal(
+      parseLeadObservation(double.offers[0]?.input ?? "").seeding,
+      undefined,
+    );
+  }
+});
+
+test("a lead another process already closed is succeeded, and one that is no lead raises", async () => {
+  const already = mailboxDouble({
+    systemPrompt: null,
+    closed: "AlreadyClosed",
+  });
+  await policyOf(already).execute(request, new AbortController().signal);
+  assert.equal(already.openings.length, 1);
+
+  const stray = mailboxDouble({ systemPrompt: null, closed: "NotLead" });
+  await assert.rejects(
+    policyOf(stray).execute(request, new AbortController().signal),
+    /not the project's lead/u,
+  );
+  assert.deepEqual([stray.openings, stray.offers], [[], []]);
 });
 
 test("a successor that does not come back open is not decided on", async () => {
@@ -637,7 +804,7 @@ test("an unseeded document overflowed past its refusals is refused, not shed", (
     (error: unknown) =>
       error instanceof RangeError &&
       /nothing sheddable/u.test(error.message) &&
-      /objectives, handoff note, cursor and refusals/u.test(error.message),
+      /: handoff note, cursor and refusals alone/u.test(error.message),
     "the steady-state turn carries no seeding, and its refusals are still never shed",
   );
 });
@@ -653,7 +820,7 @@ test("a seeded document shed to nothing is refused, not shed further", () => {
     (error: unknown) =>
       error instanceof RangeError &&
       /seeding shed to nothing/u.test(error.message) &&
-      /objectives, handoff note, cursor and refusals/u.test(error.message),
+      /: handoff note, cursor and refusals alone/u.test(error.message),
   );
 });
 

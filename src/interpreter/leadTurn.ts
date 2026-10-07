@@ -91,9 +91,8 @@ export interface LeadObservationDocument {
   readonly decision: string;
   readonly partition: Partition;
   /**
-   * The composed objectives, the North Star inside the content rather than
-   * beside it. Absent where the session carries them as a system prompt
-   * instead, which a retained document predates.
+   * The composed objectives, which this tree no longer writes: a lead's
+   * instructions are its system prompt. A retained document may carry them.
    */
   readonly instructions?: {
     readonly revision: string;

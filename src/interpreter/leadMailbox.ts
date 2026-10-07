@@ -3,11 +3,13 @@
  * declares the shapes and names no adapter, exactly as `./sessionPlane.ts` does
  * for the worker plane.
  *
- * OPENING IS A DOOR HERE AND CLOSING IS NOT. A project whose lead has closed
- * must be able to decide again, and the record is what rebuilds one, so the
- * successor is the runtime's to open. Ending a lead decides that a project's
- * continuous context is over, which is provisioning, and no runtime role may
- * do it.
+ * OPENING IS A DOOR HERE, AND CLOSING IS ONE IN TWO CASES. A project whose
+ * lead has closed must be able to decide again, and the record is what
+ * rebuilds one, so the successor is the runtime's to open. The runtime closes a
+ * lead only to replace it before a decision: when its newest decision turn
+ * spent more than a bound, or when what it was told is not what the decision
+ * composes. Ending a lead for any other reason decides that a project's
+ * continuous context is over, which is still provisioning.
  *
  * READING AND WITHDRAWING NAME THE TURN AND NOTHING ELSE. The turn is globally
  * unique and its door joins it to the project's lead, so a process that did not
@@ -45,7 +47,21 @@ export interface LeadSessionStanding {
   readonly state: SessionState;
   /** Absent until the session's first turn has bound one, which is what makes a turn a seeding turn. */
   readonly agentReference?: string;
+  /** What the lead was told when it was opened, absent where it was opened with nothing. */
+  readonly systemPrompt?: string;
+  /**
+   * What the pod measured of the newest answered decision turn, absent where
+   * there is none or it measured nothing. An inquiry's turns are not the lead's.
+   */
+  readonly decisionTurnTokens?: number;
 }
+
+/**
+ * What closing the lead found: closed, already closed, not this project's lead
+ * at all, or refused because a turn or an inquiry still stands on it.
+ */
+export type LeadClosed =
+  "Closed" | "AlreadyClosed" | "NotLead" | "TurnInFlight" | "InquiryOpen";
 
 /** What offering a turn found, carrying the ordinal only where the mailbox holds one. */
 export type LeadTurnOffered =
@@ -102,6 +118,11 @@ export interface LeadMailbox {
    * selector processes racing one project end with one lead between them.
    */
   openLead(opening: LeadOpening): Promise<LeadOpened>;
+  /**
+   * Closes the session named only where it is the project's open lead, so a
+   * caller that read a stale lead closes nothing. A refusal abandons nothing.
+   */
+  closeLead(partition: Partition, session: SessionId): Promise<LeadClosed>;
   offer(input: {
     readonly partition: Partition;
     readonly turn: SessionTurnId;

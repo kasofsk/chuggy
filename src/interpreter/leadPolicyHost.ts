@@ -8,8 +8,18 @@
  * the project for ever, so the cycle opens the next one and decides through it.
  * The successor is seeded like any lead with no bound runtime reference — the
  * handoff note, the tail of the decision log, the standing refusals and the
- * cursor — which is the same block `leadSeedingBlock` composes below. Closing a
- * lead is still provisioning and is still no runtime role's.
+ * cursor — which is the same block `leadSeedingBlock` composes below.
+ *
+ * A SPENT OR REINSTRUCTED LEAD IS REPLACED BEFORE A DECISION, AND ONLY THEN.
+ * Every turn resumes the whole session, so a lead whose newest decision turn
+ * spent more than `leadTurnTokensMax` is closed and a successor opened; and a
+ * lead's instructions are its system prompt alone, so one stored with a prompt
+ * other than the one this decision composes is replaced the same way. It is
+ * taken lazily, when the next decision asks, so a quiet project keeps a lead
+ * an inquiry can fork. The door refuses while a turn or an inquiry stands on
+ * the lead, and the decision then goes ahead on the lead that stands. Closing a
+ * lead for any other reason is still provisioning and is still no runtime
+ * role's.
  *
  * THE TURN'S IDENTITY IS THE DECISION'S, WHICH IS WHAT MAKES THE OFFER
  * IDEMPOTENT. A retry of one decision finds the turn it already enqueued rather
@@ -27,9 +37,9 @@
  * promise over it did not survive, and the project decides again on its next
  * change.
  *
- * THE OBSERVATION SHEDS ONLY WHAT A SUCCESSOR CAN DO WITHOUT. The composed
- * objectives, the handoff note, the cursor and the refusals a decision is
- * judged against are never shed — a lead shown fewer refusals than it is judged
+ * THE OBSERVATION SHEDS ONLY WHAT A SUCCESSOR CAN DO WITHOUT. The handoff
+ * note, the cursor and the refusals a decision is judged against are never
+ * shed — a lead shown fewer refusals than it is judged
  * on could lift one it was never told about — so only the seeded decision tail
  * and the seeded refusals shrink, and a document those fixed parts alone
  * overflow is refused with what overflowed rather than emptied until it fits.
@@ -48,7 +58,10 @@
  * and the offer asks it again and stamps the turn with the route it admitted.
  */
 
-import { leadSeedingDecisionsMax } from "../contract/http.ts";
+import {
+  leadSeedingDecisionsMax,
+  leadTurnTokensMax,
+} from "../contract/http.ts";
 import { leadTurnDocumentVersion } from "../contract/workerDocuments.ts";
 import {
   asSessionTurnId,
@@ -57,6 +70,7 @@ import {
   type SessionTurnState,
 } from "./agentSession.ts";
 import type {
+  LeadClosed,
   LeadMailbox,
   LeadSessionMint,
   LeadSessionStanding,
@@ -197,23 +211,18 @@ function leadSeedingDecision(
 }
 
 /**
- * The objectives one turn carries: this installation's base prompt, the
- * project's North Star and what the lead's own tools mean, composed once here.
- * The North Star is inside them rather than beside them, so the turn weighs it
- * once and the mailbox's derived ceiling counts it once.
+ * The system prompt a lead deciding this request holds: this installation's
+ * base prompt, the project's North Star and what the lead's own tools mean. It
+ * reaches the lead as its system prompt and nowhere else, so an edit reaches it
+ * by replacing the lead.
  */
-function leadTurnInstructions(
-  request: SelectorPolicyRequest,
-): NonNullable<LeadObservationDocument["instructions"]> {
-  return {
-    revision: request.instructions.revision,
-    content: leadSystemPrompt({
-      basePrompt: request.instructions.content,
-      ...(request.instructions.northStar === undefined
-        ? {}
-        : { northStar: request.instructions.northStar }),
-    }),
-  };
+function leadTurnInstructions(request: SelectorPolicyRequest): string {
+  return leadSystemPrompt({
+    basePrompt: request.instructions.content,
+    ...(request.instructions.northStar === undefined
+      ? {}
+      : { northStar: request.instructions.northStar }),
+  });
 }
 
 function leadObservationDocument(
@@ -226,7 +235,6 @@ function leadObservationDocument(
     version: leadTurnDocumentVersion,
     decision: request.attempt,
     partition,
-    instructions: leadTurnInstructions(request),
     ...(seeding === undefined ? {} : { seeding }),
     changes: request.observation.changes,
     candidates: request.observation.candidates,
@@ -276,8 +284,8 @@ export function leadTurnInput(
  */
 function leadTurnOverflowed(seeding: LeadSeeding | undefined): string {
   return seeding === undefined
-    ? "lead observation exceeds its mailbox row with nothing sheddable in it: objectives, handoff note, cursor and refusals alone"
-    : "lead observation exceeds its mailbox row with its seeding shed to nothing: objectives, handoff note, cursor and refusals alone";
+    ? "lead observation exceeds its mailbox row with nothing sheddable in it: handoff note, cursor and refusals alone"
+    : "lead observation exceeds its mailbox row with its seeding shed to nothing: handoff note, cursor and refusals alone";
 }
 
 function leadTurnAccounting(
@@ -308,24 +316,60 @@ interface LeadPolicyPorts {
 }
 
 /**
+ * Whether an open lead is replaced before this decision: its newest decision
+ * turn spent more than the bound, or it holds a system prompt other than the
+ * one composed for this decision. A turn that measured nothing says nothing.
+ */
+export function leadStandingReplaced(
+  standing: LeadSessionStanding,
+  systemPrompt: string,
+): boolean {
+  return (
+    standing.systemPrompt !== systemPrompt ||
+    (standing.decisionTurnTokens !== undefined &&
+      standing.decisionTurnTokens > leadTurnTokensMax)
+  );
+}
+
+/** Whether a successor is opened after the door answered, or the lead that stands decides. */
+function leadClosedReplaces(closed: LeadClosed): boolean {
+  switch (closed) {
+    case "Closed":
+    case "AlreadyClosed":
+      return true;
+    case "TurnInFlight":
+    case "InquiryOpen":
+      return false;
+    case "NotLead":
+      throw new Error("the lead this decision read is not the project's lead");
+  }
+}
+
+/**
  * The lead this decision is taken by, opening a successor where the project has
- * none open. The standing is re-read rather than assembled from what opening
- * answered, because `AlreadyOpen` names a session this process did not write
- * and whose runtime reference decides whether the next turn is seeded.
+ * none open or the open one is replaced. The standing is re-read rather than
+ * assembled from what opening answered, because `AlreadyOpen` names a session
+ * this process did not write and whose runtime reference decides whether the
+ * next turn is seeded.
  */
 async function leadStanding(
   ports: LeadPolicyPorts,
   request: SelectorPolicyRequest,
   partition: Partition,
 ): Promise<LeadSessionStanding> {
+  const systemPrompt = leadTurnInstructions(request);
   const held = await ports.mailbox.lead(partition);
-  if (held !== undefined && held.state === "Open") return held;
+  if (held !== undefined && held.state === "Open") {
+    if (!leadStandingReplaced(held, systemPrompt)) return held;
+    const closed = await ports.mailbox.closeLead(partition, held.session);
+    if (!leadClosedReplaces(closed)) return held;
+  }
   await ports.mailbox.openLead({
     partition,
     session: ports.sessions.session(),
     principal: ports.config.principal,
     credentialSlot: ports.config.credentialSlot,
-    systemPrompt: leadTurnInstructions(request).content,
+    systemPrompt,
   });
   const opened = await ports.mailbox.lead(partition);
   if (opened === undefined || opened.state !== "Open")

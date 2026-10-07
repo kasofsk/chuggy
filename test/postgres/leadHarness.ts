@@ -46,6 +46,7 @@ import type {
   LeadSystemPromptPort,
   SessionId,
   SessionTurnId,
+  SessionTurnMeasured,
 } from "../../src/interpreter/agentSession.ts";
 import type { LeadMailbox } from "../../src/interpreter/leadMailbox.ts";
 import {
@@ -225,10 +226,20 @@ export function leadRigPodAttempt(
   );
 }
 
+/** What a pod reports of a turn where the case does not say, which no lead is replaced for. */
+export const leadRigMeasured: SessionTurnMeasured = {
+  model: "claude-model",
+  tokens: 4_096,
+  costMicros: 12_345,
+  durationMs: 61_000,
+  tools: ["Read"],
+};
+
 /**
  * One turn taken by a pod that already holds an attempt: it claims, binds the
  * runtime session the way a real pod does — which is what makes the next turn a
- * resumed one rather than a seeded one — and answers what the case decides.
+ * resumed one rather than a seeded one — and answers what the case decides,
+ * measured as the case says, `null` being a turn the pod measured nothing of.
  * A session holds one live attempt, so a case wanting two turns takes them both
  * on one of these.
  */
@@ -237,6 +248,7 @@ export async function leadRigPodTurn(
   attempt: SessionRigAttempt,
   label: string,
   decide: (input: string) => unknown,
+  measured: SessionTurnMeasured | null = leadRigMeasured,
 ): Promise<SessionTurnId> {
   for (let poll = 0; poll < leadRigPollsMax; poll += 1) {
     const claimed = await rig.sessions.plane.claim({
@@ -261,13 +273,7 @@ export async function leadRigPodTurn(
       generation: attempt.attempt.generation,
       turn: claimed.turn,
       result: JSON.stringify(decide(claimed.input)),
-      measured: {
-        model: "claude-model",
-        tokens: 4_096,
-        costMicros: 12_345,
-        durationMs: 61_000,
-        tools: ["Read"],
-      },
+      ...(measured === null ? {} : { measured }),
     });
     return claimed.turn;
   }
