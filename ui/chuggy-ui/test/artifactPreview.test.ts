@@ -23,18 +23,9 @@ test("an artifact whose output is undefined is treated the same way", () => {
   ).toBe("Unpreviewable");
 });
 
-test("every text renderer the wire has is offered, carrying its own name", () => {
-  for (const renderer of outputRenderers.filter((each) => each !== "Image"))
+test("every renderer the wire has is offered, carrying its own name", () => {
+  for (const renderer of outputRenderers)
     expect(
       artifactPreviewOffer({ ordinal: 2, bytes: 4, output: { renderer } }),
     ).toEqual({ offer: "Previewable", renderer });
-});
-
-test("an Image output is not drawn as text", () => {
-  const offer = artifactPreviewOffer({
-    ordinal: 3,
-    bytes: 4,
-    output: { renderer: "Image" },
-  });
-  expect(offer.offer).toBe("Unpreviewable");
 });

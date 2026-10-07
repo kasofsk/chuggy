@@ -191,6 +191,41 @@ test("an execution with two attempts draws two rows told apart by number, state,
  * output declares. */
 const checkOutput = artifact(0, ".chuggy/check-output.json", 1234);
 
+/** An artifact declared under an `Image` output, as the result lists it. */
+const screenshot = {
+  ...artifact(0, "artifacts/screenshot.png", 24),
+  output: {
+    name: "screenshot",
+    path: "artifacts/screenshot.png",
+    mediaType: "image/png",
+    renderer: "Image",
+  },
+};
+
+test("an Image artifact previews as an img of a data URI carrying its declared media type", async () => {
+  const drawn = await details({
+    ...passed([runAttempt("a1", { openedAt, endedAt })], [screenshot]),
+    artifactContent: {
+      read: "Content",
+      mediaType: "image/png",
+      renderer: "Image",
+      encoding: "Base64",
+      content: "QQ==",
+    },
+  });
+  const row = within(drawn).getByText("artifacts/screenshot.png")
+    .parentElement as HTMLElement;
+  await turned(() => {
+    within(row).getByRole("button", { name: "Preview" }).click();
+  });
+  await settled();
+  const image = within(row).getByRole("img", {
+    name: "artifacts/screenshot.png",
+  });
+  expect(image.getAttribute("src")).toBe("data:image/png;base64,QQ==");
+  expect(row.querySelector("pre.preview")).toBeNull();
+});
+
 test("an undeclared artifact other than the run's result keeps its row, with a quiet note", async () => {
   const drawn = await details(
     passed([runAttempt("a1", { openedAt, endedAt })], [checkOutput]),

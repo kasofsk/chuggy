@@ -13,7 +13,10 @@ import { useState } from "react";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
-import type { ExecutionResponse } from "../../../../src/contract/responses.ts";
+import type {
+  ExecutionResponse,
+  OutputContentResponse,
+} from "../../../../src/contract/responses.ts";
 import type { ResultVerdict } from "../../../../src/contract/rosters.ts";
 import { apiExecution, apiOutputContent } from "../core/apiRoutes.ts";
 import { artifactPreviewOffer } from "../core/artifactPreview.ts";
@@ -41,11 +44,38 @@ type ResultArtifact = NonNullable<
   ExecutionResponse["result"]
 >["artifacts"][number];
 
+/** The preview content drawn the one way its own renderer draws it. Every
+ * renderer but `Image` is text, interpreted by none of them; `Image` draws
+ * as an `<img>` of a `data:` URI built from the same base64 the API answers,
+ * so nothing is fetched by the document beyond the authenticated read this
+ * panel already made. */
+function ArtifactPreviewContent(props: {
+  readonly name: string;
+  readonly preview: OutputContentResponse;
+}): ReactNode {
+  const preview = props.preview;
+  if (preview.renderer === "Image")
+    return (
+      <img
+        className="preview"
+        data-renderer={preview.renderer}
+        alt={props.name}
+        src={`data:${preview.mediaType};base64,${preview.content}`}
+      />
+    );
+  return (
+    <pre className="preview" data-renderer={preview.renderer}>
+      {preview.content}
+    </pre>
+  );
+}
+
 /** The artifact's own path under its execution is the resource this names. */
 function ArtifactPreview(props: {
   readonly partition: PartitionIdentity;
   readonly execution: string;
   readonly ordinal: number;
+  readonly name: string;
 }): ReactNode {
   const state = usePanelResource(
     props.partition,
@@ -57,9 +87,7 @@ function ArtifactPreview(props: {
   return (
     <DataPanel title="Preview" state={state}>
       {(preview) => (
-        <pre className="preview" data-renderer={preview.renderer}>
-          {preview.content}
-        </pre>
+        <ArtifactPreviewContent name={props.name} preview={preview} />
       )}
     </DataPanel>
   );
@@ -92,6 +120,7 @@ function Artifact(props: {
               partition={props.partition}
               execution={props.execution}
               ordinal={props.artifact.ordinal}
+              name={props.artifact.path}
             />
           </div>
         </Disclosure>
