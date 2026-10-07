@@ -2176,21 +2176,31 @@ test("two requests racing to configure one repository author its bootstrap once"
   assert.deepEqual(revisions.created, ["bootstrap"]);
 });
 
-test("the listing marks each binding by whether the project holds anything for it", async () => {
-  const cases: readonly (readonly [RepositoryConfigurationsHeld, boolean])[] = [
-    [{ declared: new Map(), bootstrap: undefined }, false],
-    [{ declared: new Map([[repository, 1]]), bootstrap: undefined }, true],
-    [{ declared: new Map(), bootstrap: readyBootstrap }, true],
-    [{ declared: new Map(), bootstrap: unreadyBootstrap }, false],
+/** A repository that declared names is never read as bootstrapped, whatever bootstrap the project also holds. */
+test("the listing answers what the project holds for each binding, and marks it by that", async () => {
+  const imported = { result: "Imported", count: 2 };
+  const bootstrapped = { result: "Bootstrapped", revision: "bootstrap" };
+  const declared = new Map([[repository, 2]]);
+  const cases: readonly (readonly [RepositoryConfigurationsHeld, unknown])[] = [
+    [{ declared: new Map(), bootstrap: undefined }, undefined],
+    [{ declared, bootstrap: undefined }, imported],
+    [{ declared, bootstrap: readyBootstrap }, imported],
+    [{ declared: new Map(), bootstrap: readyBootstrap }, bootstrapped],
+    [{ declared: new Map(), bootstrap: unreadyBootstrap }, undefined],
   ];
-  for (const [stepHeld, configured] of cases) {
+  for (const [stepHeld, configurationsHeld] of cases) {
     const { service, wrote } = fixtureService(["Read"], { stepHeld });
     const listed = await service.projectRepositories(principal, partition);
-    assert.deepEqual(
-      listed.result === "Repositories" &&
-        listed.repositories.map((row) => row.configured),
-      [configured],
-    );
+    const binding = {
+      repository,
+      boundAt: "2026-09-11T01:00:00Z",
+      landing: { mode: "Push" },
+    };
+    assert.deepEqual(listed.result === "Repositories" && listed.repositories, [
+      configurationsHeld === undefined
+        ? { ...binding, configured: false }
+        : { ...binding, configured: true, configurationsHeld },
+    ]);
     assert.deepEqual(wrote.heldQueries, [
       { partition, repositories: [repository], bootstrap: "bootstrap" },
     ]);

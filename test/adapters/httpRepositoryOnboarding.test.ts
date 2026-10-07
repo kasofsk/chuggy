@@ -1966,32 +1966,37 @@ function configureRequest(body: Record<string, unknown>) {
   };
 }
 
-/** What the listing says of the one binding, which is what the console offers a retry from. */
-async function listedConfigured(
+/**
+ * What the listing says the project holds for the one binding: whether it
+ * holds anything, which the console offers a retry from, and what.
+ */
+async function listedHeld(
   landed: Awaited<ReturnType<typeof fixtureLanded>>,
-): Promise<readonly boolean[]> {
+): Promise<readonly (readonly [boolean, unknown])[]> {
   const listed = await landed.app.inject({
     url: repositoriesRoot,
     headers: authorized,
   });
   return listed
-    .json<{ repositories: { configured: boolean }[] }>()
-    .repositories.map((row) => row.configured);
+    .json<{
+      repositories: { configured: boolean; configurationsHeld?: unknown }[];
+    }>()
+    .repositories.map((row) => [row.configured, row.configurationsHeld]);
 }
 
 test("asking for a binding's configuration step again answers the step and the listing agrees", async (t) => {
   const landed = await fixtureLanded(t, undefined, bootstrapImage);
-  assert.deepEqual(await listedConfigured(landed), [false]);
+  assert.deepEqual(await listedHeld(landed), [[false, undefined]]);
   const served = await landed.app.inject(configureRequest({ repository }));
   assert.equal(served.statusCode, 200);
   assert.deepEqual(served.json(), {
     repository,
     configurations: { result: "Deferred", reason: "DefaultBranchAbsent" },
   });
-  assert.deepEqual(await listedConfigured(landed), [false]);
+  assert.deepEqual(await listedHeld(landed), [[false, undefined]]);
 });
 
-test("a binding the project holds a bootstrap for is answered it and listed as configured", async (t) => {
+test("a binding the project holds a bootstrap for is answered it and listed as holding it", async (t) => {
   const landed = await fixtureLanded(t, undefined, bootstrapImage);
   landed.store.stepHeld = {
     declared: new Map(),
@@ -2003,11 +2008,16 @@ test("a binding the project holds a bootstrap for is answered it and listed as c
   };
   const served = await landed.app.inject(configureRequest({ repository }));
   assert.equal(served.statusCode, 200);
-  assert.deepEqual(served.json(), {
-    repository,
-    configurations: { result: "Bootstrapped", revision: "bootstrap" },
-  });
-  assert.deepEqual(await listedConfigured(landed), [true]);
+  const bootstrapped = { result: "Bootstrapped", revision: "bootstrap" };
+  assert.deepEqual(served.json(), { repository, configurations: bootstrapped });
+  assert.deepEqual(await listedHeld(landed), [[true, bootstrapped]]);
+  landed.store.stepHeld = {
+    ...landed.store.stepHeld,
+    declared: new Map([[repository, 2]]),
+  };
+  assert.deepEqual(await listedHeld(landed), [
+    [true, { result: "Imported", count: 2 }],
+  ]);
 });
 
 test("a configuration step without the project permit is not found and reads nothing", async (t) => {

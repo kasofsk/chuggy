@@ -1553,6 +1553,22 @@ export type ForgeRepositoriesResponse = z.infer<
 export const bootstrapConfigurationName = "bootstrap";
 
 /**
+ * What a project holds for one bound repository: the names the repository
+ * declared into it, or the bootstrap revision its tickets are released under
+ * while it declares none.
+ */
+export const projectRepositoryConfigurationsHeldSchema = z.discriminatedUnion(
+  "result",
+  [
+    z.object({ result: z.literal("Imported"), count: countSchema }),
+    z.object({ result: z.literal("Bootstrapped"), revision: identitySchema }),
+  ],
+);
+export type ProjectRepositoryConfigurationsHeldResponse = z.infer<
+  typeof projectRepositoryConfigurationsHeldSchema
+>;
+
+/**
  * What a bound repository's own configurations came to. It is beside the
  * binding and not part of it: the binding is durable whatever this says, so a
  * `Deferred` is a step to run again through the configuration route rather than
@@ -1561,8 +1577,7 @@ export const bootstrapConfigurationName = "bootstrap";
 export const projectRepositoryConfigurationsSchema = z.discriminatedUnion(
   "result",
   [
-    z.object({ result: z.literal("Imported"), count: countSchema }),
-    z.object({ result: z.literal("Bootstrapped"), revision: identitySchema }),
+    ...projectRepositoryConfigurationsHeldSchema.options,
     z.object({
       result: z.literal("Deferred"),
       reason: z.enum(projectRepositoryConfigurationDeferrals),
@@ -1651,13 +1666,15 @@ export type ProjectRepositoryResponse = z.infer<
 >;
 
 /**
- * One binding as the listing answers it. `configured` is whether the project
- * holds a configuration the repository declared into it, or a bootstrap that
- * still releases; one holding neither is what the configuration route runs the
- * step again for.
+ * One binding as the listing answers it. `configurationsHeld` is what the
+ * project holds for the repository, and `configured` is its presence; one
+ * holding nothing is what the configuration route runs the step again for.
  */
 export const projectRepositoryListedSchema =
-  projectRepositoryResponseSchema.extend({ configured: z.boolean() });
+  projectRepositoryResponseSchema.extend({
+    configured: z.boolean(),
+    configurationsHeld: projectRepositoryConfigurationsHeldSchema.optional(),
+  });
 export type ProjectRepositoryListedResponse = z.infer<
   typeof projectRepositoryListedSchema
 >;
