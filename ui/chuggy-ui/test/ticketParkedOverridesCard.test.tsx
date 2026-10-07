@@ -39,6 +39,18 @@ import { viewportAtEm } from "./viewport.ts";
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
 
+const declarations = import.meta.glob<string>(
+  "../../../.chug/configurations/*.json",
+  { query: "?raw", import: "default", eager: true, exhaustive: true },
+);
+const sonnetRaw =
+  declarations["../../../.chug/configurations/chuggy-development-sonnet.json"];
+if (sonnetRaw === undefined)
+  throw new Error("no chuggy-development-sonnet configuration declared");
+const canonical = JSON.stringify(
+  (JSON.parse(sonnetRaw) as { readonly configuration: unknown }).configuration,
+);
+
 vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof BrowserPorts>()),
   sleepMs: () => Promise.resolve(),
@@ -62,18 +74,6 @@ afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
 });
-
-const declarations = import.meta.glob<string>(
-  "../../../.chug/configurations/*.json",
-  { query: "?raw", import: "default", eager: true, exhaustive: true },
-);
-const sonnetRaw =
-  declarations["../../../.chug/configurations/chuggy-development-sonnet.json"];
-if (sonnetRaw === undefined)
-  throw new Error("no chuggy-development-sonnet configuration declared");
-const canonical = JSON.stringify(
-  (JSON.parse(sonnetRaw) as { readonly configuration: unknown }).configuration,
-);
 
 const revision = "r-sonnet-1";
 
