@@ -12,6 +12,7 @@ import { ProjectAccessUnavailable } from "../../src/interpreter/projectAccess.ts
 import {
   dryRunSelectorPolicy,
   leadDispatchesMax,
+  leadInputBytesMax,
   observeSelectorProject,
   runObservedSelectorCycle,
   runSelectorCycle,
@@ -31,6 +32,8 @@ import {
   type SelectorStandingRefusal,
   type SelectorInteractionRecord,
   type SelectorProjectState,
+  type SelectorReviewFeedback,
+  selectorNotificationPageLimit,
   type JsonValue,
 } from "../../src/interpreter/selector.ts";
 import {
@@ -42,7 +45,11 @@ import {
   unwrittenDispatches,
 } from "../../src/interpreter/selector.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
-import type { DispatchCandidate } from "../../src/interpreter/dispatchView.ts";
+import type {
+  DispatchCandidate,
+  DispatchViewQuery,
+} from "../../src/interpreter/dispatchView.ts";
+import type { ProjectNotification } from "../../src/interpreter/notifications.ts";
 import {
   pickFrom,
   randomOf,
@@ -59,6 +66,7 @@ import {
   selectorAdmissionChanges,
   selectorRunOnce,
   type SelectorRunResult,
+  type SelectorRuntimeSource,
 } from "../../src/interpreter/selectorRuntime.ts";
 import type { AgenticRefusalWrite } from "../../src/interpreter/agenticRefusal.ts";
 import type { SelectorRunFailure } from "../../src/interpreter/selectorRuntimeTypes.ts";
@@ -281,6 +289,18 @@ function standingRefusalOf(
   };
 }
 
+/** One released ticket as the dispatch view carries it. */
+const viewCandidate: DispatchCandidate = {
+  ticket: asTicketId(35),
+  ticketVersion: 4,
+  dependencies: [],
+  program: [{ key: 1, evaluators: [{ key: 1 }] }],
+  configurationRevision: "revision",
+  configurationDigest: "d".repeat(64),
+  configurationCanonical: "canonical",
+};
+
+/** A moved project whose view holds one candidate, which is a turn for its lead. */
 function promptObservationSource() {
   return {
     decisionDeadline: () => new Promise<never>(() => undefined),
@@ -300,7 +320,7 @@ function promptObservationSource() {
           watermark: 1,
           digest: "c".repeat(64),
         },
-        candidates: [],
+        candidates: [viewCandidate],
         notificationCursor: 1,
       } as const),
   };
@@ -316,7 +336,8 @@ function perProjectIdentities() {
   };
 }
 
-function emptyDispatchPage(scope: typeof partition, digest: string) {
+/** One project's page holding one candidate, which is a turn for its lead. */
+function candidateDispatchPage(scope: typeof partition, digest: string) {
   return {
     result: "Page",
     token: {
@@ -326,7 +347,7 @@ function emptyDispatchPage(scope: typeof partition, digest: string) {
       watermark: 1,
       digest,
     },
-    candidates: [],
+    candidates: [viewCandidate],
     notificationCursor: 1,
   } as const;
 }
@@ -344,6 +365,7 @@ function stateStore(
     inventoryCursor: () => Promise.resolve(undefined),
     saveInventoryCursor: () => Promise.resolve(),
     recordInteraction: () => Promise.resolve(true),
+    recordQuietCycle: () => Promise.resolve(true),
     record: (proposals) =>
       Promise.resolve({
         retained: true,
@@ -537,17 +559,6 @@ test("an oversized final candidate advances the scan to Exhausted", async () => 
   );
 });
 
-/** One released ticket as the dispatch view carries it. */
-const viewCandidate: DispatchCandidate = {
-  ticket: asTicketId(35),
-  ticketVersion: 4,
-  dependencies: [],
-  program: [{ key: 1, evaluators: [{ key: 1 }] }],
-  configurationRevision: "revision",
-  configurationDigest: "d".repeat(64),
-  configurationCanonical: "canonical",
-};
-
 /** One observation of a page holding the one candidate, against the ledger given. */
 function observeAgainstRefusals(
   refusals: AgenticRefusalWrite,
@@ -735,6 +746,7 @@ test("a paused runtime creates no new observations but still drains durable work
   assert.deepEqual(result, {
     reached: [],
     observed: 0,
+    quiet: 0,
     proposed: 0,
     dispatched: 0,
     delivered: 0,
@@ -769,18 +781,147 @@ const movedTicketPage = {
   events: [{ ordinal: 9, kind: "Ticket", resource: "35" }],
 } as const;
 
+/** A page as `candidateDispatchPage` reads it, less its candidate. */
+function emptyViewPage(digest: string) {
+  return { ...candidateDispatchPage(partition, digest), candidates: [] };
+}
+
+/** One review of a decision, which the operational context answers whatever its age. */
+function reviewFeedbackOf(ordinal: number): SelectorReviewFeedback {
+  return {
+    ordinal,
+    selectorDecision: `decision-reviewed-${String(ordinal)}`,
+    outcome: "Rejected",
+    reviewer: {
+      kind: asAuthorityKind("User"),
+      subject: asAuthoritySubject("reviewer"),
+    },
+    feedback: "not this one yet",
+    reviewedAt: "2026-08-20T12:00:00.000Z",
+  };
+}
+
+/** One project's change log, which a case appends to between passes. */
+function notificationLog(ordinals: readonly number[]) {
+  const events: ProjectNotification[] = ordinals.map((ordinal) => ({
+    ordinal,
+    kind: "Ticket",
+    resource: "35",
+  }));
+  return {
+    append: (ordinal: number) => {
+      events.push({ ordinal, kind: "Ticket", resource: "35" });
+    },
+    moved: (_scope: typeof partition, after: number, limit: number) => {
+      const page = events.filter((event) => event.ordinal > after);
+      const read = page.slice(0, limit);
+      return Promise.resolve({
+        result: "Events",
+        cursor: read.at(-1)?.ordinal ?? after,
+        events: read,
+      } as const);
+    },
+  };
+}
+
+/**
+ * One project's state held across passes as the store holds it: a quiet cycle
+ * and a decision both write it, fenced on its revision, and each step a pass
+ * took — its permit, its writes, its turns — is named so a case can say which.
+ */
+function heldProjectStore(
+  initial: SelectorProjectState,
+  held: Pick<SelectorStateStore, "heldAmong"> = noneHeld,
+) {
+  let stored = initial;
+  let admissions = 0;
+  let turns = 0;
+  const steps: string[] = [];
+  const interactions: SelectorInteraction[] = [];
+  const observations: SelectorObservation[] = [];
+  const write = (next: SelectorProjectState): boolean => {
+    if (next.revision !== stored.revision) return false;
+    stored = { ...next, revision: next.revision + 1 };
+    return true;
+  };
+  const store: SelectorStateStore = {
+    ...stateStore(() => undefined),
+    ...held,
+    project: () => Promise.resolve(stored),
+    allocateAttempt: () => {
+      steps.push("permit");
+      return Promise.resolve(true);
+    },
+    recordQuietCycle: (next) => {
+      steps.push("quiet");
+      return Promise.resolve(write(next));
+    },
+    recordInteraction: (interaction, next) => {
+      steps.push("interaction");
+      interactions.push(interaction);
+      return Promise.resolve(write(next));
+    },
+  };
+  const policy: SelectorPolicyHost = {
+    ...policyHost((request) => {
+      turns += 1;
+      observations.push(request.observation);
+      return Promise.resolve(waitingExecution());
+    }),
+    leadAdmission: () => {
+      admissions += 1;
+      return Promise.resolve("Admitted");
+    },
+  };
+  return {
+    store,
+    policy,
+    steps,
+    interactions,
+    observations,
+    stored: () => stored,
+    admissions: () => admissions,
+    turns: () => turns,
+  };
+}
+
+/** One pass over the one project a case holds. */
+function quietPass(
+  store: SelectorStateStore,
+  source: Omit<SelectorRuntimeSource, "projects" | "submit" | "operation">,
+  policy: SelectorPolicyHost,
+  refusals: AgenticRefusalWrite = refusalWrites(),
+): Promise<SelectorRunResult> {
+  return selectorRunOnce(
+    refusals,
+    store,
+    {
+      ...source,
+      projects: () => Promise.resolve({ projects: [partition] }),
+      submit: () => Promise.reject(new Error("no delivery expected")),
+      operation: () => Promise.resolve(undefined),
+    },
+    policy,
+    perProjectIdentities(),
+    settingsSource(() => Promise.resolve(runtimeSettings)),
+    { projectsMax: 1, deliveriesMax: 1, reconciliationsMax: 1 },
+  );
+}
+
 /**
  * The trigger and the observation ask different questions, and only the second
  * one is whether there is anything to decide about. The notification cursor
- * moves with every change row and is saved by a completed cycle alone, so a
- * project appending changes that leave the dispatch view where it was triggers
- * on every pass for good — and a permit taken on the trigger charges each of
- * those a decision reference, a `selector_interaction` row and a
- * selections-per-minute slot for an attempt with nothing to observe.
+ * moves with every change row, and a view that has not moved has no
+ * observation to store as a quiet cycle, so a project appending changes that
+ * leave the dispatch view where it was triggers on every pass for good — and a
+ * permit taken on the trigger charges each of those a decision reference, a
+ * `selector_interaction` row and a selections-per-minute slot for an attempt
+ * with nothing to observe.
  */
 test("a pass whose view has not moved takes no permit, leaves no attempt and asks no admission", async () => {
   const allocated: string[] = [];
   const terminated: string[] = [];
+  const written: string[] = [];
   let admissionAsked = 0;
   const result = await selectorRunOnce(
     refusalWrites(),
@@ -794,6 +935,14 @@ test("a pass whose view has not moved takes no permit, leaves no attempt and ask
       terminateAttempt: (attempt) => {
         terminated.push(attempt);
         return Promise.resolve();
+      },
+      recordQuietCycle: () => {
+        written.push("quiet");
+        return Promise.resolve(true);
+      },
+      recordInteraction: () => {
+        written.push("interaction");
+        return Promise.resolve(true);
       },
     },
     {
@@ -825,47 +974,398 @@ test("a pass whose view has not moved takes no permit, leaves no attempt and ask
   );
   assert.deepEqual(allocated, []);
   assert.deepEqual(terminated, []);
+  assert.deepEqual(written, []);
   assert.equal(admissionAsked, 0);
   assert.equal(result.observed, 0);
+  assert.equal(result.quiet, 0);
   assert.deepEqual(result.failures, []);
 });
 
-test("a pass whose view has moved still takes its permit and decides", async () => {
-  const allocated: string[] = [];
-  let views = 0;
-  const result = await selectorRunOnce(
-    refusalWrites(),
-    {
-      ...stateStore(() => undefined),
-      project: () => Promise.resolve(exhaustedProjectState),
-      allocateAttempt: (attempt) => {
-        allocated.push(attempt);
-        return Promise.resolve(true);
-      },
-    },
+/**
+ * The view moved, and what it moved to holds nothing the lead can judge: no
+ * candidate, no standing refusal, and an attention nobody raised. The pass
+ * stores the cursor and the scan as a decision that dispatched nothing would,
+ * and asks for nothing a turn costs.
+ */
+test("a pass whose view has moved to nothing the lead can judge is a quiet cycle", async () => {
+  const project = heldProjectStore(exhaustedProjectState);
+  const result = await quietPass(
+    project.store,
     {
       ...promptObservationSource(),
-      projects: () => Promise.resolve({ projects: [partition] }),
       moved: () => Promise.resolve(movedTicketPage),
-      dispatchView: () => {
-        views += 1;
+      dispatchView: (_scope, query) =>
+        Promise.resolve(
+          query.watermark === undefined
+            ? emptyViewPage("b".repeat(64))
+            : ({ result: "Reset" } as const),
+        ),
+    },
+    project.policy,
+  );
+  assert.deepEqual(project.steps, ["quiet"]);
+  assert.equal(project.admissions(), 0);
+  assert.equal(project.turns(), 0);
+  assert.equal(result.quiet, 1);
+  assert.equal(result.observed, 0);
+  assert.deepEqual(result.failures, []);
+  assert.deepEqual(project.stored(), {
+    ...exhaustedProjectState,
+    notificationCursor: 9,
+    revision: exhaustedProjectState.revision + 1,
+    recoveryEpoch: "epoch",
+    candidateScan: {
+      state: "Exhausted",
+      token: emptyViewPage("b".repeat(64)).token,
+    },
+  });
+});
+
+/**
+ * The second of the two gates that answer before an observation exists: the
+ * exhausted scan's view moved, and a fresh read of it answered `Reset` too, so
+ * there is neither an observation to judge nor a next scan to store.
+ */
+test("a view that resets on its fresh read too records nothing and leaves the cursor", async () => {
+  const project = heldProjectStore(exhaustedProjectState);
+  const result = await quietPass(
+    project.store,
+    {
+      ...promptObservationSource(),
+      moved: () => Promise.resolve(movedTicketPage),
+      dispatchView: () => Promise.resolve({ result: "Reset" } as const),
+    },
+    project.policy,
+  );
+  assert.deepEqual(project.steps, []);
+  assert.equal(project.admissions(), 0);
+  assert.equal(result.quiet, 0);
+  assert.deepEqual(project.stored(), exhaustedProjectState);
+});
+
+test("the next pass after a quiet cycle that read the last page is unmoved and does nothing", async () => {
+  const project = heldProjectStore(observedState(5));
+  const log = notificationLog([6, 7]);
+  let views = 0;
+  const source = {
+    ...promptObservationSource(),
+    moved: log.moved,
+    dispatchView: () => {
+      views += 1;
+      return Promise.resolve(emptyViewPage("b".repeat(64)));
+    },
+  };
+  const first = await quietPass(project.store, source, project.policy);
+  const second = await quietPass(project.store, source, project.policy);
+  assert.equal(first.quiet, 1);
+  assert.equal(project.stored().notificationCursor, 7);
+  assert.equal(second.quiet, 0);
+  assert.equal(second.observed, 0);
+  assert.equal(views, 1);
+  assert.deepEqual(project.steps, ["quiet"]);
+});
+
+/** Each thing the lead can judge, alone, on a view that otherwise holds nothing. */
+test("a candidate, a standing refusal or a raised attention each offers a turn", async () => {
+  const refused = standingRefusalOf(viewCandidate.ticket, 4);
+  const cases = [
+    { name: "candidate", attention: "Monitoring", standing: [] },
+    { name: "refusal", attention: "Monitoring", standing: [refused] },
+    { name: "attention", attention: "Attention", standing: [] },
+    { name: "stopped", attention: "Stopped", standing: [] },
+  ] as const;
+  for (const drawn of cases) {
+    const project = heldProjectStore({
+      ...observedState(5),
+      attention: drawn.attention,
+    });
+    const result = await quietPass(
+      project.store,
+      {
+        ...promptObservationSource(),
+        moved: notificationLog([6]).moved,
+        dispatchView: () =>
+          Promise.resolve(
+            drawn.name === "candidate" || drawn.name === "refusal"
+              ? candidateDispatchPage(partition, "b".repeat(64))
+              : emptyViewPage("b".repeat(64)),
+          ),
+      },
+      project.policy,
+      refusalWrites(() => undefined, drawn.standing),
+    );
+    assert.equal(project.turns(), 1, drawn.name);
+    assert.equal(result.quiet, 0, drawn.name);
+    assert.deepEqual(project.steps, ["permit", "interaction"], drawn.name);
+  }
+});
+
+/** One drawn pass over a view holding at least one open candidate, and what else it varies. */
+function drawnTurn(random: Random, run: number) {
+  const size = random.below(5) + 1;
+  const page = Array.from({ length: size }, (_, index) => ({
+    ...viewCandidate,
+    ticket: asTicketId(index + 1),
+  }));
+  const open = pickFrom(random, page);
+  const others = page.filter((candidate) => candidate !== open);
+  /** A refusal of the open ticket at another version, which stands against none of it. */
+  const standing = [
+    ...subsetFrom(random, others),
+    ...(random.coin() ? [{ ...open, ticketVersion: 0 }] : []),
+  ].map((refused) => standingRefusalOf(refused.ticket, refused.ticketVersion));
+  const held = subsetFrom(random, others).map((candidate) => candidate.ticket);
+  const attention = pickFrom(random, [
+    "Monitoring",
+    "Attention",
+    "Stopped",
+  ] as const);
+  const feedback = Array.from({ length: random.below(3) }, (_, index) =>
+    reviewFeedbackOf(index + 1),
+  );
+  const batch = random.coin()
+    ? ({ result: "Reset", cursor: 5 + random.below(20) } as const)
+    : notificationLog(
+        Array.from({ length: random.below(4) + 1 }, (_, index) => 6 + index),
+      );
+  return {
+    page,
+    open,
+    standing,
+    held,
+    attention,
+    feedback,
+    batch,
+    label: `seed run ${String(run)}: view ${String(size)}, open ${String(open.ticket)}, refused ${String(standing.length)}, held ${String(held.length)}, ${attention}, feedback ${String(feedback.length)}`,
+  };
+}
+
+/**
+ * The failure this rule must not have is a released ticket left undispatched,
+ * so it is asserted over drawn passes rather than one example: whatever else
+ * the observation carries, a candidate in it is a turn. The tally fails when
+ * the draw stops reaching one of the things it varies.
+ */
+test("every observation holding a candidate is offered a turn", async () => {
+  const random = randomOf(20_261_007);
+  const reached = new Set<string>();
+  for (let run = 0; run < 128; run += 1) {
+    const drawn = drawnTurn(random, run);
+    reached.add(drawn.attention);
+    if (drawn.standing.length > 0) reached.add("refused");
+    if (drawn.held.length > 0) reached.add("held");
+    if (drawn.feedback.length > 0) reached.add("feedback");
+    reached.add("result" in drawn.batch ? "Reset" : "Events");
+    const project = heldProjectStore(
+      { ...observedState(5), attention: drawn.attention },
+      {
+        heldAmong: (_scope, tickets) =>
+          Promise.resolve(
+            tickets.filter((ticket) => drawn.held.includes(ticket)),
+          ),
+      },
+    );
+    const batch = drawn.batch;
+    const result = await quietPass(
+      project.store,
+      {
+        ...promptObservationSource(),
+        moved: "result" in batch ? () => Promise.resolve(batch) : batch.moved,
+        dispatchView: () =>
+          Promise.resolve({
+            ...emptyViewPage("b".repeat(64)),
+            candidates: drawn.page,
+          }),
+        operationalContext: () =>
+          Promise.resolve({
+            ...operationalContext,
+            reviewFeedback: drawn.feedback,
+          }),
+      },
+      project.policy,
+      refusalWrites(() => undefined, drawn.standing),
+    );
+    assert.equal(project.turns(), 1, drawn.label);
+    assert.equal(result.quiet, 0, drawn.label);
+    assert.deepEqual(project.steps, ["permit", "interaction"], drawn.label);
+    assert.ok(
+      project.observations[0]?.candidates.some(
+        (candidate) => candidate.ticket === drawn.open.ticket,
+      ),
+      drawn.label,
+    );
+  }
+  assert.deepEqual(
+    [...reached].sort(),
+    [
+      "Attention",
+      "Events",
+      "Monitoring",
+      "Reset",
+      "Stopped",
+      "feedback",
+      "held",
+      "refused",
+    ],
+    "a variation no run reaches is a variation this case asserts nothing about",
+  );
+});
+
+/**
+ * Review feedback is not a reason: the context answers the newest reviews
+ * whatever their age, so counting it would offer a turn on every pass of any
+ * project that was ever reviewed.
+ */
+test("an empty view whose context carries review feedback is a quiet cycle", async () => {
+  const project = heldProjectStore(observedState(5));
+  const result = await quietPass(
+    project.store,
+    {
+      ...promptObservationSource(),
+      moved: notificationLog([6]).moved,
+      dispatchView: () => Promise.resolve(emptyViewPage("b".repeat(64))),
+      operationalContext: () =>
+        Promise.resolve({
+          ...operationalContext,
+          reviewFeedback: [reviewFeedbackOf(1)],
+        }),
+    },
+    project.policy,
+  );
+  assert.equal(result.quiet, 1);
+  assert.equal(project.turns(), 0);
+  assert.deepEqual(project.steps, ["quiet"]);
+});
+
+/**
+ * A page whose one candidate is too large carries a next scan already past it,
+ * so storing that scan quietly would pass over a released ticket with no
+ * failure recorded. It is recorded as the failure it is, and the lead is not
+ * asked.
+ */
+test("an observation over its resource limit is a recorded failure, not a quiet cycle", async () => {
+  const project = heldProjectStore(observedState(5));
+  const result = await quietPass(
+    project.store,
+    {
+      ...promptObservationSource(),
+      moved: notificationLog([6]).moved,
+      dispatchView: () =>
+        Promise.resolve({
+          ...candidateDispatchPage(partition, "b".repeat(64)),
+          candidates: [
+            {
+              ...viewCandidate,
+              configurationCanonical: "x".repeat(leadInputBytesMax(resolved())),
+            },
+          ],
+        }),
+    },
+    project.policy,
+  );
+  assert.equal(result.quiet, 0);
+  assert.equal(project.turns(), 0);
+  assert.deepEqual(project.steps, ["permit", "interaction"]);
+  assert.deepEqual(project.interactions[0]?.result, {
+    outcome: "Failed",
+    code: "ResourceLimit",
+  });
+});
+
+/**
+ * Every candidate on the page is already held as a proposal and more pages
+ * follow. The quiet cycle stores the continuing scan, so the next pass reads
+ * on from it while the view's watermark stands, and from the start once it
+ * moved.
+ */
+test("a held page with more to come is a quiet cycle that stores the continuing scan", async () => {
+  const token = { ...emptyViewPage("b".repeat(64)).token, watermark: 4 };
+  const continued = {
+    limit: selectorNotificationPageLimit,
+    after: viewCandidate.ticket,
+    watermark: 4,
+  };
+  const fresh = { limit: selectorNotificationPageLimit };
+  for (const viewMoved of [false, true]) {
+    const label = viewMoved ? "the view moved" : "the view stood";
+    const project = heldProjectStore(observedState(5), {
+      heldAmong: (_scope, tickets) => Promise.resolve(tickets),
+    });
+    const log = notificationLog([6]);
+    const queries: DispatchViewQuery[] = [];
+    const source = {
+      ...promptObservationSource(),
+      moved: log.moved,
+      dispatchView: (_scope: typeof partition, query: DispatchViewQuery) => {
+        queries.push(query);
         return Promise.resolve(
-          views === 1
+          viewMoved && query.watermark !== undefined
             ? ({ result: "Reset" } as const)
-            : emptyDispatchPage(partition, "b".repeat(64)),
+            : ({
+                result: "Page",
+                token,
+                candidates: [viewCandidate],
+                ...(query.after === undefined
+                  ? { nextAfter: viewCandidate.ticket }
+                  : {}),
+                notificationCursor: 6,
+              } as const),
         );
       },
-      submit: () => Promise.reject(new Error("no delivery expected")),
-      operation: () => Promise.resolve(undefined),
-    },
-    policyHost(() => Promise.resolve(waitingExecution())),
-    perProjectIdentities(),
-    settingsSource(() => Promise.resolve(runtimeSettings)),
-    { projectsMax: 1, deliveriesMax: 1, reconciliationsMax: 1 },
-  );
-  assert.deepEqual(allocated, [`decision-${partition.project}`]);
+    };
+    const first = await quietPass(project.store, source, project.policy);
+    assert.equal(first.quiet, 1, label);
+    assert.deepEqual(
+      project.stored().candidateScan,
+      { state: "Continue", token, after: viewCandidate.ticket },
+      label,
+    );
+    log.append(7);
+    const second = await quietPass(project.store, source, project.policy);
+    assert.equal(second.quiet, 1, label);
+    assert.deepEqual(
+      queries,
+      viewMoved ? [fresh, continued, fresh] : [fresh, continued],
+      label,
+    );
+    assert.equal(project.turns(), 0, label);
+  }
+});
+
+test("a turn after several quiet cycles is recorded, and shows the page after the last quiet cursor", async () => {
+  const project = heldProjectStore(observedState(5));
+  const log = notificationLog([6]);
+  let candidates: readonly DispatchCandidate[] = [];
+  let watermark = 1;
+  const page = emptyViewPage("b".repeat(64));
+  const source = {
+    ...promptObservationSource(),
+    moved: log.moved,
+    dispatchView: (_scope: typeof partition, query: DispatchViewQuery) =>
+      Promise.resolve(
+        query.watermark === undefined || query.watermark === watermark
+          ? { ...page, token: { ...page.token, watermark }, candidates }
+          : ({ result: "Reset" } as const),
+      ),
+  };
+  await quietPass(project.store, source, project.policy);
+  log.append(7);
+  watermark = 2;
+  await quietPass(project.store, source, project.policy);
+  log.append(8);
+  log.append(9);
+  watermark = 3;
+  candidates = [viewCandidate];
+  const result = await quietPass(project.store, source, project.policy);
+  assert.deepEqual(project.steps, ["quiet", "quiet", "permit", "interaction"]);
   assert.equal(result.observed, 1);
-  assert.deepEqual(result.failures, []);
+  assert.deepEqual(
+    project.observations[0]?.changes.map((change) => change.ordinal),
+    [8, 9],
+  );
+  assert.equal(project.interactions.length, 1);
+  assert.equal(project.stored().notificationCursor, 9);
+  assert.equal(project.stored().revision, observedState(5).revision + 3);
 });
 
 test("inventory progress follows scanned projects when a permit is unavailable", async () => {
@@ -892,7 +1392,7 @@ test("inventory progress follows scanned projects when a permit is unavailable",
         Promise.resolve(operationalContext.observedAtEpochMs),
       currentInstant: () => Promise.resolve(operationalContext.observedAt),
       dispatchView: (scope) =>
-        Promise.resolve(emptyDispatchPage(scope, "d".repeat(64))),
+        Promise.resolve(candidateDispatchPage(scope, "d".repeat(64))),
       operationalContext: () => Promise.resolve(operationalContext),
       submit: () => Promise.reject(new Error("no delivery expected")),
       operation: () => Promise.resolve(undefined),
@@ -929,7 +1429,7 @@ test("one project's pause skips that project and the sweep carries on", async ()
       ...promptObservationSource(),
       projects: () => Promise.resolve({ projects: [paused, running] }),
       dispatchView: (scope) =>
-        Promise.resolve(emptyDispatchPage(scope, "e".repeat(64))),
+        Promise.resolve(candidateDispatchPage(scope, "e".repeat(64))),
       submit: () => Promise.reject(new Error("no delivery expected")),
       operation: () => Promise.resolve(undefined),
     },
@@ -980,7 +1480,7 @@ test("a project whose tenant grants the lead no hosted runs takes no permit and 
       ...promptObservationSource(),
       projects: () => Promise.resolve({ projects: [unhosted, hosted] }),
       dispatchView: (scope) =>
-        Promise.resolve(emptyDispatchPage(scope, "f".repeat(64))),
+        Promise.resolve(candidateDispatchPage(scope, "f".repeat(64))),
       submit: () => Promise.reject(new Error("no delivery expected")),
       operation: () => Promise.resolve(undefined),
     },
@@ -1183,7 +1683,7 @@ async function sweptProjects(sweep: SweptSweep) {
         });
       },
       dispatchView: (scope) =>
-        Promise.resolve(emptyDispatchPage(scope, "f".repeat(64))),
+        Promise.resolve(candidateDispatchPage(scope, "f".repeat(64))),
       submit: () => Promise.reject(new Error("no delivery expected")),
       operation: () => Promise.resolve(undefined),
     },
@@ -1396,6 +1896,7 @@ test("a pause observed after permit acquisition prevents a new decision", async 
   assert.deepEqual(result, {
     reached: [],
     observed: 0,
+    quiet: 0,
     proposed: 0,
     dispatched: 0,
     delivered: 0,
@@ -1772,7 +2273,7 @@ test("settings and permit failures remain isolated to their projects", async () 
             watermark: 1,
             digest: "e".repeat(64),
           },
-          candidates: [],
+          candidates: [viewCandidate],
           notificationCursor: 1,
         }),
       submit: () => Promise.reject(new Error("no delivery expected")),
@@ -2054,7 +2555,7 @@ test("one project failure does not block later projects or durable delivery", as
         Promise.resolve(operationalContext.observedAtEpochMs),
       currentInstant: () => Promise.resolve(operationalContext.observedAt),
       dispatchView: (scope) =>
-        Promise.resolve(emptyDispatchPage(scope, "f".repeat(64))),
+        Promise.resolve(candidateDispatchPage(scope, "f".repeat(64))),
       operationalContext: () => Promise.resolve(operationalContext),
       submit: () =>
         Promise.resolve({
@@ -2604,29 +3105,31 @@ test("a project that moved takes one turn, and the window is what the lead is sh
   assert.equal(result.observed, 1);
 });
 
-test("a reset the consumer cannot replay is a turn rather than a skip", async () => {
-  let started = 0;
-  await selectorRunOnce(
-    refusalWrites(),
-    {
-      ...stateStore(() => undefined),
-      project: () => Promise.resolve(observedState(5)),
-    },
-    {
-      ...promptObservationSource(),
-      projects: () => Promise.resolve({ projects: [partition] }),
-      moved: () => Promise.resolve({ result: "Reset", cursor: 5 } as const),
-      submit: () => Promise.reject(new Error("no delivery expected")),
-      operation: () => Promise.resolve(undefined),
-    },
-    policyHost(() => {
-      started += 1;
-      return Promise.resolve(waitingExecution());
-    }),
-    perProjectIdentities(),
-    settingsSource(() => Promise.resolve(runtimeSettings)),
-  );
-  assert.equal(started, 1);
+/**
+ * A reset is a gap the consumer cannot replay, so it says nothing about what
+ * the lead has to judge: the view decides. An empty one is a quiet cycle that
+ * stores the newest row of the log, and one with a candidate is a turn.
+ */
+test("a reset the consumer cannot replay is a quiet cycle where the view holds nothing", async () => {
+  for (const held of [[], [viewCandidate]] as const) {
+    const project = heldProjectStore(observedState(5));
+    const result = await quietPass(
+      project.store,
+      {
+        ...promptObservationSource(),
+        moved: () => Promise.resolve({ result: "Reset", cursor: 12 } as const),
+        dispatchView: () =>
+          Promise.resolve({
+            ...emptyViewPage("b".repeat(64)),
+            candidates: held,
+          }),
+      },
+      project.policy,
+    );
+    assert.equal(result.quiet, held.length === 0 ? 1 : 0);
+    assert.equal(project.turns(), held.length);
+    assert.equal(project.stored().notificationCursor, 12);
+  }
 });
 
 test("a turn that spent more than its envelope allows is refused", async () => {

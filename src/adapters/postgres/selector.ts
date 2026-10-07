@@ -1757,6 +1757,18 @@ async function recordSelectorState(
   });
 }
 
+/** A quiet cycle's state, written alone under the same lock and fence a decision's is. */
+async function recordQuietSelectorState(
+  pool: pg.Pool,
+  state: SelectorProjectState,
+): Promise<boolean> {
+  return postgresTransaction(pool, async (client) => {
+    if (!(await lockSelectorProject(client, state))) return false;
+    await writeSelectorProject(client, state);
+    return true;
+  });
+}
+
 async function readPlanningIntent(
   pool: pg.Pool,
   partition: Partition,
@@ -2053,6 +2065,7 @@ export function postgresSelectorState(pool: pg.Pool): SelectorStateStore {
       );
       return { retained: written.recorded, dispatched: written.deliveries };
     },
+    recordQuietCycle: (state) => recordQuietSelectorState(pool, state),
     pending: (limit) => pendingDeliveries(pool, limit),
     submittedDeliveries: (limit) => submittedDeliveries(pool, limit),
     submitted: (decision, ticket) => markSubmitted(pool, decision, ticket),
