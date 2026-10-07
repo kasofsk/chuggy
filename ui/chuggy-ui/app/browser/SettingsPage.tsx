@@ -3,9 +3,9 @@
  * line per group linking to its own page.
  *
  * A LIST RATHER THAN A REDIRECT. It holds two groups today and gains another
- * every time a further one — accounts — moves under it, so a reader who has
- * bookmarked this address keeps landing somewhere that still makes sense once
- * there is more than one row.
+ * every time a further one moves under it, so a reader who has bookmarked
+ * this address keeps landing somewhere that still makes sense once there is
+ * more than one row.
  */
 
 import { Link, useParams } from "@tanstack/react-router";
@@ -27,7 +27,7 @@ interface SettingsGroup {
 }
 
 /** The project's settings groups, in the order they are listed. Gains a row as
- * each further group — accounts — moves under this page. */
+ * each further group moves under this page. */
 const settingsGroups: readonly SettingsGroup[] = [
   { id: "lead", label: "Lead", to: leadSettingsRoutePath },
   { id: "placement", label: "Placement", to: placementSettingsRoutePath },

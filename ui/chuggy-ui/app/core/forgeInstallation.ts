@@ -29,7 +29,6 @@ export interface ForgeInstallTransaction {
   readonly state: string;
   readonly app: ForgeAppName;
   readonly tenant: string;
-  readonly project: string;
   readonly returnPath: string;
 }
 
@@ -71,12 +70,10 @@ function forgeInstallTransactionOf(
   if (app !== "portal" && app !== "worker") return undefined;
   const state = fields["state"];
   const tenant = fields["tenant"];
-  const project = fields["project"];
   const returnPath = fields["returnPath"];
   if (typeof state !== "string" || typeof tenant !== "string") return undefined;
-  if (typeof project !== "string" || typeof returnPath !== "string")
-    return undefined;
-  return { state, app, tenant, project, returnPath };
+  if (typeof returnPath !== "string") return undefined;
+  return { state, app, tenant, returnPath };
 }
 
 /**

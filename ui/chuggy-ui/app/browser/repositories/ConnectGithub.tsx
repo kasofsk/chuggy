@@ -8,24 +8,20 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 
-import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import { apiForgeApps } from "../../core/apiRoutes.ts";
-import { usePanelResource } from "../api.ts";
+import { usePanelTenantResource } from "../api.ts";
 import { forgeAuthorizeRedirect } from "../forgeAuthorizeRedirect.ts";
 import { forgeSetupNotConfigured } from "../ForgeSetupPage.tsx";
 import { Button } from "../ui/Button.tsx";
 import { forgeAppsResource } from "./InstallLink.tsx";
 
 export function ConnectGithub(props: {
-  readonly partition: PartitionIdentity;
+  readonly tenant: string;
   readonly returnPath: string;
 }): ReactNode {
-  const partition = props.partition;
-  const state = usePanelResource(
-    partition,
-    "Project",
-    forgeAppsResource,
-    (ports) => apiForgeApps(ports),
+  const tenant = props.tenant;
+  const state = usePanelTenantResource(tenant, forgeAppsResource, (ports) =>
+    apiForgeApps(ports),
   );
   const [leaving, setLeaving] = useState(false);
   const client =
@@ -40,8 +36,7 @@ export function ConnectGithub(props: {
           if (client === undefined) return;
           setLeaving(true);
           void forgeAuthorizeRedirect(client, {
-            tenant: partition.tenant,
-            project: partition.project,
+            tenant,
             returnPath: props.returnPath,
           });
         }}

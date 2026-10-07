@@ -2,8 +2,8 @@
  * Where the forge sends a person back after they install an app.
  *
  * It is outside the partition routes because the forge redirects to one fixed
- * address and knows nothing about a project; the transaction this tab stored
- * before sending them away is what says which project and where they were.
+ * address and knows nothing about a tenant; the transaction this tab stored
+ * before sending them away is what says which tenant and where they were.
  * That transaction is taken once, on the first render, and a matching install
  * goes on to the authorization that proves which accounts are theirs. Any other
  * return the tab started puts the person back where they were, with its word.
@@ -59,7 +59,6 @@ async function forgeSetupAnswer(
   }
   await forgeAuthorizeRedirect(client, {
     tenant: transaction.tenant,
-    project: transaction.project,
     returnPath: transaction.returnPath,
   });
 }

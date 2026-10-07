@@ -1,6 +1,5 @@
 /**
- * The repositories page: the accounts a tenant has connected, the repositories
- * the project binds, and the picker that adds one.
+ * The repositories page: what the project binds, and the picker that adds one.
  *
  * THE PICKER'S TRAFFIC IS THE CASE WITH TEETH. A bind is keyed by an operation
  * identity the route refuses a request without, and it names the address the
@@ -17,11 +16,11 @@ import {
   screen,
   within,
 } from "@testing-library/react";
-import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { StrictMode } from "react";
+import { afterEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import { RepositoriesPage } from "../app/browser/RepositoriesPage.tsx";
+import { forgeInstallationsFixture } from "./forgeInstallationsFixture.ts";
 import {
   answer,
   openedStream,
@@ -29,21 +28,11 @@ import {
   settled,
 } from "./screenHarness.tsx";
 import { leadPartition } from "./leadFixture.ts";
-import { forgeAuthorizeTransactionKey } from "../app/core/forgeAuthorization.ts";
-import { forgeInstallTransactionKey } from "../app/core/forgeInstallation.ts";
-import { forgeReturnHold } from "../app/core/forgeReturn.ts";
-import type { ForgeReturnWord } from "../app/core/forgeReturn.ts";
-import { transientStore } from "../app/browser/ports.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
-
-const redirects = vi.hoisted((): string[] => []);
 
 vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof BrowserPorts>()),
   sleepMs: () => Promise.resolve(),
-  redirect: (url: string) => {
-    redirects.push(url);
-  },
 }));
 
 /** A link's path is filled from its params, so a link into the wrong project
@@ -68,10 +57,6 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 // jscpd:ignore-end -- the case's own doubles resume here
 
-beforeEach(() => {
-  redirects.length = 0;
-});
-
 afterEach(() => {
   cleanup();
   sessionStorage.clear();
@@ -80,35 +65,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-const installations = {
-  truncated: false,
-  installations: [
-    {
-      forge: "github",
-      app: "portal",
-      account: "kasofsk",
-      accountKind: "Organization",
-      installationId: "11",
-      claimedAt: "2026-09-11T00:00:00Z",
-    },
-    {
-      forge: "github",
-      app: "worker",
-      account: "kasofsk",
-      accountKind: "Organization",
-      installationId: "12",
-      claimedAt: "2026-09-11T00:00:01Z",
-    },
-    {
-      forge: "github",
-      app: "portal",
-      account: "gdoteof",
-      accountKind: "User",
-      installationId: "13",
-      claimedAt: "2026-09-11T00:00:02Z",
-    },
-  ],
-};
+const installations = forgeInstallationsFixture;
 
 /** The same tenant with one of the two apps installed nowhere at all. */
 function without(app: string): typeof installations {
@@ -243,8 +200,6 @@ interface Drawing {
   readonly rebound?: unknown;
   /** What this deployment answers about its apps. */
   readonly described?: unknown;
-  /** Drawn under `StrictMode`, as the console's root draws it. */
-  readonly strict?: boolean;
 }
 
 async function drawPage(drawing: Drawing = {}): Promise<readonly Sent[]> {
@@ -283,7 +238,7 @@ async function drawPage(drawing: Drawing = {}): Promise<readonly Sent[]> {
       <RepositoriesPage />
     </ScreenHarness>
   );
-  render(drawing.strict === true ? <StrictMode>{page}</StrictMode> : page);
+  render(page);
   await settled();
   return sent;
 }
@@ -326,24 +281,8 @@ function invalidationsAfterDraw(): readonly unknown[] {
   return raised;
 }
 
-test("an account is one row saying which of the two apps it holds", async () => {
-  await drawPage();
-  const accounts = sectionOf("Accounts");
-  const rows = within(accounts).getAllByRole("row");
-  expect(rows.map((row) => row.textContent)).toStrictEqual([
-    "AccountKindPortalWorker",
-    "kasofskOrganizationInstalledInstalled",
-    "gdoteofUserInstalledMissing",
-  ]);
-});
-
 /** Where the page is drawn, which every install it offers must come back to. */
 const projectPath = `/${leadPartition.tenant}/${leadPartition.project}/repositories`;
-
-/** The install a followed link stored, which the setup landing matches. */
-function storedInstall(): unknown {
-  return JSON.parse(sessionStorage.getItem(forgeInstallTransactionKey) ?? "{}");
-}
 
 /** The page drawn at its own address with both apps held. */
 async function drawAtProject(claimed?: typeof installations): Promise<void> {
@@ -362,125 +301,6 @@ async function drawAtProjectListing(listing: () => Response): Promise<void> {
     described: { apps: forgeApps, authorization: client },
   });
 }
-
-test("a panel with no account offers Connect GitHub alone", async () => {
-  await drawAtProject({ truncated: false, installations: [] });
-  const accounts = within(sectionOf("Accounts"));
-  expect(
-    accounts.getAllByRole("button").map((one) => one.textContent),
-  ).toStrictEqual(["Connect GitHub"]);
-  expect(accounts.queryAllByRole("link")).toStrictEqual([]);
-});
-
-/** An install comes back through the authorization, so where the deployment
- * answers no client the panel offers no install that could not be finished. */
-test("a panel whose deployment cannot authorize offers no install", async () => {
-  history.pushState({}, "", projectPath);
-  await drawPage({ described: { apps: forgeApps } });
-  expect(within(sectionOf("Accounts")).queryAllByRole("link")).toStrictEqual(
-    [],
-  );
-});
-
-/** Connect GitHub claims only what is already installed, so a second account is
- * the portal app's install, which comes back through the authorization. */
-test("a panel with an account offers Add account, which installs the portal", async () => {
-  await drawAtProject();
-  const add = within(sectionOf("Accounts")).getByRole<HTMLAnchorElement>(
-    "link",
-    { name: "Add account" },
-  );
-  expect(add.href.startsWith(`${forgeApps[0]?.installUrl}?state=`)).toBe(true);
-  fireEvent.click(add);
-  await settled();
-  expect(storedInstall()).toStrictEqual({
-    state: new URL(add.href).searchParams.get("state"),
-    app: "portal",
-    tenant: leadPartition.tenant,
-    project: leadPartition.project,
-    returnPath: projectPath,
-  });
-});
-
-/** A forge return held for this project, as the callback leaves it. */
-function returnedWith(word: ForgeReturnWord): void {
-  forgeReturnHold(transientStore, leadPartition, word);
-}
-
-/** The panel's own lines, which a return's word is one of. */
-function accountsLines(): readonly (string | null)[] {
-  return within(sectionOf("Accounts"))
-    .queryAllByRole("paragraph")
-    .map((line) => line.textContent);
-}
-
-test("a return's word is drawn on the Accounts panel once, and not on the next visit", async () => {
-  returnedWith({ standing: "Failed", status: "Refused" });
-  await drawPage({ strict: true });
-  expect(accountsLines()).toStrictEqual(["Refused"]);
-  expect(
-    within(sectionOf("Accounts"))
-      .getByText("Refused")
-      .classList.contains("notice-danger"),
-  ).toBe(true);
-  cleanup();
-  await drawPage({ strict: true });
-  expect(accountsLines()).toStrictEqual([]);
-});
-
-/** Connect GitHub claims only what is installed, so a return that reached no
- * account the person owns is one the portal's install puts right. */
-test("a return that reached no account the person owns offers Add account beside Connect GitHub", async () => {
-  returnedWith({ standing: "Uninstalled", status: "Not installed" });
-  await drawAtProject({ truncated: false, installations: [] });
-  const accounts = within(sectionOf("Accounts"));
-  expect(accountsLines()).toStrictEqual([
-    "Not installed",
-    "No account connected",
-  ]);
-  expect(accounts.getByRole("button", { name: "Connect GitHub" })).toBeTruthy();
-  const add = accounts.getByRole<HTMLAnchorElement>("link", {
-    name: "Add account",
-  });
-  expect(add.href.startsWith(`${forgeApps[0]?.installUrl}?state=`)).toBe(true);
-});
-
-test("a return that stopped short for another reason offers no install with no account", async () => {
-  returnedWith({ standing: "Unfinished", status: "Declined" });
-  await drawAtProject({ truncated: false, installations: [] });
-  expect(accountsLines()).toStrictEqual(["Declined", "No account connected"]);
-  const accounts = within(sectionOf("Accounts"));
-  expect(
-    accounts.getByText("Declined").classList.contains("notice-parked"),
-  ).toBe(true);
-  expect(accounts.queryAllByRole("link")).toStrictEqual([]);
-});
-
-/** Connect GitHub claims the worker app where it is installed, so the worker's
- * install is the one thing a connected account can still be missing. */
-test("an account connected without the worker offers the worker's install on its own row", async () => {
-  await drawAtProject();
-  const rows = within(sectionOf("Accounts")).getAllByRole("row");
-  expect(rows.map((row) => within(row).queryAllByRole("link").length)).toEqual([
-    0, 0, 1,
-  ]);
-  const install = within(rows[2] ?? document.body).getByRole<HTMLAnchorElement>(
-    "link",
-    { name: "Install worker" },
-  );
-  expect(install.href.startsWith(`${forgeApps[1]?.installUrl}?state=`)).toBe(
-    true,
-  );
-  fireEvent.click(install);
-  await settled();
-  expect(storedInstall()).toStrictEqual({
-    state: new URL(install.href).searchParams.get("state"),
-    app: "worker",
-    tenant: leadPartition.tenant,
-    project: leadPartition.project,
-    returnPath: projectPath,
-  });
-});
 
 test("the bindings are drawn by the account and name they are under", async () => {
   await drawPage();
@@ -634,42 +454,6 @@ test("a tenant holding no portal claim cannot open the picker", async () => {
   expect(
     screen.getByRole<HTMLButtonElement>("button", { name: "Add" }).disabled,
   ).toBe(true);
-});
-
-test("connecting is offered only where this deployment answers a client to authorize", async () => {
-  await drawPage();
-  expect(
-    screen.getByRole<HTMLButtonElement>("button", { name: "Connect GitHub" })
-      .disabled,
-  ).toBe(true);
-  expect(screen.getByText("Not configured")).toBeTruthy();
-});
-
-test("a deployment that answers a client says nothing against connecting", async () => {
-  await drawPage({
-    described: {
-      apps: [],
-      authorization: {
-        clientId: "Iv1.portal",
-        authorizeUrl: "https://forge.test/login/oauth/authorize",
-      },
-    },
-  });
-  expect(screen.queryByText("Not configured")).toBeNull();
-});
-
-test("connecting stores this tab's transaction and sends the person to authorize", async () => {
-  await drawPage({ described: { apps: [], authorization: client } });
-  fireEvent.click(screen.getByRole("button", { name: "Connect GitHub" }));
-  await settled();
-  expect(redirects).toHaveLength(1);
-  const url = new URL(redirects[0] ?? "");
-  expect(url.searchParams.get("client_id")).toBe(client.clientId);
-  const stored = JSON.parse(
-    sessionStorage.getItem(forgeAuthorizeTransactionKey) ?? "{}",
-  ) as Record<string, unknown>;
-  expect(stored["state"]).toBe(url.searchParams.get("state"));
-  expect(stored).toMatchObject({ ...leadPartition });
 });
 
 function statusesOf(): readonly (string | null)[] {
@@ -1102,63 +886,68 @@ function offered(name: string): boolean {
   ).disabled;
 }
 
-/** The listing answers only a workspace admin, so a 404 is this reader's
- * standing, and a connect they started would be refused at the claim. */
-test("a reader the accounts are withheld from is told who connects them and offered no connect", async () => {
-  await drawAtProjectListing(() => answer({}, 404));
-  const accounts = within(sectionOf("Accounts"));
-  expect(
-    accounts.getByText("A workspace admin connects GitHub accounts"),
-  ).toBeTruthy();
-  expect(accounts.queryByText(/^Not available/)).toBeNull();
-  expect(accounts.queryAllByRole("button")).toStrictEqual([]);
-  expect(accounts.queryAllByRole("link")).toStrictEqual([]);
-});
+/** The link the Repositories section points at the tenant's own accounts page
+ * with, where the withheld line names no account connected. */
+function accountsLink(): HTMLAnchorElement | null {
+  return within(sectionOf("Repositories")).queryByRole<HTMLAnchorElement>(
+    "link",
+    { name: "Accounts" },
+  );
+}
 
-test("Add and Create withheld from such a reader say who adds repositories", async () => {
+test("Add and Create withheld from a reader the accounts are withheld from say who adds repositories, with no link", async () => {
   await drawAtProjectListing(() => answer({}, 404));
   expect([offered("Add"), offered("Create")]).toStrictEqual([false, false]);
   expect(offersWithheld()).toBe("A workspace admin adds repositories");
+  expect(accountsLink()).toBeNull();
 });
 
-/** Only the forbidden listing has its own line; a listing that failed still
- * says it failed and why. */
-test("a listing that failed keeps its own line, and Add and Create say the accounts did not load", async () => {
+/** Only the forbidden listing withholds the page itself; a listing that
+ * merely failed still says so and why, with nothing to link to either. */
+test("a listing that failed says Add and Create say the accounts did not load, with no link", async () => {
   await drawAtProjectListing(() => answer({}, 500));
-  expect(
-    within(sectionOf("Accounts")).getByText(
-      "Failed to load · the API failed with InternalError",
-    ),
-  ).toBeTruthy();
   expect(offersWithheld()).toBe("Accounts failed to load");
+  expect(accountsLink()).toBeNull();
 });
 
-test("with no account, Add and Create say to connect one", async () => {
+/** One place connects an account, so the page that needs one points at it
+ * rather than carrying a second Connect control. */
+test("with no account, Add and Create say to connect one and link the tenant's accounts page", async () => {
   await drawAtProject({ truncated: false, installations: [] });
   expect([offered("Add"), offered("Create")]).toStrictEqual([false, false]);
   expect(offersWithheld()).toBe("Connect a GitHub account first");
+  expect(accountsLink()?.getAttribute("href")).toBe(
+    `/tenants/${leadPartition.tenant}/settings/accounts`,
+  );
 });
 
-/** Connect GitHub is not offered there, so the line names who can change that. */
-test("with no account on a deployment that cannot authorize, Add and Create say who configures GitHub", async () => {
+/** Connect GitHub is not offered there either, but the accounts page is still
+ * the one place that would say so, so the link still points at it. */
+test("with no account on a deployment that cannot authorize, Add and Create say who configures GitHub and still link the accounts page", async () => {
   await drawPage({ claimed: { truncated: false, installations: [] } });
   expect(offersWithheld()).toBe("GitHub not configured · ask an operator");
+  expect(accountsLink()?.getAttribute("href")).toBe(
+    `/tenants/${leadPartition.tenant}/settings/accounts`,
+  );
 });
 
-test("with no portal claim, Add and Create say no account has the portal app", async () => {
+test("with no portal claim, Add and Create say no account has the portal app, with no link", async () => {
   await drawAtProject(without("portal"));
   expect([offered("Add"), offered("Create")]).toStrictEqual([false, false]);
   expect(offersWithheld()).toBe("No account has the portal app");
+  expect(accountsLink()).toBeNull();
 });
 
-test("with no account holding both apps, Add is offered and Create says why it is not", async () => {
+test("with no account holding both apps, Add is offered and Create says why it is not, with no link", async () => {
   await drawAtProject(without("worker"));
   expect([offered("Add"), offered("Create")]).toStrictEqual([true, false]);
   expect(offersWithheld()).toBe("No account has both apps");
+  expect(accountsLink()).toBeNull();
 });
 
 test("a reader with an account holding both apps is offered Add and Create and no line", async () => {
   await drawAtProject();
   expect([offered("Add"), offered("Create")]).toStrictEqual([true, true]);
   expect(offersWithheld()).toBeUndefined();
+  expect(accountsLink()).toBeNull();
 });

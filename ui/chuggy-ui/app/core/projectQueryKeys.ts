@@ -12,6 +12,13 @@
  * id, an operation id, a configuration revision, and the project's own identity
  * for `Project`.
  *
+ * `["tenant", tenant, resource]` is a tenant's own entry, outside
+ * `projectPartitionKey` for the same reason `["projects"]` is: a forge account
+ * is the tenant's and not any one of its projects', so two projects of one
+ * tenant read the same entry rather than each holding a copy a connect on the
+ * other leaves stale, and neither a `Project` frame nor the partition's own
+ * invalidation reaches it.
+ *
  * NOT EVERY ENTRY IS A READ. `projectHeldKey` is what a screen keeps for itself
  * — the cache being the only thing under a partition that outlives the screen
  * that wrote it. Its marker is outside the kinds, so nothing addressed by kind
@@ -41,6 +48,7 @@ import type { ProjectChangeKind } from "../../../../src/contract/events.ts";
 
 export const projectQueryScope = "project";
 export const projectsQueryScope = "projects";
+export const tenantQueryScope = "tenant";
 export const projectListMarker = "list";
 
 /** Neither a kind nor a list of one, which is what keeps a held entry out of
@@ -51,6 +59,14 @@ export type ProjectQueryKey = readonly unknown[];
 
 export function projectsInventoryKey(): ProjectQueryKey {
   return [projectsQueryScope];
+}
+
+/** One tenant's own resource, one entry shared by every project under it. */
+export function tenantResourceKey(
+  tenant: string,
+  resource: string,
+): ProjectQueryKey {
+  return [tenantQueryScope, tenant, resource];
 }
 
 export function projectPartitionKey(

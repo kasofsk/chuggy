@@ -13,7 +13,6 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 
-import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import type { ForgeAppName } from "../../../../../src/contract/rosters.ts";
 import { apiForgeApps } from "../../core/apiRoutes.ts";
 import {
@@ -22,26 +21,24 @@ import {
   forgeInstallState,
   forgeInstallUrl,
 } from "../../core/forgeInstallation.ts";
-import { usePanelResource } from "../api.ts";
+import { usePanelTenantResource } from "../api.ts";
 import { drawBytes, transientStore } from "../ports.ts";
 import { buttonLookClassName } from "../ui/Button.tsx";
 
-/** No frame names this read, so the partition's own refetch is what reaches it. */
+/** No frame names this read; what reaches it is whichever refresh the scope
+ * it is read under follows. */
 export const forgeAppsResource = "forge-apps";
 
 export function InstallLink(props: {
-  readonly partition: PartitionIdentity;
+  readonly tenant: string;
   readonly returnPath: string;
   readonly app: ForgeAppName;
   /** What the link says in place of the app's install label. */
   readonly label?: string;
 }): ReactNode {
-  const partition = props.partition;
-  const state = usePanelResource(
-    partition,
-    "Project",
-    forgeAppsResource,
-    (ports) => apiForgeApps(ports),
+  const tenant = props.tenant;
+  const state = usePanelTenantResource(tenant, forgeAppsResource, (ports) =>
+    apiForgeApps(ports),
   );
   const [installState] = useState(() => forgeInstallState(drawBytes));
   const held =
@@ -57,8 +54,7 @@ export function InstallLink(props: {
         forgeInstallBegin(transientStore, {
           state: installState,
           app: props.app,
-          tenant: partition.tenant,
-          project: partition.project,
+          tenant,
           returnPath: props.returnPath,
         });
       }}
