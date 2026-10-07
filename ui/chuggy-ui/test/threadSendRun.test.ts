@@ -70,10 +70,12 @@ function serving(served: Served): Run {
   let presses = 0;
   const fetch = (
     url: string,
-    init?: { readonly method?: string; readonly body?: string },
+    init?: { readonly method?: string; readonly body?: string | Uint8Array },
   ): Promise<Response> => {
     if (init?.method === "POST") {
-      const body = JSON.parse(init.body ?? "null") as { readonly turn: string };
+      const body = JSON.parse(
+        typeof init.body === "string" ? init.body : "null",
+      ) as { readonly turn: string };
       posted.push({ url, turn: body.turn });
       const at = presses;
       presses += 1;

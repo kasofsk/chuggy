@@ -29,7 +29,7 @@ export function answeringApi(
     ports: {
       fetch: (path, init) => {
         const body: unknown =
-          init.body === undefined ? undefined : JSON.parse(init.body);
+          typeof init.body === "string" ? JSON.parse(init.body) : init.body;
         sent.push({ method: init.method, path, body });
         const answered = answer(init.method, path);
         return Promise.resolve({

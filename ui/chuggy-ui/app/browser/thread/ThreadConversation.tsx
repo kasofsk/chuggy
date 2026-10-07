@@ -17,6 +17,9 @@
  * written, every reader of the thread alike, and each block of it is drawn
  * from the transcript instead from the moment the transcript holds it.
  *
+ * AN IMAGE A MESSAGE NAMED IS DRAWN ON ITS TURN, from the project's own read
+ * of it, whoever's thread it is.
+ *
  * A MESSAGE THE READER SENT IS DRAWN BEFORE THE MAILBOX LISTS IT, at the foot
  * of the column and under its turn's name, and from the read that lists that
  * turn the mailbox's own exchange stands in the same place.
@@ -96,6 +99,7 @@ import {
 import { Conversation } from "../conversation/Conversation.tsx";
 import { useLeadTranscript } from "../lead/LeadTranscript.tsx";
 import type { LeadTranscriptWalk } from "../lead/LeadTranscript.tsx";
+import { useThreadImage } from "./threadImage.tsx";
 import { useThreadLive } from "./threadLive.ts";
 import { useConversationMentions } from "./threadMentions.ts";
 import { useThreadDoor, useThreadSend } from "./threadSend.tsx";
@@ -272,6 +276,7 @@ export function ThreadConversation(props: {
     [sends.sending],
   );
   const mentions = useConversationMentions(props.partition);
+  const image = useThreadImage(props.partition);
   const door = useThreadDoor(props.partition).door;
   const drawn = useThreadExchanges(props.partition, thread, walked, sends);
   const [read, setRead] = useState(false);
@@ -307,6 +312,7 @@ export function ThreadConversation(props: {
             }
           : {})}
         reading={walked.reading && !read}
+        image={image}
         paced
         pane
       />

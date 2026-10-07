@@ -3,11 +3,22 @@
  * `threadStop.ts` is the only part of the conversation surface that knows the
  * API.
  *
- * THE TURN IDENTITY BELONGS TO THE TEXT. A press that ended in a backlogged
- * mailbox keeps the text and the identity it minted, so pressing again reaches
- * the same row rather than queueing the message twice; editing the text
- * releases the identity, so a correction is a turn of its own instead of an
- * ordinal the mailbox already answered for what was corrected.
+ * THE TURN IDENTITY BELONGS TO THE TEXT AND ITS IMAGES. A press that ended in
+ * a backlogged mailbox keeps the text, the images and the identity it minted,
+ * so pressing again reaches the same row rather than queueing the message
+ * twice; editing the text releases the identity, so a correction is a turn of
+ * its own instead of an ordinal the mailbox already answered for what was
+ * corrected, and attaching an image or removing one is an edit to what is
+ * sent and releases it for the same reason: a second press could otherwise
+ * reach a row that answered for another set of images.
+ *
+ * EACH IMAGE IS UPLOADED BEFORE THE MESSAGE IS SENT, and the message names
+ * what the uploads answered. An upload that fails sends nothing, and says so
+ * over the box with the text and the images handed back: a message sent with
+ * half its images is worse than one not sent. An image the project already
+ * took is not given it again by a press that sends it again, so a retry names
+ * the images the first press did; a message the door refused forgets them,
+ * since what it refused may have been one of them.
  *
  * A SENT MESSAGE ARRIVES ON THE PAGE THE WAY EVERY OTHER TURN DOES. Enqueuing
  * writes a `Session` change, the frame stales the thread read, and the read
@@ -48,9 +59,19 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
-import { threadMessageCharsMax } from "../../../../../src/contract/http.ts";
+import {
+  imageMediaTypes,
+  partitionPath,
+  threadMessageCharsMax,
+  threadMessageImagesMax,
+} from "../../../../../src/contract/http.ts";
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
-import { apiHostedRuns, apiOpenThread } from "../../core/apiRoutes.ts";
+import {
+  apiHostedRuns,
+  apiOpenThread,
+  apiUploadProjectArtifact,
+} from "../../core/apiRoutes.ts";
+import type { ConversationAttachment } from "../../core/conversationAttachments.ts";
 import { projectResourceKey } from "../../core/projectQueryKeys.ts";
 import { threadMessageSent } from "../../core/threadSendRun.ts";
 import {
@@ -64,10 +85,12 @@ import {
   threadTurnIdBytesCount,
   threadTurnMinted,
   threadTurnRetained,
+  threadUploadRefused,
 } from "../../core/threads.ts";
 import type {
   ThreadDoor,
   ThreadKept,
+  ThreadPressed,
   ThreadSend,
   ThreadSending,
 } from "../../core/threads.ts";
@@ -90,9 +113,41 @@ import type { ThreadStopHeld } from "./threadStop.ts";
 
 /** What the last press left behind, so the next one can tell a retry of the
  * same message from a message of its own. */
-interface ThreadHeld {
-  readonly text: string;
+interface ThreadHeld extends ThreadPressed {
   readonly turn: string;
+}
+
+/** What each image the project took answered, and which project took it. */
+type ThreadUploaded = WeakMap<
+  ConversationAttachment,
+  { readonly project: string; readonly artifact: string }
+>;
+
+/** The identity each image of a press is named by, uploading those the
+ * project has not taken, in order, and the refusal of the first that fails. */
+async function threadSendUploaded(
+  ports: ReturnType<typeof useApiPorts>,
+  partition: PartitionIdentity,
+  attached: readonly ConversationAttachment[],
+  uploaded: ThreadUploaded,
+): Promise<readonly string[] | ThreadSend> {
+  const project = partitionPath(partition);
+  const images: string[] = [];
+  for (const attachment of attached) {
+    const known = uploaded.get(attachment);
+    if (known?.project === project) {
+      images.push(known.artifact);
+      continue;
+    }
+    const answered = await apiUploadProjectArtifact(ports, partition, {
+      mediaType: attachment.mediaType,
+      content: attachment.content,
+    });
+    if (answered.outcome !== "Ok") return threadUploadRefused(answered);
+    uploaded.set(attachment, { project, artifact: answered.value.artifact });
+    images.push(answered.value.artifact);
+  }
+  return images;
 }
 
 /** No frame names the grant, so the partition's own refetch reaches it, and a
@@ -222,11 +277,15 @@ async function threadSendAnswered(
   ports: ReturnType<typeof useApiPorts>,
   partition: PartitionIdentity,
   door: ReturnType<typeof useThreadDoor>,
-  sent: { readonly session: string } & ThreadSending,
+  sent: {
+    readonly session: string;
+    readonly images: readonly string[];
+  } & ThreadSending,
 ): Promise<ThreadSend> {
   const answered = await threadMessageSent(ports, partition, sent.session, {
     turn: sent.turn,
     message: sent.text,
+    ...(sent.images.length === 0 ? {} : { images: [...sent.images] }),
   });
   if (answered.send !== "Unhosted") return answered;
   door.learnt(false);
@@ -278,7 +337,7 @@ function useThreadKeptAway(
     readonly setHeld: (held: ThreadHeld | undefined) => void;
   },
 ): {
-  readonly answered: (sent: ThreadSending, send: ThreadSend) => void;
+  readonly answered: (sent: ThreadHeld, send: ThreadSend) => void;
   readonly back: ConversationComposerProps["back"];
 } {
   const drawn = useRef(true);
@@ -296,7 +355,7 @@ function useThreadKeptAway(
     pressed.setHeld(
       kept.turn === undefined
         ? undefined
-        : { text: kept.text, turn: kept.turn },
+        : { text: kept.text, attached: kept.attached, turn: kept.turn },
     );
   }
   return {
@@ -306,9 +365,16 @@ function useThreadKeptAway(
     back:
       away === undefined || kept === undefined
         ? undefined
-        : { text: kept.text, taken: away.taken },
+        : { text: kept.text, attached: kept.attached, taken: away.taken },
   };
 }
+
+/** What a thread's message carries as images: the message door's own bound,
+ * and the types the upload admits. */
+const threadSendAttaches = {
+  countMax: threadMessageImagesMax,
+  mediaTypes: imageMediaTypes,
+};
 
 /** What one thread's composer is made from. */
 export interface ThreadSendInput {
@@ -356,6 +422,66 @@ function useThreadStopSaid(
 }
 
 /**
+ * One press, from its images to the door's answer, and the thread the first
+ * press opened where the reader had none: the images are uploaded first, so
+ * an upload that fails opens no thread and sends nothing.
+ */
+function useThreadSendPressed(
+  input: ThreadSendInput,
+  door: ReturnType<typeof useThreadDoor>,
+  away: ReturnType<typeof useThreadKeptAway>,
+  set: {
+    readonly setSend: (send: ThreadSend) => void;
+    readonly setHeld: (held: ThreadHeld | undefined) => void;
+  },
+): {
+  readonly pressed: (sent: ThreadHeld) => Promise<string | undefined>;
+  readonly opened: string | undefined;
+} {
+  const ports = useApiPorts();
+  const { partition } = input;
+  const [opened, setOpened] = useState<string | undefined>(undefined);
+  const uploaded = useRef<ThreadUploaded>(new WeakMap());
+  const pressed = async (sent: ThreadHeld): Promise<string | undefined> => {
+    const said = (send: ThreadSend): void => {
+      set.setSend(send);
+      set.setHeld(send.send === "Sent" ? undefined : sent);
+      away.answered(sent, send);
+    };
+    const images = await threadSendUploaded(
+      ports,
+      partition,
+      sent.attached,
+      uploaded.current,
+    );
+    if ("send" in images) {
+      said(images);
+      return undefined;
+    }
+    let session = input.session ?? opened;
+    if (session === undefined) {
+      const open = await threadSendOpened(ports, partition, door);
+      if ("send" in open) {
+        set.setSend(open);
+        return undefined;
+      }
+      session = open.session;
+      setOpened(session);
+    }
+    const to = { session, images, ...sent };
+    const answered = await threadSendAnswered(ports, partition, door, to);
+    if (answered.send === "Refused")
+      for (const attachment of sent.attached)
+        uploaded.current.delete(attachment);
+    said(answered);
+    if (answered.send !== "Sent") return undefined;
+    if (input.session === undefined) input.onStarted?.(session);
+    return session;
+  };
+  return { pressed, opened };
+}
+
+/**
  * The composer one thread hands the surface: what the door still takes, what a
  * message may carry, and what a press ended as. A door that answered `Ended`
  * takes nothing more whatever the read said, because the read that drew this
@@ -364,47 +490,30 @@ function useThreadStopSaid(
  * that says runners, and holds any text it handed back, read-only.
  */
 export function useThreadSend(input: ThreadSendInput): ThreadSendHeld {
-  const ports = useApiPorts();
   const { partition } = input;
   const [held, setHeld] = useState<ThreadHeld | undefined>(undefined);
   const [send, setSend] = useState<ThreadSend>({ send: "Idle" });
-  const [opened, setOpened] = useState<string | undefined>(undefined);
   const sends = useThreadSendSending(input.listed ?? threadSendNothingListed);
   const stops = useThreadStopSaid(partition, [send, setSend], input.ended);
   const door = useThreadDoor(partition);
   const away = useThreadKeptAway(input.away, { setSend, setHeld });
+  const { pressed, opened } = useThreadSendPressed(input, door, away, {
+    setSend,
+    setHeld,
+  });
   const standing = threadSendStanding(send, input.takes, door.door);
-  const pressed = async (sent: ThreadSending): Promise<string | undefined> => {
-    let session = input.session ?? opened;
-    if (session === undefined) {
-      const open = await threadSendOpened(ports, partition, door);
-      if ("send" in open) {
-        setSend(open);
-        return undefined;
-      }
-      session = open.session;
-      setOpened(session);
-    }
-    const to = { session, ...sent };
-    const answered = await threadSendAnswered(ports, partition, door, to);
-    setSend(answered);
-    setHeld(answered.send === "Sent" ? undefined : sent);
-    away.answered(sent, answered);
-    if (answered.send !== "Sent") return undefined;
-    if (input.session === undefined) input.onStarted?.(session);
-    return session;
-  };
   const composer: ConversationComposerProps = {
     takes:
       input.takes && standing.send !== "Ended" && standing.send !== "Unhosted",
     charsMax: threadMessageCharsMax,
-    onSend: async (text: string): Promise<ConversationSent> => {
+    attaches: threadSendAttaches,
+    onSend: async (text, attached): Promise<ConversationSent> => {
       const turn =
-        threadTurnRetained(held, text) ??
+        threadTurnRetained(held, { text, attached }) ??
         threadTurnMinted(drawBytes(threadTurnIdBytesCount));
       setSend({ send: "Sending" });
       sends.pressed({ turn, text });
-      const taken = await stops.flown(turn, pressed({ turn, text }));
+      const taken = await stops.flown(turn, pressed({ turn, text, attached }));
       if (taken === undefined) sends.kept(turn);
       return taken === undefined ? "Kept" : "Sent";
     },
