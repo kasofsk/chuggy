@@ -8109,7 +8109,6 @@ test("an applied 016 stores each released ticket's brief as the one its content 
     const brief = {
       intent: "Land it.",
       links: [],
-      images: [],
       checks: [],
       branch: "refs/heads/branch-91",
       repository: "bound-91",
@@ -8128,7 +8127,10 @@ test("an applied 016 stores each released ticket's brief as the one its content 
       )
     ).rows;
     assert.ok(row !== undefined);
-    assert.deepEqual(releasedTicketBrief(row.brief, row.content), brief);
+    assert.deepEqual(releasedTicketBrief(row.brief, row.content), {
+      ...brief,
+      images: [],
+    });
   });
 });
 
