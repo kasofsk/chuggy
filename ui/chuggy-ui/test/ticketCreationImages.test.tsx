@@ -3,8 +3,8 @@
  * pasted or dropped, drawn from a `data:` URI, carried by identity into the
  * release and through the YAML view, bounded where it is attached, and an
  * upload that fails leaving the form as it was. They are the author's, so
- * they stay attached under another configuration and are revised into a
- * draft a refused release left held.
+ * they stay attached under another configuration, are revised into a draft a
+ * refused release left held, and come back with a YAML this browser kept.
  */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -22,6 +22,10 @@ import { briefImagesMax } from "../../../src/contract/brief.ts";
 import { SessionProvider } from "../app/browser/session.tsx";
 import { CreationForm } from "../app/browser/TicketCreation.tsx";
 import type { ApiPorts } from "../app/core/apiRequest.ts";
+import {
+  ticketYamlImagesStored,
+  ticketYamlStoreKey,
+} from "../app/browser/editor/authoringGuards.tsx";
 import { creationContextList } from "../app/core/ticketCreationRun.ts";
 import { answeringApi } from "./answeringApi.ts";
 import type { Sent } from "./answeringApi.ts";
@@ -367,4 +371,57 @@ test("images attached under one configuration stay attached under the one chosen
     configurationRevision: "n-sonnet",
     brief: { images: ["artifact-1"] },
   });
+});
+
+const storeKey = ticketYamlStoreKey(creationPartition, undefined);
+
+/**
+ * The kept text outlives the screen that attached its images, and the screen
+ * it is restored on has attached none. What that first screen knew is kept
+ * beside the text, so the same identities are still ones the text may name,
+ * and one nothing ever attached is still refused.
+ */
+test("a YAML this browser kept comes back with the images it names", async () => {
+  draw(api().ports);
+  picked(shot([1]));
+  await thumbnails(1);
+  const text = await toYaml();
+  fireEvent.change(text, {
+    target: { value: "intent: ship it\nimages:\n  - artifact-1\n" },
+  });
+  cleanup();
+
+  const held = api();
+  const created: number[] = [];
+  draw(held.ports, created);
+  const restored = await toYaml();
+  expect(restored.value).toBe("intent: ship it\nimages:\n  - artifact-1\n");
+  expect(screen.queryByRole("list", { name: "Problems" })).toBeNull();
+  fireEvent.click(screen.getByRole("radio", { name: "Form" }));
+  await thumbnails(1);
+  expect(ticketYamlImagesStored(storeKey)).toStrictEqual([]);
+  submit();
+  await waitFor(() => {
+    expect(created).toStrictEqual([creationDraft.ticket]);
+  });
+  expect(
+    held.sent.find((one) => one.path.endsWith("/drafts"))?.body,
+  ).toMatchObject({ brief: { images: ["artifact-1"] } });
+});
+
+test("a kept YAML naming an image no screen attached is still refused at that key", async () => {
+  draw(api().ports);
+  picked(shot([1]));
+  await thumbnails(1);
+  const text = await toYaml();
+  fireEvent.change(text, {
+    target: { value: "intent: y\nimages:\n  - artifact-9\n" },
+  });
+  cleanup();
+
+  draw(api().ports);
+  const problems = await screen.findByRole("list", { name: "Problems" });
+  expect(problems.textContent).toContain(
+    "line 3: `artifact-9` names no image attached to this ticket",
+  );
 });

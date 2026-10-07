@@ -34,6 +34,7 @@ import { Notice } from "../ui/Notice.tsx";
 import {
   EditorBoundary,
   ticketYamlForgotten,
+  ticketYamlImagesKept,
   ticketYamlKept,
   ticketYamlStored,
 } from "./authoringGuards.tsx";
@@ -182,6 +183,7 @@ function useYamlText(props: TicketYamlAuthoringProps) {
     typed: (next: string): void => {
       setText(next);
       ticketYamlKept(storeKey, next);
+      ticketYamlImagesKept(storeKey, context.images);
     },
     discarded: (): void => {
       ticketYamlForgotten(storeKey);
