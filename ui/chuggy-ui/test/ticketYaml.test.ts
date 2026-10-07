@@ -14,14 +14,22 @@ import {
 } from "../app/browser/editor/ticketYaml.ts";
 import type { TicketYamlContext } from "../app/browser/editor/ticketYaml.ts";
 import {
+  creationConfigurationChosen,
+  creationFaultSentence,
+  creationFormFrom,
+  creationStageOf,
+} from "../app/core/ticketCreation.ts";
+import {
   creationBinding,
+  creationDeclared,
   creationForm,
-  creationInitialization,
+  creationOffer,
+  creationOffers,
 } from "./ticketCreationFixture.ts";
 
 const context: TicketYamlContext = {
   base: creationForm({ intent: "" }),
-  initialization: creationInitialization,
+  offers: creationOffers,
   repositories: [],
   dependenciesLocked: false,
 };
@@ -34,8 +42,8 @@ function readForm(text: string, over: Partial<TicketYamlContext> = {}) {
  * screen would call itself dirty the moment it was opened. */
 test("a form read as YAML reads back as the same form", () => {
   const repositories = [creationBinding("acme/one", "PullRequest")];
-  const commanding = { ...creationInitialization, commandedCheckStage: 1 };
-  const over = { ...context, repositories, initialization: commanding };
+  const commanding = [creationOffer(undefined, { commandedCheckStage: 1 })];
+  const over = { ...context, repositories, offers: commanding };
   const form = creationForm(
     {
       title: "Ship it",
@@ -200,4 +208,145 @@ test("a dependency named twice is refused at the dependencies", () => {
       message: "ticket 7 is named twice",
     },
   ]);
+});
+
+const chuggy = "https://forge.test/kasofsk/chuggy";
+
+/** Two offers that differ in everything a configuration decides for a form:
+ * whether it takes check lines, the program it defaults, and how long one may be. */
+const development = creationOffer(
+  creationDeclared("n-development", chuggy, "development"),
+  { commandedCheckStage: 1 },
+);
+const sonnet = creationOffer(
+  creationDeclared("n-sonnet", chuggy, "development-sonnet"),
+  {
+    defaults: { dependencies: [], program: [creationStageOf(2, 1)] },
+    choices: { programStagesMax: 1, evaluatorsMax: 3 },
+  },
+);
+
+/** A project offering several, on a form that has chosen none of them. */
+const several: TicketYamlContext = {
+  base: creationFormFrom([development, sonnet], []),
+  offers: [development, sonnet],
+  repositories: [],
+  dependenciesLocked: false,
+};
+
+test("a project offering one configuration draws no key for it, and refuses one", () => {
+  expect(ticketYamlOf(context.base, context)).not.toContain("configuration");
+  expect(
+    readForm("configuration: r3\nintent: y\n").problems.map(
+      (problem) => problem.message,
+    ),
+  ).toStrictEqual(["this form has no `configuration`"]);
+  expect(readForm("intent: y\n").form?.configuration).toBe("r3");
+});
+
+test("a project offering several writes the choice first, by name, and reads it back", () => {
+  const form = {
+    ...creationConfigurationChosen(several.base, several.offers, "development"),
+    intent: "ship it",
+    checks: ["npm test"],
+  };
+  const text = ticketYamlOf(form, several);
+  expect(text.startsWith("configuration: development\n")).toBe(true);
+  const read = ticketYamlRead(text, several);
+  expect(read.problems).toStrictEqual([]);
+  expect(read.form).toStrictEqual(form);
+});
+
+/** A form that has chosen nothing still switches to the YAML and back: the
+ * text names none, and what is wrong with that is the form's fault to state. */
+test("a form naming no configuration reads as YAML and back, without the keys one decides", () => {
+  const text = ticketYamlOf(several.base, several);
+  expect(text.startsWith('configuration: ""\n')).toBe(true);
+  expect(text).not.toContain("program");
+  expect(text).not.toContain("dependencies");
+  const read = ticketYamlRead(text, several);
+  expect(read.problems).toStrictEqual([]);
+  expect(read.form).toStrictEqual(several.base);
+  const fault = {
+    field: "configuration" as const,
+    reason: creationFaultSentence("configuration"),
+  };
+  expect(ticketYamlFaultProblems([fault], read.keys)).toStrictEqual([
+    { from: 0, to: "configuration".length, message: fault.reason },
+  ]);
+});
+
+test("a configuration nothing offers is refused, naming the ones offered", () => {
+  const text =
+    "configuration: development-opus\nintent: y\nprogram:\n  - evaluators: 1\n";
+  const read = ticketYamlRead(text, several);
+  expect(read.form).toBeUndefined();
+  expect(read.problems).toStrictEqual([
+    {
+      from: text.indexOf("development-opus"),
+      to: text.indexOf("development-opus") + "development-opus".length,
+      message: "name one of development, development-sonnet",
+    },
+  ]);
+});
+
+/** The keys a configuration decides wait on the name: a text that leaves it
+ * out is told one thing, by the form, and not that it has no program. */
+test("a text naming no configuration leaves the keys one decides unjudged", () => {
+  const read = ticketYamlRead(
+    "intent: y\nchecks:\n  - npm test\nprogram:\n  - evaluators: 9\n",
+    several,
+  );
+  expect(read.problems).toStrictEqual([]);
+  expect(read.form?.configuration).toBe("");
+  expect(read.form?.program).toStrictEqual([]);
+  expect(read.form?.checks).toStrictEqual([]);
+});
+
+test("the keys a configuration decides are read under the one the text names", () => {
+  const named = (configuration: string, rest: string) =>
+    ticketYamlRead(
+      `intent: y\n${rest}configuration: ${configuration}\n`,
+      several,
+    );
+  expect(named("development-sonnet", "").form?.program).toStrictEqual(
+    sonnet.initialization.defaults.program,
+  );
+  expect(named("development", "").form?.program).toStrictEqual(
+    development.initialization.defaults.program,
+  );
+  const checks = "checks:\n  - npm test\n";
+  expect(named("development", checks).form?.checks).toStrictEqual(["npm test"]);
+  expect(
+    named("development-sonnet", checks).problems.map((one) => one.message),
+  ).toStrictEqual(["this form has no `checks`"]);
+  const twoStages = "program:\n  - evaluators: 1\n  - evaluators: 1\n";
+  expect(named("development", twoStages).form?.program.length).toBe(2);
+  expect(
+    named("development-sonnet", twoStages).problems.map((one) => one.message),
+  ).toStrictEqual(["a program has at most 1 stages here"]);
+});
+
+test("the vocabulary offers the configurations by name, and a program only under one", () => {
+  const unchosen = ticketYamlVocabulary(several.base, several);
+  expect(unchosen.map((key) => key.key)).toStrictEqual([
+    "configuration",
+    "title",
+    "intent",
+    "links",
+    "branch",
+    "landing",
+    "target",
+  ]);
+  expect(unchosen[0]?.values).toStrictEqual([
+    { label: "development", detail: "n-development" },
+    { label: "development-sonnet", detail: "n-sonnet" },
+  ]);
+  const chosen = ticketYamlVocabulary(
+    creationConfigurationChosen(several.base, several.offers, "development"),
+    several,
+  ).map((key) => key.key);
+  expect(chosen).toContain("checks");
+  expect(chosen).toContain("program");
+  expect(chosen).toContain("evaluators");
 });

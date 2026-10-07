@@ -9,15 +9,21 @@
  * a project that binds none — is refused rather than carried, because the form
  * would never send it and the reader could not see it there.
  *
+ * THE CONFIGURATION IS READ FIRST, wherever its key is written, because it
+ * decides which of the other keys the form draws: the checks, the dependencies
+ * and the program are a configuration's. Under a text that names none they are
+ * left unjudged, the one thing wrong with it being that it names none.
+ *
  * A KEY LEFT OUT IS EMPTY, except the three a form never leaves empty: the
- * landing, the program and the dependencies keep what the form held.
+ * landing and the dependencies keep what the form held, and so does a program
+ * the reader moved, an unmoved one being the named configuration's default.
  *
  * This lives under `browser/` rather than `core/` because the parser is a
  * package the decision layer may not reach; everything here is still pure.
  */
 
 import { Document, isMap, isScalar, isSeq, parseDocument, Scalar } from "yaml";
-import type { Node, Pair } from "yaml";
+import type { Node, Pair, YAMLMap } from "yaml";
 
 import type {
   DraftInitializationResponse,
@@ -29,13 +35,17 @@ import { landingEffect } from "../../core/codeLabels.ts";
 import { repositoryLabel } from "../../core/projectRepositories.ts";
 import {
   creationBranchHint,
+  creationConfigurationAsked,
+  creationConfigurationChosen,
   creationFaultSentence,
+  creationOfferOf,
   creationStageOf,
   creationTargetBranchHint,
 } from "../../core/ticketCreation.ts";
 import type {
   CreationFault,
   CreationField,
+  CreationOffer,
   CreationStage,
   TicketCreationForm,
 } from "../../core/ticketCreation.ts";
@@ -44,7 +54,7 @@ import type {
  * form a key left out keeps its value from. */
 export interface TicketYamlContext {
   readonly base: TicketCreationForm;
-  readonly initialization: DraftInitializationResponse;
+  readonly offers: readonly CreationOffer[];
   readonly repositories: readonly ProjectRepositoryResponse[];
   readonly dependenciesLocked: boolean;
 }
@@ -74,30 +84,51 @@ export interface TicketYamlReading {
 
 const ticketYamlLockedNote = " fixed once the ticket was released";
 
-function ticketYamlChecksOffered(context: TicketYamlContext): boolean {
-  return context.initialization.commandedCheckStage !== undefined;
+/** What the named configuration draws the form under, a name nothing offers
+ * drawing it under nothing. */
+function ticketYamlDrawn(
+  context: TicketYamlContext,
+  configuration: string,
+): DraftInitializationResponse | undefined {
+  return creationOfferOf(context.offers, configuration)?.initialization;
+}
+
+/** Whether the form asks which configuration, decided by the form the screen
+ * opened on so the key does not come and go as the text is typed. */
+function ticketYamlConfigurationOffered(context: TicketYamlContext): boolean {
+  return creationConfigurationAsked(context.offers, context.base.configuration);
 }
 
 function ticketYamlRepositoryOffered(context: TicketYamlContext): boolean {
   return context.repositories.length > 0;
 }
 
-/** The keys this project's form draws, in the order it draws them. */
+/** The keys a configuration decides whether the form draws at all. */
+const ticketYamlConfigured: ReadonlySet<string> = new Set([
+  "checks",
+  "dependencies",
+  "program",
+]);
+
+/** The keys this project's form draws under one configuration, in the order
+ * it draws them. */
 function ticketYamlKeys(
   context: TicketYamlContext,
+  configuration: string,
   landing: BriefFinalizationMode,
 ): readonly string[] {
+  const drawn = ticketYamlDrawn(context, configuration);
   return [
+    ...(ticketYamlConfigurationOffered(context) ? ["configuration"] : []),
     "title",
     "intent",
     "links",
-    ...(ticketYamlChecksOffered(context) ? ["checks"] : []),
+    ...(drawn?.commandedCheckStage === undefined ? [] : ["checks"]),
     "branch",
     ...(ticketYamlRepositoryOffered(context) ? ["repository"] : []),
     "landing",
     ...(landing === "None" ? [] : ["target"]),
-    "dependencies",
-    "program",
+    ...(drawn === undefined ? [] : ["dependencies", "program"]),
   ];
 }
 
@@ -107,6 +138,7 @@ export function ticketYamlOf(
   context: TicketYamlContext,
 ): string {
   const values: Record<string, unknown> = {
+    configuration: form.configuration,
     title: form.title,
     intent: form.intent,
     links: [...form.links],
@@ -121,7 +153,10 @@ export function ticketYamlOf(
     })),
   };
   const shown = Object.fromEntries(
-    ticketYamlKeys(context, form.landingMode).map((key) => [key, values[key]]),
+    ticketYamlKeys(context, form.configuration, form.landingMode).map((key) => [
+      key,
+      values[key],
+    ]),
   );
   const document = new Document(shown);
   const intent = document.get("intent", true);
@@ -203,6 +238,20 @@ function ticketYamlLandingOf(
     : ticketYamlTook(mode);
 }
 
+/** The configuration a text names: one of the offers, or none yet. */
+function ticketYamlConfigurationOf(
+  node: unknown,
+  context: TicketYamlContext,
+): TicketYamlTook<string> {
+  const text = ticketYamlTextOf(node);
+  if (text.took === "Problem" || text.value === "") return text;
+  return creationOfferOf(context.offers, text.value) === undefined
+    ? ticketYamlRefused(
+        `name one of ${context.offers.map((offer) => offer.name).join(", ")}`,
+      )
+    : text;
+}
+
 function ticketYamlDependenciesOf(node: unknown): TicketYamlTook<number[]> {
   if (isScalar(node) && node.value === null) return ticketYamlTook([]);
   if (!isSeq(node))
@@ -255,27 +304,70 @@ function ticketYamlSameNumbers(
   return a.length === b.length && a.every((value, index) => value === b[index]);
 }
 
-/** Each key's reading, applied to the form it is building. */
+type TicketYamlApplied = TicketYamlTook<TicketCreationForm>;
+
+function ticketYamlInto<T>(
+  reading: TicketYamlTook<T>,
+  apply: (value: T) => TicketCreationForm,
+): TicketYamlApplied {
+  return reading.took === "Problem"
+    ? reading
+    : ticketYamlTook(apply(reading.value));
+}
+
+function ticketYamlNoKey(key: string): TicketYamlApplied {
+  return ticketYamlRefused(`this form has no \`${key}\``);
+}
+
+/** The keys a configuration decides, each read against the one the form names. */
+function ticketYamlConfiguredApplied(
+  key: string,
+  value: unknown,
+  form: TicketCreationForm,
+  context: TicketYamlContext,
+): TicketYamlApplied {
+  const drawn = ticketYamlDrawn(context, form.configuration);
+  if (drawn === undefined) return ticketYamlNoKey(key);
+  if (key === "checks")
+    return ticketYamlInto(ticketYamlTextsOf(value), (checks) => ({
+      ...form,
+      checks,
+    }));
+  if (key === "program")
+    return ticketYamlInto(
+      ticketYamlProgramOf(value, drawn.choices),
+      (program) => ({ ...form, program }),
+    );
+  const read = ticketYamlDependenciesOf(value);
+  if (
+    read.took === "Value" &&
+    context.dependenciesLocked &&
+    !ticketYamlSameNumbers(read.value, context.base.dependencies)
+  )
+    return ticketYamlRefused(
+      "a released ticket's dependencies cannot change; put back what it had",
+    );
+  return ticketYamlInto(read, (dependencies) => ({ ...form, dependencies }));
+}
+
+/** Each key's reading, applied to the form it is building. The configuration
+ * is already in that form, so its key is only judged here. */
 function ticketYamlKeyApplied(
   key: string,
   value: unknown,
   form: TicketCreationForm,
   context: TicketYamlContext,
-): TicketYamlTook<TicketCreationForm> {
-  const into = <T>(
-    reading: TicketYamlTook<T>,
-    apply: (value: T) => TicketCreationForm,
-  ): TicketYamlTook<TicketCreationForm> =>
-    reading.took === "Problem" ? reading : ticketYamlTook(apply(reading.value));
+): TicketYamlApplied {
+  const into = ticketYamlInto;
   switch (key) {
+    case "configuration":
+      return into(ticketYamlConfigurationOf(value, context), () => form);
     case "title":
       return into(ticketYamlTextOf(value), (title) => ({ ...form, title }));
     case "intent":
       return into(ticketYamlTextOf(value), (intent) => ({ ...form, intent }));
     case "links":
       return into(ticketYamlTextsOf(value), (links) => ({ ...form, links }));
-    case "checks":
-      return into(ticketYamlTextsOf(value), (checks) => ({ ...form, checks }));
     case "branch":
       return into(ticketYamlTextOf(value), (branchName) => ({
         ...form,
@@ -296,25 +388,12 @@ function ticketYamlKeyApplied(
         ...form,
         landingMode,
       }));
-    case "dependencies": {
-      const read = ticketYamlDependenciesOf(value);
-      if (
-        read.took === "Value" &&
-        context.dependenciesLocked &&
-        !ticketYamlSameNumbers(read.value, context.base.dependencies)
-      )
-        return ticketYamlRefused(
-          "a released ticket's dependencies cannot change; put back what it had",
-        );
-      return into(read, (dependencies) => ({ ...form, dependencies }));
-    }
+    case "checks":
+    case "dependencies":
     case "program":
-      return into(
-        ticketYamlProgramOf(value, context.initialization.choices),
-        (program) => ({ ...form, program }),
-      );
+      return ticketYamlConfiguredApplied(key, value, form, context);
     default:
-      return ticketYamlRefused(`this form has no \`${key}\``);
+      return ticketYamlNoKey(key);
   }
 }
 
@@ -338,16 +417,22 @@ function ticketYamlKeyNameOf(pair: Pair): string | undefined {
     : undefined;
 }
 
-export function ticketYamlRead(
-  text: string,
-  context: TicketYamlContext,
-): TicketYamlReading {
+type TicketYamlPair = YAMLMap.Parsed["items"][number];
+
+/** A text as its top-level pairs, or what is wrong with one that is not a map
+ * of them. */
+type TicketYamlParsed =
+  | { readonly parsed: "Pairs"; readonly pairs: readonly TicketYamlPair[] }
+  | {
+      readonly parsed: "Problems";
+      readonly problems: readonly TicketYamlProblem[];
+    };
+
+function ticketYamlParsed(text: string): TicketYamlParsed {
   const document = parseDocument(text, { prettyErrors: false });
-  const keys = new Map<string, TicketYamlSpan>();
   if (document.errors.length > 0)
     return {
-      form: undefined,
-      keys,
+      parsed: "Problems",
       problems: document.errors.map((error) => ({
         from: error.pos[0],
         to: error.pos[1],
@@ -355,21 +440,57 @@ export function ticketYamlRead(
       })),
     };
   const contents = document.contents;
-  if (contents !== null && !isMap(contents))
-    return {
-      form: undefined,
-      keys,
-      problems: [
-        {
-          ...ticketYamlSpanOf(contents),
-          message: "write the ticket as keys, one `key: value` a line",
-        },
-      ],
-    };
-  const offered = new Set(ticketYamlKeys(context, "Push"));
+  if (contents === null) return { parsed: "Pairs", pairs: [] };
+  if (isMap(contents)) return { parsed: "Pairs", pairs: contents.items };
+  return {
+    parsed: "Problems",
+    problems: [
+      {
+        ...ticketYamlSpanOf(contents),
+        message: "write the ticket as keys, one `key: value` a line",
+      },
+    ],
+  };
+}
+
+/**
+ * The form a text starts from before its other keys are read: every key left
+ * out, under the configuration the text names, and whether it names one.
+ */
+function ticketYamlStart(
+  pairs: readonly TicketYamlPair[],
+  context: TicketYamlContext,
+): { readonly form: TicketCreationForm; readonly named: boolean } {
+  const empty = ticketYamlEmpty(context.base);
+  if (!ticketYamlConfigurationOffered(context))
+    return { form: empty, named: true };
+  const written = pairs.find(
+    (pair) => ticketYamlKeyNameOf(pair) === "configuration",
+  );
+  const read = ticketYamlConfigurationOf(written?.value, context);
+  const name = read.took === "Value" ? read.value : "";
+  return {
+    form: creationConfigurationChosen(empty, context.offers, name),
+    named: name !== "",
+  };
+}
+
+export function ticketYamlRead(
+  text: string,
+  context: TicketYamlContext,
+): TicketYamlReading {
+  const keys = new Map<string, TicketYamlSpan>();
+  const parsed = ticketYamlParsed(text);
+  if (parsed.parsed === "Problems")
+    return { form: undefined, keys, problems: parsed.problems };
+  const pairs = parsed.pairs;
+  const start = ticketYamlStart(pairs, context);
+  const offered = new Set(
+    ticketYamlKeys(context, start.form.configuration, "Push"),
+  );
   const problems: TicketYamlProblem[] = [];
-  let form = ticketYamlEmpty(context.base);
-  for (const pair of contents?.items ?? []) {
+  let form = start.form;
+  for (const pair of pairs) {
     const key = ticketYamlKeyNameOf(pair);
     const at = ticketYamlSpanOf(pair.key);
     if (key === undefined) {
@@ -377,9 +498,10 @@ export function ticketYamlRead(
       continue;
     }
     keys.set(key, at);
+    if (!start.named && ticketYamlConfigured.has(key)) continue;
     const applied = offered.has(key)
       ? ticketYamlKeyApplied(key, pair.value, form, context)
-      : ticketYamlRefused<TicketCreationForm>(`this form has no \`${key}\``);
+      : ticketYamlNoKey(key);
     if (applied.took === "Problem")
       problems.push({
         ...(pair.value === null ? at : ticketYamlSpanOf(pair.value)),
@@ -393,6 +515,7 @@ export function ticketYamlRead(
 /** The key each field's fault is drawn at; the fence belongs to no key. */
 function ticketYamlKeyOf(field: CreationField): string | undefined {
   switch (field) {
+    case "configuration":
     case "title":
     case "intent":
     case "links":
@@ -438,16 +561,50 @@ export interface TicketYamlKey {
   readonly nested?: true;
 }
 
-export function ticketYamlVocabulary(
+type TicketYamlDescribed = Omit<TicketYamlKey, "key">;
+
+/** What the keys a configuration decides mean under the one the form names. */
+function ticketYamlConfiguredDescribed(
+  context: TicketYamlContext,
+  drawn: DraftInitializationResponse | undefined,
+): Readonly<Record<string, TicketYamlDescribed>> {
+  if (drawn === undefined) return {};
+  return {
+    checks: { hint: creationFaultSentence("checks"), values: [] },
+    dependencies: {
+      hint: context.dependenciesLocked
+        ? `the tickets this one waits for,${ticketYamlLockedNote}`
+        : "the tickets this one waits for, by number",
+      values: context.dependenciesLocked
+        ? []
+        : drawn.dependencyCandidates.map((candidate) => ({
+            label: String(candidate),
+            detail: `ticket ${String(candidate)}`,
+          })),
+    },
+    program: {
+      hint: `the evaluation program: at most ${String(drawn.choices.programStagesMax)} stages, each judged by the evaluators it counts`,
+      values: [],
+    },
+  };
+}
+
+function ticketYamlDescribed(
   form: TicketCreationForm,
   context: TicketYamlContext,
-): readonly TicketYamlKey[] {
-  const choices = context.initialization.choices;
-  const described: Readonly<Record<string, Omit<TicketYamlKey, "key">>> = {
+  drawn: DraftInitializationResponse | undefined,
+): Readonly<Record<string, TicketYamlDescribed>> {
+  return {
+    configuration: {
+      hint: creationFaultSentence("configuration"),
+      values: context.offers.map((offer) => ({
+        label: offer.name,
+        detail: offer.initialization.configuration.revision,
+      })),
+    },
     title: { hint: creationFaultSentence("title"), values: [] },
     intent: { hint: creationFaultSentence("intent"), values: [] },
     links: { hint: creationFaultSentence("links"), values: [] },
-    checks: { hint: creationFaultSentence("checks"), values: [] },
     branch: { hint: creationBranchHint, values: [] },
     repository: {
       hint: creationFaultSentence("repository"),
@@ -464,34 +621,38 @@ export function ticketYamlVocabulary(
       })),
     },
     target: { hint: creationTargetBranchHint(form.landingMode), values: [] },
-    dependencies: {
-      hint: context.dependenciesLocked
-        ? `the tickets this one waits for,${ticketYamlLockedNote}`
-        : "the tickets this one waits for, by number",
-      values: context.dependenciesLocked
-        ? []
-        : context.initialization.dependencyCandidates.map((candidate) => ({
-            label: String(candidate),
-            detail: `ticket ${String(candidate)}`,
-          })),
-    },
-    program: {
-      hint: `the evaluation program: at most ${String(choices.programStagesMax)} stages, each judged by the evaluators it counts`,
-      values: [],
-    },
+    ...ticketYamlConfiguredDescribed(context, drawn),
   };
+}
+
+/** The one key written inside a stage, which only a drawn program has. */
+function ticketYamlNestedKeys(
+  drawn: DraftInitializationResponse | undefined,
+): readonly TicketYamlKey[] {
+  if (drawn === undefined) return [];
+  const evaluatorsMax = drawn.choices.evaluatorsMax;
   return [
-    ...ticketYamlKeys(context, form.landingMode).map((key) => ({
-      key,
-      ...(described[key] ?? { hint: "", values: [] }),
-    })),
     {
       key: "evaluators",
-      hint: `how many evaluators judge this stage, from one to ${String(choices.evaluatorsMax)}`,
-      values: Array.from({ length: choices.evaluatorsMax }, (_, index) => ({
+      hint: `how many evaluators judge this stage, from one to ${String(evaluatorsMax)}`,
+      values: Array.from({ length: evaluatorsMax }, (_, index) => ({
         label: String(index + 1),
       })),
       nested: true,
     },
+  ];
+}
+
+export function ticketYamlVocabulary(
+  form: TicketCreationForm,
+  context: TicketYamlContext,
+): readonly TicketYamlKey[] {
+  const drawn = ticketYamlDrawn(context, form.configuration);
+  const described = ticketYamlDescribed(form, context, drawn);
+  return [
+    ...ticketYamlKeys(context, form.configuration, form.landingMode).map(
+      (key) => ({ key, ...(described[key] ?? { hint: "", values: [] }) }),
+    ),
+    ...ticketYamlNestedKeys(drawn),
   ];
 }

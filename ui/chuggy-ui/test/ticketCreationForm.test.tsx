@@ -27,11 +27,20 @@ import type {
 } from "../../../src/contract/responses.ts";
 import type { ApiPorts } from "../app/core/apiRequest.ts";
 import { CreationForm } from "../app/browser/TicketCreation.tsx";
+import { configurationsPartialLabel } from "../app/core/repositoryConfigurations.ts";
+import {
+  creationConfigurationName,
+  creationFaultSentence,
+} from "../app/core/ticketCreation.ts";
+import type { CreationOffer } from "../app/core/ticketCreation.ts";
 import { creationContextList } from "../app/core/ticketCreationRun.ts";
+import type { CreationContext } from "../app/core/ticketCreationRun.ts";
 import {
   creationBinding,
+  creationDeclared,
   creationDraft,
   creationInitialization,
+  creationOffer,
   creationPartition,
   creationSummary,
 } from "./ticketCreationFixture.ts";
@@ -40,12 +49,17 @@ import type { Sent } from "./answeringApi.ts";
 import { ticketInstants } from "./ticketInstants.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 
-/** The runner has no globals, so each case tears down the tree it rendered. */
-beforeEach(resizeObserverStubbed);
+/** The runner has no globals, so each case tears down the tree it rendered,
+ * and starts in a browser that remembers no choice. */
+beforeEach(() => {
+  resizeObserverStubbed();
+  window.localStorage.clear();
+});
 
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 interface Api {
@@ -120,6 +134,36 @@ function shaping(
   };
 }
 
+type ReadyContext = Extract<CreationContext, { context: "Ready" }>;
+
+/** The form over whatever a project offers, which is where a case about the
+ * choice itself starts. */
+function drawOffered(
+  ports: ApiPorts,
+  created: number[],
+  context: Omit<ReadyContext, "context">,
+): { readonly rerender: (next: Omit<ReadyContext, "context">) => void } {
+  const tree = (next: Omit<ReadyContext, "context">) => (
+    <QueryClientProvider client={new QueryClient()}>
+      <CreationForm
+        ports={ports}
+        partition={creationPartition}
+        queryKey={queryKey}
+        context={{ context: "Ready", ...next }}
+        onCreated={(ticket) => created.push(ticket)}
+      />
+    </QueryClientProvider>
+  );
+  const drawn = render(tree(context));
+  return {
+    rerender: (next) => {
+      drawn.rerender(tree(next));
+    },
+  };
+}
+
+/** The form of a project offering the one configuration its initialization is
+ * of, which is every case but the choice's own. */
 function draw(
   ports: ApiPorts,
   created: number[],
@@ -127,26 +171,21 @@ function draw(
   repositories: readonly ProjectRepositoryResponse[] = [],
   configuration?: ConfigurationSummary,
 ): { readonly rerender: (next: typeof creationInitialization) => void } {
-  const tree = (next: typeof creationInitialization) => (
-    <QueryClientProvider client={new QueryClient()}>
-      <CreationForm
-        ports={ports}
-        partition={creationPartition}
-        queryKey={queryKey}
-        context={{
-          context: "Ready",
-          configuration: configuration ?? shaping(next),
-          initialization: next,
-          repositories,
-        }}
-        onCreated={(ticket) => created.push(ticket)}
-      />
-    </QueryClientProvider>
-  );
-  const drawn = render(tree(initialization));
+  const context = (
+    next: typeof creationInitialization,
+  ): Omit<ReadyContext, "context"> => {
+    const listed = configuration ?? shaping(next);
+    const offer: CreationOffer = {
+      name: creationConfigurationName(listed),
+      listed,
+      initialization: next,
+    };
+    return { offers: [offer], partial: false, repositories };
+  };
+  const drawn = drawOffered(ports, created, context(initialization));
   return {
     rerender: (next) => {
-      drawn.rerender(tree(next));
+      drawn.rerender(context(next));
     },
   };
 }
@@ -184,6 +223,7 @@ function drafts(sent: readonly Sent[]): readonly Sent[] {
 test("the configuration line keeps the revision behind the name it draws", async () => {
   const held = api({ state: "Succeeded" });
   draw(held.ports, []);
+  expect(screen.queryByRole("button", { name: /^Configuration/u })).toBeNull();
   const line = screen.getByText("Configuration · chuggy #12");
   fireEvent.focus(line);
   expect((await screen.findByRole("tooltip")).textContent).toBe(
@@ -734,4 +774,132 @@ test("changing the landing to None releases a ticket the target box would have r
     expect(drafts(held.sent).length).toBe(1);
   });
   expect(briefOf(held.sent)?.["finalization"]).toStrictEqual({ mode: "None" });
+});
+
+/** What one repository's newest commit declares, in name order: the first
+ * takes check lines, and the second is fenced at a sequence of its own. */
+const development = creationOffer(
+  creationDeclared("n-development", chuggy, "development"),
+  { commandedCheckStage: 1 },
+);
+const sonnet = creationOffer(
+  creationDeclared("n-sonnet", chuggy, "development-sonnet"),
+  { fence: { projectSequence: 77, configurationDigest: "b".repeat(64) } },
+);
+const several = {
+  offers: [development, sonnet],
+  partial: false,
+  repositories: [],
+};
+
+function configurationPicker(): HTMLElement {
+  return screen.getByRole("button", { name: /^Configuration/u });
+}
+
+async function chooseConfiguration(name: string): Promise<void> {
+  await waitFor(() => {
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+  fireEvent.keyDown(configurationPicker(), { key: "ArrowDown" });
+  const menu = await screen.findByRole("menu");
+  fireEvent.click(within(menu).getByRole("menuitemradio", { name }));
+  await waitFor(() => {
+    expect(configurationPicker().textContent).toContain(name);
+  });
+}
+
+/**
+ * Several offers is where the rule has teeth: the first ready row of this
+ * project's listing is the name sorting last, and a form that took it pinned
+ * every ticket to it without saying it had chosen anything.
+ */
+test("several configurations ask, and a submission naming none sends nothing", () => {
+  const held = api({ state: "Succeeded" });
+  drawOffered(held.ports, [], several);
+  expect(configurationPicker().textContent).toContain("Choose");
+  expect(screen.queryByText(/^Configuration ·/u)).toBeNull();
+  expect(screen.queryByRole("button", { name: "Advanced" })).toBeNull();
+  typeIntent("ship it");
+  submit();
+  expect(screen.getByText(creationFaultSentence("configuration"))).toBeTruthy();
+  expect(drafts(held.sent).length).toBe(0);
+});
+
+test("a chosen configuration pins and fences the ticket, and what was typed is kept", async () => {
+  const held = api({ state: "Succeeded" });
+  drawOffered(held.ports, [], several);
+  typeTitle("Ship it");
+  typeIntent("ship it");
+  await chooseConfiguration("development-sonnet");
+  expect(
+    screen.getByPlaceholderText<HTMLInputElement>("what this ticket is called")
+      .value,
+  ).toBe("Ship it");
+  fireEvent.focus(configurationPicker());
+  expect((await screen.findByRole("tooltip")).textContent).toBe("n-sonnet");
+  submit();
+  await waitFor(() => {
+    expect(drafts(held.sent).length).toBe(1);
+  });
+  expect(drafts(held.sent)[0]?.body).toMatchObject({
+    configurationRevision: "n-sonnet",
+    configurationDigest: "b".repeat(64),
+    expectedProjectSequence: 77,
+    brief: { title: "Ship it", intent: "ship it" },
+  });
+});
+
+test("what a configuration decides for the form follows the one chosen", async () => {
+  drawOffered(api({ state: "Succeeded" }).ports, [], several);
+  expect(screen.queryByText("Add check")).toBeNull();
+  await chooseConfiguration("development");
+  expect(screen.getByText("Add check")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Advanced" })).toBeTruthy();
+  await chooseConfiguration("development-sonnet");
+  expect(screen.queryByText("Add check")).toBeNull();
+});
+
+test("the next new ticket here starts on the configuration chosen last, while it is offered", async () => {
+  const ports = api({ state: "Succeeded" }).ports;
+  drawOffered(ports, [], several);
+  await chooseConfiguration("development-sonnet");
+  cleanup();
+
+  drawOffered(ports, [], several);
+  expect(configurationPicker().textContent).toContain("development-sonnet");
+  cleanup();
+
+  const basic = creationOffer(creationDeclared("n-basic", chuggy, "basic"));
+  drawOffered(ports, [], { ...several, offers: [basic, development] });
+  expect(configurationPicker().textContent).toContain("Choose");
+});
+
+test("a browser that keeps nothing is asked every time, and still creates", async () => {
+  const refused = (): never => {
+    throw new Error("storage is refused");
+  };
+  vi.spyOn(Storage.prototype, "getItem").mockImplementation(refused);
+  vi.spyOn(Storage.prototype, "setItem").mockImplementation(refused);
+  const held = api({ state: "Succeeded" });
+  const created: number[] = [];
+  drawOffered(held.ports, created, several);
+  expect(configurationPicker().textContent).toContain("Choose");
+  await chooseConfiguration("development");
+  typeIntent("ship it");
+  submit();
+  await waitFor(() => {
+    expect(created).toStrictEqual([creationDraft.ticket]);
+  });
+  expect(drafts(held.sent)[0]?.body).toMatchObject({
+    configurationRevision: "n-development",
+  });
+});
+
+test("a walk the budget stopped says so beside what it did find", () => {
+  const ports = api({ state: "Succeeded" }).ports;
+  drawOffered(ports, [], several);
+  expect(screen.queryByText(configurationsPartialLabel)).toBeNull();
+  cleanup();
+  drawOffered(ports, [], { ...several, partial: true });
+  expect(screen.getByText(configurationsPartialLabel)).toBeTruthy();
 });

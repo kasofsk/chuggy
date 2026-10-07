@@ -15,12 +15,10 @@
 import { lazy, Suspense, useEffect, useId, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 
-import type {
-  DraftInitializationResponse,
-  ProjectRepositoryResponse,
-} from "../../../../../src/contract/responses.ts";
+import type { ProjectRepositoryResponse } from "../../../../../src/contract/responses.ts";
 import type {
   CreationFault,
+  CreationOffer,
   TicketCreationForm,
 } from "../../core/ticketCreation.ts";
 import { Button } from "../ui/Button.tsx";
@@ -54,7 +52,7 @@ export interface TicketAuthoringProps {
   readonly initial: TicketCreationForm;
   readonly form: TicketCreationForm;
   readonly onForm: (form: TicketCreationForm) => void;
-  readonly initialization: DraftInitializationResponse;
+  readonly offers: readonly CreationOffer[];
   readonly repositories: readonly ProjectRepositoryResponse[];
   readonly dependenciesLocked: boolean;
   readonly assemble: (form: TicketCreationForm) => Assembled;
@@ -142,7 +140,7 @@ function FormSubmit(props: {
 }
 
 export function TicketAuthoring(props: TicketAuthoringProps): ReactNode {
-  const { assemble, initial, initialization, onDirty, repositories } = props;
+  const { assemble, initial, offers, onDirty, repositories } = props;
   const locked = props.dependenciesLocked;
   const storeKey = props.storeKey;
   const [mode, setMode] = useState<AuthoringMode>(() =>
@@ -157,11 +155,11 @@ export function TicketAuthoring(props: TicketAuthoringProps): ReactNode {
   const context = useMemo(
     () => ({
       base: initial,
-      initialization,
+      offers,
       repositories,
       dependenciesLocked: locked,
     }),
-    [initial, initialization, repositories, locked],
+    [initial, offers, repositories, locked],
   );
   const faultsOf = (held: TicketCreationForm): readonly CreationFault[] => {
     const assembled = assemble(held);

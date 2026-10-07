@@ -10,6 +10,7 @@
 
 import type { ReactNode } from "react";
 
+import { configurationsPartialLabel } from "../../core/repositoryConfigurations.ts";
 import type { RepositoryConfigurationRow } from "../../core/repositoryConfigurations.ts";
 import { EmptyState } from "../ui/EmptyState.tsx";
 import { Pill } from "../ui/Pill.tsx";
@@ -41,7 +42,7 @@ function RepositoryConfigurationFacts(props: {
 
 /** What the budget left unread, which is a fact about the table, not a row. */
 function RepositoryConfigurationsPartial(): ReactNode {
-  return <p className="text-ink-3 text-sm">Not every configuration was read</p>;
+  return <p className="text-ink-3 text-sm">{configurationsPartialLabel}</p>;
 }
 
 export function RepositoryConfigurationTable(props: {

@@ -20,15 +20,17 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { ticketYamlStoreKey } from "../app/browser/editor/authoringGuards.tsx";
 import { CreationForm } from "../app/browser/TicketCreation.tsx";
 import type { ApiPorts } from "../app/core/apiRequest.ts";
+import type { CreationOffer } from "../app/core/ticketCreation.ts";
 import { creationContextList } from "../app/core/ticketCreationRun.ts";
 import { answeringApi } from "./answeringApi.ts";
 import type { Sent } from "./answeringApi.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import {
+  creationDeclared,
   creationDraft,
-  creationInitialization,
+  creationOffer,
+  creationOffers,
   creationPartition,
-  creationSummary,
 } from "./ticketCreationFixture.ts";
 import { ticketInstants } from "./ticketInstants.ts";
 
@@ -95,7 +97,11 @@ function api(): { readonly ports: ApiPorts; readonly sent: Sent[] } {
   });
 }
 
-function draw(ports: ApiPorts, created: number[] = []): boolean[] {
+function draw(
+  ports: ApiPorts,
+  created: number[] = [],
+  offers: readonly CreationOffer[] = creationOffers,
+): boolean[] {
   const dirty: boolean[] = [];
   render(
     <QueryClientProvider client={new QueryClient()}>
@@ -105,8 +111,8 @@ function draw(ports: ApiPorts, created: number[] = []): boolean[] {
         queryKey={creationContextList(creationPartition).key}
         context={{
           context: "Ready",
-          configuration: creationSummary("r3", "Ready"),
-          initialization: creationInitialization,
+          offers,
+          partial: false,
           repositories: [],
         }}
         onCreated={(ticket) => created.push(ticket)}
@@ -222,4 +228,44 @@ test("switching back to the form forgets the kept copy", async () => {
     screen.getByPlaceholderText<HTMLTextAreaElement>("what this ticket is for")
       .value,
   ).toBe("kept");
+});
+
+const chuggy = "https://forge.test/kasofsk/chuggy";
+
+const several = [
+  creationOffer(creationDeclared("n-development", chuggy, "development")),
+  creationOffer(creationDeclared("n-sonnet", chuggy, "development-sonnet")),
+];
+
+/** The choice is one field under two views, so naming it in the text is
+ * choosing it: the form holds it, the draft is pinned by it, and the next new
+ * ticket here starts on it. */
+test("a configuration named in the YAML is the one chosen, sent and remembered", async () => {
+  const held = api();
+  const created: number[] = [];
+  draw(held.ports, created, several);
+  const editor = await toYaml();
+  expect(editor.value.startsWith('configuration: ""\n')).toBe(true);
+  type(editor, "configuration: development-opus\nintent: ship it\n");
+  expect(screen.getByRole("list", { name: "Problems" }).textContent).toContain(
+    "name one of development, development-sonnet",
+  );
+  type(editor, "configuration: development-sonnet\nintent: ship it\n");
+  fireEvent.click(screen.getByRole("radio", { name: "Form" }));
+  expect(
+    screen.getByRole("button", { name: /^Configuration/u }).textContent,
+  ).toContain("development-sonnet");
+  fireEvent.click(screen.getByRole("button", { name: "Create ticket" }));
+  await waitFor(() => {
+    expect(created).toStrictEqual([creationDraft.ticket]);
+  });
+  expect(
+    held.sent.find((one) => one.path.endsWith("/drafts"))?.body,
+  ).toMatchObject({ configurationRevision: "n-sonnet" });
+  cleanup();
+
+  draw(api().ports, [], several);
+  expect(
+    screen.getByRole("button", { name: /^Configuration/u }).textContent,
+  ).toContain("development-sonnet");
 });

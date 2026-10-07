@@ -13,6 +13,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
@@ -22,18 +23,24 @@ import type {
 } from "../../../src/contract/responses.ts";
 import type { ApiPorts } from "../app/core/apiRequest.ts";
 import { EditForm } from "../app/browser/TicketEdit.tsx";
+import type { CreationOffer } from "../app/core/ticketCreation.ts";
+import { editOffersFrom } from "../app/core/ticketEdit.ts";
 import {
+  creationDeclared,
   creationDraft,
-  creationInitialization,
+  creationOffer,
+  creationOffers,
   creationPartition,
-  creationSummary,
 } from "./ticketCreationFixture.ts";
 import { answeringApi } from "./answeringApi.ts";
 import type { Answer, Sent } from "./answeringApi.ts";
 import { ticketInstants } from "./ticketInstants.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 
-beforeEach(resizeObserverStubbed);
+beforeEach(() => {
+  resizeObserverStubbed();
+  window.localStorage.clear();
+});
 
 afterEach(() => {
   cleanup();
@@ -93,19 +100,22 @@ function api(revised: Answer): {
   });
 }
 
-function draw(ports: ApiPorts, updated: string[]): void {
+/** The edit of one draft over what its project offers, the draft's own
+ * revision unread: every draft here names something still offered. */
+function draw(
+  ports: ApiPorts,
+  updated: string[],
+  held: DraftResponse = draft,
+  offers: readonly CreationOffer[] = creationOffers,
+): void {
   render(
     <QueryClientProvider client={new QueryClient()}>
       <EditForm
         ports={ports}
         partition={creationPartition}
-        subject={{ ticket, draft }}
-        context={{
-          context: "Ready",
-          configuration: creationSummary("r3", "Ready"),
-          initialization: creationInitialization,
-          repositories: [],
-        }}
+        subject={{ ticket, draft: held }}
+        edit={editOffersFrom(held, offers, undefined)}
+        bound={[]}
         onUpdated={() => updated.push("updated")}
       />
     </QueryClientProvider>,
@@ -184,4 +194,70 @@ test("a revision the door locks is said in its own words, and nothing is release
   );
   expect(updated).toStrictEqual([]);
   expect(held.sent.some((one) => one.path.endsWith("/operations"))).toBe(false);
+});
+
+const chuggy = "https://forge.test/kasofsk/chuggy";
+
+/** What the repository's newest commit declares, in name order. */
+const declared = [
+  creationOffer(creationDeclared("n-development", chuggy, "development")),
+  creationOffer(creationDeclared("n-sonnet", chuggy, "development-sonnet")),
+];
+
+/** The draft pinned at an older commit's revision of the first of them. */
+const pinned: DraftResponse = {
+  ...draft,
+  configurationRevision: "o-development",
+  configurationVersion: { name: "development", number: 3 },
+};
+
+function revised(sent: readonly Sent[]): unknown {
+  return sent.find((one) => one.method === "PUT")?.body;
+}
+
+/**
+ * The title is the edit that moved tickets: the form was drawn from the first
+ * ready revision listed, which is another name's wherever a repository
+ * declares several, and the revision was pinned to whatever the form was
+ * drawn from.
+ */
+test("an edit of the title keeps the configuration the draft names", async () => {
+  const held = api({ status: 200, body: { ...pinned, authoringVersion: 4 } });
+  const updated: string[] = [];
+  draw(held.ports, updated, pinned, declared);
+  expect(
+    screen.getByRole("button", { name: /^Configuration/u }).textContent,
+  ).toContain("development");
+  fireEvent.change(screen.getByPlaceholderText("what this ticket is called"), {
+    target: { value: "Renamed" },
+  });
+  submit();
+  await waitFor(() => {
+    expect(updated).toStrictEqual(["updated"]);
+  });
+  expect(revised(held.sent)).toMatchObject({
+    configurationRevision: "n-development",
+    brief: { title: "Renamed" },
+  });
+});
+
+test("choosing another configuration is how an edit moves a ticket", async () => {
+  const held = api({ status: 200, body: { ...pinned, authoringVersion: 4 } });
+  const updated: string[] = [];
+  draw(held.ports, updated, pinned, declared);
+  fireEvent.keyDown(screen.getByRole("button", { name: /^Configuration/u }), {
+    key: "ArrowDown",
+  });
+  const menu = await screen.findByRole("menu");
+  fireEvent.click(
+    within(menu).getByRole("menuitemradio", { name: "development-sonnet" }),
+  );
+  submit();
+  await waitFor(() => {
+    expect(updated).toStrictEqual(["updated"]);
+  });
+  expect(revised(held.sent)).toMatchObject({
+    configurationRevision: "n-sonnet",
+  });
+  expect(window.localStorage.length).toBe(0);
 });

@@ -3,11 +3,13 @@
  * against, creating and releasing one in a single submit, and — for a Pending
  * ticket's edit — revising its draft and releasing the update in one.
  *
- * The configuration is not asked for, so it is walked to here — newest first,
- * for a bounded number of pages, until one is ready — and the initialization it
- * fences is read in the same motion, because a revision without its defaults is
- * not something a form can be drawn from. Release reuses `followOperation`,
- * whose one budget spans the whole follow, so this module adds no second wait.
+ * What a ticket may be drawn under is walked to here — the bindings first,
+ * then the listing, newest first, until it decides the offer or a bounded
+ * number of pages ends — and each offered revision's initialization is read in
+ * the same motion, because a revision without its defaults is not something a
+ * form can be drawn from, and a choice among them is then one no request
+ * waits on. Release reuses `followOperation`, whose one budget spans the whole
+ * follow, so this module adds no second wait.
  *
  * A DRAFT THAT WAS CREATED AND NOT RELEASED IS HANDED BACK. The release is the
  * half that can be refused on its own, and a retry that created a second draft
@@ -16,8 +18,6 @@
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type {
-  ConfigurationSummary,
-  DraftInitializationResponse,
   DraftResponse,
   ProjectRepositoryResponse,
   TicketResponse,
@@ -29,7 +29,6 @@ import type {
 import type { z } from "zod";
 
 import {
-  apiConfigurations,
   apiCreateDraft,
   apiDraftInitialization,
   apiProjectRepositories,
@@ -48,17 +47,24 @@ import { followOperation } from "./operationFollow.ts";
 import type { OperationStep } from "./operationFollow.ts";
 import { projectListReread } from "./projectQueryKeys.ts";
 import type { ProjectList } from "./projectQueryKeys.ts";
+import { readProjectConfigurations } from "./repositoryConfigurations.ts";
 import {
+  creationConfigurationsDecided,
+  creationConfigurationsOffered,
   creationReleaseMutation,
-  latestReadyConfiguration,
 } from "./ticketCreation.ts";
+import type { CreationOffer, CreationOfferListed } from "./ticketCreation.ts";
 import { ticketUpdateMutation } from "./ticketEdit.ts";
 
 export type CreationContext =
   | {
       readonly context: "Ready";
-      readonly configuration: ConfigurationSummary;
-      readonly initialization: DraftInitializationResponse;
+      /** What a ticket here may be drawn under, by name and never none. */
+      readonly offers: readonly CreationOffer[];
+      /** Whether some offer may be missing: the page budget ended the walk
+       * before the listing decided them, or more are declared than one read
+       * draws. */
+      readonly partial: boolean;
       /** What the project binds, which decides whether the form asks for one,
        * what it offers, and the landing each one defaults to. Oldest first, as
        * the listing answers. */
@@ -82,7 +88,7 @@ export function creationContextSentence(
     case "NoReadyConfiguration":
       return "No configuration";
     case "ReadyConfigurationUnknown":
-      return `the newest ${String(context.pagesRead)} pages of this project's revisions are all incomplete, so this console could not find a ready configuration to shape a ticket with`;
+      return `the newest ${String(context.pagesRead)} pages of this project's revisions offer no ready configuration, so this console could not find one to shape a ticket with`;
   }
 }
 
@@ -105,39 +111,54 @@ export type TicketCreated =
 export const creationStaleSentence =
   "the project moved while this form was open — it has been read again, so submitting now uses the current one";
 
-/**
- * What the walk found, with the two ways of finding nothing kept apart: the
- * revisions ran out, or the budget did.
- */
-type ReadyConfiguration =
-  | {
-      readonly found: "Configuration";
-      readonly configuration: ConfigurationSummary;
-    }
-  | { readonly found: "None" }
-  | { readonly found: "Unknown"; readonly pagesRead: number };
+/** How many offers one read draws, each being a request of its own. */
+export const creationOffersMax = 32;
 
-async function readyConfiguration(
+/**
+ * Each offered revision beside its own initialization, read together. One
+ * that cannot be read is the whole read's outcome, a form being drawable
+ * under any of them.
+ */
+async function creationOffersRead(
   ports: ApiPorts,
   partition: PartitionIdentity,
-): Promise<ApiResult<ReadyConfiguration>> {
-  let cursor: string | undefined;
-  for (let page = 0; page < configurationPagesMax; page += 1) {
-    const answered = await apiConfigurations(ports, partition, { cursor });
-    if (answered.outcome !== "Ok") return answered;
-    const ready = latestReadyConfiguration(answered.value.configurations);
-    if (ready !== undefined)
-      return {
-        outcome: "Ok",
-        value: { found: "Configuration", configuration: ready },
-      };
-    cursor = answered.value.nextCursor;
-    if (cursor === undefined)
-      return { outcome: "Ok", value: { found: "None" } };
+  offered: readonly CreationOfferListed[],
+): Promise<ApiResult<readonly CreationOffer[]>> {
+  const read = await Promise.all(
+    offered.map(async (one) => ({
+      one,
+      initialized: await apiDraftInitialization(
+        ports,
+        partition,
+        one.listed.revision,
+      ),
+    })),
+  );
+  const offers: CreationOffer[] = [];
+  for (const { one, initialized } of read) {
+    if (initialized.outcome !== "Ok") return initialized;
+    offers.push({ ...one, initialization: initialized.value });
   }
+  return { outcome: "Ok", value: offers };
+}
+
+/**
+ * What a project offering nothing is, with the ways of finding nothing kept
+ * apart: the budget ran out, nothing is bound to declare one, or nothing
+ * declared is ready.
+ */
+function creationContextUnoffered(
+  repositories: readonly ProjectRepositoryResponse[],
+  partial: boolean,
+): CreationContext {
+  if (partial)
+    return {
+      context: "ReadyConfigurationUnknown",
+      pagesRead: configurationPagesMax,
+    };
   return {
-    outcome: "Ok",
-    value: { found: "Unknown", pagesRead: configurationPagesMax },
+    context:
+      repositories.length === 0 ? "NoRepository" : "NoReadyConfiguration",
   };
 }
 
@@ -148,10 +169,10 @@ export const creationContextName = "creation";
 /**
  * Where the creation context is held, and what makes it stale.
  *
- * Every `Configuration` frame does, because the context is whichever revision
- * is ready and the frame's own revision does not say which one that now is —
- * a newer revision reaching ready changes the answer without ever appearing in
- * the entry the screen holds.
+ * Every `Configuration` frame does, because the context is whichever revisions
+ * are offered and the frame's own revision does not say which those now are —
+ * a newer commit's import changes the answer without ever appearing in the
+ * entry the screen holds.
  */
 export function creationContextList(
   partition: PartitionIdentity,
@@ -163,50 +184,39 @@ export function creationContextList(
   );
 }
 
-/** The revision a ticket would be shaped by, and the defaults it is fenced with. */
+/** The configurations a ticket may be drawn under, each with the defaults it
+ * is fenced with, and what the project binds. */
 export async function readCreationContext(
   ports: ApiPorts,
   partition: PartitionIdentity,
 ): Promise<ApiResult<CreationContext>> {
-  const found = await readyConfiguration(ports, partition);
-  if (found.outcome !== "Ok") return found;
-  if (found.value.found === "None") {
-    const bound = await apiProjectRepositories(ports, partition);
-    if (bound.outcome !== "Ok") return bound;
-    return {
-      outcome: "Ok",
-      value: {
-        context:
-          bound.value.repositories.length === 0
-            ? "NoRepository"
-            : "NoReadyConfiguration",
-      },
-    };
-  }
-  if (found.value.found === "Unknown")
-    return {
-      outcome: "Ok",
-      value: {
-        context: "ReadyConfigurationUnknown",
-        pagesRead: found.value.pagesRead,
-      },
-    };
-  const configuration = found.value.configuration;
-  const initialized = await apiDraftInitialization(
-    ports,
-    partition,
-    configuration.revision,
-  );
-  if (initialized.outcome !== "Ok") return initialized;
   const bound = await apiProjectRepositories(ports, partition);
   if (bound.outcome !== "Ok") return bound;
+  const repositories = bound.value.repositories;
+  const walked = await readProjectConfigurations(ports, partition, (held) =>
+    creationConfigurationsDecided(held, repositories),
+  );
+  if (walked.outcome !== "Ok") return walked;
+  const { configurations, partial } = walked.value;
+  const offered = creationConfigurationsOffered(configurations, repositories);
+  if (offered.length === 0)
+    return {
+      outcome: "Ok",
+      value: creationContextUnoffered(repositories, partial),
+    };
+  const offers = await creationOffersRead(
+    ports,
+    partition,
+    offered.slice(0, creationOffersMax),
+  );
+  if (offers.outcome !== "Ok") return offers;
   return {
     outcome: "Ok",
     value: {
       context: "Ready",
-      configuration,
-      initialization: initialized.value,
-      repositories: bound.value.repositories,
+      offers: offers.value,
+      partial: partial || offered.length > creationOffersMax,
+      repositories,
     },
   };
 }

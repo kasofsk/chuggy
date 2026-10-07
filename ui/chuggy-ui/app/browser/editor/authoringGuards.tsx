@@ -95,6 +95,27 @@ export function ticketYamlForgotten(key: string): void {
   }
 }
 
+/** Where the configuration a reader last chose for a new ticket is kept: per
+ * project, and for this browser alone. */
+function ticketConfigurationStoreKey(partition: PartitionIdentity): string {
+  return `chug.ticket-configuration.${partition.tenant}/${partition.project}`;
+}
+
+/** The configuration this reader last chose here, kept as the YAML is and as
+ * losable: a browser holding none is a form that starts on none. */
+export function ticketConfigurationStored(
+  partition: PartitionIdentity,
+): string | undefined {
+  return ticketYamlStored(ticketConfigurationStoreKey(partition));
+}
+
+export function ticketConfigurationKept(
+  partition: PartitionIdentity,
+  name: string,
+): void {
+  ticketYamlKept(ticketConfigurationStoreKey(partition), name);
+}
+
 /**
  * The editor is a separate chunk, so its load is a request that can fail. A
  * failure is not a reason to lose the document: the fallback is drawn in its

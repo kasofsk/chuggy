@@ -6,6 +6,10 @@
  * states. The dependencies are the one field it does not take from the reader:
  * a released ticket's cannot change, so the revision carries the draft's own
  * whatever the form holds, and the draft door refuses the rest.
+ *
+ * AN EDIT KEEPS THE CONFIGURATION ITS DRAFT NAMES. It starts on that name and
+ * moves the ticket to another only where its reader chooses one, so a revision
+ * of the title is never also a change of who does the work.
  */
 
 import { briefBranchPrefix } from "../../../../src/contract/brief.ts";
@@ -19,8 +23,16 @@ import type {
 } from "../../../../src/contract/responses.ts";
 import type { z } from "zod";
 
-import { creationBodyFrom, creationLandingDefault } from "./ticketCreation.ts";
-import type { CreationFault, TicketCreationForm } from "./ticketCreation.ts";
+import {
+  creationBodyFrom,
+  creationConfigurationName,
+  creationLandingDefault,
+} from "./ticketCreation.ts";
+import type {
+  CreationFault,
+  CreationOffer,
+  TicketCreationForm,
+} from "./ticketCreation.ts";
 
 /** A reference as the branch fields hold it: the name, without the prefix the
  * console adds back on the way out. */
@@ -31,10 +43,79 @@ function editBranchName(ref: string | undefined): string {
     : ref;
 }
 
+/** The name a draft's configuration goes by: the one it was declared under,
+ * and its revision where nothing declared it. */
+function editConfigurationName(draft: DraftResponse): string {
+  return draft.configurationVersion?.name ?? draft.configurationRevision;
+}
+
+/**
+ * The offer a draft is already drawn under: its own revision where the project
+ * still offers it, and otherwise the one offer declared under its name, which
+ * is that name's newest ready revision. Two repositories declaring the name
+ * leave none, because a name does not say which of them a draft came from.
+ */
+function editOfferHeld(
+  draft: DraftResponse,
+  offers: readonly CreationOffer[],
+): CreationOffer | undefined {
+  const own = offers.find(
+    (offer) =>
+      offer.initialization.configuration.revision ===
+      draft.configurationRevision,
+  );
+  if (own !== undefined) return own;
+  const name = editConfigurationName(draft);
+  const named = offers.filter(
+    (offer) =>
+      offer.listed !== undefined &&
+      creationConfigurationName(offer.listed) === name,
+  );
+  return named.length === 1 ? named[0] : undefined;
+}
+
+/** What an edit chooses among, and the name its form starts on. */
+export interface EditOffers {
+  readonly offers: readonly CreationOffer[];
+  readonly configuration: string;
+}
+
+/** Whether the project still offers the configuration a draft names, which
+ * decides whether its own revision has to be read to keep it. */
+export function editOfferListed(
+  draft: DraftResponse,
+  offers: readonly CreationOffer[],
+): boolean {
+  return editOfferHeld(draft, offers) !== undefined;
+}
+
+/**
+ * The offers one edit is drawn over. A draft whose configuration the project
+ * no longer offers is offered its own revision first and starts there, given
+ * that revision's initialization; where that could not be read, or is another
+ * revision's, nothing is chosen and the reader is asked.
+ */
+export function editOffersFrom(
+  draft: DraftResponse,
+  offers: readonly CreationOffer[],
+  own: DraftInitializationResponse | undefined,
+): EditOffers {
+  const held = editOfferHeld(draft, offers);
+  if (held !== undefined) return { offers, configuration: held.name };
+  if (own?.configuration.revision !== draft.configurationRevision)
+    return { offers, configuration: "" };
+  const name = editConfigurationName(draft);
+  return {
+    offers: [{ name, listed: undefined, initialization: own }, ...offers],
+    configuration: name,
+  };
+}
+
 /** The form a draft reads back as, so an untouched submit revises it to itself. */
 export function editFormFrom(
   draft: DraftResponse,
   repositories: readonly ProjectRepositoryResponse[],
+  configuration: string,
 ): TicketCreationForm {
   const brief = draft.brief;
   const repository = brief?.repository ?? "";
@@ -42,6 +123,7 @@ export function editFormFrom(
   return {
     dependencies: [...draft.authoring.dependencies],
     program: draft.authoring.program,
+    configuration,
     title: brief?.title ?? "",
     intent: brief?.intent ?? "",
     links: brief?.links ?? [],
@@ -67,17 +149,17 @@ export type EditAssembly =
 
 /**
  * The revision one form becomes, written against the draft version it was read
- * at and shaped by the configuration the form was drawn from, which is how an
- * update re-pins one.
+ * at and pinned to the revision of the offer the form names, which is how an
+ * update re-pins a ticket and how it is moved to another configuration.
  */
 export function editRevisionFrom(
   draft: DraftResponse,
-  initialization: DraftInitializationResponse,
+  offers: readonly CreationOffer[],
   form: TicketCreationForm,
   repositories: readonly ProjectRepositoryResponse[],
 ): EditAssembly {
   const assembled = creationBodyFrom(
-    initialization,
+    offers,
     { ...form, dependencies: draft.authoring.dependencies },
     repositories,
   );

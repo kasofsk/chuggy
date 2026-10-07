@@ -1,15 +1,16 @@
 /**
- * Creating a ticket: one screen, one submit, and a configuration nobody is
- * asked about.
+ * Creating a ticket: one screen, one submit, and a configuration asked about
+ * only where the project offers more than one.
  *
- * What is visible is what only a person can state — the title, the intent, what
- * to read first, the check lines this ticket adds where its configuration
- * commands a stage for them, the branch the work happens on and the one it
- * lands on; the rest is prefilled behind the disclosure. Submit creates the
- * draft and releases it in one motion, and the navigation happens on a settled
- * success alone, so a screen never hands a reader a ticket the projection has
- * not got to yet. Every other ending is drawn here with its reason and the form
- * still holding what was typed.
+ * What is visible is what only a person can state — which configuration does
+ * the work where there is a choice, the title, the intent, what to read first,
+ * the check lines this ticket adds where its configuration commands a stage
+ * for them, the branch the work happens on and the one it lands on; the rest
+ * is prefilled behind the disclosure. Submit creates the draft and releases it
+ * in one motion, and the navigation happens on a settled success alone, so a
+ * screen never hands a reader a ticket the projection has not got to yet.
+ * Every other ending is drawn here with its reason and the form still holding
+ * what was typed.
  */
 
 import { useQueryClient } from "@tanstack/react-query";
@@ -23,8 +24,6 @@ import {
 } from "../../../../src/contract/brief.ts";
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type {
-  ConfigurationSummary,
-  DraftInitializationResponse,
   DraftResponse,
   ProjectRepositoryResponse,
 } from "../../../../src/contract/responses.ts";
@@ -34,12 +33,16 @@ import { base64urlFromBytes } from "../core/base64url.ts";
 import type { ProjectQueryKey } from "../core/projectQueryKeys.ts";
 import { landingEffect, landingLabel } from "../core/codeLabels.ts";
 import { repositoryLabel } from "../core/projectRepositories.ts";
+import { configurationsPartialLabel } from "../core/repositoryConfigurations.ts";
 import {
   creationBodyFrom,
   creationBootstrapLine,
   creationBranchFieldHint,
+  creationConfigurationAsked,
+  creationConfigurationChosen,
   creationConfigurationLabel,
   creationFormFrom,
+  creationOfferOf,
   creationRepositories,
   creationRepositoryChosen,
   creationStepSentence,
@@ -49,6 +52,7 @@ import type {
   CreationFault,
   CreationField,
   CreationMotion,
+  CreationOffer,
   TicketCreationForm,
 } from "../core/ticketCreation.ts";
 import {
@@ -63,6 +67,8 @@ import type { OperationStep } from "../core/operationFollow.ts";
 import { usePanelList, useApiPorts } from "./api.ts";
 import { DataPanel } from "./DataPanel.tsx";
 import {
+  ticketConfigurationKept,
+  ticketConfigurationStored,
   ticketYamlForgotten,
   ticketYamlStoreKey,
   useAuthoringGuards,
@@ -104,6 +110,62 @@ function Fault(props: {
   const found = props.faults.find((fault) => fault.field === props.field);
   return found === undefined ? null : (
     <p className="text-tone-fail">{found.reason}</p>
+  );
+}
+
+/** The line for the one configuration a project offers, its revision on hover. */
+function ConfigurationLine(props: {
+  readonly offer: CreationOffer;
+}): ReactNode {
+  const shaping = creationConfigurationLabel(props.offer);
+  return (
+    <Tooltip text={shaping.title}>
+      <p className="text-ink-3">{shaping.text}</p>
+    </Tooltip>
+  );
+}
+
+/**
+ * Which configuration the ticket runs under: a line where the project offers
+ * one, and a choice among them by name where it offers several, starting on
+ * none the reader did not choose.
+ */
+function Configuration(
+  props: FormEdit & { readonly offers: readonly CreationOffer[] },
+): ReactNode {
+  const { form, onChange, offers } = props;
+  const chosen = creationOfferOf(offers, form.configuration);
+  const sole = creationConfigurationAsked(offers, form.configuration)
+    ? undefined
+    : chosen;
+  const bootstrap =
+    chosen === undefined ? undefined : creationBootstrapLine(chosen);
+  return (
+    <>
+      {sole === undefined ? (
+        <div className="creation-row">
+          <span>Configuration</span>
+          <Picker
+            label="Configuration"
+            value={form.configuration}
+            placeholder="Choose"
+            hint={chosen?.initialization.configuration.revision}
+            options={offers.map((offer) => ({
+              value: offer.name,
+              text: offer.name,
+            }))}
+            onChoose={(name) => {
+              onChange(creationConfigurationChosen(form, offers, name));
+            }}
+          />
+        </div>
+      ) : (
+        <ConfigurationLine offer={sole} />
+      )}
+      {bootstrap === undefined ? null : (
+        <Notice tone="info" detail={bootstrap} />
+      )}
+    </>
   );
 }
 
@@ -429,30 +491,29 @@ function LockedDependencies(props: {
 export function CreationFields(
   props: FormEdit & {
     readonly faults: readonly CreationFault[];
-    readonly configuration: ConfigurationSummary;
-    readonly initialization: DraftInitializationResponse;
+    readonly offers: readonly CreationOffer[];
+    /** Whether the walk for the offers stopped short of the listing's end. */
+    readonly partial?: boolean;
     readonly repositories: readonly ProjectRepositoryResponse[];
     readonly dependenciesLocked?: boolean;
   },
 ): ReactNode {
-  const { faults, form, initialization, onChange } = props;
-  const shaping = creationConfigurationLabel(props.configuration);
-  const bootstrap = creationBootstrapLine(props.configuration);
+  const { faults, form, onChange } = props;
+  const drawn = creationOfferOf(props.offers, form.configuration);
   return (
     <>
-      <Tooltip text={shaping.title}>
-        <p className="text-ink-3">{shaping.text}</p>
-      </Tooltip>
-      {bootstrap === undefined ? null : (
-        <Notice tone="info" detail={bootstrap} />
-      )}
+      <Configuration form={form} onChange={onChange} offers={props.offers} />
+      <Fault field="configuration" faults={faults} />
+      {props.partial === true ? (
+        <p className="text-ink-3 text-sm">{configurationsPartialLabel}</p>
+      ) : null}
       <Title form={form} onChange={onChange} />
       <Fault field="title" faults={faults} />
       <Intent form={form} onChange={onChange} />
       <Fault field="intent" faults={faults} />
       <Links form={form} onChange={onChange} />
       <Fault field="links" faults={faults} />
-      {initialization.commandedCheckStage === undefined ? null : (
+      {drawn?.initialization.commandedCheckStage === undefined ? null : (
         <>
           <Checks form={form} onChange={onChange} />
           <Fault field="checks" faults={faults} />
@@ -477,12 +538,14 @@ export function CreationFields(
       {props.dependenciesLocked === true ? (
         <LockedDependencies dependencies={form.dependencies} />
       ) : null}
-      <TicketCreationAdvanced
-        form={form}
-        onChange={onChange}
-        initialization={initialization}
-        dependenciesLocked={props.dependenciesLocked === true}
-      />
+      {drawn === undefined ? null : (
+        <TicketCreationAdvanced
+          form={form}
+          onChange={onChange}
+          initialization={drawn.initialization}
+          dependenciesLocked={props.dependenciesLocked === true}
+        />
+      )}
       <Fault field="authoring" faults={faults} />
       <Fault field="fence" faults={faults} />
     </>
@@ -523,7 +586,7 @@ function useCreationSubmit(props: {
   readonly ports: ApiPorts;
   readonly partition: PartitionIdentity;
   readonly queryKey: ProjectQueryKey;
-  readonly initialization: DraftInitializationResponse;
+  readonly offers: readonly CreationOffer[];
   readonly repositories: readonly ProjectRepositoryResponse[];
   readonly onFaults: (faults: readonly CreationFault[]) => void;
   readonly onCreated: (ticket: number) => void;
@@ -532,7 +595,7 @@ function useCreationSubmit(props: {
   const mounted = useMounted();
   const [attempt, setAttempt] = useState<Attempt>({ attempt: "Idle" });
   const {
-    initialization,
+    offers,
     onCreated,
     onFaults,
     ports,
@@ -542,7 +605,7 @@ function useCreationSubmit(props: {
   } = props;
 
   const submit = async (form: TicketCreationForm): Promise<void> => {
-    const assembled = creationBodyFrom(initialization, form, repositories);
+    const assembled = creationBodyFrom(offers, form, repositories);
     if (assembled.assembled === "Faults") {
       onFaults(assembled.faults);
       return;
@@ -580,6 +643,37 @@ function useCreationSubmit(props: {
 }
 
 /**
+ * What the form holds: what it started on, what was typed over that, and the
+ * configuration the reader chose, remembered as they choose it so the next
+ * new ticket here starts on it.
+ */
+function useCreationHeld(
+  partition: PartitionIdentity,
+  offers: readonly CreationOffer[],
+  repositories: readonly ProjectRepositoryResponse[],
+): {
+  readonly initial: TicketCreationForm;
+  readonly form: TicketCreationForm;
+  readonly changed: (form: TicketCreationForm) => void;
+} {
+  const [edited, setEdited] = useState<TicketCreationForm | undefined>(
+    undefined,
+  );
+  const [preferred] = useState(() => ticketConfigurationStored(partition));
+  const initial = useMemo(
+    () => creationFormFrom(offers, repositories, preferred),
+    [offers, repositories, preferred],
+  );
+  const form = edited ?? initial;
+  const changed = (next: TicketCreationForm): void => {
+    if (next.configuration !== "" && next.configuration !== form.configuration)
+      ticketConfigurationKept(partition, next.configuration);
+    setEdited(next);
+  };
+  return { initial, form, changed };
+}
+
+/**
  * The form itself, which reaches the network and the address bar through its
  * caller: the route component below owns the session and the router, and this
  * owns what one screenful of typing becomes, as fields or as YAML.
@@ -592,12 +686,8 @@ export function CreationForm(props: {
   readonly onCreated: (ticket: number) => void;
   readonly onDirty?: (dirty: boolean) => void;
 }): ReactNode {
-  const [edited, setEdited] = useState<TicketCreationForm | undefined>(
-    undefined,
-  );
   const [faults, setFaults] = useState<readonly CreationFault[]>([]);
-  const initialization = props.context.initialization;
-  const bound = props.context.repositories;
+  const { offers, partial, repositories: bound } = props.context;
   const repositories = useMemo(() => creationRepositories(bound), [bound]);
   const storeKey = ticketYamlStoreKey(props.partition, undefined);
   const onCreated = props.onCreated;
@@ -605,7 +695,7 @@ export function CreationForm(props: {
     ports: props.ports,
     partition: props.partition,
     queryKey: props.queryKey,
-    initialization,
+    offers,
     repositories,
     onFaults: setFaults,
     onCreated: (ticket) => {
@@ -613,38 +703,32 @@ export function CreationForm(props: {
       onCreated(ticket);
     },
   });
-  const initial = useMemo(
-    () => creationFormFrom(initialization, repositories),
-    [initialization, repositories],
-  );
-  const form = edited ?? initial;
+  const held = useCreationHeld(props.partition, offers, repositories);
   return (
     <div className="creation">
       <TicketAuthoring
-        initial={initial}
-        form={form}
-        onForm={setEdited}
-        initialization={initialization}
+        initial={held.initial}
+        form={held.form}
+        onForm={held.changed}
+        offers={offers}
         repositories={repositories}
         dependenciesLocked={false}
-        assemble={(held) =>
-          creationBodyFrom(initialization, held, repositories)
-        }
+        assemble={(form) => creationBodyFrom(offers, form, repositories)}
         storeKey={storeKey}
         submitLabel="Create ticket"
         submitEffect="Releases the ticket to run"
         busy={running.attempt.attempt === "Running"}
-        onSubmit={(held) => {
-          void running.submit(held);
+        onSubmit={(form) => {
+          void running.submit(form);
         }}
         onDirty={props.onDirty}
         fields={
           <CreationFields
-            form={form}
-            onChange={setEdited}
+            form={held.form}
+            onChange={held.changed}
             faults={faults}
-            configuration={props.context.configuration}
-            initialization={initialization}
+            offers={offers}
+            partial={partial}
             repositories={repositories}
           />
         }
