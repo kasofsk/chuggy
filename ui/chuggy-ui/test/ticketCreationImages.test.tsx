@@ -28,7 +28,7 @@ import {
 } from "../app/browser/editor/authoringGuards.tsx";
 import { creationContextList } from "../app/core/ticketCreationRun.ts";
 import { answeringApi } from "./answeringApi.ts";
-import type { Sent } from "./answeringApi.ts";
+import type { Answer, Sent } from "./answeringApi.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import { answer, holderDouble } from "./screenHarness.tsx";
 import {
@@ -39,8 +39,9 @@ import {
   creationPartition,
 } from "./ticketCreationFixture.ts";
 import {
-  ticketDraftRevised,
-  ticketRefusingFirst,
+  ticketDoor,
+  ticketDoorAnswers,
+  ticketRefusedFirst,
   ticketReleasing,
 } from "./ticketReleasing.tsx";
 
@@ -68,13 +69,17 @@ afterEach(() => {
  * and creating and releasing a draft as the case says. */
 function api(
   refusing = false,
-  released = ticketReleasing,
+  released: (
+    method: string,
+    path: string,
+    body: unknown,
+  ) => Answer = ticketReleasing,
 ): {
   readonly ports: ApiPorts;
   readonly sent: Sent[];
 } {
   let minted = 0;
-  return answeringApi((method, path) => {
+  return answeringApi((method, path, body) => {
     if (method === "POST" && path.endsWith("/artifacts")) {
       if (refusing)
         return { status: 413, body: { error: { code: "ArtifactTooLarge" } } };
@@ -84,7 +89,7 @@ function api(
         body: { artifact: `artifact-${String(minted)}`, digest: "d" },
       };
     }
-    return released(method, path);
+    return released(method, path, body);
   });
 }
 
@@ -107,6 +112,7 @@ function draw(
             repositories: [],
           }}
           onCreated={(ticket) => created.push(ticket)}
+          existing={() => null}
         />
       </QueryClientProvider>
     </SessionProvider>,
@@ -287,10 +293,7 @@ const heldNote = /was created and not released/u;
  * else, and the next submit revises the draft to it.
  */
 test("an image attached after a refused release is revised into the held draft", async () => {
-  const held = api(
-    false,
-    ticketRefusingFirst(() => ticketDraftRevised()),
-  );
+  const held = api(false, ticketDoorAnswers(ticketDoor(), ticketRefusedFirst));
   const created: number[] = [];
   draw(held.ports, created);
   typeIntent("ship it");
@@ -311,10 +314,7 @@ test("an image attached after a refused release is revised into the held draft",
 });
 
 test("an image removed after a refused release is revised out of the held draft", async () => {
-  const held = api(
-    false,
-    ticketRefusingFirst(() => ticketDraftRevised()),
-  );
+  const held = api(false, ticketDoorAnswers(ticketDoor(), ticketRefusedFirst));
   const created: number[] = [];
   draw(held.ports, created);
   typeIntent("ship it");

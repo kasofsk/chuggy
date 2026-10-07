@@ -51,7 +51,13 @@ import {
 import { answeringApi } from "./answeringApi.ts";
 import type { Sent } from "./answeringApi.ts";
 import { ticketInstants } from "./ticketInstants.ts";
-import { ticketDraftRevised, ticketRefusingFirst } from "./ticketReleasing.tsx";
+import {
+  ticketDoor,
+  ticketDoorAnswers,
+  ticketDoorDecides,
+  ticketRefusedFirst,
+} from "./ticketReleasing.tsx";
+import type { TicketDoor } from "./ticketReleasing.tsx";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 
 /** The runner has no globals, so each case tears down the tree it rendered,
@@ -157,6 +163,7 @@ function drawOffered(
         queryKey={queryKey}
         context={{ context: "Ready", ...next }}
         onCreated={(ticket) => created.push(ticket)}
+        existing={(ticket) => <a href="/there">Ticket {ticket}</a>}
       />
     </QueryClientProvider>
   );
@@ -298,23 +305,47 @@ test("a release that settles as succeeded navigates, and to that ticket", async 
   });
 });
 
-test("a release the actor refuses draws the reason and navigates nowhere", async () => {
+/** What the form says a submit ended in, whole. */
+function note(): string | null | undefined {
+  return document.querySelector(".panel-failed")?.textContent;
+}
+
+/** A submit, waited on until the form is back from it. */
+async function submitted(): Promise<void> {
+  const button = screen.getByRole("button", { name: "Create ticket" });
+  fireEvent.click(button);
+  expect(button).toHaveProperty("disabled", true);
+  await waitFor(() => {
+    expect(button).toHaveProperty("disabled", false);
+  });
+}
+
+const draftUnreleased =
+  "draft 12 was created and not released; submitting again goes back to that draft rather than creating another";
+const draftUnknown =
+  "draft 12 was created, and whether it was released is not known; submitting again goes back to that draft rather than creating another";
+
+test("a release that settles undecided draws the reason and its unreleased draft, and navigates nowhere", async () => {
   const held = api({ state: "Cancelled" });
   const created: number[] = [];
   draw(held.ports, created);
   typeIntent("ship it");
-  submit();
-  await screen.findByText(/was created and not released/u);
+  await submitted();
+  expect(note()).toBe(
+    `the operation was cancelled before it was decided — ${draftUnreleased}`,
+  );
   expect(created).toStrictEqual([]);
 });
 
-test("a follow that runs out of budget navigates nowhere either", async () => {
+test("a follow that runs out of budget navigates nowhere either, and does not call its draft unreleased", async () => {
   const held = api({ state: "Pending" });
   const created: number[] = [];
   draw(held.ports, created);
   typeIntent("ship it");
-  submit();
-  await screen.findByText(/attempt budget/u);
+  await submitted();
+  expect(note()).toBe(
+    `the operation is still pending after the attempt budget — ${draftUnknown}`,
+  );
   expect(created).toStrictEqual([]);
 });
 
@@ -418,13 +449,78 @@ test("a held draft the form still describes is released again, unrevised, under 
   expect(first).toBe(second);
 });
 
-test("an intent retyped after a refused release is revised into the held draft, and released afresh", async () => {
-  const held = answeringApi(ticketRefusingFirst(() => ticketDraftRevised()));
+/** One request as a case compares it: a revision by the version it was
+ * fenced at, and a release by the version it named. */
+function requestLine(one: Sent): string {
+  const said = `${one.method} ${one.path.slice(one.path.indexOf("/atlas") + 6)}`;
+  const body = one.body as {
+    readonly expectedVersion?: number;
+    readonly mutation?: { readonly authoringVersion: number };
+  } | null;
+  if (one.method === "PUT")
+    return `${said} at ${String(body?.expectedVersion)}`;
+  return body?.mutation === undefined
+    ? said
+    : `${said} at ${String(body.mutation.authoringVersion)}`;
+}
+
+/** What was sent from one point on, a run of the same request as one line. */
+function requestLines(sent: readonly Sent[], from: number): readonly string[] {
+  return sent
+    .slice(from)
+    .map(requestLine)
+    .filter((said, at, all) => said !== all[at - 1]);
+}
+
+const draftRead = "GET /drafts/12";
+const releasedAndConfirmed = (version: number): readonly string[] => [
+  `POST /operations at ${String(version)}`,
+  "GET /operations/",
+  "GET ?after=11&limit=1&minimumSequence=42",
+];
+
+const refusedNote = `the configuration this named is not one the project will run, or it hands the work off where this brief opens a pull request — ${draftUnreleased}`;
+
+/** The form over a door, and what was sent since the case last asked. */
+function drawHeld(
+  decide: (nth: number) => string,
+  over?: Parameters<typeof ticketDoorAnswers>[2],
+): {
+  readonly door: TicketDoor;
+  readonly created: number[];
+  readonly since: () => readonly string[];
+} {
+  const door = ticketDoor();
+  const held = answeringApi(ticketDoorAnswers(door, decide, over));
+  const created: number[] = [];
+  const read = { from: 0 };
+  draw(held.ports, created);
+  return {
+    door,
+    created,
+    since: () => {
+      const lines = requestLines(
+        held.sent.map((one) => ({
+          ...one,
+          path: one.path.replace(/\/operations\/.*$/u, "/operations/"),
+        })),
+        read.from,
+      );
+      read.from = held.sent.length;
+      return lines;
+    },
+  };
+}
+
+test("an intent retyped after a refused release is read, revised into the held draft, and released afresh", async () => {
+  const held = answeringApi(
+    ticketDoorAnswers(ticketDoor(), ticketRefusedFirst),
+  );
   const created: number[] = [];
   draw(held.ports, created);
   typeIntent("ship it");
-  submit();
-  await screen.findByText(/was created and not released/u);
+  await submitted();
+  expect(note()).toBe(refusedNote);
   typeIntent("ship that");
   submit();
   await waitFor(() => {
@@ -442,42 +538,149 @@ test("an intent retyped after a refused release is revised into the held draft, 
   expect(second).not.toBe(first);
 });
 
-/** The form and what is held are as they were, so the same submit is what
- * tries again: the draft is not created twice, and is revised from the
- * version this form wrote. */
-test("a revision that does not get through is said over what was typed, and the next submit sends it again", async () => {
-  const door = { open: false };
-  const held = answeringApi(
-    ticketRefusingFirst(() =>
-      door.open
-        ? ticketDraftRevised()
-        : { status: 500, body: { error: { code: "InternalError" } } },
-    ),
+/** A release left pending past the console's budget, which the actor carries
+ * out once nobody is asking. */
+async function neverLearned(held: ReturnType<typeof drawHeld>): Promise<void> {
+  typeIntent("ship it");
+  await submitted();
+  expect(note()).toBe(
+    `the operation is still pending after the attempt budget — ${draftUnknown}`,
   );
-  const created: number[] = [];
-  draw(held.ports, created);
+  ticketDoorDecides(held.door, held.door.releases[0], "Succeeded");
+  held.since();
+}
+
+const existsNote =
+  "#12 already exists: an earlier release of this draft went through, and what has been changed here since is not in it — Ticket 12";
+
+/**
+ * The ticket is as the form first said, and what it says now is in none: the
+ * form is left on its screen saying so, beside the way to that ticket, and
+ * the draft of a ticket that is running is written nothing.
+ */
+test("a changed form over a release that had gone through is told of its ticket, and writes nothing however often", async () => {
+  const held = drawHeld(() => "Pending");
+  await neverLearned(held);
+  for (const intent of ["ship that", "ship the other"]) {
+    typeIntent(intent);
+    await submitted();
+    expect(note()).toBe(existsNote);
+    expect(held.since()).toStrictEqual([draftRead]);
+  }
+  expect(
+    within(screen.getByText(/already exists/u)).getByRole("link", {
+      name: "Ticket 12",
+    }),
+  ).toHaveProperty("pathname", "/there");
+  expect(held.created).toStrictEqual([]);
+  expect(held.door.version).toBe(creationDraft.authoringVersion);
+});
+
+test("a form put back as first written after being told of its ticket goes to it", async () => {
+  const held = drawHeld(() => "Pending");
+  await neverLearned(held);
+  typeIntent("ship that");
+  await submitted();
+  expect(note()).toBe(existsNote);
+  held.since();
   typeIntent("ship it");
   submit();
-  await screen.findByText(/was created and not released/u);
+  await waitFor(() => {
+    expect(held.created).toStrictEqual([creationDraft.ticket]);
+  });
+  expect(held.since()).toStrictEqual(releasedAndConfirmed(3));
+});
+
+test("a changed form over a ticket already past Pending is told of it the same, its door never asked", async () => {
+  const held = drawHeld(() => "Pending");
+  await neverLearned(held);
+  held.door.closed = true;
   typeIntent("ship that");
-  submit();
-  await screen.findByText(/InternalError.* was created and not released/u);
-  expect(releases(held.sent).length).toBe(1);
-  expect(
-    screen.getByPlaceholderText<HTMLTextAreaElement>("what this ticket is for")
-      .value,
-  ).toBe("ship that");
-  door.open = true;
+  await submitted();
+  expect(note()).toBe(existsNote);
+  expect(held.since()).toStrictEqual([draftRead]);
+  expect(held.created).toStrictEqual([]);
+});
+
+/** The door applies the first revision it is sent and answers it as a fault. */
+function drawAnswerLost(): ReturnType<typeof drawHeld> {
+  const lost = { count: 0 };
+  return drawHeld(ticketRefusedFirst, (method, _path, answered) => {
+    const answer = answered();
+    if (method !== "PUT") return answer;
+    lost.count += 1;
+    return lost.count === 1
+      ? { status: 500, body: { error: { code: "InternalError" } } }
+      : answer;
+  });
+}
+
+/**
+ * The draft is a version on from the one this form holds of it, and the form
+ * cannot know. The next submit reads it before writing, so what the door
+ * applied is written over rather than fenced against for good.
+ */
+test.each([
+  ["the same form again", "ship that"],
+  ["a form changed again", "ship the other"],
+])(
+  "a revision the door applied and answered as a fault is said over what was typed, and %s is written over it",
+  async (_said, intent) => {
+    const held = drawAnswerLost();
+    typeIntent("ship it");
+    await submitted();
+    expect(note()).toBe(refusedNote);
+    held.since();
+    typeIntent("ship that");
+    await submitted();
+    expect(note()).toBe(
+      `the API refused this, and named a reason this console does not know (InternalError) — ${draftUnreleased}`,
+    );
+    expect(held.since()).toStrictEqual([draftRead, "PUT /drafts/12 at 3"]);
+    expect(
+      screen.getByPlaceholderText<HTMLTextAreaElement>(
+        "what this ticket is for",
+      ).value,
+    ).toBe("ship that");
+    typeIntent(intent);
+    submit();
+    await waitFor(() => {
+      expect(held.created).toStrictEqual([creationDraft.ticket]);
+    });
+    expect(held.since()).toStrictEqual([
+      draftRead,
+      "PUT /drafts/12 at 4",
+      ...releasedAndConfirmed(5),
+    ]);
+  },
+);
+
+test("a held draft that cannot be read is said, written nothing, and read again by the next submit", async () => {
+  const reads = { failing: true };
+  const held = drawHeld(ticketRefusedFirst, (method, path, answered) =>
+    reads.failing && method === "GET" && path.endsWith("/drafts/12")
+      ? { status: 500, body: { error: { code: "InternalError" } } }
+      : answered(),
+  );
+  typeIntent("ship it");
+  await submitted();
+  held.since();
+  typeIntent("ship that");
+  await submitted();
+  expect(note()).toBe(
+    `the draft could not be read, so nothing was written to it: the API failed with InternalError — ${draftUnreleased}`,
+  );
+  expect(held.since()).toStrictEqual([draftRead]);
+  reads.failing = false;
   submit();
   await waitFor(() => {
-    expect(created).toStrictEqual([creationDraft.ticket]);
+    expect(held.created).toStrictEqual([creationDraft.ticket]);
   });
-  expect(drafts(held.sent).length).toBe(1);
-  const revision = {
-    expectedVersion: creationDraft.authoringVersion,
-    brief: { intent: "ship that" },
-  };
-  expect(revisions(held.sent)).toMatchObject([revision, revision]);
+  expect(held.since()).toStrictEqual([
+    draftRead,
+    "PUT /drafts/12 at 3",
+    ...releasedAndConfirmed(4),
+  ]);
 });
 
 test("the advanced disclosure holds the authoring, and offers what is chosen", () => {
@@ -930,7 +1133,7 @@ test("the line saying what a bootstrap's ticket is for follows the configuration
  */
 test("a configuration chosen after a refused release is what the held draft is revised to, and released under", async () => {
   const held = answeringApi(
-    ticketRefusingFirst(() => ticketDraftRevised(bootstrapConfigurationName)),
+    ticketDoorAnswers(ticketDoor(), ticketRefusedFirst),
   );
   const created: number[] = [];
   drawOffered(held.ports, created, mixed);

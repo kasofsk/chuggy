@@ -59,12 +59,14 @@ import {
   createAndReleaseTicket,
   creationContextList,
   creationContextSentence,
+  creationTicketExistsSentence,
   readCreationContext,
 } from "../core/ticketCreationRun.ts";
 import type {
   CreationContext,
   CreationDraftHeld,
   DraftHeld,
+  TicketCreationEnded,
 } from "../core/ticketCreationRun.ts";
 import { operationSubmitting } from "../core/operationFollow.ts";
 import type { OperationStep } from "../core/operationFollow.ts";
@@ -419,19 +421,15 @@ function Landing(props: FormEdit): ReactNode {
   );
 }
 
-/** What a failed submit left in the draft, which only a submit that got as far
- * as the draft has anything to say about. */
+/** What a failed update left in the draft, which only one that got as far as
+ * the draft has anything to say about. A creation's reason says where its own
+ * draft stands, that being more than one thing. */
 function attemptHeldDraft(
   draft: DraftResponse | undefined,
   motion: CreationMotion,
 ): string {
-  if (draft === undefined) return "";
-  switch (motion) {
-    case "Release":
-      return ` — draft ${String(draft.ticket)} was created and not released; submitting again releases that draft`;
-    case "Update":
-      return ` — the draft holds this revision at version ${String(draft.authoringVersion)}, not released`;
-  }
+  if (draft === undefined || motion === "Release") return "";
+  return ` — the draft holds this revision at version ${String(draft.authoringVersion)}, not released`;
 }
 
 export function AttemptNote(props: {
@@ -560,8 +558,61 @@ export function CreationFields(
   );
 }
 
+/** A creation's attempt, which alone may end at a ticket it did not make. */
+type CreationAttempt =
+  | Attempt<CreationDraftHeld>
+  | {
+      readonly attempt: "Exists";
+      readonly ticket: number;
+      readonly held: CreationDraftHeld;
+    };
+
+/** What a submit that made no ticket leaves on the screen, and holds for the
+ * next one. */
+function creationAttemptOf(
+  ended: Exclude<TicketCreationEnded, { readonly created: "Created" }>,
+): CreationAttempt {
+  switch (ended.created) {
+    case "Stale":
+      return { attempt: "Stale", reason: ended.reason };
+    case "Exists":
+      return { attempt: "Exists", ticket: ended.ticket, held: ended.held };
+    case "Refused":
+      return { attempt: "Failed", reason: ended.reason, held: ended.held };
+  }
+}
+
+/** The draft the next submit goes back to, which every ending that wrote or
+ * found one hands on. */
+function creationAttemptHeld(
+  attempt: CreationAttempt,
+): CreationDraftHeld | undefined {
+  return attempt.attempt === "Failed" || attempt.attempt === "Exists"
+    ? attempt.held
+    : undefined;
+}
+
+/**
+ * What a creation's submit ended in. A ticket found already made is said with
+ * the way to it, the form being left as it is: what it has changed since is
+ * in no ticket, and a navigation nobody asked for would hide that.
+ */
+function CreationAttemptNote(props: {
+  readonly attempt: CreationAttempt;
+  readonly existing: (ticket: number) => ReactNode;
+}): ReactNode {
+  const attempt = props.attempt;
+  if (attempt.attempt !== "Exists") return <AttemptNote attempt={attempt} />;
+  return (
+    <p className="panel-failed">
+      {creationTicketExistsSentence(attempt.ticket)} —{" "}
+      {props.existing(attempt.ticket)}
+    </p>
+  );
+}
+
 interface CreationSubmit {
-  readonly attempt: Attempt;
+  readonly attempt: CreationAttempt;
   readonly submit: (form: TicketCreationForm) => Promise<void>;
 }
 
@@ -581,9 +632,7 @@ function useCreationSubmit(props: {
 }): CreationSubmit {
   const client = useQueryClient();
   const mounted = useMounted();
-  const [attempt, setAttempt] = useState<Attempt<CreationDraftHeld>>({
-    attempt: "Idle",
-  });
+  const [attempt, setAttempt] = useState<CreationAttempt>({ attempt: "Idle" });
   const {
     offers,
     onCreated,
@@ -601,7 +650,7 @@ function useCreationSubmit(props: {
       return;
     }
     onFaults([]);
-    const held = attempt.attempt === "Failed" ? attempt.held : undefined;
+    const held = creationAttemptHeld(attempt);
     const operation = base64urlFromBytes(drawBytes(operationIdBytesCount));
     setAttempt({ attempt: "Running", step: operationSubmitting() });
     const created = await createAndReleaseTicket(
@@ -617,16 +666,9 @@ function useCreationSubmit(props: {
       onCreated(created.ticket);
       return;
     }
-    if (created.created === "Stale") {
-      setAttempt({ attempt: "Stale", reason: created.reason });
+    setAttempt(creationAttemptOf(created));
+    if (created.created === "Stale")
       await client.invalidateQueries({ queryKey });
-      return;
-    }
-    setAttempt({
-      attempt: "Failed",
-      reason: created.reason,
-      held: created.held,
-    });
   };
 
   return { attempt, submit };
@@ -675,6 +717,8 @@ export function CreationForm(props: {
   readonly queryKey: ProjectQueryKey;
   readonly context: Extract<CreationContext, { context: "Ready" }>;
   readonly onCreated: (ticket: number) => void;
+  /** The way to a ticket a submit found already made. */
+  readonly existing: (ticket: number) => ReactNode;
   readonly onDirty?: (dirty: boolean) => void;
 }): ReactNode {
   const [faults, setFaults] = useState<readonly CreationFault[]>([]);
@@ -725,8 +769,31 @@ export function CreationForm(props: {
           />
         }
       />
-      <AttemptNote attempt={running.attempt} />
+      <CreationAttemptNote
+        attempt={running.attempt}
+        existing={props.existing}
+      />
     </div>
+  );
+}
+
+/**
+ * The way to a ticket from a form that did not make it. It passes the guard
+ * unasked, the note it is drawn in having said what is left behind, and
+ * leaves the guard standing for every other way out.
+ */
+export function CreationTicketLink(props: {
+  readonly partition: PartitionIdentity;
+  readonly ticket: number;
+}): ReactNode {
+  return (
+    <Link
+      to="/$tenant/$project/tickets/$ticket"
+      params={{ ...props.partition, ticket: String(props.ticket) }}
+      ignoreBlocker
+    >
+      Ticket {props.ticket}
+    </Link>
   );
 }
 
@@ -790,6 +857,9 @@ export function TicketCreation(): ReactNode {
                   params: { ...partition, ticket: String(ticket) },
                 });
               }}
+              existing={(ticket) => (
+                <CreationTicketLink partition={partition} ticket={ticket} />
+              )}
             />
           ) : (
             <CreationContextAbsent partition={partition} context={context} />

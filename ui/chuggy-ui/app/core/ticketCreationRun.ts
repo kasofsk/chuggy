@@ -15,7 +15,10 @@
  * half that can be refused on its own, and a retry that created a second draft
  * would leave the first behind for a human to find. It comes back beside what
  * it was written from, so the next submit sends that release again where the
- * form says the same, and revises the draft first where it says anything else.
+ * form says the same. Where it says anything else the draft is read before it
+ * is written: a release nobody saw settle may have made the ticket, and a
+ * revision whose answer was lost may have moved the version, so what a form
+ * holds of its draft is never what a write to it is fenced by.
  */
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
@@ -32,12 +35,14 @@ import type { z } from "zod";
 
 import {
   apiCreateDraft,
+  apiDraft,
   apiDraftInitialization,
   apiProjectRepositories,
   apiReviseDraft,
   configurationPagesMax,
 } from "./apiRoutes.ts";
 import type { ApiFailure, ApiPorts, ApiResult } from "./apiRequest.ts";
+import { panelReason } from "./freshness.ts";
 import {
   draftRevisionFailureSentence,
   draftRevisionRefusalSentence,
@@ -108,8 +113,11 @@ export interface DraftHeld {
  * asks about the one already made, where a fresh one would make a second.
  */
 export interface CreationDraftHeld extends DraftHeld {
-  readonly body: CreationBody;
+  /** Absent once something else is known to have written the draft since. */
+  readonly body: CreationBody | undefined;
   readonly operation: string;
+  /** Whether a release of the draft was sent that nobody saw settle. */
+  readonly unsettled: boolean;
 }
 
 export interface TicketCreationRequest {
@@ -128,14 +136,51 @@ export type TicketCreated<Held extends DraftHeld = DraftHeld> =
       readonly held: Held | undefined;
     };
 
+/**
+ * How a creation's submit ends: as any submit does, or at the ticket an
+ * earlier release of its draft had made, to which this one wrote nothing.
+ */
+export type TicketCreationEnded =
+  | TicketCreated<CreationDraftHeld>
+  | {
+      readonly created: "Exists";
+      readonly ticket: number;
+      readonly held: CreationDraftHeld;
+    };
+
 /** The one conflict a creation route answers: the fence this body carries moved. */
 export const creationStaleSentence =
   "the project moved while this form was open — it has been read again, so submitting now uses the current one";
 
-/** The version fence of a held draft, said for a screen that reads no draft
- * again and so cannot say the door's own sentence. */
+/** The version fence of a held draft, which it is read for just before it is
+ * written, so only a writer in between meets it. */
 export const creationDraftChangedSentence =
-  "the draft was revised somewhere else after this form wrote it, which this form does not write over";
+  "the draft was revised somewhere else while this was being written to it, so this was not written";
+
+/** Where a held draft stands as far as its form knows, and what every later
+ * submit does with it whatever the form then says. */
+export function creationDraftHeldSentence(held: CreationDraftHeld): string {
+  const draft = `draft ${String(held.draft.ticket)}`;
+  const standing = held.unsettled
+    ? `${draft} was created, and whether it was released is not known`
+    : `${draft} was created and not released`;
+  return `${standing}; submitting again goes back to that draft rather than creating another`;
+}
+
+/** A held draft that could not be read, which is read before it is written. */
+export function creationDraftUnreadSentence(failure: ApiFailure): string {
+  return `the draft could not be read, so nothing was written to it: ${panelReason(failure)}`;
+}
+
+/** A held draft read as deleted, which no later submit goes back to. */
+export function creationDraftDeletedSentence(ticket: number): string {
+  return `draft ${String(ticket)} was deleted, so there is nothing of it left to release; submitting again creates another`;
+}
+
+/** What a submit says of a ticket it found already made of its draft. */
+export function creationTicketExistsSentence(ticket: number): string {
+  return `#${String(ticket)} already exists: an earlier release of this draft went through, and what has been changed here since is not in it`;
+}
 
 /** How many offers one read draws, each being a request of its own. */
 export const creationOffersMax = 32;
@@ -260,11 +305,11 @@ async function creationDraftCreated(
   ports: ApiPorts,
   partition: PartitionIdentity,
   request: TicketCreationRequest,
-): Promise<CreationDraftHeld | TicketCreated<CreationDraftHeld>> {
+): Promise<CreationDraftHeld | TicketCreationEnded> {
   const { body, operation } = request;
   const answered = await apiCreateDraft(ports, partition, body);
   if (answered.outcome === "Ok")
-    return { draft: answered.value, body, operation };
+    return { draft: answered.value, body, operation, unsettled: false };
   return answered.outcome === "Conflict"
     ? { created: "Stale", reason: creationStaleSentence }
     : {
@@ -290,43 +335,104 @@ function creationDraftHolds(
   held: CreationDraftHeld,
   body: CreationBody,
 ): boolean {
+  if (held.body === undefined) return false;
   return (
     JSON.stringify(creationRevisionOf(held.body)) ===
     JSON.stringify(creationRevisionOf(body))
   );
 }
 
+/** A submit that made no ticket and still holds a draft, saying where it stands. */
+function creationRefused(
+  reason: string,
+  held: CreationDraftHeld,
+): TicketCreationEnded {
+  return {
+    created: "Refused",
+    reason: `${reason} — ${creationDraftHeldSentence(held)}`,
+    held,
+  };
+}
+
+/**
+ * What a draft read as no longer one ends its submit in: released, it is the
+ * ticket this form set out to make, and deleted, it is nothing a later submit
+ * can go back to.
+ */
+function creationDraftClosed(
+  draft: DraftResponse,
+  held: CreationDraftHeld,
+): TicketCreationEnded | undefined {
+  switch (draft.state) {
+    case "Draft":
+      return undefined;
+    case "Released":
+      return { created: "Exists", ticket: draft.ticket, held };
+    case "Deleted":
+      return {
+        created: "Refused",
+        reason: creationDraftDeletedSentence(draft.ticket),
+        held: undefined,
+      };
+  }
+}
+
+/**
+ * A held draft revised to what the form now says, at the version its door
+ * has it at now and only while it is still a draft. A revision that does not
+ * get through leaves what is held as it was, the next one reading the draft
+ * again; a door that calls the draft closed has said it is one no longer.
+ */
+async function creationDraftRevised(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+  request: TicketCreationRequest,
+  held: CreationDraftHeld,
+): Promise<CreationDraftHeld | TicketCreationEnded> {
+  const { body, operation } = request;
+  const ticket = held.draft.ticket;
+  const read = await apiDraft(ports, partition, ticket);
+  if (read.outcome !== "Ok")
+    return creationRefused(creationDraftUnreadSentence(read), held);
+  const closed = creationDraftClosed(read.value, held);
+  if (closed !== undefined) return closed;
+  const revised = await apiReviseDraft(ports, partition, ticket, {
+    expectedVersion: read.value.authoringVersion,
+    ...creationRevisionOf(body),
+  });
+  if (revised.outcome === "Ok")
+    return {
+      draft: revised.value,
+      body,
+      operation,
+      unsettled: held.unsettled,
+    };
+  if (revised.outcome !== "Conflict")
+    return creationRefused(draftRevisionFailureSentence(revised), held);
+  return revised.code === "DraftChanged"
+    ? creationRefused(creationDraftChangedSentence, held)
+    : creationRefused(draftRevisionFailureSentence(revised), {
+        ...held,
+        unsettled: true,
+      });
+}
+
 /**
  * The draft one submit releases, written to what the form now says: created
  * where none is held, the held one as it stands where it already says so, and
  * otherwise the held one revised, whose release is another mutation and so
- * goes under the operation this submit drew. A revision that does not get
- * through leaves what is held as it was.
+ * goes under the operation this submit drew.
  */
 async function creationDraftWritten(
   ports: ApiPorts,
   partition: PartitionIdentity,
   request: TicketCreationRequest,
-): Promise<CreationDraftHeld | TicketCreated<CreationDraftHeld>> {
-  const { body, held, operation } = request;
+): Promise<CreationDraftHeld | TicketCreationEnded> {
+  const { body, held } = request;
   if (held === undefined)
     return creationDraftCreated(ports, partition, request);
   if (creationDraftHolds(held, body)) return held;
-  const revised = await apiReviseDraft(ports, partition, held.draft.ticket, {
-    expectedVersion: held.draft.authoringVersion,
-    ...creationRevisionOf(body),
-  });
-  if (revised.outcome === "Ok")
-    return { draft: revised.value, body, operation };
-  const moved =
-    revised.outcome === "Conflict" && revised.code === "DraftChanged";
-  return {
-    created: "Refused",
-    reason: moved
-      ? creationDraftChangedSentence
-      : draftRevisionFailureSentence(revised),
-    held,
-  };
+  return creationDraftRevised(ports, partition, request, held);
 }
 
 function releasedTicket<Held extends DraftHeld>(
@@ -354,6 +460,45 @@ function releasedTicket<Held extends DraftHeld>(
 }
 
 /**
+ * Whether a release that made no ticket leaves one unseen: a refusal the
+ * actor settled was decided over a draft still unreleased, and a settlement
+ * that decided nothing, or a submission the API declined before it accepted
+ * one, leaves what was known before it. Every other ending is the console
+ * giving up on finding out.
+ */
+function creationReleaseUnsettled(
+  step: OperationStep,
+  accepted: boolean,
+  written: CreationDraftHeld,
+): boolean {
+  if (step.step === "Settled")
+    return step.state === "Refused" ? false : written.unsettled;
+  const declined = step.step === "Abandoned" && step.refused && !accepted;
+  return declined ? written.unsettled : true;
+}
+
+/**
+ * A release refused because its draft is not as it was released from, which
+ * the draft is read once to explain: released, an earlier release made the
+ * ticket; still a draft, something else wrote it, and it holds this form no
+ * longer.
+ */
+async function creationDraftFencedOut(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+  reason: string,
+  written: CreationDraftHeld,
+): Promise<TicketCreationEnded> {
+  const read = await apiDraft(ports, partition, written.draft.ticket);
+  if (read.outcome !== "Ok")
+    return creationRefused(reason, { ...written, unsettled: true });
+  return (
+    creationDraftClosed(read.value, written) ??
+    creationRefused(reason, { ...written, body: undefined, unsettled: false })
+  );
+}
+
+/**
  * One submit: the draft is written to what the form says, and released and
  * followed to settlement. Only a settled success is a ticket to navigate to.
  */
@@ -362,9 +507,10 @@ export async function createAndReleaseTicket(
   partition: PartitionIdentity,
   request: TicketCreationRequest,
   onStep: (step: OperationStep) => void,
-): Promise<TicketCreated<CreationDraftHeld>> {
+): Promise<TicketCreationEnded> {
   const written = await creationDraftWritten(ports, partition, request);
   if ("created" in written) return written;
+  const seen = { accepted: false };
   const followed = await followOperation(
     ports,
     partition,
@@ -373,9 +519,20 @@ export async function createAndReleaseTicket(
       mutation: creationReleaseMutation(written.draft),
     },
     written.draft.ticket,
-    onStep,
+    (step) => {
+      if (step.step === "Following") seen.accepted = true;
+      onStep(step);
+    },
   );
-  return releasedTicket(followed.step, written);
+  const step = followed.step;
+  const released = releasedTicket(step, written);
+  if (released.created !== "Refused") return released;
+  if (step.step === "Settled" && step.refusal?.type === "AuthoringChanged")
+    return creationDraftFencedOut(ports, partition, released.reason, written);
+  return creationRefused(released.reason, {
+    ...written,
+    unsettled: creationReleaseUnsettled(step, seen.accepted, written),
+  });
 }
 
 export interface TicketUpdateRequest {

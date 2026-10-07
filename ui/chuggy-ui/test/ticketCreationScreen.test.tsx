@@ -1,8 +1,8 @@
 /**
  * The creation screen over a project's own reads, where the form suite beside
  * it is handed a context already read: what the screen does about a read that
- * came back short, and about a submit the project moved under whose re-read
- * then fails.
+ * came back short, about a submit the project moved under whose re-read then
+ * fails, and about a submit that finds its ticket already made.
  */
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
@@ -33,6 +33,7 @@ import type { SentRequest } from "./screenHarness.tsx";
 import {
   creationBinding,
   creationDeclared,
+  creationDraft,
   creationInitialization,
   creationListed,
   creationPartition,
@@ -177,4 +178,46 @@ test("a submit the project moved under, whose re-read fails, draws that failure"
   expect(sent.filter((one) => one.method === "POST").length).toBe(1);
   expect(screen.getByText(/^Failed to load · /u)).toBeTruthy();
   expect(screen.queryByText(creationStaleSentence)).toBeNull();
+});
+
+/**
+ * The form reaches no address bar, so the way to a ticket its submit found is
+ * this screen's to draw. The release is declined before it is accepted, which
+ * leaves the draft held, and the draft is then released from somewhere else.
+ */
+test("a submit that finds its ticket already made draws the way to it in the note", async () => {
+  const draft = { released: false };
+  await drawCreation(({ method, url }) => {
+    if (method === "POST" && url.endsWith("/operations"))
+      return answer({ error: { code: "MutationNotAdmitted" } }, 409);
+    if (method === "POST" && url.endsWith("/drafts"))
+      return answer(creationDraft, 201);
+    return url.endsWith("/drafts/12")
+      ? answer({
+          ...creationDraft,
+          ...(draft.released
+            ? { state: "Released", releasedAuthoringVersion: 3 }
+            : {}),
+        })
+      : undefined;
+  });
+  await offeredNames();
+  await turned(() => {
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "development" }));
+  });
+  for (const intent of ["ship it", "ship that"]) {
+    fireEvent.change(screen.getByPlaceholderText("what this ticket is for"), {
+      target: { value: intent },
+    });
+    await turned(() => {
+      fireEvent.click(screen.getByRole("button", { name: "Create ticket" }));
+    });
+    await settled();
+    draft.released = true;
+  }
+  const told = screen.getByText(/already exists/u);
+  expect(told.textContent).toBe(
+    "#12 already exists: an earlier release of this draft went through, and what has been changed here since is not in it — Ticket 12",
+  );
+  expect(within(told).getByRole("link", { name: "Ticket 12" })).toBeTruthy();
 });

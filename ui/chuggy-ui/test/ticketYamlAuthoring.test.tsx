@@ -17,6 +17,7 @@ import {
 } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
+import { nativeHttpBasePath } from "../../../src/contract/http.ts";
 import { ticketYamlStoreKey } from "../app/browser/editor/authoringGuards.tsx";
 import { CreationForm } from "../app/browser/TicketCreation.tsx";
 import type { ApiPorts } from "../app/core/apiRequest.ts";
@@ -35,8 +36,10 @@ import {
   creationYamlKeptUnasked,
 } from "./ticketCreationFixture.ts";
 import {
-  ticketDraftRevised,
-  ticketRefusingFirst,
+  ticketDoor,
+  ticketDoorAnswers,
+  ticketDoorDecides,
+  ticketRefusedFirst,
   ticketReleasing,
 } from "./ticketReleasing.tsx";
 
@@ -80,6 +83,7 @@ function draw(
           repositories: [],
         }}
         onCreated={(ticket) => created.push(ticket)}
+        existing={(ticket) => <a href="/there">Ticket {ticket}</a>}
         onDirty={(held) => dirty.push(held)}
       />
     </QueryClientProvider>,
@@ -282,10 +286,11 @@ async function submitAsked(): Promise<void> {
 }
 
 /** The text's submit is the form's, so a draft an earlier one left held is
- * revised to what the text now names rather than released as it was. */
+ * read and revised to what the text now names rather than released as it
+ * was. */
 test("a configuration named in the YAML after a refused release is what the held draft is revised to", async () => {
   const held = answeringApi(
-    ticketRefusingFirst(() => ticketDraftRevised("n-sonnet")),
+    ticketDoorAnswers(ticketDoor(), ticketRefusedFirst),
   );
   const created: number[] = [];
   draw(held.ports, created, several);
@@ -299,14 +304,51 @@ test("a configuration named in the YAML after a refused release is what the held
     expect(created).toStrictEqual([creationDraft.ticket]);
   });
   const written = held.sent.filter((one) => one.path.includes("/drafts"));
-  expect(written.map((one) => one.method)).toStrictEqual(["POST", "PUT"]);
+  expect(written.map((one) => one.method)).toStrictEqual([
+    "POST",
+    "GET",
+    "PUT",
+  ]);
   expect(written.map((one) => one.body)).toMatchObject([
     { configurationRevision: "n-development" },
+    undefined,
     {
       expectedVersion: creationDraft.authoringVersion,
       configurationRevision: "n-sonnet",
     },
   ]);
+});
+
+/**
+ * The text's submit ends where the form's does. A release nobody saw settle
+ * had made the ticket, so a text changed since is told of that ticket, writes
+ * nothing to its draft, and is still kept: what it says is in no ticket.
+ */
+test("a YAML changed over a release that had gone through is told of its ticket, written nowhere and still kept", async () => {
+  const door = ticketDoor();
+  const held = answeringApi(ticketDoorAnswers(door, () => "Pending"));
+  const created: number[] = [];
+  draw(held.ports, created, several);
+  const editor = await toYaml();
+  type(editor, "configuration: development\nintent: ship it\n");
+  await submitAsked();
+  await screen.findByText(/whether it was released is not known/u);
+  ticketDoorDecides(door, door.releases[0], "Succeeded");
+  const from = held.sent.length;
+  const changed = "configuration: development\nintent: ship that\n";
+  type(editor, changed);
+  await submitAsked();
+  const told = await screen.findByText(/already exists/u);
+  expect(told.textContent).toBe(
+    "#12 already exists: an earlier release of this draft went through, and what has been changed here since is not in it — Ticket 12",
+  );
+  expect(
+    held.sent.slice(from).map((one) => `${one.method} ${one.path}`),
+  ).toStrictEqual([
+    `GET ${nativeHttpBasePath}/tenants/acme/projects/atlas/drafts/12`,
+  ]);
+  expect(created).toStrictEqual([]);
+  expect(window.localStorage.getItem(storeKey)).toBe(changed);
 });
 
 /** Naming none is not a choice: the name chosen before it stays the one the

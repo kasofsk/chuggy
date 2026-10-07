@@ -18,7 +18,7 @@ export interface Answer {
 }
 
 export function answeringApi(
-  answer: (method: string, path: string) => Answer,
+  answer: (method: string, path: string, body: unknown) => Answer,
 ): {
   readonly ports: ApiPorts;
   readonly sent: Sent[];
@@ -31,7 +31,7 @@ export function answeringApi(
         const body: unknown =
           typeof init.body === "string" ? JSON.parse(init.body) : init.body;
         sent.push({ method: init.method, path, body });
-        const answered = answer(init.method, path);
+        const answered = answer(init.method, path, body);
         return Promise.resolve({
           status: answered.status,
           headers: { get: () => null },
