@@ -31,6 +31,7 @@ import { configurationsPartialLabel } from "../app/core/repositoryConfigurations
 import {
   creationConfigurationName,
   creationFaultSentence,
+  creationStageOf,
 } from "../app/core/ticketCreation.ts";
 import type { CreationOffer } from "../app/core/ticketCreation.ts";
 import { creationContextList } from "../app/core/ticketCreationRun.ts";
@@ -142,12 +143,13 @@ function drawOffered(
   ports: ApiPorts,
   created: number[],
   context: Omit<ReadyContext, "context">,
+  partition = creationPartition,
 ): { readonly rerender: (next: Omit<ReadyContext, "context">) => void } {
   const tree = (next: Omit<ReadyContext, "context">) => (
     <QueryClientProvider client={new QueryClient()}>
       <CreationForm
         ports={ports}
-        partition={creationPartition}
+        partition={partition}
         queryKey={queryKey}
         context={{ context: "Ready", ...next }}
         onCreated={(ticket) => created.push(ticket)}
@@ -777,14 +779,18 @@ test("changing the landing to None releases a ticket the target box would have r
 });
 
 /** What one repository's newest commit declares, in name order: the first
- * takes check lines, and the second is fenced at a sequence of its own. */
+ * takes check lines, and the second is fenced at a sequence of its own and
+ * defaults a program of its own. */
 const development = creationOffer(
   creationDeclared("n-development", chuggy, "development"),
   { commandedCheckStage: 1 },
 );
 const sonnet = creationOffer(
   creationDeclared("n-sonnet", chuggy, "development-sonnet"),
-  { fence: { projectSequence: 77, configurationDigest: "b".repeat(64) } },
+  {
+    fence: { projectSequence: 77, configurationDigest: "b".repeat(64) },
+    defaults: { dependencies: [], program: [creationStageOf(2, 1)] },
+  },
 );
 const several = {
   offers: [development, sonnet],
@@ -845,6 +851,7 @@ test("a chosen configuration pins and fences the ticket, and what was typed is k
     configurationRevision: "n-sonnet",
     configurationDigest: "b".repeat(64),
     expectedProjectSequence: 77,
+    authoring: sonnet.initialization.defaults,
     brief: { title: "Ship it", intent: "ship it" },
   });
 });
@@ -893,6 +900,44 @@ test("a browser that keeps nothing is asked every time, and still creates", asyn
   expect(drafts(held.sent)[0]?.body).toMatchObject({
     configurationRevision: "n-development",
   });
+});
+
+/** The key is the project's, so a choice made in one says nothing of a
+ * project beside it or of its namesake under another tenant. */
+test("a choice is remembered for its own project and no other", async () => {
+  const ports = api({ state: "Succeeded" }).ports;
+  drawOffered(ports, [], several);
+  await chooseConfiguration("development-sonnet");
+  cleanup();
+
+  drawOffered(ports, [], several, {
+    ...creationPartition,
+    project: "borealis",
+  });
+  expect(configurationPicker().textContent).toContain("Choose");
+  cleanup();
+
+  drawOffered(ports, [], several, { ...creationPartition, tenant: "apex" });
+  expect(configurationPicker().textContent).toContain("Choose");
+});
+
+/**
+ * A read that may have missed an offer cannot say the one it found is the
+ * only one, so that one is asked about like any other and never taken.
+ */
+test("one configuration under a read that may have missed others is asked, not taken", () => {
+  const held = api({ state: "Succeeded" });
+  drawOffered(held.ports, [], {
+    offers: [development],
+    partial: true,
+    repositories: [],
+  });
+  expect(configurationPicker().textContent).toContain("Choose");
+  expect(screen.queryByText(/^Configuration ·/u)).toBeNull();
+  typeIntent("ship it");
+  submit();
+  expect(screen.getByText(creationFaultSentence("configuration"))).toBeTruthy();
+  expect(drafts(held.sent).length).toBe(0);
 });
 
 test("a walk the budget stopped says so beside what it did find", () => {

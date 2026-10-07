@@ -4,7 +4,7 @@
  *
  * WHICH CONFIGURATION IS THE READER'S TO SAY. A configuration is who does the
  * work, so a project offering several is asked which, and a form naming none
- * sends nothing; only a sole offer is taken unasked.
+ * sends nothing; only a sole offer of a read that missed none is taken unasked.
  *
  * Every function here is pure, so the agent this screen is built towards drives
  * the same decisions a browser does by filling the same form value. The
@@ -179,28 +179,51 @@ function creationOfferName(
 }
 
 /**
- * The revisions a ticket may be drawn under, before they are named. A project
- * where no repository declares one has its newest ready revision and nothing
- * else, which is how the authored bootstrap is reached.
+ * The project's own bootstrap where it stands ready, which is the revision its
+ * name itself is. No repository declared it, so it is what a ticket for a
+ * repository declaring nothing is released under, a declared revision
+ * releasing for its own repository alone.
+ */
+function creationBootstrapAuthored(
+  configurations: readonly ConfigurationSummary[],
+): ConfigurationSummary | undefined {
+  return configurations.find(
+    (summary) =>
+      summary.revision === bootstrapConfigurationName &&
+      summary.readiness === "Ready",
+  );
+}
+
+/**
+ * The revisions a ticket may be drawn under, before they are named: what each
+ * live binding's newest commit declares ready, and the project's bootstrap
+ * beside them while one of those bindings declares nothing. A project where no
+ * live binding declares one has its newest ready revision and nothing else,
+ * whichever binding or author that came from.
  */
 function creationConfigurationsDeclared(
   configurations: readonly ConfigurationSummary[],
   repositories: readonly ProjectRepositoryResponse[],
 ): readonly ConfigurationSummary[] {
-  const declared = creationRepositories(repositories).flatMap((binding) =>
+  const held = creationRepositories(repositories).map((binding) =>
     repositoryConfigurations(configurations, binding.repository),
   );
-  if (declared.length > 0)
-    return declared.filter((summary) => summary.readiness === "Ready");
-  const newest = latestReadyConfiguration(configurations);
-  return newest === undefined ? [] : [newest];
+  const declared = held.flat();
+  if (declared.length === 0) {
+    const newest = latestReadyConfiguration(configurations);
+    return newest === undefined ? [] : [newest];
+  }
+  const ready = declared.filter((summary) => summary.readiness === "Ready");
+  const bootstrap = held.some((rows) => rows.length === 0)
+    ? creationBootstrapAuthored(configurations)
+    : undefined;
+  return bootstrap === undefined ? ready : [...ready, bootstrap];
 }
 
 /**
  * The configurations a new ticket may be drawn under, by name and in name
- * order: the ready revisions the newest imported commit of each repository a
- * ticket may name declares. A name that commit dropped is not among them, and
- * neither is anything a retired binding declared.
+ * order. A name a repository's newest commit dropped is not among them, and
+ * neither is what a retired binding declared while a live one declares any.
  */
 export function creationConfigurationsOffered(
   configurations: readonly ConfigurationSummary[],
@@ -216,23 +239,45 @@ export function creationConfigurationsOffered(
 }
 
 /**
+ * Whether the listing read so far says all one binding declares now. Its
+ * newest commit is whole once a row that is not its own follows it; a binding
+ * with no row yet declares nothing once a row older than its bind is read,
+ * since a repository is imported only after it is bound.
+ */
+function creationBindingDecided(
+  configurations: readonly ConfigurationSummary[],
+  binding: ProjectRepositoryResponse,
+  newest: readonly ConfigurationSummary[],
+): boolean {
+  const last = configurations.at(-1);
+  if (newest.length > 0) return newest.at(-1) !== last;
+  return (
+    last !== undefined &&
+    Date.parse(last.createdAt) < Date.parse(binding.boundAt)
+  );
+}
+
+/**
  * Whether the listing read so far already decides what is offered, so a walk
- * of it may stop. A repository's newest commit is whole once a row that is not
- * its own follows it, and a project that binds nothing is decided by its first
- * ready revision.
+ * of it may stop: every live binding is decided, and where none of them
+ * declares anything the project's first ready revision has been read.
  */
 export function creationConfigurationsDecided(
   configurations: readonly ConfigurationSummary[],
   repositories: readonly ProjectRepositoryResponse[],
 ): boolean {
-  const bound = creationRepositories(repositories);
-  if (bound.length === 0)
-    return latestReadyConfiguration(configurations) !== undefined;
-  const last = configurations.at(-1);
-  return bound.every((binding) => {
-    const newest = repositoryConfigurations(configurations, binding.repository);
-    return newest.length > 0 && newest.at(-1) !== last;
-  });
+  const held = creationRepositories(repositories).map((binding) => ({
+    binding,
+    newest: repositoryConfigurations(configurations, binding.repository),
+  }));
+  const decided = held.every(({ binding, newest }) =>
+    creationBindingDecided(configurations, binding, newest),
+  );
+  if (!decided) return false;
+  return (
+    held.some(({ newest }) => newest.length > 0) ||
+    latestReadyConfiguration(configurations) !== undefined
+  );
 }
 
 /** The offer a name stands for, a name nothing offers standing for none. */
@@ -244,15 +289,17 @@ export function creationOfferOf(
 }
 
 /**
- * The name a form starts on: the sole offer, where there is no choice to make,
- * and otherwise the one this reader chose last where it is still offered.
- * Among several with none remembered it starts on nothing, never on a guess.
+ * The name a form starts on: the sole offer of a read that missed none, where
+ * there is no choice to make, and otherwise the one this reader chose last
+ * where it is still offered. Among several, or under one that may not be all
+ * there are, with none remembered it starts on nothing, never on a guess.
  */
 export function creationConfigurationStart(
   offers: readonly CreationOffer[],
   preferred: string | undefined,
+  partial = false,
 ): string {
-  const sole = offers.length === 1 ? offers[0] : undefined;
+  const sole = offers.length === 1 && !partial ? offers[0] : undefined;
   if (sole !== undefined) return sole.name;
   return creationOfferOf(offers, preferred ?? "")?.name ?? "";
 }
@@ -357,8 +404,9 @@ export function creationFormFrom(
   offers: readonly CreationOffer[],
   repositories: readonly ProjectRepositoryResponse[],
   preferred?: string,
+  partial = false,
 ): TicketCreationForm {
-  const configuration = creationConfigurationStart(offers, preferred);
+  const configuration = creationConfigurationStart(offers, preferred, partial);
   const drawn = creationOfferOf(offers, configuration);
   const repository = creationRepositoryDefault(repositories);
   return {

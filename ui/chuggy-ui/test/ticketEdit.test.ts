@@ -12,7 +12,10 @@
 import { expect, test } from "vitest";
 
 import type { DraftResponse } from "../../../src/contract/responses.ts";
-import { creationBodyFrom } from "../app/core/ticketCreation.ts";
+import {
+  creationBodyFrom,
+  creationConfigurationsOffered,
+} from "../app/core/ticketCreation.ts";
 import {
   draftReleaseOf,
   draftUnreleasedLabel,
@@ -250,6 +253,29 @@ test("a name two repositories declare does not say which of them a draft came fr
   expect(editOfferListed(pinned("development", "s-development"), shared)).toBe(
     true,
   );
+});
+
+/**
+ * A form holds the name an offer is chosen by, and that is not the draft's
+ * where two repositories declare one name and each is told apart by its own.
+ */
+test("an edit of a draft at an offered revision starts on the name that offer is chosen by", () => {
+  const elsewhere = "https://forge.test/gdoteof/scratch";
+  const offered = creationConfigurationsOffered(
+    [
+      creationDeclared("s-development", elsewhere, "development"),
+      creationDeclared("n-development", repository, "development"),
+    ],
+    [creationBinding(repository), creationBinding(elsewhere)],
+  );
+  const shared = offered.map((one) => ({
+    ...creationOffer(one.listed),
+    name: one.name,
+  }));
+  const draft = pinned("development", "s-development");
+  const edit = editOffersFrom(draft, shared, undefined);
+  expect(edit.configuration).toBe("development · gdoteof/scratch");
+  expect(revisionPinned(draft, edit)).toBe("s-development");
 });
 
 test("the update names the revision the ticket was read at and the draft revised", () => {

@@ -286,3 +286,31 @@ export async function press(name: string): Promise<void> {
   });
   await settled();
 }
+
+/**
+ * A frame down an open stream saying a configuration of the project moved,
+ * and the turns after it flushed. It is what has a screen drawn over a
+ * project's configurations read them again, whoever is typing in it.
+ */
+export async function configurationMoved(
+  server: StreamServer,
+  partition: PartitionIdentity,
+  sequence: number,
+): Promise<void> {
+  const revision = `moved-${String(sequence)}`;
+  await turned(() => {
+    server.push(
+      frame("Configuration", String(sequence), {
+        version: 1,
+        resource: revision,
+        representation: {
+          partition,
+          revision,
+          canonical: "{}",
+          digest: "d".repeat(64),
+        },
+      }),
+    );
+  });
+  await settled();
+}

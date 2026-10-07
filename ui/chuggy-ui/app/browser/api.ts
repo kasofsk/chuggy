@@ -29,7 +29,7 @@ import type { ApiPorts, ApiResult } from "../core/apiRequest.ts";
 import {
   panelReason,
   panelStateFromQuery,
-  panelStatePolled,
+  panelStateHeld,
 } from "../core/freshness.ts";
 import type { PanelState } from "../core/freshness.ts";
 import {
@@ -100,7 +100,7 @@ function panelQueryOptions<T>(
 
 function panelQueryState<T>(
   query: UseQueryResult<T>,
-  polledMs: number | undefined,
+  held: boolean,
 ): PanelState<T> {
   const state = {
     data: query.data,
@@ -108,19 +108,20 @@ function panelQueryState<T>(
     isPending: query.isPending,
     dataUpdatedAt: query.dataUpdatedAt,
   };
-  return polledMs === undefined
-    ? panelStateFromQuery<T>(state)
-    : panelStatePolled<T>(state);
+  return held ? panelStateHeld<T>(state) : panelStateFromQuery<T>(state);
 }
 
+/** One key's state, a polled one keeping its last answer across a poll that
+ * failed and any other doing so only where its caller asks. */
 function usePanelQuery<T>(
   key: ProjectQueryKey,
   read: PanelRead<T>,
   polledMs?: number,
+  held = polledMs !== undefined,
 ): PanelState<T> {
   const ports = useApiPorts();
   const query = useQuery(panelQueryOptions(ports, key, read, polledMs));
-  return panelQueryState(query, polledMs);
+  return panelQueryState(query, held);
 }
 
 /** One resource of one kind, written by the frame that names it — or a part
@@ -164,16 +165,21 @@ export function usePanelResources<T>(
       ),
     ),
   });
-  return queries.map((query) => panelQueryState<T>(query, undefined));
+  return queries.map((query) => panelQueryState<T>(query, false));
 }
 
-/** A list entry, whose refresh the list itself carries and this registers. */
+/**
+ * A list entry, whose refresh the list itself carries and this registers. One
+ * a form is typed over is read `held`, so a re-read that failed leaves the
+ * form standing over the answer it was drawn from.
+ */
 export function usePanelList<T>(
   list: ProjectList<T>,
   read: PanelRead<T>,
+  options?: { readonly held: boolean },
 ): PanelState<T> {
   useProjectListRefresh(list);
-  return usePanelQuery(list.key, read);
+  return usePanelQuery(list.key, read, undefined, options?.held === true);
 }
 
 /**

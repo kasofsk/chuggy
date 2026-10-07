@@ -1,6 +1,6 @@
 /**
  * Creating a ticket: one screen, one submit, and a configuration asked about
- * only where the project offers more than one.
+ * unless the project is known to offer one alone.
  *
  * What is visible is what only a person can state — which configuration does
  * the work where there is a choice, the title, the intent, what to read first,
@@ -492,7 +492,7 @@ export function CreationFields(
   props: FormEdit & {
     readonly faults: readonly CreationFault[];
     readonly offers: readonly CreationOffer[];
-    /** Whether the walk for the offers stopped short of the listing's end. */
+    /** Whether some offer may be missing from the ones given. */
     readonly partial?: boolean;
     readonly repositories: readonly ProjectRepositoryResponse[];
     readonly dependenciesLocked?: boolean;
@@ -651,6 +651,7 @@ function useCreationHeld(
   partition: PartitionIdentity,
   offers: readonly CreationOffer[],
   repositories: readonly ProjectRepositoryResponse[],
+  partial: boolean,
 ): {
   readonly initial: TicketCreationForm;
   readonly form: TicketCreationForm;
@@ -661,8 +662,8 @@ function useCreationHeld(
   );
   const [preferred] = useState(() => ticketConfigurationStored(partition));
   const initial = useMemo(
-    () => creationFormFrom(offers, repositories, preferred),
-    [offers, repositories, preferred],
+    () => creationFormFrom(offers, repositories, preferred, partial),
+    [offers, repositories, preferred, partial],
   );
   const form = edited ?? initial;
   const changed = (next: TicketCreationForm): void => {
@@ -703,7 +704,7 @@ export function CreationForm(props: {
       onCreated(ticket);
     },
   });
-  const held = useCreationHeld(props.partition, offers, repositories);
+  const held = useCreationHeld(props.partition, offers, repositories, partial);
   return (
     <div className="creation">
       <TicketAuthoring
@@ -774,8 +775,10 @@ export function TicketCreation(): ReactNode {
   const guard = useAuthoringGuards(dirty);
   const list = creationContextList(partition);
   const queryKey = list.key;
-  const state = usePanelList(list, (readPorts) =>
-    readCreationContext(readPorts, partition),
+  const state = usePanelList(
+    list,
+    (readPorts) => readCreationContext(readPorts, partition),
+    { held: true },
   );
   return (
     <>

@@ -35,7 +35,7 @@ import {
   apiReviseDraft,
   configurationPagesMax,
 } from "./apiRoutes.ts";
-import type { ApiPorts, ApiResult } from "./apiRequest.ts";
+import type { ApiFailure, ApiPorts, ApiResult } from "./apiRequest.ts";
 import {
   draftRevisionFailureSentence,
   draftRevisionRefusalSentence,
@@ -62,8 +62,8 @@ export type CreationContext =
       /** What a ticket here may be drawn under, by name and never none. */
       readonly offers: readonly CreationOffer[];
       /** Whether some offer may be missing: the page budget ended the walk
-       * before the listing decided them, or more are declared than one read
-       * draws. */
+       * before the listing decided them, more are declared than one read
+       * draws, or one's initialization could not be read. */
       readonly partial: boolean;
       /** What the project binds, which decides whether the form asks for one,
        * what it offers, and the landing each one defaults to. Oldest first, as
@@ -116,14 +116,19 @@ export const creationOffersMax = 32;
 
 /**
  * Each offered revision beside its own initialization, read together. One
- * that cannot be read is the whole read's outcome, a form being drawable
- * under any of them.
+ * that cannot be read is left out and said to be, the rest being as drawable
+ * without it; where none can be read, the first failure is the read's outcome.
  */
 async function creationOffersRead(
   ports: ApiPorts,
   partition: PartitionIdentity,
   offered: readonly CreationOfferListed[],
-): Promise<ApiResult<readonly CreationOffer[]>> {
+): Promise<
+  ApiResult<{
+    readonly offers: readonly CreationOffer[];
+    readonly unread: boolean;
+  }>
+> {
   const read = await Promise.all(
     offered.map(async (one) => ({
       one,
@@ -135,11 +140,14 @@ async function creationOffersRead(
     })),
   );
   const offers: CreationOffer[] = [];
+  let failed: ApiFailure | undefined;
   for (const { one, initialized } of read) {
-    if (initialized.outcome !== "Ok") return initialized;
-    offers.push({ ...one, initialization: initialized.value });
+    if (initialized.outcome === "Ok")
+      offers.push({ ...one, initialization: initialized.value });
+    else failed ??= initialized;
   }
-  return { outcome: "Ok", value: offers };
+  if (failed !== undefined && offers.length === 0) return failed;
+  return { outcome: "Ok", value: { offers, unread: failed !== undefined } };
 }
 
 /**
@@ -204,18 +212,19 @@ export async function readCreationContext(
       outcome: "Ok",
       value: creationContextUnoffered(repositories, partial),
     };
-  const offers = await creationOffersRead(
+  const read = await creationOffersRead(
     ports,
     partition,
     offered.slice(0, creationOffersMax),
   );
-  if (offers.outcome !== "Ok") return offers;
+  if (read.outcome !== "Ok") return read;
   return {
     outcome: "Ok",
     value: {
       context: "Ready",
-      offers: offers.value,
-      partial: partial || offered.length > creationOffersMax,
+      offers: read.value.offers,
+      partial:
+        partial || read.value.unread || offered.length > creationOffersMax,
       repositories,
     },
   };

@@ -152,3 +152,8 @@ export function creationForm(
     ...over,
   };
 }
+
+/** The YAML a browser kept while its project offered one configuration, and
+ * so drew no key for it, as it stands once the project offers several. */
+export const creationYamlKeptUnasked =
+  'title: Ship it\nintent: |-\n  do it\nlinks: []\nbranch: ""\nlanding: Push\ntarget: ""\ndependencies: [ 7 ]\nprogram:\n  - evaluators: 2\n  - evaluators: 1\n';

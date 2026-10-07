@@ -24,10 +24,12 @@ import type { ReactNode } from "react";
 import type { DraftResponse } from "../../../src/contract/responses.ts";
 import { TicketEdit } from "../app/browser/TicketEdit.tsx";
 import { operationStateSentence } from "../app/core/codeSentences.ts";
+import { configurationsPartialLabel } from "../app/core/repositoryConfigurations.ts";
 import { creationFaultSentence } from "../app/core/ticketCreation.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import {
   answer,
+  configurationMoved,
   openedStream,
   press,
   ScreenHarness,
@@ -199,14 +201,17 @@ function routed(drawing: Drawing): (request: SentRequest) => Response {
   };
 }
 
-async function drawEdit(drawing: Drawing): Promise<readonly SentRequest[]> {
+async function drawEdit(
+  drawing: Drawing,
+  server = openedStream(),
+): Promise<readonly SentRequest[]> {
   const scripted = scriptedFetch(routed(drawing));
   vi.stubGlobal("fetch", scripted.fetch);
   render(
     <ScreenHarness
       partition={creationPartition}
       client={new QueryClient()}
-      transport={openedStream().ports.fetch}
+      transport={server.ports.fetch}
     >
       <TicketEdit />
     </ScreenHarness>,
@@ -330,4 +335,50 @@ test("a refused update of a ticket moved off such a name is said over what was t
   expect(configurationChosen()).toContain("development");
   expect(configurationChosen()).not.toContain("opus");
   expect(left.to).toStrictEqual([]);
+});
+
+const unreadable = (): Response =>
+  answer({ error: { code: "InternalError" } }, 500);
+
+/** The name the draft holds was read and another was not, so the edit opens
+ * where it would have and says its choices may be short. */
+test("an offer that could not be read is left out of an edit, and said", async () => {
+  await drawEdit({
+    draft: pinned("development", "o-development"),
+    unread: (url) => (url.endsWith("/n-sonnet") ? unreadable() : undefined),
+  });
+  expect(screen.getByText(configurationsPartialLabel)).toBeTruthy();
+  expect(screen.getByText(/^Configuration · /u).textContent).toContain(
+    "development",
+  );
+});
+
+/**
+ * The project's configurations are read again whenever one of them moves, by
+ * a frame nobody at this form sent. One of those reads failing leaves the edit
+ * standing over the answer it was drawn from, and the typing in it.
+ */
+test("a re-read of the project that fails leaves the edit standing, with what was typed in it", async () => {
+  const failing = { on: false };
+  const server = openedStream();
+  const sent = await drawEdit(
+    {
+      draft: pinned("development", "o-development"),
+      unread: () => (failing.on ? unreadable() : undefined),
+    },
+    server,
+  );
+  const title = (): string | undefined =>
+    screen.queryByPlaceholderText<HTMLInputElement>(
+      "what this ticket is called",
+    )?.value;
+  fireEvent.change(screen.getByPlaceholderText("what this ticket is called"), {
+    target: { value: "Renamed" },
+  });
+  const before = initializationsRead(sent).length;
+  failing.on = true;
+  await configurationMoved(server, creationPartition, 43);
+  expect(initializationsRead(sent).length).toBeGreaterThan(before);
+  expect(title()).toBe("Renamed");
+  expect(screen.queryByText(/^Failed to load · /u)).toBeNull();
 });

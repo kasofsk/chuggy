@@ -261,6 +261,47 @@ test("a walk the budget stopped with something to offer says it stopped", async 
   ).toStrictEqual([true, ["development", "development-sonnet"]]);
 });
 
+/**
+ * A second repository bound declaring nothing, after everything the first
+ * declared but its newest import: the bind's bootstrap is offered beside the
+ * declared names, and the first page says all there is to say of both.
+ */
+test("a binding that declares nothing is read as the bootstrap, and holds the walk no further than its bind", async () => {
+  const boundLater = "2026-09-01 00:00:00.123456+00";
+  const since = "2026-09-02 00:00:00.5+00";
+  const [sonnet, development, ...before] = declaredPage.configurations;
+  const held = project(
+    () => ({
+      configurations: [
+        { ...creationSummary("bootstrap", "Ready"), createdAt: since },
+        { ...sonnet, createdAt: since },
+        { ...development, createdAt: since },
+        ...before,
+      ],
+      nextCursor: "next",
+    }),
+    ok({
+      repositories: [
+        { repository: chuggy, boundAt: "2026-08-26T00:00:00Z" },
+        { repository: scratch, boundAt: boundLater },
+      ].map((bound) => ({
+        ...bound,
+        landing: { mode: "Push" },
+        configured: true,
+      })),
+    }),
+  );
+  const read = await readCreationContext(held.ports, creationPartition);
+  expect(
+    read.outcome === "Ok" && read.value.context === "Ready"
+      ? [read.value.partial, read.value.offers.map((offer) => offer.name)]
+      : undefined,
+  ).toStrictEqual([false, ["bootstrap", "development", "development-sonnet"]]);
+  expect(
+    held.calls.filter((call) => call.includes("/configurations")),
+  ).toStrictEqual([`GET ${partitionBase}/configurations`]);
+});
+
 /** Every offer is a request, so a repository declaring more than one read
  * draws is offered the first of them by name and told that is not all. */
 test("a read draws no more offers than its bound, and says so past it", async () => {
@@ -304,12 +345,55 @@ test("not knowing, there being none and there being nowhere are drawn as three w
   expect(sentences[2]).toContain(String(configurationPagesMax));
 });
 
+const unavailable: Answer = {
+  status: 503,
+  body: { error: { code: "Unavailable" } },
+};
+
+/** A form is as drawable under the offers that were read as under all of
+ * them, so one that was not is left out and the shortfall said. */
+test("an offer whose initialization cannot be read is left out, and the read says so", async () => {
+  const held = answering((_method, path) => {
+    if (path.endsWith("/repositories")) return bindings(chuggy);
+    if (path.includes("/configurations")) return ok(declaredPage);
+    return path.endsWith("/n-sonnet") ? unavailable : initialization(path);
+  });
+  const read = await readCreationContext(held.ports, creationPartition);
+  expect(
+    read.outcome === "Ok" && read.value.context === "Ready"
+      ? [read.value.partial, read.value.offers.map((offer) => offer.name)]
+      : undefined,
+  ).toStrictEqual([true, ["development"]]);
+});
+
+test("offers of which none can be read are the failure, not a form with nothing to choose", async () => {
+  const held = answering((_method, path) => {
+    if (path.endsWith("/repositories")) return bindings(chuggy);
+    return path.includes("/configurations") ? ok(declaredPage) : unavailable;
+  });
+  const read = await readCreationContext(held.ports, creationPartition);
+  expect(read.outcome).toBe("Retryable");
+});
+
+/** A project whose bindings went unread is not one that binds nothing: read
+ * as that, it would be offered its first ready row, whatever declared it. */
+test("bindings that cannot be read are the outcome, and nothing is offered without them", async () => {
+  const held = answering((_method, path) =>
+    path.endsWith("/repositories") ? unavailable : ok(declaredPage),
+  );
+  const read = await readCreationContext(held.ports, creationPartition);
+  expect(read.outcome).toBe("Retryable");
+  expect(
+    held.calls.filter((call) => !call.endsWith("/repositories")),
+  ).toStrictEqual([]);
+});
+
 test("an initialization that cannot be read is the outcome, not a blank form", async () => {
   const held = answering((_method, path) => {
     if (path.endsWith("/repositories")) return bindings();
     return path.includes("/configurations")
       ? ok(configurationsPage)
-      : { status: 503, body: { error: { code: "Unavailable" } } };
+      : unavailable;
   });
   const read = await readCreationContext(held.ports, creationPartition);
   expect(read.outcome).toBe("Retryable");

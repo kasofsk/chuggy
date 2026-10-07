@@ -20,6 +20,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { ticketYamlStoreKey } from "../app/browser/editor/authoringGuards.tsx";
 import { CreationForm } from "../app/browser/TicketCreation.tsx";
 import type { ApiPorts } from "../app/core/apiRequest.ts";
+import { creationStageOf } from "../app/core/ticketCreation.ts";
 import type { CreationOffer } from "../app/core/ticketCreation.ts";
 import { creationContextList } from "../app/core/ticketCreationRun.ts";
 import { answeringApi } from "./answeringApi.ts";
@@ -31,6 +32,7 @@ import {
   creationOffer,
   creationOffers,
   creationPartition,
+  creationYamlKeptUnasked,
 } from "./ticketCreationFixture.ts";
 import { ticketInstants } from "./ticketInstants.ts";
 
@@ -262,6 +264,62 @@ test("a configuration named in the YAML is the one chosen, sent and remembered",
   expect(
     held.sent.find((one) => one.path.endsWith("/drafts"))?.body,
   ).toMatchObject({ configurationRevision: "n-sonnet" });
+  cleanup();
+
+  draw(api().ports, [], several);
+  expect(
+    screen.getByRole("button", { name: /^Configuration/u }).textContent,
+  ).toContain("development-sonnet");
+});
+
+/**
+ * The kept text writes dependencies and a program, which are a configuration's
+ * and which a form naming none has nowhere to hold. So the screen stays on the
+ * YAML, with its copy, until the text names one, and then loses neither.
+ */
+test("a kept YAML naming no configuration holds the screen until it names one, and loses nothing", async () => {
+  window.localStorage.setItem(storeKey, creationYamlKeptUnasked);
+  const held = api();
+  const created: number[] = [];
+  draw(held.ports, created, several);
+  const editor = await screen.findByRole<HTMLTextAreaElement>("textbox", {
+    name: "Ticket YAML",
+  });
+  expect(editor.value).toBe(creationYamlKeptUnasked);
+  await screen.findByText("fix the YAML to switch back to the form");
+  fireEvent.click(screen.getByRole("radio", { name: "Form" }));
+  expect(screen.getByRole("textbox", { name: "Ticket YAML" })).toBeDefined();
+  expect(window.localStorage.getItem(storeKey)).toBe(creationYamlKeptUnasked);
+
+  type(editor, `configuration: development\n${creationYamlKeptUnasked}`);
+  fireEvent.click(screen.getByRole("radio", { name: "Form" }));
+  fireEvent.click(screen.getByRole("button", { name: "Create ticket" }));
+  await waitFor(() => {
+    expect(created).toStrictEqual([creationDraft.ticket]);
+  });
+  expect(
+    held.sent.find((one) => one.path.endsWith("/drafts"))?.body,
+  ).toMatchObject({
+    configurationRevision: "n-development",
+    authoring: {
+      dependencies: [7],
+      program: [creationStageOf(2, 1), creationStageOf(1, 2)],
+    },
+    brief: { title: "Ship it", intent: "do it" },
+  });
+});
+
+/** Naming none is not a choice: the name chosen before it stays the one the
+ * next new ticket here starts on. */
+test("a text that stops naming a configuration does not forget the one chosen", async () => {
+  draw(api().ports, [], several);
+  const editor = await toYaml();
+  type(editor, "configuration: development-sonnet\nintent: ship it\n");
+  type(editor, 'configuration: ""\nintent: ship it\n');
+  fireEvent.click(screen.getByRole("radio", { name: "Form" }));
+  expect(
+    screen.getByRole("button", { name: /^Configuration/u }).textContent,
+  ).toContain("Choose");
   cleanup();
 
   draw(api().ports, [], several);

@@ -12,7 +12,9 @@
  * THE CONFIGURATION IS READ FIRST, wherever its key is written, because it
  * decides which of the other keys the form draws: the checks, the dependencies
  * and the program are a configuration's. Under a text that names none they are
- * left unjudged, the one thing wrong with it being that it names none.
+ * left unjudged, the one thing wrong with it being that it names none — and a
+ * text writing one of them under none reads as no form, because the form it
+ * would read as has nowhere to hold what they say.
  *
  * A KEY LEFT OUT IS EMPTY, except the three a form never leaves empty: the
  * landing and the dependencies keep what the form held, and so does a program
@@ -453,6 +455,10 @@ function ticketYamlParsed(text: string): TicketYamlParsed {
   };
 }
 
+/** Whether a text names a configuration: one, none, or a name its own key
+ * is refused for. */
+type TicketYamlNaming = "Named" | "Unnamed" | "Refused";
+
 /**
  * The form a text starts from before its other keys are read: every key left
  * out, under the configuration the text names, and whether it names one.
@@ -460,20 +466,27 @@ function ticketYamlParsed(text: string): TicketYamlParsed {
 function ticketYamlStart(
   pairs: readonly TicketYamlPair[],
   context: TicketYamlContext,
-): { readonly form: TicketCreationForm; readonly named: boolean } {
+): { readonly form: TicketCreationForm; readonly naming: TicketYamlNaming } {
   const empty = ticketYamlEmpty(context.base);
   if (!ticketYamlConfigurationOffered(context))
-    return { form: empty, named: true };
+    return { form: empty, naming: "Named" };
   const written = pairs.find(
     (pair) => ticketYamlKeyNameOf(pair) === "configuration",
   );
   const read = ticketYamlConfigurationOf(written?.value, context);
-  const name = read.took === "Value" ? read.value : "";
+  if (read.took === "Problem") return { form: empty, naming: "Refused" };
   return {
-    form: creationConfigurationChosen(empty, context.offers, name),
-    named: name !== "",
+    form: creationConfigurationChosen(empty, context.offers, read.value),
+    naming: read.value === "" ? "Unnamed" : "Named",
   };
 }
+
+/** What a text naming no configuration is told where it writes a key one
+ * decides, which is what the form says of naming none. */
+const ticketYamlUnnamedFault: CreationFault = {
+  field: "configuration",
+  reason: creationFaultSentence("configuration"),
+};
 
 export function ticketYamlRead(
   text: string,
@@ -490,6 +503,7 @@ export function ticketYamlRead(
   );
   const problems: TicketYamlProblem[] = [];
   let form = start.form;
+  let undrawn = false;
   for (const pair of pairs) {
     const key = ticketYamlKeyNameOf(pair);
     const at = ticketYamlSpanOf(pair.key);
@@ -498,7 +512,10 @@ export function ticketYamlRead(
       continue;
     }
     keys.set(key, at);
-    if (!start.named && ticketYamlConfigured.has(key)) continue;
+    if (start.naming !== "Named" && ticketYamlConfigured.has(key)) {
+      undrawn ||= start.naming === "Unnamed";
+      continue;
+    }
     const applied = offered.has(key)
       ? ticketYamlKeyApplied(key, pair.value, form, context)
       : ticketYamlNoKey(key);
@@ -509,6 +526,8 @@ export function ticketYamlRead(
       });
     else form = applied.value;
   }
+  if (undrawn)
+    problems.push(...ticketYamlFaultProblems([ticketYamlUnnamedFault], keys));
   return { form: problems.length === 0 ? form : undefined, keys, problems };
 }
 

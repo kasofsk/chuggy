@@ -82,18 +82,77 @@ test("a name the newest commit dropped is not offered, though older commits list
   expect(names(listing)).not.toContain("development-opus");
 });
 
+const retired = "2026-09-14T00:00:00Z";
+
 /** A ticket cannot name a retired binding's repository, so a configuration
  * only that repository declares is one no ticket could be released under. */
-test("nothing a retired binding declared is offered", () => {
-  const both = [
+test("nothing a retired binding declared is offered beside what a live one declares", () => {
+  const declaredByEach = [
     declared("s-scratch", scratch, "scratch"),
     declared("c-chuggy", chuggy, "chuggy"),
   ];
   const repositories = [
     creationBinding(chuggy),
-    creationBinding(scratch, "Push", "2026-09-14T00:00:00Z"),
+    creationBinding(scratch, "Push", retired),
   ];
-  expect(names(both, repositories)).toStrictEqual(["chuggy"]);
+  expect(names(declaredByEach, repositories)).toStrictEqual(["chuggy"]);
+});
+
+test("a project whose only binding is retired keeps its newest ready revision", () => {
+  expect(
+    revisions(listing, [creationBinding(chuggy, "Push", retired)]),
+  ).toStrictEqual(["n-sonnet"]);
+});
+
+/** The listing of a project where one repository declares and a second was
+ * bound declaring nothing, the bind having authored the bootstrap. */
+const mixed = [
+  creationSummary("bootstrap", "Ready"),
+  declared("n-sonnet", chuggy, "development-sonnet"),
+  declared("n-development", chuggy, "development"),
+  declared("o-development", chuggy, "development", "Ready", older),
+];
+const both = [creationBinding(chuggy), creationBinding(scratch)];
+
+/** A declared revision releases for its own repository alone, so without the
+ * bootstrap no ticket for the second repository could be drawn at all. */
+test("a binding that declares nothing is offered the bootstrap beside what another declares", () => {
+  expect(revisions(mixed, both)).toStrictEqual([
+    "bootstrap",
+    "n-development",
+    "n-sonnet",
+  ]);
+});
+
+test("the bootstrap is not offered where every live binding declares", () => {
+  expect(names(mixed)).toStrictEqual(["development", "development-sonnet"]);
+  expect(
+    names(mixed, [
+      creationBinding(chuggy),
+      creationBinding(scratch, "Push", retired),
+    ]),
+  ).toStrictEqual(["development", "development-sonnet"]);
+});
+
+test("only the project's own ready bootstrap stands in for a binding that declares nothing", () => {
+  const [, ...declaredRows] = mixed;
+  expect(
+    names([creationSummary("bootstrap", "Incomplete"), ...declaredRows], both),
+  ).toStrictEqual(["development", "development-sonnet"]);
+  expect(
+    names([creationSummary("r9", "Ready"), ...declaredRows], both),
+  ).toStrictEqual(["development", "development-sonnet"]);
+});
+
+test("a bootstrap a repository declares is told apart from the project's own", () => {
+  expect(
+    names([...mixed, declared("n-bootstrap", chuggy, "bootstrap")], both),
+  ).toStrictEqual([
+    "bootstrap",
+    "bootstrap · kasofsk/chuggy",
+    "development",
+    "development-sonnet",
+  ]);
 });
 
 test("a project where no repository declares one is offered its newest ready revision", () => {
@@ -181,6 +240,59 @@ test("a bound repository with no row read yet leaves the offer undecided", () =>
   ).toBe(true);
 });
 
+/** An instant as the server writes one, on the day a second repository is
+ * bound here. */
+const boundLater = "2026-09-01 00:00:00.123456+00";
+
+/** Rows as a later import writes them, newer than that bind. */
+function since(row: ConfigurationSummary): ConfigurationSummary {
+  return { ...row, createdAt: "2026-09-02 00:00:00.5+00" };
+}
+
+/**
+ * A repository is imported only after it is bound, so a row older than a
+ * binding's bind, read with none of that binding's own before it, says the
+ * binding declares nothing; until then its rows may lie further on.
+ */
+test("a binding with no row stops holding the walk open once a row older than its bind is read", () => {
+  const repositories = [
+    creationBinding(chuggy),
+    { ...creationBinding(scratch), boundAt: boundLater },
+  ];
+  const newer = [
+    since(creationSummary("bootstrap", "Ready")),
+    since(declared("n-sonnet", chuggy, "development-sonnet")),
+    since(declared("n-development", chuggy, "development")),
+    since(declared("m-development", chuggy, "development", "Ready", "0a1b2c3")),
+  ];
+  expect(creationConfigurationsDecided(newer, repositories)).toBe(false);
+  const past = [
+    ...newer,
+    declared("o-development", chuggy, "development", "Ready", older),
+  ];
+  expect(creationConfigurationsDecided(past, repositories)).toBe(true);
+  const unread = { ...creationBinding(scratch), boundAt: "soon" };
+  expect(
+    creationConfigurationsDecided(past, [creationBinding(chuggy), unread]),
+  ).toBe(false);
+});
+
+test("bindings that all declare nothing are decided by the first ready revision read", () => {
+  const repositories = [{ ...creationBinding(scratch), boundAt: boundLater }];
+  expect(
+    creationConfigurationsDecided(
+      [creationSummary("r4", "Incomplete")],
+      repositories,
+    ),
+  ).toBe(false);
+  expect(
+    creationConfigurationsDecided(
+      [creationSummary("r4", "Incomplete"), creationSummary("r3", "Ready")],
+      repositories,
+    ),
+  ).toBe(true);
+});
+
 test("a project binding nothing is decided by its first ready revision", () => {
   expect(
     creationConfigurationsDecided([creationSummary("r4", "Incomplete")], []),
@@ -218,6 +330,19 @@ test("a form starts on the sole offer, and among several on the last choice or o
   );
   expect(creationConfigurationStart(several, "gone")).toBe("");
   expect(creationConfigurationStart(several, undefined)).toBe("");
+});
+
+/** One offer of a read that may have missed others is not known to be the
+ * only one, so it is taken where the reader chose it and nowhere else. */
+test("a sole offer is not started on where the read may have missed others", () => {
+  expect(creationConfigurationStart([development], undefined, true)).toBe("");
+  expect(creationConfigurationStart([development], "gone", true)).toBe("");
+  expect(creationConfigurationStart([development], "development", true)).toBe(
+    "development",
+  );
+  expect(
+    creationFormFrom([development], [], undefined, true).program,
+  ).toStrictEqual([]);
 });
 
 test("the form asks everywhere but where the one offer is the one it names", () => {

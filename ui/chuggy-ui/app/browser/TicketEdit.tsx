@@ -369,6 +369,7 @@ export function TicketEdit(): ReactNode {
   const contextState = usePanelList(
     creationContextList(partition),
     (readPorts) => readCreationContext(readPorts, partition),
+    { held: true },
   );
   return (
     <>
