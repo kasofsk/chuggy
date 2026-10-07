@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "name": "chuggy-development",
+  "name": "chuggy-development-sonnet",
   "configuration": {
     "version": 1,
     "image": "registry.chuggy.internal/chuggy/worker@sha256:97cb5292d814c9790c5731898dd3e0e1f28487d5358058210109b2351e5d72fc",
@@ -17,7 +17,7 @@
         "agent": "Claude",
         "arguments": [
           "--allowedTools=Bash,Edit,Read,Write,Glob,Grep",
-          "--model=opus"
+          "--model=sonnet"
         ]
       },
       "setup": ["npm ci"],

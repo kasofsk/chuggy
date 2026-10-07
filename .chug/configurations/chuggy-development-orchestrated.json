@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "name": "chuggy-development-opus",
+  "name": "chuggy-development-orchestrated",
   "configuration": {
     "version": 1,
     "image": "registry.chuggy.internal/chuggy/worker@sha256:97cb5292d814c9790c5731898dd3e0e1f28487d5358058210109b2351e5d72fc",
@@ -41,7 +41,10 @@
     "work": {
       "instructions": [
         "Implement the requested change and add focused regression coverage.",
-        "`.chug/tasks/ci.sh` runs the gates the change affects and no others. While you work, the test file or the single gate in hand is enough. Run `ci.sh` once the change is complete; if a gate is red, fix it, run that gate until it is clean, and run `ci.sh` again. Report the work as passing only after a run of `ci.sh` that ends clean: a gate that could not run is not a pass."
+        "`.chug/tasks/ci.sh` runs the gates the change affects and no others. While you work, the test file or the single gate in hand is enough. Run `ci.sh` once the change is complete; if a gate is red, fix it, run that gate until it is clean, and run `ci.sh` again. Report the work as passing only after a run of `ci.sh` that ends clean: a gate that could not run is not a pass.",
+        "You may hand bounded pieces of this work to subagents, and should where it saves time: a search across the tree, a mechanical edit repeated over many files, a first draft of tests for a module you have specified.",
+        "Give a clear piece that needs no judgement to Sonnet and one that needs reasoning to Opus, and brief each with what to do, which files, and what done looks like.",
+        "Keep the design, the integration and every gate run yourself: subagents share your working tree and its database, so only one of you runs a gate at a time, and what a subagent returns is unreviewed work until you have read it."
       ]
     },
     "review": {

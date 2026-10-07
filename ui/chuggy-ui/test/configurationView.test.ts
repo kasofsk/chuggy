@@ -1,8 +1,8 @@
 /**
  * The canonical configuration document, read into what the panel draws.
  *
- * The shapes this tree's declarations take — a worker with no authority, one
- * with an authority and no model pinned, and one with a model pinned — are read
+ * The shapes this tree's declarations take — a worker with no authority or
+ * pinned model, one with both, and one with another model pinned — are read
  * from the files themselves rather than a copied fixture, so a shape those files
  * change reaches this suite without anyone updating it by hand. A document
  * naming no worker, which no file here declares and a stored revision still
@@ -101,8 +101,8 @@ test("a worker with no authority states its agent, tools and setup and no grant"
 test("a pinned tool flag is read ahead of the authority's own list", () => {
   const view = configurationViewOf(declaredConfiguration("chuggy-development"));
   expect(view.settings.model).toStrictEqual({
-    label: "Default",
-    argument: undefined,
+    label: "Opus",
+    argument: "--model=opus",
   });
   expect(view.settings.agent).toBe("Claude Code");
   expect(view.settings.agentDetail).toBe("Single agent");
@@ -129,11 +129,11 @@ test("a pinned tool flag is read ahead of the authority's own list", () => {
 
 test("a pinned model is read from its own flag and shown capitalised", () => {
   const view = configurationViewOf(
-    declaredConfiguration("chuggy-development-opus"),
+    declaredConfiguration("chuggy-development-sonnet"),
   );
   expect(view.settings.model).toStrictEqual({
-    label: "Opus",
-    argument: "--model=opus",
+    label: "Sonnet",
+    argument: "--model=sonnet",
   });
 });
 
