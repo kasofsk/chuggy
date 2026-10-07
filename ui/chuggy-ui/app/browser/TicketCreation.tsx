@@ -61,7 +61,11 @@ import {
   creationContextSentence,
   readCreationContext,
 } from "../core/ticketCreationRun.ts";
-import type { CreationContext } from "../core/ticketCreationRun.ts";
+import type {
+  CreationContext,
+  CreationDraftHeld,
+  DraftHeld,
+} from "../core/ticketCreationRun.ts";
 import { operationSubmitting } from "../core/operationFollow.ts";
 import type { OperationStep } from "../core/operationFollow.ts";
 import { usePanelList, useApiPorts } from "./api.ts";
@@ -87,14 +91,13 @@ import { Tooltip } from "./ui/Tooltip.tsx";
 
 import "./TicketCreation.css";
 
-export type Attempt =
+export type Attempt<Held extends DraftHeld = DraftHeld> =
   | { readonly attempt: "Idle" }
   | { readonly attempt: "Running"; readonly step: OperationStep }
   | {
       readonly attempt: "Failed";
       readonly reason: string;
-      readonly draft: DraftResponse | undefined;
-      readonly operation: string;
+      readonly held: Held | undefined;
     }
   | { readonly attempt: "Stale"; readonly reason: string };
 
@@ -450,7 +453,7 @@ export function AttemptNote(props: {
       return (
         <p className="panel-failed">
           {attempt.reason}
-          {attemptHeldDraft(attempt.draft, motion)}
+          {attemptHeldDraft(attempt.held?.draft, motion)}
         </p>
       );
   }
@@ -558,26 +561,6 @@ interface CreationSubmit {
 }
 
 /**
- * What a resubmission reuses, a draft that was never created reusing neither.
- * The operation identity is what the API keys a submission by, so a fresh one
- * would ask about a release nobody made rather than the one still in flight.
- */
-function creationResubmission(attempt: Attempt): {
-  readonly operation: string;
-  readonly draft: DraftResponse | undefined;
-} {
-  const held =
-    attempt.attempt === "Failed" && attempt.draft !== undefined
-      ? attempt
-      : undefined;
-  return {
-    operation:
-      held?.operation ?? base64urlFromBytes(drawBytes(operationIdBytesCount)),
-    draft: held?.draft,
-  };
-}
-
-/**
  * One submit, from the body it assembles to the state it leaves behind. The
  * form's faults are set by the caller's own setter, so nothing but this hook
  * knows how far the attempt got.
@@ -593,7 +576,9 @@ function useCreationSubmit(props: {
 }): CreationSubmit {
   const client = useQueryClient();
   const mounted = useMounted();
-  const [attempt, setAttempt] = useState<Attempt>({ attempt: "Idle" });
+  const [attempt, setAttempt] = useState<Attempt<CreationDraftHeld>>({
+    attempt: "Idle",
+  });
   const {
     offers,
     onCreated,
@@ -611,12 +596,13 @@ function useCreationSubmit(props: {
       return;
     }
     onFaults([]);
-    const resubmitted = creationResubmission(attempt);
+    const held = attempt.attempt === "Failed" ? attempt.held : undefined;
+    const operation = base64urlFromBytes(drawBytes(operationIdBytesCount));
     setAttempt({ attempt: "Running", step: operationSubmitting() });
     const created = await createAndReleaseTicket(
       ports,
       partition,
-      { body: assembled.body, ...resubmitted },
+      { body: assembled.body, operation, held },
       (step) => {
         if (mounted.current) setAttempt({ attempt: "Running", step });
       },
@@ -634,8 +620,7 @@ function useCreationSubmit(props: {
     setAttempt({
       attempt: "Failed",
       reason: created.reason,
-      draft: created.draft,
-      operation: resubmitted.operation,
+      held: created.held,
     });
   };
 

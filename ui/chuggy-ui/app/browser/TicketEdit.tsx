@@ -144,12 +144,7 @@ function useEditSubmit(props: {
     setAttempt(
       updated.created === "Stale"
         ? { attempt: "Stale", reason: updated.reason }
-        : {
-            attempt: "Failed",
-            reason: updated.reason,
-            draft: updated.draft,
-            operation,
-          },
+        : { attempt: "Failed", reason: updated.reason, held: updated.held },
     );
   };
 

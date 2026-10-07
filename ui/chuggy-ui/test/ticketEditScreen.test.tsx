@@ -138,8 +138,9 @@ function initialization(url: string): Response {
 
 interface Drawing {
   readonly draft: DraftResponse;
-  /** What the read of one revision's initialization answers instead of it. */
-  readonly unread?: (url: string) => Response | undefined;
+  /** What the read of one revision's initialization answers instead of it,
+   * which may be nothing yet. */
+  readonly unread?: (url: string) => Response | Promise<Response> | undefined;
   /** The state the update's operation settles in, which is succeeded unless a
    * case says the actor refused it. */
   readonly settles?: string;
@@ -167,7 +168,9 @@ function revisedDraft(draft: DraftResponse, body: unknown): DraftResponse {
 }
 
 /** One project's API, holding the draft a revision moves. */
-function routed(drawing: Drawing): (request: SentRequest) => Response {
+function routed(
+  drawing: Drawing,
+): (request: SentRequest) => Response | Promise<Response> {
   let draft = drawing.draft;
   return (request) => {
     const url = request.url;
@@ -303,6 +306,37 @@ test("a held revision that cannot be read is said, and the reader is asked rathe
 });
 
 /**
+ * Until the draft's own revision is read there is no configuration for the
+ * form to open on, and one drawn then would be typed into under none.
+ */
+test("the form waits for the read of a revision no longer offered, and then opens on it", async () => {
+  const own: { arrived: (answered: Response) => void } = {
+    arrived: () => undefined,
+  };
+  await drawEdit({
+    draft: pinned("development-opus", "o-opus"),
+    unread: (url) =>
+      url.endsWith("/o-opus")
+        ? new Promise<Response>((resolve) => {
+            own.arrived = resolve;
+          })
+        : undefined,
+  });
+  expect(
+    screen.queryByPlaceholderText("what this ticket is called"),
+  ).toBeNull();
+  await turned(() => {
+    own.arrived(initialization("/o-opus"));
+  });
+  await settled();
+  expect(
+    screen.getByPlaceholderText<HTMLInputElement>("what this ticket is called")
+      .value,
+  ).toBe("Ship it");
+  expect(configurationChosen()).toContain("development-opus");
+});
+
+/**
  * The draft is revised before its update is released, and read again once the
  * submit settles — now at a revision the project offers, where it opened on
  * one it does not. The form the submit reports to has to still be there.
@@ -326,8 +360,8 @@ test("a refused update of a ticket moved off such a name is said over what was t
   });
   await chooseConfiguration("development");
   await retitleAndSubmit();
-  expect(document.querySelector(".panel-failed")?.textContent).toContain(
-    operationStateSentence("Cancelled"),
+  expect(document.querySelector(".panel-failed")?.textContent).toBe(
+    `${operationStateSentence("Cancelled")} — the draft holds this revision at version ${String(creationDraft.authoringVersion + 1)}, not released`,
   );
   expect(configurationChosen()).toContain("development");
   expect(configurationChosen()).not.toContain("opus");

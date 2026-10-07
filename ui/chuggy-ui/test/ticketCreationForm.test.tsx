@@ -21,12 +21,14 @@ import {
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { briefChecksMax, briefLinksMax } from "../../../src/contract/brief.ts";
+import { bootstrapConfigurationName } from "../../../src/contract/responses.ts";
 import type {
   ConfigurationSummary,
   ProjectRepositoryResponse,
 } from "../../../src/contract/responses.ts";
 import type { ApiPorts } from "../app/core/apiRequest.ts";
 import { CreationForm } from "../app/browser/TicketCreation.tsx";
+import { ticketConfigurationKept } from "../app/browser/editor/authoringGuards.tsx";
 import { configurationsPartialLabel } from "../app/core/repositoryConfigurations.ts";
 import {
   creationConfigurationName,
@@ -37,10 +39,13 @@ import type { CreationOffer } from "../app/core/ticketCreation.ts";
 import { creationContextList } from "../app/core/ticketCreationRun.ts";
 import type { CreationContext } from "../app/core/ticketCreationRun.ts";
 import {
+  creationApiRefusingFirst,
   creationBinding,
   creationDeclared,
   creationDraft,
+  creationDraftRevised,
   creationInitialization,
+  creationListed,
   creationOffer,
   creationPartition,
   creationSummary,
@@ -378,7 +383,27 @@ test("both branch fields reach the wire, the target as the finalization", async 
   });
 });
 
-test("a held draft is released again, under the identity it was released under", async () => {
+/** The draft door's revisions of the draft a submit left held. */
+function revisions(sent: readonly Sent[]): readonly unknown[] {
+  return sent
+    .filter(
+      (one) =>
+        one.method === "PUT" &&
+        one.path.endsWith(`/drafts/${String(creationDraft.ticket)}`),
+    )
+    .map((one) => one.body);
+}
+
+/** The identity each release went under, in the order they were sent. */
+function operations(sent: readonly Sent[]): readonly unknown[] {
+  return releases(sent).map((one) =>
+    one.body !== null && typeof one.body === "object" && "operation" in one.body
+      ? one.body.operation
+      : undefined,
+  );
+}
+
+test("a held draft the form still describes is released again, unrevised, under the identity it was released under", async () => {
   const held = api({ state: "Cancelled" });
   draw(held.ports, []);
   typeIntent("ship it");
@@ -389,12 +414,69 @@ test("a held draft is released again, under the identity it was released under",
     expect(releases(held.sent).length).toBe(2);
   });
   expect(drafts(held.sent).length).toBe(1);
-  const [first, second] = releases(held.sent).map((one) =>
-    one.body !== null && typeof one.body === "object" && "operation" in one.body
-      ? one.body.operation
-      : undefined,
-  );
+  expect(revisions(held.sent)).toStrictEqual([]);
+  const [first, second] = operations(held.sent);
   expect(first).toBe(second);
+});
+
+test("an intent retyped after a refused release is revised into the held draft, and released afresh", async () => {
+  const held = creationApiRefusingFirst(() => creationDraftRevised());
+  const created: number[] = [];
+  draw(held.ports, created);
+  typeIntent("ship it");
+  submit();
+  await screen.findByText(/was created and not released/u);
+  typeIntent("ship that");
+  submit();
+  await waitFor(() => {
+    expect(created).toStrictEqual([creationDraft.ticket]);
+  });
+  expect(drafts(held.sent).length).toBe(1);
+  expect(revisions(held.sent)).toMatchObject([
+    {
+      expectedVersion: creationDraft.authoringVersion,
+      configurationRevision: creationInitialization.configuration.revision,
+      brief: { intent: "ship that" },
+    },
+  ]);
+  const [first, second] = operations(held.sent);
+  expect(second).not.toBe(first);
+});
+
+/** The form and what is held are as they were, so the same submit is what
+ * tries again: the draft is not created twice, and is revised from the
+ * version this form wrote. */
+test("a revision that does not get through is said over what was typed, and the next submit sends it again", async () => {
+  const door = { open: false };
+  const held = creationApiRefusingFirst(() =>
+    door.open
+      ? creationDraftRevised()
+      : { status: 500, body: { error: { code: "InternalError" } } },
+  );
+  const created: number[] = [];
+  draw(held.ports, created);
+  typeIntent("ship it");
+  submit();
+  await screen.findByText(/was created and not released/u);
+  typeIntent("ship that");
+  submit();
+  await screen.findByText(/InternalError.* was created and not released/u);
+  expect(releases(held.sent).length).toBe(1);
+  expect(
+    screen.getByPlaceholderText<HTMLTextAreaElement>("what this ticket is for")
+      .value,
+  ).toBe("ship that");
+  door.open = true;
+  submit();
+  await waitFor(() => {
+    expect(created).toStrictEqual([creationDraft.ticket]);
+  });
+  expect(drafts(held.sent).length).toBe(1);
+  const revision = {
+    expectedVersion: creationDraft.authoringVersion,
+    brief: { intent: "ship that" },
+  };
+  expect(revisions(held.sent)).toMatchObject([revision, revision]);
 });
 
 test("the advanced disclosure holds the authoring, and offers what is chosen", () => {
@@ -814,6 +896,73 @@ async function chooseConfiguration(name: string): Promise<void> {
   });
 }
 
+/** The project's own bootstrap, offered by its revision and listed nowhere. */
+const bootstrap: CreationOffer = {
+  ...creationOffer(creationSummary(bootstrapConfigurationName, "Ready")),
+  listed: undefined,
+};
+
+/** A project one of whose repositories declares and the other does not. */
+const mixed = {
+  offers: [bootstrap, development],
+  partial: false,
+  repositories: [
+    creationListed(creationBinding(chuggy), "Imported"),
+    creationListed(creationBinding(scratch), "Bootstrapped"),
+  ],
+};
+
+test("the line saying what a bootstrap's ticket is for follows the configuration chosen", async () => {
+  const line = "First ticket · writes this repository's configuration";
+  drawOffered(api({ state: "Succeeded" }).ports, [], mixed);
+  expect(screen.queryByText(line)).toBeNull();
+  await chooseConfiguration("development");
+  expect(screen.queryByText(line)).toBeNull();
+  await chooseConfiguration(bootstrapConfigurationName);
+  expect(screen.getByText(line)).toBeDefined();
+});
+
+/**
+ * Which repository a configuration may be released against is judged at the
+ * release, so a refusal is the first a reader hears of a pairing the project
+ * will not run, and choosing another configuration is how they answer it.
+ */
+test("a configuration chosen after a refused release is what the held draft is revised to, and released under", async () => {
+  const held = creationApiRefusingFirst(() =>
+    creationDraftRevised(bootstrapConfigurationName),
+  );
+  const created: number[] = [];
+  drawOffered(held.ports, created, mixed);
+  typeIntent("ship it");
+  await chooseConfiguration("development");
+  await chooseRepository("gdoteof/scratch");
+  submit();
+  await screen.findByText(/was created and not released/u);
+  await chooseConfiguration(bootstrapConfigurationName);
+  submit();
+  await waitFor(() => {
+    expect(created).toStrictEqual([creationDraft.ticket]);
+  });
+  expect(drafts(held.sent).length).toBe(1);
+  expect(revisions(held.sent)).toMatchObject([
+    {
+      expectedVersion: creationDraft.authoringVersion,
+      configurationRevision: bootstrapConfigurationName,
+      brief: { intent: "ship it", repository: scratch },
+    },
+  ]);
+  expect(releases(held.sent).at(-1)?.body).toMatchObject({
+    mutation: {
+      mutation: "ReleaseDraft",
+      ticket: creationDraft.ticket,
+      authoringVersion: creationDraft.authoringVersion + 1,
+      configurationRevision: bootstrapConfigurationName,
+    },
+  });
+  const [first, second] = operations(held.sent);
+  expect(second).not.toBe(first);
+});
+
 /**
  * Several offers is where the rule has teeth: the first ready row of this
  * project's listing is the name sorting last, and a form that took it pinned
@@ -879,6 +1028,23 @@ test("the next new ticket here starts on the configuration chosen last, while it
   const basic = creationOffer(creationDeclared("n-basic", chuggy, "basic"));
   drawOffered(ports, [], { ...several, offers: [basic, development] });
   expect(configurationPicker().textContent).toContain("Choose");
+});
+
+/**
+ * The remembered choice is where a form starts. One made in another tab while
+ * this form is open was not made on it, so the next read of the project
+ * leaves this form on what its reader saw it open on.
+ */
+test("a form stays on the configuration it opened on when another is chosen elsewhere", async () => {
+  const ports = api({ state: "Succeeded" }).ports;
+  drawOffered(ports, [], several);
+  await chooseConfiguration("development-sonnet");
+  cleanup();
+
+  const drawn = drawOffered(ports, [], several);
+  ticketConfigurationKept(creationPartition, "development");
+  drawn.rerender({ ...several });
+  expect(configurationPicker().textContent).toContain("development-sonnet");
 });
 
 test("a browser that keeps nothing is asked every time, and still creates", async () => {

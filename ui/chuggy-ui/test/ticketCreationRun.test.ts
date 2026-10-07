@@ -14,9 +14,11 @@ import { nativeHttpBasePath } from "../../../src/contract/http.ts";
 import type { ProjectRepositoryListedResponse } from "../../../src/contract/responses.ts";
 import type { ApiPorts } from "../app/core/apiRequest.ts";
 import { configurationPagesMax } from "../app/core/apiRoutes.ts";
+import { creationStageOf } from "../app/core/ticketCreation.ts";
 import {
   createAndReleaseTicket,
   creationContextSentence,
+  creationDraftChangedSentence,
   creationOffersMax,
   readCreationContext,
   reviseAndUpdateTicket,
@@ -83,6 +85,23 @@ function creationAnswers(
     return release(path);
   };
 }
+
+/** A release the actor decided against, and one it carried out. */
+const refusedOperation = ok({
+  operation: "op-1",
+  acceptedAt: "2026-08-26T00:00:00Z",
+  state: "Refused",
+  code: "AuthoringChanged",
+  refusedHead: 41,
+  refusedLifecycleGeneration: 1,
+});
+
+const succeededOperation = ok({
+  operation: "op-1",
+  acceptedAt: "2026-08-26T00:00:00Z",
+  state: "Succeeded",
+  decidedSequence: 42,
+});
 
 const chuggy = "https://forge.test/kasofsk/chuggy";
 const scratch = "https://forge.test/gdoteof/scratch";
@@ -527,53 +546,213 @@ test("a release that settles as succeeded is the one ticket to navigate to", asy
   expect(created).toStrictEqual({ created: "Created", ticket: 12 });
 });
 
-test("a release the actor refuses is drawn by its code, holding the draft", async () => {
-  const held = answering(
-    creationAnswers(() =>
-      ok({
-        operation: "op-1",
-        acceptedAt: "2026-08-26T00:00:00Z",
-        state: "Refused",
-        code: "AuthoringChanged",
-        refusedHead: 41,
-        refusedLifecycleGeneration: 1,
-      }),
-    ),
-  );
+test("a release the actor refuses is drawn by its code, holding the draft beside what wrote it", async () => {
+  const held = answering(creationAnswers(() => refusedOperation));
   const created = await createAndReleaseTicket(
     held.ports,
     creationPartition,
     releaseSubmission,
     () => undefined,
   );
-  expect(created.created).toBe("Refused");
-  expect(created.created === "Refused" && created.draft).toStrictEqual(
-    creationDraft,
-  );
-  expect(created.created === "Refused" && created.reason).toContain(
-    "authoring changed",
-  );
+  expect(created).toStrictEqual({
+    created: "Refused",
+    reason: "the ticket's authoring changed after this was submitted",
+    held: {
+      draft: creationDraft,
+      body: releaseSubmission.body,
+      operation: "op-1",
+    },
+  });
 });
 
-test("a draft already created is released again rather than created twice", async () => {
-  const held = answering(
-    creationAnswers(() =>
-      ok({
-        operation: "op-2",
-        acceptedAt: "2026-08-26T00:00:00Z",
-        state: "Cancelled",
-      }),
-    ),
-  );
+/** A draft an earlier submit wrote from the release submission's body, whose
+ * release went under an operation of its own and did not succeed. */
+const heldDraft = {
+  draft: creationDraft,
+  body: releaseSubmission.body,
+  operation: "op-held",
+};
+
+/** The held draft as the door answers a revision of it. */
+const heldDraftRevised = { ...creationDraft, authoringVersion: 4 };
+
+/** The door answers a revision as the case says, and the release after it is
+ * accepted and decided as the case says. */
+function heldAnswers(
+  revised: Answer,
+  decided: Answer,
+): (method: string, path: string) => Answer {
+  return (method, path) => {
+    if (method === "PUT") return revised;
+    if (method === "POST")
+      return { status: 202, body: { operation: "op", state: "Pending" } };
+    return path.includes("/operations/")
+      ? decided
+      : ok({
+          partition: creationPartition,
+          sequence: 42,
+          tickets: [
+            { ticket: 12, phase: "Pending", sequence: 42, ...ticketInstants },
+          ],
+        });
+  };
+}
+
+/**
+ * The fence is the creation's alone: a revision carries none, so a form read
+ * again under a project that moved still says what its draft holds.
+ */
+test.each([
+  ["the body it was written from", releaseSubmission.body],
+  [
+    "that body under a fence that moved",
+    {
+      ...releaseSubmission.body,
+      configurationDigest: "c".repeat(64),
+      expectedProjectSequence: 99,
+    },
+  ],
+])(
+  "a held draft is released again as it stands under %s, by the operation it went under",
+  async (_said, body) => {
+    const held = answering(heldAnswers(unavailable, refusedOperation));
+    const created = await createAndReleaseTicket(
+      held.ports,
+      creationPartition,
+      { body, operation: "op-fresh", held: heldDraft },
+      () => undefined,
+    );
+    expect(held.calls.filter((call) => call.includes("/drafts"))).toStrictEqual(
+      [],
+    );
+    expect(held.sent[0]?.body).toStrictEqual({
+      operation: "op-held",
+      mutation: {
+        mutation: "ReleaseDraft",
+        ticket: 12,
+        authoringVersion: 3,
+        configurationRevision: "r3",
+      },
+    });
+    expect(created.created === "Refused" && created.held).toBe(heldDraft);
+  },
+);
+
+/** Each part of what a revision writes, moved alone. */
+const heldDraftMoved: readonly (readonly [
+  string,
+  typeof releaseSubmission.body,
+])[] = [
+  [
+    "another configuration",
+    { ...releaseSubmission.body, configurationRevision: "r4" },
+  ],
+  [
+    "another intent",
+    { ...releaseSubmission.body, brief: { intent: "ship that", links: [] } },
+  ],
+  [
+    "another program",
+    {
+      ...releaseSubmission.body,
+      authoring: { dependencies: [], program: [creationStageOf(2, 1)] },
+    },
+  ],
+];
+
+test.each(heldDraftMoved)(
+  "a held draft is revised to a form naming %s, and the revision released under a fresh operation",
+  async (_said, body) => {
+    const revised = {
+      ...heldDraftRevised,
+      configurationRevision: body.configurationRevision,
+    };
+    const held = answering(heldAnswers(ok(revised), succeededOperation));
+    const created = await createAndReleaseTicket(
+      held.ports,
+      creationPartition,
+      { body, operation: "op-fresh", held: heldDraft },
+      () => undefined,
+    );
+    expect(created).toStrictEqual({ created: "Created", ticket: 12 });
+    expect(held.calls.slice(0, 2)).toStrictEqual([
+      `PUT ${partitionBase}/drafts/12`,
+      `POST ${partitionBase}/operations`,
+    ]);
+    expect(held.sent.slice(0, 2).map((one) => one.body)).toStrictEqual([
+      {
+        expectedVersion: 3,
+        configurationRevision: body.configurationRevision,
+        authoring: body.authoring,
+        brief: body.brief,
+      },
+      {
+        operation: "op-fresh",
+        mutation: {
+          mutation: "ReleaseDraft",
+          ticket: 12,
+          authoringVersion: 4,
+          configurationRevision: body.configurationRevision,
+        },
+      },
+    ]);
+  },
+);
+
+test("a revision whose release is refused is the draft held next, beside what revised it", async () => {
+  const body = { ...releaseSubmission.body, configurationRevision: "r4" };
+  const revised = { ...heldDraftRevised, configurationRevision: "r4" };
+  const held = answering(heldAnswers(ok(revised), refusedOperation));
   const created = await createAndReleaseTicket(
     held.ports,
     creationPartition,
-    { ...releaseSubmission, draft: creationDraft },
+    { body, operation: "op-fresh", held: heldDraft },
     () => undefined,
   );
-  expect(created.created).toBe("Refused");
-  expect(held.calls.some((call) => call.endsWith("/drafts"))).toBe(false);
+  expect(created.created === "Refused" && created.held).toStrictEqual({
+    draft: revised,
+    body,
+    operation: "op-fresh",
+  });
 });
+
+test.each([
+  [
+    "faults",
+    refusal(500, "InternalError"),
+    "the API refused this, and named a reason this console does not know (InternalError)",
+  ],
+  [
+    "was written over",
+    refusal(409, "DraftChanged"),
+    creationDraftChangedSentence,
+  ],
+  [
+    "is closed",
+    refusal(409, "DraftNotEditable"),
+    "the draft is closed to revision: only a pending ticket's draft can be revised",
+  ],
+])(
+  "a revision of a held draft that %s is said, releases nothing, and leaves the draft held as it was",
+  async (_said, answered, reason) => {
+    const held = answering(heldAnswers(answered, succeededOperation));
+    const created = await createAndReleaseTicket(
+      held.ports,
+      creationPartition,
+      {
+        body: { ...releaseSubmission.body, configurationRevision: "r4" },
+        operation: "op-fresh",
+        held: heldDraft,
+      },
+      () => undefined,
+    );
+    expect(created.created === "Refused" && created.reason).toBe(reason);
+    expect(created.created === "Refused" && created.held).toBe(heldDraft);
+    expect(held.calls.filter((call) => !call.startsWith("PUT "))).toStrictEqual(
+      [],
+    );
+  },
+);
 
 test("a follow that never settles ends in a reason, not in a navigation", async () => {
   const held = answering(
@@ -696,7 +875,7 @@ test("a revision that moves the dependencies is refused at the door, and nothing
   expect(updated).toStrictEqual({
     created: "Refused",
     reason: "what this ticket depends on cannot change once it is released",
-    draft: undefined,
+    held: undefined,
   });
   expect(held.calls).toStrictEqual([`PUT ${partitionBase}/drafts/12`]);
 });
@@ -740,6 +919,6 @@ test("an update the machine refuses says which refusal, holding the revised draf
     created: "Refused",
     reason:
       "this was written against revision 2 of #12, which is at revision 3 now",
-    draft: revisedDraft,
+    held: { draft: revisedDraft },
   });
 });

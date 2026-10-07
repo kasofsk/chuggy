@@ -102,7 +102,7 @@ function ticketConfigurationStoreKey(partition: PartitionIdentity): string {
 }
 
 /** The configuration this reader last chose here, kept as the YAML is and as
- * losable: a browser holding none is a form that starts on none. */
+ * losable. */
 export function ticketConfigurationStored(
   partition: PartitionIdentity,
 ): string | undefined {

@@ -27,8 +27,10 @@ import { answeringApi } from "./answeringApi.ts";
 import type { Sent } from "./answeringApi.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import {
+  creationApiRefusingFirst,
   creationDeclared,
   creationDraft,
+  creationDraftRevised,
   creationOffer,
   creationOffers,
   creationPartition,
@@ -307,6 +309,42 @@ test("a kept YAML naming no configuration holds the screen until it names one, a
     },
     brief: { title: "Ship it", intent: "do it" },
   });
+});
+
+/** The submit the YAML asks about, answered. */
+async function submitAsked(): Promise<void> {
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Create ticket" }));
+  const asked = await screen.findByRole("dialog");
+  fireEvent.click(within(asked).getByRole("button", { name: "Create ticket" }));
+}
+
+/** The text's submit is the form's, so a draft an earlier one left held is
+ * revised to what the text now names rather than released as it was. */
+test("a configuration named in the YAML after a refused release is what the held draft is revised to", async () => {
+  const held = creationApiRefusingFirst(() => creationDraftRevised("n-sonnet"));
+  const created: number[] = [];
+  draw(held.ports, created, several);
+  const editor = await toYaml();
+  type(editor, "configuration: development\nintent: ship it\n");
+  await submitAsked();
+  await screen.findByText(/was created and not released/u);
+  type(editor, "configuration: development-sonnet\nintent: ship it\n");
+  await submitAsked();
+  await waitFor(() => {
+    expect(created).toStrictEqual([creationDraft.ticket]);
+  });
+  const written = held.sent.filter((one) => one.path.includes("/drafts"));
+  expect(written.map((one) => one.method)).toStrictEqual(["POST", "PUT"]);
+  expect(written.map((one) => one.body)).toMatchObject([
+    { configurationRevision: "n-development" },
+    {
+      expectedVersion: creationDraft.authoringVersion,
+      configurationRevision: "n-sonnet",
+    },
+  ]);
 });
 
 /** Naming none is not a choice: the name chosen before it stays the one the

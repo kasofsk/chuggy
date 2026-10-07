@@ -13,7 +13,9 @@
  *
  * A DRAFT THAT WAS CREATED AND NOT RELEASED IS HANDED BACK. The release is the
  * half that can be refused on its own, and a retry that created a second draft
- * would leave the first behind for a human to find.
+ * would leave the first behind for a human to find. It comes back beside what
+ * it was written from, so the next submit sends that release again where the
+ * form says the same, and revises the draft first where it says anything else.
  */
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
@@ -92,24 +94,48 @@ export function creationContextSentence(
   }
 }
 
-export interface TicketCreationRequest {
-  readonly body: z.infer<typeof draftCreationSchema>;
-  readonly operation: string;
-  readonly draft?: DraftResponse | undefined;
+type CreationBody = z.infer<typeof draftCreationSchema>;
+
+/** A draft a submit wrote and did not release. */
+export interface DraftHeld {
+  readonly draft: DraftResponse;
 }
 
-export type TicketCreated =
+/**
+ * The same as a creation's next submit finds it: beside the body the draft
+ * was last written from, and the operation its release went under. The API
+ * keys a submission by that identity, so the same release sent again under it
+ * asks about the one already made, where a fresh one would make a second.
+ */
+export interface CreationDraftHeld extends DraftHeld {
+  readonly body: CreationBody;
+  readonly operation: string;
+}
+
+export interface TicketCreationRequest {
+  readonly body: CreationBody;
+  /** What a release nothing has sent yet goes under. */
+  readonly operation: string;
+  readonly held?: CreationDraftHeld | undefined;
+}
+
+export type TicketCreated<Held extends DraftHeld = DraftHeld> =
   | { readonly created: "Created"; readonly ticket: number }
   | { readonly created: "Stale"; readonly reason: string }
   | {
       readonly created: "Refused";
       readonly reason: string;
-      readonly draft: DraftResponse | undefined;
+      readonly held: Held | undefined;
     };
 
 /** The one conflict a creation route answers: the fence this body carries moved. */
 export const creationStaleSentence =
   "the project moved while this form was open — it has been read again, so submitting now uses the current one";
+
+/** The version fence of a held draft, said for a screen that reads no draft
+ * again and so cannot say the door's own sentence. */
+export const creationDraftChangedSentence =
+  "the draft was revised somewhere else after this form wrote it, which this form does not write over";
 
 /** How many offers one read draws, each being a request of its own. */
 export const creationOffersMax = 32;
@@ -230,49 +256,105 @@ export async function readCreationContext(
   };
 }
 
-async function createdDraft(
+async function creationDraftCreated(
   ports: ApiPorts,
   partition: PartitionIdentity,
   request: TicketCreationRequest,
-): Promise<DraftResponse | TicketCreated> {
-  if (request.draft !== undefined) return request.draft;
-  const answered = await apiCreateDraft(ports, partition, request.body);
-  if (answered.outcome === "Ok") return answered.value;
+): Promise<CreationDraftHeld | TicketCreated<CreationDraftHeld>> {
+  const { body, operation } = request;
+  const answered = await apiCreateDraft(ports, partition, body);
+  if (answered.outcome === "Ok")
+    return { draft: answered.value, body, operation };
   return answered.outcome === "Conflict"
     ? { created: "Stale", reason: creationStaleSentence }
     : {
         created: "Refused",
         reason: operationFailureSentence(answered),
-        draft: undefined,
+        held: undefined,
       };
 }
 
-function releasedTicket(
+/** What a revision writes of a body, which is all of it but the fence. */
+function creationRevisionOf(
+  body: CreationBody,
+): Omit<z.infer<typeof draftRevisionSchema>, "expectedVersion"> {
+  return {
+    configurationRevision: body.configurationRevision,
+    authoring: body.authoring,
+    brief: body.brief,
+  };
+}
+
+/** Whether a held draft was written from what this body would write to it. */
+function creationDraftHolds(
+  held: CreationDraftHeld,
+  body: CreationBody,
+): boolean {
+  return (
+    JSON.stringify(creationRevisionOf(held.body)) ===
+    JSON.stringify(creationRevisionOf(body))
+  );
+}
+
+/**
+ * The draft one submit releases, written to what the form now says: created
+ * where none is held, the held one as it stands where it already says so, and
+ * otherwise the held one revised, whose release is another mutation and so
+ * goes under the operation this submit drew. A revision that does not get
+ * through leaves what is held as it was.
+ */
+async function creationDraftWritten(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+  request: TicketCreationRequest,
+): Promise<CreationDraftHeld | TicketCreated<CreationDraftHeld>> {
+  const { body, held, operation } = request;
+  if (held === undefined)
+    return creationDraftCreated(ports, partition, request);
+  if (creationDraftHolds(held, body)) return held;
+  const revised = await apiReviseDraft(ports, partition, held.draft.ticket, {
+    expectedVersion: held.draft.authoringVersion,
+    ...creationRevisionOf(body),
+  });
+  if (revised.outcome === "Ok")
+    return { draft: revised.value, body, operation };
+  const moved =
+    revised.outcome === "Conflict" && revised.code === "DraftChanged";
+  return {
+    created: "Refused",
+    reason: moved
+      ? creationDraftChangedSentence
+      : draftRevisionFailureSentence(revised),
+    held,
+  };
+}
+
+function releasedTicket<Held extends DraftHeld>(
   step: OperationStep,
-  draft: DraftResponse,
-): TicketCreated {
+  held: Held,
+): TicketCreated<Held> {
   if (step.step === "Abandoned")
-    return { created: "Refused", reason: step.reason, draft };
+    return { created: "Refused", reason: step.reason, held };
   if (step.step !== "Settled")
     return {
       created: "Refused",
       reason: "the release stopped before it settled",
-      draft,
+      held,
     };
   if (step.state === "Succeeded")
-    return { created: "Created", ticket: draft.ticket };
+    return { created: "Created", ticket: held.draft.ticket };
   return {
     created: "Refused",
     reason:
       step.refusal === undefined
         ? operationStateSentence(step.state)
         : operationRefusalSentence(step.refusal),
-    draft,
+    held,
   };
 }
 
 /**
- * One submit: the draft is created if it does not exist yet, and released and
+ * One submit: the draft is written to what the form says, and released and
  * followed to settlement. Only a settled success is a ticket to navigate to.
  */
 export async function createAndReleaseTicket(
@@ -280,20 +362,20 @@ export async function createAndReleaseTicket(
   partition: PartitionIdentity,
   request: TicketCreationRequest,
   onStep: (step: OperationStep) => void,
-): Promise<TicketCreated> {
-  const created = await createdDraft(ports, partition, request);
-  if ("created" in created) return created;
+): Promise<TicketCreated<CreationDraftHeld>> {
+  const written = await creationDraftWritten(ports, partition, request);
+  if ("created" in written) return written;
   const followed = await followOperation(
     ports,
     partition,
     {
-      operation: request.operation,
-      mutation: creationReleaseMutation(created),
+      operation: written.operation,
+      mutation: creationReleaseMutation(written.draft),
     },
-    created.ticket,
+    written.draft.ticket,
     onStep,
   );
-  return releasedTicket(followed.step, created);
+  return releasedTicket(followed.step, written);
 }
 
 export interface TicketUpdateRequest {
@@ -326,7 +408,7 @@ export async function reviseAndUpdateTicket(
       : {
           created: "Refused",
           reason: draftRevisionFailureSentence(revised),
-          draft: undefined,
+          held: undefined,
         };
   const followed = await followOperation(
     ports,
@@ -338,5 +420,5 @@ export async function reviseAndUpdateTicket(
     ticket,
     onStep,
   );
-  return releasedTicket(followed.step, revised.value);
+  return releasedTicket(followed.step, { draft: revised.value });
 }

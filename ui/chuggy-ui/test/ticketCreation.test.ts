@@ -141,7 +141,8 @@ test("an offer the listing no longer holds is drawn without a commit", () => {
 /**
  * The bootstrap arrives authored at the revision its name is, or imported from
  * a repository seeded with it under that name. Either way the form says what
- * its ticket is for, and under any other name it says nothing.
+ * its ticket is for, and under any other name it says nothing — an offer with
+ * no row in the listing being known by the name it is offered under.
  */
 test("a form on the bootstrap says what its ticket is for, and no other does", () => {
   const line = "First ticket · writes this repository's configuration";
@@ -164,6 +165,9 @@ test("a form on the bootstrap says what its ticket is for, and no other does", (
   ).toBe(line);
   expect(creationBootstrapLine({ ...authored, listed: undefined })).toBe(line);
   expect(creationBootstrapLine(creationOffer())).toBe(undefined);
+  expect(creationBootstrapLine({ ...creationOffer(), listed: undefined })).toBe(
+    undefined,
+  );
   expect(
     creationBootstrapLine(
       creationOffer({
