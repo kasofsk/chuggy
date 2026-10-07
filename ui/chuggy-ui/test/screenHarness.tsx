@@ -11,7 +11,7 @@
  */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, render } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { StrictMode } from "react";
 import type { ReactNode } from "react";
 import { vi } from "vitest";
@@ -126,6 +126,28 @@ export interface SentRequest {
   readonly body: unknown;
 }
 
+/** A fetch stub that records every request as a `SentRequest` and answers
+ * each from the case's own route — what `drawnStrict`'s own fetching is a
+ * case of, and a page not drawn under `StrictMode` needs just as much. */
+export function scriptedFetch(
+  answered: (request: SentRequest) => Response | Promise<Response>,
+): {
+  readonly fetch: typeof fetch;
+  readonly sent: readonly SentRequest[];
+} {
+  const sent: SentRequest[] = [];
+  const fetching = ((url: string, init?: ApiDoubleInit) => {
+    const request: SentRequest = {
+      method: init?.method ?? "GET",
+      url,
+      body: init?.body === undefined ? undefined : JSON.parse(init.body),
+    };
+    sent.push(request);
+    return Promise.resolve(answered(request));
+  }) as unknown as typeof fetch;
+  return { fetch: fetching, sent };
+}
+
 export interface DrawnStrict {
   readonly sent: readonly SentRequest[];
   /** The page drawn again with nothing about it changed, which is what a
@@ -139,17 +161,9 @@ export async function drawnStrict(
   page: ReactNode,
   answered: (request: SentRequest) => Response,
 ): Promise<DrawnStrict> {
-  const sent: SentRequest[] = [];
-  const fetching = ((url: string, init?: ApiDoubleInit) => {
-    const request: SentRequest = {
-      method: init?.method ?? "GET",
-      url,
-      body: init?.body === undefined ? undefined : JSON.parse(init.body),
-    };
-    sent.push(request);
-    return Promise.resolve(answered(request));
-  }) as unknown as typeof fetch;
-  vi.stubGlobal("fetch", fetching);
+  const scripted = scriptedFetch(answered);
+  vi.stubGlobal("fetch", scripted.fetch);
+  const sent = scripted.sent;
   const client = new QueryClient();
   const holder = holderDouble();
   const drawn = (nudge: number): ReactNode => (
@@ -255,4 +269,20 @@ export async function turned(
 
 export async function settled(): Promise<void> {
   for (let flush = 0; flush < settleFlushesMax; flush += 1) await turned();
+}
+
+/** A `SettingsSection` or `Panel` card, reached by the heading it is labelled
+ * by — the name a case asks for is the start of a longer accessible name,
+ * since a card's own notice follows its title in the same label. */
+export function sectionOf(title: string): HTMLElement {
+  return screen.getByRole("region", { name: new RegExp(`^${title}`) });
+}
+
+/** A button pressed and the turns that follow it flushed, so what the press
+ * set off — a read, a write, a redraw — has landed before a case asserts. */
+export async function press(name: string): Promise<void> {
+  await turned(() => {
+    fireEvent.click(screen.getByRole("button", { name }));
+  });
+  await settled();
 }

@@ -46,6 +46,7 @@ import { RepositoryPage } from "./repositories/RepositoryPage.tsx";
 import { RunnersPage } from "./RunnersPage.tsx";
 import { SettingsPage } from "./SettingsPage.tsx";
 import { LeadSettingsPage } from "./settings/LeadSettingsPage.tsx";
+import { PlacementSettingsPage } from "./settings/PlacementSettingsPage.tsx";
 import { Shell } from "./Shell.tsx";
 import { ProjectStreamProvider } from "./stream.tsx";
 import { TicketCreation } from "./TicketCreation.tsx";
@@ -146,6 +147,13 @@ const settingsLeadRoute = createRoute({
   component: LeadSettingsPage,
 });
 
+/** Another settings group's own page. */
+const settingsPlacementRoute = createRoute({
+  getParentRoute: () => partitionRoute,
+  path: "/settings/placement",
+  component: PlacementSettingsPage,
+});
+
 const repositoriesRoute = createRoute({
   getParentRoute: () => partitionRoute,
   path: "/repositories",
@@ -230,6 +238,7 @@ const routeTree = rootRoute.addChildren([
     leadRoute,
     settingsRoute,
     settingsLeadRoute,
+    settingsPlacementRoute,
     repositoriesRoute,
     repositoryRoute,
     runnersRoute,
