@@ -456,3 +456,69 @@ test("an image the screen does not hold is a problem at that key", () => {
     },
   ]);
 });
+
+const overridden = {
+  "worker.mode": {
+    type: "SingleAgent",
+    agent: "Claude",
+    arguments: ["--allowedTools=Bash", "--model=opus"],
+  },
+  "worker.files": [{ path: "notes.md", content: "one\ntwo" }],
+  practices: ["RegressionCoverage"],
+  "work.instructions": ["Do it this way.", "Then stop."],
+};
+
+test("a form's overrides are one map under the configuration's own names, and read back as the same form", () => {
+  const form = creationForm({ overrides: overridden });
+  const text = ticketYamlOf(form, context);
+  expect(text).toContain(
+    "overrides:\n  worker:\n    mode:\n      type: SingleAgent\n",
+  );
+  expect(text).toContain("\n  practices:\n    - RegressionCoverage\n");
+  const read = readForm(text);
+  expect(read.problems).toStrictEqual([]);
+  expect(read.form).toStrictEqual(form);
+});
+
+test("a form holding no override writes no overrides key, and a key left out is no override", () => {
+  expect(ticketYamlOf(creationForm(), context)).not.toContain("overrides");
+  const base = creationForm({ overrides: overridden });
+  expect(readForm("intent: y\n", { base }).form?.overrides).toStrictEqual({});
+});
+
+test("an override of a field the contract does not let a ticket override is refused at that key", () => {
+  const text =
+    "intent: y\noverrides:\n  worker:\n    setup:\n      - make\n    image: other\n";
+  const read = readForm(text);
+  expect(read.form).toBeUndefined();
+  expect(read.problems).toStrictEqual([
+    {
+      from: text.indexOf("image"),
+      to: text.indexOf("image") + "image".length,
+      message:
+        "a ticket may not override `worker.image`; it may override worker.mode, worker.setup, worker.files, practices, brief.motivation, brief.acceptanceCriteria, brief.constraints, work.instructions",
+    },
+  ]);
+  const top = "intent: y\noverrides:\n  evaluations: []\n";
+  expect(readForm(top).problems).toStrictEqual([
+    {
+      from: top.indexOf("evaluations"),
+      to: top.indexOf("evaluations") + "evaluations".length,
+      message: expect.stringContaining(
+        "a ticket may not override `evaluations`",
+      ) as string,
+    },
+  ]);
+});
+
+test("overrides are a configuration's: under none the text reads as no form, and naming another keeps them", () => {
+  const rest = "intent: y\noverrides:\n  practices:\n    - Kept\n";
+  const left = ticketYamlRead(rest, several);
+  expect(left.form).toBeUndefined();
+  expect(left.problems).toStrictEqual([{ from: 0, to: 0, message: unnamed }]);
+  for (const name of ["development", "development-sonnet"]) {
+    const named = ticketYamlRead(`configuration: ${name}\n${rest}`, several);
+    expect(named.problems).toStrictEqual([]);
+    expect(named.form?.overrides).toStrictEqual({ practices: ["Kept"] });
+  }
+});

@@ -129,6 +129,77 @@ function configurationModelOf(
   };
 }
 
+/**
+ * A worker's mode exactly as the document writes it. Unlike every reader
+ * above, nothing in it is dropped for being unrecognised: a mode is sent back
+ * whole as an override, and one read leaf by leaf would lose what it did not
+ * know.
+ */
+export type ConfigurationMode = Readonly<Record<string, unknown>>;
+
+function configurationIsRecord(
+  value: unknown,
+): value is Readonly<Record<string, unknown>> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** The document's `worker.mode`, absent for a worker that predates modes. */
+export function configurationModeOf(
+  document: unknown,
+): ConfigurationMode | undefined {
+  if (!configurationIsRecord(document)) return undefined;
+  const worker = document["worker"];
+  if (!configurationIsRecord(worker)) return undefined;
+  const mode = worker["mode"];
+  return configurationIsRecord(mode) ? mode : undefined;
+}
+
+function configurationModeArguments(
+  mode: ConfigurationMode,
+): readonly unknown[] {
+  const held = mode["arguments"];
+  return Array.isArray(held) ? held : [];
+}
+
+/** The model a mode names, as written: its own field where it carries one,
+ * its `--model=` argument otherwise, and none where it names neither. */
+export function configurationModeModel(
+  mode: ConfigurationMode,
+): string | undefined {
+  if ("model" in mode)
+    return typeof mode["model"] === "string" ? mode["model"] : undefined;
+  const argument = configurationModeArguments(mode).find(
+    (held): held is string =>
+      typeof held === "string" && held.startsWith(modelArgumentPrefix),
+  );
+  return argument?.slice(modelArgumentPrefix.length);
+}
+
+/**
+ * The mode with its model alone changed: the field replaced where the mode
+ * carries one, the argument replaced where it names one, and an argument
+ * added where it names none. No model removes the argument and leaves a field
+ * as it was.
+ */
+export function configurationModeWithModel(
+  mode: ConfigurationMode,
+  model: string | undefined,
+): ConfigurationMode {
+  if ("model" in mode) return model === undefined ? mode : { ...mode, model };
+  const held = configurationModeArguments(mode);
+  const at = held.findIndex(
+    (argument) =>
+      typeof argument === "string" && argument.startsWith(modelArgumentPrefix),
+  );
+  if (at === -1 && model === undefined) return mode;
+  const named = model === undefined ? [] : [`${modelArgumentPrefix}${model}`];
+  const changed =
+    at === -1
+      ? [...held, ...named]
+      : [...held.slice(0, at), ...named, ...held.slice(at + 1)];
+  return { ...mode, arguments: changed };
+}
+
 /** `Claude` briefs an agent this console calls by its product name; every
  * other agent identity is drawn as the document names it. */
 function configurationAgentLabel(

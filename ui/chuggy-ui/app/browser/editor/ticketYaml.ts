@@ -14,7 +14,10 @@
  * and the program are a configuration's. Under a text that names none they are
  * left unjudged, the one thing wrong with it being that it names none — and a
  * text writing one of them under none reads as no form, because the form it
- * would read as has nowhere to hold what they say.
+ * would read as has nowhere to hold what they say. The overrides are a
+ * configuration's too, written as one map under its own field names, and only
+ * where the form holds one: a field left out is the configuration's, and a
+ * field no ticket may override is refused at its own key.
  *
  * AN IMAGE IS WRITTEN AS THE IDENTITY ITS UPLOAD ANSWERED, never as bytes: the
  * form attaches, and the text may only keep or drop what the screen knows the
@@ -30,7 +33,15 @@
  * package the decision layer may not reach; everything here is still pure.
  */
 
-import { Document, isMap, isScalar, isSeq, parseDocument, Scalar } from "yaml";
+import {
+  Document,
+  isMap,
+  isNode,
+  isScalar,
+  isSeq,
+  parseDocument,
+  Scalar,
+} from "yaml";
 import type { Node, Pair, YAMLMap } from "yaml";
 
 import type {
@@ -58,6 +69,15 @@ import type {
   CreationStage,
   TicketCreationForm,
 } from "../../core/ticketCreation.ts";
+import {
+  overrideFieldKind,
+  overrideFields,
+  overridesNestedOf,
+} from "../../core/ticketOverrides.ts";
+import type {
+  CreationOverrides,
+  OverrideField,
+} from "../../core/ticketOverrides.ts";
 
 /** What a document is read and written against: the project's offer, and the
  * form a key left out keeps its value from. */
@@ -120,6 +140,7 @@ const ticketYamlConfigured: ReadonlySet<string> = new Set([
   "checks",
   "dependencies",
   "program",
+  "overrides",
 ]);
 
 /** The keys this project's form draws under one configuration, in the order
@@ -141,7 +162,7 @@ function ticketYamlKeys(
     ...(ticketYamlRepositoryOffered(context) ? ["repository"] : []),
     "landing",
     ...(landing === "None" ? [] : ["target"]),
-    ...(drawn === undefined ? [] : ["dependencies", "program"]),
+    ...(drawn === undefined ? [] : ["dependencies", "program", "overrides"]),
   ];
 }
 
@@ -165,12 +186,12 @@ export function ticketYamlOf(
     program: form.program.map((stage) => ({
       evaluators: stage.evaluators.length,
     })),
+    overrides: overridesNestedOf(form.overrides),
   };
   const shown = Object.fromEntries(
-    ticketYamlKeys(context, form.configuration, form.landingMode).map((key) => [
-      key,
-      values[key],
-    ]),
+    ticketYamlKeys(context, form.configuration, form.landingMode)
+      .filter((key) => values[key] !== undefined)
+      .map((key) => [key, values[key]]),
   );
   const document = new Document(shown);
   const intent = document.get("intent", true);
@@ -197,14 +218,24 @@ function ticketYamlSpanOf(node: Node | null | undefined): TicketYamlSpan {
 
 type TicketYamlTook<T> =
   | { readonly took: "Value"; readonly value: T }
-  | { readonly took: "Problem"; readonly message: string };
+  | {
+      readonly took: "Problem";
+      readonly message: string;
+      /** Where inside the value it is about, where that is narrower. */
+      readonly at?: TicketYamlSpan;
+    };
 
 function ticketYamlTook<T>(value: T): TicketYamlTook<T> {
   return { took: "Value", value };
 }
 
-function ticketYamlRefused<T>(message: string): TicketYamlTook<T> {
-  return { took: "Problem", message };
+function ticketYamlRefused<T>(
+  message: string,
+  at?: TicketYamlSpan,
+): TicketYamlTook<T> {
+  return at === undefined
+    ? { took: "Problem", message }
+    : { took: "Problem", message, at };
 }
 
 /** A scalar as the text the form holds, nothing written reading as empty. */
@@ -327,6 +358,78 @@ function ticketYamlImagesOf(
       );
 }
 
+/** One overridden value as the form holds it: lines as text, and a mode or
+ * files as the data written, for the body's schema to judge. */
+function ticketYamlOverrideOf(
+  field: OverrideField,
+  node: unknown,
+): TicketYamlTook<unknown> {
+  if (overrideFieldKind(field) === "Lines") return ticketYamlTextsOf(node);
+  return ticketYamlTook(isNode(node) ? node.toJSON() : node);
+}
+
+const ticketYamlOverridesShape =
+  "write the overrides as a map under the configuration's own field names";
+
+/** Whether a name is a block some overridable field sits in. */
+function ticketYamlOverrideBlock(name: string): boolean {
+  return overrideFields.some((field) => field.startsWith(`${name}.`));
+}
+
+/** The pairs of one map, each under the path it names below `prefix`. */
+function ticketYamlOverridePairs(
+  node: unknown,
+  prefix: string,
+): TicketYamlTook<
+  readonly { readonly path: string; readonly pair: TicketYamlPair }[]
+> {
+  if (!isMap(node)) return ticketYamlRefused(ticketYamlOverridesShape);
+  const pairs: { readonly path: string; readonly pair: TicketYamlPair }[] = [];
+  for (const pair of node.items as readonly TicketYamlPair[]) {
+    const name = ticketYamlKeyNameOf(pair);
+    if (name === undefined)
+      return ticketYamlRefused(
+        "a key is a plain word",
+        ticketYamlSpanOf(pair.key),
+      );
+    const path = `${prefix}${name}`;
+    if (prefix === "" && ticketYamlOverrideBlock(name)) {
+      const inner = ticketYamlOverridePairs(pair.value, `${name}.`);
+      if (inner.took === "Problem")
+        return inner.at === undefined
+          ? ticketYamlRefused(inner.message, ticketYamlSpanOf(pair.key))
+          : inner;
+      pairs.push(...inner.value);
+    } else pairs.push({ path, pair });
+  }
+  return ticketYamlTook(pairs);
+}
+
+/** The overrides a text writes, each field one the contract lets a ticket
+ * override and refused at its own key where it is not. */
+function ticketYamlOverridesOf(
+  node: unknown,
+): TicketYamlTook<CreationOverrides> {
+  if (isScalar(node) && node.value === null) return ticketYamlTook({});
+  const read = ticketYamlOverridePairs(node, "");
+  if (read.took === "Problem") return read;
+  const held: Partial<Record<OverrideField, unknown>> = {};
+  for (const { path, pair } of read.value) {
+    const field = overrideFields.find((one) => one === path);
+    const at = ticketYamlSpanOf(pair.key);
+    if (field === undefined)
+      return ticketYamlRefused(
+        `a ticket may not override \`${path}\`; it may override ${overrideFields.join(", ")}`,
+        at,
+      );
+    const value = ticketYamlOverrideOf(field, pair.value);
+    if (value.took === "Problem")
+      return ticketYamlRefused(value.message, ticketYamlSpanOf(pair.value));
+    held[field] = value.value;
+  }
+  return ticketYamlTook(held);
+}
+
 function ticketYamlSameNumbers(
   a: readonly number[],
   b: readonly number[],
@@ -368,6 +471,11 @@ function ticketYamlConfiguredApplied(
       ticketYamlProgramOf(value, drawn.choices),
       (program) => ({ ...form, program }),
     );
+  if (key === "overrides")
+    return ticketYamlInto(ticketYamlOverridesOf(value), (overrides) => ({
+      ...form,
+      overrides,
+    }));
   const read = ticketYamlDependenciesOf(value);
   if (
     read.took === "Value" &&
@@ -426,6 +534,7 @@ function ticketYamlKeyApplied(
     case "checks":
     case "dependencies":
     case "program":
+    case "overrides":
       return ticketYamlConfiguredApplied(key, value, form, context);
     default:
       return ticketYamlNoKey(key);
@@ -444,6 +553,7 @@ function ticketYamlEmpty(base: TicketCreationForm): TicketCreationForm {
     branchName: "",
     targetBranchName: "",
     repository: "",
+    overrides: {},
   };
 }
 
@@ -555,7 +665,8 @@ export function ticketYamlRead(
       : ticketYamlNoKey(key);
     if (applied.took === "Problem")
       problems.push({
-        ...(pair.value === null ? at : ticketYamlSpanOf(pair.value)),
+        ...(applied.at ??
+          (pair.value === null ? at : ticketYamlSpanOf(pair.value))),
         message: applied.message,
       });
     else form = applied.value;
@@ -578,6 +689,7 @@ function ticketYamlKeyOf(field: CreationField): string | undefined {
     case "repository":
     case "target":
     case "branch":
+    case "overrides":
       return field;
     case "authoring":
       return "program";
@@ -638,6 +750,10 @@ function ticketYamlConfiguredDescribed(
     },
     program: {
       hint: `the evaluation program: at most ${String(drawn.choices.programStagesMax)} stages, each judged by the evaluators it counts`,
+      values: [],
+    },
+    overrides: {
+      hint: `what this ticket replaces of its configuration, each field whole, under the configuration's own names: ${overrideFields.join(", ")}`,
       values: [],
     },
   };

@@ -9,9 +9,8 @@
  *
  * AN EDIT KEEPS THE CONFIGURATION ITS DRAFT NAMES. It starts on that name and
  * moves the ticket to another only where its reader chooses one, so a revision
- * of the title is never also a change of who does the work. The form draws no
- * overrides, so it carries the draft's through as they are: a revision that
- * omitted them would clear them.
+ * of the title is never also a change of who does the work. Its overrides are
+ * read into the form, and the revision sends what the form holds of them.
  */
 
 import { briefBranchPrefix } from "../../../../src/contract/brief.ts";
@@ -30,6 +29,7 @@ import {
   creationConfigurationName,
   creationLandingDefault,
 } from "./ticketCreation.ts";
+import { overridesHeldOf } from "./ticketOverrides.ts";
 import type {
   CreationFault,
   CreationOffer,
@@ -140,6 +140,7 @@ export function editFormFrom(
     repository,
     landingMode:
       finalization?.mode ?? creationLandingDefault(repositories, repository),
+    overrides: overridesHeldOf(draft.overrides),
   };
 }
 
@@ -174,7 +175,9 @@ export function editRevisionFrom(
       configurationRevision: assembled.body.configurationRevision,
       authoring: assembled.body.authoring,
       brief: assembled.body.brief,
-      ...(draft.overrides === undefined ? {} : { overrides: draft.overrides }),
+      ...(assembled.body.overrides === undefined
+        ? {}
+        : { overrides: assembled.body.overrides }),
     }),
   };
 }

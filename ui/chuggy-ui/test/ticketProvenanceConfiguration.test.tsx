@@ -21,6 +21,7 @@ import {
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
+import type { ConfigurationOverrides } from "../../../src/contract/configurationOverrides.ts";
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import { TicketPage } from "../app/browser/TicketPage.tsx";
 import { viewportDeskEm } from "../app/browser/shell/viewport.ts";
@@ -84,7 +85,10 @@ const revision = "r-sonnet-1";
 const version = { name: "chuggy-development-sonnet", number: 1 };
 const digest = "d".repeat(64);
 
-async function drawTicket(served: string = canonical): Promise<void> {
+async function drawTicket(
+  served: string = canonical,
+  overrides?: ConfigurationOverrides,
+): Promise<void> {
   const api = apiDouble({
     operation: { operation: "op-one", state: "Pending" },
     route: (url) => {
@@ -116,6 +120,7 @@ async function drawTicket(served: string = canonical): Promise<void> {
         ...ticketInstants,
         configurationRevision: revision,
         configurationVersion: version,
+        ...(overrides === undefined ? {} : { overrides }),
       });
     },
   });
@@ -244,4 +249,90 @@ test("the panel keeps the digest and the full revision on a caption line", async
   expect(screen.getByText("Digest").nextElementSibling?.textContent).toBe(
     `${digest.slice(0, 12)}…${digest.slice(-6)}`,
   );
+});
+
+const caption = "As configured · a run's exact prompt is in its conversation";
+
+test("a ticket with no overrides is drawn as its pinned configuration, marking nothing", async () => {
+  await drawTicket();
+  await sectionOpened("Provenance");
+  expect(within(instructions()).getByText(caption)).toBeDefined();
+  expect(screen.queryByText("Overridden")).toBeNull();
+  expect(screen.queryByText("Also overridden")).toBeNull();
+  expect(screen.queryByText("Pinned ·")).toBeNull();
+  expect(screen.getByRole("button", { name: "Canonical JSON" })).toBeDefined();
+});
+
+/** The cell a field is drawn in, by the name over it. */
+function cell(name: string): HTMLElement {
+  const found = screen
+    .getAllByText(name)
+    .map((one) => one.closest(".ticket-config-cell"))
+    .find((one) => one instanceof HTMLElement);
+  if (!(found instanceof HTMLElement)) throw new Error(`no ${name} cell`);
+  return found;
+}
+
+test("a model the ticket overrode is drawn in the model's place, marked overridden", async () => {
+  const sonnetMode = (
+    JSON.parse(canonical) as {
+      readonly worker: { readonly mode: { readonly arguments: string[] } };
+    }
+  ).worker.mode;
+  await drawTicket(canonical, {
+    worker: {
+      mode: {
+        type: "SingleAgent",
+        agent: "Claude",
+        arguments: sonnetMode.arguments.map((argument) =>
+          argument === "--model=sonnet" ? "--model=opus" : argument,
+        ),
+      },
+    },
+  });
+  await sectionOpened("Provenance");
+  expect(within(cell("Model")).getByText("Opus")).toBeDefined();
+  expect(within(cell("Model")).getByText("--model=opus")).toBeDefined();
+  expect(within(cell("Model")).getByText("Overridden")).toBeDefined();
+  expect(screen.queryByText("Sonnet")).toBeNull();
+  expect(within(cell("Setup")).queryByText("Overridden")).toBeNull();
+  expect(screen.getByText("Pinned ·")).toBeDefined();
+  expect(
+    screen.getByRole("button", { name: "Pinned canonical JSON" }),
+  ).toBeDefined();
+  expect(screen.getByText("revision").nextElementSibling?.textContent).toBe(
+    revision,
+  );
+});
+
+test("an override the panel has no place for is listed under it by name, with its value", async () => {
+  await drawTicket(canonical, {
+    worker: { files: [{ path: "notes.md", content: "remember this" }] },
+  });
+  await sectionOpened("Provenance");
+  expect(screen.getByText("Also overridden")).toBeDefined();
+  const listed = screen.getByText("worker.files").closest("div");
+  expect(listed?.textContent).toContain("remember this");
+  expect(listed?.textContent).toContain("notes.md");
+});
+
+test("instructions the ticket overrode are drawn as the override, and the caption no longer says as configured", async () => {
+  await drawTicket(canonical, {
+    work: { instructions: ["Do it the overridden way."] },
+  });
+  await sectionOpened("Provenance");
+  expect(
+    within(instructions()).getByText("Do it the overridden way."),
+  ).toBeDefined();
+  expect(within(instructions()).queryByText(workText)).toBeNull();
+  expect(within(instructions()).queryByText(caption)).toBeNull();
+  expect(
+    within(instructions()).getByText(
+      "As configured with this ticket's overrides · a run's exact prompt is in its conversation",
+    ),
+  ).toBeDefined();
+  const heading = within(instructions()).getByRole("heading", {
+    name: /^Instructions/u,
+  });
+  expect(within(heading).getByText("Overridden")).toBeDefined();
 });

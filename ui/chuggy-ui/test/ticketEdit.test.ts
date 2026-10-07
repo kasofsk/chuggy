@@ -80,6 +80,7 @@ test("a draft reads back as the form that would revise it to itself", () => {
     targetBranchName: "main",
     repository,
     landingMode: "PullRequest",
+    overrides: {},
   });
   const commanding = [creationOffer(undefined, { commandedCheckStage: 1 })];
   const again = creationBodyFrom(commanding, form, [
@@ -116,13 +117,30 @@ test("the revision is written against the draft version it was read at", () => {
   });
 });
 
-/** The form draws no overrides, and a revision replaces the whole draft, so
- * the edit sends back the ones it read rather than clearing them. */
-test("the revision carries the draft's overrides through as they were", () => {
+/** A revision replaces the whole draft, so an untouched edit sends back the
+ * overrides it read, each held in the form as overridden. */
+test("a draft's overrides read back as overridden, and an untouched revision sends them as they were", () => {
   const overrides = {
-    worker: { setup: ["npm ci"] },
+    worker: {
+      mode: {
+        type: "SingleAgent" as const,
+        agent: "Claude" as const,
+        arguments: ["--model=opus"],
+      },
+      setup: ["npm ci"],
+    },
     work: { instructions: ["Do it this way."] },
   };
+  const form = editFormFrom(
+    { ...released, overrides },
+    [creationBinding(repository)],
+    "r3",
+  );
+  expect(form.overrides).toStrictEqual({
+    "worker.mode": overrides.worker.mode,
+    "worker.setup": ["npm ci"],
+    "work.instructions": ["Do it this way."],
+  });
   const edit = (draft: DraftResponse) =>
     editRevisionFrom(
       draft,
@@ -136,6 +154,50 @@ test("the revision carries the draft's overrides through as they were", () => {
   ).toStrictEqual(overrides);
   const plain = edit(released);
   expect(plain.assembled === "Body" && "overrides" in plain.body).toBe(false);
+});
+
+/** A list's empty lines are lines it holds, wherever they sit in it. */
+test("an untouched revision sends an override's empty lines as the draft holds them", () => {
+  const draft: DraftResponse = {
+    ...released,
+    overrides: { work: { instructions: ["Do A.", "", "Do B.", ""] } },
+  };
+  const assembled = editRevisionFrom(
+    draft,
+    creationOffers,
+    editFormFrom(draft, [creationBinding(repository)], "r3"),
+    [creationBinding(repository)],
+  );
+  expect(
+    assembled.assembled === "Body" && assembled.body.overrides,
+  ).toStrictEqual(draft.overrides);
+});
+
+test("the revision sends the overrides the form holds, not the draft's", () => {
+  const draft: DraftResponse = {
+    ...released,
+    overrides: { worker: { setup: ["npm ci"] }, practices: ["Kept"] },
+  };
+  const form = editFormFrom(draft, [creationBinding(repository)], "r3");
+  const assembled = editRevisionFrom(
+    draft,
+    creationOffers,
+    {
+      ...form,
+      overrides: { ...form.overrides, "worker.setup": ["make"] },
+    },
+    [creationBinding(repository)],
+  );
+  expect(
+    assembled.assembled === "Body" && assembled.body.overrides,
+  ).toStrictEqual({ worker: { setup: ["make"] }, practices: ["Kept"] });
+  const given = editRevisionFrom(
+    draft,
+    creationOffers,
+    { ...form, overrides: {} },
+    [creationBinding(repository)],
+  );
+  expect(given.assembled === "Body" && "overrides" in given.body).toBe(false);
 });
 
 /** The screen draws no dependency picker, and the revision does not trust that
