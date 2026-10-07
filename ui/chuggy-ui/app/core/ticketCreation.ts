@@ -2,6 +2,10 @@
  * What creating a ticket decides: which configuration shapes it, and the body
  * one form's contents become.
  *
+ * WHICH CONFIGURATION IS THE READER'S TO SAY. A configuration is who does the
+ * work, so a project offering several is asked which, and a form naming none
+ * sends nothing; only a sole offer of a read that missed none is taken unasked.
+ *
  * Every function here is pure, so the agent this screen is built towards drives
  * the same decisions a browser does by filling the same form value. The
  * assembled body is handed to the wire's own `draftCreationSchema` rather than
@@ -34,6 +38,7 @@ import type {
   ConfigurationSummary,
   DraftInitializationResponse,
   DraftResponse,
+  ProjectRepositoryListedResponse,
   ProjectRepositoryResponse,
 } from "../../../../src/contract/responses.ts";
 import type { z } from "zod";
@@ -43,6 +48,8 @@ import { operationStateSentence } from "./codeSentences.ts";
 import { configurationCommitShort, configurationLabel } from "./labels.ts";
 import type { Label } from "./labels.ts";
 import type { OperationStep } from "./operationFollow.ts";
+import { repositoryLabel } from "./projectRepositories.ts";
+import { repositoryConfigurations } from "./repositoryConfigurations.ts";
 import { threadUploadRefused } from "./threads.ts";
 
 /** The authoring half of the form, which is exactly what an initialization defaults. */
@@ -56,6 +63,8 @@ export type CreationStage = CreationAuthoring["program"][number];
  * types rather than the references they become.
  */
 export interface TicketCreationForm extends CreationAuthoring {
+  /** The offer this ticket is drawn under, by name, empty where none is chosen. */
+  readonly configuration: string;
   readonly title: string;
   readonly intent: string;
   readonly links: readonly string[];
@@ -73,6 +82,7 @@ export interface TicketCreationForm extends CreationAuthoring {
 }
 
 export type CreationField =
+  | "configuration"
   | "title"
   | "intent"
   | "links"
@@ -109,18 +119,222 @@ export function latestReadyConfiguration(
 }
 
 /**
- * The line a screen draws for the configuration it did not ask about, with the
- * commit it was imported from where it came from one, and the revision itself
- * on hover.
+ * An offer before its initialization is read: the name a reader chooses it
+ * by, the revision that read asks for, and its row in the listing. A bootstrap
+ * is offered on a binding's word and not looked for there, so it has no row.
  */
-export function creationConfigurationLabel(
+export interface CreationOfferListed {
+  readonly name: string;
+  readonly revision: string;
+  readonly listed: ConfigurationSummary | undefined;
+}
+
+/**
+ * One configuration a ticket may be drawn under, and the initialization that
+ * defaults and fences a form drawn under it.
+ */
+export interface CreationOffer {
+  /** What a reader chooses it by, which is what the form holds once they have. */
+  readonly name: string;
+  /** Its row in the listing, which neither a bootstrap nor a revision only a
+   * draft still holds has. */
+  readonly listed: ConfigurationSummary | undefined;
+  readonly initialization: DraftInitializationResponse;
+}
+
+/** The name a revision goes by: the one its repository declared it under, and
+ * itself where nothing declared it. */
+export function creationConfigurationName(
   configuration: ConfigurationSummary,
-): Label {
-  const label = configurationLabel(
-    configuration.revision,
-    configuration.version,
+): string {
+  const provenance = configuration.provenance;
+  return provenance.source === "Repository"
+    ? provenance.name
+    : configuration.revision;
+}
+
+type CreationNameSpelling = (configuration: ConfigurationSummary) => string;
+
+/** A declared name beside the repository that declares it, however that
+ * repository is spelled. */
+function creationNameQualified(
+  spelled: (repository: string) => string,
+): CreationNameSpelling {
+  return (configuration) => {
+    const provenance = configuration.provenance;
+    return provenance.source === "Repository"
+      ? `${provenance.name} · ${spelled(provenance.repository)}`
+      : configuration.revision;
+  };
+}
+
+/** The spellings a name is tried in, plainest first. */
+const creationNameSpellings: readonly CreationNameSpelling[] = [
+  creationConfigurationName,
+  creationNameQualified(repositoryLabel),
+  creationNameQualified((repository) => repository),
+];
+
+/**
+ * The name one offered revision is chosen by: its own, and beside its
+ * repository where two repositories declare one name — short where that tells
+ * them apart, whole where the two shorten alike. A name in `taken` is a
+ * bootstrap's, which no declared revision is offered under.
+ */
+function creationOfferName(
+  configuration: ConfigurationSummary,
+  offered: readonly ConfigurationSummary[],
+  taken: readonly string[],
+): string {
+  const apart = creationNameSpellings.find(
+    (spelling) =>
+      !taken.includes(spelling(configuration)) &&
+      offered.every(
+        (other) =>
+          other === configuration ||
+          spelling(other) !== spelling(configuration),
+      ),
   );
-  const commit = configurationCommitShort(configuration.provenance);
+  return (apart ?? creationConfigurationName)(configuration);
+}
+
+/**
+ * What the project holds for its live bindings, as the listing of them says:
+ * the ones whose repositories declared names into it, and the bootstrap
+ * revisions the ones declaring none are released under.
+ */
+function creationHeld(
+  repositories: readonly ProjectRepositoryListedResponse[],
+): {
+  readonly imported: readonly ProjectRepositoryListedResponse[];
+  readonly bootstraps: readonly string[];
+} {
+  const live = creationRepositories(repositories);
+  const bootstraps = live.flatMap(({ configurationsHeld: held }) =>
+    held?.result === "Bootstrapped" ? [held.revision] : [],
+  );
+  return {
+    imported: live.filter(
+      (binding) => binding.configurationsHeld?.result === "Imported",
+    ),
+    bootstraps: [...new Set(bootstraps)],
+  };
+}
+
+/**
+ * The configurations a new ticket may be drawn under, by name and in name
+ * order: what the newest commit of each live binding that declares has ready,
+ * and the bootstrap of each that declares nothing. A project whose live
+ * bindings hold neither has its newest ready revision and nothing else,
+ * whichever binding or author that came from.
+ */
+export function creationConfigurationsOffered(
+  configurations: readonly ConfigurationSummary[],
+  repositories: readonly ProjectRepositoryListedResponse[],
+): readonly CreationOfferListed[] {
+  const { imported, bootstraps } = creationHeld(repositories);
+  const newest = latestReadyConfiguration(configurations);
+  const fallback = newest === undefined ? [] : [newest];
+  const declared = imported
+    .flatMap((binding) =>
+      repositoryConfigurations(configurations, binding.repository),
+    )
+    .filter((summary) => summary.readiness === "Ready");
+  const listed =
+    imported.length === 0 && bootstraps.length === 0 ? fallback : declared;
+  const offered: readonly CreationOfferListed[] = [
+    ...listed.map((one) => ({
+      name: creationOfferName(one, listed, bootstraps),
+      revision: one.revision,
+      listed: one,
+    })),
+    ...bootstraps.map((revision) => ({
+      name: revision,
+      revision,
+      listed: undefined,
+    })),
+  ];
+  return offered.toSorted((left, right) => {
+    if (left.name === right.name) return 0;
+    return left.name < right.name ? -1 : 1;
+  });
+}
+
+/**
+ * Whether the listing read so far already decides what is offered, so a walk
+ * of it may stop. A live binding that declares holds it open until the rows
+ * of its newest commit are read, which they are once a row not its own
+ * follows them; with none declaring, one that holds a bootstrap needs no row,
+ * and otherwise the project's first ready revision is what the walk is for.
+ */
+export function creationConfigurationsDecided(
+  configurations: readonly ConfigurationSummary[],
+  repositories: readonly ProjectRepositoryListedResponse[],
+): boolean {
+  const { imported, bootstraps } = creationHeld(repositories);
+  if (imported.length > 0)
+    return imported.every((binding) => {
+      const newest = repositoryConfigurations(
+        configurations,
+        binding.repository,
+      );
+      return newest.length > 0 && newest.at(-1) !== configurations.at(-1);
+    });
+  return (
+    bootstraps.length > 0 ||
+    latestReadyConfiguration(configurations) !== undefined
+  );
+}
+
+/** The offer a name stands for, a name nothing offers standing for none. */
+export function creationOfferOf(
+  offers: readonly CreationOffer[],
+  name: string,
+): CreationOffer | undefined {
+  return offers.find((offer) => offer.name === name);
+}
+
+/**
+ * The name a form starts on: the sole offer of a read that missed none, where
+ * there is no choice to make, and otherwise the one this reader chose last
+ * where it is still offered. Among several, or under one that may not be all
+ * there are, with none remembered it starts on nothing, never on a guess.
+ */
+export function creationConfigurationStart(
+  offers: readonly CreationOffer[],
+  preferred: string | undefined,
+  partial = false,
+): string {
+  const sole = offers.length === 1 && !partial ? offers[0] : undefined;
+  if (sole !== undefined) return sole.name;
+  return creationOfferOf(offers, preferred ?? "")?.name ?? "";
+}
+
+/** Whether the form asks which configuration, which is everywhere but where
+ * the one offer is the one it already names. */
+export function creationConfigurationAsked(
+  offers: readonly CreationOffer[],
+  configuration: string,
+): boolean {
+  const sole = offers.length === 1 ? offers[0] : undefined;
+  return sole?.name !== configuration;
+}
+
+/**
+ * The line a screen draws for a configuration it did not ask about, with the
+ * commit it was imported from where the listing says one, and the revision
+ * itself on hover.
+ */
+export function creationConfigurationLabel(offer: CreationOffer): Label {
+  const held = offer.initialization.configuration;
+  const label = configurationLabel(
+    held.revision,
+    offer.listed?.version ?? held.version,
+  );
+  const commit =
+    offer.listed === undefined
+      ? undefined
+      : configurationCommitShort(offer.listed.provenance);
   const named = commit === undefined ? label.text : `${label.text} · ${commit}`;
   return { text: `Configuration · ${named}`, title: label.title };
 }
@@ -131,13 +345,12 @@ export function creationConfigurationLabel(
  * is its name, and an imported one is known by the name it was declared under.
  */
 export function creationBootstrapLine(
-  configuration: ConfigurationSummary,
+  offer: CreationOffer,
 ): string | undefined {
-  const provenance = configuration.provenance;
   const name =
-    provenance.source === "Repository"
-      ? provenance.name
-      : configuration.revision;
+    offer.listed === undefined
+      ? offer.name
+      : creationConfigurationName(offer.listed);
   return name === bootstrapConfigurationName
     ? "First ticket · writes this repository's configuration"
     : undefined;
@@ -148,9 +361,9 @@ export function creationBootstrapLine(
  * stopped reading and the authority refuses a brief against, so the form neither
  * offers it nor seeds itself with it.
  */
-export function creationRepositories(
-  bound: readonly ProjectRepositoryResponse[],
-): readonly ProjectRepositoryResponse[] {
+export function creationRepositories<Binding extends ProjectRepositoryResponse>(
+  bound: readonly Binding[],
+): readonly Binding[] {
   return bound.filter((binding) => binding.retiredAt === undefined);
 }
 
@@ -187,13 +400,24 @@ export function creationLandingDefault(
   return bound?.landing.mode ?? creationLandingUnbound;
 }
 
+/** The authoring a form holds while no configuration has defaulted it. */
+const creationAuthoringUndrawn: CreationAuthoring = {
+  dependencies: [],
+  program: [],
+};
+
 export function creationFormFrom(
-  initialization: DraftInitializationResponse,
+  offers: readonly CreationOffer[],
   repositories: readonly ProjectRepositoryResponse[],
+  preferred?: string,
+  partial = false,
 ): TicketCreationForm {
+  const configuration = creationConfigurationStart(offers, preferred, partial);
+  const drawn = creationOfferOf(offers, configuration);
   const repository = creationRepositoryDefault(repositories);
   return {
-    ...initialization.defaults,
+    ...(drawn?.initialization.defaults ?? creationAuthoringUndrawn),
+    configuration,
     title: "",
     intent: "",
     links: [],
@@ -224,6 +448,38 @@ export function creationRepositoryChosen(
       form.landingMode === seeded
         ? creationLandingDefault(repositories, repository)
         : form.landingMode,
+  };
+}
+
+/** A program as the widths of its stages, which is all one differs from
+ * another by: every key in it is its position. */
+function creationProgramWidths(program: readonly CreationStage[]): string {
+  return program.map((stage) => String(stage.evaluators.length)).join(",");
+}
+
+/**
+ * The form with another configuration named. A program the reader has not
+ * moved takes the new configuration's default and a moved one stands, as a
+ * landing does under another repository; everything typed is kept.
+ */
+export function creationConfigurationChosen(
+  form: TicketCreationForm,
+  offers: readonly CreationOffer[],
+  name: string,
+): TicketCreationForm {
+  const seeded =
+    creationOfferOf(offers, form.configuration)?.initialization.defaults ??
+    creationAuthoringUndrawn;
+  const chosen =
+    creationOfferOf(offers, name)?.initialization.defaults ??
+    creationAuthoringUndrawn;
+  const unmoved =
+    creationProgramWidths(form.program) ===
+    creationProgramWidths(seeded.program);
+  return {
+    ...form,
+    configuration: name,
+    program: unmoved ? chosen.program : form.program,
   };
 }
 
@@ -356,6 +612,8 @@ export const creationLandingWholeSentence =
  */
 export function creationFaultSentence(field: CreationField): string {
   switch (field) {
+    case "configuration":
+      return "a configuration is who does the work, so a ticket names which one it runs under";
     case "title":
       return `name this ticket in one line of at most ${String(briefTitleCharsMax)} characters`;
     case "intent":
@@ -515,17 +773,19 @@ function creationFinalizationOf(
 }
 
 /**
- * The brief a form becomes. A form adding no check lines or images sends none
- * rather than an empty list, and a form naming no title sends none rather than
- * an empty one.
+ * The brief a form becomes: no check lines or images rather than an empty
+ * list, and no title rather than an empty one. Check lines typed under a
+ * configuration that commands a stage for them are not sent under one that
+ * commands none, which draws no box to read them in.
  */
 function creationBriefOf(
   form: TicketCreationForm,
   branches: CreationBranches,
+  checksCommanded: boolean,
 ): unknown {
-  const checks = form.checks
-    .map((check) => check.trim())
-    .filter((check) => check !== "");
+  const checks = checksCommanded
+    ? form.checks.map((check) => check.trim()).filter((check) => check !== "")
+    : [];
   const title = form.title.trim();
   const repository = form.repository.trim();
   return {
@@ -541,27 +801,58 @@ function creationBriefOf(
 }
 
 /**
+ * What a form naming no offered configuration is told: that it names one, and
+ * every fault its brief earns besides. Nothing is said of the authoring or the
+ * fence, which are a configuration's and are not drawn without one.
+ */
+function creationUndrawnFaults(
+  brief: unknown,
+  stated: readonly CreationFault[],
+): CreationAssembly {
+  const parsed = draftCreationSchema.pick({ brief: true }).safeParse({ brief });
+  const unnamed: CreationFault = {
+    field: "configuration",
+    reason: creationFaultSentence("configuration"),
+  };
+  return {
+    assembled: "Faults",
+    faults: creationFaultsOf(parsed.success ? [] : parsed.error.issues, [
+      unnamed,
+      ...stated,
+    ]),
+  };
+}
+
+/**
  * The whole creation body, fence and all, or every field a reader has to
- * revisit. The fence is the initialization's own, so a body assembled from a
- * stale one is refused by the API rather than silently retargeted.
+ * revisit. The revision and the fence are those of the offer the form names,
+ * so a body assembled from a stale one is refused by the API rather than
+ * silently retargeted.
  */
 export function creationBodyFrom(
-  initialization: DraftInitializationResponse,
+  offers: readonly CreationOffer[],
   form: TicketCreationForm,
   repositories: readonly ProjectRepositoryResponse[],
 ): CreationAssembly {
+  const drawn = creationOfferOf(offers, form.configuration)?.initialization;
   const branches = creationBranchesOf(form);
+  const brief = creationBriefOf(
+    form,
+    branches,
+    drawn?.commandedCheckStage !== undefined,
+  );
+  const stated = creationStatedFaults(form, branches, repositories);
+  if (drawn === undefined) return creationUndrawnFaults(brief, stated);
   const candidate = {
-    configurationRevision: initialization.configuration.revision,
-    configurationDigest: initialization.fence.configurationDigest,
-    expectedProjectSequence: initialization.fence.projectSequence,
+    configurationRevision: drawn.configuration.revision,
+    configurationDigest: drawn.fence.configurationDigest,
+    expectedProjectSequence: drawn.fence.projectSequence,
     authoring: {
       dependencies: [...form.dependencies],
       program: [...form.program],
     },
-    brief: creationBriefOf(form, branches),
+    brief,
   };
-  const stated = creationStatedFaults(form, branches, repositories);
   const parsed = draftCreationSchema.safeParse(candidate);
   if (parsed.success && stated.length === 0)
     return { assembled: "Body", body: parsed.data };

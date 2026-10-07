@@ -2,26 +2,31 @@
  * The two motions a creation screen makes, over an API that answers whatever
  * this suite decides it answers.
  *
- * What is checked is where each motion stops: the walk for a ready revision,
- * the conflict that sends a reader back to the form, and the settlements that
- * are and are not a ticket to navigate to — for a creation, and for an edit,
- * whose revision and update are two requests in that order.
+ * What is checked is where each motion stops: the walk for what a ticket may
+ * be drawn under, the conflict that sends a reader back to the form, and the
+ * settlements that are and are not a ticket to navigate to — for a creation,
+ * and for an edit, whose revision and update are two requests in that order.
  */
 
 import { expect, test } from "vitest";
 
 import { nativeHttpBasePath } from "../../../src/contract/http.ts";
+import type { ProjectRepositoryListedResponse } from "../../../src/contract/responses.ts";
 import type { ApiPorts } from "../app/core/apiRequest.ts";
 import { configurationPagesMax } from "../app/core/apiRoutes.ts";
 import {
   createAndReleaseTicket,
   creationContextSentence,
+  creationOffersMax,
   readCreationContext,
   reviseAndUpdateTicket,
 } from "../app/core/ticketCreationRun.ts";
 import {
+  creationBinding,
+  creationDeclared,
   creationDraft,
   creationInitialization,
+  creationListed,
   creationPartition,
   creationSummary,
 } from "./ticketCreationFixture.ts";
@@ -79,75 +84,139 @@ function creationAnswers(
   };
 }
 
-test("the configuration is walked for, newest first, until one is ready", async () => {
-  const held = answering((_method, path) => {
-    if (path.includes("/configurations"))
-      return ok(
-        path.includes("cursor=next")
-          ? configurationsPage
-          : {
-              configurations: [creationSummary("r4", "Incomplete")],
-              nextCursor: "next",
-            },
-      );
-    return path.endsWith("/repositories")
-      ? ok({ repositories: [] })
-      : ok(creationInitialization);
+const chuggy = "https://forge.test/kasofsk/chuggy";
+const scratch = "https://forge.test/gdoteof/scratch";
+
+/** A binding whose repository declared names into the project. */
+function imported(repository: string): ProjectRepositoryListedResponse {
+  return creationListed(creationBinding(repository), "Imported");
+}
+
+/** A binding whose repository declares nothing, bound when the case says. */
+function bootstrapped(
+  repository: string,
+  boundAt: string,
+): ProjectRepositoryListedResponse {
+  return {
+    ...creationListed(creationBinding(repository), "Bootstrapped"),
+    boundAt,
+  };
+}
+
+function bindings(
+  ...repositories: readonly ProjectRepositoryListedResponse[]
+): Answer {
+  return ok({ repositories });
+}
+
+/** The initialization of whichever revision the path names. */
+function initialization(path: string): Answer {
+  return ok({
+    ...creationInitialization,
+    configuration: {
+      ...creationInitialization.configuration,
+      revision: decodeURIComponent(path.slice(path.lastIndexOf("/") + 1)),
+    },
   });
+}
+
+/** A project answering one listing, page by page, and the bindings given. */
+function project(
+  pages: (path: string) => unknown,
+  bound: Answer = bindings(),
+): ReturnType<typeof answering> {
+  return answering((_method, path) => {
+    if (path.endsWith("/repositories")) return bound;
+    if (path.includes("/configurations")) return ok(pages(path));
+    return initialization(path);
+  });
+}
+
+test("a project binding nothing is walked, newest first, until a revision is ready", async () => {
+  const held = project((path) =>
+    path.includes("cursor=next")
+      ? configurationsPage
+      : {
+          configurations: [creationSummary("r4", "Incomplete")],
+          nextCursor: "next",
+        },
+  );
   const read = await readCreationContext(held.ports, creationPartition);
-  expect(read.outcome === "Ok" && read.value.context).toBe("Ready");
-  expect(held.calls).toContain(`GET ${partitionBase}/draft-initializations/r3`);
-  expect(held.calls.at(-1)).toBe(`GET ${partitionBase}/repositories`);
+  expect(
+    read.outcome === "Ok" && read.value.context === "Ready"
+      ? read.value.offers.map((offer) => offer.name)
+      : undefined,
+  ).toStrictEqual(["r3"]);
+  expect(held.calls).toStrictEqual([
+    `GET ${partitionBase}/repositories`,
+    `GET ${partitionBase}/configurations`,
+    `GET ${partitionBase}/configurations?cursor=next`,
+    `GET ${partitionBase}/draft-initializations/r3`,
+  ]);
+});
+
+/** The listing a repository declaring several answers with: the newest commit
+ * by name descending, then the commit before it. */
+const declaredPage = {
+  configurations: [
+    creationDeclared("n-sonnet", chuggy, "development-sonnet"),
+    creationDeclared("n-development", chuggy, "development"),
+    creationDeclared("o-opus", chuggy, "development-opus", "Ready", "0b5c1d0"),
+    creationDeclared(
+      "o-development",
+      chuggy,
+      "development",
+      "Ready",
+      "0b5c1d0",
+    ),
+  ],
+  nextCursor: "next",
+};
+
+/**
+ * The first ready row of this listing is the name sorting last, which is the
+ * one a context holding a single configuration took for every ticket.
+ */
+test("a repository declaring several is read as each of them, with its own initialization", async () => {
+  const held = project(() => declaredPage, bindings(imported(chuggy)));
+  const read = await readCreationContext(held.ports, creationPartition);
+  if (read.outcome !== "Ok" || read.value.context !== "Ready")
+    throw new Error("the context was not ready");
+  expect(
+    read.value.offers.map((offer) => [
+      offer.name,
+      offer.initialization.configuration.revision,
+    ]),
+  ).toStrictEqual([
+    ["development", "n-development"],
+    ["development-sonnet", "n-sonnet"],
+  ]);
+  expect(read.value.partial).toBe(false);
+  expect(held.calls).toStrictEqual([
+    `GET ${partitionBase}/repositories`,
+    `GET ${partitionBase}/configurations`,
+    `GET ${partitionBase}/draft-initializations/n-development`,
+    `GET ${partitionBase}/draft-initializations/n-sonnet`,
+  ]);
 });
 
 /** The bindings are read in the same motion, and whole: whether the form asks
  * for a repository and what landing it starts on are both theirs to say, and
  * neither is the initialization's. */
 test("the context carries what the project binds", async () => {
-  const held = answering((_method, path) => {
-    if (path.includes("/configurations")) return ok(configurationsPage);
-    return path.endsWith("/repositories")
-      ? ok({
-          repositories: [
-            {
-              repository: "https://forge.test/kasofsk/chuggy",
-              boundAt: "2026-08-26T00:00:00Z",
-              landing: { mode: "Push" },
-              configured: true,
-            },
-          ],
-        })
-      : ok(creationInitialization);
-  });
+  const held = project(() => declaredPage, bindings(imported(chuggy)));
   const read = await readCreationContext(held.ports, creationPartition);
   expect(
     read.outcome === "Ok" && read.value.context === "Ready"
       ? read.value.repositories
       : undefined,
-  ).toStrictEqual([
-    {
-      repository: "https://forge.test/kasofsk/chuggy",
-      boundAt: "2026-08-26T00:00:00Z",
-      landing: { mode: "Push" },
-      configured: true,
-    },
-  ]);
+  ).toStrictEqual([imported(chuggy)]);
 });
 
 test("a project with a repository and no ready revision says exactly that", async () => {
-  const held = answering((_method, path) =>
-    path.endsWith("/repositories")
-      ? ok({
-          repositories: [
-            {
-              repository: "https://forge.test/kasofsk/chuggy",
-              boundAt: "2026-08-26T00:00:00Z",
-              landing: { mode: "Push" },
-              configured: true,
-            },
-          ],
-        })
-      : ok({ configurations: [creationSummary("r4", "Incomplete")] }),
+  const held = project(
+    () => ({ configurations: [creationSummary("r4", "Incomplete")] }),
+    bindings(imported(chuggy)),
   );
   const read = await readCreationContext(held.ports, creationPartition);
   expect(read.outcome === "Ok" && read.value.context).toBe(
@@ -156,28 +225,169 @@ test("a project with a repository and no ready revision says exactly that", asyn
 });
 
 test("a project that binds no repository says so rather than that nothing is ready", async () => {
-  const held = answering((_method, path) =>
-    path.endsWith("/repositories")
-      ? ok({ repositories: [] })
-      : ok({ configurations: [creationSummary("r4", "Incomplete")] }),
-  );
+  const held = project(() => ({
+    configurations: [creationSummary("r4", "Incomplete")],
+  }));
   const read = await readCreationContext(held.ports, creationPartition);
   expect(read.outcome === "Ok" && read.value.context).toBe("NoRepository");
 });
 
 test("a walk that runs out of budget knows nothing about the project", async () => {
-  const held = answering(() =>
-    ok({
-      configurations: [creationSummary("r4", "Incomplete")],
-      nextCursor: "next",
-    }),
-  );
+  const held = project(() => ({
+    configurations: [creationSummary("r4", "Incomplete")],
+    nextCursor: "next",
+  }));
   const read = await readCreationContext(held.ports, creationPartition);
   expect(read.outcome === "Ok" && read.value).toStrictEqual({
     context: "ReadyConfigurationUnknown",
     pagesRead: configurationPagesMax,
   });
-  expect(held.calls.length).toBe(configurationPagesMax);
+  expect(
+    held.calls.filter((call) => call.includes("/configurations")).length,
+  ).toBe(configurationPagesMax);
+});
+
+function offeredOf(
+  read: Awaited<ReturnType<typeof readCreationContext>>,
+): unknown {
+  return read.outcome === "Ok" && read.value.context === "Ready"
+    ? [read.value.partial, read.value.offers.map((offer) => offer.name)]
+    : read;
+}
+
+/**
+ * A second bound repository that declares, whose rows the budget never
+ * reached, may declare anything: the offers drawn from the first are handed
+ * over with the walk's shortfall beside them.
+ */
+test("a declaring binding the budget never reached leaves the read short, and says so", async () => {
+  const held = project(
+    (path) =>
+      path.includes("cursor=")
+        ? { configurations: [], nextCursor: "next" }
+        : declaredPage,
+    bindings(imported(chuggy), imported(scratch)),
+  );
+  const read = await readCreationContext(held.ports, creationPartition);
+  expect(offeredOf(read)).toStrictEqual([
+    true,
+    ["development", "development-sonnet"],
+  ]);
+  expect(
+    held.calls.filter((call) => call.includes("/configurations")).length,
+  ).toBe(configurationPagesMax);
+});
+
+const fabric = "https://forge.test/gdoteof/chuggy-fabric";
+
+/**
+ * One project's listing, whose first page is the declaring repository's two
+ * newest imports, written when the case says, and whose bootstrap is its
+ * oldest row, pages on. Nothing here reads past the first page, so the pages
+ * after it are not written.
+ */
+function declaringProject(
+  bound: readonly ProjectRepositoryListedResponse[],
+  createdAt: string,
+  bootstrap: Answer | undefined = undefined,
+): ReturnType<typeof answering> {
+  const page = {
+    configurations: declaredPage.configurations.map((row) => ({
+      ...row,
+      createdAt,
+    })),
+    nextCursor: "next",
+  };
+  return answering((_method, path) => {
+    if (path.endsWith("/repositories")) return bindings(...bound);
+    if (path.includes("/configurations")) return ok(page);
+    return path.endsWith("/bootstrap") && bootstrap !== undefined
+      ? bootstrap
+      : initialization(path);
+  });
+}
+
+const firstPageAndOffers = [
+  `GET ${partitionBase}/repositories`,
+  `GET ${partitionBase}/configurations`,
+  `GET ${partitionBase}/draft-initializations/bootstrap`,
+  `GET ${partitionBase}/draft-initializations/n-development`,
+  `GET ${partitionBase}/draft-initializations/n-sonnet`,
+];
+
+/**
+ * One repository declaring, one bound declaring nothing long before any row
+ * the first page holds, and three bound today. None that declares nothing is
+ * waited on, so the walk is one page, and the bootstrap they share is read once.
+ */
+test("bindings that declare nothing, however old, cost the walk nothing and are offered the bootstrap", async () => {
+  const today = "2026-10-07 08:00:00.5+00";
+  const held = declaringProject(
+    [
+      imported(chuggy),
+      bootstrapped(fabric, "2026-09-10 00:00:00+00"),
+      bootstrapped(scratch, today),
+      bootstrapped("https://forge.test/kasofsk/chuggy-common", today),
+      bootstrapped("https://forge.test/kasofsk/chuggy-linux", today),
+    ],
+    "2026-10-07 09:00:00.123456+00",
+  );
+  const read = await readCreationContext(held.ports, creationPartition);
+  expect(offeredOf(read)).toStrictEqual([
+    false,
+    ["bootstrap", "development", "development-sonnet"],
+  ]);
+  expect(held.calls).toStrictEqual(firstPageAndOffers);
+});
+
+/**
+ * A project whose first repository was bound declaring nothing, so that its
+ * bootstrap was authored then, and declares now; a second is bound declaring
+ * nothing. The bootstrap is older than every row the walk reads, and is read
+ * by the revision the second binding's answer names and not looked for.
+ */
+test("a bootstrap older than everything the walk reads is still what a later binding is offered", async () => {
+  const held = declaringProject(
+    [
+      { ...imported(chuggy), boundAt: "2026-08-01 00:00:00+00" },
+      bootstrapped(scratch, "2026-10-07 00:00:00+00"),
+    ],
+    "2026-09-10 00:00:00+00",
+  );
+  const read = await readCreationContext(held.ports, creationPartition);
+  expect(offeredOf(read)).toStrictEqual([
+    false,
+    ["bootstrap", "development", "development-sonnet"],
+  ]);
+  expect(held.calls).toStrictEqual(firstPageAndOffers);
+});
+
+/** Every offer is a request, so a repository declaring more than one read
+ * draws is offered the first of them by name and told that is not all. */
+test("a read draws no more offers than its bound, and says so past it", async () => {
+  const names = Array.from(
+    { length: creationOffersMax + 1 },
+    (_, index) => `name-${String(index).padStart(3, "0")}`,
+  );
+  const held = project(
+    () => ({
+      configurations: names
+        .toReversed()
+        .map((name) => creationDeclared(`n-${name}`, chuggy, name)),
+    }),
+    bindings(imported(chuggy)),
+  );
+  const read = await readCreationContext(held.ports, creationPartition);
+  if (read.outcome !== "Ok" || read.value.context !== "Ready")
+    throw new Error("the context was not ready");
+  expect(read.value.offers.map((offer) => offer.name)).toStrictEqual(
+    names.slice(0, creationOffersMax),
+  );
+  expect(read.value.partial).toBe(true);
+  expect(
+    held.calls.filter((call) => call.includes("/draft-initializations/"))
+      .length,
+  ).toBe(creationOffersMax);
 });
 
 test("not knowing, there being none and there being nowhere are drawn as three words", () => {
@@ -195,14 +405,83 @@ test("not knowing, there being none and there being nowhere are drawn as three w
   expect(sentences[2]).toContain(String(configurationPagesMax));
 });
 
-test("an initialization that cannot be read is the outcome, not a blank form", async () => {
+const refusal = (status: number, code: string): Answer => ({
+  status,
+  body: { error: { code } },
+});
+
+const unavailable = refusal(503, "Unavailable");
+
+/** A form is as drawable under the offers that were read as under all of
+ * them, so one that was not is left out and the shortfall said. */
+test("an offer whose initialization cannot be read is left out, and the read says so", async () => {
+  const held = answering((_method, path) => {
+    if (path.endsWith("/repositories")) return bindings(imported(chuggy));
+    if (path.includes("/configurations")) return ok(declaredPage);
+    return path.endsWith("/n-sonnet") ? unavailable : initialization(path);
+  });
+  const read = await readCreationContext(held.ports, creationPartition);
+  expect(offeredOf(read)).toStrictEqual([true, ["development"]]);
+});
+
+/** The listing of bindings said the project holds a bootstrap, so one that
+ * cannot be read is an offer left out like any other, whatever the refusal. */
+test.each([
+  ["is unavailable", unavailable],
+  ["is not found", refusal(404, "NotFound")],
+])(
+  "a bootstrap whose read %s is left out, and the read says so",
+  async (_ending, answered) => {
+    const held = declaringProject(
+      [imported(chuggy), bootstrapped(scratch, "2026-10-07 00:00:00+00")],
+      "2026-09-10 00:00:00+00",
+      answered,
+    );
+    const read = await readCreationContext(held.ports, creationPartition);
+    expect(offeredOf(read)).toStrictEqual([
+      true,
+      ["development", "development-sonnet"],
+    ]);
+  },
+);
+
+/** With nothing to draw a form under, why is the first offer's to say: the
+ * offers are read in name order, and so is what went wrong with them. */
+test("offers of which none can be read are the first one's failure, not a form with nothing to choose", async () => {
+  const held = answering((_method, path) => {
+    if (path.endsWith("/repositories")) return bindings(imported(chuggy));
+    if (path.includes("/configurations")) return ok(declaredPage);
+    return path.endsWith("/n-development")
+      ? refusal(500, "InternalError")
+      : refusal(404, "NotFound");
+  });
+  const read = await readCreationContext(held.ports, creationPartition);
+  expect(read.outcome).toBe("Fault");
+});
+
+/** A project whose bindings went unread is not one that binds nothing: read
+ * as that, it would be offered its first ready row, whatever declared it. */
+test("bindings that cannot be read are the outcome, and nothing is offered without them", async () => {
   const held = answering((_method, path) =>
-    path.includes("/configurations")
-      ? ok(configurationsPage)
-      : { status: 503, body: { error: { code: "Unavailable" } } },
+    path.endsWith("/repositories") ? unavailable : ok(declaredPage),
   );
   const read = await readCreationContext(held.ports, creationPartition);
   expect(read.outcome).toBe("Retryable");
+  expect(
+    held.calls.filter((call) => !call.endsWith("/repositories")),
+  ).toStrictEqual([]);
+});
+
+test("an initialization that cannot be read is the outcome, not a blank form", async () => {
+  const held = answering((_method, path) => {
+    if (path.endsWith("/repositories")) return bindings();
+    return path.includes("/configurations")
+      ? ok(configurationsPage)
+      : unavailable;
+  });
+  const read = await readCreationContext(held.ports, creationPartition);
+  expect(read.outcome).toBe("Retryable");
+  expect(held.calls).toContain(`GET ${partitionBase}/draft-initializations/r3`);
 });
 
 test("a fence the API refuses returns the reader to the form, unreleased", async () => {
@@ -248,54 +527,8 @@ test("a release that settles as succeeded is the one ticket to navigate to", asy
   expect(created).toStrictEqual({ created: "Created", ticket: 12 });
 });
 
-test("a release the actor refuses is drawn by its code, holding the draft", async () => {
-  const held = answering(
-    creationAnswers(() =>
-      ok({
-        operation: "op-1",
-        acceptedAt: "2026-08-26T00:00:00Z",
-        state: "Refused",
-        code: "AuthoringChanged",
-        refusedHead: 41,
-        refusedLifecycleGeneration: 1,
-      }),
-    ),
-  );
-  const created = await createAndReleaseTicket(
-    held.ports,
-    creationPartition,
-    releaseSubmission,
-    () => undefined,
-  );
-  expect(created.created).toBe("Refused");
-  expect(created.created === "Refused" && created.draft).toStrictEqual(
-    creationDraft,
-  );
-  expect(created.created === "Refused" && created.reason).toContain(
-    "authoring changed",
-  );
-});
-
-test("a draft already created is released again rather than created twice", async () => {
-  const held = answering(
-    creationAnswers(() =>
-      ok({
-        operation: "op-2",
-        acceptedAt: "2026-08-26T00:00:00Z",
-        state: "Cancelled",
-      }),
-    ),
-  );
-  const created = await createAndReleaseTicket(
-    held.ports,
-    creationPartition,
-    { ...releaseSubmission, draft: creationDraft },
-    () => undefined,
-  );
-  expect(created.created).toBe("Refused");
-  expect(held.calls.some((call) => call.endsWith("/drafts"))).toBe(false);
-});
-
+/** What a draft left held is, and what the submit after it does, is
+ * `ticketCreationHeld.test.ts`. */
 test("a follow that never settles ends in a reason, not in a navigation", async () => {
   const held = answering(
     creationAnswers(() =>
@@ -417,7 +650,7 @@ test("a revision that moves the dependencies is refused at the door, and nothing
   expect(updated).toStrictEqual({
     created: "Refused",
     reason: "what this ticket depends on cannot change once it is released",
-    draft: undefined,
+    held: undefined,
   });
   expect(held.calls).toStrictEqual([`PUT ${partitionBase}/drafts/12`]);
 });
@@ -434,6 +667,27 @@ test("a draft revised under the form is the stale ending, not a refusal", async 
     () => undefined,
   );
   expect(updated.created).toBe("Stale");
+});
+
+test("an update nobody saw settle says so, holding the revised draft", async () => {
+  const held = answering(
+    updateAnswers({
+      operation: "op-3",
+      acceptedAt: "2026-08-26T00:00:00Z",
+      state: "Pending",
+    }),
+  );
+  const updated = await reviseAndUpdateTicket(
+    held.ports,
+    creationPartition,
+    updateSubmission,
+    () => undefined,
+  );
+  expect(updated).toStrictEqual({
+    created: "Refused",
+    reason: "the operation is still pending after the attempt budget",
+    held: { draft: revisedDraft },
+  });
 });
 
 test("an update the machine refuses says which refusal, holding the revised draft", async () => {
@@ -461,6 +715,6 @@ test("an update the machine refuses says which refusal, holding the revised draf
     created: "Refused",
     reason:
       "this was written against revision 2 of #12, which is at revision 3 now",
-    draft: revisedDraft,
+    held: { draft: revisedDraft },
   });
 });

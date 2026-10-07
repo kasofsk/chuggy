@@ -8,7 +8,8 @@
  * on that YAML, because the author was typing there when they left.
  *
  * Images are attached in the form alone, so the YAML may name only those the
- * screen first read and those the form held when the text was opened.
+ * screen first read, those the form held when the text was opened, and those
+ * a text this browser kept was kept beside.
  *
  * The YAML side is a chunk of its own and this module names none of it but
  * the import, so a reader who never switches downloads neither the parser nor
@@ -18,12 +19,10 @@
 import { lazy, Suspense, useEffect, useId, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 
-import type {
-  DraftInitializationResponse,
-  ProjectRepositoryResponse,
-} from "../../../../../src/contract/responses.ts";
+import type { ProjectRepositoryResponse } from "../../../../../src/contract/responses.ts";
 import type {
   CreationFault,
+  CreationOffer,
   TicketCreationForm,
 } from "../../core/ticketCreation.ts";
 import { Button } from "../ui/Button.tsx";
@@ -32,6 +31,7 @@ import { ToggleGroup } from "../ui/ToggleGroup.tsx";
 import {
   EditorBoundary,
   ticketYamlForgotten,
+  ticketYamlImagesStored,
   ticketYamlStored,
 } from "./authoringGuards.tsx";
 import type { TicketYamlAuthoringProps } from "./TicketYamlAuthoring.tsx";
@@ -57,7 +57,7 @@ export interface TicketAuthoringProps {
   readonly initial: TicketCreationForm;
   readonly form: TicketCreationForm;
   readonly onForm: (form: TicketCreationForm) => void;
-  readonly initialization: DraftInitializationResponse;
+  readonly offers: readonly CreationOffer[];
   readonly repositories: readonly ProjectRepositoryResponse[];
   readonly dependenciesLocked: boolean;
   readonly assemble: (form: TicketCreationForm) => Assembled;
@@ -144,9 +144,27 @@ function FormSubmit(props: {
   );
 }
 
-export function TicketAuthoring(props: TicketAuthoringProps): ReactNode {
-  const { assemble, initial, initialization, onDirty, repositories } = props;
+/** What the YAML is read against, the images in it being the ones this
+ * screen knows the project holds. */
+function useYamlContext(props: TicketAuthoringProps) {
+  const { initial, offers, repositories, storeKey } = props;
   const locked = props.dependenciesLocked;
+  const held = props.form.images;
+  const [kept] = useState(() => ticketYamlImagesStored(storeKey));
+  return useMemo(
+    () => ({
+      base: initial,
+      offers,
+      repositories,
+      dependenciesLocked: locked,
+      images: [...new Set([...initial.images, ...held, ...kept])],
+    }),
+    [initial, offers, repositories, locked, held, kept],
+  );
+}
+
+export function TicketAuthoring(props: TicketAuthoringProps): ReactNode {
+  const { assemble, initial, onDirty } = props;
   const storeKey = props.storeKey;
   const [mode, setMode] = useState<AuthoringMode>(() =>
     ticketYamlStored(storeKey) === undefined ? "Form" : "YAML",
@@ -157,17 +175,7 @@ export function TicketAuthoring(props: TicketAuthoringProps): ReactNode {
   useEffect(() => {
     onDirty?.(dirty);
   }, [dirty, onDirty]);
-  const held = props.form.images;
-  const context = useMemo(
-    () => ({
-      base: initial,
-      initialization,
-      repositories,
-      dependenciesLocked: locked,
-      images: [...new Set([...initial.images, ...held])],
-    }),
-    [initial, initialization, repositories, locked, held],
-  );
+  const context = useYamlContext(props);
   const faultsOf = (held: TicketCreationForm): readonly CreationFault[] => {
     const assembled = assemble(held);
     return assembled.assembled === "Faults" ? assembled.faults : [];

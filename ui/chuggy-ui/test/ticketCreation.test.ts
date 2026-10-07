@@ -48,7 +48,8 @@ import {
   creationDigest,
   creationDraft,
   creationForm,
-  creationInitialization,
+  creationOffer,
+  creationOffers,
   creationSummary,
 } from "./ticketCreationFixture.ts";
 
@@ -69,14 +70,14 @@ function intentOfLines(chars: number): string {
 const noBindings: readonly ProjectRepositoryResponse[] = [];
 
 function faultFields(form: TicketCreationForm): readonly string[] {
-  const assembled = creationBodyFrom(creationInitialization, form, noBindings);
+  const assembled = creationBodyFrom(creationOffers, form, noBindings);
   return assembled.assembled === "Faults"
     ? assembled.faults.map((fault) => fault.field)
     : [];
 }
 
 function faultReasons(form: TicketCreationForm): readonly string[] {
-  const assembled = creationBodyFrom(creationInitialization, form, noBindings);
+  const assembled = creationBodyFrom(creationOffers, form, noBindings);
   return assembled.assembled === "Faults"
     ? assembled.faults.map((fault) => fault.reason)
     : [];
@@ -97,17 +98,19 @@ test("the configuration is the newest ready revision, and none is drawable", () 
 
 test("the line names the configuration and keeps its revision on hover", () => {
   expect(
-    creationConfigurationLabel({
-      ...creationSummary("repository:cfaca0a:chuggy", "Ready"),
-      provenance: {
-        source: "Repository",
-        repository: "kasofsk/chuggy",
-        commit: "cfaca0a0f14ec03845a4e01458ac6c3a56d52a23",
-        path: "configurations/chuggy.json",
-        name: "chuggy",
-      },
-      version: { name: "chuggy", number: 12 },
-    }),
+    creationConfigurationLabel(
+      creationOffer({
+        ...creationSummary("repository:cfaca0a:chuggy", "Ready"),
+        provenance: {
+          source: "Repository",
+          repository: "kasofsk/chuggy",
+          commit: "cfaca0a0f14ec03845a4e01458ac6c3a56d52a23",
+          path: "configurations/chuggy.json",
+          name: "chuggy",
+        },
+        version: { name: "chuggy", number: 12 },
+      }),
+    ),
   ).toEqual({
     text: "Configuration · chuggy #12 · cfaca0a",
     title: "repository:cfaca0a:chuggy",
@@ -115,54 +118,77 @@ test("the line names the configuration and keeps its revision on hover", () => {
 });
 
 test("a configuration with no version and no commit is named by its revision alone", () => {
-  expect(creationConfigurationLabel(creationSummary("r3", "Ready"))).toEqual({
+  expect(creationConfigurationLabel(creationOffer())).toEqual({
     text: "Configuration · r3",
     title: "r3",
+  });
+});
+
+/** A revision only a draft still holds has no row to say where it came from,
+ * so its line is the version its initialization carries and no commit. */
+test("an offer the listing no longer holds is drawn without a commit", () => {
+  const held = creationOffer({
+    ...creationSummary("repository:0b5c1d0:dropped", "Ready"),
+    version: { name: "dropped", number: 4 },
+  });
+  expect(
+    creationConfigurationLabel({ ...held, name: "dropped", listed: undefined }),
+  ).toEqual({
+    text: "Configuration · dropped #4",
+    title: "repository:0b5c1d0:dropped",
   });
 });
 
 /**
  * The bootstrap arrives authored at the revision its name is, or imported from
  * a repository seeded with it under that name. Either way the form says what
- * its ticket is for, and under any other name it says nothing.
+ * its ticket is for, and under any other name it says nothing — an offer with
+ * no row in the listing being known by the name it is offered under.
  */
 test("a form on the bootstrap says what its ticket is for, and no other does", () => {
   const line = "First ticket · writes this repository's configuration";
-  expect(creationBootstrapLine(creationSummary("bootstrap", "Ready"))).toBe(
-    line,
+  const authored = creationOffer(creationSummary("bootstrap", "Ready"));
+  expect(creationBootstrapLine(authored)).toBe(line);
+  expect(
+    creationBootstrapLine(
+      creationOffer({
+        ...creationSummary("repository:cfaca0a:bootstrap", "Ready"),
+        provenance: {
+          source: "Repository",
+          repository: "kasofsk/chuggy",
+          commit: "cfaca0a0f14ec03845a4e01458ac6c3a56d52a23",
+          path: "configurations/bootstrap.json",
+          name: "bootstrap",
+        },
+        version: { name: "bootstrap", number: 1 },
+      }),
+    ),
+  ).toBe(line);
+  expect(creationBootstrapLine({ ...authored, listed: undefined })).toBe(line);
+  expect(creationBootstrapLine(creationOffer())).toBe(undefined);
+  expect(creationBootstrapLine({ ...creationOffer(), listed: undefined })).toBe(
+    undefined,
   );
   expect(
-    creationBootstrapLine({
-      ...creationSummary("repository:cfaca0a:bootstrap", "Ready"),
-      provenance: {
-        source: "Repository",
-        repository: "kasofsk/chuggy",
-        commit: "cfaca0a0f14ec03845a4e01458ac6c3a56d52a23",
-        path: "configurations/bootstrap.json",
-        name: "bootstrap",
-      },
-      version: { name: "bootstrap", number: 1 },
-    }),
-  ).toBe(line);
-  expect(creationBootstrapLine(creationSummary("r3", "Ready"))).toBe(undefined);
-  expect(
-    creationBootstrapLine({
-      ...creationSummary("bootstrap", "Ready"),
-      provenance: {
-        source: "Repository",
-        repository: "kasofsk/chuggy",
-        commit: "cfaca0a0f14ec03845a4e01458ac6c3a56d52a23",
-        path: "configurations/everyday.json",
-        name: "everyday",
-      },
-      version: { name: "everyday", number: 1 },
-    }),
+    creationBootstrapLine(
+      creationOffer({
+        ...creationSummary("bootstrap", "Ready"),
+        provenance: {
+          source: "Repository",
+          repository: "kasofsk/chuggy",
+          commit: "cfaca0a0f14ec03845a4e01458ac6c3a56d52a23",
+          path: "configurations/everyday.json",
+          name: "everyday",
+        },
+        version: { name: "everyday", number: 1 },
+      }),
+    ),
   ).toBe(undefined);
 });
 
 test("a filled form becomes a body the wire's own parser accepts", () => {
   const assembled = creationBodyFrom(
-    creationInitialization,
+    creationOffers,
     creationForm({
       links: ["https://example.test/a"],
       branchName: "topic/one",
@@ -184,7 +210,7 @@ test("a filled form becomes a body the wire's own parser accepts", () => {
 
 test("a title is sent where one is typed, and omitted where the field is blank", () => {
   const titled = creationBodyFrom(
-    creationInitialization,
+    creationOffers,
     creationForm({ title: "  Ship it  " }),
     noBindings,
   );
@@ -192,11 +218,7 @@ test("a title is sent where one is typed, and omitted where the field is blank",
   if (titled.assembled !== "Body") return;
   expect(titled.body.brief.title).toBe("Ship it");
 
-  const untitled = creationBodyFrom(
-    creationInitialization,
-    creationForm(),
-    noBindings,
-  );
+  const untitled = creationBodyFrom(creationOffers, creationForm(), noBindings);
   expect(untitled.assembled).toBe("Body");
   if (untitled.assembled !== "Body") return;
   expect("title" in untitled.body.brief).toBe(false);
@@ -210,7 +232,7 @@ test("a title the wire will not take names the field a reader has to revisit", (
 
 test("the fence the initialization stated is what the body carries", () => {
   const assembled = creationBodyFrom(
-    creationInitialization,
+    creationOffers,
     creationForm(),
     noBindings,
   );
@@ -228,7 +250,7 @@ test("a branch is a name here and a full reference on the wire", () => {
   });
   expect(creationBranchOf("  ")).toStrictEqual({ named: "None" });
   const assembled = creationBodyFrom(
-    creationInitialization,
+    creationOffers,
     creationForm(),
     noBindings,
   );
@@ -247,7 +269,7 @@ test("a reference pasted where a name was asked for is refused, not prefixed twi
     named: "Prefixed",
   });
   const assembled = creationBodyFrom(
-    creationInitialization,
+    creationOffers,
     creationForm({ branchName: "refs/heads/main" }),
     noBindings,
   );
@@ -264,7 +286,7 @@ test("a reference pasted where a name was asked for is refused, not prefixed twi
  */
 test("a landing is on the wire, with a target only where one is named", () => {
   const landing = creationBodyFrom(
-    creationInitialization,
+    creationOffers,
     creationForm({ branchName: "topic/one", targetBranchName: "release/next" }),
     noBindings,
   );
@@ -277,7 +299,7 @@ test("a landing is on the wire, with a target only where one is named", () => {
     finalization: { mode: "Push", target: "refs/heads/release/next" },
   });
   const worked = creationBodyFrom(
-    creationInitialization,
+    creationOffers,
     creationForm({ branchName: "topic/one" }),
     noBindings,
   );
@@ -288,7 +310,7 @@ test("a landing is on the wire, with a target only where one is named", () => {
 
 test("a target names where work lands whether or not a branch says where it starts", () => {
   const assembled = creationBodyFrom(
-    creationInitialization,
+    creationOffers,
     creationForm({ targetBranchName: "release/next" }),
     noBindings,
   );
@@ -303,7 +325,7 @@ test("a target names where work lands whether or not a branch says where it star
 
 test("a target is refused the way a branch is, and says the same edit fixes it", () => {
   const assembled = creationBodyFrom(
-    creationInitialization,
+    creationOffers,
     creationForm({ targetBranchName: "refs/heads/main" }),
     noBindings,
   );
@@ -370,7 +392,7 @@ test("the links a brief carries are bounded and read over one scheme", () => {
     ["links"],
   );
   const assembled = creationBodyFrom(
-    creationInitialization,
+    creationOffers,
     creationForm({ links: ["  ", "https://a.test"] }),
     noBindings,
   );
@@ -379,14 +401,28 @@ test("the links a brief carries are bounded and read over one scheme", () => {
   ).toStrictEqual(["https://a.test"]);
 });
 
+/** The one offer of a project whose configuration commands a check stage. */
+const commanding = [creationOffer(undefined, { commandedCheckStage: 1 })];
+
+function checkFaultFields(checks: readonly string[]): readonly string[] {
+  const assembled = creationBodyFrom(
+    commanding,
+    creationForm({ checks }),
+    noBindings,
+  );
+  return assembled.assembled === "Faults"
+    ? assembled.faults.map((fault) => fault.field)
+    : [];
+}
+
 test("the check lines a brief appends are bounded, trimmed and omitted when empty", () => {
   const many = Array.from({ length: briefChecksMax + 1 }, () => "npm test");
-  expect(faultFields(creationForm({ checks: many }))).toStrictEqual(["checks"]);
-  expect(
-    faultFields(creationForm({ checks: ["x".repeat(briefLineCharsMax + 1)] })),
-  ).toStrictEqual(["checks"]);
+  expect(checkFaultFields(many)).toStrictEqual(["checks"]);
+  expect(checkFaultFields(["x".repeat(briefLineCharsMax + 1)])).toStrictEqual([
+    "checks",
+  ]);
   const appended = creationBodyFrom(
-    creationInitialization,
+    commanding,
     creationForm({ checks: ["  ", " npm test "] }),
     noBindings,
   );
@@ -394,11 +430,31 @@ test("the check lines a brief appends are bounded, trimmed and omitted when empt
     appended.assembled === "Body" && appended.body.brief.checks,
   ).toStrictEqual(["npm test"]);
   const none = creationBodyFrom(
-    creationInitialization,
+    commanding,
     creationForm({ checks: ["   "] }),
     noBindings,
   );
   expect(none.assembled === "Body" && none.body.brief.checks).toBe(undefined);
+});
+
+/**
+ * Check lines are typed under a configuration that commands a stage for them,
+ * and the form may then name one that commands none and draws no box. The
+ * release would be refused for lines its reader can no longer see.
+ */
+test("check lines are not sent under a configuration that commands no stage for them", () => {
+  const many = Array.from({ length: briefChecksMax + 1 }, () => "npm test");
+  expect(faultFields(creationForm({ checks: many }))).toStrictEqual([]);
+  const assembled = creationBodyFrom(
+    creationOffers,
+    creationForm({ checks: ["npm test"] }),
+    noBindings,
+  );
+  expect(assembled.assembled === "Body" && assembled.body.brief).toStrictEqual({
+    intent: "ship it",
+    links: [],
+    finalization: { mode: "Push" },
+  });
 });
 
 test("an intent is required, and bounded as a whole and by nothing a line at a time", () => {
@@ -429,7 +485,7 @@ test("an intent refused for its length is told the whole bound, and nothing abou
 
 test("an intent is sent under one newline, with its blank lines as written", () => {
   const assembled = creationBodyFrom(
-    creationInitialization,
+    creationOffers,
     creationForm({ intent: "a\r\n\r\n b \r" }),
     noBindings,
   );
@@ -500,14 +556,14 @@ test("the sole binding is the default, and two bindings default to neither", () 
   expect(creationRepositoryDefault([])).toBe("");
   expect(creationRepositoryDefault(oneBinding)).toBe(soleRepository);
   expect(creationRepositoryDefault(twoBindings)).toBe("");
-  expect(creationFormFrom(creationInitialization, oneBinding).repository).toBe(
+  expect(creationFormFrom(creationOffers, oneBinding).repository).toBe(
     soleRepository,
   );
 });
 
 test("a form naming no repository is refused where the project binds one", () => {
   const assembled = creationBodyFrom(
-    creationInitialization,
+    creationOffers,
     creationForm({ repository: "" }),
     twoBindings,
   );
@@ -520,7 +576,7 @@ test("a form naming no repository is refused where the project binds one", () =>
 
 test("a chosen repository is on the brief, and a project binding none sends no field", () => {
   const named = creationBodyFrom(
-    creationInitialization,
+    creationOffers,
     creationForm({ repository: soleRepository }),
     oneBinding,
   );
@@ -529,11 +585,7 @@ test("a chosen repository is on the brief, and a project binding none sends no f
   expect(named.body.brief.repository).toBe(soleRepository);
   expect(draftCreationSchema.parse(named.body)).toStrictEqual(named.body);
 
-  const none = creationBodyFrom(
-    creationInitialization,
-    creationForm(),
-    noBindings,
-  );
+  const none = creationBodyFrom(creationOffers, creationForm(), noBindings);
   expect(none.assembled).toBe("Body");
   if (none.assembled !== "Body") return;
   expect("repository" in none.body.brief).toBe(false);
@@ -556,7 +608,7 @@ test("a form's landing is the chosen repository's, and Push where none says", ()
   expect(creationLandingDefault(twoBindings, "")).toBe("Push");
   expect(creationLandingDefault(noBindings, soleRepository)).toBe("Push");
   expect(
-    creationFormFrom(creationInitialization, [
+    creationFormFrom(creationOffers, [
       creationBinding(soleRepository, "PullRequest"),
     ]).landingMode,
   ).toBe("PullRequest");
@@ -572,7 +624,7 @@ test("changing repositories re-seeds an untouched landing and leaves a touched o
   const fabric = "https://forge.test/kasofsk/chuggy-fabric";
   const docs = "https://forge.test/kasofsk/chuggy-docs";
   const bound = [...twoBindings, creationBinding(docs)];
-  const seeded = creationFormFrom(creationInitialization, bound);
+  const seeded = creationFormFrom(creationOffers, bound);
   const onPush = { ...seeded, repository: soleRepository };
   expect(creationRepositoryChosen(onPush, bound, fabric)).toStrictEqual({
     ...onPush,
@@ -590,7 +642,7 @@ test("changing repositories re-seeds an untouched landing and leaves a touched o
  * target, which a landing that lands nothing has no reference for. */
 test("a form landing on None sends its mode and no target", () => {
   const assembled = creationBodyFrom(
-    creationInitialization,
+    creationOffers,
     creationForm({
       landingMode: "None",
       targetBranchName: "release/next",
@@ -604,7 +656,7 @@ test("a form landing on None sends its mode and no target", () => {
 
 test("a chosen landing is on the wire whatever the repository's default is", () => {
   const assembled = creationBodyFrom(
-    creationInitialization,
+    creationOffers,
     creationForm(
       {
         repository: soleRepository,
@@ -708,7 +760,7 @@ test("a pull request naming no target is sent with the branch alone", () => {
     ),
   ).toStrictEqual([]);
   const assembled = creationBodyFrom(
-    creationInitialization,
+    creationOffers,
     creationForm({ landingMode: "PullRequest", branchName: "topic/one" }),
     noBindings,
   );
@@ -752,11 +804,7 @@ test("a form landing on None is not refused for a target it neither draws nor se
     targetBranchName: "refs/heads/release/next",
   });
   expect(faultFields(parked)).toStrictEqual([]);
-  const assembled = creationBodyFrom(
-    creationInitialization,
-    parked,
-    noBindings,
-  );
+  const assembled = creationBodyFrom(creationOffers, parked, noBindings);
   expect(assembled.assembled).toBe("Body");
   if (assembled.assembled !== "Body") return;
   expect(assembled.body.brief.finalization).toStrictEqual({ mode: "None" });
@@ -769,18 +817,14 @@ test("a form landing on None is not refused for a target it neither draws nor se
  * attaching none sends no list. */
 test("the images a form holds are the brief's, by identity, and bounded", () => {
   const assembled = creationBodyFrom(
-    creationInitialization,
+    creationOffers,
     creationForm({ images: ["artifact-1", "artifact-2"] }),
     noBindings,
   );
   expect(
     assembled.assembled === "Body" && assembled.body.brief.images,
   ).toStrictEqual(["artifact-1", "artifact-2"]);
-  const none = creationBodyFrom(
-    creationInitialization,
-    creationForm(),
-    noBindings,
-  );
+  const none = creationBodyFrom(creationOffers, creationForm(), noBindings);
   expect(none.assembled === "Body" && "images" in none.body.brief).toBe(false);
   const many = Array.from(
     { length: briefImagesMax + 1 },

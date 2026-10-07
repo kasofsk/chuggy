@@ -152,7 +152,8 @@ interface Drawing {
    * envelope: the row the write left, or the row it lost to. */
   readonly written?: readonly Response[];
   /** Whether every configurations page holds a cursor, so the walk hits the
-   * budget rather than the listing's end. */
+   * budget rather than the listing's end. The revisions are the first page's
+   * alone, a listing holding each one once. */
   readonly truncated?: boolean;
   /** The revisions the project answers with, the default being the fixture. */
   readonly declares?: readonly unknown[];
@@ -178,7 +179,9 @@ async function drawPage(drawing: Drawing = {}): Promise<readonly Sent[]> {
     if (url.includes("/configurations"))
       return Promise.resolve(
         answer({
-          configurations: drawing.declares ?? configurations.configurations,
+          configurations: url.includes("cursor=")
+            ? []
+            : (drawing.declares ?? configurations.configurations),
           ...(drawing.truncated === true ? { nextCursor: "more" } : {}),
         }),
       );

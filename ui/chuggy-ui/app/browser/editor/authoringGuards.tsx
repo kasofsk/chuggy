@@ -87,12 +87,65 @@ export function ticketYamlKept(key: string, text: string): void {
   }
 }
 
+/** Where the images a kept YAML may name are kept: beside it. */
+function ticketYamlImagesStoreKey(key: string): string {
+  return `${key}.images`;
+}
+
+/**
+ * The images a screen knew when it kept its YAML. A text names an image by
+ * identity and a screen takes only the identities it knows, so the copy is
+ * kept beside these: a screen opening on it has attached nothing yet, and
+ * would refuse every image it names.
+ */
+export function ticketYamlImagesStored(key: string): readonly string[] {
+  const stored = ticketYamlStored(ticketYamlImagesStoreKey(key));
+  if (stored === undefined) return [];
+  try {
+    const read: unknown = JSON.parse(stored);
+    return Array.isArray(read)
+      ? read.filter((one): one is string => typeof one === "string")
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+export function ticketYamlImagesKept(
+  key: string,
+  images: readonly string[],
+): void {
+  ticketYamlKept(ticketYamlImagesStoreKey(key), JSON.stringify(images));
+}
+
 export function ticketYamlForgotten(key: string): void {
   try {
     window.localStorage.removeItem(key);
+    window.localStorage.removeItem(ticketYamlImagesStoreKey(key));
   } catch {
     /** Nothing kept can be read back either. */
   }
+}
+
+/** Where the configuration a reader last chose for a new ticket is kept: per
+ * project, and for this browser alone. */
+function ticketConfigurationStoreKey(partition: PartitionIdentity): string {
+  return `chug.ticket-configuration.${partition.tenant}/${partition.project}`;
+}
+
+/** The configuration this reader last chose here, kept as the YAML is and as
+ * losable. */
+export function ticketConfigurationStored(
+  partition: PartitionIdentity,
+): string | undefined {
+  return ticketYamlStored(ticketConfigurationStoreKey(partition));
+}
+
+export function ticketConfigurationKept(
+  partition: PartitionIdentity,
+  name: string,
+): void {
+  ticketYamlKept(ticketConfigurationStoreKey(partition), name);
 }
 
 /**

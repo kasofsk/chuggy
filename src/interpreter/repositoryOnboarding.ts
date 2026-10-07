@@ -248,6 +248,12 @@ export type ProjectRepositoryConfigurationsResult =
       readonly reason: ProjectRepositoryConfigurationsDeferral;
     };
 
+/** What a project holds for one bound repository, which a step that deferred left none of. */
+export type ProjectRepositoryConfigurationsHeld = Exclude<
+  ProjectRepositoryConfigurationsResult,
+  { readonly result: "Deferred" }
+>;
+
 /** What binding one repository to one project came to. */
 export type ProjectRepositoryBindResult =
   | {
@@ -325,14 +331,19 @@ export type ProjectRepositoryCreateResult =
   | { readonly result: "Unavailable" };
 
 /**
- * One binding as the listing answers it. `configured` is whether a
- * configuration this repository declares has been imported, or the project
- * holds a bootstrap that still releases; where neither holds, the
- * configuration route runs the step again.
+ * One binding as the listing answers it. `configurationsHeld` is the names
+ * this repository declared into the project, or the bootstrap that still
+ * releases for it, and `configured` is its presence; where the project holds
+ * neither, the configuration route runs the step again.
  */
-export interface ProjectRepositoryListed extends ProjectRepositoryBound {
-  readonly configured: boolean;
-}
+export type ProjectRepositoryListed = ProjectRepositoryBound &
+  (
+    | { readonly configured: false }
+    | {
+        readonly configured: true;
+        readonly configurationsHeld: ProjectRepositoryConfigurationsHeld;
+      }
+  );
 
 /** What reading a project's bindings came to. */
 export type ProjectRepositoriesResult =
@@ -1277,7 +1288,7 @@ function heldConfigurations(
 function heldRepositoryConfigurations(
   held: RepositoryConfigurationsHeld,
   repository: RepositoryId,
-): ProjectRepositoryConfigurationsResult | undefined {
+): ProjectRepositoryConfigurationsHeld | undefined {
   const declared = held.declared.get(repository) ?? 0;
   if (declared > 0) return { result: "Imported", count: declared };
   if (
@@ -1288,7 +1299,18 @@ function heldRepositoryConfigurations(
   return undefined;
 }
 
-/** Every binding a reader may see, each with whether the step has left the project anything for it. */
+/** One binding beside what the step has left the project for it. */
+function listedRepository(
+  row: ProjectRepositoryBound,
+  held: RepositoryConfigurationsHeld,
+): ProjectRepositoryListed {
+  const configurationsHeld = heldRepositoryConfigurations(held, row.repository);
+  return configurationsHeld === undefined
+    ? { ...row, configured: false }
+    : { ...row, configured: true, configurationsHeld };
+}
+
+/** Every binding a reader may see, each with what the step has left the project for it. */
 async function projectRepositories(
   ports: RepositoryOnboardingPorts,
   principal: Principal,
@@ -1306,11 +1328,7 @@ async function projectRepositories(
   );
   return {
     result: "Repositories",
-    repositories: bound.map((row) => ({
-      ...row,
-      configured:
-        heldRepositoryConfigurations(held, row.repository) !== undefined,
-    })),
+    repositories: bound.map((row) => listedRepository(row, held)),
   };
 }
 

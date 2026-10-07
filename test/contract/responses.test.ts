@@ -77,6 +77,7 @@ import {
   projectRepositoryCreatedSchema,
   projectRepositoryLandingConflictSchema,
   projectRepositoryRetiredSchema,
+  projectRepositoryConfigurationsSchema,
   projectRepositoryConfiguredSchema,
   projectRepositoryResponseSchema,
   projectResponseSchema,
@@ -102,6 +103,7 @@ import { asConfigurationRevisionId } from "../../src/interpreter/authoring.ts";
 import type {
   ProjectRepositoryConfigurationsResult,
   ProjectRepositoryCreateResult,
+  ProjectRepositoryListed,
   ProjectRepositoryRulesetResult,
 } from "../../src/interpreter/repositoryOnboarding.ts";
 import {
@@ -1822,25 +1824,43 @@ test("a binding and a project's bindings name the repository and its moment", ()
     ),
     { repository: onboardingRepository },
   );
+  const binding = {
+    repository: onboardingRepository,
+    boundAt: instant,
+    landing: { mode: "Push" as const },
+  };
+  const listed: readonly ProjectRepositoryListed[] = [
+    {
+      ...binding,
+      configured: true,
+      configurationsHeld: { result: "Imported", count: 2 },
+    },
+    {
+      ...binding,
+      configured: true,
+      configurationsHeld: {
+        result: "Bootstrapped",
+        revision: asConfigurationRevisionId("bootstrap"),
+      },
+    },
+    { ...binding, configured: false },
+  ];
   const bound = projectRepositoriesResponseSchema.parse(
     projectRepositoriesResponse({
       result: "Repositories",
-      repositories: [
-        {
-          repository: onboardingRepository,
-          boundAt: instant,
-          landing: { mode: "Push" },
-          configured: true,
-        },
-      ],
+      repositories: listed,
     }).body,
   );
-  assert.deepEqual(bound.repositories[0], {
-    repository: onboardingRepository,
-    boundAt: instant,
-    landing: { mode: "Push" },
-    configured: true,
-  });
+  assert.deepEqual(bound.repositories, listed);
+  assert.throws(() =>
+    projectRepositoriesResponseSchema.parse({ repositories: [binding] }),
+  );
+});
+
+/** A step that deferred left the project nothing, so the listing has no such answer to give. */
+test("the listing answers what a project holds for a repository, never a step that deferred", () => {
+  const deferred = { result: "Deferred", reason: "NotConfigured" };
+  projectRepositoryConfigurationsSchema.parse(deferred);
   assert.throws(() =>
     projectRepositoriesResponseSchema.parse({
       repositories: [
@@ -1848,6 +1868,8 @@ test("a binding and a project's bindings name the repository and its moment", ()
           repository: onboardingRepository,
           boundAt: instant,
           landing: { mode: "Push" },
+          configured: true,
+          configurationsHeld: deferred,
         },
       ],
     }),

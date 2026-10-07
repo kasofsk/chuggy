@@ -10,7 +10,6 @@
 import { expect, test } from "vitest";
 
 import { nativeHttpBasePath } from "../../../src/contract/http.ts";
-import type { ConfigurationSummary } from "../../../src/contract/responses.ts";
 import type { ApiPorts } from "../app/core/apiRequest.ts";
 import { configurationPagesMax } from "../app/core/apiRoutes.ts";
 import {
@@ -18,37 +17,27 @@ import {
   repositoryConfigurationRow,
   repositoryConfigurations,
 } from "../app/core/repositoryConfigurations.ts";
-import { creationPartition, creationSummary } from "./ticketCreationFixture.ts";
+import {
+  creationDeclared as declared,
+  creationPartition,
+  creationSummary,
+} from "./ticketCreationFixture.ts";
 
 const chuggy = "https://forge.test/kasofsk/chuggy";
 const scratch = "https://forge.test/gdoteof/scratch";
 
-function declared(
-  revision: string,
-  repository: string,
-  name: string,
-  readiness: "Ready" | "Incomplete" = "Ready",
-): ConfigurationSummary {
-  const provenance: ConfigurationSummary["provenance"] = {
-    source: "Repository",
-    repository,
-    commit: "cfaca0a0f14ec03845a4e01458ac6c3a56d52a23",
-    path: `configurations/${name}.json`,
-    name,
-  };
-  return { ...creationSummary(revision, readiness), provenance };
-}
+const older = "0b5c1d0e9a7f4c3b2a1908f7e6d5c4b3a2f1e0d9";
 
 /** Newest first, which is the order the listing answers in. */
 const listing = [
   declared("r6", chuggy, "chuggy"),
   declared("r5", scratch, "scratch"),
   declared("r4", chuggy, "nightly"),
-  declared("r3", chuggy, "chuggy"),
+  declared("r3", chuggy, "chuggy", "Ready", older),
   creationSummary("r2", "Ready"),
 ];
 
-test("a page holds one row per name this repository declares, newest first", () => {
+test("a page holds what this repository's newest commit declares, in the listing's order", () => {
   expect(
     repositoryConfigurations(listing, chuggy).map(
       (summary) => summary.revision,
@@ -62,6 +51,21 @@ test("a page holds one row per name this repository declares, newest first", () 
   expect(repositoryConfigurations(listing, "https://forge.test/none")).toEqual(
     [],
   );
+});
+
+/** An import writes every declaration of its commit, so a name the newest
+ * commit lacks is one the repository stopped declaring. */
+test("a name the newest commit no longer declares is not a row", () => {
+  const held = [
+    declared("r9", chuggy, "nightly"),
+    declared("r8", chuggy, "chuggy"),
+    declared("r7", chuggy, "dropped", "Ready", older),
+    declared("r6", chuggy, "nightly", "Ready", older),
+    declared("r5", chuggy, "chuggy", "Ready", older),
+  ];
+  expect(
+    repositoryConfigurations(held, chuggy).map((summary) => summary.revision),
+  ).toStrictEqual(["r9", "r8"]);
 });
 
 test("a ready row states three facts, and an incomplete one states none", () => {

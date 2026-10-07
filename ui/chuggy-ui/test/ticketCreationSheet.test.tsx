@@ -17,9 +17,8 @@ import { creationStageOf } from "../app/core/ticketCreation.ts";
 import {
   creationBinding,
   creationForm,
-  creationInitialization,
+  creationOffer,
   creationPartition,
-  creationSummary,
 } from "./ticketCreationFixture.ts";
 import { answeringApi } from "./answeringApi.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
@@ -79,8 +78,7 @@ function drawEveryRow(dependenciesLocked: boolean): HTMLElement {
           form={form}
           onChange={() => undefined}
           faults={[]}
-          configuration={creationSummary("r3", "Ready")}
-          initialization={{ ...creationInitialization, commandedCheckStage: 1 }}
+          offers={[creationOffer(undefined, { commandedCheckStage: 1 })]}
           repositories={[binding]}
           dependenciesLocked={dependenciesLocked}
           api={{

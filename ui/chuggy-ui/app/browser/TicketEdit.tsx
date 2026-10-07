@@ -1,6 +1,8 @@
 /**
  * Editing a Pending ticket: the creation form, prefilled from the ticket's
- * draft, with its dependencies drawn and not offered.
+ * draft, with its dependencies drawn and not offered. It opens on the
+ * configuration the draft names, so a ticket is moved to another only by a
+ * reader who chooses one.
  *
  * One submit revises the draft and releases it as the ticket's update, written
  * against the revision the ticket read carries, and the navigation back to the
@@ -19,7 +21,11 @@ import type {
   ProjectRepositoryResponse,
   TicketResponse,
 } from "../../../../src/contract/responses.ts";
-import { apiDraft, apiTicket } from "../core/apiRoutes.ts";
+import {
+  apiDraft,
+  apiDraftInitialization,
+  apiTicket,
+} from "../core/apiRoutes.ts";
 import type { ApiPorts } from "../core/apiRequest.ts";
 import { base64urlFromBytes } from "../core/base64url.ts";
 import type { PanelState } from "../core/freshness.ts";
@@ -32,6 +38,7 @@ import { ticketRevisable } from "../core/ticketActions.ts";
 import { creationRepositories } from "../core/ticketCreation.ts";
 import type {
   CreationFault,
+  CreationOffer,
   TicketCreationForm,
 } from "../core/ticketCreation.ts";
 import {
@@ -40,7 +47,13 @@ import {
   reviseAndUpdateTicket,
 } from "../core/ticketCreationRun.ts";
 import type { CreationContext } from "../core/ticketCreationRun.ts";
-import { editFormFrom, editRevisionFrom } from "../core/ticketEdit.ts";
+import {
+  editFormFrom,
+  editOfferListed,
+  editOffersFrom,
+  editRevisionFrom,
+} from "../core/ticketEdit.ts";
+import type { EditOffers } from "../core/ticketEdit.ts";
 import { useApiPorts, usePanelList, usePanelResource } from "./api.ts";
 import { DataPanel, PanelUnready } from "./DataPanel.tsx";
 import {
@@ -75,7 +88,7 @@ function useEditSubmit(props: {
   readonly ports: ApiPorts;
   readonly partition: PartitionIdentity;
   readonly subject: EditSubject;
-  readonly context: Extract<CreationContext, { context: "Ready" }>;
+  readonly offers: readonly CreationOffer[];
   readonly repositories: readonly ProjectRepositoryResponse[];
   readonly onFaults: (faults: readonly CreationFault[]) => void;
   readonly onUpdated: () => void;
@@ -103,7 +116,7 @@ function useEditSubmit(props: {
   const submit = async (form: TicketCreationForm): Promise<void> => {
     const assembled = editRevisionFrom(
       subject.draft,
-      props.context.initialization,
+      props.offers,
       form,
       props.repositories,
     );
@@ -131,12 +144,7 @@ function useEditSubmit(props: {
     setAttempt(
       updated.created === "Stale"
         ? { attempt: "Stale", reason: updated.reason }
-        : {
-            attempt: "Failed",
-            reason: updated.reason,
-            draft: updated.draft,
-            operation,
-          },
+        : { attempt: "Failed", reason: updated.reason, held: updated.held },
     );
   };
 
@@ -151,7 +159,10 @@ export function EditForm(props: {
   readonly ports: ApiPorts;
   readonly partition: PartitionIdentity;
   readonly subject: EditSubject;
-  readonly context: Extract<CreationContext, { context: "Ready" }>;
+  readonly edit: EditOffers;
+  /** What the project binds, retired bindings among them. */
+  readonly bound: readonly ProjectRepositoryResponse[];
+  readonly partial?: boolean;
   readonly onUpdated: () => void;
   readonly onDirty?: (dirty: boolean) => void;
 }): ReactNode {
@@ -159,16 +170,16 @@ export function EditForm(props: {
     undefined,
   );
   const [faults, setFaults] = useState<readonly CreationFault[]>([]);
-  const bound = props.context.repositories;
+  const bound = props.bound;
   const repositories = useMemo(() => creationRepositories(bound), [bound]);
   const draft = props.subject.draft;
-  const initialization = props.context.initialization;
+  const { offers, configuration } = props.edit;
   const storeKey = ticketYamlStoreKey(props.partition, draft.ticket);
   const running = useEditSubmit({
     ports: props.ports,
     partition: props.partition,
     subject: props.subject,
-    context: props.context,
+    offers,
     repositories,
     onFaults: setFaults,
     onUpdated: () => {
@@ -177,8 +188,8 @@ export function EditForm(props: {
     },
   });
   const initial = useMemo(
-    () => editFormFrom(draft, repositories),
-    [draft, repositories],
+    () => editFormFrom(draft, repositories, configuration),
+    [draft, repositories, configuration],
   );
   const form = edited ?? initial;
   return (
@@ -187,12 +198,10 @@ export function EditForm(props: {
         initial={initial}
         form={form}
         onForm={setEdited}
-        initialization={initialization}
+        offers={offers}
         repositories={repositories}
         dependenciesLocked
-        assemble={(held) =>
-          editRevisionFrom(draft, initialization, held, repositories)
-        }
+        assemble={(held) => editRevisionFrom(draft, offers, held, repositories)}
         storeKey={storeKey}
         submitLabel="revise and release"
         busy={running.attempt.attempt === "Running"}
@@ -205,8 +214,8 @@ export function EditForm(props: {
             form={form}
             onChange={setEdited}
             faults={faults}
-            configuration={props.context.configuration}
-            initialization={initialization}
+            offers={offers}
+            partial={props.partial === true}
             repositories={repositories}
             dependenciesLocked
             api={props}
@@ -215,6 +224,94 @@ export function EditForm(props: {
       />
       <AttemptNote attempt={running.attempt} motion="Update" />
     </div>
+  );
+}
+
+interface EditOffersReadProps {
+  readonly partition: PartitionIdentity;
+  readonly draft: DraftResponse;
+  readonly offers: readonly CreationOffer[];
+  readonly children: (edit: EditOffers) => ReactNode;
+}
+
+/**
+ * A revision the project no longer offers, read for the initialization that
+ * lets an edit of a draft holding it keep it. One that cannot be read says so
+ * above a form that starts on no configuration.
+ */
+function EditOwnOfferRead(
+  props: EditOffersReadProps & { readonly revision: string },
+): ReactNode {
+  const { draft, offers, partition, revision } = props;
+  const state = usePanelResource(
+    partition,
+    "Configuration",
+    `${revision}/draft-initialization`,
+    (readPorts) => apiDraftInitialization(readPorts, partition, revision),
+  );
+  const own = state.state === "Ready" ? state.value : undefined;
+  const edit = useMemo(
+    () => editOffersFrom(draft, offers, own),
+    [draft, offers, own],
+  );
+  if (state.state === "Pending") return <PanelUnready state={state} />;
+  return (
+    <>
+      <PanelUnready state={state} />
+      {props.children(edit)}
+    </>
+  );
+}
+
+/**
+ * The offers an edit is drawn over, the draft's own revision read only where
+ * the project's offers do not already hold its configuration. Which revision
+ * that is, is decided as the screen opens: a submit revises the draft before
+ * its update is released and the draft is read again after, so a decision
+ * taken from the draft each time would redraw the form under the submit still
+ * reporting to it.
+ */
+function EditOffersRead(props: EditOffersReadProps): ReactNode {
+  const { draft, offers } = props;
+  const [unoffered] = useState(() =>
+    editOfferListed(draft, offers) ? undefined : draft.configurationRevision,
+  );
+  return unoffered === undefined ? (
+    props.children(editOffersFrom(draft, offers, undefined))
+  ) : (
+    <EditOwnOfferRead {...props} revision={unoffered} />
+  );
+}
+
+/** The form over one read subject, among the offers its draft is edited under. */
+function EditOffered(props: {
+  readonly ports: ApiPorts;
+  readonly partition: PartitionIdentity;
+  readonly subject: EditSubject;
+  readonly context: Extract<CreationContext, { context: "Ready" }>;
+  readonly onUpdated: () => void;
+  readonly onDirty: (dirty: boolean) => void;
+}): ReactNode {
+  const { context, partition, subject } = props;
+  return (
+    <EditOffersRead
+      partition={partition}
+      draft={subject.draft}
+      offers={context.offers}
+    >
+      {(edit) => (
+        <EditForm
+          ports={props.ports}
+          partition={partition}
+          subject={subject}
+          edit={edit}
+          bound={context.repositories}
+          partial={context.partial}
+          onDirty={props.onDirty}
+          onUpdated={props.onUpdated}
+        />
+      )}
+    </EditOffersRead>
   );
 }
 
@@ -280,7 +377,7 @@ export function TicketEdit(): ReactNode {
           context.context === "Ready" ? (
             <EditSubjectRead ticketState={ticketState} draftState={draftState}>
               {(subject) => (
-                <EditForm
+                <EditOffered
                   ports={ports}
                   partition={partition}
                   subject={subject}

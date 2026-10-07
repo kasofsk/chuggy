@@ -14,6 +14,7 @@ import type { projectRepositoryLandingSchema } from "../../../../src/contract/re
 import { projectRepositoryLandingConflictSchema } from "../../../../src/contract/responses.ts";
 import type {
   ProjectRepositoriesResponse,
+  ProjectRepositoryListedResponse,
   ProjectRepositoryResponse,
 } from "../../../../src/contract/responses.ts";
 import type { BriefFinalizationMode } from "../../../../src/contract/rosters.ts";
@@ -109,6 +110,16 @@ export function repositoryLandingAnswered(
   return { saved: "Failed", reason: panelReason(result) };
 }
 
+/** What only the listing says of a binding: what the project holds for it. */
+function projectRepositoryHolding(
+  row: ProjectRepositoryListedResponse,
+): Pick<ProjectRepositoryListedResponse, "configured" | "configurationsHeld"> {
+  const { configured, configurationsHeld } = row;
+  return configurationsHeld === undefined
+    ? { configured }
+    : { configured, configurationsHeld };
+}
+
 /**
  * The bindings this page holds with one row's binding replaced and what only
  * the listing says of it kept. A write that landed IS the newest read of that
@@ -123,7 +134,7 @@ export function projectRepositoriesWith(
     ...held,
     repositories: held.repositories.map((row) =>
       row.repository === binding.repository
-        ? { ...binding, configured: row.configured }
+        ? { ...binding, ...projectRepositoryHolding(row) }
         : row,
     ),
   };

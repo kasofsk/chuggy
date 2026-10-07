@@ -137,23 +137,35 @@ test("only the moved code with a readable body is a conflict", () => {
  * the write answered replaces the stale one, keeps what only the listing says
  * of it, and no other row moves. */
 test("a written row replaces its own, and the page finds the row it is about", () => {
+  const holding = {
+    configured: true,
+    configurationsHeld: { result: "Imported" as const, count: 2 },
+  };
   const held = {
     repositories: [
-      { ...binding(chuggy, "Push"), configured: false },
-      { ...binding(scratch, "Push"), configured: true },
+      { ...binding(chuggy, "Push"), ...holding },
+      { ...binding(scratch, "Push"), configured: false },
     ],
   };
   expect(
     projectRepositoriesWith(held, binding(chuggy, "PullRequest")),
   ).toStrictEqual({
     repositories: [
-      { ...binding(chuggy, "PullRequest"), configured: false },
-      { ...binding(scratch, "Push"), configured: true },
+      { ...binding(chuggy, "PullRequest"), ...holding },
+      { ...binding(scratch, "Push"), configured: false },
+    ],
+  });
+  expect(
+    projectRepositoriesWith(held, binding(scratch, "PullRequest")),
+  ).toStrictEqual({
+    repositories: [
+      { ...binding(chuggy, "Push"), ...holding },
+      { ...binding(scratch, "PullRequest"), configured: false },
     ],
   });
   expect(projectRepositoryBound(held, scratch)).toStrictEqual({
     ...binding(scratch, "Push"),
-    configured: true,
+    configured: false,
   });
   expect(projectRepositoryBound(held, "https://forge.test/kasofsk/none")).toBe(
     undefined,

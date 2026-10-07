@@ -17,20 +17,31 @@ import {
 } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
+import { nativeHttpBasePath } from "../../../src/contract/http.ts";
 import { ticketYamlStoreKey } from "../app/browser/editor/authoringGuards.tsx";
 import { CreationForm } from "../app/browser/TicketCreation.tsx";
 import type { ApiPorts } from "../app/core/apiRequest.ts";
+import { creationStageOf } from "../app/core/ticketCreation.ts";
+import type { CreationOffer } from "../app/core/ticketCreation.ts";
 import { creationContextList } from "../app/core/ticketCreationRun.ts";
 import { answeringApi } from "./answeringApi.ts";
 import type { Sent } from "./answeringApi.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import {
+  creationDeclared,
   creationDraft,
-  creationInitialization,
+  creationOffer,
+  creationOffers,
   creationPartition,
-  creationSummary,
+  creationYamlKeptUnasked,
 } from "./ticketCreationFixture.ts";
-import { ticketReleasing } from "./ticketReleasing.tsx";
+import {
+  ticketDoor,
+  ticketDoorAnswers,
+  ticketDoorDecides,
+  ticketRefusedFirst,
+  ticketReleasing,
+} from "./ticketReleasing.tsx";
 
 vi.mock(
   "../app/browser/editor/TicketEditor.tsx",
@@ -53,7 +64,11 @@ function api(): { readonly ports: ApiPorts; readonly sent: Sent[] } {
   return answeringApi(ticketReleasing);
 }
 
-function draw(ports: ApiPorts, created: number[] = []): boolean[] {
+function draw(
+  ports: ApiPorts,
+  created: number[] = [],
+  offers: readonly CreationOffer[] = creationOffers,
+): boolean[] {
   const dirty: boolean[] = [];
   render(
     <QueryClientProvider client={new QueryClient()}>
@@ -63,11 +78,12 @@ function draw(ports: ApiPorts, created: number[] = []): boolean[] {
         queryKey={creationContextList(creationPartition).key}
         context={{
           context: "Ready",
-          configuration: creationSummary("r3", "Ready"),
-          initialization: creationInitialization,
+          offers,
+          partial: false,
           repositories: [],
         }}
         onCreated={(ticket) => created.push(ticket)}
+        existing={(ticket) => <a href="/there">Ticket {ticket}</a>}
         onDirty={(held) => dirty.push(held)}
       />
     </QueryClientProvider>,
@@ -180,4 +196,176 @@ test("switching back to the form forgets the kept copy", async () => {
     screen.getByPlaceholderText<HTMLTextAreaElement>("what this ticket is for")
       .value,
   ).toBe("kept");
+});
+
+const chuggy = "https://forge.test/kasofsk/chuggy";
+
+const several = [
+  creationOffer(creationDeclared("n-development", chuggy, "development")),
+  creationOffer(creationDeclared("n-sonnet", chuggy, "development-sonnet")),
+];
+
+/** The choice is one field under two views, so naming it in the text is
+ * choosing it: the form holds it, the draft is pinned by it, and the next new
+ * ticket here starts on it. */
+test("a configuration named in the YAML is the one chosen, sent and remembered", async () => {
+  const held = api();
+  const created: number[] = [];
+  draw(held.ports, created, several);
+  const editor = await toYaml();
+  expect(editor.value.startsWith('configuration: ""\n')).toBe(true);
+  type(editor, "configuration: development-opus\nintent: ship it\n");
+  expect(screen.getByRole("list", { name: "Problems" }).textContent).toContain(
+    "name one of development, development-sonnet",
+  );
+  type(editor, "configuration: development-sonnet\nintent: ship it\n");
+  fireEvent.click(screen.getByRole("radio", { name: "Form" }));
+  expect(
+    screen.getByRole("button", { name: /^Configuration/u }).textContent,
+  ).toContain("development-sonnet");
+  fireEvent.click(screen.getByRole("button", { name: "Create ticket" }));
+  await waitFor(() => {
+    expect(created).toStrictEqual([creationDraft.ticket]);
+  });
+  expect(
+    held.sent.find((one) => one.path.endsWith("/drafts"))?.body,
+  ).toMatchObject({ configurationRevision: "n-sonnet" });
+  cleanup();
+
+  draw(api().ports, [], several);
+  expect(
+    screen.getByRole("button", { name: /^Configuration/u }).textContent,
+  ).toContain("development-sonnet");
+});
+
+/**
+ * The kept text writes dependencies and a program, which are a configuration's
+ * and which a form naming none has nowhere to hold. So the screen stays on the
+ * YAML, with its copy, until the text names one, and then loses neither.
+ */
+test("a kept YAML naming no configuration holds the screen until it names one, and loses nothing", async () => {
+  window.localStorage.setItem(storeKey, creationYamlKeptUnasked);
+  const held = api();
+  const created: number[] = [];
+  draw(held.ports, created, several);
+  const editor = await screen.findByRole<HTMLTextAreaElement>("textbox", {
+    name: "Ticket YAML",
+  });
+  expect(editor.value).toBe(creationYamlKeptUnasked);
+  await screen.findByText("fix the YAML to switch back to the form");
+  fireEvent.click(screen.getByRole("radio", { name: "Form" }));
+  expect(screen.getByRole("textbox", { name: "Ticket YAML" })).toBeDefined();
+  expect(window.localStorage.getItem(storeKey)).toBe(creationYamlKeptUnasked);
+
+  type(editor, `configuration: development\n${creationYamlKeptUnasked}`);
+  fireEvent.click(screen.getByRole("radio", { name: "Form" }));
+  fireEvent.click(screen.getByRole("button", { name: "Create ticket" }));
+  await waitFor(() => {
+    expect(created).toStrictEqual([creationDraft.ticket]);
+  });
+  expect(
+    held.sent.find((one) => one.path.endsWith("/drafts"))?.body,
+  ).toMatchObject({
+    configurationRevision: "n-development",
+    authoring: {
+      dependencies: [7],
+      program: [creationStageOf(2, 1), creationStageOf(1, 2)],
+    },
+    brief: { title: "Ship it", intent: "do it" },
+  });
+});
+
+/** The submit the YAML asks about, answered. */
+async function submitAsked(): Promise<void> {
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Create ticket" }));
+  const asked = await screen.findByRole("dialog");
+  fireEvent.click(within(asked).getByRole("button", { name: "Create ticket" }));
+}
+
+/** The text's submit is the form's, so a draft an earlier one left held is
+ * read and revised to what the text now names rather than released as it
+ * was. */
+test("a configuration named in the YAML after a refused release is what the held draft is revised to", async () => {
+  const held = answeringApi(
+    ticketDoorAnswers(ticketDoor(), ticketRefusedFirst),
+  );
+  const created: number[] = [];
+  draw(held.ports, created, several);
+  const editor = await toYaml();
+  type(editor, "configuration: development\nintent: ship it\n");
+  await submitAsked();
+  await screen.findByText(/was created and not released/u);
+  type(editor, "configuration: development-sonnet\nintent: ship it\n");
+  await submitAsked();
+  await waitFor(() => {
+    expect(created).toStrictEqual([creationDraft.ticket]);
+  });
+  const written = held.sent.filter((one) => one.path.includes("/drafts"));
+  expect(written.map((one) => one.method)).toStrictEqual([
+    "POST",
+    "GET",
+    "PUT",
+  ]);
+  expect(written.map((one) => one.body)).toMatchObject([
+    { configurationRevision: "n-development" },
+    undefined,
+    {
+      expectedVersion: creationDraft.authoringVersion,
+      configurationRevision: "n-sonnet",
+    },
+  ]);
+});
+
+/**
+ * The text's submit ends where the form's does. A release nobody saw settle
+ * had made the ticket, so a text changed since is told of that ticket, writes
+ * nothing to its draft, and is still kept: what it says is in no ticket.
+ */
+test("a YAML changed over a release that had gone through is told of its ticket, written nowhere and still kept", async () => {
+  const door = ticketDoor();
+  const held = answeringApi(ticketDoorAnswers(door, () => "Pending"));
+  const created: number[] = [];
+  draw(held.ports, created, several);
+  const editor = await toYaml();
+  type(editor, "configuration: development\nintent: ship it\n");
+  await submitAsked();
+  await screen.findByText(/whether it was released is not known/u);
+  ticketDoorDecides(door, door.releases[0], "Succeeded");
+  const from = held.sent.length;
+  const changed = "configuration: development\nintent: ship that\n";
+  type(editor, changed);
+  await submitAsked();
+  const told = await screen.findByText(/already exists/u);
+  expect(told.textContent).toBe(
+    "#12 already exists: an earlier release of this draft went through, and what has been changed here since is not in it — Ticket 12",
+  );
+  expect(
+    held.sent.slice(from).map((one) => `${one.method} ${one.path}`),
+  ).toStrictEqual([
+    `GET ${nativeHttpBasePath}/tenants/acme/projects/atlas/drafts/12`,
+  ]);
+  expect(created).toStrictEqual([]);
+  expect(window.localStorage.getItem(storeKey)).toBe(changed);
+});
+
+/** Naming none is not a choice: the name chosen before it stays the one the
+ * next new ticket here starts on. */
+test("a text that stops naming a configuration does not forget the one chosen", async () => {
+  draw(api().ports, [], several);
+  const editor = await toYaml();
+  type(editor, "configuration: development-sonnet\nintent: ship it\n");
+  type(editor, 'configuration: ""\nintent: ship it\n');
+  fireEvent.click(screen.getByRole("radio", { name: "Form" }));
+  expect(
+    screen.getByRole("button", { name: /^Configuration/u }).textContent,
+  ).toContain("Choose");
+  cleanup();
+
+  draw(api().ports, [], several);
+  expect(
+    screen.getByRole("button", { name: /^Configuration/u }).textContent,
+  ).toContain("development-sonnet");
 });

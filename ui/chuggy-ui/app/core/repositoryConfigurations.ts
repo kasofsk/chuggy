@@ -2,10 +2,13 @@
  * What one repository declares under `.chug/configurations`, as the rows its
  * page draws.
  *
- * The listing arrives newest first, so the first revision of a name is that
- * name's current one and the rest are its history, which this page is not.
- * Only what a reader can act on is drawn: an incomplete revision decides
- * nothing yet and carries none of the three facts, so it is a row saying so.
+ * An import writes every declaration of the commit it reads, and the listing
+ * arrives newest first, so the rows of the first commit it holds for a
+ * repository are the whole of what that repository declares now. Older commits
+ * are its history, which this page is not, and a name only they carry is one
+ * the repository stopped declaring. Only what a reader can act on is drawn: an
+ * incomplete revision decides nothing yet and carries none of the three facts,
+ * so it is a row saying so.
  */
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
@@ -31,20 +34,20 @@ export interface RepositoryConfigurationRow {
   readonly facts: RepositoryConfigurationFacts | undefined;
 }
 
-/** The newest revision of each name this repository declares, newest first. */
+/** The revisions this repository's newest imported commit declares, in the
+ * listing's order. */
 export function repositoryConfigurations(
   configurations: readonly ConfigurationSummary[],
   repository: string,
 ): readonly ConfigurationSummary[] {
-  const named = new Set<string>();
+  let newest: string | undefined;
   const held: ConfigurationSummary[] = [];
   for (const summary of configurations) {
     const provenance = summary.provenance;
     if (provenance.source !== "Repository") continue;
     if (provenance.repository !== repository) continue;
-    if (named.has(provenance.name)) continue;
-    named.add(provenance.name);
-    held.push(summary);
+    newest ??= provenance.commit;
+    if (provenance.commit === newest) held.push(summary);
   }
   return held;
 }
@@ -66,6 +69,10 @@ export function repositoryConfigurationRow(
   };
 }
 
+/** What a screen says of a walk the budget cut short, the revisions it did
+ * not reach being otherwise indistinguishable from ones that do not exist. */
+export const configurationsPartialLabel = "Not every configuration was read";
+
 /** What a walk of the listing read, and whether the budget cut it short. */
 export interface ProjectConfigurationsRead {
   readonly configurations: readonly ConfigurationSummary[];
@@ -73,7 +80,8 @@ export interface ProjectConfigurationsRead {
 }
 
 /**
- * Every revision the project holds, read to exhaustion under a page budget.
+ * The project's revisions, newest first, read to the listing's end under a
+ * page budget, or only until a caller has enough of them.
  *
  * A WALK THAT STOPS SAYS SO: a page whose rows all fall past the budget would
  * otherwise read as a repository that declares nothing.
@@ -81,6 +89,7 @@ export interface ProjectConfigurationsRead {
 export async function readProjectConfigurations(
   ports: ApiPorts,
   partition: PartitionIdentity,
+  enough: (held: readonly ConfigurationSummary[]) => boolean = () => false,
 ): Promise<ApiResult<ProjectConfigurationsRead>> {
   const held: ConfigurationSummary[] = [];
   let cursor: string | undefined;
@@ -89,10 +98,8 @@ export async function readProjectConfigurations(
     if (answered.outcome !== "Ok") return answered;
     held.push(...answered.value.configurations);
     cursor = answered.value.nextCursor;
-    if (cursor === undefined) break;
+    if (cursor === undefined || enough(held))
+      return { outcome: "Ok", value: { configurations: held, partial: false } };
   }
-  return {
-    outcome: "Ok",
-    value: { configurations: held, partial: cursor !== undefined },
-  };
+  return { outcome: "Ok", value: { configurations: held, partial: true } };
 }
