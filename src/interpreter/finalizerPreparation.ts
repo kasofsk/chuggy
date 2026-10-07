@@ -429,9 +429,29 @@ export type ProjectArtifactWritten =
   | { readonly written: "Artifact"; readonly digest: ArtifactDigest }
   | { readonly written: "Unavailable"; readonly retryAfterSeconds: number };
 
+/** One project-owned artifact a caller reads back, named by its own minted identity. */
+export interface ProjectArtifactReadRequest {
+  readonly partition: Partition;
+  readonly artifact: ProjectArtifactId;
+}
+
+/**
+ * What reading one project-owned artifact's bytes found. `NotFound` stands for
+ * an identity this project never wrote and one a project wrote that this
+ * partition does not own alike, for `./resultManifest.ts`'s reason: which of
+ * the two it was is not a fact a caller who may not read it is owed.
+ */
+export type ProjectArtifactRead =
+  | { readonly read: "Content"; readonly content: Uint8Array }
+  | { readonly read: "NotFound" }
+  | { readonly read: "Unavailable"; readonly retryAfterSeconds: number };
+
 /** Where a finalization's own evidence is stored, inside the project boundary it was written under. */
 export interface ProjectArtifactPort {
   writeArtifact(write: ProjectArtifactWrite): Promise<ProjectArtifactWritten>;
+  readArtifact(
+    request: ProjectArtifactReadRequest,
+  ): Promise<ProjectArtifactRead>;
 }
 
 /** The identities one preparation mints, drawn together so the pass names no ambient capability. */

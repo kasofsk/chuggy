@@ -72,6 +72,15 @@ import {
   type RunEvidenceContentPort,
   type RunEvidenceReadStore,
 } from "../../src/interpreter/runEvidence.ts";
+import {
+  asProjectArtifactId,
+  type ProjectArtifactPort,
+  type ProjectArtifactWrite,
+} from "../../src/interpreter/finalizerPreparation.ts";
+import {
+  projectArtifactIdentityText,
+  type ProjectArtifactMinting,
+} from "../../src/interpreter/projectArtifact.ts";
 
 const partition = {
   tenant: asTenantId("tenant"),
@@ -198,6 +207,8 @@ function boundary(
   initialization?: ReturnType<AuthoringStore["initializeDraft"]>,
   runEvidenceReads?: RunEvidenceReadStore,
   runEvidenceContents?: RunEvidenceContentPort,
+  projectArtifacts?: ProjectArtifactPort,
+  projectArtifactMinting?: ProjectArtifactMinting,
 ): {
   readonly web: ReturnType<typeof nativeWeb>;
   readonly calls: string[];
@@ -244,6 +255,12 @@ function boundary(
       repositoryConfigurationImports,
       runEvidenceReads,
       runEvidenceContents,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      projectArtifacts,
+      projectArtifactMinting,
     ),
     calls,
   };
@@ -681,11 +698,205 @@ test("operational resources authorize before scheduler or artifact reads", async
     (web: NativeWeb) => web.executions(principal, partition, { limit: 10 }),
     (web: NativeWeb) => web.execution(principal, partition, execution),
     (web: NativeWeb) => web.outputContent(principal, partition, execution, 1),
+    (web: NativeWeb) =>
+      web.projectArtifact(
+        principal,
+        partition,
+        asProjectArtifactId("image/png:token"),
+      ),
   ]) {
     const denied = boundary(false);
     await read(denied.web);
     assert.deepEqual(denied.calls, ["authorize:Read"]);
   }
+});
+
+/** A store that records every write and answers one fixed digest. */
+function fakeProjectArtifacts(
+  writes: ProjectArtifactWrite[],
+): ProjectArtifactPort {
+  return {
+    writeArtifact: (write) => {
+      writes.push(write);
+      return Promise.resolve({
+        written: "Artifact",
+        digest: asArtifactDigest("a".repeat(64)),
+      });
+    },
+    readArtifact: () =>
+      Promise.resolve({
+        read: "Content",
+        content: new TextEncoder().encode("a png, more or less"),
+      }),
+  };
+}
+
+/** A minting port drawing one fixed token, so a case can name what it expects back. */
+function fixedMinting(): ProjectArtifactMinting {
+  return {
+    mint: (mediaType) =>
+      asProjectArtifactId(projectArtifactIdentityText(mediaType, "token")),
+  };
+}
+
+test("giving a project an image authorizes Mutate before anything is minted or written", async () => {
+  const writes: ProjectArtifactWrite[] = [];
+  const denied = boundary(
+    false,
+    openExecutionBacklogGuard,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    fakeProjectArtifacts(writes),
+    fixedMinting(),
+  );
+  const refused = await denied.web.uploadProjectArtifact(
+    principal,
+    partition,
+    "image/png",
+    new TextEncoder().encode("a png, more or less"),
+  );
+  assert.deepEqual(refused, { result: "NotFound" });
+  assert.deepEqual(denied.calls, ["authorize:Mutate"]);
+  assert.deepEqual(writes, []);
+});
+
+test("an admitted image mints an identity carrying its media type and writes the bytes behind it", async () => {
+  const writes: ProjectArtifactWrite[] = [];
+  const allowed = boundary(
+    true,
+    openExecutionBacklogGuard,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    fakeProjectArtifacts(writes),
+    fixedMinting(),
+  );
+  const content = new TextEncoder().encode("a png, more or less");
+  const uploaded = await allowed.web.uploadProjectArtifact(
+    principal,
+    partition,
+    "image/png",
+    content,
+  );
+  assert.deepEqual(uploaded, {
+    result: "Authorized",
+    value: {
+      uploaded: "Artifact",
+      artifact: asProjectArtifactId("image/png:token"),
+      digest: "a".repeat(64),
+    },
+  });
+  assert.deepEqual(writes, [
+    { partition, artifact: asProjectArtifactId("image/png:token"), content },
+  ]);
+});
+
+test("svg and a non-image media type are both refused, asking Mutate and writing nothing", async () => {
+  const writes: ProjectArtifactWrite[] = [];
+  const allowed = boundary(
+    true,
+    openExecutionBacklogGuard,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    fakeProjectArtifacts(writes),
+    fixedMinting(),
+  );
+  for (const mediaType of ["image/svg+xml", "text/plain"]) {
+    const uploaded = await allowed.web.uploadProjectArtifact(
+      principal,
+      partition,
+      mediaType,
+      new TextEncoder().encode("<svg/>"),
+    );
+    assert.deepEqual(uploaded, {
+      result: "Authorized",
+      value: { uploaded: "NotAnImage" },
+    });
+  }
+  assert.deepEqual(writes, []);
+});
+
+test("reading a project-owned artifact back answers its bytes, its media type and the identity's own encoding", async () => {
+  const allowed = boundary(
+    true,
+    openExecutionBacklogGuard,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    fakeProjectArtifacts([]),
+    fixedMinting(),
+  );
+  assert.deepEqual(
+    await allowed.web.projectArtifact(
+      principal,
+      partition,
+      asProjectArtifactId("image/png:token"),
+    ),
+    {
+      fetched: "Content",
+      content: new TextEncoder().encode("a png, more or less"),
+      mediaType: "image/png",
+    },
+  );
+});
+
+test("a principal holding Read alone may read a project artifact and may not upload one", async () => {
+  const writes: ProjectArtifactWrite[] = [];
+  const calls: string[] = [];
+  const access: ProjectAccess = {
+    authorize: (_principal, _partition, kind) => {
+      calls.push(`authorize:${kind}`);
+      return Promise.resolve(kind === "Read" ? authority : undefined);
+    },
+    authorizeTenant: () => Promise.resolve(undefined),
+  };
+  const web = nativeWeb(
+    access,
+    readStore([]),
+    {
+      accept: () => Promise.reject(new Error("not served")),
+      cancel: () => Promise.reject(new Error("not served")),
+      operation: () => Promise.resolve(undefined),
+    },
+    authoringStore([]),
+    { read: () => Promise.reject(new Error("not served")) },
+    openExecutionBacklogGuard,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    fakeProjectArtifacts(writes),
+    fixedMinting(),
+  );
+  const content = new TextEncoder().encode("a png, more or less");
+  assert.deepEqual(
+    await web.uploadProjectArtifact(principal, partition, "image/png", content),
+    { result: "NotFound" },
+  );
+  assert.deepEqual(writes, []);
+  assert.deepEqual(
+    await web.projectArtifact(
+      principal,
+      partition,
+      asProjectArtifactId("image/png:token"),
+    ),
+    { fetched: "Content", content, mediaType: "image/png" },
+  );
+  assert.deepEqual(calls, ["authorize:Mutate", "authorize:Read"]);
 });
 
 test("every run evidence read authorizes before it reaches a store", async () => {

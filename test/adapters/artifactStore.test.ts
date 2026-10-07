@@ -499,6 +499,51 @@ test("a project-owned artifact is written read-only and answers with its own dig
   assert.equal(again.written, "Artifact");
 });
 
+test("a project-owned artifact reads back exactly the bytes it was written with", async (t) => {
+  const fixture = fixtureOpen(t);
+  await fixture.store.writeArtifact({
+    partition,
+    artifact: asProjectArtifactId("conflict-1"),
+    content: new TextEncoder().encode("evidence"),
+  });
+  const read = await fixture.store.readArtifact({
+    partition,
+    artifact: asProjectArtifactId("conflict-1"),
+  });
+  if (read.read !== "Content") assert.fail(JSON.stringify(read));
+  assert.equal(new TextDecoder().decode(read.content), "evidence");
+});
+
+test("a project-owned artifact nobody wrote reads back as not found", async (t) => {
+  const fixture = fixtureOpen(t);
+  assert.deepEqual(
+    await fixture.store.readArtifact({
+      partition,
+      artifact: asProjectArtifactId("never-written"),
+    }),
+    { read: "NotFound" },
+  );
+});
+
+test("one project's own artifact is not reachable from another's, whatever its identity spells", async (t) => {
+  const fixture = fixtureOpen(t);
+  await fixture.store.writeArtifact({
+    partition,
+    artifact: asProjectArtifactId("conflict-1"),
+    content: new TextEncoder().encode("evidence"),
+  });
+  assert.deepEqual(
+    await fixture.store.readArtifact({
+      partition: {
+        tenant: asTenantId("tenant"),
+        project: asProjectId("../../one"),
+      },
+      artifact: asProjectArtifactId("conflict-1"),
+    }),
+    { read: "NotFound" },
+  );
+});
+
 /** The byte count refuses a shorter offer, so only a same-length one reaches the digest. */
 test("a worker upload is immutable, idempotent for the same bytes, and conflicts for different bytes", async (t) => {
   const fixture = fixtureOpen(t);
