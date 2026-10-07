@@ -23,6 +23,7 @@ import {
   readCreationContext,
   reviseAndUpdateTicket,
 } from "../app/core/ticketCreationRun.ts";
+import type { TicketCreationRequest } from "../app/core/ticketCreationRun.ts";
 import {
   creationBinding,
   creationDeclared,
@@ -641,7 +642,7 @@ test.each([
 /** Each part of what a revision writes, moved alone. */
 const heldDraftMoved: readonly (readonly [
   string,
-  typeof releaseSubmission.body,
+  TicketCreationRequest["body"],
 ])[] = [
   [
     "another configuration",
@@ -650,6 +651,13 @@ const heldDraftMoved: readonly (readonly [
   [
     "another intent",
     { ...releaseSubmission.body, brief: { intent: "ship that", links: [] } },
+  ],
+  [
+    "an image",
+    {
+      ...releaseSubmission.body,
+      brief: { ...releaseSubmission.body.brief, images: ["artifact-1"] },
+    },
   ],
   [
     "another program",

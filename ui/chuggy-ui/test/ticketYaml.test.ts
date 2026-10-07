@@ -401,6 +401,32 @@ test("the vocabulary offers the configurations by name, and a program only under
   expect(chosen).toContain("evaluators");
 });
 
+/**
+ * An image is the author's and no configuration's. A text naming none may
+ * still write the key, where a check line written there reads as no form,
+ * and the images stand under whichever configuration the text goes on to name.
+ */
+test("images are read under no configuration, and kept under the one a text names", () => {
+  const over = { ...several, images: ["artifact-1"] };
+  const rest = "intent: y\nimages:\n  - artifact-1\n";
+  const unnamed = ticketYamlRead(rest, over);
+  expect(unnamed.problems).toStrictEqual([]);
+  expect(unnamed.form).toMatchObject({
+    configuration: "",
+    images: ["artifact-1"],
+  });
+  expect(unnamed.form && ticketYamlOf(unnamed.form, over)).toContain(
+    "images:\n  - artifact-1\n",
+  );
+  expect(ticketYamlRead(`${rest}checks:\n  - npm test\n`, over).form).toBe(
+    undefined,
+  );
+  for (const name of ["development", "development-sonnet"])
+    expect(
+      ticketYamlRead(`configuration: ${name}\n${rest}`, over).form,
+    ).toMatchObject({ configuration: name, images: ["artifact-1"] });
+});
+
 /** The YAML carries what the form attached, by identity, and nothing else:
  * an identity the screen never held is refused at its key. */
 test("images are written by identity and read back as the same form", () => {

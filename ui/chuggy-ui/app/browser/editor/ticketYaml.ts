@@ -18,7 +18,9 @@
  *
  * AN IMAGE IS WRITTEN AS THE IDENTITY ITS UPLOAD ANSWERED, never as bytes: the
  * form attaches, and the text may only keep or drop what the screen knows the
- * project holds, so an identity it does not know is refused at its key.
+ * project holds, so an identity it does not know is refused at its key. The
+ * key is the author's and no configuration's, so it is read under whichever
+ * one the text names and under none.
  *
  * A KEY LEFT OUT IS EMPTY, except the three a form never leaves empty: the
  * landing and the dependencies keep what the form held, and so does a program

@@ -39,11 +39,9 @@ import type { CreationOffer } from "../app/core/ticketCreation.ts";
 import { creationContextList } from "../app/core/ticketCreationRun.ts";
 import type { CreationContext } from "../app/core/ticketCreationRun.ts";
 import {
-  creationApiRefusingFirst,
   creationBinding,
   creationDeclared,
   creationDraft,
-  creationDraftRevised,
   creationInitialization,
   creationListed,
   creationOffer,
@@ -53,6 +51,7 @@ import {
 import { answeringApi } from "./answeringApi.ts";
 import type { Sent } from "./answeringApi.ts";
 import { ticketInstants } from "./ticketInstants.ts";
+import { ticketDraftRevised, ticketRefusingFirst } from "./ticketReleasing.tsx";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 
 /** The runner has no globals, so each case tears down the tree it rendered,
@@ -420,7 +419,7 @@ test("a held draft the form still describes is released again, unrevised, under 
 });
 
 test("an intent retyped after a refused release is revised into the held draft, and released afresh", async () => {
-  const held = creationApiRefusingFirst(() => creationDraftRevised());
+  const held = answeringApi(ticketRefusingFirst(() => ticketDraftRevised()));
   const created: number[] = [];
   draw(held.ports, created);
   typeIntent("ship it");
@@ -448,10 +447,12 @@ test("an intent retyped after a refused release is revised into the held draft, 
  * version this form wrote. */
 test("a revision that does not get through is said over what was typed, and the next submit sends it again", async () => {
   const door = { open: false };
-  const held = creationApiRefusingFirst(() =>
-    door.open
-      ? creationDraftRevised()
-      : { status: 500, body: { error: { code: "InternalError" } } },
+  const held = answeringApi(
+    ticketRefusingFirst(() =>
+      door.open
+        ? ticketDraftRevised()
+        : { status: 500, body: { error: { code: "InternalError" } } },
+    ),
   );
   const created: number[] = [];
   draw(held.ports, created);
@@ -928,8 +929,8 @@ test("the line saying what a bootstrap's ticket is for follows the configuration
  * will not run, and choosing another configuration is how they answer it.
  */
 test("a configuration chosen after a refused release is what the held draft is revised to, and released under", async () => {
-  const held = creationApiRefusingFirst(() =>
-    creationDraftRevised(bootstrapConfigurationName),
+  const held = answeringApi(
+    ticketRefusingFirst(() => ticketDraftRevised(bootstrapConfigurationName)),
   );
   const created: number[] = [];
   drawOffered(held.ports, created, mixed);

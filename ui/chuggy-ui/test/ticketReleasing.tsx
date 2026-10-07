@@ -1,7 +1,7 @@
 /**
  * What the creation screen's suites stand in for: the YAML editor as a plain
  * text area, and an API that creates a draft and settles its release as
- * succeeded.
+ * succeeded, or refuses the first release of it and so leaves it held.
  */
 
 import type { Answer } from "./answeringApi.ts";
@@ -56,5 +56,47 @@ export function ticketReleasing(method: string, path: string): Answer {
         },
       ],
     },
+  };
+}
+
+/** The fixture's draft as its door answers a revision of it. */
+export function ticketDraftRevised(
+  configurationRevision = creationDraft.configurationRevision,
+): Answer {
+  return {
+    status: 200,
+    body: {
+      ...creationDraft,
+      authoringVersion: creationDraft.authoringVersion + 1,
+      configurationRevision,
+    },
+  };
+}
+
+/**
+ * The same API over a draft its first release leaves held: that release
+ * settles refused and each one after it succeeds, and a revision of the
+ * draft is answered as the case says.
+ */
+export function ticketRefusingFirst(
+  revised: () => Answer,
+): (method: string, path: string) => Answer {
+  const released = { count: 0 };
+  return (method, path) => {
+    if (method === "PUT") return revised();
+    if (method === "POST" && path.endsWith("/operations")) released.count += 1;
+    if (released.count !== 1 || !path.includes("/operations/"))
+      return ticketReleasing(method, path);
+    return {
+      status: 200,
+      body: {
+        operation: "op",
+        acceptedAt: "2026-08-26T00:00:00Z",
+        state: "Refused",
+        code: "ConfigurationInvalid",
+        refusedHead: 41,
+        refusedLifecycleGeneration: 1,
+      },
+    };
   };
 }

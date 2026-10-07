@@ -27,16 +27,18 @@ import { answeringApi } from "./answeringApi.ts";
 import type { Sent } from "./answeringApi.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import {
-  creationApiRefusingFirst,
   creationDeclared,
   creationDraft,
-  creationDraftRevised,
   creationOffer,
   creationOffers,
   creationPartition,
   creationYamlKeptUnasked,
 } from "./ticketCreationFixture.ts";
-import { ticketReleasing } from "./ticketReleasing.tsx";
+import {
+  ticketDraftRevised,
+  ticketRefusingFirst,
+  ticketReleasing,
+} from "./ticketReleasing.tsx";
 
 vi.mock(
   "../app/browser/editor/TicketEditor.tsx",
@@ -282,7 +284,9 @@ async function submitAsked(): Promise<void> {
 /** The text's submit is the form's, so a draft an earlier one left held is
  * revised to what the text now names rather than released as it was. */
 test("a configuration named in the YAML after a refused release is what the held draft is revised to", async () => {
-  const held = creationApiRefusingFirst(() => creationDraftRevised("n-sonnet"));
+  const held = answeringApi(
+    ticketRefusingFirst(() => ticketDraftRevised("n-sonnet")),
+  );
   const created: number[] = [];
   draw(held.ports, created, several);
   const editor = await toYaml();

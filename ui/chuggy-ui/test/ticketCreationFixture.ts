@@ -15,7 +15,6 @@ import type {
   ProjectRepositoryResponse,
 } from "../../../src/contract/responses.ts";
 import type { BriefFinalizationMode } from "../../../src/contract/rosters.ts";
-import type { ApiPorts } from "../app/core/apiRequest.ts";
 import {
   creationConfigurationName,
   creationFormFrom,
@@ -24,9 +23,6 @@ import type {
   CreationOffer,
   TicketCreationForm,
 } from "../app/core/ticketCreation.ts";
-import { answeringApi } from "./answeringApi.ts";
-import type { Answer, Sent } from "./answeringApi.ts";
-import { ticketInstants } from "./ticketInstants.ts";
 
 export const creationDigest = "a".repeat(64);
 
@@ -105,74 +101,6 @@ export const creationDraft: DraftResponse = {
   configurationRevision: "r3",
   authoring: creationInitialization.defaults,
 };
-
-/** The fixture's draft as its door answers a revision of it. */
-export function creationDraftRevised(
-  configurationRevision = creationDraft.configurationRevision,
-): Answer {
-  return {
-    status: 200,
-    body: {
-      ...creationDraft,
-      authoringVersion: creationDraft.authoringVersion + 1,
-      configurationRevision,
-    },
-  };
-}
-
-function creationOperation(state: "Refused" | "Succeeded"): unknown {
-  const accepted = { operation: "op", acceptedAt: "2026-08-26T00:00:00Z" };
-  return state === "Succeeded"
-    ? { ...accepted, state, decidedSequence: 42 }
-    : {
-        ...accepted,
-        state,
-        code: "ConfigurationInvalid",
-        refusedHead: 41,
-        refusedLifecycleGeneration: 1,
-      };
-}
-
-/**
- * An API over one draft a release leaves held: it creates the fixture's
- * draft, refuses the first release sent and carries out each one after, and
- * answers a revision of the draft as the case says.
- */
-export function creationApiRefusingFirst(revised: () => Answer): {
-  readonly ports: ApiPorts;
-  readonly sent: Sent[];
-} {
-  const released = { count: 0 };
-  return answeringApi((method, path) => {
-    if (method === "PUT") return revised();
-    if (method === "POST" && path.endsWith("/drafts"))
-      return { status: 201, body: creationDraft };
-    if (method === "POST") {
-      released.count += 1;
-      return { status: 202, body: { operation: "op", state: "Pending" } };
-    }
-    if (path.includes("/operations/"))
-      return {
-        status: 200,
-        body: creationOperation(released.count > 1 ? "Succeeded" : "Refused"),
-      };
-    return {
-      status: 200,
-      body: {
-        partition: creationPartition,
-        sequence: 42,
-        tickets: [
-          {
-            ticket: creationDraft.ticket,
-            phase: "Pending",
-            sequence: 42,
-            ...ticketInstants,
-          },
-        ],
-      },
-    };
-  });
-}
 
 /** One binding as the listing answers it, whose landing is what a form seeded
  * from it starts on. */

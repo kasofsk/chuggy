@@ -2,7 +2,9 @@
  * Images attached in the creation form: each uploaded as the bytes picked,
  * pasted or dropped, drawn from a `data:` URI, carried by identity into the
  * release and through the YAML view, bounded where it is attached, and an
- * upload that fails leaving the form as it was.
+ * upload that fails leaving the form as it was. They are the author's, so
+ * they stay attached under another configuration and are revised into a
+ * draft a refused release left held.
  */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -26,11 +28,17 @@ import type { Sent } from "./answeringApi.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import { answer, holderDouble } from "./screenHarness.tsx";
 import {
+  creationDeclared,
   creationDraft,
+  creationOffer,
   creationOffers,
   creationPartition,
 } from "./ticketCreationFixture.ts";
-import { ticketReleasing } from "./ticketReleasing.tsx";
+import {
+  ticketDraftRevised,
+  ticketRefusingFirst,
+  ticketReleasing,
+} from "./ticketReleasing.tsx";
 
 vi.mock(
   "../app/browser/editor/TicketEditor.tsx",
@@ -53,8 +61,11 @@ afterEach(() => {
 });
 
 /** An API minting `artifact-N` for each upload unless the case refuses one,
- * and creating and releasing a draft. */
-function api(refusing = false): {
+ * and creating and releasing a draft as the case says. */
+function api(
+  refusing = false,
+  released = ticketReleasing,
+): {
   readonly ports: ApiPorts;
   readonly sent: Sent[];
 } {
@@ -69,11 +80,15 @@ function api(refusing = false): {
         body: { artifact: `artifact-${String(minted)}`, digest: "d" },
       };
     }
-    return ticketReleasing(method, path);
+    return released(method, path);
   });
 }
 
-function draw(ports: ApiPorts, created: number[] = []): void {
+function draw(
+  ports: ApiPorts,
+  created: number[] = [],
+  offers = creationOffers,
+): void {
   render(
     <SessionProvider holder={holderDouble()}>
       <QueryClientProvider client={new QueryClient()}>
@@ -83,7 +98,7 @@ function draw(ports: ApiPorts, created: number[] = []): void {
           queryKey={creationContextList(creationPartition).key}
           context={{
             context: "Ready",
-            offers: creationOffers,
+            offers,
             partial: false,
             repositories: [],
           }}
@@ -244,4 +259,112 @@ test("an identity the screen never attached is a problem at that key", async () 
   expect(problems.textContent).toContain(
     "line 3: `artifact-9` names no image attached to this ticket",
   );
+});
+
+function typeIntent(text: string): void {
+  fireEvent.change(screen.getByPlaceholderText("what this ticket is for"), {
+    target: { value: text },
+  });
+}
+
+function submit(): void {
+  fireEvent.click(screen.getByRole("button", { name: "Create ticket" }));
+}
+
+function revisions(sent: readonly Sent[]): readonly unknown[] {
+  return sent.filter((one) => one.method === "PUT").map((one) => one.body);
+}
+
+const heldNote = /was created and not released/u;
+
+/**
+ * The draft a refused release leaves held was written from the form as it
+ * was, so an image attached or removed since is a form that says something
+ * else, and the next submit revises the draft to it.
+ */
+test("an image attached after a refused release is revised into the held draft", async () => {
+  const held = api(
+    false,
+    ticketRefusingFirst(() => ticketDraftRevised()),
+  );
+  const created: number[] = [];
+  draw(held.ports, created);
+  typeIntent("ship it");
+  submit();
+  await screen.findByText(heldNote);
+  picked(shot([1]));
+  await thumbnails(1);
+  submit();
+  await waitFor(() => {
+    expect(created).toStrictEqual([creationDraft.ticket]);
+  });
+  expect(revisions(held.sent)).toMatchObject([
+    {
+      expectedVersion: creationDraft.authoringVersion,
+      brief: { intent: "ship it", images: ["artifact-1"] },
+    },
+  ]);
+});
+
+test("an image removed after a refused release is revised out of the held draft", async () => {
+  const held = api(
+    false,
+    ticketRefusingFirst(() => ticketDraftRevised()),
+  );
+  const created: number[] = [];
+  draw(held.ports, created);
+  typeIntent("ship it");
+  picked(shot([1]));
+  await thumbnails(1);
+  submit();
+  await screen.findByText(heldNote);
+  fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+  submit();
+  await waitFor(() => {
+    expect(created).toStrictEqual([creationDraft.ticket]);
+  });
+  const [revised] = revisions(held.sent);
+  expect(revised).toMatchObject({ brief: { intent: "ship it" } });
+  expect(revised).not.toHaveProperty("brief.images");
+});
+
+const chuggy = "https://forge.test/kasofsk/chuggy";
+const several = [
+  creationOffer(creationDeclared("n-development", chuggy, "development")),
+  creationOffer(creationDeclared("n-sonnet", chuggy, "development-sonnet")),
+];
+
+async function chooseConfiguration(name: string): Promise<void> {
+  const picker = () => screen.getByRole("button", { name: /^Configuration/u });
+  await waitFor(() => {
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+  fireEvent.keyDown(picker(), { key: "ArrowDown" });
+  const menu = await screen.findByRole("menu");
+  fireEvent.click(within(menu).getByRole("menuitemradio", { name }));
+  await waitFor(() => {
+    expect(picker().textContent).toContain(name);
+  });
+}
+
+test("images attached under one configuration stay attached under the one chosen next", async () => {
+  const held = api();
+  const created: number[] = [];
+  draw(held.ports, created, several);
+  typeIntent("ship it");
+  await chooseConfiguration("development");
+  picked(shot([1]));
+  await thumbnails(1);
+  await chooseConfiguration("development-sonnet");
+  await thumbnails(1);
+  submit();
+  await waitFor(() => {
+    expect(created).toStrictEqual([creationDraft.ticket]);
+  });
+  expect(
+    held.sent.find((one) => one.path.endsWith("/drafts"))?.body,
+  ).toMatchObject({
+    configurationRevision: "n-sonnet",
+    brief: { images: ["artifact-1"] },
+  });
 });
