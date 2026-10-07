@@ -43,6 +43,7 @@ import { Disclosure } from "./ui/Disclosure.tsx";
 import { Figure } from "./ui/Figure.tsx";
 import { Freshness } from "./Freshness.tsx";
 import { Panel } from "./ui/Panel.tsx";
+import { ProjectImage } from "./ProjectImage.tsx";
 import { Tooltip } from "./ui/Tooltip.tsx";
 
 import "./ticket/ticket.css";
@@ -62,10 +63,14 @@ function Field(props: {
 /**
  * What a person asked for. A ticket released before the brief was on the wire
  * carries none and says so rather than drawing empty fields, and one released
- * before a landing was recorded draws no landing at all.
+ * before a landing was recorded draws no landing at all. Its images are drawn
+ * as images, each from the project's own read of it.
  */
-function Brief(props: { readonly brief: TicketBriefBody }): ReactNode {
-  const { intent, links, checks, branch, finalization } = props.brief;
+function Brief(props: {
+  readonly partition: PartitionIdentity;
+  readonly brief: TicketBriefBody;
+}): ReactNode {
+  const { intent, links, images, checks, branch, finalization } = props.brief;
   return (
     <>
       <Field name="intent">
@@ -86,6 +91,22 @@ function Brief(props: { readonly brief: TicketBriefBody }): ReactNode {
           </ul>
         )}
       </Field>
+      {images === undefined || images.length === 0 ? null : (
+        <Field name="images">
+          <ul className="flex flex-wrap gap-2">
+            {images.map((artifact, at) => (
+              <li key={artifact}>
+                <ProjectImage
+                  partition={props.partition}
+                  artifact={artifact}
+                  alt={`Brief image ${String(at + 1)}`}
+                  className="rounded-2 border-edge block max-h-(--height-clip) max-w-full border"
+                />
+              </li>
+            ))}
+          </ul>
+        </Field>
+      )}
       <Field name="checks">
         {checks === undefined || checks.length === 0 ? (
           "none"
@@ -124,6 +145,7 @@ function ReleasedUnder(props: { readonly ticket: TicketResponse }): ReactNode {
 }
 
 export function TicketBrief(props: {
+  readonly partition: PartitionIdentity;
   readonly state: PanelState<TicketResponse>;
 }): ReactNode {
   return (
@@ -137,7 +159,7 @@ export function TicketBrief(props: {
               </span>
             </Field>
           ) : (
-            <Brief brief={ticket.brief} />
+            <Brief partition={props.partition} brief={ticket.brief} />
           )}
           <ReleasedUnder ticket={ticket} />
         </dl>
