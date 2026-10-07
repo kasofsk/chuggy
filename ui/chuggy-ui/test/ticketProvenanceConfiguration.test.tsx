@@ -3,8 +3,8 @@
  * one structural rule the Brief and Provenance rows must keep: the accordion
  * row is the only heading either draws, never a second one repeating it.
  *
- * The canonical body is read from `chuggy-development-opus.json` itself, not a
- * copied fixture, so the settings grid, the Instructions and the Evaluation
+ * The canonical body is read from `chuggy-development-sonnet.json` itself, not
+ * a copied fixture, so the settings grid, the Instructions and the Evaluation
  * list are asserted against what the repository actually declares; the Review
  * tab, which a declared document with stages never draws, is asserted over the
  * same document with its stages taken out.
@@ -46,11 +46,11 @@ const declarations = import.meta.glob<string>(
   "../../../.chug/configurations/*.json",
   { query: "?raw", import: "default", eager: true, exhaustive: true },
 );
-const opusRaw =
-  declarations["../../../.chug/configurations/chuggy-development-opus.json"];
-if (opusRaw === undefined)
-  throw new Error("no chuggy-development-opus configuration declared");
-const declared: unknown = JSON.parse(opusRaw);
+const sonnetRaw =
+  declarations["../../../.chug/configurations/chuggy-development-sonnet.json"];
+if (sonnetRaw === undefined)
+  throw new Error("no chuggy-development-sonnet configuration declared");
+const declared: unknown = JSON.parse(sonnetRaw);
 const canonical = JSON.stringify(
   (declared as { readonly configuration: unknown }).configuration,
 );
@@ -80,8 +80,8 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-const revision = "r-opus-1";
-const version = { name: "chuggy-development-opus", number: 1 };
+const revision = "r-sonnet-1";
+const version = { name: "chuggy-development-sonnet", number: 1 };
 const digest = "d".repeat(64);
 
 async function drawTicket(served: string = canonical): Promise<void> {
@@ -149,7 +149,7 @@ test("the Brief and Provenance rows draw no second heading of their own", async 
   ).toHaveLength(0);
   expect(
     screen.getByRole("heading", {
-      name: /Configuration chuggy-development-opus/u,
+      name: /Configuration chuggy-development-sonnet/u,
     }),
   ).toBeDefined();
 });
@@ -157,8 +157,8 @@ test("the Brief and Provenance rows draw no second heading of their own", async 
 test("the settings grid reads the model off its own flag and the tools off the allow-list", async () => {
   await drawTicket();
   await sectionOpened("Provenance");
-  expect(screen.getByText("Opus")).toBeDefined();
-  expect(screen.getByText("--model=opus")).toBeDefined();
+  expect(screen.getByText("Sonnet")).toBeDefined();
+  expect(screen.getByText("--model=sonnet")).toBeDefined();
   expect(screen.getByText("Claude Code")).toBeDefined();
   expect(screen.getByText("Single agent")).toBeDefined();
   expect(

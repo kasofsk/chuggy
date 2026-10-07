@@ -1177,7 +1177,8 @@ test("this tree's own configurations run their commanded check stage before any 
   for (const name of [
     "chuggy-development",
     "chuggy-development-fable",
-    "chuggy-development-opus",
+    "chuggy-development-orchestrated",
+    "chuggy-development-sonnet",
     "basic-coding",
   ]) {
     const document: unknown = JSON.parse(
@@ -1195,18 +1196,39 @@ test("this tree's own configurations run their commanded check stage before any 
   }
 });
 
-test("a model variant of the development configuration differs from it only in its name and its model", () => {
-  const read = (name: string): Record<string, unknown> =>
-    JSON.parse(
-      readFileSync(`.chug/configurations/${name}.json`, "utf8"),
-    ) as Record<string, unknown>;
-  const base = read("chuggy-development");
-  const baseConfiguration = base["configuration"] as {
-    readonly worker: { readonly mode: { readonly arguments: string[] } };
+/** One of this tree's own declarations, as its file states it. */
+function declaredDocument(name: string): Record<string, unknown> {
+  return JSON.parse(
+    readFileSync(`.chug/configurations/${name}.json`, "utf8"),
+  ) as Record<string, unknown>;
+}
+
+/** The parts of a development declaration a variant is allowed to restate. */
+interface DevelopmentConfiguration {
+  readonly worker: {
+    readonly mode: { readonly arguments: readonly string[] };
   };
-  for (const family of ["fable", "opus"]) {
+  readonly work: { readonly instructions: readonly string[] };
+}
+
+const developmentModelArgument = "--model=opus";
+
+test("the development configuration names one model, and it is Opus", () => {
+  const { worker } = declaredDocument("chuggy-development")[
+    "configuration"
+  ] as DevelopmentConfiguration;
+  assert.deepEqual(
+    worker.mode.arguments.filter((argument) => argument.startsWith("--model")),
+    [developmentModelArgument],
+  );
+});
+
+test("a model variant of the development configuration differs from it only in its name and its model", () => {
+  const base = declaredDocument("chuggy-development");
+  const baseConfiguration = base["configuration"] as DevelopmentConfiguration;
+  for (const family of ["fable", "sonnet"]) {
     const name = `chuggy-development-${family}`;
-    assert.deepEqual(read(name), {
+    assert.deepEqual(declaredDocument(name), {
       ...base,
       name,
       configuration: {
@@ -1215,15 +1237,42 @@ test("a model variant of the development configuration differs from it only in i
           ...baseConfiguration.worker,
           mode: {
             ...baseConfiguration.worker.mode,
-            arguments: [
-              ...baseConfiguration.worker.mode.arguments,
-              `--model=${family}`,
-            ],
+            arguments: baseConfiguration.worker.mode.arguments.map(
+              (argument) =>
+                argument === developmentModelArgument
+                  ? `--model=${family}`
+                  : argument,
+            ),
           },
         },
       },
     });
   }
+});
+
+test("the orchestrated variant of the development configuration differs from it only in its name and three appended work instructions", () => {
+  const base = declaredDocument("chuggy-development");
+  const baseConfiguration = base["configuration"] as DevelopmentConfiguration;
+  const name = "chuggy-development-orchestrated";
+  const orchestrated = declaredDocument(name);
+  const { work } = orchestrated["configuration"] as DevelopmentConfiguration;
+  const appended = work.instructions.slice(
+    baseConfiguration.work.instructions.length,
+  );
+  assert.equal(appended.length, 3);
+  assert.ok(appended.every((line) => line.length > 0));
+  assert.match(appended.at(0) ?? "", /subagents/u);
+  assert.deepEqual(orchestrated, {
+    ...base,
+    name,
+    configuration: {
+      ...baseConfiguration,
+      work: {
+        ...baseConfiguration.work,
+        instructions: [...baseConfiguration.work.instructions, ...appended],
+      },
+    },
+  });
 });
 
 test("a fault in one role's block does not refuse the other role's briefing", () => {
