@@ -1024,15 +1024,21 @@ export function apiWriteSelectorSettings(
   );
 }
 
+export interface SelectorSettingsHistoryPage {
+  readonly before?: number | undefined;
+  readonly limit?: number | undefined;
+}
+
+/** The settings' revisions newest first, older than `before` when it is given. */
 export function apiSelectorSettingsHistory(
   ports: ApiPorts,
   partition: PartitionIdentity,
-  page: SelectorHistoryPage = {},
+  page: SelectorSettingsHistoryPage = {},
 ): Promise<ApiResult<SelectorSettingsHistoryResponse>> {
   return apiGet(
     ports,
     apiPath(apiSegments(partition, "selector-settings", "history"), {
-      after: page.after,
+      before: page.before,
       limit: page.limit,
     }),
     (value) => selectorSettingsHistoryResponseSchema.parse(value),

@@ -267,7 +267,7 @@ test("reading and writing a project's settings needs selector administration", a
   assert.deepEqual(await denied.write(principal, partition, 0, {}), {
     result: "NotFound",
   });
-  assert.deepEqual(await denied.history(principal, partition, 0, 10), {
+  assert.deepEqual(await denied.history(principal, partition, undefined, 10), {
     result: "NotFound",
   });
 });
@@ -337,7 +337,11 @@ test("an unbounded history page is refused rather than asked for", async () => {
     store({ written: "FenceMoved" }),
   );
   await assert.rejects(
-    () => administration.history(principal, partition, 0, 0),
+    () => administration.history(principal, partition, undefined, 0),
+    RangeError,
+  );
+  await assert.rejects(
+    () => administration.history(principal, partition, -1, 10),
     RangeError,
   );
   await assert.rejects(

@@ -1001,7 +1001,7 @@ async function writeProjectSettings(
 async function projectSettingsHistory(
   pool: pg.Pool,
   partition: Partition,
-  afterRevision: number,
+  beforeRevision: number | undefined,
   limit: number,
 ): Promise<readonly SelectorProjectSettingsRevision[]> {
   const found = await pool.query<
@@ -1028,8 +1028,9 @@ async function projectSettingsHistory(
        FROM selector_project_settings_history history
       WHERE history.tenant=${partition.tenant}
         AND history.project=${partition.project}
-        AND history.revision>${afterRevision}
-      ORDER BY history.revision LIMIT ${limit}`,
+        AND (${beforeRevision ?? null}::bigint IS NULL
+             OR history.revision<${beforeRevision ?? null})
+      ORDER BY history.revision DESC LIMIT ${limit}`,
   );
   return found.rows.map((row) => ({
     revision: projectRowCounter(
@@ -1059,8 +1060,8 @@ export function postgresSelectorProjectSettings(
         overrides,
         administrator,
       ),
-    history: (partition, afterRevision, limit) =>
-      projectSettingsHistory(pool, partition, afterRevision, limit),
+    history: (partition, beforeRevision, limit) =>
+      projectSettingsHistory(pool, partition, beforeRevision, limit),
   };
 }
 

@@ -1070,14 +1070,16 @@ function registerSelectorSettings(
     },
   );
   app.get(`${root}/history`, async (request, reply) => {
-    const query = fieldsOnly(request.query, ["after", "limit"]);
+    const query = fieldsOnly(request.query, ["before", "limit"]);
     send(
       reply,
       selectorSettingsHistoryResponse(
         await settings.history(
           principalOf(request),
           partitionOf(request),
-          integerField(query, "after", 0),
+          query["before"] === undefined
+            ? undefined
+            : integerField(query, "before"),
           integerField(query, "limit", 50),
         ),
       ),
