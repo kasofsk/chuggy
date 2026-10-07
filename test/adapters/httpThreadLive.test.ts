@@ -14,7 +14,10 @@ import { setTimeout as delay } from "node:timers/promises";
 import { promisify } from "node:util";
 
 import { threadLiveFramed } from "../../src/adapters/http/eventStream.ts";
-import { createNativeHttpApp } from "../../src/adapters/http/server.ts";
+import {
+  createNativeHttpApp,
+  nativeHttpLimitsDefault,
+} from "../../src/adapters/http/server.ts";
 import { systemStreamTimers } from "../../src/adapters/runtime/systemStreamTimers.ts";
 import {
   nativeHttpRoutes,
@@ -179,6 +182,7 @@ function servedApp(options: Serving, web: ServedWeb, hub?: ThreadLiveHub) {
         ),
     },
     {
+      ...nativeHttpLimitsDefault,
       concurrentRequestsMax: options.concurrentRequestsMax ?? 64,
       requestTimeoutMs: 15_000,
     },

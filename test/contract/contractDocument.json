@@ -77,6 +77,8 @@
     "executions": "/api/v1/tenants/:tenant/projects/:project/executions",
     "execution": "/api/v1/tenants/:tenant/projects/:project/executions/:execution",
     "outputContent": "/api/v1/tenants/:tenant/projects/:project/executions/:execution/artifacts/:ordinal",
+    "projectArtifacts": "/api/v1/tenants/:tenant/projects/:project/artifacts",
+    "projectArtifact": "/api/v1/tenants/:tenant/projects/:project/artifacts/:artifact",
     "runTurns": "/api/v1/tenants/:tenant/projects/:project/executions/:execution/attempts/:attempt/turns",
     "runTranscript": "/api/v1/tenants/:tenant/projects/:project/executions/:execution/attempts/:attempt/transcript",
     "runConfiguration": "/api/v1/tenants/:tenant/projects/:project/executions/:execution/attempts/:attempt/configuration",

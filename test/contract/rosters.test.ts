@@ -84,10 +84,12 @@ import {
   agenticRefusalLedgerAnsweredMax,
   agenticRefusalReasonCharsMax,
   agenticRefusalsAnsweredMax,
+  imageMediaTypes,
   inquiryObjectivesFixedCharsMax,
   leadObjectivesFixedCharsMax,
   nativeHttpBodyBytesMax,
   nativeHttpPageItemsMax,
+  projectArtifactUploadBytesMax,
   repositoryIdentityCharsMax,
   runConfigurationBytesMax,
   sessionCapabilitiesMax,
@@ -95,6 +97,7 @@ import {
   sessionTurnInputCharsMax,
   sessionTurnModelCharsMax,
   sessionTurnResultCharsMax,
+  workerPlaneUploadBytesMax,
 } from "../../src/contract/http.ts";
 import {
   artifactFailures,
@@ -420,6 +423,20 @@ test("the cost basis roster is exhaustive over the union it induces", () => {
 test("a run's read bounds are the ones the layers beneath them hold", () => {
   assert.equal(runConfigurationBytesMax, outputPreviewBytesMax);
   assert.equal(nativeHttpPageItemsMax, runTurnsPageLimitMax);
+});
+
+test("a project-owned artifact upload is bounded by the same precedent the worker plane's own upload is", () => {
+  assert.equal(projectArtifactUploadBytesMax, workerPlaneUploadBytesMax);
+});
+
+test("the admitted image roster never admits the one document format a browser executes", () => {
+  assert.ok(
+    !imageMediaTypes.includes(
+      "image/svg+xml" as (typeof imageMediaTypes)[number],
+    ),
+  );
+  for (const mediaType of imageMediaTypes)
+    assert.ok(mediaType.startsWith("image/"));
 });
 
 test("one page bound serves every collection route", () => {

@@ -205,6 +205,17 @@ import {
 } from "./threadRead.ts";
 import { inquiriesAnsweredMax, threadsAnsweredMax } from "../contract/http.ts";
 import { resolvedThreadStandingRules } from "../contract/threadSeeding.ts";
+import {
+  projectArtifactFetched,
+  projectArtifactUploaded,
+  type ProjectArtifactFetched,
+  type ProjectArtifactMinting,
+  type ProjectArtifactUploaded,
+} from "./projectArtifact.ts";
+import type {
+  ProjectArtifactId,
+  ProjectArtifactPort,
+} from "./finalizerPreparation.ts";
 export { asPublicInstant, type PublicInstant } from "./publicResource.ts";
 export { asPrincipal, oidcPrincipal, type Principal } from "./principal.ts";
 export {
@@ -598,6 +609,19 @@ export interface NativeWeb {
     execution: ExecutionId,
     ordinal: number,
   ): Promise<OutputContentRead>;
+  /** Mints an identity and writes the bytes behind it, asking `Mutate` because giving a project an image is a developer's act. */
+  uploadProjectArtifact(
+    principal: Principal,
+    partition: Partition,
+    mediaType: string,
+    content: Uint8Array,
+  ): Promise<AuthorizedResult<ProjectArtifactUploaded>>;
+  /** Reads one project-owned artifact back, asking `Read` alone. */
+  projectArtifact(
+    principal: Principal,
+    partition: Partition,
+    artifact: ProjectArtifactId,
+  ): Promise<ProjectArtifactFetched>;
   runTurns(
     principal: Principal,
     partition: Partition,
@@ -1020,6 +1044,48 @@ function nativeOperationalMethods(
         attempt: resource.result.attempt,
         artifact,
       });
+    },
+  };
+}
+
+type NativeProjectArtifactMethods = Pick<
+  NativeWeb,
+  "uploadProjectArtifact" | "projectArtifact"
+>;
+
+/**
+ * Giving a project an image, and reading it back, both over one store and one
+ * minting port composed together: a deployment that composed neither throws
+ * the way `nativeOperationalMethods`' own guard does for every other
+ * optionally-composed port.
+ */
+function nativeProjectArtifactMethods(
+  access: ProjectAccess,
+  store?: ProjectArtifactPort,
+  minting?: ProjectArtifactMinting,
+): NativeProjectArtifactMethods {
+  const composed = () => {
+    if (store === undefined || minting === undefined) {
+      throw new Error("native web: no project artifact store was composed");
+    }
+    return { store, minting };
+  };
+  return {
+    uploadProjectArtifact: (principal, partition, mediaType, content) =>
+      authorizedProjectMutation(access, principal, partition, () => {
+        const { store: artifacts, minting: mint } = composed();
+        return projectArtifactUploaded(
+          mint,
+          artifacts,
+          partition,
+          mediaType,
+          content,
+        );
+      }),
+    projectArtifact: async (principal, partition, artifact) => {
+      if ((await access.authorize(principal, partition, "Read")) === undefined)
+        return { fetched: "NotFound" };
+      return projectArtifactFetched(composed().store, partition, artifact);
     },
   };
 }
@@ -2033,6 +2099,8 @@ export function nativeWeb(
   threads?: NativeThreadPorts,
   inquiries?: LeadInquiryStore,
   sessionRoutes?: SessionRouteReads,
+  projectArtifacts?: ProjectArtifactPort,
+  projectArtifactMinting?: ProjectArtifactMinting,
 ): NativeWeb {
   return {
     ...nativeRunEvidenceMethods(access, runEvidenceReads, runEvidenceContents),
@@ -2048,6 +2116,11 @@ export function nativeWeb(
     ...nativeDraftInitializationMethod(access, authoring),
     ...nativeAuthoringMethods(access, authoring),
     ...nativeOperationalMethods(access, operationalReads, outputContents),
+    ...nativeProjectArtifactMethods(
+      access,
+      projectArtifacts,
+      projectArtifactMinting,
+    ),
     selectorOperationalContext: nativeSelectorContextMethod(
       access,
       selectorContexts,

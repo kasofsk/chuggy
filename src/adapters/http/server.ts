@@ -66,15 +66,18 @@ import {
 } from "../../contract/rosters.ts";
 import {
   agenticRefusalsAnsweredMax,
+  imageMediaTypes,
   nativeHttpBodyBytesMax,
   nativeHttpError,
   nativeHttpHeaderBytesMax,
   nativeHttpMediaType,
   nativeHttpPathSegmentCharsMax,
   nativeHttpRoutes,
+  projectArtifactUploadBytesMax,
   selectorHistoryLimitMax,
   selectorProposalDispatchesAnsweredMax,
 } from "../../contract/http.ts";
+import { asProjectArtifactId } from "../../interpreter/finalizerPreparation.ts";
 import {
   parseConfigurationCursor,
   parseDraftCursor,
@@ -158,6 +161,9 @@ import {
   selectorProjectSettingsWriteResponse,
   selectorSettingsHistoryResponse,
   outputContentResponse,
+  projectArtifactReadResponse,
+  projectArtifactTooLargeResponse,
+  projectArtifactUploadResponse,
   runConfigurationResponse,
   runErrorResponse,
   runTranscriptResponse,
@@ -226,11 +232,14 @@ export interface NativeHttpReadiness {
 export interface NativeHttpLimits {
   readonly concurrentRequestsMax: number;
   readonly requestTimeoutMs: number;
+  /** The largest body the project-artifact upload route takes, over the global media type's own. */
+  readonly projectArtifactUploadBytesMax: number;
 }
 
 export const nativeHttpLimitsDefault: NativeHttpLimits = {
   concurrentRequestsMax: 64,
   requestTimeoutMs: 15_000,
+  projectArtifactUploadBytesMax,
 };
 
 type InitialNativeWeb = Pick<
@@ -266,6 +275,8 @@ type InitialNativeWeb = Pick<
   | "ticketAgenticRefusals"
   | "selectorHistory"
   | "outputContent"
+  | "uploadProjectArtifact"
+  | "projectArtifact"
   | "runTurns"
   | "runTranscript"
   | "runConfiguration"
@@ -938,6 +949,68 @@ function registerOperationalRoutes(
       );
     },
   );
+}
+
+/**
+ * Giving a project an image, and reading it back as base64 in a JSON body
+ * rather than a bytes route, because the console's CSP admits a `data:` URI
+ * and not this API's own origin. The upload is its own scope, adding rather
+ * than replacing the inherited parsers, so a request already readable there
+ * still reaches the session-bearer hook before this route's own media-type
+ * refusal does, and every other route's parser and body ceiling stand exactly
+ * where they were.
+ */
+function registerProjectArtifacts(
+  app: FastifyInstance,
+  web: InitialNativeWeb,
+  uploadBytesMax: number,
+): void {
+  app.get(nativeHttpRoutes.projectArtifact, async (request, reply) => {
+    const params = record(request.params);
+    send(
+      reply,
+      projectArtifactReadResponse(
+        await web.projectArtifact(
+          principalOf(request),
+          partitionOf(request),
+          asProjectArtifactId(textField(params, "artifact")),
+        ),
+      ),
+    );
+  });
+  void app.register((scope, _options, registered) => {
+    for (const mediaType of imageMediaTypes) {
+      scope.addContentTypeParser(
+        mediaType,
+        { parseAs: "buffer", bodyLimit: uploadBytesMax },
+        (_request, body, done) => {
+          done(null, body);
+        },
+      );
+    }
+    scope.setErrorHandler((failure, _request, reply) => {
+      if ((failure as { statusCode?: unknown }).statusCode === 413) {
+        send(reply, projectArtifactTooLargeResponse(uploadBytesMax));
+        return;
+      }
+      send(reply, failureResponse(failure));
+    });
+    scope.post(nativeHttpRoutes.projectArtifacts, async (request, reply) => {
+      const mediaType = request.headers["content-type"]?.split(";", 1)[0];
+      send(
+        reply,
+        projectArtifactUploadResponse(
+          await web.uploadProjectArtifact(
+            principalOf(request),
+            partitionOf(request),
+            mediaType ?? "",
+            Buffer.isBuffer(request.body) ? request.body : new Uint8Array(),
+          ),
+        ),
+      );
+    });
+    registered();
+  });
 }
 
 function registerSelectorContext(
@@ -2116,6 +2189,7 @@ export function createNativeHttpApp(
     registerProjectRepositoryConfigurations(app, onboarding);
   }
   registerOperations(app, web);
+  registerProjectArtifacts(app, web, limits.projectArtifactUploadBytesMax);
   registerNotifications(app, web);
   if (hub !== undefined) registerProjectEvents(app, web, hub);
   registerConfigurations(app, web);

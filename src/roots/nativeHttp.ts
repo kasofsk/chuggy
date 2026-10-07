@@ -75,7 +75,10 @@ import {
   postgresThreads,
 } from "../adapters/postgres/thread.ts";
 import { postgresSessionStoreRows } from "../adapters/postgres/sessionStoreReads.ts";
-import { sessionStoreStreamsAnswered } from "../contract/http.ts";
+import {
+  projectArtifactUploadBytesMax,
+  sessionStoreStreamsAnswered,
+} from "../contract/http.ts";
 import type { SessionStoreReadPort } from "../interpreter/sessionStore.ts";
 import {
   currentRuntimeSchemaContract,
@@ -266,6 +269,14 @@ const forgeTemplateRepositoryVariable = "CHUG_API_FORGE_TEMPLATE_REPOSITORY";
  * there. A deployment naming none answers every report as not found.
  */
 const actionReportersVariable = "CHUG_API_ACTION_REPORTERS";
+/**
+ * The largest body a project-owned artifact upload carries, the same
+ * deployment-overridable precedent as the worker plane's own upload bound.
+ * The artifact store's own write ceiling is set to this same value, so what
+ * the wire admits and what the store would refuse never diverge.
+ */
+const projectArtifactUploadBytesMaxVariable =
+  "CHUG_API_PROJECT_ARTIFACT_UPLOAD_BYTES_MAX";
 
 /** One pool address, refused at start where a runner would refuse it in the pool file. */
 function poolEndpointSetting(variable: string): string {
@@ -540,6 +551,27 @@ function nativeReadiness(
       (await apiDatabaseReady(pool)) &&
       (await postgresSelectorContextReady(selectorReviewPool)) &&
       (await ketoReadiness(access).ready()),
+  };
+}
+
+/**
+ * The project-owned artifact store, and the upload bound its own route is
+ * served at, both set from the same value so the two never diverge.
+ */
+function nativeArtifacts(): {
+  readonly artifacts: ReturnType<typeof artifactStore>;
+  readonly uploadBytesMax: number;
+} {
+  const uploadBytesMax = positiveEnvironment(
+    projectArtifactUploadBytesMaxVariable,
+    projectArtifactUploadBytesMax,
+  );
+  return {
+    artifacts: artifactStore({
+      root: requiredEnvironment(artifactRootVariable),
+      writeBytesMax: uploadBytesMax,
+    }),
+    uploadBytesMax,
   };
 }
 
@@ -1385,9 +1417,8 @@ async function main(): Promise<void> {
   const accessSettings = ketoConfig();
   const access = ketoProjectAccess(accessSettings);
   const grants = nativeProjectGrants();
-  const artifacts = artifactStore({
-    root: requiredEnvironment(artifactRootVariable),
-  });
+  const { artifacts, uploadBytesMax: artifactUploadBytesMax } =
+    nativeArtifacts();
   const forge = await nativeForge(pools, access);
   const web = composeNativeWeb(
     pool,
@@ -1410,7 +1441,10 @@ async function main(): Promise<void> {
     authentication,
     nativeReadiness(pool, selectorReviewPool, accessSettings),
     postgresInstallationAuthority(pool),
-    nativeHttpLimitsDefault,
+    {
+      ...nativeHttpLimitsDefault,
+      projectArtifactUploadBytesMax: artifactUploadBytesMax,
+    },
     hub,
     composeSelectorProjectSettings(pool, access),
     forge.minting,

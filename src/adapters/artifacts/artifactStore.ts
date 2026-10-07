@@ -70,6 +70,8 @@ import type {
   HandoffRead,
   HandoffRequest,
   ProjectArtifactPort,
+  ProjectArtifactRead,
+  ProjectArtifactReadRequest,
   ProjectArtifactWrite,
   ProjectArtifactWritten,
 } from "../../interpreter/finalizerPreparation.ts";
@@ -502,6 +504,35 @@ async function artifactStoreWrite(
 }
 
 /**
+ * The bytes behind one project-owned artifact, read back exactly as written.
+ * `Rejected` is folded into `NotFound` whatever it names — a project's own
+ * artifact answers no digest to confirm against, so there is no `Corrupt` to
+ * distinguish it from, and a caller who may not read an artifact of another
+ * project is owed the same answer as one that was never written.
+ */
+async function artifactStoreReadOwned(
+  own: ArtifactStoreState,
+  request: ProjectArtifactReadRequest,
+): Promise<ProjectArtifactRead> {
+  const directory = artifactProjectDirectory(
+    own.root,
+    request.partition.tenant,
+    request.partition.project,
+  );
+  const file = artifactOwnedFile(directory, request.artifact);
+  const entry = await artifactStoreEntryOf(directory, file);
+  if (entry.entry === "Unavailable") {
+    return { read: "Unavailable", retryAfterSeconds: own.unavailableRetrySecs };
+  }
+  if (entry.entry === "Rejected") return { read: "NotFound" };
+  const content = await artifactStoreBytesOf(file);
+  if (content === undefined) {
+    return { read: "Unavailable", retryAfterSeconds: own.unavailableRetrySecs };
+  }
+  return { read: "Content", content };
+}
+
+/**
  * One object written under a temporary name in a pending directory beside it
  * and committed into place, which is how every immutable object here lands: a
  * reader never sees a half-written one, and a name that is already taken is the
@@ -783,6 +814,7 @@ export function artifactStore(options: ArtifactStoreOptions): ArtifactStore {
     verifyManifest: (manifest) => artifactStoreVerify(own, manifest),
     readHandoff: (request) => artifactStoreRead(own, request),
     writeArtifact: (write) => artifactStoreWrite(own, write),
+    readArtifact: (request) => artifactStoreReadOwned(own, request),
     store: (input) => artifactStoreAttemptWrite(own, input),
     read: (input) => artifactStoreOutput(own, input),
     readEvidence: (object) => artifactStoreEvidence(own, object),

@@ -779,6 +779,7 @@ function recordingArtifacts(): ArtifactRecorder {
       own.writes.push(write);
       return Promise.resolve(own.wrote);
     },
+    readArtifact: () => Promise.resolve({ read: "NotFound" }),
   };
   return own;
 }
