@@ -57,6 +57,7 @@ import {
 } from "./http.ts";
 import { authoringResponseSchema, programStageSchema } from "./authoring.ts";
 import { briefResponseSchema, briefTitleCharsMax } from "./brief.ts";
+import { configurationOverridesSchema } from "./configurationOverrides.ts";
 import { workerPoolCapabilitiesSchema } from "./workerPool.ts";
 import {
   repositoryLandingSchema,
@@ -285,6 +286,11 @@ export const ticketResponseSchema = z.object({
    */
   configurationRevision: identitySchema.optional(),
   configurationVersion: configurationVersionSchema.optional(),
+  /**
+   * What the ticket's last release or update replaced of that configuration,
+   * absent where it replaced nothing. Only the ticket's own read carries it.
+   */
+  overrides: configurationOverridesSchema.optional(),
   /**
    * The evaluation program the ticket's last release or update was resolved
    * from, which its draft may since have been revised past. Only the ticket's
@@ -982,6 +988,7 @@ export const draftResponseSchema = z.object({
   configurationVersion: configurationVersionSchema.optional(),
   authoring: authoringResponseSchema,
   brief: briefResponseSchema.optional(),
+  overrides: configurationOverridesSchema.optional(),
 });
 export type DraftResponse = z.infer<typeof draftResponseSchema>;
 

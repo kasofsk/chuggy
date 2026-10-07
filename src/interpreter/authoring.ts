@@ -6,6 +6,10 @@ import {
   type ReleaseAuthoringProgram,
 } from "../contract/authoring.ts";
 import {
+  configurationWithOverrides,
+  type ConfigurationOverrides,
+} from "../contract/configurationOverrides.ts";
+import {
   nativeHttpPageItemsDefault,
   nativeHttpPageItemsMax,
 } from "../contract/http.ts";
@@ -125,7 +129,13 @@ export function releaseConfigurationReadiness(
   configuration: CanonicalConfiguration,
   brief?: ReleaseBrief,
 ): ReleaseConfigurationReadiness {
-  const value: unknown = JSON.parse(configuration);
+  return releaseDocumentReadiness(JSON.parse(configuration), brief);
+}
+
+function releaseDocumentReadiness(
+  value: unknown,
+  brief: ReleaseBrief | undefined,
+): ReleaseConfigurationReadiness {
   const authored = authoredTaskConfigurationReadiness(value);
   if (
     typeof value !== "object" ||
@@ -165,14 +175,20 @@ export function releaseConfigurationReadiness(
  * than for want of a repository. Only an imported revision was read out of a
  * repository, so a configuration carrying no provenance repository releases
  * under any binding and one carrying a provenance repository releases from
- * that binding alone.
+ * that binding alone, and what is judged is the pinned configuration with the
+ * draft's overrides applied, so an override cannot release what the
+ * configuration itself could not say.
  */
 export function draftReleaseReadiness(
   configuration: CanonicalConfiguration,
   brief: ReleaseBrief | undefined,
   configurationRepository: RepositoryId | undefined,
+  overrides: ConfigurationOverrides | undefined,
 ): ReleaseConfigurationReadiness {
-  const readiness = releaseConfigurationReadiness(configuration, brief);
+  const readiness = releaseDocumentReadiness(
+    configurationWithOverrides(JSON.parse(configuration), overrides),
+    brief,
+  );
   if (readiness.readiness === "Incomplete") return readiness;
   const repository = brief?.repository;
   if (repository === undefined)
@@ -275,6 +291,7 @@ export interface DraftResource {
   readonly configurationVersion?: ConfigurationVersion;
   readonly authoring: ReleaseAuthoring;
   readonly brief?: DraftBrief;
+  readonly overrides?: ConfigurationOverrides;
 }
 
 export interface ConfigurationRevisionResource {
@@ -614,6 +631,7 @@ export interface AuthoringStore {
     readonly expectedProjectSequence: number;
     readonly authoring: ReleaseAuthoring;
     readonly brief: DraftBrief;
+    readonly overrides?: ConfigurationOverrides;
   }): Promise<DraftCreated>;
   reviseDraft(input: {
     readonly partition: Partition;
@@ -623,6 +641,7 @@ export interface AuthoringStore {
     readonly configurationRevision: ConfigurationRevisionId;
     readonly authoring: ReleaseAuthoring;
     readonly brief: DraftBrief;
+    readonly overrides?: ConfigurationOverrides;
   }): Promise<DraftRevised>;
   deleteDraft(input: {
     readonly partition: Partition;

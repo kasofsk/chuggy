@@ -78,7 +78,7 @@ import {
   parseDraftAuthoring,
 } from "../../interpreter/authoring.ts";
 import { ticketDefinitionMaterial } from "../../interpreter/ticketDefinition.ts";
-import { draftBriefOf } from "./ticketBrief.ts";
+import { draftBriefOf, storedOverridesOf } from "./ticketBrief.ts";
 import {
   allInputBundleReferenceKinds,
   asFinalizationAttemptId,
@@ -165,6 +165,7 @@ interface ReleaseDraftRow {
   readonly links: string[] | null;
   readonly images: string[] | null;
   readonly checks: string[] | null;
+  readonly overrides: string | null;
 }
 
 /** A release of a draft or an update of the ticket it released: both name the draft revision they pin. */
@@ -180,7 +181,8 @@ async function releaseDraftRow(
   command: DraftReleaseCommand,
 ): Promise<ReleaseDraftRow> {
   const revision = await pool.query<ReleaseDraftRow>(
-    sql`SELECT r.authoring,c.digest,c.canonical,p.repository AS provenance_repository,
+    sql`SELECT r.authoring,r.overrides::text AS overrides,c.digest,c.canonical,
+           p.repository AS provenance_repository,
            b.title,b.intent,b.branch,b.finalization_mode,b.finalization_target,b.repository,
            (SELECT array_agg(l.url ORDER BY l.ordinal) FROM draft_brief_link l
              WHERE l.tenant=r.tenant AND l.project=r.project AND l.ticket=r.ticket) AS links,
@@ -211,7 +213,8 @@ async function releaseDraftRow(
 
 /**
  * The release's own resolution, from the draft's authoring, the configuration
- * revision the command pinned, the brief as it stands and the provenance the
+ * revision the command pinned with the overrides that revision names, the
+ * brief as it stands and the provenance the
  * pair is weighed against — resolved HERE AND NOWHERE ELSE, so the material is
  * computed once, carried into the transaction that journals its event, and
  * stored beside it. A pair that contradicts itself resolves nothing and carries
@@ -228,6 +231,7 @@ async function releaseDraftSource(
 ): Promise<DecisionInput["source"]> {
   const found = await releaseDraftRow(pool, partition, command);
   const brief = draftBriefOf(found);
+  const overrides = storedOverridesOf(found.overrides);
   const authoring = parseDraftAuthoring(found.authoring);
   const readiness = draftReleaseReadiness(
     asCanonicalConfiguration(found.canonical),
@@ -235,6 +239,7 @@ async function releaseDraftSource(
     found.provenance_repository === null
       ? undefined
       : asRepositoryId(found.provenance_repository),
+    overrides,
   );
   const material =
     readiness.readiness === "Ready"
@@ -276,6 +281,7 @@ async function releaseDraftSource(
       configurationDigest: found.digest,
       configurationCanonical: found.canonical,
       ...(brief === undefined ? {} : { brief }),
+      ...(overrides === undefined ? {} : { overrides }),
       ...(material === undefined ? {} : { definition: material }),
     },
   };

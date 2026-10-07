@@ -116,6 +116,28 @@ test("the revision is written against the draft version it was read at", () => {
   });
 });
 
+/** The form draws no overrides, and a revision replaces the whole draft, so
+ * the edit sends back the ones it read rather than clearing them. */
+test("the revision carries the draft's overrides through as they were", () => {
+  const overrides = {
+    worker: { setup: ["npm ci"] },
+    work: { instructions: ["Do it this way."] },
+  };
+  const edit = (draft: DraftResponse) =>
+    editRevisionFrom(
+      draft,
+      creationOffers,
+      editFormFrom(draft, [creationBinding(repository)], "r3"),
+      [creationBinding(repository)],
+    );
+  const assembled = edit({ ...released, overrides });
+  expect(
+    assembled.assembled === "Body" && assembled.body.overrides,
+  ).toStrictEqual(overrides);
+  const plain = edit(released);
+  expect(plain.assembled === "Body" && "overrides" in plain.body).toBe(false);
+});
+
 /** The screen draws no dependency picker, and the revision does not trust that
  * it did not: a form holding other dependencies still sends the draft's. */
 test("the revision carries the draft's own dependencies whatever the form holds", () => {

@@ -15,6 +15,7 @@ import {
   executionRowLogical,
   type ExecutionRow,
 } from "../../src/adapters/postgres/schedulerRows.ts";
+import { suppliedExecutionPolicy } from "../../src/adapters/supplied/schedulerPorts.ts";
 
 const pinned = {
   mode: "Container",
@@ -23,7 +24,7 @@ const pinned = {
   image: "registry.invalid/worker@sha256:842a",
 };
 
-function rowOf(configuration: unknown): ExecutionRow {
+function rowOf(configuration: unknown, overrides?: unknown): ExecutionRow {
   return {
     tenant: "tenant",
     project: "project",
@@ -44,6 +45,8 @@ function rowOf(configuration: unknown): ExecutionRow {
     configuration_revision: "revision",
     configuration_digest: "configuration-digest",
     configuration_canonical: JSON.stringify(configuration),
+    configuration_overrides:
+      overrides === undefined ? null : JSON.stringify(overrides),
     requirement_identity: "execution-one",
     requirement_value: JSON.stringify(pinned),
     requirement_digest: "a".repeat(64),
@@ -68,6 +71,31 @@ test("a registration under a single-agent worker asks for that agent", () => {
   );
   assert.equal(execution.agentCapability, "Agent:Claude");
   assert.deepEqual(execution.requirement, pinned);
+});
+
+test("a registration whose ticket overrides the worker's mode asks for the agent it will run", () => {
+  const configuration = {
+    version: 1,
+    image: "registry.invalid/worker@sha256:842a",
+    worker: { mode: { type: "SingleAgent", agent: "Claude" } },
+  };
+  const codex = {
+    type: "SingleAgent",
+    agent: "Codex",
+    arguments: [],
+    model: "gpt-5-codex",
+  };
+  assert.equal(
+    executionRowLogical(rowOf(configuration, { worker: { mode: codex } }))
+      .agentCapability,
+    "Agent:Codex",
+  );
+  assert.equal(
+    executionRowLogical(rowOf(configuration, { practices: [] }))
+      .agentCapability,
+    "Agent:Claude",
+    "an override that names no mode leaves the configuration's agent",
+  );
 });
 
 test("a registration under a worker that names no agent asks for none", () => {
@@ -98,5 +126,66 @@ test("the placement a row stores is the route its execution carries, and one no 
   assert.throws(
     () => executionRowLogical({ ...row, placement: "Spillover" }),
     /Spillover is not a route/,
+  );
+});
+
+test("an attempt whose ticket overrides the worker's mode to an agent its image lacks is denied, as a configuration naming that agent is", async () => {
+  const policy = suppliedExecutionPolicy({
+    profiles: new Map([
+      [
+        "Work",
+        {
+          profile: { profile: "standard", runtimeVersion: "1" },
+          grant: {
+            tools: [],
+            credentials: [],
+            network: false,
+            filesystem: "WriteWorkspace",
+            mayCompleteTask: false,
+          },
+        },
+      ],
+    ]),
+    routing: {
+      routes: { Work: "InCluster", Evaluation: "InCluster" },
+      projectRoutes: new Map(),
+    },
+    imagesAdmitted: [
+      {
+        image: pinned.image,
+        operatingSystem: "Linux",
+        architecture: "Amd64",
+        capabilities: ["Agent:Claude"],
+      },
+    ],
+  });
+  const claude = { type: "SingleAgent", agent: "Claude", arguments: [] };
+  const codex = {
+    type: "SingleAgent",
+    agent: "Codex",
+    arguments: [],
+    model: "gpt-5-codex",
+  };
+  const configured = (mode: unknown) => ({
+    version: 1,
+    image: pinned.image,
+    worker: { mode },
+  });
+  const overridden = await policy.profileFor(
+    executionRowLogical(rowOf(configured(claude), { worker: { mode: codex } })),
+  );
+  assert.deepEqual(overridden, {
+    resolved: "Denied",
+    reason: "ExecutionPolicyDenied",
+  });
+  assert.deepEqual(
+    overridden,
+    await policy.profileFor(executionRowLogical(rowOf(configured(codex)))),
+  );
+  assert.equal(
+    (await policy.profileFor(executionRowLogical(rowOf(configured(claude)))))
+      .resolved,
+    "Profile",
+    "the configuration's own agent is admitted",
   );
 });

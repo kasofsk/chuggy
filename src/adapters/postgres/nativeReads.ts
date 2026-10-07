@@ -54,7 +54,7 @@ import {
 } from "./configurationVersion.ts";
 import { projectRowCounter } from "./rows.ts";
 import { postgresTicketRunTotals } from "./runEvidence.ts";
-import { releasedBriefOf } from "./ticketBrief.ts";
+import { releasedBriefOf, storedOverridesOf } from "./ticketBrief.ts";
 
 interface PublicOperationRow {
   readonly operation: string;
@@ -107,6 +107,7 @@ interface TicketProjectionRow {
  */
 interface ReleasedBriefRow extends ConfigurationVersionRow {
   readonly brief: string | null;
+  readonly overrides: string | null;
   readonly configuration_revision: string | null;
   readonly released_authoring: string | null;
 }
@@ -528,7 +529,7 @@ async function readTicketsByIdentity(
   return found.rows;
 }
 
-/** One ticket's projection with the brief, the configuration and the authoring it was last released with. */
+/** One ticket's projection with the brief, the configuration, its overrides and the authoring it was last released with. */
 async function readTicketRow(
   pool: pg.Pool,
   partition: Partition,
@@ -540,6 +541,7 @@ async function readTicketRow(
                  '[^\\n]*[^[:space:]][^\\n]*'),${briefTitleCharsMax}::int),'')
                  AS ticket_title,
                b.brief::text AS brief,
+               b.overrides::text AS overrides,
                t.configuration_revision,
                v.name AS version_name,v.number::text AS version_number,
                a.authoring AS released_authoring,
@@ -594,6 +596,7 @@ async function readTicket(
   const row = await readTicketRow(pool, partition, ticket);
   if (row === undefined) return undefined;
   const brief = releasedBriefOf(row.brief);
+  const overrides = storedOverridesOf(row.overrides);
   const configurationVersion = configurationVersionOf(row);
   const runTotals = await postgresTicketRunTotals(pool, partition, ticket);
   return {
@@ -607,6 +610,7 @@ async function readTicket(
           ),
         }),
     ...(configurationVersion === undefined ? {} : { configurationVersion }),
+    ...(overrides === undefined ? {} : { overrides }),
     ...(row.released_authoring === null
       ? {}
       : { program: parseDraftAuthoring(row.released_authoring).prog }),

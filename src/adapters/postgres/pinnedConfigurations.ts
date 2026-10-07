@@ -4,8 +4,10 @@
  * `configuration_revision` after revoking its broad table privileges because
  * registration already resolves execution requirements from the same
  * immutable document. This adapter uses that existing boundary and selects
- * only the canonical content and digest needed by `PinnedConfigurationPort`;
- * it does not grant access to drafts or any authoring write.
+ * only the canonical content and digest needed by `PinnedConfigurationPort`,
+ * and the overrides the ticket's last release or update stored beside its
+ * definition, which the same role reads; it does not grant access to drafts or
+ * any authoring write. What it answers is the revision with those applied.
  *
  * ABSENCE, INCOMPATIBILITY AND OUTAGE ARE DIFFERENT RESULTS. No row is the
  * definitive `Missing`; a row whose canonical document cannot satisfy the
@@ -19,9 +21,18 @@
 import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
 
+import { configurationWithOverrides } from "../../contract/configurationOverrides.ts";
 import type { PinnedConfigurationPort } from "../../interpreter/taskBriefing.ts";
 import { pinnedTaskConfigurationReadiness } from "../../interpreter/taskBriefing.ts";
 import { configurationRevisionDigest } from "./digest.ts";
+import { storedOverridesOf } from "./ticketBrief.ts";
+
+/** One pinned revision, with the overrides its ticket was last released under. */
+interface PinnedConfigurationRow {
+  readonly canonical: string;
+  readonly digest: string;
+  readonly overrides: string | null;
+}
 
 /** Answers the exact revision a scheduler pass pinned, without a mutable-current read. */
 export function postgresPinnedConfigurations(
@@ -29,12 +40,15 @@ export function postgresPinnedConfigurations(
 ): PinnedConfigurationPort {
   return {
     configuration: async (partition, pin) => {
-      let found: pg.QueryResult<{ canonical: string; digest: string }>;
+      let found: pg.QueryResult<PinnedConfigurationRow>;
       try {
-        found = await pool.query<{ canonical: string; digest: string }>(
-          sql`SELECT canonical,digest FROM configuration_revision
-            WHERE tenant=${partition.tenant} AND project=${partition.project}
-              AND revision=${pin.configurationRevision}`,
+        found = await pool.query<PinnedConfigurationRow>(
+          sql`SELECT c.canonical,c.digest,d.overrides::text AS overrides
+            FROM configuration_revision c
+            LEFT JOIN ticket_definition d
+              ON d.tenant=c.tenant AND d.project=c.project AND d.ticket=${pin.ticket}
+            WHERE c.tenant=${partition.tenant} AND c.project=${partition.project}
+              AND c.revision=${pin.configurationRevision}`,
         );
       } catch {
         return { read: "Unavailable" };
@@ -45,7 +59,10 @@ export function postgresPinnedConfigurations(
         return { read: "Incompatible", fault: "DigestMismatch" };
       let document: unknown;
       try {
-        document = JSON.parse(row.canonical);
+        document = configurationWithOverrides(
+          JSON.parse(row.canonical),
+          storedOverridesOf(row.overrides),
+        );
       } catch {
         return { read: "Incompatible", fault: "ConfigurationUnreadable" };
       }

@@ -12,8 +12,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import type { ConfigurationOverrides } from "../../src/contract/configurationOverrides.ts";
+import type { ReleasedTicket } from "../../src/domain/generated/modelTypes.ts";
 import {
   canonicalConfigurationOf,
+  draftReleaseReadiness,
   releaseConfigurationReadiness,
   type ReleaseAuthoring,
   type ReleaseConfiguration,
@@ -28,31 +31,35 @@ import {
 } from "../../src/interpreter/ticketDefinition.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
 import { asDraftBrief } from "../../src/interpreter/ticketBrief.ts";
+import { asRepositoryId } from "../../src/interpreter/finalizer.ts";
 
-/** A configuration briefing its two evaluation stages from blocks that differ. */
+/** The document of a configuration briefing its two evaluation stages from blocks that differ. */
+const document = {
+  brief: {
+    acceptanceCriteria: ["It works."],
+    constraints: [],
+    motivation: ["It matters."],
+  },
+  evaluations: [
+    { instructions: ["Review."], practices: [] },
+    { instructions: ["Test."], practices: [] },
+  ],
+  image: "worker:v1",
+  practices: [],
+  review: { instructions: [] },
+  version: 1,
+  work: { instructions: ["Do the work."] },
+  worker: {
+    files: [],
+    mode: { agent: "Claude", arguments: [], type: "SingleAgent" },
+    setup: [],
+  },
+};
+
+/** The same configuration, ready. */
 const configuration: ReleaseConfiguration = (() => {
   const readiness = releaseConfigurationReadiness(
-    canonicalConfigurationOf({
-      brief: {
-        acceptanceCriteria: ["It works."],
-        constraints: [],
-        motivation: ["It matters."],
-      },
-      evaluations: [
-        { instructions: ["Review."], practices: [] },
-        { instructions: ["Test."], practices: [] },
-      ],
-      image: "worker:v1",
-      practices: [],
-      review: { instructions: [] },
-      version: 1,
-      work: { instructions: ["Do the work."] },
-      worker: {
-        files: [],
-        mode: { agent: "Claude", arguments: [], type: "SingleAgent" },
-        setup: [],
-      },
-    }),
+    canonicalConfigurationOf(document),
   );
   if (readiness.readiness !== "Ready")
     throw new Error(`the fixture configuration is ${readiness.fault}`);
@@ -198,4 +205,48 @@ test("the images a brief names are part of the content its release names", () =>
       () => releasedTicketBrief({ ...brief, images }, released.content.digest),
       /not the one the released content names/,
     );
+});
+
+/** The definition one draft releases under a configuration and its overrides. */
+function draftDefinition(
+  pinned: unknown,
+  overrides: ConfigurationOverrides | undefined,
+): ReleasedTicket {
+  const readiness = draftReleaseReadiness(
+    canonicalConfigurationOf(pinned),
+    { checks: [], repository: asRepositoryId("repository-one") },
+    undefined,
+    overrides,
+  );
+  if (readiness.readiness !== "Ready")
+    throw new Error(`the draft's configuration is ${readiness.fault}`);
+  return releasedTicketDefinition(
+    asTicketId(1),
+    authoring,
+    ticketDefinitionMaterial({
+      authoring,
+      configuration: readiness.configuration,
+    }),
+  );
+}
+
+test("a draft naming no overrides is defined exactly as its configuration is", () => {
+  assert.deepEqual(
+    draftDefinition(document, undefined),
+    releasedTicketDefinition(
+      asTicketId(1),
+      authoring,
+      ticketDefinitionMaterial({ authoring, configuration }),
+    ),
+  );
+});
+
+test("an override of the work instructions defines the ticket as a configuration saying them would", () => {
+  const instructions = ["Do the other work."];
+  const overridden = draftDefinition(document, { work: { instructions } });
+  assert.notDeepEqual(overridden, draftDefinition(document, undefined));
+  assert.deepEqual(
+    overridden,
+    draftDefinition({ ...document, work: { instructions } }, undefined),
+  );
 });

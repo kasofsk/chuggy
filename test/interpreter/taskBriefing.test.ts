@@ -35,6 +35,10 @@ import {
   briefChecksMax,
   briefIntentCharsMax,
 } from "../../src/contract/brief.ts";
+import {
+  configurationWithOverrides,
+  type ConfigurationOverrides,
+} from "../../src/contract/configurationOverrides.ts";
 import { resultReportCharsMax } from "../../src/contract/http.ts";
 import {
   briefingLineCharsMax,
@@ -49,6 +53,7 @@ import {
   stageCommandsMax,
   authoredTaskConfigurationReadiness,
   composeTaskInvocation,
+  pinnedTaskConfigurationReadiness,
   priorEvaluationReportsMax,
   priorWorkReportsMax,
   renderBriefing,
@@ -141,6 +146,39 @@ test("worker setup is parsed and carried into the composed invocation", () => {
     },
   );
   assert.deepEqual(composed(viewOf({ worker })).worker, worker);
+});
+
+test("a ticket's overrides brief the attempt from the configuration they make, and none briefs it as the configuration", () => {
+  const worker: WorkerConfiguration = {
+    mode: { type: "SingleAgent", agent: "Claude", arguments: ["--one"] },
+    setup: ["just hooks"],
+    files: [],
+  };
+  const document = { ...authoredConfiguration, worker };
+  const invocationOf = (overrides?: ConfigurationOverrides) => {
+    const read = pinnedTaskConfigurationReadiness(
+      configurationWithOverrides(document, overrides),
+      pin,
+    );
+    if (read.readiness !== "Ready") assert.fail(read.fault);
+    return composed({ ...viewOf({}), configuration: read.configuration });
+  };
+  const mode = {
+    type: "SingleAgent" as const,
+    agent: "Claude" as const,
+    arguments: ["--two"],
+  };
+  const overridden = invocationOf({
+    worker: { mode },
+    work: { instructions: ["Change the exporter instead."] },
+  });
+  assert.deepEqual(overridden.worker, { ...worker, mode });
+  assert.ok(overridden.briefing.text.includes("Change the exporter instead."));
+  assert.ok(!overridden.briefing.text.includes("Change the importer."));
+  assert.deepEqual(
+    invocationOf(),
+    composed({ ...viewOf({ worker }), configuration: { ...pin, ...document } }),
+  );
 });
 
 test("the single-agent mode admits Codex and refuses an unknown mode", () => {

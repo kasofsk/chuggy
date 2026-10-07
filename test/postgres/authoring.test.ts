@@ -12,6 +12,7 @@ import { postgresNativeReads } from "../../src/adapters/postgres/nativeReads.ts"
 import { postgresPool } from "../../src/adapters/postgres/pool.ts";
 import { postgresProjectRepositoryRetirement } from "../../src/adapters/postgres/repositoryBinding.ts";
 import { apiRole } from "../../src/adapters/postgres/schema.ts";
+import { postgresPinnedConfigurations } from "../../src/adapters/postgres/pinnedConfigurations.ts";
 import { postgresTicketBrief } from "../../src/adapters/postgres/ticketBrief.ts";
 import {
   briefChecksMax,
@@ -20,6 +21,8 @@ import {
   briefLinksMax,
   briefTitleCharsMax,
 } from "../../src/contract/brief.ts";
+import { briefingLineCharsMax } from "../../src/contract/workerTask.ts";
+import type { ConfigurationOverrides } from "../../src/contract/configurationOverrides.ts";
 import type { TicketId } from "../../src/domain/ids.ts";
 import {
   asCanonicalConfiguration,
@@ -78,6 +81,7 @@ import {
   postgresHarnessWriter,
   type PostgresHarness,
 } from "./harness.ts";
+import { schedulerRolePool } from "./schedulerHarness.ts";
 
 let harness: PostgresHarness;
 let pool: pg.Pool;
@@ -237,6 +241,7 @@ async function draftOnRevision(
   revision: ConfigurationRevisionId,
   repository: RepositoryId,
   brief: DraftBrief = postgresHarnessBrief,
+  overrides?: ConfigurationOverrides,
 ) {
   const store = postgresAuthoring(pool);
   const initialized = await store.initializeDraft(partition, revision, 100);
@@ -250,6 +255,7 @@ async function draftOnRevision(
     expectedProjectSequence: initialized.projectSequence,
     authoring: plainAuthoring,
     brief: { ...brief, repository },
+    ...(overrides === undefined ? {} : { overrides }),
   });
   if (created.created !== "Created")
     throw new Error(`draft fixture was ${created.created}`);
@@ -260,6 +266,7 @@ async function draftOnRevision(
 async function draftFixture(
   canonical = postgresHarnessConfiguration,
   brief: DraftBrief = postgresHarnessBrief,
+  overrides?: ConfigurationOverrides,
 ) {
   const partition = await postgresHarnessProject(
     harness.store,
@@ -273,7 +280,7 @@ async function draftFixture(
     revision,
     canonical,
   });
-  return draftOnRevision(partition, revision, repository, brief);
+  return draftOnRevision(partition, revision, repository, brief, overrides);
 }
 
 test("draft creation rejects a stale initialization fence", async () => {
@@ -1906,6 +1913,7 @@ function reviseReleased(
   brief: DraftBrief,
   configurationRevision: ConfigurationRevisionId = fixture.revision,
   authoring: ReleaseAuthoring = plainAuthoring,
+  overrides?: ConfigurationOverrides,
 ) {
   return fixture.store.reviseDraft({
     partition: fixture.partition,
@@ -1915,6 +1923,7 @@ function reviseReleased(
     configurationRevision,
     authoring,
     brief,
+    ...(overrides === undefined ? {} : { overrides }),
   });
 }
 
@@ -2902,4 +2911,197 @@ test("what a project holds from the configuration step is read per repository an
     (await held.held(query)).bootstrap,
     postgresHarnessConfiguration,
   );
+});
+
+/** Work instructions an override replaces the configuration's with. */
+function instructionsOverride(line: string): ConfigurationOverrides {
+  return { work: { instructions: [line] } };
+}
+
+test("a draft's overrides are written with its revision, read back, and cleared by a revision that omits them", async () => {
+  const first = instructionsOverride("Do it the first way.");
+  const fixture = await draftFixture(
+    postgresHarnessConfiguration,
+    postgresHarnessBrief,
+    first,
+  );
+  const { partition, store, revision, draft } = fixture;
+  assert.deepEqual(draft.overrides, first);
+  const page = await store.drafts(partition, { limit: 10 });
+  assert.deepEqual(
+    page.drafts.find((held) => held.ticket === draft.ticket)?.overrides,
+    first,
+  );
+  const second: ConfigurationOverrides = {
+    ...instructionsOverride("Do it the second way."),
+    practices: [],
+  };
+  const revise = (
+    expectedVersion: number,
+    overrides?: ConfigurationOverrides,
+  ) =>
+    store.reviseDraft({
+      partition,
+      authority,
+      ticket: draft.ticket,
+      expectedVersion,
+      configurationRevision: revision,
+      authoring: plainAuthoring,
+      brief: { ...postgresHarnessBrief, repository: fixture.repository },
+      ...(overrides === undefined ? {} : { overrides }),
+    });
+  const revised = await revise(1, second);
+  assert.deepEqual(
+    revised.revised === "Revised" ? revised.draft.overrides : undefined,
+    second,
+  );
+  assert.deepEqual(
+    (await store.draft(partition, draft.ticket))?.overrides,
+    second,
+  );
+  assert.equal((await revise(2)).revised, "Revised");
+  assert.equal(
+    (await store.draft(partition, draft.ticket))?.overrides,
+    undefined,
+    "a revision replaces the whole draft, and one naming no overrides has none",
+  );
+});
+
+test("a release whose overrides leave its configuration unready is refused as an unready configuration is", async () => {
+  const fixture = await draftFixture(
+    postgresHarnessConfiguration,
+    postgresHarnessBrief,
+    instructionsOverride("x".repeat(briefingLineCharsMax + 1)),
+  );
+  const decide = await fixtureWriter(fixture, "overrides-unready");
+  const submission = releaseSubmission(fixture);
+  assert.equal(await decide(submission), "Refused");
+  assert.deepEqual(
+    await harness.query(
+      "SELECT outcome_code FROM decision_input WHERE input_id=$1",
+      [submission.operation],
+    ),
+    [{ outcome_code: "ConfigurationInvalid" }],
+  );
+});
+
+/** The work instructions the scheduler's own read of the fixture's ticket answers. */
+async function pinnedWorkInstructions(
+  fixture: Awaited<ReturnType<typeof draftFixture>>,
+  scheduler: pg.Pool,
+): Promise<unknown> {
+  const pin = await fixture.store.configuration(
+    fixture.partition,
+    fixture.revision,
+  );
+  assert.ok(pin !== undefined);
+  const read = await postgresPinnedConfigurations(scheduler).configuration(
+    fixture.partition,
+    {
+      configurationRevision: fixture.revision,
+      configurationDigest: pin.digest,
+      ticket: fixture.draft.ticket,
+    },
+  );
+  return read.read === "Configuration"
+    ? read.configuration.work.instructions
+    : read;
+}
+
+test("a Pending ticket's overrides move by a revision and an update, and the next attempt is briefed from the new ones", async (t) => {
+  const first = instructionsOverride("Do it the first way.");
+  const fixture = await draftFixture(
+    postgresHarnessConfiguration,
+    postgresHarnessBrief,
+    first,
+  );
+  const asApi = postgresHarnessRolePool(apiRole);
+  const scheduler = schedulerRolePool();
+  t.after(() => Promise.all([asApi.end(), scheduler.end()]));
+  const readOverrides = async () =>
+    (
+      await postgresNativeReads(asApi).ticket(
+        fixture.partition,
+        fixture.draft.ticket,
+      )
+    )?.overrides;
+  const decide = await fixtureWriter(fixture, "overrides-update");
+  assert.equal(await decide(releaseSubmission(fixture)), "Committed");
+  assert.deepEqual(await readOverrides(), first);
+  assert.deepEqual(await pinnedWorkInstructions(fixture, scheduler), [
+    "Do it the first way.",
+  ]);
+  const material = await releasedMaterial(fixture);
+  const second = instructionsOverride("Do it the second way.");
+  const brief = postgresHarnessBriefIn(fixture.repository);
+  assert.equal(
+    (await reviseReleased(fixture, 1, brief, undefined, undefined, second))
+      .revised,
+    "Revised",
+  );
+  assert.deepEqual(
+    await readOverrides(),
+    first,
+    "a revision nobody released moves nothing the ticket runs",
+  );
+  assert.equal(await decide(updateSubmission(fixture, 1, 2)), "Committed");
+  assert.deepEqual(await readOverrides(), second);
+  assert.deepEqual(await pinnedWorkInstructions(fixture, scheduler), [
+    "Do it the second way.",
+  ]);
+  assert.notDeepEqual(
+    await releasedMaterial(fixture),
+    material,
+    "the definition the update froze is the one its instructions resolve",
+  );
+});
+
+test("a ticket past Pending keeps the overrides it was released under", async () => {
+  const first = instructionsOverride("Do it the first way.");
+  const fixture = await draftFixture(
+    postgresHarnessConfiguration,
+    postgresHarnessBrief,
+    first,
+  );
+  const writer = postgresHarnessWriter(harness);
+  const released = await decidedBy(
+    await projectWriterLoad(
+      writer,
+      await postgresHarnessHeld(
+        harness.store,
+        fixture.partition,
+        "overrides-dispatched",
+      ),
+    ),
+    releaseSubmission(fixture),
+  );
+  assert.equal(released.decided.decided, "Committed");
+  const dispatched = await decidedBy(
+    released.memory,
+    manualDispatch(fixture, released.memory),
+  );
+  assert.equal(dispatched.decided.decided, "Committed");
+  const material = await releasedMaterial(fixture);
+  assert.deepEqual(
+    await reviseReleased(
+      fixture,
+      1,
+      postgresHarnessBriefIn(fixture.repository),
+      undefined,
+      undefined,
+      instructionsOverride("Do it the second way."),
+    ),
+    { revised: "NotDraft", state: "Released" },
+  );
+  const update = updateSubmission(fixture, 1, 1);
+  const refused = await decidedBy(dispatched.memory, update);
+  assert.equal(refused.decided.decided, "Refused");
+  assert.deepEqual(
+    await harness.query(
+      "SELECT outcome_code FROM decision_input WHERE input_id=$1",
+      [update.operation],
+    ),
+    [{ outcome_code: "TicketNotPending" }],
+  );
+  assert.deepEqual(await releasedMaterial(fixture), material);
 });
