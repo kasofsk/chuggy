@@ -1769,6 +1769,7 @@ function draftCreated(value: DraftCreated): NativeHttpResponse {
       });
     case "ConfigurationNotFound":
     case "RepositoryNotBound":
+    case "ArtifactNotBound":
       return response(404, nativeHttpError("NotFound", "Resource not found."));
     case "LandingUnbranched":
       return response(422, draftLandingUnbranched);
@@ -1798,6 +1799,7 @@ function draftRevised(value: DraftRevised): NativeHttpResponse {
     case "NotFound":
     case "ConfigurationNotFound":
     case "RepositoryNotBound":
+    case "ArtifactNotBound":
       return response(404, nativeHttpError("NotFound", "Resource not found."));
     case "LandingUnbranched":
       return response(422, draftLandingUnbranched);

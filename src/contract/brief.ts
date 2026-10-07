@@ -1,7 +1,8 @@
 /**
  * The brief a ticket carries beside its authoring: what a human called it and
- * asked for, what to read first, the check lines it adds, the repository and
- * branch the work happens in, and where a finalization lands it.
+ * asked for, what to read first, the project images it carries, the check
+ * lines it adds, the repository and branch the work happens in, and where a
+ * finalization lands it.
  *
  * A brief is not authoring. `authoringSchema` is the model's own release event
  * and every value of it decides how the machine runs the ticket; none of these
@@ -13,7 +14,7 @@
 
 import { z } from "zod";
 
-import { repositoryIdentityCharsMax } from "./http.ts";
+import { identitySchema, repositoryIdentityCharsMax } from "./http.ts";
 import { briefFinalizationProposes } from "./rosters.ts";
 
 /**
@@ -35,6 +36,12 @@ export const briefIntentCharsMax = 16_384;
 
 /** The most links one brief carries, a link list being a briefing list like any other. */
 export const briefLinksMax = 8;
+
+/**
+ * The most project-owned images one brief carries, an image list being a
+ * briefing list like any other.
+ */
+export const briefImagesMax = 8;
 
 /**
  * The most command lines one brief appends to its check stage. A ticket only
@@ -59,6 +66,13 @@ export const briefLinkSchema = z
   .string()
   .max(briefLineCharsMax)
   .startsWith(briefLinkScheme);
+
+/**
+ * One project-owned artifact a brief names, by the identity its upload
+ * answered. The wire says nothing about its grammar, an artifact identity
+ * being opaque here exactly as a repository identity is.
+ */
+export const briefImageSchema = identitySchema;
 
 export const briefBranchSchema = z
   .string()
@@ -171,6 +185,7 @@ export const briefSchema = z
     intent: briefIntentSchema,
     links: z.array(briefLinkSchema).max(briefLinksMax),
     checks: z.array(briefCheckSchema).max(briefChecksMax).optional(),
+    images: z.array(briefImageSchema).max(briefImagesMax).optional(),
     repository: briefRepositorySchema.optional(),
     branch: briefBranchSchema.optional(),
     finalization: briefFinalizationSchema.optional(),

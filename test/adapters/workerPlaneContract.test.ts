@@ -59,6 +59,7 @@ import {
 import {
   workerPlaneAnswers,
   workerPlaneBytesMediaType,
+  workerPlaneInputArtifactBytesMax,
   workerPlaneRoutes,
   type WorkerPlaneAnswer,
   type WorkerPlaneRoute,
@@ -145,6 +146,9 @@ import {
   runTotalsBody,
 } from "./workerPlaneFixtures.ts";
 
+/** The image identity the live attempt's bundle pins, which `inputArtifact`'s default call reads back. */
+const liveAuthorityImage = "image/png:abc";
+
 const liveAuthority: WorkerAttemptAuthority = {
   live: true,
   partition: { tenant: asTenantId("tenant"), project: asProjectId("project") },
@@ -162,6 +166,12 @@ const liveAuthority: WorkerAttemptAuthority = {
       kind: "TargetCommit",
       reference: "main",
       digest: "b".repeat(64),
+    },
+    {
+      ordinal: 3,
+      kind: "ProjectArtifact",
+      reference: liveAuthorityImage,
+      digest: "c".repeat(64),
     },
   ],
 };
@@ -253,6 +263,7 @@ const workerPlaneCalls: Readonly<
   Record<WorkerPlaneRouteName, WorkerPlaneCall>
 > = {
   input: {},
+  inputArtifact: { rest: liveAuthorityImage },
   task: {},
   heartbeat: {},
   artifact: { rest: "out.txt", headers: octets, payload: Buffer.from("x") },
@@ -295,6 +306,7 @@ const workerPlaneRequests: Readonly<
   Record<WorkerPlaneRouteName, WorkerPlaneRequest>
 > = {
   input: "Unparsed",
+  inputArtifact: "Unparsed",
   task: "Unparsed",
   heartbeat: "Unparsed",
   artifact: "Unparsed",
@@ -694,6 +706,47 @@ const workerPlaneCases: Readonly<
   Record<WorkerPlaneRouteName, readonly WorkerPlaneCase[]>
 > = {
   input: [...workerPlaneStrangers, { name: "a live attempt" }],
+  inputArtifact: [
+    ...workerPlaneStrangers,
+    {
+      name: "a live attempt reading its own image",
+      service: {
+        projectArtifacts: {
+          readArtifact: () =>
+            Promise.resolve({ read: "Content", content: Buffer.from("png") }),
+        },
+      },
+    },
+    {
+      name: "an identity this attempt's bundle never pinned",
+      call: { rest: "image/png:other" },
+      status: 404,
+    },
+    { name: "a pinned reference the store no longer holds", status: 404 },
+    {
+      name: "a store that could not answer",
+      service: {
+        projectArtifacts: {
+          readArtifact: () =>
+            Promise.resolve({ read: "Unavailable", retryAfterSeconds: 2 }),
+        },
+      },
+      status: 503,
+    },
+    {
+      name: "content past the read bound",
+      service: {
+        projectArtifacts: {
+          readArtifact: () =>
+            Promise.resolve({
+              read: "Content",
+              content: Buffer.alloc(workerPlaneInputArtifactBytesMax + 1),
+            }),
+        },
+      },
+      status: 413,
+    },
+  ],
   task: [
     workerContractStranger,
     { name: "no bearer", anonymous: true },
@@ -1287,6 +1340,10 @@ function workerPlaneAnswerRead(
     assert.equal(body, "");
     return;
   }
+  if (answer === "bytes") {
+    assert.ok(body.length > 0);
+    return;
+  }
   const offered: unknown = JSON.parse(body);
   assert.deepEqual(answer.parse(offered), offered);
   workerContractOptionalsSeen(answer, offered, String(status), seen);
@@ -1377,6 +1434,7 @@ function workerPlaneReadBy(
     `${what} answered ${String(answered.status)}, which ${older.release} does not list`,
   );
   if (answer === "empty") assert.equal(answered.body, "", what);
+  else if (answer === "bytes") assert.ok(answered.body.length > 0, what);
   else
     assert.doesNotThrow(() => {
       answer.parse(JSON.parse(answered.body));

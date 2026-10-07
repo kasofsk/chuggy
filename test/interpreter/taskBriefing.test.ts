@@ -1031,6 +1031,7 @@ function briefAppending(checks: readonly string[]): DraftBrief {
   return {
     intent: asBriefIntent("Fix the importer."),
     links: [],
+    images: [],
     checks: checks.map(asBriefCheckLine),
   };
 }
@@ -1480,6 +1481,40 @@ test("the ticket's own brief renders as its two sections and moves no other", ()
   );
 });
 
+test("a brief naming images renders its own section, naming each one's media type and where to fetch it", () => {
+  const withImages = composed(
+    viewOf({
+      practices: [...allPracticeIds],
+      ticketBrief: asDraftBrief({
+        intent: ticketIntent,
+        links: [],
+        images: ["image/png:one", "image/jpeg:two"],
+      }),
+    }),
+  ).briefing;
+  const without = composed(
+    viewOf({
+      practices: [...allPracticeIds],
+      ticketBrief: asDraftBrief({ intent: ticketIntent, links: [] }),
+    }),
+  ).briefing;
+  assert.ok(
+    !without.sections.some((section) => section.section === "TicketImages"),
+    "a brief naming no image renders no images section",
+  );
+  assert.deepEqual(
+    withImages.sections.find((section) => section.section === "TicketImages")
+      ?.lines,
+    [
+      "- image/png: GET /v1/input/artifacts/image/png:one, with this attempt's own bearer",
+      "- image/jpeg: GET /v1/input/artifacts/image/jpeg:two, with this attempt's own bearer",
+    ],
+  );
+  const pinnedHalf = (rendered: typeof without): readonly BriefingSection[] =>
+    rendered.sections.filter((section) => section.section !== "TicketImages");
+  assert.deepEqual(pinnedHalf(withImages), pinnedHalf(without));
+});
+
 test("a titled brief heads its own words with what the ticket is called", () => {
   const rendered = composed(
     viewOf({
@@ -1519,7 +1554,12 @@ test("a brief with nothing to point at renders its intent and no link section", 
 
 /** A brief that reached the view unbranded, which is what a stored one cannot be. */
 function unbrandedBrief(intent: string): DraftBrief {
-  return { intent: intent as DraftBrief["intent"], links: [], checks: [] };
+  return {
+    intent: intent as DraftBrief["intent"],
+    links: [],
+    images: [],
+    checks: [],
+  };
 }
 
 /** The same, called something the interpreter would not have branded. */

@@ -56,6 +56,8 @@
  * token's digest stays on the command as provenance: which page the author saw.
  */
 
+import { createHash } from "node:crypto";
+
 import type { Entry, Replayed, StoredEntry } from "../actor/journal.ts";
 import { genesis, replayStep, storedJournalLegalOn } from "../actor/journal.ts";
 import { ticketEquals } from "../domain/equality.ts";
@@ -87,8 +89,13 @@ import type {
   ExecutionSourceObservationPort,
 } from "./executionSource.ts";
 import type { GitEvidence } from "./finalizer.ts";
+import type {
+  ProjectArtifactId,
+  ProjectArtifactPort,
+} from "./finalizerPreparation.ts";
 import type { ProjectDiscovery, Readiness } from "./projectDiscovery.ts";
 import type {
+  BriefImageReference,
   Decided,
   DecisionOutcome,
   ProjectDecision,
@@ -102,7 +109,7 @@ import {
   type Refusal,
 } from "./refusal.ts";
 import { ticketCommandOf } from "./commandMap.ts";
-import type { Lease, ProjectStore } from "./projectStore.ts";
+import type { Lease, Partition, ProjectStore } from "./projectStore.ts";
 import { reworkPolicy, type ReworkCap } from "./reworkCap.ts";
 import { materializationOf, type SpawnSources } from "./decisionPlan.ts";
 import {
@@ -131,6 +138,8 @@ export interface ProjectTicketWriter {
   readonly decisions: ProjectDecision;
   readonly executionSources: ExecutionSourceObservationPort;
   readonly ticketBriefs: TicketBriefPort;
+  /** Where a brief's named images are read back, to pin the digest a dispatch's bundle carries for each. */
+  readonly projectArtifacts: Pick<ProjectArtifactPort, "readArtifact">;
 }
 
 /** What a writer holds between decisions: the lease that authorizes it, and the state it replayed. */
@@ -587,7 +596,11 @@ async function projectWriterDispatchSource(
   memory: ProjectMemory,
   ticket: TicketId,
 ): Promise<
-  | { readonly observed: "Source"; readonly source: DispatchSource }
+  | {
+      readonly observed: "Source";
+      readonly source: DispatchSource;
+      readonly images: readonly BriefImageReference[];
+    }
   | { readonly observed: "Unreadable"; readonly evidence: GitEvidence }
 > {
   const brief = await writer.ticketBriefs.brief(memory.lease.partition, ticket);
@@ -599,15 +612,56 @@ async function projectWriterDispatchSource(
       : { repository: brief.repository }),
     ...(brief?.branch === undefined ? {} : { ref: brief.branch }),
   });
-  return observed.observed === "Source"
-    ? observed
-    : { observed: "Unreadable", evidence: observed.evidence };
+  if (observed.observed !== "Source")
+    return { observed: "Unreadable", evidence: observed.evidence };
+  return {
+    observed: "Source",
+    source: observed.source,
+    images: await projectWriterBriefImages(
+      writer,
+      memory.lease.partition,
+      brief?.images ?? [],
+    ),
+  };
+}
+
+/**
+ * Each image a brief names, read back with the digest the store answers it
+ * at — derived rather than carried, because an artifact's digest is a fact
+ * of its bytes and not one this tree stores a second time.
+ */
+async function projectWriterBriefImages(
+  writer: ProjectTicketWriter,
+  partition: Partition,
+  images: readonly ProjectArtifactId[],
+): Promise<readonly BriefImageReference[]> {
+  const resolved: BriefImageReference[] = [];
+  for (const artifact of images) {
+    const read = await writer.projectArtifacts.readArtifact({
+      partition,
+      artifact,
+    });
+    if (read.read === "Unavailable")
+      throw new Error(
+        "project writer: a brief's own image was unavailable at dispatch",
+      );
+    if (read.read === "NotFound")
+      throw new IntegrityContradiction(
+        "project writer: a released brief names an image its project does not hold",
+      );
+    resolved.push({
+      artifact,
+      digest: createHash("sha256").update(read.content).digest("hex"),
+    });
+  }
+  return resolved;
 }
 
 /** What the dispatch's own spawn runs against, which is what it just observed. */
 function dispatchSpawnSources(
   ticket: TicketId,
   source: DispatchSource,
+  images: readonly BriefImageReference[],
 ): SpawnSources {
   const pinned: TicketSourceRecord = {
     ticket,
@@ -618,8 +672,9 @@ function dispatchSpawnSources(
     ...(source.commit === undefined ? {} : { commit: source.commit }),
     ...(source.ref === undefined ? {} : { ref: source.ref }),
   };
+  const withImages = images.length === 0 ? {} : { images };
   if (source.repository === undefined || source.commit === undefined)
-    return { pinned };
+    return { pinned, ...withImages };
   return {
     pinned,
     source: {
@@ -630,6 +685,7 @@ function dispatchSpawnSources(
       },
       manifests: [],
     },
+    ...withImages,
   };
 }
 
@@ -786,7 +842,7 @@ async function projectWriterDispatchPlan(
         item,
         command,
         decision.value,
-        dispatchSpawnSources(ticket, observed.source),
+        dispatchSpawnSources(ticket, observed.source, observed.images),
       );
 }
 

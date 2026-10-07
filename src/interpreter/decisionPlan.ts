@@ -39,6 +39,7 @@ import {
 } from "./finalizer.ts";
 import {
   inputBundleIdentityKind,
+  type BriefImageReference,
   type ConfigurationPin,
   type DecisionMaterialization,
   type ExecutionRequestBundle,
@@ -151,6 +152,7 @@ function executionRequestBundle(
   entry: Entry,
   index: number,
   source: ExecutionSourceObservation | undefined,
+  images: readonly BriefImageReference[] | undefined,
 ): ExecutionRequestBundle {
   const evidence =
     entry.event.type === "TicketFinalizationNeedsWork"
@@ -171,6 +173,7 @@ function executionRequestBundle(
             manifests: source.manifests,
           },
         }),
+    ...(images === undefined || images.length === 0 ? {} : { images }),
   };
 }
 
@@ -186,6 +189,7 @@ function executeRequest(
   obligations: readonly Obligation[],
   post: Replayed,
   source: ExecutionSourceObservation | undefined,
+  images: readonly BriefImageReference[] | undefined,
 ): readonly ExecutionRequestPlan[] {
   const run = obligationsOf(entry, obligations, "ExecuteTask");
   const first = run[0];
@@ -202,7 +206,7 @@ function executeRequest(
       ticket,
       ticketVersion: entry.seq,
       kind: phase === "WorkTask" ? "SpawnWork" : "SpawnEvaluation",
-      bundle: executionRequestBundle(input, entry, first.index, source),
+      bundle: executionRequestBundle(input, entry, first.index, source, images),
       tasks: requestTasks(post, ticket, identities),
     },
   ];
@@ -309,12 +313,18 @@ export function inputBundleReferencesOf(
 ): readonly InputBundleReference[] {
   const evidence = bundle.evidence;
   const source = bundle.source;
+  const images = bundle.images ?? [];
   const named: readonly InputBundleReference[] = [
     {
       kind: "ConfigurationRevision",
       reference: configuration.configurationRevision,
       digest: configuration.configurationDigest,
     },
+    ...images.map((image) => ({
+      kind: "ProjectArtifact" as const,
+      reference: image.artifact,
+      digest: image.digest,
+    })),
     ...(source === undefined
       ? []
       : [
@@ -406,6 +416,8 @@ function materializationWithdrawals(
 export interface SpawnSources {
   readonly source?: ExecutionSourceObservation;
   readonly pinned?: TicketSourceRecord;
+  /** The ticket's own brief images, read at the same gather and carried onto every spawn's bundle alike. */
+  readonly images?: readonly BriefImageReference[];
 }
 
 /** The event arms a finalizer's result is journalled at, each of which fulfils the request it answered. */
@@ -430,7 +442,14 @@ export function materializationOf(
 ): DecisionMaterialization {
   return {
     execution: [
-      ...executeRequest(input, entry, obligations, post, spawn.source),
+      ...executeRequest(
+        input,
+        entry,
+        obligations,
+        post,
+        spawn.source,
+        spawn.images,
+      ),
       ...cancelRequest(entry, obligations, pre),
     ],
     actions: nativeActions(entry, pre.graph, post.graph),

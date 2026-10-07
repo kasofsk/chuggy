@@ -189,6 +189,7 @@ test("authoring DTOs translate into existing application types", () => {
       brief: {
         intent: "Serve the brief on the ticket resource.",
         links: ["https://example.test/issues/340"],
+        images: [],
         checks: [],
         branch: "refs/heads/rt/ticket-brief",
         finalization: { mode: "PullRequest", target: "refs/heads/main" },
@@ -469,7 +470,7 @@ test("a brief the interpreter would refuse never reaches a draft", () => {
       ...creation,
       brief: { intent: "Fix it.", links: [] },
     }).brief,
-    { intent: "Fix it.", links: [], checks: [] },
+    { intent: "Fix it.", links: [], images: [], checks: [] },
   );
   assert.deepEqual(
     parseDraftCreation({

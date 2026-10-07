@@ -112,6 +112,7 @@ function passService(
     projects,
     executionSources,
     ticketBriefs: { brief: () => Promise.resolve(undefined) },
+    projectArtifacts: { readArtifact: () => unreachablePromise() },
     owner,
     monotonicNow: () => 0,
     ...(metrics === undefined ? {} : { metrics }),

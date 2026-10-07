@@ -1,7 +1,8 @@
 /**
  * The brief one ticket carries: the title a human gave it, the intent they
- * stated, the links they pointed at, the check lines they added, the repository
- * and branch the work happens in, and where a finalization lands it.
+ * stated, the links they pointed at, the project images they named, the check
+ * lines they added, the repository and branch the work happens in, and where a
+ * finalization lands it.
  *
  * IT IS NOT AUTHORING. Authoring is the model's release event, and every value
  * of it decides how the machine runs the ticket. None of these do: they are
@@ -24,6 +25,11 @@
  * is measured and its lines are not counted. A briefing holds an intent to the
  * rule it is branded under and to no other, so a stored brief is not one the
  * scheduler is later unable to render.
+ *
+ * AN IMAGE IS NAMED BY ITS OWN IDENTITY AND IS OPAQUE HERE. A brief names a
+ * project-owned artifact by the identity its upload answered, exactly as a
+ * repository is opaque to this module; that the project actually holds one is
+ * the server's to enforce at release, because nothing here reaches the store.
  *
  * A REPOSITORY IS NAMED BY THE TICKET AND NOT BY THE PROJECT. A project binds
  * several repositories and privileges none of them, so the one a ticket works
@@ -66,6 +72,7 @@
 import {
   briefBranchCharsMax,
   briefChecksMax,
+  briefImagesMax,
   briefIntentCharsMax,
   briefLandingIsWhole,
   briefLinkScheme,
@@ -83,6 +90,10 @@ import {
   type GitRefName,
   type RepositoryId,
 } from "./finalizer.ts";
+import {
+  asProjectArtifactId,
+  type ProjectArtifactId,
+} from "./finalizerPreparation.ts";
 import type { Partition } from "./projectStore.ts";
 import {
   taskConfigurationLineFault,
@@ -150,6 +161,7 @@ export interface DraftBrief {
   readonly title?: BriefTitle;
   readonly intent: BriefIntent;
   readonly links: readonly BriefLinkUrl[];
+  readonly images: readonly ProjectArtifactId[];
   readonly checks: readonly BriefCheckLine[];
   readonly repository?: RepositoryId;
   readonly branch?: GitRefName;
@@ -289,6 +301,7 @@ export function asDraftBrief(value: {
   readonly title?: string;
   readonly intent: string;
   readonly links: readonly string[];
+  readonly images?: readonly string[];
   readonly checks?: readonly string[];
   readonly repository?: string;
   readonly branch?: string;
@@ -296,6 +309,9 @@ export function asDraftBrief(value: {
 }): DraftBrief {
   if (value.links.length > briefLinksMax)
     throw new RangeError("ticket brief: more links than one brief carries");
+  const images = value.images ?? [];
+  if (images.length > briefImagesMax)
+    throw new RangeError("ticket brief: more images than one brief carries");
   const checks = value.checks ?? [];
   if (checks.length > briefChecksMax)
     throw new RangeError("ticket brief: more checks than one brief appends");
@@ -303,6 +319,7 @@ export function asDraftBrief(value: {
     ...(value.title === undefined ? {} : { title: asBriefTitle(value.title) }),
     intent: asBriefIntent(value.intent),
     links: value.links.map(asBriefLinkUrl),
+    images: images.map(asProjectArtifactId),
     checks: checks.map(asBriefCheckLine),
     ...(value.repository === undefined
       ? {}

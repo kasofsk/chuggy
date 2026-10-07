@@ -80,6 +80,7 @@ import {
   postgresPriorWorkReports,
 } from "../adapters/postgres/evaluationReports.ts";
 import { postgresTicketBrief } from "../adapters/postgres/ticketBrief.ts";
+import { artifactStore } from "../adapters/artifacts/artifactStore.ts";
 import { postgresPinnedConfigurations } from "../adapters/postgres/pinnedConfigurations.ts";
 import { postgresWorkerPoolRoster } from "../adapters/postgres/workerPool.ts";
 import {
@@ -469,6 +470,8 @@ export interface TicketServiceProcessRootConfig {
   readonly ticket?: TicketServiceConfig;
   readonly source: Omit<GitPromotionOptions, "credentials"> &
     CredentialFilesOptions;
+  /** Where a brief's named images are read back, to pin the digest a dispatch's bundle carries. */
+  readonly artifacts: { readonly root: string };
   /**
    * The App key this deployment observes a source through, when it holds one.
    * A deployment naming neither a key nor a credential file could observe
@@ -501,6 +504,7 @@ export function ticketServiceProcessRoot(
       postgresExecutionSourceHistory(pool),
     ),
     ticketBriefs: postgresTicketBrief(pool),
+    projectArtifacts: artifactStore({ root: config.artifacts.root }),
     ...(config.ticket === undefined ? {} : { ticketConfig: config.ticket }),
   };
   return ownedProcess(

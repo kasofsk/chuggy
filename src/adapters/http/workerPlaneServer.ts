@@ -41,6 +41,7 @@ import { resultManifestTextCharsMax } from "../../contract/workerDocuments.ts";
 import type { WorkTaskAnswer } from "../../contract/workerTask.ts";
 import {
   workerPlaneBytesMediaType,
+  workerPlaneInputArtifactBytesMax,
   workerPlaneRoutes,
   workerRunEndedSchema,
   workerRunTotalsSchema,
@@ -95,6 +96,10 @@ import {
   type WorkerRunTurnsPort,
 } from "../../interpreter/runEvidence.ts";
 import { asRepositoryId } from "../../interpreter/finalizer.ts";
+import {
+  asProjectArtifactId,
+  type ProjectArtifactPort,
+} from "../../interpreter/finalizerPreparation.ts";
 import type {
   WorkerPlaneCredentialMinted,
   WorkerPlaneCredentialMinting,
@@ -209,6 +214,7 @@ const workerRunPageBytesMax =
 export function workerPlaneServed(uploadBytesMax: number) {
   return {
     input: { caller: "LiveAttempt", ...workerPlaneBodyless },
+    inputArtifact: { caller: "LiveAttempt", ...workerPlaneBodyless },
     task: { caller: "Task", ...workerPlaneBodyless },
     heartbeat: { caller: "LiveAttempt", ...workerPlaneBodyless },
     artifact: {
@@ -466,6 +472,8 @@ export interface WorkerPlaneServerService {
   readonly heartbeats: WorkerAttemptHeartbeatPort;
   readonly heartbeatLeaseSecs: number;
   readonly artifacts: WorkerArtifactUploadPort;
+  /** Where a brief's own images are read back, to serve an input reference's bytes. */
+  readonly projectArtifacts: Pick<ProjectArtifactPort, "readArtifact">;
   readonly reservations: WorkerArtifactReservationPort;
   readonly reports: WorkerReportPort;
   readonly runEvidence: WorkerRunEvidencePorts;
@@ -659,6 +667,45 @@ function workerInputRoute(register: WorkerJobRegistrar): void {
       references: authority.inputs,
     }),
   );
+}
+
+/** The reference kind an image's own bytes are read under, restating the interpreter's roster member. */
+const inputArtifactReferenceKind = "ProjectArtifact";
+
+/**
+ * One input reference's own bytes, to the attempt whose bundle names it and to
+ * no other: the wildcard is read against `authority.inputs` before the store
+ * is asked anything, so an identity this attempt's bundle never pinned is
+ * answered not found whether or not some other project's store holds it.
+ */
+function workerInputArtifactRoute(
+  register: WorkerJobRegistrar,
+  service: WorkerPlaneServerService,
+): void {
+  register("inputArtifact", async (request, reply, { authority }) => {
+    const raw = (request.params as { "*": string })["*"];
+    const named = authority.inputs.some(
+      (reference) =>
+        reference.kind === inputArtifactReferenceKind &&
+        reference.reference === raw,
+    );
+    if (!named) return reply.code(404).send({ action: "stop" });
+    const read = await service.projectArtifacts.readArtifact({
+      partition: authority.partition,
+      artifact: asProjectArtifactId(raw),
+    });
+    if (read.read === "NotFound")
+      return reply.code(404).send({ action: "stop" });
+    if (read.read === "Unavailable")
+      return reply
+        .header("retry-after", String(read.retryAfterSeconds))
+        .code(503)
+        .send({ action: "retry" });
+    if (read.content.byteLength > workerPlaneInputArtifactBytesMax)
+      return reply.code(413).send({ action: "stop", reason: "QuotaExceeded" });
+    reply.header("content-type", workerPlaneBytesMediaType);
+    return Buffer.from(read.content);
+  });
 }
 
 function workerUploadRoute(
@@ -1572,6 +1619,7 @@ export function createWorkerPlaneApp(
     workerPlaneServed(service.uploadBytesMax),
   );
   workerInputRoute(register);
+  workerInputArtifactRoute(register, service);
   workerTaskRoute(register, service);
   workerHeartbeatRoute(register, service);
   workerUploadRoute(register, service);

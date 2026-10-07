@@ -934,9 +934,30 @@ function nativeDraftReadMethods(
   };
 }
 
+/**
+ * Whether every image a brief names is one this project's own store holds. A
+ * brief naming none asks the store nothing, which is what keeps a brief
+ * written before this ticket answering exactly as it did.
+ */
+async function nativeBriefImagesBound(
+  artifacts: ProjectArtifactPort | undefined,
+  partition: Partition,
+  images: readonly ProjectArtifactId[],
+): Promise<boolean> {
+  if (images.length === 0) return true;
+  if (artifacts === undefined)
+    throw new Error("native web: no project artifact store was composed");
+  for (const artifact of images) {
+    const read = await artifacts.readArtifact({ partition, artifact });
+    if (read.read !== "Content") return false;
+  }
+  return true;
+}
+
 function nativeAuthoringMethods(
   access: ProjectAccess,
   authoring: AuthoringStore,
+  projectArtifacts?: ProjectArtifactPort,
 ): NativeAuthoringMethods {
   return {
     ...nativeDraftReadMethods(access, authoring),
@@ -952,14 +973,28 @@ function nativeAuthoringMethods(
         access,
         principal,
         input.partition,
-        (authority) => authoring.createDraft({ ...input, authority }),
+        async (authority) =>
+          (await nativeBriefImagesBound(
+            projectArtifacts,
+            input.partition,
+            input.brief.images,
+          ))
+            ? authoring.createDraft({ ...input, authority })
+            : { created: "ArtifactNotBound" },
       ),
     reviseDraft: (principal, input) =>
       authorizedProjectMutation(
         access,
         principal,
         input.partition,
-        (authority) => authoring.reviseDraft({ ...input, authority }),
+        async (authority) =>
+          (await nativeBriefImagesBound(
+            projectArtifacts,
+            input.partition,
+            input.brief.images,
+          ))
+            ? authoring.reviseDraft({ ...input, authority })
+            : { revised: "ArtifactNotBound" },
       ),
     deleteDraft: (principal, input) =>
       authorizedProjectMutation(
@@ -2114,7 +2149,7 @@ export function nativeWeb(
     ),
     ...nativeConfigurationMethods(access, authoring),
     ...nativeDraftInitializationMethod(access, authoring),
-    ...nativeAuthoringMethods(access, authoring),
+    ...nativeAuthoringMethods(access, authoring, projectArtifacts),
     ...nativeOperationalMethods(access, operationalReads, outputContents),
     ...nativeProjectArtifactMethods(
       access,

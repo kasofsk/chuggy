@@ -36,6 +36,7 @@ const configurationSchema = z
     domain: domainConfigurationSchema,
     rework: z.object({ cyclesMax: z.number().int().nonnegative() }).strict(),
     owner: z.string().min(1),
+    artifacts: z.object({ root: z.string().min(1) }).strict(),
     forge: z
       .object({
         appId: z.string().min(1),
@@ -129,6 +130,7 @@ export function ticketServiceConfiguration(
     domain: data.domain,
     rework: data.rework,
     owner: data.owner,
+    artifacts: { root: data.artifacts.root },
     source: {
       scratchDirectory: data.source.scratchDirectory,
       identity: data.source.identity,
