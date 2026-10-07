@@ -31,7 +31,23 @@ import type {
 import type { Worker } from "./workerCatalog.ts";
 import type { BriefingCarrier } from "./briefingTemplate.ts";
 
-export type OutputRenderer = "UnifiedDiff" | "Markdown" | "Json" | "Text";
+export type OutputRenderer =
+  "UnifiedDiff" | "Markdown" | "Json" | "Text" | "Image";
+
+/** How an output's content characters encode the bytes behind them. */
+export type OutputContentEncoding = "Utf8" | "Base64";
+
+/**
+ * The media types an `Image` output may declare. Each is a raster format no
+ * browser executes on load, which is what a reader of the stored bytes can
+ * trust: `image/svg+xml` is a document a browser parses as markup and may run
+ * as script, and does not belong here.
+ */
+export const imageOutputMediaTypes = [
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+] as const;
 
 export interface OutputDefinition {
   readonly name: string;
@@ -63,12 +79,11 @@ export type ExecutionSelection =
     };
 
 /**
- * Where a page of executions resumes.
- *
- * The list has one order, `(ticket, task)` ascending, which is the machine's
- * own history: a ticket's tasks are numbered across its whole history, so
- * ascending task is the sequence they were authorized in. The position is
- * total because a ticket numbers each task once.
+ * Where a page of executions resumes: the list has one order, `(ticket,
+ * task)` ascending, which is the machine's own history, a ticket's tasks
+ * numbered across its whole history so ascending task is the sequence they
+ * were authorized in. The position is total because a ticket numbers each
+ * task once.
  */
 export interface ExecutionPageCursor {
   readonly ticket: TicketId;
@@ -206,6 +221,7 @@ export type OutputContentRead =
       readonly read: "Content";
       readonly mediaType: string;
       readonly renderer: OutputRenderer;
+      readonly encoding: OutputContentEncoding;
       readonly content: string;
       readonly schema?: Readonly<Record<string, unknown>>;
     }
@@ -317,7 +333,10 @@ export function configuredOutputs(
       (renderer !== "UnifiedDiff" &&
         renderer !== "Markdown" &&
         renderer !== "Json" &&
-        renderer !== "Text") ||
+        renderer !== "Text" &&
+        renderer !== "Image") ||
+      (renderer === "Image" &&
+        !(imageOutputMediaTypes as readonly string[]).includes(mediaType)) ||
       (schema !== undefined &&
         (typeof schema !== "object" ||
           schema === null ||

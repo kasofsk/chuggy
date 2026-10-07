@@ -678,16 +678,53 @@ async function artifactStoreOutput(
     input.artifact,
     true,
   );
+  if (output.renderer === "Image") {
+    const drawn = artifactStoreBytesRead(own, confirmed);
+    return drawn.read === "Content"
+      ? {
+          read: "Content",
+          mediaType: output.mediaType,
+          renderer: output.renderer,
+          encoding: "Base64",
+          content: Buffer.from(drawn.content).toString("base64"),
+          ...(output.schema === undefined ? {} : { schema: output.schema }),
+        }
+      : drawn;
+  }
   const drawn = artifactStoreCharacters(own, confirmed);
   return drawn.read === "Content"
     ? {
         read: "Content",
         mediaType: output.mediaType,
         renderer: output.renderer,
+        encoding: "Utf8",
         content: drawn.content,
         ...(output.schema === undefined ? {} : { schema: output.schema }),
       }
     : drawn;
+}
+
+/** What one confirmed object resolves to apart from its bytes: an outage, an absence or a fault. */
+type ArtifactStoreBytesRead =
+  | { readonly read: "Content"; readonly content: Uint8Array }
+  | { readonly read: "NotFound" }
+  | { readonly read: "Unavailable"; readonly retryAfterSeconds: number }
+  | { readonly read: "Corrupt" };
+
+/** What one confirmed object's bytes resolve to, before anything decodes them. */
+function artifactStoreBytesRead(
+  own: ArtifactStoreState,
+  confirmed: ArtifactStoreConfirmed,
+): ArtifactStoreBytesRead {
+  if (confirmed.confirmed === "Unavailable")
+    return { read: "Unavailable", retryAfterSeconds: own.unavailableRetrySecs };
+  if (confirmed.confirmed === "Rejected")
+    return confirmed.failure === "Missing" ||
+      confirmed.failure === "ForeignProject"
+      ? { read: "NotFound" }
+      : { read: "Corrupt" };
+  if (confirmed.content === undefined) return { read: "Corrupt" };
+  return { read: "Content", content: confirmed.content };
 }
 
 /**
@@ -698,20 +735,12 @@ function artifactStoreCharacters(
   own: ArtifactStoreState,
   confirmed: ArtifactStoreConfirmed,
 ): RunEvidenceContentRead {
-  if (confirmed.confirmed === "Unavailable")
-    return { read: "Unavailable", retryAfterSeconds: own.unavailableRetrySecs };
-  if (confirmed.confirmed === "Rejected")
-    return confirmed.failure === "Missing" ||
-      confirmed.failure === "ForeignProject"
-      ? { read: "NotFound" }
-      : { read: "Corrupt" };
-  if (confirmed.content === undefined) return { read: "Corrupt" };
+  const drawn = artifactStoreBytesRead(own, confirmed);
+  if (drawn.read !== "Content") return drawn;
   try {
     return {
       read: "Content",
-      content: new TextDecoder("utf-8", { fatal: true }).decode(
-        confirmed.content,
-      ),
+      content: new TextDecoder("utf-8", { fatal: true }).decode(drawn.content),
     };
   } catch {
     return { read: "Corrupt" };

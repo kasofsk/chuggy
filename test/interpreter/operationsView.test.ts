@@ -35,6 +35,42 @@ test("configuration declares bounded custom structured output presentation", () 
   });
 });
 
+test("configuration declares an image output under an admitted media type", () => {
+  const outputs = configuredOutputs(
+    asCanonicalConfiguration(
+      '{"image":"worker:v1","outputs":[{"mediaType":"image/png","name":"design-spike","path":".chuggy/outputs/spike.png","renderer":"Image"}],"version":1}',
+    ),
+  );
+  assert.deepEqual(outputs.at(-1), {
+    name: "design-spike",
+    path: ".chuggy/outputs/spike.png",
+    mediaType: "image/png",
+    renderer: "Image",
+  });
+});
+
+test("an Image renderer paired with a non-image media type is refused", () => {
+  assert.deepEqual(
+    configuredOutputs(
+      asCanonicalConfiguration(
+        '{"image":"worker:v1","outputs":[{"mediaType":"text/plain","name":"design-spike","path":".chuggy/outputs/spike.png","renderer":"Image"}],"version":1}',
+      ),
+    ),
+    [branchDiffOutput, workSummaryOutput],
+  );
+});
+
+test("an Image output may not declare image/svg+xml, which a browser executes", () => {
+  assert.deepEqual(
+    configuredOutputs(
+      asCanonicalConfiguration(
+        '{"image":"worker:v1","outputs":[{"mediaType":"image/svg+xml","name":"design-spike","path":".chuggy/outputs/spike.svg","renderer":"Image"}],"version":1}',
+      ),
+    ),
+    [branchDiffOutput, workSummaryOutput],
+  );
+});
+
 test("execution selections reject empty, duplicate, and unbounded pages", () => {
   assert.throws(() => checkedExecutionListQuery({ limit: 0 }), RangeError);
   assert.throws(

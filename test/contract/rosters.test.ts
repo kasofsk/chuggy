@@ -40,6 +40,7 @@ import {
   operationRefusalCodes,
   operationStates,
   operationTicketRefusalCodes,
+  outputContentEncodings,
   outputRenderers,
   phaseRoster,
   repositoryConfigurationFaults,
@@ -196,6 +197,7 @@ import {
   executionPageLimitMax,
   outputPreviewBytesMax,
   type ExecutionResultResource,
+  type OutputContentEncoding,
   type OutputRenderer,
   type ProjectOperationalStatus,
 } from "../../src/interpreter/operationsView.ts";
@@ -440,6 +442,7 @@ test("the rosters with no runtime list are exhaustive over their unions", () => 
     Markdown: true,
     Json: true,
     Text: true,
+    Image: true,
   };
   const states: Record<OperationState, true> = {
     Pending: true,
@@ -496,6 +499,14 @@ test("the rosters with no runtime list are exhaustive over their unions", () => 
   assert.deepEqual(sorted(resultVerdicts), keysOf(verdicts));
   assert.deepEqual(sorted(dispatchViewResults), keysOf(dispatchResults));
   assert.deepEqual(sorted(notificationResults), keysOf(batches));
+});
+
+test("the output content encoding roster is exhaustive over its union", () => {
+  const encodings: Record<OutputContentEncoding, true> = {
+    Utf8: true,
+    Base64: true,
+  };
+  assert.deepEqual(sorted(outputContentEncodings), keysOf(encodings));
 });
 
 test("the selector rosters are exhaustive over the settings they name", () => {

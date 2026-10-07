@@ -57,7 +57,10 @@ import {
   asExecutionId,
 } from "../../src/interpreter/schedulerIdentity.ts";
 import type { WorkerAttemptAuthority } from "../../src/interpreter/workerPlane.ts";
-import { branchDiffOutput } from "../../src/interpreter/operationsView.ts";
+import {
+  branchDiffOutput,
+  outputPreviewBytesMax,
+} from "../../src/interpreter/operationsView.ts";
 import {
   asProjectId,
   asTenantId,
@@ -588,6 +591,7 @@ test("a declared output preview returns only verified UTF-8 content", async (t) 
       read: "Content",
       mediaType: "text/x-diff",
       renderer: "UnifiedDiff",
+      encoding: "Utf8",
       content,
     },
   );
@@ -601,5 +605,82 @@ test("a declared output preview returns only verified UTF-8 content", async (t) 
       })
     ).read,
     "Corrupt",
+  );
+});
+
+test("a declared image output reads back as base64 rather than decoded text", async (t) => {
+  const fixture = fixtureOpen(t);
+  const imageOutput = {
+    name: "design-spike",
+    path: asArtifactPath(".chuggy/outputs/spike.png"),
+    mediaType: "image/png",
+    renderer: "Image" as const,
+  };
+  const content = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0x01, 0x02]);
+  const file = artifactAttemptFile(
+    artifactProjectDirectory(fixture.root, partition.tenant, partition.project),
+    execution,
+    attempt,
+    imageOutput.path,
+  );
+  if (file === undefined) assert.fail("the image path resolved nowhere");
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(file, content, { mode: 0o440 });
+  chmodSync(file, 0o440);
+  const artifact = {
+    ordinal: 1,
+    role: "Diagnostic" as const,
+    path: imageOutput.path,
+    digest: asArtifactDigest(
+      createHash("sha256").update(content).digest("hex"),
+    ),
+    bytes: content.length,
+    output: imageOutput,
+  };
+  assert.deepEqual(
+    await fixture.store.read({ partition, execution, attempt, artifact }),
+    {
+      read: "Content",
+      mediaType: "image/png",
+      renderer: "Image",
+      encoding: "Base64",
+      content: content.toString("base64"),
+    },
+  );
+});
+
+test("an artifact with no output definition is not found, whatever its bytes", async (t) => {
+  const fixture = fixtureOpen(t);
+  const content = "diff --git a/a.ts b/a.ts\n";
+  fixtureStore(fixture, branchDiffOutput.path, content);
+  const artifact = {
+    ordinal: 1,
+    role: "Diagnostic" as const,
+    path: branchDiffOutput.path,
+    digest: asArtifactDigest(digestOf(content)),
+    bytes: content.length,
+  };
+  assert.equal(
+    (await fixture.store.read({ partition, execution, attempt, artifact }))
+      .read,
+    "NotFound",
+  );
+});
+
+test("an output past the preview ceiling is too large before any object is opened", async (t) => {
+  const fixture = fixtureOpen(t);
+  const content = "diff --git a/a.ts b/a.ts\n";
+  fixtureStore(fixture, branchDiffOutput.path, content);
+  const artifact = {
+    ordinal: 1,
+    role: "Diagnostic" as const,
+    path: branchDiffOutput.path,
+    digest: asArtifactDigest(digestOf(content)),
+    bytes: outputPreviewBytesMax + 1,
+    output: branchDiffOutput,
+  };
+  assert.deepEqual(
+    await fixture.store.read({ partition, execution, attempt, artifact }),
+    { read: "TooLarge", bytes: outputPreviewBytesMax + 1 },
   );
 });

@@ -87,6 +87,7 @@ import {
   operationBoundaryRefusalCodes,
   type OperationTicketRefusalCode,
   operationStates,
+  outputContentEncodings,
   outputRenderers,
   phaseRoster,
   placementRouteSources,
@@ -650,6 +651,7 @@ export const outputContentResponseSchema = z.object({
   read: z.literal("Content"),
   mediaType: z.string().min(1),
   renderer: z.enum(outputRenderers),
+  encoding: z.enum(outputContentEncodings),
   content: z.string(),
 });
 export type OutputContentResponse = z.infer<typeof outputContentResponseSchema>;
