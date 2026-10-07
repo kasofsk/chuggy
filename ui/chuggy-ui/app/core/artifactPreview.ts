@@ -27,7 +27,7 @@ export function artifactPreviewOffer(
   artifact: PreviewableArtifact,
 ): ArtifactPreviewOffer {
   const output = artifact.output;
-  if (output === undefined)
+  if (output === undefined || output.renderer === "Image")
     return { offer: "Unpreviewable", note: "No preview" };
   return { offer: "Previewable", renderer: output.renderer };
 }

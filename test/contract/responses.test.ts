@@ -821,11 +821,27 @@ test("an artifact preview parses as text with the renderer the server chose", ()
       read: "Content",
       mediaType: "text/markdown",
       renderer: "Markdown",
+      encoding: "Utf8",
       content: "# summary\n",
     }).body,
   );
   assert.equal(content.content, "# summary\n");
   assert.equal(content.renderer, "Markdown");
+  assert.equal(content.encoding, "Utf8");
+});
+
+test("an image output parses as base64 content with its encoding stated", () => {
+  const content = outputContentResponseSchema.parse(
+    outputContentResponse({
+      read: "Content",
+      mediaType: "image/png",
+      renderer: "Image",
+      encoding: "Base64",
+      content: "iVBORw0KGgo=",
+    }).body,
+  );
+  assert.equal(content.renderer, "Image");
+  assert.equal(content.encoding, "Base64");
 });
 
 test("an acceptance and an operation read parse as separate shapes", () => {

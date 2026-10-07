@@ -227,8 +227,19 @@ export const outputRenderers = [
   "Markdown",
   "Json",
   "Text",
+  "Image",
 ] as const;
 export type OutputRenderer = (typeof outputRenderers)[number];
+
+/**
+ * How an output's content characters encode the bytes behind them: verified
+ * UTF-8 text, or base64 where the bytes are not text at all. Restates the
+ * interpreter's own `OutputContentEncoding`, carried on every output content
+ * response so a reader is told rather than left to infer it from the
+ * renderer.
+ */
+export const outputContentEncodings = ["Utf8", "Base64"] as const;
+export type OutputContentEncoding = (typeof outputContentEncodings)[number];
 
 export const resultVerdicts = ["Pass", "Fail"] as const;
 export type ResultVerdict = (typeof resultVerdicts)[number];
