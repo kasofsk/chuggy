@@ -40,6 +40,7 @@ import {
   asRepositoryId,
 } from "../../src/interpreter/finalizer.ts";
 import { asResultManifestId } from "../../src/interpreter/resultManifest.ts";
+import { asProjectArtifactId } from "../../src/interpreter/finalizerPreparation.ts";
 import {
   asAuthorityKind,
   asAuthoritySubject,
@@ -557,6 +558,49 @@ test("a spawn bundle pins its exact source and prior result manifests", () => {
     { kind: "TargetCommit", reference: "a".repeat(40) },
     { kind: "ResultManifest", reference: "manifest-one" },
   ]);
+});
+
+test("a spawn bundle pins one reference per image the brief named, with the digest the store answered", () => {
+  const references = inputBundleReferencesOf(
+    { configurationRevision: "revision", configurationDigest: "d".repeat(64) },
+    {
+      bundle: "bundle",
+      images: [
+        {
+          artifact: asProjectArtifactId("image/png:one"),
+          digest: "e".repeat(64),
+        },
+        {
+          artifact: asProjectArtifactId("image/jpeg:two"),
+          digest: "f".repeat(64),
+        },
+      ],
+    },
+  );
+  assert.deepEqual(references.slice(1), [
+    {
+      kind: "ProjectArtifact",
+      reference: "image/png:one",
+      digest: "e".repeat(64),
+    },
+    {
+      kind: "ProjectArtifact",
+      reference: "image/jpeg:two",
+      digest: "f".repeat(64),
+    },
+  ]);
+});
+
+test("a spawn bundle built from no images pins none, identical to a bundle naming none at all", () => {
+  const withEmptyImages = inputBundleReferencesOf(
+    { configurationRevision: "revision", configurationDigest: "d".repeat(64) },
+    { bundle: "bundle", images: [] },
+  );
+  const withNoImages = inputBundleReferencesOf(
+    { configurationRevision: "revision", configurationDigest: "d".repeat(64) },
+    { bundle: "bundle" },
+  );
+  assert.deepEqual(withEmptyImages, withNoImages);
 });
 
 /**

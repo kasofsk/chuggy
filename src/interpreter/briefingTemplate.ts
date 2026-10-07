@@ -69,6 +69,7 @@ export type BriefingSectionId =
   | "RoleInstructions"
   | "TicketIntent"
   | "TicketLinks"
+  | "TicketImages"
   | "WhyItMatters"
   | "AcceptanceAndConstraints"
   | "PriorEvaluationReports"
@@ -84,6 +85,7 @@ export const briefingSectionOrder: readonly BriefingSectionId[] = [
   "RoleInstructions",
   "TicketIntent",
   "TicketLinks",
+  "TicketImages",
   "WhyItMatters",
   "AcceptanceAndConstraints",
   "PriorEvaluationReports",
@@ -102,7 +104,7 @@ export const briefingTemplateSections: readonly BriefingSectionId[] = [
 ];
 
 /** The wording revision every rendered briefing records, moved by any edit to the text below. */
-export const briefingTemplateVersion = 6;
+export const briefingTemplateVersion = 7;
 
 /** The heading one section renders under, which varies by role and by carrier. */
 export function briefingHeading(
@@ -117,6 +119,8 @@ export function briefingHeading(
       return "What this ticket asks for";
     case "TicketLinks":
       return "What to read first";
+    case "TicketImages":
+      return "Images for this ticket";
     case "WhyItMatters":
       return "Why this ticket matters";
     case "AcceptanceAndConstraints":

@@ -81,6 +81,11 @@ import {
   projectArtifactIdentityText,
   type ProjectArtifactMinting,
 } from "../../src/interpreter/projectArtifact.ts";
+import {
+  asDraftBrief,
+  type DraftBrief,
+} from "../../src/interpreter/ticketBrief.ts";
+import { asTicketId } from "../../src/domain/ids.ts";
 
 const partition = {
   tenant: asTenantId("tenant"),
@@ -168,8 +173,14 @@ function authoringStore(
       return Promise.resolve({ partition, drafts: [], more: false });
     },
     createConfiguration: () => Promise.resolve({ created: "ParentNotFound" }),
-    createDraft: () => Promise.resolve({ created: "ConfigurationNotFound" }),
-    reviseDraft: () => Promise.resolve({ revised: "NotFound" }),
+    createDraft: () => {
+      calls.push("createDraft");
+      return Promise.resolve({ created: "ConfigurationNotFound" });
+    },
+    reviseDraft: () => {
+      calls.push("reviseDraft");
+      return Promise.resolve({ revised: "NotFound" });
+    },
     deleteDraft: () => Promise.resolve({ deleted: "NotFound" }),
   };
 }
@@ -897,6 +908,131 @@ test("a principal holding Read alone may read a project artifact and may not upl
     { fetched: "Content", content, mediaType: "image/png" },
   );
   assert.deepEqual(calls, ["authorize:Mutate", "authorize:Read"]);
+});
+
+/** A brief naming the images a case lists, otherwise the least a draft needs. */
+function briefNamingImages(images: readonly string[]): DraftBrief {
+  return asDraftBrief({ intent: "Carry the images.", links: [], images });
+}
+
+const noAuthoring = { deps: new Set<number>(), prog: [] };
+
+/** A `createDraft` call naming `brief`, the rest of the input fixed. */
+function createDraftNaming(web: NativeWeb, brief: DraftBrief) {
+  return web.createDraft(principal, {
+    partition,
+    configurationRevision: asConfigurationRevisionId("revision"),
+    configurationDigest: "a".repeat(64),
+    expectedProjectSequence: 0,
+    authoring: noAuthoring,
+    brief,
+  });
+}
+
+/** A project artifact port that rejects if either method is called. */
+function unreachableProjectArtifacts(): ProjectArtifactPort {
+  return {
+    writeArtifact: () => Promise.reject(new Error("not served")),
+    readArtifact: () => Promise.reject(new Error("not served")),
+  };
+}
+
+test("creating or revising a draft refuses an image the project's own store does not hold", async () => {
+  const notFound: ProjectArtifactPort = {
+    ...unreachableProjectArtifacts(),
+    readArtifact: () => Promise.resolve({ read: "NotFound" }),
+  };
+  const { web, calls } = boundary(
+    true,
+    openExecutionBacklogGuard,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    notFound,
+  );
+  const brief = briefNamingImages(["image/png:unbound"]);
+  assert.deepEqual(await createDraftNaming(web, brief), {
+    result: "Authorized",
+    value: { created: "ArtifactNotBound" },
+  });
+  assert.deepEqual(
+    await web.reviseDraft(principal, {
+      partition,
+      ticket: asTicketId(1),
+      expectedVersion: 1,
+      configurationRevision: asConfigurationRevisionId("revision"),
+      authoring: noAuthoring,
+      brief,
+    }),
+    { result: "Authorized", value: { revised: "ArtifactNotBound" } },
+  );
+  assert.deepEqual(calls, ["authorize:Mutate", "authorize:Mutate"]);
+});
+
+test("creating or revising a draft reports a store outage rather than the image not existing", async () => {
+  const unavailable: ProjectArtifactPort = {
+    ...unreachableProjectArtifacts(),
+    readArtifact: () =>
+      Promise.resolve({ read: "Unavailable", retryAfterSeconds: 5 }),
+  };
+  const { web, calls } = boundary(
+    true,
+    openExecutionBacklogGuard,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    unavailable,
+  );
+  const brief = briefNamingImages(["image/png:unasked"]);
+  assert.deepEqual(await createDraftNaming(web, brief), {
+    result: "Authorized",
+    value: { created: "Unavailable", retryAfterSeconds: 5 },
+  });
+  assert.deepEqual(
+    await web.reviseDraft(principal, {
+      partition,
+      ticket: asTicketId(1),
+      expectedVersion: 1,
+      configurationRevision: asConfigurationRevisionId("revision"),
+      authoring: noAuthoring,
+      brief,
+    }),
+    {
+      result: "Authorized",
+      value: { revised: "Unavailable", retryAfterSeconds: 5 },
+    },
+  );
+  assert.deepEqual(calls, ["authorize:Mutate", "authorize:Mutate"]);
+});
+
+test("a draft naming an image its store holds, or naming none at all, reaches the authoring door", async () => {
+  const found: ProjectArtifactPort = {
+    ...unreachableProjectArtifacts(),
+    readArtifact: () =>
+      Promise.resolve({ read: "Content", content: new Uint8Array() }),
+  };
+  for (const [port, images] of [
+    [found, ["image/png:bound"]],
+    [unreachableProjectArtifacts(), []],
+  ] as const) {
+    const { web, calls } = boundary(
+      true,
+      openExecutionBacklogGuard,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      port,
+    );
+    assert.deepEqual(
+      await createDraftNaming(web, briefNamingImages(images)),
+      { result: "Authorized", value: { created: "ConfigurationNotFound" } },
+      `images: ${JSON.stringify(images)}`,
+    );
+    assert.deepEqual(calls, ["authorize:Mutate", "createDraft"]);
+  }
 });
 
 test("every run evidence read authorizes before it reaches a store", async () => {

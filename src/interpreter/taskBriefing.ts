@@ -92,10 +92,12 @@
 
 import {
   briefChecksMax,
+  briefImagesMax,
   briefIntentCharsMax,
   briefLinksMax,
 } from "../contract/brief.ts";
 import { resultReportCharsMax, textCodePointsCount } from "../contract/http.ts";
+import { workerPlaneRoutes } from "../contract/workerPlane.ts";
 import { commandLinesMax } from "../contract/workerTask.ts";
 import type { ConfigurationPin } from "./projectDecision.ts";
 import { resultTextControlCharacter } from "./resultManifest.ts";
@@ -154,6 +156,8 @@ import {
   type TaskPurpose,
 } from "./briefingTemplate.ts";
 export type { BriefingCarrier, TaskPurpose } from "./briefingTemplate.ts";
+import { projectArtifactMediaTypeOf } from "./projectArtifact.ts";
+import type { ProjectArtifactId } from "./finalizerPreparation.ts";
 import {
   briefIntentLines,
   type BriefIntent,
@@ -628,6 +632,7 @@ function briefingTicketBriefFault(
     briefingTicketIntentFault(brief.intent) ??
     briefingListsFault([
       [brief.links, briefLinksMax],
+      [brief.images, briefImagesMax],
       [brief.checks, briefChecksMax],
     ])
   );
@@ -650,6 +655,29 @@ function briefingTicketIntentLines(brief: DraftBrief): readonly string[] {
 /** One list member as it renders, which is the only list shape a briefing has. */
 function briefingBullet(line: string): string {
   return `- ${line}`;
+}
+
+/**
+ * One image's own line: its media type, recovered from its own identity, and
+ * the path this attempt reads its bytes from under `workerPlaneBytesMediaType`.
+ * An identity this tree never minted names no media type and renders nothing,
+ * which a runtime fact cannot forge a section out of rather than crashing on.
+ */
+function briefingImageLine(artifact: ProjectArtifactId): string | undefined {
+  const mediaType = projectArtifactMediaTypeOf(artifact);
+  if (mediaType === undefined) return undefined;
+  const path = workerPlaneRoutes.inputArtifact.path.replace("*", artifact);
+  return `${mediaType}: GET ${path}, with this attempt's own bearer`;
+}
+
+/** The ticket's own images, each named by its media type and where this attempt reads its bytes. */
+function briefingTicketImageLines(
+  images: readonly ProjectArtifactId[],
+): readonly string[] {
+  return images
+    .map(briefingImageLine)
+    .filter((line): line is string => line !== undefined)
+    .map(briefingBullet);
 }
 
 /** A labelled list, or nothing at all when there is nothing to label. */
@@ -708,6 +736,10 @@ function briefingBodies(
       view.brief === undefined ? [] : briefingTicketIntentLines(view.brief),
     TicketLinks:
       view.brief === undefined ? [] : view.brief.links.map(briefingBullet),
+    TicketImages:
+      view.brief === undefined
+        ? []
+        : briefingTicketImageLines(view.brief.images),
     WhyItMatters: view.configuration.brief.motivation,
     AcceptanceAndConstraints: briefingCriteriaLines(view.configuration.brief),
     PriorEvaluationReports:

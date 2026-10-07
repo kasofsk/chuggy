@@ -15,6 +15,7 @@ import { apiRole } from "../../src/adapters/postgres/schema.ts";
 import { postgresTicketBrief } from "../../src/adapters/postgres/ticketBrief.ts";
 import {
   briefChecksMax,
+  briefImagesMax,
   briefLineCharsMax,
   briefLinksMax,
   briefTitleCharsMax,
@@ -1642,6 +1643,50 @@ test("a draft is created with the check lines its brief appends", async () => {
   );
 });
 
+const imagingBrief = asDraftBrief({
+  intent: "Build the screen the design shows.",
+  links: [],
+  images: ["image/png:one", "image/jpeg:two"],
+});
+
+test("a draft is created with the images its brief names", async () => {
+  const fixture = await draftFixture(
+    postgresHarnessConfiguration,
+    imagingBrief,
+  );
+  const named = briefAsStored({
+    ...imagingBrief,
+    repository: fixture.repository,
+  });
+  assert.deepEqual(fixture.draft.brief, named);
+  assert.deepEqual(
+    await briefReleasedAt(fixture, 1, "brief-images-created"),
+    named,
+    "the scheduler's own read carries the images in the order they were created",
+  );
+});
+
+test("the images a brief names are written, ordered, replaced and read back", async () => {
+  const fixture = await draftFixture();
+  const { partition, store, revision, repository, draft } = fixture;
+  assert.deepEqual(draft.brief?.images, []);
+  const named = briefAsStored({ ...imagingBrief, repository });
+  const revised = await store.reviseDraft({
+    partition,
+    authority,
+    ticket: draft.ticket,
+    expectedVersion: 1,
+    configurationRevision: revision,
+    authoring: plainAuthoring,
+    brief: named,
+  });
+  assert.deepEqual(
+    revised.revised === "Revised" ? revised.draft.brief : undefined,
+    named,
+  );
+  assert.deepEqual((await store.draft(partition, draft.ticket))?.brief, named);
+});
+
 test("the check lines a brief appends are written, ordered, replaced and read back", async () => {
   const fixture = await draftFixture(commandedCheckConfiguration);
   const { partition, store, revision, repository, draft } = fixture;
@@ -1760,6 +1805,22 @@ test("the server refuses a brief that reached it around the interpreter's rules"
        VALUES ($1,$2,$3,$4,'https://example.test/one')`,
       [partition.tenant, partition.project, draft.ticket, briefLinksMax + 1],
     ),
+  );
+  await assert.rejects(
+    harness.query(
+      `INSERT INTO draft_brief_image (tenant,project,ticket,ordinal,artifact)
+       VALUES ($1,$2,$3,1,$4)`,
+      [partition.tenant, partition.project, draft.ticket, "image/png:\u0007"],
+    ),
+    "an image identity carrying a control character is refused",
+  );
+  await assert.rejects(
+    harness.query(
+      `INSERT INTO draft_brief_image (tenant,project,ticket,ordinal,artifact)
+       VALUES ($1,$2,$3,$4,'image/png:one')`,
+      [partition.tenant, partition.project, draft.ticket, briefImagesMax + 1],
+    ),
+    "an image past the ordinal bound is refused",
   );
 });
 

@@ -17,6 +17,7 @@ import {
   briefCheckSchema,
   briefChecksMax,
   briefFinalizationSchema,
+  briefImagesMax,
   briefIntentCharsMax,
   briefLineCharsMax,
   briefLinkSchema,
@@ -223,6 +224,31 @@ test("a brief names the repository its work happens in, or names none", () => {
   );
 });
 
+test("a brief names the images it carries, up to the bound, and reads them back", () => {
+  assert.deepEqual(
+    briefSchema.parse({
+      intent: "Do it.",
+      links: [],
+      images: ["image/png:one", "image/png:two"],
+    }).images,
+    ["image/png:one", "image/png:two"],
+  );
+  assert.equal(
+    briefSchema.parse({ intent: "Do it.", links: [] }).images,
+    undefined,
+    "a brief naming no image carries none",
+  );
+  assert.deepEqual(
+    briefResponseSchema.safeParse({
+      intent: "Do it.",
+      links: [],
+      images: ["image/png:one"],
+    }).data?.images,
+    ["image/png:one"],
+    "and a brief read back carries the images it was written with",
+  );
+});
+
 /**
  * A landing the writer may take is one the reader can spell, or a ticket
  * written under it is unreadable on every validating read, its project's
@@ -422,6 +448,14 @@ test("a brief carrying no intent, an oversized one or an unreadable link is refu
       links: Array.from(
         { length: briefLinksMax + 1 },
         (_, at) => `https://example.test/${String(at)}`,
+      ),
+    },
+    {
+      intent: "Do it.",
+      links: [],
+      images: Array.from(
+        { length: briefImagesMax + 1 },
+        (_, at) => `image/png:${String(at)}`,
       ),
     },
     { intent: "Do it.", links: [], branch: "rt/ticket-brief" },

@@ -40,6 +40,7 @@ export interface WorkerPlaneRoute {
 
 export const workerPlaneRoutes = {
   input: { method: "GET", path: "/v1/input" },
+  inputArtifact: { method: "GET", path: "/v1/input/artifacts/*" },
   task: { method: "GET", path: "/v1/task" },
   heartbeat: { method: "POST", path: "/v1/heartbeat" },
   artifact: { method: "PUT", path: "/v1/artifacts/*" },
@@ -53,11 +54,20 @@ export const workerPlaneRoutes = {
 } as const satisfies Readonly<Record<string, WorkerPlaneRoute>>;
 export type WorkerPlaneRouteName = keyof typeof workerPlaneRoutes;
 
-/** The media type an artifact, a configuration snapshot and a transcript batch are offered under. */
+/**
+ * The media type an artifact, a configuration snapshot, a transcript batch
+ * and an input reference's own bytes are offered under.
+ */
 export const workerPlaneBytesMediaType = "application/octet-stream";
 
 /** The most references one input bundle holds, restating the interpreter's bound. */
 export const workerInputReferencesMax = 1_024;
+
+/**
+ * The most bytes one input reference's own read answers, the plane's read
+ * bound the way `workerPlaneUploadBytesMax` bounds the write.
+ */
+export const workerPlaneInputArtifactBytesMax = 4_194_304;
 
 /** The longest minted password, restating the interpreter's repository credential bound. */
 export const repositoryCredentialCharsMax = 4_096;
@@ -177,6 +187,13 @@ const workerRunObjectAnswers = {
 /** Every status each job route's handler answers with, and what it answers. */
 export const workerPlaneAnswers = workerPlaneAnswersRefusingVersions({
   input: { 200: workerInputAnswerSchema, 401: workerPlaneStopSchema },
+  inputArtifact: {
+    200: "bytes",
+    401: workerPlaneStopSchema,
+    404: workerPlaneStopSchema,
+    413: workerPlaneRefusalSchema(["QuotaExceeded"]),
+    503: workerPlaneRetrySchema,
+  },
   task: {
     200: workerTaskAnswerSchema,
     401: workerPlaneStopSchema,

@@ -467,17 +467,22 @@ export type ConfigurationCreated =
   | { readonly created: "ParentNotFound" };
 
 /**
- * `RepositoryNotBound` is the brief's repository refused: the door names it
- * rather than letting the foreign key raise, because a body naming a referent
- * the project does not have is a refusal like `ConfigurationNotFound` and not a
- * fault. `LandingUnbranched` is the same for a brief whose resolved landing
- * proposes and which names no branch to propose from: the landing it is refused
- * for is the repository's, which the caller never named and cannot see.
+ * `RepositoryNotBound` is the brief's repository refused and `ArtifactNotBound`
+ * is the same claim about an image it names, the door reading the store itself
+ * where the referent is a filesystem fact rather than a row a foreign key could
+ * raise on, both refusals like `ConfigurationNotFound` and not a fault; that
+ * same read answers `Unavailable` instead when the store itself cannot be
+ * asked, a fault a caller told to retry must never be told is a missing image.
+ * `LandingUnbranched` is the same for a brief whose resolved landing proposes
+ * and which names no branch to propose from: the landing it is refused for is
+ * the repository's, which the caller never named and cannot see.
  */
 export type DraftCreated =
   | { readonly created: "Created"; readonly draft: DraftResource }
   | { readonly created: "ConfigurationNotFound" }
   | { readonly created: "RepositoryNotBound" }
+  | { readonly created: "ArtifactNotBound" }
+  | { readonly created: "Unavailable"; readonly retryAfterSeconds: number }
   | { readonly created: "LandingUnbranched" }
   | { readonly created: "Stale" };
 
@@ -544,10 +549,11 @@ export function draftInitializationPolicy(
 }
 
 /**
- * `RepositoryNotBound` and `LandingUnbranched` are the refusals `DraftCreated`
- * documents. A released draft is revisable while its ticket is Pending — past
- * it `NotDraft` — and one moving its dependencies is `DependenciesLocked`,
- * because the update releasing it would be refused `TicketDependenciesChanged`.
+ * `RepositoryNotBound`, `ArtifactNotBound`, `Unavailable` and `LandingUnbranched`
+ * are the refusals `DraftCreated` documents. A released draft is revisable
+ * while its ticket is Pending — past it `NotDraft` — and one moving its
+ * dependencies is `DependenciesLocked`, because the update releasing it would
+ * be refused `TicketDependenciesChanged`.
  */
 export type DraftRevised =
   | { readonly revised: "Revised"; readonly draft: DraftResource }
@@ -560,6 +566,8 @@ export type DraftRevised =
   | { readonly revised: "DependenciesLocked" }
   | { readonly revised: "ConfigurationNotFound" }
   | { readonly revised: "RepositoryNotBound" }
+  | { readonly revised: "ArtifactNotBound" }
+  | { readonly revised: "Unavailable"; readonly retryAfterSeconds: number }
   | { readonly revised: "LandingUnbranched" };
 
 export type DraftDeleted =
