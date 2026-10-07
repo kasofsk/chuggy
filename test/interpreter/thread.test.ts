@@ -30,6 +30,8 @@ import {
   parseThreadWake,
   threadCapabilitiesDefault,
   threadConfigurationStanding,
+  threadImageFetchPath,
+  threadImagesSection,
   threadPurposeStanding,
   threadStoppedStanding,
   threadSeedingText,
@@ -41,9 +43,11 @@ import {
   threadWakeDocument,
   threadWakeText,
   threadWakeVersion,
+  type ThreadSeededImage,
 } from "../../src/interpreter/thread.ts";
 import {
   resolvedThreadStandingRules,
+  threadImagesHeading,
   threadStandingRulesDefault,
   threadTurnBoundaryHeading,
 } from "../../src/contract/threadSeeding.ts";
@@ -456,9 +460,123 @@ const seededRefusals = (count: number) =>
     reason: `refused ${String(index + 1)}`,
   }));
 
+const seededImages = (count: number): ThreadSeededImage[] =>
+  Array.from({ length: count }, (_unused, index) => ({
+    artifact: `image/png:token-${String(index + 1)}`,
+    mediaType: "image/png",
+    path: `/image-${String(index + 1)}`,
+  }));
+
+test("an image's fetch path is the project artifact route, filled in", () => {
+  assert.equal(
+    threadImageFetchPath(partition, "image/png:token-1"),
+    "/api/v1/tenants/acme/projects/atlas/artifacts/image%2Fpng%3Atoken-1",
+  );
+});
+
+test("the images section names each one's identity, media type and fetch path", () => {
+  const section = threadImagesSection(seededImages(2));
+
+  assert.equal(
+    section,
+    `${threadImagesHeading}
+
+- image/png:token-1 — image/png — fetch at /image-1
+- image/png:token-2 — image/png — fetch at /image-2`,
+  );
+});
+
 test("a turn with no seeding is the message alone", () => {
   assert.equal(threadTurnInput("what is blocking 42?"), "what is blocking 42?");
   assert.throws(() => threadTurnInput("x".repeat(threadTurnInputCharsMax + 1)));
+});
+
+/**
+ * A turn naming no image is byte for byte what it was before this module knew
+ * images existed — the one shape the boundary the console splits on may not
+ * move, whether or not the caller passed an empty list.
+ */
+test("a turn naming no image is byte for byte what it was", () => {
+  assert.equal(
+    threadTurnInput("what is blocking 42?", undefined, []),
+    "what is blocking 42?",
+  );
+  assert.equal(
+    threadTurnInput("what is blocking 42?", {
+      standingRules: projectStandingRules,
+      drafts: [],
+      refusals: [],
+    }),
+    threadTurnInput(
+      "what is blocking 42?",
+      { standingRules: projectStandingRules, drafts: [], refusals: [] },
+      [],
+    ),
+  );
+});
+
+/**
+ * A later turn carries no seeding block at all, so an image it names opens the
+ * turn directly: the images section, the boundary, then the message — the
+ * same shape a first turn's own block stands in front of.
+ */
+test("a later turn naming an image opens with the images section and the boundary", () => {
+  const images = seededImages(1);
+
+  const input = threadTurnInput("what is blocking 42?", undefined, images);
+
+  assert.equal(
+    input,
+    `${threadImagesSection(images)}\n\n${threadTurnBoundaryHeading}\n\nwhat is blocking 42?`,
+  );
+});
+
+test("a first turn naming an image carries the seeding block, then the images section, then the boundary", () => {
+  const images = seededImages(1);
+  const seeding = {
+    standingRules: projectStandingRules,
+    drafts: [],
+    refusals: [],
+  };
+
+  const input = threadTurnInput("what is blocking 42?", seeding, images);
+
+  assert.equal(
+    input,
+    `${threadSeedingText(seeding)}\n\n${threadImagesSection(images)}\n\n${threadTurnBoundaryHeading}\n\nwhat is blocking 42?`,
+  );
+});
+
+test("the images section is never shed", () => {
+  const images = seededImages(1);
+
+  const input = threadTurnInput(
+    "x".repeat(threadMessageCharsMax),
+    {
+      northStar: "ship the console",
+      standingRules: projectStandingRules,
+      drafts: seededDrafts(nativeHttpPageItemsMax),
+      refusals: seededRefusals(32),
+    },
+    images,
+  );
+
+  assert.ok(input.includes(threadImagesSection(images)));
+});
+
+/**
+ * An image section that will not fit once nothing sheddable is left is
+ * refused rather than silently dropped — the same rule the North Star and the
+ * standing rules are already held to.
+ */
+test("an input that cannot fit the images section once everything sheddable is shed is refused", () => {
+  assert.throws(() =>
+    threadTurnInput(
+      "x".repeat(threadTurnInputCharsMax),
+      undefined,
+      seededImages(1),
+    ),
+  );
 });
 
 test("a first turn puts the seeding block in front of the message", () => {

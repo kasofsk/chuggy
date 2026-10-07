@@ -23,6 +23,7 @@ import {
   nativeHttpRoutes,
   sessionStorePageBatchesMax,
   threadMessageCharsMax,
+  threadMessageImagesMax,
   threadTurnsAnsweredMax,
 } from "../../src/contract/http.ts";
 import {
@@ -135,6 +136,20 @@ interface ThreadCase {
   readonly opening?: ThreadOpening;
 }
 
+/** The call a send is logged under, the images it named appended where it named any. */
+function sendCall(input: {
+  readonly session: string;
+  readonly turn: string;
+  readonly message: string;
+  readonly images?: readonly string[];
+}): string {
+  const named =
+    input.images === undefined || input.images.length === 0
+      ? ""
+      : `:images=${input.images.join(",")}`;
+  return `send:${input.session}:${input.turn}:${input.message}${named}`;
+}
+
 function threadWeb(held: ThreadCase): NativeThreadWeb {
   const found = held.found ?? true;
   return {
@@ -183,7 +198,7 @@ function threadWeb(held: ThreadCase): NativeThreadWeb {
       );
     },
     sendThreadMessage: (_principal, _partition, input) => {
-      held.calls.push(`send:${input.session}:${input.turn}:${input.message}`);
+      held.calls.push(sendCall(input));
       return Promise.resolve(
         held.sent ?? {
           result: "Sent",
@@ -845,6 +860,27 @@ test("a message names the turn it minted and the ordinal it took", async () => {
   ]);
 });
 
+test("a message names the images it carries, and the door is handed each one", async () => {
+  const held: ThreadCase = { calls: [] };
+  await using app = appOf(held);
+
+  const accepted = await app.inject({
+    method: "POST",
+    url: `${root}/${mine}/messages`,
+    headers: versioned,
+    payload: {
+      turn: "thread-turn-2",
+      message: "look at these",
+      images: ["image/png:token-1", "image/gif:token-2"],
+    },
+  });
+
+  assert.equal(accepted.statusCode, 202);
+  assert.deepEqual(held.calls, [
+    `send:${mine}:thread-turn-2:look at these:images=image/png:token-1,image/gif:token-2`,
+  ]);
+});
+
 test("a message body outside the schema is refused at the door", async () => {
   const held: ThreadCase = { calls: [] };
   await using app = appOf(held);
@@ -855,6 +891,15 @@ test("a message body outside the schema is refused at the door", async () => {
     { turn: "thread-turn-2", message: "x".repeat(threadMessageCharsMax + 1) },
     { turn: "thread-turn-2", message: "hi", seeding: "mine" },
     { message: "hi" },
+    {
+      turn: "thread-turn-2",
+      message: "hi",
+      images: Array.from(
+        { length: threadMessageImagesMax + 1 },
+        (_unused, index) => `image/png:token-${String(index)}`,
+      ),
+    },
+    { turn: "thread-turn-2", message: "hi", images: [""] },
   ])
     assert.equal(
       (
@@ -888,6 +933,7 @@ test("every refusal the door can meet reaches the wire as its own status", async
     ["Closed", 409, "ThreadClosed", undefined],
     ["NotFound", 404, "NotFound", undefined],
     ["Backlogged", 429, "ThreadBacklogged", String(threadBacklogRetrySeconds)],
+    ["ImageUnknown", 400, "ThreadImageUnknown", undefined],
   ] as const;
 
   const answered: string[] = [];

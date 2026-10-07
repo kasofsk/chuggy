@@ -543,6 +543,8 @@ function threadRosterWord(code: ThreadMessageRefusalCode): string {
       return "Backlogged";
     case "ThreadTurnTooLarge":
       return "Oversize";
+    case "ThreadImageUnknown":
+      return "Missing";
   }
 }
 

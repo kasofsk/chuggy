@@ -15,6 +15,7 @@ import test from "node:test";
 
 import {
   threadMessageCharsMax,
+  threadMessageImagesMax,
   threadTitleCharsMax,
   threadTurnsAnsweredMax,
   threadsAnsweredMax,
@@ -44,9 +45,17 @@ import {
 import type { SessionRouteReads } from "../../src/interpreter/sessionPlacement.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import {
+  asProjectArtifactId,
+  type ProjectArtifactPort,
+  type ProjectArtifactRead,
+} from "../../src/interpreter/finalizerPreparation.ts";
+import { projectArtifactIdentityText } from "../../src/interpreter/projectArtifact.ts";
+import {
+  checkedThreadMessageImages,
   checkedThreadsLimit,
   threadBacklogRetrySeconds,
   threadEntry,
+  threadMessageImages,
   threadTitle,
   type ThreadClosed,
   type ThreadMessageEnqueued,
@@ -259,6 +268,18 @@ function ports(doubles: ThreadDoubles): NativeThreadPorts {
   };
 }
 
+/** A project artifact store that answers whatever one case chose for every read it is asked. */
+function fakeArtifactStore(read: ProjectArtifactRead): ProjectArtifactPort {
+  return {
+    writeArtifact: () => {
+      throw new Error("not exercised by this suite");
+    },
+    readArtifact: () => Promise.resolve(read),
+  };
+}
+
+const anImage = projectArtifactIdentityText("image/png", "token-1");
+
 function boundary(
   doubles: Partial<ThreadDoubles> = {},
   allowed: readonly ("Read" | "Mutate" | "ExecuteHosted")[] = [
@@ -267,6 +288,7 @@ function boundary(
     "ExecuteHosted",
   ],
   routes: SessionRouteReads = sessionRoutesAt(),
+  projectArtifacts?: ProjectArtifactPort,
 ) {
   const held: ThreadDoubles = {
     calls: [],
@@ -309,6 +331,7 @@ function boundary(
     ports(held),
     undefined,
     routes,
+    projectArtifacts,
   );
   return { web, held };
 }
@@ -1194,6 +1217,159 @@ test("the door's bound counts code points, matching the schema in front of it", 
     }),
     new RegExp(`at most ${String(threadMessageCharsMax)} characters`, "u"),
   );
+});
+
+test("a message naming more images than the bound is refused before a mailbox is reached", async () => {
+  const { web, held } = boundary();
+
+  await assert.rejects(
+    web.sendThreadMessage(geoff, partition, {
+      session: mine,
+      turn: asSessionTurnId("thread-turn-1"),
+      message: "look at these",
+      images: Array.from({ length: threadMessageImagesMax + 1 }, () => anImage),
+    }),
+    RangeError,
+  );
+  assert.equal(
+    held.calls.filter((call) => call.startsWith("enqueue:")).length,
+    0,
+  );
+});
+
+/**
+ * An artifact this project wrote is named by its own media type and the path
+ * the GET route answers it at, and the turn the session receives carries both.
+ */
+test("a message naming an image this project holds is accepted, and the turn names its media type and fetch path", async () => {
+  const { web, held } = boundary(
+    {},
+    ["Read", "Mutate", "ExecuteHosted"],
+    sessionRoutesAt(),
+    fakeArtifactStore({ read: "Content", content: new Uint8Array() }),
+  );
+
+  const sent = await web.sendThreadMessage(geoff, partition, {
+    session: mine,
+    turn: asSessionTurnId("thread-turn-1"),
+    message: "look at this",
+    images: [anImage],
+  });
+
+  assert.equal(sent.result, "Sent");
+  const enqueued = held.calls.find((call) => call.startsWith("enqueue:")) ?? "";
+  assert.ok(enqueued.includes(anImage), enqueued);
+  assert.ok(enqueued.includes("image/png"), enqueued);
+  assert.ok(
+    enqueued.includes(
+      `/api/v1/tenants/${partition.tenant}/projects/${partition.project}/artifacts/`,
+    ),
+    enqueued,
+  );
+  assert.ok(enqueued.endsWith("look at this"), enqueued);
+});
+
+/**
+ * An identity this project never wrote and one another project's upload
+ * minted answer the artifact store the same way — `NotFound` — so the message
+ * door refuses both the same way too, without being told which it met.
+ */
+test("a message naming an artifact that does not exist, or another project's, is refused with the roster's reason", async () => {
+  const { web, held } = boundary(
+    {},
+    ["Read", "Mutate", "ExecuteHosted"],
+    sessionRoutesAt(),
+    fakeArtifactStore({ read: "NotFound" }),
+  );
+
+  const sent = await web.sendThreadMessage(geoff, partition, {
+    session: mine,
+    turn: asSessionTurnId("thread-turn-1"),
+    message: "look at this",
+    images: [anImage],
+  });
+
+  assert.deepEqual(sent, { result: "ImageUnknown" });
+  assert.equal(
+    held.calls.filter((call) => call.startsWith("enqueue:")).length,
+    0,
+  );
+});
+
+test("a message naming an image the artifact store could not answer is told to retry, not refused", async () => {
+  const { web } = boundary(
+    {},
+    ["Read", "Mutate", "ExecuteHosted"],
+    sessionRoutesAt(),
+    fakeArtifactStore({ read: "Unavailable", retryAfterSeconds: 9 }),
+  );
+
+  const sent = await web.sendThreadMessage(geoff, partition, {
+    session: mine,
+    turn: asSessionTurnId("thread-turn-1"),
+    message: "look at this",
+    images: [anImage],
+  });
+
+  assert.deepEqual(sent, { result: "ImagesUnavailable", retryAfterSeconds: 9 });
+});
+
+test("the images bound is the one every other caller of the door is held to as well", () => {
+  const atBound = Array.from({ length: threadMessageImagesMax }, () => anImage);
+  assert.deepEqual(checkedThreadMessageImages(atBound), atBound);
+  assert.throws(
+    () => checkedThreadMessageImages([...atBound, anImage]),
+    RangeError,
+  );
+});
+
+test("checking a message's images reads the project's own store once per image, in order, until one fails", async () => {
+  const reads: unknown[] = [];
+  const store: ProjectArtifactPort = {
+    writeArtifact: () => {
+      throw new Error("not exercised by this suite");
+    },
+    readArtifact: (request) => {
+      reads.push(request.artifact);
+      return Promise.resolve<ProjectArtifactRead>(
+        request.artifact === anImage
+          ? { read: "Content", content: new Uint8Array() }
+          : { read: "NotFound" },
+      );
+    },
+  };
+  const second = projectArtifactIdentityText("image/gif", "token-2");
+
+  const checked = await threadMessageImages(store, partition, [
+    anImage,
+    second,
+  ]);
+
+  assert.deepEqual(checked, { checked: "Unknown" });
+  assert.deepEqual(reads, [
+    asProjectArtifactId(anImage),
+    asProjectArtifactId(second),
+  ]);
+});
+
+test("every image checked names its own media type and the path this project's artifact route answers it at", async () => {
+  const store = fakeArtifactStore({
+    read: "Content",
+    content: new Uint8Array(),
+  });
+
+  const checked = await threadMessageImages(store, partition, [anImage]);
+
+  assert.deepEqual(checked, {
+    checked: "Images",
+    images: [
+      {
+        artifact: asProjectArtifactId(anImage),
+        mediaType: "image/png",
+        path: `/api/v1/tenants/${partition.tenant}/projects/${partition.project}/artifacts/${encodeURIComponent(anImage)}`,
+      },
+    ],
+  });
 });
 
 /**

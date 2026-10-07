@@ -23,6 +23,7 @@ import {
   selectorReviewFeedbackCharsMax,
   selectorSettingsTextCharsMax,
   threadMessageCharsMax,
+  threadMessageImagesMax,
   threadTitleCharsMax,
   ticketNumberSchema,
 } from "./http.ts";
@@ -303,14 +304,17 @@ export const selectorProposalReviewSchema = z.strictObject({
 });
 
 /**
- * What a member puts in their own thread: a turn identity they mint themselves
- * and the text they typed. The turn is the body's rather than a header's for
- * the reason `submissionSchema` gives — enqueuing is idempotent on it, so a
+ * What a member puts in their own thread: a turn identity they mint themselves,
+ * the text they typed, and the project-owned images it carries, each named by
+ * the identity the upload route minted — a project's own, since no console
+ * attaches one yet. The turn is the body's rather than a header's for the
+ * reason `submissionSchema` gives — enqueuing is idempotent on it, so a
  * retried post answers the ordinal it already has instead of a second turn.
  */
 export const threadMessageSchema = z.strictObject({
   turn: bodyIdentitySchema,
   message: z.string().min(1).max(threadMessageCharsMax),
+  images: z.array(bodyIdentitySchema).max(threadMessageImagesMax).optional(),
 });
 
 /** What a member calls their own thread, over the title derived from its

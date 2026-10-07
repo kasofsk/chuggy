@@ -2143,7 +2143,12 @@ const threadMessageRefusalCode: Readonly<
   Record<
     Exclude<
       ThreadMessageSent["result"],
-      "NotFound" | "HostedRunsNotGranted" | "NoRunner" | "Sent" | "AlreadySent"
+      | "NotFound"
+      | "HostedRunsNotGranted"
+      | "NoRunner"
+      | "Sent"
+      | "AlreadySent"
+      | "ImagesUnavailable"
     >,
     ThreadMessageRefusalCode
   >
@@ -2152,6 +2157,7 @@ const threadMessageRefusalCode: Readonly<
   Closed: "ThreadClosed",
   TooLarge: "ThreadTurnTooLarge",
   Backlogged: "ThreadBacklogged",
+  ImageUnknown: "ThreadImageUnknown",
 };
 
 /**
@@ -2159,7 +2165,8 @@ const threadMessageRefusalCode: Readonly<
  * `403` rather than `404` because the thread is one this member may read, and
  * the honest answer is that it is not theirs to write to. `ThreadTurnTooLarge`
  * names its ceiling because what overflowed is the project's own context rather
- * than anything the member can shorten.
+ * than anything the member can shorten, and `ImagesUnavailable` carries the
+ * artifact routes' own `ArtifactUnavailable` rather than a code of its own.
  */
 export function threadMessageResponse(
   result: ThreadMessageSent,
@@ -2201,6 +2208,16 @@ export function threadMessageResponse(
         result.retryAfterSeconds,
         threadMessageRefusalCode.Backlogged,
       );
+    case "ImageUnknown":
+      return response(
+        400,
+        nativeHttpError(
+          threadMessageRefusalCode.ImageUnknown,
+          "An image this message names is not one of this project's.",
+        ),
+      );
+    case "ImagesUnavailable":
+      return retry(503, result.retryAfterSeconds, "ArtifactUnavailable");
     case "Sent":
     case "AlreadySent":
       return response(202, { turn: result.turn, ordinal: result.ordinal });
