@@ -227,6 +227,7 @@ async function main(): Promise<void> {
     heartbeatLeaseSecs: positive("CHUG_WORKER_PLANE_HEARTBEAT_LEASE_SECS", 300),
     reservations: postgresWorkerArtifactReservations(pool),
     artifacts,
+    projectArtifacts: artifacts,
     runEvidence: {
       configurations: postgresWorkerRunConfiguration(pool),
       transcripts: postgresWorkerRunTranscript(pool),

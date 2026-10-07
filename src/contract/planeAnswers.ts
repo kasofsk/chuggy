@@ -11,8 +11,12 @@ import {
   contractVersionRefusalStatus,
 } from "./workerContract.ts";
 
-/** What one status answers with: a body its schema reads, or no body at all. */
-export type WorkerPlaneAnswer = z.ZodType | "empty";
+/**
+ * What one status answers with: a body its schema reads, no body at all, or
+ * the opaque bytes of an artifact read back under `workerPlaneBytesMediaType`
+ * rather than the plane's own JSON.
+ */
+export type WorkerPlaneAnswer = z.ZodType | "empty" | "bytes";
 
 /** Every status each route of one plane answers with, and what it answers. */
 export type WorkerPlaneAnswers<Name extends string> = Readonly<
@@ -34,7 +38,7 @@ export function workerPlaneAnswersRefusingVersions<Name extends string>(
         Readonly<Record<number, WorkerPlaneAnswer>>,
       ] => {
         const own = statuses[contractVersionRefusalStatus];
-        if (own === "empty")
+        if (own === "empty" || own === "bytes")
           throw new Error(`${route} answers the refusal's status with no body`);
         return [
           route,

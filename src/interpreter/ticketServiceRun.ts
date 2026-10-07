@@ -7,6 +7,7 @@ import {
   type ProjectTicketWriter,
 } from "./projectWriter.ts";
 import type { ExecutionSourceObservationPort } from "./executionSource.ts";
+import type { ProjectArtifactPort } from "./finalizerPreparation.ts";
 import type { TicketBriefPort } from "./ticketBrief.ts";
 import type { ReworkCap } from "./reworkCap.ts";
 import {
@@ -31,6 +32,7 @@ export interface TicketServiceRuntimeService {
   readonly projects: ProjectStore;
   readonly executionSources: ExecutionSourceObservationPort;
   readonly ticketBriefs: TicketBriefPort;
+  readonly projectArtifacts: Pick<ProjectArtifactPort, "readArtifact">;
   readonly owner: OwnerId;
   readonly monotonicNow: () => number;
   readonly ticketConfig?: TicketServiceConfig;
@@ -175,6 +177,7 @@ export async function ticketServiceRunOnce(
     decisions: service.decisions,
     executionSources: service.executionSources,
     ticketBriefs: service.ticketBriefs,
+    projectArtifacts: service.projectArtifacts,
   };
   let activated = 0;
   let failed = 0;

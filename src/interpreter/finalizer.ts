@@ -327,7 +327,8 @@ export type InputBundleReferenceKind =
   | "Repository"
   | "FinalizationAttempt"
   | "ConflictManifest"
-  | "TargetCommit";
+  | "TargetCommit"
+  | "ProjectArtifact";
 
 /** Every reference kind, so a suite and a database CHECK iterate rather than restate. */
 export const allInputBundleReferenceKinds: readonly InputBundleReferenceKind[] =
@@ -338,6 +339,7 @@ export const allInputBundleReferenceKinds: readonly InputBundleReferenceKind[] =
     "FinalizationAttempt",
     "ConflictManifest",
     "TargetCommit",
+    "ProjectArtifact",
   ];
 
 /** The most references one bundle holds, so a bundle cannot grow into a payload. */

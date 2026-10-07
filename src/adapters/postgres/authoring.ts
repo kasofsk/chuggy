@@ -70,6 +70,7 @@ interface DraftRow extends ConfigurationVersionRow {
   readonly finalization_mode: string | null;
   readonly finalization_target: string | null;
   readonly links: string[] | null;
+  readonly images: string[] | null;
   readonly checks: string[] | null;
 }
 
@@ -202,6 +203,8 @@ async function readDraft(
               v.name AS version_name,v.number::text AS version_number,
               (SELECT array_agg(k.url ORDER BY k.ordinal) FROM draft_brief_link k
                 WHERE k.tenant=d.tenant AND k.project=d.project AND k.ticket=d.ticket) AS links,
+              (SELECT array_agg(i.artifact ORDER BY i.ordinal) FROM draft_brief_image i
+                WHERE i.tenant=d.tenant AND i.project=d.project AND i.ticket=d.ticket) AS images,
               (SELECT array_agg(c.command ORDER BY c.ordinal) FROM draft_brief_check c
                 WHERE c.tenant=d.tenant AND c.project=d.project AND c.ticket=d.ticket) AS checks
        FROM draft d JOIN draft_revision r USING (tenant,project,ticket,authoring_version)
@@ -267,6 +270,7 @@ interface DraftPageRow extends ConfigurationVersionRow {
   readonly finalization_mode: string | null;
   readonly finalization_target: string | null;
   readonly links: string[] | null;
+  readonly images: string[] | null;
   readonly checks: string[] | null;
 }
 
@@ -306,7 +310,7 @@ async function readDrafts(
     sql`SELECT ticket::text AS ticket,
                authoring_version::text AS authoring_version,
                state,configuration_revision,authoring,title,intent,branch,
-               repository,finalization_mode,finalization_target,links,checks,
+               repository,finalization_mode,finalization_target,links,images,checks,
                version_name,version_number::text AS version_number
           FROM read_project_drafts(
                  ${partition.tenant},${partition.project},
@@ -577,7 +581,7 @@ async function createDraft(
     result: string | null;
     ticket: string | null;
   }>(
-    sql`SELECT result,ticket FROM create_draft(${input.partition.tenant},${input.partition.project},${input.configurationRevision},${input.configurationDigest},${input.expectedProjectSequence},${encodeDraftAuthoring(input.authoring)},${input.brief.title ?? null},${input.brief.intent},${[...input.brief.links]},${[...input.brief.checks]},${input.brief.branch ?? null},${input.brief.finalization?.mode ?? null},${briefFinalizationTarget(input.brief.finalization) ?? null},${input.brief.repository ?? null},${input.authority.kind},${input.authority.subject})`,
+    sql`SELECT result,ticket FROM create_draft(${input.partition.tenant},${input.partition.project},${input.configurationRevision},${input.configurationDigest},${input.expectedProjectSequence},${encodeDraftAuthoring(input.authoring)},${input.brief.title ?? null},${input.brief.intent},${[...input.brief.links]},${[...input.brief.images]},${[...input.brief.checks]},${input.brief.branch ?? null},${input.brief.finalization?.mode ?? null},${briefFinalizationTarget(input.brief.finalization) ?? null},${input.brief.repository ?? null},${input.authority.kind},${input.authority.subject})`,
   );
   const row = found.rows[0];
   if (row?.result === "ConfigurationNotFound")
@@ -604,7 +608,7 @@ async function reviseDraft(
     authoring_version: string | null;
     state: string | null;
   }>(
-    sql`SELECT * FROM revise_draft(${input.partition.tenant},${input.partition.project},${input.ticket},${input.expectedVersion},${input.configurationRevision},${encodeDraftAuthoring(input.authoring)},${input.brief.title ?? null},${input.brief.intent},${[...input.brief.links]},${[...input.brief.checks]},${input.brief.branch ?? null},${input.brief.finalization?.mode ?? null},${briefFinalizationTarget(input.brief.finalization) ?? null},${input.brief.repository ?? null},${input.authority.kind},${input.authority.subject})`,
+    sql`SELECT * FROM revise_draft(${input.partition.tenant},${input.partition.project},${input.ticket},${input.expectedVersion},${input.configurationRevision},${encodeDraftAuthoring(input.authoring)},${input.brief.title ?? null},${input.brief.intent},${[...input.brief.links]},${[...input.brief.images]},${[...input.brief.checks]},${input.brief.branch ?? null},${input.brief.finalization?.mode ?? null},${briefFinalizationTarget(input.brief.finalization) ?? null},${input.brief.repository ?? null},${input.authority.kind},${input.authority.subject})`,
   );
   const row = found.rows[0];
   if (row === undefined || row.result === "NotFound")

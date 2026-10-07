@@ -288,15 +288,19 @@ test("the baseline opens the brief's doors to the roles that reach it and no oth
       [apiRole, "draft_brief", "UPDATE", false],
       [apiRole, "draft_brief_link", "SELECT", true],
       [apiRole, "draft_brief_link", "INSERT", false],
+      [apiRole, "draft_brief_image", "SELECT", true],
+      [apiRole, "draft_brief_image", "INSERT", false],
       [ticketServiceRole, "draft_brief", "SELECT", true],
       [ticketServiceRole, "draft_brief", "UPDATE", false],
       [schedulerRole, "draft_brief", "SELECT", false],
       [schedulerRole, "draft_brief_link", "SELECT", false],
+      [schedulerRole, "draft_brief_image", "SELECT", false],
       [schedulerRole, "ticket_definition", "SELECT", true],
       [finalizerRole, "draft_brief", "SELECT", false],
       [finalizerRole, "ticket_definition", "SELECT", true],
       [boundaryOwnerRole, "draft_brief", "INSERT", true],
       [boundaryOwnerRole, "draft_brief_link", "DELETE", true],
+      [boundaryOwnerRole, "draft_brief_image", "DELETE", true],
     ] as const)
       assert.equal(
         (
@@ -833,7 +837,7 @@ async function createdProposingDraft(subject: pg.Pool, branch: string | null) {
     await subject.query<{ result: string; ticket: string | null }>(
       `SELECT result,ticket::text AS ticket FROM ${draftCreateFunction}(
          'tenant-91','project-91','revision-91','digest-91',0,$1,
-         NULL,'Land it.','{}'::text[],'{}'::text[],$2,NULL,NULL,'bound-91','User','author')`,
+         NULL,'Land it.','{}'::text[],'{}'::text[],'{}'::text[],$2,NULL,NULL,'bound-91','User','author')`,
       [encodeDraftAuthoring(plainAuthoring), branch],
     )
   ).rows;
@@ -844,8 +848,23 @@ async function createdUnboundDraft(subject: pg.Pool) {
     await subject.query<{ result: string }>(
       `SELECT result FROM ${draftCreateFunction}(
          'tenant-91','project-91','revision-91','digest-91',0,$1,
-         NULL,'Land it.','{}'::text[],'{}'::text[],NULL,NULL,NULL,NULL,'User','author')`,
+         NULL,'Land it.','{}'::text[],'{}'::text[],'{}'::text[],NULL,NULL,NULL,NULL,'User','author')`,
       [encodeDraftAuthoring(plainAuthoring)],
+    )
+  ).rows;
+}
+
+/** `createdProposingDraft`, called where the installation predates 039's extra array. */
+async function createdProposingDraftBefore039(
+  subject: pg.Pool,
+  branch: string | null,
+) {
+  return (
+    await subject.query<{ result: string; ticket: string | null }>(
+      `SELECT result,ticket::text AS ticket FROM ${draftCreateFunction}(
+         'tenant-91','project-91','revision-91','digest-91',0,$1,
+         NULL,'Land it.','{}'::text[],'{}'::text[],$2,NULL,NULL,'bound-91','User','author')`,
+      [encodeDraftAuthoring(plainAuthoring), branch],
     )
   ).rows;
 }
@@ -948,8 +967,8 @@ test("the draft doors are owned and granted to their callers", async () => {
   await migrationDatabase("i91grants", async (subject) => {
     await postgresMigrate(subject);
     await assertDoorsStandOwned(subject, [
-      `${draftCreateFunction}(text,text,text,text,bigint,text,text,text,text[],text[],text,text,text,text,text,text)`,
-      `${draftReviseFunction}(text,text,bigint,bigint,text,text,text,text,text[],text[],text,text,text,text,text,text)`,
+      `${draftCreateFunction}(text,text,text,text,bigint,text,text,text,text[],text[],text[],text,text,text,text,text,text)`,
+      `${draftReviseFunction}(text,text,bigint,bigint,text,text,text,text,text[],text[],text[],text,text,text,text,text,text)`,
     ]);
   });
 });
@@ -963,8 +982,8 @@ test("repository doors preserve their ownership and restricted grants", async ()
       `${repositoryLandingReadFunction}(text,text,text)`,
       `${repositoryLandingWriteFunction}(text,text,text,text,text)`,
       `${repositoryBindingWriteFunction}(text,text,text,text,text,text,text)`,
-      `${draftCreateFunction}(text,text,text,text,bigint,text,text,text,text[],text[],text,text,text,text,text,text)`,
-      `${draftReviseFunction}(text,text,bigint,bigint,text,text,text,text,text[],text[],text,text,text,text,text,text)`,
+      `${draftCreateFunction}(text,text,text,text,bigint,text,text,text,text[],text[],text[],text,text,text,text,text,text)`,
+      `${draftReviseFunction}(text,text,bigint,bigint,text,text,text,text,text[],text[],text[],text,text,text,text,text,text)`,
     ]);
     for (const privilege of ["SELECT", "UPDATE", "DELETE"])
       assert.equal(
@@ -2128,7 +2147,7 @@ test("an authoring that still names the deleted finalizer no longer decides the 
         await subject.query<{ result: string }>(
           `SELECT result FROM ${draftCreateFunction}(
              'tenant-91','project-91','revision-91','digest-91',0,$1,
-             NULL,'Land it.','{}'::text[],'{}'::text[],'refs/heads/rt/work',
+             NULL,'Land it.','{}'::text[],'{}'::text[],'{}'::text[],'refs/heads/rt/work',
              NULL,NULL,'bound-91','User','author')`,
           [deletionFinalizerAuthoring()],
         )
@@ -2149,7 +2168,7 @@ test("an authoring that still names the deleted finalizer no longer decides the 
         await subject.query<{ result: string }>(
           `SELECT result FROM ${draftReviseFunction}(
              'tenant-91','project-91',1,1,'revision-91',$1,
-             NULL,'Land it.','{}'::text[],'{}'::text[],'refs/heads/rt/work',
+             NULL,'Land it.','{}'::text[],'{}'::text[],'{}'::text[],'refs/heads/rt/work',
              'Push',NULL,'bound-91','User','author')`,
           [deletionFinalizerAuthoring()],
         )
@@ -8084,12 +8103,13 @@ test("an applied 016 stores each released ticket's brief as the one its content 
     await installationBefore(subject, migration016.version);
     await seedProposingBinding(subject);
     assert.deepEqual(
-      await createdProposingDraft(subject, "refs/heads/branch-91"),
+      await createdProposingDraftBefore039(subject, "refs/heads/branch-91"),
       [{ result: "Created", ticket: "1" }],
     );
     const brief = {
       intent: "Land it.",
       links: [],
+      images: [],
       checks: [],
       branch: "refs/heads/branch-91",
       repository: "bound-91",
@@ -8119,7 +8139,7 @@ async function updatePopulated(subject: pg.Pool): Promise<void> {
   await seedProposingBinding(subject);
   for (const ticket of ["1", "2"])
     assert.deepEqual(
-      await createdProposingDraft(subject, "refs/heads/branch-91"),
+      await createdProposingDraftBefore039(subject, "refs/heads/branch-91"),
       [{ result: "Created", ticket }],
     );
   assert.equal(
@@ -8494,7 +8514,7 @@ async function updateRevised(
     await subject.query(
       `SELECT result, authoring_version::int AS version, state FROM ${draftReviseFunction}(
          'tenant-91','project-91',1,$1,'revision-91',$2,
-         NULL,'Land it.','{}'::text[],'{}'::text[],'refs/heads/branch-91',
+         NULL,'Land it.','{}'::text[],'{}'::text[],'{}'::text[],'refs/heads/branch-91',
          NULL,NULL,'bound-91','User','author')`,
       [expected, authoring],
     )

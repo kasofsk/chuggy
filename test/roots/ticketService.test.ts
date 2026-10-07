@@ -47,6 +47,7 @@ const validConfiguration = {
   },
   rework: { cyclesMax: 2 },
   owner: "ticket-service-1",
+  artifacts: { root: "/tmp/chuggy-ticket-artifacts" },
   source: {
     scratchDirectory: "/tmp/chuggy-ticket-source",
     identity: { name: "Chuggy", email: "chuggy@example.invalid" },

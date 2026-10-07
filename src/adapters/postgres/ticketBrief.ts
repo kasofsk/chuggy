@@ -13,6 +13,7 @@ import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
 
 import { asRepositoryId } from "../../interpreter/finalizer.ts";
+import { asProjectArtifactId } from "../../interpreter/finalizerPreparation.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
 import {
   asBriefBranch,
@@ -45,6 +46,7 @@ export interface DraftBriefRow extends DraftBriefFinalizationRow {
   readonly branch: string | null;
   readonly repository: string | null;
   readonly links: string[] | null;
+  readonly images: string[] | null;
   readonly checks: string[] | null;
 }
 
@@ -98,6 +100,7 @@ export function draftBriefOf(row: DraftBriefRow): DraftBrief | undefined {
     ...(row.title === null ? {} : { title: asBriefTitle(row.title) }),
     intent: asBriefIntent(row.intent),
     links: (row.links ?? []).map(asBriefLinkUrl),
+    images: (row.images ?? []).map(asProjectArtifactId),
     checks: (row.checks ?? []).map(asBriefCheckLine),
     ...(row.branch === null ? {} : { branch: asBriefBranch(row.branch) }),
     ...(row.repository === null

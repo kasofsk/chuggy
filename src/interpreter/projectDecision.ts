@@ -64,7 +64,10 @@ import {
 import type { Lease, Lifecycle } from "./projectStore.ts";
 import type { Refusal } from "./refusal.ts";
 import type { DispatchCandidate } from "./dispatchView.ts";
-import type { FinalizationEvidence } from "./finalizerPreparation.ts";
+import type {
+  FinalizationEvidence,
+  ProjectArtifactId,
+} from "./finalizerPreparation.ts";
 import type { NativeActionResolution } from "./projectCommand.ts";
 import type { DraftBrief } from "./ticketBrief.ts";
 import type { TicketDefinitionMaterial } from "./ticketDefinition.ts";
@@ -151,6 +154,12 @@ export interface TicketProjection {
  */
 export type ProjectedEscalation = "NoEscalation" | Escalation["type"];
 
+/** One project-owned image a brief named, read back with the digest the store answered it at. */
+export interface BriefImageReference {
+  readonly artifact: ProjectArtifactId;
+  readonly digest: string;
+}
+
 /**
  * The bundle a spawn request pins, minted from the same journal position the
  * request is, so a retried decision reproduces the identity rather than a second
@@ -165,6 +174,8 @@ export interface ExecutionRequestBundle {
     readonly targetCommit: string;
     readonly manifests: readonly string[];
   };
+  /** The brief's own images, read at the same gather the source observes and carried regardless of it. */
+  readonly images?: readonly BriefImageReference[];
 }
 
 /** The kind part of a spawn bundle's derived identity, which the schema's backfill spells too. */

@@ -16,6 +16,7 @@ import {
   briefBranchCharsMax,
   briefBranchPrefix,
   briefChecksMax,
+  briefImagesMax,
   briefIntentCharsMax,
   briefLineCharsMax,
   briefLinkScheme,
@@ -144,6 +145,7 @@ test("a whole brief brands each of its parts and omits the branch it has none of
     {
       intent: "Fix the importer.",
       links: ["https://example.test/one"],
+      images: [],
       checks: [],
     },
   );
@@ -155,6 +157,35 @@ test("a whole brief brands each of its parts and omits the branch it has none of
         branch: "not-a-ref",
       }),
     RangeError,
+  );
+});
+
+test("a whole brief brands the images it carries, up to the bound", () => {
+  assert.deepEqual(
+    asDraftBrief({
+      intent: "Fix the importer.",
+      links: [],
+      images: ["image/png:one", "image/jpeg:two"],
+    }).images,
+    ["image/png:one", "image/jpeg:two"],
+  );
+  assert.deepEqual(
+    asDraftBrief({ intent: "Fix the importer.", links: [] }).images,
+    [],
+    "a brief naming no image carries none",
+  );
+  assert.throws(
+    () =>
+      asDraftBrief({
+        intent: "Fix the importer.",
+        links: [],
+        images: Array.from(
+          { length: briefImagesMax + 1 },
+          (_, at) => `image/png:${String(at)}`,
+        ),
+      }),
+    RangeError,
+    "more images than one brief carries",
   );
 });
 
@@ -311,6 +342,7 @@ test("a whole brief brands where it lands apart from where its work happens", ()
     {
       intent: "Fix the importer.",
       links: [],
+      images: [],
       checks: [],
       branch: "refs/heads/rt/work",
       finalization: { mode: "Push", target: "refs/heads/rt/landing" },
@@ -340,6 +372,7 @@ test("a brief that proposes brands a branch of its own and not the one it opens 
     assert.deepEqual(proposing("refs/heads/rt/work"), {
       intent: "Fix the importer.",
       links: [],
+      images: [],
       checks: [],
       branch: "refs/heads/rt/work",
       finalization: { mode, target: "refs/heads/rt/landing" },
@@ -369,6 +402,7 @@ test("a brief proposing into the default branch brands its head and no base", ()
     assert.deepEqual(proposing("refs/heads/rt/work"), {
       intent: "Fix the importer.",
       links: [],
+      images: [],
       checks: [],
       branch: "refs/heads/rt/work",
       finalization: { mode },

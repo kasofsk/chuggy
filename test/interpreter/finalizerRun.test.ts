@@ -844,6 +844,7 @@ function briefsOf(
       : {
           intent: asBriefIntent("carry the ticket's own branch"),
           links: [],
+          images: [],
           checks: [],
           ...(branch === undefined ? {} : { branch: asBriefBranch(branch) }),
           ...(landing

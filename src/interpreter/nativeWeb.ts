@@ -939,9 +939,61 @@ function nativeDraftReadMethods(
   };
 }
 
+/**
+ * Whether every image a brief names is one this project's own store holds, a
+ * claim the store itself may fail to answer: `Unavailable` keeps that fault
+ * distinguishable from `NotBound`, so a store blip is never reported to a
+ * caller as its image not existing. A brief naming none asks the store
+ * nothing, which is what keeps a brief written before this ticket answering
+ * exactly as it did.
+ */
+type BriefImagesBound =
+  | { readonly bound: "Bound" }
+  | { readonly bound: "NotBound" }
+  | { readonly bound: "Unavailable"; readonly retryAfterSeconds: number };
+
+async function nativeBriefImagesBound(
+  artifacts: ProjectArtifactPort | undefined,
+  partition: Partition,
+  images: readonly ProjectArtifactId[],
+): Promise<BriefImagesBound> {
+  if (images.length === 0) return { bound: "Bound" };
+  if (artifacts === undefined)
+    throw new Error("native web: no project artifact store was composed");
+  for (const artifact of images) {
+    const read = await artifacts.readArtifact({ partition, artifact });
+    if (read.read === "NotFound") return { bound: "NotBound" };
+    if (read.read === "Unavailable")
+      return {
+        bound: "Unavailable",
+        retryAfterSeconds: read.retryAfterSeconds,
+      };
+  }
+  return { bound: "Bound" };
+}
+
+/** What an unbound or unreachable image refuses `createDraft` with. */
+function draftCreationImagesRefusal(
+  bound: Exclude<BriefImagesBound, { bound: "Bound" }>,
+): Extract<DraftCreated, { created: "ArtifactNotBound" | "Unavailable" }> {
+  return bound.bound === "NotBound"
+    ? { created: "ArtifactNotBound" }
+    : { created: "Unavailable", retryAfterSeconds: bound.retryAfterSeconds };
+}
+
+/** What an unbound or unreachable image refuses `reviseDraft` with. */
+function draftRevisionImagesRefusal(
+  bound: Exclude<BriefImagesBound, { bound: "Bound" }>,
+): Extract<DraftRevised, { revised: "ArtifactNotBound" | "Unavailable" }> {
+  return bound.bound === "NotBound"
+    ? { revised: "ArtifactNotBound" }
+    : { revised: "Unavailable", retryAfterSeconds: bound.retryAfterSeconds };
+}
+
 function nativeAuthoringMethods(
   access: ProjectAccess,
   authoring: AuthoringStore,
+  projectArtifacts?: ProjectArtifactPort,
 ): NativeAuthoringMethods {
   return {
     ...nativeDraftReadMethods(access, authoring),
@@ -957,14 +1009,32 @@ function nativeAuthoringMethods(
         access,
         principal,
         input.partition,
-        (authority) => authoring.createDraft({ ...input, authority }),
+        async (authority) => {
+          const bound = await nativeBriefImagesBound(
+            projectArtifacts,
+            input.partition,
+            input.brief.images,
+          );
+          return bound.bound === "Bound"
+            ? authoring.createDraft({ ...input, authority })
+            : draftCreationImagesRefusal(bound);
+        },
       ),
     reviseDraft: (principal, input) =>
       authorizedProjectMutation(
         access,
         principal,
         input.partition,
-        (authority) => authoring.reviseDraft({ ...input, authority }),
+        async (authority) => {
+          const bound = await nativeBriefImagesBound(
+            projectArtifacts,
+            input.partition,
+            input.brief.images,
+          );
+          return bound.bound === "Bound"
+            ? authoring.reviseDraft({ ...input, authority })
+            : draftRevisionImagesRefusal(bound);
+        },
       ),
     deleteDraft: (principal, input) =>
       authorizedProjectMutation(
@@ -2157,7 +2227,7 @@ export function nativeWeb(
     ),
     ...nativeConfigurationMethods(access, authoring),
     ...nativeDraftInitializationMethod(access, authoring),
-    ...nativeAuthoringMethods(access, authoring),
+    ...nativeAuthoringMethods(access, authoring, projectArtifacts),
     ...nativeOperationalMethods(access, operationalReads, outputContents),
     ...nativeProjectArtifactMethods(
       access,

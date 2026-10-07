@@ -36,6 +36,7 @@ import { migration035 } from "./035-thread-turn-stop.ts";
 import { migration036 } from "./036-repository-actions.ts";
 import { migration037 } from "./037-action-observations.ts";
 import { migration038 } from "./038-action-reach.ts";
+import { migration039 } from "./039-brief-images.ts";
 import type { Migration } from "../shared.ts";
 
 export const migrations: readonly Migration[] = [
@@ -77,4 +78,5 @@ export const migrations: readonly Migration[] = [
   migration036,
   migration037,
   migration038,
+  migration039,
 ];
