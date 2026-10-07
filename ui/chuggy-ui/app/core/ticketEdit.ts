@@ -9,7 +9,9 @@
  *
  * AN EDIT KEEPS THE CONFIGURATION ITS DRAFT NAMES. It starts on that name and
  * moves the ticket to another only where its reader chooses one, so a revision
- * of the title is never also a change of who does the work.
+ * of the title is never also a change of who does the work. The form draws no
+ * overrides, so it carries the draft's through as they are: a revision that
+ * omitted them would clear them.
  */
 
 import { briefBranchPrefix } from "../../../../src/contract/brief.ts";
@@ -172,6 +174,7 @@ export function editRevisionFrom(
       configurationRevision: assembled.body.configurationRevision,
       authoring: assembled.body.authoring,
       brief: assembled.body.brief,
+      ...(draft.overrides === undefined ? {} : { overrides: draft.overrides }),
     }),
   };
 }

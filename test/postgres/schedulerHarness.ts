@@ -40,6 +40,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 
 import type pg from "pg";
+import type { ConfigurationOverrides } from "../../src/contract/configurationOverrides.ts";
 
 import { revokeTicketCommand } from "../../src/actor/command.ts";
 import type { CanonicalConfiguration } from "../../src/interpreter/authoring.ts";
@@ -237,6 +238,7 @@ export async function schedulerProject(
   capacity: SchedulerCapacity = {},
   canonical?: CanonicalConfiguration,
   partition: Partition = postgresHarnessPartition(label),
+  overrides?: ConfigurationOverrides,
 ): Promise<SchedulerProject> {
   await rig.harness.store.createProject(partition);
   const memory = await postgresHarnessHistory(
@@ -246,6 +248,7 @@ export async function schedulerProject(
     postgresHarnessJournal().length,
     undefined,
     canonical,
+    overrides,
   );
   const spawn = await schedulerSpawnRequest(rig, partition);
   return {

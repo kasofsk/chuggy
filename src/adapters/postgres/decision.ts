@@ -106,6 +106,7 @@ import {
   postgresOwnershipHonours,
   postgresOwnershipLockKnown,
 } from "./ownership.ts";
+import { storedOverridesText } from "./ticketBrief.ts";
 import { postgresTransaction } from "./pool.ts";
 import { projectRowCounter, projectRowStanding } from "./rows.ts";
 import { configurationRevisionDigest } from "./digest.ts";
@@ -519,7 +520,7 @@ async function decisionTicketSource(
 
 /**
  * What the release resolved, written beside the entry that journalled the
- * references folded from it, with the brief it resolved from. One row per
+ * references folded from it, with the brief and the overrides it resolved from. One row per
  * ticket: a release writes it and an update replaces it, and a ticket runs at
  * what the last of them froze — never at the draft, which a Pending ticket's
  * author may already have revised again.
@@ -537,17 +538,18 @@ async function decisionTicketDefinition(
     draftRelease.brief === undefined
       ? null
       : JSON.stringify(draftRelease.brief);
+  const overrides = storedOverridesText(draftRelease.overrides);
   if (draftRelease.release === "Release") {
     await client.query(
-      sql`INSERT INTO ticket_definition (tenant,project,ticket,definition,digest,brief)
+      sql`INSERT INTO ticket_definition (tenant,project,ticket,definition,digest,brief,overrides)
          VALUES (${partition.tenant},${partition.project},${draftRelease.ticket},
-                 ${definition}::jsonb,${digest},${brief}::jsonb)`,
+                 ${definition}::jsonb,${digest},${brief}::jsonb,${overrides}::jsonb)`,
     );
     return;
   }
   const replaced = await client.query(
     sql`UPDATE ticket_definition SET definition=${definition}::jsonb,digest=${digest},
-           brief=${brief}::jsonb
+           brief=${brief}::jsonb,overrides=${overrides}::jsonb
      WHERE tenant=${partition.tenant} AND project=${partition.project}
        AND ticket=${draftRelease.ticket}`,
   );
@@ -647,6 +649,7 @@ async function decisionReleaseOutcome(
     revision.repository === null
       ? undefined
       : asRepositoryId(revision.repository),
+    fence.overrides,
   );
   if (readiness.readiness === "Incomplete")
     return releaseRefused(

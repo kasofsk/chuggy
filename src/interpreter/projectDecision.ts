@@ -49,6 +49,7 @@
  * settled are outcomes a caller must handle, not exceptions it may ignore.
  */
 
+import type { ConfigurationOverrides } from "../contract/configurationOverrides.ts";
 import type { Entry } from "../actor/journal.ts";
 import type {
   Escalation,
@@ -107,6 +108,12 @@ export interface DraftReleaseFence extends ConfigurationPin {
    * refused.
    */
   readonly brief?: DraftBrief;
+  /**
+   * What the draft revision replaces of the configuration, absent where it
+   * replaces nothing. Release judges and resolves the configuration with them
+   * applied, and they are stored beside the brief for every later reader.
+   */
+  readonly overrides?: ConfigurationOverrides;
   /**
    * What this release resolved, written beside its entry. The references the
    * entry carries are folds of the digests in it, so the row is what says what

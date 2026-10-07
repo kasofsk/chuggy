@@ -32,6 +32,7 @@ import {
   postgresWorkerPoolRegistry,
   postgresWorkerPoolRoster,
 } from "../../src/adapters/postgres/workerPool.ts";
+import type { ConfigurationOverrides } from "../../src/contract/configurationOverrides.ts";
 import type { WorkTaskDocument } from "../../src/contract/workerTask.ts";
 import {
   asCanonicalConfiguration,
@@ -149,12 +150,15 @@ async function admittedProject(
   configuration: CanonicalConfiguration = workerConfiguration(),
   spawned: (project: SchedulerProject) => Promise<string> = (project) =>
     Promise.resolve(project.request),
+  overrides?: ConfigurationOverrides,
 ): Promise<{ project: SchedulerProject; execution: ExecutionId }> {
   const project = await schedulerProject(
     rig,
     label,
     { tasks: 1 },
     configuration,
+    undefined,
+    overrides,
   );
   await rig.store.registerSpawn(
     await schedulerClaimFor(
@@ -305,6 +309,34 @@ test("a worker fetches the task its pod is launched with, less the plane", async
     authority: document.authority,
     worker: document.worker,
   });
+});
+
+test("an attempt of a ticket overriding the worker's mode records that mode and the configuration's everything else", async () => {
+  const mode = {
+    type: "SingleAgent" as const,
+    agent: "Claude" as const,
+    arguments: ["--verbose"],
+  };
+  const { project } = await admittedProject(
+    "task-overridden",
+    workerConfiguration(),
+    undefined,
+    { worker: { mode } },
+  );
+  const placement = await launched(project);
+  const plain = await admittedProject("task-not-overridden");
+  const unchanged = await launched(plain.project);
+  const recorded = (await storedInvocation(placement)) as {
+    readonly worker: unknown;
+    readonly briefing: unknown;
+  };
+  const configured = (await storedInvocation(unchanged)) as {
+    readonly worker: Readonly<Record<string, unknown>>;
+    readonly briefing: unknown;
+  };
+  assert.deepEqual(recorded.worker, { ...configured.worker, mode });
+  assert.notDeepEqual(recorded.worker, configured.worker);
+  assert.deepEqual(recorded.briefing, configured.briefing);
 });
 
 test("an evaluator fetches the task its pod is launched with, its kind and stage included", async () => {

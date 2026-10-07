@@ -115,3 +115,47 @@ test("a draft body takes any landing its brief names, and none at all", () => {
         `a brief landing ${JSON.stringify(finalization)} is accepted`,
       );
 });
+
+/**
+ * A draft may replace how its work is done and nothing else: the image, every
+ * authority, the review block and the evaluation list stay the configuration's.
+ */
+test("a draft body takes overrides of how the work is done, and refuses any other field", () => {
+  const accepted = {
+    worker: {
+      mode: { type: "SingleAgent", agent: "Claude", arguments: ["--fast"] },
+      setup: ["npm ci"],
+      files: [{ path: ".npmrc", content: "fund=false" }],
+    },
+    practices: ["RegressionCoverage"],
+    brief: { motivation: ["Why."], acceptanceCriteria: [], constraints: [] },
+    work: { instructions: ["Do it."] },
+  };
+  for (const [schema, body] of draftBodiesBySchema(undefined)) {
+    assert.equal(
+      schema.safeParse({ ...body, overrides: accepted }).success,
+      true,
+      "every overridable field is accepted",
+    );
+    for (const overrides of [
+      { image: "worker:v2" },
+      { authority: { network: true } },
+      { work: { instructions: ["Do it."], authority: { network: true } } },
+      { work: { commands: ["./run"] } },
+      { review: { instructions: ["Look."] } },
+      { evaluations: [] },
+      { finalizationApprovalRequired: false },
+      { executionRequirements: {} },
+      { outputs: {} },
+      { version: 1 },
+      { worker: { arguments: [] } },
+      { worker: { mode: { type: "Commands", commands: ["./run"] } } },
+      { brief: { checks: ["npm test"] } },
+    ])
+      assert.equal(
+        schema.safeParse({ ...body, overrides }).success,
+        false,
+        `an override is refused: ${JSON.stringify(overrides)}`,
+      );
+  }
+});

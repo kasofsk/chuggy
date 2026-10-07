@@ -1,6 +1,6 @@
 /**
  * PostgreSQL reads of the brief a draft carries, and of the one its ticket was
- * released with.
+ * released with, and of the configuration overrides stored beside each.
  *
  * THEY ARE TWO BRIEFS ONCE A DRAFT REOPENS. The draft's brief is one row its
  * author revises in place, and a Pending ticket's draft takes revisions nobody
@@ -12,6 +12,10 @@
 import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
 
+import {
+  configurationOverridesSchema,
+  type ConfigurationOverrides,
+} from "../../contract/configurationOverrides.ts";
 import { asRepositoryId } from "../../interpreter/finalizer.ts";
 import { asProjectArtifactId } from "../../interpreter/finalizerPreparation.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
@@ -120,6 +124,22 @@ export function releasedBriefOf(stored: string | null): DraftBrief | undefined {
   return stored === null
     ? undefined
     : asDraftBrief(JSON.parse(stored) as Parameters<typeof asDraftBrief>[0]);
+}
+
+/** The overrides one column stored, or none where it stored none. */
+export function storedOverridesOf(
+  stored: string | null,
+): ConfigurationOverrides | undefined {
+  return stored === null
+    ? undefined
+    : configurationOverridesSchema.parse(JSON.parse(stored));
+}
+
+/** The overrides as a column stores them, null where there are none. */
+export function storedOverridesText(
+  overrides: ConfigurationOverrides | undefined,
+): string | null {
+  return overrides === undefined ? null : JSON.stringify(overrides);
 }
 
 /**

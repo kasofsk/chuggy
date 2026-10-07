@@ -58,6 +58,7 @@ test("the scheduler role reads an authored pinned task configuration", async () 
     const configurations = postgresPinnedConfigurations(pool);
     assert.deepEqual(
       await configurations.configuration(partition, {
+        ticket: 1,
         configurationRevision: revision,
         configurationDigest: created.revision.digest,
       }),
@@ -112,6 +113,7 @@ test("a work stage that names commands survives the durable round trip", async (
     const read = await postgresPinnedConfigurations(pool).configuration(
       partition,
       {
+        ticket: 1,
         configurationRevision: revision,
         configurationDigest: created.revision.digest,
       },
@@ -170,6 +172,7 @@ test("the pinned read is exact across revisions, tenants, and projects", async (
     const read = await postgresPinnedConfigurations(pool).configuration(
       target,
       {
+        ticket: 1,
         configurationRevision: revision,
         configurationDigest: pinned.digest,
       },
@@ -196,6 +199,7 @@ test("an absent revision is Missing and an unreachable authority is Unavailable"
     const configurations = postgresPinnedConfigurations(pool);
     assert.deepEqual(
       await configurations.configuration(partition, {
+        ticket: 1,
         configurationRevision: "absent",
         configurationDigest: "digest",
       }),
@@ -204,6 +208,7 @@ test("an absent revision is Missing and an unreachable authority is Unavailable"
     await pool.end();
     assert.deepEqual(
       await configurations.configuration(partition, {
+        ticket: 1,
         configurationRevision: "absent",
         configurationDigest: "digest",
       }),
@@ -237,6 +242,7 @@ test("a pre-contract revision without authored briefing content holds for replac
     if (created.created !== "Created") return;
     assert.deepEqual(
       await postgresPinnedConfigurations(pool).configuration(partition, {
+        ticket: 1,
         configurationRevision: revision,
         configurationDigest: created.revision.digest,
       }),
@@ -275,6 +281,7 @@ test("configuration bytes that contradict their stored digest are incompatible",
     );
     assert.deepEqual(
       await postgresPinnedConfigurations(pool).configuration(partition, {
+        ticket: 1,
         configurationRevision: revision,
         configurationDigest: created.revision.digest,
       }),
@@ -294,6 +301,7 @@ test("configuration bytes that contradict their stored digest are incompatible",
     );
     assert.deepEqual(
       await postgresPinnedConfigurations(pool).configuration(partition, {
+        ticket: 1,
         configurationRevision: revision,
         configurationDigest: configurationRevisionDigest(unreadable),
       }),

@@ -837,7 +837,7 @@ async function createdProposingDraft(subject: pg.Pool, branch: string | null) {
     await subject.query<{ result: string; ticket: string | null }>(
       `SELECT result,ticket::text AS ticket FROM ${draftCreateFunction}(
          'tenant-91','project-91','revision-91','digest-91',0,$1,
-         NULL,'Land it.','{}'::text[],'{}'::text[],'{}'::text[],$2,NULL,NULL,'bound-91','User','author')`,
+         NULL,'Land it.','{}'::text[],'{}'::text[],'{}'::text[],$2,NULL,NULL,'bound-91',NULL,'User','author')`,
       [encodeDraftAuthoring(plainAuthoring), branch],
     )
   ).rows;
@@ -848,7 +848,7 @@ async function createdUnboundDraft(subject: pg.Pool) {
     await subject.query<{ result: string }>(
       `SELECT result FROM ${draftCreateFunction}(
          'tenant-91','project-91','revision-91','digest-91',0,$1,
-         NULL,'Land it.','{}'::text[],'{}'::text[],'{}'::text[],NULL,NULL,NULL,NULL,'User','author')`,
+         NULL,'Land it.','{}'::text[],'{}'::text[],'{}'::text[],NULL,NULL,NULL,NULL,NULL,'User','author')`,
       [encodeDraftAuthoring(plainAuthoring)],
     )
   ).rows;
@@ -967,9 +967,60 @@ test("the draft doors are owned and granted to their callers", async () => {
   await migrationDatabase("i91grants", async (subject) => {
     await postgresMigrate(subject);
     await assertDoorsStandOwned(subject, [
-      `${draftCreateFunction}(text,text,text,text,bigint,text,text,text,text[],text[],text[],text,text,text,text,text,text)`,
-      `${draftReviseFunction}(text,text,bigint,bigint,text,text,text,text,text[],text[],text[],text,text,text,text,text,text)`,
+      `${draftCreateFunction}(text,text,text,text,bigint,text,text,text,text[],text[],text[],text,text,text,text,text,text,text)`,
+      `${draftReviseFunction}(text,text,bigint,bigint,text,text,text,text,text[],text[],text[],text,text,text,text,text,text,text)`,
     ]);
+  });
+});
+
+/** A draft created through the door with `overrides` as the text it passes. */
+async function createdOverriddenDraft(subject: pg.Pool, overrides: string) {
+  return (
+    await subject.query<{ result: string }>(
+      `SELECT result FROM ${draftCreateFunction}(
+         'tenant-91','project-91','revision-91','digest-91',0,$1,
+         NULL,'Land it.','{}'::text[],'{}'::text[],'{}'::text[],'refs/heads/rt/work',
+         NULL,NULL,'bound-91',$2,'User','author')`,
+      [encodeDraftAuthoring(plainAuthoring), overrides],
+    )
+  ).rows;
+}
+
+test("a draft revision holds its overrides as one object, and a released definition is granted them by column", async () => {
+  await migrationDatabase("overrides040", async (subject) => {
+    await postgresMigrate(subject);
+    await seedProposingBinding(subject);
+    await assert.rejects(
+      createdOverriddenDraft(subject, '["practices"]'),
+      /draft_revision_overrides_is_bounded/u,
+    );
+    assert.deepEqual(
+      await createdOverriddenDraft(subject, '{"practices":[]}'),
+      [{ result: "Created" }],
+    );
+    assert.deepEqual(
+      (
+        await subject.query<{ overrides: unknown }>(
+          "SELECT overrides FROM draft_revision",
+        )
+      ).rows,
+      [{ overrides: { practices: [] } }],
+    );
+    for (const [role, privilege, held] of [
+      [ticketServiceRole, "UPDATE", true],
+      [apiRole, "SELECT", true],
+      [apiRole, "UPDATE", false],
+    ] as const)
+      assert.equal(
+        (
+          await subject.query<{ granted: boolean }>(
+            "SELECT has_column_privilege($1,'ticket_definition','overrides',$2) AS granted",
+            [role, privilege],
+          )
+        ).rows[0]?.granted,
+        held,
+        `${role} ${privilege}`,
+      );
   });
 });
 
@@ -982,8 +1033,8 @@ test("repository doors preserve their ownership and restricted grants", async ()
       `${repositoryLandingReadFunction}(text,text,text)`,
       `${repositoryLandingWriteFunction}(text,text,text,text,text)`,
       `${repositoryBindingWriteFunction}(text,text,text,text,text,text,text)`,
-      `${draftCreateFunction}(text,text,text,text,bigint,text,text,text,text[],text[],text[],text,text,text,text,text,text)`,
-      `${draftReviseFunction}(text,text,bigint,bigint,text,text,text,text,text[],text[],text[],text,text,text,text,text,text)`,
+      `${draftCreateFunction}(text,text,text,text,bigint,text,text,text,text[],text[],text[],text,text,text,text,text,text,text)`,
+      `${draftReviseFunction}(text,text,bigint,bigint,text,text,text,text,text[],text[],text[],text,text,text,text,text,text,text)`,
     ]);
     for (const privilege of ["SELECT", "UPDATE", "DELETE"])
       assert.equal(
@@ -2148,7 +2199,7 @@ test("an authoring that still names the deleted finalizer no longer decides the 
           `SELECT result FROM ${draftCreateFunction}(
              'tenant-91','project-91','revision-91','digest-91',0,$1,
              NULL,'Land it.','{}'::text[],'{}'::text[],'{}'::text[],'refs/heads/rt/work',
-             NULL,NULL,'bound-91','User','author')`,
+             NULL,NULL,'bound-91',NULL,'User','author')`,
           [deletionFinalizerAuthoring()],
         )
       ).rows,
@@ -2169,7 +2220,7 @@ test("an authoring that still names the deleted finalizer no longer decides the 
           `SELECT result FROM ${draftReviseFunction}(
              'tenant-91','project-91',1,1,'revision-91',$1,
              NULL,'Land it.','{}'::text[],'{}'::text[],'{}'::text[],'refs/heads/rt/work',
-             'Push',NULL,'bound-91','User','author')`,
+             'Push',NULL,'bound-91',NULL,'User','author')`,
           [deletionFinalizerAuthoring()],
         )
       ).rows,
@@ -8517,7 +8568,7 @@ async function updateRevised(
       `SELECT result, authoring_version::int AS version, state FROM ${draftReviseFunction}(
          'tenant-91','project-91',1,$1,'revision-91',$2,
          NULL,'Land it.','{}'::text[],'{}'::text[],'{}'::text[],'refs/heads/branch-91',
-         NULL,NULL,'bound-91','User','author')`,
+         NULL,NULL,'bound-91',NULL,'User','author')`,
       [expected, authoring],
     )
   ).rows;

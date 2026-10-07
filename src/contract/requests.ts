@@ -29,6 +29,7 @@ import {
 } from "./http.ts";
 import { authoringSchema } from "./authoring.ts";
 import { briefSchema } from "./brief.ts";
+import { configurationOverridesSchema } from "./configurationOverrides.ts";
 import {
   briefFinalizationModes,
   forgeCredentialPermissions,
@@ -239,6 +240,7 @@ export const draftCreationSchema = z.strictObject({
   expectedProjectSequence: countSchema,
   authoring: authoringSchema,
   brief: briefSchema,
+  overrides: configurationOverridesSchema.optional(),
 });
 
 export const draftRevisionSchema = z.strictObject({
@@ -246,6 +248,7 @@ export const draftRevisionSchema = z.strictObject({
   configurationRevision: bodyIdentitySchema,
   authoring: authoringSchema,
   brief: briefSchema,
+  overrides: configurationOverridesSchema.optional(),
 });
 
 export const submissionSchema = z.strictObject({
