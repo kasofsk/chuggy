@@ -332,6 +332,14 @@ export const resultReportSchemaVersionMin = 3;
 export const threadMessageCharsMax = 16_384;
 
 /**
+ * How many project-owned images one message may name, each an identity the
+ * upload route already minted. Bounded the way every list on this wire is,
+ * rather than left to the body limit alone: a member pasting a screenful of
+ * them is composing a gallery, which is not what a thread message is for.
+ */
+export const threadMessageImagesMax = 4;
+
+/**
  * What a thread's seeding block weighs beyond the two settings texts inside it:
  * the headings, and the boundary over the member's message. It is a ceiling
  * rather than a measurement, and the interpreter's suite is what holds the

@@ -1,7 +1,8 @@
 /**
- * The headings a thread's first turn is written under, the boundary over the
- * member's own message, and the standing rules a project runs its threads by
- * until it sets its own.
+ * The headings a thread's first turn is written under, the one a later turn
+ * naming an image opens with instead, the boundary over the member's own
+ * message, and the standing rules a project runs its threads by until it sets
+ * its own.
  *
  * IT IS THE CONTRACT BECAUSE EVERY SIDE READS IT. The interpreter writes the
  * boundary between the block and the message, the console splits on it, and the
@@ -41,6 +42,15 @@ export const threadStandingHeading = "# How you act on this project";
 export const threadTurnBoundaryHeading = "# What your owner says";
 
 /**
+ * The heading a turn that names an image opens with, whether or not it is the
+ * first: naming one is not seeding, so it carries no project text and sheds
+ * nothing, but it sits in front of the same boundary a first turn's block does,
+ * which is what lets a reader who has never heard of images still split one
+ * off correctly.
+ */
+export const threadImagesHeading = "# Images with this message";
+
+/**
  * The line every block recorded before that heading existed ended on, and so
  * the older boundary a reader splits on where the heading is absent. It is
  * written out rather than taken from `threadStandingRulesDefault`, because the
@@ -57,13 +67,16 @@ export function threadStandingSection(standing: string): string {
 }
 
 /**
- * Every heading a seeding block can open with. The block sheds its middle
- * sections to fit and a project may have no North Star, so which one comes
- * first is not fixed — that any of them does is.
+ * Every heading a turn's input can open with: the seeding block's own four, on
+ * a thread's first turn, and `threadImagesHeading`, on any turn that names an
+ * image. A reader checks the whole list rather than the seeding block's own,
+ * which is what lets it split a later turn's images section off correctly
+ * without being told the turn carries one.
  */
 export const threadSeedingHeadings = [
   threadNorthStarHeading,
   threadDraftsHeading,
   threadRefusalsHeading,
   threadStandingHeading,
+  threadImagesHeading,
 ] as const;

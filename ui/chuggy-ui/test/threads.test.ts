@@ -461,6 +461,7 @@ describe("the door's own vocabulary", () => {
       ["ThreadClosed", "Closed"],
       ["ThreadBacklogged", "Backlogged"],
       ["ThreadTurnTooLarge", "Oversize"],
+      ["ThreadImageUnknown", "Missing"],
     ]);
     expect(
       new Set(said.map(([, word]) => word)).size,

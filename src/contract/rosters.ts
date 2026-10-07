@@ -539,6 +539,7 @@ export const threadMessageRefusalCodes = [
   "ThreadClosed",
   "ThreadBacklogged",
   "ThreadTurnTooLarge",
+  "ThreadImageUnknown",
 ] as const;
 export type ThreadMessageRefusalCode =
   (typeof threadMessageRefusalCodes)[number];

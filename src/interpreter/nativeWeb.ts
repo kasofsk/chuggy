@@ -179,12 +179,15 @@ import {
   threadSystemPrompt,
   threadTurnInput,
   threadTurnInputCharsMax,
+  type ThreadSeededImage,
 } from "./thread.ts";
 import {
   checkedThreadMailboxQuery,
   checkedThreadMessage,
+  checkedThreadMessageImages,
   checkedThreadsLimit,
   threadEntry,
+  threadMessageImages,
   threadMessageSent,
   threadSeeding,
   threadTurnStopping,
@@ -193,6 +196,7 @@ import {
   type ThreadHiding,
   type ThreadRenaming,
   type ThreadMailboxQuery,
+  type ThreadMessageImagesChecked,
   type ThreadMessageSent,
   type ThreadOpening,
   type ThreadRead,
@@ -764,6 +768,7 @@ export interface NativeWeb {
       readonly session: SessionId;
       readonly turn: SessionTurnId;
       readonly message: string;
+      readonly images?: readonly string[];
     },
   ): Promise<ThreadMessageSent>;
   stopThreadTurn(
@@ -1455,11 +1460,13 @@ function composedSessionRoutes(routes?: SessionRouteReads): SessionRouteReads {
 }
 
 /**
- * What the member's first turn carries, which is the seeding block and no later
- * turn's, or the ceiling it would not fit under. The overflow is a refusal
- * rather than a raise because it is the project's texts that are too long and
- * not the member's request: a bare `InvalidRequest` would tell them their
- * message was malformed, which is the one thing it was not.
+ * What the member's turn carries: the seeding block on a first turn and no
+ * later turn's, the images section on any turn that named one, and the
+ * message itself — or the ceiling the three would not fit under. The overflow
+ * is a refusal rather than a raise because it is the project's texts or the
+ * images that are too long and not the member's request: a bare
+ * `InvalidRequest` would tell them their message was malformed, which is the
+ * one thing it was not.
  */
 async function nativeThreadTurnInput(
   ports: NativeThreadPorts,
@@ -1467,11 +1474,13 @@ async function nativeThreadTurnInput(
   authority: Authority,
   seeded: boolean,
   message: string,
+  images: readonly ThreadSeededImage[] | undefined,
 ): Promise<string | { readonly charsMax: number }> {
-  if (!seeded) return threadTurnInput(message);
-  const seeding = await threadSeeding(ports.seeding, partition, authority);
+  const seeding = seeded
+    ? await threadSeeding(ports.seeding, partition, authority)
+    : undefined;
   try {
-    return threadTurnInput(message, seeding);
+    return threadTurnInput(message, seeding, images);
   } catch (failure) {
     if (failure instanceof RangeError)
       return { charsMax: threadTurnInputCharsMax };
@@ -1592,18 +1601,30 @@ function nativeHostedRunsMethod(
         };
 }
 
+/** The project artifact store a send asks of, where a message names an image, thrown for the reason every other optionally-composed port is. */
+function composedThreadArtifactStore(
+  store?: ProjectArtifactPort,
+): ProjectArtifactPort {
+  if (store === undefined)
+    throw new Error("native web: no project artifact store was composed");
+  return store;
+}
+
 /**
  * The message door, which is `Mutate` and reaches the caller's own mailbox
  * alone: the session the URL names is checked against the one the caller's
  * principal resolves to, so the page a member is reading and the mailbox their
  * message lands in cannot come apart. Each turn is stamped with the route it
  * was admitted on and runs there, so the route and what it needs of the member
- * are asked at every send, not only when the thread opened.
+ * are asked at every send, not only when the thread opened, and an image the
+ * message names is checked against this project's own artifacts only once the
+ * thread is confirmed open and the caller's own.
  */
 function nativeSendThreadMessageMethod(
   access: ProjectAccess,
   threads?: NativeThreadPorts,
   routes?: SessionRouteReads,
+  projectArtifacts?: ProjectArtifactPort,
 ): NativeWeb["sendThreadMessage"] {
   return async (principal, partition, input) => {
     const authority = await access.authorize(principal, partition, "Mutate");
@@ -1618,6 +1639,7 @@ function nativeSendThreadMessageMethod(
     if (spend.spend !== "Admitted") return { result: spend.spend };
     const ports = composedThreadPorts(threads);
     const message = checkedThreadMessage(input.message);
+    const named = checkedThreadMessageImages(input.images ?? []);
     const mine = await ports.threads.standing({
       partition,
       session: input.session,
@@ -1626,12 +1648,27 @@ function nativeSendThreadMessageMethod(
     if (mine === undefined) return { result: "NotFound" };
     if (mine.thread.principal !== principal) return { result: "NotYourThread" };
     if (mine.thread.state === "Closed") return { result: "Closed" };
+    const checked: ThreadMessageImagesChecked =
+      named.length === 0
+        ? { checked: "Images", images: [] }
+        : await threadMessageImages(
+            composedThreadArtifactStore(projectArtifacts),
+            partition,
+            named,
+          );
+    if (checked.checked === "Unknown") return { result: "ImageUnknown" };
+    if (checked.checked === "Unavailable")
+      return {
+        result: "ImagesUnavailable",
+        retryAfterSeconds: checked.retryAfterSeconds,
+      };
     const turnInput = await nativeThreadTurnInput(
       ports,
       partition,
       authority,
       mine.thread.agentReference === undefined,
       message,
+      checked.images.length === 0 ? undefined : checked.images,
     );
     if (typeof turnInput !== "string")
       return { result: "TooLarge", charsMax: turnInput.charsMax };
@@ -2010,6 +2047,7 @@ function nativeThreadMethods(
   access: ProjectAccess,
   threads?: NativeThreadPorts,
   routes?: SessionRouteReads,
+  projectArtifacts?: ProjectArtifactPort,
 ): Pick<
   NativeWeb,
   | "threads"
@@ -2026,7 +2064,12 @@ function nativeThreadMethods(
     ...nativeThreadReadMethods(access, threads),
     ...nativeThreadViewMethods(access, threads),
     openThread: nativeOpenThreadMethod(access, threads, routes),
-    sendThreadMessage: nativeSendThreadMessageMethod(access, threads, routes),
+    sendThreadMessage: nativeSendThreadMessageMethod(
+      access,
+      threads,
+      routes,
+      projectArtifacts,
+    ),
     stopThreadTurn: nativeStopThreadTurnMethod(access, threads),
     closeThread: nativeCloseThreadMethod(access, threads),
   };
@@ -2105,7 +2148,7 @@ export function nativeWeb(
   return {
     ...nativeRunEvidenceMethods(access, runEvidenceReads, runEvidenceContents),
     ...nativeLeadReadMethods(access, reads, leads),
-    ...nativeThreadMethods(access, threads, sessionRoutes),
+    ...nativeThreadMethods(access, threads, sessionRoutes, projectArtifacts),
     hostedRuns: nativeHostedRunsMethod(access),
     ...nativeLeadInquiryMethods(access, inquiries, sessionRoutes),
     importRepositoryConfigurations: nativeRepositoryConfigurationImportMethod(
