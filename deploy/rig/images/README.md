@@ -181,10 +181,16 @@ recorded through them — over a surface `chuggy_api` is granted nothing on: the
 split is the privilege, not a second credential.
 
 **The artifact root is data, not image content.** It is a filesystem path the
-API only ever reads — the web composition passes the store to one read port —
-so the deployment mounts the artifact volume there and may mount it read-only.
-Nothing creates the directory for the API, and a path that is not there reads as
-an artifact that is missing rather than as a failure.
+API reads artifacts from and writes a member's uploads under — the web
+composition holds the store's write beside its read — so the deployment mounts
+the artifact volume there writable. A root the API cannot write still serves
+what is in it and answers every upload `ArtifactUnavailable`. A path that is not
+there reads as an artifact that is missing rather than as a failure.
+
+The ticket service reads the same store and never writes it. Its
+`CHUG_TICKET_SERVICE_CONFIG` requires `.artifacts.root` and the service refuses
+to start without it: a dispatch reads each image a brief names back from there
+to pin the digest its bundle carries. The deployment may mount it read-only.
 
 ## Configuring the worker plane's minting
 
