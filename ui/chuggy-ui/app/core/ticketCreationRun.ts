@@ -319,7 +319,9 @@ async function creationDraftCreated(
       };
 }
 
-/** What a revision writes of a body, which is all of it but the fence. */
+/** What a revision writes of a body, which is all of it but the fence. A
+ * revision replaces the whole draft, so overrides left out here would be
+ * cleared by it and a form changed in them alone would read as unchanged. */
 function creationRevisionOf(
   body: CreationBody,
 ): Omit<z.infer<typeof draftRevisionSchema>, "expectedVersion"> {
@@ -327,6 +329,7 @@ function creationRevisionOf(
     configurationRevision: body.configurationRevision,
     authoring: body.authoring,
     brief: body.brief,
+    ...(body.overrides === undefined ? {} : { overrides: body.overrides }),
   };
 }
 

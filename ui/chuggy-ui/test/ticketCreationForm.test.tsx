@@ -49,6 +49,7 @@ import {
   creationSummary,
 } from "./ticketCreationFixture.ts";
 import { answeringApi } from "./answeringApi.ts";
+import { chooseConfiguration, configurationPicker } from "./creationPicker.ts";
 import type { Sent } from "./answeringApi.ts";
 import { ticketInstants } from "./ticketInstants.ts";
 import {
@@ -1083,22 +1084,6 @@ const several = {
   partial: false,
   repositories: [],
 };
-
-function configurationPicker(): HTMLElement {
-  return screen.getByRole("button", { name: /^Configuration/u });
-}
-
-async function chooseConfiguration(name: string): Promise<void> {
-  await waitFor(() => {
-    expect(screen.queryByRole("menu")).toBeNull();
-  });
-  fireEvent.keyDown(configurationPicker(), { key: "ArrowDown" });
-  const menu = await screen.findByRole("menu");
-  fireEvent.click(within(menu).getByRole("menuitemradio", { name }));
-  await waitFor(() => {
-    expect(configurationPicker().textContent).toContain(name);
-  });
-}
 
 /** The project's own bootstrap, offered by its revision and listed nowhere. */
 const bootstrap: CreationOffer = {

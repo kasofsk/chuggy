@@ -53,6 +53,13 @@ import type { OperationStep } from "./operationFollow.ts";
 import { repositoryLabel } from "./projectRepositories.ts";
 import { repositoryConfigurations } from "./repositoryConfigurations.ts";
 import { threadUploadRefused } from "./threads.ts";
+import {
+  overrideFieldKind,
+  overrideFieldLabel,
+  overrideFields,
+  overridesNestedOf,
+} from "./ticketOverrides.ts";
+import type { CreationOverrides, OverrideField } from "./ticketOverrides.ts";
 
 /** The authoring half of the form, which is exactly what an initialization defaults. */
 export type CreationAuthoring = DraftInitializationResponse["defaults"];
@@ -81,6 +88,9 @@ export interface TicketCreationForm extends CreationAuthoring {
   /** How this ticket lands, seeded from the repository's default and the
    * reader's from the moment they move it. */
   readonly landingMode: BriefFinalizationMode;
+  /** What this ticket replaces of its configuration, drawn only once a
+   * configuration is chosen and kept when another is. */
+  readonly overrides: CreationOverrides;
 }
 
 export type CreationField =
@@ -95,10 +105,13 @@ export type CreationField =
   | "landing"
   | "repository"
   | "authoring"
+  | "overrides"
   | "fence";
 
 export interface CreationFault {
   readonly field: CreationField;
+  /** The overridden field an `overrides` fault is stated at. */
+  readonly override?: OverrideField;
   readonly reason: string;
 }
 
@@ -429,6 +442,7 @@ export function creationFormFrom(
     targetBranchName: "",
     repository,
     landingMode: creationLandingDefault(repositories, repository),
+    overrides: {},
   };
 }
 
@@ -635,6 +649,8 @@ export function creationFaultSentence(field: CreationField): string {
       return "this project binds a repository, so a ticket in it names which one";
     case "authoring":
       return "one advanced setting is not one this project offers";
+    case "overrides":
+      return "an override is not one a ticket may write";
     case "fence":
       return "this form no longer describes a configuration the API will accept";
   }
@@ -649,6 +665,7 @@ function creationFieldOf(
   path: readonly PropertyKey[],
 ): CreationField | undefined {
   if (path[0] === "authoring") return "authoring";
+  if (path[0] === "overrides") return undefined;
   if (path[0] !== "brief") return "fence";
   if (path[1] === "title") return "title";
   if (path[1] === "intent") return "intent";
@@ -659,6 +676,45 @@ function creationFieldOf(
   if (path[1] === "finalization")
     return path[2] === "target" ? "target" : "landing";
   return path[1] === undefined ? undefined : "links";
+}
+
+/** What an overridden field the contract refuses is told, by how it is edited. */
+export function creationOverrideFaultSentence(field: OverrideField): string {
+  switch (overrideFieldKind(field)) {
+    case "Mode":
+      return "this model is written into a mode a ticket may not override with";
+    case "Lines":
+      return "write this as lines of text, one a line";
+    case "Files":
+      return "each file is a path and its content";
+  }
+}
+
+/** The overridden field an issue is about, by its path under `overrides`. */
+function creationOverrideOf(
+  path: readonly PropertyKey[],
+): OverrideField | undefined {
+  return overrideFields.find((field) =>
+    field.split(".").every((part, at) => path[at + 1] === part),
+  );
+}
+
+/** One fault for each overridden field the contract refuses, and the general
+ * one for an issue that names none. */
+function creationOverrideFaultsOf(
+  issues: readonly { readonly path: readonly PropertyKey[] }[],
+): readonly CreationFault[] {
+  const about = issues.filter((issue) => issue.path[0] === "overrides");
+  const fields = new Set(about.map((issue) => creationOverrideOf(issue.path)));
+  return [...fields].map((override) =>
+    override === undefined
+      ? { field: "overrides", reason: creationFaultSentence("overrides") }
+      : {
+          field: "overrides",
+          override,
+          reason: `${overrideFieldLabel(override)}: ${creationOverrideFaultSentence(override)}`,
+        },
+  );
 }
 
 /**
@@ -682,6 +738,7 @@ function creationFaultsOf(
     ...[...fields]
       .filter((field) => !named.has(field))
       .map((field) => ({ field, reason: creationFaultSentence(field) })),
+    ...creationOverrideFaultsOf(issues),
   ];
 }
 
@@ -825,6 +882,14 @@ function creationUndrawnFaults(
   };
 }
 
+/** The overrides a form sends, and no key at all where it holds none. */
+function creationOverridesOf(form: TicketCreationForm): {
+  readonly overrides?: unknown;
+} {
+  const overrides = overridesNestedOf(form.overrides);
+  return overrides === undefined ? {} : { overrides };
+}
+
 /**
  * The whole creation body, fence and all, or every field a reader has to
  * revisit. The revision and the fence are those of the offer the form names,
@@ -854,6 +919,7 @@ export function creationBodyFrom(
       program: [...form.program],
     },
     brief,
+    ...creationOverridesOf(form),
   };
   const parsed = draftCreationSchema.safeParse(candidate);
   if (parsed.success && stated.length === 0)

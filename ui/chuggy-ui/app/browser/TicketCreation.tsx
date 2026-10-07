@@ -87,6 +87,10 @@ import { drawBytes } from "./ports.ts";
 import { operationIdBytesCount } from "../core/operationFollow.ts";
 import { TopBarSlot } from "./shell/slots.tsx";
 import { TicketCreationAdvanced } from "./TicketCreationAdvanced.tsx";
+import { ConfigurationOverrides } from "./ConfigurationOverrides.tsx";
+import { overrideDocumentOf, overrideFields } from "../core/ticketOverrides.ts";
+import type { OverrideField } from "../core/ticketOverrides.ts";
+import { Panel } from "./ui/Panel.tsx";
 import { CreationImages } from "./TicketCreationImages.tsx";
 import type { CreationImagesApi } from "./TicketCreationImages.tsx";
 import { Button } from "./ui/Button.tsx";
@@ -462,6 +466,49 @@ export function AttemptNote(props: {
   }
 }
 
+/**
+ * What the ticket replaces of the configuration it names, behind a disclosure
+ * of its own: an override is free text, which the advanced settings, offering
+ * only what the initialization offered, never are.
+ */
+function Overrides(
+  props: FormEdit & {
+    /** The chosen configuration, absent until one is chosen. */
+    readonly offer: CreationOffer | undefined;
+    readonly faults: readonly CreationFault[];
+  },
+): ReactNode {
+  const { form, onChange } = props;
+  const canonical = props.offer?.initialization.configuration.canonical;
+  const document = useMemo(
+    () => (canonical === undefined ? undefined : overrideDocumentOf(canonical)),
+    [canonical],
+  );
+  const general = props.faults.filter(
+    (fault) => fault.field === "overrides" && fault.override === undefined,
+  );
+  const faults = new Map<OverrideField, string>(
+    props.faults.flatMap((fault) =>
+      fault.override === undefined ? [] : [[fault.override, fault.reason]],
+    ),
+  );
+  if (canonical === undefined) return null;
+  return (
+    <Panel title="Overrides" collapsible={{ open: false }}>
+      <ConfigurationOverrides
+        document={document}
+        overrides={form.overrides}
+        fields={overrideFields}
+        faults={faults}
+        onChange={(overrides) => {
+          onChange({ ...form, overrides });
+        }}
+      />
+      <Fault field="overrides" faults={general} />
+    </Panel>
+  );
+}
+
 /** A submit that outlived its screen has nowhere to report, so it stops there. */
 export function useMounted(): { readonly current: boolean } {
   const mounted = useRef(true);
@@ -556,6 +603,7 @@ export function CreationFields(
         />
       )}
       <Fault field="authoring" faults={faults} />
+      <Overrides {...props} offer={drawn} />
       <Fault field="fence" faults={faults} />
     </>
   );
