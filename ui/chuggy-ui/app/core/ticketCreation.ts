@@ -4,7 +4,9 @@
  *
  * WHICH CONFIGURATION IS THE READER'S TO SAY. A configuration is who does the
  * work, so a project offering several is asked which, and a form naming none
- * sends nothing; only a sole offer of a read that missed none is taken unasked.
+ * sends nothing. A form starts unasked on a name the reader has not chosen only
+ * where it is the sole offer of a read that missed none, or the one a
+ * duplicated ticket was authored under while the project still offers it.
  *
  * Every function here is pure, so the agent this screen is built towards drives
  * the same decisions a browser does by filling the same form value. The

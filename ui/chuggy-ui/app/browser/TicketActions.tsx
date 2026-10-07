@@ -76,6 +76,7 @@ import {
 } from "./ticketAttemptHeld.ts";
 import { PanelUnready } from "./DataPanel.tsx";
 import { drawBytes } from "./ports.ts";
+import { TicketDuplicateOffer } from "./ticket/TicketDuplicateOffer.tsx";
 import { TicketEditOffer } from "./ticket/TicketEditOffer.tsx";
 import {
   TicketRevokeConfirm,
@@ -566,8 +567,9 @@ export interface TicketActionsProps {
   readonly byHand: boolean;
 }
 
-/** Every action but the ones a card answers, the edit screen, and the follow
- * of whichever was pressed, wherever it was pressed. */
+/** Every action but the ones a card answers, the edit screen, the duplicate
+ * whatever the phase, and the follow of whichever was pressed, wherever it was
+ * pressed. */
 export function TicketBarActions(props: TicketActionsProps): ReactNode {
   const offers = props.offers;
   return (
@@ -597,6 +599,7 @@ export function TicketBarActions(props: TicketActionsProps): ReactNode {
           ) : null}
         </>
       )}
+      <TicketDuplicateOffer partition={props.partition} ticket={props.ticket} />
       {props.dispatchState.state === "Failed" ? (
         <Notice
           tone="parked"

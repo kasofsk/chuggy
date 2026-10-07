@@ -68,6 +68,8 @@ import type {
   DraftHeld,
   TicketCreationEnded,
 } from "../core/ticketCreationRun.ts";
+import { ticketDuplicateDroppedSentence } from "../core/ticketDuplicate.ts";
+import type { TicketDuplicateSeed } from "../core/ticketDuplicate.ts";
 import { operationSubmitting } from "../core/operationFollow.ts";
 import type { OperationStep } from "../core/operationFollow.ts";
 import { usePanelList, useApiPorts } from "./api.ts";
@@ -75,6 +77,7 @@ import { DataPanel } from "./DataPanel.tsx";
 import {
   ticketConfigurationKept,
   ticketConfigurationStored,
+  ticketYamlDuplicateStoreKey,
   ticketYamlForgotten,
   ticketYamlStoreKey,
   useAuthoringGuards,
@@ -675,15 +678,17 @@ function useCreationSubmit(props: {
 }
 
 /**
- * What the form holds: what it started on, what was typed over that, and the
- * configuration the reader chose, remembered as they choose it so the next
- * new ticket here starts on it.
+ * What the form holds: what it started on — a duplicate's seed, or a new
+ * ticket's — what was typed over that, and the configuration the reader chose,
+ * remembered as they choose it so the next new ticket here starts on it.
  */
 function useCreationHeld(
-  partition: PartitionIdentity,
-  offers: readonly CreationOffer[],
+  props: {
+    readonly partition: PartitionIdentity;
+    readonly context: Extract<CreationContext, { context: "Ready" }>;
+    readonly duplicate?: CreationDuplicate | undefined;
+  },
   repositories: readonly ProjectRepositoryResponse[],
-  partial: boolean,
 ): {
   readonly initial: TicketCreationForm;
   readonly form: TicketCreationForm;
@@ -692,10 +697,13 @@ function useCreationHeld(
   const [edited, setEdited] = useState<TicketCreationForm | undefined>(
     undefined,
   );
+  const { partition, context } = props;
+  const { offers, partial } = context;
+  const seeded = props.duplicate?.seed.form;
   const [preferred] = useState(() => ticketConfigurationStored(partition));
   const initial = useMemo(
-    () => creationFormFrom(offers, repositories, preferred, partial),
-    [offers, repositories, preferred, partial],
+    () => seeded ?? creationFormFrom(offers, repositories, preferred, partial),
+    [seeded, offers, repositories, preferred, partial],
   );
   const form = edited ?? initial;
   const changed = (next: TicketCreationForm): void => {
@@ -704,6 +712,34 @@ function useCreationHeld(
     setEdited(next);
   };
   return { initial, form, changed };
+}
+
+/** A new ticket started from another: which, and what its draft seeded. */
+export interface CreationDuplicate {
+  readonly from: number;
+  readonly seed: TicketDuplicateSeed;
+}
+
+/** Where a form keeps its YAML: a new ticket's, or the duplicate's own, which
+ * neither replaces a new ticket's kept copy nor is replaced by it. */
+function creationStoreKey(
+  partition: PartitionIdentity,
+  duplicate: CreationDuplicate | undefined,
+): string {
+  return duplicate === undefined
+    ? ticketYamlStoreKey(partition, undefined)
+    : ticketYamlDuplicateStoreKey(partition, duplicate.from);
+}
+
+/** The line at the head of a duplicate naming what it did not carry. */
+function CreationDuplicateDropped(props: {
+  readonly duplicate: CreationDuplicate | undefined;
+}): ReactNode {
+  const dropped =
+    props.duplicate === undefined
+      ? undefined
+      : ticketDuplicateDroppedSentence(props.duplicate.seed.dropped);
+  return dropped === undefined ? null : <Notice tone="info" detail={dropped} />;
 }
 
 /**
@@ -720,11 +756,13 @@ export function CreationForm(props: {
   /** The way to a ticket a submit found already made. */
   readonly existing: (ticket: number) => ReactNode;
   readonly onDirty?: (dirty: boolean) => void;
+  readonly duplicate?: CreationDuplicate;
 }): ReactNode {
   const [faults, setFaults] = useState<readonly CreationFault[]>([]);
   const { offers, partial, repositories: bound } = props.context;
   const repositories = useMemo(() => creationRepositories(bound), [bound]);
-  const storeKey = ticketYamlStoreKey(props.partition, undefined);
+  const duplicate = props.duplicate;
+  const storeKey = creationStoreKey(props.partition, duplicate);
   const onCreated = props.onCreated;
   const running = useCreationSubmit({
     ports: props.ports,
@@ -738,9 +776,10 @@ export function CreationForm(props: {
       onCreated(ticket);
     },
   });
-  const held = useCreationHeld(props.partition, offers, repositories, partial);
+  const held = useCreationHeld(props, repositories);
   return (
     <div className="creation">
+      <CreationDuplicateDropped duplicate={duplicate} />
       <TicketAuthoring
         initial={held.initial}
         form={held.form}
@@ -821,7 +860,25 @@ export function CreationContextAbsent(props: {
   );
 }
 
-export function TicketCreation(): ReactNode {
+/** What a creation screen hands the form it draws once its project is read. */
+export interface CreationScreenReady {
+  readonly ports: ApiPorts;
+  readonly partition: PartitionIdentity;
+  readonly queryKey: ProjectQueryKey;
+  readonly context: Extract<CreationContext, { context: "Ready" }>;
+  readonly onDirty: (dirty: boolean) => void;
+  readonly onCreated: (ticket: number) => void;
+  readonly existing: (ticket: number) => ReactNode;
+}
+
+/**
+ * A new-ticket screen: its title, the project's read, and the guard and the
+ * navigation a settled submit releases, around whatever form it draws.
+ */
+export function CreationScreen(props: {
+  readonly heading: ReactNode;
+  readonly children: (ready: CreationScreenReady) => ReactNode;
+}): ReactNode {
   const params = useParams({ from: "/$tenant/$project" });
   const ports = useApiPorts();
   const navigate = useNavigate();
@@ -839,33 +896,43 @@ export function TicketCreation(): ReactNode {
   return (
     <>
       <TopBarSlot>
-        <h1 className="text-md font-strong text-ink-1 truncate">New ticket</h1>
+        <h1 className="text-md font-strong text-ink-1 truncate">
+          {props.heading}
+        </h1>
       </TopBarSlot>
       <DataPanel title="Draft" state={state}>
         {(context) =>
           context.context === "Ready" ? (
-            <CreationForm
-              ports={ports}
-              partition={partition}
-              queryKey={queryKey}
-              context={context}
-              onDirty={setDirty}
-              onCreated={(ticket) => {
+            props.children({
+              ports,
+              partition,
+              queryKey,
+              context,
+              onDirty: setDirty,
+              onCreated: (ticket) => {
                 guard.release();
                 void navigate({
                   to: "/$tenant/$project/tickets/$ticket",
                   params: { ...partition, ticket: String(ticket) },
                 });
-              }}
-              existing={(ticket) => (
+              },
+              existing: (ticket) => (
                 <CreationTicketLink partition={partition} ticket={ticket} />
-              )}
-            />
+              ),
+            })
           ) : (
             <CreationContextAbsent partition={partition} context={context} />
           )
         }
       </DataPanel>
     </>
+  );
+}
+
+export function TicketCreation(): ReactNode {
+  return (
+    <CreationScreen heading="New ticket">
+      {(ready) => <CreationForm {...ready} />}
+    </CreationScreen>
   );
 }

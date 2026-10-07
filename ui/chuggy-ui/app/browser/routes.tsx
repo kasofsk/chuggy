@@ -28,6 +28,8 @@ import { forgeSetupQueryOf, forgeSetupRoutePath } from "../core/forgeSetup.ts";
 import type { ForgeSetupQuery } from "../core/forgeSetup.ts";
 import { lastProjectOrFirst, lastProjectRead } from "../core/lastProject.ts";
 import { projectCreationRoutePath } from "../core/projectCreation.ts";
+import { ticketDuplicateQueryOf } from "../core/ticketDuplicate.ts";
+import type { TicketDuplicateQuery } from "../core/ticketDuplicate.ts";
 import { usePanelInventory } from "./api.ts";
 import { DataPanel } from "./DataPanel.tsx";
 import { ForgeCallbackPage } from "./ForgeCallbackPage.tsx";
@@ -51,7 +53,7 @@ import { TenantAccountsPage } from "./settings/TenantAccountsPage.tsx";
 import { Shell } from "./Shell.tsx";
 import { ProjectStreamProvider } from "./stream.tsx";
 import { TenantSettingsPage } from "./TenantSettingsPage.tsx";
-import { TicketCreation } from "./TicketCreation.tsx";
+import { TicketCreationFrom } from "./TicketDuplicate.tsx";
 import { TicketEdit } from "./TicketEdit.tsx";
 import { TicketPage } from "./TicketPage.tsx";
 import { EmptyState } from "./ui/EmptyState.tsx";
@@ -232,10 +234,17 @@ const tenantAccountsRoute = createRoute({
   component: TenantAccountsPage,
 });
 
+function TicketCreationRoute(): ReactNode {
+  return <TicketCreationFrom from={ticketCreationRoute.useSearch().from} />;
+}
+
 const ticketCreationRoute = createRoute({
   getParentRoute: () => partitionRoute,
   path: "/tickets/new",
-  component: TicketCreation,
+  component: TicketCreationRoute,
+  validateSearch: (
+    search: Readonly<Record<string, unknown>>,
+  ): TicketDuplicateQuery => ticketDuplicateQueryOf(search),
 });
 
 const ticketRoute = createRoute({
