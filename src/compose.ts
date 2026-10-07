@@ -154,7 +154,12 @@ import {
   asProjectArtifactId,
   type CanonicalFinalization,
   type FinalizerIdentityFactory,
+  type ProjectArtifactPort,
 } from "./interpreter/finalizerPreparation.ts";
+import {
+  projectArtifactIdentityText,
+  type ProjectArtifactMinting,
+} from "./interpreter/projectArtifact.ts";
 import type { FinalizerService } from "./interpreter/finalizerRun.ts";
 import type {
   FinalizerSettings,
@@ -625,6 +630,14 @@ function finalizerIdentities(): FinalizerIdentityFactory {
   };
 }
 
+/** Mints a fresh project-owned artifact identity, the media type riding in its own text. */
+function projectArtifactMinting(): ProjectArtifactMinting {
+  return {
+    mint: (mediaType) =>
+      asProjectArtifactId(projectArtifactIdentityText(mediaType, randomUUID())),
+  };
+}
+
 /** The hash the finalizer's canonical bytes are digested under. */
 function finalizerDigestOf(canonical: CanonicalFinalization): string {
   return createHash("sha256").update(canonical, "utf8").digest("hex");
@@ -797,7 +810,9 @@ export function composeNativeWeb(
   config: TicketServiceConfig = ticketServiceDefaults,
   metrics: TicketServiceMetrics = silentTicketServiceMetrics,
   inventory?: ProjectInventory,
-  outputContents?: OutputContentPort & RunEvidenceContentPort,
+  outputContents?: OutputContentPort &
+    RunEvidenceContentPort &
+    ProjectArtifactPort,
   selectorContexts?: SelectorOperationalContextRead,
   repositoryConfigurationSnapshots?: RepositoryConfigurationSnapshotPort,
   leads?: NativeLeadPorts,
@@ -831,6 +846,8 @@ export function composeNativeWeb(
     threads,
     postgresLeadInquiries(apiPool),
     postgresSessionRouteReads(apiPool),
+    outputContents,
+    projectArtifactMinting(),
   );
 }
 

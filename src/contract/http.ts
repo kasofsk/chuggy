@@ -191,6 +191,31 @@ export const sessionLiveEventsMax = 16;
 export const workerPlaneUploadBytesMax = 4_194_304;
 
 /**
+ * The image media types a project-owned artifact admits, shared by the upload
+ * that writes one and, once it exists, the output renderer that displays one:
+ * one roster rather than two that could drift apart on which bitmap formats
+ * are in and which document format — `image/svg+xml` — is not. SVG is a
+ * document a browser executes, so it is never in this roster however an image
+ * output comes to be admitted.
+ */
+export const imageMediaTypes = [
+  "image/png",
+  "image/jpeg",
+  "image/gif",
+  "image/webp",
+] as const;
+
+export type ImageMediaType = (typeof imageMediaTypes)[number];
+
+/**
+ * The largest body a project-owned artifact upload carries. The deployment
+ * override to copy is the worker plane's own, `workerPlaneUploadBytesMax`: a
+ * per-route bound over the vendor media type's global `nativeHttpBodyBytesMax`,
+ * because 64 KiB of base64 is well under one screenshot.
+ */
+export const projectArtifactUploadBytesMax = 4_194_304;
+
+/**
  * Where an attempt that ended without a result leaves its worker's own text
  * saying why, uploaded as an artifact. The worker core writes it under the
  * same name in kasofsk/chuggy-common's `runEvidence.mjs`.
@@ -431,6 +456,8 @@ export const nativeHttpRoutes = {
   executions: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/executions`,
   execution: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/executions/:execution`,
   outputContent: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/executions/:execution/artifacts/:ordinal`,
+  projectArtifacts: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/artifacts`,
+  projectArtifact: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/artifacts/:artifact`,
   runTurns: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/executions/:execution/attempts/:attempt/turns`,
   runTranscript: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/executions/:execution/attempts/:attempt/transcript`,
   runConfiguration: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/executions/:execution/attempts/:attempt/configuration`,

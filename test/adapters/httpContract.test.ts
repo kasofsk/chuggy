@@ -64,6 +64,8 @@ const routesInOrder = [
   "/api/v1/tenants/:tenant/projects/:project/executions",
   "/api/v1/tenants/:tenant/projects/:project/executions/:execution",
   "/api/v1/tenants/:tenant/projects/:project/executions/:execution/artifacts/:ordinal",
+  "/api/v1/tenants/:tenant/projects/:project/artifacts",
+  "/api/v1/tenants/:tenant/projects/:project/artifacts/:artifact",
   "/api/v1/tenants/:tenant/projects/:project/executions/:execution/attempts/:attempt/turns",
   "/api/v1/tenants/:tenant/projects/:project/executions/:execution/attempts/:attempt/transcript",
   "/api/v1/tenants/:tenant/projects/:project/executions/:execution/attempts/:attempt/configuration",

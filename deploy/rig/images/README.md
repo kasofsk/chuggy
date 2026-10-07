@@ -113,6 +113,7 @@ to start without the required ones.
 | `CHUG_API_POOL_PLANE_URL` | with the admin URL | the pool plane's address, written into that file; https, or http on the loopback, with no credentials in it, or the API refuses to start |
 | `CHUG_API_POOL_REGISTRY_HOST` | optional | the registry a runner pulls worker images from, written into that file only where it is named; a lowercase host and an optional port, or the API refuses to start |
 | `CHUG_API_ARTIFACT_ROOT` | required | see below |
+| `CHUG_API_PROJECT_ARTIFACT_UPLOAD_BYTES_MAX` | the worker plane's own upload bound | the largest body a project-owned artifact upload carries, which the artifact store's own write ceiling is set to as well so the two never diverge |
 | `CHUG_API_GIT_SCRATCH_ROOT` | required | writable scratch for exact-commit configuration reads and for whether one commit holds another, which a ticket's action reach is read from; a scratch that has filled or been damaged shows as actions that stay `Unknown` on landed tickets of one repository, and is repaired by removing that repository's directory under the root and starting the process again, never by hand inside it |
 | `CHUG_API_THREAD_CREDENTIAL_SLOT` | required | the named credential mount a member's thread speaks through |
 | `CHUG_API_REPOSITORY_CREDENTIAL_SOURCES` | optional | JSON repository-to-credential-file mappings; a deployment that mints every credential it presents names none |

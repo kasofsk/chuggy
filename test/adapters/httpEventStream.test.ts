@@ -18,6 +18,7 @@ import { setTimeout as delay } from "node:timers/promises";
 
 import {
   createNativeHttpApp,
+  nativeHttpLimitsDefault,
   type NativeHttpLimits,
 } from "../../src/adapters/http/server.ts";
 import { projectResourceReader } from "../../src/adapters/http/eventStream.ts";
@@ -139,6 +140,8 @@ function servedWeb(
     hostedRuns: notFound,
     selectorOperationalContext: notFound,
     outputContent: () => Promise.resolve({ read: "NotFound" }),
+    uploadProjectArtifact: notFound,
+    projectArtifact: () => Promise.resolve({ fetched: "NotFound" }),
     runTurns: () => Promise.resolve(undefined),
     runTranscript: () => Promise.resolve({ read: "NotFound" }),
     runConfiguration: () => Promise.resolve({ read: "NotFound" }),
@@ -428,7 +431,11 @@ test("a place the log never held is refused as a request fault", async () => {
 
 test("a stream outlives the request timeout every other route takes", async () => {
   const rig = await rigOf({
-    httpLimits: { concurrentRequestsMax: 64, requestTimeoutMs: 200 },
+    httpLimits: {
+      ...nativeHttpLimitsDefault,
+      concurrentRequestsMax: 64,
+      requestTimeoutMs: 200,
+    },
     limits: { heartbeatMs: 50 },
   });
   const opened = await stream(rig);
@@ -442,7 +449,11 @@ test("a stream outlives the request timeout every other route takes", async () =
 
 test("streams take none of the slots an ordinary request queues for", async () => {
   const rig = await rigOf({
-    httpLimits: { concurrentRequestsMax: 1, requestTimeoutMs: 15_000 },
+    httpLimits: {
+      ...nativeHttpLimitsDefault,
+      concurrentRequestsMax: 1,
+      requestTimeoutMs: 15_000,
+    },
   });
   const first = await stream(rig);
   const second = await stream(rig);

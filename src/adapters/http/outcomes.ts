@@ -55,6 +55,10 @@ import type {
   OutputContentRead,
 } from "../../interpreter/operationsView.ts";
 import type {
+  ProjectArtifactFetched,
+  ProjectArtifactUploaded,
+} from "../../interpreter/projectArtifact.ts";
+import type {
   RunConfigurationRead,
   RunEvidenceContentRead,
   RunTranscriptRead,
@@ -593,6 +597,60 @@ export function outputContentResponse(
         409,
         nativeHttpError("OutputCorrupt", "The output failed verification."),
       );
+  }
+}
+
+export function projectArtifactUploadResponse(
+  result: AuthorizedResult<ProjectArtifactUploaded>,
+): NativeHttpResponse {
+  if (result.result === "NotFound")
+    return response(404, nativeHttpError("NotFound", "Resource not found."));
+  const value = result.value;
+  switch (value.uploaded) {
+    case "Artifact":
+      return response(201, { artifact: value.artifact, digest: value.digest });
+    case "NotAnImage":
+      return response(
+        415,
+        nativeHttpError(
+          "UnsupportedMediaType",
+          "The media type is not an admitted image type.",
+        ),
+      );
+    case "Unavailable":
+      return retry(503, value.retryAfterSeconds, "ArtifactUnavailable");
+  }
+}
+
+/** An upload past its own bound, naming the bound rather than the generic body-too-large answer. */
+export function projectArtifactTooLargeResponse(
+  bytesMax: number,
+): NativeHttpResponse {
+  return response(413, {
+    ...nativeHttpError("ArtifactTooLarge", "The artifact is too large."),
+    bytesMax,
+  });
+}
+
+/**
+ * Base64 in JSON rather than a bytes route: the console's CSP admits `data:`
+ * and not this API's own origin, so a `data:` URI built from this is the one
+ * shape a caller may hand an `<img>`.
+ */
+export function projectArtifactReadResponse(
+  result: ProjectArtifactFetched,
+): NativeHttpResponse {
+  switch (result.fetched) {
+    case "Content":
+      return response(200, {
+        content: Buffer.from(result.content).toString("base64"),
+        mediaType: result.mediaType,
+        encoding: "base64",
+      });
+    case "NotFound":
+      return response(404, nativeHttpError("NotFound", "Resource not found."));
+    case "Unavailable":
+      return retry(503, result.retryAfterSeconds, "ArtifactUnavailable");
   }
 }
 

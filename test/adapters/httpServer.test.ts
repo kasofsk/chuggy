@@ -5,12 +5,14 @@ import { test } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 
 import type { HttpErrorEnvelope } from "../../src/contract/http.ts";
+import { imageMediaTypes } from "../../src/contract/http.ts";
 import {
   briefIntentCharsMax,
   briefLineCharsMax,
 } from "../../src/contract/brief.ts";
 import {
   createNativeHttpApp,
+  nativeHttpLimitsDefault,
   type NativeHttpLimits,
 } from "../../src/adapters/http/server.ts";
 import {
@@ -57,6 +59,8 @@ import {
 import { mintedRepositoryTokens } from "../../src/adapters/forge/mintedCredentials.ts";
 import { githubRepositoryHost } from "../../src/adapters/forge/githubAddress.ts";
 import { memberAuthority } from "../../src/interpreter/projectAccess.ts";
+import { asProjectArtifactId } from "../../src/interpreter/finalizerPreparation.ts";
+import { asArtifactDigest } from "../../src/interpreter/resultManifest.ts";
 import {
   asRepositoryId,
   type RepositoryBinding,
@@ -159,6 +163,42 @@ function fakeNativeActions(calls: string[]): NativeWeb["nativeActions"] {
   };
 }
 
+/** An upload the roster admits or refuses, and a read answering one fixed image back. */
+function fakeProjectArtifacts(
+  calls: string[],
+): Pick<NativeWeb, "uploadProjectArtifact" | "projectArtifact"> {
+  return {
+    uploadProjectArtifact: (_principal, _partition, mediaType, content) => {
+      calls.push(
+        `uploadProjectArtifact:${mediaType}:${String(content.byteLength)}`,
+      );
+      if (
+        !imageMediaTypes.includes(mediaType as (typeof imageMediaTypes)[number])
+      )
+        return Promise.resolve({
+          result: "Authorized",
+          value: { uploaded: "NotAnImage" },
+        });
+      return Promise.resolve({
+        result: "Authorized",
+        value: {
+          uploaded: "Artifact",
+          artifact: asProjectArtifactId(`${mediaType}:fixed`),
+          digest: asArtifactDigest("a".repeat(64)),
+        },
+      });
+    },
+    projectArtifact: (_principal, _partition, artifact) => {
+      calls.push(`projectArtifact:${artifact}`);
+      return Promise.resolve({
+        fetched: "Content",
+        content: new TextEncoder().encode("bytes"),
+        mediaType: "image/png",
+      });
+    },
+  };
+}
+
 function fakeOperations(
   calls: string[],
 ): Pick<
@@ -168,6 +208,8 @@ function fakeOperations(
   | "executions"
   | "execution"
   | "outputContent"
+  | "uploadProjectArtifact"
+  | "projectArtifact"
   | "runTurns"
   | "runTranscript"
   | "runConfiguration"
@@ -200,6 +242,7 @@ function fakeOperations(
       calls.push(`output:${execution}:${String(ordinal)}`);
       return Promise.resolve({ read: "NotFound" });
     },
+    ...fakeProjectArtifacts(calls),
     runTurns: (_principal, _partition, execution, attempt, query) => {
       calls.push(`runTurns:${execution}:${attempt}:${String(query.limit)}`);
       return Promise.resolve(undefined);
@@ -1272,6 +1315,96 @@ test("an attempt's error text is read by the execution and attempt its route nam
   assert.deepEqual(calls, ["runError:execution-1:attempt-2"]);
 });
 
+const projectArtifactsRoot =
+  "/api/v1/tenants/tenant/projects/project/artifacts";
+
+test("an admitted image uploads and answers its identity and digest", async () => {
+  const calls: string[] = [];
+  await using app = appOf(calls);
+  const content = Buffer.from("a png, more or less");
+  const uploaded = await app.inject({
+    method: "POST",
+    url: projectArtifactsRoot,
+    headers: { authorization: "Bearer valid", "content-type": "image/png" },
+    payload: content,
+  });
+  assert.equal(uploaded.statusCode, 201);
+  assert.deepEqual(uploaded.json(), {
+    artifact: "image/png:fixed",
+    digest: "a".repeat(64),
+  });
+  assert.deepEqual(calls, [
+    `uploadProjectArtifact:image/png:${String(content.byteLength)}`,
+  ]);
+});
+
+test("reading a project artifact back answers base64 content, its media type and the encoding", async () => {
+  const calls: string[] = [];
+  await using app = appOf(calls);
+  const read = await app.inject({
+    url: `${projectArtifactsRoot}/${encodeURIComponent("image/png:fixed")}`,
+    headers: { authorization: "Bearer valid" },
+  });
+  assert.equal(read.statusCode, 200);
+  assert.deepEqual(read.json(), {
+    content: Buffer.from("bytes").toString("base64"),
+    mediaType: "image/png",
+    encoding: "base64",
+  });
+  assert.deepEqual(calls, ["projectArtifact:image/png:fixed"]);
+});
+
+test("image/svg+xml and a non-image media type are both refused, neither ever stored", async () => {
+  const calls: string[] = [];
+  await using app = appOf(calls);
+  for (const mediaType of ["image/svg+xml", "application/pdf", "text/plain"]) {
+    const refused = await app.inject({
+      method: "POST",
+      url: projectArtifactsRoot,
+      headers: { authorization: "Bearer valid", "content-type": mediaType },
+      payload: Buffer.from("not an admitted image"),
+    });
+    assert.ok(
+      refused.statusCode >= 400 && refused.statusCode < 500,
+      `${mediaType}: ${String(refused.statusCode)}`,
+    );
+  }
+  /**
+   * `image/svg+xml` and `application/pdf` have no content-type parser
+   * registered anywhere and never reach the route; `text/plain` has
+   * fastify's own built-in parser, so the route is reached and refuses it
+   * itself as the non-image media type it is.
+   */
+  assert.deepEqual(calls, ["uploadProjectArtifact:text/plain:0"]);
+});
+
+test("an upload past the project artifact's own bound is refused with the bound named, leaving the global body limit untouched", async () => {
+  const calls: string[] = [];
+  await using app = appOf(calls, true, {
+    ...nativeHttpLimitsDefault,
+    projectArtifactUploadBytesMax: 16,
+  });
+  const refused = await app.inject({
+    method: "POST",
+    url: projectArtifactsRoot,
+    headers: { authorization: "Bearer valid", "content-type": "image/png" },
+    payload: Buffer.alloc(17),
+  });
+  assert.equal(refused.statusCode, 413);
+  assert.deepEqual(refused.json(), {
+    error: { code: "ArtifactTooLarge", message: "The artifact is too large." },
+    bytesMax: 16,
+  });
+  assert.deepEqual(calls, []);
+  const fine = await app.inject({
+    method: "POST",
+    url: projectArtifactsRoot,
+    headers: { authorization: "Bearer valid", "content-type": "image/png" },
+    payload: Buffer.alloc(16),
+  });
+  assert.equal(fine.statusCode, 201);
+});
+
 const publicAuthoring = {
   dependencies: [],
   program: [{ key: 1, evaluators: [{ key: 1 }] }],
@@ -1557,6 +1690,7 @@ function capacityAbandonedRequest(port: number): Promise<net.Socket> {
 test("an aborted request returns the capacity slot it took", async () => {
   const calls: string[] = [];
   await using app = appOf(calls, true, {
+    ...nativeHttpLimitsDefault,
     concurrentRequestsMax: 1,
     requestTimeoutMs: 15_000,
   });
