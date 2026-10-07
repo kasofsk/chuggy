@@ -156,6 +156,23 @@ test("a draft's overrides read back as overridden, and an untouched revision sen
   expect(plain.assembled === "Body" && "overrides" in plain.body).toBe(false);
 });
 
+/** A list's empty lines are lines it holds, wherever they sit in it. */
+test("an untouched revision sends an override's empty lines as the draft holds them", () => {
+  const draft: DraftResponse = {
+    ...released,
+    overrides: { work: { instructions: ["Do A.", "", "Do B.", ""] } },
+  };
+  const assembled = editRevisionFrom(
+    draft,
+    creationOffers,
+    editFormFrom(draft, [creationBinding(repository)], "r3"),
+    [creationBinding(repository)],
+  );
+  expect(
+    assembled.assembled === "Body" && assembled.body.overrides,
+  ).toStrictEqual(draft.overrides);
+});
+
 test("the revision sends the overrides the form holds, not the draft's", () => {
   const draft: DraftResponse = {
     ...released,

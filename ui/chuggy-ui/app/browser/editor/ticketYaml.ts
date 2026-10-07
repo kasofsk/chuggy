@@ -166,13 +166,6 @@ function ticketYamlKeys(
   ];
 }
 
-/** The overrides a form holds as the map the text writes, each value as held. */
-function ticketYamlOverridesWritten(
-  overrides: CreationOverrides,
-): Record<string, unknown> | undefined {
-  return overridesNestedOf(overrides, (_, value) => value);
-}
-
 /** The text a form reads as. */
 export function ticketYamlOf(
   form: TicketCreationForm,
@@ -193,7 +186,7 @@ export function ticketYamlOf(
     program: form.program.map((stage) => ({
       evaluators: stage.evaluators.length,
     })),
-    overrides: ticketYamlOverridesWritten(form.overrides),
+    overrides: overridesNestedOf(form.overrides),
   };
   const shown = Object.fromEntries(
     ticketYamlKeys(context, form.configuration, form.landingMode)

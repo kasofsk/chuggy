@@ -172,22 +172,13 @@ export function overrideFilesOf(value: unknown): readonly OverrideFile[] {
   }));
 }
 
-/** A held value as it is sent: a list without the empty lines a box leaves
- * between and after what was typed. */
-function overrideSentValue(field: OverrideField, value: unknown): unknown {
-  return overrideFieldKind(field) === "Lines"
-    ? overrideLinesOf(value).filter((line) => line.trim() !== "")
-    : value;
-}
-
 /**
  * The overrides a form sends, under the configuration's own field names, or
- * none where it holds none. `sent` decides how a held value is written, so
- * the same nesting serves the body and the YAML.
+ * none where it holds none. Each value is sent as held, so the body and the
+ * YAML write the same form alike.
  */
 export function overridesNestedOf(
   held: CreationOverrides,
-  sent: (field: OverrideField, value: unknown) => unknown = overrideSentValue,
 ): Record<string, unknown> | undefined {
   const nested: Record<string, unknown> = {};
   for (const field of overrideFields) {
@@ -195,13 +186,13 @@ export function overridesNestedOf(
     if (value === undefined) continue;
     const { block, name } = overridePathOf(field);
     if (block === undefined) {
-      nested[name] = sent(field, value);
+      nested[name] = value;
       continue;
     }
     const holder = nested[block];
     nested[block] = {
       ...(overrideIsRecord(holder) ? holder : {}),
-      [name]: sent(field, value),
+      [name]: value,
     };
   }
   return Object.keys(nested).length === 0 ? undefined : nested;

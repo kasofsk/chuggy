@@ -202,7 +202,7 @@ test("a field given back to the configuration sends no override for it", () => {
   expect(none.assembled === "Body" && "overrides" in none.body).toBe(false);
 });
 
-test("lines are sent without the empty ones a box leaves", () => {
+test("lines are sent as the form holds them, the empty ones among them", () => {
   const body = creationBodyFrom(
     creationOffers,
     creationForm({
@@ -211,7 +211,7 @@ test("lines are sent without the empty ones a box leaves", () => {
     [],
   );
   expect(body.assembled === "Body" && body.body.overrides).toStrictEqual({
-    work: { instructions: ["Do it.", "Then stop."] },
+    work: { instructions: ["Do it.", "", "Then stop.", ""] },
   });
 });
 
