@@ -325,6 +325,33 @@ test("a decide carrying a dispatch is refused, as a finalization result, a compl
   }
 });
 
+test("a parked ticket's overrides change is read back whole, and refused where its fence or overrides are not", () => {
+  const stored = {
+    version: 1,
+    command: "ChangeTicketOverrides",
+    ticket: 3,
+    action: "action",
+    authorizingSeq: 2,
+    overrides: { worker: { setup: ["make"] }, practices: [] },
+  };
+  assert.deepEqual(parseStoredProjectCommand(JSON.stringify(stored)), {
+    parsed: "Ok",
+    value: stored,
+  });
+  for (const lie of [
+    { ...stored, ticket: 0 },
+    { ...stored, action: "" },
+    { ...stored, authorizingSeq: 0 },
+    { ...stored, overrides: undefined },
+    { ...stored, overrides: { image: "another:v1" } },
+  ])
+    assert.equal(
+      parseProjectCommand(JSON.stringify(lie)).parsed,
+      "Refused",
+      JSON.stringify(lie),
+    );
+});
+
 test("the finalizer's own envelope is read only by the parse a writer reads its inbox with", () => {
   const submitted = {
     version: 1,

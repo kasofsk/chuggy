@@ -341,7 +341,7 @@ export interface TicketResource {
   /** The configuration the ticket's last release or update pinned, which is what it runs under. */
   readonly configurationRevision?: ConfigurationRevisionId;
   readonly configurationVersion?: ConfigurationVersion;
-  /** What the ticket's last release or update replaced of that configuration. */
+  /** What the ticket replaces of that configuration now, which a change while it is parked may have replaced since its last release or update. */
   readonly overrides?: ConfigurationOverrides;
   /**
    * The evaluation program the ticket's last release or update was resolved

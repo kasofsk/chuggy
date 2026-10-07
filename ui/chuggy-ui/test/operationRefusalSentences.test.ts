@@ -72,6 +72,7 @@ const samples: {
   BriefNamesNoRepository: { type: "BriefNamesNoRepository" },
   TicketCapacityReached: { type: "TicketCapacityReached" },
   FinalizationRequestClosed: { type: "FinalizationRequestClosed" },
+  DefinitionLocked: { type: "DefinitionLocked" },
 };
 
 const said = operationRefusalCodes.map((code) =>

@@ -206,6 +206,7 @@ export function dispatchNeedsExecutionHeadroom(
     case "Decide":
     case "ReleaseDraft":
     case "UpdateTicket":
+    case "ChangeTicketOverrides":
     case "ResolveNativeAction":
       return false;
   }

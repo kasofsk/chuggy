@@ -5,8 +5,8 @@
  * registration already resolves execution requirements from the same
  * immutable document. This adapter uses that existing boundary and selects
  * only the canonical content and digest needed by `PinnedConfigurationPort`,
- * and the overrides the ticket's last release or update stored beside its
- * definition, which the same role reads; it does not grant access to drafts or
+ * and the overrides the ticket holds beside its definition — its last release
+ * or update's, or a parked change's since — which the same role reads; it does not grant access to drafts or
  * any authoring write. What it answers is the revision with those applied.
  *
  * ABSENCE, INCOMPATIBILITY AND OUTAGE ARE DIFFERENT RESULTS. No row is the
@@ -27,7 +27,7 @@ import { pinnedTaskConfigurationReadiness } from "../../interpreter/taskBriefing
 import { configurationRevisionDigest } from "./digest.ts";
 import { storedOverridesOf } from "./ticketBrief.ts";
 
-/** One pinned revision, with the overrides its ticket was last released under. */
+/** One pinned revision, with the overrides its ticket holds. */
 interface PinnedConfigurationRow {
   readonly canonical: string;
   readonly digest: string;

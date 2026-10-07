@@ -263,11 +263,16 @@ function ActionButtons(props: {
   readonly attempt: Attempt | undefined;
   readonly busy: boolean;
   readonly resume: ResumeOffer;
+  /** Why Resume waits, where something on the card has to be settled first. */
+  readonly resumeWithheld?: string | undefined;
   readonly onChoose: (action: TicketAction) => void;
 }): ReactNode {
   const revoke = useTicketRevokeAsk(props.attempt);
   return props.actions.map((action) => {
     const effect = ticketActionEffect(action.action, props.resume, props.exits);
+    const refusedBecause =
+      effect.refusedBecause ??
+      (action.action === "Resume" ? props.resumeWithheld : undefined);
     const asks = action.action === "Revoke";
     const chosen = (): void => {
       props.onChoose(action);
@@ -278,9 +283,7 @@ function ActionButtons(props: {
         action={action.action}
         effect={effect.effect}
         {...(effect.more === undefined ? {} : { more: effect.more })}
-        {...(effect.refusedBecause === undefined
-          ? {}
-          : { refusedBecause: effect.refusedBecause })}
+        {...(refusedBecause === undefined ? {} : { refusedBecause })}
         offered={effect.offered}
         busy={props.busy}
         danger={asks}
@@ -622,6 +625,7 @@ export function TicketAnswerActions(props: {
   readonly offers: TicketOffers;
   readonly answered: readonly TicketAction[];
   readonly resume: ResumeOffer;
+  readonly resumeWithheld?: string | undefined;
 }): ReactNode {
   if (props.offers.offers === "Unread") return null;
   return (
@@ -631,6 +635,7 @@ export function TicketAnswerActions(props: {
       attempt={props.acting.submitting.attempt}
       busy={props.acting.busy}
       resume={props.resume}
+      resumeWithheld={props.resumeWithheld}
       onChoose={props.acting.submitting.submit}
     />
   );

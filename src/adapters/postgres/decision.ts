@@ -27,6 +27,13 @@
  * and settles the input, and writes no entry, no projection and no focused work
  * — which is the whole of what keeps approval out of `TicketGraph`.
  *
+ * A PARKED TICKET'S OVERRIDES CHANGE IN THE SAME SHAPE, AND ANSWER NOTHING.
+ * The change is judged here, under the project row: the ticket must still be
+ * parked at the escalation it names, the configuration ready under the offered
+ * overrides, and its definition what it was under the held ones. Only then
+ * are they stored beside the definition, and the escalation stays open for
+ * the resume that runs under them.
+ *
  * THE PROJECTION IS UPSERTED BY THE ROWS THE DECISION CHANGED. Its sequence is
  * the entry's, which is what lets a read say which decision it is looking at,
  * and a ticket the decision left alone keeps the sequence that last moved it.
@@ -66,8 +73,10 @@ import type { ExecutionTaskKind } from "../../interpreter/executionScheduler.ts"
 import {
   asCanonicalConfiguration,
   draftReleaseReadiness,
+  parseDraftAuthoring,
   type CanonicalConfiguration,
 } from "../../interpreter/authoring.ts";
+import { parkedOverridesVerdict } from "../../interpreter/parkedOverrides.ts";
 import {
   boundaryRefusal,
   type BoundaryRefusalCode,
@@ -81,6 +90,7 @@ import {
   type DecisionOutcome,
   type DecisionInputOutcome,
   type NativeActionAnswer,
+  type TicketOverridesChange,
   type TicketProjection,
 } from "../../interpreter/projectDecision.ts";
 import type { Lease, Partition } from "../../interpreter/projectStore.ts";
@@ -106,7 +116,11 @@ import {
   postgresOwnershipHonours,
   postgresOwnershipLockKnown,
 } from "./ownership.ts";
-import { storedOverridesText } from "./ticketBrief.ts";
+import {
+  releasedBriefOf,
+  storedOverridesOf,
+  storedOverridesText,
+} from "./ticketBrief.ts";
 import { postgresTransaction } from "./pool.ts";
 import { projectRowCounter, projectRowStanding } from "./rows.ts";
 import { configurationRevisionDigest } from "./digest.ts";
@@ -523,7 +537,8 @@ async function decisionTicketSource(
  * references folded from it, with the brief and the overrides it resolved from. One row per
  * ticket: a release writes it and an update replaces it, and a ticket runs at
  * what the last of them froze — never at the draft, which a Pending ticket's
- * author may already have revised again.
+ * author may already have revised again — save for overrides a parked ticket
+ * changes, which its definition resolves the same under.
  */
 async function decisionTicketDefinition(
   client: pg.PoolClient,
@@ -582,9 +597,109 @@ async function publishNotification(
   );
 }
 
-/** A release the deciding transaction refuses for a reason `decide` does not weigh. */
+/** A decision the deciding transaction refuses for a reason `decide` does not weigh. */
 function releaseRefused(code: BoundaryRefusalCode): DecisionOutcome {
   return { outcome: "Refused", refusal: boundaryRefusal(code) };
+}
+
+/** What a parked ticket was released under, read at the escalation a change names. */
+interface ParkedTicketRow {
+  readonly canonical: string;
+  readonly digest: string;
+  readonly repository: string | null;
+  readonly brief: string | null;
+  readonly overrides: string | null;
+  readonly authoring: string;
+}
+
+/**
+ * The ticket a change names, found only while it is parked at the open
+ * escalation the change was typed against: its pin, the brief and authoring
+ * its last release or update took, and the overrides it holds.
+ */
+async function decisionParkedTicket(
+  client: pg.PoolClient,
+  partition: Partition,
+  change: TicketOverridesChange,
+): Promise<ParkedTicketRow | undefined> {
+  const found = await client.query<ParkedTicketRow>(
+    sql`SELECT c.canonical,c.digest,v.repository,d.brief::text AS brief,
+            d.overrides::text AS overrides,r.authoring
+       FROM native_action a
+       JOIN ticket_projection p
+         ON p.tenant=a.tenant AND p.project=a.project AND p.ticket=a.ticket
+       JOIN configuration_revision c
+         ON c.tenant=p.tenant AND c.project=p.project
+        AND c.revision=p.configuration_revision AND c.digest=p.configuration_digest
+       LEFT JOIN repository_configuration_provenance v
+         ON v.tenant=c.tenant AND v.project=c.project AND v.revision=c.revision
+       JOIN ticket_definition d
+         ON d.tenant=p.tenant AND d.project=p.project AND d.ticket=p.ticket
+       JOIN draft e
+         ON e.tenant=p.tenant AND e.project=p.project AND e.ticket=p.ticket
+       JOIN draft_revision r
+         ON r.tenant=e.tenant AND r.project=e.project AND r.ticket=e.ticket
+        AND r.authoring_version=e.released_authoring_version
+      WHERE a.tenant=${partition.tenant} AND a.project=${partition.project}
+        AND a.action=${change.action} AND a.authorizing_seq=${change.authorizingSeq}
+        AND a.ticket=${change.ticket} AND a.kind='TicketEscalation'
+        AND a.state='Open' AND p.phase='Escalated'`,
+  );
+  return found.rows[0];
+}
+
+/**
+ * A change of a parked ticket's overrides, judged in order: parked at the
+ * escalation it names, ready under the offered overrides, and resolving the
+ * definition the held ones do. Any other outcome passes through untouched.
+ */
+async function decisionOverridesOutcome(
+  client: pg.PoolClient,
+  decision: Decision,
+): Promise<DecisionOutcome> {
+  const outcome = decision.outcome;
+  if (outcome.outcome !== "Overridden") return outcome;
+  const parked = await decisionParkedTicket(
+    client,
+    decision.lease.partition,
+    outcome.change,
+  );
+  if (parked === undefined) return releaseRefused("TicketChanged");
+  if (configurationRevisionDigest(parked.canonical) !== parked.digest)
+    throw new Error(
+      "parked configuration content contradicts its retained digest",
+    );
+  const verdict = parkedOverridesVerdict(
+    {
+      configuration: asCanonicalConfiguration(parked.canonical),
+      configurationRepository:
+        parked.repository === null
+          ? undefined
+          : asRepositoryId(parked.repository),
+      brief: releasedBriefOf(parked.brief),
+      authoring: parseDraftAuthoring(parked.authoring),
+    },
+    storedOverridesOf(parked.overrides),
+    outcome.change.overrides,
+  );
+  return verdict === "Admitted" ? outcome : releaseRefused(verdict);
+}
+
+/** The overrides an admitted change hands its ticket, none where it names none. */
+async function decisionStoreOverrides(
+  client: pg.PoolClient,
+  partition: Partition,
+  change: TicketOverridesChange,
+): Promise<void> {
+  const overrides =
+    Object.keys(change.overrides).length === 0 ? undefined : change.overrides;
+  const stored = await client.query(
+    sql`UPDATE ticket_definition SET overrides=${storedOverridesText(overrides)}::jsonb
+      WHERE tenant=${partition.tenant} AND project=${partition.project}
+        AND ticket=${change.ticket}`,
+  );
+  if (stored.rowCount !== 1)
+    throw new Error("an overrides change replaced no released definition");
 }
 
 /**
@@ -806,6 +921,11 @@ async function decisionApply(
       await decisionSettle(client, lease, cause, { settled: "Answered" }, null);
       await notifyDecision(client, lease.partition, cause, outcome);
       return { decided: "Answered" };
+    case "Overridden":
+      await decisionStoreOverrides(client, lease.partition, outcome.change);
+      await decisionSettle(client, lease, cause, { settled: "Answered" }, null);
+      await notifyDecision(client, lease.partition, cause, outcome);
+      return { decided: "Answered" };
     case "Journaled":
       return decisionApplyJournaled(
         client,
@@ -845,7 +965,10 @@ export async function postgresDecisionCommit(
     if (standing.head !== lease.head) {
       return { decided: "StaleHead", head: standing.head };
     }
-    const outcome = await decisionReleaseOutcome(client, decision);
+    const outcome =
+      decision.outcome.outcome === "Overridden"
+        ? await decisionOverridesOutcome(client, decision)
+        : await decisionReleaseOutcome(client, decision);
     return decisionApply(
       client,
       lease,

@@ -78,6 +78,17 @@ export const publicMutationSchema = z.discriminatedUnion("mutation", [
     authorizingSequence: countSchema,
     resolution: z.enum(nativeActionResolutions),
   }),
+  /**
+   * The whole of the overrides a parked ticket is to hold, fenced to the open
+   * escalation it was typed against as that escalation's answers are.
+   */
+  z.strictObject({
+    mutation: z.literal("ChangeTicketOverrides"),
+    ticket: ticketNumberSchema,
+    action: z.string(),
+    authorizingSequence: countSchema,
+    overrides: configurationOverridesSchema,
+  }),
   z.strictObject({
     mutation: z.literal("ManualDispatch"),
     ticket: ticketNumberSchema,

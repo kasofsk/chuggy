@@ -38,9 +38,16 @@
  * draft pins, which no principal authors; the `UpdateTicket` envelope names
  * that draft revision and the ticket revision it was written against, and the
  * writer resolves the definition as the first release does.
+ *
+ * `ChangeTicketOverrides` NAMES NO TICKET COMMAND, for an approval answer's
+ * reason. How a parked ticket's worker is started is not `TicketGraph` state,
+ * so the deciding transaction stores the overrides and journals nothing, and
+ * admits them only where the definition the ticket was released with would
+ * resolve to itself under them.
  */
 
 import type { TicketCommand } from "../actor/command.ts";
+import type { ConfigurationOverrides } from "../contract/configurationOverrides.ts";
 import type { FinalizationUnavailableKind } from "../contract/rosters.ts";
 import type { FinalizationResult } from "../domain/generated/modelTypes.ts";
 import type { TicketId } from "../domain/ids.ts";
@@ -171,6 +178,16 @@ export type ProjectCommand =
       readonly expectedRevision: number;
       readonly authoringVersion: number;
       readonly configurationRevision: string;
+    }
+  | {
+      readonly version: 1;
+      readonly command: "ChangeTicketOverrides";
+      readonly ticket: TicketId;
+      /** The open escalation the change was typed against, as an answer to it names it. */
+      readonly action: string;
+      readonly authorizingSeq: number;
+      /** The whole of what the ticket is to hold, replacing what it holds. */
+      readonly overrides: ConfigurationOverrides;
     }
   | {
       readonly version: 1;

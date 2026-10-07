@@ -14,6 +14,7 @@ import "./ticket.css";
 function NeedsYou(props: {
   readonly detail: string;
   readonly more: string | undefined;
+  readonly overrides: ReactNode;
   readonly actions: ReactNode;
 }): ReactNode {
   return (
@@ -27,6 +28,7 @@ function NeedsYou(props: {
       {props.more === undefined ? null : (
         <p className="text-ink-3">{props.more}</p>
       )}
+      {props.overrides}
       <div className="ticket-card-actions">{props.actions}</div>
     </section>
   );
@@ -35,6 +37,8 @@ function NeedsYou(props: {
 export function TicketSlot(props: {
   readonly partition: PartitionIdentity;
   readonly slot: Slot;
+  /** What the card offers to change before its answer, where it offers anything. */
+  readonly overrides?: ReactNode;
   readonly actions: ReactNode;
   readonly nowMs: number;
 }): ReactNode {
@@ -45,6 +49,7 @@ export function TicketSlot(props: {
         <NeedsYou
           detail={slot.detail}
           more={slot.more}
+          overrides={props.overrides}
           actions={props.actions}
         />
       );

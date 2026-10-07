@@ -64,6 +64,24 @@ export type ConfigurationOverrides = z.infer<
   typeof configurationOverridesSchema
 >;
 
+/**
+ * The overrides a parked ticket may change, by path: the fields its definition
+ * does not fold, so not `work.instructions`, which the work stage's block does.
+ * A change is still judged by resolving the definition both ways, because the
+ * agent `worker.mode` names is folded where the requirement is a container
+ * capability.
+ */
+export const parkedOverrideFields = [
+  "worker.mode",
+  "worker.setup",
+  "worker.files",
+  "practices",
+  "brief.motivation",
+  "brief.acceptanceCriteria",
+  "brief.constraints",
+] as const;
+export type ParkedOverrideField = (typeof parkedOverrideFields)[number];
+
 function configurationOverridesIsRecord(
   value: unknown,
 ): value is Readonly<Record<string, unknown>> {

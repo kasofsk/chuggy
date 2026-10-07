@@ -408,6 +408,38 @@ test("an update names the draft revision it pins and the ticket revision its aut
   );
 });
 
+test("a parked ticket's overrides change names the escalation it was typed against and the whole of what the ticket is to hold", () => {
+  const change = {
+    mutation: "ChangeTicketOverrides",
+    ticket: 7,
+    action: "action",
+    authorizingSequence: 4,
+    overrides: { worker: { setup: ["make"] } },
+  };
+  assert.deepEqual(parseSubmission("operation", "Key", change).command, {
+    version: 1,
+    command: "ChangeTicketOverrides",
+    ticket: 7,
+    action: "action",
+    authorizingSeq: 4,
+    overrides: { worker: { setup: ["make"] } },
+  });
+  assert.equal(
+    parseSubmission("operation", "Key", { ...change, overrides: {} }).command
+      .command,
+    "ChangeTicketOverrides",
+  );
+  const withoutOverrides: Record<string, unknown> = { ...change };
+  delete withoutOverrides["overrides"];
+  assert.throws(() => parseSubmission("operation", "Key", withoutOverrides));
+  assert.throws(() =>
+    parseSubmission("operation", "Key", {
+      ...change,
+      overrides: { image: "another:v1" },
+    }),
+  );
+});
+
 test("the public mutation union rejects internal commands and unknown fields", () => {
   assert.throws(() =>
     parseSubmission("operation", "key", {

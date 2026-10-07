@@ -10,9 +10,14 @@
  */
 
 import assert from "node:assert/strict";
+import { readdirSync, readFileSync } from "node:fs";
 import { test } from "node:test";
 
-import type { ConfigurationOverrides } from "../../src/contract/configurationOverrides.ts";
+import {
+  parkedOverrideFields,
+  type ConfigurationOverrides,
+  type ParkedOverrideField,
+} from "../../src/contract/configurationOverrides.ts";
 import type { ReleasedTicket } from "../../src/domain/generated/modelTypes.ts";
 import {
   canonicalConfigurationOf,
@@ -32,6 +37,10 @@ import {
 import { asTicketId } from "../../src/domain/ids.ts";
 import { asDraftBrief } from "../../src/interpreter/ticketBrief.ts";
 import { asRepositoryId } from "../../src/interpreter/finalizer.ts";
+import {
+  parkedOverridesVerdict,
+  type ParkedTicketRelease,
+} from "../../src/interpreter/parkedOverrides.ts";
 
 /** The document of a configuration briefing its two evaluation stages from blocks that differ. */
 const document = {
@@ -248,5 +257,151 @@ test("an override of the work instructions defines the ticket as a configuration
   assert.deepEqual(
     overridden,
     draftDefinition({ ...document, work: { instructions } }, undefined),
+  );
+});
+
+/** Each configuration this repository runs, as its document. */
+const repositoryConfigurations: readonly {
+  readonly name: string;
+  readonly document: Record<string, unknown>;
+}[] = (() => {
+  const directory = new URL("../../.chug/configurations/", import.meta.url);
+  return readdirSync(directory)
+    .filter((file) => file.endsWith(".json"))
+    .map((file) => ({
+      name: file,
+      document: (
+        JSON.parse(readFileSync(new URL(file, directory), "utf8")) as {
+          readonly configuration: Record<string, unknown>;
+        }
+      ).configuration,
+    }));
+})();
+
+/** One override of each field a parked ticket may change, saying something its configuration does not. */
+const parkedOverrideOf: Readonly<
+  Record<ParkedOverrideField, ConfigurationOverrides>
+> = {
+  "worker.mode": {
+    worker: {
+      mode: {
+        type: "SingleAgent",
+        agent: "Codex",
+        arguments: [],
+        model: "another-model",
+      },
+    },
+  },
+  "worker.setup": { worker: { setup: ["make another"] } },
+  "worker.files": {
+    worker: { files: [{ path: "another.txt", content: "another" }] },
+  },
+  practices: { practices: [] },
+  "brief.motivation": { brief: { motivation: ["Another reason."] } },
+  "brief.acceptanceCriteria": {
+    brief: { acceptanceCriteria: ["Another criterion."] },
+  },
+  "brief.constraints": { brief: { constraints: ["Another constraint."] } },
+};
+
+/** A parked ticket released under one document, with a brief naming its repository and one stage. */
+function parkedRelease(pinned: unknown): ParkedTicketRelease {
+  return {
+    configuration: canonicalConfigurationOf(pinned),
+    configurationRepository: undefined,
+    brief: asDraftBrief({
+      intent: "Do the one thing.",
+      links: [],
+      repository: "repository-one",
+    }),
+    authoring: {
+      deps: new Set<number>(),
+      prog: [{ key: 1, evaluators: [{ key: 1 }] }],
+    },
+  };
+}
+
+test("each field a parked ticket may change leaves every repository configuration's definition as it was", () => {
+  assert.ok(repositoryConfigurations.length > 0);
+  for (const { name, document: pinned } of repositoryConfigurations)
+    for (const field of parkedOverrideFields)
+      assert.equal(
+        parkedOverridesVerdict(
+          parkedRelease(pinned),
+          undefined,
+          parkedOverrideOf[field],
+        ),
+        "Admitted",
+        `${name}: ${field}`,
+      );
+});
+
+test("an override of the work instructions moves every repository configuration's definition", () => {
+  for (const { name, document: pinned } of repositoryConfigurations)
+    assert.equal(
+      parkedOverridesVerdict(parkedRelease(pinned), undefined, {
+        work: { instructions: ["Do the other work."] },
+      }),
+      "DefinitionLocked",
+      name,
+    );
+});
+
+test("a change keeping the work instructions a parked ticket already overrides is admitted", () => {
+  const held = { work: { instructions: ["Do the other work."] } };
+  assert.equal(
+    parkedOverridesVerdict(parkedRelease(document), held, {
+      ...held,
+      ...parkedOverrideOf["worker.setup"],
+    }),
+    "Admitted",
+  );
+  assert.equal(
+    parkedOverridesVerdict(parkedRelease(document), held, {}),
+    "DefinitionLocked",
+  );
+});
+
+test("an agent folded into a capability requirement moves the definition though its field may change", () => {
+  const capable = {
+    ...document,
+    executionRequirements: {
+      platformDefault: {
+        mode: "ContainerCapability",
+        operatingSystem: "Linux",
+        architecture: "Amd64",
+        capabilities: ["Agent:Claude"],
+      },
+      platformDefaultVersion: 1,
+    },
+  };
+  assert.equal(
+    parkedOverridesVerdict(
+      parkedRelease(capable),
+      undefined,
+      parkedOverrideOf["worker.mode"],
+    ),
+    "DefinitionLocked",
+  );
+  assert.equal(
+    parkedOverridesVerdict(parkedRelease(capable), undefined, {
+      worker: {
+        mode: {
+          type: "SingleAgent",
+          agent: "Claude",
+          arguments: ["--model=another"],
+        },
+      },
+    }),
+    "Admitted",
+  );
+});
+
+test("overrides that leave the configuration unready are refused as a release refuses them", () => {
+  assert.equal(
+    parkedOverridesVerdict(parkedRelease(document), undefined, {
+      practices: ["NotAPractice"],
+    }),
+    "ConfigurationInvalid",
   );
 });

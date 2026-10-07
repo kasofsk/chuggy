@@ -54,6 +54,7 @@ import {
 import { checkedSelectorDecisionReference } from "./dispatchView.ts";
 import { finalizationUnavailableKinds } from "../contract/rosters.ts";
 import { dispatchViewSchemaVersion } from "../contract/http.ts";
+import { configurationOverridesSchema } from "../contract/configurationOverrides.ts";
 import { asTicketId } from "../domain/ids.ts";
 
 /** Writes one `Entry` as the text a store keeps. */
@@ -226,6 +227,36 @@ function parsedDraftCommand(record: Record<string, unknown>): boolean {
   );
 }
 
+/**
+ * A parked ticket's overrides change, refused where its fence is not whole or
+ * its overrides are not ones the contract lets a ticket hold.
+ */
+function parsedOverridesChange(
+  record: Record<string, unknown>,
+): ProjectCommand | undefined {
+  if (record["command"] !== "ChangeTicketOverrides") return undefined;
+  const ticket = record["ticket"];
+  const action = record["action"];
+  const authorizingSeq = record["authorizingSeq"];
+  if (
+    typeof ticket !== "number" ||
+    !parsedDraftCommandCount(ticket) ||
+    typeof action !== "string" ||
+    action.length === 0 ||
+    typeof authorizingSeq !== "number" ||
+    !parsedDraftCommandCount(authorizingSeq)
+  )
+    throw new TypeError("overrides change fence is invalid");
+  return {
+    version: 1,
+    command: "ChangeTicketOverrides",
+    ticket: asTicketId(ticket),
+    action,
+    authorizingSeq,
+    overrides: configurationOverridesSchema.parse(record["overrides"]),
+  };
+}
+
 export function parseProjectCommand(text: string): Parsed<ProjectCommand> {
   try {
     const raw: unknown = JSON.parse(text);
@@ -251,6 +282,8 @@ export function parseProjectCommand(text: string): Parsed<ProjectCommand> {
     if (dispatch !== undefined) return { parsed: "Ok", value: dispatch };
     if (parsedDraftCommand(record))
       return { parsed: "Ok", value: record as ProjectCommand };
+    const change = parsedOverridesChange(record);
+    if (change !== undefined) return { parsed: "Ok", value: change };
     if (
       record["command"] === "ResolveNativeAction" &&
       typeof record["action"] === "string" &&

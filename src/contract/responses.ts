@@ -287,8 +287,10 @@ export const ticketResponseSchema = z.object({
   configurationRevision: identitySchema.optional(),
   configurationVersion: configurationVersionSchema.optional(),
   /**
-   * What the ticket's last release or update replaced of that configuration,
-   * absent where it replaced nothing. Only the ticket's own read carries it.
+   * What the ticket replaces of that configuration now: what its last release
+   * or update replaced, or what a change while it was parked replaced that
+   * with. Absent where it replaces nothing, and only the ticket's own read
+   * carries it.
    */
   overrides: configurationOverridesSchema.optional(),
   /**

@@ -525,6 +525,12 @@ function projectWriterPreflight(
     item.source.nativeAction?.open === false ||
     item.source.finalizationRequest?.open === false;
   const answer = item.source.nativeAction;
+  const change = item.source.overridesChange;
+  if (change !== undefined)
+    return {
+      outcome: { outcome: "Overridden", change },
+      post: projectWriterReplayed(memory),
+    };
   if (command === undefined) {
     /**
      * A release whose draft and configuration contradict each other resolved

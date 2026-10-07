@@ -581,6 +581,24 @@ async function operationSource(
   ) {
     return releaseDraftSource(pool, partition, row.input_id, command);
   }
+  if (command.command === "ChangeTicketOverrides") {
+    /**
+     * A change of a parked ticket's overrides resolves to no command: whether
+     * it is admitted is read under the project row the deciding transaction
+     * holds, so nothing read here could be the answer.
+     */
+    return {
+      kind: "Operation",
+      operation: asOperationId(row.input_id),
+      command,
+      overridesChange: {
+        ticket: command.ticket,
+        action: command.action,
+        authorizingSeq: command.authorizingSeq,
+        overrides: command.overrides,
+      },
+    };
+  }
   if (
     command.command === "ManualDispatch" ||
     command.command === "ProposeDispatch"

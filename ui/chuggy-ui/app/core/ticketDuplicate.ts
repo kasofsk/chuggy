@@ -7,6 +7,8 @@
  * could never run — a repository no live binding offers, and a dependency on a
  * revoked ticket — and starts on the configuration the draft names only where
  * the project still offers it, never on a revision kept for the draft alone.
+ * The overrides are the ticket's own once it is past Pending, because a parked
+ * ticket's may have been changed since its draft was released.
  */
 
 import type {
@@ -27,6 +29,7 @@ import {
   editFormFrom,
   editOffersFrom,
 } from "./ticketEdit.ts";
+import { overridesHeldOf } from "./ticketOverrides.ts";
 
 /** What the new-ticket address says about where it starts: from nothing, or
  * from the ticket it names. */
@@ -88,6 +91,8 @@ export function ticketDuplicateRevoked(
  */
 export function ticketDuplicateSeed(input: {
   readonly draft: DraftResponse;
+  /** The ticket the draft released, where it was read. */
+  readonly ticket?: TicketResponse | undefined;
   readonly offers: readonly CreationOffer[];
   /** What the project binds, retired bindings among them. */
   readonly bound: readonly ProjectRepositoryResponse[];
@@ -102,7 +107,12 @@ export function ticketDuplicateSeed(input: {
     held === ""
       ? creationConfigurationStart(offers, input.preferred, input.partial)
       : held;
-  const edited = editFormFrom(draft, repositories, configuration);
+  const drafted = editFormFrom(draft, repositories, configuration);
+  const ticket = input.ticket;
+  const edited =
+    ticket === undefined || ticket.phase === "Pending"
+      ? drafted
+      : { ...drafted, overrides: overridesHeldOf(ticket.overrides) };
   const offered = repositories.some(
     (binding) => binding.repository === edited.repository,
   );

@@ -434,7 +434,7 @@ export type ConfigurationRead =
 /**
  * The immutable authoring revisions, behind a typed port. Every call names the
  * revision it wants, so there is no way to spell a read of the current one,
- * and the ticket it is read for, whose released overrides it answers applied.
+ * and the ticket it is read for, whose overrides it answers applied.
  */
 export interface PinnedConfigurationPort {
   configuration(

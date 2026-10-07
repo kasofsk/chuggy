@@ -97,7 +97,7 @@ export interface ExecutionRow {
   readonly configuration_revision: string;
   readonly configuration_digest: string;
   readonly configuration_canonical: string;
-  /** What the ticket's last release or update replaced of that configuration, as text. */
+  /** What the ticket replaces of that configuration now, as text. */
   readonly configuration_overrides: string | null;
   readonly requirement_identity: string;
   readonly requirement_value: string;
@@ -218,9 +218,10 @@ function executionRowSettlement(row: ExecutionRow) {
  * The agent a registration's configuration names, read from the pinned
  * configuration with its ticket's overrides applied rather than copied into
  * the row beside the requirement: the revision and digest a registration pins
- * cannot move, and the overrides are the ones the ticket's definition was
- * resolved from, so the answer cannot drift from the configuration the
- * requirement was materialized out of.
+ * cannot move, and the overrides are the ticket's own, which a change while it
+ * is parked replaces only where the definition resolves as it did — so where
+ * the requirement folds the agent, the answer cannot drift from the
+ * configuration the requirement was materialized out of.
  */
 function executionRowAgentCapability(row: ExecutionRow) {
   const capability = executionAgentCapability(

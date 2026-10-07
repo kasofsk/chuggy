@@ -25,6 +25,7 @@ import type {
 import { escalationTags } from "../../src/domain/generated/modelTypes.ts";
 import { genesisLedgers, ledgerAt } from "../../src/domain/ledger.ts";
 import { phaseOf } from "../../src/domain/phase.ts";
+import { asTicketId } from "../../src/domain/ids.ts";
 import {
   actorInit,
   journalStep,
@@ -262,6 +263,20 @@ test("a completion is no command a principal may offer, and a writer still reads
       value: { version: 1, command: "Decide", ticketCommand: event },
     });
   }
+});
+
+test("a parked ticket's overrides change is ordinary traffic", () => {
+  assert.deepEqual(
+    classifyCommand({
+      version: 1,
+      command: "ChangeTicketOverrides",
+      ticket: asTicketId(1),
+      action: "action",
+      authorizingSeq: 1,
+      overrides: {},
+    }),
+    { admission: "Ordinary", priority: "Ordinary" },
+  );
 });
 
 test("native-action resume is ordinary while revoke remains safety traffic", () => {

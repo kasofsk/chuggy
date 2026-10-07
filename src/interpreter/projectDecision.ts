@@ -35,6 +35,10 @@
  * which of the offered answers was given, and the head and the projection are
  * exactly as they were.
  *
+ * A CHANGE OF A PARKED TICKET'S OVERRIDES SETTLES AS AN ANSWER DOES, and
+ * answers nothing: it writes the overrides beside the ticket's definition and
+ * leaves the escalation it was fenced to open for the resume that follows.
+ *
  * A DEFERRAL SETTLES NOTHING AND COUNTS ITSELF. The input stays pending and
  * its deferred passes go up by one, so the writer that takes it next knows how
  * many passes a transient source has already cost it.
@@ -235,6 +239,19 @@ export interface NativeActionAnswer {
   readonly open: boolean;
 }
 
+/**
+ * The overrides a parked ticket is to hold, at the open escalation the change
+ * was typed against. Whether the ticket is still parked there, whether the
+ * configuration is ready under them and whether its definition stays put are
+ * the deciding transaction's to answer, under the project row it holds.
+ */
+export interface TicketOverridesChange {
+  readonly ticket: TicketId;
+  readonly action: string;
+  readonly authorizingSeq: number;
+  readonly overrides: ConfigurationOverrides;
+}
+
 export interface DecisionMaterialization {
   readonly actions: readonly NativeActionPlan[];
   readonly execution: readonly ExecutionRequestPlan[];
@@ -277,6 +294,7 @@ export type DecisionOutcome =
     }
   | { readonly outcome: "Refused"; readonly refusal: Refusal }
   | { readonly outcome: "Answered"; readonly answer: NativeActionAnswer }
+  | { readonly outcome: "Overridden"; readonly change: TicketOverridesChange }
   | { readonly outcome: "Deferred" };
 
 /** One decision offered for commit: what authorizes it, what caused it, and what it writes. */

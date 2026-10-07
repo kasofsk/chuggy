@@ -514,6 +514,8 @@ export function operationRefusalLabel(code: OperationRefusalCode): string {
       return "Ticket capacity reached";
     case "FinalizationRequestClosed":
       return "Finalization request closed";
+    case "DefinitionLocked":
+      return "Would change what the ticket was released as";
   }
 }
 

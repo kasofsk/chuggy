@@ -491,6 +491,7 @@ test("the rosters with no runtime list are exhaustive over their unions", () => 
     BriefNamesNoRepository: true,
     TicketCapacityReached: true,
     FinalizationRequestClosed: true,
+    DefinitionLocked: true,
   };
   const freshness: Record<
     ProjectOperationalStatus["schedulerFreshness"],

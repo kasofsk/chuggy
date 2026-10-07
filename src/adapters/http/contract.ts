@@ -556,6 +556,19 @@ export function parsePartition(tenant: string, project: string): Partition {
   return { tenant: asTenantId(tenant), project: asProjectId(project) };
 }
 
+function publicOverridesChangeCommand(
+  mutation: Extract<PublicMutation, { mutation: "ChangeTicketOverrides" }>,
+): ProjectCommand {
+  return {
+    version: 1,
+    command: "ChangeTicketOverrides",
+    ticket: asTicketId(mutation.ticket),
+    action: mutation.action,
+    authorizingSeq: mutation.authorizingSequence,
+    overrides: mutation.overrides,
+  };
+}
+
 function publicMutationCommand(mutation: PublicMutation): ProjectCommand {
   switch (mutation.mutation) {
     case "RevokeTicket":
@@ -599,6 +612,8 @@ function publicMutationCommand(mutation: PublicMutation): ProjectCommand {
         authorizingSeq: mutation.authorizingSequence,
         resolution: mutation.resolution,
       };
+    case "ChangeTicketOverrides":
+      return publicOverridesChangeCommand(mutation);
     case "ManualDispatch":
       return {
         version: 1,

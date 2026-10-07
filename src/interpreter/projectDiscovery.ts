@@ -29,7 +29,8 @@
  * AN ANSWER NAMING NO TICKET COMMAND CARRIES NO `ticketCommand`. The two
  * answers a finalization approval admits change no `TicketGraph` state, so the
  * source assembled for one carries the answer alone and there is nothing for a
- * decider to be offered.
+ * decider to be offered. Nor does a parked ticket's overrides change, which
+ * carries the change alone for the deciding transaction to judge.
  *
  * EVERY REFUSAL IS A VALUE, as in `./projectStore.ts`. A generation another
  * acceptance superseded and a decision input the owner had not accounted for are
@@ -47,6 +48,7 @@ import type { FinalizationEvidence } from "./finalizerPreparation.ts";
 import type {
   DraftReleaseFence,
   NativeActionAnswer,
+  TicketOverridesChange,
 } from "./projectDecision.ts";
 import type { Partition } from "./projectStore.ts";
 
@@ -86,6 +88,7 @@ export interface DecisionInput {
     readonly executionBlockedBy?: BlockedReason;
     readonly draftRelease?: DraftReleaseFence;
     readonly nativeAction?: NativeActionAnswer;
+    readonly overridesChange?: TicketOverridesChange;
     readonly finalizationRequest?: {
       readonly request: string;
       readonly requestGeneration: number;

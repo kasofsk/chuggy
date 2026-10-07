@@ -8,6 +8,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { after, test } from "node:test";
 
+import { reportTaskTerminalCommand } from "../../src/actor/command.ts";
 import { createWorkerPlaneApp } from "../../src/adapters/http/workerPlaneServer.ts";
 import { kubernetesWorkerTask } from "../../src/adapters/kubernetes/workerPod.ts";
 import {
@@ -34,6 +35,8 @@ import {
 } from "../../src/adapters/postgres/workerPool.ts";
 import type { ConfigurationOverrides } from "../../src/contract/configurationOverrides.ts";
 import type { WorkTaskDocument } from "../../src/contract/workerTask.ts";
+import { asTicketId } from "../../src/domain/ids.ts";
+import { workTaskIdentity } from "../../src/domain/task.ts";
 import {
   asCanonicalConfiguration,
   type CanonicalConfiguration,
@@ -67,10 +70,17 @@ import {
   taskFetched,
 } from "../adapters/workerPlaneFixtures.ts";
 import { goldenConfig } from "../adapters/workerPodDocumentFixture.ts";
+import type { ProjectCommand } from "../../src/interpreter/projectCommand.ts";
+import type { ProjectMemory } from "../../src/interpreter/projectWriter.ts";
 import {
+  postgresHarnessCompletion,
   postgresHarnessConfiguration,
+  postgresHarnessDrain,
   postgresHarnessNewEpoch,
+  postgresHarnessReport,
   postgresHarnessRolePool,
+  postgresHarnessSubmission,
+  type PostgresHarnessDrained,
 } from "./harness.ts";
 import { memoryProjectAccess } from "./projectAccessMemory.ts";
 import {
@@ -337,6 +347,207 @@ test("an attempt of a ticket overriding the worker's mode records that mode and 
   assert.deepEqual(recorded.worker, { ...configured.worker, mode });
   assert.notDeepEqual(recorded.worker, configured.worker);
   assert.deepEqual(recorded.briefing, configured.briefing);
+});
+
+/** Accepts one command into a project and drains what its queue then holds. */
+async function decidedIn(
+  project: SchedulerProject,
+  memory: ProjectMemory,
+  command: ProjectCommand,
+): Promise<PostgresHarnessDrained> {
+  const accepted = await rig.harness.inbox.accept({
+    ...postgresHarnessSubmission(project.partition, "parked"),
+    command,
+  });
+  assert.equal(accepted.accepted, "Accepted");
+  return postgresHarnessDrain(rig.harness, project.partition, memory);
+}
+
+/** One column of a project's rows, as the owner reads them. */
+async function ownerRead(
+  query: string,
+  project: SchedulerProject,
+): Promise<readonly Record<string, unknown>[]> {
+  return rig.harness.query(query, [
+    project.partition.tenant,
+    project.partition.project,
+  ]);
+}
+
+/** The project's one ticket parked at its first work's failure, and the escalation an answer names. */
+async function parkedAtWorkFailure(project: SchedulerProject): Promise<{
+  readonly drained: PostgresHarnessDrained;
+  readonly action: string;
+  readonly authorizingSeq: number;
+}> {
+  await postgresHarnessCompletion(
+    rig.harness,
+    project.partition,
+    `operation-parked-${randomUUID()}`,
+    reportTaskTerminalCommand(
+      postgresHarnessReport(
+        project.memory.graph,
+        workTaskIdentity(1, 1),
+        "Fail",
+      ),
+    ),
+  );
+  const drained = await postgresHarnessDrain(
+    rig.harness,
+    project.partition,
+    project.memory,
+  );
+  const [open] = await ownerRead(
+    `SELECT action,authorizing_seq::text AS seq FROM native_action
+      WHERE tenant=$1 AND project=$2 AND state='Open' AND escalation='WorkFailureEscalated'`,
+    project,
+  );
+  assert.ok(open !== undefined);
+  return {
+    drained,
+    action: String(open["action"]),
+    authorizingSeq: Number(open["seq"]),
+  };
+}
+
+/** Registers, admits and launches the newest work a resume asked for, and answers its recorded invocation. */
+async function resumedInvocation(
+  project: SchedulerProject,
+  label: string,
+): Promise<{ readonly worker: Readonly<Record<string, unknown>> }> {
+  const [newest] = await ownerRead(
+    `SELECT request FROM execution_request
+      WHERE tenant=$1 AND project=$2 AND kind='SpawnWork'
+      ORDER BY authorizing_seq DESC LIMIT 1`,
+    project,
+  );
+  assert.ok(newest !== undefined);
+  await rig.store.registerSpawn(
+    await schedulerClaimFor(
+      rig,
+      project.partition,
+      String(newest["request"]),
+      schedulerOwner(label),
+    ),
+    200,
+    schedulerInCluster,
+  );
+  const admitted = await rig.store.admit(project.cluster);
+  assert.equal(admitted.admitted, "Admitted");
+  return (await storedInvocation(await launched(project))) as {
+    readonly worker: Readonly<Record<string, unknown>>;
+  };
+}
+
+/** What a step of a parked ticket's life left of its definition and journal. */
+async function ticketRecord(project: SchedulerProject): Promise<{
+  readonly definition: unknown;
+  readonly journal: readonly string[];
+}> {
+  return {
+    definition: await ownerRead(
+      "SELECT definition,digest FROM ticket_definition WHERE tenant=$1 AND project=$2",
+      project,
+    ),
+    journal: (
+      await ownerRead(
+        "SELECT entry FROM journal_entry WHERE tenant=$1 AND project=$2 ORDER BY seq",
+        project,
+      )
+    ).map((row) => String(row["entry"])),
+  };
+}
+
+/**
+ * A ticket whose first work failed, parked at the work wall, and resumed —
+ * after `changed` replaced its overrides, where a case asks for that — with
+ * the attempt the resume asked for launched. Answers that attempt's recorded
+ * invocation, the definition and journal each step left, and the overrides
+ * the ticket then holds.
+ */
+async function resumedAfter(
+  label: string,
+  changed:
+    ((action: string, authorizingSeq: number) => ProjectCommand) | undefined,
+): Promise<{
+  readonly invocation: { readonly worker: Readonly<Record<string, unknown>> };
+  readonly records: readonly Awaited<ReturnType<typeof ticketRecord>>[];
+  readonly overrides: unknown;
+}> {
+  const project = await schedulerProject(
+    rig,
+    label,
+    { tasks: 1 },
+    workerConfiguration(),
+  );
+  const parked = await parkedAtWorkFailure(project);
+  let drained = parked.drained;
+  const records = [await ticketRecord(project)];
+  if (changed !== undefined) {
+    drained = await decidedIn(
+      project,
+      drained.memory,
+      changed(parked.action, parked.authorizingSeq),
+    );
+    assert.deepEqual(drained.decided, ["Answered"]);
+    records.push(await ticketRecord(project));
+  }
+  drained = await decidedIn(project, drained.memory, {
+    version: 1,
+    command: "ResolveNativeAction",
+    action: parked.action,
+    authorizingSeq: parked.authorizingSeq,
+    resolution: "Resume",
+  });
+  assert.deepEqual(drained.decided, ["Committed"]);
+  records.push(await ticketRecord(project));
+  const [held] = await ownerRead(
+    "SELECT overrides FROM ticket_definition WHERE tenant=$1 AND project=$2",
+    project,
+  );
+  return {
+    invocation: await resumedInvocation(project, label),
+    records,
+    overrides: held?.["overrides"],
+  };
+}
+
+test("a ticket parked at a work failure resumes under the model its overrides were changed to, and its definition and journal are as a resume leaves them", async () => {
+  const mode = {
+    type: "SingleAgent" as const,
+    agent: "Claude" as const,
+    arguments: ["--quiet", "--model=another-model"],
+  };
+  const changed = await resumedAfter("parked-changed", (action, seq) => ({
+    version: 1,
+    command: "ChangeTicketOverrides",
+    ticket: asTicketId(1),
+    action,
+    authorizingSeq: seq,
+    overrides: { worker: { mode } },
+  }));
+  assert.deepEqual(changed.invocation.worker["mode"], mode);
+  assert.deepEqual(changed.overrides, { worker: { mode } });
+  const [parked, overridden, resumed] = changed.records;
+  assert.deepEqual(overridden?.definition, parked?.definition);
+  assert.deepEqual(resumed?.definition, parked?.definition);
+  const [before, after, last] = changed.records.map((record) => record.journal);
+  assert.deepEqual(after, before);
+  assert.deepEqual(last?.slice(0, -1), before);
+  assert.equal(last?.length, (before?.length ?? 0) + 1);
+  assert.match(last?.at(-1) ?? "", /"TicketWorkResumed"/);
+});
+
+test("a ticket resumed with no change of its overrides resumes under its configuration's mode", async () => {
+  const plain = await resumedAfter("parked-unchanged", undefined);
+  assert.deepEqual(plain.invocation.worker["mode"], {
+    type: "SingleAgent",
+    agent: "Claude",
+    arguments: ["--quiet"],
+  });
+  assert.equal(plain.overrides, null);
+  const [parked, resumed] = plain.records.map((record) => record.journal);
+  assert.equal(resumed?.length, (parked?.length ?? 0) + 1);
 });
 
 test("an evaluator fetches the task its pod is launched with, its kind and stage included", async () => {

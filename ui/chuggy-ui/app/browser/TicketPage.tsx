@@ -44,6 +44,10 @@ import {
 } from "../core/ticketOffers.ts";
 import type { TicketOffers } from "../core/ticketOffers.ts";
 import { ticketPageFacts } from "../core/ticketPageFacts.ts";
+import {
+  parkedOverridesFence,
+  parkedOverridesResumeWithheld,
+} from "../core/ticketParkedOverrides.ts";
 import type { TicketPageFacts } from "../core/ticketPageFacts.ts";
 import { resumedFrom, ticketSlot } from "../core/ticketSituation.ts";
 import type { TicketSlot as Slot } from "../core/ticketSituation.ts";
@@ -70,6 +74,10 @@ import {
   ticketSections,
   ticketSectionsOpened,
 } from "./ticket/TicketSections.tsx";
+import {
+  TicketParkedOverrides,
+  useParkedOverrides,
+} from "./ticket/TicketParkedOverrides.tsx";
 import { TicketSlot } from "./ticket/TicketSlot.tsx";
 import { TicketStatus } from "./ticket/TicketStatus.tsx";
 import { EmptyState } from "./ui/EmptyState.tsx";
@@ -163,6 +171,10 @@ function TicketStanding(
   const asking = slot.slot === "NeedsYou";
   const answered = offersAnswered(offers, asking);
   const ledger = props.facts.ledger;
+  const ticket = readValue(props.reads.ticketState);
+  const parked = useParkedOverrides(ticket);
+  const fence =
+    ticket === undefined ? undefined : parkedOverridesFence(ticket, answered);
   return (
     <>
       <TicketStatus
@@ -194,12 +206,27 @@ function TicketStanding(
         partition={props.partition}
         slot={slot}
         nowMs={props.nowMs}
+        overrides={
+          ticket === undefined || fence === undefined ? null : (
+            <TicketParkedOverrides
+              partition={props.partition}
+              ticket={ticket}
+              fence={fence}
+              parked={parked}
+            />
+          )
+        }
         actions={
           <TicketAnswerActions
             acting={props.acting}
             offers={offers}
             answered={answered}
             resume={props.facts.resume}
+            resumeWithheld={
+              fence !== undefined && parked.unsaved
+                ? parkedOverridesResumeWithheld
+                : undefined
+            }
           />
         }
       />
