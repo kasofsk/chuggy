@@ -496,7 +496,12 @@ this one:
   {
     "name": "postgres",
     "image": "docker.io/library/postgres:18-alpine@sha256:d3e1620b530c944afa6e887d22eb899824da68e19c52024bf98f5220c88a65b2",
-    "args": ["-c", "listen_addresses=127.0.0.1"],
+    "args": [
+      "-c", "listen_addresses=127.0.0.1",
+      "-c", "fsync=off",
+      "-c", "synchronous_commit=off",
+      "-c", "full_page_writes=off"
+    ],
     "environment": { "POSTGRES_HOST_AUTH_METHOD": "trust" },
     "startupProbe": {
       "exec": { "command": ["pg_isready", "-h", "127.0.0.1", "-U", "postgres"] },
@@ -504,7 +509,7 @@ this one:
       "failureThreshold": 120
     },
     "resources": {
-      "cpuRequest": "250m", "cpuLimit": "1",
+      "cpuRequest": "250m", "cpuLimit": "2",
       "memoryRequest": "256Mi", "memoryLimit": "1Gi",
       "ephemeralStorageLimit": "4Gi"
     },
@@ -513,7 +518,8 @@ this one:
 ]
 ```
 
-The gates reach it through `CHUG_PG_URL`, which the rig's
+It does not flush to disk, since nothing in it outlives the pod. The gates
+reach it through `CHUG_PG_URL`, which the rig's
 `CHUG_SCHEDULER_WORKER_ENVIRONMENT` sets to
 `postgres://postgres@127.0.0.1:5432/postgres`, the sidecar's superuser on
 loopback. A site that names no sidecar places workers with none, and work that
