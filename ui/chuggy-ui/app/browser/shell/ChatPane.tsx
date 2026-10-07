@@ -398,9 +398,9 @@ function ChatPaneFirst(props: {
         exchanges={conversationExchangesStopped(sent, sends.stopping)}
         composer={{
           ...composer,
-          onSend: (text) => {
+          onSend: (text, attached) => {
             props.onStarting();
-            return composer.onSend(text);
+            return composer.onSend(text, attached);
           },
           onEdit: (text) => {
             setTyped(text !== "");

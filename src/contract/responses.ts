@@ -12,6 +12,7 @@
 import { z } from "zod";
 
 import {
+  imageMediaTypes,
   agenticRefusalLedgerAnsweredMax,
   agenticRefusalReasonCharsMax,
   agenticRefusalsAnsweredMax,
@@ -655,6 +656,25 @@ export const outputContentResponseSchema = z.object({
   content: z.string(),
 });
 export type OutputContentResponse = z.infer<typeof outputContentResponseSchema>;
+
+/** What a project-artifact upload answered: the identity a message names it by. */
+export const projectArtifactUploadedResponseSchema = z.object({
+  artifact: z.string().min(1),
+  digest: z.string().min(1),
+});
+export type ProjectArtifactUploadedResponse = z.infer<
+  typeof projectArtifactUploadedResponseSchema
+>;
+
+/** One project artifact read back, base64 for the reason its route gives. */
+export const projectArtifactResponseSchema = z.object({
+  content: z.string(),
+  mediaType: z.enum(imageMediaTypes),
+  encoding: z.literal("base64"),
+});
+export type ProjectArtifactResponse = z.infer<
+  typeof projectArtifactResponseSchema
+>;
 
 /** One page of a run's per-turn series, ascending, resumed by the last ordinal. */
 export const runTurnsResponseSchema = z.object({

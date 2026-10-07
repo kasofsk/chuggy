@@ -27,6 +27,8 @@ import {
   operationAcceptanceSchema,
   operationResponseSchema,
   outputContentResponseSchema,
+  projectArtifactResponseSchema,
+  projectArtifactUploadedResponseSchema,
   projectCreatedSchema,
   projectInventoryResponseSchema,
   projectNativeActionsResponseSchema,
@@ -65,6 +67,8 @@ import type {
   OperationAcceptance,
   OperationResponse,
   OutputContentResponse,
+  ProjectArtifactResponse,
+  ProjectArtifactUploadedResponse,
   ProjectCreatedResponse,
   ProjectInventoryResponse,
   ProjectNativeActionsResponse,
@@ -107,7 +111,12 @@ import type { workerPoolRegistrationTokenRequestSchema } from "../../../../src/c
 import type { z } from "zod";
 
 import { apiRead } from "./apiRequest.ts";
-import type { ApiPorts, ApiRequest, ApiResult } from "./apiRequest.ts";
+import type {
+  ApiBytes,
+  ApiPorts,
+  ApiRequest,
+  ApiResult,
+} from "./apiRequest.ts";
 
 export const projectInventoryPagesMax = 32;
 
@@ -655,6 +664,44 @@ export function apiOutputContent(
     ports,
     apiSegments(partition, "executions", execution, "artifacts", ordinal),
     (value) => outputContentResponseSchema.parse(value),
+  );
+}
+
+/** How long an upload waits on its door, which is longer than a read: its
+ * body is a screenshot rather than a few lines of JSON. */
+export const apiUploadTimeoutMs = 60_000;
+
+/** Gives the project one image, as the bytes it is, and answers the identity
+ * a message names it by. */
+export function apiUploadProjectArtifact(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+  bytes: ApiBytes,
+): Promise<ApiResult<ProjectArtifactUploadedResponse>> {
+  return apiRead(
+    ports,
+    {
+      method: "POST",
+      path: endpointPath(nativeHttpRoutes.projectArtifacts, partition),
+      bytes,
+      timeoutMs: apiUploadTimeoutMs,
+    },
+    (value) => projectArtifactUploadedResponseSchema.parse(value),
+  );
+}
+
+/** One of the project's images, read back as base64. */
+export function apiProjectArtifact(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+  artifact: string,
+  signal?: AbortSignal,
+): Promise<ApiResult<ProjectArtifactResponse>> {
+  return apiGet(
+    ports,
+    endpointPath(nativeHttpRoutes.projectArtifact, { ...partition, artifact }),
+    (value) => projectArtifactResponseSchema.parse(value),
+    signal,
   );
 }
 

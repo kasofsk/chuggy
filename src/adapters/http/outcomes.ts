@@ -71,9 +71,11 @@ import type {
 } from "../../interpreter/operationInbox.ts";
 import type { NotificationBatch } from "../../interpreter/notifications.ts";
 import {
+  artifactUnavailableCode,
   hostedRunsNotGrantedCode,
   noRunnerCode,
   selectorProposalNotHeldCode,
+  type ProjectArtifactUploadRefusalCode,
   type SelectorReviewOutcome,
   type ThreadMessageRefusalCode,
 } from "../../contract/rosters.ts";
@@ -613,12 +615,12 @@ export function projectArtifactUploadResponse(
       return response(
         415,
         nativeHttpError(
-          "UnsupportedMediaType",
+          "UnsupportedMediaType" satisfies ProjectArtifactUploadRefusalCode,
           "The media type is not an admitted image type.",
         ),
       );
     case "Unavailable":
-      return retry(503, value.retryAfterSeconds, "ArtifactUnavailable");
+      return retry(503, value.retryAfterSeconds, artifactUnavailableCode);
   }
 }
 
@@ -627,7 +629,10 @@ export function projectArtifactTooLargeResponse(
   bytesMax: number,
 ): NativeHttpResponse {
   return response(413, {
-    ...nativeHttpError("ArtifactTooLarge", "The artifact is too large."),
+    ...nativeHttpError(
+      "ArtifactTooLarge" satisfies ProjectArtifactUploadRefusalCode,
+      "The artifact is too large.",
+    ),
     bytesMax,
   });
 }
@@ -650,7 +655,7 @@ export function projectArtifactReadResponse(
     case "NotFound":
       return response(404, nativeHttpError("NotFound", "Resource not found."));
     case "Unavailable":
-      return retry(503, result.retryAfterSeconds, "ArtifactUnavailable");
+      return retry(503, result.retryAfterSeconds, artifactUnavailableCode);
   }
 }
 
@@ -2217,7 +2222,7 @@ export function threadMessageResponse(
         ),
       );
     case "ImagesUnavailable":
-      return retry(503, result.retryAfterSeconds, "ArtifactUnavailable");
+      return retry(503, result.retryAfterSeconds, artifactUnavailableCode);
     case "Sent":
     case "AlreadySent":
       return response(202, { turn: result.turn, ordinal: result.ordinal });

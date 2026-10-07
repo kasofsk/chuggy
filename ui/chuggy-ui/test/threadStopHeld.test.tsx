@@ -104,7 +104,7 @@ test("a stop of a message the door hands back is taken back with it, so the same
   const { result } = held(doors);
   const sent = (): void => {
     act(() => {
-      void result.current.composer.onSend("the same words");
+      void result.current.composer.onSend("the same words", []);
     });
   };
   sent();
