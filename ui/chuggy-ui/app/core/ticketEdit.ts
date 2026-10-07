@@ -45,7 +45,7 @@ function editBranchName(ref: string | undefined): string {
 
 /** The name a draft's configuration goes by: the one it was declared under,
  * and its revision where nothing declared it. */
-function editConfigurationName(draft: DraftResponse): string {
+export function editConfigurationName(draft: DraftResponse): string {
   return draft.configurationVersion?.name ?? draft.configurationRevision;
 }
 

@@ -66,6 +66,15 @@ export function ticketYamlStoreKey(
   return `chug.ticket-yaml.${partition.tenant}/${partition.project}/${ticket === undefined ? "new" : String(ticket)}`;
 }
 
+/** Where a new ticket started from another keeps its YAML: per the ticket it
+ * started from, apart from both that ticket's edit and a plain new ticket. */
+export function ticketYamlDuplicateStoreKey(
+  partition: PartitionIdentity,
+  from: number,
+): string {
+  return `chug.ticket-yaml.${partition.tenant}/${partition.project}/duplicate/${String(from)}`;
+}
+
 /**
  * Browser storage can throw or come back empty, so a read that fails is a
  * screen with nothing kept, and a write that fails costs the copy and nothing
