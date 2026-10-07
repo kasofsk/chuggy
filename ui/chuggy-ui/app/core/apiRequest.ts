@@ -20,7 +20,7 @@ export const apiAttemptsMax = 3;
 export interface ApiFetchInit {
   readonly method: string;
   readonly headers: Record<string, string>;
-  readonly body?: string;
+  readonly body?: string | Uint8Array<ArrayBuffer>;
   readonly signal: AbortSignal;
 }
 
@@ -50,10 +50,18 @@ export interface ApiPorts {
   readonly refused?: () => Promise<void>;
 }
 
+/** A body sent as the bytes it is, under its own media type, rather than as
+ * JSON: the one shape an upload takes. */
+export interface ApiBytes {
+  readonly mediaType: string;
+  readonly content: Uint8Array<ArrayBuffer>;
+}
+
 export interface ApiRequest {
   readonly method: string;
   readonly path: string;
   readonly body?: unknown;
+  readonly bytes?: ApiBytes;
   readonly idempotencyKey?: string;
   readonly timeoutMs?: number;
   readonly signal?: AbortSignal;
@@ -134,7 +142,9 @@ function apiHeaders(
 ): Record<string, string> {
   const headers: Record<string, string> = { accept: nativeHttpMediaType };
   if (bearer !== undefined) headers["authorization"] = `Bearer ${bearer}`;
-  if (hasBody) headers["content-type"] = nativeHttpMediaType;
+  if (request.bytes !== undefined)
+    headers["content-type"] = request.bytes.mediaType;
+  else if (hasBody) headers["content-type"] = nativeHttpMediaType;
   if (request.idempotencyKey !== undefined)
     headers["idempotency-key"] = request.idempotencyKey;
   return headers;
@@ -156,7 +166,8 @@ async function apiOnce(
   );
   try {
     const body =
-      request.body === undefined ? undefined : JSON.stringify(request.body);
+      request.bytes?.content ??
+      (request.body === undefined ? undefined : JSON.stringify(request.body));
     const response = await ports.fetch(request.path, {
       method: request.method,
       headers: apiHeaders(await ports.bearer(), request, body !== undefined),

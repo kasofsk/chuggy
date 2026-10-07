@@ -108,6 +108,7 @@ import type {
   SessionTurnState,
 } from "../../../../src/contract/rosters.ts";
 import {
+  threadImagesRead,
   threadSeedingHeadings,
   threadTurnBoundaryHeading,
   threadTurnRecordedLastLine,
@@ -352,6 +353,9 @@ export type ConversationAsk =
       /** The seeding block the server composed in front of a thread's first
        * message, where the input carried one. */
       readonly context?: string;
+      /** The project images the message named, by identity, where it named
+       * any. */
+      readonly images?: readonly string[];
     }
   | { readonly ask: "Wake"; readonly wake: string; readonly resource: string }
   | { readonly ask: "Document"; readonly kind: SessionTurnInputKind }
@@ -602,10 +606,11 @@ function conversationSeedingSplit(
 }
 
 /**
- * The member's own words, and the seeding block the server put in front of them
- * where the input carries one. Both sides read the contract's constants, so
- * this is the writer's boundary read backwards rather than a guess at one, and
- * a text that carries neither of them is the member's whole message.
+ * The member's own words, the seeding block the server put in front of them
+ * where the input carries one, and the images the block's last section names.
+ * Both sides read the contract's constants, so this is the writer's boundary
+ * read backwards rather than a guess at one, and a text that carries neither
+ * of them is the member's whole message.
  */
 export function conversationAskMessage(
   text: string,
@@ -618,7 +623,13 @@ export function conversationAskMessage(
   if (conversationTextIsJsonObject(said))
     return { ask: "Observation", text: said };
   if (split === undefined) return { ask: "Message", text: said };
-  return { ask: "Message", text: said, context: text.slice(0, split.ends) };
+  const block = threadImagesRead(text.slice(0, split.ends));
+  return {
+    ask: "Message",
+    text: said,
+    ...(block.before === "" ? {} : { context: block.before }),
+    ...(block.artifacts.length === 0 ? {} : { images: block.artifacts }),
+  };
 }
 
 /** What a turn's own kind asks for, with or without the text: the one place

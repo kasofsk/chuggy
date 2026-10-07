@@ -559,7 +559,7 @@ test("Enter sends what was typed, and the box clears on Sent", async () => {
   const box = await typed("run it again");
   fireEvent.keyDown(box, { key: "Enter" });
   await waitFor(() => {
-    expect(onSend).toHaveBeenCalledWith("run it again");
+    expect(onSend).toHaveBeenCalledWith("run it again", []);
   });
   await waitFor(() => {
     expect(box.value).toBe("");
@@ -595,7 +595,7 @@ test("a page that kept the message puts the characters back", async () => {
   const box = await typed("try once more");
   fireEvent.click(screen.getByRole("button", { name: "Send" }));
   await waitFor(() => {
-    expect(onSend).toHaveBeenCalledWith("try once more");
+    expect(onSend).toHaveBeenCalledWith("try once more", []);
   });
   await waitFor(() => {
     expect(box.value).toBe("try once more");
@@ -619,7 +619,7 @@ test("a running exchange still takes a message, because the mailbox queues", asy
   const box = await typed("one more thing");
   fireEvent.keyDown(box, { key: "Enter" });
   await waitFor(() => {
-    expect(onSend).toHaveBeenCalledWith("one more thing");
+    expect(onSend).toHaveBeenCalledWith("one more thing", []);
   });
   styleless();
 });

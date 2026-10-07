@@ -31,6 +31,7 @@ import {
   threadRefusalLine,
   threadRefusalWord,
   threadSendFrom,
+  threadUploadRefused,
   threadSendingWith,
   threadSendingWithout,
   threadSendStanding,
@@ -204,10 +205,34 @@ describe("the turn a press posts under", () => {
   });
 
   test("unchanged text keeps the identity and edited text releases it", () => {
-    const held = { text: "one more", turn: "thread-turn-a" };
-    expect(threadTurnRetained(held, "one more")).toBe("thread-turn-a");
-    expect(threadTurnRetained(held, "one more, and")).toBeUndefined();
-    expect(threadTurnRetained(undefined, "one more")).toBeUndefined();
+    const held = { text: "one more", attached: [], turn: "thread-turn-a" };
+    expect(threadTurnRetained(held, { text: "one more", attached: [] })).toBe(
+      "thread-turn-a",
+    );
+    expect(
+      threadTurnRetained(held, { text: "one more, and", attached: [] }),
+    ).toBeUndefined();
+    expect(
+      threadTurnRetained(undefined, { text: "one more", attached: [] }),
+    ).toBeUndefined();
+  });
+
+  test("the same images keep the identity, and attaching one or removing one releases it", () => {
+    const shot = { mediaType: "image/png", content: new Uint8Array([1]) };
+    const other = { mediaType: "image/png", content: new Uint8Array([1]) };
+    const held = { text: "see", attached: [shot], turn: "thread-turn-a" };
+    expect(threadTurnRetained(held, { text: "see", attached: [shot] })).toBe(
+      "thread-turn-a",
+    );
+    expect(
+      threadTurnRetained(held, { text: "see", attached: [shot, other] }),
+    ).toBeUndefined();
+    expect(
+      threadTurnRetained(held, { text: "see", attached: [] }),
+    ).toBeUndefined();
+    expect(
+      threadTurnRetained(held, { text: "see", attached: [other] }),
+    ).toBeUndefined();
   });
 });
 
@@ -461,7 +486,7 @@ describe("the door's own vocabulary", () => {
       ["ThreadClosed", "Closed"],
       ["ThreadBacklogged", "Backlogged"],
       ["ThreadTurnTooLarge", "Oversize"],
-      ["ThreadImageUnknown", "Missing"],
+      ["ThreadImageUnknown", "Image missing"],
     ]);
     expect(
       new Set(said.map(([, word]) => word)).size,
@@ -514,6 +539,55 @@ describe("the door's own vocabulary", () => {
     const turn = turnOf({ turn: "thread-turn-a", ordinal: 7 });
     expect(threadHeldTurn({ turns: [turn] }, "thread-turn-a")?.ordinal).toBe(7);
     expect(threadHeldTurn({ turns: [turn] }, "thread-turn-b")).toBeUndefined();
+  });
+});
+
+describe("an image as the reason a send is refused", () => {
+  test("an image the door says is not the project's is said as the image, in the refusal's own line", () => {
+    const refused = threadSendFrom({
+      outcome: "Rejected",
+      code: "ThreadImageUnknown",
+      status: 400,
+      body: undefined,
+    });
+    expect(refused).toStrictEqual({
+      send: "Refused",
+      what: "Send",
+      cause: "Image missing",
+    });
+  });
+
+  test("a store that could not say whether an image is the project's is a wait, said as the images", () => {
+    expect(
+      threadSendFrom({
+        outcome: "Retryable",
+        code: "ArtifactUnavailable",
+        retryAfterSeconds: 1,
+      }),
+    ).toStrictEqual({ send: "Waiting", why: "Images unavailable" });
+  });
+
+  test("an upload that failed is a send refused, in the words of the image", () => {
+    const rejected = (code: string) =>
+      threadUploadRefused({
+        outcome: "Rejected",
+        code,
+        status: 400,
+        body: undefined,
+      }).cause;
+    expect(rejected("ArtifactTooLarge")).toBe("Image too large");
+    expect(rejected("UnsupportedMediaType")).toBe("Image type refused");
+    expect(rejected("Invalid")).toBe("Image not uploaded");
+    expect(
+      threadUploadRefused({
+        outcome: "Retryable",
+        code: "ArtifactUnavailable",
+        retryAfterSeconds: 1,
+      }).cause,
+    ).toBe("Images unavailable");
+    expect(
+      threadUploadRefused({ outcome: "Unreachable", reason: "offline" }).cause,
+    ).toBe("Unreachable");
   });
 });
 
@@ -595,8 +669,9 @@ describe("whether a store the thread does not name is missing", () => {
 
 describe("what is kept for a thread that is not drawn", () => {
   const refused = { send: "Refused", what: "Send" } as const;
-  const one = { text: "one", turn: "t1", send: refused };
-  const two = { text: "two", turn: "t2", send: refused };
+  const shot = { mediaType: "image/png", content: new Uint8Array([1]) };
+  const one = { text: "one", attached: [shot], turn: "t1", send: refused };
+  const two = { text: "two", attached: [], turn: "t2", send: refused };
 
   test("a thread is held one text, a second handed back going under the first as a text no one turn sent", () => {
     const first = threadKeptWith(new Map(), "a", one);
@@ -604,6 +679,7 @@ describe("what is kept for a thread that is not drawn", () => {
     const both = threadKeptWith(threadKeptWith(first, "b", two), "a", two);
     expect(both.get("a")).toStrictEqual({
       text: "one\n\ntwo",
+      attached: [shot],
       turn: undefined,
       send: refused,
     });

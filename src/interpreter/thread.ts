@@ -51,6 +51,7 @@ import {
 import {
   resolvedThreadStandingRules,
   threadDraftsHeading,
+  threadImageLine,
   threadImagesHeading,
   threadNorthStarHeading,
   threadRefusalsHeading,
@@ -397,12 +398,7 @@ export function threadImageFetchPath(
 export function threadImagesSection(
   images: readonly ThreadSeededImage[],
 ): string {
-  return `${threadImagesHeading}\n\n${images
-    .map(
-      ({ artifact, mediaType, path }) =>
-        `- ${artifact} — ${mediaType} — fetch at ${path}`,
-    )
-    .join("\n")}`;
+  return `${threadImagesHeading}\n\n${images.map(threadImageLine).join("\n")}`;
 }
 
 /** The most one turn's input weighs: the member's message and the block in front of it. */
