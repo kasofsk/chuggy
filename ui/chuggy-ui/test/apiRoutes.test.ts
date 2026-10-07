@@ -466,9 +466,9 @@ test("the settings are read, written whole and paged for their revisions", async
     overrides: { northStar: "ship the console" },
   });
   expect(held.urls[1]).toBe(`${partitionPath}/selector-settings`);
-  await apiSelectorSettingsHistory(held.ports, partition, { after: 3 });
+  await apiSelectorSettingsHistory(held.ports, partition, { before: 3 });
   expect(held.urls[2]).toBe(
-    `${partitionPath}/selector-settings/history?after=3`,
+    `${partitionPath}/selector-settings/history?before=3`,
   );
 });
 

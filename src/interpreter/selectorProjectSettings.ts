@@ -87,9 +87,10 @@ export interface SelectorProjectSettingsStore {
     overrides: SelectorProjectOverrides,
     administrator: Authority,
   ): Promise<SelectorProjectSettingsWriteOutcome>;
+  /** Newest first: no cursor is the newest page, and a cursor answers only revisions older than it. */
   history(
     partition: Partition,
-    afterRevision: number,
+    beforeRevision: number | undefined,
     limit: number,
   ): Promise<readonly SelectorProjectSettingsRevision[]>;
 }
@@ -138,7 +139,7 @@ export interface SelectorProjectSettingsAdministration {
   history(
     principal: Principal,
     partition: Partition,
-    afterRevision: number,
+    beforeRevision: number | undefined,
     limit: number,
   ): Promise<SelectorProjectSettingsHistoryRead>;
 }
@@ -271,14 +272,16 @@ export function selectorProjectSettingsAdministration(
           return assertNever(written);
       }
     },
-    history: async (principal, partition, afterRevision, limit) =>
+    history: async (principal, partition, beforeRevision, limit) =>
       (await administrator(principal, partition)) === undefined
         ? { result: "NotFound" }
         : {
             result: "Found",
             revisions: await store.history(
               partition,
-              checkedSelectorProjectRevision(afterRevision),
+              beforeRevision === undefined
+                ? undefined
+                : checkedSelectorProjectRevision(beforeRevision),
               checkedHistoryLimit(limit),
             ),
           },

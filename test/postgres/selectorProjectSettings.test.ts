@@ -130,7 +130,7 @@ test("a project's thread standing rules survive the write, the history and a cle
       standingRules,
     );
     assert.deepEqual(
-      (await store.history(partition, 0, 10)).map(
+      (await store.history(partition, undefined, 10)).map(
         (revision) => revision.overrides.threadStandingRules,
       ),
       [standingRules],
@@ -229,8 +229,32 @@ test("the read names the administrator whose write the standing revision is", as
     const standing = await store.read(partition);
     assert.equal(standing.settings.revision, 2);
     assert.deepEqual(standing.movedBy?.administrator, mover);
-    const [, second] = await store.history(partition, 0, 10);
-    assert.equal(standing.movedBy?.recordedAt, second?.recordedAt);
+    const [newest] = await store.history(partition, undefined, 10);
+    assert.equal(newest?.revision, 2);
+    assert.equal(standing.movedBy?.recordedAt, newest?.recordedAt);
+  } finally {
+    await pool.end();
+  }
+});
+
+test("a history cursor answers only the revisions older than it, newest first", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "selector-settings-history-cursor",
+  );
+  const pool = postgresHarnessRolePool(apiRole);
+  const store = postgresSelectorProjectSettings(pool);
+  try {
+    for (const [revision, northStar] of ["1", "2", "3", "4"].entries())
+      await store.write(partition, revision, { northStar }, administrator);
+    const revisionsOf = async (before: number | undefined, limit: number) =>
+      (await store.history(partition, before, limit)).map(
+        (revision) => revision.revision,
+      );
+    assert.deepEqual(await revisionsOf(undefined, 2), [4, 3]);
+    assert.deepEqual(await revisionsOf(3, 10), [2, 1]);
+    assert.deepEqual(await revisionsOf(4, 1), [3]);
+    assert.deepEqual(await revisionsOf(1, 10), []);
   } finally {
     await pool.end();
   }
@@ -284,22 +308,22 @@ test("every write is retained with the administrator who made it", async () => {
   try {
     await store.write(partition, 0, { northStar: "First." }, administrator);
     await store.write(partition, 1, { northStar: "Second." }, administrator);
-    const retained = await store.history(partition, 0, 10);
+    const retained = await store.history(partition, undefined, 10);
     assert.deepEqual(
       retained.map((revision) => revision.revision),
-      [1, 2],
+      [2, 1],
     );
-    assert.deepEqual(retained[0]?.overrides, { northStar: "First." });
-    assert.deepEqual(retained[1]?.administrator, administrator);
+    assert.deepEqual(retained[1]?.overrides, { northStar: "First." });
+    assert.deepEqual(retained[0]?.administrator, administrator);
     assert.equal(
-      Number.isFinite(Date.parse(retained[1]?.recordedAt ?? "")),
+      Number.isFinite(Date.parse(retained[0]?.recordedAt ?? "")),
       true,
     );
     const restored = writtenSettings(
       await store.write(
         partition,
         2,
-        retained[0]?.overrides ?? {},
+        retained[1]?.overrides ?? {},
         administrator,
       ),
     );

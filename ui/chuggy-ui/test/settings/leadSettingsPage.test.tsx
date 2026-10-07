@@ -972,6 +972,44 @@ test("the newest revision is the one row with no Restore", async () => {
   ).toHaveLength(2);
 });
 
+/** The read is newest first, so the top row is the one standing and the bottom
+ * row is the one whose predecessor the page did not read. */
+test("the top row stands, the bottom row has no predecessor, and a diff reads older then newer", async () => {
+  await drawSettings({ history });
+  const rows = [
+    ...sectionOf("Revisions").querySelectorAll<HTMLElement>(
+      ".selector-revision",
+    ),
+  ];
+  expect(rows.map((row) => row.querySelector(".num")?.textContent)).toEqual([
+    "15",
+    "14",
+    "13",
+  ]);
+  expect(
+    rows.map(
+      (row) => within(row).queryAllByRole("button", { name: "Restore" }).length,
+    ),
+  ).toEqual([0, 1, 1]);
+  expect(rows.map((row) => row.querySelector(".fig-dim") !== null)).toEqual([
+    false,
+    false,
+    true,
+  ]);
+  await turned(() => {
+    fireEvent.click(
+      within(rows[0] as HTMLElement).getByRole("button", { name: "Diff" }),
+    );
+  });
+  const revisions = sectionOf("Revisions");
+  expect(revisions.querySelector(".selector-before")?.textContent).toBe(
+    "12,000,000",
+  );
+  expect(revisions.querySelector(".selector-after")?.textContent).toBe(
+    "17,523,063",
+  );
+});
+
 test("only the latest revisions stand until Show all is pressed", async () => {
   const many = {
     revisions: Array.from({ length: 7 }, (_unused, at) =>

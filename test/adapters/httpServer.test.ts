@@ -481,8 +481,10 @@ function fakeSelectorSettings(
             movedBy: selectorMovedBy,
           });
     },
-    history: (_principal, _partition, after, limit) => {
-      calls.push(`selector-settings:history:${String(after)}:${String(limit)}`);
+    history: (_principal, _partition, before, limit) => {
+      calls.push(
+        `selector-settings:history:${String(before)}:${String(limit)}`,
+      );
       return Promise.resolve({ result: "Found", revisions: [] });
     },
   };
@@ -684,14 +686,21 @@ test("a project's selector settings are read, written and historied", async () =
   assert.equal(written.json<{ revision: number }>().revision, 2);
   const listed = await app.inject({
     method: "GET",
-    url: `${selectorSettingsPath}/history?after=1&limit=10`,
+    url: `${selectorSettingsPath}/history?before=2&limit=10`,
     headers,
   });
   assert.equal(listed.statusCode, 200);
+  const newest = await app.inject({
+    method: "GET",
+    url: `${selectorSettingsPath}/history`,
+    headers,
+  });
+  assert.equal(newest.statusCode, 200);
   assert.deepEqual(calls, [
     "selector-settings:read",
     "selector-settings:write:1:Land the panel.",
-    "selector-settings:history:1:10",
+    "selector-settings:history:2:10",
+    "selector-settings:history:undefined:50",
   ]);
 });
 
