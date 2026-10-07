@@ -25,7 +25,8 @@ import { usePanelTenantResource } from "../api.ts";
 import { drawBytes, transientStore } from "../ports.ts";
 import { buttonLookClassName } from "../ui/Button.tsx";
 
-/** No frame names this read, so the partition's own refetch is what reaches it. */
+/** No frame names this read; what reaches it is whichever refresh the scope
+ * it is read under follows. */
 export const forgeAppsResource = "forge-apps";
 
 export function InstallLink(props: {
