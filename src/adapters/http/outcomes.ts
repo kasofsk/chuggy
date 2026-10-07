@@ -1771,6 +1771,8 @@ function draftCreated(value: DraftCreated): NativeHttpResponse {
     case "RepositoryNotBound":
     case "ArtifactNotBound":
       return response(404, nativeHttpError("NotFound", "Resource not found."));
+    case "Unavailable":
+      return retry(503, value.retryAfterSeconds, "ArtifactUnavailable");
     case "LandingUnbranched":
       return response(422, draftLandingUnbranched);
     case "Stale":
@@ -1801,6 +1803,8 @@ function draftRevised(value: DraftRevised): NativeHttpResponse {
     case "RepositoryNotBound":
     case "ArtifactNotBound":
       return response(404, nativeHttpError("NotFound", "Resource not found."));
+    case "Unavailable":
+      return retry(503, value.retryAfterSeconds, "ArtifactUnavailable");
     case "LandingUnbranched":
       return response(422, draftLandingUnbranched);
     case "Stale":

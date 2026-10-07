@@ -970,6 +970,43 @@ test("creating or revising a draft refuses an image the project's own store does
   assert.deepEqual(calls, ["authorize:Mutate", "authorize:Mutate"]);
 });
 
+test("creating or revising a draft reports a store outage rather than the image not existing", async () => {
+  const unavailable: ProjectArtifactPort = {
+    ...unreachableProjectArtifacts(),
+    readArtifact: () =>
+      Promise.resolve({ read: "Unavailable", retryAfterSeconds: 5 }),
+  };
+  const { web, calls } = boundary(
+    true,
+    openExecutionBacklogGuard,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    unavailable,
+  );
+  const brief = briefNamingImages(["image/png:unasked"]);
+  assert.deepEqual(await createDraftNaming(web, brief), {
+    result: "Authorized",
+    value: { created: "Unavailable", retryAfterSeconds: 5 },
+  });
+  assert.deepEqual(
+    await web.reviseDraft(principal, {
+      partition,
+      ticket: asTicketId(1),
+      expectedVersion: 1,
+      configurationRevision: asConfigurationRevisionId("revision"),
+      authoring: noAuthoring,
+      brief,
+    }),
+    {
+      result: "Authorized",
+      value: { revised: "Unavailable", retryAfterSeconds: 5 },
+    },
+  );
+  assert.deepEqual(calls, ["authorize:Mutate", "authorize:Mutate"]);
+});
+
 test("a draft naming an image its store holds, or naming none at all, reaches the authoring door", async () => {
   const found: ProjectArtifactPort = {
     ...unreachableProjectArtifacts(),

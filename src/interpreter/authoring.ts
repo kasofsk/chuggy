@@ -470,7 +470,9 @@ export type ConfigurationCreated =
  * `RepositoryNotBound` is the brief's repository refused and `ArtifactNotBound`
  * is the same claim about an image it names, the door reading the store itself
  * where the referent is a filesystem fact rather than a row a foreign key could
- * raise on, both refusals like `ConfigurationNotFound` and not a fault.
+ * raise on, both refusals like `ConfigurationNotFound` and not a fault; that
+ * same read answers `Unavailable` instead when the store itself cannot be
+ * asked, a fault a caller told to retry must never be told is a missing image.
  * `LandingUnbranched` is the same for a brief whose resolved landing proposes
  * and which names no branch to propose from: the landing it is refused for is
  * the repository's, which the caller never named and cannot see.
@@ -480,6 +482,7 @@ export type DraftCreated =
   | { readonly created: "ConfigurationNotFound" }
   | { readonly created: "RepositoryNotBound" }
   | { readonly created: "ArtifactNotBound" }
+  | { readonly created: "Unavailable"; readonly retryAfterSeconds: number }
   | { readonly created: "LandingUnbranched" }
   | { readonly created: "Stale" };
 
@@ -546,11 +549,11 @@ export function draftInitializationPolicy(
 }
 
 /**
- * `RepositoryNotBound`, `ArtifactNotBound` and `LandingUnbranched` are the
- * refusals `DraftCreated` documents. A released draft is revisable while its
- * ticket is Pending — past it `NotDraft` — and one moving its dependencies is
- * `DependenciesLocked`, because the update releasing it would be refused
- * `TicketDependenciesChanged`.
+ * `RepositoryNotBound`, `ArtifactNotBound`, `Unavailable` and `LandingUnbranched`
+ * are the refusals `DraftCreated` documents. A released draft is revisable
+ * while its ticket is Pending — past it `NotDraft` — and one moving its
+ * dependencies is `DependenciesLocked`, because the update releasing it would
+ * be refused `TicketDependenciesChanged`.
  */
 export type DraftRevised =
   | { readonly revised: "Revised"; readonly draft: DraftResource }
@@ -564,6 +567,7 @@ export type DraftRevised =
   | { readonly revised: "ConfigurationNotFound" }
   | { readonly revised: "RepositoryNotBound" }
   | { readonly revised: "ArtifactNotBound" }
+  | { readonly revised: "Unavailable"; readonly retryAfterSeconds: number }
   | { readonly revised: "LandingUnbranched" };
 
 export type DraftDeleted =
