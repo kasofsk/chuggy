@@ -80,7 +80,6 @@ import { postgresFinalizer } from "../../src/adapters/postgres/finalizer.ts";
 import type { BriefFinalizationMode } from "../../src/contract/rosters.ts";
 import type { ChangeProposalForges } from "../../src/interpreter/changeProposal.ts";
 import { postgresTicketBrief } from "../../src/adapters/postgres/ticketBrief.ts";
-import { asDraftBrief } from "../../src/interpreter/ticketBrief.ts";
 import {
   briefContentDigest,
   materialDigest,
@@ -696,11 +695,7 @@ function finalizerReleasedMaterial(
   const finalization = brief["finalization"] as StoredBrief | undefined;
   const material = {
     ...rest,
-    content: {
-      digest: briefContentDigest(
-        asDraftBrief(brief as Parameters<typeof asDraftBrief>[0]),
-      ),
-    },
+    content: { digest: briefContentDigest(brief) },
     finalization: {
       ...finalization,
       digest: materialDigest(finalization ?? {}),

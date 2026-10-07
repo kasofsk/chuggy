@@ -103,11 +103,14 @@ export function materialDigest(value: unknown): string {
  * released before a brief could name any still digests to the content its
  * journal names.
  */
-export function briefContentDigest(brief: DraftBrief | undefined): string {
+export function briefContentDigest(
+  brief: { readonly images?: readonly unknown[] } | undefined,
+): string {
   if (brief === undefined) return materialDigest({});
+  const images = brief.images ?? [];
   return materialDigest({
     ...brief,
-    images: brief.images.length === 0 ? undefined : brief.images,
+    images: images.length === 0 ? undefined : images,
   });
 }
 
