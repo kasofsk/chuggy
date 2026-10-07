@@ -47,8 +47,10 @@ import { RunnersPage } from "./RunnersPage.tsx";
 import { SettingsPage } from "./SettingsPage.tsx";
 import { LeadSettingsPage } from "./settings/LeadSettingsPage.tsx";
 import { PlacementSettingsPage } from "./settings/PlacementSettingsPage.tsx";
+import { TenantAccountsPage } from "./settings/TenantAccountsPage.tsx";
 import { Shell } from "./Shell.tsx";
 import { ProjectStreamProvider } from "./stream.tsx";
+import { TenantSettingsPage } from "./TenantSettingsPage.tsx";
 import { TicketCreation } from "./TicketCreation.tsx";
 import { TicketEdit } from "./TicketEdit.tsx";
 import { TicketPage } from "./TicketPage.tsx";
@@ -209,6 +211,27 @@ const projectCreationRoute = createRoute({
   component: ProjectCreationPage,
 });
 
+/**
+ * The tenant's own settings, outside the partition because a forge account is
+ * the tenant's and not any one project's. The first segment is the literal
+ * `tenants`, mirroring the API's own `/tenants/:tenant/…`, and not
+ * `/$tenant/settings`: a tenant page at the second segment would stand where
+ * `/$tenant/$project` matches and make a project named `settings`
+ * unreachable.
+ */
+const tenantSettingsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/tenants/$tenant/settings",
+  component: TenantSettingsPage,
+});
+
+/** One tenant settings group's own page. */
+const tenantAccountsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/tenants/$tenant/settings/accounts",
+  component: TenantAccountsPage,
+});
+
 const ticketCreationRoute = createRoute({
   getParentRoute: () => partitionRoute,
   path: "/tickets/new",
@@ -232,6 +255,8 @@ const routeTree = rootRoute.addChildren([
   forgeSetupRoute,
   forgeCallbackRoute,
   projectCreationRoute,
+  tenantSettingsRoute,
+  tenantAccountsRoute,
   partitionRoute.addChildren([
     projectRoute,
     inboxRoute,

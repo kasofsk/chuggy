@@ -13,6 +13,6 @@ export function forgeReturnNavigate(
   target: ForgeAuthorizeTarget,
   word: ForgeReturnWord | undefined,
 ): Promise<void> {
-  if (word !== undefined) forgeReturnHold(transientStore, target, word);
+  if (word !== undefined) forgeReturnHold(transientStore, target.tenant, word);
   return navigate({ href: target.returnPath, replace: true });
 }

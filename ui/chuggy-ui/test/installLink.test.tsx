@@ -71,7 +71,7 @@ async function drawLinks(
       {apps.map((app) => (
         <InstallLink
           key={app}
-          partition={leadPartition}
+          tenant={leadPartition.tenant}
           returnPath={returnPath}
           app={app}
         />
@@ -110,7 +110,6 @@ test("following a link stores the transaction the landing will match", async () 
     state: stateOn(link),
     app: "worker",
     tenant: leadPartition.tenant,
-    project: leadPartition.project,
     returnPath,
   });
 });

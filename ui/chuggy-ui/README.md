@@ -131,9 +131,14 @@ publishes an endpoint for it.
 
 ## Connecting a forge account
 
+A forge account is the tenant's, not any one project's, so the Accounts panel
+lives on its own settings page at `/tenants/$tenant/settings/accounts` and not
+on a project's. The Repositories page, which only binds a project's
+repositories, says where to connect one and links there.
+
 `Connect GitHub` sends the person to authorize the portal App, with a state and
 a PKCE challenge the console draws the way the sign-in's are drawn. The state,
-the verifier, the tenant, the project and where the person was are stored in
+the verifier, the tenant and where the person was are stored in
 `sessionStorage` under one key. The forge returns to `/forge/github/callback`,
 which takes that transaction once and posts the code only when the state it was
 sent matches; a callback reached without a matching transaction says "Not
@@ -142,10 +147,10 @@ from the address. The api claims each account the authorization proves the
 person owns, with the worker App's installation on it, and the page puts the
 person back where they pressed `Connect GitHub`. Anything short of a plain
 connection comes back as one word, held in `sessionStorage` and shown once on
-the Accounts panel. A person who reached no account, or only accounts they do
+the Accounts page. A person who reached no account, or only accounts they do
 not own, comes back to `Add account`, the portal App's install.
 
-`Connect GitHub` is the Accounts panel's one action until an account is
+`Connect GitHub` is the Accounts page's one action until an account is
 connected or a return offers that install. Then `Add account` installs the
 portal App, and an account without the worker App offers that App's install on
 its own row. Each install link carries a state of its own, stored the same way.

@@ -28,7 +28,6 @@ const client = {
 
 const target = {
   tenant: "vteng",
-  project: "chuggy",
   returnPath: "/vteng/chuggy/repositories",
 };
 

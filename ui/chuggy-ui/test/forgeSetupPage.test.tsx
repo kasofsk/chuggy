@@ -52,7 +52,6 @@ const transaction = {
   state: "a-state",
   app: "worker",
   tenant: "vteng",
-  project: "chuggy",
   returnPath: "/vteng/chuggy/repositories",
 };
 
@@ -107,7 +106,6 @@ test("a matching install sends the person to authorize, with this tab's transact
   expect(url.searchParams.get("state")).toBe(stored["state"]);
   expect(stored).toMatchObject({
     tenant: transaction.tenant,
-    project: transaction.project,
     returnPath: transaction.returnPath,
   });
   expect(held.navigated).toStrictEqual([]);
@@ -120,7 +118,6 @@ test("a deployment that answers no client returns with Not configured, sending n
   expect(held.navigated).toStrictEqual([returned]);
   expect(heldWord()).toStrictEqual({
     tenant: transaction.tenant,
-    project: transaction.project,
     standing: "Failed",
     status: "Not configured",
   });

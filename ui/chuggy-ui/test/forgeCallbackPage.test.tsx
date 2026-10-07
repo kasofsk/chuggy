@@ -46,7 +46,6 @@ const transaction = {
   state: "a-state",
   verifier: "a-verifier-".padEnd(43, "v"),
   tenant: "vteng",
-  project: "chuggy",
   returnPath: "/vteng/chuggy/repositories",
 };
 
@@ -121,7 +120,7 @@ test("a matching state redeems the code once, for the stored tenant, with the st
   });
 });
 
-/** The Accounts panel returned to is what says an account connected, so this
+/** The accounts page returned to is what says an account connected, so this
  * page says Connecting and nothing else. */
 test("a redeemed authorization replaces this address with where it started, drawing no account and holding no word", async () => {
   await drawCallback();
@@ -130,12 +129,11 @@ test("a redeemed authorization replaces this address with where it started, draw
   expect(screen.getByRole("main").textContent).toBe("GitHubConnecting");
 });
 
-test("an authorization reaching no installation returns with Not installed, for its own project", async () => {
+test("an authorization reaching no installation returns with Not installed, for its own tenant", async () => {
   await drawCallback(() => answer({ accounts: [], truncated: false }));
   expect(held.navigated.at(-1)).toStrictEqual(returned);
   expect(heldWord()).toStrictEqual({
     tenant: transaction.tenant,
-    project: transaction.project,
     standing: "Uninstalled",
     status: "Not installed",
   });
