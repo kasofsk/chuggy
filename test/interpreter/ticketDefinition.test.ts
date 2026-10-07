@@ -156,7 +156,7 @@ const briefBeforeImages = {
   checks: [],
 };
 
-/** The content digest the release of `briefBeforeImages` journalled then. */
+/** The content digest the release of `briefBeforeImages` stored then. */
 const digestBeforeImages =
   "8f351dc47e8a518256a965b2a205ed789eeb1da4e1a036717370a46f5c2aa2e9";
 

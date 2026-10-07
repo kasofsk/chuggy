@@ -98,10 +98,9 @@ export function materialDigest(value: unknown): string {
 }
 
 /**
- * The digest a release journals for its brief, and a stored brief is held to.
- * A brief that names no image is digested without an image list, so one
- * released before a brief could name any still digests to the content its
- * journal names.
+ * The digest a release stores for its brief, and a stored brief is held to. A
+ * brief that names no image is digested without an image list, so one released
+ * before a brief could name any still digests to what its release stored.
  */
 export function briefContentDigest(
   brief: { readonly images?: readonly unknown[] } | undefined,
