@@ -17,6 +17,7 @@ import {
   briefBranchCharsMax,
   briefBranchPrefix,
   briefChecksMax,
+  briefImagesMax,
   briefIntentCharsMax,
   briefLandingIsWhole,
   briefLineCharsMax,
@@ -24,6 +25,8 @@ import {
   briefLinksMax,
   briefTitleCharsMax,
 } from "../../../../src/contract/brief.ts";
+import { imageMediaTypes } from "../../../../src/contract/http.ts";
+import type { ImageMediaType } from "../../../../src/contract/http.ts";
 import { draftCreationSchema } from "../../../../src/contract/requests.ts";
 import {
   briefFinalizationProposes,
@@ -40,12 +43,14 @@ import type {
 } from "../../../../src/contract/responses.ts";
 import type { z } from "zod";
 
+import type { ApiFailure } from "./apiRequest.ts";
 import { operationStateSentence } from "./codeSentences.ts";
 import { configurationCommitShort, configurationLabel } from "./labels.ts";
 import type { Label } from "./labels.ts";
 import type { OperationStep } from "./operationFollow.ts";
 import { repositoryLabel } from "./projectRepositories.ts";
 import { repositoryConfigurations } from "./repositoryConfigurations.ts";
+import { threadUploadRefused } from "./threads.ts";
 
 /** The authoring half of the form, which is exactly what an initialization defaults. */
 export type CreationAuthoring = DraftInitializationResponse["defaults"];
@@ -63,6 +68,9 @@ export interface TicketCreationForm extends CreationAuthoring {
   readonly title: string;
   readonly intent: string;
   readonly links: readonly string[];
+  /** The project images this ticket carries, by the identity each upload
+   * answered: the bytes are the project's, and never the form's. */
+  readonly images: readonly string[];
   readonly checks: readonly string[];
   readonly branchName: string;
   readonly targetBranchName: string;
@@ -78,6 +86,7 @@ export type CreationField =
   | "title"
   | "intent"
   | "links"
+  | "images"
   | "checks"
   | "branch"
   | "target"
@@ -412,6 +421,7 @@ export function creationFormFrom(
     title: "",
     intent: "",
     links: [],
+    images: [],
     checks: [],
     branchName: "",
     targetBranchName: "",
@@ -541,6 +551,52 @@ export function creationTargetBranchFieldHint(
 /** The one input either branch field refuses, said as the edit that fixes it. */
 export const creationBranchPrefixedSentence = `enter the branch name, not the ref: this console adds ${briefBranchPrefix} itself`;
 
+/** The bound on a ticket's images, said where an attachment would pass it. */
+export const creationImagesBoundSentence = `one ticket carries at most ${String(briefImagesMax)} images`;
+
+/** The types an image is attached in, as a reader names them. */
+export const creationImageTypesLabel = imageMediaTypes
+  .map((type) => type.replace(/^image\//u, "").toUpperCase())
+  .join(", ");
+
+/** The type an offered file is uploaded as, where it is one the upload admits. */
+export function creationImageMediaType(
+  type: string,
+): ImageMediaType | undefined {
+  return imageMediaTypes.find((admitted) => admitted === type);
+}
+
+/**
+ * What one attaching takes of the files it was offered: each of a type the
+ * upload admits, up to the room the bound leaves beside the images held, and
+ * why it took fewer than it was offered, where it did.
+ */
+export function creationImagesTaken<T extends { readonly type: string }>(
+  heldCount: number,
+  offered: readonly T[],
+): { readonly taken: readonly T[]; readonly refused?: string } {
+  const admitted = offered.filter(
+    (file) => creationImageMediaType(file.type) !== undefined,
+  );
+  const room = Math.max(0, briefImagesMax - heldCount);
+  const taken = admitted.slice(0, room);
+  if (admitted.length > room)
+    return { taken, refused: creationImagesBoundSentence };
+  if (admitted.length < offered.length)
+    return {
+      taken,
+      refused: `only ${creationImageTypesLabel} images attach`,
+    };
+  return { taken };
+}
+
+/** What an upload that failed is said as: the upload's own refusal, and that
+ * nothing was attached. */
+export function creationImageUploadSentence(failure: ApiFailure): string {
+  const cause = threadUploadRefused(failure).cause;
+  return cause === undefined ? "Not attached" : `Not attached · ${cause}`;
+}
+
 /** What a proposal is opened from, which is the one box a push may leave empty. */
 export const creationLandingBranchSentence =
   "a pull request is opened from a branch of its own, so name one above";
@@ -564,6 +620,8 @@ export function creationFaultSentence(field: CreationField): string {
       return `state what this ticket is for, in at most ${String(briefIntentCharsMax)} characters`;
     case "links":
       return `each link is an ${briefLinkScheme} URL of at most ${String(briefLineCharsMax)} characters, and one ticket carries at most ${String(briefLinksMax)}`;
+    case "images":
+      return creationImagesBoundSentence;
     case "checks":
       return `each check is one command line of at most ${String(briefLineCharsMax)} characters, and one ticket adds at most ${String(briefChecksMax)}`;
     case "branch":
@@ -594,6 +652,7 @@ function creationFieldOf(
   if (path[1] === "intent") return "intent";
   if (path[1] === "branch") return "branch";
   if (path[1] === "checks") return "checks";
+  if (path[1] === "images") return "images";
   if (path[1] === "repository") return "repository";
   if (path[1] === "finalization")
     return path[2] === "target" ? "target" : "landing";
@@ -714,10 +773,10 @@ function creationFinalizationOf(
 }
 
 /**
- * The brief a form becomes: no check lines rather than an empty list, and no
- * title rather than an empty one. Check lines typed under a configuration that
- * commands a stage for them are not sent under one that commands none, which
- * draws no box to read them in.
+ * The brief a form becomes: no check lines or images rather than an empty
+ * list, and no title rather than an empty one. Check lines typed under a
+ * configuration that commands a stage for them are not sent under one that
+ * commands none, which draws no box to read them in.
  */
 function creationBriefOf(
   form: TicketCreationForm,
@@ -734,6 +793,7 @@ function creationBriefOf(
     ...(repository === "" ? {} : { repository }),
     intent: creationIntentNormalized(form.intent).trim(),
     links: form.links.map((link) => link.trim()).filter((link) => link !== ""),
+    ...(form.images.length === 0 ? {} : { images: [...form.images] }),
     ...(checks.length === 0 ? {} : { checks }),
     ...(branches.branch.named === "Ref" ? { branch: branches.branch.ref } : {}),
     ...creationFinalizationOf(form, branches),

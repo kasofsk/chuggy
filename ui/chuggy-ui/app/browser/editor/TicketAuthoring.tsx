@@ -7,6 +7,9 @@
  * waits until it does. A screen that finds YAML this browser kept for it opens
  * on that YAML, because the author was typing there when they left.
  *
+ * Images are attached in the form alone, so the YAML may name only those the
+ * screen first read and those the form held when the text was opened.
+ *
  * The YAML side is a chunk of its own and this module names none of it but
  * the import, so a reader who never switches downloads neither the parser nor
  * the editor. Where the chunk cannot load, the form is still here.
@@ -152,14 +155,16 @@ export function TicketAuthoring(props: TicketAuthoringProps): ReactNode {
   useEffect(() => {
     onDirty?.(dirty);
   }, [dirty, onDirty]);
+  const held = props.form.images;
   const context = useMemo(
     () => ({
       base: initial,
       offers,
       repositories,
       dependenciesLocked: locked,
+      images: [...new Set([...initial.images, ...held])],
     }),
-    [initial, offers, repositories, locked],
+    [initial, offers, repositories, locked, held],
   );
   const faultsOf = (held: TicketCreationForm): readonly CreationFault[] => {
     const assembled = assemble(held);

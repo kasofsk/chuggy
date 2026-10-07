@@ -175,7 +175,6 @@ export function EditForm(props: {
   const draft = props.subject.draft;
   const { offers, configuration } = props.edit;
   const storeKey = ticketYamlStoreKey(props.partition, draft.ticket);
-  const onUpdated = props.onUpdated;
   const running = useEditSubmit({
     ports: props.ports,
     partition: props.partition,
@@ -185,7 +184,7 @@ export function EditForm(props: {
     onFaults: setFaults,
     onUpdated: () => {
       ticketYamlForgotten(storeKey);
-      onUpdated();
+      props.onUpdated();
     },
   });
   const initial = useMemo(
@@ -219,6 +218,7 @@ export function EditForm(props: {
             partial={props.partial === true}
             repositories={repositories}
             dependenciesLocked
+            api={props}
           />
         }
       />

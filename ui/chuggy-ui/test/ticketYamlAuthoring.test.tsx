@@ -3,7 +3,7 @@
  * submit that shows what it sends first, and the copy this browser keeps.
  *
  * The editor is stood in for by a text area, because what is checked here is
- * the screen around it; `ticketEditor.test.tsx` mounts the real one.
+ * the screen around it.
  */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -36,22 +36,12 @@ import {
   creationPartition,
   creationYamlKeptUnasked,
 } from "./ticketCreationFixture.ts";
-import { ticketInstants } from "./ticketInstants.ts";
+import { ticketReleasing } from "./ticketReleasing.tsx";
 
-vi.mock("../app/browser/editor/TicketEditor.tsx", () => ({
-  default: (props: {
-    readonly value: string;
-    readonly onChange: (text: string) => void;
-  }) => (
-    <textarea
-      aria-label="Ticket YAML"
-      value={props.value}
-      onChange={(event) => {
-        props.onChange(event.target.value);
-      }}
-    />
-  ),
-}));
+vi.mock(
+  "../app/browser/editor/TicketEditor.tsx",
+  () => import("./ticketReleasing.tsx"),
+);
 
 const storeKey = ticketYamlStoreKey(creationPartition, undefined);
 
@@ -65,40 +55,8 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-const projectBody = {
-  partition: creationPartition,
-  sequence: 42,
-  tickets: [
-    {
-      ticket: creationDraft.ticket,
-      phase: "Pending",
-      sequence: 42,
-      ...ticketInstants,
-    },
-  ],
-};
-
 function api(): { readonly ports: ApiPorts; readonly sent: Sent[] } {
-  return answeringApi((method, path) => {
-    if (method === "POST" && path.endsWith("/drafts"))
-      return { status: 201, body: creationDraft };
-    if (method === "POST" && path.endsWith("/operations"))
-      return { status: 202, body: { operation: "op", state: "Pending" } };
-    if (path.includes("/operations/"))
-      return {
-        status: 200,
-        body: {
-          operation: "op",
-          acceptedAt: "2026-08-26T00:00:00Z",
-          state: "Succeeded",
-          decidedSequence: 42,
-        },
-      };
-    return {
-      status: 200,
-      body: projectBody,
-    };
-  });
+  return answeringApi(ticketReleasing);
 }
 
 function draw(

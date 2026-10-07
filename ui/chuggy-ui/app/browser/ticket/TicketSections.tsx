@@ -63,15 +63,17 @@ function usageFigure(ticket: TicketResponse | undefined): ReactNode {
   return <Figure figure={costFigure(totals.costUsdMicros, totals.costBasis)} />;
 }
 
-/** What the brief holds beside its intent: its links and checks, counted. */
+/** What the brief holds beside its intent: its links, images and checks, counted. */
 function briefSummary(ticket: TicketResponse | undefined): string | null {
   if (ticket === undefined) return null;
   if (ticket.brief === undefined) return "Not kept";
   const links = ticket.brief.links.length;
+  const images = ticket.brief.images?.length ?? 0;
   const checks = ticket.brief.checks?.length ?? 0;
-  if (links === 0 && checks === 0) return "Intent only";
+  if (links === 0 && images === 0 && checks === 0) return "Intent only";
   return [
     links === 0 ? undefined : countedLabel(links, "link"),
+    images === 0 ? undefined : countedLabel(images, "image"),
     checks === 0 ? undefined : countedLabel(checks, "check"),
   ]
     .filter((part) => part !== undefined)
@@ -184,7 +186,7 @@ export function TicketSections(props: {
       className="ticket-sections bg-surface-1 border-edge rounded-3 border"
     >
       <SectionRow id="brief" label="Brief" summary={briefSummary(ticket)}>
-        <TicketBrief state={props.ticketState} />
+        <TicketBrief partition={props.partition} state={props.ticketState} />
       </SectionRow>
       <SectionRow id="usage" label="Usage" summary={usageFigure(ticket)}>
         <TicketUsage totals={ticket?.runTotals} page={props.page} />

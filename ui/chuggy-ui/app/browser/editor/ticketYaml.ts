@@ -16,6 +16,10 @@
  * text writing one of them under none reads as no form, because the form it
  * would read as has nowhere to hold what they say.
  *
+ * AN IMAGE IS WRITTEN AS THE IDENTITY ITS UPLOAD ANSWERED, never as bytes: the
+ * form attaches, and the text may only keep or drop what the screen knows the
+ * project holds, so an identity it does not know is refused at its key.
+ *
  * A KEY LEFT OUT IS EMPTY, except the three a form never leaves empty: the
  * landing and the dependencies keep what the form held, and so does a program
  * the reader moved, an unmoved one being the named configuration's default.
@@ -31,6 +35,7 @@ import type {
   DraftInitializationResponse,
   ProjectRepositoryResponse,
 } from "../../../../../src/contract/responses.ts";
+import { briefImagesMax } from "../../../../../src/contract/brief.ts";
 import { briefFinalizationModes } from "../../../../../src/contract/rosters.ts";
 import type { BriefFinalizationMode } from "../../../../../src/contract/rosters.ts";
 import { landingEffect } from "../../core/codeLabels.ts";
@@ -59,6 +64,9 @@ export interface TicketYamlContext {
   readonly offers: readonly CreationOffer[];
   readonly repositories: readonly ProjectRepositoryResponse[];
   readonly dependenciesLocked: boolean;
+  /** The project images this screen knows exist, which are the only ones the
+   * text may name. */
+  readonly images: readonly string[];
 }
 
 /** One thing wrong with the text, over the characters it is about. */
@@ -125,6 +133,7 @@ function ticketYamlKeys(
     "title",
     "intent",
     "links",
+    "images",
     ...(drawn?.commandedCheckStage === undefined ? [] : ["checks"]),
     "branch",
     ...(ticketYamlRepositoryOffered(context) ? ["repository"] : []),
@@ -144,6 +153,7 @@ export function ticketYamlOf(
     title: form.title,
     intent: form.intent,
     links: [...form.links],
+    images: [...form.images],
     checks: [...form.checks],
     branch: form.branchName,
     repository: form.repository,
@@ -299,6 +309,22 @@ function ticketYamlProgramOf(
   return ticketYamlTook(stages);
 }
 
+function ticketYamlImagesOf(
+  node: unknown,
+  context: TicketYamlContext,
+): TicketYamlTook<readonly string[]> {
+  const read = ticketYamlTextsOf(node);
+  if (read.took === "Problem") return read;
+  if (read.value.length > briefImagesMax)
+    return ticketYamlRefused(creationFaultSentence("images"));
+  const unknown = read.value.find((image) => !context.images.includes(image));
+  return unknown === undefined
+    ? read
+    : ticketYamlRefused(
+        `\`${unknown}\` names no image attached to this ticket; attach images in the form`,
+      );
+}
+
 function ticketYamlSameNumbers(
   a: readonly number[],
   b: readonly number[],
@@ -370,6 +396,11 @@ function ticketYamlKeyApplied(
       return into(ticketYamlTextOf(value), (intent) => ({ ...form, intent }));
     case "links":
       return into(ticketYamlTextsOf(value), (links) => ({ ...form, links }));
+    case "images":
+      return into(ticketYamlImagesOf(value, context), (images) => ({
+        ...form,
+        images,
+      }));
     case "branch":
       return into(ticketYamlTextOf(value), (branchName) => ({
         ...form,
@@ -406,6 +437,7 @@ function ticketYamlEmpty(base: TicketCreationForm): TicketCreationForm {
     title: "",
     intent: "",
     links: [],
+    images: [],
     checks: [],
     branchName: "",
     targetBranchName: "",
@@ -538,6 +570,7 @@ function ticketYamlKeyOf(field: CreationField): string | undefined {
     case "title":
     case "intent":
     case "links":
+    case "images":
     case "checks":
     case "landing":
     case "repository":
@@ -624,6 +657,10 @@ function ticketYamlDescribed(
     title: { hint: creationFaultSentence("title"), values: [] },
     intent: { hint: creationFaultSentence("intent"), values: [] },
     links: { hint: creationFaultSentence("links"), values: [] },
+    images: {
+      hint: `the images attached in the form, by identity: ${creationFaultSentence("images")}`,
+      values: context.images.map((image) => ({ label: image })),
+    },
     branch: { hint: creationBranchHint, values: [] },
     repository: {
       hint: creationFaultSentence("repository"),

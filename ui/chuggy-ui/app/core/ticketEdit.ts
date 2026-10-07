@@ -127,6 +127,7 @@ export function editFormFrom(
     title: brief?.title ?? "",
     intent: brief?.intent ?? "",
     links: brief?.links ?? [],
+    images: brief?.images ?? [],
     checks: brief?.checks ?? [],
     branchName: editBranchName(brief?.branch),
     targetBranchName: editBranchName(
