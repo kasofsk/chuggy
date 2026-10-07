@@ -461,6 +461,11 @@ test("draft creation maps every closed result, a branchless landing among them",
   const creations = [
     { value: { created: "ConfigurationNotFound" }, status: 404 },
     { value: { created: "RepositoryNotBound" }, status: 404 },
+    { value: { created: "ArtifactNotBound" }, status: 404 },
+    {
+      value: { created: "Unavailable", retryAfterSeconds: 5 },
+      status: 503,
+    },
     { value: { created: "Stale" }, status: 409 },
     { value: { created: "LandingUnbranched" }, status: 422 },
   ] as const;
@@ -489,6 +494,11 @@ test("draft revision and deletion map every closed result", () => {
     { value: { revised: "NotDraft", state: "Released" }, status: 409 },
     { value: { revised: "ConfigurationNotFound" }, status: 404 },
     { value: { revised: "RepositoryNotBound" }, status: 404 },
+    { value: { revised: "ArtifactNotBound" }, status: 404 },
+    {
+      value: { revised: "Unavailable", retryAfterSeconds: 5 },
+      status: 503,
+    },
     { value: { revised: "LandingUnbranched" }, status: 422 },
     { value: { revised: "DependenciesLocked" }, status: 409 },
   ] as const;

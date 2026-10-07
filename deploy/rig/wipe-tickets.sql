@@ -59,6 +59,7 @@ TRUNCATE TABLE
   public.draft,
   public.draft_brief,
   public.draft_brief_check,
+  public.draft_brief_image,
   public.draft_brief_link,
   public.draft_revision,
   public.execution,

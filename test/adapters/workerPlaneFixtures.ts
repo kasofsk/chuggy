@@ -64,6 +64,9 @@ export function inertWorkerPlane(
     heartbeats: { heartbeat: () => Promise.resolve(true) },
     heartbeatLeaseSecs: workerPlaneFixtureLeaseSecs,
     artifacts: { store: () => Promise.resolve({ stored: "Stored" }) },
+    projectArtifacts: {
+      readArtifact: () => Promise.resolve({ read: "NotFound" }),
+    },
     reservations: {
       reserve: () => Promise.resolve({ reserved: "Reserved" }),
     },

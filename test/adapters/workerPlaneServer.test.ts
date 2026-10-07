@@ -103,6 +103,13 @@ const taskService = { tasks: inertTasks } as const;
 /** The evidence ports a case about something else never reaches. */
 const runEvidenceService = { runEvidence: inertRunEvidence } as const;
 
+/** The project-artifact port a case about something else never reaches. */
+const projectArtifactsService = {
+  projectArtifacts: {
+    readArtifact: () => Promise.resolve({ read: "NotFound" as const }),
+  },
+} as const;
+
 test("the worker plane has no tenant-shaped or project-shaped route", () => {
   for (const { path } of [
     ...Object.values(workerPlaneRoutes),
@@ -118,6 +125,7 @@ test("one live bearer scopes input, upload and report to its attempt", async () 
   const uploaded: unknown[] = [];
   const reported: unknown[] = [];
   const app = createWorkerPlaneApp({
+    ...projectArtifactsService,
     ...heartbeatService,
     ...taskService,
     ...runEvidenceService,
@@ -176,6 +184,7 @@ test("one live bearer scopes input, upload and report to its attempt", async () 
 test("an unknown or oversized bearer reaches no attempt act", async () => {
   let acts = 0;
   const app = createWorkerPlaneApp({
+    ...projectArtifactsService,
     ...heartbeatService,
     ...taskService,
     ...runEvidenceService,
@@ -211,6 +220,7 @@ test("an unknown or oversized bearer reaches no attempt act", async () => {
 test("a bearer written in the session language is never offered to the attempt authority", async () => {
   const offered: string[] = [];
   const app = createWorkerPlaneApp({
+    ...projectArtifactsService,
     ...heartbeatService,
     ...runEvidenceService,
     authority: {
@@ -292,6 +302,7 @@ test("a task is answered only to a live attempt, and only once the scheduler rec
     held: { live: true, identity, invocation },
   };
   const app = createWorkerPlaneApp({
+    ...projectArtifactsService,
     ...heartbeatService,
     ...runEvidenceService,
     authority: { authenticate: () => Promise.resolve(authority) },
@@ -362,6 +373,7 @@ test("a session bearer fetches its task through the session authority, and neith
     [bearer("held")]: { live: true, identity, invocation },
   };
   const app = createWorkerPlaneApp({
+    ...projectArtifactsService,
     ...heartbeatService,
     ...runEvidenceService,
     authority: {
@@ -418,6 +430,7 @@ test("a session bearer fetches its task through the session authority, and neith
 test("a live bearer renews only its fenced attempt generation", async () => {
   const calls: unknown[] = [];
   const app = createWorkerPlaneApp({
+    ...projectArtifactsService,
     ...heartbeatService,
     ...taskService,
     ...runEvidenceService,
@@ -452,6 +465,7 @@ test("a live bearer renews only its fenced attempt generation", async () => {
 
 test("an invalid worker-controlled artifact path is a predictable client refusal", async () => {
   const app = createWorkerPlaneApp({
+    ...projectArtifactsService,
     ...heartbeatService,
     ...taskService,
     ...runEvidenceService,
@@ -484,6 +498,7 @@ test("an invalid worker-controlled artifact path is a predictable client refusal
 
 test("an exhausted attempt artifact quota is a terminal payload refusal", async () => {
   const app = createWorkerPlaneApp({
+    ...projectArtifactsService,
     ...heartbeatService,
     ...taskService,
     ...runEvidenceService,
@@ -520,6 +535,7 @@ async function refusedReport(
   ingested: ReportIngested,
 ): Promise<{ readonly statusCode: number; readonly body: unknown }> {
   const app = createWorkerPlaneApp({
+    ...projectArtifactsService,
     ...heartbeatService,
     ...taskService,
     ...runEvidenceService,
@@ -587,6 +603,7 @@ test("a refusal that is not about the report itself names nothing further", asyn
 test("identical terminal report redelivery reaches its absorbed operation", async () => {
   let reports = 0;
   const app = createWorkerPlaneApp({
+    ...projectArtifactsService,
     ...heartbeatService,
     ...taskService,
     ...runEvidenceService,
@@ -637,6 +654,7 @@ function runEvidencePlane(
   trace: string[] = [],
 ) {
   return createWorkerPlaneApp({
+    ...projectArtifactsService,
     ...heartbeatService,
     ...taskService,
     ...runEvidenceService,
@@ -714,6 +732,7 @@ test("a reported attempt writes no evidence, its bearer still resolving", async 
     return Promise.resolve("Stored" as const);
   };
   const app = createWorkerPlaneApp({
+    ...projectArtifactsService,
     ...heartbeatService,
     ...taskService,
     ...runEvidenceService,
@@ -860,6 +879,7 @@ test("a store that could not keep the bytes records no row", async () => {
       return Promise.resolve("Stored" as const);
     };
     const app = createWorkerPlaneApp({
+      ...projectArtifactsService,
       ...heartbeatService,
       ...taskService,
       ...runEvidenceService,
@@ -978,6 +998,7 @@ const workerPlaneHeaviest: Readonly<
   Record<WorkerPlaneRouteName, PlaneHeaviest | undefined>
 > = {
   input: undefined,
+  inputArtifact: undefined,
   task: undefined,
   heartbeat: { headers: json, payload: "{}", status: 204 },
   artifact: {
@@ -1237,6 +1258,7 @@ function credentialPlane(
   live = true,
 ) {
   return createWorkerPlaneApp({
+    ...projectArtifactsService,
     ...heartbeatService,
     ...taskService,
     ...runEvidenceService,

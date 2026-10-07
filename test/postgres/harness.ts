@@ -926,6 +926,11 @@ export function postgresHarnessWriter(
         ).spawnSource(request),
     },
     ticketBriefs: postgresTicketBrief(harness.writerPool),
+    projectArtifacts: {
+      readArtifact: () => {
+        throw new Error("postgres harness: a fixture brief names no image");
+      },
+    },
   };
 }
 

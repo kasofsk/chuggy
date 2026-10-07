@@ -469,6 +469,15 @@
                 "maxLength": 512
               }
             },
+            "images": {
+              "maxItems": 8,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              }
+            },
             "repository": {
               "type": "string",
               "minLength": 1,
@@ -646,6 +655,15 @@
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 512
+              }
+            },
+            "images": {
+              "maxItems": 8,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
               }
             },
             "repository": {

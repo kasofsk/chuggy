@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { test } from "node:test";
 
 import {
@@ -188,6 +189,11 @@ const unbriefedTickets: TicketBriefPort = {
   brief: () => Promise.resolve(undefined),
 };
 
+/** The project artifact store a test naming no image never reaches. */
+const noProjectArtifacts: ProjectTicketWriter["projectArtifacts"] = {
+  readArtifact: () => Promise.resolve({ read: "NotFound" }),
+};
+
 /** What one decision left behind: what it offered the authority, and the memory it kept. */
 async function decidedWith(
   memory: ProjectMemory,
@@ -195,6 +201,7 @@ async function decidedWith(
   executionSources: ExecutionSourceObservationPort = readableSources,
   ticketBriefs: TicketBriefPort = unbriefedTickets,
   policy: Partial<Pick<ProjectTicketWriter, "config" | "rework">> = {},
+  projectArtifacts: ProjectTicketWriter["projectArtifacts"] = noProjectArtifacts,
 ): Promise<{
   readonly offered: Decision | undefined;
   readonly result: ProjectDecided;
@@ -219,6 +226,7 @@ async function decidedWith(
       decisions,
       ticketBriefs,
       executionSources,
+      projectArtifacts,
     },
     memory,
     input,
@@ -231,12 +239,16 @@ async function planned(
   command: ProjectCommand,
   executionSources?: ExecutionSourceObservationPort,
   ticketBriefs?: TicketBriefPort,
+  policy?: Partial<Pick<ProjectTicketWriter, "config" | "rework">>,
+  projectArtifacts?: ProjectTicketWriter["projectArtifacts"],
 ): Promise<Decision> {
   const { offered } = await decidedWith(
     memory,
     operationInput(command),
     executionSources,
     ticketBriefs,
+    policy,
+    projectArtifacts,
   );
   assert.ok(offered !== undefined);
   return offered;
@@ -609,6 +621,7 @@ const committingWriter: ProjectTicketWriter = {
   },
   ticketBriefs: unbriefedTickets,
   executionSources: readableSources,
+  projectArtifacts: noProjectArtifacts,
 };
 
 test("both dispatches of one decision land, though the first changed the view", async () => {
@@ -680,6 +693,67 @@ test("the branch a ticket was briefed with names the ref its work is observed at
       ? decision.outcome.materialization.execution[0]?.bundle?.source?.targetRef
       : undefined,
     "refs/heads/rt/ticket-brief",
+  );
+});
+
+test("a dispatch pins one image reference per image the brief named, with the digest its store answered", async () => {
+  const content = new TextEncoder().encode("a png, more or less");
+  const expectedDigest = createHash("sha256").update(content).digest("hex");
+  const reads: string[] = [];
+  const decision = await planned(
+    releasedMemory(),
+    manualDispatch,
+    readableSources,
+    {
+      brief: () =>
+        Promise.resolve(
+          asDraftBrief({
+            intent: "Fix the importer.",
+            links: [],
+            images: ["image/png:one"],
+          }),
+        ),
+    },
+    {},
+    {
+      readArtifact: (request) => {
+        reads.push(request.artifact);
+        return Promise.resolve({ read: "Content", content });
+      },
+    },
+  );
+  assert.deepEqual(reads, ["image/png:one"]);
+  assert.deepEqual(
+    decision.outcome.outcome === "Journaled"
+      ? decision.outcome.materialization.execution[0]?.bundle?.images
+      : undefined,
+    [{ artifact: "image/png:one", digest: expectedDigest }],
+  );
+});
+
+test("a brief naming no image pins none, and never asks the project artifact store", async () => {
+  const decision = await planned(
+    releasedMemory(),
+    manualDispatch,
+    readableSources,
+    {
+      brief: () =>
+        Promise.resolve(
+          asDraftBrief({ intent: "Fix the importer.", links: [] }),
+        ),
+    },
+    {},
+    {
+      readArtifact: () => {
+        throw new Error("a brief naming no image must not reach the store");
+      },
+    },
+  );
+  assert.equal(
+    decision.outcome.outcome === "Journaled"
+      ? decision.outcome.materialization.execution[0]?.bundle?.images
+      : "not journaled",
+    undefined,
   );
 });
 
@@ -1406,6 +1480,7 @@ test("a deferred input ends the run it arrived in without clearing readiness", a
       },
       ticketBriefs: { brief: () => Promise.resolve(undefined) },
       executionSources: unreadableSources("RemoteUnreachable"),
+      projectArtifacts: noProjectArtifacts,
     },
     {
       ready: () => Promise.resolve([]),
