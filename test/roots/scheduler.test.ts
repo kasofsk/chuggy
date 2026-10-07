@@ -1000,7 +1000,7 @@ function processSessionFakes(observing: boolean): string {
       attemptsAwaitingCleanup: async () => [],
       attemptCleanupCompleted: async () => true,
       attemptsAwaitingObservation: async () => ${observing ? "[sessionFence]" : "[]"},
-      attemptTurnFailure: async () => ${observing ? "'StoreRefused'" : "undefined"},
+      attemptTurnFailure: async () => ({ turnFailure: ${observing ? "'StoreRefused'" : "undefined"}, sessionClosed: false }),
       reapLapsedAttempts: async () => 0,
       reapIdleAttempts: async () => 0,
       withdrawUnservedPoolTurns: async () => 0,

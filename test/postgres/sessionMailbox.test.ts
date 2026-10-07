@@ -39,6 +39,9 @@ after(async () => {
   await rig.close();
 });
 
+/** What either read finds of a live attempt on an open session that has failed no turn. */
+const none = { turnFailure: undefined, sessionClosed: false };
+
 /** A session with two queued turns and a live attempt holding its bearer. */
 async function mailbox(label: string) {
   const partition = await sessionRigProject(rig, label);
@@ -356,20 +359,49 @@ test("a container that exited cleanly after refusing a turn's store is charged S
     }),
     "Failed",
   );
-  assert.equal(await rig.plane.turnFailure(secret, generation), "StoreRefused");
-  assert.equal(
+  const refused = { turnFailure: "StoreRefused", sessionClosed: false };
+  assert.deepEqual(await rig.plane.turnFailure(secret, generation), refused);
+  assert.deepEqual(
     await rig.scheduler.attemptTurnFailure(held.attempt),
-    "StoreRefused",
+    refused,
   );
-  assert.equal(await rig.plane.turnFailure(secret, generation + 1), undefined);
+  assert.deepEqual(await rig.plane.turnFailure(secret, generation + 1), none);
   const { app, ended } = endedReporter(secret);
   assert.equal((await ended("Succeeded")).statusCode, 204);
   const lost = await sessionRigAttemptState(rig, held.attempt);
   assert.equal(lost["state"], "Lost");
   assert.equal(lost["evidence"], "StoreRefused");
-  assert.equal(await rig.plane.turnFailure(secret, generation), undefined);
+  assert.deepEqual(await rig.plane.turnFailure(secret, generation), none);
   await app.close();
   await rig.sessions.close(partition, session);
+});
+
+/**
+ * The bearer's read answers the session's close beside the failure, as the
+ * worker plane's own role and through a bearer the close leaves live.
+ */
+test("a live bearer's read answers its session closed once it is, and open until then", async () => {
+  const { partition, session, first, held } = await mailbox("ended-closed");
+  const { secret } = held;
+  const { generation } = held.attempt;
+  await rig.plane.claim({ secret, generation });
+  assert.deepEqual(await rig.plane.turnFailure(secret, generation), none);
+  await rig.plane.fail({
+    secret,
+    generation,
+    turn: first,
+    failure: "StoreRefused",
+  });
+  assert.deepEqual(await rig.plane.turnFailure(secret, generation), {
+    turnFailure: "StoreRefused",
+    sessionClosed: false,
+  });
+  await rig.sessions.close(partition, session);
+  assert.deepEqual(await rig.plane.turnFailure(secret, generation), {
+    turnFailure: "StoreRefused",
+    sessionClosed: true,
+  });
+  assert.deepEqual(await rig.plane.turnFailure(secret, generation + 1), none);
 });
 
 test("the runtime's session id is bound once, and a second one is a conflict", async () => {

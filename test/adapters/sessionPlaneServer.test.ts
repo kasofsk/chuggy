@@ -62,9 +62,9 @@ import {
   asSessionId,
   asSessionStoreStream,
   asSessionTurnId,
-  type SessionTurnFailure,
 } from "../../src/interpreter/agentSession.ts";
 import type { SessionPlaneIdentity } from "../../src/interpreter/sessionPlane.ts";
+import type { SessionPodEnding } from "../../src/interpreter/sessionScheduler.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import type { WorkerPlaneCredentialMinted } from "../../src/interpreter/workerPlaneCredentials.ts";
 import {
@@ -208,6 +208,9 @@ test("a session told what it forks from is told the reference the plane resolved
   await forking.close();
 });
 
+/** What a loss port's read answers for a live attempt on an open session that failed no turn. */
+const open: SessionPodEnding = { turnFailure: undefined, sessionClosed: false };
+
 test("no session route answers a bearer that is not a live session", async () => {
   for (const [what, authority, headers] of [
     ["no bearer at all", inertSessions.authority, {}],
@@ -249,7 +252,7 @@ test("no session route answers a bearer that is not a live session", async () =>
           return Promise.resolve("Published");
         },
       },
-      losses: { lose: taken, turnFailure: counted },
+      losses: { lose: taken, turnFailure: () => counted().then(() => open) },
       store: {
         storeBatch: () => {
           reached += 1;
@@ -1053,29 +1056,33 @@ test("a live post naming whose it is, or carrying what no event may, reaches no 
   await app.close();
 });
 
-test("a container's end is charged from its phase and its attempt's own last turn failure, under its own generation, and a fenced one is told to stop", async () => {
+test("a container's end is charged from its phase, its attempt's own last turn failure and its session's close, under its own generation, and a fenced one is told to stop", async () => {
   const asked: unknown[] = [];
-  let failure: SessionTurnFailure | undefined;
+  let ending: SessionPodEnding = {
+    turnFailure: undefined,
+    sessionClosed: false,
+  };
   let lost = 0;
   const app = sessionPlane({
     losses: {
       turnFailure: (read, generation) => {
         asked.push({ read, generation });
-        return Promise.resolve(failure);
+        return Promise.resolve(ending);
       },
       lose: (offered, generation, evidence) => {
         asked.push({ offered, generation, evidence });
         lost += 1;
-        return Promise.resolve(lost <= 3);
+        return Promise.resolve(lost <= 4);
       },
     },
   });
-  for (const [phase, failed] of [
-    ["Succeeded", undefined],
-    ["Failed", undefined],
-    ["Succeeded", "StoreRefused"],
+  for (const [phase, turnFailure, sessionClosed] of [
+    ["Succeeded", undefined, false],
+    ["Failed", undefined, false],
+    ["Succeeded", "StoreRefused", false],
+    ["Failed", "StoreRefused", true],
   ] as const) {
-    failure = failed;
+    ending = { turnFailure, sessionClosed };
     const ended = await app.inject({
       method: "POST",
       url: "/v1/session/ended",
@@ -1092,6 +1099,8 @@ test("a container's end is charged from its phase and its attempt's own last tur
     { offered: secret, generation: 3, evidence: "TurnFailed" },
     read,
     { offered: secret, generation: 3, evidence: "StoreRefused" },
+    read,
+    { offered: secret, generation: 3, evidence: "SessionClosed" },
   ]);
   const fenced = await app.inject({
     method: "POST",
@@ -1110,7 +1119,10 @@ test("a container's end naming anything but its phase reaches no boundary", asyn
     losses: {
       turnFailure: () => {
         reached += 1;
-        return Promise.resolve(undefined);
+        return Promise.resolve({
+          turnFailure: undefined,
+          sessionClosed: false,
+        });
       },
       lose: () => {
         reached += 1;

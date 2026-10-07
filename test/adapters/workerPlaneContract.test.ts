@@ -1247,7 +1247,8 @@ const sessionPlaneCases: Readonly<
       service: sessionPorts({
         losses: {
           lose: () => Promise.resolve(lost),
-          turnFailure: () => Promise.resolve(undefined),
+          turnFailure: () =>
+            Promise.resolve({ turnFailure: undefined, sessionClosed: false }),
         },
       }),
     })),

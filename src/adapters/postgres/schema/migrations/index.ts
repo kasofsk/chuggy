@@ -38,6 +38,7 @@ import { migration037 } from "./037-action-observations.ts";
 import { migration038 } from "./038-action-reach.ts";
 import { migration039 } from "./039-brief-images.ts";
 import { migration040 } from "./040-configuration-overrides.ts";
+import { migration041 } from "./041-session-closed-evidence.ts";
 import type { Migration } from "../shared.ts";
 
 export const migrations: readonly Migration[] = [
@@ -81,4 +82,5 @@ export const migrations: readonly Migration[] = [
   migration038,
   migration039,
   migration040,
+  migration041,
 ];

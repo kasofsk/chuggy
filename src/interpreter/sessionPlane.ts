@@ -36,6 +36,7 @@ import type { Partition } from "./projectStore.ts";
 import {
   sessionPodEvidence,
   type SessionAttemptEvidence,
+  type SessionPodEnding,
 } from "./sessionScheduler.ts";
 import type { SessionStoreRecorded } from "./sessionStore.ts";
 
@@ -84,7 +85,8 @@ export interface SessionAttemptBindingPort {
 
 /**
  * Ending the attempt a live bearer names, and reading how the last turn to end
- * under it failed, if one did: the two halves of recording its container's end.
+ * under it failed, if one did, and whether its session is closed: the two
+ * halves of recording its container's end.
  */
 export interface SessionAttemptLossPort {
   lose(
@@ -95,7 +97,7 @@ export interface SessionAttemptLossPort {
   turnFailure(
     secret: SessionBearerSecret,
     generation: number,
-  ): Promise<SessionTurnFailure | undefined>;
+  ): Promise<SessionPodEnding>;
 }
 
 /**
@@ -109,8 +111,8 @@ export async function sessionContainerEnded(
   generation: number,
   phase: SessionContainerEnd,
 ): Promise<boolean> {
-  const failure = await losses.turnFailure(secret, generation);
-  return losses.lose(secret, generation, sessionPodEvidence(phase, failure));
+  const ending = await losses.turnFailure(secret, generation);
+  return losses.lose(secret, generation, sessionPodEvidence(phase, ending));
 }
 
 /**

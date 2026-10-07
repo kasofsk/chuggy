@@ -20,7 +20,11 @@ import type {
 } from "../../src/interpreter/agentSession.ts";
 import { asRecoveryEpoch } from "../../src/interpreter/projectStore.ts";
 import { asPlacementId } from "../../src/interpreter/schedulerIdentity.ts";
-import type { FencedSessionAttempt } from "../../src/interpreter/sessionScheduler.ts";
+import type { SessionContainerEnd } from "../../src/contract/rosters.ts";
+import {
+  sessionPodEvidence,
+  type FencedSessionAttempt,
+} from "../../src/interpreter/sessionScheduler.ts";
 import { postgresHarnessNewEpoch, postgresHarnessProject } from "./harness.ts";
 import {
   sessionRigAttempt,
@@ -478,9 +482,9 @@ async function observed(
   return offered.find((one) => one.attempt === attempt.attempt);
 }
 
-/** The reason the second read gives for one attempt, which is the whole of its subject. */
-function reason(attempt: FencedSessionAttempt) {
-  return rig.scheduler.attemptTurnFailure(attempt);
+/** The failure the second read gives for one attempt, which is the whole of its subject. */
+async function reason(attempt: FencedSessionAttempt) {
+  return (await rig.scheduler.attemptTurnFailure(attempt)).turnFailure;
 }
 
 test("only a placed, live attempt of this epoch has a pod to observe", async () => {
@@ -739,9 +743,159 @@ test("a withdrawal after a refused turn leaves the refusal standing", async () =
   assert.equal(await reason(held.attempt), "StoreRefused");
 });
 
-test("a restore fences every attempt an older epoch issued, and the sweep is bounded", async () => {
+/** The label the observe step and a runner's report choose for one attempt's pod, from the scheduler's own read. */
+async function podEnded(
+  attempt: FencedSessionAttempt,
+  phase: SessionContainerEnd,
+): Promise<string | null | undefined> {
+  const ending = await rig.scheduler.attemptTurnFailure(attempt);
+  assert.equal(
+    await rig.scheduler.attemptEnded(
+      attempt,
+      sessionPodEvidence(phase, ending),
+    ),
+    true,
+  );
+  const ended = await sessionRigAttemptState(rig, attempt);
+  assert.equal(ended["state"], "Lost");
+  return ended["evidence"] as string | null | undefined;
+}
+
+test("the scheduler's read answers a session closed once it is, and open until then", async () => {
+  const { partition, session, held } = await working("read-closed");
+  assert.deepEqual(await rig.scheduler.attemptTurnFailure(held.attempt), {
+    turnFailure: undefined,
+    sessionClosed: false,
+  });
+  await rig.sessions.close(partition, session);
+  assert.deepEqual(await rig.scheduler.attemptTurnFailure(held.attempt), {
+    turnFailure: undefined,
+    sessionClosed: true,
+  });
+});
+
+for (const phase of ["Failed", "Succeeded"] as const) {
+  test(`a pod that answered its turn and ended ${phase} after its session closed ends its attempt SessionClosed`, async () => {
+    const label = `answered-closed-${phase.toLowerCase()}`;
+    const { partition, session, held, turn } = await working(label);
+    assert.equal(
+      await rig.plane.answer({
+        secret: held.secret,
+        generation: held.attempt.generation,
+        turn,
+        result: "the answer",
+      }),
+      "Answered",
+    );
+    await rig.sessions.close(partition, session);
+    assert.equal(await podEnded(held.attempt, phase), "SessionClosed");
+  });
+}
+
+test("a session closed under a claimed turn abandons the turn and ends the attempt SessionClosed", async () => {
+  const { partition, session, held, turn } = await working("claimed-closed");
+  await rig.sessions.close(partition, session);
+  const abandoned = await sessionRigTurnState(rig, partition, session, turn);
+  assert.equal(abandoned["state"], "Abandoned");
+  assert.equal(abandoned["failure"], "SessionClosed");
+  assert.equal(await podEnded(held.attempt, "Failed"), "SessionClosed");
+});
+
+for (const failure of ["StoreRefused", "AgentFailed"] as const) {
+  test(`a closed session's attempt that also failed a turn ${failure} ends SessionClosed`, async () => {
+    const label = `failed-closed-${failure.toLowerCase()}`;
+    const { partition, session, held, turn } = await working(label);
+    await rig.plane.fail({
+      secret: held.secret,
+      generation: held.attempt.generation,
+      turn,
+      failure,
+    });
+    await rig.sessions.close(partition, session);
+    assert.equal(await reason(held.attempt), failure);
+    assert.equal(await podEnded(held.attempt, "Succeeded"), "SessionClosed");
+  });
+}
+
+/** Ages one attempt's idle clock or lease an hour and runs the reaper for it, returning the evidence it wrote. */
+async function reapedAs(
+  held: SessionRigAttempt,
+  reaper: "Idle" | "Lapsed",
+): Promise<unknown> {
+  if (reaper === "Idle") {
+    await rig.harness.query(
+      `UPDATE session_attempt SET idle_since=now()-interval '1 hour' WHERE attempt=$1`,
+      [held.attempt.attempt],
+    );
+    await rig.scheduler.reapIdleAttempts(rig.epoch, 60, sessionRigBoundless);
+  } else {
+    await rig.harness.query(
+      `UPDATE session_attempt SET lease_expires_at=now()-interval '1 second'
+        WHERE attempt=$1`,
+      [held.attempt.attempt],
+    );
+    await rig.scheduler.reapLapsedAttempts(rig.epoch, sessionRigBoundless);
+  }
+  const reaped = await sessionRigAttemptState(rig, held.attempt);
+  assert.equal(reaped["state"], "Lost");
+  return reaped["evidence"];
+}
+
+for (const reaper of ["Idle", "Lapsed"] as const) {
+  for (const closed of [false, true]) {
+    const open = reaper === "Idle" ? "SessionIdle" : "LeaseExpired";
+    const expected = closed ? "SessionClosed" : open;
+    test(`the ${reaper.toLowerCase()} reaper ends an attempt on ${closed ? "a closed" : "an open"} session ${expected}`, async () => {
+      const label = `reaped-${reaper.toLowerCase()}-${String(closed)}`;
+      const { partition, session } = await launchable(label);
+      const held = await sessionRigAttempt(rig, partition, session, label);
+      await rig.scheduler.attemptPlaced(
+        held.attempt,
+        asPlacementId(`placement-${label}`),
+      );
+      if (closed) await rig.sessions.close(partition, session);
+      assert.equal(await reapedAs(held, reaper), expected);
+    });
+  }
+}
+
+test("a placement outcome and a withdrawal on a closed session keep their own labels", async () => {
+  for (const evidence of ["PlacementDenied", "PlacementUnavailable"] as const) {
+    const label = `placement-closed-${evidence.toLowerCase()}`;
+    const { partition, session } = await launchable(label);
+    const held = await sessionRigAttempt(rig, partition, session, label);
+    await rig.sessions.close(partition, session);
+    assert.equal(
+      await rig.scheduler.attemptEnded(held.attempt, evidence),
+      true,
+    );
+    assert.equal(
+      (await sessionRigAttemptState(rig, held.attempt))["evidence"],
+      evidence,
+    );
+  }
+  const { partition, session, held } = await working("withdrawn-closed");
+  await rig.sessions.close(partition, session);
+  assert.equal(
+    await rig.plane.hold(held.secret, held.attempt.generation),
+    true,
+  );
+  const withdrawnAttempt = await sessionRigAttemptState(rig, held.attempt);
+  assert.equal(withdrawnAttempt["state"], "Withdrawn");
+  assert.equal(withdrawnAttempt["evidence"], "AgentRateLimited");
+});
+
+test("a restore fences every attempt an older epoch issued, a closed session's among them, and the sweep is bounded", async () => {
   const { partition, session } = await launchable("fencing");
   const held = await sessionRigAttempt(rig, partition, session, "fencing");
+  const closing = await launchable("fencing-closed");
+  const closed = await sessionRigAttempt(
+    rig,
+    closing.partition,
+    closing.session,
+    "fencing-closed",
+  );
+  await rig.sessions.close(closing.partition, closing.session);
   const restored = await rig.harness.store.establishRecoveryEpoch(
     postgresHarnessNewEpoch(),
   );
@@ -757,6 +911,9 @@ test("a restore fences every attempt an older epoch issued, and the sweep is bou
   assert.equal(fenced["state"], "Superseded");
   assert.equal(fenced["evidence"], "Fenced");
   assert.equal(fenced["generation"], "2");
+  const fencedClosed = await sessionRigAttemptState(rig, closed.attempt);
+  assert.equal(fencedClosed["state"], "Superseded");
+  assert.equal(fencedClosed["evidence"], "Fenced");
   assert.equal(
     (await postgresHarnessProject(
       rig.harness.store,

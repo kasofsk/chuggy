@@ -200,19 +200,31 @@ export type SessionAttemptEvidence =
   (typeof allSessionAttemptEvidences)[number];
 
 /**
- * What an ended pod ends its attempt as. The turn row already names why the
- * turn ended, so the evidence says which of the three things happened to the
- * POD rather than repeating that failure: its store was refused and its
- * transcript has a hole, a turn it held ended without an answer, or it drained
- * the mailbox and stopped — which is `SessionIdle`, the same label the idle
- * reaper would have written for the same attempt one idle window later.
+ * What an ended pod's attempt is labelled from, read in one statement so both
+ * halves are of one moment: how the last turn it ended failed, if one did, and
+ * whether its session is closed.
+ */
+export interface SessionPodEnding {
+  readonly turnFailure: SessionTurnFailure | undefined;
+  readonly sessionClosed: boolean;
+}
+
+/**
+ * What an ended pod ends its attempt as: `SessionClosed` on a closed session
+ * whatever its turns did, and otherwise which of three things happened to the
+ * pod — its store was refused, a turn it held ended without an answer, or it
+ * drained the mailbox and stopped, which is `SessionIdle`. The turn row already
+ * names why the turn ended, so the evidence names why the attempt did rather
+ * than repeating that failure.
  */
 export function sessionPodEvidence(
   phase: SessionContainerEnd,
-  turnFailure: SessionTurnFailure | undefined,
+  ending: SessionPodEnding,
 ): SessionAttemptEvidence {
-  if (turnFailure === "StoreRefused") return "StoreRefused";
-  if (turnFailure !== undefined || phase === "Failed") return "TurnFailed";
+  if (ending.sessionClosed) return "SessionClosed";
+  if (ending.turnFailure === "StoreRefused") return "StoreRefused";
+  if (ending.turnFailure !== undefined || phase === "Failed")
+    return "TurnFailed";
   return "SessionIdle";
 }
 
@@ -294,12 +306,11 @@ export interface SessionSchedulerStore {
   ): Promise<readonly FencedSessionAttempt[]>;
 
   /**
-   * The failure of the last turn this attempt ended, asked only once its pod
-   * has stopped writing, because until then the answer is a row that moves.
+   * The failure of the last turn this attempt ended and whether its session is
+   * closed, asked only once its pod has stopped writing, because until then the
+   * answer is a row that moves.
    */
-  attemptTurnFailure(
-    attempt: FencedSessionAttempt,
-  ): Promise<SessionTurnFailure | undefined>;
+  attemptTurnFailure(attempt: FencedSessionAttempt): Promise<SessionPodEnding>;
 
   /** Ends at most `attemptsMax` attempts whose lease has run out. */
   reapLapsedAttempts(
