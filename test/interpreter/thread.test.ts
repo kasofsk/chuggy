@@ -48,6 +48,7 @@ import {
 import {
   resolvedThreadStandingRules,
   threadImagesHeading,
+  threadImagesRead,
   threadStandingRulesDefault,
   threadTurnBoundaryHeading,
 } from "../../src/contract/threadSeeding.ts";
@@ -545,6 +546,29 @@ test("a first turn naming an image carries the seeding block, then the images se
     input,
     `${threadSeedingText(seeding)}\n\n${threadImagesSection(images)}\n\n${threadTurnBoundaryHeading}\n\nwhat is blocking 42?`,
   );
+});
+
+test("what a turn's images section names, the contract's reader reads back, with what stood before it", () => {
+  const images = seededImages(2);
+  const seeding = {
+    standingRules: projectStandingRules,
+    drafts: [],
+    refusals: [],
+  };
+  const block = `${threadSeedingText(seeding)}\n\n${threadImagesSection(images)}`;
+
+  assert.deepEqual(threadImagesRead(block), {
+    before: threadSeedingText(seeding),
+    artifacts: images.map((image) => image.artifact),
+  });
+  assert.deepEqual(threadImagesRead(threadImagesSection(images)), {
+    before: "",
+    artifacts: images.map((image) => image.artifact),
+  });
+  assert.deepEqual(threadImagesRead(threadSeedingText(seeding)), {
+    before: threadSeedingText(seeding),
+    artifacts: [],
+  });
 });
 
 test("the images section is never shed", () => {

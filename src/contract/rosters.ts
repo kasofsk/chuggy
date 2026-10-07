@@ -574,6 +574,21 @@ export type SessionRunnerStanding = (typeof sessionRunnerStandings)[number];
 export const hostedRunsNotGrantedCode = "HostedRunsNotGranted";
 
 /**
+ * What the project-artifact routes answer while the store cannot, and what the
+ * message door answers when it cannot ask the store whether an image it was
+ * named is the project's. Shared so a console can say an image was the reason.
+ */
+export const artifactUnavailableCode = "ArtifactUnavailable";
+
+/** What the project-artifact upload refuses a body it read with. */
+export const projectArtifactUploadRefusalCodes = [
+  "ArtifactTooLarge",
+  "UnsupportedMediaType",
+] as const;
+export type ProjectArtifactUploadRefusalCode =
+  (typeof projectArtifactUploadRefusalCodes)[number];
+
+/**
  * What a door answers a caller with no runner registered on the project, where
  * the turn would be offered to runners; shared for the same reason.
  */

@@ -81,13 +81,13 @@ test("a refused first message is sent again into the thread it opened", async ()
   );
   let first: unknown;
   await act(async () => {
-    first = await result.current.composer.onSend("hello");
+    first = await result.current.composer.onSend("hello", []);
   });
   expect(first).toBe("Kept");
   expect(started).toStrictEqual([]);
   let second: unknown;
   await act(async () => {
-    second = await result.current.composer.onSend("hello");
+    second = await result.current.composer.onSend("hello", []);
   });
   expect(second).toBe("Sent");
   expect(started).toStrictEqual(["thread-1"]);
@@ -116,7 +116,7 @@ test("a press is held from the press, under the turn it posts, until the mailbox
   );
   let sent: Promise<unknown> = Promise.resolve();
   act(() => {
-    sent = result.current.composer.onSend("hello");
+    sent = result.current.composer.onSend("hello", []);
   });
   expect(result.current.sending.map((held) => held.text)).toStrictEqual([
     "hello",
@@ -147,7 +147,7 @@ test("a press the door refuses is held no longer", async () => {
   );
   let sent: Promise<unknown> = Promise.resolve();
   act(() => {
-    sent = result.current.composer.onSend("hello");
+    sent = result.current.composer.onSend("hello", []);
   });
   expect(result.current.sending).toHaveLength(1);
   await act(async () => {
@@ -171,7 +171,7 @@ test("a send the hosted grant refuses keeps the text and stops the composer taki
   );
   let sent: unknown;
   await act(async () => {
-    sent = await result.current.composer.onSend("hello");
+    sent = await result.current.composer.onSend("hello", []);
   });
   expect(sent).toBe("Kept");
   expect(result.current.composer.takes).toBe(false);

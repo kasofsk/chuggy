@@ -54,12 +54,18 @@
  * that is full; the code is carried and drawn for the same reason it is on a
  * conflict.
  *
- * A TURN IDENTITY BELONGS TO THE TEXT IT WAS MINTED FOR. Enqueuing is
- * idempotent on the turn, so re-pressing after a mailbox said `Backlogged` must
- * reuse the identity or risk a second copy of one message; and posting EDITED
- * text under a retained identity would answer the ordinal the first text
- * already has, so the reader would be told their correction landed when the
- * mailbox still holds what they corrected.
+ * A TURN IDENTITY BELONGS TO THE TEXT AND THE IMAGES IT WAS MINTED FOR.
+ * Enqueuing is idempotent on the turn, so re-pressing after a mailbox said
+ * `Backlogged` must reuse the identity or risk a second copy of one message;
+ * and posting EDITED text, or another set of images, under a retained identity
+ * would answer the ordinal the first message already has, so the reader would
+ * be told their correction landed when the mailbox still holds what they
+ * corrected.
+ *
+ * AN IMAGE IS A REASON A SEND IS REFUSED, AND SAID AS ONE. An upload the
+ * artifact route refused, an image the message door says is not the
+ * project's, and a store neither could ask are each drawn in the words of the
+ * image, so a reader is not left to guess which of the message's parts it was.
  */
 
 import { z } from "zod";
@@ -76,11 +82,14 @@ import type {
   ThreadTurnStopResponse,
 } from "../../../../src/contract/responses.ts";
 import {
+  artifactUnavailableCode,
   hostedRunsNotGrantedCode,
+  projectArtifactUploadRefusalCodes,
   threadMessageRefusalCodes,
 } from "../../../../src/contract/rosters.ts";
 import type {
   PlacementRoute,
+  ProjectArtifactUploadRefusalCode,
   SessionRunnerStanding,
   SessionTurnInputKind,
   ThreadMessageRefusalCode,
@@ -88,6 +97,8 @@ import type {
 } from "../../../../src/contract/rosters.ts";
 import type { ApiFailure, ApiResult } from "./apiRequest.ts";
 import { base64urlFromBytes } from "./base64url.ts";
+import { conversationAttachmentsSame } from "./conversationAttachments.ts";
+import type { ConversationAttachment } from "./conversationAttachments.ts";
 import {
   sessionRefusedNoRunner,
   sessionRunnerShort,
@@ -296,13 +307,24 @@ export function threadTurnMinted(bytes: Uint8Array): string {
   return `thread-turn-${base64urlFromBytes(bytes)}`;
 }
 
+/** What a press sent: the text, and the images attached to it. */
+export interface ThreadPressed {
+  readonly text: string;
+  readonly attached: readonly ConversationAttachment[];
+}
+
 /** The turn a press posts under: the one the last press minted where the text
- * is unchanged, and nothing — so the caller mints — where it is not. */
+ * and the images are unchanged, and nothing — so the caller mints — where
+ * either is not. */
 export function threadTurnRetained(
-  held: { readonly text: string; readonly turn: string } | undefined,
-  text: string,
+  held: (ThreadPressed & { readonly turn: string }) | undefined,
+  pressed: ThreadPressed,
 ): string | undefined {
-  return held !== undefined && held.text === text ? held.turn : undefined;
+  return held !== undefined &&
+    held.text === pressed.text &&
+    conversationAttachmentsSame(held.attached, pressed.attached)
+    ? held.turn
+    : undefined;
 }
 
 /** A message this page sent, under the turn identity it minted for it, held
@@ -313,8 +335,7 @@ export interface ThreadSending {
 }
 
 /** A message a thread's door handed back, and what the press ended as. */
-export interface ThreadKept {
-  readonly text: string;
+export interface ThreadKept extends ThreadPressed {
   /** The turn the text was sent as, where it is one message's. */
   readonly turn: string | undefined;
   readonly send: ThreadSend;
@@ -335,7 +356,12 @@ export function threadKeptWith(
     session,
     before === undefined
       ? kept
-      : { ...kept, text: `${before.text}\n\n${kept.text}`, turn: undefined },
+      : {
+          ...kept,
+          text: `${before.text}\n\n${kept.text}`,
+          attached: [...before.attached, ...kept.attached],
+          turn: undefined,
+        },
   );
 }
 
@@ -544,7 +570,7 @@ function threadRosterWord(code: ThreadMessageRefusalCode): string {
     case "ThreadTurnTooLarge":
       return "Oversize";
     case "ThreadImageUnknown":
-      return "Missing";
+      return "Image missing";
   }
 }
 
@@ -566,6 +592,45 @@ export function threadSendRefused(
   };
 }
 
+/** The word for a store that could not say whether an image is the
+ * project's, or take one. */
+const threadImagesUnavailable = "Images unavailable";
+
+/** The word one refusal of the upload's own is drawn as, total over its
+ * roster. */
+function threadUploadRosterWord(
+  code: ProjectArtifactUploadRefusalCode,
+): string {
+  switch (code) {
+    case "ArtifactTooLarge":
+      return "Image too large";
+    case "UnsupportedMediaType":
+      return "Image type refused";
+  }
+}
+
+/**
+ * An upload that failed, as the send it leaves unsent: the upload's own
+ * refusal in its word, a store that could not take it as unavailable, a cause
+ * a member can act on as that, and anything else as an image not uploaded.
+ */
+export function threadUploadRefused(
+  failure: ApiFailure,
+): ThreadSend & { readonly send: "Refused" } {
+  const known =
+    failure.outcome === "Rejected"
+      ? projectArtifactUploadRefusalCodes.find((code) => code === failure.code)
+      : undefined;
+  if (known !== undefined)
+    return threadSendRefused(threadUploadRosterWord(known));
+  if (
+    failure.outcome === "Retryable" &&
+    failure.code === artifactUnavailableCode
+  )
+    return threadSendRefused(threadImagesUnavailable);
+  return threadSendRefused(threadRefusalCause(failure) ?? "Image not uploaded");
+}
+
 /**
  * One post, classified. A wait and an ended thread are each drawn as the word
  * the door's own code names, and neither is a fault the reader can press
@@ -578,14 +643,22 @@ export function threadSendFrom(
     case "Ok":
       return { send: "Sent", ordinal: result.value.ordinal };
     case "Retryable":
-      return { send: "Waiting", why: threadRefusalWord(result.code) };
+      return {
+        send: "Waiting",
+        why:
+          result.code === artifactUnavailableCode
+            ? threadImagesUnavailable
+            : threadRefusalWord(result.code),
+      };
     case "Conflict":
       return { send: "Ended", why: threadRefusalWord(result.code) };
     case "Rejected":
       if (threadUnhosted(result)) return { send: "Unhosted" };
       if (sessionRefusedNoRunner(result)) return { send: "NoRunner" };
-      return threadRefusalCode(result.code) === "NotYourThread"
-        ? { send: "Unsettled", why: threadRefusalWord(result.code) }
+      if (threadRefusalCode(result.code) === "NotYourThread")
+        return { send: "Unsettled", why: threadRefusalWord(result.code) };
+      return threadRefusalCode(result.code) === "ThreadImageUnknown"
+        ? threadSendRefused(threadRefusalWord(result.code))
         : threadSendRefused(threadRefusalCause(result));
     case "Absent":
     case "Unauthenticated":

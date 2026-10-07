@@ -3,6 +3,11 @@
  * and once — never twice and never gone — while the door takes it, the mailbox
  * comes to list it, the store comes to hold its ask, and the mailbox's tail
  * moves past it. A press the door refuses is drawn once too, back in the box.
+ *
+ * A screenshot pasted is sent with the message and the session's turn names
+ * it, a sent turn draws the images it named from the project's own read of
+ * each, and an upload that fails is said over the box with the text and the
+ * image handed back and no message sent.
  */
 
 import {
@@ -19,14 +24,22 @@ import type {
   ThreadTranscriptResponse,
   ThreadTurnResponse,
 } from "../../../src/contract/responses.ts";
+import {
+  threadImageLine,
+  threadImagesHeading,
+  threadTurnBoundaryHeading,
+} from "../../../src/contract/threadSeeding.ts";
+import { conversationAskMessage } from "../app/core/conversation.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import { answer, settled } from "./screenHarness.tsx";
 import { elementScrollToStubbed } from "./scrolling.ts";
-import { sessionPlacementBody } from "./sessionPlacementFixture.ts";
 import { frame, streamServer } from "./streamDouble.ts";
 import { styleless } from "./styleless.ts";
-import { threadConversationMounted } from "./threadConversationMount.tsx";
-import { threadBody, threadStream, threadTurn } from "./threadFixture.ts";
+import {
+  threadConversationMounted,
+  threadReadsAnswered,
+} from "./threadConversationMount.tsx";
+import { threadBody, threadTurn } from "./threadFixture.ts";
 
 beforeEach(() => {
   resizeObserverStubbed();
@@ -86,25 +99,8 @@ function doorAsked(
   init?: { readonly method?: string; readonly body?: string },
 ) => Promise<Response> {
   return (url, init) => {
-    if (url.endsWith("/hosted-runs"))
-      return Promise.resolve(answer({ granted: true }));
-    if (url.endsWith("/session-placement"))
-      return Promise.resolve(
-        answer(sessionPlacementBody({ thread: "InCluster" })),
-      );
-    if (url.includes("/transcript"))
-      return Promise.resolve(
-        answer({
-          stream: threadStream,
-          entries,
-          held: entries.flatMap((held) =>
-            held.uuid === undefined ? [] : [held.uuid],
-          ),
-          cut: 1,
-          elided: 0,
-          truncated: false,
-        }),
-      );
+    const read = threadReadsAnswered(url, entries);
+    if (read !== undefined) return Promise.resolve(read);
     if (init?.method !== "POST" || !url.endsWith("/messages"))
       return Promise.resolve(answer({ code: "NotFound" }, 404));
     const sent = JSON.parse(init.body ?? "") as {
@@ -287,4 +283,143 @@ test("two messages sent before the mailbox lists either are each drawn once, in 
   expect(asksSaying(door.container, asked)).toHaveLength(1);
   expect(asksSaying(door.container, "and 42")).toHaveLength(1);
   styleless();
+});
+
+const artifact = "image/png:token-1";
+
+/** A turn's input as the message door composes one naming `artifact`. */
+const namingInput = `${threadImagesHeading}\n\n${threadImageLine({
+  artifact,
+  mediaType: "image/png",
+  path: `/api/v1/tenants/acme/projects/atlas/artifacts/${encodeURIComponent(artifact)}`,
+})}\n\n${threadTurnBoundaryHeading}\n\nwhat is wrong here`;
+
+interface ImagesAsked {
+  readonly url: string;
+  readonly method: string;
+  readonly body: unknown;
+}
+
+/** The door a case's page asks: the reads answered at once, the image read
+ * answered with `AQID`, and each upload and message as the case says. */
+function imagesMounted(script: {
+  readonly turns?: Parameters<typeof threadBody>[0]["turns"];
+  readonly upload?: () => Response;
+}): ImagesAsked[] {
+  const asked: ImagesAsked[] = [];
+  vi.stubGlobal("fetch", (url: string, init: RequestInit) => {
+    asked.push({
+      url,
+      method: init.method ?? "GET",
+      body: typeof init.body === "string" ? JSON.parse(init.body) : init.body,
+    });
+    const read = threadReadsAnswered(url, []);
+    if (read !== undefined) return Promise.resolve(read);
+    if (url.includes("/artifacts/"))
+      return Promise.resolve(
+        answer({ content: "AQID", mediaType: "image/png", encoding: "base64" }),
+      );
+    if (url.endsWith("/artifacts"))
+      return Promise.resolve(
+        script.upload?.() ?? answer({ artifact, digest: "d" }, 201),
+      );
+    if (url.endsWith("/messages"))
+      return Promise.resolve(answer({ turn: "t", ordinal: 1 }, 202));
+    return Promise.resolve(answer({ code: "NotFound" }, 404));
+  });
+  const server = streamServer(
+    [
+      {
+        status: 200,
+        chunks: [frame("ready", undefined, { version: 1 })],
+        hold: true,
+      },
+    ],
+    "token",
+  );
+  threadConversationMounted(threadBody({ turns: script.turns ?? [] }), server);
+  return asked;
+}
+
+async function pastedAndSent(text: string): Promise<void> {
+  fireEvent.paste(box(), {
+    clipboardData: {
+      files: [
+        new File([new Uint8Array([1, 2, 3])], "shot", { type: "image/png" }),
+      ],
+    },
+  });
+  await screen.findByRole("img", { name: "Image 1" });
+  fireEvent.change(box(), { target: { value: text } });
+  await waitFor(() => {
+    expect(box().value).toBe(text);
+  });
+  await act(async () => {
+    fireEvent.keyDown(box(), { key: "Enter" });
+    await Promise.resolve();
+  });
+  await settled();
+}
+
+test("a pasted screenshot is uploaded and the message the session is sent names it", async () => {
+  const asked = imagesMounted({});
+  await settled();
+  await pastedAndSent("what is wrong here");
+  const posts = asked.filter((one) => one.method === "POST");
+  expect(posts.map((one) => one.url.split("/").at(-1))).toStrictEqual([
+    "artifacts",
+    "messages",
+  ]);
+  expect(posts[1]?.body).toMatchObject({
+    message: "what is wrong here",
+    images: [artifact],
+  });
+  styleless();
+});
+
+test("a sent turn draws each image it named from the project's own read, and no Context card for it", async () => {
+  const asked = imagesMounted({
+    turns: [
+      threadTurn({
+        turn: "turn-1",
+        input: namingInput,
+        state: "Queued",
+        result: undefined,
+      }),
+    ],
+  });
+  const drawn = await screen.findByRole("img", { name: "Image sent" });
+  expect(drawn.getAttribute("src")).toBe("data:image/png;base64,AQID");
+  expect(
+    asked.some((one) =>
+      one.url.endsWith(`/artifacts/${encodeURIComponent(artifact)}`),
+    ),
+  ).toBe(true);
+  expect(screen.queryByText("Context")).toBeNull();
+  expect(screen.getByText("what is wrong here")).toBeDefined();
+  styleless();
+});
+
+test("an upload that fails is said over the box, nothing is sent, and the text and the image are handed back", async () => {
+  const asked = imagesMounted({
+    upload: () =>
+      answer({ error: { code: "ArtifactTooLarge" }, bytesMax: 1 }, 413),
+  });
+  await settled();
+  await pastedAndSent("what is wrong here");
+  await screen.findByText("Not sent · Image too large");
+  expect(asked.some((one) => one.url.endsWith("/messages"))).toBe(false);
+  await waitFor(() => {
+    expect(box().value).toBe("what is wrong here");
+  });
+  expect(screen.getByRole("img", { name: "Image 1" })).toBeDefined();
+  styleless();
+});
+
+test("a turn's images section is read off its context into the images it names", () => {
+  expect(conversationAskMessage(namingInput)).toStrictEqual({
+    ask: "Message",
+    text: "what is wrong here",
+    images: [artifact],
+  });
 });

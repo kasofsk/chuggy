@@ -97,6 +97,12 @@ export const ConversationWorkOpen = createContext(false);
  * pace. */
 export const ConversationPaced = createContext(false);
 
+/** How the page draws one image a message named, by its identity, where the
+ * page can read one: the surface reaches no API, so the read is the page's. */
+export const ConversationImage = createContext<
+  ((artifact: string) => ReactNode) | undefined
+>(undefined);
+
 /** The exchange that holds the one thing on the surface that moves, where
  * there is one, by the name it keeps while the transcript comes to hold its
  * turn, and whether the engine is what runs for a turn nothing is drawn of. */
@@ -257,16 +263,29 @@ const conversationReportComponents = { Text: ConversationReport };
 
 /** The member's own words, on the right, as they were typed — with the block
  * the server composed in front of a thread's first message folded away above
- * them, because they neither typed it nor asked to read it. */
+ * them, because they neither typed it nor asked to read it, and the images the
+ * message named drawn over them, as the page reads each. */
 function ConversationBubble(props: {
   readonly context: string | undefined;
+  readonly images: readonly string[] | undefined;
 }): ReactNode {
+  const image = useContext(ConversationImage);
   return (
     <div className="flex flex-col items-end gap-2">
       {props.context === undefined ? null : (
         <ConversationCard label="Context">
           <MarkdownReport text={props.context} bare />
         </ConversationCard>
+      )}
+      {props.images === undefined || image === undefined ? null : (
+        <ul
+          aria-label="Images"
+          className="flex max-w-[85%] flex-wrap justify-end gap-2"
+        >
+          {props.images.map((artifact, at) => (
+            <li key={at}>{image(artifact)}</li>
+          ))}
+        </ul>
       )}
       <div className="bg-bubble rounded-3 max-w-[85%] px-4 py-3 wrap-anywhere whitespace-pre-wrap">
         <MessagePrimitive.Parts components={{ Text: ConversationSaid }} />
@@ -303,7 +322,7 @@ function ConversationAskBody(props: {
   if (ask === undefined) return null;
   switch (ask.ask) {
     case "Message":
-      return <ConversationBubble context={ask.context} />;
+      return <ConversationBubble context={ask.context} images={ask.images} />;
     case "Wake":
       return <ConversationSystemLine words={`${ask.wake} · ${ask.resource}`} />;
     case "Document":

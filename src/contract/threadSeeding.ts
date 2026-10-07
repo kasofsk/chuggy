@@ -1,7 +1,7 @@
 /**
  * The headings a thread's first turn is written under, the one a later turn
- * naming an image opens with instead, the boundary over the member's own
- * message, and the standing rules a project runs its threads by until it sets
+ * naming an image opens with instead and the lines under it, the boundary over
+ * the member's own message, and the standing rules a project runs its threads by until it sets
  * its own.
  *
  * IT IS THE CONTRACT BECAUSE EVERY SIDE READS IT. The interpreter writes the
@@ -49,6 +49,43 @@ export const threadTurnBoundaryHeading = "# What your owner says";
  * off correctly.
  */
 export const threadImagesHeading = "# Images with this message";
+
+/** What separates the fields of one line under `threadImagesHeading`, which
+ * no artifact identity, media type or fetch path contains. */
+const threadImageFieldSeparator = " — ";
+
+/** One line under `threadImagesHeading`: the image's identity, its media type,
+ * and where a session fetches it. */
+export function threadImageLine(image: {
+  readonly artifact: string;
+  readonly mediaType: string;
+  readonly path: string;
+}): string {
+  return `- ${[image.artifact, image.mediaType, `fetch at ${image.path}`].join(threadImageFieldSeparator)}`;
+}
+
+/**
+ * A block with its images section read off: what stands before it, and the
+ * identity of each image it names. The section is the last thing a block
+ * holds, so a block with none is answered whole and naming nothing.
+ */
+export function threadImagesRead(block: string): {
+  readonly before: string;
+  readonly artifacts: readonly string[];
+} {
+  const opens = block.startsWith(`${threadImagesHeading}\n\n`)
+    ? 0
+    : block.lastIndexOf(`\n\n${threadImagesHeading}\n\n`);
+  if (opens < 0) return { before: block, artifacts: [] };
+  const lines = block.slice(opens).trim().split("\n").slice(1);
+  return {
+    before: block.slice(0, opens),
+    artifacts: lines.flatMap((line) => {
+      const ends = line.indexOf(threadImageFieldSeparator);
+      return line.startsWith("- ") && ends > 2 ? [line.slice(2, ends)] : [];
+    }),
+  };
+}
 
 /**
  * The line every block recorded before that heading existed ended on, and so

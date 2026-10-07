@@ -44,7 +44,14 @@
  *
  * A MESSAGE HANDED BACK IS PUT BACK. The words the page could not take go back
  * in the box ahead of anything typed since, a blank line between, so neither
- * is lost, and a second handed back goes under the first.
+ * is lost, and a second handed back goes under the first. Its images go back
+ * ahead of any attached since.
+ *
+ * THE IMAGES ARE HELD WHERE THE TEXT IS. Both live as long as this surface's
+ * runtime, so a box that goes and comes back with its words still in it has
+ * its images too, and one that lost its words lost both. A press holding more
+ * than the page's bound — images handed back under ones attached since — is
+ * put straight back with the bound said, and nothing is sent.
  *
  * NOTHING STANDS BETWEEN THE COLUMN AND THE COMPOSER BUT WHAT A READER NEEDS
  * THERE. The engine runs where the answer is about to be and not on a strip of
@@ -80,6 +87,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
 import {
+  conversationAttachedWith,
+  conversationAttachmentsRestored,
+} from "../../core/conversationAttachments.ts";
+import type {
+  ConversationAttaches,
+  ConversationAttachment,
+  ConversationAttachRefusal,
+} from "../../core/conversationAttachments.ts";
+import {
   conversationExchangeNamed,
   conversationExchangeParts,
   conversationIndicatedNamed,
@@ -91,12 +107,14 @@ import type { ConversationExchange } from "../../core/conversation.ts";
 import type { RunPrompt } from "../../core/runConfiguration.ts";
 import { ConversationComposer } from "./ConversationComposer.tsx";
 import type {
+  ConversationComposerAttached,
   ConversationComposerButton,
   ConversationComposerProps,
 } from "./ConversationComposer.tsx";
 import {
   ConversationAnswerMessage,
   ConversationAskMessage,
+  ConversationImage,
   ConversationIndicated,
   ConversationLettingHeld,
   ConversationPaced,
@@ -303,6 +321,97 @@ function useConversationStopBeat(): ConversationStopBeat {
   );
 }
 
+/** The images held for the message being written, as the composer is handed
+ * them, and what a dispatch takes of them and puts back. */
+interface ConversationAttachmentsHeld extends ConversationComposerAttached {
+  /** The images held, which the box is cleared of. */
+  readonly taken: () => readonly ConversationAttachment[];
+  /** Puts images handed back ahead of any held since, saying the bound where
+   * they are past it. */
+  readonly restored: (back: readonly ConversationAttachment[]) => void;
+}
+
+/** One file's bytes, as the image it was pasted as. */
+async function conversationFileAttachment(
+  file: File,
+): Promise<ConversationAttachment> {
+  return {
+    mediaType: file.type,
+    content: new Uint8Array(await file.arrayBuffer()),
+  };
+}
+
+function useConversationAttachments(
+  attaches: ConversationAttaches | undefined,
+): ConversationAttachmentsHeld {
+  const held = useRef<readonly ConversationAttachment[]>([]);
+  const [attached, setAttached] = useState<readonly ConversationAttachment[]>(
+    [],
+  );
+  const [attachRefused, setAttachRefused] = useState<
+    ConversationAttachRefusal | undefined
+  >(undefined);
+  const put = (next: readonly ConversationAttachment[]): void => {
+    held.current = next;
+    setAttached(next);
+  };
+  const attach = async (files: readonly File[]): Promise<void> => {
+    if (attaches === undefined) return;
+    const pasted = await Promise.all(files.map(conversationFileAttachment));
+    const next = conversationAttachedWith(held.current, pasted, attaches);
+    put(next.attached);
+    setAttachRefused(next.refused);
+  };
+  return {
+    attached,
+    attachRefused,
+    onAttach: (files) => {
+      void attach(files);
+    },
+    onDetach: (attachment) => {
+      put(held.current.filter((kept) => kept !== attachment));
+      setAttachRefused(undefined);
+    },
+    taken: () => {
+      const taken = held.current;
+      put([]);
+      setAttachRefused(undefined);
+      return taken;
+    },
+    restored: (back) => {
+      const next = conversationAttachmentsRestored(held.current, back);
+      put(next);
+      if (attaches !== undefined && next.length > attaches.countMax)
+        setAttachRefused("Bound");
+    },
+  };
+}
+
+/** One press handed to the page with the images the box held, both put back
+ * where the page kept them, and put back unsent where the images are more
+ * than the page's bound. */
+async function conversationDispatched(
+  message: AppendMessage,
+  composer: ConversationComposerProps | undefined,
+  held: {
+    readonly attachments: ConversationAttachmentsHeld;
+    readonly setSending: (sending: boolean) => void;
+    readonly restore: ConversationRestore;
+  },
+): Promise<void> {
+  if (composer === undefined) return;
+  const text = conversationAppendedText(message);
+  const attached = held.attachments.taken();
+  if (attached.length > (composer.attaches?.countMax ?? 0)) {
+    held.restore(text, attached);
+    return;
+  }
+  held.setSending(true);
+  const sent = await composer.onSend(text, attached);
+  held.setSending(false);
+  if (sent === "Kept") held.restore(text, attached);
+}
+
 function useConversationRuntime(props: {
   readonly exchanges: readonly ConversationExchange[];
   readonly composer: ConversationComposerProps | undefined;
@@ -311,12 +420,13 @@ function useConversationRuntime(props: {
   readonly beat: ConversationStopBeat;
   /** Told whether a send is on its way, as one begins and as it ends. */
   readonly onSending: (sending: boolean) => void;
+  readonly attachments: ConversationAttachmentsHeld;
 }): AssistantRuntime {
   const setSending = props.onSending;
   const dispatchRef = useRef<(message: AppendMessage) => Promise<void>>(() =>
     Promise.resolve(),
   );
-  const restoreRef = useRef<(text: string) => void>(() => undefined);
+  const restoreRef = useRef<ConversationRestore>(() => undefined);
   const queue = useMemo<ExternalThreadQueueAdapter>(
     () => ({
       items: [],
@@ -329,15 +439,14 @@ function useConversationRuntime(props: {
     }),
     [],
   );
-  const dispatch = async (message: AppendMessage): Promise<void> => {
-    const composer = props.composer;
-    if (composer === undefined) return;
-    const text = conversationAppendedText(message);
-    setSending(true);
-    const sent = await composer.onSend(text);
-    setSending(false);
-    if (sent === "Kept") restoreRef.current(text);
-  };
+  const dispatch = (message: AppendMessage): Promise<void> =>
+    conversationDispatched(message, props.composer, {
+      attachments: props.attachments,
+      setSending,
+      restore: (text, attached) => {
+        restoreRef.current(text, attached);
+      },
+    });
   const onStop = props.composer?.onStop;
   const { stoppable, beat } = props;
   const runtime = useExternalStoreRuntime<ThreadMessageLike>({
@@ -359,7 +468,7 @@ function useConversationRuntime(props: {
   const led = useRef<string | undefined>(undefined);
   useEffect(() => {
     dispatchRef.current = dispatch;
-    restoreRef.current = (text) => {
+    restoreRef.current = (text, attached) => {
       const box = runtime.thread.composer;
       const restored = conversationBoxRestored(
         { text: box.getState().text, back: led.current },
@@ -367,17 +476,24 @@ function useConversationRuntime(props: {
       );
       led.current = restored.back;
       box.setText(restored.text);
+      props.attachments.restored(attached);
     };
   });
   useConversationBack(props.composer?.back, restoreRef);
   return runtime;
 }
 
+/** Puts a message handed back into the box: its text, and its images. */
+type ConversationRestore = (
+  text: string,
+  attached: readonly ConversationAttachment[],
+) => void;
+
 /** Puts a message the page handed back while the box was not drawn into the
  * box, once for each the page hands it. */
 function useConversationBack(
   back: ConversationComposerProps["back"],
-  restore: { readonly current: (text: string) => void },
+  restore: { readonly current: ConversationRestore },
 ): void {
   const put = useRef<string | undefined>(undefined);
   useEffect(() => {
@@ -386,7 +502,7 @@ function useConversationBack(
       return;
     }
     put.current = back.text;
-    restore.current(back.text);
+    restore.current(back.text, back.attached ?? []);
     back.taken();
   });
 }
@@ -472,6 +588,7 @@ function ConversationDrawn(props: {
   /** The name of the exchange holding the one thing that moves. */
   readonly named: string | undefined;
   readonly engine: boolean;
+  readonly image: ConversationProps["image"];
   readonly children: ReactNode;
 }): ReactNode {
   const { named, engine } = props;
@@ -480,7 +597,9 @@ function ConversationDrawn(props: {
     <ConversationWorkOpen.Provider value={props.workOpen}>
       <ConversationPaced.Provider value={props.paced}>
         <ConversationIndicated.Provider value={indicated}>
-          <ConversationLettingHeld>{props.children}</ConversationLettingHeld>
+          <ConversationImage.Provider value={props.image}>
+            <ConversationLettingHeld>{props.children}</ConversationLettingHeld>
+          </ConversationImage.Provider>
         </ConversationIndicated.Provider>
       </ConversationPaced.Provider>
     </ConversationWorkOpen.Provider>
@@ -513,6 +632,40 @@ export interface ConversationProps {
   /** Whether an answer still being written is let out at an even pace, which
    * is what a page that hears its turns as they are written asks for. */
   readonly paced?: boolean;
+  /** How the page draws an image a message named, by its identity. A page
+   * that hands none draws no image of a message. */
+  readonly image?: (artifact: string) => ReactNode;
+}
+
+/** The composer at the foot of the column, with what the surface holds of
+ * its button and its images. */
+function ConversationFoot(props: {
+  readonly composer: ConversationComposerProps;
+  readonly pane: boolean;
+  readonly sending: boolean;
+  readonly stoppable: string | undefined;
+  readonly beat: ConversationStopBeat;
+  readonly attachments: ConversationComposerAttached;
+}): ReactNode {
+  const { beat, attachments } = props;
+  return (
+    <div
+      className={`conversation-column mx-auto w-full ${props.pane ? "conversation-foot" : "pt-4"}`}
+    >
+      <ConversationComposer
+        {...props.composer}
+        busy={props.sending}
+        stops={props.stoppable !== undefined}
+        ignores={beat.ignores}
+        rests={beat.rests(props.stoppable === undefined ? "Send" : "Stop")}
+        onSendClick={beat.sent}
+        attached={attachments.attached}
+        attachRefused={attachments.attachRefused}
+        onAttach={attachments.onAttach}
+        onDetach={attachments.onDetach}
+      />
+    </div>
+  );
 }
 
 /**
@@ -534,12 +687,14 @@ export function Conversation(props: ConversationProps): ReactNode {
       ? undefined
       : conversationTurnStoppable(activeExchanges, indicator);
   const beat = useConversationStopBeat();
+  const attachments = useConversationAttachments(props.composer?.attaches);
   const runtime = useConversationRuntime({
     exchanges: activeExchanges,
     composer: props.composer,
     stoppable,
     beat,
     onSending: setSending,
+    attachments,
   });
   const composed = props.composer !== undefined;
   const inset = props.pane === true ? "px-4 py-4" : "";
@@ -561,6 +716,7 @@ export function Conversation(props: ConversationProps): ReactNode {
               paced={props.paced === true}
               named={conversationIndicatedNamed(activeExchanges, indicator)}
               engine={composed}
+              image={props.image}
             >
               <ConversationBody
                 reading={reading}
@@ -574,18 +730,14 @@ export function Conversation(props: ConversationProps): ReactNode {
         </ThreadPrimitive.Viewport>
         <ConversationBottom />
         {props.composer === undefined ? null : (
-          <div
-            className={`conversation-column mx-auto w-full ${props.pane === true ? "conversation-foot" : "pt-4"}`}
-          >
-            <ConversationComposer
-              {...props.composer}
-              busy={sending}
-              stops={stoppable !== undefined}
-              ignores={beat.ignores}
-              rests={beat.rests(stoppable === undefined ? "Send" : "Stop")}
-              onSendClick={beat.sent}
-            />
-          </div>
+          <ConversationFoot
+            composer={props.composer}
+            pane={props.pane === true}
+            sending={sending}
+            stoppable={stoppable}
+            beat={beat}
+            attachments={attachments}
+          />
         )}
       </ThreadPrimitive.Root>
     </AssistantRuntimeProvider>
