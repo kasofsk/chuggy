@@ -12,6 +12,7 @@ import type { ReactNode } from "react";
 import { ProjectlessFrame } from "./ProjectCreation.tsx";
 import { tenantAccountsRoutePath } from "./settings/TenantAccountsPage.tsx";
 import { tenantPeopleRoutePath } from "./settings/TenantPeoplePage.tsx";
+import { tenantPermissionsRoutePath } from "./settings/TenantPermissionsPage.tsx";
 import { Table } from "./ui/Table.tsx";
 
 /** This page's own address, which its reads take their tenant from. */
@@ -20,13 +21,21 @@ export const tenantSettingsRoutePath = "/tenants/$tenant/settings";
 interface TenantSettingsGroup {
   readonly id: string;
   readonly label: string;
-  readonly to: typeof tenantAccountsRoutePath | typeof tenantPeopleRoutePath;
+  readonly to:
+    | typeof tenantAccountsRoutePath
+    | typeof tenantPeopleRoutePath
+    | typeof tenantPermissionsRoutePath;
 }
 
 /** The tenant's settings groups, in the order they are listed. */
 const tenantSettingsGroups: readonly TenantSettingsGroup[] = [
   { id: "accounts", label: "Accounts", to: tenantAccountsRoutePath },
   { id: "people", label: "People", to: tenantPeopleRoutePath },
+  {
+    id: "permissions",
+    label: "Permissions",
+    to: tenantPermissionsRoutePath,
+  },
 ];
 
 function TenantSettingsGroupRow(props: {

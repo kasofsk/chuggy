@@ -18,6 +18,7 @@ import type { ReactNode } from "react";
 import {
   accessProjectRoles,
   accessTenantRoles,
+  type AccessAuthorityPerson,
   type AccessTenantAbilities,
   type AccessTenantPerson,
 } from "../../../../../src/contract/accessPlane.ts";
@@ -120,8 +121,9 @@ function useTenantPersonChange(
   };
 }
 
-function TenantPersonWho(props: {
-  readonly person: AccessTenantPerson;
+/** Who one person is, as a People row and a permission's holder both draw them. */
+export function TenantPersonWho(props: {
+  readonly person: AccessAuthorityPerson;
 }): ReactNode {
   const named = tenantPersonName(props.person);
   return (
