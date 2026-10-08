@@ -25,7 +25,10 @@ import {
   type PermissionHolder,
   type PermissionRow,
 } from "../../core/permissions.ts";
-import { accessFailureLabel } from "../../core/tenantPeople.ts";
+import {
+  accessFailureLabel,
+  tenantPeopleTruncated,
+} from "../../core/tenantPeople.ts";
 import { Button } from "../ui/Button.tsx";
 import { Confirm } from "../ui/Confirm.tsx";
 import { Notice } from "../ui/Notice.tsx";
@@ -259,4 +262,13 @@ export function PermissionsSection<
       {props.children}
     </Panel>
   );
+}
+
+/** What a section says beside its table where its level's list was cut short. */
+export function PermissionsTruncated(props: {
+  readonly truncated: boolean;
+}): ReactNode {
+  return props.truncated ? (
+    <Notice tone="parked" inline detail={tenantPeopleTruncated} />
+  ) : null;
 }

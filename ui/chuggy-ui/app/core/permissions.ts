@@ -1,5 +1,5 @@
 /**
- * Who holds each of a workspace's permissions and each of the site's, as rows:
+ * Who holds each of a project's, a workspace's and the site's permissions, as rows:
  * one a permission, named, and its holders in the order they are drawn, each
  * saying what kind of holder it is beside the words it is drawn in.
  *
@@ -10,21 +10,22 @@
  *
  * What a row may be given is what its permission admits less what holds it
  * already: each group the contract's record admits, a workspace's admins where
- * the record admits a workspace, and a person from the People list.
+ * the record admits a workspace, and a person from the level's people.
  */
 
 import {
+  accessProjectAuthorityAdmits,
   accessSiteAuthorityAdmits,
   accessTenantAuthorityAdmits,
   type AccessAuthorityPerson,
   type AccessGroup,
+  type AccessProjectAuthorities,
+  type AccessProjectAuthority,
   type AccessSiteAuthorities,
   type AccessSiteAuthority,
   type AccessTenantAbilities,
   type AccessTenantAuthorities,
   type AccessTenantAuthority,
-  type AccessTenantPeople,
-  type AccessTenantPerson,
 } from "../../../../src/contract/accessPlane.ts";
 
 import { tenantPersonName } from "./tenantPeople.ts";
@@ -32,6 +33,9 @@ import { tenantPersonName } from "./tenantPeople.ts";
 /** What the page draws for a reader the workspace's list is not answered to. */
 export const tenantPermissionsWithheld =
   "A workspace admin manages permissions";
+
+/** What the page draws for a reader the project's list is not answered to. */
+export const projectPermissionsWithheld = "A project admin manages permissions";
 
 export const permissionsNobody = "Nobody";
 
@@ -59,7 +63,8 @@ export type PermissionHolder =
       readonly words: string;
     };
 
-export type PermissionAuthority = AccessTenantAuthority | AccessSiteAuthority;
+export type PermissionAuthority =
+  AccessTenantAuthority | AccessSiteAuthority | AccessProjectAuthority;
 
 /** One permission, named, and who holds it in the order they are drawn. */
 export interface PermissionRow<
@@ -70,15 +75,16 @@ export interface PermissionRow<
   readonly holders: readonly PermissionHolder[];
 }
 
-export type PermissionLevel = "Tenant" | "Site";
+export type PermissionLevel = "Project" | "Tenant" | "Site";
 
-/** Whether the reader may change one permission, given the workspace's abilities where they were read. */
+/** Whether the reader may change one permission, given the workspace's abilities where they were read; a project's and the site's lists answer only a reader who may. */
 export function permissionChangeable(
   level: PermissionLevel,
   authority: PermissionAuthority,
   abilities: AccessTenantAbilities | undefined,
 ): boolean {
   switch (level) {
+    case "Project":
     case "Site":
       return true;
     case "Tenant":
@@ -124,6 +130,21 @@ export function tenantPermissionName(authority: AccessTenantAuthority): string {
       return "Member grants";
     case "HostedRunsGranters":
       return "Hosted run grants";
+    case "AuthorityManagers":
+      return "Permission changes";
+  }
+}
+
+export function projectPermissionName(
+  authority: AccessProjectAuthority,
+): string {
+  switch (authority) {
+    case "AdminGranters":
+      return "Admin grants";
+    case "DeveloperGranters":
+      return "Developer grants";
+    case "DispatcherGranters":
+      return "Dispatcher grants";
     case "AuthorityManagers":
       return "Permission changes";
   }
@@ -204,14 +225,28 @@ function permissionHolders(
   ];
 }
 
+/** A level whose holders are its groups, people and unnamed count alone, each row named. */
+function permissionRowsNamed<Authority extends PermissionAuthority>(
+  authorities: readonly (PermissionHeld & { readonly authority: Authority })[],
+  name: (authority: Authority) => string,
+): readonly PermissionRow<Authority>[] {
+  return authorities.map((held) => ({
+    authority: held.authority,
+    name: name(held.authority),
+    holders: permissionHolders(held, [], []),
+  }));
+}
+
 export function tenantPermissionRows(
   answer: AccessTenantAuthorities,
 ): readonly PermissionRow<AccessTenantAuthority>[] {
-  return answer.authorities.map((held) => ({
-    authority: held.authority,
-    name: tenantPermissionName(held.authority),
-    holders: permissionHolders(held, [], []),
-  }));
+  return permissionRowsNamed(answer.authorities, tenantPermissionName);
+}
+
+export function projectPermissionRows(
+  answer: AccessProjectAuthorities,
+): readonly PermissionRow<AccessProjectAuthority>[] {
+  return permissionRowsNamed(answer.authorities, projectPermissionName);
 }
 
 /** The site's admins manage its permissions whoever else does, and its list does not name them. */
@@ -249,6 +284,12 @@ export function tenantPermissionAdmits(
   return { groups: accessTenantAuthorityAdmits[authority], tenants: false };
 }
 
+export function projectPermissionAdmits(
+  authority: AccessProjectAuthority,
+): PermissionAdmits {
+  return { groups: accessProjectAuthorityAdmits[authority], tenants: false };
+}
+
 export function sitePermissionAdmits(
   authority: AccessSiteAuthority,
 ): PermissionAdmits {
@@ -274,21 +315,48 @@ export type PermissionChoice =
 export const permissionMembersGrantLine =
   "Members will see people and can remove other members.";
 
+export const permissionDevelopersGrantLine =
+  "Developers will see people and can remove other developers.";
+
+/** The group whose grant opens the level's people list to it, and the line it carries. */
 function permissionChoiceGroupLine(
+  level: PermissionLevel,
   row: PermissionRow,
   group: AccessGroup,
 ): string | undefined {
-  return row.authority === "MemberGranters" && group === "TenantMembers"
-    ? permissionMembersGrantLine
-    : undefined;
+  switch (level) {
+    case "Project":
+      return row.authority === "DeveloperGranters" &&
+        group === "ProjectDevelopers"
+        ? permissionDevelopersGrantLine
+        : undefined;
+    case "Tenant":
+      return row.authority === "MemberGranters" && group === "TenantMembers"
+        ? permissionMembersGrantLine
+        : undefined;
+    case "Site":
+      return undefined;
+  }
+}
+
+/** Where a level's people are chosen from, said beside `Person`. */
+function permissionPersonLine(level: PermissionLevel): string {
+  switch (level) {
+    case "Project":
+      return "From this project's people";
+    case "Tenant":
+    case "Site":
+      return "From the People list";
+  }
 }
 
 /**
  * What a row may be given, in the order offered: each group admitted and not
  * held, this workspace's admins where admitted and not holding, and a person
- * where the People list was read and leaves someone to offer.
+ * where the level's people were read and leave someone to offer.
  */
 export function permissionAdditionChoices(
+  level: PermissionLevel,
   row: PermissionRow,
   admits: PermissionAdmits,
   tenant: string,
@@ -307,7 +375,7 @@ export function permissionAdditionChoices(
       kind: "Group" as const,
       group,
       words: permissionGroupName(group),
-      line: permissionChoiceGroupLine(row, group),
+      line: permissionChoiceGroupLine(level, row, group),
     })),
     ...(admits.tenants && !tenantHeld
       ? [
@@ -325,17 +393,17 @@ export function permissionAdditionChoices(
           {
             kind: "Person" as const,
             words: "Person",
-            line: "From the People list",
+            line: permissionPersonLine(level),
           },
         ]),
   ];
 }
 
-/** The People list's people who do not hold the row's permission, absent where the list was not read. */
-export function permissionAdditionPeople(
-  people: AccessTenantPeople | undefined,
+/** The level's people who do not hold the row's permission, absent where they were not read. */
+export function permissionAdditionPeople<Person extends AccessAuthorityPerson>(
+  people: { readonly people: readonly Person[] } | undefined,
   row: PermissionRow,
-): readonly AccessTenantPerson[] | undefined {
+): readonly Person[] | undefined {
   return people?.people.filter(
     (person) =>
       !row.holders.some(
