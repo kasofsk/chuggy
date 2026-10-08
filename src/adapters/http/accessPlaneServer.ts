@@ -1,9 +1,9 @@
 /**
  * The access plane's server: a tenant's and a project's people, granting and
  * removing their roles, giving and taking a person's hosted runs, inviting a
- * person by their GitHub account, and what the caller may do at the site, a
- * tenant or a project, each for a caller the authority says holds the kind it
- * needs.
+ * person by their GitHub account, and what the caller may do and who holds
+ * each authority at the site, a tenant or a project, each for a caller the
+ * authority says holds the kind it needs.
  *
  * IT ANSWERS AS THE PUBLIC API DOES, because the console reads both with the
  * same code. A body is read as the API's media type, every refusal carries the
@@ -41,6 +41,7 @@ import {
   nativeHttpPathSegmentCharsMax,
 } from "../../contract/http.ts";
 import type { AccessAbilities } from "../../interpreter/accessAbilities.ts";
+import type { AccessAuthorities } from "../../interpreter/accessAuthorities.ts";
 import { AccessDirectoryUnavailable } from "../../interpreter/accessDirectory.ts";
 import type {
   AccessInvitationResult,
@@ -80,6 +81,7 @@ export interface AccessPlaneService {
   readonly plane: AccessPlane;
   readonly invitations: AccessInvitations;
   readonly abilities: AccessAbilities;
+  readonly authorities: AccessAuthorities;
   readonly ready: () => Promise<boolean>;
 }
 
@@ -273,8 +275,8 @@ function accessHostedRunsRoutes(
   );
 }
 
-/** What the caller may do at each level, absent where the level's list would be. */
-function accessAbilitiesRoutes(
+/** What the caller may do and who holds each authority at each level, absent to a caller the authority does not answer. */
+function accessAnsweredRoutes(
   app: FastifyInstance,
   service: AccessPlaneService,
 ): void {
@@ -295,6 +297,23 @@ function accessAbilitiesRoutes(
     [
       "siteAbilities",
       (_request, caller) => service.abilities.siteAbilities(caller),
+    ],
+    [
+      "tenantAuthorities",
+      (request, caller) =>
+        service.authorities.tenantAuthorities(caller, accessTenantOf(request)),
+    ],
+    [
+      "projectAuthorities",
+      (request, caller) =>
+        service.authorities.projectAuthorities(
+          caller,
+          accessPartitionOf(request),
+        ),
+    ],
+    [
+      "siteAuthorities",
+      (_request, caller) => service.authorities.siteAuthorities(caller),
     ],
   ];
   for (const [name, abilities] of answered)
@@ -473,6 +492,6 @@ export function createAccessPlaneApp(
   accessProjectRoutes(app, service);
   accessHostedRunsRoutes(app, service);
   accessInvitationRoute(app, service);
-  accessAbilitiesRoutes(app, service);
+  accessAnsweredRoutes(app, service);
   return app;
 }

@@ -32,6 +32,7 @@ import {
   accessGiven,
   accessGivenTenantAdministrator,
   accessMemory,
+  accessTenantAdministratorsNotLink,
   type AccessMemory,
 } from "./accessPlaneFixture.ts";
 
@@ -263,7 +264,11 @@ test("an unknown username, an organisation and a bot are each refused, reaching 
 
 test("a project the authority does not hold under the tenant is refused before GitHub or the directory is asked", async () => {
   const { memory, directory, github, invite } = await invited();
-  for (const project of ["loose", "absent"])
+  await memory.grants.write(
+    accessTenantAdministratorsNotLink(accessFixturePartition("acme", "held")),
+  );
+  memory.changes.length = 0;
+  for (const project of ["loose", "absent", "held"])
     assert.deepEqual(
       await invite({
         ...invitation,

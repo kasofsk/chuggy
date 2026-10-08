@@ -14,6 +14,7 @@ import {
 import { accessDirectorySubjectsMax } from "../../src/interpreter/accessDirectory.ts";
 import {
   accessPlaneBoundsDefault,
+  accessProjectLinked,
   accessProjectListKinds,
   accessProjectRoleRelations,
   accessTenantListKinds,
@@ -23,6 +24,7 @@ import {
   oidcPrincipal,
   principalCharsMax,
 } from "../../src/interpreter/principal.ts";
+import { projectAccessObject } from "../../src/interpreter/projectAccess.ts";
 import {
   projectAuthorityDefaults,
   projectPrincipalGrant,
@@ -44,6 +46,8 @@ import {
   accessGivenTenantAdministrator,
   accessMemory,
   accessMemoryPlane,
+  accessStored,
+  accessTenantAdministratorsNotLink,
   type AccessMemory,
 } from "./accessPlaneFixture.ts";
 
@@ -204,6 +208,28 @@ test("a project with no tenant link is not the tenant's: not listed, and its peo
     ["priya", "stray"],
   );
   assert.equal(await plane.projectPeople(alice, loose), undefined);
+});
+
+test("a project whose `tenant` relation holds its tenant's administrators and no link is not linked, and not the tenant's", async () => {
+  const { memory, plane } = await acme();
+  const held = accessFixturePartition("acme/co", "held");
+  await seeded(memory, [accessTenantAdministratorsNotLink(held)]);
+  const tuples = memory.tuples.filter(
+    (tuple) => tuple.object === projectAccessObject(held),
+  );
+  assert.equal(tuples.length, 1);
+  assert.equal(accessProjectLinked(held, tuples), false);
+  assert.equal(
+    accessProjectLinked(held, [
+      ...tuples,
+      accessStored(projectTenantGrant(held)),
+    ]),
+    true,
+  );
+  assert.deepEqual((await plane.tenantPeople(alice, tenant))?.projects, [
+    "api",
+    "web",
+  ]);
 });
 
 test("granting twice and removing twice each succeed, and leave one tuple and then none", async () => {

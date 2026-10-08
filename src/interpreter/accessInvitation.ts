@@ -36,6 +36,7 @@ import {
   accessTenantListed,
   accessTenantRoleGrantKinds,
   accessTenantRoleRelations,
+  accessTupleLinkRelation,
   type AccessTupleReader,
 } from "./accessPlane.ts";
 import { oidcPrincipalSubject, type Principal } from "./principal.ts";
@@ -115,7 +116,7 @@ export interface AccessInvitations {
   ): Promise<AccessInvitationResult>;
 }
 
-/** Whether the authority holds `partition`'s `tenant` link naming its own tenant. */
+/** Whether the authority holds `partition`'s `tenant` link naming its own tenant, and not the holders of a role there. */
 async function accessInvitationProjectHeld(
   tuples: AccessTupleReader,
   partition: Partition,
@@ -134,7 +135,8 @@ async function accessInvitationProjectHeld(
     (tuple) =>
       tuple.subject.subject === "Set" &&
       tuple.subject.namespace === projectAccessTenantNamespace &&
-      tuple.subject.object === tenantObject,
+      tuple.subject.object === tenantObject &&
+      tuple.subject.relation === accessTupleLinkRelation,
   );
 }
 

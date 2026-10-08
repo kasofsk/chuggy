@@ -10,6 +10,7 @@
  *
  * A SUBJECT SET IS NO PRINCIPAL, and is answered as one so the interpreter can
  * tell a `tenant` link from a person rather than reading its object as a name.
+ * Its relation is kept, which is what tells a link from the holders of a role.
  */
 
 import { z } from "zod";
@@ -64,7 +65,7 @@ const ketoTupleSchema = z.object({
   relation: z.string(),
   subject_id: z.string().optional(),
   subject_set: z
-    .object({ namespace: z.string(), object: z.string() })
+    .object({ namespace: z.string(), object: z.string(), relation: z.string() })
     .optional(),
 });
 
@@ -112,6 +113,7 @@ function ketoAccessTuple(tuple: z.infer<typeof ketoTupleSchema>): AccessTuple {
         subject: "Set",
         namespace: tuple.subject_set.namespace,
         object: tuple.subject_set.object,
+        relation: tuple.subject_set.relation,
       },
     };
   throw new ProjectAccessUnavailable("a listed tuple named no subject");

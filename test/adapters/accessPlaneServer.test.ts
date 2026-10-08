@@ -1,7 +1,8 @@
 /**
  * The access plane's server over an authority held in memory: a body read as
  * the API's media type, a removal served, every refusal in the API's
- * envelope, what a caller may do read as its schema, and no request reaching a
+ * envelope, what a caller may do and who holds each authority read as their
+ * schemas, and no request reaching a
  * relation but the ones the role rosters name and hosted runs.
  */
 
@@ -23,10 +24,14 @@ import {
   accessPlanePath,
   accessPlaneRoutes,
   accessProjectAbilitiesSchema,
+  accessProjectAuthoritiesSchema,
   accessProjectPeopleSchema,
   accessProjectRoles,
   accessSiteAbilitiesSchema,
+  accessSiteAuthorities,
+  accessSiteAuthoritiesSchema,
   accessTenantAbilitiesSchema,
+  accessTenantAuthoritiesSchema,
   accessTenantPeopleSchema,
   accessTenantRoles,
   type AccessPlaneRouteName,
@@ -74,6 +79,7 @@ import {
   accessGivenTenantAdministrator,
   accessMemory,
   accessMemoryAbilities,
+  accessMemoryAuthorities,
   accessMemoryPlane,
   type AccessMemory,
 } from "../interpreter/accessPlaneFixture.ts";
@@ -106,7 +112,8 @@ const invitedGithub = githubMemory({
  * A tenant alice administers with one linked project priya administers, each
  * holding what the defaults give them and alice `CreateAccount`. Mo may only
  * manage who grants the tenant's roles, dee may grant `Member` and
- * `Developer` on the project and make no account, and hal may give hosted runs.
+ * `Developer` on the project and make no account, and hal may give hosted runs
+ * and manage the site's authorities.
  */
 async function served(
   ready = true,
@@ -145,6 +152,7 @@ async function served(
   ]);
   accessGiven(memory, accessFixturePrincipal("hal"), [
     { on: "Tenant", tenant, kind: "GrantHostedExecution" },
+    { on: "Site", kind: "ManageSiteAuthorities" },
   ]);
   const app = createAccessPlaneApp({
     authentication: {
@@ -163,6 +171,11 @@ async function served(
     plane: accessMemoryPlane(memory, accessPlaneBoundsDefault, directory),
     invitations: invitations(memory),
     abilities: accessMemoryAbilities(memory),
+    authorities: accessMemoryAuthorities(
+      memory,
+      accessPlaneBoundsDefault,
+      directory,
+    ),
     ready: () => Promise.resolve(ready && !memory.unavailable),
   });
   return { memory, app };
@@ -385,6 +398,62 @@ test("what a caller may do reads as its strict schema at each level, and is abse
     assert.equal(absent.statusCode, 404, name);
     enveloped(absent, "Absent");
     enveloped(await get(name), "Unauthenticated");
+  }
+});
+
+test("who holds each authority reads as its strict schema at each level, and is absent to a caller managing nothing there", async () => {
+  const { memory, app } = await served();
+  await memory.grants.write({
+    ...tenantPrincipalGrant({
+      issuer: accessFixtureIssuer,
+      subject: "dee",
+      tenant,
+      relation: "admins",
+    }),
+    relation: "member_granters",
+  });
+  const get = (name: AccessPlaneRouteName, token?: string) =>
+    app.inject({
+      method: "GET",
+      url: pathOf(name),
+      ...(token === undefined ? {} : { headers: as(token) }),
+    });
+  const answered = async (name: AccessPlaneRouteName, token: string) => {
+    const reply = await get(name, token);
+    assert.equal(reply.statusCode, 200, reply.body);
+    return reply.json<unknown>();
+  };
+  const tenantList = accessTenantAuthoritiesSchema.parse(
+    await answered("tenantAuthorities", "mo-token"),
+  );
+  assert.deepEqual(
+    tenantList.authorities.find((held) => held.authority === "MemberGranters")
+      ?.people,
+    [{ subject: "dee", mine: false }],
+  );
+  assert.equal(
+    accessProjectAuthoritiesSchema.parse(
+      await answered("projectAuthorities", "priya-token"),
+    ).project,
+    "web",
+  );
+  assert.deepEqual(
+    accessSiteAuthoritiesSchema
+      .parse(await answered("siteAuthorities", "hal-token"))
+      .authorities.map((held) => held.authority),
+    accessSiteAuthorities,
+  );
+  for (const name of [
+    "tenantAuthorities",
+    "projectAuthorities",
+    "siteAuthorities",
+  ] as const) {
+    const absent = await get(name, "dee-token");
+    assert.equal(absent.statusCode, 404, name);
+    enveloped(absent, "Absent");
+    const unauthenticated = await get(name);
+    assert.equal(unauthenticated.statusCode, 401, name);
+    enveloped(unauthenticated, "Unauthenticated");
   }
 });
 

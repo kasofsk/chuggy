@@ -38,6 +38,7 @@ import {
   type AccessDirectorySettings,
 } from "../interpreter/accessDirectory.ts";
 import { accessAbilities } from "../interpreter/accessAbilities.ts";
+import { accessAuthorities } from "../interpreter/accessAuthorities.ts";
 import { accessInvitations } from "../interpreter/accessInvitation.ts";
 import {
   accessPlane,
@@ -146,6 +147,10 @@ export function accessPlaneComposed(
       { issuer },
     ),
     abilities: accessAbilities(ports, { bounds: accessPlaneBoundsDefault }),
+    authorities: accessAuthorities(ports, {
+      issuer,
+      bounds: accessPlaneBoundsDefault,
+    }),
     ready: () => readiness.ready(),
   });
 }
