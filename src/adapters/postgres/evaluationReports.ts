@@ -2,6 +2,8 @@ import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
 
 import {
+  type FailedLandingPort,
+  type FailedLandingRead,
   priorEvaluationReportsMax,
   priorWorkReportsMax,
   type PriorEvaluationReportsPort,
@@ -108,6 +110,77 @@ export function postgresPriorEvaluationReports(
         read: "Reports",
         reports: { reports: found.rows.map((row) => row.report) },
       };
+    },
+  };
+}
+
+interface FailedLandingRow {
+  readonly target_commit: string;
+  readonly change_commit: string | null;
+  readonly conflicted: boolean;
+}
+
+/**
+ * Reads the failed landing this work task's own bundle pins: the target it was
+ * prepared against, the commit of the one source a pinned result manifest
+ * recorded, and whether a conflict manifest was pinned beside them. A bundle
+ * that pins no `FinalizationAttempt` answers no row, and a manifest with no
+ * source still answers one, without the change's commit.
+ */
+export function postgresFailedLanding(pool: pg.Pool): FailedLandingPort {
+  return {
+    landing: async (partition, execution): Promise<FailedLandingRead> => {
+      let found: pg.QueryResult<FailedLandingRow>;
+      try {
+        found = await pool.query<FailedLandingRow>(
+          sql`SELECT t.reference_id AS target_commit,
+                     (SELECT s.commit
+                        FROM input_bundle_reference m
+                        JOIN execution_result_source s
+                          ON s.tenant=m.tenant AND s.project=m.project
+                         AND s.manifest=m.reference_id
+                       WHERE m.tenant=q.tenant AND m.project=q.project
+                         AND m.bundle=q.input_bundle
+                         AND m.reference_kind='ResultManifest'
+                       ORDER BY m.ordinal
+                       LIMIT 1) AS change_commit,
+                     EXISTS (SELECT 1
+                               FROM input_bundle_reference c
+                              WHERE c.tenant=q.tenant AND c.project=q.project
+                                AND c.bundle=q.input_bundle
+                                AND c.reference_kind='ConflictManifest') AS conflicted
+                FROM execution e
+                JOIN execution_request q
+                  ON q.tenant=e.tenant AND q.project=e.project
+                 AND q.request=e.source_request
+                JOIN input_bundle_reference a
+                  ON a.tenant=q.tenant AND a.project=q.project
+                 AND a.bundle=q.input_bundle
+                 AND a.reference_kind='FinalizationAttempt'
+                JOIN input_bundle_reference t
+                  ON t.tenant=q.tenant AND t.project=q.project
+                 AND t.bundle=q.input_bundle AND t.reference_kind='TargetCommit'
+               WHERE e.tenant=${partition.tenant} AND e.project=${partition.project}
+                 AND e.execution=${execution}
+               ORDER BY t.ordinal
+               LIMIT 1`,
+        );
+      } catch {
+        return { read: "Unavailable" };
+      }
+      const row = found.rows[0];
+      return row === undefined
+        ? { read: "Landing" }
+        : {
+            read: "Landing",
+            landing: {
+              targetCommit: row.target_commit,
+              ...(row.change_commit === null
+                ? {}
+                : { changeCommit: row.change_commit }),
+              conflicted: row.conflicted,
+            },
+          };
     },
   };
 }

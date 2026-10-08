@@ -3,6 +3,7 @@ import { test } from "node:test";
 import type pg from "pg";
 
 import {
+  postgresFailedLanding,
   postgresPriorEvaluationReports,
   postgresPriorWorkReports,
 } from "../../src/adapters/postgres/evaluationReports.ts";
@@ -105,4 +106,40 @@ test("a list past its bound is answered as read, for composition to refuse rathe
       bound + 1,
     );
   }
+});
+
+test("a failed landing read the database refuses is unavailable rather than a throw", async () => {
+  const refused = Object.assign(
+    new Error("permission denied for table execution_result_source"),
+    { code: "42501" },
+  );
+  const pool = {
+    query: () => Promise.reject(refused),
+  } as unknown as pg.Pool;
+  assert.deepEqual(
+    await postgresFailedLanding(pool).landing(
+      partition,
+      asExecutionId("rework"),
+    ),
+    { read: "Unavailable" },
+  );
+});
+
+test("a failed landing's row is its commits, the change's absent where no source was recorded", async () => {
+  const rows = [
+    { target_commit: "1".repeat(40), change_commit: null, conflicted: false },
+  ];
+  const pool = {
+    query: () => Promise.resolve({ rows }),
+  } as unknown as pg.Pool;
+  assert.deepEqual(
+    await postgresFailedLanding(pool).landing(
+      partition,
+      asExecutionId("rework"),
+    ),
+    {
+      read: "Landing",
+      landing: { targetCommit: "1".repeat(40), conflicted: false },
+    },
+  );
 });

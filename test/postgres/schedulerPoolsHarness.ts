@@ -15,6 +15,7 @@
 import assert from "node:assert/strict";
 
 import {
+  postgresFailedLanding,
   postgresPriorEvaluationReports,
   postgresPriorWorkReports,
 } from "../../src/adapters/postgres/evaluationReports.ts";
@@ -84,6 +85,7 @@ export function poolRoutedService(
     configurations: postgresPinnedConfigurations(rig.pool),
     priorWorkReports: postgresPriorWorkReports(rig.pool),
     priorEvaluationReports: postgresPriorEvaluationReports(rig.pool),
+    failedLanding: postgresFailedLanding(rig.pool),
     ticketBriefs: postgresTicketBrief(rig.pool),
   };
 }

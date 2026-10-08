@@ -135,6 +135,8 @@ import type { RecoveryEpoch } from "./projectStore.ts";
 import type { TicketServiceConfig } from "./ticketService.ts";
 import {
   composeTaskInvocation,
+  type FailedLanding,
+  type FailedLandingPort,
   type PinnedConfigurationPort,
   type PinnedTaskConfiguration,
   type PracticeCatalog,
@@ -173,6 +175,7 @@ export interface ExecutionSchedulerService {
   readonly runtimeFacts: RuntimeFactsPort;
   readonly priorWorkReports: PriorWorkReportsPort;
   readonly priorEvaluationReports: PriorEvaluationReportsPort;
+  readonly failedLanding: FailedLandingPort;
   readonly ticketBriefs: TicketBriefPort;
   readonly practices: PracticeCatalog;
   readonly config: ExecutionSchedulerConfig;
@@ -526,6 +529,51 @@ async function schedulerPriorEvaluationReports(
   }
 }
 
+/**
+ * Reads the failed landing a work task follows. Only a work task renders it,
+ * so no other kind is asked, and a task that follows none is briefed with none.
+ */
+async function schedulerFailedLanding(
+  service: ExecutionSchedulerService,
+  execution: LogicalExecution,
+): Promise<{ readonly landing?: FailedLanding } | BriefingUnready> {
+  if (execution.taskKind !== "Work") return {};
+  const read = await service.failedLanding.landing(
+    execution.partition,
+    execution.execution,
+  );
+  switch (read.read) {
+    case "Landing":
+      return read.landing === undefined ? {} : { landing: read.landing };
+    case "Unavailable":
+      return { gathered: "Unavailable" };
+  }
+}
+
+/** What a rework is told of the cycle before it, gathered as one value so either read can hold the attempt. */
+async function schedulerRework(
+  service: ExecutionSchedulerService,
+  execution: LogicalExecution,
+): Promise<
+  | {
+      readonly priorEvaluationReports: PriorEvaluationReports;
+      readonly failedLanding?: FailedLanding;
+    }
+  | BriefingUnready
+> {
+  const priorEvaluationReports = await schedulerPriorEvaluationReports(
+    service,
+    execution,
+  );
+  if ("gathered" in priorEvaluationReports) return priorEvaluationReports;
+  const failed = await schedulerFailedLanding(service, execution);
+  if ("gathered" in failed) return failed;
+  return {
+    priorEvaluationReports,
+    ...(failed.landing === undefined ? {} : { failedLanding: failed.landing }),
+  };
+}
+
 /** What a placement needs before it may be asked for: the profile, and the composed invocation. */
 interface TaskLaunch {
   readonly profile: ExecutionProfile;
@@ -567,12 +615,9 @@ async function schedulerPrepare(
     await schedulerUnready(service, attempt, priorWorkReports);
     return undefined;
   }
-  const priorEvaluationReports = await schedulerPriorEvaluationReports(
-    service,
-    execution,
-  );
-  if ("gathered" in priorEvaluationReports) {
-    await schedulerUnready(service, attempt, priorEvaluationReports);
+  const rework = await schedulerRework(service, execution);
+  if ("gathered" in rework) {
+    await schedulerUnready(service, attempt, rework);
     return undefined;
   }
   const brief = await service.ticketBriefs.brief(
@@ -586,7 +631,7 @@ async function schedulerPrepare(
     configuration,
     runtime,
     priorWorkReports,
-    priorEvaluationReports,
+    ...rework,
     ...(brief === undefined ? {} : { brief }),
     grant: policy.grant,
   });

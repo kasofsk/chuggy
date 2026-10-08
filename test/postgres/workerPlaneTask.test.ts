@@ -11,6 +11,7 @@ import { after, test } from "node:test";
 import { createWorkerPlaneApp } from "../../src/adapters/http/workerPlaneServer.ts";
 import { kubernetesWorkerTask } from "../../src/adapters/kubernetes/workerPod.ts";
 import {
+  postgresFailedLanding,
   postgresPriorEvaluationReports,
   postgresPriorWorkReports,
 } from "../../src/adapters/postgres/evaluationReports.ts";
@@ -267,6 +268,7 @@ function launching(
     },
     priorWorkReports: postgresPriorWorkReports(rig.pool),
     priorEvaluationReports: postgresPriorEvaluationReports(rig.pool),
+    failedLanding: postgresFailedLanding(rig.pool),
     ticketBriefs: postgresTicketBrief(rig.pool),
     practices: blessedPracticeCatalog,
     config: executionSchedulerDefaults,
