@@ -35,6 +35,7 @@ import {
   ketoHarnessPartition,
   ketoHarnessReadinessAt,
   ketoHarnessReadUrl,
+  ketoHarnessRoleKinds,
 } from "./harness.ts";
 
 const access = ketoHarnessAccess();
@@ -89,7 +90,7 @@ test("each project relation carries exactly the kinds the model follows from it"
   );
   assert.deepEqual(
     await held(await granted(partition, "administrator", "admins"), partition),
-    allProjectAccessKinds,
+    ketoHarnessRoleKinds,
   );
 });
 
@@ -153,7 +154,7 @@ test("a tenant administrator reaches every project the tenant relation names", a
     "a tenant grant reached a project no tuple put under that tenant",
   );
   await grants.write(projectTenantGrant(partition));
-  assert.deepEqual(await held(principal, partition), allProjectAccessKinds);
+  assert.deepEqual(await held(principal, partition), ketoHarnessRoleKinds);
 });
 
 /**
@@ -263,7 +264,7 @@ test("two partitions whose halves join to one string are two objects", async () 
       relation: "agents",
     }),
   );
-  assert.deepEqual(await held(principal, left), allProjectAccessKinds);
+  assert.deepEqual(await held(principal, left), ketoHarnessRoleKinds);
   assert.deepEqual(await held(principal, right), ["Read"]);
 });
 

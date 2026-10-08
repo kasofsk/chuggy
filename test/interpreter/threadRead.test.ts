@@ -70,6 +70,7 @@ import {
   threadTurnInputCharsMax,
 } from "../../src/interpreter/thread.ts";
 import { threadStandingRulesDefault } from "../../src/contract/threadSeeding.ts";
+import { projectAccessSiteRefused } from "./projectAccessFixture.ts";
 
 const partition = {
   tenant: asTenantId("acme"),
@@ -315,6 +316,7 @@ function boundary(
           : undefined,
       );
     },
+    authorizeSite: projectAccessSiteRefused,
   };
   const web = nativeWeb(
     access,

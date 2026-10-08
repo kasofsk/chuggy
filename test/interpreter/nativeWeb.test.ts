@@ -86,6 +86,7 @@ import {
   type DraftBrief,
 } from "../../src/interpreter/ticketBrief.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
+import { projectAccessSiteRefused } from "./projectAccessFixture.ts";
 
 const partition = {
   tenant: asTenantId("tenant"),
@@ -231,6 +232,7 @@ function boundary(
       return Promise.resolve(allowed ? authority : undefined);
     },
     authorizeTenant: () => Promise.resolve(undefined),
+    authorizeSite: projectAccessSiteRefused,
   };
   const reads = readStore(calls);
   const inbox: OperationInbox = {
@@ -866,6 +868,7 @@ test("a principal holding Read alone may read a project artifact and may not upl
       return Promise.resolve(kind === "Read" ? authority : undefined);
     },
     authorizeTenant: () => Promise.resolve(undefined),
+    authorizeSite: projectAccessSiteRefused,
   };
   const web = nativeWeb(
     access,
@@ -1355,6 +1358,7 @@ function submittingBoundary(): {
       {
         authorize: () => Promise.resolve(authority),
         authorizeTenant: () => Promise.resolve(undefined),
+        authorizeSite: projectAccessSiteRefused,
       },
       readStore([]),
       inbox,

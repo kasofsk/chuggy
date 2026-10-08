@@ -118,6 +118,7 @@ import type {
   ForgeRepositorySeedRequest,
   ForgeTemplateRepository,
 } from "../../src/interpreter/forgeRepositoryCreation.ts";
+import { projectAccessSiteRefused } from "./projectAccessFixture.ts";
 
 const tenant = asTenantId("vteng");
 const partition = { tenant, project: asProjectId("chuggy") };
@@ -210,6 +211,7 @@ function fixtureAccess(
         askedTenant.push(kind);
         return answer(kind);
       },
+      authorizeSite: projectAccessSiteRefused,
     },
   };
 }

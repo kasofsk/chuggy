@@ -18,7 +18,6 @@ import {
   checkedProjectAccessSettings,
   ProjectAccessUnavailable,
   projectAccessObject,
-  projectAccessTenantObject,
 } from "../../src/interpreter/projectAccess.ts";
 import { principalCharsMax } from "../../src/interpreter/principal.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
@@ -102,25 +101,17 @@ test("an answer that is not a page is undecided", async () => {
 
 test("the widest page this tree can write, every character escaped, is read and not refused", async () => {
   assert.ok(ketoAccessPageTuplesMax > 1);
-  assert.ok(
-    projectAccessTenantObject("x".repeat(nativeHttpPathSegmentCharsMax))
-      .length >= principalCharsMax,
-  );
   const escaped = (chars: number) => "\u0001".repeat(chars);
-  const tenant = asTenantId(escaped(nativeHttpPathSegmentCharsMax));
   const object = projectAccessObject({
-    tenant,
+    tenant: asTenantId(escaped(nativeHttpPathSegmentCharsMax)),
     project: asProjectId(escaped(nativeHttpPathSegmentCharsMax)),
   });
+  assert.ok(object.length >= principalCharsMax);
   const tuple = {
     namespace: "Project",
     object,
-    relation: "hosted_execution",
-    subject_set: {
-      namespace: "Tenant",
-      object: projectAccessTenantObject(tenant),
-      relation: "",
-    },
+    relation: "dispatcher_granters",
+    subject_set: { namespace: "Project", object, relation: "dispatchers" },
   };
   const body = JSON.stringify({
     relation_tuples: Array.from(

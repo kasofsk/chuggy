@@ -44,6 +44,7 @@ import {
   ketoHarnessGrants,
   ketoHarnessIssuer,
   ketoHarnessPartition,
+  ketoHarnessRoleKinds,
 } from "./harness.ts";
 
 const access = ketoHarnessAccess();
@@ -128,7 +129,7 @@ test("a new tenant's creator holds every kind on its project and administers the
   const creator = oidcPrincipal(ketoHarnessIssuer, `creator-${randomUUID()}`);
   const stranger = oidcPrincipal(ketoHarnessIssuer, `stranger-${randomUUID()}`);
   await created(creator, partition, true);
-  assert.deepEqual(await held(creator, partition), allProjectAccessKinds);
+  assert.deepEqual(await held(creator, partition), ketoHarnessRoleKinds);
   assert.notEqual(
     await access.authorizeTenant(creator, partition.tenant, "AdministerTenant"),
     undefined,
@@ -164,7 +165,7 @@ test("a project added to a tenant that stands is reached through the tenant's ad
   const creator = oidcPrincipal(ketoHarnessIssuer, `creator-${randomUUID()}`);
   await created(creator, first, true);
   await created(creator, second, false);
-  assert.deepEqual(await held(creator, second), allProjectAccessKinds);
+  assert.deepEqual(await held(creator, second), ketoHarnessRoleKinds);
 });
 
 test("a replay of a creation whose grants were never written writes them", async () => {
@@ -177,7 +178,7 @@ test("a replay of a creation whose grants were never written writes them", async
     "AlreadyCreated",
   );
   assert.equal(await administers(creator, request), true);
-  assert.deepEqual(await held(creator, request), allProjectAccessKinds);
+  assert.deepEqual(await held(creator, request), ketoHarnessRoleKinds);
 });
 
 test("a replay after the grants are recorded restores no grant an operator revoked", async () => {
@@ -204,7 +205,7 @@ test("a tenant an operator granted before its rows exist is not a stranger's to 
   const real = { ...namedCreation("real"), tenant: request.tenant };
   assert.equal((await service.create(alice, real)).result, "Created");
   assert.deepEqual(await held(mallory, real), []);
-  assert.deepEqual(await held(alice, real), allProjectAccessKinds);
+  assert.deepEqual(await held(alice, real), ketoHarnessRoleKinds);
 });
 
 test("a project a person was provisioned on holds its tenant against a stranger asking for it or any other project in it", async () => {
@@ -252,7 +253,7 @@ test("a creator whose grants never landed is answered its own tenant under a new
   };
   assert.equal((await service.create(creator, again)).result, "AlreadyCreated");
   assert.equal(await administers(creator, request), true);
-  assert.deepEqual(await held(creator, request), allProjectAccessKinds);
+  assert.deepEqual(await held(creator, request), ketoHarnessRoleKinds);
   const replayed = await store.create({
     partition: request,
     standing: "Administers",
@@ -279,7 +280,7 @@ test("a creator whose project in a standing tenant never reached it is answered 
     operation: asOperationId(`operation-${randomUUID()}`),
   };
   assert.equal((await service.create(creator, again)).result, "AlreadyCreated");
-  assert.deepEqual(await held(creator, second), allProjectAccessKinds);
+  assert.deepEqual(await held(creator, second), ketoHarnessRoleKinds);
 });
 
 test("anyone else asking for a creation whose grants never landed is refused it and granted nothing", async () => {

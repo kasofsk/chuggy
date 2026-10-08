@@ -83,6 +83,7 @@ import {
   allLeadAdmissions,
   type LeadAdmission,
 } from "../../src/interpreter/sessionPlacement.ts";
+import { projectAccessSiteRefused } from "./projectAccessFixture.ts";
 
 const partition = {
   tenant: asTenantId("tenant"),
@@ -2113,6 +2114,7 @@ test("current selector planning is project-authorized and cursor-free", async ()
             : undefined,
         ),
       authorizeTenant: () => Promise.resolve(undefined),
+      authorizeSite: projectAccessSiteRefused,
     },
     { planningIntent: () => Promise.resolve(plan) },
   );
@@ -2682,6 +2684,7 @@ test("proposal review requires dispatch authority and preserves feedback", async
             : undefined,
         ),
       authorizeTenant: () => Promise.resolve(undefined),
+      authorizeSite: projectAccessSiteRefused,
     },
     {
       awaitingApproval: () => Promise.resolve([delivery]),

@@ -14,6 +14,7 @@ import {
   projectAccessObject,
   projectAccessPermits,
   projectAccessTenantObject,
+  siteAccessPermits,
   tenantAccessPermits,
 } from "../../src/interpreter/projectAccess.ts";
 import { asPrincipal } from "../../src/interpreter/principal.ts";
@@ -101,6 +102,38 @@ test("every kind asks for its own permit", async () => {
     );
     assert.equal(fetcher.asked[0]?.searchParams.get("relation"), permit);
   }
+});
+
+test("a site kind asks the site's one object for its own permit", async () => {
+  for (const [kind, permit] of Object.entries(siteAccessPermits)) {
+    const fetcher = fetcherOf(() => json({ allowed: true }));
+    assert.deepEqual(
+      await ketoProjectAccess(settings, fetcher.fetch).authorizeSite(
+        principal,
+        kind as keyof typeof siteAccessPermits,
+      ),
+      memberAuthority(principal),
+    );
+    const asked = fetcher.asked[0];
+    assert.ok(asked !== undefined);
+    assert.deepEqual(
+      [...asked.searchParams],
+      [
+        ["namespace", "Site"],
+        ["object", "main"],
+        ["relation", permit],
+        ["subject_id", principal],
+      ],
+    );
+  }
+  const refused = fetcherOf(() => json({ allowed: false }));
+  assert.equal(
+    await ketoProjectAccess(settings, refused.fetch).authorizeSite(
+      principal,
+      "CreateAccount",
+    ),
+    undefined,
+  );
 });
 
 test("nothing the authority could not decide is answered as a refusal", async () => {
@@ -195,15 +228,17 @@ test("no listing the authority could not answer is taken for an unclaimed tenant
 });
 
 const checkPath = "relation-tuples/check/openapi";
-const wholeModel = new Set(["Project", "Tenant"]);
+const wholeModel = new Set(["Project", "Tenant", "Site"]);
 const everyPermit = new Set([
-  ...Object.values(projectAccessPermits),
-  ...Object.values(tenantAccessPermits),
+  ...Object.values(projectAccessPermits).map((permit) => `Project#${permit}`),
+  ...Object.values(tenantAccessPermits).map((permit) => `Tenant#${permit}`),
+  ...Object.values(siteAccessPermits).map((permit) => `Site#${permit}`),
 ]);
 
 /**
  * An authority carrying a model: the namespaces it knows and the permits it
- * declares, answering each path the readiness probe asks the way Keto does.
+ * declares, each as its namespace and its name, answering each path the
+ * readiness probe asks the way Keto does.
  */
 const ready = (
   known: ReadonlySet<string>,
@@ -213,7 +248,9 @@ const ready = (
   fetcherOf((at) => {
     if (at.pathname === "/health/ready") return json({ status: "ok" }, health);
     if (at.pathname === `/${checkPath}`)
-      return declared.has(at.searchParams.get("relation") ?? "")
+      return declared.has(
+        `${at.searchParams.get("namespace") ?? ""}#${at.searchParams.get("relation") ?? ""}`,
+      )
         ? json({ allowed: false })
         : json({ error: { code: 400 } }, 400);
     const namespace = at.searchParams.get("namespace") ?? "";
@@ -268,22 +305,14 @@ test("readiness needs the server up and every namespace the model declares", asy
     await ketoReadiness(settings, ready(wholeModel, everyPermit, 503)).ready(),
     false,
   );
-  assert.equal(
-    await ketoReadiness(
-      settings,
-      ready(new Set(["Project"]), everyPermit),
-    ).ready(),
-    false,
-    "a model missing the tenant namespace reported itself ready",
-  );
-  assert.equal(
-    await ketoReadiness(
-      settings,
-      ready(new Set(["Tenant"]), everyPermit),
-    ).ready(),
-    false,
-    "a model missing the project namespace reported itself ready",
-  );
+  for (const missing of wholeModel) {
+    const without = new Set([...wholeModel].filter((it) => it !== missing));
+    assert.equal(
+      await ketoReadiness(settings, ready(without, everyPermit)).ready(),
+      false,
+      `a model missing the ${missing} namespace reported itself ready`,
+    );
+  }
 });
 
 test("readiness needs every permit a check will ask for", async () => {

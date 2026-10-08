@@ -58,6 +58,7 @@ import {
 } from "../../src/interpreter/operationInbox.ts";
 import type { AuthoringStore } from "../../src/interpreter/authoring.ts";
 import type { NotificationStore } from "../../src/interpreter/notifications.ts";
+import { projectAccessSiteRefused } from "../interpreter/projectAccessFixture.ts";
 
 const partition = { tenant: asTenantId("acme"), project: asProjectId("atlas") };
 const root = "/api/v1/tenants/acme/projects/atlas";
@@ -313,6 +314,7 @@ function appOf(shape: LeadCase = {}) {
     authorize: () =>
       Promise.resolve((shape.allowed ?? true) ? authority : undefined),
     authorizeTenant: () => Promise.resolve(undefined),
+    authorizeSite: projectAccessSiteRefused,
   };
   const inbox: OperationInbox = {
     accept: () => Promise.resolve({ accepted: "InvalidCommand" }),

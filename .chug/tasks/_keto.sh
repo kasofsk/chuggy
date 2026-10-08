@@ -63,7 +63,7 @@
 # COULD-NOT-RUN. Readiness alone would pass a server carrying some other
 # namespace file, and every check against it would then answer `false` — a
 # suite of refusals reported as findings about the adapter. So the wait ends
-# only when both namespaces the model declares are listable.
+# only when every namespace the model declares is listable.
 #
 # Env:
 #   CHUG_KETO_READ_URL   run against this read API instead, starting nothing;
@@ -128,7 +128,7 @@ try {
 
 keto_wait() { # <read url>
 	keto_waited=0
-	until keto_probe "$1" Project Tenant; do
+	until keto_probe "$1" Project Tenant Site; do
 		if [ "$keto_waited" -ge "$keto_ready_secs" ]; then
 			return 1
 		fi
@@ -227,7 +227,7 @@ keto_acquire_process() {
 	echo "$keto_prefix: started $keto_subject on ports $keto_read_port and $keto_write_port"
 
 	if ! keto_wait "$keto_read_url"; then
-		echo "$keto_prefix: LINTER ERROR — $keto_subject did not answer ready with both namespaces within ${keto_ready_secs}s"
+		echo "$keto_prefix: LINTER ERROR — $keto_subject did not answer ready with every namespace within ${keto_ready_secs}s"
 		echo "$keto_prefix:                No CHUG_KETO_READ_URL and no docker, so $keto_binary was started from $keto_model."
 		if kill -0 "$keto_pid" 2>/dev/null; then
 			echo "$keto_prefix:                It is still running: its read API $(keto_answer "$keto_read_url") and its write API $(keto_answer "$keto_write_url")."
@@ -266,7 +266,7 @@ keto_acquire() { # <message prefix>
 		keto_write_url="$CHUG_KETO_WRITE_URL"
 		keto_subject="the server CHUG_KETO_READ_URL names"
 		if ! keto_wait "$keto_read_url"; then
-			echo "$keto_prefix: LINTER ERROR — nothing ready with both namespaces answered CHUG_KETO_READ_URL within ${keto_ready_secs}s"
+			echo "$keto_prefix: LINTER ERROR — nothing ready with every namespace answered CHUG_KETO_READ_URL within ${keto_ready_secs}s"
 			echo "$keto_prefix:                Point it at a Keto running .chug/tasks/keto/namespaces.ts, or unset it to have one started."
 			exit 2
 		fi
@@ -325,7 +325,7 @@ keto_acquire() { # <message prefix>
 	keto_write_url="http://127.0.0.1:$keto_write_port/"
 
 	if ! keto_wait "$keto_read_url"; then
-		echo "$keto_prefix: LINTER ERROR — $keto_container did not answer ready with both namespaces within ${keto_ready_secs}s"
+		echo "$keto_prefix: LINTER ERROR — $keto_container did not answer ready with every namespace within ${keto_ready_secs}s"
 		echo "$keto_prefix:                docker logs $keto_container says why; the model is .chug/tasks/keto/namespaces.ts."
 		exit 2
 	fi

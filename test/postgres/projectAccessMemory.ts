@@ -24,6 +24,7 @@ import type {
   Partition,
   TenantId,
 } from "../../src/interpreter/projectStore.ts";
+import { projectAccessSiteRefused } from "../interpreter/projectAccessFixture.ts";
 
 /** One principal's standing in one project, as a case grants and withdraws it. */
 export interface MemoryProjectGrant {
@@ -87,6 +88,7 @@ export function memoryProjectAccess(): MemoryProjectAccess {
         granted?.has(access) === true ? memberAuthority(principal) : undefined,
       );
     },
+    authorizeSite: projectAccessSiteRefused,
     grant: (input) => {
       held.set(at(input), new Set(input.access));
     },

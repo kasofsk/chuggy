@@ -4,12 +4,13 @@ Who may address a project is a relation tuple in Ory Keto, not a row in the
 rig's PostgreSQL. `deploy/rig/postgres/README.md` is the procedure for the
 database; this is the procedure for the authority beside it.
 
-The namespaces the API asks about — `Project` and `Tenant` — are the model the
-fabric deploys with the server, and nothing in this checkout applies it.
+The namespaces the API asks about — `Project`, `Tenant` and `Site` — are the
+model the fabric deploys with the server, and nothing in this checkout applies
+it.
 `.chug/tasks/keto/namespaces.ts` is the copy `check-keto.sh` drives its own
 container with, so a model the rig runs and a model the gate proves against are
 one file apart and are compared by nobody. The API's readiness answers false
-until both namespaces exist and every permit the code asks for is declared,
+until all three namespaces exist and every permit the code asks for is declared,
 which is how a server carrying some other model, or one that renamed a permit,
 is caught at a pod's door rather than by the first member it refuses. A permit
 still declared under a changed meaning — a `develop` that no longer implies

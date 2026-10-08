@@ -23,6 +23,7 @@ import {
 import { executionSchedulerAuthorityKind } from "../../src/interpreter/executionScheduler.ts";
 import { finalizerAuthorityKind } from "../../src/interpreter/finalizer.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
+import { projectAccessSiteRefused } from "./projectAccessFixture.ts";
 
 const partitionOf = (tenant: string, project: string) => ({
   tenant: asTenantId(tenant),
@@ -171,6 +172,7 @@ function accessAdmitting(admitted: readonly string[]): {
         );
       },
       authorizeTenant: () => Promise.resolve(undefined),
+      authorizeSite: projectAccessSiteRefused,
     },
   };
 }

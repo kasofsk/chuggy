@@ -55,6 +55,10 @@ export const allProjectAccessKinds = [
   "ManageProjectSelector",
   "Execute",
   "Administer",
+  "GrantProjectAdmin",
+  "GrantDeveloper",
+  "GrantDispatcher",
+  "ManageProjectAuthorities",
 ] as const;
 
 export type ProjectAccessKind = (typeof allProjectAccessKinds)[number];
@@ -77,15 +81,35 @@ export const allTenantAccessKinds = [
   "AdministerTenant",
   "InviteToTenant",
   "ExecuteHosted",
+  "GrantTenantAdmin",
+  "GrantMember",
+  "GrantHostedExecution",
+  "ManageTenantAuthorities",
+  "ManageSiteHeldAuthorities",
 ] as const;
 
 export type TenantAccessKind = (typeof allTenantAccessKinds)[number];
+
+/** Every site access kind, a roster of its own for `allTenantAccessKinds`' reason. */
+export const allSiteAccessKinds = [
+  "AdministerSite",
+  "CreateAccount",
+  "ManageSiteAuthorities",
+] as const;
+
+export type SiteAccessKind = (typeof allSiteAccessKinds)[number];
 
 /** The namespace one project is an object in. */
 export const projectAccessNamespace = "Project";
 
 /** The namespace one tenant is an object in, which a project's `tenant` relation names. */
 export const projectAccessTenantNamespace = "Tenant";
+
+/** The namespace the site is an object in, which a tenant's `site` relation names. */
+export const projectAccessSiteNamespace = "Site";
+
+/** The site's one object, above every tenant. */
+export const projectAccessSiteObject = "main";
 
 /**
  * The permit each access kind asks the project namespace for. The record is
@@ -101,6 +125,10 @@ export const projectAccessPermits: Readonly<Record<ProjectAccessKind, string>> =
     ManageProjectSelector: "manage_selector",
     Execute: "execute",
     Administer: "administer",
+    GrantProjectAdmin: "grant_admin",
+    GrantDeveloper: "grant_developer",
+    GrantDispatcher: "grant_dispatcher",
+    ManageProjectAuthorities: "manage_authorities",
   };
 
 /**
@@ -111,6 +139,21 @@ export const tenantAccessPermits: Readonly<Record<TenantAccessKind, string>> = {
   AdministerTenant: "administer",
   InviteToTenant: "invite",
   ExecuteHosted: "execute_hosted",
+  GrantTenantAdmin: "grant_admin",
+  GrantMember: "grant_member",
+  GrantHostedExecution: "grant_hosted_execution",
+  ManageTenantAuthorities: "manage_authorities",
+  ManageSiteHeldAuthorities: "manage_site_held_authorities",
+};
+
+/**
+ * The permit each site access kind asks the site namespace for, exhaustive
+ * over `SiteAccessKind` for `projectAccessPermits`' reason.
+ */
+export const siteAccessPermits: Readonly<Record<SiteAccessKind, string>> = {
+  AdministerSite: "administer",
+  CreateAccount: "create_account",
+  ManageSiteAuthorities: "manage_authorities",
 };
 
 /**
@@ -230,10 +273,10 @@ export function checkedProjectAccessSettings(input: {
 /**
  * Current project access and the non-reassignable authority it resolves to.
  *
- * THE TENANT QUESTION IS ON THE SAME PORT because it is the same authority
- * asked the same way, and a second port would be a second place a deployment
- * could name a different one — a tenant administrator authorized against an
- * authority the project questions never reach.
+ * THE TENANT AND SITE QUESTIONS ARE ON THE SAME PORT because each is the same
+ * authority asked the same way, and a second port would be a second place a
+ * deployment could name a different one — a tenant administrator authorized
+ * against an authority the project questions never reach.
  */
 export interface ProjectAccess {
   authorize(
@@ -246,6 +289,11 @@ export interface ProjectAccess {
     principal: Principal,
     tenant: TenantId,
     access: TenantAccessKind,
+  ): Promise<Authority | undefined>;
+
+  authorizeSite(
+    principal: Principal,
+    access: SiteAccessKind,
   ): Promise<Authority | undefined>;
 }
 
