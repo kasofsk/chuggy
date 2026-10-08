@@ -2,9 +2,13 @@
  * The process where a tenant's people and their roles are managed, composed
  * from variables alone.
  *
- * IT NAMES NO DATABASE. Everything it answers is a tuple the authority holds,
+ * IT NAMES NO DATABASE. Every role it answers is a tuple the authority holds,
  * so it has no PostgreSQL role, migration or pool, and `.dependency-cruiser.cjs`
  * holds it to reaching no PostgreSQL adapter at all.
+ *
+ * THE DIRECTORY IS OPTIONAL. A deployment that brings its own sign-in names
+ * no directory address, and the plane then answers every invitation as not
+ * configured and lists subjects alone.
  *
  * EVERY VARIABLE IS READ BEFORE THE ISSUER IS DISCOVERED, so a start missing
  * one is refused naming it rather than after a network round trip that could
@@ -21,12 +25,19 @@ import {
   type OidcAuthenticationConfig,
 } from "../adapters/http/oidc.ts";
 import type { PrincipalAuthentication } from "../adapters/http/server.ts";
+import { githubUserLookup } from "../adapters/forge/githubUserLookup.ts";
 import { ketoAccessTuples } from "../adapters/keto/accessTuples.ts";
 import {
   ketoProjectAccess,
   ketoReadiness,
 } from "../adapters/keto/projectAccess.ts";
 import { ketoProjectGrants } from "../adapters/keto/projectGrants.ts";
+import { kratosAccessDirectory } from "../adapters/kratos/identities.ts";
+import {
+  checkedAccessDirectorySettings,
+  type AccessDirectorySettings,
+} from "../interpreter/accessDirectory.ts";
+import { accessInvitations } from "../interpreter/accessInvitation.ts";
 import {
   accessPlane,
   accessPlaneBoundsDefault,
@@ -51,8 +62,22 @@ export interface AccessPlaneEnvironment {
   readonly oidc: OidcAuthenticationConfig;
   readonly read: ProjectAccessSettings;
   readonly write: ProjectGrantSettings;
+  readonly directory: AccessDirectorySettings | undefined;
   readonly host: string;
   readonly port: number;
+}
+
+/** The directory's settings, or none where the deployment names no directory address. */
+function accessPlaneDirectory(): AccessDirectorySettings | undefined {
+  const adminUrl = process.env["CHUG_ACCESS_PLANE_KRATOS_ADMIN_URL"];
+  if (adminUrl === undefined || adminUrl.length === 0) return undefined;
+  return checkedAccessDirectorySettings({
+    adminUrl,
+    requestTimeoutMs: planeEnvironmentPositive(
+      "CHUG_ACCESS_PLANE_KRATOS_TIMEOUT_MS",
+      projectAccessTimeoutMsDefault,
+    ),
+  });
 }
 
 export function accessPlaneEnvironment(): AccessPlaneEnvironment {
@@ -84,6 +109,7 @@ export function accessPlaneEnvironment(): AccessPlaneEnvironment {
       writeUrl: planeEnvironmentRequired("CHUG_ACCESS_PLANE_KETO_WRITE_URL"),
       requestTimeoutMs,
     }),
+    directory: accessPlaneDirectory(),
     host: process.env["CHUG_ACCESS_PLANE_HOST"] ?? "127.0.0.1",
     port: planeEnvironmentPositive("CHUG_ACCESS_PLANE_PORT", 3_003),
   };
@@ -95,15 +121,28 @@ export function accessPlaneComposed(
   authentication: PrincipalAuthentication,
 ): FastifyInstance {
   const readiness = ketoReadiness(environment.read);
+  const ports = {
+    access: ketoProjectAccess(environment.read),
+    tuples: ketoAccessTuples(environment.read),
+    grants: ketoProjectGrants(environment.write),
+    directory:
+      environment.directory === undefined
+        ? undefined
+        : kratosAccessDirectory(environment.directory),
+  };
+  const issuer = environment.oidc.issuer;
   return createAccessPlaneApp({
     authentication,
-    plane: accessPlane(
+    plane: accessPlane(ports, { issuer, bounds: accessPlaneBoundsDefault }),
+    invitations: accessInvitations(
       {
-        access: ketoProjectAccess(environment.read),
-        tuples: ketoAccessTuples(environment.read),
-        grants: ketoProjectGrants(environment.write),
+        ...ports,
+        github:
+          ports.directory === undefined
+            ? undefined
+            : githubUserLookup({ fetch }),
       },
-      { issuer: environment.oidc.issuer, bounds: accessPlaneBoundsDefault },
+      { issuer },
     ),
     ready: () => readiness.ready(),
   });

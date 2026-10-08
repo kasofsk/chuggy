@@ -11,7 +11,9 @@ import {
   accessProjectRoles,
   accessTenantRoles,
 } from "../../src/contract/accessPlane.ts";
+import { accessDirectorySubjectsMax } from "../../src/interpreter/accessDirectory.ts";
 import {
+  accessPlaneBoundsDefault,
   accessProjectRoleRelations,
   accessTenantRoleRelations,
 } from "../../src/interpreter/accessPlane.ts";
@@ -24,6 +26,10 @@ import {
   projectTenantGrant,
   tenantPrincipalGrant,
 } from "../../src/interpreter/projectGrant.ts";
+import {
+  directoryMemory,
+  directorySubject,
+} from "./accessInvitationFixture.ts";
 import {
   accessFixtureIssuer,
   accessFixturePartition,
@@ -283,4 +289,117 @@ test("a list past each of its bounds answers truncated and no more than the boun
   const projects = await listed({ projectsMax: 1 });
   assert.equal(projects.people?.truncated, true);
   assert.deepEqual(projects.people?.projects, ["api"]);
+});
+
+const ana = directorySubject(1);
+const ghost = directorySubject(2);
+const quiet = directorySubject(3);
+
+/** A tenant whose people are an account with a login, one without, a UUID the directory has not, and a subject of no UUID's shape. */
+async function accounted(memory: AccessMemory = accessMemory()) {
+  const directory = directoryMemory([
+    { subject: ana, email: "ana@example.com", githubLogin: "Ana-1" },
+    { subject: quiet, email: "quiet@example.com" },
+  ]);
+  const plane = accessMemoryPlane(
+    memory,
+    accessPlaneBoundsDefault,
+    directory.directory,
+  );
+  await seeded(memory, [
+    projectTenantGrant(web),
+    tenantPrincipalGrant({
+      issuer: accessFixtureIssuer,
+      subject: "alice",
+      tenant,
+      relation: "admins",
+    }),
+    ...[ana, ghost, quiet].map((subject) =>
+      projectPrincipalGrant({
+        issuer: accessFixtureIssuer,
+        subject,
+        ...web,
+        relation: "developers",
+      }),
+    ),
+  ]);
+  return { memory, directory, plane };
+}
+
+test("both lists mark each subject with who the directory says it is, asking once and never about a subject of no UUID's shape", async () => {
+  const { directory, plane } = await accounted();
+  const expected = {
+    [ana]: { account: true, email: "ana@example.com", githubLogin: "Ana-1" },
+    [ghost]: { account: false },
+    [quiet]: { account: true, email: "quiet@example.com" },
+    alice: { account: false },
+  };
+  const of = (person: Readonly<Record<string, unknown>>) =>
+    Object.fromEntries(
+      ["account", "email", "githubLogin"].flatMap((field) =>
+        person[field] === undefined ? [] : [[field, person[field]]],
+      ),
+    );
+  const tenantPeople = await plane.tenantPeople(alice, tenant);
+  assert.deepEqual(
+    Object.fromEntries(
+      (tenantPeople?.people ?? []).map((person) => [
+        person.subject,
+        of(person),
+      ]),
+    ),
+    expected,
+  );
+  const projectPeople = await plane.projectPeople(alice, web);
+  assert.deepEqual(
+    Object.fromEntries(
+      (projectPeople?.people ?? []).map((person) => [
+        person.subject,
+        of(person),
+      ]),
+    ),
+    expected,
+  );
+  assert.deepEqual(directory.asked, [
+    `accounts:${[ana, ghost, quiet].join(",")}`,
+    `accounts:${[ana, ghost, quiet].join(",")}`,
+  ]);
+});
+
+test("a list asks the directory about no more subjects than the bound, and those past it carry none of its fields", async () => {
+  const { memory, directory, plane } = await accounted(accessMemory(512));
+  const many = Array.from({ length: accessDirectorySubjectsMax }, (_, index) =>
+    directorySubject(100 + index),
+  );
+  await seeded(
+    memory,
+    many.map((subject) =>
+      tenantPrincipalGrant({
+        issuer: accessFixtureIssuer,
+        subject,
+        tenant,
+        relation: "members",
+      }),
+    ),
+  );
+  const people = (await plane.tenantPeople(alice, tenant))?.people ?? [];
+  const asked = (directory.asked[0] ?? "").slice("accounts:".length).split(",");
+  assert.equal(directory.asked.length, 1);
+  assert.equal(asked.length, accessDirectorySubjectsMax);
+  const unasked = people.filter((person) => person.account === undefined);
+  assert.equal(unasked.length, 3);
+  assert.ok(unasked.every((person) => !asked.includes(person.subject)));
+});
+
+test("a list with no directory answers no directory field", async () => {
+  const { memory } = await accounted();
+  const people = await accessMemoryPlane(memory).tenantPeople(alice, tenant);
+  assert.ok(
+    (people?.people ?? []).every(
+      (person) =>
+        !("account" in person) &&
+        !("email" in person) &&
+        !("githubLogin" in person),
+    ),
+  );
 });

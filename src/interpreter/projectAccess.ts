@@ -75,6 +75,7 @@ export function asProjectAccessKind(value: string): ProjectAccessKind {
  */
 export const allTenantAccessKinds = [
   "AdministerTenant",
+  "InviteToTenant",
   "ExecuteHosted",
 ] as const;
 
@@ -108,6 +109,7 @@ export const projectAccessPermits: Readonly<Record<ProjectAccessKind, string>> =
  */
 export const tenantAccessPermits: Readonly<Record<TenantAccessKind, string>> = {
   AdministerTenant: "administer",
+  InviteToTenant: "invite",
   ExecuteHosted: "execute_hosted",
 };
 

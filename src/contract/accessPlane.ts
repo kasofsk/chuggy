@@ -18,7 +18,7 @@
 
 import { z } from "zod";
 
-import { identitySchema } from "./http.ts";
+import { identitySchema, textCodePointsCount } from "./http.ts";
 
 export const accessPlaneBasePath = "/access/v1";
 
@@ -48,6 +48,10 @@ export const accessPlaneRoutes = {
   tenantRoleRemoval: {
     method: "DELETE",
     path: `${accessTenantPath}/people/:subject/roles/:role`,
+  },
+  tenantInvitation: {
+    method: "POST",
+    path: `${accessTenantPath}/invitations`,
   },
   projectPeople: { method: "GET", path: `${accessProjectPath}/people` },
   projectRoleGrant: {
@@ -97,6 +101,92 @@ export const accessProjectRoleGrantSchema = z.strictObject({
 /** The conflict a removal is refused with when it would leave a tenant no administrator. */
 export const accessLastTenantAdministratorCode = "LastTenantAdministrator";
 
+/** The longest username GitHub admits. */
+export const accessGithubLoginCharsMax = 39;
+
+/**
+ * A GitHub username: letters, digits, hyphens and underscores, beginning and
+ * ending with a letter or a digit.
+ */
+export const accessGithubLoginSchema = z
+  .string()
+  .regex(/^[A-Za-z0-9](?:[A-Za-z0-9_-]*[A-Za-z0-9])?$/u)
+  .refine(
+    (login) => textCodePointsCount(login) <= accessGithubLoginCharsMax,
+    `a GitHub username is at most ${String(accessGithubLoginCharsMax)} characters`,
+  );
+
+/** The longest email the directory's schema holds. */
+export const accessEmailCharsMax = 320;
+
+/** An email in an address's shape, within the directory's bound. */
+export const accessEmailSchema = z
+  .email()
+  .refine(
+    (email) => textCodePointsCount(email) <= accessEmailCharsMax,
+    `an email is at most ${String(accessEmailCharsMax)} characters`,
+  );
+
+/** The most projects one invitation names. */
+export const accessInvitationProjectsMax = 16;
+
+/** The roles an invitation grants on one of the tenant's projects. */
+export const accessInvitationProjectSchema = z.strictObject({
+  project: identitySchema,
+  roles: z.array(accessProjectRoleSchema).min(1).max(accessProjectRoles.length),
+});
+
+/**
+ * What an invitation is sent: the person's GitHub username and email, the
+ * tenant role, and roles on projects of the tenant, each project named once.
+ */
+export const accessInvitationSchema = z.strictObject({
+  github: accessGithubLoginSchema,
+  email: accessEmailSchema,
+  role: accessTenantRoleSchema,
+  projects: z
+    .array(accessInvitationProjectSchema)
+    .max(accessInvitationProjectsMax)
+    .refine(
+      (projects) =>
+        new Set(projects.map((named) => named.project)).size ===
+        projects.length,
+      "each project is named once",
+    )
+    .optional(),
+});
+
+/** What an invitation answers: the invited subject, and whether this request created its account. */
+export const accessInvitedSchema = z.strictObject({
+  subject: z.string().min(1),
+  created: z.boolean(),
+});
+
+/** The code each refusal of an invitation is answered with. */
+export const accessInvitationCodes = {
+  NotConfigured: "InvitationNotConfigured",
+  ProjectUnknown: "InvitationProjectUnknown",
+  GithubAccountUnknown: "GithubAccountUnknown",
+  GithubAccountNotUser: "GithubAccountNotUser",
+  EmailHeld: "InvitationEmailHeld",
+  EmailRefused: "InvitationEmailRefused",
+  GithubUnavailable: "GithubUnavailable",
+  DirectoryRaced: "DirectoryRaced",
+  DirectoryUnavailable: "DirectoryUnavailable",
+} as const;
+
+/**
+ * Who a subject is, where the plane has a directory to ask: whether it is an
+ * account, its email, and the GitHub login its account records. All three are
+ * absent from a plane with no directory and from a subject past the bound one
+ * answer asks about.
+ */
+const accessAccountFields = {
+  account: z.boolean().optional(),
+  email: accessEmailSchema.optional(),
+  githubLogin: accessGithubLoginSchema.optional(),
+};
+
 /** The roles one person holds on one of the tenant's projects. */
 export const accessProjectRolesHeldSchema = z.strictObject({
   project: identitySchema,
@@ -113,6 +203,7 @@ export const accessTenantPersonSchema = z.strictObject({
   tenantRoles: z.array(accessTenantRoleSchema),
   hostedRuns: z.boolean(),
   projects: z.array(accessProjectRolesHeldSchema),
+  ...accessAccountFields,
 });
 
 /**
@@ -133,6 +224,7 @@ export const accessProjectPersonSchema = z.strictObject({
   mine: z.boolean(),
   tenantAdmin: z.boolean(),
   roles: z.array(accessProjectRoleSchema),
+  ...accessAccountFields,
 });
 
 /** What a project's people list answers. */
@@ -148,3 +240,5 @@ export type AccessTenantPerson = z.infer<typeof accessTenantPersonSchema>;
 export type AccessTenantPeople = z.infer<typeof accessTenantPeopleSchema>;
 export type AccessProjectPerson = z.infer<typeof accessProjectPersonSchema>;
 export type AccessProjectPeople = z.infer<typeof accessProjectPeopleSchema>;
+export type AccessInvitation = z.infer<typeof accessInvitationSchema>;
+export type AccessInvited = z.infer<typeof accessInvitedSchema>;

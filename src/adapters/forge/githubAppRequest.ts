@@ -352,6 +352,14 @@ export function githubBearerSend(
   });
 }
 
+/** The request under no bearer, answered in the forge's own media type, which is how a public read is asked. */
+export function githubPublicSend(
+  own: GithubRequestBounds,
+  request: GithubAppRequest,
+): Promise<GithubAppAnswered> {
+  return githubSend(own, request, { accept: githubAcceptMediaType });
+}
+
 /** The request under no bearer, answered in plain JSON, which is how the forge's web host redeems an authorization. */
 export function githubWebSend(
   own: GithubRequestBounds,

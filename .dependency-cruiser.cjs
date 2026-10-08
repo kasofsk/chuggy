@@ -158,6 +158,20 @@ module.exports = {
       to: { reachable: true, path: "^src/adapters/postgres/" },
     },
     {
+      name: "only-the-access-plane-reaches-the-directory",
+      comment:
+        "The directory's admin API has no authentication: whatever reaches " +
+        "it may create an account anybody could then sign in to. So reach " +
+        "is the whole control, and of every root only the access plane's, " +
+        "which asks the authority who may invite before it asks the " +
+        "directory anything, may reach that adapter. Reachability rather " +
+        "than an import, because the shape that breaks it is a shared " +
+        "composition helper that names the directory for several roots.",
+      severity: "error",
+      from: { path: "^src/roots/", pathNot: "^src/roots/accessPlane[.]ts$" },
+      to: { reachable: true, path: "^src/adapters/kratos/" },
+    },
+    {
       name: "nothing-imports-a-process-root",
       comment:
         "src/roots/ holds the graph's executable roots: they may import " +

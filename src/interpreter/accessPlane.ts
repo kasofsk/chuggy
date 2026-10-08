@@ -11,6 +11,10 @@
  * ANYONE THE AUTHORITY REFUSES IS ANSWERED AS ABSENT, exactly as a tenant or
  * project that does not exist, so nothing here tells the two apart.
  *
+ * WHO A SUBJECT IS IS THE DIRECTORY'S, asked once per list about at most
+ * `accessDirectorySubjectsMax` subjects. A plane with no directory lists
+ * subjects alone, and one past the bound is listed as though it had none.
+ *
  * EVERY LIST IS BOUNDED BY ONE BUDGET PER ANSWER: how many pages it reads, how
  * many tuples, and how many projects. A bound that cut the answer short says
  * so as `truncated`, and what was read before it is still answered.
@@ -20,11 +24,17 @@ import {
   accessProjectRoles,
   accessTenantRoles,
   type AccessProjectPeople,
+  type AccessProjectPerson,
   type AccessProjectRole,
   type AccessTenantPeople,
   type AccessTenantPerson,
   type AccessTenantRole,
 } from "../contract/accessPlane.ts";
+import {
+  accessDirectorySubject,
+  accessDirectorySubjectsMax,
+  type AccessDirectory,
+} from "./accessDirectory.ts";
 import { oidcPrincipalSubject, type Principal } from "./principal.ts";
 import {
   projectAccessNamespace,
@@ -115,6 +125,7 @@ export interface AccessPlanePorts {
   readonly access: ProjectAccess;
   readonly tuples: AccessTupleReader;
   readonly grants: ProjectGrantWriter;
+  readonly directory?: AccessDirectory | undefined;
 }
 
 /** The issuer every subject is derived under, which is the one the plane verifies tokens of. */
@@ -271,6 +282,41 @@ function accessNamed<Person>(
   return { people, otherIssuers };
 }
 
+/** Each person marked with who the directory says they are, or as listed where there is no directory. */
+async function accessAccountsNamed<Person extends { readonly subject: string }>(
+  directory: AccessDirectory | undefined,
+  people: readonly Person[],
+): Promise<Person[]> {
+  if (directory === undefined) return [...people];
+  const asked = [
+    ...new Set(
+      people
+        .map((person) => person.subject)
+        .filter((subject) => accessDirectorySubject(subject)),
+    ),
+  ].slice(0, accessDirectorySubjectsMax);
+  const known = new Map(
+    (asked.length === 0 ? [] : await directory.accounts(asked)).map(
+      (account) => [account.subject.toLowerCase(), account] as const,
+    ),
+  );
+  const askedSet = new Set(asked);
+  return people.map((person) => {
+    if (accessDirectorySubject(person.subject) && !askedSet.has(person.subject))
+      return person;
+    const account = known.get(person.subject.toLowerCase());
+    if (account === undefined) return { ...person, account: false };
+    return {
+      ...person,
+      account: true,
+      ...(account.email === undefined ? {} : { email: account.email }),
+      ...(account.githubLogin === undefined
+        ? {}
+        : { githubLogin: account.githubLogin }),
+    };
+  });
+}
+
 /** The tenant's projects as its `tenant` links name them, at most the bound. */
 function accessTenantProjects(
   tenant: TenantId,
@@ -354,12 +400,17 @@ async function accessTenantPeopleRead(
       accessProjectRelationsListed,
       partition.project,
     );
+  const named = accessNamed(
+    holdings,
+    settings.issuer,
+    (subject, principal, holding) =>
+      accessTenantPerson(caller, subject, principal, holding),
+  );
   return {
     tenant,
     projects: projects.map((partition) => partition.project),
-    ...accessNamed(holdings, settings.issuer, (subject, principal, holding) =>
-      accessTenantPerson(caller, subject, principal, holding),
-    ),
+    people: await accessAccountsNamed(ports.directory, named.people),
+    otherIssuers: named.otherIssuers,
     truncated: budget.truncated,
   };
 }
@@ -410,23 +461,25 @@ async function accessProjectPeopleRead(
     accessProjectRelationsListed,
     partition.project,
   );
+  const named = accessNamed(
+    holdings,
+    settings.issuer,
+    (subject, principal, holding): AccessProjectPerson => ({
+      subject,
+      mine: principal === caller,
+      tenantAdmin: holding.tenant.has(tenantAdministratorRelation),
+      roles: accessRolesHeld(
+        accessProjectRoles,
+        accessProjectRoleRelations,
+        holding.projects.get(partition.project) ?? new Set(),
+      ),
+    }),
+  );
   return {
     tenant: partition.tenant,
     project: partition.project,
-    ...accessNamed(
-      holdings,
-      settings.issuer,
-      (subject, principal, holding) => ({
-        subject,
-        mine: principal === caller,
-        tenantAdmin: holding.tenant.has(tenantAdministratorRelation),
-        roles: accessRolesHeld(
-          accessProjectRoles,
-          accessProjectRoleRelations,
-          holding.projects.get(partition.project) ?? new Set(),
-        ),
-      }),
-    ),
+    people: await accessAccountsNamed(ports.directory, named.people),
+    otherIssuers: named.otherIssuers,
     truncated: budget.truncated,
   };
 }
