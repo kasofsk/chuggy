@@ -203,6 +203,14 @@ test("the door is told whether the tenant's name is reserved, and a reservation 
   assert.equal(open.writes[0]?.reserved, false);
 });
 
+test("a reservation is exact: a tenant extending a reserved name is not reserved", async () => {
+  for (const tenant of ["accessible", "access-team"]) {
+    const open = creationWith(created);
+    await open.service.create(principal, { ...request, tenant });
+    assert.equal(open.writes[0]?.reserved, false, tenant);
+  }
+});
+
 test("a caller nothing names the tenant to makes it and administers what it made", async () => {
   const { writes, grants, recorded, service } = creationWith(created);
   assert.deepEqual(await service.create(principal, request), {
