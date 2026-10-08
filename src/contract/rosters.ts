@@ -287,6 +287,7 @@ export const operationBoundaryRefusalCodes = [
   "BriefNamesNoRepository",
   "TicketCapacityReached",
   "FinalizationRequestClosed",
+  "OverridesMoveDefinition",
 ] as const;
 export type OperationBoundaryRefusalCode =
   (typeof operationBoundaryRefusalCodes)[number];

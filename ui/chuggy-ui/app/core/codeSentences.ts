@@ -158,6 +158,8 @@ export function operationRefusalSentence(refused: OperationRefusal): string {
       return "the project has no room for this ticket: it holds as many as its configuration allows, or the number is past the ones it offers";
     case "FinalizationRequestClosed":
       return "the finalization request this result answered had closed before the result was decided, though the ticket still waits on that finalization";
+    case "OverridesMoveDefinition":
+      return "these overrides would change the definition the ticket was released with; while it is parked only how its worker is started may change";
   }
 }
 

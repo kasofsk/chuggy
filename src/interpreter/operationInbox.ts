@@ -230,6 +230,7 @@ export function classifyCommand(command: ProjectCommand): {
   if (
     command.command === "ReleaseDraft" ||
     command.command === "UpdateTicket" ||
+    command.command === "ChangeTicketOverrides" ||
     command.command === "ManualDispatch" ||
     command.command === "ProposeDispatch"
   )

@@ -3,7 +3,8 @@
  * from, the form that ticket's draft seeds, and what of it is not carried.
  *
  * The form is the edit's own reading of the draft, so a duplicate holds every
- * field an edit of it would. It drops only what a new ticket could not send or
+ * field an edit of it would, but for the overrides of a ticket past Pending:
+ * those are the ticket's, which an escalation may have moved past its draft's. It drops only what a new ticket could not send or
  * could never run — a repository no live binding offers, and a dependency on a
  * revoked ticket — and starts on the configuration the draft names only where
  * the project still offers it, never on a revision kept for the draft alone.
@@ -27,6 +28,7 @@ import {
   editFormFrom,
   editOffersFrom,
 } from "./ticketEdit.ts";
+import { overridesHeldOf } from "./ticketOverrides.ts";
 
 /** What the new-ticket address says about where it starts: from nothing, or
  * from the ticket it names. */
@@ -88,6 +90,8 @@ export function ticketDuplicateRevoked(
  */
 export function ticketDuplicateSeed(input: {
   readonly draft: DraftResponse;
+  /** The ticket the draft released, absent where it released none. */
+  readonly ticket?: TicketResponse | undefined;
   readonly offers: readonly CreationOffer[];
   /** What the project binds, retired bindings among them. */
   readonly bound: readonly ProjectRepositoryResponse[];
@@ -111,9 +115,13 @@ export function ticketDuplicateSeed(input: {
   const dependencies = edited.dependencies.filter((dependency) =>
     input.revoked.includes(dependency),
   );
+  const ticket = input.ticket;
   return {
     form: {
       ...edited,
+      ...(ticket === undefined || ticket.phase === "Pending"
+        ? {}
+        : { overrides: overridesHeldOf(ticket.overrides) }),
       dependencies: edited.dependencies.filter(
         (dependency) => !input.revoked.includes(dependency),
       ),

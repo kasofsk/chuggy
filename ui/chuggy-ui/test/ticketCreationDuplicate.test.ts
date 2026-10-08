@@ -6,7 +6,10 @@
 
 import { expect, test } from "vitest";
 
-import type { DraftResponse } from "../../../src/contract/responses.ts";
+import type {
+  DraftResponse,
+  TicketResponse,
+} from "../../../src/contract/responses.ts";
 import {
   creationBodyFrom,
   creationConfigurationChosen,
@@ -18,6 +21,7 @@ import {
   creationDraft,
   creationOffer,
 } from "./ticketCreationFixture.ts";
+import { ticketInstants } from "./ticketInstants.ts";
 
 const chuggy = "https://forge.test/kasofsk/chuggy";
 
@@ -82,4 +86,33 @@ test("choosing one leaves the carried checks, dependencies and program, and send
     authoring: original.authoring,
     brief: { checks: ["npm test"] },
   });
+});
+
+/** The original once its escalation took overrides its draft never held. */
+function released(phase: TicketResponse["phase"]): TicketResponse {
+  return {
+    ticket: original.ticket,
+    phase,
+    sequence: 9,
+    ...ticketInstants,
+    overrides: { worker: { setup: ["make prepare"] } },
+  };
+}
+
+test("a ticket past Pending is duplicated under the overrides it holds, and a Pending one under its draft's", () => {
+  const drafted = { ...original, overrides: { practices: [] } };
+  const seeded = (phase: TicketResponse["phase"]) =>
+    ticketDuplicateSeed({
+      draft: drafted,
+      ticket: released(phase),
+      offers,
+      bound: [creationBinding(chuggy)],
+      revoked: [],
+      preferred: undefined,
+      partial: false,
+    }).form.overrides;
+  expect(seeded("Escalated")).toStrictEqual({
+    "worker.setup": ["make prepare"],
+  });
+  expect(seeded("Pending")).toStrictEqual({ practices: [] });
 });

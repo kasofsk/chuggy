@@ -103,7 +103,8 @@ interface TicketProjectionRow {
  * What a ticket's last release or update stored: the brief as its text, the
  * configuration revision the projection pins, with the label its version join
  * adds, and the authoring its draft held at the version that release or update
- * named, which a revision since cannot move.
+ * named, which a revision since cannot move. The overrides are the ones the
+ * ticket holds now, which an escalation may have changed since.
  */
 interface ReleasedBriefRow extends ConfigurationVersionRow {
   readonly brief: string | null;
@@ -529,7 +530,7 @@ async function readTicketsByIdentity(
   return found.rows;
 }
 
-/** One ticket's projection with the brief, the configuration, its overrides and the authoring it was last released with. */
+/** One ticket's projection with the brief, the configuration and the authoring it was last released with, and the overrides it holds. */
 async function readTicketRow(
   pool: pg.Pool,
   partition: Partition,

@@ -556,6 +556,20 @@ export function parsePartition(tenant: string, project: string): Partition {
   return { tenant: asTenantId(tenant), project: asProjectId(project) };
 }
 
+/** An escalated ticket's overrides change, fenced as an answer to its escalation is. */
+function publicMutationOverridesCommand(
+  mutation: Extract<PublicMutation, { mutation: "ChangeTicketOverrides" }>,
+): ProjectCommand {
+  return {
+    version: 1,
+    command: "ChangeTicketOverrides",
+    ticket: asTicketId(mutation.ticket),
+    action: mutation.action,
+    authorizingSeq: mutation.authorizingSequence,
+    overrides: mutation.overrides,
+  };
+}
+
 function publicMutationCommand(mutation: PublicMutation): ProjectCommand {
   switch (mutation.mutation) {
     case "RevokeTicket":
@@ -591,6 +605,8 @@ function publicMutationCommand(mutation: PublicMutation): ProjectCommand {
         authoringVersion: mutation.authoringVersion,
         configurationRevision: mutation.configurationRevision,
       };
+    case "ChangeTicketOverrides":
+      return publicMutationOverridesCommand(mutation);
     case "ResolveNativeAction":
       return {
         version: 1,

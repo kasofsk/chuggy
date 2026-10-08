@@ -35,6 +35,12 @@
  * which of the offered answers was given, and the head and the projection are
  * exactly as they were.
  *
+ * AN ESCALATED TICKET'S OVERRIDES CHANGE IN THAT SAME SHAPE. The change names
+ * no domain command, so it writes no entry; what it stores is beside the
+ * ticket's definition, and only once the transaction has held it to the open
+ * escalation it names, to a ready configuration and to a definition that does
+ * not move. The escalation stays open, because the change does not answer it.
+ *
  * A DEFERRAL SETTLES NOTHING AND COUNTS ITSELF. The input stays pending and
  * its deferred passes go up by one, so the writer that takes it next knows how
  * many passes a transient source has already cost it.
@@ -235,6 +241,17 @@ export interface NativeActionAnswer {
   readonly open: boolean;
 }
 
+/**
+ * The whole of the overrides an escalated ticket is to hold, and the open
+ * escalation the change was typed against.
+ */
+export interface TicketOverridesChange {
+  readonly ticket: TicketId;
+  readonly action: string;
+  readonly authorizingSeq: number;
+  readonly overrides: ConfigurationOverrides;
+}
+
 export interface DecisionMaterialization {
   readonly actions: readonly NativeActionPlan[];
   readonly execution: readonly ExecutionRequestPlan[];
@@ -277,6 +294,10 @@ export type DecisionOutcome =
     }
   | { readonly outcome: "Refused"; readonly refusal: Refusal }
   | { readonly outcome: "Answered"; readonly answer: NativeActionAnswer }
+  | {
+      readonly outcome: "OverridesChanged";
+      readonly change: TicketOverridesChange;
+    }
   | { readonly outcome: "Deferred" };
 
 /** One decision offered for commit: what authorizes it, what caused it, and what it writes. */

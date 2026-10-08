@@ -3,7 +3,8 @@
  * the named ticket's draft as an edit of it would be, less what a new ticket
  * cannot carry.
  *
- * The draft and the dependencies it names are read once, as the screen opens,
+ * The draft, the ticket it released and the dependencies it names are read
+ * once, as the screen opens,
  * and the form is seeded from what those reads said then: a later read of
  * either redraws nothing under the reader's typing. Submitting is a plain
  * creation, and nothing ties the ticket it makes to the one it started from.
@@ -13,7 +14,10 @@ import { Link, useParams } from "@tanstack/react-router";
 import { useState } from "react";
 import type { ReactNode } from "react";
 
-import type { DraftResponse } from "../../../../src/contract/responses.ts";
+import type {
+  DraftResponse,
+  TicketResponse,
+} from "../../../../src/contract/responses.ts";
 import { apiDraft, apiTicket } from "../core/apiRoutes.ts";
 import {
   ticketDuplicateRevoked,
@@ -33,17 +37,24 @@ interface DuplicateProps extends CreationScreenReady {
   readonly from: number;
 }
 
+/** What a duplicate is seeded from: the draft, and the ticket it released where it released one. */
+interface DuplicateReads {
+  readonly draft: DraftResponse;
+  readonly ticket: TicketResponse | undefined;
+}
+
 /** The form, seeded once from the reads it opened on. */
 function DuplicateForm(
-  props: DuplicateProps & {
-    readonly draft: DraftResponse;
-    readonly revoked: readonly number[];
-  },
+  props: DuplicateProps &
+    DuplicateReads & {
+      readonly revoked: readonly number[];
+    },
 ): ReactNode {
   const { context, draft, partition, revoked } = props;
   const [seed] = useState(() =>
     ticketDuplicateSeed({
       draft,
+      ticket: props.ticket,
       offers: context.offers,
       bound: context.repositories,
       revoked,
@@ -56,7 +67,7 @@ function DuplicateForm(
 
 /** Each dependency the draft names, read for whether it was revoked. */
 function DuplicateDependencies(
-  props: DuplicateProps & { readonly draft: DraftResponse },
+  props: DuplicateProps & DuplicateReads,
 ): ReactNode {
   const { partition } = props;
   const [draft] = useState(props.draft);
@@ -81,8 +92,22 @@ function DuplicateRead(props: DuplicateProps): ReactNode {
     String(from),
     (readPorts) => apiDraft(readPorts, partition, from),
   );
+  const ticketState = usePanelResource(
+    partition,
+    "Ticket",
+    String(from),
+    (readPorts) => apiTicket(readPorts, partition, from),
+  );
   if (draftState.state !== "Ready") return <PanelUnready state={draftState} />;
-  return <DuplicateDependencies {...props} draft={draftState.value} />;
+  if (ticketState.state === "Pending" || ticketState.state === "Failed")
+    return <PanelUnready state={ticketState} />;
+  return (
+    <DuplicateDependencies
+      {...props}
+      draft={draftState.value}
+      ticket={ticketState.state === "Ready" ? ticketState.value : undefined}
+    />
+  );
 }
 
 export function TicketDuplicate(props: { readonly from: number }): ReactNode {

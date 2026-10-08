@@ -10,9 +10,15 @@
  */
 
 import assert from "node:assert/strict";
+import { readdirSync, readFileSync } from "node:fs";
 import { test } from "node:test";
 
-import type { ConfigurationOverrides } from "../../src/contract/configurationOverrides.ts";
+import {
+  configurationOverridesSchema,
+  parkedTicketOverrideFields,
+  type ConfigurationOverrides,
+} from "../../src/contract/configurationOverrides.ts";
+import { parkedOverridesVerdict } from "../../src/interpreter/parkedOverrides.ts";
 import type { ReleasedTicket } from "../../src/domain/generated/modelTypes.ts";
 import {
   canonicalConfigurationOf,
@@ -248,5 +254,166 @@ test("an override of the work instructions defines the ticket as a configuration
   assert.deepEqual(
     overridden,
     draftDefinition({ ...document, work: { instructions } }, undefined),
+  );
+});
+
+/** One override of each field the contract offers a parked ticket, unlike what the configuration says. */
+function parkedOverrideOf(
+  field: (typeof parkedTicketOverrideFields)[number],
+  pinned: Readonly<Record<string, unknown>>,
+): ConfigurationOverrides {
+  const worker = pinned["worker"] as {
+    readonly mode: Readonly<Record<string, unknown>> & {
+      readonly arguments: readonly string[];
+    };
+  };
+  switch (field) {
+    case "worker.mode":
+      return {
+        worker: {
+          mode: {
+            ...worker.mode,
+            arguments: [...worker.mode.arguments, "--model=another"],
+          } as NonNullable<
+            NonNullable<ConfigurationOverrides["worker"]>["mode"]
+          >,
+        },
+      };
+    case "worker.setup":
+      return { worker: { setup: ["make prepare"] } };
+    case "worker.files":
+      return { worker: { files: [{ path: "notes.md", content: "Read." }] } };
+    case "practices":
+      return { practices: [] };
+    case "brief.motivation":
+      return { brief: { motivation: ["Another reason."] } };
+    case "brief.acceptanceCriteria":
+      return { brief: { acceptanceCriteria: ["Another criterion."] } };
+    case "brief.constraints":
+      return { brief: { constraints: ["Another constraint."] } };
+  }
+}
+
+/** Every field an override may name, by path, read off the contract's schema. */
+const overridableFields = Object.entries(
+  configurationOverridesSchema.shape,
+).flatMap(([key, optional]) => {
+  const inner = optional.unwrap();
+  return "shape" in inner
+    ? Object.keys(inner.shape).map((field) => `${key}.${field}`)
+    : [key];
+});
+
+test("what the contract offers a parked ticket leaves every repository configuration's definition where it was", () => {
+  assert.deepEqual(
+    [...parkedTicketOverrideFields, "work.instructions"].sort(),
+    [...overridableFields].sort(),
+  );
+  const directory = new URL("../../.chug/configurations/", import.meta.url);
+  const names = readdirSync(directory).filter((name) => name.endsWith(".json"));
+  assert.ok(names.length > 0);
+  const brief = asDraftBrief({
+    intent: "Do the one thing.",
+    links: [],
+    checks: [],
+    repository: "repository-one",
+  });
+  for (const name of names) {
+    const pinned = (
+      JSON.parse(readFileSync(new URL(name, directory), "utf8")) as {
+        readonly configuration: Readonly<Record<string, unknown>>;
+      }
+    ).configuration;
+    const ticket = {
+      configuration: canonicalConfigurationOf(pinned),
+      configurationRepository: undefined,
+      authoring,
+      brief,
+    };
+    for (const field of parkedTicketOverrideFields)
+      assert.deepEqual(
+        parkedOverridesVerdict(
+          ticket,
+          undefined,
+          parkedOverrideOf(field, pinned),
+        ),
+        { verdict: "Admitted" },
+        `${name}: ${field}`,
+      );
+    assert.deepEqual(
+      parkedOverridesVerdict(ticket, undefined, {
+        work: { instructions: ["Do the other work."] },
+      }),
+      { verdict: "Refused", code: "OverridesMoveDefinition" },
+      name,
+    );
+  }
+});
+
+test("a parked ticket's overrides are held to the ones it holds, not to the configuration alone", () => {
+  const ticket = {
+    configuration: canonicalConfigurationOf(document),
+    configurationRepository: undefined,
+    authoring,
+    brief: asDraftBrief({ ...briefBeforeImages, repository: "repository-one" }),
+  };
+  const instructions = { work: { instructions: ["Do the other work."] } };
+  assert.deepEqual(
+    parkedOverridesVerdict(ticket, instructions, {
+      ...instructions,
+      practices: [],
+    }),
+    { verdict: "Admitted" },
+  );
+  assert.deepEqual(parkedOverridesVerdict(ticket, instructions, {}), {
+    verdict: "Refused",
+    code: "OverridesMoveDefinition",
+  });
+  assert.deepEqual(
+    parkedOverridesVerdict(ticket, undefined, {
+      practices: ["NoSuchPractice"],
+    }),
+    { verdict: "Refused", code: "ConfigurationInvalid" },
+  );
+});
+
+test("an agent named where the requirement is a container capability moves the definition, though the contract offers the mode", () => {
+  const ticket = {
+    configuration: canonicalConfigurationOf({
+      ...document,
+      executionRequirements: {
+        platformDefault: {
+          mode: "ContainerCapability",
+          operatingSystem: "Linux",
+          architecture: "Amd64",
+          capabilities: ["Agent:Claude"],
+        },
+        platformDefaultVersion: 1,
+      },
+    }),
+    configurationRepository: undefined,
+    authoring,
+    brief: asDraftBrief({ ...briefBeforeImages, repository: "repository-one" }),
+  };
+  assert.deepEqual(
+    parkedOverridesVerdict(ticket, undefined, {
+      worker: {
+        mode: { type: "SingleAgent", agent: "Claude", arguments: ["--two"] },
+      },
+    }),
+    { verdict: "Admitted" },
+  );
+  assert.deepEqual(
+    parkedOverridesVerdict(ticket, undefined, {
+      worker: {
+        mode: {
+          type: "SingleAgent",
+          agent: "Codex",
+          arguments: [],
+          model: "another",
+        },
+      },
+    }),
+    { verdict: "Refused", code: "OverridesMoveDefinition" },
   );
 });
