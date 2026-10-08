@@ -11,7 +11,13 @@ import { cleanup, fireEvent, screen, within } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
-import { answer, press, turned } from "../screenHarness.tsx";
+import {
+  answer,
+  heldAnswer,
+  press,
+  settled,
+  turned,
+} from "../screenHarness.tsx";
 import type { DrawnStrict } from "../screenHarness.tsx";
 import type * as BrowserPorts from "../../app/browser/ports.ts";
 import {
@@ -198,10 +204,25 @@ test("the roster draws each person on a line: their address or subject, their lo
   ]);
 });
 
-test("a holder chosen and cancelled is forgotten when the dialog opens again", async () => {
+function notPermitted(): Response {
+  return answer(
+    { error: { code: "AccessNotPermitted", message: "refused" } },
+    403,
+  );
+}
+
+function addButton(): HTMLButtonElement {
+  return within(dialog()).getByRole<HTMLButtonElement>("button", {
+    name: "Add",
+  });
+}
+
+test("a holder chosen and cancelled is forgotten when the dialog opens again, the person with the choice", async () => {
   await drawManaging();
   await opened("Workspace", "Grant Member");
-  await chosen("Site admins");
+  await chosen("Person");
+  await press("Choose ada@example.com");
+  expect(addButton().disabled).toBe(false);
   await press("Cancel");
   await opened("Workspace", "Grant Member");
   expect(
@@ -209,10 +230,41 @@ test("a holder chosen and cancelled is forgotten when the dialog opens again", a
       .getAllByRole("radio")
       .map((radio) => radio.getAttribute("aria-checked")),
   ).toStrictEqual(["false", "false", "false"]);
-  expect(
-    within(dialog()).getByRole<HTMLButtonElement>("button", { name: "Add" })
-      .disabled,
-  ).toBe(true);
+  expect(addButton().disabled).toBe(true);
+  await chosen("Person");
+  expect(addButton().disabled).toBe(true);
+});
+
+test("a refusal's line is gone when the dialog opens again", async () => {
+  await drawManaging({ added: notPermitted });
+  await opened("Workspace", "Grant Member");
+  await chosen("Workspace members");
+  await added();
+  expect(within(dialog()).getByRole("status")).toBeTruthy();
+  await press("Cancel");
+  await opened("Workspace", "Grant Member");
+  expect(within(dialog()).queryByRole("status")).toBeNull();
+});
+
+test("an addition unanswered, Cancel takes no press and nothing closes the dialog, so its refusal is drawn there", async () => {
+  const held = heldAnswer();
+  await drawManaging({ added: () => held.answered });
+  await opened("Workspace", "Grant Member");
+  await chosen("Workspace members");
+  await added();
+  const cancel = within(dialog()).getByRole<HTMLButtonElement>("button", {
+    name: "Cancel",
+  });
+  expect(cancel.disabled).toBe(true);
+  await turned(() => {
+    fireEvent.keyDown(dialog(), { key: "Escape" });
+  });
+  await turned(() => {
+    held.release(notPermitted());
+  });
+  await settled();
+  expect(within(dialog()).getByRole("status")).toBeTruthy();
+  expect(cancel.disabled).toBe(false);
 });
 
 test("the People list not read, Person is not offered, and a permission with nothing left says so", async () => {

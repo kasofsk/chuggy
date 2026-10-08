@@ -538,6 +538,8 @@ test("a box is checked as the list holds it, and the one being sent as the chang
   expect(tenantPersonBoxChecked(member, member.change)).toBe(true);
   expect(tenantPersonBoxChecked(beacon, member.change)).toBe(false);
   expect(tenantPersonBoxChecked(beacon, beacon.change)).toBe(true);
+  const reread = { ...member, change: { ...member.change, held: true } };
+  expect(tenantPersonBoxChecked(reread, member.change)).toBe(true);
   const elsewhere = [
     { scope: "Project", project: "atlas", role: "Admin", held: false },
     { scope: "Project", project: "beacon", role: "Dispatcher", held: false },

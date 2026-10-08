@@ -61,13 +61,14 @@ afterEach(() => {
 /** The reads a change reads again that the page itself holds. */
 const siteReads = [siteAuthoritiesPath, permissionsPeoplePath];
 
-test("a site manager sees the site's two permissions and no workspace section, the site's admins always managing its permissions", async () => {
+test("a site manager sees the site's three permissions and no workspace section, the site's admins always managing its permissions", async () => {
   await drawSitePermissions();
   expect(permissionsDrawn("Site")).toStrictEqual([
     {
       name: "Create accounts",
       holders: ["Site admins", "acme admins", "globex admins"],
     },
+    { name: "Create workspaces", holders: ["Site admins"] },
     { name: "Change permissions", holders: ["Site admins"] },
   ]);
   expect(sectionDrawn("Workspace")).toBe(false);
@@ -114,6 +115,7 @@ test("a site manager may remove the site's holders, but no standing admin or unn
     "Remove Site admins from Create accounts",
     "Remove acme admins from Create accounts",
     "Remove globex admins from Create accounts",
+    "Remove Site admins from Create workspaces",
     "Remove ada@example.com from Change permissions",
   ]);
   expect(new Set(names).size).toBe(names.length);
@@ -159,11 +161,12 @@ test("a site manager may add to each of the site's permissions", async () => {
   await drawSitePermissions();
   expect(addButtons("Site")).toStrictEqual([
     "Add to Create accounts",
+    "Add to Create workspaces",
     "Add to Change permissions",
   ]);
 });
 
-test("This workspace's admins is offered on Create accounts only where they do not hold it, and Change permissions offers a person alone", async () => {
+test("This workspace's admins is offered on Create accounts only where they do not hold it and never on Create workspaces, and Change permissions offers a person alone", async () => {
   await drawSitePermissions({ people: () => answer(permissionsPeopleListed) });
   await opened("Site", "Create accounts");
   expect(choicesOffered()).toStrictEqual(["Person"]);
@@ -198,6 +201,15 @@ test("This workspace's admins is offered on Create accounts only where they do n
       body: undefined,
     },
   ]);
+  await opened("Site", "Create workspaces");
+  expect(choicesOffered()).toStrictEqual(["Site admins", "Person"]);
+  await chosen("Site admins");
+  await added();
+  expect(additionsSent(drawn).at(-1)).toStrictEqual({
+    method: "POST",
+    url: `${siteAuthoritiesPath}/TenantCreators/groups/SiteAdmins`,
+    body: undefined,
+  });
   await opened("Site", "Change permissions");
   expect(choicesOffered()).toStrictEqual(["Person"]);
 });

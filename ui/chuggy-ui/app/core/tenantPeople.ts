@@ -408,15 +408,17 @@ function tenantPersonChangeNamed(change: TenantPersonChange): string {
 }
 
 /** Whether a box is drawn checked: as the list holds it, or as the change
- * being sent will leave it until the list is read again. */
+ * being sent will leave it, whether or not the list has been read again. */
 export function tenantPersonBoxChecked(
   box: TenantPersonBox,
   sending: TenantPersonChange | undefined,
 ): boolean {
-  const sent =
+  if (
     sending !== undefined &&
-    tenantPersonChangeNamed(sending) === tenantPersonChangeNamed(box.change);
-  return sent ? !box.change.held : box.change.held;
+    tenantPersonChangeNamed(sending) === tenantPersonChangeNamed(box.change)
+  )
+    return !sending.held;
+  return box.change.held;
 }
 
 /** The workspace roles an invitation offers, in the roster's order. */

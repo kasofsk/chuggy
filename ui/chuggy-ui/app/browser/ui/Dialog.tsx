@@ -10,7 +10,10 @@
  *
  * Total over a foot of its own and one the caller hands it, each at a roster's
  * width or a form's. Its own foot is Close; a caller's is the dialog's
- * actions, drawn at the right, and closing is then one of them.
+ * actions, drawn at the right, and closing is then one of them. Beside those
+ * actions stands the line a refusal left, where no length of body hides it,
+ * and while the caller's request is unanswered nothing closes the dialog, so
+ * that line always has somewhere to be drawn.
  *
  * It is never taller than the viewport. The title and the foot stand at its
  * edges and the caller's body scrolls between them, so a roster of any length
@@ -26,9 +29,13 @@ import type { ReactNode } from "react";
 
 import { buttonLookClassName } from "./Button.tsx";
 import "./Dialog.css";
+import { Notice } from "./Notice.tsx";
 import type { ButtonSize, ButtonVariant } from "./Button.tsx";
 
-function DialogFoot(props: { readonly foot: ReactNode }): ReactNode {
+function DialogFoot(props: {
+  readonly foot: ReactNode;
+  readonly note: string | undefined;
+}): ReactNode {
   if (props.foot === undefined)
     return (
       <RadixDialog.Close
@@ -39,6 +46,11 @@ function DialogFoot(props: { readonly foot: ReactNode }): ReactNode {
     );
   return (
     <div className="flex flex-wrap items-center justify-end gap-2">
+      {props.note === undefined ? null : (
+        <div className="me-auto min-w-0">
+          <Notice tone="danger" inline role="status" detail={props.note} />
+        </div>
+      )}
       {props.foot}
     </div>
   );
@@ -56,6 +68,10 @@ export function Dialog(props: {
   readonly wide?: boolean;
   /** The dialog's own actions, in place of Close. */
   readonly foot?: ReactNode;
+  /** What a refusal left, drawn beside the caller's actions. */
+  readonly note?: string | undefined;
+  /** The caller's request is unanswered, and until it is nothing closes the dialog. */
+  readonly busy?: boolean;
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
   readonly children: ReactNode;
@@ -65,7 +81,9 @@ export function Dialog(props: {
     <RadixDialog.Root
       modal={false}
       open={props.open}
-      onOpenChange={props.onOpenChange}
+      onOpenChange={(open) => {
+        if (open || props.busy !== true) props.onOpenChange(open);
+      }}
     >
       <RadixDialog.Trigger
         disabled={props.triggerDisabled ?? false}
@@ -90,7 +108,7 @@ export function Dialog(props: {
             <div className="dialog-body -m-1 flex min-h-0 flex-col gap-4 overflow-y-auto p-1">
               {props.children}
             </div>
-            <DialogFoot foot={props.foot} />
+            <DialogFoot foot={props.foot} note={props.note} />
           </RadixDialog.Content>
         </div>
       </RadixDialog.Portal>

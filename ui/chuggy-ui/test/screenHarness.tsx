@@ -154,6 +154,19 @@ export function scriptedFetch(
   return { fetch: fetching, sent };
 }
 
+/** An answer a case holds back and lets go, for what a page draws between a
+ * press and its answer. */
+export function heldAnswer(): {
+  readonly answered: Promise<Response>;
+  readonly release: (response: Response) => void;
+} {
+  let release: (response: Response) => void = () => undefined;
+  const answered = new Promise<Response>((resolve) => {
+    release = resolve;
+  });
+  return { answered, release };
+}
+
 export interface DrawnStrict {
   readonly sent: readonly SentRequest[];
   /** The page drawn again with nothing about it changed, which is what a

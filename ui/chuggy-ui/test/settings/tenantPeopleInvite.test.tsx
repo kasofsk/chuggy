@@ -15,7 +15,13 @@ import {
   accessInvitationCodes,
   accessInvitationProjectsMax,
 } from "../../../../src/contract/accessPlane.ts";
-import { answer, press, settled, turned } from "../screenHarness.tsx";
+import {
+  answer,
+  heldAnswer,
+  press,
+  settled,
+  turned,
+} from "../screenHarness.tsx";
 import type { DrawnStrict } from "../screenHarness.tsx";
 import type * as BrowserPorts from "../../app/browser/ports.ts";
 import { styleless } from "../styleless.ts";
@@ -305,6 +311,25 @@ test("the dialog's actions are Cancel then Invite, and Cancel closes it with not
   await press("Cancel");
   expect(screen.queryByRole("dialog")).toBeNull();
   expect(changesSent(drawn)).toStrictEqual([]);
+});
+
+test("an invitation unanswered, Cancel takes no press and nothing closes the dialog, so its refusal is drawn there", async () => {
+  const held = heldAnswer();
+  await invitedWith({ changed: () => held.answered });
+  await sent();
+  const cancel = within(dialog()).getByRole<HTMLButtonElement>("button", {
+    name: "Cancel",
+  });
+  expect(cancel.disabled).toBe(true);
+  await turned(() => {
+    fireEvent.keyDown(dialog(), { key: "Escape" });
+  });
+  await turned(() => {
+    held.release(refused(422, accessInvitationCodes.GithubAccountUnknown));
+  });
+  await settled();
+  expect(within(dialog()).getByText("No such GitHub user")).toBeTruthy();
+  expect(cancel.disabled).toBe(false);
 });
 
 test("a dialog opened again starts from nothing typed and nothing said", async () => {

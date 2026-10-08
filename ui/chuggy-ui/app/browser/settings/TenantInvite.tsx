@@ -40,7 +40,6 @@ import { useApiPorts } from "../api.ts";
 import { Button } from "../ui/Button.tsx";
 import { Dialog } from "../ui/Dialog.tsx";
 import { Input } from "../ui/Input.tsx";
-import { Notice } from "../ui/Notice.tsx";
 import { RadioGroup } from "../ui/RadioGroup.tsx";
 import { tenantPeopleReread } from "./tenantPeopleResource.ts";
 import { TenantProjectsGrid } from "./TenantProjectsGrid.tsx";
@@ -195,7 +194,7 @@ function TenantInviteFields(props: {
   readonly offered: ReturnType<typeof tenantInvitationProjects>;
   readonly inviting: TenantInviting;
 }): ReactNode {
-  const { form, change, status } = props.inviting;
+  const { form, change } = props.inviting;
   return (
     <div className="grid gap-4">
       <TenantInviteText
@@ -227,9 +226,6 @@ function TenantInviteFields(props: {
         offered={props.offered}
         inviting={props.inviting}
       />
-      {status === undefined ? null : (
-        <Notice tone="danger" inline role="status" detail={status} />
-      )}
     </div>
   );
 }
@@ -241,7 +237,12 @@ function TenantInviteFoot(props: {
   const inviting = props.inviting;
   return (
     <>
-      <Button variant="quiet" size="sm" onClick={props.onCancel}>
+      <Button
+        variant="quiet"
+        size="sm"
+        disabled={inviting.busy}
+        onClick={props.onCancel}
+      >
         Cancel
       </Button>
       <Button
@@ -279,6 +280,8 @@ function TenantInviteDialog(props: {
         if (opened) inviting.begin(blank);
         setOpen(opened);
       }}
+      busy={inviting.busy}
+      note={inviting.status}
       foot={
         <TenantInviteFoot
           inviting={inviting}

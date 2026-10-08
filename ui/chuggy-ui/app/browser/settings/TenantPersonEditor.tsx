@@ -46,7 +46,6 @@ import { Button } from "../ui/Button.tsx";
 import { Checkbox } from "../ui/Checkbox.tsx";
 import { Confirm } from "../ui/Confirm.tsx";
 import { Dialog } from "../ui/Dialog.tsx";
-import { Notice } from "../ui/Notice.tsx";
 import { tenantPeopleReread } from "./tenantPeopleResource.ts";
 import { TenantProjectsGrid } from "./TenantProjectsGrid.tsx";
 
@@ -73,6 +72,8 @@ interface TenantPersonChanging {
   readonly sending: TenantPersonChange | undefined;
   readonly note: string | undefined;
   readonly asking: TenantPersonChange | undefined;
+  /** The editor opening: nothing asked and nothing said yet. */
+  readonly begin: () => void;
   readonly press: (change: TenantPersonChange) => void;
   readonly send: (change: TenantPersonChange) => void;
   readonly cancel: () => void;
@@ -113,8 +114,11 @@ function useTenantPersonChange(
     note,
     asking,
     send,
+    begin: () => {
+      setAsking(undefined);
+      setNote(undefined);
+    },
     press: (change) => {
-      if (sending !== undefined) return;
       if (tenantPersonChangeAsks(person, change)) setAsking(change);
       else send(change);
     },
@@ -122,6 +126,11 @@ function useTenantPersonChange(
       setAsking(undefined);
     },
   };
+}
+
+/** No box takes a press while a change is asked about or being sent. */
+function tenantPersonChangeHeld(changing: TenantPersonChanging): boolean {
+  return changing.asking !== undefined || changing.sending !== undefined;
 }
 
 function TenantPersonWorkspace(props: {
@@ -142,7 +151,7 @@ function TenantPersonWorkspace(props: {
             key={box.label}
             label={box.label}
             checked={tenantPersonBoxChecked(box, changing.sending)}
-            disabled={!box.offered || changing.asking !== undefined}
+            disabled={!box.offered || tenantPersonChangeHeld(changing)}
             onChange={() => {
               changing.press(box.change);
             }}
@@ -176,13 +185,12 @@ function TenantPersonAsked(props: {
 }
 
 function TenantPersonEditorBody(props: {
-  readonly tenant: string;
   readonly person: AccessTenantPerson;
   readonly projects: readonly string[];
   readonly abilities: AccessTenantAbilities | undefined;
+  readonly changing: TenantPersonChanging;
 }): ReactNode {
-  const { person, abilities } = props;
-  const changing = useTenantPersonChange(props.tenant, person);
+  const { person, abilities, changing } = props;
   return (
     <div className="grid gap-5" aria-busy={changing.sending !== undefined}>
       <TenantPersonWorkspace
@@ -199,7 +207,7 @@ function TenantPersonEditorBody(props: {
           if (box === undefined) return undefined;
           return {
             checked: tenantPersonBoxChecked(box, changing.sending),
-            disabled: !box.offered || changing.asking !== undefined,
+            disabled: !box.offered || tenantPersonChangeHeld(changing),
           };
         }}
         onToggle={(project, role) => {
@@ -207,9 +215,6 @@ function TenantPersonEditorBody(props: {
           if (box !== undefined) changing.press(box.change);
         }}
       />
-      {changing.note === undefined ? null : (
-        <Notice tone="danger" inline role="status" detail={changing.note} />
-      )}
     </div>
   );
 }
@@ -223,7 +228,9 @@ export function TenantPersonEditor(props: {
   readonly abilities: AccessTenantAbilities | undefined;
 }): ReactNode {
   const [open, setOpen] = useState(false);
+  const changing = useTenantPersonChange(props.tenant, props.person);
   const name = tenantPersonName(props.person).name;
+  const busy = changing.sending !== undefined;
   return (
     <Dialog
       wide
@@ -232,10 +239,16 @@ export function TenantPersonEditor(props: {
       triggerNamed={`Edit ${name}`}
       triggerVariant="quiet"
       open={open}
-      onOpenChange={setOpen}
+      onOpenChange={(opened) => {
+        if (opened) changing.begin();
+        setOpen(opened);
+      }}
+      busy={busy}
+      note={changing.note}
       foot={
         <Button
           size="sm"
+          disabled={busy}
           onClick={() => {
             setOpen(false);
           }}
@@ -245,10 +258,10 @@ export function TenantPersonEditor(props: {
       }
     >
       <TenantPersonEditorBody
-        tenant={props.tenant}
         person={props.person}
         projects={props.projects}
         abilities={props.abilities}
+        changing={changing}
       />
     </Dialog>
   );

@@ -1,6 +1,7 @@
 /**
- * The site's permissions: who may make an account and who may change who may,
- * drawn and changed by the workspace page's own section. Each holder a route
+ * The site's permissions: who may make an account, who may make a workspace
+ * and who may change who may, drawn and changed by the workspace page's own
+ * section. Each holder a route
  * removes is removed on its press and each permission carries `Add`, a person
  * among the People list of the workspace the page was reached through, whose
  * admins are the ones `Add` offers account creation to; either change reads

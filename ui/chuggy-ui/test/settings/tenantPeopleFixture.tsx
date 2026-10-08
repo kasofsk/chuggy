@@ -111,7 +111,7 @@ export interface PeopleDrawing {
   /** What the abilities answer, read again with the list. */
   readonly abilities?: () => Response;
   /** What a grant, a removal or an invitation is answered with. */
-  readonly changed?: (request: SentRequest) => Response;
+  readonly changed?: (request: SentRequest) => Response | Promise<Response>;
 }
 
 export function drawPeople(drawing: PeopleDrawing = {}): Promise<DrawnStrict> {

@@ -8,11 +8,17 @@
  */
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
-import { cleanup, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, screen, within } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
-import { answer, press } from "../screenHarness.tsx";
+import {
+  answer,
+  heldAnswer,
+  press,
+  settled,
+  turned,
+} from "../screenHarness.tsx";
 import type * as BrowserPorts from "../../app/browser/ports.ts";
 import { styleless } from "../styleless.ts";
 import {
@@ -224,13 +230,53 @@ test("a refused change draws its line in the editor, and the box shows what the 
   expect(heldIn(personRow("s-bob"))).toStrictEqual(["Member"]);
 });
 
-test("removing the only admin draws the conflict's sentence", async () => {
+test("removing the only admin draws the conflict's sentence, gone when the editor opens again", async () => {
   await drawPeople({ changed: () => refused(409, "LastTenantAdministrator") });
   const editor = await editorOf("s-bob");
   await boxPressed(editor, "Member");
   expect(
     within(editor).getByText("Only admin · grant another first"),
   ).toBeTruthy();
+  await press("Done");
+  expect(
+    within(await editorOf("s-bob")).queryByText(
+      "Only admin · grant another first",
+    ),
+  ).toBeNull();
+});
+
+test("a change unanswered, no box takes a press and nothing closes the editor, so its refusal is drawn there", async () => {
+  const held = heldAnswer();
+  const drawn = await drawPeople({ changed: () => held.answered });
+  const editor = await editorOf("s-bob");
+  await boxPressed(editor, "Admin");
+  expect(boxesIn(editor, "Workspace")).toStrictEqual([
+    "(Admin+)",
+    "(Member+)",
+    "(Hosted runs)",
+  ]);
+  const done = within(editor).getByRole<HTMLButtonElement>("button", {
+    name: "Done",
+  });
+  expect(done.disabled).toBe(true);
+  await turned(() => {
+    fireEvent.keyDown(editor, { key: "Escape" });
+  });
+  expect(screen.getByRole("dialog", { name: "s-bob" })).toBe(editor);
+  await turned(() => {
+    held.release(refused(409, "LastTenantAdministrator"));
+  });
+  await settled();
+  expect(
+    within(editor).getByText("Only admin · grant another first"),
+  ).toBeTruthy();
+  expect(boxesIn(editor, "Workspace")).toStrictEqual([
+    "Admin",
+    "Member+",
+    "Hosted runs",
+  ]);
+  expect(done.disabled).toBe(false);
+  expect(changesSent(drawn)).toHaveLength(1);
 });
 
 test("removing the reader's own admin asks first, and declined sends nothing", async () => {

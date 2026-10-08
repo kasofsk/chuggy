@@ -145,8 +145,9 @@ export const tenantAuthoritiesStarting: AccessTenantAuthorities = {
   truncated: false,
 };
 
-/** Account creation held by the site's admins and two workspaces' admins, and
- * permission changes by nobody the list names. */
+/** Account creation held by the site's admins and two workspaces' admins,
+ * workspace creation by the site's admins, and permission changes by nobody
+ * the list names. */
 export const siteAuthoritiesStarting: AccessSiteAuthorities = {
   authorities: [
     {
@@ -154,6 +155,13 @@ export const siteAuthoritiesStarting: AccessSiteAuthorities = {
       people: [],
       groups: ["SiteAdmins"],
       tenants: [permissionsTenant, "globex"],
+      unnamed: 0,
+    },
+    {
+      authority: "TenantCreators",
+      people: [],
+      groups: ["SiteAdmins"],
+      tenants: [],
       unnamed: 0,
     },
     {
@@ -172,7 +180,9 @@ export const siteAuthoritiesStarting: AccessSiteAuthorities = {
 export const siteAuthoritiesHeld: AccessSiteAuthorities = {
   ...siteAuthoritiesStarting,
   authorities: [
-    ...siteAuthoritiesStarting.authorities.slice(0, 1),
+    ...siteAuthoritiesStarting.authorities.filter(
+      (held) => held.authority !== "AuthorityManagers",
+    ),
     {
       authority: "AuthorityManagers",
       people: [
@@ -246,7 +256,7 @@ export interface PermissionsDrawing {
   /** What a removal is answered with. */
   readonly removed?: () => Response;
   /** What an addition is answered with. */
-  readonly added?: () => Response;
+  readonly added?: () => Response | Promise<Response>;
 }
 
 function permissionsPageDrawn(
@@ -368,7 +378,7 @@ export interface ProjectPermissionsDrawing {
   /** What a removal is answered with. */
   readonly removed?: () => Response;
   /** What an addition is answered with. */
-  readonly added?: () => Response;
+  readonly added?: () => Response | Promise<Response>;
 }
 
 /** The project's page drawn in the project's frame, its list and its people answered unless a case says otherwise. */

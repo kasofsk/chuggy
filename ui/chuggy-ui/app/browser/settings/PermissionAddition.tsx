@@ -27,7 +27,6 @@ import {
 import { Button } from "../ui/Button.tsx";
 import { Dialog } from "../ui/Dialog.tsx";
 import { EmptyState } from "../ui/EmptyState.tsx";
-import { Notice } from "../ui/Notice.tsx";
 import { RadioGroup } from "../ui/RadioGroup.tsx";
 import { SearchableRoster } from "../ui/SearchableRoster.tsx";
 
@@ -177,7 +176,6 @@ function PermissionAdditionBody(props: {
   readonly choices: readonly PermissionChoice[];
   readonly people: readonly AccessAuthorityPerson[];
   readonly draft: ReturnType<typeof usePermissionDraft>;
-  readonly note: string | undefined;
 }): ReactNode {
   const draft = props.draft;
   if (props.choices.length === 0)
@@ -209,9 +207,6 @@ function PermissionAdditionBody(props: {
           onChoose={draft.choosePerson}
         />
       ) : null}
-      {props.note === undefined ? null : (
-        <Notice tone="danger" inline role="status" detail={props.note} />
-      )}
     </div>
   );
 }
@@ -224,7 +219,12 @@ function PermissionAdditionFoot(props: {
   const { holder, adding } = props;
   return (
     <>
-      <Button variant="quiet" size="sm" onClick={props.onCancel}>
+      <Button
+        variant="quiet"
+        size="sm"
+        disabled={adding.busy}
+        onClick={props.onCancel}
+      >
         Cancel
       </Button>
       <Button
@@ -293,6 +293,8 @@ export function PermissionAddition<
         }
         setOpen(opened);
       }}
+      busy={adding.busy}
+      note={adding.note}
       foot={
         choices.length === 0 ? undefined : (
           <PermissionAdditionFoot
@@ -309,7 +311,6 @@ export function PermissionAddition<
         choices={choices}
         people={addition.people(row)}
         draft={draft}
-        note={adding.note}
       />
     </Dialog>
   );
