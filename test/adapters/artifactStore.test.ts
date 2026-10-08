@@ -59,6 +59,7 @@ import {
 import type { WorkerAttemptAuthority } from "../../src/interpreter/workerPlane.ts";
 import {
   branchDiffOutput,
+  checkOutputOutput,
   outputPreviewBytesMax,
 } from "../../src/interpreter/operationsView.ts";
 import {
@@ -650,6 +651,31 @@ test("a declared output preview returns only verified UTF-8 content", async (t) 
       })
     ).read,
     "Corrupt",
+  );
+});
+
+test("a command stage's output is served as the JSON its worker wrote", async (t) => {
+  const fixture = fixtureOpen(t);
+  const content =
+    '{"checks":[{"command":"just check","exitStatus":1,"truncated":false,"output":"check-comments ERROR\\n"}]}';
+  fixtureStore(fixture, checkOutputOutput.path, content);
+  const artifact = {
+    ordinal: 2,
+    role: "Diagnostic" as const,
+    path: checkOutputOutput.path,
+    digest: asArtifactDigest(digestOf(content)),
+    bytes: content.length,
+    output: checkOutputOutput,
+  };
+  assert.deepEqual(
+    await fixture.store.read({ partition, execution, attempt, artifact }),
+    {
+      read: "Content",
+      mediaType: "application/json",
+      renderer: "Json",
+      encoding: "Utf8",
+      content,
+    },
   );
 });
 

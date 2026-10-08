@@ -28,6 +28,7 @@ import type {
 import type { ForgeAppStanding } from "./forgeInstallation.ts";
 import { leadDispatchLanded } from "./leadTranscript.ts";
 import type { AgenticRefusalStanding, LeadDispatch } from "./leadTranscript.ts";
+import type { RunCommandEnd } from "./runResult.ts";
 import type { SetVerdict, StageRow } from "./ticketLedger.ts";
 
 export const pillTones = [
@@ -74,6 +75,17 @@ export function verdictTone(verdict: SetVerdict): Tone {
     case "Cancelled":
     case "Blocked":
       return "retired";
+  }
+}
+
+/** How one command a stage ran ended. */
+export function runCommandTone(end: RunCommandEnd): Tone {
+  switch (end) {
+    case "Passed":
+      return "pass";
+    case "Failed":
+    case "Killed":
+      return "fail";
   }
 }
 

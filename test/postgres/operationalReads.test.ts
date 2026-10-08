@@ -25,7 +25,9 @@ import {
   type PhysicalAttempt,
 } from "../../src/interpreter/executionScheduler.ts";
 import { id } from "../domain/fixtures.ts";
+import { checkOutputOutput } from "../../src/interpreter/operationsView.ts";
 import {
+  schedulerArtifact,
   schedulerClaimFor,
   schedulerExecutions,
   schedulerEvaluationRequest,
@@ -34,6 +36,7 @@ import {
   schedulerOwner,
   schedulerPlacedAttempt,
   schedulerProject,
+  schedulerReport,
   schedulerRigOpen,
   schedulerInCluster,
   type SchedulerProject,
@@ -248,6 +251,72 @@ test("an execution reads back empty until its run writes evidence", async () => 
   assert.equal(run?.totals?.stopReason, "end_turn");
   assert.equal(run?.configuration, undefined);
   assert.equal(run?.turnsRecorded, 0);
+});
+
+/** Settles the next execution the project's cluster admits under the report a
+ * case makes for its attempt, and answers the execution. */
+async function operationalSettled(
+  project: SchedulerProject,
+  label: string,
+  reported: (attempt: PhysicalAttempt) => ReturnType<typeof schedulerReport>,
+): Promise<ExecutionId> {
+  const placed = await schedulerPlacedAttempt(rig, project, label);
+  assert.equal(
+    (await rig.store.terminalize(reported(placed.attempt))).terminalized,
+    "Terminalized",
+  );
+  return placed.execution;
+}
+
+/** Reports one artifact at the command stage's path under a role, and answers
+ * the result's artifacts as the read gives them back. A handoff is an
+ * evaluation's, judging a cycle whose work passed. */
+async function operationalCheckOutput(
+  label: string,
+  role: "Handoff" | "Diagnostic",
+) {
+  const project = await schedulerProject(rig, label, { tasks: 1 });
+  await operationalRegistered(project, project.request, label);
+  const artifact = schedulerArtifact(checkOutputOutput.path, 40);
+  let execution: ExecutionId;
+  if (role === "Diagnostic") {
+    execution = await operationalSettled(project, label, (attempt) =>
+      schedulerReport(attempt, "Fail", [], [artifact]),
+    );
+  } else {
+    await operationalSettled(project, label, (attempt) =>
+      schedulerReport(attempt, "Pass"),
+    );
+    const request = await schedulerEvaluationRequest(rig, project, label, {
+      cycle: 1,
+      stage: 1,
+      generation: 1,
+      evaluator: 1,
+    });
+    await operationalRegistered(project, request, label);
+    execution = await operationalSettled(project, label, (attempt) =>
+      schedulerReport(attempt, "Pass", [artifact]),
+    );
+  }
+  const reads = postgresOperationalReads(ingress);
+  return (await reads.execution(project.partition, execution))?.result
+    ?.artifacts;
+}
+
+/**
+ * An output is matched by its path when the result is read, so the artifact a
+ * command stage uploads is served whichever role its manifest listed it under.
+ */
+test("an artifact at the command stage's path is answered as its output, whatever its role", async () => {
+  for (const role of ["Diagnostic", "Handoff"] as const) {
+    const answered = await operationalCheckOutput(
+      `operational-check-output-${role.toLowerCase()}`,
+      role,
+    );
+    assert.equal(answered?.length, 1);
+    assert.equal(answered?.[0]?.role, role);
+    assert.deepEqual(answered?.[0]?.output, checkOutputOutput);
+  }
 });
 
 /** Registers every task one spawn request declares, refusing anything less. */
