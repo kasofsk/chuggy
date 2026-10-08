@@ -2,9 +2,9 @@
  * How a plane's process ends when its supervisor asks it to.
  *
  * A PLANE STOPS ACCEPTING AND FINISHES WHAT IT HOLDS. Closing the app refuses
- * new connections and waits for every request in flight, and the pool ends
- * once the last of them has answered, so nothing a caller was already owed is
- * cut off.
+ * new connections and waits for every request in flight, and a plane's pool,
+ * where it has one, ends once the last of them has answered, so nothing a
+ * caller was already owed is cut off.
  *
  * A CONNECTION IS CLOSED AS IT FALLS IDLE, because closing the app closes only
  * the ones idle at that moment. A caller that kept its connection after its
@@ -32,13 +32,13 @@ async function planeClosed(app: FastifyInstance): Promise<void> {
   }
 }
 
-/** Ends the pool as the app closes, and closes the app on either signal a supervisor stops a process with. */
+/** Closes the app on either signal a supervisor stops a process with, ending `pool` as it closes where the plane has one. */
 export function planeStopping(
   app: FastifyInstance,
-  pool: { end(): Promise<void> },
   plane: string,
+  pool?: { end(): Promise<void> },
 ): void {
-  app.addHook("onClose", () => pool.end());
+  if (pool !== undefined) app.addHook("onClose", () => pool.end());
   for (const signal of ["SIGINT", "SIGTERM"] as const) {
     process.once(signal, () => {
       void planeClosed(app).catch((failure: unknown) => {

@@ -35,3 +35,18 @@ export function oidcPrincipal(issuer: string, subject: string): Principal {
   if (subject.length === 0) throw new RangeError("OIDC subject is empty");
   return asPrincipal(`${String(issuer.length)}:${issuer}${subject}`);
 }
+
+/**
+ * The subject `principal` carries under `issuer`, or nothing where it was
+ * derived under another issuer. The length that leads a principal fixes where
+ * its issuer ends, so beginning with this issuer's own prefix is an exact test.
+ */
+export function oidcPrincipalSubject(
+  issuer: string,
+  principal: string,
+): string | undefined {
+  const prefix = `${String(issuer.length)}:${issuer}`;
+  return principal.startsWith(prefix) && principal.length > prefix.length
+    ? principal.slice(prefix.length)
+    : undefined;
+}

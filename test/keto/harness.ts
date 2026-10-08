@@ -22,6 +22,8 @@ import {
   ketoTenantClaims,
 } from "../../src/adapters/keto/projectAccess.ts";
 import { ketoProjectGrants } from "../../src/adapters/keto/projectGrants.ts";
+import { ketoAccessTuples } from "../../src/adapters/keto/accessTuples.ts";
+import type { AccessTupleReader } from "../../src/interpreter/accessPlane.ts";
 import {
   checkedProjectAccessSettings,
   type ProjectAccess,
@@ -73,6 +75,16 @@ export function ketoHarnessAccessAt(readUrl: string): ProjectAccess {
 /** The tenant claims a creation asks, over the same read API. */
 export function ketoHarnessClaims(): TenantClaims {
   return ketoTenantClaims(
+    checkedProjectAccessSettings({
+      readUrl: ketoHarnessReadUrl(),
+      requestTimeoutMs: 2_000,
+    }),
+  );
+}
+
+/** The listing the access plane reads holders with, over the same read API. */
+export function ketoHarnessTuples(): AccessTupleReader {
+  return ketoAccessTuples(
     checkedProjectAccessSettings({
       readUrl: ketoHarnessReadUrl(),
       requestTimeoutMs: 2_000,

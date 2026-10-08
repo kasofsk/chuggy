@@ -144,6 +144,20 @@ module.exports = {
       to: { reachable: true, path: "^src/adapters/hydra/" },
     },
     {
+      name: "access-plane-names-no-database",
+      comment:
+        "The access plane answers from the authority and from nothing else: " +
+        "every role it lists or changes is a tuple there, so it is composed " +
+        "with no PostgreSQL role, migration or pool, and a database reached " +
+        "from its root would be a second store of who holds what. So the " +
+        "root may not reach a PostgreSQL adapter at all — reachability " +
+        "rather than an import, because the shape that breaks it is a " +
+        "shared composition helper that opens a pool for several roots.",
+      severity: "error",
+      from: { path: "^src/roots/accessPlane[.]ts$" },
+      to: { reachable: true, path: "^src/adapters/postgres/" },
+    },
+    {
       name: "nothing-imports-a-process-root",
       comment:
         "src/roots/ holds the graph's executable roots: they may import " +

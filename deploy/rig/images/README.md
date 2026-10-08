@@ -192,6 +192,25 @@ The ticket service reads the same store and never writes it. Its
 to start without it: a dispatch reads each image a brief names back from there
 to pin the digest its bundle carries. The deployment may mount it read-only.
 
+## Configuring the access plane
+
+Every variable here is read by `src/roots/accessPlane.ts`, and the process
+refuses to start without the required ones. It names no database: everything it
+answers is a tuple the authority holds.
+
+| Variable | | |
+|---|---|---|
+| `CHUG_ACCESS_PLANE_OIDC_ISSUER` | required | the issuer the API verifies tokens of; every subject a request names is derived as a principal under it |
+| `CHUG_ACCESS_PLANE_OIDC_AUDIENCE` | required | |
+| `CHUG_ACCESS_PLANE_OIDC_ALGORITHMS` | required | comma-separated, read as `CHUG_API_OIDC_ALGORITHMS` is |
+| `CHUG_ACCESS_PLANE_KETO_READ_URL` | required | the read API of the authority, which every permit is asked of and every list read from |
+| `CHUG_ACCESS_PLANE_KETO_WRITE_URL` | required | the write API beside it, where a role granted or removed is written |
+| `CHUG_ACCESS_PLANE_KETO_TIMEOUT_MS` | | how long one question of either API may take before it is undecided |
+| `CHUG_ACCESS_PLANE_OIDC_DISCOVERY_TIMEOUT_MS` | | |
+| `CHUG_ACCESS_PLANE_OIDC_JWKS_TIMEOUT_MS` | | |
+| `CHUG_ACCESS_PLANE_HOST` | | the default is loopback |
+| `CHUG_ACCESS_PLANE_PORT` | 3003 | |
+
 ## Configuring the worker plane's minting
 
 `src/roots/workerPlane.ts` reads the variables below beside the plane's own

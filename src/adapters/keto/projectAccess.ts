@@ -40,7 +40,7 @@ import { ketoRequest } from "./request.ts";
 const ketoCheckPath = "relation-tuples/check/openapi";
 
 /** The read API's listing, which answers 404 for a namespace the model does not declare. */
-const ketoTuplesPath = "relation-tuples";
+export const ketoTuplesPath = "relation-tuples";
 
 /** The read API's readiness, which reports the server rather than its model. */
 const ketoReadyPath = "health/ready";

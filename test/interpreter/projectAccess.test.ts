@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { authorityCharsMax } from "../../src/interpreter/operationInbox.ts";
-import { asPrincipal } from "../../src/interpreter/principal.ts";
+import {
+  asPrincipal,
+  oidcPrincipal,
+  oidcPrincipalSubject,
+} from "../../src/interpreter/principal.ts";
 import {
   allProjectAccessKinds,
   checkedProjectAccessSettings,
@@ -10,6 +14,7 @@ import {
   memberAuthority,
   memberAuthorityKind,
   projectAccessObject,
+  projectAccessObjectPartition,
   projectAccessPermits,
   projectAccessTenantObject,
   projectAccessTimeoutMsDefault,
@@ -45,6 +50,55 @@ test("a tenant's own object is the partition encoding with no project on it", ()
     projectAccessObject(partitionOf("acme", "web")),
     `${projectAccessTenantObject("acme")}web`,
   );
+});
+
+test("a project object decodes to the partition it was encoded from, separators and all", () => {
+  for (const partition of [
+    partitionOf("a/b", "c"),
+    partitionOf("a", "/bc"),
+    partitionOf("a:b", ":c"),
+    partitionOf("1:a", "2:b"),
+    partitionOf("\u{1F600}", "web"),
+  ])
+    assert.deepEqual(
+      projectAccessObjectPartition(projectAccessObject(partition)),
+      partition,
+    );
+});
+
+test("text no partition encodes to decodes to nothing", () => {
+  for (const object of [
+    "",
+    "acme",
+    ":acme",
+    "0:web",
+    "04:acmeweb",
+    "4:acme",
+    "9:acme",
+    projectAccessTenantObject("acme"),
+    `2:${"\u{1F600}".slice(0, 1)}x`,
+  ])
+    assert.equal(projectAccessObjectPartition(object), undefined, object);
+});
+
+test("a principal decodes to its subject under its own issuer and to nothing under another", () => {
+  const issuer = "https://issuer.test";
+  for (const subject of ["geoff", "a:b/c", "22:https://other.test"])
+    assert.equal(
+      oidcPrincipalSubject(issuer, oidcPrincipal(issuer, subject)),
+      subject,
+    );
+  for (const other of [
+    "https://issuer.tes",
+    "https://issuer.testx",
+    "https://issuer.TEST",
+  ])
+    assert.equal(
+      oidcPrincipalSubject(issuer, oidcPrincipal(other, "geoff")),
+      undefined,
+      other,
+    );
+  assert.equal(oidcPrincipalSubject(issuer, `19:${issuer}`), undefined);
 });
 
 test("every access kind asks for a permit and no two ask for the same one", () => {

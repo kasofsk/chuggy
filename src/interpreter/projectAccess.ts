@@ -39,7 +39,12 @@ import {
   type Authority,
 } from "./operationInbox.ts";
 import type { Principal } from "./principal.ts";
-import type { Partition, TenantId } from "./projectStore.ts";
+import {
+  asProjectId,
+  asTenantId,
+  type Partition,
+  type TenantId,
+} from "./projectStore.ts";
 
 /** Every project access kind, and the declaration `ProjectAccessKind` derives from, so narrowing a supplied kind has one list to check. */
 export const allProjectAccessKinds = [
@@ -114,6 +119,30 @@ export const tenantAccessPermits: Readonly<Record<TenantAccessKind, string>> = {
  */
 export function projectAccessObject(partition: Partition): string {
   return `${projectAccessTenantObject(partition.tenant)}${partition.project}`;
+}
+
+/**
+ * The partition a project object addresses, or nothing where `object` is not
+ * one `projectAccessObject` writes. The leading length says where the tenant
+ * ends, so the project is the whole of what follows it.
+ */
+export function projectAccessObjectPartition(
+  object: string,
+): Partition | undefined {
+  const colon = object.indexOf(":");
+  const length = object.slice(0, Math.max(colon, 0));
+  if (!/^[1-9][0-9]*$/u.test(length)) return undefined;
+  const tenantEnd = colon + 1 + Number(length);
+  if (tenantEnd >= object.length) return undefined;
+  try {
+    return {
+      tenant: asTenantId(object.slice(colon + 1, tenantEnd)),
+      project: asProjectId(object.slice(tenantEnd)),
+    };
+  } catch (failure) {
+    if (failure instanceof RangeError) return undefined;
+    throw failure;
+  }
 }
 
 /** The object string one tenant is addressed by, under the encoding a partition uses. */

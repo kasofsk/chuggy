@@ -328,6 +328,39 @@ printf '%s\n' 'import { wired } from "../compose.ts"' 'export const plane = wire
 seal
 check "the plane's root may not REACH the issuer's admin adapter through a composition helper" 1 "$RC" "pool-plane-mints-no-credential:"
 
+# --- access-plane-names-no-database -------------------------------------------
+
+# The allowed shape first: the access plane's root reaches the authority's
+# adapter and another plane's root reaches a database. A red here would mean the
+# rule refuses the adapter the plane is composed from, or a root it does not name.
+fixture
+mkdir -p "$R/src/roots" "$R/src/adapters/keto" "$R/src/adapters/postgres"
+printf '%s\n' 'export const tuples = 1' > "$R/src/adapters/keto/tuples.ts"
+printf '%s\n' 'export const registry = 1' > "$R/src/adapters/postgres/registry.ts"
+printf '%s\n' 'import { tuples } from "../adapters/keto/tuples.ts"' 'export const plane = tuples' > "$R/src/roots/accessPlane.ts"
+printf '%s\n' 'import { registry } from "../adapters/postgres/registry.ts"' 'export const plane = registry' > "$R/src/roots/poolPlane.ts"
+seal
+check "the access plane's root may reach the authority, and another root a database" 0 "$RC" "graph clean"
+
+fixture
+mkdir -p "$R/src/roots" "$R/src/adapters/postgres"
+printf '%s\n' 'export const pool = 1' > "$R/src/adapters/postgres/pool.ts"
+printf '%s\n' 'import { pool } from "../adapters/postgres/pool.ts"' 'export const plane = pool' > "$R/src/roots/accessPlane.ts"
+seal
+check "the access plane's root may not import a database adapter" 1 "$RC" "access-plane-names-no-database:"
+
+# The composition helper belongs to neither the root nor the adapter, so no
+# edge leaves src/roots/accessPlane.ts for src/adapters/postgres/ and only
+# reachability sees it. Without `reachable: true` on the rule this tree is
+# clean and no other case notices.
+fixture
+mkdir -p "$R/src/roots" "$R/src/adapters/postgres"
+printf '%s\n' 'export const pool = 1' > "$R/src/adapters/postgres/pool.ts"
+printf '%s\n' 'import { pool } from "./adapters/postgres/pool.ts"' 'export const wired = pool' > "$R/src/compose.ts"
+printf '%s\n' 'import { wired } from "../compose.ts"' 'export const plane = wired' > "$R/src/roots/accessPlane.ts"
+seal
+check "the access plane's root may not REACH a database adapter through a composition helper" 1 "$RC" "access-plane-names-no-database:"
+
 # --- no-source-reaches-a-suite, under its own name ----------------------------
 
 # From the domain the broader purity rule catches this first, which is why the
