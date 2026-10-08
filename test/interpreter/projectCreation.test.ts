@@ -12,6 +12,8 @@ import {
 import {
   memberAuthority,
   ProjectAccessUnavailable,
+  type ProjectAccess,
+  type SiteAccessKind,
 } from "../../src/interpreter/projectAccess.ts";
 import {
   projectCreation,
@@ -51,16 +53,38 @@ const request = {
   operation: asOperationId("create-chuggy-1"),
 };
 
-/** A creation over ports that record what they were asked and answer as scripted. */
+/** The creator's access, `CreateTenant` granted unless `unpermitted`, and `asking` recording each site kind it is asked. */
+function creationAccess(unpermitted: boolean) {
+  const access = memoryProjectAccess();
+  if (!unpermitted)
+    access.grantSite({ principal, access: new Set(["CreateTenant"]) });
+  const siteAsked: SiteAccessKind[] = [];
+  const asking: ProjectAccess = {
+    ...access,
+    authorizeSite: (caller, kind) => {
+      siteAsked.push(kind);
+      return access.authorizeSite(caller, kind);
+    },
+  };
+  return { access, siteAsked, asking };
+}
+
+/**
+ * A creation over ports that record what they were asked and answer as
+ * scripted, its creator permitted `CreateTenant` unless `unpermitted`.
+ */
 function creationWith(
   answer: ProjectCreationAnswer,
   options: {
     readonly claimed?: readonly string[];
     readonly grantFails?: boolean;
     readonly selector?: Principal;
+    readonly unpermitted?: boolean;
   } = {},
 ) {
-  const access = memoryProjectAccess();
+  const { access, siteAsked, asking } = creationAccess(
+    options.unpermitted === true,
+  );
   const writes: ProjectCreationWrite[] = [];
   const grants: ProjectGrant[] = [];
   const lists: (readonly ProjectGrant[])[] = [];
@@ -77,7 +101,7 @@ function creationWith(
     },
   };
   const service = projectCreation({
-    access,
+    access: asking,
     claims,
     store: {
       create: (write) => {
@@ -106,6 +130,7 @@ function creationWith(
     access,
     claims,
     asked,
+    siteAsked,
     writes,
     grants,
     lists,
@@ -186,15 +211,95 @@ test("a refused name names its own field, the tenant's first", () => {
 });
 
 test("a refused name asks neither the authority nor the door", async () => {
-  const { access, asked, writes, grants, service } = creationWith(created);
-  access.breaks();
-  assert.deepEqual(
-    await service.create(principal, { ...request, project: "Chuggy" }),
-    { result: "NameInvalid", field: "project" },
+  for (const unpermitted of [false, true]) {
+    const { access, asked, siteAsked, writes, grants, service } = creationWith(
+      created,
+      { unpermitted },
+    );
+    access.breaks();
+    assert.deepEqual(
+      await service.create(principal, { ...request, project: "Chuggy" }),
+      { result: "NameInvalid", field: "project" },
+    );
+    assert.deepEqual(asked, []);
+    assert.deepEqual(siteAsked, []);
+    assert.deepEqual(writes, []);
+    assert.deepEqual(grants, []);
+  }
+});
+
+test("a caller the site does not permit to create a tenant is refused one no tuple holds, and nothing is written", async () => {
+  const { siteAsked, writes, grants, recorded, service } = creationWith(
+    created,
+    { unpermitted: true },
   );
-  assert.deepEqual(asked, []);
+  assert.deepEqual(await service.create(principal, request), {
+    result: "TenantCreationNotPermitted",
+  });
+  assert.deepEqual(siteAsked, ["CreateTenant"]);
   assert.deepEqual(writes, []);
   assert.deepEqual(grants, []);
+  assert.deepEqual(recorded, []);
+});
+
+test("a caller who administers the tenant or finds it claimed is answered as before, and the site is asked nothing", async () => {
+  for (const unpermitted of [false, true]) {
+    const administering = creationWith(
+      { ...created, tenantCreated: false },
+      { unpermitted },
+    );
+    administering.access.grantTenant({
+      tenant: partition.tenant,
+      principal,
+      access: new Set(["AdministerTenant"]),
+    });
+    assert.deepEqual(await administering.service.create(principal, request), {
+      result: "Created",
+      partition,
+    });
+    assert.deepEqual(administering.lists, [madeProject]);
+    assert.deepEqual(administering.siteAsked, []);
+    const claimed = creationWith(
+      { ...created, outcome: "TenantTaken", tenantCreated: false },
+      { claimed: [partition.tenant], unpermitted },
+    );
+    assert.deepEqual(await claimed.service.create(principal, request), {
+      result: "TenantTaken",
+    });
+    assert.equal(claimed.writes[0]?.standing, "Claimed");
+    assert.deepEqual(claimed.siteAsked, []);
+  }
+});
+
+test("a reserved name and a tenant held only by its row are refused to a caller without the permit, and answered as before to one with it", async () => {
+  const unclaimed = [
+    [{ ...request, tenant: "access" }, "TenantReserved"],
+    [request, "TenantTaken"],
+  ] as const;
+  for (const [asking, outcome] of unclaimed) {
+    const permitted = creationWith({ ...created, outcome });
+    assert.deepEqual(await permitted.service.create(principal, asking), {
+      result: outcome,
+    });
+    assert.equal(permitted.writes[0]?.standing, "Unclaimed", outcome);
+    const refused = creationWith(
+      { ...created, outcome },
+      { unpermitted: true },
+    );
+    assert.deepEqual(await refused.service.create(principal, asking), {
+      result: "TenantCreationNotPermitted",
+    });
+    assert.deepEqual(refused.writes, [], outcome);
+  }
+  const repeating = creationWith(
+    { ...created, outcome: "AlreadyCreated", operation: earlier },
+    { unpermitted: true },
+  );
+  assert.deepEqual(await repeating.service.create(principal, request), {
+    result: "TenantCreationNotPermitted",
+  });
+  assert.deepEqual(repeating.writes, []);
+  assert.deepEqual(repeating.grants, []);
 });
 
 test("the door is told the caller administers the tenant, or else whether any tuple holds it", async () => {

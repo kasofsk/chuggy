@@ -150,10 +150,11 @@ function grantText(grant: ProjectGrant): string {
 const defaultsOf = (grants: readonly ProjectGrant[]): readonly string[] =>
   grants.map(grantText).sort();
 
-test("the site starts with its administrators making accounts, and nobody managing", () => {
+test("the site starts with its administrators making accounts and tenants, and nobody managing", () => {
   const site = `${projectAccessSiteNamespace}:${projectAccessSiteObject}`;
   assert.deepEqual(defaultsOf(siteAuthorityDefaults()), [
     `${site}#account_creators@${site}#admins`,
+    `${site}#tenant_creators@${site}#admins`,
   ]);
 });
 

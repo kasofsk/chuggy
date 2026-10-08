@@ -1,5 +1,5 @@
 /**
- * A directory and a GitHub held in memory for the invitation's and the lists'
+ * A directory and a GitHub held in memory for the invitations' and the lists'
  * suites, each recording what it was asked.
  *
  * THE DIRECTORY CONFLICTS AS KRATOS DOES: a creation whose email, in any
@@ -17,6 +17,15 @@ import {
   type AccessGithubLookup,
   type AccessInvitations,
 } from "../../src/interpreter/accessInvitation.ts";
+import {
+  accessOwnerInvitations,
+  type AccessOwnerInvitations,
+} from "../../src/interpreter/accessOwnerInvitation.ts";
+import {
+  projectAccessTenantNamespace,
+  projectAccessTenantObject,
+} from "../../src/interpreter/projectAccess.ts";
+import type { TenantClaims } from "../../src/interpreter/projectCreation.ts";
 import {
   accessFixtureIssuer,
   type AccessMemory,
@@ -167,6 +176,43 @@ export function accessMemoryInvitations(
     {
       access: memory.access,
       tuples: memory.reader,
+      grants: memory.grants,
+      directory: directory?.directory,
+      github,
+    },
+    { issuer: accessFixtureIssuer },
+  );
+}
+
+/** Whether any tuple `memory` holds names a tenant, on its own object or as a project's `tenant`, each asked as a page the reader counts. */
+export function accessMemoryClaims(memory: AccessMemory): TenantClaims {
+  return {
+    claimed: async (tenant) =>
+      (
+        await memory.reader.page(
+          {
+            query: "Object",
+            namespace: projectAccessTenantNamespace,
+            object: projectAccessTenantObject(tenant),
+          },
+          undefined,
+        )
+      ).tuples.length > 0 ||
+      (await memory.reader.page({ query: "TenantProjects", tenant }, undefined))
+        .tuples.length > 0,
+  };
+}
+
+/** The site's invitations over `memory`, `directory` and `github`, either absent being a plane with no directory. */
+export function accessMemoryOwnerInvitations(
+  memory: AccessMemory,
+  directory: DirectoryMemory | undefined,
+  github: GithubMemory | undefined,
+): AccessOwnerInvitations {
+  return accessOwnerInvitations(
+    {
+      access: memory.access,
+      claims: accessMemoryClaims(memory),
       grants: memory.grants,
       directory: directory?.directory,
       github,

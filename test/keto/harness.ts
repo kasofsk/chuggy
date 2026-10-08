@@ -275,6 +275,32 @@ export async function ketoHarnessWithSiteAdministrator(
   }
 }
 
+/** One person holding the site's `tenant_creators` directly. */
+export function ketoHarnessTenantCreatorGrant(
+  principal: Principal,
+): ProjectGrant {
+  return {
+    namespace: projectAccessSiteNamespace,
+    object: projectAccessSiteObject,
+    relation: "tenant_creators",
+    holder: { subject: "Principal", principal },
+  };
+}
+
+/** Runs `run` with `principal` permitted `CreateTenant`, taken back however it ends. */
+export async function ketoHarnessAsTenantCreator<Answer>(
+  principal: Principal,
+  run: () => Promise<Answer>,
+): Promise<Answer> {
+  const grants = ketoHarnessGrants();
+  await grants.write(ketoHarnessTenantCreatorGrant(principal));
+  try {
+    return await run();
+  } finally {
+    await grants.remove(ketoHarnessTenantCreatorGrant(principal));
+  }
+}
+
 const ketoHarnessExecute = promisify(execFile);
 
 /** What an administrative command answered: its exit code and its standard output, or its error output where it failed. */

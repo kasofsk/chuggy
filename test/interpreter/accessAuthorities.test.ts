@@ -155,6 +155,7 @@ test("the defaults are answered as groups, every authority present in roster ord
   const siteList = await authorities.siteAuthorities(sam);
   assert.deepEqual(groupsOf(siteList), {
     AccountCreators: ["SiteAdmins"],
+    TenantCreators: ["SiteAdmins"],
     AuthorityManagers: [],
   });
   for (const held of [
@@ -165,7 +166,7 @@ test("the defaults are answered as groups, every authority present in roster ord
     assert.deepEqual([held.people, held.unnamed], [[], 0], held.authority);
   assert.deepEqual(
     siteList?.authorities.map((held) => held.tenants),
-    [[], []],
+    [[], [], []],
   );
   assert.equal(tenantList?.truncated, false);
 });
@@ -286,6 +287,7 @@ test("a tenant's administrators on the site's authority are named by the tenant,
     ]),
     [
       ["AccountCreators", ["SiteAdmins"], [tenant, other].sort(), 1],
+      ["TenantCreators", ["SiteAdmins"], [], 0],
       ["AuthorityManagers", [], [], 1],
     ],
   );

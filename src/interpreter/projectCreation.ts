@@ -3,8 +3,11 @@
  * route answers from.
  *
  * A TENANT NAME IS FIRST-COME. A tenant is held by its row, by any tuple on its
- * own object and by any project whose `tenant` it is. Any principal may create a
- * tenant nothing holds and becomes its administrator; a held tenant takes a project
+ * own object and by any project whose `tenant` it is. A principal the site
+ * permits `CreateTenant` may create a tenant no tuple holds and becomes its
+ * administrator, and anyone else is refused before the store is asked, which a
+ * reserved name and a tenant held only by its row answer too because the
+ * standing cannot tell them from a free one; a held tenant takes a project
  * only from a principal the authority says administers it, and anyone else is
  * told the name is taken rather than that it was not found, because a tenant
  * name is not a secret. Tuples hold it because an operator may grant access
@@ -118,6 +121,7 @@ export type ProjectCreationResult =
   | { readonly result: "TenantTaken" }
   | { readonly result: "OperationConflict" }
   | { readonly result: "NameInvalid"; readonly field: ProjectCreationField }
+  | { readonly result: "TenantCreationNotPermitted" }
   | { readonly result: "TenantReserved" }
   | { readonly result: "NotConfigured" };
 
@@ -193,6 +197,11 @@ async function projectCreationCreate(
     project: asProjectId(request.project),
   };
   const standing = await projectCreationStanding(ports, principal, partition);
+  if (
+    standing === "Unclaimed" &&
+    (await ports.access.authorizeSite(principal, "CreateTenant")) === undefined
+  )
+    return { result: "TenantCreationNotPermitted" };
   const answer = await ports.store.create({
     partition,
     standing,

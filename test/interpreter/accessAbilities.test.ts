@@ -117,9 +117,12 @@ test("a project's answer and the site's each ask their kinds once, whoever asks"
     );
     assert.deepEqual(
       await askedBy(memory, () => abilities.siteAbilities(caller)),
-      ["AdministerSite", "CreateAccount", "ManageSiteAuthorities"].map(
-        (kind) => [kind, projectAccessSiteObject],
-      ),
+      [
+        "AdministerSite",
+        "CreateAccount",
+        "CreateTenant",
+        "ManageSiteAuthorities",
+      ].map((kind) => [kind, projectAccessSiteObject]),
       caller,
     );
   }
@@ -164,10 +167,18 @@ test("each ability is the kind's own answer, and a caller holding no kind of a l
   assert.equal(await abilities.tenantAbilities(nobody, tenant), undefined);
   assert.equal(await abilities.projectAbilities(mo, web), undefined);
   assert.equal(await abilities.siteAbilities(alice), undefined);
+  accessGiven(memory, alice, [{ on: "Site", kind: "CreateTenant" }]);
+  assert.deepEqual(await abilities.siteAbilities(alice), {
+    administer: false,
+    createAccount: false,
+    createTenant: true,
+    manageAuthorities: false,
+  });
   accessGiven(memory, mo, [{ on: "Site", kind: "CreateAccount" }]);
   assert.deepEqual(await abilities.siteAbilities(mo), {
     administer: false,
     createAccount: true,
+    createTenant: false,
     manageAuthorities: false,
   });
   assert.equal(

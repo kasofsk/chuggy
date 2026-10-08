@@ -48,6 +48,7 @@ test("every authority each level rosters has its own name", () => {
   ]);
   expect(accessSiteAuthorities.map(sitePermissionName)).toStrictEqual([
     "Create accounts",
+    "Create workspaces",
     "Change permissions",
   ]);
 });
@@ -105,13 +106,14 @@ test("the site's permission changes lead with its standing admins, and a workspa
     })),
     truncated: false,
   };
-  const [creators, managers] = sitePermissionRows(answer);
+  const [creators, tenantCreators, managers] = sitePermissionRows(answer);
   const held = [
     { kind: "Group", group: "SiteAdmins", words: "Site admins" },
     { kind: "TenantAdmins", tenant: "acme", words: "acme admins" },
     { kind: "Person", person: ada, words: "ada@example.com" },
   ];
   expect(creators?.holders).toStrictEqual(held);
+  expect(tenantCreators?.holders).toStrictEqual(held);
   expect(managers?.holders).toStrictEqual([
     { kind: "SiteStanding", words: "Site admins" },
     ...held,
@@ -168,11 +170,11 @@ test("the site's permissions are always changed by a reader shown them", () => {
     accessSiteAuthorities.map((authority) =>
       permissionChangeable("Site", authority, undefined),
     ),
-  ).toStrictEqual([true, true]);
+  ).toStrictEqual([true, true, true]);
 });
 
 test("a route removes a group, a person and a workspace's account creation, and no standing admin, unnamed count or workspace's permission changes", () => {
-  const [creators, managers] = sitePermissionRows({
+  const [creators, tenantCreators, managers] = sitePermissionRows({
     authorities: accessSiteAuthorities.map((authority) => ({
       authority,
       people: [ada],
@@ -185,6 +187,7 @@ test("a route removes a group, a person and a workspace's account creation, and 
   const removable = (row: typeof creators) =>
     row?.holders.map((holder) => permissionHolderRemovable(row, holder));
   expect(removable(creators)).toStrictEqual([true, true, true, false]);
+  expect(removable(tenantCreators)).toStrictEqual([true, false, true, false]);
   expect(removable(managers)).toStrictEqual([false, true, false, true, false]);
 });
 
@@ -315,6 +318,14 @@ test("the site's account creation offers this workspace's admins only where they
         kind: "TenantAdmins",
         tenant: "acme",
         words: "This workspace's admins",
+        line: undefined,
+      },
+    ],
+    [
+      {
+        kind: "Group",
+        group: "SiteAdmins",
+        words: "Site admins",
         line: undefined,
       },
     ],

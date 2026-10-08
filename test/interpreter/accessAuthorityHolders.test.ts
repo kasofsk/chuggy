@@ -394,6 +394,59 @@ test("a tenant's administrators are added to the site's account creators only fo
   );
 });
 
+test("the site's tenant creators take a person and the site's administrators, and refuse a tenant's administrators", async () => {
+  const { memory, holders } = await acme();
+  const creating = (holder: ProjectGrant["holder"]): ProjectGrant => ({
+    namespace: projectAccessSiteNamespace,
+    object: projectAccessSiteObject,
+    relation: "tenant_creators",
+    holder,
+  });
+  for (const [holder, grant] of [
+    [
+      person("zed"),
+      creating({
+        subject: "Principal",
+        principal: accessFixturePrincipal("zed"),
+      }),
+    ],
+    [
+      group("SiteAdmins"),
+      creating({
+        subject: "Holders",
+        namespace: projectAccessSiteNamespace,
+        object: projectAccessSiteObject,
+        relation: "admins",
+      }),
+    ],
+  ] as const) {
+    const held: AccessHeld = {
+      level: "Site",
+      authority: "TenantCreators",
+      holder,
+    };
+    assert.equal(await holders.holderRemoved(sam, held), "Changed");
+    assert.ok(!holds(memory, grant), holder.holder);
+    assert.equal(await holders.holderAdded(sam, held), "Changed");
+    assert.ok(holds(memory, grant), holder.holder);
+  }
+  memory.changes.length = 0;
+  for (const holder of [
+    { holder: "Tenant", tenant },
+    group("TenantAdmins"),
+  ] as const)
+    assert.equal(
+      await holders.holderAdded(sam, {
+        level: "Site",
+        authority: "TenantCreators",
+        holder,
+      }),
+      "NotAdmitted",
+      holder.holder,
+    );
+  assert.deepEqual(memory.changes, []);
+});
+
 test("an authority that cannot answer fails a change as it fails a role change", async () => {
   const { memory, holders } = await acme();
   memory.unavailable = true;

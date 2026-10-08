@@ -30,6 +30,7 @@ import { ketoAccessTuples } from "../adapters/keto/accessTuples.ts";
 import {
   ketoProjectAccess,
   ketoReadiness,
+  ketoTenantClaims,
 } from "../adapters/keto/projectAccess.ts";
 import { ketoProjectGrants } from "../adapters/keto/projectGrants.ts";
 import { kratosAccessDirectory } from "../adapters/kratos/identities.ts";
@@ -41,6 +42,7 @@ import { accessAbilities } from "../interpreter/accessAbilities.ts";
 import { accessAuthorities } from "../interpreter/accessAuthorities.ts";
 import { accessAuthorityHolders } from "../interpreter/accessAuthorityHolders.ts";
 import { accessInvitations } from "../interpreter/accessInvitation.ts";
+import { accessOwnerInvitations } from "../interpreter/accessOwnerInvitation.ts";
 import {
   accessPlane,
   accessPlaneBoundsDefault,
@@ -134,17 +136,14 @@ export function accessPlaneComposed(
         : kratosAccessDirectory(environment.directory),
   };
   const issuer = environment.oidc.issuer;
+  const github =
+    ports.directory === undefined ? undefined : githubUserLookup({ fetch });
   return createAccessPlaneApp({
     authentication,
     plane: accessPlane(ports, { issuer, bounds: accessPlaneBoundsDefault }),
-    invitations: accessInvitations(
-      {
-        ...ports,
-        github:
-          ports.directory === undefined
-            ? undefined
-            : githubUserLookup({ fetch }),
-      },
+    invitations: accessInvitations({ ...ports, github }, { issuer }),
+    ownerInvitations: accessOwnerInvitations(
+      { ...ports, github, claims: ketoTenantClaims(environment.read) },
       { issuer },
     ),
     abilities: accessAbilities(ports, { bounds: accessPlaneBoundsDefault }),
