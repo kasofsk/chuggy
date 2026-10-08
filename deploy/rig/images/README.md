@@ -48,9 +48,10 @@ on are these:
   copy of it inside the site is unreachable rather than merely overridden.
   Unmounted, it is a 404 and not the index, so a UI cannot mistake markup for
   its configuration.
-- **`/api/v1/` is not proxied here.** The API is reached same-origin through the
-  Ingress, which routes the two prefixes on one host. Nothing in this image
-  proxies, and nobody should look for it in the nginx configuration.
+- **`/api/v1/` and `/access/v1/` are not proxied here.** The API and the access
+  plane are reached same-origin through the Ingress, which routes each prefix
+  and the console on one host. Nothing in this image proxies, and nobody should
+  look for it in the nginx configuration.
 
 Every other unresolved path answers with the document root's `index.html`,
 because the routes belong to the client.

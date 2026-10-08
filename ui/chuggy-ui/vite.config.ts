@@ -18,7 +18,7 @@
  *
  * `CHUG_UI_UPSTREAM` is what turns this dev server into a console of a running
  * installation, and it names one: the origin serving that installation's
- * `/api/v1`. Unset, none of it is installed and `vite` serves the console as it
+ * `/api/v1` and `/access/v1`. Unset, none of it is installed and `vite` serves the console as it
  * always did. `ui/chuggy-ui/dev/README.md` is the procedure and holds the
  * installation's values; what is here is only the mechanism.
  */
@@ -112,10 +112,18 @@ function localInstallation(): Plugin {
   };
 }
 
+/** The prefixes the installation answers on this origin. */
+const upstreamPrefixes = ["/api/v1", "/access/v1"] as const;
+
 /** Only `/oauth2` is proxied, so the rewritten discovery is never shadowed. */
 function proxy(): Record<string, ProxyOptions> {
   return {
-    "/api/v1": { target: upstream ?? "", changeOrigin: true },
+    ...Object.fromEntries(
+      upstreamPrefixes.map((prefix) => [
+        prefix,
+        { target: upstream ?? "", changeOrigin: true },
+      ]),
+    ),
     [`${issuerPrefix}/oauth2`]: {
       target: issuer,
       changeOrigin: true,
