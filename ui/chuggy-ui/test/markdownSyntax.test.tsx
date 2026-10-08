@@ -220,14 +220,19 @@ describe("what a worker answers", () => {
   });
 });
 
-/** A report drawn under a provider whose workers are a double's. */
+/**
+ * A report drawn under a provider whose workers are a double's, on a clock
+ * that stands still: a block rests after a reading for a multiple of the time
+ * the reading took, and a case that has one block read twice must not have to
+ * wait a rest out.
+ */
 function mounted(
   double: SyntaxDouble,
   text: string,
   writing = false,
 ): RenderResult {
   const wrapper = (props: { readonly children: ReactNode }): ReactNode => (
-    <MarkdownProvider clock={() => performance.now()} syntax={double.open}>
+    <MarkdownProvider clock={() => 0} syntax={double.open}>
       {props.children}
     </MarkdownProvider>
   );
