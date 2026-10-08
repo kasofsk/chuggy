@@ -5,8 +5,8 @@
  *
  * Every name is one exhaustive function over the contract's roster, so an
  * authority or a group the plane adds is a compile error here before it is a
- * blank cell. A holder's kind is what a control hung on it later reads, so no
- * caller works out again from its words what it is.
+ * blank cell. A holder's kind is what its remove button reads, so no caller
+ * works out again from its words what it is or whether a route removes it.
  */
 
 import type {
@@ -14,6 +14,7 @@ import type {
   AccessGroup,
   AccessSiteAuthorities,
   AccessSiteAuthority,
+  AccessTenantAbilities,
   AccessTenantAuthorities,
   AccessTenantAuthority,
 } from "../../../../src/contract/accessPlane.ts";
@@ -50,12 +51,62 @@ export type PermissionHolder =
       readonly words: string;
     };
 
+export type PermissionAuthority = AccessTenantAuthority | AccessSiteAuthority;
+
 /** One permission, named, and who holds it in the order they are drawn. */
-export interface PermissionRow {
-  readonly authority: AccessTenantAuthority | AccessSiteAuthority;
+export interface PermissionRow<
+  Authority extends PermissionAuthority = PermissionAuthority,
+> {
+  readonly authority: Authority;
   readonly name: string;
   readonly holders: readonly PermissionHolder[];
 }
+
+export type PermissionLevel = "Tenant" | "Site";
+
+/** Whether the reader may change one permission, given the workspace's abilities where they were read. */
+export function permissionChangeable(
+  level: PermissionLevel,
+  authority: PermissionAuthority,
+  abilities: AccessTenantAbilities | undefined,
+): boolean {
+  switch (level) {
+    case "Site":
+      return true;
+    case "Tenant":
+      if (abilities === undefined) return false;
+      return authority === "HostedRunsGranters"
+        ? abilities.manageSiteHeldAuthorities
+        : abilities.manageAuthorities;
+  }
+}
+
+/** Whether a route removes this holder from this row's permission. */
+export function permissionHolderRemovable(
+  row: PermissionRow,
+  holder: PermissionHolder,
+): boolean {
+  switch (holder.kind) {
+    case "Group":
+    case "Person":
+      return true;
+    case "TenantAdmins":
+      return row.authority === "AccountCreators";
+    case "SiteStanding":
+    case "Unnamed":
+      return false;
+  }
+}
+
+/** Whether removing one of this row's holders is asked first. */
+export function permissionRemovalAsks(row: PermissionRow): boolean {
+  return row.authority === "AuthorityManagers";
+}
+
+export const permissionRemovalQuestion = {
+  question: "Remove permission manager",
+  line: "This may lock people out of this page.",
+} as const;
 
 export function tenantPermissionName(authority: AccessTenantAuthority): string {
   switch (authority) {
@@ -147,7 +198,7 @@ function permissionHolders(
 
 export function tenantPermissionRows(
   answer: AccessTenantAuthorities,
-): readonly PermissionRow[] {
+): readonly PermissionRow<AccessTenantAuthority>[] {
   return answer.authorities.map((held) => ({
     authority: held.authority,
     name: tenantPermissionName(held.authority),
@@ -166,7 +217,7 @@ function sitePermissionStanding(
 
 export function sitePermissionRows(
   answer: AccessSiteAuthorities,
-): readonly PermissionRow[] {
+): readonly PermissionRow<AccessSiteAuthority>[] {
   return answer.authorities.map((held) => ({
     authority: held.authority,
     name: sitePermissionName(held.authority),
