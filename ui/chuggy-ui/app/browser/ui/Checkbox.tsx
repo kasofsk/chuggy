@@ -40,7 +40,7 @@ export function Checkbox(props: {
   readonly onChange: (checked: boolean) => void;
   /** Drawn, and checked where it is, but never changed by a press. */
   readonly disabled?: boolean;
-  /** Its caller's change is unanswered: no press changes it, and it keeps the focus. */
+  /** Not pressable for now, while its caller settles a change: it keeps the focus. */
   readonly held?: boolean;
   /** The label names the box and is not drawn beside it. */
   readonly bare?: boolean;

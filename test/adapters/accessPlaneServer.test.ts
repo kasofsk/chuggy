@@ -4,7 +4,8 @@
  * envelope, what a caller may do and who holds each authority read as their
  * schemas, each change of a holder's outcome, and no request reaching a
  * relation but the ones the role rosters and the authority rosters name,
- * hosted runs, and the `site` link a site's invitation writes on a new tenant.
+ * hosted runs, and the `site` link a site's invitation writes on a new tenant,
+ * which the site's tenant list then reads back.
  */
 
 import assert from "node:assert/strict";
@@ -33,6 +34,7 @@ import {
   accessSiteAbilitiesSchema,
   accessSiteAuthorities,
   accessSiteAuthoritiesSchema,
+  accessSiteTenantsSchema,
   accessTenantAbilitiesSchema,
   accessTenantAuthoritiesSchema,
   accessTenantPeopleSchema,
@@ -105,6 +107,7 @@ import {
   accessMemoryAuthorities,
   accessMemoryHolders,
   accessMemoryPlane,
+  accessMemorySiteTenants,
   type AccessMemory,
 } from "../interpreter/accessPlaneFixture.ts";
 
@@ -224,6 +227,11 @@ async function served(
       directory,
     ),
     holders: accessMemoryHolders(memory),
+    siteTenants: accessMemorySiteTenants(
+      memory,
+      accessPlaneBoundsDefault,
+      directory,
+    ),
     ready: () => Promise.resolve(ready && !memory.unavailable),
   });
   return { memory, app };
@@ -1286,6 +1294,42 @@ test("a site's invitation answers the tenant and the subject created, then the s
     created: false,
   });
   assert.equal(memory.changes.length, 2 * written);
+});
+
+test("the site's tenants read as their strict schema to a caller who may make one, the invited tenant among them, and are absent to anyone else", async () => {
+  const { app, own } = await inviting();
+  const invited = accessOwnerInvitedSchema.parse(
+    (await own(ownerInvitation, "sita-token")).json(),
+  );
+  const get = (token?: string) =>
+    app.inject({
+      method: "GET",
+      url: pathOf("siteTenants"),
+      ...(token === undefined ? {} : { headers: as(token) }),
+    });
+  const listed = await get("sita-token");
+  assert.equal(listed.statusCode, 200, listed.body);
+  assert.deepEqual(
+    accessSiteTenantsSchema
+      .parse(listed.json())
+      .tenants.map((one) => [
+        one.tenant,
+        one.administrators.map((person) => person.subject),
+        one.createAccounts,
+      ]),
+    [
+      [tenant, ["alice"], false],
+      [invited.tenant, [invited.subject], true],
+    ],
+  );
+  for (const token of ["alice-token", "hal-token"]) {
+    const absent = await get(token);
+    assert.equal(absent.statusCode, 404, token);
+    enveloped(absent, "Absent");
+  }
+  const unauthenticated = await get();
+  assert.equal(unauthenticated.statusCode, 401);
+  enveloped(unauthenticated, "Unauthenticated");
 });
 
 test("a site's invitation naming a tenant outside its shape, past its bound or reserved is rejected before GitHub, the directory or the authority is asked anything", async () => {

@@ -89,6 +89,12 @@ test("a refusal's line stands in the foot before the caller's actions, outside t
   styleless();
 });
 
+/** A press outside every dialog, which Radix's dialog counts at the click the press ends in. */
+function pressedOutside(): void {
+  fireEvent.pointerDown(document.body);
+  fireEvent.click(document.body);
+}
+
 function Held(props: { readonly busy: boolean }): ReactNode {
   const [open, setOpen] = useState(true);
   return (
@@ -111,7 +117,7 @@ test("a request unanswered, nothing closes the dialog, and the close after it re
   const dialog = screen.getByRole("dialog", { name: "Edit" });
   const trigger = screen.getByRole("button", { name: "Edit" });
   await turned(() => {
-    fireEvent.pointerDown(document.body);
+    pressedOutside();
     fireEvent.keyDown(dialog, { key: "Escape" });
     fireEvent.click(trigger);
   });
@@ -123,6 +129,15 @@ test("a request unanswered, nothing closes the dialog, and the close after it re
   await turned();
   expect(screen.queryByRole("dialog")).toBeNull();
   expect(document.activeElement).toBe(trigger);
+  styleless();
+});
+
+test("a press outside closes a dialog whose caller awaits nothing", async () => {
+  render(<Held busy={false} />);
+  await turned();
+  await turned(pressedOutside);
+  await turned();
+  expect(screen.queryByRole("dialog")).toBeNull();
   styleless();
 });
 

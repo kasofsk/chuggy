@@ -4,8 +4,8 @@
  * workspace's projects as a grid. A box is drawn where the reader may change
  * it or the person holds it, and is pressable only where the reader may. A
  * press sends one grant or one removal and reads the list and the abilities
- * again, the pressed box drawn as the change will leave it until they are
- * read, and a refusal is one line in the dialog. Removing the reader's own
+ * again. A change the plane took draws its box as changed until they are
+ * read; a refusal leaves the box as it was and one line in the dialog. Removing the reader's own
  * workspace admin, and hosted runs from a subject that is no account, is asked
  * first, and no box is pressable while it is.
  */

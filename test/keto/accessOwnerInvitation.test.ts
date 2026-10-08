@@ -1,7 +1,9 @@
 /**
  * The site's invitation of a person into a tenant of their own, against a real
  * authority: what the tuples it writes permit the person, on the new tenant,
- * on the site and nowhere else, and that the tenant is then held.
+ * on the site and nowhere else, that the tenant is then held, and that each
+ * relation the site's tenant list reads across the tenants lists that relation
+ * alone, the invited tenant and a created one among them.
  *
  * THE SITE AND THE FIRST ACCOUNT ARE SHARED BETWEEN RUNS. The site is one object
  * on a server a run reuses, and the directory double gives every run's first
@@ -14,7 +16,13 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { test } from "node:test";
 
+import { accessSiteHeldTenant } from "../../src/interpreter/accessAuthorities.ts";
 import { accessOwnerInvitations } from "../../src/interpreter/accessOwnerInvitation.ts";
+import type {
+  AccessTuple,
+  AccessTupleQuery,
+} from "../../src/interpreter/accessPlane.ts";
+import { projectCreationGrants } from "../../src/interpreter/projectCreation.ts";
 import { oidcPrincipal } from "../../src/interpreter/principal.ts";
 import {
   allTenantAccessKinds,
@@ -26,10 +34,14 @@ import {
 } from "../../src/interpreter/projectAccess.ts";
 import {
   tenantAdministratorGrant,
+  tenantAdministratorRelation,
   tenantAuthorityDefaults,
+  tenantPrincipalGrant,
+  tenantSiteRelation,
   type ProjectGrant,
 } from "../../src/interpreter/projectGrant.ts";
 import {
+  asProjectId,
   asTenantId,
   type TenantId,
 } from "../../src/interpreter/projectStore.ts";
@@ -39,6 +51,8 @@ import {
   ketoHarnessGrants,
   ketoHarnessIssuer,
   ketoHarnessSiteDefaults,
+  ketoHarnessSomeone,
+  ketoHarnessTuples,
   ketoHarnessWithSiteAdministrator,
 } from "./harness.ts";
 import {
@@ -154,5 +168,90 @@ test("a site's invitation not asking for account creation gives the person no `C
   await invitedInto(tenant, false, async () => {
     assert.ok((await heldOn(tenant)).includes("AdministerTenant"));
     assert.equal(await creates(), false);
+  });
+});
+
+/** The most pages one listing is walked through before the case fails rather than reading it as ended. */
+const walkedPagesMax = 100_000;
+
+/** Every tuple one listing answers, walked to its end with the harness's reader. */
+async function walked(
+  query: AccessTupleQuery,
+): Promise<readonly AccessTuple[]> {
+  const reader = ketoHarnessTuples();
+  const tuples: AccessTuple[] = [];
+  let token: string | undefined;
+  for (let pages = 0; pages < walkedPagesMax; pages += 1) {
+    const page = await reader.page(query, token);
+    tuples.push(...page.tuples);
+    token = page.next === "" ? undefined : page.next;
+    if (token === undefined) return tuples;
+  }
+  throw new Error("the listing did not end within the walk's bound");
+}
+
+test("each relation the site's tenant list reads across the tenants lists that relation alone, a created and an invited tenant among them", async () => {
+  const created = namedTenant("listed-created");
+  await grants.writeAll(
+    projectCreationGrants(
+      ketoHarnessSomeone("creator"),
+      { tenant: created, project: asProjectId("chuggy") },
+      true,
+    ),
+  );
+  await grants.write(
+    tenantPrincipalGrant({
+      issuer: ketoHarnessIssuer,
+      subject: `member-${randomUUID()}`,
+      tenant: created,
+      relation: "members",
+    }),
+  );
+  const createdObject = projectAccessTenantObject(created);
+  const tenant = namedTenant("listed-invited");
+  await invitedInto(tenant, true, async () => {
+    assert.ok(
+      (
+        await walked({
+          query: "Object",
+          namespace: projectAccessTenantNamespace,
+          object: createdObject,
+        })
+      ).some((tuple) => tuple.relation === "members"),
+    );
+    for (const relation of [tenantAdministratorRelation, tenantSiteRelation]) {
+      const listed = await walked({
+        query: "NamespaceRelation",
+        namespace: projectAccessTenantNamespace,
+        relation,
+      });
+      assert.ok(
+        listed.every((tuple) => tuple.relation === relation),
+        relation,
+      );
+      for (const object of [createdObject, projectAccessTenantObject(tenant)])
+        assert.ok(
+          listed.some((tuple) => tuple.object === object),
+          `${relation} ${object}`,
+        );
+      assert.ok(
+        !listed.some(
+          (tuple) =>
+            tuple.object === createdObject && tuple.relation === "members",
+        ),
+      );
+    }
+    const creators = (
+      await walked({
+        query: "Object",
+        namespace: projectAccessSiteNamespace,
+        object: projectAccessSiteObject,
+        relation: "account_creators",
+      })
+    ).flatMap(({ subject }) =>
+      subject.subject === "Set" ? (accessSiteHeldTenant(subject) ?? []) : [],
+    );
+    assert.ok(creators.includes(tenant));
+    assert.ok(!creators.includes(created));
   });
 });

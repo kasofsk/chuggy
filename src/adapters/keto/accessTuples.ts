@@ -8,6 +8,10 @@
  * project each as long as a path segment carries, every character escaped —
  * rather than chosen.
  *
+ * A RELATION ACROSS A NAMESPACE IS ASKED AS THAT RELATION, so the authority
+ * answers no tuple of another, which `test/keto/accessOwnerInvitation.test.ts`
+ * holds it to.
+ *
  * A SUBJECT SET IS NO PRINCIPAL, and is answered as one so the interpreter can
  * tell a `tenant` link from a person rather than reading its object as a name.
  * Its relation is kept, which is what tells a link from the holders of a role.
@@ -95,6 +99,8 @@ function ketoAccessQuery(
       };
     case "Namespace":
       return { namespace: query.namespace };
+    case "NamespaceRelation":
+      return { namespace: query.namespace, relation: query.relation };
   }
 }
 
