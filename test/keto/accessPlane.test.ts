@@ -4,9 +4,11 @@
  * answers, a role or hosted runs granted being a permit `ProjectAccess` then
  * answers for, and what a caller may do following who holds each kind.
  *
- * NOTHING ON A FRESH TENANT IS WRITTEN BUT BY THE CASE. The plane cannot write
- * a `tenant` link, a tenant's first administrator or either level's defaults,
- * so each case writes those itself, as creation and provisioning do.
+ * NOTHING ON A FRESH TENANT IS WRITTEN BUT BY THE CASE. The plane writes a
+ * tenant's first administrator and its defaults only through the site's
+ * invitation into a tenant of one's own, and never a `tenant` link or a
+ * project's defaults, so each case writes those itself, as creation and
+ * provisioning do.
  */
 
 import assert from "node:assert/strict";

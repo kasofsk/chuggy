@@ -86,27 +86,35 @@ export interface AccessInvitationSettings {
   readonly issuer: string;
 }
 
+/** The person an invitation found or made, and whether this request made their account. */
+export interface AccessPersonInvited {
+  readonly invited: "Invited";
+  readonly subject: string;
+  readonly created: boolean;
+}
+
+/** Why GitHub or the directory gave an invitation no person. */
+export interface AccessPersonRefusal {
+  readonly invited:
+    | "AccountNotPermitted"
+    | "GithubAccountUnknown"
+    | "GithubAccountNotUser"
+    | "GithubUnavailable"
+    | "EmailHeld"
+    | "EmailRefused"
+    | "DirectoryRaced";
+}
+
+/** The refusals every invitation shares: who may, a plane with no directory, and the person refused. */
+export type AccessInvitationRefusal =
+  | AccessPersonRefusal
+  | { readonly invited: "Absent" | "NotConfigured" | "Refused" };
+
 /** What an invitation came to. Every outcome but `Invited` changed nothing. */
 export type AccessInvitationResult =
-  | {
-      readonly invited: "Invited";
-      readonly subject: string;
-      readonly created: boolean;
-    }
-  | {
-      readonly invited:
-        | "Absent"
-        | "NotConfigured"
-        | "ProjectUnknown"
-        | "Refused"
-        | "AccountNotPermitted"
-        | "GithubAccountUnknown"
-        | "GithubAccountNotUser"
-        | "GithubUnavailable"
-        | "EmailHeld"
-        | "EmailRefused"
-        | "DirectoryRaced";
-    };
+  | AccessPersonInvited
+  | { readonly invited: "ProjectUnknown" }
+  | AccessInvitationRefusal;
 
 export interface AccessInvitations {
   invite(
@@ -168,49 +176,82 @@ function accessInvitationGrants(
   ];
 }
 
-/** What finding the person came to: their account, no account the caller may make, an email held by another, or neither. */
-type AccessFound =
+/** What finding the person came to: their account, a refusal of where they stand, no account the caller may make, an email held by another, or neither. */
+type AccessFound<Refusal> =
   | { readonly found: "Account"; readonly subject: string }
+  | { readonly found: "Standing"; readonly refusal: Refusal }
   | { readonly found: "NotPermitted" }
   | { readonly found: "EmailHeld" }
   | { readonly found: "Neither" };
 
-/** What an invitation makes an account under: the email, who invited, the tenant, and whether the caller may make one. */
-interface AccessCreation {
+/**
+ * Who an invitation names and for which tenant, and what it asks of the account
+ * carrying the credential, or of there being none, before anything is made.
+ * `standing` answers a refusal where the invitation stops there.
+ */
+export interface AccessInvitationPerson<Refusal extends object> {
+  readonly github: string;
   readonly email: string;
-  readonly invitedBy: string;
   readonly tenant: TenantId;
+  readonly standing: (
+    subject: string | undefined,
+  ) => Promise<Refusal | undefined>;
+}
+
+/** What an invitation makes an account under: the person named, who invited, and whether the caller may make one. */
+interface AccessCreation<Refusal extends object> {
+  readonly person: AccessInvitationPerson<Refusal>;
+  readonly invitedBy: string;
   readonly permitted: () => Promise<boolean>;
 }
 
-async function accessInvitationFound(
+async function accessInvitationFound<Refusal extends object>(
   directory: AccessDirectory,
   github: AccessGithubAccount,
-  creation: AccessCreation,
-): Promise<AccessFound> {
+  creation: AccessCreation<Refusal>,
+): Promise<AccessFound<Refusal>> {
   const subject = await directory.githubHolder(github);
+  const refusal = await creation.person.standing(subject);
+  if (refusal !== undefined) return { found: "Standing", refusal };
   if (subject !== undefined) return { found: "Account", subject };
   if (!(await creation.permitted())) return { found: "NotPermitted" };
-  return (await directory.emailHeld(creation.email))
+  return (await directory.emailHeld(creation.person.email))
     ? { found: "EmailHeld" }
     : { found: "Neither" };
 }
 
+/** The outcome a finding ends the invitation with, or nothing where neither the credential nor the email is held. */
+function accessInvitationFoundEnded<Refusal extends object>(
+  found: AccessFound<Refusal>,
+): AccessPersonInvited | AccessPersonRefusal | Refusal | undefined {
+  switch (found.found) {
+    case "Account":
+      return { invited: "Invited", subject: found.subject, created: false };
+    case "Standing":
+      return found.refusal;
+    case "NotPermitted":
+      return { invited: "AccountNotPermitted" };
+    case "EmailHeld":
+      return { invited: "EmailHeld" };
+    case "Neither":
+      return undefined;
+  }
+}
+
 /** The account the person signs in as, found or created, or why there is none. */
-async function accessInvitationAccount(
+async function accessInvitationAccount<Refusal extends object>(
   directory: AccessDirectory,
   github: AccessGithubAccount,
-  creation: AccessCreation,
-): Promise<AccessInvitationResult> {
-  const found = await accessInvitationFound(directory, github, creation);
-  if (found.found === "Account")
-    return { invited: "Invited", subject: found.subject, created: false };
-  if (found.found === "NotPermitted") return { invited: "AccountNotPermitted" };
-  if (found.found === "EmailHeld") return { invited: "EmailHeld" };
+  creation: AccessCreation<Refusal>,
+): Promise<AccessPersonInvited | AccessPersonRefusal | Refusal> {
+  const ended = accessInvitationFoundEnded(
+    await accessInvitationFound(directory, github, creation),
+  );
+  if (ended !== undefined) return ended;
   const created = await directory.create({
-    email: creation.email,
+    email: creation.person.email,
     invitedBy: creation.invitedBy,
-    tenant: creation.tenant,
+    tenant: creation.person.tenant,
     github,
   });
   switch (created.created) {
@@ -218,16 +259,12 @@ async function accessInvitationAccount(
       return { invited: "Invited", subject: created.subject, created: true };
     case "EmailRefused":
       return { invited: "EmailRefused" };
-    case "Conflict": {
-      const again = await accessInvitationFound(directory, github, creation);
-      if (again.found === "Account")
-        return { invited: "Invited", subject: again.subject, created: false };
-      if (again.found === "NotPermitted")
-        return { invited: "AccountNotPermitted" };
-      return again.found === "EmailHeld"
-        ? { invited: "EmailHeld" }
-        : { invited: "DirectoryRaced" };
-    }
+    case "Conflict":
+      return (
+        accessInvitationFoundEnded(
+          await accessInvitationFound(directory, github, creation),
+        ) ?? { invited: "DirectoryRaced" }
+      );
   }
 }
 
@@ -235,7 +272,7 @@ async function accessInvitationAccount(
 async function accessInvitationGithub(
   github: AccessGithubAccounts,
   login: string,
-): Promise<AccessGithubAccount | AccessInvitationResult> {
+): Promise<AccessGithubAccount | AccessPersonRefusal> {
   const looked = await github.lookup(login);
   switch (looked.looked) {
     case "Unknown":
@@ -247,6 +284,39 @@ async function accessInvitationGithub(
         ? looked.account
         : { invited: "GithubAccountNotUser" };
   }
+}
+
+/** What finding or making the person reaches. */
+export interface AccessInvitationPersonPorts {
+  readonly access: ProjectAccess;
+  readonly directory: AccessDirectory;
+  readonly github: AccessGithubAccounts;
+}
+
+/**
+ * The person an admitted invitation names: their GitHub account resolved, then
+ * the account carrying it found, or made where `caller` may `CreateAccount`.
+ * Nothing is made where `standing` refuses.
+ */
+export async function accessInvitationPerson<Refusal extends object>(
+  ports: AccessInvitationPersonPorts,
+  settings: AccessInvitationSettings,
+  caller: Principal,
+  person: AccessInvitationPerson<Refusal>,
+): Promise<AccessPersonInvited | AccessPersonRefusal | Refusal> {
+  const invitedBy = oidcPrincipalSubject(settings.issuer, caller);
+  if (invitedBy === undefined)
+    throw new RangeError(
+      "access invitation: the caller is not a subject of the plane's issuer",
+    );
+  const account = await accessInvitationGithub(ports.github, person.github);
+  if ("invited" in account) return account;
+  return accessInvitationAccount(ports.directory, account, {
+    person,
+    invitedBy,
+    permitted: async () =>
+      (await ports.access.authorizeSite(caller, "CreateAccount")) !== undefined,
+  });
 }
 
 /** Whether the caller holds the kind granting every role the invitation names, each on the tenant or the project it is named on. */
@@ -322,21 +392,17 @@ export function accessInvitations(
         invitation,
       );
       if (refused !== undefined) return refused;
-      const invitedBy = oidcPrincipalSubject(settings.issuer, caller);
-      if (invitedBy === undefined)
-        throw new RangeError(
-          "access invitation: the caller is not a subject of the plane's issuer",
-        );
-      const account = await accessInvitationGithub(github, invitation.github);
-      if ("invited" in account) return account;
-      const result = await accessInvitationAccount(directory, account, {
-        email: invitation.email,
-        invitedBy,
-        tenant,
-        permitted: async () =>
-          (await ports.access.authorizeSite(caller, "CreateAccount")) !==
-          undefined,
-      });
+      const result = await accessInvitationPerson<never>(
+        { access: ports.access, directory, github },
+        settings,
+        caller,
+        {
+          github: invitation.github,
+          email: invitation.email,
+          tenant,
+          standing: () => Promise.resolve(undefined),
+        },
+      );
       if (result.invited !== "Invited") return result;
       for (const grant of accessInvitationGrants(
         settings.issuer,
