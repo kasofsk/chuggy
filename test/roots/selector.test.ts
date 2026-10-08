@@ -240,6 +240,35 @@ test("identity generation is unique and names its process instance", async () =>
   }
 });
 
+test("a decision's identity is derived again from its reference, by any instance", async () => {
+  const program = `
+    const root = await import('./src/roots/selector.ts');
+    const drawn = root.selectorIdentities('selector-1').next({ tenant: 'tenant', project: 'project' });
+    const successor = root.selectorIdentities('selector-2');
+    process.stdout.write(JSON.stringify({
+      drawn,
+      resumed: successor.resumed(drawn.selectorDecisionReference),
+      foreign: successor.resumed('decision-drawn-elsewhere') ?? null,
+      bare: successor.resumed('selector-decision-') ?? null,
+    }));
+  `;
+  const found = await execute(process.execPath, [
+    "--experimental-strip-types",
+    "--input-type=module",
+    "--eval",
+    program,
+  ]);
+  const derived = JSON.parse(found.stdout) as {
+    readonly drawn: unknown;
+    readonly resumed: unknown;
+    readonly foreign: unknown;
+    readonly bare: unknown;
+  };
+  assert.deepEqual(derived.resumed, derived.drawn);
+  assert.equal(derived.foreign, null);
+  assert.equal(derived.bare, null);
+});
+
 test("source readiness has a stable named prerequisite", async () => {
   const program = `
     const root = await import('./src/roots/selector.ts');

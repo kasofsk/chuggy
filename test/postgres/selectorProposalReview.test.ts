@@ -407,6 +407,7 @@ async function runningDecision(
       nextCandidateScan: { state: "Exhausted", token: project.page.token },
     },
     { settingsRevision: 1, projectSettingsRevision: 0 },
+    0,
   );
   return decision;
 }

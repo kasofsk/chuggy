@@ -53,7 +53,12 @@ import {
   memberAuthority,
   type ProjectAccess,
 } from "../../src/interpreter/projectAccess.ts";
-import type { JsonValue } from "../../src/interpreter/selector.ts";
+import type {
+  JsonValue,
+  SelectorObservation,
+} from "../../src/interpreter/selector.ts";
+import type { LeadPolicyClock } from "../../src/interpreter/leadPolicyHost.ts";
+import { asTicketId } from "../../src/domain/ids.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 import { postgresHarnessProject, postgresHarnessRolePool } from "./harness.ts";
 import { postgresHarnessSelectorContext } from "./harness.ts";
@@ -294,4 +299,70 @@ export async function leadRigPod(
     label,
     decide,
   );
+}
+
+/** A lead host's clock on the wall, whose wait ends early where the run is abandoned. */
+export const leadRigClock: LeadPolicyClock = {
+  now: () => {
+    const epochMs = Date.now();
+    return Promise.resolve({
+      instant: new Date(epochMs).toISOString(),
+      epochMs,
+    });
+  },
+  wait: (milliseconds, signal) =>
+    new Promise((resolve, reject) => {
+      const timer = setTimeout(resolve, milliseconds);
+      signal.addEventListener("abort", () => {
+        clearTimeout(timer);
+        reject(signal.reason as Error);
+      });
+    }),
+};
+
+/** A fresh observation of two candidates, moved to `cursor`, which a decision case offers its lead. */
+export function leadRigObservation(
+  partition: Partition,
+  cursor: number,
+): SelectorObservation {
+  const token = {
+    ...partition,
+    recoveryEpoch: "epoch",
+    schemaVersion: 1,
+    watermark: 1,
+    digest: "a".repeat(64),
+  };
+  return {
+    token,
+    candidates: [
+      {
+        ticket: asTicketId(41),
+        ticketVersion: 3,
+        dependencies: [],
+        program: [{ key: 1, evaluators: [{ key: 1 }] }],
+        configurationRevision: "revision",
+        configurationDigest: "d".repeat(64),
+        configurationCanonical: "{}",
+      },
+      {
+        ticket: asTicketId(43),
+        ticketVersion: 1,
+        dependencies: [],
+        program: [{ key: 1, evaluators: [{ key: 1 }] }],
+        configurationRevision: "revision",
+        configurationDigest: "d".repeat(64),
+        configurationCanonical: "{}",
+      },
+    ],
+    refusals: [],
+    notificationCursor: cursor,
+    changes: [{ ordinal: cursor, kind: "Ticket", resource: "41" }],
+    operationalContext: {
+      ...postgresHarnessSelectorContext,
+      observedAtEpochMs: Date.now(),
+      observedAt: new Date().toISOString(),
+    },
+    handoffNote: { watching: "41" },
+    nextCandidateScan: { state: "Exhausted", token },
+  };
 }

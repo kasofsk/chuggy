@@ -45,6 +45,7 @@ import { migration032 } from "../../src/adapters/postgres/schema/migrations/032-
 import { migration034 } from "../../src/adapters/postgres/schema/migrations/034-held-proposal-currency.ts";
 import { migration042 } from "../../src/adapters/postgres/schema/migrations/042-lead-succession.ts";
 import { migration043 } from "../../src/adapters/postgres/schema/migrations/043-parked-overrides.ts";
+import { migration045 } from "../../src/adapters/postgres/schema/migrations/045-selector-attempt-revision.ts";
 import {
   postgresForgeInstallationClaims,
   postgresForgeInstallations,
@@ -9799,5 +9800,44 @@ test("043 settles a change that would move a definition under its own code, and 
         false,
         JSON.stringify(changed),
       );
+  });
+});
+
+/** A selector attempt left running by a process before 045, which kept no project revision. */
+const attemptBeforeRevisionSeed = `
+  ${tenantSeed("tenant-45")}
+  INSERT INTO project(tenant,project,lifecycle) VALUES('tenant-45','project-45','Active');
+  INSERT INTO selector_attempt(attempt,tenant,project,state)
+  VALUES('attempt-45','tenant-45','project-45','Running')`;
+
+test("045 gives a selector attempt the project revision its decision is fenced on, which the selector writes and an older row lacks", async () => {
+  await migrationDatabase("selector_attempt_revision", async (subject) => {
+    await installationBefore(subject, migration045.version);
+    await subject.query(attemptBeforeRevisionSeed);
+    assert.ok((await postgresMigrate(subject)).includes(migration045.version));
+    assert.deepEqual(
+      (
+        await subject.query(
+          `SELECT attempt,project_revision FROM selector_attempt`,
+        )
+      ).rows,
+      [{ attempt: "attempt-45", project_revision: null }],
+    );
+    assert.deepEqual(
+      (
+        await subject.query(
+          `SELECT has_column_privilege($1,'public.selector_attempt','project_revision','UPDATE') AS writes,
+                  has_column_privilege($1,'public.selector_attempt','project_revision','SELECT') AS reads`,
+          [selectorServiceRole],
+        )
+      ).rows,
+      [{ writes: true, reads: true }],
+    );
+    await assert.rejects(
+      subject.query(
+        `UPDATE selector_attempt SET project_revision=-1 WHERE attempt='attempt-45'`,
+      ),
+      /selector_attempt_project_revision_check/u,
+    );
   });
 });

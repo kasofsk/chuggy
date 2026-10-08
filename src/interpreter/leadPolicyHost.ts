@@ -33,9 +33,9 @@
  * IT HOLDS NO STATE OF ITS OWN. Reading and withdrawing name the turn, which is
  * the decision, so a process that never offered a turn can still settle it: a
  * restart's quarantined decisions reconcile from the row rather than from a map
- * that did not survive. A restart still loses the turn in flight, because the
- * promise over it did not survive, and the project decides again on its next
- * change.
+ * that did not survive. A restart does not lose the turn in flight either: the
+ * next process resumes it from the row, waiting on it and answering it as the
+ * offer would have, without asking admission or touching the lead.
  *
  * THE OBSERVATION SHEDS ONLY WHAT A SUCCESSOR CAN DO WITHOUT. The handoff
  * note, the cursor and the refusals a decision is judged against are never
@@ -96,6 +96,7 @@ import type {
   SelectorPolicyExecution,
   SelectorPolicyRequest,
   SelectorTerminationResult,
+  SelectorTurnStanding,
 } from "./selector.ts";
 import type { SelectorPolicy } from "./selectorPolicyHost.ts";
 import {
@@ -469,6 +470,29 @@ function leadTurnUnanswered(standing: LeadTurnStanding): Error {
   });
 }
 
+/** The envelope one ended turn answers its decision in, or what ended it without an answer. */
+function leadDecisionExecution(
+  ports: LeadPolicyPorts,
+  request: SelectorPolicyRequest,
+  agentReference: string | undefined,
+  answered: LeadTurnStanding,
+  started: LeadPolicyReading,
+  completed: LeadPolicyReading,
+): SelectorPolicyExecution {
+  if (answered.state !== "Answered" || answered.result === undefined)
+    throw leadTurnUnanswered(answered);
+  return {
+    result: parseLeadDecision(answered.result, request.observation),
+    implementationRevision: ports.config.implementationRevision,
+    modelRevision: answered.measured?.model ?? leadTurnUnmeasured,
+    policyRevision: agentReference ?? leadSessionUnbound,
+    toolActivity: (answered.measured?.tools ?? []).map((tool) => ({ tool })),
+    accounting: leadTurnAccounting(answered.measured, started, completed),
+    startedAt: started.instant,
+    completedAt: completed.instant,
+  };
+}
+
 /** One decision, from the lead it is asked of to the envelope it is answered in. */
 async function leadDecision(
   ports: LeadPolicyPorts,
@@ -487,18 +511,54 @@ async function leadDecision(
   );
   const answered = await leadTurnSettled(ports, turn, pollIntervalMs, signal);
   const completed = await ports.clock.now();
-  if (answered.state !== "Answered" || answered.result === undefined)
-    throw leadTurnUnanswered(answered);
-  return {
-    result: parseLeadDecision(answered.result, request.observation),
-    implementationRevision: ports.config.implementationRevision,
-    modelRevision: answered.measured?.model ?? leadTurnUnmeasured,
-    policyRevision: lead.agentReference ?? leadSessionUnbound,
-    toolActivity: (answered.measured?.tools ?? []).map((tool) => ({ tool })),
-    accounting: leadTurnAccounting(answered.measured, started, completed),
-    startedAt: started.instant,
-    completedAt: completed.instant,
-  };
+  return leadDecisionExecution(
+    ports,
+    request,
+    lead.agentReference,
+    answered,
+    started,
+    completed,
+  );
+}
+
+/**
+ * A decision whose turn an earlier process offered, answered from the row. It
+ * asks no admission and neither opens nor closes a lead: the lead is only read,
+ * for the runtime reference the decision is attributed to.
+ */
+async function leadDecisionResumed(
+  ports: LeadPolicyPorts,
+  request: SelectorPolicyRequest,
+  pollIntervalMs: number,
+  signal: AbortSignal,
+): Promise<SelectorPolicyExecution> {
+  const lead = await ports.mailbox.lead(leadPartition(request));
+  const started = await ports.clock.now();
+  const answered = await leadTurnSettled(
+    ports,
+    asSessionTurnId(request.attempt),
+    pollIntervalMs,
+    signal,
+  );
+  const completed = await ports.clock.now();
+  return leadDecisionExecution(
+    ports,
+    request,
+    lead?.agentReference,
+    answered,
+    started,
+    completed,
+  );
+}
+
+/** Where a decision's turn stands in the mailbox, read by the turn alone. */
+async function leadTurnStanding(
+  mailbox: LeadMailbox,
+  attempt: string,
+): Promise<SelectorTurnStanding> {
+  const standing = await mailbox.turn(asSessionTurnId(attempt));
+  if (standing === undefined) return "Absent";
+  return leadTurnRunning.includes(standing.state) ? "Pending" : "Ended";
 }
 
 /** A decision is a turn on the project's lead, and the turn's result is the decision. */
@@ -533,6 +593,9 @@ export function leadSelectorPolicy(
       (await ports.admission(partition)).admission,
     execute: (request, signal) =>
       leadDecision(ports, request, pollIntervalMs, signal),
+    resume: (request, signal) =>
+      leadDecisionResumed(ports, request, pollIntervalMs, signal),
+    standing: (attempt) => leadTurnStanding(mailbox, attempt),
     cancel: (attempt) => withdraw(attempt),
     inspect: (attempt) => withdraw(attempt),
   };

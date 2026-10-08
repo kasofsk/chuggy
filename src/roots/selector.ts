@@ -10,13 +10,15 @@ import type { AccessTokenSource } from "../adapters/http/accessToken.ts";
 import { clientCredentialsTokenSource } from "../adapters/http/clientCredentials.ts";
 import { selectorContextHttp } from "../adapters/http/selectorContext.ts";
 import { asPrincipal, type Principal } from "../interpreter/nativeWeb.ts";
-import { asOperationId } from "../interpreter/operationInbox.ts";
 import { checkedProjectAccessSettings } from "../interpreter/projectAccess.ts";
 import {
   selectorNativeSource,
   type SelectorNativeApi,
 } from "../interpreter/selectorNativeSource.ts";
-import type { SelectorIdentityFactory } from "../interpreter/selectorRuntime.ts";
+import {
+  selectorIdentityFactory,
+  type SelectorIdentityFactory,
+} from "../interpreter/selectorRuntime.ts";
 import {
   type RuntimePrecondition,
   type ServiceRuntime,
@@ -190,15 +192,7 @@ export function selectorConfiguration(
 }
 
 export function selectorIdentities(instance: string): SelectorIdentityFactory {
-  return {
-    next: () => {
-      const cycle = randomUUID();
-      return {
-        operation: asOperationId(`selector-operation-${instance}-${cycle}`),
-        selectorDecisionReference: `selector-decision-${instance}-${cycle}`,
-      };
-    },
-  };
+  return selectorIdentityFactory(() => `${instance}-${randomUUID()}`);
 }
 
 function deadline(milliseconds: number, signal?: AbortSignal): Promise<never> {

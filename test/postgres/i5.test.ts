@@ -663,15 +663,17 @@ test("selector provenance and its observed cursor roll back together", async () 
     assert.equal((await state.history(partition, undefined, 10)).length, 1);
     await state.recordInteraction(interaction, later, selectorTestFence);
     assert.equal((await state.project(partition))?.notificationCursor, 17);
-    await assert.rejects(
-      state.recordInteraction(
+    assert.equal(
+      await state.recordInteraction(
         { ...interaction, instructions: "different semantic interaction" },
         later,
         selectorTestFence,
       ),
-      /identity conflicts/,
+      false,
+      "a decision whose attempt completed is recorded once, whatever a second record says",
     );
     assert.equal((await state.project(partition))?.notificationCursor, 17);
+    assert.equal((await state.history(partition, undefined, 10)).length, 1);
   } finally {
     await pool.end();
   }
@@ -1159,6 +1161,7 @@ test("attempt reconciliation cannot claim another runtime's active attempt", asy
         nextCandidateScan: { state: "Exhausted", token },
       },
       { settingsRevision: 1, projectSettingsRevision: 0 },
+      0,
     );
     assert.deepEqual(await state.quarantinedAttempts(100), []);
     const administration = postgresPool(postgresHarnessUrl());

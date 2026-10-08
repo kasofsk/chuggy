@@ -436,10 +436,12 @@ test("a running attempt records both halves of the fence it started under", asyn
       }),
       true,
     );
-    await state.runningAttempt(attempt, observation, {
-      settingsRevision: 1,
-      projectSettingsRevision: 4,
-    });
+    await state.runningAttempt(
+      attempt,
+      observation,
+      { settingsRevision: 1, projectSettingsRevision: 4 },
+      0,
+    );
     assert.deepEqual(
       await harness.query(
         `SELECT settings_revision::text AS settings,
@@ -451,10 +453,12 @@ test("a running attempt records both halves of the fence it started under", asyn
     );
     await assert.rejects(
       () =>
-        state.runningAttempt(attempt, observation, {
-          settingsRevision: 1,
-          projectSettingsRevision: 5,
-        }),
+        state.runningAttempt(
+          attempt,
+          observation,
+          { settingsRevision: 1, projectSettingsRevision: 5 },
+          0,
+        ),
       /selector attempt cannot enter Running/u,
     );
   } finally {
@@ -703,18 +707,22 @@ test("a fence no attempt row could hold is refused before any of it is written",
     );
     await assert.rejects(
       () =>
-        state.runningAttempt(attempt, fenceObservation(partition), {
-          settingsRevision: 0,
-          projectSettingsRevision: 0,
-        }),
+        state.runningAttempt(
+          attempt,
+          fenceObservation(partition),
+          { settingsRevision: 0, projectSettingsRevision: 0 },
+          0,
+        ),
       RangeError,
     );
     await assert.rejects(
       () =>
-        state.runningAttempt(attempt, fenceObservation(partition), {
-          settingsRevision: 1,
-          projectSettingsRevision: -1,
-        }),
+        state.runningAttempt(
+          attempt,
+          fenceObservation(partition),
+          { settingsRevision: 1, projectSettingsRevision: -1 },
+          0,
+        ),
       RangeError,
     );
     assert.deepEqual(

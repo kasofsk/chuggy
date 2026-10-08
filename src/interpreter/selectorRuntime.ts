@@ -1,3 +1,4 @@
+import { asOperationId } from "./operationInbox.ts";
 import type { Partition } from "./projectStore.ts";
 import type { LeadAdmission } from "./sessionPlacement.ts";
 import type { ProjectInventoryPage } from "./nativeWeb.ts";
@@ -8,6 +9,7 @@ import {
   type SelectorChangeTrigger,
   type SelectorRefusalLedger,
   type SelectorCycleIdentity,
+  selectorInitialState,
   selectorNotificationPageLimit,
   type SelectorObservation,
   type SelectorObservationSource,
@@ -35,10 +37,16 @@ import {
 } from "./selectorDeliveryRuntime.ts";
 import type {
   SelectorAdmissionPhase,
+  SelectorIdentityFactory,
   SelectorRunFailure,
 } from "./selectorRuntimeTypes.ts";
+import {
+  resumeSelectorDecisions,
+  type SelectorResumptionProgress,
+} from "./selectorResumption.ts";
 export type {
   SelectorAdmissionPhase,
+  SelectorIdentityFactory,
   SelectorRunFailure,
 } from "./selectorRuntimeTypes.ts";
 
@@ -54,8 +62,42 @@ export interface SelectorRuntimeSource
   ): Promise<ProjectInventoryPage>;
 }
 
-export interface SelectorIdentityFactory {
-  next(partition: Partition): SelectorCycleIdentity;
+const selectorDecisionPrefix = "selector-decision-";
+const selectorOperationPrefix = "selector-operation-";
+
+/** A decision's operation and its reference, both named from one identifier so either names the other. */
+function selectorIdentityOf(identifier: string): SelectorCycleIdentity {
+  return {
+    operation: asOperationId(`${selectorOperationPrefix}${identifier}`),
+    selectorDecisionReference: `${selectorDecisionPrefix}${identifier}`,
+  };
+}
+
+/**
+ * Names each new decision from an identifier `draw` gives, and a stored
+ * reference from the identifier it carries, so a successor names a finished
+ * decision's dispatches under the operations the process that began it would have.
+ */
+export function selectorIdentityFactory(
+  draw: () => string,
+): SelectorIdentityFactory {
+  return {
+    next: () => selectorIdentityOf(draw()),
+    resumed: (reference) => {
+      if (
+        !reference.startsWith(selectorDecisionPrefix) ||
+        reference.length === selectorDecisionPrefix.length
+      )
+        return undefined;
+      try {
+        return selectorIdentityOf(
+          reference.slice(selectorDecisionPrefix.length),
+        );
+      } catch {
+        return undefined;
+      }
+    },
+  };
 }
 
 /**
@@ -96,17 +138,6 @@ function checkedBound(value: number, what: string): number {
   return value;
 }
 
-function initialState(partition: Partition): SelectorProjectState {
-  return {
-    partition,
-    notificationCursor: 0,
-    revision: 0,
-    attention: "Monitoring",
-    handoffNote: {},
-    candidateScan: { state: "Unstarted" },
-  };
-}
-
 async function observeProjects(
   projects: readonly Partition[],
   refusals: SelectorRefusalLedger,
@@ -115,6 +146,7 @@ async function observeProjects(
   policy: SelectorPolicyHost,
   identities: SelectorIdentityFactory,
   control: SelectorRuntimeSettingsSource,
+  held: readonly Partition[],
 ): Promise<SelectorSweepProgress> {
   let proposed = 0;
   let dispatched = 0;
@@ -123,6 +155,10 @@ async function observeProjects(
   const reached: Partition[] = [];
   const failures: SelectorRunFailure[] = [];
   for (const partition of projects) {
+    if (selectorProjectHeld(held, partition)) {
+      reached.push(partition);
+      continue;
+    }
     const result = await observeProject(
       partition,
       refusals,
@@ -141,6 +177,18 @@ async function observeProjects(
     dispatched += result.dispatched;
   }
   return { reached, observed, quiet, proposed, dispatched, failures };
+}
+
+/** Whether a project's unfinished decision still stands, which passes it over this quantum. */
+function selectorProjectHeld(
+  held: readonly Partition[],
+  partition: Partition,
+): boolean {
+  return held.some(
+    (standing) =>
+      standing.tenant === partition.tenant &&
+      standing.project === partition.project,
+  );
 }
 
 type SelectorSweepProgress = Pick<
@@ -192,7 +240,7 @@ async function observeProject(
   let state: SelectorProjectState;
   let observation: SelectorObservation | undefined;
   try {
-    state = (await store.project(partition)) ?? initialState(partition);
+    state = (await store.project(partition)) ?? selectorInitialState(partition);
     observation = await projectObservation(
       state,
       refusals,
@@ -342,6 +390,7 @@ async function observeFencedProject(
     identity.selectorDecisionReference,
     observation,
     selectorSettingsFence(settings),
+    state.revision,
   );
   return runObservedSelectorCycle(
     state,
@@ -440,6 +489,7 @@ async function observeInventory(
   identities: SelectorIdentityFactory,
   control: SelectorRuntimeSettingsSource,
   projectsMax: number,
+  held: readonly Partition[],
 ): Promise<SelectorSweepProgress> {
   await store.setAutomaticReadiness(policy.productionReady);
   if ((await control.settings()).mode === "Paused") return pausedInventory;
@@ -455,6 +505,7 @@ async function observeInventory(
     policy,
     identities,
     control,
+    held,
   );
   await saveInventoryProgress(store, inventory, progress.reached.length);
   return progress;
@@ -493,6 +544,57 @@ async function saveInventoryProgress(
   );
 }
 
+/**
+ * The decisions a predecessor left, finished or ended first, and then the
+ * inventory, which passes over every project whose decision still stands. A
+ * resumption that could not read what is unfinished observes nothing, because
+ * it cannot say which projects are held.
+ */
+async function selectorSweep(
+  refusals: SelectorRefusalLedger,
+  store: SelectorStateStore,
+  source: SelectorRuntimeSource,
+  policy: SelectorPolicyHost,
+  identities: SelectorIdentityFactory,
+  control: SelectorRuntimeSettingsSource,
+  projectsMax: number,
+): Promise<SelectorSweepProgress> {
+  let resumed: SelectorResumptionProgress;
+  try {
+    resumed = await resumeSelectorDecisions(
+      refusals,
+      store,
+      source,
+      policy,
+      identities,
+      control,
+    );
+  } catch {
+    return { ...pausedInventory, failures: [{ phase: "Resumption" }] };
+  }
+  let progress: SelectorSweepProgress;
+  try {
+    progress = await observeInventory(
+      refusals,
+      store,
+      source,
+      policy,
+      identities,
+      control,
+      projectsMax,
+      resumed.held,
+    );
+  } catch {
+    progress = { ...pausedInventory, failures: [{ phase: "Inventory" }] };
+  }
+  return {
+    ...progress,
+    proposed: progress.proposed + resumed.proposed,
+    dispatched: progress.dispatched + resumed.dispatched,
+    failures: [...resumed.failures, ...progress.failures],
+  };
+}
+
 /** Performs one bounded poll, policy, delivery, and reconciliation quantum. */
 export async function selectorRunOnce(
   refusals: SelectorRefusalLedger,
@@ -503,35 +605,16 @@ export async function selectorRunOnce(
   control: SelectorRuntimeSettingsSource,
   config: SelectorRuntimeConfig = selectorRuntimeDefaults,
 ): Promise<SelectorRunResult> {
-  const projectsMax = checkedBound(
-    config.projectsMax,
-    "selector project bound",
+  const sweep = await selectorSweep(
+    refusals,
+    store,
+    source,
+    policy,
+    identities,
+    control,
+    checkedBound(config.projectsMax, "selector project bound"),
   );
-  let reached: readonly Partition[] = [];
-  let observed = 0;
-  let quiet = 0;
-  let proposed = 0;
-  let dispatched = 0;
-  const failures: SelectorRunFailure[] = [];
-  try {
-    const progress = await observeInventory(
-      refusals,
-      store,
-      source,
-      policy,
-      identities,
-      control,
-      projectsMax,
-    );
-    reached = progress.reached;
-    observed = progress.observed;
-    quiet = progress.quiet;
-    proposed = progress.proposed;
-    dispatched = progress.dispatched;
-    failures.push(...progress.failures);
-  } catch {
-    failures.push({ phase: "Inventory" });
-  }
+  const failures: SelectorRunFailure[] = [...sweep.failures];
   const delivery = await deliverPendingSelectorProposals(
     store,
     source,
@@ -550,11 +633,11 @@ export async function selectorRunOnce(
     failures.push({ phase: "AttemptReconciliation" });
   }
   return {
-    reached,
-    observed,
-    quiet,
-    proposed,
-    dispatched,
+    reached: sweep.reached,
+    observed: sweep.observed,
+    quiet: sweep.quiet,
+    proposed: sweep.proposed,
+    dispatched: sweep.dispatched,
     delivered: delivery.delivered,
     reconciled: reconciliation.reconciled,
     failures,

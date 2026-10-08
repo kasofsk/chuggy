@@ -1,5 +1,6 @@
 import type { DispatchCandidate } from "./dispatchView.ts";
 import type { Partition } from "./projectStore.ts";
+import type { SelectorCycleIdentity } from "./selector.ts";
 
 /**
  * One thing a sweep could not do, named where it happened.
@@ -19,6 +20,7 @@ import type { Partition } from "./projectStore.ts";
 export interface SelectorRunFailure {
   readonly phase:
     | "Inventory"
+    | "Resumption"
     | "Settings"
     | SelectorAdmissionPhase
     | "PermitAcquisition"
@@ -39,3 +41,14 @@ export interface SelectorRunFailure {
 /** The phases a project whose lead may not take a turn is passed over under. */
 export type SelectorAdmissionPhase =
   "HostedRunsNotGranted" | "RunnerOffline" | "AdmissionUndecided";
+
+/**
+ * Where a decision's identity comes from: drawn for a new decision, or derived
+ * again from the reference a predecessor stored. Deriving it is what names a
+ * finished decision's dispatches under the operations its first process would have.
+ */
+export interface SelectorIdentityFactory {
+  next(partition: Partition): SelectorCycleIdentity;
+  /** The identity a stored reference was drawn with, or nothing where it was not drawn by this factory. */
+  resumed(reference: string): SelectorCycleIdentity | undefined;
+}
