@@ -1,7 +1,7 @@
 /**
  * The access plane's server: a tenant's and a project's people, granting and
  * removing their roles, giving and taking a person's hosted runs, inviting a
- * person by their GitHub account, and what the caller may do, who holds each
+ * person by their GitHub account into a tenant or into one of their own, and what the caller may do, who holds each
  * authority and adding and removing its holders at the site, a tenant or a
  * project, each for a caller the authority says holds the kind it needs.
  *
@@ -27,6 +27,7 @@ import {
   accessInvitationSchema,
   accessLastTenantAdministratorCode,
   accessNotPermittedCode,
+  accessOwnerInvitationSchema,
   accessPlaneRoutes,
   accessProjectAuthoritySchema,
   accessProjectRoleGrantSchema,
@@ -36,9 +37,12 @@ import {
   accessTenantAuthoritySchema,
   accessTenantRoleGrantSchema,
   accessTenantRoleSchema,
+  accessTenantTakenCode,
   type AccessInvited,
+  type AccessOwnerInvited,
   type AccessPlaneRouteName,
 } from "../../contract/accessPlane.ts";
+import { projectNameCharsMax } from "../../contract/requests.ts";
 import {
   identitySchema,
   nativeHttpError,
@@ -55,9 +59,11 @@ import type {
 } from "../../interpreter/accessAuthorityHolders.ts";
 import { AccessDirectoryUnavailable } from "../../interpreter/accessDirectory.ts";
 import type {
+  AccessInvitationRefusal,
   AccessInvitationResult,
   AccessInvitations,
 } from "../../interpreter/accessInvitation.ts";
+import type { AccessOwnerInvitations } from "../../interpreter/accessOwnerInvitation.ts";
 import type {
   AccessChange,
   AccessPlane,
@@ -91,6 +97,7 @@ export interface AccessPlaneService {
   readonly authentication: PrincipalAuthentication;
   readonly plane: AccessPlane;
   readonly invitations: AccessInvitations;
+  readonly ownerInvitations: AccessOwnerInvitations;
   readonly abilities: AccessAbilities;
   readonly authorities: AccessAuthorities;
   readonly holders: AccessAuthorityHolders;
@@ -105,6 +112,13 @@ export const accessInvitationBodyBytesMax =
   planeJsonObjectBytesMax(accessGithubLoginCharsMax, accessEmailCharsMax) +
   accessInvitationProjectsMax *
     planeJsonObjectBytesMax(nativeHttpPathSegmentCharsMax);
+
+/** The most a site's invitation reads: a tenant's name, a username and an email. */
+export const accessOwnerInvitationBodyBytesMax = planeJsonObjectBytesMax(
+  projectNameCharsMax,
+  accessGithubLoginCharsMax,
+  accessEmailCharsMax,
+);
 
 /** Serves `handler` at one route for the principal its bearer names, every other caller refused before any of its body is read. */
 function accessPlaneRoute(
@@ -457,26 +471,21 @@ function accessRetry(reply: FastifyReply, code: string): FastifyReply {
 /** The person invited, created by this request or found. */
 function accessInvitedSent(
   reply: FastifyReply,
-  invited: AccessInvited,
+  body: AccessInvited | AccessOwnerInvited,
 ): FastifyReply {
-  const body: AccessInvited = {
-    subject: invited.subject,
-    created: invited.created,
-  };
   return reply
-    .code(invited.created ? 201 : 200)
+    .code(body.created ? 201 : 200)
     .type(nativeHttpMediaType)
     .send(body);
 }
 
-function accessInvited(
+/** A refusal every invitation answers alike. */
+function accessInvitationRefused(
   reply: FastifyReply,
-  result: AccessInvitationResult,
+  result: AccessInvitationRefusal,
 ): FastifyReply {
   const codes = accessInvitationCodes;
   switch (result.invited) {
-    case "Invited":
-      return accessInvitedSent(reply, result);
     case "Absent":
       nativeHttpSend(reply, notFound());
       return reply;
@@ -486,13 +495,6 @@ function accessInvited(
         404,
         codes.NotConfigured,
         "This deployment invites nobody.",
-      );
-    case "ProjectUnknown":
-      return accessRefused(
-        reply,
-        422,
-        codes.ProjectUnknown,
-        "A project named is not the tenant's.",
       );
     case "Refused":
       return accessNotPermitted(reply, accessNotPermittedCode);
@@ -533,6 +535,25 @@ function accessInvited(
   }
 }
 
+function accessInvited(
+  reply: FastifyReply,
+  result: AccessInvitationResult,
+): FastifyReply {
+  if (result.invited === "Invited")
+    return accessInvitedSent(reply, {
+      subject: result.subject,
+      created: result.created,
+    });
+  if (result.invited === "ProjectUnknown")
+    return accessRefused(
+      reply,
+      422,
+      accessInvitationCodes.ProjectUnknown,
+      "A project named is not the tenant's.",
+    );
+  return accessInvitationRefused(reply, result);
+}
+
 function accessInvitationRoute(
   app: FastifyInstance,
   service: AccessPlaneService,
@@ -551,6 +572,30 @@ function accessInvitationRoute(
         ),
       ),
     accessInvitationBodyBytesMax,
+  );
+  accessPlaneRoute(
+    app,
+    service,
+    "siteOwnerInvitation",
+    async (request, reply, caller) => {
+      const invitation = accessOwnerInvitationSchema.parse(request.body);
+      const result = await service.ownerInvitations.invite(caller, invitation);
+      if (result.invited === "Invited")
+        return accessInvitedSent(reply, {
+          tenant: invitation.tenant,
+          subject: result.subject,
+          created: result.created,
+        });
+      if (result.invited === "TenantTaken")
+        return accessRefused(
+          reply,
+          409,
+          accessTenantTakenCode,
+          "Something already holds the tenant.",
+        );
+      return accessInvitationRefused(reply, result);
+    },
+    accessOwnerInvitationBodyBytesMax,
   );
 }
 

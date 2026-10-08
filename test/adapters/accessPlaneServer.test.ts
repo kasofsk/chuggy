@@ -3,8 +3,8 @@
  * the API's media type, a removal served, every refusal in the API's
  * envelope, what a caller may do and who holds each authority read as their
  * schemas, each change of a holder's outcome, and no request reaching a
- * relation but the ones the role rosters and the authority rosters name and
- * hosted runs.
+ * relation but the ones the role rosters and the authority rosters name,
+ * hosted runs, and the `site` link a site's invitation writes on a new tenant.
  */
 
 import assert from "node:assert/strict";
@@ -23,6 +23,7 @@ import {
   accessInvitedSchema,
   accessLastTenantAdministratorCode,
   accessNotPermittedCode,
+  accessOwnerInvitedSchema,
   accessPlanePath,
   accessPlaneRoutes,
   accessProjectAbilitiesSchema,
@@ -36,8 +37,13 @@ import {
   accessTenantAuthoritiesSchema,
   accessTenantPeopleSchema,
   accessTenantRoles,
+  accessTenantTakenCode,
   type AccessPlaneRouteName,
 } from "../../src/contract/accessPlane.ts";
+import {
+  projectNameCharsMax,
+  reservedTenantNames,
+} from "../../src/contract/requests.ts";
 import {
   errorEnvelopeSchema,
   nativeHttpMediaType,
@@ -63,6 +69,7 @@ import {
   projectTenantRelation,
   tenantAuthorityDefaults,
   tenantPrincipalGrant,
+  tenantSiteRelation,
 } from "../../src/interpreter/projectGrant.ts";
 import {
   checkedAccessDirectorySettings,
@@ -73,8 +80,15 @@ import {
   type AccessInvitations,
 } from "../../src/interpreter/accessInvitation.ts";
 import {
+  accessOwnerInvitations,
+  type AccessOwnerInvitations,
+} from "../../src/interpreter/accessOwnerInvitation.ts";
+import {
+  accessMemoryClaims,
   accessMemoryInvitations,
+  accessMemoryOwnerInvitations,
   directoryMemory,
+  directorySubject,
   githubMemory,
   githubUser,
 } from "../interpreter/accessInvitationFixture.ts";
@@ -105,13 +119,17 @@ const tokens: Readonly<Record<string, string>> = {
   "dee-token": "dee",
   "hal-token": "hal",
   "sam-token": "sam",
+  "sita-token": "sita",
 };
 
 const as = (token: string) => ({ authorization: `Bearer ${token}` });
 const typed = { "content-type": nativeHttpMediaType };
 
-/** What the invitation is composed with, over the authority a case serves. */
-type Invitations = (memory: AccessMemory) => AccessInvitations;
+/** What the invitations are composed with, over the authority a case serves. */
+interface Invitations {
+  readonly tenant: (memory: AccessMemory) => AccessInvitations;
+  readonly owner: (memory: AccessMemory) => AccessOwnerInvitations;
+}
 
 /** The directory and GitHub a case invites against where it composes none of its own. */
 const invitedDirectory = directoryMemory();
@@ -119,18 +137,48 @@ const invitedGithub = githubMemory({
   "octo-cat": githubUser("990000001", "Octo-Cat"),
 });
 
+/** Every kind `served` gives its people beside what the tuples give. */
+function servedKinds(memory: AccessMemory): void {
+  const alice = accessFixturePrincipal("alice");
+  accessGivenTenantAdministrator(memory, alice, tenant, [web]);
+  accessGiven(memory, alice, [{ on: "Site", kind: "CreateAccount" }]);
+  accessGivenProjectAdministrator(memory, accessFixturePrincipal("priya"), web);
+  accessGiven(memory, accessFixturePrincipal("mo"), [
+    { on: "Tenant", tenant, kind: "ManageTenantAuthorities" },
+  ]);
+  accessGiven(memory, accessFixturePrincipal("dee"), [
+    { on: "Tenant", tenant, kind: "GrantMember" },
+    { on: "Project", partition: web, kind: "GrantDeveloper" },
+  ]);
+  accessGiven(memory, accessFixturePrincipal("hal"), [
+    { on: "Tenant", tenant, kind: "GrantHostedExecution" },
+    { on: "Tenant", tenant, kind: "ManageSiteHeldAuthorities" },
+    { on: "Site", kind: "ManageSiteAuthorities" },
+  ]);
+  accessGiven(memory, accessFixturePrincipal("sita"), [
+    { on: "Site", kind: "CreateTenant" },
+    { on: "Site", kind: "CreateAccount" },
+    { on: "Site", kind: "ManageSiteAuthorities" },
+  ]);
+}
+
 /**
  * A tenant alice administers with one linked project priya administers, each
  * holding what the defaults give them and alice `CreateAccount`. Mo may only
  * manage who grants the tenant's roles, dee may grant `Member` and
- * `Developer` on the project and make no account, and hal may give hosted runs
+ * `Developer` on the project and make no account, hal may give hosted runs
  * and manage the site's authorities and the ones the site holds over the
- * tenant.
+ * tenant, and sita may make a tenant and an account and manage the site's
+ * authorities.
  */
 async function served(
   ready = true,
-  invitations: Invitations = (memory) =>
-    accessMemoryInvitations(memory, invitedDirectory, invitedGithub),
+  invitations: Invitations = {
+    tenant: (memory) =>
+      accessMemoryInvitations(memory, invitedDirectory, invitedGithub),
+    owner: (memory) =>
+      accessMemoryOwnerInvitations(memory, invitedDirectory, invitedGithub),
+  },
   directory?: AccessDirectory,
 ) {
   const memory = accessMemory();
@@ -151,22 +199,7 @@ async function served(
   ])
     await memory.grants.write(grant);
   memory.changes.length = 0;
-  const alice = accessFixturePrincipal("alice");
-  accessGivenTenantAdministrator(memory, alice, tenant, [web]);
-  accessGiven(memory, alice, [{ on: "Site", kind: "CreateAccount" }]);
-  accessGivenProjectAdministrator(memory, accessFixturePrincipal("priya"), web);
-  accessGiven(memory, accessFixturePrincipal("mo"), [
-    { on: "Tenant", tenant, kind: "ManageTenantAuthorities" },
-  ]);
-  accessGiven(memory, accessFixturePrincipal("dee"), [
-    { on: "Tenant", tenant, kind: "GrantMember" },
-    { on: "Project", partition: web, kind: "GrantDeveloper" },
-  ]);
-  accessGiven(memory, accessFixturePrincipal("hal"), [
-    { on: "Tenant", tenant, kind: "GrantHostedExecution" },
-    { on: "Tenant", tenant, kind: "ManageSiteHeldAuthorities" },
-    { on: "Site", kind: "ManageSiteAuthorities" },
-  ]);
+  servedKinds(memory);
   const app = createAccessPlaneApp({
     authentication: {
       authenticateBearer: (token): Promise<BearerAuthentication> => {
@@ -182,7 +215,8 @@ async function served(
       },
     },
     plane: accessMemoryPlane(memory, accessPlaneBoundsDefault, directory),
-    invitations: invitations(memory),
+    invitations: invitations.tenant(memory),
+    ownerInvitations: invitations.owner(memory),
     abilities: accessMemoryAbilities(memory),
     authorities: accessMemoryAuthorities(
       memory,
@@ -205,6 +239,14 @@ function pathOf(
 ) {
   return accessPlanePath(name, { ...web, subject, role, authority, group });
 }
+
+/** A site's invitation of octo-cat into a tenant of their own that may make accounts. */
+const ownerInvitation = {
+  tenant: "octo-works",
+  github: "octo-cat",
+  email: "octo@example.com",
+  createAccounts: true,
+};
 
 /** Asserts a refusal reads as the API's envelope under `classify`, naming `code` where given. */
 function enveloped(
@@ -702,10 +744,13 @@ test("an authority that cannot answer is retryable on every route and unready on
   memory.unavailable = true;
   for (const name of Object.keys(accessPlaneRoutes) as AccessPlaneRouteName[]) {
     const route = accessPlaneRoutes[name];
+    const person = { github: "octo-cat", email: "octo@example.com" };
     const body =
       name === "tenantInvitation"
-        ? { github: "octo-cat", email: "octo@example.com", role: "Admin" }
-        : { role: "Admin" };
+        ? { ...person, role: "Admin" }
+        : name === "siteOwnerInvitation"
+          ? { ...person, tenant: "octo-works", createAccounts: true }
+          : { role: "Admin" };
     const answered = await app.inject({
       method: route.method,
       url: pathOf(name, "zed", "Admin"),
@@ -824,7 +869,7 @@ async function accessHoldersReached(
   );
 }
 
-test("no request reaches a relation but the ones the role rosters and the authority rosters name and hosted runs", async () => {
+test("no request reaches a relation but the ones the role rosters and the authority rosters name, hosted runs, and the site link a site's invitation writes", async () => {
   const { memory, app } = await served();
   for (const grant of tenantAuthorityDefaults(tenant))
     await memory.grants.write(grant);
@@ -835,12 +880,20 @@ test("no request reaches a relation but the ones the role rosters and the author
     { on: "Tenant", tenant, kind: "ManageSiteHeldAuthorities" },
     { on: "Project", partition: web, kind: "ManageProjectAuthorities" },
   ]);
+  const owned = await app.inject({
+    method: "POST",
+    url: pathOf("siteOwnerInvitation"),
+    headers: { ...as("sita-token"), ...typed },
+    payload: JSON.stringify(ownerInvitation),
+  });
+  assert.equal(owned.statusCode, 201, owned.body);
   const reached = new Set([
     ...(await accessReached(memory, app)),
     ...(await accessHoldersReached(memory, app)),
   ]);
   const expected = new Set(
     (["write", "remove"] as const).flatMap((verb) => [
+      ...(verb === "write" ? [`write Tenant ${tenantSiteRelation}`] : []),
       `${verb} Tenant hosted_execution`,
       ...Object.values(accessTenantRoleRelations).map(
         (relation) => `${verb} Tenant ${relation}`,
@@ -873,17 +926,29 @@ async function inviting(
   const github = githubMemory(answers);
   const { memory, app } = await served(
     true,
-    (held) => accessMemoryInvitations(held, directory, github),
+    {
+      tenant: (held) => accessMemoryInvitations(held, directory, github),
+      owner: (held) => accessMemoryOwnerInvitations(held, directory, github),
+    },
     directory.directory,
   );
-  const invite = (body: unknown, token = "alice-token") =>
-    app.inject({
-      method: "POST",
-      url: pathOf("tenantInvitation"),
-      headers: { ...as(token), ...typed },
-      payload: JSON.stringify(body),
-    });
-  return { memory, app, directory, github, invite };
+  const sent =
+    (route: "tenantInvitation" | "siteOwnerInvitation") =>
+    (body: unknown, token = "alice-token") =>
+      app.inject({
+        method: "POST",
+        url: pathOf(route),
+        headers: { ...as(token), ...typed },
+        payload: JSON.stringify(body),
+      });
+  return {
+    memory,
+    app,
+    directory,
+    github,
+    invite: sent("tenantInvitation"),
+    own: sent("siteOwnerInvitation"),
+  };
 }
 
 const invitation = {
@@ -1047,9 +1112,11 @@ test("a directory that raced, refused the email or could not answer is each answ
 });
 
 test("a plane with no directory answers an invitation not configured and its lists without the directory's fields", async () => {
-  const { app } = await served(true, (memory) =>
-    accessMemoryInvitations(memory, undefined, undefined),
-  );
+  const { app } = await served(true, {
+    tenant: (memory) => accessMemoryInvitations(memory, undefined, undefined),
+    owner: (memory) =>
+      accessMemoryOwnerInvitations(memory, undefined, undefined),
+  });
   const answered = await app.inject({
     method: "POST",
     url: pathOf("tenantInvitation"),
@@ -1092,17 +1159,30 @@ async function remote(
   const github = githubUserLookup({ fetch: fixtureForge(forge).requestFetch });
   return served(
     true,
-    (memory) =>
-      accessInvitations(
-        {
-          access: memory.access,
-          tuples: memory.reader,
-          grants: memory.grants,
-          directory,
-          github,
-        },
-        { issuer: accessFixtureIssuer },
-      ),
+    {
+      tenant: (memory) =>
+        accessInvitations(
+          {
+            access: memory.access,
+            tuples: memory.reader,
+            grants: memory.grants,
+            directory,
+            github,
+          },
+          { issuer: accessFixtureIssuer },
+        ),
+      owner: (memory) =>
+        accessOwnerInvitations(
+          {
+            access: memory.access,
+            claims: accessMemoryClaims(memory),
+            grants: memory.grants,
+            directory,
+            github,
+          },
+          { issuer: accessFixtureIssuer },
+        ),
+    },
     directory,
   );
 }
@@ -1186,4 +1266,173 @@ test("no remote text reaches an answer: a marker in a field neither the director
   assert.equal(people.statusCode, 200, people.body);
   assert.ok(people.body.includes("Octo-Cat"), people.body);
   assert.ok(!people.body.includes(marker), people.body);
+});
+
+test("a site's invitation answers the tenant and the subject created, then the same subject not created", async () => {
+  const { memory, own } = await inviting();
+  const first = await own(ownerInvitation, "sita-token");
+  assert.equal(first.statusCode, 201, first.body);
+  const created = accessOwnerInvitedSchema.parse(first.json());
+  assert.deepEqual(created, {
+    tenant: "octo-works",
+    subject: created.subject,
+    created: true,
+  });
+  const written = memory.changes.length;
+  const again = await own(ownerInvitation, "sita-token");
+  assert.equal(again.statusCode, 200, again.body);
+  assert.deepEqual(accessOwnerInvitedSchema.parse(again.json()), {
+    ...created,
+    created: false,
+  });
+  assert.equal(memory.changes.length, 2 * written);
+});
+
+test("a site's invitation naming a tenant outside its shape, past its bound or reserved is rejected before GitHub, the directory or the authority is asked anything", async () => {
+  const { memory, directory, github, own } = await inviting();
+  memory.asked.length = 0;
+  for (const tenant of [
+    "Octo",
+    "octo-",
+    "acme/co",
+    "o".repeat(projectNameCharsMax + 1),
+    ...reservedTenantNames,
+  ])
+    enveloped(
+      await own({ ...ownerInvitation, tenant }, "sita-token"),
+      "Rejected",
+      "InvalidRequest",
+    );
+  enveloped(
+    await own({ ...ownerInvitation, createAccounts: "yes" }, "sita-token"),
+    "Rejected",
+    "InvalidRequest",
+  );
+  assert.deepEqual(github.looked, []);
+  assert.deepEqual(directory.asked, []);
+  assert.deepEqual(memory.asked, []);
+});
+
+test("a site's invitation is absent without `CreateTenant`, forbidden without the kind a power it uses needs, and a conflict under its own code where the tenant is taken", async () => {
+  const absent = await inviting();
+  enveloped(await absent.own(ownerInvitation, "alice-token"), "Absent");
+  assert.deepEqual(absent.github.looked, []);
+  assert.deepEqual(absent.directory.asked, []);
+
+  const powers = await inviting();
+  accessGiven(powers.memory, accessFixturePrincipal("mo"), [
+    { on: "Site", kind: "CreateTenant" },
+  ]);
+  const accountless = await powers.own(
+    { ...ownerInvitation, createAccounts: false },
+    "mo-token",
+  );
+  assert.equal(accountless.statusCode, 403, accountless.body);
+  enveloped(accountless, "Rejected", accessInvitationCodes.AccountNotPermitted);
+  accessGiven(powers.memory, accessFixturePrincipal("mo"), [
+    { on: "Site", kind: "CreateAccount" },
+  ]);
+  const unmanaging = await powers.own(ownerInvitation, "mo-token");
+  assert.equal(unmanaging.statusCode, 403, unmanaging.body);
+  enveloped(unmanaging, "Rejected", accessNotPermittedCode);
+  assert.deepEqual(powers.directory.creations, []);
+  assert.deepEqual(powers.memory.changes, []);
+
+  const taken = await inviting();
+  await taken.memory.grants.write(
+    projectTenantGrant(accessFixturePartition("taken", "web")),
+  );
+  taken.memory.changes.length = 0;
+  enveloped(
+    await taken.own({ ...ownerInvitation, tenant: "taken" }, "sita-token"),
+    "Conflict",
+    accessTenantTakenCode,
+  );
+  assert.deepEqual(taken.memory.changes, []);
+});
+
+test("every refusal GitHub or the directory gives a site's invitation has the tenant invitation's status and code, and writes nothing", async () => {
+  const unavailable = { looked: "Unavailable" } as const;
+  const scenarios: readonly (readonly [
+    Parameters<typeof inviting>,
+    (directory: ReturnType<typeof directoryMemory>) => void,
+  ])[] = [
+    [[[], {}], () => undefined],
+    [
+      [[], { "octo-cat": githubUser("1", "org", "Organization") }],
+      () => undefined,
+    ],
+    [[[], { "octo-cat": unavailable }], () => undefined],
+    [
+      [[{ subject: directorySubject(9), email: "octo@example.com" }]],
+      () => undefined,
+    ],
+    [[], (directory) => (directory.creationAnswer = "EmailRefused")],
+    [[], (directory) => (directory.creationAnswer = "Conflict")],
+    [[], (directory) => (directory.unavailable = true)],
+  ];
+  for (const [arguments_, prepared] of scenarios) {
+    const { memory, directory, invite, own } = await inviting(...arguments_);
+    prepared(directory);
+    const tenantAnswered = await invite(invitation);
+    const ownerAnswered = await own(ownerInvitation, "sita-token");
+    assert.ok(tenantAnswered.statusCode >= 400, tenantAnswered.body);
+    assert.equal(ownerAnswered.statusCode, tenantAnswered.statusCode);
+    assert.equal(
+      errorEnvelopeSchema.parse(ownerAnswered.json()).error.code,
+      errorEnvelopeSchema.parse(tenantAnswered.json()).error.code,
+    );
+    assert.deepEqual(memory.changes, []);
+  }
+});
+
+test("a plane with no directory answers a site's invitation not configured", async () => {
+  const { app } = await served(true, {
+    tenant: (memory) => accessMemoryInvitations(memory, undefined, undefined),
+    owner: (memory) =>
+      accessMemoryOwnerInvitations(memory, undefined, undefined),
+  });
+  const answered = await app.inject({
+    method: "POST",
+    url: pathOf("siteOwnerInvitation"),
+    headers: { ...as("sita-token"), ...typed },
+    payload: JSON.stringify(ownerInvitation),
+  });
+  enveloped(answered, "Absent");
+  assert.equal(
+    errorEnvelopeSchema.parse(answered.json()).error.code,
+    accessInvitationCodes.NotConfigured,
+  );
+});
+
+test("no remote text reaches a site's invitation: neither a refusal GitHub or the directory wrote nor a field of an account created", async () => {
+  const sentTo = (app: Awaited<ReturnType<typeof served>>["app"]) =>
+    app.inject({
+      method: "POST",
+      url: pathOf("siteOwnerInvitation"),
+      headers: { ...as("sita-token"), ...typed },
+      payload: JSON.stringify({ ...ownerInvitation, email: remoteEmail }),
+    });
+  const subject = "5804d32a-77dc-4fd5-9ef6-8f102ea642b1";
+  for (const [kratos, forge, status] of [
+    [
+      [
+        json([]),
+        json([]),
+        json({ error: { reason: `"${remoteEmail}"` } }, 400),
+      ],
+      [remotePerson()],
+      422,
+    ],
+    [[], [json({ message: marker }, 403)], 503],
+    [
+      [json([]), json([]), json({ id: subject, state: marker }, 201)],
+      [remotePerson()],
+      201,
+    ],
+  ] as const) {
+    const answered = await sentTo((await remote(kratos, forge)).app);
+    assert.equal(answered.statusCode, status, answered.body);
+    assert.ok(!answered.body.includes(marker), answered.body);
+  }
 });

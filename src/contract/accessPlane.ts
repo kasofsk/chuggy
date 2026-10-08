@@ -31,6 +31,7 @@
 import { z } from "zod";
 
 import { identitySchema, textCodePointsCount } from "./http.ts";
+import { projectNameSchema, tenantNameReserved } from "./requests.ts";
 
 export const accessPlaneBasePath = "/access/v1";
 
@@ -200,6 +201,10 @@ export const accessPlaneRoutes = {
     method: "GET",
     path: `${accessPlaneBasePath}/site/authorities`,
   },
+  siteOwnerInvitation: {
+    method: "POST",
+    path: `${accessSitePath}/workspaces`,
+  },
   siteAuthorityPersonAddition: {
     method: "POST",
     path: accessHolderPersonPath(accessSitePath),
@@ -302,6 +307,9 @@ export const accessProjectRoleGrantSchema = z.strictObject({
 /** The conflict a removal is refused with when it would leave a tenant no administrator. */
 export const accessLastTenantAdministratorCode = "LastTenantAdministrator";
 
+/** The conflict a site's invitation is refused with where something already holds the tenant it names. */
+export const accessTenantTakenCode = "InvitationTenantTaken";
+
 /** The refusal of a change or an invitation to a caller answered the list who may not grant a role it names, or hosted runs, or manage the authority it names. */
 export const accessNotPermittedCode = "AccessNotPermitted";
 
@@ -367,6 +375,30 @@ export const accessInvitationSchema = z.strictObject({
 export const accessInvitedSchema = z.strictObject({
   subject: z.string().min(1),
   created: z.boolean(),
+});
+
+/** A tenant a site's invitation makes: a name a principal may create, and none reserved. */
+export const accessOwnedTenantSchema = projectNameSchema.refine(
+  (tenant) => !tenantNameReserved(tenant),
+  "a new tenant may not take a reserved name",
+);
+
+/**
+ * What a site's invitation is sent: the tenant the person will administer,
+ * their GitHub username and email, and whether the tenant's administrators
+ * may make accounts.
+ */
+export const accessOwnerInvitationSchema = z.strictObject({
+  tenant: accessOwnedTenantSchema,
+  github: accessGithubLoginSchema,
+  email: accessEmailSchema,
+  createAccounts: z.boolean(),
+});
+
+/** What a site's invitation answers: the tenant, the subject administering it, and whether this request created its account. */
+export const accessOwnerInvitedSchema = z.strictObject({
+  tenant: identitySchema,
+  ...accessInvitedSchema.shape,
 });
 
 /** The code each refusal of an invitation is answered with. */
@@ -547,6 +579,8 @@ export type AccessProjectPerson = z.infer<typeof accessProjectPersonSchema>;
 export type AccessProjectPeople = z.infer<typeof accessProjectPeopleSchema>;
 export type AccessInvitation = z.infer<typeof accessInvitationSchema>;
 export type AccessInvited = z.infer<typeof accessInvitedSchema>;
+export type AccessOwnerInvitation = z.infer<typeof accessOwnerInvitationSchema>;
+export type AccessOwnerInvited = z.infer<typeof accessOwnerInvitedSchema>;
 export type AccessProjectAbilitiesHeld = z.infer<
   typeof accessProjectAbilitiesHeldSchema
 >;

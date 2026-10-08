@@ -47,7 +47,9 @@ Then list again: every project object carries a `tenant` tuple.
 
 Who may grant each role, make an account, make a tenant or change any of them
 is held as tuples beside the roles. A creation writes its own: a new tenant's,
-and each new project's. The site, and every tenant and project that existed
+and each new project's. So does the access plane's invitation of a person into
+a tenant of their own, `POST /access/v1/site/workspaces`, for the tenant it
+names. The site, and every tenant and project that existed
 before, are given theirs by an operator, in this order. Until the site has an
 administrator and its defaults, nobody holds `CreateAccount` or `CreateTenant`.
 A site already holding an authority tuple is given nothing, so on a site whose
@@ -121,7 +123,10 @@ defaults, a created project's `tenant` and defaults, and a registered pool's
 `members` on a tenant and `admins`, `developers` and `dispatchers` on a
 project, gives and takes a person's `hosted_execution`, and adds and removes
 the holders of each authority beside them, each for a caller holding the kind
-that grants it. Every other grant is the operator's, through
+that grants it. Its invitation of a person into a tenant of their own writes
+that tenant's first `admins` and its defaults, and, where asked, its
+administrators among the site's `account_creators`, for a caller the site
+permits `CreateTenant`. Every other grant is the operator's, through
 `src/roots/provisionProjectAccess.ts`, which reaches that port and nothing else
 and needs no database at all.
 
