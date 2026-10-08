@@ -34,6 +34,13 @@ import {
 import type { PanelState } from "../core/freshness.ts";
 import type { TicketDeliveryState } from "../core/ticketDelivery.ts";
 import {
+  ticketLandingCurrent,
+  ticketLandingFragment,
+  ticketLandingFragmentSays,
+  ticketLandingsHeld,
+} from "../core/ticketLandings.ts";
+import type { TicketLandingsState } from "../core/ticketLandings.ts";
+import {
   parkedOverridesFence,
   parkedOverridesUnsaved,
 } from "../core/parkedOverrides.ts";
@@ -67,6 +74,10 @@ import type { TicketActing } from "./TicketActions.tsx";
 import { useTicketDelivery } from "./ticket/TicketDelivery.tsx";
 import { TicketTopBar } from "./ticket/TicketHead.tsx";
 import {
+  LandingFragment,
+  useTicketLandings,
+} from "./ticket/TicketLandings.tsx";
+import {
   TicketLedgerPanel,
   useTicketExecutions,
 } from "./ticket/TicketLedger.tsx";
@@ -94,6 +105,7 @@ export interface TicketReads {
   readonly pageState: PanelState<ExecutionsResponse>;
   readonly leadState: PanelState<LeadReadResponse>;
   readonly deliveryState: TicketDeliveryState;
+  readonly landingsState: TicketLandingsState;
 }
 
 function readValue<T>(state: PanelState<T>): T | undefined {
@@ -208,6 +220,20 @@ function useParkedStanding(
   };
 }
 
+/** The current landing's fragment on the status bar while the ticket is
+ * finalizing, and null otherwise. */
+function statusLanding(props: StandingProps): ReactNode {
+  if (readValue(props.reads.ticketState)?.phase !== "Finalization") return null;
+  const landing = ticketLandingCurrent(
+    ticketLandingsHeld(props.reads.landingsState),
+  );
+  if (landing === undefined) return null;
+  const fragment = ticketLandingFragment(landing, props.nowMs);
+  return ticketLandingFragmentSays(fragment) ? (
+    <LandingFragment fragment={fragment} />
+  ) : null;
+}
+
 /** The status bar and the card under it, which answer through one submission
  * wherever the button pressed is drawn. */
 function TicketStanding(
@@ -226,6 +252,7 @@ function TicketStanding(
         resumed={
           asking || ledger === undefined ? undefined : resumedFrom(ledger)
         }
+        landing={statusLanding(props)}
         truncated={props.facts.truncated}
         nowMs={props.nowMs}
         actions={
@@ -310,6 +337,7 @@ function TicketBody(props: {
             partition={props.partition}
             page={props.reads.pageState}
             program={facts.program}
+            landings={props.reads.landingsState}
             nowMs={props.nowMs}
           />
         </section>
@@ -365,6 +393,7 @@ export function TicketPage(): ReactNode {
   const pageState = useTicketExecutions(partition, ticket);
   const leadState = useLead(partition);
   const deliveryState = useTicketDelivery(partition, ticket);
+  const landingsState = useTicketLandings(partition, ticket);
   if (!Number.isSafeInteger(ticket) || ticket <= 0)
     return <EmptyState label="No such ticket" variant="page" />;
   return (
@@ -379,6 +408,7 @@ export function TicketPage(): ReactNode {
         pageState,
         leadState,
         deliveryState,
+        landingsState,
       }}
       nowMs={nowMs}
     />

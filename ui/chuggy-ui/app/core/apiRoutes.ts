@@ -596,6 +596,12 @@ export const apiTicketActionReach = apiProjectEndpoint(
   (partition, ticket: number) => ({ parameters: { ...partition, ticket } }),
 );
 
+/** Every landing the ticket has had, which the ticket read omits. */
+export const apiTicketLandings = apiProjectEndpoint(
+  nativeHttpEndpoints.ticketLandings,
+  (partition, ticket: number) => ({ parameters: { ...partition, ticket } }),
+);
+
 export interface NativeActionsPage {
   readonly cursor?: string | undefined;
   readonly limit?: number | undefined;

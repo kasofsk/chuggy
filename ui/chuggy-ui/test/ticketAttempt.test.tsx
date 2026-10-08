@@ -28,6 +28,7 @@ import {
   ScreenHarness,
   settled,
   ticketLandedNowhere,
+  ticketLandingsNone,
   turned,
 } from "./screenHarness.tsx";
 import { nativeHttpMediaType } from "../../../src/contract/http.ts";
@@ -172,6 +173,7 @@ function served(scripted: {
     }
     if (url.includes("/native-actions")) return scripted.openActions();
     if (url.includes("/action-reach")) return answer(ticketLandedNowhere);
+    if (url.includes("/landings")) return answer(ticketLandingsNone);
     if (url.includes("/dispatch-view")) return answer({ result: "Reset" });
     if (url.includes("/executions")) return answer({ executions: [] });
     if (url.includes("/drafts/")) return answer({}, 404);

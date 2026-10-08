@@ -18,6 +18,12 @@
 import {
   blockedReasons,
   gitEvidences,
+  type changeProposalCreations,
+  type changeProposalMergeabilities,
+  type changeProposalMergeReasons,
+  type changeProposalMerges,
+  type finalizationAttemptOutcomes,
+  type finalizationFailureKinds,
   type BlockedReason,
   type BriefFinalizationMode,
   type EscalationKind,
@@ -27,6 +33,7 @@ import {
   type OperationRefusalCode,
   type OperationState,
   type ResumePoint,
+  type TicketLandingState,
   type TicketPhase,
 } from "../../../../src/contract/rosters.ts";
 import type { TicketEscalation } from "../../../../src/contract/responses.ts";
@@ -137,6 +144,110 @@ export function finalizationUnavailableKindLabel(
       return "Proposal creations exhausted";
     case "ProposalMergesExhausted":
       return "Proposal merges exhausted";
+  }
+}
+
+/** Where one landing stands, as the one word its pill says. */
+export function ticketLandingStateLabel(state: TicketLandingState): string {
+  switch (state) {
+    case "Running":
+      return "Running";
+    case "Held":
+      return "Held";
+    case "AwaitingApproval":
+      return "Waiting";
+    case "Failed":
+      return "Failed";
+    case "Unavailable":
+      return "Escalated";
+    case "Landed":
+      return "Landed";
+    case "Proposed":
+      return "Proposed";
+    case "Invalidated":
+      return "Invalidated";
+  }
+}
+
+/** What one finalization attempt came to. */
+export function finalizationAttemptOutcomeLabel(
+  outcome: (typeof finalizationAttemptOutcomes)[number],
+): string {
+  switch (outcome) {
+    case "Prepared":
+      return "Prepared";
+    case "Failed":
+      return "Failed";
+  }
+}
+
+/** Why one finalization attempt failed. */
+export function finalizationFailureKindLabel(
+  kind: (typeof finalizationFailureKinds)[number],
+): string {
+  switch (kind) {
+    case "MergeConflict":
+      return "Merge conflict";
+    case "PreparationFailed":
+      return "Preparation failed";
+  }
+}
+
+/** What opening a landing's pull request came to. */
+export function changeProposalCreationLabel(
+  creation: (typeof changeProposalCreations)[number],
+): string {
+  switch (creation) {
+    case "Created":
+      return "Opened";
+    case "AlreadyExists":
+      return "Already open";
+    case "Contradictory":
+      return "Contradictory";
+    case "Unstorable":
+      return "Unstorable";
+  }
+}
+
+/** What merging a landing's pull request came to. */
+export function changeProposalMergeLabel(
+  merge: (typeof changeProposalMerges)[number],
+): string {
+  switch (merge) {
+    case "Merged":
+      return "Merged";
+    case "HeadMoved":
+      return "Head moved";
+    case "NotMergeable":
+      return "Not mergeable";
+  }
+}
+
+/** Why a landing's pull request was not merged. */
+export function changeProposalMergeReasonLabel(
+  reason: (typeof changeProposalMergeReasons)[number],
+): string {
+  switch (reason) {
+    case "Conflict":
+      return "Conflict";
+    case "Blocked":
+      return "Blocked";
+  }
+}
+
+/** What the forge last said of whether a pull request can merge. */
+export function changeProposalMergeabilityLabel(
+  mergeability: (typeof changeProposalMergeabilities)[number],
+): string {
+  switch (mergeability) {
+    case "Mergeable":
+      return "Mergeable";
+    case "Conflicting":
+      return "Conflicting";
+    case "Blocked":
+      return "Blocked";
+    case "Unknown":
+      return "Unknown";
   }
 }
 

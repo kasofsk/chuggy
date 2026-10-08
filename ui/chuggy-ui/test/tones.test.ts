@@ -14,6 +14,7 @@ import {
   executionOutcomes,
   executionStatuses,
   phaseRoster,
+  ticketLandingStates,
 } from "../../../src/contract/rosters.ts";
 import {
   actionReachArm,
@@ -22,6 +23,7 @@ import {
   pillTones,
   phaseTone,
   stageArm,
+  ticketLandingTone,
   verdictTone,
 } from "../app/core/tones.ts";
 import type { SetVerdict } from "../app/core/ticketLedger.ts";
@@ -40,6 +42,14 @@ test("every phase and verdict draws a tone the pill knows", () => {
     expect(pillTones).toContain(phaseTone(phase));
   for (const verdict of verdicts)
     expect(pillTones).toContain(verdictTone(verdict));
+});
+
+test("every landing state draws a tone the pill knows, a failure in the failure's", () => {
+  for (const state of ticketLandingStates)
+    expect(pillTones).toContain(ticketLandingTone(state));
+  expect(ticketLandingTone("Failed")).toBe("fail");
+  expect(ticketLandingTone("Landed")).toBe("pass");
+  expect(ticketLandingTone("Running")).toBe("live");
 });
 
 test("the machine's own meanings keep their own hues", () => {

@@ -13,13 +13,20 @@ import { expect, test } from "vitest";
 import {
   blockedReasons,
   briefFinalizationModes,
+  changeProposalCreations,
+  changeProposalMergeabilities,
+  changeProposalMergeReasons,
+  changeProposalMerges,
   escalationKinds,
+  finalizationAttemptOutcomes,
+  finalizationFailureKinds,
   finalizationUnavailableKinds,
   gitEvidences,
   operationRefusalCodes,
   operationStates,
   phaseRoster,
   resumePoints,
+  ticketLandingStates,
   type EscalationKind,
   type GitEvidenceLabel,
 } from "../../../src/contract/rosters.ts";
@@ -27,9 +34,15 @@ import {
   approvalLabel,
   blockedReasonLabel,
   briefLandingLine,
+  changeProposalCreationLabel,
+  changeProposalMergeabilityLabel,
+  changeProposalMergeLabel,
+  changeProposalMergeReasonLabel,
   escalationDetail,
   escalationEvidenceLabel,
   escalationKindLabel,
+  finalizationAttemptOutcomeLabel,
+  finalizationFailureKindLabel,
   finalizationUnavailableKindLabel,
   gitEvidenceLabel,
   landingEffect,
@@ -45,6 +58,7 @@ import {
   operationStepLabel,
   phaseLabel,
   ticketActionEffect,
+  ticketLandingStateLabel,
 } from "../app/core/codeLabels.ts";
 import { mutationRefusalCodes } from "../app/core/codeSentences.ts";
 import type { TicketActionName } from "../app/core/ticketActions.ts";
@@ -70,12 +84,23 @@ test("every wall, phase, state and refusal has a label inside the copy budget", 
     ...operationStates.map(operationStateLabel),
     ...operationRefusalCodes.map(operationRefusalLabel),
     ...mutationRefusalCodes.map(mutationRefusalLabel),
+    ...finalizationAttemptOutcomes.map(finalizationAttemptOutcomeLabel),
+    ...finalizationFailureKinds.map(finalizationFailureKindLabel),
+    ...changeProposalCreations.map(changeProposalCreationLabel),
+    ...changeProposalMerges.map(changeProposalMergeLabel),
+    ...changeProposalMergeReasons.map(changeProposalMergeReasonLabel),
+    ...changeProposalMergeabilities.map(changeProposalMergeabilityLabel),
   ];
   for (const label of drawn) {
     expect(label.length).toBeGreaterThan(0);
     expect(label.length).toBeLessThanOrEqual(copyBudgetChars);
     expect(label).not.toMatch(/[.:;]/u);
   }
+});
+
+test("every landing state is one word", () => {
+  for (const state of ticketLandingStates)
+    expect(ticketLandingStateLabel(state)).toMatch(/^[A-Z][a-z]+$/u);
 });
 
 test("the wall a reader met on ticket 21 reads as a noun and a fragment", () => {
