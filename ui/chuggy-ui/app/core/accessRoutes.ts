@@ -2,7 +2,7 @@
  * The access plane's routes, each the contract's own route table filled by the
  * contract's own path function, so a route the plane moves moves here too.
  *
- * A grant and a removal answer nothing but their status, so each is read as
+ * A grant, an addition and a removal answer nothing but their status, so each is read as
  * `Ok` with no value.
  */
 
@@ -199,6 +199,51 @@ export function apiRemoveSiteAuthorityTenant(
   tenant: string,
 ): Promise<ApiResult<undefined>> {
   return accessSent(ports, "siteAuthorityTenantRemoval", { tenant });
+}
+
+export function apiAddTenantAuthorityGroup(
+  ports: ApiPorts,
+  tenant: string,
+  authority: AccessTenantAuthority,
+  group: AccessGroup,
+): Promise<ApiResult<undefined>> {
+  const segments = { tenant, authority, group };
+  return accessSent(ports, "tenantAuthorityGroupAddition", segments);
+}
+
+export function apiAddTenantAuthorityPerson(
+  ports: ApiPorts,
+  tenant: string,
+  authority: AccessTenantAuthority,
+  subject: string,
+): Promise<ApiResult<undefined>> {
+  const segments = { tenant, authority, subject };
+  return accessSent(ports, "tenantAuthorityPersonAddition", segments);
+}
+
+export function apiAddSiteAuthorityGroup(
+  ports: ApiPorts,
+  authority: AccessSiteAuthority,
+  group: AccessGroup,
+): Promise<ApiResult<undefined>> {
+  return accessSent(ports, "siteAuthorityGroupAddition", { authority, group });
+}
+
+export function apiAddSiteAuthorityPerson(
+  ports: ApiPorts,
+  authority: AccessSiteAuthority,
+  subject: string,
+): Promise<ApiResult<undefined>> {
+  const segments = { authority, subject };
+  return accessSent(ports, "siteAuthorityPersonAddition", segments);
+}
+
+/** One workspace's admins given the site's account creators. */
+export function apiAddSiteAuthorityTenant(
+  ports: ApiPorts,
+  tenant: string,
+): Promise<ApiResult<undefined>> {
+  return accessSent(ports, "siteAuthorityTenantAddition", { tenant });
 }
 
 /** One person invited by their GitHub account, created or found. */

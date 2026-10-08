@@ -26,7 +26,7 @@ import type { ButtonSize, ButtonVariant } from "./Button.tsx";
 
 export function Dialog(props: {
   readonly title: string;
-  readonly trigger: string;
+  readonly trigger: ReactNode;
   readonly triggerVariant?: ButtonVariant;
   readonly triggerSize?: ButtonSize;
   readonly triggerDisabled?: boolean;

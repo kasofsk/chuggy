@@ -6,8 +6,14 @@
 
 import type { QueryClient } from "@tanstack/react-query";
 
-import type { AccessTenantAbilities } from "../../../../../src/contract/accessPlane.ts";
-import { apiTenantAbilities } from "../../core/accessRoutes.ts";
+import type {
+  AccessTenantAbilities,
+  AccessTenantPeople,
+} from "../../../../../src/contract/accessPlane.ts";
+import {
+  apiTenantAbilities,
+  apiTenantPeople,
+} from "../../core/accessRoutes.ts";
 import type { PanelState } from "../../core/freshness.ts";
 import { tenantResourceKey } from "../../core/projectQueryKeys.ts";
 import { usePanelTenantResource } from "../api.ts";
@@ -16,6 +22,14 @@ import { usePanelTenantResource } from "../api.ts";
 export const tenantPeopleResource = "access-people";
 
 const tenantPeopleAbilitiesResource = "access-abilities";
+
+export function useTenantPeople(
+  tenant: string,
+): PanelState<AccessTenantPeople> {
+  return usePanelTenantResource(tenant, tenantPeopleResource, (ports) =>
+    apiTenantPeople(ports, tenant),
+  );
+}
 
 export function useTenantAbilities(
   tenant: string,

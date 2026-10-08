@@ -7,8 +7,9 @@
  * removes from a permission the reader may change carries a `Remove` button,
  * and what pressing it does is the removal's: the section only holds the one
  * question a removal of a permission manager asks first, and the one line a
- * refusal leaves in its row. What a section says besides its table is its
- * caller's.
+ * refusal leaves in its row. Where it is given an addition, each permission the
+ * reader may change carries `Add`, offering what the addition says the row
+ * offers. What a section says besides its table is its caller's.
  */
 
 import { useState } from "react";
@@ -30,6 +31,10 @@ import { Confirm } from "../ui/Confirm.tsx";
 import { Notice } from "../ui/Notice.tsx";
 import { Panel } from "../ui/Panel.tsx";
 import { Table } from "../ui/Table.tsx";
+import {
+  PermissionAddition,
+  type PermissionsAddition,
+} from "./PermissionAddition.tsx";
 import { TenantPersonWho } from "./TenantPersonRow.tsx";
 
 /** Whether a row's holders may be removed, and what removing one does. */
@@ -181,6 +186,7 @@ function PermissionRowDrawn<Authority extends PermissionAuthority>(props: {
   readonly row: PermissionRow<Authority>;
   readonly removable: boolean;
   readonly removing: PermissionsRemovalState<Authority>;
+  readonly addition: PermissionsAddition<Authority> | undefined;
 }): ReactNode {
   const row = props.row;
   const removing = props.removing;
@@ -208,6 +214,9 @@ function PermissionRowDrawn<Authority extends PermissionAuthority>(props: {
             ))}
           </ul>
         )}
+        {props.addition?.addable(row) === true ? (
+          <PermissionAddition row={row} addition={props.addition} />
+        ) : null}
       </td>
     </tr>
   );
@@ -219,6 +228,7 @@ export function PermissionsSection<
   readonly title: string;
   readonly rows: readonly PermissionRow<Authority>[] | undefined;
   readonly removal?: PermissionsRemoval<Authority>;
+  readonly addition?: PermissionsAddition<Authority>;
   readonly children?: ReactNode;
 }): ReactNode {
   const removal = props.removal;
@@ -240,6 +250,7 @@ export function PermissionsSection<
                 row={row}
                 removable={removal?.removable(row) ?? false}
                 removing={removing}
+                addition={props.addition}
               />
             ))}
           </tbody>
