@@ -10,7 +10,7 @@
  */
 
 import { useQueryClient } from "@tanstack/react-query";
-import { useId, useState } from "react";
+import { useState } from "react";
 import type { ReactNode } from "react";
 
 import type {
@@ -20,11 +20,8 @@ import type {
 import { apiInviteTenantPerson } from "../../core/accessRoutes.ts";
 import {
   projectRoleOffered,
-  tenantInvitationAccountLine,
   tenantInvitationBlank,
   tenantInvitationBody,
-  tenantInvitationEmailFault,
-  tenantInvitationGithubFault,
   tenantInvitationOutcome,
   tenantInvitationProjects,
   tenantInvitationProjectsFault,
@@ -39,49 +36,15 @@ import type { TenantInvitationForm } from "../../core/tenantPeople.ts";
 import { useApiPorts } from "../api.ts";
 import { Button } from "../ui/Button.tsx";
 import { Dialog } from "../ui/Dialog.tsx";
-import { Input } from "../ui/Input.tsx";
 import { RadioGroup } from "../ui/RadioGroup.tsx";
+import {
+  InvitationEmail,
+  InvitationFault,
+  InvitationGithub,
+  invitationLabelClassName,
+} from "./InvitationFields.tsx";
 import { tenantPeopleReread } from "./tenantPeopleResource.ts";
 import { TenantProjectsGrid } from "./TenantProjectsGrid.tsx";
-
-const labelClassName = "text-sm font-medium text-ink-3";
-
-function TenantInviteFault(props: {
-  readonly id?: string;
-  readonly fault: string | undefined;
-}): ReactNode {
-  return (
-    <span id={props.id} className="text-xs text-tone-fail">
-      {props.fault}
-    </span>
-  );
-}
-
-function TenantInviteText(props: {
-  readonly label: string;
-  readonly value: string;
-  readonly fault: string | undefined;
-  readonly line?: string | undefined;
-  readonly onChange: (value: string) => void;
-}): ReactNode {
-  const faultId = useId();
-  return (
-    <label className={`grid gap-1 ${labelClassName}`}>
-      {props.label}
-      <Input
-        label={props.label}
-        value={props.value}
-        onChange={props.onChange}
-        invalid={props.fault !== undefined}
-        describedBy={faultId}
-      />
-      <TenantInviteFault id={faultId} fault={props.fault} />
-      {props.line === undefined ? null : (
-        <span className="text-xs font-regular">{props.line}</span>
-      )}
-    </label>
-  );
-}
 
 function TenantInviteRole(props: {
   readonly offered: readonly AccessTenantRole[];
@@ -90,7 +53,7 @@ function TenantInviteRole(props: {
 }): ReactNode {
   return (
     <div className="grid gap-2">
-      <span aria-hidden="true" className={labelClassName}>
+      <span aria-hidden="true" className={invitationLabelClassName}>
         Workspace role
       </span>
       <RadioGroup
@@ -184,7 +147,7 @@ function TenantInviteProjects(props: {
           change(tenantInvitationProjectToggled(form, project, role));
         }}
       />
-      <TenantInviteFault fault={tenantInvitationProjectsFault(form)} />
+      <InvitationFault fault={tenantInvitationProjectsFault(form)} />
     </div>
   );
 }
@@ -197,19 +160,15 @@ function TenantInviteFields(props: {
   const { form, change } = props.inviting;
   return (
     <div className="grid gap-4">
-      <TenantInviteText
-        label="Email"
+      <InvitationEmail
         value={form.email}
-        fault={tenantInvitationEmailFault(form.email)}
         onChange={(email) => {
           change({ ...form, email });
         }}
       />
-      <TenantInviteText
-        label="GitHub username"
+      <InvitationGithub
         value={form.github}
-        fault={tenantInvitationGithubFault(form.github)}
-        line={tenantInvitationAccountLine(props.abilities)}
+        abilities={props.abilities}
         onChange={(github) => {
           change({ ...form, github });
         }}

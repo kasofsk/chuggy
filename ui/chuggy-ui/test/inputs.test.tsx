@@ -58,6 +58,24 @@ test("an input with no unit and no numeric flag draws neither", () => {
   );
 });
 
+test("an input told it takes nothing typed is disabled with what it holds, and any other is not", () => {
+  render(
+    <>
+      <Input
+        label="Held"
+        value="northwind"
+        disabled
+        onChange={() => undefined}
+      />
+      <Input label="Open" value="" onChange={() => undefined} />
+    </>,
+  );
+  const held = screen.getByLabelText<HTMLInputElement>("Held");
+  expect(held.disabled).toBe(true);
+  expect(held.value).toBe("northwind");
+  expect(screen.getByLabelText<HTMLInputElement>("Open").disabled).toBe(false);
+});
+
 /** `field-sizing` grows the box in a browser that has it; `rows` is what stops
  * a browser without it opening the box at its own default of two lines. */
 test("a textarea opens at the fallback height and marks its own face", () => {

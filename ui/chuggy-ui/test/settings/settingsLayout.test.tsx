@@ -2,8 +2,8 @@
  * The settings' frame over the routes the console registers for it: each
  * bare address replaced by its first page, a group a level with every link in
  * the frame it is drawn in, the page's own link the current one, the site's
- * group only for a reader who manages the site, and a workspace's page reading
- * the workspace its address names in either frame.
+ * group holding only the pages the reader's site abilities give them, and a
+ * workspace's page reading the workspace its address names in either frame.
  */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -37,6 +37,7 @@ import {
   holderDouble,
   openedStream,
   scriptedFetch,
+  sectionOf,
   settled,
 } from "../screenHarness.tsx";
 import type { SentRequest } from "../screenHarness.tsx";
@@ -49,6 +50,8 @@ import {
   permissionsPeopleListed,
   permissionsPeoplePath,
   readsOf,
+  siteAbilitiesNone,
+  siteAbilitiesPath,
   siteAuthoritiesPath,
   siteAuthoritiesStarting,
   tenantAuthoritiesPath,
@@ -69,15 +72,6 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
-
-const siteAbilitiesPath = "/access/v1/site/abilities";
-
-const siteAbilitiesNone: AccessSiteAbilities = {
-  administer: false,
-  createAccount: false,
-  createTenant: false,
-  manageAuthorities: false,
-};
 
 /** The shell's two slots under landmarks, so a case can say where a title landed. */
 function ShellSlotLandmarks(props: {
@@ -258,17 +252,23 @@ test.each([
     address: "/acme/atlas/settings/workspace/permissions",
     group: "Workspace acme",
   },
+  { address: "/acme/atlas/settings/site/workspaces", group: "Site" },
   { address: "/acme/atlas/settings/site/permissions", group: "Site" },
   { address: "/tenants/acme/settings/people", group: "Workspace acme" },
   { address: "/tenants/acme/settings/accounts", group: "Workspace acme" },
   { address: "/tenants/acme/settings/permissions", group: "Workspace acme" },
+  { address: "/tenants/acme/settings/site/workspaces", group: "Site" },
   { address: "/tenants/acme/settings/site/permissions", group: "Site" },
 ])(
   "at $address the page's own link in $group is the current one and no other is",
   async ({ address, group }) => {
     await drawnSettings(
       address,
-      siteAbilitiesAnswered({ ...siteAbilitiesNone, administer: true }),
+      siteAbilitiesAnswered({
+        ...siteAbilitiesNone,
+        administer: true,
+        createTenant: true,
+      }),
     );
     const current = within(navigation())
       .getAllByRole("link")
@@ -282,26 +282,39 @@ test.each([
   },
 );
 
+/** The site's group as one frame draws it, a link a page in the order given. */
+function siteGroup(
+  frame: string,
+  pages: readonly string[],
+): readonly [string, readonly string[]] {
+  return [
+    "Site",
+    pages.map((page) => `${page} ${frame}/site/${page.toLowerCase()}`),
+  ];
+}
+
 test.each([
-  { ability: "administer" as const },
-  { ability: "manageAuthorities" as const },
+  { held: { administer: true }, pages: ["Permissions"] },
+  { held: { manageAuthorities: true }, pages: ["Permissions"] },
+  { held: { createTenant: true }, pages: ["Workspaces"] },
+  {
+    held: { createTenant: true, manageAuthorities: true },
+    pages: ["Workspaces", "Permissions"],
+  },
 ])(
-  "a reader whose site abilities say $ability is drawn the site's group last, in either frame",
-  async ({ ability }) => {
-    const answered = siteAbilitiesAnswered({
-      ...siteAbilitiesNone,
-      [ability]: true,
-    });
+  "a reader whose site abilities say $held is drawn the site's group last with $pages alone, in either frame",
+  async ({ held, pages }) => {
+    const answered = siteAbilitiesAnswered({ ...siteAbilitiesNone, ...held });
     await drawnSettings("/acme/atlas/settings/permissions", answered);
     expect(groupsDrawn()).toStrictEqual([
       ...projectGroups,
-      ["Site", ["Permissions /acme/atlas/settings/site/permissions"]],
+      siteGroup("/acme/atlas/settings", pages),
     ]);
     cleanup();
     await drawnSettings("/tenants/acme/settings/permissions", answered);
     expect(groupsDrawn()).toStrictEqual([
       ...workspaceGroups,
-      ["Site", ["Permissions /tenants/acme/settings/site/permissions"]],
+      siteGroup("/tenants/acme/settings", pages),
     ]);
   },
 );
@@ -346,6 +359,27 @@ test.each([
   async ({ address, reads }) => {
     const drawn = await drawnSettings(address);
     expect(readsOf(drawn, reads)).toBeGreaterThan(0);
+  },
+);
+
+test.each([
+  { address: "/acme/atlas/settings/site/workspaces" },
+  { address: "/tenants/acme/settings/site/workspaces" },
+])(
+  "the page at $address is the site's workspaces, its form drawn to a reader who may make one",
+  async ({ address }) => {
+    await drawnSettings(
+      address,
+      siteAbilitiesAnswered({ ...siteAbilitiesNone, createTenant: true }),
+    );
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Workspaces" }),
+    ).toBeTruthy();
+    expect(
+      within(sectionOf("New workspace")).getByRole("button", {
+        name: "Create",
+      }),
+    ).toBeTruthy();
   },
 );
 

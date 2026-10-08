@@ -461,9 +461,10 @@ export function tenantInvitationProjects(
     .filter((offered) => offered.roles.length > 0);
 }
 
-/** The line an invitation draws under the GitHub field, where it draws one. */
+/** The line an invitation draws under the GitHub field, where it draws one:
+ * for a reader whose abilities, a workspace's or the site's, make no account. */
 export function tenantInvitationAccountLine(
-  abilities: AccessTenantAbilities | undefined,
+  abilities: { readonly createAccount: boolean } | undefined,
 ): string | undefined {
   return abilities === undefined || abilities.createAccount
     ? undefined

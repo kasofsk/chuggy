@@ -2,10 +2,10 @@
  * The settings' one frame: a navigation of every settings page the reader has,
  * a group a level, and beside it the page the address names.
  *
- * The site's group is drawn only for a reader the site's abilities say manages
- * it. That read answers nothing to anyone else, and a read that failed draws
- * the same as one that said no: a group withheld is not a fault of the page
- * beside it.
+ * The site's group is drawn only for a reader the site's abilities give a page
+ * of it. That read answers nothing to anyone else, and a read that failed
+ * draws the same as one that said no: a group withheld is not a fault of the
+ * page beside it.
  */
 
 import { Link, Outlet } from "@tanstack/react-router";

@@ -29,6 +29,14 @@
     color: var(--tone-live);
   }
 
+  .notice-pass {
+    background: var(--wash-pass);
+  }
+
+  .notice-pass .notice-head {
+    color: var(--tone-pass);
+  }
+
   .notice-parked {
     background: var(--wash-parked);
   }
@@ -67,6 +75,10 @@
 
   .notice-inline.notice-live {
     color: var(--tone-live);
+  }
+
+  .notice-inline.notice-pass {
+    color: var(--tone-pass);
   }
 
   .notice-inline.notice-parked {

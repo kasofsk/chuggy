@@ -16,6 +16,7 @@ import type { ReactNode } from "react";
 import type {
   AccessProjectAuthorities,
   AccessProjectPeople,
+  AccessSiteAbilities,
   AccessSiteAuthorities,
   AccessTenantAbilities,
   AccessTenantAuthorities,
@@ -56,6 +57,16 @@ export const permissionsTenant = "acme";
 export const tenantAuthoritiesPath = `/access/v1/tenants/${permissionsTenant}/authorities`;
 
 export const siteAuthoritiesPath = "/access/v1/site/authorities";
+
+export const siteAbilitiesPath = "/access/v1/site/abilities";
+
+/** A reader the site answers, and lets do nothing. */
+export const siteAbilitiesNone: AccessSiteAbilities = {
+  administer: false,
+  createAccount: false,
+  createTenant: false,
+  manageAuthorities: false,
+};
 
 export const permissionsAbilitiesPath = `/access/v1/tenants/${permissionsTenant}/abilities`;
 

@@ -1,7 +1,7 @@
 /**
  * The settings' side navigation, derived: a group a level — the project's
- * where one is open, the workspace's, and the site's where the reader manages
- * it — each the pages of that level in the order they are listed.
+ * where one is open, the workspace's, and the site's where the reader is drawn
+ * a page of it — each the pages of that level in the order they are listed.
  *
  * A workspace's page and the site's each have two addresses: one under a
  * project, so a reader in one keeps its shell, and one naming the workspace
@@ -10,6 +10,8 @@
  */
 
 import type { AccessSiteAbilities } from "../../../../src/contract/accessPlane.ts";
+
+import { siteWorkspaceOffered } from "./siteWorkspaces.ts";
 
 /** Every settings page's address, in a project and under the workspace alone. */
 export const settingsRoutes = {
@@ -20,12 +22,14 @@ export const settingsRoutes = {
     people: "/$tenant/$project/settings/workspace/people",
     accounts: "/$tenant/$project/settings/workspace/accounts",
     workspacePermissions: "/$tenant/$project/settings/workspace/permissions",
+    siteWorkspaces: "/$tenant/$project/settings/site/workspaces",
     sitePermissions: "/$tenant/$project/settings/site/permissions",
   },
   workspace: {
     people: "/tenants/$tenant/settings/people",
     accounts: "/tenants/$tenant/settings/accounts",
     workspacePermissions: "/tenants/$tenant/settings/permissions",
+    siteWorkspaces: "/tenants/$tenant/settings/site/workspaces",
     sitePermissions: "/tenants/$tenant/settings/site/permissions",
   },
 } as const;
@@ -58,20 +62,28 @@ export interface SettingsNavGroup {
   readonly entries: readonly SettingsNavEntry[];
 }
 
+/** Which of the site's pages the reader is drawn. */
+export interface SettingsNavSite {
+  readonly workspaces: boolean;
+  readonly permissions: boolean;
+}
+
 export interface SettingsNavInput {
   readonly tenant: string;
   readonly project: string | undefined;
-  readonly site: boolean;
+  readonly site: SettingsNavSite;
 }
 
-/** Whether the reader is drawn the site's group: they administer the site or manage its permissions. */
+/** Workspaces for a reader offered its form, and Permissions for one who administers the site or manages its permissions. */
 export function settingsNavSiteDrawn(
   abilities: AccessSiteAbilities | undefined,
-): boolean {
-  return (
-    abilities !== undefined &&
-    (abilities.administer || abilities.manageAuthorities)
-  );
+): SettingsNavSite {
+  return {
+    workspaces: siteWorkspaceOffered(abilities),
+    permissions:
+      abilities !== undefined &&
+      (abilities.administer || abilities.manageAuthorities),
+  };
 }
 
 export function settingsNav(
@@ -111,11 +123,18 @@ export function settingsNav(
     id: "site",
     label: "Site",
     name: undefined,
-    entries: [entry("site-permissions", "Permissions", frame.sitePermissions)],
+    entries: [
+      ...(input.site.workspaces
+        ? [entry("site-workspaces", "Workspaces", frame.siteWorkspaces)]
+        : []),
+      ...(input.site.permissions
+        ? [entry("site-permissions", "Permissions", frame.sitePermissions)]
+        : []),
+    ],
   };
   return [
     ...(project === undefined ? [] : [projectGroup]),
     workspaceGroup,
-    ...(input.site ? [siteGroup] : []),
+    ...(siteGroup.entries.length === 0 ? [] : [siteGroup]),
   ];
 }

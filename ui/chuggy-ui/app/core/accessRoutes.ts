@@ -8,6 +8,7 @@
 
 import {
   accessInvitedSchema,
+  accessOwnerInvitedSchema,
   accessPlanePath,
   accessPlaneRoutes,
   accessProjectAuthoritiesSchema,
@@ -20,6 +21,8 @@ import {
   type AccessInvitation,
   type AccessInvited,
   type AccessGroup,
+  type AccessOwnerInvitation,
+  type AccessOwnerInvited,
   type AccessPlaneRouteName,
   type AccessProjectAuthorities,
   type AccessProjectAuthority,
@@ -346,5 +349,21 @@ export function apiInviteTenantPerson(
       body: invitation,
     },
     (value) => accessInvitedSchema.parse(value),
+  );
+}
+
+/** One person invited into a workspace of their own, which this makes or finds theirs. */
+export function apiInviteSiteOwner(
+  ports: ApiPorts,
+  invitation: AccessOwnerInvitation,
+): Promise<ApiResult<AccessOwnerInvited>> {
+  return apiRead(
+    ports,
+    {
+      method: accessPlaneRoutes.siteOwnerInvitation.method,
+      path: accessPlanePath("siteOwnerInvitation", {}),
+      body: invitation,
+    },
+    (value) => accessOwnerInvitedSchema.parse(value),
   );
 }
