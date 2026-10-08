@@ -1,6 +1,6 @@
 /**
- * The process where a tenant's people and their roles are managed, composed
- * from variables alone.
+ * The process where a tenant's people and their roles are managed and the
+ * site's tenants are listed, composed from variables alone.
  *
  * IT NAMES NO DATABASE. Every role it answers is a tuple the authority holds,
  * so it has no PostgreSQL role, migration or pool, and `.dependency-cruiser.cjs`
@@ -43,6 +43,7 @@ import { accessAuthorities } from "../interpreter/accessAuthorities.ts";
 import { accessAuthorityHolders } from "../interpreter/accessAuthorityHolders.ts";
 import { accessInvitations } from "../interpreter/accessInvitation.ts";
 import { accessOwnerInvitations } from "../interpreter/accessOwnerInvitation.ts";
+import { accessSiteTenants } from "../interpreter/accessSiteTenants.ts";
 import {
   accessPlane,
   accessPlaneBoundsDefault,
@@ -152,6 +153,10 @@ export function accessPlaneComposed(
       bounds: accessPlaneBoundsDefault,
     }),
     holders: accessAuthorityHolders(ports, {
+      issuer,
+      bounds: accessPlaneBoundsDefault,
+    }),
+    siteTenants: accessSiteTenants(ports, {
       issuer,
       bounds: accessPlaneBoundsDefault,
     }),

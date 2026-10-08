@@ -205,7 +205,7 @@ function accessSetKey(set: AccessSetSubject): string {
 }
 
 /** Each distinct principal and each distinct subject set the tuples name. */
-function accessAuthorityHolders(tuples: readonly AccessTuple[]): {
+export function accessAuthorityHolders(tuples: readonly AccessTuple[]): {
   readonly principals: readonly string[];
   readonly sets: ReadonlyMap<string, AccessSetSubject>;
 } {
@@ -248,30 +248,34 @@ function accessAuthorityNamed<
   };
 }
 
-/** Each person marked with who the directory says they are, asked once for every authority of the answer. */
-async function accessAuthorityAccounts<
-  Authority extends string,
-  Group extends AccessGroup,
->(
+/** The person `principal` is under `issuer`, the caller's marked, or nothing where it is derived under another issuer. */
+export function accessAuthorityPerson(
+  issuer: string,
+  caller: Principal,
+  principal: string,
+): AccessAuthorityPerson | undefined {
+  const subject = oidcPrincipalSubject(issuer, principal);
+  return subject === undefined
+    ? undefined
+    : { subject, mine: principal === caller };
+}
+
+/** Each list's people marked with who the directory says they are, asked once for every list. */
+export async function accessAuthorityPeopleAccounts(
   directory: AccessDirectory | undefined,
-  read: readonly AccessAuthorityRead<Authority, Group>[],
-): Promise<AccessAuthorityRead<Authority, Group>[]> {
+  lists: readonly (readonly AccessAuthorityPerson[])[],
+): Promise<AccessAuthorityPerson[][]> {
   const unique = new Map(
-    read.flatMap((held) =>
-      held.people.map((person) => [person.subject, person]),
-    ),
+    lists.flatMap((people) => people.map((person) => [person.subject, person])),
   );
   const accounted = new Map(
     (await accessAccountsNamed(directory, [...unique.values()])).map(
       (person) => [person.subject, person] as const,
     ),
   );
-  return read.map((held) => ({
-    ...held,
-    people: held.people.map(
-      (person) => accounted.get(person.subject) ?? person,
-    ),
-  }));
+  return lists.map((people) =>
+    people.map((person) => accounted.get(person.subject) ?? person),
+  );
 }
 
 /** Who holds each of `level`'s authorities, in roster order, and whether a bound cut the answer. */
@@ -288,12 +292,8 @@ async function accessAuthoritiesRead<
   readonly truncated: boolean;
 }> {
   const budget: AccessBudget = accessBudget(settings.bounds);
-  const named = (principal: string): AccessAuthorityPerson | undefined => {
-    const subject = oidcPrincipalSubject(settings.issuer, principal);
-    return subject === undefined
-      ? undefined
-      : { subject, mine: principal === caller };
-  };
+  const named = (principal: string) =>
+    accessAuthorityPerson(settings.issuer, caller, principal);
   const read: AccessAuthorityRead<Authority, Group>[] = [];
   for (const authority of level.authorities)
     read.push(
@@ -309,8 +309,15 @@ async function accessAuthoritiesRead<
         named,
       ),
     );
+  const accounted = await accessAuthorityPeopleAccounts(
+    ports.directory,
+    read.map((held) => held.people),
+  );
   return {
-    read: await accessAuthorityAccounts(ports.directory, read),
+    read: read.map((held, index) => ({
+      ...held,
+      people: accounted[index] ?? held.people,
+    })),
     truncated: budget.truncated,
   };
 }
@@ -329,7 +336,9 @@ function accessAuthorityAnswered<
 }
 
 /** The tenant whose administrators `set` is, or nothing where it is no tenant's administrators. */
-function accessSiteHeldTenant(set: AccessSetSubject): TenantId | undefined {
+export function accessSiteHeldTenant(
+  set: AccessSetSubject,
+): TenantId | undefined {
   const administrators = accessGroupHolders.TenantAdmins;
   return set.namespace === administrators.namespace &&
     set.relation === administrators.relation

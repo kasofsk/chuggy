@@ -22,6 +22,9 @@
  * `accessDirectorySubjectsMax` subjects. A plane with no directory lists
  * subjects alone, and one past the bound is listed as though it had none.
  *
+ * A LISTING IS ASKED OF ONE OBJECT, ONE TENANT'S PROJECTS, A NAMESPACE, OR ONE
+ * RELATION ACROSS A NAMESPACE, which is how the site's tenants are read.
+ *
  * EVERY LIST IS BOUNDED BY ONE BUDGET PER ANSWER: how many pages it reads, how
  * many tuples, and how many projects. A bound that cut the answer short says
  * so as `truncated`, and what was read before it is still answered.
@@ -138,7 +141,7 @@ export interface AccessTuple {
   readonly subject: AccessTupleSubject;
 }
 
-/** What one listing asks for: every tuple on one object, every project whose `tenant` link names one tenant, or every tuple in one namespace. */
+/** What one listing asks for: every tuple on one object, every project whose `tenant` link names one tenant, every tuple in one namespace, or every tuple of one relation in one namespace. */
 export type AccessTupleQuery =
   | {
       readonly query: "Object";
@@ -147,7 +150,12 @@ export type AccessTupleQuery =
       readonly relation?: string;
     }
   | { readonly query: "TenantProjects"; readonly tenant: TenantId }
-  | { readonly query: "Namespace"; readonly namespace: string };
+  | { readonly query: "Namespace"; readonly namespace: string }
+  | {
+      readonly query: "NamespaceRelation";
+      readonly namespace: string;
+      readonly relation: string;
+    };
 
 /** One page of a listing, and the token the next is asked with where there is one. */
 export interface AccessTuplePage {

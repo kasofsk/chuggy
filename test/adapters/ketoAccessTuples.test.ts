@@ -1,7 +1,8 @@
 /**
  * The listing as the access plane asks it of the authority: what each query is
- * sent as, how a tuple's subject is read, and that the widest page this tree
- * can write is read rather than refused as past its bound.
+ * sent as, one relation across a namespace among them, how a tuple's subject is
+ * read, and that the widest page this tree can write is read rather than
+ * refused as past its bound.
  */
 
 import assert from "node:assert/strict";
@@ -187,6 +188,19 @@ test("a namespace is asked by its name alone", async () => {
   );
   assert.deepEqual(Object.fromEntries(asked[0]?.searchParams ?? []), {
     namespace: "Tenant",
+    page_size: String(ketoAccessPageTuplesMax),
+  });
+});
+
+test("a relation across a namespace is asked by the namespace and the relation alone", async () => {
+  const { asked, reader } = readerOf(JSON.stringify({ relation_tuples: [] }));
+  await reader.page(
+    { query: "NamespaceRelation", namespace: "Tenant", relation: "admins" },
+    undefined,
+  );
+  assert.deepEqual(Object.fromEntries(asked[0]?.searchParams ?? []), {
+    namespace: "Tenant",
+    relation: "admins",
     page_size: String(ketoAccessPageTuplesMax),
   });
 });
