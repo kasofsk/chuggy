@@ -165,7 +165,7 @@ export interface DrawnStrict {
  * root draws it, which runs each effect twice as the page mounts. */
 export async function drawnStrict(
   page: ReactNode,
-  answered: (request: SentRequest) => Response,
+  answered: (request: SentRequest) => Response | Promise<Response>,
 ): Promise<DrawnStrict> {
   const scripted = scriptedFetch(answered);
   vi.stubGlobal("fetch", scripted.fetch);

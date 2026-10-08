@@ -27,6 +27,7 @@ import {
   accessNotPermittedCode,
   accessProjectRoles,
   accessTenantRoles,
+  type AccessAuthorityPerson,
   type AccessInvitation,
   type AccessInvited,
   type AccessProjectRole,
@@ -299,8 +300,8 @@ export function tenantInvitationAccountLine(
     : tenantInvitationAccountsLine;
 }
 
-/** Who one person is: an account by its email, or the subject itself, marked
- * where the plane says it is no account. */
+/** Who one person is, in a People row or holding a permission: an account by
+ * its email, or the subject itself, marked where the plane says it is no account. */
 export interface TenantPersonName {
   readonly name: string;
   readonly subject: boolean;
@@ -308,7 +309,9 @@ export interface TenantPersonName {
   readonly noAccount: boolean;
 }
 
-export function tenantPersonName(person: AccessTenantPerson): TenantPersonName {
+export function tenantPersonName(
+  person: AccessAuthorityPerson,
+): TenantPersonName {
   const email = person.account === true ? person.email : undefined;
   return {
     name: email ?? person.subject,
