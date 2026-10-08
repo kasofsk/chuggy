@@ -31,10 +31,23 @@ import "./ticket.css";
 /** What the page holds is not what the ticket has, where the route said so. */
 export const shortPageNote = "on this page";
 
+/** What follows the figure: a fragment of its own, after a separator. */
+function StatusFollowing(props: { readonly children: ReactNode }): ReactNode {
+  return (
+    <>
+      <i className="fig-sep" aria-hidden="true">
+        ·
+      </i>
+      {props.children}
+    </>
+  );
+}
+
 function StatusStanding(props: {
   readonly ticket: TicketResponse;
   readonly page: ExecutionsResponse | undefined;
   readonly resumed: string | undefined;
+  readonly landing: ReactNode;
   readonly nowMs: number;
 }): ReactNode {
   const ticket = props.ticket;
@@ -56,12 +69,10 @@ function StatusStanding(props: {
           )}
         />
         {props.resumed === undefined ? null : (
-          <>
-            <i className="fig-sep" aria-hidden="true">
-              ·
-            </i>
-            {props.resumed}
-          </>
+          <StatusFollowing>{props.resumed}</StatusFollowing>
+        )}
+        {props.landing === null ? null : (
+          <StatusFollowing>{props.landing}</StatusFollowing>
         )}
       </span>
     </div>
@@ -107,6 +118,8 @@ export function TicketStatus(props: {
   readonly state: PanelState<TicketResponse>;
   readonly page: ExecutionsResponse | undefined;
   readonly resumed: string | undefined;
+  /** The current landing's fragment while the ticket is finalizing, or null. */
+  readonly landing: ReactNode;
   readonly truncated: boolean;
   readonly nowMs: number;
   readonly actions: ReactNode;
@@ -128,6 +141,7 @@ export function TicketStatus(props: {
         ticket={state.value}
         page={props.page}
         resumed={props.resumed}
+        landing={props.landing}
         nowMs={props.nowMs}
       />
       <StatusFigures

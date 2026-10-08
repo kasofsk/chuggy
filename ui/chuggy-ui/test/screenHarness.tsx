@@ -84,16 +84,20 @@ export const ticketLandedNowhere = {
   actions: [],
 };
 
+/** What the read of a ticket's landings answers for one that has had none. */
+export const ticketLandingsNone = { landings: [], truncated: false };
+
 /**
  * The API as a case scripts it: every submission accepted and remembered, the
  * operation route answering one standing, a ticket's action reach answering
- * that it landed nowhere unless the case says what it answers, and every other
- * route the case's own.
+ * that it landed nowhere and its landings that it has had none unless the
+ * case says what each answers, and every other route the case's own.
  */
 export function apiDouble(served: {
   readonly operation: unknown;
   readonly route: (url: string) => Response;
   readonly reach?: (url: string) => Response | Promise<Response>;
+  readonly landings?: (url: string) => Response | Promise<Response>;
 }): ApiDouble {
   let submissions = 0;
   let submitted: unknown;
@@ -109,6 +113,8 @@ export function apiDouble(served: {
     if (url.includes("/operations/")) return answer(served.operation);
     if (url.includes("/action-reach"))
       return served.reach?.(url) ?? answer(ticketLandedNowhere);
+    if (url.includes("/landings"))
+      return served.landings?.(url) ?? answer(ticketLandingsNone);
     return served.route(url);
   };
   return {

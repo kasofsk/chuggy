@@ -18,6 +18,7 @@ import type {
   SelectorMode,
   SessionState,
   SessionTurnState,
+  TicketLandingState,
   TicketPhase,
 } from "../../../../src/contract/rosters.ts";
 import type {
@@ -72,6 +73,25 @@ export function verdictTone(verdict: SetVerdict): Tone {
       return "live";
     case "Cancelled":
     case "Blocked":
+      return "retired";
+  }
+}
+
+/** Where one landing stands: moving, waiting on a hold or a person, or settled. */
+export function ticketLandingTone(state: TicketLandingState): Tone {
+  switch (state) {
+    case "Running":
+      return "live";
+    case "Held":
+    case "AwaitingApproval":
+    case "Unavailable":
+      return "parked";
+    case "Failed":
+      return "fail";
+    case "Landed":
+    case "Proposed":
+      return "pass";
+    case "Invalidated":
       return "retired";
   }
 }

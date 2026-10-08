@@ -379,6 +379,35 @@
     }
   }
 
+  /* A landing: its fragment on a row and on the status bar, and the
+     conflicting paths its detail lists. */
+
+  .ticket-landing-fragment {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    column-gap: var(--space-2);
+    min-width: 0;
+  }
+
+  .ticket-landing-fragment a {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .ticket-landing-conflicts {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    overflow-wrap: anywhere;
+  }
+
+  .ticket-landing-cut {
+    margin: 0;
+    color: var(--ink-3);
+    font-size: var(--text-xs);
+  }
+
   /* The Configuration panel: settings, Instructions tabs, Evaluation. */
 
   .ticket-config {
