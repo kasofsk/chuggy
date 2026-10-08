@@ -248,7 +248,9 @@ async function accessDefaultsPaged(
       ? `${query.namespace}:${query.object}#${query.relation ?? ""}`
       : query.query === "Namespace"
         ? query.namespace
-        : `the projects of tenant ${query.tenant}`,
+        : query.query === "NamespaceRelation"
+          ? `${query.namespace}#${query.relation}`
+          : `the projects of tenant ${query.tenant}`,
     pagesMax,
   );
 }

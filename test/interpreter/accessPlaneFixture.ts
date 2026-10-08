@@ -3,8 +3,9 @@
  * permits a case gives, a listing that pages, and a writer.
  *
  * A LISTING MATCHES WHAT THE SERVER'S QUERY DOES. A subject set keeps its
- * relation, empty for a link, and a tenant's projects are the links naming it,
- * so a case over this reader proves what one over the adapter would.
+ * relation, empty for a link, a tenant's projects are the links naming it, and
+ * a relation across a namespace is that relation's tuples alone, so a case
+ * over this reader proves what one over the adapter would.
  *
  * ONLY ADMINISTERING FOLLOWS THE TUPLES, as the model does: a tenant's `admins`
  * administer it, and a project's `admins`, or its tenant's through the `tenant`
@@ -38,6 +39,10 @@ import {
   accessAuthorityHolders,
   type AccessAuthorityHolders,
 } from "../../src/interpreter/accessAuthorityHolders.ts";
+import {
+  accessSiteTenants,
+  type AccessSiteTenantsList,
+} from "../../src/interpreter/accessSiteTenants.ts";
 import {
   memberAuthority,
   ProjectAccessUnavailable,
@@ -163,6 +168,10 @@ function accessMatches(stored: AccessStored, query: AccessTupleQuery): boolean {
       stored.subject.relation === accessTupleLinkRelation
     );
   if (query.query === "Namespace") return stored.namespace === query.namespace;
+  if (query.query === "NamespaceRelation")
+    return (
+      stored.namespace === query.namespace && stored.relation === query.relation
+    );
   return (
     stored.namespace === query.namespace &&
     stored.object === query.object &&
@@ -431,6 +440,18 @@ export function accessMemoryAuthorities(
   directory?: AccessDirectory,
 ): AccessAuthorities {
   return accessAuthorities(
+    { access: memory.access, tuples: memory.reader, directory },
+    { issuer: accessFixtureIssuer, bounds },
+  );
+}
+
+/** The site's tenants, listed over `memory`. */
+export function accessMemorySiteTenants(
+  memory: AccessMemory,
+  bounds: AccessPlaneBounds = accessPlaneBoundsDefault,
+  directory?: AccessDirectory,
+): AccessSiteTenantsList {
+  return accessSiteTenants(
     { access: memory.access, tuples: memory.reader, directory },
     { issuer: accessFixtureIssuer, bounds },
   );
