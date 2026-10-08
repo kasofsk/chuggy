@@ -12,9 +12,15 @@
  * same invitation again finds the account and writes the same grants. A
  * creation that conflicts lost a race, and the finding is run once more.
  *
- * NOTHING IS ASKED OF GITHUB OR THE DIRECTORY until the caller may invite to
- * the tenant and every project named is the tenant's, so neither learns of a
- * request the authority would refuse.
+ * NOTHING IS ASKED OF GITHUB OR THE DIRECTORY until every project named is the
+ * tenant's and the caller holds the kind granting every role named, so neither
+ * learns of a request the authority would refuse. A caller who may not be
+ * answered the tenant's list is answered as absent, as the plane answers them.
+ *
+ * MAKING AN ACCOUNT ASKS `CreateAccount`, as soon as no account carries the
+ * credential and before the email is asked about, so a caller refused it learns
+ * nothing of who holds an address. They do learn whether the GitHub user has an
+ * account here, as `created` tells whoever may invite.
  */
 
 import type { AccessInvitation } from "../contract/accessPlane.ts";
@@ -23,7 +29,12 @@ import type {
   AccessGithubAccount,
 } from "./accessDirectory.ts";
 import {
+  accessProjectHeld,
+  accessProjectRoleGrantKinds,
   accessProjectRoleRelations,
+  accessTenantHeld,
+  accessTenantListed,
+  accessTenantRoleGrantKinds,
   accessTenantRoleRelations,
   type AccessTupleReader,
 } from "./accessPlane.ts";
@@ -86,6 +97,8 @@ export type AccessInvitationResult =
         | "Absent"
         | "NotConfigured"
         | "ProjectUnknown"
+        | "Refused"
+        | "AccountNotPermitted"
         | "GithubAccountUnknown"
         | "GithubAccountNotUser"
         | "GithubUnavailable"
@@ -153,20 +166,30 @@ function accessInvitationGrants(
   ];
 }
 
-/** What finding the person came to: their account, an email held by another, or neither. */
+/** What finding the person came to: their account, no account the caller may make, an email held by another, or neither. */
 type AccessFound =
   | { readonly found: "Account"; readonly subject: string }
+  | { readonly found: "NotPermitted" }
   | { readonly found: "EmailHeld" }
   | { readonly found: "Neither" };
+
+/** What an invitation makes an account under: the email, who invited, the tenant, and whether the caller may make one. */
+interface AccessCreation {
+  readonly email: string;
+  readonly invitedBy: string;
+  readonly tenant: TenantId;
+  readonly permitted: () => Promise<boolean>;
+}
 
 async function accessInvitationFound(
   directory: AccessDirectory,
   github: AccessGithubAccount,
-  email: string,
+  creation: AccessCreation,
 ): Promise<AccessFound> {
   const subject = await directory.githubHolder(github);
   if (subject !== undefined) return { found: "Account", subject };
-  return (await directory.emailHeld(email))
+  if (!(await creation.permitted())) return { found: "NotPermitted" };
+  return (await directory.emailHeld(creation.email))
     ? { found: "EmailHeld" }
     : { found: "Neither" };
 }
@@ -175,30 +198,30 @@ async function accessInvitationFound(
 async function accessInvitationAccount(
   directory: AccessDirectory,
   github: AccessGithubAccount,
-  creation: {
-    readonly email: string;
-    readonly invitedBy: string;
-    readonly tenant: TenantId;
-  },
+  creation: AccessCreation,
 ): Promise<AccessInvitationResult> {
-  const found = await accessInvitationFound(directory, github, creation.email);
+  const found = await accessInvitationFound(directory, github, creation);
   if (found.found === "Account")
     return { invited: "Invited", subject: found.subject, created: false };
+  if (found.found === "NotPermitted") return { invited: "AccountNotPermitted" };
   if (found.found === "EmailHeld") return { invited: "EmailHeld" };
-  const created = await directory.create({ ...creation, github });
+  const created = await directory.create({
+    email: creation.email,
+    invitedBy: creation.invitedBy,
+    tenant: creation.tenant,
+    github,
+  });
   switch (created.created) {
     case "Created":
       return { invited: "Invited", subject: created.subject, created: true };
     case "EmailRefused":
       return { invited: "EmailRefused" };
     case "Conflict": {
-      const again = await accessInvitationFound(
-        directory,
-        github,
-        creation.email,
-      );
+      const again = await accessInvitationFound(directory, github, creation);
       if (again.found === "Account")
         return { invited: "Invited", subject: again.subject, created: false };
+      if (again.found === "NotPermitted")
+        return { invited: "AccountNotPermitted" };
       return again.found === "EmailHeld"
         ? { invited: "EmailHeld" }
         : { invited: "DirectoryRaced" };
@@ -224,17 +247,44 @@ async function accessInvitationGithub(
   }
 }
 
-/** Whether the caller may invite to the tenant and every project named is the tenant's, as an outcome refusing it where not. */
+/** Whether the caller holds the kind granting every role the invitation names, each on the tenant or the project it is named on. */
+async function accessInvitationGrantable(
+  access: ProjectAccess,
+  caller: Principal,
+  tenant: TenantId,
+  invitation: AccessInvitation,
+): Promise<boolean> {
+  if (
+    !(await accessTenantHeld(
+      access,
+      caller,
+      tenant,
+      accessTenantRoleGrantKinds[invitation.role],
+    ))
+  )
+    return false;
+  for (const named of invitation.projects ?? [])
+    for (const role of named.roles)
+      if (
+        !(await accessProjectHeld(
+          access,
+          caller,
+          { tenant, project: asProjectId(named.project) },
+          accessProjectRoleGrantKinds[role],
+        ))
+      )
+        return false;
+  return true;
+}
+
+/** Whether the caller may be answered the tenant's list, every project named is the tenant's, and the caller may grant every role named, as an outcome refusing it where not. */
 async function accessInvitationAdmitted(
   ports: AccessInvitationPorts,
   caller: Principal,
   tenant: TenantId,
   invitation: AccessInvitation,
 ): Promise<AccessInvitationResult | undefined> {
-  if (
-    (await ports.access.authorizeTenant(caller, tenant, "InviteToTenant")) ===
-    undefined
-  )
+  if (!(await accessTenantListed(ports.access, caller, tenant)))
     return { invited: "Absent" };
   for (const named of invitation.projects ?? [])
     if (
@@ -244,7 +294,14 @@ async function accessInvitationAdmitted(
       }))
     )
       return { invited: "ProjectUnknown" };
-  return undefined;
+  return (await accessInvitationGrantable(
+    ports.access,
+    caller,
+    tenant,
+    invitation,
+  ))
+    ? undefined
+    : { invited: "Refused" };
 }
 
 export function accessInvitations(
@@ -274,6 +331,9 @@ export function accessInvitations(
         email: invitation.email,
         invitedBy,
         tenant,
+        permitted: async () =>
+          (await ports.access.authorizeSite(caller, "CreateAccount")) !==
+          undefined,
       });
       if (result.invited !== "Invited") return result;
       for (const grant of accessInvitationGrants(

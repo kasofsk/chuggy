@@ -101,6 +101,9 @@ export const accessProjectRoleGrantSchema = z.strictObject({
 /** The conflict a removal is refused with when it would leave a tenant no administrator. */
 export const accessLastTenantAdministratorCode = "LastTenantAdministrator";
 
+/** The refusal of a change or an invitation to a caller answered the list who may not grant a role it names. */
+export const accessNotPermittedCode = "AccessNotPermitted";
+
 /** The longest username GitHub admits. */
 export const accessGithubLoginCharsMax = 39;
 
@@ -166,6 +169,7 @@ export const accessInvitedSchema = z.strictObject({
 export const accessInvitationCodes = {
   NotConfigured: "InvitationNotConfigured",
   ProjectUnknown: "InvitationProjectUnknown",
+  AccountNotPermitted: "InvitationAccountNotPermitted",
   GithubAccountUnknown: "GithubAccountUnknown",
   GithubAccountNotUser: "GithubAccountNotUser",
   EmailHeld: "InvitationEmailHeld",

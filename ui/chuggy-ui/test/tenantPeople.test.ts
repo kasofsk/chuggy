@@ -10,6 +10,7 @@ import {
   accessInvitationCodes,
   accessInvitationProjectsMax,
   accessLastTenantAdministratorCode,
+  accessNotPermittedCode,
   accessProjectRoles,
   accessTenantRoles,
   type AccessTenantPerson,
@@ -38,12 +39,20 @@ test("every refusal the plane names has its own line, and an unknown one is prin
   const named = [
     ...Object.values(accessInvitationCodes),
     accessLastTenantAdministratorCode,
+    accessNotPermittedCode,
   ];
   const lines = named.map((code) => accessCodeLabel(code));
   for (const line of lines) expect(line).not.toMatch(fallback);
   expect(new Set(lines).size).toBe(named.length);
   expect(accessCodeLabel("SomethingNew")).toBe(
     "Unknown refusal (SomethingNew)",
+  );
+});
+
+test("a change and an account the reader may not make each have their own line", () => {
+  expect(accessCodeLabel(accessNotPermittedCode)).toBe("Change not permitted");
+  expect(accessCodeLabel(accessInvitationCodes.AccountNotPermitted)).toBe(
+    "Account creation not permitted",
   );
 });
 

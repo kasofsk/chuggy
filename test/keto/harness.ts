@@ -197,7 +197,6 @@ export function ketoHarnessSomeone(label: string): Principal {
 /** The tenant kinds a person's role gives, which every other tenant kind is not. */
 const ketoHarnessTenantRoleKinds: readonly TenantAccessKind[] = [
   "AdministerTenant",
-  "InviteToTenant",
   "ExecuteHosted",
 ];
 

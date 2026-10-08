@@ -17,6 +17,7 @@ import {
   accessInvitationProjectsMax,
   accessInvitationSchema,
   accessLastTenantAdministratorCode,
+  accessNotPermittedCode,
   type AccessInvitation,
   type AccessInvited,
   type AccessProjectRole,
@@ -55,12 +56,14 @@ export function projectRoleLabel(role: AccessProjectRole): string {
 
 export type AccessRefusalCode =
   | (typeof accessInvitationCodes)[keyof typeof accessInvitationCodes]
-  | typeof accessLastTenantAdministratorCode;
+  | typeof accessLastTenantAdministratorCode
+  | typeof accessNotPermittedCode;
 
 /** Every name the plane refuses a change or an invitation with. */
 export const accessRefusalCodes: readonly AccessRefusalCode[] = [
   ...Object.values(accessInvitationCodes),
   accessLastTenantAdministratorCode,
+  accessNotPermittedCode,
 ];
 
 /** Why the plane refused, as the one line under what was refused. */
@@ -70,6 +73,8 @@ export function accessRefusalLabel(code: AccessRefusalCode): string {
       return "Invitations not configured";
     case "InvitationProjectUnknown":
       return "Project not in this workspace";
+    case "InvitationAccountNotPermitted":
+      return "Account creation not permitted";
     case "GithubAccountUnknown":
       return "No such GitHub user";
     case "GithubAccountNotUser":
@@ -86,6 +91,8 @@ export function accessRefusalLabel(code: AccessRefusalCode): string {
       return "Directory unavailable";
     case "LastTenantAdministrator":
       return "Only admin · grant another first";
+    case "AccessNotPermitted":
+      return "Change not permitted";
   }
 }
 

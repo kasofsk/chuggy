@@ -14,7 +14,9 @@ import {
 import { accessDirectorySubjectsMax } from "../../src/interpreter/accessDirectory.ts";
 import {
   accessPlaneBoundsDefault,
+  accessProjectListKinds,
   accessProjectRoleRelations,
+  accessTenantListKinds,
   accessTenantRoleRelations,
 } from "../../src/interpreter/accessPlane.ts";
 import {
@@ -37,6 +39,9 @@ import {
   accessFixtureIssuer,
   accessFixturePartition,
   accessFixturePrincipal,
+  accessGiven,
+  accessGivenProjectAdministrator,
+  accessGivenTenantAdministrator,
   accessMemory,
   accessMemoryPlane,
   type AccessMemory,
@@ -61,7 +66,8 @@ async function seeded(
 /**
  * A tenant administered by alice with two linked projects, priya
  * administering one of them, a third project with no link, and holders the
- * list must leave out or only count.
+ * list must leave out or only count. Alice and priya hold what the defaults
+ * give their roles.
  */
 async function acme(memory: AccessMemory = accessMemory()) {
   const as = (
@@ -90,6 +96,8 @@ async function acme(memory: AccessMemory = accessMemory()) {
     on("pool", web, "pools"),
     on("stray", loose, "developers"),
   ]);
+  accessGivenTenantAdministrator(memory, alice, tenant, [web, api]);
+  accessGivenProjectAdministrator(memory, priya, web);
   return { memory, plane: accessMemoryPlane(memory) };
 }
 
@@ -237,7 +245,12 @@ test("the only administrator of a tenant is not removed, and one of two is", asy
     await plane.tenantRoleRemoved(alice, tenant, "alice", "Admin"),
     "Changed",
   );
-  assert.equal(await plane.tenantPeople(alice, tenant), undefined);
+  assert.deepEqual(
+    (await plane.tenantPeople(alice, tenant))?.people
+      .filter((person) => person.tenantRoles.includes("Admin"))
+      .map((person) => person.subject),
+    ["zed"],
+  );
 });
 
 test("a tenant and projects carrying their defaults list the same people and roles, and the only administrator is still kept", async () => {
@@ -267,6 +280,110 @@ test("a tenant and projects carrying their defaults list the same people and rol
     "LastTenantAdministrator",
   );
   assert.deepEqual(memory.changes, []);
+});
+
+test("a caller answered the list is refused a role whose grant kind they lack, and nothing is written", async () => {
+  const { memory, plane } = await acme();
+  const mo = accessFixturePrincipal("mo");
+  const sam = accessFixturePrincipal("sam");
+  accessGiven(memory, mo, [{ on: "Tenant", tenant, kind: "GrantMember" }]);
+  accessGiven(memory, sam, [
+    { on: "Project", partition: web, kind: "ManageProjectAuthorities" },
+    { on: "Project", partition: web, kind: "GrantDeveloper" },
+  ]);
+  assert.equal((await plane.tenantPeople(mo, tenant))?.tenant, tenant);
+  assert.equal(
+    await plane.tenantRoleGranted(mo, tenant, "zed", "Member"),
+    "Changed",
+  );
+  assert.equal(
+    await plane.tenantRoleRemoved(mo, tenant, "zed", "Member"),
+    "Changed",
+  );
+  memory.changes.length = 0;
+  for (const change of [
+    plane.tenantRoleGranted(mo, tenant, "zed", "Admin"),
+    plane.tenantRoleRemoved(mo, tenant, "alice", "Admin"),
+    plane.projectRoleGranted(sam, web, "zed", "Dispatcher"),
+    plane.projectRoleRemoved(sam, web, "priya", "Admin"),
+  ])
+    assert.equal(await change, "Refused");
+  assert.equal((await plane.projectPeople(sam, web))?.project, "web");
+  assert.equal(
+    await plane.projectRoleGranted(sam, web, "zed", "Developer"),
+    "Changed",
+  );
+  assert.equal(
+    await plane.projectRoleGranted(sam, api, "zed", "Developer"),
+    "Absent",
+  );
+  assert.equal(await plane.tenantPeople(sam, tenant), undefined);
+  assert.deepEqual(
+    memory.changes.map(([verb, grant]) => [verb, grant.relation]),
+    [["write", "developers"]],
+  );
+});
+
+test("an administrator of a tenant and a project carrying no defaults is answered both lists and refused every change", async () => {
+  const memory = accessMemory();
+  await seeded(memory, [
+    projectTenantGrant(web),
+    tenantPrincipalGrant({
+      issuer: accessFixtureIssuer,
+      subject: "alice",
+      tenant,
+      relation: "admins",
+    }),
+  ]);
+  const plane = accessMemoryPlane(memory);
+  assert.notEqual(await plane.tenantPeople(alice, tenant), undefined);
+  assert.notEqual(await plane.projectPeople(alice, web), undefined);
+  for (const role of accessTenantRoles)
+    assert.equal(
+      await plane.tenantRoleGranted(alice, tenant, "zed", role),
+      "Refused",
+    );
+  for (const role of accessProjectRoles)
+    assert.equal(
+      await plane.projectRoleGranted(alice, web, "zed", role),
+      "Refused",
+    );
+  assert.deepEqual(memory.changes, []);
+});
+
+test("a list asks its kinds in order until one is held, and a caller holding none is asked each once", async () => {
+  const { memory, plane } = await acme();
+  const mo = accessFixturePrincipal("mo");
+  accessGiven(memory, mo, [
+    { on: "Tenant", tenant, kind: "GrantMember" },
+    { on: "Project", partition: web, kind: "GrantDeveloper" },
+  ]);
+  const asked = async (list: () => Promise<unknown>) => {
+    memory.asked.length = 0;
+    await list();
+    return [...memory.asked];
+  };
+  assert.deepEqual(await asked(() => plane.tenantPeople(alice, tenant)), [
+    "AdministerTenant",
+  ]);
+  assert.deepEqual(await asked(() => plane.tenantPeople(mo, tenant)), [
+    "AdministerTenant",
+    "GrantTenantAdmin",
+    "GrantMember",
+  ]);
+  assert.deepEqual(
+    await asked(() => plane.tenantPeople(priya, tenant)),
+    accessTenantListKinds,
+  );
+  assert.deepEqual(await asked(() => plane.projectPeople(mo, web)), [
+    "Administer",
+    "GrantProjectAdmin",
+    "GrantDeveloper",
+  ]);
+  assert.deepEqual(
+    await asked(() => plane.projectPeople(mo, api)),
+    accessProjectListKinds,
+  );
 });
 
 test("each role reaches only the relation its record names, and every relation those records name is a role's", () => {
