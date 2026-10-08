@@ -92,6 +92,45 @@ export const accessSiteGroups = [
 ] as const satisfies readonly AccessGroup[];
 export type AccessSiteGroup = (typeof accessSiteGroups)[number];
 
+/** What each of the site's authorities admits. */
+export const accessSiteAuthorityAdmits: Readonly<
+  Record<
+    AccessSiteAuthority,
+    {
+      readonly groups: readonly AccessSiteGroup[];
+      readonly tenants: boolean;
+    }
+  >
+> = {
+  AccountCreators: { groups: ["SiteAdmins"], tenants: true },
+  AuthorityManagers: { groups: [], tenants: false },
+};
+
+/** The groups each of a tenant's authorities admits. */
+export const accessTenantAuthorityAdmits: Readonly<
+  Record<AccessTenantAuthority, readonly AccessTenantGroup[]>
+> = {
+  AdminGranters: ["TenantAdmins", "SiteAdmins"],
+  MemberGranters: ["TenantAdmins", "SiteAdmins", "TenantMembers"],
+  HostedRunsGranters: ["TenantAdmins", "SiteAdmins"],
+  AuthorityManagers: ["TenantAdmins"],
+};
+
+/** The groups each of a project's authorities admits. */
+export const accessProjectAuthorityAdmits: Readonly<
+  Record<AccessProjectAuthority, readonly AccessGroup[]>
+> = {
+  AdminGranters: ["ProjectAdmins", "TenantAdmins", "SiteAdmins"],
+  DeveloperGranters: [
+    "ProjectAdmins",
+    "TenantAdmins",
+    "SiteAdmins",
+    "ProjectDevelopers",
+  ],
+  DispatcherGranters: ["ProjectAdmins", "TenantAdmins", "SiteAdmins"],
+  AuthorityManagers: ["ProjectAdmins", "TenantAdmins"],
+};
+
 /** One route as the plane registers it, its segments named as `:name`. */
 export interface AccessPlaneRoute {
   readonly method: "GET" | "POST" | "DELETE";
