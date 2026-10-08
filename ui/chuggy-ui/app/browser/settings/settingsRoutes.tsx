@@ -114,7 +114,22 @@ export function projectSettingsRoutes<TParent extends AnyRoute>(
     },
   });
   const workspace = createRoute({ getParentRoute, path: "/workspace" });
-  const workspacePages = workspace.addChildren(workspacePageRoutes(workspace));
+  const workspaceIndex = createRoute({
+    getParentRoute: (): typeof workspace => workspace,
+    path: "/",
+    beforeLoad: ({ params }) => {
+      redirect({
+        to: settingsRoutes.project.people,
+        params,
+        replace: true,
+        throw: true,
+      });
+    },
+  });
+  const workspacePages = workspace.addChildren([
+    workspaceIndex,
+    ...workspacePageRoutes(workspace),
+  ]);
   return settings.addChildren([
     index,
     ...projectPageRoutes(settings),

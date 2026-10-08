@@ -217,6 +217,10 @@ test.each([
     bare: "/tenants/acme/settings",
     first: "/tenants/acme/settings/people",
   },
+  {
+    bare: "/acme/atlas/settings/workspace",
+    first: "/acme/atlas/settings/workspace/people",
+  },
 ])(
   "$bare is replaced by $first, so going back leaves the settings",
   async ({ bare, first }) => {

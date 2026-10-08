@@ -40,7 +40,7 @@ function SettingsNavGroupLinks(props: {
             <Link
               to={entry.to}
               params={entry.params}
-              className="settings-nav-link block rounded-2 px-3 py-1 text-md whitespace-nowrap no-underline"
+              className="block rounded-2 px-3 py-1 text-md whitespace-nowrap no-underline"
               activeProps={{ className: "bg-surface-2 text-ink-1" }}
               inactiveProps={{ className: "text-ink-2" }}
             >

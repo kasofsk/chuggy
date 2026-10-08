@@ -132,9 +132,10 @@ publishes an endpoint for it.
 ## Connecting a forge account
 
 A forge account is the tenant's, not any one project's, so the Accounts panel
-lives on its own settings page at `/tenants/$tenant/settings/accounts` and not
-on a project's. The Repositories page, which only binds a project's
-repositories, says where to connect one and links there.
+is a workspace page of the settings: `/$tenant/$project/settings/workspace/accounts`
+inside a project and `/tenants/$tenant/settings/accounts` outside one. The
+Repositories page, which only binds a project's repositories, says where to
+connect one and links to the first.
 
 `Connect GitHub` sends the person to authorize the portal App, with a state and
 a PKCE challenge the console draws the way the sign-in's are drawn. The state,

@@ -26,10 +26,6 @@
     gap: var(--space-1);
   }
 
-  .settings-nav-link:hover {
-    color: var(--ink-1);
-  }
-
   @container (min-width: 60em) {
     .settings {
       grid-template-columns: var(--width-settings-nav) minmax(0, 1fr);
