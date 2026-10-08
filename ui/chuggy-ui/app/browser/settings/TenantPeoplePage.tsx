@@ -3,11 +3,12 @@
  * roles on each of the workspace's projects edited in place, and one action
  * inviting someone new.
  *
- * The list answers only a workspace admin, so its absence is this reader's
- * standing rather than a fault: they are told who manages people and offered
- * nothing to change. That the list was answered is the whole of what tells the
- * page it may offer a change. The reader is always in a list they were
- * answered, so there is no empty state.
+ * The list answers only a reader holding some authority over the workspace's
+ * people, so its absence is this reader's standing rather than a fault: they
+ * are told who manages people and offered nothing to change. That the list was
+ * answered is the whole of what tells the page it may offer a change, and a
+ * change the reader may not make is refused with its own line. The reader is
+ * always in a list they were answered, so there is no empty state.
  */
 
 import { useParams } from "@tanstack/react-router";

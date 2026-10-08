@@ -1,7 +1,7 @@
 /**
  * The access plane's server: a tenant's and a project's people, granting and
- * removing their roles, and inviting a person by their GitHub account, for a
- * caller the authority says administers or may invite to them.
+ * removing their roles, and inviting a person by their GitHub account, each
+ * for a caller the authority says holds the kind it needs.
  *
  * IT ANSWERS AS THE PUBLIC API DOES, because the console reads both with the
  * same code. A body is read as the API's media type, every refusal carries the
@@ -22,6 +22,7 @@ import {
   accessInvitationProjectsMax,
   accessInvitationSchema,
   accessLastTenantAdministratorCode,
+  accessNotPermittedCode,
   accessPlaneRoutes,
   accessProjectRoleGrantSchema,
   accessProjectRoleSchema,
@@ -148,6 +149,24 @@ function accessListed(reply: FastifyReply, listed: unknown): FastifyReply {
   return reply.code(200).type(nativeHttpMediaType).send(listed);
 }
 
+/** A refusal in the API's envelope, its message the plane's own and never a remote's. */
+function accessRefused(
+  reply: FastifyReply,
+  status: number,
+  code: string,
+  message: string,
+): FastifyReply {
+  return reply
+    .code(status)
+    .type(nativeHttpMediaType)
+    .send(nativeHttpError(code, message));
+}
+
+/** The refusal of a change to a caller answered the list, under `code`. */
+function accessNotPermitted(reply: FastifyReply, code: string): FastifyReply {
+  return accessRefused(reply, 403, code, "The caller may not do this.");
+}
+
 function accessChanged(
   reply: FastifyReply,
   change: AccessChange,
@@ -158,16 +177,15 @@ function accessChanged(
       return reply;
     case "Changed":
       return reply.code(204).send();
+    case "Refused":
+      return accessNotPermitted(reply, accessNotPermittedCode);
     case "LastTenantAdministrator":
-      return reply
-        .code(409)
-        .type(nativeHttpMediaType)
-        .send(
-          nativeHttpError(
-            accessLastTenantAdministratorCode,
-            "A tenant keeps at least one administrator.",
-          ),
-        );
+      return accessRefused(
+        reply,
+        409,
+        accessLastTenantAdministratorCode,
+        "A tenant keeps at least one administrator.",
+      );
   }
 }
 
@@ -217,23 +235,25 @@ function accessTenantRoutes(
   );
 }
 
-/** A refusal in the API's envelope, its message the plane's own and never a remote's. */
-function accessRefused(
-  reply: FastifyReply,
-  status: number,
-  code: string,
-  message: string,
-): FastifyReply {
-  return reply
-    .code(status)
-    .type(nativeHttpMediaType)
-    .send(nativeHttpError(code, message));
-}
-
 /** A refusal the same request may be sent again after. */
 function accessRetry(reply: FastifyReply, code: string): FastifyReply {
   void reply.header("retry-after", String(authorityRetryAfterSeconds));
   return accessRefused(reply, 503, code, "The request can be retried.");
+}
+
+/** The person invited, created by this request or found. */
+function accessInvitedSent(
+  reply: FastifyReply,
+  invited: AccessInvited,
+): FastifyReply {
+  const body: AccessInvited = {
+    subject: invited.subject,
+    created: invited.created,
+  };
+  return reply
+    .code(invited.created ? 201 : 200)
+    .type(nativeHttpMediaType)
+    .send(body);
 }
 
 function accessInvited(
@@ -242,16 +262,8 @@ function accessInvited(
 ): FastifyReply {
   const codes = accessInvitationCodes;
   switch (result.invited) {
-    case "Invited": {
-      const body: AccessInvited = {
-        subject: result.subject,
-        created: result.created,
-      };
-      return reply
-        .code(result.created ? 201 : 200)
-        .type(nativeHttpMediaType)
-        .send(body);
-    }
+    case "Invited":
+      return accessInvitedSent(reply, result);
     case "Absent":
       nativeHttpSend(reply, notFound());
       return reply;
@@ -269,6 +281,10 @@ function accessInvited(
         codes.ProjectUnknown,
         "A project named is not the tenant's.",
       );
+    case "Refused":
+      return accessNotPermitted(reply, accessNotPermittedCode);
+    case "AccountNotPermitted":
+      return accessNotPermitted(reply, codes.AccountNotPermitted);
     case "GithubAccountUnknown":
       return accessRefused(
         reply,

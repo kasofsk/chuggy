@@ -18,6 +18,7 @@ import {
   accessInvitationProjectsMax,
   accessInvitedSchema,
   accessLastTenantAdministratorCode,
+  accessNotPermittedCode,
   accessPlanePath,
   accessPlaneRoutes,
   accessProjectPeopleSchema,
@@ -64,6 +65,9 @@ import {
   accessFixtureIssuer,
   accessFixturePartition,
   accessFixturePrincipal,
+  accessGiven,
+  accessGivenProjectAdministrator,
+  accessGivenTenantAdministrator,
   accessMemory,
   accessMemoryPlane,
   type AccessMemory,
@@ -76,6 +80,8 @@ const tenant = web.tenant;
 const tokens: Readonly<Record<string, string>> = {
   "alice-token": "alice",
   "priya-token": "priya",
+  "mo-token": "mo",
+  "dee-token": "dee",
 };
 
 const as = (token: string) => ({ authorization: `Bearer ${token}` });
@@ -90,7 +96,12 @@ const invitedGithub = githubMemory({
   "octo-cat": githubUser("990000001", "Octo-Cat"),
 });
 
-/** A tenant alice administers with one linked project priya administers. */
+/**
+ * A tenant alice administers with one linked project priya administers, each
+ * holding what the defaults give them and alice `CreateAccount`. Mo may only
+ * manage who grants the tenant's roles, and dee may grant `Member` and
+ * `Developer` on the project and make no account.
+ */
 async function served(
   ready = true,
   invitations: Invitations = (memory) =>
@@ -115,6 +126,17 @@ async function served(
   ])
     await memory.grants.write(grant);
   memory.changes.length = 0;
+  const alice = accessFixturePrincipal("alice");
+  accessGivenTenantAdministrator(memory, alice, tenant, [web]);
+  accessGiven(memory, alice, [{ on: "Site", kind: "CreateAccount" }]);
+  accessGivenProjectAdministrator(memory, accessFixturePrincipal("priya"), web);
+  accessGiven(memory, accessFixturePrincipal("mo"), [
+    { on: "Tenant", tenant, kind: "ManageTenantAuthorities" },
+  ]);
+  accessGiven(memory, accessFixturePrincipal("dee"), [
+    { on: "Tenant", tenant, kind: "GrantMember" },
+    { on: "Project", partition: web, kind: "GrantDeveloper" },
+  ]);
   const app = createAccessPlaneApp({
     authentication: {
       authenticateBearer: (token): Promise<BearerAuthentication> => {
@@ -280,6 +302,34 @@ test("every refusal carries the API's envelope: unauthenticated, absent, rejecte
     await app.inject({ method: "GET", url: "/access/v1/nowhere" }),
     "Absent",
   );
+});
+
+test("a change refused a caller answered the list is forbidden under its own code, and nothing is written", async () => {
+  const { memory, app } = await served();
+  const listed = await app.inject({
+    method: "GET",
+    url: pathOf("tenantPeople"),
+    headers: as("mo-token"),
+  });
+  assert.equal(listed.statusCode, 200, listed.body);
+  const granted = await app.inject({
+    method: "POST",
+    url: pathOf("tenantRoleGrant"),
+    headers: { ...as("mo-token"), ...typed },
+    payload: JSON.stringify({ role: "Member" }),
+  });
+  assert.equal(granted.statusCode, 403, granted.body);
+  enveloped(granted, "Rejected", accessNotPermittedCode);
+  enveloped(
+    await app.inject({
+      method: "DELETE",
+      url: pathOf("projectRoleRemoval", "priya", "Admin"),
+      headers: as("dee-token"),
+    }),
+    "Rejected",
+    accessNotPermittedCode,
+  );
+  assert.deepEqual(memory.changes, []);
 });
 
 test("an authority that cannot answer is retryable on every route and unready on readiness", async () => {
@@ -506,6 +556,14 @@ test("each refusal of an invitation carries its own code in the API's envelope",
     accessInvitationCodes.EmailHeld,
   );
   enveloped(await held.invite(invitation, "priya-token"), "Absent");
+  const refused = await held.invite(invitation, "mo-token");
+  assert.equal(refused.statusCode, 403, refused.body);
+  enveloped(refused, "Rejected", accessNotPermittedCode);
+  const uncreated = await inviting();
+  const accountless = await uncreated.invite(invitation, "dee-token");
+  assert.equal(accountless.statusCode, 403, accountless.body);
+  enveloped(accountless, "Rejected", accessInvitationCodes.AccountNotPermitted);
+  assert.deepEqual(uncreated.directory.creations, []);
   enveloped(
     await held.invite({
       ...invitation,

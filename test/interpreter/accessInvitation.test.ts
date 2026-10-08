@@ -29,6 +29,8 @@ import {
   accessFixtureIssuer,
   accessFixturePartition,
   accessFixturePrincipal,
+  accessGiven,
+  accessGivenTenantAdministrator,
   accessMemory,
   type AccessMemory,
 } from "./accessPlaneFixture.ts";
@@ -58,10 +60,15 @@ interface Invited {
   ) => ReturnType<ReturnType<typeof accessMemoryInvitations>["invite"]>;
 }
 
-/** A tenant alice administers with one linked project, a directory holding `accounts`, and GitHub answering `answers`. */
+/**
+ * A tenant alice administers with one linked project, holding what the
+ * defaults give her and, where `creates`, `CreateAccount`; a directory holding
+ * `accounts`, and GitHub answering `answers`.
+ */
 async function invited(
   accounts: readonly DirectoryAccount[] = [],
   answers: Parameters<typeof githubMemory>[0] = { "octo-cat": octo },
+  creates = true,
 ): Promise<Invited> {
   const memory = accessMemory();
   await memory.grants.write(projectTenantGrant(web));
@@ -75,6 +82,9 @@ async function invited(
     }),
   );
   memory.changes.length = 0;
+  accessGivenTenantAdministrator(memory, alice, tenant, [web]);
+  if (creates)
+    accessGiven(memory, alice, [{ on: "Site", kind: "CreateAccount" }]);
   const directory = directoryMemory(accounts);
   const github = githubMemory(answers);
   const invitations = accessMemoryInvitations(memory, directory, github);
@@ -144,11 +154,28 @@ test("the same invitation again creates nothing, grants the same roles, and answ
   assert.deepEqual(memory.changes, grantsOf(directorySubject(0)));
 });
 
-test("an account carrying the GitHub credential is the person whatever email was given, and the email is never asked about", async () => {
+test("an invitation of a person with no account by a caller who may not make one is refused before the email is asked about, and nothing is made or written", async () => {
+  const { memory, directory, invite } = await invited([], undefined, false);
+  assert.deepEqual(await invite(), { invited: "AccountNotPermitted" });
+  assert.deepEqual(directory.asked, ["githubHolder:990000001"]);
+  assert.deepEqual(directory.creations, []);
+  assert.deepEqual(memory.changes, []);
+  assert.equal(memory.asked.at(-1), "CreateAccount");
+});
+
+test("an account carrying the GitHub credential is the person whatever email was given, and neither the email nor `CreateAccount` is asked about", async () => {
   const held = directorySubject(7);
-  const { memory, directory, invite } = await invited([
-    { subject: held, email: "someone-else@example.com", githubId: "990000001" },
-  ]);
+  const { memory, directory, invite } = await invited(
+    [
+      {
+        subject: held,
+        email: "someone-else@example.com",
+        githubId: "990000001",
+      },
+    ],
+    undefined,
+    false,
+  );
   assert.deepEqual(await invite(), {
     invited: "Invited",
     subject: held,
@@ -156,6 +183,7 @@ test("an account carrying the GitHub credential is the person whatever email was
   });
   assert.deepEqual(directory.asked, ["githubHolder:990000001"]);
   assert.deepEqual(memory.changes, grantsOf(held));
+  assert.ok(!memory.asked.includes("CreateAccount"));
 });
 
 test("an email an account holds, where none carries the credential, is the conflict: reads and no write, and nothing granted", async () => {
@@ -246,6 +274,31 @@ test("a project the authority does not hold under the tenant is refused before G
   assert.deepEqual(github.looked, []);
   assert.deepEqual(directory.asked, []);
   assert.deepEqual(memory.changes, []);
+});
+
+test("an invitation naming a role the caller may not grant is refused before GitHub or the directory is asked, and nothing is written", async () => {
+  const { memory, directory, github, invite } = await invited();
+  const dee = accessFixturePrincipal("dee");
+  accessGiven(memory, dee, [
+    { on: "Tenant", tenant, kind: "GrantMember" },
+    { on: "Project", partition: web, kind: "GrantDeveloper" },
+    { on: "Site", kind: "CreateAccount" },
+  ]);
+  for (const sent of [
+    invitation,
+    { ...invitation, role: "Admin", projects: [] },
+  ] satisfies AccessInvitation[])
+    assert.deepEqual(await invite(sent, dee), { invited: "Refused" });
+  assert.deepEqual(
+    await invite(
+      { ...invitation, projects: [{ project: "web", roles: ["Developer"] }] },
+      dee,
+    ),
+    { invited: "Invited", subject: directorySubject(0), created: true },
+  );
+  assert.deepEqual(github.looked, ["octo-cat"]);
+  assert.deepEqual(directory.asked[0], "githubHolder:990000001");
+  assert.equal(memory.changes.length, 2);
 });
 
 test("a caller who may not invite is answered absent, and GitHub and the directory are asked nothing", async () => {

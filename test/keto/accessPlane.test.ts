@@ -4,8 +4,8 @@
  * answers, and a role granted being a permit `ProjectAccess` then answers for.
  *
  * NOTHING ON A FRESH TENANT IS WRITTEN BUT BY THE CASE. The plane cannot write
- * a `tenant` link or a tenant's first administrator, so each case writes those
- * itself, as creation and provisioning do.
+ * a `tenant` link, a tenant's first administrator or either level's defaults,
+ * so each case writes those itself, as creation and provisioning do.
  */
 
 import assert from "node:assert/strict";
@@ -16,10 +16,16 @@ import { accessInvitations } from "../../src/interpreter/accessInvitation.ts";
 import {
   accessPlane,
   accessPlaneBoundsDefault,
+  type AccessChange,
 } from "../../src/interpreter/accessPlane.ts";
+import type {
+  AccessProjectRole,
+  AccessTenantRole,
+} from "../../src/contract/accessPlane.ts";
 import {
   oidcPrincipal,
   oidcPrincipalSubject,
+  type Principal,
 } from "../../src/interpreter/principal.ts";
 import {
   projectAccessNamespace,
@@ -30,20 +36,26 @@ import {
   type ProjectAccessKind,
 } from "../../src/interpreter/projectAccess.ts";
 import {
+  projectAuthorityDefaults,
   projectPrincipalGrant,
   projectTenantGrant,
+  tenantAuthorityDefaults,
   tenantPrincipalGrant,
+  type ProjectGrant,
 } from "../../src/interpreter/projectGrant.ts";
 import {
   asProjectId,
   type Partition,
+  type TenantId,
 } from "../../src/interpreter/projectStore.ts";
 import {
   ketoHarnessAccess,
   ketoHarnessGrants,
   ketoHarnessIssuer,
   ketoHarnessPartition,
+  ketoHarnessSiteDefaults,
   ketoHarnessTuples,
+  ketoHarnessWithSiteAdministrator,
 } from "./harness.ts";
 import {
   directoryMemory,
@@ -62,7 +74,8 @@ const alice = oidcPrincipal(ketoHarnessIssuer, "alice");
 
 /**
  * A fresh tenant administered by alice, with two projects linked to it and one
- * under its name that is not. Every project carries a `/`, as the harness's do.
+ * under its name that is not, the linked ones, the tenant and the site carrying
+ * their defaults. Every project carries a `/`, as the harness's do.
  */
 async function tenantOf(label: string) {
   const web = ketoHarnessPartition(label);
@@ -74,8 +87,15 @@ async function tenantOf(label: string) {
     tenant: web.tenant,
     project: asProjectId(`loose/${web.project}`),
   };
-  await grants.write(projectTenantGrant(web));
-  await grants.write(projectTenantGrant(api));
+  await ketoHarnessSiteDefaults();
+  for (const grant of [
+    projectTenantGrant(web),
+    projectTenantGrant(api),
+    ...tenantAuthorityDefaults(web.tenant),
+    ...projectAuthorityDefaults(web),
+    ...projectAuthorityDefaults(api),
+  ])
+    await grants.write(grant);
   await grants.write(
     tenantPrincipalGrant({
       issuer: ketoHarnessIssuer,
@@ -263,63 +283,253 @@ function invitationsOf() {
   };
 }
 
-test("who may invite to a tenant is who administers it", async () => {
-  const { tenant } = await tenantOf("invite-permit");
+test("an invitation by a caller who may not be answered the tenant's list is absent, and GitHub and the directory are asked nothing", async () => {
+  const { tenant } = await tenantOf("invite-absent");
   await plane.tenantRoleGranted(alice, tenant, "mo", "Member");
-  for (const [subject, expected] of [
-    ["alice", true],
-    ["mo", false],
-    ["nobody", false],
-  ] as const) {
-    const principal = oidcPrincipal(ketoHarnessIssuer, subject);
-    for (const kind of ["AdministerTenant", "InviteToTenant"] as const)
-      assert.equal(
-        (await access.authorizeTenant(principal, tenant, kind)) !== undefined,
-        expected,
-        `${subject} ${kind}`,
-      );
-  }
   const { directory, github, invitations } = invitationsOf();
-  assert.deepEqual(
-    await invitations.invite(oidcPrincipal(ketoHarnessIssuer, "mo"), tenant, {
-      github: "octo-cat",
-      email: "octo@example.com",
-      role: "Admin",
-    }),
-    { invited: "Absent" },
-  );
+  for (const subject of ["mo", "nobody"])
+    assert.deepEqual(
+      await invitations.invite(
+        oidcPrincipal(ketoHarnessIssuer, subject),
+        tenant,
+        { github: "octo-cat", email: "octo@example.com", role: "Member" },
+      ),
+      { invited: "Absent" },
+      subject,
+    );
   assert.deepEqual(github.looked, []);
   assert.deepEqual(directory.asked, []);
 });
 
-test("an invitation grants the permits its roles carry and lists the person, and a project not linked to the tenant is refused", async () => {
+test("an invitation by a tenant administrator who is the site's grants the permits its roles carry and lists the person, and a project not linked to the tenant is refused", async () => {
   const { web, api, loose, tenant } = await tenantOf("invite-grants");
-  const { directory, invitations } = invitationsOf();
-  assert.deepEqual(
-    await invitations.invite(alice, tenant, {
+  await ketoHarnessWithSiteAdministrator(async (administrator) => {
+    await grants.write(tenantAdministratorOf(administrator, tenant));
+    const { directory, invitations } = invitationsOf();
+    assert.deepEqual(
+      await invitations.invite(administrator, tenant, {
+        github: "octo-cat",
+        email: "octo@example.com",
+        role: "Member",
+        projects: [{ project: loose.project, roles: ["Developer"] }],
+      }),
+      { invited: "ProjectUnknown" },
+    );
+    assert.deepEqual(directory.asked, []);
+    const invited = await invitations.invite(administrator, tenant, {
       github: "octo-cat",
       email: "octo@example.com",
       role: "Member",
-      projects: [{ project: loose.project, roles: ["Developer"] }],
-    }),
-    { invited: "ProjectUnknown" },
-  );
-  assert.deepEqual(directory.asked, []);
-  const invited = await invitations.invite(alice, tenant, {
-    github: "octo-cat",
-    email: "octo@example.com",
-    role: "Member",
-    projects: [{ project: web.project, roles: ["Developer", "Dispatcher"] }],
+      projects: [{ project: web.project, roles: ["Developer", "Dispatcher"] }],
+    });
+    assert.equal(invited.invited, "Invited");
+    assert.equal(invited.invited === "Invited" && invited.created, true);
+    const subject = invited.invited === "Invited" ? invited.subject : "";
+    assert.equal(await holds(subject, web, "Mutate"), true);
+    assert.equal(await holds(subject, web, "DispatchTicket"), true);
+    assert.equal(await holds(subject, web, "Administer"), false);
+    assert.equal(await holds(subject, api, "Mutate"), false);
+    const people = await plane.tenantPeople(alice, tenant);
+    assert.deepEqual(
+      people?.people.find((person) => person.subject === subject)?.tenantRoles,
+      ["Member"],
+    );
   });
-  assert.equal(invited.invited, "Invited");
-  const subject = invited.invited === "Invited" ? invited.subject : "";
-  assert.equal(await holds(subject, web, "Mutate"), true);
-  assert.equal(await holds(subject, web, "DispatchTicket"), true);
-  assert.equal(await holds(subject, web, "Administer"), false);
-  assert.equal(await holds(subject, api, "Mutate"), false);
-  const people = await plane.tenantPeople(alice, tenant);
+});
+
+/** One principal as the tenant's administrator. */
+function tenantAdministratorOf(
+  principal: Principal,
+  tenant: TenantId,
+): ProjectGrant {
+  return {
+    namespace: projectAccessTenantNamespace,
+    object: projectAccessTenantObject(tenant),
+    relation: "admins",
+    holder: { subject: "Principal", principal },
+  };
+}
+
+/** One principal written straight into one of the tenant's relations saying who may grant. */
+function tenantGranterOf(
+  principal: Principal,
+  tenant: TenantId,
+  relation: "admin_granters" | "member_granters",
+): ProjectGrant {
+  return {
+    namespace: projectAccessTenantNamespace,
+    object: projectAccessTenantObject(tenant),
+    relation,
+    holder: { subject: "Principal", principal },
+  };
+}
+
+/** What granting and then removing each role on the tenant, where named, and on each partition came to, keyed by where and which. */
+async function changed(
+  caller: Principal,
+  tenant: TenantId | undefined,
+  partitions: readonly Partition[],
+  subject = "target",
+): Promise<Record<string, AccessChange>> {
+  const answered: Record<string, AccessChange> = {};
+  const tenantRoles: readonly AccessTenantRole[] = ["Admin", "Member"];
+  const projectRoles: readonly AccessProjectRole[] = [
+    "Admin",
+    "Developer",
+    "Dispatcher",
+  ];
+  if (tenant !== undefined)
+    for (const role of tenantRoles) {
+      answered[`grant ${role}`] = await plane.tenantRoleGranted(
+        caller,
+        tenant,
+        subject,
+        role,
+      );
+      answered[`remove ${role}`] = await plane.tenantRoleRemoved(
+        caller,
+        tenant,
+        subject,
+        role,
+      );
+    }
+  for (const partition of partitions)
+    for (const role of projectRoles) {
+      answered[`grant ${partition.project} ${role}`] =
+        await plane.projectRoleGranted(caller, partition, subject, role);
+      answered[`remove ${partition.project} ${role}`] =
+        await plane.projectRoleRemoved(caller, partition, subject, role);
+    }
+  return answered;
+}
+
+/** Whether every change `changed` answered came to `expected`. */
+function allCameTo(
+  answered: Record<string, AccessChange>,
+  expected: AccessChange,
+): void {
+  for (const [change, came] of Object.entries(answered))
+    assert.equal(came, expected, change);
+}
+
+test("a tenant's administrator grants and removes every role on the tenant and on each of its projects", async () => {
+  const { web, api, tenant } = await tenantOf("change-tenant-admin");
+  const answered = await changed(alice, tenant, [web, api]);
+  assert.equal(Object.keys(answered).length, 16);
+  allCameTo(answered, "Changed");
+});
+
+test("a project's administrator changes that project and is answered its list, and is absent on the tenant, the other project and an invitation", async () => {
+  const { web, api, tenant } = await tenantOf("change-project-admin");
+  await plane.projectRoleGranted(alice, web, "pat", "Admin");
+  const pat = oidcPrincipal(ketoHarnessIssuer, "pat");
+  allCameTo(await changed(pat, undefined, [web]), "Changed");
+  assert.notEqual(await plane.projectPeople(pat, web), undefined);
+  assert.equal(await plane.tenantPeople(pat, tenant), undefined);
+  assert.equal(await plane.projectPeople(pat, api), undefined);
+  allCameTo(await changed(pat, tenant, [api]), "Absent");
   assert.deepEqual(
-    people?.people.find((person) => person.subject === subject)?.tenantRoles,
-    ["Member"],
+    await invitationsOf().invitations.invite(pat, tenant, {
+      github: "octo-cat",
+      email: "octo@example.com",
+      role: "Member",
+      projects: [{ project: web.project, roles: ["Developer"] }],
+    }),
+    { invited: "Absent" },
   );
+});
+
+test("a person written into `member_granters` is answered the list and changes `Member`, and is refused `Admin` with nothing written", async () => {
+  const { tenant } = await tenantOf("member-granter");
+  const mel = oidcPrincipal(ketoHarnessIssuer, "mel");
+  await grants.write(tenantGranterOf(mel, tenant, "member_granters"));
+  assert.notEqual(await plane.tenantPeople(mel, tenant), undefined);
+  assert.equal(
+    await plane.tenantRoleGranted(mel, tenant, "zed", "Member"),
+    "Changed",
+  );
+  assert.equal(
+    await plane.tenantRoleRemoved(mel, tenant, "zed", "Member"),
+    "Changed",
+  );
+  assert.equal(
+    await plane.tenantRoleGranted(mel, tenant, "zed", "Admin"),
+    "Refused",
+  );
+  assert.equal(
+    await plane.tenantRoleRemoved(mel, tenant, "alice", "Admin"),
+    "Refused",
+  );
+  assert.deepEqual(
+    (await plane.tenantPeople(alice, tenant))?.people.map((person) => [
+      person.subject,
+      person.tenantRoles,
+    ]),
+    [["alice", ["Admin"]]],
+  );
+});
+
+test("with the tenant's administrators taken out of `admin_granters` its administrator is refused `Admin` and still changes `Member`, and a person written there grants it", async () => {
+  const { tenant } = await tenantOf("admin-granters");
+  for (const grant of tenantAuthorityDefaults(tenant))
+    if (grant.relation === "admin_granters") await grants.remove(grant);
+  assert.equal(
+    await plane.tenantRoleGranted(alice, tenant, "zed", "Admin"),
+    "Refused",
+  );
+  assert.equal(
+    await plane.tenantRoleGranted(alice, tenant, "zed", "Member"),
+    "Changed",
+  );
+  assert.equal(
+    await plane.tenantRoleRemoved(alice, tenant, "zed", "Member"),
+    "Changed",
+  );
+  const ari = oidcPrincipal(ketoHarnessIssuer, "ari");
+  await grants.write(tenantGranterOf(ari, tenant, "admin_granters"));
+  assert.equal(
+    await plane.tenantRoleGranted(ari, tenant, "zed", "Admin"),
+    "Changed",
+  );
+  assert.deepEqual(
+    (await plane.tenantPeople(alice, tenant))?.people.map((person) => [
+      person.subject,
+      person.tenantRoles,
+    ]),
+    [
+      ["alice", ["Admin"]],
+      ["zed", ["Admin"]],
+    ],
+  );
+});
+
+test("a tenant member, a project developer and a stranger are absent everywhere", async () => {
+  const { web, api, tenant } = await tenantOf("absent-everywhere");
+  await plane.tenantRoleGranted(alice, tenant, "mo", "Member");
+  await plane.projectRoleGranted(alice, web, "dev", "Developer");
+  for (const subject of ["mo", "dev", "stranger"]) {
+    const caller = oidcPrincipal(ketoHarnessIssuer, subject);
+    assert.equal(await plane.tenantPeople(caller, tenant), undefined, subject);
+    for (const partition of [web, api])
+      assert.equal(
+        await plane.projectPeople(caller, partition),
+        undefined,
+        subject,
+      );
+    allCameTo(await changed(caller, tenant, [web, api]), "Absent");
+  }
+});
+
+test("the site's administrator, holding no role in the tenant, is answered every list and refused every change", async () => {
+  const { web, api, tenant } = await tenantOf("site-admin");
+  await ketoHarnessWithSiteAdministrator(async (administrator) => {
+    assert.notEqual(await plane.tenantPeople(administrator, tenant), undefined);
+    for (const partition of [web, api])
+      assert.notEqual(
+        await plane.projectPeople(administrator, partition),
+        undefined,
+        partition.project,
+      );
+    allCameTo(await changed(administrator, tenant, [web, api]), "Refused");
+  });
 });

@@ -1,11 +1,13 @@
 /**
  * An authority held in memory for the access plane's suites: its tuples, the
- * permits the model derives from them, a listing that pages, and a writer.
+ * permits a case gives, a listing that pages, and a writer.
  *
- * THE PERMITS ARE THE MODEL'S, restated for the ones this plane asks: a
- * tenant's `admins` administer it and may invite to it, and a project's `admins`, or its tenant's
- * through the `tenant` link, administer the project. `.chug/tasks/check-keto.sh`
- * asks a real server the same questions.
+ * ONLY ADMINISTERING FOLLOWS THE TUPLES, as the model does: a tenant's `admins`
+ * administer it, and a project's `admins`, or its tenant's through the `tenant`
+ * link, administer the project. Every other kind is answered from a table a
+ * case fills, and what the tuples saying who may grant mean is the real
+ * server's to show, which `.chug/tasks/check-keto.sh` asks. Every kind asked is
+ * recorded, in order.
  */
 
 import type { AccessDirectory } from "../../src/interpreter/accessDirectory.ts";
@@ -26,6 +28,9 @@ import {
   projectAccessTenantNamespace,
   projectAccessTenantObject,
   type ProjectAccess,
+  type ProjectAccessKind,
+  type SiteAccessKind,
+  type TenantAccessKind,
 } from "../../src/interpreter/projectAccess.ts";
 import {
   projectTenantGrant,
@@ -40,8 +45,8 @@ import {
   asProjectId,
   asTenantId,
   type Partition,
+  type TenantId,
 } from "../../src/interpreter/projectStore.ts";
-import { projectAccessSiteRefused } from "./projectAccessFixture.ts";
 
 export const accessFixtureIssuer = "https://issuer.invalid";
 
@@ -60,6 +65,34 @@ export interface AccessMemoryState {
   unavailable: boolean;
   /** How many pages the reader has answered. */
   pages: number;
+  /** Every kind given a principal on an object, as `accessHeldKey` names it. */
+  readonly held: Set<string>;
+  /** Every kind asked, in order. */
+  readonly asked: string[];
+}
+
+/** One kind on the object it is asked of. */
+export type AccessMemoryKind =
+  | { readonly on: "Site"; readonly kind: SiteAccessKind }
+  | {
+      readonly on: "Tenant";
+      readonly tenant: TenantId;
+      readonly kind: TenantAccessKind;
+    }
+  | {
+      readonly on: "Project";
+      readonly partition: Partition;
+      readonly kind: ProjectAccessKind;
+    };
+
+function accessHeldKey(principal: Principal, kind: AccessMemoryKind): string {
+  const object =
+    kind.on === "Site"
+      ? ""
+      : kind.on === "Tenant"
+        ? projectAccessTenantObject(kind.tenant)
+        : projectAccessObject(kind.partition);
+  return JSON.stringify([principal, kind.on, object, kind.kind]);
 }
 
 export interface AccessMemory extends AccessMemoryState {
@@ -160,28 +193,89 @@ function accessProjectAdmin(
   );
 }
 
+/** Records `kind` asked, and answers whether `held` or the table gives it. */
+function accessAnswered(
+  memory: AccessMemoryState,
+  principal: Principal,
+  kind: AccessMemoryKind,
+  administers: () => boolean,
+) {
+  accessReachable(memory);
+  memory.asked.push(kind.kind);
+  const held =
+    kind.kind === "Administer" || kind.kind === "AdministerTenant"
+      ? administers()
+      : memory.held.has(accessHeldKey(principal, kind));
+  return Promise.resolve(held ? memberAuthority(principal) : undefined);
+}
+
 function accessMemoryAccess(memory: AccessMemoryState): ProjectAccess {
   return {
-    authorize: (principal, partition, kind) => {
-      accessReachable(memory);
-      return Promise.resolve(
-        kind === "Administer" &&
-          accessProjectAdmin(memory, principal, partition)
-          ? memberAuthority(principal)
-          : undefined,
-      );
-    },
-    authorizeTenant: (principal, tenant, kind) => {
-      accessReachable(memory);
-      return Promise.resolve(
-        (kind === "AdministerTenant" || kind === "InviteToTenant") &&
-          accessTenantAdmin(memory, principal, tenant)
-          ? memberAuthority(principal)
-          : undefined,
-      );
-    },
-    authorizeSite: projectAccessSiteRefused,
+    authorize: (principal, partition, kind) =>
+      accessAnswered(
+        memory,
+        principal,
+        { on: "Project", partition, kind },
+        () => accessProjectAdmin(memory, principal, partition),
+      ),
+    authorizeTenant: (principal, tenant, kind) =>
+      accessAnswered(memory, principal, { on: "Tenant", tenant, kind }, () =>
+        accessTenantAdmin(memory, principal, tenant),
+      ),
+    authorizeSite: (principal, kind) =>
+      accessAnswered(memory, principal, { on: "Site", kind }, () => false),
   };
+}
+
+/** Gives `principal` each kind, on the object each names. */
+export function accessGiven(
+  memory: AccessMemoryState,
+  principal: Principal,
+  kinds: readonly AccessMemoryKind[],
+): void {
+  for (const kind of kinds) memory.held.add(accessHeldKey(principal, kind));
+}
+
+const accessProjectAuthorityKinds: readonly ProjectAccessKind[] = [
+  "GrantProjectAdmin",
+  "GrantDeveloper",
+  "GrantDispatcher",
+  "ManageProjectAuthorities",
+];
+
+/** What the defaults give a project's administrator there. */
+export function accessGivenProjectAdministrator(
+  memory: AccessMemoryState,
+  principal: Principal,
+  partition: Partition,
+): void {
+  accessGiven(
+    memory,
+    principal,
+    accessProjectAuthorityKinds.map((kind) => ({
+      on: "Project",
+      partition,
+      kind,
+    })),
+  );
+}
+
+/** What the defaults give a tenant's administrator, on the tenant and on each of `projects`. */
+export function accessGivenTenantAdministrator(
+  memory: AccessMemoryState,
+  principal: Principal,
+  tenant: TenantId,
+  projects: readonly Partition[],
+): void {
+  accessGiven(
+    memory,
+    principal,
+    (
+      ["GrantTenantAdmin", "GrantMember", "ManageTenantAuthorities"] as const
+    ).map((kind) => ({ on: "Tenant", tenant, kind })),
+  );
+  for (const partition of projects)
+    accessGivenProjectAdministrator(memory, principal, partition);
 }
 
 function accessMemoryReader(
@@ -247,6 +341,8 @@ export function accessMemory(pageTuples = 2): AccessMemory {
     batches: [],
     unavailable: false,
     pages: 0,
+    held: new Set(),
+    asked: [],
   };
   return Object.assign(state, {
     access: accessMemoryAccess(state),

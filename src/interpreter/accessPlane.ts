@@ -1,6 +1,6 @@
 /**
  * Who holds a role in a tenant and its projects, and granting or removing one,
- * for a caller the authority says administers what is being changed.
+ * each asked of the authority as the kind it needs.
  *
  * A ROLE REACHES A RELATION THROUGH ONE RECORD PER ROSTER. The builders in
  * `./projectGrant.ts` take any relation the model declares, `hosted_execution`,
@@ -8,8 +8,11 @@
  * the whole of what keeps a request from writing one of those: no string a
  * request carries reaches a builder any other way.
  *
- * ANYONE THE AUTHORITY REFUSES IS ANSWERED AS ABSENT, exactly as a tenant or
- * project that does not exist, so nothing here tells the two apart.
+ * A LIST IS ANSWERED TO WHOEVER HOLDS ONE OF ITS OWN KINDS, and a change asks
+ * the kind granting its role, each in one record beside the role's relation. A
+ * caller holding none of a list's kinds is answered as absent, exactly as a
+ * tenant or project that does not exist, so nothing here tells the two apart;
+ * one answered the list who lacks a change's kind is refused it.
  *
  * WHO A SUBJECT IS IS THE DIRECTORY'S, asked once per list about at most
  * `accessDirectorySubjectsMax` subjects. A plane with no directory lists
@@ -43,6 +46,8 @@ import {
   projectAccessTenantNamespace,
   projectAccessTenantObject,
   type ProjectAccess,
+  type ProjectAccessKind,
+  type TenantAccessKind,
 } from "./projectAccess.ts";
 import {
   projectPrincipalGrant,
@@ -64,6 +69,43 @@ export const accessTenantRoleRelations: Readonly<
 export const accessProjectRoleRelations: Readonly<
   Record<AccessProjectRole, ProjectGrantRelation>
 > = { Admin: "admins", Developer: "developers", Dispatcher: "dispatchers" };
+
+/** The kind granting or removing each tenant role asks. */
+export const accessTenantRoleGrantKinds: Readonly<
+  Record<AccessTenantRole, TenantAccessKind>
+> = { Admin: "GrantTenantAdmin", Member: "GrantMember" };
+
+/** The kind granting or removing each project role asks. */
+export const accessProjectRoleGrantKinds: Readonly<
+  Record<AccessProjectRole, ProjectAccessKind>
+> = {
+  Admin: "GrantProjectAdmin",
+  Developer: "GrantDeveloper",
+  Dispatcher: "GrantDispatcher",
+};
+
+/**
+ * The kinds any one of which answers a tenant's list, the one most holders
+ * hold first. It is not the roster less a kind, so a kind the roster gains
+ * opens nothing here.
+ */
+export const accessTenantListKinds: readonly TenantAccessKind[] = [
+  "AdministerTenant",
+  "GrantTenantAdmin",
+  "GrantMember",
+  "GrantHostedExecution",
+  "ManageTenantAuthorities",
+  "ManageSiteHeldAuthorities",
+];
+
+/** The kinds any one of which answers a project's list, for `accessTenantListKinds`' reason. */
+export const accessProjectListKinds: readonly ProjectAccessKind[] = [
+  "Administer",
+  "GrantProjectAdmin",
+  "GrantDeveloper",
+  "GrantDispatcher",
+  "ManageProjectAuthorities",
+];
 
 /** The tenant relation a list reports as hosted runs granted, which no request writes. */
 const accessHostedRunsRelation: TenantGrantRelation = "hosted_execution";
@@ -136,7 +178,8 @@ export interface AccessPlaneSettings {
 }
 
 /** What a grant or a removal came to. */
-export type AccessChange = "Absent" | "Changed" | "LastTenantAdministrator";
+export type AccessChange =
+  "Absent" | "Changed" | "Refused" | "LastTenantAdministrator";
 
 export interface AccessPlane {
   tenantPeople(
@@ -513,28 +556,64 @@ async function accessTenantAdministratorKept(
   );
 }
 
-/** Whether `caller` administers `tenant`, which is what every tenant route asks first. */
-async function accessTenantAdministered(
-  ports: AccessPlanePorts,
+/** Whether `caller` holds `kind` on `tenant`. */
+export async function accessTenantHeld(
+  access: ProjectAccess,
+  caller: Principal,
+  tenant: TenantId,
+  kind: TenantAccessKind,
+): Promise<boolean> {
+  return (await access.authorizeTenant(caller, tenant, kind)) !== undefined;
+}
+
+/** Whether `caller` holds `kind` on the project. */
+export async function accessProjectHeld(
+  access: ProjectAccess,
+  caller: Principal,
+  partition: Partition,
+  kind: ProjectAccessKind,
+): Promise<boolean> {
+  return (await access.authorize(caller, partition, kind)) !== undefined;
+}
+
+/** Whether `caller` holds a kind answering the tenant's list, asked in order until one is held. */
+export async function accessTenantListed(
+  access: ProjectAccess,
   caller: Principal,
   tenant: TenantId,
 ): Promise<boolean> {
-  return (
-    (await ports.access.authorizeTenant(caller, tenant, "AdministerTenant")) !==
-    undefined
-  );
+  for (const kind of accessTenantListKinds)
+    if (await accessTenantHeld(access, caller, tenant, kind)) return true;
+  return false;
 }
 
-/** Whether `caller` administers the project, directly or through its tenant. */
-async function accessProjectAdministered(
-  ports: AccessPlanePorts,
+/** Whether `caller` holds a kind answering the project's list, asked in order until one is held. */
+async function accessProjectListed(
+  access: ProjectAccess,
   caller: Principal,
   partition: Partition,
 ): Promise<boolean> {
-  return (
-    (await ports.access.authorize(caller, partition, "Administer")) !==
-    undefined
-  );
+  for (const kind of accessProjectListKinds)
+    if (await accessProjectHeld(access, caller, partition, kind)) return true;
+  return false;
+}
+
+/** Why `caller` may not change `role` on `tenant`, or nothing where it may. */
+async function accessTenantChangeRefused(
+  access: ProjectAccess,
+  caller: Principal,
+  tenant: TenantId,
+  role: AccessTenantRole,
+): Promise<AccessChange | undefined> {
+  if (!(await accessTenantListed(access, caller, tenant))) return "Absent";
+  return (await accessTenantHeld(
+    access,
+    caller,
+    tenant,
+    accessTenantRoleGrantKinds[role],
+  ))
+    ? undefined
+    : "Refused";
 }
 
 function accessTenantChanges(
@@ -550,14 +629,24 @@ function accessTenantChanges(
     });
   return {
     tenantRoleGranted: async (caller, tenant, subject, role) => {
-      if (!(await accessTenantAdministered(ports, caller, tenant)))
-        return "Absent";
+      const refused = await accessTenantChangeRefused(
+        ports.access,
+        caller,
+        tenant,
+        role,
+      );
+      if (refused !== undefined) return refused;
       await ports.grants.write(grantOf(tenant, subject, role));
       return "Changed";
     },
     tenantRoleRemoved: async (caller, tenant, subject, role) => {
-      if (!(await accessTenantAdministered(ports, caller, tenant)))
-        return "Absent";
+      const refused = await accessTenantChangeRefused(
+        ports.access,
+        caller,
+        tenant,
+        role,
+      );
+      if (refused !== undefined) return refused;
       const grant = grantOf(tenant, subject, role);
       if (
         grant.holder.subject === "Principal" &&
@@ -588,8 +677,17 @@ function accessProjectChanges(
       subject: string,
       role: AccessProjectRole,
     ): Promise<AccessChange> => {
-      if (!(await accessProjectAdministered(ports, caller, partition)))
+      if (!(await accessProjectListed(ports.access, caller, partition)))
         return "Absent";
+      if (
+        !(await accessProjectHeld(
+          ports.access,
+          caller,
+          partition,
+          accessProjectRoleGrantKinds[role],
+        ))
+      )
+        return "Refused";
       await ports.grants[verb](
         projectPrincipalGrant({
           issuer: settings.issuer,
@@ -615,11 +713,11 @@ export function accessPlane(
     throw new RangeError("access plane: the issuer is empty");
   return {
     tenantPeople: async (caller, tenant) =>
-      (await accessTenantAdministered(ports, caller, tenant))
+      (await accessTenantListed(ports.access, caller, tenant))
         ? accessTenantPeopleRead(ports, settings, caller, tenant)
         : undefined,
     projectPeople: async (caller, partition) =>
-      (await accessProjectAdministered(ports, caller, partition))
+      (await accessProjectListed(ports.access, caller, partition))
         ? accessProjectPeopleRead(ports, settings, caller, partition)
         : undefined,
     ...accessTenantChanges(ports, settings),
