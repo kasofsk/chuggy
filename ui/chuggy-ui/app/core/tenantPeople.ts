@@ -1,13 +1,17 @@
 /**
  * A workspace's people: who each one is, the words their roles are drawn in,
  * what a role change or an invitation came to, and what an invitation's fields
- * may hold before anything is sent.
+ * may hold before anything is sent, and which changes it offers.
  *
  * Every field rule is the access contract's own schema, so this only spares the
  * reader a round trip to be told what the plane would refuse anyway. Every
  * refusal the plane names has its own line in `accessRefusalLabel`, total over
  * the contract's roster, and a name outside it is printed as one this console
  * does not know.
+ *
+ * What is offered is decided from the reader's abilities alone, and a reader
+ * whose abilities were not read is offered nothing: a role they may not grant
+ * is shown as it is held, and an invitation only with roles they may grant.
  */
 
 import {
@@ -19,9 +23,12 @@ import {
   accessInvitationSchema,
   accessLastTenantAdministratorCode,
   accessNotPermittedCode,
+  accessProjectRoles,
+  accessTenantRoles,
   type AccessInvitation,
   type AccessInvited,
   type AccessProjectRole,
+  type AccessTenantAbilities,
   type AccessTenantPerson,
   type AccessTenantRole,
 } from "../../../../src/contract/accessPlane.ts";
@@ -32,6 +39,9 @@ import type { ApiFailure, ApiResult } from "./apiRequest.ts";
 export const tenantPeopleWithheld = "A workspace admin manages people";
 
 export const tenantPeopleTruncated = "List cut short";
+
+/** What the invitation says to a reader who may not make an account. */
+export const tenantInvitationAccountsLine = "Existing accounts only";
 
 /** One workspace role as the label its control carries. */
 export function tenantRoleLabel(role: AccessTenantRole): string {
@@ -176,6 +186,89 @@ export function tenantPersonProjectRoles(
   return person.projects.find((held) => held.project === project)?.roles ?? [];
 }
 
+/** Whether the reader may grant and remove one workspace role. */
+export function tenantRoleOffered(
+  abilities: AccessTenantAbilities | undefined,
+  role: AccessTenantRole,
+): boolean {
+  return abilities?.roles.includes(role) ?? false;
+}
+
+/** Whether the reader may grant and remove one role on one project, which an
+ * answer cut short before naming it does not say. */
+export function projectRoleOffered(
+  abilities: AccessTenantAbilities | undefined,
+  project: string,
+  role: AccessProjectRole,
+): boolean {
+  const named = abilities?.projects.find((held) => held.project === project);
+  return named?.roles.includes(role) ?? false;
+}
+
+/** A project is drawn in a person's row where they hold a role there or the
+ * reader may grant one there. */
+export function tenantPersonProjectDrawn(
+  abilities: AccessTenantAbilities | undefined,
+  person: AccessTenantPerson,
+  project: string,
+): boolean {
+  return (
+    tenantPersonProjectRoles(person, project).length > 0 ||
+    accessProjectRoles.some((role) =>
+      projectRoleOffered(abilities, project, role),
+    )
+  );
+}
+
+/** The workspace roles an invitation offers, in the roster's order. */
+export function tenantInvitationRoles(
+  abilities: AccessTenantAbilities | undefined,
+): readonly AccessTenantRole[] {
+  return accessTenantRoles.filter((role) => tenantRoleOffered(abilities, role));
+}
+
+/** The workspace role an invitation opens on, where it offers any. */
+export function tenantInvitationRoleOpening(
+  abilities: AccessTenantAbilities | undefined,
+): AccessTenantRole | undefined {
+  const offered = tenantInvitationRoles(abilities);
+  return offered.includes("Member") ? "Member" : offered[0];
+}
+
+export function tenantInvitationOffered(
+  abilities: AccessTenantAbilities | undefined,
+): boolean {
+  return tenantInvitationRoleOpening(abilities) !== undefined;
+}
+
+/** The list's projects an invitation offers, each with the roles it offers
+ * there, a project with none left out. */
+export function tenantInvitationProjects(
+  abilities: AccessTenantAbilities | undefined,
+  projects: readonly string[],
+): readonly {
+  readonly project: string;
+  readonly roles: readonly AccessProjectRole[];
+}[] {
+  return projects
+    .map((project) => ({
+      project,
+      roles: accessProjectRoles.filter((role) =>
+        projectRoleOffered(abilities, project, role),
+      ),
+    }))
+    .filter((offered) => offered.roles.length > 0);
+}
+
+/** The line an invitation draws under the GitHub field, where it draws one. */
+export function tenantInvitationAccountLine(
+  abilities: AccessTenantAbilities | undefined,
+): string | undefined {
+  return abilities === undefined || abilities.createAccount
+    ? undefined
+    : tenantInvitationAccountsLine;
+}
+
 /** Who one person is: an account by its email, or the subject itself, marked
  * where the plane says it is no account. */
 export interface TenantPersonName {
@@ -284,6 +377,19 @@ export function tenantInvitationProjectToggled(
       return { project, roles };
     }),
   };
+}
+
+/** Whether the dialog holds one project role chosen. */
+export function tenantInvitationRoleChosen(
+  form: TenantInvitationForm,
+  project: string,
+  role: AccessProjectRole,
+): boolean {
+  return (
+    form.projects
+      .find((chosen) => chosen.project === project)
+      ?.roles.includes(role) ?? false
+  );
 }
 
 /** What one invitation came to. An absent answer is a plane that invites

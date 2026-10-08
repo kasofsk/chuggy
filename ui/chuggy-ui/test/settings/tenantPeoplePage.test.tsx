@@ -1,7 +1,8 @@
 /**
- * The workspace's people page, mounted: a row a person, each role a button
- * pressed where the list holds it, one grant or removal a press, and one notice
- * for a reader the list is not answered to.
+ * The workspace's people page, mounted: a row a person, each role the reader
+ * may grant a button pressed where the list holds it and every other role as
+ * it is held, one grant or removal a press, and one notice for a reader the
+ * list is not answered to.
  */
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
@@ -12,8 +13,11 @@ import type { ReactNode } from "react";
 import { answer, press, sectionOf, settled } from "../screenHarness.tsx";
 import type * as BrowserPorts from "../../app/browser/ports.ts";
 import {
+  abilitiesReads,
   changesSent,
   drawPeople,
+  peopleAbilitiesAll,
+  peopleAbilitiesNone,
   listReads,
   peopleListed,
   peoplePath,
@@ -108,7 +112,10 @@ test("a cut list, and one counting principals from another sign-in, each say so"
 });
 
 test("an absent list draws the one notice and no control", async () => {
-  await drawPeople({ listing: () => answer({}, 404) });
+  await drawPeople({
+    listing: () => answer({}, 404),
+    abilities: () => answer({}, 404),
+  });
   expect(screen.getByText("A workspace admin manages people")).toBeTruthy();
   expect(within(sectionOf("People")).queryAllByRole("button")).toStrictEqual(
     [],
@@ -130,9 +137,10 @@ test("a failed list draws its reason, and one that is not JSON draws as unreacha
   ).toBeTruthy();
 });
 
-test("granting a role sends that grant alone and reads the list again", async () => {
+test("granting a role sends that grant alone and reads the list and the abilities again, each once", async () => {
   const drawn = await drawPeople();
   const read = listReads(drawn);
+  const abilitiesRead = abilitiesReads(drawn);
   pressIn(personRow("s-bob"), "Workspace", "Admin");
   await settled();
   expect(changesSent(drawn)).toStrictEqual([
@@ -142,7 +150,8 @@ test("granting a role sends that grant alone and reads the list again", async ()
       body: { role: "Admin" },
     },
   ]);
-  expect(listReads(drawn)).toBeGreaterThan(read);
+  expect(listReads(drawn)).toBe(read + 1);
+  expect(abilitiesReads(drawn)).toBe(abilitiesRead + 1);
 });
 
 test("removing a project role sends that removal alone, and a project admin asks nothing", async () => {
@@ -195,6 +204,7 @@ test("removing the reader's own admin, once confirmed, sends it and draws the no
   let removed = false;
   const drawn = await drawPeople({
     listing: () => (removed ? answer({}, 404) : answer(peopleListed)),
+    abilities: () => (removed ? answer({}, 404) : answer(peopleAbilitiesAll())),
     changed: () => {
       removed = true;
       return new Response(null, { status: 204 });
@@ -210,4 +220,91 @@ test("removing the reader's own admin, once confirmed, sends it and draws the no
   expect(within(sectionOf("People")).queryAllByRole("button")).toStrictEqual(
     [],
   );
+});
+
+/** What one group of a row draws after its name: a button with `+` where pressed, a label in parentheses. */
+function drawnIn(row: HTMLElement, group: string): readonly string[] {
+  const scope = within(row).getByRole("group", { name: group });
+  return [...scope.children]
+    .slice(group === "Workspace" ? 0 : 1)
+    .map((drawn) =>
+      drawn.tagName === "BUTTON"
+        ? `${drawn.textContent}${drawn.getAttribute("aria-pressed") === "true" ? "+" : ""}`
+        : `(${drawn.textContent})`,
+    );
+}
+
+function tableButtons(): readonly HTMLElement[] {
+  return within(screen.getByRole("table")).queryAllByRole("button");
+}
+
+test("a reader who may grant every role is offered every role on every person and project", async () => {
+  await drawPeople();
+  for (const name of ["ada@example.com", "s-bob"]) {
+    const row = personRow(name);
+    expect(
+      within(within(row).getByRole("group", { name: "Workspace" }))
+        .getAllByRole("button")
+        .map((button) => button.textContent),
+    ).toStrictEqual(["Admin", "Member"]);
+    for (const project of peopleListed.projects)
+      expect(
+        within(within(row).getByRole("group", { name: project }))
+          .getAllByRole("button")
+          .map((button) => button.textContent),
+      ).toStrictEqual(["Admin", "Developer", "Dispatcher"]);
+  }
+});
+
+test("a reader who may grant Member alone is offered Member, and sees the rest as it is held", async () => {
+  await drawPeople({
+    abilities: () => answer({ ...peopleAbilitiesNone, roles: ["Member"] }),
+  });
+  const ada = personRow("ada@example.com");
+  expect(drawnIn(ada, "Workspace")).toStrictEqual(["(Admin)", "Member"]);
+  expect(drawnIn(ada, "atlas")).toStrictEqual(["(Admin)", "(Developer)"]);
+  expect(within(ada).queryByRole("group", { name: "beacon" })).toBeNull();
+  const bob = personRow("s-bob");
+  expect(drawnIn(bob, "Workspace")).toStrictEqual(["Member+"]);
+  expect(within(bob).queryByRole("group", { name: "atlas" })).toBeNull();
+  expect(within(bob).queryByRole("group", { name: "beacon" })).toBeNull();
+});
+
+test("a reader who may grant on one project of two is offered its roles, and sees the other's as held", async () => {
+  await drawPeople({
+    abilities: () =>
+      answer({
+        ...peopleAbilitiesNone,
+        projects: peopleAbilitiesAll(["beacon"]).projects,
+      }),
+  });
+  const ada = personRow("ada@example.com");
+  expect(drawnIn(ada, "atlas")).toStrictEqual(["(Admin)", "(Developer)"]);
+  expect(drawnIn(ada, "beacon")).toStrictEqual([
+    "Admin",
+    "Developer",
+    "Dispatcher",
+  ]);
+  expect(drawnIn(personRow("s-bob"), "beacon")).toStrictEqual([
+    "Admin",
+    "Developer",
+    "Dispatcher",
+  ]);
+});
+
+test("a reader who may change nothing sees no button in the table and no Invite", async () => {
+  await drawPeople({ abilities: () => answer(peopleAbilitiesNone) });
+  expect(tableButtons()).toStrictEqual([]);
+  expect(drawnIn(personRow("ada@example.com"), "Workspace")).toStrictEqual([
+    "(Admin)",
+  ]);
+  expect(screen.queryByRole("button", { name: "Invite" })).toBeNull();
+});
+
+test("abilities absent beside a list that was answered leave the table without controls, and draw one line under it", async () => {
+  await drawPeople({ abilities: () => answer({}, 404) });
+  expect(personRow("ada@example.com")).toBeTruthy();
+  expect(tableButtons()).toStrictEqual([]);
+  expect(screen.queryByRole("button", { name: "Invite" })).toBeNull();
+  expect(screen.getAllByText(/^Not available/u)).toHaveLength(1);
 });

@@ -1,9 +1,11 @@
 /**
- * One person in a workspace, their roles edited in place: each workspace role
- * and each role on each of the workspace's projects is one button, pressed
- * where the list says it is held. A press sends one grant or one removal and
- * reads the list again, so what the button shows is always what the list
- * holds, and a refusal is one line under the person's name.
+ * One person in a workspace, their roles edited in place where the reader may
+ * grant them: each such role is one button, pressed where the list says it is
+ * held, and a role the reader may not grant is its label where held and absent
+ * where not. A project is drawn where the person holds a role there or the
+ * reader may grant one. A press sends one grant or one removal and reads the
+ * list and the abilities again, so what the button shows is always what the
+ * list holds, and a refusal is one line under the person's name.
  */
 
 import { useQueryClient } from "@tanstack/react-query";
@@ -13,6 +15,7 @@ import type { ReactNode } from "react";
 import {
   accessProjectRoles,
   accessTenantRoles,
+  type AccessTenantAbilities,
   type AccessTenantPerson,
 } from "../../../../../src/contract/accessPlane.ts";
 import type { ApiPorts, ApiResult } from "../../core/apiRequest.ts";
@@ -22,14 +25,16 @@ import {
   apiRemoveProjectRole,
   apiRemoveTenantRole,
 } from "../../core/accessRoutes.ts";
-import { tenantResourceKey } from "../../core/projectQueryKeys.ts";
 import {
   projectRoleLabel,
+  projectRoleOffered,
   tenantPersonName,
+  tenantPersonProjectDrawn,
   tenantPersonProjectRoles,
   tenantRoleChangeAsks,
   tenantRoleChangeNote,
   tenantRoleLabel,
+  tenantRoleOffered,
 } from "../../core/tenantPeople.ts";
 import type { TenantRoleChange } from "../../core/tenantPeople.ts";
 import { useApiPorts } from "../api.ts";
@@ -37,9 +42,7 @@ import { Button } from "../ui/Button.tsx";
 import { Confirm } from "../ui/Confirm.tsx";
 import { Identity } from "../ui/Identity.tsx";
 import { Notice } from "../ui/Notice.tsx";
-
-/** No frame names this read, so a change's own invalidation is what reaches it. */
-export const tenantPeopleResource = "access-people";
+import { tenantPeopleReread } from "./tenantPeopleResource.ts";
 
 function tenantRoleChangeSent(
   ports: ApiPorts,
@@ -83,9 +86,7 @@ function useTenantRoleChange(
         person.subject,
         change,
       );
-      await client.invalidateQueries({
-        queryKey: tenantResourceKey(tenant, tenantPeopleResource),
-      });
+      await tenantPeopleReread(client, tenant);
       setAsking(undefined);
       setBusy(false);
       setNote(tenantRoleChangeNote(answered));
@@ -130,15 +131,45 @@ function TenantPersonWho(props: {
   );
 }
 
+/** One role as the reader may change it: a button where they may grant it,
+ * otherwise its label where held and nothing where not. */
+function TenantPersonRole(props: {
+  readonly label: string;
+  readonly offered: boolean;
+  readonly held: boolean;
+  readonly busy: boolean;
+  readonly onPress: () => void;
+}): ReactNode {
+  if (!props.offered)
+    return props.held ? (
+      <span className="text-sm text-ink-2">{props.label}</span>
+    ) : null;
+  return (
+    <Button
+      size="sm"
+      variant="quiet"
+      pressed={props.held}
+      disabled={props.busy}
+      onClick={props.onPress}
+    >
+      {props.label}
+    </Button>
+  );
+}
+
 function TenantPersonProjects(props: {
   readonly person: AccessTenantPerson;
   readonly projects: readonly string[];
+  readonly abilities: AccessTenantAbilities | undefined;
   readonly busy: boolean;
   readonly press: (change: TenantRoleChange) => void;
 }): ReactNode {
+  const drawn = props.projects.filter((project) =>
+    tenantPersonProjectDrawn(props.abilities, props.person, project),
+  );
   return (
     <span className="grid gap-1">
-      {props.projects.map((project) => {
+      {drawn.map((project) => {
         const held = tenantPersonProjectRoles(props.person, project);
         return (
           <span
@@ -149,13 +180,13 @@ function TenantPersonProjects(props: {
           >
             <span className="text-sm text-ink-2">{project}</span>
             {accessProjectRoles.map((role) => (
-              <Button
+              <TenantPersonRole
                 key={role}
-                size="sm"
-                variant="quiet"
-                pressed={held.includes(role)}
-                disabled={props.busy}
-                onClick={() => {
+                label={projectRoleLabel(role)}
+                offered={projectRoleOffered(props.abilities, project, role)}
+                held={held.includes(role)}
+                busy={props.busy}
+                onPress={() => {
                   props.press({
                     scope: "Project",
                     project,
@@ -163,9 +194,7 @@ function TenantPersonProjects(props: {
                     held: held.includes(role),
                   });
                 }}
-              >
-                {projectRoleLabel(role)}
-              </Button>
+              />
             ))}
           </span>
         );
@@ -176,6 +205,7 @@ function TenantPersonProjects(props: {
 
 function TenantPersonRoles(props: {
   readonly person: AccessTenantPerson;
+  readonly abilities: AccessTenantAbilities | undefined;
   readonly busy: boolean;
   readonly press: (change: TenantRoleChange) => void;
 }): ReactNode {
@@ -187,18 +217,16 @@ function TenantPersonRoles(props: {
       className="flex flex-wrap items-center gap-2"
     >
       {accessTenantRoles.map((role) => (
-        <Button
+        <TenantPersonRole
           key={role}
-          size="sm"
-          variant="quiet"
-          pressed={held.includes(role)}
-          disabled={props.busy}
-          onClick={() => {
+          label={tenantRoleLabel(role)}
+          offered={tenantRoleOffered(props.abilities, role)}
+          held={held.includes(role)}
+          busy={props.busy}
+          onPress={() => {
             props.press({ scope: "Tenant", role, held: held.includes(role) });
           }}
-        >
-          {tenantRoleLabel(role)}
-        </Button>
+        />
       ))}
     </span>
   );
@@ -208,6 +236,7 @@ export function TenantPersonRow(props: {
   readonly tenant: string;
   readonly person: AccessTenantPerson;
   readonly projects: readonly string[];
+  readonly abilities: AccessTenantAbilities | undefined;
 }): ReactNode {
   const person = props.person;
   const change = useTenantRoleChange(props.tenant, person);
@@ -238,6 +267,7 @@ export function TenantPersonRow(props: {
       <td>
         <TenantPersonRoles
           person={person}
+          abilities={props.abilities}
           busy={change.busy || asking !== undefined}
           press={change.press}
         />
@@ -247,6 +277,7 @@ export function TenantPersonRow(props: {
         <TenantPersonProjects
           person={person}
           projects={props.projects}
+          abilities={props.abilities}
           busy={change.busy || asking !== undefined}
           press={change.press}
         />

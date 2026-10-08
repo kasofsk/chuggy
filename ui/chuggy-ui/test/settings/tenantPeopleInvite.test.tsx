@@ -1,8 +1,8 @@
 /**
- * Inviting a person from the workspace's people page: the fields sent as the
- * contract states them, a field's fault under it before anything is sent, each
- * refusal's line with the dialog left as it was, and a created or found person
- * closing it.
+ * Inviting a person from the workspace's people page: the roles and projects
+ * the reader may grant offered, the fields sent as the contract states them, a
+ * field's fault under it before anything is sent, each refusal's line with the
+ * dialog left as it was, and a created or found person closing it.
  */
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
@@ -22,6 +22,8 @@ import {
   drawPeople,
   invitationPath,
   listReads,
+  peopleAbilitiesAll,
+  peopleAbilitiesNone,
   peopleListed,
   peopleTenant,
   refused,
@@ -125,6 +127,7 @@ test("more projects than the schema admits sends nothing and draws its fault", a
   );
   const drawn = await invitedWith({
     listing: () => answer({ ...peopleListed, projects }),
+    abilities: () => answer(peopleAbilitiesAll(projects)),
   });
   for (const project of projects)
     fireEvent.click(
@@ -216,4 +219,60 @@ test("a retryable answer is sent three times at most, the action writing through
   expect(changesSent(drawn)).toHaveLength(3);
   expect(within(dialog()).getByText("GitHub unavailable")).toBeTruthy();
   expect(within(dialog()).getByRole("button", { name: "Invite" })).toBeTruthy();
+});
+
+function radios(): readonly string[] {
+  return within(dialog())
+    .getAllByRole("radio")
+    .map(
+      (radio) =>
+        `${radio.getAttribute("value") ?? ""}${radio.getAttribute("aria-checked") === "true" ? "+" : ""}`,
+    );
+}
+
+test("a reader who may grant every role and invite anyone is offered every role, opening on Member", async () => {
+  await invitedWith({});
+  expect(radios()).toStrictEqual(["Admin", "Member+"]);
+  for (const project of peopleListed.projects)
+    expect(
+      within(within(dialog()).getByRole("group", { name: project }))
+        .getAllByRole("button")
+        .map((button) => button.textContent),
+    ).toStrictEqual(["Admin", "Developer", "Dispatcher"]);
+  expect(within(dialog()).queryByText("Existing accounts only")).toBeNull();
+});
+
+test("a reader who may grant Member alone is offered Member and no project", async () => {
+  await invitedWith({
+    abilities: () =>
+      answer({ ...peopleAbilitiesAll(), roles: ["Member"], projects: [] }),
+  });
+  expect(radios()).toStrictEqual(["Member+"]);
+  expect(within(dialog()).queryByRole("group", { name: "Projects" })).toBe(
+    null,
+  );
+});
+
+test("a reader who may grant Admin and not Member opens on Admin, and sends it", async () => {
+  const drawn = await invitedWith({
+    abilities: () => answer({ ...peopleAbilitiesAll(), roles: ["Admin"] }),
+    changed: () => answer({ subject: "s-new", created: true }, 201),
+  });
+  expect(radios()).toStrictEqual(["Admin+"]);
+  await sent();
+  expect(changesSent(drawn).map((request) => request.body)).toStrictEqual([
+    { github: "ada", email: "ada@example.com", role: "Admin" },
+  ]);
+});
+
+test("a reader who may not make an account is told so in the form", async () => {
+  await invitedWith({
+    abilities: () => answer({ ...peopleAbilitiesAll(), createAccount: false }),
+  });
+  expect(within(dialog()).getByText("Existing accounts only")).toBeTruthy();
+});
+
+test("a reader who may grant no workspace role is offered no invitation", async () => {
+  await drawPeople({ abilities: () => answer(peopleAbilitiesNone) });
+  expect(screen.queryByRole("button", { name: "Invite" })).toBeNull();
 });

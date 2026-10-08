@@ -1,29 +1,36 @@
 /**
  * Inviting one person to a workspace: their GitHub username, their email, a
- * workspace role, and roles on any of the workspace's projects. Each field's
- * fault stands under it before anything is sent, a refusal is one line under
- * the form with everything typed still there, and an invitation that created
- * or found the person closes the dialog and reads the list again.
+ * workspace role, and roles on the workspace's projects, each offered only
+ * where the reader may grant it. A reader who may not make an account is told
+ * so under the GitHub field before anything is sent. Each field's fault stands
+ * under it before anything is sent, a refusal is one line under the form with
+ * everything typed still there, and an invitation that created or found the
+ * person closes the dialog and reads the list and the abilities again.
  */
 
 import { useQueryClient } from "@tanstack/react-query";
 import { useId, useState } from "react";
 import type { ReactNode } from "react";
 
-import {
-  accessProjectRoles,
-  accessTenantRoles,
+import type {
+  AccessProjectRole,
+  AccessTenantAbilities,
+  AccessTenantRole,
 } from "../../../../../src/contract/accessPlane.ts";
 import { apiInviteTenantPerson } from "../../core/accessRoutes.ts";
-import { tenantResourceKey } from "../../core/projectQueryKeys.ts";
 import {
   projectRoleLabel,
+  tenantInvitationAccountLine,
   tenantInvitationBody,
   tenantInvitationEmailFault,
   tenantInvitationGithubFault,
   tenantInvitationOutcome,
+  tenantInvitationProjects,
   tenantInvitationProjectsFault,
   tenantInvitationProjectToggled,
+  tenantInvitationRoleChosen,
+  tenantInvitationRoleOpening,
+  tenantInvitationRoles,
   tenantInvitationSendable,
   tenantRoleLabel,
 } from "../../core/tenantPeople.ts";
@@ -34,7 +41,7 @@ import { Dialog } from "../ui/Dialog.tsx";
 import { Input } from "../ui/Input.tsx";
 import { Notice } from "../ui/Notice.tsx";
 import { RadioGroup } from "../ui/RadioGroup.tsx";
-import { tenantPeopleResource } from "./TenantPersonRow.tsx";
+import { tenantPeopleReread } from "./tenantPeopleResource.ts";
 
 function TenantInviteFault(props: {
   readonly id: string;
@@ -51,6 +58,7 @@ function TenantInviteText(props: {
   readonly label: string;
   readonly value: string;
   readonly fault: string | undefined;
+  readonly line?: string | undefined;
   readonly onChange: (value: string) => void;
 }): ReactNode {
   const faultId = useId();
@@ -65,37 +73,45 @@ function TenantInviteText(props: {
         describedBy={faultId}
       />
       <TenantInviteFault id={faultId} fault={props.fault} />
+      {props.line === undefined ? null : (
+        <span className="text-xs text-ink-3">{props.line}</span>
+      )}
     </label>
   );
 }
 
+/** Each project the reader may grant on, with the roles they may grant there. */
 function TenantInviteProjects(props: {
+  readonly offered: readonly {
+    readonly project: string;
+    readonly roles: readonly AccessProjectRole[];
+  }[];
   readonly form: TenantInvitationForm;
   readonly onChange: (form: TenantInvitationForm) => void;
 }): ReactNode {
   const faultId = useId();
   const form = props.form;
-  if (form.projects.length === 0) return null;
+  if (props.offered.length === 0) return null;
   return (
     <div role="group" aria-label="Projects" className="grid gap-1">
       <span className="text-sm text-ink-2">Projects</span>
-      {form.projects.map((chosen) => (
+      {props.offered.map((offered) => (
         <span
-          key={chosen.project}
+          key={offered.project}
           role="group"
-          aria-label={chosen.project}
+          aria-label={offered.project}
           className="flex flex-wrap items-center gap-2"
         >
-          <span className="text-sm text-ink-2">{chosen.project}</span>
-          {accessProjectRoles.map((role) => (
+          <span className="text-sm text-ink-2">{offered.project}</span>
+          {offered.roles.map((role) => (
             <Button
               key={role}
               size="sm"
               variant="quiet"
-              pressed={chosen.roles.includes(role)}
+              pressed={tenantInvitationRoleChosen(form, offered.project, role)}
               onClick={() => {
                 props.onChange(
-                  tenantInvitationProjectToggled(form, chosen.project, role),
+                  tenantInvitationProjectToggled(form, offered.project, role),
                 );
               }}
             >
@@ -143,24 +159,49 @@ function useTenantInvite(
         if (outcome.outcome === "Refused") setStatus(outcome.status);
         else onInvited();
         if (outcome.outcome === "Invited" || outcome.reread)
-          await client.invalidateQueries({
-            queryKey: tenantResourceKey(tenant, tenantPeopleResource),
-          });
+          await tenantPeopleReread(client, tenant);
       })();
     },
   };
 }
 
+function TenantInviteRole(props: {
+  readonly offered: readonly AccessTenantRole[];
+  readonly role: AccessTenantRole;
+  readonly onChoose: (role: AccessTenantRole) => void;
+}): ReactNode {
+  return (
+    <RadioGroup
+      label="Workspace role"
+      value={props.role}
+      options={props.offered.map((role) => ({
+        value: role,
+        text: tenantRoleLabel(role),
+      }))}
+      onChoose={(value) => {
+        const role = props.offered.find((known) => known === value);
+        if (role !== undefined) props.onChoose(role);
+      }}
+    />
+  );
+}
+
 function TenantInviteBody(props: {
   readonly tenant: string;
   readonly projects: readonly string[];
+  readonly abilities: AccessTenantAbilities;
+  readonly opening: AccessTenantRole;
   readonly onInvited: () => void;
 }): ReactNode {
+  const offered = tenantInvitationProjects(props.abilities, props.projects);
   const [form, setForm] = useState<TenantInvitationForm>(() => ({
     github: "",
     email: "",
-    role: "Member",
-    projects: props.projects.map((project) => ({ project, roles: [] })),
+    role: props.opening,
+    projects: offered.map((project) => ({
+      project: project.project,
+      roles: [],
+    })),
   }));
   const inviting = useTenantInvite(props.tenant, props.onInvited);
   return (
@@ -169,6 +210,7 @@ function TenantInviteBody(props: {
         label="GitHub username"
         value={form.github}
         fault={tenantInvitationGithubFault(form.github)}
+        line={tenantInvitationAccountLine(props.abilities)}
         onChange={(github) => {
           setForm({ ...form, github });
         }}
@@ -181,19 +223,14 @@ function TenantInviteBody(props: {
           setForm({ ...form, email });
         }}
       />
-      <RadioGroup
-        label="Workspace role"
-        value={form.role}
-        options={accessTenantRoles.map((role) => ({
-          value: role,
-          text: tenantRoleLabel(role),
-        }))}
-        onChoose={(value) => {
-          const role = accessTenantRoles.find((known) => known === value);
-          if (role !== undefined) setForm({ ...form, role });
+      <TenantInviteRole
+        offered={tenantInvitationRoles(props.abilities)}
+        role={form.role}
+        onChoose={(role) => {
+          setForm({ ...form, role });
         }}
       />
-      <TenantInviteProjects form={form} onChange={setForm} />
+      <TenantInviteProjects offered={offered} form={form} onChange={setForm} />
       <div className="flex items-center gap-3">
         <Button
           variant="primary"
@@ -213,16 +250,23 @@ function TenantInviteBody(props: {
   );
 }
 
+/** Drawn only where the reader may grant some workspace role, the one the
+ * form opens on. */
 export function TenantInvite(props: {
   readonly tenant: string;
   readonly projects: readonly string[];
+  readonly abilities: AccessTenantAbilities;
 }): ReactNode {
   const [open, setOpen] = useState(false);
+  const opening = tenantInvitationRoleOpening(props.abilities);
+  if (opening === undefined) return null;
   return (
     <Dialog title="Invite" trigger="Invite" open={open} onOpenChange={setOpen}>
       <TenantInviteBody
         tenant={props.tenant}
         projects={props.projects}
+        abilities={props.abilities}
+        opening={opening}
         onInvited={() => {
           setOpen(false);
         }}

@@ -10,11 +10,13 @@ import {
   accessInvitedSchema,
   accessPlanePath,
   accessPlaneRoutes,
+  accessTenantAbilitiesSchema,
   accessTenantPeopleSchema,
   type AccessInvitation,
   type AccessInvited,
   type AccessPlaneRouteName,
   type AccessProjectRole,
+  type AccessTenantAbilities,
   type AccessTenantPeople,
   type AccessTenantRole,
 } from "../../../../src/contract/accessPlane.ts";
@@ -47,6 +49,18 @@ export function apiTenantPeople(
 ): Promise<ApiResult<AccessTenantPeople>> {
   return apiGet(ports, accessPlanePath("tenantPeople", { tenant }), (value) =>
     accessTenantPeopleSchema.parse(value),
+  );
+}
+
+/** What the caller may do in one tenant, answered to whoever the list is. */
+export function apiTenantAbilities(
+  ports: ApiPorts,
+  tenant: string,
+): Promise<ApiResult<AccessTenantAbilities>> {
+  return apiGet(
+    ports,
+    accessPlanePath("tenantAbilities", { tenant }),
+    (value) => accessTenantAbilitiesSchema.parse(value),
   );
 }
 
