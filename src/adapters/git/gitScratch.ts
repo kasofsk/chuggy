@@ -50,6 +50,10 @@ import {
   type RepositoryCredential,
   type RepositoryId,
 } from "../../interpreter/finalizer.ts";
+import type {
+  RepositoryGitCommand,
+  RepositoryGitEvidence,
+} from "../../interpreter/repositoryReadEvidence.ts";
 import {
   gitCredentialArguments,
   gitCredentialHelperText,
@@ -106,7 +110,7 @@ export interface GitScratchEntry {
 export type ScratchRead<Value> =
   | { readonly read: "Value"; readonly value: Value }
   | { readonly read: "Absent" }
-  | { readonly read: "Unreachable" };
+  | { readonly read: "Unreachable"; readonly evidence?: RepositoryGitEvidence };
 
 /** What merging two commits into a tree found. */
 export type ScratchMerged =
@@ -259,6 +263,16 @@ function scratchWrittenObjectOf(ran: GitRan): GitObjectId | undefined {
   return scratchObjectIdOf(ran.stdout.trim());
 }
 
+/** How one git call that did not succeed ended, in words and an exit code and never in anything git wrote. */
+export function scratchGitEvidence(
+  git: RepositoryGitCommand,
+  ran: GitRan,
+): RepositoryGitEvidence {
+  return ran.ran === "Exited"
+    ? { git, exited: ran.code }
+    : { git, stopped: ran.stopped };
+}
+
 /** The branch the remote's own HEAD names and the commit it stands at, read from the remote rather than remembered. */
 export async function scratchObserveHead(
   scratch: GitScratch,
@@ -276,9 +290,13 @@ export async function scratchObserveHead(
       ...scratchRemoteArguments(repository, "HEAD"),
     ],
   });
-  if (ran.ran === "Stopped") return { read: "Unreachable" };
-  if (ran.code === scratchNoMatchingRefCode) return { read: "Absent" };
-  if (ran.code !== 0) return { read: "Unreachable" };
+  if (ran.ran === "Exited" && ran.code === scratchNoMatchingRefCode)
+    return { read: "Absent" };
+  if (ran.ran === "Stopped" || ran.code !== 0)
+    return {
+      read: "Unreachable",
+      evidence: scratchGitEvidence("ls-remote", ran),
+    };
   const named = /^ref: (refs\/[^\t\n]+)\tHEAD$/mu.exec(ran.stdout);
   const stood = /^([0-9a-f]+)\tHEAD$/mu.exec(ran.stdout);
   const commit = scratchObjectIdOf(stood?.[1]);

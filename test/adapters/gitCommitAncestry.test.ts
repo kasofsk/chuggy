@@ -28,7 +28,6 @@ import { randomBytes } from "node:crypto";
 import {
   chmodSync,
   existsSync,
-  mkdirSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
@@ -66,6 +65,12 @@ import {
   asRecoveryEpoch,
   asTenantId,
 } from "../../src/interpreter/projectStore.ts";
+import {
+  gitStandInFaulted,
+  gitStandInLines,
+  gitStandInOpen,
+  type GitStandInFault,
+} from "./gitStandIn.ts";
 
 /** The secret the fixture's credential source hands out. */
 const fixtureSecret = "fixture-secret-a1b2c3";
@@ -94,39 +99,14 @@ const fixtureServeText = [
 ].join("\n");
 
 /** The verbs the adapter reads and fills a scratch with, which are the calls a recording git counts. */
-type FixtureVerb =
-  "fetch" | "rev-parse" | "cat-file" | "merge-base" | "rev-list";
-
-/** How one verb's calls go through a recording git: as git has them, ended by a signal or by git's own code for a failure before git ran, or begun only after a pause. */
-type FixtureFault = "Whole" | "Killed" | "Failed" | "Stalled";
-
-/**
- * A git in front of the real one. It writes the verb of every call the adapter
- * makes as a line, and the calls of the one verb the fixture names die before
- * git has run or reach it late, a late one writing a line once it has ended.
- */
-function fixtureRecordingText(git: string): string {
-  return [
-    "#!/bin/sh",
-    'here=$(dirname "$0")',
-    'read faulted fault < "$here/faulted"',
-    'for arg in "$@"; do',
-    '  case "$arg" in',
-    "  fetch | rev-parse | cat-file | merge-base | rev-list)",
-    '    echo "$arg" >> "$here/calls"',
-    '    [ "$arg" = "$faulted" ] || break',
-    '    case "$fault" in',
-    "    Killed) kill -KILL $$ ;;",
-    "    Failed) exit 128 ;;",
-    `    Stalled) sleep 3; '${git}' "$@"; code=$?; echo ended >> "$here/calls"; exit $code ;;`,
-    "    esac",
-    "    break ;;",
-    "  esac",
-    "done",
-    `exec '${git}' "$@"`,
-    "",
-  ].join("\n");
-}
+const fixtureVerbs = [
+  "fetch",
+  "rev-parse",
+  "cat-file",
+  "merge-base",
+  "rev-list",
+] as const;
+type FixtureVerb = (typeof fixtureVerbs)[number];
 
 /** One fixture: a bare origin holding a merge of one branch, a commit it never received, and the scratch the adapter opens. */
 interface Fixture {
@@ -255,37 +235,23 @@ function fixtureServe(
 function fixtureFaulted(
   fixture: Fixture,
   verb: FixtureVerb,
-  fault: FixtureFault,
+  fault: GitStandInFault,
 ): void {
-  writeFileSync(
-    join(fixture.directory, "recording", "faulted"),
-    `${verb} ${fault}\n`,
-  );
+  gitStandInFaulted(join(fixture.directory, "recording"), verb, fault);
 }
 
 /** The environment of a port whose every git call goes through a recording git, which nothing is faulted at until a test says so. */
 function fixtureRecorded(fixture: Fixture): GitEnvironment {
-  const recording = join(fixture.directory, "recording");
-  mkdirSync(recording);
-  const git = execFileSync("sh", ["-c", "command -v git"], {
-    encoding: "utf8",
-  }).trim();
-  writeFileSync(join(recording, "git"), fixtureRecordingText(git), {
-    mode: 0o755,
-  });
-  fixtureFaulted(fixture, "fetch", "Whole");
   return {
     ...process.env,
     GIT_CONFIG_GLOBAL: join(fixture.directory, "gitconfig"),
-    PATH: `${recording}:${process.env["PATH"] ?? ""}`,
+    PATH: gitStandInOpen(join(fixture.directory, "recording"), fixtureVerbs),
   };
 }
 
 /** What the recording git has written, in order: the verb of each call, and `ended` for each late call that has ended. */
 function fixtureRecordedLines(fixture: Fixture): readonly string[] {
-  const calls = join(fixture.directory, "recording", "calls");
-  if (!existsSync(calls)) return [];
-  return readFileSync(calls, "utf8").split("\n").filter(Boolean);
+  return gitStandInLines(join(fixture.directory, "recording"));
 }
 
 function fixtureRecordedCount(

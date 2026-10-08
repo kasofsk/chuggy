@@ -45,7 +45,15 @@ import {
   repositoryDeclarationsMax,
   type RepositoryDeclarationFile,
 } from "./repositoryDeclaration.ts";
-import type { RepositoryDeclarationSnapshotRequest } from "./repositoryDeclarationSnapshot.ts";
+import {
+  repositoryDeclarationUnavailableOutcome,
+  type RepositoryDeclarationSnapshotRequest,
+  type RepositoryDeclarationUnavailable,
+} from "./repositoryDeclarationSnapshot.ts";
+import {
+  repositoryReadEvidenceHeld,
+  type RepositoryReadEvidence,
+} from "./repositoryReadEvidence.ts";
 export * from "./repositoryConfigurationIdentity.ts";
 
 /** What reading an immutable repository view found before its declarations are interpreted. */
@@ -58,10 +66,7 @@ export type RepositoryConfigurationSnapshotRead =
       readonly read: "Absent";
       readonly absent: "Commit" | "ConfigurationDirectory";
     }
-  | {
-      readonly read: "Unavailable";
-      readonly unavailable: "Credential" | "Repository";
-    }
+  | ({ readonly read: "Unavailable" } & RepositoryDeclarationUnavailable)
   | {
       readonly read: "Refused";
       readonly refused: "Credential" | "Snapshot";
@@ -87,7 +92,10 @@ export type RepositoryDefaultBranchRead =
       readonly commit: GitObjectId;
     }
   | { readonly read: "Absent" }
-  | { readonly read: "Unavailable" };
+  | {
+      readonly read: "Unavailable";
+      readonly evidence?: RepositoryReadEvidence;
+    };
 
 /**
  * Where a repository's own HEAD points, asked of the remote rather than
@@ -178,10 +186,7 @@ export type RepositoryConfigurationImportOutcome =
       readonly result: "SnapshotAbsent";
       readonly absent: "Commit" | "ConfigurationDirectory";
     }
-  | {
-      readonly result: "Unavailable";
-      readonly unavailable: "Credential" | "Repository";
-    }
+  | ({ readonly result: "Unavailable" } & RepositoryDeclarationUnavailable)
   | {
       readonly result: "SnapshotRefused";
       readonly refused: "Credential" | "Snapshot";
@@ -215,7 +220,7 @@ export async function importRepositoryConfigurations(input: {
     case "Absent":
       return { result: "SnapshotAbsent", absent: snapshot.absent };
     case "Unavailable":
-      return { result: "Unavailable", unavailable: snapshot.unavailable };
+      return repositoryDeclarationUnavailableOutcome(snapshot);
     case "Refused":
       return { result: "SnapshotRefused", refused: snapshot.refused };
     case "Snapshot": {
@@ -318,14 +323,17 @@ export type BoundRepositoryActionImportSkip = Exclude<
 >;
 
 /**
- * Why one bound repository could not be imported. Every term is a variant but a
- * refused declaration's `path`, which is the tree path `ls-tree` answered and is
- * the one value here a forge supplied.
+ * Why one bound repository could not be imported. Every term is a variant or an
+ * integer but a refused declaration's `path`, which is the tree path `ls-tree`
+ * answered and is the one text here a forge supplied.
  */
 export type BoundRepositoryImportFailure<
   Outcome = RepositoryConfigurationImportOutcome,
 > =
-  | { readonly failure: "HeadUnavailable" }
+  | {
+      readonly failure: "HeadUnavailable";
+      readonly evidence?: RepositoryReadEvidence;
+    }
   | { readonly failure: "Raised" }
   | { readonly failure: "Import"; readonly outcome: Outcome };
 
@@ -412,7 +420,15 @@ async function importBoundRepositoryHead(
       case "Unavailable":
         return {
           head: "None",
-          result: { result: "Failed", failure: { failure: "HeadUnavailable" } },
+          result: {
+            result: "Failed",
+            failure: {
+              failure: "HeadUnavailable",
+              ...(head.evidence === undefined
+                ? {}
+                : { evidence: head.evidence }),
+            },
+          },
         };
       case "Branch":
         return { head: "Commit", binding, commit: head.commit };
@@ -539,12 +555,47 @@ function boundRepositoryImportLineWhere(bound: BoundRepositoryImport): string {
   return `${bound.partition.tenant}/${bound.partition.project} ${bound.repository}`;
 }
 
+/** Either import's outcome, as a line reads it. */
+type BoundRepositoryImportOutcome =
+  RepositoryConfigurationImportOutcome | RepositoryActionImportOutcome;
+
+/** One failure as it may be printed, its evidence held to the range each integer can honestly take. */
+function boundRepositoryImportFailureHeld(
+  failure: BoundRepositoryImportFailure<BoundRepositoryImportOutcome>,
+): BoundRepositoryImportFailure<BoundRepositoryImportOutcome> {
+  switch (failure.failure) {
+    case "HeadUnavailable":
+      return failure.evidence === undefined
+        ? failure
+        : {
+            ...failure,
+            evidence: repositoryReadEvidenceHeld(failure.evidence),
+          };
+    case "Raised":
+      return failure;
+    case "Import":
+      return failure.outcome.result !== "Unavailable" ||
+        failure.outcome.evidence === undefined
+        ? failure
+        : {
+            ...failure,
+            outcome: {
+              ...failure.outcome,
+              evidence: repositoryReadEvidenceHeld(failure.outcome.evidence),
+            },
+          };
+    default:
+      return assertNever(failure);
+  }
+}
+
 /**
  * One result as the words a line ends in. Every term is a variant of the run's
- * own types but a refused declaration's path, which `JSON.stringify` escapes.
+ * own types or a held integer but a refused declaration's path, which
+ * `JSON.stringify` escapes.
  */
 function boundRepositoryImportLineWords(
-  result: BoundRepositoryImportResult<string, unknown>,
+  result: BoundRepositoryImportResult<string, BoundRepositoryImportOutcome>,
 ): string {
   switch (result.result) {
     case "Imported":
@@ -552,7 +603,7 @@ function boundRepositoryImportLineWords(
     case "Skipped":
       return `skipped: ${result.why}`;
     case "Failed":
-      return `failed: ${JSON.stringify(result.failure)}`;
+      return `failed: ${JSON.stringify(boundRepositoryImportFailureHeld(result.failure))}`;
     default:
       return assertNever(result);
   }

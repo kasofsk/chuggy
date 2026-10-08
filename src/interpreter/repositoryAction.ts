@@ -33,9 +33,11 @@ import {
   repositoryDeclarationsMax,
   type RepositoryDeclarationFile,
 } from "./repositoryDeclaration.ts";
-import type {
-  RepositoryDeclarationSnapshotRead,
-  RepositoryDeclarationSnapshotRequest,
+import {
+  repositoryDeclarationUnavailableOutcome,
+  type RepositoryDeclarationSnapshotRead,
+  type RepositoryDeclarationSnapshotRequest,
+  type RepositoryDeclarationUnavailable,
 } from "./repositoryDeclarationSnapshot.ts";
 import { taskConfigurationLineFault } from "./taskConfiguration.ts";
 
@@ -209,10 +211,7 @@ export interface RepositoryActionImportPorts {
 
 export type RepositoryActionImportOutcome =
   | { readonly result: "CommitAbsent" }
-  | {
-      readonly result: "Unavailable";
-      readonly unavailable: "Credential" | "Repository";
-    }
+  | ({ readonly result: "Unavailable" } & RepositoryDeclarationUnavailable)
   | { readonly result: "SnapshotRefused" }
   | {
       readonly result: "DeclarationsRefused";
@@ -236,7 +235,7 @@ export async function importRepositoryActions(input: {
     case "Absent":
       return { result: "CommitAbsent" };
     case "Unavailable":
-      return { result: "Unavailable", unavailable: snapshot.unavailable };
+      return repositoryDeclarationUnavailableOutcome(snapshot);
     case "Refused":
       return { result: "SnapshotRefused" };
     case "Snapshot":
