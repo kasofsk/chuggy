@@ -1,7 +1,8 @@
 /**
- * The site's invitation into a workspace of the person's own: who is drawn its
- * form, how the form starts, what a name may be before it is sent, what is
- * sent, and the one line each answer comes to.
+ * The site's workspaces and its invitation into one of the person's own: who
+ * is drawn them, what a row says of a workspace, how the form starts, what a
+ * name may be before it is sent, what is sent, and the one line each answer
+ * comes to.
  */
 
 import { expect, test } from "vitest";
@@ -28,10 +29,13 @@ import {
 import {
   siteWorkspaceBlank,
   siteWorkspaceHeld,
+  siteWorkspaceInvitesLabel,
   siteWorkspaceNameFault,
   siteWorkspaceOffered,
   siteWorkspaceOutcome,
+  siteWorkspacesCountLine,
   siteWorkspaceSendable,
+  siteWorkspaceUnnamedLine,
 } from "../app/core/siteWorkspaces.ts";
 import type { SiteWorkspaceForm } from "../app/core/siteWorkspaces.ts";
 
@@ -55,7 +59,7 @@ function line(result: ApiResult<AccessOwnerInvited>): string {
   return siteWorkspaceOutcome(typed, result).line;
 }
 
-test("the form is drawn to a reader who may make a workspace, and to no other", () => {
+test("the list and its form are drawn to a reader who may make a workspace, and to no other", () => {
   expect(siteWorkspaceOffered({ ...none, createTenant: true })).toBe(true);
   expect(
     siteWorkspaceOffered({
@@ -66,6 +70,35 @@ test("the form is drawn to a reader who may make a workspace, and to no other", 
     }),
   ).toBe(false);
   expect(siteWorkspaceOffered(undefined)).toBe(false);
+});
+
+test("the workspaces are counted in the singular at one and the plural at every other count", () => {
+  expect([0, 1, 2].map(siteWorkspacesCountLine)).toStrictEqual([
+    "0 workspaces",
+    "1 workspace",
+    "2 workspaces",
+  ]);
+});
+
+test("the admins an answer only counts follow the ones it names, stand alone where it names none, and are nothing at zero", () => {
+  const named = [{ subject: "s-ada", mine: false }];
+  expect(
+    siteWorkspaceUnnamedLine({ administrators: named, unnamed: 0 }),
+  ).toBeUndefined();
+  expect(
+    siteWorkspaceUnnamedLine({ administrators: [], unnamed: 0 }),
+  ).toBeUndefined();
+  expect(siteWorkspaceUnnamedLine({ administrators: named, unnamed: 2 })).toBe(
+    "+2 more",
+  );
+  expect(siteWorkspaceUnnamedLine({ administrators: [], unnamed: 2 })).toBe(
+    "2 unnamed",
+  );
+});
+
+test("a workspace's row says whom its admins may invite", () => {
+  expect(siteWorkspaceInvitesLabel(true)).toBe("New people");
+  expect(siteWorkspaceInvitesLabel(false)).toBe("Existing accounts");
 });
 
 test("the form starts with nothing typed, its box checked only where the reader manages the site's permissions", () => {

@@ -1,7 +1,8 @@
 /**
- * The site inviting a person into a workspace of their own: what the form
- * holds, what each field may hold before anything is sent, what is sent, and
- * what one answer came to, as the one line the form draws.
+ * The site's workspaces as their page draws them, and the site inviting a
+ * person into a workspace of their own: what a row says of a workspace, what
+ * the form holds, what each field may hold before anything is sent, what is
+ * sent, and what one answer came to, as the one line it leaves.
  *
  * Every field rule is the access contract's own schema, so this only spares
  * the reader a round trip to be told what the plane would refuse anyway. The
@@ -19,6 +20,7 @@ import {
   type AccessOwnerInvitation,
   type AccessOwnerInvited,
   type AccessSiteAbilities,
+  type AccessSiteTenant,
 } from "../../../../src/contract/accessPlane.ts";
 
 import type { ApiFailure, ApiResult } from "./apiRequest.ts";
@@ -33,15 +35,36 @@ export type SiteWorkspaceForm = AccessOwnerInvitation;
 /** What the page draws for a reader who may make no workspace. */
 export const siteWorkspacesWithheld = "A site admin creates workspaces";
 
-/** Whether the reader is drawn the form, which a reader whose abilities were
- * not answered is not. */
+/** Whether the reader is drawn the list and its form, which a reader whose
+ * abilities were not answered is not. */
 export function siteWorkspaceOffered(
   abilities: AccessSiteAbilities | undefined,
 ): boolean {
   return abilities?.createTenant ?? false;
 }
 
-/** The form as it starts and as a creation leaves it: nothing typed, and the
+/** How many workspaces the table under this line holds. */
+export function siteWorkspacesCountLine(count: number): string {
+  return count === 1 ? "1 workspace" : `${String(count)} workspaces`;
+}
+
+/** The administrators a workspace's answer counts and does not name: a line
+ * after those it names, the count alone where it names none, nothing at zero. */
+export function siteWorkspaceUnnamedLine(
+  listed: Pick<AccessSiteTenant, "administrators" | "unnamed">,
+): string | undefined {
+  if (listed.unnamed === 0) return undefined;
+  return listed.administrators.length === 0
+    ? `${String(listed.unnamed)} unnamed`
+    : `+${String(listed.unnamed)} more`;
+}
+
+/** Whom a workspace's admins may invite, as its row says it. */
+export function siteWorkspaceInvitesLabel(createAccounts: boolean): string {
+  return createAccounts ? "New people" : "Existing accounts";
+}
+
+/** The form as every opening of the dialog starts it: nothing typed, and the
  * box checked where the reader may hand account creation on. */
 export function siteWorkspaceBlank(
   abilities: AccessSiteAbilities,
@@ -79,8 +102,8 @@ export function siteWorkspaceSendable(form: SiteWorkspaceForm): boolean {
   return accessOwnerInvitationSchema.safeParse(form).success;
 }
 
-/** What one creation came to, as the line the form draws for it. A `200`
- * replay is a creation too, because the workspace it names is the person's. */
+/** What one creation came to, as the line it leaves. A `200` replay is a
+ * creation too, because the workspace it names is the person's. */
 export interface SiteWorkspaceOutcome {
   readonly outcome: "Created" | "Refused";
   readonly line: string;

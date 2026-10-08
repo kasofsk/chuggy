@@ -15,6 +15,7 @@ import {
   accessProjectPeopleSchema,
   accessSiteAbilitiesSchema,
   accessSiteAuthoritiesSchema,
+  accessSiteTenantsSchema,
   accessTenantAbilitiesSchema,
   accessTenantAuthoritiesSchema,
   accessTenantPeopleSchema,
@@ -31,6 +32,7 @@ import {
   type AccessSiteAbilities,
   type AccessSiteAuthorities,
   type AccessSiteAuthority,
+  type AccessSiteTenants,
   type AccessTenantAbilities,
   type AccessTenantAuthorities,
   type AccessTenantAuthority,
@@ -134,6 +136,15 @@ export function apiSiteAuthorities(
 ): Promise<ApiResult<AccessSiteAuthorities>> {
   return apiGet(ports, accessPlanePath("siteAuthorities", {}), (value) =>
     accessSiteAuthoritiesSchema.parse(value),
+  );
+}
+
+/** The site's workspaces and who administers each, absent for a caller who may make none. */
+export function apiSiteTenants(
+  ports: ApiPorts,
+): Promise<ApiResult<AccessSiteTenants>> {
+  return apiGet(ports, accessPlanePath("siteTenants", {}), (value) =>
+    accessSiteTenantsSchema.parse(value),
   );
 }
 

@@ -1,19 +1,20 @@
 /**
- * Inviting a person into a workspace of their own, as the parts a form of it
- * is made from: the one request and what it left, the fields, the action that
- * sends them, and the line the last answer left.
+ * Inviting a person into a workspace of their own, in a dialog: the
+ * workspace's name first, then its owner's fields together under their own
+ * word, so no field has to say whose it is, and the box that hands account
+ * creation on, the reader's to change only where they manage the site's
+ * permissions.
  *
- * Nothing here is a card or a dialog, so whatever frames the form places the
- * fields in its body and the action and the line at its foot. The workspace
- * is named first and its owner's fields stand together under their own word,
- * so no field has to say whose it is. Each field's
- * fault stands under it before anything is sent, and while a request is
- * unanswered no field and no action takes a press. A creation leaves the form
- * as it started and its line in the passing tone; a refusal leaves everything
- * typed and its own line; either line stands until the form is changed or
- * sent again.
+ * Each field's fault stands under it before anything is sent, and while the
+ * request is unanswered no field and no action takes a press and nothing
+ * closes the dialog. A refusal is one line beside the actions with everything
+ * typed still there, standing until the form is changed or sent again. A
+ * creation closes the dialog, reads the list again and hands its line to the
+ * page, which is where it is drawn. Every opening starts from nothing typed
+ * and nothing said.
  */
 
+import { useQueryClient } from "@tanstack/react-query";
 import { useId, useState } from "react";
 import type { ReactNode } from "react";
 
@@ -26,67 +27,75 @@ import {
   siteWorkspaceOutcome,
   siteWorkspaceSendable,
 } from "../../core/siteWorkspaces.ts";
-import type {
-  SiteWorkspaceForm,
-  SiteWorkspaceOutcome,
-} from "../../core/siteWorkspaces.ts";
+import type { SiteWorkspaceForm } from "../../core/siteWorkspaces.ts";
 import { useApiPorts } from "../api.ts";
 import { Button } from "../ui/Button.tsx";
 import { Checkbox } from "../ui/Checkbox.tsx";
-import { Notice } from "../ui/Notice.tsx";
+import { Dialog } from "../ui/Dialog.tsx";
 import {
   InvitationEmail,
   InvitationGithub,
   InvitationText,
 } from "./InvitationFields.tsx";
+import { siteWorkspacesReread } from "./siteWorkspacesResource.ts";
 
-export interface SiteWorkspaceCreating {
+interface SiteWorkspaceCreating {
   readonly form: SiteWorkspaceForm;
   readonly busy: boolean;
-  /** What the last answer came to, until the form is changed or sent again. */
-  readonly answered: SiteWorkspaceOutcome | undefined;
+  /** The line the last refusal left, until the form is changed or sent again. */
+  readonly refused: string | undefined;
   readonly change: (form: SiteWorkspaceForm) => void;
+  /** The dialog opening: nothing typed, and nothing said yet. */
+  readonly begin: () => void;
   readonly create: () => void;
 }
 
-/** One form's state under the site abilities now read, from nothing typed to
- * the line its last answer left. */
-export function useSiteWorkspaceCreation(
+/** One creation under the site abilities now read, from the dialog opening to
+ * the line a creation hands on or the one a refusal leaves. */
+function useSiteWorkspaceCreation(
+  tenant: string,
   abilities: AccessSiteAbilities,
+  onCreated: (line: string) => void,
 ): SiteWorkspaceCreating {
   const ports = useApiPorts();
+  const client = useQueryClient();
   const [typed, setTyped] = useState(() => siteWorkspaceBlank(abilities));
   const [busy, setBusy] = useState(false);
-  const [answered, setAnswered] = useState<SiteWorkspaceOutcome | undefined>(
-    undefined,
-  );
+  const [refused, setRefused] = useState<string | undefined>(undefined);
   const form = siteWorkspaceHeld(typed, abilities);
   return {
     form,
     busy,
-    answered,
+    refused,
     change: (changed) => {
       setTyped(changed);
-      setAnswered(undefined);
+      setRefused(undefined);
+    },
+    begin: () => {
+      setTyped(siteWorkspaceBlank(abilities));
+      setRefused(undefined);
     },
     create: () => {
       setBusy(true);
-      setAnswered(undefined);
+      setRefused(undefined);
       void (async () => {
         const outcome = siteWorkspaceOutcome(
           form,
           await apiInviteSiteOwner(ports, form),
         );
         setBusy(false);
-        setAnswered(outcome);
-        if (outcome.outcome === "Created")
-          setTyped(siteWorkspaceBlank(abilities));
+        if (outcome.outcome === "Refused") {
+          setRefused(outcome.line);
+          return;
+        }
+        onCreated(outcome.line);
+        await siteWorkspacesReread(client, tenant);
       })();
     },
   };
 }
 
-export function SiteWorkspaceFields(props: {
+function SiteWorkspaceFields(props: {
   readonly abilities: AccessSiteAbilities;
   readonly creating: SiteWorkspaceCreating;
 }): ReactNode {
@@ -125,7 +134,8 @@ export function SiteWorkspaceFields(props: {
         <Checkbox
           label="Can invite new people"
           checked={form.createAccounts}
-          disabled={busy || !props.abilities.manageAuthorities}
+          disabled={!props.abilities.manageAuthorities}
+          held={busy}
           onChange={(createAccounts) => {
             change({ ...form, createAccounts });
           }}
@@ -135,35 +145,77 @@ export function SiteWorkspaceFields(props: {
   );
 }
 
-/** The line the last answer left, in the tone of how it went. */
-export function SiteWorkspaceAnswered(props: {
+/** The two actions as one, so a refusal's line too long to stand beside them
+ * puts both under it and neither alone. */
+function SiteWorkspaceFoot(props: {
   readonly creating: SiteWorkspaceCreating;
-}): ReactNode {
-  const answered = props.creating.answered;
-  if (answered === undefined) return null;
-  return (
-    <Notice
-      tone={answered.outcome === "Created" ? "pass" : "danger"}
-      inline
-      role="status"
-      detail={answered.line}
-    />
-  );
-}
-
-export function SiteWorkspaceCreate(props: {
-  readonly creating: SiteWorkspaceCreating;
+  readonly onCancel: () => void;
 }): ReactNode {
   const creating = props.creating;
   return (
-    <Button
-      variant="primary"
-      size="sm"
-      disabled={!siteWorkspaceSendable(creating.form) || creating.busy}
+    <div className="flex gap-2">
+      <Button
+        variant="quiet"
+        size="sm"
+        disabled={creating.busy}
+        onClick={props.onCancel}
+      >
+        Cancel
+      </Button>
+      <Button
+        variant="primary"
+        size="sm"
+        disabled={!siteWorkspaceSendable(creating.form) || creating.busy}
+        busy={creating.busy}
+        onClick={creating.create}
+      >
+        {creating.busy ? "Creating…" : "Create"}
+      </Button>
+    </div>
+  );
+}
+
+/** The action over the list and the dialog it opens, `onSaid` given a
+ * creation's line, and nothing as the dialog opens again. */
+export function SiteWorkspaceNew(props: {
+  readonly tenant: string;
+  readonly abilities: AccessSiteAbilities;
+  readonly onSaid: (line: string | undefined) => void;
+}): ReactNode {
+  const [open, setOpen] = useState(false);
+  const creating = useSiteWorkspaceCreation(
+    props.tenant,
+    props.abilities,
+    (line) => {
+      setOpen(false);
+      props.onSaid(line);
+    },
+  );
+  return (
+    <Dialog
+      wide
+      title="New workspace"
+      trigger="New workspace"
+      open={open}
+      onOpenChange={(opened) => {
+        if (opened) {
+          creating.begin();
+          props.onSaid(undefined);
+        }
+        setOpen(opened);
+      }}
       busy={creating.busy}
-      onClick={creating.create}
+      note={creating.refused}
+      foot={
+        <SiteWorkspaceFoot
+          creating={creating}
+          onCancel={() => {
+            setOpen(false);
+          }}
+        />
+      }
     >
-      {creating.busy ? "Creating…" : "Create"}
-    </Button>
+      <SiteWorkspaceFields abilities={props.abilities} creating={creating} />
+    </Dialog>
   );
 }

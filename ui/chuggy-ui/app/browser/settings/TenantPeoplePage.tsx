@@ -13,7 +13,6 @@
  * is drawn under it.
  */
 
-import { useId } from "react";
 import type { ReactNode } from "react";
 
 import type {
@@ -26,21 +25,24 @@ import {
   tenantPeopleCountLine,
   tenantPeopleOtherIssuersLine,
   tenantPeopleParted,
-  tenantPeopleTruncated,
   tenantPeopleWithheld,
   tenantPersonEditOffered,
 } from "../../core/tenantPeople.ts";
 import { PanelUnready } from "../DataPanel.tsx";
 import { Notice } from "../ui/Notice.tsx";
-import { Table } from "../ui/Table.tsx";
+import {
+  SettingsListing,
+  SettingsListingCut,
+  SettingsListingSection,
+  SettingsListingTable,
+  SettingsListingUnread,
+} from "./SettingsListing.tsx";
 import { SettingsPage, useSettingsTenant } from "./SettingsPage.tsx";
 import { TenantInvite } from "./TenantInvite.tsx";
 import { TenantPersonRow } from "./TenantPersonRow.tsx";
 import { useTenantAbilities, useTenantPeople } from "./tenantPeopleResource.ts";
 
 import "./tenantPeople.css";
-
-const cardClassName = "bg-surface-1 border-edge rounded-2 min-w-0 border";
 
 /** One of the page's two tables, the same columns in each so they line up. */
 function TenantPeopleTable(props: {
@@ -53,59 +55,36 @@ function TenantPeopleTable(props: {
 }): ReactNode {
   const editable = tenantPersonEditOffered(props.abilities, props.projects);
   return (
-    <div className={`people-table ${cardClassName}`}>
-      <Table caption={props.caption}>
-        <thead>
-          <tr>
-            <th scope="col">{props.named}</th>
-            <th scope="col" className="people-col-held">
-              Workspace
+    <SettingsListingTable caption={props.caption}>
+      <thead>
+        <tr>
+          <th scope="col">{props.named}</th>
+          <th scope="col" className="people-col-held">
+            Workspace
+          </th>
+          <th scope="col" className="people-col-projects">
+            Projects
+          </th>
+          {editable ? (
+            <th scope="col" className="people-col-edit">
+              <span className="visually-hidden">Edit</span>
             </th>
-            <th scope="col" className="people-col-projects">
-              Projects
-            </th>
-            {editable ? (
-              <th scope="col" className="people-col-edit">
-                <span className="visually-hidden">Edit</span>
-              </th>
-            ) : null}
-          </tr>
-        </thead>
-        <tbody>
-          {props.people.map((person) => (
-            <TenantPersonRow
-              key={person.subject}
-              tenant={props.tenant}
-              person={person}
-              projects={props.projects}
-              abilities={props.abilities}
-              editable={editable}
-            />
-          ))}
-        </tbody>
-      </Table>
-    </div>
-  );
-}
-
-/** A table under the line that heads it, and beside that line the action the
- * table has. */
-function TenantPeopleSection(props: {
-  readonly heading: string;
-  readonly action?: ReactNode;
-  readonly children: ReactNode;
-}): ReactNode {
-  const labelled = useId();
-  return (
-    <section aria-labelledby={labelled} className="grid min-w-0 gap-3">
-      <div className="flex min-w-0 items-center justify-between gap-3">
-        <h2 id={labelled} className="text-md font-medium">
-          {props.heading}
-        </h2>
-        {props.action}
-      </div>
-      {props.children}
-    </section>
+          ) : null}
+        </tr>
+      </thead>
+      <tbody>
+        {props.people.map((person) => (
+          <TenantPersonRow
+            key={person.subject}
+            tenant={props.tenant}
+            person={person}
+            projects={props.projects}
+            abilities={props.abilities}
+            editable={editable}
+          />
+        ))}
+      </tbody>
+    </SettingsListingTable>
   );
 }
 
@@ -120,7 +99,7 @@ function TenantPeopleListed(props: {
   const table = { tenant, projects: listed.projects, abilities };
   return (
     <>
-      <TenantPeopleSection
+      <SettingsListingSection
         heading={tenantPeopleCountLine(parted.people.length)}
         action={
           abilities === undefined ||
@@ -141,23 +120,21 @@ function TenantPeopleListed(props: {
             {...table}
           />
         )}
-      </TenantPeopleSection>
+      </SettingsListingSection>
       {parted.identities.length === 0 ? null : (
-        <TenantPeopleSection heading="Other identities">
+        <SettingsListingSection heading="Other identities">
           <TenantPeopleTable
             caption="Other identities"
             named="Identity"
             people={parted.identities}
             {...table}
           />
-        </TenantPeopleSection>
+        </SettingsListingSection>
       )}
       {otherIssuers === undefined ? null : (
         <Notice tone="info" inline detail={otherIssuers} />
       )}
-      {listed.truncated ? (
-        <Notice tone="parked" inline detail={tenantPeopleTruncated} />
-      ) : null}
+      {listed.truncated ? <SettingsListingCut /> : null}
     </>
   );
 }
@@ -169,7 +146,7 @@ export function TenantPeoplePage(): ReactNode {
   const abilities = read.state === "Ready" ? read.value : undefined;
   return (
     <SettingsPage title="People">
-      <div className="@container grid min-w-0 gap-5">
+      <SettingsListing>
         {people.state === "Ready" ? (
           <TenantPeopleListed
             tenant={tenant}
@@ -177,18 +154,15 @@ export function TenantPeoplePage(): ReactNode {
             abilities={abilities}
           />
         ) : (
-          <div className={`${cardClassName} px-4 py-3`}>
-            {people.state === "Absent" ? (
-              <Notice tone="parked" inline detail={tenantPeopleWithheld} />
-            ) : (
-              <PanelUnready state={people} />
-            )}
-          </div>
+          <SettingsListingUnread
+            state={people}
+            withheld={tenantPeopleWithheld}
+          />
         )}
         {people.state !== "Ready" || read.state === "Pending" ? null : (
           <PanelUnready state={read} />
         )}
-      </div>
+      </SettingsListing>
     </SettingsPage>
   );
 }

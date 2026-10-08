@@ -74,7 +74,7 @@ export interface SettingsNavInput {
   readonly site: SettingsNavSite;
 }
 
-/** Workspaces for a reader offered its form, and Permissions for one who administers the site or manages its permissions. */
+/** Workspaces for a reader offered its list, and Permissions for one who administers the site or manages its permissions. */
 export function settingsNavSiteDrawn(
   abilities: AccessSiteAbilities | undefined,
 ): SettingsNavSite {

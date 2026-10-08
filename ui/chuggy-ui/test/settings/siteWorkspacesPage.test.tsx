@@ -1,42 +1,28 @@
 /**
- * The site's workspaces page, mounted: the one card and its form for a reader
- * who may make a workspace and one line for any other, the fields sent as the
- * contract states them, a field's fault under it before anything is sent, the
- * line each answer leaves at the card's foot, and a form that takes no press
- * while its request is unanswered.
+ * The site's workspaces page, mounted: a row a workspace in the order
+ * answered, saying who administers it and whom they may invite, under their
+ * count and the one action; a cut list and an unread one each saying so; and
+ * one line, with no list read, for a reader who may make no workspace.
  */
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
-import { cleanup, fireEvent, screen, within } from "@testing-library/react";
+import { cleanup, screen, within } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
-import {
-  accessInvitationCodes,
-  accessNotPermittedCode,
-  accessTenantTakenCode,
-} from "../../../../src/contract/accessPlane.ts";
-import type { AccessSiteAbilities } from "../../../../src/contract/accessPlane.ts";
-import { SiteWorkspacesPage } from "../../app/browser/settings/SiteWorkspacesPage.tsx";
-import {
-  answer,
-  drawnStrict,
-  heldAnswer,
-  press,
-  sectionOf,
-  settled,
-  turned,
-} from "../screenHarness.tsx";
-import type { DrawnStrict, SentRequest } from "../screenHarness.tsx";
+import { answer } from "../screenHarness.tsx";
 import type * as BrowserPorts from "../../app/browser/ports.ts";
 import { styleless } from "../styleless.ts";
+import { permissionsTenant, unanswered } from "./permissionsFixture.tsx";
 import {
-  permissionsTenant,
-  siteAbilitiesNone,
-  siteAbilitiesPath,
-  unanswered,
-} from "./permissionsFixture.tsx";
-import { refused } from "./tenantPeopleFixture.tsx";
+  drawWorkspaces,
+  workspaceListReads,
+  workspaceRow,
+  workspacesAbilitiesEvery,
+  workspacesDrawn,
+  workspacesListed,
+  workspacesWithheld,
+} from "./siteWorkspacesFixture.tsx";
 
 vi.mock("../../app/browser/ports.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof BrowserPorts>()),
@@ -59,335 +45,153 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-const workspacesPath = "/access/v1/site/workspaces";
-
-const withheld = "A site admin creates workspaces";
-
-const box = "Can invite new people";
-
-/** A reader who may make a workspace and hand account creation on with it. */
-const abilitiesEvery: AccessSiteAbilities = {
-  administer: true,
-  createAccount: true,
-  createTenant: true,
-  manageAuthorities: true,
-};
-
-/** A reader who may make a workspace and nothing else. */
-const abilitiesCreator: AccessSiteAbilities = {
-  ...siteAbilitiesNone,
-  createTenant: true,
-};
-
-const owner = {
-  Name: "northwind",
-  "GitHub username": "octocat",
-  Email: "owner@example.com",
-};
-
-function created(status = 201): Response {
-  return answer(
-    { tenant: "northwind", subject: "s-owner", created: status === 201 },
-    status,
-  );
+function listedWith(listed: Partial<typeof workspacesListed>): () => Response {
+  return () => answer({ ...workspacesListed, ...listed });
 }
 
-interface WorkspacesDrawing {
-  readonly abilities?: () => Response | Promise<Response>;
-  /** What a creation is answered with. */
-  readonly sent?: () => Response | Promise<Response>;
-}
-
-function drawWorkspaces(drawing: WorkspacesDrawing = {}): Promise<DrawnStrict> {
-  const abilities = drawing.abilities ?? (() => answer(abilitiesEvery));
-  const sent = drawing.sent ?? (() => created());
-  return drawnStrict(<SiteWorkspacesPage />, (request: SentRequest) => {
-    if (request.method !== "GET") return sent();
-    if (request.url === siteAbilitiesPath) return abilities();
-    return answer({}, 404);
-  });
-}
-
-function card(): HTMLElement {
-  return sectionOf("New workspace");
-}
-
-function field(label: string): HTMLInputElement {
-  return within(card()).getByRole<HTMLInputElement>("textbox", {
-    name: label,
-  });
-}
-
-function checkbox(): HTMLButtonElement {
-  return within(card()).getByRole<HTMLButtonElement>("checkbox", {
-    name: box,
-  });
-}
-
-function create(): HTMLButtonElement {
-  return within(card()).getByRole<HTMLButtonElement>("button", {
-    name: /^Creat/u,
-  });
-}
-
-/** What the three fields hold and whether the box is checked, as a case reads a form. */
-function formDrawn(): readonly (string | boolean)[] {
-  return [
-    ...Object.keys(owner).map((label) => field(label).value),
-    checkbox().getAttribute("aria-checked") === "true",
-  ];
-}
-
-async function typed(fields: Readonly<Record<string, string>>): Promise<void> {
-  for (const [label, value] of Object.entries(fields))
-    fireEvent.change(field(label), { target: { value } });
-  await turned();
-}
-
-async function filled(drawing: WorkspacesDrawing = {}): Promise<DrawnStrict> {
-  const drawn = await drawWorkspaces(drawing);
-  await typed(owner);
-  return drawn;
-}
-
-function creationsSent(drawn: DrawnStrict): readonly SentRequest[] {
-  return drawn.sent.filter((request) => request.method !== "GET");
-}
-
-test("a reader who may make a workspace is drawn the one card, its three fields in order, its box and Create, and nothing listed", async () => {
+test("a workspace is a row, in the order answered: its name, its admins a line each, and whom they may invite", async () => {
   await drawWorkspaces();
   expect(
-    within(card())
-      .getAllByRole("textbox")
-      .map((input) => input.getAttribute("aria-label")),
-  ).toStrictEqual(Object.keys(owner));
-  expect(formDrawn()).toStrictEqual(["", "", "", true]);
-  expect(create().textContent).toBe("Create");
-  expect(create().disabled).toBe(true);
-  expect(within(card()).queryByRole("status")).toBeNull();
-  expect(screen.getAllByRole("region")).toHaveLength(1);
-  expect(screen.queryByRole("table")).toBeNull();
-  expect(screen.queryByText(withheld)).toBeNull();
+    screen.getAllByRole("columnheader").map((column) => column.textContent),
+  ).toStrictEqual(["Workspace", "Admins", "Invites"]);
+  expect(workspacesDrawn()).toStrictEqual([
+    [
+      "globex",
+      "bob@example.com bob",
+      "s-robot No account",
+      "+2 more",
+      "Existing accounts",
+    ],
+    ["acme", "ada@example.com ada You", "s-dan", "New people"],
+    ["umbrella", "3 unnamed", "New people"],
+    ["initech", "Existing accounts"],
+  ]);
   styleless();
 });
 
-test("Create sends the four fields the contract states, as typed, to the site's route", async () => {
-  const drawn = await filled();
-  expect(create().disabled).toBe(false);
-  await press("Create");
-  expect(creationsSent(drawn)).toStrictEqual([
-    {
-      method: "POST",
-      url: workspacesPath,
-      body: {
-        tenant: "northwind",
-        github: "octocat",
-        email: "owner@example.com",
-        createAccounts: true,
-      },
-    },
-  ]);
-});
-
-test.each([[201], [200]])(
-  "a %i creation says who signs in, in the passing tone, and leaves the form as it started",
-  async (status) => {
-    await filled({ sent: () => created(status) });
-    fireEvent.click(checkbox());
-    await turned();
-    expect(formDrawn()).toStrictEqual([...Object.values(owner), false]);
-    await press("Create");
-    const said = within(card()).getByRole("status");
-    expect(said.textContent).toBe(
-      "northwind created · octocat signs in with GitHub",
-    );
-    expect(said.classList.contains("notice-pass")).toBe(true);
-    expect(formDrawn()).toStrictEqual(["", "", "", true]);
-    expect(create().disabled).toBe(true);
-  },
-);
-
-test("a creation's line stands until the form is changed", async () => {
-  await filled();
-  await press("Create");
-  expect(within(card()).getByRole("status")).toBeTruthy();
-  await typed({ Name: "n" });
-  expect(within(card()).queryByRole("status")).toBeNull();
-});
-
-const refusals = [
-  [409, accessTenantTakenCode, "Name taken"],
-  [403, accessNotPermittedCode, "Not permitted"],
-  [
-    403,
-    accessInvitationCodes.AccountNotPermitted,
-    "Account creation not permitted",
-  ],
-  [422, accessInvitationCodes.GithubAccountUnknown, "No such GitHub user"],
-  [
-    409,
-    accessInvitationCodes.EmailHeld,
-    "Email held by another account · use another address",
-  ],
-  [503, accessInvitationCodes.GithubUnavailable, "GitHub unavailable"],
-  [404, "NotFound", "Not available"],
-  [500, "InternalError", "Failed"],
-] as const;
-
-test.each(refusals)(
-  "a %i %s draws its own line in the refusing tone and leaves the form as typed",
-  async (status, code, line) => {
-    await filled({ sent: () => refused(status, code) });
-    await press("Create");
-    const said = within(card()).getByRole("status");
-    expect(said.textContent).toBe(line);
-    expect(said.classList.contains("notice-danger")).toBe(true);
-    expect(formDrawn()).toStrictEqual([...Object.values(owner), true]);
-    expect(create().disabled).toBe(false);
-  },
-);
-
-test("a refusal's line goes when the form is sent again, and the next answer's replaces it", async () => {
-  const held = heldAnswer();
-  const answers = [() => refused(409, accessTenantTakenCode)];
-  const drawn = await filled({
-    sent: () => answers.shift()?.() ?? held.answered,
-  });
-  await press("Create");
-  expect(within(card()).getByRole("status").textContent).toBe("Name taken");
-  await press("Create");
-  expect(creationsSent(drawn)).toHaveLength(2);
-  expect(within(card()).queryByRole("status")).toBeNull();
-  await turned(() => {
-    held.release(created());
-  });
-  await settled();
-  expect(within(card()).getByRole("status").textContent).toBe(
-    "northwind created · octocat signs in with GitHub",
-  );
-});
-
-test.each([
-  ["North Wind", "Lowercase letters, digits, inner hyphens"],
-  ["api", "Reserved"],
-])(
-  "the name %s draws its fault under the field and sends nothing",
-  async (name, fault) => {
-    const drawn = await filled();
-    await typed({ Name: name });
-    expect(within(card()).getByText(fault)).toBeTruthy();
-    expect(field("Name").getAttribute("aria-invalid")).toBe("true");
-    expect(create().disabled).toBe(true);
-    fireEvent.click(create());
-    await settled();
-    expect(creationsSent(drawn)).toStrictEqual([]);
-  },
-);
-
-test("a username or an email the schema refuses draws the invitation's own fault and sends nothing", async () => {
-  const drawn = await filled();
-  await typed({ "GitHub username": "-octocat", Email: "owner@" });
-  expect(within(card()).getByText("Not a GitHub username")).toBeTruthy();
-  expect(within(card()).getByText("Not an email")).toBeTruthy();
-  expect(create().disabled).toBe(true);
-  fireEvent.click(create());
-  await settled();
-  expect(creationsSent(drawn)).toStrictEqual([]);
-});
-
-test("a reader who manages the site's permissions starts with the box checked, and unchecking it is what is sent", async () => {
-  const drawn = await filled();
-  expect(checkbox().disabled).toBe(false);
-  fireEvent.click(checkbox());
-  await turned();
-  expect(checkbox().getAttribute("aria-checked")).toBe("false");
-  await press("Create");
-  expect(creationsSent(drawn).map((request) => request.body)).toStrictEqual([
-    {
-      tenant: "northwind",
-      github: "octocat",
-      email: "owner@example.com",
-      createAccounts: false,
-    },
-  ]);
-});
-
-test("a reader who does not manage the site's permissions has the box unchecked, taking no press, and sends it so", async () => {
-  const drawn = await filled({ abilities: () => answer(abilitiesCreator) });
-  expect(checkbox().getAttribute("aria-checked")).toBe("false");
-  expect(checkbox().disabled).toBe(true);
-  fireEvent.click(checkbox());
-  await turned();
-  expect(checkbox().getAttribute("aria-checked")).toBe("false");
-  await press("Create");
-  expect(creationsSent(drawn).map((request) => request.body)).toMatchObject([
-    { createAccounts: false },
-  ]);
-});
-
-test("a reader who may make no account is told so under the username, and one who may is not", async () => {
+test("an admin with no account, and one no directory answered for, is their subject in the identity's face", async () => {
   await drawWorkspaces();
-  expect(within(card()).queryByText("Existing accounts only")).toBeNull();
-  cleanup();
-  await drawWorkspaces({ abilities: () => answer(abilitiesCreator) });
-  expect(within(card()).getByText("Existing accounts only")).toBeTruthy();
+  for (const subject of ["s-robot", "s-dan"])
+    expect(screen.getByText(subject).classList.contains("identity")).toBe(true);
+  expect(
+    screen.getByText("bob@example.com").classList.contains("identity"),
+  ).toBe(false);
 });
 
-test("a creation unanswered, no field, box or action takes a press, and its answer gives them back", async () => {
-  const held = heldAnswer();
-  const drawn = await filled({ sent: () => held.answered });
-  await press("Create");
-  expect(create().textContent).toBe("Creating…");
-  expect(create().disabled).toBe(true);
-  for (const label of Object.keys(owner))
-    expect(field(label).disabled, label).toBe(true);
-  expect(checkbox().disabled).toBe(true);
-  expect(formDrawn()).toStrictEqual([...Object.values(owner), true]);
-  fireEvent.click(create());
-  await settled();
-  expect(creationsSent(drawn)).toHaveLength(1);
-  await turned(() => {
-    held.release(refused(409, accessTenantTakenCode));
+test("a workspace whose admins may make no account says so quietly, one whose may does not, and a stacked row keeps either beside its name", async () => {
+  await drawWorkspaces();
+  const invites = (name: string): readonly string[] => [
+    ...(workspaceRow(name).lastElementChild?.classList ?? []),
+  ];
+  expect(invites("globex")).toStrictEqual(["people-beside", "text-ink-3"]);
+  expect(invites("acme")).toStrictEqual(["people-beside"]);
+});
+
+test("a workspace with no admin draws a dash its stacked row leaves out, and no other row does", async () => {
+  await drawWorkspaces();
+  const none = within(workspaceRow("initech")).getByText("None");
+  expect(none.closest("td")?.getAttribute("data-none")).toBe("");
+  expect(screen.getAllByText("None")).toStrictEqual([none]);
+  expect(
+    [...document.querySelectorAll("td[data-none]")].map(
+      (cell) => cell.closest("tr")?.firstElementChild?.textContent,
+    ),
+  ).toStrictEqual(["initech"]);
+});
+
+test("the workspaces are counted over their table, beside the one action, with nothing said", async () => {
+  await drawWorkspaces();
+  expect(screen.getByRole("heading", { name: "4 workspaces" })).toBeTruthy();
+  expect(
+    screen.getAllByRole("button").map((button) => button.textContent),
+  ).toStrictEqual(["New workspace"]);
+  expect(screen.getAllByRole("region")).toHaveLength(1);
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.queryByRole("status")).toBeNull();
+  expect(screen.queryByText("List cut short")).toBeNull();
+  expect(screen.queryByText(workspacesWithheld)).toBeNull();
+});
+
+test("one workspace is counted as one, and none as none over no table", async () => {
+  await drawWorkspaces({
+    listing: listedWith({ tenants: workspacesListed.tenants.slice(0, 1) }),
   });
-  await settled();
-  expect(create().textContent).toBe("Create");
-  expect(create().disabled).toBe(false);
-  for (const label of Object.keys(owner))
-    expect(field(label).disabled, label).toBe(false);
-  expect(checkbox().disabled).toBe(false);
+  expect(screen.getByRole("heading", { name: "1 workspace" })).toBeTruthy();
+  expect(workspacesDrawn()).toHaveLength(1);
+  cleanup();
+  await drawWorkspaces({ listing: listedWith({ tenants: [] }) });
+  expect(screen.getByRole("heading", { name: "0 workspaces" })).toBeTruthy();
+  expect(screen.queryByRole("table")).toBeNull();
+  expect(screen.getByRole("button", { name: "New workspace" })).toBeTruthy();
+});
+
+test("a cut list says so under its table, in the People page's words", async () => {
+  await drawWorkspaces({ listing: listedWith({ truncated: true }) });
+  const cut = screen.getByText("List cut short");
+  expect(
+    screen.getByRole("table").compareDocumentPosition(cut) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  expect(workspacesDrawn()).toHaveLength(workspacesListed.tenants.length);
+});
+
+test("a list loading or failed is the read's own line, with no table and no action", async () => {
+  await drawWorkspaces({ listing: unanswered });
+  expect(screen.getByText("Loading…")).toBeTruthy();
+  expect(screen.queryByRole("table")).toBeNull();
+  expect(screen.queryAllByRole("button")).toStrictEqual([]);
+  cleanup();
+  await drawWorkspaces({ listing: () => answer({}, 500) });
+  expect(
+    screen.getByText("Failed to load · the API failed with InternalError"),
+  ).toBeTruthy();
+  expect(screen.queryByRole("table")).toBeNull();
+  expect(screen.queryAllByRole("button")).toStrictEqual([]);
+  expect(screen.queryByText(workspacesWithheld)).toBeNull();
+});
+
+test("a list absent to a reader the abilities offered it is who creates workspaces, and no action", async () => {
+  await drawWorkspaces({ listing: () => answer({}, 404) });
+  expect(screen.getByText(workspacesWithheld)).toBeTruthy();
+  expect(screen.queryAllByRole("button")).toStrictEqual([]);
+  expect(screen.queryByText(/^Not available/u)).toBeNull();
 });
 
 test.each([
   {
     reader: "who may do everything on the site but make a workspace",
-    abilities: () => answer({ ...abilitiesEvery, createTenant: false }),
+    abilities: () =>
+      answer({ ...workspacesAbilitiesEvery, createTenant: false }),
   },
   {
     reader: "the site's abilities are absent to",
     abilities: () => answer({}, 404),
   },
 ])(
-  "a reader $reader is told who creates workspaces and drawn no form",
+  "a reader $reader is told who creates workspaces, with no list read and no action",
   async ({ abilities }) => {
-    await drawWorkspaces({ abilities });
-    expect(screen.getByText(withheld)).toBeTruthy();
+    const drawn = await drawWorkspaces({ abilities });
+    expect(screen.getByText(workspacesWithheld)).toBeTruthy();
+    expect(workspaceListReads(drawn)).toBe(0);
+    expect(screen.queryByRole("table")).toBeNull();
     expect(screen.queryByRole("region")).toBeNull();
-    expect(screen.queryByRole("textbox")).toBeNull();
-    expect(screen.queryByRole("button", { name: "Create" })).toBeNull();
+    expect(screen.queryAllByRole("button")).toStrictEqual([]);
     expect(screen.queryByText(/^Not available/u)).toBeNull();
   },
 );
 
-test("the abilities loading or failed is the page's unready line, with no form and no word on who creates", async () => {
-  await drawWorkspaces({ abilities: unanswered });
+test("the abilities loading or failed is the page's unready line, with no list read and no word on who creates", async () => {
+  const loading = await drawWorkspaces({ abilities: unanswered });
   expect(screen.getByText("Loading…")).toBeTruthy();
-  expect(screen.queryByRole("textbox")).toBeNull();
-  expect(screen.queryByText(withheld)).toBeNull();
+  expect(workspaceListReads(loading)).toBe(0);
+  expect(screen.queryAllByRole("button")).toStrictEqual([]);
+  expect(screen.queryByText(workspacesWithheld)).toBeNull();
   cleanup();
-  await drawWorkspaces({ abilities: () => answer({}, 500) });
+  const failed = await drawWorkspaces({ abilities: () => answer({}, 500) });
   expect(
     screen.getByText("Failed to load · the API failed with InternalError"),
   ).toBeTruthy();
-  expect(screen.queryByRole("textbox")).toBeNull();
-  expect(screen.queryByText(withheld)).toBeNull();
+  expect(workspaceListReads(failed)).toBe(0);
+  expect(screen.queryAllByRole("button")).toStrictEqual([]);
+  expect(screen.queryByText(workspacesWithheld)).toBeNull();
 });

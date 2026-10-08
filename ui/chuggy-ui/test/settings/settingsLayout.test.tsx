@@ -37,7 +37,6 @@ import {
   holderDouble,
   openedStream,
   scriptedFetch,
-  sectionOf,
   settled,
 } from "../screenHarness.tsx";
 import type { SentRequest } from "../screenHarness.tsx";
@@ -56,6 +55,10 @@ import {
   siteAuthoritiesStarting,
   tenantAuthoritiesPath,
 } from "./permissionsFixture.tsx";
+import {
+  siteWorkspacesPath,
+  workspacesListed,
+} from "./siteWorkspacesFixture.tsx";
 
 vi.mock("../../app/browser/ports.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof BrowserPorts>()),
@@ -366,20 +369,20 @@ test.each([
   { address: "/acme/atlas/settings/site/workspaces" },
   { address: "/tenants/acme/settings/site/workspaces" },
 ])(
-  "the page at $address is the site's workspaces, its form drawn to a reader who may make one",
+  "the page at $address is the site's workspaces, its list and its action drawn to a reader who may make one",
   async ({ address }) => {
-    await drawnSettings(
-      address,
-      siteAbilitiesAnswered({ ...siteAbilitiesNone, createTenant: true }),
-    );
+    await drawnSettings(address, (request) => {
+      if (request.url === siteAbilitiesPath)
+        return answer({ ...siteAbilitiesNone, createTenant: true });
+      return request.url === siteWorkspacesPath
+        ? answer(workspacesListed)
+        : undefined;
+    });
     expect(
       screen.getByRole("heading", { level: 1, name: "Workspaces" }),
     ).toBeTruthy();
-    expect(
-      within(sectionOf("New workspace")).getByRole("button", {
-        name: "Create",
-      }),
-    ).toBeTruthy();
+    expect(screen.getByRole("table", { name: "Workspaces" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "New workspace" })).toBeTruthy();
   },
 );
 

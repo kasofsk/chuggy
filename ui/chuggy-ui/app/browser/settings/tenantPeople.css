@@ -1,9 +1,9 @@
-/* The People page: its tables drawn edge to edge in a card, a row at an
-   ordinary height with every cell's first line on one baseline, and the same
-   row stacked where the page is narrow. Then the grid of projects a person's
-   editor and an invitation share. Both restate the table primitive's cells,
-   which are set for figures compared along a row and not for lines read down
-   a column. */
+/* The People page, and any settings list drawn in its frame: a table drawn
+   edge to edge in a card, a row at an ordinary height with every cell's first
+   line on one baseline, and the same row stacked where the page is narrow.
+   Then the grid of projects a person's editor and an invitation share. Both
+   restate the table primitive's cells, which are set for figures compared
+   along a row and not for lines read down a column. */
 
 @layer page {
   .people-table table {
@@ -108,7 +108,9 @@
       grid-column: 1;
     }
 
-    .people-table tbody .people-edit {
+    /* What a stacked row keeps beside its name: a person's Edit, and what a
+       workspace's admins may do. */
+    .people-table tbody :is(.people-edit, .people-beside) {
       grid-column: 2;
       grid-row: 1;
     }
