@@ -19,7 +19,7 @@ export interface TenantProjectsBox {
   readonly checked: boolean;
   /** Drawn as it stands and not pressable. */
   readonly disabled: boolean;
-  /** Not pressable until its caller's change is answered. */
+  /** Not pressable for now, while its caller settles a change. */
   readonly held?: boolean;
 }
 

@@ -197,15 +197,15 @@ export async function editorOf(name: string): Promise<HTMLElement> {
   return screen.getByRole("dialog", { name });
 }
 
-/** One box as a case reads it: its name, `+` where checked, in parentheses
- * where no press changes it. */
-/** Whether no press changes a box: one never offered, or one held while a change is asked about or sent. */
+/** Whether no press changes a box: one never offered, or one held for a change. */
 export function boxStill(box: HTMLElement): boolean {
   return (
     box.hasAttribute("disabled") || box.getAttribute("aria-disabled") === "true"
   );
 }
 
+/** One box as a case reads it: its name, `+` where checked, in parentheses
+ * where no press changes it. */
 function boxDrawn(box: HTMLElement): string {
   const drawn = `${box.getAttribute("aria-label") ?? box.nextElementSibling?.textContent ?? ""}${box.getAttribute("aria-checked") === "true" ? "+" : ""}`;
   return boxStill(box) ? `(${drawn})` : drawn;

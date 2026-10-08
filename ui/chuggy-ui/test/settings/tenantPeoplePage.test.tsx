@@ -262,10 +262,11 @@ test("a change unanswered, no box takes a press and nothing closes the editor, s
     "(atlas Developer)",
     "(atlas Dispatcher)",
   ]);
-  expect(
-    within(editor).getByRole<HTMLButtonElement>("checkbox", { name: "Admin" })
-      .disabled,
-  ).toBe(false);
+  for (const name of ["Admin", "atlas Developer"])
+    expect(
+      within(editor).getByRole<HTMLButtonElement>("checkbox", { name })
+        .disabled,
+    ).toBe(false);
   await boxPressed(editor, "Member");
   await boxPressed(editor, "atlas Developer");
   const done = within(editor).getByRole<HTMLButtonElement>("button", {
@@ -295,11 +296,13 @@ test("a change unanswered, no box takes a press and nothing closes the editor, s
 /** s-bob's editor after Admin is pressed and answered, the list's next read still unanswered. */
 async function answeredBeforeTheList(change: () => Response): Promise<{
   readonly editor: HTMLElement;
+  /** How many times the list has been asked for since the press. */
+  readonly rereads: () => number;
   readonly listed: () => Promise<void>;
 }> {
   const held = heldAnswer();
   let changed = false;
-  await drawPeople({
+  const drawn = await drawPeople({
     listing: () => (changed ? held.answered : answer(peopleListed)),
     changed: () => {
       changed = true;
@@ -307,6 +310,7 @@ async function answeredBeforeTheList(change: () => Response): Promise<{
     },
   });
   const editor = await editorOf("s-bob");
+  const read = listReads(drawn);
   await boxPressed(editor, "Admin");
   expect(
     within(editor).getByRole<HTMLButtonElement>("button", { name: "Done" })
@@ -314,6 +318,7 @@ async function answeredBeforeTheList(change: () => Response): Promise<{
   ).toBe(false);
   return {
     editor,
+    rereads: () => listReads(drawn) - read,
     listed: async () => {
       await turned(() => {
         held.release(answer(peopleListed));
@@ -339,7 +344,7 @@ test("a change answered frees the editor, and its boxes once the list is read ag
 });
 
 test("a change refused draws its line and frees its boxes as they were, before the list is read again", async () => {
-  const { editor } = await answeredBeforeTheList(() =>
+  const { editor, rereads } = await answeredBeforeTheList(() =>
     refused(409, "LastTenantAdministrator"),
   );
   expect(
@@ -350,6 +355,7 @@ test("a change refused draws its line and frees its boxes as they were, before t
     "Member+",
     "Hosted runs",
   ]);
+  expect(rereads()).toBe(1);
 });
 
 test("a question left unanswered is gone when the editor opens again", async () => {
