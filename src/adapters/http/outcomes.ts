@@ -159,6 +159,8 @@ import type {
 import type { ActionReportResponse } from "../../contract/actionReport.ts";
 import type { ActionReported } from "../../interpreter/actionReport.ts";
 import type { TicketActionReachResponse } from "../../contract/actionReach.ts";
+import type { TicketLandingsResponse } from "../../contract/responses.ts";
+import type { TicketLandings } from "../../interpreter/ticketLandings.ts";
 import type {
   ActionReachRead,
   TicketActionReach,
@@ -1174,6 +1176,18 @@ export function ticketActionReachResponse(
           commit: reach.commit,
           actions: reach.actions.map(ticketActionReachAction),
         };
+  return response(200, body);
+}
+
+/** A ticket the caller may not read and one that does not exist answer alike, as the ticket's own read answers them. */
+export function ticketLandingsResponse(
+  landings: TicketLandings | undefined,
+): NativeHttpResponse {
+  if (landings === undefined) return notFound();
+  const body: TicketLandingsResponse = {
+    landings: [...landings.landings],
+    truncated: landings.truncated,
+  };
   return response(200, body);
 }
 

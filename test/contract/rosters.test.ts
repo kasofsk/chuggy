@@ -18,6 +18,10 @@ import {
   attemptStates,
   blockedReasons,
   briefingCarriers,
+  changeProposalCreations,
+  changeProposalMergeabilities,
+  changeProposalMergeReasons,
+  changeProposalMerges,
   configurationProvenanceSources,
   configurationReadinesses,
   draftStates,
@@ -27,6 +31,8 @@ import {
   executionOutcomes,
   executionStatuses,
   executionTaskKinds,
+  finalizationAttemptOutcomes,
+  finalizationFailureKinds,
   finalizationUnavailableKinds,
   gitEvidences,
   nativeActionKindResolutions,
@@ -61,6 +67,7 @@ import {
   forgeIds,
   sessionStates,
   threadStandings,
+  ticketLandingStates,
   sessionTurnFailures,
   sessionTurnInputKinds,
   projectRepositoryConfigurationDeferrals,
@@ -162,6 +169,18 @@ import {
 } from "../../src/interpreter/executionScheduler.ts";
 import type { ExecutionTaskKind } from "../../src/interpreter/executionScheduler.ts";
 import {
+  allChangeProposalCreationsStored,
+  allChangeProposalMergeabilities,
+  allChangeProposalMergeAnswers,
+  allChangeProposalUnmergeableSettled,
+} from "../../src/interpreter/changeProposal.ts";
+import {
+  ticketLandingsResponseSchema,
+  type TicketLandingResponse,
+} from "../../src/contract/responses.ts";
+import {
+  allFinalizationAttemptOutcomes,
+  allFinalizationFailureKinds,
   allFinalizationHoldKinds,
   allGitEvidence,
   finalizerIdentityCharsMax,
@@ -248,6 +267,118 @@ test("the blocked reasons are the interpreter's", () => {
  */
 test("the git evidences are the interpreter's", () => {
   assert.deepEqual([...gitEvidences], [...allGitEvidence]);
+});
+
+/**
+ * The codes a landing carries of its attempt and its pull request are the
+ * interpreter's rosters of what a row holds, and not the wider ones of what a
+ * forge may answer: `allChangeProposalMerges` and
+ * `allChangeProposalUnmergeableReasons` name members no row is written with.
+ */
+test("the attempt and pull request codes a landing carries are the ones a row holds", () => {
+  assert.deepEqual(
+    [...finalizationAttemptOutcomes],
+    [...allFinalizationAttemptOutcomes],
+  );
+  assert.deepEqual(
+    [...finalizationFailureKinds],
+    [...allFinalizationFailureKinds],
+  );
+  assert.deepEqual(
+    [...changeProposalCreations],
+    [...allChangeProposalCreationsStored],
+  );
+  assert.deepEqual(
+    [...changeProposalMerges],
+    [...allChangeProposalMergeAnswers],
+  );
+  assert.deepEqual(
+    [...changeProposalMergeReasons],
+    [...allChangeProposalUnmergeableSettled],
+  );
+  assert.deepEqual(
+    [...changeProposalMergeabilities],
+    [...allChangeProposalMergeabilities],
+  );
+});
+
+/** One landing a reader could be sent, carrying `state` and every optional code at the value given. */
+function landingCarrying(
+  state: (typeof ticketLandingStates)[number],
+  codes: Readonly<Record<string, string>>,
+): TicketLandingResponse {
+  const commit = "a".repeat(40);
+  return {
+    cycle: 1,
+    generation: 1,
+    attempts: 1,
+    attempt: {
+      outcome: codes["outcome"] ?? "Failed",
+      failureKind: codes["failureKind"] ?? "MergeConflict",
+      targetRef: "refs/heads/main",
+      targetCommit: commit,
+      preparedAt: "2026-10-07T12:00:00.000000Z",
+    },
+    proposal: {
+      headRef: "refs/heads/chuggy/1",
+      baseRef: "refs/heads/main",
+      creation: codes["creation"] ?? "Created",
+      merge: codes["merge"] ?? "NotMergeable",
+      mergeReason: codes["mergeReason"] ?? "Conflict",
+      mergeability: codes["mergeability"] ?? "Conflicting",
+    },
+    ...(state === "Held"
+      ? {
+          state,
+          hold: {
+            kind: codes["hold"] ?? "TargetUnreadable",
+            passes: 1,
+            since: "2026-10-07T12:00:00.000000Z",
+          },
+        }
+      : state === "Landed"
+        ? { state, landedCommit: commit }
+        : { state }),
+  } as TicketLandingResponse;
+}
+
+/**
+ * Each roster a landing's codes are drawn from, iterated: every member is a
+ * code a reader can be sent, and a code beside them is refused, so the
+ * console's label tables can be held to these lists and to nothing else.
+ */
+test("every code a landing can carry is a member of a contract roster", () => {
+  const rostered: readonly (readonly [string, readonly string[]])[] = [
+    ["outcome", finalizationAttemptOutcomes],
+    ["failureKind", finalizationFailureKinds],
+    ["creation", changeProposalCreations],
+    ["merge", changeProposalMerges],
+    ["mergeReason", changeProposalMergeReasons],
+    ["mergeability", changeProposalMergeabilities],
+    ["hold", finalizationUnavailableKinds],
+  ];
+  const parsed = (landing: TicketLandingResponse) =>
+    ticketLandingsResponseSchema.safeParse({
+      landings: [landing],
+      truncated: false,
+    }).success;
+  for (const state of ticketLandingStates) {
+    assert.ok(parsed(landingCarrying(state, {})), state);
+    for (const [field, roster] of rostered) {
+      for (const code of roster)
+        assert.ok(
+          parsed(landingCarrying(state, { [field]: code })),
+          `${state} ${field} ${code}`,
+        );
+      if (field === "hold" && state !== "Held") continue;
+      assert.equal(
+        parsed(landingCarrying(state, { [field]: "Unrostered" })),
+        false,
+        `${state} ${field}`,
+      );
+    }
+  }
+  assert.equal(parsed(landingCarrying("Unrostered" as never, {})), false);
 });
 
 test("the briefing carriers are the interpreter's", () => {

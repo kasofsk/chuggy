@@ -53,8 +53,10 @@ import {
   threadTurnsAnsweredMax,
   threadsAnsweredMax,
   workerPoolsAnsweredMax,
+  ticketLandingsAnsweredMax,
   ticketNumberSchema,
 } from "./http.ts";
+import { actionReportDocumentSchema } from "./actionReport.ts";
 import { authoringResponseSchema, programStageSchema } from "./authoring.ts";
 import { briefResponseSchema, briefTitleCharsMax } from "./brief.ts";
 import { configurationOverridesSchema } from "./configurationOverrides.ts";
@@ -70,12 +72,18 @@ import {
   attemptStates,
   blockedReasons,
   briefingCarriers,
+  changeProposalCreations,
+  changeProposalMergeabilities,
+  changeProposalMergeReasons,
+  changeProposalMerges,
   draftStates,
   escalationKinds,
   executionCapabilities,
   executionOutcomes,
   executionStatuses,
   executionTaskKinds,
+  finalizationAttemptOutcomes,
+  finalizationFailureKinds,
   finalizationUnavailableKinds,
   gitEvidences,
   nativeActionKindResolutions,
@@ -113,6 +121,7 @@ import {
   sessionTurnStates,
   threadStandings,
   threadTurnStops,
+  ticketLandingStates,
   forgeAccountKinds,
   forgeAccountProofs,
   forgeAppClaims,
@@ -1848,3 +1857,87 @@ export const workerPoolsResponseSchema = z.object({
   truncated: z.boolean(),
 });
 export type WorkerPoolsResponse = z.infer<typeof workerPoolsResponseSchema>;
+
+/** A commit, at either width git addresses an object at. */
+const landingCommitSchema = actionReportDocumentSchema.shape.commit;
+
+/** The newest attempt one landing recorded. */
+const ticketLandingAttemptSchema = z.strictObject({
+  outcome: z.enum(finalizationAttemptOutcomes),
+  failureKind: z.enum(finalizationFailureKinds).optional(),
+  targetRef: z.string().min(1),
+  targetCommit: landingCommitSchema,
+  candidateCommit: landingCommitSchema.optional(),
+  preparedAt: instantSchema,
+});
+
+/**
+ * The paths the newest attempt's conflict manifest names, as many as one
+ * landing answers, and `truncated` where the manifest or that bound cut them.
+ */
+const ticketLandingConflictSchema = z.strictObject({
+  paths: z.array(z.string().min(1)).readonly(),
+  truncated: z.boolean(),
+});
+
+/**
+ * The pull request one landing opened, each field present where its row holds
+ * it. `url` is absent where none was recorded or the one recorded is not a link
+ * a report could carry; `creation` is absent where the proposal was found by
+ * reading it back; `mergeability` is what the last reading of its merge said.
+ */
+const ticketLandingProposalSchema = z.strictObject({
+  url: actionReportDocumentSchema.shape.link,
+  headRef: z.string().min(1),
+  baseRef: z.string().min(1),
+  creation: z.enum(changeProposalCreations).optional(),
+  merge: z.enum(changeProposalMerges).optional(),
+  mergeReason: z.enum(changeProposalMergeReasons).optional(),
+  mergeability: z.enum(changeProposalMergeabilities).optional(),
+  mergeCommit: landingCommitSchema.optional(),
+});
+
+const ticketLandingFields = {
+  cycle: ticketNumberSchema,
+  generation: ticketNumberSchema,
+  attempts: countSchema,
+  attempt: ticketLandingAttemptSchema.optional(),
+  conflict: ticketLandingConflictSchema.optional(),
+  proposal: ticketLandingProposalSchema.optional(),
+};
+
+/**
+ * One finalization of a ticket, as what is recorded of it. A `Held` landing
+ * carries the hold it was last recorded at, and only a `Landed` one carries
+ * the commit it landed at.
+ */
+export const ticketLandingSchema = z.discriminatedUnion("state", [
+  z.strictObject({
+    ...ticketLandingFields,
+    state: z.literal("Held"),
+    hold: z.strictObject({
+      kind: z.enum(finalizationUnavailableKinds),
+      passes: ticketNumberSchema,
+      since: instantSchema,
+    }),
+  }),
+  z.strictObject({
+    ...ticketLandingFields,
+    state: z.literal("Landed"),
+    landedCommit: landingCommitSchema,
+  }),
+  z.strictObject({
+    ...ticketLandingFields,
+    state: z.enum(ticketLandingStates).exclude(["Held", "Landed"]),
+  }),
+]);
+export type TicketLandingResponse = z.infer<typeof ticketLandingSchema>;
+
+/** A ticket's newest landings, oldest first, `truncated` where it has had more than one read answers. */
+export const ticketLandingsResponseSchema = z.strictObject({
+  landings: z.array(ticketLandingSchema).max(ticketLandingsAnsweredMax),
+  truncated: z.boolean(),
+});
+export type TicketLandingsResponse = z.infer<
+  typeof ticketLandingsResponseSchema
+>;

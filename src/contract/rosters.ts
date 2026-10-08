@@ -5,12 +5,13 @@
  * A roster here is a restatement of one the model or the interpreter owns, and
  * `test/contract/rosters.test.ts` holds each against its source — against a
  * runtime list where one exists, and otherwise against a record the compiler
- * rejects when the union gains or loses a member. `notificationKinds` and
- * `briefFinalizationModes` are the exceptions: the wire owns each outright and
- * the interpreter takes its union from here. What stands behind the first is
- * the relation to `projectChangeKinds` that the same suite pins; behind the
- * second, `test/contract/brief.test.ts` holding this list against the
- * finalization variants the wire publishes.
+ * rejects when the union gains or loses a member. `notificationKinds`,
+ * `briefFinalizationModes` and `ticketLandingStates` are the exceptions: the
+ * wire owns each outright and the interpreter takes its union from here. What
+ * stands behind the first is the relation to `projectChangeKinds` that the
+ * same suite pins; behind the second, `test/contract/brief.test.ts` holding
+ * this list against the finalization variants the wire publishes; behind the
+ * third, the same suite holding that a landing parses at every member.
  */
 
 export const phaseRoster = [
@@ -420,6 +421,54 @@ export const briefFinalizationModes = [
   "None",
 ] as const;
 export type BriefFinalizationMode = (typeof briefFinalizationModes)[number];
+
+/** Where one landing of a ticket stands; `src/interpreter/ticketLandings.ts` states what each is read from. */
+export const ticketLandingStates = [
+  "Running",
+  "Held",
+  "AwaitingApproval",
+  "Failed",
+  "Unavailable",
+  "Landed",
+  "Proposed",
+  "Invalidated",
+] as const;
+export type TicketLandingState = (typeof ticketLandingStates)[number];
+
+/** What one finalization attempt came to, restating the interpreter's `allFinalizationAttemptOutcomes`. */
+export const finalizationAttemptOutcomes = ["Prepared", "Failed"] as const;
+
+/** Why one finalization attempt failed, restating the interpreter's `allFinalizationFailureKinds`. */
+export const finalizationFailureKinds = [
+  "MergeConflict",
+  "PreparationFailed",
+] as const;
+
+/** What a stored change proposal says its create came to, restating `allChangeProposalCreationsStored`. */
+export const changeProposalCreations = [
+  "Created",
+  "AlreadyExists",
+  "Contradictory",
+  "Unstorable",
+] as const;
+
+/** What a stored change proposal says its merge came to, restating `allChangeProposalMergeAnswers`. */
+export const changeProposalMerges = [
+  "Merged",
+  "HeadMoved",
+  "NotMergeable",
+] as const;
+
+/** Why a stored change proposal was not mergeable, restating `allChangeProposalUnmergeableSettled`. */
+export const changeProposalMergeReasons = ["Conflict", "Blocked"] as const;
+
+/** What a forge last said of merging a proposal, restating `allChangeProposalMergeabilities`. */
+export const changeProposalMergeabilities = [
+  "Mergeable",
+  "Conflicting",
+  "Blocked",
+  "Unknown",
+] as const;
 
 /** Whether a mode lands by opening a change proposal rather than advancing a reference directly. */
 export function briefFinalizationProposes(mode: string | undefined): boolean {

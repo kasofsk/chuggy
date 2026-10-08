@@ -95,6 +95,7 @@ const documentRouteNames = [
   "ticket",
   "ticketActionReach",
   "ticketAgenticRefusals",
+  "ticketLandings",
   "ticketNativeActions",
   "tickets",
   "workerPoolRegistrationTokens",

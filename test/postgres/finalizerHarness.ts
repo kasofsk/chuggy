@@ -841,6 +841,11 @@ export interface FinalizerAttempt {
   readonly candidate?: string | null;
   readonly failureKind?: string | null;
   readonly approvalRequired?: boolean;
+  /** The conflict manifest a failed attempt names, and the digest it is recorded under. */
+  readonly conflictManifest?: {
+    readonly artifact: string;
+    readonly digest: string;
+  };
 }
 
 /** Writes one bundle as the finalizer, which is what an attempt has to pin one of. */
@@ -885,8 +890,9 @@ export async function finalizerPrepare(
        (tenant, project, attempt, request, ticket, repository, input_bundle,
         input_bundle_digest, target_ref,
         target_commit, strategy, configuration_revision, configuration_digest,
-        approval_required, outcome, candidate_commit, failure_kind, attempt_digest)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'refs/heads/main',$9,'Merge',$10,$11,$12,$13,$14,$15,$16)`,
+        approval_required, outcome, candidate_commit, failure_kind, attempt_digest,
+        conflict_manifest, conflict_manifest_digest)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'refs/heads/main',$9,'Merge',$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
     [
       project.partition.tenant,
       project.partition.project,
@@ -904,6 +910,8 @@ export async function finalizerPrepare(
       outcome === "Prepared" ? (attempt.candidate ?? finalizerCommit()) : null,
       outcome === "Failed" ? (attempt.failureKind ?? "MergeConflict") : null,
       finalizerDigest(),
+      attempt.conflictManifest?.artifact ?? null,
+      attempt.conflictManifest?.digest ?? null,
     ],
   );
   return identity;

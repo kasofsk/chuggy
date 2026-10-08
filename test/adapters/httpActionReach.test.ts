@@ -12,10 +12,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { createNativeHttpApp } from "../../src/adapters/http/server.ts";
 import { nativeHttpEndpoints } from "../../src/contract/endpoints.ts";
 import { nativeHttpRoutes } from "../../src/contract/http.ts";
-import { asInstallationId } from "../../src/domain/ids.ts";
 import type {
   ActionReachEarlierSuccess,
   ActionReachNewest,
@@ -46,7 +44,10 @@ import {
   type TicketLanded,
 } from "../../src/interpreter/ticketActionReach.ts";
 import { memoryProjectAccess } from "../postgres/projectAccessMemory.ts";
-import { unservedNativeWeb } from "./threadFixtures.ts";
+import {
+  ticketReadApp,
+  ticketReadRefusesWhatTheTicketDoes,
+} from "./ticketReadFixtures.ts";
 
 const partition = { tenant: asTenantId("acme"), project: asProjectId("atlas") };
 const caller = asPrincipal("issuer geoff");
@@ -133,40 +134,7 @@ function appOver(access: readonly ProjectAccessKind[], beneath: Beneath) {
     }),
     pacing: { wait: () => new Promise(() => undefined) },
   });
-  return createNativeHttpApp(
-    unservedNativeWeb,
-    {
-      authenticateBearer: (token) =>
-        Promise.resolve(
-          token === "valid"
-            ? {
-                authenticated: "Bearer" as const,
-                bearer: { principal: caller },
-              }
-            : { authenticated: "InvalidToken" as const },
-        ),
-    },
-    { ready: () => Promise.resolve(true) },
-    {
-      installationAuthority: () =>
-        Promise.resolve(
-          asInstallationId("018f84a1-4c2b-7def-8abc-0123456789ab"),
-        ),
-    },
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    reach,
-  );
+  return ticketReadApp(caller, { actionReach: reach });
 }
 
 /** What a reader is answered by the route, held to be a success whose body the endpoint's own schema reads back whole. */
@@ -373,20 +341,10 @@ test("a caller who presents no bearer, or one that is not valid, is answered bef
 });
 
 test("a ticket named by something other than its number is refused as the ticket's own read refuses it", async () => {
-  for (const named of ["seven", "0", "-1", "7.5"]) {
-    const read: string[] = [];
-    await using app = appOver(["Read"], { landed: landedAt, read });
-    const ticketUrl = `/api/v1/tenants/acme/projects/atlas/tickets/${named}`;
-    const own = await app.inject({ url: ticketUrl, headers: authorized });
-    const found = await app.inject({
-      url: `${ticketUrl}/action-reach`,
-      headers: authorized,
-    });
-    assert.ok(found.statusCode >= 400 && found.statusCode < 500, named);
-    assert.equal(found.statusCode, own.statusCode, named);
-    assert.deepEqual(found.json(), own.json(), named);
-    assert.deepEqual(read, [], named);
-  }
+  await ticketReadRefusesWhatTheTicketDoes(
+    (read) => appOver(["Read"], { landed: landedAt, read }),
+    "action-reach",
+  );
 });
 
 test("a port that raises is a mark that could not be found out, and the read is still answered", async () => {

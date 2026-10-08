@@ -37,6 +37,7 @@ import {
   leadInquiryAcceptedSchema,
   selectorProposalsResponseSchema,
   selectorProposalReviewResponseSchema,
+  ticketLandingsResponseSchema,
 } from "./responses.ts";
 
 function endpointInteger(name: string, fallback?: number) {
@@ -203,6 +204,11 @@ export const nativeHttpEndpoints = {
     method: "GET",
     path: nativeHttpRoutes.ticketActionReach,
     response: ticketActionReachResponseSchema,
+  },
+  ticketLandings: {
+    method: "GET",
+    path: nativeHttpRoutes.ticketLandings,
+    response: ticketLandingsResponseSchema,
   },
 } as const;
 
