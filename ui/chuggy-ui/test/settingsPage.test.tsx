@@ -1,7 +1,7 @@
 /**
  * The settings index: the project's settings groups, each one line linking to
- * its own page — the shape `/repositories` has over `/repositories/$repository`,
- * with two groups drawn today and room for the rest to arrive beside them.
+ * its own page — the shape `/repositories` has over `/repositories/$repository`
+ * — and one more leading to the workspace's own settings.
  */
 
 import {
@@ -51,9 +51,15 @@ async function drawnSettingsPage(): Promise<void> {
     path: "/settings/placement",
     component: () => <p>the placement settings page</p>,
   });
+  const tenantSettings = createRoute({
+    getParentRoute: () => root,
+    path: "/tenants/$tenant/settings",
+    component: () => <p>the workspace settings page</p>,
+  });
   const router = createRouter({
     history: createMemoryHistory({ initialEntries: ["/acme/atlas/settings"] }),
     routeTree: root.addChildren([
+      tenantSettings,
       partition.addChildren([settings, settingsLead, settingsPlacement]),
     ]),
   });
@@ -71,4 +77,14 @@ test("the index names the Placement group and links to its own page", async () =
   await drawnSettingsPage();
   fireEvent.click(screen.getByRole("link", { name: "Placement" }));
   expect(await screen.findByText("the placement settings page")).toBeDefined();
+});
+
+test("the index names the Workspace group and links to the workspace's own settings", async () => {
+  await drawnSettingsPage();
+  const workspace = screen.getByRole<HTMLAnchorElement>("link", {
+    name: "Workspace",
+  });
+  expect(workspace.getAttribute("href")).toBe("/tenants/acme/settings");
+  fireEvent.click(workspace);
+  expect(await screen.findByText("the workspace settings page")).toBeDefined();
 });

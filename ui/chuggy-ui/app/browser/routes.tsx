@@ -50,6 +50,10 @@ import { SettingsPage } from "./SettingsPage.tsx";
 import { LeadSettingsPage } from "./settings/LeadSettingsPage.tsx";
 import { PlacementSettingsPage } from "./settings/PlacementSettingsPage.tsx";
 import { TenantAccountsPage } from "./settings/TenantAccountsPage.tsx";
+import {
+  TenantPeoplePage,
+  tenantPeopleRoutePath,
+} from "./settings/TenantPeoplePage.tsx";
 import { Shell } from "./Shell.tsx";
 import { ProjectStreamProvider } from "./stream.tsx";
 import { TenantSettingsPage } from "./TenantSettingsPage.tsx";
@@ -234,6 +238,13 @@ const tenantAccountsRoute = createRoute({
   component: TenantAccountsPage,
 });
 
+/** Another tenant settings group's own page. */
+const tenantPeopleRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: tenantPeopleRoutePath,
+  component: TenantPeoplePage,
+});
+
 function TicketCreationRoute(): ReactNode {
   return <TicketCreationFrom from={ticketCreationRoute.useSearch().from} />;
 }
@@ -266,6 +277,7 @@ const routeTree = rootRoute.addChildren([
   projectCreationRoute,
   tenantSettingsRoute,
   tenantAccountsRoute,
+  tenantPeopleRoute,
   partitionRoute.addChildren([
     projectRoute,
     inboxRoute,

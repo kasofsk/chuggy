@@ -5,7 +5,7 @@ just ui-local
 ```
 
 Then open the address it prints. The console is served from this checkout with
-its sources watched, so an edit is a reload; everything behind `/api/v1` is the
+its sources watched, so an edit is a reload; everything behind `/api/v1` and `/access/v1` is the
 installation `compose.yaml` names, which by default is the rig. **Every action
 taken here is taken there.** A dispatch is a dispatch, a revoke is a revoke,
 and there is no local database to reset.

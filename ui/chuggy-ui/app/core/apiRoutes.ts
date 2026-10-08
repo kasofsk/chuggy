@@ -152,7 +152,8 @@ function apiSegments(
   ].join("/");
 }
 
-function apiGet<T>(
+/** One read of a path, parsed by the wire's own schema. */
+export function apiGet<T>(
   ports: ApiPorts,
   path: string,
   parse: (value: unknown) => T,
