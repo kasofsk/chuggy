@@ -82,6 +82,7 @@ import type {
   FinalizationOutcome,
 } from "./projectCommand.ts";
 import type { Lifecycle, Partition, RecoveryEpoch } from "./projectStore.ts";
+import type { CredentialMintEvidence } from "./repositoryReadEvidence.ts";
 
 declare const finalizationAttemptIdBrand: unique symbol;
 declare const commitPermitIdBrand: unique symbol;
@@ -1015,8 +1016,14 @@ export type CredentialResolved =
       readonly resolved: "Credential";
       readonly credential: RepositoryCredential;
     }
-  | { readonly resolved: "Denied" }
-  | { readonly resolved: "Unavailable" };
+  | {
+      readonly resolved: "Denied";
+      readonly evidence?: CredentialMintEvidence;
+    }
+  | {
+      readonly resolved: "Unavailable";
+      readonly evidence?: CredentialMintEvidence;
+    };
 
 /**
  * Where a repository's credential comes from, which is the composition root and

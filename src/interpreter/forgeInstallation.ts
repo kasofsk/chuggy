@@ -31,6 +31,7 @@ import {
   type RepositoryId,
 } from "./finalizer.ts";
 import type { TenantId } from "./projectStore.ts";
+import type { CredentialMintEvidence } from "./repositoryReadEvidence.ts";
 
 declare const forgeIdBrand: unique symbol;
 declare const forgeAccountBrand: unique symbol;
@@ -320,8 +321,14 @@ export type ForgeTokenMinted =
       readonly token: ForgeInstallationToken;
       readonly expiresAtMs: number;
     }
-  | { readonly minted: "Denied" }
-  | { readonly minted: "Unavailable" };
+  | {
+      readonly minted: "Denied";
+      readonly evidence?: CredentialMintEvidence;
+    }
+  | {
+      readonly minted: "Unavailable";
+      readonly evidence?: CredentialMintEvidence;
+    };
 
 /** Mints installation tokens against one forge, as the app whose key it holds. */
 export interface ForgeInstallationTokens {

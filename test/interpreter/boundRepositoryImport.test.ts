@@ -61,6 +61,13 @@ import {
   type RepositoryDefaultBranchRead,
 } from "../../src/interpreter/repositoryConfiguration.ts";
 import type { RepositoryDeclarationSnapshotRead } from "../../src/interpreter/repositoryDeclarationSnapshot.ts";
+import {
+  allCredentialMintCauses,
+  allRepositoryCredentialRefusals,
+  allRepositoryGitCommands,
+  allRepositoryGitStops,
+  type RepositoryReadEvidence,
+} from "../../src/interpreter/repositoryReadEvidence.ts";
 
 const authority = {
   kind: asAuthorityKind("Service"),
@@ -776,4 +783,169 @@ test("a binding is reported on two lines, its configurations' and then its actio
       failed: false,
     },
   ]);
+});
+
+/** The two lines one binding's run prints, over the fixture's scripted ports. */
+async function linesOf(
+  input: Omit<FixtureInput, "bindings">,
+): Promise<readonly string[]> {
+  const { ports } = fixture({ bindings: [listed("atlas", "atlas")], ...input });
+  const { imports } = await importBoundRepositories({ authority, ports });
+  const [bound] = imports;
+  assert.ok(bound !== undefined);
+  return boundRepositoryImportReport(bound).map(({ line }) => line);
+}
+
+/** What a binding whose head answered this evidence prints on both of its lines. */
+async function headLinesOf(
+  evidence: RepositoryReadEvidence,
+): Promise<readonly string[]> {
+  return linesOf({ heads: () => ({ read: "Unavailable", evidence }) });
+}
+
+const atlasWhere = "acme/atlas https://github.com/acme/atlas.git";
+
+test("a head whose credential the forge answered a status for prints that status on both lines", async () => {
+  const failed = `failed: {"failure":"HeadUnavailable","evidence":{"credential":"Unavailable","mint":"Status","status":500}}`;
+  assert.deepEqual(
+    await headLinesOf({
+      credential: "Unavailable",
+      mint: "Status",
+      status: 500,
+    }),
+    [`${atlasWhere} ${failed}`, `${atlasWhere} actions ${failed}`],
+  );
+});
+
+test("a head whose ls-remote failed prints the command and its code, or that it timed out", async () => {
+  for (const [evidence, printed] of [
+    [{ git: "ls-remote", exited: 128 }, `{"git":"ls-remote","exited":128}`],
+    [
+      { git: "ls-remote", stopped: "Timeout" },
+      `{"git":"ls-remote","stopped":"Timeout"}`,
+    ],
+  ] as const) {
+    const failed = `failed: {"failure":"HeadUnavailable","evidence":${printed}}`;
+    assert.deepEqual(await headLinesOf(evidence), [
+      `${atlasWhere} ${failed}`,
+      `${atlasWhere} actions ${failed}`,
+    ]);
+  }
+});
+
+test("a denied credential prints why, and what git then did without one", async () => {
+  for (const [evidence, printed] of [
+    [{ credential: "Denied", mint: "Address" }, `"mint":"Address"`],
+    [
+      { credential: "Denied", mint: "NoInstallation" },
+      `"mint":"NoInstallation"`,
+    ],
+    [
+      { credential: "Denied", mint: "Status", status: 404 },
+      `"mint":"Status","status":404`,
+    ],
+  ] as const) {
+    const lines = await headLinesOf({
+      ...evidence,
+      git: "ls-remote",
+      exited: 128,
+    });
+    for (const line of lines)
+      assert.ok(
+        line.endsWith(
+          `{"failure":"HeadUnavailable","evidence":{"credential":"Denied",${printed},"git":"ls-remote","exited":128}}`,
+        ),
+        line,
+      );
+  }
+});
+
+test("every word the evidence can carry reaches both lines", async () => {
+  const said: readonly (readonly [RepositoryReadEvidence, string])[] = [
+    ...allRepositoryCredentialRefusals.map(
+      (credential) => [{ credential }, credential] as const,
+    ),
+    ...allCredentialMintCauses.map(
+      (mint) => [{ credential: "Unavailable", mint }, mint] as const,
+    ),
+    ...allRepositoryGitCommands.map(
+      (git) => [{ git, exited: 1 }, git] as const,
+    ),
+    ...allRepositoryGitStops.map(
+      (stopped) => [{ git: "ls-remote", stopped }, stopped] as const,
+    ),
+  ];
+  for (const [evidence, word] of said)
+    for (const line of await headLinesOf(evidence))
+      assert.ok(line.includes(`"${word}"`), `${word}: ${line}`);
+});
+
+test("a snapshot whose probe failed prints what answered on the pass it failed in alone", async () => {
+  const evidence = { git: "ls-remote", exited: 128 } as const;
+  const failed = `failed: {"failure":"Import","outcome":{"result":"Unavailable","unavailable":"Repository","evidence":{"git":"ls-remote","exited":128}}}`;
+  assert.deepEqual(
+    await linesOf({
+      snapshots: () => ({
+        read: "Unavailable",
+        unavailable: "Repository",
+        evidence,
+      }),
+    }),
+    [`${atlasWhere} ${failed}`, `${atlasWhere} actions imported at ${head}`],
+  );
+  assert.deepEqual(
+    await linesOf({
+      actionSnapshots: () => ({
+        read: "Unavailable",
+        unavailable: "Repository",
+        evidence,
+      }),
+    }),
+    [`${atlasWhere} imported at ${head}`, `${atlasWhere} actions ${failed}`],
+  );
+});
+
+test("a failure with no evidence prints the line it always printed", async () => {
+  assert.deepEqual(await linesOf({ heads: () => ({ read: "Unavailable" }) }), [
+    `${atlasWhere} failed: {"failure":"HeadUnavailable"}`,
+    `${atlasWhere} actions failed: {"failure":"HeadUnavailable"}`,
+  ]);
+  const unavailable = () =>
+    ({ read: "Unavailable", unavailable: "Credential" }) as const;
+  assert.deepEqual(
+    await linesOf({ snapshots: unavailable, actionSnapshots: unavailable }),
+    [
+      `${atlasWhere} failed: {"failure":"Import","outcome":{"result":"Unavailable","unavailable":"Credential"}}`,
+      `${atlasWhere} actions failed: {"failure":"Import","outcome":{"result":"Unavailable","unavailable":"Credential"}}`,
+    ],
+  );
+});
+
+test("a status or an exit code outside the range it can take is not printed as given", async () => {
+  for (const status of [99, 600, 1.5, -1, Number.NaN, 2 ** 60])
+    for (const line of await headLinesOf({
+      credential: "Unavailable",
+      mint: "Status",
+      status,
+    }))
+      assert.ok(
+        line.endsWith(
+          `{"failure":"HeadUnavailable","evidence":{"credential":"Unavailable","mint":"Status"}}`,
+        ),
+        `${String(status)}: ${line}`,
+      );
+  for (const exited of [0, 256, -1, 1.5, Number.POSITIVE_INFINITY]) {
+    const evidence = { git: "ls-remote", exited } as const;
+    const lines = await linesOf({
+      snapshots: () => ({
+        read: "Unavailable",
+        unavailable: "Repository",
+        evidence,
+      }),
+    });
+    assert.ok(
+      lines[0]?.endsWith(`"evidence":{"git":"ls-remote"}}}`),
+      `${String(exited)}: ${String(lines[0])}`,
+    );
+  }
 });

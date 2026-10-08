@@ -166,7 +166,7 @@ test("a repository this forge does not hold and an account no tenant claimed are
         fixtureTenant,
         "read",
       ),
-      { minted: "Denied" },
+      { minted: "Denied", evidence: { mint: "Address" } },
       repository,
     );
   }
@@ -176,7 +176,7 @@ test("a repository this forge does not hold and an account no tenant claimed are
       fixtureTenant,
       "read",
     ),
-    { minted: "Denied" },
+    { minted: "Denied", evidence: { mint: "NoInstallation" } },
   );
   assert.deepEqual(askedMints, [], "no refusal reaches the forge");
 });
@@ -187,7 +187,7 @@ test("an account another tenant claimed is denied to this one, and the tenant is
   const tokens = fixtureRepositoryTokens({ askedInstallations, askedMints });
   assert.deepEqual(
     await tokens.token(fixtureRepository, fixtureOtherTenant, "write"),
-    { minted: "Denied" },
+    { minted: "Denied", evidence: { mint: "NoInstallation" } },
   );
   assert.deepEqual(
     askedInstallations.map((query) => query.tenant),
@@ -205,7 +205,7 @@ test("a binding of one tenant mints nothing against another tenant's claim", asy
       tokens,
       permissions: "write",
     }).credential(fixtureBinding(fixtureOtherTenant)),
-    { resolved: "Denied" },
+    { resolved: "Denied", evidence: { mint: "NoInstallation" } },
   );
   assert.deepEqual(
     await mintedRepositoryCredentials({
@@ -272,4 +272,54 @@ test("a store or a forge that raised is an outage rather than an answer", async 
     }).credential(fixtureBinding()),
     { resolved: "Unavailable" },
   );
+});
+
+test("a mint's cause reaches the source beside its refusal or its outage", async () => {
+  for (const minted of [
+    { minted: "Denied", evidence: { mint: "Status", status: 404 } },
+    { minted: "Unavailable", evidence: { mint: "Status", status: 500 } },
+  ] as const) {
+    assert.deepEqual(
+      await mintedRepositoryCredentials({
+        tokens: fixtureRepositoryTokens({ minted }),
+        permissions: "read",
+      }).credential(fixtureBinding()),
+      { resolved: minted.minted, evidence: minted.evidence },
+    );
+  }
+});
+
+test("a store and a mint that raised each say which, and still raise to a caller of the tokens", async () => {
+  const storeRaised = new Error("the store went away");
+  const mintRaised = new Error("the forge went away");
+  const store: ForgeInstallationStore = {
+    installation: () => Promise.reject(storeRaised),
+  };
+  const mint: ForgeInstallationTokens = {
+    mint: () => Promise.reject(mintRaised),
+  };
+  for (const [installations, tokens, raised, cause] of [
+    [store, fixtureTokens({ minted: "Denied" }), storeRaised, "StoreRaised"],
+    [fixtureInstallations([fixtureAccount]), mint, mintRaised, "MintRaised"],
+  ] as const) {
+    const repositoryTokens = mintedRepositoryTokens({
+      forge: fixtureForgeId,
+      app: "portal",
+      repositoryHost: githubRepositoryHost,
+      installations,
+      tokens,
+    });
+    await assert.rejects(
+      repositoryTokens.token(fixtureRepository, fixtureTenant, "read"),
+      (thrown) => thrown === raised,
+    );
+    assert.deepEqual(
+      await mintedRepositoryCredentials({
+        tokens: repositoryTokens,
+        permissions: "read",
+      }).credential(fixtureBinding()),
+      { resolved: "Unavailable", evidence: { mint: cause } },
+      cause,
+    );
+  }
 });

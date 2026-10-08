@@ -128,6 +128,30 @@ test("a read that found no snapshot is reported as what it found, and the store 
       { read: "Unavailable", unavailable: "Repository" },
       { result: "Unavailable", unavailable: "Repository" },
     ],
+    [
+      {
+        read: "Unavailable",
+        unavailable: "Credential",
+        evidence: { credential: "Unavailable", mint: "Status", status: 500 },
+      },
+      {
+        result: "Unavailable",
+        unavailable: "Credential",
+        evidence: { credential: "Unavailable", mint: "Status", status: 500 },
+      },
+    ],
+    [
+      {
+        read: "Unavailable",
+        unavailable: "Repository",
+        evidence: { git: "ls-remote", stopped: "Timeout" },
+      },
+      {
+        result: "Unavailable",
+        unavailable: "Repository",
+        evidence: { git: "ls-remote", stopped: "Timeout" },
+      },
+    ],
     [{ read: "Refused" }, { result: "SnapshotRefused" }],
   ] as const) {
     const found = await imported(read);

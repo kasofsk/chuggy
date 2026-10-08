@@ -14,6 +14,7 @@ import { dirname, join } from "node:path";
 import { test, type TestContext } from "node:test";
 
 import { gitRepositoryConfiguration } from "../../src/adapters/git/gitRepositoryConfiguration.ts";
+import type { GitEnvironment } from "../../src/adapters/git/gitRun.ts";
 import {
   asGitObjectId,
   asRepositoryCredential,
@@ -33,6 +34,12 @@ import {
   repositoryDeclarationFileCharsMax,
   repositoryDeclarationsMax,
 } from "../../src/interpreter/repositoryDeclaration.ts";
+import {
+  gitStandInFaulted,
+  gitStandInMarker,
+  gitStandInOpen,
+  type GitStandInFault,
+} from "./gitStandIn.ts";
 
 interface Fixture {
   readonly directory: string;
@@ -104,13 +111,23 @@ function fixturePort(
     resolved: "Credential",
     credential: asRepositoryCredential("credential"),
   },
+  stoodIn?: GitEnvironment,
 ) {
   return gitRepositoryConfiguration({
     scratchDirectory: join(fixture.directory, "scratch"),
     identity: { name: "chug", email: "chug@example.test" },
-    environment: process.env,
+    environment: stoodIn ?? process.env,
     credentials: fixtureCredentials(resolved),
+    ...(stoodIn === undefined ? {} : { remoteTimeoutSecsMax: 1 }),
   });
+}
+
+/** A port whose `ls-remote` goes through the git stand-in one way, every other call reaching git as it is. */
+function fixtureStoodIn(fixture: Fixture, fault: GitStandInFault) {
+  const standIn = join(fixture.directory, "stand-in");
+  const path = gitStandInOpen(standIn, ["ls-remote"]);
+  gitStandInFaulted(standIn, "ls-remote", fault);
+  return fixturePort(fixture, undefined, { ...process.env, PATH: path });
 }
 
 test("a moving branch cannot change a snapshot pinned to an earlier commit", async (t) => {
@@ -226,7 +243,11 @@ test("an unreachable repository is unavailable", async (t) => {
       repository: fixtureBinding(join(fixture.directory, "missing.git")),
       commit: asGitObjectId("f".repeat(40)),
     }),
-    { read: "Unavailable", unavailable: "Repository" },
+    {
+      read: "Unavailable",
+      unavailable: "Repository",
+      evidence: { git: "ls-remote", exited: 128 },
+    },
   );
 });
 
@@ -242,7 +263,11 @@ test("an unmapped repository needs no credential while an outage remains distinc
   );
   assert.deepEqual(
     await fixturePort(fixture, { resolved: "Unavailable" }).snapshot(request),
-    { read: "Unavailable", unavailable: "Credential" },
+    {
+      read: "Unavailable",
+      unavailable: "Credential",
+      evidence: { credential: "Unavailable" },
+    },
   );
 });
 
@@ -320,7 +345,7 @@ test("a remote nothing can reach is an outage and not an absent head", async (t)
     await fixturePort(fixture).defaultBranch(
       fixtureBinding(join(fixture.directory, "no-such.git")),
     ),
-    { read: "Unavailable" },
+    { read: "Unavailable", evidence: { git: "ls-remote", exited: 128 } },
   );
 });
 
@@ -332,8 +357,99 @@ test("a credential source that could not answer stops the head read", async (t) 
     await fixturePort(fixture, { resolved: "Unavailable" }).defaultBranch(
       fixtureBinding(fixture.remote),
     ),
-    { read: "Unavailable" },
+    { read: "Unavailable", evidence: { credential: "Unavailable" } },
   );
+});
+
+test("a credential the mint could not give says why, and no git runs", async (t) => {
+  const fixture = fixtureOpen(t);
+  for (const evidence of [
+    { mint: "Status", status: 500 },
+    { mint: "Throttle", status: 403 },
+    { mint: "Key" },
+  ] as const)
+    assert.deepEqual(
+      await fixturePort(fixture, {
+        resolved: "Unavailable",
+        evidence,
+      }).defaultBranch(fixtureBinding(join(fixture.directory, "no-such.git"))),
+      {
+        read: "Unavailable",
+        evidence: { credential: "Unavailable", ...evidence },
+      },
+    );
+});
+
+test("a denied credential and the git that then failed without one are both said", async (t) => {
+  const fixture = fixtureOpen(t);
+  const port = fixturePort(fixture, {
+    resolved: "Denied",
+    evidence: { mint: "Status", status: 404 },
+  });
+  const missing = fixtureBinding(join(fixture.directory, "no-such.git"));
+  const both = {
+    credential: "Denied",
+    mint: "Status",
+    status: 404,
+    git: "ls-remote",
+    exited: 128,
+  };
+  assert.deepEqual(await port.defaultBranch(missing), {
+    read: "Unavailable",
+    evidence: both,
+  });
+  assert.deepEqual(
+    await port.snapshot({
+      repository: missing,
+      commit: asGitObjectId("f".repeat(40)),
+    }),
+    { read: "Unavailable", unavailable: "Repository", evidence: both },
+  );
+});
+
+test("an ls-remote that outlived its bound says it timed out, on the head and on a snapshot's probe", async (t) => {
+  const fixture = fixtureOpen(t);
+  fixtureWrite(fixture, `${repositoryConfigurationRoot}work.json`, "one\n");
+  const commit = asGitObjectId(fixtureCommit(fixture, "one"));
+  const port = fixtureStoodIn(fixture, "Stalled");
+  const repository = fixtureBinding(fixture.remote);
+  const evidence = { git: "ls-remote", stopped: "Timeout" };
+
+  assert.deepEqual(await port.defaultBranch(repository), {
+    read: "Unavailable",
+    evidence,
+  });
+  assert.deepEqual(await port.snapshot({ repository, commit }), {
+    read: "Unavailable",
+    unavailable: "Repository",
+    evidence,
+  });
+  assert.deepEqual(await port.actionSnapshot({ repository, commit }), {
+    read: "Unavailable",
+    unavailable: "Repository",
+    evidence,
+  });
+});
+
+test("what git wrote when it failed reaches nothing the read answers", async (t) => {
+  const fixture = fixtureOpen(t);
+  fixtureWrite(fixture, `${repositoryConfigurationRoot}work.json`, "one\n");
+  const commit = asGitObjectId(fixtureCommit(fixture, "one"));
+  const port = fixtureStoodIn(fixture, "Said");
+  const repository = fixtureBinding(fixture.remote);
+
+  const answers = [
+    await port.defaultBranch(repository),
+    await port.snapshot({ repository, commit }),
+    await port.actionSnapshot({ repository, commit }),
+  ];
+  for (const answer of answers) {
+    assert.deepEqual(answer.read === "Unavailable" ? answer.evidence : answer, {
+      git: "ls-remote",
+      exited: 128,
+    });
+    assert.equal(JSON.stringify(answer).includes(gitStandInMarker), false);
+  }
 });
 
 /** What the action directory holds at one commit of the fixture's remote. */
@@ -427,13 +543,21 @@ test("a commit the repository does not hold, and a repository or a credential th
       ...request,
       repository: fixtureBinding(join(fixture.directory, "missing.git")),
     }),
-    { read: "Unavailable", unavailable: "Repository" },
+    {
+      read: "Unavailable",
+      unavailable: "Repository",
+      evidence: { git: "ls-remote", exited: 128 },
+    },
   );
   assert.deepEqual(
     await fixturePort(fixture, { resolved: "Unavailable" }).actionSnapshot(
       request,
     ),
-    { read: "Unavailable", unavailable: "Credential" },
+    {
+      read: "Unavailable",
+      unavailable: "Credential",
+      evidence: { credential: "Unavailable" },
+    },
   );
 });
 

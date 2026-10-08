@@ -178,16 +178,23 @@ async function githubInstallationTokensSend(
     okStatus: githubMintedStatus,
     body: githubInstallationTokensBody(request),
   });
-  if (answered.answered === "Denied") return { minted: "Denied" };
-  if (answered.answered === "Unavailable") return { minted: "Unavailable" };
+  if (answered.answered !== "Answer")
+    return {
+      minted: answered.answered,
+      ...(answered.evidence === undefined
+        ? {}
+        : { evidence: answered.evidence }),
+    };
   const granted = await githubAppRead(
     own.app,
     answered.response,
     githubAccessTokenSchema,
   );
-  if (granted === undefined) return { minted: "Unavailable" };
+  if (granted === undefined)
+    return { minted: "Unavailable", evidence: { mint: "Body" } };
   const expiresAtMs = Date.parse(granted.expires_at);
-  if (!Number.isSafeInteger(expiresAtMs)) return { minted: "Unavailable" };
+  if (!Number.isSafeInteger(expiresAtMs))
+    return { minted: "Unavailable", evidence: { mint: "Expiry" } };
   return {
     minted: "Token",
     token: asForgeInstallationToken(granted.token),

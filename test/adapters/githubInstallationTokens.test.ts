@@ -287,48 +287,96 @@ test("a named permission set is the whole of what a body asks for", async (t) =>
   assert.deepEqual(asked, [{ contents: "read" }, { contents: "write" }]);
 });
 
-test("a forge that refuses this app is settled and everything else is a wait", async (t) => {
+test("a forge that refuses this app is settled and everything else is a wait, each saying the status it answered", async (t) => {
   const refused: unknown[] = [];
   for (const status of [401, 403, 404, 422, 429, 500, 502, 503]) {
     const recorder = fixtureForge([
       new Response("{}", { status, headers: { "content-type": "text/plain" } }),
     ]);
+    const minted = await fixtureAdapter(t, recorder).mint(fixtureRequest());
     refused.push([
       status,
-      (await fixtureAdapter(t, recorder).mint(fixtureRequest())).minted,
+      minted.minted,
+      minted.minted === "Token" ? undefined : minted.evidence,
     ]);
   }
-  assert.deepEqual(refused, [
-    [401, "Denied"],
-    [403, "Denied"],
-    [404, "Denied"],
-    [422, "Denied"],
-    [429, "Unavailable"],
-    [500, "Unavailable"],
-    [502, "Unavailable"],
-    [503, "Unavailable"],
-  ]);
+  assert.deepEqual(
+    refused,
+    [
+      [401, "Denied"],
+      [403, "Denied"],
+      [404, "Denied"],
+      [422, "Denied"],
+      [429, "Unavailable"],
+      [500, "Unavailable"],
+      [502, "Unavailable"],
+      [503, "Unavailable"],
+    ].map(([status, minted]) => [status, minted, { mint: "Status", status }]),
+  );
+});
+
+test("a throttle is a wait that says it was one, and the status it came as", async (t) => {
+  for (const headers of [
+    { "x-ratelimit-remaining": "0" },
+    { "retry-after": "60" },
+  ]) {
+    const recorder = fixtureForge([
+      new Response("{}", { status: 403, headers }),
+    ]);
+    assert.deepEqual(
+      await fixtureAdapter(t, recorder).mint(fixtureRequest()),
+      {
+        minted: "Unavailable",
+        evidence: { mint: "Throttle", status: 403 },
+      },
+      JSON.stringify(headers),
+    );
+  }
+});
+
+test("a refusal's body reaches nothing the mint answers", async (t) => {
+  const marker = "forge-said-k7m2p9";
+  for (const status of [401, 403, 404, 422]) {
+    const recorder = fixtureForge([
+      Response.json(
+        { message: marker, errors: [{ message: marker }] },
+        { status },
+      ),
+    ]);
+    const minted = await fixtureAdapter(t, recorder).mint(fixtureRequest());
+    assert.deepEqual(minted, {
+      minted: "Denied",
+      evidence: { mint: "Status", status },
+    });
+    assert.equal(JSON.stringify(minted).includes(marker), false);
+  }
 });
 
 test("a fault, a redirect and an answer this side cannot read are all a wait", async (t) => {
-  const answers: readonly (Response | Error)[] = [
-    new TypeError("the network went away"),
-    new Response("", {
-      status: 302,
-      headers: { location: "https://elsewhere.invalid/" },
-    }),
-    Response.json({ token: fixtureToken }, { status: 201 }),
-    Response.json(
-      { token: fixtureToken, expires_at: "never" },
-      { status: 201 },
-    ),
-    new Response("{", { status: 201 }),
+  const answers: readonly (readonly [Response | Error, string])[] = [
+    [new TypeError("the network went away"), "Request"],
+    [
+      new Response("", {
+        status: 302,
+        headers: { location: "https://elsewhere.invalid/" },
+      }),
+      "Request",
+    ],
+    [Response.json({ token: fixtureToken }, { status: 201 }), "Body"],
+    [
+      Response.json(
+        { token: fixtureToken, expires_at: "never" },
+        { status: 201 },
+      ),
+      "Expiry",
+    ],
+    [new Response("{", { status: 201 }), "Body"],
   ];
-  for (const answer of answers) {
+  for (const [answer, mint] of answers) {
     const recorder = fixtureForge([answer]);
     assert.deepEqual(
       await fixtureAdapter(t, recorder).mint(fixtureRequest()),
-      { minted: "Unavailable" },
+      { minted: "Unavailable", evidence: { mint } },
       String(answer instanceof Error ? answer.message : answer.status),
     );
   }
@@ -344,6 +392,7 @@ test("a redirect is refused rather than followed to whatever stands there", asyn
   ]);
   assert.deepEqual(await fixtureAdapter(t, recorder).mint(fixtureRequest()), {
     minted: "Unavailable",
+    evidence: { mint: "Request" },
   });
   assert.equal(recorder.calls.length, 1, "the redirect was followed");
 });
@@ -368,7 +417,11 @@ test("a key that is not a readable RSA private key is a wait rather than a refus
       privateKeyPath,
       apiUrl: fixtureApiUrl,
     }).mint(fixtureRequest());
-    assert.deepEqual(minted, { minted: "Unavailable" }, privateKeyPath);
+    assert.deepEqual(
+      minted,
+      { minted: "Unavailable", evidence: { mint: "Key" } },
+      privateKeyPath,
+    );
     assert.equal(recorder.calls.length, 0, privateKeyPath);
   }
 });
@@ -393,7 +446,7 @@ test("a key past its bound is refused rather than read as far as the bound allow
     }).mint(fixtureRequest());
     assert.deepEqual(
       minted,
-      { minted: "Unavailable" },
+      { minted: "Unavailable", evidence: { mint: "Key" } },
       String(privateKeyBytesMax),
     );
     assert.equal(recorder.calls.length, 0, String(privateKeyBytesMax));

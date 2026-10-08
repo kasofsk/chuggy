@@ -39,7 +39,15 @@ import type {
   RepositoryDeclarationSnapshotRead,
   RepositoryDeclarationSnapshotRequest,
 } from "../../interpreter/repositoryDeclarationSnapshot.ts";
+import type {
+  CredentialMintEvidence,
+  RepositoryCredentialEvidence,
+  RepositoryCredentialRefusal,
+  RepositoryGitEvidence,
+  RepositoryReadEvidence,
+} from "../../interpreter/repositoryReadEvidence.ts";
 import {
+  scratchGitEvidence,
   scratchObserveHead,
   scratchOpen,
   scratchRemoteArguments,
@@ -81,13 +89,36 @@ type GitRepositoryConfigurationAuthorization =
       readonly authorized: "Credential";
       readonly credential: RepositoryCredential;
     }
-  | { readonly authorized: "NoCredential" }
-  | { readonly authorized: "Unavailable" };
+  | {
+      readonly authorized: "NoCredential";
+      readonly evidence: RepositoryCredentialEvidence;
+    }
+  | {
+      readonly authorized: "Unavailable";
+      readonly evidence: RepositoryCredentialEvidence;
+    };
+
+/** What a fetch of one commit came to, a probe that failed saying how. */
+type GitRepositoryConfigurationFetched =
+  | { readonly fetched: "Fetched" }
+  | { readonly fetched: "Absent" }
+  | {
+      readonly fetched: "Unavailable";
+      readonly evidence: RepositoryGitEvidence;
+    };
 
 const gitRepositoryConfigurationTreeOutputBytesMax =
   (repositoryDeclarationsMax + 1) * 512;
 const gitRepositoryConfigurationBlobOutputBytesMax =
   repositoryDeclarationFileCharsMax * 4 + 1;
+
+/** A credential that resolved to none, as evidence: which way, and the mint's cause where it gave one. */
+function gitRepositoryConfigurationCredentialEvidence(
+  credential: RepositoryCredentialRefusal,
+  evidence: CredentialMintEvidence | undefined,
+): RepositoryCredentialEvidence {
+  return { credential, ...evidence };
+}
 
 async function gitRepositoryConfigurationCredential(
   own: GitRepositoryConfigurationState,
@@ -98,12 +129,34 @@ async function gitRepositoryConfigurationCredential(
     case "Credential":
       return { authorized: "Credential", credential: resolved.credential };
     case "Denied":
-      return { authorized: "NoCredential" };
+      return {
+        authorized: "NoCredential",
+        evidence: gitRepositoryConfigurationCredentialEvidence(
+          "Denied",
+          resolved.evidence,
+        ),
+      };
     case "Unavailable":
-      return { authorized: "Unavailable" };
+      return {
+        authorized: "Unavailable",
+        evidence: gitRepositoryConfigurationCredentialEvidence(
+          "Unavailable",
+          resolved.evidence,
+        ),
+      };
     default:
       return assertNever(resolved);
   }
+}
+
+/** What git did after a credential was resolved, said beside the denial where git ran with none. */
+function gitRepositoryConfigurationEvidence(
+  authorization: GitRepositoryConfigurationAuthorization,
+  git: RepositoryGitEvidence,
+): RepositoryReadEvidence {
+  return authorization.authorized === "NoCredential"
+    ? { ...authorization.evidence, ...git }
+    : git;
 }
 
 function gitRepositoryConfigurationExited(
@@ -116,7 +169,7 @@ async function gitRepositoryConfigurationFetch(
   own: GitRepositoryConfigurationState,
   request: RepositoryDeclarationSnapshotRequest,
   credential: RepositoryCredential | undefined,
-): Promise<"Fetched" | "Absent" | "Unavailable"> {
+): Promise<GitRepositoryConfigurationFetched> {
   const repository = request.repository.repository;
   const probe = await scratchRun(own.scratch, {
     repository,
@@ -124,7 +177,11 @@ async function gitRepositoryConfigurationFetch(
     timeoutSecsMax: own.scratch.options.remoteTimeoutSecsMax,
     argv: ["ls-remote", ...scratchRemoteArguments(repository)],
   });
-  if (!gitRepositoryConfigurationExited(probe)) return "Unavailable";
+  if (!gitRepositoryConfigurationExited(probe))
+    return {
+      fetched: "Unavailable",
+      evidence: scratchGitEvidence("ls-remote", probe),
+    };
   const fetched = await scratchRun(own.scratch, {
     repository,
     ...(credential === undefined ? {} : { credential }),
@@ -139,7 +196,9 @@ async function gitRepositoryConfigurationFetch(
       ),
     ],
   });
-  return gitRepositoryConfigurationExited(fetched) ? "Fetched" : "Absent";
+  return gitRepositoryConfigurationExited(fetched)
+    ? { fetched: "Fetched" }
+    : { fetched: "Absent" };
 }
 
 function gitRepositoryConfigurationEntries(
@@ -227,7 +286,11 @@ async function gitRepositoryConfigurationDirectory(
     request.repository,
   );
   if (authorization.authorized === "Unavailable")
-    return { read: "Unavailable", unavailable: "Credential" };
+    return {
+      read: "Unavailable",
+      unavailable: "Credential",
+      evidence: authorization.evidence,
+    };
   const fetched = await gitRepositoryConfigurationFetch(
     own,
     request,
@@ -235,9 +298,16 @@ async function gitRepositoryConfigurationDirectory(
       ? authorization.credential
       : undefined,
   );
-  if (fetched === "Unavailable")
-    return { read: "Unavailable", unavailable: "Repository" };
-  if (fetched === "Absent") return { read: "Absent" };
+  if (fetched.fetched === "Unavailable")
+    return {
+      read: "Unavailable",
+      unavailable: "Repository",
+      evidence: gitRepositoryConfigurationEvidence(
+        authorization,
+        fetched.evidence,
+      ),
+    };
+  if (fetched.fetched === "Absent") return { read: "Absent" };
   const entries = await gitRepositoryConfigurationTree(own, request, root);
   if (entries === "Refused") return { read: "Refused" };
   const files = await gitRepositoryConfigurationFiles(own, request, entries);
@@ -280,7 +350,7 @@ async function gitRepositoryDefaultBranch(
     repository,
   );
   if (authorization.authorized === "Unavailable")
-    return { read: "Unavailable" };
+    return { read: "Unavailable", evidence: authorization.evidence };
   const observed = await scratchObserveHead(
     own.scratch,
     repository.repository,
@@ -298,7 +368,15 @@ async function gitRepositoryDefaultBranch(
     case "Absent":
       return { read: "Absent" };
     case "Unreachable":
-      return { read: "Unavailable" };
+      return observed.evidence === undefined
+        ? { read: "Unavailable" }
+        : {
+            read: "Unavailable",
+            evidence: gitRepositoryConfigurationEvidence(
+              authorization,
+              observed.evidence,
+            ),
+          };
     default:
       return assertNever(observed);
   }
