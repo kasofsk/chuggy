@@ -21,7 +21,7 @@ import { usePanelTenantResource } from "../api.ts";
 /** No frame names this read, so a change's own invalidation is what reaches it. */
 export const tenantPeopleResource = "access-people";
 
-const tenantPeopleAbilitiesResource = "access-abilities";
+export const tenantPeopleAbilitiesResource = "access-abilities";
 
 export function useTenantPeople(
   tenant: string,

@@ -31,27 +31,19 @@ import {
   projectPermissionRows,
   projectPermissionsWithheld,
 } from "../../core/permissions.ts";
-import { PanelUnready } from "../DataPanel.tsx";
-import { TopBarSlot } from "../shell/slots.tsx";
-import { Notice } from "../ui/Notice.tsx";
+import { settingsRoutes } from "../../core/settingsNav.ts";
 import {
   usePermissionsChange,
   type PermissionChange,
   type PermissionHolderRoutes,
 } from "./permissionsChange.ts";
-import {
-  PermissionsSection,
-  PermissionsTruncated,
-} from "./PermissionsSection.tsx";
+import { PermissionsSection } from "./PermissionsSection.tsx";
 import {
   projectPermissionsReread,
   useProjectAuthorities,
   useProjectPeople,
 } from "./projectPermissionsResource.ts";
-
-/** This page's own address, which its reads take their partition from. */
-export const projectPermissionsRoutePath =
-  "/$tenant/$project/settings/permissions";
+import { SettingsPage } from "./SettingsPage.tsx";
 
 /** No route sends a workspace's admins on a project. */
 function projectPermissionRoutes(
@@ -115,44 +107,31 @@ function ProjectPermissions(props: {
       projectPermissionRoutes(ports, partition, authority, sent),
     reread: (client) => projectPermissionsReread(client, partition),
   });
-  if (read.state !== "Ready")
-    return (
-      <PermissionsSection title="Project" rows={undefined}>
-        {read.state === "Absent" ? (
-          <Notice tone="parked" inline detail={projectPermissionsWithheld} />
-        ) : (
-          <PanelUnready state={read} />
-        )}
-      </PermissionsSection>
-    );
   return (
     <PermissionsSection
-      title="Project"
-      rows={projectPermissionRows(read.value)}
+      label="Project permissions"
+      read={read}
+      rows={projectPermissionRows}
+      withheld={projectPermissionsWithheld}
       removal={change.removal}
       addition={change.addition}
-    >
-      <PermissionsTruncated truncated={read.value.truncated} />
-    </PermissionsSection>
+    />
   );
 }
 
 export function ProjectPermissionsPage(): ReactNode {
-  const params = useParams({ from: projectPermissionsRoutePath });
+  const params = useParams({ from: settingsRoutes.project.permissions });
   const partition: PartitionIdentity = {
     tenant: params.tenant,
     project: params.project,
   };
   const people = useProjectPeople(partition);
   return (
-    <div className="grid min-w-0 max-w-settings gap-4">
-      <TopBarSlot>
-        <h1 className="text-md font-strong text-ink-1 truncate">Permissions</h1>
-      </TopBarSlot>
+    <SettingsPage title="Permissions">
       <ProjectPermissions
         partition={partition}
         people={people.state === "Ready" ? people.value : undefined}
       />
-    </div>
+    </SettingsPage>
   );
 }

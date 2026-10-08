@@ -26,6 +26,7 @@ import {
   permissionChoiceValue,
   permissionGroupName,
   permissionHolderRemovable,
+  permissionPersonMarks,
   permissionRemovalAsks,
   projectPermissionAdmits,
   projectPermissionName,
@@ -40,15 +41,15 @@ import {
 
 test("every authority each level rosters has its own name", () => {
   expect(accessTenantAuthorities.map(tenantPermissionName)).toStrictEqual([
-    "Admin grants",
-    "Member grants",
-    "Hosted run grants",
-    "Permission changes",
+    "Grant Admin",
+    "Grant Member",
+    "Grant hosted runs",
+    "Change permissions",
   ]);
   expect(accessSiteAuthorities.map(sitePermissionName)).toStrictEqual([
-    "Account creation",
-    "Workspace creation",
-    "Permission changes",
+    "Create accounts",
+    "Create workspaces",
+    "Change permissions",
   ]);
 });
 
@@ -148,7 +149,7 @@ const abilities: AccessTenantAbilities = {
   truncated: false,
 };
 
-test("a workspace's permissions are changed where the reader manages them, and hosted run grants where they manage what the site holds", () => {
+test("a workspace's permissions are changed where the reader manages them, and Grant hosted runs where they manage what the site holds", () => {
   const changeable = (held: AccessTenantAbilities | undefined) =>
     accessTenantAuthorities.map((authority) =>
       permissionChangeable("Tenant", authority, held),
@@ -188,6 +189,19 @@ test("a route removes a group, a person and a workspace's account creation, and 
   expect(removable(creators)).toStrictEqual([true, true, true, false]);
   expect(removable(tenantCreators)).toStrictEqual([true, false, true, false]);
   expect(removable(managers)).toStrictEqual([false, true, false, true, false]);
+});
+
+test("a person is marked where they are no account and where they are the reader, in that order", () => {
+  const marks = (account: boolean, mine: boolean): readonly string[] =>
+    permissionPersonMarks(
+      account
+        ? { subject: "s-ada", mine, account, email: "ada@example.com" }
+        : { subject: "s-ada", mine, account },
+    );
+  expect(marks(true, false)).toStrictEqual([]);
+  expect(marks(true, true)).toStrictEqual(["You"]);
+  expect(marks(false, false)).toStrictEqual(["No account"]);
+  expect(marks(false, true)).toStrictEqual(["No account", "You"]);
 });
 
 test("only removing a holder of permission changes is asked first", () => {
@@ -251,7 +265,7 @@ test("a workspace permission offers each group its record admits and it does not
   expect(tenantChoicesWords([])).toStrictEqual(tenantChoicesWords(undefined));
 });
 
-test("only Workspace members on Member grants, and Person, carry a line", () => {
+test("only Workspace members on Grant Member, and Person, carry a line", () => {
   const lines = tenantRowsAdminsOnly.flatMap((row) =>
     permissionAdditionChoices(
       "Tenant",
@@ -264,11 +278,11 @@ test("only Workspace members on Member grants, and Person, carry a line", () => 
       .map((choice) => `${row.name}: ${choice.words}: ${choice.line ?? ""}`),
   );
   expect(lines).toStrictEqual([
-    "Admin grants: Person: From the People list",
-    "Member grants: Workspace members: Members will see people and can remove other members.",
-    "Member grants: Person: From the People list",
-    "Hosted run grants: Person: From the People list",
-    "Permission changes: Person: From the People list",
+    "Grant Admin: Person: From the People list",
+    "Grant Member: Workspace members: Members will see people and can remove other members.",
+    "Grant Member: Person: From the People list",
+    "Grant hosted runs: Person: From the People list",
+    "Change permissions: Person: From the People list",
   ]);
 });
 
@@ -395,7 +409,7 @@ test("a choice is sent as its holder, a person only once one is chosen, and each
   expect(permissionChoiceHolder(undefined, ada)).toBeUndefined();
 });
 
-/** Each project permission held by its starting holders, and a person on admin grants. */
+/** Each project permission held by its starting holders, and a person on Grant Admin. */
 const projectRowsStarting = projectPermissionRows({
   tenant: "acme",
   project: "atlas",
@@ -410,10 +424,10 @@ const projectRowsStarting = projectPermissionRows({
 
 test("every authority a project rosters has its own name, its rows in roster order", () => {
   expect(accessProjectAuthorities.map(projectPermissionName)).toStrictEqual([
-    "Admin grants",
-    "Developer grants",
-    "Dispatcher grants",
-    "Permission changes",
+    "Grant Admin",
+    "Grant Developer",
+    "Grant Dispatcher",
+    "Change permissions",
   ]);
   expect(
     projectRowsStarting.map((row) => [
@@ -421,10 +435,10 @@ test("every authority a project rosters has its own name, its rows in roster ord
       row.holders.map((holder) => holder.words),
     ]),
   ).toStrictEqual([
-    ["Admin grants", ["Workspace admins", "Project admins", "ada@example.com"]],
-    ["Developer grants", ["Workspace admins", "Project admins"]],
-    ["Dispatcher grants", ["Workspace admins", "Project admins"]],
-    ["Permission changes", ["Workspace admins", "Project admins"]],
+    ["Grant Admin", ["Workspace admins", "Project admins", "ada@example.com"]],
+    ["Grant Developer", ["Workspace admins", "Project admins"]],
+    ["Grant Dispatcher", ["Workspace admins", "Project admins"]],
+    ["Change permissions", ["Workspace admins", "Project admins"]],
   ]);
 });
 
@@ -442,7 +456,7 @@ test("a project's permissions are all changed by a reader shown them, and only p
   ]);
 });
 
-test("a project permission offers its record's groups less those held, Project developers on Developer grants alone with its line, and a person from the project's people", () => {
+test("a project permission offers its record's groups less those held, Project developers on Grant Developer alone with its line, and a person from the project's people", () => {
   const lines = projectRowsStarting.map((row) =>
     permissionAdditionChoices(
       "Project",

@@ -114,6 +114,11 @@ export function ShellSlots(props: { readonly children: ReactNode }): ReactNode {
   );
 }
 
+/** Whether the shell is around the caller, which a page drawn both in it and outside it asks before filling a slot. */
+export function useShellSlotsOffered(): boolean {
+  return useContext(shellSlotsContext) !== undefined;
+}
+
 /** What the shell draws differently because a page filled a slot. */
 export function useShellSlotsFilled(): ShellSlotsFilled {
   return useShellSlotsHeld().filled;

@@ -12,6 +12,7 @@ import {
   accessPlaneRoutes,
   accessProjectAuthoritiesSchema,
   accessProjectPeopleSchema,
+  accessSiteAbilitiesSchema,
   accessSiteAuthoritiesSchema,
   accessTenantAbilitiesSchema,
   accessTenantAuthoritiesSchema,
@@ -24,6 +25,7 @@ import {
   type AccessProjectAuthority,
   type AccessProjectPeople,
   type AccessProjectRole,
+  type AccessSiteAbilities,
   type AccessSiteAuthorities,
   type AccessSiteAuthority,
   type AccessTenantAbilities,
@@ -111,6 +113,15 @@ export function apiProjectAuthorities(
     ports,
     accessPlanePath("projectAuthorities", { tenant, project }),
     (value) => accessProjectAuthoritiesSchema.parse(value),
+  );
+}
+
+/** What the caller may do on the site, absent for one who may do none of it. */
+export function apiSiteAbilities(
+  ports: ApiPorts,
+): Promise<ApiResult<AccessSiteAbilities>> {
+  return apiGet(ports, accessPlanePath("siteAbilities", {}), (value) =>
+    accessSiteAbilitiesSchema.parse(value),
   );
 }
 

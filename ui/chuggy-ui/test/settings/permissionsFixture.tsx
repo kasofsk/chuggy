@@ -1,15 +1,17 @@
 /**
  * A project's permissions, a workspace's and the site's as the access plane
  * answers them, and each level's page drawn against a plane a case scripts:
- * each list and the reader's abilities and people at their own paths, every
- * removal and every addition answered by the case, and what the bar reads
- * answered empty. What a case does to a section and its `Add` dialog is here
- * too, so every level's suite asks it the same way.
+ * each list and the reader's abilities and people at their own paths, and
+ * every removal and every addition answered by the case. What a case does to
+ * a section and its `Add` dialog is here too, so every level's suite asks it
+ * the same way.
  */
 
 import { QueryClient } from "@tanstack/react-query";
 import { fireEvent, render, screen, within } from "@testing-library/react";
-import { vi } from "vitest";
+import { expect, vi } from "vitest";
+import type { MockInstance } from "vitest";
+import type { ReactNode } from "react";
 
 import type {
   AccessProjectAuthorities,
@@ -20,7 +22,18 @@ import type {
   AccessTenantPeople,
 } from "../../../../src/contract/accessPlane.ts";
 import { ProjectPermissionsPage } from "../../app/browser/settings/ProjectPermissionsPage.tsx";
+import { SitePermissionsPage } from "../../app/browser/settings/SitePermissionsPage.tsx";
+import {
+  tenantPeopleAbilitiesResource,
+  tenantPeopleResource,
+} from "../../app/browser/settings/tenantPeopleResource.ts";
 import { TenantPermissionsPage } from "../../app/browser/settings/TenantPermissionsPage.tsx";
+import {
+  siteAbilitiesResource,
+  sitePermissionsResource,
+  tenantPermissionsResource,
+} from "../../app/browser/settings/tenantPermissionsResource.ts";
+import { tenantResourceKey } from "../../app/core/projectQueryKeys.ts";
 import {
   answer,
   drawnStrict,
@@ -132,8 +145,9 @@ export const tenantAuthoritiesStarting: AccessTenantAuthorities = {
   truncated: false,
 };
 
-/** Account creation held by the site's admins and two workspaces' admins, and
- * permission changes by nobody the list names. */
+/** Account creation held by the site's admins and two workspaces' admins,
+ * workspace creation by the site's admins, and permission changes by nobody
+ * the list names. */
 export const siteAuthoritiesStarting: AccessSiteAuthorities = {
   authorities: [
     {
@@ -141,6 +155,13 @@ export const siteAuthoritiesStarting: AccessSiteAuthorities = {
       people: [],
       groups: ["SiteAdmins"],
       tenants: [permissionsTenant, "globex"],
+      unnamed: 0,
+    },
+    {
+      authority: "TenantCreators",
+      people: [],
+      groups: ["SiteAdmins"],
+      tenants: [],
       unnamed: 0,
     },
     {
@@ -152,6 +173,31 @@ export const siteAuthoritiesStarting: AccessSiteAuthorities = {
     },
   ],
   truncated: false,
+};
+
+/** The site's permission changes held by a workspace's admins, a person and
+ * two holders the list does not name, beside its standing admins. */
+export const siteAuthoritiesHeld: AccessSiteAuthorities = {
+  ...siteAuthoritiesStarting,
+  authorities: [
+    ...siteAuthoritiesStarting.authorities.filter(
+      (held) => held.authority !== "AuthorityManagers",
+    ),
+    {
+      authority: "AuthorityManagers",
+      people: [
+        {
+          subject: "s-ada",
+          mine: false,
+          account: true,
+          email: "ada@example.com",
+        },
+      ],
+      groups: [],
+      tenants: [permissionsTenant],
+      unnamed: 2,
+    },
+  ],
 };
 
 export const permissionsProject = "atlas";
@@ -210,12 +256,12 @@ export interface PermissionsDrawing {
   /** What a removal is answered with. */
   readonly removed?: () => Response;
   /** What an addition is answered with. */
-  readonly added?: () => Response;
+  readonly added?: () => Response | Promise<Response>;
 }
 
-/** The page drawn, the site's list, the abilities and the People list absent unless a case answers them. */
-export function drawPermissions(
-  drawing: PermissionsDrawing = {},
+function permissionsPageDrawn(
+  page: ReactNode,
+  drawing: PermissionsDrawing,
 ): Promise<DrawnStrict> {
   const tenant = drawing.tenant ?? (() => answer(tenantAuthoritiesStarting));
   const site = drawing.site ?? (() => answer({}, 404));
@@ -224,16 +270,55 @@ export function drawPermissions(
   const removed =
     drawing.removed ?? (() => new Response(null, { status: 204 }));
   const added = drawing.added ?? (() => new Response(null, { status: 204 }));
-  return drawnStrict(<TenantPermissionsPage />, (request: SentRequest) => {
+  return drawnStrict(page, (request: SentRequest) => {
     if (request.method === "DELETE") return removed();
     if (request.method === "POST") return added();
     if (request.url === permissionsPeoplePath) return people();
     if (request.url === tenantAuthoritiesPath) return tenant();
     if (request.url === siteAuthoritiesPath) return site();
     if (request.url === permissionsAbilitiesPath) return abilities();
-    if (request.url.includes("/projects")) return answer({ projects: [] });
     return answer({}, 404);
   });
+}
+
+/** The workspace's page drawn, the site's list, the abilities and the People list absent unless a case answers them. */
+export function drawPermissions(
+  drawing: PermissionsDrawing = {},
+): Promise<DrawnStrict> {
+  return permissionsPageDrawn(<TenantPermissionsPage />, drawing);
+}
+
+/** The site's page drawn against the same plane, its list answered as it starts unless a case says otherwise. */
+export function drawSitePermissions(
+  drawing: PermissionsDrawing = {},
+): Promise<DrawnStrict> {
+  return permissionsPageDrawn(<SitePermissionsPage />, {
+    site: () => answer(siteAuthoritiesStarting),
+    ...drawing,
+  });
+}
+
+/** A change on the workspace's page or the site's reads again every resource either page, the People page and the navigation hold of the workspace. */
+export function expectPermissionsReread(
+  invalidated: MockInstance<QueryClient["invalidateQueries"]>,
+): void {
+  for (const resource of [
+    tenantPermissionsResource,
+    sitePermissionsResource,
+    siteAbilitiesResource,
+    tenantPeopleResource,
+    tenantPeopleAbilitiesResource,
+  ])
+    expect(invalidated).toHaveBeenCalledWith({
+      queryKey: tenantResourceKey(permissionsTenant, resource),
+    });
+}
+
+/** A node's words less those of every button in it. */
+function permissionsDrawnWords(node: Node): string {
+  if (node instanceof HTMLButtonElement) return "";
+  if (!(node instanceof Element)) return node.textContent ?? "";
+  return [...node.childNodes].map(permissionsDrawnWords).join("");
 }
 
 /** Each permission a section draws, by name, and the words of every holder in it, less its remove button. */
@@ -247,12 +332,7 @@ export function permissionsDrawn(
       name: within(row).getByRole("rowheader").textContent,
       holders: within(row)
         .queryAllByRole("listitem")
-        .map((item) =>
-          [...item.childNodes]
-            .filter((node) => !(node instanceof HTMLButtonElement))
-            .map((node) => node.textContent)
-            .join(""),
-        ),
+        .map(permissionsDrawnWords),
     }));
 }
 
@@ -298,7 +378,7 @@ export interface ProjectPermissionsDrawing {
   /** What a removal is answered with. */
   readonly removed?: () => Response;
   /** What an addition is answered with. */
-  readonly added?: () => Response;
+  readonly added?: () => Response | Promise<Response>;
 }
 
 /** The project's page drawn in the project's frame, its list and its people answered unless a case says otherwise. */

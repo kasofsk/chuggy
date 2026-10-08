@@ -1,0 +1,71 @@
+/* Chip: the pill's own box around a name that clips, and the round button
+   that takes the chip away. The button is the height of the chip's line, so a
+   chip with one stands no taller than a chip without, and its press reaches
+   past its edge for a finger but never past the chip's end, where the next
+   control stands. The focus ring is the chip's, since the button's own would
+   lie over the name. */
+
+@layer ui {
+  .chip {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .chip-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .chip-remove {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: calc(var(--leading-dense) * 1em);
+    height: calc(var(--leading-dense) * 1em);
+    margin-inline-end: calc(var(--space-1) * -1);
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-circle);
+    background: transparent;
+    color: var(--ink-3);
+    cursor: pointer;
+    transition:
+      background var(--duration-1) var(--ease-out),
+      color var(--duration-1) var(--ease-out);
+  }
+
+  .chip-remove::after {
+    content: "";
+    position: absolute;
+    inset: calc(var(--space-2) * -1);
+    inset-inline-end: calc(var(--space-1) * -1);
+  }
+
+  .chip-remove:hover,
+  .chip-remove:focus-visible {
+    background: color-mix(in srgb, var(--ink-1) 12%, transparent);
+    color: var(--ink-1);
+  }
+
+  .chip-remove:focus-visible {
+    box-shadow: none;
+  }
+
+  .chip:has(.chip-remove:focus-visible) {
+    box-shadow: var(--ring-focus);
+  }
+
+  .chip-remove:disabled {
+    background: transparent;
+    color: var(--ink-3);
+    cursor: not-allowed;
+  }
+
+  .chip-cross {
+    width: 0.9em;
+    height: 0.9em;
+  }
+}

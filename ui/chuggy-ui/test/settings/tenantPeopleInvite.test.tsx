@@ -1,8 +1,9 @@
 /**
- * Inviting a person from the workspace's people page: the roles and projects
- * the reader may grant offered, the fields sent as the contract states them, a
- * field's fault under it before anything is sent, each refusal's line with the
- * dialog left as it was, and a created or found person closing it.
+ * Inviting a person from the workspace's people page: a dialog named for the
+ * workspace, the roles and projects the reader may grant offered, the fields
+ * sent as the contract states them, a field's fault under it before anything
+ * is sent, each refusal's line with the dialog left as it was, and a created
+ * or found person closing it.
  */
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
@@ -14,10 +15,18 @@ import {
   accessInvitationCodes,
   accessInvitationProjectsMax,
 } from "../../../../src/contract/accessPlane.ts";
-import { answer, press, settled, turned } from "../screenHarness.tsx";
+import {
+  answer,
+  heldAnswer,
+  press,
+  settled,
+  turned,
+} from "../screenHarness.tsx";
 import type { DrawnStrict } from "../screenHarness.tsx";
 import type * as BrowserPorts from "../../app/browser/ports.ts";
+import { styleless } from "../styleless.ts";
 import {
+  boxesIn,
   changesSent,
   drawPeople,
   invitationPath,
@@ -26,6 +35,7 @@ import {
   peopleAbilitiesNone,
   peopleListed,
   peopleTenant,
+  projectsOffered,
   refused,
 } from "./tenantPeopleFixture.tsx";
 import type { PeopleDrawing } from "./tenantPeopleFixture.tsx";
@@ -57,7 +67,11 @@ afterEach(() => {
 });
 
 function dialog(): HTMLElement {
-  return screen.getByRole("dialog", { name: "Invite" });
+  return screen.getByRole("dialog", { name: `Invite to ${peopleTenant}` });
+}
+
+function chosen(box: string): void {
+  fireEvent.click(within(dialog()).getByRole("checkbox", { name: box }));
 }
 
 function typed(label: string, value: string): void {
@@ -87,9 +101,14 @@ test("an invitation sends the fields the contract states, as it states them", as
     changed: () => answer({ subject: "s-new", created: true }, 201),
   });
   fireEvent.click(within(dialog()).getByRole("radio", { name: "Admin" }));
-  const beacon = within(dialog()).getByRole("group", { name: "beacon" });
-  fireEvent.click(within(beacon).getByRole("button", { name: "Developer" }));
-  fireEvent.click(within(beacon).getByRole("button", { name: "Dispatcher" }));
+  chosen("beacon Developer");
+  chosen("beacon Dispatcher");
+  await turned();
+  expect(boxesIn(dialog(), "beacon")).toStrictEqual([
+    "beacon Admin",
+    "beacon Developer+",
+    "beacon Dispatcher+",
+  ]);
   await sent();
   expect(changesSent(drawn)).toStrictEqual([
     {
@@ -129,13 +148,7 @@ test("more projects than the schema admits sends nothing and draws its fault", a
     listing: () => answer({ ...peopleListed, projects }),
     abilities: () => answer(peopleAbilitiesAll(projects)),
   });
-  for (const project of projects)
-    fireEvent.click(
-      within(within(dialog()).getByRole("group", { name: project })).getByRole(
-        "button",
-        { name: "Admin" },
-      ),
-    );
+  for (const project of projects) chosen(`${project} Admin`);
   await turned();
   expect(
     within(dialog()).getByText(
@@ -233,13 +246,15 @@ function radios(): readonly string[] {
 test("a reader who may grant every role and invite anyone is offered every role, opening on Member", async () => {
   await invitedWith({});
   expect(radios()).toStrictEqual(["Admin", "Member+"]);
+  expect(projectsOffered(dialog())).toStrictEqual(peopleListed.projects);
   for (const project of peopleListed.projects)
-    expect(
-      within(within(dialog()).getByRole("group", { name: project }))
-        .getAllByRole("button")
-        .map((button) => button.textContent),
-    ).toStrictEqual(["Admin", "Developer", "Dispatcher"]);
+    expect(boxesIn(dialog(), project)).toStrictEqual([
+      `${project} Admin`,
+      `${project} Developer`,
+      `${project} Dispatcher`,
+    ]);
   expect(within(dialog()).queryByText("Existing accounts only")).toBeNull();
+  styleless();
 });
 
 test("a reader who may grant Member alone is offered Member and no project", async () => {
@@ -248,9 +263,8 @@ test("a reader who may grant Member alone is offered Member and no project", asy
       answer({ ...peopleAbilitiesAll(), roles: ["Member"], projects: [] }),
   });
   expect(radios()).toStrictEqual(["Member+"]);
-  expect(within(dialog()).queryByRole("group", { name: "Projects" })).toBe(
-    null,
-  );
+  expect(projectsOffered(dialog())).toStrictEqual([]);
+  expect(within(dialog()).queryAllByRole("checkbox")).toStrictEqual([]);
 });
 
 test("a reader who may grant Admin and not Member opens on Admin, and sends it", async () => {
@@ -275,4 +289,62 @@ test("a reader who may not make an account is told so in the form", async () => 
 test("a reader who may grant no workspace role is offered no invitation", async () => {
   await drawPeople({ abilities: () => answer(peopleAbilitiesNone) });
   expect(screen.queryByRole("button", { name: "Invite" })).toBeNull();
+});
+
+test("a reader who may grant on one project of two is offered that project alone", async () => {
+  await invitedWith({
+    abilities: () =>
+      answer({
+        ...peopleAbilitiesAll(),
+        projects: peopleAbilitiesAll(["beacon"]).projects,
+      }),
+  });
+  expect(projectsOffered(dialog())).toStrictEqual(["beacon"]);
+});
+
+test("the dialog's actions are Cancel then Invite, and Cancel closes it with nothing sent", async () => {
+  const drawn = await invitedWith({});
+  const actions = within(dialog())
+    .getAllByRole("button")
+    .map((button) => button.textContent);
+  expect(actions).toStrictEqual(["Cancel", "Invite"]);
+  await press("Cancel");
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(changesSent(drawn)).toStrictEqual([]);
+});
+
+test("an invitation unanswered, Cancel takes no press and nothing closes the dialog, so its refusal is drawn there", async () => {
+  const held = heldAnswer();
+  await invitedWith({ changed: () => held.answered });
+  await sent();
+  const cancel = within(dialog()).getByRole<HTMLButtonElement>("button", {
+    name: "Cancel",
+  });
+  expect(cancel.disabled).toBe(true);
+  await turned(() => {
+    fireEvent.keyDown(dialog(), { key: "Escape" });
+  });
+  await turned(() => {
+    held.release(refused(422, accessInvitationCodes.GithubAccountUnknown));
+  });
+  await settled();
+  expect(within(dialog()).getByText("No such GitHub user")).toBeTruthy();
+  expect(cancel.disabled).toBe(false);
+});
+
+test("a dialog opened again starts from nothing typed and nothing said", async () => {
+  await invitedWith({
+    changed: () => refused(422, accessInvitationCodes.GithubAccountUnknown),
+  });
+  chosen("beacon Developer");
+  await sent();
+  expect(within(dialog()).getByText("No such GitHub user")).toBeTruthy();
+  await press("Cancel");
+  await press("Invite");
+  expect(
+    within(dialog()).getByRole<HTMLInputElement>("textbox", { name: "Email" })
+      .value,
+  ).toBe("");
+  expect(within(dialog()).queryByText("No such GitHub user")).toBeNull();
+  expect(boxesIn(dialog(), "beacon")).not.toContain("beacon Developer+");
 });

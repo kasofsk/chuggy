@@ -15,7 +15,6 @@
  * to connect with.
  */
 
-import { useParams } from "@tanstack/react-router";
 import { useState } from "react";
 import type { ReactNode } from "react";
 
@@ -29,7 +28,6 @@ import { forgeAppStandingTone } from "../../core/tones.ts";
 import { usePanelTenantResource } from "../api.ts";
 import { PanelUnready } from "../DataPanel.tsx";
 import { currentPath, transientStore } from "../ports.ts";
-import { ProjectlessFrame } from "../ProjectCreation.tsx";
 import { ConnectGithub } from "../repositories/ConnectGithub.tsx";
 import { InstallLink } from "../repositories/InstallLink.tsx";
 import { EmptyState } from "../ui/EmptyState.tsx";
@@ -38,9 +36,7 @@ import type { NoticeTone } from "../ui/Notice.tsx";
 import { Panel } from "../ui/Panel.tsx";
 import { Pill } from "../ui/Pill.tsx";
 import { Table } from "../ui/Table.tsx";
-
-/** This page's own address, which its reads take their tenant from. */
-export const tenantAccountsRoutePath = "/tenants/$tenant/settings/accounts";
+import { SettingsPage, useSettingsTenant } from "./SettingsPage.tsx";
 
 /** No frame names this read, so a fresh visit is what reaches it. */
 export const forgeInstallationsResource = "forge-installations";
@@ -111,8 +107,7 @@ function tenantAccountsReturnTone(standing: ForgeReturnStanding): NoticeTone {
 /** The listing answers only a workspace admin, so its absence is this reader's
  * standing rather than a fault, and a claim they started would be refused. */
 export function TenantAccountsPage(): ReactNode {
-  const params = useParams({ from: tenantAccountsRoutePath });
-  const tenant = params.tenant;
+  const tenant = useSettingsTenant();
   const [returned] = useState(() => forgeReturnTake(transientStore, tenant));
   const accounts = usePanelTenantResource(
     tenant,
@@ -126,49 +121,46 @@ export function TenantAccountsPage(): ReactNode {
     (installations !== undefined && installations.length > 0) ||
     returned?.standing === "Uninstalled";
   return (
-    <ProjectlessFrame>
-      <div className="grid min-w-0 max-w-settings gap-4">
-        <h1 className="text-md font-strong text-ink-1 truncate">Accounts</h1>
-        <Panel
-          variant="section"
-          title="Accounts"
-          about="The forge accounts this workspace has connected, and the apps each holds."
-          meta={
-            <span className="flex items-center gap-2">
-              {withheld ? null : (
-                <ConnectGithub tenant={tenant} returnPath={currentPath()} />
-              )}
-              {adding ? (
-                <InstallLink
-                  tenant={tenant}
-                  returnPath={currentPath()}
-                  app="portal"
-                  label="Add account"
-                />
-              ) : null}
-            </span>
-          }
-        >
-          {returned === undefined ? null : (
-            <Notice
-              tone={tenantAccountsReturnTone(returned.standing)}
-              inline
-              detail={returned.status}
-            />
-          )}
-          {withheld ? (
-            <Notice tone="parked" inline detail={forgeAccountsWithheld} />
-          ) : (
-            <PanelUnready state={accounts} />
-          )}
-          {installations === undefined ? null : (
-            <AccountTable
-              tenant={tenant}
-              rows={forgeAccountRows(installations)}
-            />
-          )}
-        </Panel>
-      </div>
-    </ProjectlessFrame>
+    <SettingsPage title="Accounts">
+      <Panel
+        variant="section"
+        title="Accounts"
+        about="The forge accounts this workspace has connected, and the apps each holds."
+        meta={
+          <span className="flex items-center gap-2">
+            {withheld ? null : (
+              <ConnectGithub tenant={tenant} returnPath={currentPath()} />
+            )}
+            {adding ? (
+              <InstallLink
+                tenant={tenant}
+                returnPath={currentPath()}
+                app="portal"
+                label="Add account"
+              />
+            ) : null}
+          </span>
+        }
+      >
+        {returned === undefined ? null : (
+          <Notice
+            tone={tenantAccountsReturnTone(returned.standing)}
+            inline
+            detail={returned.status}
+          />
+        )}
+        {withheld ? (
+          <Notice tone="parked" inline detail={forgeAccountsWithheld} />
+        ) : (
+          <PanelUnready state={accounts} />
+        )}
+        {installations === undefined ? null : (
+          <AccountTable
+            tenant={tenant}
+            rows={forgeAccountRows(installations)}
+          />
+        )}
+      </Panel>
+    </SettingsPage>
   );
 }

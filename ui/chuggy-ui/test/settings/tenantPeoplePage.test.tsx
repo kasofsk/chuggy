@@ -1,8 +1,10 @@
 /**
- * The workspace's people page, mounted: a row a person, each role the reader
- * may grant a button pressed where the list holds it and every other role as
- * it is held, one grant or removal a press, and one notice for a reader the
- * list is not answered to.
+ * The workspace's people page, mounted: a row a person saying what the list
+ * holds of them and nothing else, the subjects that are no account in a table
+ * of their own, and a person's editor a box for each role the reader may
+ * grant, checked where the list holds it, with every other role as it is
+ * held. One grant or removal a press, and one notice for a reader the list is
+ * not answered to.
  */
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
@@ -10,21 +12,36 @@ import { cleanup, fireEvent, screen, within } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
-import { answer, press, sectionOf, settled } from "../screenHarness.tsx";
+import {
+  answer,
+  heldAnswer,
+  press,
+  settled,
+  turned,
+} from "../screenHarness.tsx";
 import type * as BrowserPorts from "../../app/browser/ports.ts";
+import { styleless } from "../styleless.ts";
 import {
   abilitiesReads,
+  boxesIn,
+  boxPressed,
+  boxStill,
   changesSent,
   drawPeople,
+  editorOf,
+  heldIn,
+  hostedRunsPath,
+  listReads,
+  namedIn,
+  noContent,
   peopleAbilitiesAll,
   peopleAbilitiesNone,
-  listReads,
   peopleListed,
   peoplePath,
   peopleTenant,
   personRow,
-  pressedIn,
-  hostedRunsPath,
+  projectsIn,
+  projectsOffered,
   refused,
 } from "./tenantPeopleFixture.tsx";
 
@@ -49,38 +66,37 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-/** One role's button, in the group a row holds it under: `Workspace`, or a project. */
-function pressIn(row: HTMLElement, group: string, role: string): void {
-  const scope = within(row).getByRole("group", { name: group });
-  fireEvent.click(within(scope).getByRole("button", { name: role }));
-}
-
-test("a person is a row: an account by its email and login, the reader marked, and roles as the list holds them", async () => {
-  await drawPeople({
-    abilities: () =>
-      answer({ ...peopleAbilitiesAll(), grantHostedRuns: false }),
-  });
+test("a person is a row: an account by its email and login, the reader marked, and what the list holds of them", async () => {
+  await drawPeople();
   const ada = personRow("ada@example.com");
   expect(within(ada).getByText("ada")).toBeTruthy();
   expect(within(ada).getByText("You")).toBeTruthy();
-  expect(within(ada).queryByText("No account")).toBeNull();
-  expect(within(ada).getByText("Granted")).toBeTruthy();
-  expect(pressedIn(ada)).toStrictEqual(["Admin", "Admin", "Developer"]);
-  expect(
-    pressedIn(within(ada).getByRole("group", { name: "atlas" })),
-  ).toStrictEqual(["Admin", "Developer"]);
-  expect(
-    pressedIn(within(ada).getByRole("group", { name: "beacon" })),
-  ).toStrictEqual([]);
+  expect(heldIn(ada)).toStrictEqual(["Admin", "Hosted runs"]);
+  expect(within(ada).getByText("All projects")).toBeTruthy();
+  expect(projectsIn(ada)).toStrictEqual(["atlas: Admin, Developer"]);
   const bob = personRow("s-bob");
-  expect(within(bob).getByText("No account")).toBeTruthy();
   expect(within(bob).queryByText("You")).toBeNull();
-  expect(within(bob).getByText("Not granted")).toBeTruthy();
-  expect(pressedIn(bob)).toStrictEqual(["Member"]);
-  expect(screen.queryByRole("button", { name: /hosted/iu })).toBeNull();
+  expect(heldIn(bob)).toStrictEqual(["Member"]);
+  expect(within(bob).queryByText("All projects")).toBeNull();
+  expect(projectsIn(bob)).toStrictEqual([]);
+  expect(heldIn(personRow("s-selector"))).toStrictEqual(["Hosted runs"]);
+  expect(screen.queryByText("Granted")).toBeNull();
+  expect(screen.queryByText("Not granted")).toBeNull();
+  styleless();
 });
 
-test("an answer with no account field draws its subjects unmarked", async () => {
+test("the people are counted over their table, and a subject that is no account stands in a second one", async () => {
+  await drawPeople();
+  expect(screen.getByRole("heading", { name: "1 person" })).toBeTruthy();
+  expect(namedIn("People")).toStrictEqual(["ada@example.com"]);
+  expect(
+    screen.getByRole("heading", { name: "Other identities" }),
+  ).toBeTruthy();
+  expect(namedIn("Other identities")).toStrictEqual(["s-bob", "s-selector"]);
+  expect(screen.queryByText("No account")).toBeNull();
+});
+
+test("an answer with no account field draws its subjects among the people", async () => {
   const bare = peopleListed.people.map((person) => ({
     subject: person.subject,
     mine: person.mine,
@@ -91,8 +107,11 @@ test("an answer with no account field draws its subjects unmarked", async () => 
   await drawPeople({
     listing: () => answer({ ...peopleListed, people: bare }),
   });
-  expect(personRow("s-ada")).toBeTruthy();
-  expect(personRow("s-bob")).toBeTruthy();
+  expect(namedIn("People")).toStrictEqual(["s-ada", "s-bob", "s-selector"]);
+  expect(screen.getByRole("heading", { name: "3 people" })).toBeTruthy();
+  expect(screen.queryByRole("heading", { name: "Other identities" })).toBe(
+    null,
+  );
   expect(screen.queryByText("No account")).toBeNull();
 });
 
@@ -102,6 +121,7 @@ test("a list holding only the reader draws that row, with nothing cut or counted
       answer({ ...peopleListed, people: peopleListed.people.slice(0, 1) }),
   });
   expect(screen.getAllByRole("row")).toHaveLength(2);
+  expect(screen.queryByRole("table", { name: "Other identities" })).toBeNull();
   expect(screen.queryByText(/another sign-in/u)).toBeNull();
   expect(screen.queryByText("List cut short")).toBeNull();
 });
@@ -121,9 +141,8 @@ test("an absent list draws the one notice and no control", async () => {
     abilities: () => answer({}, 404),
   });
   expect(screen.getByText("A workspace admin manages people")).toBeTruthy();
-  expect(within(sectionOf("People")).queryAllByRole("button")).toStrictEqual(
-    [],
-  );
+  expect(screen.queryAllByRole("button")).toStrictEqual([]);
+  expect(screen.queryByRole("table")).toBeNull();
   expect(screen.queryByText(/^Not available/u)).toBeNull();
 });
 
@@ -141,12 +160,26 @@ test("a failed list draws its reason, and one that is not JSON draws as unreacha
   ).toBeTruthy();
 });
 
+test("a person's editor is a dialog named for them, closed by Done", async () => {
+  const drawn = await drawPeople();
+  const editor = await editorOf("ada@example.com");
+  expect(boxesIn(editor, "Workspace")).toStrictEqual([
+    "Admin+",
+    "Member",
+    "Hosted runs+",
+  ]);
+  expect(within(editor).queryByRole("button", { name: "Close" })).toBeNull();
+  await press("Done");
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(changesSent(drawn)).toStrictEqual([]);
+  styleless();
+});
+
 test("granting a role sends that grant alone and reads the list and the abilities again, each once", async () => {
   const drawn = await drawPeople();
   const read = listReads(drawn);
   const abilitiesRead = abilitiesReads(drawn);
-  pressIn(personRow("s-bob"), "Workspace", "Admin");
-  await settled();
+  await boxPressed(await editorOf("s-bob"), "Admin");
   expect(changesSent(drawn)).toStrictEqual([
     {
       method: "POST",
@@ -161,8 +194,7 @@ test("granting a role sends that grant alone and reads the list and the abilitie
 test("removing a project role sends that removal alone, and a project admin asks nothing", async () => {
   const drawn = await drawPeople();
   const read = listReads(drawn);
-  pressIn(personRow("ada@example.com"), "atlas", "Admin");
-  await settled();
+  await boxPressed(await editorOf("ada@example.com"), "atlas Admin");
   expect(changesSent(drawn)).toStrictEqual([
     {
       method: "DELETE",
@@ -173,35 +205,185 @@ test("removing a project role sends that removal alone, and a project admin asks
   expect(listReads(drawn)).toBeGreaterThan(read);
 });
 
-test("a refused change draws its line, and the control shows what the list holds", async () => {
-  await drawPeople({ changed: () => refused(422, "SomethingNew") });
-  const bob = personRow("s-bob");
-  pressIn(bob, "Workspace", "Admin");
-  await settled();
-  expect(within(bob).getByText("Unknown refusal (SomethingNew)")).toBeTruthy();
-  expect(pressedIn(bob)).toStrictEqual(["Member"]);
+test("granting a project role sends that grant alone", async () => {
+  const drawn = await drawPeople();
+  await boxPressed(await editorOf("s-bob"), "beacon Dispatcher");
+  expect(changesSent(drawn)).toStrictEqual([
+    {
+      method: "POST",
+      url: `/access/v1/tenants/${peopleTenant}/projects/beacon/people/s-bob/roles`,
+      body: { role: "Dispatcher" },
+    },
+  ]);
 });
 
-test("removing the only admin draws the conflict's sentence", async () => {
+test("a refused change draws its line in the editor, and the box shows what the list holds", async () => {
+  await drawPeople({ changed: () => refused(422, "SomethingNew") });
+  const editor = await editorOf("s-bob");
+  await boxPressed(editor, "Admin");
+  expect(
+    within(editor).getByText("Unknown refusal (SomethingNew)"),
+  ).toBeTruthy();
+  expect(boxesIn(editor, "Workspace")).toStrictEqual([
+    "Admin",
+    "Member+",
+    "Hosted runs",
+  ]);
+  expect(heldIn(personRow("s-bob"))).toStrictEqual(["Member"]);
+});
+
+test("removing the only admin draws the conflict's sentence, gone when the editor opens again", async () => {
   await drawPeople({ changed: () => refused(409, "LastTenantAdministrator") });
-  const bob = personRow("s-bob");
-  pressIn(bob, "Workspace", "Member");
+  const editor = await editorOf("s-bob");
+  await boxPressed(editor, "Member");
+  expect(
+    within(editor).getByText("Only admin · grant another first"),
+  ).toBeTruthy();
+  await press("Done");
+  expect(
+    within(await editorOf("s-bob")).queryByText(
+      "Only admin · grant another first",
+    ),
+  ).toBeNull();
+});
+
+test("a change unanswered, no box takes a press and nothing closes the editor, so its refusal is drawn there", async () => {
+  const held = heldAnswer();
+  const drawn = await drawPeople({ changed: () => held.answered });
+  const editor = await editorOf("s-bob");
+  await boxPressed(editor, "Admin");
+  expect(boxesIn(editor, "Workspace")).toStrictEqual([
+    "(Admin+)",
+    "(Member+)",
+    "(Hosted runs)",
+  ]);
+  expect(boxesIn(editor, "atlas")).toStrictEqual([
+    "(atlas Admin)",
+    "(atlas Developer)",
+    "(atlas Dispatcher)",
+  ]);
+  for (const name of ["Admin", "atlas Developer"])
+    expect(
+      within(editor).getByRole<HTMLButtonElement>("checkbox", { name })
+        .disabled,
+    ).toBe(false);
+  await boxPressed(editor, "Member");
+  await boxPressed(editor, "atlas Developer");
+  const done = within(editor).getByRole<HTMLButtonElement>("button", {
+    name: "Done",
+  });
+  expect(done.disabled).toBe(true);
+  await turned(() => {
+    fireEvent.keyDown(editor, { key: "Escape" });
+  });
+  expect(screen.getByRole("dialog", { name: "s-bob" })).toBe(editor);
+  await turned(() => {
+    held.release(refused(409, "LastTenantAdministrator"));
+  });
   await settled();
   expect(
-    within(bob).getByText("Only admin · grant another first"),
+    within(editor).getByText("Only admin · grant another first"),
   ).toBeTruthy();
+  expect(boxesIn(editor, "Workspace")).toStrictEqual([
+    "Admin",
+    "Member+",
+    "Hosted runs",
+  ]);
+  expect(done.disabled).toBe(false);
+  expect(changesSent(drawn)).toHaveLength(1);
+});
+
+/** s-bob's editor after Admin is pressed and answered, the list's next read still unanswered. */
+async function answeredBeforeTheList(change: () => Response): Promise<{
+  readonly editor: HTMLElement;
+  /** How many times the list has been asked for since the press. */
+  readonly rereads: () => number;
+  readonly listed: () => Promise<void>;
+}> {
+  const held = heldAnswer();
+  let changed = false;
+  const drawn = await drawPeople({
+    listing: () => (changed ? held.answered : answer(peopleListed)),
+    changed: () => {
+      changed = true;
+      return change();
+    },
+  });
+  const editor = await editorOf("s-bob");
+  const read = listReads(drawn);
+  await boxPressed(editor, "Admin");
+  expect(
+    within(editor).getByRole<HTMLButtonElement>("button", { name: "Done" })
+      .disabled,
+  ).toBe(false);
+  return {
+    editor,
+    rereads: () => listReads(drawn) - read,
+    listed: async () => {
+      await turned(() => {
+        held.release(answer(peopleListed));
+      });
+      await settled();
+    },
+  };
+}
+
+test("a change answered frees the editor, and its boxes once the list is read again", async () => {
+  const { editor, listed } = await answeredBeforeTheList(noContent);
+  expect(boxesIn(editor, "Workspace")).toStrictEqual([
+    "(Admin+)",
+    "(Member+)",
+    "(Hosted runs)",
+  ]);
+  await listed();
+  expect(boxesIn(editor, "Workspace")).toStrictEqual([
+    "Admin",
+    "Member+",
+    "Hosted runs",
+  ]);
+});
+
+test("a change refused draws its line and frees its boxes as they were, before the list is read again", async () => {
+  const { editor, rereads } = await answeredBeforeTheList(() =>
+    refused(409, "LastTenantAdministrator"),
+  );
+  expect(
+    within(editor).getByText("Only admin · grant another first"),
+  ).toBeTruthy();
+  expect(boxesIn(editor, "Workspace")).toStrictEqual([
+    "Admin",
+    "Member+",
+    "Hosted runs",
+  ]);
+  expect(rereads()).toBe(1);
+});
+
+test("a question left unanswered is gone when the editor opens again", async () => {
+  const drawn = await drawPeople();
+  const asked = { name: "Remove your admin role" };
+  const editor = await editorOf("ada@example.com");
+  await boxPressed(editor, "Admin");
+  expect(within(editor).getByRole("group", asked)).toBeTruthy();
+  await press("Done");
+  const again = await editorOf("ada@example.com");
+  expect(within(again).queryByRole("group", asked)).toBeNull();
+  expect(changesSent(drawn)).toStrictEqual([]);
 });
 
 test("removing the reader's own admin asks first, and declined sends nothing", async () => {
   const drawn = await drawPeople();
-  pressIn(personRow("ada@example.com"), "Workspace", "Admin");
-  await settled();
+  const editor = await editorOf("ada@example.com");
+  await boxPressed(editor, "Admin");
+  expect(
+    within(editor).getByRole("group", { name: "Remove your admin role" }),
+  ).toBeTruthy();
   expect(changesSent(drawn)).toStrictEqual([]);
   await press("Cancel");
   expect(changesSent(drawn)).toStrictEqual([]);
   expect(screen.queryByRole("group", { name: "Remove your admin role" })).toBe(
     null,
   );
+  expect(boxesIn(editor, "Workspace")).toContain("Admin+");
 });
 
 test("removing the reader's own admin, once confirmed, sends it and draws the notice", async () => {
@@ -214,64 +396,70 @@ test("removing the reader's own admin, once confirmed, sends it and draws the no
       return new Response(null, { status: 204 });
     },
   });
-  pressIn(personRow("ada@example.com"), "Workspace", "Admin");
-  await settled();
+  await boxPressed(await editorOf("ada@example.com"), "Admin");
   await press("Remove");
   expect(changesSent(drawn).map((request) => request.url)).toStrictEqual([
     `${peoplePath}/s-ada/roles/Admin`,
   ]);
   expect(screen.getByText("A workspace admin manages people")).toBeTruthy();
-  expect(within(sectionOf("People")).queryAllByRole("button")).toStrictEqual(
-    [],
-  );
+  expect(screen.queryAllByRole("button")).toStrictEqual([]);
+  expect(screen.queryByRole("dialog")).toBeNull();
 });
-
-/** What one group of a row draws after its name: a button with `+` where pressed, a label in parentheses. */
-function drawnIn(row: HTMLElement, group: string): readonly string[] {
-  const scope = within(row).getByRole("group", { name: group });
-  return [...scope.children]
-    .slice(group === "Workspace" ? 0 : 1)
-    .map((drawn) =>
-      drawn.tagName === "BUTTON"
-        ? `${drawn.textContent}${drawn.getAttribute("aria-pressed") === "true" ? "+" : ""}`
-        : `(${drawn.textContent})`,
-    );
-}
-
-function tableButtons(): readonly HTMLElement[] {
-  return within(screen.getByRole("table")).queryAllByRole("button");
-}
 
 test("a reader who may grant every role is offered every role on every person and project", async () => {
   await drawPeople();
   for (const name of ["ada@example.com", "s-bob"]) {
-    const row = personRow(name);
+    const editor = await editorOf(name);
     expect(
-      within(within(row).getByRole("group", { name: "Workspace" }))
-        .getAllByRole("button")
-        .map((button) => button.textContent),
-    ).toStrictEqual(["Admin", "Member"]);
+      boxesIn(editor, "Workspace").map((box) => box.replace("+", "")),
+    ).toStrictEqual(["Admin", "Member", "Hosted runs"]);
+    expect(projectsOffered(editor)).toStrictEqual(peopleListed.projects);
     for (const project of peopleListed.projects)
       expect(
-        within(within(row).getByRole("group", { name: project }))
-          .getAllByRole("button")
-          .map((button) => button.textContent),
-      ).toStrictEqual(["Admin", "Developer", "Dispatcher"]);
+        boxesIn(editor, project).map((box) => box.replace("+", "")),
+      ).toStrictEqual([
+        `${project} Admin`,
+        `${project} Developer`,
+        `${project} Dispatcher`,
+      ]);
+    await press("Done");
   }
+});
+
+test("the grid of projects heads its columns once, a role each", async () => {
+  await drawPeople();
+  const editor = await editorOf("ada@example.com");
+  expect(
+    within(within(editor).getByRole("table", { name: "Projects" }))
+      .getAllByRole("columnheader")
+      .map((header) => header.textContent),
+  ).toStrictEqual(["Projects", "Admin", "Developer", "Dispatcher"]);
+  expect(boxesIn(editor, "atlas")).toStrictEqual([
+    "atlas Admin+",
+    "atlas Developer+",
+    "atlas Dispatcher",
+  ]);
 });
 
 test("a reader who may grant Member alone is offered Member, and sees the rest as it is held", async () => {
   await drawPeople({
     abilities: () => answer({ ...peopleAbilitiesNone, roles: ["Member"] }),
   });
-  const ada = personRow("ada@example.com");
-  expect(drawnIn(ada, "Workspace")).toStrictEqual(["(Admin)", "Member"]);
-  expect(drawnIn(ada, "atlas")).toStrictEqual(["(Admin)", "(Developer)"]);
-  expect(within(ada).queryByRole("group", { name: "beacon" })).toBeNull();
-  const bob = personRow("s-bob");
-  expect(drawnIn(bob, "Workspace")).toStrictEqual(["Member+"]);
-  expect(within(bob).queryByRole("group", { name: "atlas" })).toBeNull();
-  expect(within(bob).queryByRole("group", { name: "beacon" })).toBeNull();
+  const ada = await editorOf("ada@example.com");
+  expect(boxesIn(ada, "Workspace")).toStrictEqual([
+    "(Admin+)",
+    "Member",
+    "(Hosted runs+)",
+  ]);
+  expect(boxesIn(ada, "atlas")).toStrictEqual([
+    "(atlas Admin+)",
+    "(atlas Developer+)",
+  ]);
+  expect(projectsOffered(ada)).toStrictEqual(["atlas"]);
+  await press("Done");
+  const bob = await editorOf("s-bob");
+  expect(boxesIn(bob, "Workspace")).toStrictEqual(["Member+"]);
+  expect(projectsOffered(bob)).toStrictEqual([]);
 });
 
 test("a reader who may grant on one project of two is offered its roles, and sees the other's as held", async () => {
@@ -282,57 +470,61 @@ test("a reader who may grant on one project of two is offered its roles, and see
         projects: peopleAbilitiesAll(["beacon"]).projects,
       }),
   });
-  const ada = personRow("ada@example.com");
-  expect(drawnIn(ada, "atlas")).toStrictEqual(["(Admin)", "(Developer)"]);
-  expect(drawnIn(ada, "beacon")).toStrictEqual([
-    "Admin",
-    "Developer",
-    "Dispatcher",
+  const offered = ["beacon Admin", "beacon Developer", "beacon Dispatcher"];
+  const ada = await editorOf("ada@example.com");
+  expect(boxesIn(ada, "atlas")).toStrictEqual([
+    "(atlas Admin+)",
+    "(atlas Developer+)",
   ]);
-  expect(drawnIn(personRow("s-bob"), "beacon")).toStrictEqual([
-    "Admin",
-    "Developer",
-    "Dispatcher",
-  ]);
+  expect(boxesIn(ada, "beacon")).toStrictEqual(offered);
+  await press("Done");
+  expect(boxesIn(await editorOf("s-bob"), "beacon")).toStrictEqual(offered);
 });
 
-test("a reader who may change nothing sees no button in the table and no Invite", async () => {
+test("a held box the reader may not change takes no press", async () => {
+  const drawn = await drawPeople({
+    abilities: () => answer({ ...peopleAbilitiesNone, roles: ["Member"] }),
+  });
+  const editor = await editorOf("ada@example.com");
+  await boxPressed(editor, "Admin");
+  await boxPressed(editor, "atlas Developer");
+  expect(changesSent(drawn)).toStrictEqual([]);
+});
+
+test("a reader who may change nothing sees what each person holds, and no Edit and no Invite", async () => {
   await drawPeople({ abilities: () => answer(peopleAbilitiesNone) });
-  expect(tableButtons()).toStrictEqual([]);
-  expect(drawnIn(personRow("ada@example.com"), "Workspace")).toStrictEqual([
-    "(Admin)",
+  expect(screen.queryAllByRole("button")).toStrictEqual([]);
+  expect(heldIn(personRow("ada@example.com"))).toStrictEqual([
+    "Admin",
+    "Hosted runs",
   ]);
-  expect(screen.queryByRole("button", { name: "Invite" })).toBeNull();
+  expect(projectsIn(personRow("ada@example.com"))).toStrictEqual([
+    "atlas: Admin, Developer",
+  ]);
 });
 
-test("abilities absent beside a list that was answered leave the table without controls, and draw one line under it", async () => {
+test("abilities absent beside a list that was answered leave the tables without controls, and draw one line under them", async () => {
   await drawPeople({ abilities: () => answer({}, 404) });
   expect(personRow("ada@example.com")).toBeTruthy();
-  expect(tableButtons()).toStrictEqual([]);
-  expect(screen.queryByRole("button", { name: "Invite" })).toBeNull();
+  expect(screen.queryAllByRole("button")).toStrictEqual([]);
   expect(screen.getAllByText(/^Not available/u)).toHaveLength(1);
 });
 
-function hostedRunsIn(row: HTMLElement): HTMLElement {
-  return within(row).getByRole("button", { name: "Hosted runs" });
-}
-
-test("a reader who may give hosted runs sees them as a button on every person, pressed where held", async () => {
+test("a reader who may give hosted runs is offered them on every person, checked where held", async () => {
   await drawPeople();
-  const pressed = ["ada@example.com", "s-bob", "s-selector"].map((name) =>
-    hostedRunsIn(personRow(name)).getAttribute("aria-pressed"),
-  );
-  expect(pressed).toStrictEqual(["true", "false", "true"]);
-  expect(screen.queryByText("Granted")).toBeNull();
-  expect(screen.queryByText("Not granted")).toBeNull();
+  const drawn: string[] = [];
+  for (const name of ["ada@example.com", "s-bob", "s-selector"]) {
+    drawn.push(...boxesIn(await editorOf(name), "Workspace").slice(-1));
+    await press("Done");
+  }
+  expect(drawn).toStrictEqual(["Hosted runs+", "Hosted runs", "Hosted runs+"]);
 });
 
 test("giving hosted runs sends the grant with no body, and reads the list and the abilities again", async () => {
   const drawn = await drawPeople();
   const read = listReads(drawn);
   const abilitiesRead = abilitiesReads(drawn);
-  fireEvent.click(hostedRunsIn(personRow("s-bob")));
-  await settled();
+  await boxPressed(await editorOf("s-bob"), "Hosted runs");
   expect(changesSent(drawn)).toStrictEqual([
     { method: "POST", url: hostedRunsPath("s-bob"), body: undefined },
   ]);
@@ -342,8 +534,7 @@ test("giving hosted runs sends the grant with no body, and reads the list and th
 
 test("taking hosted runs from a person with an account sends the removal at once", async () => {
   const drawn = await drawPeople();
-  fireEvent.click(hostedRunsIn(personRow("ada@example.com")));
-  await settled();
+  await boxPressed(await editorOf("ada@example.com"), "Hosted runs");
   expect(screen.queryByRole("group", { name: "Remove hosted runs" })).toBe(
     null,
   );
@@ -354,61 +545,72 @@ test("taking hosted runs from a person with an account sends the removal at once
 
 test("taking hosted runs from a subject with no account asks first, and Remove sends the removal", async () => {
   const drawn = await drawPeople();
-  const selector = personRow("s-selector");
-  fireEvent.click(hostedRunsIn(selector));
-  await settled();
-  const asked = within(selector).getByRole("group", {
+  const editor = await editorOf("s-selector");
+  await boxPressed(editor, "Hosted runs");
+  const asked = within(editor).getByRole("group", {
     name: "Remove hosted runs",
   });
   expect(
     within(asked).getByText("Runs this identity starts will stop."),
   ).toBeTruthy();
   expect(changesSent(drawn)).toStrictEqual([]);
-  expect(
-    within(selector)
-      .getAllByRole("button", { name: /Admin|Member|Hosted runs/u })
-      .every((button) => button.hasAttribute("disabled")),
-  ).toBe(true);
+  expect(within(editor).getAllByRole("checkbox").every(boxStill)).toBe(true);
   await press("Remove");
   expect(changesSent(drawn)).toStrictEqual([
     { method: "DELETE", url: hostedRunsPath("s-selector"), body: undefined },
   ]);
 });
 
-test("cancelling the question on a subject with no account sends nothing and leaves hosted runs pressed", async () => {
+test("cancelling the question on a subject with no account sends nothing and leaves hosted runs checked", async () => {
   const drawn = await drawPeople();
-  const selector = personRow("s-selector");
-  fireEvent.click(hostedRunsIn(selector));
-  await settled();
+  const editor = await editorOf("s-selector");
+  await boxPressed(editor, "Hosted runs");
   await press("Cancel");
   expect(changesSent(drawn)).toStrictEqual([]);
   expect(screen.queryByRole("group", { name: "Remove hosted runs" })).toBe(
     null,
   );
-  expect(hostedRunsIn(selector).getAttribute("aria-pressed")).toBe("true");
+  expect(boxesIn(editor, "Workspace")).toContain("Hosted runs+");
 });
 
-test("refused hosted runs draw the line under the person", async () => {
+test("refused hosted runs draw the line in the person's editor", async () => {
   await drawPeople({ changed: () => refused(403, "AccessNotPermitted") });
-  const bob = personRow("s-bob");
-  fireEvent.click(hostedRunsIn(bob));
-  await settled();
-  expect(within(bob).getByText("Change not permitted")).toBeTruthy();
-  expect(hostedRunsIn(bob).getAttribute("aria-pressed")).toBe("false");
+  const editor = await editorOf("s-bob");
+  await boxPressed(editor, "Hosted runs");
+  expect(within(editor).getByText("Change not permitted")).toBeTruthy();
+  expect(boxesIn(editor, "Workspace")).toContain("Hosted runs");
 });
 
-test("a reader who may not give hosted runs, and one whose abilities are not read, see the words and no button", async () => {
+test("a reader who may not give hosted runs sees them where held, as a box no press changes", async () => {
+  const drawn = await drawPeople({
+    abilities: () =>
+      answer({ ...peopleAbilitiesAll(), grantHostedRuns: false }),
+  });
+  const ada = await editorOf("ada@example.com");
+  expect(boxesIn(ada, "Workspace")).toStrictEqual([
+    "Admin+",
+    "Member",
+    "(Hosted runs+)",
+  ]);
+  await boxPressed(ada, "Hosted runs");
+  expect(changesSent(drawn)).toStrictEqual([]);
+  await press("Done");
+  expect(boxesIn(await editorOf("s-bob"), "Workspace")).toStrictEqual([
+    "Admin",
+    "Member+",
+  ]);
+});
+
+test("a reader who may not give hosted runs, and one whose abilities are not read, see them as a chip where held", async () => {
   for (const abilities of [
     () => answer(peopleAbilitiesNone),
     () => answer({}, 404),
   ]) {
     await drawPeople({ abilities });
-    expect(screen.queryByRole("button", { name: "Hosted runs" })).toBeNull();
-    expect(
-      within(personRow("ada@example.com")).getByText("Granted"),
-    ).toBeTruthy();
-    expect(within(personRow("s-bob")).getByText("Not granted")).toBeTruthy();
-    expect(within(personRow("s-selector")).getByText("Granted")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /^Edit/u })).toBeNull();
+    expect(heldIn(personRow("ada@example.com"))).toContain("Hosted runs");
+    expect(heldIn(personRow("s-bob"))).not.toContain("Hosted runs");
+    expect(heldIn(personRow("s-selector"))).toStrictEqual(["Hosted runs"]);
     cleanup();
   }
 });

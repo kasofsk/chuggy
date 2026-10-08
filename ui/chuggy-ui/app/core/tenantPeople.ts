@@ -1,8 +1,8 @@
 /**
- * A workspace's people: who each one is, the words their roles are drawn in,
- * what a change to a person or an invitation came to, which change is asked
- * first, what an invitation's fields may hold before anything is sent, and
- * which changes it offers.
+ * A workspace's people: who each one is, the words what they hold is drawn in
+ * on their row, the boxes their editor holds, what a change to a person or an
+ * invitation came to, which change is asked first, what an invitation's fields
+ * may hold before anything is sent, and which changes it offers.
  *
  * Every field rule is the access contract's own schema, so this only spares the
  * reader a round trip to be told what the plane would refuse anyway. Every
@@ -11,9 +11,9 @@
  * does not know.
  *
  * What is offered is decided from the reader's abilities alone, and a reader
- * whose abilities were not read is offered nothing: a role they may not grant
- * is shown as it is held, hosted runs as granted or not, and an invitation
- * only with roles they may grant.
+ * whose abilities were not read is offered nothing: no person's editor, a box
+ * for what they may not change only where it is held, and an invitation only
+ * with roles they may grant.
  */
 
 import {
@@ -236,8 +236,8 @@ export function projectRoleOffered(
   return named?.roles.includes(role) ?? false;
 }
 
-/** A project is drawn in a person's row where they hold a role there or the
- * reader may grant one there. */
+/** A project is a row of a person's editor where they hold a role there or
+ * the reader may grant one there. */
 export function tenantPersonProjectDrawn(
   abilities: AccessTenantAbilities | undefined,
   person: AccessTenantPerson,
@@ -249,6 +249,176 @@ export function tenantPersonProjectDrawn(
       projectRoleOffered(abilities, project, role),
     )
   );
+}
+
+/** What hosted runs are called wherever a person holds them or may be given them. */
+export const tenantHostedRunsLabel = "Hosted runs";
+
+/** The list's people, and apart from them its subjects the plane says are no
+ * account, each in the list's order. */
+export interface TenantPeopleParted {
+  readonly people: readonly AccessTenantPerson[];
+  readonly identities: readonly AccessTenantPerson[];
+}
+
+export function tenantPeopleParted(
+  listed: readonly AccessTenantPerson[],
+): TenantPeopleParted {
+  return {
+    people: listed.filter((person) => person.account !== false),
+    identities: listed.filter((person) => person.account === false),
+  };
+}
+
+/** How many people the table under this line holds. */
+export function tenantPeopleCountLine(count: number): string {
+  return count === 1 ? "1 person" : `${String(count)} people`;
+}
+
+/** What one person holds in the workspace, as the words their row draws: each
+ * role in the roster's order, then hosted runs. */
+export function tenantPersonHeld(
+  person: AccessTenantPerson,
+): readonly string[] {
+  return [
+    ...accessTenantRoles
+      .filter((role) => person.tenantRoles.includes(role))
+      .map(tenantRoleLabel),
+    ...(person.hostedRuns ? [tenantHostedRunsLabel] : []),
+  ];
+}
+
+/** What a row says of a person who administers every project of the workspace. */
+export const tenantPersonEveryProjectLine = "All projects";
+
+/** Whether a person administers every project of the workspace with no role
+ * there, which `.chug/tasks/keto/namespaces.ts` gives a workspace admin
+ * through each project's tenant. */
+export function tenantPersonEveryProject(person: AccessTenantPerson): boolean {
+  return person.tenantRoles.includes("Admin");
+}
+
+/** One project a person holds a role on, as their row's line: the project,
+ * then its roles in the roster's order. */
+export interface TenantPersonProjectLine {
+  readonly project: string;
+  readonly roles: string;
+}
+
+export function tenantPersonProjectLines(
+  person: AccessTenantPerson,
+  projects: readonly string[],
+): readonly TenantPersonProjectLine[] {
+  return projects
+    .map((project) => {
+      const held = tenantPersonProjectRoles(person, project);
+      return {
+        project,
+        roles: accessProjectRoles
+          .filter((role) => held.includes(role))
+          .map(projectRoleLabel)
+          .join(", "),
+      };
+    })
+    .filter((line) => line.roles !== "");
+}
+
+/** Whether the reader may change anything a person holds, which is whether a
+ * row offers their editor. */
+export function tenantPersonEditOffered(
+  abilities: AccessTenantAbilities | undefined,
+  projects: readonly string[],
+): boolean {
+  return (
+    tenantHostedRunsOffered(abilities) ||
+    accessTenantRoles.some((role) => tenantRoleOffered(abilities, role)) ||
+    projects.some((project) =>
+      accessProjectRoles.some((role) =>
+        projectRoleOffered(abilities, project, role),
+      ),
+    )
+  );
+}
+
+/** One box of a person's editor: the change a press on it asks for, `held` in
+ * it being what the list holds now, and whether the reader may make it. */
+export interface TenantPersonBox {
+  readonly label: string;
+  readonly change: TenantPersonChange;
+  readonly offered: boolean;
+}
+
+function tenantPersonBoxDrawn(box: TenantPersonBox): boolean {
+  return box.offered || box.change.held;
+}
+
+/** The workspace's boxes in a person's editor: each role, then hosted runs,
+ * one the reader may not change drawn only where it is held. */
+export function tenantPersonWorkspaceBoxes(
+  abilities: AccessTenantAbilities | undefined,
+  person: AccessTenantPerson,
+): readonly TenantPersonBox[] {
+  const roles = accessTenantRoles.map((role): TenantPersonBox => ({
+    label: tenantRoleLabel(role),
+    change: {
+      scope: "Tenant",
+      role,
+      held: person.tenantRoles.includes(role),
+    },
+    offered: tenantRoleOffered(abilities, role),
+  }));
+  const hostedRuns: TenantPersonBox = {
+    label: tenantHostedRunsLabel,
+    change: { scope: "HostedRuns", held: person.hostedRuns },
+    offered: tenantHostedRunsOffered(abilities),
+  };
+  return [...roles, hostedRuns].filter(tenantPersonBoxDrawn);
+}
+
+/** One project's box for one role in a person's editor, absent where the
+ * reader may not change it and the person does not hold it. */
+export function tenantPersonProjectBox(
+  abilities: AccessTenantAbilities | undefined,
+  person: AccessTenantPerson,
+  project: string,
+  role: AccessProjectRole,
+): TenantPersonBox | undefined {
+  const box: TenantPersonBox = {
+    label: projectRoleLabel(role),
+    change: {
+      scope: "Project",
+      project,
+      role,
+      held: tenantPersonProjectRoles(person, project).includes(role),
+    },
+    offered: projectRoleOffered(abilities, project, role),
+  };
+  return tenantPersonBoxDrawn(box) ? box : undefined;
+}
+
+function tenantPersonChangeNamed(change: TenantPersonChange): string {
+  switch (change.scope) {
+    case "HostedRuns":
+      return change.scope;
+    case "Tenant":
+      return `${change.scope} ${change.role}`;
+    case "Project":
+      return `${change.scope} ${change.project} ${change.role}`;
+  }
+}
+
+/** Whether a box is drawn checked: as the list holds it, or as the change
+ * being sent will leave it, whether or not the list has been read again. */
+export function tenantPersonBoxChecked(
+  box: TenantPersonBox,
+  sending: TenantPersonChange | undefined,
+): boolean {
+  if (
+    sending !== undefined &&
+    tenantPersonChangeNamed(sending) === tenantPersonChangeNamed(box.change)
+  )
+    return !sending.held;
+  return box.change.held;
 }
 
 /** The workspace roles an invitation offers, in the roster's order. */
@@ -340,6 +510,20 @@ export interface TenantInvitationForm {
     readonly project: string;
     readonly roles: readonly AccessProjectRole[];
   }[];
+}
+
+/** An invitation as each opening of the dialog starts it: nothing typed, the
+ * role it opens on, and every project it offers with no role chosen. */
+export function tenantInvitationBlank(
+  role: AccessTenantRole,
+  offered: readonly { readonly project: string }[],
+): TenantInvitationForm {
+  return {
+    github: "",
+    email: "",
+    role,
+    projects: offered.map((held) => ({ project: held.project, roles: [] })),
+  };
 }
 
 export function tenantInvitationGithubFault(
