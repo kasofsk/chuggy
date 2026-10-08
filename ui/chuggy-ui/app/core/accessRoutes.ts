@@ -10,13 +10,17 @@ import {
   accessInvitedSchema,
   accessPlanePath,
   accessPlaneRoutes,
+  accessSiteAuthoritiesSchema,
   accessTenantAbilitiesSchema,
+  accessTenantAuthoritiesSchema,
   accessTenantPeopleSchema,
   type AccessInvitation,
   type AccessInvited,
   type AccessPlaneRouteName,
   type AccessProjectRole,
+  type AccessSiteAuthorities,
   type AccessTenantAbilities,
+  type AccessTenantAuthorities,
   type AccessTenantPeople,
   type AccessTenantRole,
 } from "../../../../src/contract/accessPlane.ts";
@@ -61,6 +65,27 @@ export function apiTenantAbilities(
     ports,
     accessPlanePath("tenantAbilities", { tenant }),
     (value) => accessTenantAbilitiesSchema.parse(value),
+  );
+}
+
+/** Who holds each of one tenant's authorities, absent for a caller who does not manage them. */
+export function apiTenantAuthorities(
+  ports: ApiPorts,
+  tenant: string,
+): Promise<ApiResult<AccessTenantAuthorities>> {
+  return apiGet(
+    ports,
+    accessPlanePath("tenantAuthorities", { tenant }),
+    (value) => accessTenantAuthoritiesSchema.parse(value),
+  );
+}
+
+/** Who holds each of the site's authorities, absent for a caller who does not manage them. */
+export function apiSiteAuthorities(
+  ports: ApiPorts,
+): Promise<ApiResult<AccessSiteAuthorities>> {
+  return apiGet(ports, accessPlanePath("siteAuthorities", {}), (value) =>
+    accessSiteAuthoritiesSchema.parse(value),
   );
 }
 

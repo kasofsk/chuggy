@@ -62,3 +62,12 @@ test("the index names the People group and links to its own page", async () => {
       .getAttribute("href"),
   ).toBe(`/tenants/${tenant}/settings/people`);
 });
+
+test("the index names the Permissions group and links to its own page", async () => {
+  await drawTenantSettings();
+  expect(
+    screen
+      .getByRole<HTMLAnchorElement>("link", { name: "Permissions" })
+      .getAttribute("href"),
+  ).toBe(`/tenants/${tenant}/settings/permissions`);
+});
