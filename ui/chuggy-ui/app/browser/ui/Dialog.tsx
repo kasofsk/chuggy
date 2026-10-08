@@ -13,7 +13,9 @@
  * actions, drawn at the right, and closing is then one of them. Beside those
  * actions stands the line a refusal left, where no length of body hides it,
  * and while the caller's request is unanswered nothing closes the dialog, so
- * that line always has somewhere to be drawn.
+ * that line always has somewhere to be drawn. A press outside is refused
+ * before Radix counts it, so the next close still returns the focus to the
+ * trigger.
  *
  * It is never taller than the viewport. The title and the foot stand at its
  * edges and the caller's body scrolls between them, so a roster of any length
@@ -77,12 +79,13 @@ export function Dialog(props: {
   readonly children: ReactNode;
 }): ReactNode {
   const width = props.wide === true ? "max-w-measure" : "max-w-aside";
+  const busy = props.busy === true;
   return (
     <RadixDialog.Root
       modal={false}
       open={props.open}
       onOpenChange={(open) => {
-        if (open || props.busy !== true) props.onOpenChange(open);
+        if (open || !busy) props.onOpenChange(open);
       }}
     >
       <RadixDialog.Trigger
@@ -100,6 +103,9 @@ export function Dialog(props: {
         <div className="pointer-events-none fixed inset-x-4 inset-y-6 z-20">
           <RadixDialog.Content
             aria-describedby={undefined}
+            onInteractOutside={(event) => {
+              if (busy) event.preventDefault();
+            }}
             className={`pointer-events-auto mx-auto flex max-h-full ${width} flex-col gap-4 rounded-3 border border-edge bg-surface-1 p-5 outline-none`}
           >
             <RadixDialog.Title className="text-md font-strong text-ink-1 wrap-anywhere">

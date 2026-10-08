@@ -69,7 +69,10 @@ function tenantPersonChangeSent(
 }
 
 interface TenantPersonChanging {
+  /** The change the list has not yet caught up with. */
   readonly sending: TenantPersonChange | undefined;
+  /** Its request is unanswered. */
+  readonly unanswered: boolean;
   readonly note: string | undefined;
   readonly asking: TenantPersonChange | undefined;
   /** The editor opening: nothing asked and nothing said yet. */
@@ -89,12 +92,14 @@ function useTenantPersonChange(
   const [sending, setSending] = useState<TenantPersonChange | undefined>(
     undefined,
   );
+  const [unanswered, setUnanswered] = useState(false);
   const [note, setNote] = useState<string | undefined>(undefined);
   const [asking, setAsking] = useState<TenantPersonChange | undefined>(
     undefined,
   );
   const send = (change: TenantPersonChange): void => {
     setSending(change);
+    setUnanswered(true);
     setNote(undefined);
     void (async () => {
       const answered = await tenantPersonChangeSent(
@@ -103,14 +108,22 @@ function useTenantPersonChange(
         person.subject,
         change,
       );
-      await tenantPeopleReread(client, tenant);
+      const refused = tenantPersonChangeNote(answered);
+      setUnanswered(false);
       setAsking(undefined);
+      setNote(refused);
+      if (refused !== undefined) {
+        setSending(undefined);
+        void tenantPeopleReread(client, tenant);
+        return;
+      }
+      await tenantPeopleReread(client, tenant);
       setSending(undefined);
-      setNote(tenantPersonChangeNote(answered));
     })();
   };
   return {
     sending,
+    unanswered,
     note,
     asking,
     send,
@@ -151,7 +164,8 @@ function TenantPersonWorkspace(props: {
             key={box.label}
             label={box.label}
             checked={tenantPersonBoxChecked(box, changing.sending)}
-            disabled={!box.offered || tenantPersonChangeHeld(changing)}
+            disabled={!box.offered}
+            held={tenantPersonChangeHeld(changing)}
             onChange={() => {
               changing.press(box.change);
             }}
@@ -207,7 +221,8 @@ function TenantPersonEditorBody(props: {
           if (box === undefined) return undefined;
           return {
             checked: tenantPersonBoxChecked(box, changing.sending),
-            disabled: !box.offered || tenantPersonChangeHeld(changing),
+            disabled: !box.offered,
+            held: tenantPersonChangeHeld(changing),
           };
         }}
         onToggle={(project, role) => {
@@ -230,7 +245,7 @@ export function TenantPersonEditor(props: {
   const [open, setOpen] = useState(false);
   const changing = useTenantPersonChange(props.tenant, props.person);
   const name = tenantPersonName(props.person).name;
-  const busy = changing.sending !== undefined;
+  const busy = changing.unanswered;
   return (
     <Dialog
       wide

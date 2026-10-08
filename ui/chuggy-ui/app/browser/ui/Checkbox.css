@@ -1,6 +1,6 @@
 /* Checkbox: the box a press fills, the mark in it, and a box drawn but not
-   pressable. A press lands a little past the box's edge, because the box is
-   smaller than a finger. */
+   pressable, whether never or only for now. A press lands a little past the
+   box's edge, because the box is smaller than a finger. */
 
 @layer ui {
   .checkbox {
@@ -33,7 +33,8 @@
     border-color: var(--surface-inverse);
   }
 
-  .checkbox:disabled {
+  .checkbox:disabled,
+  .checkbox[aria-disabled="true"] {
     background: transparent;
     border-color: var(--edge);
     color: var(--ink-3);

@@ -107,7 +107,7 @@ export function refused(status: number, code: string): Response {
 
 export interface PeopleDrawing {
   /** What the list answers, read again after every change. */
-  readonly listing?: () => Response;
+  readonly listing?: () => Response | Promise<Response>;
   /** What the abilities answer, read again with the list. */
   readonly abilities?: () => Response;
   /** What a grant, a removal or an invitation is answered with. */
@@ -199,9 +199,16 @@ export async function editorOf(name: string): Promise<HTMLElement> {
 
 /** One box as a case reads it: its name, `+` where checked, in parentheses
  * where no press changes it. */
+/** Whether no press changes a box: one never offered, or one held while a change is asked about or sent. */
+export function boxStill(box: HTMLElement): boolean {
+  return (
+    box.hasAttribute("disabled") || box.getAttribute("aria-disabled") === "true"
+  );
+}
+
 function boxDrawn(box: HTMLElement): string {
   const drawn = `${box.getAttribute("aria-label") ?? box.nextElementSibling?.textContent ?? ""}${box.getAttribute("aria-checked") === "true" ? "+" : ""}`;
-  return box.hasAttribute("disabled") ? `(${drawn})` : drawn;
+  return boxStill(box) ? `(${drawn})` : drawn;
 }
 
 /** The boxes one group of an editor draws: `Workspace`, or the row of a project. */
