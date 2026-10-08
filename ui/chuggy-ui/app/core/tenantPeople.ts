@@ -1,7 +1,8 @@
 /**
  * A workspace's people: who each one is, the words their roles are drawn in,
- * what a role change or an invitation came to, and what an invitation's fields
- * may hold before anything is sent, and which changes it offers.
+ * what a change to a person or an invitation came to, which change is asked
+ * first, what an invitation's fields may hold before anything is sent, and
+ * which changes it offers.
  *
  * Every field rule is the access contract's own schema, so this only spares the
  * reader a round trip to be told what the plane would refuse anyway. Every
@@ -11,7 +12,8 @@
  *
  * What is offered is decided from the reader's abilities alone, and a reader
  * whose abilities were not read is offered nothing: a role they may not grant
- * is shown as it is held, and an invitation only with roles they may grant.
+ * is shown as it is held, hosted runs as granted or not, and an invitation
+ * only with roles they may grant.
  */
 
 import {
@@ -144,14 +146,15 @@ export function accessFailureLabel(failure: ApiFailure): string {
 }
 
 /** What one grant or removal came to: nothing to say, or its line. */
-export function tenantRoleChangeNote(
+export function tenantPersonChangeNote(
   result: ApiResult<undefined>,
 ): string | undefined {
   return result.outcome === "Ok" ? undefined : accessFailureLabel(result);
 }
 
-/** One role held or not, on the workspace or on one of its projects. */
-export type TenantRoleChange =
+/** One role held or not, on the workspace or on one of its projects, or
+ * hosted runs held or not. */
+export type TenantPersonChange =
   | {
       readonly scope: "Tenant";
       readonly role: AccessTenantRole;
@@ -162,20 +165,47 @@ export type TenantRoleChange =
       readonly project: string;
       readonly role: AccessProjectRole;
       readonly held: boolean;
-    };
+    }
+  | { readonly scope: "HostedRuns"; readonly held: boolean };
 
-/** Removing the reader's own workspace admin is the one change asked first,
- * because once it is done the list is no longer theirs to read. */
-export function tenantRoleChangeAsks(
+/** Two removals are asked first: the reader's own workspace admin, after which
+ * the list is no longer theirs to read, and hosted runs from a subject that is
+ * no account, which may be the identity that starts the workspace's runs. */
+export function tenantPersonChangeAsks(
   person: AccessTenantPerson,
-  change: TenantRoleChange,
+  change: TenantPersonChange,
 ): boolean {
-  return (
-    person.mine &&
-    change.scope === "Tenant" &&
-    change.role === "Admin" &&
-    change.held
-  );
+  if (!change.held) return false;
+  if (change.scope === "HostedRuns") return person.account === false;
+  return person.mine && change.scope === "Tenant" && change.role === "Admin";
+}
+
+/** What a change asked first is named for, and the line it is asked with. */
+export interface TenantPersonQuestion {
+  readonly question: string;
+  readonly line: string;
+}
+
+export function tenantPersonQuestion(
+  change: TenantPersonChange,
+): TenantPersonQuestion {
+  return change.scope === "HostedRuns"
+    ? {
+        question: "Remove hosted runs",
+        line: "Runs this identity starts will stop.",
+      }
+    : {
+        question: "Remove your admin role",
+        line: "You will no longer manage this workspace.",
+      };
+}
+
+/** Whether the reader may give and take hosted runs, which a reader whose
+ * abilities were not read may not. */
+export function tenantHostedRunsOffered(
+  abilities: AccessTenantAbilities | undefined,
+): boolean {
+  return abilities?.grantHostedRuns ?? false;
 }
 
 /** The roles one person holds on one of the workspace's projects. */

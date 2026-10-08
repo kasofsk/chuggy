@@ -1,8 +1,8 @@
 /**
- * A workspace's people: one row a person, their workspace roles and their
- * roles on each of the workspace's projects, and one action inviting someone
- * new, each change offered only where the reader's abilities say they may
- * make it.
+ * A workspace's people: one row a person, their workspace roles, whether they
+ * hold hosted runs and their roles on each of the workspace's projects, and one
+ * action inviting someone new, each change offered only where the reader's
+ * abilities say they may make it.
  *
  * The list answers only a reader holding some authority over the workspace's
  * people, so its absence is this reader's standing rather than a fault: they
