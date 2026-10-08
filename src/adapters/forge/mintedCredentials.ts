@@ -38,7 +38,22 @@ import {
   type ForgeRepositoryTokens,
   type ForgeTokenMinted,
 } from "../../interpreter/forgeInstallation.ts";
+import type { CredentialMintCause } from "../../interpreter/repositoryReadEvidence.ts";
 import { githubAddressOf } from "./githubAddress.ts";
+
+/** Which step of a mint raised, keyed by what it raised with, so a raise reaches every caller unchanged. */
+const mintedRaisedBy = new WeakMap<object, CredentialMintCause>();
+
+/** Raises what a step raised with again, marked with the step where it can be. */
+function mintedRaisedMarked(
+  cause: CredentialMintCause,
+): (raised: unknown) => never {
+  return (raised) => {
+    if (typeof raised === "object" && raised !== null)
+      mintedRaisedBy.set(raised, cause);
+    throw raised;
+  };
+}
 
 /** Everything the per-repository source is composed with, all of it one forge's. */
 export interface MintedRepositoryTokensOptions {
@@ -59,19 +74,25 @@ export function mintedRepositoryTokens(
   return {
     token: async (repository, tenant, permissions) => {
       const address = githubAddressOf(repository, options.repositoryHost);
-      if (address === undefined) return { minted: "Denied" };
-      const installation = await options.installations.installation({
-        forge: options.forge,
-        app: options.app,
-        account: asForgeAccount(address.owner),
-        tenant,
-      });
-      if (installation === undefined) return { minted: "Denied" };
-      return options.tokens.mint({
-        installation,
-        repositories: [asForgeRepositoryName(address.name)],
-        permissions,
-      });
+      if (address === undefined)
+        return { minted: "Denied", evidence: { mint: "Address" } };
+      const installation = await options.installations
+        .installation({
+          forge: options.forge,
+          app: options.app,
+          account: asForgeAccount(address.owner),
+          tenant,
+        })
+        .catch(mintedRaisedMarked("StoreRaised"));
+      if (installation === undefined)
+        return { minted: "Denied", evidence: { mint: "NoInstallation" } };
+      return options.tokens
+        .mint({
+          installation,
+          repositories: [asForgeRepositoryName(address.name)],
+          permissions,
+        })
+        .catch(mintedRaisedMarked("MintRaised"));
     },
   };
 }
@@ -80,8 +101,11 @@ export function mintedRepositoryTokens(
 function mintedCredentialResolved(
   minted: ForgeTokenMinted,
 ): CredentialResolved {
-  if (minted.minted === "Denied") return { resolved: "Denied" };
-  if (minted.minted === "Unavailable") return { resolved: "Unavailable" };
+  if (minted.minted !== "Token")
+    return {
+      resolved: minted.minted,
+      ...(minted.evidence === undefined ? {} : { evidence: minted.evidence }),
+    };
   return {
     resolved: "Credential",
     credential: asRepositoryCredential(minted.token),
@@ -118,5 +142,13 @@ function mintedCredentialToken(
 ): Promise<ForgeTokenMinted> {
   return options.tokens
     .token(repository, tenant, options.permissions)
-    .catch((): ForgeTokenMinted => ({ minted: "Unavailable" }));
+    .catch((raised: unknown): ForgeTokenMinted => {
+      const cause =
+        typeof raised === "object" && raised !== null
+          ? mintedRaisedBy.get(raised)
+          : undefined;
+      return cause === undefined
+        ? { minted: "Unavailable" }
+        : { minted: "Unavailable", evidence: { mint: cause } };
+    });
 }

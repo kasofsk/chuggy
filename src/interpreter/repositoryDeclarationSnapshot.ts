@@ -6,6 +6,7 @@
 
 import type { GitObjectId, RepositoryBinding } from "./finalizer.ts";
 import type { RepositoryDeclarationFile } from "./repositoryDeclaration.ts";
+import type { RepositoryReadEvidence } from "./repositoryReadEvidence.ts";
 
 /** One commit of one bound repository, which is what a declaration directory is read at. */
 export interface RepositoryDeclarationSnapshotRequest {
@@ -24,8 +25,22 @@ export type RepositoryDeclarationSnapshotRead =
       readonly files: readonly RepositoryDeclarationFile[];
     }
   | { readonly read: "Absent" }
-  | {
-      readonly read: "Unavailable";
-      readonly unavailable: "Credential" | "Repository";
-    }
+  | ({ readonly read: "Unavailable" } & RepositoryDeclarationUnavailable)
   | { readonly read: "Refused" };
+
+/** What could not be reached, and what answered where something did. */
+export interface RepositoryDeclarationUnavailable {
+  readonly unavailable: "Credential" | "Repository";
+  readonly evidence?: RepositoryReadEvidence;
+}
+
+/** An unavailable read as the import outcome it is rebuilt into, its evidence carried rather than dropped. */
+export function repositoryDeclarationUnavailableOutcome(
+  read: RepositoryDeclarationUnavailable,
+): { readonly result: "Unavailable" } & RepositoryDeclarationUnavailable {
+  return {
+    result: "Unavailable",
+    unavailable: read.unavailable,
+    ...(read.evidence === undefined ? {} : { evidence: read.evidence }),
+  };
+}

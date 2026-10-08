@@ -52,6 +52,7 @@ import { SignJWT } from "jose";
 import { z } from "zod";
 
 import { forgeRefusalMessageCharsMax } from "../../contract/http.ts";
+import type { CredentialMintEvidence } from "../../interpreter/repositoryReadEvidence.ts";
 import { githubResponseTextOf } from "./githubResponse.ts";
 
 /** Where the forge is and how much of it one call may take. */
@@ -232,11 +233,18 @@ async function githubAppJwt(
     .sign(key);
 }
 
-/** What one request came to, a refusal kept apart from an outage. */
+/** What one request came to, a refusal kept apart from an outage, each with the cause and the status a mint reports it under. */
 export type GithubAppAnswered =
   | { readonly answered: "Answer"; readonly response: Response }
-  | { readonly answered: "Denied"; readonly message: string }
-  | { readonly answered: "Unavailable" };
+  | {
+      readonly answered: "Denied";
+      readonly message: string;
+      readonly evidence?: CredentialMintEvidence;
+    }
+  | {
+      readonly answered: "Unavailable";
+      readonly evidence?: CredentialMintEvidence;
+    };
 
 /** One request as a caller spells it, including the one status it treats as an answer. */
 export interface GithubAppRequest {
@@ -310,20 +318,25 @@ async function githubSend(
       signal: AbortSignal.timeout(own.requestTimeoutMs),
     });
   } catch {
-    return { answered: "Unavailable" };
+    return { answered: "Unavailable", evidence: { mint: "Request" } };
   }
   if (response.status === request.okStatus)
     return { answered: "Answer", response };
-  if (
-    !githubDeniedStatuses.includes(response.status) ||
-    githubThrottled(response)
-  ) {
+  const throttled = githubThrottled(response);
+  if (!githubDeniedStatuses.includes(response.status) || throttled) {
     await response.body?.cancel().catch(() => undefined);
-    return { answered: "Unavailable" };
+    return {
+      answered: "Unavailable",
+      evidence: {
+        mint: throttled ? "Throttle" : "Status",
+        status: response.status,
+      },
+    };
   }
   return {
     answered: "Denied",
     message: await githubRefusalMessage(own, response),
+    evidence: { mint: "Status", status: response.status },
   };
 }
 
@@ -356,7 +369,7 @@ export async function githubAppSend(
   try {
     bearer = await githubAppJwt(own, await githubAppKey(own));
   } catch {
-    return { answered: "Unavailable" };
+    return { answered: "Unavailable", evidence: { mint: "Key" } };
   }
   return githubBearerSend(own, request, bearer);
 }
