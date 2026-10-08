@@ -19,6 +19,9 @@
  * added is written as. A person and a group are different paths, so a subject
  * is never read as a group's name.
  *
+ * THE SITE'S TENANTS ARE ANSWERED TO WHOEVER MAY MAKE ONE, each with its
+ * administrators, at the path the site's invitation makes them at.
+ *
  * WHAT A CALLER MAY DO IS ANSWERED ABOUT THEM ALONE, at the site, a tenant or
  * a project: each ability is whether they hold the kind it needs there, so a
  * console offers the controls the plane would not refuse.
@@ -205,6 +208,7 @@ export const accessPlaneRoutes = {
     method: "POST",
     path: `${accessSitePath}/workspaces`,
   },
+  siteTenants: { method: "GET", path: `${accessSitePath}/workspaces` },
   siteAuthorityPersonAddition: {
     method: "POST",
     path: accessHolderPersonPath(accessSitePath),
@@ -573,6 +577,23 @@ export const accessProjectAuthoritiesSchema = z.strictObject({
   truncated: z.boolean(),
 });
 
+/**
+ * One of the site's tenants: the people administering it, how many of its
+ * administrators no person names, and whether they may make accounts.
+ */
+export const accessSiteTenantSchema = z.strictObject({
+  tenant: identitySchema,
+  administrators: z.array(accessAuthorityPersonSchema),
+  unnamed: z.number().int().nonnegative(),
+  createAccounts: z.boolean(),
+});
+
+/** What the site's tenant list answers, in tenant order. */
+export const accessSiteTenantsSchema = z.strictObject({
+  tenants: z.array(accessSiteTenantSchema),
+  truncated: z.boolean(),
+});
+
 export type AccessTenantPerson = z.infer<typeof accessTenantPersonSchema>;
 export type AccessTenantPeople = z.infer<typeof accessTenantPeopleSchema>;
 export type AccessProjectPerson = z.infer<typeof accessProjectPersonSchema>;
@@ -590,6 +611,8 @@ export type AccessProjectAbilities = z.infer<
 >;
 export type AccessSiteAbilities = z.infer<typeof accessSiteAbilitiesSchema>;
 export type AccessAuthorityPerson = z.infer<typeof accessAuthorityPersonSchema>;
+export type AccessSiteTenant = z.infer<typeof accessSiteTenantSchema>;
+export type AccessSiteTenants = z.infer<typeof accessSiteTenantsSchema>;
 export type AccessSiteAuthorities = z.infer<typeof accessSiteAuthoritiesSchema>;
 export type AccessTenantAuthorities = z.infer<
   typeof accessTenantAuthoritiesSchema

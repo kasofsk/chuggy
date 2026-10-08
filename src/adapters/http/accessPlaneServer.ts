@@ -1,9 +1,10 @@
 /**
  * The access plane's server: a tenant's and a project's people, granting and
  * removing their roles, giving and taking a person's hosted runs, inviting a
- * person by their GitHub account into a tenant or into one of their own, and what the caller may do, who holds each
- * authority and adding and removing its holders at the site, a tenant or a
- * project, each for a caller the authority says holds the kind it needs.
+ * person by their GitHub account into a tenant or into one of their own, the
+ * site's tenants, and what the caller may do, who holds each authority and
+ * adding and removing its holders at the site, a tenant or a project, each for
+ * a caller the authority says holds the kind it needs.
  *
  * IT ANSWERS AS THE PUBLIC API DOES, because the console reads both with the
  * same code. A body is read as the API's media type, every refusal carries the
@@ -68,6 +69,7 @@ import type {
   AccessChange,
   AccessPlane,
 } from "../../interpreter/accessPlane.ts";
+import type { AccessSiteTenantsList } from "../../interpreter/accessSiteTenants.ts";
 import type { Principal } from "../../interpreter/principal.ts";
 import {
   asTenantId,
@@ -101,6 +103,7 @@ export interface AccessPlaneService {
   readonly abilities: AccessAbilities;
   readonly authorities: AccessAuthorities;
   readonly holders: AccessAuthorityHolders;
+  readonly siteTenants: AccessSiteTenantsList;
   readonly ready: () => Promise<boolean>;
 }
 
@@ -301,7 +304,7 @@ function accessHostedRunsRoutes(
   );
 }
 
-/** What the caller may do and who holds each authority at each level, absent to a caller the authority does not answer. */
+/** What the caller may do, who holds each authority at each level, and the site's tenants, absent to a caller the authority does not answer. */
 function accessAnsweredRoutes(
   app: FastifyInstance,
   service: AccessPlaneService,
@@ -340,6 +343,10 @@ function accessAnsweredRoutes(
     [
       "siteAuthorities",
       (_request, caller) => service.authorities.siteAuthorities(caller),
+    ],
+    [
+      "siteTenants",
+      (_request, caller) => service.siteTenants.siteTenants(caller),
     ],
   ];
   for (const [name, abilities] of answered)
