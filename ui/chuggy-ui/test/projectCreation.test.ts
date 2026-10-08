@@ -2,6 +2,8 @@
 
 import { expect, test } from "vitest";
 
+import { nativeHttpError } from "../../../src/contract/http.ts";
+import { classify } from "../../../src/contract/outcomes.ts";
 import { projectNameCharsMax } from "../../../src/contract/requests.ts";
 import type { ProjectCreatedResponse } from "../../../src/contract/responses.ts";
 import type { ApiResult } from "../app/core/apiRequest.ts";
@@ -71,6 +73,17 @@ test("each refusal is one short line of its own", () => {
       body: undefined,
     }),
   ).toBe("Reserved");
+  const refused = classify(
+    403,
+    () => null,
+    nativeHttpError(
+      "TenantCreationNotPermitted",
+      "The site does not permit this caller to create a tenant.",
+    ),
+  );
+  if (refused.outcome === "Ok" || refused.outcome === "Accepted")
+    throw new Error("a refusal was classified as a success");
+  expect(status(refused)).toBe("Not permitted");
   expect(status({ outcome: "Absent" })).toBe("Unavailable");
   expect(
     status({

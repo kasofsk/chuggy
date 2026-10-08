@@ -585,6 +585,7 @@ test("the site's administrator, holding no role in the tenant, is answered every
     assert.deepEqual(await abilities.siteAbilities(administrator), {
       administer: true,
       createAccount: true,
+      createTenant: true,
       manageAuthorities: true,
     });
   });

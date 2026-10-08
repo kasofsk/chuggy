@@ -32,6 +32,9 @@ const versioned = { ...authorized, "content-type": nativeHttpMediaType };
 const keyed = { ...versioned, "idempotency-key": "create-chuggy-1" };
 const body = { tenant: "vteng", project: "chuggy" };
 
+/** The principal the fixture's `valid` bearer resolves to. */
+const caller = asPrincipal("issuer geoff");
+
 const createdAnswer: ProjectCreationAnswer = {
   outcome: "Created",
   tenantCreated: true,
@@ -52,9 +55,12 @@ function creationCase(
   options: {
     readonly configured?: boolean;
     readonly grantFails?: boolean;
+    readonly unpermitted?: boolean;
   } = {},
 ): CreationCase {
   const access = memoryProjectAccess();
+  if (options.unpermitted !== true)
+    access.grantSite({ principal: caller, access: new Set(["CreateTenant"]) });
   const writes: ProjectCreationWrite[] = [];
   const grants: ProjectGrant[] = [];
   const app = servedNativeHttpApp(
@@ -150,6 +156,15 @@ test("each refusal the door answers reaches the wire as its own conflict", async
     assert.equal(code(served), outcome);
     assert.deepEqual(one.grants, [], outcome);
   }
+});
+
+test("a caller the site does not permit to create a tenant is refused with its own code, and the door is asked nothing", async (t) => {
+  const one = creationCase(t, createdAnswer, { unpermitted: true });
+  const served = await created(one);
+  assert.equal(served.statusCode, 403);
+  assert.equal(code(served), "TenantCreationNotPermitted");
+  assert.deepEqual(one.writes, []);
+  assert.deepEqual(one.grants, []);
 });
 
 test("a name the rule refuses is the request's own fault and names its field", async (t) => {

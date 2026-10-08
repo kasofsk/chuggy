@@ -78,6 +78,7 @@ const accessAbilitiesProjectKinds: readonly ProjectAccessKind[] = [
 const accessAbilitiesSiteKinds: readonly SiteAccessKind[] = [
   "AdministerSite",
   "CreateAccount",
+  "CreateTenant",
   "ManageSiteAuthorities",
 ];
 
@@ -195,6 +196,7 @@ export function accessAbilities(
       return {
         administer: held.has("AdministerSite"),
         createAccount: held.has("CreateAccount"),
+        createTenant: held.has("CreateTenant"),
         manageAuthorities: held.has("ManageSiteAuthorities"),
       };
     },
