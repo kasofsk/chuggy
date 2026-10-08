@@ -153,6 +153,7 @@
     --width-column: 64rem; /* a conversation's reading column */
     --width-reading: 48rem; /* that column where the conversation has the frame */
     --width-settings: 56rem; /* a settings page: form rows, not prose */
+    --width-settings-nav: 13rem; /* the settings' own navigation, beside its page */
     --width-aside: 22rem;
     --width-chat: 25%; /* the frame a docked chat pane takes beside the pages */
     /* and under them, where a quarter is too short to read: a third, and on a

@@ -33,6 +33,7 @@ import {
   repositoryOffersPointsAtAccounts,
   repositoryOffersWithheld,
 } from "../core/projectRepositories.ts";
+import { settingsRoutes } from "../core/settingsNav.ts";
 import { usePanelResource, usePanelTenantResource } from "./api.ts";
 import { PanelUnready } from "./DataPanel.tsx";
 import { useNowMs } from "./Freshness.tsx";
@@ -44,10 +45,7 @@ import { BindingConfigurations } from "./repositories/BindingConfigurations.tsx"
 import { CreateRepository } from "./repositories/CreateRepository.tsx";
 import { forgeAppsResource } from "./repositories/InstallLink.tsx";
 import { repositoryRoutePath } from "./repositories/RepositoryPage.tsx";
-import {
-  forgeInstallationsResource,
-  tenantAccountsRoutePath,
-} from "./settings/TenantAccountsPage.tsx";
+import { forgeInstallationsResource } from "./settings/TenantAccountsPage.tsx";
 import { TopBarSlot } from "./shell/slots.tsx";
 import { EmptyState } from "./ui/EmptyState.tsx";
 import { Figure } from "./ui/Figure.tsx";
@@ -157,10 +155,7 @@ function RepositoriesSection(props: {
         <Notice tone="parked" inline detail={props.withheld} />
       )}
       {props.pointsAtAccounts ? (
-        <Link
-          to={tenantAccountsRoutePath}
-          params={{ tenant: props.partition.tenant }}
-        >
+        <Link to={settingsRoutes.project.accounts} params={props.partition}>
           Accounts
         </Link>
       ) : null}

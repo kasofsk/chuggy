@@ -26,6 +26,7 @@ import {
   apiSelectorSettingsHistory,
 } from "../../core/apiRoutes.ts";
 import { projectLeadPresent } from "../../core/projectLead.ts";
+import { settingsRoutes } from "../../core/settingsNav.ts";
 import {
   selectorSettingsSectionCleared,
   selectorSettingsSectionRestored,
@@ -49,14 +50,11 @@ import {
   useSelectorSettingsWriting,
 } from "../selectorSettingsWriting.ts";
 import type { SelectorSettingsWriting } from "../selectorSettingsWriting.ts";
-import { TopBarSlot } from "../shell/slots.tsx";
 import { Notice } from "../ui/Notice.tsx";
 import { SelectorLimitsSection } from "./lead/SelectorLimitsSection.tsx";
 import { SelectorRevisions } from "./lead/SelectorRevisions.tsx";
 import { SelectorTextSection } from "./lead/SelectorTextSection.tsx";
-
-/** This page's own address, which its reads take their partition from. */
-export const leadSettingsRoutePath = "/$tenant/$project/settings/lead";
+import { SettingsPage } from "./SettingsPage.tsx";
 
 /** No frame names either read, so the partition's own refetch is what reaches
  * them. */
@@ -226,7 +224,7 @@ function SelectorSettingsUnled(props: {
 }
 
 export function LeadSettingsPage(): ReactNode {
-  const params = useParams({ from: leadSettingsRoutePath });
+  const params = useParams({ from: settingsRoutes.project.lead });
   const partition: PartitionIdentity = {
     tenant: params.tenant,
     project: params.project,
@@ -238,20 +236,21 @@ export function LeadSettingsPage(): ReactNode {
     (ports) => apiSelectorSettings(ports, partition),
   );
   return (
-    <div className="grid min-w-0 max-w-settings gap-4">
-      <TopBarSlot>
-        <h1 className="text-md font-strong text-ink-1 truncate">Lead</h1>
-        {state.state === "Ready" ? (
+    <SettingsPage
+      title="Lead"
+      chips={
+        state.state === "Ready" ? (
           <span className="text-ink-3 text-sm tabular-nums">
             {`Revision ${String(state.value.revision)}`}
           </span>
-        ) : null}
-      </TopBarSlot>
+        ) : null
+      }
+    >
       <SelectorSettingsUnled partition={partition} />
       <PanelUnready state={state} />
       {state.state === "Ready" ? (
         <SelectorSettingsForm partition={partition} settings={state.value} />
       ) : null}
-    </div>
+    </SettingsPage>
   );
 }

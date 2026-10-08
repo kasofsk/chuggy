@@ -1,8 +1,7 @@
 /**
  * A workspace's people as the access plane answers them, and the page drawn
  * against a plane a case scripts: the list and the reader's abilities at their
- * own paths, every change and invitation answered by the case, and what the bar
- * reads answered empty.
+ * own paths, and every change and invitation answered by the case.
  */
 
 import { screen, within } from "@testing-library/react";
@@ -119,12 +118,11 @@ export function drawPeople(drawing: PeopleDrawing = {}): Promise<DrawnStrict> {
     if (request.url === abilitiesPath && request.method === "GET")
       return abilities();
     if (request.url.startsWith("/access/v1/")) return changed(request);
-    if (request.url.includes("/projects")) return answer({ projects: [] });
     return answer({}, 404);
   });
 }
 
-/** Every request the page sent but the list's and the abilities' reads and the bar's own. */
+/** Every request the page sent but the list's and the abilities' reads. */
 export function changesSent(drawn: DrawnStrict): readonly SentRequest[] {
   return drawn.sent.filter(
     (request) =>

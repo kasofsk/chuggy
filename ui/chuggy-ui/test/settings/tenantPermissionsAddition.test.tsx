@@ -11,8 +11,6 @@ import { cleanup, fireEvent, screen, within } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
-import { tenantPeopleResource } from "../../app/browser/settings/tenantPeopleResource.ts";
-import { tenantResourceKey } from "../../app/core/projectQueryKeys.ts";
 import { answer, press, turned } from "../screenHarness.tsx";
 import type { DrawnStrict } from "../screenHarness.tsx";
 import type * as BrowserPorts from "../../app/browser/ports.ts";
@@ -24,6 +22,7 @@ import {
   chosen,
   dialog,
   drawPermissions,
+  expectPermissionsReread,
   opened,
   permissionsAbilitiesNone,
   permissionsAbilitiesPath,
@@ -33,8 +32,6 @@ import {
   permissionsPeoplePath,
   permissionsTenant,
   readsOf,
-  siteAuthoritiesPath,
-  siteAuthoritiesStarting,
   tenantAuthoritiesPath,
   tenantAuthoritiesStarting,
 } from "./permissionsFixture.tsx";
@@ -64,11 +61,10 @@ afterEach(() => {
 const [adminGranters, memberGranters, hostedRunsGranters, authorityManagers] =
   tenantAuthoritiesStarting.authorities;
 
-/** A reader managing the workspace's permissions and the site's, the People list read. */
+/** A reader managing the workspace's permissions, the People list read. */
 function drawManaging(drawing: PermissionsDrawing = {}): Promise<DrawnStrict> {
   return drawPermissions({
     abilities: () => answer(permissionsAbilitiesTenant),
-    site: () => answer(siteAuthoritiesStarting),
     people: () => answer(permissionsPeopleListed),
     ...drawing,
   });
@@ -85,16 +81,11 @@ test("a workspace manager may add to each workspace permission they may change, 
   ]);
 });
 
-test("a site manager may add to hosted run grants and to the site's permissions", async () => {
+test("a site manager may add to hosted run grants, and to no other of the workspace's permissions", async () => {
   await drawPermissions({
     abilities: () => answer(permissionsAbilitiesSite),
-    site: () => answer(siteAuthoritiesStarting),
   });
   expect(addButtons("Workspace")).toStrictEqual(["Add to Hosted run grants"]);
-  expect(addButtons("Site")).toStrictEqual([
-    "Add to Account creation",
-    "Add to Permission changes",
-  ]);
 });
 
 test("a reader who may change nothing may add nothing", async () => {
@@ -123,44 +114,6 @@ test("each permission offers its record's groups less those it holds, then a per
   expect(choicesOffered()).toStrictEqual(["Site admins", "Person"]);
   await press("Close");
   await opened("Workspace", "Permission changes");
-  expect(choicesOffered()).toStrictEqual(["Person"]);
-  await press("Close");
-  await opened("Site", "Permission changes");
-  expect(choicesOffered()).toStrictEqual(["Person"]);
-});
-
-test("This workspace's admins is offered on the site's account creation only where they do not hold it", async () => {
-  await drawManaging();
-  await opened("Site", "Account creation");
-  expect(choicesOffered()).toStrictEqual(["Person"]);
-  cleanup();
-  const drawn = await drawManaging({
-    site: () =>
-      answer({
-        ...siteAuthoritiesStarting,
-        authorities: siteAuthoritiesStarting.authorities.map((held) => ({
-          ...held,
-          groups: [],
-          tenants: ["globex"],
-        })),
-      }),
-  });
-  await opened("Site", "Account creation");
-  expect(choicesOffered()).toStrictEqual([
-    "Site admins",
-    "This workspace's admins",
-    "Person",
-  ]);
-  await chosen("This workspace's admins");
-  await added();
-  expect(additionsSent(drawn)).toStrictEqual([
-    {
-      method: "POST",
-      url: `${siteAuthoritiesPath}/AccountCreators/tenants/${permissionsTenant}`,
-      body: undefined,
-    },
-  ]);
-  await opened("Site", "Permission changes");
   expect(choicesOffered()).toStrictEqual(["Person"]);
 });
 
@@ -245,7 +198,6 @@ test("sent, the dialog closes and both lists, the abilities and the People list 
   const drawn = await drawManaging();
   const reads = [
     tenantAuthoritiesPath,
-    siteAuthoritiesPath,
     permissionsAbilitiesPath,
     permissionsPeoplePath,
   ];
@@ -257,10 +209,8 @@ test("sent, the dialog closes and both lists, the abilities and the People list 
   expect(screen.queryByRole("dialog", { name: "Add holder" })).toBeNull();
   expect(
     reads.map((read, index) => readsOf(drawn, read) > (before[index] ?? 0)),
-  ).toStrictEqual([true, true, true, true]);
-  expect(invalidated).toHaveBeenCalledWith({
-    queryKey: tenantResourceKey(permissionsTenant, tenantPeopleResource),
-  });
+  ).toStrictEqual([true, true, true]);
+  expectPermissionsReread(invalidated);
 });
 
 test.each([

@@ -105,7 +105,6 @@ function drawAccounts(drawing: Drawing = {}): Promise<DrawnStrict> {
   return drawnStrict(<TenantAccountsPage />, (request: SentRequest) => {
     if (request.url.endsWith("/forge/github")) return answer(described);
     if (request.url.includes("/forge-installations")) return listing();
-    if (request.url.includes("/projects")) return answer({ projects: [] });
     return answer({}, 404);
   });
 }

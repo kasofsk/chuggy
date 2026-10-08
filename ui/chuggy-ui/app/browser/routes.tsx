@@ -46,22 +46,12 @@ import { ProjectTable } from "./ProjectTable.tsx";
 import { RepositoriesPage } from "./RepositoriesPage.tsx";
 import { RepositoryPage } from "./repositories/RepositoryPage.tsx";
 import { RunnersPage } from "./RunnersPage.tsx";
-import { SettingsPage } from "./SettingsPage.tsx";
-import { LeadSettingsPage } from "./settings/LeadSettingsPage.tsx";
-import { PlacementSettingsPage } from "./settings/PlacementSettingsPage.tsx";
-import { ProjectPermissionsPage } from "./settings/ProjectPermissionsPage.tsx";
-import { TenantAccountsPage } from "./settings/TenantAccountsPage.tsx";
 import {
-  TenantPeoplePage,
-  tenantPeopleRoutePath,
-} from "./settings/TenantPeoplePage.tsx";
-import {
-  TenantPermissionsPage,
-  tenantPermissionsRoutePath,
-} from "./settings/TenantPermissionsPage.tsx";
+  projectSettingsRoutes,
+  workspaceSettingsRoutes,
+} from "./settings/settingsRoutes.tsx";
 import { Shell } from "./Shell.tsx";
 import { ProjectStreamProvider } from "./stream.tsx";
-import { TenantSettingsPage } from "./TenantSettingsPage.tsx";
 import { TicketCreationFrom } from "./TicketDuplicate.tsx";
 import { TicketEdit } from "./TicketEdit.tsx";
 import { TicketPage } from "./TicketPage.tsx";
@@ -147,33 +137,6 @@ const leadRoute = createRoute({
   component: LeadPage,
 });
 
-const settingsRoute = createRoute({
-  getParentRoute: () => partitionRoute,
-  path: "/settings",
-  component: SettingsPage,
-});
-
-/** One settings group's own page. */
-const settingsLeadRoute = createRoute({
-  getParentRoute: () => partitionRoute,
-  path: "/settings/lead",
-  component: LeadSettingsPage,
-});
-
-/** Another settings group's own page. */
-const settingsPlacementRoute = createRoute({
-  getParentRoute: () => partitionRoute,
-  path: "/settings/placement",
-  component: PlacementSettingsPage,
-});
-
-/** Another settings group's own page. */
-const settingsPermissionsRoute = createRoute({
-  getParentRoute: () => partitionRoute,
-  path: "/settings/permissions",
-  component: ProjectPermissionsPage,
-});
-
 const repositoriesRoute = createRoute({
   getParentRoute: () => partitionRoute,
   path: "/repositories",
@@ -229,41 +192,6 @@ const projectCreationRoute = createRoute({
   component: ProjectCreationPage,
 });
 
-/**
- * The tenant's own settings, outside the partition because a forge account is
- * the tenant's and not any one project's. The first segment is the literal
- * `tenants`, mirroring the API's own `/tenants/:tenant/…`, and not
- * `/$tenant/settings`: a tenant page at the second segment would stand where
- * `/$tenant/$project` matches and make a project named `settings`
- * unreachable.
- */
-const tenantSettingsRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/tenants/$tenant/settings",
-  component: TenantSettingsPage,
-});
-
-/** One tenant settings group's own page. */
-const tenantAccountsRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/tenants/$tenant/settings/accounts",
-  component: TenantAccountsPage,
-});
-
-/** Another tenant settings group's own page. */
-const tenantPeopleRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: tenantPeopleRoutePath,
-  component: TenantPeoplePage,
-});
-
-/** Another tenant settings group's own page. */
-const tenantPermissionsRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: tenantPermissionsRoutePath,
-  component: TenantPermissionsPage,
-});
-
 function TicketCreationRoute(): ReactNode {
   return <TicketCreationFrom from={ticketCreationRoute.useSearch().from} />;
 }
@@ -294,18 +222,12 @@ const routeTree = rootRoute.addChildren([
   forgeSetupRoute,
   forgeCallbackRoute,
   projectCreationRoute,
-  tenantSettingsRoute,
-  tenantAccountsRoute,
-  tenantPeopleRoute,
-  tenantPermissionsRoute,
+  workspaceSettingsRoutes(rootRoute),
   partitionRoute.addChildren([
     projectRoute,
     inboxRoute,
     leadRoute,
-    settingsRoute,
-    settingsLeadRoute,
-    settingsPlacementRoute,
-    settingsPermissionsRoute,
+    projectSettingsRoutes(partitionRoute),
     repositoriesRoute,
     repositoryRoute,
     runnersRoute,

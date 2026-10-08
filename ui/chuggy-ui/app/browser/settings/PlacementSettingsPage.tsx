@@ -34,6 +34,7 @@ import {
   apiWriteSessionPlacement,
 } from "../../core/apiRoutes.ts";
 import { projectResourceKey } from "../../core/projectQueryKeys.ts";
+import { settingsRoutes } from "../../core/settingsNav.ts";
 import {
   runnerRouteLabel,
   runnerRouteSourceLabel,
@@ -58,19 +59,15 @@ import {
   sessionPlacementResource,
   useSessionPlacement,
 } from "../sessionPlacement.tsx";
-import { TopBarSlot } from "../shell/slots.tsx";
 import { Notice } from "../ui/Notice.tsx";
 import { Panel } from "../ui/Panel.tsx";
 import { RadioGroup } from "../ui/RadioGroup.tsx";
 import { SettingsSection } from "../ui/SettingsSection.tsx";
 import { Table } from "../ui/Table.tsx";
+import { SettingsPage } from "./SettingsPage.tsx";
 
 /** No frame names this read, so the partition's own refetch is what reaches it. */
 const executionPlacementResource = "execution-placement";
-
-/** This page's own address, which its reads are from. */
-export const placementSettingsRoutePath =
-  "/$tenant/$project/settings/placement";
 
 /** One kind's row: where it runs, what decided it, and, for a session on
  * runners, whether the runners it would run on are there. */
@@ -342,7 +339,7 @@ function PlacementSection(props: {
 }
 
 export function PlacementSettingsPage(): ReactNode {
-  const params = useParams({ from: placementSettingsRoutePath });
+  const params = useParams({ from: settingsRoutes.project.placement });
   const partition: PartitionIdentity = {
     tenant: params.tenant,
     project: params.project,
@@ -355,10 +352,7 @@ export function PlacementSettingsPage(): ReactNode {
   );
   const sessions = useSessionPlacement(partition);
   return (
-    <div className="grid min-w-0 max-w-settings gap-4">
-      <TopBarSlot>
-        <h1 className="text-md font-strong text-ink-1 truncate">Placement</h1>
-      </TopBarSlot>
+    <SettingsPage title="Placement">
       {placement.state === "Ready" && sessions.state === "Ready" ? (
         <PlacementSection
           partition={partition}
@@ -372,6 +366,6 @@ export function PlacementSettingsPage(): ReactNode {
           />
         </Panel>
       )}
-    </div>
+    </SettingsPage>
   );
 }

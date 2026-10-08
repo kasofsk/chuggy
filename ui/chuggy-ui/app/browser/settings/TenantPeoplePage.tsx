@@ -13,7 +13,6 @@
  * is no empty state.
  */
 
-import { useParams } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
 import type {
@@ -27,16 +26,13 @@ import {
   tenantPeopleWithheld,
 } from "../../core/tenantPeople.ts";
 import { PanelUnready } from "../DataPanel.tsx";
-import { ProjectlessFrame } from "../ProjectCreation.tsx";
 import { Notice } from "../ui/Notice.tsx";
 import { Panel } from "../ui/Panel.tsx";
 import { Table } from "../ui/Table.tsx";
+import { SettingsPage, useSettingsTenant } from "./SettingsPage.tsx";
 import { TenantInvite } from "./TenantInvite.tsx";
 import { TenantPersonRow } from "./TenantPersonRow.tsx";
 import { useTenantAbilities, useTenantPeople } from "./tenantPeopleResource.ts";
-
-/** This page's own address, which its reads take their tenant from. */
-export const tenantPeopleRoutePath = "/tenants/$tenant/settings/people";
 
 function TenantPeopleTable(props: {
   readonly tenant: string;
@@ -79,49 +75,45 @@ function TenantPeopleTable(props: {
 }
 
 export function TenantPeoplePage(): ReactNode {
-  const params = useParams({ from: tenantPeopleRoutePath });
-  const tenant = params.tenant;
+  const tenant = useSettingsTenant();
   const people = useTenantPeople(tenant);
   const listed = people.state === "Ready" ? people.value : undefined;
   const read = useTenantAbilities(tenant);
   const abilities = read.state === "Ready" ? read.value : undefined;
   return (
-    <ProjectlessFrame>
-      <div className="grid min-w-0 max-w-settings gap-4">
-        <h1 className="text-md font-strong text-ink-1 truncate">People</h1>
-        <Panel
-          variant="section"
-          title="People"
-          about="Who is in this workspace, and the roles each holds."
-          meta={
-            listed === undefined ||
-            abilities === undefined ||
-            !tenantInvitationOffered(abilities) ? undefined : (
-              <TenantInvite
-                tenant={tenant}
-                projects={listed.projects}
-                abilities={abilities}
-              />
-            )
-          }
-        >
-          {people.state === "Absent" ? (
-            <Notice tone="parked" inline detail={tenantPeopleWithheld} />
-          ) : (
-            <PanelUnready state={people} />
-          )}
-          {listed === undefined ? null : (
-            <TenantPeopleTable
+    <SettingsPage title="People">
+      <Panel
+        variant="section"
+        title="People"
+        about="Who is in this workspace, and the roles each holds."
+        meta={
+          listed === undefined ||
+          abilities === undefined ||
+          !tenantInvitationOffered(abilities) ? undefined : (
+            <TenantInvite
               tenant={tenant}
-              listed={listed}
+              projects={listed.projects}
               abilities={abilities}
             />
-          )}
-          {listed === undefined || read.state === "Pending" ? null : (
-            <PanelUnready state={read} />
-          )}
-        </Panel>
-      </div>
-    </ProjectlessFrame>
+          )
+        }
+      >
+        {people.state === "Absent" ? (
+          <Notice tone="parked" inline detail={tenantPeopleWithheld} />
+        ) : (
+          <PanelUnready state={people} />
+        )}
+        {listed === undefined ? null : (
+          <TenantPeopleTable
+            tenant={tenant}
+            listed={listed}
+            abilities={abilities}
+          />
+        )}
+        {listed === undefined || read.state === "Pending" ? null : (
+          <PanelUnready state={read} />
+        )}
+      </Panel>
+    </SettingsPage>
   );
 }

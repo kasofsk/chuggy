@@ -886,6 +886,9 @@ function offered(name: string): boolean {
   ).disabled;
 }
 
+/** The workspace's accounts page at its address in the project, so following the link keeps the project's shell. */
+const accountsAddress = `/${leadPartition.tenant}/${leadPartition.project}/settings/workspace/accounts`;
+
 /** The link the Repositories section points at the tenant's own accounts page
  * with, where the withheld line names no account connected. */
 function accountsLink(): HTMLAnchorElement | null {
@@ -916,9 +919,7 @@ test("with no account, Add and Create say to connect one and link the tenant's a
   await drawAtProject({ truncated: false, installations: [] });
   expect([offered("Add"), offered("Create")]).toStrictEqual([false, false]);
   expect(offersWithheld()).toBe("Connect a GitHub account first");
-  expect(accountsLink()?.getAttribute("href")).toBe(
-    `/tenants/${leadPartition.tenant}/settings/accounts`,
-  );
+  expect(accountsLink()?.getAttribute("href")).toBe(accountsAddress);
 });
 
 /** Connect GitHub is not offered there either, but the accounts page is still
@@ -926,9 +927,7 @@ test("with no account, Add and Create say to connect one and link the tenant's a
 test("with no account on a deployment that cannot authorize, Add and Create say who configures GitHub and still link the accounts page", async () => {
   await drawPage({ claimed: { truncated: false, installations: [] } });
   expect(offersWithheld()).toBe("GitHub not configured · ask an operator");
-  expect(accountsLink()?.getAttribute("href")).toBe(
-    `/tenants/${leadPartition.tenant}/settings/accounts`,
-  );
+  expect(accountsLink()?.getAttribute("href")).toBe(accountsAddress);
 });
 
 test("with no portal claim, Add and Create say no account has the portal app, with no link", async () => {

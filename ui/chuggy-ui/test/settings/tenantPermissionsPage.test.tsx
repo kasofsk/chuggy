@@ -1,8 +1,7 @@
 /**
- * The workspace's permissions page, mounted: a section a level, a row a
- * permission naming its holders, the workspace's absent list as one line, the
- * site's drawn only where it was answered or failed, and a holder removed where
- * the reader may change its permission.
+ * The workspace's permissions page, mounted: the workspace's section alone, a
+ * row a permission naming its holders, its absent list as one line, and a
+ * holder removed where the reader may change its permission.
  */
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
@@ -11,25 +10,23 @@ import { cleanup, screen, within } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
-import { tenantPeopleResource } from "../../app/browser/settings/tenantPeopleResource.ts";
-import { tenantResourceKey } from "../../app/core/projectQueryKeys.ts";
 import { answer, press, sectionOf } from "../screenHarness.tsx";
-import type { DrawnStrict } from "../screenHarness.tsx";
 import type * as BrowserPorts from "../../app/browser/ports.ts";
 import {
   drawPermissions,
+  expectPermissionsReread,
   permissionCell,
   permissionsAbilitiesNone,
   permissionsAbilitiesPath,
   permissionsAbilitiesSite,
   permissionsAbilitiesTenant,
   permissionsDrawn,
+  permissionsPeoplePath,
   permissionsTenant,
   readsOf,
   removalsSent,
   removeButtons,
   sectionDrawn,
-  siteAuthoritiesPath,
   siteAuthoritiesStarting,
   tenantAuthoritiesPath,
   tenantAuthoritiesStarting,
@@ -71,17 +68,19 @@ test("a workspace manager sees its four permissions in roster order, each naming
   expect(sectionDrawn("Site")).toBe(false);
 });
 
-test("a site manager sees both sections, the site's admins always managing the site's permissions", async () => {
-  await drawPermissions({ site: () => answer(siteAuthoritiesStarting) });
-  expect(sectionDrawn("Workspace")).toBe(true);
-  expect(permissionsDrawn("Site")).toStrictEqual([
-    {
-      name: "Account creation",
-      holders: ["Site admins", "acme admins", "globex admins"],
-    },
-    { name: "Permission changes", holders: ["Site admins"] },
-  ]);
-});
+test.each([
+  { answered: "its holders", site: () => answer(siteAuthoritiesStarting) },
+  { answered: "nothing yet", site: unanswered },
+  { answered: "absent", site: () => answer({}, 404) },
+  { answered: "a failure", site: () => answer({}, 500) },
+])(
+  "the site's list answering $answered, the page draws the workspace's section and no site section",
+  async ({ site }) => {
+    await drawPermissions({ site });
+    expect(sectionDrawn("Workspace")).toBe(true);
+    expect(sectionDrawn("Site")).toBe(false);
+  },
+);
 
 test("a person holding a permission is drawn as the People page draws them, after the groups", async () => {
   await drawPermissions({
@@ -158,32 +157,18 @@ test("the workspace's read loading or failed is its unready line", async () => {
   ).toBeTruthy();
 });
 
-test("the site's read draws nothing loading or absent, and its section with the unready line failed", async () => {
-  await drawPermissions({ site: unanswered });
-  expect(sectionDrawn("Site")).toBe(false);
-  cleanup();
-  await drawPermissions({ site: () => answer({}, 404) });
-  expect(sectionDrawn("Site")).toBe(false);
-  cleanup();
-  await drawPermissions({ site: () => answer({}, 500) });
-  const site = sectionOf("Site");
-  expect(
-    within(site).getByText(
-      "Failed to load · the API failed with InternalError",
-    ),
-  ).toBeTruthy();
-  expect(within(site).queryByRole("table")).toBeNull();
-});
-
 test("a list cut short says so, and a whole one does not", async () => {
   await drawPermissions({
     tenant: () => answer({ ...tenantAuthoritiesStarting, truncated: true }),
-    site: () => answer(siteAuthoritiesStarting),
   });
   expect(
     within(sectionOf("Workspace")).getByText("List cut short"),
   ).toBeTruthy();
-  expect(within(sectionOf("Site")).queryByText("List cut short")).toBeNull();
+  cleanup();
+  await drawPermissions();
+  expect(
+    within(sectionOf("Workspace")).queryByText("List cut short"),
+  ).toBeNull();
 });
 
 const ada = {
@@ -193,39 +178,12 @@ const ada = {
   email: "ada@example.com",
 };
 
-/** The site's permission changes held by a workspace's admins, a person and
- * two holders the list does not name, beside its standing admins. */
-const siteAuthoritiesHeld = {
-  ...siteAuthoritiesStarting,
-  authorities: [
-    siteAuthoritiesStarting.authorities[0],
-    {
-      authority: "AuthorityManagers",
-      people: [ada],
-      groups: [],
-      tenants: [permissionsTenant],
-      unnamed: 2,
-    },
-  ],
-};
-
-/** The reads a removal reads again that the page itself observes. */
+/** The reads a removal reads again that the page itself holds. */
 const permissionsReads = [
   tenantAuthoritiesPath,
-  siteAuthoritiesPath,
   permissionsAbilitiesPath,
+  permissionsPeoplePath,
 ];
-
-function drawManaging(
-  abilities = permissionsAbilitiesTenant,
-  removed?: () => Response,
-): Promise<DrawnStrict> {
-  return drawPermissions({
-    abilities: () => answer(abilities),
-    site: () => answer(siteAuthoritiesHeld),
-    ...(removed === undefined ? {} : { removed }),
-  });
-}
 
 test("a workspace manager may remove each holder of the workspace's permissions but hosted run grants", async () => {
   await drawPermissions({
@@ -238,16 +196,10 @@ test("a workspace manager may remove each holder of the workspace's permissions 
   ]);
 });
 
-test("a site manager may remove hosted run grants' holders and the site's, but no standing admin, unnamed count or workspace's permission managers", async () => {
-  await drawManaging(permissionsAbilitiesSite);
+test("a site manager may remove hosted run grants' holders, and no holder of the workspace's own permissions", async () => {
+  await drawPermissions({ abilities: () => answer(permissionsAbilitiesSite) });
   expect(removeButtons("Workspace")).toStrictEqual([
     "Remove Site admins from Hosted run grants",
-  ]);
-  expect(removeButtons("Site")).toStrictEqual([
-    "Remove Site admins from Account creation",
-    "Remove acme admins from Account creation",
-    "Remove globex admins from Account creation",
-    "Remove ada@example.com from Permission changes",
   ]);
 });
 
@@ -259,56 +211,40 @@ test("a reader whose abilities are not read, or who may manage nothing, may remo
   expect(removeButtons("Workspace")).toStrictEqual([]);
 });
 
-test("each remove button's name is its own within its section", async () => {
-  await drawManaging({
-    ...permissionsAbilitiesTenant,
-    manageSiteHeldAuthorities: true,
+test("each remove button's name is its own within the section", async () => {
+  await drawPermissions({
+    abilities: () =>
+      answer({
+        ...permissionsAbilitiesTenant,
+        manageSiteHeldAuthorities: true,
+      }),
   });
-  for (const title of ["Workspace", "Site"]) {
-    const names = removeButtons(title);
-    expect(new Set(names).size).toBe(names.length);
-  }
+  const names = removeButtons("Workspace");
+  expect(names).toHaveLength(tenantAuthoritiesStarting.authorities.length);
+  expect(new Set(names).size).toBe(names.length);
 });
 
-test.each([
-  {
-    holder: "Remove Workspace admins from Admin grants",
-    path: `${tenantAuthoritiesPath}/AdminGranters/groups/TenantAdmins`,
-  },
-  {
-    holder: "Remove ada@example.com from Permission changes",
-    path: `${siteAuthoritiesPath}/AuthorityManagers/people/s-ada`,
-    confirmed: true,
-  },
-  {
-    holder: "Remove acme admins from Account creation",
-    path: `${siteAuthoritiesPath}/AccountCreators/tenants/${permissionsTenant}`,
-  },
-  {
-    holder: "Remove Site admins from Account creation",
-    path: `${siteAuthoritiesPath}/AccountCreators/groups/SiteAdmins`,
-  },
-])(
-  "$holder sends its route with no body, then reads both lists, the abilities and the people again",
-  async ({ holder, path, confirmed }) => {
-    const drawn = await drawManaging();
-    const before = permissionsReads.map((read) => readsOf(drawn, read));
-    const invalidated = vi.spyOn(QueryClient.prototype, "invalidateQueries");
-    await press(holder);
-    if (confirmed === true) await press("Remove");
-    expect(removalsSent(drawn)).toStrictEqual([
-      { method: "DELETE", url: path, body: undefined },
-    ]);
-    expect(
-      permissionsReads.map(
-        (read, index) => readsOf(drawn, read) > (before[index] ?? 0),
-      ),
-    ).toStrictEqual([true, true, true]);
-    expect(invalidated).toHaveBeenCalledWith({
-      queryKey: tenantResourceKey(permissionsTenant, tenantPeopleResource),
-    });
-  },
-);
+test("a removal sends its route with no body, then reads both lists, the abilities and the people again", async () => {
+  const drawn = await drawPermissions({
+    abilities: () => answer(permissionsAbilitiesTenant),
+  });
+  const before = permissionsReads.map((read) => readsOf(drawn, read));
+  const invalidated = vi.spyOn(QueryClient.prototype, "invalidateQueries");
+  await press("Remove Workspace admins from Admin grants");
+  expect(removalsSent(drawn)).toStrictEqual([
+    {
+      method: "DELETE",
+      url: `${tenantAuthoritiesPath}/AdminGranters/groups/TenantAdmins`,
+      body: undefined,
+    },
+  ]);
+  expect(
+    permissionsReads.map(
+      (read, index) => readsOf(drawn, read) > (before[index] ?? 0),
+    ),
+  ).toStrictEqual([true, true, true]);
+  expectPermissionsReread(invalidated);
+});
 
 test("a person removed from a workspace permission is sent with their subject", async () => {
   const drawn = await drawPermissions({

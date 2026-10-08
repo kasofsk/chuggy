@@ -37,6 +37,9 @@ export const tenantPermissionsWithheld =
 /** What the page draws for a reader the project's list is not answered to. */
 export const projectPermissionsWithheld = "A project admin manages permissions";
 
+/** What the page draws for a reader the site's list is not answered to. */
+export const sitePermissionsWithheld = "A site admin manages permissions";
+
 export const permissionsNobody = "Nobody";
 
 /** One holder of one permission, `words` what it is drawn as. */

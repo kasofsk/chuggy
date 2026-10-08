@@ -1,0 +1,47 @@
+/* The settings' frame: its navigation and the page beside it as one block,
+   centred in whatever holds it. Narrower than two columns the navigation
+   stands above the page, each group's links a wrapping row. */
+
+@layer page {
+  .settings {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-4);
+    max-width: calc(
+      var(--width-settings-nav) + var(--space-6) + var(--width-settings)
+    );
+    margin-inline: auto;
+  }
+
+  .settings-nav {
+    display: grid;
+    align-content: start;
+    gap: var(--space-3);
+    min-width: 0;
+  }
+
+  .settings-nav-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1);
+  }
+
+  .settings-nav-link:hover {
+    color: var(--ink-1);
+  }
+
+  @container (min-width: 60em) {
+    .settings {
+      grid-template-columns: var(--width-settings-nav) minmax(0, 1fr);
+      column-gap: var(--space-6);
+    }
+
+    .settings-nav {
+      gap: var(--space-5);
+    }
+
+    .settings-nav-list {
+      display: grid;
+    }
+  }
+}
