@@ -30,6 +30,7 @@ import type {
 } from "./executionRequirement.ts";
 import type { Worker } from "./workerCatalog.ts";
 import type { BriefingCarrier } from "./briefingTemplate.ts";
+import { checkOutputName, checkOutputPath } from "../contract/checkOutput.ts";
 
 export type OutputRenderer =
   "UnifiedDiff" | "Markdown" | "Json" | "Text" | "Image";
@@ -70,6 +71,20 @@ export const workSummaryOutput: OutputDefinition = {
   mediaType: "text/markdown",
   renderer: "Markdown",
 } as const;
+
+/** What a command stage's worker writes of each command it ran. */
+export const checkOutputOutput: OutputDefinition = {
+  name: checkOutputName,
+  path: asArtifactPath(checkOutputPath),
+  mediaType: "application/json",
+  renderer: "Json",
+} as const;
+
+const builtInOutputs: readonly OutputDefinition[] = [
+  branchDiffOutput,
+  workSummaryOutput,
+  checkOutputOutput,
+];
 
 export type ExecutionSelection =
   | { readonly selection: "NonTerminal" }
@@ -312,8 +327,8 @@ export function configuredOutputs(
 ): readonly OutputDefinition[] {
   const parsed = JSON.parse(canonical) as Readonly<Record<string, unknown>>;
   const configured = parsed["outputs"];
-  if (!Array.isArray(configured)) return [branchDiffOutput, workSummaryOutput];
-  const outputs: OutputDefinition[] = [branchDiffOutput, workSummaryOutput];
+  if (!Array.isArray(configured)) return builtInOutputs;
+  const outputs: OutputDefinition[] = [...builtInOutputs];
   for (const candidate of configured) {
     if (typeof candidate !== "object" || candidate === null) continue;
     const fields = candidate as Readonly<Record<string, unknown>>;
