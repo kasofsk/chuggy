@@ -186,3 +186,57 @@ test("a write the authority refused raises rather than reporting success", async
     );
   }
 });
+
+test("a list is one PATCH inserting each tuple in order", async () => {
+  const fetcher = fetcherOf(204);
+  const grants = ketoProjectGrants(settings, fetcher.fetch);
+  const named = [projectTenantGrant(request), projectPrincipalGrant(request)];
+  await grants.writeAll(named);
+  assert.equal(fetcher.asked.length, 1);
+  const asked = fetcher.asked[0];
+  assert.ok(asked !== undefined);
+  assert.equal(asked.method, "PATCH");
+  assert.equal(asked.url.pathname, "/admin/relation-tuples");
+  assert.deepEqual(asked.body, [
+    {
+      action: "insert",
+      relation_tuple: {
+        namespace: "Project",
+        object: `${projectAccessTenantObject(request.tenant)}${request.project}`,
+        relation: "tenant",
+        subject_set: {
+          namespace: "Tenant",
+          object: projectAccessTenantObject(request.tenant),
+          relation: "",
+        },
+      },
+    },
+    {
+      action: "insert",
+      relation_tuple: {
+        namespace: "Project",
+        object: `${projectAccessTenantObject(request.tenant)}${request.project}`,
+        relation: "developers",
+        subject_id: principal,
+      },
+    },
+  ]);
+});
+
+test("an empty list asks the authority nothing", async () => {
+  const fetcher = fetcherOf(204);
+  await ketoProjectGrants(settings, fetcher.fetch).writeAll([]);
+  assert.deepEqual(fetcher.asked, []);
+});
+
+test("a list the authority refused raises as a single write does", async () => {
+  for (const status of [400, 404, 500, 503])
+    await assert.rejects(
+      () =>
+        ketoProjectGrants(settings, fetcherOf(status).fetch).writeAll([
+          projectPrincipalGrant(request),
+        ]),
+      ProjectAccessUnavailable,
+      `a ${String(status)} was reported as a written list`,
+    );
+});

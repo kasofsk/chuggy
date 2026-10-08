@@ -19,7 +19,9 @@
  * its administrator uses a principal of its own and removes the grant itself.
  */
 
+import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { promisify } from "node:util";
 
 import {
   ketoProjectAccess,
@@ -30,10 +32,21 @@ import { ketoProjectGrants } from "../../src/adapters/keto/projectGrants.ts";
 import { ketoAccessTuples } from "../../src/adapters/keto/accessTuples.ts";
 import type { AccessTupleReader } from "../../src/interpreter/accessPlane.ts";
 import {
+  allProjectAccessKinds,
+  allSiteAccessKinds,
+  allTenantAccessKinds,
   checkedProjectAccessSettings,
+  projectAccessSiteNamespace,
+  projectAccessSiteObject,
   type ProjectAccess,
   type ProjectAccessKind,
+  type SiteAccessKind,
+  type TenantAccessKind,
 } from "../../src/interpreter/projectAccess.ts";
+import {
+  oidcPrincipal,
+  type Principal,
+} from "../../src/interpreter/principal.ts";
 import type { TenantClaims } from "../../src/interpreter/projectCreation.ts";
 import {
   checkedProjectGrantSettings,
@@ -174,4 +187,126 @@ export async function ketoHarnessSiteDefaults(): Promise<void> {
   const grants = ketoHarnessGrants();
   for (const grant of siteAuthorityDefaults())
     if (!(await ketoHarnessHeld(grant))) await grants.write(grant);
+}
+
+/** A principal no other case or run names. */
+export function ketoHarnessSomeone(label: string): Principal {
+  return oidcPrincipal(ketoHarnessIssuer, `${label}-${randomUUID()}`);
+}
+
+/** The tenant kinds a person's role gives, which every other tenant kind is not. */
+const ketoHarnessTenantRoleKinds: readonly TenantAccessKind[] = [
+  "AdministerTenant",
+  "InviteToTenant",
+  "ExecuteHosted",
+];
+
+/** The kinds asked of a relation saying who may grant or manage, at each level. */
+export interface KetoHarnessAuthority {
+  readonly site: readonly SiteAccessKind[];
+  readonly tenant: readonly TenantAccessKind[];
+  readonly project: readonly ProjectAccessKind[];
+}
+
+export const ketoHarnessHeldNothing: KetoHarnessAuthority = {
+  site: [],
+  tenant: [],
+  project: [],
+};
+
+/** Every project kind asked of a relation saying who may grant or manage. */
+export const ketoHarnessProjectAuthorities: readonly ProjectAccessKind[] = [
+  "GrantProjectAdmin",
+  "GrantDeveloper",
+  "GrantDispatcher",
+  "ManageProjectAuthorities",
+];
+
+/** Every authority kind the principal holds on the site, the partition's tenant and the partition. */
+export async function ketoHarnessAuthorityHeld(
+  principal: Principal,
+  partition: Partition,
+): Promise<KetoHarnessAuthority> {
+  const access = ketoHarnessAccess();
+  const site: SiteAccessKind[] = [];
+  for (const kind of allSiteAccessKinds)
+    if ((await access.authorizeSite(principal, kind)) !== undefined)
+      site.push(kind);
+  const tenant: TenantAccessKind[] = [];
+  for (const kind of allTenantAccessKinds)
+    if (
+      !ketoHarnessTenantRoleKinds.includes(kind) &&
+      (await access.authorizeTenant(principal, partition.tenant, kind)) !==
+        undefined
+    )
+      tenant.push(kind);
+  const project: ProjectAccessKind[] = [];
+  for (const kind of allProjectAccessKinds)
+    if (
+      !ketoHarnessRoleKinds.includes(kind) &&
+      (await access.authorize(principal, partition, kind)) !== undefined
+    )
+      project.push(kind);
+  return { site, tenant, project };
+}
+
+/** One person as the site's administrator. */
+export function ketoHarnessSiteAdministratorGrant(
+  principal: Principal,
+): ProjectGrant {
+  return {
+    namespace: projectAccessSiteNamespace,
+    object: projectAccessSiteObject,
+    relation: "admins",
+    holder: { subject: "Principal", principal },
+  };
+}
+
+/** Runs a case with a site administrator of its own, removed however the case ends. */
+export async function ketoHarnessWithSiteAdministrator(
+  run: (administrator: Principal) => Promise<void>,
+): Promise<void> {
+  const grants = ketoHarnessGrants();
+  const administrator = ketoHarnessSomeone("site-admin");
+  await grants.write(ketoHarnessSiteAdministratorGrant(administrator));
+  try {
+    await run(administrator);
+  } finally {
+    await grants.remove(ketoHarnessSiteAdministratorGrant(administrator));
+  }
+}
+
+const ketoHarnessExecute = promisify(execFile);
+
+/** What an administrative command answered: its exit code and its standard output, or its error output where it failed. */
+export interface KetoHarnessCommandRun {
+  readonly code: number;
+  readonly output: string;
+}
+
+/** One administrative root, run as a process with the authority's URLs and issuer and the variables a case exports. */
+export async function ketoHarnessCommand(
+  root: string,
+  environment: Readonly<Record<string, string>>,
+): Promise<KetoHarnessCommandRun> {
+  try {
+    const ran = await ketoHarnessExecute(
+      process.execPath,
+      ["--experimental-strip-types", root],
+      {
+        cwd: process.cwd(),
+        env: {
+          ...process.env,
+          CHUG_PROVISION_KETO_READ_URL: ketoHarnessReadUrl(),
+          CHUG_PROVISION_KETO_WRITE_URL: ketoHarnessWriteUrl(),
+          CHUG_API_OIDC_ISSUER: ketoHarnessIssuer,
+          ...environment,
+        },
+      },
+    );
+    return { code: 0, output: ran.stdout };
+  } catch (failure) {
+    const ran = failure as { code?: number; stderr?: string };
+    return { code: ran.code ?? 1, output: ran.stderr ?? "" };
+  }
 }

@@ -55,6 +55,8 @@ export interface AccessMemoryState {
   readonly tuples: AccessStored[];
   /** Every grant written or removed, in order. */
   readonly changes: (readonly ["write" | "remove", ProjectGrant])[];
+  /** Every list written as one request, in order. */
+  readonly batches: (readonly ProjectGrant[])[];
   unavailable: boolean;
   /** How many pages the reader has answered. */
   pages: number;
@@ -94,6 +96,7 @@ function accessMatches(stored: AccessStored, query: AccessTupleQuery): boolean {
       stored.subject.subject === "Set" &&
       stored.subject.object === projectAccessTenantObject(query.tenant)
     );
+  if (query.query === "Namespace") return stored.namespace === query.namespace;
   return (
     stored.namespace === query.namespace &&
     stored.object === query.object &&
@@ -202,14 +205,27 @@ function accessMemoryReader(
   };
 }
 
+function accessMemoryStore(
+  memory: AccessMemoryState,
+  grant: ProjectGrant,
+): void {
+  const stored = accessStored(grant);
+  if (!memory.tuples.some((tuple) => accessSame(tuple, stored)))
+    memory.tuples.push(stored);
+}
+
 function accessMemoryGrants(memory: AccessMemoryState): ProjectGrantWriter {
   return {
     write: (grant) => {
       accessReachable(memory);
       memory.changes.push(["write", grant]);
-      const stored = accessStored(grant);
-      if (!memory.tuples.some((tuple) => accessSame(tuple, stored)))
-        memory.tuples.push(stored);
+      accessMemoryStore(memory, grant);
+      return Promise.resolve();
+    },
+    writeAll: (grants) => {
+      accessReachable(memory);
+      memory.batches.push(grants);
+      for (const grant of grants) accessMemoryStore(memory, grant);
       return Promise.resolve();
     },
     remove: (grant) => {
@@ -228,6 +244,7 @@ export function accessMemory(pageTuples = 2): AccessMemory {
   const state: AccessMemoryState = {
     tuples: [],
     changes: [],
+    batches: [],
     unavailable: false,
     pages: 0,
   };

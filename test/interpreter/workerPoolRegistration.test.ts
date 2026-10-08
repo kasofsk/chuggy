@@ -70,6 +70,7 @@ function ports(input?: {
     grants: {
       write: (grant: ProjectGrant) =>
         Promise.resolve((made.push(["write", grant.relation]), undefined)),
+      writeAll: () => Promise.reject(new Error("registration writes no list")),
       remove: (grant: ProjectGrant) =>
         removed("grants", ["revoke", grant.relation]),
     },

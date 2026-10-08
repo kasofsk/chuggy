@@ -100,6 +100,7 @@ function ports(): RegisterPoolPorts & { readonly made: unknown[] } {
     },
     grants: {
       write: () => Promise.resolve(undefined),
+      writeAll: () => Promise.reject(new Error("registration writes no list")),
       remove: () => Promise.resolve(undefined),
     },
     clientId: () => "chuggy-pool-fixed",

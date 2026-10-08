@@ -84,7 +84,7 @@ export interface AccessTuple {
   readonly subject: AccessTupleSubject;
 }
 
-/** What one listing asks for: every tuple on one object, or every project whose `tenant` link names one tenant. */
+/** What one listing asks for: every tuple on one object, every project whose `tenant` link names one tenant, or every tuple in one namespace. */
 export type AccessTupleQuery =
   | {
       readonly query: "Object";
@@ -92,7 +92,8 @@ export type AccessTupleQuery =
       readonly object: string;
       readonly relation?: string;
     }
-  | { readonly query: "TenantProjects"; readonly tenant: TenantId };
+  | { readonly query: "TenantProjects"; readonly tenant: TenantId }
+  | { readonly query: "Namespace"; readonly namespace: string };
 
 /** One page of a listing, and the token the next is asked with where there is one. */
 export interface AccessTuplePage {
@@ -416,7 +417,7 @@ async function accessTenantPeopleRead(
 }
 
 /** Whether a project's tuples carry the `tenant` link naming its own tenant, which is what a tenant's administrators reach it through. */
-function accessProjectLinked(
+export function accessProjectLinked(
   partition: Partition,
   tuples: readonly AccessTuple[],
 ): boolean {

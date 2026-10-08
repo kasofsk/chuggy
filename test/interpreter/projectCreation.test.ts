@@ -15,15 +15,18 @@ import {
 } from "../../src/interpreter/projectAccess.ts";
 import {
   projectCreation,
+  projectCreationGrants,
   projectCreationNameFault,
   type ProjectCreationAnswer,
   type ProjectCreationOutcome,
   type ProjectCreationWrite,
 } from "../../src/interpreter/projectCreation.ts";
 import {
+  projectAuthorityDefaults,
   projectRelationGrant,
   projectTenantGrant,
   tenantAdministratorGrant,
+  tenantAuthorityDefaults,
   type ProjectGrant,
 } from "../../src/interpreter/projectGrant.ts";
 import {
@@ -60,6 +63,8 @@ function creationWith(
   const access = memoryProjectAccess();
   const writes: ProjectCreationWrite[] = [];
   const grants: ProjectGrant[] = [];
+  const lists: (readonly ProjectGrant[])[] = [];
+  const writer = { failing: options.grantFails === true };
   const recorded: OperationId[] = [];
   const asked: TenantId[] = [];
   const claims = {
@@ -85,17 +90,29 @@ function creationWith(
       },
     },
     grants: {
-      write: (grant) => {
-        if (options.grantFails === true)
+      write: () => Promise.reject(new Error("creation writes one list")),
+      writeAll: (named) => {
+        if (writer.failing)
           return Promise.reject(new ProjectAccessUnavailable("keto down"));
-        grants.push(grant);
+        lists.push(named);
+        grants.push(...named);
         return Promise.resolve();
       },
       remove: () => Promise.reject(new Error("creation removes no grant")),
     },
     ...(options.selector === undefined ? {} : { selector: options.selector }),
   });
-  return { access, claims, asked, writes, grants, recorded, service };
+  return {
+    access,
+    claims,
+    asked,
+    writes,
+    grants,
+    lists,
+    writer,
+    recorded,
+    service,
+  };
 }
 
 const created: ProjectCreationAnswer = {
@@ -104,6 +121,20 @@ const created: ProjectCreationAnswer = {
   grantsWritten: false,
   operation: request.operation,
 };
+
+/** What a creation that made its tenant writes, in order. */
+const madeTenant: readonly ProjectGrant[] = [
+  tenantAdministratorGrant(principal, partition.tenant),
+  ...tenantAuthorityDefaults(partition.tenant),
+  projectTenantGrant(partition),
+  ...projectAuthorityDefaults(partition),
+];
+
+/** What a creation in a tenant that stands writes, in order. */
+const madeProject: readonly ProjectGrant[] = [
+  projectTenantGrant(partition),
+  ...projectAuthorityDefaults(partition),
+];
 
 /** An earlier identity the same creator made the project under, which a repeat under a new one finishes. */
 const earlier = asOperationId("create-chuggy-0");
@@ -211,8 +242,37 @@ test("a reservation is exact: a tenant extending a reserved name is not reserved
   }
 });
 
+test("a creation's tuples are its administrator and the tenant's defaults where it made the tenant, then the link, the project's defaults and the selector", () => {
+  const selector = asPrincipal("issuer selector");
+  const developing = projectRelationGrant(selector, partition, "developers");
+  assert.deepEqual(
+    projectCreationGrants(principal, partition, true),
+    madeTenant,
+  );
+  assert.deepEqual(
+    projectCreationGrants(principal, partition, true, selector),
+    [...madeTenant, developing],
+  );
+  assert.deepEqual(
+    projectCreationGrants(principal, partition, false, selector),
+    [...madeProject, developing],
+  );
+  assert.deepEqual(
+    projectCreationGrants(principal, partition, false),
+    madeProject,
+  );
+  assert.equal(
+    madeTenant.filter(
+      (grant) =>
+        grant.holder.subject === "Principal" &&
+        grant.holder.principal === principal,
+    ).length,
+    1,
+  );
+});
+
 test("a caller nothing names the tenant to makes it and administers what it made", async () => {
-  const { writes, grants, recorded, service } = creationWith(created);
+  const { writes, lists, recorded, service } = creationWith(created);
   assert.deepEqual(await service.create(principal, request), {
     result: "Created",
     partition,
@@ -226,35 +286,37 @@ test("a caller nothing names the tenant to makes it and administers what it made
       authority: memberAuthority(principal),
     },
   ]);
-  assert.deepEqual(grants, [
-    tenantAdministratorGrant(principal, partition.tenant),
-    projectTenantGrant(partition),
-  ]);
+  assert.deepEqual(lists, [madeTenant]);
   assert.deepEqual(recorded, [request.operation]);
 });
 
 test("a site that names its selector makes it a developer of the project, beside the creator's grants", async () => {
   const selector = asPrincipal("issuer selector");
-  const { grants, service } = creationWith(created, { selector });
+  const { lists, service } = creationWith(created, { selector });
   assert.equal((await service.create(principal, request)).result, "Created");
-  assert.deepEqual(grants, [
-    tenantAdministratorGrant(principal, partition.tenant),
-    projectTenantGrant(partition),
-    projectRelationGrant(selector, partition, "developers"),
+  assert.deepEqual(lists, [
+    [...madeTenant, projectRelationGrant(selector, partition, "developers")],
   ]);
 });
 
-test("a grant the authority does not take leaves the creation unrecorded", async () => {
-  const { recorded, service } = creationWith(created, { grantFails: true });
+test("a list the authority does not take leaves the creation unrecorded, and its repeat writes the whole list", async () => {
+  const { lists, writer, recorded, service } = creationWith(created, {
+    grantFails: true,
+  });
   await assert.rejects(
     service.create(principal, request),
     ProjectAccessUnavailable,
   );
   assert.deepEqual(recorded, []);
+  assert.deepEqual(lists, []);
+  writer.failing = false;
+  assert.equal((await service.create(principal, request)).result, "Created");
+  assert.deepEqual(lists, [madeTenant]);
+  assert.deepEqual(recorded, [request.operation]);
 });
 
 test("a tenant's administrator is granted nothing on it again", async () => {
-  const { access, grants, service } = creationWith({
+  const { access, lists, service } = creationWith({
     ...created,
     tenantCreated: false,
   });
@@ -267,12 +329,12 @@ test("a tenant's administrator is granted nothing on it again", async () => {
     result: "Created",
     partition,
   });
-  assert.deepEqual(grants, [projectTenantGrant(partition)]);
+  assert.deepEqual(lists, [madeProject]);
 });
 
 test("a repeat before the grants are recorded writes them and records the operation that made the project", async () => {
   for (const tenantCreated of [true, false]) {
-    const { grants, recorded, service } = creationWith({
+    const { lists, recorded, service } = creationWith({
       outcome: "AlreadyCreated",
       tenantCreated,
       grantsWritten: false,
@@ -282,15 +344,7 @@ test("a repeat before the grants are recorded writes them and records the operat
       result: "AlreadyCreated",
       partition,
     });
-    assert.deepEqual(
-      grants,
-      tenantCreated
-        ? [
-            tenantAdministratorGrant(principal, partition.tenant),
-            projectTenantGrant(partition),
-          ]
-        : [projectTenantGrant(partition)],
-    );
+    assert.deepEqual(lists, [tenantCreated ? madeTenant : madeProject]);
     assert.deepEqual(recorded, [earlier]);
   }
 });

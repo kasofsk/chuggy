@@ -42,10 +42,71 @@ CHUG_PROVISION_TENANT="tenant" CHUG_PROVISION_PROJECT="project" \
 
 Then list again: every project object carries a `tenant` tuple.
 
+## Default authority holders
+
+Who may grant each role, make an account or change either is held as tuples
+beside the roles. A creation writes its own: a new tenant's, and each new
+project's. The site, and every tenant and project that existed before, are given
+theirs by an operator, in this order. Until the site has an administrator and
+its defaults, nobody holds `CreateAccount`.
+
+**Name the site's first administrator.** The site is asked for by
+`CHUG_PROVISION_LEVEL=site`, which writes only the site's `admins` and is
+refused beside a tenant, a project or any other relation:
+
+```sh
+export CHUG_PROVISION_KETO_WRITE_URL="$keto_write_url"
+CHUG_API_OIDC_ISSUER="https://accounts.example.test" \
+  CHUG_PROVISION_SUBJECT="the sub claim the provider issues" \
+  CHUG_PROVISION_LEVEL=site CHUG_PROVISION_RELATION=admins \
+  CHUG_PROVISION_ACTION=grant npm run provision:project-access
+```
+
+`CHUG_PROVISION_ACTION=revoke` takes it back.
+
+**Give defaults to what exists.** `src/roots/provisionAccessDefaults.ts`
+reads and writes Keto and nothing else. It considers the site, and with
+`CHUG_PROVISION_TENANT` that tenant and the projects linked to it, or without it
+every tenant and project holding a tuple. Run it first without
+`CHUG_PROVISION_APPLY`, which writes nothing, and read what it reports; then
+with `CHUG_PROVISION_APPLY=1`, which writes and reports the same lines:
+
+```sh
+export CHUG_PROVISION_KETO_READ_URL="$keto_read_url"
+export CHUG_PROVISION_KETO_WRITE_URL="$keto_write_url"
+npm run provision:access-defaults
+CHUG_PROVISION_APPLY=1 npm run provision:access-defaults
+```
+
+One line an object, naming it and no person:
+
+- `defaults` — it holds no authority tuple and is given its defaults, all of
+  them in one request.
+- `left` — it holds an authority tuple and is left exactly as it is. This is
+  what a second run says of everything the first gave defaults, and it never
+  puts back a holder a person has since removed.
+- `skipped …: no administrator holds it` — a tenant with no `admins`, written
+  nothing because a tuple there would hold it while nobody administers it.
+  Grant it an administrator, then run again.
+- `skipped …: no tenant link names its own tenant` — a project its tenant's
+  administrators do not reach. Link it as under
+  [Before migration 26](#before-migration-26), then run again.
+- `skipped …: its name is no tenant's or project's this tree writes` — an object
+  nothing here reads. It is left for the operator to remove or keep.
+
+Two cases a run does not tell from an object never given defaults, and gives
+them again: a project, or the site, from which every holder of every authority
+was removed.
+
+A listing of a namespace, or of a tenant's projects, longer than its bound in
+pages fails the run before anything is written, and
+`CHUG_PROVISION_LISTING_PAGES_MAX` raises the bound.
+
 ## Grant a project access
 
-The API writes the tuples its own routes create — a new tenant's `admins`, a
-created project's `tenant` and a registered pool's `pools` — when
+The API writes the tuples its own routes create — a new tenant's `admins` and
+defaults, a created project's `tenant` and defaults, and a registered pool's
+`pools` — when
 `CHUG_API_KETO_WRITE_URL` names Keto's **write** port. A grant to anyone else is
 the operator's, through `src/roots/provisionProjectAccess.ts`, which reaches
 that port and nothing else and needs no database at all.
@@ -73,7 +134,7 @@ issuer or subject. A person's project grant writes that `tenant` link beside
 it, so the tenant's administrators administer the project, as they do every
 project the API creates.
 
-A grant is a PUT, so re-running it changes nothing and granting a second
+A grant is a PUT, so re-running it changes no answer and granting a second
 relation adds to what the principal holds rather than replacing it. Narrowing
 access is a revocation of the relation to be taken back.
 

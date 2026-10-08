@@ -38,6 +38,7 @@
     "start:worker-plane": "node --experimental-strip-types src/roots/workerPlane.ts",
     "provision:forge-installation": "node --experimental-strip-types src/roots/provisionForgeInstallation.ts",
     "provision:project-access": "node --experimental-strip-types src/roots/provisionProjectAccess.ts",
+    "provision:access-defaults": "node --experimental-strip-types src/roots/provisionAccessDefaults.ts",
     "provision:session": "node --experimental-strip-types src/roots/provisionAgentSession.ts",
     "bind:project-repository": "node --experimental-strip-types src/roots/bindProjectRepository.ts",
     "import:repository-configurations": "node --experimental-strip-types src/roots/configurationImporter.ts",

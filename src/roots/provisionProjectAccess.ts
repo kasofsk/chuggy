@@ -18,6 +18,12 @@
  * beside the grant because a project with no link does not hold its tenant,
  * which would then go to the first principal to ask for it. A revocation leaves
  * the link, which is the project's rather than the person's.
+ *
+ * THE SITE IS NAMED, NEVER DEFAULTED TO. A site grant is asked for by
+ * `CHUG_PROVISION_LEVEL=site` and writes only the site's `admins`; beside a
+ * tenant, a project or another relation it is refused before anything is
+ * written, and without the level the command is a tenant's or a project's, so
+ * a forgotten variable never makes anyone the site's administrator.
  */
 
 import { ketoProjectGrants } from "../adapters/keto/projectGrants.ts";
@@ -26,6 +32,7 @@ import {
   projectPrincipalGrant,
   projectTenantGrant,
   projectTenantRelation,
+  sitePrincipalGrant,
   tenantPrincipalGrant,
   type ProjectGrant,
   type ProjectGrantSubject,
@@ -38,6 +45,10 @@ const subjectVariable = "CHUG_PROVISION_SUBJECT";
 const tenantVariable = "CHUG_PROVISION_TENANT";
 const projectVariable = "CHUG_PROVISION_PROJECT";
 const relationVariable = "CHUG_PROVISION_RELATION";
+const levelVariable = "CHUG_PROVISION_LEVEL";
+
+const siteLevel = "site";
+const siteAdministratorRelation = "admins";
 
 const grantAction = "grant";
 const revokeAction = "revoke";
@@ -63,6 +74,25 @@ function provisionAction(): "Grant" | "Revoke" {
   );
 }
 
+/** The site's `admins` for the person the variables name, refused beside anything a site grant does not read. */
+function provisionSiteGrant(): ProjectGrant {
+  for (const variable of [tenantVariable, projectVariable])
+    if (optionalEnvironment(variable) !== undefined)
+      throw new Error(
+        `${levelVariable}=${siteLevel} names no tenant or project, so ${variable} must be unset`,
+      );
+  const relation = requiredEnvironment(relationVariable);
+  if (relation !== siteAdministratorRelation)
+    throw new Error(
+      `${levelVariable}=${siteLevel} writes only ${relationVariable}=${siteAdministratorRelation}`,
+    );
+  return sitePrincipalGrant({
+    issuer: requiredEnvironment(issuerVariable),
+    subject: requiredEnvironment(subjectVariable),
+    relation,
+  });
+}
+
 /**
  * The tuples the variables name, with the project's `tenant` link beside a
  * person's project grant, written first so a grant that fails after it leaves
@@ -70,6 +100,12 @@ function provisionAction(): "Grant" | "Revoke" {
  * looked for in, and the link is the one arm naming no person.
  */
 function provisionGrants(action: "Grant" | "Revoke"): readonly ProjectGrant[] {
+  const level = optionalEnvironment(levelVariable);
+  if (level !== undefined) {
+    if (level !== siteLevel)
+      throw new Error(`${levelVariable} must be ${siteLevel} or unset`);
+    return [provisionSiteGrant()];
+  }
   const tenant = requiredEnvironment(tenantVariable);
   const relation = requiredEnvironment(relationVariable);
   const project = optionalEnvironment(projectVariable);
