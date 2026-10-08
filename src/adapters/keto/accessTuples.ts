@@ -92,6 +92,8 @@ function ketoAccessQuery(
         "subject_set.object": projectAccessTenantObject(query.tenant),
         "subject_set.relation": ketoSubjectSetRelation,
       };
+    case "Namespace":
+      return { namespace: query.namespace };
   }
 }
 

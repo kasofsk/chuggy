@@ -201,6 +201,26 @@ export function tenantPrincipalGrant(
   };
 }
 
+/** Narrows a supplied relation, refusing one the site namespace does not declare. */
+export function asSiteGrantRelation(value: string): SiteGrantRelation {
+  const relation = allSiteGrantRelations.find((known) => known === value);
+  if (relation === undefined)
+    throw new RangeError(`project grant: ${value} is not a site relation`);
+  return relation;
+}
+
+/** One person's relation on the site. */
+export function sitePrincipalGrant(
+  request: ProjectGrantPrincipalRequest & { readonly relation: string },
+): ProjectGrant {
+  return {
+    namespace: projectAccessSiteNamespace,
+    object: projectAccessSiteObject,
+    relation: asSiteGrantRelation(request.relation),
+    holder: projectGrantHolder(request),
+  };
+}
+
 /** The tenant relation that holds the permit to administer it. */
 export const tenantAdministratorRelation: TenantGrantRelation = "admins";
 
@@ -375,12 +395,16 @@ export function checkedProjectGrantSettings(input: {
 }
 
 /**
- * Writes what `ProjectAccess` reads. Both verbs are idempotent, so re-running
- * either is the same as running it once.
+ * Writes what `ProjectAccess` reads. A tuple written again may be stored again,
+ * so re-running a verb changes what the authority answers no more than running
+ * it once, and one removal takes every copy.
  */
 export interface ProjectGrantWriter {
-  /** Adds the tuple, or leaves the one already there. */
+  /** Adds the tuple, where the authority may keep a copy beside one already there. */
   write(grant: ProjectGrant): Promise<void>;
+
+  /** Adds every tuple as one request, so the authority takes all of them or none. */
+  writeAll(grants: readonly ProjectGrant[]): Promise<void>;
 
   /** Removes the tuple, whether or not there was one to remove. */
   remove(grant: ProjectGrant): Promise<void>;

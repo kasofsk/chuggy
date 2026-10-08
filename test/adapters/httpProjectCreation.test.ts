@@ -17,10 +17,12 @@ import { asOperationId } from "../../src/interpreter/operationInbox.ts";
 import { ProjectAccessUnavailable } from "../../src/interpreter/projectAccess.ts";
 import {
   projectCreation,
+  projectCreationGrants,
   type ProjectCreationAnswer,
   type ProjectCreationWrite,
 } from "../../src/interpreter/projectCreation.ts";
 import type { ProjectGrant } from "../../src/interpreter/projectGrant.ts";
+import { asPrincipal } from "../../src/interpreter/principal.ts";
 import { memoryProjectAccess } from "../postgres/projectAccessMemory.ts";
 import { servedNativeHttpApp, unservedNativeWeb } from "./threadFixtures.ts";
 
@@ -72,12 +74,13 @@ function creationCase(
         ? {}
         : {
             grants: {
-              write: (grant) => {
+              write: () => Promise.reject(new Error("never written alone")),
+              writeAll: (named) => {
                 if (options.grantFails === true)
                   return Promise.reject(
                     new ProjectAccessUnavailable("the write port refused"),
                   );
-                grants.push(grant);
+                grants.push(...named);
                 return Promise.resolve();
               },
               remove: () => Promise.reject(new Error("never removed")),
@@ -115,7 +118,12 @@ test("a project is created at its own address, under the identity the caller key
   );
   assert.deepEqual(served.json(), body);
   assert.equal(one.writes[0]?.operation, "create-chuggy-1");
-  assert.equal(one.grants.length, 2);
+  const partition = one.writes[0]?.partition;
+  assert.ok(partition !== undefined);
+  assert.equal(
+    one.grants.length,
+    projectCreationGrants(asPrincipal("issuer anyone"), partition, true).length,
+  );
 });
 
 test("a replay answers the project it already created", async (t) => {

@@ -1,10 +1,13 @@
 /**
  * `ProjectGrantWriter` over Ory Keto's write API.
  *
- * A GRANT IS A PUT AND A REVOCATION IS A DELETE, which is what makes both
- * idempotent: a tuple written again changes no answer and one delete removes
- * every copy of it, and a delete of a tuple that is not there is the state the
- * caller asked for.
+ * A GRANT IS A PUT AND A REVOCATION IS A DELETE. Neither is idempotent in
+ * rows: the server stores a tuple written again as another copy of it. Both are
+ * in answers: a copy changes no check, one delete removes every copy, and a
+ * delete of a tuple that is not there is the state the caller asked for.
+ *
+ * SEVERAL GRANTS ARE ONE PATCH OF INSERTS, which the server applies as one
+ * transaction, so a list it refuses any entry of is written none of.
  */
 
 import type {
@@ -15,7 +18,7 @@ import type {
 } from "../../interpreter/projectGrant.ts";
 import { ketoRequest } from "./request.ts";
 
-/** The write API's tuple resource, which both verbs address. */
+/** The write API's tuple resource, which every verb addresses. */
 const ketoAdminTuplesPath = "admin/relation-tuples";
 
 /**
@@ -95,6 +98,19 @@ export function ketoProjectGrants(
         requestTimeoutMs: settings.requestTimeoutMs,
         fetcher,
         body: ketoGrantBody(grant),
+      });
+    },
+    writeAll: async (named) => {
+      if (named.length === 0) return;
+      await ketoRequest({
+        url: new URL(ketoAdminTuplesPath, settings.writeUrl),
+        method: "PATCH",
+        requestTimeoutMs: settings.requestTimeoutMs,
+        fetcher,
+        body: named.map((grant) => ({
+          action: "insert",
+          relation_tuple: ketoGrantBody(grant),
+        })),
       });
     },
     remove: async (grant) => {

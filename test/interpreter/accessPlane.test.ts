@@ -22,8 +22,11 @@ import {
   principalCharsMax,
 } from "../../src/interpreter/principal.ts";
 import {
+  projectAuthorityDefaults,
   projectPrincipalGrant,
   projectTenantGrant,
+  siteAuthorityDefaults,
+  tenantAuthorityDefaults,
   tenantPrincipalGrant,
 } from "../../src/interpreter/projectGrant.ts";
 import {
@@ -235,6 +238,35 @@ test("the only administrator of a tenant is not removed, and one of two is", asy
     "Changed",
   );
   assert.equal(await plane.tenantPeople(alice, tenant), undefined);
+});
+
+test("a tenant and projects carrying their defaults list the same people and roles, and the only administrator is still kept", async () => {
+  const bare = await acme();
+  const { memory, plane } = await acme();
+  await seeded(memory, [
+    ...siteAuthorityDefaults(),
+    ...tenantAuthorityDefaults(tenant),
+    ...[web, api, loose].flatMap(projectAuthorityDefaults),
+  ]);
+  assert.deepEqual(
+    await plane.tenantPeople(alice, tenant),
+    await bare.plane.tenantPeople(alice, tenant),
+  );
+  for (const [caller, partition] of [
+    [priya, web],
+    [alice, api],
+    [priya, loose],
+  ] as const)
+    assert.deepEqual(
+      await plane.projectPeople(caller, partition),
+      await bare.plane.projectPeople(caller, partition),
+      partition.project,
+    );
+  assert.equal(
+    await plane.tenantRoleRemoved(alice, tenant, "alice", "Admin"),
+    "LastTenantAdministrator",
+  );
+  assert.deepEqual(memory.changes, []);
 });
 
 test("each role reaches only the relation its record names, and every relation those records name is a role's", () => {

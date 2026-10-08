@@ -127,3 +127,15 @@ test("the widest page this tree can write, every character escaped, is read and 
   );
   assert.equal(page.tuples.length, ketoAccessPageTuplesMax);
 });
+
+test("a namespace is asked by its name alone", async () => {
+  const { asked, reader } = readerOf(JSON.stringify({ relation_tuples: [] }));
+  assert.deepEqual(
+    await reader.page({ query: "Namespace", namespace: "Tenant" }, undefined),
+    { tuples: [], next: undefined },
+  );
+  assert.deepEqual(Object.fromEntries(asked[0]?.searchParams ?? []), {
+    namespace: "Tenant",
+    page_size: String(ketoAccessPageTuplesMax),
+  });
+});

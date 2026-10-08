@@ -5,9 +5,8 @@
  */
 
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { test } from "node:test";
-import { promisify } from "node:util";
 
 import {
   allProjectAccessKinds,
@@ -17,45 +16,18 @@ import { oidcPrincipal } from "../../src/interpreter/principal.ts";
 import {
   ketoHarnessAccess,
   ketoHarnessClaims,
+  ketoHarnessCommand,
   ketoHarnessIssuer,
   ketoHarnessPartition,
   ketoHarnessReadUrl,
   ketoHarnessRoleKinds,
-  ketoHarnessWriteUrl,
 } from "./harness.ts";
 
-const execute = promisify(execFile);
 const access = ketoHarnessAccess();
 
-interface Provisioned {
-  readonly code: number;
-  readonly output: string;
-}
-
 /** The command, run with the variables a case exports and nothing else of its own. */
-async function provision(
-  environment: Readonly<Record<string, string>>,
-): Promise<Provisioned> {
-  try {
-    const ran = await execute(
-      process.execPath,
-      ["--experimental-strip-types", "src/roots/provisionProjectAccess.ts"],
-      {
-        cwd: process.cwd(),
-        env: {
-          ...process.env,
-          CHUG_PROVISION_KETO_WRITE_URL: ketoHarnessWriteUrl(),
-          CHUG_API_OIDC_ISSUER: ketoHarnessIssuer,
-          ...environment,
-        },
-      },
-    );
-    return { code: 0, output: ran.stdout };
-  } catch (failure) {
-    const ran = failure as { code?: number; stderr?: string };
-    return { code: ran.code ?? 1, output: ran.stderr ?? "" };
-  }
-}
+const provision = (environment: Readonly<Record<string, string>>) =>
+  ketoHarnessCommand("src/roots/provisionProjectAccess.ts", environment);
 
 test("a granted relation is one the API's own port then answers for", async () => {
   const partition = ketoHarnessPartition("provision");
@@ -190,5 +162,73 @@ test("a relation the model does not declare is refused before anything is writte
     relation_tuples: unknown[];
   };
   assert.deepEqual(onProject.relation_tuples, []);
+  assert.equal(await ketoHarnessClaims().claimed(partition.tenant), false);
+});
+
+/** Whether a principal of `subject` administers the site. */
+async function administersSite(subject: string): Promise<boolean> {
+  return (
+    (await access.authorizeSite(
+      oidcPrincipal(ketoHarnessIssuer, subject),
+      "AdministerSite",
+    )) !== undefined
+  );
+}
+
+test("a site grant makes a person the site's administrator, and its revocation takes that back", async () => {
+  const site = {
+    CHUG_PROVISION_LEVEL: "site",
+    CHUG_PROVISION_SUBJECT: `site-admin-${randomUUID()}`,
+    CHUG_PROVISION_RELATION: "admins",
+  };
+  try {
+    const granted = await provision({
+      ...site,
+      CHUG_PROVISION_ACTION: "grant",
+    });
+    assert.equal(granted.code, 0, granted.output);
+    assert.equal(await administersSite(site.CHUG_PROVISION_SUBJECT), true);
+  } finally {
+    const revoked = await provision({
+      ...site,
+      CHUG_PROVISION_ACTION: "revoke",
+    });
+    assert.equal(revoked.code, 0, revoked.output);
+  }
+  assert.equal(await administersSite(site.CHUG_PROVISION_SUBJECT), false);
+});
+
+test("a site grant beside another relation, a tenant or a project, or under another level, writes nothing and says why", async () => {
+  const partition = ketoHarnessPartition("provision-site");
+  for (const [refusal, environment] of [
+    [
+      /writes only CHUG_PROVISION_RELATION=admins/u,
+      { CHUG_PROVISION_RELATION: "account_creators" },
+    ],
+    [
+      /CHUG_PROVISION_TENANT must be unset/u,
+      { CHUG_PROVISION_TENANT: partition.tenant },
+    ],
+    [
+      /CHUG_PROVISION_PROJECT must be unset/u,
+      { CHUG_PROVISION_PROJECT: partition.project },
+    ],
+    [
+      /CHUG_PROVISION_LEVEL must be site or unset/u,
+      { CHUG_PROVISION_LEVEL: "tenant" },
+    ],
+  ] as const) {
+    const subject = `site-refused-${randomUUID()}`;
+    const refused = await provision({
+      CHUG_PROVISION_ACTION: "grant",
+      CHUG_PROVISION_LEVEL: "site",
+      CHUG_PROVISION_SUBJECT: subject,
+      CHUG_PROVISION_RELATION: "admins",
+      ...environment,
+    });
+    assert.equal(refused.code, 1, refused.output);
+    assert.match(refused.output, refusal);
+    assert.equal(await administersSite(subject), false);
+  }
   assert.equal(await ketoHarnessClaims().claimed(partition.tenant), false);
 });

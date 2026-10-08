@@ -195,6 +195,22 @@ export function projectAccessTenantObject(tenant: string): string {
   return `${String(tenant.length)}:${tenant}`;
 }
 
+/** The tenant a tenant object addresses, or nothing where `object` is not one `projectAccessTenantObject` writes. */
+export function projectAccessObjectTenant(
+  object: string,
+): TenantId | undefined {
+  const colon = object.indexOf(":");
+  const length = object.slice(0, Math.max(colon, 0));
+  if (!/^[1-9][0-9]*$/u.test(length)) return undefined;
+  if (object.length !== colon + 1 + Number(length)) return undefined;
+  try {
+    return asTenantId(object.slice(colon + 1));
+  } catch (failure) {
+    if (failure instanceof RangeError) return undefined;
+    throw failure;
+  }
+}
+
 /**
  * The object and the subject a readiness probe names. Any string the model
  * accepts would do: the probe reads whether the relation is declared and

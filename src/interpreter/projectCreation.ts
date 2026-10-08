@@ -13,11 +13,14 @@
  * `TenantTaken` and never a project in the winner's tenant, and it refuses a
  * name another path begins with only for a tenant that is new.
  *
- * ACCESS IS WRITTEN AFTER THE ROW COMMITS, AND A REPEAT WRITES IT AGAIN UNTIL
- * THE WRITES ARE RECORDED. Every grant is idempotent, so an authority that
- * failed after the commit is repaired by the creator asking again for the same
- * tenant and project, under any idempotency key; once recorded, a repeat writes
- * nothing, so it cannot restore a grant an operator has since revoked.
+ * ACCESS IS WRITTEN AFTER THE ROW COMMITS, AS ONE REQUEST, AND A REPEAT WRITES
+ * IT AGAIN UNTIL THE WRITE IS RECORDED. The authority takes the whole list or
+ * none of it, so a failure leaves no tenant held by a tuple and administered by
+ * nobody, and no object with some of its defaults. A tuple written again changes
+ * no answer, so an authority that failed after the commit is repaired by the
+ * creator asking again for the same tenant and project, under any idempotency
+ * key; once recorded, a repeat writes nothing, so it cannot restore a grant or
+ * a default anyone has since removed.
  */
 
 import { assertNever } from "../domain/assertNever.ts";
@@ -25,9 +28,11 @@ import { projectNameSchema, tenantNameReserved } from "../contract/requests.ts";
 import type { OperationId, Authority } from "./operationInbox.ts";
 import { memberAuthority, type ProjectAccess } from "./projectAccess.ts";
 import {
+  projectAuthorityDefaults,
   projectRelationGrant,
   projectTenantGrant,
   tenantAdministratorGrant,
+  tenantAuthorityDefaults,
   type ProjectGrant,
   type ProjectGrantWriter,
 } from "./projectGrant.ts";
@@ -133,9 +138,9 @@ export function projectCreationNameFault(
 }
 
 /**
- * The grants an accepted creation writes: the tenant's administrator only where
- * it made the tenant, and the site's selector as a developer where the site
- * names one, so the project is decided for from its first ticket.
+ * The grants an accepted creation writes: the tenant's administrator and
+ * defaults only where it made the tenant, the project's link and defaults, and
+ * the site's selector as a developer where the site names one.
  */
 export function projectCreationGrants(
   principal: Principal,
@@ -145,9 +150,13 @@ export function projectCreationGrants(
 ): readonly ProjectGrant[] {
   return [
     ...(tenantCreated
-      ? [tenantAdministratorGrant(principal, partition.tenant)]
+      ? [
+          tenantAdministratorGrant(principal, partition.tenant),
+          ...tenantAuthorityDefaults(partition.tenant),
+        ]
       : []),
     projectTenantGrant(partition),
+    ...projectAuthorityDefaults(partition),
     ...(selector === undefined
       ? []
       : [projectRelationGrant(selector, partition, "developers")]),
@@ -195,13 +204,14 @@ async function projectCreationCreate(
     case "Created":
     case "AlreadyCreated":
       if (!answer.grantsWritten) {
-        for (const grant of projectCreationGrants(
-          principal,
-          partition,
-          answer.tenantCreated,
-          ports.selector,
-        ))
-          await grants.write(grant);
+        await grants.writeAll(
+          projectCreationGrants(
+            principal,
+            partition,
+            answer.tenantCreated,
+            ports.selector,
+          ),
+        );
         await ports.store.recordGrants(answer.operation);
       }
       return { result: answer.outcome, partition };
