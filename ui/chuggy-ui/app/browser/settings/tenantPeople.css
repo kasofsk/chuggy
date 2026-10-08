@@ -25,6 +25,10 @@
     padding-inline-end: var(--space-4);
   }
 
+  .people-table .tabular tbody tr:hover {
+    background: transparent;
+  }
+
   .people-table thead th {
     padding-block: var(--space-2);
     font-weight: var(--weight-medium);

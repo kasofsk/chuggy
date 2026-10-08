@@ -54,6 +54,7 @@ function usePermissionAdding(
 ): {
   readonly busy: boolean;
   readonly note: string | undefined;
+  readonly begin: () => void;
   readonly send: (holder: PermissionHolder) => void;
 } {
   const [busy, setBusy] = useState(false);
@@ -61,6 +62,9 @@ function usePermissionAdding(
   return {
     busy,
     note,
+    begin: () => {
+      setNote(undefined);
+    },
     send: (holder) => {
       setBusy(true);
       setNote(undefined);
@@ -145,61 +149,96 @@ function PermissionAdditionPerson(props: {
   );
 }
 
-function PermissionAdditionBody(props: {
-  readonly choices: readonly PermissionChoice[];
-  readonly people: readonly AccessAuthorityPerson[];
-  readonly add: (holder: PermissionHolder) => Promise<ApiResult<undefined>>;
-  readonly onAdded: () => void;
-}): ReactNode {
+/** What the dialog has chosen so far, forgotten each time it opens. */
+function usePermissionDraft(): {
+  readonly choice: PermissionChoice | undefined;
+  readonly person: AccessAuthorityPerson | undefined;
+  readonly choose: (choice: PermissionChoice | undefined) => void;
+  readonly choosePerson: (person: AccessAuthorityPerson) => void;
+  readonly begin: () => void;
+} {
   const [choice, setChoice] = useState<PermissionChoice | undefined>(undefined);
   const [person, setPerson] = useState<AccessAuthorityPerson | undefined>(
     undefined,
   );
-  const adding = usePermissionAdding(props.add, props.onAdded);
-  const holder = permissionChoiceHolder(choice, person);
+  return {
+    choice,
+    person,
+    choose: setChoice,
+    choosePerson: setPerson,
+    begin: () => {
+      setChoice(undefined);
+      setPerson(undefined);
+    },
+  };
+}
+
+function PermissionAdditionBody(props: {
+  readonly choices: readonly PermissionChoice[];
+  readonly people: readonly AccessAuthorityPerson[];
+  readonly draft: ReturnType<typeof usePermissionDraft>;
+  readonly note: string | undefined;
+}): ReactNode {
+  const draft = props.draft;
   if (props.choices.length === 0)
     return <EmptyState variant="inline" label="Nothing to add" />;
   return (
     <div className="grid min-h-0 gap-3">
       <RadioGroup
         label="Holder"
-        value={choice === undefined ? "" : permissionChoiceValue(choice)}
+        value={
+          draft.choice === undefined ? "" : permissionChoiceValue(draft.choice)
+        }
         options={props.choices.map((offered) => ({
           value: permissionChoiceValue(offered),
           text: offered.words,
           ...(offered.line === undefined ? {} : { description: offered.line }),
         }))}
         onChoose={(value) => {
-          setChoice(
+          draft.choose(
             props.choices.find(
               (offered) => permissionChoiceValue(offered) === value,
             ),
           );
         }}
       />
-      {choice?.kind === "Person" ? (
+      {draft.choice?.kind === "Person" ? (
         <PermissionAdditionPerson
           people={props.people}
-          chosen={person}
-          onChoose={setPerson}
+          chosen={draft.person}
+          onChoose={draft.choosePerson}
         />
       ) : null}
-      <div className="flex items-center gap-3">
-        <Button
-          variant="primary"
-          disabled={holder === undefined || adding.busy}
-          busy={adding.busy}
-          onClick={() => {
-            if (holder !== undefined) adding.send(holder);
-          }}
-        >
-          Add
-        </Button>
-        {adding.note === undefined ? null : (
-          <Notice tone="danger" inline role="status" detail={adding.note} />
-        )}
-      </div>
+      {props.note === undefined ? null : (
+        <Notice tone="danger" inline role="status" detail={props.note} />
+      )}
     </div>
+  );
+}
+
+function PermissionAdditionFoot(props: {
+  readonly holder: PermissionHolder | undefined;
+  readonly adding: ReturnType<typeof usePermissionAdding>;
+  readonly onCancel: () => void;
+}): ReactNode {
+  const { holder, adding } = props;
+  return (
+    <>
+      <Button variant="quiet" size="sm" onClick={props.onCancel}>
+        Cancel
+      </Button>
+      <Button
+        variant="primary"
+        size="sm"
+        disabled={holder === undefined || adding.busy}
+        busy={adding.busy}
+        onClick={() => {
+          if (holder !== undefined) adding.send(holder);
+        }}
+      >
+        Add
+      </Button>
+    </>
   );
 }
 
@@ -226,6 +265,14 @@ export function PermissionAddition<
   const [open, setOpen] = useState(false);
   const row = props.row;
   const addition = props.addition;
+  const draft = usePermissionDraft();
+  const adding = usePermissionAdding(
+    (holder) => addition.add(row, holder),
+    () => {
+      setOpen(false);
+    },
+  );
+  const choices = addition.choices(row);
   return (
     <Dialog
       title="Add holder"
@@ -239,15 +286,30 @@ export function PermissionAddition<
       }
       triggerVariant="quiet"
       open={open}
-      onOpenChange={setOpen}
+      onOpenChange={(opened) => {
+        if (opened) {
+          draft.begin();
+          adding.begin();
+        }
+        setOpen(opened);
+      }}
+      foot={
+        choices.length === 0 ? undefined : (
+          <PermissionAdditionFoot
+            holder={permissionChoiceHolder(draft.choice, draft.person)}
+            adding={adding}
+            onCancel={() => {
+              setOpen(false);
+            }}
+          />
+        )
+      }
     >
       <PermissionAdditionBody
-        choices={addition.choices(row)}
+        choices={choices}
         people={addition.people(row)}
-        add={(holder) => addition.add(row, holder)}
-        onAdded={() => {
-          setOpen(false);
-        }}
+        draft={draft}
+        note={adding.note}
       />
     </Dialog>
   );

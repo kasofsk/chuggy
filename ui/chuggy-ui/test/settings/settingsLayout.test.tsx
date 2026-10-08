@@ -75,6 +75,7 @@ const siteAbilitiesPath = "/access/v1/site/abilities";
 const siteAbilitiesNone: AccessSiteAbilities = {
   administer: false,
   createAccount: false,
+  createTenant: false,
   manageAuthorities: false,
 };
 

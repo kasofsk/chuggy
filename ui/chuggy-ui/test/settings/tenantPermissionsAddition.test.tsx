@@ -109,10 +109,10 @@ test("each permission offers its record's groups less those it holds, then a per
       .getAllByRole("radio")
       .map((radio) => radio.getAttribute("aria-checked")),
   ).toStrictEqual(["false", "false", "false"]);
-  await press("Close");
+  await press("Cancel");
   await opened("Workspace", "Grant Admin");
   expect(choicesOffered()).toStrictEqual(["Site admins", "Person"]);
-  await press("Close");
+  await press("Cancel");
   await opened("Workspace", "Change permissions");
   expect(choicesOffered()).toStrictEqual(["Person"]);
 });
@@ -198,11 +198,28 @@ test("the roster draws each person on a line: their address or subject, their lo
   ]);
 });
 
+test("a holder chosen and cancelled is forgotten when the dialog opens again", async () => {
+  await drawManaging();
+  await opened("Workspace", "Grant Member");
+  await chosen("Site admins");
+  await press("Cancel");
+  await opened("Workspace", "Grant Member");
+  expect(
+    within(dialog())
+      .getAllByRole("radio")
+      .map((radio) => radio.getAttribute("aria-checked")),
+  ).toStrictEqual(["false", "false", "false"]);
+  expect(
+    within(dialog()).getByRole<HTMLButtonElement>("button", { name: "Add" })
+      .disabled,
+  ).toBe(true);
+});
+
 test("the People list not read, Person is not offered, and a permission with nothing left says so", async () => {
   await drawManaging({ people: () => answer({}, 404) });
   await opened("Workspace", "Grant Member");
   expect(choicesOffered()).toStrictEqual(["Site admins", "Workspace members"]);
-  await press("Close");
+  await press("Cancel");
   await opened("Workspace", "Change permissions");
   expect(choicesOffered()).toStrictEqual([]);
   expect(within(dialog()).getByText("Nothing to add")).toBeTruthy();

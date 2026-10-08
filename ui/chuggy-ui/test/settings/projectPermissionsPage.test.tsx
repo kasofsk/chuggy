@@ -192,10 +192,10 @@ test("each permission offers its record's groups less those held, Project develo
     "Project developers",
     "Person",
   ]);
-  await press("Close");
+  await press("Cancel");
   await opened("Project", "Grant Admin");
   expect(choicesOffered()).toStrictEqual(["Site admins", "Person"]);
-  await press("Close");
+  await press("Cancel");
   await opened("Project", "Change permissions");
   expect(choicesOffered()).toStrictEqual(["Person"]);
 });

@@ -82,11 +82,13 @@ test("the site's group is drawn to a reader who administers the site or manages 
   const none = {
     administer: false,
     createAccount: false,
+    createTenant: false,
     manageAuthorities: false,
   };
   expect(settingsNavSiteDrawn({ ...none, administer: true })).toBe(true);
   expect(settingsNavSiteDrawn({ ...none, manageAuthorities: true })).toBe(true);
   expect(settingsNavSiteDrawn({ ...none, createAccount: true })).toBe(false);
+  expect(settingsNavSiteDrawn({ ...none, createTenant: true })).toBe(false);
   expect(settingsNavSiteDrawn(none)).toBe(false);
   expect(settingsNavSiteDrawn(undefined)).toBe(false);
 });

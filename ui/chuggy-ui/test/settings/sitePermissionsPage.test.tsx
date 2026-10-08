@@ -167,7 +167,7 @@ test("This workspace's admins is offered on Create accounts only where they do n
   await drawSitePermissions({ people: () => answer(permissionsPeopleListed) });
   await opened("Site", "Create accounts");
   expect(choicesOffered()).toStrictEqual(["Person"]);
-  await press("Close");
+  await press("Cancel");
   await opened("Site", "Change permissions");
   expect(choicesOffered()).toStrictEqual(["Person"]);
   cleanup();
