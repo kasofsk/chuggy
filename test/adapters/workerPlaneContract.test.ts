@@ -240,11 +240,13 @@ const served = workerContractAccepted.max;
 
 /**
  * Every path the worker core's `entrypoint.mjs` uploads an artifact at: an
- * agentic attempt's result, a commands attempt's output, and a crash's error.
- * The first two are restated because that module is in kasofsk/chuggy-common.
+ * agentic attempt's result and its summary as written, a commands attempt's
+ * output, and a crash's error. All but the last are restated because that
+ * module is in kasofsk/chuggy-common.
  */
 const workerUploadPathsWritten = [
   ".chuggy/agent-result.json",
+  ".chuggy/outputs/summary.md",
   ".chuggy/check-output.json",
   workerErrorPath,
 ] as const;
