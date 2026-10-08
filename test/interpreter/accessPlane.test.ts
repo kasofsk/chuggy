@@ -361,7 +361,7 @@ test("a list asks its kinds in order until one is held, and a caller holding non
   const asked = async (list: () => Promise<unknown>) => {
     memory.asked.length = 0;
     await list();
-    return [...memory.asked];
+    return memory.asked.map(([kind]) => kind);
   };
   assert.deepEqual(await asked(() => plane.tenantPeople(alice, tenant)), [
     "AdministerTenant",
@@ -551,4 +551,58 @@ test("a list with no directory answers no directory field", async () => {
         !("githubLogin" in person),
     ),
   );
+});
+
+test("hosted runs are given and taken under `GrantHostedExecution`, each twice changing no more than once, and the list reports them", async () => {
+  const { memory, plane } = await acme();
+  const sid = accessFixturePrincipal("sid");
+  accessGiven(memory, sid, [
+    { on: "Tenant", tenant, kind: "GrantHostedExecution" },
+  ]);
+  const hosted = async () =>
+    (await plane.tenantPeople(sid, tenant))?.people.find(
+      (person) => person.subject === "zed",
+    )?.hostedRuns;
+  for (const round of ["first", "second"])
+    assert.equal(
+      await plane.tenantHostedRunsGiven(sid, tenant, "zed"),
+      "Changed",
+      round,
+    );
+  assert.equal(await hosted(), true);
+  for (const round of ["first", "second"])
+    assert.equal(
+      await plane.tenantHostedRunsTaken(sid, tenant, "zed"),
+      "Changed",
+      round,
+    );
+  assert.equal(await hosted(), undefined);
+  assert.deepEqual(
+    memory.changes.map(([verb, grant]) => [verb, grant.relation]),
+    [
+      ["write", "hosted_execution"],
+      ["write", "hosted_execution"],
+      ["remove", "hosted_execution"],
+      ["remove", "hosted_execution"],
+    ],
+  );
+  assert.deepEqual(memory.changes[0]?.[1].holder, {
+    subject: "Principal",
+    principal: accessFixturePrincipal("zed"),
+  });
+});
+
+test("hosted runs are refused a tenant's administrator who lacks `GrantHostedExecution`, and absent to a caller not answered the list, and nothing is written", async () => {
+  const { memory, plane } = await acme();
+  for (const change of [
+    plane.tenantHostedRunsGiven(alice, tenant, "bo"),
+    plane.tenantHostedRunsTaken(alice, tenant, "bo"),
+  ])
+    assert.equal(await change, "Refused");
+  for (const change of [
+    plane.tenantHostedRunsGiven(priya, tenant, "bo"),
+    plane.tenantHostedRunsTaken(priya, tenant, "bo"),
+  ])
+    assert.equal(await change, "Absent");
+  assert.deepEqual(memory.changes, []);
 });

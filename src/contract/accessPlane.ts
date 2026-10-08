@@ -11,6 +11,10 @@
  * relation each names is the interpreter's, in one exhaustive record, so no
  * string a request carries reaches a relation without passing through it.
  *
+ * WHAT A CALLER MAY DO IS ANSWERED ABOUT THEM ALONE, at the site, a tenant or
+ * a project: each ability is whether they hold the kind it needs there, so a
+ * console offers the controls the plane would not refuse.
+ *
  * A PERSON IS NAMED BY SUBJECT, the one their token carries. The plane derives
  * the principal from it under its own issuer, and how long a subject may be
  * depends on that issuer, so the schema here bounds it only by the path.
@@ -49,10 +53,19 @@ export const accessPlaneRoutes = {
     method: "DELETE",
     path: `${accessTenantPath}/people/:subject/roles/:role`,
   },
+  tenantHostedRunsGrant: {
+    method: "POST",
+    path: `${accessTenantPath}/people/:subject/hosted-runs`,
+  },
+  tenantHostedRunsRemoval: {
+    method: "DELETE",
+    path: `${accessTenantPath}/people/:subject/hosted-runs`,
+  },
   tenantInvitation: {
     method: "POST",
     path: `${accessTenantPath}/invitations`,
   },
+  tenantAbilities: { method: "GET", path: `${accessTenantPath}/abilities` },
   projectPeople: { method: "GET", path: `${accessProjectPath}/people` },
   projectRoleGrant: {
     method: "POST",
@@ -61,6 +74,11 @@ export const accessPlaneRoutes = {
   projectRoleRemoval: {
     method: "DELETE",
     path: `${accessProjectPath}/people/:subject/roles/:role`,
+  },
+  projectAbilities: { method: "GET", path: `${accessProjectPath}/abilities` },
+  siteAbilities: {
+    method: "GET",
+    path: `${accessPlaneBasePath}/site/abilities`,
   },
 } as const satisfies Readonly<Record<string, AccessPlaneRoute>>;
 
@@ -101,7 +119,7 @@ export const accessProjectRoleGrantSchema = z.strictObject({
 /** The conflict a removal is refused with when it would leave a tenant no administrator. */
 export const accessLastTenantAdministratorCode = "LastTenantAdministrator";
 
-/** The refusal of a change or an invitation to a caller answered the list who may not grant a role it names. */
+/** The refusal of a change or an invitation to a caller answered the list who may not grant a role it names, or hosted runs. */
 export const accessNotPermittedCode = "AccessNotPermitted";
 
 /** The longest username GitHub admits. */
@@ -198,8 +216,9 @@ export const accessProjectRolesHeldSchema = z.strictObject({
 });
 
 /**
- * One person in a tenant. `hostedRuns` is read and never granted here, and
- * `mine` is the server's answer to whether this is the caller.
+ * One person in a tenant. `hostedRuns` is whether the tenant grants them
+ * hosted runs, which the plane's own route gives and takes, and `mine` is the
+ * server's answer to whether this is the caller.
  */
 export const accessTenantPersonSchema = z.strictObject({
   subject: z.string().min(1),
@@ -240,9 +259,54 @@ export const accessProjectPeopleSchema = z.strictObject({
   truncated: z.boolean(),
 });
 
+/** What the caller may do on one project: the roles they may grant and remove there, and whether they may change who holds its authorities. */
+export const accessProjectAbilitiesHeldSchema = z.strictObject({
+  project: identitySchema,
+  roles: z.array(accessProjectRoleSchema),
+  manageAuthorities: z.boolean(),
+});
+
+/**
+ * What the caller may do in a tenant: the tenant roles they may grant and
+ * remove, whether they may give hosted runs, make an account, change who holds
+ * the tenant's authorities and the ones the site holds over it, and what they
+ * may do on each of the tenant's projects the answer names.
+ */
+export const accessTenantAbilitiesSchema = z.strictObject({
+  tenant: identitySchema,
+  roles: z.array(accessTenantRoleSchema),
+  grantHostedRuns: z.boolean(),
+  createAccount: z.boolean(),
+  manageAuthorities: z.boolean(),
+  manageSiteHeldAuthorities: z.boolean(),
+  projects: z.array(accessProjectAbilitiesHeldSchema),
+  truncated: z.boolean(),
+});
+
+/** What the caller may do in one project. */
+export const accessProjectAbilitiesSchema = z.strictObject({
+  tenant: identitySchema,
+  ...accessProjectAbilitiesHeldSchema.shape,
+});
+
+/** What the caller may do on the site: administer it, make an account, and change who holds its authorities. */
+export const accessSiteAbilitiesSchema = z.strictObject({
+  administer: z.boolean(),
+  createAccount: z.boolean(),
+  manageAuthorities: z.boolean(),
+});
+
 export type AccessTenantPerson = z.infer<typeof accessTenantPersonSchema>;
 export type AccessTenantPeople = z.infer<typeof accessTenantPeopleSchema>;
 export type AccessProjectPerson = z.infer<typeof accessProjectPersonSchema>;
 export type AccessProjectPeople = z.infer<typeof accessProjectPeopleSchema>;
 export type AccessInvitation = z.infer<typeof accessInvitationSchema>;
 export type AccessInvited = z.infer<typeof accessInvitedSchema>;
+export type AccessProjectAbilitiesHeld = z.infer<
+  typeof accessProjectAbilitiesHeldSchema
+>;
+export type AccessTenantAbilities = z.infer<typeof accessTenantAbilitiesSchema>;
+export type AccessProjectAbilities = z.infer<
+  typeof accessProjectAbilitiesSchema
+>;
+export type AccessSiteAbilities = z.infer<typeof accessSiteAbilitiesSchema>;

@@ -1,18 +1,20 @@
 /**
- * Who holds a role in a tenant and its projects, and granting or removing one,
- * each asked of the authority as the kind it needs.
+ * Who holds a role in a tenant and its projects, granting or removing one, and
+ * giving or taking a tenant's hosted runs, each asked of the authority as the
+ * kind it needs.
  *
- * A ROLE REACHES A RELATION THROUGH ONE RECORD PER ROSTER. The builders in
- * `./projectGrant.ts` take any relation the model declares, `hosted_execution`,
- * `agents`, `pools` and the `tenant` link included, so these two records are
- * the whole of what keeps a request from writing one of those: no string a
- * request carries reaches a builder any other way.
+ * A REQUEST REACHES A RELATION THROUGH ONE RECORD PER ROSTER, OR AS HOSTED
+ * RUNS. The builders in `./projectGrant.ts` take any relation the model
+ * declares, `agents`, `pools` and the `tenant` link included, so these two
+ * records and `accessHostedRunsRelation` are the whole of what a request can
+ * write: no string a request carries reaches a builder any other way.
  *
  * A LIST IS ANSWERED TO WHOEVER HOLDS ONE OF ITS OWN KINDS, and a change asks
- * the kind granting its role, each in one record beside the role's relation. A
- * caller holding none of a list's kinds is answered as absent, exactly as a
- * tenant or project that does not exist, so nothing here tells the two apart;
- * one answered the list who lacks a change's kind is refused it.
+ * the kind granting its role, each in one record beside the role's relation,
+ * or `GrantHostedExecution` for hosted runs. A caller holding none of a list's
+ * kinds is answered as absent, exactly as a tenant or project that does not
+ * exist, so nothing here tells the two apart; one answered the list who lacks
+ * a change's kind is refused it.
  *
  * WHO A SUBJECT IS IS THE DIRECTORY'S, asked once per list about at most
  * `accessDirectorySubjectsMax` subjects. A plane with no directory lists
@@ -107,7 +109,7 @@ export const accessProjectListKinds: readonly ProjectAccessKind[] = [
   "ManageProjectAuthorities",
 ];
 
-/** The tenant relation a list reports as hosted runs granted, which no request writes. */
+/** The tenant relation a list reports as hosted runs granted, and the one giving or taking them writes under `GrantHostedExecution`. */
 const accessHostedRunsRelation: TenantGrantRelation = "hosted_execution";
 
 /** Who one tuple names: a principal's text, or a subject set, which is no principal. */
@@ -214,22 +216,32 @@ export interface AccessPlane {
     subject: string,
     role: AccessProjectRole,
   ): Promise<AccessChange>;
+  tenantHostedRunsGiven(
+    caller: Principal,
+    tenant: TenantId,
+    subject: string,
+  ): Promise<AccessChange>;
+  tenantHostedRunsTaken(
+    caller: Principal,
+    tenant: TenantId,
+    subject: string,
+  ): Promise<AccessChange>;
 }
 
 /** What one answer has spent of its bounds, and whether a bound cut it. */
-interface AccessBudget {
+export interface AccessBudget {
   readonly bounds: AccessPlaneBounds;
   pages: number;
   tuples: number;
   truncated: boolean;
 }
 
-function accessBudget(bounds: AccessPlaneBounds): AccessBudget {
+export function accessBudget(bounds: AccessPlaneBounds): AccessBudget {
   return { bounds, pages: 0, tuples: 0, truncated: false };
 }
 
 /** Every tuple one listing holds, or as many as the budget left room for. */
-async function accessTuplesRead(
+export async function accessTuplesRead(
   reader: AccessTupleReader,
   budget: AccessBudget,
   query: AccessTupleQuery,
@@ -362,7 +374,7 @@ async function accessAccountsNamed<Person extends { readonly subject: string }>(
 }
 
 /** The tenant's projects as its `tenant` links name them, at most the bound. */
-function accessTenantProjects(
+export function accessTenantProjects(
   tenant: TenantId,
   links: readonly AccessTuple[],
   budget: AccessBudget,
@@ -598,20 +610,15 @@ async function accessProjectListed(
   return false;
 }
 
-/** Why `caller` may not change `role` on `tenant`, or nothing where it may. */
+/** Why `caller` may not make a change on `tenant` that asks `kind`, or nothing where it may. */
 async function accessTenantChangeRefused(
   access: ProjectAccess,
   caller: Principal,
   tenant: TenantId,
-  role: AccessTenantRole,
+  kind: TenantAccessKind,
 ): Promise<AccessChange | undefined> {
   if (!(await accessTenantListed(access, caller, tenant))) return "Absent";
-  return (await accessTenantHeld(
-    access,
-    caller,
-    tenant,
-    accessTenantRoleGrantKinds[role],
-  ))
+  return (await accessTenantHeld(access, caller, tenant, kind))
     ? undefined
     : "Refused";
 }
@@ -633,7 +640,7 @@ function accessTenantChanges(
         ports.access,
         caller,
         tenant,
-        role,
+        accessTenantRoleGrantKinds[role],
       );
       if (refused !== undefined) return refused;
       await ports.grants.write(grantOf(tenant, subject, role));
@@ -644,7 +651,7 @@ function accessTenantChanges(
         ports.access,
         caller,
         tenant,
-        role,
+        accessTenantRoleGrantKinds[role],
       );
       if (refused !== undefined) return refused;
       const grant = grantOf(tenant, subject, role);
@@ -662,6 +669,45 @@ function accessTenantChanges(
       await ports.grants.remove(grant);
       return "Changed";
     },
+  };
+}
+
+/**
+ * Giving and taking a person's hosted runs. The selector's principal is a
+ * person here like any other: taking its hosted runs stops hosted dispatch in
+ * the tenant, and holding `GrantHostedExecution` is what decides that.
+ */
+function accessHostedRunsChanges(
+  ports: AccessPlanePorts,
+  settings: AccessPlaneSettings,
+): Pick<AccessPlane, "tenantHostedRunsGiven" | "tenantHostedRunsTaken"> {
+  const changed =
+    (verb: "write" | "remove") =>
+    async (
+      caller: Principal,
+      tenant: TenantId,
+      subject: string,
+    ): Promise<AccessChange> => {
+      const refused = await accessTenantChangeRefused(
+        ports.access,
+        caller,
+        tenant,
+        "GrantHostedExecution",
+      );
+      if (refused !== undefined) return refused;
+      await ports.grants[verb](
+        tenantPrincipalGrant({
+          issuer: settings.issuer,
+          subject,
+          tenant,
+          relation: accessHostedRunsRelation,
+        }),
+      );
+      return "Changed";
+    };
+  return {
+    tenantHostedRunsGiven: changed("write"),
+    tenantHostedRunsTaken: changed("remove"),
   };
 }
 
@@ -722,5 +768,6 @@ export function accessPlane(
         : undefined,
     ...accessTenantChanges(ports, settings),
     ...accessProjectChanges(ports, settings),
+    ...accessHostedRunsChanges(ports, settings),
   };
 }

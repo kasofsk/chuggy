@@ -7,9 +7,14 @@
  * link, administer the project. Every other kind is answered from a table a
  * case fills, and what the tuples saying who may grant mean is the real
  * server's to show, which `.chug/tasks/check-keto.sh` asks. Every kind asked is
- * recorded, in order.
+ * recorded beside the object it was asked of, in order, so the same kind on
+ * two projects is told from one kind asked twice.
  */
 
+import {
+  accessAbilities,
+  type AccessAbilities,
+} from "../../src/interpreter/accessAbilities.ts";
 import type { AccessDirectory } from "../../src/interpreter/accessDirectory.ts";
 import {
   accessPlane,
@@ -25,6 +30,7 @@ import {
   ProjectAccessUnavailable,
   projectAccessNamespace,
   projectAccessObject,
+  projectAccessSiteObject,
   projectAccessTenantNamespace,
   projectAccessTenantObject,
   type ProjectAccess,
@@ -67,8 +73,8 @@ export interface AccessMemoryState {
   pages: number;
   /** Every kind given a principal on an object, as `accessHeldKey` names it. */
   readonly held: Set<string>;
-  /** Every kind asked, in order. */
-  readonly asked: string[];
+  /** Every kind asked and the object it was asked of, in order. */
+  readonly asked: (readonly [kind: string, object: string])[];
 }
 
 /** One kind on the object it is asked of. */
@@ -85,14 +91,21 @@ export type AccessMemoryKind =
       readonly kind: ProjectAccessKind;
     };
 
+/** The object one kind is asked of, as the authority addresses it. */
+function accessKindObject(kind: AccessMemoryKind): string {
+  if (kind.on === "Site") return projectAccessSiteObject;
+  return kind.on === "Tenant"
+    ? projectAccessTenantObject(kind.tenant)
+    : projectAccessObject(kind.partition);
+}
+
 function accessHeldKey(principal: Principal, kind: AccessMemoryKind): string {
-  const object =
-    kind.on === "Site"
-      ? ""
-      : kind.on === "Tenant"
-        ? projectAccessTenantObject(kind.tenant)
-        : projectAccessObject(kind.partition);
-  return JSON.stringify([principal, kind.on, object, kind.kind]);
+  return JSON.stringify([
+    principal,
+    kind.on,
+    accessKindObject(kind),
+    kind.kind,
+  ]);
 }
 
 export interface AccessMemory extends AccessMemoryState {
@@ -201,7 +214,7 @@ function accessAnswered(
   administers: () => boolean,
 ) {
   accessReachable(memory);
-  memory.asked.push(kind.kind);
+  memory.asked.push([kind.kind, accessKindObject(kind)]);
   const held =
     kind.kind === "Administer" || kind.kind === "AdministerTenant"
       ? administers()
@@ -365,6 +378,17 @@ export function accessMemoryPlane(
       directory,
     },
     { issuer: accessFixtureIssuer, bounds },
+  );
+}
+
+/** What a caller may do, answered over `memory`. */
+export function accessMemoryAbilities(
+  memory: AccessMemory,
+  bounds: AccessPlaneBounds = accessPlaneBoundsDefault,
+): AccessAbilities {
+  return accessAbilities(
+    { access: memory.access, tuples: memory.reader },
+    { bounds },
   );
 }
 

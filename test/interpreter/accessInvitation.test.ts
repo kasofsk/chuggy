@@ -160,7 +160,7 @@ test("an invitation of a person with no account by a caller who may not make one
   assert.deepEqual(directory.asked, ["githubHolder:990000001"]);
   assert.deepEqual(directory.creations, []);
   assert.deepEqual(memory.changes, []);
-  assert.equal(memory.asked.at(-1), "CreateAccount");
+  assert.equal(memory.asked.at(-1)?.[0], "CreateAccount");
 });
 
 test("an account carrying the GitHub credential is the person whatever email was given, and neither the email nor `CreateAccount` is asked about", async () => {
@@ -183,7 +183,7 @@ test("an account carrying the GitHub credential is the person whatever email was
   });
   assert.deepEqual(directory.asked, ["githubHolder:990000001"]);
   assert.deepEqual(memory.changes, grantsOf(held));
-  assert.ok(!memory.asked.includes("CreateAccount"));
+  assert.ok(!memory.asked.some(([kind]) => kind === "CreateAccount"));
 });
 
 test("an email an account holds, where none carries the credential, is the conflict: reads and no write, and nothing granted", async () => {
