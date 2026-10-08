@@ -47,9 +47,7 @@ vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
 
 vi.mock("@tanstack/react-router", () => ({
   createLink: (component: unknown) => component,
-  Link: (props: { readonly children?: ReactNode }) => (
-    <a href="/">{props.children}</a>
-  ),
+  Link: (props: { readonly children?: ReactNode }) => props.children,
   useParams: () => ({ ...atlas, ticket: "11" }),
 }));
 // jscpd:ignore-end -- the case's own doubles resume here
