@@ -152,6 +152,7 @@ export default defineConfig({
     environment: "jsdom",
     execArgv: ["--no-experimental-webstorage"],
     include: ["test/**/*.test.ts", "test/**/*.test.tsx"],
+    setupFiles: ["./test/timersDrained.ts"],
     /** A sheet the runner reaches by import is emptied, and one a suite asks
      * for as `?raw` is text to read rather than styles to apply. */
     css: { include: [/\.css\?raw$/u] },
