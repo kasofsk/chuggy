@@ -1,11 +1,14 @@
 /**
- * One person in a workspace, their roles edited in place where the reader may
- * grant them: each such role is one button, pressed where the list says it is
- * held, and a role the reader may not grant is its label where held and absent
- * where not. A project is drawn where the person holds a role there or the
- * reader may grant one. A press sends one grant or one removal and reads the
- * list and the abilities again, so what the button shows is always what the
- * list holds, and a refusal is one line under the person's name.
+ * One person in a workspace, their roles and hosted runs edited in place where
+ * the reader may grant them: each such role, and hosted runs, is one button,
+ * pressed where the list says it is held. A role the reader may not grant is
+ * its label where held and absent where not, and hosted runs the reader may not
+ * give are `Granted` or `Not granted`. A project is drawn where the person
+ * holds a role there or the reader may grant one. A press sends one grant or
+ * one removal and reads the list and the abilities again, so what the button
+ * shows is always what the list holds, and a refusal is one line under the
+ * person's name. Removing the reader's own workspace admin, and hosted runs
+ * from a subject that is no account, is asked first, one question at a time.
  */
 
 import { useQueryClient } from "@tanstack/react-query";
@@ -20,23 +23,27 @@ import {
 } from "../../../../../src/contract/accessPlane.ts";
 import type { ApiPorts, ApiResult } from "../../core/apiRequest.ts";
 import {
+  apiGrantHostedRuns,
   apiGrantProjectRole,
   apiGrantTenantRole,
+  apiRemoveHostedRuns,
   apiRemoveProjectRole,
   apiRemoveTenantRole,
 } from "../../core/accessRoutes.ts";
 import {
   projectRoleLabel,
   projectRoleOffered,
+  tenantHostedRunsOffered,
+  tenantPersonChangeAsks,
+  tenantPersonChangeNote,
   tenantPersonName,
   tenantPersonProjectDrawn,
   tenantPersonProjectRoles,
-  tenantRoleChangeAsks,
-  tenantRoleChangeNote,
+  tenantPersonQuestion,
   tenantRoleLabel,
   tenantRoleOffered,
 } from "../../core/tenantPeople.ts";
-import type { TenantRoleChange } from "../../core/tenantPeople.ts";
+import type { TenantPersonChange } from "../../core/tenantPeople.ts";
 import { useApiPorts } from "../api.ts";
 import { Button } from "../ui/Button.tsx";
 import { Confirm } from "../ui/Confirm.tsx";
@@ -44,12 +51,16 @@ import { Identity } from "../ui/Identity.tsx";
 import { Notice } from "../ui/Notice.tsx";
 import { tenantPeopleReread } from "./tenantPeopleResource.ts";
 
-function tenantRoleChangeSent(
+function tenantPersonChangeSent(
   ports: ApiPorts,
   tenant: string,
   subject: string,
-  change: TenantRoleChange,
+  change: TenantPersonChange,
 ): Promise<ApiResult<undefined>> {
+  if (change.scope === "HostedRuns")
+    return change.held
+      ? apiRemoveHostedRuns(ports, tenant, subject)
+      : apiGrantHostedRuns(ports, tenant, subject);
   if (change.scope === "Tenant")
     return change.held
       ? apiRemoveTenantRole(ports, tenant, subject, change.role)
@@ -60,27 +71,29 @@ function tenantRoleChangeSent(
 }
 
 /** One change at a time for one person, from the press to the line it leaves. */
-function useTenantRoleChange(
+function useTenantPersonChange(
   tenant: string,
   person: AccessTenantPerson,
 ): {
   readonly busy: boolean;
   readonly note: string | undefined;
-  readonly asking: TenantRoleChange | undefined;
-  readonly press: (change: TenantRoleChange) => void;
-  readonly send: (change: TenantRoleChange) => void;
+  readonly asking: TenantPersonChange | undefined;
+  readonly press: (change: TenantPersonChange) => void;
+  readonly send: (change: TenantPersonChange) => void;
   readonly cancel: () => void;
 } {
   const ports = useApiPorts();
   const client = useQueryClient();
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | undefined>(undefined);
-  const [asking, setAsking] = useState<TenantRoleChange | undefined>(undefined);
-  const send = (change: TenantRoleChange): void => {
+  const [asking, setAsking] = useState<TenantPersonChange | undefined>(
+    undefined,
+  );
+  const send = (change: TenantPersonChange): void => {
     setBusy(true);
     setNote(undefined);
     void (async () => {
-      const answered = await tenantRoleChangeSent(
+      const answered = await tenantPersonChangeSent(
         ports,
         tenant,
         person.subject,
@@ -89,7 +102,7 @@ function useTenantRoleChange(
       await tenantPeopleReread(client, tenant);
       setAsking(undefined);
       setBusy(false);
-      setNote(tenantRoleChangeNote(answered));
+      setNote(tenantPersonChangeNote(answered));
     })();
   };
   return {
@@ -98,7 +111,7 @@ function useTenantRoleChange(
     asking,
     send,
     press: (change) => {
-      if (tenantRoleChangeAsks(person, change)) setAsking(change);
+      if (tenantPersonChangeAsks(person, change)) setAsking(change);
       else send(change);
     },
     cancel: () => {
@@ -162,7 +175,7 @@ function TenantPersonProjects(props: {
   readonly projects: readonly string[];
   readonly abilities: AccessTenantAbilities | undefined;
   readonly busy: boolean;
-  readonly press: (change: TenantRoleChange) => void;
+  readonly press: (change: TenantPersonChange) => void;
 }): ReactNode {
   const drawn = props.projects.filter((project) =>
     tenantPersonProjectDrawn(props.abilities, props.person, project),
@@ -207,7 +220,7 @@ function TenantPersonRoles(props: {
   readonly person: AccessTenantPerson;
   readonly abilities: AccessTenantAbilities | undefined;
   readonly busy: boolean;
-  readonly press: (change: TenantRoleChange) => void;
+  readonly press: (change: TenantPersonChange) => void;
 }): ReactNode {
   const held = props.person.tenantRoles;
   return (
@@ -232,6 +245,59 @@ function TenantPersonRoles(props: {
   );
 }
 
+function TenantPersonHostedRuns(props: {
+  readonly person: AccessTenantPerson;
+  readonly abilities: AccessTenantAbilities | undefined;
+  readonly busy: boolean;
+  readonly press: (change: TenantPersonChange) => void;
+}): ReactNode {
+  const held = props.person.hostedRuns;
+  if (!tenantHostedRunsOffered(props.abilities))
+    return held ? "Granted" : "Not granted";
+  return (
+    <TenantPersonRole
+      label="Hosted runs"
+      offered
+      held={held}
+      busy={props.busy}
+      onPress={() => {
+        props.press({ scope: "HostedRuns", held });
+      }}
+    />
+  );
+}
+
+/** Who the person is, the line a refused change leaves, and the question a
+ * change asked first waits on. */
+function TenantPersonHeader(props: {
+  readonly person: AccessTenantPerson;
+  readonly change: ReturnType<typeof useTenantPersonChange>;
+}): ReactNode {
+  const change = props.change;
+  const asking = change.asking;
+  return (
+    <span className="grid gap-1">
+      <TenantPersonWho person={props.person} />
+      {change.note === undefined ? null : (
+        <Notice tone="danger" inline role="status" detail={change.note} />
+      )}
+      {asking === undefined ? null : (
+        <Confirm
+          question={tenantPersonQuestion(asking).question}
+          confirm="Remove"
+          busy={change.busy}
+          onConfirm={() => {
+            change.send(asking);
+          }}
+          onCancel={change.cancel}
+        >
+          {tenantPersonQuestion(asking).line}
+        </Confirm>
+      )}
+    </span>
+  );
+}
+
 export function TenantPersonRow(props: {
   readonly tenant: string;
   readonly person: AccessTenantPerson;
@@ -239,46 +305,35 @@ export function TenantPersonRow(props: {
   readonly abilities: AccessTenantAbilities | undefined;
 }): ReactNode {
   const person = props.person;
-  const change = useTenantRoleChange(props.tenant, person);
-  const asking = change.asking;
+  const change = useTenantPersonChange(props.tenant, person);
+  const busy = change.busy || change.asking !== undefined;
   return (
     <tr>
       <th scope="row">
-        <span className="grid gap-1">
-          <TenantPersonWho person={person} />
-          {change.note === undefined ? null : (
-            <Notice tone="danger" inline role="status" detail={change.note} />
-          )}
-          {asking === undefined ? null : (
-            <Confirm
-              question="Remove your admin role"
-              confirm="Remove"
-              busy={change.busy}
-              onConfirm={() => {
-                change.send(asking);
-              }}
-              onCancel={change.cancel}
-            >
-              You will no longer manage this workspace.
-            </Confirm>
-          )}
-        </span>
+        <TenantPersonHeader person={person} change={change} />
       </th>
       <td>
         <TenantPersonRoles
           person={person}
           abilities={props.abilities}
-          busy={change.busy || asking !== undefined}
+          busy={busy}
           press={change.press}
         />
       </td>
-      <td>{person.hostedRuns ? "Granted" : "Not granted"}</td>
+      <td>
+        <TenantPersonHostedRuns
+          person={person}
+          abilities={props.abilities}
+          busy={busy}
+          press={change.press}
+        />
+      </td>
       <td>
         <TenantPersonProjects
           person={person}
           projects={props.projects}
           abilities={props.abilities}
-          busy={change.busy || asking !== undefined}
+          busy={busy}
           press={change.press}
         />
       </td>

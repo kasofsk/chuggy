@@ -24,6 +24,7 @@ import {
   peopleTenant,
   personRow,
   pressedIn,
+  hostedRunsPath,
   refused,
 } from "./tenantPeopleFixture.tsx";
 
@@ -55,7 +56,10 @@ function pressIn(row: HTMLElement, group: string, role: string): void {
 }
 
 test("a person is a row: an account by its email and login, the reader marked, and roles as the list holds them", async () => {
-  await drawPeople();
+  await drawPeople({
+    abilities: () =>
+      answer({ ...peopleAbilitiesAll(), grantHostedRuns: false }),
+  });
   const ada = personRow("ada@example.com");
   expect(within(ada).getByText("ada")).toBeTruthy();
   expect(within(ada).getByText("You")).toBeTruthy();
@@ -307,4 +311,104 @@ test("abilities absent beside a list that was answered leave the table without c
   expect(tableButtons()).toStrictEqual([]);
   expect(screen.queryByRole("button", { name: "Invite" })).toBeNull();
   expect(screen.getAllByText(/^Not available/u)).toHaveLength(1);
+});
+
+function hostedRunsIn(row: HTMLElement): HTMLElement {
+  return within(row).getByRole("button", { name: "Hosted runs" });
+}
+
+test("a reader who may give hosted runs sees them as a button on every person, pressed where held", async () => {
+  await drawPeople();
+  const pressed = ["ada@example.com", "s-bob", "s-selector"].map((name) =>
+    hostedRunsIn(personRow(name)).getAttribute("aria-pressed"),
+  );
+  expect(pressed).toStrictEqual(["true", "false", "true"]);
+  expect(screen.queryByText("Granted")).toBeNull();
+  expect(screen.queryByText("Not granted")).toBeNull();
+});
+
+test("giving hosted runs sends the grant with no body, and reads the list and the abilities again", async () => {
+  const drawn = await drawPeople();
+  const read = listReads(drawn);
+  const abilitiesRead = abilitiesReads(drawn);
+  fireEvent.click(hostedRunsIn(personRow("s-bob")));
+  await settled();
+  expect(changesSent(drawn)).toStrictEqual([
+    { method: "POST", url: hostedRunsPath("s-bob"), body: undefined },
+  ]);
+  expect(listReads(drawn)).toBe(read + 1);
+  expect(abilitiesReads(drawn)).toBe(abilitiesRead + 1);
+});
+
+test("taking hosted runs from a person with an account sends the removal at once", async () => {
+  const drawn = await drawPeople();
+  fireEvent.click(hostedRunsIn(personRow("ada@example.com")));
+  await settled();
+  expect(screen.queryByRole("group", { name: "Remove hosted runs" })).toBe(
+    null,
+  );
+  expect(changesSent(drawn)).toStrictEqual([
+    { method: "DELETE", url: hostedRunsPath("s-ada"), body: undefined },
+  ]);
+});
+
+test("taking hosted runs from a subject with no account asks first, and Remove sends the removal", async () => {
+  const drawn = await drawPeople();
+  const selector = personRow("s-selector");
+  fireEvent.click(hostedRunsIn(selector));
+  await settled();
+  const asked = within(selector).getByRole("group", {
+    name: "Remove hosted runs",
+  });
+  expect(
+    within(asked).getByText("Runs this identity starts will stop."),
+  ).toBeTruthy();
+  expect(changesSent(drawn)).toStrictEqual([]);
+  expect(
+    within(selector)
+      .getAllByRole("button", { name: /Admin|Member|Hosted runs/u })
+      .every((button) => button.hasAttribute("disabled")),
+  ).toBe(true);
+  await press("Remove");
+  expect(changesSent(drawn)).toStrictEqual([
+    { method: "DELETE", url: hostedRunsPath("s-selector"), body: undefined },
+  ]);
+});
+
+test("cancelling the question on a subject with no account sends nothing and leaves hosted runs pressed", async () => {
+  const drawn = await drawPeople();
+  const selector = personRow("s-selector");
+  fireEvent.click(hostedRunsIn(selector));
+  await settled();
+  await press("Cancel");
+  expect(changesSent(drawn)).toStrictEqual([]);
+  expect(screen.queryByRole("group", { name: "Remove hosted runs" })).toBe(
+    null,
+  );
+  expect(hostedRunsIn(selector).getAttribute("aria-pressed")).toBe("true");
+});
+
+test("refused hosted runs draw the line under the person", async () => {
+  await drawPeople({ changed: () => refused(403, "AccessNotPermitted") });
+  const bob = personRow("s-bob");
+  fireEvent.click(hostedRunsIn(bob));
+  await settled();
+  expect(within(bob).getByText("Change not permitted")).toBeTruthy();
+  expect(hostedRunsIn(bob).getAttribute("aria-pressed")).toBe("false");
+});
+
+test("a reader who may not give hosted runs, and one whose abilities are not read, see the words and no button", async () => {
+  for (const abilities of [
+    () => answer(peopleAbilitiesNone),
+    () => answer({}, 404),
+  ]) {
+    await drawPeople({ abilities });
+    expect(screen.queryByRole("button", { name: "Hosted runs" })).toBeNull();
+    expect(
+      within(personRow("ada@example.com")).getByText("Granted"),
+    ).toBeTruthy();
+    expect(within(personRow("s-bob")).getByText("Not granted")).toBeTruthy();
+    expect(within(personRow("s-selector")).getByText("Granted")).toBeTruthy();
+    cleanup();
+  }
 });

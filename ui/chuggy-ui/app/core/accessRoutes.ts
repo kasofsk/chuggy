@@ -112,6 +112,22 @@ export function apiRemoveProjectRole(
   });
 }
 
+export function apiGrantHostedRuns(
+  ports: ApiPorts,
+  tenant: string,
+  subject: string,
+): Promise<ApiResult<undefined>> {
+  return accessSent(ports, "tenantHostedRunsGrant", { tenant, subject });
+}
+
+export function apiRemoveHostedRuns(
+  ports: ApiPorts,
+  tenant: string,
+  subject: string,
+): Promise<ApiResult<undefined>> {
+  return accessSent(ports, "tenantHostedRunsRemoval", { tenant, subject });
+}
+
 /** One person invited by their GitHub account, created or found. */
 export function apiInviteTenantPerson(
   ports: ApiPorts,

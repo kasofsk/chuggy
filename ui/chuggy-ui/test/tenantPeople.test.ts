@@ -36,10 +36,12 @@ import {
   tenantInvitationRoles,
   tenantInvitationSendable,
   tenantPeopleOtherIssuersLine,
+  tenantHostedRunsOffered,
+  tenantPersonChangeAsks,
+  tenantPersonChangeNote,
   tenantPersonName,
   tenantPersonProjectDrawn,
-  tenantRoleChangeAsks,
-  tenantRoleChangeNote,
+  tenantPersonQuestion,
   tenantRoleLabel,
   tenantRoleOffered,
 } from "../app/core/tenantPeople.ts";
@@ -118,14 +120,14 @@ test("an account is named by its email, any other subject by itself", () => {
   });
 });
 
-test("only removing the reader's own workspace admin is asked first", () => {
+test("removing the reader's own workspace admin is asked first, and no other role change", () => {
   const mine = { ...person, mine: true };
   const removal = { scope: "Tenant", role: "Admin", held: true } as const;
-  expect(tenantRoleChangeAsks(mine, removal)).toBe(true);
-  expect(tenantRoleChangeAsks(person, removal)).toBe(false);
-  expect(tenantRoleChangeAsks(mine, { ...removal, held: false })).toBe(false);
+  expect(tenantPersonChangeAsks(mine, removal)).toBe(true);
+  expect(tenantPersonChangeAsks(person, removal)).toBe(false);
+  expect(tenantPersonChangeAsks(mine, { ...removal, held: false })).toBe(false);
   expect(
-    tenantRoleChangeAsks(mine, {
+    tenantPersonChangeAsks(mine, {
       scope: "Project",
       project: "atlas",
       role: "Admin",
@@ -134,18 +136,59 @@ test("only removing the reader's own workspace admin is asked first", () => {
   ).toBe(false);
 });
 
+test("taking hosted runs from a subject that is no account is asked first, and giving them is not", () => {
+  const selector = { ...person, account: false } as const;
+  const taken = { scope: "HostedRuns", held: true } as const;
+  expect(tenantPersonChangeAsks(selector, taken)).toBe(true);
+  expect(tenantPersonChangeAsks(selector, { ...taken, held: false })).toBe(
+    false,
+  );
+  expect(
+    tenantPersonChangeAsks(
+      { ...person, account: true, email: "ada@example.com" },
+      taken,
+    ),
+  ).toBe(false);
+  expect(tenantPersonChangeAsks(person, taken)).toBe(false);
+  expect(
+    tenantPersonChangeAsks(
+      { ...person, mine: true, account: false },
+      {
+        scope: "Tenant",
+        role: "Admin",
+        held: true,
+      },
+    ),
+  ).toBe(true);
+});
+
+test("each change asked first has its own question and line", () => {
+  expect(
+    tenantPersonQuestion({ scope: "HostedRuns", held: true }),
+  ).toStrictEqual({
+    question: "Remove hosted runs",
+    line: "Runs this identity starts will stop.",
+  });
+  expect(
+    tenantPersonQuestion({ scope: "Tenant", role: "Admin", held: true }),
+  ).toStrictEqual({
+    question: "Remove your admin role",
+    line: "You will no longer manage this workspace.",
+  });
+});
+
 test("a change answered says nothing, and a refused one its line", () => {
-  expect(tenantRoleChangeNote({ outcome: "Ok", value: undefined })).toBe(
+  expect(tenantPersonChangeNote({ outcome: "Ok", value: undefined })).toBe(
     undefined,
   );
   expect(
-    tenantRoleChangeNote({
+    tenantPersonChangeNote({
       outcome: "Conflict",
       code: accessLastTenantAdministratorCode,
       body: {},
     }),
   ).toBe("Only admin · grant another first");
-  expect(tenantRoleChangeNote({ outcome: "Absent" })).toBe("Not available");
+  expect(tenantPersonChangeNote({ outcome: "Absent" })).toBe("Not available");
 });
 
 test("principals from another sign-in are counted only where there are any", () => {
@@ -248,6 +291,14 @@ const abilities: AccessTenantAbilities = {
   ],
   truncated: false,
 };
+
+test("hosted runs are offered only where the abilities say so, and not where none were read", () => {
+  expect(tenantHostedRunsOffered(abilities)).toBe(false);
+  expect(tenantHostedRunsOffered({ ...abilities, grantHostedRuns: true })).toBe(
+    true,
+  );
+  expect(tenantHostedRunsOffered(undefined)).toBe(false);
+});
 
 test("a role is offered only where the abilities name it, and nothing where none were read", () => {
   expect(tenantRoleOffered(abilities, "Member")).toBe(true);

@@ -25,7 +25,8 @@ export const abilitiesPath = `/access/v1/tenants/${peopleTenant}/abilities`;
 
 export const invitationPath = `/access/v1/tenants/${peopleTenant}/invitations`;
 
-/** The reader, an admin with an account, and a subject the plane says is no account. */
+/** The reader, an admin with an account, and two subjects the plane says are
+ * no account, the second holding hosted runs as a workspace's selector does. */
 export const peopleListed: AccessTenantPeople = {
   tenant: peopleTenant,
   projects: ["atlas", "beacon"],
@@ -45,6 +46,14 @@ export const peopleListed: AccessTenantPeople = {
       mine: false,
       tenantRoles: ["Member"],
       hostedRuns: false,
+      projects: [],
+      account: false,
+    },
+    {
+      subject: "s-selector",
+      mine: false,
+      tenantRoles: [],
+      hostedRuns: true,
       projects: [],
       account: false,
     },
@@ -121,6 +130,11 @@ export function changesSent(drawn: DrawnStrict): readonly SentRequest[] {
     (request) =>
       request.url.startsWith("/access/v1/") && request.method !== "GET",
   );
+}
+
+/** Where one person's hosted runs are given and taken. */
+export function hostedRunsPath(subject: string): string {
+  return `${peoplePath}/${subject}/hosted-runs`;
 }
 
 export function listReads(drawn: DrawnStrict): number {
