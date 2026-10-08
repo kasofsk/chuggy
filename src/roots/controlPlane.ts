@@ -76,6 +76,7 @@ import { postgresExecutionScheduler } from "../adapters/postgres/scheduler.ts";
 import { postgresSessionScheduler } from "../adapters/postgres/sessionScheduler.ts";
 import { postgresThreadWakes } from "../adapters/postgres/thread.ts";
 import {
+  postgresFailedLanding,
   postgresPriorEvaluationReports,
   postgresPriorWorkReports,
 } from "../adapters/postgres/evaluationReports.ts";
@@ -549,6 +550,7 @@ export interface SchedulerProcessRootConfig {
     | "configurations"
     | "priorWorkReports"
     | "priorEvaluationReports"
+    | "failedLanding"
     | "ticketBriefs"
     | "workerPools"
     | "access"
@@ -587,6 +589,7 @@ export function schedulerProcessRootService(
     configurations: postgresPinnedConfigurations(pool),
     priorWorkReports: postgresPriorWorkReports(pool),
     priorEvaluationReports: postgresPriorEvaluationReports(pool),
+    failedLanding: postgresFailedLanding(pool),
     ticketBriefs: postgresTicketBrief(pool),
     workerPools: postgresWorkerPoolRoster(pool),
   };

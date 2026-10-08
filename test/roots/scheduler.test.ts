@@ -1030,6 +1030,9 @@ function processFakes(reachable: boolean, observing: boolean): string {
 const reportsNone =
   "{ reports: async () => ({ read: 'Reports', reports: { reports: [] } }) }";
 
+/** A landing port that answers no failed landing, as the program spells one. */
+const landingNone = "{ landing: async () => ({ read: 'Landing' }) }";
+
 /**
  * One scheduler process against fakes for the two authorities it does not own:
  * a pool that answers the schema query, and a cluster that answers the probe
@@ -1068,7 +1071,7 @@ function processProgram(
         configuration: async () => ({ read: 'Configuration', configuration }),
       },
       runtimeFacts: supplied.suppliedRuntimeFacts({ workspace: '/workspace' }),
-      priorWorkReports: ${reportsNone}, priorEvaluationReports: ${reportsNone},
+      priorWorkReports: ${reportsNone}, priorEvaluationReports: ${reportsNone}, failedLanding: ${landingNone},
       ticketBriefs: { brief: async () => undefined },
       practices: briefing.blessedPracticeCatalog,
       config: scheduler.executionSchedulerDefaults,

@@ -16,6 +16,7 @@ import { test } from "node:test";
 import {
   allBriefingCarriers,
   allTaskPurposes,
+  briefingFailedLandingLines,
   briefingHeading,
   briefingLabels,
   briefingRequiredResult,
@@ -24,7 +25,16 @@ import {
   briefingSectionOrder,
   briefingTemplateSections,
   briefingTemplateVersion,
+  type FailedLanding,
 } from "../../src/interpreter/briefingTemplate.ts";
+
+/** Every shape a failed landing is told in, its commits fixed so only the wording moves the digest. */
+const failedLandings: readonly FailedLanding[] = [true, false].flatMap(
+  (conflicted) => [
+    { targetCommit: "1".repeat(40), changeCommit: "2".repeat(40), conflicted },
+    { targetCommit: "1".repeat(40), conflicted },
+  ],
+);
 
 /** Every string the template states, in an order this file fixes rather than reads. */
 function templateWording(): readonly string[] {
@@ -32,6 +42,7 @@ function templateWording(): readonly string[] {
     ...briefingSectionOrder,
     ...briefingTemplateSections,
     ...briefingReworkPreface,
+    ...failedLandings.flatMap(briefingFailedLandingLines),
   ];
   for (const [label, text] of Object.entries(briefingLabels).sort()) {
     wording.push(label, text);
@@ -63,7 +74,7 @@ function templateDigest(): string {
 test("the template version moves with the wording it names", () => {
   assert.deepEqual(
     [briefingTemplateVersion, templateDigest()],
-    [7, "4591a0f6d312744c7dd5f711ba90eacb57d41abe2593469e7cb68691316754e9"],
+    [8, "94bd153ae176d3333a00d369503373c678da244761b30c375aa46efbfecec56e"],
     "the template wording changed: move briefingTemplateVersion and repin this digest",
   );
 });
@@ -89,6 +100,7 @@ test("the digest reads every string the template states", () => {
   for (const text of [
     ...Object.values(briefingLabels),
     ...briefingReworkPreface,
+    ...failedLandings.flatMap(briefingFailedLandingLines),
   ]) {
     assert.ok(wording.includes(text), `${text} is outside the pin`);
   }

@@ -299,6 +299,7 @@ function serviceWith(
       reports: () =>
         Promise.resolve({ read: "Reports", reports: { reports: [] } }),
     },
+    failedLanding: { landing: () => Promise.resolve({ read: "Landing" }) },
     ticketBriefs: { brief: () => Promise.resolve(brief) },
     practices: blessedPracticeCatalog,
     config: executionSchedulerDefaults,
@@ -1266,6 +1267,35 @@ test("prior work reports that cannot be read hold the attempt instead", async ()
   assert.deepEqual(calls, ["ended:Withdrawn:PolicyUnavailable"]);
 });
 
+/**
+ * Launches the work task and then an evaluation through one service, holding
+ * that the named section and its text reach the work task alone and that its
+ * port was asked for the work task alone.
+ */
+async function reworkSectionReachesWorkAlone(
+  service: ExecutionSchedulerService,
+  placements: AttemptPlacement[],
+  asked: readonly string[],
+  section: string,
+  text: string,
+): Promise<void> {
+  await executionSchedulerLaunch(service, epoch);
+  const briefing = placements[0]?.invocation.briefing;
+  assert.ok(briefing !== undefined);
+  assert.ok(briefing.text.includes(text));
+  assert.ok(briefing.sections.some((each) => each.section === section));
+  assert.deepEqual(asked, [execution.execution]);
+  placements.length = 0;
+  const evaluationStore: ExecutionSchedulerStore = {
+    ...service.store,
+    unlaunched: () =>
+      Promise.resolve([{ ...execution, taskKind: "Evaluation", stage: 0 }]),
+  };
+  await executionSchedulerLaunch({ ...service, store: evaluationStore }, epoch);
+  assert.equal(placements[0]?.invocation.briefing.text.includes(text), false);
+  assert.deepEqual(asked, [execution.execution]);
+}
+
 test("a rework is handed the failed evaluation's reports and an evaluation is not", async () => {
   const placements: AttemptPlacement[] = [];
   const asked: string[] = [];
@@ -1282,28 +1312,13 @@ test("a rework is handed the failed evaluation's reports and an evaluation is no
       },
     },
   };
-  await executionSchedulerLaunch(service, epoch);
-  const briefing = placements[0]?.invocation.briefing;
-  assert.ok(briefing !== undefined);
-  assert.ok(briefing.text.includes(reports[0] ?? ""));
-  assert.ok(
-    briefing.sections.some(
-      (section) => section.section === "PriorEvaluationReports",
-    ),
+  await reworkSectionReachesWorkAlone(
+    service,
+    placements,
+    asked,
+    "PriorEvaluationReports",
+    reports[0] ?? "",
   );
-  assert.deepEqual(asked, [execution.execution]);
-  placements.length = 0;
-  const evaluationStore: ExecutionSchedulerStore = {
-    ...service.store,
-    unlaunched: () =>
-      Promise.resolve([{ ...execution, taskKind: "Evaluation", stage: 0 }]),
-  };
-  await executionSchedulerLaunch({ ...service, store: evaluationStore }, epoch);
-  assert.equal(
-    placements[0]?.invocation.briefing.text.includes(reports[0] ?? ""),
-    false,
-  );
-  assert.deepEqual(asked, [execution.execution]);
 });
 
 test("evaluation reports that cannot be read hold the attempt instead", async () => {
@@ -1322,6 +1337,55 @@ test("evaluation reports that cannot be read hold the attempt instead", async ()
     0,
   );
   assert.deepEqual(calls, ["ended:Withdrawn:PolicyUnavailable"]);
+});
+
+test("a rework after a failed landing is handed it and an evaluation is not", async () => {
+  const placements: AttemptPlacement[] = [];
+  const asked: string[] = [];
+  const changeCommit = "2".repeat(40);
+  const service = {
+    ...placingService([], placements),
+    failedLanding: {
+      landing: (_partition: unknown, execution: string) => {
+        asked.push(execution);
+        return Promise.resolve({
+          read: "Landing" as const,
+          landing: {
+            targetCommit: "1".repeat(40),
+            changeCommit,
+            conflicted: true,
+          },
+        });
+      },
+    },
+  };
+  await reworkSectionReachesWorkAlone(
+    service,
+    placements,
+    asked,
+    "FailedLanding",
+    changeCommit,
+  );
+});
+
+test("a failed landing that cannot be read holds the attempt and briefs nothing", async () => {
+  const calls: string[] = [];
+  const placements: AttemptPlacement[] = [];
+  const service = placingService(calls, placements);
+  assert.equal(
+    await executionSchedulerLaunch(
+      {
+        ...service,
+        failedLanding: {
+          landing: () => Promise.resolve({ read: "Unavailable" as const }),
+        },
+      },
+      epoch,
+    ),
+    0,
+  );
+  assert.deepEqual(calls, ["ended:Withdrawn:PolicyUnavailable"]);
+  assert.deepEqual(placements, []);
 });
 
 test("an evaluation report a briefing cannot render blocks the ticket like a work report", async () => {

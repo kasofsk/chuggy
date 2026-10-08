@@ -72,6 +72,7 @@ export type BriefingSectionId =
   | "TicketImages"
   | "WhyItMatters"
   | "AcceptanceAndConstraints"
+  | "FailedLanding"
   | "PriorEvaluationReports"
   | "PriorWorkReports"
   | "PurposeInstructions"
@@ -88,6 +89,7 @@ export const briefingSectionOrder: readonly BriefingSectionId[] = [
   "TicketImages",
   "WhyItMatters",
   "AcceptanceAndConstraints",
+  "FailedLanding",
   "PriorEvaluationReports",
   "PriorWorkReports",
   "PurposeInstructions",
@@ -104,7 +106,7 @@ export const briefingTemplateSections: readonly BriefingSectionId[] = [
 ];
 
 /** The wording revision every rendered briefing records, moved by any edit to the text below. */
-export const briefingTemplateVersion = 7;
+export const briefingTemplateVersion = 8;
 
 /** The heading one section renders under, which varies by role and by carrier. */
 export function briefingHeading(
@@ -125,6 +127,8 @@ export function briefingHeading(
       return "Why this ticket matters";
     case "AcceptanceAndConstraints":
       return "Acceptance criteria and constraints";
+    case "FailedLanding":
+      return "The change that failed to land";
     case "PriorEvaluationReports":
       return "What the last evaluation found";
     case "PriorWorkReports":
@@ -167,6 +171,59 @@ export const briefingReworkPreface: readonly string[] = [
   "Evaluators of an earlier change made for this ticket reported the findings below.",
   "Address what the reports name before anything else; where a report names a command, run it before you report.",
 ];
+
+/**
+ * What a work task following a failed landing is told of it: the commit of the
+ * target its workspace is at, the commit the passed change ends at where its
+ * source was recorded, and whether the landing pinned a conflict manifest,
+ * which is the only failure whose reason reaches a worker.
+ */
+export interface FailedLanding {
+  readonly targetCommit: string;
+  readonly changeCommit?: string;
+  readonly conflicted: boolean;
+}
+
+/**
+ * The one command that carries a whole change into the workspace without
+ * committing it. A squash merge takes every commit between the target and the
+ * change, and leaves the commit to the worker; it still asks for an identity,
+ * which the pod does not have while an agent runs, so the command names one
+ * for itself alone.
+ */
+export function briefingFailedLandingCommand(changeCommit: string): string {
+  return `git -c user.name=worker -c user.email=worker@invalid merge --squash ${changeCommit}`;
+}
+
+/** What a work task following a failed landing is told, the conflict lines only where a manifest says there was one. */
+export function briefingFailedLandingLines(
+  landing: FailedLanding,
+): readonly string[] {
+  const reason = landing.conflicted
+    ? "It failed to land on a merge conflict with the target."
+    : "Why it failed to land is not carried to this task.";
+  const workspace = `This workspace is checked out at the target's commit ${landing.targetCommit}, and does not hold that change.`;
+  const opening = [
+    "The change this ticket already made passed its evaluation and could not be landed on the target.",
+    reason,
+    workspace,
+  ];
+  const change = landing.changeCommit;
+  if (change === undefined) {
+    return [...opening, "The commit of that change is not recorded."];
+  }
+  return [
+    ...opening,
+    `That change ends at commit ${change}, which this clone already holds; it is everything between the target and that commit, and can be more than one commit.`,
+    `Bring that change into this workspace rather than writing it again: run \`${briefingFailedLandingCommand(change)}\`, which takes every commit of it and commits nothing.`,
+    ...(landing.conflicted
+      ? [
+          "Resolve every conflict it marks, and leave no conflict marker in the tree: whatever the tree holds when you finish is committed.",
+        ]
+      : []),
+    "Change nothing but what landing on this base forces, and that can include files git merged without a mark, such as a migration whose number the target has since used.",
+  ];
+}
 
 /** What a commanded stage is, stated rather than addressed to anyone. */
 const briefingCommandedRole: readonly string[] = [

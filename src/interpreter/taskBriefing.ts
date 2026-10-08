@@ -28,10 +28,11 @@
  * rather than by a second path into the worker.
  *
  * SO A COMMANDED STAGE IS TOLD NOTHING AN AGENT WOULD HAVE READ. It carries no
- * practices and no report. The failed evaluation's reports are gated on the
- * carrier, because they are documents rather than lines and would otherwise
- * take a reworked commanded stage past the carrier the invocation has; the work
- * reports are a review's, and no commanded stage is one.
+ * practices, no report and no failed landing. The failed evaluation's reports
+ * are gated on the carrier, because they are documents rather than lines and
+ * would otherwise take a reworked commanded stage past the carrier the
+ * invocation has; the work reports are a review's, and no commanded stage is
+ * one.
  *
  * THE TICKET'S OWN CHECK LINES ARE THE SECOND SOURCE, AND THEY FOLLOW. They are
  * appended to the first evaluation stage the configuration commands, so the
@@ -144,6 +145,7 @@ export {
   type WorkerMode,
 } from "./taskConfiguration.ts";
 import {
+  briefingFailedLandingLines,
   briefingHeading,
   briefingLabels,
   briefingRequiredResult,
@@ -153,9 +155,14 @@ import {
   briefingTemplateVersion,
   type BriefingCarrier,
   type BriefingSectionId,
+  type FailedLanding,
   type TaskPurpose,
 } from "./briefingTemplate.ts";
-export type { BriefingCarrier, TaskPurpose } from "./briefingTemplate.ts";
+export type {
+  BriefingCarrier,
+  FailedLanding,
+  TaskPurpose,
+} from "./briefingTemplate.ts";
 import { projectArtifactMediaTypeOf } from "./projectArtifact.ts";
 import type { ProjectArtifactId } from "./finalizerPreparation.ts";
 import {
@@ -264,6 +271,21 @@ export interface PriorEvaluationReportsPort {
     partition: Partition,
     execution: ExecutionId,
   ): Promise<PriorEvaluationReportsRead>;
+}
+
+/**
+ * What reading a failed landing found: the landing a work task follows, none
+ * for a task its bundle pins no `FinalizationAttempt` for, or an outage.
+ */
+export type FailedLandingRead =
+  | { readonly read: "Landing"; readonly landing?: FailedLanding }
+  | { readonly read: "Unavailable" };
+
+export interface FailedLandingPort {
+  landing(
+    partition: Partition,
+    execution: ExecutionId,
+  ): Promise<FailedLandingRead>;
 }
 
 /** What reading the pinned work reports found, an outage kept apart from no prior work. */
@@ -465,6 +487,7 @@ export interface BriefingView {
   readonly runtime: RuntimeFacts;
   readonly priorWorkReports: PriorWorkReports;
   readonly priorEvaluationReports: PriorEvaluationReports;
+  readonly failedLanding?: FailedLanding;
   readonly brief?: DraftBrief;
   readonly grant: PolicyAuthorityGrant;
 }
@@ -583,6 +606,17 @@ function briefingRuntimeFault(
     [runtime.workspace === undefined ? [] : [runtime.workspace], 1],
     [runtime.changedFiles, runtimeChangedFilesMax],
     [runtime.handoff, runtimeHandoffLinesMax],
+  ]);
+}
+
+/** What a failed landing's commits have to be to render, which is printable lines. */
+function briefingFailedLandingFault(
+  landing: FailedLanding | undefined,
+): BriefingFault | undefined {
+  if (landing === undefined) return undefined;
+  return briefingListsFault([
+    [[landing.targetCommit], 1],
+    [landing.changeCommit === undefined ? [] : [landing.changeCommit], 1],
   ]);
 }
 
@@ -743,6 +777,10 @@ function briefingBodies(
         : briefingTicketImageLines(view.brief.images),
     WhyItMatters: view.configuration.brief.motivation,
     AcceptanceAndConstraints: briefingCriteriaLines(view.configuration.brief),
+    FailedLanding:
+      briefed && view.purpose === "Work" && view.failedLanding !== undefined
+        ? briefingFailedLandingLines(view.failedLanding)
+        : [],
     PriorEvaluationReports:
       briefed && view.purpose === "Work"
         ? briefingEvaluationReportLines(view.priorEvaluationReports)
@@ -968,6 +1006,7 @@ export function composeTaskInvocation(
       view.priorEvaluationReports.reports,
       priorEvaluationReportsMax,
     ) ??
+    briefingFailedLandingFault(view.failedLanding) ??
     briefingTicketBriefFault(view.brief);
   if (fault !== undefined) return { composed: "Blocked", fault };
   const resolved = resolvePractices(

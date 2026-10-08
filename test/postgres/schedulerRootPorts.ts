@@ -33,6 +33,7 @@ export const schedulerRootService: Omit<
   | "configurations"
   | "priorWorkReports"
   | "priorEvaluationReports"
+  | "failedLanding"
   | "ticketBriefs"
   | "workerPools"
   | "access"
