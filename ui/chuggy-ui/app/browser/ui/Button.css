@@ -90,6 +90,11 @@
     border-color: transparent;
   }
 
+  .btn:disabled:hover {
+    background: transparent;
+    color: var(--ink-3);
+  }
+
   .btn-icon {
     flex: none;
     width: var(--height-icon);

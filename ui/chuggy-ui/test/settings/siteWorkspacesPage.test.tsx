@@ -63,7 +63,7 @@ const workspacesPath = "/access/v1/site/workspaces";
 
 const withheld = "A site admin creates workspaces";
 
-const box = "Owner can invite new people";
+const box = "Can invite new people";
 
 /** A reader who may make a workspace and hand account creation on with it. */
 const abilitiesEvery: AccessSiteAbilities = {
@@ -80,7 +80,7 @@ const abilitiesCreator: AccessSiteAbilities = {
 };
 
 const owner = {
-  Workspace: "northwind",
+  Name: "northwind",
   "GitHub username": "octocat",
   Email: "owner@example.com",
 };
@@ -211,7 +211,7 @@ test("a creation's line stands until the form is changed", async () => {
   await filled();
   await press("Create");
   expect(within(card()).getByRole("status")).toBeTruthy();
-  await typed({ Workspace: "n" });
+  await typed({ Name: "n" });
   expect(within(card()).queryByRole("status")).toBeNull();
 });
 
@@ -274,9 +274,9 @@ test.each([
   "the name %s draws its fault under the field and sends nothing",
   async (name, fault) => {
     const drawn = await filled();
-    await typed({ Workspace: name });
+    await typed({ Name: name });
     expect(within(card()).getByText(fault)).toBeTruthy();
-    expect(field("Workspace").getAttribute("aria-invalid")).toBe("true");
+    expect(field("Name").getAttribute("aria-invalid")).toBe("true");
     expect(create().disabled).toBe(true);
     fireEvent.click(create());
     await settled();

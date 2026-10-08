@@ -4,7 +4,9 @@
  * sends them, and the line the last answer left.
  *
  * Nothing here is a card or a dialog, so whatever frames the form places the
- * fields in its body and the action and the line at its foot. Each field's
+ * fields in its body and the action and the line at its foot. The workspace
+ * is named first and its owner's fields stand together under their own word,
+ * so no field has to say whose it is. Each field's
  * fault stands under it before anything is sent, and while a request is
  * unanswered no field and no action takes a press. A creation leaves the form
  * as it started and its line in the passing tone; a refusal leaves everything
@@ -12,7 +14,7 @@
  * sent again.
  */
 
-import { useState } from "react";
+import { useId, useState } from "react";
 import type { ReactNode } from "react";
 
 import type { AccessSiteAbilities } from "../../../../../src/contract/accessPlane.ts";
@@ -89,10 +91,11 @@ export function SiteWorkspaceFields(props: {
   readonly creating: SiteWorkspaceCreating;
 }): ReactNode {
   const { form, busy, change } = props.creating;
+  const owner = useId();
   return (
-    <div className="grid gap-4">
+    <div className="grid gap-5">
       <InvitationText
-        label="Workspace"
+        label="Name"
         value={form.tenant}
         fault={siteWorkspaceNameFault(form.tenant)}
         disabled={busy}
@@ -100,29 +103,34 @@ export function SiteWorkspaceFields(props: {
           change({ ...form, tenant });
         }}
       />
-      <InvitationGithub
-        value={form.github}
-        abilities={props.abilities}
-        disabled={busy}
-        onChange={(github) => {
-          change({ ...form, github });
-        }}
-      />
-      <InvitationEmail
-        value={form.email}
-        disabled={busy}
-        onChange={(email) => {
-          change({ ...form, email });
-        }}
-      />
-      <Checkbox
-        label="Owner can invite new people"
-        checked={form.createAccounts}
-        disabled={busy || !props.abilities.manageAuthorities}
-        onChange={(createAccounts) => {
-          change({ ...form, createAccounts });
-        }}
-      />
+      <div role="group" aria-labelledby={owner} className="grid gap-4">
+        <span id={owner} className="text-md font-strong text-ink-1">
+          Owner
+        </span>
+        <InvitationGithub
+          value={form.github}
+          abilities={props.abilities}
+          disabled={busy}
+          onChange={(github) => {
+            change({ ...form, github });
+          }}
+        />
+        <InvitationEmail
+          value={form.email}
+          disabled={busy}
+          onChange={(email) => {
+            change({ ...form, email });
+          }}
+        />
+        <Checkbox
+          label="Can invite new people"
+          checked={form.createAccounts}
+          disabled={busy || !props.abilities.manageAuthorities}
+          onChange={(createAccounts) => {
+            change({ ...form, createAccounts });
+          }}
+        />
+      </div>
     </div>
   );
 }
