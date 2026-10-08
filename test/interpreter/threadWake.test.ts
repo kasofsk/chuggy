@@ -60,6 +60,7 @@ import {
   type ThreadWakeStore,
 } from "../../src/interpreter/threadWake.ts";
 import { randomOf, type Random } from "../random/random.ts";
+import { projectAccessSiteRefused } from "./projectAccessFixture.ts";
 
 const partition = { tenant: "acme", project: "atlas" } as unknown as Partition;
 const instant = "2026-09-02T12:00:00.000Z";
@@ -229,6 +230,7 @@ function referenceAccess(
       answered(principal, options.undecided, options.unadmitted),
     authorizeTenant: (principal) =>
       answered(principal, options.hostedUndecided, options.unhosted),
+    authorizeSite: projectAccessSiteRefused,
   };
 }
 

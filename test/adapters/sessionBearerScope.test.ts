@@ -48,6 +48,7 @@ import {
 import { openExecutionBacklogGuard } from "../../src/interpreter/schedulerContext.ts";
 import { routerServed } from "./routerFixtures.ts";
 import { unservedNativeWeb } from "./threadFixtures.ts";
+import { projectAccessSiteRefused } from "../interpreter/projectAccessFixture.ts";
 
 type ServedNativeWeb = Parameters<typeof createNativeHttpApp>[0];
 
@@ -373,6 +374,7 @@ function revokingWeb(authorized: string[], accepted: Submission[]) {
         );
       },
       authorizeTenant: () => Promise.resolve(undefined),
+      authorizeSite: projectAccessSiteRefused,
     },
     recorded([], "reads"),
     {

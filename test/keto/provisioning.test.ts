@@ -20,6 +20,7 @@ import {
   ketoHarnessIssuer,
   ketoHarnessPartition,
   ketoHarnessReadUrl,
+  ketoHarnessRoleKinds,
   ketoHarnessWriteUrl,
 } from "./harness.ts";
 
@@ -104,9 +105,9 @@ test("a tenant grant and the project's tenant relation compose to project access
   assert.equal(inherited.code, 0, inherited.output);
   const principal = oidcPrincipal(ketoHarnessIssuer, "tenant-provisioned");
   for (const kind of allProjectAccessKinds)
-    assert.notEqual(
-      await access.authorize(principal, partition, kind),
-      undefined,
+    assert.equal(
+      (await access.authorize(principal, partition, kind)) !== undefined,
+      ketoHarnessRoleKinds.includes(kind),
       kind,
     );
 });

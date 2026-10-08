@@ -19,7 +19,7 @@
 # THE KETO ON PATH IS A DOUBLE AS WELL: a script that states a version, records
 # what it was started with and then is that same authority on the port it was
 # told. Its cases hold the process to what the container is held to — this
-# tree's model, ports of its own, a wait that needs both namespaces — and to
+# tree's model, ports of its own, a wait that needs every namespace — and to
 # what only a process owes: loopback, an environment of its own, ports it can
 # bind and no outgoing connection is given, a failure that says what is known
 # of it, and being gone when the run ends, however the run ends.
@@ -27,8 +27,8 @@
 # THE MODEL CASE IS THE ONE THAT MATTERS MOST. A server carrying the wrong
 # namespaces answers every check `false`, so a gate that waited on readiness
 # alone would run a whole suite of refusals and report them as findings about
-# the adapter. The case drives an authority that is ready and knows only one of
-# the two namespaces, and requires a could-not-run.
+# the adapter. The cases drive an authority that is ready and lacks one of the
+# namespaces, and require a could-not-run.
 #
 # Run:  .chug/tasks/check-keto.test.sh
 set -eu
@@ -394,12 +394,21 @@ run_gate "$R" "CHUG_KETO_READ_URL=$KETO_ANSWERS" "CHUG_KETO_WRITE_URL=$KETO_ANSW
 keto_double_stop
 check "an authority missing a namespace is a could-not-run" 2 "$RC" "namespaces.ts"
 
+fixture
+passing_suite "$R/test/keto/one.test.ts"
+git -C "$R" add -A
+keto_double Project Tenant
+run_gate "$R" "CHUG_KETO_READ_URL=$KETO_ANSWERS" "CHUG_KETO_WRITE_URL=$KETO_ANSWERS" \
+	"CHUG_PG_URL=$ANSWERS" CHUG_KETO_READY_SECS=0
+keto_double_stop
+check "an authority missing the site's namespace is a could-not-run" 2 "$RC" "namespaces.ts"
+
 # --- A database that cannot be prepared is a could-not-run -------------------
 
 fixture
 passing_suite "$R/test/keto/one.test.ts"
 git -C "$R" add -A
-keto_double Project Tenant
+keto_double Project Tenant Site
 run_gate "$R" "CHUG_KETO_READ_URL=$KETO_ANSWERS" "CHUG_KETO_WRITE_URL=$KETO_ANSWERS" \
 	"CHUG_PG_URL=$ANSWERS" "CHUG_PG_HELPER_LOG=$CHUG_PG_HELPER_LOG" \
 	CHUG_PG_HELPER_FAIL=prepare
@@ -413,7 +422,7 @@ check "a partial preparation still removes its database" 0 0 "drop chuggy_keto_"
 fixture
 failing_suite "$R/test/keto/red.test.ts"
 git -C "$R" add -A
-keto_double Project Tenant
+keto_double Project Tenant Site
 run_gate "$R" "CHUG_KETO_READ_URL=$KETO_ANSWERS" "CHUG_KETO_WRITE_URL=$KETO_ANSWERS" \
 	"CHUG_PG_URL=$ANSWERS" "CHUG_PG_HELPER_LOG=$CHUG_PG_HELPER_LOG"
 keto_double_stop
@@ -427,7 +436,7 @@ fixture
 passing_suite "$R/test/keto/one.test.ts"
 passing_suite "$R/test/keto/two.test.ts"
 git -C "$R" add -A
-keto_double Project Tenant
+keto_double Project Tenant Site
 run_gate "$R" "CHUG_KETO_READ_URL=$KETO_ANSWERS" "CHUG_KETO_WRITE_URL=$KETO_ANSWERS" \
 	"CHUG_PG_URL=$ANSWERS" "CHUG_PG_HELPER_LOG=$CHUG_PG_HELPER_LOG"
 keto_double_stop
@@ -449,7 +458,7 @@ check "a green run removes its database" 0 0 "drop chuggy_keto_"
 fixture
 passing_suite "$R/test/keto/one.test.ts"
 git -C "$R" add -A
-keto_double Project Tenant
+keto_double Project Tenant Site
 docker_double "the digest of some earlier model"
 run_gate_over_docker
 keto_double_stop
@@ -466,7 +475,7 @@ check "the model a container starts from is a label on it" 0 0 "--label chuggy.k
 
 STARTED_FROM="$(sed -n 's/.*--label chuggy\.keto\.model=\([0-9a-f]*\).*/\1/p' "$DOCKER_LOG" | head -1)"
 [ -n "$STARTED_FROM" ] || { echo "check-keto.test.sh: LINTER ERROR — nothing was started with a model label"; exit 2; }
-keto_double Project Tenant
+keto_double Project Tenant Site
 docker_double "$STARTED_FROM"
 run_gate_over_docker
 keto_double_stop
@@ -488,7 +497,7 @@ git -C "$R" add -A
 docker_double ""
 KETO_PORT=1
 run_gate_over_docker
-check "a container that never answers is a could-not-run" 2 "$RC" "did not answer ready with both namespaces"
+check "a container that never answers is a could-not-run" 2 "$RC" "did not answer ready with every namespace"
 
 # --- A container that cannot be started is a could-not-run --------------------
 #
@@ -513,7 +522,7 @@ fixture
 passing_suite "$R/test/keto/one.test.ts"
 rm -rf "$R/.chug/tasks/keto"
 git -C "$R" add -A
-keto_double Project Tenant
+keto_double Project Tenant Site
 docker_double ""
 run_gate_over_docker
 keto_double_stop
@@ -529,7 +538,7 @@ fixture
 passing_suite "$R/test/keto/one.test.ts"
 git -C "$R" add -A
 ROOT="$(git -C "$R" rev-parse --show-toplevel)"
-keto_binary_double Project Tenant
+keto_binary_double Project Tenant Site
 run_gate_over_binary DSN=postgres://somebody@127.0.0.1/theirs
 check "with no docker the keto on PATH is the server" 0 "$RC" "started keto v0.0.0-fixture from PATH on ports $KETO_PORT and $KETO_PORT"
 check "the clean line names the version the binary states" 0 "$RC" \
@@ -556,7 +565,7 @@ check "nothing the caller's environment names reaches the keto" 0 0 \
 fixture
 passing_suite "$R/test/keto/one.test.ts"
 git -C "$R" add -A
-keto_binary_double Project Tenant
+keto_binary_double Project Tenant Site
 run_gate_over_binary "CHUG_PG_URL=postgres://fixture@$SILENT/ignored" CHUG_PG_READY_SECS=0
 check "a database nothing answers is a could-not-run behind a started keto" 2 "$RC" "nothing answered at $SILENT"
 keto_binary_left
@@ -570,7 +579,7 @@ git -C "$R" add -A
 keto_binary_double
 run_gate_over_binary CHUG_KETO_READY_SECS=1
 check "a keto that will not start is a could-not-run" 2 "$RC" \
-	"keto v0.0.0-fixture from PATH did not answer ready with both namespaces within 1s"
+	"keto v0.0.0-fixture from PATH did not answer ready with every namespace within 1s"
 check "the message says what was tried before it" 2 "$RC" \
 	"No CHUG_KETO_READ_URL and no docker, so $KETO_BIN/keto was started from $ROOT/.chug/tasks/keto."
 check "the message says it exited, and with what" 2 "$RC" "It exited with status 1."
@@ -587,7 +596,7 @@ git -C "$R" add -A
 keto_binary_double Project
 run_gate_over_binary CHUG_KETO_READY_SECS=2
 check "a keto missing a namespace is a could-not-run" 2 "$RC" \
-	"did not answer ready with both namespaces within 2s"
+	"did not answer ready with every namespace within 2s"
 check "the message says it is running and which of its APIs answer" 2 "$RC" \
 	"It is still running: its read API answers ready and its write API answers ready."
 refute "a keto that said nothing is not reported for its silence" 2 "$RC" " said"
@@ -603,7 +612,7 @@ check "a keto that never answered is stopped" 0 0 "the keto was stopped"
 fixture
 passing_suite "$R/test/keto/one.test.ts"
 git -C "$R" add -A
-keto_binary_double Project Tenant
+keto_binary_double Project Tenant Site
 : >"$KETO_BIN/unbound"
 run_gate_over_binary "CHUG_KETO_WRITE_PORT=$(free_port)" CHUG_KETO_READY_SECS=2
 check "a keto without its read API is a could-not-run that says which API answers" 2 "$RC" \
@@ -652,7 +661,7 @@ check "a keto's read port is one no outgoing connection is given" 2 "$RC" "the r
 check "a keto's write port is one no outgoing connection is given" 2 "$RC" "the write port is its own"
 check "the keto is told the two ports the gate names" 2 "$RC" "told $READ_PORT and $WRITE_PORT."
 check "the gate tests those two ports, waits on the read one and asks about no other" 2 "$RC" \
-	"asked $READ_PORT;$WRITE_PORT;http://127.0.0.1:$READ_PORT/ Project Tenant;"
+	"asked $READ_PORT;$WRITE_PORT;http://127.0.0.1:$READ_PORT/ Project Tenant Site;"
 
 # --- A port something already listens on is a could-not-run ------------------
 #
@@ -663,8 +672,8 @@ check "the gate tests those two ports, waits on the read one and asks about no o
 fixture
 passing_suite "$R/test/keto/one.test.ts"
 git -C "$R" add -A
-keto_binary_double Project Tenant
-keto_double Project Tenant
+keto_binary_double Project Tenant Site
+keto_double Project Tenant Site
 run_gate_over_binary
 keto_double_stop
 check "a port something already listens on is a could-not-run" 2 "$RC" \
@@ -686,7 +695,7 @@ for held in "open READ WRITE" "closed WRITE READ"; do
 	fixture
 	passing_suite "$R/test/keto/one.test.ts"
 	git -C "$R" add -A
-	keto_binary_double Project Tenant
+	keto_binary_double Project Tenant Site
 	port_end "$1"
 	run_gate_over_binary "CHUG_KETO_${2}_PORT=$KETO_PORT" "CHUG_KETO_${3}_PORT=$(free_port)" \
 		CHUG_KETO_READY_SECS=0
@@ -706,7 +715,7 @@ done
 fixture
 passing_suite "$R/test/keto/one.test.ts"
 git -C "$R" add -A
-keto_binary_double Project Tenant
+keto_binary_double Project Tenant Site
 port_end stopped
 run_gate_over_binary
 port_end_stop
@@ -721,7 +730,7 @@ check "a keto is started on the port of a listener stopped a moment ago" 0 "$RC"
 fixture
 passing_suite "$R/test/keto/one.test.ts"
 git -C "$R" add -A
-keto_binary_double Project Tenant
+keto_binary_double Project Tenant Site
 rm -f "$KETO_PORT_FILE"
 node -e '
 const fs = require("node:fs");
@@ -742,8 +751,8 @@ check "a keto is started on a port something listens on at another address" 0 "$
 fixture
 passing_suite "$R/test/keto/one.test.ts"
 git -C "$R" add -A
-keto_binary_double Project Tenant
-keto_double Project Tenant
+keto_binary_double Project Tenant Site
+keto_double Project Tenant Site
 docker_double ""
 run_gate_over_docker "PATH=$DOCKER_BIN:$KETO_BIN:$PATH"
 keto_double_stop

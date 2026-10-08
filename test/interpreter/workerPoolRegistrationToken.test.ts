@@ -16,6 +16,7 @@ import {
   type WorkerPoolTokenMinting,
   type WorkerPoolTokenWritten,
 } from "../../src/interpreter/workerPoolRegistrationToken.ts";
+import { projectAccessSiteRefused } from "./projectAccessFixture.ts";
 
 const issuer = "https://issuer.invalid";
 const site = {
@@ -33,6 +34,7 @@ function authority(allowed: boolean): ProjectAccess {
     authorize: (asked) =>
       Promise.resolve(allowed ? memberAuthority(asked) : undefined),
     authorizeTenant: () => Promise.resolve(undefined),
+    authorizeSite: projectAccessSiteRefused,
   };
 }
 

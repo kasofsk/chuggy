@@ -29,6 +29,7 @@ import {
   asTenantId,
   type Partition,
 } from "../../src/interpreter/projectStore.ts";
+import { projectAccessSiteRefused } from "./projectAccessFixture.ts";
 
 const partition: Partition = {
   tenant: asTenantId("acme"),
@@ -55,6 +56,7 @@ function accessGranting(
         tenant.includes(kind) ? memberAuthority(principal) : undefined,
       );
     },
+    authorizeSite: projectAccessSiteRefused,
   };
 }
 

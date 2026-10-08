@@ -24,6 +24,7 @@ import {
   asAuthorityKind,
   asAuthoritySubject,
 } from "../../src/interpreter/operationInbox.ts";
+import { projectAccessSiteRefused } from "./projectAccessFixture.ts";
 
 const partition = {
   tenant: asTenantId("acme"),
@@ -92,6 +93,7 @@ test("a reader without project read access is told the project is not there", as
     {
       authorize: () => Promise.resolve(undefined),
       authorizeTenant: () => Promise.resolve(undefined),
+      authorizeSite: projectAccessSiteRefused,
     },
     read,
   );
@@ -112,6 +114,7 @@ test("an authorized read answers the ledger and the standing it induces", async 
     {
       authorize: () => Promise.resolve(authority),
       authorizeTenant: () => Promise.resolve(undefined),
+      authorizeSite: projectAccessSiteRefused,
     },
     read,
   );

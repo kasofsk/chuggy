@@ -34,6 +34,7 @@ import {
   ticketLandingState,
   type TicketLandingRecord,
 } from "../../src/interpreter/ticketLandings.ts";
+import { projectAccessSiteRefused } from "./projectAccessFixture.ts";
 
 const partition = {
   tenant: asTenantId("tenant"),
@@ -185,6 +186,7 @@ function readsOver(
       authorize: (who) =>
         Promise.resolve(allowed ? memberAuthority(who) : undefined),
       authorizeTenant: () => Promise.resolve(undefined),
+      authorizeSite: projectAccessSiteRefused,
     },
     store: {
       landings: (_partition, named, count) => {

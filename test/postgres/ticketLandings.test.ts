@@ -82,6 +82,7 @@ import {
   postgresHarnessRolePool,
   postgresHarnessSubmission,
 } from "./harness.ts";
+import { projectAccessSiteRefused } from "../interpreter/projectAccessFixture.ts";
 
 let rig: FinalizerRig;
 let apiPool: pg.Pool;
@@ -107,6 +108,7 @@ function landingsOf(
     access: {
       authorize: (who) => Promise.resolve(memberAuthority(who)),
       authorizeTenant: () => Promise.resolve(undefined),
+      authorizeSite: projectAccessSiteRefused,
     },
     store: postgresTicketLandings(apiPool),
     artifacts: store,

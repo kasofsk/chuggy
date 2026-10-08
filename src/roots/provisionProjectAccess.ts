@@ -21,7 +21,6 @@
  */
 
 import { ketoProjectGrants } from "../adapters/keto/projectGrants.ts";
-import { projectAccessTenantNamespace } from "../interpreter/projectAccess.ts";
 import {
   checkedProjectGrantSettings,
   projectPrincipalGrant,
@@ -29,6 +28,7 @@ import {
   projectTenantRelation,
   tenantPrincipalGrant,
   type ProjectGrant,
+  type ProjectGrantSubject,
 } from "../interpreter/projectGrant.ts";
 
 const writeUrlVariable = "CHUG_PROVISION_KETO_WRITE_URL";
@@ -94,13 +94,21 @@ function provisionGrants(action: "Grant" | "Revoke"): readonly ProjectGrant[] {
   return action === "Grant" ? [link, granted] : [granted];
 }
 
+/** What one holder is reported as, in the notation the authority's own tuples use. */
+function provisionHolderText(holder: ProjectGrantSubject): string {
+  switch (holder.subject) {
+    case "Principal":
+      return holder.principal;
+    case "Object":
+      return `${holder.namespace}:${holder.object}`;
+    case "Holders":
+      return `${holder.namespace}:${holder.object}#${holder.relation}`;
+  }
+}
+
 /** What one tuple is reported as, naming the holder the authority will answer for. */
 function provisionGrantText(grant: ProjectGrant): string {
-  const holder =
-    grant.holder.subject === "Principal"
-      ? grant.holder.principal
-      : `${projectAccessTenantNamespace}:${grant.holder.tenantObject}`;
-  return `${grant.namespace}:${grant.object}#${grant.relation} for ${holder}`;
+  return `${grant.namespace}:${grant.object}#${grant.relation} for ${provisionHolderText(grant.holder)}`;
 }
 
 async function main(): Promise<void> {

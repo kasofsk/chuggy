@@ -41,6 +41,7 @@ import {
   asTenantId,
   type Partition,
 } from "../../src/interpreter/projectStore.ts";
+import { projectAccessSiteRefused } from "./projectAccessFixture.ts";
 
 export const accessFixtureIssuer = "https://issuer.invalid";
 
@@ -75,8 +76,8 @@ function accessStored(grant: ProjectGrant): AccessStored {
         ? { subject: "Id", id: grant.holder.principal }
         : {
             subject: "Set",
-            namespace: projectAccessTenantNamespace,
-            object: grant.holder.tenantObject,
+            namespace: grant.holder.namespace,
+            object: grant.holder.object,
           },
   };
 }
@@ -176,6 +177,7 @@ function accessMemoryAccess(memory: AccessMemoryState): ProjectAccess {
           : undefined,
       );
     },
+    authorizeSite: projectAccessSiteRefused,
   };
 }
 

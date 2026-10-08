@@ -97,6 +97,7 @@ import {
   sessionRigTurn,
   sessionRigTurnState,
 } from "./sessionHarness.ts";
+import { projectAccessSiteRefused } from "../interpreter/projectAccessFixture.ts";
 
 const rig = await sessionRigOpen();
 const apiPool = postgresHarnessRolePool(apiRole);
@@ -1114,6 +1115,7 @@ async function poolPlaneServing(
       authorize: (caller) =>
         Promise.resolve(caller === runs ? memberAuthority(caller) : undefined),
       authorizeTenant: () => Promise.resolve(undefined),
+      authorizeSite: projectAccessSiteRefused,
     },
     registry: postgresWorkerPoolRegistry(poolPlanePool),
     assignments: ports.assignments,

@@ -78,6 +78,7 @@ import {
   workerPoolsResponseSchema,
 } from "../../src/contract/responses.ts";
 import { hostedRunsNotGrantedCode } from "../../src/contract/rosters.ts";
+import { projectAccessSiteRefused } from "../interpreter/projectAccessFixture.ts";
 
 const authority = {
   installationAuthority: () =>
@@ -765,6 +766,7 @@ function realForgeCredentials(claimedBy: string): ForgeCredentialMinting {
     {
       authorize: () => Promise.resolve(memberAuthority(asPrincipal("m"))),
       authorizeTenant: () => Promise.resolve(undefined),
+      authorizeSite: projectAccessSiteRefused,
     },
     {
       binding: (_partition, repository) =>

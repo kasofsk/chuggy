@@ -54,6 +54,7 @@ import {
   type TicketActionReachStore,
   type TicketLanded,
 } from "../../src/interpreter/ticketActionReach.ts";
+import { projectAccessSiteRefused } from "./projectAccessFixture.ts";
 
 const principal = asPrincipal("caller");
 const partition = {
@@ -194,6 +195,7 @@ function fixture(
         return Promise.resolve(allowed ? memberAuthority(who) : undefined);
       },
       authorizeTenant: () => Promise.resolve(undefined),
+      authorizeSite: projectAccessSiteRefused,
     },
     store: fixtureStore({ stored, earlierAsked }, landed, declares, earlier),
     ancestry: actionReachAncestry({

@@ -36,7 +36,7 @@ import { ketoRequest, ketoResponseBytesMax } from "./request.ts";
 /** The most one UTF-16 unit weighs in the authority's JSON, which is a `\u` escape. */
 const ketoEscapedUnitBytesMax = 6;
 
-/** What a tuple or a page weighs apart from its texts: keys, quotes, separators, a namespace and a relation. */
+/** What a tuple or a page weighs apart from its texts: keys, quotes, separators, namespaces and relations. */
 const ketoFixedBytesMax = 512;
 
 /** The longest object a tuple names, a project's: a length, a colon, a tenant and a project. */
@@ -45,11 +45,8 @@ const ketoObjectUnitsMax =
   1 +
   2 * nativeHttpPathSegmentCharsMax;
 
-/** The longest subject: a principal, or a tenant object named by a subject set. */
-const ketoSubjectUnitsMax = Math.max(
-  principalCharsMax,
-  projectAccessTenantObject("x".repeat(nativeHttpPathSegmentCharsMax)).length,
-);
+/** The longest subject: a principal, or a project's object named by a subject set. */
+const ketoSubjectUnitsMax = Math.max(principalCharsMax, ketoObjectUnitsMax);
 
 /** The most one tuple weighs, which also bounds the page token beside it. */
 export const ketoTupleBytesMax =

@@ -12,6 +12,11 @@
  * gate's container holds its tuples in memory and is reused between runs, so a
  * case that assumed an empty server would pass once and then answer for
  * whatever the run before it wrote.
+ *
+ * THE SITE IS THE EXCEPTION, because it is one object and every case shares it.
+ * No case assumes it holds nothing or asserts that it did not change; its
+ * default is written only where it is missing, and a case that makes someone
+ * its administrator uses a principal of its own and removes the grant itself.
  */
 
 import { randomUUID } from "node:crypto";
@@ -27,10 +32,13 @@ import type { AccessTupleReader } from "../../src/interpreter/accessPlane.ts";
 import {
   checkedProjectAccessSettings,
   type ProjectAccess,
+  type ProjectAccessKind,
 } from "../../src/interpreter/projectAccess.ts";
 import type { TenantClaims } from "../../src/interpreter/projectCreation.ts";
 import {
   checkedProjectGrantSettings,
+  siteAuthorityDefaults,
+  type ProjectGrant,
   type ProjectGrantWriter,
 } from "../../src/interpreter/projectGrant.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
@@ -119,4 +127,51 @@ export function ketoHarnessPartition(label: string): Partition {
     tenant: asTenantId(`keto/${label}-${suffix}`),
     project: asProjectId(`web/${label}-${suffix}`),
   };
+}
+
+/**
+ * The project kinds a person's role gives. The roster's other kinds are asked
+ * of relations saying who may grant, which no role is.
+ */
+export const ketoHarnessRoleKinds: readonly ProjectAccessKind[] = [
+  "Read",
+  "Mutate",
+  "DispatchTicket",
+  "ProposeDispatch",
+  "ManageProjectSelector",
+  "Execute",
+  "Administer",
+];
+
+/** Whether the authority already holds one tuple, asked by the listing that names it whole. */
+async function ketoHarnessHeld(grant: ProjectGrant): Promise<boolean> {
+  const url = new URL("relation-tuples", ketoHarnessReadUrl());
+  url.searchParams.set("namespace", grant.namespace);
+  url.searchParams.set("object", grant.object);
+  url.searchParams.set("relation", grant.relation);
+  if (grant.holder.subject === "Principal")
+    url.searchParams.set("subject_id", grant.holder.principal);
+  else {
+    url.searchParams.set("subject_set.namespace", grant.holder.namespace);
+    url.searchParams.set("subject_set.object", grant.holder.object);
+    url.searchParams.set(
+      "subject_set.relation",
+      grant.holder.subject === "Holders" ? grant.holder.relation : "",
+    );
+  }
+  url.searchParams.set("page_size", "1");
+  const answered = await fetch(url);
+  if (!answered.ok)
+    throw new Error(
+      `the listing of ${url.toString()} answered ${String(answered.status)}`,
+    );
+  const listed = (await answered.json()) as { relation_tuples: unknown[] };
+  return listed.relation_tuples.length > 0;
+}
+
+/** The site's default tuples, written where the shared site does not hold them already. */
+export async function ketoHarnessSiteDefaults(): Promise<void> {
+  const grants = ketoHarnessGrants();
+  for (const grant of siteAuthorityDefaults())
+    if (!(await ketoHarnessHeld(grant))) await grants.write(grant);
 }

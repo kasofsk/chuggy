@@ -59,6 +59,7 @@ import {
   planeTextHeaviest,
   planeUnendingAnswered,
 } from "./planeBodies.ts";
+import { projectAccessSiteRefused } from "../interpreter/projectAccessFixture.ts";
 
 const issuer = "https://issuer.invalid";
 
@@ -242,6 +243,7 @@ function authority(answer: "Allow" | "Refuse" | "Outage"): ProjectAccess {
       );
     },
     authorizeTenant: () => Promise.resolve(undefined),
+    authorizeSite: projectAccessSiteRefused,
   };
 }
 

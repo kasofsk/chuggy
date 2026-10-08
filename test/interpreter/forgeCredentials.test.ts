@@ -62,6 +62,7 @@ import {
   asTenantId,
   type TenantId,
 } from "../../src/interpreter/projectStore.ts";
+import { projectAccessSiteRefused } from "./projectAccessFixture.ts";
 
 const fixturePartition = {
   tenant: asTenantId("vteng"),
@@ -107,6 +108,7 @@ function fixtureAccess(
       );
     },
     authorizeTenant: () => Promise.resolve(undefined),
+    authorizeSite: projectAccessSiteRefused,
   };
 }
 

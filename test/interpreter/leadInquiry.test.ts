@@ -53,6 +53,7 @@ import {
   sessionRoutesAt,
   sessionRoutesFlipping,
 } from "./sessionRoutesFixture.ts";
+import { projectAccessSiteRefused } from "./projectAccessFixture.ts";
 
 const partition: Partition = {
   tenant: asTenantId("vteng"),
@@ -77,6 +78,7 @@ function accessHolding(...held: readonly string[]): ProjectAccess {
   return {
     authorize: (_principal, _partition, kind) => holding(kind),
     authorizeTenant: (_principal, _tenant, kind) => holding(kind),
+    authorizeSite: projectAccessSiteRefused,
   };
 }
 

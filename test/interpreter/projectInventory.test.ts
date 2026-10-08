@@ -4,6 +4,7 @@ import { test } from "node:test";
 import { authorizedProjectInventory } from "../../src/interpreter/projectInventory.ts";
 import { asPrincipal } from "../../src/interpreter/nativeWeb.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
+import { projectAccessSiteRefused } from "./projectAccessFixture.ts";
 
 test("authorized inventory bounds hidden-project scanning and returns progress", async () => {
   const tenant = asTenantId("tenant");
@@ -16,6 +17,7 @@ test("authorized inventory bounds hidden-project scanning and returns progress",
     {
       authorize: () => Promise.resolve(undefined),
       authorizeTenant: () => Promise.resolve(undefined),
+      authorizeSite: projectAccessSiteRefused,
     },
     {
       projects: (after, limit) => {

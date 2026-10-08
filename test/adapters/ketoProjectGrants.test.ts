@@ -7,6 +7,7 @@ import {
   projectPrincipalGrant,
   projectTenantGrant,
   tenantPrincipalGrant,
+  type ProjectGrant,
 } from "../../src/interpreter/projectGrant.ts";
 import {
   ProjectAccessUnavailable,
@@ -125,6 +126,49 @@ test("a revocation is a DELETE naming the same tuple as a query", async () => {
   );
   assert.equal(inherited.url.searchParams.get("subject_set.relation"), "");
   assert.equal(inherited.url.searchParams.get("subject_id"), null);
+});
+
+test("the holders of a role are written and removed as a subject set carrying that role", async () => {
+  const fetcher = fetcherOf(201);
+  const grants = ketoProjectGrants(settings, fetcher.fetch);
+  const tenantObject = projectAccessTenantObject(request.tenant);
+  const holders: ProjectGrant = {
+    namespace: "Tenant",
+    object: tenantObject,
+    relation: "member_granters",
+    holder: {
+      subject: "Holders",
+      namespace: "Tenant",
+      object: tenantObject,
+      relation: "members",
+    },
+  };
+  await grants.write(holders);
+  await grants.remove(holders);
+  assert.deepEqual(fetcher.asked[0]?.body, {
+    namespace: "Tenant",
+    object: tenantObject,
+    relation: "member_granters",
+    subject_set: {
+      namespace: "Tenant",
+      object: tenantObject,
+      relation: "members",
+    },
+  });
+  const removed = fetcher.asked[1];
+  assert.ok(removed !== undefined);
+  assert.equal(removed.method, "DELETE");
+  assert.deepEqual(
+    [...removed.url.searchParams],
+    [
+      ["namespace", "Tenant"],
+      ["object", tenantObject],
+      ["relation", "member_granters"],
+      ["subject_set.namespace", "Tenant"],
+      ["subject_set.object", tenantObject],
+      ["subject_set.relation", "members"],
+    ],
+  );
 });
 
 test("a write the authority refused raises rather than reporting success", async () => {

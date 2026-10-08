@@ -23,8 +23,11 @@ import {
   projectAccessPermits,
   projectAccessObject,
   projectAccessProbe,
+  projectAccessSiteNamespace,
+  projectAccessSiteObject,
   projectAccessTenantNamespace,
   projectAccessTenantObject,
+  siteAccessPermits,
   tenantAccessPermits,
   type ProjectAccess,
   type ProjectAccessSettings,
@@ -119,6 +122,13 @@ export function ketoProjectAccess(
         projectAccessTenantObject(tenant),
         tenantAccessPermits[access],
       ),
+    authorizeSite: (principal, access) =>
+      checked(
+        principal,
+        projectAccessSiteNamespace,
+        projectAccessSiteObject,
+        siteAccessPermits[access],
+      ),
   };
 }
 
@@ -161,7 +171,7 @@ export function ketoTenantClaims(
 }
 
 /**
- * Whether the authority is up, carries both namespaces, and declares every
+ * Whether the authority is up, carries every namespace, and declares every
  * permit a check will ask it for. A permit that is still declared under a
  * changed meaning is not detected, because a subject nothing granted is
  * refused either way.
@@ -198,6 +208,9 @@ export function ketoReadiness(
     ...[...new Set(Object.values(tenantAccessPermits))].map(
       (permit) => [projectAccessTenantNamespace, permit] as const,
     ),
+    ...[...new Set(Object.values(siteAccessPermits))].map(
+      (permit) => [projectAccessSiteNamespace, permit] as const,
+    ),
   ];
   return {
     ready: async () => {
@@ -206,6 +219,7 @@ export function ketoReadiness(
         for (const namespace of [
           projectAccessNamespace,
           projectAccessTenantNamespace,
+          projectAccessSiteNamespace,
         ])
           await ask(listing(namespace));
         for (const [namespace, permit] of probed)

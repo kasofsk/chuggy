@@ -88,6 +88,7 @@ import type {
   WorkerPoolRegistered,
   WorkerPoolRosterPage,
 } from "../../src/interpreter/workerPool.ts";
+import { projectAccessSiteRefused } from "./projectAccessFixture.ts";
 
 const partition = {
   tenant: asTenantId("tenant"),
@@ -108,6 +109,7 @@ function poolAccess(
     },
     authorizeTenant: () =>
       Promise.reject(new Error("the scheduler asks no tenant question")),
+    authorizeSite: projectAccessSiteRefused,
   };
 }
 const epoch = asRecoveryEpoch("epoch");
@@ -1684,6 +1686,7 @@ test("an authority that cannot answer decides nothing, so the execution is held 
         {
           authorize: () => Promise.reject(failure),
           authorizeTenant: () => Promise.reject(failure),
+          authorizeSite: projectAccessSiteRefused,
         },
       ),
       0,
@@ -1844,6 +1847,7 @@ test("an attempt routed to pools is offered to none while the authority cannot a
     await poolOffer(calls, seen, runnable, undefined, {
       authorize: () => Promise.reject(failure),
       authorizeTenant: () => Promise.reject(failure),
+      authorizeSite: projectAccessSiteRefused,
     }),
     0,
   );

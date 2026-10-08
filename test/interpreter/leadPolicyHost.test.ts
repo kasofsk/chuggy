@@ -64,6 +64,7 @@ import {
   selectorHandoffNoteBytesMax,
   selectorSettingsTextCharsMax,
 } from "../../src/contract/http.ts";
+import { projectAccessSiteRefused } from "./projectAccessFixture.ts";
 
 const partition = {
   tenant: asTenantId("tenant"),
@@ -344,6 +345,7 @@ const leadPolicyConfig = {
 const hostedEverywhere: ProjectAccess = {
   authorize: (principal) => Promise.resolve(memberAuthority(principal)),
   authorizeTenant: (principal) => Promise.resolve(memberAuthority(principal)),
+  authorizeSite: projectAccessSiteRefused,
 };
 
 function policyOf(double: MailboxDouble) {
@@ -673,6 +675,7 @@ const askedNothing: ProjectAccess = {
   authorize: () => Promise.reject(new Error("a resumed turn asks no grant")),
   authorizeTenant: () =>
     Promise.reject(new Error("a resumed turn asks no grant")),
+  authorizeSite: projectAccessSiteRefused,
 };
 
 test("a turn another process offered is waited on and answered from the row, offering nothing", async () => {
@@ -1110,6 +1113,7 @@ function hostedAuthority(answer: "Granted" | "Refused" | "Unavailable"): {
           answer === "Granted" ? memberAuthority(principal) : undefined,
         );
       },
+      authorizeSite: projectAccessSiteRefused,
     },
   };
 }

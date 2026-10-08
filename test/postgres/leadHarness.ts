@@ -63,6 +63,7 @@ import type { Partition } from "../../src/interpreter/projectStore.ts";
 import { postgresHarnessProject, postgresHarnessRolePool } from "./harness.ts";
 import { postgresHarnessSelectorContext } from "./harness.ts";
 import { sessionRigOpen, type SessionRig } from "./sessionHarness.ts";
+import { projectAccessSiteRefused } from "../interpreter/projectAccessFixture.ts";
 
 /**
  * An authority granting every question. The runtime asks the hosted grant
@@ -71,6 +72,7 @@ import { sessionRigOpen, type SessionRig } from "./sessionHarness.ts";
 export const leadRigHostedAccess: ProjectAccess = {
   authorize: (principal) => Promise.resolve(memberAuthority(principal)),
   authorizeTenant: (principal) => Promise.resolve(memberAuthority(principal)),
+  authorizeSite: projectAccessSiteRefused,
 };
 
 /** One opened subject: the session rig, the two role pools and every door over them. */

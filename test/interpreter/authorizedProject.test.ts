@@ -12,6 +12,7 @@ import {
   type ProjectAccess,
 } from "../../src/interpreter/projectAccess.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
+import { projectAccessSiteRefused } from "./projectAccessFixture.ts";
 
 const principal = asPrincipal("caller");
 const partition = {
@@ -31,6 +32,7 @@ function authorizedProjectFixture() {
       return Promise.resolve(allowed ? authority : undefined);
     },
     authorizeTenant: () => Promise.resolve(undefined),
+    authorizeSite: projectAccessSiteRefused,
   };
   return {
     access,

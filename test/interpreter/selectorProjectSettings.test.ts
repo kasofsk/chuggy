@@ -29,6 +29,7 @@ import {
   type SelectorProjectSettingsWriteOutcome,
   type SelectorSettingsMovement,
 } from "../../src/interpreter/selectorProjectSettings.ts";
+import { projectAccessSiteRefused } from "./projectAccessFixture.ts";
 
 const partition = {
   tenant: asTenantId("tenant"),
@@ -67,6 +68,7 @@ function access(kinds: readonly string[]): ProjectAccess {
     authorize: (_principal, _partition, kind) =>
       Promise.resolve(kinds.includes(kind) ? administrator : undefined),
     authorizeTenant: () => Promise.resolve(undefined),
+    authorizeSite: projectAccessSiteRefused,
   };
 }
 
