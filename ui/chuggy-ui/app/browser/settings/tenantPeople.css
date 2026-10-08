@@ -1,0 +1,144 @@
+/* The People page: its tables drawn edge to edge in a card, a row at an
+   ordinary height with every cell's first line on one baseline, and the same
+   row stacked where the page is narrow. Then the grid of projects a person's
+   editor and an invitation share. Both restate the table primitive's cells,
+   which are set for figures compared along a row and not for lines read down
+   a column. */
+
+@layer page {
+  .people-table table {
+    table-layout: fixed;
+  }
+
+  .people-table :is(th, td) {
+    padding: var(--space-3);
+    vertical-align: baseline;
+    white-space: normal;
+    font-weight: var(--weight-regular);
+  }
+
+  .people-table :is(th, td):where(:first-child) {
+    padding-inline-start: var(--space-4);
+  }
+
+  .people-table :is(th, td):where(:last-child) {
+    padding-inline-end: var(--space-4);
+  }
+
+  .people-table thead th {
+    padding-block: var(--space-2);
+    font-weight: var(--weight-medium);
+  }
+
+  /* A row is not pressable, and the primitive's hover is the level a chip is
+     drawn on, so a hovered row would lose its chips. */
+  .people-table tbody tr:hover,
+  .people-grid tbody tr:hover {
+    background: transparent;
+  }
+
+  .people-col-held {
+    width: 24%;
+  }
+
+  .people-col-projects {
+    width: 36%;
+  }
+
+  .people-col-edit {
+    width: 5em;
+  }
+
+  .people-edit {
+    text-align: right;
+  }
+
+  .people-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* The roles start at one place down the table where the projects' names
+     are short, and where the two do not fit the name is cut short before
+     its roles wrap. */
+  .people-projects {
+    display: grid;
+    grid-template-columns: minmax(5em, 1fr) minmax(0, max-content);
+    column-gap: var(--space-3);
+    width: fit-content;
+    max-width: 100%;
+  }
+
+  @container (max-width: 40em) {
+    .people-table :is(table, tbody) {
+      display: block;
+    }
+
+    .people-table thead {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+    }
+
+    .people-table tbody tr {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: baseline;
+      gap: var(--space-2) var(--space-3);
+      padding: var(--space-3) var(--space-4);
+      border-bottom: var(--hairline) solid var(--edge);
+    }
+
+    .people-table tbody tr:last-child {
+      border-bottom: 0;
+    }
+
+    .people-table tbody :is(th, td) {
+      display: block;
+      grid-column: 1 / -1;
+      padding: 0;
+      border: 0;
+    }
+
+    .people-table tbody th {
+      grid-column: 1;
+    }
+
+    .people-table tbody .people-edit {
+      grid-column: 2;
+      grid-row: 1;
+    }
+
+    .people-table tbody td[data-none] {
+      display: none;
+    }
+
+    .people-name,
+    .people-name .identity {
+      white-space: normal;
+      overflow-wrap: anywhere;
+    }
+  }
+
+  .people-grid :is(th, td) {
+    padding-inline: var(--space-2);
+    text-align: center;
+  }
+
+  .people-grid :is(th, td):where(:first-child) {
+    width: 100%;
+    padding-inline-start: 0;
+    text-align: left;
+  }
+
+  .people-grid tbody th {
+    color: var(--ink-2);
+    font-weight: var(--weight-regular);
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+}

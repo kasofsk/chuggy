@@ -1,8 +1,9 @@
 /**
  * A workspace's people, decided with no renderer: every refusal the plane
- * names and every role it rosters has its own word, an invitation's fields are
- * held to the contract's schema, each answer comes to one line, and a change is
- * offered only where the reader's abilities say they may make it.
+ * names and every role it rosters has its own word, a row says what its person
+ * holds and nothing else, an invitation's fields are held to the contract's
+ * schema, each answer comes to one line, and a change is offered only where
+ * the reader's abilities say they may make it.
  */
 
 import { expect, test } from "vitest";
@@ -23,6 +24,7 @@ import {
   projectRoleLabel,
   projectRoleOffered,
   tenantInvitationAccountLine,
+  tenantInvitationBlank,
   tenantInvitationBody,
   tenantInvitationEmailFault,
   tenantInvitationGithubFault,
@@ -35,13 +37,22 @@ import {
   tenantInvitationRoleOpening,
   tenantInvitationRoles,
   tenantInvitationSendable,
+  tenantPeopleCountLine,
   tenantPeopleOtherIssuersLine,
+  tenantPeopleParted,
   tenantHostedRunsOffered,
+  tenantPersonBoxChecked,
   tenantPersonChangeAsks,
   tenantPersonChangeNote,
+  tenantPersonEditOffered,
+  tenantPersonEveryProject,
+  tenantPersonHeld,
   tenantPersonName,
+  tenantPersonProjectBox,
   tenantPersonProjectDrawn,
+  tenantPersonProjectLines,
   tenantPersonQuestion,
+  tenantPersonWorkspaceBoxes,
   tenantRoleLabel,
   tenantRoleOffered,
 } from "../app/core/tenantPeople.ts";
@@ -311,7 +322,7 @@ test("a role is offered only where the abilities name it, and nothing where none
   expect(projectRoleOffered(undefined, "beacon", "Admin")).toBe(false);
 });
 
-test("a project is drawn in a row where the person holds a role there or the reader may grant one", () => {
+test("a project is a row of an editor where the person holds a role there or the reader may grant one", () => {
   const holding: AccessTenantPerson = {
     ...person,
     projects: [{ project: "atlas", roles: ["Developer"] }],
@@ -360,4 +371,198 @@ test("a reader who may not make an account is told so, and one who may is told n
     tenantInvitationAccountLine({ ...abilities, createAccount: true }),
   ).toBe(undefined);
   expect(tenantInvitationAccountLine(undefined)).toBe(undefined);
+});
+
+test("the subjects that are no account are parted from the people, each in the list's order", () => {
+  const listed: AccessTenantPerson[] = [
+    { ...person, subject: "s-machine", account: false },
+    { ...person, subject: "s-ada", account: true },
+    { ...person, subject: "s-older" },
+    { ...person, subject: "s-other", account: false },
+  ];
+  const parted = tenantPeopleParted(listed);
+  expect(parted.people.map((held) => held.subject)).toStrictEqual([
+    "s-ada",
+    "s-older",
+  ]);
+  expect(parted.identities.map((held) => held.subject)).toStrictEqual([
+    "s-machine",
+    "s-other",
+  ]);
+});
+
+test("the people are counted in a word that agrees with how many", () => {
+  expect([0, 1, 2].map(tenantPeopleCountLine)).toStrictEqual([
+    "0 people",
+    "1 person",
+    "2 people",
+  ]);
+});
+
+test("a row draws what its person holds in the workspace, roles in the roster's order and hosted runs last", () => {
+  expect(tenantPersonHeld(person)).toStrictEqual([]);
+  expect(
+    tenantPersonHeld({
+      ...person,
+      tenantRoles: ["Member", "Admin"],
+      hostedRuns: true,
+    }),
+  ).toStrictEqual(["Admin", "Member", "Hosted runs"]);
+  expect(tenantPersonHeld({ ...person, hostedRuns: true })).toStrictEqual([
+    "Hosted runs",
+  ]);
+});
+
+test("a workspace admin, and no one else, reads as holding every project", () => {
+  expect(tenantPersonEveryProject({ ...person, tenantRoles: ["Admin"] })).toBe(
+    true,
+  );
+  expect(tenantPersonEveryProject({ ...person, tenantRoles: ["Member"] })).toBe(
+    false,
+  );
+  expect(
+    tenantPersonEveryProject({
+      ...person,
+      projects: [{ project: "atlas", roles: ["Admin"] }],
+    }),
+  ).toBe(false);
+});
+
+test("a row draws a line for each project its person holds a role on, in the list's order and the roster's", () => {
+  const holding: AccessTenantPerson = {
+    ...person,
+    projects: [
+      { project: "beacon", roles: ["Dispatcher", "Developer"] },
+      { project: "atlas", roles: ["Admin"] },
+      { project: "cedar", roles: [] },
+    ],
+  };
+  expect(
+    tenantPersonProjectLines(holding, ["atlas", "beacon", "cedar", "delta"]),
+  ).toStrictEqual([
+    { project: "atlas", roles: "Admin" },
+    { project: "beacon", roles: "Developer, Dispatcher" },
+  ]);
+  expect(tenantPersonProjectLines(person, ["atlas"])).toStrictEqual([]);
+});
+
+test("an editor is offered where the reader may change anything at all, and not where no abilities were read", () => {
+  const none: AccessTenantAbilities = { ...abilities, roles: [], projects: [] };
+  expect(tenantPersonEditOffered(none, ["atlas", "beacon"])).toBe(false);
+  expect(tenantPersonEditOffered(undefined, ["atlas", "beacon"])).toBe(false);
+  expect(tenantPersonEditOffered({ ...none, roles: ["Member"] }, [])).toBe(
+    true,
+  );
+  expect(tenantPersonEditOffered({ ...none, grantHostedRuns: true }, [])).toBe(
+    true,
+  );
+  expect(
+    tenantPersonEditOffered({ ...none, projects: abilities.projects }, [
+      "beacon",
+    ]),
+  ).toBe(true);
+  expect(
+    tenantPersonEditOffered({ ...none, projects: abilities.projects }, [
+      "atlas",
+    ]),
+  ).toBe(false);
+});
+
+test("an editor's workspace boxes are each role and hosted runs, one the reader may not change only where held", () => {
+  const holding: AccessTenantPerson = {
+    ...person,
+    tenantRoles: ["Admin"],
+    hostedRuns: true,
+  };
+  expect(tenantPersonWorkspaceBoxes(abilities, holding)).toStrictEqual([
+    {
+      label: "Admin",
+      change: { scope: "Tenant", role: "Admin", held: true },
+      offered: false,
+    },
+    {
+      label: "Member",
+      change: { scope: "Tenant", role: "Member", held: false },
+      offered: true,
+    },
+    {
+      label: "Hosted runs",
+      change: { scope: "HostedRuns", held: true },
+      offered: false,
+    },
+  ]);
+  expect(
+    tenantPersonWorkspaceBoxes(abilities, person).map((box) => box.label),
+  ).toStrictEqual(["Member"]);
+  expect(tenantPersonWorkspaceBoxes(undefined, person)).toStrictEqual([]);
+});
+
+test("an editor's project box is the change a press asks for, absent where neither offered nor held", () => {
+  const holding: AccessTenantPerson = {
+    ...person,
+    projects: [{ project: "atlas", roles: ["Developer"] }],
+  };
+  expect(
+    tenantPersonProjectBox(abilities, holding, "atlas", "Developer"),
+  ).toStrictEqual({
+    label: "Developer",
+    change: {
+      scope: "Project",
+      project: "atlas",
+      role: "Developer",
+      held: true,
+    },
+    offered: false,
+  });
+  expect(tenantPersonProjectBox(abilities, holding, "atlas", "Admin")).toBe(
+    undefined,
+  );
+  expect(
+    tenantPersonProjectBox(abilities, holding, "beacon", "Admin"),
+  ).toStrictEqual({
+    label: "Admin",
+    change: { scope: "Project", project: "beacon", role: "Admin", held: false },
+    offered: true,
+  });
+  expect(
+    tenantPersonProjectBox(abilities, holding, "beacon", "Developer"),
+  ).toBe(undefined);
+});
+
+test("a box is checked as the list holds it, and the one being sent as the change will leave it", () => {
+  const [member] = tenantPersonWorkspaceBoxes(abilities, person);
+  const beacon = tenantPersonProjectBox(abilities, person, "beacon", "Admin");
+  if (member === undefined || beacon === undefined)
+    throw new Error("the boxes the abilities offer were not drawn");
+  expect(tenantPersonBoxChecked(member, undefined)).toBe(false);
+  expect(tenantPersonBoxChecked(member, member.change)).toBe(true);
+  expect(tenantPersonBoxChecked(beacon, member.change)).toBe(false);
+  expect(tenantPersonBoxChecked(beacon, beacon.change)).toBe(true);
+  const elsewhere = [
+    { scope: "Project", project: "atlas", role: "Admin", held: false },
+    { scope: "Project", project: "beacon", role: "Dispatcher", held: false },
+    { scope: "Tenant", role: "Admin", held: false },
+    { scope: "HostedRuns", held: false },
+  ] as const;
+  for (const sending of elsewhere)
+    expect(tenantPersonBoxChecked(beacon, sending)).toBe(false);
+  const held = { ...member, change: { ...member.change, held: true } };
+  expect(tenantPersonBoxChecked(held, held.change)).toBe(false);
+});
+
+test("an invitation opens with nothing typed and every offered project unchosen", () => {
+  expect(
+    tenantInvitationBlank("Admin", [
+      { project: "atlas" },
+      { project: "beacon" },
+    ]),
+  ).toStrictEqual({
+    github: "",
+    email: "",
+    role: "Admin",
+    projects: [
+      { project: "atlas", roles: [] },
+      { project: "beacon", roles: [] },
+    ],
+  });
 });

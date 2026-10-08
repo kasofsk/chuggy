@@ -1,0 +1,47 @@
+/* Checkbox: the box a press fills, the mark in it, and a box drawn but not
+   pressable. A press lands a little past the box's edge, because the box is
+   smaller than a finger. */
+
+@layer ui {
+  .checkbox {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 1em;
+    height: 1em;
+    padding: 0;
+    background: var(--surface-1);
+    border: var(--hairline) solid var(--edge-control);
+    border-radius: var(--radius-2);
+    color: var(--ink-inverse);
+    cursor: pointer;
+    transition:
+      background var(--duration-1) var(--ease-out),
+      border-color var(--duration-1) var(--ease-out);
+  }
+
+  .checkbox::after {
+    content: "";
+    position: absolute;
+    inset: -0.5em;
+  }
+
+  .checkbox[data-state="checked"] {
+    background: var(--surface-inverse);
+    border-color: var(--surface-inverse);
+  }
+
+  .checkbox:disabled {
+    background: transparent;
+    border-color: var(--edge);
+    color: var(--ink-3);
+    cursor: not-allowed;
+  }
+
+  .checkbox-mark {
+    width: 0.75em;
+    height: 0.75em;
+  }
+}

@@ -4,7 +4,7 @@
  * own paths, and every change and invitation answered by the case.
  */
 
-import { screen, within } from "@testing-library/react";
+import { fireEvent, screen, within } from "@testing-library/react";
 
 import {
   accessProjectRoles,
@@ -13,7 +13,13 @@ import {
   type AccessTenantPeople,
 } from "../../../../src/contract/accessPlane.ts";
 import { TenantPeoplePage } from "../../app/browser/settings/TenantPeoplePage.tsx";
-import { answer, drawnStrict } from "../screenHarness.tsx";
+import {
+  answer,
+  drawnStrict,
+  press,
+  settled,
+  turned,
+} from "../screenHarness.tsx";
 import type { DrawnStrict, SentRequest } from "../screenHarness.tsx";
 
 export const peopleTenant = "acme";
@@ -143,15 +149,86 @@ export function abilitiesReads(drawn: DrawnStrict): number {
   return drawn.sent.filter((request) => request.url === abilitiesPath).length;
 }
 
-/** One person's row, found by what it draws them as. */
+/** One person's row, in either table, found by what it draws them as. */
 export function personRow(name: string): HTMLElement {
-  const row = screen.getByText(name).closest("tr");
-  if (row === null) throw new Error(`no row draws ${name}`);
+  const row = screen
+    .getAllByRole("rowheader")
+    .find((header) => within(header).queryByText(name) !== null)
+    ?.closest("tr");
+  if (row === null || row === undefined)
+    throw new Error(`no row draws ${name}`);
   return row;
 }
 
-export function pressedIn(scope: HTMLElement): readonly string[] {
-  return within(scope)
-    .queryAllByRole("button", { pressed: true })
-    .map((button) => button.textContent);
+/** What a row is headed by first, which is its person's name. */
+function headedBy(header: Element): string {
+  let drawn = header;
+  while (drawn.firstElementChild !== null) drawn = drawn.firstElementChild;
+  return drawn.textContent;
+}
+
+/** The names one of the page's two tables draws, a row each, in its order. */
+export function namedIn(table: string): readonly string[] {
+  const drawn = screen.queryByRole("table", { name: table });
+  if (drawn === null) return [];
+  return within(drawn).getAllByRole("rowheader").map(headedBy);
+}
+
+/** The chips a row draws: what its person holds in the workspace. */
+export function heldIn(row: HTMLElement): readonly string[] {
+  return within(row)
+    .queryAllByRole("listitem")
+    .map((chip) => chip.textContent);
+}
+
+/** The lines a row draws of its person's projects, each a project and its roles. */
+export function projectsIn(row: HTMLElement): readonly string[] {
+  return within(row)
+    .queryAllByRole("term")
+    .map(
+      (project) =>
+        `${project.textContent}: ${project.nextElementSibling?.textContent ?? ""}`,
+    );
+}
+
+/** One person's editor, opened from their row. */
+export async function editorOf(name: string): Promise<HTMLElement> {
+  await press(`Edit ${name}`);
+  return screen.getByRole("dialog", { name });
+}
+
+/** One box as a case reads it: its name, `+` where checked, in parentheses
+ * where no press changes it. */
+function boxDrawn(box: HTMLElement): string {
+  const drawn = `${box.getAttribute("aria-label") ?? box.nextElementSibling?.textContent ?? ""}${box.getAttribute("aria-checked") === "true" ? "+" : ""}`;
+  return box.hasAttribute("disabled") ? `(${drawn})` : drawn;
+}
+
+/** The boxes one group of an editor draws: `Workspace`, or the row of a project. */
+export function boxesIn(editor: HTMLElement, group: string): readonly string[] {
+  const scope =
+    group === "Workspace"
+      ? within(editor).getByRole("group", { name: group })
+      : within(editor).getByRole("row", { name: new RegExp(`^${group}`, "u") });
+  return within(scope).queryAllByRole("checkbox").map(boxDrawn);
+}
+
+/** The projects an editor or an invitation draws a row of boxes for. */
+export function projectsOffered(dialog: HTMLElement): readonly string[] {
+  const grid = within(dialog).queryByRole("table", { name: "Projects" });
+  if (grid === null) return [];
+  return within(grid)
+    .getAllByRole("rowheader")
+    .map((header) => header.textContent);
+}
+
+/** One box of a dialog pressed, and what the press set off flushed. */
+export async function boxPressed(
+  dialog: HTMLElement,
+  name: string,
+): Promise<void> {
+  await turned(() => {
+    fireEvent.click(within(dialog).getByRole("checkbox", { name }));
+  });
+  await settled();
 }

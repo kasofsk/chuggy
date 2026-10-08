@@ -1,127 +1,33 @@
 /**
- * One person in a workspace, their roles and hosted runs edited in place where
- * the reader may grant them: each such role, and hosted runs, is one button,
- * pressed where the list says it is held. A role the reader may not grant is
- * its label where held and absent where not, and hosted runs the reader may not
- * give are `Granted` or `Not granted`. A project is drawn where the person
- * holds a role there or the reader may grant one. A press sends one grant or
- * one removal and reads the list and the abilities again, so what the button
- * shows is always what the list holds, and a refusal is one line under the
- * person's name. Removing the reader's own workspace admin, and hosted runs
- * from a subject that is no account, is asked first, one question at a time.
+ * One person in a workspace as one table row: who they are, what they hold in
+ * the workspace as chips, the projects they hold a role on as a line each, and
+ * the Edit that opens their editor where the reader may change anything.
+ * Nothing a person does not hold is drawn, so a row is read without knowing
+ * what the reader may grant.
  */
 
-import { useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
 import type { ReactNode } from "react";
 
-import {
-  accessProjectRoles,
-  accessTenantRoles,
-  type AccessAuthorityPerson,
-  type AccessTenantAbilities,
-  type AccessTenantPerson,
+import type {
+  AccessAuthorityPerson,
+  AccessTenantAbilities,
+  AccessTenantPerson,
 } from "../../../../../src/contract/accessPlane.ts";
-import type { ApiPorts, ApiResult } from "../../core/apiRequest.ts";
 import {
-  apiGrantHostedRuns,
-  apiGrantProjectRole,
-  apiGrantTenantRole,
-  apiRemoveHostedRuns,
-  apiRemoveProjectRole,
-  apiRemoveTenantRole,
-} from "../../core/accessRoutes.ts";
-import {
-  projectRoleLabel,
-  projectRoleOffered,
-  tenantHostedRunsOffered,
-  tenantPersonChangeAsks,
-  tenantPersonChangeNote,
+  tenantPersonEveryProject,
+  tenantPersonEveryProjectLine,
+  tenantPersonHeld,
   tenantPersonName,
-  tenantPersonProjectDrawn,
-  tenantPersonProjectRoles,
-  tenantPersonQuestion,
-  tenantRoleLabel,
-  tenantRoleOffered,
+  tenantPersonProjectLines,
 } from "../../core/tenantPeople.ts";
-import type { TenantPersonChange } from "../../core/tenantPeople.ts";
-import { useApiPorts } from "../api.ts";
-import { Button } from "../ui/Button.tsx";
-import { Confirm } from "../ui/Confirm.tsx";
+import type { TenantPersonProjectLine } from "../../core/tenantPeople.ts";
 import { Identity } from "../ui/Identity.tsx";
-import { Notice } from "../ui/Notice.tsx";
-import { tenantPeopleReread } from "./tenantPeopleResource.ts";
+import { Pill } from "../ui/Pill.tsx";
+import { TenantPersonEditor } from "./TenantPersonEditor.tsx";
 
-function tenantPersonChangeSent(
-  ports: ApiPorts,
-  tenant: string,
-  subject: string,
-  change: TenantPersonChange,
-): Promise<ApiResult<undefined>> {
-  if (change.scope === "HostedRuns")
-    return change.held
-      ? apiRemoveHostedRuns(ports, tenant, subject)
-      : apiGrantHostedRuns(ports, tenant, subject);
-  if (change.scope === "Tenant")
-    return change.held
-      ? apiRemoveTenantRole(ports, tenant, subject, change.role)
-      : apiGrantTenantRole(ports, tenant, subject, change.role);
-  return change.held
-    ? apiRemoveProjectRole(ports, tenant, change.project, subject, change.role)
-    : apiGrantProjectRole(ports, tenant, change.project, subject, change.role);
-}
+import "./tenantPeople.css";
 
-/** One change at a time for one person, from the press to the line it leaves. */
-function useTenantPersonChange(
-  tenant: string,
-  person: AccessTenantPerson,
-): {
-  readonly busy: boolean;
-  readonly note: string | undefined;
-  readonly asking: TenantPersonChange | undefined;
-  readonly press: (change: TenantPersonChange) => void;
-  readonly send: (change: TenantPersonChange) => void;
-  readonly cancel: () => void;
-} {
-  const ports = useApiPorts();
-  const client = useQueryClient();
-  const [busy, setBusy] = useState(false);
-  const [note, setNote] = useState<string | undefined>(undefined);
-  const [asking, setAsking] = useState<TenantPersonChange | undefined>(
-    undefined,
-  );
-  const send = (change: TenantPersonChange): void => {
-    setBusy(true);
-    setNote(undefined);
-    void (async () => {
-      const answered = await tenantPersonChangeSent(
-        ports,
-        tenant,
-        person.subject,
-        change,
-      );
-      await tenantPeopleReread(client, tenant);
-      setAsking(undefined);
-      setBusy(false);
-      setNote(tenantPersonChangeNote(answered));
-    })();
-  };
-  return {
-    busy,
-    note,
-    asking,
-    send,
-    press: (change) => {
-      if (tenantPersonChangeAsks(person, change)) setAsking(change);
-      else send(change);
-    },
-    cancel: () => {
-      setAsking(undefined);
-    },
-  };
-}
-
-/** Who one person is, as a People row and a permission's holder both draw them. */
+/** Who one person is, as a permission's holder draws them. */
 export function TenantPersonWho(props: {
   readonly person: AccessAuthorityPerson;
 }): ReactNode {
@@ -146,158 +52,90 @@ export function TenantPersonWho(props: {
   );
 }
 
-/** One role as the reader may change it: a button where they may grant it,
- * otherwise its label where held and nothing where not. */
-function TenantPersonRole(props: {
-  readonly label: string;
-  readonly offered: boolean;
-  readonly held: boolean;
-  readonly busy: boolean;
-  readonly onPress: () => void;
-}): ReactNode {
-  if (!props.offered)
-    return props.held ? (
-      <span className="text-sm text-ink-2">{props.label}</span>
-    ) : null;
+/** What stands in a cell for a person who holds nothing there. */
+function TenantPersonNone(): ReactNode {
   return (
-    <Button
-      size="sm"
-      variant="quiet"
-      pressed={props.held}
-      disabled={props.busy}
-      onClick={props.onPress}
-    >
-      {props.label}
-    </Button>
+    <span className="text-ink-3">
+      <span aria-hidden="true">—</span>
+      <span className="visually-hidden">None</span>
+    </span>
+  );
+}
+
+/** A row's own heading: the name strong with the reader marked beside it, and
+ * the GitHub login under it. */
+function TenantPersonNamed(props: {
+  readonly person: AccessTenantPerson;
+}): ReactNode {
+  const named = tenantPersonName(props.person);
+  return (
+    <span className="grid min-w-0">
+      <span className="flex min-w-0 items-baseline gap-2">
+        {named.subject ? (
+          <span className="people-name">
+            <Identity label={{ text: named.name, title: named.name }} />
+          </span>
+        ) : (
+          <span
+            className="people-name font-strong text-ink-1"
+            title={named.name}
+          >
+            {named.name}
+          </span>
+        )}
+        {props.person.mine ? (
+          <span className="shrink-0 text-sm text-ink-3">You</span>
+        ) : null}
+      </span>
+      {named.githubLogin === undefined ? null : (
+        <span className="truncate text-sm text-ink-3">{named.githubLogin}</span>
+      )}
+    </span>
+  );
+}
+
+function TenantPersonHeld(props: {
+  readonly held: readonly string[];
+}): ReactNode {
+  if (props.held.length === 0) return <TenantPersonNone />;
+  return (
+    <ul className="flex flex-wrap gap-1">
+      {props.held.map((word) => (
+        <li key={word} className="flex">
+          <Pill tone="neutral">{word}</Pill>
+        </li>
+      ))}
+    </ul>
   );
 }
 
 function TenantPersonProjects(props: {
-  readonly person: AccessTenantPerson;
-  readonly projects: readonly string[];
-  readonly abilities: AccessTenantAbilities | undefined;
-  readonly busy: boolean;
-  readonly press: (change: TenantPersonChange) => void;
+  readonly every: boolean;
+  readonly lines: readonly TenantPersonProjectLine[];
 }): ReactNode {
-  const drawn = props.projects.filter((project) =>
-    tenantPersonProjectDrawn(props.abilities, props.person, project),
-  );
+  const lines = props.lines;
+  if (!props.every && lines.length === 0) return <TenantPersonNone />;
   return (
-    <span className="grid gap-1">
-      {drawn.map((project) => {
-        const held = tenantPersonProjectRoles(props.person, project);
-        return (
-          <span
-            key={project}
-            role="group"
-            aria-label={project}
-            className="flex flex-wrap items-center gap-2"
-          >
-            <span className="text-sm text-ink-2">{project}</span>
-            {accessProjectRoles.map((role) => (
-              <TenantPersonRole
-                key={role}
-                label={projectRoleLabel(role)}
-                offered={projectRoleOffered(props.abilities, project, role)}
-                held={held.includes(role)}
-                busy={props.busy}
-                onPress={() => {
-                  props.press({
-                    scope: "Project",
-                    project,
-                    role,
-                    held: held.includes(role),
-                  });
-                }}
-              />
-            ))}
-          </span>
-        );
-      })}
-    </span>
-  );
-}
-
-function TenantPersonRoles(props: {
-  readonly person: AccessTenantPerson;
-  readonly abilities: AccessTenantAbilities | undefined;
-  readonly busy: boolean;
-  readonly press: (change: TenantPersonChange) => void;
-}): ReactNode {
-  const held = props.person.tenantRoles;
-  return (
-    <span
-      role="group"
-      aria-label="Workspace"
-      className="flex flex-wrap items-center gap-2"
-    >
-      {accessTenantRoles.map((role) => (
-        <TenantPersonRole
-          key={role}
-          label={tenantRoleLabel(role)}
-          offered={tenantRoleOffered(props.abilities, role)}
-          held={held.includes(role)}
-          busy={props.busy}
-          onPress={() => {
-            props.press({ scope: "Tenant", role, held: held.includes(role) });
-          }}
-        />
-      ))}
-    </span>
-  );
-}
-
-function TenantPersonHostedRuns(props: {
-  readonly person: AccessTenantPerson;
-  readonly abilities: AccessTenantAbilities | undefined;
-  readonly busy: boolean;
-  readonly press: (change: TenantPersonChange) => void;
-}): ReactNode {
-  const held = props.person.hostedRuns;
-  if (!tenantHostedRunsOffered(props.abilities))
-    return held ? "Granted" : "Not granted";
-  return (
-    <TenantPersonRole
-      label="Hosted runs"
-      offered
-      held={held}
-      busy={props.busy}
-      onPress={() => {
-        props.press({ scope: "HostedRuns", held });
-      }}
-    />
-  );
-}
-
-/** Who the person is, the line a refused change leaves, and the question a
- * change asked first waits on. */
-function TenantPersonHeader(props: {
-  readonly person: AccessTenantPerson;
-  readonly change: ReturnType<typeof useTenantPersonChange>;
-}): ReactNode {
-  const change = props.change;
-  const asking = change.asking;
-  return (
-    <span className="grid gap-1">
-      <TenantPersonWho person={props.person} />
-      {change.note === undefined ? null : (
-        <Notice tone="danger" inline role="status" detail={change.note} />
+    <div className="grid min-w-0">
+      {props.every ? <span>{tenantPersonEveryProjectLine}</span> : null}
+      {lines.length === 0 ? null : (
+        <dl className="people-projects">
+          {lines.map((line) => (
+            <div key={line.project} className="contents">
+              <dt className="truncate">{line.project}</dt>
+              <dd className="text-ink-3">{line.roles}</dd>
+            </div>
+          ))}
+        </dl>
       )}
-      {asking === undefined ? null : (
-        <Confirm
-          question={tenantPersonQuestion(asking).question}
-          confirm="Remove"
-          busy={change.busy}
-          onConfirm={() => {
-            change.send(asking);
-          }}
-          onCancel={change.cancel}
-        >
-          {tenantPersonQuestion(asking).line}
-        </Confirm>
-      )}
-    </span>
+    </div>
   );
+}
+
+/** An empty attribute where a cell holds nothing, which is how the stacked
+ * row leaves that cell out. */
+function none(empty: boolean): "" | undefined {
+  return empty ? "" : undefined;
 }
 
 export function TenantPersonRow(props: {
@@ -305,40 +143,34 @@ export function TenantPersonRow(props: {
   readonly person: AccessTenantPerson;
   readonly projects: readonly string[];
   readonly abilities: AccessTenantAbilities | undefined;
+  /** Whether the table has a column of editors, which is the reader's to have and not this person's. */
+  readonly editable: boolean;
 }): ReactNode {
   const person = props.person;
-  const change = useTenantPersonChange(props.tenant, person);
-  const busy = change.busy || change.asking !== undefined;
+  const held = tenantPersonHeld(person);
+  const every = tenantPersonEveryProject(person);
+  const lines = tenantPersonProjectLines(person, props.projects);
   return (
     <tr>
       <th scope="row">
-        <TenantPersonHeader person={person} change={change} />
+        <TenantPersonNamed person={person} />
       </th>
-      <td>
-        <TenantPersonRoles
-          person={person}
-          abilities={props.abilities}
-          busy={busy}
-          press={change.press}
-        />
+      <td data-none={none(held.length === 0)}>
+        <TenantPersonHeld held={held} />
       </td>
-      <td>
-        <TenantPersonHostedRuns
-          person={person}
-          abilities={props.abilities}
-          busy={busy}
-          press={change.press}
-        />
+      <td data-none={none(!every && lines.length === 0)}>
+        <TenantPersonProjects every={every} lines={lines} />
       </td>
-      <td>
-        <TenantPersonProjects
-          person={person}
-          projects={props.projects}
-          abilities={props.abilities}
-          busy={busy}
-          press={change.press}
-        />
-      </td>
+      {props.editable ? (
+        <td className="people-edit">
+          <TenantPersonEditor
+            tenant={props.tenant}
+            person={person}
+            projects={props.projects}
+            abilities={props.abilities}
+          />
+        </td>
+      ) : null}
     </tr>
   );
 }
