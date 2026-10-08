@@ -246,6 +246,12 @@ function policyHost(
       },
     }),
     reconcileQuarantined: () => Promise.resolve({ status: "Unconfirmed" }),
+    turnStanding: () => Promise.resolve("Absent"),
+    resume: () => ({
+      result: Promise.reject(new Error("no decision was resumed")),
+      terminate: () => Promise.resolve({ status: "Unconfirmed" }),
+    }),
+    withdraw: () => Promise.resolve({ status: "Unconfirmed" }),
   };
 }
 
@@ -329,6 +335,7 @@ function promptObservationSource() {
 /** One identity per project, so a sweep over several names each decision after its own. */
 function perProjectIdentities() {
   return {
+    resumed: () => undefined,
     next: (scope: typeof partition) => ({
       operation: asOperationId(`operation-${scope.project}`),
       selectorDecisionReference: `decision-${scope.project}`,
@@ -362,6 +369,7 @@ function stateStore(
     quarantineAttempt: () => Promise.resolve(),
     terminateAttempt: () => Promise.resolve(),
     quarantinedAttempts: () => Promise.resolve([]),
+    unfinishedAttempts: () => Promise.resolve([]),
     inventoryCursor: () => Promise.resolve(undefined),
     saveInventoryCursor: () => Promise.resolve(),
     recordInteraction: () => Promise.resolve(true),
@@ -734,6 +742,7 @@ test("a paused runtime creates no new observations but still drains durable work
       Promise.reject(new Error("paused runtime invoked its policy")),
     ),
     {
+      resumed: () => undefined,
       next: () => ({
         operation: asOperationId("unused"),
         selectorDecisionReference: "unused",
@@ -1399,6 +1408,7 @@ test("inventory progress follows scanned projects when a permit is unavailable",
     },
     policyHost(() => Promise.resolve(waitingExecution())),
     {
+      resumed: () => undefined,
       next: () => ({
         operation: asOperationId("inventory-operation"),
         selectorDecisionReference: "inventory-decision",
@@ -1870,6 +1880,7 @@ test("a pause observed after permit acquisition prevents a new decision", async 
       Promise.reject(new Error("paused runtime invoked its policy")),
     ),
     {
+      resumed: () => undefined,
       next: () => ({
         operation: asOperationId("pause-race-operation"),
         selectorDecisionReference: "pause-race-decision",
@@ -1983,6 +1994,7 @@ test("unconfirmed attempt reconciliation yields to newer attempts", async () => 
     },
     policyHost(() => Promise.resolve(waitingExecution())),
     {
+      resumed: () => undefined,
       next: () => ({
         operation: asOperationId("unused"),
         selectorDecisionReference: "unused",
@@ -2026,6 +2038,7 @@ test("one failed attempt inspection does not starve later quarantines", async ()
       },
     },
     {
+      resumed: () => undefined,
       next: () => ({
         operation: asOperationId("unused"),
         selectorDecisionReference: "unused",
@@ -2190,6 +2203,7 @@ test("unconfirmed capability cancellation quarantines its durable attempt", asyn
       () => Promise.resolve({ status: "Unconfirmed" }),
     ),
     {
+      resumed: () => undefined,
       next: () => ({
         operation: asOperationId("unsafe-operation"),
         selectorDecisionReference: "unsafe-decision",
@@ -2223,6 +2237,7 @@ test("an unconfirmed permit release enters reconciliation", async () => {
     },
     policyHost(() => Promise.resolve(waitingExecution())),
     {
+      resumed: () => undefined,
       next: () => ({
         operation: asOperationId("release-operation"),
         selectorDecisionReference: "release-decision",
@@ -2617,6 +2632,7 @@ test("one reconciliation failure does not abandon the rest of its claim", async 
     },
     policyHost(() => Promise.resolve(waitingExecution())),
     {
+      resumed: () => undefined,
       next: () => ({
         operation: asOperationId("unused"),
         selectorDecisionReference: "unused",
@@ -2788,6 +2804,8 @@ test("the selector policy host answers the admission its policy answers", async 
         execute: () => Promise.reject(new Error("no decision was expected")),
         cancel: () => Promise.resolve({ status: "Unconfirmed" }),
         inspect: () => Promise.resolve({ status: "Unconfirmed" }),
+        standing: () => Promise.resolve("Absent"),
+        resume: () => Promise.reject(new Error("no decision was resumed")),
       },
       { after: () => new Promise<never>(() => undefined) },
       { controlDeadlineMs: 1_000 },
@@ -2817,6 +2835,8 @@ test("the selector policy host starts once and bounds cancellation evidence", as
           proof: "all capability calls settled",
         }),
       inspect: () => Promise.resolve({ status: "Unconfirmed" }),
+      standing: () => Promise.resolve("Absent"),
+      resume: () => Promise.reject(new Error("no decision was resumed")),
     },
     { after: () => new Promise<never>(() => undefined) },
     { controlDeadlineMs: 1_000 },
@@ -3040,6 +3060,7 @@ test("a project whose change log has not moved takes no turn and spends nothing"
       return Promise.reject(new Error("an unmoved project ran its policy"));
     }),
     {
+      resumed: () => undefined,
       next: () => {
         identities += 1;
         return {
@@ -3090,6 +3111,7 @@ test("a project that moved takes one turn, and the window is what the lead is sh
       return Promise.resolve(waitingExecution());
     }),
     {
+      resumed: () => undefined,
       next: () => ({
         operation: asOperationId("operation-moved"),
         selectorDecisionReference: "decision-moved",
@@ -4276,6 +4298,7 @@ test("a sweep does not offer its lead a ticket a held decision dispatches", asyn
       return Promise.resolve(waitingExecution());
     }),
     {
+      resumed: () => undefined,
       next: () => ({
         operation: asOperationId("held-sweep-operation"),
         selectorDecisionReference: "held-sweep-decision",

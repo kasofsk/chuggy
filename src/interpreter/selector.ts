@@ -136,16 +136,26 @@ export interface SelectorStateStore {
       "concurrentDecisions" | "selectionsPerMinute" | "millisecondsPerDecision"
     >,
   ): Promise<boolean>;
+  /** Stores the observation and both fences, the project revision being the one the decision's record is held to. */
   runningAttempt(
     attempt: string,
     observation: SelectorObservation,
     fence: SelectorSettingsFence,
+    projectRevision: number,
   ): Promise<void>;
   quarantineAttempt(attempt: string): Promise<void>;
   terminateAttempt(attempt: string, evidence: string): Promise<void>;
   quarantinedAttempts(limit: number): Promise<readonly string[]>;
+  /** Every attempt in `Starting` or `Running` across the installation, oldest first. */
+  unfinishedAttempts(
+    limit: number,
+  ): Promise<readonly SelectorUnfinishedAttempt[]>;
   inventoryCursor(): Promise<Partition | undefined>;
   saveInventoryCursor(cursor: Partition | undefined): Promise<void>;
+  /**
+   * Writes nothing where the attempt already ended, and ends a live attempt
+   * where the project moved off the revision in `state`.
+   */
   recordInteraction(
     interaction: SelectorInteraction,
     state: SelectorProjectState,
@@ -192,6 +202,19 @@ export interface SelectorStateStore {
     partition: Partition,
     tickets: readonly DispatchCandidate["ticket"][],
   ): Promise<readonly DispatchCandidate["ticket"][]>;
+}
+
+/** A decision a selector process began and did not finish, as the store holds it. */
+export interface SelectorUnfinishedAttempt {
+  readonly attempt: string;
+  readonly partition: Partition;
+  readonly state: "Starting" | "Running";
+  /** How long the attempt has stood, by the store's own clock. */
+  readonly ageMs: number;
+  /** The revision the decision is fenced on, absent on an attempt stored before one was kept. */
+  readonly projectRevision?: number;
+  /** What the decision stood on, absent where none was stored or it does not read back. */
+  readonly observation?: SelectorObservation;
 }
 
 /** One of a decision's dispatches as the delivery record settled it. */
@@ -242,6 +265,20 @@ export type SelectorCandidateScan =
       readonly after: DispatchCandidate["ticket"];
     }
   | { readonly state: "Exhausted"; readonly token: DispatchViewToken };
+
+/** The state of a project no decision has written, which the store's own row starts as. */
+export function selectorInitialState(
+  partition: Partition,
+): SelectorProjectState {
+  return {
+    partition,
+    notificationCursor: 0,
+    revision: 0,
+    attention: "Monitoring",
+    handoffNote: {},
+    candidateScan: { state: "Unstarted" },
+  };
+}
 
 /** How many change rows one turn's window carries, which is the page the notifications hold. */
 export const selectorNotificationPageLimit = notificationPageLimitMax;
@@ -735,7 +772,19 @@ export interface SelectorPolicyHost {
   leadAdmission(partition: Partition): Promise<LeadAdmission>;
   start(request: SelectorPolicyRequest): SelectorPolicyRun;
   reconcileQuarantined(attempt: string): Promise<SelectorTerminationResult>;
+  /** Where the turn a decision offered stands, read without offering one. */
+  turnStanding(attempt: string): Promise<SelectorTurnStanding>;
+  /**
+   * The turn a decision already offered, polled to its end and answered as
+   * `start` answers it. It offers nothing: no admission, no lead opened or closed.
+   */
+  resume(request: SelectorPolicyRequest): SelectorPolicyRun;
+  /** Withdraws the turn a decision offered, proving it can no longer be answered. */
+  withdraw(attempt: string): Promise<SelectorTerminationResult>;
 }
+
+/** Whether a decision's turn was never offered, is still in the mailbox, or has ended. */
+export type SelectorTurnStanding = "Absent" | "Pending" | "Ended";
 
 function allowed(name: string, allowlist: readonly string[]): boolean {
   return allowlist.includes("*") || allowlist.includes(name);
@@ -1167,17 +1216,15 @@ function selectorInteraction(
   };
 }
 
-async function executeSelectorPolicy(
-  source: Pick<SelectorObservationSource, "decisionDeadline">,
-  policy: SelectorPolicyHost,
+/** What a policy is asked: the observation, the instructions and the constraints, each frozen. */
+function selectorPolicyRequest(
   observation: SelectorObservation,
   settings: SelectorResolvedSettings,
   attempt: string,
-): Promise<SelectorPolicyExecution> {
-  const policyObservation = persistablePolicyObservation(observation, settings);
-  const run = policy.start({
+): SelectorPolicyRequest {
+  return {
     attempt,
-    observation: Object.freeze(policyObservation),
+    observation: Object.freeze(observation),
     instructions: Object.freeze({
       revision: selectorInstructionsVersion(settings),
       content: settings.basePrompt,
@@ -1186,19 +1233,79 @@ async function executeSelectorPolicy(
         : { northStar: settings.northStar }),
     }),
     constraints: policyConstraints(settings),
+  };
+}
+
+function selectorDecisionDeadline(
+  source: Pick<SelectorObservationSource, "decisionDeadline">,
+  milliseconds: number,
+): Promise<never> {
+  return source.decisionDeadline(milliseconds).catch(() => {
+    throw new SelectorDeadlineExceeded("selector policy deadline exceeded");
   });
-  try {
-    const execution = await Promise.race([
+}
+
+async function executeSelectorPolicy(
+  source: Pick<SelectorObservationSource, "decisionDeadline">,
+  policy: SelectorPolicyHost,
+  observation: SelectorObservation,
+  settings: SelectorResolvedSettings,
+  attempt: string,
+): Promise<SelectorPolicyExecution> {
+  const run = policy.start(
+    selectorPolicyRequest(
+      persistablePolicyObservation(observation, settings),
+      settings,
+      attempt,
+    ),
+  );
+  return settledSelectorPolicy(run, attempt, settings, () =>
+    Promise.race([
       run.result,
-      source
-        .decisionDeadline(settings.limits.millisecondsPerDecision)
-        .catch(() => {
-          throw new SelectorDeadlineExceeded(
-            "selector policy deadline exceeded",
-          );
-        }),
-    ]);
-    const parsed = parsedPolicyExecution(execution);
+      selectorDecisionDeadline(source, settings.limits.millisecondsPerDecision),
+    ]),
+  );
+}
+
+/**
+ * The turn a predecessor offered, waited on for what is left of the decision's
+ * deadline. A turn that already ended is answered however late it is found, and
+ * one still in the mailbox past the deadline is withdrawn as the live path withdraws it.
+ */
+async function resumeSelectorPolicy(
+  source: Pick<SelectorObservationSource, "decisionDeadline">,
+  policy: SelectorPolicyHost,
+  resumed: SelectorResumedDecision,
+  settings: SelectorResolvedSettings,
+  attempt: string,
+): Promise<SelectorPolicyExecution> {
+  const run = policy.resume(
+    selectorPolicyRequest(resumed.observation, settings, attempt),
+  );
+  const remainingMs = settings.limits.millisecondsPerDecision - resumed.ageMs;
+  return settledSelectorPolicy(run, attempt, settings, () =>
+    resumed.turn === "Ended"
+      ? run.result
+      : remainingMs <= 0
+        ? Promise.reject(
+            new SelectorDeadlineExceeded("selector policy deadline exceeded"),
+          )
+        : Promise.race([
+            run.result,
+            selectorDecisionDeadline(source, remainingMs),
+          ]),
+  );
+}
+
+/** Parses and controls what a run answered, terminating it with proof where anything refused it. */
+async function settledSelectorPolicy(
+  run: SelectorPolicyRun,
+  attempt: string,
+  settings: SelectorResolvedSettings,
+  answered: () => Promise<unknown>,
+): Promise<SelectorPolicyExecution> {
+  try {
+    const parsed = parsedPolicyExecution(await answered());
     try {
       enforcePolicyControls(parsed, settings);
     } catch (error) {
@@ -1526,13 +1633,15 @@ async function recordCompletedSelectorCycle(
         : { state: "Unstarted" },
   };
   if (selected.length === 0) {
-    await store.recordInteraction(
-      interaction,
-      nextState,
-      selectorSettingsFence(settings),
-      result.planningIntent,
-    );
-    await recordDecisionRefusals(refusals, state.partition, identity, result);
+    if (
+      await store.recordInteraction(
+        interaction,
+        nextState,
+        selectorSettingsFence(settings),
+        result.planningIntent,
+      )
+    )
+      await recordDecisionRefusals(refusals, state.partition, identity, result);
     return undefined;
   }
   const proposals: SelectorDecisionProposals = {
@@ -1553,7 +1662,8 @@ async function recordCompletedSelectorCycle(
       : { planningIntent: result.planningIntent }),
   };
   const recorded = await store.record(proposals, nextState);
-  await recordDecisionRefusals(refusals, state.partition, identity, result);
+  if (recorded.retained)
+    await recordDecisionRefusals(refusals, state.partition, identity, result);
   return recorded.retained
     ? { proposals, dispatched: recorded.dispatched }
     : undefined;
@@ -1631,27 +1741,15 @@ export async function runObservedSelectorCycle(
       identity.selectorDecisionReference,
     );
   } catch (error) {
-    if (error instanceof SelectorInputInvalid) throw error;
-    let auditFailed = false;
-    let auditFailure: unknown;
-    try {
-      const completedAt = await source.currentInstant();
-      await recordFailedSelectorCycle(
-        store,
-        state,
-        observation,
-        identity,
-        settings,
-        error,
-        completedAt,
-      );
-    } catch (failed) {
-      auditFailed = true;
-      auditFailure = failed;
-    }
-    if (error instanceof SelectorTerminationUnconfirmed) throw error;
-    if (auditFailed) throw auditFailure;
-    return undefined;
+    return selectorCycleFailed(
+      source,
+      store,
+      state,
+      observation,
+      identity,
+      settings,
+      error,
+    );
   }
   return recordCompletedSelectorCycle(
     refusals,
@@ -1662,6 +1760,96 @@ export async function runObservedSelectorCycle(
     settings,
     execution,
   );
+}
+
+/** A decision a predecessor offered a turn for, as a successor found it. */
+export interface SelectorResumedDecision {
+  readonly observation: SelectorObservation;
+  readonly turn: Exclude<SelectorTurnStanding, "Absent">;
+  /** How long the decision has stood, which is what its deadline is measured from. */
+  readonly ageMs: number;
+}
+
+/**
+ * Finishes a decision a predecessor offered a turn for, recording it as the
+ * process that offered the turn would have. Nothing is offered and the
+ * observation's age is not checked again, because both were settled before the turn.
+ */
+export async function runResumedSelectorCycle(
+  state: SelectorProjectState,
+  resumed: SelectorResumedDecision,
+  source: SelectorObservationSource,
+  refusals: SelectorRefusalLedger,
+  store: SelectorStateStore,
+  policy: SelectorPolicyHost,
+  identity: SelectorCycleIdentity,
+  settings: SelectorResolvedSettings,
+): Promise<SelectorProposedDecision | undefined> {
+  const observation = resumed.observation;
+  if (!observationMatchesProject(observation, state.partition))
+    throw new Error("selector observation crossed its project boundary");
+  let execution: SelectorPolicyExecution;
+  try {
+    execution = await resumeSelectorPolicy(
+      source,
+      policy,
+      resumed,
+      settings,
+      identity.selectorDecisionReference,
+    );
+  } catch (error) {
+    return selectorCycleFailed(
+      source,
+      store,
+      state,
+      observation,
+      identity,
+      settings,
+      error,
+    );
+  }
+  return recordCompletedSelectorCycle(
+    refusals,
+    store,
+    state,
+    observation,
+    identity,
+    settings,
+    execution,
+  );
+}
+
+/** Records a cycle that ended without a decision, raising what its caller must still settle. */
+async function selectorCycleFailed(
+  source: Pick<SelectorObservationSource, "currentInstant">,
+  store: SelectorStateStore,
+  state: SelectorProjectState,
+  observation: SelectorObservation,
+  identity: SelectorCycleIdentity,
+  settings: SelectorResolvedSettings,
+  error: unknown,
+): Promise<undefined> {
+  if (error instanceof SelectorInputInvalid) throw error;
+  let auditFailed = false;
+  let auditFailure: unknown;
+  try {
+    const completedAt = await source.currentInstant();
+    await recordFailedSelectorCycle(
+      store,
+      state,
+      observation,
+      identity,
+      settings,
+      error,
+      completedAt,
+    );
+  } catch (failed) {
+    auditFailed = true;
+    auditFailure = failed;
+  }
+  if (error instanceof SelectorTerminationUnconfirmed) throw error;
+  if (auditFailed) throw auditFailure;
+  return undefined;
 }
 
 async function selectorObservationIsFresh(

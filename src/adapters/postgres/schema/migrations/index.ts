@@ -42,6 +42,7 @@ import { migration041 } from "./041-session-closed-evidence.ts";
 import { migration042 } from "./042-lead-succession.ts";
 import { migration043 } from "./043-parked-overrides.ts";
 import { migration044 } from "./044-ticket-landings.ts";
+import { migration045 } from "./045-selector-attempt-revision.ts";
 import type { Migration } from "../shared.ts";
 
 export const migrations: readonly Migration[] = [
@@ -89,4 +90,5 @@ export const migrations: readonly Migration[] = [
   migration042,
   migration043,
   migration044,
+  migration045,
 ];

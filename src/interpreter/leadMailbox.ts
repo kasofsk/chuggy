@@ -14,8 +14,8 @@
  * READING AND WITHDRAWING NAME THE TURN AND NOTHING ELSE. The turn is globally
  * unique and its door joins it to the project's lead, so a process that did not
  * offer a turn can still settle it — which is what lets a restarted selector
- * withdraw the turn its predecessor left in flight instead of holding a permit
- * against a decision nobody can end.
+ * read the turn its predecessor left in flight and finish the decision, or
+ * withdraw it, instead of holding a permit against a decision nobody can end.
  *
  * A TURN'S IDENTITY IS THE DECISION'S. Offering is therefore idempotent: a
  * retry of one decision finds the turn it already enqueued rather than putting

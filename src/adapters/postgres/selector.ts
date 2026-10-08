@@ -30,6 +30,7 @@ import type {
   SelectorSettingsUpdate,
   SelectorSettingsRevision,
   SelectorStateStore,
+  SelectorUnfinishedAttempt,
 } from "../../interpreter/selector.ts";
 import {
   dispatchesPerDecisionUnstated,
@@ -57,7 +58,11 @@ import { parseProjectCommand } from "../../interpreter/wire.ts";
 import { postgresTransaction } from "./pool.ts";
 import { projectRowCounter } from "./rows.ts";
 import { sessionRowText } from "./sessionRows.ts";
-import { decodeDispatchProgram } from "../../interpreter/dispatchView.ts";
+import {
+  decodeDispatchProgram,
+  type DispatchCandidate,
+} from "../../interpreter/dispatchView.ts";
+import { asConfigurationVersion } from "../../interpreter/repositoryConfigurationIdentity.ts";
 import { asTicketId } from "../../domain/ids.ts";
 import type { SelectorProposalReviewStore } from "../../interpreter/selectorReview.ts";
 
@@ -250,6 +255,85 @@ export function parseSelectorInteractionContext(
 ): SelectorInteraction["context"] {
   return selectorContextSchema.parse(value);
 }
+
+/** One candidate as an observation stores it, its configuration label kept where the read attached one. */
+const observedCandidateSchema = z
+  .object({
+    ticket: z.number().int().safe().positive().transform(asTicketId),
+    ticketVersion: z.number().int().safe().positive(),
+    dependencies: z.array(z.number().int().safe().positive()).readonly(),
+    program: z.array(z.unknown()).transform(decodeDispatchProgram),
+    configurationRevision: z.string(),
+    configurationDigest: z.string(),
+    configurationCanonical: z.string(),
+    configurationVersion: z
+      .object({ name: z.string(), number: z.number().int().safe().positive() })
+      .optional(),
+  })
+  .transform(({ configurationVersion, ...candidate }): DispatchCandidate =>
+    configurationVersion === undefined
+      ? candidate
+      : {
+          ...candidate,
+          configurationVersion: asConfigurationVersion(configurationVersion),
+        },
+  );
+
+const observedRefusalSchema = z
+  .object({
+    ticket: z.number().int().safe().positive().transform(asTicketId),
+    ticketVersion: z.number().int().safe().nonnegative(),
+    reason: z.string(),
+    decision: z.string(),
+    recordedAt: z.string(),
+  })
+  .readonly();
+
+const observedScanSchema = z.union([
+  z
+    .object({
+      state: z.literal("Continue"),
+      token: dispatchViewTokenSchema,
+      after: z.number().int().safe().positive().transform(asTicketId),
+    })
+    .readonly(),
+  z
+    .object({ state: z.literal("Exhausted"), token: dispatchViewTokenSchema })
+    .readonly(),
+]);
+
+/** An observation as `runningAttempt` stored it, which a successor finishes the decision from. */
+const selectorObservationSchema = z
+  .object({
+    token: dispatchViewTokenSchema,
+    candidates: z.array(observedCandidateSchema).readonly(),
+    refusals: z.array(observedRefusalSchema).readonly(),
+    notificationCursor: z.number().int().safe().nonnegative(),
+    changes: z.array(notificationSchema).readonly(),
+    operationalContext: selectorOperationalContextSchema,
+    handoffNote: jsonValueSchema,
+    nextCandidateScan: observedScanSchema,
+    resourceLimit: z.literal("CandidateTooLarge").optional(),
+  })
+  .transform(
+    ({ resourceLimit, changes, ...observation }): SelectorObservation => ({
+      ...observation,
+      changes: changes.map(retainedChange),
+      ...(resourceLimit === undefined ? {} : { resourceLimit }),
+    }),
+  );
+
+/** A stored observation, or nothing where it does not read back as one. */
+function storedSelectorObservation(
+  text: string | null,
+): SelectorObservation | undefined {
+  if (text === null) return undefined;
+  try {
+    return decoded(text, selectorObservationSchema, "selector observation");
+  } catch {
+    return undefined;
+  }
+}
 const interactionResourceManifestSchema = z
   .object({
     kind: z.enum(["ObservedView", "Context", "ToolActivity"]),
@@ -314,7 +398,12 @@ async function runningAttempt(
   attempt: string,
   observation: SelectorObservation,
   fence: SelectorSettingsFence,
+  projectRevision: number,
 ): Promise<void> {
+  if (!Number.isSafeInteger(projectRevision) || projectRevision < 0)
+    throw new RangeError(
+      "selector project revision must be a non-negative safe integer",
+    );
   const encoded = encode(observation);
   const digest = createHash("sha256").update(encoded).digest("hex");
   await postgresTransaction(pool, async (client) => {
@@ -333,7 +422,7 @@ async function runningAttempt(
     await client.query(
       sql`UPDATE selector_attempt SET settings_revision=${checkedSelectorFence(fence).settingsRevision},
          project_settings_revision=${fence.projectSettingsRevision},
-         observation_digest=${digest}
+         project_revision=${projectRevision},observation_digest=${digest}
        WHERE attempt=${attempt} AND state='Starting'`,
     );
     const advanced = await client.query<{ advanced: boolean | null }>(
@@ -345,6 +434,7 @@ async function runningAttempt(
          WHERE attempt=${attempt} AND state='Running'
            AND settings_revision=${fence.settingsRevision}
            AND project_settings_revision=${fence.projectSettingsRevision}
+           AND project_revision=${projectRevision}
            AND observation_digest=${digest}`,
       );
       if (same.rowCount !== 1)
@@ -378,6 +468,58 @@ async function quarantinedAttempts(
     if (row.attempt === null)
       throw new Error("selector attempt reconciliation returned no identity");
     return row.attempt;
+  });
+}
+
+/**
+ * Every attempt still `Starting` or `Running`, oldest first, its age answered by
+ * the server's own clock against the instant the server stamped it with.
+ */
+async function unfinishedAttempts(
+  pool: pg.Pool,
+  limit: number,
+): Promise<readonly SelectorUnfinishedAttempt[]> {
+  checkedSelectorLimit(limit, "selector unfinished attempt");
+  const found = await pool.query<{
+    attempt: string;
+    tenant: string;
+    project: string;
+    state: string;
+    project_revision: string | null;
+    age_ms: string;
+    observation: string | null;
+  }>(
+    sql`SELECT a.attempt,a.tenant,a.project,a.state,
+         a.project_revision::text AS project_revision,
+         floor(extract(epoch FROM (now()-a.created_at))*1000)::bigint::text AS age_ms,
+         o.observation
+       FROM selector_attempt a
+       LEFT JOIN selector_observation o ON o.attempt=a.attempt
+       WHERE a.state IN ('Starting','Running')
+       ORDER BY a.created_at,a.attempt LIMIT ${limit}`,
+  );
+  return found.rows.map((row) => {
+    if (row.state !== "Starting" && row.state !== "Running")
+      throw new Error("selector unfinished attempt is in another state");
+    const observation = storedSelectorObservation(row.observation);
+    return {
+      attempt: row.attempt,
+      partition: {
+        tenant: asTenantId(row.tenant),
+        project: asProjectId(row.project),
+      },
+      state: row.state,
+      ageMs: Math.max(0, projectRowCounter(row.age_ms, "selector attempt age")),
+      ...(row.project_revision === null
+        ? {}
+        : {
+            projectRevision: projectRowCounter(
+              row.project_revision,
+              "selector attempt project revision",
+            ),
+          }),
+      ...(observation === undefined ? {} : { observation }),
+    };
   });
 }
 
@@ -1346,6 +1488,35 @@ function candidateScanOf(row: {
   };
 }
 
+/**
+ * Whether a decision may be recorded on the project's state, read under the
+ * project's lock: not where its attempt already ended, which is a decision
+ * recorded once or ended by another, and not where the project moved off the
+ * revision it is fenced on, which ends its attempt in the same transaction.
+ */
+async function selectorDecisionRecordable(
+  client: pg.PoolClient,
+  interaction: SelectorInteraction,
+  state: SelectorProjectState,
+): Promise<boolean> {
+  const fenced = await lockSelectorProject(client, state);
+  const attempt = await client.query<{ state: string }>(
+    sql`SELECT state FROM selector_attempt WHERE attempt=${interaction.decision} FOR UPDATE`,
+  );
+  const standing = attempt.rows[0]?.state;
+  if (standing === "Completed" || standing === "Terminated") return false;
+  if (fenced) return true;
+  if (standing === "Starting" || standing === "Running") {
+    const ended = await client.query<{ advanced: boolean | null }>(
+      sql`SELECT advance_selector_attempt(${interaction.decision},'Terminated',
+        'the project moved off the revision the decision is fenced on')::boolean AS advanced`,
+    );
+    if (!(ended.rows[0]?.advanced ?? false))
+      throw new Error("selector attempt cannot enter Terminated");
+  }
+  return false;
+}
+
 async function lockSelectorProject(
   client: pg.PoolClient,
   state: SelectorProjectState,
@@ -1659,7 +1830,6 @@ async function completeSelectorAttempt(
     );
     return;
   }
-  if (state === "Completed") return;
   if (state !== "Running")
     throw new Error("selector interaction requires a completed attempt");
   const completed = await client.query<{ advanced: boolean | null }>(
@@ -1725,9 +1895,9 @@ async function insertSelectorProposals(
 /**
  * The one transaction a decision is written in: the interaction, the planning
  * intent, its delivery rows and the project's own next state. `recorded` is
- * false where the project moved under the write or the interaction was already
- * retained, and `deliveries` names the tickets this call wrote a row for, which
- * a replay leaves empty without making it a failure.
+ * false where the project moved under the write or the attempt already ended,
+ * and `deliveries` names the tickets this call wrote a row for, which a replay
+ * leaves empty without making it a failure.
  */
 async function recordSelectorState(
   pool: pg.Pool,
@@ -1741,7 +1911,7 @@ async function recordSelectorState(
   readonly deliveries: readonly SelectorDelivery["ticket"][];
 }> {
   return postgresTransaction(pool, async (client) => {
-    if (!(await lockSelectorProject(client, state)))
+    if (!(await selectorDecisionRecordable(client, interaction, state)))
       return { recorded: false, deliveries: [] };
     await completeSelectorAttempt(client, interaction, fence);
     if (!(await insertSelectorInteraction(client, interaction)))
@@ -2035,13 +2205,14 @@ export function postgresSelectorState(pool: pg.Pool): SelectorStateStore {
     },
     allocateAttempt: (attempt, partition, limits) =>
       allocateAttempt(pool, attempt, partition, limits),
-    runningAttempt: (attempt, observation, fence) =>
-      runningAttempt(pool, attempt, observation, fence),
+    runningAttempt: (attempt, observation, fence, projectRevision) =>
+      runningAttempt(pool, attempt, observation, fence, projectRevision),
     quarantineAttempt: (attempt) =>
       advanceAttempt(pool, attempt, "Quarantined"),
     terminateAttempt: (attempt, evidence) =>
       advanceAttempt(pool, attempt, "Terminated", evidence),
     quarantinedAttempts: (limit) => quarantinedAttempts(pool, limit),
+    unfinishedAttempts: (limit) => unfinishedAttempts(pool, limit),
     inventoryCursor: () => readInventoryCursor(pool),
     saveInventoryCursor: (cursor) => writeInventoryCursor(pool, cursor),
     recordInteraction: async (interaction, state, fence, planningIntent) =>
