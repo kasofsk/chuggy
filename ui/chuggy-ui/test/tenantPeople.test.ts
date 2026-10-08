@@ -1,7 +1,8 @@
 /**
  * A workspace's people, decided with no renderer: every refusal the plane
  * names and every role it rosters has its own word, an invitation's fields are
- * held to the contract's schema, and each answer comes to one line.
+ * held to the contract's schema, each answer comes to one line, and a change is
+ * offered only where the reader's abilities say they may make it.
  */
 
 import { expect, test } from "vitest";
@@ -14,23 +15,33 @@ import {
   accessNotPermittedCode,
   accessProjectRoles,
   accessTenantRoles,
+  type AccessTenantAbilities,
   type AccessTenantPerson,
 } from "../../../src/contract/accessPlane.ts";
 import {
   accessCodeLabel,
   projectRoleLabel,
+  projectRoleOffered,
+  tenantInvitationAccountLine,
   tenantInvitationBody,
   tenantInvitationEmailFault,
   tenantInvitationGithubFault,
+  tenantInvitationOffered,
   tenantInvitationOutcome,
+  tenantInvitationProjects,
   tenantInvitationProjectsFault,
   tenantInvitationProjectToggled,
+  tenantInvitationRoleChosen,
+  tenantInvitationRoleOpening,
+  tenantInvitationRoles,
   tenantInvitationSendable,
   tenantPeopleOtherIssuersLine,
   tenantPersonName,
+  tenantPersonProjectDrawn,
   tenantRoleChangeAsks,
   tenantRoleChangeNote,
   tenantRoleLabel,
+  tenantRoleOffered,
 } from "../app/core/tenantPeople.ts";
 import type { TenantInvitationForm } from "../app/core/tenantPeople.ts";
 
@@ -218,4 +229,84 @@ test("an invitation answered closes, a named refusal stays, and an absent one re
     status: "Not available",
     reread: true,
   });
+});
+
+const abilities: AccessTenantAbilities = {
+  tenant: "acme",
+  roles: ["Member"],
+  grantHostedRuns: false,
+  createAccount: false,
+  manageAuthorities: false,
+  manageSiteHeldAuthorities: false,
+  projects: [
+    { project: "atlas", roles: [], manageAuthorities: false },
+    {
+      project: "beacon",
+      roles: ["Dispatcher", "Admin"],
+      manageAuthorities: false,
+    },
+  ],
+  truncated: false,
+};
+
+test("a role is offered only where the abilities name it, and nothing where none were read", () => {
+  expect(tenantRoleOffered(abilities, "Member")).toBe(true);
+  expect(tenantRoleOffered(abilities, "Admin")).toBe(false);
+  expect(tenantRoleOffered(undefined, "Member")).toBe(false);
+  expect(projectRoleOffered(abilities, "beacon", "Admin")).toBe(true);
+  expect(projectRoleOffered(abilities, "beacon", "Developer")).toBe(false);
+  expect(projectRoleOffered(abilities, "atlas", "Admin")).toBe(false);
+  expect(projectRoleOffered(abilities, "cut", "Admin")).toBe(false);
+  expect(projectRoleOffered(undefined, "beacon", "Admin")).toBe(false);
+});
+
+test("a project is drawn in a row where the person holds a role there or the reader may grant one", () => {
+  const holding: AccessTenantPerson = {
+    ...person,
+    projects: [{ project: "atlas", roles: ["Developer"] }],
+  };
+  expect(tenantPersonProjectDrawn(abilities, holding, "atlas")).toBe(true);
+  expect(tenantPersonProjectDrawn(abilities, person, "atlas")).toBe(false);
+  expect(tenantPersonProjectDrawn(abilities, person, "beacon")).toBe(true);
+  expect(tenantPersonProjectDrawn(undefined, person, "beacon")).toBe(false);
+  expect(tenantPersonProjectDrawn(undefined, holding, "atlas")).toBe(true);
+});
+
+test("an invitation offers the roles the reader may grant in the roster's order, opening on Member where it may", () => {
+  const every: AccessTenantAbilities = {
+    ...abilities,
+    roles: ["Member", "Admin"],
+  };
+  expect(tenantInvitationRoles(every)).toStrictEqual(["Admin", "Member"]);
+  expect(tenantInvitationRoleOpening(every)).toBe("Member");
+  expect(tenantInvitationRoleOpening({ ...abilities, roles: ["Admin"] })).toBe(
+    "Admin",
+  );
+  expect(tenantInvitationOffered(abilities)).toBe(true);
+  expect(tenantInvitationOffered({ ...abilities, roles: [] })).toBe(false);
+  expect(tenantInvitationOffered(undefined)).toBe(false);
+  expect(tenantInvitationRoleOpening(undefined)).toBe(undefined);
+});
+
+test("an invitation offers the list's projects the reader may grant on, in the list's order and the roster's", () => {
+  expect(
+    tenantInvitationProjects(abilities, ["beacon", "atlas", "cut"]),
+  ).toStrictEqual([{ project: "beacon", roles: ["Admin", "Dispatcher"] }]);
+  expect(tenantInvitationProjects(undefined, ["beacon"])).toStrictEqual([]);
+  expect(
+    tenantInvitationRoleChosen(
+      tenantInvitationProjectToggled(form, "beacon", "Admin"),
+      "beacon",
+      "Admin",
+    ),
+  ).toBe(true);
+  expect(tenantInvitationRoleChosen(form, "beacon", "Admin")).toBe(false);
+});
+
+test("a reader who may not make an account is told so, and one who may is told nothing", () => {
+  expect(tenantInvitationAccountLine(abilities)).toBe("Existing accounts only");
+  expect(
+    tenantInvitationAccountLine({ ...abilities, createAccount: true }),
+  ).toBe(undefined);
+  expect(tenantInvitationAccountLine(undefined)).toBe(undefined);
 });

@@ -1,22 +1,28 @@
 /**
  * A workspace's people: one row a person, their workspace roles and their
- * roles on each of the workspace's projects edited in place, and one action
- * inviting someone new.
+ * roles on each of the workspace's projects, and one action inviting someone
+ * new, each change offered only where the reader's abilities say they may
+ * make it.
  *
  * The list answers only a reader holding some authority over the workspace's
  * people, so its absence is this reader's standing rather than a fault: they
- * are told who manages people and offered nothing to change. That the list was
- * answered is the whole of what tells the page it may offer a change, and a
- * change the reader may not make is refused with its own line. The reader is
- * always in a list they were answered, so there is no empty state.
+ * are told who manages people and offered nothing to change. The abilities are
+ * read beside the list, and until they are answered the table is drawn with no
+ * control; where they are not answered beside a list that was, their line is
+ * drawn under it. The reader is always in a list they were answered, so there
+ * is no empty state.
  */
 
 import { useParams } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
-import type { AccessTenantPeople } from "../../../../../src/contract/accessPlane.ts";
+import type {
+  AccessTenantAbilities,
+  AccessTenantPeople,
+} from "../../../../../src/contract/accessPlane.ts";
 import { apiTenantPeople } from "../../core/accessRoutes.ts";
 import {
+  tenantInvitationOffered,
   tenantPeopleOtherIssuersLine,
   tenantPeopleTruncated,
   tenantPeopleWithheld,
@@ -28,7 +34,11 @@ import { Notice } from "../ui/Notice.tsx";
 import { Panel } from "../ui/Panel.tsx";
 import { Table } from "../ui/Table.tsx";
 import { TenantInvite } from "./TenantInvite.tsx";
-import { TenantPersonRow, tenantPeopleResource } from "./TenantPersonRow.tsx";
+import { TenantPersonRow } from "./TenantPersonRow.tsx";
+import {
+  tenantPeopleResource,
+  useTenantAbilities,
+} from "./tenantPeopleResource.ts";
 
 /** This page's own address, which its reads take their tenant from. */
 export const tenantPeopleRoutePath = "/tenants/$tenant/settings/people";
@@ -36,6 +46,7 @@ export const tenantPeopleRoutePath = "/tenants/$tenant/settings/people";
 function TenantPeopleTable(props: {
   readonly tenant: string;
   readonly listed: AccessTenantPeople;
+  readonly abilities: AccessTenantAbilities | undefined;
 }): ReactNode {
   const listed = props.listed;
   const otherIssuers = tenantPeopleOtherIssuersLine(listed.otherIssuers);
@@ -57,6 +68,7 @@ function TenantPeopleTable(props: {
               tenant={props.tenant}
               person={person}
               projects={listed.projects}
+              abilities={props.abilities}
             />
           ))}
         </tbody>
@@ -78,6 +90,8 @@ export function TenantPeoplePage(): ReactNode {
     apiTenantPeople(ports, tenant),
   );
   const listed = people.state === "Ready" ? people.value : undefined;
+  const read = useTenantAbilities(tenant);
+  const abilities = read.state === "Ready" ? read.value : undefined;
   return (
     <ProjectlessFrame>
       <div className="grid min-w-0 max-w-settings gap-4">
@@ -87,8 +101,14 @@ export function TenantPeoplePage(): ReactNode {
           title="People"
           about="Who is in this workspace, and the roles each holds."
           meta={
-            listed === undefined ? undefined : (
-              <TenantInvite tenant={tenant} projects={listed.projects} />
+            listed === undefined ||
+            abilities === undefined ||
+            !tenantInvitationOffered(abilities) ? undefined : (
+              <TenantInvite
+                tenant={tenant}
+                projects={listed.projects}
+                abilities={abilities}
+              />
             )
           }
         >
@@ -98,7 +118,14 @@ export function TenantPeoplePage(): ReactNode {
             <PanelUnready state={people} />
           )}
           {listed === undefined ? null : (
-            <TenantPeopleTable tenant={tenant} listed={listed} />
+            <TenantPeopleTable
+              tenant={tenant}
+              listed={listed}
+              abilities={abilities}
+            />
+          )}
+          {listed === undefined || read.state === "Pending" ? null : (
+            <PanelUnready state={read} />
           )}
         </Panel>
       </div>
