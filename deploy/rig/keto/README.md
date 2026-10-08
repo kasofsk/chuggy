@@ -107,9 +107,13 @@ pages fails the run before anything is written, and
 The API writes the tuples its own routes create — a new tenant's `admins` and
 defaults, a created project's `tenant` and defaults, and a registered pool's
 `pools` — when
-`CHUG_API_KETO_WRITE_URL` names Keto's **write** port. A grant to anyone else is
-the operator's, through `src/roots/provisionProjectAccess.ts`, which reaches
-that port and nothing else and needs no database at all.
+`CHUG_API_KETO_WRITE_URL` names Keto's **write** port. The access plane,
+`src/roots/accessPlane.ts`, grants and removes a person's `admins` and
+`members` on a tenant and `admins`, `developers` and `dispatchers` on a
+project, and gives and takes a person's `hosted_execution`, each for a caller
+holding the kind that grants it. Every other grant is the operator's, through
+`src/roots/provisionProjectAccess.ts`, which reaches that port and nothing else
+and needs no database at all.
 
 Supply the issuer and the subject the token carries; the command derives the
 principal with the same function the API derives it from, so neither side has
@@ -152,7 +156,10 @@ command wrote the link holds nothing, and is linked under
 **The selector needs the hosted grant too.** A project's lead runs on the
 shared credential as the principal the selector's `identity.principal` setting
 names, and the selector passes over every project whose tenant does not grant
-that principal `hosted_execution`. The rig's setting is the principal of issuer
+that principal `hosted_execution`. Where the access plane verifies the issuer
+the selector's tokens carry, the selector is a person in the tenant's list with
+hosted runs, and whoever holds `GrantHostedExecution` there can take them from
+it, which stops hosted dispatch in that tenant; nothing guards it. The rig's setting is the principal of issuer
 `https://auth.vteng.io` and subject `chuggy-selector`, so with the write URL
 exported as above, tenant `vteng` is granted with:
 

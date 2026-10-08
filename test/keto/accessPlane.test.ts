@@ -1,7 +1,8 @@
 /**
  * The access plane against a real authority: what a list reads back from the
  * tuples, a principal and a project object decoded from what the server
- * answers, and a role granted being a permit `ProjectAccess` then answers for.
+ * answers, a role or hosted runs granted being a permit `ProjectAccess` then
+ * answers for, and what a caller may do following who holds each kind.
  *
  * NOTHING ON A FRESH TENANT IS WRITTEN BUT BY THE CASE. The plane cannot write
  * a `tenant` link, a tenant's first administrator or either level's defaults,
@@ -12,6 +13,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { ketoAccessPageTuplesMax } from "../../src/adapters/keto/accessTuples.ts";
+import { accessAbilities } from "../../src/interpreter/accessAbilities.ts";
 import { accessInvitations } from "../../src/interpreter/accessInvitation.ts";
 import {
   accessPlane,
@@ -33,6 +35,7 @@ import {
   projectAccessObjectPartition,
   projectAccessTenantNamespace,
   projectAccessTenantObject,
+  hostedRunsGranted,
   type ProjectAccessKind,
 } from "../../src/interpreter/projectAccess.ts";
 import {
@@ -69,6 +72,10 @@ const tuples = ketoHarnessTuples();
 const plane = accessPlane(
   { access, tuples, grants },
   { issuer: ketoHarnessIssuer, bounds: accessPlaneBoundsDefault },
+);
+const abilities = accessAbilities(
+  { access, tuples },
+  { bounds: accessPlaneBoundsDefault },
 );
 const alice = oidcPrincipal(ketoHarnessIssuer, "alice");
 
@@ -428,6 +435,15 @@ test("a project's administrator changes that project and is answered its list, a
   assert.equal(await plane.tenantPeople(pat, tenant), undefined);
   assert.equal(await plane.projectPeople(pat, api), undefined);
   allCameTo(await changed(pat, tenant, [api]), "Absent");
+  assert.deepEqual(await abilities.projectAbilities(pat, web), {
+    tenant,
+    project: web.project,
+    roles: ["Admin", "Developer", "Dispatcher"],
+    manageAuthorities: true,
+  });
+  assert.equal(await abilities.tenantAbilities(pat, tenant), undefined);
+  assert.equal(await abilities.projectAbilities(pat, api), undefined);
+  assert.equal(await abilities.siteAbilities(pat), undefined);
   assert.deepEqual(
     await invitationsOf().invitations.invite(pat, tenant, {
       github: "octo-cat",
@@ -440,9 +456,15 @@ test("a project's administrator changes that project and is answered its list, a
 });
 
 test("a person written into `member_granters` is answered the list and changes `Member`, and is refused `Admin` with nothing written", async () => {
-  const { tenant } = await tenantOf("member-granter");
+  const { web, api, tenant } = await tenantOf("member-granter");
   const mel = oidcPrincipal(ketoHarnessIssuer, "mel");
   await grants.write(tenantGranterOf(mel, tenant, "member_granters"));
+  const melAbilities = await abilities.tenantAbilities(mel, tenant);
+  assert.deepEqual(melAbilities?.roles, ["Member"]);
+  assert.deepEqual(
+    melAbilities?.projects.map((project) => [project.project, project.roles]),
+    [api.project, web.project].sort().map((project) => [project, []]),
+  );
   assert.notEqual(await plane.tenantPeople(mel, tenant), undefined);
   assert.equal(
     await plane.tenantRoleGranted(mel, tenant, "zed", "Member"),
@@ -471,8 +493,15 @@ test("a person written into `member_granters` is answered the list and changes `
 
 test("with the tenant's administrators taken out of `admin_granters` its administrator is refused `Admin` and still changes `Member`, and a person written there grants it", async () => {
   const { tenant } = await tenantOf("admin-granters");
+  assert.deepEqual((await abilities.tenantAbilities(alice, tenant))?.roles, [
+    "Admin",
+    "Member",
+  ]);
   for (const grant of tenantAuthorityDefaults(tenant))
     if (grant.relation === "admin_granters") await grants.remove(grant);
+  assert.deepEqual((await abilities.tenantAbilities(alice, tenant))?.roles, [
+    "Member",
+  ]);
   assert.equal(
     await plane.tenantRoleGranted(alice, tenant, "zed", "Admin"),
     "Refused",
@@ -517,6 +546,14 @@ test("a tenant member, a project developer and a stranger are absent everywhere"
         subject,
       );
     allCameTo(await changed(caller, tenant, [web, api]), "Absent");
+    assert.equal(await abilities.tenantAbilities(caller, tenant), undefined);
+    for (const partition of [web, api])
+      assert.equal(
+        await abilities.projectAbilities(caller, partition),
+        undefined,
+        subject,
+      );
+    assert.equal(await abilities.siteAbilities(caller), undefined, subject);
   }
 });
 
@@ -531,5 +568,86 @@ test("the site's administrator, holding no role in the tenant, is answered every
         partition.project,
       );
     allCameTo(await changed(administrator, tenant, [web, api]), "Refused");
+    assert.deepEqual(await abilities.tenantAbilities(administrator, tenant), {
+      tenant,
+      roles: [],
+      grantHostedRuns: true,
+      createAccount: true,
+      manageAuthorities: true,
+      manageSiteHeldAuthorities: true,
+      projects: [api.project, web.project].sort().map((project) => ({
+        project,
+        roles: [],
+        manageAuthorities: true,
+      })),
+      truncated: false,
+    });
+    assert.deepEqual(await abilities.siteAbilities(administrator), {
+      administer: true,
+      createAccount: true,
+      manageAuthorities: true,
+    });
+  });
+});
+
+test("a tenant's administrator may grant both tenant roles and every project role, and change the tenant's and each project's authorities and nothing the site holds", async () => {
+  const { web, api, tenant } = await tenantOf("abilities-tenant-admin");
+  assert.deepEqual(await abilities.tenantAbilities(alice, tenant), {
+    tenant,
+    roles: ["Admin", "Member"],
+    grantHostedRuns: false,
+    createAccount: false,
+    manageAuthorities: true,
+    manageSiteHeldAuthorities: false,
+    projects: [api.project, web.project].sort().map((project) => ({
+      project,
+      roles: ["Admin", "Developer", "Dispatcher"],
+      manageAuthorities: true,
+    })),
+    truncated: false,
+  });
+});
+
+test("the site's administrator gives a member hosted runs and takes them back, the tenant's administrator is refused both and a stranger is absent", async () => {
+  const { tenant } = await tenantOf("hosted-runs");
+  await plane.tenantRoleGranted(alice, tenant, "mo", "Member");
+  const mo = oidcPrincipal(ketoHarnessIssuer, "mo");
+  const listed = async () =>
+    (await plane.tenantPeople(alice, tenant))?.people.find(
+      (person) => person.subject === "mo",
+    )?.hostedRuns;
+  const stranger = oidcPrincipal(ketoHarnessIssuer, "stranger");
+  assert.equal(
+    await plane.tenantHostedRunsGiven(alice, tenant, "mo"),
+    "Refused",
+  );
+  assert.equal(
+    await plane.tenantHostedRunsGiven(stranger, tenant, "mo"),
+    "Absent",
+  );
+  assert.equal(await listed(), false);
+  assert.equal(await hostedRunsGranted(access, mo, tenant), false);
+  await ketoHarnessWithSiteAdministrator(async (administrator) => {
+    assert.equal(
+      await plane.tenantHostedRunsGiven(administrator, tenant, "mo"),
+      "Changed",
+    );
+    assert.equal(await listed(), true);
+    assert.equal(await hostedRunsGranted(access, mo, tenant), true);
+    assert.equal(
+      await plane.tenantHostedRunsTaken(alice, tenant, "mo"),
+      "Refused",
+    );
+    assert.equal(
+      await plane.tenantHostedRunsTaken(stranger, tenant, "mo"),
+      "Absent",
+    );
+    assert.equal(await listed(), true);
+    assert.equal(
+      await plane.tenantHostedRunsTaken(administrator, tenant, "mo"),
+      "Changed",
+    );
+    assert.equal(await listed(), false);
+    assert.equal(await hostedRunsGranted(access, mo, tenant), false);
   });
 });

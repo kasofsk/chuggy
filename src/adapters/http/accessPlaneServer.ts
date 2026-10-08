@@ -1,7 +1,9 @@
 /**
  * The access plane's server: a tenant's and a project's people, granting and
- * removing their roles, and inviting a person by their GitHub account, each
- * for a caller the authority says holds the kind it needs.
+ * removing their roles, giving and taking a person's hosted runs, inviting a
+ * person by their GitHub account, and what the caller may do at the site, a
+ * tenant or a project, each for a caller the authority says holds the kind it
+ * needs.
  *
  * IT ANSWERS AS THE PUBLIC API DOES, because the console reads both with the
  * same code. A body is read as the API's media type, every refusal carries the
@@ -38,6 +40,7 @@ import {
   nativeHttpMediaType,
   nativeHttpPathSegmentCharsMax,
 } from "../../contract/http.ts";
+import type { AccessAbilities } from "../../interpreter/accessAbilities.ts";
 import { AccessDirectoryUnavailable } from "../../interpreter/accessDirectory.ts";
 import type {
   AccessInvitationResult,
@@ -76,6 +79,7 @@ export interface AccessPlaneService {
   readonly authentication: PrincipalAuthentication;
   readonly plane: AccessPlane;
   readonly invitations: AccessInvitations;
+  readonly abilities: AccessAbilities;
   readonly ready: () => Promise<boolean>;
 }
 
@@ -233,6 +237,70 @@ function accessTenantRoutes(
         ),
       ),
   );
+}
+
+function accessHostedRunsRoutes(
+  app: FastifyInstance,
+  service: AccessPlaneService,
+): void {
+  accessPlaneRoute(
+    app,
+    service,
+    "tenantHostedRunsGrant",
+    async (request, reply, caller) =>
+      accessChanged(
+        reply,
+        await service.plane.tenantHostedRunsGiven(
+          caller,
+          accessTenantOf(request),
+          accessSubjectOf(request),
+        ),
+      ),
+  );
+  accessPlaneRoute(
+    app,
+    service,
+    "tenantHostedRunsRemoval",
+    async (request, reply, caller) =>
+      accessChanged(
+        reply,
+        await service.plane.tenantHostedRunsTaken(
+          caller,
+          accessTenantOf(request),
+          accessSubjectOf(request),
+        ),
+      ),
+  );
+}
+
+/** What the caller may do at each level, absent where the level's list would be. */
+function accessAbilitiesRoutes(
+  app: FastifyInstance,
+  service: AccessPlaneService,
+): void {
+  const answered: readonly (readonly [
+    AccessPlaneRouteName,
+    (request: FastifyRequest, caller: Principal) => Promise<unknown>,
+  ])[] = [
+    [
+      "tenantAbilities",
+      (request, caller) =>
+        service.abilities.tenantAbilities(caller, accessTenantOf(request)),
+    ],
+    [
+      "projectAbilities",
+      (request, caller) =>
+        service.abilities.projectAbilities(caller, accessPartitionOf(request)),
+    ],
+    [
+      "siteAbilities",
+      (_request, caller) => service.abilities.siteAbilities(caller),
+    ],
+  ];
+  for (const [name, abilities] of answered)
+    accessPlaneRoute(app, service, name, async (request, reply, caller) =>
+      accessListed(reply, await abilities(request, caller)),
+    );
 }
 
 /** A refusal the same request may be sent again after. */
@@ -403,6 +471,8 @@ export function createAccessPlaneApp(
   planeHealthRoutes(app, service.ready);
   accessTenantRoutes(app, service);
   accessProjectRoutes(app, service);
+  accessHostedRunsRoutes(app, service);
   accessInvitationRoute(app, service);
+  accessAbilitiesRoutes(app, service);
   return app;
 }

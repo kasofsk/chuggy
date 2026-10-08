@@ -1,7 +1,8 @@
 /**
  * The access plane's server over an authority held in memory: a body read as
  * the API's media type, a removal served, every refusal in the API's
- * envelope, and no request reaching a relation the role rosters do not name.
+ * envelope, what a caller may do read as its schema, and no request reaching a
+ * relation but the ones the role rosters name and hosted runs.
  */
 
 import assert from "node:assert/strict";
@@ -21,8 +22,11 @@ import {
   accessNotPermittedCode,
   accessPlanePath,
   accessPlaneRoutes,
+  accessProjectAbilitiesSchema,
   accessProjectPeopleSchema,
   accessProjectRoles,
+  accessSiteAbilitiesSchema,
+  accessTenantAbilitiesSchema,
   accessTenantPeopleSchema,
   accessTenantRoles,
   type AccessPlaneRouteName,
@@ -69,6 +73,7 @@ import {
   accessGivenProjectAdministrator,
   accessGivenTenantAdministrator,
   accessMemory,
+  accessMemoryAbilities,
   accessMemoryPlane,
   type AccessMemory,
 } from "../interpreter/accessPlaneFixture.ts";
@@ -82,6 +87,7 @@ const tokens: Readonly<Record<string, string>> = {
   "priya-token": "priya",
   "mo-token": "mo",
   "dee-token": "dee",
+  "hal-token": "hal",
 };
 
 const as = (token: string) => ({ authorization: `Bearer ${token}` });
@@ -99,8 +105,8 @@ const invitedGithub = githubMemory({
 /**
  * A tenant alice administers with one linked project priya administers, each
  * holding what the defaults give them and alice `CreateAccount`. Mo may only
- * manage who grants the tenant's roles, and dee may grant `Member` and
- * `Developer` on the project and make no account.
+ * manage who grants the tenant's roles, dee may grant `Member` and
+ * `Developer` on the project and make no account, and hal may give hosted runs.
  */
 async function served(
   ready = true,
@@ -137,6 +143,9 @@ async function served(
     { on: "Tenant", tenant, kind: "GrantMember" },
     { on: "Project", partition: web, kind: "GrantDeveloper" },
   ]);
+  accessGiven(memory, accessFixturePrincipal("hal"), [
+    { on: "Tenant", tenant, kind: "GrantHostedExecution" },
+  ]);
   const app = createAccessPlaneApp({
     authentication: {
       authenticateBearer: (token): Promise<BearerAuthentication> => {
@@ -153,6 +162,7 @@ async function served(
     },
     plane: accessMemoryPlane(memory, accessPlaneBoundsDefault, directory),
     invitations: invitations(memory),
+    abilities: accessMemoryAbilities(memory),
     ready: () => Promise.resolve(ready && !memory.unavailable),
   });
   return { memory, app };
@@ -332,6 +342,98 @@ test("a change refused a caller answered the list is forbidden under its own cod
   assert.deepEqual(memory.changes, []);
 });
 
+test("what a caller may do reads as its strict schema at each level, and is absent to a caller that level's list is not answered to", async () => {
+  const { app } = await served();
+  const get = (name: AccessPlaneRouteName, token?: string) =>
+    app.inject({
+      method: "GET",
+      url: pathOf(name),
+      ...(token === undefined ? {} : { headers: as(token) }),
+    });
+  const tenantAbilities = accessTenantAbilitiesSchema.parse(
+    (await get("tenantAbilities", "alice-token")).json(),
+  );
+  assert.deepEqual(
+    [tenantAbilities.roles, tenantAbilities.createAccount],
+    [["Admin", "Member"], true],
+  );
+  assert.deepEqual(tenantAbilities.projects, [
+    {
+      project: "web",
+      roles: ["Admin", "Developer", "Dispatcher"],
+      manageAuthorities: true,
+    },
+  ]);
+  assert.deepEqual(
+    accessProjectAbilitiesSchema.parse(
+      (await get("projectAbilities", "dee-token")).json(),
+    ),
+    { tenant, project: "web", roles: ["Developer"], manageAuthorities: false },
+  );
+  assert.deepEqual(
+    accessSiteAbilitiesSchema.parse(
+      (await get("siteAbilities", "alice-token")).json(),
+    ),
+    { administer: false, createAccount: true, manageAuthorities: false },
+  );
+  for (const [name, token] of [
+    ["tenantAbilities", "priya-token"],
+    ["projectAbilities", "mo-token"],
+    ["siteAbilities", "priya-token"],
+  ] as const) {
+    const absent = await get(name, token);
+    assert.equal(absent.statusCode, 404, name);
+    enveloped(absent, "Absent");
+    enveloped(await get(name), "Unauthenticated");
+  }
+});
+
+test("hosted runs are given and taken by a holder of `GrantHostedExecution`, forbidden to an administrator who is not one, and absent to a caller not answered the list", async () => {
+  const { memory, app } = await served();
+  const changed = (
+    name: "tenantHostedRunsGrant" | "tenantHostedRunsRemoval",
+    token: string,
+  ) =>
+    app.inject({
+      method: accessPlaneRoutes[name].method,
+      url: pathOf(name),
+      headers: as(token),
+    });
+  const hosted = async () =>
+    accessTenantPeopleSchema
+      .parse(
+        (
+          await app.inject({
+            method: "GET",
+            url: pathOf("tenantPeople"),
+            headers: as("alice-token"),
+          })
+        ).json(),
+      )
+      .people.some((person) => person.subject === "zed" && person.hostedRuns);
+  assert.equal(
+    (await changed("tenantHostedRunsGrant", "hal-token")).statusCode,
+    204,
+  );
+  assert.equal(await hosted(), true);
+  assert.equal(
+    (await changed("tenantHostedRunsRemoval", "hal-token")).statusCode,
+    204,
+  );
+  assert.equal(await hosted(), false);
+  memory.changes.length = 0;
+  for (const name of [
+    "tenantHostedRunsGrant",
+    "tenantHostedRunsRemoval",
+  ] as const) {
+    const refused = await changed(name, "alice-token");
+    assert.equal(refused.statusCode, 403, refused.body);
+    enveloped(refused, "Rejected", accessNotPermittedCode);
+    enveloped(await changed(name, "priya-token"), "Absent");
+  }
+  assert.deepEqual(memory.changes, []);
+});
+
 test("an authority that cannot answer is retryable on every route and unready on readiness", async () => {
   const { memory, app } = await served();
   memory.unavailable = true;
@@ -404,6 +506,11 @@ async function accessReached(
   memory: AccessMemory,
   app: Awaited<ReturnType<typeof served>>["app"],
 ) {
+  for (const [method, name] of [
+    ["POST", "tenantHostedRunsGrant"],
+    ["DELETE", "tenantHostedRunsRemoval"],
+  ] as const)
+    await app.inject({ method, url: pathOf(name), headers: as("hal-token") });
   for (const role of accessSpellings())
     for (const [grant, removal] of [
       ["tenantRoleGrant", "tenantRoleRemoval"],
@@ -428,11 +535,12 @@ async function accessReached(
   );
 }
 
-test("no request reaches a relation but the ones the role rosters name", async () => {
+test("no request reaches a relation but the ones the role rosters name and hosted runs", async () => {
   const { memory, app } = await served();
   const reached = await accessReached(memory, app);
   const expected = new Set(
     (["write", "remove"] as const).flatMap((verb) => [
+      `${verb} Tenant hosted_execution`,
       ...Object.values(accessTenantRoleRelations).map(
         (relation) => `${verb} Tenant ${relation}`,
       ),
