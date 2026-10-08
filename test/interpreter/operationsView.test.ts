@@ -4,6 +4,7 @@ import { test } from "node:test";
 import { asCanonicalConfiguration } from "../../src/interpreter/authoring.ts";
 import {
   branchDiffOutput,
+  checkOutputOutput,
   checkedExecutionListQuery,
   configuredOutputs,
   executionSummaryTotalled,
@@ -16,8 +17,37 @@ test("standard completion outputs have stable presentation contracts", () => {
     configuredOutputs(
       asCanonicalConfiguration('{"image":"worker:v1","version":1}'),
     ),
-    [branchDiffOutput, workSummaryOutput],
+    [branchDiffOutput, workSummaryOutput, checkOutputOutput],
   );
+});
+
+test("a command stage's output is built in, as JSON at the path its worker writes", () => {
+  assert.deepEqual(checkOutputOutput, {
+    name: "check-output",
+    path: ".chuggy/check-output.json",
+    mediaType: "application/json",
+    renderer: "Json",
+  });
+});
+
+/** The first definition whose path matches an artifact is the one it is served as. */
+test("a configuration's own outputs follow every built-in one, even one at a built-in's path", () => {
+  const outputs = configuredOutputs(
+    asCanonicalConfiguration(
+      '{"image":"worker:v1","outputs":[{"mediaType":"text/plain","name":"commands","path":".chuggy/check-output.json","renderer":"Text"}],"version":1}',
+    ),
+  );
+  assert.deepEqual(outputs, [
+    branchDiffOutput,
+    workSummaryOutput,
+    checkOutputOutput,
+    {
+      name: "commands",
+      path: ".chuggy/check-output.json",
+      mediaType: "text/plain",
+      renderer: "Text",
+    },
+  ]);
 });
 
 test("configuration declares bounded custom structured output presentation", () => {
@@ -56,7 +86,7 @@ test("an Image renderer paired with a non-image media type is refused", () => {
         '{"image":"worker:v1","outputs":[{"mediaType":"text/plain","name":"design-spike","path":".chuggy/outputs/spike.png","renderer":"Image"}],"version":1}',
       ),
     ),
-    [branchDiffOutput, workSummaryOutput],
+    [branchDiffOutput, workSummaryOutput, checkOutputOutput],
   );
 });
 
@@ -67,7 +97,7 @@ test("an Image output may not declare image/svg+xml, which a browser executes", 
         '{"image":"worker:v1","outputs":[{"mediaType":"image/svg+xml","name":"design-spike","path":".chuggy/outputs/spike.svg","renderer":"Image"}],"version":1}',
       ),
     ),
-    [branchDiffOutput, workSummaryOutput],
+    [branchDiffOutput, workSummaryOutput, checkOutputOutput],
   );
 });
 

@@ -19,7 +19,10 @@ import type {
 } from "../../../../src/contract/responses.ts";
 import type { ResultVerdict } from "../../../../src/contract/rosters.ts";
 import { apiExecution, apiOutputContent } from "../core/apiRoutes.ts";
-import { artifactPreviewOffer } from "../core/artifactPreview.ts";
+import {
+  artifactPreviewJson,
+  artifactPreviewOffer,
+} from "../core/artifactPreview.ts";
 import { ranFigure, sinceFigure } from "../core/figures.ts";
 import { runArtifactsListed } from "../core/runSummary.ts";
 import { runCountLabel } from "../core/runTotals.ts";
@@ -31,6 +34,7 @@ import { RunEvidence } from "./RunEvidence.tsx";
 import { Disclosure } from "./ui/Disclosure.tsx";
 import { Figure } from "./ui/Figure.tsx";
 import { Identity } from "./ui/Identity.tsx";
+import { MarkdownReport } from "./ui/MarkdownReport.tsx";
 import { Pill } from "./ui/Pill.tsx";
 import { Table } from "./ui/Table.tsx";
 
@@ -44,30 +48,44 @@ type ResultArtifact = NonNullable<
   ExecutionResponse["result"]
 >["artifacts"][number];
 
-/** The preview content drawn the one way its own renderer draws it. Every
- * renderer but `Image` is text, interpreted by none of them; `Image` draws
- * as an `<img>` of a `data:` URI built from the same base64 the API answers,
- * so nothing is fetched by the document beyond the authenticated read this
- * panel already made. */
+/** The preview content drawn the one way its own renderer draws it, each as
+ * `core/artifactPreview.ts` argues: markdown through `MarkdownReport`, JSON
+ * indented, an image from the base64 the read answered, the rest as text. */
 function ArtifactPreviewContent(props: {
   readonly name: string;
   readonly preview: OutputContentResponse;
 }): ReactNode {
   const preview = props.preview;
-  if (preview.renderer === "Image")
-    return (
-      <img
-        className="preview"
-        data-renderer={preview.renderer}
-        alt={props.name}
-        src={`data:${preview.mediaType};base64,${preview.content}`}
-      />
-    );
-  return (
-    <pre className="preview" data-renderer={preview.renderer}>
-      {preview.content}
-    </pre>
-  );
+  switch (preview.renderer) {
+    case "Image":
+      return (
+        <img
+          className="preview"
+          data-renderer={preview.renderer}
+          alt={props.name}
+          src={`data:${preview.mediaType};base64,${preview.content}`}
+        />
+      );
+    case "Markdown":
+      return (
+        <div data-renderer={preview.renderer}>
+          <MarkdownReport text={preview.content} />
+        </div>
+      );
+    case "Json":
+      return (
+        <pre className="preview" data-renderer={preview.renderer}>
+          {artifactPreviewJson(preview.content)}
+        </pre>
+      );
+    case "UnifiedDiff":
+    case "Text":
+      return (
+        <pre className="preview" data-renderer={preview.renderer}>
+          {preview.content}
+        </pre>
+      );
+  }
 }
 
 /** The artifact's own path under its execution is the resource this names. */

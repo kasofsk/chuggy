@@ -187,9 +187,8 @@ test("an execution with two attempts draws two rows told apart by number, state,
   expect(reported?.cells[2]).toBe("2m 48s");
 });
 
-/** What a command stage's worker uploads as its diagnostic, which no task
- * output declares. */
-const checkOutput = artifact(0, ".chuggy/check-output.json", 1234);
+/** A diagnostic a worker uploads that no task output declares. */
+const undeclared = artifact(0, ".chuggy/lint-output.txt", 1234);
 
 /** An artifact declared under an `Image` output, as the result lists it. */
 const screenshot = {
@@ -228,13 +227,74 @@ test("an Image artifact previews as an img of a data URI carrying its declared m
 
 test("an undeclared artifact other than the run's result keeps its row, with a quiet note", async () => {
   const drawn = await details(
-    passed([runAttempt("a1", { openedAt, endedAt })], [checkOutput]),
+    passed([runAttempt("a1", { openedAt, endedAt })], [undeclared]),
   );
-  const row = within(drawn).getByText(
-    ".chuggy/check-output.json",
-  ).parentElement;
+  const row = within(drawn).getByText(".chuggy/lint-output.txt").parentElement;
   expect(row?.textContent).toContain("Diagnostic");
   expect(row?.textContent).toContain("1,234 bytes");
   const note = within(row as HTMLElement).getByText("No preview");
   expect(note.className).not.toMatch(/panel-absent|tone-parked|tone-fail/u);
+});
+
+/** An artifact declared under an output a case names, with its preview opened. */
+async function previewed(
+  path: string,
+  renderer: string,
+  content: string,
+): Promise<HTMLElement> {
+  const declared = {
+    ...artifact(0, path, content.length),
+    output: { name: "notes", path, mediaType: "text/plain", renderer },
+  };
+  const drawn = await details({
+    ...passed([runAttempt("a1", { openedAt, endedAt })], [declared]),
+    artifactContent: {
+      read: "Content",
+      mediaType: "text/plain",
+      renderer,
+      encoding: "Utf8",
+      content,
+    },
+  });
+  const row = within(drawn).getByText(path).parentElement as HTMLElement;
+  await turned(() => {
+    within(row).getByRole("button", { name: "Preview" }).click();
+  });
+  await settled();
+  return row;
+}
+
+test("a Markdown output previews as markdown", async () => {
+  const row = await previewed(
+    "out/notes.md",
+    "Markdown",
+    "- one\n- two\n\nRun `just check`.",
+  );
+  const drawn = row.querySelector('[data-renderer="Markdown"]');
+  expect(drawn?.querySelectorAll("ul > li")).toHaveLength(2);
+  expect(drawn?.querySelector("code")?.textContent).toBe("just check");
+  expect(row.querySelector("pre.preview")).toBeNull();
+});
+
+test("a Markdown output carrying a tag, a script address and an image draws none of them live", async () => {
+  const row = await previewed(
+    "out/notes.md",
+    "Markdown",
+    '<b onclick="alert(1)">bold</b> [go](javascript:alert(1)) ![x](https://example.com/x.png)',
+  );
+  const drawn = row.querySelector('[data-renderer="Markdown"]');
+  expect(drawn).not.toBeNull();
+  expect(drawn?.querySelector("b, img, script, [onclick]")).toBeNull();
+  expect(
+    Array.from(drawn?.querySelectorAll("a") ?? []).filter((link) =>
+      (link.getAttribute("href") ?? "").startsWith("javascript"),
+    ),
+  ).toEqual([]);
+});
+
+test("a Json output previews indented", async () => {
+  const row = await previewed("out/coverage.json", "Json", '{"lines":[1,2]}');
+  expect(row.querySelector('pre[data-renderer="Json"]')?.textContent).toBe(
+    '{\n  "lines": [\n    1,\n    2\n  ]\n}',
+  );
 });

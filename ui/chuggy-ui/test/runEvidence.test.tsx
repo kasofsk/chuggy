@@ -334,9 +334,14 @@ test("a run whose worker said why it ended shows the reason on its row", async (
   expect(errorReads(rendered.reads)).toHaveLength(1);
 });
 
-test("a run whose worker left no reason shows none, and asks for none", async () => {
+/** The fabric's own words are the result's report, so a run that left none
+ * draws those, and the worker's text is never asked for. */
+test("a run whose worker left no reason shows the settled result's line, and asks for none", async () => {
   const rendered = await runPageDrawn(atlas, lostRun(undefined));
-  expect(rendered.container.querySelector(".ledger-reason")).toBeNull();
+  const line = rendered.container.querySelector(".ledger-row .ledger-reason");
+  expect(line?.textContent).toBe(
+    "The attempt a pool claimed ended before it reported a result.",
+  );
   expect(errorReads(rendered.reads)).toEqual([]);
 });
 
