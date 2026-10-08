@@ -128,13 +128,13 @@ export const permissionRemovalQuestion = {
 export function tenantPermissionName(authority: AccessTenantAuthority): string {
   switch (authority) {
     case "AdminGranters":
-      return "Admin grants";
+      return "Grant Admin";
     case "MemberGranters":
-      return "Member grants";
+      return "Grant Member";
     case "HostedRunsGranters":
-      return "Hosted run grants";
+      return "Grant hosted runs";
     case "AuthorityManagers":
-      return "Permission changes";
+      return "Change permissions";
   }
 }
 
@@ -143,22 +143,22 @@ export function projectPermissionName(
 ): string {
   switch (authority) {
     case "AdminGranters":
-      return "Admin grants";
+      return "Grant Admin";
     case "DeveloperGranters":
-      return "Developer grants";
+      return "Grant Developer";
     case "DispatcherGranters":
-      return "Dispatcher grants";
+      return "Grant Dispatcher";
     case "AuthorityManagers":
-      return "Permission changes";
+      return "Change permissions";
   }
 }
 
 export function sitePermissionName(authority: AccessSiteAuthority): string {
   switch (authority) {
     case "AccountCreators":
-      return "Account creation";
+      return "Create accounts";
     case "AuthorityManagers":
-      return "Permission changes";
+      return "Change permissions";
   }
 }
 
@@ -175,6 +175,17 @@ export function permissionGroupName(group: AccessGroup): string {
     case "ProjectDevelopers":
       return "Project developers";
   }
+}
+
+/** What stands after a person's name on a permission: that they are no
+ * account, and that they are the reader. */
+export function permissionPersonMarks(
+  person: AccessAuthorityPerson,
+): readonly string[] {
+  return [
+    ...(person.account ? [] : ["No account"]),
+    ...(person.mine ? ["You"] : []),
+  ];
 }
 
 /** What every level's answer names of one authority's holders. */

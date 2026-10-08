@@ -365,7 +365,7 @@ test("the site's page in a project offers the address's workspace, sends it, and
     },
   );
   const before = readsOf(drawn, siteAbilitiesPath);
-  await opened("Site", "Account creation");
+  await opened("Site", "Create accounts");
   await chosen("This workspace's admins");
   await added();
   expect(additionsSent(drawn)).toStrictEqual([

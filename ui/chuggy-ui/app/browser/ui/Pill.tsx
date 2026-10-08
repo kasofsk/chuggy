@@ -21,14 +21,22 @@ import "./Pill.css";
 export { pillTones };
 export type { Tone };
 
-export function Pill(props: {
+interface PillLook {
   readonly tone: Tone;
-  readonly children: ReactNode;
-  readonly emphasis?: boolean;
-}): ReactNode {
-  const emphasis = props.emphasis === true ? " pill-emphasis" : "";
+  readonly emphasis?: boolean | undefined;
+}
+
+/** The pill's look as a class name, for a primitive drawn as one. */
+export function pillLookClassName(look: PillLook): string {
+  const emphasis = look.emphasis === true ? " pill-emphasis" : "";
+  return `pill pill-${look.tone}${emphasis}`;
+}
+
+export function Pill(
+  props: PillLook & { readonly children: ReactNode },
+): ReactNode {
   return (
-    <span className={`pill pill-${props.tone}${emphasis}`}>
+    <span className={pillLookClassName(props)}>
       <i className="pill-mark" aria-hidden="true" />
       {props.children}
     </span>

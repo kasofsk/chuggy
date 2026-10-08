@@ -33,17 +33,12 @@ import {
   sitePermissionRows,
   sitePermissionsWithheld,
 } from "../../core/permissions.ts";
-import { PanelUnready } from "../DataPanel.tsx";
-import { Notice } from "../ui/Notice.tsx";
 import {
   usePermissionsChange,
   type PermissionChange,
   type PermissionHolderRoutes,
 } from "./permissionsChange.ts";
-import {
-  PermissionsSection,
-  PermissionsTruncated,
-} from "./PermissionsSection.tsx";
+import { PermissionsSection } from "./PermissionsSection.tsx";
 import { SettingsPage, useSettingsTenant } from "./SettingsPage.tsx";
 import { useTenantPeople } from "./tenantPeopleResource.ts";
 import {
@@ -85,7 +80,6 @@ function SitePermissions(props: {
   readonly read: PanelState<AccessSiteAuthorities>;
   readonly people: AccessTenantPeople | undefined;
 }): ReactNode {
-  const read = props.read;
   const change = usePermissionsChange<AccessSiteAuthority>({
     tenant: props.tenant,
     level: "Site",
@@ -95,25 +89,15 @@ function SitePermissions(props: {
     routes: sitePermissionRoutes,
     reread: (client) => tenantPermissionsReread(client, props.tenant),
   });
-  if (read.state !== "Ready")
-    return (
-      <PermissionsSection title="Site" rows={undefined}>
-        {read.state === "Absent" ? (
-          <Notice tone="parked" inline detail={sitePermissionsWithheld} />
-        ) : (
-          <PanelUnready state={read} />
-        )}
-      </PermissionsSection>
-    );
   return (
     <PermissionsSection
-      title="Site"
-      rows={sitePermissionRows(read.value)}
+      label="Site permissions"
+      read={props.read}
+      rows={sitePermissionRows}
+      withheld={sitePermissionsWithheld}
       removal={change.removal}
       addition={change.addition}
-    >
-      <PermissionsTruncated truncated={read.value.truncated} />
-    </PermissionsSection>
+    />
   );
 }
 

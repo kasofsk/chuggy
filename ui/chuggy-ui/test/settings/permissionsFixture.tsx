@@ -304,6 +304,13 @@ export function expectPermissionsReread(
     });
 }
 
+/** A node's words less those of every button in it. */
+function permissionsDrawnWords(node: Node): string {
+  if (node instanceof HTMLButtonElement) return "";
+  if (!(node instanceof Element)) return node.textContent ?? "";
+  return [...node.childNodes].map(permissionsDrawnWords).join("");
+}
+
 /** Each permission a section draws, by name, and the words of every holder in it, less its remove button. */
 export function permissionsDrawn(
   title: string,
@@ -315,12 +322,7 @@ export function permissionsDrawn(
       name: within(row).getByRole("rowheader").textContent,
       holders: within(row)
         .queryAllByRole("listitem")
-        .map((item) =>
-          [...item.childNodes]
-            .filter((node) => !(node instanceof HTMLButtonElement))
-            .map((node) => node.textContent)
-            .join(""),
-        ),
+        .map(permissionsDrawnWords),
     }));
 }
 
