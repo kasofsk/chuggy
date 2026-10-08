@@ -157,11 +157,13 @@ export const projectNameSchema = z
   .regex(/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/u);
 
 /**
- * Names a path outside the tenant routes already begins with: the API's base
- * and probes, the console's own pages and the sign-in's return. A new tenant
- * may not take one, because its pages would share an address with that path.
+ * Names a path outside the tenant routes already begins with: the access
+ * plane's base, the API's base and probes, the console's own pages and the
+ * sign-in's return. A new tenant may not take one, because its pages would
+ * share an address with that path.
  */
 export const reservedTenantNames = [
+  "access",
   "api",
   "auth",
   "forge",
