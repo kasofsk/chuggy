@@ -7,6 +7,10 @@
  * every box named. What is checked is the caller's own state, so a press asks
  * and the caller answers: a box that changed itself would show a change
  * nothing had made.
+ *
+ * Total over a box no press ever changes and one held for now. The first is
+ * disabled; the second only says so and is deaf, because a disabled control
+ * loses the focus, and the press that held a box is the one that focused it.
  */
 
 import { Checkbox as CheckboxPrimitive } from "radix-ui";
@@ -36,11 +40,15 @@ export function Checkbox(props: {
   readonly onChange: (checked: boolean) => void;
   /** Drawn, and checked where it is, but never changed by a press. */
   readonly disabled?: boolean;
+  /** Its caller's change is unanswered: no press changes it, and it keeps the focus. */
+  readonly held?: boolean;
   /** The label names the box and is not drawn beside it. */
   readonly bare?: boolean;
 }): ReactNode {
   const id = useId();
   const bare = props.bare === true;
+  const held = props.held === true;
+  const still = held || props.disabled === true;
   const box = (
     <CheckboxPrimitive.Root
       id={id}
@@ -48,8 +56,9 @@ export function Checkbox(props: {
       checked={props.checked}
       disabled={props.disabled ?? false}
       onCheckedChange={(checked) => {
-        props.onChange(checked === true);
+        if (!held) props.onChange(checked === true);
       }}
+      {...(held ? { "aria-disabled": true } : {})}
       {...(bare ? { "aria-label": props.label } : {})}
     >
       <CheckboxPrimitive.Indicator className="flex">
@@ -63,7 +72,7 @@ export function Checkbox(props: {
       {box}
       <label
         htmlFor={id}
-        className={`text-md ${props.disabled === true ? "text-ink-3" : "text-ink-2"}`}
+        className={`text-md ${still ? "text-ink-3" : "text-ink-2"}`}
       >
         {props.label}
       </label>

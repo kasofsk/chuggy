@@ -6,10 +6,13 @@
  * that stay outside it: Close, or the actions a caller hands it.
  */
 
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { useState } from "react";
+import type { ReactNode } from "react";
 import { afterEach, expect, test } from "vitest";
 
 import { Dialog } from "../app/browser/ui/Dialog.tsx";
+import { turned } from "./screenHarness.tsx";
 import { styleless } from "./styleless.ts";
 
 afterEach(cleanup);
@@ -64,6 +67,62 @@ test("a caller's foot stands in place of Close, at the width a form takes", () =
   expect(classesOf(foot ?? null)).toContain("justify-end");
   expect(screen.queryByRole("button", { name: "Close" })).toBeNull();
   expect(dialog.children).toHaveLength(3);
+  styleless();
+});
+
+test("a refusal's line stands in the foot before the caller's actions, outside the body that scrolls", () => {
+  render(
+    <Dialog
+      title="Invite"
+      trigger="Invite"
+      open
+      onOpenChange={() => undefined}
+      note="Not permitted"
+      foot={<button type="button">Send</button>}
+    >
+      <p>form</p>
+    </Dialog>,
+  );
+  const [, body, foot] = [...screen.getByRole("dialog").children];
+  expect(body?.textContent).toBe("form");
+  expect(foot?.textContent).toBe("Not permittedSend");
+  styleless();
+});
+
+function Held(props: { readonly busy: boolean }): ReactNode {
+  const [open, setOpen] = useState(true);
+  return (
+    <Dialog
+      title="Edit"
+      trigger="Edit"
+      open={open}
+      onOpenChange={setOpen}
+      busy={props.busy}
+      foot={<button type="button">Done</button>}
+    >
+      <p>roles</p>
+    </Dialog>
+  );
+}
+
+test("a request unanswered, nothing closes the dialog, and the close after it returns the focus to the trigger", async () => {
+  const drawn = render(<Held busy />);
+  await turned();
+  const dialog = screen.getByRole("dialog", { name: "Edit" });
+  const trigger = screen.getByRole("button", { name: "Edit" });
+  await turned(() => {
+    fireEvent.pointerDown(document.body);
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    fireEvent.click(trigger);
+  });
+  expect(screen.getByRole("dialog", { name: "Edit" })).toBe(dialog);
+  drawn.rerender(<Held busy={false} />);
+  await turned(() => {
+    fireEvent.keyDown(dialog, { key: "Escape" });
+  });
+  await turned();
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(document.activeElement).toBe(trigger);
   styleless();
 });
 

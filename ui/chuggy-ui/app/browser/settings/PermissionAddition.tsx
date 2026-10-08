@@ -3,7 +3,7 @@
  * given, one choice at a time, and for a person a roster of the people given
  * to choose among, one to a line. What adding does is its caller's; the dialog
  * holds the choice, closes on an addition the plane took, and leaves a
- * refusal's one line beside what was chosen.
+ * refusal's one line beside its actions.
  */
 
 import { useState } from "react";

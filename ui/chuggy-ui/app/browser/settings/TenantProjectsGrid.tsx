@@ -19,6 +19,8 @@ export interface TenantProjectsBox {
   readonly checked: boolean;
   /** Drawn as it stands and not pressable. */
   readonly disabled: boolean;
+  /** Not pressable until its caller's change is answered. */
+  readonly held?: boolean;
 }
 
 function TenantProjectsRow(props: {
@@ -39,6 +41,7 @@ function TenantProjectsRow(props: {
                 label={`${props.project} ${projectRoleLabel(role)}`}
                 checked={box.checked}
                 disabled={box.disabled}
+                held={box.held ?? false}
                 onChange={() => {
                   props.onToggle(role);
                 }}

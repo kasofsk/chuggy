@@ -25,6 +25,7 @@ import {
   abilitiesReads,
   boxesIn,
   boxPressed,
+  boxStill,
   changesSent,
   drawPeople,
   editorOf,
@@ -32,6 +33,7 @@ import {
   hostedRunsPath,
   listReads,
   namedIn,
+  noContent,
   peopleAbilitiesAll,
   peopleAbilitiesNone,
   peopleListed,
@@ -255,6 +257,17 @@ test("a change unanswered, no box takes a press and nothing closes the editor, s
     "(Member+)",
     "(Hosted runs)",
   ]);
+  expect(boxesIn(editor, "atlas")).toStrictEqual([
+    "(atlas Admin)",
+    "(atlas Developer)",
+    "(atlas Dispatcher)",
+  ]);
+  expect(
+    within(editor).getByRole<HTMLButtonElement>("checkbox", { name: "Admin" })
+      .disabled,
+  ).toBe(false);
+  await boxPressed(editor, "Member");
+  await boxPressed(editor, "atlas Developer");
   const done = within(editor).getByRole<HTMLButtonElement>("button", {
     name: "Done",
   });
@@ -277,6 +290,78 @@ test("a change unanswered, no box takes a press and nothing closes the editor, s
   ]);
   expect(done.disabled).toBe(false);
   expect(changesSent(drawn)).toHaveLength(1);
+});
+
+/** s-bob's editor after Admin is pressed and answered, the list's next read still unanswered. */
+async function answeredBeforeTheList(change: () => Response): Promise<{
+  readonly editor: HTMLElement;
+  readonly listed: () => Promise<void>;
+}> {
+  const held = heldAnswer();
+  let changed = false;
+  await drawPeople({
+    listing: () => (changed ? held.answered : answer(peopleListed)),
+    changed: () => {
+      changed = true;
+      return change();
+    },
+  });
+  const editor = await editorOf("s-bob");
+  await boxPressed(editor, "Admin");
+  expect(
+    within(editor).getByRole<HTMLButtonElement>("button", { name: "Done" })
+      .disabled,
+  ).toBe(false);
+  return {
+    editor,
+    listed: async () => {
+      await turned(() => {
+        held.release(answer(peopleListed));
+      });
+      await settled();
+    },
+  };
+}
+
+test("a change answered frees the editor, and its boxes once the list is read again", async () => {
+  const { editor, listed } = await answeredBeforeTheList(noContent);
+  expect(boxesIn(editor, "Workspace")).toStrictEqual([
+    "(Admin+)",
+    "(Member+)",
+    "(Hosted runs)",
+  ]);
+  await listed();
+  expect(boxesIn(editor, "Workspace")).toStrictEqual([
+    "Admin",
+    "Member+",
+    "Hosted runs",
+  ]);
+});
+
+test("a change refused draws its line and frees its boxes as they were, before the list is read again", async () => {
+  const { editor } = await answeredBeforeTheList(() =>
+    refused(409, "LastTenantAdministrator"),
+  );
+  expect(
+    within(editor).getByText("Only admin · grant another first"),
+  ).toBeTruthy();
+  expect(boxesIn(editor, "Workspace")).toStrictEqual([
+    "Admin",
+    "Member+",
+    "Hosted runs",
+  ]);
+});
+
+test("a question left unanswered is gone when the editor opens again", async () => {
+  const drawn = await drawPeople();
+  const asked = { name: "Remove your admin role" };
+  const editor = await editorOf("ada@example.com");
+  await boxPressed(editor, "Admin");
+  expect(within(editor).getByRole("group", asked)).toBeTruthy();
+  await press("Done");
+  const again = await editorOf("ada@example.com");
+  expect(within(again).queryByRole("group", asked)).toBeNull();
+  expect(changesSent(drawn)).toStrictEqual([]);
 });
 
 test("removing the reader's own admin asks first, and declined sends nothing", async () => {
@@ -463,11 +548,7 @@ test("taking hosted runs from a subject with no account asks first, and Remove s
     within(asked).getByText("Runs this identity starts will stop."),
   ).toBeTruthy();
   expect(changesSent(drawn)).toStrictEqual([]);
-  expect(
-    within(editor)
-      .getAllByRole("checkbox")
-      .every((box) => box.hasAttribute("disabled")),
-  ).toBe(true);
+  expect(within(editor).getAllByRole("checkbox").every(boxStill)).toBe(true);
   await press("Remove");
   expect(changesSent(drawn)).toStrictEqual([
     { method: "DELETE", url: hostedRunsPath("s-selector"), body: undefined },
