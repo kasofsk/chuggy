@@ -13,7 +13,9 @@ import { randomUUID } from "node:crypto";
 import { test } from "node:test";
 
 import {
+  accessProjectAuthorityAdmits,
   accessProjectGroups,
+  accessTenantAuthorityAdmits,
   type AccessGroup,
   type AccessProjectAuthority,
   type AccessTenantAuthority,
@@ -21,8 +23,6 @@ import {
 import { accessAuthorities } from "../../src/interpreter/accessAuthorities.ts";
 import {
   accessAuthorityHolders,
-  accessProjectAuthorityAdmits,
-  accessTenantAuthorityAdmits,
   type AccessHeld,
   type AccessHolder,
 } from "../../src/interpreter/accessAuthorityHolders.ts";
