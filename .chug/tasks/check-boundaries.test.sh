@@ -361,6 +361,39 @@ printf '%s\n' 'import { wired } from "../compose.ts"' 'export const plane = wire
 seal
 check "the access plane's root may not REACH a database adapter through a composition helper" 1 "$RC" "access-plane-names-no-database:"
 
+# --- only-the-access-plane-reaches-the-directory ------------------------------
+
+# The allowed shape first: the access plane's root reaches the directory's
+# adapter, directly and through a composition helper. A red here would mean the
+# rule refuses the one root it exempts.
+fixture
+mkdir -p "$R/src/roots" "$R/src/adapters/kratos"
+printf '%s\n' 'export const identities = 1' > "$R/src/adapters/kratos/identities.ts"
+printf '%s\n' 'import { identities } from "./adapters/kratos/identities.ts"' 'export const wired = identities' > "$R/src/compose.ts"
+printf '%s\n' 'import { identities } from "../adapters/kratos/identities.ts"' 'import { wired } from "../compose.ts"' 'export const plane = identities + wired' > "$R/src/roots/accessPlane.ts"
+seal
+check "the access plane's root may reach the directory, directly and through a composition helper" 0 "$RC" "graph clean"
+
+# Every other root is refused, the API's and one more, each directly and
+# through the composition helper. The helper belongs to neither the root nor
+# the adapter, so only reachability sees the second shape.
+for directory_root in nativeHttp poolPlane; do
+	fixture
+	mkdir -p "$R/src/roots" "$R/src/adapters/kratos"
+	printf '%s\n' 'export const identities = 1' > "$R/src/adapters/kratos/identities.ts"
+	printf '%s\n' 'import { identities } from "../adapters/kratos/identities.ts"' 'export const root = identities' > "$R/src/roots/$directory_root.ts"
+	seal
+	check "the $directory_root root may not import the directory's adapter" 1 "$RC" "only-the-access-plane-reaches-the-directory:"
+
+	fixture
+	mkdir -p "$R/src/roots" "$R/src/adapters/kratos"
+	printf '%s\n' 'export const identities = 1' > "$R/src/adapters/kratos/identities.ts"
+	printf '%s\n' 'import { identities } from "./adapters/kratos/identities.ts"' 'export const wired = identities' > "$R/src/compose.ts"
+	printf '%s\n' 'import { wired } from "../compose.ts"' 'export const root = wired' > "$R/src/roots/$directory_root.ts"
+	seal
+	check "the $directory_root root may not REACH the directory's adapter through a composition helper" 1 "$RC" "only-the-access-plane-reaches-the-directory:"
+done
+
 # --- no-source-reaches-a-suite, under its own name ----------------------------
 
 # From the domain the broader purity rule catches this first, which is why the

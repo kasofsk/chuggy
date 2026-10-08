@@ -1,6 +1,7 @@
 /**
- * The access plane's server: a tenant's and a project's people, and granting
- * and removing their roles, for a caller the authority says administers them.
+ * The access plane's server: a tenant's and a project's people, granting and
+ * removing their roles, and inviting a person by their GitHub account, for a
+ * caller the authority says administers or may invite to them.
  *
  * IT ANSWERS AS THE PUBLIC API DOES, because the console reads both with the
  * same code. A body is read as the API's media type, every refusal carries the
@@ -15,6 +16,11 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
 import {
+  accessEmailCharsMax,
+  accessGithubLoginCharsMax,
+  accessInvitationCodes,
+  accessInvitationProjectsMax,
+  accessInvitationSchema,
   accessLastTenantAdministratorCode,
   accessPlaneRoutes,
   accessProjectRoleGrantSchema,
@@ -22,6 +28,7 @@ import {
   accessSubjectSchema,
   accessTenantRoleGrantSchema,
   accessTenantRoleSchema,
+  type AccessInvited,
   type AccessPlaneRouteName,
 } from "../../contract/accessPlane.ts";
 import {
@@ -30,6 +37,11 @@ import {
   nativeHttpMediaType,
   nativeHttpPathSegmentCharsMax,
 } from "../../contract/http.ts";
+import { AccessDirectoryUnavailable } from "../../interpreter/accessDirectory.ts";
+import type {
+  AccessInvitationResult,
+  AccessInvitations,
+} from "../../interpreter/accessInvitation.ts";
 import type {
   AccessChange,
   AccessPlane,
@@ -41,7 +53,11 @@ import {
   type TenantId,
 } from "../../interpreter/projectStore.ts";
 import { parsePartition } from "./contract.ts";
-import { failureResponse, notFound } from "./outcomes.ts";
+import {
+  authorityRetryAfterSeconds,
+  failureResponse,
+  notFound,
+} from "./outcomes.ts";
 import {
   planeApp,
   planeHealthRoutes,
@@ -58,11 +74,18 @@ import {
 export interface AccessPlaneService {
   readonly authentication: PrincipalAuthentication;
   readonly plane: AccessPlane;
+  readonly invitations: AccessInvitations;
   readonly ready: () => Promise<boolean>;
 }
 
-/** The most any route reads: a grant names one role and no text of its own. */
+/** The most any route reads but an invitation: a grant names one role and no text of its own. */
 export const accessPlaneBodyBytesMax = planeJsonObjectBytesMax();
+
+/** The most an invitation reads: a username, an email, and the most projects it names, each with its roles. */
+export const accessInvitationBodyBytesMax =
+  planeJsonObjectBytesMax(accessGithubLoginCharsMax, accessEmailCharsMax) +
+  accessInvitationProjectsMax *
+    planeJsonObjectBytesMax(nativeHttpPathSegmentCharsMax);
 
 /** Serves `handler` at one route for the principal its bearer names, every other caller refused before any of its body is read. */
 function accessPlaneRoute(
@@ -74,6 +97,7 @@ function accessPlaneRoute(
     reply: FastifyReply,
     caller: Principal,
   ) => Promise<unknown>,
+  bodyBytesMax = accessPlaneBodyBytesMax,
 ): void {
   const route = accessPlaneRoutes[name];
   planeRouteServed(
@@ -81,7 +105,7 @@ function accessPlaneRoute(
     {
       method: route.method,
       url: route.path,
-      bodyBytesMax: accessPlaneBodyBytesMax,
+      bodyBytesMax,
     },
     async (request, reply) => {
       const bearer = await nativeHttpBearerAuthenticated(
@@ -193,6 +217,114 @@ function accessTenantRoutes(
   );
 }
 
+/** A refusal in the API's envelope, its message the plane's own and never a remote's. */
+function accessRefused(
+  reply: FastifyReply,
+  status: number,
+  code: string,
+  message: string,
+): FastifyReply {
+  return reply
+    .code(status)
+    .type(nativeHttpMediaType)
+    .send(nativeHttpError(code, message));
+}
+
+/** A refusal the same request may be sent again after. */
+function accessRetry(reply: FastifyReply, code: string): FastifyReply {
+  void reply.header("retry-after", String(authorityRetryAfterSeconds));
+  return accessRefused(reply, 503, code, "The request can be retried.");
+}
+
+function accessInvited(
+  reply: FastifyReply,
+  result: AccessInvitationResult,
+): FastifyReply {
+  const codes = accessInvitationCodes;
+  switch (result.invited) {
+    case "Invited": {
+      const body: AccessInvited = {
+        subject: result.subject,
+        created: result.created,
+      };
+      return reply
+        .code(result.created ? 201 : 200)
+        .type(nativeHttpMediaType)
+        .send(body);
+    }
+    case "Absent":
+      nativeHttpSend(reply, notFound());
+      return reply;
+    case "NotConfigured":
+      return accessRefused(
+        reply,
+        404,
+        codes.NotConfigured,
+        "This deployment invites nobody.",
+      );
+    case "ProjectUnknown":
+      return accessRefused(
+        reply,
+        422,
+        codes.ProjectUnknown,
+        "A project named is not the tenant's.",
+      );
+    case "GithubAccountUnknown":
+      return accessRefused(
+        reply,
+        422,
+        codes.GithubAccountUnknown,
+        "GitHub has no account of that name.",
+      );
+    case "GithubAccountNotUser":
+      return accessRefused(
+        reply,
+        422,
+        codes.GithubAccountNotUser,
+        "The GitHub account is not a person's.",
+      );
+    case "EmailHeld":
+      return accessRefused(
+        reply,
+        409,
+        codes.EmailHeld,
+        "Another account holds the email.",
+      );
+    case "EmailRefused":
+      return accessRefused(
+        reply,
+        422,
+        codes.EmailRefused,
+        "The directory does not hold that email.",
+      );
+    case "GithubUnavailable":
+      return accessRetry(reply, codes.GithubUnavailable);
+    case "DirectoryRaced":
+      return accessRetry(reply, codes.DirectoryRaced);
+  }
+}
+
+function accessInvitationRoute(
+  app: FastifyInstance,
+  service: AccessPlaneService,
+): void {
+  accessPlaneRoute(
+    app,
+    service,
+    "tenantInvitation",
+    async (request, reply, caller) =>
+      accessInvited(
+        reply,
+        await service.invitations.invite(
+          caller,
+          accessTenantOf(request),
+          accessInvitationSchema.parse(request.body),
+        ),
+      ),
+    accessInvitationBodyBytesMax,
+  );
+}
+
 function accessProjectRoutes(
   app: FastifyInstance,
   service: AccessPlaneService,
@@ -245,7 +377,9 @@ export function createAccessPlaneApp(
   const app = planeApp({ pathSegmentCharsMax: nativeHttpPathSegmentCharsMax });
   nativeHttpMediaTypeServed(app);
   app.setErrorHandler((failure, _request, reply) => {
-    nativeHttpSend(reply, failureResponse(failure));
+    if (failure instanceof AccessDirectoryUnavailable)
+      accessRetry(reply, accessInvitationCodes.DirectoryUnavailable);
+    else nativeHttpSend(reply, failureResponse(failure));
   });
   app.setNotFoundHandler((_request, reply) => {
     nativeHttpSend(reply, notFound());
@@ -253,5 +387,6 @@ export function createAccessPlaneApp(
   planeHealthRoutes(app, service.ready);
   accessTenantRoutes(app, service);
   accessProjectRoutes(app, service);
+  accessInvitationRoute(app, service);
   return app;
 }

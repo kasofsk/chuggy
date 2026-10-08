@@ -2,12 +2,13 @@
  * An authority held in memory for the access plane's suites: its tuples, the
  * permits the model derives from them, a listing that pages, and a writer.
  *
- * THE PERMITS ARE THE MODEL'S, restated for the four this plane asks: a
- * tenant's `admins` administer it, and a project's `admins`, or its tenant's
+ * THE PERMITS ARE THE MODEL'S, restated for the ones this plane asks: a
+ * tenant's `admins` administer it and may invite to it, and a project's `admins`, or its tenant's
  * through the `tenant` link, administer the project. `.chug/tasks/check-keto.sh`
  * asks a real server the same questions.
  */
 
+import type { AccessDirectory } from "../../src/interpreter/accessDirectory.ts";
 import {
   accessPlane,
   accessPlaneBoundsDefault,
@@ -169,7 +170,7 @@ function accessMemoryAccess(memory: AccessMemoryState): ProjectAccess {
     authorizeTenant: (principal, tenant, kind) => {
       accessReachable(memory);
       return Promise.resolve(
-        kind === "AdministerTenant" &&
+        (kind === "AdministerTenant" || kind === "InviteToTenant") &&
           accessTenantAdmin(memory, principal, tenant)
           ? memberAuthority(principal)
           : undefined,
@@ -239,9 +240,15 @@ export function accessMemory(pageTuples = 2): AccessMemory {
 export function accessMemoryPlane(
   memory: AccessMemory,
   bounds: AccessPlaneBounds = accessPlaneBoundsDefault,
+  directory?: AccessDirectory,
 ): AccessPlane {
   return accessPlane(
-    { access: memory.access, tuples: memory.reader, grants: memory.grants },
+    {
+      access: memory.access,
+      tuples: memory.reader,
+      grants: memory.grants,
+      directory,
+    },
     { issuer: accessFixtureIssuer, bounds },
   );
 }

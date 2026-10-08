@@ -12,6 +12,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { ketoAccessPageTuplesMax } from "../../src/adapters/keto/accessTuples.ts";
+import { accessInvitations } from "../../src/interpreter/accessInvitation.ts";
 import {
   accessPlane,
   accessPlaneBoundsDefault,
@@ -44,6 +45,11 @@ import {
   ketoHarnessPartition,
   ketoHarnessTuples,
 } from "./harness.ts";
+import {
+  directoryMemory,
+  githubMemory,
+  githubUser,
+} from "../interpreter/accessInvitationFixture.ts";
 
 const access = ketoHarnessAccess();
 const grants = ketoHarnessGrants();
@@ -239,4 +245,81 @@ test("a list crosses the authority's page boundary and reads every holder past i
     ["alice", ...subjects],
   );
   assert.equal(people?.truncated, false);
+});
+
+/** The invitation over the real authority, with a directory and GitHub held in memory. */
+function invitationsOf() {
+  const directory = directoryMemory();
+  const github = githubMemory({
+    "octo-cat": githubUser("990000001", "Octo-Cat"),
+  });
+  return {
+    directory,
+    github,
+    invitations: accessInvitations(
+      { access, tuples, grants, directory: directory.directory, github },
+      { issuer: ketoHarnessIssuer },
+    ),
+  };
+}
+
+test("who may invite to a tenant is who administers it", async () => {
+  const { tenant } = await tenantOf("invite-permit");
+  await plane.tenantRoleGranted(alice, tenant, "mo", "Member");
+  for (const [subject, expected] of [
+    ["alice", true],
+    ["mo", false],
+    ["nobody", false],
+  ] as const) {
+    const principal = oidcPrincipal(ketoHarnessIssuer, subject);
+    for (const kind of ["AdministerTenant", "InviteToTenant"] as const)
+      assert.equal(
+        (await access.authorizeTenant(principal, tenant, kind)) !== undefined,
+        expected,
+        `${subject} ${kind}`,
+      );
+  }
+  const { directory, github, invitations } = invitationsOf();
+  assert.deepEqual(
+    await invitations.invite(oidcPrincipal(ketoHarnessIssuer, "mo"), tenant, {
+      github: "octo-cat",
+      email: "octo@example.com",
+      role: "Admin",
+    }),
+    { invited: "Absent" },
+  );
+  assert.deepEqual(github.looked, []);
+  assert.deepEqual(directory.asked, []);
+});
+
+test("an invitation grants the permits its roles carry and lists the person, and a project not linked to the tenant is refused", async () => {
+  const { web, api, loose, tenant } = await tenantOf("invite-grants");
+  const { directory, invitations } = invitationsOf();
+  assert.deepEqual(
+    await invitations.invite(alice, tenant, {
+      github: "octo-cat",
+      email: "octo@example.com",
+      role: "Member",
+      projects: [{ project: loose.project, roles: ["Developer"] }],
+    }),
+    { invited: "ProjectUnknown" },
+  );
+  assert.deepEqual(directory.asked, []);
+  const invited = await invitations.invite(alice, tenant, {
+    github: "octo-cat",
+    email: "octo@example.com",
+    role: "Member",
+    projects: [{ project: web.project, roles: ["Developer", "Dispatcher"] }],
+  });
+  assert.equal(invited.invited, "Invited");
+  const subject = invited.invited === "Invited" ? invited.subject : "";
+  assert.equal(await holds(subject, web, "Mutate"), true);
+  assert.equal(await holds(subject, web, "DispatchTicket"), true);
+  assert.equal(await holds(subject, web, "Administer"), false);
+  assert.equal(await holds(subject, api, "Mutate"), false);
+  const people = await plane.tenantPeople(alice, tenant);
+  assert.deepEqual(
+    people?.people.find((person) => person.subject === subject)?.tenantRoles,
+    ["Member"],
+  );
 });

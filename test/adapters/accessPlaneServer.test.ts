@@ -9,7 +9,14 @@ import { test } from "node:test";
 
 import { createAccessPlaneApp } from "../../src/adapters/http/accessPlaneServer.ts";
 import type { BearerAuthentication } from "../../src/adapters/http/server.ts";
+import { githubUserLookup } from "../../src/adapters/forge/githubUserLookup.ts";
+import { kratosAccessDirectory } from "../../src/adapters/kratos/identities.ts";
 import {
+  accessEmailCharsMax,
+  accessGithubLoginCharsMax,
+  accessInvitationCodes,
+  accessInvitationProjectsMax,
+  accessInvitedSchema,
   accessLastTenantAdministratorCode,
   accessPlanePath,
   accessPlaneRoutes,
@@ -25,6 +32,7 @@ import {
 } from "../../src/contract/http.ts";
 import { classify } from "../../src/contract/outcomes.ts";
 import {
+  accessPlaneBoundsDefault,
   accessProjectRoleRelations,
   accessTenantRoleRelations,
 } from "../../src/interpreter/accessPlane.ts";
@@ -37,6 +45,21 @@ import {
   projectTenantRelation,
   tenantPrincipalGrant,
 } from "../../src/interpreter/projectGrant.ts";
+import {
+  checkedAccessDirectorySettings,
+  type AccessDirectory,
+} from "../../src/interpreter/accessDirectory.ts";
+import {
+  accessInvitations,
+  type AccessInvitations,
+} from "../../src/interpreter/accessInvitation.ts";
+import {
+  accessMemoryInvitations,
+  directoryMemory,
+  githubMemory,
+  githubUser,
+} from "../interpreter/accessInvitationFixture.ts";
+import { fixtureForge } from "./forgeFixtures.ts";
 import {
   accessFixtureIssuer,
   accessFixturePartition,
@@ -58,8 +81,22 @@ const tokens: Readonly<Record<string, string>> = {
 const as = (token: string) => ({ authorization: `Bearer ${token}` });
 const typed = { "content-type": nativeHttpMediaType };
 
+/** What the invitation is composed with, over the authority a case serves. */
+type Invitations = (memory: AccessMemory) => AccessInvitations;
+
+/** The directory and GitHub a case invites against where it composes none of its own. */
+const invitedDirectory = directoryMemory();
+const invitedGithub = githubMemory({
+  "octo-cat": githubUser("990000001", "Octo-Cat"),
+});
+
 /** A tenant alice administers with one linked project priya administers. */
-async function served(ready = true) {
+async function served(
+  ready = true,
+  invitations: Invitations = (memory) =>
+    accessMemoryInvitations(memory, invitedDirectory, invitedGithub),
+  directory?: AccessDirectory,
+) {
   const memory = accessMemory();
   for (const grant of [
     projectTenantGrant(web),
@@ -92,7 +129,8 @@ async function served(ready = true) {
         );
       },
     },
-    plane: accessMemoryPlane(memory),
+    plane: accessMemoryPlane(memory, accessPlaneBoundsDefault, directory),
+    invitations: invitations(memory),
     ready: () => Promise.resolve(ready && !memory.unavailable),
   });
   return { memory, app };
@@ -249,6 +287,10 @@ test("an authority that cannot answer is retryable on every route and unready on
   memory.unavailable = true;
   for (const name of Object.keys(accessPlaneRoutes) as AccessPlaneRouteName[]) {
     const route = accessPlaneRoutes[name];
+    const body =
+      name === "tenantInvitation"
+        ? { github: "octo-cat", email: "octo@example.com", role: "Admin" }
+        : { role: "Admin" };
     const answered = await app.inject({
       method: route.method,
       url: pathOf(name, "zed", "Admin"),
@@ -256,9 +298,7 @@ test("an authority that cannot answer is retryable on every route and unready on
         ...as("alice-token"),
         ...(route.method === "POST" ? typed : {}),
       },
-      ...(route.method === "POST"
-        ? { payload: JSON.stringify({ role: "Admin" }) }
-        : {}),
+      ...(route.method === "POST" ? { payload: JSON.stringify(body) } : {}),
     });
     enveloped(answered, "Retryable", "AuthorityUnavailable");
     assert.equal(answered.headers["retry-after"], "1", name);
@@ -352,4 +392,322 @@ test("no request reaches a relation but the ones the role rosters name", async (
     ]),
   );
   assert.deepEqual(reached, expected);
+});
+
+/** A server inviting against fresh doubles, and the doubles, so a case reads what each was asked. */
+async function inviting(
+  accounts: Parameters<typeof directoryMemory>[0] = [],
+  answers: Parameters<typeof githubMemory>[0] = {
+    "octo-cat": githubUser("990000001", "Octo-Cat"),
+  },
+) {
+  const directory = directoryMemory(accounts);
+  const github = githubMemory(answers);
+  const { memory, app } = await served(
+    true,
+    (held) => accessMemoryInvitations(held, directory, github),
+    directory.directory,
+  );
+  const invite = (body: unknown, token = "alice-token") =>
+    app.inject({
+      method: "POST",
+      url: pathOf("tenantInvitation"),
+      headers: { ...as(token), ...typed },
+      payload: JSON.stringify(body),
+    });
+  return { memory, app, directory, github, invite };
+}
+
+const invitation = {
+  github: "octo-cat",
+  email: "octo@example.com",
+  role: "Member",
+  projects: [{ project: "web", roles: ["Developer"] }],
+};
+
+test("an invitation answers the subject created, then the same subject not created, and the lists then name the account", async () => {
+  const { app, invite } = await inviting();
+  const first = await invite(invitation);
+  assert.equal(first.statusCode, 201, first.body);
+  const created = accessInvitedSchema.parse(first.json());
+  assert.equal(created.created, true);
+  const again = await invite(invitation);
+  assert.equal(again.statusCode, 200, again.body);
+  assert.deepEqual(accessInvitedSchema.parse(again.json()), {
+    subject: created.subject,
+    created: false,
+  });
+  const people = accessTenantPeopleSchema.parse(
+    (
+      await app.inject({
+        method: "GET",
+        url: pathOf("tenantPeople"),
+        headers: as("alice-token"),
+      })
+    ).json(),
+  );
+  const invited = people.people.find(
+    (person) => person.subject === created.subject,
+  );
+  assert.deepEqual(
+    [
+      invited?.account,
+      invited?.email,
+      invited?.githubLogin,
+      invited?.tenantRoles,
+    ],
+    [true, "octo@example.com", "Octo-Cat", ["Member"]],
+  );
+  assert.equal(
+    people.people.find((person) => person.subject === "alice")?.account,
+    false,
+  );
+});
+
+test("an invitation outside its shape is rejected before GitHub or the directory is asked anything", async () => {
+  const { directory, github, invite } = await inviting();
+  const projects = Array.from(
+    { length: accessInvitationProjectsMax + 1 },
+    (_, index) => ({ project: `p${String(index)}`, roles: ["Admin"] }),
+  );
+  for (const body of [
+    { ...invitation, github: ".." },
+    { ...invitation, github: "-octo" },
+    { ...invitation, github: "octo-" },
+    { ...invitation, github: "o".repeat(accessGithubLoginCharsMax + 1) },
+    { ...invitation, email: `${"e".repeat(accessEmailCharsMax)}@example.com` },
+    { ...invitation, email: "not an address" },
+    { ...invitation, role: "Owner" },
+    { ...invitation, projects },
+    {
+      ...invitation,
+      projects: [
+        { project: "web", roles: ["Admin"] },
+        { project: "web", roles: ["Developer"] },
+      ],
+    },
+    { ...invitation, projects: [{ project: "web", roles: ["Owner"] }] },
+  ])
+    enveloped(await invite(body), "Rejected", "InvalidRequest");
+  assert.deepEqual(github.looked, []);
+  assert.deepEqual(directory.asked, []);
+});
+
+test("each refusal of an invitation carries its own code in the API's envelope", async () => {
+  const held = await inviting([
+    {
+      subject: "00000000-0000-4000-8000-000000000009",
+      email: "octo@example.com",
+    },
+  ]);
+  enveloped(
+    await held.invite(invitation),
+    "Conflict",
+    accessInvitationCodes.EmailHeld,
+  );
+  enveloped(await held.invite(invitation, "priya-token"), "Absent");
+  enveloped(
+    await held.invite({
+      ...invitation,
+      projects: [{ project: "loose", roles: ["Admin"] }],
+    }),
+    "Rejected",
+    accessInvitationCodes.ProjectUnknown,
+  );
+  const kinds = await inviting([], {
+    "octo-cat": { looked: "Unknown" },
+    org: githubUser("1", "org", "Organization"),
+    down: { looked: "Unavailable" },
+  });
+  enveloped(
+    await kinds.invite(invitation),
+    "Rejected",
+    accessInvitationCodes.GithubAccountUnknown,
+  );
+  enveloped(
+    await kinds.invite({ ...invitation, github: "org" }),
+    "Rejected",
+    accessInvitationCodes.GithubAccountNotUser,
+  );
+  const down = await kinds.invite({ ...invitation, github: "down" });
+  enveloped(down, "Retryable", accessInvitationCodes.GithubUnavailable);
+  assert.equal(down.headers["retry-after"], "1");
+});
+
+test("a directory that raced, refused the email or could not answer is each answered under its own code, and a list asking it too", async () => {
+  const raced = await inviting();
+  raced.directory.creationAnswer = "Conflict";
+  enveloped(
+    await raced.invite(invitation),
+    "Retryable",
+    accessInvitationCodes.DirectoryRaced,
+  );
+  raced.directory.creationAnswer = "EmailRefused";
+  enveloped(
+    await raced.invite(invitation),
+    "Rejected",
+    accessInvitationCodes.EmailRefused,
+  );
+  raced.directory.unavailable = true;
+  enveloped(
+    await raced.invite(invitation),
+    "Retryable",
+    accessInvitationCodes.DirectoryUnavailable,
+  );
+  await raced.memory.grants.write(
+    tenantPrincipalGrant({
+      issuer: accessFixtureIssuer,
+      subject: "00000000-0000-4000-8000-000000000009",
+      tenant,
+      relation: "members",
+    }),
+  );
+  const people = await raced.app.inject({
+    method: "GET",
+    url: pathOf("tenantPeople"),
+    headers: as("alice-token"),
+  });
+  enveloped(people, "Retryable", accessInvitationCodes.DirectoryUnavailable);
+});
+
+test("a plane with no directory answers an invitation not configured and its lists without the directory's fields", async () => {
+  const { app } = await served(true, (memory) =>
+    accessMemoryInvitations(memory, undefined, undefined),
+  );
+  const answered = await app.inject({
+    method: "POST",
+    url: pathOf("tenantInvitation"),
+    headers: { ...as("alice-token"), ...typed },
+    payload: JSON.stringify(invitation),
+  });
+  enveloped(answered, "Absent");
+  assert.equal(
+    errorEnvelopeSchema.parse(answered.json()).error.code,
+    accessInvitationCodes.NotConfigured,
+  );
+  const people = (
+    await app.inject({
+      method: "GET",
+      url: pathOf("tenantPeople"),
+      headers: as("alice-token"),
+    })
+  ).body;
+  assert.ok(!people.includes('"account"'), people);
+});
+
+const marker = "MARKER-not-for-a-response";
+
+function json(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
+}
+
+/** A server whose invitation and lists run through the real directory and GitHub adapters, over doubles answering `kratos` and `forge` in order. */
+async function remote(
+  kratos: readonly (Response | Error)[],
+  forge: readonly (Response | Error)[],
+) {
+  const directory = kratosAccessDirectory(
+    checkedAccessDirectorySettings({ adminUrl: "http://kratos.invalid/" }),
+    fixtureForge(kratos).requestFetch,
+  );
+  const github = githubUserLookup({ fetch: fixtureForge(forge).requestFetch });
+  return served(
+    true,
+    (memory) =>
+      accessInvitations(
+        {
+          access: memory.access,
+          tuples: memory.reader,
+          grants: memory.grants,
+          directory,
+          github,
+        },
+        { issuer: accessFixtureIssuer },
+      ),
+    directory,
+  );
+}
+
+const remoteEmail = `${marker}@example.com`;
+
+/** A person as GitHub answers one, with a marker in a field the plane does not read. */
+const remotePerson = () =>
+  json({ id: 990000001, login: "Octo-Cat", type: "User", bio: marker });
+
+/** An invitation of the person sent to `app` under an email carrying the marker. */
+function remoteSent(app: Awaited<ReturnType<typeof served>>["app"]) {
+  return app.inject({
+    method: "POST",
+    url: pathOf("tenantInvitation"),
+    headers: { ...as("alice-token"), ...typed },
+    payload: JSON.stringify({
+      ...invitation,
+      email: remoteEmail,
+      projects: [],
+    }),
+  });
+}
+
+test("no remote text reaches a refusal: a directory refusal quoting the email, and a GitHub refusal with a message", async () => {
+  const refused = await remote(
+    [
+      json([]),
+      json([]),
+      json(
+        {
+          error: { code: 400, reason: `"${remoteEmail}" is not valid "email"` },
+        },
+        400,
+      ),
+    ],
+    [remotePerson()],
+  );
+  const refusal = await remoteSent(refused.app);
+  enveloped(refusal, "Rejected", accessInvitationCodes.EmailRefused);
+  assert.ok(!refusal.body.includes(marker), refusal.body);
+  const github = await remote([], [json({ message: marker }, 403)]);
+  const githubRefusal = await remoteSent(github.app);
+  enveloped(
+    githubRefusal,
+    "Retryable",
+    accessInvitationCodes.GithubUnavailable,
+  );
+  assert.ok(!githubRefusal.body.includes(marker), githubRefusal.body);
+});
+
+test("no remote text reaches an answer: a marker in a field neither the directory's nor GitHub's answer is read for", async () => {
+  const subject = "5804d32a-77dc-4fd5-9ef6-8f102ea642b1";
+  const listed = await remote(
+    [
+      json([]),
+      json([]),
+      json(
+        { id: subject, traits: { email: "a@example.com" }, state: marker },
+        201,
+      ),
+      json([
+        {
+          id: subject,
+          traits: { email: "a@example.com" },
+          metadata_admin: { github_login: "Octo-Cat", invited_by: marker },
+          state: marker,
+        },
+      ]),
+    ],
+    [remotePerson()],
+  );
+  const created = await remoteSent(listed.app);
+  assert.equal(created.statusCode, 201, created.body);
+  assert.ok(!created.body.includes(marker), created.body);
+  const people = await listed.app.inject({
+    method: "GET",
+    url: pathOf("tenantPeople"),
+    headers: as("alice-token"),
+  });
+  assert.equal(people.statusCode, 200, people.body);
+  assert.ok(people.body.includes("Octo-Cat"), people.body);
+  assert.ok(!people.body.includes(marker), people.body);
 });

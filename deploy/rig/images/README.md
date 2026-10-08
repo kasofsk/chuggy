@@ -195,8 +195,10 @@ to pin the digest its bundle carries. The deployment may mount it read-only.
 ## Configuring the access plane
 
 Every variable here is read by `src/roots/accessPlane.ts`, and the process
-refuses to start without the required ones. It names no database: everything it
-answers is a tuple the authority holds.
+refuses to start without the required ones. It names no database: every role it
+answers is a tuple the authority holds. With a directory named it also asks
+`https://api.github.com` for the account each invitation names, with no
+credential.
 
 | Variable | | |
 |---|---|---|
@@ -206,6 +208,8 @@ answers is a tuple the authority holds.
 | `CHUG_ACCESS_PLANE_KETO_READ_URL` | required | the read API of the authority, which every permit is asked of and every list read from |
 | `CHUG_ACCESS_PLANE_KETO_WRITE_URL` | required | the write API beside it, where a role granted or removed is written |
 | `CHUG_ACCESS_PLANE_KETO_TIMEOUT_MS` | | how long one question of either API may take before it is undecided |
+| `CHUG_ACCESS_PLANE_KRATOS_ADMIN_URL` | | the admin API of the directory, where an invited person's account is found or created and every listed subject is named; unset, every invitation answers `InvitationNotConfigured` and a list names subjects alone |
+| `CHUG_ACCESS_PLANE_KRATOS_TIMEOUT_MS` | | how long one question of the directory may take before it is undecided |
 | `CHUG_ACCESS_PLANE_OIDC_DISCOVERY_TIMEOUT_MS` | | |
 | `CHUG_ACCESS_PLANE_OIDC_JWKS_TIMEOUT_MS` | | |
 | `CHUG_ACCESS_PLANE_HOST` | | the default is loopback |
