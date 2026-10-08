@@ -2,8 +2,9 @@
  * The access plane's server over an authority held in memory: a body read as
  * the API's media type, a removal served, every refusal in the API's
  * envelope, what a caller may do and who holds each authority read as their
- * schemas, and no request reaching a
- * relation but the ones the role rosters name and hosted runs.
+ * schemas, each change of a holder's outcome, and no request reaching a
+ * relation but the ones the role rosters and the authority rosters name and
+ * hosted runs.
  */
 
 import assert from "node:assert/strict";
@@ -16,6 +17,7 @@ import { kratosAccessDirectory } from "../../src/adapters/kratos/identities.ts";
 import {
   accessEmailCharsMax,
   accessGithubLoginCharsMax,
+  accessHolderNotAdmittedCode,
   accessInvitationCodes,
   accessInvitationProjectsMax,
   accessInvitedSchema,
@@ -46,13 +48,20 @@ import {
   accessProjectRoleRelations,
   accessTenantRoleRelations,
 } from "../../src/interpreter/accessPlane.ts";
+import {
+  accessProjectAuthorityRelations,
+  accessSiteAuthorityRelations,
+  accessTenantAuthorityRelations,
+} from "../../src/interpreter/accessAuthorities.ts";
 import { principalCharsMax } from "../../src/interpreter/principal.ts";
+import { projectAccessTenantObject } from "../../src/interpreter/projectAccess.ts";
 import {
   allProjectGrantRelations,
   allTenantGrantRelations,
   projectPrincipalGrant,
   projectTenantGrant,
   projectTenantRelation,
+  tenantAuthorityDefaults,
   tenantPrincipalGrant,
 } from "../../src/interpreter/projectGrant.ts";
 import {
@@ -80,6 +89,7 @@ import {
   accessMemory,
   accessMemoryAbilities,
   accessMemoryAuthorities,
+  accessMemoryHolders,
   accessMemoryPlane,
   type AccessMemory,
 } from "../interpreter/accessPlaneFixture.ts";
@@ -94,6 +104,7 @@ const tokens: Readonly<Record<string, string>> = {
   "mo-token": "mo",
   "dee-token": "dee",
   "hal-token": "hal",
+  "sam-token": "sam",
 };
 
 const as = (token: string) => ({ authorization: `Bearer ${token}` });
@@ -113,7 +124,8 @@ const invitedGithub = githubMemory({
  * holding what the defaults give them and alice `CreateAccount`. Mo may only
  * manage who grants the tenant's roles, dee may grant `Member` and
  * `Developer` on the project and make no account, and hal may give hosted runs
- * and manage the site's authorities.
+ * and manage the site's authorities and the ones the site holds over the
+ * tenant.
  */
 async function served(
   ready = true,
@@ -152,6 +164,7 @@ async function served(
   ]);
   accessGiven(memory, accessFixturePrincipal("hal"), [
     { on: "Tenant", tenant, kind: "GrantHostedExecution" },
+    { on: "Tenant", tenant, kind: "ManageSiteHeldAuthorities" },
     { on: "Site", kind: "ManageSiteAuthorities" },
   ]);
   const app = createAccessPlaneApp({
@@ -176,14 +189,21 @@ async function served(
       accessPlaneBoundsDefault,
       directory,
     ),
+    holders: accessMemoryHolders(memory),
     ready: () => Promise.resolve(ready && !memory.unavailable),
   });
   return { memory, app };
 }
 
-/** The path one route is asked at for `web`, its subject and role where it names them. */
-function pathOf(name: AccessPlaneRouteName, subject = "zed", role = "Member") {
-  return accessPlanePath(name, { ...web, subject, role });
+/** The path one route is asked at for `web`, its subject, role, authority and group where it names them. */
+function pathOf(
+  name: AccessPlaneRouteName,
+  subject = "zed",
+  role = "Member",
+  authority = "AuthorityManagers",
+  group = "TenantAdmins",
+) {
+  return accessPlanePath(name, { ...web, subject, role, authority, group });
 }
 
 /** Asserts a refusal reads as the API's envelope under `classify`, naming `code` where given. */
@@ -503,6 +523,175 @@ test("hosted runs are given and taken by a holder of `GrantHostedExecution`, for
   assert.deepEqual(memory.changes, []);
 });
 
+/** One change of a holder sent to `app` by the bearer of `token`, naming `authority` and `group` where its path does. */
+function holderChange(
+  app: Awaited<ReturnType<typeof served>>["app"],
+  name: AccessPlaneRouteName,
+  token: string | undefined,
+  authority = "MemberGranters",
+  group = "TenantMembers",
+) {
+  return app.inject({
+    method: accessPlaneRoutes[name].method,
+    url: pathOf(name, "zed", "Member", authority, group),
+    ...(token === undefined ? {} : { headers: as(token) }),
+  });
+}
+
+test("a holder is added and removed at each level by a caller managing the authority, and the change written is the one the path names", async () => {
+  const { memory, app } = await served();
+  for (const [name, token, authority] of [
+    ["tenantAuthorityPersonAddition", "alice-token", "MemberGranters"],
+    ["tenantAuthorityGroupAddition", "alice-token", "MemberGranters"],
+    ["tenantAuthorityGroupRemoval", "alice-token", "MemberGranters"],
+    ["tenantAuthorityPersonRemoval", "alice-token", "MemberGranters"],
+    ["projectAuthorityGroupAddition", "priya-token", "AdminGranters"],
+    ["projectAuthorityPersonRemoval", "priya-token", "AdminGranters"],
+    ["siteAuthorityPersonAddition", "hal-token", "AuthorityManagers"],
+    ["siteAuthorityGroupRemoval", "hal-token", "AccountCreators"],
+  ] as const) {
+    const changed = await holderChange(
+      app,
+      name,
+      token,
+      authority,
+      name.startsWith("project")
+        ? "ProjectAdmins"
+        : name.startsWith("site")
+          ? "SiteAdmins"
+          : "TenantMembers",
+    );
+    assert.equal(changed.statusCode, 204, `${name} ${changed.body}`);
+  }
+  assert.deepEqual(
+    memory.changes.map(([verb, grant]) => [
+      verb,
+      grant.namespace,
+      grant.relation,
+      grant.holder.subject,
+    ]),
+    [
+      ["write", "Tenant", "member_granters", "Principal"],
+      ["write", "Tenant", "member_granters", "Holders"],
+      ["remove", "Tenant", "member_granters", "Holders"],
+      ["remove", "Tenant", "member_granters", "Principal"],
+      ["write", "Project", "admin_granters", "Holders"],
+      ["remove", "Project", "admin_granters", "Principal"],
+      ["write", "Site", "authority_managers", "Principal"],
+      ["remove", "Site", "account_creators", "Holders"],
+    ],
+  );
+});
+
+test("a change of a holder is absent, forbidden, a conflict under its own code or rejected, and none of them writes", async () => {
+  const { memory, app } = await served();
+  for (const name of [
+    "tenantAuthorityPersonAddition",
+    "projectAuthorityGroupRemoval",
+    "siteAuthorityPersonAddition",
+  ] as const) {
+    const absent = await holderChange(
+      app,
+      name,
+      "dee-token",
+      "AuthorityManagers",
+      "ProjectAdmins",
+    );
+    assert.equal(absent.statusCode, 404, name);
+    enveloped(absent, "Absent");
+    const unauthenticated = await holderChange(app, name, undefined);
+    assert.equal(unauthenticated.statusCode, 401, name);
+  }
+  for (const [token, authority] of [
+    ["alice-token", "HostedRunsGranters"],
+    ["hal-token", "AdminGranters"],
+  ] as const) {
+    const refused = await holderChange(
+      app,
+      "tenantAuthorityGroupAddition",
+      token,
+      authority,
+    );
+    assert.equal(refused.statusCode, 403, refused.body);
+    enveloped(refused, "Rejected", accessNotPermittedCode);
+  }
+  for (const [name, token, authority, group] of [
+    [
+      "tenantAuthorityGroupAddition",
+      "alice-token",
+      "AdminGranters",
+      "TenantMembers",
+    ],
+    [
+      "siteAuthorityGroupAddition",
+      "hal-token",
+      "AccountCreators",
+      "TenantAdmins",
+    ],
+    [
+      "tenantAuthorityGroupRemoval",
+      "alice-token",
+      "AdminGranters",
+      "ProjectAdmins",
+    ],
+  ] as const) {
+    const conflict = await holderChange(app, name, token, authority, group);
+    assert.equal(conflict.statusCode, 409, conflict.body);
+    enveloped(conflict, "Conflict", accessHolderNotAdmittedCode);
+  }
+  for (const [name, authority, group] of [
+    ["tenantAuthorityPersonAddition", "Owners", "TenantMembers"],
+    ["siteAuthorityPersonAddition", "AdminGranters", "TenantMembers"],
+    ["projectAuthorityGroupAddition", "AdminGranters", "Everyone"],
+  ] as const)
+    enveloped(
+      await holderChange(app, name, "alice-token", authority, group),
+      "Rejected",
+      "InvalidRequest",
+    );
+  assert.deepEqual(memory.changes, []);
+});
+
+test("a tenant's administrators are added to the site's account creators once the tenant carries its site link, and removed", async () => {
+  const { memory, app } = await served();
+  const unlinked = await holderChange(
+    app,
+    "siteAuthorityTenantAddition",
+    "hal-token",
+  );
+  assert.equal(unlinked.statusCode, 404, unlinked.body);
+  enveloped(
+    await holderChange(app, "siteAuthorityTenantAddition", "alice-token"),
+    "Absent",
+  );
+  assert.equal(memory.changes.length, 0);
+  for (const grant of tenantAuthorityDefaults(tenant))
+    await memory.grants.write(grant);
+  memory.changes.length = 0;
+  for (const name of [
+    "siteAuthorityTenantAddition",
+    "siteAuthorityTenantRemoval",
+  ] as const)
+    assert.equal(
+      (await holderChange(app, name, "hal-token")).statusCode,
+      204,
+      name,
+    );
+  assert.deepEqual(
+    memory.changes.map(([verb, grant]) => [verb, grant.relation, grant.holder]),
+    (["write", "remove"] as const).map((verb) => [
+      verb,
+      "account_creators",
+      {
+        subject: "Holders",
+        namespace: "Tenant",
+        object: projectAccessTenantObject(tenant),
+        relation: "admins",
+      },
+    ]),
+  );
+});
+
 test("an authority that cannot answer is retryable on every route and unready on readiness", async () => {
   const { memory, app } = await served();
   memory.unavailable = true;
@@ -604,9 +793,47 @@ async function accessReached(
   );
 }
 
-test("no request reaches a relation but the ones the role rosters name and hosted runs", async () => {
+/** Every holder route asked by a caller managing everything, its authority spelled every way a role is and as every authority and relation. */
+async function accessHoldersReached(
+  memory: AccessMemory,
+  app: Awaited<ReturnType<typeof served>>["app"],
+) {
+  const spellings = [
+    ...new Set([
+      ...accessSpellings(),
+      ...Object.entries({
+        ...accessSiteAuthorityRelations,
+        ...accessTenantAuthorityRelations,
+        ...accessProjectAuthorityRelations,
+      }).flat(),
+    ]),
+  ];
+  for (const name of Object.keys(accessPlaneRoutes) as AccessPlaneRouteName[])
+    if (name.includes("Authority") && accessPlaneRoutes[name].method !== "GET")
+      for (const authority of spellings)
+        await holderChange(app, name, "sam-token", authority, "TenantAdmins");
+  return new Set(
+    memory.changes.map(
+      ([verb, grant]) => `${verb} ${grant.namespace} ${grant.relation}`,
+    ),
+  );
+}
+
+test("no request reaches a relation but the ones the role rosters and the authority rosters name and hosted runs", async () => {
   const { memory, app } = await served();
-  const reached = await accessReached(memory, app);
+  for (const grant of tenantAuthorityDefaults(tenant))
+    await memory.grants.write(grant);
+  memory.changes.length = 0;
+  accessGiven(memory, accessFixturePrincipal("sam"), [
+    { on: "Site", kind: "ManageSiteAuthorities" },
+    { on: "Tenant", tenant, kind: "ManageTenantAuthorities" },
+    { on: "Tenant", tenant, kind: "ManageSiteHeldAuthorities" },
+    { on: "Project", partition: web, kind: "ManageProjectAuthorities" },
+  ]);
+  const reached = new Set([
+    ...(await accessReached(memory, app)),
+    ...(await accessHoldersReached(memory, app)),
+  ]);
   const expected = new Set(
     (["write", "remove"] as const).flatMap((verb) => [
       `${verb} Tenant hosted_execution`,
@@ -614,6 +841,15 @@ test("no request reaches a relation but the ones the role rosters name and hoste
         (relation) => `${verb} Tenant ${relation}`,
       ),
       ...Object.values(accessProjectRoleRelations).map(
+        (relation) => `${verb} Project ${relation}`,
+      ),
+      ...Object.values(accessSiteAuthorityRelations).map(
+        (relation) => `${verb} Site ${relation}`,
+      ),
+      ...Object.values(accessTenantAuthorityRelations).map(
+        (relation) => `${verb} Tenant ${relation}`,
+      ),
+      ...Object.values(accessProjectAuthorityRelations).map(
         (relation) => `${verb} Project ${relation}`,
       ),
     ]),

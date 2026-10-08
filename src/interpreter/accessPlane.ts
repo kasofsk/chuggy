@@ -6,8 +6,10 @@
  * A REQUEST REACHES A RELATION THROUGH ONE RECORD PER ROSTER, OR AS HOSTED
  * RUNS. The builders in `./projectGrant.ts` take any relation the model
  * declares, `agents`, `pools` and the `tenant` link included, so these two
- * records and `accessHostedRunsRelation` are the whole of what a request can
- * write: no string a request carries reaches a builder any other way.
+ * records and `accessHostedRunsRelation` are the whole of what a role change
+ * can write, and `./accessAuthorityHolders.ts` holds the records an
+ * authority's holders are written through: no string a request carries
+ * reaches a builder any other way.
  *
  * A LIST IS ANSWERED TO WHOEVER HOLDS ONE OF ITS OWN KINDS, and a change asks
  * the kind granting its role, each in one record beside the role's relation,

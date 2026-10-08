@@ -63,6 +63,7 @@ import {
 import type {
   ProjectAuthorityRelation,
   ProjectGrantHolderRelation,
+  ProjectGrantSubject,
   SiteAuthorityRelation,
   TenantAuthorityRelation,
 } from "./projectGrant.ts";
@@ -153,16 +154,24 @@ type AccessSetSubject = Extract<
   { readonly subject: "Set" }
 >;
 
+/** The holder `group` is written as where `place` names its namespace's object. */
+export function accessGroupHolder(
+  place: AccessAuthorityPlace,
+  group: AccessGroup,
+): Extract<ProjectGrantSubject, { readonly subject: "Holders" }> {
+  const { namespace, relation } = accessGroupHolders[group];
+  const object = place[namespace];
+  if (object === undefined)
+    throw new RangeError(`access authorities: ${group} is not named here`);
+  return { subject: "Holders", namespace, object, relation };
+}
+
 /** The subject set `group` is where `place` names its namespace's object. */
 export function accessGroupSubject(
   place: AccessAuthorityPlace,
   group: AccessGroup,
 ): AccessSetSubject {
-  const { namespace, relation } = accessGroupHolders[group];
-  const object = place[namespace];
-  if (object === undefined)
-    throw new RangeError(`access authorities: ${group} is not named here`);
-  return { subject: "Set", namespace, object, relation };
+  return { ...accessGroupHolder(place, group), subject: "Set" };
 }
 
 /** One list's level: the object its authorities are relations of, its rosters and where its groups are named. */
@@ -327,7 +336,7 @@ function accessSiteHeldTenant(set: AccessSetSubject): TenantId | undefined {
     : undefined;
 }
 
-const accessSitePlace: AccessAuthorityPlace = {
+export const accessSitePlace: AccessAuthorityPlace = {
   [projectAccessSiteNamespace]: projectAccessSiteObject,
 };
 
@@ -364,10 +373,17 @@ async function accessSiteAuthoritiesRead(
   };
 }
 
-function accessTenantPlace(tenant: TenantId): AccessAuthorityPlace {
+export function accessTenantPlace(tenant: TenantId): AccessAuthorityPlace {
   return {
     ...accessSitePlace,
     [projectAccessTenantNamespace]: projectAccessTenantObject(tenant),
+  };
+}
+
+export function accessProjectPlace(partition: Partition): AccessAuthorityPlace {
+  return {
+    ...accessTenantPlace(partition.tenant),
+    [projectAccessNamespace]: projectAccessObject(partition),
   };
 }
 
@@ -414,10 +430,7 @@ async function accessProjectAuthoritiesRead(
       authorities: accessProjectAuthorities,
       relations: accessProjectAuthorityRelations,
       groups: accessProjectGroups,
-      place: {
-        ...accessTenantPlace(partition.tenant),
-        [projectAccessNamespace]: object,
-      },
+      place: accessProjectPlace(partition),
     },
   );
   return {
@@ -428,6 +441,52 @@ async function accessProjectAuthoritiesRead(
   };
 }
 
+/** Whether `caller` is answered the site's list. */
+export async function accessSiteAuthoritiesListed(
+  access: ProjectAccess,
+  caller: Principal,
+): Promise<boolean> {
+  return (
+    (await access.authorizeSite(caller, "ManageSiteAuthorities")) !== undefined
+  );
+}
+
+/** Whether `caller` is answered the tenant's list. */
+export async function accessTenantAuthoritiesListed(
+  access: ProjectAccess,
+  caller: Principal,
+  tenant: TenantId,
+): Promise<boolean> {
+  return (
+    (await accessTenantHeld(
+      access,
+      caller,
+      tenant,
+      "ManageTenantAuthorities",
+    )) ||
+    (await accessTenantHeld(
+      access,
+      caller,
+      tenant,
+      "ManageSiteHeldAuthorities",
+    ))
+  );
+}
+
+/** Whether `caller` is answered the project's list. */
+export function accessProjectAuthoritiesListed(
+  access: ProjectAccess,
+  caller: Principal,
+  partition: Partition,
+): Promise<boolean> {
+  return accessProjectHeld(
+    access,
+    caller,
+    partition,
+    "ManageProjectAuthorities",
+  );
+}
+
 export function accessAuthorities(
   ports: AccessAuthoritiesPorts,
   settings: AccessAuthoritiesSettings,
@@ -436,32 +495,15 @@ export function accessAuthorities(
     throw new RangeError("access authorities: the issuer is empty");
   return {
     siteAuthorities: async (caller) =>
-      (await ports.access.authorizeSite(caller, "ManageSiteAuthorities")) ===
-      undefined
-        ? undefined
-        : accessSiteAuthoritiesRead(ports, settings, caller),
+      (await accessSiteAuthoritiesListed(ports.access, caller))
+        ? accessSiteAuthoritiesRead(ports, settings, caller)
+        : undefined,
     tenantAuthorities: async (caller, tenant) =>
-      (await accessTenantHeld(
-        ports.access,
-        caller,
-        tenant,
-        "ManageTenantAuthorities",
-      )) ||
-      (await accessTenantHeld(
-        ports.access,
-        caller,
-        tenant,
-        "ManageSiteHeldAuthorities",
-      ))
+      (await accessTenantAuthoritiesListed(ports.access, caller, tenant))
         ? accessTenantAuthoritiesRead(ports, settings, caller, tenant)
         : undefined,
     projectAuthorities: async (caller, partition) =>
-      (await accessProjectHeld(
-        ports.access,
-        caller,
-        partition,
-        "ManageProjectAuthorities",
-      ))
+      (await accessProjectAuthoritiesListed(ports.access, caller, partition))
         ? accessProjectAuthoritiesRead(ports, settings, caller, partition)
         : undefined,
   };

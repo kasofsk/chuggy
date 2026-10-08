@@ -50,6 +50,11 @@ project's. The site, and every tenant and project that existed before, are given
 theirs by an operator, in this order. Until the site has an administrator and
 its defaults, nobody holds `CreateAccount`.
 
+Once given, the holders are a request's to change: the access plane adds and
+removes a holder of each authority for a caller who may manage it. A project,
+or the site, that every holder of every authority is removed from is given its
+defaults again by the next run of the command below.
+
 **Name the site's first administrator.** The site is asked for by
 `CHUG_PROVISION_LEVEL=site`, which writes only the site's `admins` and is
 refused beside a tenant, a project or any other relation:
@@ -110,8 +115,9 @@ defaults, a created project's `tenant` and defaults, and a registered pool's
 `CHUG_API_KETO_WRITE_URL` names Keto's **write** port. The access plane,
 `src/roots/accessPlane.ts`, grants and removes a person's `admins` and
 `members` on a tenant and `admins`, `developers` and `dispatchers` on a
-project, and gives and takes a person's `hosted_execution`, each for a caller
-holding the kind that grants it. Every other grant is the operator's, through
+project, gives and takes a person's `hosted_execution`, and adds and removes
+the holders of each authority beside them, each for a caller holding the kind
+that grants it. Every other grant is the operator's, through
 `src/roots/provisionProjectAccess.ts`, which reaches that port and nothing else
 and needs no database at all.
 

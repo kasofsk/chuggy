@@ -13,6 +13,7 @@
 import {
   accessEmailSchema,
   accessGithubLoginSchema,
+  accessHolderNotAdmittedCode,
   accessInvitationCodes,
   accessInvitationProjectsMax,
   accessInvitationSchema,
@@ -57,13 +58,15 @@ export function projectRoleLabel(role: AccessProjectRole): string {
 export type AccessRefusalCode =
   | (typeof accessInvitationCodes)[keyof typeof accessInvitationCodes]
   | typeof accessLastTenantAdministratorCode
-  | typeof accessNotPermittedCode;
+  | typeof accessNotPermittedCode
+  | typeof accessHolderNotAdmittedCode;
 
 /** Every name the plane refuses a change or an invitation with. */
 export const accessRefusalCodes: readonly AccessRefusalCode[] = [
   ...Object.values(accessInvitationCodes),
   accessLastTenantAdministratorCode,
   accessNotPermittedCode,
+  accessHolderNotAdmittedCode,
 ];
 
 /** Why the plane refused, as the one line under what was refused. */
@@ -93,6 +96,8 @@ export function accessRefusalLabel(code: AccessRefusalCode): string {
       return "Only admin · grant another first";
     case "AccessNotPermitted":
       return "Change not permitted";
+    case "AccessHolderNotAdmitted":
+      return "Holder not admitted";
   }
 }
 

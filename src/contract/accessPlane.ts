@@ -15,7 +15,9 @@
  * saying who may grant a role or manage who may, one roster a level, and a
  * group is the holders of one role named relative to where a list is asked.
  * Each reaches its relation or subject set through one record in the
- * interpreter, which is also what names a holder read back.
+ * interpreter, which is also what names a holder read back and what a holder
+ * added is written as. A person and a group are different paths, so a subject
+ * is never read as a group's name.
  *
  * WHAT A CALLER MAY DO IS ANSWERED ABOUT THEM ALONE, at the site, a tenant or
  * a project: each ability is whether they hold the kind it needs there, so a
@@ -82,10 +84,13 @@ export const accessTenantGroups = [
   "TenantMembers",
 ] as const satisfies readonly AccessGroup[];
 
+export type AccessTenantGroup = (typeof accessTenantGroups)[number];
+
 /** The groups the site's list names. */
 export const accessSiteGroups = [
   "SiteAdmins",
 ] as const satisfies readonly AccessGroup[];
+export type AccessSiteGroup = (typeof accessSiteGroups)[number];
 
 /** One route as the plane registers it, its segments named as `:name`. */
 export interface AccessPlaneRoute {
@@ -95,6 +100,18 @@ export interface AccessPlaneRoute {
 
 const accessTenantPath = `${accessPlaneBasePath}/tenants/:tenant`;
 const accessProjectPath = `${accessTenantPath}/projects/:project`;
+const accessSitePath = `${accessPlaneBasePath}/site`;
+
+/** One person as a holder of one of the level's authorities, `level` its path. */
+const accessHolderPersonPath = (level: string) =>
+  `${level}/authorities/:authority/people/:subject`;
+
+/** One group as a holder of one of the level's authorities. */
+const accessHolderGroupPath = (level: string) =>
+  `${level}/authorities/:authority/groups/:group`;
+
+/** The site's account creators held by one tenant's administrators. */
+const accessSiteTenantHolderPath = `${accessSitePath}/authorities/AccountCreators/tenants/:tenant`;
 
 export const accessPlaneRoutes = {
   tenantPeople: { method: "GET", path: `${accessTenantPath}/people` },
@@ -142,6 +159,62 @@ export const accessPlaneRoutes = {
     method: "GET",
     path: `${accessPlaneBasePath}/site/authorities`,
   },
+  siteAuthorityPersonAddition: {
+    method: "POST",
+    path: accessHolderPersonPath(accessSitePath),
+  },
+  siteAuthorityPersonRemoval: {
+    method: "DELETE",
+    path: accessHolderPersonPath(accessSitePath),
+  },
+  siteAuthorityGroupAddition: {
+    method: "POST",
+    path: accessHolderGroupPath(accessSitePath),
+  },
+  siteAuthorityGroupRemoval: {
+    method: "DELETE",
+    path: accessHolderGroupPath(accessSitePath),
+  },
+  siteAuthorityTenantAddition: {
+    method: "POST",
+    path: accessSiteTenantHolderPath,
+  },
+  siteAuthorityTenantRemoval: {
+    method: "DELETE",
+    path: accessSiteTenantHolderPath,
+  },
+  tenantAuthorityPersonAddition: {
+    method: "POST",
+    path: accessHolderPersonPath(accessTenantPath),
+  },
+  tenantAuthorityPersonRemoval: {
+    method: "DELETE",
+    path: accessHolderPersonPath(accessTenantPath),
+  },
+  tenantAuthorityGroupAddition: {
+    method: "POST",
+    path: accessHolderGroupPath(accessTenantPath),
+  },
+  tenantAuthorityGroupRemoval: {
+    method: "DELETE",
+    path: accessHolderGroupPath(accessTenantPath),
+  },
+  projectAuthorityPersonAddition: {
+    method: "POST",
+    path: accessHolderPersonPath(accessProjectPath),
+  },
+  projectAuthorityPersonRemoval: {
+    method: "DELETE",
+    path: accessHolderPersonPath(accessProjectPath),
+  },
+  projectAuthorityGroupAddition: {
+    method: "POST",
+    path: accessHolderGroupPath(accessProjectPath),
+  },
+  projectAuthorityGroupRemoval: {
+    method: "DELETE",
+    path: accessHolderGroupPath(accessProjectPath),
+  },
 } as const satisfies Readonly<Record<string, AccessPlaneRoute>>;
 
 export type AccessPlaneRouteName = keyof typeof accessPlaneRoutes;
@@ -168,6 +241,13 @@ export const accessSubjectSchema = identitySchema;
 export const accessTenantRoleSchema = z.enum(accessTenantRoles);
 export const accessProjectRoleSchema = z.enum(accessProjectRoles);
 
+export const accessSiteAuthoritySchema = z.enum(accessSiteAuthorities);
+export const accessTenantAuthoritySchema = z.enum(accessTenantAuthorities);
+export const accessProjectAuthoritySchema = z.enum(accessProjectAuthorities);
+
+/** A group as a path names it at any level, so one the level does not name is refused as a holder rather than as a request. */
+export const accessGroupSchema = z.enum(accessProjectGroups);
+
 /** What a tenant role grant is sent. */
 export const accessTenantRoleGrantSchema = z.strictObject({
   role: accessTenantRoleSchema,
@@ -181,8 +261,11 @@ export const accessProjectRoleGrantSchema = z.strictObject({
 /** The conflict a removal is refused with when it would leave a tenant no administrator. */
 export const accessLastTenantAdministratorCode = "LastTenantAdministrator";
 
-/** The refusal of a change or an invitation to a caller answered the list who may not grant a role it names, or hosted runs. */
+/** The refusal of a change or an invitation to a caller answered the list who may not grant a role it names, or hosted runs, or manage the authority it names. */
 export const accessNotPermittedCode = "AccessNotPermitted";
+
+/** The conflict a holder is refused with where the authority does not admit it, or where a removal names a group the level's list cannot. */
+export const accessHolderNotAdmittedCode = "AccessHolderNotAdmitted";
 
 /** The longest username GitHub admits. */
 export const accessGithubLoginCharsMax = 39;
