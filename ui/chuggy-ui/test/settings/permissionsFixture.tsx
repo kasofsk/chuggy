@@ -1,21 +1,42 @@
 /**
- * A workspace's permissions and the site's as the access plane answers them,
- * and the page drawn against a plane a case scripts: each list and the reader's
- * abilities and the People list at their own paths, every removal and every
- * addition answered by the case, and what the bar reads answered empty.
+ * A project's permissions, a workspace's and the site's as the access plane
+ * answers them, and each level's page drawn against a plane a case scripts:
+ * each list and the reader's abilities and people at their own paths, every
+ * removal and every addition answered by the case, and what the bar reads
+ * answered empty. What a case does to a section and its `Add` dialog is here
+ * too, so every level's suite asks it the same way.
  */
 
-import { screen, within } from "@testing-library/react";
+import { QueryClient } from "@tanstack/react-query";
+import { fireEvent, render, screen, within } from "@testing-library/react";
+import { vi } from "vitest";
 
 import type {
+  AccessProjectAuthorities,
+  AccessProjectPeople,
   AccessSiteAuthorities,
   AccessTenantAbilities,
   AccessTenantAuthorities,
   AccessTenantPeople,
 } from "../../../../src/contract/accessPlane.ts";
+import { ProjectPermissionsPage } from "../../app/browser/settings/ProjectPermissionsPage.tsx";
 import { TenantPermissionsPage } from "../../app/browser/settings/TenantPermissionsPage.tsx";
-import { answer, drawnStrict, sectionOf } from "../screenHarness.tsx";
+import {
+  answer,
+  drawnStrict,
+  openedStream,
+  ScreenHarness,
+  scriptedFetch,
+  sectionOf,
+  settled,
+  turned,
+} from "../screenHarness.tsx";
 import type { DrawnStrict, SentRequest } from "../screenHarness.tsx";
+
+/** What a drawn page sent, every level's drawing carrying it. */
+interface PermissionsSent {
+  readonly sent: readonly SentRequest[];
+}
 
 export const permissionsTenant = "acme";
 
@@ -133,6 +154,49 @@ export const siteAuthoritiesStarting: AccessSiteAuthorities = {
   truncated: false,
 };
 
+export const permissionsProject = "atlas";
+
+export const projectAuthoritiesPath = `/access/v1/tenants/${permissionsTenant}/projects/${permissionsProject}/authorities`;
+
+export const projectPeoplePath = `/access/v1/tenants/${permissionsTenant}/projects/${permissionsProject}/people`;
+
+/** The holders a project starts with. */
+export const projectAuthoritiesStarting: AccessProjectAuthorities = {
+  tenant: permissionsTenant,
+  project: permissionsProject,
+  authorities: (
+    [
+      "AdminGranters",
+      "DeveloperGranters",
+      "DispatcherGranters",
+      "AuthorityManagers",
+    ] as const
+  ).map((authority) => ({
+    authority,
+    people: [],
+    groups: ["TenantAdmins", "ProjectAdmins"],
+    unnamed: 0,
+  })),
+  truncated: false,
+};
+
+/** The project's people: one person with an account, one without. */
+export const projectPeopleListed: AccessProjectPeople = {
+  tenant: permissionsTenant,
+  project: permissionsProject,
+  people: permissionsPeopleListed.people.map((person) => ({
+    subject: person.subject,
+    mine: person.mine,
+    tenantAdmin: false,
+    roles: ["Developer"],
+    ...(person.account
+      ? { account: true, email: person.email, githubLogin: person.githubLogin }
+      : { account: false }),
+  })),
+  otherIssuers: 0,
+  truncated: false,
+};
+
 /** A read that never answers. */
 export function unanswered(): Promise<Response> {
   return new Promise<Response>(() => undefined);
@@ -193,16 +257,16 @@ export function permissionsDrawn(
 }
 
 /** Every removal the page sent. */
-export function removalsSent(drawn: DrawnStrict): readonly SentRequest[] {
+export function removalsSent(drawn: PermissionsSent): readonly SentRequest[] {
   return drawn.sent.filter((request) => request.method === "DELETE");
 }
 
 /** Every addition the page sent. */
-export function additionsSent(drawn: DrawnStrict): readonly SentRequest[] {
+export function additionsSent(drawn: PermissionsSent): readonly SentRequest[] {
   return drawn.sent.filter((request) => request.method === "POST");
 }
 
-export function readsOf(drawn: DrawnStrict, path: string): number {
+export function readsOf(drawn: PermissionsSent, path: string): number {
   return drawn.sent.filter((request) => request.url === path).length;
 }
 
@@ -226,4 +290,88 @@ export function sectionDrawn(title: string): boolean {
   return (
     screen.queryByRole("region", { name: new RegExp(`^${title}`) }) !== null
   );
+}
+
+export interface ProjectPermissionsDrawing {
+  readonly authorities?: () => Response | Promise<Response>;
+  readonly people?: () => Response;
+  /** What a removal is answered with. */
+  readonly removed?: () => Response;
+  /** What an addition is answered with. */
+  readonly added?: () => Response;
+}
+
+/** The project's page drawn in the project's frame, its list and its people answered unless a case says otherwise. */
+export async function drawProjectPermissions(
+  drawing: ProjectPermissionsDrawing = {},
+): Promise<PermissionsSent> {
+  const authorities =
+    drawing.authorities ?? (() => answer(projectAuthoritiesStarting));
+  const people = drawing.people ?? (() => answer(projectPeopleListed));
+  const scripted = scriptedFetch((request) => {
+    if (request.method === "DELETE")
+      return drawing.removed?.() ?? new Response(null, { status: 204 });
+    if (request.method === "POST")
+      return drawing.added?.() ?? new Response(null, { status: 204 });
+    if (request.url === projectAuthoritiesPath) return authorities();
+    if (request.url === projectPeoplePath) return people();
+    return answer({}, 404);
+  });
+  vi.stubGlobal("fetch", scripted.fetch);
+  render(
+    <ScreenHarness
+      partition={{ tenant: permissionsTenant, project: permissionsProject }}
+      client={new QueryClient()}
+      transport={openedStream().ports.fetch}
+    >
+      <ProjectPermissionsPage />
+    </ScreenHarness>,
+  );
+  await settled();
+  return { sent: scripted.sent };
+}
+
+/** The accessible name of every add button a section draws. */
+export function addButtons(title: string): readonly string[] {
+  return within(sectionOf(title))
+    .queryAllByRole("button", { name: /^Add to / })
+    .map((button) => button.textContent);
+}
+
+/** One section's add button pressed, its dialog opened. */
+export async function opened(title: string, permission: string): Promise<void> {
+  await turned(() => {
+    fireEvent.click(
+      within(sectionOf(title)).getByRole("button", {
+        name: `Add to ${permission}`,
+      }),
+    );
+  });
+  await settled();
+}
+
+export function dialog(): HTMLElement {
+  return screen.getByRole("dialog", { name: "Add holder" });
+}
+
+export function choicesOffered(): readonly string[] {
+  return within(dialog())
+    .queryAllByRole("radio")
+    .map((radio) => {
+      const label = document.querySelector(`label[for="${radio.id}"]`);
+      return label?.textContent ?? "";
+    });
+}
+
+export async function chosen(name: string): Promise<void> {
+  await turned(() => {
+    fireEvent.click(within(dialog()).getByRole("radio", { name }));
+  });
+}
+
+export async function added(): Promise<void> {
+  await turned(() => {
+    fireEvent.click(within(dialog()).getByRole("button", { name: "Add" }));
+  });
+  await settled();
 }

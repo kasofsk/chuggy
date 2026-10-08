@@ -10,6 +10,8 @@ import {
   accessInvitedSchema,
   accessPlanePath,
   accessPlaneRoutes,
+  accessProjectAuthoritiesSchema,
+  accessProjectPeopleSchema,
   accessSiteAuthoritiesSchema,
   accessTenantAbilitiesSchema,
   accessTenantAuthoritiesSchema,
@@ -18,6 +20,9 @@ import {
   type AccessInvited,
   type AccessGroup,
   type AccessPlaneRouteName,
+  type AccessProjectAuthorities,
+  type AccessProjectAuthority,
+  type AccessProjectPeople,
   type AccessProjectRole,
   type AccessSiteAuthorities,
   type AccessSiteAuthority,
@@ -80,6 +85,32 @@ export function apiTenantAuthorities(
     ports,
     accessPlanePath("tenantAuthorities", { tenant }),
     (value) => accessTenantAuthoritiesSchema.parse(value),
+  );
+}
+
+/** One project's people, absent for a caller who may not see them. */
+export function apiProjectPeople(
+  ports: ApiPorts,
+  tenant: string,
+  project: string,
+): Promise<ApiResult<AccessProjectPeople>> {
+  return apiGet(
+    ports,
+    accessPlanePath("projectPeople", { tenant, project }),
+    (value) => accessProjectPeopleSchema.parse(value),
+  );
+}
+
+/** Who holds each of one project's authorities, absent for a caller who does not manage them. */
+export function apiProjectAuthorities(
+  ports: ApiPorts,
+  tenant: string,
+  project: string,
+): Promise<ApiResult<AccessProjectAuthorities>> {
+  return apiGet(
+    ports,
+    accessPlanePath("projectAuthorities", { tenant, project }),
+    (value) => accessProjectAuthoritiesSchema.parse(value),
   );
 }
 
@@ -244,6 +275,50 @@ export function apiAddSiteAuthorityTenant(
   tenant: string,
 ): Promise<ApiResult<undefined>> {
   return accessSent(ports, "siteAuthorityTenantAddition", { tenant });
+}
+
+export function apiAddProjectAuthorityGroup(
+  ports: ApiPorts,
+  tenant: string,
+  project: string,
+  authority: AccessProjectAuthority,
+  group: AccessGroup,
+): Promise<ApiResult<undefined>> {
+  const segments = { tenant, project, authority, group };
+  return accessSent(ports, "projectAuthorityGroupAddition", segments);
+}
+
+export function apiRemoveProjectAuthorityGroup(
+  ports: ApiPorts,
+  tenant: string,
+  project: string,
+  authority: AccessProjectAuthority,
+  group: AccessGroup,
+): Promise<ApiResult<undefined>> {
+  const segments = { tenant, project, authority, group };
+  return accessSent(ports, "projectAuthorityGroupRemoval", segments);
+}
+
+export function apiAddProjectAuthorityPerson(
+  ports: ApiPorts,
+  tenant: string,
+  project: string,
+  authority: AccessProjectAuthority,
+  subject: string,
+): Promise<ApiResult<undefined>> {
+  const segments = { tenant, project, authority, subject };
+  return accessSent(ports, "projectAuthorityPersonAddition", segments);
+}
+
+export function apiRemoveProjectAuthorityPerson(
+  ports: ApiPorts,
+  tenant: string,
+  project: string,
+  authority: AccessProjectAuthority,
+  subject: string,
+): Promise<ApiResult<undefined>> {
+  const segments = { tenant, project, authority, subject };
+  return accessSent(ports, "projectAuthorityPersonRemoval", segments);
 }
 
 /** One person invited by their GitHub account, created or found. */

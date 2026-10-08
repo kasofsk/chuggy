@@ -51,6 +51,11 @@ async function drawnSettingsPage(): Promise<void> {
     path: "/settings/placement",
     component: () => <p>the placement settings page</p>,
   });
+  const settingsPermissions = createRoute({
+    getParentRoute: () => partition,
+    path: "/settings/permissions",
+    component: () => <p>the permissions settings page</p>,
+  });
   const tenantSettings = createRoute({
     getParentRoute: () => root,
     path: "/tenants/$tenant/settings",
@@ -60,7 +65,12 @@ async function drawnSettingsPage(): Promise<void> {
     history: createMemoryHistory({ initialEntries: ["/acme/atlas/settings"] }),
     routeTree: root.addChildren([
       tenantSettings,
-      partition.addChildren([settings, settingsLead, settingsPlacement]),
+      partition.addChildren([
+        settings,
+        settingsLead,
+        settingsPlacement,
+        settingsPermissions,
+      ]),
     ]),
   });
   render(<RouterProvider router={router} />);
@@ -77,6 +87,23 @@ test("the index names the Placement group and links to its own page", async () =
   await drawnSettingsPage();
   fireEvent.click(screen.getByRole("link", { name: "Placement" }));
   expect(await screen.findByText("the placement settings page")).toBeDefined();
+});
+
+test("the index names the Permissions group before Workspace and links to its own page", async () => {
+  await drawnSettingsPage();
+  expect(
+    screen.getAllByRole("link").map((link) => link.textContent),
+  ).toStrictEqual(["Lead", "Placement", "Permissions", "Workspace"]);
+  const permissions = screen.getByRole<HTMLAnchorElement>("link", {
+    name: "Permissions",
+  });
+  expect(permissions.getAttribute("href")).toBe(
+    "/acme/atlas/settings/permissions",
+  );
+  fireEvent.click(permissions);
+  expect(
+    await screen.findByText("the permissions settings page"),
+  ).toBeDefined();
 });
 
 test("the index names the Workspace group and links to the workspace's own settings", async () => {

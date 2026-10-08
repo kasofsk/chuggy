@@ -8,9 +8,11 @@
 import { expect, test } from "vitest";
 
 import {
+  accessProjectAuthorities,
   accessProjectGroups,
   accessSiteAuthorities,
   accessTenantAuthorities,
+  type AccessProjectPeople,
   type AccessSiteAuthorities,
   type AccessTenantAbilities,
   type AccessTenantAuthorities,
@@ -25,6 +27,9 @@ import {
   permissionGroupName,
   permissionHolderRemovable,
   permissionRemovalAsks,
+  projectPermissionAdmits,
+  projectPermissionName,
+  projectPermissionRows,
   sitePermissionAdmits,
   sitePermissionName,
   sitePermissionRows,
@@ -218,6 +223,7 @@ function tenantChoicesWords(
 ): readonly (readonly string[])[] {
   return tenantRowsAdminsOnly.map((row) =>
     permissionAdditionChoices(
+      "Tenant",
       row,
       tenantPermissionAdmits(row.authority),
       "acme",
@@ -245,6 +251,7 @@ test("a workspace permission offers each group its record admits and it does not
 test("only Workspace members on Member grants, and Person, carry a line", () => {
   const lines = tenantRowsAdminsOnly.flatMap((row) =>
     permissionAdditionChoices(
+      "Tenant",
       row,
       tenantPermissionAdmits(row.authority),
       "acme",
@@ -275,6 +282,7 @@ test("the site's account creation offers this workspace's admins only where they
       truncated: false,
     }).map((row) =>
       permissionAdditionChoices(
+        "Site",
         row,
         sitePermissionAdmits(row.authority),
         "acme",
@@ -345,6 +353,7 @@ test("a choice is sent as its holder, a person only once one is chosen, and each
   });
   if (creators === undefined) throw new Error("no row");
   const choices = permissionAdditionChoices(
+    "Site",
     creators,
     sitePermissionAdmits("AccountCreators"),
     "acme",
@@ -373,4 +382,95 @@ test("a choice is sent as its holder, a person only once one is chosen, and each
     words: "ada@example.com",
   });
   expect(permissionChoiceHolder(undefined, ada)).toBeUndefined();
+});
+
+/** Each project permission held by its starting holders, and a person on admin grants. */
+const projectRowsStarting = projectPermissionRows({
+  tenant: "acme",
+  project: "atlas",
+  authorities: accessProjectAuthorities.map((authority) => ({
+    authority,
+    people: authority === "AdminGranters" ? [ada] : [],
+    groups: ["TenantAdmins", "ProjectAdmins"],
+    unnamed: 0,
+  })),
+  truncated: false,
+});
+
+test("every authority a project rosters has its own name, its rows in roster order", () => {
+  expect(accessProjectAuthorities.map(projectPermissionName)).toStrictEqual([
+    "Admin grants",
+    "Developer grants",
+    "Dispatcher grants",
+    "Permission changes",
+  ]);
+  expect(
+    projectRowsStarting.map((row) => [
+      row.name,
+      row.holders.map((holder) => holder.words),
+    ]),
+  ).toStrictEqual([
+    ["Admin grants", ["Workspace admins", "Project admins", "ada@example.com"]],
+    ["Developer grants", ["Workspace admins", "Project admins"]],
+    ["Dispatcher grants", ["Workspace admins", "Project admins"]],
+    ["Permission changes", ["Workspace admins", "Project admins"]],
+  ]);
+});
+
+test("a project's permissions are all changed by a reader shown them, and only permission changes asks first", () => {
+  expect(
+    accessProjectAuthorities.map((authority) =>
+      permissionChangeable("Project", authority, undefined),
+    ),
+  ).toStrictEqual([true, true, true, true]);
+  expect(projectRowsStarting.map(permissionRemovalAsks)).toStrictEqual([
+    false,
+    false,
+    false,
+    true,
+  ]);
+});
+
+test("a project permission offers its record's groups less those held, Project developers on Developer grants alone with its line, and a person from the project's people", () => {
+  const lines = projectRowsStarting.map((row) =>
+    permissionAdditionChoices(
+      "Project",
+      row,
+      projectPermissionAdmits(row.authority),
+      "acme",
+      [ada],
+    ).map((choice) => `${choice.words}: ${choice.line ?? ""}`),
+  );
+  const person = "Person: From this project's people";
+  expect(lines).toStrictEqual([
+    ["Site admins: ", person],
+    [
+      "Site admins: ",
+      "Project developers: Developers will see people and can remove other developers.",
+      person,
+    ],
+    ["Site admins: ", person],
+    [person],
+  ]);
+});
+
+test("the people offered are the project's less those holding the permission", () => {
+  const people: AccessProjectPeople = {
+    tenant: "acme",
+    project: "atlas",
+    people: [ada, { ...ada, subject: "s-bob" }].map((person) => ({
+      ...person,
+      tenantAdmin: false,
+      roles: [],
+    })),
+    otherIssuers: 0,
+    truncated: false,
+  };
+  const [admin, developer] = projectRowsStarting;
+  if (admin === undefined || developer === undefined)
+    throw new Error("no rows");
+  const subjects = (row: typeof admin) =>
+    permissionAdditionPeople(people, row)?.map((person) => person.subject);
+  expect(subjects(admin)).toStrictEqual(["s-bob"]);
+  expect(subjects(developer)).toStrictEqual(["s-ada", "s-bob"]);
 });

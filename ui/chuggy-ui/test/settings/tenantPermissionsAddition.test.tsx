@@ -13,18 +13,18 @@ import type { ReactNode } from "react";
 
 import { tenantPeopleResource } from "../../app/browser/settings/tenantPeopleResource.ts";
 import { tenantResourceKey } from "../../app/core/projectQueryKeys.ts";
-import {
-  answer,
-  press,
-  sectionOf,
-  settled,
-  turned,
-} from "../screenHarness.tsx";
+import { answer, press, turned } from "../screenHarness.tsx";
 import type { DrawnStrict } from "../screenHarness.tsx";
 import type * as BrowserPorts from "../../app/browser/ports.ts";
 import {
+  addButtons,
+  added,
   additionsSent,
+  choicesOffered,
+  chosen,
+  dialog,
   drawPermissions,
+  opened,
   permissionsAbilitiesNone,
   permissionsAbilitiesPath,
   permissionsAbilitiesSite,
@@ -63,51 +63,6 @@ afterEach(() => {
 
 const [adminGranters, memberGranters, hostedRunsGranters, authorityManagers] =
   tenantAuthoritiesStarting.authorities;
-
-/** The accessible name of every add button a section draws. */
-function addButtons(title: string): readonly string[] {
-  return within(sectionOf(title))
-    .queryAllByRole("button", { name: /^Add to / })
-    .map((button) => button.textContent);
-}
-
-/** One section's add button pressed, its dialog opened. */
-async function opened(title: string, permission: string): Promise<void> {
-  await turned(() => {
-    fireEvent.click(
-      within(sectionOf(title)).getByRole("button", {
-        name: `Add to ${permission}`,
-      }),
-    );
-  });
-  await settled();
-}
-
-function dialog(): HTMLElement {
-  return screen.getByRole("dialog", { name: "Add holder" });
-}
-
-function choicesOffered(): readonly string[] {
-  return within(dialog())
-    .queryAllByRole("radio")
-    .map((radio) => {
-      const label = document.querySelector(`label[for="${radio.id}"]`);
-      return label?.textContent ?? "";
-    });
-}
-
-async function chosen(name: string): Promise<void> {
-  await turned(() => {
-    fireEvent.click(within(dialog()).getByRole("radio", { name }));
-  });
-}
-
-async function added(): Promise<void> {
-  await turned(() => {
-    fireEvent.click(within(dialog()).getByRole("button", { name: "Add" }));
-  });
-  await settled();
-}
 
 /** A reader managing the workspace's permissions and the site's, the People list read. */
 function drawManaging(drawing: PermissionsDrawing = {}): Promise<DrawnStrict> {
