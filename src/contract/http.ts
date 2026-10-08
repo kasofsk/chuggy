@@ -383,6 +383,16 @@ export const projectRepositoriesAnsweredMax = 200;
 /** How many registered pools one project's listing answers with, in name order. */
 export const workerPoolsAnsweredMax = 64;
 
+/** How many of a ticket's landings one read answers with, the newest of them, oldest first. */
+export const ticketLandingsAnsweredMax = 8;
+
+/**
+ * How much of a conflict's paths one landing answers with, weighed as the JSON
+ * strings they are sent as. A manifest can hold far more than a response body
+ * carries, so a landing answers the paths that fit and says the list was cut.
+ */
+export const ticketLandingConflictBytesMax = 2_048;
+
 /**
  * How many repositories one installation's listing answers with at the most,
  * whatever bound a deployment sets: a deployment naming a wider one is refused
@@ -448,6 +458,7 @@ export const nativeHttpRoutes = {
   ticketNativeActions: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/tickets/:ticket/native-actions`,
   ticketAgenticRefusals: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/tickets/:ticket/agentic-refusals`,
   ticketActionReach: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/tickets/:ticket/action-reach`,
+  ticketLandings: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/tickets/:ticket/landings`,
   nativeActions: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/native-actions`,
   agenticRefusals: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/agentic-refusals`,
   operationalStatus: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/operational-status`,

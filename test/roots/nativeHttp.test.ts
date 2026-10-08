@@ -1585,3 +1585,113 @@ test("a deployment naming no scratch root serves the reach route, runs no git, a
     );
   }
 });
+
+/** One row of the landings door: a landing failed on a conflict whose manifest is `conflict-1`. */
+const landingsRow = {
+  request: "request-1",
+  authorizing_seq: "4",
+  work_cycle: "1",
+  finalization_generation: "1",
+  state: "Fulfilled",
+  concluded: "TicketFinalizationNeedsWork",
+  hold_kind: null,
+  hold_passes: 0,
+  held_since: null,
+  attempts: 1,
+  outcome: "Failed",
+  failure_kind: "MergeConflict",
+  target_ref: "refs/heads/main",
+  target_commit: "a".repeat(40),
+  candidate_commit: null,
+  prepared_at: "2026-10-07T12:00:00.000000Z",
+  conflict_manifest: "conflict-1",
+  approval_open: false,
+  proposed: false,
+  head_ref: null,
+  base_ref: null,
+  creation: null,
+  url: null,
+  merge: null,
+  merge_reason: null,
+  mergeability: null,
+  merge_commit: null,
+  landed_commit: null,
+};
+
+/**
+ * The root's own landings service over a pool answering as the door would of
+ * one failed landing, and a store holding its manifest. It reads the ticket
+ * once and says what each double was asked.
+ */
+const ticketLandingsProgram = `
+  const root = await import('./src/roots/nativeHttp.ts');
+  const preparation = await import('./src/interpreter/finalizerPreparation.ts');
+  const asked = [];
+  const pooled = (named) => ({
+    query: async (query) => {
+      const text = String(query.text);
+      asked.push(named + ' ' + (text.includes('read_ticket_landings') ? 'landings' : 'other'));
+      return { rows: [${JSON.stringify(landingsRow)}] };
+    },
+  });
+  const manifest = preparation.conflictManifestText({
+    request: 'request-1',
+    attempt: 'attempt-1',
+    strategy: 'Merge',
+    candidate: '${"b".repeat(40)}',
+    target: { ref: 'refs/heads/main', commit: '${"a".repeat(40)}' },
+    conflict: { paths: ['one.ts'], truncated: false },
+  });
+  const landings = root.nativeTicketLandings(
+    { pool: pooled('pool'), selectorReviewPool: pooled('selectorReviewPool') },
+    {
+      authorize: async (_principal, _partition, kind) => {
+        asked.push('access ' + kind);
+        return { kind: 'User', subject: 'reader' };
+      },
+    },
+    {
+      readArtifact: async (request) => {
+        asked.push('artifact ' + request.artifact);
+        return { read: 'Content', content: new TextEncoder().encode(manifest) };
+      },
+    },
+  );
+  const read = await landings.read(
+    'reader', { tenant: 'vteng', project: 'chuggy' }, 7,
+  );
+  process.stdout.write(JSON.stringify({ read, asked }));
+`;
+
+test("a ticket's landings are read over the API pool, and a conflict from the store the root is handed", async () => {
+  const ran = await rootRead({}, ticketLandingsProgram);
+  assert.equal(ran.code, 0, ran.out);
+  const { read, asked } = JSON.parse(ran.out) as {
+    read: unknown;
+    asked: readonly string[];
+  };
+  assert.deepEqual(read, {
+    landings: [
+      {
+        state: "Failed",
+        cycle: 1,
+        generation: 1,
+        attempts: 1,
+        attempt: {
+          outcome: "Failed",
+          failureKind: "MergeConflict",
+          targetRef: "refs/heads/main",
+          targetCommit: "a".repeat(40),
+          preparedAt: "2026-10-07T12:00:00.000000Z",
+        },
+        conflict: { paths: ["one.ts"], truncated: false },
+      },
+    ],
+    truncated: false,
+  });
+  assert.deepEqual(asked, [
+    "access Read",
+    "pool landings",
+    "artifact conflict-1",
+  ]);
+});

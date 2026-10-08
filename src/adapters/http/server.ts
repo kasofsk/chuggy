@@ -193,9 +193,11 @@ import {
   sessionBearerRefusedResponse,
   actionReportResponse,
   ticketActionReachResponse,
+  ticketLandingsResponse,
 } from "./outcomes.ts";
 import type { ActionReports } from "../../interpreter/actionReport.ts";
 import type { TicketActionReaches } from "../../interpreter/ticketActionReach.ts";
+import type { TicketLandingReads } from "../../interpreter/ticketLandings.ts";
 import type { WorkerPoolRegistrationService } from "../../interpreter/workerPoolRegistrationToken.ts";
 import type { ExecutionPlacementAdministration } from "../../interpreter/executionPlacement.ts";
 import type { PlacementAdministration } from "../../interpreter/placementRoute.ts";
@@ -1774,6 +1776,23 @@ function registerActionReach(
   );
 }
 
+function registerTicketLandings(
+  app: FastifyInstance,
+  landings: TicketLandingReads,
+): void {
+  registerEndpoint(
+    app,
+    nativeHttpEndpoints.ticketLandings,
+    (request, principal, partition) =>
+      landings.read(
+        principal,
+        partition,
+        asTicketIdField(record(request.params), "ticket"),
+      ),
+    ticketLandingsResponse,
+  );
+}
+
 function registerEndpointSession(request: FastifyRequest): SessionId {
   return asSessionId(textField(record(request.params), "session"));
 }
@@ -2162,6 +2181,7 @@ export function createNativeHttpApp(
   threadLive?: ThreadLiveHub,
   actionReports?: ActionReports,
   actionReach?: TicketActionReaches,
+  landings?: TicketLandingReads,
 ): FastifyInstance {
   const app = nativeHttpServer(limits);
   const partitionRoot = "/api/v1/tenants/:tenant/projects/:project";
@@ -2206,6 +2226,7 @@ export function createNativeHttpApp(
   registerPlacements(app, partitionRoot, placement, sessionPlacement);
   if (actionReports !== undefined) registerActionReports(app, actionReports);
   if (actionReach !== undefined) registerActionReach(app, actionReach);
+  if (landings !== undefined) registerTicketLandings(app, landings);
   app.setErrorHandler((failure, _request, reply) => {
     send(reply, failureResponse(failure));
   });

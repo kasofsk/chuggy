@@ -57,6 +57,8 @@
  * capability, and a port is the only capability it has.
  */
 
+import { z } from "zod";
+
 import { asBoundedText } from "./boundedText.ts";
 import type { CanonicalConfiguration } from "./canonicalConfiguration.ts";
 import {
@@ -668,10 +670,25 @@ function conflictManifestPaths(manifest: ConflictManifest): {
   return { paths, truncated: manifest.conflict.truncated };
 }
 
+/** The document one conflict manifest is stored as, which the writer below writes and `conflictManifestRead` reads. */
+const conflictManifestDocumentSchema = z.strictObject({
+  version: z.literal(conflictManifestSchemaVersion),
+  request: z.string(),
+  attempt: z.string(),
+  strategy: z.string(),
+  candidate: z.string(),
+  targetRef: z.string(),
+  targetCommit: z.string(),
+  mergeBase: z.string().nullable(),
+  conflictingPaths: z.array(z.string().min(1)).readonly(),
+  truncated: z.boolean(),
+});
+type ConflictManifestDocument = z.infer<typeof conflictManifestDocumentSchema>;
+
 /** The exact bytes one conflict manifest is stored and digested as, bounded by its own ceiling. */
 export function conflictManifestText(manifest: ConflictManifest): string {
   const held = conflictManifestPaths(manifest);
-  return `${JSON.stringify({
+  const document: ConflictManifestDocument = {
     version: conflictManifestSchemaVersion,
     request: manifest.request,
     attempt: manifest.attempt,
@@ -682,5 +699,24 @@ export function conflictManifestText(manifest: ConflictManifest): string {
     mergeBase: manifest.base ?? null,
     conflictingPaths: held.paths,
     truncated: held.truncated,
-  })}\n`;
+  };
+  return `${JSON.stringify(document)}\n`;
+}
+
+/** The paths one stored conflict manifest names and whether it cut them, or nothing where the bytes are not one. */
+export function conflictManifestRead(
+  content: Uint8Array,
+): ConflictSummary | undefined {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(
+      new TextDecoder("utf-8", { fatal: true }).decode(content),
+    );
+  } catch {
+    return undefined;
+  }
+  const read = conflictManifestDocumentSchema.safeParse(parsed);
+  return read.success
+    ? { paths: read.data.conflictingPaths, truncated: read.data.truncated }
+    : undefined;
 }
