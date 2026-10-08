@@ -9,15 +9,15 @@ import { test } from "node:test";
 
 import {
   accessProjectAuthorities,
+  accessProjectAuthorityAdmits,
   accessProjectGroups,
   accessSiteAuthorities,
+  accessSiteAuthorityAdmits,
   accessTenantAuthorities,
+  accessTenantAuthorityAdmits,
   accessTenantGroups,
 } from "../../src/contract/accessPlane.ts";
 import {
-  accessProjectAuthorityAdmits,
-  accessSiteAuthorityAdmits,
-  accessTenantAuthorityAdmits,
   accessTenantAuthorityKinds,
   type AccessHeld,
   type AccessHolder,

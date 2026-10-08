@@ -7,13 +7,13 @@
  * is refused; only then is the holder considered, so a refused caller learns
  * nothing about it.
  *
- * WHAT MAY BE ADDED IS ONE EXHAUSTIVE RECORD A LEVEL, because Keto stores any
- * tuple and follows any subject set. A person may hold any authority; a group
- * only where the model declares it, named at the request's own tenant and
- * project; and a tenant's administrators only on the site's `AccountCreators`,
- * and only a tenant carrying its `site` link, so a tenant nobody has made is
- * not handed the making of accounts ahead of whoever makes it. No holder is the
- * holders of another authority.
+ * WHAT MAY BE ADDED IS ONE EXHAUSTIVE RECORD A LEVEL, declared in the
+ * contract, because Keto stores any tuple and follows any subject set. A person
+ * may hold any authority; a group only where the model declares it, named at
+ * the request's own tenant and project; and a tenant's administrators only on
+ * the site's `AccountCreators`, and only a tenant carrying its `site` link, so a
+ * tenant nobody has made is not handed the making of accounts ahead of whoever
+ * makes it. No holder is the holders of another authority.
  *
  * WHAT MAY BE REMOVED IS WHAT THE LEVEL'S LIST CAN NAME, admitted or not, so a
  * holder written by hand that the list shows can be taken away. A removal names
@@ -31,15 +31,16 @@
  */
 
 import {
+  accessProjectAuthorityAdmits,
   accessProjectGroups,
+  accessSiteAuthorityAdmits,
   accessSiteGroups,
+  accessTenantAuthorityAdmits,
   accessTenantGroups,
   type AccessGroup,
   type AccessProjectAuthority,
   type AccessSiteAuthority,
-  type AccessSiteGroup,
   type AccessTenantAuthority,
-  type AccessTenantGroup,
 } from "../contract/accessPlane.ts";
 import {
   accessGroupHolder,
@@ -136,45 +137,6 @@ interface AccessAdmitted {
   readonly groups: readonly AccessGroup[];
   readonly tenants: boolean;
 }
-
-/** What each of the site's authorities admits. */
-export const accessSiteAuthorityAdmits: Readonly<
-  Record<
-    AccessSiteAuthority,
-    {
-      readonly groups: readonly AccessSiteGroup[];
-      readonly tenants: boolean;
-    }
-  >
-> = {
-  AccountCreators: { groups: ["SiteAdmins"], tenants: true },
-  AuthorityManagers: { groups: [], tenants: false },
-};
-
-/** The groups each of a tenant's authorities admits. */
-export const accessTenantAuthorityAdmits: Readonly<
-  Record<AccessTenantAuthority, readonly AccessTenantGroup[]>
-> = {
-  AdminGranters: ["TenantAdmins", "SiteAdmins"],
-  MemberGranters: ["TenantAdmins", "SiteAdmins", "TenantMembers"],
-  HostedRunsGranters: ["TenantAdmins", "SiteAdmins"],
-  AuthorityManagers: ["TenantAdmins"],
-};
-
-/** The groups each of a project's authorities admits. */
-export const accessProjectAuthorityAdmits: Readonly<
-  Record<AccessProjectAuthority, readonly AccessGroup[]>
-> = {
-  AdminGranters: ["ProjectAdmins", "TenantAdmins", "SiteAdmins"],
-  DeveloperGranters: [
-    "ProjectAdmins",
-    "TenantAdmins",
-    "SiteAdmins",
-    "ProjectDevelopers",
-  ],
-  DispatcherGranters: ["ProjectAdmins", "TenantAdmins", "SiteAdmins"],
-  AuthorityManagers: ["ProjectAdmins", "TenantAdmins"],
-};
 
 /** The kind changing each of a tenant's authorities asks. */
 export const accessTenantAuthorityKinds: Readonly<
