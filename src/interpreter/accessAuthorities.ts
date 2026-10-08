@@ -100,6 +100,7 @@ export const accessSiteAuthorityRelations: Readonly<
   Record<AccessSiteAuthority, SiteAuthorityRelation>
 > = {
   AccountCreators: "account_creators",
+  TenantCreators: "tenant_creators",
   AuthorityManagers: "authority_managers",
 };
 

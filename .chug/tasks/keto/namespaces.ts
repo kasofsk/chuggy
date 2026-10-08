@@ -2,8 +2,8 @@
  * The relation model `check-keto.sh` drives its own server with.
  *
  * IT IS A COPY OF WHAT THE FABRIC DEPLOYS — the roles a person holds, and
- * beside them who may grant each role, who may make an account and who may
- * change either — and nothing compares the two. A gate proving the adapter
+ * beside them who may grant each role, who may make an account or a tenant and
+ * who may change any of them — and nothing compares the two. A gate proving the adapter
  * against a model the installation does not run would report a green verdict
  * about a question the deployment answers differently, so the deployed model
  * changing without this file changing is the failure to watch for.
@@ -38,11 +38,13 @@ class Site implements Namespace {
   related: {
     admins: User[];
     account_creators: (User | SubjectSet<Site, "admins"> | SubjectSet<Tenant, "admins">)[];
+    tenant_creators: (User | SubjectSet<Site, "admins"> | SubjectSet<Tenant, "admins">)[];
     authority_managers: User[];
   };
   permits = {
     administer: (ctx: Context): boolean => this.related.admins.includes(ctx.subject),
     create_account: (ctx: Context): boolean => this.related.account_creators.includes(ctx.subject),
+    create_tenant: (ctx: Context): boolean => this.related.tenant_creators.includes(ctx.subject),
     manage_authorities: (ctx: Context): boolean =>
       this.related.authority_managers.includes(ctx.subject) || this.permits.administer(ctx),
   };

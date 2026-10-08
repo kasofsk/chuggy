@@ -68,6 +68,8 @@ function projectCreationRejected(code: string): string {
       return projectNameRule;
     case "TenantNameReserved":
       return "Reserved";
+    case "TenantCreationNotPermitted":
+      return "Not permitted";
     default:
       return "Refused";
   }

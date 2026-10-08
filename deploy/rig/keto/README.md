@@ -24,8 +24,9 @@ Link every project a person was granted on before
 and roll out the images that declare it, which go out in one window
 (`deploy/rig/postgres/README.md`, Migrate). From then the
 API serves `POST /api/v1/projects`, and a project with neither a link nor a
-row holds nothing: the first principal to ask for its tenant is given the
-tenant, then creates that project and administers it. Keto's read API lists every project object
+row holds nothing: the first principal the site permits `CreateTenant` to ask
+for its tenant is given the tenant, then creates that project and administers
+it. Keto's read API lists every project object
 that carries a tuple (`GET /relation-tuples?namespace=Project`, following
 `next_page_token`); each one with no `tenant` tuple is linked once, with the
 command below and its write URL exported. An object is the tenant's length, a
@@ -44,11 +45,14 @@ Then list again: every project object carries a `tenant` tuple.
 
 ## Default authority holders
 
-Who may grant each role, make an account or change either is held as tuples
-beside the roles. A creation writes its own: a new tenant's, and each new
-project's. The site, and every tenant and project that existed before, are given
-theirs by an operator, in this order. Until the site has an administrator and
-its defaults, nobody holds `CreateAccount`.
+Who may grant each role, make an account, make a tenant or change any of them
+is held as tuples beside the roles. A creation writes its own: a new tenant's,
+and each new project's. The site, and every tenant and project that existed
+before, are given theirs by an operator, in this order. Until the site has an
+administrator and its defaults, nobody holds `CreateAccount` or `CreateTenant`.
+A site already holding an authority tuple is given nothing, so on a site whose
+defaults predate `tenant_creators` its holders are added through the access
+plane by whoever may change the site's authorities.
 
 Once given, the holders are a request's to change: the access plane adds and
 removes a holder of each authority for a caller who may manage it. A project,

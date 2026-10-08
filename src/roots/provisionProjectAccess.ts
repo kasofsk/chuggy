@@ -16,7 +16,8 @@
  *
  * A PERSON'S PROJECT GRANT LINKS THE PROJECT TO ITS TENANT. The link is written
  * beside the grant because a project with no link does not hold its tenant,
- * which would then go to the first principal to ask for it. A revocation leaves
+ * which would then go to the first principal the site lets make a tenant to ask
+ * for it. A revocation leaves
  * the link, which is the project's rather than the person's.
  *
  * THE SITE IS NAMED, NEVER DEFAULTED TO. A site grant is asked for by

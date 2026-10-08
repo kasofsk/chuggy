@@ -93,6 +93,7 @@ export type TenantAccessKind = (typeof allTenantAccessKinds)[number];
 export const allSiteAccessKinds = [
   "AdministerSite",
   "CreateAccount",
+  "CreateTenant",
   "ManageSiteAuthorities",
 ] as const;
 
@@ -151,6 +152,7 @@ export const tenantAccessPermits: Readonly<Record<TenantAccessKind, string>> = {
 export const siteAccessPermits: Readonly<Record<SiteAccessKind, string>> = {
   AdministerSite: "administer",
   CreateAccount: "create_account",
+  CreateTenant: "create_tenant",
   ManageSiteAuthorities: "manage_authorities",
 };
 

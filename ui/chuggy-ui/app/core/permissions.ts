@@ -154,6 +154,8 @@ export function sitePermissionName(authority: AccessSiteAuthority): string {
   switch (authority) {
     case "AccountCreators":
       return "Account creation";
+    case "TenantCreators":
+      return "Workspace creation";
     case "AuthorityManagers":
       return "Permission changes";
   }

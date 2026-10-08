@@ -2,9 +2,10 @@
  * What creating a project grants, asked of the authority the API authorizes
  * with: the creator of a new tenant reaches every kind on the project and
  * administers the tenant, a project added later is reached through the tenant
- * alone, a tenant tuples hold is nobody else's to make, and a repeat by the
- * creator writes the grants only until the door records them, so restores no
- * default removed after that.
+ * alone, a tenant tuples hold is nobody else's to make, a tenant no tuple holds
+ * is made only by a principal the site permits `CreateTenant`, and a repeat by
+ * the creator writes the grants only until the door records them, so restores
+ * no default removed after that.
  */
 
 import assert from "node:assert/strict";
@@ -45,6 +46,7 @@ import {
 import { postgresHarnessRolePool } from "../postgres/harness.ts";
 import {
   ketoHarnessAccess,
+  ketoHarnessAsTenantCreator,
   ketoHarnessAuthorityHeld,
   ketoHarnessClaims,
   ketoHarnessGrants,
@@ -52,6 +54,7 @@ import {
   ketoHarnessIssuer,
   ketoHarnessPartition,
   ketoHarnessProjectAuthorities,
+  ketoHarnessSiteDefaults,
   ketoHarnessSomeone,
   ketoHarnessWithSiteAdministrator,
 } from "./harness.ts";
@@ -67,6 +70,16 @@ const service = projectCreation({
   store,
   grants,
 });
+
+/** A creation by a principal the site permits `CreateTenant` while it is asked. */
+function permittedCreate(
+  creator: Principal,
+  request: ReturnType<typeof namedCreation>,
+) {
+  return ketoHarnessAsTenantCreator(creator, () =>
+    service.create(creator, request),
+  );
+}
 
 /** A creation the name rule takes, which the harness's partitions are not. */
 function namedCreation(label: string) {
@@ -180,6 +193,10 @@ test("a replay of a creation whose grants were never written writes them", async
   assert.equal(await administers(creator, request), false);
   assert.equal(
     (await service.create(creator, request)).result,
+    "TenantCreationNotPermitted",
+  );
+  assert.equal(
+    (await permittedCreate(creator, request)).result,
     "AlreadyCreated",
   );
   assert.equal(await administers(creator, request), true);
@@ -189,7 +206,7 @@ test("a replay of a creation whose grants were never written writes them", async
 test("a replay after the grants are recorded restores no grant an operator revoked", async () => {
   const creator = oidcPrincipal(ketoHarnessIssuer, `creator-${randomUUID()}`);
   const request = namedCreation("revoked");
-  assert.equal((await service.create(creator, request)).result, "Created");
+  assert.equal((await permittedCreate(creator, request)).result, "Created");
   await grants.remove(tenantAdministratorGrant(creator, request.tenant));
   assert.equal(await administers(creator, request), false);
   assert.equal(
@@ -208,6 +225,7 @@ test("a tenant an operator granted before its rows exist is not a stranger's to 
   assert.equal((await service.create(mallory, request)).result, "TenantTaken");
   assert.equal(await administers(mallory, request), false);
   const real = { ...namedCreation("real"), tenant: request.tenant };
+  assert.equal(await access.authorizeSite(alice, "CreateTenant"), undefined);
   assert.equal((await service.create(alice, real)).result, "Created");
   assert.deepEqual(await held(mallory, real), []);
   assert.deepEqual(await held(alice, real), allProjectAccessKinds);
@@ -256,7 +274,10 @@ test("a creator whose grants never landed is answered its own tenant under a new
     ...request,
     operation: asOperationId(`operation-${randomUUID()}`),
   };
-  assert.equal((await service.create(creator, again)).result, "AlreadyCreated");
+  assert.equal(
+    (await permittedCreate(creator, again)).result,
+    "AlreadyCreated",
+  );
   assert.equal(await administers(creator, request), true);
   assert.deepEqual(await held(creator, request), allProjectAccessKinds);
   const replayed = await store.create({
@@ -272,7 +293,7 @@ test("a creator whose grants never landed is answered its own tenant under a new
 test("a creator whose project in a standing tenant never reached it is answered that project under a new identity, and granted it", async () => {
   const creator = oidcPrincipal(ketoHarnessIssuer, `creator-${randomUUID()}`);
   const first = namedCreation("standing");
-  assert.equal((await service.create(creator, first)).result, "Created");
+  assert.equal((await permittedCreate(creator, first)).result, "Created");
   const second = {
     ...namedCreation("second"),
     tenant: first.tenant,
@@ -297,7 +318,11 @@ test("anyone else asking for a creation whose grants never landed is refused it 
     ...request,
     operation: asOperationId(`operation-${randomUUID()}`),
   };
-  assert.equal((await service.create(mallory, taken)).result, "TenantTaken");
+  assert.equal(
+    (await service.create(mallory, taken)).result,
+    "TenantCreationNotPermitted",
+  );
+  assert.equal((await permittedCreate(mallory, taken)).result, "TenantTaken");
   assert.equal(await administers(mallory, request), false);
   assert.equal(await administers(creator, request), false);
 });
@@ -321,7 +346,7 @@ test("a created tenant and project give their creator and the site's administrat
   const creator = ketoHarnessSomeone("authority-creator");
   const stranger = ketoHarnessSomeone("authority-stranger");
   const request = namedCreation("authority");
-  assert.equal((await service.create(creator, request)).result, "Created");
+  assert.equal((await permittedCreate(creator, request)).result, "Created");
   assert.deepEqual(await ketoHarnessAuthorityHeld(creator, request), {
     site: [],
     tenant: ["GrantTenantAdmin", "GrantMember", "ManageTenantAuthorities"],
@@ -347,7 +372,7 @@ test("a project created in a tenant that stands gets the project's defaults, and
     const creator = ketoHarnessSomeone("standing-creator");
     const stranger = ketoHarnessSomeone("standing-stranger");
     const first = namedCreation("first");
-    assert.equal((await service.create(creator, first)).result, "Created");
+    assert.equal((await permittedCreate(creator, first)).result, "Created");
     const people = [creator, stranger, siteAdministrator];
     const before = await Promise.all(
       people.map((person) => tenantHeld(person, first)),
@@ -376,7 +401,7 @@ test("a project created in a tenant that stands gets the project's defaults, and
 test("a repeat after the grants are recorded restores no default removed in between", async () => {
   const creator = ketoHarnessSomeone("defaults-removed");
   const request = namedCreation("unrestored");
-  assert.equal((await service.create(creator, request)).result, "Created");
+  assert.equal((await permittedCreate(creator, request)).result, "Created");
   for (const grant of [
     ...tenantAuthorityDefaults(request.tenant),
     ...projectAuthorityDefaults(request),
@@ -396,4 +421,34 @@ test("a repeat after the grants are recorded restores no default removed in betw
     "AlreadyCreated",
   );
   assert.deepEqual(await ketoHarnessAuthorityHeld(creator, request), removed);
+});
+
+test("a principal the site does not permit to create a tenant is refused a free name, and nothing is written for it", async () => {
+  const stranger = ketoHarnessSomeone("unpermitted");
+  const request = namedCreation("unpermitted");
+  assert.equal(
+    (await service.create(stranger, request)).result,
+    "TenantCreationNotPermitted",
+  );
+  assert.equal(await ketoHarnessClaims().claimed(request.tenant), false);
+  assert.equal(await administers(stranger, request), false);
+  assert.equal((await permittedCreate(stranger, request)).result, "Created");
+  assert.equal(await administers(stranger, request), true);
+});
+
+test("a principal holding the site's tenant creators directly is permitted `CreateTenant` until it is taken back, as the site's administrators are, and nobody else is", async () => {
+  await ketoHarnessSiteDefaults();
+  const holder = ketoHarnessSomeone("tenant-creator");
+  const stranger = ketoHarnessSomeone("tenant-creator-stranger");
+  const permitted = async (principal: Principal) =>
+    (await access.authorizeSite(principal, "CreateTenant")) !== undefined;
+  assert.equal(
+    await ketoHarnessAsTenantCreator(holder, () => permitted(holder)),
+    true,
+  );
+  assert.equal(await permitted(holder), false);
+  assert.equal(await permitted(stranger), false);
+  await ketoHarnessWithSiteAdministrator(async (siteAdministrator) => {
+    assert.equal(await permitted(siteAdministrator), true);
+  });
 });

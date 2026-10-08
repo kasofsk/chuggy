@@ -1353,6 +1353,17 @@ const projectNameInvalidCodes: Readonly<Record<ProjectCreationField, string>> =
     project: "ProjectNameInvalid",
   };
 
+/** What creation answers a caller the site does not permit to create a tenant. */
+function tenantCreationRefused(): NativeHttpResponse {
+  return response(
+    403,
+    nativeHttpError(
+      "TenantCreationNotPermitted",
+      "The site does not permit this caller to create a tenant.",
+    ),
+  );
+}
+
 /**
  * A creation. A tenant another principal holds is a conflict rather than a
  * missing resource, because a tenant name is first-come and not a secret.
@@ -1400,6 +1411,8 @@ export function projectCreationResponse(
           `A ${result.field} name is at most ${String(projectNameCharsMax)} lowercase letters, digits and hyphens, beginning and ending with a letter or digit.`,
         ),
       );
+    case "TenantCreationNotPermitted":
+      return tenantCreationRefused();
     case "TenantReserved":
       return response(
         422,

@@ -45,6 +45,7 @@ export type AccessProjectRole = (typeof accessProjectRoles)[number];
 /** The authorities a site's list answers. */
 export const accessSiteAuthorities = [
   "AccountCreators",
+  "TenantCreators",
   "AuthorityManagers",
 ] as const;
 export type AccessSiteAuthority = (typeof accessSiteAuthorities)[number];
@@ -103,6 +104,7 @@ export const accessSiteAuthorityAdmits: Readonly<
   >
 > = {
   AccountCreators: { groups: ["SiteAdmins"], tenants: true },
+  TenantCreators: { groups: ["SiteAdmins"], tenants: false },
   AuthorityManagers: { groups: [], tenants: false },
 };
 
@@ -473,10 +475,11 @@ export const accessProjectAbilitiesSchema = z.strictObject({
   ...accessProjectAbilitiesHeldSchema.shape,
 });
 
-/** What the caller may do on the site: administer it, make an account, and change who holds its authorities. */
+/** What the caller may do on the site: administer it, make an account, make a tenant, and change who holds its authorities. */
 export const accessSiteAbilitiesSchema = z.strictObject({
   administer: z.boolean(),
   createAccount: z.boolean(),
+  createTenant: z.boolean(),
   manageAuthorities: z.boolean(),
 });
 

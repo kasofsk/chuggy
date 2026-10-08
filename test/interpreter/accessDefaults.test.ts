@@ -197,6 +197,28 @@ test("with a tenant named, the site, that tenant and the projects linked to it a
   ]);
 });
 
+test("a site holding no authority tuple is given its administrators as account and tenant creators, and one holding account creators is written nothing", async () => {
+  const fresh = accessMemory();
+  await provisioned(fresh);
+  assert.deepEqual(
+    fresh.batches.flat().map((grant) => grant.relation),
+    ["account_creators", "tenant_creators"],
+  );
+  const older = accessMemory();
+  const [creators] = siteAuthorityDefaults().filter(
+    (grant) => grant.relation === "account_creators",
+  );
+  assert.ok(creators !== undefined);
+  await older.grants.write(creators);
+  assert.deepEqual(await provisioned(older), [
+    "left Site:main: it holds an authority tuple",
+  ]);
+  assert.deepEqual(older.batches, []);
+  assert.ok(
+    !older.tuples.some((tuple) => tuple.relation === "tenant_creators"),
+  );
+});
+
 test("a listing its bound cuts fails before anything is written or reported", async () => {
   const memory = await existing();
   const lines: string[] = [];

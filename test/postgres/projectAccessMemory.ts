@@ -17,6 +17,7 @@ import {
   projectAccessTenantObject,
   type ProjectAccess,
   type ProjectAccessKind,
+  type SiteAccessKind,
   type TenantAccessKind,
 } from "../../src/interpreter/projectAccess.ts";
 import type { Principal } from "../../src/interpreter/principal.ts";
@@ -24,7 +25,6 @@ import type {
   Partition,
   TenantId,
 } from "../../src/interpreter/projectStore.ts";
-import { projectAccessSiteRefused } from "../interpreter/projectAccessFixture.ts";
 
 /** One principal's standing in one project, as a case grants and withdraws it. */
 export interface MemoryProjectGrant {
@@ -53,6 +53,12 @@ export interface MemoryProjectAccess extends ProjectAccess {
     },
   ): void;
 
+  /** Admits one principal to the site for the kinds named, replacing what they held. */
+  grantSite(input: {
+    readonly principal: Principal;
+    readonly access: ReadonlySet<SiteAccessKind>;
+  }): void;
+
   /** Withdraws every kind, answering whether there was anything to withdraw. */
   revoke(input: MemoryProjectGrant): boolean;
 
@@ -66,6 +72,7 @@ export interface MemoryProjectAccess extends ProjectAccess {
 export function memoryProjectAccess(): MemoryProjectAccess {
   const held = new Map<string, ReadonlySet<ProjectAccessKind>>();
   const heldTenant = new Map<string, ReadonlySet<TenantAccessKind>>();
+  const heldSite = new Map<Principal, ReadonlySet<SiteAccessKind>>();
   let broken: string | undefined;
   const at = (grant: MemoryProjectGrant): string =>
     `${projectAccessObject(grant.partition)} ${grant.principal}`;
@@ -88,12 +95,23 @@ export function memoryProjectAccess(): MemoryProjectAccess {
         granted?.has(access) === true ? memberAuthority(principal) : undefined,
       );
     },
-    authorizeSite: projectAccessSiteRefused,
+    authorizeSite: (principal, access) => {
+      if (broken !== undefined)
+        return Promise.reject(new ProjectAccessUnavailable(broken));
+      return Promise.resolve(
+        heldSite.get(principal)?.has(access) === true
+          ? memberAuthority(principal)
+          : undefined,
+      );
+    },
     grant: (input) => {
       held.set(at(input), new Set(input.access));
     },
     grantTenant: (input) => {
       heldTenant.set(atTenant(input), new Set(input.access));
+    },
+    grantSite: (input) => {
+      heldSite.set(input.principal, new Set(input.access));
     },
     revoke: (input) => held.delete(at(input)),
     breaks: (why = "the authority did not answer") => {

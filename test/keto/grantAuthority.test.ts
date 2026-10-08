@@ -12,6 +12,7 @@ import { test } from "node:test";
 import {
   projectAccessTenantNamespace,
   projectAccessTenantObject,
+  type SiteAccessKind,
 } from "../../src/interpreter/projectAccess.ts";
 import {
   allProjectGrantRelations,
@@ -107,6 +108,14 @@ async function neighbours(
   return { otherTenantAdministrator, siblingAdministrator };
 }
 
+/** Every site kind the site's administrators hold under its defaults. */
+const siteAdministratorKinds: readonly SiteAccessKind[] = [
+  "AdministerSite",
+  "CreateAccount",
+  "CreateTenant",
+  "ManageSiteAuthorities",
+];
+
 test("the defaults give each role exactly the authority they say, and nobody else any", async () => {
   const partition = ketoHarnessPartition("authority-defaults");
   await defaulted(partition);
@@ -134,7 +143,7 @@ test("the defaults give each role exactly the authority they say, and nobody els
     assert.deepEqual(
       await ketoHarnessAuthorityHeld(siteAdministrator, partition),
       {
-        site: ["AdministerSite", "CreateAccount", "ManageSiteAuthorities"],
+        site: siteAdministratorKinds,
         tenant: [
           "GrantHostedExecution",
           "ManageTenantAuthorities",

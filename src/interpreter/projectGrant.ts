@@ -91,9 +91,10 @@ export const allTenantAuthorityRelations = [
 export type TenantAuthorityRelation =
   (typeof allTenantAuthorityRelations)[number];
 
-/** The relations on the site saying who may make an account or manage who may. */
+/** The relations on the site saying who may make an account, who may make a tenant, or who may manage either. */
 export const allSiteAuthorityRelations = [
   "account_creators",
+  "tenant_creators",
   "authority_managers",
 ] as const;
 
@@ -292,6 +293,12 @@ export function siteAuthorityDefaults(): readonly ProjectGrant[] {
       namespace: projectAccessSiteNamespace,
       object: projectAccessSiteObject,
       relation: "account_creators" satisfies SiteAuthorityRelation,
+      holder: siteAdministrators,
+    },
+    {
+      namespace: projectAccessSiteNamespace,
+      object: projectAccessSiteObject,
+      relation: "tenant_creators" satisfies SiteAuthorityRelation,
       holder: siteAdministrators,
     },
   ];

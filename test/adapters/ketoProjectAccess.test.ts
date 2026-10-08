@@ -316,6 +316,7 @@ test("readiness needs the server up and every namespace the model declares", asy
 });
 
 test("readiness needs every permit a check will ask for", async () => {
+  assert.ok(everyPermit.has("Site#create_tenant"));
   for (const missing of everyPermit) {
     const without = new Set([...everyPermit].filter((it) => it !== missing));
     assert.equal(

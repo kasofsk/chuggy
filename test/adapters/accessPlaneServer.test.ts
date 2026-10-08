@@ -407,7 +407,12 @@ test("what a caller may do reads as its strict schema at each level, and is abse
     accessSiteAbilitiesSchema.parse(
       (await get("siteAbilities", "alice-token")).json(),
     ),
-    { administer: false, createAccount: true, manageAuthorities: false },
+    {
+      administer: false,
+      createAccount: true,
+      createTenant: false,
+      manageAuthorities: false,
+    },
   );
   for (const [name, token] of [
     ["tenantAbilities", "priya-token"],
