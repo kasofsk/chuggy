@@ -178,6 +178,12 @@ import {
 } from "../interpreter/actionReport.ts";
 import { postgresActionObservations } from "../adapters/postgres/actionObservation.ts";
 import { postgresTicketActionReach } from "../adapters/postgres/actionReach.ts";
+import { postgresTicketLandings } from "../adapters/postgres/ticketLandings.ts";
+import {
+  ticketLandingReads,
+  type TicketLandingReads,
+} from "../interpreter/ticketLandings.ts";
+import type { ProjectArtifactPort } from "../interpreter/finalizerPreparation.ts";
 import { gitCommitAncestry } from "../adapters/git/gitCommitAncestry.ts";
 import { systemPacing } from "../adapters/runtime/systemPacing.ts";
 import { actionReachAncestry } from "../interpreter/actionReachAncestry.ts";
@@ -670,6 +676,23 @@ export function nativeActionReach(
       monotonicNowMs: () => performance.now(),
     }),
     pacing: systemPacing,
+  });
+}
+
+/**
+ * The landings route's service: the finalizer's rows are read through their
+ * door over the API pool, and a conflict's manifest from the project-owned
+ * store the finalizer wrote it to.
+ */
+export function nativeTicketLandings(
+  pools: Pick<NativePools, "pool">,
+  access: ProjectAccess,
+  artifacts: Pick<ProjectArtifactPort, "readArtifact">,
+): TicketLandingReads {
+  return ticketLandingReads({
+    access,
+    store: postgresTicketLandings(pools.pool),
+    artifacts,
   });
 }
 
@@ -1463,6 +1486,7 @@ async function main(): Promise<void> {
     threadLive,
     nativeActionReports(pools, reporters),
     nativeActionReach(pools, access, forge.credentials),
+    nativeTicketLandings(pools, access, artifacts),
   );
   nativeStopping(app, pools, [hub, threadLive]);
   await app.listen({

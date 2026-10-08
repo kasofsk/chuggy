@@ -35,6 +35,7 @@ import {
   canonicalFinalizationAttempt,
   canonicalInputBundle,
   conflictManifestBytesMax,
+  conflictManifestRead,
   conflictManifestText,
   handoffAccepted,
   handoffSuperseded,
@@ -471,6 +472,72 @@ test("the ceiling counts the bytes the artifact is stored as and not its charact
   ) as { conflictingPaths: string[]; truncated: boolean };
   assert.equal(held.truncated, true);
   assert.equal(held.conflictingPaths.length < declared, true);
+});
+
+test("what the writer stores as a conflict manifest is what the reader reads back, the cut included", () => {
+  const encoded = (text: string) => new TextEncoder().encode(text);
+  for (const conflict of [
+    { paths: ["one.txt", "dir/\u{1f600}.txt"], truncated: false },
+    { paths: [], truncated: true },
+  ])
+    for (const base of [undefined, asGitObjectId(commitOf("c"))])
+      assert.deepEqual(
+        conflictManifestRead(
+          encoded(
+            conflictManifestText({
+              request: "request-a",
+              attempt: asFinalizationAttemptId("attempt-1"),
+              strategy: "Merge",
+              candidate: asGitObjectId(commitOf("b")),
+              target: record.target,
+              ...(base === undefined ? {} : { base }),
+              conflict,
+            }),
+          ),
+        ),
+        conflict,
+      );
+  const cut = conflictManifestRead(
+    encoded(
+      conflictManifestText({
+        request: "request-a",
+        attempt: asFinalizationAttemptId("attempt-1"),
+        strategy: "Merge",
+        candidate: asGitObjectId(commitOf("b")),
+        target: record.target,
+        conflict: {
+          paths: Array.from({ length: conflictPathsMax }, () =>
+            "p".repeat(4_096),
+          ),
+          truncated: false,
+        },
+      }),
+    ),
+  );
+  assert.equal(cut?.truncated, true, "a cut the writer made is read back");
+});
+
+test("bytes that are not a manifest the writer wrote read as none", () => {
+  const written = JSON.parse(
+    conflictManifestText({
+      request: "request-a",
+      attempt: asFinalizationAttemptId("attempt-1"),
+      strategy: "Merge",
+      candidate: asGitObjectId(commitOf("b")),
+      target: record.target,
+      conflict: { paths: ["one.txt"], truncated: false },
+    }),
+  ) as Record<string, unknown>;
+  for (const bytes of [
+    new Uint8Array([0xff, 0xfe]),
+    new TextEncoder().encode("not json"),
+    new TextEncoder().encode(JSON.stringify({ ...written, version: 2 })),
+    new TextEncoder().encode(JSON.stringify({ ...written, extra: true })),
+    new TextEncoder().encode(
+      JSON.stringify({ ...written, conflictingPaths: [""] }),
+    ),
+  ])
+    assert.equal(conflictManifestRead(bytes), undefined);
 });
 
 test("a project artifact identity is refused what any other opaque identity is", () => {

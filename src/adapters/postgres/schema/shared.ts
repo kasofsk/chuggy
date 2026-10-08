@@ -43,6 +43,7 @@ export const repositoryConfigurationImportFunction =
 export const repositoryActionImportFunction = "import_repository_actions";
 export const actionObservationRecordFunction = "record_action_observation";
 export const ticketLandedCommitReadFunction = "read_ticket_landed_commit";
+export const ticketLandingsReadFunction = "read_ticket_landings";
 export const projectCreateFunction = "create_project";
 export const projectCreationGrantsFunction = "record_project_creation_grants";
 export const repositoryBindingReadFunction = "read_project_repository_binding";
