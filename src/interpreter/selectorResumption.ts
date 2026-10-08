@@ -61,6 +61,8 @@ interface SelectorResumptionPorts {
   readonly source: SelectorObservationSource;
   readonly policy: SelectorPolicyHost;
   readonly identities: SelectorIdentityFactory;
+  /** The source's clock when the store answered the decisions' ages. */
+  readonly readAtMs: number;
 }
 
 /** What handling one unfinished decision left. */
@@ -109,7 +111,10 @@ export async function resumeSelectorDecisions(
   const projects = selectorUnfinishedByProject(
     await store.unfinishedAttempts(selectorUnfinishedAttemptsMax),
   );
-  const ports = { refusals, store, source, policy, identities };
+  if (projects.length === 0)
+    return { held: [], proposed: 0, dispatched: 0, failures: [] };
+  const readAtMs = await source.currentTimeEpochMs();
+  const ports = { refusals, store, source, policy, identities, readAtMs };
   const held: Partition[] = [];
   const failures: SelectorRunFailure[] = [];
   let proposed = 0;
@@ -184,6 +189,19 @@ async function resumeSelectorAttempt(
   }
 }
 
+/**
+ * A decision's age when it is reached, which is later than the read by however
+ * long the decisions before it waited. Only the time elapsed on the source's
+ * own clock is added, so no instant of one clock is subtracted from another's.
+ */
+async function reachedSelectorAttempt(
+  found: SelectorUnfinishedAttempt,
+  ports: SelectorResumptionPorts,
+): Promise<SelectorUnfinishedAttempt> {
+  const elapsedMs = (await ports.source.currentTimeEpochMs()) - ports.readAtMs;
+  return { ...found, ageMs: found.ageMs + Math.max(0, elapsedMs) };
+}
+
 /** Where the turn of an unfinished decision stands, an attempt still `Starting` having offered none. */
 async function resumedTurnStanding(
   found: SelectorUnfinishedAttempt,
@@ -237,10 +255,11 @@ async function voidSelectorAttempt(
 
 /** A decision younger than its project's oldest, which is void unless it may still be a sibling about to offer. */
 async function resumeYoungerSelectorAttempt(
-  found: SelectorUnfinishedAttempt,
+  read: SelectorUnfinishedAttempt,
   ports: SelectorResumptionPorts,
   settings: SelectorResolvedSettings,
 ): Promise<SelectorAttemptResumption> {
+  const found = await reachedSelectorAttempt(read, ports);
   const turn = await resumedTurnStanding(found, ports.policy);
   if (turn === "Absent")
     return resumeUnofferedAttempt(found, ports.store, settings);
@@ -290,10 +309,11 @@ async function selectorResumable(
 
 /** The oldest unfinished decision of a project, finished where its turn was offered and it can be fenced. */
 async function resumeOldestSelectorAttempt(
-  found: SelectorUnfinishedAttempt,
+  read: SelectorUnfinishedAttempt,
   ports: SelectorResumptionPorts,
   settings: SelectorResolvedSettings,
 ): Promise<SelectorAttemptResumption> {
+  const found = await reachedSelectorAttempt(read, ports);
   const turn = await resumedTurnStanding(found, ports.policy);
   if (turn === "Absent")
     return resumeUnofferedAttempt(found, ports.store, settings);

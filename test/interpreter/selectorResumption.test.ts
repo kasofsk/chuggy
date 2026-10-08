@@ -144,7 +144,7 @@ interface RigOptions {
   readonly found?: readonly SelectorUnfinishedAttempt[];
   readonly turns?: Readonly<Record<string, SelectorTurnStanding>>;
   /** What the turn answers, which a case may hold back. */
-  readonly answer?: () => Promise<unknown>;
+  readonly answer?: (attempt: string, rig: Rig) => Promise<unknown>;
   readonly deadlineFires?: boolean;
   readonly state?: SelectorProjectState;
   readonly projectMode?: SelectorRuntimeSettings["mode"];
@@ -166,6 +166,7 @@ interface Rig {
   readonly deadlines: number[];
   readonly submitted: SelectorDelivery[];
   readonly observed: string[];
+  nowMs: number;
   started: number;
   admissions: number;
   allocated: number;
@@ -188,6 +189,7 @@ function rigOf(options: RigOptions): Rig {
     deadlines: [],
     submitted: [],
     observed: [],
+    nowMs: selectorOperationalContext.observedAtEpochMs,
     started: 0,
     admissions: 0,
     allocated: 0,
@@ -323,8 +325,7 @@ function rigSource(rig: Rig, options: RigOptions): SelectorRuntimeSource {
     notifications: (_scope, cursor) => Promise.resolve(unmoved(cursor.after)),
     dispatchView: () => Promise.reject(new Error("the view was not asked for")),
     operationalContext: () => Promise.resolve(selectorOperationalContext),
-    currentTimeEpochMs: () =>
-      Promise.resolve(selectorOperationalContext.observedAtEpochMs),
+    currentTimeEpochMs: () => Promise.resolve(rig.nowMs),
     currentInstant: () => Promise.resolve("2026-10-08T02:10:00.000Z"),
     decisionDeadline: (milliseconds) => {
       rig.deadlines.push(milliseconds);
@@ -361,7 +362,10 @@ function rigPolicy(rig: Rig, options: RigOptions): SelectorPolicyHost {
     resume: (request) => {
       rig.resumed.push(request);
       return {
-        result: (options.answer ?? (() => Promise.resolve(answered)))(),
+        result: (options.answer ?? (() => Promise.resolve(answered)))(
+          request.attempt,
+          rig,
+        ),
         terminate: () => Promise.resolve(terminated(request.attempt)),
       };
     },
@@ -557,6 +561,28 @@ test("a turn the remaining deadline outlasts is withdrawn and recorded as a dead
   assert.deepEqual(rig.deadlines, [20_000]);
   assert.deepEqual(rig.withdrawn, [decision]);
   assert.equal(failureCode(rig.interactions[0]), "DeadlineExceeded");
+});
+
+test("a later project's turn is handed only what its decision has left once it is reached", async () => {
+  const other = "selector-decision-other-project";
+  const { rig, result } = await run({
+    turns: { [decision]: "Pending", [other]: "Pending" },
+    answer: (attempt, waited) => {
+      if (attempt === decision) waited.nowMs += 50_000;
+      return Promise.resolve(answered);
+    },
+    found: [
+      unfinished({ ageMs: 1_000 }),
+      unfinished({
+        attempt: other,
+        ageMs: 1_000,
+        partition: { ...partition, project: asProjectId("other") },
+        projectRevision: begunOn.revision + 1,
+      }),
+    ],
+  });
+  assert.deepEqual(result.failures, []);
+  assert.deepEqual(rig.deadlines, [120_000 - 1_000, 120_000 - 1_000 - 50_000]);
 });
 
 test("a turn answered before it was found is recorded however late it is found", async () => {
