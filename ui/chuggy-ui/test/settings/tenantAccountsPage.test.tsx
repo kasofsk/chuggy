@@ -23,9 +23,16 @@ import type * as BrowserPorts from "../../app/browser/ports.ts";
 
 const held = vi.hoisted((): { redirects: string[] } => ({ redirects: [] }));
 
+/**
+ * The digest is a double that answers at once: the real one is answered from
+ * another thread, so a redirect that waits for it can land after the turns a
+ * case waits out, or in the case that follows. What a challenge must equal is
+ * asserted in `ui/chuggy-ui/test/pkce.test.ts`.
+ */
 vi.mock("../../app/browser/ports.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof BrowserPorts>()),
   sleepMs: () => Promise.resolve(),
+  digest: (message: Uint8Array) => Promise.resolve(message),
   redirect: (url: string) => {
     held.redirects.push(url);
   },
