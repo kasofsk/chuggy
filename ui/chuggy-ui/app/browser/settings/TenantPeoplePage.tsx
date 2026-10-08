@@ -20,14 +20,12 @@ import type {
   AccessTenantAbilities,
   AccessTenantPeople,
 } from "../../../../../src/contract/accessPlane.ts";
-import { apiTenantPeople } from "../../core/accessRoutes.ts";
 import {
   tenantInvitationOffered,
   tenantPeopleOtherIssuersLine,
   tenantPeopleTruncated,
   tenantPeopleWithheld,
 } from "../../core/tenantPeople.ts";
-import { usePanelTenantResource } from "../api.ts";
 import { PanelUnready } from "../DataPanel.tsx";
 import { ProjectlessFrame } from "../ProjectCreation.tsx";
 import { Notice } from "../ui/Notice.tsx";
@@ -35,10 +33,7 @@ import { Panel } from "../ui/Panel.tsx";
 import { Table } from "../ui/Table.tsx";
 import { TenantInvite } from "./TenantInvite.tsx";
 import { TenantPersonRow } from "./TenantPersonRow.tsx";
-import {
-  tenantPeopleResource,
-  useTenantAbilities,
-} from "./tenantPeopleResource.ts";
+import { useTenantAbilities, useTenantPeople } from "./tenantPeopleResource.ts";
 
 /** This page's own address, which its reads take their tenant from. */
 export const tenantPeopleRoutePath = "/tenants/$tenant/settings/people";
@@ -86,9 +81,7 @@ function TenantPeopleTable(props: {
 export function TenantPeoplePage(): ReactNode {
   const params = useParams({ from: tenantPeopleRoutePath });
   const tenant = params.tenant;
-  const people = usePanelTenantResource(tenant, tenantPeopleResource, (ports) =>
-    apiTenantPeople(ports, tenant),
-  );
+  const people = useTenantPeople(tenant);
   const listed = people.state === "Ready" ? people.value : undefined;
   const read = useTenantAbilities(tenant);
   const abilities = read.state === "Ready" ? read.value : undefined;

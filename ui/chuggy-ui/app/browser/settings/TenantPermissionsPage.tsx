@@ -4,7 +4,9 @@
  * an account and change who may. Where the reader may change a permission,
  * each holder a route removes is removed on its press, and everything the
  * removal may have changed is read again: both lists, the workspace's abilities
- * and its people. Nothing here adds a holder.
+ * and its people. Each such permission carries `Add`, offering what it admits
+ * and has not got, a person among them from the People list where it is read;
+ * an addition reads again what a removal does.
  *
  * The workspace's list answers only a reader who manages the workspace's
  * permissions, and the site's only one who manages the site's, so an absent
@@ -17,14 +19,21 @@ import { useParams } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
 import type {
+  AccessGroup,
   AccessSiteAuthorities,
   AccessSiteAuthority,
   AccessTenantAbilities,
   AccessTenantAuthorities,
   AccessTenantAuthority,
+  AccessTenantPeople,
 } from "../../../../../src/contract/accessPlane.ts";
 import type { ApiPorts, ApiResult } from "../../core/apiRequest.ts";
 import {
+  apiAddSiteAuthorityGroup,
+  apiAddSiteAuthorityPerson,
+  apiAddSiteAuthorityTenant,
+  apiAddTenantAuthorityGroup,
+  apiAddTenantAuthorityPerson,
   apiRemoveSiteAuthorityGroup,
   apiRemoveSiteAuthorityPerson,
   apiRemoveSiteAuthorityTenant,
@@ -33,19 +42,26 @@ import {
 } from "../../core/accessRoutes.ts";
 import type { PanelState } from "../../core/freshness.ts";
 import {
+  permissionAdditionChoices,
+  permissionAdditionPeople,
   permissionChangeable,
+  sitePermissionAdmits,
   sitePermissionRows,
+  tenantPermissionAdmits,
   tenantPermissionRows,
   tenantPermissionsWithheld,
+  type PermissionAdmits,
   type PermissionAuthority,
   type PermissionHolder,
   type PermissionLevel,
+  type PermissionRow,
 } from "../../core/permissions.ts";
 import { tenantPeopleTruncated } from "../../core/tenantPeople.ts";
 import { useApiPorts } from "../api.ts";
 import { PanelUnready } from "../DataPanel.tsx";
 import { ProjectlessFrame } from "../ProjectCreation.tsx";
 import { Notice } from "../ui/Notice.tsx";
+import type { PermissionsAddition } from "./PermissionAddition.tsx";
 import {
   PermissionsSection,
   type PermissionsRemoval,
@@ -53,6 +69,7 @@ import {
 import {
   tenantPeopleReread,
   useTenantAbilities,
+  useTenantPeople,
 } from "./tenantPeopleResource.ts";
 import {
   tenantPermissionsReread,
@@ -64,86 +81,146 @@ import {
 export const tenantPermissionsRoutePath =
   "/tenants/$tenant/settings/permissions";
 
-function permissionRemovalUnrouted(holder: PermissionHolder): never {
-  throw new Error(`no route removes ${holder.kind} from this permission`);
+function permissionHolderUnrouted(holder: PermissionHolder): never {
+  throw new Error(`no route sends ${holder.kind} for this permission`);
 }
 
-function tenantPermissionRemovalSent(
+/** One level's routes for one permission, a removal's or an addition's. */
+interface PermissionHolderRoutes {
+  readonly group: (group: AccessGroup) => Promise<ApiResult<undefined>>;
+  readonly person: (subject: string) => Promise<ApiResult<undefined>>;
+  readonly tenant:
+    ((tenant: string) => Promise<ApiResult<undefined>>) | undefined;
+}
+
+function permissionHolderSent(
+  routes: PermissionHolderRoutes,
+  holder: PermissionHolder,
+): Promise<ApiResult<undefined>> {
+  switch (holder.kind) {
+    case "Group":
+      return routes.group(holder.group);
+    case "Person":
+      return routes.person(holder.person.subject);
+    case "TenantAdmins":
+      return routes.tenant === undefined
+        ? permissionHolderUnrouted(holder)
+        : routes.tenant(holder.tenant);
+    case "SiteStanding":
+    case "Unnamed":
+      return permissionHolderUnrouted(holder);
+  }
+}
+
+function tenantPermissionRoutes(
   ports: ApiPorts,
   tenant: string,
   authority: AccessTenantAuthority,
-  holder: PermissionHolder,
-): Promise<ApiResult<undefined>> {
-  switch (holder.kind) {
-    case "Group":
-      return apiRemoveTenantAuthorityGroup(
-        ports,
-        tenant,
-        authority,
-        holder.group,
-      );
-    case "Person":
-      return apiRemoveTenantAuthorityPerson(
-        ports,
-        tenant,
-        authority,
-        holder.person.subject,
-      );
-    case "TenantAdmins":
-    case "SiteStanding":
-    case "Unnamed":
-      return permissionRemovalUnrouted(holder);
+  change: PermissionChange,
+): PermissionHolderRoutes {
+  switch (change) {
+    case "Removal":
+      return {
+        group: (group) =>
+          apiRemoveTenantAuthorityGroup(ports, tenant, authority, group),
+        person: (subject) =>
+          apiRemoveTenantAuthorityPerson(ports, tenant, authority, subject),
+        tenant: undefined,
+      };
+    case "Addition":
+      return {
+        group: (group) =>
+          apiAddTenantAuthorityGroup(ports, tenant, authority, group),
+        person: (subject) =>
+          apiAddTenantAuthorityPerson(ports, tenant, authority, subject),
+        tenant: undefined,
+      };
   }
 }
 
-function sitePermissionRemovalSent(
+/** Only account creation is held by a workspace's admins. */
+function sitePermissionRoutes(
   ports: ApiPorts,
   authority: AccessSiteAuthority,
-  holder: PermissionHolder,
-): Promise<ApiResult<undefined>> {
-  switch (holder.kind) {
-    case "Group":
-      return apiRemoveSiteAuthorityGroup(ports, authority, holder.group);
-    case "Person":
-      return apiRemoveSiteAuthorityPerson(
-        ports,
-        authority,
-        holder.person.subject,
-      );
-    case "TenantAdmins":
-      return authority === "AccountCreators"
-        ? apiRemoveSiteAuthorityTenant(ports, holder.tenant)
-        : permissionRemovalUnrouted(holder);
-    case "SiteStanding":
-    case "Unnamed":
-      return permissionRemovalUnrouted(holder);
+  change: PermissionChange,
+): PermissionHolderRoutes {
+  const creators = authority === "AccountCreators";
+  switch (change) {
+    case "Removal":
+      return {
+        group: (group) => apiRemoveSiteAuthorityGroup(ports, authority, group),
+        person: (subject) =>
+          apiRemoveSiteAuthorityPerson(ports, authority, subject),
+        tenant: creators
+          ? (tenant) => apiRemoveSiteAuthorityTenant(ports, tenant)
+          : undefined,
+      };
+    case "Addition":
+      return {
+        group: (group) => apiAddSiteAuthorityGroup(ports, authority, group),
+        person: (subject) =>
+          apiAddSiteAuthorityPerson(ports, authority, subject),
+        tenant: creators
+          ? (tenant) => apiAddSiteAuthorityTenant(ports, tenant)
+          : undefined,
+      };
   }
 }
 
-/** One level's removal: a holder sent where the reader may change its
- * permission and a route removes it, then everything it may have changed read
- * again. */
-function useTenantPermissionsRemoval<Authority extends PermissionAuthority>(
+type PermissionChange = "Removal" | "Addition";
+
+/** One level's removal and addition: a holder sent where the reader may
+ * change its permission, then everything it may have changed read again. The
+ * choices are the row's admitted holders less those it has, and the people the
+ * People list's, where it was read. */
+function useTenantPermissionsChange<Authority extends PermissionAuthority>(
   tenant: string,
   level: PermissionLevel,
   abilities: AccessTenantAbilities | undefined,
-  sent: (
+  people: AccessTenantPeople | undefined,
+  admits: (authority: Authority) => PermissionAdmits,
+  routes: (
     ports: ApiPorts,
     authority: Authority,
-    holder: PermissionHolder,
-  ) => Promise<ApiResult<undefined>>,
-): PermissionsRemoval<Authority> {
+    change: PermissionChange,
+  ) => PermissionHolderRoutes,
+): {
+  readonly removal: PermissionsRemoval<Authority>;
+  readonly addition: PermissionsAddition<Authority>;
+} {
   const ports = useApiPorts();
   const client = useQueryClient();
-  return {
-    removable: (row) => permissionChangeable(level, row.authority, abilities),
-    remove: async (row, holder) => {
-      const answered = await sent(ports, row.authority, holder);
+  const changeable = (row: PermissionRow<Authority>): boolean =>
+    permissionChangeable(level, row.authority, abilities);
+  const sent =
+    (change: PermissionChange) =>
+    async (
+      row: PermissionRow<Authority>,
+      holder: PermissionHolder,
+    ): Promise<ApiResult<undefined>> => {
+      const answered = await permissionHolderSent(
+        routes(ports, row.authority, change),
+        holder,
+      );
       await Promise.all([
         tenantPeopleReread(client, tenant),
         tenantPermissionsReread(client, tenant),
       ]);
       return answered;
+    };
+  return {
+    removal: { removable: changeable, remove: sent("Removal") },
+    addition: {
+      addable: changeable,
+      choices: (row) =>
+        permissionAdditionChoices(
+          row,
+          admits(row.authority),
+          tenant,
+          permissionAdditionPeople(people, row),
+        ),
+      people: (row) => permissionAdditionPeople(people, row) ?? [],
+      add: sent("Addition"),
     },
   };
 }
@@ -160,15 +237,18 @@ function TenantPermissions(props: {
   readonly tenant: string;
   readonly read: PanelState<AccessTenantAuthorities>;
   readonly abilities: AccessTenantAbilities | undefined;
+  readonly people: AccessTenantPeople | undefined;
 }): ReactNode {
   const read = props.read;
   const tenant = props.tenant;
-  const removal = useTenantPermissionsRemoval<AccessTenantAuthority>(
+  const change = useTenantPermissionsChange<AccessTenantAuthority>(
     tenant,
     "Tenant",
     props.abilities,
-    (ports, authority, holder) =>
-      tenantPermissionRemovalSent(ports, tenant, authority, holder),
+    props.people,
+    tenantPermissionAdmits,
+    (ports, authority, sent) =>
+      tenantPermissionRoutes(ports, tenant, authority, sent),
   );
   if (read.state !== "Ready")
     return (
@@ -184,7 +264,8 @@ function TenantPermissions(props: {
     <PermissionsSection
       title="Workspace"
       rows={tenantPermissionRows(read.value)}
-      removal={removal}
+      removal={change.removal}
+      addition={change.addition}
     >
       <PermissionsTruncated truncated={read.value.truncated} />
     </PermissionsSection>
@@ -194,13 +275,16 @@ function TenantPermissions(props: {
 function SitePermissions(props: {
   readonly tenant: string;
   readonly read: PanelState<AccessSiteAuthorities>;
+  readonly people: AccessTenantPeople | undefined;
 }): ReactNode {
   const read = props.read;
-  const removal = useTenantPermissionsRemoval<AccessSiteAuthority>(
+  const change = useTenantPermissionsChange<AccessSiteAuthority>(
     props.tenant,
     "Site",
     undefined,
-    sitePermissionRemovalSent,
+    props.people,
+    sitePermissionAdmits,
+    sitePermissionRoutes,
   );
   if (read.state === "Pending" || read.state === "Absent") return null;
   if (read.state === "Failed")
@@ -213,7 +297,8 @@ function SitePermissions(props: {
     <PermissionsSection
       title="Site"
       rows={sitePermissionRows(read.value)}
-      removal={removal}
+      removal={change.removal}
+      addition={change.addition}
     >
       <PermissionsTruncated truncated={read.value.truncated} />
     </PermissionsSection>
@@ -225,6 +310,8 @@ export function TenantPermissionsPage(): ReactNode {
   const tenant = useTenantAuthorities(params.tenant);
   const site = useSiteAuthorities(params.tenant);
   const abilities = useTenantAbilities(params.tenant);
+  const read = useTenantPeople(params.tenant);
+  const people = read.state === "Ready" ? read.value : undefined;
   return (
     <ProjectlessFrame>
       <div className="grid min-w-0 max-w-settings gap-4">
@@ -233,8 +320,9 @@ export function TenantPermissionsPage(): ReactNode {
           tenant={params.tenant}
           read={tenant}
           abilities={abilities.state === "Ready" ? abilities.value : undefined}
+          people={people}
         />
-        <SitePermissions tenant={params.tenant} read={site} />
+        <SitePermissions tenant={params.tenant} read={site} people={people} />
       </div>
     </ProjectlessFrame>
   );

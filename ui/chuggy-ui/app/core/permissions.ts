@@ -7,16 +7,24 @@
  * authority or a group the plane adds is a compile error here before it is a
  * blank cell. A holder's kind is what its remove button reads, so no caller
  * works out again from its words what it is or whether a route removes it.
+ *
+ * What a row may be given is what its permission admits less what holds it
+ * already: each group the contract's record admits, a workspace's admins where
+ * the record admits a workspace, and a person from the People list.
  */
 
-import type {
-  AccessAuthorityPerson,
-  AccessGroup,
-  AccessSiteAuthorities,
-  AccessSiteAuthority,
-  AccessTenantAbilities,
-  AccessTenantAuthorities,
-  AccessTenantAuthority,
+import {
+  accessSiteAuthorityAdmits,
+  accessTenantAuthorityAdmits,
+  type AccessAuthorityPerson,
+  type AccessGroup,
+  type AccessSiteAuthorities,
+  type AccessSiteAuthority,
+  type AccessTenantAbilities,
+  type AccessTenantAuthorities,
+  type AccessTenantAuthority,
+  type AccessTenantPeople,
+  type AccessTenantPerson,
 } from "../../../../src/contract/accessPlane.ts";
 
 import { tenantPersonName } from "./tenantPeople.ts";
@@ -227,4 +235,141 @@ export function sitePermissionRows(
       held.tenants.map(permissionTenantHolder),
     ),
   }));
+}
+
+/** What one permission admits: these groups, and whether a workspace's admins. */
+export interface PermissionAdmits {
+  readonly groups: readonly AccessGroup[];
+  readonly tenants: boolean;
+}
+
+export function tenantPermissionAdmits(
+  authority: AccessTenantAuthority,
+): PermissionAdmits {
+  return { groups: accessTenantAuthorityAdmits[authority], tenants: false };
+}
+
+export function sitePermissionAdmits(
+  authority: AccessSiteAuthority,
+): PermissionAdmits {
+  return accessSiteAuthorityAdmits[authority];
+}
+
+/** One holder a row may be given, `line` what choosing it says beside it. */
+export type PermissionChoice =
+  | {
+      readonly kind: "Group";
+      readonly group: AccessGroup;
+      readonly words: string;
+      readonly line: string | undefined;
+    }
+  | {
+      readonly kind: "TenantAdmins";
+      readonly tenant: string;
+      readonly words: string;
+      readonly line: undefined;
+    }
+  | { readonly kind: "Person"; readonly words: string; readonly line: string };
+
+export const permissionMembersGrantLine =
+  "Members will see people and can remove other members.";
+
+function permissionChoiceGroupLine(
+  row: PermissionRow,
+  group: AccessGroup,
+): string | undefined {
+  return row.authority === "MemberGranters" && group === "TenantMembers"
+    ? permissionMembersGrantLine
+    : undefined;
+}
+
+/**
+ * What a row may be given, in the order offered: each group admitted and not
+ * held, this workspace's admins where admitted and not holding, and a person
+ * where the People list was read and leaves someone to offer.
+ */
+export function permissionAdditionChoices(
+  row: PermissionRow,
+  admits: PermissionAdmits,
+  tenant: string,
+  people: readonly AccessAuthorityPerson[] | undefined,
+): readonly PermissionChoice[] {
+  const held = row.holders;
+  const groups = admits.groups.filter(
+    (group) =>
+      !held.some((holder) => holder.kind === "Group" && holder.group === group),
+  );
+  const tenantHeld = held.some(
+    (holder) => holder.kind === "TenantAdmins" && holder.tenant === tenant,
+  );
+  return [
+    ...groups.map((group) => ({
+      kind: "Group" as const,
+      group,
+      words: permissionGroupName(group),
+      line: permissionChoiceGroupLine(row, group),
+    })),
+    ...(admits.tenants && !tenantHeld
+      ? [
+          {
+            kind: "TenantAdmins" as const,
+            tenant,
+            words: "This workspace's admins",
+            line: undefined,
+          },
+        ]
+      : []),
+    ...(people === undefined || people.length === 0
+      ? []
+      : [
+          {
+            kind: "Person" as const,
+            words: "Person",
+            line: "From the People list",
+          },
+        ]),
+  ];
+}
+
+/** The People list's people who do not hold the row's permission, absent where the list was not read. */
+export function permissionAdditionPeople(
+  people: AccessTenantPeople | undefined,
+  row: PermissionRow,
+): readonly AccessTenantPerson[] | undefined {
+  return people?.people.filter(
+    (person) =>
+      !row.holders.some(
+        (holder) =>
+          holder.kind === "Person" && holder.person.subject === person.subject,
+      ),
+  );
+}
+
+/** A choice as a radio's value, one apart from every other a row offers. */
+export function permissionChoiceValue(choice: PermissionChoice): string {
+  switch (choice.kind) {
+    case "Group":
+      return `Group:${choice.group}`;
+    case "TenantAdmins":
+      return `TenantAdmins:${choice.tenant}`;
+    case "Person":
+      return "Person";
+  }
+}
+
+/** The holder a choice sends, absent for a person until one is chosen. */
+export function permissionChoiceHolder(
+  choice: PermissionChoice | undefined,
+  person: AccessAuthorityPerson | undefined,
+): PermissionHolder | undefined {
+  switch (choice?.kind) {
+    case undefined:
+      return undefined;
+    case "Group":
+      return permissionGroupHolder(choice.group);
+    case "TenantAdmins":
+      return permissionTenantHolder(choice.tenant);
+    case "Person":
+      return person === undefined ? undefined : permissionPersonHolder(person);
+  }
 }

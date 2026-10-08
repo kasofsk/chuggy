@@ -2,7 +2,7 @@
  * A workspace's permissions and the site's, decided with no renderer: every
  * authority and group the contract rosters has its own name, and each answer
  * comes to rows whose holders are in the order drawn and say what they are,
- * and which of them a reader may remove.
+ * and which of them a reader may remove, and what each row may be given.
  */
 
 import { expect, test } from "vitest";
@@ -14,14 +14,21 @@ import {
   type AccessSiteAuthorities,
   type AccessTenantAbilities,
   type AccessTenantAuthorities,
+  type AccessTenantPeople,
 } from "../../../src/contract/accessPlane.ts";
 import {
+  permissionAdditionChoices,
+  permissionAdditionPeople,
   permissionChangeable,
+  permissionChoiceHolder,
+  permissionChoiceValue,
   permissionGroupName,
   permissionHolderRemovable,
   permissionRemovalAsks,
+  sitePermissionAdmits,
   sitePermissionName,
   sitePermissionRows,
+  tenantPermissionAdmits,
   tenantPermissionName,
   tenantPermissionRows,
 } from "../app/core/permissions.ts";
@@ -192,4 +199,178 @@ test("only removing a holder of permission changes is asked first", () => {
     false,
     true,
   ]);
+});
+
+/** Each workspace permission held by its admins alone. */
+const tenantRowsAdminsOnly = tenantPermissionRows({
+  tenant: "acme",
+  authorities: accessTenantAuthorities.map((authority) => ({
+    authority,
+    people: authority === "AdminGranters" ? [ada] : [],
+    groups: ["TenantAdmins"],
+    unnamed: 0,
+  })),
+  truncated: false,
+});
+
+function tenantChoicesWords(
+  people: readonly (typeof ada)[] | undefined,
+): readonly (readonly string[])[] {
+  return tenantRowsAdminsOnly.map((row) =>
+    permissionAdditionChoices(
+      row,
+      tenantPermissionAdmits(row.authority),
+      "acme",
+      people,
+    ).map((choice) => choice.words),
+  );
+}
+
+test("a workspace permission offers each group its record admits and it does not hold, then a person where the People list leaves one", () => {
+  expect(tenantChoicesWords([ada])).toStrictEqual([
+    ["Site admins", "Person"],
+    ["Site admins", "Workspace members", "Person"],
+    ["Site admins", "Person"],
+    ["Person"],
+  ]);
+  expect(tenantChoicesWords(undefined)).toStrictEqual([
+    ["Site admins"],
+    ["Site admins", "Workspace members"],
+    ["Site admins"],
+    [],
+  ]);
+  expect(tenantChoicesWords([])).toStrictEqual(tenantChoicesWords(undefined));
+});
+
+test("only Workspace members on Member grants, and Person, carry a line", () => {
+  const lines = tenantRowsAdminsOnly.flatMap((row) =>
+    permissionAdditionChoices(
+      row,
+      tenantPermissionAdmits(row.authority),
+      "acme",
+      [ada],
+    )
+      .filter((choice) => choice.line !== undefined)
+      .map((choice) => `${row.name}: ${choice.words}: ${choice.line ?? ""}`),
+  );
+  expect(lines).toStrictEqual([
+    "Admin grants: Person: From the People list",
+    "Member grants: Workspace members: Members will see people and can remove other members.",
+    "Member grants: Person: From the People list",
+    "Hosted run grants: Person: From the People list",
+    "Permission changes: Person: From the People list",
+  ]);
+});
+
+test("the site's account creation offers this workspace's admins only where they do not hold it, and its permission changes no group", () => {
+  const rows = (tenants: readonly string[]) =>
+    sitePermissionRows({
+      authorities: accessSiteAuthorities.map((authority) => ({
+        authority,
+        people: [],
+        groups: [],
+        tenants: [...tenants],
+        unnamed: 0,
+      })),
+      truncated: false,
+    }).map((row) =>
+      permissionAdditionChoices(
+        row,
+        sitePermissionAdmits(row.authority),
+        "acme",
+        undefined,
+      ),
+    );
+  expect(rows(["globex"])).toStrictEqual([
+    [
+      {
+        kind: "Group",
+        group: "SiteAdmins",
+        words: "Site admins",
+        line: undefined,
+      },
+      {
+        kind: "TenantAdmins",
+        tenant: "acme",
+        words: "This workspace's admins",
+        line: undefined,
+      },
+    ],
+    [],
+  ]);
+  expect(rows(["acme"])[0]?.map((choice) => choice.kind)).toStrictEqual([
+    "Group",
+  ]);
+});
+
+const bob = { ...ada, subject: "s-bob", email: "bob@example.com" };
+
+const peopleListed: AccessTenantPeople = {
+  tenant: "acme",
+  projects: [],
+  people: [ada, bob].map((person) => ({
+    ...person,
+    tenantRoles: [],
+    hostedRuns: false,
+    projects: [],
+  })),
+  otherIssuers: 0,
+  truncated: false,
+};
+
+test("the people offered are the People list's less those holding the permission, and none where it was not read", () => {
+  const [admin, member] = tenantRowsAdminsOnly;
+  if (admin === undefined || member === undefined) throw new Error("no rows");
+  const subjects = (row: typeof admin) =>
+    permissionAdditionPeople(peopleListed, row)?.map(
+      (person) => person.subject,
+    );
+  expect(subjects(admin)).toStrictEqual(["s-bob"]);
+  expect(subjects(member)).toStrictEqual(["s-ada", "s-bob"]);
+  expect(permissionAdditionPeople(undefined, admin)).toBeUndefined();
+});
+
+test("a choice is sent as its holder, a person only once one is chosen, and each value is its own", () => {
+  const [creators] = sitePermissionRows({
+    authorities: [
+      {
+        authority: "AccountCreators",
+        people: [],
+        groups: [],
+        tenants: [],
+        unnamed: 0,
+      },
+    ],
+    truncated: false,
+  });
+  if (creators === undefined) throw new Error("no row");
+  const choices = permissionAdditionChoices(
+    creators,
+    sitePermissionAdmits("AccountCreators"),
+    "acme",
+    [ada],
+  );
+  expect(choices.map(permissionChoiceValue)).toStrictEqual([
+    "Group:SiteAdmins",
+    "TenantAdmins:acme",
+    "Person",
+  ]);
+  const [group, admins, person] = choices;
+  expect(permissionChoiceHolder(group, undefined)).toStrictEqual({
+    kind: "Group",
+    group: "SiteAdmins",
+    words: "Site admins",
+  });
+  expect(permissionChoiceHolder(admins, undefined)).toStrictEqual({
+    kind: "TenantAdmins",
+    tenant: "acme",
+    words: "acme admins",
+  });
+  expect(permissionChoiceHolder(person, undefined)).toBeUndefined();
+  expect(permissionChoiceHolder(person, ada)).toStrictEqual({
+    kind: "Person",
+    person: ada,
+    words: "ada@example.com",
+  });
+  expect(permissionChoiceHolder(undefined, ada)).toBeUndefined();
 });
