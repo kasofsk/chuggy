@@ -7,6 +7,7 @@
 import { expect, test } from "vitest";
 
 import {
+  accessHolderNotAdmittedCode,
   accessInvitationCodes,
   accessInvitationProjectsMax,
   accessLastTenantAdministratorCode,
@@ -40,6 +41,7 @@ test("every refusal the plane names has its own line, and an unknown one is prin
     ...Object.values(accessInvitationCodes),
     accessLastTenantAdministratorCode,
     accessNotPermittedCode,
+    accessHolderNotAdmittedCode,
   ];
   const lines = named.map((code) => accessCodeLabel(code));
   for (const line of lines) expect(line).not.toMatch(fallback);
@@ -53,6 +55,9 @@ test("a change and an account the reader may not make each have their own line",
   expect(accessCodeLabel(accessNotPermittedCode)).toBe("Change not permitted");
   expect(accessCodeLabel(accessInvitationCodes.AccountNotPermitted)).toBe(
     "Account creation not permitted",
+  );
+  expect(accessCodeLabel(accessHolderNotAdmittedCode)).toBe(
+    "Holder not admitted",
   );
 });
 

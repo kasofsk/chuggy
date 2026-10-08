@@ -35,6 +35,10 @@ import {
   type AccessAuthorities,
 } from "../../src/interpreter/accessAuthorities.ts";
 import {
+  accessAuthorityHolders,
+  type AccessAuthorityHolders,
+} from "../../src/interpreter/accessAuthorityHolders.ts";
+import {
   memberAuthority,
   ProjectAccessUnavailable,
   projectAccessNamespace,
@@ -428,6 +432,17 @@ export function accessMemoryAuthorities(
 ): AccessAuthorities {
   return accessAuthorities(
     { access: memory.access, tuples: memory.reader, directory },
+    { issuer: accessFixtureIssuer, bounds },
+  );
+}
+
+/** Adding and removing an authority's holders, over `memory`. */
+export function accessMemoryHolders(
+  memory: AccessMemory,
+  bounds: AccessPlaneBounds = accessPlaneBoundsDefault,
+): AccessAuthorityHolders {
+  return accessAuthorityHolders(
+    { access: memory.access, tuples: memory.reader, grants: memory.grants },
     { issuer: accessFixtureIssuer, bounds },
   );
 }

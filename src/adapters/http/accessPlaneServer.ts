@@ -1,9 +1,9 @@
 /**
  * The access plane's server: a tenant's and a project's people, granting and
  * removing their roles, giving and taking a person's hosted runs, inviting a
- * person by their GitHub account, and what the caller may do and who holds
- * each authority at the site, a tenant or a project, each for a caller the
- * authority says holds the kind it needs.
+ * person by their GitHub account, and what the caller may do, who holds each
+ * authority and adding and removing its holders at the site, a tenant or a
+ * project, each for a caller the authority says holds the kind it needs.
  *
  * IT ANSWERS AS THE PUBLIC API DOES, because the console reads both with the
  * same code. A body is read as the API's media type, every refusal carries the
@@ -20,15 +20,20 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import {
   accessEmailCharsMax,
   accessGithubLoginCharsMax,
+  accessGroupSchema,
+  accessHolderNotAdmittedCode,
   accessInvitationCodes,
   accessInvitationProjectsMax,
   accessInvitationSchema,
   accessLastTenantAdministratorCode,
   accessNotPermittedCode,
   accessPlaneRoutes,
+  accessProjectAuthoritySchema,
   accessProjectRoleGrantSchema,
   accessProjectRoleSchema,
+  accessSiteAuthoritySchema,
   accessSubjectSchema,
+  accessTenantAuthoritySchema,
   accessTenantRoleGrantSchema,
   accessTenantRoleSchema,
   type AccessInvited,
@@ -42,6 +47,12 @@ import {
 } from "../../contract/http.ts";
 import type { AccessAbilities } from "../../interpreter/accessAbilities.ts";
 import type { AccessAuthorities } from "../../interpreter/accessAuthorities.ts";
+import type {
+  AccessAuthorityHolders,
+  AccessHeld,
+  AccessHolder,
+  AccessHolderChange,
+} from "../../interpreter/accessAuthorityHolders.ts";
 import { AccessDirectoryUnavailable } from "../../interpreter/accessDirectory.ts";
 import type {
   AccessInvitationResult,
@@ -82,6 +93,7 @@ export interface AccessPlaneService {
   readonly invitations: AccessInvitations;
   readonly abilities: AccessAbilities;
   readonly authorities: AccessAuthorities;
+  readonly holders: AccessAuthorityHolders;
   readonly ready: () => Promise<boolean>;
 }
 
@@ -322,6 +334,120 @@ function accessAnsweredRoutes(
     );
 }
 
+function accessHolderChanged(
+  reply: FastifyReply,
+  change: AccessHolderChange,
+): FastifyReply {
+  return change === "NotAdmitted"
+    ? accessRefused(
+        reply,
+        409,
+        accessHolderNotAdmittedCode,
+        "The authority does not admit that holder.",
+      )
+    : accessChanged(reply, change);
+}
+
+/** One authority at the level a path names, held by `holder`. */
+type AccessHeldOf = (
+  request: FastifyRequest,
+  holder: AccessHolder,
+) => AccessHeld;
+
+const accessHeldAt: Readonly<
+  Record<"site" | "creators" | "tenant" | "project", AccessHeldOf>
+> = {
+  site: (request, holder) => ({
+    level: "Site",
+    authority: accessSiteAuthoritySchema.parse(
+      accessParams(request)["authority"],
+    ),
+    holder,
+  }),
+  creators: (_request, holder) => ({
+    level: "Site",
+    authority: "AccountCreators",
+    holder,
+  }),
+  tenant: (request, holder) => ({
+    level: "Tenant",
+    tenant: accessTenantOf(request),
+    authority: accessTenantAuthoritySchema.parse(
+      accessParams(request)["authority"],
+    ),
+    holder,
+  }),
+  project: (request, holder) => ({
+    level: "Project",
+    partition: accessPartitionOf(request),
+    authority: accessProjectAuthoritySchema.parse(
+      accessParams(request)["authority"],
+    ),
+    holder,
+  }),
+};
+
+/** The holder a path names. */
+const accessHolderOf: Readonly<
+  Record<
+    "person" | "group" | "tenant",
+    (request: FastifyRequest) => AccessHolder
+  >
+> = {
+  person: (request) => ({
+    holder: "Person",
+    subject: accessSubjectOf(request),
+  }),
+  group: (request) => ({
+    holder: "Group",
+    group: accessGroupSchema.parse(accessParams(request)["group"]),
+  }),
+  tenant: (request) => ({ holder: "Tenant", tenant: accessTenantOf(request) }),
+};
+
+/** Each route adding or removing a holder, the level its path names and the holder. */
+const accessHolderRouteTable: readonly (readonly [
+  AccessPlaneRouteName,
+  keyof typeof accessHeldAt,
+  keyof typeof accessHolderOf,
+])[] = [
+  ["siteAuthorityPersonAddition", "site", "person"],
+  ["siteAuthorityPersonRemoval", "site", "person"],
+  ["siteAuthorityGroupAddition", "site", "group"],
+  ["siteAuthorityGroupRemoval", "site", "group"],
+  ["siteAuthorityTenantAddition", "creators", "tenant"],
+  ["siteAuthorityTenantRemoval", "creators", "tenant"],
+  ["tenantAuthorityPersonAddition", "tenant", "person"],
+  ["tenantAuthorityPersonRemoval", "tenant", "person"],
+  ["tenantAuthorityGroupAddition", "tenant", "group"],
+  ["tenantAuthorityGroupRemoval", "tenant", "group"],
+  ["projectAuthorityPersonAddition", "project", "person"],
+  ["projectAuthorityPersonRemoval", "project", "person"],
+  ["projectAuthorityGroupAddition", "project", "group"],
+  ["projectAuthorityGroupRemoval", "project", "group"],
+];
+
+function accessHolderRoutes(
+  app: FastifyInstance,
+  service: AccessPlaneService,
+): void {
+  for (const [name, level, holder] of accessHolderRouteTable) {
+    const verb =
+      accessPlaneRoutes[name].method === "POST"
+        ? "holderAdded"
+        : "holderRemoved";
+    accessPlaneRoute(app, service, name, async (request, reply, caller) =>
+      accessHolderChanged(
+        reply,
+        await service.holders[verb](
+          caller,
+          accessHeldAt[level](request, accessHolderOf[holder](request)),
+        ),
+      ),
+    );
+  }
+}
+
 /** A refusal the same request may be sent again after. */
 function accessRetry(reply: FastifyReply, code: string): FastifyReply {
   void reply.header("retry-after", String(authorityRetryAfterSeconds));
@@ -493,5 +619,6 @@ export function createAccessPlaneApp(
   accessHostedRunsRoutes(app, service);
   accessInvitationRoute(app, service);
   accessAnsweredRoutes(app, service);
+  accessHolderRoutes(app, service);
   return app;
 }
