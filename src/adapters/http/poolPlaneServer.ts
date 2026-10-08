@@ -60,6 +60,7 @@ import {
 import type { WorkerPoolSessionPorts } from "../../interpreter/workerPoolSessions.ts";
 import {
   planeApp,
+  planeHealthRoutes,
   planeJsonObjectBytesMax,
   planeRouteServed,
   type PlaneRoute,
@@ -194,18 +195,6 @@ function poolAssignmentNamed(request: FastifyRequest): string | undefined {
     (request.params as Record<string, unknown>)["assignment"],
   );
   return named.success ? named.data : undefined;
-}
-
-function poolHealthRoutes(
-  app: FastifyInstance,
-  service: PoolPlaneService,
-): void {
-  app.get("/health/live", () => ({ status: "live" }));
-  app.get("/health/ready", async (_request, reply) =>
-    (await service.ready())
-      ? { status: "ready" }
-      : reply.code(503).send({ status: "unready" }),
-  );
 }
 
 /** The reconciliation poll, which is the whole of what a pool asks for, answered in the shape the release the pool names reads. */
@@ -381,7 +370,7 @@ function poolPullRoute(app: FastifyInstance, service: PoolPlaneService): void {
 export function createPoolPlaneApp(service: PoolPlaneService): FastifyInstance {
   const app = planeApp();
   workerContractNamed(app);
-  poolHealthRoutes(app, service);
+  planeHealthRoutes(app, service.ready);
   poolAssignmentsRoute(app, service);
   poolOutcomeRoutes(app, service);
   poolPullRoute(app, service);

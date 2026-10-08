@@ -1,6 +1,7 @@
 /**
- * How the job, session and pool planes serve a route: the plane's release
- * check, then the caller resolved from its bearer, both in `onRequest` hooks
+ * How the job, session, pool and access planes serve a route: the plane's
+ * release check where it has one, then the caller resolved from its bearer,
+ * both in `onRequest` hooks
  * that run before any byte of the body is read, and only then the body, read
  * under the most that one route takes. A request from anyone the plane does not
  * serve is refused without the plane buffering or parsing what it sent, and the
@@ -25,8 +26,16 @@ export const planeBodyBytesDefault = nativeHttpBodyBytesMax;
  * re-send a bodyless POST chunked, as the public tunnel does, and Fastify
  * refuses an untyped chunked body it has no parser for.
  */
-export function planeApp(): FastifyInstance {
-  const app = fastify({ logger: false, bodyLimit: planeBodyBytesDefault });
+export function planeApp(
+  options: { readonly pathSegmentCharsMax?: number } = {},
+): FastifyInstance {
+  const app = fastify({
+    logger: false,
+    bodyLimit: planeBodyBytesDefault,
+    ...(options.pathSegmentCharsMax === undefined
+      ? {}
+      : { routerOptions: { maxParamLength: options.pathSegmentCharsMax } }),
+  });
   app.addContentTypeParser(
     "*",
     { parseAs: "buffer" },
@@ -37,6 +46,19 @@ export function planeApp(): FastifyInstance {
     },
   );
   return app;
+}
+
+/** A plane's unauthenticated probes: live while it answers at all, ready while `ready` says so. */
+export function planeHealthRoutes(
+  app: FastifyInstance,
+  ready: () => Promise<boolean>,
+): void {
+  app.get("/health/live", () => ({ status: "live" }));
+  app.get("/health/ready", async (_request, reply) =>
+    (await ready())
+      ? { status: "ready" }
+      : reply.code(503).send({ status: "unready" }),
+  );
 }
 
 /** The most one character weighs once JSON escapes it: past the basic plane, a surrogate pair written as two `\u` escapes. */
@@ -58,12 +80,16 @@ export function planeJsonObjectBytesMax(...texts: readonly number[]): number {
   );
 }
 
-/** One route as a plane serves it, `oversized` answering a body past its bound where the route's own answers name that refusal. */
+/**
+ * One route as a plane serves it, `released` checking the worker contract's
+ * release on a plane that serves that contract, and `oversized` answering a
+ * body past its bound where the route's own answers name that refusal.
+ */
 export interface PlaneRoute {
-  readonly method: "GET" | "POST" | "PUT";
+  readonly method: "GET" | "POST" | "PUT" | "DELETE";
   readonly url: string;
   readonly bodyBytesMax: number;
-  readonly released: (
+  readonly released?: (
     request: FastifyRequest,
     reply: FastifyReply,
   ) => Promise<FastifyReply | undefined>;
@@ -95,8 +121,8 @@ export function planeRouteServed<Caller extends object>(
     url: route.url,
     bodyLimit: route.bodyBytesMax,
     onRequest: [
-      route.released,
-      async (request, reply) => {
+      ...(route.released === undefined ? [] : [route.released]),
+      async (request: FastifyRequest, reply: FastifyReply) => {
         const caller = await admitted(request, reply);
         if (caller === undefined) return reply;
         callers.set(request, caller);

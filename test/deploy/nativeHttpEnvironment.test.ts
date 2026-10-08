@@ -1,26 +1,34 @@
 /**
- * The image runbook's variable table against the root that reads them. The
- * table opens by claiming to list every variable `src/roots/nativeHttp.ts`
- * reads, and nothing was holding it to that: a variable added to the root and
- * missed in the table is a deployment an operator cannot configure from the
- * one document that claims to enumerate them, and it reads as a default rather
- * than as an omission.
+ * The image runbook's variable tables against the roots that read them. Each
+ * table opens by claiming to list every variable its root reads, and nothing
+ * was holding it to that: a variable added to the root and missed in the table
+ * is a deployment an operator cannot configure from the one document that
+ * claims to enumerate them, and it reads as a default rather than as an
+ * omission.
  *
  * THE EXPECTED SET IS DERIVED FROM THE ROOT, never listed here, and the table
  * is read from its own section so that a name mentioned in the prose around it
- * neither adds to nor covers for a row.
+ * neither adds to nor covers for a row. Only the root's own file is read, so a
+ * variable named in a helper it imports is not seen.
  */
 
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
-const rootPath = "src/roots/nativeHttp.ts";
 const readmePath = "deploy/rig/images/README.md";
-const tableHeading = "## Configuring the API";
+
+/** Each root a section of the runbook claims to enumerate, and that section's heading. */
+const tables = [
+  { rootPath: "src/roots/nativeHttp.ts", heading: "## Configuring the API" },
+  {
+    rootPath: "src/roots/accessPlane.ts",
+    heading: "## Configuring the access plane",
+  },
+] as const;
 
 /** Every environment variable the root names, which is every one it can read. */
-function rootVariables(): ReadonlySet<string> {
+function rootVariables(rootPath: string): ReadonlySet<string> {
   const found = new Set<string>();
   for (const [, name] of readFileSync(rootPath, "utf8").matchAll(
     /"(CHUG_[A-Z0-9_]+)"/gu,
@@ -31,11 +39,11 @@ function rootVariables(): ReadonlySet<string> {
 }
 
 /** Every variable the runbook's own table names, taken from that section alone. */
-function tableVariables(): ReadonlySet<string> {
+function tableVariables(heading: string): ReadonlySet<string> {
   const readme = readFileSync(readmePath, "utf8");
-  const opened = readme.indexOf(tableHeading);
-  assert.notEqual(opened, -1, `${readmePath} has no ${tableHeading}`);
-  const rest = readme.slice(opened + tableHeading.length);
+  const opened = readme.indexOf(`${heading}\n`);
+  assert.notEqual(opened, -1, `${readmePath} has no ${heading}`);
+  const rest = readme.slice(opened + heading.length);
   const closed = rest.indexOf("\n## ");
   const section = closed === -1 ? rest : rest.slice(0, closed);
   const found = new Set<string>();
@@ -44,6 +52,7 @@ function tableVariables(): ReadonlySet<string> {
   return found;
 }
 
-test("the runbook's table names every variable the API root reads", () => {
-  assert.deepEqual(tableVariables(), rootVariables());
-});
+for (const { rootPath, heading } of tables)
+  test(`the runbook's table under "${heading}" names every variable ${rootPath} reads`, () => {
+    assert.deepEqual(tableVariables(heading), rootVariables(rootPath));
+  });

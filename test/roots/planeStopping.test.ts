@@ -1,6 +1,7 @@
 /**
- * A plane's stopping, wired to an app that holds one request and a pool that
- * records being ended, and signalled while that request is in flight.
+ * A plane's stopping, wired to an app that holds one request and, for a plane
+ * that has one, a pool that records being ended, and signalled while that
+ * request is in flight.
  *
  * THE CALLER KEEPS ITS CONNECTION, as a worker does, and never closes it: a
  * plane that waited for its callers to hang up would not exit, and the program
@@ -19,7 +20,8 @@ const neverEnded = 3;
 const heldMs = 300;
 const giveUpMs = 10_000;
 
-const program = `
+/** The program, its plane holding a pool that records being ended only where `pooled` says so. */
+const program = (pooled: boolean): string => `
   const { planeStopping } = await import('./src/roots/planeStopping.ts');
   const { default: fastify } = await import('fastify');
   const http = await import('node:http');
@@ -33,8 +35,8 @@ const program = `
   });
   planeStopping(
     app,
-    { end: () => { seen.push('pool ended'); return Promise.resolve(); } },
     'a plane',
+    ${pooled ? "{ end: () => { seen.push('pool ended'); return Promise.resolve(); } }" : "undefined"},
   );
   process.on('exit', () => {
     process.stdout.write(JSON.stringify(seen));
@@ -50,12 +52,17 @@ const program = `
     .on('error', () => seen.push('heard nothing'));
 `;
 
-test("a signalled plane answers the request it holds, ends its pool once it has, and exits though its caller kept the connection", async () => {
-  const { code, stdout } = await signalledCommandRun(program, (out) =>
+/** What a plane run as `program(pooled)` saw once signalled, after asserting it exited cleanly. */
+async function stopped(pooled: boolean): Promise<string[]> {
+  const { code, stdout } = await signalledCommandRun(program(pooled), (out) =>
     out.includes("held\n"),
   );
   assert.equal(code, 0, stdout);
-  const seen = JSON.parse(stdout.slice("held\n".length)) as string[];
+  return JSON.parse(stdout.slice("held\n".length)) as string[];
+}
+
+test("a signalled plane answers the request it holds, ends its pool once it has, and exits though its caller kept the connection", async () => {
+  const seen = await stopped(true);
   assert.deepEqual(
     seen.filter((each) => !each.startsWith("heard")),
     ["answered", "pool ended"],
@@ -64,4 +71,8 @@ test("a signalled plane answers the request it holds, ends its pool once it has,
     seen.filter((each) => each.startsWith("heard")),
     ["heard 200"],
   );
+});
+
+test("a signalled plane with no pool answers the request it holds and exits", async () => {
+  assert.deepEqual(await stopped(false), ["answered", "heard 200"]);
 });

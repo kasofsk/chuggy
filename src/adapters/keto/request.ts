@@ -9,13 +9,14 @@
  * a silent denial for every caller at once.
  *
  * THE BODY IS READ UNDER A BYTE BOUND rather than awaited whole, because the
- * answers this module reads are a flag or a status and an authority that
- * answered a stream instead is one this side cannot decide from.
+ * answers this module reads are a flag, a status, or one page of a listing
+ * whose size `./accessTuples.ts` chose so that its widest page fits, and an
+ * authority that answered a stream instead is one this side cannot decide from.
  */
 
 import { ProjectAccessUnavailable } from "../../interpreter/projectAccess.ts";
 
-/** The most one answer may weigh, which is orders above every body read here. */
+/** The most one answer may weigh: orders above a flag, and what a listing's page is sized under. */
 export const ketoResponseBytesMax = 64 * 1024;
 
 /** The most reads one answer may take, so a trickle of empty chunks cannot hold the request open. */

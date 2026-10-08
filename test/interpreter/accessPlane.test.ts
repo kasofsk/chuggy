@@ -1,0 +1,286 @@
+/**
+ * The access plane's decisions over an authority held in memory: who is
+ * listed, who may list and change, what a change writes, and where a bound
+ * cuts a list short.
+ */
+
+import assert from "node:assert/strict";
+import { test } from "node:test";
+
+import {
+  accessProjectRoles,
+  accessTenantRoles,
+} from "../../src/contract/accessPlane.ts";
+import {
+  accessProjectRoleRelations,
+  accessTenantRoleRelations,
+} from "../../src/interpreter/accessPlane.ts";
+import {
+  oidcPrincipal,
+  principalCharsMax,
+} from "../../src/interpreter/principal.ts";
+import {
+  projectPrincipalGrant,
+  projectTenantGrant,
+  tenantPrincipalGrant,
+} from "../../src/interpreter/projectGrant.ts";
+import {
+  accessFixtureIssuer,
+  accessFixturePartition,
+  accessFixturePrincipal,
+  accessMemory,
+  accessMemoryPlane,
+  type AccessMemory,
+} from "./accessPlaneFixture.ts";
+
+const web = accessFixturePartition("acme/co", "web");
+const api = accessFixturePartition("acme/co", "api");
+const loose = accessFixturePartition("acme/co", "loose");
+const tenant = web.tenant;
+const alice = accessFixturePrincipal("alice");
+const priya = accessFixturePrincipal("priya");
+
+/** Writes one tuple the plane does not write itself, as provisioning would. */
+async function seeded(
+  memory: AccessMemory,
+  grants: readonly Parameters<typeof memory.grants.write>[0][],
+): Promise<void> {
+  for (const grant of grants) await memory.grants.write(grant);
+  memory.changes.length = 0;
+}
+
+/**
+ * A tenant administered by alice with two linked projects, priya
+ * administering one of them, a third project with no link, and holders the
+ * list must leave out or only count.
+ */
+async function acme(memory: AccessMemory = accessMemory()) {
+  const as = (
+    subject: string,
+    relation: string,
+    issuer = accessFixtureIssuer,
+  ) => tenantPrincipalGrant({ issuer, subject, tenant, relation });
+  const on = (subject: string, partition: typeof web, relation: string) =>
+    projectPrincipalGrant({
+      issuer: accessFixtureIssuer,
+      subject,
+      ...partition,
+      relation,
+    });
+  await seeded(memory, [
+    projectTenantGrant(web),
+    projectTenantGrant(api),
+    as("alice", "admins"),
+    as("bo", "members"),
+    as("bo", "hosted_execution"),
+    as("elsewhere", "members", "https://other.invalid"),
+    on("priya", web, "admins"),
+    on("bo", web, "developers"),
+    on("bo", api, "dispatchers"),
+    on("robot", web, "agents"),
+    on("pool", web, "pools"),
+    on("stray", loose, "developers"),
+  ]);
+  return { memory, plane: accessMemoryPlane(memory) };
+}
+
+test("a tenant's administrator reads every holder with the roles the tuples say, itself marked, and the tenant's projects", async () => {
+  const { plane } = await acme();
+  assert.deepEqual(await plane.tenantPeople(alice, tenant), {
+    tenant,
+    projects: ["api", "web"],
+    people: [
+      {
+        subject: "alice",
+        mine: true,
+        tenantRoles: ["Admin"],
+        hostedRuns: false,
+        projects: [],
+      },
+      {
+        subject: "bo",
+        mine: false,
+        tenantRoles: ["Member"],
+        hostedRuns: true,
+        projects: [
+          { project: "api", roles: ["Dispatcher"] },
+          { project: "web", roles: ["Developer"] },
+        ],
+      },
+      {
+        subject: "priya",
+        mine: false,
+        tenantRoles: [],
+        hostedRuns: false,
+        projects: [{ project: "web", roles: ["Admin"] }],
+      },
+    ],
+    otherIssuers: 1,
+    truncated: false,
+  });
+});
+
+test("a caller administering nothing, and a tenant that does not exist, are both absent", async () => {
+  const { plane } = await acme();
+  assert.equal(await plane.tenantPeople(priya, tenant), undefined);
+  assert.equal(
+    await plane.tenantPeople(
+      alice,
+      accessFixturePartition("nobody", "x").tenant,
+    ),
+    undefined,
+  );
+  assert.equal(
+    await plane.tenantRoleGranted(priya, tenant, "zed", "Member"),
+    "Absent",
+  );
+});
+
+test("a project's administrator lists and changes that project alone, a tenant administrator listed with its role", async () => {
+  const { memory, plane } = await acme();
+  assert.deepEqual(await plane.projectPeople(priya, web), {
+    tenant,
+    project: "web",
+    people: [
+      { subject: "alice", mine: false, tenantAdmin: true, roles: [] },
+      { subject: "bo", mine: false, tenantAdmin: false, roles: ["Developer"] },
+      { subject: "priya", mine: true, tenantAdmin: false, roles: ["Admin"] },
+    ],
+    otherIssuers: 0,
+    truncated: false,
+  });
+  assert.equal(await plane.projectPeople(priya, api), undefined);
+  assert.equal(
+    await plane.projectRoleGranted(priya, api, "zed", "Developer"),
+    "Absent",
+  );
+  assert.equal(
+    await plane.projectRoleGranted(priya, web, "zed", "Dispatcher"),
+    "Changed",
+  );
+  assert.equal(
+    await plane.projectRoleRemoved(priya, web, "bo", "Developer"),
+    "Changed",
+  );
+  assert.deepEqual(
+    memory.changes.map(([verb, grant]) => [verb, grant.relation]),
+    [
+      ["write", "dispatchers"],
+      ["remove", "developers"],
+    ],
+  );
+});
+
+test("a project with no tenant link is not the tenant's: not listed, and its people do not list the tenant's administrator", async () => {
+  const { memory, plane } = await acme();
+  await seeded(memory, [
+    projectPrincipalGrant({
+      issuer: accessFixtureIssuer,
+      subject: "priya",
+      ...loose,
+      relation: "admins",
+    }),
+  ]);
+  const people = await plane.projectPeople(priya, loose);
+  assert.deepEqual(
+    people?.people.map((person) => person.subject),
+    ["priya", "stray"],
+  );
+  assert.equal(await plane.projectPeople(alice, loose), undefined);
+});
+
+test("granting twice and removing twice each succeed, and leave one tuple and then none", async () => {
+  const { memory, plane } = await acme();
+  const held = () =>
+    memory.tuples.filter(
+      (tuple) =>
+        tuple.subject.subject === "Id" &&
+        tuple.subject.id === accessFixturePrincipal("zed"),
+    ).length;
+  for (const round of ["first", "second"])
+    assert.equal(
+      await plane.tenantRoleGranted(alice, tenant, "zed", "Member"),
+      "Changed",
+      round,
+    );
+  assert.equal(held(), 1);
+  for (const round of ["first", "second"])
+    assert.equal(
+      await plane.tenantRoleRemoved(alice, tenant, "zed", "Member"),
+      "Changed",
+      round,
+    );
+  assert.equal(held(), 0);
+});
+
+test("the only administrator of a tenant is not removed, and one of two is", async () => {
+  const { memory, plane } = await acme();
+  assert.equal(
+    await plane.tenantRoleRemoved(alice, tenant, "alice", "Admin"),
+    "LastTenantAdministrator",
+  );
+  assert.deepEqual(memory.changes, []);
+  assert.equal(
+    await plane.tenantRoleGranted(alice, tenant, "zed", "Admin"),
+    "Changed",
+  );
+  assert.equal(
+    await plane.tenantRoleRemoved(alice, tenant, "alice", "Admin"),
+    "Changed",
+  );
+  assert.equal(await plane.tenantPeople(alice, tenant), undefined);
+});
+
+test("each role reaches only the relation its record names, and every relation those records name is a role's", () => {
+  assert.deepEqual(
+    accessTenantRoles.map((role) => accessTenantRoleRelations[role]),
+    ["admins", "members"],
+  );
+  assert.deepEqual(
+    accessProjectRoles.map((role) => accessProjectRoleRelations[role]),
+    ["admins", "developers", "dispatchers"],
+  );
+});
+
+test("a subject is carried as the principal of the plane's issuer, separators whole, up to the principal's bound and not past it", async () => {
+  const { memory, plane } = await acme();
+  await plane.projectRoleGranted(alice, web, "a/b:c 7", "Developer");
+  const [, grant] = memory.changes[0] ?? [];
+  assert.deepEqual(grant?.holder, {
+    subject: "Principal",
+    principal: oidcPrincipal(accessFixtureIssuer, "a/b:c 7"),
+  });
+  const prefix = `${String(accessFixtureIssuer.length)}:${accessFixtureIssuer}`;
+  const widest = "w".repeat(principalCharsMax - prefix.length);
+  assert.equal(
+    await plane.tenantRoleGranted(alice, tenant, widest, "Member"),
+    "Changed",
+  );
+  await assert.rejects(
+    plane.tenantRoleGranted(alice, tenant, `${widest}w`, "Member"),
+    RangeError,
+  );
+});
+
+test("a list past each of its bounds answers truncated and no more than the bound", async () => {
+  const bounds = { pagesMax: 64, tuplesMax: 512, projectsMax: 32 };
+  const listed = async (narrowed: Partial<typeof bounds>) => {
+    const memory = accessMemory();
+    await acme(memory);
+    const people = await accessMemoryPlane(memory, {
+      ...bounds,
+      ...narrowed,
+    }).tenantPeople(alice, tenant);
+    return { memory, people };
+  };
+  assert.equal((await listed({})).people?.truncated, false);
+  const pages = await listed({ pagesMax: 2 });
+  assert.equal(pages.people?.truncated, true);
+  assert.equal(pages.memory.pages, 2);
+  const tuples = await listed({ tuplesMax: 3 });
+  assert.equal(tuples.people?.truncated, true);
+  assert.ok((tuples.people?.people.length ?? 0) <= 3);
+  const projects = await listed({ projectsMax: 1 });
+  assert.equal(projects.people?.truncated, true);
+  assert.deepEqual(projects.people?.projects, ["api"]);
+});

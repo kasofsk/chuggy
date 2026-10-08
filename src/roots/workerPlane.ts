@@ -262,7 +262,7 @@ async function main(): Promise<void> {
       }
     },
   });
-  planeStopping(app, pool, "worker plane");
+  planeStopping(app, "worker plane", pool);
   await app.listen({
     host: process.env["CHUG_WORKER_PLANE_HOST"] ?? "127.0.0.1",
     port: positive("CHUG_WORKER_PLANE_PORT", 3_001),

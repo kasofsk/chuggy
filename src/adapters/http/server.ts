@@ -297,7 +297,11 @@ type InitialNativeWeb = Pick<
   | "askLead"
 >;
 
-function send(reply: FastifyReply, result: NativeHttpResponse): void {
+/** Sends one response the outcome mappers built, headers and all. */
+export function nativeHttpSend(
+  reply: FastifyReply,
+  result: NativeHttpResponse,
+): void {
   for (const [name, value] of Object.entries(result.headers)) {
     void reply.header(name, value);
   }
@@ -398,6 +402,35 @@ async function authorityUnavailable(reply: FastifyReply): Promise<void> {
     );
 }
 
+/**
+ * The bearer a request carries as the authentication decided it, or nothing
+ * once the refusal it met has been answered: no token or a rejected one as
+ * unauthenticated, and a verification that could not be made as a wait.
+ */
+export async function nativeHttpBearerAuthenticated(
+  authentication: PrincipalAuthentication,
+  request: FastifyRequest,
+  reply: FastifyReply,
+): Promise<AuthenticatedBearer | undefined> {
+  const token = bearer(request.headers.authorization);
+  if (token === undefined) {
+    await unauthenticated(reply, false);
+    return undefined;
+  }
+  const decided = await authentication
+    .authenticateBearer(token)
+    .catch(() => ({ authenticated: "AuthorityUnavailable" }) as const);
+  if (decided.authenticated === "AuthorityUnavailable") {
+    await authorityUnavailable(reply);
+    return undefined;
+  }
+  if (decided.authenticated === "InvalidToken") {
+    await unauthenticated(reply, true);
+    return undefined;
+  }
+  return decided.bearer;
+}
+
 function registerAuthentication(
   app: FastifyInstance,
   authentication: PrincipalAuthentication,
@@ -407,31 +440,21 @@ function registerAuthentication(
   app.decorateRequest("viaSession");
   app.addHook("preHandler", async (request, reply) => {
     if (request.routeOptions.config.public === true) return;
-    const token = bearer(request.headers.authorization);
-    if (token === undefined) {
-      await unauthenticated(reply, false);
-      return reply;
-    }
-    const decided = await authentication
-      .authenticateBearer(token)
-      .catch(() => ({ authenticated: "AuthorityUnavailable" }) as const);
-    if (decided.authenticated === "AuthorityUnavailable") {
-      await authorityUnavailable(reply);
-      return reply;
-    }
-    if (decided.authenticated === "InvalidToken") {
-      await unauthenticated(reply, true);
-      return reply;
-    }
-    const session = decided.bearer.viaSession;
+    const authenticated = await nativeHttpBearerAuthenticated(
+      authentication,
+      request,
+      reply,
+    );
+    if (authenticated === undefined) return reply;
+    const session = authenticated.viaSession;
     if (
       session !== undefined &&
       !registerAuthenticationSession(request, reply, session)
     )
       return reply;
-    request.principal = decided.bearer.principal;
-    if (decided.bearer.expiresAtMs !== undefined)
-      request.bearerExpiresAtMs = decided.bearer.expiresAtMs;
+    request.principal = authenticated.principal;
+    if (authenticated.expiresAtMs !== undefined)
+      request.bearerExpiresAtMs = authenticated.expiresAtMs;
     if (session !== undefined) request.viaSession = session.session;
   });
 }
@@ -456,10 +479,10 @@ function registerAuthenticationSession(
     case "Admitted":
       return true;
     case "OtherPartition":
-      send(reply, notFound());
+      nativeHttpSend(reply, notFound());
       return false;
     case "Refused":
-      send(reply, sessionBearerRefusedResponse());
+      nativeHttpSend(reply, sessionBearerRefusedResponse());
       return false;
   }
 }
@@ -544,7 +567,7 @@ function registerInventory(app: FastifyInstance, web: InitialNativeWeb): void {
       after,
       integerField(query, "limit", 50),
     );
-    send(reply, inventoryResponse(page));
+    nativeHttpSend(reply, inventoryResponse(page));
   });
 }
 
@@ -559,7 +582,7 @@ function registerProjectCreation(
       const key = request.headers["idempotency-key"];
       if (typeof key !== "string")
         throw new TypeError("idempotency key is absent");
-      send(
+      nativeHttpSend(
         reply,
         projectCreationResponse(
           await creation.create(
@@ -621,7 +644,7 @@ function registerProject(app: FastifyInstance, web: InitialNativeWeb): void {
         : { minimumSequence: integerField(query, "minimumSequence") }),
       ...phaseFilter(query["phase"]),
     });
-    send(reply, projectResponse(result));
+    nativeHttpSend(reply, projectResponse(result));
   };
   app.get(root, projectRead);
   app.get(`${root}/tickets`, projectRead);
@@ -632,7 +655,7 @@ function registerProject(app: FastifyInstance, web: InitialNativeWeb): void {
       partitionOf(request),
       asTicketIdField(params, "ticket"),
     );
-    send(reply, ticketResponse(resource));
+    nativeHttpSend(reply, ticketResponse(resource));
   });
   registerNativeActions(app, web, root);
   registerAgenticRefusals(app, web, root);
@@ -683,7 +706,7 @@ function registerAgenticRefusals(
 ): void {
   app.get(`${root}/agentic-refusals`, async (request, reply) => {
     const query = fieldsOnly(request.query, ["limit"]);
-    send(
+    nativeHttpSend(
       reply,
       agenticRefusalsResponse(
         await web.agenticRefusals(
@@ -698,7 +721,7 @@ function registerAgenticRefusals(
     `${root}/tickets/:ticket/agentic-refusals`,
     async (request, reply) => {
       const params = record(request.params);
-      send(
+      nativeHttpSend(
         reply,
         ticketAgenticRefusalsResponse(
           await web.ticketAgenticRefusals(
@@ -729,7 +752,7 @@ function registerSelectorHistory(
 ): void {
   app.get(`${root}/selector-history`, async (request, reply) => {
     const query = fieldsOnly(request.query, ["after", "limit", "order"]);
-    send(
+    nativeHttpSend(
       reply,
       selectorHistoryResponse(
         await web.selectorHistory(principalOf(request), partitionOf(request), {
@@ -877,7 +900,7 @@ function registerNativeActions(
       partitionOf(request),
       asTicketIdField(params, "ticket"),
     );
-    send(reply, ticketNativeActionsResponse(actions));
+    nativeHttpSend(reply, ticketNativeActionsResponse(actions));
   });
   app.get(`${root}/native-actions`, async (request, reply) => {
     const query = fieldsOnly(request.query, ["cursor", "limit"]);
@@ -893,7 +916,7 @@ function registerNativeActions(
           }),
       limit: integerField(query, "limit", 50),
     });
-    send(reply, nativeActionsResponse(partition, result));
+    nativeHttpSend(reply, nativeActionsResponse(partition, result));
   });
 }
 
@@ -911,7 +934,7 @@ function registerOperationalRoutes(
   );
   app.get(`${root}/executions`, async (request, reply) => {
     const partition = partitionOf(request);
-    send(
+    nativeHttpSend(
       reply,
       executionsResponse(
         partition,
@@ -938,7 +961,7 @@ function registerOperationalRoutes(
     `${root}/executions/:execution/artifacts/:ordinal`,
     async (request, reply) => {
       const params = record(request.params);
-      send(
+      nativeHttpSend(
         reply,
         outputContentResponse(
           await web.outputContent(
@@ -969,7 +992,7 @@ function registerProjectArtifacts(
 ): void {
   app.get(nativeHttpRoutes.projectArtifact, async (request, reply) => {
     const params = record(request.params);
-    send(
+    nativeHttpSend(
       reply,
       projectArtifactReadResponse(
         await web.projectArtifact(
@@ -992,14 +1015,14 @@ function registerProjectArtifacts(
     }
     scope.setErrorHandler((failure, _request, reply) => {
       if ((failure as { statusCode?: unknown }).statusCode === 413) {
-        send(reply, projectArtifactTooLargeResponse(uploadBytesMax));
+        nativeHttpSend(reply, projectArtifactTooLargeResponse(uploadBytesMax));
         return;
       }
-      send(reply, failureResponse(failure));
+      nativeHttpSend(reply, failureResponse(failure));
     });
     scope.post(nativeHttpRoutes.projectArtifacts, async (request, reply) => {
       const mediaType = request.headers["content-type"]?.split(";", 1)[0];
-      send(
+      nativeHttpSend(
         reply,
         projectArtifactUploadResponse(
           await web.uploadProjectArtifact(
@@ -1022,7 +1045,7 @@ function registerSelectorContext(
   app.get(
     "/api/v1/tenants/:tenant/projects/:project/selector-context",
     async (request, reply) => {
-      send(
+      nativeHttpSend(
         reply,
         selectorOperationalContextResponse(
           await web.selectorOperationalContext(
@@ -1046,7 +1069,7 @@ function registerSelectorSettings(
 ): void {
   const root = "/api/v1/tenants/:tenant/projects/:project/selector-settings";
   app.get(root, async (request, reply) => {
-    send(
+    nativeHttpSend(
       reply,
       selectorProjectSettingsResponse(
         await settings.read(principalOf(request), partitionOf(request)),
@@ -1058,7 +1081,7 @@ function registerSelectorSettings(
     { preValidation: requireVersionedJson },
     async (request, reply) => {
       const written = parseSelectorProjectSettings(request.body);
-      send(
+      nativeHttpSend(
         reply,
         selectorProjectSettingsWriteResponse(
           await settings.write(
@@ -1073,7 +1096,7 @@ function registerSelectorSettings(
   );
   app.get(`${root}/history`, async (request, reply) => {
     const query = fieldsOnly(request.query, ["before", "limit"]);
-    send(
+    nativeHttpSend(
       reply,
       selectorSettingsHistoryResponse(
         await settings.history(
@@ -1102,7 +1125,7 @@ function registerForgeCredentials(
     "/api/v1/tenants/:tenant/projects/:project/forge-credentials",
     { preValidation: requireVersionedJson },
     async (request, reply) => {
-      send(
+      nativeHttpSend(
         reply,
         forgeCredentialResponse(
           await minting.mint(
@@ -1130,7 +1153,7 @@ function registerWorkerPools(
   partitionRoot: string,
 ): void {
   app.get(`${partitionRoot}/worker-pools`, async (request, reply) => {
-    send(
+    nativeHttpSend(
       reply,
       workerPoolsResponse(
         await pools.registered(principalOf(request), partitionOf(request)),
@@ -1141,7 +1164,7 @@ function registerWorkerPools(
     `${partitionRoot}/worker-pool-registration-tokens`,
     { preValidation: requireVersionedJson },
     async (request, reply) => {
-      send(
+      nativeHttpSend(
         reply,
         workerPoolTokenResponse(
           await pools.mint(
@@ -1157,7 +1180,7 @@ function registerWorkerPools(
     "/api/v1/worker-pool-registrations",
     { config: { public: true }, preValidation: requireVersionedJson },
     async (request, reply) => {
-      send(
+      nativeHttpSend(
         reply,
         workerPoolRedemptionResponse(
           await pools.redeem(parseWorkerPoolRedemption(request.body)),
@@ -1192,7 +1215,7 @@ function registerActionReports(
       { config: { public: true } },
       async (request, reply) => {
         const address = record(request.params);
-        send(
+        nativeHttpSend(
           reply,
           actionReportResponse(
             await reports.report({
@@ -1224,7 +1247,7 @@ function registerPlacement<Routes, View>(
   body: (view: View) => unknown,
 ): void {
   app.get(path, async (request, reply) => {
-    send(
+    nativeHttpSend(
       reply,
       placementReadResponse(
         await placement.read(principalOf(request), partitionOf(request)),
@@ -1237,7 +1260,7 @@ function registerPlacement<Routes, View>(
     { preValidation: requireVersionedJson },
     async (request, reply) => {
       const written = parse(request.body);
-      send(
+      nativeHttpSend(
         reply,
         placementWriteResponse(
           await placement.write(
@@ -1269,13 +1292,13 @@ function registerForgeInstallations(
   onboarding: RepositoryOnboarding,
 ): void {
   app.get("/api/v1/forge/github", async (_request, reply) => {
-    send(reply, forgeAppsResponse(await onboarding.forgeApps()));
+    nativeHttpSend(reply, forgeAppsResponse(await onboarding.forgeApps()));
   });
   app.post(
     "/api/v1/tenants/:tenant/forge-authorizations",
     { preValidation: requireVersionedJson },
     async (request, reply) => {
-      send(
+      nativeHttpSend(
         reply,
         forgeAuthorizationResponse(
           await onboarding.authorizeForge(
@@ -1290,7 +1313,7 @@ function registerForgeInstallations(
   app.get(
     "/api/v1/tenants/:tenant/forge-installations",
     async (request, reply) => {
-      send(
+      nativeHttpSend(
         reply,
         forgeInstallationsResponse(
           await onboarding.installations(
@@ -1304,7 +1327,7 @@ function registerForgeInstallations(
   app.get(
     "/api/v1/tenants/:tenant/forge-installations/:installationId/repositories",
     async (request, reply) => {
-      send(
+      nativeHttpSend(
         reply,
         forgeRepositoriesResponse(
           await onboarding.installationRepositories(
@@ -1339,7 +1362,7 @@ function registerProjectRepositories(
       const key = request.headers["idempotency-key"];
       if (typeof key !== "string")
         throw new TypeError("idempotency key is absent");
-      send(
+      nativeHttpSend(
         reply,
         projectRepositoryBindResponse(
           partition,
@@ -1360,7 +1383,7 @@ function registerProjectRepositories(
       const key = request.headers["idempotency-key"];
       if (typeof key !== "string")
         throw new TypeError("idempotency key is absent");
-      send(
+      nativeHttpSend(
         reply,
         projectRepositoryCreateResponse(
           partition,
@@ -1376,7 +1399,7 @@ function registerProjectRepositories(
   app.get(
     "/api/v1/tenants/:tenant/projects/:project/repositories",
     async (request, reply) => {
-      send(
+      nativeHttpSend(
         reply,
         projectRepositoriesResponse(
           await onboarding.projectRepositories(
@@ -1403,7 +1426,7 @@ function registerProjectRepositoryLanding(
     { preValidation: requireVersionedJson },
     async (request, reply) => {
       const written = parseProjectRepositoryLanding(request.body);
-      send(
+      nativeHttpSend(
         reply,
         projectRepositoryLandingResponse(
           await onboarding.setLanding(
@@ -1432,7 +1455,7 @@ function registerProjectRepositoryRetirement(
     "/api/v1/tenants/:tenant/projects/:project/repositories/retirement",
     { preValidation: requireVersionedJson },
     async (request, reply) => {
-      send(
+      nativeHttpSend(
         reply,
         projectRepositoryRetirementResponse(
           await onboarding.retireRepository(
@@ -1459,7 +1482,7 @@ function registerProjectRepositoryConfigurations(
     "/api/v1/tenants/:tenant/projects/:project/repositories/configurations",
     { preValidation: requireVersionedJson },
     async (request, reply) => {
-      send(
+      nativeHttpSend(
         reply,
         projectRepositoryConfigureResponse(
           await onboarding.configureRepository(
@@ -1578,7 +1601,7 @@ function registerOperations(app: FastifyInstance, web: InitialNativeWeb): void {
         ...parsed,
         ...(session === undefined ? {} : { viaSession: session }),
       });
-      send(reply, submissionResponse(partition, result));
+      nativeHttpSend(reply, submissionResponse(partition, result));
     },
   );
   app.get(`${root}/:operation`, async (request, reply) => {
@@ -1588,7 +1611,7 @@ function registerOperations(app: FastifyInstance, web: InitialNativeWeb): void {
       partitionOf(request),
       asOperationId(textField(params, "operation")),
     );
-    send(reply, operationResponse(result));
+    nativeHttpSend(reply, operationResponse(result));
   });
   app.delete(`${root}/:operation`, async (request, reply) => {
     const params = record(request.params);
@@ -1597,7 +1620,7 @@ function registerOperations(app: FastifyInstance, web: InitialNativeWeb): void {
       partitionOf(request),
       asOperationId(textField(params, "operation")),
     );
-    send(reply, cancellationResponse(result));
+    nativeHttpSend(reply, cancellationResponse(result));
   });
 }
 
@@ -1621,7 +1644,7 @@ function registerConfigurations(
           }),
       limit: integerField(query, "limit", 50),
     });
-    send(reply, configurationsResponse(result));
+    nativeHttpSend(reply, configurationsResponse(result));
   });
   app.post(
     root,
@@ -1631,7 +1654,7 @@ function registerConfigurations(
         partition: partitionOf(request),
         ...parseConfigurationCreation(request.body),
       });
-      send(reply, configurationCreationResponse(result));
+      nativeHttpSend(reply, configurationCreationResponse(result));
     },
   );
   app.post(
@@ -1643,7 +1666,7 @@ function registerConfigurations(
         partitionOf(request),
         parseRepositoryConfigurationImport(request.body),
       );
-      send(reply, repositoryConfigurationImportResponse(result));
+      nativeHttpSend(reply, repositoryConfigurationImportResponse(result));
     },
   );
   app.get(`${root}/:revision`, async (request, reply) => {
@@ -1653,7 +1676,7 @@ function registerConfigurations(
       partitionOf(request),
       asConfigurationRevisionId(textField(params, "revision")),
     );
-    send(reply, configurationResponse(result));
+    nativeHttpSend(reply, configurationResponse(result));
   });
 }
 
@@ -1669,7 +1692,7 @@ function registerDrafts(app: FastifyInstance, web: InitialNativeWeb): void {
           textField(record(request.params), "revision"),
         ),
       );
-      send(reply, draftInitializationResponse(result));
+      nativeHttpSend(reply, draftInitializationResponse(result));
     },
   );
   app.get(root, async (request, reply) => {
@@ -1682,7 +1705,7 @@ function registerDrafts(app: FastifyInstance, web: InitialNativeWeb): void {
         : { cursor: parseDraftCursor(textField(query, "cursor"), partition) }),
       limit: integerField(query, "limit", draftPageLimitDefault),
     });
-    send(reply, draftsResponse(result));
+    nativeHttpSend(reply, draftsResponse(result));
   });
   app.post(
     root,
@@ -1692,7 +1715,7 @@ function registerDrafts(app: FastifyInstance, web: InitialNativeWeb): void {
         partition: partitionOf(request),
         ...parseDraftCreation(request.body),
       });
-      send(reply, draftCreationResponse(result));
+      nativeHttpSend(reply, draftCreationResponse(result));
     },
   );
   app.get(`${root}/:ticket`, async (request, reply) => {
@@ -1701,7 +1724,7 @@ function registerDrafts(app: FastifyInstance, web: InitialNativeWeb): void {
       partitionOf(request),
       asTicketIdField(record(request.params), "ticket"),
     );
-    send(reply, draftResponse(result));
+    nativeHttpSend(reply, draftResponse(result));
   });
   app.put(
     `${root}/:ticket`,
@@ -1712,7 +1735,7 @@ function registerDrafts(app: FastifyInstance, web: InitialNativeWeb): void {
         ticket: asTicketIdField(record(request.params), "ticket"),
         ...parseDraftRevision(request.body),
       });
-      send(reply, draftRevisionResponse(result));
+      nativeHttpSend(reply, draftRevisionResponse(result));
     },
   );
   app.delete(`${root}/:ticket`, async (request, reply) => {
@@ -1722,7 +1745,7 @@ function registerDrafts(app: FastifyInstance, web: InitialNativeWeb): void {
       ticket: asTicketIdField(record(request.params), "ticket"),
       expectedVersion: integerField(query, "expectedVersion"),
     });
-    send(reply, draftDeletionResponse(result));
+    nativeHttpSend(reply, draftDeletionResponse(result));
   });
 }
 
@@ -1748,7 +1771,7 @@ function registerEndpoint<Value>(
       : { preValidation: requireVersionedJson }),
     handler: async (request, reply) => {
       const partition = partitionOf(request);
-      send(
+      nativeHttpSend(
         reply,
         respond(
           await read(request, principalOf(request), partition),
@@ -1965,7 +1988,7 @@ function registerDispatchView(
             : { watermark: integerField(query, "watermark") }),
         },
       );
-      send(reply, dispatchViewResponse(result));
+      nativeHttpSend(reply, dispatchViewResponse(result));
     },
   );
 }
@@ -1986,7 +2009,7 @@ function registerNotifications(
           limit: integerField(query, "limit", 50),
         },
       );
-      send(reply, notificationsResponse(result));
+      nativeHttpSend(reply, notificationsResponse(result));
     },
   );
 }
@@ -2019,7 +2042,7 @@ async function serveProjectEvents(
   const after = streamCursor(request);
   const standing = await web.project(principal, partition, { limit: 1 });
   if (standing.result !== "Found") {
-    send(reply, projectEntryResponse(standing));
+    nativeHttpSend(reply, projectEntryResponse(standing));
     return;
   }
   const watching: { stream?: ProjectStream; abandoned: boolean } = {
@@ -2085,7 +2108,7 @@ async function serveThreadLive(
   const read = () => web.thread(principal, partition, session, { limit: 1 });
   const standing = await read();
   if (standing.result !== "Found") {
-    send(reply, threadResponse(standing));
+    nativeHttpSend(reply, threadResponse(standing));
     return;
   }
   if (listening.abandoned) return;
@@ -2125,6 +2148,12 @@ function nativeHttpServer(limits: NativeHttpLimits): FastifyInstance {
     forceCloseConnections: "idle",
     http: { maxHeaderSize: nativeHttpHeaderBytesMax },
   });
+  nativeHttpMediaTypeServed(app);
+  return app;
+}
+
+/** Reads a body sent as the API's media type, and lets no answer be cached that does not say it may be. */
+export function nativeHttpMediaTypeServed(app: FastifyInstance): void {
   app.addContentTypeParser(
     nativeHttpMediaType,
     { parseAs: "string", bodyLimit: nativeHttpBodyBytesMax },
@@ -2136,7 +2165,6 @@ function nativeHttpServer(limits: NativeHttpLimits): FastifyInstance {
     }
     return Promise.resolve();
   });
-  return app;
 }
 
 function registerPlacements(
@@ -2228,7 +2256,7 @@ export function createNativeHttpApp(
   if (actionReach !== undefined) registerActionReach(app, actionReach);
   if (landings !== undefined) registerTicketLandings(app, landings);
   app.setErrorHandler((failure, _request, reply) => {
-    send(reply, failureResponse(failure));
+    nativeHttpSend(reply, failureResponse(failure));
   });
   return app;
 }
