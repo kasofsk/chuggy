@@ -16,11 +16,14 @@ import {
   accessTenantPeopleSchema,
   type AccessInvitation,
   type AccessInvited,
+  type AccessGroup,
   type AccessPlaneRouteName,
   type AccessProjectRole,
   type AccessSiteAuthorities,
+  type AccessSiteAuthority,
   type AccessTenantAbilities,
   type AccessTenantAuthorities,
+  type AccessTenantAuthority,
   type AccessTenantPeople,
   type AccessTenantRole,
 } from "../../../../src/contract/accessPlane.ts";
@@ -151,6 +154,51 @@ export function apiRemoveHostedRuns(
   subject: string,
 ): Promise<ApiResult<undefined>> {
   return accessSent(ports, "tenantHostedRunsRemoval", { tenant, subject });
+}
+
+export function apiRemoveTenantAuthorityGroup(
+  ports: ApiPorts,
+  tenant: string,
+  authority: AccessTenantAuthority,
+  group: AccessGroup,
+): Promise<ApiResult<undefined>> {
+  const segments = { tenant, authority, group };
+  return accessSent(ports, "tenantAuthorityGroupRemoval", segments);
+}
+
+export function apiRemoveTenantAuthorityPerson(
+  ports: ApiPorts,
+  tenant: string,
+  authority: AccessTenantAuthority,
+  subject: string,
+): Promise<ApiResult<undefined>> {
+  const segments = { tenant, authority, subject };
+  return accessSent(ports, "tenantAuthorityPersonRemoval", segments);
+}
+
+export function apiRemoveSiteAuthorityGroup(
+  ports: ApiPorts,
+  authority: AccessSiteAuthority,
+  group: AccessGroup,
+): Promise<ApiResult<undefined>> {
+  return accessSent(ports, "siteAuthorityGroupRemoval", { authority, group });
+}
+
+export function apiRemoveSiteAuthorityPerson(
+  ports: ApiPorts,
+  authority: AccessSiteAuthority,
+  subject: string,
+): Promise<ApiResult<undefined>> {
+  const segments = { authority, subject };
+  return accessSent(ports, "siteAuthorityPersonRemoval", segments);
+}
+
+/** One workspace's admins taken from the site's account creators, the one site permission a workspace holds. */
+export function apiRemoveSiteAuthorityTenant(
+  ports: ApiPorts,
+  tenant: string,
+): Promise<ApiResult<undefined>> {
+  return accessSent(ports, "siteAuthorityTenantRemoval", { tenant });
 }
 
 /** One person invited by their GitHub account, created or found. */

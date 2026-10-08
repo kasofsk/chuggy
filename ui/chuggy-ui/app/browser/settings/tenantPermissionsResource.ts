@@ -1,8 +1,9 @@
 /**
  * Who holds a workspace's permissions and the site's, read as two resources of
- * the workspace. Nothing on the page changes a holder, so nothing reads them
- * again.
+ * the workspace and read again together after a holder is removed.
  */
+
+import type { QueryClient } from "@tanstack/react-query";
 
 import type {
   AccessSiteAuthorities,
@@ -13,6 +14,7 @@ import {
   apiTenantAuthorities,
 } from "../../core/accessRoutes.ts";
 import type { PanelState } from "../../core/freshness.ts";
+import { tenantResourceKey } from "../../core/projectQueryKeys.ts";
 import { usePanelTenantResource } from "../api.ts";
 
 /** No frame names these reads. */
@@ -34,5 +36,18 @@ export function useSiteAuthorities(
 ): PanelState<AccessSiteAuthorities> {
   return usePanelTenantResource(tenant, sitePermissionsResource, (ports) =>
     apiSiteAuthorities(ports),
+  );
+}
+
+export async function tenantPermissionsReread(
+  client: QueryClient,
+  tenant: string,
+): Promise<void> {
+  await Promise.all(
+    [tenantPermissionsResource, sitePermissionsResource].map((resource) =>
+      client.invalidateQueries({
+        queryKey: tenantResourceKey(tenant, resource),
+      }),
+    ),
   );
 }
