@@ -2,8 +2,8 @@
  * The dialog mounted open: what jsdom can see of a dialog that is never taller
  * than the viewport, since it lays nothing out. The frame is fixed with an
  * inset at both edges, the dialog fills at most that frame, and the caller's
- * body is the one part that shrinks and scrolls, between a title and a Close
- * that stay outside it.
+ * body is the one part that shrinks and scrolls, between a title and a foot
+ * that stay outside it: Close, or the actions a caller hands it.
  */
 
 import { cleanup, render, screen } from "@testing-library/react";
@@ -41,4 +41,60 @@ test("the body scrolls inside a dialog bounded by the viewport, between its titl
   expect(body?.textContent).toBe("firstlast");
   expect(dialog.children).toHaveLength(3);
   styleless();
+});
+
+test("a caller's foot stands in place of Close, at the width a form takes", () => {
+  render(
+    <Dialog
+      wide
+      title="Invite"
+      trigger="Invite"
+      open
+      onOpenChange={() => undefined}
+      foot={<button type="button">Send</button>}
+    >
+      <p>form</p>
+    </Dialog>,
+  );
+  const dialog = screen.getByRole("dialog", { name: "Invite" });
+  expect(classesOf(dialog)).toContain("max-w-measure");
+  expect(classesOf(dialog)).not.toContain("max-w-aside");
+  const foot = dialog.children[2];
+  expect(foot?.textContent).toBe("Send");
+  expect(classesOf(foot ?? null)).toContain("justify-end");
+  expect(screen.queryByRole("button", { name: "Close" })).toBeNull();
+  expect(dialog.children).toHaveLength(3);
+  styleless();
+});
+
+test("a trigger is named by its word, or by the name a caller gives it", () => {
+  render(
+    <>
+      <Dialog
+        title="One"
+        trigger="Edit"
+        open={false}
+        onOpenChange={() => undefined}
+      >
+        <p>one</p>
+      </Dialog>
+      <Dialog
+        title="Two"
+        trigger="Edit"
+        triggerNamed="Edit ada"
+        open={false}
+        onOpenChange={() => undefined}
+      >
+        <p>two</p>
+      </Dialog>
+    </>,
+  );
+  expect(
+    screen
+      .getAllByRole("button")
+      .map((button) => [button.textContent, button.getAttribute("aria-label")]),
+  ).toStrictEqual([
+    ["Edit", null],
+    ["Edit", "Edit ada"],
+  ]);
 });
