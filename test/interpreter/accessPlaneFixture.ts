@@ -2,6 +2,10 @@
  * An authority held in memory for the access plane's suites: its tuples, the
  * permits a case gives, a listing that pages, and a writer.
  *
+ * A LISTING MATCHES WHAT THE SERVER'S QUERY DOES. A subject set keeps its
+ * relation, empty for a link, and a tenant's projects are the links naming it,
+ * so a case over this reader proves what one over the adapter would.
+ *
  * ONLY ADMINISTERING FOLLOWS THE TUPLES, as the model does: a tenant's `admins`
  * administer it, and a project's `admins`, or its tenant's through the `tenant`
  * link, administer the project. Every other kind is answered from a table a
@@ -24,7 +28,12 @@ import {
   type AccessTuple,
   type AccessTupleQuery,
   type AccessTupleReader,
+  accessTupleLinkRelation,
 } from "../../src/interpreter/accessPlane.ts";
+import {
+  accessAuthorities,
+  type AccessAuthorities,
+} from "../../src/interpreter/accessAuthorities.ts";
 import {
   memberAuthority,
   ProjectAccessUnavailable,
@@ -114,7 +123,8 @@ export interface AccessMemory extends AccessMemoryState {
   readonly grants: ProjectGrantWriter;
 }
 
-function accessStored(grant: ProjectGrant): AccessStored {
+/** One grant as the listing answers it. */
+export function accessStored(grant: ProjectGrant): AccessStored {
   return {
     namespace: grant.namespace,
     object: grant.object,
@@ -126,6 +136,10 @@ function accessStored(grant: ProjectGrant): AccessStored {
             subject: "Set",
             namespace: grant.holder.namespace,
             object: grant.holder.object,
+            relation:
+              grant.holder.subject === "Holders"
+                ? grant.holder.relation
+                : accessTupleLinkRelation,
           },
   };
 }
@@ -140,7 +154,9 @@ function accessMatches(stored: AccessStored, query: AccessTupleQuery): boolean {
       stored.namespace === projectAccessNamespace &&
       stored.relation === "tenant" &&
       stored.subject.subject === "Set" &&
-      stored.subject.object === projectAccessTenantObject(query.tenant)
+      stored.subject.namespace === projectAccessTenantNamespace &&
+      stored.subject.object === projectAccessTenantObject(query.tenant) &&
+      stored.subject.relation === accessTupleLinkRelation
     );
   if (query.query === "Namespace") return stored.namespace === query.namespace;
   return (
@@ -402,4 +418,31 @@ export function accessFixturePartition(
   project: string,
 ): Partition {
   return { tenant: asTenantId(tenant), project: asProjectId(project) };
+}
+
+/** Who holds each authority, answered over `memory`. */
+export function accessMemoryAuthorities(
+  memory: AccessMemory,
+  bounds: AccessPlaneBounds = accessPlaneBoundsDefault,
+  directory?: AccessDirectory,
+): AccessAuthorities {
+  return accessAuthorities(
+    { access: memory.access, tuples: memory.reader, directory },
+    { issuer: accessFixtureIssuer, bounds },
+  );
+}
+
+/** A project's `tenant` relation holding its tenant's administrators rather than the tenant itself, which is no link. */
+export function accessTenantAdministratorsNotLink(
+  partition: Partition,
+): ProjectGrant {
+  return {
+    ...projectTenantGrant(partition),
+    holder: {
+      subject: "Holders",
+      namespace: projectAccessTenantNamespace,
+      object: projectAccessTenantObject(partition.tenant),
+      relation: "admins",
+    },
+  };
 }

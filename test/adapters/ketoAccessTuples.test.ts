@@ -67,7 +67,12 @@ test("a tenant's projects are asked by the link naming it, and the next page by 
       {
         object: "4:acmeweb",
         relation: "tenant",
-        subject: { subject: "Set", namespace: "Tenant", object: "4:acme" },
+        subject: {
+          subject: "Set",
+          namespace: "Tenant",
+          object: "4:acme",
+          relation: "",
+        },
       },
       {
         object: "4:acmeweb",
@@ -87,6 +92,52 @@ test("a tenant's projects are asked by the link naming it, and the next page by 
     page_size: String(ketoAccessPageTuplesMax),
     page_token: "this",
   });
+});
+
+test("a subject set keeps its relation, the role whose holders it names, and one naming none is undecided", async () => {
+  const set = { namespace: "Tenant", object: "4:acme", relation: "admins" };
+  const page = await readerOf(
+    JSON.stringify({
+      relation_tuples: [
+        {
+          namespace: "Tenant",
+          object: "4:acme",
+          relation: "admin_granters",
+          subject_set: set,
+        },
+      ],
+    }),
+  ).reader.page(
+    {
+      query: "Object",
+      namespace: "Tenant",
+      object: "4:acme",
+      relation: "admin_granters",
+    },
+    undefined,
+  );
+  assert.deepEqual(
+    page.tuples.map((tuple) => tuple.subject),
+    [{ subject: "Set", ...set }],
+  );
+  const { namespace, object } = set;
+  await assert.rejects(
+    readerOf(
+      JSON.stringify({
+        relation_tuples: [
+          {
+            object: "4:acme",
+            relation: "admin_granters",
+            subject_set: { namespace, object },
+          },
+        ],
+      }),
+    ).reader.page(
+      { query: "Object", namespace: "Tenant", object: "4:acme" },
+      undefined,
+    ),
+    ProjectAccessUnavailable,
+  );
 });
 
 test("an answer that is not a page is undecided", async () => {

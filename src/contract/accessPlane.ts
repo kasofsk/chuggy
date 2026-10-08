@@ -11,6 +11,12 @@
  * relation each names is the interpreter's, in one exhaustive record, so no
  * string a request carries reaches a relation without passing through it.
  *
+ * AN AUTHORITY AND A GROUP ARE CLOSED ROSTERS TOO. An authority is a relation
+ * saying who may grant a role or manage who may, one roster a level, and a
+ * group is the holders of one role named relative to where a list is asked.
+ * Each reaches its relation or subject set through one record in the
+ * interpreter, which is also what names a holder read back.
+ *
  * WHAT A CALLER MAY DO IS ANSWERED ABOUT THEM ALONE, at the site, a tenant or
  * a project: each ability is whether they hold the kind it needs there, so a
  * console offers the controls the plane would not refuse.
@@ -33,6 +39,53 @@ export type AccessTenantRole = (typeof accessTenantRoles)[number];
 /** The roles a request may grant or remove on a project. */
 export const accessProjectRoles = ["Admin", "Developer", "Dispatcher"] as const;
 export type AccessProjectRole = (typeof accessProjectRoles)[number];
+
+/** The authorities a site's list answers. */
+export const accessSiteAuthorities = [
+  "AccountCreators",
+  "AuthorityManagers",
+] as const;
+export type AccessSiteAuthority = (typeof accessSiteAuthorities)[number];
+
+/** The authorities a tenant's list answers. */
+export const accessTenantAuthorities = [
+  "AdminGranters",
+  "MemberGranters",
+  "HostedRunsGranters",
+  "AuthorityManagers",
+] as const;
+export type AccessTenantAuthority = (typeof accessTenantAuthorities)[number];
+
+/** The authorities a project's list answers. */
+export const accessProjectAuthorities = [
+  "AdminGranters",
+  "DeveloperGranters",
+  "DispatcherGranters",
+  "AuthorityManagers",
+] as const;
+export type AccessProjectAuthority = (typeof accessProjectAuthorities)[number];
+
+/** The groups a project's list names, every level's being some of them. */
+export const accessProjectGroups = [
+  "SiteAdmins",
+  "TenantAdmins",
+  "TenantMembers",
+  "ProjectAdmins",
+  "ProjectDevelopers",
+] as const;
+export type AccessGroup = (typeof accessProjectGroups)[number];
+
+/** The groups a tenant's list names, of that tenant and of the site. */
+export const accessTenantGroups = [
+  "SiteAdmins",
+  "TenantAdmins",
+  "TenantMembers",
+] as const satisfies readonly AccessGroup[];
+
+/** The groups the site's list names. */
+export const accessSiteGroups = [
+  "SiteAdmins",
+] as const satisfies readonly AccessGroup[];
 
 /** One route as the plane registers it, its segments named as `:name`. */
 export interface AccessPlaneRoute {
@@ -79,6 +132,15 @@ export const accessPlaneRoutes = {
   siteAbilities: {
     method: "GET",
     path: `${accessPlaneBasePath}/site/abilities`,
+  },
+  tenantAuthorities: { method: "GET", path: `${accessTenantPath}/authorities` },
+  projectAuthorities: {
+    method: "GET",
+    path: `${accessProjectPath}/authorities`,
+  },
+  siteAuthorities: {
+    method: "GET",
+    path: `${accessPlaneBasePath}/site/authorities`,
   },
 } as const satisfies Readonly<Record<string, AccessPlaneRoute>>;
 
@@ -296,6 +358,64 @@ export const accessSiteAbilitiesSchema = z.strictObject({
   manageAuthorities: z.boolean(),
 });
 
+/** One person holding an authority, `mine` the server's answer to whether this is the caller. */
+export const accessAuthorityPersonSchema = z.strictObject({
+  subject: z.string().min(1),
+  mine: z.boolean(),
+  ...accessAccountFields,
+});
+
+/**
+ * Who holds one authority: each person, each group, and how many holders no
+ * roster names, a principal under another issuer among them.
+ */
+function accessAuthorityHeldShape<
+  const Authority extends readonly [string, ...string[]],
+  const Group extends readonly [string, ...string[]],
+>(authorities: Authority, groups: Group) {
+  return {
+    authority: z.enum(authorities),
+    people: z.array(accessAuthorityPersonSchema),
+    groups: z.array(z.enum(groups)),
+    unnamed: z.number().int().nonnegative(),
+  };
+}
+
+/** Who holds one of the site's authorities, `tenants` naming each tenant whose administrators hold it. */
+export const accessSiteAuthorityHeldSchema = z.strictObject({
+  ...accessAuthorityHeldShape(accessSiteAuthorities, accessSiteGroups),
+  tenants: z.array(identitySchema),
+});
+
+export const accessTenantAuthorityHeldSchema = z.strictObject(
+  accessAuthorityHeldShape(accessTenantAuthorities, accessTenantGroups),
+);
+
+export const accessProjectAuthorityHeldSchema = z.strictObject(
+  accessAuthorityHeldShape(accessProjectAuthorities, accessProjectGroups),
+);
+
+/** What the site's authority list answers: every authority in roster order. */
+export const accessSiteAuthoritiesSchema = z.strictObject({
+  authorities: z.array(accessSiteAuthorityHeldSchema),
+  truncated: z.boolean(),
+});
+
+/** What a tenant's authority list answers. */
+export const accessTenantAuthoritiesSchema = z.strictObject({
+  tenant: identitySchema,
+  authorities: z.array(accessTenantAuthorityHeldSchema),
+  truncated: z.boolean(),
+});
+
+/** What a project's authority list answers. */
+export const accessProjectAuthoritiesSchema = z.strictObject({
+  tenant: identitySchema,
+  project: identitySchema,
+  authorities: z.array(accessProjectAuthorityHeldSchema),
+  truncated: z.boolean(),
+});
+
 export type AccessTenantPerson = z.infer<typeof accessTenantPersonSchema>;
 export type AccessTenantPeople = z.infer<typeof accessTenantPeopleSchema>;
 export type AccessProjectPerson = z.infer<typeof accessProjectPersonSchema>;
@@ -310,3 +430,11 @@ export type AccessProjectAbilities = z.infer<
   typeof accessProjectAbilitiesSchema
 >;
 export type AccessSiteAbilities = z.infer<typeof accessSiteAbilitiesSchema>;
+export type AccessAuthorityPerson = z.infer<typeof accessAuthorityPersonSchema>;
+export type AccessSiteAuthorities = z.infer<typeof accessSiteAuthoritiesSchema>;
+export type AccessTenantAuthorities = z.infer<
+  typeof accessTenantAuthoritiesSchema
+>;
+export type AccessProjectAuthorities = z.infer<
+  typeof accessProjectAuthoritiesSchema
+>;

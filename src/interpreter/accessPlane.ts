@@ -112,14 +112,22 @@ export const accessProjectListKinds: readonly ProjectAccessKind[] = [
 /** The tenant relation a list reports as hosted runs granted, and the one giving or taking them writes under `GrantHostedExecution`. */
 const accessHostedRunsRelation: TenantGrantRelation = "hosted_execution";
 
-/** Who one tuple names: a principal's text, or a subject set, which is no principal. */
+/**
+ * Who one tuple names: a principal's text, or a subject set, which is no
+ * principal. A set's relation is the role whose holders it names, or
+ * `accessTupleLinkRelation` where it names an object itself.
+ */
 export type AccessTupleSubject =
   | { readonly subject: "Id"; readonly id: string }
   | {
       readonly subject: "Set";
       readonly namespace: string;
       readonly object: string;
+      readonly relation: string;
     };
+
+/** The relation a subject set is listed with where it is a link, naming an object rather than the holders of a role. */
+export const accessTupleLinkRelation = "";
 
 /** One tuple a listing answered. */
 export interface AccessTuple {
@@ -339,7 +347,9 @@ function accessNamed<Person>(
 }
 
 /** Each person marked with who the directory says they are, or as listed where there is no directory. */
-async function accessAccountsNamed<Person extends { readonly subject: string }>(
+export async function accessAccountsNamed<
+  Person extends { readonly subject: string },
+>(
   directory: AccessDirectory | undefined,
   people: readonly Person[],
 ): Promise<Person[]> {
@@ -482,7 +492,8 @@ export function accessProjectLinked(
       tuple.relation === projectTenantRelation &&
       tuple.subject.subject === "Set" &&
       tuple.subject.namespace === projectAccessTenantNamespace &&
-      tuple.subject.object === tenantObject,
+      tuple.subject.object === tenantObject &&
+      tuple.subject.relation === accessTupleLinkRelation,
   );
 }
 
