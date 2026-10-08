@@ -19,10 +19,7 @@ import { leadTurnTokensMax } from "../../src/contract/http.ts";
 import type { SessionId } from "../../src/interpreter/agentSession.ts";
 import { threadStandingRulesDefault } from "../../src/contract/threadSeeding.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
-import {
-  leadSelectorPolicy,
-  type LeadPolicyClock,
-} from "../../src/interpreter/leadPolicyHost.ts";
+import { leadSelectorPolicy } from "../../src/interpreter/leadPolicyHost.ts";
 import { leadSystemPrompt } from "../../src/interpreter/leadTools.ts";
 import { parseLeadObservation } from "../../src/interpreter/leadTurn.ts";
 import { asOperationId } from "../../src/interpreter/operationInbox.ts";
@@ -35,8 +32,9 @@ import {
   type SelectorResolvedSettings,
 } from "../../src/interpreter/selector.ts";
 import { selectorPolicyHost } from "../../src/interpreter/selectorPolicyHost.ts";
-import { postgresHarnessSelectorContext } from "./harness.ts";
 import {
+  leadRigClock,
+  leadRigObservation,
   leadRigDecision,
   leadRigOpen,
   leadRigPod,
@@ -95,24 +93,6 @@ function settingsFor(
   };
 }
 
-const clock: LeadPolicyClock = {
-  now: () => {
-    const epochMs = Date.now();
-    return Promise.resolve({
-      instant: new Date(epochMs).toISOString(),
-      epochMs,
-    });
-  },
-  wait: (milliseconds, signal) =>
-    new Promise((resolve, reject) => {
-      const timer = setTimeout(resolve, milliseconds);
-      signal.addEventListener("abort", () => {
-        clearTimeout(timer);
-        reject(signal.reason as Error);
-      });
-    }),
-};
-
 /** Who a lead this suite's host opens acts as, which is the selector's own principal. */
 const leadDecisionPrincipal = "principal-lead-successor";
 
@@ -122,7 +102,7 @@ function leadPolicy() {
       rig.mailbox,
       postgresSelectorState(rig.selectorPool),
       leadSessionMint(),
-      clock,
+      leadRigClock,
       leadRigHostedAccess,
       postgresSessionRouteReads(rig.selectorPool),
       {
@@ -142,52 +122,6 @@ function leadPolicy() {
     },
     { controlDeadlineMs: 5_000 },
   );
-}
-
-function observationOf(
-  partition: Partition,
-  cursor: number,
-): SelectorObservation {
-  const token = {
-    ...partition,
-    recoveryEpoch: "epoch",
-    schemaVersion: 1,
-    watermark: 1,
-    digest: "a".repeat(64),
-  };
-  return {
-    token,
-    candidates: [
-      {
-        ticket: asTicketId(41),
-        ticketVersion: 3,
-        dependencies: [],
-        program: [{ key: 1, evaluators: [{ key: 1 }] }],
-        configurationRevision: "revision",
-        configurationDigest: "d".repeat(64),
-        configurationCanonical: "{}",
-      },
-      {
-        ticket: asTicketId(43),
-        ticketVersion: 1,
-        dependencies: [],
-        program: [{ key: 1, evaluators: [{ key: 1 }] }],
-        configurationRevision: "revision",
-        configurationDigest: "d".repeat(64),
-        configurationCanonical: "{}",
-      },
-    ],
-    refusals: [],
-    notificationCursor: cursor,
-    changes: [{ ordinal: cursor, kind: "Ticket", resource: "41" }],
-    operationalContext: {
-      ...postgresHarnessSelectorContext,
-      observedAtEpochMs: Date.now(),
-      observedAt: new Date().toISOString(),
-    },
-    handoffNote: { watching: "41" },
-    nextCandidateScan: { state: "Exhausted", token },
-  };
 }
 
 function initialState(partition: Partition): SelectorProjectState {
@@ -244,10 +178,15 @@ async function runOneDecision(
     partition,
     settings.limits,
   );
-  await store.runningAttempt(identity.selectorDecisionReference, observation, {
-    settingsRevision: settings.revision,
-    projectSettingsRevision: settings.projectRevision,
-  });
+  await store.runningAttempt(
+    identity.selectorDecisionReference,
+    observation,
+    {
+      settingsRevision: settings.revision,
+      projectSettingsRevision: settings.projectRevision,
+    },
+    state.revision,
+  );
   const proposal = await runObservedSelectorCycle(
     state,
     observation,
@@ -282,7 +221,7 @@ test("nothing new is no turn", async () => {
 
 test("a moved project takes one turn, and the decision lands whole", async () => {
   const { partition, session } = await leadProject("whole");
-  const observation = observationOf(partition, 12);
+  const observation = leadRigObservation(partition, 12);
   const pod = leadRigPod(rig, partition, session, "whole", (input: string) => {
     const observed = parseLeadObservation(input);
     assert.deepEqual(
@@ -354,7 +293,7 @@ test("a moved project takes one turn, and the decision lands whole", async () =>
  */
 test("one decision's dispatches are two rows under one interaction", async () => {
   const { partition, session } = await leadProject("several");
-  const observation = observationOf(partition, 15);
+  const observation = leadRigObservation(partition, 15);
   const pod = leadRigPod(rig, partition, session, "several", () => ({
     version: 1,
     dispatches: [
@@ -406,7 +345,7 @@ test("the refusal reaches the stream and the project's standing read", async () 
   const partition = (await leadProject("stream")).partition;
   const session = (await rig.mailbox.lead(partition))?.session;
   assert.ok(session !== undefined);
-  const observation = observationOf(partition, 9);
+  const observation = leadRigObservation(partition, 9);
   const pod = leadRigPod(rig, partition, session, "stream", () => ({
     version: 1,
     dispatches: [],
@@ -513,7 +452,7 @@ test("a decision after a replacement is recorded as any is, on the cursor and re
   assert.equal(left?.notificationCursor, 12);
 
   const observation = {
-    ...observationOf(partition, 13),
+    ...leadRigObservation(partition, 13),
     refusals: await rig.selectorStanding.standingAmong(partition, [
       asTicketId(43),
     ]),

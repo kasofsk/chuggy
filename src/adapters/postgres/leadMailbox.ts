@@ -19,9 +19,9 @@
  * enqueued and is answered `AlreadyEnqueued`.
  *
  * READING AND WITHDRAWING NAME THE TURN AND NOT THE PROJECT. A turn identity
- * is never reused, and a process that restarted holds the decision reference
- * with no partition beside it — which is exactly the case reconciliation is
- * for. The partition the port passes is therefore not consulted, and the
+ * is never reused, and a process that restarted may hold the decision
+ * reference with no partition beside it — which is the case reconciliation is
+ * for, and a resumed decision reads its turn by the same reference. The partition the port passes is therefore not consulted, and the
  * doors stay bounded because each joins to a `Lead` session.
  */
 

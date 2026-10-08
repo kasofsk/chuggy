@@ -17,6 +17,7 @@ import type {
   SelectorPolicyRequest,
   SelectorPolicyRun,
   SelectorTerminationResult,
+  SelectorTurnStanding,
 } from "./selector.ts";
 
 export interface SelectorPolicy {
@@ -34,6 +35,10 @@ export interface SelectorPolicy {
     attempt: string,
     signal: AbortSignal,
   ): Promise<SelectorTerminationResult>;
+  /** Where the turn a decision offered stands, which reads and offers nothing. */
+  standing(attempt: string, signal: AbortSignal): Promise<SelectorTurnStanding>;
+  /** The turn a decision already offered, waited on and answered as `execute` answers it, offering nothing. */
+  resume(request: SelectorPolicyRequest, signal: AbortSignal): Promise<unknown>;
 }
 
 export interface SelectorHostDeadline {
@@ -64,6 +69,33 @@ function boundedControl<T>(
   });
 }
 
+/**
+ * One retained run per decision, whichever door began it: a retried decision
+ * finds its own run, and its termination is a cancellation with proof.
+ */
+function selectorPolicyRun(
+  runs: Map<string, SelectorPolicyRun>,
+  attempt: string,
+  execute: (signal: AbortSignal) => Promise<unknown>,
+  cancel: () => Promise<SelectorTerminationResult>,
+): SelectorPolicyRun {
+  const retained = runs.get(attempt);
+  if (retained !== undefined) return retained;
+  const execution = new AbortController();
+  const result = execute(execution.signal).finally(() => {
+    runs.delete(attempt);
+  });
+  const run: SelectorPolicyRun = {
+    result,
+    terminate: () => {
+      execution.abort();
+      return cancel();
+    },
+  };
+  runs.set(attempt, run);
+  return run;
+}
+
 /** Runs policy code with only its request and an abort signal. */
 export function selectorPolicyHost(
   policy: SelectorPolicy,
@@ -72,44 +104,50 @@ export function selectorPolicyHost(
 ): SelectorPolicyHost {
   const controlDeadlineMs = checkedControlDeadline(config.controlDeadlineMs);
   const runs = new Map<string, SelectorPolicyRun>();
+  const bounded = async (
+    attempt: string,
+    door: (
+      attempt: string,
+      signal: AbortSignal,
+    ) => Promise<SelectorTerminationResult>,
+  ): Promise<SelectorTerminationResult> => {
+    try {
+      return await boundedControl(
+        (signal) => door(attempt, signal),
+        deadline,
+        controlDeadlineMs,
+      );
+    } catch {
+      return { status: "Unconfirmed" };
+    }
+  };
+  const cancel = (attempt: string) =>
+    bounded(attempt, (named, signal) => policy.cancel(named, signal));
   return {
     productionReady: true,
     leadAdmission: (partition) => policy.leadAdmission(partition),
-    start: (request) => {
-      const retained = runs.get(request.attempt);
-      if (retained !== undefined) return retained;
-      const execution = new AbortController();
-      const result = policy.execute(request, execution.signal).finally(() => {
-        runs.delete(request.attempt);
-      });
-      const run: SelectorPolicyRun = {
-        result,
-        terminate: async () => {
-          execution.abort();
-          try {
-            return await boundedControl(
-              (signal) => policy.cancel(request.attempt, signal),
-              deadline,
-              controlDeadlineMs,
-            );
-          } catch {
-            return { status: "Unconfirmed" };
-          }
-        },
-      };
-      runs.set(request.attempt, run);
-      return run;
-    },
-    reconcileQuarantined: async (attempt) => {
-      try {
-        return await boundedControl(
-          (signal) => policy.inspect(attempt, signal),
-          deadline,
-          controlDeadlineMs,
-        );
-      } catch {
-        return { status: "Unconfirmed" };
-      }
-    },
+    start: (request) =>
+      selectorPolicyRun(
+        runs,
+        request.attempt,
+        (signal) => policy.execute(request, signal),
+        () => cancel(request.attempt),
+      ),
+    resume: (request) =>
+      selectorPolicyRun(
+        runs,
+        request.attempt,
+        (signal) => policy.resume(request, signal),
+        () => cancel(request.attempt),
+      ),
+    turnStanding: (attempt) =>
+      boundedControl(
+        (signal) => policy.standing(attempt, signal),
+        deadline,
+        controlDeadlineMs,
+      ),
+    withdraw: cancel,
+    reconcileQuarantined: (attempt) =>
+      bounded(attempt, (named, signal) => policy.inspect(named, signal)),
   };
 }

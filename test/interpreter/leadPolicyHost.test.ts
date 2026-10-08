@@ -668,6 +668,86 @@ test("a decision this process never offered is still settled from the row", asyn
   );
 });
 
+/** An authority that raises if it is asked anything, which a resumed decision never does. */
+const askedNothing: ProjectAccess = {
+  authorize: () => Promise.reject(new Error("a resumed turn asks no grant")),
+  authorizeTenant: () =>
+    Promise.reject(new Error("a resumed turn asks no grant")),
+};
+
+test("a turn another process offered is waited on and answered from the row, offering nothing", async () => {
+  const double = mailboxDouble({
+    agentReference: "agent-session-9",
+    measured,
+    turnStates: ["Queued", "Claimed", "Answered"],
+  });
+  const policy = leadSelectorPolicy(
+    double.mailbox,
+    decisionTail(),
+    sessionMint(),
+    clock(),
+    askedNothing,
+    sessionRoutesAt(),
+    leadPolicyConfig,
+  );
+  const execution = (await policy.resume(
+    request,
+    new AbortController().signal,
+  )) as SelectorPolicyExecution;
+  assert.equal(double.offers.length, 0);
+  assert.deepEqual(double.openings, []);
+  assert.deepEqual(double.closings, []);
+  assert.equal(double.reads(), 3, "the turn is polled until it ends");
+  assert.deepEqual(execution.result.dispatches, [
+    { ticket: 41, expectedTicketVersion: 3 },
+  ]);
+  assert.equal(execution.policyRevision, "agent-session-9");
+  assert.equal(execution.modelRevision, measured.model);
+});
+
+test("a resumed turn that ended without an answer raises as an offered one does", async () => {
+  const double = mailboxDouble({ turnStates: ["Abandoned"] });
+  await assert.rejects(
+    policyOf(double).resume(request, new AbortController().signal),
+    /without an answer/u,
+  );
+  assert.equal(double.offers.length, 0);
+});
+
+test("a turn's standing is read without offering one", async () => {
+  for (const [states, standing] of [
+    [["Queued"], "Pending"],
+    [["Claimed"], "Pending"],
+    [["Answered"], "Ended"],
+    [["Failed"], "Ended"],
+    [["Abandoned"], "Ended"],
+  ] as const) {
+    const double = mailboxDouble({ turnStates: states });
+    assert.equal(
+      await policyOf(double).standing(
+        request.attempt,
+        new AbortController().signal,
+      ),
+      standing,
+    );
+    assert.equal(double.offers.length, 0);
+  }
+  const absent = mailboxDouble();
+  const policy = leadSelectorPolicy(
+    { ...absent.mailbox, turn: () => Promise.resolve(undefined) },
+    decisionTail(),
+    sessionMint(),
+    clock(),
+    askedNothing,
+    sessionRoutesAt(),
+    leadPolicyConfig,
+  );
+  assert.equal(
+    await policy.standing(request.attempt, new AbortController().signal),
+    "Absent",
+  );
+});
+
 test("the parts a turn never sheds fit its mailbox row at their ceilings", () => {
   const standing = Array.from(
     { length: leadRefusalsObservedMax },
