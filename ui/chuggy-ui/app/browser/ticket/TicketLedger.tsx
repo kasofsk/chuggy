@@ -33,6 +33,17 @@ import type { ProjectListChange } from "../../core/projectQueryKeys.ts";
 import { runReasonAttempt } from "../../core/runReason.ts";
 import { generationLabel, runSpendOf } from "../../core/runTotals.ts";
 import { runTranscriptAttempt } from "../../core/runTranscript.ts";
+import {
+  ticketLandingOpened,
+  ticketLandingsHeld,
+  ticketLandingsJoined,
+  ticketLandingSummary,
+} from "../../core/ticketLandings.ts";
+import type {
+  TicketLanding,
+  TicketLandingsJoined,
+  TicketLandingsState,
+} from "../../core/ticketLandings.ts";
 import { ticketExecutionsFolded } from "../../core/ticketExecutions.ts";
 import type {
   Cycle,
@@ -58,6 +69,7 @@ import { DataPanel } from "../DataPanel.tsx";
 import { useRunReason } from "../RunEvidence.tsx";
 import { RunConversationFollowed } from "../RunTranscript.tsx";
 import { ExecutionDetail } from "../TicketExecutions.tsx";
+import { LandingBlock } from "./TicketLandings.tsx";
 import { EmptyState } from "../ui/EmptyState.tsx";
 import { Figure } from "../ui/Figure.tsx";
 import {
@@ -133,11 +145,15 @@ function SetRowNote(props: {
   readonly set: TaskSet;
   readonly standing: string | undefined;
   readonly shortfall?: string | undefined;
+  readonly opened?: string | undefined;
 }): ReactNode {
   const shortfall = props.shortfall ?? setShortfall(props.set);
   return (
     <>
       {setNotes(props.set, props.standing)}
+      {props.opened === undefined ? null : (
+        <span className="text-tone-fail text-xs"> {props.opened}</span>
+      )}
       {shortfall === undefined ? null : (
         <span className="text-tone-parked text-xs"> {shortfall}</span>
       )}
@@ -167,6 +183,8 @@ interface SetRowProps {
   readonly set: TaskSet;
   readonly standing?: string;
   readonly shortfall?: string;
+  /** Why the cycle this row's work opened exists, where a failed landing opened it. */
+  readonly opened?: string | undefined;
   readonly superseded?: boolean;
 }
 
@@ -266,6 +284,7 @@ function SetRowRan(
           set={props.set}
           standing={props.standing}
           shortfall={props.shortfall}
+          opened={props.opened}
         />
       }
       reason={
@@ -403,8 +422,8 @@ export function cycleArtifactNote(
   }
 }
 
-/** The cycle in two fragments: what its work did, and what judged the artifact. */
-export function cycleSummary(cycle: Cycle, stageCount: number): string {
+/** What the cycle's work did and what judged the artifact. */
+function cycleSummaryRan(cycle: Cycle, stageCount: number): string {
   const work =
     cycle.work === undefined
       ? "Work not on this page"
@@ -416,6 +435,19 @@ export function cycleSummary(cycle: Cycle, stageCount: number): string {
       ? "Evaluation"
       : stageLabel(last.stage, stageCount);
   return `${work} · ${named} ${last.verdict.toLowerCase()}`;
+}
+
+/** The cycle in fragments: what its work did, what judged the artifact, and
+ * where its newest landing stands. */
+export function cycleSummary(
+  cycle: Cycle,
+  stageCount: number,
+  landing: TicketLanding | undefined,
+): string {
+  const ran = cycleSummaryRan(cycle, stageCount);
+  return landing === undefined
+    ? ran
+    : `${ran} · ${ticketLandingSummary(landing)}`;
 }
 
 function CycleRollup(props: {
@@ -452,13 +484,15 @@ function CycleGroup(props: {
   readonly cycle: Cycle;
   readonly supersededBy: number | undefined;
   readonly stageCount: number;
+  readonly landings: TicketLandingsJoined;
 }): ReactNode {
   const cycle = props.cycle;
+  const landings = props.landings.byCycle.get(cycle.ordinal) ?? [];
   return (
     <LedgerGroup
       title={cycleLabel(cycle.ordinal)}
       standing={cycle.standing}
-      summary={cycleSummary(cycle, props.stageCount)}
+      summary={cycleSummary(cycle, props.stageCount, landings.at(-1))}
       rollup={<CycleRollup cycle={cycle} nowMs={props.chrome.nowMs} />}
       open={cycle.standing === "Current"}
       lazy
@@ -477,6 +511,7 @@ function CycleGroup(props: {
             label="Work"
             set={cycle.work}
             standing={cycleArtifactNote(cycle, props.supersededBy)}
+            opened={ticketLandingOpened(props.landings, cycle.ordinal)}
           />
         )}
       </LedgerBlock>
@@ -492,6 +527,11 @@ function CycleGroup(props: {
           ))}
         </LedgerBlock>
       )}
+      <LandingBlock
+        landings={landings}
+        cycleNamed={false}
+        nowMs={props.chrome.nowMs}
+      />
     </LedgerGroup>
   );
 }
@@ -501,9 +541,22 @@ export function TicketCycles(props: {
   readonly chrome: RowChrome;
   readonly facts: LedgerFacts;
   readonly stageCount: number;
+  readonly landings: TicketLandingsJoined;
 }): ReactNode {
   const cycles = [...props.facts.cycles].reverse();
-  if (cycles.length === 0) return <EmptyState label="Nothing has run" />;
+  const unheld = (
+    <LandingBlock
+      landings={props.landings.unheld}
+      cycleNamed
+      nowMs={props.chrome.nowMs}
+    />
+  );
+  if (cycles.length === 0)
+    return props.landings.unheld.length === 0 ? (
+      <EmptyState label="Nothing has run" />
+    ) : (
+      <Ledger>{unheld}</Ledger>
+    );
   return (
     <Ledger
       truncated={
@@ -519,8 +572,10 @@ export function TicketCycles(props: {
           cycle={cycle}
           supersededBy={cycles[index - 1]?.ordinal}
           stageCount={props.stageCount}
+          landings={props.landings}
         />
       ))}
+      {unheld}
     </Ledger>
   );
 }
@@ -539,11 +594,24 @@ function ungroupedLabel(summary: ExecutionSummary): string {
 export function UngroupedRows(props: {
   readonly chrome: RowChrome;
   readonly page: ExecutionsResponse;
+  readonly landings: readonly TicketLanding[];
 }): ReactNode {
   const ordered = [...props.page.executions].sort(
     (left, right) => left.task - right.task,
   );
-  if (ordered.length === 0) return <EmptyState label="Nothing has run" />;
+  const unheld = (
+    <LandingBlock
+      landings={props.landings}
+      cycleNamed
+      nowMs={props.chrome.nowMs}
+    />
+  );
+  if (ordered.length === 0)
+    return props.landings.length === 0 ? (
+      <EmptyState label="Nothing has run" />
+    ) : (
+      <Ledger>{unheld}</Ledger>
+    );
   return (
     <Ledger>
       <LedgerBlock eyebrow="Ungrouped · program not loaded">
@@ -561,6 +629,7 @@ export function UngroupedRows(props: {
           />
         ))}
       </LedgerBlock>
+      {unheld}
     </Ledger>
   );
 }
@@ -591,6 +660,7 @@ function TicketRows(props: {
   readonly partition: PartitionIdentity;
   readonly page: ExecutionsResponse;
   readonly program: TicketProgram | undefined;
+  readonly landings: readonly TicketLanding[];
   readonly nowMs: number;
 }): ReactNode {
   const [opened, setOpened] = useState<RowOpened | undefined>(undefined);
@@ -607,12 +677,23 @@ function TicketRows(props: {
   };
   const program = props.program;
   if (program === undefined)
-    return <UngroupedRows chrome={chrome} page={props.page} />;
+    return (
+      <UngroupedRows
+        chrome={chrome}
+        page={props.page}
+        landings={props.landings}
+      />
+    );
+  const facts = ticketLedger(props.page, program);
   return (
     <TicketCycles
       chrome={chrome}
-      facts={ticketLedger(props.page, program)}
+      facts={facts}
       stageCount={program.length}
+      landings={ticketLandingsJoined(
+        props.landings,
+        facts.cycles.map((cycle) => cycle.ordinal),
+      )}
     />
   );
 }
@@ -621,6 +702,7 @@ export function TicketLedgerPanel(props: {
   readonly partition: PartitionIdentity;
   readonly page: ReturnType<typeof usePanelList<ExecutionsResponse>>;
   readonly program: TicketProgram | undefined;
+  readonly landings: TicketLandingsState;
   readonly nowMs: number;
 }): ReactNode {
   return (
@@ -630,6 +712,7 @@ export function TicketLedgerPanel(props: {
           partition={props.partition}
           page={page}
           program={props.program}
+          landings={ticketLandingsHeld(props.landings)}
           nowMs={props.nowMs}
         />
       )}

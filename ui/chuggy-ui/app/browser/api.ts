@@ -167,13 +167,15 @@ export function usePanelResources<T>(
   return queries.map((query) => panelQueryState<T>(query, undefined));
 }
 
-/** A list entry, whose refresh the list itself carries and this registers. */
+/** A list entry, whose refresh the list itself carries and this registers,
+ * read again every `polledMs` as well where a caller names one. */
 export function usePanelList<T>(
   list: ProjectList<T>,
   read: PanelRead<T>,
+  polledMs?: number,
 ): PanelState<T> {
   useProjectListRefresh(list);
-  return usePanelQuery(list.key, read);
+  return usePanelQuery(list.key, read, polledMs);
 }
 
 /**
