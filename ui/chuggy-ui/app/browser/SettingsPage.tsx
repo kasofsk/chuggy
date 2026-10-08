@@ -13,6 +13,7 @@ import type { ReactNode } from "react";
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import { leadSettingsRoutePath } from "./settings/LeadSettingsPage.tsx";
 import { placementSettingsRoutePath } from "./settings/PlacementSettingsPage.tsx";
+import { projectPermissionsRoutePath } from "./settings/ProjectPermissionsPage.tsx";
 import { TopBarSlot } from "./shell/slots.tsx";
 import { tenantSettingsRoutePath } from "./TenantSettingsPage.tsx";
 import { Table } from "./ui/Table.tsx";
@@ -26,6 +27,7 @@ interface SettingsGroup {
   readonly to:
     | typeof leadSettingsRoutePath
     | typeof placementSettingsRoutePath
+    | typeof projectPermissionsRoutePath
     | typeof tenantSettingsRoutePath;
 }
 
@@ -34,6 +36,11 @@ interface SettingsGroup {
 const settingsGroups: readonly SettingsGroup[] = [
   { id: "lead", label: "Lead", to: leadSettingsRoutePath },
   { id: "placement", label: "Placement", to: placementSettingsRoutePath },
+  {
+    id: "permissions",
+    label: "Permissions",
+    to: projectPermissionsRoutePath,
+  },
   { id: "workspace", label: "Workspace", to: tenantSettingsRoutePath },
 ];
 

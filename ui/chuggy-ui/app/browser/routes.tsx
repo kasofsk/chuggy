@@ -49,6 +49,7 @@ import { RunnersPage } from "./RunnersPage.tsx";
 import { SettingsPage } from "./SettingsPage.tsx";
 import { LeadSettingsPage } from "./settings/LeadSettingsPage.tsx";
 import { PlacementSettingsPage } from "./settings/PlacementSettingsPage.tsx";
+import { ProjectPermissionsPage } from "./settings/ProjectPermissionsPage.tsx";
 import { TenantAccountsPage } from "./settings/TenantAccountsPage.tsx";
 import {
   TenantPeoplePage,
@@ -164,6 +165,13 @@ const settingsPlacementRoute = createRoute({
   getParentRoute: () => partitionRoute,
   path: "/settings/placement",
   component: PlacementSettingsPage,
+});
+
+/** Another settings group's own page. */
+const settingsPermissionsRoute = createRoute({
+  getParentRoute: () => partitionRoute,
+  path: "/settings/permissions",
+  component: ProjectPermissionsPage,
 });
 
 const repositoriesRoute = createRoute({
@@ -297,6 +305,7 @@ const routeTree = rootRoute.addChildren([
     settingsRoute,
     settingsLeadRoute,
     settingsPlacementRoute,
+    settingsPermissionsRoute,
     repositoriesRoute,
     repositoryRoute,
     runnersRoute,
