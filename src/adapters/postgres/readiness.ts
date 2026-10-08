@@ -596,6 +596,19 @@ async function operationSource(
       command,
     };
   }
+  if (command.command === "ChangeTicketOverrides") {
+    /**
+     * An overrides change resolves to no command either. Everything it is
+     * held to — the escalation it names, the configuration and the definition
+     * — is read by the deciding transaction under the project's lock, so
+     * nothing read here could be the one it is decided against.
+     */
+    return {
+      kind: "Operation",
+      operation: asOperationId(row.input_id),
+      command,
+    };
+  }
   return nativeActionSource(pool, partition, row.input_id, command);
 }
 

@@ -72,6 +72,7 @@ const samples: {
   BriefNamesNoRepository: { type: "BriefNamesNoRepository" },
   TicketCapacityReached: { type: "TicketCapacityReached" },
   FinalizationRequestClosed: { type: "FinalizationRequestClosed" },
+  OverridesMoveDefinition: { type: "OverridesMoveDefinition" },
 };
 
 const said = operationRefusalCodes.map((code) =>

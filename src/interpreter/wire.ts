@@ -52,6 +52,7 @@ import {
   type Refusal,
 } from "./refusal.ts";
 import { checkedSelectorDecisionReference } from "./dispatchView.ts";
+import { configurationOverridesSchema } from "../contract/configurationOverrides.ts";
 import { finalizationUnavailableKinds } from "../contract/rosters.ts";
 import { dispatchViewSchemaVersion } from "../contract/http.ts";
 import { asTicketId } from "../domain/ids.ts";
@@ -226,6 +227,47 @@ function parsedDraftCommand(record: Record<string, unknown>): boolean {
   );
 }
 
+/**
+ * An escalated ticket's overrides change, refused unless its fence is whole
+ * and its overrides are ones the contract's schema admits. The overrides are
+ * read back through that schema, so what a writer weighs is what ingress
+ * judged.
+ */
+function parsedOverridesChange(
+  record: Record<string, unknown>,
+): ProjectCommand | undefined {
+  if (record["command"] !== "ChangeTicketOverrides") return undefined;
+  const ticket = record["ticket"];
+  const action = record["action"];
+  const authorizingSeq = record["authorizingSeq"];
+  if (
+    !parsedDraftCommandCount(ticket) ||
+    typeof action !== "string" ||
+    action.length === 0 ||
+    !parsedDraftCommandCount(authorizingSeq) ||
+    carriesUnwrittenField(record, storedOverridesChangeFields)
+  )
+    throw new TypeError("overrides change fields are invalid");
+  return {
+    version: 1,
+    command: "ChangeTicketOverrides",
+    ticket: asTicketId(ticket as number),
+    action,
+    authorizingSeq: authorizingSeq as number,
+    overrides: configurationOverridesSchema.parse(record["overrides"]),
+  };
+}
+
+/** The fields an overrides change carries, and the only ones. */
+const storedOverridesChangeFields = [
+  "version",
+  "command",
+  "ticket",
+  "action",
+  "authorizingSeq",
+  "overrides",
+] as const;
+
 export function parseProjectCommand(text: string): Parsed<ProjectCommand> {
   try {
     const raw: unknown = JSON.parse(text);
@@ -251,6 +293,9 @@ export function parseProjectCommand(text: string): Parsed<ProjectCommand> {
     if (dispatch !== undefined) return { parsed: "Ok", value: dispatch };
     if (parsedDraftCommand(record))
       return { parsed: "Ok", value: record as ProjectCommand };
+    const overridesChange = parsedOverridesChange(record);
+    if (overridesChange !== undefined)
+      return { parsed: "Ok", value: overridesChange };
     if (
       record["command"] === "ResolveNativeAction" &&
       typeof record["action"] === "string" &&

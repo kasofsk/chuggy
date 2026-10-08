@@ -44,6 +44,7 @@ import { migration029 } from "../../src/adapters/postgres/schema/migrations/029-
 import { migration032 } from "../../src/adapters/postgres/schema/migrations/032-session-placement.ts";
 import { migration034 } from "../../src/adapters/postgres/schema/migrations/034-held-proposal-currency.ts";
 import { migration042 } from "../../src/adapters/postgres/schema/migrations/042-lead-succession.ts";
+import { migration043 } from "../../src/adapters/postgres/schema/migrations/043-parked-overrides.ts";
 import {
   postgresForgeInstallationClaims,
   postgresForgeInstallations,
@@ -9746,5 +9747,57 @@ test("042 widens the lead read to its objectives and newest decision measure, an
         public: false,
       })),
     );
+  });
+});
+
+/** One overrides change as a principal's envelope stores it, with whatever a case changes. */
+function parkedOverridesEnvelope(
+  changed: Readonly<Record<string, unknown>> = {},
+): string {
+  return JSON.stringify({
+    version: 1,
+    command: "ChangeTicketOverrides",
+    ticket: 1,
+    action: "action-43",
+    authorizingSeq: 1,
+    overrides: { worker: { setup: ["npm ci"] } },
+    ...changed,
+  });
+}
+
+test("043 settles a change that would move a definition under its own code, and knows the envelope that asks for one", async () => {
+  await migrationDatabase("parked_overrides", async (subject) => {
+    await installationBefore(subject, migration043.version);
+    await subject.query(deletionPartition);
+    const valid = async (envelope: string) =>
+      (
+        await subject.query<{ valid: boolean }>(
+          `SELECT public_ticket_command_is_valid($1::jsonb) AS valid`,
+          [envelope],
+        )
+      ).rows[0]?.valid;
+    assert.equal(await valid(parkedOverridesEnvelope()), false);
+    assert.match(
+      String(await commandsRefuse(subject, 1, "OverridesMoveDefinition", null)),
+      /decision_input_outcome_is_known/u,
+    );
+    assert.equal(await commandsRefuse(subject, 1, "TicketChanged", null), null);
+    assert.ok((await postgresMigrate(subject)).includes(migration043.version));
+    assert.equal(
+      await commandsRefuse(subject, 2, "OverridesMoveDefinition", null),
+      null,
+    );
+    assert.equal(await valid(parkedOverridesEnvelope()), true);
+    for (const changed of [
+      { overrides: ["npm ci"] },
+      { ticket: 0 },
+      { action: "" },
+      { resolution: "Resume" },
+    ])
+      assert.equal(
+        await valid(parkedOverridesEnvelope(changed)),
+        false,
+        JSON.stringify(changed),
+      );
   });
 });

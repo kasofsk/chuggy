@@ -176,8 +176,9 @@ function releaseDocumentReadiness(
  * repository, so a configuration carrying no provenance repository releases
  * under any binding and one carrying a provenance repository releases from
  * that binding alone, and what is judged is the pinned configuration with the
- * draft's overrides applied, so an override cannot release what the
- * configuration itself could not say.
+ * overrides applied — the draft's, or those offered for an escalated ticket —
+ * so an override cannot release or run what the configuration itself could
+ * not say.
  */
 export function draftReleaseReadiness(
   configuration: CanonicalConfiguration,

@@ -21,6 +21,7 @@ import type {
   DispatchViewResponse,
   ExecutionsResponse,
   LeadReadResponse,
+  NativeActionResponse,
   TicketNativeActionsResponse,
   TicketResponse,
 } from "../../../../src/contract/responses.ts";
@@ -32,6 +33,11 @@ import {
 } from "../core/apiRoutes.ts";
 import type { PanelState } from "../core/freshness.ts";
 import type { TicketDeliveryState } from "../core/ticketDelivery.ts";
+import {
+  parkedOverridesFence,
+  parkedOverridesUnsaved,
+} from "../core/parkedOverrides.ts";
+import type { ParkedOverridesTyped } from "../core/parkedOverrides.ts";
 import { projectLeadPresent } from "../core/projectLead.ts";
 import {
   manualDispatchAction,
@@ -70,6 +76,11 @@ import {
   ticketSections,
   ticketSectionsOpened,
 } from "./ticket/TicketSections.tsx";
+import {
+  ParkedOverrides,
+  parkedOverridesSaving,
+  useParkedOverridesSave,
+} from "./ticket/ParkedOverrides.tsx";
 import { TicketSlot } from "./ticket/TicketSlot.tsx";
 import { TicketStatus } from "./ticket/TicketStatus.tsx";
 import { EmptyState } from "./ui/EmptyState.tsx";
@@ -129,14 +140,20 @@ interface StandingProps {
   readonly nowMs: number;
 }
 
-/** The offers, and the one card the slot holds, from what the page has read. */
+/** The offers, the one card the slot holds and the escalation its overrides
+ * are fenced to, from what the page has read. */
 function standingOf(props: StandingProps): {
   readonly offers: TicketOffers;
   readonly slot: Slot;
+  readonly fence: NativeActionResponse | undefined;
 } {
   const ticket = readValue(props.reads.ticketState);
   if (ticket === undefined)
-    return { offers: { offers: "Unread" }, slot: { slot: "Nothing" } };
+    return {
+      offers: { offers: "Unread" },
+      slot: { slot: "Nothing" },
+      fence: undefined,
+    };
   const dispatchState = props.reads.dispatchState;
   const dispatch =
     dispatchState.state === "Ready"
@@ -151,6 +168,43 @@ function standingOf(props: StandingProps): {
       open: readValue(props.reads.openState)?.actions,
       executions: readValue(props.reads.pageState)?.executions ?? [],
     }),
+    fence: parkedOverridesFence(
+      ticket,
+      readValue(props.reads.openState)?.actions,
+    ),
+  };
+}
+
+/**
+ * The card's overrides and the Resume beside them: Resume is withheld while
+ * what was typed is not what the ticket holds, or a save of it is still going,
+ * so nobody resumes under settings they believed they had changed.
+ */
+function useParkedStanding(
+  props: StandingProps,
+  fence: NativeActionResponse | undefined,
+): { readonly overrides: ReactNode; readonly withheld: boolean } {
+  const [typed, setTyped] = useState<ParkedOverridesTyped | undefined>(
+    undefined,
+  );
+  const saving = useParkedOverridesSave(props.partition, props.ticket);
+  const ticket = readValue(props.reads.ticketState);
+  if (ticket === undefined || fence === undefined)
+    return { overrides: null, withheld: false };
+  return {
+    overrides: (
+      <ParkedOverrides
+        partition={props.partition}
+        ticket={ticket}
+        fence={fence}
+        typed={typed}
+        onTyped={setTyped}
+        saving={saving}
+      />
+    ),
+    withheld:
+      parkedOverridesUnsaved(typed, fence, ticket.overrides) ||
+      parkedOverridesSaving(saving),
   };
 }
 
@@ -159,7 +213,8 @@ function standingOf(props: StandingProps): {
 function TicketStanding(
   props: StandingProps & { readonly acting: TicketActing },
 ): ReactNode {
-  const { offers, slot } = standingOf(props);
+  const { offers, slot, fence } = standingOf(props);
+  const parked = useParkedStanding(props, fence);
   const asking = slot.slot === "NeedsYou";
   const answered = offersAnswered(offers, asking);
   const ledger = props.facts.ledger;
@@ -194,11 +249,16 @@ function TicketStanding(
         partition={props.partition}
         slot={slot}
         nowMs={props.nowMs}
+        overrides={parked.overrides}
         actions={
           <TicketAnswerActions
             acting={props.acting}
             offers={offers}
-            answered={answered}
+            answered={
+              parked.withheld
+                ? answered.filter((action) => action.action !== "Resume")
+                : answered
+            }
             resume={props.facts.resume}
           />
         }

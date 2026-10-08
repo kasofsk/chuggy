@@ -574,3 +574,28 @@ test("project cursor codecs preserve wire order and reject foreign or altered en
       assert.throws(() => entry.parse(encode(altered), partition));
   }
 });
+
+test("an overrides change names the escalation it was typed against and the whole of what the ticket is to hold", () => {
+  const change = {
+    mutation: "ChangeTicketOverrides",
+    ticket: 7,
+    action: "action",
+    authorizingSequence: 4,
+    overrides: { worker: { setup: ["npm ci"] }, practices: [] },
+  };
+  assert.deepEqual(parseSubmission("operation", "Key", change).command, {
+    version: 1,
+    command: "ChangeTicketOverrides",
+    ticket: 7,
+    action: "action",
+    authorizingSeq: 4,
+    overrides: { worker: { setup: ["npm ci"] }, practices: [] },
+  });
+  for (const broken of [
+    { ...change, overrides: undefined },
+    { ...change, overrides: { image: "worker:v2" } },
+    { ...change, action: 5 },
+    { ...change, resolution: "Resume" },
+  ])
+    assert.throws(() => parseSubmission("operation", "Key", broken));
+});

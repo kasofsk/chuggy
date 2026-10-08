@@ -42,13 +42,18 @@ import {
 } from "../../src/domain/generated/modelTypes.ts";
 import {
   encodeEntry,
+  encodeProjectCommand,
   parseEntry,
   parseJournal,
   parseProjectCommand,
   parseStoredProjectCommand,
   type Parsed,
 } from "../../src/interpreter/wire.ts";
-import { asOperationTicketCommand } from "../../src/interpreter/projectCommand.ts";
+import {
+  asOperationTicketCommand,
+  type ProjectCommand,
+} from "../../src/interpreter/projectCommand.ts";
+import { asTicketId } from "../../src/domain/ids.ts";
 import {
   plainDefinitionOf,
   plainPolicy,
@@ -518,4 +523,32 @@ test("a submission carries its hold kind exactly when it reports one", () => {
     assert.ok(refused.parsed === "Refused");
     assert.match(refused.why, /finalization submission fields are invalid/);
   }
+});
+
+test("an overrides change is stored as it was offered and read back through the overrides schema", () => {
+  const change: ProjectCommand = {
+    version: 1,
+    command: "ChangeTicketOverrides",
+    ticket: asTicketId(3),
+    action: "action",
+    authorizingSeq: 2,
+    overrides: { worker: { setup: ["npm ci"] } },
+  };
+  const text = encodeProjectCommand(change);
+  assert.deepEqual(parseProjectCommand(text), { parsed: "Ok", value: change });
+  assert.deepEqual(parseStoredProjectCommand(text), {
+    parsed: "Ok",
+    value: change,
+  });
+  for (const broken of [
+    { ...change, overrides: { image: "worker:v2" } },
+    { ...change, authorizingSeq: 0 },
+    { ...change, action: "" },
+    { ...change, resolution: "Resume" },
+  ])
+    assert.equal(
+      parseProjectCommand(JSON.stringify(broken)).parsed,
+      "Refused",
+      JSON.stringify(broken),
+    );
 });

@@ -168,6 +168,8 @@ function routed(project: Project): (request: SentRequest) => Response {
     );
     if (draft !== undefined) return answer(draft);
     if (url.endsWith("/tickets/7")) return answer(ticketOf(7, "Revoked"));
+    if (url.endsWith("/tickets/11")) return answer(ticketOf(11, "Revoked"));
+    if (url.endsWith("/tickets/13")) return answer(ticketOf(13, "Revoked"));
     if (url.endsWith("/tickets/40")) return answer(ticketOf(40, "Pending"));
     return answer({
       partition: creationPartition,

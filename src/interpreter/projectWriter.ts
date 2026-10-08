@@ -501,6 +501,36 @@ function projectWriterClosedRefusal(
 }
 
 /**
+ * The plan an escalated ticket's overrides change earns, or none for any other
+ * item. A ticket standing anywhere but `Escalated` takes none and is refused
+ * `TicketChanged`, as an answer to an escalation that closed is; one that is
+ * parked is offered to the deciding transaction, which holds the change to
+ * its fence, its configuration and its definition under the project's lock.
+ */
+function projectWriterOverridesChange(
+  memory: ProjectMemory,
+  item: DecisionInput,
+): ProjectPlan | undefined {
+  const command = item.source.command;
+  if (command.command !== "ChangeTicketOverrides") return undefined;
+  const state = memory.graph.tickets.get(command.ticket)?.state;
+  if (state === undefined || projectedEscalationOf(state) === "NoEscalation")
+    return refusedPlan(memory, boundaryRefusal("TicketChanged"));
+  return {
+    outcome: {
+      outcome: "OverridesChanged",
+      change: {
+        ticket: command.ticket,
+        action: command.action,
+        authorizingSeq: command.authorizingSeq,
+        overrides: command.overrides,
+      },
+    },
+    post: projectWriterReplayed(memory),
+  };
+}
+
+/**
  * What one inbox item asks of the state in hand: the decision the machine
  * takes, the ticket a dispatch must be observed at before there is one, or the
  * refusal it earns. Nothing here reaches the world.
@@ -518,6 +548,8 @@ function projectWriterPreflight(
   | { readonly dispatch: TicketId } {
   const fence = operationDispatchFence(memory, item.source);
   if (fence !== undefined) return refusedPlan(memory, boundaryRefusal(fence));
+  const overridesChange = projectWriterOverridesChange(memory, item);
+  if (overridesChange !== undefined) return overridesChange;
   const dispatch = operationDispatchTicket(item);
   if (dispatch !== undefined) return { dispatch };
   const command = item.source.ticketCommand;

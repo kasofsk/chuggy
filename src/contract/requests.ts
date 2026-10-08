@@ -72,6 +72,18 @@ export const publicMutationSchema = z.discriminatedUnion("mutation", [
     authoringVersion: countSchema,
     configurationRevision: z.string(),
   }),
+  /**
+   * The whole of the overrides an escalated ticket is to hold, fenced to the
+   * escalation they were typed against as an answer to it is. It answers
+   * nothing: the escalation stays open for its own answer.
+   */
+  z.strictObject({
+    mutation: z.literal("ChangeTicketOverrides"),
+    ticket: ticketNumberSchema,
+    action: z.string(),
+    authorizingSequence: countSchema,
+    overrides: configurationOverridesSchema,
+  }),
   z.strictObject({
     mutation: z.literal("ResolveNativeAction"),
     action: z.string(),

@@ -16,6 +16,12 @@
  *
  * THE EFFECTIVE CONFIGURATION IS STILL A CONFIGURATION, and it is judged by
  * whatever judges a pinned one: this module checks shape, never readiness.
+ *
+ * A PARKED TICKET'S OVERRIDES CHANGE ONLY WHERE ITS DEFINITION DOES NOT. The
+ * deciding transaction compares the definition resolved under the overrides
+ * a ticket holds with the one resolved under those offered, and that
+ * comparison is the authority; `parkedTicketOverrideFields` is what a console
+ * that cannot run it may offer.
  */
 
 import { z } from "zod";
@@ -63,6 +69,23 @@ export const configurationOverridesSchema = z.strictObject({
 export type ConfigurationOverrides = z.infer<
   typeof configurationOverridesSchema
 >;
+
+/**
+ * The overrides an escalated ticket may change, by path: the fields a ticket's
+ * definition does not fold. `work.instructions` is not one, being part of the
+ * work stage's block, and an agent named in `worker.mode` is folded where the
+ * requirement is a container capability, which is why this is an offer and
+ * not the rule.
+ */
+export const parkedTicketOverrideFields = [
+  "worker.mode",
+  "worker.setup",
+  "worker.files",
+  "practices",
+  "brief.motivation",
+  "brief.acceptanceCriteria",
+  "brief.constraints",
+] as const;
 
 function configurationOverridesIsRecord(
   value: unknown,

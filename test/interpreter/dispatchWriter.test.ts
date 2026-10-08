@@ -8,6 +8,7 @@ import {
   createTicketCommand,
   resumeTicketCommand,
   reportTaskTerminalCommand,
+  revokeTicketCommand,
   type TicketCommand,
 } from "../../src/actor/command.ts";
 import { ticketAt } from "../../src/domain/ticketGraph.ts";
@@ -1542,4 +1543,73 @@ test("the repository a ticket was briefed with is the one its work is pinned to"
       : undefined,
     siblingRepository,
   );
+});
+
+/** An overrides change for ticket 1, whose fence the deciding transaction holds it to. */
+const overridesChange: ProjectCommand = {
+  version: 1,
+  command: "ChangeTicketOverrides",
+  ticket: id(1),
+  action: "action",
+  authorizingSeq: 1,
+  overrides: { worker: { setup: ["npm ci"] } },
+};
+
+/** Ticket 1 at every phase but parked, each reached as the machine reaches it. */
+function unparkedMemories(): ReadonlyMap<string, ProjectMemory> {
+  const { awaiting } = finalizingGraphs();
+  const judge = evaluationTaskOf(1, 1, 1, 1, 1);
+  const done = [
+    reportTaskTerminalCommand(judgedReport(judge, "EvaluatorPass")),
+    reportFinalizationResultCommand(id(1), 1, 1, {
+      type: "FinalizationSucceeded",
+      value: 1,
+    }),
+  ].reduce(
+    (each, command) => stepped(refinementInstance, each, command),
+    workPassedState(),
+  );
+  const revoked = stepped(
+    refinementInstance,
+    dispatchedState(),
+    asOperationTicketCommand(revokeTicketCommand(id(1))),
+  );
+  return new Map([
+    ["Pending", releasedMemory()],
+    ["Work", dispatchedMemory()],
+    ["Evaluation", judgementMemory()],
+    ["Finalization", { ...releasedMemory(), ...awaiting }],
+    ["Done", { ...releasedMemory(), ...memoryOf(done) }],
+    ["Revoked", { ...releasedMemory(), ...memoryOf(revoked) }],
+  ]);
+}
+
+test("an overrides change is offered to the transaction for a parked ticket alone, and journals nothing", async () => {
+  for (const [phase, memory] of unparkedMemories()) {
+    assert.equal(phaseOf(ticketAt(memory.graph, id(1)).state), phase);
+    const offered = await planned(memory, overridesChange);
+    assert.deepEqual(
+      offered.outcome,
+      { outcome: "Refused", refusal: { type: "TicketChanged" } },
+      phase,
+    );
+  }
+  for (const memory of [workWalledMemory(), finalizationWalledMemory()]) {
+    assert.equal(phaseOf(ticketAt(memory.graph, id(1)).state), "Escalated");
+    const { offered, result } = await decidedWith(
+      memory,
+      operationInput(overridesChange),
+    );
+    assert.deepEqual(offered?.outcome, {
+      outcome: "OverridesChanged",
+      change: {
+        ticket: id(1),
+        action: "action",
+        authorizingSeq: 1,
+        overrides: { worker: { setup: ["npm ci"] } },
+      },
+    });
+    assert.equal(offered?.draftRelease, undefined);
+    assert.equal(result.memory.graph, memory.graph);
+  }
 });
