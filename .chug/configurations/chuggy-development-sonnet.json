@@ -3,7 +3,7 @@
   "name": "chuggy-development-sonnet",
   "configuration": {
     "version": 1,
-    "image": "registry.chuggy.internal/chuggy/worker@sha256:97cb5292d814c9790c5731898dd3e0e1f28487d5358058210109b2351e5d72fc",
+    "image": "registry.chuggy.internal/chuggy/worker@sha256:be94fcd8ab81defd285ebab9b34719a653107fbefc543de4bc41c363a434bafe",
     "authority": {
       "tools": ["claude-code", "shell"],
       "credentials": ["chuggy-github-worker", "claude-code"],
