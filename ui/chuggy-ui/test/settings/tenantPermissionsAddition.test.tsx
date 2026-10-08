@@ -70,22 +70,22 @@ function drawManaging(drawing: PermissionsDrawing = {}): Promise<DrawnStrict> {
   });
 }
 
-test("a workspace manager may add to each workspace permission they may change, and not to hosted run grants", async () => {
+test("a workspace manager may add to each workspace permission they may change, and not to Grant hosted runs", async () => {
   await drawPermissions({
     abilities: () => answer(permissionsAbilitiesTenant),
   });
   expect(addButtons("Workspace")).toStrictEqual([
-    "Add to Admin grants",
-    "Add to Member grants",
-    "Add to Permission changes",
+    "Add to Grant Admin",
+    "Add to Grant Member",
+    "Add to Change permissions",
   ]);
 });
 
-test("a site manager may add to hosted run grants, and to no other of the workspace's permissions", async () => {
+test("a site manager may add to Grant hosted runs, and to no other of the workspace's permissions", async () => {
   await drawPermissions({
     abilities: () => answer(permissionsAbilitiesSite),
   });
-  expect(addButtons("Workspace")).toStrictEqual(["Add to Hosted run grants"]);
+  expect(addButtons("Workspace")).toStrictEqual(["Add to Grant hosted runs"]);
 });
 
 test("a reader who may change nothing may add nothing", async () => {
@@ -98,7 +98,7 @@ test("a reader who may change nothing may add nothing", async () => {
 
 test("each permission offers its record's groups less those it holds, then a person, nothing chosen", async () => {
   await drawManaging();
-  await opened("Workspace", "Member grants");
+  await opened("Workspace", "Grant Member");
   expect(choicesOffered()).toStrictEqual([
     "Site admins",
     "Workspace members",
@@ -110,16 +110,16 @@ test("each permission offers its record's groups less those it holds, then a per
       .map((radio) => radio.getAttribute("aria-checked")),
   ).toStrictEqual(["false", "false", "false"]);
   await press("Close");
-  await opened("Workspace", "Admin grants");
+  await opened("Workspace", "Grant Admin");
   expect(choicesOffered()).toStrictEqual(["Site admins", "Person"]);
   await press("Close");
-  await opened("Workspace", "Permission changes");
+  await opened("Workspace", "Change permissions");
   expect(choicesOffered()).toStrictEqual(["Person"]);
 });
 
-test("Workspace members on Member grants draws its line, and sending sends the group's addition", async () => {
+test("Workspace members on Grant Member draws its line, and sending sends the group's addition", async () => {
   const drawn = await drawManaging();
-  await opened("Workspace", "Member grants");
+  await opened("Workspace", "Grant Member");
   const line = within(dialog()).getByText(
     "Members will see people and can remove other members.",
   );
@@ -159,7 +159,7 @@ test("a person is chosen from the People list's people less those holding the pe
         ],
       }),
   });
-  await opened("Workspace", "Admin grants");
+  await opened("Workspace", "Grant Admin");
   await chosen("Person");
   const add = within(dialog()).getByRole<HTMLButtonElement>("button", {
     name: "Add",
@@ -184,12 +184,26 @@ test("a person is chosen from the People list's people less those holding the pe
   ]);
 });
 
+test("the roster draws each person on a line: their address or subject, their login, what they are, and Choose", async () => {
+  await drawManaging();
+  await opened("Workspace", "Grant Member");
+  await chosen("Person");
+  expect(
+    within(dialog())
+      .getAllByRole("listitem")
+      .map((item) => item.textContent),
+  ).toStrictEqual([
+    "ada@example.comadaChoose ada@example.com",
+    "s-bobNo accountChoose s-bob",
+  ]);
+});
+
 test("the People list not read, Person is not offered, and a permission with nothing left says so", async () => {
   await drawManaging({ people: () => answer({}, 404) });
-  await opened("Workspace", "Member grants");
+  await opened("Workspace", "Grant Member");
   expect(choicesOffered()).toStrictEqual(["Site admins", "Workspace members"]);
   await press("Close");
-  await opened("Workspace", "Permission changes");
+  await opened("Workspace", "Change permissions");
   expect(choicesOffered()).toStrictEqual([]);
   expect(within(dialog()).getByText("Nothing to add")).toBeTruthy();
 });
@@ -203,7 +217,7 @@ test("sent, the dialog closes and both lists, the abilities and the People list 
   ];
   const before = reads.map((read) => readsOf(drawn, read));
   const invalidated = vi.spyOn(QueryClient.prototype, "invalidateQueries");
-  await opened("Workspace", "Admin grants");
+  await opened("Workspace", "Grant Admin");
   await chosen("Site admins");
   await added();
   expect(screen.queryByRole("dialog", { name: "Add holder" })).toBeNull();
@@ -234,7 +248,7 @@ test.each([
   "a refusal is $line, one line in the dialog with the choice still made",
   async ({ refusal, line }) => {
     await drawManaging({ added: refusal });
-    await opened("Workspace", "Member grants");
+    await opened("Workspace", "Grant Member");
     await chosen("Workspace members");
     await added();
     expect(within(dialog()).getByText(line)).toBeTruthy();

@@ -1,0 +1,85 @@
+/* A level's permissions as one card: its table drawn to the card's edges, a
+   permission's name on the first line of its holders, and no row lit under
+   the pointer, since a chip stands on the level a lit row takes. `Add` is
+   drawn in toward the holders by the padding it has and they have not, so it
+   adds no height to a row and starts a line of its own near where they do.
+   Narrower than the narrow breakpoint a row is a block, its name above its
+   holders. */
+
+@layer page {
+  .permissions {
+    container-type: inline-size;
+  }
+
+  .permissions .tabular {
+    table-layout: fixed;
+  }
+
+  .permissions .tabular th,
+  .permissions .tabular td {
+    padding: var(--space-3) var(--space-4);
+    vertical-align: baseline;
+  }
+
+  .permissions .tabular thead th {
+    padding-block: var(--space-2);
+  }
+
+  .permissions .tabular tbody th {
+    color: var(--ink-1);
+    font-weight: var(--weight-medium);
+  }
+
+  .permissions .tabular tbody tr:hover {
+    background: transparent;
+  }
+
+  .permissions-name {
+    width: calc(var(--col-field-label) + var(--space-6));
+  }
+
+  .permissions-add {
+    display: inline-flex;
+    margin-block: calc(var(--space-1) * -0.5);
+    margin-inline-start: calc(var(--space-2) * -1);
+  }
+
+  .permissions-line {
+    padding: var(--space-3) var(--space-4);
+  }
+
+  .permissions .tabular-scroll + .permissions-line {
+    border-top: var(--hairline) solid var(--edge);
+  }
+
+  @container (max-width: 40em) {
+    .permissions .tabular,
+    .permissions .tabular tbody,
+    .permissions .tabular tr,
+    .permissions .tabular th,
+    .permissions .tabular td {
+      display: block;
+    }
+
+    .permissions .tabular thead {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+    }
+
+    .permissions-name {
+      width: auto;
+    }
+
+    .permissions .tabular tbody th {
+      padding-bottom: 0;
+      border-bottom: 0;
+    }
+
+    .permissions .tabular tbody td {
+      padding-top: var(--space-2);
+    }
+  }
+}

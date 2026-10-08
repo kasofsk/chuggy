@@ -33,17 +33,12 @@ import {
   tenantPermissionRows,
   tenantPermissionsWithheld,
 } from "../../core/permissions.ts";
-import { PanelUnready } from "../DataPanel.tsx";
-import { Notice } from "../ui/Notice.tsx";
 import {
   usePermissionsChange,
   type PermissionChange,
   type PermissionHolderRoutes,
 } from "./permissionsChange.ts";
-import {
-  PermissionsSection,
-  PermissionsTruncated,
-} from "./PermissionsSection.tsx";
+import { PermissionsSection } from "./PermissionsSection.tsx";
 import { SettingsPage, useSettingsTenant } from "./SettingsPage.tsx";
 import { useTenantAbilities, useTenantPeople } from "./tenantPeopleResource.ts";
 import {
@@ -83,7 +78,6 @@ function TenantPermissions(props: {
   readonly abilities: AccessTenantAbilities | undefined;
   readonly people: AccessTenantPeople | undefined;
 }): ReactNode {
-  const read = props.read;
   const tenant = props.tenant;
   const change = usePermissionsChange<AccessTenantAuthority>({
     tenant,
@@ -95,25 +89,15 @@ function TenantPermissions(props: {
       tenantPermissionRoutes(ports, tenant, authority, sent),
     reread: (client) => tenantPermissionsReread(client, tenant),
   });
-  if (read.state !== "Ready")
-    return (
-      <PermissionsSection title="Workspace" rows={undefined}>
-        {read.state === "Absent" ? (
-          <Notice tone="parked" inline detail={tenantPermissionsWithheld} />
-        ) : (
-          <PanelUnready state={read} />
-        )}
-      </PermissionsSection>
-    );
   return (
     <PermissionsSection
-      title="Workspace"
-      rows={tenantPermissionRows(read.value)}
+      label="Workspace permissions"
+      read={props.read}
+      rows={tenantPermissionRows}
+      withheld={tenantPermissionsWithheld}
       removal={change.removal}
       addition={change.addition}
-    >
-      <PermissionsTruncated truncated={read.value.truncated} />
-    </PermissionsSection>
+    />
   );
 }
 

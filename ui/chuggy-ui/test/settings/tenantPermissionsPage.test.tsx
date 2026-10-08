@@ -60,12 +60,21 @@ const [adminGranters, memberGranters, hostedRunsGranters, authorityManagers] =
 test("a workspace manager sees its four permissions in roster order, each naming its holders, and no site section", async () => {
   await drawPermissions();
   expect(permissionsDrawn("Workspace")).toStrictEqual([
-    { name: "Admin grants", holders: ["Workspace admins"] },
-    { name: "Member grants", holders: ["Workspace admins"] },
-    { name: "Hosted run grants", holders: ["Site admins"] },
-    { name: "Permission changes", holders: ["Workspace admins"] },
+    { name: "Grant Admin", holders: ["Workspace admins"] },
+    { name: "Grant Member", holders: ["Workspace admins"] },
+    { name: "Grant hosted runs", holders: ["Site admins"] },
+    { name: "Change permissions", holders: ["Workspace admins"] },
   ]);
   expect(sectionDrawn("Site")).toBe(false);
+});
+
+test("the table's columns are the permission and who holds it, under no title of the section's own", async () => {
+  await drawPermissions();
+  const section = within(sectionOf("Workspace"));
+  expect(
+    section.getAllByRole("columnheader").map((header) => header.textContent),
+  ).toStrictEqual(["Permission", "Held by"]);
+  expect(section.queryByRole("heading")).toBeNull();
 });
 
 test.each([
@@ -82,7 +91,7 @@ test.each([
   },
 );
 
-test("a person holding a permission is drawn as the People page draws them, after the groups", async () => {
+test("a person holding a permission is drawn after the groups by their address or their subject, then what they are", async () => {
   await drawPermissions({
     tenant: () =>
       answer({
@@ -110,8 +119,8 @@ test("a person holding a permission is drawn as the People page draws them, afte
   const [admin] = permissionsDrawn("Workspace");
   expect(admin?.holders).toStrictEqual([
     "Workspace admins",
-    "ada@example.comadaYou",
-    "s-bobNo account",
+    "ada@example.com You",
+    "s-bob No account",
   ]);
 });
 
@@ -132,7 +141,7 @@ test("unnamed holders are a count, and a permission nobody holds says Nobody", a
     "Workspace admins",
     "3 unnamed",
   ]);
-  expect(permissionCell("Workspace", "Member grants")).toBe("Nobody");
+  expect(permissionCell("Workspace", "Grant Member")).toBe("Nobody");
 });
 
 test("a reader the workspace's list is absent to sees the one line and no table", async () => {
@@ -185,21 +194,21 @@ const permissionsReads = [
   permissionsPeoplePath,
 ];
 
-test("a workspace manager may remove each holder of the workspace's permissions but hosted run grants", async () => {
+test("a workspace manager may remove each holder of the workspace's permissions but Grant hosted runs", async () => {
   await drawPermissions({
     abilities: () => answer(permissionsAbilitiesTenant),
   });
   expect(removeButtons("Workspace")).toStrictEqual([
-    "Remove Workspace admins from Admin grants",
-    "Remove Workspace admins from Member grants",
-    "Remove Workspace admins from Permission changes",
+    "Remove Workspace admins from Grant Admin",
+    "Remove Workspace admins from Grant Member",
+    "Remove Workspace admins from Change permissions",
   ]);
 });
 
-test("a site manager may remove hosted run grants' holders, and no holder of the workspace's own permissions", async () => {
+test("a site manager may remove the holders of Grant hosted runs, and no holder of the workspace's own permissions", async () => {
   await drawPermissions({ abilities: () => answer(permissionsAbilitiesSite) });
   expect(removeButtons("Workspace")).toStrictEqual([
-    "Remove Site admins from Hosted run grants",
+    "Remove Site admins from Grant hosted runs",
   ]);
 });
 
@@ -230,7 +239,7 @@ test("a removal sends its route with no body, then reads both lists, the abiliti
   });
   const before = permissionsReads.map((read) => readsOf(drawn, read));
   const invalidated = vi.spyOn(QueryClient.prototype, "invalidateQueries");
-  await press("Remove Workspace admins from Admin grants");
+  await press("Remove Workspace admins from Grant Admin");
   expect(removalsSent(drawn)).toStrictEqual([
     {
       method: "DELETE",
@@ -260,7 +269,7 @@ test("a person removed from a workspace permission is sent with their subject", 
         ],
       }),
   });
-  await press("Remove ada@example.com from Admin grants");
+  await press("Remove ada@example.com from Grant Admin");
   expect(removalsSent(drawn)).toStrictEqual([
     {
       method: "DELETE",
@@ -274,20 +283,23 @@ test("removing a permission manager asks first, sends nothing until confirmed, a
   const drawn = await drawPermissions({
     abilities: () => answer(permissionsAbilitiesTenant),
   });
-  await press("Remove Workspace admins from Permission changes");
+  await press("Remove Workspace admins from Change permissions");
   const asked = screen.getByRole("group", {
     name: "Remove permission manager",
   });
   expect(
     within(asked).getByText("This may lock people out of this page."),
   ).toBeTruthy();
+  expect(
+    within(asked.closest("tr") ?? asked).getByRole("rowheader").textContent,
+  ).toBe("Change permissions");
   expect(removalsSent(drawn)).toStrictEqual([]);
   await press("Cancel");
   expect(
     screen.queryByRole("group", { name: "Remove permission manager" }),
   ).toBeNull();
   expect(removalsSent(drawn)).toStrictEqual([]);
-  await press("Remove Workspace admins from Permission changes");
+  await press("Remove Workspace admins from Change permissions");
   await press("Remove");
   expect(removalsSent(drawn)).toStrictEqual([
     {
@@ -307,11 +319,11 @@ test("a refused removal is one line in its permission's row", async () => {
         403,
       ),
   });
-  await press("Remove Workspace admins from Member grants");
+  await press("Remove Workspace admins from Grant Member");
   const row = within(sectionOf("Workspace"))
-    .getByRole("rowheader", { name: /^Member grants/u })
+    .getByRole("rowheader", { name: "Grant Member" })
     .closest("tr");
-  if (row === null) throw new Error("no row draws Member grants");
+  if (row === null) throw new Error("no row draws Grant Member");
   expect(within(row).getByText("Change not permitted")).toBeTruthy();
   expect(screen.getAllByText("Change not permitted")).toHaveLength(1);
 });

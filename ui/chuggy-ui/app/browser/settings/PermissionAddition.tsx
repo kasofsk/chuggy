@@ -1,9 +1,9 @@
 /**
  * Adding one holder to one permission: a dialog offering what the row is
  * given, one choice at a time, and for a person a roster of the people given
- * to choose among, each drawn as the People page draws them. What adding does
- * is its caller's; the dialog holds the choice, closes on an addition the
- * plane took, and leaves a refusal's one line beside what was chosen.
+ * to choose among, one to a line. What adding does is its caller's; the dialog
+ * holds the choice, closes on an addition the plane took, and leaves a
+ * refusal's one line beside what was chosen.
  */
 
 import { useState } from "react";
@@ -14,6 +14,7 @@ import type { ApiResult } from "../../core/apiRequest.ts";
 import {
   permissionChoiceHolder,
   permissionChoiceValue,
+  permissionPersonMarks,
   type PermissionAuthority,
   type PermissionChoice,
   type PermissionHolder,
@@ -29,7 +30,6 @@ import { EmptyState } from "../ui/EmptyState.tsx";
 import { Notice } from "../ui/Notice.tsx";
 import { RadioGroup } from "../ui/RadioGroup.tsx";
 import { SearchableRoster } from "../ui/SearchableRoster.tsx";
-import { TenantPersonWho } from "./TenantPersonRow.tsx";
 
 /** Whether a row may be given a holder, what it offers, the people to choose
  * among, and what adding one does. */
@@ -74,6 +74,50 @@ function usePermissionAdding(
   };
 }
 
+/** A person's name as a permission draws it: their address, or their subject
+ * in the face an identity is drawn in. */
+export function PermissionPersonName(props: {
+  readonly person: AccessAuthorityPerson;
+}): ReactNode {
+  const named = tenantPersonName(props.person);
+  return named.subject ? <code>{named.name}</code> : named.name;
+}
+
+/** One person the roster offers on one line: their name and their login,
+ * each clipping, then what stands after them and the button that chooses. */
+function PermissionAdditionChoice(props: {
+  readonly person: AccessAuthorityPerson;
+  readonly chosen: boolean;
+  readonly onChoose: () => void;
+}): ReactNode {
+  const person = props.person;
+  const named = tenantPersonName(person);
+  const marks = permissionPersonMarks(person);
+  return (
+    <span className="flex w-0 min-w-full items-center gap-2">
+      <span className="truncate">
+        <PermissionPersonName person={person} />
+      </span>
+      {named.githubLogin === undefined ? null : (
+        <span className="text-ink-3 truncate text-sm">{named.githubLogin}</span>
+      )}
+      {marks.length === 0 ? null : (
+        <span className="text-ink-3 shrink-0 text-sm">{marks.join(" ")}</span>
+      )}
+      <span className="ms-auto shrink-0">
+        <Button
+          size="sm"
+          variant="quiet"
+          pressed={props.chosen}
+          onClick={props.onChoose}
+        >
+          Choose <span className="visually-hidden">{named.name}</span>
+        </Button>
+      </span>
+    </span>
+  );
+}
+
 function PermissionAdditionPerson(props: {
   readonly people: readonly AccessAuthorityPerson[];
   readonly chosen: AccessAuthorityPerson | undefined;
@@ -89,22 +133,13 @@ function PermissionAdditionPerson(props: {
       }}
       keyOf={(person) => person.subject}
       renderRow={(person) => (
-        <span className="flex flex-wrap items-center gap-2">
-          <TenantPersonWho person={person} />
-          <Button
-            size="sm"
-            variant="quiet"
-            pressed={props.chosen?.subject === person.subject}
-            onClick={() => {
-              props.onChoose(person);
-            }}
-          >
-            Choose{" "}
-            <span className="visually-hidden">
-              {tenantPersonName(person).name}
-            </span>
-          </Button>
-        </span>
+        <PermissionAdditionChoice
+          person={person}
+          chosen={props.chosen?.subject === person.subject}
+          onChoose={() => {
+            props.onChoose(person);
+          }}
+        />
       )}
     />
   );
@@ -168,6 +203,20 @@ function PermissionAdditionBody(props: {
   );
 }
 
+function PermissionAdditionPlus(): ReactNode {
+  return (
+    <svg viewBox="0 0 12 12" aria-hidden="true" className="size-3 shrink-0">
+      <path
+        d="M6 2.5 V9.5 M2.5 6 H9.5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
 export function PermissionAddition<
   Authority extends PermissionAuthority,
 >(props: {
@@ -182,7 +231,10 @@ export function PermissionAddition<
       title="Add holder"
       trigger={
         <>
-          Add <span className="visually-hidden">{`to ${row.name}`}</span>
+          <PermissionAdditionPlus />
+          <span>
+            Add <span className="visually-hidden">{`to ${row.name}`}</span>
+          </span>
         </>
       }
       triggerVariant="quiet"

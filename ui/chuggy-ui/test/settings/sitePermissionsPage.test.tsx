@@ -65,10 +65,10 @@ test("a site manager sees the site's two permissions and no workspace section, t
   await drawSitePermissions();
   expect(permissionsDrawn("Site")).toStrictEqual([
     {
-      name: "Account creation",
+      name: "Create accounts",
       holders: ["Site admins", "acme admins", "globex admins"],
     },
-    { name: "Permission changes", holders: ["Site admins"] },
+    { name: "Change permissions", holders: ["Site admins"] },
   ]);
   expect(sectionDrawn("Workspace")).toBe(false);
 });
@@ -111,26 +111,26 @@ test("a site manager may remove the site's holders, but no standing admin or unn
   await drawSitePermissions({ site: () => answer(siteAuthoritiesHeld) });
   const names = removeButtons("Site");
   expect(names).toStrictEqual([
-    "Remove Site admins from Account creation",
-    "Remove acme admins from Account creation",
-    "Remove globex admins from Account creation",
-    "Remove ada@example.com from Permission changes",
+    "Remove Site admins from Create accounts",
+    "Remove acme admins from Create accounts",
+    "Remove globex admins from Create accounts",
+    "Remove ada@example.com from Change permissions",
   ]);
   expect(new Set(names).size).toBe(names.length);
 });
 
 test.each([
   {
-    holder: "Remove ada@example.com from Permission changes",
+    holder: "Remove ada@example.com from Change permissions",
     path: `${siteAuthoritiesPath}/AuthorityManagers/people/s-ada`,
     confirmed: true,
   },
   {
-    holder: "Remove acme admins from Account creation",
+    holder: "Remove acme admins from Create accounts",
     path: `${siteAuthoritiesPath}/AccountCreators/tenants/${permissionsTenant}`,
   },
   {
-    holder: "Remove Site admins from Account creation",
+    holder: "Remove Site admins from Create accounts",
     path: `${siteAuthoritiesPath}/AccountCreators/groups/SiteAdmins`,
   },
 ])(
@@ -158,17 +158,17 @@ test.each([
 test("a site manager may add to each of the site's permissions", async () => {
   await drawSitePermissions();
   expect(addButtons("Site")).toStrictEqual([
-    "Add to Account creation",
-    "Add to Permission changes",
+    "Add to Create accounts",
+    "Add to Change permissions",
   ]);
 });
 
-test("This workspace's admins is offered on account creation only where they do not hold it, and permission changes offer a person alone", async () => {
+test("This workspace's admins is offered on Create accounts only where they do not hold it, and Change permissions offers a person alone", async () => {
   await drawSitePermissions({ people: () => answer(permissionsPeopleListed) });
-  await opened("Site", "Account creation");
+  await opened("Site", "Create accounts");
   expect(choicesOffered()).toStrictEqual(["Person"]);
   await press("Close");
-  await opened("Site", "Permission changes");
+  await opened("Site", "Change permissions");
   expect(choicesOffered()).toStrictEqual(["Person"]);
   cleanup();
   const drawn = await drawSitePermissions({
@@ -183,7 +183,7 @@ test("This workspace's admins is offered on account creation only where they do 
         })),
       }),
   });
-  await opened("Site", "Account creation");
+  await opened("Site", "Create accounts");
   expect(choicesOffered()).toStrictEqual([
     "Site admins",
     "This workspace's admins",
@@ -198,7 +198,7 @@ test("This workspace's admins is offered on account creation only where they do 
       body: undefined,
     },
   ]);
-  await opened("Site", "Permission changes");
+  await opened("Site", "Change permissions");
   expect(choicesOffered()).toStrictEqual(["Person"]);
 });
 
@@ -209,7 +209,7 @@ test("sent, the dialog closes and both lists, the abilities and the People list 
   });
   const before = siteReads.map((read) => readsOf(drawn, read));
   const invalidated = vi.spyOn(QueryClient.prototype, "invalidateQueries");
-  await opened("Site", "Account creation");
+  await opened("Site", "Create accounts");
   await chosen("Person");
   await press("Choose ada@example.com");
   await added();

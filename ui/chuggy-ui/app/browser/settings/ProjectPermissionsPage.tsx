@@ -32,17 +32,12 @@ import {
   projectPermissionsWithheld,
 } from "../../core/permissions.ts";
 import { settingsRoutes } from "../../core/settingsNav.ts";
-import { PanelUnready } from "../DataPanel.tsx";
-import { Notice } from "../ui/Notice.tsx";
 import {
   usePermissionsChange,
   type PermissionChange,
   type PermissionHolderRoutes,
 } from "./permissionsChange.ts";
-import {
-  PermissionsSection,
-  PermissionsTruncated,
-} from "./PermissionsSection.tsx";
+import { PermissionsSection } from "./PermissionsSection.tsx";
 import {
   projectPermissionsReread,
   useProjectAuthorities,
@@ -112,25 +107,15 @@ function ProjectPermissions(props: {
       projectPermissionRoutes(ports, partition, authority, sent),
     reread: (client) => projectPermissionsReread(client, partition),
   });
-  if (read.state !== "Ready")
-    return (
-      <PermissionsSection title="Project" rows={undefined}>
-        {read.state === "Absent" ? (
-          <Notice tone="parked" inline detail={projectPermissionsWithheld} />
-        ) : (
-          <PanelUnready state={read} />
-        )}
-      </PermissionsSection>
-    );
   return (
     <PermissionsSection
-      title="Project"
-      rows={projectPermissionRows(read.value)}
+      label="Project permissions"
+      read={read}
+      rows={projectPermissionRows}
+      withheld={projectPermissionsWithheld}
       removal={change.removal}
       addition={change.addition}
-    >
-      <PermissionsTruncated truncated={read.value.truncated} />
-    </PermissionsSection>
+    />
   );
 }
 

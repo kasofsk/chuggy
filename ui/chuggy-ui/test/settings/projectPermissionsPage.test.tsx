@@ -67,23 +67,23 @@ test("a project manager sees its four permissions in roster order, each with Add
   await drawProjectPermissions();
   expect(screen.getByRole("heading", { name: "Permissions" })).toBeTruthy();
   expect(permissionsDrawn("Project")).toStrictEqual([
-    { name: "Admin grants", holders: startingHolders },
-    { name: "Developer grants", holders: startingHolders },
-    { name: "Dispatcher grants", holders: startingHolders },
-    { name: "Permission changes", holders: startingHolders },
+    { name: "Grant Admin", holders: startingHolders },
+    { name: "Grant Developer", holders: startingHolders },
+    { name: "Grant Dispatcher", holders: startingHolders },
+    { name: "Change permissions", holders: startingHolders },
   ]);
   expect(addButtons("Project")).toStrictEqual([
-    "Add to Admin grants",
-    "Add to Developer grants",
-    "Add to Dispatcher grants",
-    "Add to Permission changes",
+    "Add to Grant Admin",
+    "Add to Grant Developer",
+    "Add to Grant Dispatcher",
+    "Add to Change permissions",
   ]);
   expect(removeButtons("Project")).toStrictEqual(
     [
-      "Admin grants",
-      "Developer grants",
-      "Dispatcher grants",
-      "Permission changes",
+      "Grant Admin",
+      "Grant Developer",
+      "Grant Dispatcher",
+      "Change permissions",
     ].flatMap((permission) =>
       startingHolders.map((holder) => `Remove ${holder} from ${permission}`),
     ),
@@ -129,11 +129,11 @@ const ada = {
 
 test.each([
   {
-    holder: "Remove Project admins from Developer grants",
+    holder: "Remove Project admins from Grant Developer",
     path: `${projectAuthoritiesPath}/DeveloperGranters/groups/ProjectAdmins`,
   },
   {
-    holder: "Remove ada@example.com from Admin grants",
+    holder: "Remove ada@example.com from Grant Admin",
     path: `${projectAuthoritiesPath}/AdminGranters/people/s-ada`,
   },
 ])(
@@ -164,9 +164,9 @@ test.each([
   },
 );
 
-test("removing a holder of Permission changes asks first and sends nothing until confirmed", async () => {
+test("removing a holder of Change permissions asks first and sends nothing until confirmed", async () => {
   const drawn = await drawProjectPermissions();
-  await press("Remove Project admins from Permission changes");
+  await press("Remove Project admins from Change permissions");
   const asked = screen.getByRole("group", {
     name: "Remove permission manager",
   });
@@ -184,25 +184,25 @@ test("removing a holder of Permission changes asks first and sends nothing until
   ]);
 });
 
-test("each permission offers its record's groups less those held, Project developers on Developer grants alone", async () => {
+test("each permission offers its record's groups less those held, Project developers on Grant Developer alone", async () => {
   await drawProjectPermissions();
-  await opened("Project", "Developer grants");
+  await opened("Project", "Grant Developer");
   expect(choicesOffered()).toStrictEqual([
     "Site admins",
     "Project developers",
     "Person",
   ]);
   await press("Close");
-  await opened("Project", "Admin grants");
+  await opened("Project", "Grant Admin");
   expect(choicesOffered()).toStrictEqual(["Site admins", "Person"]);
   await press("Close");
-  await opened("Project", "Permission changes");
+  await opened("Project", "Change permissions");
   expect(choicesOffered()).toStrictEqual(["Person"]);
 });
 
-test("Project developers on Developer grants draws its line, Person its own, and adding sends the group's route and reads again", async () => {
+test("Project developers on Grant Developer draws its line, Person its own, and adding sends the group's route and reads again", async () => {
   const drawn = await drawProjectPermissions();
-  await opened("Project", "Developer grants");
+  await opened("Project", "Grant Developer");
   const line = within(dialog()).getByText(
     "Developers will see people and can remove other developers.",
   );
@@ -242,7 +242,7 @@ test("a person is chosen among the project's people less those holding the permi
         ],
       }),
   });
-  await opened("Project", "Dispatcher grants");
+  await opened("Project", "Grant Dispatcher");
   await chosen("Person");
   expect(
     within(dialog())
