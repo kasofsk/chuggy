@@ -3,27 +3,38 @@
  * command stage ran.
  *
  * Each reads its output only once it is mounted, which is when its expander is
- * opened, and under the key the details' preview reads the same output by. An
- * output that is refused, or is not what its renderer says it is, draws the
- * result's report instead, so a reader is never left with less than the row's
- * line already promised.
+ * opened, and under the key the details' preview reads the same output by. The
+ * row holds that read without requesting it, so a stage's commands that are
+ * refused or do not parse relabel its expander "Report" once the read answers.
+ * A work summary that is refused draws the result's report instead.
  */
 
 import { useState } from "react";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
-import type { OutputContentResponse } from "../../../../../src/contract/responses.ts";
+import type {
+  ExecutionResponse,
+  OutputContentResponse,
+} from "../../../../../src/contract/responses.ts";
 import { apiOutputContent } from "../../core/apiRoutes.ts";
 import type { PanelState } from "../../core/freshness.ts";
-import { runResultCommandsOf } from "../../core/runResult.ts";
+import {
+  runResultCommandsRead,
+  runResultOpenedOf,
+  runResultOpenedSettled,
+} from "../../core/runResult.ts";
 import type { RunCommand, RunResultOpened } from "../../core/runResult.ts";
 import { runCommandTone } from "../../core/tones.ts";
-import { usePanelResource } from "../api.ts";
+import { usePanelResource, usePanelResourcesHeld } from "../api.ts";
 import { PanelUnready } from "../DataPanel.tsx";
 import { Disclosure } from "../ui/Disclosure.tsx";
 import { MarkdownReport } from "../ui/MarkdownReport.tsx";
 import { Pill } from "../ui/Pill.tsx";
+
+function runResultOutputResource(execution: string, ordinal: number): string {
+  return `${execution}/artifacts/${String(ordinal)}`;
+}
 
 /** One output of one execution, read as the details' preview reads it. */
 function useRunResultOutput(
@@ -34,9 +45,32 @@ function useRunResultOutput(
   return usePanelResource(
     partition,
     "Execution",
-    `${execution}/artifacts/${String(ordinal)}`,
+    runResultOutputResource(execution, ordinal),
     (ports) => apiOutputContent(ports, partition, execution, ordinal),
   );
+}
+
+/** The row's result expander, as its listing chose it and as the read of a
+ * stage's commands, where one was opened, has answered since. */
+export function useRunResultOpened(
+  partition: PartitionIdentity,
+  execution: string,
+  read: ExecutionResponse | undefined,
+): RunResultOpened | undefined {
+  const opened = read === undefined ? undefined : runResultOpenedOf(read);
+  const commands = opened?.opened === "Commands" ? opened.commands : undefined;
+  const [held] = usePanelResourcesHeld(
+    partition,
+    "Execution",
+    commands === undefined
+      ? []
+      : [runResultOutputResource(execution, commands)],
+    (_resource, ports) =>
+      apiOutputContent(ports, partition, execution, commands ?? 0),
+  );
+  return opened === undefined
+    ? undefined
+    : runResultOpenedSettled(opened, held);
 }
 
 /** The output's text where it was read as text, and none where it was refused. */
@@ -46,16 +80,6 @@ function runResultText(
   return state.state === "Ready" && state.value.encoding === "Utf8"
     ? state.value.content
     : undefined;
-}
-
-function RunResultReportText(props: {
-  readonly report: string | undefined;
-}): ReactNode {
-  return props.report === undefined ? (
-    <p className="panel-note">No report</p>
-  ) : (
-    <MarkdownReport text={props.report} />
-  );
 }
 
 function RunResultSummary(props: {
@@ -118,10 +142,8 @@ function RunResultCommands(props: {
     props.commands,
   );
   if (state.state === "Pending") return <PanelUnready state={state} />;
-  const text = runResultText(state);
-  const commands = text === undefined ? undefined : runResultCommandsOf(text);
-  if (commands === undefined)
-    return <RunResultReportText report={props.report} />;
+  const commands = runResultCommandsRead(state);
+  if (commands === undefined) return null;
   return (
     <ul className="grid gap-2">
       {commands.map((command, index) => (

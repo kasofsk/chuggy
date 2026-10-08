@@ -5,9 +5,10 @@
  *
  * The line is the report's opening, cut as a worker's reason is cut, and gives
  * way to that reason where the newest attempt left one. The expander is chosen
- * by what carried the stage, an absent carrier read as an agent's. Which
- * artifact it reads is decided here from the result's own listing, so a row
- * that is only drawn reads nothing; what the read answers is the browser's.
+ * by what carried the stage, an absent carrier read as an agent's, and by what
+ * the read of a stage's commands answered once it was opened. Which artifact it
+ * reads is decided here from the result's own listing, so a row that is only
+ * drawn reads nothing.
  */
 
 import {
@@ -15,7 +16,11 @@ import {
   checkOutputSchema,
 } from "../../../../src/contract/checkOutput.ts";
 import type { CheckOutputEntry } from "../../../../src/contract/checkOutput.ts";
-import type { ExecutionResponse } from "../../../../src/contract/responses.ts";
+import type {
+  ExecutionResponse,
+  OutputContentResponse,
+} from "../../../../src/contract/responses.ts";
+import type { PanelState } from "./freshness.ts";
 import { runReasonAttempt, runReasonOf } from "./runReason.ts";
 import type { RunReason } from "./runReason.ts";
 
@@ -81,6 +86,29 @@ export function runResultOpenedOf(
         (output) => output.name === runResultSummaryName,
       );
   return { opened: "Report", report, summary };
+}
+
+/** The expander once the read of its commands answered: "Report" where the
+ * read was refused or is not the document a command stage writes. */
+export function runResultOpenedSettled(
+  opened: RunResultOpened,
+  read: PanelState<OutputContentResponse> | undefined,
+): RunResultOpened | undefined {
+  if (opened.opened === "Report" || read === undefined) return opened;
+  if (read.state === "Pending") return opened;
+  if (runResultCommandsRead(read) !== undefined) return opened;
+  return opened.report === undefined
+    ? undefined
+    : { opened: "Report", report: opened.report, summary: undefined };
+}
+
+/** The commands an answered read holds, and none where it holds no document. */
+export function runResultCommandsRead(
+  read: PanelState<OutputContentResponse>,
+): readonly RunCommand[] | undefined {
+  return read.state === "Ready" && read.value.encoding === "Utf8"
+    ? runResultCommandsOf(read.value.content)
+    : undefined;
 }
 
 export type RunCommandEnd = "Passed" | "Failed" | "Killed";

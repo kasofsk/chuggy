@@ -196,7 +196,7 @@ test("a check whose last command was cut says so and draws the report beneath it
   expect(texts).toEqual(["End cut", runResultCheckReport]);
 });
 
-test("a check whose commands are not listed, are refused or do not parse draws its report and no command", async () => {
+test("a check whose commands are not listed, are refused or do not parse gets Report and no command", async () => {
   const listed = runResultFailed(runResultCheckReport, [runResultCheckOutput]);
   const unlisted = await runPageDrawn(
     atlas,
@@ -218,8 +218,14 @@ test("a check whose commands are not listed, are refused or do not parse draws i
       ),
     );
     const detail = await opened(drawn, "Commands");
+    expect(screen.queryByRole("button", { name: "Hide commands" })).toBeNull();
     expect(detail.querySelector("li[data-end]")).toBeNull();
     expect(detail.textContent).toContain(runResultCheckReport);
+    await turned(() => {
+      screen.getByRole("button", { name: "Hide report" }).click();
+    });
+    expect(screen.queryByRole("button", { name: "Commands" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Report" })).not.toBeNull();
     cleanup();
   }
 });

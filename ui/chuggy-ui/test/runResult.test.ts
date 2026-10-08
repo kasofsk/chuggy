@@ -1,18 +1,24 @@
 import { expect, test } from "vitest";
 
-import type { ExecutionResponse } from "../../../src/contract/responses.ts";
+import type {
+  ExecutionResponse,
+  OutputContentResponse,
+} from "../../../src/contract/responses.ts";
 import { artifactPreviewJson } from "../app/core/artifactPreview.ts";
 import { runReasonCharsMax } from "../app/core/runReason.ts";
 import {
   runResultCommandsOf,
   runResultLineOf,
   runResultOpenedOf,
+  runResultOpenedSettled,
 } from "../app/core/runResult.ts";
+import type { RunResultOpened } from "../app/core/runResult.ts";
 import { runAttempt, runSummary } from "./runPageFixture.tsx";
 import {
   runResultCheckOutput,
   runResultCheckReport,
   runResultChecks,
+  runResultContent,
   runResultFailed,
   runResultReviewReport,
   runResultWorkSummary,
@@ -89,6 +95,42 @@ test("a command stage opens its commands only where its result lists them, and a
       }),
     )?.opened,
   ).toBe("Report");
+});
+
+test("a stage's commands become its Report once their read is refused or does not parse", () => {
+  const commands: RunResultOpened = {
+    opened: "Commands",
+    commands: 1,
+    report: runResultCheckReport,
+  };
+  const ready = (content: string) => ({
+    state: "Ready" as const,
+    value: runResultContent(content) as unknown as OutputContentResponse,
+    observedAtMs: undefined,
+  });
+  const report = {
+    opened: "Report",
+    report: runResultCheckReport,
+    summary: undefined,
+  };
+  expect(runResultOpenedSettled(commands, undefined)).toBe(commands);
+  expect(runResultOpenedSettled(commands, { state: "Pending" })).toBe(commands);
+  expect(
+    runResultOpenedSettled(
+      commands,
+      ready(JSON.stringify({ checks: runResultChecks })),
+    ),
+  ).toBe(commands);
+  expect(runResultOpenedSettled(commands, ready("not json"))).toEqual(report);
+  expect(
+    runResultOpenedSettled(commands, { state: "Absent", reason: "gone" }),
+  ).toEqual(report);
+  expect(
+    runResultOpenedSettled(
+      { ...commands, report: undefined },
+      { state: "Failed", reason: "refused" },
+    ),
+  ).toBeUndefined();
 });
 
 test("each command ends in one word, and only the failing one is open", () => {

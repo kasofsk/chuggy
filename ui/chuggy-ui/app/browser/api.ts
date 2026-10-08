@@ -153,16 +153,47 @@ export function usePanelResources<T>(
     signal: AbortSignal,
   ) => Promise<ApiResult<T>>,
 ): readonly PanelState<T>[] {
+  return usePanelResourcesRead(partition, kind, resources, read, true);
+}
+
+/** Several resources as `usePanelResources` reads them, answered from what a
+ * screen drawing one already read and never requested here, so one no screen
+ * has read is pending. */
+export function usePanelResourcesHeld<T>(
+  partition: PartitionIdentity,
+  kind: ProjectChangeKind,
+  resources: readonly string[],
+  read: (
+    resource: string,
+    ports: ApiPorts,
+    signal: AbortSignal,
+  ) => Promise<ApiResult<T>>,
+): readonly PanelState<T>[] {
+  return usePanelResourcesRead(partition, kind, resources, read, false);
+}
+
+function usePanelResourcesRead<T>(
+  partition: PartitionIdentity,
+  kind: ProjectChangeKind,
+  resources: readonly string[],
+  read: (
+    resource: string,
+    ports: ApiPorts,
+    signal: AbortSignal,
+  ) => Promise<ApiResult<T>>,
+  requested: boolean,
+): readonly PanelState<T>[] {
   const ports = useApiPorts();
   const queries = useQueries({
-    queries: resources.map((resource) =>
-      panelQueryOptions(
+    queries: resources.map((resource) => ({
+      ...panelQueryOptions(
         ports,
         projectResourceKey(partition, kind, resource),
         (readPorts, signal) => read(resource, readPorts, signal),
         undefined,
       ),
-    ),
+      enabled: requested,
+    })),
   });
   return queries.map((query) => panelQueryState<T>(query, undefined));
 }

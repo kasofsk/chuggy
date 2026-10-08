@@ -31,7 +31,8 @@ import { executionRequirementLabel } from "../../core/labels.ts";
 import { projectListFolded } from "../../core/projectQueryKeys.ts";
 import type { ProjectListChange } from "../../core/projectQueryKeys.ts";
 import { runReasonAttempt } from "../../core/runReason.ts";
-import { runResultLineOf, runResultOpenedOf } from "../../core/runResult.ts";
+import { runResultLineOf } from "../../core/runResult.ts";
+import type { RunResultOpened } from "../../core/runResult.ts";
 import { generationLabel, runSpendOf } from "../../core/runTotals.ts";
 import { runTranscriptAttempt } from "../../core/runTranscript.ts";
 import {
@@ -71,7 +72,7 @@ import { useRunReason } from "../RunEvidence.tsx";
 import { RunConversationFollowed } from "../RunTranscript.tsx";
 import { ExecutionDetail } from "../TicketExecutions.tsx";
 import { LandingBlock } from "./TicketLandings.tsx";
-import { RunResultOpenedBody } from "./TicketResult.tsx";
+import { RunResultOpenedBody, useRunResultOpened } from "./TicketResult.tsx";
 import { EmptyState } from "../ui/EmptyState.tsx";
 import { Figure } from "../ui/Figure.tsx";
 import {
@@ -164,8 +165,8 @@ function SetRowNote(props: {
 }
 
 /** What a row opens beneath itself: everything its run left, the run's
- * conversation alone, or its result whole. */
-type RowDetail = "Details" | "Conversation" | "Report" | "Commands";
+ * conversation alone, or its result whole under whichever label it has now. */
+type RowDetail = "Details" | "Conversation" | "Result";
 
 interface RowOpened {
   readonly execution: string;
@@ -194,11 +195,12 @@ function setRowExpand(
   chrome: RowChrome,
   execution: string,
   detail: RowDetail,
-  hide: string,
+  shown: { readonly label: string; readonly hide: string },
   children: ReactNode,
 ): LedgerRowExpand {
+  const { label, hide } = shown;
   return {
-    label: detail,
+    label,
     hide,
     open:
       chrome.opened?.execution === execution && chrome.opened.detail === detail,
@@ -213,16 +215,18 @@ function setRowExpand(
 function setRowResultExpands(
   chrome: RowChrome,
   execution: string,
-  read: ExecutionResponse | undefined,
+  opened: RunResultOpened | undefined,
 ): readonly LedgerRowExpand[] {
-  const opened = read === undefined ? undefined : runResultOpenedOf(read);
   if (opened === undefined) return [];
   return [
     setRowExpand(
       chrome,
       execution,
-      opened.opened,
-      opened.opened === "Commands" ? "Hide commands" : "Hide report",
+      "Result",
+      {
+        label: opened.opened,
+        hide: opened.opened === "Commands" ? "Hide commands" : "Hide report",
+      },
       <RunResultOpenedBody
         partition={chrome.partition}
         execution={execution}
@@ -238,6 +242,7 @@ function setRowExpands(
   chrome: RowChrome,
   execution: string,
   read: ExecutionResponse | undefined,
+  opened: RunResultOpened | undefined,
 ): readonly LedgerRowExpand[] {
   const { partition } = chrome;
   const attempt = read === undefined ? undefined : runTranscriptAttempt(read);
@@ -249,7 +254,7 @@ function setRowExpands(
             chrome,
             execution,
             "Conversation",
-            "Hide conversation",
+            { label: "Conversation", hide: "Hide conversation" },
             <RunConversationFollowed
               key={attempt.attempt}
               partition={partition}
@@ -259,12 +264,12 @@ function setRowExpands(
             />,
           ),
         ]),
-    ...setRowResultExpands(chrome, execution, read),
+    ...setRowResultExpands(chrome, execution, opened),
     setRowExpand(
       chrome,
       execution,
       "Details",
-      "Hide",
+      { label: "Details", hide: "Hide" },
       <ExecutionDetail
         partition={partition}
         execution={execution}
@@ -323,6 +328,7 @@ function SetRowRan(
     (ports) => apiExecution(ports, partition, first.execution),
   );
   const read = state.state === "Ready" ? state.value : undefined;
+  const opened = useRunResultOpened(partition, first.execution, read);
   return (
     <LedgerRow
       label={props.label}
@@ -355,7 +361,7 @@ function SetRowRan(
       {...(props.superseded === undefined
         ? {}
         : { superseded: props.superseded })}
-      expands={setRowExpands(props.chrome, first.execution, read)}
+      expands={setRowExpands(props.chrome, first.execution, read, opened)}
     />
   );
 }
