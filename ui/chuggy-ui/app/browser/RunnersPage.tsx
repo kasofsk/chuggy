@@ -127,8 +127,8 @@ function RunnerStep(props: {
 /**
  * What a minted token is handed over in: the steps that make a machine a
  * runner, each command copied by its own control. The list takes the focus as
- * it is drawn, because the press that drew it may have been of a control that
- * is gone.
+ * it is drawn only where nothing holds it, as after a press of a control that
+ * is gone, so a reader who has since moved on keeps their place.
  */
 function RunnerSteps(props: {
   readonly minted: WorkerPoolTokenResponse;
@@ -137,7 +137,10 @@ function RunnerSteps(props: {
   const nowMs = useNowMs();
   const steps = useRef<HTMLOListElement>(null);
   useEffect(() => {
-    steps.current?.focus();
+    const list = steps.current;
+    if (list === null) return;
+    const held = list.ownerDocument.activeElement;
+    if (held === null || held === list.ownerDocument.body) list.focus();
   }, []);
   const offered = runnerPackageOffered;
   const expires = new Date(props.minted.expiresAtMs).toISOString();

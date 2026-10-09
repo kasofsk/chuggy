@@ -255,6 +255,16 @@ test("the steps take the focus as they are drawn, since an empty roster's Add ru
   ).toBeTruthy();
 });
 
+test("the steps leave the focus where a reader has put it since the press", async () => {
+  await drawPage({ listed: none, written: [minted()] });
+  const elsewhere = document.body.appendChild(document.createElement("input"));
+  elsewhere.focus();
+  await press("Add runner");
+  expect(steps()).toBeTruthy();
+  expect(document.activeElement).toBe(elsewhere);
+  elsewhere.remove();
+});
+
 test("Done puts the steps away and reads the pools again, and an empty roster offers Add runner again", async () => {
   const sent = await drawPage({ listed: none, written: [minted()] });
   const before = sent.filter((one) => one.url.endsWith("/worker-pools")).length;

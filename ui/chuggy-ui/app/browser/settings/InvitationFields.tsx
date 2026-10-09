@@ -18,10 +18,20 @@ import { Input } from "../ui/Input.tsx";
 
 export const invitationLabelClassName = "text-sm font-medium text-ink-3";
 
+/** The line under a field: its fault, or until one stands what it holds. */
 export function InvitationFault(props: {
   readonly fault: string | undefined;
+  readonly about?: string | undefined;
+  readonly id?: string | undefined;
 }): ReactNode {
-  return <span className="text-xs text-tone-fail">{props.fault}</span>;
+  return (
+    <span
+      id={props.id}
+      className={`text-xs ${props.fault === undefined ? "font-regular" : "text-tone-fail"}`}
+    >
+      {props.fault ?? props.about}
+    </span>
+  );
 }
 
 export function InvitationText(props: {
@@ -46,12 +56,7 @@ export function InvitationText(props: {
         disabled={props.disabled}
         describedBy={faultId}
       />
-      <span
-        id={faultId}
-        className={`text-xs ${props.fault === undefined ? "font-regular" : "text-tone-fail"}`}
-      >
-        {props.fault ?? props.about}
-      </span>
+      <InvitationFault id={faultId} fault={props.fault} about={props.about} />
       {props.line === undefined ? null : (
         <span className="text-xs font-regular">{props.line}</span>
       )}
