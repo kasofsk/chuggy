@@ -16,6 +16,12 @@
  * and among several it starts on nothing and the form sends nothing until the
  * reader says which.
  *
+ * A START IS ONLY FOR A READER WHO HAS SAID NOTHING. Once they pick an entry
+ * or type a name the field holds what they said, or nothing where the offer
+ * cannot hold it, whatever a later answer of either read makes the offer. A
+ * start put where the reader had spoken would be a workspace they did not
+ * choose, in a form they can send.
+ *
  * Either read failing leaves the field the free text it is without them, so a
  * failure costs nobody the form. The first read lists a bounded number of
  * workspaces and says where it was cut short, and an answer cut short leaves
@@ -142,64 +148,117 @@ export function projectCreationWorkspaceOffer(
   };
 }
 
-function projectCreationWorkspaceSame(
-  one: ProjectCreationWorkspaceEntry,
-  other: ProjectCreationWorkspaceEntry,
-): boolean {
-  return one.entry === "Held"
-    ? other.entry === "Held" && other.tenant === one.tenant
-    : other.entry === "New";
+type ProjectCreationWorkspaceChoice = Extract<
+  ProjectCreationWorkspaceOffer,
+  { readonly offer: "Choice" }
+>;
+
+/**
+ * What the reader last said of the workspace, nothing until they touch the
+ * field: the workspace they picked, the making of one and the name typed for
+ * it, or a name typed into the free text.
+ */
+export type ProjectCreationWorkspaceSaid =
+  | { readonly said: "Picked"; readonly tenant: string }
+  | { readonly said: "Making"; readonly name: string }
+  | { readonly said: "Typed"; readonly name: string }
+  | undefined;
+
+/** The name what the reader said carries, which a pick's is its workspace's. */
+function projectCreationWorkspaceSaidName(
+  said: ProjectCreationWorkspaceSaid,
+): string | undefined {
+  if (said === undefined) return undefined;
+  return said.said === "Picked" ? said.tenant : said.name;
 }
 
-/** What the reader did to the field: the entry they picked and the name they
- * typed, each nothing until they do. */
-export interface ProjectCreationWorkspaceEdits {
-  readonly picked: ProjectCreationWorkspaceEntry | undefined;
-  readonly typed: string | undefined;
-}
-
-/** The edits after a pick. Picking a workspace drops a name typed for a new
- * one, so no later state of the field sends a name its reader left. */
-export function projectCreationWorkspacePicked(
-  edits: ProjectCreationWorkspaceEdits,
-  picked: ProjectCreationWorkspaceEntry,
-): ProjectCreationWorkspaceEdits {
-  return { picked, typed: picked.entry === "New" ? edits.typed : undefined };
-}
-
-/** The entry the form stands on, or none: the reader's own pick while the
- * choice holds it, and where the choice starts otherwise. */
-export function projectCreationWorkspaceChosen(
-  offer: Extract<ProjectCreationWorkspaceOffer, { readonly offer: "Choice" }>,
-  picked: ProjectCreationWorkspaceEntry | undefined,
+function projectCreationWorkspaceEntryHeld(
+  offer: ProjectCreationWorkspaceChoice,
+  tenant: string,
 ): ProjectCreationWorkspaceEntry | undefined {
-  if (picked === undefined) return offer.start;
-  return (
-    offer.entries.find((entry) =>
-      projectCreationWorkspaceSame(entry, picked),
-    ) ?? offer.start
+  return offer.entries.find(
+    (entry) => entry.entry === "Held" && entry.tenant === tenant,
   );
+}
+
+function projectCreationWorkspaceEntryNew(
+  offer: ProjectCreationWorkspaceChoice,
+): ProjectCreationWorkspaceEntry | undefined {
+  return offer.entries.find((entry) => entry.entry === "New");
+}
+
+/**
+ * The entry the form stands on, or none. It is where the choice starts only
+ * for a reader who has said nothing, and after that the entry that holds what
+ * they said: the workspace picked or typed, or the making of one for a name
+ * no entry is called.
+ */
+export function projectCreationWorkspaceChosen(
+  offer: ProjectCreationWorkspaceChoice,
+  said: ProjectCreationWorkspaceSaid,
+): ProjectCreationWorkspaceEntry | undefined {
+  if (said === undefined) return offer.start;
+  switch (said.said) {
+    case "Picked":
+      return projectCreationWorkspaceEntryHeld(offer, said.tenant);
+    case "Making":
+      return projectCreationWorkspaceEntryNew(offer);
+    case "Typed":
+      return (
+        projectCreationWorkspaceEntryHeld(offer, said.name) ??
+        (said.name === "" ? undefined : projectCreationWorkspaceEntryNew(offer))
+      );
+  }
 }
 
 /**
  * The workspace name the form sends, and the name its typed field holds where
  * one is drawn. It is empty where nothing is offered yet or no entry is
- * chosen, which no form sends.
+ * chosen, which no form sends, and free text holds its start only until the
+ * reader has said something.
  */
 export function projectCreationWorkspaceTenant(
   offer: ProjectCreationWorkspaceOffer,
-  edits: ProjectCreationWorkspaceEdits,
+  said: ProjectCreationWorkspaceSaid,
 ): string {
   switch (offer.offer) {
     case "Pending":
     case "Withheld":
       return "";
     case "Typed":
-      return edits.typed ?? offer.name;
+      return projectCreationWorkspaceSaidName(said) ?? offer.name;
     case "Choice": {
-      const chosen = projectCreationWorkspaceChosen(offer, edits.picked);
+      const chosen = projectCreationWorkspaceChosen(offer, said);
       if (chosen === undefined) return "";
-      return chosen.entry === "Held" ? chosen.tenant : (edits.typed ?? "");
+      return chosen.entry === "Held"
+        ? chosen.tenant
+        : (projectCreationWorkspaceSaidName(said) ?? "");
     }
   }
+}
+
+/** What the reader says by picking an entry. The making of a workspace keeps
+ * the name the form already holds for it, and has none otherwise. */
+export function projectCreationWorkspacePicked(
+  offer: ProjectCreationWorkspaceChoice,
+  said: ProjectCreationWorkspaceSaid,
+  picked: ProjectCreationWorkspaceEntry,
+): ProjectCreationWorkspaceSaid {
+  if (picked.entry === "Held") return { said: "Picked", tenant: picked.tenant };
+  const making = projectCreationWorkspaceChosen(offer, said)?.entry === "New";
+  return {
+    said: "Making",
+    name: making ? projectCreationWorkspaceTenant(offer, said) : "",
+  };
+}
+
+/** What the reader says by typing into the box an offer draws: under a choice
+ * the name of the workspace being made, and in free text the workspace. */
+export function projectCreationWorkspaceNamed(
+  offer: ProjectCreationWorkspaceOffer,
+  name: string,
+): ProjectCreationWorkspaceSaid {
+  return offer.offer === "Choice"
+    ? { said: "Making", name }
+    : { said: "Typed", name };
 }

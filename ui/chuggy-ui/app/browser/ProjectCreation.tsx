@@ -38,14 +38,15 @@ import type {
 import {
   projectCreationWorkspaceChosen,
   projectCreationWorkspaceEntryText,
+  projectCreationWorkspaceNamed,
   projectCreationWorkspaceOffer,
   projectCreationWorkspacePicked,
   projectCreationWorkspaceTenant,
 } from "../core/projectCreationWorkspace.ts";
 import type {
   ProjectCreationWorkspaceDrawn,
-  ProjectCreationWorkspaceEdits,
   ProjectCreationWorkspaceOffer,
+  ProjectCreationWorkspaceSaid,
 } from "../core/projectCreationWorkspace.ts";
 import { projectsInventoryKey } from "../core/projectQueryKeys.ts";
 import { useApiPorts, usePanelCallerResource } from "./api.ts";
@@ -109,8 +110,8 @@ function ProjectCreationName(props: ProjectCreationNameProps): ReactNode {
 }
 
 interface ProjectCreationWorkspaceProps {
-  readonly edits: ProjectCreationWorkspaceEdits;
-  readonly onEdit: (edits: ProjectCreationWorkspaceEdits) => void;
+  readonly said: ProjectCreationWorkspaceSaid;
+  readonly onSay: (said: ProjectCreationWorkspaceSaid) => void;
 }
 
 /** The choice, its entries told apart by their place in it because a
@@ -124,8 +125,8 @@ function ProjectCreationWorkspaceChoice(
     >;
   },
 ): ReactNode {
-  const { offer, edits, onEdit } = props;
-  const chosen = projectCreationWorkspaceChosen(offer, edits.picked);
+  const { offer, said, onSay } = props;
+  const chosen = projectCreationWorkspaceChosen(offer, said);
   return (
     <div className={fieldClassName}>
       <span>Workspace</span>
@@ -144,16 +145,16 @@ function ProjectCreationWorkspaceChoice(
           onChoose={(at) => {
             const picked = offer.entries[Number(at)];
             if (picked !== undefined)
-              onEdit(projectCreationWorkspacePicked(edits, picked));
+              onSay(projectCreationWorkspacePicked(offer, said, picked));
           }}
         />
       </div>
       {chosen?.entry === "New" ? (
         <ProjectCreationNameBox
           label="Workspace"
-          value={projectCreationWorkspaceTenant(offer, edits)}
-          onChange={(typed) => {
-            onEdit({ ...edits, typed });
+          value={projectCreationWorkspaceTenant(offer, said)}
+          onChange={(name) => {
+            onSay(projectCreationWorkspaceNamed(offer, name));
           }}
         />
       ) : null}
@@ -166,7 +167,7 @@ function ProjectCreationWorkspace(
     readonly offer: ProjectCreationWorkspaceDrawn;
   },
 ): ReactNode {
-  const { offer, edits, onEdit } = props;
+  const { offer, said, onSay } = props;
   switch (offer.offer) {
     case "Pending":
       return (
@@ -179,9 +180,9 @@ function ProjectCreationWorkspace(
       return (
         <ProjectCreationName
           label="Workspace"
-          value={projectCreationWorkspaceTenant(offer, edits)}
-          onChange={(typed) => {
-            onEdit({ ...edits, typed });
+          value={projectCreationWorkspaceTenant(offer, said)}
+          onChange={(name) => {
+            onSay(projectCreationWorkspaceNamed(offer, name));
           }}
         />
       );
@@ -189,8 +190,8 @@ function ProjectCreationWorkspace(
       return (
         <ProjectCreationWorkspaceChoice
           offer={offer}
-          edits={edits}
-          onEdit={onEdit}
+          said={said}
+          onSay={onSay}
         />
       );
   }
@@ -236,10 +237,8 @@ function useProjectCreationSend(fields: ProjectCreationFields): {
 function ProjectCreationForm(props: {
   readonly offer: ProjectCreationWorkspaceDrawn;
 }): ReactNode {
-  const [workspace, setWorkspace] = useState<ProjectCreationWorkspaceEdits>({
-    picked: undefined,
-    typed: undefined,
-  });
+  const [workspace, setWorkspace] =
+    useState<ProjectCreationWorkspaceSaid>(undefined);
   const [project, setProject] = useState("");
   const fields: ProjectCreationFields = {
     tenant: projectCreationWorkspaceTenant(props.offer, workspace),
@@ -250,8 +249,8 @@ function ProjectCreationForm(props: {
     <div className="grid w-full max-w-aside gap-3">
       <ProjectCreationWorkspace
         offer={props.offer}
-        edits={workspace}
-        onEdit={setWorkspace}
+        said={workspace}
+        onSay={setWorkspace}
       />
       <ProjectCreationName
         label="Project"

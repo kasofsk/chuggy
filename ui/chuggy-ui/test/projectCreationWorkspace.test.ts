@@ -3,7 +3,11 @@
  * starts under each pair of answers, which is on nothing wherever starting
  * would be a guess, the empty state each reader with nothing to choose is
  * drawn, the free text a failed or cut-short read leaves, and the name the
- * form sends under the reader's own edits.
+ * form sends.
+ *
+ * A start is asserted only for a reader who has said nothing. After a pick or
+ * a typed name, each offer is asserted to hold what the reader said or
+ * nothing, and never its start.
  */
 
 import { expect, test } from "vitest";
@@ -17,6 +21,7 @@ import type { PanelState } from "../app/core/freshness.ts";
 import {
   projectCreationWorkspaceChosen,
   projectCreationWorkspaceEntryText,
+  projectCreationWorkspaceNamed,
   projectCreationWorkspaceOffer,
   projectCreationWorkspacePicked,
   projectCreationWorkspaceTenant,
@@ -24,6 +29,7 @@ import {
 import type {
   ProjectCreationWorkspaceEntry,
   ProjectCreationWorkspaceOffer,
+  ProjectCreationWorkspaceSaid,
 } from "../app/core/projectCreationWorkspace.ts";
 
 function ready<T>(value: T): PanelState<T> {
@@ -80,8 +86,6 @@ function choice(
 ): ProjectCreationWorkspaceOffer {
   return { offer: "Choice", entries, start };
 }
-
-const untouched = { picked: undefined, typed: undefined };
 
 const several = listed(administered("acme"), administered("northwind"));
 const severalEntries = [held("acme"), held("northwind")];
@@ -263,99 +267,153 @@ const offered = {
 
 const unstarted = { ...offered, start: undefined };
 
-test("the form stands where the choice starts until the reader picks, and on their pick after", () => {
+/** The same choice to a reader who may make no workspace. */
+const unmakeable = { ...offered, entries: [held("acme"), held("northwind")] };
+
+/** Free text that starts on a workspace, as under an address naming one. */
+const freeText = { offer: "Typed", name: "acme" } as const;
+
+function picked(tenant: string): ProjectCreationWorkspaceSaid {
+  return { said: "Picked", tenant };
+}
+
+function making(name: string): ProjectCreationWorkspaceSaid {
+  return { said: "Making", name };
+}
+
+function typed(name: string): ProjectCreationWorkspaceSaid {
+  return { said: "Typed", name };
+}
+
+test("the form stands where the choice starts until the reader says something, and on what they said after", () => {
   expect(projectCreationWorkspaceChosen(offered, undefined)).toStrictEqual(
     held("northwind"),
   );
   expect(projectCreationWorkspaceChosen(unstarted, undefined)).toBeUndefined();
   for (const start of [offered, unstarted]) {
-    expect(projectCreationWorkspaceChosen(start, held("acme"))).toStrictEqual(
+    expect(projectCreationWorkspaceChosen(start, picked("acme"))).toStrictEqual(
       held("acme"),
     );
-    expect(projectCreationWorkspaceChosen(start, creation)).toStrictEqual(
+    expect(projectCreationWorkspaceChosen(start, making(""))).toStrictEqual(
       creation,
     );
   }
 });
 
-test("a pick the choice no longer holds falls back to where it starts", () => {
-  expect(projectCreationWorkspaceChosen(offered, held("gone"))).toStrictEqual(
-    held("northwind"),
-  );
-  expect(
-    projectCreationWorkspaceChosen(unstarted, held("gone")),
-  ).toBeUndefined();
-  expect(
-    projectCreationWorkspaceChosen(
-      { ...offered, entries: [held("acme"), held("northwind")] },
-      creation,
-    ),
-  ).toStrictEqual(held("northwind"));
+test.each([
+  ["a picked workspace the choice has lost", offered, picked("gone")],
+  ["the making of a workspace the reader may not make", unmakeable, making("")],
+  ["a name typed for a workspace they may not make", unmakeable, making("x")],
+  ["such a name that an entry is called", unmakeable, making("acme")],
+] as const)(
+  "%s leaves no entry chosen and nothing to send, whatever the choice starts on",
+  (_, offer, said) => {
+    expect(offer.start).toStrictEqual(held("northwind"));
+    expect(projectCreationWorkspaceChosen(offer, said)).toBeUndefined();
+    expect(projectCreationWorkspaceTenant(offer, said)).toBe("");
+  },
+);
+
+test("a name typed into free text is the entry called that under a choice, whatever the choice starts on and whether or not one may be made", () => {
+  for (const offer of [offered, unstarted, unmakeable]) {
+    expect(projectCreationWorkspaceChosen(offer, typed("acme"))).toStrictEqual(
+      held("acme"),
+    );
+    expect(projectCreationWorkspaceTenant(offer, typed("acme"))).toBe("acme");
+  }
 });
 
-test("picking a workspace drops a name typed for a new one, and picking the making of one keeps it", () => {
-  const typing = { picked: creation, typed: "abandoned" };
-  expect(projectCreationWorkspacePicked(typing, held("acme"))).toStrictEqual({
-    picked: held("acme"),
-    typed: undefined,
-  });
-  expect(projectCreationWorkspacePicked(typing, creation)).toStrictEqual(
-    typing,
+test("a name typed into free text that no entry is called is held by the making of a workspace, and by no entry where none may be made", () => {
+  expect(
+    projectCreationWorkspaceChosen(offered, typed("brand-new")),
+  ).toStrictEqual(creation);
+  expect(projectCreationWorkspaceTenant(offered, typed("brand-new"))).toBe(
+    "brand-new",
   );
-  expect(projectCreationWorkspacePicked(untouched, creation)).toStrictEqual({
-    picked: creation,
-    typed: undefined,
-  });
+  expect(
+    projectCreationWorkspaceChosen(unmakeable, typed("brand-new")),
+  ).toBeUndefined();
+  expect(projectCreationWorkspaceTenant(unmakeable, typed("brand-new"))).toBe(
+    "",
+  );
+});
+
+test("free text the reader emptied is no entry under a choice, not its start and not the making of a workspace", () => {
+  expect(projectCreationWorkspaceChosen(offered, typed(""))).toBeUndefined();
+  expect(projectCreationWorkspaceTenant(offered, typed(""))).toBe("");
+});
+
+test.each([
+  ["a picked workspace", picked("northwind"), "northwind"],
+  ["the making of a workspace with no name typed", making(""), ""],
+  [
+    "the name typed for a workspace being made",
+    making("brand-new"),
+    "brand-new",
+  ],
+  ["a name typed into it", typed("zephyr"), "zephyr"],
+  ["a name the reader emptied", typed(""), ""],
+] as const)(
+  "free text holds %s in place of the workspace it starts on",
+  (_, said, name) => {
+    expect(projectCreationWorkspaceTenant(freeText, said)).toBe(name);
+  },
+);
+
+test("free text holds the workspace it starts on only for a reader who has said nothing", () => {
+  expect(projectCreationWorkspaceTenant(freeText, undefined)).toBe("acme");
+});
+
+test("picking a workspace says that workspace and no name for a new one", () => {
+  for (const said of [undefined, making("abandoned"), typed("abandoned")])
+    expect(
+      projectCreationWorkspacePicked(offered, said, held("acme")),
+    ).toStrictEqual(picked("acme"));
+});
+
+test("picking the making of a workspace keeps the name the form already holds for it", () => {
+  for (const said of [making("kept"), typed("kept")])
+    expect(
+      projectCreationWorkspacePicked(offered, said, creation),
+    ).toStrictEqual(making("kept"));
+});
+
+test("picking the making of a workspace from anywhere else starts it with no name", () => {
+  for (const said of [undefined, picked("acme"), typed("acme")])
+    expect(
+      projectCreationWorkspacePicked(offered, said, creation),
+    ).toStrictEqual(making(""));
+});
+
+test("typing says the name of the workspace being made under a choice, and the workspace in free text", () => {
+  expect(projectCreationWorkspaceNamed(offered, "brand-new")).toStrictEqual(
+    making("brand-new"),
+  );
+  expect(projectCreationWorkspaceNamed(freeText, "zephyr")).toStrictEqual(
+    typed("zephyr"),
+  );
 });
 
 test("the form sends the workspace it stands on, and the typed name where it stands on making one", () => {
-  expect(projectCreationWorkspaceTenant(offered, untouched)).toBe("northwind");
-  expect(
-    projectCreationWorkspaceTenant(offered, {
-      picked: held("acme"),
-      typed: "typed-and-left",
-    }),
-  ).toBe("acme");
-  expect(
-    projectCreationWorkspaceTenant(offered, {
-      picked: creation,
-      typed: "brand-new",
-    }),
-  ).toBe("brand-new");
-  expect(
-    projectCreationWorkspaceTenant(offered, {
-      picked: creation,
-      typed: undefined,
-    }),
-  ).toBe("");
-});
-
-test("a choice standing on no entry sends no workspace, whatever was typed", () => {
-  expect(projectCreationWorkspaceTenant(unstarted, untouched)).toBe("");
-  expect(
-    projectCreationWorkspaceTenant(unstarted, {
-      picked: undefined,
-      typed: "typed-and-left",
-    }),
-  ).toBe("");
-});
-
-test("free text sends what the reader typed, and what it started on until they type", () => {
-  const typed = { offer: "Typed", name: "northwind" } as const;
-  expect(projectCreationWorkspaceTenant(typed, untouched)).toBe("northwind");
-  expect(
-    projectCreationWorkspaceTenant(typed, { picked: undefined, typed: "" }),
-  ).toBe("");
-  expect(
-    projectCreationWorkspaceTenant(typed, { picked: undefined, typed: "acme" }),
-  ).toBe("acme");
-});
-
-test("nothing offered yet sends no workspace, whatever was typed", () => {
+  expect(projectCreationWorkspaceTenant(offered, undefined)).toBe("northwind");
+  expect(projectCreationWorkspaceTenant(offered, picked("acme"))).toBe("acme");
+  expect(projectCreationWorkspaceTenant(offered, making("brand-new"))).toBe(
+    "brand-new",
+  );
+  expect(projectCreationWorkspaceTenant(offered, making(""))).toBe("");
   expect(
     projectCreationWorkspaceTenant(
-      { offer: "Pending" },
-      { picked: held("acme"), typed: "acme" },
+      { offer: "Choice", entries: [creation], start: creation },
+      undefined,
     ),
   ).toBe("");
+});
+
+test("a choice standing on no entry sends no workspace", () => {
+  expect(projectCreationWorkspaceTenant(unstarted, undefined)).toBe("");
+});
+
+test("nothing offered yet sends no workspace, whatever the reader said", () => {
+  for (const said of [picked("acme"), making("acme"), typed("acme")])
+    expect(projectCreationWorkspaceTenant({ offer: "Pending" }, said)).toBe("");
 });
