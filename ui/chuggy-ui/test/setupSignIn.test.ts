@@ -446,10 +446,12 @@ test("a listener that is running and never says where it listens is waited on fo
   expect(machine.nowMs - began).toBe(setupSignInStartSecsMax * 1_000);
 });
 
-test("a listener that cannot be started is a failure, and nothing is opened", async () => {
+test("a listener that cannot be started is a failure at once, and nothing is opened", async () => {
   const machine = setupMachine();
   machine.spawning = "Unstarted";
+  const began = machine.nowMs;
   expect(await machine.command(signIn)).toEqual({ report: "Faulted" });
+  expect(machine.nowMs - began).toBe(0);
   expect(machine.launched).toEqual([]);
   expect([...machine.files.keys()]).toEqual([setupFiles.session]);
 });

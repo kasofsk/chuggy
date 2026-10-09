@@ -305,7 +305,7 @@ async function setupCallbackExchanged(
         ? "Mismatched"
         : "ExchangeFailed";
     if (opened.store.read(sessionRefreshTokenKey) === null) return "NoRenewal";
-    const workspaces = await setupWorkspacesRead(ports, opened);
+    const workspaces = await setupWorkspacesRead(opened);
     return workspaces.read === "Answered" ? "SignedIn" : "WorkspacesUnread";
   } finally {
     setupLockReleased(ports);

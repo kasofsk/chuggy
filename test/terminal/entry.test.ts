@@ -12,7 +12,7 @@
  */
 
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
@@ -146,6 +146,11 @@ async function sessionRun(): Promise<Session> {
   await signIn(session);
   installation.renewable = true;
   await bare();
+  installation.serves = false;
+  await signIn(session);
+  await bare();
+  installation.serves = true;
+  rmSync(join(session.machine.directory, "session.json"));
   await signIn(session);
   await bare();
   await bare();
@@ -183,11 +188,22 @@ test("across every way a sign-in ends, nothing the issuer handed out and nothing
       [1, "found: the sign-in server did not accept the answer"],
       [0, "found: the sign-in was allowed without leave to stay signed in"],
       [0, `site: ${installation.site}, not signed in`],
+      [
+        1,
+        "found: the sign-in went through, but the site did not say which workspaces are yours",
+      ],
+      [1, "found: the site did not say which workspaces are yours (Fault)"],
       [0, signedIn],
       [0, signedIn],
       [0, signedIn],
       [0, signedIn],
     ],
+  );
+  assert.deepEqual(
+    runs.flatMap((done) =>
+      done.lines.filter((text) => text.startsWith("workspace: ")),
+    ),
+    ["workspace: acme", "workspace: acme", "workspace: acme"],
   );
   for (const done of runs) dialect(done, done.stdout);
 

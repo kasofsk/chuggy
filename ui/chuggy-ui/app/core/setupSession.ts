@@ -11,6 +11,7 @@
  * a report.
  */
 
+import { apiCallerTenants } from "./accessRoutes.ts";
 import { apiPortsOver } from "./apiPorts.ts";
 import type { ApiFailure, ApiPorts } from "./apiRequest.ts";
 import {
@@ -170,19 +171,16 @@ export function setupSessionOpened(
 export type SetupWorkspaces =
   | {
       readonly read: "Answered";
-      readonly workspaces: readonly string[] | undefined;
+      readonly workspaces: readonly string[];
       readonly truncated: boolean;
     }
   | { readonly read: "Unread"; readonly outcome: ApiFailure["outcome"] };
 
 /** The read that confirms a sign-in: an issuer can hand out a token the site then refuses. */
 export async function setupWorkspacesRead(
-  ports: SetupPorts,
   opened: SetupSessionOpened,
 ): Promise<SetupWorkspaces> {
-  if (ports.callerTenants === undefined)
-    return { read: "Answered", workspaces: undefined, truncated: false };
-  const read = await ports.callerTenants(opened.api);
+  const read = await apiCallerTenants(opened.api);
   if (read.outcome !== "Ok") return { read: "Unread", outcome: read.outcome };
   return {
     read: "Answered",

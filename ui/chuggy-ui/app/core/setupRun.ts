@@ -88,7 +88,7 @@ async function setupStanding(
     return opened.tokenAsked() === "Refused"
       ? signedOut
       : { report: "IssuerUnanswered", site, asked };
-  const workspaces = await setupWorkspacesRead(ports, opened);
+  const workspaces = await setupWorkspacesRead(opened);
   if (workspaces.read === "Unread")
     return {
       report: "WorkspacesUnread",

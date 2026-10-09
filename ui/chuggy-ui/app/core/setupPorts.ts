@@ -9,9 +9,7 @@
  * store is synchronous.
  */
 
-import type { AccessCallerTenants } from "../../../../src/contract/accessPlane.ts";
-
-import type { ApiFetchPort, ApiPorts, ApiResult } from "./apiRequest.ts";
+import type { ApiFetchPort } from "./apiRequest.ts";
 import type { PkceDigestPort } from "./pkce.ts";
 import type { FetchJsonPort } from "./sessionHolder.ts";
 
@@ -90,11 +88,6 @@ export interface SetupSurroundings {
   readonly directory: string;
 }
 
-/** The site's answer about the workspaces a role names the caller in. */
-export type SetupWorkspacesRead = (
-  ports: ApiPorts,
-) => Promise<ApiResult<AccessCallerTenants>>;
-
 export interface SetupPorts {
   readonly nowMs: () => number;
   readonly sleepMs: (ms: number, signal?: AbortSignal) => Promise<void>;
@@ -108,6 +101,4 @@ export interface SetupPorts {
   readonly listen: SetupListenPort;
   readonly process: SetupProcessPort;
   readonly surroundings: SetupSurroundings;
-  /** The workspaces read, where the run was given one; without it a sign-in is taken on the issuer's word alone. */
-  readonly callerTenants?: SetupWorkspacesRead;
 }

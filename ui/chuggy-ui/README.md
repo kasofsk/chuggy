@@ -144,14 +144,14 @@ node chuggy-setup.mjs --site https://<site>
 
 It is one file with nothing to install. Every line it prints is a word from a
 closed set, a colon and its text; the last is `next:` and names the exact
-command to run after it. It exits 0 where that line is to be followed, 1 where
-it failed and 2 where it was asked wrongly.
+command to run after it, or says to stop. It exits 0 where that line is to be
+followed, 1 where it failed and 2 where it was asked wrongly.
 
-Run bare it changes nothing: it says whether it is signed in and which
-workspaces the person administers. `sign-in` opens the installation's sign-in
-in a browser and takes the answer on `127.0.0.1`, as the public client
+Run bare it changes nothing at the site: it says whether it is signed in and
+which workspaces the person administers. `sign-in` opens the installation's
+sign-in in a browser and takes the answer on `127.0.0.1`, as the public client
 `chuggy-setup`. It remembers the site and the renewal token in the person's
-home directory and prints neither.
+home directory and never prints the token.
 
 ## The session
 

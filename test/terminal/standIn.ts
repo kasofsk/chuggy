@@ -208,8 +208,8 @@ function siteHandler(standIn: StandIn, issuer: Issuer) {
       if (issuer.access.has(bearer))
         sent(response, 200, {
           tenants: [
-            { tenant: "acme", roles: ["Owner"], administer: true },
-            { tenant: "guest", roles: [], administer: false },
+            { tenant: "acme", roles: ["Admin"], administer: true },
+            { tenant: "guest", roles: ["Member"], administer: false },
           ],
           truncated: false,
         });

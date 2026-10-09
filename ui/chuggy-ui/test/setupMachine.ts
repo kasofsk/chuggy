@@ -11,11 +11,6 @@
  * when shown a spent one, which is what the real one does.
  */
 
-import {
-  accessCallerTenantsSchema,
-  accessPlanePath,
-} from "../../../src/contract/accessPlane.ts";
-import { apiRead } from "../app/core/apiRequest.ts";
 import type { ApiFetchInit } from "../app/core/apiRequest.ts";
 import type {
   FetchJsonInit,
@@ -84,7 +79,7 @@ export interface SetupMachine {
   /** The arguments of each run the program started for itself, and of each command it launched. */
   readonly detached: (readonly string[])[];
   readonly launched: (readonly string[])[];
-  /** The processes running now, a suite's own among them. */
+  /** The processes running now, a suite's own among them; a number that names no one process is answered as running, as a system answers for a group. */
   readonly alive: Set<number>;
   /** Every renewal token the issuer handed out, and the one it would accept now. */
   readonly issued: string[];
@@ -323,7 +318,7 @@ function portsOf(inner: Inner, pid: number): SetupPorts {
     },
     process: {
       pid,
-      alive: (asked) => machine.alive.has(asked),
+      alive: (asked) => asked <= 0 || machine.alive.has(asked),
       detach: (argv) => {
         machine.detached.push(argv);
         if (machine.spawning === "Unstarted") return undefined;
@@ -344,12 +339,6 @@ function portsOf(inner: Inner, pid: number): SetupPorts {
       browser: machine.browser,
       directory: machineDirectory,
     },
-    callerTenants: (api) =>
-      apiRead(
-        api,
-        { method: "GET", path: accessPlanePath("callerTenants", {}) },
-        (value) => accessCallerTenantsSchema.parse(value),
-      ),
   };
 }
 

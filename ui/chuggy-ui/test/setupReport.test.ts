@@ -55,7 +55,6 @@ const roster: {
       truncated: false,
     },
     { report: "SignedIn", site, workspaces: [], truncated: true },
-    { report: "SignedIn", site, workspaces: undefined, truncated: false },
   ],
   WorkspacesUnread: [
     { report: "WorkspacesUnread", site, outcome: "Fault", asked: "Status" },

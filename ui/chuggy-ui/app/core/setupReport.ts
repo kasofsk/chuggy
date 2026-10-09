@@ -65,8 +65,8 @@ export type SetupReport =
   | {
       readonly report: "SignedIn";
       readonly site: string;
-      /** The workspaces the person administers, or nothing where the site was not asked. */
-      readonly workspaces: readonly string[] | undefined;
+      /** The workspaces the person administers. */
+      readonly workspaces: readonly string[];
       readonly truncated: boolean;
     }
   | {
@@ -174,10 +174,9 @@ function setupRuleLines(directory: string): readonly SetupLine[] {
 }
 
 function setupWorkspaceLines(
-  workspaces: readonly string[] | undefined,
+  workspaces: readonly string[],
   truncated: boolean,
 ): readonly SetupLine[] {
-  if (workspaces === undefined) return [];
   const listed: SetupLine[] = workspaces.map((name) => ["workspace", name]);
   if (listed.length === 0)
     listed.push(["found", "no workspace is yours to administer yet"]);

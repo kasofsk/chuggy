@@ -84,7 +84,11 @@ test("a second run renews with what the first stored, and a third with what the 
   const first = remembered(machine).refreshToken;
   const second = await machine.run([]);
   assert.equal(second.code, 0, second.stdout);
-  assert.equal(second.lines[0], `site: ${installation.site}, signed in`);
+  assert.deepEqual(second.lines, [
+    `site: ${installation.site}, signed in`,
+    "workspace: acme",
+    "next: stop",
+  ]);
   assert.ok(remembered(machine).refreshToken !== first);
   assert.ok(remembered(machine).refreshToken === installation.renewal());
   const third = await machine.run([]);
@@ -115,6 +119,40 @@ test("a renewal the issuer refuses is not signed in and not a failure, and sign-
   writeFileSync(join(machine.directory, "session.json"), fresh);
   const ended = await machine.run([]);
   assert.equal(ended.lines[0], `site: ${installation.site}, not signed in`);
+});
+
+test("a sign-in the site does not confirm is a failure that is kept, and the next command confirms it once the site answers", async () => {
+  const { installation, machine } = await installed();
+  installation.serves = false;
+  const done = await signedIn(installation, machine, async (opened) => {
+    assert.equal((await person(opened)).status, 400);
+  });
+  assert.equal(done.code, 1);
+  assert.deepEqual(done.lines.slice(0, -1), [
+    `site: ${installation.site}, not signed in`,
+    "found: the sign-in went through, but the site did not say which workspaces are yours",
+  ]);
+  assert.match(done.lines.at(-1) ?? "", /^next: node \S+$/u);
+  assert.ok(remembered(machine).refreshToken === installation.renewal());
+  const unread = await machine.run([]);
+  assert.equal(unread.code, 1);
+  assert.deepEqual(unread.lines.slice(0, -1), [
+    `site: ${installation.site}, sign-in not confirmed`,
+    "found: the site did not say which workspaces are yours (Fault)",
+  ]);
+  assert.match(unread.lines.at(-1) ?? "", /^next: node \S+$/u);
+  installation.serves = true;
+  const confirmed = await machine.run([]);
+  assert.equal(confirmed.code, 0);
+  assert.deepEqual(confirmed.lines, [
+    `site: ${installation.site}, signed in`,
+    "workspace: acme",
+    "next: stop",
+  ]);
+  assert.equal(
+    installation.asked.filter((line) => line.includes("/oauth2/auth")).length,
+    1,
+  );
 });
 
 test("a sign-in declined in the browser is said to be, and nothing is exchanged", async () => {
