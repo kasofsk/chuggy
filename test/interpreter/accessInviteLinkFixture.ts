@@ -22,6 +22,7 @@ import {
   type AccessInviteLinkService,
   type AccessInviteLinkStore,
   type AccessInviteLinkStored,
+  type AccessInviteLinkUsed,
   type AccessInviteLinkWritten,
   type AccessWorkspaceLinkStored,
 } from "../../src/interpreter/accessInviteLink.ts";
@@ -262,6 +263,31 @@ function workspaceLinkStore(
   };
 }
 
+/** The used link `digest` names whose user is `subject`, whatever the clock says. */
+function inviteLinkUsedBy(
+  memory: InviteLinkMemory,
+  digest: string,
+  subject: string,
+): Promise<AccessInviteLinkUsed | undefined> {
+  const row = memory.rows.find(
+    (one) => one.digest === digest && one.used?.by === subject,
+  );
+  if (row?.used === undefined) return Promise.resolve(undefined);
+  if (row.tenant !== undefined)
+    return Promise.resolve({
+      kind: "Tenant",
+      tenant: row.tenant,
+      role: row.role,
+      projects: row.projects,
+    } as const);
+  if (row.used.workspace === undefined)
+    throw new RangeError("workspace link: a used link names no use");
+  return Promise.resolve({
+    kind: "Workspace",
+    workspace: row.used.workspace,
+  } as const);
+}
+
 function inviteLinkStore(memory: InviteLinkMemory): AccessInviteLinkStore {
   const find = (tenant: string, link: string) =>
     inviteLinksOf(memory, tenant).find((row) => row.link === link);
@@ -314,6 +340,7 @@ function inviteLinkStore(memory: InviteLinkMemory): AccessInviteLinkStore {
       if (row === undefined) return Promise.resolve(undefined);
       return Promise.resolve(row.tenant === undefined ? "Workspace" : "Tenant");
     },
+    usedBy: (digest, subject) => inviteLinkUsedBy(memory, digest, subject),
     ...workspaceLinkStore(memory),
     restore: (link) => {
       const row = memory.rows.find((one) => one.link === link);
@@ -333,6 +360,28 @@ export function inviteLinkMemory(): InviteLinkMemory {
   };
   const full = memory as InviteLinkMemory;
   return Object.assign(full, { store: inviteLinkStore(full) });
+}
+
+/** The store of `links`, its first `presented` running `between` once it has read and before it answers, as a send overlapping another between its read and its spend. */
+export function inviteLinkOverlapped(
+  links: InviteLinkMemory,
+  between: () => Promise<unknown>,
+): InviteLinkMemory {
+  let pending = true;
+  return {
+    ...links,
+    store: {
+      ...links.store,
+      presented: async (digest) => {
+        const presented = await links.store.presented(digest);
+        if (pending) {
+          pending = false;
+          await between();
+        }
+        return presented;
+      },
+    },
+  };
 }
 
 /** The digest the fixture's secrets give `token`. */

@@ -27,6 +27,13 @@
  * request, all or none, so a link given back is open again and nothing was
  * granted; the fault is then raised as the authority's outage is everywhere.
  *
+ * A USED LINK ANSWERS ITS USER AGAIN WHAT IT GAVE, and nothing is written, so
+ * a person whose answer was lost and who sends again is told what they hold
+ * from it, and one whose access was since removed is not given it back. Anyone
+ * else is answered absent. Wherever a redemption finds no open link to take,
+ * it asks the store for the used link the digest names whose user is the
+ * caller, and the answer says what the link gave, never what is held now.
+ *
  * A REGISTRATION IS ADMITTED BY READING A LINK, NEVER BY SPENDING IT. The
  * directory may ask twice about one registration, or fail it after admitting
  * it, and redeeming is still what spends the link.
@@ -156,9 +163,11 @@ export interface AccessInviteLinkSpent extends AccessInviteLinkGrants {
  * write taking an open tenant's link for `subject`, `revoke` the single write
  * ending an open one, `restore` gives back a spent link of either kind, and
  * `opened` and `presented` each read the open link a digest names without
- * spending it; each `workspace` statement is its tenant counterpart over the
- * site's workspace links alone, `workspaceSpend` also writing the workspace
- * and refusing one another used link holds.
+ * spending it, `usedBy` reads the used link of either kind a digest names
+ * whose user is `subject`, whatever the clock says; each `workspace` statement
+ * is its tenant counterpart over the site's workspace links alone,
+ * `workspaceSpend` also writing the workspace and refusing one another used
+ * link holds.
  */
 export interface AccessInviteLinkStore {
   mint(link: AccessInviteLinkMint): Promise<AccessInviteLinkWritten>;
@@ -177,6 +186,10 @@ export interface AccessInviteLinkStore {
     digest: string,
   ): Promise<{ readonly newAccounts: boolean } | undefined>;
   presented(digest: string): Promise<"Tenant" | "Workspace" | undefined>;
+  usedBy(
+    digest: string,
+    subject: string,
+  ): Promise<AccessInviteLinkUsed | undefined>;
   workspaceMint(
     link: AccessWorkspaceLinkMint,
   ): Promise<AccessInviteLinkWritten>;
@@ -193,6 +206,14 @@ export interface AccessInviteLinkStore {
     workspace: TenantId,
   ): Promise<AccessWorkspaceLinkSpent | undefined>;
 }
+
+/** A used link as its user is answered it again: a tenant's with what it grants, a workspace link with the workspace its use made. */
+export type AccessInviteLinkUsed =
+  | ({
+      readonly kind: "Tenant";
+      readonly tenant: TenantId;
+    } & AccessInviteLinkGrants)
+  | { readonly kind: "Workspace"; readonly workspace: TenantId };
 
 /** How a token is drawn and digested, both supplied. */
 export interface AccessInviteLinkSecrets {
@@ -501,7 +522,13 @@ async function accessWorkspaceLinkRevoked(
     : { outcome: "Ended" };
 }
 
-/** Writes a spent link's grants as one request, giving the link back and raising where that faults. */
+/**
+ * Writes a spent link's grants as one request, giving the link back and
+ * raising where that faults. Until the give-back the link reads as used by its
+ * caller, who is answered as though this send had worked, and where the
+ * give-back never happens that stays so with nothing granted for as long as
+ * the row is kept.
+ */
 async function accessInviteLinkGrantsWritten(
   ports: AccessInviteLinkPorts,
   store: AccessInviteLinkStore,
@@ -516,7 +543,33 @@ async function accessInviteLinkGrantsWritten(
   }
 }
 
-/** Using an open workspace link: the name wanted, admissible and free before the spend that carries it, and the site's invitation's grants after. */
+/** What a redemption that found no open link to take answers: what the link gave, where the caller used it, and absent otherwise. */
+async function accessInviteLinkUsedAnswer(
+  store: AccessInviteLinkStore,
+  digest: string,
+  subject: string,
+): Promise<AccessInviteLinkRedemption> {
+  const used = await store.usedBy(digest, subject);
+  if (used === undefined) return { outcome: "Absent" };
+  switch (used.kind) {
+    case "Tenant":
+      return {
+        outcome: "Redeemed",
+        redeemed: {
+          tenant: used.tenant,
+          role: used.role,
+          projects: [...used.projects],
+        },
+      };
+    case "Workspace":
+      return {
+        outcome: "Redeemed",
+        redeemed: { tenant: used.workspace, role: "Admin", projects: [] },
+      };
+  }
+}
+
+/** Using an open workspace link: the name wanted, admissible and free before the spend that carries it, and the site's invitation's grants after. A send overlapping its caller's own first with the same name can find the name taken by the first's grants. */
 async function accessWorkspaceLinkRedeemed(
   ports: AccessInviteLinkPorts,
   links: AccessInviteLinkKept,
@@ -536,7 +589,8 @@ async function accessWorkspaceLinkRedeemed(
   const tenant = asTenantId(workspace);
   if (await ports.claims.claimed(tenant)) return { outcome: "TenantTaken" };
   const spent = await links.store.workspaceSpend(digest, subject, tenant);
-  if (spent === undefined) return { outcome: "Absent" };
+  if (spent === undefined)
+    return accessInviteLinkUsedAnswer(links.store, digest, subject);
   if (spent.spent === "Taken") return { outcome: "TenantTaken" };
   await accessInviteLinkGrantsWritten(
     ports,
@@ -568,7 +622,8 @@ async function accessInviteLinkRedeemed(
   const subject = accessInviteLinkSubject(settings.issuer, request.caller);
   const digest = links.secrets.digest(request.token);
   const presented = await links.store.presented(digest);
-  if (presented === undefined) return { outcome: "Absent" };
+  if (presented === undefined)
+    return accessInviteLinkUsedAnswer(links.store, digest, subject);
   if (presented === "Workspace")
     return accessWorkspaceLinkRedeemed(ports, links, settings, {
       subject,
@@ -576,7 +631,8 @@ async function accessInviteLinkRedeemed(
       workspace: request.workspace,
     });
   const spent = await links.store.spend(digest, subject);
-  if (spent === undefined) return { outcome: "Absent" };
+  if (spent === undefined)
+    return accessInviteLinkUsedAnswer(links.store, digest, subject);
   await accessInviteLinkGrantsWritten(
     ports,
     links.store,

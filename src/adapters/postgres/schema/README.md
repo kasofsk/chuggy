@@ -463,7 +463,8 @@ give-back, and `invite_link_workspace_once` holds a name to one used link. A
 role is kept as the contract spells it and no constraint names the roster. No
 state is stored: a link is used, revoked or expired as those three columns and
 the database's own clock say, in the statement that asks. A spend and a
-revocation are each one conditional update on an open link; a mint takes an
-advisory lock on the tenant, or for a workspace link on the site, drops that
-set's ended links past the most recently ended it keeps, and counts its open
-ones before it inserts. A link is not a ticket, and the wipe keeps it.
+revocation are each one conditional update on an open link, and a used link is
+read again only for the subject that used it, whatever the clock says; a mint
+takes an advisory lock on the tenant, or for a workspace link on the site,
+drops that set's ended links past the most recently ended it keeps, and counts
+its open ones before it inserts. A link is not a ticket, and the wipe keeps it.
