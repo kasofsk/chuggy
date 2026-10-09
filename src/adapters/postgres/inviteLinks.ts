@@ -174,14 +174,14 @@ async function inviteLinkPresented(
   pool: pg.Pool,
   digest: string,
 ): Promise<"Tenant" | "Workspace" | undefined> {
-  const found = await pool.query<{ workspace: boolean | null }>(
+  const found = await pool.query<{ workspace: boolean }>(
     sql`SELECT (l.tenant IS NULL) AS workspace FROM invite_link l
     WHERE l.token_digest=${digest}
       AND l.used_at IS NULL AND l.revoked_at IS NULL AND l.expires_at>now()`,
   );
   const row = found.rows[0];
   if (row === undefined) return undefined;
-  return row.workspace === true ? "Workspace" : "Tenant";
+  return row.workspace ? "Workspace" : "Tenant";
 }
 
 /** One listed workspace link row, its state the one its statement derived. */
@@ -345,7 +345,7 @@ function workspaceLinks(
     workspaceHeld: async (link) => {
       const found = await pool.query<{
         create_accounts: boolean | null;
-        open: boolean | null;
+        open: boolean;
       }>(sql`SELECT l.create_accounts,
           (l.used_at IS NULL AND l.revoked_at IS NULL AND l.expires_at>now()) AS open
         FROM invite_link l WHERE l.tenant IS NULL AND l.link=${link}`);
@@ -355,7 +355,7 @@ function workspaceLinks(
         throw new RangeError(
           "workspace link: a workspace link carries no grant",
         );
-      return { createAccounts: row.create_accounts, open: row.open === true };
+      return { createAccounts: row.create_accounts, open: row.open };
     },
     workspaceRevoke: async (link) => {
       const revoked =

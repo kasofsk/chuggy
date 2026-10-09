@@ -156,9 +156,9 @@ export interface AccessInviteLinkSpent extends AccessInviteLinkGrants {
  * write taking an open tenant's link for `subject`, `revoke` the single write
  * ending an open one, `restore` gives back a spent link of either kind, and
  * `opened` and `presented` each read the open link a digest names without
- * spending it. Each `workspace` statement is its tenant counterpart over the
- * site's workspace links alone, and `workspaceSpend` also writes the
- * workspace, refusing one another used link holds.
+ * spending it; each `workspace` statement is its tenant counterpart over the
+ * site's workspace links alone, `workspaceSpend` also writing the workspace
+ * and refusing one another used link holds.
  */
 export interface AccessInviteLinkStore {
   mint(link: AccessInviteLinkMint): Promise<AccessInviteLinkWritten>;
