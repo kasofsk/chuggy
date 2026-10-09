@@ -34,6 +34,9 @@ export function Picker(props: {
   readonly options: readonly PickerOption[];
   readonly onChoose: (value: string) => void;
   readonly sideOffset?: number;
+  /** The edge of the trigger the menu lines up with, its middle where none is
+   * named. */
+  readonly align?: "start" | "end";
   /** What the trigger says while the held value is none of the options, so a
    * choice nobody has made yet reads as one rather than as a blank control. */
   readonly placeholder?: string;
@@ -57,7 +60,10 @@ export function Picker(props: {
         </DropdownMenu.Trigger>
       </Tooltip>
       <DropdownMenu.Portal>
-        <MenuContent sideOffset={props.sideOffset ?? 4}>
+        <MenuContent
+          sideOffset={props.sideOffset ?? 4}
+          align={props.align ?? "center"}
+        >
           <DropdownMenu.RadioGroup
             value={props.value}
             onValueChange={props.onChoose}

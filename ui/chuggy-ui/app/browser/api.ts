@@ -34,6 +34,7 @@ import {
 } from "../core/freshness.ts";
 import type { PanelState } from "../core/freshness.ts";
 import {
+  callerResourceKey,
   projectResourceKey,
   projectsInventoryKey,
   tenantResourceKey,
@@ -251,4 +252,13 @@ export function usePanelTenantResource<T>(
   read: PanelRead<T>,
 ): PanelState<T> {
   return usePanelQuery(tenantResourceKey(tenant, resource), read);
+}
+
+/** The reader's own resource, outside every tenant and so every refresh path,
+ * as `usePanelInventory`'s is: read when a screen drawing it mounts. */
+export function usePanelCallerResource<T>(
+  resource: string,
+  read: PanelRead<T>,
+): PanelState<T> {
+  return usePanelQuery(callerResourceKey(resource), read);
 }

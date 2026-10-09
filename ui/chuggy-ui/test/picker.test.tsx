@@ -88,6 +88,28 @@ test("choosing another option reaches the caller with its value", async () => {
   styleless();
 });
 
+test.each([
+  ["its trigger's middle where its caller names no edge", undefined, "center"],
+  ["the edge of its trigger its caller names", "start", "start"],
+] as const)("an open menu lines up with %s", async (_edge, align, drawn) => {
+  render(
+    <Picker
+      label="Project"
+      value="acme/atlas"
+      options={projects}
+      {...(align === undefined ? {} : { align })}
+      onChoose={() => undefined}
+    />,
+  );
+  fireEvent.keyDown(screen.getByRole("button", { name: /^Project / }), {
+    key: "ArrowDown",
+  });
+  expect((await screen.findByRole("menu")).getAttribute("data-align")).toBe(
+    drawn,
+  );
+  styleless();
+});
+
 /** A trigger takes the width its place gives it, so the chosen text is clipped
  * to that and the hint is where the whole of it stays reachable. */
 test("the trigger may be narrower than its text, which it clips, and focusing it reveals the hint", async () => {
