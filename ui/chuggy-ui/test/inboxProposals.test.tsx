@@ -18,9 +18,21 @@ import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import { selectorReviewFeedbackCharsMax } from "../../../src/contract/http.ts";
-import type { SelectorProposalResponse } from "../../../src/contract/responses.ts";
+import type {
+  ProjectAbilitiesResponse,
+  SelectorProposalResponse,
+} from "../../../src/contract/responses.ts";
 import { selectorProposalNotHeldCode } from "../../../src/contract/rosters.ts";
 import { InboxScreen } from "../app/browser/Inbox.tsx";
+import { projectAbilitiesResource } from "../app/browser/projectAbilities.tsx";
+import { projectResourceKey } from "../app/core/projectQueryKeys.ts";
+import {
+  abilitiesEvery,
+  abilitiesFetch,
+  abilitiesNone,
+  addressesKept,
+  unanswered,
+} from "./projectAbilitiesFixture.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import {
   answer,
@@ -61,6 +73,22 @@ interface Reviewed {
   readonly body: unknown;
 }
 
+/** The inbox over whatever `fetch` the case has stubbed, and the cache it
+ * reads into. */
+function inboxDrawn(): QueryClient {
+  const client = new QueryClient();
+  render(
+    <ScreenHarness
+      partition={atlas}
+      client={client}
+      transport={openedStream().ports.fetch}
+    >
+      <InboxScreen partition={atlas} />
+    </ScreenHarness>,
+  );
+  return client;
+}
+
 /**
  * A project whose only questions are the lead's held decisions. A review ends
  * the decision it names; `answeredElsewhere` has someone else end it first, so
@@ -68,7 +96,9 @@ interface Reviewed {
  * `unanswered` never answers it, and `rereadHeld` answers it but never the
  * read after.
  * `absent` is a reader who may not dispatch, whom the read answers as it
- * answers a project they cannot see.
+ * answers a project they cannot see. The abilities read answers that the
+ * reader may press every door unless the case says what it answers, and
+ * `abilities` of `undefined` never answers it.
  */
 function drawProject(served: {
   readonly held: readonly SelectorProposalResponse[];
@@ -77,7 +107,12 @@ function drawProject(served: {
   readonly unanswered?: boolean;
   readonly rereadHeld?: boolean;
   readonly absent?: boolean;
-}): { readonly reviewed: readonly Reviewed[] } {
+  readonly abilities?: ProjectAbilitiesResponse | undefined;
+}): {
+  readonly reviewed: readonly Reviewed[];
+  readonly proposalsAsked: () => number;
+  readonly client: QueryClient;
+} {
   const reviewed: Reviewed[] = [];
   let held = [...served.held];
   let answered = false;
@@ -120,25 +155,19 @@ function drawProject(served: {
     if (url.includes("/executions")) return answer({ executions: [] });
     return answer({ partition: atlas, sequence: 9, tickets: [] });
   };
-  vi.stubGlobal(
-    "fetch",
-    (url: string, init?: { method?: string; body?: string }) => {
-      const answered = respond(url, init);
-      return answered === undefined
-        ? new Promise<never>(() => undefined)
-        : Promise.resolve(answered);
-    },
+  const kept = addressesKept(
+    abilitiesFetch(
+      "abilities" in served ? served.abilities : abilitiesEvery,
+      ((url: string, init?: { method?: string; body?: string }) =>
+        respond(url, init) ?? unanswered()) as typeof fetch,
+    ),
   );
-  render(
-    <ScreenHarness
-      partition={atlas}
-      client={new QueryClient()}
-      transport={openedStream().ports.fetch}
-    >
-      <InboxScreen partition={atlas} />
-    </ScreenHarness>,
-  );
-  return { reviewed };
+  vi.stubGlobal("fetch", kept.fetch);
+  return {
+    reviewed,
+    proposalsAsked: () => kept.sentTo("/selector-proposals"),
+    client: inboxDrawn(),
+  };
 }
 
 /** The row a ticket's number link sits in. */
@@ -309,4 +338,48 @@ test("a reader who may not dispatch has no proposal and no notice", async () => 
   expect(screen.queryByText("Proposal")).toBeNull();
   expect(screen.queryByText(/^Proposals ·/u)).toBeNull();
   expect(screen.getByText("Inbox is clear")).toBeDefined();
+});
+
+test("a reader the abilities read says may not dispatch is never sent the held decisions read", async () => {
+  const api = drawProject({
+    held: [both],
+    abilities: { ...abilitiesEvery, dispatch: false },
+  });
+  await settled();
+  expect(api.proposalsAsked()).toBe(0);
+  expect(screen.queryByText("Proposal")).toBeNull();
+  expect(screen.getByText("Inbox is clear")).toBeDefined();
+});
+
+test("the held decisions are not read while the abilities read is unanswered", async () => {
+  const api = drawProject({ held: [both], abilities: undefined });
+  await settled();
+  expect(api.proposalsAsked()).toBe(0);
+  expect(screen.queryByText("Proposal")).toBeNull();
+});
+
+test("the held decisions are read once the abilities read says the reader may dispatch", async () => {
+  const api = drawProject({
+    held: [both],
+    abilities: { ...abilitiesNone, dispatch: true },
+  });
+  await settled();
+  expect(api.proposalsAsked()).toBeGreaterThan(0);
+  expect(within(row(7)).getByText("Proposal")).toBeDefined();
+});
+
+/** A poll that has stopped leaves its last answer in the cache, and a row
+ * drawn from it would offer an answer the server now refuses. */
+test("held decisions already read are not drawn once the reader may no longer dispatch", async () => {
+  const api = drawProject({ held: [both] });
+  await settled();
+  expect(within(row(7)).getByText("Proposal")).toBeDefined();
+  await turned(() => {
+    api.client.setQueryData(
+      projectResourceKey(atlas, "Project", projectAbilitiesResource),
+      { ...abilitiesEvery, dispatch: false },
+    );
+  });
+  await settled();
+  expect(screen.queryByText("Proposal")).toBeNull();
 });

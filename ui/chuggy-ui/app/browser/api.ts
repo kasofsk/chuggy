@@ -117,9 +117,13 @@ function usePanelQuery<T>(
   key: ProjectQueryKey,
   read: PanelRead<T>,
   polledMs?: number,
+  asked = true,
 ): PanelState<T> {
   const ports = useApiPorts();
-  const query = useQuery(panelQueryOptions(ports, key, read, polledMs));
+  const query = useQuery({
+    ...panelQueryOptions(ports, key, read, polledMs),
+    enabled: asked,
+  });
   return panelQueryState(query, polledMs);
 }
 
@@ -139,6 +143,43 @@ export function usePanelResource<T>(
     read,
     polledMs,
   );
+}
+
+/** A resource as `usePanelResource` reads it, requested only while `asked`
+ * and pending while not, whatever an earlier read left under its key. */
+export function usePanelResourceAsked<T>(
+  partition: PartitionIdentity,
+  kind: ProjectChangeKind,
+  resource: string,
+  read: PanelRead<T>,
+  polledMs: number | undefined,
+  asked: boolean,
+): PanelState<T> {
+  const state = usePanelQuery(
+    projectResourceKey(partition, kind, resource),
+    read,
+    polledMs,
+    asked,
+  );
+  return asked ? state : { state: "Pending" };
+}
+
+/** A resource as `usePanelResource` reads it, with whether its read has ever
+ * come back, which a read that failed cannot say by being pending again on
+ * every retry. */
+export function usePanelResourceSettled<T>(
+  partition: PartitionIdentity,
+  kind: ProjectChangeKind,
+  resource: string,
+  read: PanelRead<T>,
+): { readonly state: PanelState<T>; readonly settled: boolean } {
+  const ports = useApiPorts();
+  const key = projectResourceKey(partition, kind, resource);
+  const query = useQuery(panelQueryOptions(ports, key, read, undefined));
+  return {
+    state: panelQueryState(query, undefined),
+    settled: query.isFetched,
+  };
 }
 
 /** Several resources of one kind, each under the key `usePanelResource` reads

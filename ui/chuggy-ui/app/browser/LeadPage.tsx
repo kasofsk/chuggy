@@ -68,6 +68,7 @@ import type { InquiryBoxesHeld } from "./lead/LeadInquiries.tsx";
 import { LeadRefusals } from "./lead/LeadRefusals.tsx";
 import { LeadNote, useLeadTranscript } from "./lead/LeadTranscript.tsx";
 import { SelectorStrip } from "./lead/SelectorStrip.tsx";
+import { useProjectAbilityRead } from "./projectAbilities.tsx";
 import {
   selectorSettingsResource,
   useSelectorSettingsDraft,
@@ -171,9 +172,8 @@ function LeadSelectorStripReady(props: {
   );
 }
 
-/** What the selector is doing for this project right now, which leads the page
- * because a paused selector is the first thing an operator needs to see. */
-function LeadSelectorStrip(props: {
+/** The strip's own read, mounted for a reader that read would answer. */
+function LeadSelectorStripRead(props: {
   readonly partition: PartitionIdentity;
 }): ReactNode {
   const partition = props.partition;
@@ -187,6 +187,18 @@ function LeadSelectorStrip(props: {
   return (
     <LeadSelectorStripReady partition={partition} settings={state.value} />
   );
+}
+
+/** What the selector is doing for this project right now, which leads the page
+ * because a paused selector is the first thing an operator needs to see. A
+ * reader who may not manage the selector is refused its read and drawn none. */
+function LeadSelectorStrip(props: {
+  readonly partition: PartitionIdentity;
+}): ReactNode {
+  const read = useProjectAbilityRead(props.partition, "manageSelector");
+  if (read === "Refused") return null;
+  if (read === "Held") return <PanelUnready state={{ state: "Pending" }} />;
+  return <LeadSelectorStripRead partition={props.partition} />;
 }
 
 function LeadTurnRow(props: { readonly turn: LeadTurnResponse }): ReactNode {

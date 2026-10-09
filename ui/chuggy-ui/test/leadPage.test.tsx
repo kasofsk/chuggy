@@ -59,6 +59,13 @@ import {
 } from "./leadFixture.ts";
 import type { LeadServed } from "./leadFixture.ts";
 import { fillerMessage, fillerSentence } from "./interruptionFixture.ts";
+import {
+  abilitiesEvery,
+  abilitiesFetch,
+  abilitiesUnrefusing,
+  addressesKept,
+} from "./projectAbilitiesFixture.ts";
+import type { AbilitiesAnswer } from "./projectAbilitiesFixture.ts";
 import { sessionPlacementBody } from "./sessionPlacementFixture.ts";
 import type { LeadInquiriesResponse } from "../../../src/contract/responses.ts";
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
@@ -1795,3 +1802,89 @@ test("a visit to a project with no lead keeps the box of the one that has it", a
     "a visit to a leadless project forked another door twice",
   ).toBe(asked.posted[0]?.session);
 });
+
+/** The page of a project with a lead, or with none, for a reader the abilities
+ * read answers as `abilities` says, and how often the strip's read was sent. */
+async function drawLeadFor(
+  abilities: AbilitiesAnswer,
+  led = true,
+): Promise<{ readonly settingsReads: () => number }> {
+  if (led) await drawLead(() => opening);
+  else leadlessServed();
+  cleanup();
+  const kept = addressesKept(abilitiesFetch(abilities, fetch));
+  vi.stubGlobal("fetch", kept.fetch);
+  await mountLead();
+  return { settingsReads: () => kept.sentTo("/selector-settings") };
+}
+
+function stripDrawn(): boolean {
+  return screen.queryByRole("button", { name: "Pause" }) !== null;
+}
+
+function askDrawn(): boolean {
+  return screen.queryByRole("button", { name: "Ask" }) !== null;
+}
+
+test.each([
+  ["with a lead", true],
+  ["with no lead", false],
+])(
+  "a reader who may not manage the selector of a project %s is drawn no strip and its read is never sent",
+  async (_said, led) => {
+    const page = await drawLeadFor(
+      { ...abilitiesEvery, manageSelector: false },
+      led,
+    );
+    expect(stripDrawn()).toBe(false);
+    expect(page.settingsReads()).toBe(0);
+    expect(screen.queryByText("Not available")).toBeNull();
+    expect(askDrawn()).toBe(led);
+  },
+);
+
+/** A page opened by its address mounts both reads at once, so the strip's
+ * waits on the one that says whether it would be refused. */
+test("the strip's read is not sent while the abilities read is unanswered, and the strip is drawn as still read", async () => {
+  const page = await drawLeadFor(undefined);
+  expect(page.settingsReads()).toBe(0);
+  expect(stripDrawn()).toBe(false);
+  expect(screen.getAllByText("Loading…").length).toBeGreaterThan(0);
+});
+
+test("a reader the abilities read says may manage the selector is drawn the strip from its own read", async () => {
+  const page = await drawLeadFor(abilitiesEvery);
+  expect(page.settingsReads()).toBeGreaterThan(0);
+  expect(stripDrawn()).toBe(true);
+});
+
+/** A read that failed is pending again on every retry, and a strip held each
+ * time would be unmounted under its reader and read again. */
+test("a reader whose abilities read failed is drawn the strip from one read of its own", async () => {
+  const page = await drawLeadFor(
+    Promise.resolve(answer({ error: { code: "InternalError" } }, 500)),
+  );
+  expect(page.settingsReads()).toBe(1);
+  expect(stripDrawn()).toBe(true);
+});
+
+test("a reader who may not mutate reads the inquiries and View only where the question would be asked", async () => {
+  await drawLeadFor({ ...abilitiesEvery, mutate: false });
+  const inquiries = screen
+    .getByRole("heading", { name: "Inquiries" })
+    .closest("section");
+  expect(within(inquiries as HTMLElement).getByText("View only")).toBeDefined();
+  expect(screen.getAllByText("View only")).toHaveLength(1);
+  expect(askDrawn()).toBe(false);
+  expect(screen.queryByLabelText("Question")).toBeNull();
+  expect(stripDrawn()).toBe(true);
+});
+
+test.each(abilitiesUnrefusing)(
+  "a reader the abilities read %s is offered the question's box and is told nothing",
+  async (_said, abilities) => {
+    await drawLeadFor(abilities);
+    expect(askDrawn()).toBe(true);
+    expect(screen.queryByText("View only")).toBeNull();
+  },
+);

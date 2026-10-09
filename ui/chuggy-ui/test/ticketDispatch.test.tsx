@@ -17,6 +17,12 @@ import {
 } from "./screenHarness.tsx";
 import { leadBody } from "./leadFixture.ts";
 import {
+  abilitiesEvery,
+  abilitiesOver,
+  abilitiesNone,
+  abilitiesUnrefusing,
+} from "./projectAbilitiesFixture.ts";
+import {
   ticketDispatchViewOf,
   ticketPageCandidate,
   ticketPageRoutes,
@@ -88,8 +94,13 @@ test("a dispatchable ticket submits the version from the strict view", async () 
 });
 
 /** The page over a server whose lead route answers `lead`, with the ticket a
- * dispatch candidate or not as `candidate` says. */
-async function drawnWithLead(lead: unknown, candidate = true): Promise<void> {
+ * dispatch candidate or not as `candidate` says, and the abilities read
+ * answering as the page's other reads do unless `over` answers it. */
+async function drawnWithLead(
+  lead: unknown,
+  candidate = true,
+  over: (served: typeof fetch) => typeof fetch = (served) => served,
+): Promise<void> {
   const routes = ticketPageRoutes(atlas, () =>
     ticketDispatchViewOf(atlas, candidate ? [ticketPageCandidate] : []),
   );
@@ -97,7 +108,7 @@ async function drawnWithLead(lead: unknown, candidate = true): Promise<void> {
     operation: { operation: "op-one", state: "Pending" },
     route: (url) => (url.endsWith("/lead") ? answer(lead) : routes(url)),
   });
-  vi.stubGlobal("fetch", api.fetch);
+  vi.stubGlobal("fetch", over(api.fetch));
   const server = openedStream();
   render(
     <ScreenHarness
@@ -130,3 +141,38 @@ test("a ticket offered no Dispatch says nothing of the hand, lead or none", asyn
   expect(screen.queryByRole("button", { name: "Dispatch" })).toBeNull();
   expect(screen.queryByText("No lead · Dispatched by hand")).toBeNull();
 });
+
+function dispatchOffered(): boolean {
+  return screen.queryByRole("button", { name: "Dispatch" }) !== null;
+}
+
+test("a reader who may not dispatch is offered no Dispatch and is told nothing of the hand", async () => {
+  await drawnWithLead(
+    { lead: "None" },
+    true,
+    abilitiesOver({ ...abilitiesEvery, dispatch: false }),
+  );
+  expect(dispatchOffered()).toBe(false);
+  expect(screen.queryByText("No lead · Dispatched by hand")).toBeNull();
+  expect(screen.getByText("Edit")).toBeDefined();
+});
+
+test("a reader who may dispatch and not mutate is offered Dispatch alone", async () => {
+  await drawnWithLead(
+    { lead: "None" },
+    true,
+    abilitiesOver({ ...abilitiesNone, dispatch: true }),
+  );
+  expect(dispatchOffered()).toBe(true);
+  expect(screen.queryByText("Edit")).toBeNull();
+  expect(screen.queryByText("Duplicate")).toBeNull();
+});
+
+test.each(abilitiesUnrefusing)(
+  "a reader the abilities read %s is offered Dispatch",
+  async (_said, abilities) => {
+    await drawnWithLead({ lead: "None" }, true, abilitiesOver(abilities));
+    expect(dispatchOffered()).toBe(true);
+    expect(screen.getByText("Edit")).toBeDefined();
+  },
+);

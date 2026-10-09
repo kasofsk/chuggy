@@ -834,6 +834,12 @@ export const apiHostedRuns = apiProjectEndpoint(
   (partition) => ({ parameters: partition }),
 );
 
+/** Which of the project's doors the reader may press. */
+export const apiProjectAbilities = apiProjectEndpoint(
+  nativeHttpEndpoints.abilities,
+  (partition) => ({ parameters: partition }),
+);
+
 /** The lead's decisions held for approval; a reader who may not dispatch is answered as absent. */
 export const apiSelectorProposals = apiProjectEndpoint(
   nativeHttpEndpoints.selectorProposals,

@@ -26,6 +26,11 @@ import {
 } from "./screenHarness.tsx";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 import { ticketInstants } from "./ticketInstants.ts";
+import {
+  abilitiesEvery,
+  abilitiesOver,
+  abilitiesUnrefusing,
+} from "./projectAbilitiesFixture.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
@@ -126,10 +131,13 @@ const escalated = {
   ...ticketInstants,
 };
 
-/** The table drawn from whatever tickets and executions a case wants. */
+/** The table drawn from whatever tickets and executions a case wants, the
+ * abilities read answering as the tickets do unless the case hands a `fetch`
+ * of its own over them. */
 async function drawTableWith(
   tickets: readonly unknown[],
   executions: readonly unknown[],
+  over: (served: typeof fetch) => typeof fetch = (served) => served,
 ): Promise<void> {
   const api = apiDouble({
     operation: { operation: "op-one", state: "Pending" },
@@ -147,7 +155,7 @@ async function drawTableWith(
       });
     },
   });
-  vi.stubGlobal("fetch", api.fetch);
+  vi.stubGlobal("fetch", over(api.fetch));
   render(
     <ScreenHarness
       partition={atlas}
@@ -341,3 +349,30 @@ test("a finished row says how its run ended, and never Terminal", async () => {
   expect(within(done).getByText("Passed").className).toContain("pill-pass");
   expect(document.body.textContent).not.toContain("Terminal");
 });
+
+function newTicketOffers(): number {
+  return screen.queryAllByText("New ticket").length;
+}
+
+test("a reader who may not mutate is offered no new ticket, in the empty state or beside the filters", async () => {
+  const unmutating = abilitiesOver({ ...abilitiesEvery, mutate: false });
+  await drawTableWith([], [], unmutating);
+  expect(screen.getByRole("heading", { name: "No tickets" })).toBeDefined();
+  expect(newTicketOffers()).toBe(0);
+  cleanup();
+  await drawTableWith([ticket], [execution], unmutating);
+  expect(screen.getByRole("group", { name: "phase" })).toBeDefined();
+  expect(newTicketOffers()).toBe(0);
+});
+
+test.each(abilitiesUnrefusing)(
+  "a reader the abilities read %s is offered a new ticket in the empty state and beside the filters",
+  async (_said, abilities) => {
+    const over = abilitiesOver(abilities);
+    await drawTableWith([], [], over);
+    expect(newTicketOffers()).toBe(1);
+    cleanup();
+    await drawTableWith([ticket], [execution], over);
+    expect(newTicketOffers()).toBe(1);
+  },
+);

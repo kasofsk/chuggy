@@ -33,6 +33,7 @@ import {
   apiNativeActions,
   apiOpenThread,
   apiProject,
+  apiProjectAbilities,
   apiProjectInventory,
   apiProjectInventoryAll,
   apiProjectRepositories,
@@ -361,6 +362,21 @@ test("the hosted-runs grant hangs from the partition and is read as given or not
     value: { granted: false },
   });
   expect(held.urls[0]).toBe(`${partitionPath}/hosted-runs`);
+});
+
+test("the reader's abilities hang from the partition and are read door by door", async () => {
+  const abilities = {
+    mutate: false,
+    dispatch: false,
+    manageSelector: false,
+    administer: false,
+  };
+  const held = recording(() => abilities);
+  expect(await apiProjectAbilities(held.ports, partition)).toStrictEqual({
+    outcome: "Ok",
+    value: abilities,
+  });
+  expect(held.urls[0]).toBe(`${partitionPath}/abilities`);
 });
 
 /**

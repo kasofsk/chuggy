@@ -30,6 +30,11 @@ import {
 } from "./screenHarness.tsx";
 import { frame } from "./streamDouble.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
+import {
+  abilitiesEvery,
+  abilitiesOver,
+  abilitiesUnrefusing,
+} from "./projectAbilitiesFixture.ts";
 import { ticketInstants } from "./ticketInstants.ts";
 import { viewportAtEm } from "./viewport.ts";
 
@@ -90,7 +95,11 @@ function serving(asked: () => unknown): (url: string) => Response {
   };
 }
 
-function mounted(): {
+/** The page of a ticket waiting on an approval, the abilities read answering
+ * as its other reads do unless the case hands a `fetch` of its own over them. */
+function mounted(
+  over: (served: typeof fetch) => typeof fetch = (served) => served,
+): {
   readonly api: ReturnType<typeof apiDouble>;
   readonly server: ReturnType<typeof openedStream>;
 } {
@@ -98,7 +107,7 @@ function mounted(): {
     operation: operationAt("Answered"),
     route: (url) => serving(() => api.submitted())(url),
   });
-  vi.stubGlobal("fetch", api.fetch);
+  vi.stubGlobal("fetch", over(api.fetch));
   const server = openedStream();
   render(
     <ScreenHarness
@@ -159,3 +168,25 @@ test("a frame moves what the page offers without the page reading again", async 
   expect(screen.getByRole("button", { name: "Revoke" })).toBeDefined();
   expect(held.api.submitted()).toBeUndefined();
 });
+
+function answersOffered(): readonly boolean[] {
+  return ["Approve", "Decline"].map(
+    (name) => screen.queryByRole("button", { name }) !== null,
+  );
+}
+
+test("a reader who may not mutate reads that an approval is awaited and is offered neither answer", async () => {
+  mounted(abilitiesOver({ ...abilitiesEvery, mutate: false }));
+  await settled();
+  expect(document.body.textContent).toContain("Awaiting approval");
+  expect(answersOffered()).toStrictEqual([false, false]);
+});
+
+test.each(abilitiesUnrefusing)(
+  "a reader the abilities read %s is offered approve and decline",
+  async (_said, abilities) => {
+    mounted(abilitiesOver(abilities));
+    await settled();
+    expect(answersOffered()).toStrictEqual([true, true]);
+  },
+);

@@ -28,6 +28,11 @@ import {
   settled,
 } from "./screenHarness.tsx";
 import { leadPartition } from "./leadFixture.ts";
+import {
+  abilitiesEvery,
+  abilitiesOver,
+  abilitiesUnrefusing,
+} from "./projectAbilitiesFixture.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 
 vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
@@ -200,6 +205,8 @@ interface Drawing {
   readonly rebound?: unknown;
   /** What this deployment answers about its apps. */
   readonly described?: unknown;
+  /** A `fetch` laid over the page's own, where a case answers one more read. */
+  readonly over?: (served: typeof fetch) => typeof fetch;
 }
 
 async function drawPage(drawing: Drawing = {}): Promise<readonly Sent[]> {
@@ -228,7 +235,7 @@ async function drawPage(drawing: Drawing = {}): Promise<readonly Sent[]> {
     const written = sent.some((one) => one.method === "POST");
     return Promise.resolve(answer(written ? rebound : bound));
   }) as unknown as typeof fetch;
-  vi.stubGlobal("fetch", fetching);
+  vi.stubGlobal("fetch", (drawing.over ?? ((served) => served))(fetching));
   const page = (
     <ScreenHarness
       partition={leadPartition}
@@ -950,3 +957,19 @@ test("a reader with an account holding both apps is offered Add and Create and n
   expect(offersWithheld()).toBeUndefined();
   expect(accountsLink()).toBeNull();
 });
+
+test("a reader who may not administer reads that a binding deferred and is offered no Retry", async () => {
+  await drawPage({
+    bound: unconfigured,
+    over: abilitiesOver({ ...abilitiesEvery, administer: false }),
+  });
+  expect(bindingRowsText()[0]).toBe("kasofsk/chuggyDeferred");
+});
+
+test.each(abilitiesUnrefusing)(
+  "a reader the abilities read %s is offered Retry beside a deferred binding",
+  async (_said, abilities) => {
+    await drawPage({ bound: unconfigured, over: abilitiesOver(abilities) });
+    expect(bindingRowsText()[0]).toBe("kasofsk/chuggyDeferredRetry");
+  },
+);

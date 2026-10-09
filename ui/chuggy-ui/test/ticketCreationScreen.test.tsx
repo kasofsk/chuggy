@@ -22,7 +22,13 @@ import { configurationsPartialLabel } from "../app/core/repositoryConfigurations
 import { creationStaleSentence } from "../app/core/ticketCreationRun.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import {
+  abilitiesEvery,
+  abilitiesOver,
+  draftPanelText,
+} from "./projectAbilitiesFixture.ts";
+import {
   answer,
+  heldAnswer,
   openedStream,
   ScreenHarness,
   scriptedFetch,
@@ -102,11 +108,14 @@ function routed(
   };
 }
 
+/** The screen over the project's reads, which are what it returns as sent:
+ * a `fetch` laid over them answers the abilities read before they see it. */
 async function drawCreation(
   answered: (request: SentRequest) => Response | undefined,
+  over: (served: typeof fetch) => typeof fetch = (served) => served,
 ): Promise<readonly SentRequest[]> {
   const scripted = scriptedFetch(routed(answered));
-  vi.stubGlobal("fetch", scripted.fetch);
+  vi.stubGlobal("fetch", over(scripted.fetch));
   render(
     <ScreenHarness
       partition={creationPartition}
@@ -220,4 +229,34 @@ test("a submit that finds its ticket already made draws the way to it in the not
     "#12 already exists: an earlier release of this draft went through, and what has been changed here since is not in it — Ticket 12",
   );
   expect(within(told).getByRole("link", { name: "Ticket 12" })).toBeTruthy();
+});
+
+test("a reader who may not mutate, arriving by address, is told View only and none of the form's reads is sent", async () => {
+  const sent = await drawCreation(
+    () => undefined,
+    abilitiesOver({ ...abilitiesEvery, mutate: false }),
+  );
+  expect(draftPanelText()).toBe("DraftView only");
+  expect(sent).toStrictEqual([]);
+});
+
+/** The address mounts the abilities read and the form at once, so the form's
+ * reads wait for the one that says whether they would be refused. */
+test("the form's reads wait for the abilities read, and are sent once it says the reader may mutate", async () => {
+  const held = heldAnswer();
+  const sent = await drawCreation(
+    () => undefined,
+    abilitiesOver(held.answered),
+  );
+  expect(draftPanelText()).toBe("DraftLoading…");
+  expect(sent).toStrictEqual([]);
+
+  await turned(() => {
+    held.release(answer(abilitiesEvery));
+  });
+  await settled();
+  expect(configurationPicker()).toBeDefined();
+  expect(
+    sent.filter((one) => one.url.includes("/draft-initializations/")),
+  ).not.toStrictEqual([]);
 });

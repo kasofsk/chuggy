@@ -37,6 +37,11 @@ import { projectResourceKey } from "../app/core/projectQueryKeys.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import { elementScrollToStubbed } from "./scrolling.ts";
 import { leadBody } from "./leadFixture.ts";
+import {
+  abilitiesFetch,
+  abilitiesNone,
+  abilitiesUnrefusing,
+} from "./projectAbilitiesFixture.ts";
 import { sessionPlacementBody } from "./sessionPlacementFixture.ts";
 import {
   threadBody,
@@ -1667,5 +1672,115 @@ test("under the desk width the details take the middle from the page", async () 
   const hiddenScroller = screen.getByText("page").closest("[hidden]");
   expect(hiddenScroller).not.toBeNull();
   expect(hiddenScroller?.className ?? "").not.toContain("grid");
+  styleless();
+});
+
+const heldOwn = threadEntry({
+  session: openedSession,
+  owner: "geoff",
+  mine: true,
+  title: "held",
+});
+
+/** What the frame offers a reader to change: the bar's way to a new ticket,
+ * the pane's New, what is done to a held thread, and the box. */
+function offeredToChange(): Record<string, boolean> {
+  const named = (role: string, name: string): boolean =>
+    screen.queryByRole(role, { name }) !== null;
+  return {
+    newTicket: named("link", "New ticket"),
+    new: named("button", "New"),
+    rename: named("button", "Rename"),
+    close: named("button", "Close"),
+    box: named("textbox", "Message"),
+  };
+}
+
+function viewOnlySaid(within_: HTMLElement | null): number {
+  return within(within_ ?? document.body).queryAllByText("View only").length;
+}
+
+test("a reader who may not mutate is told View only once in the bar and once where the first message would be typed", async () => {
+  await mounted(
+    viewportDeskEm,
+    abilitiesFetch({ ...abilitiesNone, dispatch: true }, threadServed([])),
+  );
+  expect(offeredToChange()).toStrictEqual({
+    newTicket: false,
+    new: false,
+    rename: false,
+    close: false,
+    box: false,
+  });
+  expect(viewOnlySaid(navDrawn())).toBe(1);
+  expect(viewOnlySaid(conversationRegion())).toBe(1);
+  expect(viewOnlySaid(null)).toBe(2);
+  styleless();
+});
+
+test("a reader who may not mutate keeps a held thread's title and transcript, with View only where its box would be", async () => {
+  await mounted(
+    viewportDeskEm,
+    abilitiesFetch(abilitiesNone, threadServed([heldOwn])),
+  );
+  expect(screen.getByRole("heading", { name: "held" })).toBeDefined();
+  expect(offeredToChange()).toStrictEqual({
+    newTicket: false,
+    new: false,
+    rename: false,
+    close: false,
+    box: false,
+  });
+  expect(viewOnlySaid(conversationRegion())).toBe(1);
+  for (const kept of ["History", "Full screen", "Collapse"])
+    expect(screen.getByRole("button", { name: kept })).toBeDefined();
+  styleless();
+});
+
+test.each(abilitiesUnrefusing)(
+  "a reader the abilities read %s is offered everything that changes a thread, and is told nothing",
+  async (_said, abilities) => {
+    await mounted(
+      viewportDeskEm,
+      abilitiesFetch(abilities, threadServed([heldOwn])),
+    );
+    expect(offeredToChange()).toStrictEqual({
+      newTicket: true,
+      new: true,
+      rename: true,
+      close: true,
+      box: true,
+    });
+    expect(viewOnlySaid(null)).toBe(0);
+    styleless();
+  },
+);
+
+test.each(abilitiesUnrefusing)(
+  "a reader the abilities read %s is offered the first message's box",
+  async (_said, abilities) => {
+    await mounted(viewportDeskEm, abilitiesFetch(abilities, threadServed([])));
+    expect(offeredToChange()).toMatchObject({ new: true, box: true });
+    expect(viewOnlySaid(null)).toBe(0);
+    styleless();
+  },
+);
+
+/** One line where the box would be: a reader who could not send with the
+ * grant is not told about the grant. */
+test("View only stands in place of the hosted grant's line, not beside it", async () => {
+  await mounted(
+    viewportDeskEm,
+    abilitiesFetch(abilitiesNone, grantReadServed(false, [])),
+  );
+  expect(viewOnlySaid(conversationRegion())).toBe(1);
+  expect(screen.queryByText("Needs hosted runs")).toBeNull();
+  cleanup();
+  await mounted(
+    viewportDeskEm,
+    abilitiesFetch(abilitiesNone, grantReadServed(false, [heldOwn])),
+  );
+  expect(viewOnlySaid(conversationRegion())).toBe(1);
+  expect(screen.queryByText("Needs hosted runs")).toBeNull();
   styleless();
 });

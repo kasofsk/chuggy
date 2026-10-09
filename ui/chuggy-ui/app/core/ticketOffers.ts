@@ -16,6 +16,8 @@ import type { TicketResponse } from "../../../../src/contract/responses.ts";
 
 import type { PanelState } from "./freshness.ts";
 import { nativeActionsAnswers } from "./nativeActionAnswers.ts";
+import { projectAbilityRefused } from "./projectAbilities.ts";
+import type { ProjectAbilities } from "./projectAbilities.ts";
 import { actionsFor, ticketRevisable } from "./ticketActions.ts";
 import type { TicketAction, TicketActionName } from "./ticketActions.ts";
 
@@ -58,6 +60,24 @@ export function ticketOffers(
       };
     }
   }
+}
+
+/** The offers the reader's abilities leave: Dispatch goes where they may not
+ * dispatch, and every other action and the edit screen where they may not mutate. */
+export function ticketOffersAllowed(
+  offers: TicketOffers,
+  abilities: ProjectAbilities,
+): TicketOffers {
+  if (offers.offers === "Unread") return offers;
+  const mutates = !projectAbilityRefused(abilities, "mutate");
+  const dispatches = !projectAbilityRefused(abilities, "dispatch");
+  return {
+    offers: "Actions",
+    editable: offers.editable && mutates,
+    actions: offers.actions.filter((action) =>
+      action.action === "Dispatch" ? dispatches : mutates,
+    ),
+  };
 }
 
 /** Whether the action answers what the ticket is waiting on a person for, which
