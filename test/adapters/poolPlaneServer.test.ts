@@ -1342,3 +1342,23 @@ test("a personal runner's session is opened only in a project its owner may stil
     "a session was opened in a project its owner may not read",
   );
 });
+
+test("a personal runner polling while its owner's read cannot be answered is told to retry", async () => {
+  const sessions = sessionCalls([], ["thread-one"]);
+  const unanswered: ProjectAccess = {
+    ...authority("Allow"),
+    authorize: () =>
+      Promise.reject(
+        new ProjectAccessUnavailable("the authority is unreachable"),
+      ),
+  };
+  const answered = await createPoolPlaneApp(
+    plane(calls().ports, unanswered, sessions.store),
+  ).inject({
+    method: "GET",
+    url: polling([], 0, 1),
+    headers: runnerSpeaking,
+  });
+  assert.equal(answered.statusCode, 503);
+  assert.equal(answered.body, "");
+});

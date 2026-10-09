@@ -221,17 +221,24 @@ function poolAssignmentsRoute(
         workerPoolHeldNamedMax(service.settings, sessionsRead),
       ).safeParse(request.query);
       if (!query.success) return reply.code(400).send();
-      const polled = await workerPoolPoll(
-        poolPorts(service),
-        identity,
-        {
-          held: query.data[workerPoolPollQuery.held],
-          wanted: query.data[workerPoolPollQuery.wanted],
-          wantedSessions: query.data[workerPoolPollQuery.wantedSessions],
-          readsSessions: sessionsRead,
-        },
-        service.settings,
-      );
+      let polled: Awaited<ReturnType<typeof workerPoolPoll>>;
+      try {
+        polled = await workerPoolPoll(
+          poolPorts(service),
+          identity,
+          {
+            held: query.data[workerPoolPollQuery.held],
+            wanted: query.data[workerPoolPollQuery.wanted],
+            wantedSessions: query.data[workerPoolPollQuery.wantedSessions],
+            readsSessions: sessionsRead,
+          },
+          service.settings,
+        );
+      } catch (failure) {
+        if (failure instanceof ProjectAccessUnavailable)
+          return poolRefused(reply, "Unavailable");
+        throw failure;
+      }
       if (polled.polled === "HeldOverBound") return reply.code(400).send();
       return reply
         .code(200)
