@@ -188,7 +188,7 @@ function useInviteNaming(
   };
 }
 
-/** The card as a form: the field, its fault beneath, and `Create`, which Enter in the field presses. */
+/** The card as a form: the field, under it what a workspace is until a fault stands there, and `Create`, which Enter in the field presses. */
 function InviteNamingForm(props: { readonly named: InviteNamed }): ReactNode {
   const { name, sending, came, change, create } = props.named;
   return (
@@ -210,6 +210,7 @@ function InviteNamingForm(props: { readonly named: InviteNamed }): ReactNode {
               siteWorkspaceNameFault(name) ??
               (came?.outcome === "Refused" ? came.fault : undefined)
             }
+            about={invitePageWords.workspaceAbout}
             disabled={sending}
             onChange={change}
           />

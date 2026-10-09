@@ -74,13 +74,23 @@ function create(): HTMLButtonElement {
   return screen.getByRole<HTMLButtonElement>("button", { name: "Create" });
 }
 
-/** What stands under the field, which is its fault and nothing else. */
-function fault(): string {
-  return (
-    document.getElementById(field().getAttribute("aria-describedby") ?? "")
-      ?.textContent ?? ""
+/** The line the field is described by, which is the one under it. */
+function under(): HTMLElement {
+  const line = document.getElementById(
+    field().getAttribute("aria-describedby") ?? "",
   );
+  if (line === null) throw new Error("nothing describes the field");
+  return line;
 }
+
+/** The fault under the field, none while the line there says what a workspace is. */
+function fault(): string {
+  return under().className.includes("text-tone-fail")
+    ? under().textContent
+    : "";
+}
+
+const about = "Your team or company. Projects go inside.";
 
 async function typed(name: string): Promise<void> {
   fireEvent.change(field(), { target: { value: name } });
@@ -121,6 +131,30 @@ test("a link that asks for its workspace's name draws the form on the same card,
   expect(browser.written).toStrictEqual([]);
   expect(browser.left).toStrictEqual([]);
   styleless();
+});
+
+test("under the empty field one line says what a workspace is, and it stands while the name typed breaks no rule", async () => {
+  await linked();
+  expect(under().textContent).toBe(about);
+  expect(fault()).toBe("");
+  expect(field().getAttribute("aria-invalid")).toBe("false");
+  await typed("northwind");
+  expect(under().textContent).toBe(about);
+  expect(fault()).toBe("");
+});
+
+test("the line gives way to the field's fault, a rule broken or a name refused, and comes back when the name is mended", async () => {
+  await created(() => refused(409, accessTenantTakenCode));
+  expect(under().textContent).toBe("Name taken");
+  expect(fault()).toBe("Name taken");
+  expect(screen.queryByText(about)).toBeNull();
+  await typed("North Wind");
+  expect(under().textContent).toBe(projectNameRule);
+  expect(fault()).toBe(projectNameRule);
+  expect(screen.queryByText(about)).toBeNull();
+  await typed("north-wind");
+  expect(under().textContent).toBe(about);
+  expect(fault()).toBe("");
 });
 
 test("the send without a name is made once under a double mount and a remount, and no mount sends a name", async () => {

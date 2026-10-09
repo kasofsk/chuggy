@@ -83,7 +83,7 @@ test("each refusal is one short line of its own", () => {
   );
   if (refused.outcome === "Ok" || refused.outcome === "Accepted")
     throw new Error("a refusal was classified as a success");
-  expect(status(refused)).toBe("Not permitted");
+  expect(status(refused)).toBe("New workspace needs an invite link");
   expect(status({ outcome: "Absent" })).toBe("Unavailable");
   expect(
     status({
