@@ -70,6 +70,72 @@ export class FetchJsonError extends Error {
   }
 }
 
+/** What a JSON request is sent with, a GET where it names no method. */
+export interface FetchJsonInit {
+  readonly method?: "POST";
+  readonly headers: Record<string, string>;
+  readonly body?: string;
+}
+
+/** An answer narrowed to what is read of it, so a suite can fake it. */
+export interface FetchJsonResponse {
+  readonly ok: boolean;
+  readonly status: number;
+  readonly text: () => Promise<string>;
+}
+
+export type FetchJsonPort = (
+  url: string,
+  init: FetchJsonInit,
+) => Promise<FetchJsonResponse>;
+
+function fetchJsonInit(request: FormRequest | string): FetchJsonInit {
+  if (typeof request === "string")
+    return { headers: { accept: "application/json" } };
+  return {
+    method: "POST",
+    headers: {
+      accept: "application/json",
+      "content-type": "application/x-www-form-urlencoded",
+    },
+    body: request.body,
+  };
+}
+
+function fetchJsonUnanswered(failure: unknown): FetchJsonError {
+  return new FetchJsonError(
+    { fault: "Unanswered" },
+    failure instanceof Error ? failure.message : "the request got no answer",
+  );
+}
+
+/**
+ * The token endpoints speak form encoding; `/config.json` and discovery, GET.
+ * A request that got no answer, or lost its body on the way, rejects as
+ * unanswered, and a body that is not JSON as the parser's own error.
+ */
+export async function fetchJsonThrough(
+  fetch: FetchJsonPort,
+  request: FormRequest | string,
+): Promise<unknown> {
+  const url = typeof request === "string" ? request : request.url;
+  const response = await fetch(url, fetchJsonInit(request)).catch(
+    (failure: unknown) => {
+      throw fetchJsonUnanswered(failure);
+    },
+  );
+  if (!response.ok)
+    throw new FetchJsonError(
+      { fault: "Status", status: response.status },
+      `${url} answered ${String(response.status)}`,
+    );
+  const text = await response.text().catch((failure: unknown) => {
+    throw fetchJsonUnanswered(failure);
+  });
+  const value: unknown = JSON.parse(text);
+  return value;
+}
+
 export interface SessionHolderPorts {
   readonly nowMs: () => number;
   readonly sleepMs: (ms: number) => Promise<void>;

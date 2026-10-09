@@ -11,7 +11,7 @@
 import type { FormRequest } from "../core/authorization.ts";
 import type { ApiFetchInit } from "../core/apiRequest.ts";
 import type { StreamResponse } from "../core/streamConnection.ts";
-import { FetchJsonError } from "../core/sessionHolder.ts";
+import { fetchJsonThrough } from "../core/sessionHolder.ts";
 import type { KeyValuePort, SessionLocation } from "../core/sessionHolder.ts";
 import type { MarkdownSyntaxWorker } from "./ui/markdownSyntax.ts";
 
@@ -87,50 +87,8 @@ export async function streamFetch(
   };
 }
 
-function fetchJsonInit(request: FormRequest | string): RequestInit {
-  if (typeof request === "string")
-    return { headers: { accept: "application/json" } };
-  return {
-    method: "POST",
-    headers: {
-      accept: "application/json",
-      "content-type": "application/x-www-form-urlencoded",
-    },
-    body: request.body,
-  };
-}
-
-function fetchJsonUnanswered(failure: unknown): FetchJsonError {
-  return new FetchJsonError(
-    { fault: "Unanswered" },
-    failure instanceof Error ? failure.message : "the request got no answer",
-  );
-}
-
-/**
- * The token endpoints speak form encoding; `/config.json` and discovery, GET.
- * A request that got no answer, or lost its body on the way, rejects as
- * unanswered, and a body that is not JSON as the parser's own error.
- */
-export async function fetchJson(
-  request: FormRequest | string,
-): Promise<unknown> {
-  const url = typeof request === "string" ? request : request.url;
-  const response = await fetch(url, fetchJsonInit(request)).catch(
-    (failure: unknown) => {
-      throw fetchJsonUnanswered(failure);
-    },
-  );
-  if (!response.ok)
-    throw new FetchJsonError(
-      { fault: "Status", status: response.status },
-      `${url} answered ${String(response.status)}`,
-    );
-  const text = await response.text().catch((failure: unknown) => {
-    throw fetchJsonUnanswered(failure);
-  });
-  const value: unknown = JSON.parse(text);
-  return value;
+export function fetchJson(request: FormRequest | string): Promise<unknown> {
+  return fetchJsonThrough((url, init) => fetch(url, init), request);
 }
 
 function keyValuePort(store: () => Storage): KeyValuePort {
