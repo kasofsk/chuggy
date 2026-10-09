@@ -145,10 +145,9 @@ export interface WorkerPoolSessions extends WorkerPoolSessionRows<PoolPlaneIdent
   launch(): Promise<SessionLaunchFacts | undefined>;
 }
 
-/** Everything a session claim reaches beyond its rows: the authority a personal runner's owner is asked, each project's binding, and where a bearer is drawn. */
+/** Everything a session claim reaches beyond its rows and the authority: each project's binding, and where a bearer is drawn. */
 export interface WorkerPoolSessionPorts {
   readonly store: WorkerPoolSessions;
-  readonly access: ProjectAccess;
   readonly bindings: ProjectRepositoryBindingRead;
   readonly bearers: SessionAttemptMint;
 }
@@ -207,6 +206,7 @@ async function workerPoolSessionProjectRead(
  */
 async function workerPoolSessionProjectsServed(
   ports: WorkerPoolSessionPorts,
+  access: ProjectAccess,
   identity: PoolPlaneIdentity,
   waiting: readonly WorkerPoolSessionCandidate[],
 ): Promise<ReadonlyMap<ProjectId, RepositoryBinding | undefined>> {
@@ -214,7 +214,7 @@ async function workerPoolSessionProjectsServed(
     identity.kind === "Dedicated" ? identity.partition.tenant : identity.tenant;
   const served = new Map<ProjectId, RepositoryBinding | undefined>();
   for (const project of new Set(waiting.map((waited) => waited.project)))
-    if (await workerPoolSessionProjectRead(ports.access, identity, project))
+    if (await workerPoolSessionProjectRead(access, identity, project))
       served.set(project, await ports.bindings.binding({ tenant, project }));
   return served;
 }
@@ -225,6 +225,7 @@ async function workerPoolSessionProjectsServed(
  */
 export async function workerPoolSessionClaims(
   ports: WorkerPoolSessionPorts,
+  access: ProjectAccess,
   identity: PoolPlaneIdentity,
   terms: WorkerPoolSessionTerms,
   mint: WorkerPoolMint,
@@ -241,6 +242,7 @@ export async function workerPoolSessionClaims(
   if (waiting.length === 0) return [];
   const served = await workerPoolSessionProjectsServed(
     ports,
+    access,
     identity,
     waiting,
   );

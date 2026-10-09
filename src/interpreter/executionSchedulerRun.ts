@@ -155,6 +155,7 @@ import type { TicketBriefPort } from "./ticketBrief.ts";
 import type { ProjectAccess } from "./projectAccess.ts";
 import {
   workerPoolExecutes,
+  workerPoolOwnerStands,
   type WorkerPoolRegistered,
   type WorkerPoolRoster,
 } from "./workerPool.ts";
@@ -718,22 +719,65 @@ async function schedulerPlace(
   }
 }
 
-/** Each pool beside whether the authority withholds its `Execute`, or nothing where the authority could not answer, which decides nothing this pass. */
+/**
+ * The owner's personal runner for an execution whose project allows one,
+ * revoked where the owner no longer holds what admits it or `Read` of the
+ * project; nothing where the execution allows none, has no owner, or the owner
+ * has no runner.
+ */
+async function schedulerOwnerRunnerAnswered(
+  service: ExecutionSchedulerService,
+  execution: LogicalExecution,
+): Promise<readonly WorkerPoolAnswered[]> {
+  const owner = execution.owner;
+  if (execution.ownerFallback === undefined || owner === undefined) return [];
+  const runner = await service.workerPools.personal(execution.partition, owner);
+  if (runner === undefined) return [];
+  return [
+    {
+      partition: execution.partition,
+      pool: owner,
+      principal: runner.principal,
+      capabilities: runner.capabilities,
+      class: "Personal",
+      dedicatedOwner: owner,
+      allowlist: runner.allowlist,
+      revoked: !(await workerPoolOwnerStands(
+        service.access,
+        owner,
+        execution.partition,
+      )),
+    },
+  ];
+}
+
+/**
+ * Each pool beside whether the authority withholds its `Execute`, and the
+ * owner's personal runner beside whether it is revoked, or nothing where the
+ * authority could not answer, which decides nothing this pass.
+ */
 async function schedulerPoolsAnswered(
-  access: ProjectAccess,
+  service: ExecutionSchedulerService,
+  execution: LogicalExecution,
   pools: readonly WorkerPoolRegistered[],
 ): Promise<readonly WorkerPoolAnswered[] | undefined> {
   try {
-    return await Promise.all(
+    const answered = await Promise.all(
       pools.map(async (pool) => ({
         ...pool,
+        dedicatedOwner: undefined,
+        allowlist: [],
         revoked: !(await workerPoolExecutes(
-          access,
+          service.access,
           pool.partition,
           pool.principal,
         )),
       })),
     );
+    return [
+      ...answered,
+      ...(await schedulerOwnerRunnerAnswered(service, execution)),
+    ];
   } catch {
     return undefined;
   }
@@ -741,9 +785,10 @@ async function schedulerPoolsAnswered(
 
 /**
  * Asks what can be said of an execution routed to pools against the pools its
- * project registered, blocks the one no pool is configured to run, and answers
- * whether its attempt may be offered. A page the registry cut short never
- * blocks, since a pool past it may be, and an undecided authority holds.
+ * project registered and its owner's personal runner, blocks the one no runner
+ * is configured to run, and answers whether its attempt may be offered. A page
+ * the registry cut short never blocks, since a pool past it may be, and an
+ * undecided authority holds.
  */
 async function schedulerOfferable(
   service: ExecutionSchedulerService,
@@ -752,7 +797,8 @@ async function schedulerOfferable(
 ): Promise<boolean> {
   const registered = await service.workerPools.registered(execution.partition);
   const answered = await schedulerPoolsAnswered(
-    service.access,
+    service,
+    execution,
     registered.pools,
   );
   if (answered === undefined) return false;

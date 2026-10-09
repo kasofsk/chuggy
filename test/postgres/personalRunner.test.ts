@@ -343,6 +343,7 @@ test("the pool plane reads a runner and its allowlist and stamps its poll, and c
     ["personal_runner", "owner"],
     ["personal_runner", "capabilities"],
     ["personal_runner", "principal"],
+    ["personal_runner", "executions_polled_at"],
     ["personal_runner_project", "project"],
   ] as const)
     assert.equal(
@@ -380,7 +381,7 @@ test("the pool plane reads a runner and its allowlist and stamps its poll, and c
   );
 });
 
-test("the boundary reads a runner's owner, principal and poll and its allowlist, and the scheduler reads none of it", async () => {
+test("the boundary reads a runner's owner, principal and poll and its allowlist, and the scheduler its owner, principal, capabilities and allowlist alone", async () => {
   assert.equal(
     await harness.attemptAs(
       boundaryOwnerRole,
@@ -395,16 +396,31 @@ test("the boundary reads a runner's owner, principal and poll and its allowlist,
     ),
     undefined,
   );
-  for (const relation of [
-    "personal_runner",
-    "personal_runner_project",
-    "personal_runner_registration_token",
+  for (const statement of [
+    `SELECT tenant,owner,principal,capabilities FROM personal_runner`,
+    `SELECT tenant,owner,project FROM personal_runner_project`,
+  ])
+    assert.equal(
+      await harness.attemptAs(schedulerRole, statement),
+      undefined,
+      statement,
+    );
+  for (const statement of [
+    `SELECT client_id FROM personal_runner`,
+    `SELECT last_polled_at FROM personal_runner`,
   ])
     assert.match(
-      (await harness.attemptAs(schedulerRole, `SELECT 1 FROM ${relation}`)) ??
-        "",
-      postgresHarnessDenial(relation),
+      (await harness.attemptAs(schedulerRole, statement)) ?? "",
+      /permission denied/u,
+      statement,
     );
+  assert.match(
+    (await harness.attemptAs(
+      schedulerRole,
+      `SELECT 1 FROM personal_runner_registration_token`,
+    )) ?? "",
+    postgresHarnessDenial("personal_runner_registration_token"),
+  );
 });
 
 test("a runner's owner, principal and client are bounded, and a principal or client is one runner's", async () => {

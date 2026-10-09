@@ -22,16 +22,23 @@
  * unique `assignment` column refuses an identity already bound, by failing the
  * statement; `placement` is the route and the partition the account. The
  * registry row joined on the poll's own principal is a pool that is enabled,
- * polling under its current registration, and of a class the routed demand
- * allows. Its capabilities are the inventory, matched as
+ * polling under its current registration, and not personal. Its capabilities
+ * are the inventory, matched by `worker_pool_inventory_matches` as
  * `workerPoolInventoryMatches` does and with a platform spelled as
- * `workerPoolPlatformToken` spells it, and the held count is the slot. The rest
- * hold before a claim is made: the bearer's authentication refuses a token that
- * lapsed and `workerPoolAdmitted` a principal that lost `Execute`, a claim is
- * made only by a poll, and
- * drain, trust, secrets, source and owner are constants every registered pool
- * and every routed execution holds. The owner's fallback holds for every pool,
- * since the routed demand allows no personal pool for an owner to have.
+ * `workerPoolPlatformToken` spells it, and the held count is the slot. The
+ * owner's fallback is the execution's own: where its project allows a
+ * personal runner, the owner's runner allowlisting the project and able to run
+ * it holds the claim back under `Strict`, and under `Preferred` while it polled
+ * for an execution within `sessionRunnerPolledSecsMax`, unless the poll named
+ * its owner revoked.
+ * The rest hold before a claim is made: the bearer's authentication refuses a
+ * token that lapsed and `workerPoolAdmitted` a principal that lost `Execute`, a
+ * claim is made only by a poll, and drain, trust, secrets, source and a
+ * dedicated owner are constants every registered pool and every routed
+ * execution holds.
+ *
+ * A PERSONAL RUNNER'S CLAIM IS THE SAME GUARD FOR ITS CLASS, in
+ * `./personalExecutions.ts`.
  *
  * THE HELD COUNT IS THE DATABASE'S AND NOT THE POOL'S. It counts every attempt
  * under the pool's name that is still placing or running, so a pool that leaves
@@ -76,13 +83,16 @@ import type pg from "pg";
 
 import { asExecutionRequirement } from "../../interpreter/executionRequirement.ts";
 import { asPrincipal, type Principal } from "../../interpreter/principal.ts";
-import type { Partition } from "../../interpreter/projectStore.ts";
+import { asProjectId, type Partition } from "../../interpreter/projectStore.ts";
+import { sessionRunnerPolledSecsMax } from "../../interpreter/sessionPlacement.ts";
 import {
   workerPoolsAnsweredMax,
+  type PoolPlaneIdentity,
   type WorkerPoolAssignments,
   type WorkerPoolClaimed,
   type WorkerPoolClaimTerms,
   type WorkerPoolDirectory,
+  type WorkerPoolExecutionHolds,
   type WorkerPoolIdentity,
   type WorkerPoolRegistration,
   type WorkerPoolRegistry,
@@ -95,6 +105,12 @@ import {
   type WorkerPoolRegistrationTokenTerms,
   type WorkerPoolTokenWritten,
 } from "../../interpreter/workerPoolRegistrationToken.ts";
+import {
+  personalExecutionClaimed,
+  personalExecutionsAllowlisted,
+  personalExecutionsPolled,
+  postgresPersonalExecutionHolds,
+} from "./personalExecutions.ts";
 import { postgresTransaction } from "./pool.ts";
 
 /** One token's terms as either statement returns them, read the same way by both. */
@@ -304,10 +320,35 @@ export function postgresWorkerPoolDirectory(
 /**
  * A project's registered pools over a scheduler-role pool, in name order and
  * read one past the page, so a project registering more than one read answers
- * is told the page is partial rather than handed a short one.
+ * is told the page is partial rather than handed a short one; and a member's
+ * personal runner in the project's tenant, with every project it allowlists.
  */
 export function postgresWorkerPoolRoster(pool: pg.Pool): WorkerPoolRoster {
   return {
+    personal: async (partition, owner) => {
+      const found = await pool.query<{
+        principal: string;
+        capabilities: string[];
+        projects: string[] | null;
+      }>(sql`SELECT r.principal,r.capabilities,
+          (SELECT array_agg(l.project ORDER BY l.project)
+             FROM personal_runner_project l
+            WHERE l.tenant=r.tenant AND l.owner=r.owner) AS projects
+        FROM personal_runner r
+        WHERE r.tenant=${partition.tenant} AND r.owner=${owner}`);
+      const row = found.rows[0];
+      return row === undefined
+        ? undefined
+        : {
+            owner,
+            principal: asPrincipal(row.principal),
+            capabilities: row.capabilities,
+            allowlist: (row.projects ?? []).map((project) => ({
+              tenant: partition.tenant,
+              project: asProjectId(project),
+            })),
+          };
+    },
     registered: async (partition) => {
       const found = await pool.query<{
         pool: string;
@@ -345,6 +386,7 @@ async function workerPoolClaimed(
   terms: WorkerPoolClaimTerms,
   assignment: string,
   bearer: string,
+  ownersRevoked: readonly Principal[],
 ): Promise<WorkerPoolClaimed | undefined> {
   const { partition } = identity;
   await client.query<{ locked: string | null }>(
@@ -373,18 +415,19 @@ async function workerPoolClaimed(
           AND x.placement='Pool' AND x.status='Launching'
           AND q.recovery_epoch=(SELECT r.epoch FROM recovery_epoch r ORDER BY r.ordinal DESC LIMIT 1)
           AND w.class<>'Personal'
-          AND CASE x.requirement_value->>'mode'
-            WHEN 'Container' THEN
-              'Platform:' || (x.requirement_value->>'operatingSystem') || ':' || (x.requirement_value->>'architecture')
-                = ANY(w.capabilities)
-            WHEN 'ContainerCapability' THEN
-              'Platform:' || (x.requirement_value->>'operatingSystem') || ':' || (x.requirement_value->>'architecture')
-                = ANY(w.capabilities)
-              AND ARRAY(SELECT jsonb_array_elements_text(x.requirement_value->'capabilities')) <@ w.capabilities
-            ELSE false END
+          AND worker_pool_inventory_matches(x.requirement_value,w.capabilities)
           AND (SELECT count(*) FROM execution_attempt h
                 WHERE h.tenant=q.tenant AND h.project=q.project AND h.pool=w.pool
+                  AND NOT h.personal
                   AND h.state IN ('Placing','Running')) < ${terms.heldMax}::bigint
+          AND NOT EXISTS(SELECT 1 FROM personal_runner r
+            JOIN personal_runner_project l ON l.tenant=r.tenant AND l.owner=r.owner
+            WHERE x.owner_fallback IS NOT NULL
+              AND r.tenant=x.tenant AND r.owner=x.owner AND l.project=x.project
+              AND r.owner<>ALL(${[...ownersRevoked] as string[]}::text[])
+              AND worker_pool_inventory_matches(x.requirement_value,r.capabilities)
+              AND (x.owner_fallback='Strict'
+                   OR r.executions_polled_at>now()-make_interval(secs=>${sessionRunnerPolledSecsMax}::double precision)))
           AND EXISTS(SELECT 1 FROM project p
             WHERE p.tenant=q.tenant AND p.project=q.project AND p.lifecycle='Active')
         ORDER BY q.opened_at,q.attempt
@@ -450,16 +493,42 @@ async function workerPoolHeldImages(
   return found.rows.flatMap((row) => (row.image === null ? [] : [row.image]));
 }
 
-export function postgresWorkerPoolAssignments(
+/**
+ * The owners a claim by this pool would defer to: those of its project's
+ * unclaimed executions that allow a personal runner and whose owner has one
+ * allowlisting the project, the oldest waiting first.
+ */
+async function workerPoolOwnersDeferredTo(
   pool: pg.Pool,
-): WorkerPoolAssignments {
+  identity: WorkerPoolIdentity,
+  max: number,
+): Promise<readonly Principal[]> {
+  if (!Number.isSafeInteger(max) || max < 1)
+    throw new RangeError("invalid worker pool owner bound");
+  const found = await pool.query<{ owner: string | null }>(
+    sql`SELECT x.owner FROM execution_attempt q
+      JOIN execution x
+        ON x.tenant=q.tenant AND x.project=q.project AND x.execution=q.execution
+      WHERE q.tenant=${identity.partition.tenant} AND q.project=${identity.partition.project}
+        AND q.state='Placing' AND q.pool IS NULL AND q.invoked
+        AND x.placement='Pool' AND x.status='Launching'
+        AND x.owner_fallback IS NOT NULL
+        AND EXISTS(SELECT 1 FROM personal_runner r
+          JOIN personal_runner_project l ON l.tenant=r.tenant AND l.owner=r.owner
+          WHERE r.tenant=x.tenant AND r.owner=x.owner AND l.project=x.project)
+      GROUP BY x.owner
+      ORDER BY min(q.opened_at),x.owner LIMIT ${max}`,
+  );
+  return found.rows.flatMap((row) =>
+    row.owner === null ? [] : [asPrincipal(row.owner)],
+  );
+}
+
+/** What a pool holds, through the registration that claimed it. */
+function postgresPoolExecutionHolds(
+  pool: pg.Pool,
+): WorkerPoolExecutionHolds<WorkerPoolIdentity> {
   return {
-    claim: async (identity, terms, assignment, bearer) => {
-      workerPoolClaimTermsChecked(terms);
-      return postgresTransaction(pool, (client) =>
-        workerPoolClaimed(client, identity, terms, assignment, bearer),
-      );
-    },
     renew: async (identity, assignment, leaseSecs) => {
       if (!Number.isSafeInteger(leaseSecs) || leaseSecs < 1)
         throw new RangeError("invalid worker pool lease");
@@ -507,5 +576,71 @@ export function postgresWorkerPoolAssignments(
     },
     heldImages: (identity, heldMax) =>
       workerPoolHeldImages(pool, identity, heldMax),
+  };
+}
+
+/** Each holding call of a pool or a runner, routed to the side the caller holds through. */
+function postgresExecutionHoldsRouted(
+  pool: pg.Pool,
+): WorkerPoolExecutionHolds<PoolPlaneIdentity> {
+  const pools = postgresPoolExecutionHolds(pool);
+  const runners = postgresPersonalExecutionHolds(pool);
+  return {
+    renew: (identity, assignment, leaseSecs) =>
+      identity.kind === "Dedicated"
+        ? pools.renew(identity, assignment, leaseSecs)
+        : runners.renew(identity, assignment, leaseSecs),
+    refuse: (identity, assignment, evidence) =>
+      identity.kind === "Dedicated"
+        ? pools.refuse(identity, assignment, evidence)
+        : runners.refuse(identity, assignment, evidence),
+    release: (identity, assignment) =>
+      identity.kind === "Dedicated"
+        ? pools.release(identity, assignment)
+        : runners.release(identity, assignment),
+    held: (identity, assignment) =>
+      identity.kind === "Dedicated"
+        ? pools.held(identity, assignment)
+        : runners.held(identity, assignment),
+    heldImages: (identity, heldMax) =>
+      identity.kind === "Dedicated"
+        ? pools.heldImages(identity, heldMax)
+        : runners.heldImages(identity, heldMax),
+  };
+}
+
+/** Both callers' assignments behind one port, each call routed by who is asking. */
+export function postgresWorkerPoolAssignments(
+  pool: pg.Pool,
+): WorkerPoolAssignments {
+  return {
+    claim: async (identity, terms, assignment, bearer, ownersRevoked) => {
+      workerPoolClaimTermsChecked(terms);
+      return postgresTransaction(pool, (client) =>
+        workerPoolClaimed(
+          client,
+          identity,
+          terms,
+          assignment,
+          bearer,
+          ownersRevoked,
+        ),
+      );
+    },
+    ownersDeferredTo: (identity, max) =>
+      workerPoolOwnersDeferredTo(pool, identity, max),
+    claimPersonal: async (identity, terms, assignment, bearer, projects) => {
+      workerPoolClaimTermsChecked(terms);
+      return postgresTransaction(pool, (client) =>
+        personalExecutionClaimed(client, identity, terms, {
+          assignment,
+          digest: workerPoolDigest(bearer),
+          projects,
+        }),
+      );
+    },
+    allowlisted: (identity) => personalExecutionsAllowlisted(pool, identity),
+    polled: (identity) => personalExecutionsPolled(pool, identity),
+    ...postgresExecutionHoldsRouted(pool),
   };
 }

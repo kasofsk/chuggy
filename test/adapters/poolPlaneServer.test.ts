@@ -138,6 +138,10 @@ function calls(pinning: readonly string[] = []): {
             : undefined,
         );
       },
+      ownersDeferredTo: () => Promise.resolve([]),
+      claimPersonal: () => Promise.resolve(undefined),
+      allowlisted: () => Promise.resolve([]),
+      polled: () => Promise.resolve(),
       renew: (_identity, assignment) =>
         Promise.resolve(
           (made.push(["renew", assignment]), assignment === "live"),
@@ -286,7 +290,6 @@ function plane(
     assignments: ports,
     sessions: {
       store: sessions,
-      access,
       bindings: { binding: () => Promise.resolve(undefined) },
       bearers: {
         mint: () => ({
@@ -1271,7 +1274,7 @@ const runnerSpeaking = {
   [workerContractHeader]: workerContractRelease,
 };
 
-test("a personal runner is admitted by its owner's permit, claims no execution, and is told to stop every execution it names", async () => {
+test("a personal runner is admitted by its owner's permit and renews the executions it names", async () => {
   const recorded = calls();
   const sessions = sessionCalls([], ["thread-one"]);
   const answered = await createPoolPlaneApp(
@@ -1284,9 +1287,9 @@ test("a personal runner is admitted by its owner's permit, claims no execution, 
   assert.equal(answered.statusCode, 200);
   const body = workerPoolReconciliationSchema.parse(answered.json());
   assert.deepEqual(body.assignments, []);
-  assert.deepEqual(body.stop, ["live"]);
+  assert.deepEqual(body.stop, []);
   assert.equal(body.sessions.length, 1);
-  assert.deepEqual(recorded.made, [], "a personal runner reached executions");
+  assert.deepEqual(recorded.made, [["renew", "live"]]);
 });
 
 test("a personal runner whose owner lost the permit to register one is told it is not there", async () => {
@@ -1303,15 +1306,15 @@ test("a personal runner whose owner lost the permit to register one is told it i
   assert.deepEqual(sessions.made, [], "a refused runner reached sessions");
 });
 
-test("a personal runner's settlement of an execution it does not hold settles nothing", async () => {
+test("a personal runner's settlement of an execution reaches the executions it holds", async () => {
   const recorded = calls();
   const answered = await createPoolPlaneApp(plane(recorded.ports)).inject({
     method: "POST",
     url: workerPoolSettlementPath("Accepted", "live"),
     headers: runnerSpeaking,
   });
-  assert.equal(answered.statusCode, 409);
-  assert.deepEqual(recorded.made, []);
+  assert.equal(answered.statusCode, 204);
+  assert.deepEqual(recorded.made, [["held", "live"]]);
 });
 
 test("a personal runner's session is opened only in a project its owner may still read", async () => {

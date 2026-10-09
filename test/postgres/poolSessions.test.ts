@@ -195,9 +195,9 @@ const readingEverything: ProjectAccess = {
 const store = postgresWorkerPoolSessions(poolPlanePool);
 const ports: WorkerPoolPorts = {
   assignments: postgresWorkerPoolAssignments(poolPlanePool),
+  access: readingEverything,
   sessions: {
     store,
-    access: readingEverything,
     bindings: postgresProjectRepositoryBinding(poolPlanePool),
     bearers: sessionAttemptMint(),
   },
@@ -1393,14 +1393,11 @@ test("a personal runner is handed no thread in a project its owner may no longer
   const asked: string[] = [];
   const unread: WorkerPoolPorts = {
     ...ports,
-    sessions: {
-      ...ports.sessions,
-      access: {
-        ...readingEverything,
-        authorize: (caller, at, kind) => {
-          asked.push(`${caller}:${at.project}:${kind}`);
-          return Promise.resolve(undefined);
-        },
+    access: {
+      ...readingEverything,
+      authorize: (caller, at, kind) => {
+        asked.push(`${caller}:${at.project}:${kind}`);
+        return Promise.resolve(undefined);
       },
     },
   };

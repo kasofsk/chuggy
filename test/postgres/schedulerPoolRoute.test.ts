@@ -238,6 +238,7 @@ async function claimed(
     { leaseSecs: claimLeaseSecs, heldMax: 1 },
     `assignment-${randomUUID()}`,
     bearer,
+    [],
   );
   return claim === undefined ? undefined : bearer;
 }

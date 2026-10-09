@@ -96,7 +96,8 @@ async function personalRunnerReplaced(
         principal=${registration.principal as string},
         client_id=${registration.clientId},
         registered_at=now(),
-        last_polled_at=NULL
+        last_polled_at=NULL,
+        executions_polled_at=NULL
     WHERE r.tenant=${registration.tenant as string} AND r.owner=${registration.owner as string}
       AND r.client_id=${replacing}`);
   if ((updated.rowCount ?? 0) !== 1) return "Moved";

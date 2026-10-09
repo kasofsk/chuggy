@@ -39,11 +39,12 @@
  * drain, trust, the allowance of secrets and source, an owner and an allowlist are
  * the model's administrator-owned authority, and the route and a demand on
  * each of them are the model's `ExecutionProfile`. The registry carries a
- * pool's class, every other term of its policy is
- * `workerPoolPolicyRegistered`'s, and every execution routed to one is pinned
- * with `workerPoolDemandRouted`; the guard reads both as it reads any other
- * field, so a registry that carries more of them per pool changes values and
- * not terms.
+ * pool's class, and a personal pool's owner and allowlist; every other term of
+ * its policy is `workerPoolPolicyRegistered`'s. An execution carries its owner
+ * and the fallback its project named, and every other term of its demand is
+ * `workerPoolDemandRouted`'s, which `workerPoolDemandOf` reads it with; the
+ * guard reads both as it reads any other field, so a registry that carries
+ * more of them changes values and not terms.
  *
  * AN OWNER'S FALLBACK READS EVERY POOL, as the model's reads every runner: a
  * pool other than a personal one takes an owned execution only as the
@@ -54,7 +55,9 @@
  * THE SCHEDULER ASKS THE OUTCOME OF THE REGISTRY AND THE AUTHORITY. A poll is
  * not durable, so the scheduler sees no session and no pool is placeable to
  * it. A registered pool is enabled, and revoked where the authority withholds
- * the `Execute` its polls are admitted by.
+ * the `Execute` its polls are admitted by; an owner's personal pool is revoked
+ * where it withholds the permit its polls are admitted by, or the owner's
+ * `Read` of the project its claims are asked under.
  */
 
 import type {
@@ -64,7 +67,12 @@ import type {
 } from "./executionScheduler.ts";
 import type { ExecutionRequirement, Platform } from "./executionRequirement.ts";
 import type { Principal } from "./principal.ts";
+import type { WorkerPoolOwnerFallback } from "./projectOwnerFallback.ts";
 import type { Partition } from "./projectStore.ts";
+export {
+  allWorkerPoolOwnerFallbacks,
+  type WorkerPoolOwnerFallback,
+} from "./projectOwnerFallback.ts";
 
 /** The model's `RunnerClass`, and the roster the type derives from. */
 export const allWorkerPoolClasses = [
@@ -102,11 +110,6 @@ export const allWorkerPoolPlacementOutcomes = [
 export type WorkerPoolPlacementOutcome =
   (typeof allWorkerPoolPlacementOutcomes)[number];
 
-/** The model's `OwnerFallback`: whether a pool other than a personal one may take an owned execution while its owner has a personal pool for it. */
-export const allWorkerPoolOwnerFallbacks = ["Strict", "Preferred"] as const;
-export type WorkerPoolOwnerFallback =
-  (typeof allWorkerPoolOwnerFallbacks)[number];
-
 /** The administrator-owned policy of the model's `Runner`; an owner is a principal, undefined where the model writes 0 for none. */
 export interface WorkerPoolPolicy {
   readonly class: WorkerPoolClass;
@@ -140,7 +143,7 @@ export const workerPoolPolicyRegistered: WorkerPoolPolicy = {
   allowlist: [],
 };
 
-/** The demand every execution routed to a pool is pinned with: no personal pool and no owner, so no fallback is taken, the registered trust, and secrets and source both, since a task is handed credentials and a clone. */
+/** The demand an execution routed to a pool is pinned with where its project allows no personal pool and it has no owner, so no fallback is taken: the registered trust, and secrets and source both, since a task is handed credentials and a clone. */
 export const workerPoolDemandRouted: WorkerPoolDemand = {
   personalRunnerAllowed: false,
   trustMin: 1,
@@ -150,6 +153,19 @@ export const workerPoolDemandRouted: WorkerPoolDemand = {
   ownerOf: undefined,
   ownerFallback: "Preferred",
 };
+
+/** The demand one execution was pinned with: the routed demand, its owner, and the fallback its project named, which is what allows a personal pool. */
+export function workerPoolDemandOf(
+  execution: Pick<LogicalExecution, "owner" | "ownerFallback">,
+): WorkerPoolDemand {
+  return {
+    ...workerPoolDemandRouted,
+    personalRunnerAllowed: execution.ownerFallback !== undefined,
+    ownerOf: execution.owner,
+    ownerFallback:
+      execution.ownerFallback ?? workerPoolDemandRouted.ownerFallback,
+  };
+}
 
 /** A registered pool as the model's `Runner`: its partition and name are the runner's identity, and its principal the session generation. */
 export interface WorkerPoolRunner extends WorkerPoolPolicy {
@@ -380,19 +396,28 @@ export function workerPoolPlacementOutcome(
   return configured.length > 0 ? "Unavailable" : "DefinitiveIncompatibility";
 }
 
-/** A registered pool as the registry and the authority answer it: the runner's identity, inventory and class, and whether it is revoked. */
+/** A registered pool as the registry and the authority answer it: the runner's identity, inventory, class, owner and allowlist, and whether it is revoked. */
 export type WorkerPoolAnswered = Pick<
   WorkerPoolRunner,
-  "partition" | "pool" | "principal" | "capabilities" | "class" | "revoked"
+  | "partition"
+  | "pool"
+  | "principal"
+  | "capabilities"
+  | "class"
+  | "dedicatedOwner"
+  | "allowlist"
+  | "revoked"
 >;
 
-/** A registered pool as the scheduler reads it: the class it registered, the registered policy otherwise, enabled, and revoked as the authority answered. */
+/** A registered pool as the scheduler reads it: the class, owner and allowlist it registered, the registered policy otherwise, enabled, and revoked as the authority answered. */
 function workerPoolOutcomeRegisteredRunner(
   registered: WorkerPoolAnswered,
 ): WorkerPoolRunner {
   return {
     ...workerPoolPolicyRegistered,
     class: registered.class,
+    dedicatedOwner: registered.dedicatedOwner,
+    allowlist: registered.allowlist,
     partition: registered.partition,
     pool: registered.pool,
     principal: registered.principal,
@@ -402,7 +427,7 @@ function workerPoolOutcomeRegisteredRunner(
   };
 }
 
-/** What `workerPoolPlacementOutcome` says of an execution no pool has taken, asked of its project's registered pools. */
+/** What `workerPoolPlacementOutcome` says of an execution no pool has taken, asked of its project's registered pools and its owner's personal pool. */
 export function workerPoolOutcomeRegistered(
   execution: LogicalExecution,
   registered: readonly WorkerPoolAnswered[],
@@ -414,7 +439,7 @@ export function workerPoolOutcomeRegistered(
       phase: "Waiting",
       requirement: execution.requirement,
       route: execution.route,
-      demand: workerPoolDemandRouted,
+      demand: workerPoolDemandOf(execution),
     },
     registered.map((pool) => ({
       pool: workerPoolOutcomeRegisteredRunner(pool),

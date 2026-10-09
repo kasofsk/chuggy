@@ -161,7 +161,6 @@ async function main(): Promise<void> {
     assignments: postgresWorkerPoolAssignments(pool),
     sessions: {
       store: postgresWorkerPoolSessions(pool),
-      access,
       bindings: postgresProjectRepositoryBinding(pool),
       bearers: sessionAttemptMint(),
     },

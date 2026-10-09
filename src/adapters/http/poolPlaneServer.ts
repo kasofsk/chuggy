@@ -99,6 +99,7 @@ function poolPorts(service: PoolPlaneService): WorkerPoolPorts {
   return {
     assignments: service.assignments,
     sessions: service.sessions,
+    access: service.access,
     mint: service.mint,
   };
 }

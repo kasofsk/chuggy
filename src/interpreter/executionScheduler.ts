@@ -98,6 +98,8 @@ import type { TaskPurpose } from "./briefingTemplate.ts";
 import { checkedFinalizerConfig } from "./finalizer.ts";
 import type { FinalizerConfig } from "./finalizer.ts";
 import type { OperationId } from "./operationInbox.ts";
+import type { Principal } from "./principal.ts";
+import type { WorkerPoolOwnerFallback } from "./projectOwnerFallback.ts";
 import { mailboxCompletionRoom, observe } from "./ticketService.ts";
 import type { TicketServiceConfig } from "./ticketService.ts";
 import type {
@@ -446,6 +448,10 @@ export interface LogicalExecution {
   readonly execution: ExecutionId;
   /** Where its attempts run: placed by this scheduler, or offered to the project's pools. */
   readonly route: ExecutionRoute;
+  /** Who created its ticket, absent where no member did or it was registered before owners were recorded. */
+  readonly owner?: Principal;
+  /** The fallback its project named when it was registered, absent where the project allowed no personal runner. */
+  readonly ownerFallback?: WorkerPoolOwnerFallback;
   readonly ticket: TicketId;
   readonly task: TaskId;
   readonly taskKind: ExecutionTaskKind;

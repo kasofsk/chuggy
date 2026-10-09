@@ -24,6 +24,7 @@ import {
 import {
   workerPoolHeldImages,
   workerPoolHeldNamedMax,
+  workerPoolOwnersAskedMax,
   workerPoolPoll,
   workerPoolReconcile,
   workerPoolReconciliationUnsessioned,
@@ -99,6 +100,10 @@ const settings: WorkerPoolPollSettings = {
 /** A durable side holding nothing, which is what a pool with no work to take meets. */
 const idle: WorkerPoolAssignments = {
   claim: () => Promise.resolve(undefined),
+  ownersDeferredTo: () => Promise.resolve([]),
+  claimPersonal: () => Promise.resolve(undefined),
+  allowlisted: () => Promise.resolve([]),
+  polled: () => Promise.resolve(),
   renew: () => Promise.resolve(true),
   refuse: () => Promise.resolve(false),
   release: () => Promise.resolve(false),
@@ -156,9 +161,9 @@ function ports(
   let minted = 0;
   return {
     assignments,
+    access,
     sessions: {
       store,
-      access,
       bindings: {
         binding: (partition) =>
           Promise.resolve({
@@ -826,48 +831,219 @@ test("the images a pool may pull are those of what it holds of either kind, each
   assert.deepEqual(bounds, ["job:3", "session:5"]);
 });
 
-test("a personal runner claims no execution, renews none, and is told to stop every one it names", async () => {
+test("a personal runner claims only in the projects it allowlists that its owner may still read, every one asked before any claim", async () => {
   const reached: string[] = [];
   const answered = await workerPoolReconcile(
-    ports({
-      ...idle,
-      claim: () => {
-        reached.push("claim");
-        return Promise.resolve({ requirement: container });
+    ports(
+      {
+        ...idle,
+        claim: () => Promise.resolve((reached.push("pool"), undefined)),
+        allowlisted: () =>
+          Promise.resolve([asProjectId("project"), asProjectId("elsewhere")]),
+        claimPersonal: (_identity, _terms, _assignment, _bearer, projects) => {
+          reached.push(`claim:${projects.join(",")}`);
+          return Promise.resolve({ requirement: container });
+        },
       },
-      renew: () => {
-        reached.push("renew");
-        return Promise.resolve(true);
+      noSessions,
+      () => "minted",
+      {
+        ...reading,
+        authorize: (principal, partition, kind) => {
+          reached.push(`${principal}:${partition.project}:${kind}`);
+          return Promise.resolve(
+            partition.project === "project"
+              ? memberAuthority(principal)
+              : undefined,
+          );
+        },
       },
-    }),
+    ),
     runner,
-    { jobs: ["one"], sessions: [] },
-    { wanted: settings.assignmentsPerPollMax, wantedSessions: 0 },
+    nothingHeld,
+    { wanted: 1, wantedSessions: 0 },
+    settings,
+  );
+  assert.equal(answered.assignments.length, 1);
+  assert.deepEqual(reached, [
+    "a-member:project:Read",
+    "a-member:elsewhere:Read",
+    "claim:project",
+  ]);
+});
+
+test("a personal runner whose owner may read nothing it allowlists claims nothing", async () => {
+  let claimed = 0;
+  const answered = await workerPoolReconcile(
+    ports(
+      {
+        ...idle,
+        allowlisted: () => Promise.resolve([asProjectId("project")]),
+        claimPersonal: () => {
+          claimed += 1;
+          return Promise.resolve({ requirement: container });
+        },
+      },
+      noSessions,
+      () => "minted",
+      { ...reading, authorize: () => Promise.resolve(undefined) },
+    ),
+    runner,
+    nothingHeld,
+    { wanted: 1, wantedSessions: 0 },
     settings,
   );
   assert.deepEqual(answered.assignments, []);
-  assert.deepEqual(answered.stop, ["one"]);
+  assert.equal(claimed, 0);
+});
+
+test("a pool's claim names revoked each owner it would defer to who lost their permit or their Read, and asks of no more owners than its bound", async () => {
+  const kept = asPrincipal("member-kept");
+  const unpermitted = asPrincipal("member-unpermitted");
+  const unreading = asPrincipal("member-unreading");
+  const asked: unknown[] = [];
+  await workerPoolReconcile(
+    ports(
+      {
+        ...idle,
+        ownersDeferredTo: (_identity, max) => {
+          asked.push(max);
+          return Promise.resolve([kept, unpermitted, unreading]);
+        },
+        claim: (_identity, _terms, _assignment, _bearer, revoked) => {
+          asked.push(revoked);
+          return Promise.resolve(undefined);
+        },
+      },
+      noSessions,
+      () => "minted",
+      {
+        ...reading,
+        authorizeTenant: (principal, _tenant, kind) =>
+          Promise.resolve(
+            principal !== unpermitted && kind === "RegisterPersonalRunner"
+              ? memberAuthority(principal)
+              : undefined,
+          ),
+        authorize: (principal, _partition, kind) =>
+          Promise.resolve(
+            principal !== unreading && kind === "Read"
+              ? memberAuthority(principal)
+              : undefined,
+          ),
+      },
+    ),
+    identity,
+    nothingHeld,
+    { wanted: 1, wantedSessions: 0 },
+    settings,
+  );
+  assert.deepEqual(asked, [workerPoolOwnersAskedMax, [unpermitted, unreading]]);
+});
+
+test("a caller with no room asks the authority nothing and claims nothing", async () => {
+  const reached: string[] = [];
+  const access: ProjectAccess = {
+    ...reading,
+    authorize: () => Promise.resolve((reached.push("authorize"), undefined)),
+    authorizeTenant: () =>
+      Promise.resolve((reached.push("authorizeTenant"), undefined)),
+  };
+  for (const caller of [identity, runner])
+    await workerPoolReconcile(
+      ports(
+        {
+          ...idle,
+          ownersDeferredTo: () =>
+            Promise.resolve((reached.push("owners"), [asPrincipal("member")])),
+          allowlisted: () =>
+            Promise.resolve((reached.push("allowlisted"), [asProjectId("p")])),
+        },
+        noSessions,
+        () => "minted",
+        access,
+      ),
+      caller,
+      nothingHeld,
+      { wanted: 0, wantedSessions: 0 },
+      settings,
+    );
   assert.deepEqual(reached, []);
 });
 
-test("a personal runner settles no execution and pulls no execution's image", async () => {
+test("a personal runner renews, settles and pulls the images of its executions through its own identity", async () => {
   const reached: string[] = [];
-  const executions = {
+  const executions: WorkerPoolAssignments = {
     ...idle,
-    held: () => Promise.resolve((reached.push("held"), true)),
-    heldImages: () => Promise.resolve((reached.push("images"), ["job-image"])),
+    renew: (caller, assignment) =>
+      Promise.resolve(
+        (reached.push(`renew:${caller.kind}:${assignment}`),
+        assignment === "live"),
+      ),
+    held: (caller, assignment) =>
+      Promise.resolve(
+        (reached.push(`held:${caller.kind}:${assignment}`), true),
+      ),
+    heldImages: (caller) =>
+      Promise.resolve((reached.push(`images:${caller.kind}`), ["job-image"])),
   };
+  const answered = await workerPoolReconcile(
+    ports(executions),
+    runner,
+    { jobs: ["live", "gone"], sessions: [] },
+    { wanted: 0, wantedSessions: 0 },
+    settings,
+  );
+  assert.deepEqual(answered.stop, ["gone"]);
   assert.equal(
-    await workerPoolSettled(ports(executions), runner, "j1", {
+    await workerPoolSettled(ports(executions), runner, "live", {
       outcome: "Accepted",
     }),
-    false,
+    true,
   );
   assert.deepEqual(
     await workerPoolHeldImages(ports(executions), runner, settings),
-    [],
+    ["job-image"],
   );
-  assert.deepEqual(reached, []);
+  assert.deepEqual(reached, [
+    "renew:Personal:live",
+    "renew:Personal:gone",
+    "held:Personal:live",
+    "images:Personal",
+  ]);
+});
+
+test("a personal runner's poll is recorded as one that could take an execution where it has room for one or holds one, apart from its sessions, and a pool's is not", async () => {
+  for (const [caller, over, recorded] of [
+    [runner, { wanted: 1, readsSessions: false }, ["executions"]],
+    [runner, { held: ["j1"], readsSessions: false }, ["executions"]],
+    [runner, { readsSessions: false }, []],
+    [runner, { wantedSessions: 1 }, ["sessions"]],
+    [runner, { wanted: 1, wantedSessions: 1 }, ["sessions", "executions"]],
+    [identity, { wanted: 1, readsSessions: false }, []],
+  ] as const) {
+    const reached: string[] = [];
+    await workerPoolPoll(
+      ports(
+        {
+          ...idle,
+          polled: () => Promise.resolve(void reached.push("executions")),
+        },
+        {
+          ...noSessions,
+          polled: () => Promise.resolve(void reached.push("sessions")),
+        },
+      ),
+      caller,
+      asked(over),
+      { ...settings, pollsMax: 1 },
+    );
+    assert.deepEqual(
+      reached,
+      recorded,
+      `${caller.kind} ${JSON.stringify(over)}`,
+    );
+  }
 });
 
 test("a personal runner's sessions are opened only in projects its owner may read, each asked once and all before any is opened", async () => {

@@ -178,6 +178,7 @@ test("an attempt a pool held is lost when its lease runs out, and spends the bud
       { leaseSecs: service.config.attemptLeaseSecs, heldMax: 1 },
       `assignment-${randomUUID()}`,
       `bearer-${randomUUID()}`,
+      [],
     ),
     undefined,
   );
@@ -353,8 +354,10 @@ async function poolClaimed(routed: PoolRouted, name: string) {
     await rig.store.attemptInvoked(attempt, schedulerInvocation),
     true,
   );
-  const [pool] = (await roster.registered(routed.project.partition)).pools;
-  assert.ok(pool !== undefined);
+  const [registered] = (await roster.registered(routed.project.partition))
+    .pools;
+  assert.ok(registered !== undefined);
+  const pool = { kind: "Dedicated" as const, ...registered };
   const assignment = `assignment-${randomUUID()}`;
   const bearer = `bearer-${randomUUID()}`;
   assert.notEqual(
@@ -363,6 +366,7 @@ async function poolClaimed(routed: PoolRouted, name: string) {
       { leaseSecs: service.config.attemptLeaseSecs, heldMax: 1 },
       assignment,
       bearer,
+      [],
     ),
     undefined,
   );
@@ -476,6 +480,7 @@ async function poolConcludedStays(
       { leaseSecs: service.config.attemptLeaseSecs, heldMax: 1 },
       `assignment-${randomUUID()}`,
       `bearer-${randomUUID()}`,
+      [],
     ),
     undefined,
   );

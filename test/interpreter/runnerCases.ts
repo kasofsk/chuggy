@@ -372,6 +372,12 @@ const assigned: readonly RunnerCase[] = [
     others: [ownersPoolRegistered({ draining: true })],
     placement: owned,
   },
+  {
+    ...assignable,
+    name: "a dedicated pool is assigned a strict owner's execution while the owner's personal pool is revoked",
+    others: [ownersPoolRegistered({ revoked: true })],
+    placement: ownedStrict,
+  },
 ];
 
 const refusedByPlacement: readonly RunnerCase[] = [
@@ -626,6 +632,22 @@ const refusedBySession: readonly RunnerCase[] = [
     [runnerTerm.slot],
     "Unavailable",
     { session: { ...session, held: 1 } },
+  ),
+  refused(
+    "a personal pool's poll under a principal registered over is stale",
+    [runnerTerm.generation],
+    "Unavailable",
+    {
+      pool: personal,
+      placement: owned,
+      session: { ...session, principal: asPrincipal("principal-zero") },
+    },
+  ),
+  refused(
+    "a personal pool polling with the plane's bound held has no slot",
+    [runnerTerm.slot],
+    "Unavailable",
+    { pool: personal, placement: owned, session: { ...session, held: 1 } },
   ),
 ];
 

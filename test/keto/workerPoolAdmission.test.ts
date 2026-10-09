@@ -12,12 +12,18 @@ import {
   oidcPrincipal,
   type Principal,
 } from "../../src/interpreter/principal.ts";
+import { forgeCredentialMinting } from "../../src/interpreter/forgeCredentials.ts";
+import { asRepositoryId } from "../../src/interpreter/finalizer.ts";
+import { asForgeInstallationToken } from "../../src/interpreter/forgeInstallation.ts";
 import { allProjectAccessKinds } from "../../src/interpreter/projectAccess.ts";
 import {
   projectPrincipalGrant,
   tenantPrincipalGrant,
 } from "../../src/interpreter/projectGrant.ts";
-import type { Partition } from "../../src/interpreter/projectStore.ts";
+import {
+  asRecoveryEpoch,
+  type Partition,
+} from "../../src/interpreter/projectStore.ts";
 import {
   workerPoolAdmitted,
   type PersonalRunnerIdentity,
@@ -174,4 +180,71 @@ test("a personal runner is admitted while its owner may register one in its tena
   assert.deepEqual(await admitted(), { ...runner, kind: "Personal" });
   await grants.remove(permit);
   assert.equal(await admitted(), undefined);
+});
+
+test("a personal runner holds no permit of any project its owner serves, so a project's forge credential answers it nothing while it answers a pool", async () => {
+  const partition = ketoHarnessPartition("personal-unminted");
+  const runner = personalRunner(partition, "personal-unminted");
+  const pool = oidcPrincipal(ketoHarnessIssuer, "chuggy-pool-minted");
+  for (const grant of [
+    tenantPrincipalGrant({
+      issuer: ketoHarnessIssuer,
+      subject: "member-personal-unminted",
+      tenant: partition.tenant,
+      relation: "personal_runners",
+    }),
+    projectPrincipalGrant({
+      issuer: ketoHarnessIssuer,
+      subject: "member-personal-unminted",
+      tenant: partition.tenant,
+      project: partition.project,
+      relation: "admins",
+    }),
+    projectPrincipalGrant({
+      issuer: ketoHarnessIssuer,
+      subject: "chuggy-pool-minted",
+      tenant: partition.tenant,
+      project: partition.project,
+      relation: "pools",
+    }),
+  ])
+    await grants.write(grant);
+  for (const kind of allProjectAccessKinds)
+    assert.equal(
+      await access.authorize(runner.principal, partition, kind),
+      undefined,
+      kind,
+    );
+  const repository = asRepositoryId("github.com/owner/repo");
+  const asked: string[] = [];
+  const minting = forgeCredentialMinting(
+    access,
+    {
+      binding: (bound) =>
+        Promise.resolve({
+          partition: bound,
+          repository,
+          recoveryEpoch: asRecoveryEpoch("epoch"),
+        }),
+    },
+    {
+      token: (named) => {
+        asked.push(named);
+        return Promise.resolve({
+          minted: "Token",
+          token: asForgeInstallationToken("ghs_minted"),
+          expiresAtMs: 1,
+        });
+      },
+    },
+  );
+  const request = { repository, permissions: "read" } as const;
+  assert.deepEqual(await minting.mint(runner.principal, partition, request), {
+    result: "NotFound",
+  });
+  assert.deepEqual(asked, [], "a runner's mint reached the forge");
+  assert.equal(
+    (await minting.mint(pool, partition, request)).result,
+    "Authorized",
+  );
 });
