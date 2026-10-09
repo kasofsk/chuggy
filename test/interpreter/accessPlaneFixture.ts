@@ -314,7 +314,12 @@ export function accessGivenTenantAdministrator(
     memory,
     principal,
     (
-      ["GrantTenantAdmin", "GrantMember", "ManageTenantAuthorities"] as const
+      [
+        "GrantTenantAdmin",
+        "GrantMember",
+        "GrantPersonalRunners",
+        "ManageTenantAuthorities",
+      ] as const
     ).map((kind) => ({ on: "Tenant", tenant, kind })),
   );
   for (const partition of projects)

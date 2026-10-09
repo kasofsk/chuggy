@@ -284,6 +284,56 @@ test("who gives hosted runs is the site's to change: the tenant's administrator 
   );
 });
 
+test("who gives personal runners is the tenant's to change: its administrator delegates to a member, refuses the tenant's members as a group, and removing its own group ends its giving", async () => {
+  const holding = await tenantOf("holders-personal-runners");
+  const { admin, member } = holding;
+  const tenant = holding.web.tenant;
+  assert.equal(
+    await tenantKindHeld(admin.principal, holding, "GrantPersonalRunners"),
+    true,
+  );
+  assert.equal(
+    await holders.holderAdded(
+      admin.principal,
+      onTenant(holding, "PersonalRunnersGranters", group("TenantMembers")),
+    ),
+    "NotAdmitted",
+  );
+  const delegated = onTenant(
+    holding,
+    "PersonalRunnersGranters",
+    person(member.subject),
+  );
+  assert.equal(
+    await holders.holderAdded(admin.principal, delegated),
+    "Changed",
+  );
+  assert.equal(
+    await plane.tenantPersonalRunnersGiven(member.principal, tenant, "zed"),
+    "Changed",
+  );
+  assert.equal(
+    await tenantKindHeld(member.principal, holding, "RegisterPersonalRunner"),
+    false,
+  );
+  assert.equal(
+    await holders.holderRemoved(
+      admin.principal,
+      onTenant(holding, "PersonalRunnersGranters", group("TenantAdmins")),
+    ),
+    "Changed",
+  );
+  assert.equal(
+    await plane.tenantPersonalRunnersTaken(admin.principal, tenant, "zed"),
+    "Refused",
+  );
+  assert.deepEqual(await tenantHeld(holding, "PersonalRunnersGranters"), {
+    groups: [],
+    people: [member.subject],
+    unnamed: 0,
+  });
+});
+
 test("a group the authority does not admit is refused and nothing is written", async () => {
   const holding = await tenantOf("holders-not-admitted");
   assert.equal(
@@ -382,6 +432,7 @@ const ketoTenantAuthorityKinds: Readonly<
   AdminGranters: "GrantTenantAdmin",
   MemberGranters: "GrantMember",
   HostedRunsGranters: "GrantHostedExecution",
+  PersonalRunnersGranters: "GrantPersonalRunners",
   AuthorityManagers: "ManageTenantAuthorities",
 };
 

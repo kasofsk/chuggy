@@ -212,6 +212,22 @@ export function apiRemoveHostedRuns(
   return accessSent(ports, "tenantHostedRunsRemoval", { tenant, subject });
 }
 
+export function apiGrantPersonalRunners(
+  ports: ApiPorts,
+  tenant: string,
+  subject: string,
+): Promise<ApiResult<undefined>> {
+  return accessSent(ports, "tenantPersonalRunnersGrant", { tenant, subject });
+}
+
+export function apiRemovePersonalRunners(
+  ports: ApiPorts,
+  tenant: string,
+  subject: string,
+): Promise<ApiResult<undefined>> {
+  return accessSent(ports, "tenantPersonalRunnersRemoval", { tenant, subject });
+}
+
 export function apiRemoveTenantAuthorityGroup(
   ports: ApiPorts,
   tenant: string,

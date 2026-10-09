@@ -133,6 +133,8 @@ export function tenantPermissionName(authority: AccessTenantAuthority): string {
       return "Grant Member";
     case "HostedRunsGranters":
       return "Grant hosted runs";
+    case "PersonalRunnersGranters":
+      return "Grant personal runners";
     case "AuthorityManagers":
       return "Change permissions";
   }

@@ -255,6 +255,60 @@ test("hosted runs are the tenant's own grant, which administering the tenant doe
   assert.deepEqual(await hosted(), memberAuthority(principal));
 });
 
+test("registering a personal runner is the tenant's own grant, which no role, `Execute` nor hosted runs carries", async () => {
+  const partition = ketoHarnessPartition("tenant-personal");
+  const tenantOf = (subject: string, relation: string) =>
+    grants.write(
+      tenantPrincipalGrant({
+        issuer: ketoHarnessIssuer,
+        subject,
+        tenant: partition.tenant,
+        relation,
+      }),
+    );
+  const registers = (principal: ReturnType<typeof oidcPrincipal>) =>
+    access.authorizeTenant(
+      principal,
+      partition.tenant,
+      "RegisterPersonalRunner",
+    );
+  await grants.write(projectTenantGrant(partition));
+  await tenantOf("personal-member", "members");
+  const member = oidcPrincipal(ketoHarnessIssuer, "personal-member");
+  const everything = await granted(partition, "personal-every", "developers");
+  for (const relation of ["admins", "members", "hosted_execution"])
+    await tenantOf("personal-every", relation);
+  assert.notEqual(
+    await access.authorize(everything, partition, "Execute"),
+    undefined,
+  );
+  for (const [who, principal] of [
+    ["a member", member],
+    ["every other role and hosted runs", everything],
+  ] as const)
+    assert.equal(
+      await registers(principal),
+      undefined,
+      `${who} answered for registering a personal runner`,
+    );
+  await tenantOf("personal-member", "personal_runners");
+  assert.deepEqual(await registers(member), memberAuthority(member));
+  assert.equal(
+    await access.authorizeTenant(member, partition.tenant, "ExecuteHosted"),
+    undefined,
+    "personal runners answered for hosted runs",
+  );
+  assert.equal(
+    await access.authorizeTenant(
+      member,
+      partition.tenant,
+      "GrantPersonalRunners",
+    ),
+    undefined,
+    "holding personal runners answered for granting them",
+  );
+});
+
 /**
  * The object encoding is what keeps two partitions apart, and both halves are
  * arbitrary text that may carry any separator. A joined encoding would let one

@@ -1,6 +1,6 @@
 /**
  * A workspace's permissions: who may grant each of its roles, give it hosted
- * runs and change who may. Where the reader may change a permission, each
+ * runs or personal runners and change who may. Where the reader may change a permission, each
  * holder a route removes is removed on its press, and everything the removal
  * may have changed is read again: the workspace's list and the site's, the
  * reader's abilities and the people. Each such permission carries `Add`,

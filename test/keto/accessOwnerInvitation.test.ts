@@ -154,6 +154,7 @@ test("a site's invitation makes the person the new tenant's administrator and on
       "AdministerTenant",
       "GrantTenantAdmin",
       "GrantMember",
+      "GrantPersonalRunners",
       "ManageTenantAuthorities",
     ] as const)
       assert.ok(held.includes(kind), kind);

@@ -1,8 +1,9 @@
 /**
  * The access plane against a real authority: what a list reads back from the
  * tuples, a principal and a project object decoded from what the server
- * answers, a role or hosted runs granted being a permit `ProjectAccess` then
- * answers for, and what a caller may do following who holds each kind.
+ * answers, a role, hosted runs or personal runners granted being a permit
+ * `ProjectAccess` then answers for, and what a caller may do following who
+ * holds each kind.
  *
  * NOTHING ON A FRESH TENANT IS WRITTEN BUT BY THE CASE. The plane writes a
  * tenant's first administrator and its defaults only through the site's
@@ -620,6 +621,7 @@ test("the site's administrator, holding no role in the tenant, is answered every
       tenant,
       roles: [],
       grantHostedRuns: true,
+      grantPersonalRunners: false,
       createAccount: true,
       manageAuthorities: true,
       manageSiteHeldAuthorities: true,
@@ -645,6 +647,7 @@ test("a tenant's administrator may grant both tenant roles and every project rol
     tenant,
     roles: ["Admin", "Member"],
     grantHostedRuns: false,
+    grantPersonalRunners: true,
     createAccount: false,
     manageAuthorities: true,
     manageSiteHeldAuthorities: false,
@@ -655,6 +658,49 @@ test("a tenant's administrator may grant both tenant roles and every project rol
     })),
     truncated: false,
   });
+});
+
+test("the tenant's administrator gives a member personal runners and takes them back, the site's administrator is refused both and the member is absent", async () => {
+  const { tenant } = await tenantOf("personal-runners");
+  await plane.tenantRoleGranted(alice, tenant, "pat", "Member");
+  const pat = oidcPrincipal(ketoHarnessIssuer, "pat");
+  const listed = async () =>
+    (await plane.tenantPeople(alice, tenant))?.people.find(
+      (person) => person.subject === "pat",
+    )?.personalRunners;
+  const registers = async () =>
+    (await access.authorizeTenant(pat, tenant, "RegisterPersonalRunner")) !==
+    undefined;
+  assert.equal(await registers(), false);
+  assert.equal(
+    await plane.tenantPersonalRunnersGiven(pat, tenant, "pat"),
+    "Absent",
+  );
+  await ketoHarnessWithSiteAdministrator(async (administrator) => {
+    assert.equal(
+      await plane.tenantPersonalRunnersGiven(administrator, tenant, "pat"),
+      "Refused",
+    );
+  });
+  assert.equal(await listed(), false);
+  assert.equal(
+    await plane.tenantPersonalRunnersGiven(alice, tenant, "pat"),
+    "Changed",
+  );
+  assert.equal(await listed(), true);
+  assert.equal(await registers(), true);
+  assert.equal(await hostedRunsGranted(access, pat, tenant), false);
+  assert.equal(
+    await plane.tenantPersonalRunnersTaken(pat, tenant, "pat"),
+    "Absent",
+  );
+  assert.equal(await registers(), true);
+  assert.equal(
+    await plane.tenantPersonalRunnersTaken(alice, tenant, "pat"),
+    "Changed",
+  );
+  assert.equal(await listed(), false);
+  assert.equal(await registers(), false);
 });
 
 test("the site's administrator gives a member hosted runs and takes them back, the tenant's administrator is refused both and a stranger is absent", async () => {

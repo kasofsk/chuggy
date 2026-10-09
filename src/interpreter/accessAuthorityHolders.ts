@@ -146,6 +146,7 @@ export const accessTenantAuthorityKinds: Readonly<
   AdminGranters: "ManageTenantAuthorities",
   MemberGranters: "ManageTenantAuthorities",
   HostedRunsGranters: "ManageSiteHeldAuthorities",
+  PersonalRunnersGranters: "ManageTenantAuthorities",
   AuthorityManagers: "ManageTenantAuthorities",
 };
 

@@ -41,6 +41,7 @@ export const peopleListed: AccessTenantPeople = {
       mine: true,
       tenantRoles: ["Admin"],
       hostedRuns: true,
+      personalRunners: false,
       projects: [{ project: "atlas", roles: ["Admin", "Developer"] }],
       account: true,
       email: "ada@example.com",
@@ -51,6 +52,7 @@ export const peopleListed: AccessTenantPeople = {
       mine: false,
       tenantRoles: ["Member"],
       hostedRuns: false,
+      personalRunners: false,
       projects: [],
       account: false,
     },
@@ -59,6 +61,7 @@ export const peopleListed: AccessTenantPeople = {
       mine: false,
       tenantRoles: [],
       hostedRuns: true,
+      personalRunners: false,
       projects: [],
       account: false,
     },
@@ -75,6 +78,7 @@ export function peopleAbilitiesAll(
     tenant: peopleTenant,
     roles: [...accessTenantRoles],
     grantHostedRuns: true,
+    grantPersonalRunners: false,
     createAccount: true,
     manageAuthorities: true,
     manageSiteHeldAuthorities: false,
@@ -92,6 +96,7 @@ export const peopleAbilitiesNone: AccessTenantAbilities = {
   ...peopleAbilitiesAll([]),
   roles: [],
   grantHostedRuns: false,
+  grantPersonalRunners: false,
   createAccount: false,
   manageAuthorities: false,
 };
@@ -139,6 +144,11 @@ export function changesSent(drawn: DrawnStrict): readonly SentRequest[] {
 /** Where one person's hosted runs are given and taken. */
 export function hostedRunsPath(subject: string): string {
   return `${peoplePath}/${subject}/hosted-runs`;
+}
+
+/** Where one person's personal runners are given and taken. */
+export function personalRunnersPath(subject: string): string {
+  return `${peoplePath}/${subject}/personal-runners`;
 }
 
 export function listReads(drawn: DrawnStrict): number {

@@ -41,6 +41,7 @@ import {
   tenantPeopleOtherIssuersLine,
   tenantPeopleParted,
   tenantHostedRunsOffered,
+  tenantPersonalRunnersOffered,
   tenantPersonBoxChecked,
   tenantPersonChangeAsks,
   tenantPersonChangeNote,
@@ -103,6 +104,7 @@ const person: AccessTenantPerson = {
   mine: false,
   tenantRoles: [],
   hostedRuns: false,
+  personalRunners: false,
   projects: [],
 };
 
@@ -290,6 +292,7 @@ const abilities: AccessTenantAbilities = {
   tenant: "acme",
   roles: ["Member"],
   grantHostedRuns: false,
+  grantPersonalRunners: false,
   createAccount: false,
   manageAuthorities: false,
   manageSiteHeldAuthorities: false,
@@ -310,6 +313,17 @@ test("hosted runs are offered only where the abilities say so, and not where non
     true,
   );
   expect(tenantHostedRunsOffered(undefined)).toBe(false);
+});
+
+test("personal runners are offered only where the abilities say so, apart from hosted runs, and not where none were read", () => {
+  expect(tenantPersonalRunnersOffered(abilities)).toBe(false);
+  expect(
+    tenantPersonalRunnersOffered({ ...abilities, grantPersonalRunners: true }),
+  ).toBe(true);
+  expect(
+    tenantPersonalRunnersOffered({ ...abilities, grantHostedRuns: true }),
+  ).toBe(false);
+  expect(tenantPersonalRunnersOffered(undefined)).toBe(false);
 });
 
 test("a role is offered only where the abilities name it, and nothing where none were read", () => {
@@ -400,18 +414,22 @@ test("the people are counted in a word that agrees with how many", () => {
   ]);
 });
 
-test("a row draws what its person holds in the workspace, roles in the roster's order and hosted runs last", () => {
+test("a row draws what its person holds in the workspace, roles in the roster's order, then hosted runs, then personal runners", () => {
   expect(tenantPersonHeld(person)).toStrictEqual([]);
   expect(
     tenantPersonHeld({
       ...person,
       tenantRoles: ["Member", "Admin"],
       hostedRuns: true,
+      personalRunners: false,
     }),
   ).toStrictEqual(["Admin", "Member", "Hosted runs"]);
   expect(tenantPersonHeld({ ...person, hostedRuns: true })).toStrictEqual([
     "Hosted runs",
   ]);
+  expect(
+    tenantPersonHeld({ ...person, hostedRuns: true, personalRunners: true }),
+  ).toStrictEqual(["Hosted runs", "Personal runners"]);
 });
 
 test("a workspace admin, and no one else, reads as holding every project", () => {
@@ -458,6 +476,9 @@ test("an editor is offered where the reader may change anything at all, and not 
     true,
   );
   expect(
+    tenantPersonEditOffered({ ...none, grantPersonalRunners: true }, []),
+  ).toBe(true);
+  expect(
     tenantPersonEditOffered({ ...none, projects: abilities.projects }, [
       "beacon",
     ]),
@@ -474,6 +495,7 @@ test("an editor's workspace boxes are each role and hosted runs, one the reader 
     ...person,
     tenantRoles: ["Admin"],
     hostedRuns: true,
+    personalRunners: false,
   };
   expect(tenantPersonWorkspaceBoxes(abilities, holding)).toStrictEqual([
     {
@@ -496,6 +518,30 @@ test("an editor's workspace boxes are each role and hosted runs, one the reader 
     tenantPersonWorkspaceBoxes(abilities, person).map((box) => box.label),
   ).toStrictEqual(["Member"]);
   expect(tenantPersonWorkspaceBoxes(undefined, person)).toStrictEqual([]);
+});
+
+test("an editor's personal runners box follows hosted runs, offered by its own ability and drawn where held", () => {
+  expect(
+    tenantPersonWorkspaceBoxes(
+      { ...abilities, grantPersonalRunners: true },
+      person,
+    ).at(-1),
+  ).toStrictEqual({
+    label: "Personal runners",
+    change: { scope: "PersonalRunners", held: false },
+    offered: true,
+  });
+  expect(
+    tenantPersonWorkspaceBoxes(abilities, {
+      ...person,
+      hostedRuns: true,
+      personalRunners: true,
+    }).map((box) => [box.label, box.offered]),
+  ).toStrictEqual([
+    ["Member", true],
+    ["Hosted runs", false],
+    ["Personal runners", false],
+  ]);
 });
 
 test("an editor's project box is the change a press asks for, absent where neither offered nor held", () => {
@@ -546,6 +592,7 @@ test("a box is checked as the list holds it, and the one being sent as the chang
     { scope: "Project", project: "beacon", role: "Dispatcher", held: false },
     { scope: "Tenant", role: "Admin", held: false },
     { scope: "HostedRuns", held: false },
+    { scope: "PersonalRunners", held: false },
   ] as const;
   for (const sending of elsewhere)
     expect(tenantPersonBoxChecked(beacon, sending)).toBe(false);

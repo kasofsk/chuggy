@@ -64,6 +64,7 @@ export const accessTenantAuthorities = [
   "AdminGranters",
   "MemberGranters",
   "HostedRunsGranters",
+  "PersonalRunnersGranters",
   "AuthorityManagers",
 ] as const;
 export type AccessTenantAuthority = (typeof accessTenantAuthorities)[number];
@@ -125,6 +126,7 @@ export const accessTenantAuthorityAdmits: Readonly<
   AdminGranters: ["TenantAdmins", "SiteAdmins"],
   MemberGranters: ["TenantAdmins", "SiteAdmins", "TenantMembers"],
   HostedRunsGranters: ["TenantAdmins", "SiteAdmins"],
+  PersonalRunnersGranters: ["TenantAdmins", "SiteAdmins"],
   AuthorityManagers: ["TenantAdmins"],
 };
 
@@ -187,6 +189,14 @@ export const accessPlaneRoutes = {
   tenantHostedRunsRemoval: {
     method: "DELETE",
     path: `${accessTenantPath}/people/:subject/hosted-runs`,
+  },
+  tenantPersonalRunnersGrant: {
+    method: "POST",
+    path: `${accessTenantPath}/people/:subject/personal-runners`,
+  },
+  tenantPersonalRunnersRemoval: {
+    method: "DELETE",
+    path: `${accessTenantPath}/people/:subject/personal-runners`,
   },
   tenantInvitation: {
     method: "POST",
@@ -326,7 +336,7 @@ export const accessLastTenantAdministratorCode = "LastTenantAdministrator";
 /** The conflict a site's invitation is refused with where something already holds the tenant it names. */
 export const accessTenantTakenCode = "InvitationTenantTaken";
 
-/** The refusal of a change or an invitation to a caller answered the list who may not grant a role it names, or hosted runs, or manage the authority it names. */
+/** The refusal of a change or an invitation to a caller answered the list who may not grant a role it names, hosted runs or personal runners, or manage the authority it names. */
 export const accessNotPermittedCode = "AccessNotPermitted";
 
 /** The conflict a holder is refused with where the authority does not admit it, or where a removal names a group the level's list cannot. */
@@ -451,14 +461,16 @@ export const accessProjectRolesHeldSchema = z.strictObject({
 
 /**
  * One person in a tenant. `hostedRuns` is whether the tenant grants them
- * hosted runs, which the plane's own route gives and takes, and `mine` is the
- * server's answer to whether this is the caller.
+ * hosted runs and `personalRunners` whether it grants them registering a
+ * personal runner, each given and taken by the plane's own route, and `mine` is
+ * the server's answer to whether this is the caller.
  */
 export const accessTenantPersonSchema = z.strictObject({
   subject: z.string().min(1),
   mine: z.boolean(),
   tenantRoles: z.array(accessTenantRoleSchema),
   hostedRuns: z.boolean(),
+  personalRunners: z.boolean(),
   projects: z.array(accessProjectRolesHeldSchema),
   ...accessAccountFields,
 });
@@ -502,14 +514,16 @@ export const accessProjectAbilitiesHeldSchema = z.strictObject({
 
 /**
  * What the caller may do in a tenant: the tenant roles they may grant and
- * remove, whether they may give hosted runs, make an account, change who holds
- * the tenant's authorities and the ones the site holds over it, and what they
- * may do on each of the tenant's projects the answer names.
+ * remove, whether they may give hosted runs or personal runners, make an
+ * account, change who holds the tenant's authorities and the ones the site
+ * holds over it, and what they may do on each of the tenant's projects the
+ * answer names.
  */
 export const accessTenantAbilitiesSchema = z.strictObject({
   tenant: identitySchema,
   roles: z.array(accessTenantRoleSchema),
   grantHostedRuns: z.boolean(),
+  grantPersonalRunners: z.boolean(),
   createAccount: z.boolean(),
   manageAuthorities: z.boolean(),
   manageSiteHeldAuthorities: z.boolean(),
