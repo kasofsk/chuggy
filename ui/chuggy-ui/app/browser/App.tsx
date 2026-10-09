@@ -7,9 +7,8 @@
  * gateway's answer for a server it could not reach, offers to ask again, since
  * a blip says nothing about the deployment.
  *
- * The sign-in names the page it was pressed on, because the issuer redirects to
- * the one address this client is registered with: a page reached with a query
- * it needs — the forge's setup return — would otherwise come back without it.
+ * A browser with no session at the invite page's address is drawn that page,
+ * which is the one address a person without an account is sent to.
  */
 
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -17,8 +16,11 @@ import type { QueryClient } from "@tanstack/react-query";
 import { RouterProvider } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
-import { currentPath } from "./ports.ts";
+import { inviteRoutePath } from "../core/inviteLinks.ts";
+import { InvitePage } from "./InvitePage.tsx";
+import { currentLocation } from "./ports.ts";
 import { consoleRouter } from "./routes.tsx";
+import { SessionCard, SignedOutCard } from "./SessionCard.tsx";
 import {
   sessionBegin,
   useSessionHolder,
@@ -27,22 +29,6 @@ import {
 } from "./session.tsx";
 import { Button } from "./ui/Button.tsx";
 import { Locomotive } from "./ui/Locomotive.tsx";
-
-function SessionCard(props: {
-  readonly title: string;
-  readonly detail: string;
-  readonly media?: ReactNode;
-  readonly action?: ReactNode;
-}): ReactNode {
-  return (
-    <div className="session-card">
-      <h1>{props.title}</h1>
-      {props.media}
-      <p>{props.detail}</p>
-      {props.action}
-    </div>
-  );
-}
 
 export function App(props: { readonly queryClient: QueryClient }): ReactNode {
   const holder = useSessionHolder();
@@ -77,21 +63,10 @@ export function App(props: { readonly queryClient: QueryClient }): ReactNode {
       />
     );
   if (snapshot.phase === "SignedOut")
-    return (
-      <SessionCard
-        title="chuggy"
-        detail={snapshot.reason ?? "Signed out"}
-        action={
-          <Button
-            variant="primary"
-            onClick={() => {
-              void holder.signIn(currentPath());
-            }}
-          >
-            Sign in
-          </Button>
-        }
-      />
+    return currentLocation().pathname === inviteRoutePath ? (
+      <InvitePage />
+    ) : (
+      <SignedOutCard />
     );
   return (
     <QueryClientProvider client={props.queryClient}>

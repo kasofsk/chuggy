@@ -3,5 +3,6 @@
   "clientId": "chuggy-ui",
   "audience": "https://chuggy.vteng.io/api",
   "redirectUri": "https://chuggy.vteng.io/auth/callback",
-  "scopes": ["openid", "offline_access"]
+  "scopes": ["openid", "offline_access"],
+  "inviteCookieDomain": "vteng.io"
 }
