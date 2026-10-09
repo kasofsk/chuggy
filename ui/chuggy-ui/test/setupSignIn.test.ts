@@ -1,0 +1,373 @@
+/**
+ * Signing in from a terminal, end to end over a machine and an installation
+ * that are both doubles: the command, the listener it leaves behind and the
+ * person's browser, which each case plays itself.
+ *
+ * What is checked is what a person's agent is told and what is left on the
+ * machine afterwards: the remembered sign-in, the lock and the listener's
+ * note. A case that ends signed in also checks the three things that means.
+ */
+
+import { expect, test } from "vitest";
+
+import { setupFiles } from "../app/core/setupPorts.ts";
+import { machineAudience, machineSite, setupMachine } from "./setupMachine.ts";
+import type { SetupMachine } from "./setupMachine.ts";
+
+const signIn = ["sign-in", "--site", machineSite, "--wait-secs", "2"];
+
+function remembered(machine: SetupMachine): unknown {
+  const text = machine.files.get(setupFiles.session);
+  return text === undefined ? undefined : JSON.parse(text);
+}
+
+function ended(ending: string) {
+  return { report: "SignInEnded", site: machineSite, ended: ending };
+}
+
+/** A machine whose person signs in as soon as the page opens. */
+function prompt(allowed = true): SetupMachine {
+  const machine = setupMachine();
+  machine.opened = async () => {
+    await machine.person(allowed);
+  };
+  return machine;
+}
+
+test("a sign-in the person finishes is remembered, and leaves neither a lock nor a note", async () => {
+  const machine = prompt();
+  expect(await machine.command(signIn)).toEqual(ended("SignedIn"));
+  expect(remembered(machine)).toEqual({
+    site: machineSite,
+    refreshToken: machine.live(),
+  });
+  expect([...machine.files.keys()]).toEqual([setupFiles.session]);
+  expect(machine.listening()).toBeUndefined();
+  expect(machine.asked).toContain(`${machineSite}/access/v1/workspaces`);
+});
+
+test("the issuer is asked as the setup client, to answer on this machine's own address", async () => {
+  const machine = setupMachine();
+  let first = "";
+  machine.opened = async (address) => {
+    first = address;
+    await machine.person();
+  };
+  await machine.command(signIn);
+  const port = String(new URL(first).port);
+  expect(first).toBe(`http://127.0.0.1:${port}/`);
+  expect(machine.launched).toEqual([["xdg-open", first]]);
+  const exchange = new URLSearchParams(machine.bodies[0]);
+  expect(exchange.get("client_id")).toBe("chuggy-setup");
+  expect(exchange.get("redirect_uri")).toBe(
+    `http://127.0.0.1:${port}/callback`,
+  );
+  expect(machine.asked.join(" ")).not.toContain("localhost");
+  expect(machine.bodies.join(" ")).not.toContain("localhost");
+});
+
+test("the page sends the browser to the issuer with the setup client's scopes and the API's audience", async () => {
+  const machine = setupMachine();
+  let sent = new URL("http://127.0.0.1/");
+  machine.opened = async (address) => {
+    sent = new URL((await machine.browse(address)).location ?? "");
+  };
+  await machine.command(signIn);
+  expect(`${sent.origin}${sent.pathname}`).toBe(
+    "https://auth.example/oauth2/auth",
+  );
+  expect(Object.fromEntries(sent.searchParams)).toMatchObject({
+    response_type: "code",
+    client_id: "chuggy-setup",
+    scope: "openid offline_access",
+    audience: machineAudience,
+    code_challenge_method: "S256",
+  });
+  expect(sent.searchParams.get("redirect_uri")).toBe(
+    `http://127.0.0.1:${String(machine.listening())}/callback`,
+  );
+});
+
+test("a person slower than one wait finishes in the same page, and the next sign-in waits on it and opens nothing", async () => {
+  const machine = setupMachine();
+  const waiting = await machine.command(signIn);
+  expect(waiting).toEqual({
+    report: "SignInWaiting",
+    site: machineSite,
+    port: machine.listening(),
+    opened: "Opened",
+    waitedSecs: 2,
+  });
+  const attached = machine.command(signIn);
+  await machine.person();
+  expect(await attached).toEqual(ended("SignedIn"));
+  expect(machine.detached).toHaveLength(1);
+  expect(machine.launched).toHaveLength(1);
+});
+
+test("a sign-in that is still waiting says so again, as one it did not open", async () => {
+  const machine = setupMachine();
+  await machine.command(signIn);
+  expect(await machine.command(signIn)).toMatchObject({
+    report: "SignInWaiting",
+    opened: "Attached",
+  });
+  expect(machine.detached).toHaveLength(1);
+});
+
+test("a person who finishes between two commands is found signed in by the second", async () => {
+  const machine = setupMachine();
+  await machine.command(signIn);
+  await machine.person();
+  await machine.advance(0);
+  expect(await machine.command(signIn)).toEqual({
+    report: "SignedIn",
+    site: machineSite,
+    workspaces: ["acme"],
+    truncated: false,
+  });
+  expect([...machine.files.keys()]).toEqual([setupFiles.session]);
+  expect(machine.detached).toHaveLength(1);
+});
+
+test("where no browser can be opened the address is handed over at once, and the next sign-in waits on it", async () => {
+  const machine = setupMachine();
+  machine.opener = { launched: "Unstarted" };
+  const handed = await machine.command(signIn);
+  expect(handed).toEqual({
+    report: "SignInWaiting",
+    site: machineSite,
+    port: machine.listening(),
+    opened: "NotOpened",
+    waitedSecs: 0,
+  });
+  const attached = machine.command(signIn);
+  await machine.person();
+  expect(await attached).toEqual(ended("SignedIn"));
+});
+
+test("an opener that ends badly opened nothing, and one still running did", async () => {
+  const failed = setupMachine();
+  failed.opener = { launched: "Ended", exit: 3 };
+  expect(await failed.command(signIn)).toMatchObject({ opened: "NotOpened" });
+  const running = setupMachine();
+  running.opener = { launched: "Running" };
+  expect(await running.command(signIn)).toMatchObject({ opened: "Opened" });
+});
+
+test("a machine this program knows no opener for is handed the address", async () => {
+  const machine = setupMachine();
+  machine.platform = "plan9";
+  expect(await machine.command(signIn)).toMatchObject({ opened: "NotOpened" });
+  expect(machine.launched).toEqual([]);
+});
+
+test("the person's own opener is used where they named one", async () => {
+  const machine = prompt();
+  machine.browser = "/usr/bin/their-browser";
+  await machine.command(signIn);
+  expect(machine.launched[0]?.[0]).toBe("/usr/bin/their-browser");
+});
+
+test("a sign-in declined in the browser is said to be, and nothing is remembered", async () => {
+  const machine = prompt(false);
+  expect(await machine.command(signIn)).toEqual(ended("Declined"));
+  expect(remembered(machine)).toEqual({ site: machineSite });
+  expect(machine.bodies).toEqual([]);
+});
+
+test("a refusal that is not the person's is the issuer's", async () => {
+  const machine = setupMachine();
+  machine.opened = async () => {
+    await machine.browse(
+      `http://127.0.0.1:${String(machine.listening())}/callback?error=invalid_scope`,
+    );
+  };
+  expect(await machine.command(signIn)).toEqual(ended("Refused"));
+});
+
+test("an answer that is not this sign-in's is refused before the issuer is asked anything", async () => {
+  const machine = setupMachine();
+  machine.opened = async () => {
+    const answered = await machine.browse(
+      `http://127.0.0.1:${String(machine.listening())}/callback?code=code-1&state=someone-elses`,
+    );
+    expect(answered.status).toBe(400);
+  };
+  expect(await machine.command(signIn)).toEqual(ended("Mismatched"));
+  expect(machine.bodies).toEqual([]);
+  expect(remembered(machine)).toEqual({ site: machineSite });
+});
+
+test("an allow page that hands over no renewal token is not a sign-in", async () => {
+  const machine = prompt();
+  machine.renewable = false;
+  expect(await machine.command(signIn)).toEqual(ended("NoRenewal"));
+  expect(remembered(machine)).toEqual({ site: machineSite });
+});
+
+test("an answer the issuer will not exchange is not a sign-in", async () => {
+  const machine = prompt();
+  machine.token = "Refuses";
+  expect(await machine.command(signIn)).toEqual(ended("ExchangeFailed"));
+  expect(remembered(machine)).toEqual({ site: machineSite });
+});
+
+test("a sign-in the site then answers nothing for is not confirmed, and its token is kept for the next command", async () => {
+  const machine = prompt();
+  machine.api = "Refuses";
+  expect(await machine.command(signIn)).toEqual(ended("WorkspacesUnread"));
+  expect(remembered(machine)).toEqual({
+    site: machineSite,
+    refreshToken: machine.live(),
+  });
+});
+
+test("only the address the issuer was given is read as its answer", async () => {
+  const machine = setupMachine();
+  const statuses: number[] = [];
+  machine.opened = async (address) => {
+    const first = await machine.browse(address);
+    const back = new URL(machine.authorized(first.location ?? "", true));
+    for (const path of ["/callback/", "/auth/callback", "/"])
+      statuses.push(
+        (await machine.browse(`${back.origin}${path}${back.search}`)).status,
+      );
+    statuses.push((await machine.browse(`${back.origin}/callback`)).status);
+    statuses.push((await machine.browse(back.href)).status);
+  };
+  expect(await machine.command(signIn)).toEqual(ended("SignedIn"));
+  expect(statuses).toEqual([404, 404, 302, 400, 200]);
+});
+
+test("a page answered once answers nothing a second time", async () => {
+  const machine = setupMachine();
+  let second = 0;
+  machine.opened = async (address) => {
+    const first = await machine.browse(address);
+    const back = machine.authorized(first.location ?? "", true);
+    const answering = machine.browse(back);
+    second = (await machine.browse(back)).status;
+    await answering;
+  };
+  expect(await machine.command(signIn)).toEqual(ended("SignedIn"));
+  expect(second).toBe(409);
+  expect(machine.bodies).toHaveLength(1);
+});
+
+test("a page nobody finishes closes at its bound, and the next sign-in says so before opening another", async () => {
+  const machine = setupMachine();
+  await machine.command(signIn);
+  await machine.advance(600_000);
+  expect(machine.listening()).toBeUndefined();
+  expect(await machine.command(signIn)).toEqual(ended("Expired"));
+  expect(machine.detached).toHaveLength(1);
+  expect(await machine.command(signIn)).toMatchObject({
+    report: "SignInWaiting",
+    opened: "Opened",
+  });
+  expect(machine.detached).toHaveLength(2);
+});
+
+test("an ending nobody was told while it was worth telling is dropped, and a page is opened", async () => {
+  const machine = setupMachine();
+  await machine.command(signIn);
+  await machine.advance(600_000);
+  await machine.advance(600_001);
+  expect(await machine.command(signIn)).toMatchObject({
+    report: "SignInWaiting",
+    opened: "Opened",
+  });
+});
+
+test("an answer being read when the bound passes is read to its end", async () => {
+  const machine = setupMachine();
+  await machine.command(signIn);
+  machine.alive.add(7);
+  machine.files.set(
+    setupFiles.lock,
+    JSON.stringify({ pid: 7, takenAtMs: machine.nowMs + 590_000 }),
+  );
+  await machine.advance(590_000);
+  const answering = machine.person();
+  await machine.advance(15_000);
+  expect(machine.files.get(setupFiles.signIn)).toContain("Waiting");
+  machine.files.delete(setupFiles.lock);
+  await machine.advance(1_000);
+  expect((await answering).status).toBe(200);
+  expect(await machine.command(signIn)).toMatchObject({ report: "SignedIn" });
+});
+
+test("a listener that cannot have the lock in time ends as busy and writes no token", async () => {
+  const machine = setupMachine();
+  await machine.command(signIn);
+  machine.alive.add(7);
+  machine.files.set(
+    setupFiles.lock,
+    JSON.stringify({ pid: 7, takenAtMs: machine.nowMs }),
+  );
+  const answering = machine.person();
+  await machine.advance(31_000);
+  expect((await answering).status).toBe(400);
+  machine.files.delete(setupFiles.lock);
+  expect(await machine.command(signIn)).toEqual(ended("Busy"));
+  expect(machine.bodies).toEqual([]);
+});
+
+test("two sign-ins at once open one page between them", async () => {
+  const machine = setupMachine();
+  const [first, second] = await Promise.all([
+    machine.command(signIn),
+    machine.command(signIn),
+  ]);
+  expect(machine.detached).toHaveLength(1);
+  expect([first.report, second.report]).toEqual([
+    "SignInWaiting",
+    "SignInWaiting",
+  ]);
+});
+
+test("a listener the site will not start a sign-in for says so and is gone", async () => {
+  const machine = setupMachine();
+  machine.site = "Silent";
+  const listened = ["listen", "--site", machineSite, "--life-secs", "5"];
+  expect(await machine.command(listened)).toEqual(ended("SiteUnusable"));
+  expect(machine.listening()).toBeUndefined();
+  expect(machine.files.get(setupFiles.signIn)).toContain("SiteUnusable");
+});
+
+test("a site that stops answering once the page is being started ends the command that started it", async () => {
+  const machine = setupMachine();
+  let reads = 0;
+  Object.defineProperty(machine, "site", {
+    get: () => {
+      reads += 1;
+      return reads > 1 ? "Silent" : "Answers";
+    },
+  });
+  expect(await machine.command(signIn)).toEqual(ended("SiteUnusable"));
+  expect(machine.launched).toEqual([]);
+  expect([...machine.files.keys()]).toEqual([setupFiles.session]);
+});
+
+test("a listener that is gone without a word ends the command waiting on it", async () => {
+  const machine = setupMachine();
+  const waiting = await machine.command(signIn);
+  expect(waiting).toMatchObject({ report: "SignInWaiting" });
+  machine.alive.clear();
+  expect(await machine.command(signIn)).toMatchObject({
+    report: "SignInWaiting",
+    opened: "Opened",
+  });
+  expect(machine.detached).toHaveLength(2);
+});
+
+test("a listener that goes while a command waits on it ends that wait, and its note with it", async () => {
+  const machine = setupMachine();
+  machine.opened = () => {
+    machine.alive.delete(Math.max(...machine.alive));
+    return Promise.resolve();
+  };
+  expect(await machine.command(signIn)).toEqual(ended("Expired"));
+  expect([...machine.files.keys()]).toEqual([setupFiles.session]);
+});
