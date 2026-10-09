@@ -5,8 +5,9 @@
  * site's tenants, and what the caller may do, who holds each authority and
  * adding and removing its holders at the site, a tenant or a project, each for
  * a caller the authority says holds the kind it needs. A tenant's invite links
- * are made, listed and revoked the same way, and redeemed by any caller signed
- * in, who needs no kind because the link's maker held them.
+ * are made, listed and revoked the same way, and so are the site's workspace
+ * links, and either is redeemed by any caller signed in, who needs no kind
+ * because the link's maker held them.
  *
  * IT ANSWERS ITS CALLERS AS THE PUBLIC API DOES, because the console reads
  * both with the same code. A caller's body is read as the API's media type,
@@ -59,6 +60,9 @@ import {
   accessTenantRoleGrantSchema,
   accessTenantRoleSchema,
   accessTenantTakenCode,
+  accessWorkspaceLinkCreationSchema,
+  accessWorkspaceLinkNameWantedCode,
+  accessWorkspaceLinkNoteCharsMax,
   type AccessInvited,
   type AccessOwnerInvited,
   type AccessPlaneRouteName,
@@ -86,6 +90,7 @@ import type {
 } from "../../interpreter/accessInvitation.ts";
 import type {
   AccessInviteLinkRefusal,
+  AccessInviteLinkRevocation,
   AccessInviteLinkService,
 } from "../../interpreter/accessInviteLink.ts";
 import type { AccessOwnerInvitations } from "../../interpreter/accessOwnerInvitation.ts";
@@ -132,7 +137,7 @@ export interface AccessPlaneService {
   readonly ready: () => Promise<boolean>;
 }
 
-/** The most any route reads but an invitation: a grant names one role and no text of its own. */
+/** The most any route reads that derives no bound of its own: a grant names one role and no text of its own. */
 export const accessPlaneBodyBytesMax = planeJsonObjectBytesMax();
 
 /** The most an invitation reads: a username, an email, and the most projects it names, each with its roles. */
@@ -146,6 +151,17 @@ export const accessOwnerInvitationBodyBytesMax = planeJsonObjectBytesMax(
   projectNameCharsMax,
   accessGithubLoginCharsMax,
   accessEmailCharsMax,
+);
+
+/** The most a workspace link's mint reads: its note. */
+export const accessWorkspaceLinkBodyBytesMax = planeJsonObjectBytesMax(
+  accessWorkspaceLinkNoteCharsMax,
+);
+
+/** The most a redemption reads: a token, and the name of a workspace it makes. */
+export const accessInviteLinkRedemptionBodyBytesMax = planeJsonObjectBytesMax(
+  accessInviteLinkTokenCharsMax,
+  projectNameCharsMax,
 );
 
 /** The most the registration gate reads: one token. */
@@ -627,16 +643,20 @@ function accessInvitationRoute(
           subject: result.subject,
           created: result.created,
         });
-      if (result.invited === "TenantTaken")
-        return accessRefused(
-          reply,
-          409,
-          accessTenantTakenCode,
-          "Something already holds the tenant.",
-        );
+      if (result.invited === "TenantTaken") return accessTenantTaken(reply);
       return accessInvitationRefused(reply, result);
     },
     accessOwnerInvitationBodyBytesMax,
+  );
+}
+
+/** The conflict a tenant something already holds is refused with. */
+function accessTenantTaken(reply: FastifyReply): FastifyReply {
+  return accessRefused(
+    reply,
+    409,
+    accessTenantTakenCode,
+    "Something already holds the tenant.",
   );
 }
 
@@ -713,6 +733,74 @@ function accessInviteLinkMakingRoutes(
   );
 }
 
+/** What a revocation of either kind of link answers. */
+function accessInviteLinkRevoked(
+  reply: FastifyReply,
+  result: AccessInviteLinkRevocation,
+): FastifyReply {
+  switch (result.outcome) {
+    case "Revoked":
+      return reply.code(204).send();
+    case "Refused":
+      return accessNotPermitted(reply, accessNotPermittedCode);
+    case "Ended":
+      return accessRefused(
+        reply,
+        409,
+        accessInviteLinkEndedCode,
+        "The invite link has already ended.",
+      );
+    case "Absent":
+    case "NotConfigured":
+      return accessInviteLinkRefused(reply, result);
+  }
+}
+
+function accessWorkspaceLinkMakingRoutes(
+  app: FastifyInstance,
+  service: AccessPlaneService,
+): void {
+  accessPlaneRoute(
+    app,
+    service,
+    "siteWorkspaceLinkCreation",
+    async (request, reply, caller) => {
+      const result = await service.inviteLinks.workspaceMint(
+        caller,
+        accessWorkspaceLinkCreationSchema.parse(request.body),
+      );
+      switch (result.outcome) {
+        case "Minted":
+          return reply.code(201).type(nativeHttpMediaType).send(result.minted);
+        case "Refused":
+          return accessNotPermitted(reply, accessNotPermittedCode);
+        case "LimitReached":
+          return accessRefused(
+            reply,
+            409,
+            accessInviteLinkLimitReachedCode,
+            "The site holds as many open workspace links as it may.",
+          );
+        case "Absent":
+        case "NotConfigured":
+          return accessInviteLinkRefused(reply, result);
+      }
+    },
+    accessWorkspaceLinkBodyBytesMax,
+  );
+  accessPlaneRoute(
+    app,
+    service,
+    "siteWorkspaceLinks",
+    async (_request, reply, caller) => {
+      const result = await service.inviteLinks.workspaceListed(caller);
+      return result.outcome === "Listed"
+        ? accessListed(reply, result.listed)
+        : accessInviteLinkRefused(reply, result);
+    },
+  );
+}
+
 function accessInviteLinkEndingRoutes(
   app: FastifyInstance,
   service: AccessPlaneService,
@@ -722,42 +810,63 @@ function accessInviteLinkEndingRoutes(
     service,
     "tenantInviteLinkRevocation",
     async (request, reply, caller) => {
-      const result = await service.inviteLinks.revoked(
-        caller,
-        accessTenantOf(request),
-        accessInviteLinkOf(request),
+      return accessInviteLinkRevoked(
+        reply,
+        await service.inviteLinks.revoked(
+          caller,
+          accessTenantOf(request),
+          accessInviteLinkOf(request),
+        ),
       );
-      switch (result.outcome) {
-        case "Revoked":
-          return reply.code(204).send();
-        case "Refused":
-          return accessNotPermitted(reply, accessNotPermittedCode);
-        case "Ended":
-          return accessRefused(
-            reply,
-            409,
-            accessInviteLinkEndedCode,
-            "The invite link has already ended.",
-          );
-        case "Absent":
-        case "NotConfigured":
-          return accessInviteLinkRefused(reply, result);
-      }
     },
+  );
+  accessPlaneRoute(
+    app,
+    service,
+    "siteWorkspaceLinkRevocation",
+    async (request, reply, caller) =>
+      accessInviteLinkRevoked(
+        reply,
+        await service.inviteLinks.workspaceRevoked(
+          caller,
+          accessInviteLinkOf(request),
+        ),
+      ),
   );
   accessPlaneRoute(
     app,
     service,
     "inviteLinkRedemption",
     async (request, reply, caller) => {
+      const { token, workspace } = accessInviteLinkRedemptionSchema.parse(
+        request.body,
+      );
       const result = await service.inviteLinks.redeemed(
         caller,
-        accessInviteLinkRedemptionSchema.parse(request.body).token,
+        token,
+        workspace,
       );
-      return result.outcome === "Redeemed"
-        ? reply.code(200).type(nativeHttpMediaType).send(result.redeemed)
-        : accessInviteLinkRefused(reply, result);
+      switch (result.outcome) {
+        case "Redeemed":
+          return reply
+            .code(200)
+            .type(nativeHttpMediaType)
+            .send(result.redeemed);
+        case "NameWanted":
+          return accessRefused(
+            reply,
+            409,
+            accessWorkspaceLinkNameWantedCode,
+            "The invite link makes a workspace, and wants its name.",
+          );
+        case "TenantTaken":
+          return accessTenantTaken(reply);
+        case "Absent":
+        case "NotConfigured":
+          return accessInviteLinkRefused(reply, result);
+      }
     },
+    accessInviteLinkRedemptionBodyBytesMax,
   );
 }
 
@@ -846,6 +955,7 @@ export function createAccessPlaneApp(
   accessHostedRunsRoutes(app, service);
   accessInvitationRoute(app, service);
   accessInviteLinkMakingRoutes(app, service);
+  accessWorkspaceLinkMakingRoutes(app, service);
   accessInviteLinkEndingRoutes(app, service);
   accessRegistrationGateRoute(app, service);
   accessAnsweredRoutes(app, service);

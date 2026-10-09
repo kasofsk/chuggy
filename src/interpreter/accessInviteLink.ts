@@ -1,6 +1,7 @@
 /**
  * Invite links: a tenant's grant made in advance, to whoever presents the
- * token signed in, once.
+ * token signed in, once; and the site's workspace links, its invitation made
+ * in advance with the person and the workspace left blank.
  *
  * A LINK IS ITS MAKER'S GRANT. Making one asks what an invitation asks, in the
  * same order and with the same answers, and what the maker could grant then is
@@ -10,6 +11,17 @@
  * ONE CLOCK DECIDES, THE STORE'S. Whether a link is open, used, revoked or
  * expired is answered by the store in the statement that reads or spends it,
  * so nothing here reads a clock or derives a state.
+ *
+ * A WORKSPACE LINK ASKS WHAT THE SITE'S INVITATION ASKS, to make, list or
+ * revoke one, and using it writes what that invitation writes for whoever
+ * presents it and the workspace they name. The two kinds never meet: a
+ * tenant's routes reach its links alone, and the site's its workspace links.
+ *
+ * A REDEMPTION READS THE LINK BEFORE IT SPENDS IT, so a workspace link
+ * presented with no name, a name no new tenant may take or one something
+ * holds is answered and stays open. A free name is then carried in the spend,
+ * where the store refuses one another link has made, so two links never make
+ * one workspace.
  *
  * A SPEND IS GIVEN BACK WHERE THE GRANT FAULTS. The grants are written as one
  * request, all or none, so a link given back is open again and nothing was
@@ -23,13 +35,17 @@
  * digest reaches the store. The mint's answer is the only one carrying it.
  */
 
-import type {
-  AccessInvitationGrants,
-  AccessInviteLink,
-  AccessInviteLinkMinted,
-  AccessInviteLinkRedeemed,
-  AccessInviteLinks,
-  AccessTenantRole,
+import {
+  accessOwnedTenantSchema,
+  type AccessInvitationGrants,
+  type AccessInviteLink,
+  type AccessInviteLinkMinted,
+  type AccessInviteLinkRedeemed,
+  type AccessInviteLinks,
+  type AccessTenantRole,
+  type AccessWorkspaceLink,
+  type AccessWorkspaceLinkCreation,
+  type AccessWorkspaceLinks,
 } from "../contract/accessPlane.ts";
 import type { AccessDirectory } from "./accessDirectory.ts";
 import {
@@ -42,10 +58,15 @@ import {
   accessTenantListed,
   type AccessTupleReader,
 } from "./accessPlane.ts";
+import {
+  accessOwnerInvitationAdmitted,
+  accessOwnerInvitationGrants,
+} from "./accessOwnerInvitation.ts";
 import { oidcPrincipalSubject, type Principal } from "./principal.ts";
 import type { ProjectAccess } from "./projectAccess.ts";
+import type { TenantClaims } from "./projectCreation.ts";
 import type { ProjectGrantWriter } from "./projectGrant.ts";
-import type { TenantId } from "./projectStore.ts";
+import { asTenantId, type TenantId } from "./projectStore.ts";
 
 /** What a link grants, as the store keeps it: the tenant role and each project's roles. */
 export interface AccessInviteLinkGrants {
@@ -77,7 +98,44 @@ export interface AccessInviteLinkMint extends AccessInviteLinkGrants {
   readonly mintedBy: string;
 }
 
-/** What one mint came to: the link and when it expires, or nothing because the tenant holds as many open links as it may. */
+/** What one workspace link's mint writes. */
+export interface AccessWorkspaceLinkMint {
+  readonly digest: string;
+  readonly createAccounts: boolean;
+  readonly note: string | undefined;
+  readonly newAccounts: boolean;
+  readonly mintedBy: string;
+}
+
+/** One workspace link as the store answers it, a `Used` one naming the workspace its use made. */
+export type AccessWorkspaceLinkStored = {
+  readonly link: string;
+  readonly createAccounts: boolean;
+  readonly note: string | undefined;
+  readonly newAccounts: boolean;
+  readonly mintedBy: string;
+  readonly mintedAtMs: number;
+  readonly expiresAtMs: number;
+} & (
+  | { readonly state: "Open" | "Revoked" | "Expired" }
+  | {
+      readonly state: "Used";
+      readonly usedBy: string;
+      readonly usedAtMs: number;
+      readonly workspace: TenantId;
+    }
+);
+
+/** What a workspace link's spend came to where its link was open: spent, or refused because another link made the workspace it names. */
+export type AccessWorkspaceLinkSpent =
+  | {
+      readonly spent: "Spent";
+      readonly link: string;
+      readonly createAccounts: boolean;
+    }
+  | { readonly spent: "Taken" };
+
+/** What one mint came to: the link and when it expires, or nothing because the tenant, or the site, holds as many open links as it may. */
 export type AccessInviteLinkWritten =
   | {
       readonly written: "Minted";
@@ -95,9 +153,12 @@ export interface AccessInviteLinkSpent extends AccessInviteLinkGrants {
 /**
  * The durable side of a link's whole life. `mint` writes under the tenant's
  * bound and drops its ended links past the number kept, `spend` is the single
- * write taking an open link for `subject`, `revoke` the single write ending an
- * open one, `restore` gives back a spent one, and `opened` reads the open
- * link a digest names without spending it.
+ * write taking an open tenant's link for `subject`, `revoke` the single write
+ * ending an open one, `restore` gives back a spent link of either kind, and
+ * `opened` and `presented` each read the open link a digest names without
+ * spending it. Each `workspace` statement is its tenant counterpart over the
+ * site's workspace links alone, and `workspaceSpend` also writes the
+ * workspace, refusing one another used link holds.
  */
 export interface AccessInviteLinkStore {
   mint(link: AccessInviteLinkMint): Promise<AccessInviteLinkWritten>;
@@ -115,6 +176,22 @@ export interface AccessInviteLinkStore {
   opened(
     digest: string,
   ): Promise<{ readonly newAccounts: boolean } | undefined>;
+  presented(digest: string): Promise<"Tenant" | "Workspace" | undefined>;
+  workspaceMint(
+    link: AccessWorkspaceLinkMint,
+  ): Promise<AccessInviteLinkWritten>;
+  workspaceListed(): Promise<readonly AccessWorkspaceLinkStored[]>;
+  workspaceHeld(
+    link: string,
+  ): Promise<
+    { readonly createAccounts: boolean; readonly open: boolean } | undefined
+  >;
+  workspaceRevoke(link: string): Promise<boolean>;
+  workspaceSpend(
+    digest: string,
+    subject: string,
+    workspace: TenantId,
+  ): Promise<AccessWorkspaceLinkSpent | undefined>;
 }
 
 /** How a token is drawn and digested, both supplied. */
@@ -127,6 +204,7 @@ export interface AccessInviteLinkPorts {
   readonly access: ProjectAccess;
   readonly tuples: AccessTupleReader;
   readonly grants: ProjectGrantWriter;
+  readonly claims: TenantClaims;
   readonly directory?: AccessDirectory | undefined;
   readonly links?:
     | {
@@ -154,6 +232,15 @@ export type AccessInviteLinksResult =
   | { readonly outcome: "Listed"; readonly listed: AccessInviteLinks }
   | AccessInviteLinkRefusal;
 
+export type AccessWorkspaceLinkMintResult =
+  | { readonly outcome: "Minted"; readonly minted: AccessInviteLinkMinted }
+  | AccessInviteLinkRefusal
+  | { readonly outcome: "Refused" | "LimitReached" };
+
+export type AccessWorkspaceLinksResult =
+  | { readonly outcome: "Listed"; readonly listed: AccessWorkspaceLinks }
+  | AccessInviteLinkRefusal;
+
 export type AccessInviteLinkRevocation =
   | AccessInviteLinkRefusal
   | { readonly outcome: "Revoked" | "Refused" | "Ended" };
@@ -163,7 +250,8 @@ export type AccessInviteLinkRedemption =
       readonly outcome: "Redeemed";
       readonly redeemed: AccessInviteLinkRedeemed;
     }
-  | AccessInviteLinkRefusal;
+  | AccessInviteLinkRefusal
+  | { readonly outcome: "NameWanted" | "TenantTaken" };
 
 export interface AccessInviteLinkService {
   mint(
@@ -177,9 +265,20 @@ export interface AccessInviteLinkService {
     tenant: TenantId,
     link: string,
   ): Promise<AccessInviteLinkRevocation>;
+  workspaceMint(
+    caller: Principal,
+    creation: AccessWorkspaceLinkCreation,
+  ): Promise<AccessWorkspaceLinkMintResult>;
+  workspaceListed(caller: Principal): Promise<AccessWorkspaceLinksResult>;
+  workspaceRevoked(
+    caller: Principal,
+    link: string,
+  ): Promise<AccessInviteLinkRevocation>;
+  /** Uses the link `token` names, `workspace` the name a workspace link's new workspace takes and ignored for a tenant's link. */
   redeemed(
     caller: Principal,
     token: string,
+    workspace?: string,
   ): Promise<AccessInviteLinkRedemption>;
   /** Whether a person with no account may register holding `token`: only while it is an open link whose maker could make accounts. */
   registrationAdmitted(token: string | undefined): Promise<boolean>;
@@ -196,6 +295,26 @@ function accessInviteLinkSubject(issuer: string, caller: Principal): string {
 }
 
 type AccessInviteLinkKept = NonNullable<AccessInviteLinkPorts["links"]>;
+
+/** What a mint answers once the store has written it or refused it at its bound. */
+function accessInviteLinkMintAnswer(
+  written: AccessInviteLinkWritten,
+  token: string,
+  newAccounts: boolean,
+):
+  | { readonly outcome: "Minted"; readonly minted: AccessInviteLinkMinted }
+  | { readonly outcome: "LimitReached" } {
+  if (written.written === "LimitReached") return { outcome: "LimitReached" };
+  return {
+    outcome: "Minted",
+    minted: {
+      link: written.link,
+      token,
+      expiresAtMs: written.expiresAtMs,
+      newAccounts,
+    },
+  };
+}
 
 async function accessInviteLinkMinted(
   ports: AccessInviteLinkPorts,
@@ -221,16 +340,52 @@ async function accessInviteLinkMinted(
     newAccounts,
     mintedBy: accessInviteLinkSubject(settings.issuer, caller),
   });
-  if (written.written === "LimitReached") return { outcome: "LimitReached" };
-  return {
-    outcome: "Minted",
-    minted: {
-      link: written.link,
-      token,
-      expiresAtMs: written.expiresAtMs,
-      newAccounts,
-    },
-  };
+  return accessInviteLinkMintAnswer(written, token, newAccounts);
+}
+
+async function accessWorkspaceLinkMinted(
+  ports: AccessInviteLinkPorts,
+  links: AccessInviteLinkKept,
+  settings: AccessInviteLinkSettings,
+  request: {
+    readonly caller: Principal;
+    readonly creation: AccessWorkspaceLinkCreation;
+  },
+): Promise<AccessWorkspaceLinkMintResult> {
+  const { caller, creation } = request;
+  const refused = await accessOwnerInvitationAdmitted(
+    ports.access,
+    caller,
+    creation,
+  );
+  if (refused !== undefined) return { outcome: refused.invited };
+  const newAccounts =
+    (await ports.access.authorizeSite(caller, "CreateAccount")) !== undefined;
+  const token = links.secrets.draw();
+  const written = await links.store.workspaceMint({
+    digest: links.secrets.digest(token),
+    createAccounts: creation.createAccounts,
+    note: creation.note,
+    newAccounts,
+    mintedBy: accessInviteLinkSubject(settings.issuer, caller),
+  });
+  return accessInviteLinkMintAnswer(written, token, newAccounts);
+}
+
+/** Each of `subjects` named by the directory in one question, a subject it does not name answered alone. */
+async function accessInviteLinkPeople(
+  directory: AccessDirectory | undefined,
+  subjects: readonly string[],
+): Promise<(subject: string) => AccessInviteLink["mintedBy"]> {
+  const named = new Map(
+    (
+      await accessAccountsNamed(
+        directory,
+        [...new Set(subjects)].map((subject) => ({ subject })),
+      )
+    ).map((person) => [person.subject, person] as const),
+  );
+  return (subject) => named.get(subject) ?? { subject };
 }
 
 /** Every link the tenant keeps, each subject in it named by the directory in one question. */
@@ -238,20 +393,12 @@ async function accessInviteLinksNamed(
   directory: AccessDirectory | undefined,
   stored: readonly AccessInviteLinkStored[],
 ): Promise<AccessInviteLinks> {
-  const subjects = new Set(
+  const person = await accessInviteLinkPeople(
+    directory,
     stored.flatMap((link) =>
       link.state === "Used" ? [link.mintedBy, link.usedBy] : [link.mintedBy],
     ),
   );
-  const named = new Map(
-    (
-      await accessAccountsNamed(
-        directory,
-        [...subjects].map((subject) => ({ subject })),
-      )
-    ).map((person) => [person.subject, person] as const),
-  );
-  const person = (subject: string) => named.get(subject) ?? { subject };
   return {
     links: stored.map((link): AccessInviteLink => {
       const kept = {
@@ -269,6 +416,41 @@ async function accessInviteLinksNamed(
             state: link.state,
             usedBy: person(link.usedBy),
             usedAtMs: link.usedAtMs,
+          }
+        : { ...kept, state: link.state };
+    }),
+  };
+}
+
+/** Every workspace link the site keeps, each subject in it named by the directory in one question. */
+async function accessWorkspaceLinksNamed(
+  directory: AccessDirectory | undefined,
+  stored: readonly AccessWorkspaceLinkStored[],
+): Promise<AccessWorkspaceLinks> {
+  const person = await accessInviteLinkPeople(
+    directory,
+    stored.flatMap((link) =>
+      link.state === "Used" ? [link.mintedBy, link.usedBy] : [link.mintedBy],
+    ),
+  );
+  return {
+    links: stored.map((link): AccessWorkspaceLink => {
+      const kept = {
+        link: link.link,
+        ...(link.note === undefined ? {} : { note: link.note }),
+        createAccounts: link.createAccounts,
+        newAccounts: link.newAccounts,
+        mintedBy: person(link.mintedBy),
+        mintedAtMs: link.mintedAtMs,
+        expiresAtMs: link.expiresAtMs,
+      };
+      return link.state === "Used"
+        ? {
+            ...kept,
+            state: link.state,
+            usedBy: person(link.usedBy),
+            usedAtMs: link.usedAtMs,
+            workspace: link.workspace,
           }
         : { ...kept, state: link.state };
     }),
@@ -297,26 +479,110 @@ async function accessInviteLinkRevoked(
     : { outcome: "Ended" };
 }
 
+/** Revoking a workspace link, which asks what making it asked: `CreateTenant`, and `ManageSiteAuthorities` where it carries `createAccounts`. */
+async function accessWorkspaceLinkRevoked(
+  access: ProjectAccess,
+  store: AccessInviteLinkStore,
+  request: { readonly caller: Principal; readonly link: string },
+): Promise<AccessInviteLinkRevocation> {
+  const { caller, link } = request;
+  if ((await access.authorizeSite(caller, "CreateTenant")) === undefined)
+    return { outcome: "Absent" };
+  const held = await store.workspaceHeld(link);
+  if (held === undefined) return { outcome: "Absent" };
+  if (
+    held.createAccounts &&
+    (await access.authorizeSite(caller, "ManageSiteAuthorities")) === undefined
+  )
+    return { outcome: "Refused" };
+  if (!held.open) return { outcome: "Ended" };
+  return (await store.workspaceRevoke(link))
+    ? { outcome: "Revoked" }
+    : { outcome: "Ended" };
+}
+
+/** Writes a spent link's grants as one request, giving the link back and raising where that faults. */
+async function accessInviteLinkGrantsWritten(
+  ports: AccessInviteLinkPorts,
+  store: AccessInviteLinkStore,
+  link: string,
+  grants: Parameters<ProjectGrantWriter["writeAll"]>[0],
+): Promise<void> {
+  try {
+    await ports.grants.writeAll(grants);
+  } catch (failure) {
+    await store.restore(link);
+    throw failure;
+  }
+}
+
+/** Using an open workspace link: the name wanted, admissible and free before the spend that carries it, and the site's invitation's grants after. */
+async function accessWorkspaceLinkRedeemed(
+  ports: AccessInviteLinkPorts,
+  links: AccessInviteLinkKept,
+  settings: AccessInviteLinkSettings,
+  request: {
+    readonly subject: string;
+    readonly digest: string;
+    readonly workspace: string | undefined;
+  },
+): Promise<AccessInviteLinkRedemption> {
+  const { subject, digest, workspace } = request;
+  if (workspace === undefined) return { outcome: "NameWanted" };
+  if (!accessOwnedTenantSchema.safeParse(workspace).success)
+    throw new RangeError(
+      "access workspace link: the workspace is not a name a new tenant may take",
+    );
+  const tenant = asTenantId(workspace);
+  if (await ports.claims.claimed(tenant)) return { outcome: "TenantTaken" };
+  const spent = await links.store.workspaceSpend(digest, subject, tenant);
+  if (spent === undefined) return { outcome: "Absent" };
+  if (spent.spent === "Taken") return { outcome: "TenantTaken" };
+  await accessInviteLinkGrantsWritten(
+    ports,
+    links.store,
+    spent.link,
+    accessOwnerInvitationGrants(
+      settings.issuer,
+      tenant,
+      subject,
+      spent.createAccounts,
+    ),
+  );
+  return {
+    outcome: "Redeemed",
+    redeemed: { tenant, role: "Admin", projects: [] },
+  };
+}
+
 async function accessInviteLinkRedeemed(
   ports: AccessInviteLinkPorts,
   links: AccessInviteLinkKept,
   settings: AccessInviteLinkSettings,
-  request: { readonly caller: Principal; readonly token: string },
+  request: {
+    readonly caller: Principal;
+    readonly token: string;
+    readonly workspace: string | undefined;
+  },
 ): Promise<AccessInviteLinkRedemption> {
   const subject = accessInviteLinkSubject(settings.issuer, request.caller);
-  const spent = await links.store.spend(
-    links.secrets.digest(request.token),
-    subject,
-  );
+  const digest = links.secrets.digest(request.token);
+  const presented = await links.store.presented(digest);
+  if (presented === undefined) return { outcome: "Absent" };
+  if (presented === "Workspace")
+    return accessWorkspaceLinkRedeemed(ports, links, settings, {
+      subject,
+      digest,
+      workspace: request.workspace,
+    });
+  const spent = await links.store.spend(digest, subject);
   if (spent === undefined) return { outcome: "Absent" };
-  try {
-    await ports.grants.writeAll(
-      accessInvitationGrants(settings.issuer, spent.tenant, spent, subject),
-    );
-  } catch (failure) {
-    await links.store.restore(spent.link);
-    throw failure;
-  }
+  await accessInviteLinkGrantsWritten(
+    ports,
+    links.store,
+    spent.link,
+    accessInvitationGrants(settings.issuer, spent.tenant, spent, subject),
+  );
   return {
     outcome: "Redeemed",
     redeemed: {
@@ -324,6 +590,36 @@ async function accessInviteLinkRedeemed(
       role: spent.role,
       projects: [...spent.projects],
     },
+  };
+}
+
+/** The site's workspace link routes over a store. */
+function accessWorkspaceLinkRoutes(
+  ports: AccessInviteLinkPorts,
+  links: AccessInviteLinkKept,
+  settings: AccessInviteLinkSettings,
+): Pick<
+  AccessInviteLinkService,
+  "workspaceMint" | "workspaceListed" | "workspaceRevoked"
+> {
+  return {
+    workspaceMint: (caller, creation) =>
+      accessWorkspaceLinkMinted(ports, links, settings, { caller, creation }),
+    workspaceListed: async (caller) => {
+      if (
+        (await ports.access.authorizeSite(caller, "CreateTenant")) === undefined
+      )
+        return { outcome: "Absent" };
+      return {
+        outcome: "Listed",
+        listed: await accessWorkspaceLinksNamed(
+          ports.directory,
+          await links.store.workspaceListed(),
+        ),
+      };
+    },
+    workspaceRevoked: (caller, link) =>
+      accessWorkspaceLinkRevoked(ports.access, links.store, { caller, link }),
   };
 }
 
@@ -339,6 +635,9 @@ export function accessInviteLinks(
       mint: notConfigured,
       listed: notConfigured,
       revoked: notConfigured,
+      workspaceMint: notConfigured,
+      workspaceListed: notConfigured,
+      workspaceRevoked: notConfigured,
       redeemed: notConfigured,
       registrationAdmitted: () => Promise.resolve(false),
     };
@@ -363,8 +662,13 @@ export function accessInviteLinks(
     },
     revoked: (caller, tenant, link) =>
       accessInviteLinkRevoked(ports, links.store, { caller, tenant, link }),
-    redeemed: (caller, token) =>
-      accessInviteLinkRedeemed(ports, links, settings, { caller, token }),
+    ...accessWorkspaceLinkRoutes(ports, links, settings),
+    redeemed: (caller, token, workspace) =>
+      accessInviteLinkRedeemed(ports, links, settings, {
+        caller,
+        token,
+        workspace,
+      }),
     registrationAdmitted: async (token) =>
       token !== undefined &&
       token !== "" &&

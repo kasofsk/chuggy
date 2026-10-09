@@ -52,6 +52,9 @@ import {
   accessTenantPeopleSchema,
   accessTenantRoles,
   accessTenantTakenCode,
+  accessWorkspaceLinkNameWantedCode,
+  accessWorkspaceLinkNoteCharsMax,
+  accessWorkspaceLinksSchema,
   type AccessPlaneRouteName,
 } from "../../src/contract/accessPlane.ts";
 import {
@@ -74,6 +77,7 @@ import {
   accessTenantAuthorityRelations,
 } from "../../src/interpreter/accessAuthorities.ts";
 import { principalCharsMax } from "../../src/interpreter/principal.ts";
+import { asTenantId } from "../../src/interpreter/projectStore.ts";
 import { projectAccessTenantObject } from "../../src/interpreter/projectAccess.ts";
 import {
   allProjectGrantRelations,
@@ -804,7 +808,9 @@ test("an authority that cannot answer is retryable on every route and unready on
           ? { ...person, tenant: "octo-works", createAccounts: true }
           : name === "inviteLinkRedemption"
             ? { token: open.token }
-            : { role: "Admin" };
+            : name === "siteWorkspaceLinkCreation"
+              ? { createAccounts: true, note: "for octo-cat" }
+              : { role: "Admin" };
     const answered = await app.inject({
       method: route.method,
       url: pathOf(name, "zed", "Admin", undefined, undefined, open.link),
@@ -1662,6 +1668,9 @@ test("a plane with no store answers every link route not configured, while an in
     "tenantInviteLinkCreation",
     "tenantInviteLinks",
     "tenantInviteLinkRevocation",
+    "siteWorkspaceLinkCreation",
+    "siteWorkspaceLinks",
+    "siteWorkspaceLinkRevocation",
     "inviteLinkRedemption",
   ] as const) {
     const route = accessPlaneRoutes[name];
@@ -1676,8 +1685,10 @@ test("a plane with no store answers every link route not configured, while an in
         ? {
             payload: JSON.stringify(
               name === "inviteLinkRedemption"
-                ? { token: "token-0" }
-                : { role: "Member" },
+                ? { token: "token-0", workspace: "alice-works" }
+                : name === "siteWorkspaceLinkCreation"
+                  ? { createAccounts: false }
+                  : { role: "Member" },
             ),
           }
         : {}),
@@ -1707,6 +1718,268 @@ test("a plane with no store answers every link route not configured, while an in
     payload: JSON.stringify(invitation),
   });
   assert.ok([200, 201].includes(invited.statusCode), invited.body);
+});
+
+/** A mint of a workspace link sent `body` with `token`. */
+function workspaceLinkMinted(
+  app: Awaited<ReturnType<typeof served>>["app"],
+  token: string,
+  body: unknown,
+) {
+  return app.inject({
+    method: "POST",
+    url: pathOf("siteWorkspaceLinkCreation"),
+    headers: { ...as(token), ...typed },
+    payload: JSON.stringify(body),
+  });
+}
+
+/** A redemption sent `body` with `token`, or with no bearer where `token` is undefined. */
+function redemption(
+  app: Awaited<ReturnType<typeof served>>["app"],
+  token: string | undefined,
+  body: unknown,
+) {
+  return app.inject({
+    method: "POST",
+    url: pathOf("inviteLinkRedemption"),
+    headers: { ...(token === undefined ? {} : as(token)), ...typed },
+    payload: JSON.stringify(body),
+  });
+}
+
+const workspaceNote = "for Octo Cat, handed over at the meetup";
+
+test("a workspace link is made 201 with its id, token, expiry and `newAccounts`, listed 200 with its note and without its token, revoked 204, and then a conflict", async () => {
+  const { app } = await served();
+  const made = await workspaceLinkMinted(app, "sita-token", {
+    createAccounts: true,
+    note: workspaceNote,
+  });
+  assert.equal(made.statusCode, 201, made.body);
+  const minted = accessInviteLinkMintedSchema.parse(made.json());
+  assert.deepEqual(Object.keys(minted).sort(), [
+    "expiresAtMs",
+    "link",
+    "newAccounts",
+    "token",
+  ]);
+  assert.equal(minted.newAccounts, true);
+  const list = (token = "sita-token") =>
+    app.inject({
+      method: "GET",
+      url: pathOf("siteWorkspaceLinks"),
+      headers: as(token),
+    });
+  const listed = await list();
+  assert.equal(listed.statusCode, 200, listed.body);
+  assert.deepEqual(
+    accessWorkspaceLinksSchema
+      .parse(listed.json())
+      .links.map((one) => [one.link, one.state, one.note, one.createAccounts]),
+    [[minted.link, "Open", workspaceNote, true]],
+  );
+  assert.ok(!listed.body.includes(minted.token), listed.body);
+  const revoke = (token: string, link = minted.link) =>
+    app.inject({
+      method: "DELETE",
+      url: pathOf("siteWorkspaceLinkRevocation", "", "", "", "", link),
+      headers: as(token),
+    });
+  assert.equal((await revoke("sita-token")).statusCode, 204);
+  enveloped(await revoke("sita-token"), "Conflict", accessInviteLinkEndedCode);
+  enveloped(await revoke("sita-token", "no/such link?"), "Absent");
+  assert.equal(
+    accessWorkspaceLinksSchema.parse((await list()).json()).links[0]?.state,
+    "Revoked",
+  );
+});
+
+test("each workspace link route is unauthenticated without a bearer, absent without `CreateTenant`, and forbidden `createAccounts` without `ManageSiteAuthorities`, and only a mint stores anything", async () => {
+  const { app, links, memory } = await served();
+  const minted = accessInviteLinkMintedSchema.parse(
+    (
+      await workspaceLinkMinted(app, "sita-token", { createAccounts: true })
+    ).json(),
+  );
+  const routes = [
+    ["siteWorkspaceLinkCreation", { createAccounts: false }],
+    ["siteWorkspaceLinks", undefined],
+    ["siteWorkspaceLinkRevocation", undefined],
+  ] as const;
+  for (const [token, outcome] of [
+    [undefined, "Unauthenticated"],
+    ["alice-token", "Absent"],
+    ["hal-token", "Absent"],
+  ] as const)
+    for (const [name, body] of routes)
+      enveloped(
+        await app.inject({
+          method: accessPlaneRoutes[name].method,
+          url: pathOf(name, "", "", "", "", minted.link),
+          headers: {
+            ...(token === undefined ? {} : as(token)),
+            ...(body === undefined ? {} : typed),
+          },
+          ...(body === undefined ? {} : { payload: JSON.stringify(body) }),
+        }),
+        outcome,
+      );
+  accessGiven(memory, accessFixturePrincipal("mo"), [
+    { on: "Site", kind: "CreateTenant" },
+  ]);
+  enveloped(
+    await workspaceLinkMinted(app, "mo-token", { createAccounts: true }),
+    "Rejected",
+    accessNotPermittedCode,
+  );
+  enveloped(
+    await app.inject({
+      method: "DELETE",
+      url: pathOf("siteWorkspaceLinkRevocation", "", "", "", "", minted.link),
+      headers: as("mo-token"),
+    }),
+    "Rejected",
+    accessNotPermittedCode,
+  );
+  assert.equal(links?.rows.length, 1);
+  const plain = await workspaceLinkMinted(app, "mo-token", {
+    createAccounts: false,
+  });
+  assert.equal(plain.statusCode, 201, plain.body);
+  assert.equal(
+    accessInviteLinkMintedSchema.parse(plain.json()).newAccounts,
+    false,
+  );
+});
+
+test("a workspace link's note past its bound or holding a line break, or a body outside its shape, is rejected, a note at its bound is kept, and the site's bound is a conflict", async () => {
+  const { app, links } = await served();
+  for (const body of [
+    {
+      createAccounts: true,
+      note: "n".repeat(accessWorkspaceLinkNoteCharsMax + 1),
+    },
+    { createAccounts: true, note: "one\ntwo" },
+    { createAccounts: true, note: "one\r\ntwo" },
+    { createAccounts: true, note: "" },
+    { createAccounts: true, role: "Admin" },
+    { note: workspaceNote },
+  ])
+    enveloped(
+      await workspaceLinkMinted(app, "sita-token", body),
+      "Rejected",
+      "InvalidRequest",
+    );
+  assert.deepEqual(links?.rows, []);
+  const widest = '"é'.repeat(accessWorkspaceLinkNoteCharsMax / 2);
+  const kept = await workspaceLinkMinted(app, "sita-token", {
+    createAccounts: false,
+    note: widest,
+  });
+  assert.equal(kept.statusCode, 201, kept.body);
+  assert.equal(
+    accessWorkspaceLinksSchema.parse(
+      (
+        await app.inject({
+          method: "GET",
+          url: pathOf("siteWorkspaceLinks"),
+          headers: as("sita-token"),
+        })
+      ).json(),
+    ).links[0]?.note,
+    widest,
+  );
+  for (let minted = 1; minted < accessInviteLinksOpenMax; minted += 1)
+    assert.equal(
+      (await workspaceLinkMinted(app, "sita-token", { createAccounts: false }))
+        .statusCode,
+      201,
+    );
+  enveloped(
+    await workspaceLinkMinted(app, "sita-token", { createAccounts: false }),
+    "Conflict",
+    accessInviteLinkLimitReachedCode,
+  );
+});
+
+test("a workspace link presented without a name, with a taken one or one no tenant may take is refused under its own code and stays open, and with a free name makes its user the workspace's administrator", async () => {
+  const { app, memory } = await served();
+  await memory.grants.write(
+    tenantPrincipalGrant({
+      issuer: accessFixtureIssuer,
+      subject: "alice",
+      tenant: asTenantId("held-works"),
+      relation: "admins",
+    }),
+  );
+  const minted = accessInviteLinkMintedSchema.parse(
+    (
+      await workspaceLinkMinted(app, "sita-token", {
+        createAccounts: true,
+        note: workspaceNote,
+      })
+    ).json(),
+  );
+  const { token } = minted;
+  enveloped(await redemption(app, undefined, { token }), "Unauthenticated");
+  const wanted = await redemption(app, "sam-token", { token });
+  enveloped(wanted, "Conflict", accessWorkspaceLinkNameWantedCode);
+  for (const caller of ["sam-token", "alice-token"])
+    enveloped(
+      await redemption(app, caller, { token, workspace: "held-works" }),
+      "Conflict",
+      accessTenantTakenCode,
+    );
+  for (const workspace of ["Not A Name", "api", "w".repeat(40), 7])
+    enveloped(
+      await redemption(app, "sam-token", { token, workspace }),
+      "Rejected",
+      "InvalidRequest",
+    );
+  assert.equal((await registrationAsked(app, { token })).statusCode, 204);
+  const redeemed = await redemption(app, "sam-token", {
+    token,
+    workspace: "sam-works",
+  });
+  assert.equal(redeemed.statusCode, 200, redeemed.body);
+  assert.deepEqual(accessInviteLinkRedeemedSchema.parse(redeemed.json()), {
+    tenant: "sam-works",
+    role: "Admin",
+    projects: [],
+  });
+  assert.ok(!redeemed.body.includes("Octo"), redeemed.body);
+  assert.ok(!wanted.body.includes("Octo"), wanted.body);
+  enveloped(
+    await redemption(app, "dee-token", { token, workspace: "dee-works" }),
+    "Absent",
+  );
+  enveloped(
+    await redemption(app, "dee-token", {
+      token: "token-nobody-holds",
+      workspace: "Not A Name",
+    }),
+    "Absent",
+  );
+});
+
+test("a tenant's link redeemed with a workspace's name or without one is used as before", async () => {
+  const { app } = await served();
+  for (const workspace of [undefined, "sam-works", "Not A Name"]) {
+    const minted = accessInviteLinkMintedSchema.parse(
+      (await linkMinted(app, "alice-token", { role: "Member" })).json(),
+    );
+    const redeemed = await redemption(app, "sam-token", {
+      token: minted.token,
+      ...(workspace === undefined ? {} : { workspace }),
+    });
+    assert.equal(redeemed.statusCode, 200, redeemed.body);
+    assert.deepEqual(accessInviteLinkRedeemedSchema.parse(redeemed.json()), {
+      tenant,
+      role: "Member",
+      projects: [],
+    });
+  }
 });
 
 /** The directory's question about a registration presenting `body`, sent as JSON as the directory sends it, with `headers` beside. */
