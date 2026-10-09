@@ -44,6 +44,7 @@ import { migration043 } from "./043-parked-overrides.ts";
 import { migration044 } from "./044-ticket-landings.ts";
 import { migration045 } from "./045-selector-attempt-revision.ts";
 import { migration046 } from "./046-invite-links.ts";
+import { migration047 } from "./047-workspace-links.ts";
 import type { Migration } from "../shared.ts";
 
 export const migrations: readonly Migration[] = [
@@ -93,4 +94,5 @@ export const migrations: readonly Migration[] = [
   migration044,
   migration045,
   migration046,
+  migration047,
 ];

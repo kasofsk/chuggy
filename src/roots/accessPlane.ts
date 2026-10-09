@@ -179,6 +179,7 @@ export function accessPlaneComposed(
   const issuer = environment.oidc.issuer;
   const github =
     ports.directory === undefined ? undefined : githubUserLookup({ fetch });
+  const claims = ketoTenantClaims(environment.read);
   const links =
     environment.databaseUrl === undefined
       ? undefined
@@ -188,7 +189,7 @@ export function accessPlaneComposed(
     plane: accessPlane(ports, { issuer, bounds: accessPlaneBoundsDefault }),
     invitations: accessInvitations({ ...ports, github }, { issuer }),
     ownerInvitations: accessOwnerInvitations(
-      { ...ports, github, claims: ketoTenantClaims(environment.read) },
+      { ...ports, github, claims },
       { issuer },
     ),
     abilities: accessAbilities(ports, { bounds: accessPlaneBoundsDefault }),
@@ -204,7 +205,7 @@ export function accessPlaneComposed(
       issuer,
       bounds: accessPlaneBoundsDefault,
     }),
-    inviteLinks: accessInviteLinks({ ...ports, links }, { issuer }),
+    inviteLinks: accessInviteLinks({ ...ports, claims, links }, { issuer }),
     ready: async () =>
       (await readiness.ready()) &&
       (links === undefined || (await links.ready())),

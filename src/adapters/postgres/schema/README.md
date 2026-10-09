@@ -449,15 +449,21 @@ of the action's newest row; a row once written is neither changed nor removed,
 which `action_observation_is_written_once` refuses. It has no unfinished work:
 a report is a row or it is nothing, and no later step completes one.
 
-`invite_link` — a tenant's invite links, a row to a link, each keeping the
-digest of its token and never the token. The access plane's role holds what its
-routes need on it and nothing else in the schema: it inserts and deletes rows,
-and updates only `used_by`, `used_at` and `revoked_at`. Its key is `link`, a
-text the insert draws, and `tenant` points at no row, because a tenant the
-plane makes has none until its first project. A role is kept as the contract
-spells it and no constraint names the roster. No state is stored: a link is
-used, revoked or expired as those three columns and the database's own clock
-say, in the statement that asks. A spend and a revocation are each one
-conditional update on an open link; a mint takes an advisory lock on the tenant,
-drops its ended links past the most recently ended it keeps, and counts the
-open ones before it inserts. A link is not a ticket, and the wipe keeps it.
+`invite_link` — a tenant's invite links and the site's workspace links, a row
+to a link, each keeping the digest of its token and never the token. The
+access plane's role holds what its routes need on it and nothing else in the
+schema: it inserts and deletes rows, and updates only `used_by`, `used_at`,
+`revoked_at` and `workspace`. Its key is `link`, a text the insert draws, and
+`tenant` points at no row, because a tenant the plane makes has none until its
+first project. A workspace link names no tenant, role or projects, and keeps
+whether its workspace's administrators may make accounts and its maker's note;
+`invite_link_is_one_kind` holds each row to one kind. The workspace its use
+made is `workspace`, never `tenant`, written by the spend and cleared by a
+give-back, and `invite_link_workspace_once` holds a name to one used link. A
+role is kept as the contract spells it and no constraint names the roster. No
+state is stored: a link is used, revoked or expired as those three columns and
+the database's own clock say, in the statement that asks. A spend and a
+revocation are each one conditional update on an open link; a mint takes an
+advisory lock on the tenant, or for a workspace link on the site, drops that
+set's ended links past the most recently ended it keeps, and counts its open
+ones before it inserts. A link is not a ticket, and the wipe keeps it.
