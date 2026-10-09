@@ -132,6 +132,12 @@
     }
   }
 
+  /* The grid measures itself, so its own width is what its form is chosen
+     by: columns while a name has room beside its roles, and blocks below. */
+  .people-grid {
+    container-type: inline-size;
+  }
+
   .people-grid :is(th, td) {
     padding-inline: var(--space-2);
     text-align: center;
@@ -143,10 +149,76 @@
     text-align: left;
   }
 
+  /* A name wraps where its words end, and inside a word only where the word
+     alone is longer than its line. */
   .people-grid tbody th {
     color: var(--ink-2);
     font-weight: var(--weight-regular);
     white-space: normal;
     overflow-wrap: anywhere;
+  }
+
+  /* A box's role is its column's heading, and a word of its own only where
+     the grid has no columns. */
+  .people-grid-role {
+    display: none;
+  }
+
+  /* Too narrow for a name beside its roles, a project is a block: its name
+     on a line of its own, over a row of its boxes each under its role's word.
+     A cell with no box keeps its place and draws nothing, so a role stands at
+     the same place down the grid. */
+  @container (max-width: 28em) {
+    .people-grid :is(table, tbody) {
+      display: block;
+    }
+
+    .people-grid thead {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+    }
+
+    /* The columns are as many as fit at a role's word wide, so a block too
+       narrow for every role takes another row before it cuts one off. */
+    .people-grid tbody tr {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(4.5em, 1fr));
+      row-gap: var(--space-2);
+      padding-block: var(--space-3);
+      border-bottom: var(--hairline) solid var(--edge);
+    }
+
+    .people-grid tbody tr:last-child {
+      border-bottom: 0;
+    }
+
+    .people-grid tbody :is(th, td) {
+      display: block;
+      min-width: 0;
+      padding: 0;
+      border: 0;
+      text-align: start;
+    }
+
+    .people-grid tbody th {
+      grid-column: 1 / -1;
+    }
+
+    .people-grid-box {
+      display: inline-flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: var(--space-1);
+      cursor: pointer;
+    }
+
+    .people-grid-role {
+      display: block;
+      color: var(--ink-3);
+      font-size: var(--text-sm);
+    }
   }
 }

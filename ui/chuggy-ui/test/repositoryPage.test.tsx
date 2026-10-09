@@ -29,6 +29,11 @@ import {
   turned,
 } from "./screenHarness.tsx";
 import { leadPartition } from "./leadFixture.ts";
+import {
+  abilitiesEvery,
+  abilitiesOver,
+  abilitiesUnrefusing,
+} from "./projectAbilitiesFixture.ts";
 import { styleless } from "./styleless.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 
@@ -157,6 +162,8 @@ interface Drawing {
   readonly truncated?: boolean;
   /** The revisions the project answers with, the default being the fixture. */
   readonly declares?: readonly unknown[];
+  /** A `fetch` laid over the page's own, where a case answers one more read. */
+  readonly over?: (served: typeof fetch) => typeof fetch;
 }
 
 async function drawPage(drawing: Drawing = {}): Promise<readonly Sent[]> {
@@ -187,7 +194,7 @@ async function drawPage(drawing: Drawing = {}): Promise<readonly Sent[]> {
       );
     return Promise.resolve(answer({ repositories: bound }));
   }) as unknown as typeof fetch;
-  vi.stubGlobal("fetch", fetching);
+  vi.stubGlobal("fetch", (drawing.over ?? ((served) => served))(fetching));
   render(
     <ScreenHarness
       partition={leadPartition}
@@ -381,3 +388,26 @@ test("a walk the budget stopped says so under the rows it did read", async () =>
   ).toBeTruthy();
   styleless();
 });
+
+function landingEditOffered(): boolean {
+  return (
+    within(sectionOf("Landing")).queryByRole("button", { name: "Edit" }) !==
+    null
+  );
+}
+
+test("a reader who may not administer reads the landing and is offered no Edit", async () => {
+  await drawPage({
+    over: abilitiesOver({ ...abilitiesEvery, administer: false }),
+  });
+  expect(chosenLanding()).toBe("Push");
+  expect(landingEditOffered()).toBe(false);
+});
+
+test.each(abilitiesUnrefusing)(
+  "a reader the abilities read %s is offered the landing's Edit",
+  async (_said, abilities) => {
+    await drawPage({ over: abilitiesOver(abilities) });
+    expect(landingEditOffered()).toBe(true);
+  },
+);

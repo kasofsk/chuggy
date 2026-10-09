@@ -48,6 +48,7 @@ import {
 } from "../../core/conversation.ts";
 import { panelReason } from "../../core/freshness.ts";
 import { leadSessionNamed } from "../../core/leadTranscript.ts";
+import { projectAbilityRefused } from "../../core/projectAbilities.ts";
 import {
   projectListReread,
   projectListRereadNamed,
@@ -70,6 +71,7 @@ import { sessionRefusedNoRunner } from "../../core/sessionRunners.ts";
 import { useApiPorts, usePanelList } from "../api.ts";
 import { PanelUnready } from "../DataPanel.tsx";
 import { Conversation } from "../conversation/Conversation.tsx";
+import { useProjectAbilities, ViewOnlyNotice } from "../projectAbilities.tsx";
 import { ThreadConversation } from "../thread/ThreadConversation.tsx";
 import { SessionRunnerNotice } from "../sessionPlacement.tsx";
 import {
@@ -305,16 +307,18 @@ function useChatPaneKept(
   });
 }
 
-/** What stands where the composer would, for a reader whose thread door asks a
- * hosted grant the tenant does not give them: no thread they open could run. */
-function ChatPaneUnhosted(): ReactNode {
+/** The one line that stands where the composer would, for a reader no thread
+ * could run for or one who may send nothing. */
+function ChatPaneUnsendable(props: {
+  readonly children: ReactNode;
+}): ReactNode {
   return (
     <div
       role="region"
       aria-label="Conversation"
       className="grid min-h-0 min-w-0 flex-1 content-end px-4 pb-4"
     >
-      <ThreadUnhostedNotice />
+      {props.children}
     </div>
   );
 }
@@ -384,7 +388,9 @@ function ChatPaneFirst(props: {
     return (
       <>
         {opening}
-        <ChatPaneUnhosted />
+        <ChatPaneUnsendable>
+          <ThreadUnhostedNotice />
+        </ChatPaneUnsendable>
       </>
     );
   return (
@@ -446,6 +452,8 @@ function ChatPaneBody(props: {
   readonly session: string | undefined;
   readonly named: boolean;
   readonly starting: boolean;
+  /** The reader may open no thread, which is said before anything a door asks. */
+  readonly viewOnly: boolean;
   readonly unhosted: boolean;
   readonly opening: string | undefined;
   readonly kept: (session: string) => ThreadKeptAway;
@@ -462,6 +470,12 @@ function ChatPaneBody(props: {
         named={props.named}
         away={props.kept(props.session)}
       />
+    );
+  if (props.viewOnly)
+    return (
+      <ChatPaneUnsendable>
+        <ViewOnlyNotice />
+      </ChatPaneUnsendable>
     );
   return (
     <ChatPaneFirst
@@ -554,6 +568,23 @@ function useChatPaneOpenHeld(partition: PartitionIdentity): {
   };
 }
 
+/** The thread the pane holds, at the start of its header's row, or the room
+ * one would take. */
+function ChatPaneHeld(props: {
+  readonly partition: PartitionIdentity;
+  readonly thread: ThreadEntryResponse | undefined;
+  readonly viewOnly: boolean;
+}): ReactNode {
+  if (props.thread === undefined) return <span className="flex-1" />;
+  return (
+    <ChatPaneThreadActions
+      partition={props.partition}
+      thread={props.thread}
+      viewOnly={props.viewOnly}
+    />
+  );
+}
+
 function ChatPaneOpen(props: {
   readonly partition: PartitionIdentity;
   /** Whether the pane has the whole frame, and so sets its conversation as a
@@ -566,30 +597,36 @@ function ChatPaneOpen(props: {
   const kept = useChatPaneKept(threads);
   const held = threads?.find((thread) => thread.session === holding.session);
   const drawn = chatPaneThreadDrawn(holding.session, pane.starting);
+  const viewOnly = projectAbilityRefused(
+    useProjectAbilities(props.partition),
+    "mutate",
+  );
   return (
     <section
       aria-label="Chat"
       className={`bg-surface-1 relative grid min-h-0 min-w-0 grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] overflow-hidden ${props.reading ? "chat-reading" : ""}`}
     >
       <header className="border-edge flex min-w-0 flex-wrap items-center border-b px-1 py-1">
-        {held === undefined ? (
-          <span className="flex-1" />
-        ) : (
-          <ChatPaneThreadActions partition={props.partition} thread={held} />
-        )}
-        <ChatPaneStartControl
+        <ChatPaneHeld
           partition={props.partition}
-          start={holding.start}
-          onOpened={(session) => {
-            pane.chose(session);
-            door.opened();
-          }}
-          onRefused={(answer) => {
-            door.refused(answer);
-            pane.stayed();
-          }}
-          header={chatPaneHeaderDoor(door.door, drawn, held, door.refusal)}
+          thread={held}
+          viewOnly={viewOnly}
         />
+        {viewOnly ? null : (
+          <ChatPaneStartControl
+            partition={props.partition}
+            start={holding.start}
+            onOpened={(session) => {
+              pane.chose(session);
+              door.opened();
+            }}
+            onRefused={(answer) => {
+              door.refused(answer);
+              pane.stayed();
+            }}
+            header={chatPaneHeaderDoor(door.door, drawn, held, door.refusal)}
+          />
+        )}
         {threads === undefined ? null : (
           <ChatPaneHistory
             threads={threads}
@@ -605,6 +642,7 @@ function ChatPaneOpen(props: {
           session={holding.session}
           named={pane.named}
           starting={pane.starting}
+          viewOnly={viewOnly}
           unhosted={chatPaneUnhosted(door.door, door.refusal)}
           opening={pane.opening}
           kept={kept}

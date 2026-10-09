@@ -54,6 +54,7 @@ import {
   offersAnswered,
   offersDispatchByHand,
   ticketOffers,
+  ticketOffersAllowed,
 } from "../core/ticketOffers.ts";
 import type { TicketOffers } from "../core/ticketOffers.ts";
 import { ticketPageFacts } from "../core/ticketPageFacts.ts";
@@ -64,6 +65,7 @@ import { usePanelList, usePanelResource } from "./api.ts";
 import { FreshnessInstants, useNowMs } from "./Freshness.tsx";
 import { useLead } from "./LeadPage.tsx";
 import { currentAnchor } from "./ports.ts";
+import { useProjectAbilities } from "./projectAbilities.tsx";
 import { DetailsSlot, TopBarSlot } from "./shell/slots.tsx";
 import {
   TicketActingScope,
@@ -239,7 +241,9 @@ function statusLanding(props: StandingProps): ReactNode {
 function TicketStanding(
   props: StandingProps & { readonly acting: TicketActing },
 ): ReactNode {
-  const { offers, slot, fence } = standingOf(props);
+  const abilities = useProjectAbilities(props.partition);
+  const { slot, fence, ...standing } = standingOf(props);
+  const offers = ticketOffersAllowed(standing.offers, abilities);
   const parked = useParkedStanding(props, fence);
   const asking = slot.slot === "NeedsYou";
   const answered = offersAnswered(offers, asking);

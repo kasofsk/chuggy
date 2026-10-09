@@ -85,7 +85,7 @@ import {
 import { TicketAuthoring } from "./editor/TicketAuthoring.tsx";
 import { drawBytes } from "./ports.ts";
 import { operationIdBytesCount } from "../core/operationFollow.ts";
-import { TopBarSlot } from "./shell/slots.tsx";
+import { DraftScreen } from "./ticket/DraftScreen.tsx";
 import { TicketCreationAdvanced } from "./TicketCreationAdvanced.tsx";
 import { ConfigurationOverrides } from "./ConfigurationOverrides.tsx";
 import { overrideDocumentOf, overrideFields } from "../core/ticketOverrides.ts";
@@ -919,21 +919,15 @@ export interface CreationScreenReady {
   readonly existing: (ticket: number) => ReactNode;
 }
 
-/**
- * A new-ticket screen: its title, the project's read, and the guard and the
- * navigation a settled submit releases, around whatever form it draws.
- */
-export function CreationScreen(props: {
-  readonly heading: ReactNode;
+/** The project's read, and the guard and the navigation a settled submit
+ * releases, around whatever form a new-ticket screen draws. */
+function CreationScreenRead(props: {
+  readonly partition: PartitionIdentity;
   readonly children: (ready: CreationScreenReady) => ReactNode;
 }): ReactNode {
-  const params = useParams({ from: "/$tenant/$project" });
+  const partition = props.partition;
   const ports = useApiPorts();
   const navigate = useNavigate();
-  const partition: PartitionIdentity = {
-    tenant: params.tenant,
-    project: params.project,
-  };
   const [dirty, setDirty] = useState(false);
   const guard = useAuthoringGuards(dirty);
   const list = creationContextList(partition);
@@ -942,38 +936,51 @@ export function CreationScreen(props: {
     readCreationContext(readPorts, partition),
   );
   return (
-    <>
-      <TopBarSlot>
-        <h1 className="text-md font-strong text-ink-1 truncate">
-          {props.heading}
-        </h1>
-      </TopBarSlot>
-      <DataPanel title="Draft" state={state}>
-        {(context) =>
-          context.context === "Ready" ? (
-            props.children({
-              ports,
-              partition,
-              queryKey,
-              context,
-              onDirty: setDirty,
-              onCreated: (ticket) => {
-                guard.release();
-                void navigate({
-                  to: "/$tenant/$project/tickets/$ticket",
-                  params: { ...partition, ticket: String(ticket) },
-                });
-              },
-              existing: (ticket) => (
-                <CreationTicketLink partition={partition} ticket={ticket} />
-              ),
-            })
-          ) : (
-            <CreationContextAbsent partition={partition} context={context} />
-          )
-        }
-      </DataPanel>
-    </>
+    <DataPanel title="Draft" state={state}>
+      {(context) =>
+        context.context === "Ready" ? (
+          props.children({
+            ports,
+            partition,
+            queryKey,
+            context,
+            onDirty: setDirty,
+            onCreated: (ticket) => {
+              guard.release();
+              void navigate({
+                to: "/$tenant/$project/tickets/$ticket",
+                params: { ...partition, ticket: String(ticket) },
+              });
+            },
+            existing: (ticket) => (
+              <CreationTicketLink partition={partition} ticket={ticket} />
+            ),
+          })
+        ) : (
+          <CreationContextAbsent partition={partition} context={context} />
+        )
+      }
+    </DataPanel>
+  );
+}
+
+/** A new-ticket screen: its title, and the form it draws for a reader who may
+ * open a ticket. */
+export function CreationScreen(props: {
+  readonly heading: ReactNode;
+  readonly children: (ready: CreationScreenReady) => ReactNode;
+}): ReactNode {
+  const params = useParams({ from: "/$tenant/$project" });
+  const partition: PartitionIdentity = {
+    tenant: params.tenant,
+    project: params.project,
+  };
+  return (
+    <DraftScreen partition={partition} heading={props.heading}>
+      <CreationScreenRead partition={partition}>
+        {props.children}
+      </CreationScreenRead>
+    </DraftScreen>
   );
 }
 

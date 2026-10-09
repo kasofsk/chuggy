@@ -15,7 +15,10 @@ import type { TicketAction } from "../app/core/ticketActions.ts";
 import {
   offersDispatchByHand,
   ticketOffers,
+  ticketOffersAllowed,
 } from "../app/core/ticketOffers.ts";
+import type { TicketOffers } from "../app/core/ticketOffers.ts";
+import { abilitiesEvery, abilitiesNone } from "./projectAbilitiesFixture.ts";
 import { ticketInstants } from "./ticketInstants.ts";
 
 const parked = {
@@ -98,4 +101,72 @@ test("the bar says Dispatch is by hand only beside a Dispatch in a project with 
   expect(offersDispatchByHand(withDispatch, undefined)).toBe(false);
   expect(offersDispatchByHand(withoutDispatch, false)).toBe(false);
   expect(offersDispatchByHand({ offers: "Unread" }, false)).toBe(false);
+});
+
+const pending = { ...parked, phase: "Pending" as const };
+
+/** What is left of the offers of a Pending ticket's page and of a parked
+ * one's, as the actions' names and whether the edit screen stands. */
+function allowed(abilities: Parameters<typeof ticketOffersAllowed>[1]): {
+  readonly parked: readonly string[];
+  readonly editable: boolean;
+} {
+  const left = (offers: TicketOffers) => ticketOffersAllowed(offers, abilities);
+  const actions = left(ticketOffers(ready([]), parked, dispatch));
+  const edit = left(ticketOffers(ready([]), pending, undefined));
+  return {
+    parked:
+      actions.offers === "Actions"
+        ? actions.actions.map((action) => action.action)
+        : [],
+    editable: edit.offers === "Actions" && edit.editable,
+  };
+}
+
+test("a reader the read has not answered for, or said yes to, keeps every offer", () => {
+  const every = { parked: ["Dispatch", "Resume", "Revoke"], editable: true };
+  expect(allowed(undefined)).toStrictEqual(every);
+  expect(allowed(abilitiesEvery)).toStrictEqual(every);
+});
+
+test("a reader who may not dispatch loses Dispatch and nothing else", () => {
+  expect(allowed({ ...abilitiesEvery, dispatch: false })).toStrictEqual({
+    parked: ["Resume", "Revoke"],
+    editable: true,
+  });
+});
+
+test("a reader who may not mutate keeps Dispatch and loses every answer and the edit screen", () => {
+  expect(allowed({ ...abilitiesEvery, mutate: false })).toStrictEqual({
+    parked: ["Dispatch"],
+    editable: false,
+  });
+  expect(allowed(abilitiesNone)).toStrictEqual({ parked: [], editable: false });
+});
+
+test("an open action's answers go with the ability to mutate", () => {
+  const open = ticketOffers(
+    ready([
+      {
+        action: "action-one",
+        kind: "FinalizationApproval",
+        authorizingSequence: 42,
+        admits: ["Approve", "Decline"],
+      },
+    ]),
+    parked,
+    dispatch,
+  );
+  expect(ticketOffersAllowed(open, abilitiesEvery)).toStrictEqual(open);
+  expect(ticketOffersAllowed(open, abilitiesNone)).toStrictEqual({
+    offers: "Actions",
+    actions: [],
+    editable: false,
+  });
+});
+
+test("an unread offer stays unread whatever the reader may do", () => {
+  expect(
+    ticketOffersAllowed({ offers: "Unread" }, abilitiesNone),
+  ).toStrictEqual({ offers: "Unread" });
 });

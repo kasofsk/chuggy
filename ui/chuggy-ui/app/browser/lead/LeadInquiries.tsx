@@ -73,12 +73,14 @@ import type { InquiryAsk } from "../../core/leadInquiries.ts";
 import { sessionChangeKindNamed } from "../../core/leadTranscript.ts";
 import { inquiryBoxesHeld } from "./inquiryBoxes.ts";
 import type { InquiryBoxStore } from "./inquiryBoxes.ts";
+import { projectAbilityRefused } from "../../core/projectAbilities.ts";
 import { projectListRereadNamed } from "../../core/projectQueryKeys.ts";
 import type { ProjectList } from "../../core/projectQueryKeys.ts";
 import { sessionTurnStateTone } from "../../core/tones.ts";
 import { useApiPorts, usePanelList } from "../api.ts";
 import { PanelUnready } from "../DataPanel.tsx";
 import { drawBytes } from "../ports.ts";
+import { useProjectAbilities, ViewOnlyNotice } from "../projectAbilities.tsx";
 import {
   SessionRunnerNotice,
   useSessionRunnerShort,
@@ -328,6 +330,17 @@ function LeadInquiryList(props: {
   );
 }
 
+/** The box, or the one line where the reader may ask nothing. */
+function LeadAskOffered(props: {
+  readonly partition: PartitionIdentity;
+  readonly held: InquiryBoxesHeld;
+  readonly onAsked: (partition: PartitionIdentity) => void;
+}): ReactNode {
+  const abilities = useProjectAbilities(props.partition);
+  if (projectAbilityRefused(abilities, "mutate")) return <ViewOnlyNotice />;
+  return <LeadAsk {...props} />;
+}
+
 export function LeadInquiries(props: {
   readonly partition: PartitionIdentity;
   /** The lead's runtime reference, which is the head a fork is taken from. */
@@ -344,7 +357,7 @@ export function LeadInquiries(props: {
   return (
     <Panel title="Inquiries">
       {props.head === undefined ? null : (
-        <LeadAsk
+        <LeadAskOffered
           partition={partition}
           held={props.held}
           onAsked={(at) => {

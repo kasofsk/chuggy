@@ -13,12 +13,14 @@ import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import { apiConfigureProjectRepository } from "../../core/apiRoutes.ts";
+import { projectAbilityRefused } from "../../core/projectAbilities.ts";
 import { projectResourceKey } from "../../core/projectQueryKeys.ts";
 import {
   repositoryConfigureStatus,
   type RepositoryStepStatus,
 } from "../../core/projectRepositories.ts";
 import { useApiPorts } from "../api.ts";
+import { useProjectAbilities } from "../projectAbilities.tsx";
 import { Button } from "../ui/Button.tsx";
 import { Pill } from "../ui/Pill.tsx";
 import { projectRepositoriesResource } from "./AddRepository.tsx";
@@ -72,12 +74,13 @@ export function BindingConfigurations(props: {
   readonly repository: string;
 }): ReactNode {
   const step = useBindingConfigurationsRetry(props.partition, props.repository);
+  const abilities = useProjectAbilities(props.partition);
   return (
     <>
       <span role="status">
         <Pill tone="parked">{step.status.status}</Pill>
       </span>
-      {step.status.retry ? (
+      {step.status.retry && !projectAbilityRefused(abilities, "administer") ? (
         <Button
           size="sm"
           variant="quiet"

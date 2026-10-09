@@ -12,6 +12,10 @@ import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import { InboxScreen } from "../app/browser/Inbox.tsx";
+import {
+  abilitiesAnswered,
+  abilitiesEvery,
+} from "./projectAbilitiesFixture.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import {
   answer,
@@ -102,6 +106,8 @@ function drawInbox(served: {
         ? answer({ error: { code: "InternalError", message: "fault" } }, 500)
         : answer(body);
     }
+    const abilities = abilitiesAnswered(url, abilitiesEvery);
+    if (abilities !== undefined) return abilities;
     if (url.includes("/selector-proposals"))
       return answer({
         proposals:

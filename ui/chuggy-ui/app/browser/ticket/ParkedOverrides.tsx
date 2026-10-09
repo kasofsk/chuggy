@@ -38,12 +38,14 @@ import {
   parkedOverridesUnsaved,
 } from "../../core/parkedOverrides.ts";
 import type { ParkedOverridesTyped } from "../../core/parkedOverrides.ts";
+import { projectAbilityRefused } from "../../core/projectAbilities.ts";
 import { projectResourceKey } from "../../core/projectQueryKeys.ts";
 import { overrideDocumentOf } from "../../core/ticketOverrides.ts";
 import { useApiPorts, usePanelResource } from "../api.ts";
 import { ConfigurationOverrides } from "../ConfigurationOverrides.tsx";
 import { PanelUnready } from "../DataPanel.tsx";
 import { drawBytes } from "../ports.ts";
+import { useProjectAbilities } from "../projectAbilities.tsx";
 import { Button } from "../ui/Button.tsx";
 import { Notice } from "../ui/Notice.tsx";
 import { Panel } from "../ui/Panel.tsx";
@@ -172,6 +174,10 @@ function ParkedOverridesEdit(props: {
   const shown = parkedOverridesShown(typed, fence, ticket.overrides);
   const unsaved = parkedOverridesUnsaved(typed, fence, ticket.overrides);
   const busy = parkedOverridesSaving(saving);
+  const refused = projectAbilityRefused(
+    useProjectAbilities(props.partition),
+    "mutate",
+  );
   return (
     <div className="grid gap-2">
       <ConfigurationOverrides
@@ -184,21 +190,23 @@ function ParkedOverridesEdit(props: {
         }}
       />
       <div className="flex flex-wrap items-center gap-2">
-        <Button
-          size="sm"
-          disabled={!unsaved || busy}
-          onClick={() => {
-            const change = parkedOverridesChange(ticket, fence, shown);
-            if (change.change === "Invalid") {
-              setInvalid(true);
-              return;
-            }
-            saving.save(change.mutation);
-          }}
-        >
-          Save overrides
-        </Button>
-        {unsaved && !busy ? (
+        {refused ? null : (
+          <Button
+            size="sm"
+            disabled={!unsaved || busy}
+            onClick={() => {
+              const change = parkedOverridesChange(ticket, fence, shown);
+              if (change.change === "Invalid") {
+                setInvalid(true);
+                return;
+              }
+              saving.save(change.mutation);
+            }}
+          >
+            Save overrides
+          </Button>
+        )}
+        {unsaved && !busy && !refused ? (
           <Button
             size="sm"
             variant="quiet"

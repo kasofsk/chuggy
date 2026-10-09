@@ -63,7 +63,7 @@ import {
 } from "./editor/authoringGuards.tsx";
 import { TicketAuthoring } from "./editor/TicketAuthoring.tsx";
 import { drawBytes } from "./ports.ts";
-import { TopBarSlot } from "./shell/slots.tsx";
+import { DraftScreen } from "./ticket/DraftScreen.tsx";
 import {
   AttemptNote,
   CreationContextAbsent,
@@ -338,15 +338,14 @@ function EditSubjectRead(props: {
   });
 }
 
-export function TicketEdit(): ReactNode {
-  const params = useParams({ from: "/$tenant/$project/tickets/$ticket/edit" });
+/** The edit screen's reads, and the form they prefill. */
+function TicketEditRead(props: {
+  readonly partition: PartitionIdentity;
+  readonly ticket: number;
+}): ReactNode {
+  const { partition, ticket } = props;
   const ports = useApiPorts();
   const navigate = useNavigate();
-  const partition: PartitionIdentity = {
-    tenant: params.tenant,
-    project: params.project,
-  };
-  const ticket = Number(params.ticket);
   const [dirty, setDirty] = useState(false);
   const guard = useAuthoringGuards(dirty);
   const ticketState = usePanelResource(
@@ -366,38 +365,47 @@ export function TicketEdit(): ReactNode {
     (readPorts) => readCreationContext(readPorts, partition),
   );
   return (
-    <>
-      <TopBarSlot>
-        <h1 className="text-md font-strong text-ink-1 truncate">
-          Edit ticket {params.ticket}
-        </h1>
-      </TopBarSlot>
-      <DataPanel title="Draft" state={contextState}>
-        {(context) =>
-          context.context === "Ready" ? (
-            <EditSubjectRead ticketState={ticketState} draftState={draftState}>
-              {(subject) => (
-                <EditOffered
-                  ports={ports}
-                  partition={partition}
-                  subject={subject}
-                  context={context}
-                  onDirty={setDirty}
-                  onUpdated={() => {
-                    guard.release();
-                    void navigate({
-                      to: "/$tenant/$project/tickets/$ticket",
-                      params: { ...partition, ticket: String(ticket) },
-                    });
-                  }}
-                />
-              )}
-            </EditSubjectRead>
-          ) : (
-            <CreationContextAbsent partition={partition} context={context} />
-          )
-        }
-      </DataPanel>
-    </>
+    <DataPanel title="Draft" state={contextState}>
+      {(context) =>
+        context.context === "Ready" ? (
+          <EditSubjectRead ticketState={ticketState} draftState={draftState}>
+            {(subject) => (
+              <EditOffered
+                ports={ports}
+                partition={partition}
+                subject={subject}
+                context={context}
+                onDirty={setDirty}
+                onUpdated={() => {
+                  guard.release();
+                  void navigate({
+                    to: "/$tenant/$project/tickets/$ticket",
+                    params: { ...partition, ticket: String(ticket) },
+                  });
+                }}
+              />
+            )}
+          </EditSubjectRead>
+        ) : (
+          <CreationContextAbsent partition={partition} context={context} />
+        )
+      }
+    </DataPanel>
+  );
+}
+
+export function TicketEdit(): ReactNode {
+  const params = useParams({ from: "/$tenant/$project/tickets/$ticket/edit" });
+  const partition: PartitionIdentity = {
+    tenant: params.tenant,
+    project: params.project,
+  };
+  return (
+    <DraftScreen
+      partition={partition}
+      heading={<>Edit ticket {params.ticket}</>}
+    >
+      <TicketEditRead partition={partition} ticket={Number(params.ticket)} />
+    </DraftScreen>
   );
 }
