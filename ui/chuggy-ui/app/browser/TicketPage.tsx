@@ -27,8 +27,8 @@ import type {
 } from "../../../../src/contract/responses.ts";
 import {
   apiDraft,
-  apiDispatchView,
   apiTicket,
+  apiTicketDispatchView,
   apiTicketNativeActions,
 } from "../core/apiRoutes.ts";
 import type { PanelState } from "../core/freshness.ts";
@@ -388,11 +388,7 @@ export function TicketPage(): ReactNode {
   );
   const dispatchState = usePanelList(
     ticketDispatchList(partition, ticket),
-    (ports) =>
-      apiDispatchView(ports, partition, {
-        ...(ticket > 1 ? { after: ticket - 1 } : {}),
-        limit: 1,
-      }),
+    (ports) => apiTicketDispatchView(ports, partition, ticket),
   );
   const pageState = useTicketExecutions(partition, ticket);
   const leadState = useLead(partition);

@@ -577,6 +577,19 @@ export function apiDispatchView(
   );
 }
 
+/** The page of the dispatch view that says whether one ticket is a candidate.
+ * The route's `after` is exclusive and names a ticket, so the first has none. */
+export function apiTicketDispatchView(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+  ticket: number,
+): Promise<ApiResult<DispatchViewResponse>> {
+  return apiDispatchView(ports, partition, {
+    ...(ticket > 1 ? { after: ticket - 1 } : {}),
+    limit: 1,
+  });
+}
+
 /** Every question this one ticket has open, which the ticket read omits. */
 export function apiTicketNativeActions(
   ports: ApiPorts,

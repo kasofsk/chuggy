@@ -954,6 +954,12 @@ export function creationOffered<T>(
     : [chosen, ...offered];
 }
 
+/** What creating a ticket does beyond making it, for the reader pressing: work
+ * starts for one who dispatches, and waits on someone who does for one who may not. */
+export function creationSubmitEffect(dispatches: boolean): string {
+  return dispatches ? "Starts work" : "Released for a dispatcher to start";
+}
+
 /** What one submit releases: a new ticket, or a Pending one's next revision. */
 export type CreationMotion = "Release" | "Update";
 

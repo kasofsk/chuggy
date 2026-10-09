@@ -7,10 +7,11 @@
  * the images it carries, the check lines this ticket adds where its
  * configuration commands a stage for them, the branch the work happens on and
  * the one it lands on; the rest is prefilled behind the disclosure. Submit
- * creates the draft and releases it in one motion, and the navigation happens
- * on a settled success alone, so a screen never hands a reader a ticket the
- * projection has not got to yet. Every other ending is drawn here with its
- * reason and the form still holding what was typed.
+ * creates the draft, releases it and, for a reader who may dispatch, starts
+ * the ticket in one motion, and the navigation happens on a settled release
+ * alone, so a screen never hands a reader a ticket the projection has not got
+ * to yet. Every other ending of the release is drawn here with its reason and
+ * the form still holding what was typed.
  */
 
 import { useQueryClient } from "@tanstack/react-query";
@@ -46,6 +47,7 @@ import {
   creationRepositories,
   creationRepositoryChosen,
   creationStepSentence,
+  creationSubmitEffect,
   creationTargetBranchFieldHint,
 } from "../core/ticketCreation.ts";
 import type {
@@ -84,6 +86,7 @@ import {
 } from "./editor/authoringGuards.tsx";
 import { TicketAuthoring } from "./editor/TicketAuthoring.tsx";
 import { drawBytes } from "./ports.ts";
+import { useProjectAbilityRead } from "./projectAbilities.tsx";
 import { operationIdBytesCount } from "../core/operationFollow.ts";
 import { DraftScreen } from "./ticket/DraftScreen.tsx";
 import { TicketCreationAdvanced } from "./TicketCreationAdvanced.tsx";
@@ -667,6 +670,11 @@ interface CreationSubmit {
   readonly submit: (form: TicketCreationForm) => Promise<void>;
 }
 
+/** An operation identity nothing has been sent under. */
+function operationDrawn(): string {
+  return base64urlFromBytes(drawBytes(operationIdBytesCount));
+}
+
 /**
  * One submit, from the body it assembles to the state it leaves behind. The
  * form's faults are set by the caller's own setter, so nothing but this hook
@@ -678,6 +686,7 @@ function useCreationSubmit(props: {
   readonly queryKey: ProjectQueryKey;
   readonly offers: readonly CreationOffer[];
   readonly repositories: readonly ProjectRepositoryResponse[];
+  readonly dispatches: boolean;
   readonly onFaults: (faults: readonly CreationFault[]) => void;
   readonly onCreated: (ticket: number) => void;
 }): CreationSubmit {
@@ -685,6 +694,7 @@ function useCreationSubmit(props: {
   const mounted = useMounted();
   const [attempt, setAttempt] = useState<CreationAttempt>({ attempt: "Idle" });
   const {
+    dispatches,
     offers,
     onCreated,
     onFaults,
@@ -702,12 +712,13 @@ function useCreationSubmit(props: {
     }
     onFaults([]);
     const held = creationAttemptHeld(attempt);
-    const operation = base64urlFromBytes(drawBytes(operationIdBytesCount));
+    const operation = operationDrawn();
+    const dispatchOperation = dispatches ? operationDrawn() : undefined;
     setAttempt({ attempt: "Running", step: operationSubmitting() });
     const created = await createAndReleaseTicket(
       ports,
       partition,
-      { body: assembled.body, operation, held },
+      { body: assembled.body, operation, held, dispatchOperation },
       (step) => {
         if (mounted.current) setAttempt({ attempt: "Running", step });
       },
@@ -800,6 +811,8 @@ export function CreationForm(props: {
   readonly partition: PartitionIdentity;
   readonly queryKey: ProjectQueryKey;
   readonly context: Extract<CreationContext, { context: "Ready" }>;
+  /** Whether a submit goes on to dispatch the ticket it makes. */
+  readonly dispatches: boolean;
   readonly onCreated: (ticket: number) => void;
   /** The way to a ticket a submit found already made. */
   readonly existing: (ticket: number) => ReactNode;
@@ -818,6 +831,7 @@ export function CreationForm(props: {
     queryKey: props.queryKey,
     offers,
     repositories,
+    dispatches: props.dispatches,
     onFaults: setFaults,
     onCreated: (ticket) => {
       ticketYamlForgotten(storeKey);
@@ -838,7 +852,7 @@ export function CreationForm(props: {
         assemble={(form) => creationBodyFrom(offers, form, repositories)}
         storeKey={storeKey}
         submitLabel="Create ticket"
-        submitEffect="Releases the ticket to run"
+        submitEffect={creationSubmitEffect(props.dispatches)}
         busy={running.attempt.attempt === "Running"}
         onSubmit={(form) => {
           void running.submit(form);
@@ -914,6 +928,9 @@ export interface CreationScreenReady {
   readonly partition: PartitionIdentity;
   readonly queryKey: ProjectQueryKey;
   readonly context: Extract<CreationContext, { context: "Ready" }>;
+  /** Whether a submit dispatches its ticket, which it does once the abilities
+   * read has come back without saying this reader may not. */
+  readonly dispatches: boolean;
   readonly onDirty: (dirty: boolean) => void;
   readonly onCreated: (ticket: number) => void;
   readonly existing: (ticket: number) => ReactNode;
@@ -930,6 +947,7 @@ function CreationScreenRead(props: {
   const navigate = useNavigate();
   const [dirty, setDirty] = useState(false);
   const guard = useAuthoringGuards(dirty);
+  const dispatches = useProjectAbilityRead(partition, "dispatch") === "Asked";
   const list = creationContextList(partition);
   const queryKey = list.key;
   const state = usePanelList(list, (readPorts) =>
@@ -944,6 +962,7 @@ function CreationScreenRead(props: {
             partition,
             queryKey,
             context,
+            dispatches,
             onDirty: setDirty,
             onCreated: (ticket) => {
               guard.release();

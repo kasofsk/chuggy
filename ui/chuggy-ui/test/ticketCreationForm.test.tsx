@@ -34,6 +34,7 @@ import {
   creationConfigurationName,
   creationFaultSentence,
   creationStageOf,
+  creationSubmitEffect,
 } from "../app/core/ticketCreation.ts";
 import type { CreationOffer } from "../app/core/ticketCreation.ts";
 import { creationContextList } from "../app/core/ticketCreationRun.ts";
@@ -163,6 +164,7 @@ function drawOffered(
         partition={partition}
         queryKey={queryKey}
         context={{ context: "Ready", ...next }}
+        dispatches={false}
         onCreated={(ticket) => created.push(ticket)}
         existing={(ticket) => <a href="/there">Ticket {ticket}</a>}
       />
@@ -273,7 +275,7 @@ test("each field is named by its label, and a line beside one describes it", () 
   expect(
     screen.getByRole("button", {
       name: "Create ticket",
-      description: "Releases the ticket to run",
+      description: creationSubmitEffect(false),
     }),
   ).toBeDefined();
 });
