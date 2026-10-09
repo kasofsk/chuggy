@@ -58,24 +58,27 @@ const [
   adminGranters,
   developerGranters,
   dispatcherGranters,
+  viewerGranters,
   authorityManagers,
 ] = projectAuthoritiesStarting.authorities;
 
 const startingHolders = ["Workspace admins", "Project admins"];
 
-test("a project manager sees its four permissions in roster order, each with Add and each holder removable", async () => {
+test("a project manager sees its five permissions in roster order, each with Add and each holder removable", async () => {
   await drawProjectPermissions();
   expect(screen.getByRole("heading", { name: "Permissions" })).toBeTruthy();
   expect(permissionsDrawn("Project")).toStrictEqual([
     { name: "Grant Admin", holders: startingHolders },
     { name: "Grant Developer", holders: startingHolders },
     { name: "Grant Dispatcher", holders: startingHolders },
+    { name: "Grant Viewer", holders: startingHolders },
     { name: "Change permissions", holders: startingHolders },
   ]);
   expect(addButtons("Project")).toStrictEqual([
     "Add to Grant Admin",
     "Add to Grant Developer",
     "Add to Grant Dispatcher",
+    "Add to Grant Viewer",
     "Add to Change permissions",
   ]);
   expect(removeButtons("Project")).toStrictEqual(
@@ -83,6 +86,7 @@ test("a project manager sees its four permissions in roster order, each with Add
       "Grant Admin",
       "Grant Developer",
       "Grant Dispatcher",
+      "Grant Viewer",
       "Change permissions",
     ].flatMap((permission) =>
       startingHolders.map((holder) => `Remove ${holder} from ${permission}`),
@@ -184,9 +188,16 @@ test("removing a holder of Change permissions asks first and sends nothing until
   ]);
 });
 
-test("each permission offers its record's groups less those held, Project developers on Grant Developer alone", async () => {
+test("each permission offers its record's groups less those held, Project developers on Grant Developer and Grant Viewer", async () => {
   await drawProjectPermissions();
   await opened("Project", "Grant Developer");
+  expect(choicesOffered()).toStrictEqual([
+    "Site admins",
+    "Project developers",
+    "Person",
+  ]);
+  await press("Cancel");
+  await opened("Project", "Grant Viewer");
   expect(choicesOffered()).toStrictEqual([
     "Site admins",
     "Project developers",
@@ -229,6 +240,24 @@ test("Project developers on Grant Developer draws its line, Person its own, and 
   ).toStrictEqual([true, true]);
 });
 
+test("Project developers on Grant Viewer draws its own line, and not Grant Developer's", async () => {
+  await drawProjectPermissions();
+  await opened("Project", "Grant Viewer");
+  const line = within(dialog()).getByText(
+    "Developers will see people and can remove viewers.",
+  );
+  expect(
+    within(dialog())
+      .getByRole("radio", { name: "Project developers" })
+      .getAttribute("aria-describedby"),
+  ).toBe(line.id);
+  expect(
+    within(dialog()).queryByText(
+      "Developers will see people and can remove other developers.",
+    ),
+  ).toBeNull();
+});
+
 test("a person is chosen among the project's people less those holding the permission, and sent with their subject", async () => {
   const drawn = await drawProjectPermissions({
     authorities: () =>
@@ -238,6 +267,7 @@ test("a person is chosen among the project's people less those holding the permi
           adminGranters,
           developerGranters,
           { ...dispatcherGranters, people: [ada] },
+          viewerGranters,
           authorityManagers,
         ],
       }),

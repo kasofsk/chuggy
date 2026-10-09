@@ -226,6 +226,7 @@ export const projectAuthoritiesStarting: AccessProjectAuthorities = {
       "AdminGranters",
       "DeveloperGranters",
       "DispatcherGranters",
+      "ViewerGranters",
       "AuthorityManagers",
     ] as const
   ).map((authority) => ({

@@ -179,6 +179,44 @@ test("a person is written into the authority's relation as the principal its sub
   }
 });
 
+test("`ViewerGranters` admits what `DeveloperGranters` admits, each and a person added and removed in `viewer_granters`, and refuses a group it does not admit", async () => {
+  const { memory, holders } = await acme();
+  assert.deepEqual(
+    accessProjectAuthorityAdmits.ViewerGranters,
+    accessProjectAuthorityAdmits.DeveloperGranters,
+  );
+  const admitted = [
+    person("zed"),
+    ...accessProjectAuthorityAdmits.ViewerGranters.map(group),
+  ];
+  for (const holder of admitted) {
+    const held: AccessHeld = {
+      level: "Project",
+      partition: web,
+      authority: "ViewerGranters",
+      holder,
+    };
+    assert.equal(await holders.holderAdded(sam, held), "Changed");
+    assert.equal(await holders.holderRemoved(sam, held), "Changed");
+  }
+  assert.deepEqual(
+    memory.changes.map(([verb, grant]) => [verb, grant.relation]),
+    admitted.flatMap(() => [
+      ["write", "viewer_granters"],
+      ["remove", "viewer_granters"],
+    ]),
+  );
+  assert.equal(
+    await holders.holderAdded(sam, {
+      level: "Project",
+      partition: web,
+      authority: "ViewerGranters",
+      holder: group("TenantMembers"),
+    }),
+    "NotAdmitted",
+  );
+});
+
 test("adding a holder already held and removing one that is not change nothing and succeed", async () => {
   const { memory, holders } = await acme();
   const held: AccessHeld = {

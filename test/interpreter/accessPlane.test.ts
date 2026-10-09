@@ -45,6 +45,7 @@ import {
   accessGivenProjectAdministrator,
   accessGivenTenantAdministrator,
   accessMemory,
+  accessMemoryAbilities,
   accessMemoryPlane,
   accessStored,
   accessTenantAdministratorsNotLink,
@@ -350,6 +351,49 @@ test("a caller answered the list is refused a role whose grant kind they lack, a
   );
 });
 
+test("a caller holding `GrantViewer` alone lists the project, grants `Viewer` and removes it, and one holding `GrantDeveloper` alone is refused both", async () => {
+  const { memory, plane } = await acme();
+  const vic = accessFixturePrincipal("vic");
+  const dee = accessFixturePrincipal("dee");
+  accessGiven(memory, vic, [
+    { on: "Project", partition: web, kind: "GrantViewer" },
+  ]);
+  accessGiven(memory, dee, [
+    { on: "Project", partition: web, kind: "GrantDeveloper" },
+  ]);
+  assert.deepEqual(
+    await accessMemoryAbilities(memory).projectAbilities(vic, web),
+    { tenant, project: "web", roles: ["Viewer"], manageAuthorities: false },
+  );
+  const rowOf = async (subject: string) =>
+    (await plane.projectPeople(vic, web))?.people.find(
+      (person) => person.subject === subject,
+    )?.roles;
+  assert.equal(
+    await plane.projectRoleGranted(vic, web, "bo", "Viewer"),
+    "Changed",
+  );
+  assert.deepEqual(await rowOf("bo"), ["Developer", "Viewer"]);
+  for (const change of [
+    plane.projectRoleGranted(dee, web, "zed", "Viewer"),
+    plane.projectRoleRemoved(dee, web, "bo", "Viewer"),
+    plane.projectRoleGranted(vic, web, "zed", "Developer"),
+  ])
+    assert.equal(await change, "Refused");
+  assert.equal(
+    await plane.projectRoleRemoved(vic, web, "bo", "Viewer"),
+    "Changed",
+  );
+  assert.deepEqual(await rowOf("bo"), ["Developer"]);
+  assert.deepEqual(
+    memory.changes.map(([verb, grant]) => [verb, grant.relation]),
+    [
+      ["write", "viewers"],
+      ["remove", "viewers"],
+    ],
+  );
+});
+
 test("an administrator of a tenant and a project carrying no defaults is answered both lists and refused every change", async () => {
   const memory = accessMemory();
   await seeded(memory, [
@@ -419,7 +463,7 @@ test("each role reaches only the relation its record names, and every relation t
   );
   assert.deepEqual(
     accessProjectRoles.map((role) => accessProjectRoleRelations[role]),
-    ["admins", "developers", "dispatchers"],
+    ["admins", "developers", "dispatchers", "viewers"],
   );
 });
 

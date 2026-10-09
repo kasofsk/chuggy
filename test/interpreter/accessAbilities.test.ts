@@ -49,6 +49,7 @@ const projectKinds = [
   "GrantProjectAdmin",
   "GrantDeveloper",
   "GrantDispatcher",
+  "GrantViewer",
   "ManageProjectAuthorities",
 ];
 
@@ -131,7 +132,7 @@ test("a project's answer and the site's each ask their kinds once, whoever asks"
 test("each ability is the kind's own answer, and a caller holding no kind of a level is absent there", async () => {
   const memory = await acme();
   const abilities = accessMemoryAbilities(memory);
-  const everything = { roles: ["Admin", "Developer", "Dispatcher"] };
+  const everything = { roles: ["Admin", "Developer", "Dispatcher", "Viewer"] };
   assert.deepEqual(await abilities.tenantAbilities(alice, tenant), {
     tenant,
     roles: ["Admin", "Member"],

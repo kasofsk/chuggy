@@ -27,7 +27,8 @@
  * TWO GROUPS OPEN A LIST, AND THAT IS MEANT. `GrantMember` answers a tenant's
  * people list, so `TenantMembers` holding `MemberGranters` shows every member
  * that list, with its emails and logins, and lets any member remove another.
- * `ProjectDevelopers` holding `DeveloperGranters` does the same in a project.
+ * `ProjectDevelopers` holding `DeveloperGranters` or `ViewerGranters` does the
+ * same in a project.
  */
 
 import {

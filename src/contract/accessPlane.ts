@@ -43,7 +43,12 @@ export const accessTenantRoles = ["Admin", "Member"] as const;
 export type AccessTenantRole = (typeof accessTenantRoles)[number];
 
 /** The roles a request may grant or remove on a project. */
-export const accessProjectRoles = ["Admin", "Developer", "Dispatcher"] as const;
+export const accessProjectRoles = [
+  "Admin",
+  "Developer",
+  "Dispatcher",
+  "Viewer",
+] as const;
 export type AccessProjectRole = (typeof accessProjectRoles)[number];
 
 /** The authorities a site's list answers. */
@@ -68,6 +73,7 @@ export const accessProjectAuthorities = [
   "AdminGranters",
   "DeveloperGranters",
   "DispatcherGranters",
+  "ViewerGranters",
   "AuthorityManagers",
 ] as const;
 export type AccessProjectAuthority = (typeof accessProjectAuthorities)[number];
@@ -134,6 +140,12 @@ export const accessProjectAuthorityAdmits: Readonly<
     "ProjectDevelopers",
   ],
   DispatcherGranters: ["ProjectAdmins", "TenantAdmins", "SiteAdmins"],
+  ViewerGranters: [
+    "ProjectAdmins",
+    "TenantAdmins",
+    "SiteAdmins",
+    "ProjectDevelopers",
+  ],
   AuthorityManagers: ["ProjectAdmins", "TenantAdmins"],
 };
 

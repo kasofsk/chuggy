@@ -75,7 +75,12 @@ export const accessTenantRoleRelations: Readonly<
 /** The relation each project role is written as. */
 export const accessProjectRoleRelations: Readonly<
   Record<AccessProjectRole, ProjectGrantRelation>
-> = { Admin: "admins", Developer: "developers", Dispatcher: "dispatchers" };
+> = {
+  Admin: "admins",
+  Developer: "developers",
+  Dispatcher: "dispatchers",
+  Viewer: "viewers",
+};
 
 /** The kind granting or removing each tenant role asks. */
 export const accessTenantRoleGrantKinds: Readonly<
@@ -89,6 +94,7 @@ export const accessProjectRoleGrantKinds: Readonly<
   Admin: "GrantProjectAdmin",
   Developer: "GrantDeveloper",
   Dispatcher: "GrantDispatcher",
+  Viewer: "GrantViewer",
 };
 
 /**
@@ -111,6 +117,7 @@ export const accessProjectListKinds: readonly ProjectAccessKind[] = [
   "GrantProjectAdmin",
   "GrantDeveloper",
   "GrantDispatcher",
+  "GrantViewer",
   "ManageProjectAuthorities",
 ];
 

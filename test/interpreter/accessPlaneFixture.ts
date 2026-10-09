@@ -282,6 +282,7 @@ const accessProjectAuthorityKinds: readonly ProjectAccessKind[] = [
   "GrantProjectAdmin",
   "GrantDeveloper",
   "GrantDispatcher",
+  "GrantViewer",
   "ManageProjectAuthorities",
 ];
 

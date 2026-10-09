@@ -121,6 +121,7 @@ export const accessProjectAuthorityRelations: Readonly<
   AdminGranters: "admin_granters",
   DeveloperGranters: "developer_granters",
   DispatcherGranters: "dispatcher_granters",
+  ViewerGranters: "viewer_granters",
   AuthorityManagers: "authority_managers",
 };
 

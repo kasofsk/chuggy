@@ -392,6 +392,7 @@ const ketoProjectAuthorityKinds: Readonly<
   AdminGranters: "GrantProjectAdmin",
   DeveloperGranters: "GrantDeveloper",
   DispatcherGranters: "GrantDispatcher",
+  ViewerGranters: "GrantViewer",
   AuthorityManagers: "ManageProjectAuthorities",
 };
 
