@@ -150,6 +150,10 @@ const nativeActionCursorSchema = inventoryCursorSchema.extend({
 });
 
 import {
+  personalRunnerRedemptionSchema,
+  type PersonalRunnerRedemptionRequest,
+} from "../../contract/requests.ts";
+import {
   workerPoolRedemptionSchema,
   workerPoolRegistrationTokenRequestSchema,
   type WorkerPoolRedemptionRequest,
@@ -181,6 +185,12 @@ export function parseWorkerPoolRedemption(
   body: unknown,
 ): WorkerPoolRedemptionRequest {
   return workerPoolRedemptionSchema.parse(body);
+}
+
+export function parsePersonalRunnerRedemption(
+  body: unknown,
+): PersonalRunnerRedemptionRequest {
+  return personalRunnerRedemptionSchema.parse(body);
 }
 
 export function parseRepositoryConfigurationImport(

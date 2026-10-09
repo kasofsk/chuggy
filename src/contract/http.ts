@@ -383,6 +383,9 @@ export const projectRepositoriesAnsweredMax = 200;
 /** How many registered pools one project's listing answers with, in name order. */
 export const workerPoolsAnsweredMax = 64;
 
+/** How many projects one personal runner's allowlist may name, which its read answers whole. */
+export const personalRunnerProjectsMax = 64;
+
 /** How many of a ticket's landings one read answers with, the newest of them, oldest first. */
 export const ticketLandingsAnsweredMax = 8;
 
@@ -501,6 +504,11 @@ export const nativeHttpRoutes = {
   workerPools: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/worker-pools`,
   workerPoolRegistrationTokens: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/worker-pool-registration-tokens`,
   workerPoolRegistrations: `${nativeHttpBasePath}/worker-pool-registrations`,
+  personalRunnerRegistrationTokens: `${nativeHttpBasePath}/tenants/:tenant/personal-runner-registration-tokens`,
+  personalRunnerRegistrations: `${nativeHttpBasePath}/personal-runner-registrations`,
+  personalRunner: `${nativeHttpBasePath}/tenants/:tenant/personal-runner`,
+  personalRunnerProject: `${nativeHttpBasePath}/tenants/:tenant/personal-runner/projects/:project`,
+  personalRunnerMember: `${nativeHttpBasePath}/tenants/:tenant/personal-runners/:subject`,
   actionReports: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/actions/:action/reports`,
   drafts: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/drafts`,
   draftInitialization: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/draft-initializations/:revision`,

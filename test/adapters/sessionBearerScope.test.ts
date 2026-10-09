@@ -130,6 +130,7 @@ function scopedApp(
     recorded(reached, "actionReports"),
     recorded(reached, "actionReach"),
     recorded(reached, "landings"),
+    recorded(reached, "personalRunners"),
   );
 }
 

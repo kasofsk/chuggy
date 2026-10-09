@@ -41,6 +41,10 @@ import {
   selectorModes,
   selectorReviewOutcomes,
 } from "./rosters.ts";
+import {
+  workerPoolCapabilitiesSchema,
+  workerPoolIdentityCharsMax,
+} from "./workerPool.ts";
 
 /** An identity a body may carry, bounded only by the body limit itself. */
 const bodyIdentitySchema = z.string().min(1);
@@ -358,3 +362,17 @@ export const leadInquirySchema = z.strictObject({
   turn: bodyIdentitySchema,
   question: z.string().min(1).max(inquiryQuestionCharsMax),
 });
+
+/**
+ * What a member's machine redeems a personal token with: the token and the
+ * capabilities it declares. It names no pool, since a member's runner is the
+ * one their token's tenant keys by them.
+ */
+export const personalRunnerRedemptionSchema = z.strictObject({
+  token: z.string().min(1).max(workerPoolIdentityCharsMax),
+  capabilities: workerPoolCapabilitiesSchema,
+});
+
+export type PersonalRunnerRedemptionRequest = z.infer<
+  typeof personalRunnerRedemptionSchema
+>;

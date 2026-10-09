@@ -33,6 +33,7 @@ import {
   leadTurnsAnsweredMax,
   nativeHttpPageItemsMax,
   partitionSchema,
+  personalRunnerProjectsMax,
   resultReportCharsMax,
   runModelCharsMax,
   runOutcomeLabelCharsMax,
@@ -1868,6 +1869,37 @@ export const workerPoolsResponseSchema = z.object({
   truncated: z.boolean(),
 });
 export type WorkerPoolsResponse = z.infer<typeof workerPoolsResponseSchema>;
+
+/**
+ * What a personal redemption answers, once: a pool's file with the pool's
+ * project and name taken out and the tenant's member it serves put in, `kind`
+ * telling it apart from a pool's file, which carries none.
+ */
+export const personalRunnerCredentialsSchema = z.strictObject({
+  kind: z.literal("Personal"),
+  tenant: identitySchema,
+  owner: identitySchema,
+  capabilities: workerPoolCapabilitiesSchema,
+  tokenUrl: workerPoolEndpointSchema,
+  audience: z.string().min(1),
+  planeUrl: workerPoolEndpointSchema,
+  registryHost: workerPoolRegistryHostSchema.optional(),
+  clientId: z.string().min(1),
+  clientSecret: z.string().min(1),
+});
+export type PersonalRunnerCredentialsResponse = z.infer<
+  typeof personalRunnerCredentialsSchema
+>;
+
+/** A member's own runner in one tenant, and the projects it may serve in project order. */
+export const personalRunnerResponseSchema = z.strictObject({
+  capabilities: z.array(z.string().min(1)),
+  registeredAt: instantSchema,
+  projects: z.array(identitySchema).max(personalRunnerProjectsMax),
+});
+export type PersonalRunnerResponse = z.infer<
+  typeof personalRunnerResponseSchema
+>;
 
 /** A commit, at either width git addresses an object at. */
 const landingCommitSchema = actionReportDocumentSchema.shape.commit;

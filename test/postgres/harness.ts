@@ -384,6 +384,11 @@ export async function postgresHarnessExpire(
   );
 }
 
+/** A registration token's digest drawn from `label`, 64 hex characters as the row requires. */
+export function postgresHarnessTokenDigest(label: string): string {
+  return label.padEnd(64, "0");
+}
+
 /** A ticket-service instance identity no other case is using. */
 export function postgresHarnessOwner(label: string): OwnerId {
   return asOwnerId(`owner-${label}-${randomUUID()}`);

@@ -11,11 +11,12 @@
  * is answered, so a session learns nothing of a project it cannot reach. A
  * `Refused` route never admits one: everything not addressed to one partition,
  * and inside one the registration-token mint, because enrolling a machine is
- * provisioning rather than work, and the answer to a lead's held proposal,
- * because the hold is there for a person to answer and the lead's session
- * holds a bearer. A `Public` route is one the authentication hook passes
- * over, so no session bearer is read on it; what such a route is presented, it
- * verifies itself.
+ * provisioning rather than work — which is also why every personal runner
+ * route is refused, its allowlist among them — and the answer to a lead's
+ * held proposal, because the hold is there for a person to answer and the
+ * lead's session holds a bearer. A `Public` route is one the authentication
+ * hook passes over, so no session bearer is read on it; what such a route is
+ * presented, it verifies itself.
  *
  * THE TABLE IS EXHAUSTIVE OVER THE ROUTE TABLE, so a route named there without
  * a class is a compile error, and a method or path served without an entry
@@ -46,6 +47,7 @@ export const sessionBearerRouteClasses = {
   contract: "Public",
   installation: "Public",
   workerPoolRegistrations: "Public",
+  personalRunnerRegistrations: "Public",
   actionReports: "Public",
   projects: { GET: "Refused", POST: "Refused" },
   forgeApps: { GET: "Refused" },
@@ -53,6 +55,10 @@ export const sessionBearerRouteClasses = {
   forgeInstallations: { GET: "Refused" },
   forgeInstallationRepositories: { GET: "Refused" },
   workerPoolRegistrationTokens: { POST: "Refused" },
+  personalRunnerRegistrationTokens: { POST: "Refused" },
+  personalRunner: { GET: "Refused", DELETE: "Refused" },
+  personalRunnerProject: { PUT: "Refused", DELETE: "Refused" },
+  personalRunnerMember: { DELETE: "Refused" },
   project: partitionRead,
   tickets: partitionRead,
   ticket: partitionRead,
