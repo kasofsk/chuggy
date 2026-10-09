@@ -46,6 +46,9 @@ import { migration034 } from "../../src/adapters/postgres/schema/migrations/034-
 import { migration042 } from "../../src/adapters/postgres/schema/migrations/042-lead-succession.ts";
 import { migration043 } from "../../src/adapters/postgres/schema/migrations/043-parked-overrides.ts";
 import { migration045 } from "../../src/adapters/postgres/schema/migrations/045-selector-attempt-revision.ts";
+import { migration047 } from "../../src/adapters/postgres/schema/migrations/047-workspace-links.ts";
+import { accessPlaneRole } from "../../src/adapters/postgres/schema/shared.ts";
+import { postgresInviteLinks } from "../../src/adapters/postgres/inviteLinks.ts";
 import {
   postgresForgeInstallationClaims,
   postgresForgeInstallations,
@@ -9839,6 +9842,103 @@ test("045 gives a selector attempt the project revision its decision is fenced o
         `UPDATE selector_attempt SET project_revision=-1 WHERE attempt='attempt-45'`,
       ),
       /selector_attempt_project_revision_check/u,
+    );
+  });
+});
+
+/** A tenant's links as 046 kept them: one open, one used and one revoked. */
+const tenantLinksBefore047 = `
+  INSERT INTO invite_link(link,tenant,token_digest,role,projects,new_accounts,minted_by,expires_at)
+  VALUES('open-47','tenant-47',repeat('a',64),'Member','[]',true,'minter',now()+interval '1 day'),
+        ('used-47','tenant-47',repeat('b',64),'Admin','[{"project":"web","roles":["Viewer"]}]',false,'minter',now()+interval '1 day'),
+        ('revoked-47','tenant-47',repeat('c',64),'Member','[]',false,'minter',now()+interval '1 day');
+  UPDATE invite_link SET used_by='user',used_at=now() WHERE link='used-47';
+  UPDATE invite_link SET revoked_at=now() WHERE link='revoked-47'`;
+
+/** A workspace link's insert, `extra` the columns past the ones every row names. */
+function workspaceLinkInsert047(
+  link: string,
+  digest: string,
+  extra: { readonly columns: string; readonly values: string },
+): string {
+  return `INSERT INTO invite_link(link,token_digest,new_accounts,minted_by,expires_at,${extra.columns})
+    VALUES('${link}',repeat('${digest}',64),false,'minter',now()+interval '1 day',${extra.values})`;
+}
+
+/** Asserts each row 047 refuses is refused under the one constraint holding a row to one kind. */
+async function workspaceLinkKindsRefused047(subject: pg.Pool): Promise<void> {
+  for (const refused of [
+    workspaceLinkInsert047("roled-47", "e", {
+      columns: "create_accounts,role,projects",
+      values: "true,'Member','[]'",
+    }),
+    `INSERT INTO invite_link(tenant,token_digest,role,projects,new_accounts,create_accounts,minted_by,expires_at)
+       VALUES('tenant-47',repeat('f',64),'Member','[]',false,true,'minter',now()+interval '1 day')`,
+    workspaceLinkInsert047("unnamed-47", "1", {
+      columns: "create_accounts,used_by,used_at",
+      values: "true,'user',now()",
+    }),
+  ])
+    await assert.rejects(subject.query(refused), /invite_link_is_one_kind/u);
+}
+
+/** Whether the plane's role may update each column 047 adds, and `tenant`. */
+async function workspaceLinkUpdates047(subject: pg.Pool): Promise<unknown> {
+  return (
+    await subject.query<Record<string, boolean>>(
+      `SELECT has_column_privilege($1,'public.invite_link','workspace','UPDATE') AS workspace,
+              has_column_privilege($1,'public.invite_link','tenant','UPDATE') AS tenant,
+              has_column_privilege($1,'public.invite_link','note','UPDATE') AS note,
+              has_column_privilege($1,'public.invite_link','create_accounts','UPDATE') AS accounts`,
+      [accessPlaneRole],
+    )
+  ).rows;
+}
+
+test("047 lets a link name no tenant, keeping every tenant link that stood, and grants the plane's role the workspace and nothing else new", async () => {
+  await migrationDatabase("workspace_links", async (subject) => {
+    await installationBefore(subject, migration047.version);
+    await subject.query(tenantLinksBefore047);
+    const rows = async () =>
+      (
+        await subject.query<Record<string, unknown>>(
+          `SELECT link,tenant,role,projects,new_accounts,used_by,revoked_at IS NOT NULL AS revoked
+             FROM invite_link ORDER BY link`,
+        )
+      ).rows;
+    const stood = await rows();
+    assert.ok((await postgresMigrate(subject)).includes(migration047.version));
+    assert.deepEqual(await rows(), stood);
+    assert.deepEqual(await workspaceLinkUpdates047(subject), [
+      { workspace: true, tenant: false, note: false, accounts: false },
+    ]);
+    const links = postgresInviteLinks(subject);
+    assert.equal(
+      (await links.spend("a".repeat(64), "redeemer"))?.tenant,
+      "tenant-47",
+    );
+    await subject.query(
+      workspaceLinkInsert047("site-47", "d", {
+        columns: "create_accounts,note",
+        values: "true,'for someone'",
+      }),
+    );
+    assert.equal(await links.presented("d".repeat(64)), "Workspace");
+    await workspaceLinkKindsRefused047(subject);
+    assert.equal(
+      (await links.workspaceSpend("d".repeat(64), "user", asTenantId("w-47")))
+        ?.spent,
+      "Spent",
+    );
+    await subject.query(
+      workspaceLinkInsert047("twin-47", "2", {
+        columns: "create_accounts",
+        values: "false",
+      }),
+    );
+    assert.deepEqual(
+      await links.workspaceSpend("2".repeat(64), "other", asTenantId("w-47")),
+      { spent: "Taken" },
     );
   });
 });

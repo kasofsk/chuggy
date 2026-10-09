@@ -81,12 +81,12 @@ export interface AccessOwnerInvitations {
   ): Promise<AccessOwnerInvitationResult>;
 }
 
-/** Whether the caller may make a tenant, and may hand its administrators the making of accounts where the invitation asks it, as an outcome refusing it where not. */
-async function accessOwnerInvitationAdmitted(
+/** Whether the caller may make a tenant, and may hand its administrators the making of accounts where the invitation, or a workspace link, asks it, as an outcome refusing it where not. */
+export async function accessOwnerInvitationAdmitted(
   access: ProjectAccess,
   caller: Principal,
-  invitation: AccessOwnerInvitation,
-): Promise<AccessInvitationRefusal | undefined> {
+  invitation: Pick<AccessOwnerInvitation, "createAccounts">,
+): Promise<{ readonly invited: "Absent" | "Refused" } | undefined> {
   if ((await access.authorizeSite(caller, "CreateTenant")) === undefined)
     return { invited: "Absent" };
   if (
