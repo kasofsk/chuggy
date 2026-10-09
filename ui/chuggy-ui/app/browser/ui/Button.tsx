@@ -1,6 +1,6 @@
 /**
- * The pressable things: an action, a disclosure, a toggle, and the same look
- * over a route link.
+ * The pressable things: an action, a disclosure, a toggle, the button a form
+ * is submitted by, and the same look over a route link.
  *
  * Total over `buttonVariants` × `buttonSizes`, and over the states an
  * attribute carries — pressed, busy, disabled. Those are attributes rather
@@ -48,23 +48,28 @@ export function buttonLookClassName(look: ButtonLook): string {
   return `${buttonPillClassName} btn-${variant} ${buttonSizeClassNames[look.size ?? "md"]}`;
 }
 
+/** Whose a press is: the caller's, or the form's the button stands in, which
+ * hears it as its own submission and so takes no handler here. */
+type ButtonPress =
+  | { readonly type?: "button"; readonly onClick: () => void }
+  | { readonly type: "submit" };
+
 export function Button(
-  props: ButtonLook & {
-    readonly children: ReactNode;
-    readonly onClick: () => void;
-    readonly type?: "button" | "submit";
-    readonly pressed?: boolean;
-    readonly busy?: boolean;
-    readonly disabled?: boolean;
-    readonly describedBy?: string;
-    readonly expanded?: boolean;
-  },
+  props: ButtonLook &
+    ButtonPress & {
+      readonly children: ReactNode;
+      readonly pressed?: boolean;
+      readonly busy?: boolean;
+      readonly disabled?: boolean;
+      readonly describedBy?: string;
+      readonly expanded?: boolean;
+    },
 ): ReactNode {
   return (
     <button
       type={props.type === "submit" ? "submit" : "button"}
       className={buttonLookClassName(props)}
-      onClick={props.onClick}
+      onClick={props.type === "submit" ? undefined : props.onClick}
       disabled={props.disabled ?? false}
       aria-pressed={props.pressed}
       aria-busy={props.busy}
