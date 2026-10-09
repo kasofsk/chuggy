@@ -58,7 +58,7 @@ vi.mock("@tanstack/react-router", () => ({
   ),
   useParams: () => ({ ...atlas, ticket: addressed.ticket }),
 }));
-// jscpd:ignore-end
+// jscpd:ignore-end -- the case's own doubles resume here
 
 /**
  * The Delivery row on a ticket's page, over what the read of the ticket's

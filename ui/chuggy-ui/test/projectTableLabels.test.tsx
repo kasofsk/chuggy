@@ -1,3 +1,22 @@
+/**
+ * The one annotation that still clips — runs on, whose digest reference is not
+ * the ticket's own words — on the two things `projectTableRows.ts` cannot say
+ * about it: that the whole value is on the chip, and that the chip still clips.
+ *
+ * Both are properties of the markup and of nothing else. `title` dropped there
+ * loses the image with no way back to it, and `max-w-aside` dropped lets a
+ * value the length of a full digest reference take the card apart. Neither
+ * shows up in the row's own value, so neither is provable above this tier.
+ *
+ * The title is the opposite property, now that it fills the card: that it
+ * wraps whole rather than clipping is markup too, and is asserted the same
+ * way, on the same tier.
+ *
+ * The last activity annotation is the same tier for a different reason: that
+ * it draws the relative reading and carries the absolute one on hover is a
+ * fact about `Figure`'s tooltip, not about `activityAt` itself.
+ */
+
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
 import { QueryClient } from "@tanstack/react-query";
 import {
@@ -52,26 +71,7 @@ vi.mock("@tanstack/react-router", () => ({
   ),
   useParams: () => atlas,
 }));
-// jscpd:ignore-end
-
-/**
- * The one annotation that still clips — runs on, whose digest reference is not
- * the ticket's own words — on the two things `projectTableRows.ts` cannot say
- * about it: that the whole value is on the chip, and that the chip still clips.
- *
- * Both are properties of the markup and of nothing else. `title` dropped there
- * loses the image with no way back to it, and `max-w-aside` dropped lets a
- * value the length of a full digest reference take the card apart. Neither
- * shows up in the row's own value, so neither is provable above this tier.
- *
- * The title is the opposite property, now that it fills the card: that it
- * wraps whole rather than clipping is markup too, and is asserted the same
- * way, on the same tier.
- *
- * The last activity annotation is the same tier for a different reason: that
- * it draws the relative reading and carries the absolute one on hover is a
- * fact about `Figure`'s tooltip, not about `activityAt` itself.
- */
+// jscpd:ignore-end -- the case's own doubles resume here
 
 beforeEach(resizeObserverStubbed);
 

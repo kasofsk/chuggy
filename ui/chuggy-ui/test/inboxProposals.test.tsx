@@ -89,19 +89,19 @@ function inboxDrawn(): QueryClient {
 
 /**
  * A project whose only questions are the lead's held decisions. A review ends
- * the decision it names; `answeredElsewhere` has someone else end it first, so
- * the review is refused as no longer held; `failing` refuses it as a fault,
- * `unanswered` never answers it, and `rereadHeld` answers it but never the
- * read after.
- * `absent` is a reader who may not dispatch, whom the read answers as it
- * answers a project they cannot see.
+ * the decision it names.
  */
 function drawProject(served: {
   readonly held: readonly SelectorProposalResponse[];
+  /** Someone else ends the decision first, so the review is refused as no longer held. */
   readonly answeredElsewhere?: boolean;
+  /** The review is refused as a fault. */
   readonly failing?: boolean;
+  /** The review is never answered. */
   readonly unanswered?: boolean;
+  /** The review is answered, but never the read after it. */
   readonly rereadHeld?: boolean;
+  /** A reader who may not dispatch, whom the read answers as it answers a project they cannot see. */
   readonly absent?: boolean;
   /** What the abilities read answers: every door unless the case says, and `undefined` never answers it. */
   readonly abilities?: AbilitiesAnswer;

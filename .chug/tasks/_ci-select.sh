@@ -123,6 +123,8 @@ ci_toolchain_changed() {
 
 # A gate's suite runs the gate over a copy of the tree's own configuration of
 # the tools, so that configuration is the suite's input as well as the gate's.
+# The comments gate's suite copies none, and is selected by the toolchain whose
+# parser it runs.
 ci_tools_configured_changed() {
 	ci_toolchain_changed || ci_changed 'tsconfig*.json' .prettierignore .jscpd.json
 }
@@ -171,6 +173,9 @@ ci_suite_selected() { # <suite path>
 	.chug/tasks/ci.test.sh) ci_changed .chug/tasks/ci.sh '.chug/tasks/_*.sh' justfile ;;
 	.chug/tasks/check-source.test.sh | .chug/tasks/check-boundaries.test.sh | .chug/tasks/check-duplication.test.sh)
 		ci_changed "${suite%.test.sh}.sh" '.chug/tasks/_*.sh' || ci_tools_configured_changed
+		;;
+	.chug/tasks/check-comments.test.sh)
+		ci_changed .chug/tasks/check-comments.sh '.chug/tasks/_*.sh' || ci_toolchain_changed
 		;;
 	.chug/tasks/check-conformance.test.sh | .chug/tasks/check-random.test.sh | .chug/tasks/check-model-api.test.sh)
 		over="${suite##*/}"
