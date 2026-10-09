@@ -36,10 +36,9 @@ import type {
   InboxProposalAnswer,
   InboxProposalStep,
 } from "../core/inboxProposals.ts";
-import { projectAbilityGranted } from "../core/projectAbilities.ts";
 import { projectResourceKey } from "../core/projectQueryKeys.ts";
 import { useApiPorts, usePanelResourceAsked } from "./api.ts";
-import { useProjectAbilities } from "./projectAbilities.tsx";
+import { useProjectAbilityRead } from "./projectAbilities.tsx";
 import { Button } from "./ui/Button.tsx";
 import { Confirm } from "./ui/Confirm.tsx";
 import { Input } from "./ui/Input.tsx";
@@ -51,19 +50,19 @@ import { Tooltip } from "./ui/Tooltip.tsx";
 /** A resource no frame names, so the poll, a partition's invalidation and an answer from this tab are what reach it. */
 export const inboxProposalsResource = "selector-proposals";
 
-/** The held decisions, read only for a reader the abilities read said may
- * dispatch, since any other is refused them on every poll. */
+/** The held decisions, never read for a reader the abilities read said may
+ * not dispatch, who is refused them on every poll. */
 export function useInboxProposals(
   partition: PartitionIdentity,
 ): PanelState<SelectorProposalsResponse> {
-  const abilities = useProjectAbilities(partition);
+  const read = useProjectAbilityRead(partition, "dispatch");
   return usePanelResourceAsked(
     partition,
     "Project",
     inboxProposalsResource,
     (ports) => apiSelectorProposals(ports, partition),
     inboxProposalsPolledMs,
-    projectAbilityGranted(abilities, "dispatch"),
+    read === "Asked",
   );
 }
 

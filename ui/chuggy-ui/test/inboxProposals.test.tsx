@@ -18,10 +18,7 @@ import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import { selectorReviewFeedbackCharsMax } from "../../../src/contract/http.ts";
-import type {
-  ProjectAbilitiesResponse,
-  SelectorProposalResponse,
-} from "../../../src/contract/responses.ts";
+import type { SelectorProposalResponse } from "../../../src/contract/responses.ts";
 import { selectorProposalNotHeldCode } from "../../../src/contract/rosters.ts";
 import { InboxScreen } from "../app/browser/Inbox.tsx";
 import { projectAbilitiesResource } from "../app/browser/projectAbilities.tsx";
@@ -33,6 +30,7 @@ import {
   addressesKept,
   unanswered,
 } from "./projectAbilitiesFixture.ts";
+import type { AbilitiesAnswer } from "./projectAbilitiesFixture.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import {
   answer,
@@ -107,7 +105,7 @@ function drawProject(served: {
   readonly unanswered?: boolean;
   readonly rereadHeld?: boolean;
   readonly absent?: boolean;
-  readonly abilities?: ProjectAbilitiesResponse | undefined;
+  readonly abilities?: AbilitiesAnswer;
 }): {
   readonly reviewed: readonly Reviewed[];
   readonly proposalsAsked: () => number;
@@ -367,6 +365,30 @@ test("the held decisions are read once the abilities read says the reader may di
   expect(api.proposalsAsked()).toBeGreaterThan(0);
   expect(within(row(7)).getByText("Proposal")).toBeDefined();
 });
+
+/** A read that went wrong says nothing of what the reader may do, so the
+ * decisions are read as they were before there was anything to ask. */
+test.each([
+  [
+    "failed",
+    answer({ error: { code: "InternalError", message: "fault" } }, 500),
+  ],
+  [
+    "was absent",
+    answer({ error: { code: "NotFound", message: "absent" } }, 404),
+  ],
+])(
+  "the held decisions are read by a reader whose abilities read %s",
+  async (_, refusal) => {
+    const api = drawProject({
+      held: [both],
+      abilities: Promise.resolve(refusal),
+    });
+    await settled();
+    expect(api.proposalsAsked()).toBeGreaterThan(0);
+    expect(within(row(7)).getByText("Proposal")).toBeDefined();
+  },
+);
 
 /** A poll that has stopped leaves its last answer in the cache, and a row
  * drawn from it would offer an answer the server now refuses. */

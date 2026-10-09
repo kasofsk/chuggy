@@ -1,13 +1,11 @@
 /**
  * What the abilities read decides: a door is refused only where the read said
- * no, granted only where it said yes, and a read behind a door is held until
- * the abilities read has settled.
+ * no, and a read behind a door is held until the abilities read has settled.
  */
 
 import { expect, test } from "vitest";
 
 import {
-  projectAbilityGranted,
   projectAbilityRead,
   projectAbilityRefused,
 } from "../app/core/projectAbilities.ts";
@@ -35,14 +33,6 @@ test("each door is refused by its own answer and no other's", () => {
     expect(
       abilities.filter((ability) => projectAbilityRefused(one, ability)),
     ).toStrictEqual([refused]);
-  }
-});
-
-test("a door is granted only where the read answered yes", () => {
-  for (const ability of abilities) {
-    expect(projectAbilityGranted(abilitiesEvery, ability)).toBe(true);
-    expect(projectAbilityGranted(abilitiesNone, ability)).toBe(false);
-    expect(projectAbilityGranted(undefined, ability)).toBe(false);
   }
 });
 

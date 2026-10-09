@@ -28,15 +28,6 @@ export function projectAbilityRefused(
   return abilities?.[ability] === false;
 }
 
-/** Whether the read answered that the reader may, which a read refused on
- * every poll to anyone else waits for. */
-export function projectAbilityGranted(
-  abilities: ProjectAbilities,
-  ability: ProjectAbility,
-): boolean {
-  return abilities?.[ability] === true;
-}
-
 /** Where a read only one door's holder is answered stands. */
 export type ProjectAbilityRead = "Held" | "Refused" | "Asked";
 
