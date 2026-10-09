@@ -95,6 +95,7 @@ export const unservedNativeWeb: Parameters<typeof createNativeHttpApp>[0] = {
   executions: unserved("executions"),
   operationalStatus: unserved("operational status"),
   hostedRuns: unserved("hosted runs"),
+  abilities: unserved("abilities"),
   selectorOperationalContext: unserved("selector operational context"),
   outputContent: unserved("output content"),
   uploadProjectArtifact: unserved("upload project artifact"),

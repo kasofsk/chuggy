@@ -101,6 +101,7 @@
     "executionPlacement": "/api/v1/tenants/:tenant/projects/:project/execution-placement",
     "sessionPlacement": "/api/v1/tenants/:tenant/projects/:project/session-placement",
     "hostedRuns": "/api/v1/tenants/:tenant/projects/:project/hosted-runs",
+    "abilities": "/api/v1/tenants/:tenant/projects/:project/abilities",
     "workerPools": "/api/v1/tenants/:tenant/projects/:project/worker-pools",
     "workerPoolRegistrationTokens": "/api/v1/tenants/:tenant/projects/:project/worker-pool-registration-tokens",
     "workerPoolRegistrations": "/api/v1/worker-pool-registrations",

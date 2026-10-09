@@ -32,6 +32,7 @@ const document = golden as {
 
 /** Every route name the golden document names, sorted. */
 const documentRouteNames = [
+  "abilities",
   "actionReports",
   "agenticRefusals",
   "configuration",

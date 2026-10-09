@@ -346,6 +346,7 @@ function fakeWeb(calls: string[]): ServedNativeWeb {
       return Promise.resolve({ result: "NotFound" });
     },
     hostedRuns: () => Promise.resolve({ result: "NotFound" }),
+    abilities: () => Promise.resolve({ result: "NotFound" }),
     dispatchView: (_principal, _partition, query) => {
       calls.push(`dispatchView:${String(query.limit)}`);
       return Promise.resolve({ result: "NotFound" });
