@@ -190,7 +190,7 @@ test("one press by a person holding neither app goes through both installs and r
 
 /** A landing left as an entry of its own is what Back from a page at the forge
  * opens, and a landing opened again takes whichever transaction is held by then. */
-test("the press is the one entry its round trips leave in the tab's history, neither landing among them", async () => {
+test("neither landing leaves an entry in the tab's history as a press goes through both installs", async () => {
   await pressed([nothing, workerless, connected]);
   expect(held.entered.map(addressOf)).toStrictEqual([client.authorizeUrl]);
 });
