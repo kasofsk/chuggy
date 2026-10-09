@@ -1,8 +1,9 @@
 /**
  * What the invite page holds for the life of the page: the token leaves the
- * address as it arrives, a token read once is kept, the cookie is written
- * only when asked, and one token is redeemed once however often it is asked
- * for, with what the answer decides performed once.
+ * address as the holder is made, which listens for the next by itself, a token
+ * read once is kept, the cookie is written only when asked, and one token is
+ * redeemed once however often it is asked for, with what the answer decides
+ * performed once.
  */
 
 import { expect, test } from "vitest";
@@ -17,7 +18,6 @@ import { inviteBrowser as held } from "./inviteDouble.ts";
 
 test("a token arriving in the fragment is kept and leaves the address at once", () => {
   const { browser, holder } = held({ anchor: "t0ken" });
-  holder.arrive();
   expect(browser.replaced).toStrictEqual(["/invite"]);
   expect(holder.opened(false)).toMatchObject({
     page: "Invited",
@@ -27,8 +27,7 @@ test("a token arriving in the fragment is kept and leaves the address at once", 
 });
 
 test("the address keeps its query when the fragment leaves it", () => {
-  const { browser, holder } = held({ anchor: "t0ken", search: "?flow=f-1" });
-  holder.arrive();
+  const { browser } = held({ anchor: "t0ken", search: "?flow=f-1" });
   expect(browser.replaced).toStrictEqual(["/invite?flow=f-1"]);
 });
 
@@ -37,7 +36,6 @@ test("a fragment at any other address is not the invite page's to take", () => {
     pathname: "/acme/atlas",
     anchor: "t0ken",
   });
-  holder.arrive();
   expect(browser.replaced).toStrictEqual([]);
   browser.pathname = "/invite";
   expect(holder.opened(false)).toMatchObject({ page: "SignedOut" });
@@ -45,37 +43,33 @@ test("a fragment at any other address is not the invite page's to take", () => {
 
 test("an address with no fragment is left as it is", () => {
   const { browser, holder } = held({});
-  holder.arrive();
   expect(browser.replaced).toStrictEqual([]);
   expect(holder.opened(true)).toMatchObject({ page: "Elsewhere" });
 });
 
 test("a fragment that is no token still leaves the address, and nothing is kept", () => {
   const { browser, holder } = held({ anchor: "t".repeat(4096) });
-  holder.arrive();
   expect(browser.replaced).toStrictEqual(["/invite"]);
   expect(holder.opened(false)).toMatchObject({ page: "SignedOut" });
 });
 
 test("a link opened in a tab already at the page loads the document again, and takes nothing from the page it leaves", () => {
   const { browser, holder } = held({ anchor: "first" });
-  holder.arrive();
-  browser.anchor = "second";
-  holder.rearrive();
+  browser.anchored("second");
   expect(browser.reloads).toBe(1);
   expect(browser.replaced).toStrictEqual(["/invite"]);
   expect(holder.opened(true)).toMatchObject({ token: "first" });
 });
 
 test("a fragment that changes at any other address loads nothing", () => {
-  const { browser, holder } = held({ pathname: "/acme/atlas", anchor: "s" });
-  holder.rearrive();
+  const { browser } = held({ pathname: "/acme/atlas" });
+  browser.anchored("s");
   expect(browser.reloads).toBe(0);
 });
 
 test("a fragment taken away from the page's address loads nothing", () => {
-  const { browser, holder } = held({ anchor: "" });
-  holder.rearrive();
+  const { browser } = held({ anchor: "first" });
+  browser.anchored("");
   expect(browser.reloads).toBe(0);
 });
 
@@ -94,7 +88,6 @@ test("a token read from the cookie is kept once the cookie is gone", () => {
 
 test("the cookie is written when the page is left for a sign-in, and by nothing before it", () => {
   const { browser, holder } = held({ anchor: "t0ken" });
-  holder.arrive();
   holder.opened(false);
   expect(browser.written).toStrictEqual([]);
   holder.leave("t0ken", "example.com");

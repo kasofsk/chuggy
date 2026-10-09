@@ -2,6 +2,9 @@
  * The invite page's two holders with no browser present: an address bar and a
  * cookie jar a case reads back, and a session at whatever phase the case
  * wants, which remembers where a sign-in was asked to return.
+ *
+ * The holder is made at the address a case names, which is where it takes the
+ * token from, and hears the fragment change only through `anchored`.
  */
 
 import type { ConsoleConfiguration } from "../app/core/configuration.ts";
@@ -23,6 +26,8 @@ export interface InviteBrowser {
   readonly left: string[];
   /** How often the document was loaded again. */
   reloads: number;
+  /** The fragment changed under the document, told to whoever listens for it. */
+  readonly anchored: (anchor: string) => void;
 }
 
 export function inviteBrowser(
@@ -30,6 +35,7 @@ export function inviteBrowser(
     Pick<InviteBrowser, "pathname" | "search" | "anchor" | "cookies">
   >,
 ): { readonly browser: InviteBrowser; readonly holder: InviteHolder } {
+  const listening: (() => void)[] = [];
   const browser: InviteBrowser = {
     pathname: "/invite",
     search: "",
@@ -40,10 +46,17 @@ export function inviteBrowser(
     replaced: [],
     left: [],
     reloads: 0,
+    anchored: (anchor) => {
+      browser.anchor = anchor;
+      for (const heard of listening) heard();
+    },
   };
   const holder = createInviteHolder({
     location: () => ({ pathname: browser.pathname, search: browser.search }),
     anchor: () => browser.anchor,
+    anchorHeard: (heard) => {
+      listening.push(heard);
+    },
     replacePath: (path) => {
       browser.replaced.push(path);
       browser.anchor = "";

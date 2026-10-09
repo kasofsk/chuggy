@@ -78,7 +78,6 @@ test("a person returning from sign-in to the invite page is drawn it, and their 
 test("a browser with no session is drawn the invite page at its address, and the signed-out card at any other", async () => {
   const { session } = inviteSession("SignedOut");
   const { holder } = inviteBrowser({ anchor: "t0ken" });
-  holder.arrive();
   const tree = (
     <SessionProvider holder={session}>
       <InviteProvider holder={holder}>

@@ -13,9 +13,12 @@
  * fragment, because the page that clears the cookie still has that token's
  * answer to draw.
  *
- * A link opened in a tab that is already at the page changes the fragment and
- * loads nothing, so the document is loaded again: the link then arrives as
- * any other does, and nothing this page held for the last one is carried.
+ * The token leaves the address as the holder is made, so a holder made before
+ * the first render leaves no frame drawn with it in the address bar. A link
+ * opened in a tab that is already at the page changes the fragment and loads
+ * nothing, so the holder listens for that and loads the document again: the
+ * link then arrives as any other does, and nothing this page held for the
+ * last one is carried.
  */
 
 import type { AccessInviteLinkRedeemed } from "../../../../src/contract/accessPlane.ts";
@@ -38,6 +41,8 @@ import type { SessionLocation } from "./sessionHolder.ts";
 export interface InvitePorts {
   readonly location: () => SessionLocation;
   readonly anchor: () => string;
+  /** Tells `heard` each time the fragment changes under this document. */
+  readonly anchorHeard: (heard: () => void) => void;
   readonly replacePath: (path: string) => void;
   /** Leaves this document for another address, in this entry's place. */
   readonly replaceLocation: (path: string) => void;
@@ -48,10 +53,6 @@ export interface InvitePorts {
 }
 
 export interface InviteHolder {
-  /** Takes the token out of the address this tab was opened at, where it is the invite page's. */
-  readonly arrive: () => void;
-  /** Heard when the fragment changes under a document already drawn. */
-  readonly rearrive: () => void;
   readonly opened: (signedIn: boolean) => InvitePage;
   readonly cookieClear: (domain: string | undefined) => void;
   /** Writes the cookie the token crosses a sign-in in, which is all that outlives this page. */
@@ -72,25 +73,32 @@ interface InviteRedemptionHeld {
   readonly answered: Promise<InviteRedemption>;
 }
 
+/** The token in the address this tab was opened at, taken out of it, where the address is the invite page's. */
+function inviteArrived(ports: InvitePorts): string | undefined {
+  const { pathname, search } = ports.location();
+  if (pathname !== inviteRoutePath) return undefined;
+  const fragment = ports.anchor();
+  if (fragment === "") return undefined;
+  ports.replacePath(`${pathname}${search}`);
+  return inviteTokenRead(fragment);
+}
+
+/** A fragment that changed under a document already drawn, which is a link opened at the page where it names one. */
+function inviteRearrived(ports: InvitePorts): void {
+  if (ports.location().pathname !== inviteRoutePath) return;
+  if (ports.anchor() !== "") ports.reload();
+}
+
 export function createInviteHolder(ports: InvitePorts): InviteHolder {
-  let tokenKept: string | undefined;
+  let tokenKept = inviteArrived(ports);
   let redemption: InviteRedemptionHeld | undefined;
+  ports.anchorHeard(() => {
+    inviteRearrived(ports);
+  });
   const cookieClear = (domain: string | undefined): void => {
     ports.cookieWrite(inviteCookieCleared(domain));
   };
   return {
-    arrive: () => {
-      const { pathname, search } = ports.location();
-      if (pathname !== inviteRoutePath) return;
-      const fragment = ports.anchor();
-      if (fragment === "") return;
-      tokenKept = inviteTokenRead(fragment);
-      ports.replacePath(`${pathname}${search}`);
-    },
-    rearrive: () => {
-      if (ports.location().pathname !== inviteRoutePath) return;
-      if (ports.anchor() !== "") ports.reload();
-    },
     opened: (signedIn) => {
       const page = invitePageDecided({
         flow: inviteFlowCarried(ports.location().search),
