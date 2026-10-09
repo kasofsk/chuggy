@@ -30,6 +30,12 @@
     font-weight: var(--weight-medium);
   }
 
+  /* A subject in a cell is longer than a narrow column and wraps in it. */
+  .people-table td .identity {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
   /* A row is not pressable, and the primitive's hover is the level a chip is
      drawn on, so a hovered row would lose its chips. */
   .people-table tbody tr:hover,

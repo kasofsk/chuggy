@@ -153,7 +153,7 @@ function SiteWorkspaceFoot(props: {
 }): ReactNode {
   const creating = props.creating;
   return (
-    <div className="flex gap-2">
+    <>
       <Button
         variant="quiet"
         size="sm"
@@ -171,7 +171,7 @@ function SiteWorkspaceFoot(props: {
       >
         {creating.busy ? "Creating…" : "Create"}
       </Button>
-    </div>
+    </>
   );
 }
 

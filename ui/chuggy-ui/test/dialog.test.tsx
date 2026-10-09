@@ -89,6 +89,32 @@ test("a refusal's line stands in the foot before the caller's actions, outside t
   styleless();
 });
 
+test("a refusal's line never stands between the caller's actions", () => {
+  render(
+    <Dialog
+      title="Invite"
+      trigger="Invite"
+      open
+      onOpenChange={() => undefined}
+      note="Email held by another account"
+      foot={
+        <>
+          <button type="button">Cancel</button>
+          <button type="button">Send</button>
+        </>
+      }
+    >
+      <p>form</p>
+    </Dialog>,
+  );
+  const actions = screen.getByRole("button", { name: "Cancel" }).parentElement;
+  expect(screen.getByRole("button", { name: "Send" }).parentElement).toBe(
+    actions,
+  );
+  expect(actions?.textContent).toBe("CancelSend");
+  styleless();
+});
+
 /** A press outside every dialog, which Radix's dialog counts at the click the press ends in. */
 function pressedOutside(): void {
   fireEvent.pointerDown(document.body);
