@@ -2040,10 +2040,10 @@ function nativeLeadReadMethods(
 }
 
 /**
- * The three ways a member reaches the lead's inquiries, every one gated on
- * `Read` because an inquiry holds a strict subset of what `Read` already
- * permits, and asking on what the inquiry's route needs of the asker too —
- * `./leadInquiry.ts`'s header carries the argument. THE ASKER IS THE AUTHORITY'S OWN SUBJECT and comes from the
+ * The three ways a member reaches the lead's inquiries: the two reads gated on
+ * `Read`, and asking on `Mutate`, because an inquiry is a turn, and on what the
+ * inquiry's route needs of the asker too — `./leadInquiry.ts`'s header carries
+ * the argument. THE ASKER IS THE AUTHORITY'S OWN SUBJECT and comes from the
  * authorization this door already did, never from the body: a question whose
  * asker the caller chose would name whoever they liked on a document the lead
  * reads.
@@ -2088,7 +2088,7 @@ function nativeLeadInquiryMethods(
       return { result: "Found", inquiry };
     },
     askLead: async (principal, partition, input) => {
-      const authority = await access.authorize(principal, partition, "Read");
+      const authority = await access.authorize(principal, partition, "Mutate");
       if (authority === undefined) return { result: "NotFound" };
       const spend = await sessionSpendRoute(
         access,

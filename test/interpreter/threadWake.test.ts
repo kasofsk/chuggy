@@ -9,9 +9,11 @@
  *
  * A MAILBOX SKIP IS A RACE AND AN UNADMITTED PRINCIPAL IS NOT. `NoThread` and
  * `Closed` can only be a mailbox that changed between the read and the wake, so
- * the reference store draws them per offer; whether the project still admits a
- * principal is the authority's answer and is drawn by the reference authority
- * beside it, before any offer is made.
+ * the reference store draws them per offer; whether a principal may still
+ * change the project is the authority's answer and is drawn by the reference
+ * authority beside it, before any offer is made. That skip asks `Mutate`, and
+ * `Orphaned` is a fact about `Read`, so a thread whose owner may read and not
+ * change the project is skipped and is not orphaned.
  */
 
 import assert from "node:assert/strict";
@@ -196,13 +198,14 @@ function referenceStore(options: ReferenceStoreOptions): ReferenceStore {
 
 /**
  * The project authority the pass asks, admitting every principal a case has not
- * named and granting each hosted runs. It counts its refusals, because a
- * candidate the authority turned away reaches no store and a case has nowhere
- * else to read that from.
+ * named, letting each change the project unless named a reader, and granting
+ * each hosted runs. It counts its refusals, because a candidate the authority
+ * turned away reaches no store and a case has nowhere else to read that from.
  */
 function referenceAccess(
   options: {
     readonly unadmitted?: ReadonlySet<Principal>;
+    readonly readers?: ReadonlySet<Principal>;
     readonly undecided?: ReadonlySet<Principal>;
     readonly unhosted?: ReadonlySet<Principal>;
     readonly hostedUndecided?: ReadonlySet<Principal>;
@@ -212,13 +215,13 @@ function referenceAccess(
   const answered = (
     principal: Principal,
     undecided: ReadonlySet<Principal> | undefined,
-    refusing: ReadonlySet<Principal> | undefined,
+    refusing: boolean,
   ): Promise<Authority | undefined> => {
     if (undecided?.has(principal) === true)
       return Promise.reject(
         new ProjectAccessUnavailable("the authority did not answer"),
       );
-    if (refusing?.has(principal) === true) {
+    if (refusing) {
       refused.push(principal);
       return Promise.resolve(undefined);
     }
@@ -226,10 +229,19 @@ function referenceAccess(
   };
   return {
     refused,
-    authorize: (principal) =>
-      answered(principal, options.undecided, options.unadmitted),
+    authorize: (principal, _partition, kind) =>
+      answered(
+        principal,
+        options.undecided,
+        options.unadmitted?.has(principal) === true ||
+          (kind !== "Read" && options.readers?.has(principal) === true),
+      ),
     authorizeTenant: (principal) =>
-      answered(principal, options.hostedUndecided, options.unhosted),
+      answered(
+        principal,
+        options.hostedUndecided,
+        options.unhosted?.has(principal) === true,
+      ),
     authorizeSite: projectAccessSiteRefused,
   };
 }
@@ -392,8 +404,8 @@ test("each mailbox a wake cannot reach is skipped, and the pass carries on", asy
 });
 
 /**
- * A thread the project no longer admits its principal to is the derivation of
- * `Orphaned`, and it is answered before the mailbox rather than by it.
+ * A thread the project no longer admits its principal to is skipped before the
+ * mailbox rather than by it, as one whose principal may only read is.
  */
 test("a thread whose principal is no longer admitted is skipped unoffered", async () => {
   const log = [candidateAt(1, "gone"), candidateAt(2, "here")];
@@ -409,6 +421,27 @@ test("a thread whose principal is no longer admitted is skipped unoffered", asyn
     [member("here").session],
   );
   assert.deepEqual(access.refused, [member("gone").principal]);
+});
+
+/**
+ * A wake is a turn, so it asks `Mutate` of the thread's owner: one who may read
+ * the project and not change it is skipped unoffered and the store is not asked.
+ */
+test("a thread whose principal may read and not change the project is skipped unoffered", async () => {
+  const log = [candidateAt(1, "reader"), candidateAt(2, "here")];
+  const store = referenceStore({ log });
+  const access = referenceAccess({
+    readers: new Set([member("reader").principal]),
+  });
+  const report = await threadWakePass(serviceOf(store, undefined, access));
+
+  assert.deepEqual(report, { read: 2, woken: 1, skipped: 1, cursor: 2 });
+  assert.deepEqual(
+    store.offers.map((offer) => offer.session),
+    [member("here").session],
+  );
+  assert.deepEqual(store.mailbox(member("reader").session), []);
+  assert.deepEqual(access.refused, [member("reader").principal]);
 });
 
 test("a thread whose principal the tenant grants no hosted runs is skipped unoffered", async () => {

@@ -161,10 +161,9 @@ test("a prompt no lead could have carried is refused, and one it could is not", 
 });
 
 /**
- * The door is gated on `Read` rather than on `Mutate` because everything the
- * fork can issue is a command the asker already had. That argument is only as
- * good as this: the roster admits exactly the project's reads, and strictly
- * fewer tools than a lead's own roster does.
+ * The fork can issue no command its asker lacks, since asking takes `Mutate`
+ * and the roster admits exactly the project's reads, and strictly fewer tools
+ * than a lead's own roster does.
  */
 test("the roster admits exactly the project's reads and nothing further", () => {
   for (const held of inquiryCapabilities)
