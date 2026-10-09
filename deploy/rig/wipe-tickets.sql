@@ -19,7 +19,8 @@
 -- selector's project and runtime settings with their histories, worker pools
 -- and their registration tokens, where each project's executions run and the
 -- routing the scheduler published, the execution cluster, the capacity
--- entitlements drawn on it, admitted workers and the recovery epochs.
+-- entitlements drawn on it, admitted workers and the recovery epochs, and
+-- each tenant's invite links.
 -- Re-onboarding a project is not part of the release, so none of that is in
 -- the list below. Nor is what each declared action was reported to have done:
 -- it is a record of a repository's commits and names no ticket.

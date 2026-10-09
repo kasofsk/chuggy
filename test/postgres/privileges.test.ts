@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import {
   acceptanceFunction,
+  accessPlaneRole,
   accountIdentityFunction,
   apiRole,
   boundaryOwnerRole,
@@ -77,6 +78,7 @@ after(async () => {
 
 test("every runtime role may read only the migration ledger contract", async () => {
   for (const role of [
+    accessPlaneRole,
     apiRole,
     ticketServiceRole,
     selectorServiceRole,
@@ -196,6 +198,31 @@ test("no runtime role but the API binds a repository, and none records one", asy
       postgresHarnessDenial("project_repository_bind_operation"),
     );
   }
+});
+
+test("the access plane's role reaches its invite links and is refused every relation that is not its own", async () => {
+  assert.equal(
+    await harness.attemptAs(
+      accessPlaneRole,
+      "SELECT link,token_digest,used_by,used_at,revoked_at FROM invite_link",
+    ),
+    undefined,
+  );
+  for (const [statement, relation] of [
+    ["SELECT * FROM project", "project"],
+    ["SELECT * FROM tenant", "tenant"],
+    [
+      "SELECT * FROM worker_pool_registration_token",
+      "worker_pool_registration_token",
+    ],
+    ["UPDATE invite_link SET role=role", "invite_link"],
+    ["UPDATE invite_link SET token_digest=token_digest", "invite_link"],
+  ] as const)
+    assert.match(
+      (await harness.attemptAs(accessPlaneRole, statement)) ?? "",
+      postgresHarnessDenial(relation),
+      statement,
+    );
 });
 
 /**

@@ -161,11 +161,21 @@ function sourceOf(
   };
 }
 
-/** A clock whose waits never end, which is a process that offered its turn and was replaced while polling. */
-const replacedClock: LeadPolicyClock = {
-  now: () => leadRigClock.now(),
-  wait: () => new Promise(() => undefined),
-};
+/**
+ * A clock whose waits never end, which is a process that offered its turn and
+ * was replaced while polling; `polling` settles when it is first asked to wait.
+ */
+function replacedClock() {
+  const polling = Promise.withResolvers<"polled">();
+  const clock: LeadPolicyClock = {
+    now: () => leadRigClock.now(),
+    wait: () => {
+      polling.resolve("polled");
+      return new Promise(() => undefined);
+    },
+  };
+  return { clock, polling: polling.promise };
+}
 
 /** One selector runtime on a pool of its own, as one deployed process composes it. */
 function selectorRuntime(
@@ -428,15 +438,27 @@ test("a decision one process began and finished over a project that moved is end
   );
 });
 
-/** Starts a runtime that offers its turn and is replaced while polling, and answers the turn as its pod. */
+/** Starts a runtime that offers its turn and is replaced while polling, and only then answers the turn as its pod. */
 async function decisionLeftBehind(partition: Partition, session: SessionId) {
   const first: SourceRecord = { contexts: [], pages: [] };
+  const parked = replacedClock();
   const replaced = selectorRuntime(
     "instance-a",
     sourceOf(partition, first, false),
-    replacedClock,
+    parked.clock,
   );
-  void replaced.runtime.runOnce();
+  const ended = await Promise.race([
+    parked.polling,
+    replaced.runtime.runOnce().then(
+      () => "returned",
+      () => "threw",
+    ),
+  ]);
+  assert.equal(
+    ended,
+    "polled",
+    `the first runtime ${ended} before it ever polled its turn`,
+  );
   await leadRigPod(rig, partition, session, "successor", () => decided);
   const [begun] = await attemptsOf(partition);
   assert.equal(begun?.["state"], "Running", "the first runtime never returned");

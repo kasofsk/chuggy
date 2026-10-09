@@ -192,6 +192,22 @@ export const accessPlaneRoutes = {
     method: "POST",
     path: `${accessTenantPath}/invitations`,
   },
+  tenantInviteLinkCreation: {
+    method: "POST",
+    path: `${accessTenantPath}/invite-links`,
+  },
+  tenantInviteLinks: {
+    method: "GET",
+    path: `${accessTenantPath}/invite-links`,
+  },
+  tenantInviteLinkRevocation: {
+    method: "DELETE",
+    path: `${accessTenantPath}/invite-links/:link`,
+  },
+  inviteLinkRedemption: {
+    method: "POST",
+    path: `${accessPlaneBasePath}/invite-links/redemptions`,
+  },
   tenantAbilities: { method: "GET", path: `${accessTenantPath}/abilities` },
   projectPeople: { method: "GET", path: `${accessProjectPath}/people` },
   projectRoleGrant: {
@@ -367,13 +383,8 @@ export const accessInvitationProjectSchema = z.strictObject({
   roles: z.array(accessProjectRoleSchema).min(1).max(accessProjectRoles.length),
 });
 
-/**
- * What an invitation is sent: the person's GitHub username and email, the
- * tenant role, and roles on projects of the tenant, each project named once.
- */
-export const accessInvitationSchema = z.strictObject({
-  github: accessGithubLoginSchema,
-  email: accessEmailSchema,
+/** What an invitation grants and an invite link is sent: the tenant role, and roles on projects of the tenant, each project named once. */
+export const accessInvitationGrantsSchema = z.strictObject({
   role: accessTenantRoleSchema,
   projects: z
     .array(accessInvitationProjectSchema)
@@ -385,6 +396,13 @@ export const accessInvitationSchema = z.strictObject({
       "each project is named once",
     )
     .optional(),
+});
+
+/** What an invitation is sent: the person's GitHub username and email, and what it grants them. */
+export const accessInvitationSchema = z.strictObject({
+  github: accessGithubLoginSchema,
+  email: accessEmailSchema,
+  ...accessInvitationGrantsSchema.shape,
 });
 
 /** What an invitation answers: the invited subject, and whether this request created its account. */
@@ -606,11 +624,106 @@ export const accessSiteTenantsSchema = z.strictObject({
   truncated: z.boolean(),
 });
 
+/** How long an invite link stands once made. */
+export const accessInviteLinkLifetimeMs = 7 * 24 * 60 * 60 * 1_000;
+
+/** The most open invite links one tenant holds. */
+export const accessInviteLinksOpenMax = 16;
+
+/** The most ended invite links one tenant keeps, the most recently ended. */
+export const accessInviteLinksEndedKept = 48;
+
+/** The refusal of every invite link route on a plane composed with no store. */
+export const accessInviteLinksNotConfiguredCode = "InviteLinksNotConfigured";
+
+/** The conflict a mint is refused with where the tenant holds as many open links as it may. */
+export const accessInviteLinkLimitReachedCode = "InviteLinkLimitReached";
+
+/** The conflict a revocation is refused with where the link has already ended. */
+export const accessInviteLinkEndedCode = "InviteLinkEnded";
+
+/** The longest token a redemption is read with. */
+export const accessInviteLinkTokenCharsMax = 128;
+
+/** The states an invite link is in, each derived from what happened to it and when. */
+export const accessInviteLinkStates = [
+  "Open",
+  "Used",
+  "Revoked",
+  "Expired",
+] as const;
+
+/** What a mint answers, and the only answer carrying the token. */
+export const accessInviteLinkMintedSchema = z.strictObject({
+  link: identitySchema,
+  token: z.string().min(1).max(accessInviteLinkTokenCharsMax),
+  expiresAtMs: z.number().int().nonnegative(),
+  newAccounts: z.boolean(),
+});
+
+/** Who made or used a link, named as a people list names them. */
+export const accessInviteLinkPersonSchema = z.strictObject({
+  subject: z.string().min(1),
+  ...accessAccountFields,
+});
+
+const accessInviteLinkShape = {
+  link: identitySchema,
+  role: accessTenantRoleSchema,
+  projects: z.array(accessInvitationProjectSchema),
+  newAccounts: z.boolean(),
+  mintedBy: accessInviteLinkPersonSchema,
+  mintedAtMs: z.number().int().nonnegative(),
+  expiresAtMs: z.number().int().nonnegative(),
+};
+
+/** One of a tenant's links, where a `Used` one names who used it and when. */
+export const accessInviteLinkSchema = z.discriminatedUnion("state", [
+  z.strictObject({
+    ...accessInviteLinkShape,
+    state: z.enum(accessInviteLinkStates).exclude(["Used"]),
+  }),
+  z.strictObject({
+    ...accessInviteLinkShape,
+    state: z.literal("Used"),
+    usedBy: accessInviteLinkPersonSchema,
+    usedAtMs: z.number().int().nonnegative(),
+  }),
+]);
+
+/** What a tenant's link list answers, newest first. */
+export const accessInviteLinksSchema = z.strictObject({
+  links: z.array(accessInviteLinkSchema),
+});
+
+/** What a redemption is sent. */
+export const accessInviteLinkRedemptionSchema = z.strictObject({
+  token: z.string().min(1).max(accessInviteLinkTokenCharsMax),
+});
+
+/** What a redemption answers: what it granted the caller, and where. */
+export const accessInviteLinkRedeemedSchema = z.strictObject({
+  tenant: identitySchema,
+  role: accessTenantRoleSchema,
+  projects: z.array(accessInvitationProjectSchema),
+});
+
 export type AccessTenantPerson = z.infer<typeof accessTenantPersonSchema>;
 export type AccessTenantPeople = z.infer<typeof accessTenantPeopleSchema>;
 export type AccessProjectPerson = z.infer<typeof accessProjectPersonSchema>;
 export type AccessProjectPeople = z.infer<typeof accessProjectPeopleSchema>;
 export type AccessInvitation = z.infer<typeof accessInvitationSchema>;
+export type AccessInvitationGrants = z.infer<
+  typeof accessInvitationGrantsSchema
+>;
+export type AccessInviteLinkMinted = z.infer<
+  typeof accessInviteLinkMintedSchema
+>;
+export type AccessInviteLink = z.infer<typeof accessInviteLinkSchema>;
+export type AccessInviteLinks = z.infer<typeof accessInviteLinksSchema>;
+export type AccessInviteLinkRedeemed = z.infer<
+  typeof accessInviteLinkRedeemedSchema
+>;
 export type AccessInvited = z.infer<typeof accessInvitedSchema>;
 export type AccessOwnerInvitation = z.infer<typeof accessOwnerInvitationSchema>;
 export type AccessOwnerInvited = z.infer<typeof accessOwnerInvitedSchema>;
