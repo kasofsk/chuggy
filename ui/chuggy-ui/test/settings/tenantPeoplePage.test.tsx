@@ -261,6 +261,7 @@ test("a change unanswered, no box takes a press and nothing closes the editor, s
     "(atlas Admin)",
     "(atlas Developer)",
     "(atlas Dispatcher)",
+    "(atlas Viewer)",
   ]);
   for (const name of ["Admin", "atlas Developer"])
     expect(
@@ -421,6 +422,7 @@ test("a reader who may grant every role is offered every role on every person an
         `${project} Admin`,
         `${project} Developer`,
         `${project} Dispatcher`,
+        `${project} Viewer`,
       ]);
     await press("Done");
   }
@@ -433,11 +435,12 @@ test("the grid of projects heads its columns once, a role each", async () => {
     within(within(editor).getByRole("table", { name: "Projects" }))
       .getAllByRole("columnheader")
       .map((header) => header.textContent),
-  ).toStrictEqual(["Projects", "Admin", "Developer", "Dispatcher"]);
+  ).toStrictEqual(["Projects", "Admin", "Developer", "Dispatcher", "Viewer"]);
   expect(boxesIn(editor, "atlas")).toStrictEqual([
     "atlas Admin+",
     "atlas Developer+",
     "atlas Dispatcher",
+    "atlas Viewer",
   ]);
 });
 
@@ -470,7 +473,12 @@ test("a reader who may grant on one project of two is offered its roles, and see
         projects: peopleAbilitiesAll(["beacon"]).projects,
       }),
   });
-  const offered = ["beacon Admin", "beacon Developer", "beacon Dispatcher"];
+  const offered = [
+    "beacon Admin",
+    "beacon Developer",
+    "beacon Dispatcher",
+    "beacon Viewer",
+  ];
   const ada = await editorOf("ada@example.com");
   expect(boxesIn(ada, "atlas")).toStrictEqual([
     "(atlas Admin+)",

@@ -103,11 +103,13 @@ test("an invitation sends the fields the contract states, as it states them", as
   fireEvent.click(within(dialog()).getByRole("radio", { name: "Admin" }));
   chosen("beacon Developer");
   chosen("beacon Dispatcher");
+  chosen("beacon Viewer");
   await turned();
   expect(boxesIn(dialog(), "beacon")).toStrictEqual([
     "beacon Admin",
     "beacon Developer+",
     "beacon Dispatcher+",
+    "beacon Viewer+",
   ]);
   await sent();
   expect(changesSent(drawn)).toStrictEqual([
@@ -118,7 +120,9 @@ test("an invitation sends the fields the contract states, as it states them", as
         github: "ada",
         email: "ada@example.com",
         role: "Admin",
-        projects: [{ project: "beacon", roles: ["Developer", "Dispatcher"] }],
+        projects: [
+          { project: "beacon", roles: ["Developer", "Dispatcher", "Viewer"] },
+        ],
       },
     },
   ]);
@@ -252,6 +256,7 @@ test("a reader who may grant every role and invite anyone is offered every role,
       `${project} Admin`,
       `${project} Developer`,
       `${project} Dispatcher`,
+      `${project} Viewer`,
     ]);
   expect(within(dialog()).queryByText("Existing accounts only")).toBeNull();
   styleless();

@@ -85,11 +85,13 @@ class Project implements Namespace {
     admins: User[];
     developers: User[];
     dispatchers: User[];
+    viewers: User[];
     agents: User[];
     pools: User[];
     admin_granters: (User | SubjectSet<Project, "admins"> | SubjectSet<Tenant, "admins"> | SubjectSet<Site, "admins">)[];
     developer_granters: (User | SubjectSet<Project, "admins"> | SubjectSet<Project, "developers"> | SubjectSet<Tenant, "admins"> | SubjectSet<Site, "admins">)[];
     dispatcher_granters: (User | SubjectSet<Project, "admins"> | SubjectSet<Tenant, "admins"> | SubjectSet<Site, "admins">)[];
+    viewer_granters: (User | SubjectSet<Project, "admins"> | SubjectSet<Project, "developers"> | SubjectSet<Tenant, "admins"> | SubjectSet<Site, "admins">)[];
     authority_managers: (User | SubjectSet<Project, "admins"> | SubjectSet<Tenant, "admins">)[];
   };
   permits = {
@@ -100,7 +102,9 @@ class Project implements Namespace {
       this.related.developers.includes(ctx.subject) ||
       this.permits.administer(ctx),
     read: (ctx: Context): boolean =>
-      this.permits.develop(ctx) || this.related.agents.includes(ctx.subject),
+      this.permits.develop(ctx) ||
+      this.related.agents.includes(ctx.subject) ||
+      this.related.viewers.includes(ctx.subject),
     propose: (ctx: Context): boolean => this.permits.develop(ctx),
     dispatch: (ctx: Context): boolean =>
       this.related.dispatchers.includes(ctx.subject) ||
@@ -111,6 +115,7 @@ class Project implements Namespace {
     grant_admin: (ctx: Context): boolean => this.related.admin_granters.includes(ctx.subject),
     grant_developer: (ctx: Context): boolean => this.related.developer_granters.includes(ctx.subject),
     grant_dispatcher: (ctx: Context): boolean => this.related.dispatcher_granters.includes(ctx.subject),
+    grant_viewer: (ctx: Context): boolean => this.related.viewer_granters.includes(ctx.subject),
     manage_authorities: (ctx: Context): boolean =>
       this.related.authority_managers.includes(ctx.subject) ||
       this.related.tenant.traverse((t) => t.permits.manage_authorities(ctx)),

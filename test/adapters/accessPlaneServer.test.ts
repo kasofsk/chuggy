@@ -443,7 +443,7 @@ test("what a caller may do reads as its strict schema at each level, and is abse
   assert.deepEqual(tenantAbilities.projects, [
     {
       project: "web",
-      roles: ["Admin", "Developer", "Dispatcher"],
+      roles: ["Admin", "Developer", "Dispatcher", "Viewer"],
       manageAuthorities: true,
     },
   ]);

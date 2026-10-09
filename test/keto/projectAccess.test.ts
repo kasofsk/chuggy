@@ -89,6 +89,10 @@ test("each project relation carries exactly the kinds the model follows from it"
     ["DispatchTicket"],
   );
   assert.deepEqual(
+    await held(await granted(partition, "viewer", "viewers"), partition),
+    ["Read"],
+  );
+  assert.deepEqual(
     await held(await granted(partition, "administrator", "admins"), partition),
     ketoHarnessRoleKinds,
   );
@@ -135,6 +139,25 @@ test("a revocation takes back the one relation it names and is idempotent", asyn
   assert.deepEqual(await held(principal, partition), ["DispatchTicket"]);
   await grants.remove(grant);
   assert.deepEqual(await held(principal, partition), ["DispatchTicket"]);
+});
+
+test("a viewer reads its own project alone, and removed from `viewers` reads nothing", async () => {
+  const partition = ketoHarnessPartition("viewing");
+  const viewer = await granted(partition, "watching", "viewers");
+  assert.deepEqual(
+    await held(viewer, ketoHarnessPartition("viewing-elsewhere")),
+    [],
+  );
+  await grants.remove(
+    projectPrincipalGrant({
+      issuer: ketoHarnessIssuer,
+      subject: "watching",
+      tenant: partition.tenant,
+      project: partition.project,
+      relation: "viewers",
+    }),
+  );
+  assert.deepEqual(await held(viewer, partition), []);
 });
 
 test("a tenant administrator reaches every project the tenant relation names", async () => {

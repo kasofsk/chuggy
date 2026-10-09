@@ -413,7 +413,12 @@ test("a repeat after the grants are recorded restores no default removed in betw
   const removed = {
     site: [],
     tenant: ["ManageTenantAuthorities"],
-    project: ["GrantDeveloper", "GrantDispatcher", "ManageProjectAuthorities"],
+    project: [
+      "GrantDeveloper",
+      "GrantDispatcher",
+      "GrantViewer",
+      "ManageProjectAuthorities",
+    ],
   };
   assert.deepEqual(await ketoHarnessAuthorityHeld(creator, request), removed);
   assert.equal(

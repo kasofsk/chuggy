@@ -306,6 +306,47 @@ test("an invitation naming a role the caller may not grant is refused before Git
   assert.equal(memory.changes.length, 2);
 });
 
+test("an invitation naming `Viewer` on one project writes the membership and that project's `viewers` alone, and is refused before anything to a caller without `GrantViewer`", async () => {
+  const { memory, directory, github, invite } = await invited();
+  const api = accessFixturePartition("acme", "api");
+  await memory.grants.write(projectTenantGrant(api));
+  memory.changes.length = 0;
+  accessGivenTenantAdministrator(memory, alice, tenant, [web, api]);
+  const dee = accessFixturePrincipal("dee");
+  accessGiven(memory, dee, [
+    { on: "Tenant", tenant, kind: "GrantMember" },
+    { on: "Project", partition: web, kind: "GrantDeveloper" },
+    { on: "Site", kind: "CreateAccount" },
+  ]);
+  const sent: AccessInvitation = {
+    ...invitation,
+    projects: [{ project: "web", roles: ["Viewer"] }],
+  };
+  assert.deepEqual(await invite(sent, dee), { invited: "Refused" });
+  assert.deepEqual(
+    [github.looked, directory.asked, memory.changes],
+    [[], [], []],
+  );
+  const subject = directorySubject(0);
+  assert.deepEqual(await invite(sent), {
+    invited: "Invited",
+    subject,
+    created: true,
+  });
+  const at = { issuer: accessFixtureIssuer, subject, tenant };
+  assert.deepEqual(memory.changes, [
+    ["write", tenantPrincipalGrant({ ...at, relation: "members" })],
+    [
+      "write",
+      projectPrincipalGrant({
+        ...at,
+        project: web.project,
+        relation: "viewers",
+      }),
+    ],
+  ]);
+});
+
 test("a caller who may not invite is answered absent, and GitHub and the directory are asked nothing", async () => {
   const { memory, directory, github, invite } = await invited();
   assert.deepEqual(await invite(invitation, mallory), { invited: "Absent" });

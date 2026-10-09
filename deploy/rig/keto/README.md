@@ -55,7 +55,10 @@ before, are given theirs by an operator, in this order. Until the site has an
 administrator and its defaults, nobody holds `CreateAccount` or `CreateTenant`.
 A site already holding an authority tuple is given nothing, so on a site whose
 defaults predate `tenant_creators` its holders are added through the access
-plane by whoever may change the site's authorities.
+plane by whoever may change the site's authorities. A project already holding
+one is given nothing likewise, so on a project whose defaults predate
+`viewer_granters` its holders are added by whoever may change the project's
+authorities.
 
 Once given, the holders are a request's to change: the access plane adds and
 removes a holder of each authority for a caller who may manage it. A project,
@@ -121,8 +124,8 @@ defaults, a created project's `tenant` and defaults, and a registered pool's
 `pools` — when
 `CHUG_API_KETO_WRITE_URL` names Keto's **write** port. The access plane,
 `src/roots/accessPlane.ts`, grants and removes a person's `admins` and
-`members` on a tenant and `admins`, `developers` and `dispatchers` on a
-project, gives and takes a person's `hosted_execution`, and adds and removes
+`members` on a tenant and `admins`, `developers`, `dispatchers` and `viewers`
+on a project, gives and takes a person's `hosted_execution`, and adds and removes
 the holders of each authority beside them, each for a caller holding the kind
 that grants it. Its invitation of a person into a tenant of their own writes
 that tenant's first `admins` and its defaults, and, where asked, its
@@ -146,7 +149,7 @@ CHUG_PROVISION_ACTION=grant npm run provision:project-access
 
 `CHUG_PROVISION_RELATION` names one relation, and the model is what turns it
 into the permits a route asks for: `admins`, `developers`, `dispatchers`,
-`agents` and `pools` are the project's, and `admins`, `members` and
+`viewers`, `agents` and `pools` are the project's, and `admins`, `members` and
 `hosted_execution` are the tenant's. A grant with `CHUG_PROVISION_PROJECT`
 absent is a tenant grant, and one whose relation is `tenant` names the tenant
 the project inherits from rather than a person — the one arm that reads no

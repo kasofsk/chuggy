@@ -94,6 +94,7 @@ test("every role in both rosters has a word", () => {
     "Admin",
     "Developer",
     "Dispatcher",
+    "Viewer",
   ]);
 });
 
@@ -432,7 +433,7 @@ test("a row draws a line for each project its person holds a role on, in the lis
   const holding: AccessTenantPerson = {
     ...person,
     projects: [
-      { project: "beacon", roles: ["Dispatcher", "Developer"] },
+      { project: "beacon", roles: ["Viewer", "Dispatcher", "Developer"] },
       { project: "atlas", roles: ["Admin"] },
       { project: "cedar", roles: [] },
     ],
@@ -441,7 +442,7 @@ test("a row draws a line for each project its person holds a role on, in the lis
     tenantPersonProjectLines(holding, ["atlas", "beacon", "cedar", "delta"]),
   ).toStrictEqual([
     { project: "atlas", roles: "Admin" },
-    { project: "beacon", roles: "Developer, Dispatcher" },
+    { project: "beacon", roles: "Developer, Dispatcher, Viewer" },
   ]);
   expect(tenantPersonProjectLines(person, ["atlas"])).toStrictEqual([]);
 });

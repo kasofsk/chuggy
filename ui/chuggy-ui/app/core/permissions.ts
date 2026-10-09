@@ -148,6 +148,8 @@ export function projectPermissionName(
       return "Grant Developer";
     case "DispatcherGranters":
       return "Grant Dispatcher";
+    case "ViewerGranters":
+      return "Grant Viewer";
     case "AuthorityManagers":
       return "Change permissions";
   }
@@ -334,6 +336,17 @@ export const permissionMembersGrantLine =
 export const permissionDevelopersGrantLine =
   "Developers will see people and can remove other developers.";
 
+export const permissionDevelopersViewerGrantLine =
+  "Developers will see people and can remove viewers.";
+
+/** The line `ProjectDevelopers` carries on each project authority whose grant opens the people list to it. */
+const permissionProjectDevelopersLines: Partial<
+  Record<PermissionAuthority, string>
+> = {
+  DeveloperGranters: permissionDevelopersGrantLine,
+  ViewerGranters: permissionDevelopersViewerGrantLine,
+};
+
 /** The group whose grant opens the level's people list to it, and the line it carries. */
 function permissionChoiceGroupLine(
   level: PermissionLevel,
@@ -342,9 +355,8 @@ function permissionChoiceGroupLine(
 ): string | undefined {
   switch (level) {
     case "Project":
-      return row.authority === "DeveloperGranters" &&
-        group === "ProjectDevelopers"
-        ? permissionDevelopersGrantLine
+      return group === "ProjectDevelopers"
+        ? permissionProjectDevelopersLines[row.authority]
         : undefined;
     case "Tenant":
       return row.authority === "MemberGranters" && group === "TenantMembers"

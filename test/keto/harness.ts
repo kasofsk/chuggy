@@ -218,6 +218,7 @@ export const ketoHarnessProjectAuthorities: readonly ProjectAccessKind[] = [
   "GrantProjectAdmin",
   "GrantDeveloper",
   "GrantDispatcher",
+  "GrantViewer",
   "ManageProjectAuthorities",
 ];
 

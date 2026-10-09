@@ -49,6 +49,7 @@ export const allProjectGrantRelations = [
   "admins",
   "developers",
   "dispatchers",
+  "viewers",
   "agents",
   "pools",
 ] as const;
@@ -74,6 +75,7 @@ export const allProjectAuthorityRelations = [
   "admin_granters",
   "developer_granters",
   "dispatcher_granters",
+  "viewer_granters",
   "authority_managers",
 ] as const;
 

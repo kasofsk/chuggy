@@ -58,6 +58,7 @@ export const allProjectAccessKinds = [
   "GrantProjectAdmin",
   "GrantDeveloper",
   "GrantDispatcher",
+  "GrantViewer",
   "ManageProjectAuthorities",
 ] as const;
 
@@ -128,6 +129,7 @@ export const projectAccessPermits: Readonly<Record<ProjectAccessKind, string>> =
     GrantProjectAdmin: "grant_admin",
     GrantDeveloper: "grant_developer",
     GrantDispatcher: "grant_dispatcher",
+    GrantViewer: "grant_viewer",
     ManageProjectAuthorities: "manage_authorities",
   };
 

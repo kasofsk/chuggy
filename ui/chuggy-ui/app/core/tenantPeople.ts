@@ -65,6 +65,8 @@ export function projectRoleLabel(role: AccessProjectRole): string {
       return "Developer";
     case "Dispatcher":
       return "Dispatcher";
+    case "Viewer":
+      return "Viewer";
   }
 }
 

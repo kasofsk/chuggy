@@ -226,6 +226,7 @@ test("a project role granted is the permit it carries, and removed is not", asyn
   for (const [role, kind] of [
     ["Developer", "Mutate"],
     ["Dispatcher", "DispatchTicket"],
+    ["Viewer", "Read"],
     ["Admin", "Administer"],
   ] as const) {
     const subject = `holder-${role}`;
@@ -386,6 +387,7 @@ async function changed(
     "Admin",
     "Developer",
     "Dispatcher",
+    "Viewer",
   ];
   if (tenant !== undefined)
     for (const role of tenantRoles) {
@@ -424,7 +426,7 @@ function allCameTo(
 test("a tenant's administrator grants and removes every role on the tenant and on each of its projects", async () => {
   const { web, api, tenant } = await tenantOf("change-tenant-admin");
   const answered = await changed(alice, tenant, [web, api]);
-  assert.equal(Object.keys(answered).length, 16);
+  assert.equal(Object.keys(answered).length, 20);
   allCameTo(answered, "Changed");
 });
 
@@ -440,7 +442,7 @@ test("a project's administrator changes that project and is answered its list, a
   assert.deepEqual(await abilities.projectAbilities(pat, web), {
     tenant,
     project: web.project,
-    roles: ["Admin", "Developer", "Dispatcher"],
+    roles: ["Admin", "Developer", "Dispatcher", "Viewer"],
     manageAuthorities: true,
   });
   assert.equal(await abilities.tenantAbilities(pat, tenant), undefined);
@@ -491,6 +493,50 @@ test("a person written into `member_granters` is answered the list and changes `
     ]),
     [["alice", ["Admin"]]],
   );
+});
+
+test("a person written into `viewer_granters` is answered the project's list and abilities naming `Viewer`, grants and removes it, and one in `developer_granters` is refused it", async () => {
+  const { web, tenant } = await tenantOf("viewer-granter");
+  const vic = oidcPrincipal(ketoHarnessIssuer, "vic");
+  const dee = oidcPrincipal(ketoHarnessIssuer, "dee");
+  for (const [principal, relation] of [
+    [vic, "viewer_granters"],
+    [dee, "developer_granters"],
+  ] as const)
+    await grants.write({
+      namespace: projectAccessNamespace,
+      object: projectAccessObject(web),
+      relation,
+      holder: { subject: "Principal", principal },
+    });
+  assert.deepEqual(await abilities.projectAbilities(vic, web), {
+    tenant,
+    project: web.project,
+    roles: ["Viewer"],
+    manageAuthorities: false,
+  });
+  const rolesOf = async () =>
+    (await plane.projectPeople(vic, web))?.people.find(
+      (person) => person.subject === "zed",
+    )?.roles;
+  assert.equal(
+    await plane.projectRoleGranted(vic, web, "zed", "Viewer"),
+    "Changed",
+  );
+  assert.deepEqual(await rolesOf(), ["Viewer"]);
+  assert.equal(
+    await plane.projectRoleGranted(dee, web, "zed", "Viewer"),
+    "Refused",
+  );
+  assert.equal(
+    await plane.projectRoleRemoved(dee, web, "zed", "Viewer"),
+    "Refused",
+  );
+  assert.equal(
+    await plane.projectRoleRemoved(vic, web, "zed", "Viewer"),
+    "Changed",
+  );
+  assert.equal(await rolesOf(), undefined);
 });
 
 test("with the tenant's administrators taken out of `admin_granters` its administrator is refused `Admin` and still changes `Member`, and a person written there grants it", async () => {
@@ -604,7 +650,7 @@ test("a tenant's administrator may grant both tenant roles and every project rol
     manageSiteHeldAuthorities: false,
     projects: [api.project, web.project].sort().map((project) => ({
       project,
-      roles: ["Admin", "Developer", "Dispatcher"],
+      roles: ["Admin", "Developer", "Dispatcher", "Viewer"],
       manageAuthorities: true,
     })),
     truncated: false,

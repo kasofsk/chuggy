@@ -10,6 +10,8 @@ import { randomUUID } from "node:crypto";
 import { test } from "node:test";
 
 import {
+  projectAccessNamespace,
+  projectAccessObject,
   projectAccessTenantNamespace,
   projectAccessTenantObject,
   type SiteAccessKind,
@@ -287,4 +289,39 @@ test("one role's holders are added and removed alone, leaving a person and anoth
   assert.equal(await grantsMember(member), false);
   assert.equal(await grantsMember(administrator), true);
   assert.equal(await grantsMember(direct), true);
+});
+
+test("on a project given its defaults a developer and a viewer may not grant `Viewer`, and a developer may while the project's developers hold `viewer_granters`", async () => {
+  const partition = ketoHarnessPartition("authority-viewers");
+  await defaulted(partition);
+  const developer = ketoHarnessSomeone("viewers-developer");
+  const viewer = ketoHarnessSomeone("viewers-viewer");
+  await written([
+    projectRelationGrant(developer, partition, "developers"),
+    projectRelationGrant(viewer, partition, "viewers"),
+  ]);
+  const grantsViewer = async (principal: Principal): Promise<boolean> =>
+    (await access.authorize(principal, partition, "GrantViewer")) !== undefined;
+  const developers: ProjectGrant = {
+    namespace: projectAccessNamespace,
+    object: projectAccessObject(partition),
+    relation: "viewer_granters",
+    holder: {
+      subject: "Holders",
+      namespace: projectAccessNamespace,
+      object: projectAccessObject(partition),
+      relation: "developers",
+    },
+  };
+  assert.deepEqual(
+    [await grantsViewer(developer), await grantsViewer(viewer)],
+    [false, false],
+  );
+  await grants.write(developers);
+  assert.deepEqual(
+    [await grantsViewer(developer), await grantsViewer(viewer)],
+    [true, false],
+  );
+  await grants.remove(developers);
+  assert.equal(await grantsViewer(developer), false);
 });

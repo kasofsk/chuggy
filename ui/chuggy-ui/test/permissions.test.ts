@@ -427,6 +427,7 @@ test("every authority a project rosters has its own name, its rows in roster ord
     "Grant Admin",
     "Grant Developer",
     "Grant Dispatcher",
+    "Grant Viewer",
     "Change permissions",
   ]);
   expect(
@@ -438,6 +439,7 @@ test("every authority a project rosters has its own name, its rows in roster ord
     ["Grant Admin", ["Workspace admins", "Project admins", "ada@example.com"]],
     ["Grant Developer", ["Workspace admins", "Project admins"]],
     ["Grant Dispatcher", ["Workspace admins", "Project admins"]],
+    ["Grant Viewer", ["Workspace admins", "Project admins"]],
     ["Change permissions", ["Workspace admins", "Project admins"]],
   ]);
 });
@@ -447,8 +449,9 @@ test("a project's permissions are all changed by a reader shown them, and only p
     accessProjectAuthorities.map((authority) =>
       permissionChangeable("Project", authority, undefined),
     ),
-  ).toStrictEqual([true, true, true, true]);
+  ).toStrictEqual([true, true, true, true, true]);
   expect(projectRowsStarting.map(permissionRemovalAsks)).toStrictEqual([
+    false,
     false,
     false,
     false,
@@ -456,7 +459,7 @@ test("a project's permissions are all changed by a reader shown them, and only p
   ]);
 });
 
-test("a project permission offers its record's groups less those held, Project developers on Grant Developer alone with its line, and a person from the project's people", () => {
+test("a project permission offers its record's groups less those held, Project developers on Grant Developer and Grant Viewer each with its own line, and a person from the project's people", () => {
   const lines = projectRowsStarting.map((row) =>
     permissionAdditionChoices(
       "Project",
@@ -475,6 +478,11 @@ test("a project permission offers its record's groups less those held, Project d
       person,
     ],
     ["Site admins: ", person],
+    [
+      "Site admins: ",
+      "Project developers: Developers will see people and can remove viewers.",
+      person,
+    ],
     [person],
   ]);
 });

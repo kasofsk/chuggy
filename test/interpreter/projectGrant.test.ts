@@ -100,6 +100,7 @@ test("a relation the namespace does not declare is refused", () => {
     "developers",
     "dispatchers",
     "pools",
+    "viewers",
   ]);
   assert.deepEqual([...allTenantGrantRelations].sort(), [
     "admins",
@@ -187,6 +188,7 @@ test("a project starts with each of its authority relations held by its administ
       "admin_granters",
       "developer_granters",
       "dispatcher_granters",
+      "viewer_granters",
       "authority_managers",
     ]
       .flatMap((relation) => [

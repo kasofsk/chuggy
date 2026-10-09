@@ -161,6 +161,60 @@ test("a thread whose principal the authority no longer admits stands orphaned", 
   );
 });
 
+test("a viewer reads the project's threads and is answered on opening one what a caller outside the project is", async () => {
+  const { partition, principal } = await admittedMember("viewed");
+  const viewer = `viewer-${randomUUID()}`;
+  await grants.write(
+    projectPrincipalGrant({
+      issuer: ketoHarnessIssuer,
+      subject: viewer,
+      tenant: partition.tenant,
+      project: partition.project,
+      relation: "viewers",
+    }),
+  );
+  await using owning = threadApp(principal, ketoHarnessAccess());
+  const opened = await owning.inject({
+    method: "POST",
+    url: pathOf(partition),
+    headers: versioned,
+    payload: {},
+  });
+  assert.equal(opened.statusCode, 201, opened.body);
+  const { session } = threadEntryResponseSchema.parse(opened.json());
+  await using viewing = threadApp(
+    oidcPrincipal(ketoHarnessIssuer, viewer),
+    ketoHarnessAccess(),
+  );
+  const listed = await viewing.inject({
+    url: pathOf(partition),
+    headers: authorized,
+  });
+  assert.equal(listed.statusCode, 200, listed.body);
+  assert.deepEqual(
+    threadsResponseSchema
+      .parse(listed.json())
+      .threads.map((thread) => thread.session),
+    [session],
+  );
+  await using outside = threadApp(
+    oidcPrincipal(ketoHarnessIssuer, `outside-${randomUUID()}`),
+    ketoHarnessAccess(),
+  );
+  const refusals = [];
+  for (const app of [viewing, outside]) {
+    const refused = await app.inject({
+      method: "POST",
+      url: pathOf(partition),
+      headers: versioned,
+      payload: {},
+    });
+    refusals.push([refused.statusCode, refused.json<HttpErrorEnvelope>()]);
+  }
+  assert.equal(refusals[0]?.[0], 404);
+  assert.deepEqual(refusals[0], refusals[1]);
+});
+
 test("an authority that cannot be reached answers 503 and never falls open", async () => {
   const { partition, principal } = await admittedMember("outage");
   await using app = threadApp(

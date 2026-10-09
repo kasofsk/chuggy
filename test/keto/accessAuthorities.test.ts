@@ -163,6 +163,7 @@ test("the defaults read back as groups: the tenant's own administrators and the 
     AdminGranters: both,
     DeveloperGranters: both,
     DispatcherGranters: both,
+    ViewerGranters: both,
     AuthorityManagers: both,
   });
   await ketoHarnessWithSiteAdministrator(async (administrator) => {
