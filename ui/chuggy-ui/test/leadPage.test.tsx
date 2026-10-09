@@ -1880,6 +1880,14 @@ test("a reader who may not mutate reads the inquiries and View only where the qu
   expect(stripDrawn()).toBe(true);
 });
 
+/** A reader who can change nothing is waiting on nothing, so the line is not
+ * the amber a parked ticket is said in. */
+test("View only is said in the tone of a fact", async () => {
+  await drawLeadFor({ ...abilitiesEvery, mutate: false });
+  const told = screen.getByText("View only").classList;
+  expect(told.contains("notice-info")).toBe(true);
+});
+
 test.each(abilitiesUnrefusing)(
   "a reader the abilities read %s is offered the question's box and is told nothing",
   async (_said, abilities) => {

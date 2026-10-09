@@ -59,5 +59,5 @@ export function useProjectAbilityRead(
 
 /** The line drawn in place of a composer or a form the reader may not send. */
 export function ViewOnlyNotice(): ReactNode {
-  return <Notice tone="parked" inline detail="View only" />;
+  return <Notice tone="info" inline detail="View only" />;
 }
