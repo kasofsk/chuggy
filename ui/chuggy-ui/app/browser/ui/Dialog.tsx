@@ -53,7 +53,7 @@ function DialogFoot(props: {
           <Notice tone="danger" inline role="status" detail={props.note} />
         </div>
       )}
-      {props.foot}
+      <div className="flex items-center gap-2">{props.foot}</div>
     </div>
   );
 }

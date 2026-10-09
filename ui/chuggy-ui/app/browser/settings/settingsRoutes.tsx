@@ -25,6 +25,7 @@ import { PlacementSettingsPage } from "./PlacementSettingsPage.tsx";
 import { ProjectPermissionsPage } from "./ProjectPermissionsPage.tsx";
 import { SettingsLayout } from "./SettingsLayout.tsx";
 import { SitePermissionsPage } from "./SitePermissionsPage.tsx";
+import { SiteWorkspacesPage } from "./SiteWorkspacesPage.tsx";
 import { TenantAccountsPage } from "./TenantAccountsPage.tsx";
 import { TenantPeoplePage } from "./TenantPeoplePage.tsx";
 import { TenantPermissionsPage } from "./TenantPermissionsPage.tsx";
@@ -68,9 +69,15 @@ function workspacePageRoutes<TParent extends AnyRoute>(parent: TParent) {
 }
 
 function sitePageRoutes<TParent extends AnyRoute>(parent: TParent) {
+  const getParentRoute = (): TParent => parent;
   return [
     createRoute({
-      getParentRoute: (): TParent => parent,
+      getParentRoute,
+      path: "/site/workspaces",
+      component: SiteWorkspacesPage,
+    }),
+    createRoute({
+      getParentRoute,
       path: "/site/permissions",
       component: SitePermissionsPage,
     }),

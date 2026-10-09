@@ -23,17 +23,22 @@ import {
 import type { TenantPersonProjectLine } from "../../core/tenantPeople.ts";
 import { Identity } from "../ui/Identity.tsx";
 import { Pill } from "../ui/Pill.tsx";
+import {
+  SettingsListingNone,
+  settingsListingNone,
+} from "./SettingsListing.tsx";
 import { TenantPersonEditor } from "./TenantPersonEditor.tsx";
 
 import "./tenantPeople.css";
 
-/** Who one person is, as a permission's holder draws them. */
+/** Who one person is on one line: their address or their subject, then
+ * quietly their login, that they are no account, and that they are the reader. */
 export function TenantPersonWho(props: {
   readonly person: AccessAuthorityPerson;
 }): ReactNode {
   const named = tenantPersonName(props.person);
   return (
-    <span className="flex flex-wrap items-center gap-2">
+    <span className="flex flex-wrap items-baseline gap-x-2 wrap-anywhere">
       {named.subject ? (
         <Identity label={{ text: named.name, title: named.name }} />
       ) : (
@@ -48,16 +53,6 @@ export function TenantPersonWho(props: {
       {props.person.mine ? (
         <span className="text-sm text-ink-3">You</span>
       ) : null}
-    </span>
-  );
-}
-
-/** What stands in a cell for a person who holds nothing there. */
-function TenantPersonNone(): ReactNode {
-  return (
-    <span className="text-ink-3">
-      <span aria-hidden="true">—</span>
-      <span className="visually-hidden">None</span>
     </span>
   );
 }
@@ -97,7 +92,7 @@ function TenantPersonNamed(props: {
 function TenantPersonHeld(props: {
   readonly held: readonly string[];
 }): ReactNode {
-  if (props.held.length === 0) return <TenantPersonNone />;
+  if (props.held.length === 0) return <SettingsListingNone />;
   return (
     <ul className="flex flex-wrap gap-1">
       {props.held.map((word) => (
@@ -114,7 +109,7 @@ function TenantPersonProjects(props: {
   readonly lines: readonly TenantPersonProjectLine[];
 }): ReactNode {
   const lines = props.lines;
-  if (!props.every && lines.length === 0) return <TenantPersonNone />;
+  if (!props.every && lines.length === 0) return <SettingsListingNone />;
   return (
     <div className="grid min-w-0">
       {props.every ? <span>{tenantPersonEveryProjectLine}</span> : null}
@@ -130,12 +125,6 @@ function TenantPersonProjects(props: {
       )}
     </div>
   );
-}
-
-/** An empty attribute where a cell holds nothing, which is how the stacked
- * row leaves that cell out. */
-function none(empty: boolean): "" | undefined {
-  return empty ? "" : undefined;
 }
 
 export function TenantPersonRow(props: {
@@ -155,10 +144,10 @@ export function TenantPersonRow(props: {
       <th scope="row">
         <TenantPersonNamed person={person} />
       </th>
-      <td data-none={none(held.length === 0)}>
+      <td data-none={settingsListingNone(held.length === 0)}>
         <TenantPersonHeld held={held} />
       </td>
-      <td data-none={none(!every && lines.length === 0)}>
+      <td data-none={settingsListingNone(!every && lines.length === 0)}>
         <TenantPersonProjects every={every} lines={lines} />
       </td>
       {props.editable ? (

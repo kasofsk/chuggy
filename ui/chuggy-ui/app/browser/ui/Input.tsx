@@ -20,6 +20,8 @@ export function Input(props: {
   readonly placeholder?: string;
   readonly numeric?: boolean;
   readonly invalid?: boolean;
+  /** Drawn, with what it holds, but taking nothing typed. */
+  readonly disabled?: boolean | undefined;
   readonly describedBy?: string;
   readonly autoFocus?: boolean;
 }): ReactNode {
@@ -36,6 +38,7 @@ export function Input(props: {
         aria-describedby={props.describedBy}
         inputMode={props.numeric === true ? "numeric" : undefined}
         autoFocus={props.autoFocus}
+        disabled={props.disabled}
         value={props.value}
         placeholder={props.placeholder}
         onChange={(event) => {

@@ -1,5 +1,6 @@
-/* Input: the box, the unit ruled off at its end, and the refused state. The
-   border is on the wrapper so the unit sits inside the same box as the value. */
+/* Input: the box, the unit ruled off at its end, the refused state and the one
+   that takes nothing typed. The border is on the wrapper so the unit sits
+   inside the same box as the value. */
 
 @layer ui {
   .input {
@@ -31,6 +32,11 @@
 
   .input-box::placeholder {
     color: var(--ink-3);
+  }
+
+  .input-box:disabled {
+    color: var(--ink-3);
+    cursor: not-allowed;
   }
 
   .input-unit {

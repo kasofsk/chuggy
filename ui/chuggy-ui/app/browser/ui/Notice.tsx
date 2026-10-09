@@ -11,7 +11,13 @@ import type { ReactNode } from "react";
 
 import "./Notice.css";
 
-export const noticeTones = ["info", "live", "parked", "danger"] as const;
+export const noticeTones = [
+  "info",
+  "live",
+  "pass",
+  "parked",
+  "danger",
+] as const;
 
 export type NoticeTone = (typeof noticeTones)[number];
 

@@ -8,18 +8,22 @@
 
 import {
   accessInvitedSchema,
+  accessOwnerInvitedSchema,
   accessPlanePath,
   accessPlaneRoutes,
   accessProjectAuthoritiesSchema,
   accessProjectPeopleSchema,
   accessSiteAbilitiesSchema,
   accessSiteAuthoritiesSchema,
+  accessSiteTenantsSchema,
   accessTenantAbilitiesSchema,
   accessTenantAuthoritiesSchema,
   accessTenantPeopleSchema,
   type AccessInvitation,
   type AccessInvited,
   type AccessGroup,
+  type AccessOwnerInvitation,
+  type AccessOwnerInvited,
   type AccessPlaneRouteName,
   type AccessProjectAuthorities,
   type AccessProjectAuthority,
@@ -28,6 +32,7 @@ import {
   type AccessSiteAbilities,
   type AccessSiteAuthorities,
   type AccessSiteAuthority,
+  type AccessSiteTenants,
   type AccessTenantAbilities,
   type AccessTenantAuthorities,
   type AccessTenantAuthority,
@@ -131,6 +136,15 @@ export function apiSiteAuthorities(
 ): Promise<ApiResult<AccessSiteAuthorities>> {
   return apiGet(ports, accessPlanePath("siteAuthorities", {}), (value) =>
     accessSiteAuthoritiesSchema.parse(value),
+  );
+}
+
+/** The site's workspaces and who administers each, absent for a caller who may make none. */
+export function apiSiteTenants(
+  ports: ApiPorts,
+): Promise<ApiResult<AccessSiteTenants>> {
+  return apiGet(ports, accessPlanePath("siteTenants", {}), (value) =>
+    accessSiteTenantsSchema.parse(value),
   );
 }
 
@@ -346,5 +360,21 @@ export function apiInviteTenantPerson(
       body: invitation,
     },
     (value) => accessInvitedSchema.parse(value),
+  );
+}
+
+/** One person invited into a workspace of their own, which this makes or finds theirs. */
+export function apiInviteSiteOwner(
+  ports: ApiPorts,
+  invitation: AccessOwnerInvitation,
+): Promise<ApiResult<AccessOwnerInvited>> {
+  return apiRead(
+    ports,
+    {
+      method: accessPlaneRoutes.siteOwnerInvitation.method,
+      path: accessPlanePath("siteOwnerInvitation", {}),
+      body: invitation,
+    },
+    (value) => accessOwnerInvitedSchema.parse(value),
   );
 }
