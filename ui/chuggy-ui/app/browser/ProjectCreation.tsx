@@ -121,7 +121,7 @@ export function ProjectCreationForm(props: {
           edit({ ...fields, project });
         }}
       />
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <Button
           variant="primary"
           disabled={!projectCreationSendable(fields) || busy}

@@ -64,6 +64,9 @@ export const projectNameLengthFault = "Too long";
 /** What a workspace name the contract reserves is refused as. */
 export const tenantNameReservedFault = "Reserved";
 
+/** What a workspace nobody holds is refused as, to a reader who may make none. */
+export const tenantCreationRefusedLine = "New workspace needs an invite link";
+
 /** Why one name cannot be sent, or nothing while it is empty, which the submit
  * being unavailable already says. */
 export function projectCreationNameFault(name: string): string | undefined {
@@ -105,7 +108,7 @@ function projectCreationRejected(code: string): string {
     case "TenantNameReserved":
       return tenantNameReservedFault;
     case "TenantCreationNotPermitted":
-      return "Not permitted";
+      return tenantCreationRefusedLine;
     default:
       return "Refused";
   }

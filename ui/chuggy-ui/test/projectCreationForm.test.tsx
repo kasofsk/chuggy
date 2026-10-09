@@ -222,6 +222,28 @@ test("a refusal is one short line, and the form stays where it was", async () =>
   expect(held.went).toEqual([]);
 });
 
+test("a workspace the reader may not make says what a new one needs, and the form stays where it was", async () => {
+  served([], () =>
+    Promise.resolve(
+      answer(
+        { error: { code: "TenantCreationNotPermitted", message: "no" } },
+        403,
+      ),
+    ),
+  );
+  await drawn(<Landing />);
+  typed("Workspace", partition.tenant);
+  typed("Project", partition.project);
+  await pressed();
+  expect(screen.getByRole("status").textContent).toBe(
+    "New workspace needs an invite link",
+  );
+  expect(
+    screen.getByRole<HTMLInputElement>("textbox", { name: "Workspace" }).value,
+  ).toBe(partition.tenant);
+  expect(held.went).toEqual([]);
+});
+
 test("a press repeated after no answer spends the same identity, and an edit draws a new one", async () => {
   const posted = served([], () => Promise.reject(new Error("offline")));
   await drawn(<Landing />);

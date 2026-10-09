@@ -147,6 +147,7 @@ export const invitePageWords = {
   retry: "Retry",
   naming: "New workspace",
   workspaceName: "Workspace name",
+  workspaceAbout: "Your team or company. Projects go inside.",
   create: "Create",
   creating: "Creating…",
   nameNotValid: "Name not valid",
