@@ -6281,6 +6281,7 @@ const wipeKept = [
   "execution_routing",
   "forge_installation",
   "installation_authority",
+  "invite_link",
   "project",
   "project_creation_grant",
   "project_creation_operation",

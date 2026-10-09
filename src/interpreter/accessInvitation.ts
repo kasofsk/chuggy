@@ -23,7 +23,10 @@
  * account here, as `created` tells whoever may invite.
  */
 
-import type { AccessInvitation } from "../contract/accessPlane.ts";
+import type {
+  AccessInvitation,
+  AccessInvitationGrants,
+} from "../contract/accessPlane.ts";
 import type {
   AccessDirectory,
   AccessGithubAccount,
@@ -148,11 +151,11 @@ async function accessInvitationProjectHeld(
   );
 }
 
-/** Every grant the invitation writes for `subject`: the tenant role, then each project's. */
-function accessInvitationGrants(
+/** Every grant an invitation writes for `subject`: the tenant role, then each project's. */
+export function accessInvitationGrants(
   issuer: string,
   tenant: TenantId,
-  invitation: AccessInvitation,
+  invitation: AccessInvitationGrants,
   subject: string,
 ): readonly ProjectGrant[] {
   return [
@@ -319,12 +322,12 @@ export async function accessInvitationPerson<Refusal extends object>(
   });
 }
 
-/** Whether the caller holds the kind granting every role the invitation names, each on the tenant or the project it is named on. */
-async function accessInvitationGrantable(
+/** Whether the caller holds the kind granting every role an invitation names, each on the tenant or the project it is named on. */
+export async function accessInvitationGrantable(
   access: ProjectAccess,
   caller: Principal,
   tenant: TenantId,
-  invitation: AccessInvitation,
+  invitation: AccessInvitationGrants,
 ): Promise<boolean> {
   if (
     !(await accessTenantHeld(
@@ -349,13 +352,18 @@ async function accessInvitationGrantable(
   return true;
 }
 
+/** Why an invitation's grants are not the caller's to give: the tenant's list is not answered them, a project named is not the tenant's, or a role named is not theirs to grant. */
+export interface AccessInvitationNotAdmitted {
+  readonly invited: "Absent" | "ProjectUnknown" | "Refused";
+}
+
 /** Whether the caller may be answered the tenant's list, every project named is the tenant's, and the caller may grant every role named, as an outcome refusing it where not. */
-async function accessInvitationAdmitted(
-  ports: AccessInvitationPorts,
+export async function accessInvitationAdmitted(
+  ports: Pick<AccessInvitationPorts, "access" | "tuples">,
   caller: Principal,
   tenant: TenantId,
-  invitation: AccessInvitation,
-): Promise<AccessInvitationResult | undefined> {
+  invitation: AccessInvitationGrants,
+): Promise<AccessInvitationNotAdmitted | undefined> {
   if (!(await accessTenantListed(ports.access, caller, tenant)))
     return { invited: "Absent" };
   for (const named of invitation.projects ?? [])
