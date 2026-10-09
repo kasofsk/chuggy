@@ -10,6 +10,7 @@
 import { expect, test } from "vitest";
 
 import { nativeHttpBasePath } from "../../../src/contract/http.ts";
+import { apiAttemptsMax } from "../app/core/apiRequest.ts";
 import { operationAttemptsMax } from "../app/core/operationFollow.ts";
 import { createAndReleaseTicket } from "../app/core/ticketCreationRun.ts";
 import type {
@@ -196,9 +197,23 @@ test.each([
 });
 
 /**
- * One budget spans the submit: what the release waited is not there for the
- * dispatch to wait again, so a submit is on the form no longer than a release
- * alone may be.
+ * A deferral is the API saying not now. The one request that met it, sent as
+ * often as the request layer honours a retry, is the last the run makes: the
+ * follow does not submit it again after the wait the API asked for, the
+ * ticket's page being where a deferred dispatch is pressed again.
+ */
+test("a dispatch the API defers is not waited on, and ends at the ticket", async () => {
+  const { ended, sent, lines } = await submitted({
+    declined: dispatchingRefusal(429, "DispatchBacklog"),
+  });
+  expect(ended).toStrictEqual(created);
+  expect(dispatches(sent).length).toBe(apiAttemptsMax);
+  expect(lines.at(-1)).toBe("POST /operations op-2 ManualDispatch");
+});
+
+/**
+ * The release and the dispatch are followed out of one attempts budget: an
+ * attempt the release spent is not there for the dispatch to spend again.
  */
 test.each([0, 1, operationAttemptsMax - 1])(
   "after a release that waited %i times, a dispatch is waited on for the rest of the one budget",

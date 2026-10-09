@@ -48,6 +48,7 @@ import {
   creationRepositoryChosen,
   creationStepSentence,
   creationSubmitEffect,
+  creationSubmitMotion,
   creationTargetBranchFieldHint,
 } from "../core/ticketCreation.ts";
 import type {
@@ -438,7 +439,7 @@ function attemptHeldDraft(
   draft: DraftResponse | undefined,
   motion: CreationMotion,
 ): string {
-  if (draft === undefined || motion === "Release") return "";
+  if (draft === undefined || motion !== "Update") return "";
   return ` — the draft holds this revision at version ${String(draft.authoringVersion)}, not released`;
 }
 
@@ -653,10 +654,12 @@ function creationAttemptHeld(
  */
 function CreationAttemptNote(props: {
   readonly attempt: CreationAttempt;
+  readonly motion: CreationMotion;
   readonly existing: (ticket: number) => ReactNode;
 }): ReactNode {
   const attempt = props.attempt;
-  if (attempt.attempt !== "Exists") return <AttemptNote attempt={attempt} />;
+  if (attempt.attempt !== "Exists")
+    return <AttemptNote attempt={attempt} motion={props.motion} />;
   return (
     <p className="panel-failed">
       {creationTicketExistsSentence(attempt.ticket)} —{" "}
@@ -872,6 +875,7 @@ export function CreationForm(props: {
       />
       <CreationAttemptNote
         attempt={running.attempt}
+        motion={creationSubmitMotion(props.dispatches)}
         existing={props.existing}
       />
     </div>

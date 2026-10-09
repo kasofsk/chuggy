@@ -960,26 +960,36 @@ export function creationSubmitEffect(dispatches: boolean): string {
   return dispatches ? "Starts work" : "Released for a dispatcher to start";
 }
 
-/** What one submit releases: a new ticket, or a Pending one's next revision. */
-export type CreationMotion = "Release" | "Update";
+/** What one submit does: releases a new ticket, releases one and goes on to
+ * dispatch it, or releases a Pending one's next revision. */
+export type CreationMotion = "Release" | "Start" | "Update";
 
-/** The motion's own words: what it is called, and what it is once settled. */
+/** The motion a creation's submit makes, which goes on to a dispatch for a
+ * reader who may make one. */
+export function creationSubmitMotion(dispatches: boolean): CreationMotion {
+  return dispatches ? "Start" : "Release";
+}
+
+/** The motion's own words: what its release is called, and what a submit
+ * says once that has settled, which one that goes on to dispatch says of that. */
 function creationMotionWords(motion: CreationMotion): {
   readonly noun: string;
-  readonly done: string;
+  readonly settled: string;
   readonly submitting: string;
 } {
   switch (motion) {
     case "Release":
       return {
         noun: "release",
-        done: "released",
+        settled: "released",
         submitting: "creating the draft and releasing it…",
       };
+    case "Start":
+      return { ...creationMotionWords("Release"), settled: "starting…" };
     case "Update":
       return {
         noun: "update",
-        done: "updated",
+        settled: "updated",
         submitting: "revising the draft and releasing the update…",
       };
   }
@@ -1002,7 +1012,7 @@ export function creationStepSentence(
       return `waiting for the project to catch up with the ${words.noun}…`;
     case "Settled":
       return step.state === "Succeeded"
-        ? words.done
+        ? words.settled
         : operationStateSentence(step.state);
     case "Abandoned":
       return step.reason;

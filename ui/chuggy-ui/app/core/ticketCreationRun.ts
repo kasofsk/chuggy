@@ -8,16 +8,19 @@
  * number of pages ends — and each offered revision's initialization is read in
  * the same motion, because a revision without its defaults is not something a
  * form can be drawn from, and a choice among them is then one no request
- * waits on. Release reuses `followOperation`, whose one budget spans the whole
- * follow, and the dispatch after it is followed on what the release left of
- * that budget, so this module adds no second wait.
+ * waits on. The release and the dispatch after it are each followed by
+ * `followOperation` out of one attempts budget, the dispatch starting from the
+ * attempts its release spent, so this module adds no budget of its own.
  *
  * A CREATION DISPATCHES THE TICKET IT RELEASED, FOR A READER WHO MAY. The
  * ticket exists from the moment its release settles, so nothing its dispatch
  * meets ends the submit any other way: a ticket that is no candidate, a
- * dispatch view that could not be read, a refusal and a follow that ran out of
- * budget all hand back the ticket, as a release alone does, and its page
- * offers `Dispatch` wherever a press is still what starts it.
+ * dispatch view that could not be read, a refusal, a deferral and a follow
+ * that ran out of budget all hand back the ticket, as a release alone does,
+ * and its page offers `Dispatch` wherever a press is still what starts it. A
+ * deferral is the API saying not now, so the follow is ended where it meets
+ * one rather than waited through: the ticket's page is where a deferred
+ * dispatch is drawn and pressed again.
  *
  * A DRAFT THAT WAS CREATED AND NOT RELEASED IS HANDED BACK. The release is the
  * half that can be refused on its own, and a retry that created a second draft
@@ -516,9 +519,9 @@ async function creationDraftFencedOut(
 
 /**
  * The ticket a release made, dispatched where the dispatch view lists it as a
- * candidate, at the version that view gives it, and followed to settlement
- * from the `attempts` its release had spent. It answers nothing, the ticket
- * being there whatever this meets.
+ * candidate, at the version that view gives it, and followed from the
+ * `attempts` its release had spent until it settles or the API defers it. It
+ * answers nothing, the ticket being there whatever this meets.
  */
 async function creationTicketDispatched(
   ports: ApiPorts,
@@ -531,13 +534,16 @@ async function creationTicketDispatched(
   if (view.outcome !== "Ok") return;
   const dispatch = manualDispatchAction(ticket, view.value);
   if (dispatch === undefined) return;
+  const deferred = new AbortController();
   await followOperation(
     ports,
     partition,
     { operation, mutation: dispatch.mutation },
     ticket,
-    () => undefined,
-    undefined,
+    (step) => {
+      if (step.step === "Backlogged") deferred.abort();
+    },
+    deferred.signal,
     { step: "Submitting", attempts },
   );
 }

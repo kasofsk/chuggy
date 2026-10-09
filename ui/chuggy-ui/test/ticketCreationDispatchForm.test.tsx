@@ -1,8 +1,9 @@
 /**
  * The creation form's one press, for a reader who may dispatch and for one
  * who may not: the line under the button, the release and the dispatch it
- * drives with the button busy throughout, and the ticket it hands its caller
- * to navigate to whatever the dispatch met.
+ * drives with the button busy throughout, what the note under it reads while
+ * each is followed, and the ticket it hands its caller to navigate to
+ * whatever the dispatch met.
  */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -96,8 +97,12 @@ function operations(sent: readonly Sent[]): readonly string[] {
     .map((one) => (one.body as { readonly operation: string }).operation);
 }
 
-/** `api`, with the poll of its dispatch held back until the case lets it go. */
-function dispatchHeld(api: Api): {
+/** `api`, with the poll of the submission at `position` in the order they
+ * were sent, the release first, held back until the case lets it go. */
+function pollHeld(
+  api: Api,
+  position: number,
+): {
   readonly ports: ApiPorts;
   readonly release: () => void;
 } {
@@ -110,14 +115,17 @@ function dispatchHeld(api: Api): {
     ports: {
       ...api.ports,
       fetch: async (path, init) => {
-        const dispatch = operations(api.sent)[1];
-        if (dispatch !== undefined && path.endsWith(`/${dispatch}`))
-          await letGo;
+        const held = operations(api.sent)[position];
+        if (held !== undefined && path.endsWith(`/${held}`)) await letGo;
         return api.ports.fetch(path, init);
       },
     },
   };
 }
+
+/** What the note reads from a settled release until the form navigates, for
+ * a press that goes on to dispatch. */
+const starting = "starting…";
 
 test.each([
   ["may dispatch", true, "Starts work"],
@@ -135,9 +143,23 @@ test.each([
   },
 );
 
-test("one press releases and dispatches, the button busy until the dispatch has settled", async () => {
+test("the note is the release's own until the release has settled", async () => {
   const api = answeringApi(ticketDispatching());
-  const held = dispatchHeld(api);
+  const held = pollHeld(api, 0);
+  const created = draw(held.ports, true);
+  pressed();
+  await screen.findByText("waiting for the actor to decide the release…");
+  expect(screen.queryByText(starting)).toBeNull();
+
+  act(held.release);
+  await waitFor(() => {
+    expect(created).toStrictEqual([creationDraft.ticket]);
+  });
+});
+
+test("one press releases and dispatches, the button busy and the note starting until the dispatch has settled", async () => {
+  const api = answeringApi(ticketDispatching());
+  const held = pollHeld(api, 1);
   const created = draw(held.ports, true);
   pressed();
   await waitFor(() => {
@@ -147,6 +169,8 @@ test("one press releases and dispatches, the button busy until the dispatch has 
     ]);
   });
   expect(button()).toHaveProperty("disabled", true);
+  expect(screen.getByText(starting).className).toBe("panel-note");
+  expect(screen.queryByText("released")).toBeNull();
   expect(created).toStrictEqual([]);
 
   act(held.release);
@@ -168,6 +192,25 @@ test("the press of a reader who may not dispatch releases, reads no dispatch vie
   expect(
     api.sent.filter((one) => one.path.includes("/dispatch-view")),
   ).toStrictEqual([]);
+  expect(screen.getByText("released").className).toBe("panel-note");
+  expect(screen.queryByText(starting)).toBeNull();
+});
+
+test("a release refused for a reader who may dispatch is drawn as a creation's, and nothing is dispatched", async () => {
+  const api = answeringApi(
+    ticketDispatching({ released: dispatchingRefused("ConfigurationInvalid") }),
+  );
+  const created = draw(api.ports, true);
+  pressed();
+  await waitFor(() => {
+    expect(document.querySelector(".panel-failed")).not.toBeNull();
+  });
+  expect(document.querySelector(".panel-failed")?.textContent).not.toContain(
+    "the draft holds this revision",
+  );
+  expect(screen.queryByText(starting)).toBeNull();
+  expect(mutations(api.sent)).toStrictEqual(["ReleaseDraft"]);
+  expect(created).toStrictEqual([]);
 });
 
 const endings: readonly (readonly [string, TicketDispatching])[] = [
@@ -181,6 +224,10 @@ const endings: readonly (readonly [string, TicketDispatching])[] = [
     { dispatched: dispatchingRefused("TicketChanged") },
   ],
   ["the API refused", { declined: dispatchingRefusal(403, "Forbidden") }],
+  [
+    "the API deferred",
+    { declined: dispatchingRefusal(429, "DispatchBacklog") },
+  ],
   ["nobody saw settle", { dispatched: { state: "Pending" } }],
 ];
 
