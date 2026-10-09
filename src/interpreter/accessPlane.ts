@@ -16,18 +16,22 @@
  * or `GrantHostedExecution` for hosted runs. A caller holding none of a list's
  * kinds is answered as absent, exactly as a tenant or project that does not
  * exist, so nothing here tells the two apart; one answered the list who lacks
- * a change's kind is refused it.
+ * a change's kind is refused it. The caller's own tenants, in
+ * `./accessCallerTenants.ts`, are the one list answered to any caller, because
+ * it is about them alone.
  *
  * WHO A SUBJECT IS IS THE DIRECTORY'S, asked once per list about at most
  * `accessDirectorySubjectsMax` subjects. A plane with no directory lists
  * subjects alone, and one past the bound is listed as though it had none.
  *
- * A LISTING IS ASKED OF ONE OBJECT, ONE TENANT'S PROJECTS, A NAMESPACE, OR ONE
- * RELATION ACROSS A NAMESPACE, which is how the site's tenants are read.
+ * A LISTING IS ASKED OF ONE OBJECT, ONE TENANT'S PROJECTS, A NAMESPACE, ONE
+ * RELATION ACROSS A NAMESPACE, which is how the site's tenants are read, OR
+ * ONE PRINCIPAL ACROSS A NAMESPACE, which is how the caller's own are.
  *
  * EVERY LIST IS BOUNDED BY ONE BUDGET PER ANSWER: how many pages it reads, how
- * many tuples, and how many projects. A bound that cut the answer short says
- * so as `truncated`, and what was read before it is still answered.
+ * many tuples, how many projects, and how many tenants. A bound that cut the
+ * answer short says so as `truncated`, and what was read before it is still
+ * answered.
  */
 
 import {
@@ -148,7 +152,7 @@ export interface AccessTuple {
   readonly subject: AccessTupleSubject;
 }
 
-/** What one listing asks for: every tuple on one object, every project whose `tenant` link names one tenant, every tuple in one namespace, or every tuple of one relation in one namespace. */
+/** What one listing asks for: every tuple on one object, every project whose `tenant` link names one tenant, every tuple in one namespace, every tuple of one relation in one namespace, or every tuple in one namespace naming one principal as itself. */
 export type AccessTupleQuery =
   | {
       readonly query: "Object";
@@ -162,6 +166,11 @@ export type AccessTupleQuery =
       readonly query: "NamespaceRelation";
       readonly namespace: string;
       readonly relation: string;
+    }
+  | {
+      readonly query: "NamespaceSubject";
+      readonly namespace: string;
+      readonly principal: Principal;
     };
 
 /** One page of a listing, and the token the next is asked with where there is one. */
@@ -183,12 +192,14 @@ export interface AccessPlaneBounds {
   readonly pagesMax: number;
   readonly tuplesMax: number;
   readonly projectsMax: number;
+  readonly tenantsMax: number;
 }
 
 export const accessPlaneBoundsDefault: AccessPlaneBounds = {
   pagesMax: 64,
   tuplesMax: 512,
   projectsMax: 32,
+  tenantsMax: 32,
 };
 
 export interface AccessPlanePorts {

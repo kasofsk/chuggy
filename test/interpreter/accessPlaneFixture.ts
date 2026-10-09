@@ -3,9 +3,10 @@
  * permits a case gives, a listing that pages, and a writer.
  *
  * A LISTING MATCHES WHAT THE SERVER'S QUERY DOES. A subject set keeps its
- * relation, empty for a link, a tenant's projects are the links naming it, and
- * a relation across a namespace is that relation's tuples alone, so a case
- * over this reader proves what one over the adapter would.
+ * relation, empty for a link, a tenant's projects are the links naming it, a
+ * relation across a namespace is that relation's tuples alone, and a principal
+ * across one is the tuples naming that principal as itself, so a case over
+ * this reader proves what one over the adapter would.
  *
  * ONLY ADMINISTERING FOLLOWS THE TUPLES, as the model does: a tenant's `admins`
  * administer it, and a project's `admins`, or its tenant's through the `tenant`
@@ -35,6 +36,10 @@ import {
   accessAuthorities,
   type AccessAuthorities,
 } from "../../src/interpreter/accessAuthorities.ts";
+import {
+  accessCallerTenants,
+  type AccessCallerTenantsList,
+} from "../../src/interpreter/accessCallerTenants.ts";
 import {
   accessAuthorityHolders,
   type AccessAuthorityHolders,
@@ -171,6 +176,12 @@ function accessMatches(stored: AccessStored, query: AccessTupleQuery): boolean {
   if (query.query === "NamespaceRelation")
     return (
       stored.namespace === query.namespace && stored.relation === query.relation
+    );
+  if (query.query === "NamespaceSubject")
+    return (
+      stored.namespace === query.namespace &&
+      stored.subject.subject === "Id" &&
+      stored.subject.id === query.principal
     );
   return (
     stored.namespace === query.namespace &&
@@ -420,6 +431,15 @@ export function accessMemoryAbilities(
     { access: memory.access, tuples: memory.reader },
     { bounds },
   );
+}
+
+/** The caller's own tenants, answered over `memory` or over `access` in its place. */
+export function accessMemoryCallerTenants(
+  memory: AccessMemory,
+  bounds: AccessPlaneBounds = accessPlaneBoundsDefault,
+  access: ProjectAccess = memory.access,
+): AccessCallerTenantsList {
+  return accessCallerTenants({ access, tuples: memory.reader }, { bounds });
 }
 
 /** The principal a subject is under the fixture's issuer. */

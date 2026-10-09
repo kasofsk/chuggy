@@ -12,6 +12,11 @@
  * answers no tuple of another, which `test/keto/accessOwnerInvitation.test.ts`
  * holds it to.
  *
+ * A PRINCIPAL ACROSS A NAMESPACE IS ASKED AS THAT `subject_id` ALONE, with no
+ * object and no relation, so the authority answers that principal's own tuples
+ * in every relation and no tuple of a set, another subject or another
+ * namespace, which `test/keto/accessOwnerInvitation.test.ts` holds it to.
+ *
  * A SUBJECT SET IS NO PRINCIPAL, and is answered as one so the interpreter can
  * tell a `tenant` link from a person rather than reading its object as a name.
  * Its relation is kept, which is what tells a link from the holders of a role.
@@ -101,6 +106,8 @@ function ketoAccessQuery(
       return { namespace: query.namespace };
     case "NamespaceRelation":
       return { namespace: query.namespace, relation: query.relation };
+    case "NamespaceSubject":
+      return { namespace: query.namespace, subject_id: query.principal };
   }
 }
 
