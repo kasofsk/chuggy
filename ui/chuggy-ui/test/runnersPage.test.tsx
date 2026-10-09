@@ -255,7 +255,7 @@ test("the steps take the focus as they are drawn, since an empty roster's Add ru
   ).toBeTruthy();
 });
 
-test("the steps leave the focus where a reader has put it since the press", async () => {
+test("the steps leave the focus with whatever holds it as they are drawn", async () => {
   await drawPage({ listed: none, written: [minted()] });
   const elsewhere = document.body.appendChild(document.createElement("input"));
   elsewhere.focus();

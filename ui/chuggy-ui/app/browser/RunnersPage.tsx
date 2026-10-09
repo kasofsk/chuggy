@@ -127,8 +127,9 @@ function RunnerStep(props: {
 /**
  * What a minted token is handed over in: the steps that make a machine a
  * runner, each command copied by its own control. The list takes the focus as
- * it is drawn only where nothing holds it, as after a press of a control that
- * is gone, so a reader who has since moved on keeps their place.
+ * it is drawn only where nothing holds it, which is where a press leaves it
+ * once the control is disabled for the mint, so a reader who has since moved
+ * on keeps their place.
  */
 function RunnerSteps(props: {
   readonly minted: WorkerPoolTokenResponse;
