@@ -2,7 +2,8 @@
  * The creation screen over a project's own reads, where the form suite beside
  * it is handed a context already read: what the screen does about a read that
  * came back short, about a submit the project moved under whose re-read then
- * fails, and about a submit that finds its ticket already made.
+ * fails, about a submit that finds its ticket already made, and about which
+ * reader its abilities read says is pressing.
  */
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
@@ -260,3 +261,29 @@ test("the form's reads wait for the abilities read, and are sent once it says th
     sent.filter((one) => one.url.includes("/draft-initializations/")),
   ).not.toStrictEqual([]);
 });
+
+/**
+ * Which reader is pressing is the abilities read's to say, and the form is not
+ * drawn before that read comes back. One that failed decides nothing here, as
+ * it decides nothing of any control.
+ */
+test.each([
+  ["it says may dispatch", abilitiesEvery, "Starts work"],
+  [
+    "it says may not dispatch",
+    { ...abilitiesEvery, dispatch: false },
+    "Released for a dispatcher to start",
+  ],
+  ["it failed for", Promise.resolve(unreadable()), "Starts work"],
+])(
+  "the abilities read tells a reader %s what Create ticket does",
+  async (_reader, abilities, effect) => {
+    await drawCreation(() => undefined, abilitiesOver(abilities));
+    expect(
+      screen.getByRole("button", {
+        name: "Create ticket",
+        description: effect,
+      }),
+    ).toBeDefined();
+  },
+);

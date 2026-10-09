@@ -21,7 +21,10 @@ import { nativeHttpBasePath } from "../../../src/contract/http.ts";
 import { ticketYamlStoreKey } from "../app/browser/editor/authoringGuards.tsx";
 import { CreationForm } from "../app/browser/TicketCreation.tsx";
 import type { ApiPorts } from "../app/core/apiRequest.ts";
-import { creationStageOf } from "../app/core/ticketCreation.ts";
+import {
+  creationStageOf,
+  creationSubmitEffect,
+} from "../app/core/ticketCreation.ts";
 import type { CreationOffer } from "../app/core/ticketCreation.ts";
 import { creationContextList } from "../app/core/ticketCreationRun.ts";
 import { answeringApi } from "./answeringApi.ts";
@@ -82,6 +85,7 @@ function draw(
           partial: false,
           repositories: [],
         }}
+        dispatches={false}
         onCreated={(ticket) => created.push(ticket)}
         existing={(ticket) => <a href="/there">Ticket {ticket}</a>}
         onDirty={(held) => dirty.push(held)}
@@ -142,7 +146,7 @@ test("the submit asks first, and refuses while a problem stands", async () => {
   expect(asked.textContent).toMatch(/One problem must be fixed/u);
   const confirm = within(asked).getByRole("button", {
     name: "Create ticket",
-    description: "Releases the ticket to run",
+    description: creationSubmitEffect(false),
   });
   expect(confirm.hasAttribute("disabled")).toBe(true);
   fireEvent.click(within(asked).getByRole("button", { name: "Close" }));

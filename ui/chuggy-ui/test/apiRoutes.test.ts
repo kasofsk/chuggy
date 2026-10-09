@@ -47,6 +47,7 @@ import {
   apiStopTimeoutMs,
   apiTicket,
   apiTicketActionReach,
+  apiTicketDispatchView,
   apiTicketNativeActions,
   apiWriteProjectRepositoryLanding,
   apiWriteSelectorSettings,
@@ -173,6 +174,19 @@ test("a dispatch read can address one ticket-sized candidate page", async () => 
   expect(held.urls[0]).toBe(
     `${nativeHttpBasePath}/tenants/acme/projects/at%20las/dispatch-view?after=11&limit=1`,
   );
+});
+
+/** The route reads candidates after a ticket, so one ticket's own page starts
+ * at the ticket before it, and the first ticket's at the head. */
+test("one ticket's dispatch read is the page that would hold it", async () => {
+  const held = recording(() => ({ result: "Reset" }));
+  await apiTicketDispatchView(held.ports, partition, 12);
+  await apiTicketDispatchView(held.ports, partition, 1);
+  const view = `${nativeHttpBasePath}/tenants/acme/projects/at%20las/dispatch-view`;
+  expect(held.urls).toStrictEqual([
+    `${view}?after=11&limit=1`,
+    `${view}?limit=1`,
+  ]);
 });
 
 test("a revision that looks like a path is one segment, not several", async () => {

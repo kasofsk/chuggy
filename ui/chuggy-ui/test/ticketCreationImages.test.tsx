@@ -111,6 +111,7 @@ function draw(
             partial: false,
             repositories: [],
           }}
+          dispatches={false}
           onCreated={(ticket) => created.push(ticket)}
           existing={() => null}
         />
