@@ -15,6 +15,10 @@
  * request, all or none, so a link given back is open again and nothing was
  * granted; the fault is then raised as the authority's outage is everywhere.
  *
+ * A REGISTRATION IS ADMITTED BY READING A LINK, NEVER BY SPENDING IT. The
+ * directory may ask twice about one registration, or fail it after admitting
+ * it, and redeeming is still what spends the link.
+ *
  * THE TOKEN IS DRAWN AND DIGESTED BY WHAT COMPOSES THE PLANE, and only the
  * digest reaches the store. The mint's answer is the only one carrying it.
  */
@@ -92,7 +96,8 @@ export interface AccessInviteLinkSpent extends AccessInviteLinkGrants {
  * The durable side of a link's whole life. `mint` writes under the tenant's
  * bound and drops its ended links past the number kept, `spend` is the single
  * write taking an open link for `subject`, `revoke` the single write ending an
- * open one, and `restore` gives back a spent one.
+ * open one, `restore` gives back a spent one, and `opened` reads the open
+ * link a digest names without spending it.
  */
 export interface AccessInviteLinkStore {
   mint(link: AccessInviteLinkMint): Promise<AccessInviteLinkWritten>;
@@ -107,6 +112,9 @@ export interface AccessInviteLinkStore {
     subject: string,
   ): Promise<AccessInviteLinkSpent | undefined>;
   restore(link: string): Promise<boolean>;
+  opened(
+    digest: string,
+  ): Promise<{ readonly newAccounts: boolean } | undefined>;
 }
 
 /** How a token is drawn and digested, both supplied. */
@@ -173,6 +181,8 @@ export interface AccessInviteLinkService {
     caller: Principal,
     token: string,
   ): Promise<AccessInviteLinkRedemption>;
+  /** Whether a person with no account may register holding `token`: only while it is an open link whose maker could make accounts. */
+  registrationAdmitted(token: string | undefined): Promise<boolean>;
 }
 
 /** The caller's subject under the plane's issuer, which every authenticated caller of the plane has. */
@@ -330,6 +340,7 @@ export function accessInviteLinks(
       listed: notConfigured,
       revoked: notConfigured,
       redeemed: notConfigured,
+      registrationAdmitted: () => Promise.resolve(false),
     };
   }
   return {
@@ -354,5 +365,10 @@ export function accessInviteLinks(
       accessInviteLinkRevoked(ports, links.store, { caller, tenant, link }),
     redeemed: (caller, token) =>
       accessInviteLinkRedeemed(ports, links, settings, { caller, token }),
+    registrationAdmitted: async (token) =>
+      token !== undefined &&
+      token !== "" &&
+      (await links.store.opened(links.secrets.digest(token)))?.newAccounts ===
+        true,
   };
 }

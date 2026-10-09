@@ -1,8 +1,8 @@
 /**
  * A tenant's invite links, the one thing the access plane keeps in a database.
  *
- * THE DATABASE'S CLOCK DECIDES. A spend, a revocation, the count of open links
- * and the state a list answers are each judged by `now()` in the statement
+ * THE DATABASE'S CLOCK DECIDES. A spend, a revocation, the count of open links,
+ * the open link a registration reads and the state a list answers are each judged by `now()` in the statement
  * itself, so this process holds no clock a link's state could disagree with.
  *
  * A SPEND IS ONE CONDITIONAL UPDATE, so two callers presenting one token are
@@ -201,6 +201,15 @@ export function postgresInviteLinks(pool: pg.Pool): AccessInviteLinkStore {
         await pool.query(sql`UPDATE invite_link l SET used_by=NULL,used_at=NULL
         WHERE l.link=${link} AND l.used_at IS NOT NULL`);
       return (restored.rowCount ?? 0) === 1;
+    },
+    opened: async (digest) => {
+      const found = await pool.query<{ new_accounts: boolean }>(
+        sql`SELECT l.new_accounts FROM invite_link l
+        WHERE l.token_digest=${digest}
+          AND l.used_at IS NULL AND l.revoked_at IS NULL AND l.expires_at>now()`,
+      );
+      const row = found.rows[0];
+      return row === undefined ? undefined : { newAccounts: row.new_accounts };
     },
   };
 }

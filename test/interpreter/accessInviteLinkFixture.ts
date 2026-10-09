@@ -120,6 +120,16 @@ function inviteLinkOpen(memory: InviteLinkMemory, row: InviteLinkRow): boolean {
   return inviteLinkEndedAtMs(memory, row) === undefined;
 }
 
+/** The open link `digest` names, if any. */
+function inviteLinkOpenNamed(
+  memory: InviteLinkMemory,
+  digest: string,
+): InviteLinkRow | undefined {
+  return memory.rows.find(
+    (one) => one.digest === digest && inviteLinkOpen(memory, one),
+  );
+}
+
 function inviteLinkStore(memory: InviteLinkMemory): AccessInviteLinkStore {
   const find = (tenant: string, link: string) =>
     memory.rows.find((row) => row.tenant === tenant && row.link === link);
@@ -152,9 +162,7 @@ function inviteLinkStore(memory: InviteLinkMemory): AccessInviteLinkStore {
       return Promise.resolve(true);
     },
     spend: (digest, subject) => {
-      const row = memory.rows.find(
-        (one) => one.digest === digest && inviteLinkOpen(memory, one),
-      );
+      const row = inviteLinkOpenNamed(memory, digest);
       if (row === undefined) return Promise.resolve(undefined);
       row.used = { by: subject, atMs: memory.nowMs };
       return Promise.resolve({
@@ -163,6 +171,12 @@ function inviteLinkStore(memory: InviteLinkMemory): AccessInviteLinkStore {
         role: row.role,
         projects: row.projects,
       });
+    },
+    opened: (digest) => {
+      const row = inviteLinkOpenNamed(memory, digest);
+      return Promise.resolve(
+        row === undefined ? undefined : { newAccounts: row.newAccounts },
+      );
     },
     restore: (link) => {
       const row = memory.rows.find((one) => one.link === link);
