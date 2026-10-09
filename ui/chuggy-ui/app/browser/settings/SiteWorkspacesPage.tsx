@@ -9,6 +9,11 @@
  * nothing to a reader who may do nothing on the site, so their absence is this
  * reader's standing rather than a fault, and the page says who creates
  * workspaces instead.
+ *
+ * The site's workspace links are read beside the workspaces, and only a read
+ * that answered with a list lets one be made: a plane that keeps no links, a
+ * read not yet answered and one that failed all leave the action as it is
+ * without them.
  */
 
 import { useState } from "react";
@@ -39,7 +44,10 @@ import {
 } from "./SettingsListing.tsx";
 import { SettingsPage, useSettingsTenant } from "./SettingsPage.tsx";
 import { SiteWorkspaceNew } from "./SiteWorkspaceCreation.tsx";
-import { useSiteWorkspaces } from "./siteWorkspacesResource.ts";
+import {
+  useSiteWorkspaceLinks,
+  useSiteWorkspaces,
+} from "./siteWorkspacesResource.ts";
 import { TenantPersonWho } from "./TenantPersonRow.tsx";
 import { useSiteAbilities } from "./tenantPermissionsResource.ts";
 
@@ -129,6 +137,8 @@ function SiteWorkspacesListed(props: {
   readonly abilities: AccessSiteAbilities;
 }): ReactNode {
   const listed = useSiteWorkspaces(props.tenant);
+  const read = useSiteWorkspaceLinks(props.tenant);
+  const links = read.state === "Ready";
   const [created, setCreated] = useState<string | undefined>(undefined);
   return (
     <>
@@ -143,6 +153,7 @@ function SiteWorkspacesListed(props: {
               <SiteWorkspaceNew
                 tenant={props.tenant}
                 abilities={props.abilities}
+                links={links}
                 onSaid={setCreated}
               />
             }
