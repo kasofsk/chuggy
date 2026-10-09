@@ -6,7 +6,7 @@
  */
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
-import { cleanup, fireEvent, screen, within } from "@testing-library/react";
+import { cleanup, screen, within } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
@@ -15,7 +15,6 @@ import {
   accessNotPermittedCode,
   type AccessInviteLinks,
 } from "../../../../src/contract/accessPlane.ts";
-import { instantText } from "../../app/core/figures.ts";
 import {
   answer,
   heldAnswer,
@@ -25,6 +24,20 @@ import {
 } from "../screenHarness.tsx";
 import type * as BrowserPorts from "../../app/browser/ports.ts";
 import { styleless } from "../styleless.ts";
+import {
+  linkCells as cells,
+  linkHeadings,
+  linkRevocations as revocations,
+  linkRows as rows,
+  linkStackedLabels,
+  linkStatuses as statuses,
+  linksTable as table,
+  linkWhen as when,
+  revocationAsked,
+  revocationQuestion as question,
+  revocationQuestionSpans,
+  revokedFirst,
+} from "./inviteLinksTable.ts";
 import {
   changesSent,
   drawPeople,
@@ -63,45 +76,6 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function table(): HTMLElement {
-  return screen.getByRole("table", { name: "Invite links" });
-}
-
-/** The table's rows under its head, a link each and under one the row its revocation asks in. */
-function rows(): readonly HTMLElement[] {
-  return within(table()).getAllByRole("row").slice(1);
-}
-
-/** What each column of one row draws, by the column's own heading. */
-function cells(row: HTMLElement): Readonly<Record<string, HTMLElement>> {
-  const headings = within(table())
-    .getAllByRole("columnheader")
-    .map((heading) => heading.textContent);
-  const drawn = [
-    within(row).getByRole("rowheader"),
-    ...within(row).getAllByRole("cell"),
-  ];
-  return Object.fromEntries(
-    drawn.map((cell, index) => [headings[index] ?? "", cell]),
-  );
-}
-
-function statuses(): readonly (string | undefined)[] {
-  return rows().map(
-    (row) => cells(row)["Status"]?.querySelector(".pill")?.textContent,
-  );
-}
-
-function when(atMs: number): string {
-  return instantText(new Date(atMs), new Date());
-}
-
-function revocations(): readonly (string | null)[] {
-  return within(table())
-    .queryAllByRole("button", { name: "Revoke" })
-    .map((button) => button.closest("tr")?.textContent ?? null);
-}
-
 const [opened, used, revoked, expired] = linksListed.links;
 
 test("the links are a section under the people and over the other identities, a row a link in the plane's order", async () => {
@@ -110,11 +84,13 @@ test("the links are a section under the people and over the other identities, a 
     screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent),
   ).toStrictEqual(["1 person", "Invite links", "Other identities"]);
   expect(statuses()).toStrictEqual(["Open", "Used", "Revoked", "Expired"]);
-  expect(
-    within(table())
-      .getAllByRole("columnheader")
-      .map((heading) => heading.textContent),
-  ).toStrictEqual(["Access", "Status", "Used by", "Made by", "Revoke"]);
+  expect(linkHeadings()).toStrictEqual([
+    "Access",
+    "Status",
+    "Used by",
+    "Made by",
+    "Revoke",
+  ]);
   styleless();
 });
 
@@ -200,13 +176,7 @@ test("a person is named on one line under their whole name, and a maker who is n
 
 test("the two columns that name a person carry their words for a stacked row, and no other cell does", async () => {
   await drawPeople({ links: () => answer(linksListed) });
-  expect(
-    rows().map((row) =>
-      Array.from(row.querySelectorAll(".people-stacked-label")).map(
-        (label) => label.textContent,
-      ),
-    ),
-  ).toStrictEqual([
+  expect(linkStackedLabels()).toStrictEqual([
     ["Made by"],
     ["Used by", "Made by"],
     ["Made by"],
@@ -229,11 +199,12 @@ test("a link carrying a role the reader may not grant draws no Revoke, and a tab
     abilities: () => answer(short),
   });
   expect(revocations()).toStrictEqual([]);
-  expect(
-    within(table())
-      .getAllByRole("columnheader")
-      .map((heading) => heading.textContent),
-  ).toStrictEqual(["Access", "Status", "Used by", "Made by"]);
+  expect(linkHeadings()).toStrictEqual([
+    "Access",
+    "Status",
+    "Used by",
+    "Made by",
+  ]);
 });
 
 test("a reader who may grant nothing, and one whose abilities are not read, are offered no Revoke", async () => {
@@ -275,16 +246,11 @@ function revoking(changed: () => Response | Promise<Response>): {
   };
 }
 
-function question(): HTMLElement | null {
-  return screen.queryByRole("group", { name: "Revoke link" });
-}
-
 test("Revoke asks first, in the row under its link, and Cancel sends nothing", async () => {
   const drawn = await drawPeople(revoking(noContent));
-  await turned(() => {
-    fireEvent.click(within(rows()[0] ?? table()).getByRole("button"));
-  });
+  await revocationAsked(0);
   expect(question()?.closest("tr")).toBe(rows()[1]);
+  expect(revocationQuestionSpans()).toBe(true);
   expect(question()?.textContent).toContain("This link will stop working.");
   expect(
     within(table())
@@ -298,18 +264,6 @@ test("Revoke asks first, in the row under its link, and Cancel sends nothing", a
   expect(statuses()).toStrictEqual(["Open", "Open"]);
   styleless();
 });
-
-/** The first link's Revoke pressed and its question confirmed. */
-async function revokedFirst(): Promise<void> {
-  await turned(() => {
-    fireEvent.click(within(rows()[0] ?? table()).getByRole("button"));
-  });
-  const asked = question();
-  if (asked === null) throw new Error("nothing asked");
-  await turned(() => {
-    fireEvent.click(within(asked).getByRole("button", { name: "Revoke" }));
-  });
-}
 
 test("a revocation confirmed sends that link's removal alone and reads the links again, and the people not at all", async () => {
   const drawn = await drawPeople(revoking(noContent));
@@ -352,9 +306,7 @@ test("a revocation the plane refuses draws its line under that link's row, gone 
   expect(said.textContent).toBe("Change not permitted");
   expect(said.closest("tr")).toBe(rows()[1]);
   expect(question()).toBeNull();
-  await turned(() => {
-    fireEvent.click(within(rows()[2] ?? table()).getByRole("button"));
-  });
+  await revocationAsked(2);
   expect(within(table()).queryByRole("status")).toBeNull();
 });
 

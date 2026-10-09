@@ -25,6 +25,14 @@ import type { DrawnStrict } from "../screenHarness.tsx";
 import type * as BrowserPorts from "../../app/browser/ports.ts";
 import { styleless } from "../styleless.ts";
 import {
+  dialogActions,
+  dialogFields,
+  inviteModeChosen,
+  inviteModesDrawn,
+  pressedOutside,
+  tokenHeldOutside,
+} from "./inviteDialogDrawn.ts";
+import {
   boxesIn,
   changesSent,
   drawPeople,
@@ -72,31 +80,19 @@ function dialog(): HTMLElement {
 }
 
 function modes(): readonly string[] {
-  return within(dialog())
-    .queryAllByRole("radio")
-    .filter((radio) => radio.closest('[aria-label="Invite by"]') !== null)
-    .map(
-      (radio) =>
-        `${radio.textContent}${radio.getAttribute("aria-checked") === "true" ? "+" : ""}`,
-    );
+  return inviteModesDrawn(dialog());
 }
 
 function fields(): readonly (string | null)[] {
-  return within(dialog())
-    .queryAllByRole("textbox")
-    .map((box) => box.getAttribute("aria-label"));
+  return dialogFields(dialog());
 }
 
 function actions(): readonly (string | null)[] {
-  return within(dialog())
-    .getAllByRole("button")
-    .map((button) => button.textContent);
+  return dialogActions(dialog());
 }
 
-async function chose(mode: string): Promise<void> {
-  await turned(() => {
-    fireEvent.click(within(dialog()).getByRole("radio", { name: mode }));
-  });
+function chose(mode: string): Promise<void> {
+  return inviteModeChosen(dialog(), mode);
 }
 
 /** The dialog opened on a workspace that keeps links, and `Link` chosen. */
@@ -115,11 +111,6 @@ async function made(drawing: PeopleDrawing = {}): Promise<DrawnStrict> {
   const drawn = await linking(drawing);
   await press("Create link");
   return drawn;
-}
-
-function pressedOutside(): void {
-  fireEvent.pointerDown(document.body);
-  fireEvent.click(document.body);
 }
 
 test("where the workspace keeps links the dialog opens on Person, its form as it was, with Link beside it", async () => {
@@ -249,16 +240,7 @@ test("a made link is gone once the dialog is closed and opened again, and nothin
   const drawn = await made();
   await press("Done");
   expect(screen.queryByRole("dialog")).toBeNull();
-  expect(document.body.textContent).not.toContain(minted.token);
-  expect(
-    JSON.stringify([{ ...localStorage }, { ...sessionStorage }]),
-  ).not.toContain(minted.token);
-  expect(document.cookie).not.toContain(minted.token);
-  expect(
-    drawn.sent.filter((request) =>
-      JSON.stringify(request).includes(minted.token),
-    ),
-  ).toStrictEqual([]);
+  expect(tokenHeldOutside(minted.token, drawn.sent)).toStrictEqual([]);
   await press("Invite");
   expect(modes()).toStrictEqual(["Person+", "Link"]);
   expect(fields()).toStrictEqual(["Email", "GitHub username"]);

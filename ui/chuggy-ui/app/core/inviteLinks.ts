@@ -48,10 +48,19 @@ export function inviteLinkAddress(origin: string, token: string): string {
   return `${origin}${inviteRoutePath}#${token}`;
 }
 
-/** What the Invite dialog makes: an invitation of one person, or a link. */
-export const tenantInviteModes = ["Person", "Link"] as const;
+/** What a dialog that invites makes: an invitation of one person, or a link. */
+export const inviteModes = ["Person", "Link"] as const;
 
-export type TenantInviteMode = (typeof tenantInviteModes)[number];
+export type InviteMode = (typeof inviteModes)[number];
+
+/** What the choice between the two is labelled. */
+export const inviteModesLabel = "Invite by";
+
+/** What making a link is called on the action that sends it, and while it is unanswered. */
+export const inviteLinkSendWords = {
+  idle: "Create link",
+  busy: "Creating…",
+} as const;
 
 /** What a made link's dialog says of the address it holds. */
 export const tenantInviteLinkShownOnce = "Shown once";
