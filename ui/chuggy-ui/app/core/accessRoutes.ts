@@ -8,6 +8,9 @@
 
 import {
   accessInvitedSchema,
+  accessInviteLinkMintedSchema,
+  accessInviteLinkRedeemedSchema,
+  accessInviteLinksSchema,
   accessOwnerInvitedSchema,
   accessPlanePath,
   accessPlaneRoutes,
@@ -20,7 +23,11 @@ import {
   accessTenantAuthoritiesSchema,
   accessTenantPeopleSchema,
   type AccessInvitation,
+  type AccessInvitationGrants,
   type AccessInvited,
+  type AccessInviteLinkMinted,
+  type AccessInviteLinkRedeemed,
+  type AccessInviteLinks,
   type AccessGroup,
   type AccessOwnerInvitation,
   type AccessOwnerInvited,
@@ -360,6 +367,60 @@ export function apiInviteTenantPerson(
       body: invitation,
     },
     (value) => accessInvitedSchema.parse(value),
+  );
+}
+
+/** One invite link made for a workspace, its token in this answer and no later one. */
+export function apiMintTenantInviteLink(
+  ports: ApiPorts,
+  tenant: string,
+  grants: AccessInvitationGrants,
+): Promise<ApiResult<AccessInviteLinkMinted>> {
+  return apiRead(
+    ports,
+    {
+      method: accessPlaneRoutes.tenantInviteLinkCreation.method,
+      path: accessPlanePath("tenantInviteLinkCreation", { tenant }),
+      body: grants,
+    },
+    (value) => accessInviteLinkMintedSchema.parse(value),
+  );
+}
+
+/** Every invite link one workspace keeps, absent on a plane that keeps none. */
+export function apiTenantInviteLinks(
+  ports: ApiPorts,
+  tenant: string,
+): Promise<ApiResult<AccessInviteLinks>> {
+  return apiGet(
+    ports,
+    accessPlanePath("tenantInviteLinks", { tenant }),
+    (value) => accessInviteLinksSchema.parse(value),
+  );
+}
+
+/** One open invite link ended before anyone used it. */
+export function apiRevokeTenantInviteLink(
+  ports: ApiPorts,
+  tenant: string,
+  link: string,
+): Promise<ApiResult<undefined>> {
+  return accessSent(ports, "tenantInviteLinkRevocation", { tenant, link });
+}
+
+/** An invite link used by the caller, answered with what it granted them. */
+export function apiRedeemInviteLink(
+  ports: ApiPorts,
+  token: string,
+): Promise<ApiResult<AccessInviteLinkRedeemed>> {
+  return apiRead(
+    ports,
+    {
+      method: accessPlaneRoutes.inviteLinkRedemption.method,
+      path: accessPlanePath("inviteLinkRedemption", {}),
+      body: { token },
+    },
+    (value) => accessInviteLinkRedeemedSchema.parse(value),
   );
 }
 
