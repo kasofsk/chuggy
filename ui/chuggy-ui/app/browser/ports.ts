@@ -2,8 +2,8 @@
  * The platform capabilities the decision layer takes as arguments.
  *
  * Every ambient thing this console touches — the clock, the network, the
- * timers, the draws, the digest, the two stores, the address bar and the
- * worker — is spelled once here, so `ui/chuggy-ui/app/core/` names none of them and a suite can hand it
+ * timers, the draws, the digest, the two stores, the cookies, the address bar
+ * and the worker — is spelled once here, so `ui/chuggy-ui/app/core/` names none of them and a suite can hand it
  * something else. A store a browser refuses in a private window is read as
  * empty rather than thrown from.
  */
@@ -164,6 +164,39 @@ export const transientStore = keyValuePort(() => sessionStorage);
 
 export function redirect(url: string): void {
   location.assign(url);
+}
+
+/** Leaves this document for another address in this entry's place, so Back does not return to the one left. */
+export function replaceLocation(url: string): void {
+  location.replace(url);
+}
+
+/** Loads this document again, at the address and the fragment it is at. */
+export function reloadLocation(): void {
+  location.reload();
+}
+
+/** Tells `heard` each time the fragment changes under this document, which loads nothing. */
+export function anchorHeard(heard: () => void): void {
+  addEventListener("hashchange", heard);
+}
+
+/** Every cookie a script may read here, none where the browser refuses the read. */
+export function cookiesRead(): string {
+  try {
+    return document.cookie;
+  } catch {
+    return "";
+  }
+}
+
+/** Hands the browser one cookie to keep or to end. */
+export function cookieWritten(line: string): void {
+  try {
+    document.cookie = line;
+  } catch {
+    return;
+  }
 }
 
 /** This console's own origin, where its API answers and where a forge is told to return an authorization. */

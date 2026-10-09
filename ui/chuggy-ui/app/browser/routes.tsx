@@ -26,6 +26,7 @@ import {
 import type { ForgeCallbackQuery } from "../core/forgeAuthorization.ts";
 import { forgeSetupQueryOf, forgeSetupRoutePath } from "../core/forgeSetup.ts";
 import type { ForgeSetupQuery } from "../core/forgeSetup.ts";
+import { inviteRoutePath } from "../core/inviteLinks.ts";
 import { lastProjectOrFirst, lastProjectRead } from "../core/lastProject.ts";
 import { projectCreationRoutePath } from "../core/projectCreation.ts";
 import { ticketDuplicateQueryOf } from "../core/ticketDuplicate.ts";
@@ -35,6 +36,7 @@ import { DataPanel } from "./DataPanel.tsx";
 import { ForgeCallbackPage } from "./ForgeCallbackPage.tsx";
 import { ForgeSetupPage } from "./ForgeSetupPage.tsx";
 import { Inbox } from "./Inbox.tsx";
+import { InvitePage } from "./InvitePage.tsx";
 import { LeadPage } from "./LeadPage.tsx";
 import { persistentStore } from "./ports.ts";
 import {
@@ -111,6 +113,12 @@ const landingRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
   component: Landing,
+});
+
+const inviteRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: inviteRoutePath,
+  component: InvitePage,
 });
 
 const partitionRoute = createRoute({
@@ -222,6 +230,7 @@ const routeTree = rootRoute.addChildren([
   forgeSetupRoute,
   forgeCallbackRoute,
   projectCreationRoute,
+  inviteRoute,
   workspaceSettingsRoutes(rootRoute),
   partitionRoute.addChildren([
     projectRoute,

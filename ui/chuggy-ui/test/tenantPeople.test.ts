@@ -12,6 +12,7 @@ import {
   accessHolderNotAdmittedCode,
   accessInvitationCodes,
   accessInvitationProjectsMax,
+  accessInviteLinkLimitReachedCode,
   accessLastTenantAdministratorCode,
   accessNotPermittedCode,
   accessProjectRoles,
@@ -28,6 +29,7 @@ import {
   tenantInvitationBody,
   tenantInvitationEmailFault,
   tenantInvitationGithubFault,
+  tenantInvitationGrantsBody,
   tenantInvitationOffered,
   tenantInvitationOutcome,
   tenantInvitationProjects,
@@ -45,12 +47,12 @@ import {
   tenantPersonChangeAsks,
   tenantPersonChangeNote,
   tenantPersonEditOffered,
-  tenantPersonEveryProject,
-  tenantPersonHeld,
+  tenantHeldEveryProject,
+  tenantHeldWords,
   tenantPersonName,
   tenantPersonProjectBox,
   tenantPersonProjectDrawn,
-  tenantPersonProjectLines,
+  tenantHeldProjectLines,
   tenantPersonQuestion,
   tenantPersonWorkspaceBoxes,
   tenantRoleLabel,
@@ -63,6 +65,7 @@ const fallback = /^Unknown refusal/u;
 test("every refusal the plane names has its own line, and an unknown one is printed", () => {
   const named = [
     ...Object.values(accessInvitationCodes),
+    accessInviteLinkLimitReachedCode,
     accessLastTenantAdministratorCode,
     accessNotPermittedCode,
     accessHolderNotAdmittedCode,
@@ -82,6 +85,12 @@ test("a change and an account the reader may not make each have their own line",
   );
   expect(accessCodeLabel(accessHolderNotAdmittedCode)).toBe(
     "Holder not admitted",
+  );
+});
+
+test("a workspace at its limit of open links says so", () => {
+  expect(accessCodeLabel(accessInviteLinkLimitReachedCode)).toBe(
+    "Link limit reached",
   );
 });
 
@@ -105,6 +114,22 @@ const person: AccessTenantPerson = {
   hostedRuns: false,
   projects: [],
 };
+
+test("a subject is named with nothing said of whose it is", () => {
+  expect(
+    tenantPersonName({
+      subject: "s-9",
+      account: true,
+      email: "grace@example.com",
+      githubLogin: "grace",
+    }),
+  ).toStrictEqual({
+    name: "grace@example.com",
+    subject: false,
+    githubLogin: "grace",
+    noAccount: false,
+  });
+});
 
 test("an account is named by its email, any other subject by itself", () => {
   expect(
@@ -244,6 +269,18 @@ test("an invitation names only the projects a role is chosen on", () => {
   expect(
     tenantInvitationProjectToggled(chosen, "beacon", "Developer"),
   ).toStrictEqual(form);
+});
+
+test("what an invitation grants is its role and chosen projects, and nothing of who is invited", () => {
+  expect(tenantInvitationGrantsBody(form)).toStrictEqual({ role: "Member" });
+  expect(
+    tenantInvitationGrantsBody(
+      tenantInvitationProjectToggled(form, "beacon", "Developer"),
+    ),
+  ).toStrictEqual({
+    role: "Member",
+    projects: [{ project: "beacon", roles: ["Developer"] }],
+  });
 });
 
 test("more projects than one invitation names is a fault, and is not sendable", () => {
@@ -401,28 +438,28 @@ test("the people are counted in a word that agrees with how many", () => {
 });
 
 test("a row draws what its person holds in the workspace, roles in the roster's order and hosted runs last", () => {
-  expect(tenantPersonHeld(person)).toStrictEqual([]);
+  expect(tenantHeldWords(person)).toStrictEqual([]);
   expect(
-    tenantPersonHeld({
+    tenantHeldWords({
       ...person,
       tenantRoles: ["Member", "Admin"],
       hostedRuns: true,
     }),
   ).toStrictEqual(["Admin", "Member", "Hosted runs"]);
-  expect(tenantPersonHeld({ ...person, hostedRuns: true })).toStrictEqual([
+  expect(tenantHeldWords({ ...person, hostedRuns: true })).toStrictEqual([
     "Hosted runs",
   ]);
 });
 
 test("a workspace admin, and no one else, reads as holding every project", () => {
-  expect(tenantPersonEveryProject({ ...person, tenantRoles: ["Admin"] })).toBe(
+  expect(tenantHeldEveryProject({ ...person, tenantRoles: ["Admin"] })).toBe(
     true,
   );
-  expect(tenantPersonEveryProject({ ...person, tenantRoles: ["Member"] })).toBe(
+  expect(tenantHeldEveryProject({ ...person, tenantRoles: ["Member"] })).toBe(
     false,
   );
   expect(
-    tenantPersonEveryProject({
+    tenantHeldEveryProject({
       ...person,
       projects: [{ project: "atlas", roles: ["Admin"] }],
     }),
@@ -439,12 +476,12 @@ test("a row draws a line for each project its person holds a role on, in the lis
     ],
   };
   expect(
-    tenantPersonProjectLines(holding, ["atlas", "beacon", "cedar", "delta"]),
+    tenantHeldProjectLines(holding, ["atlas", "beacon", "cedar", "delta"]),
   ).toStrictEqual([
     { project: "atlas", roles: "Admin" },
     { project: "beacon", roles: "Developer, Dispatcher, Viewer" },
   ]);
-  expect(tenantPersonProjectLines(person, ["atlas"])).toStrictEqual([]);
+  expect(tenantHeldProjectLines(person, ["atlas"])).toStrictEqual([]);
 });
 
 test("an editor is offered where the reader may change anything at all, and not where no abilities were read", () => {

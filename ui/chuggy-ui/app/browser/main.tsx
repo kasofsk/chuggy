@@ -11,6 +11,10 @@
  * bundler emits a sheet where it first reaches it; what holds the emitted
  * order to the system's is `scripts/console-policy.ts`, over the stylesheet the
  * build wrote.
+ *
+ * An invite link's token is taken out of the address here, before the tree is
+ * mounted, so no frame is drawn with it in the address bar. A fragment that
+ * changes later is the invite holder's to hear, for the life of the document.
  */
 
 import "../styles/tokens.css";
@@ -21,15 +25,25 @@ import { QueryClient } from "@tanstack/react-query";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
+import { createInviteHolder } from "../core/inviteHolder.ts";
 import { createSessionHolder } from "../core/sessionHolder.ts";
 import { App } from "./App.tsx";
+import { InviteProvider } from "./InvitePage.tsx";
 import {
+  anchorHeard,
+  cookiesRead,
+  cookieWritten,
+  currentAnchor,
+  currentLocation,
   digest,
   drawBytes,
   fetchJson,
   nowMs,
   persistentStore,
   redirect,
+  reloadLocation,
+  replaceLocation,
+  replacePath,
   sleepMs,
   transientStore,
 } from "./ports.ts";
@@ -58,6 +72,18 @@ const holder = createSessionHolder({
   redirect,
 });
 
+const invite = createInviteHolder({
+  location: currentLocation,
+  anchor: currentAnchor,
+  replacePath,
+  replaceLocation,
+  cookies: cookiesRead,
+  cookieWrite: cookieWritten,
+  reload: reloadLocation,
+});
+invite.arrive();
+anchorHeard(invite.rearrive);
+
 themeChoiceApply(document.documentElement, themeChoiceRead(persistentStore));
 
 const container = document.getElementById("root");
@@ -69,7 +95,9 @@ if (container === null)
 createRoot(container).render(
   <StrictMode>
     <SessionProvider holder={holder}>
-      <App queryClient={queryClient} />
+      <InviteProvider holder={invite}>
+        <App queryClient={queryClient} />
+      </InviteProvider>
     </SessionProvider>
   </StrictMode>,
 );

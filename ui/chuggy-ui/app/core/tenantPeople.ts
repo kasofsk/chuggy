@@ -4,6 +4,11 @@
  * invitation came to, which change is asked first, what an invitation's fields
  * may hold before anything is sent, and which changes it offers.
  *
+ * What an invitation grants is a form of its own, as the contract's schema is:
+ * an invitation of a person adds who they are to it, and an invite link is
+ * that part alone. What is held is a shape of its own the same way, so a
+ * person's row and a link's draw what they hold from one account of it.
+ *
  * Every field rule is the access contract's own schema, so this only spares the
  * reader a round trip to be told what the plane would refuse anyway. Every
  * refusal the plane names has its own line in `accessRefusalLabel`, total over
@@ -21,14 +26,17 @@ import {
   accessGithubLoginSchema,
   accessHolderNotAdmittedCode,
   accessInvitationCodes,
+  accessInvitationGrantsSchema,
   accessInvitationProjectsMax,
   accessInvitationSchema,
+  accessInviteLinkLimitReachedCode,
   accessLastTenantAdministratorCode,
   accessNotPermittedCode,
   accessProjectRoles,
   accessTenantRoles,
   type AccessAuthorityPerson,
   type AccessInvitation,
+  type AccessInvitationGrants,
   type AccessInvited,
   type AccessProjectRole,
   type AccessTenantAbilities,
@@ -72,13 +80,15 @@ export function projectRoleLabel(role: AccessProjectRole): string {
 
 export type AccessRefusalCode =
   | (typeof accessInvitationCodes)[keyof typeof accessInvitationCodes]
+  | typeof accessInviteLinkLimitReachedCode
   | typeof accessLastTenantAdministratorCode
   | typeof accessNotPermittedCode
   | typeof accessHolderNotAdmittedCode;
 
-/** Every name the plane refuses a change or an invitation with. */
+/** Every name the plane refuses a change, an invitation or an invite link with. */
 export const accessRefusalCodes: readonly AccessRefusalCode[] = [
   ...Object.values(accessInvitationCodes),
+  accessInviteLinkLimitReachedCode,
   accessLastTenantAdministratorCode,
   accessNotPermittedCode,
   accessHolderNotAdmittedCode,
@@ -107,6 +117,8 @@ export function accessRefusalLabel(code: AccessRefusalCode): string {
       return "Directory changed · try again";
     case "DirectoryUnavailable":
       return "Directory unavailable";
+    case "InviteLinkLimitReached":
+      return "Link limit reached";
     case "LastTenantAdministrator":
       return "Only admin · grant another first";
     case "AccessNotPermitted":
@@ -211,12 +223,18 @@ export function tenantHostedRunsOffered(
   return abilities?.grantHostedRuns ?? false;
 }
 
-/** The roles one person holds on one of the workspace's projects. */
+/** What a person holds in a workspace, or an invite link carries into one. */
+export type TenantHeld = Pick<
+  AccessTenantPerson,
+  "tenantRoles" | "hostedRuns" | "projects"
+>;
+
+/** The roles held on one of the workspace's projects. */
 export function tenantPersonProjectRoles(
-  person: AccessTenantPerson,
+  held: Pick<TenantHeld, "projects">,
   project: string,
 ): readonly AccessProjectRole[] {
-  return person.projects.find((held) => held.project === project)?.roles ?? [];
+  return held.projects.find((named) => named.project === project)?.roles ?? [];
 }
 
 /** Whether the reader may grant and remove one workspace role. */
@@ -277,47 +295,46 @@ export function tenantPeopleCountLine(count: number): string {
   return count === 1 ? "1 person" : `${String(count)} people`;
 }
 
-/** What one person holds in the workspace, as the words their row draws: each
- * role in the roster's order, then hosted runs. */
-export function tenantPersonHeld(
-  person: AccessTenantPerson,
-): readonly string[] {
+/** What is held in the workspace, as the words a row draws: each role in the
+ * roster's order, then hosted runs. */
+export function tenantHeldWords(held: TenantHeld): readonly string[] {
   return [
     ...accessTenantRoles
-      .filter((role) => person.tenantRoles.includes(role))
+      .filter((role) => held.tenantRoles.includes(role))
       .map(tenantRoleLabel),
-    ...(person.hostedRuns ? [tenantHostedRunsLabel] : []),
+    ...(held.hostedRuns ? [tenantHostedRunsLabel] : []),
   ];
 }
 
-/** What a row says of a person who administers every project of the workspace. */
-export const tenantPersonEveryProjectLine = "All projects";
+/** What a row says where every project of the workspace is administered. */
+export const tenantHeldEveryProjectLine = "All projects";
 
-/** Whether a person administers every project of the workspace with no role
+/** Whether every project of the workspace is administered with no role
  * there, which `.chug/tasks/keto/namespaces.ts` gives a workspace admin
  * through each project's tenant. */
-export function tenantPersonEveryProject(person: AccessTenantPerson): boolean {
-  return person.tenantRoles.includes("Admin");
+export function tenantHeldEveryProject(held: TenantHeld): boolean {
+  return held.tenantRoles.includes("Admin");
 }
 
-/** One project a person holds a role on, as their row's line: the project,
- * then its roles in the roster's order. */
-export interface TenantPersonProjectLine {
+/** One project a role is held on, as a row's line: the project, then its
+ * roles in the roster's order. */
+export interface TenantHeldProjectLine {
   readonly project: string;
   readonly roles: string;
 }
 
-export function tenantPersonProjectLines(
-  person: AccessTenantPerson,
+/** A line for each of `projects` a role is held on, in their order. */
+export function tenantHeldProjectLines(
+  held: TenantHeld,
   projects: readonly string[],
-): readonly TenantPersonProjectLine[] {
+): readonly TenantHeldProjectLine[] {
   return projects
     .map((project) => {
-      const held = tenantPersonProjectRoles(person, project);
+      const roles = tenantPersonProjectRoles(held, project);
       return {
         project,
         roles: accessProjectRoles
-          .filter((role) => held.includes(role))
+          .filter((role) => roles.includes(role))
           .map(projectRoleLabel)
           .join(", "),
       };
@@ -473,8 +490,11 @@ export function tenantInvitationAccountLine(
     : tenantInvitationAccountsLine;
 }
 
-/** Who one person is, in a People row or holding a permission: an account by
- * its email, or the subject itself, marked where the plane says it is no account. */
+/** A subject and what the directory says of it, which is all a person is named from. */
+export type TenantSubject = Omit<AccessAuthorityPerson, "mine">;
+
+/** Who one person is, in a People row, holding a permission or beside an
+ * invite link: an account by its email, or the subject itself, marked where the plane says it is no account. */
 export interface TenantPersonName {
   readonly name: string;
   readonly subject: boolean;
@@ -482,9 +502,7 @@ export interface TenantPersonName {
   readonly noAccount: boolean;
 }
 
-export function tenantPersonName(
-  person: AccessAuthorityPerson,
-): TenantPersonName {
+export function tenantPersonName(person: TenantSubject): TenantPersonName {
   const email = person.account === true ? person.email : undefined;
   return {
     name: email ?? person.subject,
@@ -503,16 +521,21 @@ export function tenantPeopleOtherIssuersLine(
     : `${String(otherIssuers)} more from another sign-in`;
 }
 
-/** An invitation as the dialog holds it, every project's roles kept even
- * where none is chosen. */
-export interface TenantInvitationForm {
-  readonly github: string;
-  readonly email: string;
+/** What an invitation grants as a dialog holds it, every project's roles kept
+ * even where none is chosen. */
+export interface TenantInvitationGrantsForm {
   readonly role: AccessTenantRole;
   readonly projects: readonly {
     readonly project: string;
     readonly roles: readonly AccessProjectRole[];
   }[];
+}
+
+/** An invitation of one person as the dialog holds it: who they are, and what
+ * it grants them. */
+export interface TenantInvitationForm extends TenantInvitationGrantsForm {
+  readonly github: string;
+  readonly email: string;
 }
 
 /** An invitation as each opening of the dialog starts it: nothing typed, the
@@ -546,34 +569,44 @@ export function tenantInvitationEmailFault(email: string): string | undefined {
 }
 
 function tenantInvitationProjectsChosen(
-  form: TenantInvitationForm,
-): AccessInvitation["projects"] {
+  form: TenantInvitationGrantsForm,
+): AccessInvitationGrants["projects"] {
   return form.projects
     .filter((chosen) => chosen.roles.length > 0)
     .map((chosen) => ({ project: chosen.project, roles: [...chosen.roles] }));
 }
 
 export function tenantInvitationProjectsFault(
-  form: TenantInvitationForm,
+  form: TenantInvitationGrantsForm,
 ): string | undefined {
   const projects = tenantInvitationProjectsChosen(form);
-  if (accessInvitationSchema.shape.projects.safeParse(projects).success)
+  if (accessInvitationGrantsSchema.shape.projects.safeParse(projects).success)
     return undefined;
   return (projects?.length ?? 0) > accessInvitationProjectsMax
     ? `At most ${String(accessInvitationProjectsMax)} projects`
     : "Each project once";
 }
 
-/** What the plane is sent, projects named only where one is chosen. */
+/** What an invitation grants as the plane is sent it, projects named only
+ * where one is chosen, and nothing else the form holds. */
+export function tenantInvitationGrantsBody(
+  form: TenantInvitationGrantsForm,
+): AccessInvitationGrants {
+  const projects = tenantInvitationProjectsChosen(form) ?? [];
+  return {
+    role: form.role,
+    ...(projects.length === 0 ? {} : { projects }),
+  };
+}
+
+/** What the plane is sent to invite a person. */
 export function tenantInvitationBody(
   form: TenantInvitationForm,
 ): AccessInvitation {
-  const projects = tenantInvitationProjectsChosen(form) ?? [];
   return {
     github: form.github,
     email: form.email,
-    role: form.role,
-    ...(projects.length === 0 ? {} : { projects }),
+    ...tenantInvitationGrantsBody(form),
   };
 }
 
@@ -582,11 +615,9 @@ export function tenantInvitationSendable(form: TenantInvitationForm): boolean {
 }
 
 /** One project role chosen or let go in the dialog. */
-export function tenantInvitationProjectToggled(
-  form: TenantInvitationForm,
-  project: string,
-  role: AccessProjectRole,
-): TenantInvitationForm {
+export function tenantInvitationProjectToggled<
+  Form extends TenantInvitationGrantsForm,
+>(form: Form, project: string, role: AccessProjectRole): Form {
   return {
     ...form,
     projects: form.projects.map((chosen) => {
@@ -601,7 +632,7 @@ export function tenantInvitationProjectToggled(
 
 /** Whether the dialog holds one project role chosen. */
 export function tenantInvitationRoleChosen(
-  form: TenantInvitationForm,
+  form: TenantInvitationGrantsForm,
   project: string,
   role: AccessProjectRole,
 ): boolean {
@@ -612,24 +643,33 @@ export function tenantInvitationRoleChosen(
   );
 }
 
-/** What one invitation came to. An absent answer is a plane that invites
- * nobody or a reader no longer an admin, and reading the list again is what
- * tells the two apart. */
+/** An invitation or an invite link the plane did not take. An absent answer
+ * is a plane that invites nobody or a reader no longer an admin, and reading
+ * the list again is what tells the two apart. */
+export interface TenantInvitationRefused {
+  readonly outcome: "Refused";
+  readonly status: string;
+  readonly reread: boolean;
+}
+
+export function tenantInvitationRefused(
+  failure: ApiFailure,
+): TenantInvitationRefused {
+  return {
+    outcome: "Refused",
+    status: accessFailureLabel(failure),
+    reread: failure.outcome === "Absent",
+  };
+}
+
+/** What one invitation came to. */
 export type TenantInvitationOutcome =
-  | { readonly outcome: "Invited" }
-  | {
-      readonly outcome: "Refused";
-      readonly status: string;
-      readonly reread: boolean;
-    };
+  { readonly outcome: "Invited" } | TenantInvitationRefused;
 
 export function tenantInvitationOutcome(
   result: ApiResult<AccessInvited>,
 ): TenantInvitationOutcome {
-  if (result.outcome === "Ok") return { outcome: "Invited" };
-  return {
-    outcome: "Refused",
-    status: accessFailureLabel(result),
-    reread: result.outcome === "Absent",
-  };
+  return result.outcome === "Ok"
+    ? { outcome: "Invited" }
+    : tenantInvitationRefused(result);
 }

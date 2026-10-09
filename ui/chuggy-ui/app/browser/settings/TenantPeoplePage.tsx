@@ -11,6 +11,11 @@
  * read beside the list, and until they are answered the tables are drawn with
  * no control; where they are not answered beside a list that was, their line
  * is drawn under it.
+ *
+ * The workspace's invite links are read beside the people, and only a read
+ * that answered with a list draws anything: a plane that keeps no links, a
+ * read not yet answered and one that failed all leave the page as it is
+ * without them, with no way to make a link and no section of them.
  */
 
 import type { ReactNode } from "react";
@@ -39,8 +44,13 @@ import {
 } from "./SettingsListing.tsx";
 import { SettingsPage, useSettingsTenant } from "./SettingsPage.tsx";
 import { TenantInvite } from "./TenantInvite.tsx";
+import { TenantInviteLinks } from "./TenantInviteLinks.tsx";
 import { TenantPersonRow } from "./TenantPersonRow.tsx";
-import { useTenantAbilities, useTenantPeople } from "./tenantPeopleResource.ts";
+import {
+  useTenantAbilities,
+  useTenantInviteLinks,
+  useTenantPeople,
+} from "./tenantPeopleResource.ts";
 
 import "./tenantPeople.css";
 
@@ -94,6 +104,8 @@ function TenantPeopleListed(props: {
   readonly abilities: AccessTenantAbilities | undefined;
 }): ReactNode {
   const { tenant, listed, abilities } = props;
+  const read = useTenantInviteLinks(tenant);
+  const links = read.state === "Ready" ? read.value.links : undefined;
   const parted = tenantPeopleParted(listed.people);
   const otherIssuers = tenantPeopleOtherIssuersLine(listed.otherIssuers);
   const table = { tenant, projects: listed.projects, abilities };
@@ -108,6 +120,7 @@ function TenantPeopleListed(props: {
               tenant={tenant}
               projects={listed.projects}
               abilities={abilities}
+              links={links !== undefined}
             />
           )
         }
@@ -121,6 +134,13 @@ function TenantPeopleListed(props: {
           />
         )}
       </SettingsListingSection>
+      {links === undefined ? null : (
+        <TenantInviteLinks
+          tenant={tenant}
+          links={links}
+          abilities={abilities}
+        />
+      )}
       {parted.identities.length === 0 ? null : (
         <SettingsListingSection heading="Other identities">
           <TenantPeopleTable

@@ -103,6 +103,13 @@ blank page.
 `audience` is the API's own identity and not this console's host: without it the
 access token comes back with an empty audience and every read is refused.
 
+`inviteCookieDomain` is the one key a deployment may leave out. An invite link
+is opened at `/invite`, and its token crosses the sign-in in a cookie,
+`chuggy_invite`, which the deployment's sign-in hook reads to admit a person
+with no account. Name the domain the console and the sign-in service share, so
+that service is sent the cookie. Without the key the cookie is the console
+host's own, which still carries a person who has an account.
+
 ## The image
 
 `images/chuggy-ui/Dockerfile` installs and bundles this console inside the
