@@ -27,6 +27,7 @@ import {
 import {
   accessMemoryInviteLinks,
   inviteLinkMemory,
+  inviteLinkOverlapped,
 } from "./accessInviteLinkFixture.ts";
 import {
   accessFixtureIssuer,
@@ -219,7 +220,7 @@ test("a grant that faults gives the link back open, grants nothing, and rejects,
   assert.equal((await service.redeemed(zed, link.token)).outcome, "Redeemed");
 });
 
-test("an unknown token and a used, revoked or expired link are each absent, and grant nothing", async () => {
+test("an unknown token, a link another person used, and a revoked or expired link are each absent, and grant nothing", async () => {
   const { memory, links, service } = await linked();
   assert.deepEqual(await service.redeemed(zed, "token-none"), {
     outcome: "Absent",
@@ -238,6 +239,53 @@ test("an unknown token and a used, revoked or expired link are each absent, and 
       outcome: "Absent",
     });
   assert.deepEqual(memory.batches, []);
+});
+
+test("a link's user sending again, past its expiry and with their grants since removed, is answered what the first use answered, and nothing is written", async () => {
+  const { memory, links, service } = await linked();
+  const link = await minted(service);
+  const first = await service.redeemed(zed, link.token);
+  assert.equal(first.outcome, "Redeemed");
+  for (const grant of memory.batches.flat()) await memory.grants.remove(grant);
+  const before = held(memory);
+  const row = structuredClone(links?.rows[0]);
+  memory.batches.length = 0;
+  memory.changes.length = 0;
+  if (links !== undefined) links.nowMs = link.expiresAtMs;
+  assert.deepEqual(await service.redeemed(zed, link.token), first);
+  assert.deepEqual(memory.batches, []);
+  assert.deepEqual(memory.changes, []);
+  assert.deepEqual(held(memory), before);
+  assert.deepEqual(links?.rows[0], row);
+});
+
+test("a send that read the link open and whose spend took nothing is answered what its caller's own other send was given, and absent where another person's took it", async () => {
+  for (const [other, answered] of [
+    [zed, "Redeemed"],
+    [bob, "Absent"],
+  ] as const) {
+    const { memory, links, service } = await linked();
+    if (links === undefined) return;
+    const link = await minted(service);
+    let taken: unknown;
+    const overlapping = accessMemoryInviteLinks(
+      memory,
+      inviteLinkOverlapped(links, async () => {
+        taken = await service.redeemed(other, link.token);
+      }),
+    );
+    const answer = await overlapping.redeemed(zed, link.token);
+    assert.deepEqual(taken, {
+      outcome: "Redeemed",
+      redeemed: { tenant, role: "Member", projects: granted.projects },
+    });
+    assert.deepEqual(
+      answer,
+      answered === "Redeemed" ? taken : { outcome: "Absent" },
+    );
+    assert.equal(memory.batches.length, 1);
+    assert.equal(links.rows[0]?.used?.by, other === zed ? "zed" : "bob");
+  }
 });
 
 test("revoking asks the kinds the link's own roles need, so a caller who may grant `Member` but not a project role it carries is refused", async () => {

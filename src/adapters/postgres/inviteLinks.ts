@@ -42,6 +42,7 @@ import type {
   AccessInviteLinkMint,
   AccessInviteLinkStore,
   AccessInviteLinkStored,
+  AccessInviteLinkUsed,
   AccessInviteLinkWritten,
   AccessWorkspaceLinkMint,
   AccessWorkspaceLinkSpent,
@@ -182,6 +183,32 @@ async function inviteLinkPresented(
   const row = found.rows[0];
   if (row === undefined) return undefined;
   return row.workspace ? "Workspace" : "Tenant";
+}
+
+/** The used link of either kind `digest` names whose user is `subject`, whatever the clock says. */
+async function inviteLinkUsedBy(
+  pool: pg.Pool,
+  digest: string,
+  subject: string,
+): Promise<AccessInviteLinkUsed | undefined> {
+  const found = await pool.query<{
+    tenant: string | null;
+    role: string | null;
+    projects: unknown;
+    workspace: string | null;
+  }>(sql`SELECT l.tenant,l.role,l.projects,l.workspace FROM invite_link l
+    WHERE l.token_digest=${digest} AND l.used_by=${subject}`);
+  const row = found.rows[0];
+  if (row === undefined) return undefined;
+  if (row.tenant !== null)
+    return {
+      kind: "Tenant",
+      tenant: asTenantId(row.tenant),
+      ...inviteLinkGrants(row),
+    };
+  if (row.workspace === null)
+    throw new RangeError("workspace link: a used link names no use");
+  return { kind: "Workspace", workspace: asTenantId(row.workspace) };
 }
 
 /** One listed workspace link row, its state the one its statement derived. */
@@ -430,6 +457,7 @@ export function postgresInviteLinks(pool: pg.Pool): AccessInviteLinkStore {
       return row === undefined ? undefined : { newAccounts: row.new_accounts };
     },
     presented: (digest) => inviteLinkPresented(pool, digest),
+    usedBy: (digest, subject) => inviteLinkUsedBy(pool, digest, subject),
     ...workspaceLinks(pool),
   };
 }
