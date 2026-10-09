@@ -1,7 +1,8 @@
 /**
  * Making a project: the workspace it belongs to, its own name, and one submit,
- * on the landing a reader with no project meets and at its own address. The
- * rule both names are held to stands under each field before anything is typed.
+ * on the landing a reader with no project meets and at its own address, where
+ * the address may name the workspace the form starts on. The rule both names
+ * are held to stands under each field before anything is typed.
  *
  * One operation identity is held while both names stand, so pressing again
  * after an answer that never arrived repeats that creation rather than asking
@@ -65,12 +66,15 @@ function ProjectCreationName(props: {
   );
 }
 
-export function ProjectCreationForm(): ReactNode {
+/** The form, its `Workspace` starting on the one it is given and the reader's to change. */
+export function ProjectCreationForm(props: {
+  readonly workspace?: string | undefined;
+}): ReactNode {
   const ports = useApiPorts();
   const client = useQueryClient();
   const navigate = useNavigate();
   const [fields, setFields] = useState<ProjectCreationFields>({
-    tenant: "",
+    tenant: props.workspace ?? "",
     project: "",
   });
   const [operation, setOperation] = useState(drawnOperation);
@@ -152,11 +156,13 @@ export function ProjectlessFrame(props: {
   );
 }
 
-export function ProjectCreationPage(): ReactNode {
+export function ProjectCreationPage(props: {
+  readonly workspace?: string | undefined;
+}): ReactNode {
   return (
     <ProjectlessFrame>
       <h1 className="text-md font-strong text-ink-1">New project</h1>
-      <ProjectCreationForm />
+      <ProjectCreationForm workspace={props.workspace} />
     </ProjectlessFrame>
   );
 }

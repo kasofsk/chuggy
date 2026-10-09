@@ -28,7 +28,11 @@ import { forgeSetupQueryOf, forgeSetupRoutePath } from "../core/forgeSetup.ts";
 import type { ForgeSetupQuery } from "../core/forgeSetup.ts";
 import { inviteRoutePath } from "../core/inviteLinks.ts";
 import { lastProjectOrFirst, lastProjectRead } from "../core/lastProject.ts";
-import { projectCreationRoutePath } from "../core/projectCreation.ts";
+import {
+  projectCreationQueryOf,
+  projectCreationRoutePath,
+} from "../core/projectCreation.ts";
+import type { ProjectCreationQuery } from "../core/projectCreation.ts";
 import { ticketDuplicateQueryOf } from "../core/ticketDuplicate.ts";
 import type { TicketDuplicateQuery } from "../core/ticketDuplicate.ts";
 import { usePanelInventory } from "./api.ts";
@@ -192,12 +196,23 @@ const forgeCallbackRoute = createRoute({
   ): ForgeCallbackQuery => forgeCallbackQueryOf(search),
 });
 
+function ProjectCreationRoute(): ReactNode {
+  return (
+    <ProjectCreationPage
+      workspace={projectCreationRoute.useSearch().workspace}
+    />
+  );
+}
+
 /** Outside the partition because it makes one. A static segment outranks a
  * parameter, so this address is never read as a tenant and a project. */
 const projectCreationRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: projectCreationRoutePath,
-  component: ProjectCreationPage,
+  component: ProjectCreationRoute,
+  validateSearch: (
+    search: Readonly<Record<string, unknown>>,
+  ): ProjectCreationQuery => projectCreationQueryOf(search),
 });
 
 function TicketCreationRoute(): ReactNode {
