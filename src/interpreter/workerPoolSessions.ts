@@ -20,6 +20,12 @@
  * that this pool may, and that the roster and runtime session the invocation
  * was built from are still the session's — so a session another pool claimed
  * in between is skipped and one this pool has no room for ends the claims.
+ *
+ * A PERSONAL RUNNER'S OWNER MUST STILL READ THE PROJECT. Its candidates span
+ * the projects on its allowlist, and the authority answers whether its owner
+ * may still read each one, so every project is asked before anything is opened
+ * and a project the owner lost is skipped. A pool's candidates are all of its
+ * own project, which its admission already answered for.
  */
 import type { SessionBounds } from "../contract/workerTask.ts";
 import type { WorkerPoolSessionAssignment } from "../contract/workerPool.ts";
@@ -30,7 +36,9 @@ import type {
   SessionId,
   SessionKind,
 } from "./agentSession.ts";
-import type { RepositoryId } from "./finalizer.ts";
+import type { RepositoryBinding, RepositoryId } from "./finalizer.ts";
+import type { ProjectAccess } from "./projectAccess.ts";
+import type { ProjectId } from "./projectStore.ts";
 import type { ProjectRepositoryBindingRead } from "./repositoryConfiguration.ts";
 import {
   sessionRepositoryPlaced,
@@ -44,7 +52,7 @@ import {
   type WorkerPoolImageHosts,
 } from "./workerPoolImagePull.ts";
 import type {
-  WorkerPoolIdentity,
+  PoolPlaneIdentity,
   WorkerPoolMint,
 } from "./workerPoolIdentity.ts";
 import { sessionTaskInvocation, type SessionTaskLaunch } from "./workerTask.ts";
@@ -67,8 +75,9 @@ export interface SessionLaunchFacts {
   readonly placementBackoffSecs: number;
 }
 
-/** One session a pool may claim, with what its invocation is built from. */
+/** One session a pool may claim, the project it is in, and what its invocation is built from. */
 export interface WorkerPoolSessionCandidate {
+  readonly project: ProjectId;
   readonly session: SessionId;
   readonly kind: SessionKind;
   readonly capabilities: readonly SessionCapability[];
@@ -95,49 +104,51 @@ export interface WorkerPoolSessionOpening {
 export type WorkerPoolSessionOpened = "Opened" | "NotClaimable" | "PoolFull";
 
 /**
- * The durable side of a pool-held session attempt, every call scoped to the
- * pool's current registration and to what that registration claimed, as an
- * execution's assignment is.
+ * The rows one kind of caller holds session attempts through, every call
+ * scoped to its current registration and to what that registration claimed,
+ * as an execution's assignment is.
  */
-export interface WorkerPoolSessions {
-  launch(): Promise<SessionLaunchFacts | undefined>;
+export interface WorkerPoolSessionRows<Identity> {
   /** Which of `assignments` are session attempts this registration claimed, in any state. */
   among(
-    identity: WorkerPoolIdentity,
+    identity: Identity,
     assignments: readonly string[],
   ): Promise<ReadonlySet<string>>;
   awaiting(
-    identity: WorkerPoolIdentity,
+    identity: Identity,
     placementBackoffSecs: number,
     max: number,
   ): Promise<readonly WorkerPoolSessionCandidate[]>;
   open(
-    identity: WorkerPoolIdentity,
+    identity: Identity,
     opening: WorkerPoolSessionOpening,
   ): Promise<WorkerPoolSessionOpened>;
   renew(
-    identity: WorkerPoolIdentity,
+    identity: Identity,
     assignment: string,
     leaseSecs: number,
   ): Promise<boolean>;
-  held(identity: WorkerPoolIdentity, assignment: string): Promise<boolean>;
+  held(identity: Identity, assignment: string): Promise<boolean>;
   refuse(
-    identity: WorkerPoolIdentity,
+    identity: Identity,
     assignment: string,
     evidence: string,
   ): Promise<boolean>;
-  release(identity: WorkerPoolIdentity, assignment: string): Promise<boolean>;
-  heldImages(
-    identity: WorkerPoolIdentity,
-    max: number,
-  ): Promise<readonly string[]>;
-  /** Records that a pool able to take sessions polled, which is what a member reads a runner as live by. */
-  polled(identity: WorkerPoolIdentity): Promise<void>;
+  release(identity: Identity, assignment: string): Promise<boolean>;
+  heldImages(identity: Identity, max: number): Promise<readonly string[]>;
+  /** Records that a caller able to take sessions polled, which is what a member reads a runner as live by. */
+  polled(identity: Identity): Promise<void>;
 }
 
-/** Everything a session claim reaches beyond its rows: the project's binding, and where a bearer is drawn. */
+/** The durable side of a runner-held session attempt, for whichever caller the pool plane admitted. */
+export interface WorkerPoolSessions extends WorkerPoolSessionRows<PoolPlaneIdentity> {
+  launch(): Promise<SessionLaunchFacts | undefined>;
+}
+
+/** Everything a session claim reaches beyond its rows: the authority a personal runner's owner is asked, each project's binding, and where a bearer is drawn. */
 export interface WorkerPoolSessionPorts {
   readonly store: WorkerPoolSessions;
+  readonly access: ProjectAccess;
   readonly bindings: ProjectRepositoryBindingRead;
   readonly bearers: SessionAttemptMint;
 }
@@ -169,14 +180,52 @@ function workerPoolSessionInvocation(
   });
 }
 
+/** Whether a personal runner's owner may still read `project`; a pool's own project is answered by its admission. */
+async function workerPoolSessionProjectRead(
+  access: ProjectAccess,
+  identity: PoolPlaneIdentity,
+  project: ProjectId,
+): Promise<boolean> {
+  switch (identity.kind) {
+    case "Dedicated":
+      return project === identity.partition.project;
+    case "Personal":
+      return (
+        (await access.authorize(
+          identity.owner,
+          { tenant: identity.tenant, project },
+          "Read",
+        )) !== undefined
+      );
+  }
+}
+
 /**
- * The sessions one poll claims, at most `wanted` of them. The binding is read
- * once, and only once a session is waiting, because every candidate is of the
- * pool's own project.
+ * The binding of each project among `waiting` that this caller may serve, read
+ * once per project and every one before any session is opened, so an
+ * authority that cannot answer fails the poll with nothing opened.
+ */
+async function workerPoolSessionProjectsServed(
+  ports: WorkerPoolSessionPorts,
+  identity: PoolPlaneIdentity,
+  waiting: readonly WorkerPoolSessionCandidate[],
+): Promise<ReadonlyMap<ProjectId, RepositoryBinding | undefined>> {
+  const tenant =
+    identity.kind === "Dedicated" ? identity.partition.tenant : identity.tenant;
+  const served = new Map<ProjectId, RepositoryBinding | undefined>();
+  for (const project of new Set(waiting.map((waited) => waited.project)))
+    if (await workerPoolSessionProjectRead(ports.access, identity, project))
+      served.set(project, await ports.bindings.binding({ tenant, project }));
+  return served;
+}
+
+/**
+ * The sessions one poll claims, at most `wanted` of them. Each project's
+ * binding is read once, and only once a session in it is waiting.
  */
 export async function workerPoolSessionClaims(
   ports: WorkerPoolSessionPorts,
-  identity: WorkerPoolIdentity,
+  identity: PoolPlaneIdentity,
   terms: WorkerPoolSessionTerms,
   mint: WorkerPoolMint,
   wanted: number,
@@ -190,10 +239,15 @@ export async function workerPoolSessionClaims(
     wanted,
   );
   if (waiting.length === 0) return [];
-  const binding = await ports.bindings.binding(identity.partition);
+  const served = await workerPoolSessionProjectsServed(
+    ports,
+    identity,
+    waiting,
+  );
   const claimed: WorkerPoolSessionAssignment[] = [];
   for (const candidate of waiting) {
     if (claimed.length >= wanted) break;
+    if (!served.has(candidate.project)) continue;
     const minted = ports.bearers.mint();
     const assignment = mint();
     const opened = await ports.store.open(identity, {
@@ -209,7 +263,7 @@ export async function workerPoolSessionClaims(
         candidate,
         launch,
         sessionRepositoryPlaced(
-          binding,
+          served.get(candidate.project),
           candidate.capabilities,
           launch.mirrors,
         ),

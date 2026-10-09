@@ -22,6 +22,7 @@ import { sessionAttemptMint } from "../adapters/crypto/sessionAttemptMint.ts";
 import { createPoolPlaneApp } from "../adapters/http/poolPlaneServer.ts";
 import { oidcAuthentication } from "../adapters/http/oidc.ts";
 import { ketoProjectAccess } from "../adapters/keto/projectAccess.ts";
+import { postgresPersonalRunnerPlaneRegistry } from "../adapters/postgres/personalRunner.ts";
 import { postgresPool } from "../adapters/postgres/pool.ts";
 import {
   checkedProjectAccessSettings,
@@ -143,21 +144,24 @@ async function main(): Promise<void> {
       throw failure;
     },
   );
+  const access = ketoProjectAccess(
+    checkedProjectAccessSettings({
+      readUrl: planeEnvironmentRequired("CHUG_POOL_PLANE_KETO_READ_URL"),
+      requestTimeoutMs: planeEnvironmentPositive(
+        "CHUG_POOL_PLANE_KETO_TIMEOUT_MS",
+        projectAccessTimeoutMsDefault,
+      ),
+    }),
+  );
   const app = createPoolPlaneApp({
     authentication,
-    access: ketoProjectAccess(
-      checkedProjectAccessSettings({
-        readUrl: planeEnvironmentRequired("CHUG_POOL_PLANE_KETO_READ_URL"),
-        requestTimeoutMs: planeEnvironmentPositive(
-          "CHUG_POOL_PLANE_KETO_TIMEOUT_MS",
-          projectAccessTimeoutMsDefault,
-        ),
-      }),
-    ),
+    access,
     registry: postgresWorkerPoolRegistry(pool),
+    personal: postgresPersonalRunnerPlaneRegistry(pool),
     assignments: postgresWorkerPoolAssignments(pool),
     sessions: {
       store: postgresWorkerPoolSessions(pool),
+      access,
       bindings: postgresProjectRepositoryBinding(pool),
       bearers: sessionAttemptMint(),
     },

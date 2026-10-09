@@ -61,16 +61,36 @@ export const sessionRunnerPolledSecsMax = 120;
  */
 export const sessionPoolTurnDwellSecs = 30 * 60;
 
-/** The runners a session would run on: the member's own for a thread, and any of the project's for the lead. */
+/**
+ * The runners a session would run on: the member's own personal runner,
+ * allowlisting the project, for their thread; a pool the member registered for
+ * their inquiry; and any of the project's pools for the lead.
+ */
 export interface SessionRunners {
   readonly mine: SessionRunnerStanding;
+  readonly inquiry: SessionRunnerStanding;
   readonly project: SessionRunnerStanding;
+}
+
+/** The standing of the runners a member's session of `kind` would run on. */
+export function sessionRunnersServing(
+  runners: SessionRunners,
+  kind: SessionKind,
+): SessionRunnerStanding {
+  switch (kind) {
+    case "Thread":
+      return runners.mine;
+    case "Inquiry":
+      return runners.inquiry;
+    case "Lead":
+      return runners.project;
+  }
 }
 
 /** The reads every door that spends a session asks of where it runs. */
 export interface SessionRouteReads {
   route(partition: Partition, kind: SessionKind): Promise<SessionRouteResolved>;
-  /** `mine` is `Unregistered` where no member is named. */
+  /** `mine` and `inquiry` are `Unregistered` where no member is named. */
   runners(
     partition: Partition,
     member: Principal | undefined,
@@ -188,7 +208,7 @@ export async function sessionSpendRoute(
   if (placementRouteHosted[route]) return { spend: "Admitted", route };
   return sessionRunnerServes(
     route,
-    (await routes.runners(partition, principal)).mine,
+    sessionRunnersServing(await routes.runners(partition, principal), kind),
   )
     ? { spend: "Admitted", route }
     : { spend: "NoRunner" };

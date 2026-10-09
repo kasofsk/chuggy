@@ -960,7 +960,7 @@ test("a thread routed to the member's runner opens and takes a message without t
     ["Read", "Mutate"],
     sessionRoutesAt(
       { Thread: "Pool" },
-      { mine: "Offline", project: "Offline" },
+      { mine: "Offline", inquiry: "Unregistered", project: "Offline" },
     ),
   );
 
@@ -1001,11 +1001,30 @@ test("a thread routed to runners where the member has registered none is refused
   );
 });
 
+test("a thread routed to runners is refused where the member's only runners are pools, their own among them", async () => {
+  const { web } = boundary(
+    {},
+    ["Read", "Mutate"],
+    sessionRoutesAt(
+      { Thread: "Pool" },
+      { mine: "Unregistered", inquiry: "Live", project: "Live" },
+    ),
+  );
+
+  assert.deepEqual(await web.openThread(geoff, partition), {
+    result: "NoRunner",
+  });
+});
+
 test("a message is stamped with the route its admission was asked of, however the route reads after", async () => {
   const { web, held } = boundary(
     {},
     ["Read", "Mutate"],
-    sessionRoutesFlipping("Pool", { mine: "Offline", project: "Offline" }),
+    sessionRoutesFlipping("Pool", {
+      mine: "Offline",
+      inquiry: "Unregistered",
+      project: "Offline",
+    }),
   );
 
   const sent = await web.sendThreadMessage(geoff, partition, {

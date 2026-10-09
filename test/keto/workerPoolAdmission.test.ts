@@ -1,8 +1,8 @@
 /**
- * Whether a registered pool is admitted, asked of the authority an installation
- * actually runs. The registry is a stand-in here because what is under test is
- * the permit: a pool is recorded in PostgreSQL and authorized in Keto, and the
- * suite beside this one drives the other half.
+ * Whether a registered pool or personal runner is admitted, asked of the
+ * authority an installation actually runs. The registries are stand-ins here
+ * because what is under test is the permit: each is recorded in PostgreSQL and
+ * authorized in Keto, and the suite beside this one drives the other half.
  */
 
 import assert from "node:assert/strict";
@@ -13,10 +13,15 @@ import {
   type Principal,
 } from "../../src/interpreter/principal.ts";
 import { allProjectAccessKinds } from "../../src/interpreter/projectAccess.ts";
-import { projectPrincipalGrant } from "../../src/interpreter/projectGrant.ts";
+import {
+  projectPrincipalGrant,
+  tenantPrincipalGrant,
+} from "../../src/interpreter/projectGrant.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 import {
   workerPoolAdmitted,
+  type PersonalRunnerIdentity,
+  type PersonalRunnerPlaneRegistry,
   type WorkerPoolIdentity,
   type WorkerPoolRegistry,
 } from "../../src/interpreter/workerPool.ts";
@@ -50,6 +55,16 @@ function registryOf(
   };
 }
 
+/** A registry of personal runners that knows `runner` alone, or none. */
+function personalOf(
+  runner?: PersonalRunnerIdentity,
+): PersonalRunnerPlaneRegistry {
+  return {
+    identify: (asked) =>
+      Promise.resolve(asked === runner?.principal ? runner : undefined),
+  };
+}
+
 test("a registered pool the authority permits is admitted as the registration its principal names", async () => {
   const partition = ketoHarnessPartition("pool-admitted");
   const principal = oidcPrincipal(ketoHarnessIssuer, "chuggy-pool-admitted");
@@ -65,10 +80,12 @@ test("a registered pool the authority permits is admitted as the registration it
   assert.deepEqual(
     await workerPoolAdmitted(
       registryOf(partition, principal),
+      personalOf(),
       access,
       principal,
     ),
     {
+      kind: "Dedicated",
       partition,
       pool: "pool-one",
       principal,
@@ -102,6 +119,7 @@ test("a registered pool the authority names nothing about is not admitted", asyn
   assert.equal(
     await workerPoolAdmitted(
       registryOf(partition, principal),
+      personalOf(),
       access,
       principal,
     ),
@@ -115,9 +133,45 @@ test("a pool polling through an authority that cannot answer is left undecided",
   await assert.rejects(
     workerPoolAdmitted(
       registryOf(partition, principal),
+      personalOf(),
       ketoHarnessAccessAt("http://127.0.0.1:1/"),
       principal,
     ),
     { name: "ProjectAccessUnavailable" },
   );
+});
+
+/** A member's personal runner in the tenant of `partition`, its principal named by no relation. */
+function personalRunner(
+  partition: Partition,
+  label: string,
+): PersonalRunnerIdentity {
+  return {
+    tenant: partition.tenant,
+    owner: oidcPrincipal(ketoHarnessIssuer, `member-${label}`),
+    principal: oidcPrincipal(ketoHarnessIssuer, `chuggy-personal-${label}`),
+  };
+}
+
+test("a personal runner is admitted while its owner may register one in its tenant, and not once they may not", async () => {
+  const partition = ketoHarnessPartition("personal-admitted");
+  const runner = personalRunner(partition, "personal-admitted");
+  const admitted = () =>
+    workerPoolAdmitted(
+      registryOf(partition, oidcPrincipal(ketoHarnessIssuer, "no-pool")),
+      personalOf(runner),
+      access,
+      runner.principal,
+    );
+  assert.equal(await admitted(), undefined);
+  const permit = tenantPrincipalGrant({
+    issuer: ketoHarnessIssuer,
+    subject: "member-personal-admitted",
+    tenant: partition.tenant,
+    relation: "personal_runners",
+  });
+  await grants.write(permit);
+  assert.deepEqual(await admitted(), { ...runner, kind: "Personal" });
+  await grants.remove(permit);
+  assert.equal(await admitted(), undefined);
 });

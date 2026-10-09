@@ -29,6 +29,11 @@
  * the rows each kind lives in, so each kind is renewed, bounded and claimed on
  * its own; `./workerPoolSessions.ts` says what claiming one opens. Such a poll
  * is also what a member's runner reads as live by, so only it is recorded.
+ *
+ * A MEMBER'S PERSONAL RUNNER POLLS THE SAME CHANNEL FOR SESSIONS ALONE. It is
+ * admitted by its row in its tenant and its owner's standing permit to
+ * register one, since no relation names its principal; it claims no
+ * execution, renews none, and settles none.
  */
 import { setTimeout as delay } from "node:timers/promises";
 
@@ -58,10 +63,15 @@ import {
   type WorkerContractRange,
 } from "./workerPlane.ts";
 import type {
+  PersonalRunnerIdentity,
+  PoolPlaneIdentity,
   WorkerPoolIdentity,
   WorkerPoolMint,
 } from "./workerPoolIdentity.ts";
 export type {
+  DedicatedPoolIdentity,
+  PersonalRunnerIdentity,
+  PoolPlaneIdentity,
   WorkerPoolIdentity,
   WorkerPoolMint,
 } from "./workerPoolIdentity.ts";
@@ -178,25 +188,53 @@ export interface WorkerPoolRoster {
   registered(partition: Partition): Promise<WorkerPoolRosterPage>;
 }
 
+/** The lookup a poll resolves a member's personal runner by: its row, in a tenant, by the principal its client resolves to. */
+export interface PersonalRunnerPlaneRegistry {
+  identify(principal: Principal): Promise<PersonalRunnerIdentity | undefined>;
+}
+
 /**
- * The pool one authenticated principal acts as, and nothing where the authority
- * says it may not: `Execute` on the project is the permit, and revoking a pool
- * is therefore a revocation like any other and needs no row deleted here. An
- * authority that
- * could not answer throws `ProjectAccessUnavailable` through this function
- * rather than resolving to `undefined`, because a pool told it is not allowed
- * stops where a pool told to retry comes back.
+ * The pool or personal runner one authenticated principal acts as, and nothing
+ * where the authority says it may not: a pool's permit is `Execute` on its
+ * project and a personal runner's is its owner's `RegisterPersonalRunner` in
+ * its tenant, so revoking either is a revocation like any other and needs no
+ * row deleted here. An authority that could not answer throws
+ * `ProjectAccessUnavailable` through this function rather than resolving to
+ * `undefined`, because a pool told it is not allowed stops where a pool told
+ * to retry comes back.
  */
 export async function workerPoolAdmitted(
   registry: WorkerPoolRegistry,
+  personal: PersonalRunnerPlaneRegistry,
   access: ProjectAccess,
   principal: Principal,
-): Promise<WorkerPoolIdentity | undefined> {
-  const identity = await registry.identify(principal);
-  if (identity === undefined) return undefined;
-  return (await workerPoolExecutes(access, identity.partition, principal))
-    ? identity
-    : undefined;
+): Promise<PoolPlaneIdentity | undefined> {
+  const pool = await registry.identify(principal);
+  if (pool !== undefined)
+    return (await workerPoolExecutes(access, pool.partition, principal))
+      ? { ...pool, kind: "Dedicated" }
+      : undefined;
+  const runner = await personal.identify(principal);
+  if (runner === undefined) return undefined;
+  return (await access.authorizeTenant(
+    runner.owner,
+    runner.tenant,
+    "RegisterPersonalRunner",
+  )) === undefined
+    ? undefined
+    : { ...runner, kind: "Personal" };
+}
+
+/** The pool whose executions a caller's calls reach, which a personal runner has none of. */
+function workerPoolExecuting(
+  identity: PoolPlaneIdentity,
+): WorkerPoolIdentity | undefined {
+  switch (identity.kind) {
+    case "Dedicated":
+      return identity;
+    case "Personal":
+      return undefined;
+  }
 }
 
 /** Whether the authority permits a pool's principal to run its project's work, which is the one question a pool is admitted or revoked by. */
@@ -345,9 +383,15 @@ export interface WorkerPoolHolding {
  * pool's is the stop flag, so asked-to-stop and already-gone are one answer
  * and a pool need not tell them apart.
  */
-async function workerPoolHeldReconciled(
-  renewing: Pick<WorkerPoolAssignments, "renew">,
-  identity: WorkerPoolIdentity,
+async function workerPoolHeldReconciled<Identity>(
+  renewing: {
+    renew(
+      identity: Identity,
+      assignment: string,
+      leaseSecs: number,
+    ): Promise<boolean>;
+  },
+  identity: Identity,
   held: readonly string[],
   leaseSecs: number,
 ): Promise<string[]> {
@@ -395,12 +439,13 @@ function workerPoolClaimedPlacement(
  */
 async function workerPoolClaims(
   assignments: WorkerPoolAssignments,
-  identity: WorkerPoolIdentity,
+  identity: WorkerPoolIdentity | undefined,
   settings: WorkerPoolPollSettings,
   mint: WorkerPoolMint,
   wanted: number,
 ): Promise<WorkerPoolAssignment[]> {
   const claimed: WorkerPoolAssignment[] = [];
+  if (identity === undefined) return claimed;
   for (let taken = 0; taken < wanted; taken += 1) {
     const assignment = mint();
     const bearer = mint();
@@ -422,7 +467,7 @@ async function workerPoolClaims(
 /** The sessions one pass claims, which is none on a plane that names no API for a session to reach. */
 function workerPoolSessionsClaimed(
   ports: WorkerPoolPorts,
-  identity: WorkerPoolIdentity,
+  identity: PoolPlaneIdentity,
   settings: WorkerPoolPollSettings,
   wanted: number,
 ): Promise<WorkerPoolSessionAssignment[]> {
@@ -445,6 +490,19 @@ function workerPoolSessionsClaimed(
   );
 }
 
+/** What a caller holds of executions that is no longer its own, which for a personal runner is every one it names. */
+async function workerPoolJobsStopped(
+  ports: WorkerPoolPorts,
+  identity: PoolPlaneIdentity,
+  jobs: readonly string[],
+  leaseSecs: number,
+): Promise<string[]> {
+  const executing = workerPoolExecuting(identity);
+  return executing === undefined
+    ? [...jobs]
+    : workerPoolHeldReconciled(ports.assignments, executing, jobs, leaseSecs);
+}
+
 /**
  * One reconciliation pass, which is a renewal of what is held and a claim of
  * what is not, each kind through its own rows. Each kind's room is the least
@@ -453,14 +511,14 @@ function workerPoolSessionsClaimed(
  */
 export async function workerPoolReconcile(
   ports: WorkerPoolPorts,
-  identity: WorkerPoolIdentity,
+  identity: PoolPlaneIdentity,
   holding: WorkerPoolHolding,
   asked: Pick<WorkerPoolAsked, "wanted" | "wantedSessions">,
   settings: WorkerPoolPollSettings,
 ): Promise<WorkerPoolReconciliation> {
   const stop = [
-    ...(await workerPoolHeldReconciled(
-      ports.assignments,
+    ...(await workerPoolJobsStopped(
+      ports,
       identity,
       holding.jobs,
       settings.leaseSecs,
@@ -475,7 +533,7 @@ export async function workerPoolReconcile(
   return {
     assignments: await workerPoolClaims(
       ports.assignments,
-      identity,
+      workerPoolExecuting(identity),
       settings,
       ports.mint,
       Math.min(
@@ -512,7 +570,7 @@ export type WorkerPoolPolled =
  */
 async function workerPoolHoldingRead(
   ports: WorkerPoolPorts,
-  identity: WorkerPoolIdentity,
+  identity: PoolPlaneIdentity,
   asked: WorkerPoolAsked,
 ): Promise<WorkerPoolHolding> {
   if (!asked.readsSessions) return { jobs: asked.held, sessions: [] };
@@ -533,7 +591,7 @@ async function workerPoolHoldingRead(
  */
 export async function workerPoolPoll(
   ports: WorkerPoolPorts,
-  identity: WorkerPoolIdentity,
+  identity: PoolPlaneIdentity,
   asked: WorkerPoolAsked,
   settings: WorkerPoolPollSettings,
 ): Promise<WorkerPoolPolled> {
@@ -589,22 +647,21 @@ export async function workerPoolPoll(
   return { polled: "Answered", answer };
 }
 
-/**
- * One settlement a pool reports, made against the kind the assignment is: an
- * accepted one is already leased and needs no write, a refusal is recorded
- * against its attempt, and an unavailable releases it.
- */
-export async function workerPoolSettled(
-  ports: WorkerPoolPorts,
-  identity: WorkerPoolIdentity,
+/** One settlement against the side `assignment` is held on, whichever kind of caller holds it. */
+function workerPoolSettledOn<Identity>(
+  settling: {
+    held(identity: Identity, assignment: string): Promise<boolean>;
+    refuse(
+      identity: Identity,
+      assignment: string,
+      evidence: string,
+    ): Promise<boolean>;
+    release(identity: Identity, assignment: string): Promise<boolean>;
+  },
+  identity: Identity,
   assignment: string,
   offered: AssignmentOutcome,
 ): Promise<boolean> {
-  const settling: Pick<WorkerPoolAssignments, "held" | "refuse" | "release"> = (
-    await ports.sessions.store.among(identity, [assignment])
-  ).has(assignment)
-    ? ports.sessions.store
-    : ports.assignments;
   switch (offered.outcome) {
     case "Accepted":
       return settling.held(identity, assignment);
@@ -615,14 +672,44 @@ export async function workerPoolSettled(
   }
 }
 
+/**
+ * One settlement a pool reports, made against the kind the assignment is: an
+ * accepted one is already leased and needs no write, a refusal is recorded
+ * against its attempt, and an unavailable releases it. A personal runner holds
+ * no execution, so one it names settles nothing.
+ */
+export async function workerPoolSettled(
+  ports: WorkerPoolPorts,
+  identity: PoolPlaneIdentity,
+  assignment: string,
+  offered: AssignmentOutcome,
+): Promise<boolean> {
+  if (
+    (await ports.sessions.store.among(identity, [assignment])).has(assignment)
+  )
+    return workerPoolSettledOn(
+      ports.sessions.store,
+      identity,
+      assignment,
+      offered,
+    );
+  const executing = workerPoolExecuting(identity);
+  return executing === undefined
+    ? false
+    : workerPoolSettledOn(ports.assignments, executing, assignment, offered);
+}
+
 /** The images pinned by what this registration may still renew of either kind, each kind to its own bound. */
 export async function workerPoolHeldImages(
   ports: WorkerPoolPorts,
-  identity: WorkerPoolIdentity,
+  identity: PoolPlaneIdentity,
   settings: WorkerPoolPollSettings,
 ): Promise<readonly string[]> {
+  const executing = workerPoolExecuting(identity);
   return [
-    ...(await ports.assignments.heldImages(identity, settings.heldMax)),
+    ...(executing === undefined
+      ? []
+      : await ports.assignments.heldImages(executing, settings.heldMax)),
     ...(await ports.sessions.store.heldImages(
       identity,
       settings.sessionsHeldMax,

@@ -287,21 +287,21 @@ test("a member the tenant grants no hosted runs asks a lead routed to the projec
     await routesAskedOn(
       sessionRoutesAt(
         { Lead: "Pool" },
-        { mine: "Offline", project: "Offline" },
+        { mine: "Unregistered", inquiry: "Offline", project: "Offline" },
       ),
     ),
     ["Pool"],
   );
 });
 
-test("a member with no runner registered on the project asks a lead routed to runners nothing", async () => {
+test("a member who registered no pool on the project asks a lead routed to runners nothing, whatever their personal runner or the project's pools", async () => {
   const asked: unknown[] = [];
   const web = webOver(
     storeAnswering({}, asked),
     accessHolding("Mutate", "ExecuteHosted"),
     sessionRoutesAt(
       { Lead: "Pool" },
-      { mine: "Unregistered", project: "Live" },
+      { mine: "Live", inquiry: "Unregistered", project: "Live" },
     ),
   );
   const asking = await web.askLead(reader, partition, {
@@ -316,7 +316,11 @@ test("a member with no runner registered on the project asks a lead routed to ru
 test("a question is stamped with the route its admission was asked of, however the route reads after", async () => {
   assert.deepEqual(
     await routesAskedOn(
-      sessionRoutesFlipping("Pool", { mine: "Offline", project: "Offline" }),
+      sessionRoutesFlipping("Pool", {
+        mine: "Unregistered",
+        inquiry: "Offline",
+        project: "Offline",
+      }),
     ),
     ["Pool"],
   );

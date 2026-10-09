@@ -66,7 +66,7 @@ import {
 import { materialDigest } from "../../src/interpreter/ticketDefinition.ts";
 import {
   workerPoolReconcile,
-  type WorkerPoolIdentity,
+  type DedicatedPoolIdentity,
   type WorkerPoolPollSettings,
   type WorkerPoolPorts,
 } from "../../src/interpreter/workerPool.ts";
@@ -82,6 +82,7 @@ import {
   runnerCases,
   type RunnerCase,
 } from "../interpreter/runnerCases.ts";
+import { projectAccessSiteRefused } from "../interpreter/projectAccessFixture.ts";
 import { postgresHarnessRolePool } from "./harness.ts";
 import {
   schedulerClaimFor,
@@ -113,6 +114,11 @@ function polling(mint: () => string): WorkerPoolPorts {
     assignments,
     sessions: {
       store: postgresWorkerPoolSessions(planePool),
+      access: {
+        authorize: () => Promise.resolve(undefined),
+        authorizeTenant: () => Promise.resolve(undefined),
+        authorizeSite: projectAccessSiteRefused,
+      },
       bindings: postgresProjectRepositoryBinding(planePool),
       bearers: sessionAttemptMint(),
     },
@@ -279,7 +285,7 @@ async function registeredPool(
 }
 
 /** Claims the oldest placeable attempt for a pool that must get one. */
-async function claimedBy(identity: WorkerPoolIdentity, assignment: string) {
+async function claimedBy(identity: DedicatedPoolIdentity, assignment: string) {
   const claimed = await assignments.claim(
     identity,
     { leaseSecs, heldMax: Number.MAX_SAFE_INTEGER },
@@ -302,9 +308,9 @@ function declaringAll(requirement: ExecutionRequirement): readonly string[] {
 
 /** The case's pool as registered, the client it was registered under, and another pool of the project declaring everything. */
 interface PlantedPools {
-  readonly pool: WorkerPoolIdentity;
+  readonly pool: DedicatedPoolIdentity;
   readonly clientId: string;
-  readonly other: WorkerPoolIdentity;
+  readonly other: DedicatedPoolIdentity;
 }
 
 async function plantedPools(
@@ -312,7 +318,8 @@ async function plantedPools(
   named: Planted,
 ): Promise<PlantedPools> {
   const home = named.project.partition;
-  const pool: WorkerPoolIdentity = {
+  const pool: DedicatedPoolIdentity = {
+    kind: "Dedicated",
     partition: named.partition(c.pool.partition),
     pool: c.pool.pool,
     principal: named.principal(c.pool.principal),
@@ -325,7 +332,8 @@ async function plantedPools(
     c.pool,
     home,
   );
-  const other: WorkerPoolIdentity = {
+  const other: DedicatedPoolIdentity = {
+    kind: "Dedicated",
     partition: home,
     pool: "pool-other",
     principal: named.principal(asPrincipal("principal-other")),
@@ -388,7 +396,7 @@ async function plantedTarget(
 
 /** The case's claim, asked under its session; an identity already bound fails the statement, and that binds nothing. */
 async function claimAsked(
-  identity: WorkerPoolIdentity,
+  identity: DedicatedPoolIdentity,
   heldMax: number,
   assignment: string,
 ): Promise<unknown> {
@@ -428,6 +436,7 @@ async function claimTook(c: RunnerCase, label: string): Promise<boolean> {
     );
   const claimed = await claimAsked(
     {
+      kind: "Dedicated",
       partition: named.partition(session.partition),
       pool: session.pool,
       principal: named.principal(session.principal),
@@ -498,8 +507,9 @@ async function pollingPool(
   project: SchedulerProject,
   label: string,
   requirement: ExecutionRequirement,
-): Promise<WorkerPoolIdentity> {
-  const identity: WorkerPoolIdentity = {
+): Promise<DedicatedPoolIdentity> {
+  const identity: DedicatedPoolIdentity = {
+    kind: "Dedicated",
     partition: project.partition,
     pool: label,
     principal: asPrincipal(`https://issuer.invalid#${label}-${randomUUID()}`),

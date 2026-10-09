@@ -11,7 +11,14 @@ import type { ExecutionRequirement } from "../../src/interpreter/executionRequir
 import { asRepositoryId } from "../../src/interpreter/finalizer.ts";
 import { asPrincipal } from "../../src/interpreter/principal.ts";
 import {
+  ProjectAccessUnavailable,
+  memberAuthority,
+  type ProjectAccess,
+} from "../../src/interpreter/projectAccess.ts";
+import {
+  asProjectId,
   asRecoveryEpoch,
+  asTenantId,
   type Partition,
 } from "../../src/interpreter/projectStore.ts";
 import {
@@ -25,7 +32,7 @@ import {
   type WorkerPoolAssignments,
   type WorkerPoolAsked,
   type WorkerPoolClaimTerms,
-  type WorkerPoolIdentity,
+  type PoolPlaneIdentity,
   type WorkerPoolPollSettings,
   type WorkerPoolPorts,
 } from "../../src/interpreter/workerPool.ts";
@@ -37,10 +44,26 @@ import type {
   WorkerPoolSessions,
 } from "../../src/interpreter/workerPoolSessions.ts";
 
-const identity: WorkerPoolIdentity = {
+const identity: PoolPlaneIdentity = {
+  kind: "Dedicated",
   partition: { tenant: "tenant", project: "project" } as Partition,
   pool: "pool-one",
   principal: asPrincipal("principal-one"),
+};
+
+/** A member's personal runner in the same tenant, whose candidates span its allowlist. */
+const runner: PoolPlaneIdentity = {
+  kind: "Personal",
+  tenant: asTenantId("tenant"),
+  owner: asPrincipal("a-member"),
+  principal: asPrincipal("chuggy-personal-one"),
+};
+
+/** An authority answering every project read for whoever asks. */
+const reading: ProjectAccess = {
+  authorize: (principal) => Promise.resolve(memberAuthority(principal)),
+  authorizeTenant: () => Promise.resolve(undefined),
+  authorizeSite: () => Promise.resolve(undefined),
 };
 
 const container: ExecutionRequirement = {
@@ -128,12 +151,14 @@ function ports(
   assignments: WorkerPoolAssignments = idle,
   store: WorkerPoolSessions = noSessions,
   mint: () => string = () => "minted",
+  access: ProjectAccess = reading,
 ): WorkerPoolPorts {
   let minted = 0;
   return {
     assignments,
     sessions: {
       store,
+      access,
       bindings: {
         binding: (partition) =>
           Promise.resolve({
@@ -475,6 +500,7 @@ test("a long poll stops at the first pass with a stop flag to deliver", async ()
 });
 
 const candidate: WorkerPoolSessionCandidate = {
+  project: asProjectId("project"),
   session: asSessionId("session-one"),
   kind: "Thread",
   capabilities: ["RepositoryRead"],
@@ -732,17 +758,18 @@ test("only a poll from a pool able to take a session, to a plane able to hand on
 
 test("a settlement is made against the kind its assignment is", async () => {
   const calls: string[] = [];
-  const recording = (
-    kind: string,
-  ): Pick<WorkerPoolAssignments, "held" | "refuse" | "release"> => {
+  const recording = (kind: string) => {
     const answer = (name: string, assignment: string) => {
       calls.push(`${kind}.${name}(${assignment})`);
       return Promise.resolve(true);
     };
     return {
-      held: (_identity, assignment) => answer("held", assignment),
-      refuse: (_identity, assignment) => answer("refuse", assignment),
-      release: (_identity, assignment) => answer("release", assignment),
+      held: (_identity: unknown, assignment: string) =>
+        answer("held", assignment),
+      refuse: (_identity: unknown, assignment: string) =>
+        answer("refuse", assignment),
+      release: (_identity: unknown, assignment: string) =>
+        answer("release", assignment),
     };
   };
   const settling = ports(
@@ -797,4 +824,99 @@ test("the images a pool may pull are those of what it holds of either kind, each
     ["job-image", "session-image"],
   );
   assert.deepEqual(bounds, ["job:3", "session:5"]);
+});
+
+test("a personal runner claims no execution, renews none, and is told to stop every one it names", async () => {
+  const reached: string[] = [];
+  const answered = await workerPoolReconcile(
+    ports({
+      ...idle,
+      claim: () => {
+        reached.push("claim");
+        return Promise.resolve({ requirement: container });
+      },
+      renew: () => {
+        reached.push("renew");
+        return Promise.resolve(true);
+      },
+    }),
+    runner,
+    { jobs: ["one"], sessions: [] },
+    { wanted: settings.assignmentsPerPollMax, wantedSessions: 0 },
+    settings,
+  );
+  assert.deepEqual(answered.assignments, []);
+  assert.deepEqual(answered.stop, ["one"]);
+  assert.deepEqual(reached, []);
+});
+
+test("a personal runner settles no execution and pulls no execution's image", async () => {
+  const reached: string[] = [];
+  const executions = {
+    ...idle,
+    held: () => Promise.resolve((reached.push("held"), true)),
+    heldImages: () => Promise.resolve((reached.push("images"), ["job-image"])),
+  };
+  assert.equal(
+    await workerPoolSettled(ports(executions), runner, "j1", {
+      outcome: "Accepted",
+    }),
+    false,
+  );
+  assert.deepEqual(
+    await workerPoolHeldImages(ports(executions), runner, settings),
+    [],
+  );
+  assert.deepEqual(reached, []);
+});
+
+test("a personal runner's sessions are opened only in projects its owner may read, each asked once and all before any is opened", async () => {
+  const elsewhere = { ...candidate, project: asProjectId("elsewhere") };
+  const again = { ...candidate, session: asSessionId("session-two") };
+  const { store, opened } = offering([candidate, elsewhere, again]);
+  const asked: string[] = [];
+  const access: ProjectAccess = {
+    ...reading,
+    authorize: (principal, partition, kind) => {
+      asked.push(`${principal}:${partition.project}:${kind}`);
+      return Promise.resolve(
+        partition.project === "project"
+          ? memberAuthority(principal)
+          : undefined,
+      );
+    },
+  };
+  await workerPoolReconcile(
+    ports(idle, store, () => "minted", access),
+    runner,
+    nothingHeld,
+    { wanted: 0, wantedSessions: 3 },
+    { ...settings, sessionsPerPollMax: 3, sessionsHeldMax: 3 },
+  );
+  assert.deepEqual(asked, ["a-member:project:Read", "a-member:elsewhere:Read"]);
+  assert.deepEqual(
+    opened.map((opening) => opening.candidate.session),
+    [candidate.session, again.session],
+  );
+});
+
+test("a personal runner whose owner's authority cannot answer opens nothing", async () => {
+  const { store, opened } = offering([candidate]);
+  const access: ProjectAccess = {
+    ...reading,
+    authorize: () => {
+      throw new ProjectAccessUnavailable("the authority is unreachable");
+    },
+  };
+  await assert.rejects(
+    workerPoolReconcile(
+      ports(idle, store, () => "minted", access),
+      runner,
+      nothingHeld,
+      { wanted: 0, wantedSessions: 1 },
+      settings,
+    ),
+    ProjectAccessUnavailable,
+  );
+  assert.deepEqual(opened, []);
 });

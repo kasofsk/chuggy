@@ -1,6 +1,6 @@
 /** Who a poll acts as, and where what it hands out is named from: shared by both kinds of work a pool is handed. */
 import type { Principal } from "./principal.ts";
-import type { Partition } from "./projectStore.ts";
+import type { Partition, TenantId } from "./projectStore.ts";
 
 /** One registered pool as its principal resolves it: whose it is, and the principal a claim is current under. */
 export interface WorkerPoolIdentity {
@@ -8,6 +8,23 @@ export interface WorkerPoolIdentity {
   readonly pool: string;
   readonly principal: Principal;
 }
+
+/** One member's personal runner as its principal resolves it: its tenant and owner, and no project, since what it serves is its allowlist. */
+export interface PersonalRunnerIdentity {
+  readonly tenant: TenantId;
+  readonly owner: Principal;
+  readonly principal: Principal;
+}
+
+/** A project's pool as the pool plane admitted it. */
+export type DedicatedPoolIdentity = WorkerPoolIdentity & {
+  readonly kind: "Dedicated";
+};
+
+/** Whoever the pool plane admitted: a project's pool, or a member's personal runner. */
+export type PoolPlaneIdentity =
+  | DedicatedPoolIdentity
+  | (PersonalRunnerIdentity & { readonly kind: "Personal" });
 
 /** Draws an assignment's identity and the one-shot bearer its harness answers under. */
 export type WorkerPoolMint = () => string;

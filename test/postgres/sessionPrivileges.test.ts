@@ -15,6 +15,16 @@ import { after, before, test } from "node:test";
 import {
   apiRole,
   boundaryOwnerRole,
+  personalRunnerFenceFunction,
+  personalSessionAssignmentsFunction,
+  personalSessionHeldFunction,
+  personalSessionHoldingFunction,
+  personalSessionImagesFunction,
+  personalSessionOpenFunction,
+  personalSessionRefuseFunction,
+  personalSessionReleaseFunction,
+  personalSessionRenewFunction,
+  personalSessionsAwaitingFunction,
   poolPlaneRole,
   poolSessionAssignmentsFunction,
   poolSessionsAwaitingFunction,
@@ -154,6 +164,16 @@ const boundaries: readonly (readonly [string, string | undefined])[] = [
   [poolSessionRefuseFunction, poolPlaneRole],
   [poolSessionReleaseFunction, poolPlaneRole],
   [poolSessionImagesFunction, poolPlaneRole],
+  [personalSessionsAwaitingFunction, poolPlaneRole],
+  [personalSessionOpenFunction, poolPlaneRole],
+  [personalSessionAssignmentsFunction, poolPlaneRole],
+  [personalSessionHoldingFunction, undefined],
+  [personalSessionRenewFunction, poolPlaneRole],
+  [personalSessionHeldFunction, poolPlaneRole],
+  [personalSessionRefuseFunction, poolPlaneRole],
+  [personalSessionReleaseFunction, poolPlaneRole],
+  [personalSessionImagesFunction, poolPlaneRole],
+  [personalRunnerFenceFunction, apiRole],
 ];
 
 /** Every runtime credential this installation deploys, none of which owns a relation here. */

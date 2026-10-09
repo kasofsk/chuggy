@@ -1186,7 +1186,10 @@ test("a lead routed to the project's runners is admitted by a live one and asks 
     const policy = hostedPolicyOf(
       mailboxDouble({ absent: true }),
       authority.access,
-      sessionRoutesAt({ Lead: "Pool" }, { mine: "Unregistered", project }),
+      sessionRoutesAt(
+        { Lead: "Pool" },
+        { mine: "Unregistered", inquiry: "Unregistered", project },
+      ),
     );
     assert.equal(await policy.leadAdmission(partition), admission);
     assert.deepEqual(authority.asked, [], "a runner route spends no grant");
@@ -1223,7 +1226,10 @@ test("a turn is offered on the route its lead was admitted on", async () => {
     await hostedPolicyOf(
       routed.double,
       hostedAuthority("Granted").access,
-      sessionRoutesAt({ Lead: lead }, { mine: "Unregistered", project }),
+      sessionRoutesAt(
+        { Lead: lead },
+        { mine: "Unregistered", inquiry: "Unregistered", project },
+      ),
     ).execute(request, new AbortController().signal);
     assert.deepEqual(routed.routes, [lead]);
   }
@@ -1234,7 +1240,11 @@ test("a turn is stamped with the route its admission was asked of, however the r
   await hostedPolicyOf(
     routed.double,
     hostedAuthority("Refused").access,
-    sessionRoutesFlipping("Pool", { mine: "Unregistered", project: "Live" }),
+    sessionRoutesFlipping("Pool", {
+      mine: "Unregistered",
+      inquiry: "Unregistered",
+      project: "Live",
+    }),
   ).execute(request, new AbortController().signal);
   assert.deepEqual(routed.routes, ["Pool"]);
 });

@@ -8,10 +8,10 @@
  * registrations racing for one member exactly one writes and the other is
  * answered `Moved`. Replacing keeps the allowlist; deleting the row takes it.
  *
- * REPLACING FENCES NOTHING YET. No attempt and no session records a personal
- * runner as its holder, so there is nothing an older registration holds; the
- * claim that first records one owes this update the fence a pool's
- * registration takes.
+ * REPLACING OR REMOVING A RUNNER FENCES WHAT IT HELD. A session attempt it
+ * claimed records its owner and the principal that claimed, so the write that
+ * changes or deletes the row ends, in the same transaction, every live attempt
+ * whose principal the row no longer names.
  *
  * AN ALLOWLIST IS BOUNDED AND ADDED TO UNDER THE RUNNER'S ROW LOCK, so two
  * additions racing cannot both see room for one, and a project is added only
@@ -38,6 +38,7 @@ import {
   type ProjectId,
   type TenantId,
 } from "../../interpreter/projectStore.ts";
+import type { PersonalRunnerPlaneRegistry } from "../../interpreter/workerPool.ts";
 import type { WorkerPoolTokenWritten } from "../../interpreter/workerPoolRegistrationToken.ts";
 import { postgresTransaction } from "./pool.ts";
 
@@ -74,13 +75,23 @@ async function personalRunnerInserted(
   }
 }
 
-/** A member's runner replaced, only where its row still names the client `replacing` is. */
+/** Ends every live attempt the runner of `key` holds under a principal its row no longer names. */
+async function personalRunnerFenced(
+  client: pg.PoolClient,
+  key: PersonalRunnerKey,
+): Promise<void> {
+  await client.query<{ fenced: string | null }>(
+    sql`SELECT fence_personal_runner_attempts(${key.tenant},${key.owner})::text AS fenced`,
+  );
+}
+
+/** A member's runner replaced, only where its row still names the client `replacing` is, and what the old one held fenced. */
 async function personalRunnerReplaced(
-  pool: pg.Pool,
+  client: pg.PoolClient,
   registration: PersonalRunnerRegistration,
   replacing: string,
 ): Promise<PersonalRunnerWritten> {
-  const updated = await pool.query(sql`UPDATE personal_runner r
+  const updated = await client.query(sql`UPDATE personal_runner r
     SET capabilities=${[...registration.capabilities]}::text[],
         principal=${registration.principal as string},
         client_id=${registration.clientId},
@@ -88,7 +99,9 @@ async function personalRunnerReplaced(
         last_polled_at=NULL
     WHERE r.tenant=${registration.tenant as string} AND r.owner=${registration.owner as string}
       AND r.client_id=${replacing}`);
-  return (updated.rowCount ?? 0) === 1 ? "Registered" : "Moved";
+  if ((updated.rowCount ?? 0) !== 1) return "Moved";
+  await personalRunnerFenced(client, registration);
+  return "Registered";
 }
 
 /** One addition to a member's allowlist, under their runner's row lock. */
@@ -140,13 +153,18 @@ export function postgresPersonalRunnerRegistry(
     register: (registration, replacing) =>
       replacing === undefined
         ? personalRunnerInserted(pool, registration)
-        : personalRunnerReplaced(pool, registration, replacing),
-    deregister: async (key, clientId) => {
-      const deleted = await pool.query(sql`DELETE FROM personal_runner r
-        WHERE r.tenant=${key.tenant as string} AND r.owner=${key.owner as string}
-          AND r.client_id=${clientId}`);
-      return (deleted.rowCount ?? 0) === 1;
-    },
+        : postgresTransaction(pool, (client) =>
+            personalRunnerReplaced(client, registration, replacing),
+          ),
+    deregister: (key, clientId) =>
+      postgresTransaction(pool, async (client) => {
+        const deleted = await client.query(sql`DELETE FROM personal_runner r
+          WHERE r.tenant=${key.tenant as string} AND r.owner=${key.owner as string}
+            AND r.client_id=${clientId}`);
+        if ((deleted.rowCount ?? 0) !== 1) return false;
+        await personalRunnerFenced(client, key);
+        return true;
+      }),
     runner: async (key) => {
       const found = await pool.query<{
         capabilities: string[];
@@ -182,6 +200,30 @@ export function postgresPersonalRunnerRegistry(
               WHERE r.tenant=${key.tenant} AND r.owner=${key.owner}) AS registered`,
       );
       return found.rows[0]?.registered === true;
+    },
+  };
+}
+
+/** The personal runner a poll's principal resolves to, read over the pool plane's pool. */
+export function postgresPersonalRunnerPlaneRegistry(
+  pool: pg.Pool,
+): PersonalRunnerPlaneRegistry {
+  return {
+    identify: async (principal) => {
+      const found = await pool.query<{
+        tenant: string;
+        owner: string;
+        principal: string;
+      }>(sql`SELECT r.tenant,r.owner,r.principal FROM personal_runner r
+        WHERE r.principal=${principal}`);
+      const row = found.rows[0];
+      return row === undefined
+        ? undefined
+        : {
+            tenant: asTenantId(row.tenant),
+            owner: asPrincipal(row.owner),
+            principal: asPrincipal(row.principal),
+          };
     },
   };
 }

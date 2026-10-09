@@ -44,6 +44,7 @@ function storeRecording(
     runners: (_partition, member) =>
       Promise.resolve({
         mine: member === caller ? "Live" : "Unregistered",
+        inquiry: "Unregistered",
         project: "Live",
       }),
     write: (_partition, placement) => {

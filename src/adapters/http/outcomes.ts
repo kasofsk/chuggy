@@ -1035,7 +1035,7 @@ export function sessionPlacementBody(
     thread: view.routes.Thread,
     lead: view.routes.Lead,
     choices: [...view.choices],
-    runners: view.runners,
+    runners: { mine: view.runners.mine, project: view.runners.project },
   };
 }
 
