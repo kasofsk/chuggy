@@ -3,11 +3,9 @@
  * door that forks one inquiry, the listing every member sees, and one inquiry
  * on its own.
  *
- * ASKING IS `Read` AND NOT `Mutate`. An inquiry holds `inquiryCapabilities`,
- * which is a strict subset of what `Read` already permits, so opening one
- * grants the asker nothing they did not already hold; gating it on `Mutate`
- * would say a reader may not ask a question about what they are already allowed
- * to read, which is a control with no failure to prevent. What asking needs
+ * ASKING IS `Mutate`, BECAUSE AN INQUIRY IS A TURN. Asking forks the lead and
+ * runs one turn on its route, and a reader who may change nothing in the
+ * project must not start work in it. What asking needs
  * beyond that is what the lead's route needs, as a thread's turn does: in
  * cluster it spends a hosted run on the shared credential, so it needs the
  * tenant's hosted grant, and on runners it needs one of the asker's registered.
@@ -196,7 +194,7 @@ export type LeadInquiryRead =
 
 /**
  * What the ask door answered, every refusal one the member can act on:
- * `NotFound` a project they may not read, `NoLead` a project with no lead,
+ * `NotFound` a project they may not change, `NoLead` a project with no lead,
  * `LeadNotStarted` a lead with no head to fork from, `LeadClosed` a lead that
  * takes no more, `InFlight` their own unanswered questions,
  * `HostedRunsNotGranted` a lead run in cluster for a tenant that grants them no

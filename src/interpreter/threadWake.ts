@@ -22,9 +22,11 @@
  * nobody to tell. The pass counts each of those and carries on, because one
  * member's mailbox is not the pass's business to stop for.
  *
- * A THREAD WHOSE PRINCIPAL THE PROJECT NO LONGER ADMITS IS ONE OF THOSE, AND
- * SO IS ONE ROUTED IN CLUSTER WHOSE TENANT NO LONGER GRANTS THEM THE HOSTED RUN
- * THE TURN WOULD SPEND; THE AUTHORITY IS ASKED HERE. `src/interpreter/projectAccess.ts`
+ * A THREAD WHOSE PRINCIPAL MAY NOT CHANGE THE PROJECT IS ONE OF THOSE, because
+ * a wake is a turn and a member who may only read starts none; so is one whose
+ * principal the project no longer admits at all, and one routed in cluster
+ * whose tenant no longer grants them the hosted run the turn would spend. THE
+ * AUTHORITY IS ASKED HERE. `src/interpreter/projectAccess.ts`
  * answers it, not the mailbox door, because access is not a row this database
  * holds. An authority that could not answer at all is neither a wake nor an
  * ownerless thread: the candidate is passed over and its sequence holds the
@@ -214,7 +216,7 @@ function orderedPage(
   return page;
 }
 
-/** Whether the project still admits a candidate's principal and the thread's route still lets them spend a turn, or nothing where the authority could not say. */
+/** Whether a candidate's principal may still change the project and the thread's route still lets them spend a turn, or nothing where the authority could not say. */
 async function threadWakeAdmitted(
   access: ProjectAccess,
   candidate: ThreadWakeCandidate,
@@ -224,7 +226,7 @@ async function threadWakeAdmitted(
       (await access.authorize(
         candidate.principal,
         candidate.partition,
-        "Read",
+        "Mutate",
       )) !== undefined &&
       (await placementRouteGranted(
         access,

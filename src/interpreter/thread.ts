@@ -9,9 +9,10 @@
  * grant: `agent_session.principal` is the owner's own principal, and the API
  * authorizes a thread's commands with the same membership row it authorizes the
  * owner's with. So a thread CANNOT EXCEED ITS OWNER — a member holding only
- * read access has a thread that reads and does nothing else, whatever roster it
- * carries, because the roster is enforced inside the pod and the membership is
- * enforced by the database. A ROSTER IS NOT A CONTROL, and saying so is the
+ * read access has a thread that takes no turn at all, because every door and
+ * every wake that starts one asks to change the project, and a thread does no
+ * more than its owner may whatever roster it carries, because the roster is
+ * enforced inside the pod and the membership is enforced by the database. A ROSTER IS NOT A CONTROL, and saying so is the
  * point: the roster below is the weaker of the two, and a control described as
  * stronger than it is, is worse than none.
  *
