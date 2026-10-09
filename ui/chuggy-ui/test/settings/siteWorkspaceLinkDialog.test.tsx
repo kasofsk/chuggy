@@ -355,8 +355,9 @@ test.each([
   },
 );
 
-test("a site with links draws the choice", async () => {
+test("a site with links draws them and the choice", async () => {
   await drawWorkspaces({ links: () => answer(workspaceLinksListed) });
+  expect(screen.getByRole("table", { name: "Invite links" })).toBeTruthy();
   await press(opener);
   expect(inviteModesDrawn(dialog())).toStrictEqual(["Person+", "Link"]);
 });
