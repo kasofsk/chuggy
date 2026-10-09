@@ -57,9 +57,9 @@ vi.mock("@tanstack/react-router", () => ({
 
 const transaction = {
   state: "a-state",
-  app: "worker",
   tenant: "vteng",
   returnPath: "/vteng/chuggy/repositories",
+  installs: ["portal"],
 };
 
 const client = {
@@ -99,6 +99,8 @@ function heldWord(): unknown {
   return JSON.parse(sessionStorage.getItem(forgeReturnKey) ?? "null");
 }
 
+/** The installs the press has been sent on to go with it, which is what the
+ * callback reads before it sends anybody on again. */
 test("a matching install sends the person to authorize, with this tab's transaction stored", async () => {
   const { sent } = await drawLanding();
   expect(sent.map((request) => request.method)).toStrictEqual(["GET"]);
@@ -114,6 +116,7 @@ test("a matching install sends the person to authorize, with this tab's transact
   expect(stored).toMatchObject({
     tenant: transaction.tenant,
     returnPath: transaction.returnPath,
+    installs: transaction.installs,
   });
   expect(held.navigated).toStrictEqual([]);
   expect(screen.getByRole("main").textContent).toBe("SetupConnecting");

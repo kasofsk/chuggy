@@ -2,7 +2,7 @@
 
 import type { ForgeAuthorizationClientResponse } from "../../../../src/contract/responses.ts";
 import { forgeAuthorizeBegin } from "../core/forgeAuthorization.ts";
-import type { ForgeAuthorizeTarget } from "../core/forgeAuthorization.ts";
+import type { ForgePress } from "../core/forgePress.ts";
 import {
   currentOrigin,
   digest,
@@ -14,14 +14,14 @@ import {
 /** Stores this tab's transaction and sends the person to the forge. */
 export async function forgeAuthorizeRedirect(
   client: ForgeAuthorizationClientResponse,
-  target: ForgeAuthorizeTarget,
+  press: ForgePress,
 ): Promise<void> {
   redirect(
     await forgeAuthorizeBegin(
       { drawBytes, digest, transient: transientStore },
       client,
       currentOrigin(),
-      target,
+      press,
     ),
   );
 }

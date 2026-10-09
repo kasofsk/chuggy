@@ -159,8 +159,8 @@ test("a panel whose deployment cannot authorize offers no install", async () => 
   );
 });
 
-/** Connect GitHub claims only what is already installed, so a second account is
- * the portal app's install, which comes back through the authorization. */
+/** Connect GitHub goes on to the portal's install only for a person owning no
+ * account that holds it, so a second account is that install asked for here. */
 test("a panel with an account offers Add account, which installs the portal", async () => {
   await drawAccounts({ described: { apps: forgeApps, authorization: client } });
   const add = within(sectionOf("Accounts")).getByRole<HTMLAnchorElement>(
@@ -172,9 +172,9 @@ test("a panel with an account offers Add account, which installs the portal", as
   await settled();
   expect(storedInstall()).toStrictEqual({
     state: new URL(add.href).searchParams.get("state"),
-    app: "portal",
     tenant,
     returnPath: accountsPath,
+    installs: ["portal"],
   });
 });
 
@@ -192,8 +192,8 @@ test("a return's word is drawn on the Accounts panel once, and not on the next v
   expect(accountsLines()).toStrictEqual([]);
 });
 
-/** Connect GitHub claims only what is installed, so a return that reached no
- * account the person owns is one the portal's install puts right. */
+/** A press goes on to the portal's install once, so a return that still reached
+ * no account the person owns leaves that install to be asked for by name. */
 test("a return that reached no account the person owns offers Add account beside Connect GitHub", async () => {
   returnedWith({ standing: "Uninstalled", status: "Not installed" });
   await drawAccounts({
@@ -242,9 +242,9 @@ test("an account connected without the worker offers the worker's install on its
   await settled();
   expect(storedInstall()).toStrictEqual({
     state: new URL(install.href).searchParams.get("state"),
-    app: "worker",
     tenant,
     returnPath: accountsPath,
+    installs: ["worker"],
   });
 });
 
@@ -270,6 +270,8 @@ test("a deployment that answers a client says nothing against connecting", async
   expect(screen.queryByText("Not configured")).toBeNull();
 });
 
+/** The press begins sent on to no install, which is what lets its answer send
+ * it on to each. */
 test("connecting stores this tab's transaction and sends the person to authorize", async () => {
   await drawAccounts({ described: { apps: [], authorization: client } });
   fireEvent.click(screen.getByRole("button", { name: "Connect GitHub" }));
@@ -281,7 +283,11 @@ test("connecting stores this tab's transaction and sends the person to authorize
     sessionStorage.getItem(forgeAuthorizeTransactionKey) ?? "{}",
   ) as Record<string, unknown>;
   expect(stored["state"]).toBe(url.searchParams.get("state"));
-  expect(stored).toMatchObject({ tenant, returnPath: accountsPath });
+  expect(stored).toMatchObject({
+    tenant,
+    returnPath: accountsPath,
+    installs: [],
+  });
 });
 
 /** The listing answers only a workspace admin, so a 404 is this reader's

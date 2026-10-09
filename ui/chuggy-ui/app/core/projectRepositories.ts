@@ -19,8 +19,8 @@ import type { ProjectRepositoryConfigurationDeferralName } from "../../../../src
 import type { ApiFailure, ApiResult } from "./apiRequest.ts";
 import type { ProjectRepositoryBindAnswer } from "./apiRoutes.ts";
 import {
-  forgeCreatingAccounts,
   forgePortalInstallations,
+  forgeWorkerlessAccounts,
 } from "./forgeInstallation.ts";
 import type { PanelState } from "./freshness.ts";
 
@@ -63,75 +63,77 @@ export const forgeAccountsWithheld =
 
 const repositoryOffersNotConfigured = "GitHub not configured · ask an operator";
 
+/** What this reader takes from the page itself, under the line that names it. */
+export const repositoryOffersSteps = ["Connect", "InstallWorker"] as const;
+
+export type RepositoryOffersStep = (typeof repositoryOffersSteps)[number];
+
+/** The one line drawn under Add and Create, and the step drawn under it where
+ * the page offers one. */
+export interface RepositoryOffersLine {
+  readonly status: string;
+  readonly step: RepositoryOffersStep | undefined;
+}
+
+function repositoryOffersSaid(status: string): RepositoryOffersLine {
+  return { status, step: undefined };
+}
+
 /**
- * Why Add and Create are not both offered, as the one line drawn under them;
- * nothing where both are, or where a read the answer turns on is in flight.
- * Each line names what is missing or who supplies it, and points at a step only
- * where the page offers that step to this reader.
+ * The line under Add and Create: why they are not both offered, or that a
+ * connected account lacks the worker app, and nothing where neither is so or a
+ * read the answer turns on is in flight. It names what is missing or who
+ * supplies it, and carries a step only where this reader can take that step.
  */
-export function repositoryOffersWithheld(
+export function repositoryOffersLine(
   accounts: PanelState<ForgeInstallationsResponse>,
   apps: PanelState<ForgeAppsResponse>,
-): string | undefined {
+): RepositoryOffersLine | undefined {
   switch (accounts.state) {
     case "Pending":
       return undefined;
     case "Absent":
-      return "A workspace admin adds repositories";
+      return repositoryOffersSaid("A workspace admin adds repositories");
     case "Failed":
-      return "Accounts failed to load";
+      return repositoryOffersSaid("Accounts failed to load");
     case "Ready": {
       const installations = accounts.value.installations;
       return installations.length === 0
-        ? repositoryOffersWithheldUnconnected(apps)
-        : repositoryOffersWithheldClaimed(installations);
+        ? repositoryOffersLineUnconnected(apps)
+        : repositoryOffersLineClaimed(installations);
     }
   }
 }
 
 /** No account yet: connecting one is the step, where this deployment can. */
-function repositoryOffersWithheldUnconnected(
+function repositoryOffersLineUnconnected(
   apps: PanelState<ForgeAppsResponse>,
-): string | undefined {
+): RepositoryOffersLine | undefined {
   switch (apps.state) {
     case "Pending":
       return undefined;
     case "Absent":
-      return repositoryOffersNotConfigured;
+      return repositoryOffersSaid(repositoryOffersNotConfigured);
     case "Failed":
-      return "GitHub unavailable";
+      return repositoryOffersSaid("GitHub unavailable");
     case "Ready":
       return apps.value.authorization === undefined
-        ? repositoryOffersNotConfigured
-        : "Connect a GitHub account first";
+        ? repositoryOffersSaid(repositoryOffersNotConfigured)
+        : { status: "Connect a GitHub account first", step: "Connect" };
   }
 }
 
-/**
- * Whether the line Add and Create withhold points at the tenant's own
- * accounts page — true only where this reader has read a tenant holding no
- * account, since every other reason the line withholds (no admin, a read that
- * failed) is not something that page would answer either, and it is the one
- * place that connects one.
- */
-export function repositoryOffersPointsAtAccounts(
-  accounts: PanelState<ForgeInstallationsResponse>,
-): boolean {
-  return (
-    accounts.state === "Ready" && accounts.value.installations.length === 0
-  );
-}
-
-/** Add reads under a portal claim and Create needs both apps on one account,
- * which are the tests each button is disabled by. */
-function repositoryOffersWithheldClaimed(
+/** Add reads under a portal claim, and a job's credential is minted under the
+ * worker app, so the line names the oldest account that lacks it. */
+function repositoryOffersLineClaimed(
   installations: readonly ForgeInstallationResponse[],
-): string | undefined {
+): RepositoryOffersLine | undefined {
   if (forgePortalInstallations(installations).length === 0)
-    return "No account has the portal app";
-  if (forgeCreatingAccounts(installations).length === 0)
-    return "No account has both apps";
-  return undefined;
+    return repositoryOffersSaid("No account has the portal app");
+  const [workerless] = forgeWorkerlessAccounts(installations);
+  return workerless === undefined
+    ? undefined
+    : { status: `Worker app missing · ${workerless}`, step: "InstallWorker" };
 }
 
 /**

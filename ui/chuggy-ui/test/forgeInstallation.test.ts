@@ -9,27 +9,32 @@
 
 import { expect, test } from "vitest";
 
-import type { ForgeInstallationResponse } from "../../../src/contract/responses.ts";
+import type {
+  ForgeAppsResponse,
+  ForgeInstallationResponse,
+} from "../../../src/contract/responses.ts";
 import {
   forgeAccountRows,
   forgeCreatingAccounts,
   forgeInstallBegin,
   forgeInstallLabel,
+  forgeInstallOffered,
   forgeInstallState,
   forgeInstallStateBytesCount,
   forgeInstallTake,
   forgeInstallTransactionKey,
   forgeInstallUrl,
   forgePortalInstallations,
+  forgeWorkerlessAccounts,
 } from "../app/core/forgeInstallation.ts";
 import type { ForgeInstallTransaction } from "../app/core/forgeInstallation.ts";
 import { keyValueDouble } from "./keyValueDouble.ts";
 
 const transaction: ForgeInstallTransaction = {
   state: "a-state",
-  app: "portal",
   tenant: "vteng",
   returnPath: "/vteng/chuggy/repositories",
+  installs: ["portal"],
 };
 
 function claim(
@@ -70,11 +75,34 @@ test("a transaction that is not one is read as none", () => {
   expect(forgeInstallTake(held)).toBeUndefined();
   held.write(forgeInstallTransactionKey, JSON.stringify({ state: "a" }));
   expect(forgeInstallTake(held)).toBeUndefined();
-  held.write(
-    forgeInstallTransactionKey,
-    JSON.stringify({ ...transaction, app: "neither" }),
-  );
-  expect(forgeInstallTake(held)).toBeUndefined();
+  for (const over of [{ installs: ["neither"] }, { state: undefined }]) {
+    held.write(
+      forgeInstallTransactionKey,
+      JSON.stringify({ ...transaction, ...over }),
+    );
+    expect(forgeInstallTake(held)).toBeUndefined();
+  }
+});
+
+const portal = {
+  app: "portal" as const,
+  id: "1",
+  slug: "chuggy-portal",
+  installUrl: "https://forge.test/apps/chuggy-portal/installations/new",
+};
+
+const authorization = {
+  clientId: "Iv1.portal",
+  authorizeUrl: "https://forge.test/login/oauth/authorize",
+};
+
+/** The landing claims an install only through the authorization, so an install
+ * made where there is none would end with the app installed and unclaimed. */
+test("an install is offered only for an app held, by a deployment that can authorize", () => {
+  const held: ForgeAppsResponse = { apps: [portal], authorization };
+  expect(forgeInstallOffered(held, "portal")).toStrictEqual(portal);
+  expect(forgeInstallOffered(held, "worker")).toBeUndefined();
+  expect(forgeInstallOffered({ apps: [portal] }, "portal")).toBeUndefined();
 });
 
 /** The api builds the address from an `html_url` it refuses with a query of its
@@ -127,6 +155,19 @@ test("only an account holding both apps may be created under", () => {
     ]),
   ).toEqual(["kasofsk"]);
   expect(forgeCreatingAccounts([])).toEqual([]);
+});
+
+test("an account lacks the worker app where it holds the portal app alone", () => {
+  expect(
+    forgeWorkerlessAccounts([
+      claim({ app: "portal", account: "kasofsk", installationId: "1" }),
+      claim({ app: "worker", account: "kasofsk", installationId: "2" }),
+      claim({ app: "portal", account: "gdoteof", installationId: "3" }),
+      claim({ app: "worker", account: "vteng", installationId: "4" }),
+      claim({ app: "portal", account: "initech", installationId: "5" }),
+    ]),
+  ).toEqual(["gdoteof", "initech"]);
+  expect(forgeWorkerlessAccounts([])).toEqual([]);
 });
 
 test("the repositories are read under the portal claims alone", () => {

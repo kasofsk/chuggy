@@ -1,16 +1,21 @@
 /**
  * Connecting forge accounts by proof: the authorization this console sends a
- * person to the forge for, and the word they come back with. The state and
- * verifier are held in tab storage and taken once by the callback.
+ * person to the forge for, the install its answer sends them on to, and the
+ * word they come back with. The state and verifier are held in tab storage and
+ * taken once by the callback.
  */
 
 import type {
   ForgeAuthorizationClientResponse,
   ForgeAuthorizationResponse,
 } from "../../../../src/contract/responses.ts";
+import { forgeApps } from "../../../../src/contract/rosters.ts";
+import type { ForgeAppName } from "../../../../src/contract/rosters.ts";
 
 import type { ApiResult } from "./apiRequest.ts";
 import { base64urlFromBytes } from "./base64url.ts";
+import { forgePressOf } from "./forgePress.ts";
+import type { ForgePress } from "./forgePress.ts";
 import type { ForgeReturnWord } from "./forgeReturn.ts";
 import {
   pkceChallengeFromVerifier,
@@ -30,14 +35,8 @@ export const forgeAuthorizeTransactionKey = "chuggy.forgeAuthorization";
  */
 export const forgeCallbackRoutePath = "/forge/github/callback";
 
-/** Where the person goes, and comes back to, and what redeems the code. */
-export interface ForgeAuthorizeTarget {
-  readonly tenant: string;
-  readonly returnPath: string;
-}
-
 /** What the console remembers while the person is away at the forge. */
-export interface ForgeAuthorizeTransaction extends ForgeAuthorizeTarget {
+export interface ForgeAuthorizeTransaction extends ForgePress {
   readonly state: string;
   readonly verifier: string;
 }
@@ -58,14 +57,14 @@ export async function forgeAuthorizeBegin(
   ports: ForgeAuthorizePorts,
   client: ForgeAuthorizationClientResponse,
   origin: string,
-  target: ForgeAuthorizeTarget,
+  press: ForgePress,
 ): Promise<string> {
   const verifier = pkceVerifierFromBytes(
     ports.drawBytes(pkceVerifierBytesCount),
   );
   const state = base64urlFromBytes(ports.drawBytes(pkceVerifierBytesCount));
   const challenge = await pkceChallengeFromVerifier(ports.digest, verifier);
-  const transaction: ForgeAuthorizeTransaction = { ...target, state, verifier };
+  const transaction: ForgeAuthorizeTransaction = { ...press, state, verifier };
   ports.transient.write(
     forgeAuthorizeTransactionKey,
     JSON.stringify(transaction),
@@ -90,12 +89,11 @@ export function forgeAuthorizeTake(
     const parsed: unknown = JSON.parse(stored);
     if (typeof parsed !== "object" || parsed === null) return undefined;
     const fields = parsed as Record<string, unknown>;
-    const { state, verifier, tenant, returnPath } = fields;
+    const { state, verifier } = fields;
     if (typeof state !== "string" || typeof verifier !== "string")
       return undefined;
-    if (typeof tenant !== "string" || typeof returnPath !== "string")
-      return undefined;
-    return { state, verifier, tenant, returnPath };
+    const press = forgePressOf(fields);
+    return press === undefined ? undefined : { ...press, state, verifier };
   } catch {
     return undefined;
   }
@@ -161,6 +159,14 @@ function forgeAuthorizationWordFailed(status: string): ForgeReturnWord {
   return { standing: "Failed", status };
 }
 
+/** Whether the answer reaches no account the person owns that holds the portal
+ * app, an account the forge could not answer for being one it may yet prove. */
+function forgeAuthorizationUninstalled(
+  answered: ForgeAuthorizationResponse,
+): boolean {
+  return answered.accounts.every((account) => account.proof === "NotOwner");
+}
+
 /**
  * What an answered authorization says, which is nothing where it connected an
  * account and read every one it reaches. An account the forge could not answer
@@ -169,9 +175,7 @@ function forgeAuthorizationWordFailed(status: string): ForgeReturnWord {
 function forgeAuthorizationWordAnswered(
   answered: ForgeAuthorizationResponse,
 ): ForgeReturnWord | undefined {
-  const uninstalled = answered.accounts.every(
-    (account) => account.proof === "NotOwner",
-  );
+  const uninstalled = forgeAuthorizationUninstalled(answered);
   const standing = uninstalled ? "Uninstalled" : "Unfinished";
   if (answered.truncated) return { standing, status: "Partial" };
   if (uninstalled) return { standing, status: "Not installed" };
@@ -212,4 +216,35 @@ export function forgeAuthorizationWord(
     case "Unreadable":
       return forgeAuthorizationWordFailed("Unreadable");
   }
+}
+
+/**
+ * The app an answer leaves to be installed: the portal app where the person
+ * owns no account holding it, and otherwise an app an account of theirs lacks.
+ * An answer that did not read every account may have missed the one that
+ * holds the portal app, so it is not a reason to install it.
+ */
+function forgeAuthorizationLacking(
+  answered: ForgeAuthorizationResponse,
+): ForgeAppName | undefined {
+  if (forgeAuthorizationUninstalled(answered))
+    return answered.truncated ? undefined : "portal";
+  return forgeApps.find((app) =>
+    answered.accounts.some((account) =>
+      account.apps.some((held) => held.app === app && held.claim === "Missing"),
+    ),
+  );
+}
+
+/**
+ * The app whose install a redeemed press goes on to, which is none where the
+ * press has been sent on to that install already.
+ */
+export function forgeAuthorizationInstall(
+  result: ApiResult<ForgeAuthorizationResponse>,
+  installs: readonly ForgeAppName[],
+): ForgeAppName | undefined {
+  if (result.outcome !== "Ok") return undefined;
+  const app = forgeAuthorizationLacking(result.value);
+  return app === undefined || installs.includes(app) ? undefined : app;
 }

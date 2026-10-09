@@ -18,6 +18,7 @@ import { apiForgeApps } from "../../core/apiRoutes.ts";
 import {
   forgeInstallBegin,
   forgeInstallLabel,
+  forgeInstallOffered,
   forgeInstallState,
   forgeInstallUrl,
 } from "../../core/forgeInstallation.ts";
@@ -42,8 +43,8 @@ export function InstallLink(props: {
   );
   const [installState] = useState(() => forgeInstallState(drawBytes));
   const held =
-    state.state === "Ready" && state.value.authorization !== undefined
-      ? state.value.apps.find((app) => app.app === props.app)
+    state.state === "Ready"
+      ? forgeInstallOffered(state.value, props.app)
       : undefined;
   if (held === undefined) return null;
   return (
@@ -53,9 +54,9 @@ export function InstallLink(props: {
       onClick={() => {
         forgeInstallBegin(transientStore, {
           state: installState,
-          app: props.app,
           tenant,
           returnPath: props.returnPath,
+          installs: [props.app],
         });
       }}
     >

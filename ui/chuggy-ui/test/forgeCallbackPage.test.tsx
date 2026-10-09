@@ -1,7 +1,8 @@
 /**
  * The page the forge returns an authorization to, mounted. What is asserted is
  * the traffic, because a code posted from a return this tab did not start
- * would claim someone else's accounts, and where the person is put back.
+ * would claim someone else's accounts, and where the person goes next: on to
+ * an install the answer leaves to be made, or back where they pressed.
  */
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
@@ -11,6 +12,7 @@ import type { ReactNode } from "react";
 
 import { ForgeCallbackPage } from "../app/browser/ForgeCallbackPage.tsx";
 import { forgeAuthorizeTransactionKey } from "../app/core/forgeAuthorization.ts";
+import { forgeInstallTransactionKey } from "../app/core/forgeInstallation.ts";
 import { forgeReturnKey } from "../app/core/forgeReturn.ts";
 import { answer, drawnStrict, settled } from "./screenHarness.tsx";
 import type { DrawnStrict, SentRequest } from "./screenHarness.tsx";
@@ -20,13 +22,17 @@ const held = vi.hoisted(
   (): {
     arrived: Record<string, unknown>;
     navigated: unknown[];
-  } => ({ arrived: {}, navigated: [] }),
+    replaced: string[];
+  } => ({ arrived: {}, navigated: [], replaced: [] }),
 );
 
 vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof BrowserPorts>()),
   sleepMs: () => Promise.resolve(),
   currentOrigin: () => "https://console.test",
+  replaceLocation: (url: string) => {
+    held.replaced.push(url);
+  },
 }));
 
 vi.mock("@tanstack/react-router", () => ({
@@ -42,41 +48,79 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 // jscpd:ignore-end -- the case's own doubles resume here
 
+/** The transaction as Connect GitHub leaves it: a press sent on to no install. */
 const transaction = {
   state: "a-state",
   verifier: "a-verifier-".padEnd(43, "v"),
   tenant: "vteng",
   returnPath: "/vteng/chuggy/repositories",
+  installs: [] as string[],
 };
 
-const authorized = {
-  accounts: [
-    {
-      account: "kasofsk",
-      accountKind: "Organization",
-      proof: "Proven",
-      apps: [
-        { app: "portal", claim: "Claimed" },
-        { app: "worker", claim: "Missing" },
-      ],
-    },
-    {
-      account: "globex",
-      accountKind: "Organization",
-      proof: "NotOwner",
-      apps: [],
-    },
-  ],
-  truncated: false,
+/** An answer reaching one account the person owns, with what claiming the
+ * worker app on it came to, and one they do not. */
+function reaching(worker: string): unknown {
+  return {
+    accounts: [
+      {
+        account: "kasofsk",
+        accountKind: "Organization",
+        proof: "Proven",
+        apps: [
+          { app: "portal", claim: "Claimed" },
+          { app: "worker", claim: worker },
+        ],
+      },
+      {
+        account: "globex",
+        accountKind: "Organization",
+        proof: "NotOwner",
+        apps: [],
+      },
+    ],
+    truncated: false,
+  };
+}
+
+const authorized = reaching("Claimed");
+const workerless = reaching("Missing");
+const nothing = { accounts: [], truncated: false };
+
+const client = {
+  clientId: "Iv1.portal",
+  authorizeUrl: "https://forge.test/login/oauth/authorize",
 };
+
+const portal = {
+  app: "portal",
+  id: "1",
+  slug: "chuggy-portal",
+  installUrl: "https://forge.test/apps/chuggy-portal/installations/new",
+};
+
+const worker = {
+  app: "worker",
+  id: "2",
+  slug: "chuggy-worker",
+  installUrl: "https://forge.test/apps/chuggy-worker/installations/new",
+};
+
+/** Both apps this deployment holds, and the client it authorizes with. */
+const apps = { apps: [portal, worker], authorization: client };
+
+/** The stored transaction as a press that has been through these installs. */
+function through(...installs: readonly string[]): void {
+  sessionStorage.setItem(
+    forgeAuthorizeTransactionKey,
+    JSON.stringify({ ...transaction, installs }),
+  );
+}
 
 beforeEach(() => {
   held.arrived = { code: "a-code", state: "a-state" };
   held.navigated.length = 0;
-  sessionStorage.setItem(
-    forgeAuthorizeTransactionKey,
-    JSON.stringify(transaction),
-  );
+  held.replaced.length = 0;
+  through();
 });
 
 afterEach(() => {
@@ -87,8 +131,11 @@ afterEach(() => {
 
 function drawCallback(
   redeemed: () => Response = () => answer(authorized),
+  described: () => Response = () => answer(apps),
 ): Promise<DrawnStrict> {
-  return drawnStrict(<ForgeCallbackPage />, () => redeemed());
+  return drawnStrict(<ForgeCallbackPage />, (request) =>
+    request.method === "POST" ? redeemed() : described(),
+  );
 }
 
 function posts(sent: readonly SentRequest[]): readonly SentRequest[] {
@@ -107,6 +154,29 @@ function refusedWith(code: string, status: number): () => Response {
   return () =>
     answer({ error: { code, message: "The forge said no." } }, status);
 }
+
+/** The install transaction held, or `null` where none is. */
+function heldInstall(): unknown {
+  return JSON.parse(
+    sessionStorage.getItem(forgeInstallTransactionKey) ?? "null",
+  );
+}
+
+/** The one address this page left for, and the state on it. */
+function leftFor(): { readonly address: string; readonly state: string } {
+  expect(held.replaced).toHaveLength(1);
+  const url = new URL(held.replaced[0] ?? "");
+  return {
+    address: `${url.origin}${url.pathname}`,
+    state: url.searchParams.get("state") ?? "",
+  };
+}
+
+const notInstalled = {
+  tenant: transaction.tenant,
+  standing: "Uninstalled",
+  status: "Not installed",
+};
 
 test("a matching state redeems the code once, for the stored tenant, with the stored verifier", async () => {
   const { sent } = await drawCallback();
@@ -129,13 +199,94 @@ test("a redeemed authorization replaces this address with where it started, draw
   expect(screen.getByRole("main").textContent).toBe("GitHubConnecting");
 });
 
-test("an authorization reaching no installation returns with Not installed, for its own tenant", async () => {
-  await drawCallback(() => answer({ accounts: [], truncated: false }));
-  expect(held.navigated.at(-1)).toStrictEqual(returned);
-  expect(heldWord()).toStrictEqual({
+/** The install comes back through the setup landing, which matches the state on
+ * the address against the transaction held, as it does for a link followed. */
+test("an authorization reaching no account goes on to the portal's install, holding its transaction and no word", async () => {
+  const { sent } = await drawCallback(() => answer(nothing));
+  const left = leftFor();
+  expect(left.address).toBe(portal.installUrl);
+  expect(left.state).toBeTruthy();
+  expect(heldInstall()).toStrictEqual({
+    state: left.state,
     tenant: transaction.tenant,
+    returnPath: transaction.returnPath,
+    installs: ["portal"],
+  });
+  expect(sent.map((request) => request.method)).toStrictEqual(["POST", "GET"]);
+  expect(held.navigated).not.toContainEqual(returned);
+  expect(heldWord()).toBeNull();
+  expect(screen.getByRole("main").textContent).toBe("GitHubConnecting");
+});
+
+test("an account claimed without the worker app goes on to the worker's install", async () => {
+  await drawCallback(() => answer(workerless));
+  const left = leftFor();
+  expect(left.address).toBe(worker.installUrl);
+  expect(heldInstall()).toStrictEqual({
+    state: left.state,
+    tenant: transaction.tenant,
+    returnPath: transaction.returnPath,
+    installs: ["worker"],
+  });
+  expect(held.navigated).not.toContainEqual(returned);
+  expect(heldWord()).toBeNull();
+});
+
+test("a press back from the portal's install goes on to the worker's, carrying both", async () => {
+  through("portal");
+  await drawCallback(() => answer(workerless));
+  const left = leftFor();
+  expect(left.address).toBe(worker.installUrl);
+  expect(heldInstall()).toMatchObject({ installs: ["portal", "worker"] });
+});
+
+/** Asking again would send the person round the same install, so the page they
+ * left says what the forge still answers. */
+test("a press that has been through the portal's install and still reaches nothing returns with Not installed", async () => {
+  through("portal");
+  const { sent } = await drawCallback(() => answer(nothing));
+  expect(held.replaced).toStrictEqual([]);
+  expect(posts(sent)).toHaveLength(sent.length);
+  expect(held.navigated.at(-1)).toStrictEqual(returned);
+  expect(heldWord()).toStrictEqual(notInstalled);
+  expect(heldInstall()).toBeNull();
+});
+
+/** The account's row on the page returned to is what says Missing. */
+test("a press that has been through the worker's install and still lacks it returns with no word", async () => {
+  through("portal", "worker");
+  await drawCallback(() => answer(workerless));
+  expect(held.replaced).toStrictEqual([]);
+  expect(held.navigated.at(-1)).toStrictEqual(returned);
+  expect(heldWord()).toBeNull();
+});
+
+test.each([
+  ["holds no key for the app", () => answer({ ...apps, apps: [worker] })],
+  ["answers no client to authorize", () => answer({ apps: [portal, worker] })],
+  ["does not answer its apps", () => answer({}, 503)],
+])(
+  "a deployment that %s sends nobody on, and the return carries Not installed",
+  async (_said, described) => {
+    await drawCallback(() => answer(nothing), described);
+    expect(held.replaced).toStrictEqual([]);
+    expect(held.navigated.at(-1)).toStrictEqual(returned);
+    expect(heldWord()).toStrictEqual(notInstalled);
+    expect(heldInstall()).toBeNull();
+  },
+);
+
+/** An answer that read only some accounts may have missed the one that holds
+ * the portal app. */
+test("a partial answer reaching nothing installs nothing and returns with Partial", async () => {
+  const { sent } = await drawCallback(() =>
+    answer({ accounts: [], truncated: true }),
+  );
+  expect(held.replaced).toStrictEqual([]);
+  expect(posts(sent)).toHaveLength(sent.length);
+  expect(heldWord()).toMatchObject({
     standing: "Uninstalled",
-    status: "Not installed",
+    status: "Partial",
   });
 });
 
@@ -151,8 +302,9 @@ test("the code and state leave the address while it is redeemed", async () => {
   ]);
 });
 
-test("a code the forge would not redeem returns with Refused", async () => {
+test("a code the forge would not redeem returns with Refused, and goes on to no install", async () => {
   await drawCallback(refusedWith("AuthorizationRefused", 422));
+  expect(held.replaced).toStrictEqual([]);
   expect(held.navigated.at(-1)).toStrictEqual(returned);
   expect(heldWord()).toMatchObject({ standing: "Failed", status: "Refused" });
 });
@@ -211,4 +363,12 @@ test("the code is posted once however often the page is drawn", async () => {
   await settled();
   expect(posts(landed.sent)).toHaveLength(1);
   expect(screen.queryByText("Not expected")).toBeNull();
+});
+
+test("a press is sent on once however often the page is drawn", async () => {
+  const landed = await drawCallback(() => answer(nothing));
+  landed.redraw();
+  await settled();
+  expect(posts(landed.sent)).toHaveLength(1);
+  expect(held.replaced).toHaveLength(1);
 });

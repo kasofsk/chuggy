@@ -20,6 +20,11 @@ import { afterEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import { RepositoriesPage } from "../app/browser/RepositoriesPage.tsx";
+import { forgeAuthorizeTransactionKey } from "../app/core/forgeAuthorization.ts";
+import { forgeInstallTransactionKey } from "../app/core/forgeInstallation.ts";
+import { forgeReturnHold, forgeReturnKey } from "../app/core/forgeReturn.ts";
+import type { ForgeReturnWord } from "../app/core/forgeReturn.ts";
+import { transientStore } from "../app/browser/ports.ts";
 import { forgeInstallationsFixture } from "./forgeInstallationsFixture.ts";
 import {
   answer,
@@ -35,9 +40,17 @@ import {
 } from "./projectAbilitiesFixture.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 
+const held = vi.hoisted((): { redirects: string[] } => ({ redirects: [] }));
+
+/** The digest answers at once, for the reason given in
+ * `ui/chuggy-ui/test/settings/tenantAccountsPage.test.tsx`. */
 vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof BrowserPorts>()),
   sleepMs: () => Promise.resolve(),
+  digest: (message: Uint8Array) => Promise.resolve(message),
+  redirect: (url: string) => {
+    held.redirects.push(url);
+  },
 }));
 
 /** A link's path is filled from its params, so a link into the wrong project
@@ -64,6 +77,7 @@ vi.mock("@tanstack/react-router", () => ({
 
 afterEach(() => {
   cleanup();
+  held.redirects.length = 0;
   sessionStorage.clear();
   history.pushState({}, "", "/");
   vi.unstubAllGlobals();
@@ -881,8 +895,8 @@ test("a retry that meets the binding retired stales the bindings the page drew",
   expect(raised).toStrictEqual([bindingsKey]);
 });
 
-/** The line drawn under Add and Create, which is none where both are offered. */
-function offersWithheld(): string | null | undefined {
+/** The line drawn under Add and Create, which is none where nothing is missing. */
+function offersLine(): string | null | undefined {
   return sectionOf("Repositories").querySelector(".notice")?.textContent;
 }
 
@@ -893,69 +907,159 @@ function offered(name: string): boolean {
   ).disabled;
 }
 
-/** The workspace's accounts page at its address in the project, so following the link keeps the project's shell. */
-const accountsAddress = `/${leadPartition.tenant}/${leadPartition.project}/settings/workspace/accounts`;
+/** The steps the section offers under its line, each `null` where it is not. */
+function offersSteps(): {
+  readonly connect: HTMLButtonElement | null;
+  readonly install: HTMLAnchorElement | null;
+} {
+  const section = within(sectionOf("Repositories"));
+  return {
+    connect: section.queryByRole<HTMLButtonElement>("button", {
+      name: "Connect GitHub",
+    }),
+    install: section.queryByRole<HTMLAnchorElement>("link", {
+      name: "Install worker",
+    }),
+  };
+}
 
-/** The link the Repositories section points at the tenant's own accounts page
- * with, where the withheld line names no account connected. */
-function accountsLink(): HTMLAnchorElement | null {
-  return within(sectionOf("Repositories")).queryByRole<HTMLAnchorElement>(
-    "link",
-    { name: "Accounts" },
+const noStep = { connect: null, install: null };
+
+const noAccount: typeof installations = { truncated: false, installations: [] };
+
+test("a reader the accounts are withheld from is told who adds repositories, and offered no step", async () => {
+  await drawAtProjectListing(() => answer({}, 404));
+  expect([offered("Add"), offered("Create")]).toStrictEqual([false, false]);
+  expect(offersLine()).toBe("A workspace admin adds repositories");
+  expect(offersSteps()).toStrictEqual(noStep);
+});
+
+/** Only the forbidden listing is this reader's standing; one that merely failed
+ * says so, and says nothing of what the workspace holds to offer a step on. */
+test("a listing that failed says the accounts did not load, and offers no step", async () => {
+  await drawAtProjectListing(() => answer({}, 500));
+  expect(offersLine()).toBe("Accounts failed to load");
+  expect(offersSteps()).toStrictEqual(noStep);
+});
+
+/** A new project's creator lands here, so the press returns here, where Add is. */
+test("with no account, the page offers Connect GitHub under its line, returning to itself", async () => {
+  await drawAtProject(noAccount);
+  expect([offered("Add"), offered("Create")]).toStrictEqual([false, false]);
+  expect(offersLine()).toBe("Connect a GitHub account first");
+  const { connect, install } = offersSteps();
+  expect(install).toBeNull();
+  expect(
+    within(sectionOf("Repositories")).queryByRole("link", { name: "Accounts" }),
+  ).toBeNull();
+  fireEvent.click(connect ?? document.body);
+  await settled();
+  expect(held.redirects).toHaveLength(1);
+  const url = new URL(held.redirects[0] ?? "");
+  expect(`${url.origin}${url.pathname}`).toBe(client.authorizeUrl);
+  expect(
+    JSON.parse(sessionStorage.getItem(forgeAuthorizeTransactionKey) ?? "{}"),
+  ).toMatchObject({
+    state: url.searchParams.get("state"),
+    tenant: leadPartition.tenant,
+    returnPath: projectPath,
+    installs: [],
+  });
+});
+
+/** The line already says who puts it right, so a button that could only be
+ * disabled beside it is not drawn. */
+test("with no account on a deployment that cannot authorize, the page says who configures GitHub and offers no step", async () => {
+  await drawPage({ claimed: noAccount });
+  expect(offersLine()).toBe("GitHub not configured · ask an operator");
+  expect(offersSteps()).toStrictEqual(noStep);
+});
+
+test("with no portal claim, the page says no account has the portal app, and offers no step", async () => {
+  await drawAtProject(without("portal"));
+  expect([offered("Add"), offered("Create")]).toStrictEqual([false, false]);
+  expect(offersLine()).toBe("No account has the portal app");
+  expect(offersSteps()).toStrictEqual(noStep);
+});
+
+/** Add is offered from an account like this one, and the first job on what it
+ * binds would find no worker app to mint a credential under. */
+test("an account without the worker app is named under Add and Create, with its install returning here", async () => {
+  await drawAtProject(without("worker"));
+  expect([offered("Add"), offered("Create")]).toStrictEqual([true, false]);
+  expect(offersLine()).toBe("Worker app missing · kasofsk");
+  const { connect, install } = offersSteps();
+  expect(connect).toBeNull();
+  expect(install?.href.startsWith(`${forgeApps[1]?.installUrl}?state=`)).toBe(
+    true,
+  );
+  fireEvent.click(install ?? document.body);
+  await settled();
+  expect(
+    JSON.parse(sessionStorage.getItem(forgeInstallTransactionKey) ?? "{}"),
+  ).toStrictEqual({
+    state: new URL(install?.href ?? "").searchParams.get("state"),
+    tenant: leadPartition.tenant,
+    returnPath: projectPath,
+    installs: ["worker"],
+  });
+});
+
+test("an account without the worker app is named where another holds both and nothing is withheld", async () => {
+  await drawAtProject();
+  expect([offered("Add"), offered("Create")]).toStrictEqual([true, true]);
+  expect(offersLine()).toBe("Worker app missing · gdoteof");
+  expect(offersSteps().install).not.toBeNull();
+});
+
+/** An install comes back through the authorization, so the line stands alone
+ * where the deployment answers no client to finish one with. */
+test("a deployment that offers no install still names the account without the worker app", async () => {
+  await drawPage();
+  expect(offersLine()).toBe("Worker app missing · gdoteof");
+  expect(offersSteps()).toStrictEqual(noStep);
+});
+
+/** Every line the section draws above its bindings, the return's word first. */
+function sectionLines(): readonly (string | null)[] {
+  return [...sectionOf("Repositories").querySelectorAll(".notice")].map(
+    (line) => line.textContent,
   );
 }
 
-test("Add and Create withheld from a reader the accounts are withheld from say who adds repositories, with no link", async () => {
-  await drawAtProjectListing(() => answer({}, 404));
-  expect([offered("Add"), offered("Create")]).toStrictEqual([false, false]);
-  expect(offersWithheld()).toBe("A workspace admin adds repositories");
-  expect(accountsLink()).toBeNull();
+/** A forge return held for this tenant, as the callback leaves it. */
+function returnedWith(word: ForgeReturnWord): void {
+  forgeReturnHold(transientStore, leadPartition.tenant, word);
+}
+
+/** A press from this page returns to it, so a word this page left held would
+ * be drawn by the accounts page, about a press that page never saw. */
+test("a return's word is drawn above the line once, and is not left held", async () => {
+  returnedWith({ standing: "Uninstalled", status: "Not installed" });
+  await drawAtProject(noAccount);
+  expect(sectionLines()).toStrictEqual([
+    "Not installed",
+    "Connect a GitHub account first",
+  ]);
+  expect(sessionStorage.getItem(forgeReturnKey)).toBeNull();
+  expect(offersSteps().connect).not.toBeNull();
+  cleanup();
+  await drawAtProject(noAccount);
+  expect(sectionLines()).toStrictEqual(["Connect a GitHub account first"]);
 });
 
-/** Only the forbidden listing withholds the page itself; a listing that
- * merely failed still says so and why, with nothing to link to either. */
-test("a listing that failed says Add and Create say the accounts did not load, with no link", async () => {
-  await drawAtProjectListing(() => answer({}, 500));
-  expect(offersWithheld()).toBe("Accounts failed to load");
-  expect(accountsLink()).toBeNull();
+test("a return that failed is drawn as a failure", async () => {
+  returnedWith({ standing: "Failed", status: "Refused" });
+  await drawAtProject(noAccount);
+  const word = within(sectionOf("Repositories")).getByText("Refused");
+  expect(word.classList.contains("notice-danger")).toBe(true);
 });
 
-/** One place connects an account, so the page that needs one points at it
- * rather than carrying a second Connect control. */
-test("with no account, Add and Create say to connect one and link the tenant's accounts page", async () => {
-  await drawAtProject({ truncated: false, installations: [] });
-  expect([offered("Add"), offered("Create")]).toStrictEqual([false, false]);
-  expect(offersWithheld()).toBe("Connect a GitHub account first");
-  expect(accountsLink()?.getAttribute("href")).toBe(accountsAddress);
-});
-
-/** Connect GitHub is not offered there either, but the accounts page is still
- * the one place that would say so, so the link still points at it. */
-test("with no account on a deployment that cannot authorize, Add and Create say who configures GitHub and still link the accounts page", async () => {
-  await drawPage({ claimed: { truncated: false, installations: [] } });
-  expect(offersWithheld()).toBe("GitHub not configured · ask an operator");
-  expect(accountsLink()?.getAttribute("href")).toBe(accountsAddress);
-});
-
-test("with no portal claim, Add and Create say no account has the portal app, with no link", async () => {
-  await drawAtProject(without("portal"));
-  expect([offered("Add"), offered("Create")]).toStrictEqual([false, false]);
-  expect(offersWithheld()).toBe("No account has the portal app");
-  expect(accountsLink()).toBeNull();
-});
-
-test("with no account holding both apps, Add is offered and Create says why it is not, with no link", async () => {
-  await drawAtProject(without("worker"));
-  expect([offered("Add"), offered("Create")]).toStrictEqual([true, false]);
-  expect(offersWithheld()).toBe("No account has both apps");
-  expect(accountsLink()).toBeNull();
-});
-
-test("a reader with an account holding both apps is offered Add and Create and no line", async () => {
-  await drawAtProject();
+test("a workspace whose accounts all hold both apps is offered Add and Create, no line and no step", async () => {
+  await drawAtProject(twoAccounts);
   expect([offered("Add"), offered("Create")]).toStrictEqual([true, true]);
-  expect(offersWithheld()).toBeUndefined();
-  expect(accountsLink()).toBeNull();
+  expect(offersLine()).toBeUndefined();
+  expect(offersSteps()).toStrictEqual(noStep);
 });
 
 test("a reader who may not administer reads that a binding deferred and is offered no Retry", async () => {

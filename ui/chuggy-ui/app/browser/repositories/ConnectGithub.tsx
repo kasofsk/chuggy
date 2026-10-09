@@ -38,6 +38,7 @@ export function ConnectGithub(props: {
           void forgeAuthorizeRedirect(client, {
             tenant,
             returnPath: props.returnPath,
+            installs: [],
           });
         }}
       >

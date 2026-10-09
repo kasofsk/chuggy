@@ -13,9 +13,15 @@ import type {
   ForgeAccountKindName,
   ForgeAppName,
 } from "../../../../src/contract/rosters.ts";
-import type { ForgeInstallationResponse } from "../../../../src/contract/responses.ts";
+import type {
+  ForgeAppResponse,
+  ForgeAppsResponse,
+  ForgeInstallationResponse,
+} from "../../../../src/contract/responses.ts";
 
 import { base64urlFromBytes } from "./base64url.ts";
+import { forgePressOf } from "./forgePress.ts";
+import type { ForgePress } from "./forgePress.ts";
 import type { KeyValuePort } from "./sessionHolder.ts";
 
 /** Where the transaction is held, which is `sessionStorage` and not the URL. */
@@ -24,12 +30,10 @@ export const forgeInstallTransactionKey = "chuggy.forgeInstall";
 /** The entropy the state is drawn with, as the authorization state is drawn. */
 export const forgeInstallStateBytesCount = 32;
 
-/** What the console remembers while the person is away at the forge. */
-export interface ForgeInstallTransaction {
+/** What the console remembers while the person is away at the forge, the app
+ * being installed among the installs its press has been sent on to. */
+export interface ForgeInstallTransaction extends ForgePress {
   readonly state: string;
-  readonly app: ForgeAppName;
-  readonly tenant: string;
-  readonly returnPath: string;
 }
 
 export function forgeInstallState(
@@ -66,14 +70,23 @@ function forgeInstallTransactionOf(
 ): ForgeInstallTransaction | undefined {
   if (typeof parsed !== "object" || parsed === null) return undefined;
   const fields = parsed as Record<string, unknown>;
-  const app = fields["app"];
-  if (app !== "portal" && app !== "worker") return undefined;
   const state = fields["state"];
-  const tenant = fields["tenant"];
-  const returnPath = fields["returnPath"];
-  if (typeof state !== "string" || typeof tenant !== "string") return undefined;
-  if (typeof returnPath !== "string") return undefined;
-  return { state, app, tenant, returnPath };
+  if (typeof state !== "string") return undefined;
+  const press = forgePressOf(fields);
+  return press === undefined ? undefined : { ...press, state };
+}
+
+/**
+ * The app as this deployment offers its install, which it does not where it
+ * holds no key for the app or answers no client to authorize: the setup
+ * landing claims an install only through that authorization.
+ */
+export function forgeInstallOffered(
+  apps: ForgeAppsResponse,
+  app: ForgeAppName,
+): ForgeAppResponse | undefined {
+  if (apps.authorization === undefined) return undefined;
+  return apps.apps.find((held) => held.app === app);
 }
 
 /**
@@ -148,6 +161,17 @@ export function forgeCreatingAccounts(
 ): readonly string[] {
   return forgeAccountRows(installations)
     .filter((row) => row.portal === "Installed" && row.worker === "Installed")
+    .map((row) => row.account);
+}
+
+/** The accounts lacking the worker app, in the order the listing answers. A row
+ * is an account holding one of the two apps, so each of these holds the portal
+ * app. */
+export function forgeWorkerlessAccounts(
+  installations: readonly ForgeInstallationResponse[],
+): readonly string[] {
+  return forgeAccountRows(installations)
+    .filter((row) => row.worker === "Missing")
     .map((row) => row.account);
 }
 

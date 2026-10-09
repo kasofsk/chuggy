@@ -60,6 +60,7 @@ async function forgeSetupAnswer(
   await forgeAuthorizeRedirect(client, {
     tenant: transaction.tenant,
     returnPath: transaction.returnPath,
+    installs: transaction.installs,
   });
 }
 
