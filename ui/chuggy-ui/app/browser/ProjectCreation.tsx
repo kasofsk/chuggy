@@ -27,9 +27,10 @@ import type { ProjectCreationForm as ProjectCreationFields } from "../core/proje
 import { projectsInventoryKey } from "../core/projectQueryKeys.ts";
 import { useApiPorts } from "./api.ts";
 import { Footer } from "./Footer.tsx";
-import { drawBytes, persistentStore } from "./ports.ts";
+import { clipboardWritten, drawBytes, persistentStore } from "./ports.ts";
 import { TopBar } from "./shell/TopBar.tsx";
 import { Button } from "./ui/Button.tsx";
+import { CopyProvider } from "./ui/copyHeld.tsx";
 import { Input } from "./ui/Input.tsx";
 import { Notice } from "./ui/Notice.tsx";
 
@@ -134,18 +135,20 @@ export function ProjectCreationForm(): ReactNode {
 }
 
 /** A screen outside every project: the bar, the page under it, and the footer
- * at the foot of the viewport. */
+ * at the foot of the viewport, with the clipboard a copy control under it asks for. */
 export function ProjectlessFrame(props: {
   readonly children: ReactNode;
 }): ReactNode {
   return (
-    <div className="grid min-h-dvh grid-rows-[auto_minmax(0,1fr)_auto]">
-      <TopBar partition={undefined} />
-      <main className="grid content-start gap-4 p-4">{props.children}</main>
-      <div className="px-4 pb-4">
-        <Footer />
+    <CopyProvider write={clipboardWritten}>
+      <div className="grid min-h-dvh grid-rows-[auto_minmax(0,1fr)_auto]">
+        <TopBar partition={undefined} />
+        <main className="grid content-start gap-4 p-4">{props.children}</main>
+        <div className="px-4 pb-4">
+          <Footer />
+        </div>
       </div>
-    </div>
+    </CopyProvider>
   );
 }
 

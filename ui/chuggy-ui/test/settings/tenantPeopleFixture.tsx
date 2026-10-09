@@ -2,6 +2,9 @@
  * A workspace's people as the access plane answers them, and the page drawn
  * against a plane a case scripts: the list and the reader's abilities at their
  * own paths, and every change and invitation answered by the case.
+ *
+ * The workspace's invite links are read at a path of their own, which answers
+ * as a plane that keeps none unless the case says what it lists.
  */
 
 import { fireEvent, screen, within } from "@testing-library/react";
@@ -9,6 +12,8 @@ import { fireEvent, screen, within } from "@testing-library/react";
 import {
   accessProjectRoles,
   accessTenantRoles,
+  type AccessInviteLink,
+  type AccessInviteLinks,
   type AccessTenantAbilities,
   type AccessTenantPeople,
 } from "../../../../src/contract/accessPlane.ts";
@@ -29,6 +34,60 @@ export const peoplePath = `/access/v1/tenants/${peopleTenant}/people`;
 export const abilitiesPath = `/access/v1/tenants/${peopleTenant}/abilities`;
 
 export const invitationPath = `/access/v1/tenants/${peopleTenant}/invitations`;
+
+export const linksPath = `/access/v1/tenants/${peopleTenant}/invite-links`;
+
+/** Where one link is revoked. */
+export function linkPath(link: string): string {
+  return `${linksPath}/${link}`;
+}
+
+/** A link nobody used, which is every state but the one that names who did. */
+type LinkUnused = Exclude<AccessInviteLink, { state: "Used" }>;
+
+const linkMade: Omit<LinkUnused, "link" | "state"> = {
+  role: "Member",
+  projects: [],
+  newAccounts: true,
+  mintedBy: {
+    subject: "s-ada",
+    account: true,
+    email: "ada@example.com",
+    githubLogin: "ada",
+  },
+  mintedAtMs: Date.UTC(2026, 7, 20, 9, 0),
+  expiresAtMs: Date.UTC(2026, 7, 27, 9, 0),
+};
+
+/** One link the reader made, open and carrying Member alone unless a case says otherwise. */
+export function linkListed(
+  link: string,
+  over: Partial<Omit<LinkUnused, "link">> = {},
+): AccessInviteLink {
+  return { ...linkMade, state: "Open", ...over, link };
+}
+
+/** A link in each of its four states, newest first: the used one by a subject
+ * the directory cannot name, the open one carrying roles on both projects. */
+export const linksListed: AccessInviteLinks = {
+  links: [
+    linkListed("l-open", {
+      projects: [
+        { project: "beacon", roles: ["Viewer", "Developer"] },
+        { project: "atlas", roles: ["Dispatcher"] },
+      ],
+    }),
+    {
+      ...linkMade,
+      link: "l-used",
+      state: "Used",
+      usedBy: { subject: "s-grace" },
+      usedAtMs: Date.UTC(2026, 7, 21, 9, 0),
+    },
+    linkListed("l-revoked", { state: "Revoked", role: "Admin" }),
+    linkListed("l-expired", { state: "Expired", newAccounts: false }),
+  ],
+};
 
 /** The reader, an admin with an account, and two subjects the plane says are
  * no account, the second holding hosted runs as a workspace's selector does. */
@@ -110,25 +169,29 @@ export interface PeopleDrawing {
   readonly listing?: () => Response | Promise<Response>;
   /** What the abilities answer, read again with the list. */
   readonly abilities?: () => Response;
-  /** What a grant, a removal or an invitation is answered with. */
+  /** What the workspace's links answer, a plane that keeps none where a case says nothing. */
+  readonly links?: () => Response | Promise<Response>;
+  /** What a grant, a removal, an invitation, a link made or one revoked is answered with. */
   readonly changed?: (request: SentRequest) => Response | Promise<Response>;
 }
 
 export function drawPeople(drawing: PeopleDrawing = {}): Promise<DrawnStrict> {
   const listing = drawing.listing ?? (() => answer(peopleListed));
   const abilities = drawing.abilities ?? (() => answer(peopleAbilitiesAll()));
+  const links = drawing.links ?? (() => answer({}, 404));
   const changed = drawing.changed ?? noContent;
   return drawnStrict(<TenantPeoplePage />, (request: SentRequest) => {
     if (request.url === peoplePath && request.method === "GET")
       return listing();
     if (request.url === abilitiesPath && request.method === "GET")
       return abilities();
+    if (request.url === linksPath && request.method === "GET") return links();
     if (request.url.startsWith("/access/v1/")) return changed(request);
     return answer({}, 404);
   });
 }
 
-/** Every request the page sent but the list's and the abilities' reads. */
+/** Every request the page sent but its reads. */
 export function changesSent(drawn: DrawnStrict): readonly SentRequest[] {
   return drawn.sent.filter(
     (request) =>
@@ -147,6 +210,12 @@ export function listReads(drawn: DrawnStrict): number {
 
 export function abilitiesReads(drawn: DrawnStrict): number {
   return drawn.sent.filter((request) => request.url === abilitiesPath).length;
+}
+
+export function linksReads(drawn: DrawnStrict): number {
+  return drawn.sent.filter(
+    (request) => request.url === linksPath && request.method === "GET",
+  ).length;
 }
 
 /** One person's row, in either table, found by what it draws them as. */

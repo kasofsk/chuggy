@@ -3,7 +3,8 @@
    line on one baseline, and the same row stacked where the page is narrow.
    Then the grid of projects a person's editor and an invitation share. Both
    restate the table primitive's cells, which are set for figures compared
-   along a row and not for lines read down a column. */
+   along a row and not for lines read down a column. The page's invite links
+   are a table in the same frame, with columns of their own. */
 
 @layer page {
   .people-table table {
@@ -57,6 +58,37 @@
 
   .people-edit {
     text-align: right;
+  }
+
+  /* An invite link's columns: its state with when it expires under it, the
+     two people a link names, and the one action a row may have. What a link
+     carries takes the room they leave. */
+  .people-col-status {
+    width: 11em;
+  }
+
+  .people-col-who {
+    width: 23%;
+  }
+
+  .people-col-revoke {
+    width: 7em;
+  }
+
+  /* A column's words over its cell, drawn only where the row is stacked and
+     the head that said them is clipped. */
+  .people-stacked-label {
+    display: none;
+  }
+
+  /* What a row asks or was refused with stands under it as part of it, so the
+     rule that parts two rows is not drawn between them. */
+  .people-table tbody tr:has(+ .people-asked) > * {
+    border-bottom: 0;
+  }
+
+  .people-table .people-asked > td {
+    padding-block-start: 0;
   }
 
   .people-name {
@@ -123,6 +155,17 @@
 
     .people-table tbody td[data-none] {
       display: none;
+    }
+
+    .people-stacked-label {
+      display: block;
+      color: var(--ink-3);
+      font-size: var(--text-sm);
+    }
+
+    .people-table tbody tr:has(+ .people-asked) {
+      padding-block-end: 0;
+      border-bottom: 0;
     }
 
     .people-name,
