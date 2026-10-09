@@ -18,6 +18,8 @@ import {
   costFigure,
   countFigure,
   durationText,
+  instantFigure,
+  instantFigureAtMs,
   instantText,
   ranFigure,
   settledFigure,
@@ -157,6 +159,20 @@ test("a clock that ran backwards reads as no time elapsed, not a negative one", 
 
 test("an instant the clock cannot read is an absence, never a printed string", () => {
   expect(agoFigure("not an instant", agoNowMs).kind).toBe("Absent");
+});
+
+test("an instant counted in milliseconds reads as one stated does, and one no date holds is an absence", () => {
+  const at = new Date(2026, 7, 26, 18, 40);
+  const now = new Date(2026, 7, 27, 11, 7).getTime();
+  expect(instantFigureAtMs(at.getTime(), now)).toStrictEqual(
+    instantFigure(at.toISOString(), now),
+  );
+  expect(instantFigureAtMs(at.getTime(), now)).toMatchObject({
+    kind: "Instant",
+    text: "Aug 26 18:40",
+  });
+  expect(instantFigureAtMs(Number.MAX_SAFE_INTEGER, now).kind).toBe("Absent");
+  expect(instantFigure("not an instant", now).kind).toBe("Absent");
 });
 
 test("an ago figure carries the relative reading and the full date and clock for its hover", () => {

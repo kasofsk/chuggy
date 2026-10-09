@@ -132,6 +132,17 @@ export function inviteLinkRevocable(
   );
 }
 
+/** The words of the section a workspace's links are listed in. */
+export const inviteLinksWords = {
+  heading: "Invite links",
+  access: "Access",
+  status: "Status",
+  usedBy: "Used by",
+  madeBy: "Made by",
+  expires: "Expires",
+  revoke: "Revoke",
+} as const;
+
 /** What a revocation is asked with before it is sent. */
 export const inviteLinkRevocationQuestion = {
   question: "Revoke link",
