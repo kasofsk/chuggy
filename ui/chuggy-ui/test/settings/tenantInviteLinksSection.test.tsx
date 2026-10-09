@@ -173,6 +173,31 @@ test("every link names who made it and when, an account by its address and login
   );
 });
 
+test("a person is named on one line under their whole name, and a maker who is no account says so", async () => {
+  await drawPeople({
+    links: () =>
+      answer({
+        links: [
+          linkListed("l-one"),
+          linkListed("l-two", {
+            mintedBy: { subject: "chuggy-selector", account: false },
+          }),
+        ],
+      }),
+  });
+  const [named, unnamed] = rows().map((row) => cells(row)["Made by"]);
+  const name = named?.querySelector(".people-name");
+  expect(name?.textContent).toBe("ada@example.com");
+  expect(name?.getAttribute("title")).toBe("ada@example.com");
+  expect(named?.textContent).not.toContain("No account");
+  expect(unnamed?.querySelector(".identity")?.textContent).toBe(
+    "chuggy-selector",
+  );
+  expect(unnamed?.textContent).toBe(
+    `Made bychuggy-selectorNo account${when(linkListed("l-two").mintedAtMs)}`,
+  );
+});
+
 test("the two columns that name a person carry their words for a stacked row, and no other cell does", async () => {
   await drawPeople({ links: () => answer(linksListed) });
   expect(

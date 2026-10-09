@@ -5,14 +5,14 @@
  * Nothing a person does not hold is drawn, so a row is read without knowing
  * what the reader may grant.
  *
- * Who a person is on one line, the chips and the project lines are drawn here
- * for every row that names a person or what is held: a workspace's admins, and
- * an invite link's row, which carries what a person would hold.
+ * The chips and the project lines are drawn here for an invite link's row
+ * too, which carries what a person would hold.
  */
 
 import type { ReactNode } from "react";
 
 import type {
+  AccessAuthorityPerson,
   AccessTenantAbilities,
   AccessTenantPerson,
 } from "../../../../../src/contract/accessPlane.ts";
@@ -23,10 +23,7 @@ import {
   tenantHeldWords,
   tenantPersonName,
 } from "../../core/tenantPeople.ts";
-import type {
-  TenantHeldProjectLine,
-  TenantSubject,
-} from "../../core/tenantPeople.ts";
+import type { TenantHeldProjectLine } from "../../core/tenantPeople.ts";
 import { Identity } from "../ui/Identity.tsx";
 import { Pill } from "../ui/Pill.tsx";
 import {
@@ -38,9 +35,9 @@ import { TenantPersonEditor } from "./TenantPersonEditor.tsx";
 import "./tenantPeople.css";
 
 /** Who one person is on one line: their address or their subject, then
- * quietly their login, that they are no account, and that they are the reader where the answer says so. */
+ * quietly their login, that they are no account, and that they are the reader. */
 export function TenantPersonWho(props: {
-  readonly person: TenantSubject & { readonly mine?: boolean };
+  readonly person: AccessAuthorityPerson;
 }): ReactNode {
   const named = tenantPersonName(props.person);
   return (
@@ -56,7 +53,7 @@ export function TenantPersonWho(props: {
       {named.noAccount ? (
         <span className="text-sm text-ink-3">No account</span>
       ) : null}
-      {props.person.mine === true ? (
+      {props.person.mine ? (
         <span className="text-sm text-ink-3">You</span>
       ) : null}
     </span>

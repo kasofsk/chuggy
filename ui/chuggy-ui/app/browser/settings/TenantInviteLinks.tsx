@@ -28,6 +28,7 @@ import {
   inviteLinkStateLabel,
   inviteLinksWords,
 } from "../../core/inviteLinks.ts";
+import { tenantPersonName } from "../../core/tenantPeople.ts";
 import type { TenantSubject } from "../../core/tenantPeople.ts";
 import { inviteLinkStateTone } from "../../core/tones.ts";
 import { useApiPorts } from "../api.ts";
@@ -35,6 +36,7 @@ import { useNowMs } from "../Freshness.tsx";
 import { Button } from "../ui/Button.tsx";
 import { Confirm } from "../ui/Confirm.tsx";
 import { Figure } from "../ui/Figure.tsx";
+import { Identity } from "../ui/Identity.tsx";
 import { Notice } from "../ui/Notice.tsx";
 import { Pill } from "../ui/Pill.tsx";
 import {
@@ -44,11 +46,7 @@ import {
   SettingsListingTable,
 } from "./SettingsListing.tsx";
 import { tenantInviteLinksReread } from "./tenantPeopleResource.ts";
-import {
-  TenantHeldProjects,
-  TenantHeldWords,
-  TenantPersonWho,
-} from "./TenantPersonRow.tsx";
+import { TenantHeldProjects, TenantHeldWords } from "./TenantPersonRow.tsx";
 
 import "./tenantPeople.css";
 
@@ -97,17 +95,31 @@ function useInviteLinkRevoking(tenant: string): InviteLinkRevoking {
   };
 }
 
-/** Who made or used a link and when, under the column's words where the row is stacked. */
+/** Who made or used a link and when, down a narrow column: the name cut short
+ * on a line as a person's row cuts it, under the column's words where the row is stacked. */
 function InviteLinkWho(props: {
   readonly label: string;
   readonly person: TenantSubject;
   readonly atMs: number;
   readonly nowMs: number;
 }): ReactNode {
+  const named = tenantPersonName(props.person);
   return (
     <div className="grid min-w-0">
       <span className="people-stacked-label">{props.label}</span>
-      <TenantPersonWho person={props.person} />
+      <span className="people-name" title={named.name}>
+        {named.subject ? (
+          <Identity label={{ text: named.name, title: named.name }} />
+        ) : (
+          named.name
+        )}
+      </span>
+      {named.githubLogin === undefined ? null : (
+        <span className="truncate text-sm text-ink-3">{named.githubLogin}</span>
+      )}
+      {named.noAccount ? (
+        <span className="text-sm text-ink-3">No account</span>
+      ) : null}
       <span className="text-sm text-ink-3">
         <Figure figure={instantFigureAtMs(props.atMs, props.nowMs)} />
       </span>
@@ -219,6 +231,7 @@ function InviteLinkRow(props: {
         <td className="people-edit">
           {props.revocable ? (
             <Button
+              variant="quiet"
               size="sm"
               disabled={revoking.busy || revoking.asking !== undefined}
               onClick={() => {

@@ -64,15 +64,15 @@
      two people a link names, and the one action a row may have. What a link
      carries takes the room they leave. */
   .people-col-status {
-    width: 11em;
+    width: 9em;
   }
 
   .people-col-who {
-    width: 23%;
+    width: 21%;
   }
 
   .people-col-revoke {
-    width: 7em;
+    width: 6.5em;
   }
 
   /* A column's words over its cell, drawn only where the row is stacked and
