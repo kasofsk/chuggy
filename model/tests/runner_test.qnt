@@ -13,7 +13,8 @@ module registered_runner_test {
   })
   pure val personalProfile: ExecutionProfile = {
     route: RegisteredRunner, personalRunnerAllowed: true, minimumTrust: 1,
-    secretsRequired: false, sourceRequired: false, dedicatedOwnerRequired: 0
+    secretsRequired: false, sourceRequired: false, dedicatedOwnerRequired: 0,
+    ownerOf: 7
   }
   pure val inventory: CapabilityInventory = {
     containerPlatforms: Set(
@@ -27,7 +28,8 @@ module registered_runner_test {
   pure val runner: Runner = {
     id: 1, account: 1, class: Personal, enabled: true, draining: false,
     revoked: false, trust: 1, secretsAllowed: false, sourceAllowed: true,
-    dedicatedOwner: 0, sessionGeneration: 1, retainedInventory: inventory
+    dedicatedOwner: 7, allowlist: Set(1), sessionGeneration: 1,
+    retainedInventory: inventory
   }
   pure val session: RunnerSession = {
     runner: 1, generation: 1, leaseOpen: true, slotsOffered: 1, slotsUsed: 0,
@@ -233,5 +235,59 @@ module registered_runner_test {
       takenOver.sessions.get(1).inventory == changed,
       inventoryObservationSafe(takenOver),
       placementOutcome(takenOver, 1) == DefinitiveIncompatibility
+    })
+
+  run personalRunnerTakesItsOwnersAllowlistedExecutionTest =
+    val assigned = bindAssignment(initial, 10, 1, 1)
+    assert(and {
+      canAssign(initial, 1, 1, 10),
+      placementOutcome(initial, 1) == Placeable,
+      personalAssignmentSafe(assigned)
+    })
+
+  run personalRunnerRefusesAnotherOwnersExecutionTest =
+    val state = { ...initial, placements: Map(1 -> { ...placement(1, nativeRequirement),
+      profile: { ...personalProfile, ownerOf: 8 } }) }
+    assert(and {
+      not(canAssign(state, 1, 1, 10)),
+      placementOutcome(state, 1) == DefinitiveIncompatibility
+    })
+
+  run personalRunnerRefusesOwnerlessExecutionTest =
+    val ownerless = { ...runner, dedicatedOwner: 0 }
+    val state = { ...initial, runners: Map(1 -> ownerless),
+      placements: Map(1 -> { ...placement(1, nativeRequirement),
+        profile: { ...personalProfile, ownerOf: 0 } }) }
+    assert(and {
+      ownerless.dedicatedOwner == state.placements.get(1).profile.ownerOf,
+      not(canAssign(state, 1, 1, 10)),
+      placementOutcome(state, 1) == DefinitiveIncompatibility
+    })
+
+  run personalRunnerRefusesAccountItDoesNotAllowlistTest =
+    val unlisted = { ...runner, allowlist: Set(2) }
+    val state = { ...initial, runners: Map(1 -> unlisted) }
+    assert(and {
+      unlisted.account == execution(1).account,
+      not(canAssign(state, 1, 1, 10)),
+      placementOutcome(state, 1) == DefinitiveIncompatibility
+    })
+
+  run personalRunnerServesAllowlistedAccountNotItsOwnTest =
+    val elsewhere = { ...runner, account: 2 }
+    val state = { ...initial, runners: Map(1 -> elsewhere) }
+    assert(and {
+      canAssign(state, 1, 1, 10),
+      placementOutcome(state, 1) == Placeable
+    })
+
+  run dedicatedRunnerServesOnlyItsOwnAccountTest =
+    val dedicated = { ...runner, class: Dedicated, account: 2 }
+    val state = { ...initial, runners: Map(1 -> dedicated) }
+    assert(and {
+      dedicated.allowlist.contains(execution(1).account),
+      not(canAssign(state, 1, 1, 10)),
+      placementOutcome(state, 1) == DefinitiveIncompatibility,
+      canAssign({ ...state, runners: Map(1 -> { ...dedicated, account: 1 }) }, 1, 1, 10)
     })
 }

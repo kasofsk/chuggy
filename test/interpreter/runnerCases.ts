@@ -62,11 +62,14 @@ export const runnerTerm = {
   waiting: "p.phase == Waiting",
   fresh: "not(s.assignments.keys().contains(aid))",
   route: "p.route == RegisteredRunner",
-  account: "r.account == e.account",
+  account: "r.class == Personal or r.account == e.account",
   enabled: "r.enabled",
   draining: "not(r.draining)",
   revoked: "not(r.revoked)",
   personal: "r.class != Personal or p.personalRunnerAllowed",
+  ownerless: "r.class != Personal or p.ownerOf != 0",
+  ownerOf: "r.class != Personal or r.dedicatedOwner == p.ownerOf",
+  allowlist: "r.class != Personal or r.allowlist.contains(e.account)",
   trust: "r.trust >= p.minimumTrust",
   secrets: "not(p.secretsRequired) or r.secretsAllowed",
   source: "not(p.sourceRequired) or r.sourceAllowed",
@@ -101,6 +104,13 @@ const partition: Partition = {
   tenant: asTenantId("tenant-one"),
   project: asProjectId("project-one"),
 };
+
+const elsewhere: Partition = {
+  ...partition,
+  project: asProjectId("project-two"),
+};
+
+const owner = asPrincipal("principal-owner");
 
 const container: ContainerExecutionRequirement = {
   mode: "Container",
@@ -168,6 +178,17 @@ function demanding(demand: Partial<WorkerPoolDemand>): WorkerPoolPlacement {
   return { ...placement, demand: { ...workerPoolDemandRouted, ...demand } };
 }
 
+/** A personal pool of `owner` allowlisting the case's partition. */
+const personal: WorkerPoolRunner = {
+  ...pool,
+  class: "Personal",
+  dedicatedOwner: owner,
+  allowlist: [partition],
+};
+
+/** An execution of `owner` that allows a personal pool. */
+const owned = demanding({ personalRunnerAllowed: true, ownerOf: owner });
+
 const assigned: readonly RunnerCase[] = [
   {
     ...assignable,
@@ -203,9 +224,18 @@ const assigned: readonly RunnerCase[] = [
   },
   {
     ...assignable,
-    name: "a personal pool is assigned an execution whose demand allows one",
-    pool: { ...pool, class: "Personal" },
-    placement: demanding({ personalRunnerAllowed: true }),
+    name: "a personal pool is assigned its owner's execution in a partition it allowlists",
+    model: "personalRunnerTakesItsOwnersAllowlistedExecutionTest",
+    pool: personal,
+    placement: owned,
+  },
+  {
+    ...assignable,
+    name: "a personal pool registered in another partition is assigned its owner's execution in one it allowlists",
+    model: "personalRunnerServesAllowlistedAccountNotItsOwnTest",
+    pool: { ...personal, partition: elsewhere },
+    session: { ...session, partition: elsewhere },
+    placement: owned,
   },
   {
     ...assignable,
@@ -215,13 +245,13 @@ const assigned: readonly RunnerCase[] = [
   {
     ...assignable,
     name: "a pool dedicated to the owner an execution requires is assigned it",
-    pool: { ...pool, dedicatedOwner: 7 },
-    placement: demanding({ dedicatedOwnerRequired: 7 }),
+    pool: { ...pool, dedicatedOwner: owner },
+    placement: demanding({ dedicatedOwnerRequired: owner }),
   },
   {
     ...assignable,
     name: "a pool dedicated to an owner is assigned what requires none",
-    pool: { ...pool, dedicatedOwner: 7 },
+    pool: { ...pool, dedicatedOwner: owner },
   },
   {
     ...assignable,
@@ -280,11 +310,16 @@ const refusedByPolicy: readonly RunnerCase[] = [
     "a pool of another project is assigned nothing",
     [runnerTerm.account],
     "DefinitiveIncompatibility",
+    { pool: { ...pool, partition: elsewhere } },
+  ),
+  refused(
+    "a pool of another project allowlisting this one is assigned nothing, since only a personal pool reads its allowlist",
+    [runnerTerm.account],
+    "DefinitiveIncompatibility",
     {
-      pool: {
-        ...pool,
-        partition: { ...partition, project: asProjectId("project-two") },
-      },
+      model: "dedicatedRunnerServesOnlyItsOwnAccountTest",
+      pool: { ...pool, partition: elsewhere, allowlist: [partition] },
+      session: { ...session, partition: elsewhere },
     },
   ),
   refused(
@@ -320,10 +355,49 @@ const refusedByPolicy: readonly RunnerCase[] = [
     { pool: { ...pool, revoked: true } },
   ),
   refused(
-    "a personal pool is assigned nothing an execution does not allow one",
-    [runnerTerm.personal],
+    "a personal pool registered as every pool is, owning nothing and allowlisting nothing, is assigned nothing",
+    [runnerTerm.personal, runnerTerm.ownerless, runnerTerm.allowlist],
     "DefinitiveIncompatibility",
     { pool: { ...pool, class: "Personal" } },
+  ),
+  refused(
+    "a personal pool is assigned nothing of its owner's that does not allow one",
+    [runnerTerm.personal],
+    "DefinitiveIncompatibility",
+    { pool: personal, placement: demanding({ ownerOf: owner }) },
+  ),
+  refused(
+    "a personal pool is assigned nothing of another owner's",
+    [runnerTerm.ownerOf],
+    "DefinitiveIncompatibility",
+    {
+      model: "personalRunnerRefusesAnotherOwnersExecutionTest",
+      pool: personal,
+      placement: demanding({
+        personalRunnerAllowed: true,
+        ownerOf: asPrincipal("principal-other"),
+      }),
+    },
+  ),
+  refused(
+    "a personal pool owning nothing is assigned nothing owned by nobody",
+    [runnerTerm.ownerless],
+    "DefinitiveIncompatibility",
+    {
+      model: "personalRunnerRefusesOwnerlessExecutionTest",
+      pool: { ...personal, dedicatedOwner: undefined },
+      placement: demanding({ personalRunnerAllowed: true }),
+    },
+  ),
+  refused(
+    "a personal pool is assigned nothing of its owner's in a partition it does not allowlist",
+    [runnerTerm.allowlist],
+    "DefinitiveIncompatibility",
+    {
+      model: "personalRunnerRefusesAccountItDoesNotAllowlistTest",
+      pool: { ...personal, allowlist: [elsewhere] },
+      placement: owned,
+    },
   ),
   refused(
     "a pool below the trust an execution demands is assigned nothing",
@@ -356,7 +430,7 @@ const refusedByPolicy: readonly RunnerCase[] = [
     "a pool dedicated to nobody is assigned nothing that requires an owner",
     [runnerTerm.owner],
     "DefinitiveIncompatibility",
-    { placement: demanding({ dedicatedOwnerRequired: 7 }) },
+    { placement: demanding({ dedicatedOwnerRequired: owner }) },
   ),
 ];
 

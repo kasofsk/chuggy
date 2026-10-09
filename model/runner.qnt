@@ -29,14 +29,17 @@ module registered_runner {
   /// backend-specific fidelity without forcing native drivers into a generic
   /// lowest-common-denominator interface.
   type ExecutionRequirement = ContainerRequirement(ContainerExecutionRequirement) | CapabilityRequirement(CapabilityExecutionRequirement) | NativeRequirement(NativeExecutionRequirement)
-  type ExecutionProfile = { route: ExecutionRoute, personalRunnerAllowed: bool, minimumTrust: int, secretsRequired: bool, sourceRequired: bool, dedicatedOwnerRequired: int }
+  type ExecutionProfile = { route: ExecutionRoute, personalRunnerAllowed: bool, minimumTrust: int, secretsRequired: bool, sourceRequired: bool, dedicatedOwnerRequired: int, ownerOf: int }
   type CapabilityInventory = {
     containerPlatforms: Set[Platform], executionCapabilities: Set[ExecutionCapability], nativePlatform: Platform,
     nativeDrivers: Set[NativeDriver], xcodeVersion: int,
     sdkVersions: Set[int], revision: int
   }
   /// All authority here is administrator-owned, never advertised inventory.
-  type Runner = { id: int, account: int, class: RunnerClass, enabled: bool, draining: bool, revoked: bool, trust: int, secretsAllowed: bool, sourceAllowed: bool, dedicatedOwner: int, sessionGeneration: int, retainedInventory: CapabilityInventory }
+  /// A Personal runner's `dedicatedOwner` is the member it serves and its
+  /// `allowlist` the accounts that member opted it into; every other class
+  /// serves its own `account`.
+  type Runner = { id: int, account: int, class: RunnerClass, enabled: bool, draining: bool, revoked: bool, trust: int, secretsAllowed: bool, sourceAllowed: bool, dedicatedOwner: int, allowlist: Set[int], sessionGeneration: int, retainedInventory: CapabilityInventory }
   type RunnerSession = { runner: int, generation: int, leaseOpen: bool, slotsOffered: int, slotsUsed: int, inventory: CapabilityInventory }
   type PlacementPhase = Waiting | Assigned | ResultPending | PlacementCancelled
   type ExecutionPlacement = { execution: int, attemptGeneration: int, requirement: ExecutionRequirement, profile: ExecutionProfile, requirementIdentity: int, requirementDigest: int, phase: PlacementPhase }
@@ -62,16 +65,20 @@ module registered_runner {
       }
   }
   pure def policyAllows(r: Runner, e: Execution, p: ExecutionProfile): bool = and {
-    p.route == RegisteredRunner, r.account == e.account, r.enabled, not(r.draining), not(r.revoked),
-    r.class != Personal or p.personalRunnerAllowed, r.trust >= p.minimumTrust,
+    p.route == RegisteredRunner, r.class == Personal or r.account == e.account, r.enabled, not(r.draining), not(r.revoked),
+    r.class != Personal or p.personalRunnerAllowed, r.class != Personal or p.ownerOf != 0,
+    r.class != Personal or r.dedicatedOwner == p.ownerOf, r.class != Personal or r.allowlist.contains(e.account),
+    r.trust >= p.minimumTrust,
     not(p.secretsRequired) or r.secretsAllowed, not(p.sourceRequired) or r.sourceAllowed,
     p.dedicatedOwnerRequired == 0 or r.dedicatedOwner == p.dedicatedOwnerRequired
   }
   /// Drain is volatile placement posture, not a proof that the configured
   /// route can never satisfy the pinned requirement.
   pure def policyConfigures(r: Runner, e: Execution, p: ExecutionProfile): bool = and {
-    p.route == RegisteredRunner, r.account == e.account, r.enabled, not(r.revoked),
-    r.class != Personal or p.personalRunnerAllowed, r.trust >= p.minimumTrust,
+    p.route == RegisteredRunner, r.class == Personal or r.account == e.account, r.enabled, not(r.revoked),
+    r.class != Personal or p.personalRunnerAllowed, r.class != Personal or p.ownerOf != 0,
+    r.class != Personal or r.dedicatedOwner == p.ownerOf, r.class != Personal or r.allowlist.contains(e.account),
+    r.trust >= p.minimumTrust,
     not(p.secretsRequired) or r.secretsAllowed, not(p.sourceRequired) or r.sourceAllowed,
     p.dedicatedOwnerRequired == 0 or r.dedicatedOwner == p.dedicatedOwnerRequired
   }
@@ -160,6 +167,19 @@ module registered_runner {
   }
   pure def completionAuthoritySafe(s: RunnerState): bool = executionSet(s).filter(e => e.status == Terminal).forall(e => s.assignments.keys().map(aid => s.assignments.get(aid)).exists(a => a.execution == e.id and a.status == Verified and a.attemptGeneration == s.placements.get(e.id).attemptGeneration))
   pure def pinnedRequirementsUnchanged(initial: RunnerState, s: RunnerState): bool = initial.placements.keys().forall(id => and { s.placements.get(id).requirement == initial.placements.get(id).requirement, s.placements.get(id).profile == initial.placements.get(id).profile, s.placements.get(id).requirementIdentity == initial.placements.get(id).requirementIdentity, s.placements.get(id).requirementDigest == initial.placements.get(id).requirementDigest })
+  /// A Personal runner holds an assigned placement only of its owner's
+  /// execution, in an account it allowlists.
+  pure def personalAssignmentSafe(s: RunnerState): bool = s.assignments.keys().forall(aid =>
+    val a = s.assignments.get(aid)
+    val r = s.runners.get(a.runner)
+    val p = s.placements.get(a.execution)
+    or {
+      a.status != Offered, p.phase != Assigned, r.class != Personal,
+      and {
+        p.profile.personalRunnerAllowed, p.profile.ownerOf != 0, r.dedicatedOwner == p.profile.ownerOf,
+        r.allowlist.contains(executionById(s, a.execution).account)
+      }
+    })
   /// A current session and its durable last observation publish atomically.
   pure def inventoryObservationSafe(s: RunnerState): bool = s.sessions.keys().forall(rid =>
     val session = s.sessions.get(rid)

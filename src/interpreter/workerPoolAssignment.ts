@@ -14,7 +14,8 @@
  * A POOL IS THE MODEL'S RUNNER, SCOPED BY PROJECT. An execution draws on its
  * project's capacity account, which names no other project, so a pool's
  * partition standing equal to the execution's is the model's
- * `r.account == e.account`. Registering a pool
+ * `r.account == e.account`, and a personal pool's allowlist of partitions is
+ * the model's `r.allowlist`. Registering a pool
  * enables it, withholding `Execute` from its principal revokes it, and
  * registering it again mints a new principal, which is the generation a
  * session is current under. A poll is the session: it resolves to one pool,
@@ -35,7 +36,7 @@
  * with all of them.
  *
  * THE POLICY THE REGISTRY HAS NO COLUMN FOR IS DATA, NOT AN OMISSION. Class,
- * drain, trust, the allowance of secrets and source, and a dedicated owner are
+ * drain, trust, the allowance of secrets and source, an owner and an allowlist are
  * the model's administrator-owned authority, and the route and a demand on
  * each of them are the model's `ExecutionProfile`. The registry carries a
  * pool's class, every other term of its policy is
@@ -95,23 +96,25 @@ export const allWorkerPoolPlacementOutcomes = [
 export type WorkerPoolPlacementOutcome =
   (typeof allWorkerPoolPlacementOutcomes)[number];
 
-/** The administrator-owned policy of the model's `Runner`; `dedicatedOwner` is 0 for none, as the model writes it. */
+/** The administrator-owned policy of the model's `Runner`; an owner is a principal, undefined where the model writes 0 for none. */
 export interface WorkerPoolPolicy {
   readonly class: WorkerPoolClass;
   readonly draining: boolean;
   readonly trust: number;
   readonly secretsAllowed: boolean;
   readonly sourceAllowed: boolean;
-  readonly dedicatedOwner: number;
+  readonly dedicatedOwner: Principal | undefined;
+  readonly allowlist: readonly Partition[];
 }
 
-/** What the model's `ExecutionProfile` demands of a runner beside the route; `dedicatedOwnerRequired` is 0 when it requires none. */
+/** What the model's `ExecutionProfile` demands of a runner beside the route; an owner is a principal, undefined where the model writes 0 for none. */
 export interface WorkerPoolDemand {
   readonly personalRunnerAllowed: boolean;
   readonly trustMin: number;
   readonly secretsRequired: boolean;
   readonly sourceRequired: boolean;
-  readonly dedicatedOwnerRequired: number;
+  readonly dedicatedOwnerRequired: Principal | undefined;
+  readonly ownerOf: Principal | undefined;
 }
 
 /** The policy a pool is registered with; the registry carries its class per pool and none of the rest. */
@@ -121,16 +124,18 @@ export const workerPoolPolicyRegistered: WorkerPoolPolicy = {
   trust: 1,
   secretsAllowed: true,
   sourceAllowed: true,
-  dedicatedOwner: 0,
+  dedicatedOwner: undefined,
+  allowlist: [],
 };
 
-/** The demand every execution routed to a pool is pinned with: no personal pool, the registered trust, and secrets and source both, since a task is handed credentials and a clone. */
+/** The demand every execution routed to a pool is pinned with: no personal pool and no owner, the registered trust, and secrets and source both, since a task is handed credentials and a clone. */
 export const workerPoolDemandRouted: WorkerPoolDemand = {
   personalRunnerAllowed: false,
   trustMin: 1,
   secretsRequired: true,
   sourceRequired: true,
-  dedicatedOwnerRequired: 0,
+  dedicatedOwnerRequired: undefined,
+  ownerOf: undefined,
 };
 
 /** A registered pool as the model's `Runner`: its partition and name are the runner's identity, and its principal the session generation. */
@@ -198,22 +203,35 @@ export function workerPoolInventoryMatches(
   }
 }
 
-/** Whether the route and the pool's standing configure it for this execution, which is the model's `policyConfigures`: drain aside, since drain is posture and not incompatibility. */
+/**
+ * Whether the route and the pool's standing configure it for this execution,
+ * which is the model's `policyConfigures`: drain aside, since drain is posture
+ * and not incompatibility. A personal pool serves its owner's executions in
+ * the partitions it allowlists; every other pool serves its own partition.
+ */
 export function workerPoolPolicyConfigures(
   pool: WorkerPoolRunner,
   placement: WorkerPoolPlacement,
 ): boolean {
   const demand = placement.demand;
+  const personal = pool.class === "Personal";
   return (
     placement.route === "Pool" &&
-    workerPoolSamePartition(pool.partition, placement.partition) &&
+    (personal ||
+      workerPoolSamePartition(pool.partition, placement.partition)) &&
     pool.enabled &&
     !pool.revoked &&
-    (pool.class !== "Personal" || demand.personalRunnerAllowed) &&
+    (!personal || demand.personalRunnerAllowed) &&
+    (!personal || demand.ownerOf !== undefined) &&
+    (!personal || pool.dedicatedOwner === demand.ownerOf) &&
+    (!personal ||
+      pool.allowlist.some((allowed) =>
+        workerPoolSamePartition(allowed, placement.partition),
+      )) &&
     pool.trust >= demand.trustMin &&
     (!demand.secretsRequired || pool.secretsAllowed) &&
     (!demand.sourceRequired || pool.sourceAllowed) &&
-    (demand.dedicatedOwnerRequired === 0 ||
+    (demand.dedicatedOwnerRequired === undefined ||
       pool.dedicatedOwner === demand.dedicatedOwnerRequired)
   );
 }
