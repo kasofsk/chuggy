@@ -1,6 +1,7 @@
 /**
  * The landing a reader with no project meets, and the switcher entry that
- * reaches the same form, mounted.
+ * reaches the same form, mounted over a plane that answers neither of the
+ * form's reads, so its workspace is the free text a failed read leaves.
  *
  * What is asserted is the traffic as well as the words: a name the wire would
  * refuse sends nothing, and a press repeated after an answer that never arrived
@@ -8,12 +9,10 @@
  */
 
 // jscpd:ignore-start -- the imports and vi.mock factories a case cannot hoist out
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, screen } from "@testing-library/react";
 import { afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
-import { SessionProvider } from "../app/browser/session.tsx";
 import { Landing } from "../app/browser/routes.tsx";
 import {
   ProjectSwitcher,
@@ -25,8 +24,16 @@ import {
   projectNameRule,
 } from "../app/core/projectCreation.ts";
 import { persistentStore } from "../app/browser/ports.ts";
+import {
+  drawn,
+  pressed,
+  ruleUnder,
+  served,
+  submit,
+  typed,
+} from "./projectCreationDrawn.tsx";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
-import { answer, holderDouble, settled, turned } from "./screenHarness.tsx";
+import { answer, settled } from "./screenHarness.tsx";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 import type * as RouterModule from "@tanstack/react-router";
 
@@ -60,17 +67,6 @@ vi.mock("@tanstack/react-router", async (importOriginal) => ({
 }));
 // jscpd:ignore-end -- the case's own doubles resume here
 
-interface Posted {
-  readonly key: string | undefined;
-  readonly body: unknown;
-}
-
-interface Init {
-  readonly method?: string;
-  readonly headers?: Record<string, string>;
-  readonly body?: string;
-}
-
 const partition = { tenant: "vteng", project: "chuggy" };
 
 beforeAll(() => {
@@ -89,54 +85,6 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-/** The API as one case scripts it: an inventory of the given projects, and a
- * creation answered by the case, every one of which is kept. */
-function served(
-  projects: readonly unknown[],
-  created: () => Promise<Response>,
-): Posted[] {
-  const posted: Posted[] = [];
-  vi.stubGlobal("fetch", (url: string, init?: Init) => {
-    if (init?.method === "POST" && url === "/api/v1/projects") {
-      posted.push({
-        key: init.headers?.["idempotency-key"],
-        body: JSON.parse(init.body ?? "null"),
-      });
-      return created();
-    }
-    return Promise.resolve(answer({ projects }));
-  });
-  return posted;
-}
-
-async function drawn(children: ReactNode): Promise<void> {
-  render(
-    <SessionProvider holder={holderDouble()}>
-      <QueryClientProvider client={new QueryClient()}>
-        {children}
-      </QueryClientProvider>
-    </SessionProvider>,
-  );
-  await settled();
-}
-
-function typed(label: string, value: string): void {
-  fireEvent.change(screen.getByRole("textbox", { name: label }), {
-    target: { value },
-  });
-}
-
-function submit(): HTMLElement {
-  return screen.getByRole("button", { name: "Create project" });
-}
-
-async function pressed(): Promise<void> {
-  await turned(() => {
-    fireEvent.click(submit());
-  });
-  await settled();
-}
-
 test("a reader with no project meets the form, under a bar that signs out and sets the theme", async () => {
   served([], () => Promise.resolve(answer(partition, 201)));
   await drawn(<Landing />);
@@ -153,16 +101,6 @@ test("a reader with no project meets the form, under a bar that signs out and se
   ).toBeDefined();
   expect(screen.queryByText("Chat position")).toBeNull();
 });
-
-/** The line a box is described by, which is where the rule stands. */
-function ruleUnder(label: string): HTMLElement {
-  const box = screen.getByRole("textbox", { name: label });
-  const line = document.getElementById(
-    box.getAttribute("aria-describedby") ?? "",
-  );
-  if (line === null) throw new Error(`nothing describes ${label}`);
-  return line;
-}
 
 test("the rule both names are held to stands under each field before anything is typed", async () => {
   served([], () => Promise.resolve(answer(partition, 201)));
@@ -260,7 +198,7 @@ test("a press repeated after no answer spends the same identity, and an edit dra
   expect(keys[2]).not.toBe(keys[0]);
 });
 
-test("the switcher offers a new project beside every project, and it opens the form", async () => {
+test("the switcher offers a new project beside every project, and it opens the form in the workspace of the project shown", async () => {
   served([partition], () => Promise.resolve(answer(partition, 201)));
   await drawn(<ProjectSwitcher partition={partition} />);
   fireEvent.keyDown(screen.getByRole("button", { name: /^Project / }), {
@@ -273,5 +211,7 @@ test("the switcher offers a new project beside every project, and it opens the f
     screen.getAllByRole("menuitemradio").map((one) => one.textContent),
   ).toEqual(["vteng / chuggy"]);
   fireEvent.click(item);
-  expect(held.went).toEqual([{ to: projectCreationRoutePath }]);
+  expect(held.went).toStrictEqual([
+    { to: projectCreationRoutePath, search: { workspace: partition.tenant } },
+  ]);
 });

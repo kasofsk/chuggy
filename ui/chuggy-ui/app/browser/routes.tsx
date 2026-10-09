@@ -44,7 +44,7 @@ import { InvitePage } from "./InvitePage.tsx";
 import { LeadPage } from "./LeadPage.tsx";
 import { persistentStore } from "./ports.ts";
 import {
-  ProjectCreationForm,
+  ProjectCreation,
   ProjectCreationPage,
   ProjectlessFrame,
 } from "./ProjectCreation.tsx";
@@ -82,12 +82,15 @@ export function Landing(): ReactNode {
     return (
       <ProjectlessFrame>
         <div className="grid justify-items-center gap-4">
-          <EmptyState
-            variant="page"
-            label="No projects"
-            detail="Create one to start"
+          <ProjectCreation
+            lead={
+              <EmptyState
+                variant="page"
+                label="No projects"
+                detail="Create one to start"
+              />
+            }
           />
-          <ProjectCreationForm />
         </div>
       </ProjectlessFrame>
     );

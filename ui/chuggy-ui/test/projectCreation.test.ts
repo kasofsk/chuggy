@@ -1,4 +1,5 @@
-/** What a name may be before it is sent, and what one creation came to. */
+/** What a name may be before it is sent, which press repeats the last, and
+ * what one creation came to. */
 
 import { expect, test } from "vitest";
 
@@ -11,6 +12,7 @@ import {
   projectCreationNameFault,
   projectCreationOutcome,
   projectCreationSendable,
+  projectCreationStanding,
   projectNameRule,
   projectNameLengthFault,
 } from "../app/core/projectCreation.ts";
@@ -43,6 +45,18 @@ test("a form is sent only when both names are ones the wire takes", () => {
   expect(projectCreationSendable({ ...partition, project: "Chuggy" })).toBe(
     false,
   );
+});
+
+test("what was sent stands only while the form holds both of its names", () => {
+  const sent = { fields: partition, operation: "op-one", status: "Exists" };
+  expect(projectCreationStanding(sent, { ...partition })).toBe(sent);
+  expect(
+    projectCreationStanding(sent, { ...partition, tenant: "acme" }),
+  ).toBeUndefined();
+  expect(
+    projectCreationStanding(sent, { ...partition, project: "arbbot" }),
+  ).toBeUndefined();
+  expect(projectCreationStanding(undefined, partition)).toBeUndefined();
 });
 
 test("a creation or its replay is the project it names", () => {

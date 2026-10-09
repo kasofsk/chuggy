@@ -7,6 +7,7 @@
  */
 
 import {
+  accessCallerTenantsSchema,
   accessInvitedSchema,
   accessInviteLinkMintedSchema,
   accessInviteLinkRedeemedSchema,
@@ -23,6 +24,7 @@ import {
   accessTenantAuthoritiesSchema,
   accessTenantPeopleSchema,
   accessWorkspaceLinksSchema,
+  type AccessCallerTenants,
   type AccessInvitation,
   type AccessInvitationGrants,
   type AccessInvited,
@@ -155,6 +157,15 @@ export function apiSiteTenants(
 ): Promise<ApiResult<AccessSiteTenants>> {
   return apiGet(ports, accessPlanePath("siteTenants", {}), (value) =>
     accessSiteTenantsSchema.parse(value),
+  );
+}
+
+/** The workspaces a role names the caller in, answered to anyone signed in about themself. */
+export function apiCallerTenants(
+  ports: ApiPorts,
+): Promise<ApiResult<AccessCallerTenants>> {
+  return apiGet(ports, accessPlanePath("callerTenants", {}), (value) =>
+    accessCallerTenantsSchema.parse(value),
   );
 }
 
