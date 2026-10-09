@@ -282,6 +282,43 @@ test("a project the caller is not a member of answers nothing on any route", asy
   assert.equal(asking.statusCode, 404, asking.body);
 });
 
+/**
+ * Asking starts a turn, so a member who may read the project and not change it
+ * is answered the `404` a caller outside it is, and still reads the listing.
+ */
+test("a member holding Read and not Mutate reads the listing and cannot ask", async () => {
+  const { partition } = await askableProject("reader");
+  const reader = inquiryRigMember(
+    rig,
+    partition,
+    "http-reader",
+    new Set(["Read"] as const),
+  );
+  await using app = inquiryApp(reader.principal);
+
+  const asking = await app.inject({
+    method: "POST",
+    url: pathOf(partition),
+    headers: versioned,
+    payload: {
+      session: `inq-http-${randomUUID()}`,
+      turn: `inq-turn-http-${randomUUID()}`,
+      question: "may I?",
+    },
+  });
+  assert.equal(asking.statusCode, 404, asking.body);
+
+  const listed = await app.inject({
+    url: pathOf(partition),
+    headers: authorized,
+  });
+  assert.equal(listed.statusCode, 200, listed.body);
+  assert.deepEqual(
+    leadInquiriesResponseSchema.parse(listed.json()).inquiries,
+    [],
+  );
+});
+
 /** The bound the door checks before anything reaches a definer. */
 test("a question over the door's own bound never reaches the database", async () => {
   const { partition, member } = await askableProject("bound");

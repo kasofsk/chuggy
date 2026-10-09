@@ -227,12 +227,12 @@ async function ingressLead(
   );
 }
 
-/** Admits the principal to ask: `Read` on the project, and the tenant's hosted grant asking spends. */
+/** Admits the principal to ask and to list back: `Mutate` and `Read` on the project, and the tenant's hosted grant asking spends. */
 function ingressAsker(harness: PostgresHarness, partition: Partition): void {
   harness.access.grant({
     partition,
     principal,
-    access: new Set(["Read"]),
+    access: new Set(["Read", "Mutate"]),
   });
   harness.access.grantTenant({
     tenant: partition.tenant,
