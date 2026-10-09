@@ -1,8 +1,8 @@
 /**
  * A tenant's invite links against a real PostgreSQL, driven as the access
  * plane's own role: one spend of a token where two race, the database's clock
- * deciding what has expired, a spend given back, and the tenant's bounds kept
- * under the mint's lock.
+ * deciding what has expired, a spend given back, an open link read without
+ * spending it, and the tenant's bounds kept under the mint's lock.
  */
 
 import assert from "node:assert/strict";
@@ -85,6 +85,16 @@ test("a link is read back as it was minted, open, and spent once by the statemen
   assert.equal(used?.state === "Used" ? used.usedBy : undefined, "user");
 });
 
+test("an open link is read with its `newAccounts` and is still open, and a spent one is not read", async () => {
+  const tenant = asTenantId("links-opened");
+  const link = await minted(tenant);
+  assert.deepEqual(await links.opened(link.digest), { newAccounts: true });
+  assert.deepEqual(await states(tenant), [[link.link, "Open"]]);
+  assert.notEqual(await links.spend(link.digest, "user"), undefined);
+  assert.equal(await links.opened(link.digest), undefined);
+  assert.equal(await links.opened(digestNext()), undefined);
+});
+
 test("two redemptions of one token started together: exactly one is given the link", async () => {
   const tenant = asTenantId("links-race");
   const link = await minted(tenant);
@@ -103,6 +113,7 @@ test("a link stored past its expiry lists as `Expired` and is not spent", async 
     [link.link],
   );
   assert.deepEqual(await states(tenant), [[link.link, "Expired"]]);
+  assert.equal(await links.opened(link.digest), undefined);
   assert.equal(await links.spend(link.digest, "user"), undefined);
   assert.equal(await links.revoke(tenant, link.link), false);
 });

@@ -1,7 +1,7 @@
 /**
  * Invite links over an authority and a store held in memory: who may make,
- * list and revoke one, what redeeming grants and to whom, and what a grant
- * that faults leaves behind.
+ * list and revoke one, what redeeming grants and to whom, what a grant that
+ * faults leaves behind, and which tokens the registration gate admits.
  */
 
 import assert from "node:assert/strict";
@@ -340,4 +340,89 @@ test("a plane with no store answers every route not configured before it asks th
   });
   assert.deepEqual(memory.asked, []);
   assert.equal(memory.pages, 0);
+});
+
+/** Each token the registration gate is asked about, set up as its case names, and whether it is admitted. */
+const registrationCases: readonly (readonly [
+  string,
+  (made: Awaited<ReturnType<typeof linked>>) => Promise<string | undefined>,
+  boolean,
+])[] = [
+  [
+    "an open link with `newAccounts`",
+    async ({ service }) => (await minted(service)).token,
+    true,
+  ],
+  [
+    "an open link without `newAccounts`",
+    async ({ service }) => {
+      const made = await service.mint(bob, tenant, granted);
+      return made.outcome === "Minted" ? made.minted.token : undefined;
+    },
+    false,
+  ],
+  [
+    "a used link",
+    async ({ service }) => {
+      const link = await minted(service);
+      await service.redeemed(zed, link.token);
+      return link.token;
+    },
+    false,
+  ],
+  [
+    "a revoked link",
+    async ({ service }) => {
+      const link = await minted(service);
+      await service.revoked(alice, tenant, link.link);
+      return link.token;
+    },
+    false,
+  ],
+  [
+    "an expired link",
+    async ({ links, service }) => {
+      const link = await minted(service);
+      if (links !== undefined) links.nowMs = link.expiresAtMs;
+      return link.token;
+    },
+    false,
+  ],
+  ["an unknown token", () => Promise.resolve("token-none"), false],
+  ["an empty token", () => Promise.resolve(""), false],
+  ["an absent token", () => Promise.resolve(undefined), false],
+];
+
+for (const [name, presented, admitted] of registrationCases)
+  test(`the registration gate ${admitted ? "admits" : "refuses"} ${name}`, async () => {
+    const made = await linked();
+    const token = await presented(made);
+    assert.equal(await made.service.registrationAdmitted(token), admitted);
+  });
+
+test("a link admitted to registration is still open, and a redemption after it is given it", async () => {
+  const { links, service } = await linked();
+  const link = await minted(service);
+  assert.equal(await service.registrationAdmitted(link.token), true);
+  assert.equal(await service.registrationAdmitted(link.token), true);
+  assert.equal(links?.rows[0]?.used, undefined);
+  const listed = await service.listed(alice, tenant);
+  assert.equal(
+    listed.outcome === "Listed" ? listed.listed.links[0]?.state : undefined,
+    "Open",
+  );
+  assert.equal((await service.redeemed(zed, link.token)).outcome, "Redeemed");
+});
+
+test("a plane with no store refuses every registration, and a store that rejects makes the gate reject", async () => {
+  assert.equal(
+    await (await linked(false)).service.registrationAdmitted("token-0"),
+    false,
+  );
+  const { links, service } = await linked();
+  const link = await minted(service);
+  const fault = new Error("store down");
+  if (links !== undefined)
+    Object.assign(links.store, { opened: () => Promise.reject(fault) });
+  await assert.rejects(service.registrationAdmitted(link.token), fault);
 });

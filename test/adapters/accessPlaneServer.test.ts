@@ -1,12 +1,14 @@
 /**
  * The access plane's server over an authority held in memory: a body read as
- * the API's media type, a removal served, every refusal in the API's
- * envelope, what a caller may do and who holds each authority read as their
+ * the API's media type, a removal served, every refusal of a caller in the
+ * API's envelope, what a caller may do and who holds each authority read as their
  * schemas, each change of a holder's outcome, and no request reaching a
  * relation but the ones the role rosters and the authority rosters name,
  * hosted runs, and the `site` link a site's invitation writes on a new tenant,
  * which the site's tenant list then reads back, and a tenant's invite links
- * made, listed, revoked and redeemed, each route's refusals among them.
+ * made, listed, revoked and redeemed, each route's refusals among them, and
+ * the directory's registration gate, which holds no bearer and is answered in
+ * the directory's own shape.
  */
 
 import assert from "node:assert/strict";
@@ -39,6 +41,8 @@ import {
   accessProjectAuthoritiesSchema,
   accessProjectPeopleSchema,
   accessProjectRoles,
+  accessRegistrationGateMessageId,
+  accessRegistrationGatePath,
   accessSiteAbilitiesSchema,
   accessSiteAuthorities,
   accessSiteAuthoritiesSchema,
@@ -378,7 +382,7 @@ test("a list reads as its schema, the caller marked by the server", async () => 
   );
 });
 
-test("every refusal carries the API's envelope: unauthenticated, absent, rejected and the conflict by its own name", async () => {
+test("every refusal of a caller carries the API's envelope: unauthenticated, absent, rejected and the conflict by its own name", async () => {
   const { app } = await served();
   const missing = await app.inject({
     method: "GET",
@@ -1703,4 +1707,97 @@ test("a plane with no store answers every link route not configured, while an in
     payload: JSON.stringify(invitation),
   });
   assert.ok([200, 201].includes(invited.statusCode), invited.body);
+});
+
+/** The directory's question about a registration presenting `body`, sent as JSON as the directory sends it, with `headers` beside. */
+function registrationAsked(
+  app: Awaited<ReturnType<typeof served>>["app"],
+  body: unknown,
+  headers: Record<string, string> = {},
+) {
+  return app.inject({
+    method: "POST",
+    url: accessRegistrationGatePath,
+    headers: { ...headers, "content-type": "application/json" },
+    payload: JSON.stringify(body),
+  });
+}
+
+/** Asserts the gate refused, its body exactly the directory's message. */
+function registrationRefused(answered: {
+  statusCode: number;
+  body: string;
+}): void {
+  assert.equal(answered.statusCode, 403, answered.body);
+  assert.deepEqual(JSON.parse(answered.body), {
+    messages: [
+      {
+        instance_ptr: "#/",
+        messages: [
+          {
+            id: accessRegistrationGateMessageId,
+            text: "Invite needed",
+            type: "error",
+          },
+        ],
+      },
+    ],
+  });
+}
+
+test("the registration gate admits an open link that may make accounts 204 with no body, with or without a bearer, and refuses every other token in the directory's shape", async () => {
+  const { app } = await served();
+  const opened = accessInviteLinkMintedSchema.parse(
+    (await linkMinted(app, "alice-token", { role: "Member" })).json(),
+  );
+  const accountless = accessInviteLinkMintedSchema.parse(
+    (await linkMinted(app, "dee-token", { role: "Member" })).json(),
+  );
+  for (const headers of [{}, as("forged"), as("alice-token")]) {
+    const admitted = await registrationAsked(
+      app,
+      { token: opened.token },
+      headers,
+    );
+    assert.equal(admitted.statusCode, 204, admitted.body);
+    assert.equal(admitted.body, "");
+    registrationRefused(
+      await registrationAsked(app, { token: accountless.token }, headers),
+    );
+  }
+  for (const body of [{}, { token: "" }, { token: "token-nobody-holds" }])
+    registrationRefused(await registrationAsked(app, body));
+  enveloped(
+    await registrationAsked(app, { token: 7 }),
+    "Rejected",
+    "InvalidRequest",
+  );
+  const redeemed = await app.inject({
+    method: "POST",
+    url: pathOf("inviteLinkRedemption"),
+    headers: { ...as("sam-token"), ...typed },
+    payload: JSON.stringify({ token: opened.token }),
+  });
+  assert.equal(redeemed.statusCode, 200, redeemed.body);
+  registrationRefused(await registrationAsked(app, { token: opened.token }));
+});
+
+test("the registration gate refuses on a plane with no store, and a store that rejects is a fault without the refusal's body", async () => {
+  registrationRefused(
+    await registrationAsked(
+      (await served(true, undefined, undefined, false)).app,
+      { token: "token-0" },
+    ),
+  );
+  const { app, links } = await served();
+  const minted = accessInviteLinkMintedSchema.parse(
+    (await linkMinted(app, "alice-token", { role: "Member" })).json(),
+  );
+  if (links !== undefined)
+    Object.assign(links.store, {
+      opened: () => Promise.reject(new Error("store down")),
+    });
+  const faulted = await registrationAsked(app, { token: minted.token });
+  assert.ok(faulted.statusCode >= 500, faulted.body);
+  assert.ok(!faulted.body.includes("Invite needed"), faulted.body);
 });
