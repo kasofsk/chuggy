@@ -1781,6 +1781,17 @@ export const hostedRunsResponseSchema = z.strictObject({
 });
 export type HostedRunsResponse = z.infer<typeof hostedRunsResponseSchema>;
 
+/** Which of a project's doors its reader may press, each by the kind that door asks. */
+export const projectAbilitiesResponseSchema = z.strictObject({
+  mutate: z.boolean(),
+  dispatch: z.boolean(),
+  manageSelector: z.boolean(),
+  administer: z.boolean(),
+});
+export type ProjectAbilitiesResponse = z.infer<
+  typeof projectAbilitiesResponseSchema
+>;
+
 /** What a registration-token mint answers: the token, once, and the instant it stops being redeemable. */
 export const workerPoolTokenResponseSchema = z.object({
   token: z.string().min(1),

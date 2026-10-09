@@ -98,6 +98,7 @@ export const sessionBearerRouteClasses = {
   executionPlacement: { GET: "Partition", PUT: "Partition" },
   sessionPlacement: { GET: "Partition", PUT: "Partition" },
   hostedRuns: partitionRead,
+  abilities: partitionRead,
   workerPools: partitionRead,
   drafts: { GET: "Partition", POST: "Partition" },
   draftInitialization: partitionRead,

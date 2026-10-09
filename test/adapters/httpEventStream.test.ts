@@ -138,6 +138,7 @@ function servedWeb(
     executions: notFound,
     operationalStatus: notFound,
     hostedRuns: notFound,
+    abilities: notFound,
     selectorOperationalContext: notFound,
     outputContent: () => Promise.resolve({ read: "NotFound" }),
     uploadProjectArtifact: notFound,

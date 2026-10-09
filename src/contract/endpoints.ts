@@ -18,6 +18,7 @@ import {
   operationalStatusResponseSchema,
   executionResponseSchema,
   hostedRunsResponseSchema,
+  projectAbilitiesResponseSchema,
   leadReadResponseSchema,
   leadTranscriptResponseSchema,
   runTurnsResponseSchema,
@@ -83,6 +84,11 @@ export const nativeHttpEndpoints = {
     method: "GET",
     path: nativeHttpRoutes.hostedRuns,
     response: hostedRunsResponseSchema,
+  },
+  abilities: {
+    method: "GET",
+    path: nativeHttpRoutes.abilities,
+    response: projectAbilitiesResponseSchema,
   },
   lead: {
     method: "GET",

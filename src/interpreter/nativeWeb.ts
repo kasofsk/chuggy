@@ -127,6 +127,8 @@ import {
 import type { AttemptId, ExecutionId } from "./schedulerIdentity.ts";
 import { type PublicInstant } from "./publicResource.ts";
 import { hostedRunsGranted, memberAuthorities } from "./projectAccess.ts";
+import { projectAbilities } from "./projectAbilities.ts";
+import type { ProjectAbilitiesResponse } from "../contract/responses.ts";
 import type { ProjectAccess, ProjectAccessKind } from "./projectAccess.ts";
 import type { Authority } from "./operationInbox.ts";
 import type { SelectorOperationalContext } from "./selector.ts";
@@ -579,6 +581,10 @@ export interface NativeWeb {
     principal: Principal,
     partition: Partition,
   ): Promise<AuthorizedResult<boolean>>;
+  abilities(
+    principal: Principal,
+    partition: Partition,
+  ): Promise<AuthorizedResult<ProjectAbilitiesResponse>>;
   lead(principal: Principal, partition: Partition): Promise<LeadRead>;
   leadTranscript(
     principal: Principal,
@@ -2225,6 +2231,8 @@ export function nativeWeb(
     ...nativeLeadReadMethods(access, reads, leads),
     ...nativeThreadMethods(access, threads, sessionRoutes, projectArtifacts),
     hostedRuns: nativeHostedRunsMethod(access),
+    abilities: (principal, partition) =>
+      projectAbilities(access, principal, partition),
     ...nativeLeadInquiryMethods(access, inquiries, sessionRoutes),
     importRepositoryConfigurations: nativeRepositoryConfigurationImportMethod(
       access,

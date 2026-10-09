@@ -497,6 +497,7 @@ export const nativeHttpRoutes = {
   executionPlacement: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/execution-placement`,
   sessionPlacement: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/session-placement`,
   hostedRuns: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/hosted-runs`,
+  abilities: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/abilities`,
   workerPools: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/worker-pools`,
   workerPoolRegistrationTokens: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/worker-pool-registration-tokens`,
   workerPoolRegistrations: `${nativeHttpBasePath}/worker-pool-registrations`,

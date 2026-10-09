@@ -87,6 +87,7 @@ const routesInOrder = [
   "/api/v1/tenants/:tenant/projects/:project/execution-placement",
   "/api/v1/tenants/:tenant/projects/:project/session-placement",
   "/api/v1/tenants/:tenant/projects/:project/hosted-runs",
+  "/api/v1/tenants/:tenant/projects/:project/abilities",
   "/api/v1/tenants/:tenant/projects/:project/worker-pools",
   "/api/v1/tenants/:tenant/projects/:project/worker-pool-registration-tokens",
   "/api/v1/worker-pool-registrations",

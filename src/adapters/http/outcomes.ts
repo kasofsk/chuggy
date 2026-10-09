@@ -159,7 +159,10 @@ import type {
 import type { ActionReportResponse } from "../../contract/actionReport.ts";
 import type { ActionReported } from "../../interpreter/actionReport.ts";
 import type { TicketActionReachResponse } from "../../contract/actionReach.ts";
-import type { TicketLandingsResponse } from "../../contract/responses.ts";
+import type {
+  ProjectAbilitiesResponse,
+  TicketLandingsResponse,
+} from "../../contract/responses.ts";
 import type { TicketLandings } from "../../interpreter/ticketLandings.ts";
 import type {
   ActionReachRead,
@@ -449,6 +452,14 @@ export function hostedRunsResponse(
   return result.result === "NotFound"
     ? response(404, nativeHttpError("NotFound", "Resource not found."))
     : response(200, { granted: result.value });
+}
+
+export function projectAbilitiesResponse(
+  result: AuthorizedResult<ProjectAbilitiesResponse>,
+): NativeHttpResponse {
+  return result.result === "NotFound"
+    ? response(404, nativeHttpError("NotFound", "Resource not found."))
+    : response(200, result.value);
 }
 
 export function selectorOperationalContextResponse(
