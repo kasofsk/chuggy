@@ -2,7 +2,8 @@
  * The access plane against a real authority: what a list reads back from the
  * tuples, a principal and a project object decoded from what the server
  * answers, a role or hosted runs granted being a permit `ProjectAccess` then
- * answers for, and what a caller may do following who holds each kind.
+ * answers for, what a caller may do following who holds each kind, and the
+ * caller's own tenants reading `administer` from the kind rather than a role.
  *
  * NOTHING ON A FRESH TENANT IS WRITTEN BUT BY THE CASE. The plane writes a
  * tenant's first administrator and its defaults only through the site's
@@ -16,6 +17,7 @@ import { test } from "node:test";
 
 import { ketoAccessPageTuplesMax } from "../../src/adapters/keto/accessTuples.ts";
 import { accessAbilities } from "../../src/interpreter/accessAbilities.ts";
+import { accessCallerTenants } from "../../src/interpreter/accessCallerTenants.ts";
 import { accessInvitations } from "../../src/interpreter/accessInvitation.ts";
 import {
   accessPlane,
@@ -59,6 +61,7 @@ import {
   ketoHarnessIssuer,
   ketoHarnessPartition,
   ketoHarnessSiteDefaults,
+  ketoHarnessSomeone,
   ketoHarnessTuples,
   ketoHarnessWithSiteAdministrator,
 } from "./harness.ts";
@@ -76,6 +79,10 @@ const plane = accessPlane(
   { issuer: ketoHarnessIssuer, bounds: accessPlaneBoundsDefault },
 );
 const abilities = accessAbilities(
+  { access, tuples },
+  { bounds: accessPlaneBoundsDefault },
+);
+const callerTenants = accessCallerTenants(
   { access, tuples },
   { bounds: accessPlaneBoundsDefault },
 );
@@ -635,6 +642,50 @@ test("the site's administrator, holding no role in the tenant, is answered every
       createAccount: true,
       createTenant: true,
       manageAuthorities: true,
+    });
+  });
+});
+
+/** A fresh tenant linked to the site, `principal` a member of it. */
+async function memberedTenant(label: string, principal: Principal) {
+  const { tenant } = ketoHarnessPartition(label);
+  await ketoHarnessSiteDefaults();
+  for (const grant of [
+    ...tenantAuthorityDefaults(tenant),
+    {
+      namespace: projectAccessTenantNamespace,
+      object: projectAccessTenantObject(tenant),
+      relation: "members",
+      holder: { subject: "Principal", principal },
+    } satisfies ProjectGrant,
+  ])
+    await grants.write(grant);
+  return tenant;
+}
+
+test("a member of a tenant whose `admins` holds its `members` reads `administer` with the role `Member`, and the site's administrator holding `Member` does not", async () => {
+  const member = ketoHarnessSomeone("set-member");
+  const tenant = await memberedTenant("caller-set", member);
+  await grants.write({
+    namespace: projectAccessTenantNamespace,
+    object: projectAccessTenantObject(tenant),
+    relation: "admins",
+    holder: {
+      subject: "Holders",
+      namespace: projectAccessTenantNamespace,
+      object: projectAccessTenantObject(tenant),
+      relation: "members",
+    },
+  });
+  assert.deepEqual(await callerTenants.callerTenants(member), {
+    tenants: [{ tenant, roles: ["Member"], administer: true }],
+    truncated: false,
+  });
+  await ketoHarnessWithSiteAdministrator(async (administrator) => {
+    const linked = await memberedTenant("caller-site", administrator);
+    assert.deepEqual(await callerTenants.callerTenants(administrator), {
+      tenants: [{ tenant: linked, roles: ["Member"], administer: false }],
+      truncated: false,
     });
   });
 });

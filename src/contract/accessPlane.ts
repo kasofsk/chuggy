@@ -24,6 +24,11 @@
  * THE SITE'S TENANTS ARE ANSWERED TO WHOEVER MAY MAKE ONE, each with its
  * administrators, at the path the site's invitation makes them at.
  *
+ * THE CALLER'S OWN TENANTS ARE ANSWERED TO ANY CALLER SIGNED IN, about them
+ * alone: each tenant a role on its own object names them in, the roles, and
+ * whether they administer it. It names nobody else, so there is nobody it is
+ * hidden from, and a caller written into none is answered an empty list.
+ *
  * A WORKSPACE LINK IS THE SITE'S INVITATION MADE IN ADVANCE, naming nobody and
  * no workspace: whoever presents it signed in names the workspace they will
  * administer, at the route every invite link is redeemed at.
@@ -247,6 +252,7 @@ export const accessPlaneRoutes = {
     path: `${accessSitePath}/workspaces`,
   },
   siteTenants: { method: "GET", path: `${accessSitePath}/workspaces` },
+  callerTenants: { method: "GET", path: `${accessPlaneBasePath}/workspaces` },
   siteWorkspaceLinkCreation: {
     method: "POST",
     path: `${accessSitePath}/workspace-links`,
@@ -646,6 +652,23 @@ export const accessSiteTenantsSchema = z.strictObject({
   truncated: z.boolean(),
 });
 
+/**
+ * One tenant a role names the caller in: the roles their own tuples give, and
+ * whether they hold `AdministerTenant` there, which the authority answers and
+ * no role decides.
+ */
+export const accessCallerTenantSchema = z.strictObject({
+  tenant: identitySchema,
+  roles: z.array(accessTenantRoleSchema),
+  administer: z.boolean(),
+});
+
+/** What the caller's own tenant list answers, in tenant order. */
+export const accessCallerTenantsSchema = z.strictObject({
+  tenants: z.array(accessCallerTenantSchema),
+  truncated: z.boolean(),
+});
+
 /** How long an invite link stands once made. */
 export const accessInviteLinkLifetimeMs = 7 * 24 * 60 * 60 * 1_000;
 
@@ -863,6 +886,8 @@ export type AccessSiteAbilities = z.infer<typeof accessSiteAbilitiesSchema>;
 export type AccessAuthorityPerson = z.infer<typeof accessAuthorityPersonSchema>;
 export type AccessSiteTenant = z.infer<typeof accessSiteTenantSchema>;
 export type AccessSiteTenants = z.infer<typeof accessSiteTenantsSchema>;
+export type AccessCallerTenant = z.infer<typeof accessCallerTenantSchema>;
+export type AccessCallerTenants = z.infer<typeof accessCallerTenantsSchema>;
 export type AccessSiteAuthorities = z.infer<typeof accessSiteAuthoritiesSchema>;
 export type AccessTenantAuthorities = z.infer<
   typeof accessTenantAuthoritiesSchema

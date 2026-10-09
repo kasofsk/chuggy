@@ -1,8 +1,8 @@
 /**
  * The listing as the access plane asks it of the authority: what each query is
- * sent as, one relation across a namespace among them, how a tuple's subject is
- * read, and that the widest page this tree can write is read rather than
- * refused as past its bound.
+ * sent as, one relation and one principal across a namespace among them, how
+ * a tuple's subject is read, and that the widest page this tree can write is
+ * read rather than refused as past its bound.
  */
 
 import assert from "node:assert/strict";
@@ -20,7 +20,10 @@ import {
   ProjectAccessUnavailable,
   projectAccessObject,
 } from "../../src/interpreter/projectAccess.ts";
-import { principalCharsMax } from "../../src/interpreter/principal.ts";
+import {
+  asPrincipal,
+  principalCharsMax,
+} from "../../src/interpreter/principal.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 
 const settings = checkedProjectAccessSettings({
@@ -202,5 +205,23 @@ test("a relation across a namespace is asked by the namespace and the relation a
     namespace: "Tenant",
     relation: "admins",
     page_size: String(ketoAccessPageTuplesMax),
+  });
+});
+
+test("a principal across a namespace is asked by the namespace and the principal as `subject_id` alone, and the next page by its token", async () => {
+  const { asked, reader } = readerOf(JSON.stringify({ relation_tuples: [] }));
+  await reader.page(
+    {
+      query: "NamespaceSubject",
+      namespace: "Tenant",
+      principal: asPrincipal("p"),
+    },
+    "this",
+  );
+  assert.deepEqual(Object.fromEntries(asked[0]?.searchParams ?? []), {
+    namespace: "Tenant",
+    subject_id: "p",
+    page_size: String(ketoAccessPageTuplesMax),
+    page_token: "this",
   });
 });

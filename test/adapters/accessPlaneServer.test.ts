@@ -5,8 +5,9 @@
  * schemas, each change of a holder's outcome, and no request reaching a
  * relation but the ones the role rosters and the authority rosters name,
  * hosted runs, and the `site` link a site's invitation writes on a new tenant,
- * which the site's tenant list then reads back, and a tenant's invite links
- * made, listed, revoked and redeemed, each route's refusals among them, and
+ * which the site's tenant list then reads back, the caller's own tenants, and
+ * a tenant's invite links made, listed, revoked and redeemed, each route's
+ * refusals among them, and
  * the directory's registration gate, which holds no bearer and is answered in
  * the directory's own shape.
  */
@@ -47,6 +48,7 @@ import {
   accessSiteAuthorities,
   accessSiteAuthoritiesSchema,
   accessSiteTenantsSchema,
+  accessCallerTenantsSchema,
   accessTenantAbilitiesSchema,
   accessTenantAuthoritiesSchema,
   accessTenantPeopleSchema,
@@ -124,6 +126,7 @@ import {
   accessGivenTenantAdministrator,
   accessMemory,
   accessMemoryAbilities,
+  accessMemoryCallerTenants,
   accessMemoryAuthorities,
   accessMemoryHolders,
   accessMemoryPlane,
@@ -244,6 +247,7 @@ async function served(
     ownerInvitations: invitations.owner(memory),
     inviteLinks: accessMemoryInviteLinks(memory, links, directory),
     abilities: accessMemoryAbilities(memory),
+    callerTenants: accessMemoryCallerTenants(memory),
     authorities: accessMemoryAuthorities(
       memory,
       accessPlaneBoundsDefault,
@@ -1379,6 +1383,31 @@ test("the site's tenants read as their strict schema to a caller who may make on
     assert.equal(absent.statusCode, 404, token);
     enveloped(absent, "Absent");
   }
+  const unauthenticated = await get();
+  assert.equal(unauthenticated.statusCode, 401);
+  enveloped(unauthenticated, "Unauthenticated");
+});
+
+test("the caller's own tenants read as their strict schema to any caller signed in, empty to one holding only a project's role, and are refused without a credential", async () => {
+  const { app } = await served();
+  const get = (token?: string) =>
+    app.inject({
+      method: "GET",
+      url: pathOf("callerTenants"),
+      ...(token === undefined ? {} : { headers: as(token) }),
+    });
+  const held = await get("alice-token");
+  assert.equal(held.statusCode, 200, held.body);
+  assert.deepEqual(accessCallerTenantsSchema.parse(held.json()), {
+    tenants: [{ tenant, roles: ["Admin"], administer: true }],
+    truncated: false,
+  });
+  const none = await get("priya-token");
+  assert.equal(none.statusCode, 200, none.body);
+  assert.deepEqual(accessCallerTenantsSchema.parse(none.json()), {
+    tenants: [],
+    truncated: false,
+  });
   const unauthenticated = await get();
   assert.equal(unauthenticated.statusCode, 401);
   enveloped(unauthenticated, "Unauthenticated");

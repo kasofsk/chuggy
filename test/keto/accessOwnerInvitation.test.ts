@@ -1,9 +1,10 @@
 /**
  * The site's invitation of a person into a tenant of their own, against a real
  * authority: what the tuples it writes permit the person, on the new tenant,
- * on the site and nowhere else, that the tenant is then held, and that each
+ * on the site and nowhere else, that the tenant is then held, that each
  * relation the site's tenant list reads across the tenants lists that relation
- * alone, the invited tenant and a created one among them.
+ * alone, the invited tenant and a created one among them, and that a principal
+ * read across the tenants lists that principal's own tuples alone.
  *
  * THE SITE AND THE FIRST ACCOUNT ARE SHARED BETWEEN RUNS. The site is one object
  * on a server a run reuses, and the directory double gives every run's first
@@ -26,6 +27,8 @@ import { projectCreationGrants } from "../../src/interpreter/projectCreation.ts"
 import { oidcPrincipal } from "../../src/interpreter/principal.ts";
 import {
   allTenantAccessKinds,
+  projectAccessNamespace,
+  projectAccessObject,
   projectAccessSiteNamespace,
   projectAccessSiteObject,
   projectAccessTenantNamespace,
@@ -33,6 +36,7 @@ import {
   type TenantAccessKind,
 } from "../../src/interpreter/projectAccess.ts";
 import {
+  projectRelationGrant,
   tenantAdministratorGrant,
   tenantAdministratorRelation,
   tenantAuthorityDefaults,
@@ -254,4 +258,66 @@ test("each relation the site's tenant list reads across the tenants lists that r
     assert.ok(creators.includes(tenant));
     assert.ok(!creators.includes(created));
   });
+});
+
+test("a principal read across the tenants lists that principal's own tuples there in every relation, and none of another subject, a set or another namespace", async () => {
+  const caller = ketoHarnessSomeone("caller");
+  const held = namedTenant("caller-held");
+  const membered = namedTenant("caller-membered");
+  const own: readonly ProjectGrant[] = [
+    tenantAdministratorGrant(caller, held),
+    { ...tenantAdministratorGrant(caller, held), relation: "hosted_execution" },
+    { ...tenantAdministratorGrant(caller, membered), relation: "members" },
+  ];
+  for (const grant of [
+    ...own,
+    tenantAdministratorGrant(ketoHarnessSomeone("other"), held),
+    {
+      ...tenantAdministratorGrant(caller, held),
+      holder: {
+        subject: "Holders",
+        namespace: projectAccessTenantNamespace,
+        object: projectAccessTenantObject(membered),
+        relation: "members",
+      },
+    } satisfies ProjectGrant,
+    projectRelationGrant(
+      caller,
+      { tenant: held, project: asProjectId("chuggy") },
+      "admins",
+    ),
+  ])
+    await grants.write(grant);
+  const shown = (tuples: readonly AccessTuple[]) =>
+    tuples.map((tuple) => JSON.stringify(tuple)).sort();
+  assert.deepEqual(
+    shown(
+      await walked({
+        query: "NamespaceSubject",
+        namespace: projectAccessTenantNamespace,
+        principal: caller,
+      }),
+    ),
+    shown(
+      own.map((grant) => ({
+        object: grant.object,
+        relation: grant.relation,
+        subject: { subject: "Id", id: caller },
+      })),
+    ),
+  );
+  assert.ok(
+    (
+      await walked({
+        query: "Object",
+        namespace: projectAccessNamespace,
+        object: projectAccessObject({
+          tenant: held,
+          project: asProjectId("chuggy"),
+        }),
+      })
+    ).some(
+      (tuple) => tuple.subject.subject === "Id" && tuple.subject.id === caller,
+    ),
+  );
 });

@@ -7,7 +7,8 @@
  * a caller the authority says holds the kind it needs. A tenant's invite links
  * are made, listed and revoked the same way, and so are the site's workspace
  * links, and either is redeemed by any caller signed in, who needs no kind
- * because the link's maker held them.
+ * because the link's maker held them. The tenants a caller is written into are
+ * answered to any caller signed in, about them alone.
  *
  * IT ANSWERS ITS CALLERS AS THE PUBLIC API DOES, because the console reads
  * both with the same code. A caller's body is read as the API's media type,
@@ -76,6 +77,7 @@ import {
 } from "../../contract/http.ts";
 import type { AccessAbilities } from "../../interpreter/accessAbilities.ts";
 import type { AccessAuthorities } from "../../interpreter/accessAuthorities.ts";
+import type { AccessCallerTenantsList } from "../../interpreter/accessCallerTenants.ts";
 import type {
   AccessAuthorityHolders,
   AccessHeld,
@@ -134,6 +136,7 @@ export interface AccessPlaneService {
   readonly authorities: AccessAuthorities;
   readonly holders: AccessAuthorityHolders;
   readonly siteTenants: AccessSiteTenantsList;
+  readonly callerTenants: AccessCallerTenantsList;
   readonly ready: () => Promise<boolean>;
 }
 
@@ -350,7 +353,7 @@ function accessHostedRunsRoutes(
   );
 }
 
-/** What the caller may do, who holds each authority at each level, and the site's tenants, absent to a caller the authority does not answer. */
+/** What the caller may do, who holds each authority at each level and the site's tenants, each absent to a caller the authority does not answer, and the caller's own tenants, answered to every caller. */
 function accessAnsweredRoutes(
   app: FastifyInstance,
   service: AccessPlaneService,
@@ -393,6 +396,10 @@ function accessAnsweredRoutes(
     [
       "siteTenants",
       (_request, caller) => service.siteTenants.siteTenants(caller),
+    ],
+    [
+      "callerTenants",
+      (_request, caller) => service.callerTenants.callerTenants(caller),
     ],
   ];
   for (const [name, abilities] of answered)
