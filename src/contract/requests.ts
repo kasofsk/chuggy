@@ -168,6 +168,7 @@ export const reservedTenantNames = [
   "auth",
   "forge",
   "health",
+  "invite",
   "projects",
   "tenants",
 ] as const;
