@@ -132,6 +132,12 @@
     }
   }
 
+  /* The grid is as wide as what holds it and never widens that, so a table
+     too wide for a narrow dialog scrolls in its own scroller. */
+  .people-grid {
+    contain: inline-size;
+  }
+
   .people-grid :is(th, td) {
     padding-inline: var(--space-2);
     text-align: center;
@@ -147,6 +153,5 @@
     color: var(--ink-2);
     font-weight: var(--weight-regular);
     white-space: normal;
-    overflow-wrap: anywhere;
   }
 }
