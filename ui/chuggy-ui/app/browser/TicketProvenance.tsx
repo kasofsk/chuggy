@@ -67,10 +67,10 @@ function Field(props: {
 }
 
 /**
- * What a person asked for. A ticket released before the brief was on the wire
- * carries none and says so rather than drawing empty fields, and one released
- * before a landing was recorded draws no landing at all. Its images are drawn
- * as images, each from the project's own read of it.
+ * What a person asked for, its images drawn as images, each from the project's
+ * own read of it. A ticket released before the brief was on the wire carries
+ * none and says so rather than drawing empty fields, and one released before a
+ * landing was recorded draws no landing at all.
  */
 function Brief(props: {
   readonly partition: PartitionIdentity;

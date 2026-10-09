@@ -79,9 +79,9 @@ function ConversationToolCallNamed(props: {
 }
 
 /** One call, its one-line argument, and the whole of what went in and came
- * back a chevron away. An error is the row's own ink: a result that failed is
- * read where the call is, not in a badge beside it. A call nothing is held of
- * but its name is that name and no control. */
+ * back a chevron away, or only its name and no control when nothing else of it
+ * is held. An error is the row's own ink: a result that failed is read where
+ * the call is, not in a badge beside it. */
 function ConversationToolCall(props: {
   readonly call: ConversationToolCallStep;
 }): ReactNode {

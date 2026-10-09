@@ -8,11 +8,19 @@
  * are made, listed and revoked the same way, and redeemed by any caller signed
  * in, who needs no kind because the link's maker held them.
  *
- * IT ANSWERS AS THE PUBLIC API DOES, because the console reads both with the
- * same code. A body is read as the API's media type, every refusal carries the
- * API's envelope, and what a handler throws is mapped by `failureResponse`, so
- * an authority that could not answer is a wait and a malformed request is a
- * rejection rather than either being a fault.
+ * IT ANSWERS ITS CALLERS AS THE PUBLIC API DOES, because the console reads
+ * both with the same code. A caller's body is read as the API's media type,
+ * every refusal of a caller carries the API's envelope, and what a handler
+ * throws is mapped by `failureResponse`, so an authority that could not answer
+ * is a wait and a malformed request is a rejection rather than either being a
+ * fault.
+ *
+ * THE DIRECTORY IS NOT A CALLER. It asks the registration gate, holding no
+ * bearer, whether a person with no account may register, and is answered in
+ * its own shape: its body is JSON, and a refusal is its message rather than
+ * the API's envelope. A bearer it sends is ignored, because the gate tells it
+ * only whether a token it already holds is an open link, which redeeming the
+ * token would tell anyone holding it.
  *
  * IT SERVES NO WORKER CONTRACT, so no route checks a release and no answer is
  * stamped with one.
@@ -25,6 +33,7 @@ import {
   accessEmailCharsMax,
   accessGithubLoginCharsMax,
   accessGroupSchema,
+  accessInviteLinkTokenCharsMax,
   accessHolderNotAdmittedCode,
   accessInvitationCodes,
   accessInvitationProjectsMax,
@@ -39,6 +48,9 @@ import {
   accessOwnerInvitationSchema,
   accessPlaneRoutes,
   accessProjectAuthoritySchema,
+  accessRegistrationGatePath,
+  accessRegistrationGateRefusal,
+  accessRegistrationGateSchema,
   accessProjectRoleGrantSchema,
   accessProjectRoleSchema,
   accessSiteAuthoritySchema,
@@ -134,6 +146,11 @@ export const accessOwnerInvitationBodyBytesMax = planeJsonObjectBytesMax(
   projectNameCharsMax,
   accessGithubLoginCharsMax,
   accessEmailCharsMax,
+);
+
+/** The most the registration gate reads: one token. */
+export const accessRegistrationGateBodyBytesMax = planeJsonObjectBytesMax(
+  accessInviteLinkTokenCharsMax,
 );
 
 /** Serves `handler` at one route for the principal its bearer names, every other caller refused before any of its body is read. */
@@ -744,6 +761,26 @@ function accessInviteLinkEndingRoutes(
   );
 }
 
+/** The directory's question before it makes an account, served to no caller and answered `204` or its own refusal. */
+function accessRegistrationGateRoute(
+  app: FastifyInstance,
+  service: AccessPlaneService,
+): void {
+  app.post(
+    accessRegistrationGatePath,
+    { bodyLimit: accessRegistrationGateBodyBytesMax },
+    async (request, reply) => {
+      const { token } = accessRegistrationGateSchema.parse(request.body);
+      return (await service.inviteLinks.registrationAdmitted(token))
+        ? reply.code(204).send()
+        : reply
+            .code(403)
+            .type("application/json")
+            .send(accessRegistrationGateRefusal);
+    },
+  );
+}
+
 function accessProjectRoutes(
   app: FastifyInstance,
   service: AccessPlaneService,
@@ -810,6 +847,7 @@ export function createAccessPlaneApp(
   accessInvitationRoute(app, service);
   accessInviteLinkMakingRoutes(app, service);
   accessInviteLinkEndingRoutes(app, service);
+  accessRegistrationGateRoute(app, service);
   accessAnsweredRoutes(app, service);
   accessHolderRoutes(app, service);
   return app;
