@@ -271,19 +271,19 @@ export async function inboxCount(page: Page): Promise<number> {
 
 /**
  * Signed in by password through the console's own `Sign in`. The card may keep
- * its password form behind a link, so the link is pressed where it is drawn
- * and the field itself where the form already is.
+ * its password form behind a link, and what it draws is settled only once its
+ * page has loaded, so the link is looked for then and pressed where it is drawn.
  */
 export async function signIn(page: Page): Promise<void> {
   await page.goto(`${rig.consoleUrl}/`);
   await page
     .getByRole("button", { name: "Sign in" })
     .click({ timeout: signInTimeoutMs });
-  await page
-    .locator('a[href="#use-password"]:visible, input[name="password"]:visible')
-    .first()
-    .click({ timeout: signInTimeoutMs });
   const identifier = page.locator('input[name="identifier"]');
+  await identifier.waitFor({ state: "attached", timeout: signInTimeoutMs });
+  await page.waitForLoadState("load", { timeout: signInTimeoutMs });
+  const asked = page.locator('a[href="#use-password"]');
+  if (await asked.isVisible()) await asked.click({ timeout: signInTimeoutMs });
   await identifier.waitFor({ timeout: signInTimeoutMs });
   await identifier.fill(rig.user);
   await page.locator('input[name="password"]').fill(rig.password);
