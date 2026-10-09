@@ -2,10 +2,12 @@
  * The access plane's wire: its routes, the roles a request may name, and what
  * a list answers.
  *
- * IT IS NOT THE PUBLIC API'S CONTRACT. The plane is a process of its own under
- * `accessPlaneBasePath`, so none of this is in `nativeHttpRoutes` or the
- * contract document. It shares that API's media type and error envelope,
- * because the console reads both with the same code.
+ * IT IS NOT THE PUBLIC API'S CONTRACT. The plane is a process of its own, its
+ * callers' routes under `accessPlaneBasePath` and the directory's registration
+ * gate beside them, so none of this is in `nativeHttpRoutes` or the contract
+ * document. Its callers' routes share that API's media type and error
+ * envelope, because the console reads both with the same code; the gate
+ * answers in the directory's own shape.
  *
  * A ROLE IS A CLOSED ROSTER, one for a tenant and one for a project. What
  * relation each names is the interpreter's, in one exhaustive record, so no
@@ -700,6 +702,40 @@ export const accessInviteLinksSchema = z.strictObject({
 export const accessInviteLinkRedemptionSchema = z.strictObject({
   token: z.string().min(1).max(accessInviteLinkTokenCharsMax),
 });
+
+/**
+ * Where the directory asks, before it makes an account, whether to make it.
+ * It is not under `accessPlaneBasePath` on purpose: a deployment forwards that
+ * prefix alone from the internet, so the gate is reached from beside the plane.
+ */
+export const accessRegistrationGatePath = "/hooks/v1/registration";
+
+/** The id of the message a refused registration shows. */
+export const accessRegistrationGateMessageId = 4_190_001;
+
+/** The words a refused registration shows. */
+export const accessRegistrationGateText = "Invite needed";
+
+/** What the directory sends the gate: the token the person presented, if any. */
+export const accessRegistrationGateSchema = z.strictObject({
+  token: z.string().max(accessInviteLinkTokenCharsMax).optional(),
+});
+
+/** What the gate refuses a registration with, in the directory's own shape. */
+export const accessRegistrationGateRefusal = {
+  messages: [
+    {
+      instance_ptr: "#/",
+      messages: [
+        {
+          id: accessRegistrationGateMessageId,
+          text: accessRegistrationGateText,
+          type: "error",
+        },
+      ],
+    },
+  ],
+} as const;
 
 /** What a redemption answers: what it granted the caller, and where. */
 export const accessInviteLinkRedeemedSchema = z.strictObject({
