@@ -171,6 +171,16 @@ export function replaceLocation(url: string): void {
   location.replace(url);
 }
 
+/** Loads this document again, at the address and the fragment it is at. */
+export function reloadLocation(): void {
+  location.reload();
+}
+
+/** Tells `heard` each time the fragment changes under this document, which loads nothing. */
+export function anchorHeard(heard: () => void): void {
+  addEventListener("hashchange", heard);
+}
+
 /** Every cookie a script may read here, none where the browser refuses the read. */
 export function cookiesRead(): string {
   try {

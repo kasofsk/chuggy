@@ -12,6 +12,10 @@
  * A token is kept from wherever it was first read, the cookie as much as the
  * fragment, because the page that clears the cookie still has that token's
  * answer to draw.
+ *
+ * A link opened in a tab that is already at the page changes the fragment and
+ * loads nothing, so the document is loaded again: the link then arrives as
+ * any other does, and nothing this page held for the last one is carried.
  */
 
 import type { AccessInviteLinkRedeemed } from "../../../../src/contract/accessPlane.ts";
@@ -39,11 +43,15 @@ export interface InvitePorts {
   readonly replaceLocation: (path: string) => void;
   readonly cookies: () => string;
   readonly cookieWrite: (line: string) => void;
+  /** Loads this document again at the address it is at. */
+  readonly reload: () => void;
 }
 
 export interface InviteHolder {
   /** Takes the token out of the address this tab was opened at, where it is the invite page's. */
   readonly arrive: () => void;
+  /** Heard when the fragment changes under a document already drawn. */
+  readonly rearrive: () => void;
   readonly opened: (signedIn: boolean) => InvitePage;
   readonly cookieClear: (domain: string | undefined) => void;
   /** Writes the cookie the token crosses a sign-in in, which is all that outlives this page. */
@@ -78,6 +86,10 @@ export function createInviteHolder(ports: InvitePorts): InviteHolder {
       if (fragment === "") return;
       tokenKept = inviteTokenRead(fragment);
       ports.replacePath(`${pathname}${search}`);
+    },
+    rearrive: () => {
+      if (ports.location().pathname !== inviteRoutePath) return;
+      if (ports.anchor() !== "") ports.reload();
     },
     opened: (signedIn) => {
       const page = invitePageDecided({

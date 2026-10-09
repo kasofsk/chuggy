@@ -13,7 +13,8 @@
  * build wrote.
  *
  * An invite link's token is taken out of the address here, before the tree is
- * mounted, so no frame is drawn with it in the address bar.
+ * mounted, so no frame is drawn with it in the address bar. A fragment that
+ * changes later is the invite holder's to hear, for the life of the document.
  */
 
 import "../styles/tokens.css";
@@ -29,6 +30,7 @@ import { createSessionHolder } from "../core/sessionHolder.ts";
 import { App } from "./App.tsx";
 import { InviteProvider } from "./InvitePage.tsx";
 import {
+  anchorHeard,
   cookiesRead,
   cookieWritten,
   currentAnchor,
@@ -39,6 +41,7 @@ import {
   nowMs,
   persistentStore,
   redirect,
+  reloadLocation,
   replaceLocation,
   replacePath,
   sleepMs,
@@ -76,8 +79,10 @@ const invite = createInviteHolder({
   replaceLocation,
   cookies: cookiesRead,
   cookieWrite: cookieWritten,
+  reload: reloadLocation,
 });
 invite.arrive();
+anchorHeard(invite.rearrive);
 
 themeChoiceApply(document.documentElement, themeChoiceRead(persistentStore));
 

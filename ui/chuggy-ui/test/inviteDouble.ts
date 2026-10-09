@@ -21,6 +21,8 @@ export interface InviteBrowser {
   readonly replaced: string[];
   /** Every address the document was left for. */
   readonly left: string[];
+  /** How often the document was loaded again. */
+  reloads: number;
 }
 
 export function inviteBrowser(
@@ -37,6 +39,7 @@ export function inviteBrowser(
     written: [],
     replaced: [],
     left: [],
+    reloads: 0,
   };
   const holder = createInviteHolder({
     location: () => ({ pathname: browser.pathname, search: browser.search }),
@@ -51,6 +54,9 @@ export function inviteBrowser(
     cookies: () => browser.cookies,
     cookieWrite: (line) => {
       browser.written.push(line);
+    },
+    reload: () => {
+      browser.reloads += 1;
     },
   });
   return { browser, holder };

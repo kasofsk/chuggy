@@ -57,6 +57,28 @@ test("a fragment that is no token still leaves the address, and nothing is kept"
   expect(holder.opened(false)).toMatchObject({ page: "SignedOut" });
 });
 
+test("a link opened in a tab already at the page loads the document again, and takes nothing from the page it leaves", () => {
+  const { browser, holder } = held({ anchor: "first" });
+  holder.arrive();
+  browser.anchor = "second";
+  holder.rearrive();
+  expect(browser.reloads).toBe(1);
+  expect(browser.replaced).toStrictEqual(["/invite"]);
+  expect(holder.opened(true)).toMatchObject({ token: "first" });
+});
+
+test("a fragment that changes at any other address loads nothing", () => {
+  const { browser, holder } = held({ pathname: "/acme/atlas", anchor: "s" });
+  holder.rearrive();
+  expect(browser.reloads).toBe(0);
+});
+
+test("a fragment taken away from the page's address loads nothing", () => {
+  const { browser, holder } = held({ anchor: "" });
+  holder.rearrive();
+  expect(browser.reloads).toBe(0);
+});
+
 test("a token read from the cookie is kept once the cookie is gone", () => {
   const { browser, holder } = held({ cookies: "chuggy_invite=crossed" });
   expect(holder.opened(true)).toMatchObject({
