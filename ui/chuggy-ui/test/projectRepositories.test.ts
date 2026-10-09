@@ -27,9 +27,9 @@ import {
   repositoryConfigureStatus,
   repositoryDeferrals,
   repositoryLabel,
-  repositoryOffersPointsAtAccounts,
-  repositoryOffersWithheld,
+  repositoryOffersLine,
   type RepositoryNote,
+  type RepositoryOffersStep,
   type RepositoryStepStatus,
 } from "../app/core/projectRepositories.ts";
 import { repositoryRefusalsDrawn } from "./repositoryRefusals.ts";
@@ -280,73 +280,102 @@ const unauthorizing: PanelState<ForgeAppsResponse> = ready({ apps: [] });
 /**
  * The listing answers only a workspace admin, and Connect GitHub is offered
  * only where the deployment answers a client to authorize, so a line that
- * named a step either withholds is a step the reader cannot take.
+ * carried a step either withholds is a step the reader cannot take.
  */
-test("Add and Create withheld say why, and name a step only where it is offered", () => {
+test("the line under Add and Create says what is missing, and carries a step only where it is offered", () => {
   const cases: readonly (readonly [
     PanelState<ForgeInstallationsResponse>,
     PanelState<ForgeAppsResponse>,
     string | undefined,
+    RepositoryOffersStep | undefined,
   ])[] = [
-    [{ state: "Pending" }, authorizing, undefined],
+    [{ state: "Pending" }, authorizing, undefined, undefined],
     [
       { state: "Absent", reason: "withheld" },
       authorizing,
       "A workspace admin adds repositories",
+      undefined,
     ],
     [
       { state: "Failed", reason: "down" },
       authorizing,
       "Accounts failed to load",
+      undefined,
     ],
-    [claimed(), authorizing, "Connect a GitHub account first"],
-    [claimed(), unauthorizing, "GitHub not configured · ask an operator"],
+    [claimed(), authorizing, "Connect a GitHub account first", "Connect"],
+    [
+      claimed(),
+      unauthorizing,
+      "GitHub not configured · ask an operator",
+      undefined,
+    ],
     [
       claimed(),
       { state: "Absent", reason: "no app" },
       "GitHub not configured · ask an operator",
+      undefined,
     ],
-    [claimed(), { state: "Failed", reason: "down" }, "GitHub unavailable"],
-    [claimed(), { state: "Pending" }, undefined],
+    [
+      claimed(),
+      { state: "Failed", reason: "down" },
+      "GitHub unavailable",
+      undefined,
+    ],
+    [claimed(), { state: "Pending" }, undefined, undefined],
     [
       claimed(claim("worker", "kasofsk")),
       authorizing,
       "No account has the portal app",
-    ],
-    [
-      claimed(claim("portal", "kasofsk"), claim("worker", "gdoteof")),
-      authorizing,
-      "No account has both apps",
+      undefined,
     ],
     [
       claimed(claim("portal", "kasofsk"), claim("worker", "kasofsk")),
       unauthorizing,
       undefined,
+      undefined,
     ],
   ];
-  for (const [accounts, apps, line] of cases) {
-    expect(repositoryOffersWithheld(accounts, apps)).toBe(line);
-    expect((line ?? "").length).toBeLessThanOrEqual(60);
+  for (const [accounts, apps, status, step] of cases) {
+    expect(repositoryOffersLine(accounts, apps)).toStrictEqual(
+      status === undefined ? undefined : { status, step },
+    );
+    expect((status ?? "").length).toBeLessThanOrEqual(60);
   }
 });
 
 /**
- * The tenant's own accounts page is the one place that connects an account,
- * so the line points there only where a read that succeeded says this tenant
- * holds none — not where the reason is something that page would not answer
- * either: no admin, a read that is loading or failed, or an account held that
- * is merely short of a claim.
+ * A job's git credential is minted under the worker app, so a repository bound
+ * from an account without it is a first job that fails. The line stands where
+ * another account holds both apps too, because Add offers the lacking
+ * account's repositories all the same.
  */
-test("the withheld line points at the tenant's accounts page only where it read zero accounts", () => {
-  expect(repositoryOffersPointsAtAccounts({ state: "Pending" })).toBe(false);
-  expect(
-    repositoryOffersPointsAtAccounts({ state: "Absent", reason: "withheld" }),
-  ).toBe(false);
-  expect(
-    repositoryOffersPointsAtAccounts({ state: "Failed", reason: "down" }),
-  ).toBe(false);
-  expect(
-    repositoryOffersPointsAtAccounts(claimed(claim("worker", "kasofsk"))),
-  ).toBe(false);
-  expect(repositoryOffersPointsAtAccounts(claimed())).toBe(true);
+test("an account holding the portal app without the worker app is named, with the worker's install", () => {
+  const workerMissing = (account: string): unknown => ({
+    status: `Worker app missing · ${account}`,
+    step: "InstallWorker",
+  });
+  const lacking: readonly (readonly [
+    PanelState<ForgeInstallationsResponse>,
+    string,
+  ])[] = [
+    [claimed(claim("portal", "kasofsk")), "kasofsk"],
+    [
+      claimed(claim("portal", "kasofsk"), claim("worker", "gdoteof")),
+      "kasofsk",
+    ],
+    [
+      claimed(
+        claim("portal", "kasofsk"),
+        claim("worker", "kasofsk"),
+        claim("portal", "gdoteof"),
+        claim("portal", "initech"),
+      ),
+      "gdoteof",
+    ],
+  ];
+  for (const [accounts, account] of lacking)
+    for (const apps of [authorizing, unauthorizing])
+      expect(repositoryOffersLine(accounts, apps)).toStrictEqual(
+        workerMissing(account),
+      );
 });

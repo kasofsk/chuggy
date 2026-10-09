@@ -1,13 +1,18 @@
 /**
  * The authorization this console starts at the forge, what the callback
- * decides from what came back, and the word a redemption returns with: a return
- * whose state is not this tab's unspent one redeems nothing.
+ * decides from what came back, and the install or the word a redemption comes
+ * to: a return whose state is not this tab's unspent one redeems nothing.
  */
 
 import { expect, test } from "vitest";
 
 import type { ForgeAuthorizationResponse } from "../../../src/contract/responses.ts";
+import type {
+  ForgeAppClaimName,
+  ForgeAppName,
+} from "../../../src/contract/rosters.ts";
 import {
+  forgeAuthorizationInstall,
   forgeAuthorizationWord,
   forgeAuthorizeBegin,
   forgeAuthorizeTake,
@@ -18,6 +23,7 @@ import {
   forgeCallbackRoutePath,
 } from "../app/core/forgeAuthorization.ts";
 import type { ForgeAuthorizeTransaction } from "../app/core/forgeAuthorization.ts";
+import type { ForgePress } from "../app/core/forgePress.ts";
 import { pkceChallengeFromVerifier } from "../app/core/pkce.ts";
 import { keyValueDouble } from "./keyValueDouble.ts";
 
@@ -26,9 +32,10 @@ const client = {
   authorizeUrl: "https://forge.test/login/oauth/authorize",
 };
 
-const target = {
+const target: ForgePress = {
   tenant: "vteng",
   returnPath: "/vteng/chuggy/repositories",
+  installs: ["portal"],
 };
 
 /** A digest that is not SHA-256, so a challenge equal to the verifier fails. */
@@ -94,11 +101,14 @@ test("the transaction is taken once", () => {
 
 test("a stored transaction missing a field is none at all", () => {
   const transient = keyValueDouble();
-  transient.write(
-    forgeAuthorizeTransactionKey,
-    JSON.stringify({ ...target, state: "s" }),
-  );
-  expect(forgeAuthorizeTake(transient)).toBeUndefined();
+  const whole = { ...target, state: "s", verifier: "v" };
+  for (const field of ["verifier", "state", "tenant", "installs"] as const) {
+    transient.write(
+      forgeAuthorizeTransactionKey,
+      JSON.stringify({ ...whole, [field]: undefined }),
+    );
+    expect(forgeAuthorizeTake(transient)).toBeUndefined();
+  }
   transient.write(forgeAuthorizeTransactionKey, "{");
   expect(forgeAuthorizeTake(transient)).toBeUndefined();
 });
@@ -251,4 +261,85 @@ test("a refusal is one failed word, a dead code's being Start again", () => {
       retryAfterSeconds: 5,
     }),
   ).toBe("Unavailable");
+});
+
+/** One account the person owns, with what claiming the worker app on it came to. */
+function owned(
+  account: string,
+  worker: ForgeAppClaimName,
+): ForgeAuthorizationResponse["accounts"][number] {
+  return {
+    account,
+    accountKind: "User",
+    proof: "Proven",
+    apps: [
+      { app: "portal", claim: "AlreadyClaimed" },
+      { app: "worker", claim: worker },
+    ],
+  };
+}
+
+function installOf(
+  accounts: ForgeAuthorizationResponse["accounts"],
+  installs: readonly ForgeAppName[] = [],
+  truncated = false,
+): ForgeAppName | undefined {
+  return forgeAuthorizationInstall(
+    { outcome: "Ok", value: { accounts, truncated } },
+    installs,
+  );
+}
+
+test("an answer reaching no account the person owns goes on to the portal's install", () => {
+  expect(installOf([])).toBe("portal");
+  expect(installOf([reached("globex", "NotOwner")])).toBe("portal");
+});
+
+/** The account holding the portal app may be one the answer did not read, or
+ * one the forge may yet prove. */
+test("an answer that is partial, or could not prove an account, installs nothing", () => {
+  expect(installOf([], [], true)).toBeUndefined();
+  expect(installOf([reached("initech", "Unavailable")])).toBeUndefined();
+});
+
+test("an account claimed without the worker app goes on to the worker's install", () => {
+  expect(installOf([owned("kasofsk", "Missing")])).toBe("worker");
+  expect(
+    installOf([owned("gdoteof", "Claimed"), owned("kasofsk", "Missing")]),
+  ).toBe("worker");
+});
+
+/** A lacking account is one the answer read, so an answer that read only some
+ * still names it. */
+test("a partial answer that claimed an account without the worker app still goes on to its install", () => {
+  expect(installOf([owned("kasofsk", "Missing")], [], true)).toBe("worker");
+});
+
+test("an account holding both apps, or a worker claim the forge could not answer, installs nothing", () => {
+  for (const worker of ["Claimed", "AlreadyClaimed", "Unavailable"] as const)
+    expect(installOf([owned("kasofsk", worker)])).toBeUndefined();
+});
+
+test("a press already sent on to an app's install is not sent on to it again", () => {
+  expect(installOf([], ["portal"])).toBeUndefined();
+  expect(installOf([owned("kasofsk", "Missing")], ["worker"])).toBeUndefined();
+  expect(installOf([owned("kasofsk", "Missing")], ["portal"])).toBe("worker");
+  expect(installOf([], ["worker"])).toBe("portal");
+});
+
+test("a refusal installs nothing", () => {
+  const refusals: readonly Parameters<typeof forgeAuthorizationInstall>[0][] = [
+    {
+      outcome: "Rejected",
+      code: "AuthorizationRefused",
+      status: 422,
+      body: undefined,
+    },
+    { outcome: "Absent" },
+    { outcome: "Retryable", code: "ForgeUnavailable", retryAfterSeconds: 5 },
+    { outcome: "Fault", code: "AuthorizationSpent", status: 502 },
+    { outcome: "Unauthenticated" },
+  ];
+  for (const refusal of refusals)
+    expect(forgeAuthorizationInstall(refusal, [])).toBeUndefined();
 });

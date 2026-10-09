@@ -15,9 +15,9 @@ import {
 
 const transaction: ForgeInstallTransaction = {
   state: "a-state",
-  app: "worker",
   tenant: "vteng",
   returnPath: "/vteng/chuggy/repositories",
+  installs: ["worker"],
 };
 
 const arrived = forgeSetupQueryOf({

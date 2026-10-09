@@ -5,8 +5,10 @@
  * address and knows nothing about a tenant; the transaction this tab stored
  * before sending them away is what says which tenant and where they were.
  * That transaction is taken once, on the first render, and a matching install
- * goes on to the authorization that proves which accounts are theirs. Any other
- * return the tab started puts the person back where they were, with its word.
+ * goes on to the authorization that proves which accounts are theirs, in this
+ * address's place: a landing gone back to would take the transaction of
+ * whichever install the press had gone on to since. Any other return the tab
+ * started puts the person back where they were, with its word.
  */
 
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
@@ -28,7 +30,7 @@ import { useApiPorts } from "./api.ts";
 import { Footer } from "./Footer.tsx";
 import { forgeAuthorizeRedirect } from "./forgeAuthorizeRedirect.ts";
 import { forgeReturnNavigate } from "./forgeReturnNavigate.ts";
-import { transientStore } from "./ports.ts";
+import { replaceLocation, transientStore } from "./ports.ts";
 import { Notice } from "./ui/Notice.tsx";
 
 /** What this page says while it reads where to send the person. */
@@ -57,10 +59,15 @@ async function forgeSetupAnswer(
     });
     return;
   }
-  await forgeAuthorizeRedirect(client, {
-    tenant: transaction.tenant,
-    returnPath: transaction.returnPath,
-  });
+  await forgeAuthorizeRedirect(
+    client,
+    {
+      tenant: transaction.tenant,
+      returnPath: transaction.returnPath,
+      installs: transaction.installs,
+    },
+    replaceLocation,
+  );
 }
 
 function ForgeSetupDrawn(props: {

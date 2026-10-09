@@ -7,10 +7,13 @@
  * is added from what those installations grant rather than from a typed
  * address. A live binding the project holds no configuration for is drawn as
  * deferred, with its configuration step offered again on its row.
- * Where Add or Create is withheld the line under them says why. The accounts
- * themselves are the tenant's and are connected from its own accounts page —
- * one place connects an account, and this page points at it rather than
- * carrying a second control.
+ * The line under Add and Create says why either is withheld, or that a
+ * connected account lacks the worker app. The accounts are the tenant's, and
+ * the step that line names is taken from here where this reader can take it:
+ * Connect GitHub where the workspace holds no account, and the worker app's
+ * install where one it holds lacks that app, each returning to this page. A
+ * return from the forge that did not simply connect says so in one line above
+ * it, until the person leaves.
  */
 
 import { Link, useParams } from "@tanstack/react-router";
@@ -28,22 +31,31 @@ import {
 } from "../core/apiRoutes.ts";
 import { instantFigure } from "../core/figures.ts";
 import { forgePortalInstallations } from "../core/forgeInstallation.ts";
+import type { ForgeReturnWord } from "../core/forgeReturn.ts";
 import {
   repositoryLabel,
-  repositoryOffersPointsAtAccounts,
-  repositoryOffersWithheld,
+  repositoryOffersLine,
 } from "../core/projectRepositories.ts";
-import { settingsRoutes } from "../core/settingsNav.ts";
+import type {
+  RepositoryOffersLine,
+  RepositoryOffersStep,
+} from "../core/projectRepositories.ts";
 import { usePanelResource, usePanelTenantResource } from "./api.ts";
 import { PanelUnready } from "./DataPanel.tsx";
 import { useNowMs } from "./Freshness.tsx";
+import { currentPath } from "./ports.ts";
 import {
   AddRepository,
   projectRepositoriesResource,
 } from "./repositories/AddRepository.tsx";
 import { BindingConfigurations } from "./repositories/BindingConfigurations.tsx";
+import { ConnectGithub } from "./repositories/ConnectGithub.tsx";
 import { CreateRepository } from "./repositories/CreateRepository.tsx";
-import { forgeAppsResource } from "./repositories/InstallLink.tsx";
+import {
+  ForgeReturned,
+  useForgeReturned,
+} from "./repositories/ForgeReturned.tsx";
+import { forgeAppsResource, InstallLink } from "./repositories/InstallLink.tsx";
 import { repositoryRoutePath } from "./repositories/RepositoryPage.tsx";
 import { forgeInstallationsResource } from "./settings/TenantAccountsPage.tsx";
 import { TopBarSlot } from "./shell/slots.tsx";
@@ -123,12 +135,54 @@ function BindingTable(props: {
   );
 }
 
+function OffersStep(props: {
+  readonly tenant: string;
+  readonly step: RepositoryOffersStep;
+}): ReactNode {
+  switch (props.step) {
+    case "Connect":
+      return (
+        <ConnectGithub
+          tenant={props.tenant}
+          returnPath={currentPath()}
+          variant="primary"
+        />
+      );
+    case "InstallWorker":
+      return (
+        <InstallLink
+          tenant={props.tenant}
+          returnPath={currentPath()}
+          app="worker"
+        />
+      );
+  }
+}
+
+function OffersLine(props: {
+  readonly tenant: string;
+  readonly line: RepositoryOffersLine | undefined;
+}): ReactNode {
+  const line = props.line;
+  if (line === undefined) return null;
+  return (
+    <>
+      <Notice tone="parked" inline detail={line.status} />
+      {line.step === undefined ? null : (
+        <div className="flex">
+          <OffersStep tenant={props.tenant} step={line.step} />
+        </div>
+      )}
+    </>
+  );
+}
+
 function RepositoriesSection(props: {
   readonly partition: PartitionIdentity;
   readonly installations: readonly ForgeInstallationResponse[];
   readonly bindings: readonly ProjectRepositoryListedResponse[] | undefined;
-  readonly withheld: string | undefined;
-  readonly pointsAtAccounts: boolean;
+  readonly line: RepositoryOffersLine | undefined;
+  readonly returned: ForgeReturnWord | undefined;
   readonly unready: ReactNode;
 }): ReactNode {
   const bindings = props.bindings;
@@ -151,14 +205,8 @@ function RepositoriesSection(props: {
         </span>
       }
     >
-      {props.withheld === undefined ? null : (
-        <Notice tone="parked" inline detail={props.withheld} />
-      )}
-      {props.pointsAtAccounts ? (
-        <Link to={settingsRoutes.project.accounts} params={props.partition}>
-          Accounts
-        </Link>
-      ) : null}
+      <ForgeReturned word={props.returned} />
+      <OffersLine tenant={props.partition.tenant} line={props.line} />
       {props.unready}
       {bindings === undefined ? null : (
         <BindingTable partition={props.partition} bindings={bindings} />
@@ -190,6 +238,7 @@ export function RepositoriesPage(): ReactNode {
     projectRepositoriesResource,
     (ports) => apiProjectRepositories(ports, partition),
   );
+  const returned = useForgeReturned(partition.tenant);
   return (
     <div className="grid min-w-0 max-w-settings gap-4">
       <TopBarSlot>
@@ -205,8 +254,8 @@ export function RepositoriesPage(): ReactNode {
         bindings={
           bindings.state === "Ready" ? bindings.value.repositories : undefined
         }
-        withheld={repositoryOffersWithheld(accounts, apps)}
-        pointsAtAccounts={repositoryOffersPointsAtAccounts(accounts)}
+        line={repositoryOffersLine(accounts, apps)}
+        returned={returned}
         unready={<PanelUnready state={bindings} />}
       />
     </div>

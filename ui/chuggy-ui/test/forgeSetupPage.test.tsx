@@ -20,10 +20,12 @@ const held = vi.hoisted(
   (): {
     arrived: Record<string, unknown>;
     redirects: string[];
+    replaced: string[];
     navigated: unknown[];
   } => ({
     arrived: {},
     redirects: [],
+    replaced: [],
     navigated: [],
   }),
 );
@@ -41,6 +43,9 @@ vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
   redirect: (url: string) => {
     held.redirects.push(url);
   },
+  replaceLocation: (url: string) => {
+    held.replaced.push(url);
+  },
 }));
 
 vi.mock("@tanstack/react-router", () => ({
@@ -57,9 +62,9 @@ vi.mock("@tanstack/react-router", () => ({
 
 const transaction = {
   state: "a-state",
-  app: "worker",
   tenant: "vteng",
   returnPath: "/vteng/chuggy/repositories",
+  installs: ["portal"],
 };
 
 const client = {
@@ -72,6 +77,7 @@ const apps = { apps: [], authorization: client };
 beforeEach(() => {
   held.arrived = { action: "install", state: "a-state" };
   held.redirects.length = 0;
+  held.replaced.length = 0;
   held.navigated.length = 0;
   sessionStorage.setItem(
     forgeInstallTransactionKey,
@@ -99,12 +105,14 @@ function heldWord(): unknown {
   return JSON.parse(sessionStorage.getItem(forgeReturnKey) ?? "null");
 }
 
+/** The installs the press has been sent on to go with it, which is what the
+ * callback reads before it sends anybody on again. */
 test("a matching install sends the person to authorize, with this tab's transaction stored", async () => {
   const { sent } = await drawLanding();
   expect(sent.map((request) => request.method)).toStrictEqual(["GET"]);
   expect(sent[0]?.url).toContain("/forge/github");
-  expect(held.redirects).toHaveLength(1);
-  const url = new URL(held.redirects[0] ?? "");
+  expect(held.replaced).toHaveLength(1);
+  const url = new URL(held.replaced[0] ?? "");
   expect(`${url.origin}${url.pathname}`).toBe(client.authorizeUrl);
   expect(url.searchParams.get("client_id")).toBe(client.clientId);
   const stored = JSON.parse(
@@ -114,14 +122,23 @@ test("a matching install sends the person to authorize, with this tab's transact
   expect(stored).toMatchObject({
     tenant: transaction.tenant,
     returnPath: transaction.returnPath,
+    installs: transaction.installs,
   });
   expect(held.navigated).toStrictEqual([]);
   expect(screen.getByRole("main").textContent).toBe("SetupConnecting");
 });
 
+/** Left as an entry of its own, the landing is what Back from the next
+ * install's page opens, and opened again it takes that install's transaction. */
+test("a matching install leaves in this address's place, so no visit back lands on it", async () => {
+  await drawLanding();
+  expect(held.replaced).toHaveLength(1);
+  expect(held.redirects).toStrictEqual([]);
+});
+
 test("a deployment that answers no client returns with Not configured, sending nobody to the forge", async () => {
   await drawLanding(() => answer({ apps: [] }));
-  expect(held.redirects).toStrictEqual([]);
+  expect(held.replaced).toStrictEqual([]);
   expect(held.navigated).toStrictEqual([returned]);
   expect(heldWord()).toStrictEqual({
     tenant: transaction.tenant,
@@ -134,7 +151,7 @@ test("a state that is not this tab's asks nothing, stays and links home", async 
   held.arrived = { ...held.arrived, state: "someone-else" };
   const { sent } = await drawLanding();
   expect(sent).toStrictEqual([]);
-  expect(held.redirects).toStrictEqual([]);
+  expect(held.replaced).toStrictEqual([]);
   expect(held.navigated).toStrictEqual([]);
   expect(screen.getByText("Not expected")).toBeTruthy();
   expect(
@@ -154,9 +171,9 @@ test("the transaction is spent, and the landing opened again asks nothing", asyn
   await drawLanding();
   expect(sessionStorage.getItem(forgeInstallTransactionKey)).toBeNull();
   cleanup();
-  held.redirects.length = 0;
+  held.replaced.length = 0;
   expect((await drawLanding()).sent).toStrictEqual([]);
-  expect(held.redirects).toStrictEqual([]);
+  expect(held.replaced).toStrictEqual([]);
   expect(screen.getByText("Not expected")).toBeTruthy();
 });
 
@@ -165,7 +182,7 @@ test("the transaction is spent, and the landing opened again asks nothing", asyn
 test("a request that awaits an owner asks nothing and returns with Requested", async () => {
   held.arrived = { ...held.arrived, action: "request" };
   expect((await drawLanding()).sent).toStrictEqual([]);
-  expect(held.redirects).toStrictEqual([]);
+  expect(held.replaced).toStrictEqual([]);
   expect(held.navigated).toStrictEqual([returned]);
   expect(heldWord()).toMatchObject({
     standing: "Unfinished",
@@ -183,6 +200,6 @@ test("the decision survives the page being drawn again", async () => {
   landed.redraw();
   await settled();
   expect(landed.sent).toHaveLength(1);
-  expect(held.redirects).toHaveLength(1);
+  expect(held.replaced).toHaveLength(1);
   expect(screen.queryByText("Not expected")).toBeNull();
 });
