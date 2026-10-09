@@ -181,6 +181,17 @@ export function anchorHeard(heard: () => void): void {
   addEventListener("hashchange", heard);
 }
 
+/** Tells `heard` each time the browser shows this document again as it was left, out of its back-forward cache; the answer stops the telling. */
+export function pageRestoredHeard(heard: () => void): () => void {
+  const shown = (event: PageTransitionEvent): void => {
+    if (event.persisted) heard();
+  };
+  addEventListener("pageshow", shown);
+  return () => {
+    removeEventListener("pageshow", shown);
+  };
+}
+
 /** Every cookie a script may read here, none where the browser refuses the read. */
 export function cookiesRead(): string {
   try {

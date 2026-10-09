@@ -14,6 +14,7 @@ import type { ReactNode } from "react";
 import { ForgeCallbackPage } from "../app/browser/ForgeCallbackPage.tsx";
 import { ForgeSetupPage } from "../app/browser/ForgeSetupPage.tsx";
 import { forgeAuthorizeRedirect } from "../app/browser/forgeAuthorizeRedirect.ts";
+import { redirect } from "../app/browser/ports.ts";
 import { forgeReturnKey } from "../app/core/forgeReturn.ts";
 import { answer, drawnStrict } from "./screenHarness.tsx";
 import type * as BrowserPorts from "../app/browser/ports.ts";
@@ -22,12 +23,14 @@ const held = vi.hoisted(
   (): {
     arrived: Record<string, unknown>;
     left: string[];
+    entered: string[];
     navigated: unknown[];
-  } => ({ arrived: {}, left: [], navigated: [] }),
+  } => ({ arrived: {}, left: [], entered: [], navigated: [] }),
 );
 
 /** The digest answers at once, for the reason given in
- * `ui/chuggy-ui/test/forgeSetupPage.test.tsx`. */
+ * `ui/chuggy-ui/test/forgeSetupPage.test.tsx`. An address left for as a new
+ * entry in the tab's history is kept apart from one left for in place. */
 vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof BrowserPorts>()),
   sleepMs: () => Promise.resolve(),
@@ -35,6 +38,7 @@ vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
   currentOrigin: () => "https://console.test",
   redirect: (url: string) => {
     held.left.push(url);
+    held.entered.push(url);
   },
   replaceLocation: (url: string) => {
     held.left.push(url);
@@ -110,6 +114,7 @@ const connected = owning("Claimed");
 beforeEach(() => {
   held.arrived = {};
   held.left.length = 0;
+  held.entered.length = 0;
   held.navigated.length = 0;
 });
 
@@ -152,7 +157,7 @@ async function forgeAnswers(redeemed: unknown): Promise<boolean> {
 async function pressed(
   redemptions: readonly unknown[],
 ): Promise<readonly string[]> {
-  await forgeAuthorizeRedirect(client, press);
+  await forgeAuthorizeRedirect(client, press, redirect);
   for (const redeemed of redemptions) {
     const sentOn = await forgeAnswers(redeemed);
     if (!sentOn) break;
@@ -181,6 +186,13 @@ test("one press by a person holding neither app goes through both installs and r
     client.authorizeUrl,
   ]);
   expect(returned()).toStrictEqual({ to: back, word: null });
+});
+
+/** A landing left as an entry of its own is what Back from a page at the forge
+ * opens, and a landing opened again takes whichever transaction is held by then. */
+test("the press is the one entry its round trips leave in the tab's history, neither landing among them", async () => {
+  await pressed([nothing, workerless, connected]);
+  expect(held.entered.map(addressOf)).toStrictEqual([client.authorizeUrl]);
 });
 
 test("a press whose portal install changed nothing returns with Not installed, sent on once", async () => {

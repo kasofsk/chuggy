@@ -141,30 +141,32 @@ publishes an endpoint for it.
 A forge account is the tenant's, not any one project's, so the Accounts panel
 is a workspace page of the settings: `/$tenant/$project/settings/workspace/accounts`
 inside a project and `/tenants/$tenant/settings/accounts` outside one. The
-Repositories page, which only binds a project's repositories, says where to
-connect one and links to the first.
+Repositories page offers `Connect GitHub` itself while the tenant has no
+account, and the worker App's install where a connected account lacks it.
 
 `Connect GitHub` sends the person to authorize the portal App, with a state and
 a PKCE challenge the console draws the way the sign-in's are drawn. The state,
-the verifier, the tenant and where the person was are stored in
-`sessionStorage` under one key. The forge returns to `/forge/github/callback`,
-which takes that transaction once and posts the code only when the state it was
-sent matches; a callback reached without a matching transaction says "Not
-expected", posts nothing and links home. The page then drops the code and state
-from the address. The api claims each account the authorization proves the
-person owns, with the worker App's installation on it, and the page puts the
-person back where they pressed `Connect GitHub`. Anything short of a plain
-connection comes back as one word, held in `sessionStorage` and shown once on
-the Accounts page. A person who reached no account, or only accounts they do
-not own, comes back to `Add account`, the portal App's install.
+the verifier and the press (its tenant, the page it began on, the Apps it has
+gone on to install) are stored in `sessionStorage` under one key. The forge
+returns to `/forge/github/callback`, which takes that transaction once and
+posts the code only when the state it was sent matches; a callback reached
+without a matching transaction says "Not expected", posts nothing and links
+home. The page then drops the code and state from the address. The api claims
+each account the authorization proves the person owns, with the worker App's
+installation on it. A press goes on to an install the answer leaves, each App's
+at most once: the portal App's where a whole answer reached no account they
+own, the worker App's where one they own lacks it. Otherwise it returns to the
+page it began on, and anything short of a plain connection comes back as one
+word, held in `sessionStorage` and shown once on that page.
 
-`Connect GitHub` is the Accounts page's one action until an account is
-connected or a return offers that install. Then `Add account` installs the
-portal App, and an account without the worker App offers that App's install on
-its own row. Each install link carries a state of its own, stored the same way.
-The forge sends the person back to `/forge/github/setup`, which takes that
-transaction once and, when the state matches, goes on to the authorization; an
-install an owner has to approve returns with "Requested".
+On the Accounts page `Connect GitHub` is the one action until an account is
+connected or a press returns having reached none the person owns. Then
+`Add account` installs the portal App, and an account without the worker App
+offers that App's install on its own row. Every install stores a state of its
+own and the press, naming its App, under a second key. The forge sends the
+person back to `/forge/github/setup`, which takes that transaction once and,
+when the state matches, goes on to the authorization with the press; an install
+an owner has to approve returns with "Requested".
 
 Both Apps' Setup URL must be that route on the console's own host, with
 "Redirect on update" set so an App already installed comes back too, and the

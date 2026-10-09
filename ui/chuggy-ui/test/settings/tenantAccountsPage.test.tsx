@@ -147,6 +147,9 @@ test("a panel with no account offers Connect GitHub alone", async () => {
   expect(
     accounts.getAllByRole("button").map((one) => one.textContent),
   ).toStrictEqual(["Connect GitHub"]);
+  expect(accounts.getByRole("button").classList.contains("btn-default")).toBe(
+    true,
+  );
   expect(accounts.queryAllByRole("link")).toStrictEqual([]);
 });
 

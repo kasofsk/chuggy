@@ -141,7 +141,13 @@ function OffersStep(props: {
 }): ReactNode {
   switch (props.step) {
     case "Connect":
-      return <ConnectGithub tenant={props.tenant} returnPath={currentPath()} />;
+      return (
+        <ConnectGithub
+          tenant={props.tenant}
+          returnPath={currentPath()}
+          variant="primary"
+        />
+      );
     case "InstallWorker":
       return (
         <InstallLink

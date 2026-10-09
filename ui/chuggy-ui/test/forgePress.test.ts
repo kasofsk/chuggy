@@ -215,8 +215,8 @@ test("a press that began with neither app is sent on to each install in turn", a
   ).toStrictEqual(["worker"]);
 });
 
-/** One answer more than there are apps is the shortest sequence that could
- * send a press on to an install a second time, and one more again is asked. */
+/** A press sent on by every answer of a sequence one longer than the roster of
+ * apps would have to repeat an install, and each sequence asked is longer again. */
 test("no sequence of answers sends a press on to one app's install twice", async () => {
   for (const installs of beginnings)
     for (const sequence of sequencesOf(forgeApps.length + 2)) {

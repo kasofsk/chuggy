@@ -949,6 +949,7 @@ test("with no account, the page offers Connect GitHub under its line, returning 
   expect(offersLine()).toBe("Connect a GitHub account first");
   const { connect, install } = offersSteps();
   expect(install).toBeNull();
+  expect(connect?.classList.contains("btn-primary")).toBe(true);
   expect(
     within(sectionOf("Repositories")).queryByRole("link", { name: "Accounts" }),
   ).toBeNull();
@@ -965,6 +966,23 @@ test("with no account, the page offers Connect GitHub under its line, returning 
     returnPath: projectPath,
     installs: [],
   });
+});
+
+/** Back from a page at the forge can show this one again exactly as it was
+ * left, with the press it left by still drawn as under way. */
+test("a page restored after Connect GitHub was pressed offers the press again", async () => {
+  await drawAtProject(noAccount);
+  fireEvent.click(offersSteps().connect ?? document.body);
+  await settled();
+  expect(offered("Connect GitHub")).toBe(false);
+  fireEvent(window, new PageTransitionEvent("pageshow", { persisted: false }));
+  expect(offered("Connect GitHub")).toBe(false);
+  fireEvent(window, new PageTransitionEvent("pageshow", { persisted: true }));
+  expect(offered("Connect GitHub")).toBe(true);
+  expect(offersSteps().connect?.getAttribute("aria-busy")).toBe("false");
+  fireEvent.click(offersSteps().connect ?? document.body);
+  await settled();
+  expect(held.redirects).toHaveLength(2);
 });
 
 /** The line already says who puts it right, so a button that could only be
@@ -990,6 +1008,7 @@ test("an account without the worker app is named under Add and Create, with its 
   expect(offersLine()).toBe("Worker app missing · kasofsk");
   const { connect, install } = offersSteps();
   expect(connect).toBeNull();
+  expect(install?.classList.contains("btn-default")).toBe(true);
   expect(install?.href.startsWith(`${forgeApps[1]?.installUrl}?state=`)).toBe(
     true,
   );

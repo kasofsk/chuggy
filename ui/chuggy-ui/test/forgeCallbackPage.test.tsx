@@ -232,6 +232,19 @@ test("an account claimed without the worker app goes on to the worker's install"
   expect(heldWord()).toBeNull();
 });
 
+/** The setup landing matches an install by its state alone, and the forge has
+ * carried the authorization's on two addresses by the time this one is drawn. */
+test("each install gone on to carries a state drawn for it, never the authorization's", async () => {
+  await drawCallback(() => answer(nothing));
+  const first = leftFor().state;
+  cleanup();
+  held.replaced.length = 0;
+  through();
+  await drawCallback(() => answer(nothing));
+  expect(first).not.toBe(transaction.state);
+  expect(leftFor().state).not.toBe(first);
+});
+
 test("a press back from the portal's install goes on to the worker's, carrying both", async () => {
   through("portal");
   await drawCallback(() => answer(workerless));
