@@ -1,13 +1,19 @@
 /**
  * What the invite page holds for the life of the page and not of a component:
- * the token this tab was opened with, and the one redemption sent for it.
+ * the token this tab was opened with, and the one send made for it without a
+ * name.
  *
  * A component mounts twice under React's strict mode and again whenever what
- * is above it redraws it, and a redemption sent twice is answered absent the
- * second time although the first granted everything. So the send is held
- * here, by token, and every mount is handed the same answer. What the answer
- * decides — the cookie cleared, the reader sent on — is performed here too,
- * once, when it arrives.
+ * is above it redraws it, and a mount is not a press: no person asked for the
+ * send a second mount would make. So the send without a name is held here, by
+ * token, and every mount is handed the same answer. What an answer decides —
+ * the cookie cleared, the reader sent on — is performed here too, once, when
+ * it arrives.
+ *
+ * A link that makes a workspace answers that send by asking for the
+ * workspace's name. The send that carries one is no part of what is held: a
+ * press makes it, each press makes one, and the held answer stays as it was,
+ * so the page goes on knowing the link asked.
  *
  * A token is kept from wherever it was first read, the cookie as much as the
  * fragment, because the page that clears the cookie still has that token's
@@ -30,11 +36,16 @@ import {
   inviteCookieWritten,
   inviteElsewherePath,
   inviteFlowCarried,
+  inviteNaming,
   invitePageDecided,
   inviteRedemption,
   inviteTokenRead,
 } from "./invitePage.ts";
-import type { InvitePage, InviteRedemption } from "./invitePage.ts";
+import type {
+  InviteNaming,
+  InvitePage,
+  InviteRedemption,
+} from "./invitePage.ts";
 import type { SessionLocation } from "./sessionHolder.ts";
 
 /** The address bar and the cookies, as the page reaches them. */
@@ -52,20 +63,29 @@ export interface InvitePorts {
   readonly reload: () => void;
 }
 
+type InviteAnswer = Promise<ApiResult<AccessInviteLinkRedeemed>>;
+
 export interface InviteHolder {
   readonly opened: (signedIn: boolean) => InvitePage;
   readonly cookieClear: (domain: string | undefined) => void;
   /** Writes the cookie the token crosses a sign-in in, which is all that outlives this page. */
   readonly leave: (token: string, domain: string | undefined) => void;
   readonly elsewhere: () => void;
-  /** The one redemption of a token, sent by the first call that names it. */
+  /** The one send of a token without a name, made by the first call that names it. */
   readonly redeem: (
     token: string,
     domain: string | undefined,
-    send: (token: string) => Promise<ApiResult<AccessInviteLinkRedeemed>>,
+    send: (token: string) => InviteAnswer,
   ) => Promise<InviteRedemption>;
-  /** Forgets a redemption that failed, so the next call sends one again. */
+  /** Forgets a send without a name that failed, so the next call makes one again. */
   readonly retry: () => void;
+  /** One send of a token with the name of the workspace it makes, made by every call and so asked for by nothing but a press. */
+  readonly named: (
+    token: string,
+    domain: string | undefined,
+    workspace: string,
+    send: (token: string, workspace: string) => InviteAnswer,
+  ) => Promise<InviteNaming>;
 }
 
 interface InviteRedemptionHeld {
@@ -98,6 +118,14 @@ export function createInviteHolder(ports: InvitePorts): InviteHolder {
   const cookieClear = (domain: string | undefined): void => {
     ports.cookieWrite(inviteCookieCleared(domain));
   };
+  const performed = <Came extends InviteRedemption | InviteNaming>(
+    came: Came,
+    domain: string | undefined,
+  ): Came => {
+    if (came.cookieCleared) cookieClear(domain);
+    if (came.outcome === "Redeemed") ports.replaceLocation(came.path);
+    return came;
+  };
   return {
     opened: (signedIn) => {
       const page = invitePageDecided({
@@ -121,17 +149,18 @@ export function createInviteHolder(ports: InvitePorts): InviteHolder {
       if (redemption?.token !== token)
         redemption = {
           token,
-          answered: send(token).then((result) => {
-            const came = inviteRedemption(result);
-            if (came.cookieCleared) cookieClear(domain);
-            if (came.outcome === "Redeemed") ports.replaceLocation(came.path);
-            return came;
-          }),
+          answered: send(token).then((result) =>
+            performed(inviteRedemption(result), domain),
+          ),
         };
       return redemption.answered;
     },
     retry: () => {
       redemption = undefined;
     },
+    named: (token, domain, workspace, send) =>
+      send(token, workspace).then((result) =>
+        performed(inviteNaming(result), domain),
+      ),
   };
 }

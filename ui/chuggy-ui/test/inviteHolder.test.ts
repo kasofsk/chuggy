@@ -2,12 +2,16 @@
  * What the invite page holds for the life of the page: the token leaves the
  * address as the holder is made, which listens for the next by itself, a token
  * read once is kept, the cookie is written only when asked, and one token is
- * redeemed once however often it is asked for, with what the answer decides
- * performed once.
+ * sent once without a name however often it is asked for and once with a name
+ * for every time it is, with what each answer decides performed once.
  */
 
 import { expect, test } from "vitest";
 
+import {
+  accessTenantTakenCode,
+  accessWorkspaceLinkNameWantedCode,
+} from "../../../src/contract/accessPlane.ts";
 import type { AccessInviteLinkRedeemed } from "../../../src/contract/accessPlane.ts";
 import type { ApiResult } from "../app/core/apiRequest.ts";
 import {
@@ -177,4 +181,101 @@ test("a reader with nothing to open is sent to the landing page in this entry's 
   const { browser, holder } = held({});
   holder.elsewhere();
   expect(browser.left).toStrictEqual(["/"]);
+});
+
+function conflict(code: string): ApiResult<AccessInviteLinkRedeemed> {
+  return { outcome: "Conflict", code, body: {} };
+}
+
+/** A plane answering every send with a name the same way, each one kept. */
+function namer(answer: ApiResult<AccessInviteLinkRedeemed>): {
+  readonly sent: (readonly [string, string])[];
+  readonly send: (
+    token: string,
+    workspace: string,
+  ) => Promise<ApiResult<AccessInviteLinkRedeemed>>;
+} {
+  const sent: (readonly [string, string])[] = [];
+  return {
+    sent,
+    send: (token, workspace) => {
+      sent.push([token, workspace]);
+      return Promise.resolve(answer);
+    },
+  };
+}
+
+const made: ApiResult<AccessInviteLinkRedeemed> = {
+  outcome: "Ok",
+  value: { tenant: "northwind", role: "Admin", projects: [] },
+};
+
+test("a link that asks for its workspace's name keeps the cookie and sends its reader nowhere", async () => {
+  const { browser, holder } = held({});
+  const { send } = sender(conflict(accessWorkspaceLinkNameWantedCode));
+  expect(await holder.redeem("t0ken", "example.com", send)).toMatchObject({
+    outcome: "NameWanted",
+  });
+  expect(browser.written).toStrictEqual([]);
+  expect(browser.left).toStrictEqual([]);
+});
+
+test("a name is sent every time it is asked for, and the answer that asked for it stays held", async () => {
+  const { browser, holder } = held({});
+  const wanted = sender(conflict(accessWorkspaceLinkNameWantedCode));
+  await holder.redeem("t0ken", undefined, wanted.send);
+  const taken = namer(conflict(accessTenantTakenCode));
+  expect(
+    await holder.named("t0ken", undefined, "northwind", taken.send),
+  ).toMatchObject({ outcome: "Refused" });
+  await holder.named("t0ken", undefined, "northwind", taken.send);
+  expect(taken.sent).toStrictEqual([
+    ["t0ken", "northwind"],
+    ["t0ken", "northwind"],
+  ]);
+  expect(await holder.redeem("t0ken", undefined, wanted.send)).toMatchObject({
+    outcome: "NameWanted",
+  });
+  expect(wanted.sent).toStrictEqual(["t0ken"]);
+  expect(browser.written).toStrictEqual([]);
+  expect(browser.left).toStrictEqual([]);
+});
+
+test("a workspace made is performed once: the cookie cleared with the deployment's domain, and the reader sent to where its first project is made", async () => {
+  const { browser, holder } = held({});
+  const { send } = namer(made);
+  expect(
+    await holder.named("t0ken", "example.com", "northwind", send),
+  ).toMatchObject({ outcome: "Redeemed" });
+  expect(browser.written).toStrictEqual([inviteCookieCleared("example.com")]);
+  expect(browser.left).toStrictEqual(["/projects/new?workspace=northwind"]);
+});
+
+test("a name sent for a link the plane no longer knows clears the cookie and sends its reader nowhere", async () => {
+  const { browser, holder } = held({});
+  const { send } = namer({ outcome: "Absent" });
+  expect(
+    await holder.named("t0ken", undefined, "northwind", send),
+  ).toMatchObject({ outcome: "NotValid" });
+  expect(browser.written).toStrictEqual([inviteCookieCleared(undefined)]);
+  expect(browser.left).toStrictEqual([]);
+});
+
+test("a name that failed keeps the cookie, and a retry of it leaves the held answer where it is", async () => {
+  const { browser, holder } = held({});
+  const wanted = sender(conflict(accessWorkspaceLinkNameWantedCode));
+  await holder.redeem("t0ken", undefined, wanted.send);
+  const failing = namer({
+    outcome: "Fault",
+    code: "InternalError",
+    status: 500,
+  });
+  expect(
+    await holder.named("t0ken", undefined, "northwind", failing.send),
+  ).toMatchObject({ outcome: "Failed" });
+  await holder.named("t0ken", undefined, "northwind", failing.send);
+  await holder.redeem("t0ken", undefined, wanted.send);
+  expect(wanted.sent).toStrictEqual(["t0ken"]);
+  expect(browser.written).toStrictEqual([]);
+  expect(browser.left).toStrictEqual([]);
 });
