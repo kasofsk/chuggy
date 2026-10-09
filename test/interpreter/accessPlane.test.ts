@@ -488,7 +488,12 @@ test("a subject is carried as the principal of the plane's issuer, separators wh
 });
 
 test("a list past each of its bounds answers truncated and no more than the bound", async () => {
-  const bounds = { pagesMax: 64, tuplesMax: 512, projectsMax: 32 };
+  const bounds = {
+    pagesMax: 64,
+    tuplesMax: 512,
+    projectsMax: 32,
+    tenantsMax: 32,
+  };
   const listed = async (narrowed: Partial<typeof bounds>) => {
     const memory = accessMemory();
     await acme(memory);
