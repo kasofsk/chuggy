@@ -53,8 +53,9 @@ on are these:
   and the console on one host. Nothing in this image proxies, and nobody should
   look for it in the nginx configuration.
 
-Every other unresolved path answers with the document root's `index.html`,
-because the routes belong to the client.
+`/chuggy-setup.mjs` is the setup program, a file of the bundle, and a 404 where
+a build has none. Every other unresolved path answers with the document root's
+`index.html`, because the routes belong to the client.
 
 ## What a manifest of an imported image must reference
 
