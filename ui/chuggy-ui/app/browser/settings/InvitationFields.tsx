@@ -1,8 +1,8 @@
 /**
- * The fields an invitation names a person by, the same in every form that
- * invites one: a labelled line with its fault under it before anything is
- * sent, the email and the GitHub username each held to the contract's schema,
- * and under the username the line a reader who may make no account is told.
+ * The fields of the forms that invite, the same in each: a labelled line with
+ * its fault under it before anything is sent, the email and the GitHub
+ * username a person is named by, each held to the contract's schema, and
+ * under the username the line a reader who may make no account is told.
  */
 
 import { useId } from "react";

@@ -1,7 +1,7 @@
 /**
- * A link that was just made, as the Invite dialog's whole body: its address in
- * a field a reader selects from, the control that copies it, and under it what
- * is true of the link and said nowhere later.
+ * A link that was just made, as the whole body of the dialog that made it:
+ * its address in a field a reader selects from, the control that copies it,
+ * and under it what is true of the link and said nowhere later.
  *
  * THE ADDRESS IS BUILT HERE FROM A TOKEN THIS IS HANDED and kept by nothing:
  * the dialog's state holds the mint's answer, and closing the dialog forgets

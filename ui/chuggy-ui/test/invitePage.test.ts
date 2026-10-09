@@ -1,12 +1,20 @@
 /**
  * The page an invite link is opened at, decided with no renderer: what counts
  * as a token, the cookie that carries one across a sign-in, the card for every
- * combination of what the page is opened with, and what a redemption came to.
+ * combination of what the page is opened with, what a redemption came to, and
+ * for a link that makes a workspace, which name may be sent and what sending
+ * one came to.
  */
 
 import { expect, test } from "vitest";
 
-import { accessInviteLinkTokenCharsMax } from "../../../src/contract/accessPlane.ts";
+import {
+  accessInviteLinkLimitReachedCode,
+  accessInviteLinkTokenCharsMax,
+  accessTenantTakenCode,
+  accessWorkspaceLinkNameWantedCode,
+} from "../../../src/contract/accessPlane.ts";
+import { projectNameCharsMax } from "../../../src/contract/requests.ts";
 import type { ApiResult } from "../app/core/apiRequest.ts";
 import type { AccessInviteLinkRedeemed } from "../../../src/contract/accessPlane.ts";
 import {
@@ -16,9 +24,11 @@ import {
   inviteCookieToken,
   inviteCookieWritten,
   inviteFlowCarried,
+  inviteNaming,
   invitePageDecided,
   inviteRedemption,
   inviteTokenRead,
+  inviteWorkspaceSendable,
 } from "../app/core/invitePage.ts";
 import type { InviteArrival } from "../app/core/invitePage.ts";
 
@@ -209,4 +219,93 @@ test("any other failure keeps the cookie and says its own line", () => {
       retryAfterSeconds: 1,
     }),
   ).toMatchObject({ outcome: "Failed", cookieCleared: false });
+});
+
+function conflict(code: string): ApiResult<AccessInviteLinkRedeemed> {
+  return { outcome: "Conflict", code, body: {} };
+}
+
+test("a link that asks for its workspace's name is no failure, and keeps the cookie", () => {
+  expect(
+    inviteRedemption(conflict(accessWorkspaceLinkNameWantedCode)),
+  ).toStrictEqual({ outcome: "NameWanted", cookieCleared: false });
+});
+
+test("any other conflict answering the send without a name is a failure with its own line", () => {
+  expect(
+    inviteRedemption(conflict(accessInviteLinkLimitReachedCode)),
+  ).toStrictEqual({
+    outcome: "Failed",
+    line: "Link limit reached",
+    cookieCleared: false,
+  });
+});
+
+test("Create may send a name a new workspace may take, and no other", () => {
+  expect(inviteWorkspaceSendable("northwind")).toBe(true);
+  expect(inviteWorkspaceSendable("n".repeat(projectNameCharsMax))).toBe(true);
+  expect(inviteWorkspaceSendable("")).toBe(false);
+  expect(inviteWorkspaceSendable("North Wind")).toBe(false);
+  expect(inviteWorkspaceSendable("projects")).toBe(false);
+  expect(inviteWorkspaceSendable("n".repeat(projectNameCharsMax + 1))).toBe(
+    false,
+  );
+});
+
+function named(tenant: string): ApiResult<AccessInviteLinkRedeemed> {
+  return { outcome: "Ok", value: { tenant, role: "Admin", projects: [] } };
+}
+
+test("a workspace made sends its reader to where its first project is made, the workspace in the address, and clears the cookie", () => {
+  expect(inviteNaming(named("northwind"))).toStrictEqual({
+    outcome: "Redeemed",
+    path: "/projects/new?workspace=northwind",
+    cookieCleared: true,
+  });
+});
+
+test("a name something holds is the field's to say, the link still open and the cookie kept", () => {
+  expect(inviteNaming(conflict(accessTenantTakenCode))).toStrictEqual({
+    outcome: "Refused",
+    fault: "Name taken",
+    cookieCleared: false,
+  });
+});
+
+test("a name the plane will not read is the field's to say, and keeps the cookie", () => {
+  expect(
+    inviteNaming({
+      outcome: "Rejected",
+      code: "InvalidRequest",
+      status: 400,
+      body: {},
+    }),
+  ).toStrictEqual({
+    outcome: "Refused",
+    fault: "Name not valid",
+    cookieCleared: false,
+  });
+});
+
+test("a link the plane no longer knows when its name is sent is not valid, and clears the cookie", () => {
+  expect(inviteNaming({ outcome: "Absent" })).toStrictEqual({
+    outcome: "NotValid",
+    cookieCleared: true,
+  });
+});
+
+test("any other answer to a name is a failure with its own line, and keeps the cookie", () => {
+  expect(
+    inviteNaming({ outcome: "Fault", code: "InternalError", status: 500 }),
+  ).toStrictEqual({ outcome: "Failed", line: "Failed", cookieCleared: false });
+  expect(
+    inviteNaming(conflict(accessWorkspaceLinkNameWantedCode)),
+  ).toMatchObject({ outcome: "Failed", cookieCleared: false });
+  expect(
+    inviteNaming({ outcome: "Unreachable", reason: "no answer" }),
+  ).toStrictEqual({
+    outcome: "Failed",
+    line: "Unreachable",
+    cookieCleared: false,
+  });
 });

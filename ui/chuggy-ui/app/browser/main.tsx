@@ -12,9 +12,10 @@
  * order to the system's is `scripts/console-policy.ts`, over the stylesheet the
  * build wrote.
  *
- * An invite link's token is taken out of the address here, before the tree is
- * mounted, so no frame is drawn with it in the address bar. A fragment that
- * changes later is the invite holder's to hear, for the life of the document.
+ * The invite holder is made here, once, before the tree is mounted. Being
+ * made is what takes an invite link's token out of the address, so no frame is
+ * drawn with it in the address bar, and what starts it hearing a fragment that
+ * changes later, for the life of the document.
  */
 
 import "../styles/tokens.css";
@@ -75,14 +76,13 @@ const holder = createSessionHolder({
 const invite = createInviteHolder({
   location: currentLocation,
   anchor: currentAnchor,
+  anchorHeard,
   replacePath,
   replaceLocation,
   cookies: cookiesRead,
   cookieWrite: cookieWritten,
   reload: reloadLocation,
 });
-invite.arrive();
-anchorHeard(invite.rearrive);
 
 themeChoiceApply(document.documentElement, themeChoiceRead(persistentStore));
 

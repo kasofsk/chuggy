@@ -22,6 +22,7 @@ import {
   accessTenantAbilitiesSchema,
   accessTenantAuthoritiesSchema,
   accessTenantPeopleSchema,
+  accessWorkspaceLinksSchema,
   type AccessInvitation,
   type AccessInvitationGrants,
   type AccessInvited,
@@ -45,6 +46,8 @@ import {
   type AccessTenantAuthority,
   type AccessTenantPeople,
   type AccessTenantRole,
+  type AccessWorkspaceLinkCreation,
+  type AccessWorkspaceLinks,
 } from "../../../../src/contract/accessPlane.ts";
 
 import { apiRead } from "./apiRequest.ts";
@@ -408,20 +411,54 @@ export function apiRevokeTenantInviteLink(
   return accessSent(ports, "tenantInviteLinkRevocation", { tenant, link });
 }
 
-/** An invite link used by the caller, answered with what it granted them. */
+/** An invite link used by the caller, with the name of the workspace it makes where one is given, answered with what it granted them. */
 export function apiRedeemInviteLink(
   ports: ApiPorts,
   token: string,
+  workspace?: string,
 ): Promise<ApiResult<AccessInviteLinkRedeemed>> {
   return apiRead(
     ports,
     {
       method: accessPlaneRoutes.inviteLinkRedemption.method,
       path: accessPlanePath("inviteLinkRedemption", {}),
-      body: { token },
+      body: workspace === undefined ? { token } : { token, workspace },
     },
     (value) => accessInviteLinkRedeemedSchema.parse(value),
   );
+}
+
+/** One workspace link made for the site, its token in this answer and no later one. */
+export function apiMintSiteWorkspaceLink(
+  ports: ApiPorts,
+  creation: AccessWorkspaceLinkCreation,
+): Promise<ApiResult<AccessInviteLinkMinted>> {
+  return apiRead(
+    ports,
+    {
+      method: accessPlaneRoutes.siteWorkspaceLinkCreation.method,
+      path: accessPlanePath("siteWorkspaceLinkCreation", {}),
+      body: creation,
+    },
+    (value) => accessInviteLinkMintedSchema.parse(value),
+  );
+}
+
+/** Every workspace link the site keeps, absent on a plane that keeps none and to a caller who may make no workspace. */
+export function apiSiteWorkspaceLinks(
+  ports: ApiPorts,
+): Promise<ApiResult<AccessWorkspaceLinks>> {
+  return apiGet(ports, accessPlanePath("siteWorkspaceLinks", {}), (value) =>
+    accessWorkspaceLinksSchema.parse(value),
+  );
+}
+
+/** One open workspace link ended before anyone used it. */
+export function apiRevokeSiteWorkspaceLink(
+  ports: ApiPorts,
+  link: string,
+): Promise<ApiResult<undefined>> {
+  return accessSent(ports, "siteWorkspaceLinkRevocation", { link });
 }
 
 /** One person invited into a workspace of their own, which this makes or finds theirs. */

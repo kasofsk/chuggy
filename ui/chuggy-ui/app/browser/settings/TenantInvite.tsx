@@ -28,11 +28,11 @@ import {
   apiMintTenantInviteLink,
 } from "../../core/accessRoutes.ts";
 import {
+  inviteLinkSendWords,
   tenantInviteLinkOutcome,
   tenantInviteLinkSendable,
-  tenantInviteModes,
 } from "../../core/inviteLinks.ts";
-import type { TenantInviteMode } from "../../core/inviteLinks.ts";
+import type { InviteMode } from "../../core/inviteLinks.ts";
 import {
   projectRoleOffered,
   tenantInvitationBlank,
@@ -53,16 +53,15 @@ import type {
   TenantInvitationRefused,
 } from "../../core/tenantPeople.ts";
 import { useApiPorts } from "../api.ts";
-import { Button } from "../ui/Button.tsx";
 import { Dialog } from "../ui/Dialog.tsx";
 import { RadioGroup } from "../ui/RadioGroup.tsx";
-import { ToggleGroup } from "../ui/ToggleGroup.tsx";
 import {
   InvitationEmail,
   InvitationFault,
   InvitationGithub,
   invitationLabelClassName,
 } from "./InvitationFields.tsx";
+import { InviteFoot, InviteModes } from "./InviteDialog.tsx";
 import { TenantInviteLinkMade } from "./TenantInviteLinkMade.tsx";
 import {
   tenantInviteLinksReread,
@@ -98,13 +97,13 @@ function TenantInviteRole(props: {
 
 interface TenantInviting {
   readonly form: TenantInvitationForm;
-  readonly mode: TenantInviteMode;
+  readonly mode: InviteMode;
   /** The link this opening made, which is the one place its token is. */
   readonly made: AccessInviteLinkMinted | undefined;
   readonly busy: boolean;
   readonly status: string | undefined;
   readonly change: (form: TenantInvitationForm) => void;
-  readonly choose: (mode: TenantInviteMode) => void;
+  readonly choose: (mode: InviteMode) => void;
   /** The dialog opening or closing: the form it starts from, a person to invite, and nothing made or said. */
   readonly begin: (form: TenantInvitationForm) => void;
   readonly invite: () => void;
@@ -150,7 +149,7 @@ function useTenantInvite(
   const ports = useApiPorts();
   const client = useQueryClient();
   const [form, setForm] = useState(blank);
-  const [mode, setMode] = useState<TenantInviteMode>("Person");
+  const [mode, setMode] = useState<InviteMode>("Person");
   const [made, setMade] = useState<AccessInviteLinkMinted>();
   const { busy, status, quiet, send } = useTenantInviteSent();
   const invited = async (): Promise<TenantInvitationRefused | undefined> => {
@@ -231,26 +230,6 @@ function TenantInviteProjects(props: {
   );
 }
 
-/** Which of the two the dialog makes, drawn only where the workspace keeps links. */
-function TenantInviteModes(props: {
-  readonly inviting: TenantInviting;
-}): ReactNode {
-  const inviting = props.inviting;
-  return (
-    <div>
-      <ToggleGroup
-        label="Invite by"
-        options={tenantInviteModes}
-        value={inviting.mode}
-        onChange={(value) => {
-          const mode = tenantInviteModes.find((known) => known === value);
-          if (mode !== undefined && !inviting.busy) inviting.choose(mode);
-        }}
-      />
-    </div>
-  );
-}
-
 /** Who a person's invitation names, which a link's form does not hold. */
 function TenantInvitePerson(props: {
   readonly abilities: AccessTenantAbilities;
@@ -285,7 +264,13 @@ function TenantInviteFields(props: {
   const { form, change, mode } = props.inviting;
   return (
     <div className="grid gap-4">
-      {props.links ? <TenantInviteModes inviting={props.inviting} /> : null}
+      {props.links ? (
+        <InviteModes
+          mode={mode}
+          busy={props.inviting.busy}
+          onChoose={props.inviting.choose}
+        />
+      ) : null}
       {mode === "Person" ? (
         <TenantInvitePerson
           abilities={props.abilities}
@@ -310,11 +295,11 @@ function TenantInviteFields(props: {
 
 /** What sending the form is called in each mode, and while it is unanswered. */
 const tenantInviteSendWords: Record<
-  TenantInviteMode,
+  InviteMode,
   { readonly idle: string; readonly busy: string }
 > = {
   Person: { idle: "Invite", busy: "Inviting…" },
-  Link: { idle: "Create link", busy: "Creating…" },
+  Link: inviteLinkSendWords,
 };
 
 function TenantInviteFoot(props: {
@@ -322,37 +307,20 @@ function TenantInviteFoot(props: {
   readonly onClose: () => void;
 }): ReactNode {
   const inviting = props.inviting;
-  if (inviting.made !== undefined)
-    return (
-      <Button variant="primary" size="sm" onClick={props.onClose}>
-        Done
-      </Button>
-    );
   const person = inviting.mode === "Person";
-  const sendable = person
-    ? tenantInvitationSendable(inviting.form)
-    : tenantInviteLinkSendable(inviting.form);
-  const words = tenantInviteSendWords[inviting.mode];
   return (
-    <>
-      <Button
-        variant="quiet"
-        size="sm"
-        disabled={inviting.busy}
-        onClick={props.onClose}
-      >
-        Cancel
-      </Button>
-      <Button
-        variant="primary"
-        size="sm"
-        disabled={!sendable || inviting.busy}
-        busy={inviting.busy}
-        onClick={person ? inviting.invite : inviting.mint}
-      >
-        {inviting.busy ? words.busy : words.idle}
-      </Button>
-    </>
+    <InviteFoot
+      made={inviting.made !== undefined}
+      busy={inviting.busy}
+      sendable={
+        person
+          ? tenantInvitationSendable(inviting.form)
+          : tenantInviteLinkSendable(inviting.form)
+      }
+      words={tenantInviteSendWords[inviting.mode]}
+      onSend={person ? inviting.invite : inviting.mint}
+      onClose={props.onClose}
+    />
   );
 }
 

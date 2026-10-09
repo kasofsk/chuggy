@@ -1,6 +1,7 @@
 /**
- * Creating a project: what each name may be, and what one answer came to, in a
- * line short enough to sit under the form.
+ * Creating a project: what each name may be, the workspace the form's address
+ * may start it on, and what one answer came to, in a line short enough to sit
+ * under the form.
  *
  * The name rule is the wire's own schema, so this only spares the reader a
  * round trip to be told what the api would refuse anyway.
@@ -22,6 +23,38 @@ export type ProjectCreationForm = z.infer<typeof projectCreationSchema>;
 
 /** The form's own address, outside every partition because it makes one. */
 export const projectCreationRoutePath = "/projects/new";
+
+/** What the form's address says about where it starts: on no workspace, or
+ * on the one it names. */
+export interface ProjectCreationQuery {
+  readonly workspace?: string | undefined;
+}
+
+/** The workspace the address names, read off the query the router parsed. The
+ * key is answered even where it names none, because the router lays this over
+ * the query as parsed and a key left out would stand as it was parsed. */
+export function projectCreationQueryOf(
+  search: Readonly<Record<string, unknown>>,
+): ProjectCreationQuery {
+  const named = projectNameSchema.safeParse(search["workspace"]);
+  return { workspace: named.success ? named.data : undefined };
+}
+
+/** A name as the router writes text into a query: quoted where it would
+ * otherwise be read back as a number or a word of JSON. */
+function projectCreationQueryText(name: string): string {
+  try {
+    JSON.parse(name);
+  } catch {
+    return name;
+  }
+  return JSON.stringify(name);
+}
+
+/** The form's address starting on one workspace. */
+export function projectCreationPathIn(workspace: string): string {
+  return `${projectCreationRoutePath}?workspace=${encodeURIComponent(projectCreationQueryText(workspace))}`;
+}
 
 /** The name rule as the form states it under each field before anything is
  * typed, and as it states a name that breaks it. */

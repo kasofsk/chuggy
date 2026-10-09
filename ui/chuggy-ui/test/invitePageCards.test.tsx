@@ -4,106 +4,27 @@
  * and a redemption sent once however often the page mounts.
  */
 
-import { cleanup, render, screen } from "@testing-library/react";
-import { StrictMode } from "react";
-import type { ReactNode } from "react";
+import { cleanup, screen } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 
-import type { ConsoleConfiguration } from "../app/core/configuration.ts";
-import type { InviteHolder } from "../app/core/inviteHolder.ts";
 import {
   inviteCookieCleared,
   inviteCookieWritten,
 } from "../app/core/invitePage.ts";
-import type { SessionHolder, SessionPhase } from "../app/core/sessionHolder.ts";
-import { InvitePage, InviteProvider } from "../app/browser/InvitePage.tsx";
-import { SessionProvider } from "../app/browser/session.tsx";
+import { inviteConfiguration } from "./inviteDouble.ts";
 import {
-  inviteBrowser,
-  inviteConfiguration,
-  inviteSession,
-} from "./inviteDouble.ts";
-import type { InviteBrowser } from "./inviteDouble.ts";
-import {
-  answer,
-  heldAnswer,
-  press,
-  scriptedFetch,
-  settled,
-} from "./screenHarness.tsx";
-import type { SentRequest } from "./screenHarness.tsx";
+  inviteButtonsDrawn as drawnButtons,
+  inviteGranted as granted,
+  inviteOpened as opened,
+  inviteRedemptionsSent as redemptions,
+} from "./invitePageDrawn.tsx";
+import { answer, heldAnswer, press, settled } from "./screenHarness.tsx";
 import { styleless } from "./styleless.ts";
 
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
 });
-
-const redemptionPath = "/access/v1/invite-links/redemptions";
-
-const granted = {
-  tenant: "acme",
-  role: "Member",
-  projects: [{ project: "atlas", roles: ["Viewer"] }],
-};
-
-function page(session: SessionHolder, invite: InviteHolder): ReactNode {
-  return (
-    <StrictMode>
-      <SessionProvider holder={session}>
-        <InviteProvider holder={invite}>
-          <InvitePage />
-        </InviteProvider>
-      </SessionProvider>
-    </StrictMode>
-  );
-}
-
-interface Opened {
-  readonly browser: InviteBrowser;
-  readonly signIns: readonly (string | undefined)[];
-  readonly sent: readonly SentRequest[];
-  /** The page taken down and mounted again in the same document. */
-  readonly remount: () => Promise<void>;
-}
-
-/** The page opened under `StrictMode`, as the console's root mounts it. */
-async function opened(
-  phase: SessionPhase,
-  at: Parameters<typeof inviteBrowser>[0],
-  served: {
-    readonly answered?: (request: SentRequest) => Response | Promise<Response>;
-    readonly configuration?: ConsoleConfiguration;
-  } = {},
-): Promise<Opened> {
-  const { browser, holder } = inviteBrowser(at);
-  const { session, signIns } = inviteSession(phase, served.configuration);
-  const scripted = scriptedFetch(served.answered ?? (() => answer(granted)));
-  vi.stubGlobal("fetch", scripted.fetch);
-  holder.arrive();
-  let view = render(page(session, holder));
-  await settled();
-  return {
-    browser,
-    signIns,
-    sent: scripted.sent,
-    remount: async () => {
-      view.unmount();
-      view = render(page(session, holder));
-      await settled();
-    },
-  };
-}
-
-function redemptions(sent: readonly SentRequest[]): readonly unknown[] {
-  return sent
-    .filter((request) => request.url.endsWith(redemptionPath))
-    .map((request) => request.body);
-}
-
-function drawnButtons(): readonly (string | null)[] {
-  return screen.queryAllByRole("button").map((button) => button.textContent);
-}
 
 test.each(["SignedOut", "SignedIn"] as const)(
   "a person the sign-in service sent back is drawn Invite needed, their cookie ended (%s)",

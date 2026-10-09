@@ -1,17 +1,19 @@
 /**
  * The page an invite link is opened at, drawn the same with a session and
- * without one: a card, one line, and at most one action.
+ * without one: a card, one line, and at most one action, which for a link that
+ * makes a workspace is the form that names it.
  *
  * It reads no router, because the tree's root draws it for a browser that
  * holds no session and has no router, and the route draws it for a reader.
  * What it draws and what it does to the cookie are decided in
  * `ui/chuggy-ui/app/core/invitePage.ts`; what must outlive a mount, the token
- * and the one redemption sent for it, is the holder's, handed down from the
- * process root.
+ * and the one send made for it without a name, is the holder's, handed down
+ * from the process root.
  *
  * NOTHING HERE LEAVES THE PAGE WITHOUT A PRESS but a redemption the plane
  * took. A person the sign-in service refused is drawn a card and not sent
- * round again.
+ * round again, and a workspace's name is sent by a press of `Create` and by
+ * nothing else: no effect sends one, so no mount does.
  */
 
 import { createContext, useContext, useEffect, useState } from "react";
@@ -20,11 +22,17 @@ import type { ReactNode } from "react";
 import { apiRedeemInviteLink } from "../core/accessRoutes.ts";
 import type { InviteHolder } from "../core/inviteHolder.ts";
 import { inviteRoutePath } from "../core/inviteLinks.ts";
-import { inviteElsewherePath, invitePageWords } from "../core/invitePage.ts";
-import type { InviteRedemption } from "../core/invitePage.ts";
+import {
+  inviteElsewherePath,
+  invitePageWords,
+  inviteWorkspaceSendable,
+} from "../core/invitePage.ts";
+import type { InviteNaming, InviteRedemption } from "../core/invitePage.ts";
+import { siteWorkspaceNameFault } from "../core/siteWorkspaces.ts";
 import { useApiPorts } from "./api.ts";
 import { SessionCard, SignedOutCard } from "./SessionCard.tsx";
 import { useSessionHolder, useSessionSnapshot } from "./session.tsx";
+import { InvitationText } from "./settings/InvitationFields.tsx";
 import { Button } from "./ui/Button.tsx";
 import { Locomotive } from "./ui/Locomotive.tsx";
 
@@ -40,6 +48,8 @@ export function InviteProvider(props: {
     </InviteContext.Provider>
   );
 }
+
+const inviteCardTitle = "chuggy";
 
 function useInviteHolder(): InviteHolder {
   const holder = useContext(InviteContext);
@@ -57,7 +67,7 @@ function InviteCard(props: {
   const { action, onAction } = props;
   return (
     <SessionCard
-      title="chuggy"
+      title={inviteCardTitle}
       detail={props.line}
       media={props.media}
       action={
@@ -100,7 +110,7 @@ function InviteElsewhere(): ReactNode {
   return null;
 }
 
-/** The answer one attempt at a redemption came to, none while it is unanswered. */
+/** The answer one attempt at the send without a name came to, none while it is unanswered. */
 function useInviteRedemption(
   token: string,
   domain: string | undefined,
@@ -135,6 +145,115 @@ function useInviteRedemption(
   };
 }
 
+interface InviteNamed {
+  readonly name: string;
+  /** A press unanswered, or answered by a workspace the reader is leaving for. */
+  readonly sending: boolean;
+  /** What the last press came to, until the name is changed. */
+  readonly came: InviteNaming | undefined;
+  readonly change: (name: string) => void;
+  /** The name as it stands sent with the token, which only a press asks for. */
+  readonly create: () => void;
+}
+
+function useInviteNaming(
+  token: string,
+  domain: string | undefined,
+): InviteNamed {
+  const invite = useInviteHolder();
+  const ports = useApiPorts();
+  const [name, setName] = useState("");
+  const [sending, setSending] = useState(false);
+  const [came, setCame] = useState<InviteNaming>();
+  return {
+    name,
+    sending,
+    came,
+    change: (changed) => {
+      setName(changed);
+      setCame(undefined);
+    },
+    create: () => {
+      if (sending || !inviteWorkspaceSendable(name)) return;
+      setSending(true);
+      void invite
+        .named(token, domain, name, (sent, workspace) =>
+          apiRedeemInviteLink(ports, sent, workspace),
+        )
+        .then((naming) => {
+          setCame(naming);
+          setSending(naming.outcome === "Redeemed");
+        });
+    },
+  };
+}
+
+/** The card as a form: the field, its fault beneath, and `Create`, which Enter in the field presses. */
+function InviteNamingForm(props: { readonly named: InviteNamed }): ReactNode {
+  const { name, sending, came, change, create } = props.named;
+  return (
+    <SessionCard
+      title={inviteCardTitle}
+      detail={sending ? invitePageWords.creating : invitePageWords.naming}
+      action={
+        <form
+          className="grid gap-4"
+          onSubmit={(event) => {
+            event.preventDefault();
+            create();
+          }}
+        >
+          <InvitationText
+            label={invitePageWords.workspaceName}
+            value={name}
+            fault={
+              siteWorkspaceNameFault(name) ??
+              (came?.outcome === "Refused" ? came.fault : undefined)
+            }
+            disabled={sending}
+            onChange={change}
+          />
+          <Button
+            variant="primary"
+            type="submit"
+            disabled={sending || !inviteWorkspaceSendable(name)}
+            busy={sending}
+          >
+            {invitePageWords.create}
+          </Button>
+        </form>
+      }
+    />
+  );
+}
+
+/** A link that makes a workspace, from the plane asking for its name to the answer one press of `Create` came to. */
+function InviteNamingCard(props: {
+  readonly token: string;
+  readonly domain: string | undefined;
+}): ReactNode {
+  const invite = useInviteHolder();
+  const named = useInviteNaming(props.token, props.domain);
+  const came = named.sending ? undefined : named.came;
+  if (came?.outcome === "NotValid")
+    return (
+      <InviteCard
+        line={invitePageWords.notValid}
+        action={invitePageWords.open}
+        onAction={invite.elsewhere}
+      />
+    );
+  if (came?.outcome === "Failed")
+    return (
+      <InviteCard
+        line={came.line}
+        action={invitePageWords.retry}
+        onAction={named.create}
+      />
+    );
+  return <InviteNamingForm named={named} />;
+}
+
 function InviteRedeeming(props: {
   readonly token: string;
   readonly domain: string | undefined;
@@ -145,21 +264,26 @@ function InviteRedeeming(props: {
     return (
       <InviteCard line={invitePageWords.redeeming} media={<Locomotive />} />
     );
-  if (redemption.outcome === "NotValid")
-    return (
-      <InviteCard
-        line={invitePageWords.notValid}
-        action={invitePageWords.open}
-        onAction={invite.elsewhere}
-      />
-    );
-  return (
-    <InviteCard
-      line={redemption.line}
-      action={invitePageWords.retry}
-      onAction={retry}
-    />
-  );
+  switch (redemption.outcome) {
+    case "NameWanted":
+      return <InviteNamingCard token={props.token} domain={props.domain} />;
+    case "NotValid":
+      return (
+        <InviteCard
+          line={invitePageWords.notValid}
+          action={invitePageWords.open}
+          onAction={invite.elsewhere}
+        />
+      );
+    case "Failed":
+      return (
+        <InviteCard
+          line={redemption.line}
+          action={invitePageWords.retry}
+          onAction={retry}
+        />
+      );
+  }
 }
 
 export function InvitePage(): ReactNode {

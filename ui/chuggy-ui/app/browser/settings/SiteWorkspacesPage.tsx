@@ -9,6 +9,11 @@
  * nothing to a reader who may do nothing on the site, so their absence is this
  * reader's standing rather than a fault, and the page says who creates
  * workspaces instead.
+ *
+ * The site's workspace links are read beside the workspaces, and only a read
+ * that answered with a list draws anything: a plane that keeps no links, a
+ * read not yet answered and one that failed all leave the page as it is
+ * without them, with no way to make a link and no section of them.
  */
 
 import { useState } from "react";
@@ -39,7 +44,11 @@ import {
 } from "./SettingsListing.tsx";
 import { SettingsPage, useSettingsTenant } from "./SettingsPage.tsx";
 import { SiteWorkspaceNew } from "./SiteWorkspaceCreation.tsx";
-import { useSiteWorkspaces } from "./siteWorkspacesResource.ts";
+import { SiteWorkspaceLinks } from "./SiteWorkspaceLinks.tsx";
+import {
+  useSiteWorkspaceLinks,
+  useSiteWorkspaces,
+} from "./siteWorkspacesResource.ts";
 import { TenantPersonWho } from "./TenantPersonRow.tsx";
 import { useSiteAbilities } from "./tenantPermissionsResource.ts";
 
@@ -123,12 +132,14 @@ function SiteWorkspacesTable(props: {
 }
 
 /** The list for a reader who may make a workspace, the line the last creation
- * left held here so it outlives the read the creation set off. */
+ * left held here so it outlives the read the creation set off, and under the list the site's links. */
 function SiteWorkspacesListed(props: {
   readonly tenant: string;
   readonly abilities: AccessSiteAbilities;
 }): ReactNode {
   const listed = useSiteWorkspaces(props.tenant);
+  const read = useSiteWorkspaceLinks(props.tenant);
+  const links = read.state === "Ready" ? read.value.links : undefined;
   const [created, setCreated] = useState<string | undefined>(undefined);
   return (
     <>
@@ -143,6 +154,7 @@ function SiteWorkspacesListed(props: {
               <SiteWorkspaceNew
                 tenant={props.tenant}
                 abilities={props.abilities}
+                links={links !== undefined}
                 onSaid={setCreated}
               />
             }
@@ -159,6 +171,11 @@ function SiteWorkspacesListed(props: {
           withheld={siteWorkspacesWithheld}
         />
       )}
+      <SiteWorkspaceLinks
+        tenant={props.tenant}
+        links={links ?? []}
+        abilities={props.abilities}
+      />
     </>
   );
 }

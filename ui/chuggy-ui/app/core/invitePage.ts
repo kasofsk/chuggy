@@ -1,7 +1,9 @@
 /**
  * The page an invite link is opened at, decided with no renderer: what a
  * fragment or a cookie holds of a token, the cookie that carries the token
- * across a sign-in, which card the page draws, and what a redemption came to.
+ * across a sign-in, which card the page draws, what a redemption came to, and
+ * for a link that makes a workspace, which name may be sent and what sending
+ * one came to.
  *
  * THE FRAGMENT IS ANYONE'S TO WRITE, so nothing read from it is trusted to be
  * a token the plane made: it is bounded where it is read, and percent-encoded
@@ -14,10 +16,15 @@
 
 import {
   accessInviteLinkTokenCharsMax,
+  accessOwnedTenantSchema,
+  accessTenantTakenCode,
+  accessWorkspaceLinkNameWantedCode,
   type AccessInviteLinkRedeemed,
 } from "../../../../src/contract/accessPlane.ts";
 
-import type { ApiResult } from "./apiRequest.ts";
+import type { ApiFailure, ApiResult } from "./apiRequest.ts";
+import { projectCreationPathIn } from "./projectCreation.ts";
+import { siteWorkspaceNameTaken } from "./siteWorkspaces.ts";
 import { accessFailureLabel } from "./tenantPeople.ts";
 
 /** The cookie a token crosses a sign-in in. The deployment's sign-in hook
@@ -138,10 +145,15 @@ export const invitePageWords = {
   signIn: "Sign in",
   open: "Open chuggy",
   retry: "Retry",
+  naming: "New workspace",
+  workspaceName: "Workspace name",
+  create: "Create",
+  creating: "Creating…",
+  nameNotValid: "Name not valid",
 } as const;
 
-/** What a redemption came to, and whether it clears the cookie. */
-export type InviteRedemption =
+/** What any send of a token may come to, and whether it clears the cookie. */
+type InviteAnswered =
   | {
       readonly outcome: "Redeemed";
       readonly path: string;
@@ -154,11 +166,37 @@ export type InviteRedemption =
       readonly cookieCleared: false;
     };
 
+/** What a send without a name came to: any send's answer, or the plane
+ * asking for the name of the workspace the link makes. */
+export type InviteRedemption =
+  | InviteAnswered
+  | { readonly outcome: "NameWanted"; readonly cookieCleared: false };
+
+/** What a send with a workspace's name came to: any send's answer, or the
+ * name refused, as the line under its field. */
+export type InviteNaming =
+  | InviteAnswered
+  | {
+      readonly outcome: "Refused";
+      readonly fault: string;
+      readonly cookieCleared: false;
+    };
+
+function inviteFailed(failure: ApiFailure): InviteAnswered {
+  return {
+    outcome: "Failed",
+    line: accessFailureLabel(failure),
+    cookieCleared: false,
+  };
+}
+
 /**
  * A link the plane took sends its reader to the first project it granted, or
- * to the landing page where it granted none. One the plane does not know, or
- * a request it will not read, is a link no retry mends and so clears the
- * cookie, which any other failure keeps for the retry.
+ * to the landing page where it granted none; one that makes a workspace is
+ * answered with the plane's request for its name, which is no failure and
+ * keeps the cookie. One the plane does not know, or a request it will not
+ * read, is a link no retry mends and so clears the cookie, which any other
+ * failure keeps for the retry.
  */
 export function inviteRedemption(
   result: ApiResult<AccessInviteLinkRedeemed>,
@@ -178,16 +216,63 @@ export function inviteRedemption(
     case "Absent":
     case "Rejected":
       return { outcome: "NotValid", cookieCleared: true };
-    case "Unauthenticated":
     case "Conflict":
+      return result.code === accessWorkspaceLinkNameWantedCode
+        ? { outcome: "NameWanted", cookieCleared: false }
+        : inviteFailed(result);
+    case "Unauthenticated":
     case "Retryable":
     case "Fault":
     case "Unreachable":
     case "Unreadable":
+      return inviteFailed(result);
+  }
+}
+
+/** Whether `Create` may send a name: one a new workspace may take, which an
+ * empty one is not. */
+export function inviteWorkspaceSendable(name: string): boolean {
+  return accessOwnedTenantSchema.safeParse(name).success;
+}
+
+/**
+ * A workspace the plane made sends its reader to where its first project is
+ * made, the workspace in the address, and clears the cookie, as a link the
+ * plane no longer knows does. A name something holds, and one the plane will
+ * not read, are the field's to say and keep the cookie, as any other failure
+ * does for the retry.
+ */
+export function inviteNaming(
+  result: ApiResult<AccessInviteLinkRedeemed>,
+): InviteNaming {
+  switch (result.outcome) {
+    case "Ok":
       return {
-        outcome: "Failed",
-        line: accessFailureLabel(result),
+        outcome: "Redeemed",
+        path: projectCreationPathIn(result.value.tenant),
+        cookieCleared: true,
+      };
+    case "Absent":
+      return { outcome: "NotValid", cookieCleared: true };
+    case "Rejected":
+      return {
+        outcome: "Refused",
+        fault: invitePageWords.nameNotValid,
         cookieCleared: false,
       };
+    case "Conflict":
+      return result.code === accessTenantTakenCode
+        ? {
+            outcome: "Refused",
+            fault: siteWorkspaceNameTaken,
+            cookieCleared: false,
+          }
+        : inviteFailed(result);
+    case "Unauthenticated":
+    case "Retryable":
+    case "Fault":
+    case "Unreachable":
+    case "Unreadable":
+      return inviteFailed(result);
   }
 }

@@ -61,8 +61,8 @@
   }
 
   /* An invite link's columns: its state with when it expires under it, the
-     two people a link names, and the one action a row may have. What a link
-     carries takes the room they leave. */
+     two that say who used it and who made it, and the one action a row may
+     have. What heads a row takes the room they leave. */
   .people-col-status {
     width: 9em;
   }
