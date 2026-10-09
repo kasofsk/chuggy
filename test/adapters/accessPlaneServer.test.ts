@@ -1625,7 +1625,7 @@ test("a mint is absent, refused under the plane's code, a project unknown under 
   assert.equal(links?.rows.length, accessInviteLinksOpenMax);
 });
 
-test("a redemption answers what it granted to the caller, is unauthenticated without a bearer, and is absent once spent or for a token nobody holds", async () => {
+test("a redemption answers what it granted to the caller, and the same again to them once spent writing nothing, is unauthenticated without a bearer, and is absent once spent to another caller or for a token nobody holds", async () => {
   const { memory, app } = await served();
   const minted = accessInviteLinkMintedSchema.parse(
     (
@@ -1658,6 +1658,10 @@ test("a redemption answers what it granted to the caller, is unauthenticated wit
       { subject: "Principal", principal: accessFixturePrincipal("sam") },
     ],
   );
+  const again = await redeem(as("sam-token"));
+  assert.equal(again.statusCode, 200, again.body);
+  assert.equal(again.body, redeemed.body);
+  assert.equal(memory.batches.length, 1);
   enveloped(await redeem(as("dee-token")), "Absent");
   enveloped(await redeem(as("dee-token"), "token-nobody-holds"), "Absent");
 });
@@ -1903,7 +1907,7 @@ test("a workspace link's note past its bound or holding a line break, or a body 
   );
 });
 
-test("a workspace link presented without a name, with a taken one or one no tenant may take is refused under its own code and stays open, and with a free name makes its user the workspace's administrator", async () => {
+test("a workspace link presented without a name, with a taken one or one no tenant may take is refused under its own code and stays open, with a free name makes its user the workspace's administrator, and is then answered the same to them alone", async () => {
   const { app, memory } = await served();
   await memory.grants.write(
     tenantPrincipalGrant({
@@ -1950,6 +1954,13 @@ test("a workspace link presented without a name, with a taken one or one no tena
   });
   assert.ok(!redeemed.body.includes("Octo"), redeemed.body);
   assert.ok(!wanted.body.includes("Octo"), wanted.body);
+  const batches = memory.batches.length;
+  for (const workspace of [undefined, "sam-other-works", "Not A Name"]) {
+    const again = await redemption(app, "sam-token", { token, workspace });
+    assert.equal(again.statusCode, 200, again.body);
+    assert.equal(again.body, redeemed.body);
+  }
+  assert.equal(memory.batches.length, batches);
   enveloped(
     await redemption(app, "dee-token", { token, workspace: "dee-works" }),
     "Absent",

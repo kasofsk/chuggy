@@ -175,6 +175,90 @@ test("a link given back is open and can be spent", async () => {
   assert.notEqual(await links.spend(link.digest, "second"), undefined);
 });
 
+test("a used link of either kind is read for its user alone, past its expiry too, and the read writes nothing", async () => {
+  await siteCleared();
+  const tenant = asTenantId("links-used-by");
+  const link = await minted(tenant);
+  const made = await workspaceMinted();
+  for (const digest of [link.digest, made.digest])
+    assert.equal(await links.usedBy(digest, "user"), undefined);
+  assert.notEqual(await links.spend(link.digest, "user"), undefined);
+  assert.notEqual(
+    await links.workspaceSpend(made.digest, "user", asTenantId("user-used")),
+    undefined,
+  );
+  await harness.query(
+    "UPDATE invite_link SET minted_at=now()-interval '2 days', expires_at=now()-interval '1 day' WHERE link=$1",
+    [made.link],
+  );
+  const rows = () =>
+    harness.query(
+      "SELECT link,used_by,used_at,revoked_at,workspace,expires_at FROM invite_link WHERE link IN ($1,$2) ORDER BY link",
+      [link.link, made.link],
+    );
+  const before = await rows();
+  assert.deepEqual(await links.usedBy(link.digest, "user"), {
+    kind: "Tenant",
+    tenant,
+    role: "Member",
+    projects: [{ project: "web", roles: ["Developer", "Viewer"] }],
+  });
+  assert.deepEqual(await links.usedBy(made.digest, "user"), {
+    kind: "Workspace",
+    workspace: "user-used",
+  });
+  for (const digest of [link.digest, made.digest])
+    assert.equal(await links.usedBy(digest, "other"), undefined);
+  assert.equal(await links.usedBy(digestNext(), "user"), undefined);
+  assert.deepEqual(await rows(), before);
+});
+
+test("a revoked link and an expired one nobody used are read for nobody, of either kind", async () => {
+  await siteCleared();
+  const tenant = asTenantId("links-used-by-ended");
+  const revoked = await minted(tenant);
+  const expired = await minted(tenant);
+  const siteRevoked = await workspaceMinted();
+  const siteExpired = await workspaceMinted();
+  assert.equal(await links.revoke(tenant, revoked.link), true);
+  assert.equal(await links.workspaceRevoke(siteRevoked.link), true);
+  await harness.query(
+    "UPDATE invite_link SET minted_at=now()-interval '2 days', expires_at=now()-interval '1 day' WHERE link IN ($1,$2)",
+    [expired.link, siteExpired.link],
+  );
+  for (const link of [revoked, expired, siteRevoked, siteExpired])
+    for (const subject of ["user", "minter", "site-minter"])
+      assert.equal(await links.usedBy(link.digest, subject), undefined);
+});
+
+test("a used link a mint has dropped is read for nobody, of either kind", async () => {
+  await siteCleared();
+  const tenant = asTenantId("links-used-by-dropped");
+  const used = await minted(tenant);
+  assert.notEqual(await links.spend(used.digest, "user"), undefined);
+  const siteUsed = await workspaceMinted();
+  assert.notEqual(
+    await links.workspaceSpend(
+      siteUsed.digest,
+      "user",
+      asTenantId("dropped-works"),
+    ),
+    undefined,
+  );
+  for (let count = 0; count < accessInviteLinksEndedKept; count += 1) {
+    const link = await minted(tenant);
+    assert.equal(await links.revoke(tenant, link.link), true);
+    const site = await workspaceMinted();
+    assert.equal(await links.workspaceRevoke(site.link), true);
+  }
+  assert.notEqual(await links.usedBy(used.digest, "user"), undefined);
+  assert.notEqual(await links.usedBy(siteUsed.digest, "user"), undefined);
+  await minted(tenant);
+  await workspaceMinted();
+  assert.equal(await links.usedBy(used.digest, "user"), undefined);
+  assert.equal(await links.usedBy(siteUsed.digest, "user"), undefined);
+});
+
 test("the mint past the open bound is refused, and an ended link does not count against it", async () => {
   const tenant = asTenantId("links-open-bound");
   const made = [];

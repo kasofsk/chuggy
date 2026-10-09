@@ -26,6 +26,7 @@ import {
   accessMemoryInviteLinks,
   inviteLinkDigest,
   inviteLinkMemory,
+  inviteLinkOverlapped,
   type InviteLinkMemory,
 } from "./accessInviteLinkFixture.ts";
 import {
@@ -337,7 +338,7 @@ test("a grant that faults gives the link back open and naming nothing, and the n
   );
 });
 
-test("a workspace link used once is absent after, with any name or none", async () => {
+test("a workspace link used once is absent after to another person, with any name or none", async () => {
   const { memory, service } = await sited();
   const made = await workspaceMinted(service);
   await service.redeemed(zed, made.token, "zed-works");
@@ -347,6 +348,67 @@ test("a workspace link used once is absent after, with any name or none", async 
       outcome: "Absent",
     });
   assert.deepEqual(memory.batches, []);
+});
+
+test("a workspace link's user sending again is answered the workspace it made, whatever name the send carries, and nothing is written", async () => {
+  const { memory, links, service } = await sited();
+  const made = await workspaceMinted(service);
+  const first = await service.redeemed(zed, made.token, "zed-works");
+  assert.deepEqual(first, {
+    outcome: "Redeemed",
+    redeemed: { tenant: "zed-works", role: "Admin", projects: [] },
+  });
+  for (const grant of memory.batches.flat()) await memory.grants.remove(grant);
+  const row = structuredClone(rowOf(links, made.link));
+  memory.batches.length = 0;
+  memory.changes.length = 0;
+  memory.asked.length = 0;
+  if (links !== undefined) links.nowMs = made.expiresAtMs;
+  for (const workspace of [
+    undefined,
+    "other-works",
+    "zed-works",
+    "Not A Name",
+    "api",
+    "",
+  ])
+    assert.deepEqual(
+      await service.redeemed(zed, made.token, workspace),
+      first,
+      String(workspace),
+    );
+  assert.deepEqual(memory.batches, []);
+  assert.deepEqual(memory.changes, []);
+  assert.deepEqual(memory.asked, []);
+  assert.deepEqual(rowOf(links, made.link), row);
+});
+
+test("a send that read a workspace link open and whose spend took nothing is answered the workspace its caller's own other send made, and absent where another person's took it", async () => {
+  for (const [other, answered] of [
+    [zed, "Redeemed"],
+    [dee, "Absent"],
+  ] as const) {
+    const { memory, links, service } = await sited();
+    if (links === undefined) return;
+    const made = await workspaceMinted(service);
+    let taken: unknown;
+    const overlapping = accessMemoryInviteLinks(
+      memory,
+      inviteLinkOverlapped(links, async () => {
+        taken = await service.redeemed(other, made.token, "first-works");
+      }),
+    );
+    const answer = await overlapping.redeemed(zed, made.token, "second-works");
+    assert.deepEqual(taken, {
+      outcome: "Redeemed",
+      redeemed: { tenant: "first-works", role: "Admin", projects: [] },
+    });
+    assert.deepEqual(
+      answer,
+      answered === "Redeemed" ? taken : { outcome: "Absent" },
+    );
+    assert.equal(memory.batches.length, 1);
+  }
 });
 
 test("two links never make one workspace: where the authority does not yet hold a name another link took, the spend is refused it and the link stays open", async () => {
