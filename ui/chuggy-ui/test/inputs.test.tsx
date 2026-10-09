@@ -43,6 +43,20 @@ test("an input answers to its label, carries its unit and says it was refused", 
   styleless();
 });
 
+test("a read-only input holds its value for a reader to select, and is one the browser types nothing into", () => {
+  render(<Input readOnly label="Link" value="https://chuggy.example/x" />);
+  const box = screen.getByLabelText<HTMLInputElement>("Link");
+  expect(box.value).toBe("https://chuggy.example/x");
+  expect(box.readOnly).toBe(true);
+  expect(box.disabled).toBe(false);
+  styleless();
+});
+
+test("an input that takes typing is not read only", () => {
+  render(<Input label="Title" value="" onChange={() => undefined} />);
+  expect(screen.getByLabelText<HTMLInputElement>("Title").readOnly).toBe(false);
+});
+
 /** A box with no unit draws none rather than an empty one, and a box that is
  * not numeric is not aligned as though it were. */
 test("an input with no unit and no numeric flag draws neither", () => {
