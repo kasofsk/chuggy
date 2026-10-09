@@ -239,8 +239,8 @@ export function inviteWorkspaceSendable(name: string): boolean {
  * A workspace the plane made sends its reader to where its first project is
  * made, the workspace in the address, and clears the cookie, as a link the
  * plane no longer knows does. A name something holds, and one the plane will
- * not read, are the field's to say and leave the link open, and any other
- * failure keeps the cookie for the retry.
+ * not read, are the field's to say and keep the cookie, as any other failure
+ * does for the retry.
  */
 export function inviteNaming(
   result: ApiResult<AccessInviteLinkRedeemed>,

@@ -149,7 +149,7 @@ interface InviteNamed {
   readonly name: string;
   /** A press unanswered, or answered by a workspace the reader is leaving for. */
   readonly sending: boolean;
-  /** What the last press came to, until the name is changed or sent again. */
+  /** What the last press came to, until the name is changed. */
   readonly came: InviteNaming | undefined;
   readonly change: (name: string) => void;
   /** The name as it stands sent with the token, which only a press asks for. */
