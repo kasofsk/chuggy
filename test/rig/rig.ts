@@ -269,10 +269,19 @@ export async function inboxCount(page: Page): Promise<number> {
   return Number.parseInt(await badge.innerText(), 10);
 }
 
+/**
+ * Signed in by password through the console's own `Sign in`. The card may keep
+ * its password form behind a link, so the link is pressed where it is drawn
+ * and the field itself where the form already is.
+ */
 export async function signIn(page: Page): Promise<void> {
   await page.goto(`${rig.consoleUrl}/`);
   await page
     .getByRole("button", { name: "Sign in" })
+    .click({ timeout: signInTimeoutMs });
+  await page
+    .locator('a[href="#use-password"]:visible, input[name="password"]:visible')
+    .first()
     .click({ timeout: signInTimeoutMs });
   const identifier = page.locator('input[name="identifier"]');
   await identifier.waitFor({ timeout: signInTimeoutMs });
