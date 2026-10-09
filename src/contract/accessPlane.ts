@@ -24,6 +24,10 @@
  * THE SITE'S TENANTS ARE ANSWERED TO WHOEVER MAY MAKE ONE, each with its
  * administrators, at the path the site's invitation makes them at.
  *
+ * A WORKSPACE LINK IS THE SITE'S INVITATION MADE IN ADVANCE, naming nobody and
+ * no workspace: whoever presents it signed in names the workspace they will
+ * administer, at the route every invite link is redeemed at.
+ *
  * WHAT A CALLER MAY DO IS ANSWERED ABOUT THEM ALONE, at the site, a tenant or
  * a project: each ability is whether they hold the kind it needs there, so a
  * console offers the controls the plane would not refuse.
@@ -36,7 +40,11 @@
 import { z } from "zod";
 
 import { identitySchema, textCodePointsCount } from "./http.ts";
-import { projectNameSchema, tenantNameReserved } from "./requests.ts";
+import {
+  projectNameCharsMax,
+  projectNameSchema,
+  tenantNameReserved,
+} from "./requests.ts";
 
 export const accessPlaneBasePath = "/access/v1";
 
@@ -239,6 +247,18 @@ export const accessPlaneRoutes = {
     path: `${accessSitePath}/workspaces`,
   },
   siteTenants: { method: "GET", path: `${accessSitePath}/workspaces` },
+  siteWorkspaceLinkCreation: {
+    method: "POST",
+    path: `${accessSitePath}/workspace-links`,
+  },
+  siteWorkspaceLinks: {
+    method: "GET",
+    path: `${accessSitePath}/workspace-links`,
+  },
+  siteWorkspaceLinkRevocation: {
+    method: "DELETE",
+    path: `${accessSitePath}/workspace-links/:link`,
+  },
   siteAuthorityPersonAddition: {
     method: "POST",
     path: accessHolderPersonPath(accessSitePath),
@@ -341,7 +361,7 @@ export const accessProjectRoleGrantSchema = z.strictObject({
 /** The conflict a removal is refused with when it would leave a tenant no administrator. */
 export const accessLastTenantAdministratorCode = "LastTenantAdministrator";
 
-/** The conflict a site's invitation is refused with where something already holds the tenant it names. */
+/** The conflict a site's invitation, or a workspace link's use, is refused with where something already holds the tenant it names. */
 export const accessTenantTakenCode = "InvitationTenantTaken";
 
 /** The refusal of a change or an invitation to a caller answered the list who may not grant a role it names, or hosted runs, or manage the authority it names. */
@@ -629,16 +649,16 @@ export const accessSiteTenantsSchema = z.strictObject({
 /** How long an invite link stands once made. */
 export const accessInviteLinkLifetimeMs = 7 * 24 * 60 * 60 * 1_000;
 
-/** The most open invite links one tenant holds. */
+/** The most open invite links one tenant holds, and the most open workspace links the site holds. */
 export const accessInviteLinksOpenMax = 16;
 
-/** The most ended invite links one tenant keeps, the most recently ended. */
+/** The most ended invite links one tenant keeps, and the site of its workspace links, the most recently ended. */
 export const accessInviteLinksEndedKept = 48;
 
 /** The refusal of every invite link route on a plane composed with no store. */
 export const accessInviteLinksNotConfiguredCode = "InviteLinksNotConfigured";
 
-/** The conflict a mint is refused with where the tenant holds as many open links as it may. */
+/** The conflict a mint is refused with where the tenant, or the site, holds as many open links as it may. */
 export const accessInviteLinkLimitReachedCode = "InviteLinkLimitReached";
 
 /** The conflict a revocation is refused with where the link has already ended. */
@@ -698,10 +718,74 @@ export const accessInviteLinksSchema = z.strictObject({
   links: z.array(accessInviteLinkSchema),
 });
 
-/** What a redemption is sent. */
+/** The longest note a workspace link keeps. */
+export const accessWorkspaceLinkNoteCharsMax = 200;
+
+/** The maker's own line about a workspace link: some text, on one line, within its bound. */
+export const accessWorkspaceLinkNoteSchema = z
+  .string()
+  .min(1)
+  .refine(
+    (note) => textCodePointsCount(note) <= accessWorkspaceLinkNoteCharsMax,
+    `a note is at most ${String(accessWorkspaceLinkNoteCharsMax)} characters`,
+  )
+  .refine(
+    (note) => !/[\n\r\u0085\u2028\u2029]/u.test(note),
+    "a note is one line",
+  );
+
+/**
+ * What a workspace link is sent: whether the workspace's administrators may
+ * make accounts, and a note the site's list alone shows. It names nobody and
+ * no workspace: whoever uses it names the workspace then.
+ */
+export const accessWorkspaceLinkCreationSchema = z.strictObject({
+  createAccounts: z.boolean(),
+  note: accessWorkspaceLinkNoteSchema.optional(),
+});
+
+const accessWorkspaceLinkShape = {
+  link: identitySchema,
+  note: accessWorkspaceLinkNoteSchema.optional(),
+  createAccounts: z.boolean(),
+  newAccounts: z.boolean(),
+  mintedBy: accessInviteLinkPersonSchema,
+  mintedAtMs: z.number().int().nonnegative(),
+  expiresAtMs: z.number().int().nonnegative(),
+};
+
+/** One of the site's workspace links, where a `Used` one names who used it, when, and the workspace they made. */
+export const accessWorkspaceLinkSchema = z.discriminatedUnion("state", [
+  z.strictObject({
+    ...accessWorkspaceLinkShape,
+    state: z.enum(accessInviteLinkStates).exclude(["Used"]),
+  }),
+  z.strictObject({
+    ...accessWorkspaceLinkShape,
+    state: z.literal("Used"),
+    usedBy: accessInviteLinkPersonSchema,
+    usedAtMs: z.number().int().nonnegative(),
+    workspace: identitySchema,
+  }),
+]);
+
+/** What the site's workspace link list answers, newest first. */
+export const accessWorkspaceLinksSchema = z.strictObject({
+  links: z.array(accessWorkspaceLinkSchema),
+});
+
+/**
+ * What a redemption is sent: the token, and the name of the workspace a
+ * workspace link is to make. The name is bounded and nothing more here,
+ * because what it must be depends on the link the token names.
+ */
 export const accessInviteLinkRedemptionSchema = z.strictObject({
   token: z.string().min(1).max(accessInviteLinkTokenCharsMax),
+  workspace: z.string().max(projectNameCharsMax).optional(),
 });
+
+/** The conflict a workspace link presented without a workspace's name is refused with. */
+export const accessWorkspaceLinkNameWantedCode = "WorkspaceLinkNameWanted";
 
 /**
  * Where the directory asks, before it makes an account, whether to make it.
@@ -760,6 +844,11 @@ export type AccessInviteLinks = z.infer<typeof accessInviteLinksSchema>;
 export type AccessInviteLinkRedeemed = z.infer<
   typeof accessInviteLinkRedeemedSchema
 >;
+export type AccessWorkspaceLinkCreation = z.infer<
+  typeof accessWorkspaceLinkCreationSchema
+>;
+export type AccessWorkspaceLink = z.infer<typeof accessWorkspaceLinkSchema>;
+export type AccessWorkspaceLinks = z.infer<typeof accessWorkspaceLinksSchema>;
 export type AccessInvited = z.infer<typeof accessInvitedSchema>;
 export type AccessOwnerInvitation = z.infer<typeof accessOwnerInvitationSchema>;
 export type AccessOwnerInvited = z.infer<typeof accessOwnerInvitedSchema>;
