@@ -970,8 +970,9 @@ export function creationSubmitMotion(dispatches: boolean): CreationMotion {
   return dispatches ? "Start" : "Release";
 }
 
-/** The motion's own words: what its release is called, and what a submit
- * says once that has settled, which one that goes on to dispatch says of that. */
+/** The motion's own words: what its release is called, what a submit says
+ * while it sends it, and what the note reads once the release has settled. A
+ * submit that goes on to dispatch reads there that the ticket is starting. */
 function creationMotionWords(motion: CreationMotion): {
   readonly noun: string;
   readonly settled: string;
