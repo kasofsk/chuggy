@@ -94,9 +94,7 @@ function inboxDrawn(): QueryClient {
  * `unanswered` never answers it, and `rereadHeld` answers it but never the
  * read after.
  * `absent` is a reader who may not dispatch, whom the read answers as it
- * answers a project they cannot see. The abilities read answers that the
- * reader may press every door unless the case says what it answers, and
- * `abilities` of `undefined` never answers it.
+ * answers a project they cannot see.
  */
 function drawProject(served: {
   readonly held: readonly SelectorProposalResponse[];
@@ -105,6 +103,7 @@ function drawProject(served: {
   readonly unanswered?: boolean;
   readonly rereadHeld?: boolean;
   readonly absent?: boolean;
+  /** What the abilities read answers: every door unless the case says, and `undefined` never answers it. */
   readonly abilities?: AbilitiesAnswer;
 }): {
   readonly reviewed: readonly Reviewed[];

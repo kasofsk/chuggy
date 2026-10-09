@@ -38,8 +38,8 @@ import { resizeObserverStubbed } from "./resizeObserver.ts";
 import { elementScrollToStubbed } from "./scrolling.ts";
 import { leadBody } from "./leadFixture.ts";
 import {
+  abilitiesEvery,
   abilitiesFetch,
-  abilitiesNone,
   abilitiesUnrefusing,
 } from "./projectAbilitiesFixture.ts";
 import { sessionPlacementBody } from "./sessionPlacementFixture.ts";
@@ -1703,7 +1703,7 @@ function viewOnlySaid(within_: HTMLElement | null): number {
 test("a reader who may not mutate is told View only once in the bar and once where the first message would be typed", async () => {
   await mounted(
     viewportDeskEm,
-    abilitiesFetch({ ...abilitiesNone, dispatch: true }, threadServed([])),
+    abilitiesFetch({ ...abilitiesEvery, mutate: false }, threadServed([])),
   );
   expect(offeredToChange()).toStrictEqual({
     newTicket: false,
@@ -1721,7 +1721,10 @@ test("a reader who may not mutate is told View only once in the bar and once whe
 test("a reader who may not mutate keeps a held thread's title and transcript, with View only where its box would be", async () => {
   await mounted(
     viewportDeskEm,
-    abilitiesFetch(abilitiesNone, threadServed([heldOwn])),
+    abilitiesFetch(
+      { ...abilitiesEvery, mutate: false },
+      threadServed([heldOwn]),
+    ),
   );
   expect(screen.getByRole("heading", { name: "held" })).toBeDefined();
   expect(offeredToChange()).toStrictEqual({
@@ -1771,14 +1774,20 @@ test.each(abilitiesUnrefusing)(
 test("View only stands in place of the hosted grant's line, not beside it", async () => {
   await mounted(
     viewportDeskEm,
-    abilitiesFetch(abilitiesNone, grantReadServed(false, [])),
+    abilitiesFetch(
+      { ...abilitiesEvery, mutate: false },
+      grantReadServed(false, []),
+    ),
   );
   expect(viewOnlySaid(conversationRegion())).toBe(1);
   expect(screen.queryByText("Needs hosted runs")).toBeNull();
   cleanup();
   await mounted(
     viewportDeskEm,
-    abilitiesFetch(abilitiesNone, grantReadServed(false, [heldOwn])),
+    abilitiesFetch(
+      { ...abilitiesEvery, mutate: false },
+      grantReadServed(false, [heldOwn]),
+    ),
   );
   expect(viewOnlySaid(conversationRegion())).toBe(1);
   expect(screen.queryByText("Needs hosted runs")).toBeNull();

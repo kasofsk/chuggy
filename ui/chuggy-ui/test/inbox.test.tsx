@@ -36,8 +36,8 @@ import type * as BrowserPorts from "../app/browser/ports.ts";
 import { leadRefusals } from "./leadFixture.ts";
 import { ticketInstants } from "./ticketInstants.ts";
 import {
+  abilitiesEvery,
   abilitiesOver,
-  abilitiesNone,
   abilitiesUnrefusing,
 } from "./projectAbilitiesFixture.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
@@ -297,7 +297,7 @@ test("a row says how its last run ended, and never Terminal", async () => {
 });
 
 test("a reader who may not mutate keeps the row and is offered no answer", async () => {
-  drawInbox(served, abilitiesOver({ ...abilitiesNone, dispatch: true }));
+  drawInbox(served, abilitiesOver({ ...abilitiesEvery, mutate: false }));
   await settled();
   expect(screen.getByText("Serve the reason")).toBeDefined();
   expect(screen.queryByRole("button", { name: "resume" })).toBeNull();
