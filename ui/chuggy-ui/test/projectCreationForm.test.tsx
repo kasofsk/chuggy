@@ -198,7 +198,7 @@ test("a press repeated after no answer spends the same identity, and an edit dra
   expect(keys[2]).not.toBe(keys[0]);
 });
 
-test("the switcher offers a new project beside every project, and it opens the form", async () => {
+test("the switcher offers a new project beside every project, and it opens the form in the workspace of the project shown", async () => {
   served([partition], () => Promise.resolve(answer(partition, 201)));
   await drawn(<ProjectSwitcher partition={partition} />);
   fireEvent.keyDown(screen.getByRole("button", { name: /^Project / }), {
@@ -211,5 +211,7 @@ test("the switcher offers a new project beside every project, and it opens the f
     screen.getAllByRole("menuitemradio").map((one) => one.textContent),
   ).toEqual(["vteng / chuggy"]);
   fireEvent.click(item);
-  expect(held.went).toEqual([{ to: projectCreationRoutePath }]);
+  expect(held.went).toStrictEqual([
+    { to: projectCreationRoutePath, search: { workspace: partition.tenant } },
+  ]);
 });

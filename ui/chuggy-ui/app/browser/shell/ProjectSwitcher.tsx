@@ -1,6 +1,6 @@
 /**
  * The project the bar is showing, every other project this reader may read,
- * and the way to make another.
+ * and the way to make another, which starts in the workspace of the one shown.
  *
  * A pick is a navigation, and the picked project is remembered so the next tab
  * opens where this one left off. An inventory that has not answered says so
@@ -56,7 +56,10 @@ export function ProjectSwitcher(props: {
         {
           text: projectSwitcherCreateText,
           onSelect: () => {
-            void navigate({ to: projectCreationRoutePath });
+            void navigate({
+              to: projectCreationRoutePath,
+              search: { workspace: props.partition?.tenant },
+            });
           },
         },
       ]}

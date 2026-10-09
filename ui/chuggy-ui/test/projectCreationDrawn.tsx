@@ -102,12 +102,15 @@ export function served(
   return posted;
 }
 
-export async function drawn(children: ReactNode): Promise<void> {
+/** The children mounted over a cache of their own, or over the one a case
+ * hands in to mount them again over what an earlier mount read. */
+export async function drawn(
+  children: ReactNode,
+  client = new QueryClient(),
+): Promise<void> {
   render(
     <SessionProvider holder={holderDouble()}>
-      <QueryClientProvider client={new QueryClient()}>
-        {children}
-      </QueryClientProvider>
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
     </SessionProvider>,
   );
   await settled();
@@ -143,6 +146,14 @@ export function ruleUnder(label: string): HTMLElement {
 /** The workspace choice's trigger, whose name ends in the entry it stands on. */
 export function workspaceChoice(): HTMLElement {
   return screen.getByRole("button", { name: /^Workspace / });
+}
+
+/** What a reader sees captioning the workspace field, which the label the
+ * choice's trigger carries for a screen reader is not. */
+export function workspaceCaptions(): readonly HTMLElement[] {
+  return screen
+    .queryAllByText("Workspace")
+    .filter((caption) => !caption.classList.contains("visually-hidden"));
 }
 
 /** The entries the choice lists, read off its opened menu, which is closed

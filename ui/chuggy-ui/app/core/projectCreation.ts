@@ -1,7 +1,7 @@
 /**
  * Creating a project: what each name may be, the workspace the form's address
- * may start it on, and what one answer came to, in a line short enough to sit
- * under the form.
+ * may start it on, which press repeats the last, and what one answer came to,
+ * in a line short enough to sit under the form.
  *
  * The name rule is the wire's own schema, so this only spares the reader a
  * round trip to be told what the api would refuse anyway.
@@ -83,6 +83,26 @@ export function projectCreationSendable(form: ProjectCreationForm): boolean {
     projectNameSchema.safeParse(form.tenant).success &&
     projectNameSchema.safeParse(form.project).success
   );
+}
+
+/** What the last press sent: its two names, the operation identity they went
+ * under, and the line a refusal left, none while it is unanswered. */
+export interface ProjectCreationSent {
+  readonly fields: ProjectCreationForm;
+  readonly operation: string;
+  readonly status: string | undefined;
+}
+
+/** What was sent, while the form still holds its two names: a press then
+ * repeats it under its identity, and any other names go under a new one. */
+export function projectCreationStanding(
+  sent: ProjectCreationSent | undefined,
+  fields: ProjectCreationForm,
+): ProjectCreationSent | undefined {
+  return sent?.fields.tenant === fields.tenant &&
+    sent.fields.project === fields.project
+    ? sent
+    : undefined;
 }
 
 export type ProjectCreationOutcome =

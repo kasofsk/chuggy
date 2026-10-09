@@ -8,9 +8,10 @@
  * A reader with nothing to choose is drawn an empty state where the form
  * would be, and what its page leads the form with is not drawn over it.
  *
- * One operation identity is held while both names stand, so pressing again
- * after an answer that never arrived repeats that creation rather than asking
- * for a second one.
+ * The last press's operation identity belongs to the two names it sent. A
+ * press while the form holds those two repeats that creation, as after an
+ * answer that never arrived, and any other two go under an identity of their
+ * own.
  */
 
 import { useQueryClient } from "@tanstack/react-query";
@@ -27,13 +28,18 @@ import {
   projectCreationNameFault,
   projectCreationOutcome,
   projectCreationSendable,
+  projectCreationStanding,
   projectNameRule,
 } from "../core/projectCreation.ts";
-import type { ProjectCreationForm as ProjectCreationFields } from "../core/projectCreation.ts";
+import type {
+  ProjectCreationForm as ProjectCreationFields,
+  ProjectCreationSent,
+} from "../core/projectCreation.ts";
 import {
   projectCreationWorkspaceChosen,
   projectCreationWorkspaceEntryText,
   projectCreationWorkspaceOffer,
+  projectCreationWorkspacePicked,
   projectCreationWorkspaceTenant,
 } from "../core/projectCreationWorkspace.ts";
 import type {
@@ -109,7 +115,7 @@ interface ProjectCreationWorkspaceProps {
 
 /** The choice, its entries told apart by their place in it because a
  * workspace may be called what another entry is, and the name field under it
- * while the making of a workspace is chosen. */
+ * while the making of a workspace is chosen. With no entry chosen it asks. */
 function ProjectCreationWorkspaceChoice(
   props: ProjectCreationWorkspaceProps & {
     readonly offer: Extract<
@@ -127,18 +133,22 @@ function ProjectCreationWorkspaceChoice(
         <Picker
           label="Workspace"
           align="start"
-          value={String(offer.entries.indexOf(chosen))}
+          value={
+            chosen === undefined ? "" : String(offer.entries.indexOf(chosen))
+          }
+          placeholder="Choose"
           options={offer.entries.map((entry, at) => ({
             value: String(at),
             text: projectCreationWorkspaceEntryText(entry),
           }))}
           onChoose={(at) => {
             const picked = offer.entries[Number(at)];
-            if (picked !== undefined) onEdit({ ...edits, picked });
+            if (picked !== undefined)
+              onEdit(projectCreationWorkspacePicked(edits, picked));
           }}
         />
       </div>
-      {chosen.entry === "New" ? (
+      {chosen?.entry === "New" ? (
         <ProjectCreationNameBox
           label="Workspace"
           value={projectCreationWorkspaceTenant(offer, edits)}
@@ -186,34 +196,30 @@ function ProjectCreationWorkspace(
   }
 }
 
-/** One creation sent under the identity its fields hold, and the line a
- * refusal left; `edited` is told of every change to what would be sent. */
-function useProjectCreationSend(): {
+/** The press that sends these two names, and the line a refusal of them left,
+ * which is drawn only while the form holds the names it answered. */
+function useProjectCreationSend(fields: ProjectCreationFields): {
   readonly busy: boolean;
   readonly status: string | undefined;
-  readonly edited: () => void;
-  readonly create: (fields: ProjectCreationFields) => void;
+  readonly create: () => void;
 } {
   const ports = useApiPorts();
   const client = useQueryClient();
   const navigate = useNavigate();
-  const [operation, setOperation] = useState(drawnOperation);
+  const [sent, setSent] = useState<ProjectCreationSent | undefined>(undefined);
   const [busy, setBusy] = useState(false);
-  const [status, setStatus] = useState<string | undefined>(undefined);
-  const edited = (): void => {
-    setOperation(drawnOperation());
-    setStatus(undefined);
-  };
-  const create = (fields: ProjectCreationFields): void => {
+  const standing = projectCreationStanding(sent, fields);
+  const create = (): void => {
+    const operation = standing?.operation ?? drawnOperation();
+    setSent({ fields, operation, status: undefined });
     setBusy(true);
-    setStatus(undefined);
     void (async () => {
       const outcome = projectCreationOutcome(
         await apiCreateProject(ports, fields, operation),
       );
       setBusy(false);
       if (outcome.outcome === "Refused") {
-        setStatus(outcome.status);
+        setSent({ fields, operation, status: outcome.status });
         return;
       }
       lastProjectWrite(persistentStore, outcome.partition);
@@ -224,7 +230,7 @@ function useProjectCreationSend(): {
       });
     })();
   };
-  return { busy, status, edited, create };
+  return { busy, status: standing?.status, create };
 }
 
 function ProjectCreationForm(props: {
@@ -235,37 +241,29 @@ function ProjectCreationForm(props: {
     typed: undefined,
   });
   const [project, setProject] = useState("");
-  const send = useProjectCreationSend();
   const fields: ProjectCreationFields = {
     tenant: projectCreationWorkspaceTenant(props.offer, workspace),
     project,
   };
+  const send = useProjectCreationSend(fields);
   return (
     <div className="grid w-full max-w-aside gap-3">
       <ProjectCreationWorkspace
         offer={props.offer}
         edits={workspace}
-        onEdit={(edits) => {
-          setWorkspace(edits);
-          send.edited();
-        }}
+        onEdit={setWorkspace}
       />
       <ProjectCreationName
         label="Project"
         value={project}
-        onChange={(name) => {
-          setProject(name);
-          send.edited();
-        }}
+        onChange={setProject}
       />
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <Button
           variant="primary"
           disabled={!projectCreationSendable(fields) || send.busy}
           busy={send.busy}
-          onClick={() => {
-            send.create(fields);
-          }}
+          onClick={send.create}
         >
           Create project
         </Button>

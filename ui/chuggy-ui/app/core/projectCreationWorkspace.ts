@@ -8,11 +8,19 @@
  * the site, which answers nothing to a reader who may do none of it and is
  * read as that. A workspace is an entry where its read says the reader
  * administers it, which is what the api asks of whoever adds a project there.
- * Either read failing leaves the field the free text it is without them, so a
- * failure costs nobody the form.
  *
- * The first read lists a bounded number of workspaces and says where it was
- * cut short. The choice holds the ones listed and says nothing of the rest.
+ * THE CHOICE NEVER STARTS ON A GUESS. Nothing moves or removes a project, so
+ * one made in the wrong workspace stays there. The choice starts on the
+ * workspace the address names where that is an entry, else on the only
+ * workspace there is to choose, else on the making of one where there is none,
+ * and among several it starts on nothing and the form sends nothing until the
+ * reader says which.
+ *
+ * Either read failing leaves the field the free text it is without them, so a
+ * failure costs nobody the form. The first read lists a bounded number of
+ * workspaces and says where it was cut short, and an answer cut short leaves
+ * free text as well: a choice among part of them would keep the reader out of
+ * the rest.
  */
 
 import type {
@@ -57,8 +65,8 @@ const projectCreationWithheldUnadministered = {
 
 /**
  * What stands where the form says its workspace: nothing yet, free text
- * starting on `name`, a choice starting on `start`, or the empty state that
- * replaces the whole form.
+ * starting on `name`, a choice starting on `start` or on no entry, or the
+ * empty state that replaces the whole form.
  */
 export type ProjectCreationWorkspaceOffer =
   | { readonly offer: "Pending" }
@@ -66,7 +74,7 @@ export type ProjectCreationWorkspaceOffer =
   | {
       readonly offer: "Choice";
       readonly entries: readonly ProjectCreationWorkspaceEntry[];
-      readonly start: ProjectCreationWorkspaceEntry;
+      readonly start: ProjectCreationWorkspaceEntry | undefined;
     }
   | {
       readonly offer: "Withheld";
@@ -80,42 +88,42 @@ export type ProjectCreationWorkspaceDrawn = Exclude<
   { readonly offer: "Withheld" }
 >;
 
-function projectCreationWorkspaceEntries(
+type ProjectCreationWorkspaceHeld = Extract<
+  ProjectCreationWorkspaceEntry,
+  { readonly entry: "Held" }
+>;
+
+function projectCreationWorkspaceAdministered(
   held: AccessCallerTenants,
-  creation: boolean,
-): readonly ProjectCreationWorkspaceEntry[] {
-  return [
-    ...held.tenants
-      .filter((listed) => listed.administer)
-      .map((listed) => ({ entry: "Held" as const, tenant: listed.tenant })),
-    ...(creation ? [{ entry: "New" as const }] : []),
-  ];
+): readonly ProjectCreationWorkspaceHeld[] {
+  return held.tenants
+    .filter((listed) => listed.administer)
+    .map((listed) => ({ entry: "Held", tenant: listed.tenant }));
 }
 
-/**
- * The offer under the two reads and the workspace the address names. The
- * choice starts on the named workspace where it holds it and on its first
- * entry otherwise, which is the making of one for a reader who holds none.
- */
+/** The offer under the two reads and the workspace the address names. */
 export function projectCreationWorkspaceOffer(
   held: PanelState<AccessCallerTenants>,
   abilities: PanelState<AccessSiteAbilities>,
   named: string | undefined,
 ): ProjectCreationWorkspaceOffer {
-  if (
-    held.state === "Failed" ||
-    held.state === "Absent" ||
-    abilities.state === "Failed"
-  )
-    return { offer: "Typed", name: named ?? "" };
-  if (held.state === "Pending" || abilities.state === "Pending")
-    return { offer: "Pending" };
-  const entries = projectCreationWorkspaceEntries(
-    held.value,
-    siteWorkspaceOffered(
+  const typed = { offer: "Typed", name: named ?? "" } as const;
+  if (held.state === "Failed" || held.state === "Absent") return typed;
+  if (held.state === "Pending") return { offer: "Pending" };
+  if (held.value.truncated) return typed;
+  const administered = projectCreationWorkspaceAdministered(held.value);
+  const sole = administered.length === 1 ? administered[0] : undefined;
+  if (abilities.state === "Failed")
+    return { offer: "Typed", name: named ?? sole?.tenant ?? "" };
+  if (abilities.state === "Pending") return { offer: "Pending" };
+  const entries: readonly ProjectCreationWorkspaceEntry[] = [
+    ...administered,
+    ...(siteWorkspaceOffered(
       abilities.state === "Ready" ? abilities.value : undefined,
-    ),
-  );
+    )
+      ? [{ entry: "New" as const }]
+      : []),
+  ];
   const first = entries[0];
   if (first === undefined)
     return {
@@ -124,10 +132,14 @@ export function projectCreationWorkspaceOffer(
         ? projectCreationWithheldUnheld
         : projectCreationWithheldUnadministered),
     };
-  const start = entries.find(
-    (entry) => entry.entry === "Held" && entry.tenant === named,
-  );
-  return { offer: "Choice", entries, start: start ?? first };
+  return {
+    offer: "Choice",
+    entries,
+    start:
+      administered.find((entry) => entry.tenant === named) ??
+      sole ??
+      (administered.length === 0 ? first : undefined),
+  };
 }
 
 function projectCreationWorkspaceSame(
@@ -146,12 +158,21 @@ export interface ProjectCreationWorkspaceEdits {
   readonly typed: string | undefined;
 }
 
-/** The entry the form stands on: the reader's own pick while the choice holds
- * it, and where the choice starts otherwise. */
+/** The edits after a pick. Picking a workspace drops a name typed for a new
+ * one, so no later state of the field sends a name its reader left. */
+export function projectCreationWorkspacePicked(
+  edits: ProjectCreationWorkspaceEdits,
+  picked: ProjectCreationWorkspaceEntry,
+): ProjectCreationWorkspaceEdits {
+  return { picked, typed: picked.entry === "New" ? edits.typed : undefined };
+}
+
+/** The entry the form stands on, or none: the reader's own pick while the
+ * choice holds it, and where the choice starts otherwise. */
 export function projectCreationWorkspaceChosen(
   offer: Extract<ProjectCreationWorkspaceOffer, { readonly offer: "Choice" }>,
   picked: ProjectCreationWorkspaceEntry | undefined,
-): ProjectCreationWorkspaceEntry {
+): ProjectCreationWorkspaceEntry | undefined {
   if (picked === undefined) return offer.start;
   return (
     offer.entries.find((entry) =>
@@ -162,7 +183,8 @@ export function projectCreationWorkspaceChosen(
 
 /**
  * The workspace name the form sends, and the name its typed field holds where
- * one is drawn. It is empty where nothing is offered yet, which no form sends.
+ * one is drawn. It is empty where nothing is offered yet or no entry is
+ * chosen, which no form sends.
  */
 export function projectCreationWorkspaceTenant(
   offer: ProjectCreationWorkspaceOffer,
@@ -176,6 +198,7 @@ export function projectCreationWorkspaceTenant(
       return edits.typed ?? offer.name;
     case "Choice": {
       const chosen = projectCreationWorkspaceChosen(offer, edits.picked);
+      if (chosen === undefined) return "";
       return chosen.entry === "Held" ? chosen.tenant : (edits.typed ?? "");
     }
   }

@@ -1,15 +1,18 @@
 /**
  * The form's workspace as each answer of its two reads draws it, on the page
  * a project is made at and on the landing a reader with no project meets: the
- * choice and where it stands, the name field the making of a workspace shows,
- * the loading field nothing is sent from, the free text a failed read leaves,
- * and the empty state that stands in for the form.
+ * choice and where it stands, which among several is on none until the reader
+ * says, the name field the making of a workspace shows, the loading field
+ * nothing is sent from, the typed name a failed or cut-short read leaves, and
+ * the empty state that stands in for the form.
  *
  * What a press sends is asserted beside what is drawn, so the workspace named
- * on the wire is the one the choice stood on.
+ * on the wire is the one the choice stood on, and so is the identity it went
+ * under, which no other pair of names is sent under.
  */
 
 // jscpd:ignore-start -- the imports and vi.mock factories a case cannot hoist out
+import { QueryClient } from "@tanstack/react-query";
 import { cleanup, fireEvent, screen } from "@testing-library/react";
 import { afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
@@ -27,13 +30,18 @@ import {
   served,
   submit,
   typed,
+  workspaceCaptions,
   workspaceChoice,
   workspaceChosen,
   workspaceEntries,
 } from "./projectCreationDrawn.tsx";
-import type { ProjectCreationAccess } from "./projectCreationDrawn.tsx";
+import type {
+  ProjectCreationAccess,
+  ProjectCreationPosted,
+} from "./projectCreationDrawn.tsx";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import { answer, heldAnswer, settled } from "./screenHarness.tsx";
+import type { AccessCallerTenant } from "../../../src/contract/accessPlane.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 import type * as RouterModule from "@tanstack/react-router";
 
@@ -70,6 +78,16 @@ function created(): Promise<Response> {
   return Promise.resolve(answer({ tenant: "acme", project: "atlas" }, 201));
 }
 
+function refused(): Promise<Response> {
+  return Promise.resolve(
+    answer({ error: { code: "ProjectExists", message: "exists" } }, 409),
+  );
+}
+
+function unanswered(): Promise<Response> {
+  return Promise.reject(new Error("offline"));
+}
+
 const several = [
   administered("acme"),
   joined("harbour"),
@@ -78,6 +96,11 @@ const several = [
 
 function workspaceBox(): HTMLElement | null {
   return screen.queryByRole("textbox", { name: "Workspace" });
+}
+
+/** The trigger of a choice that stands on no entry. */
+function workspaceUnchosen(): HTMLElement | null {
+  return screen.queryByRole("button", { name: "Workspace Choose" });
 }
 
 test("one workspace the reader may add to is shown chosen, and the project is the only name to type", async () => {
@@ -98,12 +121,40 @@ test("one workspace the reader may add to is shown chosen, and the project is th
   ]);
 });
 
-test("several are listed in the order the read gives without the ones the reader only belongs to, and the form starts on the first", async () => {
+test.each([
+  ["the choice", accessHolding(several)],
+  ["the choice of one", accessHolding([administered("mimage")])],
+  [
+    "the typed name",
+    { ...accessHolding([]), workspaces: () => answer({}, 500) },
+  ],
+] as const)(
+  "%s is captioned Workspace where a reader sees it",
+  async (_, access) => {
+    served([], created, access);
+    await drawn(<ProjectCreationPage />);
+    expect(workspaceCaptions()).toHaveLength(1);
+  },
+);
+
+test("several are listed in the order the read gives without the ones the reader only belongs to, and the choice stands on none of them", async () => {
   served([], created, accessHolding(several));
   await drawn(<ProjectCreationPage />);
-  expect(screen.getByRole("button", { name: "Workspace acme" })).toBeDefined();
+  expect(workspaceUnchosen()).not.toBeNull();
   expect(await workspaceEntries()).toStrictEqual(["acme", "northwind"]);
   expect(workspaceBox()).toBeNull();
+});
+
+test("a choice that stands on no entry sends nothing until the reader chooses one", async () => {
+  const posted = served([], created, accessHolding(several));
+  await drawn(<ProjectCreationPage />);
+  typed("Project", "atlas");
+  expect(submit()).toHaveProperty("disabled", true);
+  await pressed();
+  expect(posted).toStrictEqual([]);
+  await workspaceChosen("northwind");
+  expect(workspaceUnchosen()).toBeNull();
+  expect(submit()).toHaveProperty("disabled", false);
 });
 
 /** The field stands at the page's edge, where a menu under its trigger's
@@ -118,17 +169,21 @@ test("the choice's menu lines up with the start of its trigger", async () => {
 });
 
 test.each([
-  ["a workspace the reader may add to", "northwind", "northwind"],
-  ["a workspace the reader only belongs to", "harbour", "acme"],
-  ["what no workspace of theirs is called", "elsewhere", "acme"],
-])(
-  "under an address naming %s the form starts on %s's choice",
-  async (_named, workspace, stands) => {
+  ["a workspace the reader may add to", "that workspace", "northwind"],
+  ["a workspace the reader only belongs to", "no entry", "harbour"],
+  ["what no workspace of theirs is called", "no entry", "elsewhere"],
+] as const)(
+  "under an address naming %s the choice starts on %s",
+  async (_named, stands, workspace) => {
     served([], created, accessHolding(several));
     await drawn(<ProjectCreationPage workspace={workspace} />);
     expect(
-      screen.getByRole("button", { name: `Workspace ${stands}` }),
+      screen.getByRole("button", {
+        name: `Workspace ${stands === "no entry" ? "Choose" : workspace}`,
+      }),
     ).toBeDefined();
+    typed("Project", "atlas");
+    expect(submit()).toHaveProperty("disabled", stands === "no entry");
   },
 );
 
@@ -146,16 +201,10 @@ test("the form sends the workspace the reader chose", async () => {
   ]);
 });
 
-test("choosing another workspace takes a refusal's line down and draws a new identity", async () => {
-  const posted = served(
-    [],
-    () =>
-      Promise.resolve(
-        answer({ error: { code: "ProjectExists", message: "exists" } }, 409),
-      ),
-    accessHolding(several),
-  );
+test("choosing another workspace takes a refusal's line down and sends under a new identity", async () => {
+  const posted = served([], refused, accessHolding(several));
   await drawn(<ProjectCreationPage />);
+  await workspaceChosen("acme");
   typed("Project", "atlas");
   await pressed();
   expect(screen.getByRole("status").textContent).toBe("Exists");
@@ -169,16 +218,139 @@ test("choosing another workspace takes a refusal's line down and draws a new ide
   expect(posted[1]?.key).not.toBe(posted[0]?.key);
 });
 
+test("the two names an answer never came for, stood on again, show its line again and repeat under its identity", async () => {
+  const posted = served([], unanswered, accessHolding(several));
+  await drawn(<ProjectCreationPage />);
+  await workspaceChosen("acme");
+  typed("Project", "atlas");
+  await pressed();
+  expect(screen.getByRole("status").textContent).toBe("Unreachable");
+  await workspaceChosen("northwind");
+  expect(screen.queryByRole("status")).toBeNull();
+  await workspaceChosen("acme");
+  expect(screen.getByRole("status").textContent).toBe("Unreachable");
+  await pressed();
+  expect(posted.map((one) => one.body)).toStrictEqual([
+    { tenant: "acme", project: "atlas" },
+    { tenant: "acme", project: "atlas" },
+  ]);
+  expect(posted[1]?.key).toBe(posted[0]?.key);
+});
+
+test("a press takes the last answer's line down until its own answer comes", async () => {
+  const second = heldAnswer();
+  const answers = [refused(), second.answered];
+  const posted = served(
+    [],
+    () => answers.shift() ?? refused(),
+    accessHolding([administered("mimage")]),
+  );
+  await drawn(<ProjectCreationPage />);
+  typed("Project", "atlas");
+  await pressed();
+  expect(screen.getByRole("status").textContent).toBe("Exists");
+  await pressed();
+  expect(screen.queryByRole("status")).toBeNull();
+  second.release(await refused());
+  await settled();
+  expect(screen.getByRole("status").textContent).toBe("Exists");
+  expect(posted).toHaveLength(2);
+});
+
+/**
+ * The page mounted a second time over what its first mount read of `first`.
+ * The second mount draws that and reads the workspaces again, which is
+ * answered when the case calls `arrives`.
+ */
+async function mountedAgain(
+  first: readonly AccessCallerTenant[],
+  creation: () => Promise<Response>,
+): Promise<{
+  readonly posted: readonly ProjectCreationPosted[];
+  readonly arrives: (tenants: readonly AccessCallerTenant[]) => Promise<void>;
+}> {
+  const client = new QueryClient();
+  served([], creation, accessHolding(first));
+  await drawn(<ProjectCreationPage />, client);
+  cleanup();
+  const reread = heldAnswer();
+  const posted = served([], creation, {
+    ...accessHolding([]),
+    workspaces: () => reread.answered,
+  });
+  await drawn(<ProjectCreationPage />, client);
+  return {
+    posted,
+    arrives: async (tenants) => {
+      reread.release(answer({ tenants, truncated: false }));
+      await settled();
+    },
+  };
+}
+
+/** The workspace the form stands on comes from a read, so it can change with
+ * no edit between two presses. */
+test("a read arriving again that moves where the form stands takes the unanswered line down, and the next press goes under a new identity", async () => {
+  const again = await mountedAgain([administered("northwind")], unanswered);
+  expect(workspaceChoice().textContent).toContain("northwind");
+  typed("Project", "atlas");
+  await pressed();
+  expect(screen.getByRole("status").textContent).toBe("Unreachable");
+  await again.arrives([administered("acme")]);
+  expect(workspaceChoice().textContent).toContain("acme");
+  expect(screen.queryByRole("status")).toBeNull();
+  await pressed();
+  expect(again.posted.map((one) => one.body)).toStrictEqual([
+    { tenant: "northwind", project: "atlas" },
+    { tenant: "acme", project: "atlas" },
+  ]);
+  expect(again.posted[1]?.key).not.toBe(again.posted[0]?.key);
+});
+
+test("a read arriving again moves nothing the reader chose", async () => {
+  const again = await mountedAgain(several, created);
+  await workspaceChosen("northwind");
+  await again.arrives([administered("zephyr"), ...several]);
+  expect(await workspaceEntries()).toStrictEqual([
+    "zephyr",
+    "acme",
+    "northwind",
+  ]);
+  typed("Project", "atlas");
+  await pressed();
+  expect(again.posted.map((one) => one.body)).toStrictEqual([
+    { tenant: "northwind", project: "atlas" },
+  ]);
+});
+
 test("a reader who may make a workspace has that as the last entry, and no name to type until they choose it", async () => {
   served([], created, accessHolding(several, true));
   await drawn(<ProjectCreationPage />);
-  expect(screen.getByRole("button", { name: "Workspace acme" })).toBeDefined();
+  expect(workspaceUnchosen()).not.toBeNull();
   expect(await workspaceEntries()).toStrictEqual([
     "acme",
     "northwind",
     "New workspace",
   ]);
   expect(workspaceBox()).toBeNull();
+});
+
+test("the only workspace to add to is where a reader who may make another starts", async () => {
+  const posted = served(
+    [],
+    created,
+    accessHolding([administered("mimage")], true),
+  );
+  await drawn(<ProjectCreationPage />);
+  expect(
+    screen.getByRole("button", { name: "Workspace mimage" }),
+  ).toBeDefined();
+  expect(await workspaceEntries()).toStrictEqual(["mimage", "New workspace"]);
+  typed("Project", "atlas");
+  await pressed();
+  expect(posted.map((one) => one.body)).toStrictEqual([
+    { tenant: "mimage", project: "atlas" },
+  ]);
 });
 
 test("choosing New workspace shows its name field under the rule, and choosing another takes the field and its fault down", async () => {
@@ -202,6 +374,16 @@ test("choosing New workspace shows its name field under the rule, and choosing a
   expect(posted.map((one) => one.body)).toStrictEqual([
     { tenant: "northwind", project: "atlas" },
   ]);
+});
+
+test("a name typed for a new workspace is gone once another entry is chosen", async () => {
+  served([], created, accessHolding(several, true));
+  await drawn(<ProjectCreationPage />);
+  await workspaceChosen("New workspace");
+  typed("Workspace", "abandoned");
+  await workspaceChosen("northwind");
+  await workspaceChosen("New workspace");
+  expect(workspaceBox()).toHaveProperty("value", "");
 });
 
 test("the form sends the name typed for a new workspace", async () => {
@@ -282,8 +464,16 @@ test.each([
     "the abilities read failing",
     { ...accessHolding(several), abilities: () => answer({}, 500) },
   ],
+  [
+    "a workspaces answer cut short",
+    {
+      ...accessHolding([]),
+      workspaces: () =>
+        answer({ tenants: [administered("mimage")], truncated: true }),
+    },
+  ],
 ] as const)(
-  "%s leaves the workspace the free text it was, starting on what the address names",
+  "%s leaves the workspace a name to type, starting on what the address names",
   async (_failure, access) => {
     const posted = served([], created, access);
     await drawn(<ProjectCreationPage workspace="northwind" />);
@@ -296,6 +486,37 @@ test.each([
     expect(posted.map((one) => one.body)).toStrictEqual([
       { tenant: "typed-here", project: "atlas" },
     ]);
+  },
+);
+
+test("the abilities read failing over one workspace to add to starts the typed name on it", async () => {
+  const posted = served([], created, {
+    ...accessHolding([joined("harbour"), administered("mimage")]),
+    abilities: () => answer({}, 500),
+  });
+  await drawn(<ProjectCreationPage />);
+  expect(workspaceBox()).toHaveProperty("value", "mimage");
+  typed("Project", "atlas");
+  await pressed();
+  expect(posted.map((one) => one.body)).toStrictEqual([
+    { tenant: "mimage", project: "atlas" },
+  ]);
+});
+
+test.each([
+  ["no workspace", []],
+  ["only workspaces the reader belongs to", [joined("harbour")]],
+] as const)(
+  "an answer cut short that lists %s draws the form and no empty state",
+  async (_listed, tenants) => {
+    served([], created, {
+      ...accessHolding([]),
+      workspaces: () => answer({ tenants, truncated: true }),
+    });
+    await drawn(<ProjectCreationPage />);
+    expect(screen.getByRole("heading", { name: "New project" })).toBeDefined();
+    expect(workspaceBox()).toHaveProperty("value", "");
+    expect(submit()).toBeDefined();
   },
 );
 
