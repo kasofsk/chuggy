@@ -8,8 +8,9 @@
  * the failure this exists to prevent. The runner machine emits no golden, so
  * nothing replays against it. Instead this reads out of the model's own
  * source its rosters, the terms `canAssign` conjoins with each predicate it
- * calls opened, `policyConfigures` as `policyAllows` without drain, the arms
- * of `placementOutcome` and the terms of each block they test, and the runs of
+ * calls opened, `policyConfigures` as `policyAllows` without drain, the
+ * owner's runners and their liveness, the arms of `placementOutcome` and the
+ * terms of each block they test, and the runs of
  * `model/tests/runner_test.qnt` that call a guard. A constructor of a roster it
  * reads, a term or an arm changed there, or a run added, removed or renamed, is
  * a failure here until the refinement answers it.
@@ -61,6 +62,7 @@ import {
 } from "../../src/interpreter/executionScheduler.ts";
 import {
   allWorkerPoolClasses,
+  allWorkerPoolOwnerFallbacks,
   allWorkerPoolPlacementOutcomes,
   allWorkerPoolPlacementPhases,
   workerPoolCanAssign,
@@ -213,7 +215,7 @@ function runnerDefinitionText(name: string): string {
 /** The body of one pure definition, flattened: what follows its signature up to the next member of the module. */
 function runnerDefinition(name: string): string {
   const text = runnerFlattened(runnerDefinitionText(name));
-  const signature = /^pure def \w+\([^)]*\): \w+ = /.exec(text);
+  const signature = /^pure def \w+\([^)]*\): [\w[\]]+ = /.exec(text);
   assert.ok(signature, `model/runner.qnt: ${name} has no signature to read`);
   return text.slice(signature[0].length).trim();
 }
@@ -309,6 +311,7 @@ const runnerOutcome = {
   ],
   placeable: [
     "policyAllows(s.runners.get(rid), e, p.profile)",
+    "ownerFallbackAllows(s, s.runners.get(rid), e, p)",
     "sessionIsCurrent(s.runners.get(rid), s.sessions.get(rid))",
     "sessionHasSlot(s.sessions.get(rid))",
     "inventoryMatches(p.requirement, s.sessions.get(rid).inventory)",
@@ -414,6 +417,12 @@ test("the outcome roster is the one model/runner.qnt declares", () => {
   ]);
 });
 
+test("the owner fallback roster is the one model/runner.qnt declares", () => {
+  assert.deepEqual(runnerRoster("OwnerFallback"), [
+    ...allWorkerPoolOwnerFallbacks,
+  ]);
+});
+
 test("the phase roster is the one model/runner.qnt declares", () => {
   assert.deepEqual(runnerRoster("PlacementPhase"), [
     ...allWorkerPoolPlacementPhases,
@@ -483,6 +492,17 @@ test("policyConfigures is policyAllows without drain, which is posture and not i
   );
 });
 
+test("the owner's runners are the Personal ones configured for the placement, and live is a current session not draining", () => {
+  assert.equal(
+    runnerDefinition("ownerRunners"),
+    "s.runners.keys().filter(rid => and { s.runners.get(rid).class == Personal, policyConfigures(s.runners.get(rid), e, p.profile), inventoryMatches(p.requirement, s.runners.get(rid).retainedInventory) })",
+  );
+  assert.equal(
+    runnerDefinition("runnerIsLive"),
+    "if (s.sessions.keys().contains(rid)) and { not(s.runners.get(rid).draining), sessionIsCurrent(s.runners.get(rid), s.sessions.get(rid)) } else false",
+  );
+});
+
 test("placementOutcome takes the arms, and tests the terms, the decider restates", () => {
   const { skeleton, blocks } = runnerBlocks(
     runnerDefinition("placementOutcome"),
@@ -537,10 +557,12 @@ test("every case is named once, and falsifies a term exactly when it is refused"
 for (const each of populated(runnerCases, "the runner cases")) {
   test(each.name, () => {
     const enrolment = { pool: each.pool, session: each.session };
+    const registry = [enrolment, ...each.others];
     assert.equal(
       workerPoolCanAssign(
         each.placement,
         enrolment,
+        registry,
         runnerCaseAssignment,
         new Set(each.assignmentsBound),
       ),
@@ -548,7 +570,7 @@ for (const each of populated(runnerCases, "the runner cases")) {
       "canAssign",
     );
     assert.equal(
-      workerPoolPlacementOutcome(each.placement, [enrolment]),
+      workerPoolPlacementOutcome(each.placement, registry),
       each.placementOutcome,
       "placementOutcome",
     );

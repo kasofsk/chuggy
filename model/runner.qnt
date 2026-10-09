@@ -29,7 +29,12 @@ module registered_runner {
   /// backend-specific fidelity without forcing native drivers into a generic
   /// lowest-common-denominator interface.
   type ExecutionRequirement = ContainerRequirement(ContainerExecutionRequirement) | CapabilityRequirement(CapabilityExecutionRequirement) | NativeRequirement(NativeExecutionRequirement)
-  type ExecutionProfile = { route: ExecutionRoute, personalRunnerAllowed: bool, minimumTrust: int, secretsRequired: bool, sourceRequired: bool, dedicatedOwnerRequired: int, ownerOf: int }
+  /// Whether a non-Personal runner may take an owned execution while its
+  /// owner has a Personal runner configured for it: never under Strict, and
+  /// under Preferred only while none of those runners is live. An execution
+  /// whose owner has no such runner takes the route it would without one.
+  type OwnerFallback = Strict | Preferred
+  type ExecutionProfile = { route: ExecutionRoute, personalRunnerAllowed: bool, minimumTrust: int, secretsRequired: bool, sourceRequired: bool, dedicatedOwnerRequired: int, ownerOf: int, ownerFallback: OwnerFallback }
   type CapabilityInventory = {
     containerPlatforms: Set[Platform], executionCapabilities: Set[ExecutionCapability], nativePlatform: Platform,
     nativeDrivers: Set[NativeDriver], xcodeVersion: int,
@@ -84,6 +89,20 @@ module registered_runner {
   }
   pure def sessionIsCurrent(r: Runner, s: RunnerSession): bool = s.runner == r.id and s.generation == r.sessionGeneration and s.leaseOpen
   pure def sessionHasSlot(s: RunnerSession): bool = s.slotsUsed < s.slotsOffered
+  /// The owner's runners for an execution: the Personal runners configured
+  /// for its placement as `placementOutcome` configures one, which are the
+  /// owner's, allowlist its account and can run its requirement.
+  pure def ownerRunners(s: RunnerState, e: Execution, p: ExecutionPlacement): Set[int] = s.runners.keys().filter(rid => and { s.runners.get(rid).class == Personal, policyConfigures(s.runners.get(rid), e, p.profile), inventoryMatches(p.requirement, s.runners.get(rid).retainedInventory) })
+  /// A live runner takes new work under a current session, so a draining one
+  /// is not live.
+  pure def runnerIsLive(s: RunnerState, rid: int): bool = if (s.sessions.keys().contains(rid)) and { not(s.runners.get(rid).draining), sessionIsCurrent(s.runners.get(rid), s.sessions.get(rid)) } else false
+  /// `placementOutcome` configures a runner without it: the fallback refuses
+  /// one only for an owner's runner that is itself configured, so an
+  /// execution it holds back is never definitively incompatible.
+  pure def ownerFallbackAllows(s: RunnerState, r: Runner, e: Execution, p: ExecutionPlacement): bool = and {
+    r.class == Personal or p.profile.ownerFallback == Preferred or ownerRunners(s, e, p).size() == 0,
+    r.class == Personal or ownerRunners(s, e, p).forall(o => not(runnerIsLive(s, o)))
+  }
   pure def placementOutcome(s: RunnerState, id: int): PlacementOutcome =
     val e = executionById(s, id)
     val p = s.placements.get(id)
@@ -94,6 +113,7 @@ module registered_runner {
     if (p.profile.route != RegisteredRunner) NotApplicable
     else if (configured.exists(rid => if (s.sessions.keys().contains(rid)) and {
       policyAllows(s.runners.get(rid), e, p.profile),
+      ownerFallbackAllows(s, s.runners.get(rid), e, p),
       sessionIsCurrent(s.runners.get(rid), s.sessions.get(rid)),
       sessionHasSlot(s.sessions.get(rid)),
       inventoryMatches(p.requirement, s.sessions.get(rid).inventory)
@@ -106,7 +126,7 @@ module registered_runner {
     val p = s.placements.get(id)
     val r = s.runners.get(rid)
     val session = s.sessions.get(rid)
-    and { e.status == Launching, p.phase == Waiting, not(s.assignments.keys().contains(aid)), policyAllows(r, e, p.profile), sessionIsCurrent(r, session), sessionHasSlot(session), inventoryMatches(p.requirement, session.inventory) }
+    and { e.status == Launching, p.phase == Waiting, not(s.assignments.keys().contains(aid)), policyAllows(r, e, p.profile), ownerFallbackAllows(s, r, e, p), sessionIsCurrent(r, session), sessionHasSlot(session), inventoryMatches(p.requirement, session.inventory) }
     else false
   pure def bindAssignment(s: RunnerState, aid: int, id: int, rid: int): RunnerState =
     val p = s.placements.get(id)
@@ -167,19 +187,23 @@ module registered_runner {
   }
   pure def completionAuthoritySafe(s: RunnerState): bool = executionSet(s).filter(e => e.status == Terminal).forall(e => s.assignments.keys().map(aid => s.assignments.get(aid)).exists(a => a.execution == e.id and a.status == Verified and a.attemptGeneration == s.placements.get(e.id).attemptGeneration))
   pure def pinnedRequirementsUnchanged(initial: RunnerState, s: RunnerState): bool = initial.placements.keys().forall(id => and { s.placements.get(id).requirement == initial.placements.get(id).requirement, s.placements.get(id).profile == initial.placements.get(id).profile, s.placements.get(id).requirementIdentity == initial.placements.get(id).requirementIdentity, s.placements.get(id).requirementDigest == initial.placements.get(id).requirementDigest })
-  /// A Personal runner holds an assigned placement only of its owner's
-  /// execution, in an account it allowlists.
+  /// A Personal runner is assigned only its owner's execution, in an account
+  /// it allowlists.
   pure def personalAssignmentSafe(s: RunnerState): bool = s.assignments.keys().forall(aid =>
     val a = s.assignments.get(aid)
     val r = s.runners.get(a.runner)
     val p = s.placements.get(a.execution)
     or {
-      a.status != Offered, p.phase != Assigned, r.class != Personal,
+      r.class != Personal,
       and {
         p.profile.personalRunnerAllowed, p.profile.ownerOf != 0, r.dedicatedOwner == p.profile.ownerOf,
         r.allowlist.contains(executionById(s, a.execution).account)
       }
     })
+  /// Every other runner is assigned only executions of its own account.
+  pure def accountAssignmentSafe(s: RunnerState): bool = s.assignments.keys().forall(aid =>
+    val a = s.assignments.get(aid)
+    s.runners.get(a.runner).class == Personal or s.runners.get(a.runner).account == executionById(s, a.execution).account)
   /// A current session and its durable last observation publish atomically.
   pure def inventoryObservationSafe(s: RunnerState): bool = s.sessions.keys().forall(rid =>
     val session = s.sessions.get(rid)

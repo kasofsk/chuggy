@@ -15,6 +15,10 @@
  * statement with no column for some term — the policy the registry does not
  * carry — can select the cases it can express rather than skip the table.
  *
+ * A CASE IS ONE POOL BESIDE THE OTHERS REGISTERED WITH IT, since an owner's
+ * fallback reads the owner's personal pools; the guard is asked of the case's
+ * pool, and the outcome of all of them.
+ *
  * TWO REQUIREMENTS MATCH A CAPABILITY SUBSET VACUOUSLY: a container carries no
  * capabilities, and neither does a native one. So the table refuses a
  * container to a pool that declares nothing, and a native requirement to every
@@ -25,6 +29,7 @@ import {
   workerPoolDemandRouted,
   workerPoolPolicyRegistered,
   type WorkerPoolDemand,
+  type WorkerPoolEnrolment,
   type WorkerPoolPlacement,
   type WorkerPoolPlacementOutcome,
   type WorkerPoolRunner,
@@ -38,7 +43,7 @@ import {
   type Partition,
 } from "../../src/interpreter/projectStore.ts";
 
-/** One case: a pool, the poll it is making if any, an execution routed to pools, and what the model says of them. */
+/** One case: a pool, the poll it is making if any, the pools registered beside it, an execution routed to pools, and what the model says of them. */
 export interface RunnerCase {
   readonly name: string;
   /** The run of `model/tests/runner_test.qnt` this restates, where it restates one. */
@@ -47,6 +52,7 @@ export interface RunnerCase {
   readonly placement: WorkerPoolPlacement;
   readonly pool: WorkerPoolRunner;
   readonly session: WorkerPoolSession | undefined;
+  readonly others: readonly WorkerPoolEnrolment[];
   readonly assignmentsBound: readonly string[];
   readonly canAssign: boolean;
   readonly placementOutcome: WorkerPoolPlacementOutcome;
@@ -79,6 +85,9 @@ export const runnerTerm = {
   generation: "s.generation == r.sessionGeneration",
   lease: "s.leaseOpen",
   slot: "s.slotsUsed < s.slotsOffered",
+  fallback:
+    "r.class == Personal or p.profile.ownerFallback == Preferred or ownerRunners(s, e, p).size() == 0",
+  live: "r.class == Personal or ownerRunners(s, e, p).forall(o => not(runnerIsLive(s, o)))",
   containerPlatform:
     "ContainerRequirement: i.containerPlatforms.contains({ operatingSystem: c.operatingSystem, architecture: c.architecture })",
   capabilityPlatform:
@@ -153,6 +162,7 @@ const assignable: Omit<RunnerCase, "name"> = {
   placement,
   pool,
   session,
+  others: [],
   assignmentsBound: [],
   canAssign: true,
   placementOutcome: "Placeable",
@@ -188,6 +198,41 @@ const personal: WorkerPoolRunner = {
 
 /** An execution of `owner` that allows a personal pool. */
 const owned = demanding({ personalRunnerAllowed: true, ownerOf: owner });
+
+/** An execution of `owner` that allows a personal pool under a Strict fallback. */
+const ownedStrict = demanding({
+  personalRunnerAllowed: true,
+  ownerOf: owner,
+  ownerFallback: "Strict",
+});
+
+const ownersPoolPrincipal = asPrincipal("principal-owner-pool");
+
+const ownersPoolSession: WorkerPoolSession = {
+  ...session,
+  pool: "pool-owner",
+  principal: ownersPoolPrincipal,
+};
+
+/** `owner`'s personal pool registered beside `pool`, polling with room. */
+const ownersPool: WorkerPoolEnrolment = {
+  pool: { ...personal, pool: "pool-owner", principal: ownersPoolPrincipal },
+  session: ownersPoolSession,
+};
+
+/** `ownersPool` with its poll varied. */
+function ownersPoolPolling(
+  varied: Partial<WorkerPoolSession>,
+): WorkerPoolEnrolment {
+  return { ...ownersPool, session: { ...ownersPoolSession, ...varied } };
+}
+
+/** `ownersPool` with its policy or inventory varied. */
+function ownersPoolRegistered(
+  varied: Partial<WorkerPoolRunner>,
+): WorkerPoolEnrolment {
+  return { ...ownersPool, pool: { ...ownersPool.pool, ...varied } };
+}
 
 const assigned: readonly RunnerCase[] = [
   {
@@ -269,6 +314,63 @@ const assigned: readonly RunnerCase[] = [
     name: "a pool not allowed source is assigned what requires none",
     pool: { ...pool, sourceAllowed: false },
     placement: demanding({ sourceRequired: false }),
+  },
+  {
+    ...assignable,
+    name: "a personal pool is assigned its owner's execution beside a dedicated pool that defers to it",
+    model: "preferredFallbackWaitsForLiveOwnerRunnerTest",
+    pool: ownersPool.pool,
+    session: ownersPool.session,
+    others: [{ pool, session }],
+    placement: owned,
+  },
+  {
+    ...assignable,
+    name: "a dedicated pool is assigned an owner's execution while the owner's personal pool makes no live poll",
+    model: "preferredFallbackTakesDedicatedWhileOwnerRunnerIsAbsentTest",
+    others: [ownersPoolPolling({ leaseOpen: false })],
+    placement: owned,
+  },
+  {
+    ...assignable,
+    name: "a dedicated pool is assigned a strict owner's execution while the owner has no personal pool allowlisting its partition",
+    model: "ownerWithoutConfiguredRunnerFollowsDedicatedRouteTest",
+    others: [ownersPoolRegistered({ allowlist: [elsewhere] })],
+    placement: ownedStrict,
+  },
+  {
+    ...assignable,
+    name: "a dedicated pool is assigned a strict owner's execution that allows no personal pool",
+    model: "ownerWithoutConfiguredRunnerFollowsDedicatedRouteTest",
+    others: [ownersPool],
+    placement: {
+      ...ownedStrict,
+      demand: { ...ownedStrict.demand, personalRunnerAllowed: false },
+    },
+  },
+  {
+    ...assignable,
+    name: "a dedicated pool is assigned a strict execution owned by nobody beside a personal pool owning nothing",
+    model: "ownerWithoutConfiguredRunnerFollowsDedicatedRouteTest",
+    others: [ownersPoolRegistered({ dedicatedOwner: undefined })],
+    placement: {
+      ...ownedStrict,
+      demand: { ...ownedStrict.demand, ownerOf: undefined },
+    },
+  },
+  {
+    ...assignable,
+    name: "a dedicated pool is assigned a strict owner's execution that the owner's polling personal pool cannot run",
+    model: "strictFallbackOwnerRunnerUnableLeavesDedicatedRouteTest",
+    others: [ownersPoolRegistered({ capabilities: ["Platform:Linux:Arm64"] })],
+    placement: ownedStrict,
+  },
+  {
+    ...assignable,
+    name: "a dedicated pool is assigned an owner's execution while the owner's personal pool polls draining",
+    model: "preferredFallbackTakesDedicatedWhileOwnerRunnerDrainsTest",
+    others: [ownersPoolRegistered({ draining: true })],
+    placement: owned,
   },
 ];
 
@@ -434,6 +536,49 @@ const refusedByPolicy: readonly RunnerCase[] = [
   ),
 ];
 
+const refusedByFallback: readonly RunnerCase[] = [
+  refused(
+    "a dedicated pool is assigned nothing of an owner's whose personal pool is polling",
+    [runnerTerm.live],
+    "Placeable",
+    {
+      model: "preferredFallbackWaitsForLiveOwnerRunnerTest",
+      others: [ownersPool],
+      placement: owned,
+    },
+  ),
+  refused(
+    "a dedicated pool waiting on an owner's personal pool that is polling without room leaves the execution unavailable",
+    [runnerTerm.live],
+    "Unavailable",
+    {
+      model: "preferredFallbackBusyOwnerRunnerIsUnavailableTest",
+      others: [ownersPoolPolling({ held: 1 })],
+      placement: owned,
+    },
+  ),
+  refused(
+    "a dedicated pool is assigned nothing of a strict owner's beside the owner's polling personal pool",
+    [runnerTerm.fallback, runnerTerm.live],
+    "Placeable",
+    {
+      model: "strictFallbackRefusesDedicatedWhileOwnerHasRunnerTest",
+      others: [ownersPool],
+      placement: ownedStrict,
+    },
+  ),
+  refused(
+    "a dedicated pool is assigned nothing of a strict owner's whose personal pool makes no live poll, which is unavailable",
+    [runnerTerm.fallback],
+    "Unavailable",
+    {
+      model: "strictFallbackRefusesDedicatedWhileOwnerHasRunnerTest",
+      others: [ownersPoolPolling({ leaseOpen: false })],
+      placement: ownedStrict,
+    },
+  ),
+];
+
 const refusedBySession: readonly RunnerCase[] = [
   refused(
     "a registered pool making no poll is unavailable",
@@ -583,6 +728,7 @@ export const runnerCases: readonly RunnerCase[] = [
   ...assigned,
   ...refusedByPlacement,
   ...refusedByPolicy,
+  ...refusedByFallback,
   ...refusedBySession,
   ...refusedByInventory,
 ];

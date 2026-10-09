@@ -30,7 +30,8 @@
  * lapsed and `workerPoolAdmitted` a principal that lost `Execute`, a claim is
  * made only by a poll, and
  * drain, trust, secrets, source and owner are constants every registered pool
- * and every routed execution holds.
+ * and every routed execution holds. The owner's fallback holds for every pool,
+ * since the routed demand allows no personal pool for an owner to have.
  *
  * THE HELD COUNT IS THE DATABASE'S AND NOT THE POOL'S. It counts every attempt
  * under the pool's name that is still placing or running, so a pool that leaves

@@ -152,6 +152,8 @@ function inexpressible(c: RunnerCase): string | undefined {
   );
   if (demand.length > 0)
     return `the execution has no column for ${demand.join(", ")}, which every routed execution is pinned with`;
+  if (c.others.length > 0)
+    return "a case is planted with one pool, and the pools beside it are an owner's fallback, which no routed execution takes";
   return undefined;
 }
 
@@ -458,6 +460,7 @@ for (const c of runnerCases) {
       workerPoolCanAssign(
         c.placement,
         { pool: c.pool, session: c.session },
+        [{ pool: c.pool, session: c.session }, ...c.others],
         runnerCaseAssignment,
         new Set(c.assignmentsBound),
       ),

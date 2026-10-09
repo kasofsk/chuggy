@@ -45,6 +45,12 @@
  * field, so a registry that carries more of them per pool changes values and
  * not terms.
  *
+ * AN OWNER'S FALLBACK READS EVERY POOL, as the model's reads every runner: a
+ * pool other than a personal one takes an owned execution only as the
+ * demand's fallback allows, which turns on the owner's personal pools
+ * configured for it and whether any of them is polling. So the guard and the
+ * outcome are asked of a pool beside the registry it is one of.
+ *
  * THE SCHEDULER ASKS THE OUTCOME OF THE REGISTRY AND THE AUTHORITY. A poll is
  * not durable, so the scheduler sees no session and no pool is placeable to
  * it. A registered pool is enabled, and revoked where the authority withholds
@@ -96,6 +102,11 @@ export const allWorkerPoolPlacementOutcomes = [
 export type WorkerPoolPlacementOutcome =
   (typeof allWorkerPoolPlacementOutcomes)[number];
 
+/** The model's `OwnerFallback`: whether a pool other than a personal one may take an owned execution while its owner has a personal pool for it. */
+export const allWorkerPoolOwnerFallbacks = ["Strict", "Preferred"] as const;
+export type WorkerPoolOwnerFallback =
+  (typeof allWorkerPoolOwnerFallbacks)[number];
+
 /** The administrator-owned policy of the model's `Runner`; an owner is a principal, undefined where the model writes 0 for none. */
 export interface WorkerPoolPolicy {
   readonly class: WorkerPoolClass;
@@ -115,6 +126,7 @@ export interface WorkerPoolDemand {
   readonly sourceRequired: boolean;
   readonly dedicatedOwnerRequired: Principal | undefined;
   readonly ownerOf: Principal | undefined;
+  readonly ownerFallback: WorkerPoolOwnerFallback;
 }
 
 /** The policy a pool is registered with; the registry carries its class per pool and none of the rest. */
@@ -128,7 +140,7 @@ export const workerPoolPolicyRegistered: WorkerPoolPolicy = {
   allowlist: [],
 };
 
-/** The demand every execution routed to a pool is pinned with: no personal pool and no owner, the registered trust, and secrets and source both, since a task is handed credentials and a clone. */
+/** The demand every execution routed to a pool is pinned with: no personal pool and no owner, so no fallback is taken, the registered trust, and secrets and source both, since a task is handed credentials and a clone. */
 export const workerPoolDemandRouted: WorkerPoolDemand = {
   personalRunnerAllowed: false,
   trustMin: 1,
@@ -136,6 +148,7 @@ export const workerPoolDemandRouted: WorkerPoolDemand = {
   sourceRequired: true,
   dedicatedOwnerRequired: undefined,
   ownerOf: undefined,
+  ownerFallback: "Preferred",
 };
 
 /** A registered pool as the model's `Runner`: its partition and name are the runner's identity, and its principal the session generation. */
@@ -266,14 +279,60 @@ export function workerPoolSessionHasSlot(session: WorkerPoolSession): boolean {
   return session.held < session.heldMax;
 }
 
+/** The owner's personal pools configured for the execution, which is the model's `ownerRunners`: configured as `workerPoolPlacementOutcome` configures a pool, so able to run its requirement. */
+export function workerPoolOwnerPools(
+  placement: WorkerPoolPlacement,
+  registry: readonly WorkerPoolEnrolment[],
+): readonly WorkerPoolEnrolment[] {
+  return registry.filter(
+    ({ pool }) =>
+      pool.class === "Personal" &&
+      workerPoolPolicyConfigures(pool, placement) &&
+      workerPoolInventoryMatches(placement.requirement, pool),
+  );
+}
+
+/** Whether the pool takes new work under its current registration, which is the model's `runnerIsLive`: a draining pool is not live. */
+export function workerPoolIsLive({
+  pool,
+  session,
+}: WorkerPoolEnrolment): boolean {
+  return (
+    !pool.draining &&
+    session !== undefined &&
+    workerPoolSessionIsCurrent(pool, session)
+  );
+}
+
+/**
+ * Whether the owner's fallback lets the pool take the execution now, which is
+ * the model's `ownerFallbackAllows`: under a Strict fallback no owner's
+ * personal pool, and under either none of them live. An outcome configures a
+ * pool without it, since it refuses one only for an owner's pool that is
+ * itself configured.
+ */
+export function workerPoolOwnerFallbackAllows(
+  pool: WorkerPoolRunner,
+  placement: WorkerPoolPlacement,
+  registry: readonly WorkerPoolEnrolment[],
+): boolean {
+  if (pool.class === "Personal") return true;
+  const owners = workerPoolOwnerPools(placement, registry);
+  return (
+    (placement.demand.ownerFallback === "Preferred" || owners.length === 0) &&
+    !owners.some(workerPoolIsLive)
+  );
+}
+
 /**
  * Whether the pool may bind this assignment to the execution, which is the
- * model's `canAssign`. A pool making no poll has no session and is assigned
- * nothing.
+ * model's `canAssign`, asked beside every registered pool. A pool making no
+ * poll has no session and is assigned nothing.
  */
 export function workerPoolCanAssign(
   placement: WorkerPoolPlacement,
   enrolment: WorkerPoolEnrolment,
+  registry: readonly WorkerPoolEnrolment[],
   assignment: string,
   assignmentsBound: ReadonlySet<string>,
 ): boolean {
@@ -284,6 +343,7 @@ export function workerPoolCanAssign(
     placement.phase === "Waiting" &&
     !assignmentsBound.has(assignment) &&
     workerPoolPolicyAllows(pool, placement) &&
+    workerPoolOwnerFallbackAllows(pool, placement, registry) &&
     workerPoolSessionIsCurrent(pool, session) &&
     workerPoolSessionHasSlot(session) &&
     workerPoolInventoryMatches(placement.requirement, pool)
@@ -311,6 +371,7 @@ export function workerPoolPlacementOutcome(
       ({ pool, session }) =>
         session !== undefined &&
         workerPoolPolicyAllows(pool, placement) &&
+        workerPoolOwnerFallbackAllows(pool, placement, enrolments) &&
         workerPoolSessionIsCurrent(pool, session) &&
         workerPoolSessionHasSlot(session),
     )
