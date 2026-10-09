@@ -112,6 +112,8 @@ test("the holder's store keeps nothing but the renewal token", () => {
   store.remove(sessionRefreshTokenKey);
   expect(store.read("chuggy.authorization")).toBeNull();
   expect(writes).toEqual([]);
+  const holding = setupTokenStore(files, site, "renewal-1");
+  expect(holding.read("chuggy.authorization")).toBeNull();
 });
 
 const nowMs = 5_000_000;

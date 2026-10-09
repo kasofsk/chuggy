@@ -170,8 +170,13 @@ async function setupSignInStarted(
       ports.files.remove(setupFiles.signIn);
       return { begun: "Reported", report: setupEndedReport(site, note.ended) };
     }
-    if (note?.note === "Waiting" && note.pid === pid)
-      return { begun: "Waiting", port: note.port, pid, started: true };
+    if (note?.note === "Waiting")
+      return {
+        begun: "Waiting",
+        port: note.port,
+        pid: note.pid,
+        started: true,
+      };
     if (!alive) break;
     await ports.sleepMs(setupSignInPollMs);
   }

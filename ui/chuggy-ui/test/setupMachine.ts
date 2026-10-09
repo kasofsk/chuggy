@@ -41,8 +41,11 @@ const tokenAddress = `${machineIssuer}/oauth2/token`;
 const authorizeAddress = `${machineIssuer}/oauth2/auth`;
 const workspacesAddress = `${machineSite}/access/v1/workspaces`;
 
-/** How a part of the installation answers: as it should, with a refusal, or not at all. */
-export type Answering = "Answers" | "Refuses" | "Silent";
+/** How a part of the installation answers: as it should, with a refusal, with a fault of its own, with nothing readable, or not at all. */
+export type Answering = "Answers" | "Refuses" | "Fails" | "Garbles" | "Silent";
+
+/** What becomes of a run the program starts for itself: it runs, it is gone before it says anything, it stays and says nothing, or it cannot be started. */
+export type Spawning = "Runs" | "Dies" | "Mute" | "Unstarted";
 
 export interface MachineTenant {
   readonly tenant: string;
@@ -69,6 +72,9 @@ export interface SetupMachine {
   tenants: readonly MachineTenant[];
   browser: string | undefined;
   platform: string;
+  spawning: Spawning;
+  /** What happens while a listener is closing, before it is gone. */
+  closing: () => Promise<void>;
   /** What starting the opener answers, and what the person then does in the browser it opened. */
   opener: SetupLaunched;
   opened: (address: string) => Promise<void>;
@@ -89,8 +95,8 @@ export interface SetupMachine {
   readonly advance: (ms: number) => Promise<void>;
   /** The one listener's port, where one is listening. */
   readonly listening: () => number | undefined;
-  /** One request of a browser's to the listener. */
-  readonly browse: (address: string) => Promise<SetupAnswered>;
+  /** One request of a browser's to the listener, a GET unless it says otherwise. */
+  readonly browse: (address: string, method?: string) => Promise<SetupAnswered>;
   /** What the issuer does with an authorization address: the address it sends the browser back to. */
   readonly authorized: (address: string, allowed: boolean) => string;
   /** The person signing in: the listener's first page, the issuer, and back. */
@@ -104,6 +110,9 @@ function json(status: number, body: unknown): FetchJsonResponse {
     text: () => Promise.resolve(JSON.stringify(body)),
   };
 }
+
+/** More timers than any command sets inside every bound the program has, so one that never ends fails a case instead of holding it. */
+const machineStepsMax = 20_000;
 
 function turn(): Promise<void> {
   return new Promise<void>((resolve) => {
@@ -171,17 +180,19 @@ function fetchJson(
 ): Promise<FetchJsonResponse> {
   machine.asked.push(url);
   if (init.body !== undefined) machine.bodies.push(init.body);
-  const answering =
-    url === `${machineSite}/config.json`
-      ? machine.site
-      : url === tokenAddress
-        ? machine.token
-        : machine.discovery;
+  const configuration = url.endsWith("/config.json");
+  const answering = configuration
+    ? machine.site
+    : url === tokenAddress
+      ? machine.token
+      : machine.discovery;
   if (answering === "Silent")
     return Promise.reject(new Error("no route to host"));
   if (answering === "Refuses")
     return Promise.resolve(json(url === tokenAddress ? 400 : 404, {}));
-  if (url === `${machineSite}/config.json`)
+  if (answering === "Fails") return Promise.resolve(json(500, {}));
+  if (answering === "Garbles") return Promise.resolve(json(200, {}));
+  if (configuration)
     return Promise.resolve(
       json(200, {
         issuer: `${machineIssuer}/`,
@@ -215,6 +226,10 @@ function apiFetch(
     return Promise.resolve(
       new Response("{}", { status: 503, headers: { "retry-after": "300" } }),
     );
+  if (machine.api === "Fails")
+    return Promise.resolve(new Response("{}", { status: 500 }));
+  if (machine.api === "Garbles")
+    return Promise.resolve(new Response("{}", { status: 200 }));
   const bearer = (init.headers["authorization"] ?? "").replace("Bearer ", "");
   return Promise.resolve(
     issuer.access.has(bearer)
@@ -300,9 +315,9 @@ function portsOf(inner: Inner, pid: number): SetupPorts {
       inner.listeners.set(port, answer);
       return Promise.resolve({
         port,
-        close: () => {
+        close: async () => {
+          await machine.closing();
           inner.listeners.delete(port);
-          return Promise.resolve();
         },
       });
     },
@@ -311,7 +326,11 @@ function portsOf(inner: Inner, pid: number): SetupPorts {
       alive: (asked) => machine.alive.has(asked),
       detach: (argv) => {
         machine.detached.push(argv);
-        return started(inner, argv).pid;
+        if (machine.spawning === "Unstarted") return undefined;
+        if (machine.spawning === "Runs") return started(inner, argv).pid;
+        inner.pids += 1;
+        if (machine.spawning === "Mute") machine.alive.add(inner.pids);
+        return inner.pids;
       },
       launch: async (command) => {
         machine.launched.push(command);
@@ -354,9 +373,10 @@ async function settled<T>(inner: Inner, work: Promise<T>): Promise<T> {
     done = true;
   });
   marked.catch(() => undefined);
-  for (let step = 0; step < 100_000 && !done; step += 1)
+  for (let step = 0; step < machineStepsMax && !done; step += 1)
     if (!(await fired(inner, Number.POSITIVE_INFINITY)) && !done)
       throw new Error("the command waits on nothing that will ever happen");
+  if (!done) throw new Error("the command outlived every bound it has");
   return work;
 }
 
@@ -370,12 +390,16 @@ function authorized(issuer: Issuer, address: string, allowed: boolean): string {
   return `${redirect}?code=${code}&state=${state}`;
 }
 
-function browsed(inner: Inner, address: string): Promise<SetupAnswered> {
+function browsed(
+  inner: Inner,
+  address: string,
+  method = "GET",
+): Promise<SetupAnswered> {
   const url = new URL(address);
   const answer = inner.listeners.get(Number(url.port));
   if (answer === undefined)
     return Promise.reject(new Error(`nothing listens at ${address}`));
-  return answer({ method: "GET", path: url.pathname, search: url.search });
+  return answer({ method, path: url.pathname, search: url.search });
 }
 
 async function person(inner: Inner, allowed: boolean): Promise<SetupAnswered> {
@@ -409,6 +433,8 @@ export function setupMachine(): SetupMachine {
     ],
     browser: undefined,
     platform: "linux",
+    spawning: "Runs",
+    closing: () => Promise.resolve(),
     opener: { launched: "Ended", exit: 0 },
     opened: () => Promise.resolve(),
     asked: [],
@@ -421,12 +447,12 @@ export function setupMachine(): SetupMachine {
     command: (argv) => settled(inner, started(inner, argv).report),
     advance: async (ms) => {
       const untilMs = machine.nowMs + ms;
-      for (let step = 0; step < 100_000; step += 1)
+      for (let step = 0; step < machineStepsMax; step += 1)
         if (!(await fired(inner, untilMs))) break;
       machine.nowMs = untilMs;
     },
     listening: () => [...inner.listeners.keys()][0],
-    browse: (address) => browsed(inner, address),
+    browse: (address, method) => browsed(inner, address, method),
     authorized: (address, allowed) => authorized(issuer, address, allowed),
     person: (allowed = true) => person(inner, allowed),
   };

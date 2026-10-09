@@ -5,9 +5,10 @@
  * The last is the control for the rule that no secret is ever printed. A
  * whole session is run against the stand-in installation — signing in,
  * renewing, and every way a sign-in fails — and everything the program wrote
- * to either stream, every page it answered the browser with and every file it
- * keeps besides the one that holds the sign-in is searched for every value the
- * issuer handed out and every secret of the exchange the program itself drew.
+ * to either stream, every page it answered the browser with, the note each
+ * listener left while it waited and every file it keeps besides the one that
+ * holds the sign-in is searched for every value the issuer handed out and
+ * every secret of the exchange the program itself drew.
  */
 
 import assert from "node:assert/strict";
@@ -97,6 +98,8 @@ interface Session {
   readonly machine: Home;
   /** Every page the program answered the browser with. */
   readonly pages: string[];
+  /** The note each sign-in's listener left while its page was waiting. */
+  readonly notes: string[];
   readonly runs: Ran[];
 }
 
@@ -108,6 +111,7 @@ async function signIn(
   const { installation, machine, pages, runs } = session;
   const running = machine.run(["sign-in", "--site", installation.site]);
   const sent = await browsed(await machine.opened());
+  session.notes.push(machine.file("sign-in.json") ?? "");
   pages.push(await sent.text());
   const allowed = await browsed(sent.headers.get("location") ?? "");
   const back = new URL(allowed.headers.get("location") ?? "");
@@ -123,6 +127,7 @@ async function sessionRun(): Promise<Session> {
     installation,
     machine: made.machine(),
     pages: [],
+    notes: [],
     runs: [],
   };
   const bare = async () => {
@@ -165,7 +170,7 @@ function drawn(installation: StandIn): string[] {
 }
 
 test("across every way a sign-in ends, nothing the issuer handed out and nothing the exchange drew is in anything the program wrote", async () => {
-  const { installation, machine, pages, runs } = await sessionRun();
+  const { installation, machine, pages, notes, runs } = await sessionRun();
   const signedIn = `site: ${installation.site}, signed in`;
   assert.deepEqual(
     runs.map((done) => [
@@ -192,7 +197,8 @@ test("across every way a sign-in ends, nothing the issuer handed out and nothing
   const kept = readdirSync(machine.directory)
     .filter((name) => name !== "session.json")
     .map((name) => readFileSync(join(machine.directory, name), "utf8"));
-  const wrote = [...machine.written, ...pages, ...kept].join("\n");
+  for (const note of notes) assert.match(note, /"note":"Waiting"/u);
+  const wrote = [...machine.written, ...pages, ...notes, ...kept].join("\n");
   assert.ok(wrote.includes(installation.site));
   for (const secret of secrets) {
     assert.ok(secret.length >= 16);

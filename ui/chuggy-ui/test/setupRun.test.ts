@@ -175,6 +175,21 @@ test("a body the site sends that this program cannot read is said to be unreadab
   });
 });
 
+test("a renewal the issuer answers with a fault of its own is a failure, and the token is kept", async () => {
+  const machine = await signedIn();
+  const held = machine.live();
+  machine.token = "Fails";
+  expect(await machine.command([])).toEqual({
+    report: "IssuerUnanswered",
+    site: machineSite,
+    asked: "Status",
+  });
+  expect(remembered(machine)).toEqual({
+    site: machineSite,
+    refreshToken: held,
+  });
+});
+
 test("a token remembered for one site is never sent for another, and the other site replaces it", async () => {
   const machine = await signedIn();
   const held = machine.live() ?? "";
