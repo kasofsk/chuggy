@@ -4,7 +4,9 @@
  * person by their GitHub account into a tenant or into one of their own, the
  * site's tenants, and what the caller may do, who holds each authority and
  * adding and removing its holders at the site, a tenant or a project, each for
- * a caller the authority says holds the kind it needs.
+ * a caller the authority says holds the kind it needs. A tenant's invite links
+ * are made, listed and revoked the same way, and redeemed by any caller signed
+ * in, who needs no kind because the link's maker held them.
  *
  * IT ANSWERS AS THE PUBLIC API DOES, because the console reads both with the
  * same code. A body is read as the API's media type, every refusal carries the
@@ -17,6 +19,7 @@
  */
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import { z } from "zod";
 
 import {
   accessEmailCharsMax,
@@ -25,7 +28,12 @@ import {
   accessHolderNotAdmittedCode,
   accessInvitationCodes,
   accessInvitationProjectsMax,
+  accessInvitationGrantsSchema,
   accessInvitationSchema,
+  accessInviteLinkEndedCode,
+  accessInviteLinkLimitReachedCode,
+  accessInviteLinkRedemptionSchema,
+  accessInviteLinksNotConfiguredCode,
   accessLastTenantAdministratorCode,
   accessNotPermittedCode,
   accessOwnerInvitationSchema,
@@ -64,6 +72,10 @@ import type {
   AccessInvitationResult,
   AccessInvitations,
 } from "../../interpreter/accessInvitation.ts";
+import type {
+  AccessInviteLinkRefusal,
+  AccessInviteLinkService,
+} from "../../interpreter/accessInviteLink.ts";
 import type { AccessOwnerInvitations } from "../../interpreter/accessOwnerInvitation.ts";
 import type {
   AccessChange,
@@ -100,6 +112,7 @@ export interface AccessPlaneService {
   readonly plane: AccessPlane;
   readonly invitations: AccessInvitations;
   readonly ownerInvitations: AccessOwnerInvitations;
+  readonly inviteLinks: AccessInviteLinkService;
   readonly abilities: AccessAbilities;
   readonly authorities: AccessAuthorities;
   readonly holders: AccessAuthorityHolders;
@@ -542,6 +555,16 @@ function accessInvitationRefused(
   }
 }
 
+/** The refusal of grants naming a project that is not the tenant's. */
+function accessProjectUnknown(reply: FastifyReply): FastifyReply {
+  return accessRefused(
+    reply,
+    422,
+    accessInvitationCodes.ProjectUnknown,
+    "A project named is not the tenant's.",
+  );
+}
+
 function accessInvited(
   reply: FastifyReply,
   result: AccessInvitationResult,
@@ -551,13 +574,7 @@ function accessInvited(
       subject: result.subject,
       created: result.created,
     });
-  if (result.invited === "ProjectUnknown")
-    return accessRefused(
-      reply,
-      422,
-      accessInvitationCodes.ProjectUnknown,
-      "A project named is not the tenant's.",
-    );
+  if (result.invited === "ProjectUnknown") return accessProjectUnknown(reply);
   return accessInvitationRefused(reply, result);
 }
 
@@ -603,6 +620,127 @@ function accessInvitationRoute(
       return accessInvitationRefused(reply, result);
     },
     accessOwnerInvitationBodyBytesMax,
+  );
+}
+
+/** A refusal every invite link route answers alike. */
+function accessInviteLinkRefused(
+  reply: FastifyReply,
+  refusal: AccessInviteLinkRefusal,
+): FastifyReply {
+  if (refusal.outcome === "Absent") {
+    nativeHttpSend(reply, notFound());
+    return reply;
+  }
+  return accessRefused(
+    reply,
+    404,
+    accessInviteLinksNotConfiguredCode,
+    "This deployment keeps no invite links.",
+  );
+}
+
+/** The link a path names, any text the path admits, so one naming none of the tenant's is absent whatever its shape. */
+function accessInviteLinkOf(request: FastifyRequest): string {
+  return z.string().parse(accessParams(request)["link"]);
+}
+
+function accessInviteLinkMakingRoutes(
+  app: FastifyInstance,
+  service: AccessPlaneService,
+): void {
+  accessPlaneRoute(
+    app,
+    service,
+    "tenantInviteLinkCreation",
+    async (request, reply, caller) => {
+      const result = await service.inviteLinks.mint(
+        caller,
+        accessTenantOf(request),
+        accessInvitationGrantsSchema.parse(request.body),
+      );
+      switch (result.outcome) {
+        case "Minted":
+          return reply.code(201).type(nativeHttpMediaType).send(result.minted);
+        case "ProjectUnknown":
+          return accessProjectUnknown(reply);
+        case "Refused":
+          return accessNotPermitted(reply, accessNotPermittedCode);
+        case "LimitReached":
+          return accessRefused(
+            reply,
+            409,
+            accessInviteLinkLimitReachedCode,
+            "The tenant holds as many open invite links as it may.",
+          );
+        case "Absent":
+        case "NotConfigured":
+          return accessInviteLinkRefused(reply, result);
+      }
+    },
+    accessInvitationBodyBytesMax,
+  );
+  accessPlaneRoute(
+    app,
+    service,
+    "tenantInviteLinks",
+    async (request, reply, caller) => {
+      const result = await service.inviteLinks.listed(
+        caller,
+        accessTenantOf(request),
+      );
+      return result.outcome === "Listed"
+        ? accessListed(reply, result.listed)
+        : accessInviteLinkRefused(reply, result);
+    },
+  );
+}
+
+function accessInviteLinkEndingRoutes(
+  app: FastifyInstance,
+  service: AccessPlaneService,
+): void {
+  accessPlaneRoute(
+    app,
+    service,
+    "tenantInviteLinkRevocation",
+    async (request, reply, caller) => {
+      const result = await service.inviteLinks.revoked(
+        caller,
+        accessTenantOf(request),
+        accessInviteLinkOf(request),
+      );
+      switch (result.outcome) {
+        case "Revoked":
+          return reply.code(204).send();
+        case "Refused":
+          return accessNotPermitted(reply, accessNotPermittedCode);
+        case "Ended":
+          return accessRefused(
+            reply,
+            409,
+            accessInviteLinkEndedCode,
+            "The invite link has already ended.",
+          );
+        case "Absent":
+        case "NotConfigured":
+          return accessInviteLinkRefused(reply, result);
+      }
+    },
+  );
+  accessPlaneRoute(
+    app,
+    service,
+    "inviteLinkRedemption",
+    async (request, reply, caller) => {
+      const result = await service.inviteLinks.redeemed(
+        caller,
+        accessInviteLinkRedemptionSchema.parse(request.body).token,
+      );
+      return result.outcome === "Redeemed"
+        ? reply.code(200).type(nativeHttpMediaType).send(result.redeemed)
+        : accessInviteLinkRefused(reply, result);
+    },
   );
 }
 
@@ -670,6 +808,8 @@ export function createAccessPlaneApp(
   accessProjectRoutes(app, service);
   accessHostedRunsRoutes(app, service);
   accessInvitationRoute(app, service);
+  accessInviteLinkMakingRoutes(app, service);
+  accessInviteLinkEndingRoutes(app, service);
   accessAnsweredRoutes(app, service);
   accessHolderRoutes(app, service);
   return app;

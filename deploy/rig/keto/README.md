@@ -127,7 +127,9 @@ defaults, a created project's `tenant` and defaults, and a registered pool's
 `members` on a tenant and `admins`, `developers`, `dispatchers` and `viewers`
 on a project, gives and takes a person's `hosted_execution`, and adds and removes
 the holders of each authority beside them, each for a caller holding the kind
-that grants it. Its invitation of a person into a tenant of their own writes
+that grants it. Redeeming an invite link writes the tenant role and project
+roles the link carries, for whoever presents its token signed in and whatever
+kind they hold, since its maker held the kinds when they made it. Its invitation of a person into a tenant of their own writes
 that tenant's first `admins` and its defaults, and, where asked, its
 administrators among the site's `account_creators`, for a caller the site
 permits `CreateTenant`. Every other grant is the operator's, through
