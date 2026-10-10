@@ -172,6 +172,12 @@ export async function setupLockTaken(
   return false;
 }
 
+/** The process the lock names as its holder, for a run that waited for it and did not get it. */
+export function setupLockHeldBy(ports: SetupLockPorts): number | undefined {
+  const held = ports.lock.read();
+  return held === undefined ? undefined : setupLockHolder(held)?.pid;
+}
+
 /** Gives the lock up where it is still this run's, so a run that outlived its lock frees nobody else's. */
 export function setupLockReleased(ports: SetupLockPorts): void {
   const held = ports.lock.read();
@@ -180,7 +186,12 @@ export function setupLockReleased(ports: SetupLockPorts): void {
     ports.lock.swap(held, undefined);
 }
 
-/** What a sign-in page leaves for the command waiting on it: where it listens, or how it ended. */
+/**
+ * What a sign-in page leaves for the command waiting on it: where it listens,
+ * or how it ended. An ending is `told` once a `sign-in` has reported it, and
+ * is kept after that where nothing is run until the person asks, so the bare
+ * command goes on saying it until a `sign-in` opens another page.
+ */
 export type SetupSignInNote =
   | {
       readonly note: "Waiting";
@@ -194,6 +205,7 @@ export type SetupSignInNote =
       readonly site: string;
       readonly ended: SetupSignInEnded;
       readonly endedAtMs: number;
+      readonly told: boolean;
     };
 
 const setupSignInNoteSchema = z.discriminatedUnion("note", [
@@ -209,6 +221,7 @@ const setupSignInNoteSchema = z.discriminatedUnion("note", [
     site: z.string().min(1),
     ended: z.enum(setupSignInEndings),
     endedAtMs: z.number(),
+    told: z.boolean(),
   }),
 ]);
 

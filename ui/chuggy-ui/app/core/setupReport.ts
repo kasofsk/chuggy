@@ -4,19 +4,21 @@
  *
  * Every line is `<word>: <text>` with the word from a closed set, and the last
  * is the one `next:` line: a command that runs as it is written, or `stop`.
- * `stop` is also what follows an answer that was the person's to give, a
- * sign-in they declined or a page they left, where the command that would
- * open another page is named in a `rule:` line and run only when they ask.
- * A report holds a site's origin, a directory, workspace names, numbers and
- * members of closed sets, so no token, code or message of another system's has
- * a field to ride in. Nothing here runs on import and no parser is reached,
- * because the Node check prints through this module before anything else has
- * been evaluated.
+ * `stop` is also what follows anything running a command again would not
+ * mend by itself: a sign-in that ended any way but signed in, another run
+ * holding the lock, a path the machine would not write. Each says what was
+ * found, tells the person, and names in a `rule:` line the one command and the
+ * condition it may be run under. A report holds a site's origin, a directory,
+ * a path of the program's own, workspace names, numbers and members of closed
+ * sets, so no token, code or message of another system's has a field to ride
+ * in. Nothing here runs on import and no parser is reached, because the Node
+ * check prints through this module before anything else has been evaluated.
  */
 
 import type { ApiFailure } from "./apiRequest.ts";
 import { setupCommandArguments, setupWaitSecsMax } from "./setupArguments.ts";
 import type { SetupAskFault, SetupCommand } from "./setupArguments.ts";
+import type { SetupMachineFault } from "./setupPorts.ts";
 import {
   setupLoopbackAddress,
   setupNodeMajorMin,
@@ -45,12 +47,30 @@ export type SetupSignInEnded = (typeof setupSignInEndings)[number];
 /** Whether this run opened the sign-in page, could not, or found one already waiting. */
 export type SetupSignInOpened = "Opened" | "NotOpened" | "Attached";
 
+/** Why a run stopped with no site and no sign-in server at fault: the machine, a sign-in page that would not start, or something nothing here expected. */
+export type SetupFault =
+  | SetupMachineFault
+  | { readonly fault: "Unstarted" }
+  | { readonly fault: "Unexpected" };
+
 export type SetupReport =
   | { readonly report: "NodeOld"; readonly major: number | undefined }
   | { readonly report: "AskedWrongly"; readonly fault: SetupAskFault }
   | { readonly report: "SiteUnknown" }
-  | { readonly report: "Busy"; readonly asked: SetupCommand }
-  | { readonly report: "Faulted" }
+  | {
+      readonly report: "Busy";
+      readonly asked: SetupCommand;
+      /** The site the command was given, which may not be the one remembered. */
+      readonly site: string | undefined;
+      /** The process the lock named as its holder, where it still named one. */
+      readonly pid: number | undefined;
+    }
+  | {
+      readonly report: "Faulted";
+      readonly asked: SetupCommand;
+      readonly site: string | undefined;
+      readonly fault: SetupFault;
+    }
   | {
       readonly report: "SiteUnusable";
       readonly site: string;
@@ -66,6 +86,8 @@ export type SetupReport =
       readonly report: "SignedOut";
       readonly site: string;
       readonly directory: string;
+      /** How the last sign-in for this site ended, where that ending still stands. */
+      readonly ended: SetupSignInEnded | undefined;
     }
   | {
       readonly report: "SignedIn";
@@ -129,13 +151,21 @@ function setupNextCommand(script: string, command: SetupCommand): SetupLine {
   return setupNext(script, setupCommandArguments(command));
 }
 
-/** The command again with its site named, for a site that failed before it was remembered. */
+/** A command's arguments with its site named, for a run that ended before the site was remembered. */
+function setupArgumentsAt(
+  command: SetupCommand,
+  site: string | undefined,
+): readonly string[] {
+  const words = setupCommandArguments(command);
+  return site === undefined ? words : [...words, "--site", site];
+}
+
 function setupNextAt(
   script: string,
   command: SetupCommand,
   site: string,
 ): SetupLine {
-  return setupNext(script, [...setupCommandArguments(command), "--site", site]);
+  return setupNext(script, setupArgumentsAt(command, site));
 }
 
 const setupSignInNext: readonly string[] = setupCommandArguments("SignIn");
@@ -221,90 +251,109 @@ function setupWaitingLines(
   }
 }
 
-/** What each ending that is not a sign-in found, and what the person is told where it was theirs. */
-const setupEndings: Readonly<
-  Record<Exclude<SetupSignInEnded, "SignedIn">, readonly SetupLine[]>
-> = {
-  NoRenewal: [
-    ["found", "the sign-in was allowed without leave to stay signed in"],
-    [
-      "tell",
-      "The sign-in went through without the permission that keeps chuggy setup signed in. I will open the page again: tick every box on the page that asks before pressing Allow.",
-    ],
-  ],
-  Declined: [
-    ["found", "the sign-in was declined in the browser"],
-    [
-      "tell",
-      "You pressed Deny, so chuggy setup is not signed in and nothing was changed. Tell me if you want to sign in after all.",
-    ],
-  ],
-  Refused: [["found", "the sign-in server refused the request"]],
-  Mismatched: [
-    ["found", "the answer that came back did not belong to this sign-in"],
-  ],
-  ExchangeFailed: [["found", "the sign-in server did not accept the answer"]],
-  SiteChanged: [
-    [
-      "found",
-      "another site was chosen on this machine while the sign-in page waited, so nothing was signed in",
-    ],
-  ],
-  SiteRefused: [
-    [
-      "found",
-      "the sign-in went through, but the site refused it, so nothing is remembered",
-    ],
-  ],
-  WorkspacesUnread: [
-    [
-      "found",
-      "the sign-in went through, but the site did not say which workspaces are yours",
-    ],
-  ],
-  Expired: [
-    ["found", "nobody finished the sign-in page before it closed"],
-    [
-      "tell",
-      "The sign-in page expired before anyone signed in. Tell me when you are ready and I will open a new one.",
-    ],
-  ],
-  SiteUnusable: [
-    ["found", "the site stopped answering before the sign-in page could open"],
-  ],
-  Busy: [["found", "another chuggy setup command held the sign-in"]],
-  Faulted: [
-    ["found", "the sign-in page stopped on something it did not expect"],
-  ],
-};
+/** A stop: what was found, what the person is told, and the condition the one command a rule names may be run under. */
+interface SetupStop {
+  readonly found: string;
+  readonly tell: string;
+  readonly when: string;
+}
 
-/** The endings after which nothing is run until the person asks, and what a rule says they ask. */
-const setupEndingsHeld: Partial<Readonly<Record<SetupSignInEnded, string>>> = {
-  Declined: "if the person asks to sign in after all",
-  SiteRefused: "if the person asks to try signing in again",
-  Expired: "when the person says they are ready to sign in",
-};
-
-/** The endings a page is not what follows: the bare command says how the remembered site stands. */
-const setupEndingsStanding: ReadonlySet<SetupSignInEnded> = new Set([
-  "SiteChanged",
-  "WorkspacesUnread",
-]);
-
-function setupEndedNext(
-  ended: SetupSignInEnded,
-  script: string,
-): readonly SetupLine[] {
-  const held = setupEndingsHeld[ended];
-  if (held === undefined)
-    return [
-      setupNext(script, setupEndingsStanding.has(ended) ? [] : setupSignInNext),
-    ];
-  const signIn = setupCommandLine(["node", script, ...setupSignInNext]);
+function setupStopSaid(stop: SetupStop): readonly SetupLine[] {
   return [
-    ["rule", `Run ${signIn} only ${held}.`],
+    ["found", stop.found],
+    ["tell", stop.tell],
+  ];
+}
+
+function setupStopRule(stop: SetupStop, command: string): readonly SetupLine[] {
+  return [
+    ["rule", `Run ${command} only ${stop.when}.`],
     ["next", setupNextStop],
   ];
+}
+
+const setupAskedAgain = "if the person asks to try signing in again";
+
+/**
+ * Every ending that is not a sign-in and after which nothing is run until the
+ * person asks. A page is opened by a person's wish and never by a failure, so
+ * each is a stop, and each stands until a `sign-in` opens another page.
+ */
+const setupEndingsHeld = {
+  NoRenewal: {
+    found: "the sign-in was allowed without leave to stay signed in",
+    tell: "The sign-in went through without the permission that keeps chuggy setup signed in, so it was not kept. Next time, tick every box on the page that asks before pressing Allow. Tell me when you are ready to sign in again.",
+    when: "when the person says they are ready to sign in again",
+  },
+  Declined: {
+    found: "the sign-in was declined in the browser",
+    tell: "The sign-in was declined in the browser, so chuggy setup is not signed in and nothing was changed. Tell me if you want to sign in after all.",
+    when: "if the person asks to sign in after all",
+  },
+  Refused: {
+    found: "the sign-in server refused the request",
+    tell: "The sign-in server refused the sign-in, so chuggy setup is not signed in. Tell me if you want to try signing in again.",
+    when: setupAskedAgain,
+  },
+  Mismatched: {
+    found: "the answer that came back did not belong to this sign-in",
+    tell: "The answer the browser brought back was not this sign-in's, so chuggy setup is not signed in. Tell me if you want to try signing in again.",
+    when: setupAskedAgain,
+  },
+  ExchangeFailed: {
+    found: "the sign-in server did not accept the answer",
+    tell: "The sign-in server did not accept the answer the browser brought back, so chuggy setup is not signed in. Tell me if you want to try signing in again.",
+    when: setupAskedAgain,
+  },
+  SiteRefused: {
+    found:
+      "the sign-in went through, but the site refused it, so nothing is remembered",
+    tell: "The sign-in went through, but the chuggy site did not accept it, so chuggy setup is not signed in. Tell me if you want to try signing in again.",
+    when: setupAskedAgain,
+  },
+  Expired: {
+    found: "nobody finished the sign-in page before it closed",
+    tell: "The sign-in page expired before anyone signed in. Tell me when you are ready and I will open a new one.",
+    when: "when the person says they are ready to sign in",
+  },
+  SiteUnusable: {
+    found: "the site stopped answering before the sign-in page could open",
+    tell: "The chuggy site stopped answering before the sign-in page could open, so nothing was signed in. Tell me if you want to try signing in again.",
+    when: setupAskedAgain,
+  },
+  Busy: {
+    found: "another chuggy setup command held the sign-in",
+    tell: "The sign-in was answered while another chuggy setup command was running, so it was not kept. Tell me if you want to try signing in again.",
+    when: setupAskedAgain,
+  },
+  Faulted: {
+    found: "the sign-in page stopped on something it did not expect",
+    tell: "The sign-in page stopped before the sign-in finished, so chuggy setup is not signed in. Tell me if you want to try signing in again.",
+    when: setupAskedAgain,
+  },
+} as const satisfies Partial<Readonly<Record<SetupSignInEnded, SetupStop>>>;
+
+type SetupSignInHeld = keyof typeof setupEndingsHeld;
+
+/** The endings a page is not what follows: the bare command says how the remembered site stands. */
+const setupEndingsStanding: Readonly<
+  Record<Exclude<SetupSignInEnded, SetupSignInHeld | "SignedIn">, string>
+> = {
+  SiteChanged:
+    "another site was chosen on this machine while the sign-in page waited, so nothing was signed in",
+  WorkspacesUnread:
+    "the sign-in went through, but the site did not say which workspaces are yours",
+};
+
+/** Whether an ending is one nothing is run after until the person asks, which is also whether it stands. */
+export function setupSignInHeld(
+  ended: SetupSignInEnded,
+): ended is SetupSignInHeld {
+  return Object.hasOwn(setupEndingsHeld, ended);
+}
+
+function setupSignInCommand(script: string): string {
+  return setupCommandLine(["node", script, ...setupSignInNext]);
 }
 
 function setupEndedLines(
@@ -313,11 +362,107 @@ function setupEndedLines(
 ): readonly SetupLine[] {
   if (report.ended === "SignedIn")
     return [["site", `${report.site}, signed in`], setupNext(script, [])];
+  const head: SetupLine = ["site", `${report.site}, not signed in`];
+  if (!setupSignInHeld(report.ended))
+    return [
+      head,
+      ["found", setupEndingsStanding[report.ended]],
+      setupNext(script, []),
+    ];
+  const held: SetupStop = setupEndingsHeld[report.ended];
   return [
-    ["site", `${report.site}, not signed in`],
-    ...setupEndings[report.ended],
-    ...setupEndedNext(report.ended, script),
+    head,
+    ...setupStopSaid(held),
+    ...setupStopRule(held, setupSignInCommand(script)),
   ];
+}
+
+/** Not signed in: how the program is driven, and either the sign-in that is next or the ending that still stands in its way. */
+function setupSignedOutLines(
+  report: Extract<SetupReport, { readonly report: "SignedOut" }>,
+  script: string,
+): readonly SetupLine[] {
+  const head: SetupLine = ["site", `${report.site}, not signed in`];
+  const stood: SetupStop | undefined =
+    report.ended !== undefined && setupSignInHeld(report.ended)
+      ? setupEndingsHeld[report.ended]
+      : undefined;
+  if (stood === undefined)
+    return [
+      head,
+      ...setupRuleLines(report.directory),
+      setupNext(script, setupSignInNext),
+    ];
+  return [
+    head,
+    ...setupStopSaid(stood),
+    ...setupRuleLines(report.directory),
+    ...setupStopRule(stood, setupSignInCommand(script)),
+  ];
+}
+
+const setupAskedRetry = "if the person asks to try again";
+
+function setupFaultStop(fault: SetupFault): SetupStop {
+  switch (fault.fault) {
+    case "Unwritable":
+      return {
+        found: `chuggy setup could not make or write ${fault.path}`,
+        tell: `chuggy setup stopped because it could not write ${fault.path} on this machine. Tell me once it can.`,
+        when: `once ${fault.path} can be made and written`,
+      };
+    case "Unreadable":
+      return {
+        found: `chuggy setup could not read ${fault.path}`,
+        tell: `chuggy setup stopped because it could not read ${fault.path} on this machine. Tell me once it can.`,
+        when: `once ${fault.path} can be read`,
+      };
+    case "Homeless":
+      return {
+        found: "this machine did not say where the person's home directory is",
+        tell: "chuggy setup keeps its sign-in in your home directory, and this machine did not say where that is. Tell me once HOME is set.",
+        when: "once HOME names the person's home directory",
+      };
+    case "Unstarted":
+      return {
+        found: "the sign-in page could not be started on this machine",
+        tell: "I could not start the sign-in page on this machine. Tell me if you want me to try again.",
+        when: setupAskedRetry,
+      };
+    case "Unexpected":
+      return {
+        found: "chuggy setup stopped on something it did not expect",
+        tell: "chuggy setup stopped on something it did not expect. Tell me if you want me to try again.",
+        when: setupAskedRetry,
+      };
+  }
+}
+
+function setupBusyStop(pid: number | undefined): SetupStop {
+  const running = "another chuggy setup command is running on this machine";
+  return {
+    found:
+      pid === undefined ? running : `${running}, as process ${String(pid)}`,
+    tell: "Another chuggy setup command is still running on this machine, so this one did nothing. I will run it again once the other has ended.",
+    when: "once that command has ended",
+  };
+}
+
+/** A run that stopped on this machine and not on a site: what stopped it, and the same command named under the condition that mends it. */
+function setupStoppedLines(
+  report: Extract<SetupReport, { readonly report: "Busy" | "Faulted" }>,
+  script: string,
+): readonly SetupLine[] {
+  const stop =
+    report.report === "Busy"
+      ? setupBusyStop(report.pid)
+      : setupFaultStop(report.fault);
+  const command = setupCommandLine([
+    "node",
+    script,
+    ...setupArgumentsAt(report.asked, report.site),
+  ]);
+  return [...setupStopSaid(stop), ...setupStopRule(stop, command)];
 }
 
 function setupUnreadLines(
@@ -358,8 +503,7 @@ function setupSessionLines(
   report: Extract<
     SetupReport,
     {
-      readonly report:
-        "SignedOut" | "SignedIn" | "SiteUnusable" | "IssuerUnanswered";
+      readonly report: "SignedIn" | "SiteUnusable" | "IssuerUnanswered";
     }
   >,
   script: string,
@@ -374,12 +518,6 @@ function setupSessionLines(
       return [
         ["site", `${report.site}, its sign-in server is not answering`],
         setupNextAt(script, report.asked, report.site),
-      ];
-    case "SignedOut":
-      return [
-        ["site", `${report.site}, not signed in`],
-        ...setupRuleLines(report.directory),
-        setupNext(script, setupSignInNext),
       ];
     case "SignedIn":
       return [
@@ -406,15 +544,8 @@ function setupLines(report: SetupReport, script: string): readonly SetupLine[] {
         ["next", setupNextStop],
       ];
     case "Busy":
-      return [
-        ["found", "another chuggy setup command is running on this machine"],
-        setupNextCommand(script, report.asked),
-      ];
     case "Faulted":
-      return [
-        ["found", "chuggy setup stopped on something it did not expect"],
-        setupNext(script, []),
-      ];
+      return setupStoppedLines(report, script);
     case "WorkspacesUnread":
       return setupUnreadLines(report, script);
     case "SignInWaiting":
@@ -425,9 +556,10 @@ function setupLines(report: SetupReport, script: string): readonly SetupLine[] {
       ];
     case "SignInEnded":
       return setupEndedLines(report, script);
+    case "SignedOut":
+      return setupSignedOutLines(report, script);
     case "SiteUnusable":
     case "IssuerUnanswered":
-    case "SignedOut":
     case "SignedIn":
       return setupSessionLines(report, script);
   }

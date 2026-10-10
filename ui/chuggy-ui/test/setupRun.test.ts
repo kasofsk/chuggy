@@ -11,7 +11,7 @@
 import { expect, test } from "vitest";
 
 import { apiAttemptsMax } from "../app/core/apiRequest.ts";
-import { setupFiles } from "../app/core/setupPorts.ts";
+import { SetupMachineError, setupFiles } from "../app/core/setupPorts.ts";
 import { setupRetryDelayMsMax } from "../app/core/setupSession.ts";
 import { setupLockWaitMs, setupLockWord } from "../app/core/setupStore.ts";
 import { machineDirectory, machineSite, setupMachine } from "./setupMachine.ts";
@@ -21,6 +21,7 @@ const signedOut = {
   report: "SignedOut",
   site: machineSite,
   directory: machineDirectory,
+  ended: undefined,
 };
 
 function remembered(machine: SetupMachine): unknown {
@@ -235,10 +236,14 @@ test("a command that finds another run holding the lock waits a bounded time and
   expect(await machine.command([])).toEqual({
     report: "Busy",
     asked: "Status",
+    site: undefined,
+    pid: 7,
   });
-  expect(await machine.command(["sign-in"])).toEqual({
+  expect(await machine.command(["sign-in", "--site", machineSite])).toEqual({
     report: "Busy",
     asked: "SignIn",
+    site: machineSite,
+    pid: 7,
   });
   expect(machine.nowMs - began).toBe(2 * setupLockWaitMs);
   expect(machine.lock).toBe(held);
@@ -261,13 +266,134 @@ test("a command asked wrongly says which part, and reads nothing", async () => {
   expect([...machine.files.keys()]).toEqual([]);
 });
 
-test("whatever a port throws ends as one report, and the lock is given up", async () => {
+/** A machine whose remembered sign-in cannot be read, and throws `failure` to whoever tries. */
+async function unreadable(failure: Error): Promise<SetupMachine> {
   const machine = await signedIn();
   const read = machine.files.get.bind(machine.files);
   machine.files.get = (file) => {
-    if (file === setupFiles.session) throw new Error("renewal-secret");
+    if (file === setupFiles.session) throw failure;
     return read(file);
   };
-  expect(await machine.command([])).toEqual({ report: "Faulted" });
+  return machine;
+}
+
+test("whatever a port throws ends as one report that carries nothing of what was thrown, and the lock is given up", async () => {
+  const machine = await unreadable(new Error("renewal-secret"));
+  for (const [argv, asked, site] of [
+    [[], "Status", undefined],
+    [["--site", `${machineSite}/acme`], "Status", machineSite],
+    [["sign-in"], "SignIn", undefined],
+  ] as const)
+    expect(await machine.command(argv)).toEqual({
+      report: "Faulted",
+      asked,
+      site,
+      fault: { fault: "Unexpected" },
+    });
   expect(machine.lock).toBeUndefined();
+});
+
+test("a listener the machine stops reports as the sign-in that ran it, since nobody runs a listener themselves", async () => {
+  const machine = setupMachine();
+  machine.files.set = () => {
+    throw new Error("no room");
+  };
+  const listened = ["listen", "--site", machineSite, "--life-secs", "5"];
+  expect(await machine.command(listened)).toEqual({
+    report: "Faulted",
+    asked: "SignIn",
+    site: machineSite,
+    fault: { fault: "Unexpected" },
+  });
+  expect(machine.listening()).toBeUndefined();
+});
+
+test("what the machine says it would not do is reported as the machine said it", async () => {
+  for (const fault of [
+    { fault: "Unwritable", path: "/home/person/.chuggy-setup" },
+    { fault: "Unreadable", path: "/home/person/.chuggy-setup/session.json" },
+    { fault: "Homeless" },
+  ] as const) {
+    const machine = await unreadable(new SetupMachineError(fault));
+    expect(await machine.command([])).toEqual({
+      report: "Faulted",
+      asked: "Status",
+      site: undefined,
+      fault,
+    });
+    expect(machine.lock).toBeUndefined();
+  }
+});
+
+/** A machine whose last sign-in the person declined in the browser, as the `sign-in` that waited on it leaves it. */
+async function declined(): Promise<SetupMachine> {
+  const machine = setupMachine();
+  machine.opened = async () => {
+    await machine.person(false);
+  };
+  expect(await machine.command(["sign-in", "--site", machineSite])).toEqual({
+    report: "SignInEnded",
+    site: machineSite,
+    ended: "Declined",
+  });
+  machine.opened = () => Promise.resolve();
+  return machine;
+}
+
+test("an ending that stands is what the bare command says, as often as it is asked, and it opens nothing and writes nothing", async () => {
+  const machine = await declined();
+  const kept = new Map(machine.files);
+  for (let asked = 0; asked < 3; asked += 1)
+    expect(await machine.command([])).toEqual({
+      ...signedOut,
+      ended: "Declined",
+    });
+  expect(new Map(machine.files)).toEqual(kept);
+  expect(machine.detached).toHaveLength(1);
+  expect(machine.launched).toHaveLength(1);
+});
+
+test("an ending stands until a sign-in is run, which opens a page, and the bare command then names sign-in again", async () => {
+  const machine = await declined();
+  expect(await machine.command(["sign-in", "--wait-secs", "0"])).toMatchObject({
+    report: "SignInWaiting",
+    opened: "Opened",
+  });
+  expect(machine.detached).toHaveLength(2);
+  expect(await machine.command([])).toEqual(signedOut);
+});
+
+test("an ending for one site does not stand in the way of another", async () => {
+  const machine = await declined();
+  const other = "https://other.example";
+  expect(await machine.command(["--site", other])).toEqual({
+    ...signedOut,
+    site: other,
+  });
+});
+
+test("an ending nobody was waiting for is said by the bare command before any sign-in has reported it, and the bare command leaves it for sign-in to report", async () => {
+  const machine = setupMachine();
+  const waiting = ["sign-in", "--site", machineSite, "--wait-secs", "0"];
+  expect(await machine.command(waiting)).toMatchObject({
+    report: "SignInWaiting",
+  });
+  await machine.person(false);
+  await machine.advance(0);
+  const note = machine.files.get(setupFiles.signIn);
+  expect(JSON.parse(note ?? "{}")).toMatchObject({
+    ended: "Declined",
+    told: false,
+  });
+  expect(await machine.command([])).toEqual({
+    ...signedOut,
+    ended: "Declined",
+  });
+  expect(machine.files.get(setupFiles.signIn)).toBe(note);
+  expect(await machine.command(["sign-in"])).toEqual({
+    report: "SignInEnded",
+    site: machineSite,
+    ended: "Declined",
+  });
+  expect(machine.detached).toHaveLength(1);
 });

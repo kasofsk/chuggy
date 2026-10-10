@@ -149,11 +149,14 @@ node chuggy-setup.mjs --site https://<site>
 
 It is one file with nothing to install. Every line it prints is a word from a
 closed set, a colon and its text; the last is `next:` and names the exact
-command to run after it, or says to stop. It says to stop where what comes next
-is the person's to say, as after a sign-in they declined or a page they left to
-expire, and a `rule:` line names the command to run once they have said it. It
-exits 0 where that line is to be followed, 1 where it failed and 2 where it was
-asked wrongly.
+command to run after it, or says to stop. It says to stop where running a
+command again would mend nothing until the person has said something: after a
+sign-in that was declined, left to expire or refused, and where the machine
+would not keep its files or another run held them. A `rule:` line then names
+the command and what must be so before it is run, and the bare command goes on
+saying how the last sign-in ended until `sign-in` is run. It exits 0 where the
+last line is to be followed, 1 where it failed and 2 where it was asked
+wrongly.
 
 Run bare it changes nothing at the site: it says whether it is signed in and
 which workspaces the person administers. `sign-in` opens the installation's

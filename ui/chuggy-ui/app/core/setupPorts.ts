@@ -28,6 +28,27 @@ export const setupLockName = "lock";
 
 export type SetupFile = (typeof setupFiles)[keyof typeof setupFiles];
 
+/** What of the machine stopped a run: a path it could not make or write, one it could not read, or no home to keep anything in. */
+export type SetupMachineFault =
+  | { readonly fault: "Unwritable"; readonly path: string }
+  | { readonly fault: "Unreadable"; readonly path: string }
+  | { readonly fault: "Homeless" };
+
+/**
+ * What the files and the lock throw where the machine would not do what was
+ * asked. It carries which path and nothing the system said of it, so a report
+ * names the path and no message of another system's.
+ */
+export class SetupMachineError extends Error {
+  readonly fault: SetupMachineFault;
+
+  constructor(fault: SetupMachineFault) {
+    super("the machine did not do what chuggy setup asked of it");
+    this.name = "SetupMachineError";
+    this.fault = fault;
+  }
+}
+
 export interface SetupFilesPort {
   /** The file's text, or nothing where there is no such file. */
   readonly read: (file: SetupFile) => string | undefined;

@@ -100,6 +100,30 @@ test("a site that does not answer is a failure that exits one, and names the com
   );
 });
 
+test("a machine that names no home is a report and not a trace, and nothing is kept in the folder the program was run in", async () => {
+  const machine = made.machine();
+  const site = "http://127.0.0.1:9";
+  for (const argv of [
+    ["--site", site],
+    ["sign-in", "--site", site],
+  ]) {
+    const done = await machine.run(argv, { HOME: "" });
+    assert.equal(done.code, 1);
+    dialect(done, argv.join(" "));
+    assert.deepEqual(done.lines.slice(0, 2), [
+      "found: this machine did not say where the person's home directory is",
+      "tell: chuggy setup keeps its sign-in in your home directory, and this machine did not say where that is. Tell me once HOME is set.",
+    ]);
+    assert.match(
+      done.lines[2] ?? "",
+      /^rule: Run node \S+ (sign-in )?--site http:\/\/127\.0\.0\.1:9 only once HOME names the person's home directory\.$/u,
+    );
+    assert.deepEqual(done.lines.slice(3), ["next: stop"]);
+  }
+  assert.deepEqual(readdirSync(machine.folder), []);
+  assert.deepEqual(readdirSync(machine.home), []);
+});
+
 interface Session {
   readonly installation: StandIn;
   readonly machine: Home;
@@ -197,7 +221,7 @@ test("across every way a sign-in ends, nothing the issuer handed out and nothing
       [0, "found: the sign-in was declined in the browser"],
       [1, "found: the sign-in server did not accept the answer"],
       [0, "found: the sign-in was allowed without leave to stay signed in"],
-      [0, `site: ${installation.site}, not signed in`],
+      [0, "found: the sign-in was allowed without leave to stay signed in"],
       [
         1,
         "found: the sign-in went through, but the site did not say which workspaces are yours",

@@ -77,6 +77,10 @@ export interface SetupMachine {
   spawning: Spawning;
   /** What happens while a listener is closing, before it is gone. */
   closing: () => Promise<void>;
+  /** The machine's digest, which a case replaces to say exactly where two digests differ. */
+  digest: (message: Uint8Array) => Uint8Array;
+  /** The octets handed over where the program asks for ones nobody could guess, given how many and which ask it is. */
+  draws: (count: number, turn: number) => Uint8Array;
   /** What starting the opener answers, and what the person then does in the browser it opened. */
   opener: SetupLaunched;
   opened: (address: string) => Promise<void>;
@@ -287,7 +291,7 @@ async function fired(
 }
 
 /** The double's digest: every octet, its place and the length move the answer, and nothing waits on a clock that is not the machine's. */
-function folded(message: Uint8Array): Uint8Array {
+export function folded(message: Uint8Array): Uint8Array {
   const digest = new Uint8Array(32);
   let carried = message.length + 1;
   for (const [at, octet] of message.entries()) {
@@ -333,9 +337,9 @@ function portsOf(inner: Inner, pid: number): SetupPorts {
     sleepMs: (ms, signal) => slept(inner, ms, signal),
     drawBytes: (count) => {
       inner.drawn += 1;
-      return new Uint8Array(count).fill(inner.drawn);
+      return machine.draws(count, inner.drawn);
     },
-    digest: (message) => Promise.resolve(folded(message)),
+    digest: (message) => Promise.resolve(machine.digest(message)),
     fetchJson: (url, init) => fetchJson(machine, issuer, url, init),
     apiFetch: (url, init) => apiFetch(machine, issuer, url, init),
     files: filesOf(machine),
@@ -464,6 +468,8 @@ export function setupMachine(): SetupMachine {
     platform: "linux",
     spawning: "Runs",
     closing: () => Promise.resolve(),
+    digest: folded,
+    draws: (count, turn) => new Uint8Array(count).fill(turn),
     opener: { launched: "Ended", exit: 0 },
     opened: () => Promise.resolve(),
     asked: [],

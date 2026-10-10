@@ -157,7 +157,21 @@ test("a sign-in the site does not confirm is a failure that is kept, and the nex
   );
 });
 
-test("a sign-in the person declines is said to be theirs to have declined, nothing is exchanged, and nothing is run next", async () => {
+const declined = [
+  "found: the sign-in was declined in the browser",
+  "tell: The sign-in was declined in the browser, so chuggy setup is not signed in and nothing was changed. Tell me if you want to sign in after all.",
+];
+
+const declinedRule =
+  /^rule: Run node \S+ sign-in only if the person asks to sign in after all\.$/u;
+
+/** How many times the issuer was asked to start a sign-in, which is how many pages were opened and followed. */
+function pages(installation: StandIn): number {
+  return installation.asked.filter((line) => line.includes("/oauth2/auth"))
+    .length;
+}
+
+test("a sign-in declined in the browser is said as that, nothing is exchanged, and nothing is run next", async () => {
   const { installation, machine } = await installed();
   installation.allows = false;
   const done = await signedIn(installation, machine, async (opened) => {
@@ -166,17 +180,75 @@ test("a sign-in the person declines is said to be theirs to have declined, nothi
   assert.equal(done.code, 0);
   assert.deepEqual(done.lines.slice(0, 3), [
     `site: ${installation.site}, not signed in`,
-    "found: the sign-in was declined in the browser",
-    "tell: You pressed Deny, so chuggy setup is not signed in and nothing was changed. Tell me if you want to sign in after all.",
+    ...declined,
   ]);
-  assert.match(
-    done.lines[3] ?? "",
-    /^rule: Run node \S+ sign-in only if the person asks to sign in after all\.$/u,
-  );
+  assert.match(done.lines[3] ?? "", declinedRule);
   assert.deepEqual(done.lines.slice(4), ["next: stop"]);
   assert.deepEqual(installation.grants, []);
   assert.equal(remembered(machine).refreshToken, undefined);
+  assert.match(
+    machine.file("sign-in.json") ?? "",
+    /"ended":"Declined".*"told":true/u,
+  );
+});
+
+test("a declined sign-in stands: the bare command says it again and opens nothing, however often it is run, until a sign-in is", async () => {
+  const { installation, machine } = await installed();
+  installation.allows = false;
+  await signedIn(installation, machine, person);
+  const note = machine.file("sign-in.json");
+  for (let asked = 0; asked < 3; asked += 1) {
+    const stood = await machine.run([]);
+    assert.equal(stood.code, 0);
+    assert.equal(stood.stderr, "");
+    assert.deepEqual(stood.lines.slice(0, 3), [
+      `site: ${installation.site}, not signed in`,
+      ...declined,
+    ]);
+    assert.match(stood.lines[3] ?? "", /^rule: Run the command on the next: /u);
+    assert.match(stood.lines[4] ?? "", /^rule: Never read or print /u);
+    assert.match(stood.lines[5] ?? "", declinedRule);
+    assert.deepEqual(stood.lines.slice(6), ["next: stop"]);
+  }
+  assert.equal(pages(installation), 1);
+  assert.equal(existsSync(join(machine.beside, "opened")), false);
+  assert.ok(machine.file("sign-in.json") === note);
+  installation.allows = true;
+  const done = await signedIn(installation, machine);
+  assert.equal(done.lines[0], `site: ${installation.site}, signed in`);
+  assert.equal(pages(installation), 2);
   assert.equal(machine.file("sign-in.json"), undefined);
+  const after = await machine.run([]);
+  assert.equal(after.lines[0], `site: ${installation.site}, signed in`);
+});
+
+test("a sign-in the issuer will not exchange is said to the person, and a page that would fail the same way is not opened again unasked", async () => {
+  const { installation, machine } = await installed();
+  const done = await signedIn(installation, machine, async (opened) => {
+    const sent = await browsed(opened);
+    const allowed = await browsed(sent.headers.get("location") ?? "");
+    const back = new URL(allowed.headers.get("location") ?? "");
+    back.searchParams.set("code", "not-the-code");
+    assert.equal((await browsed(back.href)).status, 400);
+  });
+  assert.equal(done.code, 1);
+  assert.deepEqual(done.lines.slice(0, 3), [
+    `site: ${installation.site}, not signed in`,
+    "found: the sign-in server did not accept the answer",
+    "tell: The sign-in server did not accept the answer the browser brought back, so chuggy setup is not signed in. Tell me if you want to try signing in again.",
+  ]);
+  assert.match(
+    done.lines[3] ?? "",
+    /^rule: Run node \S+ sign-in only if the person asks to try signing in again\.$/u,
+  );
+  assert.deepEqual(done.lines.slice(4), ["next: stop"]);
+  const stood = await machine.run([]);
+  assert.equal(
+    stood.lines[1],
+    "found: the sign-in server did not accept the answer",
+  );
+  assert.equal(stood.lines.at(-1), "next: stop");
+  assert.equal(pages(installation), 1);
 });
 
 /** Answers that anything on this machine could send the page: none carries the state this sign-in sent. */
@@ -230,6 +302,11 @@ test("an allow page that hands over no renewal token is not a sign-in, and the p
     "found: the sign-in was allowed without leave to stay signed in",
   );
   assert.match(done.lines[2] ?? "", /^tell: .*tick every box/u);
+  assert.match(
+    done.lines[3] ?? "",
+    /^rule: Run node \S+ sign-in only when the person says they are ready to sign in again\.$/u,
+  );
+  assert.deepEqual(done.lines.slice(4), ["next: stop"]);
   assert.deepEqual(installation.grants, ["authorization_code granted"]);
   assert.equal(remembered(machine).refreshToken, undefined);
 });
@@ -329,7 +406,16 @@ test("a page nobody finishes stops answering at its bound, and the next sign-in 
     /^rule: Run node \S+ sign-in only when the person says they are ready to sign in\.$/u,
   );
   assert.deepEqual(said.lines.slice(4), ["next: stop"]);
-  assert.equal(machine.file("sign-in.json"), undefined);
+  assert.match(
+    machine.file("sign-in.json") ?? "",
+    /"ended":"Expired".*"told":true/u,
+  );
+  const stood = await machine.run([]);
+  assert.equal(
+    stood.lines[1],
+    "found: nobody finished the sign-in page before it closed",
+  );
+  assert.equal(stood.lines.at(-1), "next: stop");
   assert.deepEqual(installation.grants, []);
 });
 
@@ -428,12 +514,16 @@ test("a site that refuses the sign-in it remembered is said to have, and a sign-
     assert.equal((await person(opened)).status, 400);
   });
   assert.equal(done.code, 1);
-  assert.equal(
-    done.lines[1],
+  assert.deepEqual(done.lines.slice(1, 3), [
     "found: the sign-in went through, but the site refused it, so nothing is remembered",
-  );
+    "tell: The sign-in went through, but the chuggy site did not accept it, so chuggy setup is not signed in. Tell me if you want to try signing in again.",
+  ]);
   assert.equal(done.lines.at(-1), "next: stop");
   assert.equal(remembered(machine).refreshToken, undefined);
+  const stood = await machine.run([]);
+  assert.deepEqual(stood.lines.slice(1, 3), done.lines.slice(1, 3));
+  assert.equal(stood.lines.at(-1), "next: stop");
+  assert.equal(pages(installation), 2);
 });
 
 test("a page whose site is no longer the one remembered signs nothing in, and what is kept for the other site is left as it was", async () => {

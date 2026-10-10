@@ -5,7 +5,9 @@
  * The program is the entry in the sources unless `CHUG_SETUP_PROGRAM` names a
  * built file, so one set of cases proves both. The opener it is given records
  * the address it was handed and opens nothing, and the suite then plays the
- * person.
+ * person. Every run is started in a folder of its home's own, so what the
+ * program reads of the folder it is run in is that folder, and what a run
+ * that lost its home writes there is not this checkout.
  *
  * Nothing here waits without a bound and nothing outlives its suite. A
  * process still running at its deadline, or one that wrote more than any
@@ -31,7 +33,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import type { Readable } from "node:stream";
 import { after } from "node:test";
 import { setTimeout as slept } from "node:timers/promises";
@@ -39,9 +41,9 @@ import { setTimeout as slept } from "node:timers/promises";
 import { standIn } from "./standIn.ts";
 import type { StandIn } from "./standIn.ts";
 
-export const program =
-  process.env["CHUG_SETUP_PROGRAM"] ??
-  join(process.cwd(), "ui/chuggy-ui/terminal/main.ts");
+export const program = resolve(
+  process.env["CHUG_SETUP_PROGRAM"] ?? "ui/chuggy-ui/terminal/main.ts",
+);
 
 const pollMs = 50;
 const waitMsMax = 20_000;
@@ -74,6 +76,8 @@ export interface Home {
   readonly directory: string;
   /** A directory beside the home for what a case makes itself. */
   readonly beside: string;
+  /** The folder every run under this home is started in, empty until a case puts something there. */
+  readonly folder: string;
   /** Everything every run under this home wrote to either stream. */
   readonly written: string[];
   readonly run: (
@@ -141,9 +145,11 @@ export function finished(
 async function ran(
   argv: readonly string[],
   environment: NodeJS.ProcessEnv,
+  folder: string,
 ): Promise<Ran> {
   const done = await finished(
     spawn(process.execPath, [program, ...argv], {
+      cwd: folder,
       env: environment,
       stdio: ["ignore", "pipe", "pipe"],
     }),
@@ -201,11 +207,12 @@ function home(): Home {
   const root = mkdtempSync(join(tmpdir(), "chuggy-setup-"));
   const kept = join(root, "home");
   const beside = join(root, "beside");
+  const folder = join(root, "folder");
   const running = join(root, "running");
   const directory = join(kept, ".chuggy-setup");
   const record = join(beside, "opened");
   const opener = join(beside, "opener.sh");
-  for (const made of [kept, beside, running]) mkdirSync(made);
+  for (const made of [kept, beside, folder, running]) mkdirSync(made);
   writeFileSync(join(root, "registrar.mjs"), registrar(running));
   writeFileSync(opener, `#!/bin/sh\nprintf '%s' "$1" > "${record}"\n`);
   chmodSync(opener, 0o755);
@@ -219,6 +226,7 @@ function home(): Home {
     home: kept,
     directory,
     beside,
+    folder,
     written,
     file,
     lock: () => {
@@ -227,7 +235,7 @@ function home(): Home {
       return said.length === 1 && said[0] === "free" ? undefined : said.join();
     },
     run: async (argv, environment = {}) => {
-      const done = await ran(argv, {
+      const surroundings = {
         ...process.env,
         HOME: kept,
         BROWSER: opener,
@@ -235,7 +243,8 @@ function home(): Home {
           .join(" ")
           .trim(),
         ...environment,
-      });
+      };
+      const done = await ran(argv, surroundings, folder);
       written.push(done.stdout, done.stderr);
       return done;
     },

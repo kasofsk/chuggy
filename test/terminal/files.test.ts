@@ -13,6 +13,7 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import {
+  chmodSync,
   closeSync,
   existsSync,
   mkdirSync,
@@ -27,8 +28,11 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { pathToFileURL } from "node:url";
 
+import { SetupMachineError } from "../../ui/chuggy-ui/app/core/setupPorts.ts";
+import type { SetupMachineFault } from "../../ui/chuggy-ui/app/core/setupPorts.ts";
 import { filesIn } from "../../ui/chuggy-ui/terminal/files.ts";
 import { lockIn } from "../../ui/chuggy-ui/terminal/lock.ts";
+import { homeOf } from "../../ui/chuggy-ui/terminal/ports.ts";
 import { eventually, finished, making, person } from "./program.ts";
 import type { Home } from "./program.ts";
 import type { StandIn } from "./standIn.ts";
@@ -50,6 +54,18 @@ function left(directory: string, word: string): void {
   rmSync(lock, { recursive: true, force: true });
   mkdirSync(lock, { recursive: true });
   writeFileSync(join(lock, word), "");
+}
+
+/** What `step` throws where the machine would not do it: which path, and whether it was being written or read. */
+function refused(step: () => unknown): SetupMachineFault | undefined {
+  try {
+    step();
+  } catch (failure: unknown) {
+    assert.ok(failure instanceof SetupMachineError);
+    assert.ok(!/E[A-Z]{4,}|errno|syscall/u.test(failure.message));
+    return failure.fault;
+  }
+  return undefined;
 }
 
 test("a file, the lock and their directory are the person's alone, whatever the process would have allowed", () => {
@@ -151,7 +167,126 @@ test("a lock says only a holder's word, and one that was left saying two is a fa
   assert.equal(lock.swap("../lock/7.1", "8.2"), false);
   assert.equal(lock.read(), "7.1");
   writeFileSync(join(directory, "lock", "8.2"), "");
-  assert.throws(() => lock.read());
+  assert.deepEqual(
+    refused(() => lock.read()),
+    { fault: "Unreadable", path: join(directory, "lock") },
+  );
+  rmSync(join(directory, "lock", "8.2"));
+  writeFileSync(join(directory, "lock", "free"), "");
+  assert.deepEqual(
+    refused(() => lock.read()),
+    { fault: "Unreadable", path: join(directory, "lock") },
+  );
+});
+
+test("the lock reads past a name beside its word that is no word of the lock, and changes hands as if it were not there", () => {
+  const { directory } = made.machine();
+  const lock = lockIn(directory);
+  const stray = join(directory, "lock", ".DS_Store");
+  assert.equal(lock.swap(undefined, "7.1"), true);
+  writeFileSync(stray, "a file manager's");
+  assert.equal(lock.read(), "7.1");
+  assert.equal(lock.swap(undefined, "8.2"), false);
+  assert.equal(lock.swap("7.1", "8.2"), true);
+  assert.equal(lock.read(), "8.2");
+  assert.equal(lock.swap("8.2", undefined), true);
+  assert.equal(lock.read(), undefined);
+  assert.equal(lock.swap(undefined, "9.3"), true);
+  assert.equal(lock.read(), "9.3");
+  assert.deepEqual(readdirSync(join(directory, "lock")).toSorted(), [
+    ".DS_Store",
+    "9.3",
+  ]);
+  assert.equal(readFileSync(stray, "utf8"), "a file manager's");
+});
+
+test("a lock left holding only a name that is no word of it says that name, and is taken from it by one run", () => {
+  const { directory } = made.machine();
+  mkdirSync(join(directory, "lock"), { recursive: true });
+  writeFileSync(join(directory, "lock", ".DS_Store"), "");
+  const lock = lockIn(directory);
+  assert.equal(lock.read(), ".DS_Store");
+  assert.equal(lock.swap(undefined, "7.1"), false);
+  assert.equal(lock.swap(".DS_Store", "7.1"), true);
+  assert.equal(lock.swap(".DS_Store", "8.2"), false);
+  assert.equal(lock.read(), "7.1");
+  assert.deepEqual(readdirSync(join(directory, "lock")), ["7.1"]);
+});
+
+test("a lock left with nothing in it is made whole and moved into place by the one run that takes it", () => {
+  const { directory } = made.machine();
+  mkdirSync(join(directory, "lock"), { recursive: true });
+  const lock = lockIn(directory);
+  assert.equal(lock.read(), undefined);
+  assert.equal(lock.swap(undefined, "7.1"), true);
+  assert.equal(lock.swap(undefined, "8.2"), false);
+  assert.equal(lock.read(), "7.1");
+  assert.deepEqual(readdirSync(join(directory, "lock")), ["7.1"]);
+  assert.deepEqual(readdirSync(directory), ["lock"]);
+});
+
+test("what the machine will not write or read is thrown as which path, and what is not there is read as nothing", () => {
+  const machine = made.machine();
+  const { directory } = machine;
+  writeFileSync(directory, "in the way");
+  const files = filesIn(directory);
+  const lock = lockIn(directory);
+  assert.equal(files.read("session.json"), undefined);
+  assert.equal(lock.read(), undefined);
+  files.remove("session.json");
+  files.sweep("session.json");
+  assert.deepEqual(
+    refused(() => {
+      files.write("session.json", "kept");
+    }),
+    { fault: "Unwritable", path: directory },
+  );
+  assert.deepEqual(
+    refused(() => lock.swap(undefined, "7.1")),
+    { fault: "Unwritable", path: directory },
+  );
+  rmSync(directory);
+  mkdirSync(join(directory, "session.json"), { recursive: true });
+  writeFileSync(join(directory, "lock"), "in the way");
+  assert.deepEqual(
+    refused(() => files.read("session.json")),
+    { fault: "Unreadable", path: join(directory, "session.json") },
+  );
+  assert.deepEqual(
+    refused(() => {
+      files.write("session.json", "kept");
+    }),
+    { fault: "Unwritable", path: join(directory, "session.json") },
+  );
+  assert.deepEqual(
+    refused(() => lock.swap(undefined, "7.1")),
+    { fault: "Unwritable", path: join(directory, "lock") },
+  );
+});
+
+test("a home is a whole path the machine names, and anything else is no home", () => {
+  assert.equal(
+    homeOf(() => "/home/person"),
+    "/home/person",
+  );
+  assert.equal(
+    homeOf(() => ""),
+    undefined,
+  );
+  assert.equal(
+    homeOf(() => "home/person"),
+    undefined,
+  );
+  assert.equal(
+    homeOf(() => "."),
+    undefined,
+  );
+  assert.equal(
+    homeOf(() => {
+      throw new Error("no entry for this user");
+    }),
+    undefined,
+  );
 });
 
 test("a word nobody could have written is read as it is, so whoever judges it nobody's takes it from that word", () => {
@@ -186,8 +321,8 @@ const maker = `
   process.stdout.write(lock.swap(undefined, process.pid + '.1') ? 'made' : 'refused');
 `;
 
-test("of several processes making the lock at one instant, one makes it", async () => {
-  const { directory } = made.machine();
+/** Several processes that each try to make the lock in `directory` at one instant, as what each answered. */
+async function makers(directory: string): Promise<readonly string[]> {
   const startsAtMs = Date.now() + 1_500;
   const answers = await Promise.all(
     Array.from({ length: 6 }, () =>
@@ -198,14 +333,22 @@ test("of several processes making the lock at one instant, one makes it", async 
       ]),
     ),
   );
-  assert.deepEqual(answers.toSorted(), [
-    "made",
-    "refused",
-    "refused",
-    "refused",
-    "refused",
-    "refused",
-  ]);
+  return answers.toSorted();
+}
+
+const oneMade = ["made", "refused", "refused", "refused", "refused", "refused"];
+
+test("of several processes making the lock at one instant, one makes it", async () => {
+  const { directory } = made.machine();
+  assert.deepEqual(await makers(directory), oneMade);
+  assert.equal(readdirSync(join(directory, "lock")).length, 1);
+  assert.deepEqual(readdirSync(directory), ["lock"]);
+});
+
+test("of several processes that meet a lock with nothing in it at one instant, one makes it", async () => {
+  const { directory } = made.machine();
+  mkdirSync(join(directory, "lock"), { recursive: true });
+  assert.deepEqual(await makers(directory), oneMade);
   assert.equal(readdirSync(join(directory, "lock")).length, 1);
   assert.deepEqual(readdirSync(directory), ["lock"]);
 });
@@ -311,15 +454,41 @@ test("a run that finds the lock held by a running process spends nothing and say
   const session = machine.file("session.json");
   const held = `${String(process.pid)}.${String(Date.now())}`;
   left(machine.directory, held);
-  const refused = await machine.run([]);
-  assert.equal(refused.code, 1);
-  assert.deepEqual(refused.lines.slice(0, -1), [
-    "found: another chuggy setup command is running on this machine",
+  const busy = await machine.run([]);
+  assert.equal(busy.code, 1);
+  assert.equal(busy.stderr, "");
+  assert.deepEqual(busy.lines.slice(0, 2), [
+    `found: another chuggy setup command is running on this machine, as process ${String(process.pid)}`,
+    "tell: Another chuggy setup command is still running on this machine, so this one did nothing. I will run it again once the other has ended.",
   ]);
-  assert.match(refused.lines.at(-1) ?? "", /^next: node \S+$/u);
+  assert.match(
+    busy.lines[2] ?? "",
+    /^rule: Run node \S+ only once that command has ended\.$/u,
+  );
+  assert.deepEqual(busy.lines.slice(3), ["next: stop"]);
   assert.equal(machine.lock(), held);
   assert.ok(machine.file("session.json") === session);
   assert.deepEqual(installation.grants, ["authorization_code granted"]);
+});
+
+test("a name a file manager left in the lock's folder stops no command, and is still there afterwards", async () => {
+  const { installation, machine } = await signedIn();
+  const stray = join(machine.directory, "lock", ".DS_Store");
+  writeFileSync(stray, "");
+  for (let asked = 0; asked < 2; asked += 1) {
+    const done = await machine.run([]);
+    assert.equal(done.code, 0, done.stdout);
+    assert.equal(done.lines[0], `site: ${installation.site}, signed in`);
+  }
+  assert.deepEqual(readdirSync(join(machine.directory, "lock")).toSorted(), [
+    ".DS_Store",
+    "free",
+  ]);
+  assert.deepEqual(installation.grants, [
+    "authorization_code granted",
+    "refresh_token granted",
+    "refresh_token granted",
+  ]);
 });
 
 test("a lock whose holder has gone is taken, and given up when the run ends", async () => {
@@ -390,14 +559,47 @@ test("runs started together each renew in turn with what the one before stored",
   assert.ok(stored.refreshToken === installation.renewal());
 });
 
-test("a home the program cannot keep its files in is a failure said in one line, with no trace of why", async () => {
+test("a home the program cannot keep its files in is a failure that names the path, with no trace of why, and names no command to run until it can", async () => {
   const machine = made.machine();
   mkdirSync(machine.home, { recursive: true });
   writeFileSync(machine.directory, "in the way");
-  const done = await machine.run(["--site", "http://127.0.0.1:9"]);
-  assert.equal(done.code, 1);
-  assert.equal(done.stderr, "");
-  assert.deepEqual(done.lines.slice(0, -1), [
-    "found: chuggy setup stopped on something it did not expect",
-  ]);
+  for (const argv of [["--site", "http://127.0.0.1:9"], ["sign-in"]]) {
+    const done = await machine.run(argv);
+    assert.equal(done.code, 1);
+    assert.equal(done.stderr, "");
+    assert.deepEqual(done.lines.slice(0, 2), [
+      `found: chuggy setup could not make or write ${machine.directory}`,
+      `tell: chuggy setup stopped because it could not write ${machine.directory} on this machine. Tell me once it can.`,
+    ]);
+    const rule = done.lines[2] ?? "";
+    assert.ok(rule.startsWith("rule: Run node "), rule);
+    assert.ok(
+      rule.endsWith(` only once ${machine.directory} can be made and written.`),
+      rule,
+    );
+    assert.deepEqual(done.lines.slice(3), ["next: stop"]);
+  }
+  assert.equal(readFileSync(machine.directory, "utf8"), "in the way");
+});
+
+test("a home the program may read and not write names the path it could not change, whichever command is run, and nothing is asked of the site", async () => {
+  const { installation, machine } = await signedIn();
+  const kept = [machine.directory, join(machine.directory, "lock")];
+  const asked = installation.asked.length;
+  for (const path of kept) chmodSync(path, 0o500);
+  try {
+    for (const argv of [[], ["sign-in"]]) {
+      const done = await machine.run(argv);
+      assert.equal(done.code, 1);
+      assert.equal(done.stderr, "");
+      assert.equal(
+        done.lines[0],
+        `found: chuggy setup could not make or write ${kept[1] ?? ""}`,
+      );
+      assert.deepEqual(done.lines.slice(3), ["next: stop"]);
+    }
+    assert.equal(installation.asked.length, asked);
+  } finally {
+    for (const path of kept) chmodSync(path, 0o700);
+  }
 });

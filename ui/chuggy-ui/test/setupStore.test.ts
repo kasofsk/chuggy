@@ -13,12 +13,16 @@ import type {
   SetupFilesPort,
   SetupLockPort,
 } from "../app/core/setupPorts.ts";
+import { setupSignInEndings } from "../app/core/setupReport.ts";
+import type { SetupSignInEnded } from "../app/core/setupReport.ts";
 import {
   setupSignInFound,
   setupSignInGraceSecs,
   setupSignInKeptSecs,
+  setupSignInStood,
 } from "../app/core/setupSignIn.ts";
 import {
+  setupLockHeldBy,
   setupLockReleased,
   setupLockRetryMs,
   setupLockSecsMax,
@@ -252,6 +256,16 @@ test("taking the lock removes what a write of the remembered sign-in left unfini
   expect(second.swept).toEqual([]);
 });
 
+test("a run that did not get the lock is told which process it names, and nothing where it names none", () => {
+  const lock = cell();
+  const asking = locker(lock, 11, [7, 11]).ports;
+  expect(setupLockHeldBy(asking)).toBeUndefined();
+  lock.said = setupLockWord(7, nowMs);
+  expect(setupLockHeldBy(asking)).toBe(7);
+  lock.said = "left by hand";
+  expect(setupLockHeldBy(asking)).toBeUndefined();
+});
+
 test("a run gives up its own lock and nobody else's", () => {
   const lock = cell(setupLockWord(7, nowMs));
   setupLockReleased(locker(lock, 11, [7, 11]).ports);
@@ -270,8 +284,11 @@ const waiting: SetupSignInNote = {
   endsAtMs: nowMs + 60_000,
 };
 
-function endedNote(ended: "Declined" | "SignedIn"): SetupSignInNote {
-  return { note: "Ended", site, ended, endedAtMs: nowMs };
+function endedNote(
+  ended: SetupSignInEnded,
+  told = false,
+): Extract<SetupSignInNote, { readonly note: "Ended" }> {
+  return { note: "Ended", site, ended, endedAtMs: nowMs, told };
 }
 
 test("a note is read back as it was written, and anything else as none", () => {
@@ -285,6 +302,11 @@ test("a note is read back as it was written, and anything else as none", () => {
     setupFiles.signIn,
     JSON.stringify({ ...endedNote("Declined"), ended: "Hacked" }),
   );
+  expect(setupSignInNoteRead(files)).toBeUndefined();
+  setupSignInNoteWritten(files, endedNote("Declined", true));
+  expect(setupSignInNoteRead(files)).toEqual(endedNote("Declined", true));
+  const untold = { note: "Ended", site, ended: "Declined", endedAtMs: nowMs };
+  texts.set(setupFiles.signIn, JSON.stringify(untold));
   expect(setupSignInNoteRead(files)).toBeUndefined();
 });
 
@@ -305,18 +327,52 @@ test("a page is still waiting while its listener runs and its end, with a little
     expect(gone).toEqual({ found: "None" });
 });
 
-test("an ending is worth saying while it is recent and was not a sign-in", () => {
+test("an ending is a sign-in's to report while it is recent, was not a sign-in, and no sign-in has reported it", () => {
   const alive = () => false;
   const keptMs = setupSignInKeptSecs * 1_000;
   const declined = endedNote("Declined");
   expect(setupSignInFound(declined, site, nowMs + keptMs, alive)).toEqual({
     found: "Ended",
-    ended: "Declined",
+    note: declined,
   });
-  expect(setupSignInFound(declined, site, nowMs + keptMs + 1, alive)).toEqual({
-    found: "None",
+  for (const gone of [
+    setupSignInFound(declined, site, nowMs + keptMs + 1, alive),
+    setupSignInFound(endedNote("SignedIn"), site, nowMs, alive),
+    setupSignInFound(endedNote("Declined", true), site, nowMs, alive),
+    setupSignInFound(declined, "https://elsewhere.example", nowMs, alive),
+  ])
+    expect(gone).toEqual({ found: "None" });
+});
+
+test("an ending stands for its own site, told or not and however old, where nothing is run after it until the person asks", () => {
+  const stood = Object.fromEntries(
+    setupSignInEndings.map((ended) => [
+      ended,
+      setupSignInStood(endedNote(ended), site),
+    ]),
+  );
+  expect(stood).toEqual({
+    SignedIn: undefined,
+    SiteChanged: undefined,
+    WorkspacesUnread: undefined,
+    NoRenewal: "NoRenewal",
+    Declined: "Declined",
+    Refused: "Refused",
+    Mismatched: "Mismatched",
+    ExchangeFailed: "ExchangeFailed",
+    SiteRefused: "SiteRefused",
+    Expired: "Expired",
+    SiteUnusable: "SiteUnusable",
+    Busy: "Busy",
+    Faulted: "Faulted",
   });
-  expect(setupSignInFound(endedNote("SignedIn"), site, nowMs, alive)).toEqual({
-    found: "None",
-  });
+  expect(setupSignInStood(endedNote("Declined", true), site)).toBe("Declined");
+  expect(
+    setupSignInStood({ ...endedNote("Declined"), endedAtMs: 0 }, site),
+  ).toBe("Declined");
+  expect(
+    setupSignInStood(endedNote("Declined"), "https://elsewhere.example"),
+  ).toBeUndefined();
+  expect(setupSignInStood(waiting, site)).toBeUndefined();
+  expect(setupSignInStood(undefined, site)).toBeUndefined();
 });

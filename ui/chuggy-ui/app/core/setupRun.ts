@@ -2,15 +2,18 @@
  * One run of the setup program, from its arguments to the report it prints.
  *
  * A run that uses the remembered sign-in holds the lock while it does, and
- * gives it up before it waits on a person. Whatever goes wrong that nothing
- * here expected ends as one report that says only that, so no message of
- * another system's, and nothing a message could carry, is ever printed.
+ * gives it up before it waits on a person. Whatever goes wrong on the machine
+ * ends as one report: which path it would not make, write or read where a
+ * port said so, and otherwise only that something unexpected stopped the run,
+ * so no message of another system's, and nothing a message could carry, is
+ * ever printed.
  */
 
 import { setupAsked } from "./setupArguments.ts";
-import type { SetupCommand } from "./setupArguments.ts";
+import type { SetupAsked, SetupCommand } from "./setupArguments.ts";
+import { SetupMachineError } from "./setupPorts.ts";
 import type { SetupPorts } from "./setupPorts.ts";
-import type { SetupReport } from "./setupReport.ts";
+import type { SetupFault, SetupReport } from "./setupReport.ts";
 import { setupSessionOpened, setupWorkspacesRead } from "./setupSession.ts";
 import type { SetupSessionOpened } from "./setupSession.ts";
 import {
@@ -18,14 +21,17 @@ import {
   setupSignInAwaited,
   setupSignInBegun,
   setupSignInSettled,
+  setupSignInStood,
 } from "./setupSignIn.ts";
 import type { SetupSignInBegun } from "./setupSignIn.ts";
 import {
+  setupLockHeldBy,
   setupLockReleased,
   setupLockTaken,
   setupLockWaitMs,
   setupSessionRead,
   setupSessionWritten,
+  setupSignInNoteRead,
 } from "./setupStore.ts";
 
 type SetupBegun =
@@ -82,6 +88,7 @@ async function setupStanding(
     report: "SignedOut",
     site,
     directory: ports.surroundings.directory,
+    ended: undefined,
   };
   if (opened.holder.snapshot().phase !== "SignedIn") return signedOut;
   if ((await opened.holder.bearer()) === undefined)
@@ -117,17 +124,32 @@ async function setupLocked<T>(
   }
 }
 
+function setupBusy(
+  ports: SetupPorts,
+  asked: SetupCommand,
+  site: string | undefined,
+): SetupReport {
+  return { report: "Busy", asked, site, pid: setupLockHeldBy(ports) };
+}
+
+/**
+ * The bare command opens no page, so where it is not signed in it says how
+ * the last sign-in ended while that ending stands, and names `sign-in` only
+ * where none does.
+ */
 async function setupStatus(
   ports: SetupPorts,
   given: string | undefined,
 ): Promise<SetupReport> {
   const report = await setupLocked(ports, async () => {
     const begun = await setupBegun(ports, given, "Status");
-    return begun.begun === "Reported"
-      ? begun.report
-      : setupStanding(ports, begun.opened, "Status");
+    if (begun.begun === "Reported") return begun.report;
+    const standing = await setupStanding(ports, begun.opened, "Status");
+    if (standing.report !== "SignedOut") return standing;
+    const note = setupSignInNoteRead(ports.files);
+    return { ...standing, ended: setupSignInStood(note, standing.site) };
   });
-  return report ?? { report: "Busy", asked: "Status" };
+  return report ?? setupBusy(ports, "Status", given);
 }
 
 type SetupSignInStep =
@@ -165,9 +187,29 @@ async function setupSignIn(
   waitSecs: number,
 ): Promise<SetupReport> {
   const step = await setupLocked(ports, () => setupSignInStep(ports, given));
-  if (step === undefined) return { report: "Busy", asked: "SignIn" };
+  if (step === undefined) return setupBusy(ports, "SignIn", given);
   if (step.step === "Reported") return step.report;
   return setupSignInAwaited(ports, step.site, step.waiting, waitSecs);
+}
+
+/** What a port threw, as a member of a closed set: the machine's own word for what it would not do, or only that something unexpected happened. */
+function setupFaultOf(failure: unknown): SetupFault {
+  return failure instanceof SetupMachineError
+    ? failure.fault
+    : { fault: "Unexpected" };
+}
+
+/** What a run the machine stopped reports, and is run again as: a listener is run by `sign-in` and by nobody else. */
+function setupFaulted(
+  asked: Exclude<SetupAsked, { readonly asked: "Wrongly" }>,
+  failure: unknown,
+): SetupReport {
+  return {
+    report: "Faulted",
+    asked: asked.asked === "Status" ? "Status" : "SignIn",
+    site: asked.site,
+    fault: setupFaultOf(failure),
+  };
 }
 
 export async function setupRun(
@@ -175,10 +217,10 @@ export async function setupRun(
   argv: readonly string[],
 ): Promise<SetupReport> {
   const asked = setupAsked(argv);
+  if (asked.asked === "Wrongly")
+    return { report: "AskedWrongly", fault: asked.fault };
   try {
     switch (asked.asked) {
-      case "Wrongly":
-        return { report: "AskedWrongly", fault: asked.fault };
       case "Status":
         return await setupStatus(ports, asked.site);
       case "SignIn":
@@ -186,7 +228,7 @@ export async function setupRun(
       case "Listen":
         return await setupListened(ports, asked.site, asked.lifeSecs);
     }
-  } catch {
-    return { report: "Faulted" };
+  } catch (failure: unknown) {
+    return setupFaulted(asked, failure);
   }
 }
