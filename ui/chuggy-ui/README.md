@@ -204,13 +204,14 @@ Web Lock, and signing out in one tab signs the others out. A tab is one
 sign-in's for as long as it is loaded: each sign-in stores a random mark beside
 its token, which a renewal leaves, and a tab that finds another mark there ends
 its own session, reads `Session changed` and offers a reload, sending and
-revoking nothing more. A tab the issuer redirected back takes no stored session
-until its own sign-in has answered. A renewal the issuer refuses ends the
-session at once; one that got no answer keeps it, a gateway's own status and a
-request given up at its bound among those; one answered unusably is on a
-budget, so such an issuer ends the session once rather than being asked
-forever. Signing out clears the store and revokes the refresh token where the
-issuer publishes an endpoint for it.
+revoking nothing more. A tab the issuer redirected back with a sign-in of its
+own to complete takes no stored session until that sign-in has answered; the
+callback address opened in a tab that began none takes the stored session at
+once. A renewal the issuer refuses ends the session at once; one that got no
+answer keeps it, a gateway's own status and a request given up at its bound
+among those; one answered unusably is on a budget, so such an issuer ends the
+session once rather than being asked forever. Signing out clears the store and
+revokes the refresh token where the issuer publishes an endpoint for it.
 
 ## Connecting a forge account
 

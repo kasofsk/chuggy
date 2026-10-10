@@ -567,6 +567,7 @@ test("a store that keeps the token and no mark holds a sign-in through its renew
     {
       read: (file) => texts.get(file),
       write: (file, text) => texts.set(file, text),
+      reserve: () => undefined,
       remove: (file) => texts.delete(file),
       sweep: () => undefined,
     },

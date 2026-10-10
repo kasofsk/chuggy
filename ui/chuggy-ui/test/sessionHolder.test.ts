@@ -524,6 +524,36 @@ test("a renewal changes the generation, which is what reopens a stream", async (
   expect(holder.generation()).toBeGreaterThan(before);
 });
 
+/** An issuer that does not rotate answers a renewal with an access token and
+ * no refresh token, and the one it was asked with is still the session's. */
+test("a renewal answered with no new refresh token keeps the one it holds, and renews with it again", async () => {
+  const held = harness();
+  held.persistent.held.set(sessionRefreshTokenKey, "renew");
+  const answer = held.answer;
+  held.answer = (request) =>
+    isTokenRequest(request)
+      ? { access_token: "access", expires_in: 600 }
+      : answer(request);
+  const holder = createSessionHolder(held.ports);
+  await holder.load();
+  const asked = held.asked.length;
+
+  expect(await holder.refresh()).toBe(true);
+  expect(await holder.refresh()).toBe(true);
+
+  expect(holder.snapshot().phase).toBe("SignedIn");
+  expect(held.persistent.held.get(sessionRefreshTokenKey)).toBe("renew");
+  expect(
+    held.asked
+      .slice(asked)
+      .map((request) =>
+        typeof request === "object"
+          ? new URLSearchParams(request.body).get("refresh_token")
+          : undefined,
+      ),
+  ).toEqual(["renew", "renew"]);
+});
+
 /** The process root replaces the address with this and with nothing else, so
  * a refusal landing anywhere but the root would be a page the reader did not
  * ask for drawn over a sign-in that did not happen. */
