@@ -144,7 +144,7 @@ function bootstrapBrief(input: BootstrapConfigurationInput): TicketBrief {
     acceptanceCriteria: [
       "The change does what this ticket asks for.",
       `Every file under ${repositoryConfigurationRoot} whose name ends in .json sits directly in that directory and is one JSON object with exactly the keys "version", "name" and "configuration", whose "version" is the number 1, and the change leaves at least one such file.`,
-      `No file the change leaves under ${repositoryConfigurationRoot} has the "name" "${bootstrapConfigurationName}". That name is this configuration's own, and ${bootstrapConfigurationPath}, in a repository that has it, is this configuration: the change deletes that file. Nor does the change leave this configuration there under another name: no file it leaves holds a configuration that, like this one, asks a ticket to write the repository's configuration.`,
+      `No file the change leaves under ${repositoryConfigurationRoot} has the "name" "${bootstrapConfigurationName}". That name is this configuration's own, and ${bootstrapConfigurationPath}, in a repository that has it, is this configuration: the change deletes that file. Nor does the change leave this configuration there under another name: no file it leaves holds a configuration that, like this one, asks every ticket to write the repository's configuration.`,
     ],
     constraints: [
       `The repository's default branch is ${input.defaultBranch}.`,
