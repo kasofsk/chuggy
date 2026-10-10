@@ -133,6 +133,12 @@ export async function pressed(): Promise<void> {
   await settled();
 }
 
+/** The line the last answer left beside the submit, none where none stands there. It is asked of the submit's own row, because the page's copy control is a status too. */
+export function answerLine(): HTMLElement | null {
+  const row = submit().parentElement;
+  return row === null ? null : within(row).queryByRole("status");
+}
+
 /** The line a box is described by, which is where the rule stands. */
 export function ruleUnder(label: string): HTMLElement {
   const box = screen.getByRole("textbox", { name: label });

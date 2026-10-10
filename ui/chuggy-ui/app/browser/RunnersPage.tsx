@@ -40,7 +40,7 @@ import { useNowMs } from "./Freshness.tsx";
 import { currentOrigin } from "./ports.ts";
 import { TopBarSlot } from "./shell/slots.tsx";
 import { Button } from "./ui/Button.tsx";
-import { CopyButton } from "./ui/CopyButton.tsx";
+import { CopyBox } from "./ui/CopyBox.tsx";
 import { EmptyState } from "./ui/EmptyState.tsx";
 import { Figure } from "./ui/Figure.tsx";
 import { Notice } from "./ui/Notice.tsx";
@@ -91,25 +91,6 @@ function RunnerRoster(props: {
   );
 }
 
-/** A command in a box of its own, under the bar that says one thing of it and holds the control that copies it. */
-function RunnerCommand(props: {
-  readonly about: ReactNode;
-  readonly command: string;
-  readonly copyLabel: string;
-}): ReactNode {
-  return (
-    <div className="bg-surface-2 rounded-2 grid min-w-0">
-      <div className="flex items-center justify-between gap-2 py-1 pr-1 pl-3 text-sm text-ink-3">
-        <span className="min-w-0">{props.about}</span>
-        <CopyButton text={props.command} label={props.copyLabel} worded />
-      </div>
-      <code className="px-3 pb-2 font-mono text-sm text-ink-1 break-all">
-        {props.command}
-      </code>
-    </div>
-  );
-}
-
 function RunnerStep(props: {
   readonly title: string;
   readonly children: ReactNode;
@@ -154,20 +135,20 @@ function RunnerSteps(props: {
         className="grid min-w-0 list-decimal gap-3 pl-6"
       >
         <RunnerStep title="Install">
-          <RunnerCommand
+          <CopyBox
             about={offered.needs}
-            command={offered.installCommand}
+            text={offered.installCommand}
             copyLabel="Copy install command"
           />
         </RunnerStep>
         <RunnerStep title="Register">
-          <RunnerCommand
+          <CopyBox
             about={
               <>
                 Expires <Figure figure={instantFigure(expires, nowMs)} />
               </>
             }
-            command={runnerRegisterCommand(
+            text={runnerRegisterCommand(
               offered,
               currentOrigin(),
               props.minted.token,

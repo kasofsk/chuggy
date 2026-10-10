@@ -25,6 +25,7 @@ import {
 } from "../app/core/projectCreation.ts";
 import { persistentStore } from "../app/browser/ports.ts";
 import {
+  answerLine,
   drawn,
   pressed,
   ruleUnder,
@@ -156,7 +157,7 @@ test("a refusal is one short line, and the form stays where it was", async () =>
   typed("Workspace", partition.tenant);
   typed("Project", partition.project);
   await pressed();
-  expect(screen.getByRole("status").textContent).toBe("Taken");
+  expect(answerLine()?.textContent).toBe("Taken");
   expect(held.went).toEqual([]);
 });
 
@@ -173,9 +174,7 @@ test("a workspace the reader may not make says what a new one needs, and the for
   typed("Workspace", partition.tenant);
   typed("Project", partition.project);
   await pressed();
-  expect(screen.getByRole("status").textContent).toBe(
-    "New workspace needs an invite link",
-  );
+  expect(answerLine()?.textContent).toBe("New workspace needs an invite link");
   expect(
     screen.getByRole<HTMLInputElement>("textbox", { name: "Workspace" }).value,
   ).toBe(partition.tenant);
@@ -188,7 +187,7 @@ test("a press repeated after no answer spends the same identity, and an edit dra
   typed("Workspace", partition.tenant);
   typed("Project", partition.project);
   await pressed();
-  expect(screen.getByRole("status").textContent).toBe("Unreachable");
+  expect(answerLine()?.textContent).toBe("Unreachable");
   await pressed();
   typed("Project", "arbbot");
   await pressed();
