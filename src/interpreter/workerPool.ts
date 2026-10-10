@@ -295,9 +295,10 @@ export interface WorkerPoolClaimTerms {
 }
 
 /**
- * The most owners one poll asks the authority about before a pool claims. A
- * project's waiting executions rarely span more owners than this, and one past
- * it is deferred to, which delays a pool's claim and never widens one.
+ * The most owners one poll asks the authority about before a pool claims. Each
+ * poll asks a window of the waiting owners drawn afresh, so an owner outside
+ * this poll's is deferred to by this poll's claim alone and is in a later
+ * poll's window by the same chance as any other.
  */
 export const workerPoolOwnersAskedMax = 16;
 
@@ -333,10 +334,11 @@ export interface WorkerPoolAssignments extends WorkerPoolExecutionHolds<PoolPlan
     bearer: string,
     ownersRevoked: readonly Principal[],
   ): Promise<WorkerPoolClaimed | undefined>;
-  /** The owners whose personal runners a claim by this pool would defer to, the oldest waiting first and at most `max` of them. */
+  /** At most `max` of the owners whose personal runners a claim by this pool would defer to, in an order `rotation` draws, so a fresh rotation draws a fresh window. */
   ownersDeferredTo(
     identity: WorkerPoolIdentity,
     max: number,
+    rotation: string,
   ): Promise<readonly Principal[]>;
   /** One claim by a personal runner, in one of `projects` alone. */
   claimPersonal(
@@ -508,6 +510,7 @@ async function workerPoolClaimMade(
       const owners = await assignments.ownersDeferredTo(
         identity,
         workerPoolOwnersAskedMax,
+        ports.mint(),
       );
       const revoked: Principal[] = [];
       for (const owner of owners)

@@ -496,12 +496,14 @@ async function workerPoolHeldImages(
 /**
  * The owners a claim by this pool would defer to: those of its project's
  * unclaimed executions that allow a personal runner and whose owner has one
- * allowlisting the project, the oldest waiting first.
+ * allowlisting the project, ordered by a digest of each owner keyed by
+ * `rotation`, which is a fresh permutation of them for each fresh rotation.
  */
 async function workerPoolOwnersDeferredTo(
   pool: pg.Pool,
   identity: WorkerPoolIdentity,
   max: number,
+  rotation: string,
 ): Promise<readonly Principal[]> {
   if (!Number.isSafeInteger(max) || max < 1)
     throw new RangeError("invalid worker pool owner bound");
@@ -517,7 +519,7 @@ async function workerPoolOwnersDeferredTo(
           JOIN personal_runner_project l ON l.tenant=r.tenant AND l.owner=r.owner
           WHERE r.tenant=x.tenant AND r.owner=x.owner AND l.project=x.project)
       GROUP BY x.owner
-      ORDER BY min(q.opened_at),x.owner LIMIT ${max}`,
+      ORDER BY md5(x.owner || ${rotation}),x.owner LIMIT ${max}`,
   );
   return found.rows.flatMap((row) =>
     row.owner === null ? [] : [asPrincipal(row.owner)],
@@ -627,8 +629,8 @@ export function postgresWorkerPoolAssignments(
         ),
       );
     },
-    ownersDeferredTo: (identity, max) =>
-      workerPoolOwnersDeferredTo(pool, identity, max),
+    ownersDeferredTo: (identity, max, rotation) =>
+      workerPoolOwnersDeferredTo(pool, identity, max, rotation),
     claimPersonal: async (identity, terms, assignment, bearer, projects) => {
       workerPoolClaimTermsChecked(terms);
       return postgresTransaction(pool, (client) =>

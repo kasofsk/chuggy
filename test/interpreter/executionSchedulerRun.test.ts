@@ -1733,6 +1733,7 @@ function ownedLaunch(
   fallback: "Strict" | "Preferred" | undefined,
   runner: PersonalRunnerRegistered | undefined,
   access: ProjectAccess,
+  failing?: "personal" | "registered",
 ): Promise<number> {
   const service = serviceWith(calls, runnable, placedOk);
   const owned: LogicalExecution = {
@@ -1748,9 +1749,14 @@ function ownedLaunch(
       workerPools: {
         personal: (_partition, asked) => {
           calls.push(`personal:${asked}`);
-          return Promise.resolve(runner);
+          return failing === "personal"
+            ? Promise.reject(new Error("the roster could not be read"))
+            : Promise.resolve(runner);
         },
-        registered: () => Promise.resolve({ pools: [], truncated: false }),
+        registered: () =>
+          failing === "registered"
+            ? Promise.reject(new Error("the roster could not be read"))
+            : Promise.resolve({ pools: [], truncated: false }),
       },
       access,
       metrics: schedulerTelemetry(recordingMetrics([])),
@@ -1793,6 +1799,24 @@ test("an owner's execution is blocked where the runner that alone could run it i
     const calls: string[] = [];
     await ownedLaunch(calls, "Strict", runner, access);
     assert.deepEqual(calls, ["personal:member-one", ...blocked], why);
+  }
+});
+
+test("a failed read of the owner's runner fails the pass as a failed read of the project's pools does, rather than holding the execution", async () => {
+  for (const failing of ["registered", "personal"] as const) {
+    const calls: string[] = [];
+    await assert.rejects(
+      ownedLaunch(
+        calls,
+        "Strict",
+        memberRunner,
+        ownerAccess(true, true),
+        failing,
+      ),
+      /the roster could not be read/u,
+      failing,
+    );
+    assert.ok(!calls.some((call) => call.startsWith("ended:")), failing);
   }
 });
 

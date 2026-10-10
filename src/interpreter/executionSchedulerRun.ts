@@ -153,9 +153,11 @@ import {
 import type { PolicyAuthorityGrant } from "./taskAuthority.ts";
 import type { TicketBriefPort } from "./ticketBrief.ts";
 import type { ProjectAccess } from "./projectAccess.ts";
+import type { Principal } from "./principal.ts";
 import {
   workerPoolExecutes,
   workerPoolOwnerStands,
+  type PersonalRunnerRegistered,
   type WorkerPoolRegistered,
   type WorkerPoolRoster,
 } from "./workerPool.ts";
@@ -719,36 +721,44 @@ async function schedulerPlace(
   }
 }
 
-/**
- * The owner's personal runner for an execution whose project allows one,
- * revoked where the owner no longer holds what admits it or `Read` of the
- * project; nothing where the execution allows none, has no owner, or the owner
- * has no runner.
- */
+/** An execution's owner and the personal runner registered for them. */
+interface SchedulerOwnerRunner {
+  readonly owner: Principal;
+  readonly runner: PersonalRunnerRegistered;
+}
+
+/** The owner's runner where the execution's project allows one, and nothing where it allows none, it has no owner, or the owner has no runner. */
+async function schedulerOwnerRunner(
+  service: ExecutionSchedulerService,
+  execution: LogicalExecution,
+): Promise<SchedulerOwnerRunner | undefined> {
+  const owner = execution.owner;
+  if (execution.ownerFallback === undefined || owner === undefined)
+    return undefined;
+  const runner = await service.workerPools.personal(execution.partition, owner);
+  return runner === undefined ? undefined : { owner, runner };
+}
+
+/** The owner's runner, revoked where the owner no longer holds what admits it or `Read` of the project. */
 async function schedulerOwnerRunnerAnswered(
   service: ExecutionSchedulerService,
   execution: LogicalExecution,
-): Promise<readonly WorkerPoolAnswered[]> {
-  const owner = execution.owner;
-  if (execution.ownerFallback === undefined || owner === undefined) return [];
-  const runner = await service.workerPools.personal(execution.partition, owner);
-  if (runner === undefined) return [];
-  return [
-    {
-      partition: execution.partition,
-      pool: owner,
-      principal: runner.principal,
-      capabilities: runner.capabilities,
-      class: "Personal",
-      dedicatedOwner: owner,
-      allowlist: runner.allowlist,
-      revoked: !(await workerPoolOwnerStands(
-        service.access,
-        owner,
-        execution.partition,
-      )),
-    },
-  ];
+  { owner, runner }: SchedulerOwnerRunner,
+): Promise<WorkerPoolAnswered> {
+  return {
+    partition: execution.partition,
+    pool: owner,
+    principal: runner.principal,
+    capabilities: runner.capabilities,
+    class: "Personal",
+    dedicatedOwner: owner,
+    allowlist: runner.allowlist,
+    revoked: !(await workerPoolOwnerStands(
+      service.access,
+      owner,
+      execution.partition,
+    )),
+  };
 }
 
 /**
@@ -760,6 +770,7 @@ async function schedulerPoolsAnswered(
   service: ExecutionSchedulerService,
   execution: LogicalExecution,
   pools: readonly WorkerPoolRegistered[],
+  owned: SchedulerOwnerRunner | undefined,
 ): Promise<readonly WorkerPoolAnswered[] | undefined> {
   try {
     const answered = await Promise.all(
@@ -774,10 +785,12 @@ async function schedulerPoolsAnswered(
         )),
       })),
     );
-    return [
-      ...answered,
-      ...(await schedulerOwnerRunnerAnswered(service, execution)),
-    ];
+    return owned === undefined
+      ? answered
+      : [
+          ...answered,
+          await schedulerOwnerRunnerAnswered(service, execution, owned),
+        ];
   } catch {
     return undefined;
   }
@@ -800,6 +813,7 @@ async function schedulerOfferable(
     service,
     execution,
     registered.pools,
+    await schedulerOwnerRunner(service, execution),
   );
   if (answered === undefined) return false;
   const outcome = workerPoolOutcomeRegistered(execution, answered);

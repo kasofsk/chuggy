@@ -333,14 +333,14 @@ test("one poll renews what is held, says what must stop and hands over what it c
   assert.deepEqual(answered.json(), {
     assignments: [
       {
-        assignment: "minted-1",
+        assignment: "minted-2",
         capabilities: ["Platform:Linux:Amd64"],
         image: published,
         cpuMillis: 500,
         memoryMib: 256,
         deadlineSecs: 600,
         callbackUrl: "https://plane.invalid/v1/ticket-execution",
-        bearer: "minted-2",
+        bearer: "minted-3",
       },
     ],
     sessions: [],
@@ -349,7 +349,7 @@ test("one poll renews what is held, says what must stop and hands over what it c
   assert.deepEqual(recorded.made, [
     ["renew", "live"],
     ["renew", "gone"],
-    ["claim", "minted-1"],
+    ["claim", "minted-2"],
   ]);
 });
 
@@ -384,7 +384,7 @@ test("a pool wanting more than the plane hands out per poll is claimed the plane
     workerPoolReconciliationSchema.parse(answered.json()).assignments.length,
     1,
   );
-  assert.deepEqual(recorded.made, [["claim", "minted-1"]]);
+  assert.deepEqual(recorded.made, [["claim", "minted-2"]]);
 });
 
 test("a poll that does not say its room, or says it as no count, is refused", async () => {
@@ -444,14 +444,14 @@ test("a pool naming a release from before sessions is answered without a list of
   assert.deepEqual(answered.json(), {
     assignments: [
       {
-        assignment: "minted-1",
+        assignment: "minted-2",
         capabilities: ["Platform:Linux:Amd64"],
         image: published,
         cpuMillis: 500,
         memoryMib: 256,
         deadlineSecs: 600,
         callbackUrl: "https://plane.invalid/v1/ticket-execution",
-        bearer: "minted-2",
+        bearer: "minted-3",
       },
     ],
     stop: ["gone"],

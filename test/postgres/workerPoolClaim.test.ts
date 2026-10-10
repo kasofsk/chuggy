@@ -71,6 +71,7 @@ import {
   asTenantId,
   type Partition,
 } from "../../src/interpreter/projectStore.ts";
+import { sessionRunnerPolledSecsMax } from "../../src/interpreter/sessionPlacement.ts";
 import { materialDigest } from "../../src/interpreter/ticketDefinition.ts";
 import {
   workerPoolReconcile,
@@ -409,11 +410,12 @@ async function registeredPool(
   return clientId;
 }
 
-/** A member's runner as its row and allowlist, polled just now where it is `live` and never otherwise. */
+/** A member's runner as its row and allowlist, polled `polledSecsAgo` before now where it is `live` and never otherwise. */
 async function plantedRunner(
   named: Planted,
   pool: WorkerPoolRunner,
   live: boolean,
+  polledSecsAgo: number,
 ): Promise<PersonalPlaneIdentity> {
   const home = named.project.partition;
   if (pool.dedicatedOwner === undefined)
@@ -426,7 +428,8 @@ async function plantedRunner(
   };
   await rig.harness.query(
     `INSERT INTO personal_runner(tenant,owner,capabilities,principal,client_id,executions_polled_at)
-      VALUES($1,$2,$3,$4,$5,CASE WHEN $6::boolean THEN now() END)`,
+      VALUES($1,$2,$3,$4,$5,
+        CASE WHEN $6::boolean THEN now()-make_interval(secs=>$7::double precision) END)`,
     [
       identity.tenant,
       identity.owner,
@@ -434,6 +437,7 @@ async function plantedRunner(
       identity.principal,
       `chuggy-personal-${randomUUID()}`,
       live,
+      polledSecsAgo,
     ],
   );
   for (const allowed of pool.allowlist) {
@@ -497,10 +501,16 @@ interface PlantedPools {
 async function plantedPool(
   named: Planted,
   { pool, session }: WorkerPoolEnrolment,
+  polledSecsAgo: number,
 ): Promise<{ identity: PlantedIdentity; clientId: string | undefined }> {
   if (runnerOwned(pool))
     return {
-      identity: await plantedRunner(named, pool, session?.leaseOpen === true),
+      identity: await plantedRunner(
+        named,
+        pool,
+        session?.leaseOpen === true,
+        polledSecsAgo,
+      ),
       clientId: undefined,
     };
   const identity: DedicatedPoolIdentity = {
@@ -523,15 +533,17 @@ async function plantedPool(
 async function plantedPools(
   c: RunnerCase,
   named: Planted,
+  polledSecsAgo: number,
 ): Promise<PlantedPools> {
   const home = named.project.partition;
-  const { identity: pool, clientId } = await plantedPool(named, {
-    pool: c.pool,
-    session: c.session,
-  });
+  const { identity: pool, clientId } = await plantedPool(
+    named,
+    { pool: c.pool, session: c.session },
+    polledSecsAgo,
+  );
   const ownersRevoked: Principal[] = [];
   for (const beside of c.others) {
-    await plantedPool(named, beside);
+    await plantedPool(named, beside, polledSecsAgo);
     const owner = beside.pool.dedicatedOwner;
     if (runnerOwned(beside.pool) && beside.pool.revoked && owner !== undefined)
       ownersRevoked.push(named.principal(owner));
@@ -660,8 +672,12 @@ function sessionIdentity(
       };
 }
 
-/** Whether the case's claim took its execution's attempt, from the rows the case planted. */
-async function claimTook(c: RunnerCase, label: string): Promise<boolean> {
+/** Whether the case's claim took its execution's attempt, from the rows the case planted, a live runner's last poll `polledSecsAgo` before now. */
+async function claimTook(
+  c: RunnerCase,
+  label: string,
+  polledSecsAgo = 0,
+): Promise<boolean> {
   const session = c.session;
   if (session === undefined) throw new Error("an inexpressible case");
   const bystanders =
@@ -670,7 +686,7 @@ async function claimTook(c: RunnerCase, label: string): Promise<boolean> {
     c,
     await releasedUnder(label, c.placement.requirement, bystanders + 1),
   );
-  const pools = await plantedPools(c, named);
+  const pools = await plantedPools(c, named, polledSecsAgo);
   const target = await plantedTarget(c, session.held, named, pools);
   if (!c.pool.enabled && pools.pool.kind === "Dedicated")
     assert.equal(
@@ -724,6 +740,33 @@ for (const c of runnerCases) {
     assert.equal(await claimTook(c, `claim-${String(label)}`), c.canAssign);
   });
 }
+
+test("a runner's poll for executions keeps a pool deferring to it for the liveness window and no longer", async () => {
+  const deferring = runnerCases.find(
+    (c) =>
+      c.name ===
+      "a dedicated pool is assigned nothing of an owner's whose personal pool is polling",
+  );
+  assert.ok(deferring !== undefined && !deferring.canAssign);
+  assert.equal(
+    await claimTook(
+      deferring,
+      "claim-live-inside",
+      sessionRunnerPolledSecsMax - 30,
+    ),
+    false,
+    "a poll inside the window",
+  );
+  assert.equal(
+    await claimTook(
+      deferring,
+      "claim-live-outside",
+      sessionRunnerPolledSecsMax + 30,
+    ),
+    true,
+    "a poll older than the window",
+  );
+});
 
 test("the claim is asked cases it takes and cases it refuses", () => {
   const asked = runnerCases.filter((c) => inexpressible(c) === undefined);

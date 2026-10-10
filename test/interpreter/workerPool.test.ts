@@ -9,7 +9,10 @@ import {
 } from "../../src/interpreter/agentSession.ts";
 import type { ExecutionRequirement } from "../../src/interpreter/executionRequirement.ts";
 import { asRepositoryId } from "../../src/interpreter/finalizer.ts";
-import { asPrincipal } from "../../src/interpreter/principal.ts";
+import {
+  asPrincipal,
+  type Principal,
+} from "../../src/interpreter/principal.ts";
 import {
   ProjectAccessUnavailable,
   memberAuthority,
@@ -939,6 +942,53 @@ test("a pool's claim names revoked each owner it would defer to who lost their p
     settings,
   );
   assert.deepEqual(asked, [workerPoolOwnersAskedMax, [unpermitted, unreading]]);
+});
+
+test("each poll asks the owners' window under a rotation it draws afresh, so a revoked owner outside one poll's window is named revoked by a later one", async () => {
+  const kept = asPrincipal("member-kept");
+  const revoked = asPrincipal("member-revoked");
+  const rotations: string[] = [];
+  const named: (readonly Principal[])[] = [];
+  let drawn = 0;
+  const polling = ports(
+    {
+      ...idle,
+      ownersDeferredTo: (_identity, _max, rotation) => {
+        rotations.push(rotation);
+        return Promise.resolve(
+          rotation === "draw-1" ? [kept] : [kept, revoked],
+        );
+      },
+      claim: (_identity, _terms, _assignment, _bearer, ownersRevoked) => {
+        named.push(ownersRevoked);
+        return Promise.resolve(undefined);
+      },
+    },
+    noSessions,
+    () => {
+      drawn += 1;
+      return `draw-${String(drawn)}`;
+    },
+    {
+      ...reading,
+      authorizeTenant: (principal, _tenant, kind) =>
+        Promise.resolve(
+          principal !== revoked && kind === "RegisterPersonalRunner"
+            ? memberAuthority(principal)
+            : undefined,
+        ),
+    },
+  );
+  for (let poll = 0; poll < 2; poll += 1)
+    await workerPoolReconcile(
+      polling,
+      identity,
+      nothingHeld,
+      { wanted: 1, wantedSessions: 0 },
+      settings,
+    );
+  assert.equal(new Set(rotations).size, 2, "each poll drew its own rotation");
+  assert.deepEqual(named, [[], [revoked]]);
 });
 
 test("a caller with no room asks the authority nothing and claims nothing", async () => {

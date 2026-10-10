@@ -9,7 +9,7 @@
  */
 
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { after, test } from "node:test";
 
 import { postgresPersonalRunnerRegistry } from "../../src/adapters/postgres/personalRunner.ts";
@@ -23,6 +23,7 @@ import {
   postgresWorkerPoolAssignments,
   postgresWorkerPoolRegistry,
 } from "../../src/adapters/postgres/workerPool.ts";
+import { materialDigest } from "../../src/interpreter/ticketDefinition.ts";
 import { memberAuthority } from "../../src/interpreter/projectAccess.ts";
 import {
   asPrincipal,
@@ -115,6 +116,33 @@ async function pinned(
   )) as readonly { owner: string | null; owner_fallback: string | null }[];
 }
 
+/** Has every task of the project's ticket run a container of `image`, written into the release before registration copies it out. */
+async function imagePinned(
+  project: SchedulerProject,
+  image: string,
+): Promise<void> {
+  const requirement = {
+    mode: "Container",
+    operatingSystem: "Linux",
+    architecture: "Amd64",
+    image,
+  } as const;
+  await rig.harness.query(
+    `UPDATE ticket_definition d SET definition=jsonb_set(d.definition,'{tasks}',
+       (SELECT jsonb_agg(jsonb_set(jsonb_set(t,'{executionRequirements,value}',$4::jsonb),
+                         '{executionRequirements,digest}',to_jsonb($5::text)) ORDER BY o)
+          FROM jsonb_array_elements(d.definition->'tasks') WITH ORDINALITY AS e(t,o)))
+      WHERE d.tenant=$1 AND d.project=$2 AND d.ticket=$3`,
+    [
+      project.partition.tenant,
+      project.partition.project,
+      project.ticket,
+      JSON.stringify(requirement),
+      materialDigest(requirement),
+    ],
+  );
+}
+
 /** A project of `member`'s, its fallback named before registration where a case names one. */
 async function ownedProject(
   label: string,
@@ -122,6 +150,7 @@ async function ownedProject(
   fallback: WorkerPoolOwnerFallback | undefined,
   tasks: number,
   partition?: Partition,
+  image?: string,
 ): Promise<SchedulerProject> {
   const project = await schedulerProject(
     rig,
@@ -131,6 +160,7 @@ async function ownedProject(
     partition,
   );
   await draftedBy(project, member);
+  if (image !== undefined) await imagePinned(project, image);
   if (fallback !== undefined)
     assert.equal(
       await fallbacks.write(
@@ -402,9 +432,72 @@ test("a pool's claim defers to the owners whose runner allowlists the project, a
     pool: "pool-deferring",
     principal: principal("pool"),
   };
-  assert.deepEqual(await assignments.ownersDeferredTo(pool, 4), []);
+  assert.deepEqual(await assignments.ownersDeferredTo(pool, 4, "rotation"), []);
   await runnerOf(project.partition, member);
-  assert.deepEqual(await assignments.ownersDeferredTo(pool, 4), [member]);
+  assert.deepEqual(await assignments.ownersDeferredTo(pool, 4, "rotation"), [
+    member,
+  ]);
+});
+
+/** The order a rotation draws `owners` in, as the window's digest orders them. */
+function rotated(
+  owners: readonly Principal[],
+  rotation: string,
+): readonly Principal[] {
+  const digest = (owner: Principal) =>
+    createHash("md5").update(`${owner}${rotation}`).digest("hex");
+  return [...owners].sort((one, two) =>
+    digest(one) < digest(two) ? -1 : digest(one) > digest(two) ? 1 : 0,
+  );
+}
+
+test("a pool asks a bounded window of the owners it defers to, and an owner outside one rotation's window is inside another's", async () => {
+  const project = await ownedProject(
+    "windowed",
+    principal("drafter"),
+    "Strict",
+    3,
+  );
+  const owners: Principal[] = [];
+  for (const label of ["first", "second", "third"]) {
+    const owner = principal(label);
+    owners.push(owner);
+    const attempt = await opened(project);
+    await rig.harness.query(
+      `UPDATE execution x SET owner=$4 FROM execution_attempt a
+        WHERE a.tenant=$1 AND a.project=$2 AND a.attempt=$3
+          AND x.tenant=a.tenant AND x.project=a.project AND x.execution=a.execution`,
+      [project.partition.tenant, project.partition.project, attempt, owner],
+    );
+    await runnerOf(project.partition, owner);
+  }
+  const pool = {
+    partition: project.partition,
+    pool: "pool-windowed",
+    principal: principal("pool"),
+  };
+  const last = owners[2];
+  assert.ok(last !== undefined);
+  const rotations = Array.from({ length: 32 }, (_, n) => `rotation-${n}`);
+  const outside = rotations.find(
+    (rotation) => !rotated(owners, rotation).slice(0, 2).includes(last),
+  );
+  const inside = rotations.find((rotation) =>
+    rotated(owners, rotation).slice(0, 2).includes(last),
+  );
+  assert.ok(outside !== undefined && inside !== undefined);
+  for (const rotation of [outside, inside])
+    assert.deepEqual(
+      await assignments.ownersDeferredTo(pool, 2, rotation),
+      rotated(owners, rotation).slice(0, 2),
+      rotation,
+    );
+  assert.ok(
+    !(await assignments.ownersDeferredTo(pool, 2, outside)).includes(last),
+  );
+  assert.ok(
+    (await assignments.ownersDeferredTo(pool, 2, inside)).includes(last),
+  );
 });
 
 test("a pool registered again fences none of a runner's attempts, even under a name the runner's owner shares", async () => {
@@ -455,4 +548,52 @@ test("a runner's poll for executions is stamped under its current registration a
   assert.deepEqual(await stamps(), [{ executions: true, sessions: false }]);
   await runnerOf(project.partition, member, []);
   assert.deepEqual(await stamps(), [{ executions: false, sessions: false }]);
+});
+
+test("a project taken off a runner's allowlist stops what it holds there alone, and what it holds in a project it still serves stands", async () => {
+  const member = principal("member");
+  const keptImage = `registry.invalid/kept@sha256:${"a".repeat(64)}`;
+  const kept = await ownedProject(
+    "scoped-kept",
+    member,
+    "Strict",
+    1,
+    undefined,
+    keptImage,
+  );
+  const dropped = await ownedProject(
+    "scoped-dropped",
+    member,
+    "Strict",
+    1,
+    {
+      tenant: kept.partition.tenant,
+      project: asProjectId(`scoped-dropped-${randomUUID()}`),
+    },
+    `registry.invalid/dropped@sha256:${"b".repeat(64)}`,
+  );
+  await opened(kept);
+  await opened(dropped);
+  const runner = await runnerOf(kept.partition, member, [
+    kept.partition,
+    dropped.partition,
+  ]);
+  const inKept = await claimed(runner, [kept.partition]);
+  const inDropped = await claimed(runner, [dropped.partition]);
+  assert.ok(inKept !== undefined && inDropped !== undefined);
+  assert.equal((await assignments.heldImages(runner, 4)).length, 2);
+  assert.equal(
+    await personalRegistry.disallow(
+      { tenant: runner.tenant, owner: runner.owner },
+      dropped.partition.project,
+    ),
+    true,
+  );
+  assert.equal(await assignments.renew(runner, inDropped, leaseSecs), false);
+  assert.equal(await assignments.held(runner, inDropped), false);
+  assert.equal(await assignments.refuse(runner, inDropped, "no node"), false);
+  assert.deepEqual(await assignments.heldImages(runner, 4), [keptImage]);
+  assert.equal(await assignments.renew(runner, inKept, leaseSecs), true);
+  assert.equal(await assignments.held(runner, inKept), true);
+  assert.equal(await assignments.refuse(runner, inKept, "no node"), true);
 });
