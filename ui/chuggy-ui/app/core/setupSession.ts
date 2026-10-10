@@ -11,6 +11,8 @@
  * a report.
  */
 
+import type { AccessCallerTenant } from "../../../../src/contract/accessPlane.ts";
+
 import { apiCallerTenants } from "./accessRoutes.ts";
 import { apiPortsOver } from "./apiPorts.ts";
 import type { ApiFailure, ApiPorts } from "./apiRequest.ts";
@@ -167,13 +169,15 @@ export function setupSessionOpened(
   };
 }
 
-/** What the site says of whoever a session is: the workspaces they administer, or why it did not say. */
+/** The workspaces a role names a person in, each with whether they administer it, and whether the site sent only part of them. */
+export interface SetupWorkspacesAnswered {
+  readonly tenants: readonly AccessCallerTenant[];
+  readonly truncated: boolean;
+}
+
+/** What the site says of whoever a session is, or why it did not say. */
 export type SetupWorkspaces =
-  | {
-      readonly read: "Answered";
-      readonly workspaces: readonly string[];
-      readonly truncated: boolean;
-    }
+  | ({ readonly read: "Answered" } & SetupWorkspacesAnswered)
   | { readonly read: "Unread"; readonly outcome: ApiFailure["outcome"] };
 
 /** The read that confirms a sign-in: an issuer can hand out a token the site then refuses. */
@@ -184,9 +188,7 @@ export async function setupWorkspacesRead(
   if (read.outcome !== "Ok") return { read: "Unread", outcome: read.outcome };
   return {
     read: "Answered",
-    workspaces: read.value.tenants
-      .filter((tenant) => tenant.administer)
-      .map((tenant) => tenant.tenant),
+    tenants: read.value.tenants,
     truncated: read.value.truncated,
   };
 }

@@ -158,12 +158,7 @@ test("a person who finishes between two commands is found signed in by the secon
   await machine.person();
   await machine.advance(0);
   expect(noted(machine)).toMatchObject({ ended: "SignedIn", told: false });
-  expect(await machine.command(signIn)).toEqual({
-    report: "SignedIn",
-    site: machineSite,
-    workspaces: ["acme"],
-    truncated: false,
-  });
+  expect(await machine.command(signIn)).toEqual(ended("SignedIn"));
   expect([...machine.files.keys()]).toEqual([setupFiles.session]);
   expect(machine.detached).toHaveLength(1);
 });
@@ -576,7 +571,7 @@ test("an answer being read when the bound passes is read to its end", async () =
   machine.lock = undefined;
   await machine.advance(1_000);
   expect((await answering).status).toBe(200);
-  expect(await machine.command(signIn)).toMatchObject({ report: "SignedIn" });
+  expect(await machine.command(signIn)).toEqual(ended("SignedIn"));
 });
 
 test("a listener that cannot have the lock in time ends as busy and writes no token", async () => {

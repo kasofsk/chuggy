@@ -1,0 +1,331 @@
+/**
+ * The one next thing, from where a person stands on each step of setup.
+ *
+ * The first step that is not done decides it. This program has no command
+ * that does a step, and it never prints a `next:` it cannot run, so what it
+ * names is a page of the console by its full address and what is pressed
+ * there, and the checklist is read again only once the person says the step
+ * is done. `setupMend` is where each thing a step can lack is turned into
+ * that; the slice that gives a step its command changes that step's line
+ * there and nowhere else. A step that was not read is said as that: a read
+ * the site refused or cut short is the person's to take up, and one that
+ * failed is a failure. Where which project is meant is still open, the next
+ * thing is the question, one flag at a time.
+ */
+
+import { forgeInstallLabel } from "./forgeInstallation.ts";
+import { inviteRoutePath } from "./inviteLinks.ts";
+import { invitePageWords } from "./invitePage.ts";
+import { projectCreationPathIn } from "./projectCreation.ts";
+import { repositoryLabel } from "./projectRepositories.ts";
+import { selectorSettingsSection } from "./selectorSettingsForm.ts";
+import { settingsRoutes } from "./settingsNav.ts";
+import type { SetupAnswers } from "./setupArguments.ts";
+import type { SetupChoice } from "./setupReads.ts";
+import type { SetupNext, SetupThing } from "./setupReport.ts";
+import type { SetupLack, SetupStanding, SetupStep } from "./setupStanding.ts";
+import { setupListed } from "./setupText.ts";
+import { navRoutes } from "./shellNav.ts";
+
+/**
+ * What is pressed on the console's pages, by the name each page draws. The
+ * pages write these names themselves and core has no constant for them, so a
+ * case reads each page's source for its name and fails where a page renamed it.
+ */
+export const setupPressed = {
+  projectPage: "New project",
+  projectCreate: "Create project",
+  edit: "Edit",
+  save: "Save changes",
+  connect: "Connect GitHub",
+  add: "Add",
+  retry: "Retry",
+  runner: "Add runner",
+  ticket: "Create ticket",
+} as const;
+
+/** How many names a question lists before it says how many more there are. */
+export const setupAskNamesMax = 12;
+
+/** Where the pages a step is done on are: the site, and the workspace and project as far as the checklist is of one. */
+interface SetupAt {
+  readonly site: string;
+  readonly workspace: string;
+  readonly project: string;
+}
+
+function setupPage(at: SetupAt, route: string): string {
+  return `${at.site}${route
+    .replace("$tenant", encodeURIComponent(at.workspace))
+    .replace("$project", encodeURIComponent(at.project))}`;
+}
+
+function setupTicketPage(at: SetupAt, ticket: number): string {
+  return `${setupPage(at, navRoutes.overview)}/tickets/${String(ticket)}`;
+}
+
+function setupHand(tell: string, when: string): SetupThing {
+  return { thing: "Hand", tell, when };
+}
+
+const setupLookAgain = "if the person asks to look again";
+
+function setupWorkspaceMend(
+  lack: Extract<SetupLack, { readonly lacks: "Workspace" | "Administration" }>,
+  at: SetupAt,
+): SetupThing {
+  if (lack.lacks === "Administration")
+    return setupHand(
+      `Setting chuggy up takes an admin of the workspace, and you are not one in ${lack.workspace}. Ask an admin of ${lack.workspace} to make you one on its People page, ${setupPage(at, settingsRoutes.workspace.people)}. Tell me once you are an admin.`,
+      `once the person says they are an admin of ${lack.workspace}`,
+    );
+  const none =
+    lack.workspace === undefined
+      ? "You are not in a chuggy workspace yet."
+      : `You are not in a chuggy workspace named ${lack.workspace}.`;
+  return setupHand(
+    `${none} A new workspace is made from an invite link: open the one you were sent (it starts ${at.site}${inviteRoutePath}), and under ${invitePageWords.naming} name the workspace and press ${invitePageWords.create}. Tell me once it is made.`,
+    "once the person says their workspace is made",
+  );
+}
+
+function setupProjectMend(
+  lack: Extract<SetupLack, { readonly lacks: "Project" | "NorthStar" }>,
+  at: SetupAt,
+): SetupThing {
+  if (lack.lacks === "Project")
+    return setupHand(
+      `Open ${at.site}${projectCreationPathIn(at.workspace)}, the ${setupPressed.projectPage} page, name the project and press ${setupPressed.projectCreate}. Tell me once it is made.`,
+      "once the person says the project is made",
+    );
+  const section = selectorSettingsSection("northStar").title;
+  return setupHand(
+    `Open ${setupPage(at, settingsRoutes.project.lead)}, press ${setupPressed.edit} beside ${section}, write a paragraph that says what the project is for, and press ${setupPressed.save}. Tell me once it is saved.`,
+    `once the person says the ${section} is saved`,
+  );
+}
+
+function setupGithubMend(
+  lack: Extract<SetupLack, { readonly lacks: "Account" | "App" }>,
+  at: SetupAt,
+): SetupThing {
+  const page = setupPage(at, navRoutes.repositories);
+  if (lack.lacks === "Account")
+    return setupHand(
+      `Open ${page} and press ${setupPressed.connect}, then install the chuggy app on the GitHub account that owns your repository. Tell me once GitHub is connected.`,
+      "once the person says GitHub is connected",
+    );
+  if (lack.app === "worker") {
+    const install = forgeInstallLabel(lack.app);
+    return setupHand(
+      `Open ${page} and press ${install}, then install it on ${lack.account}. Where ${lack.account} is an organisation you do not own, GitHub asks its owner for you and this waits on them. Tell me once it is installed.`,
+      `once the person says the worker app is installed on ${lack.account}`,
+    );
+  }
+  return setupHand(
+    `Open ${page} and press ${setupPressed.connect}, so chuggy is shown ${lack.account} as well as working in it. Tell me once GitHub is connected.`,
+    "once the person says GitHub is connected",
+  );
+}
+
+function setupRepositoryMend(
+  lack: Extract<SetupLack, { readonly lacks: "Binding" | "Configuration" }>,
+  at: SetupAt,
+  mine: string | undefined,
+): SetupThing {
+  const page = setupPage(at, navRoutes.repositories);
+  if (lack.lacks === "Binding")
+    return setupHand(
+      `Open ${page}, press ${setupPressed.add} and choose ${mine === undefined ? "your repository" : `${mine}, this folder's repository`}. Tell me once it is added.`,
+      "once the person says the repository is added",
+    );
+  return setupHand(
+    `${lack.repository} is added, but chuggy has not read its configuration. Open ${page}: the row for ${lack.repository} says why, and ${setupPressed.retry} asks again where it is offered. Tell me once that row has settled.`,
+    `once the person says the configuration of ${lack.repository} is read`,
+  );
+}
+
+function setupRunnerMend(
+  lack: Extract<SetupLack, { readonly lacks: "Runner" | "RunnerLive" }>,
+  at: SetupAt,
+): SetupThing {
+  const page = setupPage(at, navRoutes.runners);
+  return lack.lacks === "Runner"
+    ? setupHand(
+        `Open ${page} and press ${setupPressed.runner}, then do what it shows on the machine that will run the work. Tell me once the runner is running.`,
+        "once the person says the runner is running",
+      )
+    : setupHand(
+        `A runner is registered and is not running. Start it on its machine; ${page} shows when it is live. Tell me once it is.`,
+        "once the person says the runner is running",
+      );
+}
+
+function setupTicketMend(
+  lack: Extract<
+    SetupLack,
+    { readonly lacks: "Ticket" | "Release" | "Landing" | "Decision" }
+  >,
+  at: SetupAt,
+): SetupThing {
+  const create = `Open ${setupPage(at, navRoutes.ticketNew)}, say what you want done and press ${setupPressed.ticket}`;
+  const created = "once the person says the ticket is created";
+  switch (lack.lacks) {
+    case "Ticket":
+      return setupHand(`${create}. Tell me once it is created.`, created);
+    case "Release":
+      return setupHand(
+        `Ticket ${String(lack.ticket)} was drafted and never released, so nothing is working on it, and the console has no page that releases it. ${create}, which makes a ticket and releases it at once. Tell me once it is created.`,
+        created,
+      );
+    case "Landing":
+      return setupHand(
+        `Ticket ${String(lack.ticket)} is in ${lack.phase}, and setup is done when it lands. ${setupTicketPage(at, lack.ticket)} shows where it is. Tell me when you want me to look again.`,
+        setupLookAgain,
+      );
+    case "Decision":
+      return setupHand(
+        `Ticket ${String(lack.ticket)} is escalated: it waits on a decision of yours at ${setupTicketPage(at, lack.ticket)}. Tell me once it is moving again.`,
+        `once the person says ticket ${String(lack.ticket)} is moving again`,
+      );
+  }
+}
+
+/** A step that was not read: a failure where the read failed or was never asked, and otherwise the person's to take up with whoever can show it to them. */
+function setupUnreadMend(
+  lack: Extract<SetupLack, { readonly lacks: "Read" }>,
+  step: SetupStep,
+): SetupThing {
+  const said = `the ${step.step} step is not read: ${step.detail}`;
+  switch (lack.fate.fate) {
+    case "Failed":
+      return {
+        thing: "Failed",
+        found: said,
+        stale: lack.fate.outcome === "Unreadable",
+      };
+    case "Unasked":
+      return { thing: "Failed", found: said, stale: false };
+    case "Refused":
+      return setupHand(
+        `The chuggy site does not show you what the ${step.step} step is read from, so I cannot say whether it is done. An admin of the workspace can see it, or can give you the access to. Tell me if your access changes.`,
+        "if the person says their access has changed",
+      );
+    case "Cut":
+      return setupHand(
+        `The chuggy site sent only part of what the ${step.step} step is read from, so I cannot say whether it is done. Tell me if you want me to look again.`,
+        setupLookAgain,
+      );
+  }
+}
+
+/**
+ * How each thing a step lacks is mended: today, by the person, on a page of
+ * the console. The slice that can do a step itself changes that step's line
+ * here, and what stands on either side of it stays as it is.
+ */
+function setupMend(
+  step: SetupStep,
+  lack: SetupLack,
+  at: SetupAt,
+  mine: string | undefined,
+): SetupThing {
+  switch (lack.lacks) {
+    case "Read":
+      return setupUnreadMend(lack, step);
+    case "Workspace":
+    case "Administration":
+      return setupWorkspaceMend(lack, at);
+    case "Project":
+    case "NorthStar":
+      return setupProjectMend(lack, at);
+    case "Account":
+    case "App":
+      return setupGithubMend(lack, at);
+    case "Binding":
+    case "Configuration":
+      return setupRepositoryMend(lack, at, mine);
+    case "Runner":
+    case "RunnerLive":
+      return setupRunnerMend(lack, at);
+    case "Ticket":
+    case "Release":
+    case "Landing":
+    case "Decision":
+      return setupTicketMend(lack, at);
+  }
+}
+
+/** The question a choice still open is put as, with the names it is among as far as the site sent them. */
+function setupAsk(
+  choice: Extract<SetupChoice, { readonly choice: "Open" }>,
+): SetupThing {
+  const of =
+    choice.open === "workspace"
+      ? "Which workspace"
+      : `Which project of ${choice.workspace ?? ""}`;
+  const shown = choice.among.slice(0, setupAskNamesMax);
+  const more = choice.among.length - shown.length;
+  const names =
+    more > 0
+      ? `${shown.join(", ")} and ${String(more)} more`
+      : setupListed(shown);
+  const part = choice.whole
+    ? ""
+    : " The site sent only part of the list, so the one meant may not be named here.";
+  const among = shown.length === 0 ? "?" : `: ${names}?`;
+  return {
+    thing: "Ask",
+    ask: `${of} is this for${among}${part} Pass the name as --${choice.open}.`,
+    flag: choice.open,
+  };
+}
+
+/** The workspace and project a checklist's commands carry: none where there was nothing to choose, and otherwise the choice as far as it is made. */
+function setupCarried(
+  choice: SetupChoice,
+  answers: SetupAnswers,
+): SetupAnswers {
+  if (choice.choice === "Made")
+    return choice.by === "Only"
+      ? answers
+      : { workspace: choice.workspace, project: choice.project };
+  return choice.open === "workspace"
+    ? { workspace: undefined, project: answers.project }
+    : { workspace: choice.workspace, project: undefined };
+}
+
+function setupThing(standing: SetupStanding): SetupThing {
+  if (standing.choice.choice === "Open") return setupAsk(standing.choice);
+  const at: SetupAt = {
+    site: standing.site,
+    workspace: standing.choice.workspace ?? "",
+    project: standing.choice.project ?? "",
+  };
+  const undone = standing.steps.find((step) => step.lacks !== undefined);
+  if (undone?.lacks === undefined)
+    return {
+      thing: "Done",
+      tell: `chuggy is set up for ${at.workspace}/${at.project}: a first ticket has landed. The next one is made at ${setupPage(at, navRoutes.ticketNew)}.`,
+    };
+  const mine =
+    standing.remote === undefined
+      ? undefined
+      : repositoryLabel(standing.remote.said);
+  return setupMend(undone, undone.lacks, at, mine);
+}
+
+/**
+ * Names the one next thing and the choice every command printed with it
+ * carries. `answers` is what the run's own arguments named, which a question
+ * about the other name keeps.
+ */
+export function setupNext(
+  standing: SetupStanding,
+  answers: SetupAnswers,
+): SetupNext {
+  return {
+    carried: setupCarried(standing.choice, answers),
+    thing: setupThing(standing),
+  };
+}

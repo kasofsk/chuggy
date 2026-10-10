@@ -1,8 +1,13 @@
 /**
  * The other processes the setup program deals with: itself started again to
- * outlive this run, and a command of the machine's that opens a browser.
+ * outlive this run, a command of the machine's that opens a browser, and one
+ * whose answer is read.
  *
- * Neither is given this run's output to write to, and neither holds it open.
+ * None is given this run's output to write to, and none holds it open. The
+ * one that is read is given nothing to read itself, and what it says of a
+ * failure is dropped unread. It is waited on for a bounded time and read up
+ * to a bounded length, and past either it is ended, its output is let go of
+ * and the answer is that there is none, whatever it left running behind it.
  */
 
 import { spawn } from "node:child_process";
@@ -51,6 +56,43 @@ function launch(
   });
 }
 
+function read(
+  command: readonly string[],
+  waitMs: number,
+  bytesMax: number,
+): Promise<string | undefined> {
+  return new Promise<string | undefined>((resolve) => {
+    const [program, ...rest] = command;
+    if (program === undefined) {
+      resolve(undefined);
+      return;
+    }
+    const child = spawn(program, rest, { stdio: ["ignore", "pipe", "ignore"] });
+    const printed: Buffer[] = [];
+    let bytes = 0;
+    const ended = (answer: string | undefined): void => {
+      clearTimeout(waiting);
+      child.kill("SIGKILL");
+      child.stdout.destroy();
+      resolve(answer);
+    };
+    const waiting = setTimeout(() => {
+      ended(undefined);
+    }, waitMs);
+    child.stdout.on("data", (chunk: Buffer) => {
+      bytes += chunk.length;
+      if (bytes > bytesMax) ended(undefined);
+      else printed.push(chunk);
+    });
+    child.once("error", () => {
+      ended(undefined);
+    });
+    child.once("close", (exit) => {
+      ended(exit === 0 ? Buffer.concat(printed).toString("utf8") : undefined);
+    });
+  });
+}
+
 /** `script` is this program's own file, run again under the Node and the flags this run was started with. */
 export function processesOf(script: string): SetupProcessPort {
   return {
@@ -67,5 +109,6 @@ export function processesOf(script: string): SetupProcessPort {
       return child.pid;
     },
     launch,
+    read,
   };
 }

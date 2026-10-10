@@ -16,8 +16,15 @@ import { networkInterfaces } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 
-import { browsed, ended, eventually, making, person } from "./program.ts";
-import type { Home, Ran } from "./program.ts";
+import {
+  browsed,
+  ended,
+  eventually,
+  making,
+  person,
+  signedIn,
+} from "./program.ts";
+import type { Home } from "./program.ts";
 import type { StandIn } from "./standIn.ts";
 
 const made = making();
@@ -34,17 +41,6 @@ function remembered(machine: Home): { site?: string; refreshToken?: string } {
     site?: string;
     refreshToken?: string;
   };
-}
-
-/** Runs `sign-in` and plays `played` in the browser it opens, answering what the command said. */
-async function signedIn(
-  installation: StandIn,
-  machine: Home,
-  played: (address: string) => Promise<unknown> = person,
-): Promise<Ran> {
-  const running = machine.run(["sign-in", "--site", installation.site]);
-  await played(await machine.opened());
-  return running;
 }
 
 test("a sign-in the person finishes is exchanged, remembered and said, on this machine's own address", async () => {
@@ -86,11 +82,12 @@ test("a second run renews with what the first stored, and a third with what the 
   const first = remembered(machine).refreshToken;
   const second = await machine.run([]);
   assert.equal(second.code, 0, second.stdout);
-  assert.deepEqual(second.lines, [
+  assert.deepEqual(second.lines.slice(0, 3), [
     `site: ${installation.site}, signed in`,
-    "workspace: acme",
-    "next: stop",
+    "step: workspace   done     acme",
+    "step: project     todo     acme has no project yet",
   ]);
+  assert.equal(second.lines.at(-1), "next: stop");
   assert.ok(remembered(machine).refreshToken !== first);
   assert.ok(remembered(machine).refreshToken === installation.renewal());
   const third = await machine.run([]);
@@ -146,11 +143,11 @@ test("a sign-in the site does not confirm is a failure that is kept, and the nex
   installation.serves = true;
   const confirmed = await machine.run([]);
   assert.equal(confirmed.code, 0);
-  assert.deepEqual(confirmed.lines, [
+  assert.deepEqual(confirmed.lines.slice(0, 2), [
     `site: ${installation.site}, signed in`,
-    "workspace: acme",
-    "next: stop",
+    "step: workspace   done     acme",
   ]);
+  assert.equal(confirmed.lines.at(-1), "next: stop");
   assert.equal(
     installation.asked.filter((line) => line.includes("/oauth2/auth")).length,
     1,

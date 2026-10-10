@@ -112,6 +112,12 @@ export interface SetupProcessPort {
     command: readonly string[],
     waitMs: number,
   ) => Promise<SetupLaunched>;
+  /** Runs a command of the machine's in the folder the program was run in and answers what it printed. Nothing is answered where it did not start, did not end well within `waitMs`, or printed more than `bytesMax`. */
+  readonly read: (
+    command: readonly string[],
+    waitMs: number,
+    bytesMax: number,
+  ) => Promise<string | undefined>;
 }
 
 /** Where the program is running, as plain facts read once at its start. */

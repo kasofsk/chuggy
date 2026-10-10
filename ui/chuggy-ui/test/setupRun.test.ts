@@ -11,10 +11,16 @@
 import { expect, test } from "vitest";
 
 import { apiAttemptsMax } from "../app/core/apiRequest.ts";
+import { setupAnswersNone } from "../app/core/setupArguments.ts";
 import { SetupMachineError, setupFiles } from "../app/core/setupPorts.ts";
 import { setupRetryDelayMsMax } from "../app/core/setupSession.ts";
 import { setupLockWaitMs, setupLockWord } from "../app/core/setupStore.ts";
-import { machineDirectory, machineSite, setupMachine } from "./setupMachine.ts";
+import {
+  machineDirectory,
+  machineSignedIn,
+  machineSite,
+  setupMachine,
+} from "./setupMachine.ts";
 import type { SetupMachine } from "./setupMachine.ts";
 
 const signedOut = {
@@ -29,18 +35,7 @@ function remembered(machine: SetupMachine): unknown {
   return text === undefined ? undefined : JSON.parse(text);
 }
 
-/** A machine already signed in, as a sign-in the person finished leaves it. */
-async function signedIn(): Promise<SetupMachine> {
-  const machine = setupMachine();
-  machine.opened = async () => {
-    await machine.person();
-  };
-  await machine.command(["sign-in", "--site", machineSite]);
-  machine.opened = () => Promise.resolve();
-  machine.asked.length = 0;
-  machine.bodies.length = 0;
-  return machine;
-}
+const signedIn = (): Promise<SetupMachine> => machineSignedIn();
 
 test("with no site given and none remembered the program asks for one and touches nothing", async () => {
   const machine = setupMachine();
@@ -90,14 +85,33 @@ test("a site whose issuer does not answer is told apart from a site that does no
   expect(machine.detached).toEqual([]);
 });
 
-test("the bare command says who is signed in and lists the workspaces they administer", async () => {
+test("the bare command, signed in, reads where the person stands and reports it as a checklist", async () => {
   const machine = await signedIn();
-  expect(await machine.command([])).toEqual({
-    report: "SignedIn",
+  expect(await machine.command([])).toMatchObject({
+    report: "Checklist",
     site: machineSite,
-    workspaces: ["acme"],
-    truncated: false,
+    found: [],
+    steps: [
+      { step: "workspace", state: "done", detail: "acme" },
+      { step: "project", state: "todo", detail: "acme has no project yet" },
+      { step: "github", state: "todo", detail: "" },
+      { step: "repository", state: "todo", detail: "" },
+      { step: "runner", state: "todo", detail: "" },
+      { step: "ticket", state: "todo", detail: "" },
+    ],
+    next: { carried: setupAnswersNone, thing: { thing: "Hand" } },
   });
+});
+
+test("a sign-in asked for by someone already signed in ends as signed in, and opens no page", async () => {
+  const machine = await signedIn();
+  expect(await machine.command(["sign-in"])).toEqual({
+    report: "SignInEnded",
+    site: machineSite,
+    ended: "SignedIn",
+  });
+  expect(machine.launched).toHaveLength(1);
+  expect(machine.detached).toHaveLength(1);
 });
 
 test("each command spends the token it found and leaves the one that replaced it", async () => {
@@ -114,7 +128,7 @@ test("each command spends the token it found and leaves the one that replaced it
   expect(new URLSearchParams(machine.bodies[0]).get("refresh_token")).toBe(
     first,
   );
-  expect(await machine.command([])).toMatchObject({ report: "SignedIn" });
+  expect(await machine.command([])).toMatchObject({ report: "Checklist" });
   expect(machine.issued).toHaveLength(3);
 });
 
@@ -145,7 +159,7 @@ test("a renewal the issuer does not answer is a failure, and the token is kept",
     refreshToken: held,
   });
   machine.token = "Answers";
-  expect(await machine.command([])).toMatchObject({ report: "SignedIn" });
+  expect(await machine.command([])).toMatchObject({ report: "Checklist" });
 });
 
 test("a site that renews the sign-in and then keeps saying try later is a failure, after waits this program bounds", async () => {
@@ -169,7 +183,7 @@ test("a site that renews the sign-in and then keeps saying try later is a failur
 
 test("a body the site sends that this program cannot read is said to be unreadable", async () => {
   const machine = await signedIn();
-  machine.tenants = [{ tenant: "acme", roles: ["Admin"] } as never];
+  machine.world.tenants = [{ tenant: "acme", roles: ["Admin"] } as never];
   expect(await machine.command([])).toMatchObject({
     report: "WorkspacesUnread",
     outcome: "Unreadable",
@@ -253,7 +267,7 @@ test("a command that finds another run holding the lock waits a bounded time and
 test("a lock whose holder is gone is taken, and the command runs", async () => {
   const machine = await signedIn();
   machine.lock = setupLockWord(7, machine.nowMs);
-  expect(await machine.command([])).toMatchObject({ report: "SignedIn" });
+  expect(await machine.command([])).toMatchObject({ report: "Checklist" });
   expect(machine.lock).toBeUndefined();
 });
 

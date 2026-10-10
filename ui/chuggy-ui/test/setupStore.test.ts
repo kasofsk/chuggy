@@ -193,6 +193,7 @@ function locker(
         alive: (asked: number) => alive.includes(asked),
         detach: () => undefined,
         launch: () => Promise.resolve({ launched: "Unstarted" } as const),
+        read: () => Promise.resolve(undefined),
       },
     },
   };

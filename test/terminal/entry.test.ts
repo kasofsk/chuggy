@@ -9,7 +9,8 @@
  * listener left while it waited, and the name and the text of everything it
  * keeps besides the file that holds the sign-in, is searched for every value
  * the issuer handed out and every secret of the exchange the program itself
- * drew.
+ * drew. The session ends with the checklist read in a checkout whose remote
+ * carries a credential, which is searched for with the rest.
  */
 
 import assert from "node:assert/strict";
@@ -17,26 +18,12 @@ import { readdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { browsed, making } from "./program.ts";
+import { browsed, dialect, making } from "./program.ts";
 import type { Home, Ran } from "./program.ts";
 import type { StandIn } from "./standIn.ts";
+import { setupSiteAt } from "../../ui/chuggy-ui/test/setupSite.ts";
 
 const made = making();
-
-const line = /^(site|workspace|found|did|tell|rule|next): \S.*$/u;
-
-/** What every run prints: lines of the dialect, one `next:` and it last, and nothing on the other stream. */
-function dialect(done: Ran, said: string): void {
-  assert.equal(done.stderr, "", said);
-  assert.ok(done.stdout.endsWith("\n"), said);
-  assert.ok(done.lines.length > 0, said);
-  for (const text of done.lines) assert.match(text, line, said);
-  assert.deepEqual(
-    done.lines.filter((text) => text.startsWith("next: ")),
-    [done.lines.at(-1)],
-    said,
-  );
-}
 
 const wrongly: readonly (readonly string[])[] = [
   ["sign-out"],
@@ -154,6 +141,9 @@ async function signIn(
   runs.push(await running);
 }
 
+/** What the remote of the session's checkout carries before its host, which nothing printed may hold. */
+const remoteSecret = "ghp_r3m0teCredentialNeverPrinted";
+
 /** Every way a sign-in ends against the stand-in, and the commands around them. */
 async function sessionRun(): Promise<Session> {
   const installation = await made.installation();
@@ -190,6 +180,13 @@ async function sessionRun(): Promise<Session> {
   await bare();
   await bare();
   session.runs.push(await session.machine.run(["sign-in", "--wait-secs", "0"]));
+  await session.machine.checkout(
+    `https://deploy:${remoteSecret}@github.com/acme-org/widgets.git`,
+  );
+  for (const stage of ["Portal", "Landed"] as const) {
+    installation.world = setupSiteAt(stage);
+    await bare();
+  }
   return session;
 }
 
@@ -209,47 +206,54 @@ function drawn(installation: StandIn): string[] {
   return secrets;
 }
 
+/** How each run of the session ends, in order: what it exits with, and what it found or, finding nothing, said first. */
+function sessionEndings(site: string): readonly (readonly [number, string])[] {
+  const signedIn = `site: ${site}, signed in`;
+  return [
+    [0, "found: the sign-in was declined in the browser"],
+    [1, "found: the sign-in server did not accept the answer"],
+    [0, "found: the sign-in was allowed without leave to stay signed in"],
+    [0, "found: the sign-in was allowed without leave to stay signed in"],
+    [
+      1,
+      "found: the sign-in went through, but the site did not say which workspaces are yours",
+    ],
+    [1, "found: the site did not say which workspaces are yours (Fault)"],
+    [1, "found: the site refused the remembered sign-in, so it was forgotten"],
+    [
+      1,
+      "found: the sign-in went through, but the site refused it, so nothing is remembered",
+    ],
+    ...Array.from({ length: 6 }, () => [0, signedIn] as const),
+  ];
+}
+
 test("across every way a sign-in ends, nothing the issuer handed out and nothing the exchange drew is in anything the program wrote", async () => {
   const { installation, machine, pages, notes, runs } = await sessionRun();
-  const signedIn = `site: ${installation.site}, signed in`;
   assert.deepEqual(
     runs.map((done) => [
       done.code,
       done.lines.find((text) => text.startsWith("found: ")) ?? done.lines[0],
     ]),
-    [
-      [0, "found: the sign-in was declined in the browser"],
-      [1, "found: the sign-in server did not accept the answer"],
-      [0, "found: the sign-in was allowed without leave to stay signed in"],
-      [0, "found: the sign-in was allowed without leave to stay signed in"],
-      [
-        1,
-        "found: the sign-in went through, but the site did not say which workspaces are yours",
-      ],
-      [1, "found: the site did not say which workspaces are yours (Fault)"],
-      [
-        1,
-        "found: the site refused the remembered sign-in, so it was forgotten",
-      ],
-      [
-        1,
-        "found: the sign-in went through, but the site refused it, so nothing is remembered",
-      ],
-      [0, signedIn],
-      [0, signedIn],
-      [0, signedIn],
-      [0, signedIn],
-    ],
+    sessionEndings(installation.site),
+  );
+  assert.equal(
+    runs.at(-2)?.lines[4],
+    "step: repository  todo     github.com/acme-org/widgets (this folder's remote)",
   );
   assert.deepEqual(
     runs.flatMap((done) =>
-      done.lines.filter((text) => text.startsWith("workspace: ")),
+      done.lines.filter((text) => text.startsWith("step: workspace ")),
     ),
-    ["workspace: acme", "workspace: acme", "workspace: acme"],
+    Array.from({ length: 4 }, () => "step: workspace   done     acme"),
   );
   for (const done of runs) dialect(done, done.stdout);
 
-  const secrets = [...installation.issued, ...drawn(installation)];
+  const secrets = [
+    ...installation.issued,
+    ...drawn(installation),
+    remoteSecret,
+  ];
   assert.ok(installation.issued.size >= 9, String(installation.issued.size));
   assert.ok(secrets.length > installation.issued.size);
   const kept = readdirSync(machine.directory, {

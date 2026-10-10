@@ -151,18 +151,35 @@ It is one file with nothing to install. Every line it prints is a word from a
 closed set, a colon and its text; the last is `next:` and names the exact
 command to run after it, or says to stop. It says to stop where running a
 command again would mend nothing until the person has said something: after a
-sign-in that was declined, left to expire or refused, and where the machine
-would not keep its files or another run held them. A `rule:` line then names
-the command and what must be so before it is run, and the bare command goes on
-saying how the last sign-in ended until `sign-in` is run. It exits 0 where the
-last line is to be followed, 1 where it failed and 2 where it was asked
-wrongly.
+sign-in that was declined, left to expire or refused, where the machine would
+not keep its files or another run held them, and where a step of setup waits
+on her. A `rule:` line then names the command and what must be so before it is
+run, and the bare command goes on saying how the last sign-in ended until
+`sign-in` is run. It exits 0 where the last line is to be followed, 1 where it
+failed and 2 where it was asked wrongly.
 
-Run bare it changes nothing at the site: it says whether it is signed in and
-which workspaces the person administers. `sign-in` opens the installation's
-sign-in in a browser and takes the answer on `127.0.0.1`, as the public client
-`chuggy-setup`. It remembers the site and the renewal token in the person's
-home directory and never prints the token.
+Run bare and signed in, it prints the checklist: a `step:` line for each step
+of setup in order (workspace, project, github, repository, runner, ticket),
+saying it is done, waiting on something named, to do or not read, and then the
+one next thing. It sends the site nothing but reads and keeps nothing of what
+they answered: the site is the record. Each read stands by itself, so one the
+site refused, failed or sent only part of leaves its own step not read and is
+said as that. The program does none of the steps yet: for the first one not
+done a `tell:` line names the console page and what to press there, and `next:`
+is `stop`.
+
+With one workspace and one project there is nothing to choose. Otherwise
+`--workspace` and `--project` name them, and every command the program prints
+carries them, so the conversation holds the choice and no file does. Where one
+is still to be chosen an `ask:` line puts the question to the person, and the
+`rule:` line names the flag her answer goes in. Run in a git checkout whose
+`origin` is a repository added to exactly one of her projects, it proposes that
+project and says so in a `found:` line. It asks `git` for that address and
+prints only its host and path, never a credential the address carried.
+
+`sign-in` opens the installation's sign-in in a browser and takes the answer on
+`127.0.0.1`, as the public client `chuggy-setup`. It remembers the site and the
+renewal token in the person's home directory and never prints the token.
 
 ## The session
 

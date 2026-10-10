@@ -26,6 +26,8 @@ import type {
 } from "../app/core/setupPorts.ts";
 import type { SetupReport } from "../app/core/setupReport.ts";
 import { setupRun } from "../app/core/setupRun.ts";
+import { setupSiteAnswered, setupSiteAt } from "./setupSite.ts";
+import type { SetupSite } from "./setupSite.ts";
 
 export const machineSite = "https://chuggy.example";
 export const machineIssuer = "https://auth.example";
@@ -35,19 +37,12 @@ export const machineDirectory = "~/.chuggy-setup";
 
 const tokenAddress = `${machineIssuer}/oauth2/token`;
 const authorizeAddress = `${machineIssuer}/oauth2/auth`;
-const workspacesAddress = `${machineSite}/access/v1/workspaces`;
 
 /** How a part of the installation answers: as it should, with a refusal, with a fault of its own, with nothing readable, or not at all. */
 export type Answering = "Answers" | "Refuses" | "Fails" | "Garbles" | "Silent";
 
 /** What becomes of a run the program starts for itself: it runs, it is gone before it says anything, it stays and says nothing, or it cannot be started. */
 export type Spawning = "Runs" | "Dies" | "Mute" | "Unstarted";
-
-export interface MachineTenant {
-  readonly tenant: string;
-  readonly roles: readonly string[];
-  readonly administer: boolean;
-}
 
 interface Timer {
   readonly atMs: number;
@@ -71,7 +66,10 @@ export interface SetupMachine {
   renewable: boolean;
   /** Whether the API takes the tokens the issuer hands out, which a site whose audience changed does not. */
   admits: boolean;
-  tenants: readonly MachineTenant[];
+  /** What the site holds, which is what its reads answer. */
+  world: SetupSite;
+  /** What git prints of the folder's `origin`, or nothing where it has none to print. */
+  remote: string | undefined;
   browser: string | undefined;
   platform: string;
   spawning: Spawning;
@@ -87,6 +85,11 @@ export interface SetupMachine {
   /** Every address asked through either network port, and every body sent. */
   readonly asked: string[];
   readonly bodies: string[];
+  /** Every request of the site's API, as its method and address, and each address that was asked while the lock was held. */
+  readonly sent: string[];
+  readonly locked: string[];
+  /** Each command the program ran to read what it printed. */
+  readonly ran: (readonly string[])[];
   /** The arguments of each run the program started for itself, and of each command it launched. */
   readonly detached: (readonly string[])[];
   readonly launched: (readonly string[])[];
@@ -226,9 +229,14 @@ function apiFetch(
   init: ApiFetchInit,
 ): Promise<Response> {
   machine.asked.push(url);
+  machine.sent.push(`${init.method} ${url}`);
+  if (machine.lock !== undefined) machine.locked.push(url);
+  const answer = url.startsWith(`${machineSite}/`)
+    ? setupSiteAnswered(machine.world, url.slice(machineSite.length))
+    : undefined;
   if (machine.api === "Silent")
     return Promise.reject(new Error("no route to host"));
-  if (machine.api === "Refuses" || url !== workspacesAddress)
+  if (machine.api === "Refuses" || answer === undefined)
     return Promise.resolve(
       new Response("{}", { status: 503, headers: { "retry-after": "300" } }),
     );
@@ -239,10 +247,7 @@ function apiFetch(
   const bearer = (init.headers["authorization"] ?? "").replace("Bearer ", "");
   return Promise.resolve(
     machine.admits && issuer.access.has(bearer)
-      ? new Response(
-          JSON.stringify({ tenants: machine.tenants, truncated: false }),
-          { status: 200 },
-        )
+      ? new Response(JSON.stringify(answer.body), { status: answer.status })
       : new Response("{}", { status: 401 }),
   );
 }
@@ -373,6 +378,10 @@ function portsOf(inner: Inner, pid: number): SetupPorts {
           await machine.opened(command.at(-1) ?? "");
         return machine.opener;
       },
+      read: (command) => {
+        machine.ran.push(command);
+        return Promise.resolve(machine.remote);
+      },
     },
     surroundings: {
       platform: machine.platform,
@@ -460,10 +469,8 @@ export function setupMachine(): SetupMachine {
     api: "Answers",
     renewable: true,
     admits: true,
-    tenants: [
-      { tenant: "acme", roles: ["Admin"], administer: true },
-      { tenant: "guest", roles: ["Member"], administer: false },
-    ],
+    world: setupSiteAt("Workspace"),
+    remote: undefined,
     browser: undefined,
     platform: "linux",
     spawning: "Runs",
@@ -474,6 +481,9 @@ export function setupMachine(): SetupMachine {
     opened: () => Promise.resolve(),
     asked: [],
     bodies: [],
+    sent: [],
+    locked: [],
+    ran: [],
     detached: [],
     launched: [],
     alive: new Set(),
@@ -499,5 +509,27 @@ export function setupMachine(): SetupMachine {
     pids: 100,
     drawn: 0,
   };
+  return machine;
+}
+
+/** A machine already signed in to a site holding `world`, as a sign-in the person finished leaves it, with nothing yet recorded as asked. */
+export async function machineSignedIn(
+  world: SetupSite = setupSiteAt("Workspace"),
+): Promise<SetupMachine> {
+  const machine = setupMachine();
+  machine.world = world;
+  machine.opened = async () => {
+    await machine.person();
+  };
+  await machine.command(["sign-in", "--site", machineSite]);
+  machine.opened = () => Promise.resolve();
+  for (const recorded of [
+    machine.asked,
+    machine.bodies,
+    machine.sent,
+    machine.locked,
+    machine.ran,
+  ])
+    recorded.length = 0;
   return machine;
 }

@@ -10,12 +10,22 @@
  */
 
 import { setupAsked } from "./setupArguments.ts";
-import type { SetupAsked, SetupCommand } from "./setupArguments.ts";
+import type {
+  SetupAnswers,
+  SetupAsked,
+  SetupCommand,
+} from "./setupArguments.ts";
+import { setupNext } from "./setupNext.ts";
 import { SetupMachineError } from "./setupPorts.ts";
 import type { SetupPorts } from "./setupPorts.ts";
+import { readSetup, setupReadPorts } from "./setupReads.ts";
+import { setupRemoteRead } from "./setupRemote.ts";
 import type { SetupFault, SetupReport } from "./setupReport.ts";
 import { setupSessionOpened, setupWorkspacesRead } from "./setupSession.ts";
-import type { SetupSessionOpened } from "./setupSession.ts";
+import type {
+  SetupSessionOpened,
+  SetupWorkspacesAnswered,
+} from "./setupSession.ts";
 import {
   setupListened,
   setupSignInAwaited,
@@ -24,6 +34,7 @@ import {
   setupSignInStood,
 } from "./setupSignIn.ts";
 import type { SetupSignInBegun } from "./setupSignIn.ts";
+import { setupStanding } from "./setupStanding.ts";
 import {
   setupLockHeldBy,
   setupLockReleased,
@@ -73,42 +84,52 @@ async function setupBegun(
   return { begun: "Session", opened };
 }
 
+/** Whether a session is signed in: with the bearer the site took and the workspaces it answered, or the report that says why it is not. */
+type SetupSigned =
+  | {
+      readonly signed: "In";
+      readonly opened: SetupSessionOpened;
+      readonly bearer: string;
+      readonly workspaces: SetupWorkspacesAnswered;
+    }
+  | { readonly signed: "Out"; readonly report: SetupReport };
+
 /**
  * Whether the remembered sign-in still stands: its token renews and the site
  * answers as that person. A renewal the issuer refuses is not a failure, only
  * not signed in; one it did not answer is.
  */
-async function setupStanding(
+async function setupSigned(
   ports: SetupPorts,
   opened: SetupSessionOpened,
   asked: SetupCommand,
-): Promise<SetupReport> {
+): Promise<SetupSigned> {
   const site = opened.site;
+  const out = (report: SetupReport): SetupSigned => ({ signed: "Out", report });
   const signedOut: SetupReport = {
     report: "SignedOut",
     site,
     directory: ports.surroundings.directory,
     ended: undefined,
   };
-  if (opened.holder.snapshot().phase !== "SignedIn") return signedOut;
-  if ((await opened.holder.bearer()) === undefined)
-    return opened.tokenAsked() === "Refused"
-      ? signedOut
-      : { report: "IssuerUnanswered", site, asked };
+  if (opened.holder.snapshot().phase !== "SignedIn") return out(signedOut);
+  const renewed = await opened.holder.bearer();
+  if (renewed === undefined)
+    return out(
+      opened.tokenAsked() === "Refused"
+        ? signedOut
+        : { report: "IssuerUnanswered", site, asked },
+    );
   const workspaces = await setupWorkspacesRead(opened);
   if (workspaces.read === "Unread")
-    return {
+    return out({
       report: "WorkspacesUnread",
       site,
       outcome: workspaces.outcome,
       asked,
-    };
-  return {
-    report: "SignedIn",
-    site,
-    workspaces: workspaces.workspaces,
-    truncated: workspaces.truncated,
-  };
+    });
+  const bearer = (await opened.holder.bearer()) ?? renewed;
+  return { signed: "In", opened, bearer, workspaces };
 }
 
 /** Runs `body` holding the lock, or answers nothing where another run kept it past the wait. */
@@ -133,23 +154,64 @@ function setupBusy(
 }
 
 /**
- * The bare command opens no page, so where it is not signed in it says how
- * the last sign-in ended while that ending stands, and names `sign-in` only
- * where none does.
+ * The checklist, read once the lock is given up: nothing from here on reads
+ * or writes the session file, and no request is sent while the lock is held
+ * for it. Everything goes out through ports that can only read.
+ */
+async function setupChecklist(
+  ports: SetupPorts,
+  signed: Extract<SetupSigned, { readonly signed: "In" }>,
+  answers: SetupAnswers,
+): Promise<SetupReport> {
+  const site = signed.opened.site;
+  const reads = await readSetup(
+    setupReadPorts(signed.opened.api, signed.bearer),
+    {
+      site,
+      answers,
+      remote: await setupRemoteRead(ports.process),
+      workspaces: signed.workspaces,
+    },
+  );
+  const standing = setupStanding(reads);
+  return {
+    report: "Checklist",
+    site,
+    found: standing.found,
+    steps: standing.steps.map(({ step, state, detail }) => ({
+      step,
+      state,
+      detail,
+    })),
+    next: setupNext(standing, answers),
+  };
+}
+
+/**
+ * The bare command opens no page and changes nothing at the site. Signed in,
+ * it reads where the person stands; not signed in, it says how the last
+ * sign-in ended while that ending stands, and names `sign-in` only where none
+ * does.
  */
 async function setupStatus(
   ports: SetupPorts,
-  given: string | undefined,
+  asked: Extract<SetupAsked, { readonly asked: "Status" }>,
 ): Promise<SetupReport> {
-  const report = await setupLocked(ports, async () => {
-    const begun = await setupBegun(ports, given, "Status");
-    if (begun.begun === "Reported") return begun.report;
-    const standing = await setupStanding(ports, begun.opened, "Status");
-    if (standing.report !== "SignedOut") return standing;
+  const held = await setupLocked(ports, async (): Promise<SetupSigned> => {
+    const begun = await setupBegun(ports, asked.site, "Status");
+    if (begun.begun === "Reported")
+      return { signed: "Out", report: begun.report };
+    const signed = await setupSigned(ports, begun.opened, "Status");
+    if (signed.signed === "In" || signed.report.report !== "SignedOut")
+      return signed;
     const note = setupSignInNoteRead(ports.files);
-    return { ...standing, ended: setupSignInStood(note, standing.site) };
+    const ended = setupSignInStood(note, signed.report.site);
+    return { signed: "Out", report: { ...signed.report, ended } };
   });
-  return report ?? setupBusy(ports, "Status", given);
+  if (held === undefined) return setupBusy(ports, "Status", asked.site);
+  return held.signed === "Out"
+    ? held.report
+    : setupChecklist(ports, held, asked.answers);
 }
 
 type SetupSignInStep =
@@ -170,11 +232,17 @@ async function setupSignInStep(
   const begun = await setupBegun(ports, given, "SignIn");
   if (begun.begun === "Reported")
     return { step: "Reported", report: begun.report };
-  const standing = await setupStanding(ports, begun.opened, "SignIn");
-  if (standing.report === "SignedIn") setupSignInSettled(ports);
-  if (standing.report !== "SignedOut")
-    return { step: "Reported", report: standing };
   const site = begun.opened.site;
+  const signed = await setupSigned(ports, begun.opened, "SignIn");
+  if (signed.signed === "In") {
+    setupSignInSettled(ports);
+    return {
+      step: "Reported",
+      report: { report: "SignInEnded", site, ended: "SignedIn" },
+    };
+  }
+  if (signed.report.report !== "SignedOut")
+    return { step: "Reported", report: signed.report };
   const page = await setupSignInBegun(ports, site);
   return page.begun === "Reported"
     ? { step: "Reported", report: page.report }
@@ -222,7 +290,7 @@ export async function setupRun(
   try {
     switch (asked.asked) {
       case "Status":
-        return await setupStatus(ports, asked.site);
+        return await setupStatus(ports, asked);
       case "SignIn":
         return await setupSignIn(ports, asked.site, asked.waitSecs);
       case "Listen":
