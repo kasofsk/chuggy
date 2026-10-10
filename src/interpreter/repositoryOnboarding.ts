@@ -54,9 +54,9 @@
  * THE BOOTSTRAP'S REVISION IS ITS NAME, so two steps racing to author it author
  * one row: the second meets the first's revision as the one it already is. A
  * revision is never rewritten, so a stored bootstrap whose text differs, being
- * another repository's or one the release rule has since outgrown, is met as
- * `BootstrapDiffers` rather than replaced, and only counts as held while it
- * still releases.
+ * another repository's, one the generator words otherwise or one the release
+ * rule has since outgrown, is met as `BootstrapDiffers` rather than replaced,
+ * and only counts as held while it still releases.
  */
 
 import { assertNever } from "../domain/assertNever.ts";
@@ -751,8 +751,9 @@ const bootstrapConfigurationRevision = asConfigurationRevisionId(
  * The bootstrap configuration authored as this project's own, at the revision
  * the name itself is. Identical text is that revision and any other is
  * `BootstrapDiffers`, whether it is another repository's, was authored under
- * another image or branch, or no longer releases, and in each case the
- * repository declaring its own configurations is what clears it.
+ * another image or branch or in other words than the generator's, or no longer
+ * releases, and in each case the repository declaring its own configurations is
+ * what clears it.
  */
 async function bindRepositoryBootstrapped(
   configurations: RepositoryConfigurationsPorts,

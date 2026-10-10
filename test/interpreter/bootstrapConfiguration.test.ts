@@ -191,9 +191,11 @@ function bootstrapReady(): ReleaseConfiguration {
   return readiness.configuration;
 }
 
-/** The instruction lines the bootstrap configuration's worker is told. */
-function toldLines(): readonly string[] {
-  const work = bootstrapReady().work;
+/** The instruction lines a configuration's worker is told, the bootstrap's where none is named. */
+function toldLines(
+  configuration: ReleaseConfiguration = bootstrapReady(),
+): readonly string[] {
+  const work = configuration.work;
   return ("instructions" in work ? work.instructions : undefined) ?? [];
 }
 
@@ -443,6 +445,13 @@ test("what the ticket asks for is a criterion of its own, and the worker is told
   );
 });
 
+/**
+ * Which lockfile the limit does not reach. A setup line that installs from a
+ * lockfile and writes none, as `npm ci` does, leaves a worker to make the file
+ * by another command, and that file is the one its setup needs.
+ */
+const neededOrWritten = "needs or writes";
+
 test("each role is told that a limit the request puts on what may change does not reach what the configuration asks for", () => {
   assert.ok(
     toldLines().some((line) => line.includes("lockfile")),
@@ -461,7 +470,9 @@ test("each role is told that a limit the request puts on what may change does no
       purpose,
     );
     assert.ok(
-      held.some((line) => line.includes("lockfile")),
+      held.some(
+        (line) => line.includes("lockfile") && line.includes(neededOrWritten),
+      ),
       purpose,
     );
   }
@@ -481,7 +492,8 @@ test("each role is told that a limit the request puts on what may change does no
     unfailed.some(
       (line) =>
         line.includes("more than the request allowed") &&
-        line.includes("lockfile"),
+        line.includes("lockfile") &&
+        line.includes(neededOrWritten),
     ),
     "nor for being wider than the request's limit",
   );
@@ -501,12 +513,13 @@ function declaredNames(
   return imported.declarations.map((declaration) => declaration.name);
 }
 
-test("no file may be left declaring the bootstrap's own name, which a seeded repository that kept its file would still declare", () => {
+test("no file may be left declaring the bootstrap's own name, which a seeded repository that kept its file would still declare, so the change is told to delete it", () => {
   assert.ok(
     bootstrapReady().brief.acceptanceCriteria.some(
       (line) =>
         line.includes(`"${bootstrapConfigurationName}"`) &&
-        line.includes(bootstrapConfigurationPath),
+        line.includes(bootstrapConfigurationPath) &&
+        line.includes("the change deletes that file"),
     ),
   );
   const seeded = {
@@ -526,35 +539,97 @@ test("no file may be left declaring the bootstrap's own name, which a seeded rep
   assert.deepEqual(declaredNames([own]), ["default"]);
 });
 
+/** A configuration asking its ticket for the repository's configuration, in a criterion's words or a work line's. */
+const writesConfiguration = /\bwrite the repository's\b.*\bconfiguration\b/u;
+
+test("the seeded document left under another name is one an import takes, so a criterion rules it out by what it asks of a ticket", () => {
+  assert.ok(
+    bootstrapReady().brief.acceptanceCriteria.some(
+      (line) =>
+        line.includes("under another name") && writesConfiguration.test(line),
+    ),
+  );
+  const seeded: unknown = JSON.parse(
+    bootstrapConfigurationFile({ repository, defaultBranch, image }),
+  );
+  assert.ok(typeof seeded === "object" && seeded !== null);
+  const imported = repositoryConfigurationImportReadiness({
+    repository,
+    commit,
+    files: [
+      {
+        path: declaredPath,
+        kind: "File",
+        content: JSON.stringify({ ...seeded, name: "default" }),
+      },
+    ],
+  });
+  if (imported.readiness !== "Ready")
+    assert.fail(JSON.stringify(imported.faults));
+  assert.deepEqual(
+    imported.declarations.map((declaration) => declaration.name),
+    ["default"],
+    "an import takes it as the repository's own",
+  );
+  assert.ok(
+    imported.declarations.every((declaration) =>
+      toldLines(declaration.configuration).some((line) =>
+        writesConfiguration.test(line),
+      ),
+    ),
+    "and it asks its ticket what the criterion says no file left may",
+  );
+});
+
+/** The faults an import refuses a tree for whose one file is `content` at `path`. */
+function refusalOf(path: string, content: string): readonly string[] {
+  const imported = repositoryConfigurationImportReadiness({
+    repository,
+    commit,
+    files: [{ path, kind: "File", content }],
+  });
+  return imported.readiness === "Refused"
+    ? imported.faults.map((held) => held.fault)
+    : [];
+}
+
 test("the criterion on a declaration's file names where an import looks for one and the keys it takes one by", () => {
   const envelope: unknown = JSON.parse(
     bootstrapConfigurationFile({ repository, defaultBranch, image }),
   );
   assert.ok(typeof envelope === "object" && envelope !== null);
-  const keys = Object.keys(envelope);
+  const keys = Object.keys(envelope).map((key) => `"${key}"`);
+  const listed = `exactly the keys ${keys.slice(0, -1).join(", ")} and ${keys.at(-1) ?? ""}`;
   assert.ok(
     bootstrapReady().brief.acceptanceCriteria.some(
       (line) =>
         line.includes(repositoryConfigurationRoot) &&
         line.includes(".json") &&
         line.includes("directly") &&
-        keys.every((key) => line.includes(`"${key}"`)),
+        line.includes(listed),
     ),
   );
-  const nested = repositoryConfigurationImportReadiness({
-    repository,
-    commit,
-    files: [
-      {
-        path: `${repositoryConfigurationRoot}nested/default.json`,
-        kind: "File",
-        content: declaredFile(atEveryBound),
-      },
-    ],
-  });
   assert.deepEqual(
-    nested.readiness === "Refused" && nested.faults.map((held) => held.fault),
+    refusalOf(
+      `${repositoryConfigurationRoot}nested/default.json`,
+      declaredFile(atEveryBound),
+    ),
     ["PathInvalid"],
     "a declaration below the directory refuses the tree it is in",
+  );
+});
+
+test("the criterion on a declaration's file says the version an import takes, and an import refuses a file of another", () => {
+  assert.ok(
+    bootstrapReady().brief.acceptanceCriteria.some(
+      (line) =>
+        line.includes(".json") && line.includes('"version" is the number 1'),
+    ),
+  );
+  const own: unknown = JSON.parse(declaredFile(atEveryBound));
+  assert.ok(typeof own === "object" && own !== null);
+  assert.deepEqual(
+    refusalOf(declaredPath, JSON.stringify({ ...own, version: 2 })),
+    ["EnvelopeInvalid"],
   );
 });

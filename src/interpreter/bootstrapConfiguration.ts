@@ -23,7 +23,9 @@
  * the default branch, which no change can show, so it is said as motivation and
  * held against nothing. No file may be left declaring the bootstrap's own name:
  * a seeded repository holds this document under it, and a repository that kept
- * the name would still be declaring a bootstrap.
+ * the name would still be declaring a bootstrap. Nor may the document be left
+ * under another name, which an import takes like any other and which briefs
+ * every later ticket to write the declarations again.
  *
  * IT TELLS ITS WORKER THE SHAPE OF WHAT IT ASKS FOR. The worker is handed a
  * rendered briefing and never a configuration document, so without the shape
@@ -123,7 +125,7 @@ function bootstrapFormatInstructions(image: string): readonly string[] {
 const bootstrapReviewInstructions: readonly string[] = [
   "Review the change against what the repository itself asks of one and against the ticket's acceptance criteria.",
   `The change is two things together: what this ticket asks for, and the repository's own configuration in ${repositoryConfigurationRoot}. Hold those files to the criteria above, and do not fail the change for writing them.`,
-  "Do not fail it for changing more than the request allowed either, where the more is those files or a lockfile their setup writes.",
+  "Do not fail it for changing more than the request allowed either, where the more is those files or a lockfile their setup needs or writes.",
   "Whether later tickets run on what the change declares is settled after it lands, by chuggy and outside the change: it is no criterion, and nothing missing from the change on that account is a finding.",
 ];
 
@@ -141,13 +143,13 @@ function bootstrapBrief(input: BootstrapConfigurationInput): TicketBrief {
     ],
     acceptanceCriteria: [
       "The change does what this ticket asks for.",
-      `Every file under ${repositoryConfigurationRoot} whose name ends in .json sits directly in that directory and is one JSON object with exactly the keys "version", "name" and "configuration", and the change leaves at least one such file.`,
-      `No file the change leaves under ${repositoryConfigurationRoot} has the "name" "${bootstrapConfigurationName}". That name is this configuration's own, and ${bootstrapConfigurationPath}, in a repository that has it, is this configuration: the change deletes that file.`,
+      `Every file under ${repositoryConfigurationRoot} whose name ends in .json sits directly in that directory and is one JSON object with exactly the keys "version", "name" and "configuration", whose "version" is the number 1, and the change leaves at least one such file.`,
+      `No file the change leaves under ${repositoryConfigurationRoot} has the "name" "${bootstrapConfigurationName}". That name is this configuration's own, and ${bootstrapConfigurationPath}, in a repository that has it, is this configuration: the change deletes that file. Nor does the change leave this configuration there under another name: no file it leaves holds a configuration that, like this one, asks a ticket to write the repository's configuration.`,
     ],
     constraints: [
       `The repository's default branch is ${input.defaultBranch}.`,
       `Where what this ticket asks for limits what may change, as "change nothing else" does, the limit does not reach the files under ${repositoryConfigurationRoot}: they are written whatever the request says, and writing them does not go against it.`,
-      "The same holds for a lockfile that the setup declared in those files writes and this change commits.",
+      "The same holds for a lockfile that the setup declared in those files needs or writes and this change commits.",
     ],
   };
 }
