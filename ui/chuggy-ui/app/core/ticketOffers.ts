@@ -20,6 +20,7 @@ import { projectAbilityRefused } from "./projectAbilities.ts";
 import type { ProjectAbilities } from "./projectAbilities.ts";
 import { actionsFor, ticketRevisable } from "./ticketActions.ts";
 import type { TicketAction, TicketActionName } from "./ticketActions.ts";
+import type { WorkRunner } from "./workRunner.ts";
 
 /** The buttons to draw and whether the edit screen is offered beside them, or
  * the read whose state is drawn in their place. */
@@ -77,6 +78,34 @@ export function ticketOffersAllowed(
     actions: offers.actions.filter((action) =>
       action.action === "Dispatch" ? dispatches : mutates,
     ),
+  };
+}
+
+/** The offers a ticket's bar draws, and whether a Dispatch among them gave way
+ * to the line that says the project's work has no runner. */
+export interface TicketOffersStartable {
+  readonly offers: TicketOffers;
+  readonly noRunner: boolean;
+}
+
+/** The offers left where work started now has no runner to go to: Dispatch
+ * goes, and nothing else does. Any other answer leaves them as they were. */
+export function ticketOffersStartable(
+  offers: TicketOffers,
+  runner: WorkRunner,
+): TicketOffersStartable {
+  if (
+    runner !== "NoRunner" ||
+    offers.offers === "Unread" ||
+    !offers.actions.some((action) => action.action === "Dispatch")
+  )
+    return { offers, noRunner: false };
+  return {
+    offers: {
+      ...offers,
+      actions: offers.actions.filter((action) => action.action !== "Dispatch"),
+    },
+    noRunner: true,
   };
 }
 
