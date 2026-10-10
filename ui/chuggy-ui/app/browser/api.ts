@@ -246,13 +246,16 @@ export function usePanelInventory<T>(read: PanelRead<T>): PanelState<T> {
 
 /** One tenant's own resource, shared by every project under it and so outside
  * any one partition's refresh path — the same arrangement as `usePanelInventory`,
- * for a read that belongs to the tenant rather than to no partition at all. */
+ * for a read that belongs to the tenant rather than to no partition at all.
+ * Where a caller names a `polledMs` it is read again on that clock, as
+ * `usePanelResource` reads one. */
 export function usePanelTenantResource<T>(
   tenant: string,
   resource: string,
   read: PanelRead<T>,
+  polledMs?: number,
 ): PanelState<T> {
-  return usePanelQuery(tenantResourceKey(tenant, resource), read);
+  return usePanelQuery(tenantResourceKey(tenant, resource), read, polledMs);
 }
 
 /** The reader's own resource, outside every tenant and so every refresh path,
