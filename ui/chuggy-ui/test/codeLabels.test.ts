@@ -41,6 +41,7 @@ import {
   escalationDetail,
   escalationEvidenceLabel,
   escalationKindLabel,
+  escalationStep,
   finalizationAttemptOutcomeLabel,
   finalizationFailureKindLabel,
   finalizationUnavailableKindLabel,
@@ -170,6 +171,57 @@ test("the escalation's one line names the wall where the read carries evidence",
       resumeAt: "ResumeWork",
     }),
   ).toBe("Execution unavailable");
+});
+
+/**
+ * The wall covers a project with no runner, a runner that refused the work and
+ * a hosted route with nothing admitted for it, so its line says what is true
+ * of all three and names no runner.
+ */
+test("the wall that is nothing to run the work says so in a reader's words", () => {
+  expect(blockedReasonLabel("RequiredCapabilityUnavailable")).toBe(
+    "Nowhere to run this work",
+  );
+  for (const kind of [
+    "WorkExecutionUnavailableEscalated",
+    "EvaluationBlockedEscalated",
+  ] as const)
+    expect(
+      escalationDetail({
+        kind,
+        evidence: "RequiredCapabilityUnavailable",
+        resumeAt: "ResumeWork",
+      }),
+    ).toBe("Nowhere to run this work");
+});
+
+/** Every evidence of every roster is walked, so a wall added to one leads
+ * nowhere until this says where. */
+test("only the wall that is nothing to run the work leads to Runners", () => {
+  const evidences = [
+    ...blockedReasons,
+    ...gitEvidences,
+    ...finalizationUnavailableKinds,
+  ];
+  const leading = evidences.filter(
+    (evidence) =>
+      escalationStep({
+        kind: "WorkExecutionUnavailableEscalated",
+        evidence,
+        resumeAt: "ResumeWork",
+      }) !== undefined,
+  );
+  expect(leading).toStrictEqual(["RequiredCapabilityUnavailable"]);
+  for (const kind of escalationKinds) {
+    expect(escalationStep({ kind, resumeAt: "ResumeWork" })).toBeUndefined();
+    expect(
+      escalationStep({
+        kind,
+        evidence: "RequiredCapabilityUnavailable",
+        resumeAt: "ResumeWork",
+      }),
+    ).toBe("Runners");
+  }
 });
 
 /** The continuation path's evidence is drawn from the git roster, the third

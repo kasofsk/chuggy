@@ -85,7 +85,7 @@ function draw(
           partial: false,
           repositories: [],
         }}
-        dispatches={false}
+        start="Waits"
         onCreated={(ticket) => created.push(ticket)}
         existing={(ticket) => <a href="/there">Ticket {ticket}</a>}
         onDirty={(held) => dirty.push(held)}
@@ -121,6 +121,59 @@ test("the YAML starts as the form reads, and reads back into it", async () => {
   ).toBe("Shipped");
 });
 
+function typeTitle(text: string): void {
+  fireEvent.change(screen.getByPlaceholderText("what this ticket is called"), {
+    target: { value: text },
+  });
+}
+
+function problems(): string | null {
+  return screen.queryByRole("list", { name: "Problems" })?.textContent ?? null;
+}
+
+/** The text is the reader's from its first line and is what its submit shows
+ * and sends, so the proposal is written into it as a branch they can read and
+ * change, and the form holds it as typed from then on. */
+test("the YAML of a pull request with an empty branch box is first written with the proposal", async () => {
+  draw(api().ports);
+  fireEvent.click(screen.getByRole("radio", { name: "Pull request" }));
+  typeTitle("Fix the login page");
+  const editor = await toYaml();
+  expect(editor.value).toContain("branch: fix-the-login-page\n");
+  expect(problems()).not.toMatch(/opened from a branch of its own/u);
+  fireEvent.click(screen.getByRole("radio", { name: "Form" }));
+  expect(
+    screen.getByRole<HTMLInputElement>("textbox", { name: "Branch" }).value,
+  ).toBe("fix-the-login-page");
+});
+
+test("the YAML of a push is written with the empty branch its box holds", async () => {
+  draw(api().ports);
+  typeTitle("Fix the login page");
+  const editor = await toYaml();
+  expect(editor.value).toContain('branch: ""\n');
+});
+
+/** Nothing is written into a text once it is the reader's, so a branch they
+ * emptied under a pull request is refused at its key as it was. */
+test("a YAML whose reader empties the branch of a pull request is refused at the key", async () => {
+  draw(api().ports);
+  fireEvent.click(screen.getByRole("radio", { name: "Pull request" }));
+  typeTitle("Fix the login page");
+  const editor = await toYaml();
+  type(
+    editor,
+    editor.value.replace("branch: fix-the-login-page", 'branch: ""'),
+  );
+  await waitFor(() => {
+    expect(problems()).toMatch(/opened from a branch of its own/u);
+  });
+  expect(
+    screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Ticket YAML" })
+      .value,
+  ).toContain('branch: ""\n');
+});
+
 test("text that reads as no form holds the screen on the YAML", async () => {
   const dirty = draw(api().ports);
   const editor = await toYaml();
@@ -146,7 +199,7 @@ test("the submit asks first, and refuses while a problem stands", async () => {
   expect(asked.textContent).toMatch(/One problem must be fixed/u);
   const confirm = within(asked).getByRole("button", {
     name: "Create ticket",
-    description: creationSubmitEffect(false),
+    description: creationSubmitEffect("Waits"),
   });
   expect(confirm.hasAttribute("disabled")).toBe(true);
   fireEvent.click(within(asked).getByRole("button", { name: "Close" }));

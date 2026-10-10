@@ -37,7 +37,10 @@ import {
   abilitiesEvery,
   abilitiesOver,
   abilitiesUnrefusing,
+  unanswered,
 } from "./projectAbilitiesFixture.ts";
+import { workRunnerOver, workRunnerUnreadable } from "./workRunnerReads.ts";
+import type { WorkRunnerReads } from "./workRunnerReads.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 
 const held = vi.hoisted((): { redirects: string[] } => ({ redirects: [] }));
@@ -1094,5 +1097,196 @@ test.each(abilitiesUnrefusing)(
   async (_said, abilities) => {
     await drawPage({ bound: unconfigured, over: abilitiesOver(abilities) });
     expect(bindingRowsText()[0]).toBe("kasofsk/chuggyDeferredRetry");
+  },
+);
+
+/** A bind answered with the configuration it left, which is the answer that
+ * offers a next step. */
+const bootstrapped = (): Response =>
+  answer(
+    {
+      repository: freeUrl,
+      landing: { mode: "Push" },
+      configurations: { result: "Bootstrapped", revision: "bootstrap" },
+    },
+    201,
+  );
+
+const configured = "Default configuration added";
+
+const runnersPath = `/${leadPartition.tenant}/${leadPartition.project}/runners`;
+
+/** The steps the open dialog offers, each by its words and where it goes. */
+function dialogSteps(): readonly (readonly [string | null, string | null])[] {
+  return within(screen.getByRole("dialog"))
+    .queryAllByRole("link", { name: /^(?:Add runner|New ticket)$/u })
+    .map((link) => [link.textContent, link.getAttribute("href")]);
+}
+
+/** The first ticket of a project with no runner parks for want of one, so the
+ * bind leads to the runner first and offers no ticket beside it. */
+test("a bind in a project with no runner leads to adding one, and to no ticket", async () => {
+  await drawPage({
+    posted: bootstrapped,
+    over: workRunnerOver({ runners: "Unregistered" }),
+  });
+  await chooseFree();
+  expect(statusesOf()).toStrictEqual([`${configured} · Add runner`]);
+  expect(dialogSteps()).toStrictEqual([["Add runner", runnersPath]]);
+});
+
+const ticketLeading: readonly (readonly [string, WorkRunnerReads])[] = [
+  ["with a runner that is offline", { runners: "Offline" }],
+  ["with a runner that is live", { runners: "Live" }],
+  [
+    "whose work is hosted, with no runner",
+    { runners: "Unregistered", work: "InCluster" },
+  ],
+  ["whose runners read failed", { runners: workRunnerUnreadable }],
+  [
+    "whose route read failed",
+    { runners: "Unregistered", work: workRunnerUnreadable },
+  ],
+];
+
+test.each(ticketLeading)(
+  "a bind in a project %s leads to a first ticket",
+  async (_project, reads) => {
+    await drawPage({ posted: bootstrapped, over: workRunnerOver(reads) });
+    await chooseFree();
+    expect(statusesOf()).toStrictEqual([`${configured} · New ticket`]);
+    expect(dialogSteps().map(([words]) => words)).toStrictEqual(["New ticket"]);
+  },
+);
+
+/** Either step drawn before the read is back could be the wrong one, and the
+ * line already says what the bind came to. */
+test("a bind whose runners read has not come back draws what it came to and no step yet", async () => {
+  await drawPage({
+    posted: bootstrapped,
+    over: workRunnerOver({ runners: unanswered }),
+  });
+  await chooseFree();
+  expect(statusesOf()).toStrictEqual([configured]);
+  expect(dialogSteps()).toStrictEqual([]);
+});
+
+test("a bind that left no configuration offers no step, runner or none", async () => {
+  await drawPage({
+    posted: () =>
+      answer(
+        {
+          repository: freeUrl,
+          landing: { mode: "Push" },
+          configurations: { result: "Deferred", reason: "StepFailed" },
+        },
+        201,
+      ),
+    over: workRunnerOver({ runners: "Unregistered" }),
+  });
+  await chooseFree();
+  expect(dialogSteps()).toStrictEqual([]);
+});
+
+test("a create in a project with no runner leads to adding one from its row", async () => {
+  const sent = await drawPage({
+    posted: () =>
+      answer(
+        {
+          ...made,
+          configurations: { result: "Bootstrapped", revision: "bootstrap" },
+        },
+        201,
+      ),
+    over: workRunnerOver({ runners: "Unregistered" }),
+  });
+  await typeCreate(sent);
+  expect(
+    within(screen.getByRole("dialog")).getByRole("status").textContent,
+  ).toContain(`Configurations${configured} · Add runner`);
+  expect(dialogSteps()).toStrictEqual([["Add runner", runnersPath]]);
+});
+
+const unbound = { repositories: [] };
+
+function addButtons(): readonly HTMLButtonElement[] {
+  return within(sectionOf("Repositories")).getAllByRole<HTMLButtonElement>(
+    "button",
+    { name: "Add" },
+  );
+}
+
+/** What the open picker is, by what a reader could tell two dialogs apart by. */
+function pickerDrawn(): unknown {
+  const dialog = screen.getByRole("dialog");
+  return {
+    name: dialog.getAttribute("aria-labelledby"),
+    rows: pickerRows(),
+    filter: within(dialog).queryByRole("textbox", { name: "Filter" }) !== null,
+  };
+}
+
+/**
+ * A workspace that has connected GitHub and bound nothing has one thing left
+ * to do here, so the roster's empty line carries the control that does it.
+ * It is the head's own dialog it opens, and a row chosen there binds.
+ */
+test("an empty roster carries Add under its line, and it opens the dialog the head's Add opens", async () => {
+  const sent = await drawPage({
+    claimed: twoAccounts,
+    bound: unbound,
+    posted: bootstrapped,
+  });
+  const [head, body, ...more] = addButtons();
+  if (head === undefined || body === undefined) throw new Error("one Add");
+  expect(more).toStrictEqual([]);
+  expect(body.classList.contains("btn-primary")).toBe(true);
+  expect(body.previousElementSibling?.textContent).toBe("No repository bound");
+
+  fireEvent.click(head);
+  await settled();
+  const fromHead = pickerDrawn();
+  fireEvent.click(
+    within(screen.getByRole("dialog")).getByRole("button", { name: "Close" }),
+  );
+  await settled();
+  expect(screen.queryByRole("dialog")).toBeNull();
+
+  fireEvent.click(body);
+  await settled();
+  expect(pickerDrawn()).toStrictEqual(fromHead);
+  expect(pickerRows()).not.toStrictEqual([]);
+  fireEvent.click(screen.getByRole("button", { name: "gdoteof/scratch" }));
+  await settled();
+  expect(sent.find((one) => one.method === "POST")?.body).toStrictEqual({
+    repository: freeUrl,
+  });
+});
+
+const headOnly: readonly (readonly [string, Drawing])[] = [
+  ["a repository is bound", { claimed: twoAccounts }],
+  [
+    "no account holds the portal app",
+    { claimed: without("portal"), bound: unbound },
+  ],
+  [
+    "an account lacks the worker app, whose install comes first",
+    { bound: unbound, described: { apps: forgeApps, authorization: client } },
+  ],
+  [
+    "no account is connected, and Connect GitHub comes first",
+    {
+      claimed: { truncated: false, installations: [] },
+      bound: unbound,
+      described: { apps: forgeApps, authorization: client },
+    },
+  ],
+];
+
+test.each(headOnly)(
+  "Add is drawn once, in the head, where %s",
+  async (_where, drawing) => {
+    await drawPage(drawing);
+    expect(addButtons()).toHaveLength(1);
   },
 );

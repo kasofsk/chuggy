@@ -46,9 +46,9 @@ import { Figure } from "./ui/Figure.tsx";
 import { Notice } from "./ui/Notice.tsx";
 import { Panel } from "./ui/Panel.tsx";
 import { Table } from "./ui/Table.tsx";
+import { executionPlacementResource } from "./workRunner.tsx";
 
-/** No frame names these reads, so the partition's own refetch is what reaches them. */
-const executionPlacementResource = "execution-placement";
+/** No frame names this read, so the partition's own refetch is what reaches it. */
 const workerPoolsResource = "worker-pools";
 
 /** This page's own address, which its reads are from. */

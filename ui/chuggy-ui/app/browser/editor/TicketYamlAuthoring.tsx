@@ -61,6 +61,7 @@ export interface TicketYamlAuthoringProps {
   readonly storeKey: string;
   readonly submitLabel: string;
   readonly submitEffect?: string | undefined;
+  readonly submitStep?: ReactNode;
   readonly busy: boolean;
   readonly onSubmit: (form: TicketCreationForm) => void;
 }
@@ -100,6 +101,7 @@ function YamlSubmit(props: {
   readonly form: TicketCreationForm | undefined;
   readonly label: string;
   readonly effect: string | undefined;
+  readonly step: ReactNode;
   readonly busy: boolean;
   readonly onSubmit: (form: TicketCreationForm) => void;
 }): ReactNode {
@@ -121,8 +123,9 @@ function YamlSubmit(props: {
         {ticketYamlProblemsSentence(props.problems)}
       </p>
       {props.effect === undefined ? null : (
-        <p id={effect} className="text-ink-3 m-0 text-sm">
-          {props.effect}
+        <p className="text-ink-3 m-0 text-sm">
+          <span id={effect}>{props.effect}</span>
+          {props.step === undefined ? null : <> · {props.step}</>}
         </p>
       )}
       <Button
@@ -243,6 +246,7 @@ export default function TicketYamlAuthoring(
           form={yaml.read}
           label={props.submitLabel}
           effect={props.submitEffect}
+          step={props.submitStep}
           busy={props.busy}
           onSubmit={props.onSubmit}
         />

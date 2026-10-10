@@ -31,6 +31,7 @@ import type {
   RepositoryCreateForm,
   RepositoryCreateOutcome,
 } from "../../core/projectRepositoryCreate.ts";
+import type { WorkRunner } from "../../core/workRunner.ts";
 import { useApiPorts } from "../api.ts";
 import { drawBytes } from "../ports.ts";
 import { Button } from "../ui/Button.tsx";
@@ -41,7 +42,7 @@ import { Notice } from "../ui/Notice.tsx";
 import { Picker } from "../ui/Picker.tsx";
 import { RadioGroup } from "../ui/RadioGroup.tsx";
 import { projectRepositoriesResource } from "./AddRepository.tsx";
-import { NewTicketOffer } from "./NewTicketOffer.tsx";
+import { RepositoryNextStep } from "./RepositoryNextStep.tsx";
 
 const visibilityOptions = forgeRepositoryVisibilities.map((visibility) => ({
   value: visibility,
@@ -94,6 +95,7 @@ function useRepositoryCreate(partition: PartitionIdentity): {
 function CreateOutcome(props: {
   readonly partition: PartitionIdentity;
   readonly outcome: RepositoryCreateOutcome;
+  readonly runner: WorkRunner;
 }): ReactNode {
   if (props.outcome.outcome === "Refused")
     return (
@@ -115,9 +117,10 @@ function CreateOutcome(props: {
         {repositoryCreatedRows(created).map((row) => (
           <Field key={row.label} name={row.label}>
             {row.detail}
-            <NewTicketOffer
+            <RepositoryNextStep
               partition={props.partition}
-              offered={row.ticketOffered}
+              ticketOffered={row.ticketOffered}
+              runner={props.runner}
             />
           </Field>
         ))}
@@ -129,6 +132,7 @@ function CreateOutcome(props: {
 function CreateRepositoryBody(props: {
   readonly partition: PartitionIdentity;
   readonly accounts: readonly string[];
+  readonly runner: WorkRunner;
 }): ReactNode {
   const [account, setAccount] = useState(props.accounts[0] ?? "");
   const [name, setName] = useState("");
@@ -171,7 +175,11 @@ function CreateRepositoryBody(props: {
         Create
       </Button>
       {creating.outcome === undefined ? null : (
-        <CreateOutcome partition={props.partition} outcome={creating.outcome} />
+        <CreateOutcome
+          partition={props.partition}
+          outcome={creating.outcome}
+          runner={props.runner}
+        />
       )}
     </>
   );
@@ -180,6 +188,8 @@ function CreateRepositoryBody(props: {
 export function CreateRepository(props: {
   readonly partition: PartitionIdentity;
   readonly installations: readonly ForgeInstallationResponse[];
+  /** Whether the project's work has a runner to go to, which a create's next step turns on. */
+  readonly runner: WorkRunner;
 }): ReactNode {
   const [open, setOpen] = useState(false);
   const accounts = forgeCreatingAccounts(props.installations);
@@ -191,7 +201,11 @@ export function CreateRepository(props: {
       open={open}
       onOpenChange={setOpen}
     >
-      <CreateRepositoryBody partition={props.partition} accounts={accounts} />
+      <CreateRepositoryBody
+        partition={props.partition}
+        accounts={accounts}
+        runner={props.runner}
+      />
     </Dialog>
   );
 }

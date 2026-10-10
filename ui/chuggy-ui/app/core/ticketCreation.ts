@@ -50,8 +50,10 @@ import { operationStateSentence } from "./codeSentences.ts";
 import { configurationCommitShort, configurationLabel } from "./labels.ts";
 import type { Label } from "./labels.ts";
 import type { OperationStep } from "./operationFollow.ts";
+import type { ProjectAbilityRead } from "./projectAbilities.ts";
 import { repositoryLabel } from "./projectRepositories.ts";
 import { repositoryConfigurations } from "./repositoryConfigurations.ts";
+import { sessionRunnerShortWord } from "./sessionRunners.ts";
 import { threadUploadRefused } from "./threads.ts";
 import {
   overrideFieldKind,
@@ -60,6 +62,7 @@ import {
   overridesNestedOf,
 } from "./ticketOverrides.ts";
 import type { CreationOverrides, OverrideField } from "./ticketOverrides.ts";
+import type { WorkRunner } from "./workRunner.ts";
 
 /** The authoring half of the form, which is exactly what an initialization defaults. */
 export type CreationAuthoring = DraftInitializationResponse["defaults"];
@@ -524,6 +527,51 @@ export function creationBranchOf(branchName: string): CreationBranch {
   return { named: "Ref", ref: `${briefBranchPrefix}${named}` };
 }
 
+/** The longest name a creation proposes, which is one a person reads in a
+ * list of branches and far short of the longest the wire admits. */
+export const creationBranchProposedCharsMax = 48;
+
+/**
+ * A branch name made of a title: its letters and digits in any script,
+ * lowercased, each run of anything else one hyphen, and cut at the end of a
+ * word where it would pass the bound. It is empty where the title holds none.
+ */
+export function creationBranchNameOf(title: string): string {
+  const words =
+    title
+      .normalize("NFKC")
+      .toLowerCase()
+      .match(/[\p{L}\p{M}\p{N}]+/gu) ?? [];
+  const points = Array.from(words.join("-"));
+  if (points.length <= creationBranchProposedCharsMax) return points.join("");
+  const cut = points.slice(0, creationBranchProposedCharsMax).join("");
+  const wordEnd =
+    points[creationBranchProposedCharsMax] === "-"
+      ? cut.length
+      : cut.lastIndexOf("-");
+  return wordEnd > 0 ? cut.slice(0, wordEnd) : cut;
+}
+
+/** The branch a creation proposes: under a landing that opens a pull request,
+ * for a box left empty, where the title has a name in it. */
+export function creationBranchProposed(
+  form: TicketCreationForm,
+): string | undefined {
+  if (!briefFinalizationProposes(form.landingMode)) return undefined;
+  if (form.branchName !== "") return undefined;
+  const name = creationBranchNameOf(form.title);
+  return name === "" ? undefined : name;
+}
+
+/** The form a creation sends: the one it holds, with the branch it proposes
+ * in the box left empty for it. */
+export function creationFormProposed(
+  form: TicketCreationForm,
+): TicketCreationForm {
+  const branchName = creationBranchProposed(form);
+  return branchName === undefined ? form : { ...form, branchName };
+}
+
 /** What the branch key asks for and what naming it does, which the YAML editor explains the key with. */
 export const creationBranchHint = `the branch this work starts from, and lands on unless a target names another, created if it does not exist yet: a name, not a reference, which this console sends as ${briefBranchPrefix}<name>`;
 
@@ -954,20 +1002,44 @@ export function creationOffered<T>(
     : [chosen, ...offered];
 }
 
+/** What a creation's press goes on to once its ticket is released: a start, no
+ * more than the release, or no more because the work has no runner to go to. */
+export type CreationStart = "Starts" | "Waits" | "NoRunner";
+
+/**
+ * What one press goes on to. It starts work only for a reader who may dispatch
+ * in a project whose work has somewhere to run, and until both are read it
+ * waits, as it does for a reader who may not.
+ */
+export function creationStart(
+  dispatch: ProjectAbilityRead,
+  runner: WorkRunner,
+): CreationStart {
+  if (dispatch !== "Asked" || runner === "Held") return "Waits";
+  return runner === "NoRunner" ? "NoRunner" : "Starts";
+}
+
 /** What creating a ticket does beyond making it, for the reader pressing: work
- * starts for one who dispatches, and waits on someone who does for one who may not. */
-export function creationSubmitEffect(dispatches: boolean): string {
-  return dispatches ? "Starts work" : "Released for a dispatcher to start";
+ * starts, waits on someone who dispatches, or has no runner to start on. */
+export function creationSubmitEffect(start: CreationStart): string {
+  switch (start) {
+    case "Starts":
+      return "Starts work";
+    case "Waits":
+      return "Released for a dispatcher to start";
+    case "NoRunner":
+      return sessionRunnerShortWord("NoRunner");
+  }
 }
 
 /** What one submit does: releases a new ticket, releases one and goes on to
  * dispatch it, or releases a Pending one's next revision. */
 export type CreationMotion = "Release" | "Start" | "Update";
 
-/** The motion a creation's submit makes, which goes on to a dispatch for a
- * reader who may make one. */
-export function creationSubmitMotion(dispatches: boolean): CreationMotion {
-  return dispatches ? "Start" : "Release";
+/** The motion a creation's submit makes, which goes on to a dispatch only
+ * where the press starts work. */
+export function creationSubmitMotion(start: CreationStart): CreationMotion {
+  return start === "Starts" ? "Start" : "Release";
 }
 
 /** The motion's own words: what its release is called, what a submit says

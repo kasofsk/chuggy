@@ -21,18 +21,30 @@ import type { ApiResult } from "../app/core/apiRequest.ts";
 import type { ProjectRepositoryBindAnswer } from "../app/core/apiRoutes.ts";
 import type { PanelState } from "../app/core/freshness.ts";
 import {
+  repositoryAddLeads,
   repositoryBindNote,
   repositoryBindOutcome,
   repositoryChoices,
   repositoryConfigureStatus,
   repositoryDeferrals,
   repositoryLabel,
+  repositoryNextStep,
   repositoryOffersLine,
+  type RepositoryNextStep,
   type RepositoryNote,
   type RepositoryOffersStep,
   type RepositoryStepStatus,
 } from "../app/core/projectRepositories.ts";
+import { workRunner } from "../app/core/workRunner.ts";
+import type { WorkRunner } from "../app/core/workRunner.ts";
 import { repositoryRefusalsDrawn } from "./repositoryRefusals.ts";
+import { sessionPlacementBody } from "./sessionPlacementFixture.ts";
+import {
+  executionPlacementBody,
+  workRunnerAnswered,
+  workRunnerFailed,
+  workRunnerUnread,
+} from "./workRunnerFixture.ts";
 
 function reachable(
   over: Partial<ForgeRepositoryResponse>,
@@ -379,3 +391,137 @@ test("an account holding the portal app without the worker app is named, with th
         workerMissing(account),
       );
 });
+
+const steps: readonly (readonly [
+  WorkRunner,
+  RepositoryNextStep | undefined,
+])[] = [
+  ["NoRunner", "AddRunner"],
+  ["Clear", "NewTicket"],
+  ["Held", undefined],
+];
+
+test.each(steps)(
+  "a line that offers a ticket, over a runner read of %s, leads to %s",
+  (runner, step) => {
+    expect(repositoryNextStep(true, runner)).toBe(step);
+  },
+);
+
+test.each(steps)(
+  "a line that offers no ticket leads nowhere, over a runner read of %s",
+  (runner) => {
+    expect(repositoryNextStep(false, runner)).toBeUndefined();
+  },
+);
+
+/** The step a bind's line draws, from the bind's own answer and the two reads
+ * the page holds when it comes back. */
+function bindStep(
+  placement: Parameters<typeof workRunner>[0],
+  runners: Parameters<typeof workRunner>[1],
+): RepositoryNextStep | undefined {
+  const note = boundNote({ result: "Bootstrapped", revision: "r1" });
+  return repositoryNextStep(note.ticketOffered, workRunner(placement, runners));
+}
+
+const toRunners = workRunnerAnswered(executionPlacementBody("Pool"));
+const noneRegistered = workRunnerAnswered(
+  sessionPlacementBody({ project: "Unregistered" }),
+);
+
+test("a bind in a project with no runner leads to adding one", () => {
+  expect(bindStep(toRunners, noneRegistered)).toBe("AddRunner");
+});
+
+test.each(["Offline", "Live"] as const)(
+  "a bind in a project with a runner that is %s leads to a first ticket",
+  (project) => {
+    expect(
+      bindStep(
+        toRunners,
+        workRunnerAnswered(sessionPlacementBody({ project })),
+      ),
+    ).toBe("NewTicket");
+  },
+);
+
+test("a bind in a project whose work is hosted leads to a first ticket", () => {
+  expect(
+    bindStep(
+      workRunnerAnswered(executionPlacementBody("InCluster")),
+      noneRegistered,
+    ),
+  ).toBe("NewTicket");
+});
+
+test("a bind whose runners read has not come back leads nowhere yet", () => {
+  expect(bindStep(toRunners, workRunnerUnread)).toBeUndefined();
+  expect(bindStep(workRunnerUnread, noneRegistered)).toBeUndefined();
+});
+
+test("a bind whose runners read failed leads to a first ticket, as it did", () => {
+  expect(bindStep(toRunners, workRunnerFailed)).toBe("NewTicket");
+  expect(bindStep(workRunnerFailed, noneRegistered)).toBe("NewTicket");
+});
+
+const bound = {
+  repository: "https://forge.test/kasofsk/chuggy",
+  boundAt: "2026-09-11T00:00:00Z",
+  landing: { mode: "Push" as const },
+};
+
+const both = [claim("portal", "kasofsk"), claim("worker", "kasofsk")];
+
+test("an empty roster carries Add where an account grants repositories and no step comes first", () => {
+  expect(
+    repositoryAddLeads({ bindings: [], installations: both, line: undefined }),
+  ).toBe(true);
+});
+
+/** A line with no step names nothing to do first, so Add still leads under it. */
+test("a line that names no step does not take the lead from Add", () => {
+  expect(
+    repositoryAddLeads({
+      bindings: [],
+      installations: both,
+      line: { status: "GitHub unavailable", step: undefined },
+    }),
+  ).toBe(true);
+});
+
+test("Add does not lead while the bindings are unread, or once one is bound", () => {
+  const view = { installations: both, line: undefined };
+  expect(repositoryAddLeads({ ...view, bindings: undefined })).toBe(false);
+  expect(repositoryAddLeads({ ...view, bindings: [bound] })).toBe(false);
+  expect(
+    repositoryAddLeads({
+      ...view,
+      bindings: [{ ...bound, retiredAt: "2026-09-14T00:00:00Z" }],
+    }),
+  ).toBe(false);
+});
+
+test("Add does not lead where no account holds the portal app it reads under", () => {
+  const view = { bindings: [], line: undefined };
+  expect(repositoryAddLeads({ ...view, installations: [] })).toBe(false);
+  expect(
+    repositoryAddLeads({
+      ...view,
+      installations: [claim("worker", "kasofsk")],
+    }),
+  ).toBe(false);
+});
+
+test.each(["Connect", "InstallWorker"] as const)(
+  "Add does not lead under a line whose step is %s, which comes first",
+  (step) => {
+    expect(
+      repositoryAddLeads({
+        bindings: [],
+        installations: both,
+        line: { status: "a line", step },
+      }),
+    ).toBe(false);
+  },
+);

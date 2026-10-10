@@ -111,7 +111,7 @@ function draw(
             partial: false,
             repositories: [],
           }}
-          dispatches={false}
+          start="Waits"
           onCreated={(ticket) => created.push(ticket)}
           existing={() => null}
         />
