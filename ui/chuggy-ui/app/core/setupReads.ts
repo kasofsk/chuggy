@@ -10,6 +10,9 @@
  * forgotten, and a request that is not a read is refused before it is sent.
  * Which project is meant is decided from the same reads: the one there is,
  * the one named, or the one the folder's remote is added to and no other is.
+ * What an installation grants is read only for the two apps on the account
+ * that owns the project's repository, since each listing costs the site a
+ * request to the forge.
  * The list of projects is read a page at a time for a bounded count of pages,
  * and is whole only where the last page read named no next. A name is taken
  * from it without a question only where it is whole; a project named in full
@@ -22,17 +25,21 @@ import type {
   DraftResponse,
   ExecutionPlacementResponse,
   ForgeInstallationResponse,
+  ForgeRepositoryResponse,
   ProjectRepositoryListedResponse,
   SelectorProjectSettingsResponse,
   SessionPlacementResponse,
   TicketLandingResponse,
   TicketResponse,
 } from "../../../../src/contract/responses.ts";
+import { forgeApps } from "../../../../src/contract/rosters.ts";
+import type { ForgeAppName } from "../../../../src/contract/rosters.ts";
 
 import type { ApiFailure, ApiPorts, ApiResult } from "./apiRequest.ts";
 import {
   apiDrafts,
   apiExecutionPlacement,
+  apiForgeInstallationRepositories,
   apiForgeInstallations,
   apiProject,
   apiProjectInventory,
@@ -43,7 +50,7 @@ import {
   projectInventoryPagesMax,
 } from "./apiRoutes.ts";
 import type { SetupAnswers } from "./setupArguments.ts";
-import { setupRepositoryRead } from "./setupRemote.ts";
+import { setupRepositoryOwner, setupRepositoryRead } from "./setupRemote.ts";
 import type { SetupRemote } from "./setupRemote.ts";
 import type { SetupWorkspacesAnswered } from "./setupSession.ts";
 
@@ -58,7 +65,8 @@ const setupUnasked = { read: "Unasked" } as const;
 /** The status a server that says so refuses a caller with; one that hides what it refuses answers not found. */
 const setupForbiddenStatus = 403;
 
-function setupGot<T, V>(
+/** What an answer of the site's is as a read: got, refused where the site hides or forbids it, or failed. */
+export function setupGot<T, V>(
   result: ApiResult<T>,
   value: (answered: T) => V,
   whole: (answered: T) => boolean,
@@ -143,16 +151,31 @@ export interface SetupCandidate {
   readonly repositories: SetupRepositories;
 }
 
+/** Where the folder's remote was looked for. */
+interface SetupSoughtIn {
+  /** The one workspace whose projects were looked in, or none where every project the site shows was. */
+  readonly within: string | undefined;
+}
+
 /** What looking for the folder's remote among the projects came to. */
 export type SetupProposal =
   | { readonly proposal: "Unsought" }
-  | { readonly proposal: "Unbound" }
-  | { readonly proposal: "One"; readonly partition: PartitionIdentity }
-  | {
-      readonly proposal: "Several";
-      readonly partitions: readonly PartitionIdentity[];
-    }
-  | { readonly proposal: "Unread" };
+  | (SetupSoughtIn &
+      (
+        | { readonly proposal: "Unbound" }
+        | { readonly proposal: "One"; readonly partition: PartitionIdentity }
+        | {
+            readonly proposal: "Several";
+            readonly partitions: readonly PartitionIdentity[];
+          }
+        | { readonly proposal: "Unread" }
+      ));
+
+/** What one app's installation on the account that owns the project's repository was read to grant, whole where the listing was all of it. */
+export interface SetupGrant {
+  readonly app: ForgeAppName;
+  readonly listed: SetupRead<readonly ForgeRepositoryResponse[]>;
+}
 
 /** The landings of one ticket that was being landed when the tickets were read. */
 export interface SetupTicketLandings {
@@ -168,6 +191,8 @@ export interface SetupReads {
   readonly proposal: SetupProposal;
   readonly choice: SetupChoice;
   readonly installations: SetupRead<readonly ForgeInstallationResponse[]>;
+  /** One for each app, where the account that owns the repository meant holds both; none otherwise. */
+  readonly grants: readonly SetupGrant[];
   readonly settings: SetupRead<SelectorProjectSettingsResponse>;
   readonly repositories: SetupRepositories;
   /** Where the project's work runs, which is what says whether it waits on a runner at all. */
@@ -367,18 +392,27 @@ function setupChoiceOf(
     : setupChoiceNamed(listing, proposed);
 }
 
+/** The projects the folder's remote is looked for among. */
+interface SetupSeeking extends SetupSoughtIn {
+  readonly partitions: readonly PartitionIdentity[];
+}
+
 /** The projects the folder's remote could name: those the open question is among, where the whole list of them is known. */
 function setupCandidates(
   listing: SetupListing,
   choice: SetupChoice,
-): readonly PartitionIdentity[] {
-  if (choice.choice !== "Open" || !listing.projectsWhole) return [];
-  if (listing.answers.project !== undefined) return [];
+): SetupSeeking {
+  const none: SetupSeeking = { within: undefined, partitions: [] };
+  if (choice.choice !== "Open" || !listing.projectsWhole) return none;
+  if (listing.answers.project !== undefined) return none;
   return choice.open === "workspace"
-    ? listing.projects
-    : listing.projects.filter(
-        (partition) => partition.tenant === choice.workspace,
-      );
+    ? { within: undefined, partitions: listing.projects }
+    : {
+        within: choice.workspace,
+        partitions: listing.projects.filter(
+          (partition) => partition.tenant === choice.workspace,
+        ),
+      };
 }
 
 /** Whether a project has a repository added, and not retired, that is the one an address names. */
@@ -397,6 +431,7 @@ export function setupBound(
 function setupProposalOf(
   remote: SetupRemote,
   candidates: readonly SetupCandidate[],
+  within: string | undefined,
 ): SetupProposal {
   const partitions = candidates
     .filter(
@@ -406,15 +441,15 @@ function setupProposalOf(
     )
     .map((candidate) => candidate.partition);
   const [partition] = partitions;
-  if (partitions.length > 1) return { proposal: "Several", partitions };
+  if (partitions.length > 1) return { proposal: "Several", within, partitions };
   const unread = candidates.some(
     (candidate) =>
       candidate.repositories.read !== "Got" || !candidate.repositories.whole,
   );
-  if (unread) return { proposal: "Unread" };
+  if (unread) return { proposal: "Unread", within };
   return partition === undefined
-    ? { proposal: "Unbound" }
-    : { proposal: "One", partition };
+    ? { proposal: "Unbound", within }
+    : { proposal: "One", within, partition };
 }
 
 async function setupRepositoriesRead(
@@ -436,19 +471,20 @@ interface SetupSought {
 async function setupSought(
   ports: ApiPorts,
   remote: SetupRemote | undefined,
-  partitions: readonly PartitionIdentity[],
+  seeking: SetupSeeking,
 ): Promise<SetupSought> {
+  const { within, partitions } = seeking;
   if (remote === undefined || partitions.length === 0)
     return { proposal: { proposal: "Unsought" }, candidates: [] };
   if (partitions.length > setupCandidatesMax)
-    return { proposal: { proposal: "Unread" }, candidates: [] };
+    return { proposal: { proposal: "Unread", within }, candidates: [] };
   const candidates = await Promise.all(
     partitions.map(async (partition) => ({
       partition,
       repositories: await setupRepositoriesRead(ports, partition),
     })),
   );
-  return { proposal: setupProposalOf(remote, candidates), candidates };
+  return { proposal: setupProposalOf(remote, candidates, within), candidates };
 }
 
 type SetupProjectReads = Pick<
@@ -570,12 +606,68 @@ export function setupPartition(
   return ruledOut ? undefined : named;
 }
 
+/**
+ * The repository the GitHub step and the repository step are both said of:
+ * the first that is configured, else the first added, and none that is
+ * retired. A list cut short names one only where a configured one is in it.
+ */
+export function setupBindingMeant(
+  read: SetupRepositories,
+): ProjectRepositoryListedResponse | undefined {
+  if (read.read !== "Got") return undefined;
+  const added = read.value.filter((held) => held.retiredAt === undefined);
+  return (
+    added.find((held) => held.configured) ?? (read.whole ? added[0] : undefined)
+  );
+}
+
+/**
+ * What each app's installation on the account that owns the repository meant
+ * grants. Nothing is asked where no repository is meant, its address names no
+ * one owner, or that account is not shown holding both apps: the step is then
+ * decided without it, and the forge is spared the request.
+ */
+async function setupGrantsRead(
+  ports: ApiPorts,
+  workspace: string | undefined,
+  installations: SetupReads["installations"],
+  repositories: SetupRepositories,
+): Promise<readonly SetupGrant[]> {
+  const binding = setupBindingMeant(repositories);
+  if (binding === undefined || workspace === undefined) return [];
+  if (installations.read !== "Got") return [];
+  const owner = setupRepositoryOwner(binding.repository);
+  const claims = forgeApps.flatMap((app) => {
+    const claim = installations.value.find(
+      (held) => held.app === app && held.account === owner,
+    );
+    return claim === undefined ? [] : [claim];
+  });
+  if (claims.length < forgeApps.length) return [];
+  return Promise.all(
+    claims.map(async (claim) => ({
+      app: claim.app,
+      listed: setupGot(
+        await apiForgeInstallationRepositories(
+          ports,
+          workspace,
+          claim.installationId,
+        ),
+        (answered) => answered.repositories,
+        (answered) => !answered.truncated,
+      ),
+    })),
+  );
+}
+
 async function setupChosenRead(
   ports: ApiPorts,
   choice: SetupChoice,
   inventory: SetupReads["inventory"],
   candidates: readonly SetupCandidate[],
-): Promise<SetupProjectReads & Pick<SetupReads, "installations" | "landings">> {
+): Promise<
+  SetupProjectReads & Pick<SetupReads, "installations" | "grants" | "landings">
+> {
   const partition = setupPartition(choice, inventory);
   const held = candidates.find(
     (candidate) =>
@@ -596,11 +688,18 @@ async function setupChosenRead(
       ? setupProjectUnasked
       : setupProjectRead(ports, partition, held),
   ]);
-  const landings =
+  const [grants, landings] = await Promise.all([
+    setupGrantsRead(
+      ports,
+      partition?.tenant,
+      installations,
+      project.repositories,
+    ),
     partition === undefined
       ? []
-      : await setupLandingsRead(ports, partition, project.moving);
-  return { ...project, installations, landings };
+      : setupLandingsRead(ports, partition, project.moving),
+  ]);
+  return { ...project, installations, grants, landings };
 }
 
 /**

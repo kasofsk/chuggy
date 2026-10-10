@@ -26,12 +26,17 @@ export const saidTodo: Said = ["todo", ""];
 export const saidAcme: Said = ["done", "acme"];
 export const saidWidgets: Said = ["done", "acme/widgets"];
 export const saidOrg: Said = ["done", "acme-org"];
+/** GitHub once a repository is added: the account that owns it, and that both apps there are granted it. */
+export const saidGranted: Said = [
+  "done",
+  "acme-org, both apps granted acme-org/widgets",
+];
 export const saidRepository: Said = ["done", "acme-org/widgets"];
 export const saidLive: Said = ["done", "live"];
 export const saidReady = [
   saidAcme,
   saidWidgets,
-  saidOrg,
+  saidGranted,
   saidRepository,
   saidLive,
 ] as const;
@@ -74,7 +79,7 @@ export const saidStages: Readonly<Record<SetupSiteStage, readonly Said[]>> = {
   Added: [
     saidAcme,
     saidWidgets,
-    saidOrg,
+    saidGranted,
     ["waiting", "acme-org/widgets is added, its configuration not read yet"],
     saidTodo,
     saidTodo,
@@ -82,7 +87,7 @@ export const saidStages: Readonly<Record<SetupSiteStage, readonly Said[]>> = {
   Configured: [
     saidAcme,
     saidWidgets,
-    saidOrg,
+    saidGranted,
     saidRepository,
     saidTodo,
     saidTodo,
@@ -90,7 +95,7 @@ export const saidStages: Readonly<Record<SetupSiteStage, readonly Said[]>> = {
   Offline: [
     saidAcme,
     saidWidgets,
-    saidOrg,
+    saidGranted,
     saidRepository,
     ["waiting", "registered, not running"],
     saidTodo,
@@ -98,7 +103,7 @@ export const saidStages: Readonly<Record<SetupSiteStage, readonly Said[]>> = {
   Live: [...saidReady, saidTodo],
   Draft: [...saidReady, ["waiting", "ticket 1 is a draft, not released"]],
   Moving: [...saidReady, ["waiting", "ticket 1 is in Work"]],
-  Landed: [...saidReady, ["done", "ticket 1 landed"]],
+  Landed: [...saidReady, ["done", "ticket 1 is done"]],
 };
 
 /** A site with everything before the ticket done, and its project to put tickets in. */
@@ -134,6 +139,8 @@ export const saidUnread: Readonly<
   inventory: [1, "your projects were"],
   settings: [1, "acme/widgets: its lead settings were"],
   installations: [2, "its GitHub accounts were"],
+  portalGrant: [2, "what the portal app is granted on GitHub was"],
+  workerGrant: [2, "what the worker app is granted on GitHub was"],
   repositories: [3, "its repositories were"],
   work: [4, "where its work runs was"],
   placement: [4, "its runners were"],
@@ -222,5 +229,5 @@ export const saidViewer: readonly Said[] = [
   saidAccountsUnshown,
   saidRepository,
   saidLive,
-  ["done", "ticket 1 landed"],
+  ["done", "ticket 1 is done"],
 ];

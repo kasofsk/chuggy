@@ -22,6 +22,7 @@ import { setupRetryDelayMsMax } from "../app/core/setupSession.ts";
 import { setupLockWaitMs, setupLockWord } from "../app/core/setupStore.ts";
 import {
   machineDirectory,
+  machineDraftSuffix,
   machineKept,
   machineRevokeAddress,
   machineSignedIn,
@@ -296,6 +297,75 @@ test("a token the issuer handed back that the machine would not write is a sign-
   expect(machine.lock).toBeUndefined();
 });
 
+const unswept = {
+  fault: "Unwritable",
+  path: `${machineKept}/${setupFiles.session}${machineDraftSuffix}`,
+};
+
+test("a sign-in that was not kept is what is said even where giving the lock up could not remove what the write left, and the lock is given up all the same", async () => {
+  const machine = await signedIn();
+  machine.takes = (file) => file !== setupFiles.session;
+  machine.sweeps = (turn) => turn === 1;
+  expect(await machine.command([])).toEqual({
+    report: "Faulted",
+    asked: "Status",
+    site: undefined,
+    fault: { ...unwritable, fault: "Unkept" },
+  });
+  expect(machine.swept).toHaveLength(2);
+  expect(machine.lock).toBeUndefined();
+});
+
+test("a run that failed in no other way says what giving the lock up could not remove", async () => {
+  const machine = await signedIn();
+  machine.sweeps = (turn) => turn === 1;
+  expect(await machine.command([])).toEqual({
+    report: "Faulted",
+    asked: "Status",
+    site: undefined,
+    fault: unswept,
+  });
+  expect(machine.lock).toBeUndefined();
+});
+
+test("a run that takes the lock and cannot remove what a cut-short write left gives the lock back, names the path, and asks nothing of the site or the issuer", async () => {
+  const machine = await signedIn();
+  machine.sweeps = () => false;
+  for (const argv of [[], ["sign-in"]] as const) {
+    expect(await machine.command(argv)).toMatchObject({
+      report: "Faulted",
+      fault: unswept,
+    });
+    expect(machine.lock).toBeUndefined();
+  }
+  expect(machine.asked).toEqual([]);
+  machine.sweeps = () => true;
+  expect(await machine.command([])).toMatchObject({ report: "Checklist" });
+});
+
+test("the bearer a run reads last is checked like the others: where it renewed, and the machine would not write that token, the sign-in was not kept", async () => {
+  const machine = await signedIn();
+  machine.accessSecs = 61;
+  machine.answering = () => {
+    machine.nowMs += 2_000;
+  };
+  let writes = 0;
+  machine.takes = (file) => {
+    if (file !== setupFiles.session) return true;
+    writes += 1;
+    return writes !== 2;
+  };
+  expect(await machine.command([])).toEqual({
+    report: "Faulted",
+    asked: "Status",
+    site: undefined,
+    fault: { ...unwritable, fault: "Unkept" },
+  });
+  expect(machine.bodies).toHaveLength(2);
+  expect(machine.sent).toEqual([`GET ${machineSite}/access/v1/workspaces`]);
+  expect(machine.lock).toBeUndefined();
+});
+
 test("a second renewal whose token the machine would not write is a sign-in that was not kept, whether or not the machine then let it be forgotten, and never a site that refused", async () => {
   for (const forgets of [true, false]) {
     const machine = await signedIn();
@@ -363,7 +433,7 @@ test("the platforms served are Linux and macOS, each one this program knows how 
     expect(await machine.command([])).toEqual({ report: "SiteUnknown" });
     expect(
       setupOpenerCommand(
-        { platform, browser: undefined, directory: machineDirectory },
+        { platform, browser: undefined },
         "http://127.0.0.1:41001/",
       ),
     ).toBeDefined();

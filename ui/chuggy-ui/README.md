@@ -48,11 +48,11 @@ builds with.
 - `ui/chuggy-ui/app/styles.css` — what the pages that have not moved to the
   design system still draw with; it shrinks as they move.
 - `ui/chuggy-ui/terminal/` — the setup program's entry and its Node adapters:
-  files, a lock, a listener, child processes and requests, filling the ports
-  `ui/chuggy-ui/app/core/setupPorts.ts` declares. Its decisions are in
-  `app/core/` with the console's own. `ui/chuggy-ui/terminal/built.ts` is not
-  part of the program: it is the build's last step, which starts what was
-  built.
+  files, a lock, a listener, child processes, the machine's own paths and
+  requests, filling the ports `ui/chuggy-ui/app/core/setupPorts.ts` declares.
+  Its decisions are in `app/core/` with the console's own.
+  `ui/chuggy-ui/terminal/built.ts` is not part of the program: it is the
+  build's last step, which starts what was built.
 - `ui/chuggy-ui/test/` — the suites, run by the console's own runner.
 - `ui/chuggy-ui/config.example.json` — the shape of the runtime configuration.
 
@@ -151,11 +151,12 @@ It is one file with nothing to install, and it runs on Linux and macOS: on any
 other platform it says so and does nothing. Every line it prints is a word from
 a closed set, a colon and its text; the last is `next:` and names the exact
 command to run after it, or says to stop. It says to stop where running a
-command again would mend nothing until the person has said something: after a
-sign-in that was declined, left to expire or refused, where the site or the
-sign-in server did not answer, where the machine would not keep its files or
-another run held them, and where a step of setup waits on her. A `rule:` line
-then names the command and what must be so before it is run. How the last
+command again would mend nothing until something else has changed: where the
+Node it was run under is too old, after a sign-in that was declined, left to
+expire or refused, where the site or the sign-in server did not answer, where
+the machine would not keep its files or another run held them, and where a
+step of setup waits on her. A `rule:` line then names the command and what
+must be so before it is run. How the last
 sign-in ended is said once by whichever command meets it first; from then on
 the bare command goes on saying it, and the next `sign-in` opens a page. It
 exits 0 where the last line is to be followed, 1 where it failed and 2 where it
@@ -169,9 +170,18 @@ they answered: the site is the record. The sign-in server is sent one renewal,
 and where the site refuses the sign-in, one more and then the revocation of the
 token, which is forgotten. Each read stands by itself, so one the site refused,
 failed or sent only part of leaves its own step not read and is said as that.
-The program does none of the steps yet: for the first one not done a `tell:`
-line says what mends it, a console page and what to press there wherever a page
-is what does, and `next:` is `stop`.
+Once a repository is added the github step is held to it: done only where both
+apps on the account that owns it are granted that repository, which is read
+from each of the two installations' own listings and from no other.
+The runner's step is the one the program does. For any other step that is the
+first not done, a `tell:` line says what mends it, a console page and what to
+press there wherever a page is what does, and `next:` is `stop`. At the
+runner's step it looks at the machine and changes nothing. Where a runner could
+be put there, one `tell:` says what `runner` would put on the machine and the
+`rule:` names that command for once she says yes; where one could not (a Mac,
+user services that do not answer, no container engine that answers her without
+a password, or none the runner package takes from her user) the `tell:` says
+that instead.
 
 With one workspace and one project there is nothing to choose. Otherwise
 `--workspace` and `--project` name them, and every command the program prints
@@ -190,6 +200,33 @@ renewal token in the person's home directory and never prints the token. The
 issuer hands a new token back for each one it is shown, so before one is shown
 the program keeps room in that directory for the next: a home that will not
 take it is said as that, with its path, and the sign-in is not spent.
+
+`runner --workspace <w> --project <p>` sets a runner up for that project on the
+Linux machine it is run on, and is done once the site sees the runner live;
+`--wait-secs` bounds that wait. The machine is the record of the machine's
+things and the site of the site's, and the program keeps neither: every act is
+preceded by the probe that would show it done, so the command is run again
+after any failure and picks up where things stand. In order it has the runner
+package installed, by the console's own install command and under a prefix in
+her home directory where npm's own is not hers to write; the package's
+settings written, with its guide's values, where there are none; the machine
+registered; the package's own check passed; its service installed; her
+services set to outlive a logout; and the service enabled and started. For a
+registration it mints a registration token, which is the one write it sends a
+site, and hands it to the package's `register` as one word of its arguments
+and nowhere else. Every try mints one, so a registration the package refuses
+for the machine's processor or its name is not offered again as the machine
+stands.
+It takes no password: a child has no terminal to ask on, and what wants one is
+told to her to do herself. It does not make the runner's Claude login, and
+stops where there is none. The runner package takes docker from one user of a
+machine only, so docker is asked of that user alone and podman of any other,
+and a user left with no engine is stopped before anything is changed. Nothing
+a child prints is printed as it came: a failure, or a check that passed with a
+warning, keeps one short excerpt with the run's secrets struck out; a
+service's state is said only where it is one word; and of the registration,
+which is handed the token, nothing it printed is kept but which of the
+package's own refusals it was.
 
 ## The session
 

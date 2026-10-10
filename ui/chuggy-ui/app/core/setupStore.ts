@@ -200,9 +200,10 @@ type SetupLockPorts = Pick<
 >;
 
 /**
- * Takes the lock, waiting at most `waitMs` for a run that holds it. Whoever
- * holds it is the one writer of the remembered sign-in, so what a write that
- * was cut short left of that file is removed as the lock is taken.
+ * Takes the lock, waiting at most `waitMs` for a run that holds it, and as the
+ * one writer of the remembered sign-in removes what a write that was cut short
+ * left of that file. Where that cannot be removed the lock is given back
+ * before the path is thrown, so a run that stops there leaves it nobody's.
  */
 export async function setupLockTaken(
   ports: SetupLockPorts,
@@ -214,11 +215,14 @@ export async function setupLockTaken(
     const nowMs = ports.nowMs();
     const nobodys =
       held === undefined || setupLockStale(held, nowMs, ports.process.alive);
-    if (
-      nobodys &&
-      ports.lock.swap(held, setupLockWord(ports.process.pid, nowMs))
-    ) {
-      ports.files.sweep(setupFiles.session);
+    const mine = setupLockWord(ports.process.pid, nowMs);
+    if (nobodys && ports.lock.swap(held, mine)) {
+      try {
+        ports.files.sweep(setupFiles.session);
+      } catch (failure: unknown) {
+        ports.lock.swap(mine, undefined);
+        throw failure;
+      }
       return true;
     }
     if (turn + 1 < turns) await ports.sleepMs(setupLockRetryMs);

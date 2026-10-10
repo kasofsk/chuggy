@@ -7,6 +7,12 @@
  * with, so a state of setup means the same here as there; a case sets it and
  * the site answers each read from it, to whoever holds a token the issuer
  * handed out. Every request either server was sent is kept with its method.
+ * The site takes the writes the model does: a registration token minted for
+ * whoever it admits, and a runner's redemption of one, which carries no
+ * sign-in and is known by the token alone. Each is kept with who sent it, the
+ * program or a runner, which a runner says of itself. What happens on the
+ * machine reaches the site only where a case says how: it is asked before
+ * every answer.
  *
  * The issuer registers the setup client with one redirect and accepts it on
  * any port of `127.0.0.1`, refuses `localhost`, and matches the path exactly.
@@ -29,6 +35,7 @@ import {
   setupSiteAt,
 } from "../../ui/chuggy-ui/test/setupSite.ts";
 import type { SetupSite } from "../../ui/chuggy-ui/test/setupSite.ts";
+import { machineSender } from "./machineShape.ts";
 
 export const standInAudience = "https://chuggy.invalid/api";
 const client = "chuggy-setup";
@@ -42,6 +49,8 @@ export interface StandIn {
   readonly issued: Set<string>;
   /** Every request line either server was sent, and every body. */
   readonly asked: string[];
+  /** Every request to the site that is not a read, as who sent it, its method and its path. */
+  readonly writes: string[];
   /** Each ask of the token endpoint, as its grant and whether it was granted. */
   readonly grants: string[];
   /** Each ask of the revocation endpoint, as the names of what it carried and whether what it named was the sign-in's renewal token. */
@@ -57,6 +66,10 @@ export interface StandIn {
   world: SetupSite;
   /** Whether the site takes the tokens the issuer hands out, or refuses whoever holds one. */
   admits: boolean;
+  /** What happens once the issuer has granted a renewal, before its answer is sent back. */
+  renewed: () => void;
+  /** What the site learns before it answers, where something outside it changes what it holds. */
+  seen: () => void;
   readonly renewal: () => string | undefined;
   readonly close: () => Promise<void>;
 }
@@ -175,7 +188,9 @@ function token(
   standIn.grants.push(`${grant} ${granted ? "granted" : "refused"}`);
   if (granted) {
     const renewable = grant === "refresh_token" || standIn.renewable;
-    sent(response, 200, tokens(standIn, issuer, renewable));
+    const answer = tokens(standIn, issuer, renewable);
+    if (grant === "refresh_token") standIn.renewed();
+    sent(response, 200, answer);
     return;
   }
   if (grant === "refresh_token") {
@@ -246,8 +261,52 @@ function issuerHandler(standIn: StandIn, issuer: Issuer) {
   };
 }
 
+/** Where a runner redeems a registration token, which it is let do by the token alone. */
+const redemption = "/api/v1/worker-pool-registrations";
+
+/** A read of the site, answered from what it holds to whoever it admits. */
+function siteRead(
+  standIn: StandIn,
+  target: string,
+  admitted: boolean,
+  response: ServerResponse,
+): void {
+  const answer = setupSiteAnswered(standIn.world, target);
+  if (answer === undefined) sent(response, 404, {});
+  else if (!standIn.serves) sent(response, 500, {});
+  else if (admitted) sent(response, answer.status, answer.body);
+  else sent(response, 401, {});
+}
+
+/** A write to the site, which changes what it holds only once it is one the site would take. */
+async function siteWritten(
+  standIn: StandIn,
+  request: IncomingMessage,
+  url: URL,
+  admitted: boolean,
+): Promise<{ readonly status: number; readonly body: unknown }> {
+  const method = request.method ?? "";
+  const sender = request.headers[machineSender];
+  const who = typeof sender === "string" ? sender : "program";
+  standIn.writes.push(`${who} ${method} ${url.pathname}`);
+  const body = await bodyOf(request);
+  if (!standIn.serves) return { status: 500, body: {} };
+  if (!admitted && url.pathname !== redemption)
+    return { status: 401, body: {} };
+  const target = `${url.pathname}${url.search}`;
+  return (
+    setupSiteAnswered(standIn.world, target, { method, body }) ?? {
+      status: 404,
+      body: {},
+    }
+  );
+}
+
 function siteHandler(standIn: StandIn, issuer: Issuer) {
-  return (request: IncomingMessage, response: ServerResponse): void => {
+  return async (
+    request: IncomingMessage,
+    response: ServerResponse,
+  ): Promise<void> => {
     const url = new URL(request.url ?? "/", standIn.site);
     standIn.asked.push(`${request.method ?? ""} ${url.href}`);
     if (url.pathname === "/config.json") {
@@ -260,16 +319,15 @@ function siteHandler(standIn: StandIn, issuer: Issuer) {
       });
       return;
     }
-    const answer =
-      request.method === "GET"
-        ? setupSiteAnswered(standIn.world, `${url.pathname}${url.search}`)
-        : undefined;
+    standIn.seen();
     const bearer = (request.headers.authorization ?? "").slice(7);
-    if (answer === undefined) sent(response, 404, {});
-    else if (!standIn.serves) sent(response, 500, {});
-    else if (standIn.admits && issuer.access.has(bearer))
-      sent(response, answer.status, answer.body);
-    else sent(response, 401, {});
+    const admitted = standIn.admits && issuer.access.has(bearer);
+    if (request.method === "GET") {
+      siteRead(standIn, `${url.pathname}${url.search}`, admitted, response);
+      return;
+    }
+    const answer = await siteWritten(standIn, request, url, admitted);
+    sent(response, answer.status, answer.body);
   };
 }
 
@@ -306,6 +364,7 @@ export async function standIn(): Promise<StandIn> {
   const held = {
     issued: new Set<string>(),
     asked: [] as string[],
+    writes: [] as string[],
     grants: [] as string[],
     revocations: [] as string[],
     refusals: [] as string[],
@@ -313,6 +372,8 @@ export async function standIn(): Promise<StandIn> {
     renewable: true,
     serves: true,
     admits: true,
+    renewed: () => undefined,
+    seen: () => undefined,
     world: setupSiteAt("Workspace"),
     renewal: () => issuer.renewal,
     close: async () => {
@@ -322,7 +383,7 @@ export async function standIn(): Promise<StandIn> {
     issuer: "",
   };
   held.site = await serve((request, response) => {
-    siteHandler(held, issuer)(request, response);
+    void siteHandler(held, issuer)(request, response);
   });
   held.issuer = await serve((request, response) => {
     void issuerHandler(held, issuer)(request, response);

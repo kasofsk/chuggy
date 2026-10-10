@@ -101,6 +101,7 @@ function asking(printed: string | undefined): {
       alive: refused,
       detach: refused,
       launch: refused,
+      run: refused,
       read: (...given) => {
         asked.push(given);
         return Promise.resolve(printed);

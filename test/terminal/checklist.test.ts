@@ -7,7 +7,10 @@
  * folder's remote asked of a real git, the commands the program prints split
  * by a real shell and run again, and every request the site was sent kept
  * with its method, so a bare run is seen to have sent nothing but reads. The
- * words a step is said in are the table the console's own suites check.
+ * words a step is said in are the table the console's own suites check. A
+ * home here is a machine with no service manager, so at the runner's step the
+ * program says a runner cannot be put on it and names the page; what it says
+ * and does where one can is the runner suite's.
  */
 
 import assert from "node:assert/strict";
@@ -366,7 +369,7 @@ test("the folder's remote proposes the one project it is added to and says so, p
   const { machine } = session;
   const asks = (done: Ran) => [said(done, "found"), said(done, "ask").length];
   const proposed =
-    "this folder's remote github.com/acme-org/widgets is added to acme/gadgets and to no other project of yours, so this checklist is of acme/gadgets: proposed and not chosen, and --workspace with --project names another";
+    "this folder's remote github.com/acme-org/widgets is added to acme/gadgets and to no other project of acme the site shows you, so this checklist is of acme/gadgets: proposed and not chosen, and --workspace with --project names another";
 
   assert.deepEqual(asks(await read(session, setupSiteTwo())), [[], 1]);
   await machine.checkout();
@@ -397,13 +400,13 @@ test("the folder's remote proposes the one project it is added to and says so, p
   const two = await read(session, both);
   assert.equal(said(two, "ask").length, 1, two.stdout);
   assert.deepEqual(said(two, "found"), [
-    "this folder's remote github.com/acme-org/widgets is added to more than one of your projects (acme/widgets, acme/gadgets), so it proposes none",
+    "this folder's remote github.com/acme-org/widgets is added to more than one project of acme the site shows you (acme/widgets, acme/gadgets), so it proposes none",
   ]);
 
   await machine.checkout("git@github.com:acme-org/elsewhere.git");
   assert.deepEqual(asks(await read(session, setupSiteTwo())), [
     [
-      "this folder's remote github.com/acme-org/elsewhere is added to none of your projects, so it proposes none",
+      "this folder's remote github.com/acme-org/elsewhere is added to no project of acme the site shows you, so it proposes none",
     ],
     1,
   ]);
@@ -431,14 +434,20 @@ function gitAnswering(machine: Home, name: string, body: string): string {
   writeFileSync(join(directory, "git"), `#!/bin/sh\n${body}\n`, {
     mode: 0o755,
   });
-  return `${directory}:${process.env["PATH"] ?? ""}`;
+  return `${directory}:${machine.bin}`;
+}
+
+/** A script's last line that writes nothing and stays for `secs`, as the program this suite runs under and so by no name a run would have to find. */
+function staying(secs: number): string {
+  return `exec '${process.execPath}' -e 'setTimeout(() => undefined, ${String(secs * 1_000)})'`;
 }
 
 test("a git that fails, answers too late or answers with more than an address is given up on and read as no remote", async () => {
   const session = await signed();
   const answer = `printf '%s' ${setupSiteRepositoryAddress}`;
   const lateMs = setupRemoteWaitMs + 3_000;
-  const late = `exec '${process.execPath}' -e 'setTimeout(() => process.stdout.write(process.argv[1]), ${String(lateMs)})' ${setupSiteRepositoryAddress}`;
+  const node = `exec '${process.execPath}' -e`;
+  const late = `${node} 'setTimeout(() => process.stdout.write(process.argv[1]), ${String(lateMs)})' ${setupSiteRepositoryAddress}`;
   const proposed = async (name: string, body: string): Promise<number> => {
     const path = gitAnswering(session.machine, name, body);
     const done = await read(session, setupSiteTwo(), [], { PATH: path });
@@ -449,7 +458,7 @@ test("a git that fails, answers too late or answers with more than an address is
   assert.equal(
     await proposed(
       "long",
-      `${answer}\nhead -c ${String(setupRemoteBytesMax)} /dev/zero | tr '\\0' /`,
+      `${answer}\n${node} 'process.stdout.write("/".repeat(${String(setupRemoteBytesMax)}))'`,
     ),
     0,
   );
@@ -463,7 +472,7 @@ test("a git still running when its wait runs out is ended by the run, which ends
   const path = gitAnswering(
     machine,
     "sleeping",
-    `echo $$ > '${noted}'\nexec sleep ${String(sleepSecs)}`,
+    `echo $$ > '${noted}'\n${staying(sleepSecs)}`,
   );
   const started = Date.now();
   try {
@@ -482,7 +491,7 @@ test("a git the system will not start at all is no remote and no failure", async
   const directory = join(session.machine.beside, "looping");
   mkdirSync(directory);
   symlinkSync(join(directory, "git"), join(directory, "git"));
-  const path = `${directory}:${process.env["PATH"] ?? ""}`;
+  const path = `${directory}:${session.machine.bin}`;
   const done = await read(session, setupSiteTwo(), [], { PATH: path });
   assert.equal(done.code, 0, done.stdout);
   assert.deepEqual(said(done, "found"), []);

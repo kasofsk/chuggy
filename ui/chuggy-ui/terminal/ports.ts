@@ -20,6 +20,7 @@ import {
 } from "../app/core/setupPorts.ts";
 import type { SetupPorts } from "../app/core/setupPorts.ts";
 import { setupFetchTimeoutMs } from "../app/core/setupSession.ts";
+import { disk } from "./disk.ts";
 import { filesIn } from "./files.ts";
 import { listen } from "./listener.ts";
 import { lockIn } from "./lock.ts";
@@ -91,10 +92,14 @@ export function portsOf(script: string): SetupPorts {
     apiFetch,
     listen,
     process: processesOf(script),
+    disk,
     surroundings: {
       platform: process.platform,
       browser: process.env["BROWSER"],
       directory: join("~", setupDirectoryName),
+      home,
+      configHome: process.env["XDG_CONFIG_HOME"],
+      user: process.getuid === undefined ? undefined : String(process.getuid()),
     },
   };
 }

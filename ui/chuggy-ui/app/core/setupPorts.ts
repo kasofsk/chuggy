@@ -9,6 +9,11 @@
  * holds while it uses the remembered sign-in is beside them and is not a file
  * to read and write: it is one word, changed only by a call that names what it
  * says now.
+ *
+ * The runner command needs more of the machine than files of its own: other
+ * programs run to their end and read on both streams, and paths that are the
+ * runner package's, probed and at most made where there was nothing. Neither
+ * port keeps anything of the program's.
  */
 
 import type { ApiFetchPort } from "./apiRequest.ts";
@@ -108,6 +113,17 @@ export type SetupLaunched =
   | { readonly launched: "Running" }
   | { readonly launched: "Ended"; readonly exit: number };
 
+/** How a command that was run to its end ended: not started, ended by the wait, or ended with its exit and what it printed on each stream as far as the bound kept it. */
+export type SetupChildEnded =
+  | { readonly ended: "Unstarted" }
+  | { readonly ended: "Unended" }
+  | {
+      readonly ended: "Exited";
+      readonly exit: number;
+      readonly out: string;
+      readonly err: string;
+    };
+
 export interface SetupProcessPort {
   /** This run's own identity among the machine's processes. */
   readonly pid: number;
@@ -125,6 +141,33 @@ export interface SetupProcessPort {
     waitMs: number,
     bytesMax: number,
   ) => Promise<string | undefined>;
+  /**
+   * Runs a command of the machine's to its end with nothing to read and no
+   * terminal to ask a person on, and answers how it ended. What it prints past
+   * `bytesMax` on a stream is let go of, and one still running at `waitMs` is
+   * ended with everything it started.
+   */
+  readonly run: (
+    command: readonly string[],
+    waitMs: number,
+    bytesMax: number,
+  ) => Promise<SetupChildEnded>;
+}
+
+/** What is at a path: a file, a directory, something else, or nothing this user can see. */
+export type SetupDiskKind = "File" | "Directory" | "Other" | "None";
+
+/** Paths outside the program's own directory, each named whole by the caller. */
+export interface SetupDiskPort {
+  readonly kind: (path: string) => SetupDiskKind;
+  /** The names in a directory, or none where there is no such directory to list. */
+  readonly names: (directory: string) => readonly string[];
+  /** A file's text, or nothing where there is none to read or it is longer than `bytesMax`. */
+  readonly text: (path: string, bytesMax: number) => string | undefined;
+  /** Makes a file only its owner reads, with the directories above it, where nothing is at the path; throws which path it could not make. */
+  readonly make: (path: string, text: string) => void;
+  /** Whether this user may make and remove names in a directory that is there. */
+  readonly writable: (directory: string) => boolean;
 }
 
 /** The platforms the program is served on: those it knows how to open a browser on. */
@@ -139,6 +182,12 @@ export interface SetupSurroundings {
   readonly browser: string | undefined;
   /** The program's own directory, as a person would write it. */
   readonly directory: string;
+  /** The person's home as the machine names it, or nothing where it names none. */
+  readonly home: string | undefined;
+  /** What the person set their configuration directory to, where they set one. */
+  readonly configHome: string | undefined;
+  /** The person as the machine numbers its users, or nothing where it numbers none. */
+  readonly user: string | undefined;
 }
 
 export interface SetupPorts {
@@ -154,5 +203,6 @@ export interface SetupPorts {
   readonly lock: SetupLockPort;
   readonly listen: SetupListenPort;
   readonly process: SetupProcessPort;
+  readonly disk: SetupDiskPort;
   readonly surroundings: SetupSurroundings;
 }
