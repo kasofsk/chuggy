@@ -210,7 +210,7 @@ export type SetupRunnerStop =
   | {
       readonly stop: "Inactive";
       readonly unit: string;
-      /** The one word the service manager said of the service, empty where it said none, or nothing where it did not answer. */
+      /** The one word the service manager said of the service, empty where what it said is no word, or nothing where it did not answer. */
       readonly state: string | undefined;
       /** How long the site had been waited on when the service was found stopped, or nothing where it was asked straight after it was started. */
       readonly waitedSecs: number | undefined;
@@ -452,6 +452,13 @@ const setupReadsSaid: Readonly<Record<SetupRunnerRead, string>> = {
   pools: "which runners it has",
 };
 
+/** The read a run makes before it looks at the machine, which makes it the one read a stop at can say nothing was changed. */
+const setupReadFirst: SetupRunnerRead = "work";
+
+/** What a read the site did not give leaves of a run: a runner not known to be set up, which is not one known not to be. */
+const setupUnknown =
+  "so I cannot say the runner is set up. What was done before stays done";
+
 function setupUnreadSaid(
   stop: Extract<SetupRunnerStop, { readonly stop: "Unread" }>,
   project: string,
@@ -460,13 +467,13 @@ function setupUnreadSaid(
   if (stop.outcome === "Refused")
     return {
       found: `the site does not show you ${project} or ${what}`,
-      tell: `The chuggy site does not show you what a runner for ${project} is set up from, ${setupUnchanged}. An admin of the workspace can see it, or can give you the access to. Tell me if your access changes.`,
+      tell: `The chuggy site does not show you what a runner for ${project} is set up from, ${stop.read === setupReadFirst ? setupUnchanged : setupUnknown}. An admin of the workspace can see it, or can give you the access to. Tell me if your access changes.`,
       when: "if the person says their access has changed",
       again: "Runner",
     };
   return {
     found: `the site did not say of ${project} ${what} (${stop.outcome})`,
-    tell: "The chuggy site did not answer everything I asked it, so the runner is not set up yet. What was done before stays done. Tell me if you want me to try again.",
+    tell: `The chuggy site did not answer everything I asked it, ${setupUnknown}. Tell me if you want me to try again.`,
     when: setupTryAgain,
     again: "Runner",
   };

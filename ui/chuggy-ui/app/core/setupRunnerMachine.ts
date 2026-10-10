@@ -528,7 +528,12 @@ export const setupRunnerCommands = {
   ],
 } as const;
 
-/** Whether a unit is what `verb` asks, and the one word the service manager said of it: empty where it said none, and nothing where it did not answer. */
+/**
+ * Whether a unit is what `verb` asks, and the one word the service manager said
+ * of it: empty where what it said is no word, and nothing where it did not
+ * answer. One that ends badly having printed nothing did not answer, which is
+ * how it ends where it cannot reach the person's services.
+ */
 export async function setupUnitIs(
   ports: SetupPorts,
   verb: "is-enabled" | "is-active",
@@ -542,6 +547,7 @@ export async function setupUnitIs(
   ]);
   if (ended.ended !== "Exited") return { is: false, said: undefined };
   const said = setupFlat(ended.out);
+  if (!setupWell(ended) && said === "") return { is: false, said: undefined };
   return { is: setupWell(ended), said: /^[a-z-]+$/u.test(said) ? said : "" };
 }
 

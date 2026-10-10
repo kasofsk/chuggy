@@ -26,7 +26,10 @@ import {
   setupMintLifetimeSecs,
   setupMintPorts,
 } from "../app/core/setupRunner.ts";
-import { setupLockWord } from "../app/core/setupStore.ts";
+import {
+  setupLockWord,
+  setupSignInNoteWritten,
+} from "../app/core/setupStore.ts";
 import {
   machineKept,
   machineScript,
@@ -85,7 +88,7 @@ function secrets(machine: SetupMachine): readonly string[] {
   return [...machine.world.secrets, ...machine.issued, boxLoginSecret];
 }
 
-/** One command as the entry prints it, which holds no secret whatever the run met. */
+/** One command as the entry prints it: it holds no secret whatever the run met, and where it says a thing was done it does not say nothing was. */
 async function ran(machine: SetupMachine, argv = runner): Promise<Ran> {
   const report = await machine.command(argv);
   const lines = setupReportLines(
@@ -96,6 +99,8 @@ async function ran(machine: SetupMachine, argv = runner): Promise<Ran> {
   const said = lines.join("\n");
   for (const secret of secrets(machine)) expect(said).not.toContain(secret);
   expect(said).not.toMatch(/access-\d/u);
+  if (lines.some((line) => line.startsWith("did: ")))
+    expect(said).not.toMatch(/nothing was changed|did nothing/u);
   return { exit: setupReportExit(report), lines };
 }
 
@@ -925,7 +930,7 @@ test("whether a pool file is good is the site's to say: an unread roster stops t
   expect(unread.exit).toBe(1);
   expect(unread.lines.slice(-4, -2)).toEqual([
     "found: the site did not say of acme/widgets which runners it has (Fault)",
-    "tell: The chuggy site did not answer everything I asked it, so the runner is not set up yet. What was done before stays done. Tell me if you want me to try again.",
+    "tell: The chuggy site did not answer everything I asked it, so I cannot say the runner is set up. What was done before stays done. Tell me if you want me to try again.",
   ]);
   machine.world.fates.set("pools", "Cut");
   expect((await ran(machine)).lines.slice(-2)).toEqual([live, next]);
@@ -1095,14 +1100,14 @@ test("a service that stops while the site is waited on is what the run says when
   expect(machine.box.acts.slice(-3)).toEqual(["start", "active", "active"]);
 });
 
-test("a service manager that does not answer whether the service is running is said as that, straight after the start and after the wait, and never as a service that is not running", async () => {
-  const silentFrom = async (ask: number) => {
+test("a service manager that does not answer whether the service is running, or ends badly having printed nothing as one that cannot reach the person's services does, is said as that, straight after the start and after the wait, and never as a service that is not running", async () => {
+  const silentFrom = async (ask: number, silent: SetupChildEnded) => {
     const machine = await fresh();
     machine.box.polls = false;
     let asked = 0;
     machine.box.answers.set("active", (): SetupChildEnded => {
       asked += 1;
-      if (asked >= ask) return { ended: "Unended" };
+      if (asked >= ask) return silent;
       return asked === 1 ? exited(3, "inactive\n") : exited(0, "active\n");
     });
     const done = await ran(machine, [...runner, "--wait-secs", "3"]);
@@ -1116,12 +1121,15 @@ test("a service manager that does not answer whether the service is running is s
   };
   const unanswered =
     "this machine's user services did not answer whether it is running";
-  expect(await silentFrom(2)).toBe(
-    `found: ${unit} was started and ${unanswered}`,
-  );
-  expect(await silentFrom(3)).toBe(
-    `found: ${unit} was running and after 3 s ${unanswered}`,
-  );
+  const busless = exited(1, "", "Failed to connect to bus: No medium found\n");
+  for (const silent of [{ ended: "Unended" } as const, busless]) {
+    expect(await silentFrom(2, silent)).toBe(
+      `found: ${unit} was started and ${unanswered}`,
+    );
+    expect(await silentFrom(3, silent)).toBe(
+      `found: ${unit} was running and after 3 s ${unanswered}`,
+    );
+  }
 });
 
 test("a workspace or project named as a place an address would fold away is asked wrongly and nothing is asked of the site or the machine, and the names beside those are asked whole, each one part of the address", async () => {
@@ -1207,6 +1215,35 @@ test("where the project's work runs not read is a stop before the machine is loo
     `rule: Run node ${machineScript} runner --workspace acme --project gone only if the person says their access has changed.`,
   ]);
   expect(machine.box.ran).toEqual([]);
+});
+
+test("a read the site hides once the run has acted is the person's to take up as the first is, and says what was done stays done where the first says nothing was changed", async () => {
+  const hidden = (what: string) => [
+    `found: the site does not show you acme/widgets or ${what}`,
+    "tell: The chuggy site does not show you what a runner for acme/widgets is set up from, so I cannot say the runner is set up. What was done before stays done. An admin of the workspace can see it, or can give you the access to. Tell me if your access changes.",
+    again("if the person says their access has changed"),
+    stop,
+  ];
+  const waited = await fresh();
+  waited.world.fates.set("placement", "Refused");
+  const unseen = await ran(waited);
+  expect(unseen.exit).toBe(0);
+  expect(unseen.lines.slice(-5)).toEqual([
+    did.started,
+    ...hidden("how its runners stand"),
+  ]);
+  expect(unseen.lines.slice(3, 5)).toEqual([did.package, did.settings]);
+
+  const machine = await fresh();
+  await ran(machine);
+  machine.box.paths.delete(command);
+  machine.world.fates.set("pools", "Refused");
+  const unlisted = await ran(machine);
+  expect(unlisted.exit).toBe(0);
+  expect(unlisted.lines.slice(-5)).toEqual([
+    did.package,
+    ...hidden("which runners it has"),
+  ]);
 });
 
 test("on a Mac runner says it cannot set one up and names no page, before it asks a site anything or looks at the machine, signed in or not", async () => {
@@ -1365,6 +1402,36 @@ test("a run ended part-way by another command holding the lock, or by a site tha
     expect(out.lines.slice(0, byMint.length), site).toEqual(byMint);
     expect(out.lines.at(-3), site).toBe(tells[index]);
   }
+});
+
+test("a declined sign-in that still stands where a run enters its sign-in again part-way is said as where the run went no further, and as having changed nothing only where the run had done nothing", async () => {
+  const declined = (machine: SetupMachine) => {
+    machine.token = "Refuses";
+    setupSignInNoteWritten(machine.ports().files, {
+      note: "Ended",
+      site: machineSite,
+      ended: "Declined",
+      endedAtMs: machine.nowMs,
+      told: false,
+    });
+  };
+  const told = (left: string) => [
+    `site: ${machineSite}, not signed in`,
+    "found: the sign-in was declined in the browser",
+    `tell: The sign-in was declined in the browser, so chuggy setup is not signed in and ${left}. Tell me if you want to sign in after all.`,
+  ];
+  const partWay = await lapsedAt(declined);
+  expect(partWay.lines.slice(0, byMint.length + 3)).toEqual([
+    ...byMint,
+    ...told("went no further"),
+  ]);
+  const first = await fresh();
+  first.lapse();
+  declined(first);
+  const alone = await ran(first);
+  expect(alone.lines.slice(0, 3)).toEqual(told("nothing was changed"));
+  expect([partWay.lines.at(-1), alone.lines.at(-1)]).toEqual([stop, stop]);
+  expect(first.box.ran).toEqual([]);
 });
 
 const pages = `${machineSite}/acme/widgets`;

@@ -593,7 +593,7 @@ test("lingering is turned on with leave to ask for a password refused, and the c
   expect([...setupLingerByHand]).toEqual(["loginctl", "enable-linger"]);
 });
 
-test("a unit is what it is asked to be where the service manager ends well, the one word it said is kept only where it is a word, and one that did not answer said nothing, which is not an empty word", async () => {
+test("a unit is what it is asked to be where the service manager ends well, the one word it said is kept only where it is a word, and one that did not answer, or ended badly having printed nothing, said nothing, which is not an empty word", async () => {
   const unit = { name: "u.service", path: `${boxUnits}/u.service` };
   const asked = async (answer: SetupChildEnded) => {
     const machine = setupMachine();
@@ -608,7 +608,10 @@ test("a unit is what it is asked to be where the service manager ends well, the 
   expect(await is("active\n", 0)).toEqual({ is: true, said: "active" });
   expect(await is("failed\n", 3)).toEqual({ is: false, said: "failed" });
   expect(await is("next: rm -rf ~\n", 3)).toEqual({ is: false, said: "" });
-  expect(await is("", 1)).toEqual({ is: false, said: "" });
+  expect(await is("", 0)).toEqual({ is: true, said: "" });
+  const busless = "Failed to connect to bus: No medium found\n";
+  for (const ended of [exited(1, ""), exited(1, "\n", busless)])
+    expect(await asked(ended)).toEqual({ is: false, said: undefined });
   for (const ended of ["Unended", "Unstarted"] as const)
     expect(await asked({ ended }), ended).toEqual({
       is: false,

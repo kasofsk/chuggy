@@ -161,6 +161,7 @@ const outs: readonly SetupReport[] = [
   { report: "SiteUnusable", site, phase: "Unconfigured", asked: "Runner" },
   { report: "Busy", asked: "Runner", site, pid: 4242 },
   { report: "Faulted", asked: "Runner", site, fault: faults.Unkept },
+  { report: "SignedOut", site, directory, ended: "Declined" },
 ];
 
 const roster: {
@@ -840,21 +841,32 @@ test("a run of runner says each thing it found and did in the order it met them,
   );
 });
 
-test("a run of runner that a lost sign-in ends says everything it had found and done, as a run that went on says it, then the report that ends it, whole but that the run went no further where that report alone says it did nothing, and exits as that report does", () => {
+/** What a report says that only a run that had done nothing can say. */
+const nothing = /did nothing|nothing was changed/u;
+
+function alone(out: SetupReport): readonly string[] {
+  return setupReportLines(out, machineScript, both);
+}
+
+test("a run of runner that a lost sign-in ends says everything it had found and done, as a run that went on says it, then the report that ends it, whole but that the run went no further where that report alone says it did nothing or that nothing was changed, and exits as that report does", () => {
   expect(roster.RunnerOut).toHaveLength(pairs.length * outs.length);
-  const alone = (out: SetupReport) =>
-    setupReportLines(out, machineScript, both);
-  expect(
-    outs.map((out) => alone(out).join("\n").includes("did nothing")),
-  ).toEqual([false, true, false, true, true, false]);
+  expect(outs.map((out) => nothing.exec(alone(out).join("\n"))?.[0])).toEqual([
+    undefined,
+    "did nothing",
+    undefined,
+    "did nothing",
+    "did nothing",
+    undefined,
+    "nothing was changed",
+  ]);
   for (const report of roster.RunnerOut) {
     const said = JSON.stringify(report.out);
     const lines = setupReportLines(report, machineScript, both);
     const ending = alone(report.out).map((line) =>
-      line.replace("did nothing", "went no further"),
+      line.replace(nothing, "went no further"),
     );
     expect(lines.slice(-ending.length), said).toEqual(ending);
-    expect(lines.join("\n"), said).not.toContain("did nothing");
+    expect(lines.join("\n"), said).not.toMatch(nothing);
     const went = setupReportLines(
       { ...report, report: "Runner", site, ended: { ended: "Live" } },
       machineScript,
@@ -870,7 +882,40 @@ test("a run of runner that a lost sign-in ends says everything it had found and 
       0,
       outs.length,
     ),
-  ).toEqual([0, 1, 1, 1, 1, 1]);
+  ).toEqual([0, 1, 1, 1, 1, 1, 0]);
+});
+
+test("whichever report an entry makes, the run it ends part-way says it as the report alone does but for where that says the run did nothing or changed nothing, which of the endings of a sign-in that stand only one declined does", () => {
+  const entered: readonly SetupReport[] = [
+    ...roster.SiteUnknown,
+    ...roster.SiteUnusable,
+    ...roster.IssuerUnanswered,
+    ...roster.SignedOut,
+    ...roster.WorkspacesUnread,
+    ...roster.Busy,
+    ...roster.Faulted,
+  ];
+  for (const out of entered) {
+    const lines = setupReportLines(
+      {
+        report: "RunnerOut",
+        workspace: "acme",
+        project: "widgets",
+        notes: [],
+        out,
+      },
+      machineScript,
+      both,
+    );
+    expect(lines, JSON.stringify(out)).toEqual(
+      alone(out).map((line) => line.replace(nothing, "went no further")),
+    );
+  }
+  expect(
+    roster.SignedOut.filter((out) => nothing.test(alone(out).join("\n"))).map(
+      (out) => out.ended,
+    ),
+  ).toEqual(["Declined"]);
 });
 
 test("a runner the site sees live, and a project whose work needs none, end on the checklist for that project and tell the person nothing", () => {

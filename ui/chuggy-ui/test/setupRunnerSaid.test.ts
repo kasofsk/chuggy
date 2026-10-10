@@ -65,6 +65,16 @@ const all: { readonly [K in Kind]: ReturnType<typeof said> } = {
       1,
       "Runner",
     ],
+    [
+      "the site does not show you acme/widgets or how its runners stand",
+      0,
+      "Runner",
+    ],
+    [
+      "the site does not show you acme/widgets or which runners it has",
+      0,
+      "Runner",
+    ],
   ],
   NotAdmin: [
     ["the site says you are not an admin of acme/widgets", 0, "Runner"],
@@ -302,23 +312,39 @@ test("every stop tells the person one thing that ends on what they are to tell t
   }
 });
 
-test("only a stop that changed nothing says nothing was changed, and only one after the package went on says what was done stays done", () => {
-  const unchanged = runnerStopsAll
-    .filter((stop) =>
-      setupRunnerStopSaid(stop, "p").tell.includes("nothing was changed"),
-    )
-    .map((stop) => (stop.stop === "Unread" ? stop.outcome : stop.stop));
-  expect([...new Set(unchanged)].toSorted()).toEqual([
+test("only a stop made before the run's first act says nothing was changed, which of the site's reads is the first alone, and a read not given after it says the runner is not known to be set up and never that it is not", () => {
+  const saying = (words: string) =>
+    runnerStopsAll
+      .filter((stop) => setupRunnerStopSaid(stop, "p").tell.includes(words))
+      .map((stop) =>
+        stop.stop === "Unread" ? `${stop.read} ${stop.outcome}` : stop.stop,
+      )
+      .toSorted();
+  expect([...new Set(saying("nothing was changed"))]).toEqual([
     "DockerBarred",
     "Engineless",
     "LoginMissing",
     "Mac",
     "NotAdmin",
     "Npmless",
-    "Refused",
     "Serviceless",
     "SettingsUnread",
+    "work Refused",
   ]);
+  expect(
+    saying(
+      "so I cannot say the runner is set up. What was done before stays done.",
+    ),
+  ).toEqual([
+    "placement Fault",
+    "placement Refused",
+    "pools Cut",
+    "pools Refused",
+  ]);
+  const unread = runnerStops.Unread.map(
+    (stop) => setupRunnerStopSaid(stop, "p").tell,
+  );
+  for (const tell of unread) expect(tell).not.toContain("is not set up");
 });
 
 test("a registration the package refused for what running again does not mend is not offered again as it stands, since every try makes another token: it waits on a runner elsewhere or on this machine's name, and every other refusal may be tried again", () => {

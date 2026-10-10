@@ -255,9 +255,11 @@ interface SetupSaying {
   readonly partWay: boolean;
 }
 
+const setupWentNoFurther = "went no further";
+
 /** What a run came to that the lock or the site stopped at its sign-in: nothing, unless it had gone some way and was entering its sign-in again. */
 function setupCameTo(saying: SetupSaying): string {
-  return saying.partWay ? "went no further" : "did nothing";
+  return saying.partWay ? setupWentNoFurther : "did nothing";
 }
 
 /** A command of this program as it is run: its word, the workspace and project the conversation holds, then whatever else it takes. */
@@ -411,6 +413,10 @@ function setupNodeStop(major: number | undefined): SetupStop {
 
 const setupAskedAgain = "if the person asks to try signing in again";
 
+function setupDeclinedTold(left: string): string {
+  return `The sign-in was declined in the browser, so chuggy setup is not signed in and ${left}. Tell me if you want to sign in after all.`;
+}
+
 /**
  * Every ending that is not a sign-in and after which nothing is run until the
  * person asks. A page is opened by a person's wish and never by a failure, so
@@ -424,7 +430,7 @@ const setupEndingsHeld = {
   },
   Declined: {
     found: "the sign-in was declined in the browser",
-    tell: "The sign-in was declined in the browser, so chuggy setup is not signed in and nothing was changed. Tell me if you want to sign in after all.",
+    tell: setupDeclinedTold("nothing was changed"),
     when: "if the person asks to sign in after all",
   },
   Refused: {
@@ -489,6 +495,14 @@ export function setupSignInHeld(
   return Object.hasOwn(setupEndingsHeld, ended);
 }
 
+/** An ending that stands where a run is not signed in, as a stop. A sign-in declined changed nothing, which a run that met that ending having gone some way does not say of itself. */
+function setupHeldStop(ended: SetupSignInHeld, saying: SetupSaying): SetupStop {
+  const held: SetupStop = setupEndingsHeld[ended];
+  return ended === "Declined" && saying.partWay
+    ? { ...held, tell: setupDeclinedTold(setupWentNoFurther) }
+    : held;
+}
+
 function setupEndedLines(
   report: Extract<SetupReport, { readonly report: "SignInEnded" }>,
   saying: SetupSaying,
@@ -521,7 +535,7 @@ function setupSignedOutLines(
   const head: SetupLine = ["site", `${report.site}, not signed in`];
   const stood: SetupStop | undefined =
     report.ended !== undefined && setupSignInHeld(report.ended)
-      ? setupEndingsHeld[report.ended]
+      ? setupHeldStop(report.ended, saying)
       : undefined;
   if (stood === undefined)
     return [

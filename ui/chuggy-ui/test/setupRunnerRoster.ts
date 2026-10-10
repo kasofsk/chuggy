@@ -58,6 +58,8 @@ export const runnerStops: {
     { stop: "Unread", read: "work", outcome: "Refused" },
     { stop: "Unread", read: "placement", outcome: "Fault" },
     { stop: "Unread", read: "pools", outcome: "Cut" },
+    { stop: "Unread", read: "placement", outcome: "Refused" },
+    { stop: "Unread", read: "pools", outcome: "Refused" },
   ],
   NotAdmin: [{ stop: "NotAdmin" }],
   Serviceless: [{ stop: "Serviceless", guide }],
