@@ -590,6 +590,27 @@ printf '%s\n' 'import { readFile } from "node:fs/promises"' 'export const main =
 seal
 check "a rostered module of Node's does not admit its subpaths" 1 "$RC" "chuggy-ui-terminal-reaches-a-closed-roster:"
 
+# The parser the contract is written in is the one package the program
+# carries. Another package the tree has installed is not on the roster for
+# being installed.
+fixture
+mkdir -p "$R/ui/chuggy-ui/terminal"
+printf '%s\n' 'export const x = 1' > "$R/src/domain/a.ts"
+printf '%s\n' 'import { x } from "../src/domain/a.ts"' 'export const y = x' > "$R/test/a.test.ts"
+printf '%s\n' 'import { parse } from "yaml"' 'export const main = () => parse' > "$R/ui/chuggy-ui/terminal/main.ts"
+seal
+check "the terminal program may not reach a package that is not the contract's parser" 1 "$RC" "chuggy-ui-terminal-reaches-a-closed-roster:"
+
+# The public contract is the one part of the server's source the program
+# carries. The rest of src/ is not admitted beside it.
+fixture
+mkdir -p "$R/ui/chuggy-ui/terminal"
+printf '%s\n' 'export const x = 1' > "$R/src/domain/a.ts"
+printf '%s\n' 'import { x } from "../src/domain/a.ts"' 'export const y = x' > "$R/test/a.test.ts"
+printf '%s\n' 'import { x } from "../../../src/domain/a.ts"' 'export const main = () => x' > "$R/ui/chuggy-ui/terminal/main.ts"
+seal
+check "the terminal program may not reach the server's source outside the contract" 1 "$RC" "chuggy-ui-terminal-reaches-a-closed-roster:"
+
 # What draws in a browser is no part of a program run in a terminal, and the
 # relay is in the decision layer for the reason the case above gives.
 fixture
