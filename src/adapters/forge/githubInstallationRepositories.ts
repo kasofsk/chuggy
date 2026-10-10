@@ -1,11 +1,12 @@
 /**
  * What one installation grants, paged under a bound this deployment sets.
  *
- * THE TOKEN IS SCOPED TO THE INSTALLATION AND NOT TO A REPOSITORY, which is the
- * one mint in this tree that is: the question is which repositories exist at
- * all, and a token naming them would be a token asked for by a caller that
- * already had the answer. It asks for `read` and nothing more, so the listing
- * cannot be made by a credential that could also push.
+ * THE TOKEN IS SCOPED TO THE INSTALLATION AND NOT TO A REPOSITORY, as only this
+ * mint and the one `src/adapters/forge/githubRepositoryCreation.ts` makes are:
+ * the question is which repositories exist at all, and a token naming them
+ * would be a token asked for by a caller that already had the answer. It asks
+ * for `read` and nothing more, so the listing cannot be made by a credential
+ * that could also push.
  *
  * THE TOKEN IS MINTED FOR THE LISTING IT PAGES. What an installation grants
  * changes on the forge with no word to this deployment, and whether a token
