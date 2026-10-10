@@ -31,7 +31,7 @@ import { test } from "node:test";
 import { SetupMachineError } from "../../ui/chuggy-ui/app/core/setupPorts.ts";
 import { disk } from "../../ui/chuggy-ui/terminal/disk.ts";
 import { processesOf } from "../../ui/chuggy-ui/terminal/processes.ts";
-import { ended, eventually, making } from "./program.ts";
+import { ended, eventually, gone, making } from "./program.ts";
 
 const made = making();
 const { read, run } = processesOf("unused");
@@ -49,13 +49,9 @@ const bytesMax = 4_096;
 /** More than a pipe and a reader that stopped reading hold between them, so a child that prints it ends only where it is read on. */
 const floodBytes = bytesMax * 4_096;
 
+/** Whether a process can still run something, which one that ended and that nothing has collected cannot. */
 function running(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
+  return !gone(pid);
 }
 
 test("what is at a path is said following a link to where it points, and a path nobody can be shown is nothing there", () => {

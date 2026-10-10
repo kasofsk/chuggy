@@ -255,7 +255,7 @@ function real(name: string): string {
 }
 
 /** Whether a process can run nothing more: it is not there, or it is only waiting to be collected. */
-function gone(pid: number): boolean {
+export function gone(pid: number): boolean {
   try {
     process.kill(pid, 0);
   } catch (failure: unknown) {
