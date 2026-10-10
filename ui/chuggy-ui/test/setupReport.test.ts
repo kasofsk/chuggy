@@ -152,6 +152,13 @@ function checklist(
   };
 }
 
+/** What ends a run of `runner` whose sign-in the site stopped taking: a report a sign-in entered again comes back with. */
+const outs: readonly SetupReport[] = [
+  { report: "SignedOut", site, directory, ended: undefined },
+  { report: "SiteUnusable", site, phase: "Unreachable", asked: "Runner" },
+  { report: "IssuerUnanswered", site, asked: "Runner" },
+];
+
 const roster: {
   readonly [Kind in SetupReport["report"]]: readonly Extract<
     SetupReport,
@@ -261,18 +268,31 @@ const roster: {
       ended,
     })),
   ),
+  RunnerOut: pairs.flatMap(({ workspace, project }) =>
+    outs.map((out) => ({
+      report: "RunnerOut",
+      workspace,
+      project,
+      notes: runnerNotesAll,
+      out,
+    })),
+  ),
 };
 
 const every: readonly SetupReport[] = Object.values(roster).flat();
 
 /** Every report but a checklist and a run of `runner`, which is every report a run that is not signed in can make. */
 const sessions = every.filter(
-  (report) => report.report !== "Checklist" && report.report !== "Runner",
+  (report) =>
+    report.report !== "Checklist" &&
+    report.report !== "Runner" &&
+    report.report !== "RunnerOut",
 );
 
 /** The choices a run that made a report can have been given: any, and for a run asked as `runner` only those naming both. */
 function given(report: SetupReport): readonly SetupAnswers[] {
-  return "asked" in report && report.asked === "Runner"
+  return report.report === "RunnerOut" ||
+    ("asked" in report && report.asked === "Runner")
     ? choices.filter(
         (held) => held.workspace !== undefined && held.project !== undefined,
       )
@@ -380,6 +400,7 @@ test("every command any line of any report names, on next: or in a rule:, is one
 /** The names a report's commands carry: the project's where it is `runner` that is named or was run, a checklist's own, and otherwise the ones the run was given, which a run that could not read its arguments or its Node has none of. */
 function carried(report: SetupReport, answers: SetupAnswers): SetupAnswers {
   if (report.report === "Runner") return project(report);
+  if (report.report === "RunnerOut") return carried(report.out, answers);
   if (report.report === "Checklist") {
     const thing = report.next.thing;
     return thing.thing === "Offer" ? project(thing) : report.next.carried;
@@ -813,6 +834,31 @@ test("a run of runner says each thing it found and did in the order it met them,
   expect(roster.Runner.filter((one) => one.site === undefined)).toHaveLength(
     pairs.length,
   );
+});
+
+test("a run of runner that a lost sign-in ends says everything it had found and done, as a run that went on says it, then the report that ends it whole, and exits as that report does", () => {
+  expect(roster.RunnerOut).toHaveLength(pairs.length * outs.length);
+  for (const report of roster.RunnerOut) {
+    const said = JSON.stringify(report.out);
+    const lines = setupReportLines(report, machineScript, both);
+    const ending = setupReportLines(report.out, machineScript, both);
+    expect(lines.slice(-ending.length), said).toEqual(ending);
+    const went = setupReportLines(
+      { ...report, report: "Runner", site, ended: { ended: "Live" } },
+      machineScript,
+      both,
+    );
+    expect(lines.slice(0, -ending.length), said).toEqual(
+      went.slice(1, 1 + runnerNotesAll.length),
+    );
+    expect(setupReportExit(report), said).toBe(setupReportExit(report.out));
+  }
+  expect(
+    roster.RunnerOut.map((report) => setupReportExit(report)).slice(
+      0,
+      outs.length,
+    ),
+  ).toEqual([0, 1, 1]);
 });
 
 test("a runner the site sees live, and a project whose work needs none, end on the checklist for that project and tell the person nothing", () => {

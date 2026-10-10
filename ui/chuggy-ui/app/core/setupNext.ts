@@ -36,6 +36,7 @@ import type { SetupChoice } from "./setupReads.ts";
 import type { SetupNext, SetupThing } from "./setupReport.ts";
 import type { SetupRunnerHere } from "./setupRunnerMachine.ts";
 import {
+  setupDockerBarredTold,
   setupEngineNeedsPassword,
   setupEnginesNone,
   setupMacNone,
@@ -193,14 +194,14 @@ const setupRunnerIs =
 
 const setupRunnerRunning = "once the person says the runner is running";
 
-/** A runner registered and not running: started here on the person's yes where this machine is registered as one, and otherwise theirs to start where it is. */
+/** A runner registered and not running: started here on the person's yes where this machine holds a registration for the project, and otherwise theirs to start where it is. */
 function setupRunnerLiveMend(
   at: SetupAt,
   here: SetupRunnerHere | undefined,
 ): SetupThing {
-  return here?.registered === true
+  return here?.held === true
     ? setupOffer(
-        `A runner is registered for ${at.workspace}/${at.project} and is not running, and this machine is registered as one. With your yes I will check it and start it here as a background service of yours that starts when you log in, so work on your tickets runs on this machine in containers, on your Claude plan. Tell me yes to go ahead.`,
+        `A runner is registered for ${at.workspace}/${at.project} and is not running, and this machine holds a registration for that project. With your yes I will check it and start it here as a background service of yours that starts when you log in, registering this machine again first if the site no longer knows that registration, so work on your tickets runs on this machine in containers, on your Claude plan. Tell me yes to go ahead.`,
         at,
       )
     : setupHand(
@@ -223,6 +224,7 @@ function setupRunnerMend(
   const page = setupPage(at, navRoutes.runners);
   const pressed = `press ${setupPressed.runner}`;
   const elsewhere = `Open ${page} and ${pressed}, then do what it shows on the machine that will run the work. Tell me once the runner is running.`;
+  const instead = `For a runner on another machine instead, open ${page} there and ${pressed}, and tell me once it is running.`;
   const room = here?.room;
   switch (room?.room) {
     case undefined:
@@ -244,9 +246,16 @@ function setupRunnerMend(
       );
     case "Engineless":
       return setupHand(
-        `${setupRunnerIs}, in containers. This machine cannot be one yet: ${setupEnginesNone(room.asked)} here without a password. ${setupEngineNeedsPassword} Tell me once one answers you here. For a runner on another machine instead, open ${page} there and ${pressed}, and tell me once it is running.`,
+        `${setupRunnerIs}, in containers. This machine cannot be one yet: ${setupEnginesNone(room.asked)} here without a password. ${setupEngineNeedsPassword} Tell me once one answers you here. ${instead}`,
         "once the person says a container engine answers them on this machine, or that a runner is running",
       );
+    case "DockerBarred": {
+      const told = setupDockerBarredTold(room.user, room.how);
+      return setupHand(
+        `${setupRunnerIs}, in containers. This machine cannot be one yet. ${told.why} ${told.state}. ${told.mend} ${instead}`,
+        `${told.when}, or that a runner is running`,
+      );
+    }
   }
 }
 

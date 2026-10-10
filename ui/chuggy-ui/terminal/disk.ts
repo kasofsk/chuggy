@@ -7,15 +7,19 @@
  * probe the system would not answer is answered as nothing there, since a
  * path this user cannot see is one it cannot use, and what the system said of
  * it is dropped. Only making a file throws, as which path it was. A file is
- * made beside its place and linked onto it, so it is there whole or not at
- * all, and a link is refused where something already holds the name.
+ * made beside its place, put on the disk and only then linked onto it, so it
+ * is there whole or not at all, also on a machine that loses power, and a
+ * link is refused where something already holds the name.
  */
 
 import {
   accessSync,
+  closeSync,
   constants,
+  fsyncSync,
   linkSync,
   mkdirSync,
+  openSync,
   readFileSync,
   readdirSync,
   rmSync,
@@ -57,12 +61,23 @@ function text(path: string, bytesMax: number): string | undefined {
   }
 }
 
+/** Writes a file that was not there and has the system put it on the disk before answering. */
+function flushed(path: string, held: string): void {
+  const file = openSync(path, "wx", fileMode);
+  try {
+    writeFileSync(file, held);
+    fsyncSync(file);
+  } finally {
+    closeSync(file);
+  }
+}
+
 function make(path: string, held: string): void {
   const draft = `${path}.${String(process.pid)}.draft`;
   attempted("Unwritable", path, () => {
     mkdirSync(dirname(path), { recursive: true, mode: directoryMode });
     rmSync(draft, { force: true });
-    writeFileSync(draft, held, { mode: fileMode, flag: "wx" });
+    flushed(draft, held);
     try {
       linkSync(draft, path);
     } finally {

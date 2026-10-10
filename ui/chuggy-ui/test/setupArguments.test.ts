@@ -148,6 +148,11 @@ test.each([
   [["--project", "wid\ngets"], "Name"],
   [["--workspace", "acme", "--project", "wid\u001bgets"], "Name"],
   [["sign-in", "--workspace", "acme\u202e"], "Name"],
+  [["--workspace", "."], "Name"],
+  [["--project", ".."], "Name"],
+  [["runner", "--workspace", "..", "--project", "widgets"], "Name"],
+  [["runner", "--workspace", "acme", "--project", "."], "Name"],
+  [["sign-in", "--workspace=..", "--project=.."], "Name"],
   [["--workspace", "acme", "--workspace", "acme"], "Flag"],
   [["--workspace"], "Flag"],
   [["sign-in", "--wait-secs", "soon"], "WaitSecs"],
@@ -158,6 +163,14 @@ test.each([
   [["listen"], "Site"],
 ])("%j is asked wrongly: %s", (argv, fault) => {
   expect(setupAsked(argv)).toEqual(wrongly(fault));
+});
+
+test("only the two names an address reads as a place are refused for it: names made of dots and others, or of their written-out octets, are names", () => {
+  for (const name of ["...", ".a", "a.", "..a", "%2e", "%2e%2e", ". ."])
+    expect(
+      setupAsked(["runner", "--workspace", name, "--project", name]),
+      name,
+    ).toMatchObject({ asked: "Runner", workspace: name, project: name });
 });
 
 test("the longest wait is read, and no wait at all", () => {

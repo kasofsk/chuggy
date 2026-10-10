@@ -217,6 +217,14 @@ export type SetupReport =
       readonly project: string;
       readonly notes: readonly SetupRunnerNote[];
       readonly ended: SetupRunnerEnded;
+    }
+  | {
+      /** A run of `runner` whose sign-in the site stopped taking part-way: what it had found and done by then, and the report that ends it. */
+      readonly report: "RunnerOut";
+      readonly workspace: string;
+      readonly project: string;
+      readonly notes: readonly SetupRunnerNote[];
+      readonly out: SetupReport;
     };
 
 export const setupWords = [
@@ -802,6 +810,14 @@ function setupChecklistLines(
   ];
 }
 
+/** What a run of `runner` found and did, in the order it met them. */
+function setupNoteLines(
+  report: Extract<SetupReport, { readonly report: "Runner" | "RunnerOut" }>,
+): readonly SetupLine[] {
+  const named = `${report.workspace}/${report.project}`;
+  return report.notes.map((note) => setupRunnerNoteSaid(note, named));
+}
+
 /**
  * A run of `runner`: everything it found and did, in the order it met them,
  * then the checklist as the next command where a runner is live or none is
@@ -818,7 +834,7 @@ function setupRunnerLines(
     ...(report.site === undefined
       ? []
       : [["site", `${report.site}, signed in`] as const]),
-    ...report.notes.map((note) => setupRunnerNoteSaid(note, named)),
+    ...setupNoteLines(report),
   ];
   switch (report.ended.ended) {
     case "Live":
@@ -902,6 +918,8 @@ function setupLines(
       });
     case "Runner":
       return setupRunnerLines(report, saying);
+    case "RunnerOut":
+      return [...setupNoteLines(report), ...setupLines(report.out, saying)];
   }
 }
 
@@ -970,5 +988,7 @@ export function setupReportExit(report: SetupReport): 0 | 1 | 2 {
       return report.ended.ended === "Stopped"
         ? setupRunnerStopExit(report.ended.stop)
         : 0;
+    case "RunnerOut":
+      return setupReportExit(report.out);
   }
 }

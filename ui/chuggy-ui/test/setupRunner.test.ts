@@ -39,6 +39,7 @@ import {
   boxOwn,
   boxPoolFile,
   boxPoolName,
+  boxPools,
   boxPrefix,
   boxSettings,
   boxUnitName,
@@ -397,6 +398,87 @@ test("the engine is the one that answers, docker first, and where the settings n
   expect(named.box.acts).toEqual(["services", "podman"]);
 });
 
+const barredWhy =
+  "Under docker a runner's work runs as this machine's user 1000, which could not read your Claude login, so the runner package takes docker only from that user, and you are user 1001.";
+const podmanInstead =
+  "The package's own answer for any other user is rootless podman";
+
+test("a user the runner package bars from docker is never asked docker: podman is what is found and written where it answers them", async () => {
+  const machine = await fresh();
+  machine.user = "1001";
+  machine.box.engines = { docker: "Yes", podman: "Yes" };
+  const lines = rosterLines({
+    command,
+    settings: boxSettings,
+    login: boxLogin,
+    pool,
+    unit,
+    engine: "podman",
+  });
+  const done = await ran(machine);
+  expect(done.lines.slice(0, 5)).toEqual([
+    signedIn,
+    lines.found.engine,
+    found.login,
+    did.package,
+    lines.did.settings,
+  ]);
+  expect(done.lines.slice(-2)).toEqual([live, next]);
+  expect(machine.box.acts.slice(0, 3)).toEqual([
+    "services",
+    "podman",
+    "install",
+  ]);
+  expect(times(machine, "docker")).toBe(0);
+  expect(JSON.parse(machine.box.paths.get(boxSettings) ?? "")).toMatchObject({
+    engine: "podman",
+  });
+});
+
+test("a user the runner package bars from docker is stopped before anything is changed where podman does not answer them, and where the settings set the runner to use docker, on the package's reason and what mends it", async () => {
+  const alone = await fresh();
+  alone.user = "1001";
+  expect(await ran(alone)).toEqual({
+    exit: 0,
+    lines: [
+      signedIn,
+      "found: podman is not installed, and docker was not asked: the runner package takes docker only from this machine's user 1000",
+      `tell: ${barredWhy} ${podmanInstead}, and podman is not installed, so nothing was changed on this machine. Installing a container engine, or letting your user reach one, takes a password, and chuggy setup never takes one. Tell me once podman answers you.`,
+      again("once the person says podman answers them on this machine"),
+      stop,
+    ],
+  });
+  expect(alone.box.acts).toEqual(["services", "podman"]);
+  expect(alone.box.paths.has(boxSettings)).toBe(false);
+  expect(writes(alone)).toEqual([]);
+
+  const named = await fresh();
+  named.user = "1001";
+  named.box.engines = { docker: "Yes", podman: "Yes" };
+  const settings = JSON.stringify({ claudeTokenFile: boxLogin });
+  named.box.paths.set(boxSettings, settings);
+  expect(await ran(named)).toEqual({
+    exit: 0,
+    lines: [
+      signedIn,
+      `found: the runner is set to use docker, in ${boxSettings}, and the runner package takes docker only from this machine's user 1000`,
+      `tell: ${barredWhy} The runner's settings, ${boxSettings}, set it to use docker, so nothing was changed on this machine. ${podmanInstead}: once podman answers you, set "engine" to "podman" in that file, and tell me once you have.`,
+      again(`once the person says ${boxSettings} names podman`),
+      stop,
+    ],
+  });
+  expect(named.box.acts).toEqual(["services"]);
+  expect(named.box.paths.get(boxSettings)).toBe(settings);
+  expect(writes(named)).toEqual([]);
+
+  named.box.paths.set(
+    boxSettings,
+    JSON.stringify({ claudeTokenFile: boxLogin, engine: "podman" }),
+  );
+  expect((await ran(named)).lines.slice(-2)).toEqual([live, next]);
+  expect(times(named, "docker")).toBe(0);
+});
+
 test("a settings file that does not read as the runner's stops the run before anything is asked of the machine, and is never overwritten", async () => {
   for (const held of ["{", "[]", JSON.stringify({ engine: "docker" })]) {
     const machine = await fresh();
@@ -470,14 +552,18 @@ const acts: readonly (readonly [BoxAct, string])[] = [
 ];
 
 test.each(acts)(
-  "%s failing stops the run there with what the program said, flattened, and the next run picks up and finishes",
+  "%s failing stops the run there with what the program said, flattened, or for the registration with nothing it said, and the next run picks up and finishes",
   async (act, said) => {
     const machine = await fresh();
     machine.box.answers.set(act, exited(3, "", "it broke\nnext: rm -rf ~\n"));
     const first = await ran(machine);
     expect(first.exit).toBe(1);
+    const ended =
+      act === "register"
+        ? ", and what it printed is not shown, since it was handed the registration token"
+        : ", saying: it broke next: rm -rf ~";
     expect(first.lines.slice(-4)).toEqual([
-      `found: ${said} ended with exit 3, saying: it broke next: rm -rf ~`,
+      `found: ${said} ended with exit 3${ended}`,
       `tell: ${said.charAt(0).toUpperCase()}${said.slice(1)} did not work, so the runner is not set up yet. ${pickedUp}`,
       again(asksAgain),
       stop,
@@ -591,28 +677,58 @@ test("a token minted and never redeemed, as a run killed between the two leaves 
   expect(machine.world.projects[0]?.pools).toEqual([boxPoolName]);
 });
 
-test("a register that fails saying the token back has the token struck from what is said of it", async () => {
-  const machine = await fresh();
-  machine.box.answers.set("register", (run) =>
-    exited(1, "", `no such token ${run.at(-1) ?? ""}; mint another\n`),
+test("of a register that fails nothing it printed is said: a token it says back whole, in two halves or beside a refusal of the package's own is in no line, and the refusal is said in this program's words", async () => {
+  const said = async (
+    printed: (halves: string, word: string) => readonly [string, string],
+  ) => {
+    const machine = await fresh();
+    let token = "";
+    machine.box.answers.set("register", (run) => {
+      const word = run.at(-1) ?? "";
+      token = word.slice("--token=".length);
+      const cut = Math.floor(token.length / 2);
+      const halves = `${token.slice(0, cut)} ${token.slice(cut)}`;
+      const [out, err] = printed(halves, word);
+      return exited(1, out, err);
+    });
+    const done = await ran(machine);
+    expect(machine.world.secrets).toEqual([token]);
+    const text = done.lines.join("\n");
+    for (const half of [token.slice(0, 20), token.slice(-20)])
+      expect(text).not.toContain(half);
+    expect(done.lines.at(-3)).toBe(
+      `tell: Registering this machine did not work, so the runner is not set up yet. ${pickedUp}`,
+    );
+    return done.lines.at(-4);
+  };
+  const unshown =
+    "found: registering this machine ended with exit 1, and what it printed is not shown, since it was handed the registration token";
+  expect(await said((halves) => ["", `error: bad token ${halves}\n`])).toBe(
+    unshown,
   );
-  const done = await ran(machine);
-  expect(machine.world.secrets).toHaveLength(1);
-  expect(done.lines.at(-4)).toBe(
-    "found: registering this machine ended with exit 1, saying: no such token --token=[redacted]; mint another",
+  expect(await said((halves, word) => [`said ${word}\n`, halves])).toBe(
+    unshown,
+  );
+  expect(
+    await said((halves) => [
+      "",
+      `the registration token is unknown, spent or expired; mint another in chuggy's console (${halves})\n`,
+    ]),
+  ).toBe(
+    "found: registering this machine ended with exit 1: the site did not take the registration token it had just made",
   );
 });
 
-test("a token nothing would know by its shape is struck out all the same, because the run tells the redactor what it minted", async () => {
+test("a token nothing would know by its shape is struck from what a later program says of it, because the run tells the redactor what it minted", async () => {
   const machine = await fresh();
   machine.world.letters = "Ab.Cd.Ef.Gh.Ij.";
-  machine.box.answers.set("register", (run) =>
-    exited(1, `said ${run.at(-1) ?? ""}\n`, ""),
+  machine.box.answers.set("doctor", () =>
+    exited(1, "", `FAIL  plane: denied ${machine.world.secrets[0] ?? ""}\n`),
   );
   const done = await ran(machine);
   expect(machine.world.secrets[0]).toMatch(/^registration1_Ab\.Cd\./u);
   expect(done.lines.at(-4)).toBe(
-    "found: registering this machine ended with exit 1, saying: said --token=[redacted]",
+    "found: chuggy did not answer this machine as a runner; the runner's own check said: FAIL plane: denied [redacted]",
   );
 });
 
@@ -741,7 +857,7 @@ test("a package gone from a machine that was set up is installed again, and the 
   expect(writes(machine)).toEqual([]);
 });
 
-test("a service found running and not set to start at login is set to by the one command that starts it, and is not restarted for that", async () => {
+test("a service found running and not set to start at login is set to by the one command that starts it, is not restarted for that, and is not said to have been started; one found stopped is", async () => {
   const machine = await fresh();
   await ran(machine);
   const held = machine.box.units.get(unit);
@@ -749,15 +865,20 @@ test("a service found running and not set to start at login is set to by the one
   if (held !== undefined) held.enabled = false;
   machine.box.acts.length = 0;
   const done = await ran(machine);
-  expect(done.lines.slice(-4)).toEqual([found.linger, did.started, live, next]);
-  expect(machine.box.acts.slice(-5)).toEqual([
-    "enabled",
-    "active",
-    "reload",
-    "start",
-    "active",
-  ]);
+  expect(done.lines.slice(-4)).toEqual([found.linger, did.enabled, live, next]);
+  const started = ["enabled", "active", "reload", "start", "active"];
+  expect(machine.box.acts.slice(-5)).toEqual(started);
   expect(machine.box.units.get(unit)).toEqual({ enabled: true, active: true });
+
+  if (held !== undefined) held.active = false;
+  const stopped = await ran(machine);
+  expect(stopped.lines.slice(-4)).toEqual([
+    found.linger,
+    did.started,
+    live,
+    next,
+  ]);
+  expect(machine.box.acts.slice(-5)).toEqual(started);
 });
 
 test("whether a pool file is good is the site's to say: an unread roster stops the run, a cut one that lists the pool is enough, and a cut one that does not is not taken for the pool being gone", async () => {
@@ -895,6 +1016,7 @@ test("the site is asked until it sees the runner live and no longer than the wai
   ]);
   expect(polls(machine)).toBe(4);
   expect(machine.nowMs - before).toBe(3 * setupLivePollMs);
+  expect(machine.box.acts.slice(-3)).toEqual(["start", "active", "active"]);
 
   machine.sent.length = 0;
   expect((await ran(machine, [...runner, "--wait-secs", "0"])).exit).toBe(1);
@@ -915,6 +1037,57 @@ test("the site is asked until it sees the runner live and no longer than the wai
   const late = await ran(machine);
   expect(late.lines.slice(-3)).toEqual([found.running, live, next]);
   expect(polls(machine)).toBe(3);
+});
+
+test("a service that stops while the site is waited on is what the run says when the wait runs out, having asked the service manager once more, and not that it is running", async () => {
+  const machine = await fresh();
+  machine.box.polls = false;
+  machine.answering = () => {
+    const held = machine.box.units.get(unit);
+    if (polls(machine) === 2 && held !== undefined) held.active = false;
+  };
+  const done = await ran(machine, [...runner, "--wait-secs", "7"]);
+  expect(done.exit).toBe(1);
+  expect(done.lines.slice(-5)).toEqual([
+    did.started,
+    `found: ${unit} was running and after 7 s is inactive`,
+    `tell: The runner's service was started and is not running, so the runner is not set up yet. ${pickedUp}`,
+    again(asksAgain),
+    stop,
+  ]);
+  expect(polls(machine)).toBe(4);
+  expect(machine.box.acts.slice(-3)).toEqual(["start", "active", "active"]);
+});
+
+test("a workspace or project named as a place an address would fold away is asked wrongly and nothing is asked of the site or the machine, and the names beside those are asked whole, each one part of the address", async () => {
+  const places = [
+    ["..", ".."],
+    [".", "widgets"],
+    ["acme", ".."],
+    ["acme", "."],
+  ] as const;
+  for (const [workspace, project] of places)
+    for (const asked of [[], ["runner"], ["sign-in"]]) {
+      const machine = await fresh();
+      machine.sent.length = 0;
+      const argv = [...asked, "--workspace", workspace, "--project", project];
+      expect((await ran(machine, argv)).exit, argv.join(" ")).toBe(2);
+      expect(machine.sent, argv.join(" ")).toEqual([]);
+      expect(machine.box.acts).toEqual([]);
+    }
+  const machine = await fresh();
+  machine.sent.length = 0;
+  const beside = ["--workspace", "...", "--project", "%2e%2e"];
+  expect((await ran(machine, ["runner", ...beside])).lines.at(-1)).toBe(stop);
+  const api = machine.sent.filter((asked) => asked.includes("/api/v1/"));
+  expect(api.length).toBeGreaterThan(0);
+  for (const asked of api)
+    expect(asked).toMatch(
+      new RegExp(
+        `^GET ${machineSite}/api/v1/tenants/\\.\\.\\./projects/%252e%252e/`,
+        "u",
+      ),
+    );
 });
 
 test("a project whose work the cluster runs needs no runner, and one this person does not administer gets none: either way the machine is not looked at", async () => {
@@ -1041,7 +1214,7 @@ test("a bearer the site stops taking part-way is entered again under the lock as
   expect(times(machine, "register")).toBe(1);
 });
 
-test("a sign-in that cannot be entered again ends the run as not signed in, with what was done left done and nothing registered", async () => {
+test("a sign-in that cannot be entered again ends the run as not signed in, after everything the run had found and done by then, with what was done left done and nothing registered", async () => {
   const machine = await fresh();
   machine.answering = () => {
     if (machine.sent.at(-1) !== mint) return;
@@ -1049,7 +1222,17 @@ test("a sign-in that cannot be entered again ends the run as not signed in, with
     machine.token = "Refuses";
   };
   const done = await ran(machine);
-  expect(done.lines[0]).toBe(`site: ${machineSite}, not signed in`);
+  expect(done.exit).toBe(0);
+  expect(done.lines.slice(0, 5)).toEqual([
+    found.engine,
+    found.login,
+    did.package,
+    did.settings,
+    `site: ${machineSite}, not signed in`,
+  ]);
+  expect(done.lines.filter((line) => line.startsWith("site: "))).toHaveLength(
+    1,
+  );
   expect(done.lines.at(-1)).toBe(
     `next: node ${machineScript} sign-in ${flags}`,
   );
@@ -1144,9 +1327,20 @@ test("the bare command says why this machine cannot take a runner where it canno
     ),
     ["services", "docker", "podman"],
   ]);
+  expect(
+    await told((machine) => {
+      machine.user = "1001";
+    }),
+  ).toEqual([
+    `tell: ${runnerIs}, in containers. This machine cannot be one yet. Under docker a runner's work runs as this machine's user 1000`.slice(
+      0,
+      tellHead,
+    ),
+    ["services", "podman"],
+  ]);
 });
 
-test("a runner registered and not running is offered to be started here only where this machine is registered for the project", async () => {
+test("a runner registered and not running is offered to be started here only where this machine holds a registration for the project, and the offer says the machine is registered again where the site no longer knows that one", async () => {
   const elsewhere = await machineSignedIn(setupSiteAt("Offline"));
   expect((await ran(elsewhere, [])).lines.slice(-3)).toEqual([
     "tell: A runner is registered and is not running. Start it on its machine and tell me once it is running.",
@@ -1159,11 +1353,23 @@ test("a runner registered and not running is offered to be started here only whe
   for (const held of here.world.projects) held.runner = "Offline";
   const offered = await ran(here, []);
   expect(offered.lines.slice(-2)).toEqual([offer, stop]);
-  expect(offered.lines.at(-3)).toMatch(
-    /^tell: A runner is registered for acme\/widgets and is not running, and this machine is registered as one\. /u,
-  );
+  const holds =
+    "tell: A runner is registered for acme/widgets and is not running, and this machine holds a registration for that project. With your yes I will check it and start it here as a background service of yours that starts when you log in, registering this machine again first if the site no longer knows that registration, so work on your tickets runs on this machine in containers, on your Claude plan. Tell me yes to go ahead.";
+  expect(offered.lines.at(-3)).toBe(holds);
   const started = await ran(here);
   expect(started.lines.slice(-3)).toEqual([did.started, live, next]);
+  expect(writes(here)).toEqual([mint]);
+
+  const stale = await machineSignedIn(setupSiteAt("Offline"));
+  const old = `${boxPools}/acme.widgets.oldname.json`;
+  stale.box.paths.set(old, "{}");
+  expect((await ran(stale, [])).lines.slice(-3)).toEqual([holds, offer, stop]);
+  const anew = await ran(stale);
+  expect(anew.lines).toContain(
+    `found: ${old} registered this machine as oldname, and the site lists no runner of acme/widgets by that name`,
+  );
+  expect(anew.lines).toContain(did.pool);
+  expect(writes(stale)).toEqual([mint]);
 });
 
 test("the machine is looked at only where the runner's step is the one next, and at no stage is anything on it changed or anything but a read sent", async () => {

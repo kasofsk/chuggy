@@ -356,9 +356,9 @@ const offered = (tell: string): SetupThing => ({
 function here(
   lack: SetupLack,
   room: SetupRunnerRoom,
-  registered = false,
+  held = false,
 ): SetupThing {
-  const looked: SetupRunnerHere = { room, registered };
+  const looked: SetupRunnerHere = { room, held };
   return setupNext(lacking(lack), setupAnswersNone, looked).thing;
 }
 
@@ -410,10 +410,48 @@ test("where this machine could not take a runner the person is told why instead,
   );
 });
 
-test("a runner registered and not running is offered to be started here only where this machine is registered as one, and is otherwise the person's to start where it is", () => {
+test("a user the runner package bars from docker is told the package's reason and its way out before any runner is offered here, and the page for another machine", () => {
+  const why =
+    "Under docker a runner's work runs as this machine's user 1000, which could not read your Claude login, so the runner package takes docker only from that user, and you are user 1001.";
+  const podman =
+    "The package's own answer for any other user is rootless podman";
+  const instead = `For a runner on another machine instead, open ${pages}/runners there and press Add runner, and tell me once it is running.`;
+  expect(
+    here(
+      { lacks: "Runner" },
+      {
+        room: "DockerBarred",
+        user: "1001",
+        how: { barred: "Podmanless", answered: "Absent" },
+      },
+    ),
+  ).toEqual(
+    hand(
+      `${runnerIs}, in containers. This machine cannot be one yet. ${why} ${podman}, and podman is not installed. Installing a container engine, or letting your user reach one, takes a password, and chuggy setup never takes one. Tell me once podman answers you. ${instead}`,
+      "once the person says podman answers them on this machine, or that a runner is running",
+    ),
+  );
+  expect(
+    here(
+      { lacks: "Runner" },
+      {
+        room: "DockerBarred",
+        user: "1001",
+        how: { barred: "Named", settings: "/home/person/runner.json" },
+      },
+    ),
+  ).toEqual(
+    hand(
+      `${runnerIs}, in containers. This machine cannot be one yet. ${why} The runner's settings, /home/person/runner.json, set it to use docker. ${podman}: once podman answers you, set "engine" to "podman" in that file, and tell me once you have. ${instead}`,
+      "once the person says /home/person/runner.json names podman, or that a runner is running",
+    ),
+  );
+});
+
+test("a runner registered and not running is offered to be started here only where this machine holds a registration for the project, said as held and as registered again where the site no longer knows it, and is otherwise the person's to start where it is", () => {
   expect(here({ lacks: "RunnerLive" }, roomy, true)).toEqual(
     offered(
-      "A runner is registered for acme/widgets and is not running, and this machine is registered as one. With your yes I will check it and start it here as a background service of yours that starts when you log in, so work on your tickets runs on this machine in containers, on your Claude plan. Tell me yes to go ahead.",
+      "A runner is registered for acme/widgets and is not running, and this machine holds a registration for that project. With your yes I will check it and start it here as a background service of yours that starts when you log in, registering this machine again first if the site no longer knows that registration, so work on your tickets runs on this machine in containers, on your Claude plan. Tell me yes to go ahead.",
     ),
   );
   for (const room of [roomy, { room: "Mac" }, { room: "Serviceless" }] as const)

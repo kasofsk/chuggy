@@ -5,7 +5,10 @@
  */
 
 import { runnerPackageOffered } from "../app/core/runners.ts";
+import { setupRegisterRefusals } from "../app/core/setupRunnerSaid.ts";
 import type {
+  SetupEngine,
+  SetupRegisterRefusal,
   SetupRunnerAct,
   SetupRunnerNote,
   SetupRunnerStop,
@@ -30,6 +33,10 @@ export const rosterUnit = boxUnitName("acme", "widgets");
 /** What `loginctl` says where turning lingering on wants a password. */
 export const rosterLingerRefusal =
   "Could not enable linger: Interactive authentication required.";
+
+const registerRefusals = Object.keys(
+  setupRegisterRefusals,
+) as SetupRegisterRefusal[];
 
 const acts: readonly SetupRunnerAct[] = [
   "Install",
@@ -64,6 +71,23 @@ export const runnerStops: {
     },
     { stop: "Engineless", asked: [{ engine: "podman", answered: "No" }] },
   ],
+  DockerBarred: [
+    {
+      stop: "DockerBarred",
+      user: "1001",
+      how: { barred: "Named", settings: boxSettings },
+    },
+    {
+      stop: "DockerBarred",
+      user: "0",
+      how: { barred: "Podmanless", answered: "Absent" },
+    },
+    {
+      stop: "DockerBarred",
+      user: undefined,
+      how: { barred: "Podmanless", answered: "No" },
+    },
+  ],
   SettingsUnread: [{ stop: "SettingsUnread", path: boxSettings, guide }],
   LoginMissing: [{ stop: "LoginMissing", path: boxLogin, guide }],
   Npmless: [{ stop: "Npmless" }],
@@ -81,6 +105,16 @@ export const runnerStops: {
       act: "Start",
       failed: { how: "Exit", exit: 1, excerpt: "" },
     },
+    {
+      stop: "Act",
+      act: "Register",
+      failed: { how: "ExitUnquoted", exit: 1, refusal: undefined },
+    },
+    ...registerRefusals.map((refusal) => ({
+      stop: "Act" as const,
+      act: "Register" as const,
+      failed: { how: "ExitUnquoted" as const, exit: 2, refusal },
+    })),
   ],
   Unseen: [
     { stop: "Unseen", act: "Install", path: rosterCommand },
@@ -109,8 +143,15 @@ export const runnerStops: {
     },
   ],
   Inactive: [
-    { stop: "Inactive", unit: rosterUnit, state: "failed" },
-    { stop: "Inactive", unit: rosterUnit, state: "" },
+    {
+      stop: "Inactive",
+      unit: rosterUnit,
+      state: "failed",
+      waitedSecs: undefined,
+    },
+    { stop: "Inactive", unit: rosterUnit, state: "", waitedSecs: undefined },
+    { stop: "Inactive", unit: rosterUnit, state: "activating", waitedSecs: 90 },
+    { stop: "Inactive", unit: rosterUnit, state: "", waitedSecs: 0 },
   ],
   NotLive: [
     { stop: "NotLive", waitedSecs: 90, registered: true },
@@ -151,25 +192,27 @@ export const runnerNotes: {
     { note: "LingerOn", read: false },
   ],
   Running: [{ note: "Running", unit: rosterUnit }],
+  Enabled: [{ note: "Enabled", unit: rosterUnit }],
   Started: [{ note: "Started", unit: rosterUnit }],
   Restarted: [{ note: "Restarted", unit: rosterUnit }],
 };
 
-/** Where a machine keeps the things a run names in its lines. */
+/** Where a machine keeps the things a run names in its lines, and the engine it runs its work in where that is not docker. */
 export interface RosterPlaces {
   readonly command: string;
   readonly settings: string;
   readonly login: string;
   readonly pool: string;
   readonly unit: string;
+  readonly engine?: SetupEngine;
 }
 
 /** What a run prints of each thing it found as it should be, and of each thing it did, for acme/widgets on a machine whose things are at `places`. */
 export function rosterLines(places: RosterPlaces) {
-  const { command, settings, login, pool, unit } = places;
+  const { command, settings, login, pool, unit, engine = "docker" } = places;
   return {
     found: {
-      engine: "found: docker answers you without a password",
+      engine: `found: ${engine} answers you without a password`,
       login: `found: the runner's Claude login is in ${login}`,
       settings: `found: the runner's settings are in ${settings}`,
       package: `found: the runner package is installed: chuggy-linux ${boxVersion}, at ${command}`,
@@ -182,10 +225,11 @@ export function rosterLines(places: RosterPlaces) {
     },
     did: {
       package: `did: installed the runner package, chuggy-linux ${boxVersion}, at ${command}`,
-      settings: `did: wrote the runner's settings to ${settings}: its guide's own, with docker as the engine`,
+      settings: `did: wrote the runner's settings to ${settings}: its guide's own, with ${engine} as the engine`,
       pool: `did: registered this machine as a runner of acme/widgets, in ${pool}`,
       unit: `did: installed the runner's service, ${unit}`,
       linger: "did: set your services to keep running after you log out",
+      enabled: `did: set ${unit}, which was running, to start when you log in`,
       started: `did: started ${unit}, which also starts when you log in`,
       restarted: `did: restarted ${unit}, so it runs as it is now registered and installed`,
     },

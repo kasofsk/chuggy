@@ -8,6 +8,8 @@ import { expect, test } from "vitest";
 
 import {
   setupCheckFirst,
+  setupRegisterRefusal,
+  setupRegisterRefusals,
   setupRunnerChecks,
   setupRunnerNoteSaid,
   setupRunnerStopExit,
@@ -79,6 +81,23 @@ const all: { readonly [K in Kind]: ReturnType<typeof said> } = {
     ],
     ["podman did not answer you without a password", 0, "Runner"],
   ],
+  DockerBarred: [
+    [
+      `the runner is set to use docker, in ${boxSettings}, and the runner package takes docker only from this machine's user 1000`,
+      0,
+      "Runner",
+    ],
+    [
+      "podman is not installed, and docker was not asked: the runner package takes docker only from this machine's user 1000",
+      0,
+      "Runner",
+    ],
+    [
+      "podman did not answer you without a password, and docker was not asked: the runner package takes docker only from this machine's user 1000",
+      0,
+      "Runner",
+    ],
+  ],
   SettingsUnread: [
     [
       `${boxSettings} is there and does not read as the runner's settings`,
@@ -148,6 +167,27 @@ const all: { readonly [K in Kind]: ReturnType<typeof said> } = {
       1,
       "Runner",
     ],
+    [
+      "registering this machine ended with exit 1, and what it printed is not shown, since it was handed the registration token",
+      1,
+      "Runner",
+    ],
+    ...[
+      "this machine's name makes no name for a runner",
+      "the runner package does not run on this machine's kind of processor",
+      "the runner package could not make the directory it keeps registrations in",
+      "the site did not answer the runner package",
+      "the site did not take the registration token it had just made",
+      "the site could not register this machine just then",
+      "the runner package could not write this machine's registration",
+    ].map(
+      (ours) =>
+        [
+          `registering this machine ended with exit 2: ${ours}`,
+          1,
+          "Runner",
+        ] as const,
+    ),
   ],
   Unseen: [
     [
@@ -210,6 +250,8 @@ const all: { readonly [K in Kind]: ReturnType<typeof said> } = {
   Inactive: [
     [`${rosterUnit} was started and is failed`, 1, "Runner"],
     [`${rosterUnit} was started and is not running`, 1, "Runner"],
+    [`${rosterUnit} was running and after 90 s is activating`, 1, "Runner"],
+    [`${rosterUnit} was running and after 0 s is not running`, 1, "Runner"],
   ],
   NotLive: [
     [
@@ -250,6 +292,7 @@ test("only a stop that changed nothing says nothing was changed, and only one af
     )
     .map((stop) => (stop.stop === "Unread" ? stop.outcome : stop.stop));
   expect([...new Set(unchanged)].toSorted()).toEqual([
+    "DockerBarred",
     "Engineless",
     "LoginMissing",
     "Mac",
@@ -259,6 +302,27 @@ test("only a stop that changed nothing says nothing was changed, and only one af
     "Serviceless",
     "SettingsUnread",
   ]);
+});
+
+test("a user the package bars from docker is told the package's reason and who they are, then its own way out: the settings changed where they name docker, and podman answering where there are none", () => {
+  const [named, absent, unnumbered] = runnerStops.DockerBarred.map((stop) =>
+    setupRunnerStopSaid(stop, "acme/widgets"),
+  );
+  const why = (who: string) =>
+    `Under docker a runner's work runs as this machine's user 1000, which could not read your Claude login, so the runner package takes docker only from that user, and you are ${who}.`;
+  const podman =
+    "The package's own answer for any other user is rootless podman";
+  expect(named).toMatchObject({
+    tell: `${why("user 1001")} The runner's settings, ${boxSettings}, set it to use docker, so nothing was changed on this machine. ${podman}: once podman answers you, set "engine" to "podman" in that file, and tell me once you have.`,
+    when: `once the person says ${boxSettings} names podman`,
+  });
+  expect(absent).toMatchObject({
+    tell: `${why("user 0")} ${podman}, and podman is not installed, so nothing was changed on this machine. Installing a container engine, or letting your user reach one, takes a password, and chuggy setup never takes one. Tell me once podman answers you.`,
+    when: "once the person says podman answers them on this machine",
+  });
+  expect(unnumbered?.tell).toBe(
+    `${why("not that user")} ${podman}, and podman did not answer you without a password, so nothing was changed on this machine. Installing a container engine, or letting your user reach one, takes a password, and chuggy setup never takes one. Tell me once podman answers you.`,
+  );
 });
 
 test("each thing a run found is said as found and each thing it did as did, in words that name the path, the program or the service", () => {
@@ -284,6 +348,10 @@ test("each thing a run found is said as found and each thing it did as did, in w
   expect(lines("Restarted")).toEqual([
     `did: restarted ${rosterUnit}, so it runs as it is now registered and installed`,
   ]);
+  expect([...lines("Enabled"), ...lines("Started")]).toEqual([
+    `did: set ${rosterUnit}, which was running, to start when you log in`,
+    `did: started ${rosterUnit}, which also starts when you log in`,
+  ]);
   const words = Object.fromEntries(
     Object.entries(runnerNotes).map(([kind, notes]) => [
       kind,
@@ -306,6 +374,7 @@ test("each thing a run found is said as found and each thing it did as did, in w
     Linger: ["found"],
     LingerOn: ["did"],
     Running: ["found"],
+    Enabled: ["did"],
     Started: ["did"],
     Restarted: ["did"],
   });
@@ -353,6 +422,68 @@ test("the checks this program has words for are the ones the package's doctor pr
   ]);
 });
 
+test("the refusals of a registration this program has words for are the package's own sentences, each known by the words of it that never change, and nothing else a registration prints is one", () => {
+  expect(Object.keys(setupRegisterRefusals)).toEqual([
+    "hostname makes no pool name",
+    "a Linux pool runs on",
+    "no token was spent",
+    "did not answer the registration",
+    "is unknown, spent or expired",
+    "run register again",
+    "pool file could not be written",
+  ]);
+  const printed: readonly (readonly [string, string])[] = [
+    [
+      "this machine's hostname makes no pool name; name the pool with --pool",
+      "hostname makes no pool name",
+    ],
+    [
+      "this machine is riscv64, and a Linux pool runs on x64 or arm64",
+      "a Linux pool runs on",
+    ],
+    [
+      `${boxPools} cannot be made a directory only you can write, so no token was spent: EACCES`,
+      "no token was spent",
+    ],
+    [
+      "chuggy at https://chuggy.example did not answer the registration: fetch failed",
+      "did not answer the registration",
+    ],
+    [
+      "chuggy at https://chuggy.example did not answer the registration whole, and the token is spent: terminated",
+      "did not answer the registration",
+    ],
+    [
+      "the registration token is unknown, spent or expired; mint another in chuggy's console",
+      "is unknown, spent or expired",
+    ],
+    [
+      "chuggy could not answer the registration; run register again",
+      "run register again",
+    ],
+    [
+      "chuggy failed the registration with HTTP 502; run register again",
+      "run register again",
+    ],
+    [
+      "the pool file could not be written, and the token is spent, so mint another: ENOSPC",
+      "pool file could not be written",
+    ],
+  ];
+  for (const [line, known] of printed) {
+    expect(setupRegisterRefusal(`${line}\n`), line).toBe(known);
+    expect(setupRegisterRefusal(`first\nerror: ${line}\n`), line).toBe(known);
+  }
+  for (const line of [
+    "",
+    "--token is not a registration token",
+    "chuggy answered the registration with HTTP 418",
+    "toString",
+    "constructor",
+  ])
+    expect(setupRegisterRefusal(line), line).toBeUndefined();
+});
+
 test("an excerpt has every secret the run knows struck from it, and everything shaped like one it was never told", () => {
   const token = "-Zy_registration-token-of-forty-three-chars";
   expect(setupExcerpt(`bad --token=${token}; again ${token}.`, [token])).toBe(
@@ -365,6 +496,9 @@ test("an excerpt has every secret the run knows struck from it, and everything s
   const shaped = "a".repeat(24);
   expect(setupExcerpt(`id ${shaped} and ${shaped.slice(1)}`, [])).toBe(
     `id ${setupRedacted} and ${shaped.slice(1)}`,
+  );
+  expect(setupExcerpt("key ab-cd_ef-gh_ij-kl_mn-op_qr.", [])).toBe(
+    `key ${setupRedacted}.`,
   );
   expect(
     setupExcerpt(

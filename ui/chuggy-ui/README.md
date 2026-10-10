@@ -180,7 +180,8 @@ runner's step it looks at the machine and changes nothing. Where a runner could
 be put there, one `tell:` says what `runner` would put on the machine and the
 `rule:` names that command for once she says yes; where one could not (a Mac,
 user services that do not answer, no container engine that answers her without
-a password) the `tell:` says that instead.
+a password, or none the runner package takes from her user) the `tell:` says
+that instead.
 
 With one workspace and one project there is nothing to choose. Otherwise
 `--workspace` and `--project` name them, and every command the program prints
@@ -216,8 +217,14 @@ site, and hands it to the package's `register` as one word of its arguments
 and nowhere else.
 It takes no password: a child has no terminal to ask on, and what wants one is
 told to her to do herself. It does not make the runner's Claude login, and
-stops where there is none. Nothing a child prints is printed: a failure keeps
-one short excerpt with the run's secrets struck out.
+stops where there is none. The runner package takes docker from one user of a
+machine only, so docker is asked of that user alone and podman of any other,
+and a user left with no engine is stopped before anything is changed. Nothing
+a child prints is printed as it came: a failure, or a check that passed with a
+warning, keeps one short excerpt with the run's secrets struck out; a
+service's state is said only where it is one word; and of the registration,
+which is handed the token, nothing it printed is kept but which of the
+package's own refusals it was.
 
 ## The session
 

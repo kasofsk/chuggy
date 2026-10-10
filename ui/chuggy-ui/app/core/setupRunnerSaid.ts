@@ -25,15 +25,64 @@ export interface SetupEngineAsked {
   readonly answered: "Yes" | "No" | "Absent";
 }
 
+/** The one user of a machine the package takes docker from, by number: the package's own, copied here because no command of it says it. */
+export const setupJobUser = "1000";
+
+/** What leaves a user the package bars from docker with no engine: the runner's settings set it to use docker, or none are written and podman did not answer. */
+export type SetupDockerBarred =
+  | { readonly barred: "Named"; readonly settings: string }
+  | { readonly barred: "Podmanless"; readonly answered: "No" | "Absent" };
+
 /** The things `runner` runs another program to do. */
 export type SetupRunnerAct =
   "Install" | "Register" | "Check" | "Service" | "Reload" | "Start" | "Restart";
 
-/** How a program that was run did not do what it was run for. */
+/**
+ * What the runner package's `register` says where it refuses, by the words of
+ * each that are the same every time and in the order it can meet them, each
+ * with what it means in this program's words.
+ */
+export const setupRegisterRefusals = {
+  "hostname makes no pool name":
+    "this machine's name makes no name for a runner",
+  "a Linux pool runs on":
+    "the runner package does not run on this machine's kind of processor",
+  "no token was spent":
+    "the runner package could not make the directory it keeps registrations in",
+  "did not answer the registration":
+    "the site did not answer the runner package",
+  "is unknown, spent or expired":
+    "the site did not take the registration token it had just made",
+  "run register again": "the site could not register this machine just then",
+  "pool file could not be written":
+    "the runner package could not write this machine's registration",
+} as const;
+
+export type SetupRegisterRefusal = keyof typeof setupRegisterRefusals;
+
+/** Which of the package's refusals a failed registration printed, or nothing where it is none this program knows. */
+export function setupRegisterRefusal(
+  printed: string,
+): SetupRegisterRefusal | undefined {
+  return (Object.keys(setupRegisterRefusals) as SetupRegisterRefusal[]).find(
+    (known) => printed.includes(known),
+  );
+}
+
+/**
+ * How a program that was run did not do what it was run for. One that was
+ * handed a secret ends `ExitUnquoted`: nothing it printed is kept, only which
+ * refusal of a closed set it named.
+ */
 export type SetupChildFailed =
   | { readonly how: "Unstarted" }
   | { readonly how: "Unended"; readonly secs: number }
-  | { readonly how: "Exit"; readonly exit: number; readonly excerpt: string };
+  | { readonly how: "Exit"; readonly exit: number; readonly excerpt: string }
+  | {
+      readonly how: "ExitUnquoted";
+      readonly exit: number;
+      readonly refusal: SetupRegisterRefusal | undefined;
+    };
 
 /** One thing a run found as it was or did, in the order it met them. */
 export type SetupRunnerNote =
@@ -58,8 +107,9 @@ export type SetupRunnerNote =
   | { readonly note: "Unit" | "UnitWritten"; readonly unit: string }
   | { readonly note: "Linger" }
   | { readonly note: "LingerOn"; readonly read: boolean }
+  /** `Enabled` is a service found running and set by this run to start at login, where `Started` is one this run started. */
   | {
-      readonly note: "Running" | "Started" | "Restarted";
+      readonly note: "Running" | "Enabled" | "Started" | "Restarted";
       readonly unit: string;
     };
 
@@ -119,6 +169,12 @@ export type SetupRunnerStop =
   | { readonly stop: "Serviceless"; readonly guide: string }
   | { readonly stop: "Engineless"; readonly asked: readonly SetupEngineAsked[] }
   | {
+      readonly stop: "DockerBarred";
+      /** This machine's user the run is, by number, where the machine numbers them. */
+      readonly user: string | undefined;
+      readonly how: SetupDockerBarred;
+    }
+  | {
       readonly stop: "SettingsUnread" | "LoginMissing";
       readonly path: string;
       readonly guide: string;
@@ -151,7 +207,13 @@ export type SetupRunnerStop =
       readonly command: string;
       readonly excerpt: string;
     }
-  | { readonly stop: "Inactive"; readonly unit: string; readonly state: string }
+  | {
+      readonly stop: "Inactive";
+      readonly unit: string;
+      readonly state: string;
+      /** How long the site had been waited on when the service was found stopped, or nothing where it was asked straight after it was started. */
+      readonly waitedSecs: number | undefined;
+    }
   | {
       readonly stop: "NotLive";
       readonly waitedSecs: number;
@@ -195,6 +257,7 @@ type SetupServiceNote = Extract<
       | "Linger"
       | "LingerOn"
       | "Running"
+      | "Enabled"
       | "Started"
       | "Restarted";
   }
@@ -217,6 +280,11 @@ function setupServiceNoteSaid(note: SetupServiceNote): SetupRunnerNoteSaid {
       ];
     case "Running":
       return ["found", `${note.unit} is enabled and running`];
+    case "Enabled":
+      return [
+        "did",
+        `set ${note.unit}, which was running, to start when you log in`,
+      ];
     case "Started":
       return ["did", `started ${note.unit}, which also starts when you log in`];
     case "Restarted":
@@ -280,6 +348,7 @@ export function setupRunnerNoteSaid(
     case "Linger":
     case "LingerOn":
     case "Running":
+    case "Enabled":
     case "Started":
     case "Restarted":
       return setupServiceNoteSaid(note);
@@ -309,20 +378,67 @@ export function setupEnginesNone(asked: readonly SetupEngineAsked[]): string {
 export const setupEngineNeedsPassword =
   "Installing a container engine, or letting your user reach one, takes a password, and chuggy setup never takes one.";
 
+function setupEngineNone({ engine, answered }: SetupEngineAsked): string {
+  return answered === "Absent"
+    ? `${engine} is not installed`
+    : `${engine} did not answer you without a password`;
+}
+
 function setupEnginelessSaid(
   asked: readonly SetupEngineAsked[],
 ): SetupRunnerStopSaid {
-  const found = asked
-    .map(({ engine, answered }) =>
-      answered === "Absent"
-        ? `${engine} is not installed`
-        : `${engine} did not answer you without a password`,
-    )
-    .join("; ");
   return {
-    found,
+    found: asked.map(setupEngineNone).join("; "),
     tell: `A runner does its work in containers, and ${setupEnginesNone(asked)} on this machine without a password, ${setupUnchanged}. ${setupEngineNeedsPassword} Tell me once one answers you.`,
     when: "once the person says a container engine answers them on this machine",
+    again: "Runner",
+  };
+}
+
+/** A person the package bars from docker, as they are told it: the package's reason, what leaves them no engine, what mends it, and what that waits on. */
+export interface SetupDockerBarredTold {
+  readonly why: string;
+  readonly state: string;
+  readonly mend: string;
+  readonly when: string;
+}
+
+const setupPodmanInstead =
+  "The package's own answer for any other user is rootless podman";
+
+/** The package's rule in this program's words: a job under docker is one user of the machine, who could read no other's Claude login. */
+export function setupDockerBarredTold(
+  user: string | undefined,
+  how: SetupDockerBarred,
+): SetupDockerBarredTold {
+  const why = `Under docker a runner's work runs as this machine's user ${setupJobUser}, which could not read your Claude login, so the runner package takes docker only from that user, and you are ${user === undefined ? "not that user" : `user ${user}`}.`;
+  if (how.barred === "Named")
+    return {
+      why,
+      state: `The runner's settings, ${how.settings}, set it to use docker`,
+      mend: `${setupPodmanInstead}: once podman answers you, set "engine" to "podman" in that file, and tell me once you have.`,
+      when: `once the person says ${how.settings} names podman`,
+    };
+  return {
+    why,
+    state: `${setupPodmanInstead}, and ${setupEngineNone({ engine: "podman", answered: how.answered })}`,
+    mend: `${setupEngineNeedsPassword} Tell me once podman answers you.`,
+    when: "once the person says podman answers them on this machine",
+  };
+}
+
+function setupDockerBarredSaid(
+  stop: Extract<SetupRunnerStop, { readonly stop: "DockerBarred" }>,
+): SetupRunnerStopSaid {
+  const { why, state, mend, when } = setupDockerBarredTold(stop.user, stop.how);
+  const only = `the runner package takes docker only from this machine's user ${setupJobUser}`;
+  return {
+    found:
+      stop.how.barred === "Named"
+        ? `the runner is set to use docker, in ${stop.how.settings}, and ${only}`
+        : `${setupEngineNone({ engine: "podman", answered: stop.how.answered })}, and docker was not asked: ${only}`,
+    tell: `${why} ${state}, ${setupUnchanged}. ${mend}`,
+    when,
     again: "Runner",
   };
 }
@@ -373,6 +489,10 @@ function setupFailedSaid(failed: SetupChildFailed): string {
       return failed.excerpt === ""
         ? `ended with exit ${String(failed.exit)} and said nothing`
         : `ended with exit ${String(failed.exit)}, saying: ${failed.excerpt}`;
+    case "ExitUnquoted":
+      return failed.refusal === undefined
+        ? `ended with exit ${String(failed.exit)}, and what it printed is not shown, since it was handed the registration token`
+        : `ended with exit ${String(failed.exit)}: ${setupRegisterRefusals[failed.refusal]}`;
   }
 }
 
@@ -506,7 +626,7 @@ function setupServiceSaid(
       };
     case "Inactive":
       return {
-        found: `${stop.unit} was started and is ${stop.state === "" ? "not running" : stop.state}`,
+        found: `${stop.unit} ${stop.waitedSecs === undefined ? "was started and" : `was running and after ${String(stop.waitedSecs)} s`} is ${stop.state === "" ? "not running" : stop.state}`,
         tell: `The runner's service was started and is not running, so the runner is not set up yet. ${setupPickedUp}`,
         when: setupTryAgain,
         again: "Runner",
@@ -547,6 +667,8 @@ export function setupRunnerStopSaid(
       };
     case "Engineless":
       return setupEnginelessSaid(stop.asked);
+    case "DockerBarred":
+      return setupDockerBarredSaid(stop);
     case "Act":
       return setupActSaid(stop.act, setupFailedSaid(stop.failed));
     case "Unseen":
@@ -572,6 +694,7 @@ export function setupRunnerStopExit(stop: SetupRunnerStop): 0 | 1 | 2 {
     case "NotAdmin":
     case "Serviceless":
     case "Engineless":
+    case "DockerBarred":
     case "LoginMissing":
     case "Npmless":
     case "LingerAsks":

@@ -18,7 +18,8 @@
  * the real git, and whatever a case puts there. So nothing a run starts is
  * this machine's service manager, container engine or package manager, and
  * nothing it looks for under a configuration directory is this person's. A
- * case may say the machine is another kind than the one the suite runs on.
+ * case may say the machine is another kind than the one the suite runs on,
+ * and the user another than the one the suite runs as.
  *
  * Nothing here waits without a bound and nothing outlives its suite. A
  * process still running at its deadline, or one that wrote more than any
@@ -225,7 +226,10 @@ export function dialect(done: Ran, said: string): void {
 /** The name a case gives the kind of machine a run is to take itself for, where that is not the suite's own. */
 export const platformSaid = "CHUG_STAND_IN_PLATFORM";
 
-/** What every Node process under a home runs first: its number written where the suite will look, or nothing run at all; and the kind of machine its case says it is on. */
+/** The name a case gives the user a run is to take itself for, by number, where that is not the one the suite runs as. */
+export const userSaid = "CHUG_STAND_IN_USER";
+
+/** What every Node process under a home runs first: its number written where the suite will look, or nothing run at all; and the kind of machine and the user its case says it is. */
 function registrar(running: string): string {
   return [
     'import { rmSync, writeFileSync } from "node:fs";',
@@ -234,6 +238,8 @@ function registrar(running: string): string {
     'process.once("exit", () => { try { rmSync(mine, { force: true }); } catch {} });',
     `const platform = process.env[${JSON.stringify(platformSaid)}];`,
     'if (platform !== undefined) Object.defineProperty(process, "platform", { value: platform });',
+    `const user = process.env[${JSON.stringify(userSaid)}];`,
+    'if (user !== undefined) Object.defineProperty(process, "getuid", { value: () => Number(user) });',
   ].join("\n");
 }
 

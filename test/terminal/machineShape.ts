@@ -4,7 +4,7 @@
  * they did. Nothing here is run, so the script loads nothing but its shape.
  */
 
-/** How a stand-in command fails where a case has it fail, and whether it says its own arguments back as it does. */
+/** How a stand-in command fails where a case has it fail, and whether it says its own arguments back as it does: each whole, and then each in two halves. */
 export interface MachineFailure {
   readonly exit: number;
   readonly aside: string;

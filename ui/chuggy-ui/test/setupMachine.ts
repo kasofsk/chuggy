@@ -43,7 +43,7 @@ export const machineScript = `${boxHome}/chuggy-setup.mjs`;
 export const machineDirectory = "~/.chuggy-setup";
 /** The program's directory as the machine names it, which is how a path it would not write is said. */
 export const machineKept = `${boxHome}/.chuggy-setup`;
-/** The number the machine knows its user by. */
+/** The number the machine knows its user by unless a case says another: the one the runner package takes docker from. */
 export const machineUser = "1000";
 
 export const machineTokenAddress = `${machineIssuer}/oauth2/token`;
@@ -95,6 +95,8 @@ export interface SetupMachine {
   remote: string | undefined;
   browser: string | undefined;
   platform: string;
+  /** The number the machine knows its user by, or nothing where it numbers none. */
+  user: string | undefined;
   /** Where the person keeps their configuration, where they set that; and the paths and programs `runner` meets. */
   configHome: string | undefined;
   readonly box: RunnerBox;
@@ -469,7 +471,7 @@ function portsOf(inner: Inner, pid: number): SetupPorts {
       directory: machineDirectory,
       home: boxHome,
       configHome: machine.configHome,
-      user: machineUser,
+      user: machine.user,
     },
   };
 }
@@ -564,6 +566,7 @@ export function setupMachine(): SetupMachine {
     remote: undefined,
     browser: undefined,
     platform: "linux",
+    user: machineUser,
     configHome: undefined,
     box: runnerBox(),
     spawning: "Runs",

@@ -9,9 +9,9 @@
  * after any failure, at any point, and picks up where things stand. Whatever
  * could stop a run without anything having been changed is looked at before
  * the first act: where the project's work runs and whether this person may
- * register for it, the machine's user services, a container engine, the
- * runner's settings and its Claude login, and whether the package could be
- * installed at all.
+ * register for it, the machine's user services, a container engine the
+ * package takes from this user, the runner's settings and its Claude login,
+ * and whether the package could be installed at all.
  *
  * A registration is good where the machine holds a pool file for the project
  * and the site lists the pool it names; otherwise a registration token is
@@ -22,9 +22,12 @@
  *
  * No password is taken: a child is run with no terminal to ask on, and what
  * would need one is told to the person to do themselves. Nothing a child
- * prints is printed: a failure keeps an excerpt that has been through the
- * redactor with this run's secrets, and everything else said is this
- * program's own words.
+ * prints is printed as it came: a failure, or a check that passed with a
+ * warning, keeps one excerpt that has been through the redactor with this
+ * run's secrets, and a service's state is kept only where it is one word. Of
+ * the registration, which is handed the token, nothing printed is kept at
+ * all: only which of the package's own refusals it named. Everything else
+ * said is this program's own words.
  */
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
@@ -59,6 +62,7 @@ import {
   setupPackageProbed,
   setupPoolFiles,
   setupRegisterCommand,
+  setupRegisterFailed,
   setupRunnerCommands,
   setupRunnerPlaces,
   setupRunnerPlatform,
@@ -243,6 +247,8 @@ export function setupRoomStop(
       return { stop: "Serviceless", guide: runnerPackageOffered.guideAddress };
     case "Engineless":
       return { stop: "Engineless", asked: room.asked };
+    case "DockerBarred":
+      return { stop: "DockerBarred", user: room.user, how: room.how };
   }
 }
 
@@ -264,7 +270,7 @@ async function setupMachineProbed(run: Run): Promise<Machine | Halt> {
   const settings = setupSettingsRead(ports, places);
   if (settings.settings === "Unread")
     return halt({ stop: "SettingsUnread", path: places.settings, guide });
-  const named = settings.settings === "Read" ? settings.engine : undefined;
+  const named = settings.settings === "Read" ? settings : undefined;
   const room = await setupRunnerRoom(ports, named);
   if (room.room !== "Open") return halt(setupRoomStop(room));
   notes.push({ note: "Engine", engine: room.engine });
@@ -285,7 +291,7 @@ interface Exited {
   readonly err: string;
 }
 
-/** Runs one thing on the machine to its end, and answers what it printed or the stop its failure is. */
+/** Runs one thing on the machine to its end, and answers what it printed or the stop its failure is; the registration, which is handed the token, fails with nothing it printed kept. */
 async function setupActed(
   run: Run,
   act: SetupRunnerAct,
@@ -297,7 +303,10 @@ async function setupActed(
     waitMs,
     setupChildBytesMax,
   );
-  const failed = setupChildFailed(ended, waitMs, run.secrets);
+  const failed =
+    act === "Register"
+      ? setupRegisterFailed(ended, waitMs)
+      : setupChildFailed(ended, waitMs, run.secrets);
   if (failed !== undefined) return halt({ stop: "Act", act, failed });
   return ended.ended === "Exited" ? ended : { out: "", err: "" };
 }
@@ -468,7 +477,7 @@ interface Served {
   readonly written: boolean;
 }
 
-/** The service of the pool file: found where its unit is there and names the package this run found, and written by the package's own command otherwise. */
+/** The service of the pool file: found where its unit is there and this run did not install the package, and written by the package's own command otherwise. */
 async function setupServiceHad(
   run: Run,
   packaged: Packaged,
@@ -554,18 +563,35 @@ async function setupStarted(
       setupRunnerCommands.start(unit),
     );
     if (halted(begun)) return begun;
-    run.notes.push({ note: "Started", unit: unit.name });
+    run.notes.push({
+      note: active.is ? "Enabled" : "Started",
+      unit: unit.name,
+    });
   }
+  return setupInactive(run, unit, undefined);
+}
+
+/** Asks the service manager whether the runner's service is running now, and answers the stop it is where it is not. */
+async function setupInactive(
+  run: Run,
+  unit: SetupUnit,
+  waitedSecs: number | undefined,
+): Promise<Halt | undefined> {
   const now = await setupUnitIs(run.ports, "is-active", unit);
   return now.is
     ? undefined
-    : halt({ stop: "Inactive", unit: unit.name, state: now.said });
+    : halt({ stop: "Inactive", unit: unit.name, state: now.said, waitedSecs });
 }
 
-/** Asks the site, for as long as the run was given, until it sees a runner of the project live by the console's own decider. */
+/**
+ * Asks the site, for as long as the run was given, until it sees a runner of
+ * the project live by the console's own decider. Where the wait runs out the
+ * service is asked once more, so one that stopped meanwhile is what is said.
+ */
 async function setupLive(
   run: Run,
   route: PlacementRoute,
+  unit: SetupUnit,
 ): Promise<SetupRunnerEnded | Halt> {
   const endsAtMs = run.ports.nowMs() + run.waitSecs * 1_000;
   for (;;) {
@@ -582,20 +608,23 @@ async function setupLive(
     const short = sessionRunnerShort(route, read.value);
     if (short === undefined) return { ended: "Live" };
     if (run.ports.nowMs() >= endsAtMs)
-      return halt({
-        stop: "NotLive",
-        waitedSecs: run.waitSecs,
-        registered: short === "RunnerOffline",
-      });
+      return (
+        (await setupInactive(run, unit, run.waitSecs)) ??
+        halt({
+          stop: "NotLive",
+          waitedSecs: run.waitSecs,
+          registered: short === "RunnerOffline",
+        })
+      );
     await run.ports.sleepMs(setupLivePollMs);
   }
 }
 
-/** The acts in their order, each found done or done now, from the package to the service running. */
+/** The acts in their order, each found done or done now, from the package to the service running, which is what is answered. */
 async function setupMachineDone(
   run: Run,
   machine: Machine,
-): Promise<Halt | undefined> {
+): Promise<SetupUnit | Halt> {
   const packaged = await setupPackageHad(run, machine);
   if (halted(packaged)) return packaged;
   const settled = setupSettingsHad(run, machine);
@@ -608,7 +637,8 @@ async function setupMachineDone(
   if (halted(served)) return served;
   const lingering = await setupLingerHad(run);
   if (halted(lingering)) return lingering;
-  return setupStarted(run, served.unit, pooled.fresh || served.written);
+  const changed = pooled.fresh || served.written;
+  return (await setupStarted(run, served.unit, changed)) ?? served.unit;
 }
 
 async function setupWalked(run: Run): Promise<SetupRunnerEnded | Halt> {
@@ -617,15 +647,16 @@ async function setupWalked(run: Run): Promise<SetupRunnerEnded | Halt> {
   if (setupHosted(project.route)) return { ended: "Hosted" };
   const machine = await setupMachineProbed(run);
   if (halted(machine)) return machine;
-  const done = await setupMachineDone(run, machine);
-  if (halted(done)) return done;
-  return setupLive(run, project.route);
+  const unit = await setupMachineDone(run, machine);
+  if (halted(unit)) return unit;
+  return setupLive(run, project.route, unit);
 }
 
 /**
  * One run of `runner`, to its report. A machine that is not the package's
  * platform is said before anything is asked of a site, and whatever the walk
- * found and did before it stopped is in the report with the stop.
+ * found and did before it ended is in the report, also where what ended it is
+ * a sign-in the site stopped taking part-way.
  */
 export async function setupRunner(
   ports: SetupPorts,
@@ -660,7 +691,14 @@ export async function setupRunner(
     session: entered.session,
   };
   const ended = await setupWalked(run);
-  if ("reported" in ended) return ended.reported;
+  if ("reported" in ended)
+    return {
+      report: "RunnerOut",
+      workspace,
+      project,
+      notes: run.notes,
+      out: ended.reported,
+    };
   return said(
     run.session.site,
     run.notes,

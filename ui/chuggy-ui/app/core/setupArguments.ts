@@ -154,14 +154,21 @@ function setupTokens(argv: readonly string[]): SetupTokens | SetupAskFault {
   return { command, flags };
 }
 
-/** The names the flags gave, or nothing where one is not a name a line can carry back unchanged. */
+/** What an address reads as a place and not a name, so one made with either would be another address. */
+const setupPlaces: readonly string[] = [".", ".."];
+
+/** The names the flags gave, or nothing where one is not a name a line can carry back unchanged or an address can carry as itself. */
 function setupAnswersRead(
   flags: ReadonlyMap<SetupFlag, string>,
 ): SetupAnswers | undefined {
   const workspace = flags.get("workspace");
   const project = flags.get("project");
   for (const name of [workspace, project])
-    if (name !== undefined && !setupSayable(name)) return undefined;
+    if (
+      name !== undefined &&
+      (!setupSayable(name) || setupPlaces.includes(name))
+    )
+      return undefined;
   return { workspace, project };
 }
 

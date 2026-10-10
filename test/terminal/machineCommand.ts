@@ -67,11 +67,19 @@ function said(exit: number, out = "", aside = ""): number {
   return exit;
 }
 
+/** A word as a program that wraps what it prints says it back: in two halves. */
+function halved(word: string): string {
+  const cut = Math.floor(word.length / 2);
+  return `${word.slice(0, cut)} ${word.slice(cut)}`;
+}
+
 /** What a case has this act fail with, or nothing where it is to do what the real one does. */
 function failing(act: MachineAct): number | undefined {
   const failure = knobs.fails[act];
   if (failure === undefined) return undefined;
-  const echoed = failure.echoes ? ` (${name} ${argv.join(" ")})` : "";
+  const echoed = failure.echoes
+    ? ` (${name} ${argv.join(" ")}; ${argv.map(halved).join(" ")})`
+    : "";
   return said(failure.exit, "", `${failure.aside}${echoed}\n`);
 }
 

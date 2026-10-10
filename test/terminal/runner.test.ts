@@ -5,10 +5,12 @@
  *
  * These are the cases only real processes make. The registration token is one
  * word of one child's arguments and is in nothing the program writes, also
- * where that child says it back as it fails. Every child is given nothing to
- * read and a session of its own, so none can ask a person for a password, and
- * no command that asks for one is run. The site is sent one write by the
- * program, the mint, and none where the machine is already registered. The
+ * where that child says it back, whole or in pieces, as it fails. Every child
+ * is given nothing to read and a session of its own, so none can ask a person
+ * for a password, and no command that asks for one is run. The site is sent
+ * one write by the program, the mint, and none where the machine is already
+ * registered. Every run takes itself for the user the runner package takes
+ * docker from unless its case says another, whoever the suite runs as. The
  * last case is the control: everything every run here wrote is searched for
  * everything the stand-ins handed out and for the runner's Claude login.
  */
@@ -43,6 +45,7 @@ import {
   program,
   shellWords,
   signedIn,
+  userSaid,
 } from "./program.ts";
 import type { Home, Ran } from "./program.ts";
 import type { StandIn } from "./standIn.ts";
@@ -62,7 +65,9 @@ const runner = ["runner", "--workspace", "acme", "--project", "widgets"];
 const flags = "--workspace acme --project widgets";
 const poolFile = "acme.widgets.shame.json";
 const unit = "chuggy-linux-acme.widgets.shame.service";
-const user = String(process.getuid?.() ?? "");
+/** The user a run here takes itself for, by number: the one the runner package takes docker from, and for the cases that say so one it does not. */
+const user = "1000";
+const other = "1001";
 const mint =
   "program POST /api/v1/tenants/acme/projects/widgets/worker-pool-registration-tokens";
 const redemption = "runner POST /api/v1/worker-pool-registrations";
@@ -99,20 +104,21 @@ async function ran(
   argv: readonly string[] = runner,
   environment?: Readonly<Record<string, string>>,
 ): Promise<Ran> {
-  const done = await on.home.run(argv, environment);
+  const done = await on.home.run(argv, { [userSaid]: user, ...environment });
   dialect(done, done.stdout);
   for (const secret of secrets(on))
     assert.ok(!done.stdout.includes(secret), done.stdout);
   return done;
 }
 
-function lines(on: Stood) {
+function lines(on: Stood, engine: "docker" | "podman" = "docker") {
   return rosterLines({
     command: join(on.machine.prefix, "bin", "chuggy-linux"),
     settings: on.machine.settings,
     login: on.machine.login,
     pool: join(on.machine.pools, poolFile),
     unit,
+    engine,
   });
 }
 
@@ -138,7 +144,7 @@ async function commanded(command: string): Promise<readonly string[]> {
   return argv;
 }
 
-/** No command run so far could have asked anyone for a password: each was given nothing to read, each run to its end led a session of its own, and none is a command that asks. */
+/** No command run so far could have asked anyone for a password: each was given nothing to read, each led a session of its own, and none is a command that asks. */
 function unasked(on: Stood): void {
   const calls = on.machine.calls();
   assert.ok(calls.length > 0);
@@ -146,8 +152,7 @@ function unasked(on: Stood): void {
     const said = JSON.stringify(call);
     assert.equal(call.stdin, "/dev/null", said);
     assert.ok(!machineAskers.some((asker) => asker === call.name), said);
-    if (call.name !== "git" && call.argv[0] !== "prefix")
-      assert.ok(call.leads, said);
+    assert.ok(call.leads, said);
     if (call.argv.includes("enable-linger"))
       assert.equal(call.argv[0], "--no-ask-password", said);
   }
@@ -279,6 +284,37 @@ test("a second run on a machine that has everything finds each thing as it is, r
 
 const changing = new Set(first.filter((act) => !probes.includes(act)));
 
+/** What the runner's settings hold, or nothing where there are none. */
+function settings(on: Stood): string | undefined {
+  return existsSync(on.machine.settings)
+    ? readFileSync(on.machine.settings, "utf8")
+    : undefined;
+}
+
+/** One run that stopped short of changing anything: it says what it found, names `runner` to be run again, and has installed nothing, written nothing and sent nothing but reads. */
+async function unchanged(on: Stood, found: string, as = user): Promise<void> {
+  const before = settings(on);
+  const done = await ran(on, runner, { [userSaid]: as });
+  assert.equal(done.code, 0, done.stdout);
+  assert.equal(done.lines.at(-1), "next: stop", done.stdout);
+  assert.ok(
+    done.lines.some((line) => line.startsWith(found)),
+    done.stdout,
+  );
+  assert.ok(
+    done.lines.some((line) => line.startsWith(again)),
+    done.stdout,
+  );
+  assert.deepEqual(
+    acts(on).filter((act) => changing.has(act)),
+    [],
+  );
+  assert.deepEqual(on.installation.writes, []);
+  assert.equal(settings(on), before, found);
+  assert.ok(!existsSync(on.machine.pools), found);
+  assert.ok(!/setup-token|sk-ant|OAUTH/u.test(done.stdout), done.stdout);
+}
+
 test("a machine that could not take a runner, or lacks what this program cannot make, stops the run with nothing installed, nothing written and nothing sent but reads", async () => {
   const lacks: readonly (readonly [(on: Stood) => void, string])[] = [
     [
@@ -309,26 +345,78 @@ test("a machine that could not take a runner, or lacks what this program cannot 
   for (const [lack, found] of lacks) {
     const on = await stood();
     lack(on);
-    const done = await ran(on);
-    assert.equal(done.code, 0, done.stdout);
-    assert.equal(done.lines.at(-1), "next: stop", done.stdout);
-    assert.ok(
-      done.lines.some((line) => line.startsWith(found)),
-      done.stdout,
-    );
-    assert.ok(
-      done.lines.some((line) => line.startsWith(again)),
-      done.stdout,
-    );
-    assert.deepEqual(
-      acts(on).filter((act) => changing.has(act)),
-      [],
-    );
-    assert.deepEqual(on.installation.writes, []);
-    assert.ok(!existsSync(on.machine.settings), found);
-    assert.ok(!existsSync(on.machine.pools), found);
-    assert.ok(!/setup-token|sk-ant|OAUTH/u.test(done.stdout), done.stdout);
+    await unchanged(on, found);
+    assert.equal(settings(on), undefined, found);
   }
+});
+
+test("a user the runner package bars from docker is stopped before anything is changed where podman is not there, where it does not answer them, and where the settings set the runner to use docker, and docker is never run", async () => {
+  const bars: readonly (readonly [(on: Stood) => void, string])[] = [
+    [
+      () => undefined,
+      "found: podman is not installed, and docker was not asked: the runner package takes docker only from this machine's user 1000",
+    ],
+    [
+      (on) => {
+        on.machine.has("podman");
+        on.machine.tell({ engines: { docker: true, podman: false } });
+      },
+      "found: podman did not answer you without a password, and docker was not asked: ",
+    ],
+    [
+      (on) => {
+        on.machine.has("podman");
+        writeFileSync(
+          on.machine.settings,
+          JSON.stringify({ claudeTokenFile: on.machine.login }),
+        );
+      },
+      "found: the runner is set to use docker, in ",
+    ],
+  ];
+  for (const [bar, found] of bars) {
+    const on = await stood();
+    bar(on);
+    await unchanged(on, found, other);
+    assert.deepEqual(words(on, "docker"), [], found);
+    unasked(on);
+  }
+});
+
+test("a user the runner package bars from docker is asked podman alone, and where it answers them the runner is set up on it: podman is what the settings name, and docker is never run", async () => {
+  const on = await stood();
+  on.machine.has("podman");
+  const as = { [userSaid]: other };
+  const { found, did } = lines(on, "podman");
+  const offered = await ran(on, [], as);
+  assert.equal(offered.lines.at(-1), "next: stop");
+  assert.deepEqual(acts(on), ["services", "podman"]);
+  const done = await ran(on, runner, as);
+  assert.equal(done.code, 0, done.stdout);
+  assert.deepEqual(done.lines.slice(1, 5), [
+    found.engine,
+    found.login,
+    did.package,
+    did.settings,
+  ]);
+  assert.deepEqual(done.lines.slice(-2), [found.live, next]);
+  assert.deepEqual(words(on, "docker"), []);
+  const settings = JSON.parse(
+    readFileSync(on.machine.settings, "utf8"),
+  ) as Record<string, unknown>;
+  assert.equal(settings["engine"], "podman");
+  assert.deepEqual(words(on, "loginctl")[0], [
+    "show-user",
+    other,
+    "--property",
+    "Linger",
+  ]);
+  unasked(on);
+
+  cleared(on);
+  const second = await ran(on, runner, as);
+  assert.deepEqual(second.lines.slice(-2), [found.live, next]);
+  assert.deepEqual(acts(on), ["services", "podman", ...probes.slice(2)]);
 });
 
 type Did = ReturnType<typeof lines>["did"];
@@ -356,6 +444,18 @@ const losses: readonly Loss[] = [
         project.runner = "Offline";
     },
     did: (did) => [did.started],
+    acts: [...probes, "reload", "start", "active"],
+    sent: [],
+  },
+  {
+    lost: "its start at login",
+    lose: (on) => {
+      on.machine.keep({
+        ...on.machine.state(),
+        units: { [unit]: { enabled: false, active: true } },
+      });
+    },
+    did: (did) => [did.enabled],
     acts: [...probes, "reload", "start", "active"],
     sent: [],
   },
@@ -481,13 +581,23 @@ test("where the person keeps their configuration in a directory of their own cho
     assert.ok(!existsSync(usual), usual);
 });
 
-test("a registration that fails saying its own arguments back is told with the token struck out, and the token it lost is left unredeemed while the next run mints another and finishes", async () => {
+/** As long a stretch of a registration token as is in no other word a run prints. */
+const stretch = 16;
+
+/** Whether any stretch of a secret is in a text, which is the secret said whole or in pieces. */
+function pieced(text: string, secret: string): boolean {
+  return Array.from({ length: secret.length - stretch + 1 }, (_, at) =>
+    secret.slice(at, at + stretch),
+  ).some((piece) => text.includes(piece));
+}
+
+test("a registration that fails saying its own arguments back, whole and in halves, has nothing it printed said of it: the package's own refusal is told in this program's words with no piece of the token, and the token it lost is left unredeemed while the next run mints another and finishes", async () => {
   const on = await stood();
   on.machine.tell({
     fails: {
       register: {
         exit: 1,
-        aside: "error: chuggy did not answer",
+        aside: `chuggy at ${on.installation.site} did not answer the registration: fetch failed`,
         echoes: true,
       },
     },
@@ -499,9 +609,12 @@ test("a registration that fails saying its own arguments back is told with the t
     words(on, "chuggy-linux")[0]?.includes(`--token=${lost}`),
     "the child was given the token, and said it back",
   );
+  assert.ok(lost.length > stretch && !pieced(failed.stdout, lost));
+  assert.ok(pieced(`said ${lost.slice(0, stretch)} back`, lost));
+  assert.ok(!failed.stdout.includes("fetch failed"), failed.stdout);
   assert.ok(
     failed.lines.includes(
-      `found: registering this machine ended with exit 1, saying: error: chuggy did not answer (chuggy-linux register --api ${on.installation.site} --token=[redacted])`,
+      "found: registering this machine ended with exit 1: the site did not answer the runner package",
     ),
     failed.stdout,
   );
@@ -517,6 +630,25 @@ test("a registration that fails saying its own arguments back is told with the t
   assert.equal(on.installation.world.mints.length, 2);
   assert.deepEqual(on.installation.world.projects[0]?.tokens, [lost]);
   assert.equal(done.lines.at(-1), next);
+});
+
+test("the runner's own check failing with a secret in what it says is told with the secret struck out, and nothing is started", async () => {
+  const on = await stood();
+  on.machine.tell({
+    doctor: {
+      exit: 1,
+      aside: `FAIL  Claude token file: ${machineLoginSecret} is no login\n`,
+    },
+  });
+  const failed = await ran(on);
+  assert.equal(failed.code, 1, failed.stdout);
+  assert.ok(
+    failed.lines.includes(
+      "found: the runner's Claude login is not as it needs it; the runner's own check said: FAIL Claude token file: [redacted] is no login",
+    ),
+    failed.stdout,
+  );
+  assert.equal(acts(on).at(-1), "doctor");
 });
 
 test("where keeping services running after a logout wants a password, none is taken: the person is told the command to run themselves, and the run after they have finishes", async () => {
@@ -546,7 +678,7 @@ test("where keeping services running after a logout wants a password, none is ta
   assert.deepEqual(on.installation.writes, []);
 });
 
-test("a runner that is started and that the site does not see live within the wait is a failure that says how long was waited, and the run after it is seen ends on the checklist", async () => {
+test("a runner that is started and that the site does not see live within the wait is a failure that says how long was waited, having asked the service manager once more whether it still runs, and the run after it is seen ends on the checklist", async () => {
   const on = await stood();
   on.machine.tell({ polls: false });
   const waited = await ran(on, [...runner, "--wait-secs", "2"]);
@@ -559,6 +691,7 @@ test("a runner that is started and that the site does not see live within the wa
   );
   assert.equal(waited.lines.at(-1), "next: stop");
   assert.ok(waited.lines.at(-2)?.startsWith(again), waited.stdout);
+  assert.deepEqual(acts(on).slice(-3), ["start", "active", "active"]);
 
   on.machine.tell({ polls: true });
   cleared(on);
@@ -598,8 +731,9 @@ test("on a Mac runner says it cannot set one up and asks nothing of the machine 
   assert.deepEqual(on.installation.writes, []);
 });
 
-/** The names a run's environment holds: what a home sets, and what a shell adds of its own. */
+/** The names a run's environment holds: what a home sets, the user this suite has it take itself for, and what a shell adds of its own. */
 const environmentNames = [
+  userSaid,
   "BROWSER",
   "GIT_CEILING_DIRECTORIES",
   "HOME",

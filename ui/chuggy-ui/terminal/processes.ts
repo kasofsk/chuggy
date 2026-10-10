@@ -4,19 +4,21 @@
  * whose answer is read, and one run to its end for what it does.
  *
  * None is given this run's output to write to, and none holds it open. The
- * one that is read is given nothing to read itself, and what it says of a
- * failure is dropped unread. It is waited on for a bounded time and read up
- * to a bounded length, and past either it is ended, its output is let go of
- * and the answer is that there is none, whatever it left running behind it.
- * A command the system would not start at all is one that did not start,
- * whether it says so at once or afterwards.
+ * one that is read and the one run to its end are each started in a session
+ * of its own, with nothing to read and no terminal, so nothing either starts
+ * can ask a person for a password. Each is waited on for a bounded time, and
+ * at the end of the wait it is ended with everything it started in that
+ * session. What started a session of its own in turn is not reached by that,
+ * and nothing here ends it. A command the system would not start at all is
+ * one that did not start, whether it says so at once or afterwards.
  *
- * The one run to its end is started in a session of its own, with nothing to
- * read and no terminal, so nothing it starts can ask a person for a password.
- * Both its streams are read to a bound and drained past it, so it is never
- * held up by a reader that stopped. At the end of the wait everything it
- * started is ended with it; and once it has ended, what it left running is
- * given a moment to let go of its output and no longer.
+ * The one that is read is read up to a bounded length and what it says of a
+ * failure is dropped unread; past the length it is ended as at the end of
+ * the wait, its output is let go of and the answer is that there is none.
+ * The one run to its end has both its streams read to a bound and drained
+ * past it, so it is never held up by a reader that stopped; and once it has
+ * ended, what it left running is given a moment to let go of its output and
+ * no longer.
  */
 
 import { spawn } from "node:child_process";
@@ -80,13 +82,25 @@ function launch(
   });
 }
 
+/** Ends a child started in a session of its own with everything it started there. */
+function ended(child: ChildProcess): void {
+  try {
+    if (child.pid !== undefined) process.kill(-child.pid, "SIGKILL");
+  } catch {
+    child.kill("SIGKILL");
+  }
+}
+
 function read(
   command: readonly string[],
   waitMs: number,
   bytesMax: number,
 ): Promise<string | undefined> {
   return new Promise<string | undefined>((resolve) => {
-    const child = started(command, { stdio: ["ignore", "pipe", "ignore"] });
+    const child = started(command, {
+      detached: true,
+      stdio: ["ignore", "pipe", "ignore"],
+    });
     const said = child?.stdout;
     if (child === undefined || said === null || said === undefined) {
       resolve(undefined);
@@ -94,25 +108,26 @@ function read(
     }
     const printed: Buffer[] = [];
     let bytes = 0;
-    const ended = (answer: string | undefined): void => {
+    const answer = (answered: string | undefined): void => {
       clearTimeout(waiting);
-      child.kill("SIGKILL");
       said.destroy();
-      resolve(answer);
+      resolve(answered);
     };
-    const waiting = setTimeout(() => {
-      ended(undefined);
-    }, waitMs);
+    const cut = (): void => {
+      ended(child);
+      answer(undefined);
+    };
+    const waiting = setTimeout(cut, waitMs);
     said.on("data", (chunk: Buffer) => {
       bytes += chunk.length;
-      if (bytes > bytesMax) ended(undefined);
+      if (bytes > bytesMax) cut();
       else printed.push(chunk);
     });
     child.once("error", () => {
-      ended(undefined);
+      answer(undefined);
     });
     child.once("close", (exit) => {
-      ended(exit === 0 ? Buffer.concat(printed).toString("utf8") : undefined);
+      answer(exit === 0 ? Buffer.concat(printed).toString("utf8") : undefined);
     });
   });
 }
@@ -130,15 +145,6 @@ function kept(said: Said, bytesMax: number): () => string {
   });
   said.on("error", () => undefined);
   return () => Buffer.concat(printed).toString("utf8");
-}
-
-/** Ends a child started in a session of its own with everything it started there. */
-function ended(child: ChildProcess): void {
-  try {
-    if (child.pid !== undefined) process.kill(-child.pid, "SIGKILL");
-  } catch {
-    child.kill("SIGKILL");
-  }
 }
 
 /** How long what a child left running may hold its output open once the child itself has ended. */

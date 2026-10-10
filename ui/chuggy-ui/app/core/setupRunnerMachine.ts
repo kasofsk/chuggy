@@ -27,9 +27,14 @@ import type {
   SetupPorts,
   SetupSurroundings,
 } from "./setupPorts.ts";
-import { setupEngines } from "./setupRunnerSaid.ts";
+import {
+  setupEngines,
+  setupJobUser,
+  setupRegisterRefusal,
+} from "./setupRunnerSaid.ts";
 import type {
   SetupChildFailed,
+  SetupDockerBarred,
   SetupEngine,
   SetupEngineAsked,
 } from "./setupRunnerSaid.ts";
@@ -108,6 +113,21 @@ export function setupChildFailed(
   }
 }
 
+/**
+ * The failure of the one program handed the registration token, or nothing
+ * where it ended well. No redactor finds a token said back in pieces, so
+ * nothing it printed is kept: only which of the package's refusals it named.
+ */
+export function setupRegisterFailed(
+  ended: SetupChildEnded,
+  waitMs: number,
+): SetupChildFailed | undefined {
+  if (ended.ended !== "Exited") return setupChildFailed(ended, waitMs, []);
+  if (ended.exit === 0) return undefined;
+  const refusal = setupRegisterRefusal(ended.err);
+  return { how: "ExitUnquoted", exit: ended.exit, refusal };
+}
+
 function setupProbed(
   ports: SetupPorts,
   command: readonly string[],
@@ -128,7 +148,8 @@ const setupEngineProbes: Readonly<Record<SetupEngine, readonly string[]>> = {
 /**
  * Where a runner could be put: here, with the engine that answered; or not
  * here, because the machine is not the package's platform, its user services
- * did not answer, or no engine did.
+ * did not answer, no engine did, or the package bars this user from docker
+ * and nothing else is theirs to use.
  */
 export type SetupRunnerRoom =
   | { readonly room: "Open"; readonly engine: SetupEngine }
@@ -137,20 +158,58 @@ export type SetupRunnerRoom =
   | {
       readonly room: "Engineless";
       readonly asked: readonly SetupEngineAsked[];
+    }
+  | {
+      readonly room: "DockerBarred";
+      readonly user: string | undefined;
+      readonly how: SetupDockerBarred;
     };
 
+/** The runner's settings where the machine has ones that read, which is where an engine is already named. */
+export type SetupSettingsNamed = Extract<
+  SetupSettingsRead,
+  { readonly settings: "Read" }
+>;
+
+async function setupEngineAsked(
+  ports: SetupPorts,
+  engine: SetupEngine,
+): Promise<SetupEngineAsked> {
+  const ended = await setupProbed(ports, setupEngineProbes[engine]);
+  if (setupWell(ended)) return { engine, answered: "Yes" };
+  return { engine, answered: ended.ended === "Unstarted" ? "Absent" : "No" };
+}
+
+/** What leaves a user the package bars from docker with no engine, or nothing where podman answers them; podman is asked only where no settings name an engine. */
+async function setupBarredHow(
+  ports: SetupPorts,
+  named: SetupSettingsNamed | undefined,
+): Promise<SetupDockerBarred | undefined> {
+  if (named !== undefined) return { barred: "Named", settings: named.path };
+  const { answered } = await setupEngineAsked(ports, "podman");
+  return answered === "Yes" ? undefined : { barred: "Podmanless", answered };
+}
+
+/**
+ * The package takes docker only from the user its jobs run as. Any other is
+ * never asked docker, so podman is what is found for them, or no engine at all.
+ */
 async function setupEngineRoom(
   ports: SetupPorts,
-  named: SetupEngine | undefined,
+  named: SetupSettingsNamed | undefined,
 ): Promise<SetupRunnerRoom> {
+  const user = ports.surroundings.user;
+  if (user !== setupJobUser && named?.engine !== "podman") {
+    const how = await setupBarredHow(ports, named);
+    return how === undefined
+      ? { room: "Open", engine: "podman" }
+      : { room: "DockerBarred", user, how };
+  }
   const asked: SetupEngineAsked[] = [];
-  for (const engine of named === undefined ? setupEngines : [named]) {
-    const ended = await setupProbed(ports, setupEngineProbes[engine]);
-    if (setupWell(ended)) return { room: "Open", engine };
-    asked.push({
-      engine,
-      answered: ended.ended === "Unstarted" ? "Absent" : "No",
-    });
+  for (const engine of named === undefined ? setupEngines : [named.engine]) {
+    const answer = await setupEngineAsked(ports, engine);
+    if (answer.answered === "Yes") return { room: "Open", engine };
+    asked.push(answer);
   }
   return { room: "Engineless", asked };
 }
@@ -164,10 +223,10 @@ const setupServicesProbe = [
   "Version",
 ];
 
-/** Whether this machine could take a runner, asking the one engine `named` where the runner's settings name one, and each the package runs on otherwise. */
+/** Whether this machine could take a runner, asking the one engine the runner's settings name where there are any, and otherwise each the package would take from this user. */
 export async function setupRunnerRoom(
   ports: SetupPorts,
-  named: SetupEngine | undefined,
+  named: SetupSettingsNamed | undefined,
 ): Promise<SetupRunnerRoom> {
   if (ports.surroundings.platform !== setupRunnerPlatform)
     return { room: "Mac" };
@@ -188,6 +247,7 @@ export type SetupSettingsRead =
   | { readonly settings: "Unread" }
   | {
       readonly settings: "Read";
+      readonly path: string;
       readonly engine: SetupEngine;
       readonly login: string;
     };
@@ -214,6 +274,7 @@ export function setupSettingsRead(
   return parsed.success
     ? {
         settings: "Read",
+        path: places.settings,
         engine: parsed.data.engine ?? setupEngines[0],
         login: parsed.data.claudeTokenFile,
       }
@@ -343,10 +404,10 @@ export function setupRegisterCommand(
   return [command, ...rest];
 }
 
-/** What the bare command reads of this machine where the runner's step is the one next: whether a runner could be put here, and whether one is registered here for the project. */
+/** What the bare command reads of this machine where the runner's step is the one next: whether a runner could be put here, and whether it holds a registration for the project, which is a file's name and not yet whether the site knows it. */
 export interface SetupRunnerHere {
   readonly room: SetupRunnerRoom;
-  readonly registered: boolean;
+  readonly held: boolean;
 }
 
 /** One part of a pool file's name as the package writes it: letters, digits and `-` as themselves, and every other octet by its number. */
@@ -404,16 +465,16 @@ export async function setupRunnerHere(
   partition: PartitionIdentity,
 ): Promise<SetupRunnerHere> {
   if (ports.surroundings.platform !== setupRunnerPlatform)
-    return { room: { room: "Mac" }, registered: false };
+    return { room: { room: "Mac" }, held: false };
   const places = setupRunnerPlaces(ports.surroundings);
   const settings = setupSettingsRead(ports, places);
   const room = await setupRunnerRoom(
     ports,
-    settings.settings === "Read" ? settings.engine : undefined,
+    settings.settings === "Read" ? settings : undefined,
   );
   return {
     room,
-    registered:
+    held:
       room.room === "Open" &&
       setupPoolFiles(ports, places, partition).length > 0,
   };

@@ -20,6 +20,7 @@ import {
   setupPackageProbed,
   setupPoolFilePrefix,
   setupPoolFiles,
+  setupRegisterFailed,
   setupRunnerCommands,
   setupRunnerHere,
   setupRunnerPlaces,
@@ -29,6 +30,8 @@ import {
   setupUnitIs,
   setupUnitOf,
 } from "../app/core/setupRunnerMachine.ts";
+import type { SetupSettingsNamed } from "../app/core/setupRunnerMachine.ts";
+import type { SetupEngine } from "../app/core/setupRunnerSaid.ts";
 import { setupMachine } from "./setupMachine.ts";
 import type { SetupMachine } from "./setupMachine.ts";
 import {
@@ -105,6 +108,8 @@ test("the pool files of a project are the files named for it with a pool's name,
     "acme.widgets.shame.json",
     "acme.widgets.box-2.json",
     "acme.widgets.shame.json.1234.draft",
+    "acme.widgets.shame.bak",
+    "acme.widgets.shamejson",
     "acme.widgets.Shame.json",
     "acme.widgets.a.b.json",
     "acme.widgets.-a.json",
@@ -189,6 +194,7 @@ test("the settings are read for the engine and the Claude login they name and fo
   expect(settled(undefined)).toEqual({ settings: "Absent" });
   expect(settled(JSON.stringify({ claudeTokenFile: "/k/t" }))).toEqual({
     settings: "Read",
+    path: boxSettings,
     engine: "docker",
     login: "/k/t",
   });
@@ -201,7 +207,12 @@ test("the settings are read for the engine and the Claude login they name and fo
         somethingNew: true,
       }),
     ),
-  ).toEqual({ settings: "Read", engine: "podman", login: "/k/t" });
+  ).toEqual({
+    settings: "Read",
+    path: boxSettings,
+    engine: "podman",
+    login: "/k/t",
+  });
   for (const held of [
     "",
     "{",
@@ -234,6 +245,7 @@ test("the settings a machine with none is given are the package's guide's own, a
   });
   expect(settled(text)).toEqual({
     settings: "Read",
+    path: boxSettings,
     engine: "podman",
     login: boxLogin,
   });
@@ -312,14 +324,20 @@ test("the prefix npm prints is taken only as one whole path, and is this person'
     expect(await probed(printed), printed).toEqual([undefined, false]);
 });
 
+/** The runner's settings as they are read where they set it to use `engine`. */
+function naming(engine: SetupEngine): SetupSettingsNamed {
+  return { settings: "Read", path: boxSettings, engine, login: boxLogin };
+}
+
 test("a machine could take a runner where its user services answer and an engine answers this user: docker first, or only the one the settings name", async () => {
   const room = async (
     prepare: (machine: SetupMachine) => void,
-    named?: "docker" | "podman",
+    named?: SetupEngine,
   ) => {
     const machine = setupMachine();
     prepare(machine);
-    return [await setupRunnerRoom(machine.ports(), named), machine.box.acts];
+    const settings = named === undefined ? undefined : naming(named);
+    return [await setupRunnerRoom(machine.ports(), settings), machine.box.acts];
   };
   expect(await room(() => undefined)).toEqual([
     { room: "Open", engine: "docker" },
@@ -372,22 +390,75 @@ test("a machine could take a runner where its user services answer and an engine
   ).toEqual([{ room: "Mac" }, []]);
 });
 
-test("what the bare command reads of the machine changes nothing: whether a runner could be put here, and whether one is registered here for the project", async () => {
+test("docker is asked only of the user the package takes it from: any other is asked podman alone, and has no engine where podman does not answer or the settings set the runner to use docker", async () => {
+  const both = { docker: "Yes", podman: "Yes" } as const;
+  const room = async (
+    user: string | undefined,
+    engines: SetupMachine["box"]["engines"],
+    named?: SetupEngine,
+  ) => {
+    const machine = setupMachine();
+    machine.user = user;
+    machine.box.engines = { ...engines };
+    const settings = named === undefined ? undefined : naming(named);
+    return [await setupRunnerRoom(machine.ports(), settings), machine.box.acts];
+  };
+  const podman = [{ room: "Open", engine: "podman" }, ["services", "podman"]];
+  expect(await room("1000", both)).toEqual([
+    { room: "Open", engine: "docker" },
+    ["services", "docker"],
+  ]);
+  for (const user of ["1001", "0", "100", "10000", undefined])
+    expect(await room(user, both), user).toEqual(podman);
+  for (const answered of ["Absent", "No"] as const)
+    expect(
+      await room("1001", { docker: "Yes", podman: answered }),
+      answered,
+    ).toEqual([
+      {
+        room: "DockerBarred",
+        user: "1001",
+        how: { barred: "Podmanless", answered },
+      },
+      ["services", "podman"],
+    ]);
+  expect(await room("0", both, "docker")).toEqual([
+    {
+      room: "DockerBarred",
+      user: "0",
+      how: { barred: "Named", settings: boxSettings },
+    },
+    ["services"],
+  ]);
+  expect(await room("1001", both, "podman")).toEqual(podman);
+  expect(await room("1001", { docker: "Yes", podman: "No" }, "podman")).toEqual(
+    [
+      { room: "Engineless", asked: [{ engine: "podman", answered: "No" }] },
+      ["services", "podman"],
+    ],
+  );
+  expect(await room("1000", both, "docker")).toEqual([
+    { room: "Open", engine: "docker" },
+    ["services", "docker"],
+  ]);
+});
+
+test("what the bare command reads of the machine changes nothing: whether a runner could be put here, and whether it holds a registration for the project", async () => {
   const here = (machine: SetupMachine) =>
     setupRunnerHere(machine.ports(), acme);
   const bare = setupMachine();
   const before = new Map(bare.box.paths);
   expect(await here(bare)).toEqual({
     room: { room: "Open", engine: "docker" },
-    registered: false,
+    held: false,
   });
   expect(bare.box.paths).toEqual(before);
   expect(bare.box.acts).toEqual(["services", "docker"]);
 
   const registered = pooled(["acme.widgets.shame.json"]);
-  expect((await here(registered)).registered).toBe(true);
+  expect((await here(registered)).held).toBe(true);
   registered.box.engines.docker = "No";
-  expect((await here(registered)).registered).toBe(false);
+  expect((await here(registered)).held).toBe(false);
 
   const named = setupMachine();
   named.box.paths.set(
@@ -399,12 +470,68 @@ test("what the bare command reads of the machine changes nothing: whether a runn
     asked: [{ engine: "podman", answered: "Absent" }],
   });
 
+  const barred = pooled(["acme.widgets.shame.json"]);
+  barred.user = "1001";
+  barred.box.paths.set(
+    boxSettings,
+    JSON.stringify({ claudeTokenFile: boxLogin }),
+  );
+  expect(await here(barred)).toEqual({
+    room: {
+      room: "DockerBarred",
+      user: "1001",
+      how: { barred: "Named", settings: boxSettings },
+    },
+    held: false,
+  });
+  expect(barred.box.acts).toEqual(["services"]);
+
   const mac = pooled(["acme.widgets.shame.json"]);
   mac.box.paths.set(boxSettings, JSON.stringify({ claudeTokenFile: boxLogin }));
   mac.platform = "darwin";
-  expect(await here(mac)).toEqual({ room: { room: "Mac" }, registered: false });
+  expect(await here(mac)).toEqual({ room: { room: "Mac" }, held: false });
   expect(mac.box.ran).toEqual([]);
   expect(mac.box.read).toEqual([]);
+});
+
+test("of a registration that failed nothing it printed is kept, on either stream: its exit, and which of the package's refusals it said aside", () => {
+  const halves = "registration1_AbCdEfG hIjKlMnOpQrStUvWxYz012";
+  expect(setupRegisterFailed(exited(0, halves, halves), 60_000)).toBe(
+    undefined,
+  );
+  expect(setupRegisterFailed({ ended: "Unstarted" }, 60_000)).toEqual({
+    how: "Unstarted",
+  });
+  expect(setupRegisterFailed({ ended: "Unended" }, 60_000)).toEqual({
+    how: "Unended",
+    secs: 60,
+  });
+  expect(
+    setupRegisterFailed(
+      exited(1, `said ${halves}`, `error: bad token ${halves}\n`),
+      60_000,
+    ),
+  ).toEqual({ how: "ExitUnquoted", exit: 1, refusal: undefined });
+  expect(
+    setupRegisterFailed(
+      exited(
+        2,
+        "",
+        `this machine's hostname makes no pool name; name the pool with --pool (${halves})\n`,
+      ),
+      60_000,
+    ),
+  ).toEqual({
+    how: "ExitUnquoted",
+    exit: 2,
+    refusal: "hostname makes no pool name",
+  });
+  expect(
+    setupRegisterFailed(
+      exited(1, "the registration token is unknown, spent or expired", ""),
+      60_000,
+    ),
+  ).toEqual({ how: "ExitUnquoted", exit: 1, refusal: undefined });
 });
 
 test("lingering is read from the login manager for this user by number, and is unread wherever that did not say yes or no", async () => {
