@@ -11,7 +11,13 @@
  */
 
 import assert from "node:assert/strict";
-import { mkdirSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 
@@ -44,6 +50,8 @@ import type {
 import {
   browsed,
   dialect,
+  ended,
+  eventually,
   making,
   program,
   shellWords,
@@ -127,7 +135,7 @@ async function ruled(done: Ran): Promise<readonly string[]> {
   return argv;
 }
 
-test("a site set up one thing further at a time, from nothing to a landed first ticket, is printed as it stands at each, with an address of the site's to go to and no command but this one again", async () => {
+test("a site set up one thing further at a time, from nothing to a landed first ticket, is printed as it stands at each, with an address of the site's to go to wherever a page is what mends it, and no command but this one again", async () => {
   const session = await signed();
   for (const stage of setupSiteStages) {
     const done = await read(session, setupSiteAt(stage));
@@ -135,7 +143,11 @@ test("a site set up one thing further at a time, from nothing to a landed first 
     assert.deepEqual(steps(done), saidStages[stage], stage);
     assert.equal(done.lines.at(-1), "next: stop", stage);
     const [tell = ""] = said(done, "tell");
-    assert.ok(tell.includes(`${session.installation.site}/`), tell);
+    assert.equal(
+      tell.includes(`${session.installation.site}/`),
+      stage !== "Offline",
+      tell,
+    );
     if (stage === "Landed") assert.deepEqual(said(done, "rule"), []);
     else assert.deepEqual(await ruled(done), [], stage);
   }
@@ -163,7 +175,7 @@ function awkward(): SetupSite {
   return world;
 }
 
-test("across every state of setup, a choice asked and a choice named, a bare run sends the site nothing but reads, and the one request that is not a read is the renewal the issuer is sent", async () => {
+test("across every state of setup, a choice asked and a choice named, a bare run of a sign-in the site takes sends the site nothing but reads and the issuer one renewal", async () => {
   const session = await signed();
   const { installation } = session;
   await session.machine.checkout(setupSiteRepositoryAddress);
@@ -197,6 +209,46 @@ test("across every state of setup, a choice asked and a choice named, a bare run
   assert.equal(
     writes(installation).at(-1),
     `POST ${installation.site}/api/v1/projects`,
+  );
+});
+
+test("a bare run of a sign-in the site refuses sends the site its one read twice and nothing else, and the issuer a second renewal and then the revocation of the token it was last handed, which is forgotten", async () => {
+  const session = await signed();
+  const { installation, machine } = session;
+  installation.admits = false;
+  const done = await machine.run([]);
+  dialect(done, done.stdout);
+  assert.equal(done.code, 1, done.stdout);
+  assert.deepEqual(done.lines, [
+    `site: ${installation.site}, not signed in`,
+    "found: the site refused the remembered sign-in, so it was forgotten",
+    `next: node ${program} sign-in`,
+  ]);
+  const requests = installation.asked.filter((asked) =>
+    /^[A-Z]+ http/u.test(asked),
+  );
+  const workspaces = `GET ${installation.site}/access/v1/workspaces`;
+  const renewal = `POST ${installation.issuer}/oauth2/token`;
+  assert.deepEqual(requests, [
+    `GET ${installation.site}/config.json`,
+    `GET ${installation.issuer}/.well-known/openid-configuration`,
+    renewal,
+    workspaces,
+    renewal,
+    workspaces,
+    `POST ${installation.issuer}/oauth2/revoke`,
+  ]);
+  assert.deepEqual(installation.grants.slice(1), [
+    "refresh_token granted",
+    "refresh_token granted",
+  ]);
+  assert.deepEqual(installation.revocations, [
+    "client_id token token_type_hint: the renewal",
+  ]);
+  assert.equal(installation.renewal(), undefined);
+  assert.equal(
+    machine.file("session.json"),
+    JSON.stringify({ site: installation.site }),
   );
 });
 
@@ -280,7 +332,7 @@ const cuts: readonly (readonly [
   ["landings", saidLandingSite, 5, "a ticket's landings were"],
 ];
 
-test("each list cut short leaves its step not read where what was sent does not settle it, and is never read as all there is", async () => {
+test("each list cut short leaves its step not read where what was sent does not settle it, and is never read as all there is: no name is taken from a list of projects that did not end, and a project named in full is read without one", async () => {
   const session = await signed();
   for (const [cut, site, at, subject] of cuts) {
     const world = site();
@@ -298,7 +350,12 @@ test("each list cut short leaves its step not read where what was sent does not 
   partial.fates.set("inventory", "Cut");
   const unchosen = await read(session, partial);
   assert.deepEqual(said(unchosen, "step"), []);
-  const named = await read(session, partial, ["--project", "widgets"]);
+  const half = await read(session, partial, ["--project", "widgets"]);
+  assert.deepEqual(said(half, "step"), []);
+  assert.deepEqual(said(half, "ask"), [
+    "Which workspace is this for: acme? The site sent only part of the list, so the one meant may not be named here. Pass the name as --workspace.",
+  ]);
+  const named = await read(session, partial, [...(await ruled(half)), "acme"]);
   assert.deepEqual(steps(named), saidStages.Landed);
 });
 
@@ -354,6 +411,19 @@ test("the folder's remote proposes the one project it is added to and says so, p
   assert.ok(!machine.written.join("\n").includes("deploy"));
 });
 
+/** Longer than the harness lets any run last, so a run that waited the git out is one the harness ends as a failure. */
+const sleepSecs = 600;
+
+/** Whether a process is still there to be signalled. */
+function running(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** A path for one run on which `git` is a script of the case's own, answering as `body` says. */
 function gitAnswering(machine: Home, name: string, body: string): string {
   const directory = join(machine.beside, name);
@@ -384,4 +454,37 @@ test("a git that fails, answers too late or answers with more than an address is
     0,
   );
   assert.equal(await proposed("late", late), 0);
+});
+
+test("a git still running when its wait runs out is ended by the run, which ends then and not when the git would have", async () => {
+  const session = await signed();
+  const { machine } = session;
+  const noted = join(machine.beside, "git.pid");
+  const path = gitAnswering(
+    machine,
+    "sleeping",
+    `echo $$ > '${noted}'\nexec sleep ${String(sleepSecs)}`,
+  );
+  const started = Date.now();
+  try {
+    const done = await read(session, setupSiteTwo(), [], { PATH: path });
+    assert.deepEqual(said(done, "found"), []);
+    assert.ok(Date.now() - started >= setupRemoteWaitMs, done.stdout);
+    const pid = Number(readFileSync(noted, "utf8"));
+    await eventually(() => (running(pid) ? undefined : true));
+  } finally {
+    if (existsSync(noted)) ended(Number(readFileSync(noted, "utf8")));
+  }
+});
+
+test("a git the system will not start at all is no remote and no failure", async () => {
+  const session = await signed();
+  const directory = join(session.machine.beside, "looping");
+  mkdirSync(directory);
+  symlinkSync(join(directory, "git"), join(directory, "git"));
+  const path = `${directory}:${process.env["PATH"] ?? ""}`;
+  const done = await read(session, setupSiteTwo(), [], { PATH: path });
+  assert.equal(done.code, 0, done.stdout);
+  assert.deepEqual(said(done, "found"), []);
+  assert.equal(said(done, "ask").length, 1, done.stdout);
 });

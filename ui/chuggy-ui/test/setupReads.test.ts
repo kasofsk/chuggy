@@ -6,9 +6,11 @@
  * none, names given are taken as given, and this folder's remote proposes a
  * project only where it is added to exactly one of those it could have meant
  * and every one of them was read whole. The second half is the requests
- * themselves: which are sent for which site, that a read hanging on one that
- * was not got is never sent, and that the ports the reads go through send
- * nothing that is not a read.
+ * themselves: which are sent for which site, that the list of projects is
+ * read past its first page and no further than a bound, that a project named
+ * in full is read by its name where no whole list ruled it out, that a read
+ * hanging on one that was not got is never sent, and that the ports the reads
+ * go through send nothing that is not a read.
  */
 
 import { expect, test } from "vitest";
@@ -19,6 +21,7 @@ import {
   apiMintWorkerPoolToken,
   apiProjectInventory,
   apiWriteSessionPlacement,
+  projectInventoryPagesMax,
 } from "../app/core/apiRoutes.ts";
 import {
   setupCandidatesMax,
@@ -324,7 +327,162 @@ test("a part of the projects is never where the remote is looked for nor all a n
   );
 });
 
-const project = "/api/v1/tenants/acme/projects/widgets";
+const inventory = "GET /api/v1/projects";
+
+/** The pages of the list of projects a run asked for, as the cursor each was asked by. */
+function paged(sent: readonly string[]): readonly string[] {
+  return sent
+    .filter((asked) => asked.startsWith(inventory))
+    .map((asked) => asked.slice(inventory.length));
+}
+
+test("the list of projects is read past its first page, and is whole once a page names no next, however the projects fall on the pages", async () => {
+  const trailing = siteOf(["acme"], ["acme/widgets"]);
+  trailing.inventoryPages = 2;
+  const later = siteOf(["acme"], ["acme/widgets"]);
+  for (const held of later.projects) held.page = 2;
+  for (const site of [trailing, later]) {
+    const sent: string[] = [];
+    const reads = await siteRead(site, { sent });
+    expect(reads.inventory).toEqual({
+      read: "Got",
+      value: [{ tenant: "acme", project: "widgets" }],
+      whole: true,
+    });
+    expect(reads.choice).toEqual(made("Only", "acme", "widgets"));
+    expect(paged(sent).slice(0, 2)).toEqual(["", "?cursor=1"]);
+  }
+});
+
+test("a project name two workspaces hold is asked about though one of them is on a later page", async () => {
+  const site = siteOf(["acme", "zeta"], ["acme/widgets", "zeta/widgets"]);
+  for (const held of site.projects) if (held.tenant === "zeta") held.page = 1;
+  const named = { answers: { project: "widgets" } };
+  expect((await siteRead(site, named)).choice).toEqual(
+    open("workspace", ["acme", "zeta"]),
+  );
+});
+
+test("the pages of the list of projects are read up to the console's own bound and no further, and a list that still names a next is not whole", async () => {
+  const site = siteOf(["acme"], ["acme/widgets"]);
+  site.fates.set("inventory", "Cut");
+  const sent: string[] = [];
+  const reads = await siteRead(site, { sent });
+  expect(reads.inventory).toMatchObject({ read: "Got", whole: false });
+  expect(paged(sent)).toHaveLength(projectInventoryPagesMax);
+  expect(paged(sent).at(-1)).toBe(
+    `?cursor=${String(projectInventoryPagesMax - 1)}`,
+  );
+});
+
+test("a later page of the list of projects that was not got is what the whole read came to, and no part of the list is kept", async () => {
+  const site = siteOf(["acme"], ["acme/widgets", "acme/gadgets"]);
+  site.inventoryPages = 3;
+  const through = answering("cursor=1", () =>
+    Response.json({}, { status: 500 }),
+  );
+  const reads = await siteRead(site, { through });
+  expect(reads.inventory).toEqual({ read: "Failed", outcome: "Fault" });
+  expect(reads.choice).toEqual(made("Only", "acme"));
+});
+
+test("the one workspace seen to hold a named project is taken only from a list that was whole, and is asked about from one that was not", async () => {
+  const named = { answers: { project: "widgets" } };
+  const site = siteOf(["acme"], ["acme/widgets"]);
+  expect((await siteRead(site, named)).choice).toEqual(
+    made("Named", "acme", "widgets"),
+  );
+  site.fates.set("inventory", "Cut");
+  expect((await siteRead(site, named)).choice).toEqual(
+    open("workspace", ["acme"], undefined, false),
+  );
+});
+
+test("a question about the workspace of a named project lists the workspaces that hold it and no other", async () => {
+  const three = [...both, "initech"];
+  const site = siteOf(three, [...spread, "initech/turbines"]);
+  expect(
+    (await siteRead(site, { answers: { project: "widgets" } })).choice,
+  ).toEqual(open("workspace", both));
+  expect(
+    (await siteRead(site, { answers: { project: "sprockets" } })).choice,
+  ).toEqual(open("workspace", three));
+});
+
+test.each(["workspaces", "inventory"] as const)(
+  "a question about the workspace says the names are not all of them where the %s were sent only in part",
+  async (read) => {
+    const site = siteOf(both, spread);
+    expect((await siteRead(site)).choice).toEqual(open("workspace", both));
+    site.fates.set(read, "Cut");
+    expect((await siteRead(site)).choice).toEqual(
+      open("workspace", both, undefined, false),
+    );
+    expect(
+      (await siteRead(site, { answers: { project: "sprockets" } })).choice,
+    ).toEqual(open("workspace", both, undefined, false));
+  },
+);
+
+const widgets = "/api/v1/tenants/acme/projects/widgets";
+
+test("a project named with its workspace is read by its name where the list was not whole or not got, and need be on no page that was read", async () => {
+  const named = { answers: { workspace: "acme", project: "widgets" } };
+  const beyond = setupSiteAt("Landed");
+  for (const held of beyond.projects) held.page = projectInventoryPagesMax;
+  const failed = setupSiteAt("Landed");
+  failed.fates.set("inventory", "Failed");
+  for (const site of [beyond, failed]) {
+    const sent: string[] = [];
+    const reads = await siteRead(site, { ...named, sent });
+    expect(reads.choice).toEqual(made("Named", "acme", "widgets"));
+    expect(reads.settings.read).toBe("Got");
+    expect(sent).toContain(`GET ${widgets}/selector-settings`);
+  }
+  expect((await siteRead(beyond, named)).inventory).toEqual({
+    read: "Got",
+    value: [],
+    whole: false,
+  });
+});
+
+test("a project named with its workspace that a whole list does not name is not asked for, and the one that is read is the one in the workspace named", async () => {
+  const site = siteOf(both, ["acme/widgets"]);
+  const sent: string[] = [];
+  const absent = { workspace: "globex", project: "widgets" };
+  const reads = await siteRead(site, { answers: absent, sent });
+  expect(reads.choice).toEqual(made("Named", "globex", "widgets"));
+  expect(reads.settings).toEqual({ read: "Unasked" });
+  expect(sent.filter((asked) => asked.includes("/projects/"))).toEqual([]);
+  const twice = siteOf(both, ["acme/widgets", "globex/widgets"]);
+  const asked: string[] = [];
+  await siteRead(twice, { answers: absent, sent: asked });
+  const read = asked.filter((line) => line.includes("/projects/widgets"));
+  expect(read.length).toBeGreaterThan(0);
+  for (const line of read) expect(line).toContain("/tenants/globex/");
+});
+
+test("the repositories read while the remote was looked for are the chosen project's own, by its workspace and by its name", async () => {
+  const across = bound(
+    both,
+    ["acme/widgets", "globex/widgets"],
+    ["globex/widgets"],
+  );
+  const within = bound(["acme"], pair, ["acme/gadgets"]);
+  for (const [site, chosen] of [
+    [across, made("Remote", "globex", "widgets")],
+    [within, made("Remote", "acme", "gadgets")],
+  ] as const) {
+    const reads = await siteRead(site, { remote });
+    expect(reads.choice).toEqual(chosen);
+    expect(reads.repositories).toMatchObject({
+      read: "Got",
+      value: [{ repository: address, configured: true }],
+    });
+  }
+});
+
+const project = widgets;
 const moving = setupMovingPhases.map((phase) => `phase=${phase}`).join("&");
 
 /** Every request a site set up to its end is sent, and no other: in particular nothing that mints or reads a token. */
@@ -333,6 +491,7 @@ const reads = [
   "GET /api/v1/tenants/acme/forge-installations",
   `GET ${project}/selector-settings`,
   `GET ${project}/repositories`,
+  `GET ${project}/execution-placement`,
   `GET ${project}/session-placement`,
   `GET ${project}?limit=1&phase=Done`,
   `GET ${project}?order=RecentActivity&${moving}`,
@@ -432,6 +591,22 @@ test("the ports the checklist reads through hold one bearer, renew nothing and f
   expect(await apiProjectInventory(ports)).toEqual({
     outcome: "Unauthenticated",
   });
+});
+
+test("every read goes out under the bearer the run got while it held the lock, and never under one the ports it reads through would answer now", async () => {
+  const authorized: (string | undefined)[] = [];
+  const later: ApiPorts = {
+    ...sitePorts(setupSiteAt("Landed")),
+    fetch: (_target, init) => {
+      authorized.push(new Headers(init.headers).get("authorization") ?? "");
+      return Promise.resolve(Response.json({ projects: [] }));
+    },
+    bearer: () => Promise.resolve("renewed-since"),
+  };
+  const ports = setupReadPorts(later, "got-under-the-lock");
+  expect(await ports.bearer()).toBe("got-under-the-lock");
+  await apiProjectInventory(ports);
+  expect(authorized).toEqual(["Bearer got-under-the-lock"]);
 });
 
 /** Ports that answer as `ports` do, but for the reads whose address holds `part`, which are answered as `answer` makes of what the site sent. */

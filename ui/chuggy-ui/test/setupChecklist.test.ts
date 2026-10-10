@@ -11,6 +11,7 @@
 
 import { expect, test } from "vitest";
 
+import { projectInventoryPagesMax } from "../app/core/apiRoutes.ts";
 import { setupAnswersAsked } from "../app/core/setupArguments.ts";
 import { setupFiles } from "../app/core/setupPorts.ts";
 import { setupRemoteCommand } from "../app/core/setupRemote.ts";
@@ -24,7 +25,9 @@ import {
 import type { SetupMachine } from "./setupMachine.ts";
 import {
   setupSiteAt,
+  setupSiteClaim,
   setupSiteProject,
+  setupSiteProposed,
   setupSiteStages,
   setupSiteTwo,
 } from "./setupSite.ts";
@@ -100,10 +103,99 @@ test("a person fully set up is shown every step done, and nothing is named to ru
       "step: repository  done     acme-org/widgets",
       "step: runner      done     live",
       "step: ticket      done     ticket 1 landed",
-      `tell: chuggy is set up for acme/widgets: a first ticket has landed. The next one is made at ${pages}/tickets/new.`,
+      `tell: chuggy is set up for acme/widgets: ticket 1 landed. The next ticket is made at ${pages}/tickets/new.`,
       "next: stop",
     ],
   });
+});
+
+test("a first ticket that opened a pull request is said to have done that, in the step and in the closing line, and is nowhere said to have landed", async () => {
+  const world = setupSiteAt("Live");
+  const [project] = world.projects;
+  project?.tickets.push({ ticket: 1, phase: "Finalization" });
+  const url = "https://github.com/acme-org/widgets/pull/1";
+  project?.landings.set(1, [setupSiteProposed(url)]);
+  const done = await printed(await machineSignedIn(world));
+  expect(done.lines.slice(-3)).toEqual([
+    "step: ticket      done     ticket 1 opened a pull request",
+    `tell: chuggy is set up for acme/widgets: ticket 1 opened a pull request. The next ticket is made at ${pages}/tickets/new.`,
+    "next: stop",
+  ]);
+  expect(done.lines.join("\n")).not.toContain("landed");
+  project?.landings.set(1, [{ ...setupSiteProposed(url), state: "Failed" }]);
+  const failed = await printed(await machineSignedIn(world));
+  expect(failed.lines.slice(-4, -2)).toEqual([
+    "step: ticket      waiting  ticket 1 is in Finalization",
+    `tell: Ticket 1 is in Finalization, and setup is done when it lands. ${pages}/tickets/1 shows where it is. Tell me when you want me to look again.`,
+  ]);
+});
+
+test("a ticket released before anything could run it is not waited on: the person is sent to its page to start it", async () => {
+  const world = setupSiteAt("Live");
+  world.projects[0]?.tickets.push({ ticket: 1, phase: "Pending" });
+  const done = await printed(await machineSignedIn(world));
+  expect(done.lines.slice(-4)).toEqual([
+    "step: ticket      waiting  ticket 1 is released, not started",
+    `tell: Ticket 1 is released and has not started. Open ${pages}/tickets/1 and press Dispatch to start it. Tell me once it has started.`,
+    `rule: Run node ${machineScript} only once the person says ticket 1 has started.`,
+    "next: stop",
+  ]);
+});
+
+test("a project whose work the cluster runs, with a ticket landed and no runner, is set up, and is sent to no runners page", async () => {
+  const world = setupSiteAt("Landed");
+  for (const held of world.projects) {
+    held.work = "InCluster";
+    held.runner = "Unregistered";
+  }
+  const done = await printed(await machineSignedIn(world));
+  expect(done.lines.slice(-4)).toEqual([
+    "step: runner      done     the cluster runs its work",
+    "step: ticket      done     ticket 1 landed",
+    `tell: chuggy is set up for acme/widgets: ticket 1 landed. The next ticket is made at ${pages}/tickets/new.`,
+    "next: stop",
+  ]);
+  expect(done.lines.join("\n")).not.toContain("/runners");
+});
+
+test("a repository whose own account lacks the worker app holds the GitHub step, though another account has both apps, and the person is sent to install it there", async () => {
+  const world = setupSiteAt("Live");
+  world.installations.set("acme", [
+    setupSiteClaim("personal", "portal"),
+    setupSiteClaim("personal", "worker"),
+    setupSiteClaim("acme-org", "portal"),
+  ]);
+  const done = await printed(await machineSignedIn(world));
+  expect(done.lines.slice(3, 5)).toEqual([
+    "step: github      waiting  acme-org, which owns acme-org/widgets, has the portal app, not the worker app",
+    "step: repository  done     acme-org/widgets",
+  ]);
+  expect(done.lines.slice(-3)).toEqual([
+    `tell: Open ${pages}/repositories and press Install worker, then install it on acme-org. Where acme-org is an organisation you do not own, GitHub asks its owner for you and this waits on them. Tell me once it is installed.`,
+    `rule: Run node ${machineScript} only once the person says the worker app is installed on acme-org.`,
+    "next: stop",
+  ]);
+});
+
+test("a person whose one project is on a later page of the site's list is asked nothing, and past a list that never ends she is asked which project and her answer is read by its name", async () => {
+  const later = setupSiteAt("Landed");
+  for (const held of later.projects) held.page = 3;
+  const found = await printed(await machineSignedIn(later));
+  expect(found.lines.at(-2)).toBe(
+    `tell: chuggy is set up for acme/widgets: ticket 1 landed. The next ticket is made at ${pages}/tickets/new.`,
+  );
+  later.fates.set("inventory", "Cut");
+  for (const held of later.projects) held.page = projectInventoryPagesMax;
+  const machine = await machineSignedIn(later);
+  expect((await printed(machine)).lines.slice(1)).toEqual([
+    "ask: Which project of acme is this for? The site sent only part of the list, so the one meant may not be named here. Pass the name as --project.",
+    `rule: Run node ${machineScript} --workspace acme --project with the person's answer after it, only once the person has answered.`,
+    "next: stop",
+  ]);
+  const named = ["--workspace", "acme", "--project", "widgets"];
+  expect((await printed(machine, named)).lines.at(-2)).toBe(
+    `tell: chuggy is set up for acme/widgets: ticket 1 landed. The next ticket is made at ${pages}/tickets/new.`,
+  );
 });
 
 test("at every stage of a site the bare command sends the site nothing but reads, and every one of them with the lock given up but the one that confirms the sign-in", async () => {
@@ -132,6 +224,7 @@ const reads: readonly Exclude<SetupSiteRead, "workspaces">[] = [
   "settings",
   "installations",
   "repositories",
+  "work",
   "placement",
   "landed",
   "moving",

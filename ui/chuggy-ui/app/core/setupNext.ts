@@ -7,10 +7,12 @@
  * there, and the checklist is read again only once the person says the step
  * is done. `setupMend` is where each thing a step can lack is turned into
  * that; the slice that gives a step its command changes that step's line
- * there and nowhere else. A step that was not read is said as that: a read
- * the site refused or cut short is the person's to take up, and one that
- * failed is a failure. Where which project is meant is still open, the next
- * thing is the question, one flag at a time.
+ * there and nowhere else. A tell says of a page only what is pressed there:
+ * whether a step is done is this program's to say, from the reads, and never
+ * a page's. A step that was not read is said as that: a read the site refused
+ * or cut short is the person's to take up, and one that failed is a failure.
+ * Where which project is meant is still open, the next thing is the question,
+ * one flag at a time.
  */
 
 import { forgeInstallLabel } from "./forgeInstallation.ts";
@@ -42,6 +44,7 @@ export const setupPressed = {
   retry: "Retry",
   runner: "Add runner",
   ticket: "Create ticket",
+  dispatch: "Dispatch",
 } as const;
 
 /** How many names a question lists before it says how many more there are. */
@@ -123,7 +126,7 @@ function setupGithubMend(
     );
   }
   return setupHand(
-    `Open ${page} and press ${setupPressed.connect}, so chuggy is shown ${lack.account} as well as working in it. Tell me once GitHub is connected.`,
+    `Open ${setupPage(at, settingsRoutes.workspace.accounts)}, the workspace's accounts page, and press ${setupPressed.connect}, so chuggy is shown ${lack.account}. Tell me once GitHub is connected.`,
     "once the person says GitHub is connected",
   );
 }
@@ -140,8 +143,8 @@ function setupRepositoryMend(
       "once the person says the repository is added",
     );
   return setupHand(
-    `${lack.repository} is added, but chuggy has not read its configuration. Open ${page}: the row for ${lack.repository} says why, and ${setupPressed.retry} asks again where it is offered. Tell me once that row has settled.`,
-    `once the person says the configuration of ${lack.repository} is read`,
+    `${lack.repository} is added, but chuggy has not read its configuration. Open ${page} and press ${setupPressed.retry} on the row for ${lack.repository}; if it still cannot, the row then says why. Tell me once ${setupPressed.retry} has answered.`,
+    `once the person says ${setupPressed.retry} has answered for ${lack.repository}`,
   );
 }
 
@@ -156,7 +159,7 @@ function setupRunnerMend(
         "once the person says the runner is running",
       )
     : setupHand(
-        `A runner is registered and is not running. Start it on its machine; ${page} shows when it is live. Tell me once it is.`,
+        "A runner is registered and is not running. Start it on its machine and tell me once it is running.",
         "once the person says the runner is running",
       );
 }
@@ -164,7 +167,10 @@ function setupRunnerMend(
 function setupTicketMend(
   lack: Extract<
     SetupLack,
-    { readonly lacks: "Ticket" | "Release" | "Landing" | "Decision" }
+    {
+      readonly lacks:
+        "Ticket" | "Release" | "Dispatch" | "Landing" | "Decision";
+    }
   >,
   at: SetupAt,
 ): SetupThing {
@@ -177,6 +183,11 @@ function setupTicketMend(
       return setupHand(
         `Ticket ${String(lack.ticket)} was drafted and never released, so nothing is working on it, and the console has no page that releases it. ${create}, which makes a ticket and releases it at once. Tell me once it is created.`,
         created,
+      );
+    case "Dispatch":
+      return setupHand(
+        `Ticket ${String(lack.ticket)} is released and has not started. Open ${setupTicketPage(at, lack.ticket)} and press ${setupPressed.dispatch} to start it. Tell me once it has started.`,
+        `once the person says ticket ${String(lack.ticket)} has started`,
       );
     case "Landing":
       return setupHand(
@@ -250,6 +261,7 @@ function setupMend(
       return setupRunnerMend(lack, at);
     case "Ticket":
     case "Release":
+    case "Dispatch":
     case "Landing":
     case "Decision":
       return setupTicketMend(lack, at);
@@ -295,6 +307,16 @@ function setupCarried(
     : { workspace: choice.workspace, project: undefined };
 }
 
+/** Setup said to be done in the ticket step's own words, so a pull request that was opened is not said to have landed. */
+function setupDoneThing(standing: SetupStanding, at: SetupAt): SetupThing {
+  const ticket = standing.steps.find((step) => step.step === "ticket");
+  const how = ticket === undefined ? "" : `: ${ticket.detail}`;
+  return {
+    thing: "Done",
+    tell: `chuggy is set up for ${at.workspace}/${at.project}${how}. The next ticket is made at ${setupPage(at, navRoutes.ticketNew)}.`,
+  };
+}
+
 function setupThing(standing: SetupStanding): SetupThing {
   if (standing.choice.choice === "Open") return setupAsk(standing.choice);
   const at: SetupAt = {
@@ -303,11 +325,7 @@ function setupThing(standing: SetupStanding): SetupThing {
     project: standing.choice.project ?? "",
   };
   const undone = standing.steps.find((step) => step.lacks !== undefined);
-  if (undone?.lacks === undefined)
-    return {
-      thing: "Done",
-      tell: `chuggy is set up for ${at.workspace}/${at.project}: a first ticket has landed. The next one is made at ${setupPage(at, navRoutes.ticketNew)}.`,
-    };
+  if (undone?.lacks === undefined) return setupDoneThing(standing, at);
   const mine =
     standing.remote === undefined
       ? undefined

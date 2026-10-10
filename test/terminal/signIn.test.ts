@@ -22,6 +22,7 @@ import {
   eventually,
   making,
   person,
+  program,
   signedIn,
 } from "./program.ts";
 import type { Home } from "./program.ts";
@@ -135,11 +136,13 @@ test("a sign-in the site does not confirm is a failure that is kept, and the nex
   assert.ok(remembered(machine).refreshToken === installation.renewal());
   const unread = await machine.run([]);
   assert.equal(unread.code, 1);
-  assert.deepEqual(unread.lines.slice(0, -1), [
+  assert.deepEqual(unread.lines, [
     `site: ${installation.site}, sign-in not confirmed`,
     "found: the site did not say which workspaces are yours (Fault)",
+    "tell: The chuggy site did not answer when I asked which workspaces are yours, so I cannot say where you stand. Tell me if you want me to look again.",
+    `rule: Run node ${program} only if the person asks to look again.`,
+    "next: stop",
   ]);
-  assert.match(unread.lines.at(-1) ?? "", /^next: node \S+$/u);
   installation.serves = true;
   const confirmed = await machine.run([]);
   assert.equal(confirmed.code, 0);
@@ -217,6 +220,32 @@ test("a declined sign-in stands: the bare command says it again and opens nothin
   assert.equal(machine.file("sign-in.json"), undefined);
   const after = await machine.run([]);
   assert.equal(after.lines[0], `site: ${installation.site}, signed in`);
+});
+
+test("a sign-in declined with no command waiting on it is said by the bare command, however often it is run, and the sign-in the person then asks for opens a page that time", async () => {
+  const { installation, machine } = await installed();
+  installation.allows = false;
+  const argv = ["sign-in", "--site", installation.site, "--wait-secs", "0"];
+  assert.equal((await machine.run(argv)).code, 0);
+  assert.equal((await person(await machine.opened())).status, 400);
+  await eventually(() =>
+    (machine.file("sign-in.json") ?? "").includes('"Ended"') ? true : undefined,
+  );
+  for (let asked = 0; asked < 2; asked += 1) {
+    const stood = await machine.run([]);
+    assert.equal(stood.code, 0);
+    assert.deepEqual(stood.lines.slice(0, 3), [
+      `site: ${installation.site}, not signed in`,
+      ...declined,
+    ]);
+    assert.match(stood.lines.at(-2) ?? "", declinedRule);
+    assert.equal(stood.lines.at(-1), "next: stop");
+  }
+  assert.equal(pages(installation), 1);
+  installation.allows = true;
+  const done = await signedIn(installation, machine);
+  assert.equal(done.lines[0], `site: ${installation.site}, signed in`);
+  assert.equal(pages(installation), 2);
 });
 
 test("a sign-in the issuer will not exchange is said to the person, and a page that would fail the same way is not opened again unasked", async () => {

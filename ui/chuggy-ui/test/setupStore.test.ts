@@ -7,7 +7,7 @@
 import { expect, test } from "vitest";
 
 import { sessionRefreshTokenKey } from "../app/core/sessionHolder.ts";
-import { setupFiles } from "../app/core/setupPorts.ts";
+import { setupFiles, SetupMachineError } from "../app/core/setupPorts.ts";
 import type {
   SetupFile,
   SetupFilesPort,
@@ -30,6 +30,7 @@ import {
   setupLockTaken,
   setupLockWord,
   setupSessionRead,
+  setupSessionRoomBytes,
   setupSessionWritten,
   setupSignInNoteRead,
   setupSignInNoteWritten,
@@ -46,31 +47,48 @@ interface Held {
   readonly writes: SetupFile[];
   /** Each file whose unfinished writes were asked to be removed. */
   readonly swept: SetupFile[];
+  /** Each file room was asked for, with how much. */
+  readonly reserved: (readonly [SetupFile, number])[];
+  /** What the machine refuses from here on: room, a write, a sweep, or nothing. */
+  refuses: "Room" | "Write" | "Sweep" | undefined;
+}
+
+const sessionPath = "/home/person/.chuggy-setup/session.json";
+
+function unwritable(): SetupMachineError {
+  return new SetupMachineError({ fault: "Unwritable", path: sessionPath });
 }
 
 function held(session?: string): Held {
   const texts = new Map<SetupFile, string>();
   if (session !== undefined) texts.set(setupFiles.session, session);
-  const writes: SetupFile[] = [];
-  const swept: SetupFile[] = [];
-  return {
+  const kept: Held = {
     texts,
-    writes,
-    swept,
+    writes: [],
+    swept: [],
+    reserved: [],
+    refuses: undefined,
     files: {
       read: (file) => texts.get(file),
       write: (file, text) => {
-        writes.push(file);
+        if (kept.refuses === "Write") throw unwritable();
+        kept.writes.push(file);
         texts.set(file, text);
+      },
+      reserve: (file, bytes) => {
+        kept.reserved.push([file, bytes]);
+        if (kept.refuses === "Room") throw unwritable();
       },
       remove: (file) => {
         texts.delete(file);
       },
       sweep: (file) => {
-        swept.push(file);
+        kept.swept.push(file);
+        if (kept.refuses === "Sweep") throw unwritable();
       },
     },
   };
+  return kept;
 }
 
 test("what is remembered is a site and the renewal token for it, and nothing else", () => {
@@ -128,6 +146,117 @@ test("the holder's store keeps nothing but the renewal token", () => {
   expect(holding.read("chuggy.authorization")).toBeNull();
 });
 
+const room = [setupFiles.session, setupSessionRoomBytes] as const;
+
+test("room is kept for one write of the remembered sign-in at a time: once before a write, and again only after one took it", () => {
+  const kept = held();
+  const store = setupTokenStore(kept.files, site, "renewal-1");
+  expect(kept.reserved).toEqual([]);
+  store.roomed();
+  store.roomed();
+  expect(kept.reserved).toEqual([room]);
+  store.write(sessionRefreshTokenKey, "renewal-2");
+  store.roomed();
+  expect(kept.reserved).toEqual([room, room]);
+  store.remove(sessionRefreshTokenKey);
+  store.roomed();
+  store.roomed();
+  expect(kept.reserved).toEqual([room, room, room]);
+  expect(() => {
+    store.kept();
+  }).not.toThrow();
+});
+
+/** What a call threw, as the machine's own word for it. */
+function fault(call: () => void): unknown {
+  try {
+    call();
+  } catch (failure: unknown) {
+    return failure instanceof SetupMachineError ? failure.fault : failure;
+  }
+  return undefined;
+}
+
+test("room the machine would not give is thrown as the path, when it is asked for and again by whoever asks what the store was refused", () => {
+  const kept = held();
+  const store = setupTokenStore(kept.files, site, "renewal-1");
+  kept.refuses = "Room";
+  const refused = { fault: "Unwritable", path: sessionPath };
+  expect(fault(store.roomed)).toEqual(refused);
+  expect(fault(store.kept)).toEqual(refused);
+  kept.refuses = undefined;
+  store.roomed();
+  expect(kept.reserved).toEqual([room, room]);
+  expect(fault(store.kept)).toEqual(refused);
+});
+
+test("a token the machine would not write is a sign-in that was not kept, with the path, to the holder that wrote it and to whoever asks afterwards", () => {
+  const kept = held();
+  const store = setupTokenStore(kept.files, site, "renewal-1");
+  store.roomed();
+  kept.refuses = "Write";
+  const unkept = { fault: "Unkept", path: sessionPath };
+  expect(
+    fault(() => {
+      store.write(sessionRefreshTokenKey, "renewal-2");
+    }),
+  ).toEqual(unkept);
+  expect(fault(store.kept)).toEqual(unkept);
+  expect(kept.texts.get(setupFiles.session)).toBeUndefined();
+});
+
+test("a sign-in the machine would not forget is the path it would not write, and no token is said to be lost", () => {
+  const kept = held();
+  const store = setupTokenStore(kept.files, site, "renewal-1");
+  kept.refuses = "Write";
+  const refused = { fault: "Unwritable", path: sessionPath };
+  expect(
+    fault(() => {
+      store.remove(sessionRefreshTokenKey);
+    }),
+  ).toEqual(refused);
+  expect(fault(store.kept)).toEqual(refused);
+});
+
+test("what the store was first refused is what it goes on saying, whatever it is refused afterwards: a forgetting that fails after a token was lost is thrown as the token that was lost", () => {
+  const kept = held();
+  const store = setupTokenStore(kept.files, site, "renewal-1");
+  const unkept = { fault: "Unkept", path: sessionPath };
+  kept.refuses = "Write";
+  fault(() => {
+    store.write(sessionRefreshTokenKey, "renewal-2");
+  });
+  expect(
+    fault(() => {
+      store.remove(sessionRefreshTokenKey);
+    }),
+  ).toEqual(unkept);
+  kept.refuses = "Room";
+  expect(fault(store.roomed)).toEqual(unkept);
+  expect(fault(store.kept)).toEqual(unkept);
+});
+
+test("something the files threw that is no path of the machine's is thrown again as it was", () => {
+  const kept = held();
+  const odd = new Error("not the machine's");
+  const store = setupTokenStore(
+    {
+      ...kept.files,
+      write: () => {
+        throw odd;
+      },
+    },
+    site,
+    "renewal-1",
+  );
+  expect(
+    fault(() => {
+      store.write(sessionRefreshTokenKey, "renewal-2");
+    }),
+  ).toBe(odd);
+  expect(fault(store.kept)).toBe(odd);
+});
+
 const nowMs = 5_000_000;
 
 test("a word is nobody's when it is not a holder's, its holder is gone, or it is older than any run", () => {
@@ -176,10 +305,12 @@ function locker(
   clockMs = nowMs,
 ) {
   const slept: number[] = [];
-  const { files, swept } = held();
+  const kept = held();
+  const { files, swept } = kept;
   return {
     slept,
     swept,
+    kept,
     ports: {
       files,
       lock: lock.port,
@@ -274,6 +405,43 @@ test("a run gives up its own lock and nobody else's", () => {
   setupLockReleased(locker(lock, 7, [7, 11]).ports);
   expect(lock.said).toBeUndefined();
   setupLockReleased(locker(lock, 7, [7, 11]).ports);
+  expect(lock.said).toBeUndefined();
+});
+
+test("giving the lock up gives back room no write took, while the lock is still this run's and for no lock that is another's", () => {
+  const lock = cell(setupLockWord(7, nowMs));
+  const other = locker(lock, 11, [7, 11]);
+  setupLockReleased(other.ports);
+  expect(other.swept).toEqual([]);
+  const mine = locker(lock, 7, [7, 11]);
+  const said: (string | undefined)[] = [];
+  const ports = {
+    ...mine.ports,
+    files: {
+      ...mine.ports.files,
+      sweep: (file: SetupFile) => {
+        said.push(lock.said);
+        mine.ports.files.sweep(file);
+      },
+    },
+  };
+  setupLockReleased(ports);
+  expect(said).toEqual([setupLockWord(7, nowMs)]);
+  expect(mine.swept).toEqual([setupFiles.session]);
+  expect(lock.said).toBeUndefined();
+  setupLockReleased(ports);
+  expect(mine.swept).toEqual([setupFiles.session]);
+});
+
+test("a lock is given up even where the room could not be given back, and the path is what is thrown", () => {
+  const lock = cell(setupLockWord(7, nowMs));
+  const mine = locker(lock, 7, [7]);
+  mine.kept.refuses = "Sweep";
+  expect(
+    fault(() => {
+      setupLockReleased(mine.ports);
+    }),
+  ).toEqual({ fault: "Unwritable", path: sessionPath });
   expect(lock.said).toBeUndefined();
 });
 

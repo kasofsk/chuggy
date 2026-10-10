@@ -135,12 +135,16 @@ export const saidUnread: Readonly<
   settings: [1, "acme/widgets: its lead settings were"],
   installations: [2, "its GitHub accounts were"],
   repositories: [3, "its repositories were"],
+  work: [4, "where its work runs was"],
   placement: [4, "its runners were"],
   landed: [5, "its tickets were"],
   moving: [5, "its tickets were"],
   drafts: [5, "its drafts were"],
   landings: [5, "a ticket's landings were"],
 };
+
+/** Where the GitHub step is said, which the project's repositories leave unread as they do their own step: it is held to the account that owns one. */
+const saidGithubAt = 2;
 
 /** How each way a read fails is said. */
 export const saidFates: Readonly<
@@ -169,10 +173,12 @@ export function saidFated(
   const [at, subject] = saidUnread[read];
   const said = [...saidLanding];
   said[at] = ["unread", `${subject} ${saidFates[fate]}`];
+  if (read === "repositories") said[saidGithubAt] = said[at] ?? saidTodo;
   if (read === "inventory")
     for (const [after, hung] of [
+      [saidGithubAt, "its repositories were"],
       [3, "its repositories were"],
-      [4, "its runners were"],
+      [4, "where its work runs was"],
       [5, "its tickets were"],
     ] as const)
       said[after] = ["unread", `${hung} not read`];

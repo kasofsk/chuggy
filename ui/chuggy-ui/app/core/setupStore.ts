@@ -8,8 +8,12 @@
  * is spent by the request that uses it and replaying a spent one ends the
  * whole sign-in, and each run is a process of its own, so a run holds the lock
  * from before it reads the token until after it has written the one that
- * replaced it. A file that does not read as what this module wrote is treated
- * as absent, which costs a sign-in and never a wrong answer.
+ * replaced it. Room for that write is kept before the token is spent, so a
+ * home that would not take the new token is found while the old one is still
+ * good; and a write that fails all the same is noted here, because the holder
+ * reads a store that threw as a renewal that failed. A file that does not read
+ * as what this module wrote is treated as absent, which costs a sign-in and
+ * never a wrong answer.
  *
  * The lock is one word, its holder's or none, and it changes hands only by a
  * swap that names the word it is changed from. So a lock whose holder is gone
@@ -22,7 +26,7 @@
 import { z } from "zod";
 
 import { setupSiteRead } from "./setupArguments.ts";
-import { setupFiles } from "./setupPorts.ts";
+import { setupFiles, SetupMachineError } from "./setupPorts.ts";
 import type { SetupFilesPort, SetupPorts } from "./setupPorts.ts";
 import { setupSignInEndings } from "./setupReport.ts";
 import type { SetupSignInEnded } from "./setupReport.ts";
@@ -84,19 +88,59 @@ export function setupSessionWritten(
   );
 }
 
+/** The room kept for a write of the remembered sign-in: past any site's origin and any issuer's token together. */
+export const setupSessionRoomBytes = 16_384;
+
+export interface SetupTokenStore extends KeyValuePort {
+  /** Keeps room for the next write of the remembered sign-in, and throws which path would not give it. */
+  readonly roomed: () => void;
+  /** Throws what the store was refused, whatever the holder made of it: no room, or a token handed back and not written. */
+  readonly kept: () => void;
+}
+
+function setupAsThrown(failure: unknown): unknown {
+  return failure;
+}
+
+/** What a write that failed is thrown as once the issuer has answered: the token it handed back is the one that was lost. */
+function setupUnkept(failure: unknown): unknown {
+  return failure instanceof SetupMachineError &&
+    failure.fault.fault === "Unwritable"
+    ? new SetupMachineError({ fault: "Unkept", path: failure.fault.path })
+    : failure;
+}
+
 /**
  * The session holder's store for one site: the token it was opened with, and
- * every token after it written to the file before the write returns.
+ * every token after it written to the file before the write returns. The
+ * first thing the machine refuses it is what that step and every refused step
+ * after it throws, and what `kept` throws.
  */
 export function setupTokenStore(
   files: SetupFilesPort,
   site: string,
   held: string | undefined,
-): KeyValuePort {
+): SetupTokenStore {
   let refreshToken = held;
+  let room = false;
+  let refused: { readonly failure: unknown } | undefined;
+  const noting = (step: () => void, thrown: (failure: unknown) => unknown) => {
+    try {
+      step();
+    } catch (failure: unknown) {
+      refused ??= { failure: thrown(failure) };
+      throw refused.failure;
+    }
+  };
   const keep = (next: string | undefined): void => {
     refreshToken = next;
-    setupSessionWritten(files, { site, refreshToken });
+    room = false;
+    noting(
+      () => {
+        setupSessionWritten(files, { site, refreshToken });
+      },
+      next === undefined ? setupAsThrown : setupUnkept,
+    );
   };
   return {
     read: (key) =>
@@ -107,6 +151,16 @@ export function setupTokenStore(
     remove: (key) => {
       if (key === sessionRefreshTokenKey && refreshToken !== undefined)
         keep(undefined);
+    },
+    roomed: () => {
+      if (room) return;
+      noting(() => {
+        files.reserve(setupFiles.session, setupSessionRoomBytes);
+      }, setupAsThrown);
+      room = true;
+    },
+    kept: () => {
+      if (refused !== undefined) throw refused.failure;
     },
   };
 }
@@ -178,19 +232,28 @@ export function setupLockHeldBy(ports: SetupLockPorts): number | undefined {
   return held === undefined ? undefined : setupLockHolder(held)?.pid;
 }
 
-/** Gives the lock up where it is still this run's, so a run that outlived its lock frees nobody else's. */
+/**
+ * Gives the lock up where it is still this run's, so a run that outlived its
+ * lock frees nobody else's. Room this run kept and no write took is given
+ * back first, while it is still the one writer.
+ */
 export function setupLockReleased(ports: SetupLockPorts): void {
   const held = ports.lock.read();
   if (held === undefined) return;
-  if (setupLockHolder(held)?.pid === ports.process.pid)
+  if (setupLockHolder(held)?.pid !== ports.process.pid) return;
+  try {
+    ports.files.sweep(setupFiles.session);
+  } finally {
     ports.lock.swap(held, undefined);
+  }
 }
 
 /**
  * What a sign-in page leaves for the command waiting on it: where it listens,
- * or how it ended. An ending is `told` once a `sign-in` has reported it, and
- * is kept after that where nothing is run until the person asks, so the bare
- * command goes on saying it until a `sign-in` opens another page.
+ * or how it ended. An ending is `told` once a command has said it, whichever
+ * command that was, and is kept after that where nothing is run until the
+ * person asks: the bare command goes on saying it, and the next `sign-in`
+ * opens another page.
  */
 export type SetupSignInNote =
   | {

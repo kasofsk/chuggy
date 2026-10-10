@@ -10,8 +10,9 @@
 
 import { expect, test } from "vitest";
 
-import { setupFiles } from "../app/core/setupPorts.ts";
+import { setupFiles, SetupMachineError } from "../app/core/setupPorts.ts";
 import {
+  setupOpenerCommand,
   setupSignInPollMs,
   setupSignInStartSecsMax,
 } from "../app/core/setupSignIn.ts";
@@ -20,6 +21,7 @@ import {
   folded,
   machineAudience,
   machineSite,
+  machineTokenAddress,
   setupMachine,
 } from "./setupMachine.ts";
 import type { SetupMachine } from "./setupMachine.ts";
@@ -188,11 +190,84 @@ test("an opener that ends badly opened nothing, and one still running did", asyn
   expect(await running.command(signIn)).toMatchObject({ opened: "Opened" });
 });
 
-test("a machine this program knows no opener for is handed the address", async () => {
+test("each platform's own opener is what is run, and a platform this program knows none for has none to run", async () => {
+  for (const [platform, opener] of [
+    ["linux", "xdg-open"],
+    ["darwin", "open"],
+  ] as const) {
+    const machine = prompt();
+    machine.platform = platform;
+    await machine.command(signIn);
+    expect(machine.launched[0]?.[0], platform).toBe(opener);
+  }
+  const surroundings = { browser: undefined, directory: "~/.chuggy-setup" };
+  const address = "http://127.0.0.1:41001/";
+  expect(
+    setupOpenerCommand({ ...surroundings, platform: "plan9" }, address),
+  ).toBeUndefined();
+  expect(
+    setupOpenerCommand(
+      { ...surroundings, platform: "plan9", browser: "" },
+      address,
+    ),
+  ).toBeUndefined();
+});
+
+/** A machine whose person signs in, and whose browser is answered with whatever the page threw, as a real listener's is with a status. */
+function thrown(): { machine: SetupMachine; faults: unknown[] } {
   const machine = setupMachine();
-  machine.platform = "plan9";
-  expect(await machine.command(signIn)).toMatchObject({ opened: "NotOpened" });
-  expect(machine.launched).toEqual([]);
+  const faults: unknown[] = [];
+  machine.opened = async () => {
+    await machine.person().catch((failure: unknown) => {
+      faults.push(
+        failure instanceof SetupMachineError ? failure.fault.fault : failure,
+      );
+    });
+  };
+  return { machine, faults };
+}
+
+test("a page answered on a machine that gives no room for the sign-in exchanges nothing, so the answer is not spent, and ends as a fault", async () => {
+  const { machine, faults } = thrown();
+  machine.room = (turn) => turn === 1;
+  expect(await machine.command(signIn)).toEqual(ended("Faulted"));
+  expect(faults).toEqual(["Unwritable"]);
+  expect(machine.reserved).toEqual([setupFiles.session, setupFiles.session]);
+  expect(machine.bodies).toEqual([]);
+  expect(remembered(machine)).toEqual({ site: machineSite });
+  expect(machine.lock).toBeUndefined();
+});
+
+test("a sign-in the issuer exchanged that the machine would not write ends the page as a fault, and is not said to be signed in", async () => {
+  const { machine, faults } = thrown();
+  await machine.command(["--site", machineSite]);
+  machine.takes = (file) => file !== setupFiles.session;
+  expect(await machine.command(["sign-in"])).toEqual(ended("Faulted"));
+  expect(faults).toEqual(["Unkept"]);
+  expect(machine.bodies).toHaveLength(1);
+  expect(machine.sent).toEqual([]);
+  expect(remembered(machine)).toEqual({ site: machineSite });
+  expect(machine.lock).toBeUndefined();
+});
+
+test("a token renewed while the page confirmed its sign-in that the machine would not write ends the page as a sign-in that was not kept, whether or not the machine then let it be forgotten", async () => {
+  for (const forgets of [true, false]) {
+    const { machine, faults } = thrown();
+    await machine.command(["--site", machineSite]);
+    machine.admits = false;
+    let writes = 0;
+    machine.takes = (file) => {
+      if (file !== setupFiles.session) return true;
+      writes += 1;
+      return writes === 1 || (forgets && writes > 2);
+    };
+    expect(await machine.command(["sign-in"])).toEqual(ended("Faulted"));
+    expect(faults, String(forgets)).toEqual(["Unkept"]);
+    expect(
+      machine.asked.filter((address) => address === machineTokenAddress),
+    ).toHaveLength(2);
+    expect(machine.lock).toBeUndefined();
+  }
 });
 
 test("the person's own opener is used where they named one", async () => {

@@ -6,8 +6,9 @@
  * is the one `next:` line: a command that runs as it is written, or `stop`.
  * `stop` is also what follows anything running a command again would not
  * mend by itself: a sign-in that ended any way but signed in, another run
- * holding the lock, a path the machine would not write. Each says what was
- * found, tells the person, and names in a `rule:` line the one command and the
+ * holding the lock, a path the machine would not write, a site or a sign-in
+ * server that did not answer, a read that failed. Each says what was found,
+ * tells the person, and names in a `rule:` line the one command and the
  * condition it may be run under. A step the person does by hand is that shape
  * too, so nothing printed is a command an agent could run round and round
  * without her.
@@ -36,7 +37,8 @@ import type {
   SetupAskFault,
   SetupCommand,
 } from "./setupArguments.ts";
-import type { SetupMachineFault } from "./setupPorts.ts";
+import { setupPlatforms } from "./setupPorts.ts";
+import type { SetupMachineFault, SetupPlatform } from "./setupPorts.ts";
 import {
   setupLoopbackAddress,
   setupNodeMajorMin,
@@ -125,6 +127,8 @@ export interface SetupNext {
 
 export type SetupReport =
   | { readonly report: "NodeOld"; readonly major: number | undefined }
+  /** A platform the program is not served on, by the name the machine gave. */
+  | { readonly report: "Unserved"; readonly platform: string }
   | { readonly report: "AskedWrongly"; readonly fault: SetupAskFault }
   | { readonly report: "SiteUnknown" }
   | {
@@ -259,6 +263,28 @@ function setupNodeLines(major: number | undefined): readonly SetupLine[] {
   return [
     ["found", `${found}; ${needs}`],
     ["tell", `${needs} on this machine. Once it is installed I can carry on.`],
+  ];
+}
+
+const setupPlatformNames: Readonly<Record<SetupPlatform, string>> = {
+  linux: "Linux",
+  darwin: "macOS",
+};
+
+function setupUnservedLines(platform: string): readonly SetupLine[] {
+  const served = setupPlatforms
+    .map((name) => setupPlatformNames[name])
+    .join(" and ");
+  return [
+    [
+      "found",
+      `chuggy setup runs on ${served}, and this machine is ${platform}`,
+    ],
+    [
+      "tell",
+      `chuggy setup runs on ${served} and this machine is neither, so it did nothing. Run it from a machine that is one of those.`,
+    ],
+    ["next", setupNextStop],
   ];
 }
 
@@ -480,6 +506,12 @@ function setupFaultStop(fault: SetupFault): SetupStop {
         tell: `chuggy setup stopped because it could not read ${fault.path} on this machine. Tell me once it can.`,
         when: `once ${fault.path} can be read`,
       };
+    case "Unkept":
+      return {
+        found: `the sign-in was renewed and could not be kept: chuggy setup could not write ${fault.path}`,
+        tell: `chuggy setup renewed your sign-in and then could not write it to ${fault.path} on this machine, so it was not kept and you may have to sign in again. Tell me once that path can be written.`,
+        when: `once ${fault.path} can be made and written`,
+      };
     case "Homeless":
       return {
         found: "this machine did not say where the person's home directory is",
@@ -542,6 +574,26 @@ function setupFetched(site: string, saying: SetupSaying): string {
   return `${fetched} && ${setupCommandOf(saying, "Status")}`;
 }
 
+const setupLookAgain = "if the person asks to look again";
+
+/** What follows an answer this copy could not read: the person is told, and fetching the site's own copy waits on their say-so. */
+function setupStaleLines(
+  site: string,
+  saying: SetupSaying,
+): readonly SetupLine[] {
+  return [
+    [
+      "tell",
+      "This copy of chuggy setup could not read what the chuggy site sent, and may be older than the site. Tell me if you want me to fetch the site's own copy.",
+    ],
+    ...setupStopRule(
+      { when: "if the person asks to fetch chuggy setup again" },
+      setupFetched(site, saying),
+    ),
+  ];
+}
+
+/** A sign-in the site refused is forgotten, and the page that mends it is next; any other read that did not confirm it is a stop. */
 function setupUnreadLines(
   report: Extract<SetupReport, { readonly report: "WorkspacesUnread" }>,
   saying: SetupSaying,
@@ -553,20 +605,51 @@ function setupUnreadLines(
       setupNextLine(saying, "SignIn"),
     ];
   const head: SetupLine = ["site", `${report.site}, sign-in not confirmed`];
-  if (report.outcome !== "Unreadable")
+  if (report.outcome === "Unreadable")
     return [
       head,
-      [
-        "found",
-        `the site did not say which workspaces are yours (${report.outcome})`,
-      ],
-      setupNextLine(saying, report.asked),
+      ["found", setupStale],
+      ...setupStaleLines(report.site, saying),
     ];
+  const stop: SetupStop = {
+    found: `the site did not say which workspaces are yours (${report.outcome})`,
+    tell: "The chuggy site did not answer when I asked which workspaces are yours, so I cannot say where you stand. Tell me if you want me to look again.",
+    when: setupLookAgain,
+  };
   return [
     head,
-    ["found", setupStale],
-    ["next", setupFetched(report.site, saying)],
+    ...setupStopSaid(stop),
+    ...setupStopRule(stop, setupCommandOf(saying, report.asked)),
   ];
+}
+
+/** Why a site could not be worked with, as a stop: asking again unasked mends none of them. */
+function setupSessionStop(
+  report: Extract<
+    SetupReport,
+    { readonly report: "SiteUnusable" | "IssuerUnanswered" }
+  >,
+): SetupStop {
+  if (report.report === "IssuerUnanswered")
+    return {
+      found: "the sign-in server did not answer",
+      tell: "The chuggy site's sign-in server is not answering, so I cannot tell whether chuggy setup is signed in. Tell me if you want me to try again.",
+      when: setupAskedRetry,
+    };
+  switch (report.phase) {
+    case "Unreachable":
+      return {
+        found: "the site did not answer",
+        tell: `${report.site} did not answer, so chuggy setup did nothing. Check the address and that this machine can reach it, and tell me if you want me to try again.`,
+        when: setupAskedRetry,
+      };
+    case "Unconfigured":
+      return {
+        found: "the address answered, and not as a chuggy site",
+        tell: `What answered at ${report.site} is not a chuggy site this program can read, so chuggy setup did nothing. Check the address, and tell me if you want me to try again.`,
+        when: setupAskedRetry,
+      };
+  }
 }
 
 function setupSessionLines(
@@ -580,13 +663,18 @@ function setupSessionLines(
     report.report === "SiteUnusable"
       ? setupSitePhases[report.phase]
       : "its sign-in server is not answering";
+  const stop = setupSessionStop(report);
+  const command = setupCommandOf(
+    saying,
+    report.asked,
+    setupSiteFlag(report.site),
+  );
   return [
     ["site", `${report.site}, ${said}`],
-    setupNextLine(saying, report.asked, setupSiteFlag(report.site)),
+    ...setupStopSaid(stop),
+    ...setupStopRule(stop, command),
   ];
 }
-
-const setupLookAgain = "if the person asks to look again";
 
 /** A read that failed is a stop like any other: what was not read, and the one command named under the person's say-so. */
 function setupFailedLines(
@@ -608,14 +696,7 @@ function setupFailedLines(
     ];
   return [
     ["found", `${thing.found}; ${setupStale}`],
-    [
-      "tell",
-      "This copy of chuggy setup could not read what the chuggy site sent, and may be older than the site. Tell me if you want me to fetch the site's own copy.",
-    ],
-    ...setupStopRule(
-      { when: "if the person asks to fetch chuggy setup again" },
-      setupFetched(site, saying),
-    ),
+    ...setupStaleLines(site, saying),
   ];
 }
 
@@ -679,6 +760,8 @@ function setupLines(
   switch (report.report) {
     case "NodeOld":
       return [...setupNodeLines(report.major), setupNextLine(bare, "Status")];
+    case "Unserved":
+      return setupUnservedLines(report.platform);
     case "AskedWrongly":
       return [
         ["found", setupAskFaults[report.fault]],
@@ -759,10 +842,11 @@ const setupEndedFailures: ReadonlySet<SetupSignInEnded> = new Set([
   "Faulted",
 ]);
 
-/** Zero is follow `next:`, one is failed, two is asked wrongly or run on a Node too old. */
+/** Zero is follow `next:`, one is failed, two is asked wrongly or run where the program cannot be: a Node too old, or a platform it is not served on. */
 export function setupReportExit(report: SetupReport): 0 | 1 | 2 {
   switch (report.report) {
     case "NodeOld":
+    case "Unserved":
     case "AskedWrongly":
     case "SiteUnknown":
       return 2;

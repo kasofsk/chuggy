@@ -125,8 +125,8 @@ const mends: {
   Configuration: [
     { lacks: "Configuration", repository: "acme-org/widgets" },
     hand(
-      `acme-org/widgets is added, but chuggy has not read its configuration. Open ${pages}/repositories: the row for acme-org/widgets says why, and Retry asks again where it is offered. Tell me once that row has settled.`,
-      "once the person says the configuration of acme-org/widgets is read",
+      `acme-org/widgets is added, but chuggy has not read its configuration. Open ${pages}/repositories and press Retry on the row for acme-org/widgets; if it still cannot, the row then says why. Tell me once Retry has answered.`,
+      "once the person says Retry has answered for acme-org/widgets",
     ),
   ],
   Runner: [
@@ -139,7 +139,7 @@ const mends: {
   RunnerLive: [
     { lacks: "RunnerLive" },
     hand(
-      `A runner is registered and is not running. Start it on its machine; ${pages}/runners shows when it is live. Tell me once it is.`,
+      "A runner is registered and is not running. Start it on its machine and tell me once it is running.",
       "once the person says the runner is running",
     ),
   ],
@@ -155,6 +155,13 @@ const mends: {
     hand(
       `Ticket 4 was drafted and never released, so nothing is working on it, and the console has no page that releases it. ${create}, which makes a ticket and releases it at once. Tell me once it is created.`,
       "once the person says the ticket is created",
+    ),
+  ],
+  Dispatch: [
+    { lacks: "Dispatch", ticket: 4 },
+    hand(
+      `Ticket 4 is released and has not started. Open ${pages}/tickets/4 and press Dispatch to start it. Tell me once it has started.`,
+      "once the person says ticket 4 has started",
     ),
   ],
   Landing: [
@@ -180,20 +187,29 @@ test.each(Object.entries(mends))(
   },
 );
 
-test("nothing a step can lack is mended by a command: each is told, names a page of this site, and waits on the person", () => {
+test("nothing a step can lack is mended by a command: each is told, waits on the person, and names a page of this site wherever something is pressed on one", () => {
+  const pageless: string[] = [];
   for (const [lack] of Object.values(mends)) {
     const next = thing(lack);
     if (next.thing !== "Hand") throw new Error(`${lack.lacks} is not handed`);
-    expect(next.tell, lack.lacks).toContain(`${stoodSite}/`);
-    expect(next.tell, lack.lacks).toMatch(/ Tell me (once|when|if) [^.]+\.$/u);
+    if (!next.tell.includes(`${stoodSite}/`)) pageless.push(lack.lacks);
+    expect(next.tell, lack.lacks).toMatch(
+      / [Tt]ell me (once|when|if) [^.]+\.$/u,
+    );
     expect(next.when, lack.lacks).toMatch(/^(once|if|when) the person /u);
   }
+  expect(pageless).toEqual(["RunnerLive"]);
 });
 
-test("the portal app missing from an account that has the worker app is mended where an account is connected", () => {
+test("a runner that is registered and not running is started on its machine, and the tell says nothing of any page, since no page of the console says whether one is live", () => {
+  const { tell } = mends.RunnerLive[1] as { readonly tell: string };
+  expect(tell).not.toMatch(/https?:|page|shows/u);
+});
+
+test("the portal app missing from an account is mended on the workspace's accounts page, which is the page that draws Connect GitHub where an account is already connected", () => {
   expect(thing({ lacks: "App", app: "portal", account: "acme-org" })).toEqual(
     hand(
-      `Open ${pages}/repositories and press Connect GitHub, so chuggy is shown acme-org as well as working in it. Tell me once GitHub is connected.`,
+      `Open ${stoodSite}/tenants/acme/settings/accounts, the workspace's accounts page, and press Connect GitHub, so chuggy is shown acme-org. Tell me once GitHub is connected.`,
       "once the person says GitHub is connected",
     ),
   );
@@ -272,17 +288,22 @@ test("a step the site would not show, or sent only part of, is a state the perso
   );
 });
 
-test("with every step done, setup is said to be done and nothing is named but where the next ticket is made", () => {
-  const done = lacking({ lacks: "Runner" }).steps.slice(0, 1);
-  expect(
-    setupNext(lacking({ lacks: "Runner" }, { steps: done }), setupAnswersNone),
-  ).toEqual({
-    carried: setupAnswersNone,
-    thing: {
-      thing: "Done",
-      tell: `chuggy is set up for acme/widgets: a first ticket has landed. The next one is made at ${pages}/tickets/new.`,
-    },
-  });
+test("with every step done, setup is said to be done in the ticket step's own words, and nothing is named but where the next ticket is made", () => {
+  for (const detail of ["ticket 4 landed", "ticket 4 opened a pull request"]) {
+    const steps: readonly SetupStep[] = [
+      ...lacking({ lacks: "Runner" }).steps.slice(0, 1),
+      { step: "ticket", state: "done", detail, lacks: undefined },
+    ];
+    expect(
+      setupNext(lacking({ lacks: "Runner" }, { steps }), setupAnswersNone),
+    ).toEqual({
+      carried: setupAnswersNone,
+      thing: {
+        thing: "Done",
+        tell: `chuggy is set up for acme/widgets: ${detail}. The next ticket is made at ${pages}/tickets/new.`,
+      },
+    });
+  }
 });
 
 /** The step that decides what is next at each stage of a site set up one thing at a time: the first that is not done. */
@@ -314,6 +335,17 @@ test("at each stage of a site the first step that is not done decides what is ne
       expect(next.thing, stage).toMatchObject({ thing: "Hand", when });
     }
   }
+});
+
+test("a ticket released and not started is what is next only once the project has somewhere to run it: before that the runner is", async () => {
+  const pending = (stage: SetupSiteStage) => {
+    const site = setupSiteAt(stage);
+    site.projects[0]?.tickets.push({ ticket: 4, phase: "Pending" });
+    return nextOf(site);
+  };
+  expect((await pending("Live")).thing).toEqual(mends.Dispatch[1]);
+  expect((await pending("Configured")).thing).toEqual(mends.Runner[1]);
+  expect((await pending("Offline")).thing).toEqual(mends.RunnerLive[1]);
 });
 
 const open = (

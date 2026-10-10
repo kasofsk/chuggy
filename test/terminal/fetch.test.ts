@@ -16,7 +16,7 @@ import {
   apiFetch,
   fetchJsonWithin,
 } from "../../ui/chuggy-ui/terminal/ports.ts";
-import { making } from "./program.ts";
+import { making, program } from "./program.ts";
 
 const servers: Server[] = [];
 const made = making();
@@ -154,7 +154,10 @@ test("a site that answers its configuration with a redirect is not a site, and w
   assert.equal(done.code, 1);
   assert.deepEqual(done.lines, [
     `site: ${there.at}, no answer`,
-    `next: node ${done.lines.at(-1)?.split(" ")[2] ?? ""} --site ${there.at}`,
+    "found: the site did not answer",
+    `tell: ${there.at} did not answer, so chuggy setup did nothing. Check the address and that this machine can reach it, and tell me if you want me to try again.`,
+    `rule: Run node ${program} --site ${there.at} only if the person asks to try again.`,
+    "next: stop",
   ]);
   assert.deepEqual(elsewhere.asked, []);
   assert.equal(machine.file("session.json"), undefined);

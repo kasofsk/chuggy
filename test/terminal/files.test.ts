@@ -16,12 +16,14 @@ import {
   chmodSync,
   closeSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   openSync,
   readdirSync,
   readFileSync,
   rmSync,
   statSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
@@ -99,6 +101,90 @@ test("a write replaces the file whole, and leaves nothing beside it", () => {
   assert.notEqual(statSync(placed).ino, before);
   assert.equal(files.read("session.json"), "second, and longer");
   assert.deepEqual(readdirSync(machine.directory), ["session.json"]);
+});
+
+/** The one copy kept beside `file` in a directory, as its path. */
+function copyOf(directory: string, file: string): string {
+  const [copy = "", ...more] = readdirSync(directory).filter(
+    (name) => name.startsWith(`${file}.`) && name.endsWith(".draft"),
+  );
+  assert.deepEqual(more, []);
+  assert.notEqual(copy, "");
+  return join(directory, copy);
+}
+
+test("room kept for a write is a file of that size the person alone can read, and the write that follows is written over it, whole, with nothing left beside it", () => {
+  const machine = made.machine();
+  const files = filesIn(machine.directory);
+  const placed = join(machine.directory, "session.json");
+  const allowed = process.umask(0);
+  try {
+    files.reserve("session.json", 4_096);
+  } finally {
+    process.umask(allowed);
+  }
+  const copy = copyOf(machine.directory, "session.json");
+  assert.equal(statSync(copy).size, 4_096);
+  assert.equal(permissions(copy), "600");
+  assert.equal(files.read("session.json"), undefined);
+  const given = statSync(copy).ino;
+  files.write("session.json", "a token");
+  assert.equal(statSync(placed).ino, given);
+  assert.equal(readFileSync(placed, "utf8"), "a token");
+  assert.deepEqual(readdirSync(machine.directory), ["session.json"]);
+});
+
+test("room is kept for one write: the write after it makes its own copy, and a text longer than the room is written whole all the same", () => {
+  const machine = made.machine();
+  const files = filesIn(machine.directory);
+  const placed = join(machine.directory, "session.json");
+  files.reserve("session.json", 8);
+  const given = statSync(copyOf(machine.directory, "session.json")).ino;
+  const long = "longer than the room that was kept";
+  files.write("session.json", long);
+  assert.equal(statSync(placed).ino, given);
+  assert.equal(files.read("session.json"), long);
+  files.write("session.json", "next");
+  assert.notEqual(statSync(placed).ino, given);
+  assert.equal(files.read("session.json"), "next");
+  assert.deepEqual(readdirSync(machine.directory), ["session.json"]);
+});
+
+test("room is kept again from nothing each time it is asked for, is given back by a sweep, and a write whose room has gone makes its own copy", () => {
+  const machine = made.machine();
+  const files = filesIn(machine.directory);
+  files.reserve("session.json", 64);
+  const first = copyOf(machine.directory, "session.json");
+  writeFileSync(first, "something another write left");
+  files.reserve("session.json", 16);
+  assert.equal(readFileSync(first, "utf8"), " ".repeat(16));
+  files.sweep("session.json");
+  assert.deepEqual(readdirSync(machine.directory), []);
+  files.write("session.json", "after a sweep");
+  assert.equal(files.read("session.json"), "after a sweep");
+  files.reserve("session.json", 16);
+  rmSync(copyOf(machine.directory, "session.json"));
+  files.write("session.json", "after the room went");
+  assert.equal(files.read("session.json"), "after the room went");
+  assert.deepEqual(readdirSync(machine.directory), ["session.json"]);
+});
+
+test("a copy this port did not make is never written over: a write with no room kept replaces whatever holds its copy's name, and what that name pointed at is left as it was", () => {
+  const machine = made.machine();
+  const files = filesIn(machine.directory);
+  files.reserve("session.json", 16);
+  const copy = copyOf(machine.directory, "session.json");
+  files.sweep("session.json");
+  const elsewhere = join(machine.beside, "elsewhere");
+  writeFileSync(elsewhere, "not the program's");
+  symlinkSync(elsewhere, copy);
+  files.write("session.json", "a token");
+  assert.equal(readFileSync(elsewhere, "utf8"), "not the program's");
+  assert.equal(files.read("session.json"), "a token");
+  assert.ok(
+    lstatSync(join(machine.directory, "session.json")).isFile(),
+    "the file is a link",
+  );
 });
 
 test("a file that is not there is read as nothing, and removing it twice is no failure", () => {
@@ -582,7 +668,7 @@ test("a home the program cannot keep its files in is a failure that names the pa
   assert.equal(readFileSync(machine.directory, "utf8"), "in the way");
 });
 
-test("a home the program may read and not write names the path it could not change, whichever command is run, and nothing is asked of the site", async () => {
+test("a home in which neither the directory nor its lock can be changed names the lock, whichever command is run, and nothing is asked of the site", async () => {
   const { installation, machine } = await signedIn();
   const kept = [machine.directory, join(machine.directory, "lock")];
   const asked = installation.asked.length;
@@ -602,4 +688,41 @@ test("a home the program may read and not write names the path it could not chan
   } finally {
     for (const path of kept) chmodSync(path, 0o700);
   }
+});
+
+test("a home that takes no new file while its lock still changes hands costs no sign-in: each run, bare or a sign-in, names the file it could not write and stops, the issuer is asked nothing, and once the home is mended the sign-in is still good", async () => {
+  const { installation, machine } = await signedIn();
+  const session = join(machine.directory, "session.json");
+  const before = machine.file("session.json");
+  const asked = installation.asked.length;
+  const grants = installation.grants.length;
+  chmodSync(machine.directory, 0o500);
+  try {
+    for (const argv of [[], [], ["sign-in"], []]) {
+      const done = await machine.run(argv);
+      assert.equal(done.code, 1, done.stdout);
+      assert.equal(done.stderr, "");
+      assert.deepEqual(done.lines.slice(0, 2), [
+        `found: chuggy setup could not make or write ${session}`,
+        `tell: chuggy setup stopped because it could not write ${session} on this machine. Tell me once it can.`,
+      ]);
+      assert.match(
+        done.lines[2] ?? "",
+        /^rule: Run node \S+(?: sign-in)? only once /u,
+      );
+      assert.deepEqual(done.lines.slice(3), ["next: stop"]);
+      assert.equal(machine.lock(), undefined);
+    }
+    assert.equal(installation.asked.length, asked);
+    assert.equal(installation.grants.length, grants);
+    assert.equal(machine.file("session.json"), before);
+  } finally {
+    chmodSync(machine.directory, 0o700);
+  }
+  const mended = await machine.run([]);
+  assert.equal(mended.code, 0, mended.stdout);
+  assert.equal(mended.lines[0], `site: ${installation.site}, signed in`);
+  assert.deepEqual(installation.grants.slice(grants), [
+    "refresh_token granted",
+  ]);
 });

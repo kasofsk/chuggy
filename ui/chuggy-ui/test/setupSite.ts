@@ -8,14 +8,17 @@
  * command makes and refuses, as the server does, what it would not show:
  * a project the caller is not listed in is not found, a workspace's accounts
  * are not found by anyone who does not administer it, and lead settings are
- * not found by whoever is not shown them. A case moves one read to another
- * fate by naming it in `fates`.
+ * not found by whoever is not shown them. The list of projects is answered a
+ * page at a time, each page but the last naming the next, since the server
+ * answers a page of what it scanned and not of what the caller is shown. A
+ * case moves one read to another fate by naming it in `fates`.
  */
 
 import type { AccessCallerTenant } from "../../../src/contract/accessPlane.ts";
 import { projectRepositoriesAnsweredMax } from "../../../src/contract/http.ts";
 import type {
   DraftResponse,
+  ExecutionPlacementResponse,
   ForgeInstallationResponse,
   ProjectRepositoryListedResponse,
   SelectorProjectSettingsResponse,
@@ -25,6 +28,7 @@ import type {
 } from "../../../src/contract/responses.ts";
 import type {
   ForgeAppName,
+  PlacementRoute,
   SessionRunnerStanding,
 } from "../../../src/contract/rosters.ts";
 
@@ -42,10 +46,16 @@ export interface SetupSiteTicket {
 export interface SetupSiteProject {
   readonly tenant: string;
   readonly project: string;
+  /** The page of the list of projects this one is answered on, the first being zero. */
+  page: number;
   northStar: string | undefined;
+  /** A North Star the installation gives every project that has none of its own. */
+  inherited: string | undefined;
   /** Whether the caller is shown the project's lead settings. */
   settled: boolean;
   repositories: SetupSiteRepository[];
+  /** Where the project's work runs. */
+  work: PlacementRoute;
   runner: SessionRunnerStanding;
   /** Most lately moved first. */
   tickets: SetupSiteTicket[];
@@ -60,6 +70,7 @@ export type SetupSiteRead =
   | "settings"
   | "installations"
   | "repositories"
+  | "work"
   | "placement"
   | "landed"
   | "moving"
@@ -73,6 +84,8 @@ export type SetupSiteFate =
 export interface SetupSite {
   tenants: AccessCallerTenant[];
   projects: SetupSiteProject[];
+  /** How many pages the list of projects is answered in, where that is more than the projects' own pages come to. */
+  inventoryPages: number;
   /** The claims each workspace holds, by workspace. */
   installations: Map<string, ForgeInstallationResponse[]>;
   fates: Map<SetupSiteRead, SetupSiteFate>;
@@ -90,9 +103,12 @@ export function setupSiteProject(
   return {
     tenant,
     project,
+    page: 0,
     northStar: undefined,
+    inherited: undefined,
     settled: true,
     repositories: [],
+    work: "Pool",
     runner: "Unregistered",
     tickets: [],
     drafts: [],
@@ -105,6 +121,7 @@ export function setupSiteEmpty(): SetupSite {
   return {
     tenants: [],
     projects: [],
+    inventoryPages: 1,
     installations: new Map(),
     fates: new Map(),
   };
@@ -277,6 +294,8 @@ function settings(project: SetupSiteProject): SelectorProjectSettingsResponse {
   };
   const northStar =
     project.northStar === undefined ? {} : { northStar: project.northStar };
+  const inherited =
+    project.inherited === undefined ? {} : { northStar: project.inherited };
   return {
     partition: { tenant: project.tenant, project: project.project },
     revision: 1,
@@ -288,6 +307,7 @@ function settings(project: SetupSiteProject): SelectorProjectSettingsResponse {
       installationMode: "Running",
       dispatchMode: "Automatic",
       basePrompt: "Lead the project.",
+      ...inherited,
       ...northStar,
       threadStandingRules: "Be brief.",
       modelAllowlist: [],
@@ -338,6 +358,14 @@ function placement(project: SetupSiteProject): SessionPlacementResponse {
     lead: { route: "Pool", source: "Default" },
     choices: ["Pool"],
     runners: { mine: project.runner, project: project.runner },
+  };
+}
+
+function work(project: SetupSiteProject): ExecutionPlacementResponse {
+  return {
+    work: { route: project.work, source: "Default" },
+    evaluation: { route: project.work, source: "Default" },
+    choices: ["InCluster", "Pool"],
   };
 }
 
@@ -425,6 +453,8 @@ function projectAnswered(
         fated(site, "repositories") ??
         answered({ repositories: bindings(site, project) })
       );
+    case "/execution-placement":
+      return fated(site, "work") ?? answered(work(project));
     case "/session-placement":
       return fated(site, "placement") ?? answered(placement(project));
     case "/drafts":
@@ -474,6 +504,26 @@ function tenantAnswered(
     : projectAnswered(site, project, within[2] ?? "", query);
 }
 
+/** One page of the projects the caller is shown: those answered on it, and the next page's cursor on every page but the last, or on every page where a case cut the list. */
+function inventory(site: SetupSite, cursor: string | null): SetupSiteAnswer {
+  const at = cursor === null ? 0 : Number(cursor);
+  const last = Math.max(
+    site.inventoryPages - 1,
+    ...site.projects.map((held) => held.page),
+  );
+  return (
+    fated(site, "inventory") ??
+    answered({
+      projects: site.projects
+        .filter((held) => held.page === at)
+        .map((held) => ({ tenant: held.tenant, project: held.project })),
+      ...(at < last || cut(site, "inventory")
+        ? { nextCursor: String(at + 1) }
+        : {}),
+    })
+  );
+}
+
 /**
  * What the site answers a read of `target`, a path with its query, or
  * nothing where the path is none of the reads the bare command makes.
@@ -489,16 +539,7 @@ export function setupSiteAnswered(
       answered({ tenants: site.tenants, truncated: cut(site, "workspaces") })
     );
   if (url.pathname === "/api/v1/projects")
-    return (
-      fated(site, "inventory") ??
-      answered({
-        projects: site.projects.map((held) => ({
-          tenant: held.tenant,
-          project: held.project,
-        })),
-        ...(cut(site, "inventory") ? { nextCursor: "more" } : {}),
-      })
-    );
+    return inventory(site, url.searchParams.get("cursor"));
   const tenant = /^\/api\/v1\/tenants\/([^/]+)(\/.*)$/u.exec(url.pathname);
   return tenant === null
     ? undefined

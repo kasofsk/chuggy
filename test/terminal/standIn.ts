@@ -13,8 +13,10 @@
  * It checks the proof key, hands a code out once, hands out a new renewal
  * token for each one it is shown, and ends the whole sign-in when shown a
  * spent one. A token request that is not sent as a form is refused unread,
- * and costs the sign-in nothing. Every value it hands out is kept, so a suite
- * can search everything the program wrote for any of them.
+ * and costs the sign-in nothing. It publishes where a token is revoked, and a
+ * renewal token revoked there ends the sign-in as a spent one does. Every
+ * value it hands out is kept, so a suite can search everything the program
+ * wrote for any of them.
  */
 
 import { createHash, randomBytes } from "node:crypto";
@@ -42,6 +44,8 @@ export interface StandIn {
   readonly asked: string[];
   /** Each ask of the token endpoint, as its grant and whether it was granted. */
   readonly grants: string[];
+  /** Each ask of the revocation endpoint, as the names of what it carried and whether what it named was the sign-in's renewal token. */
+  readonly revocations: string[];
   /** Why the issuer refused to start a sign-in, each time it did. */
   readonly refusals: string[];
   /** Whether the person allows the sign-in, and whether allowing hands over a renewal token. */
@@ -181,6 +185,36 @@ function token(
   sent(response, 400, { error: "invalid_grant" });
 }
 
+/** Ends the sign-in where the form names its renewal token, and answers the same either way, as an issuer does. */
+function revoke(
+  standIn: StandIn,
+  issuer: Issuer,
+  form: URLSearchParams,
+  response: ServerResponse,
+): void {
+  const mine =
+    issuer.renewal !== undefined && form.get("token") === issuer.renewal;
+  const carried = [...form.keys()].toSorted().join(" ");
+  standIn.revocations.push(`${carried}: ${mine ? "the renewal" : "unknown"}`);
+  if (mine) {
+    issuer.renewal = undefined;
+    issuer.access.clear();
+  }
+  sent(response, 200, {});
+}
+
+/** A form posted to the issuer, kept as it was sent and handed on as its fields, or nothing where it was not sent as a form. */
+async function formOf(
+  standIn: StandIn,
+  request: IncomingMessage,
+): Promise<URLSearchParams | undefined> {
+  const body = await bodyOf(request);
+  standIn.asked.push(body);
+  return request.headers["content-type"] === formType
+    ? new URLSearchParams(body)
+    : undefined;
+}
+
 function issuerHandler(standIn: StandIn, issuer: Issuer) {
   return async (
     request: IncomingMessage,
@@ -193,18 +227,21 @@ function issuerHandler(standIn: StandIn, issuer: Issuer) {
         issuer: standIn.issuer,
         authorization_endpoint: `${standIn.issuer}/oauth2/auth`,
         token_endpoint: `${standIn.issuer}/oauth2/token`,
+        revocation_endpoint: `${standIn.issuer}/oauth2/revoke`,
       });
     } else if (url.pathname === "/oauth2/auth") {
       authorize(standIn, issuer, url.searchParams, response);
     } else if (url.pathname === "/oauth2/token" && request.method === "POST") {
-      const body = await bodyOf(request);
-      standIn.asked.push(body);
-      if (request.headers["content-type"] === formType)
-        token(standIn, issuer, new URLSearchParams(body), response);
+      const form = await formOf(standIn, request);
+      if (form !== undefined) token(standIn, issuer, form, response);
       else {
         standIn.grants.push("not a form refused");
         sent(response, 400, { error: "invalid_request" });
       }
+    } else if (url.pathname === "/oauth2/revoke" && request.method === "POST") {
+      const form = await formOf(standIn, request);
+      if (form !== undefined) revoke(standIn, issuer, form, response);
+      else sent(response, 400, { error: "invalid_request" });
     } else sent(response, 404, {});
   };
 }
@@ -270,6 +307,7 @@ export async function standIn(): Promise<StandIn> {
     issued: new Set<string>(),
     asked: [] as string[],
     grants: [] as string[],
+    revocations: [] as string[],
     refusals: [] as string[],
     allows: true,
     renewable: true,

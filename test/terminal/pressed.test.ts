@@ -6,6 +6,11 @@
  * pages write those names in their own markup, where the program's code
  * cannot reach them. Each page's source is read here for the name the
  * program says, so a page that renames a button fails this and not her.
+ *
+ * Two names are not written where they are drawn. A ticket's page draws each
+ * action under the action's own name, so that name is read where the action
+ * is made; and the workspace's accounts page draws the connect button as the
+ * one component that writes it, so the page is read for the component.
  */
 
 import assert from "node:assert/strict";
@@ -25,7 +30,12 @@ const drawnIn: Readonly<Record<keyof typeof setupPressed, string>> = {
   retry: "ui/chuggy-ui/app/browser/repositories/BindingConfigurations.tsx",
   runner: "ui/chuggy-ui/app/browser/RunnersPage.tsx",
   ticket: "ui/chuggy-ui/app/browser/TicketCreation.tsx",
+  dispatch: "ui/chuggy-ui/app/core/ticketActions.ts",
 };
+
+const ticketPage = "ui/chuggy-ui/app/browser/TicketActions.tsx";
+const accountsPage = "ui/chuggy-ui/app/browser/settings/TenantAccountsPage.tsx";
+const connectButton = "ui/chuggy-ui/app/browser/repositories/ConnectGithub.tsx";
 
 /** Whether a page's source draws `name` as the whole of a text or of a label, and not as part of a longer one. */
 function draws(source: string, name: string): boolean {
@@ -39,6 +49,25 @@ for (const [key, page] of Object.entries(drawnIn))
     const source = readFileSync(page, "utf8");
     assert.ok(draws(source, name), `${page} draws no "${name}"`);
   });
+
+test("a ticket's page draws each action it offers as a button under the action's own name, and has a line of its own for a project with no runner", () => {
+  const source = readFileSync(ticketPage, "utf8");
+  assert.match(
+    source,
+    /<OfferedAction\s+key=\{action\.action\}\s+action=\{action\.action\}/u,
+  );
+  assert.match(source, /props\.noRunner \? <NoRunnerLine /u);
+});
+
+test("the workspace's accounts page, where the program sends a person whose account lacks the portal app, draws the connect button", () => {
+  assert.equal(drawnIn.connect, connectButton);
+  const source = readFileSync(accountsPage, "utf8");
+  assert.match(
+    source,
+    /^import \{ ConnectGithub \} from "\.\.\/repositories\/ConnectGithub\.tsx";$/mu,
+  );
+  assert.match(source, /<ConnectGithub tenant=\{tenant\} /u);
+});
 
 test("a name is found only where a page draws all of it and no more", () => {
   const source = '<Button aria-label="Add runner">\n  Add runner\n</Button>';

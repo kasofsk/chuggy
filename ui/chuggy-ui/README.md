@@ -147,39 +147,49 @@ curl -fsS https://<site>/chuggy-setup.mjs -o chuggy-setup.mjs
 node chuggy-setup.mjs --site https://<site>
 ```
 
-It is one file with nothing to install. Every line it prints is a word from a
-closed set, a colon and its text; the last is `next:` and names the exact
+It is one file with nothing to install, and it runs on Linux and macOS: on any
+other platform it says so and does nothing. Every line it prints is a word from
+a closed set, a colon and its text; the last is `next:` and names the exact
 command to run after it, or says to stop. It says to stop where running a
 command again would mend nothing until the person has said something: after a
-sign-in that was declined, left to expire or refused, where the machine would
-not keep its files or another run held them, and where a step of setup waits
-on her. A `rule:` line then names the command and what must be so before it is
-run, and the bare command goes on saying how the last sign-in ended until
-`sign-in` is run. It exits 0 where the last line is to be followed, 1 where it
-failed and 2 where it was asked wrongly.
+sign-in that was declined, left to expire or refused, where the site or the
+sign-in server did not answer, where the machine would not keep its files or
+another run held them, and where a step of setup waits on her. A `rule:` line
+then names the command and what must be so before it is run. How the last
+sign-in ended is said once by whichever command meets it first; from then on
+the bare command goes on saying it, and the next `sign-in` opens a page. It
+exits 0 where the last line is to be followed, 1 where it failed and 2 where it
+was asked wrongly or cannot run on this machine.
 
 Run bare and signed in, it prints the checklist: a `step:` line for each step
 of setup in order (workspace, project, github, repository, runner, ticket),
 saying it is done, waiting on something named, to do or not read, and then the
 one next thing. It sends the site nothing but reads and keeps nothing of what
-they answered: the site is the record. Each read stands by itself, so one the
-site refused, failed or sent only part of leaves its own step not read and is
-said as that. The program does none of the steps yet: for the first one not
-done a `tell:` line names the console page and what to press there, and `next:`
-is `stop`.
+they answered: the site is the record. The sign-in server is sent one renewal,
+and where the site refuses the sign-in, one more and then the revocation of the
+token, which is forgotten. Each read stands by itself, so one the site refused,
+failed or sent only part of leaves its own step not read and is said as that.
+The program does none of the steps yet: for the first one not done a `tell:`
+line says what mends it, a console page and what to press there wherever a page
+is what does, and `next:` is `stop`.
 
 With one workspace and one project there is nothing to choose. Otherwise
 `--workspace` and `--project` name them, and every command the program prints
 carries them, so the conversation holds the choice and no file does. Where one
 is still to be chosen an `ask:` line puts the question to the person, and the
-`rule:` line names the flag her answer goes in. Run in a git checkout whose
+`rule:` line names the flag her answer goes in. The list of projects is read to
+its end, and no name is taken from a list that did not end; a project named
+with both flags is read by its name. Run in a git checkout whose
 `origin` is a repository added to exactly one of her projects, it proposes that
 project and says so in a `found:` line. It asks `git` for that address and
 prints only its host and path, never a credential the address carried.
 
 `sign-in` opens the installation's sign-in in a browser and takes the answer on
 `127.0.0.1`, as the public client `chuggy-setup`. It remembers the site and the
-renewal token in the person's home directory and never prints the token.
+renewal token in the person's home directory and never prints the token. The
+issuer hands a new token back for each one it is shown, so before one is shown
+the program keeps room in that directory for the next: a home that will not
+take it is said as that, with its path, and the sign-in is not spent.
 
 ## The session
 

@@ -2,11 +2,13 @@
  * One run of the setup program, from its arguments to the report it prints.
  *
  * A run that uses the remembered sign-in holds the lock while it does, and
- * gives it up before it waits on a person. Whatever goes wrong on the machine
- * ends as one report: which path it would not make, write or read where a
- * port said so, and otherwise only that something unexpected stopped the run,
- * so no message of another system's, and nothing a message could carry, is
- * ever printed.
+ * gives it up before it waits on a person. Before it asks a site or an issuer
+ * anything it keeps room for what it may have to write, so a home that takes
+ * no new file is found while the remembered sign-in is still good. Whatever
+ * goes wrong on the machine ends as one report: which path it would not make,
+ * write or read where a port said so, and otherwise only that something
+ * unexpected stopped the run, so no message of another system's, and nothing a
+ * message could carry, is ever printed.
  */
 
 import { setupAsked } from "./setupArguments.ts";
@@ -16,7 +18,7 @@ import type {
   SetupCommand,
 } from "./setupArguments.ts";
 import { setupNext } from "./setupNext.ts";
-import { SetupMachineError } from "./setupPorts.ts";
+import { SetupMachineError, setupPlatforms } from "./setupPorts.ts";
 import type { SetupPorts } from "./setupPorts.ts";
 import { readSetup, setupReadPorts } from "./setupReads.ts";
 import { setupRemoteRead } from "./setupRemote.ts";
@@ -31,7 +33,7 @@ import {
   setupSignInAwaited,
   setupSignInBegun,
   setupSignInSettled,
-  setupSignInStood,
+  setupSignInStoodSaid,
 } from "./setupSignIn.ts";
 import type { SetupSignInBegun } from "./setupSignIn.ts";
 import { setupStanding } from "./setupStanding.ts";
@@ -42,7 +44,6 @@ import {
   setupLockWaitMs,
   setupSessionRead,
   setupSessionWritten,
-  setupSignInNoteRead,
 } from "./setupStore.ts";
 
 type SetupBegun =
@@ -51,8 +52,9 @@ type SetupBegun =
 
 /**
  * The session a command works under: the site it was given or the one
- * remembered, loaded, with the remembered token only where it is that site's.
- * A site is remembered once it has answered as one.
+ * remembered, loaded, with the remembered token only where it is that site's
+ * and room for its renewal kept before anything is asked of either. A site is
+ * remembered once it has answered as one.
  */
 async function setupBegun(
   ports: SetupPorts,
@@ -65,6 +67,7 @@ async function setupBegun(
     return { begun: "Reported", report: { report: "SiteUnknown" } };
   const held = stored?.site === site ? stored.refreshToken : undefined;
   const opened = setupSessionOpened(ports, site, held, undefined);
+  opened.store.roomed();
   await opened.holder.load();
   const phase = opened.holder.snapshot().phase;
   if (phase !== "SignedIn" && phase !== "SignedOut")
@@ -96,8 +99,10 @@ type SetupSigned =
 
 /**
  * Whether the remembered sign-in still stands: its token renews and the site
- * answers as that person. A renewal the issuer refuses is not a failure, only
- * not signed in; one it did not answer is.
+ * answers as that person, where a renewal the issuer refuses is only not
+ * signed in and one it did not answer is a failure. What the store was refused
+ * is thrown after each thing that could have spent a token, before anything is
+ * made of how the holder took it.
  */
 async function setupSigned(
   ports: SetupPorts,
@@ -114,6 +119,7 @@ async function setupSigned(
   };
   if (opened.holder.snapshot().phase !== "SignedIn") return out(signedOut);
   const renewed = await opened.holder.bearer();
+  opened.store.kept();
   if (renewed === undefined)
     return out(
       opened.tokenAsked() === "Refused"
@@ -121,6 +127,7 @@ async function setupSigned(
         : { report: "IssuerUnanswered", site, asked },
     );
   const workspaces = await setupWorkspacesRead(opened);
+  opened.store.kept();
   if (workspaces.read === "Unread")
     return out({
       report: "WorkspacesUnread",
@@ -190,8 +197,8 @@ async function setupChecklist(
 /**
  * The bare command opens no page and changes nothing at the site. Signed in,
  * it reads where the person stands; not signed in, it says how the last
- * sign-in ended while that ending stands, and names `sign-in` only where none
- * does.
+ * sign-in ended while that ending stands, leaves it as said, and names
+ * `sign-in` only where none does.
  */
 async function setupStatus(
   ports: SetupPorts,
@@ -204,8 +211,7 @@ async function setupStatus(
     const signed = await setupSigned(ports, begun.opened, "Status");
     if (signed.signed === "In" || signed.report.report !== "SignedOut")
       return signed;
-    const note = setupSignInNoteRead(ports.files);
-    const ended = setupSignInStood(note, signed.report.site);
+    const ended = setupSignInStoodSaid(ports, signed.report.site);
     return { signed: "Out", report: { ...signed.report, ended } };
   });
   if (held === undefined) return setupBusy(ports, "Status", asked.site);
@@ -280,10 +286,14 @@ function setupFaulted(
   };
 }
 
+/** A platform the program is not served on is refused before an argument is read or anything is asked, made or written. */
 export async function setupRun(
   ports: SetupPorts,
   argv: readonly string[],
 ): Promise<SetupReport> {
+  const platform = ports.surroundings.platform;
+  if (!setupPlatforms.some((served) => served === platform))
+    return { report: "Unserved", platform };
   const asked = setupAsked(argv);
   if (asked.asked === "Wrongly")
     return { report: "AskedWrongly", fault: asked.fault };

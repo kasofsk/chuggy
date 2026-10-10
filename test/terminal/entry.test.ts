@@ -72,19 +72,22 @@ test("with no site given and none remembered the program exits two, says what to
   assert.equal(done.lines[2], "next: stop");
 });
 
-test("a site that does not answer is a failure that exits one, and names the command to run again", async () => {
+test("a site that does not answer is a failure that exits one and stops, with the command to try again under the person's say-so", async () => {
   const done = await made
     .machine()
     .run(["sign-in", "--site", "http://127.0.0.1:9"]);
   assert.equal(done.code, 1);
   dialect(done, "sign-in");
-  assert.deepEqual(done.lines.slice(0, -1), [
+  assert.deepEqual(done.lines.slice(0, 3), [
     "site: http://127.0.0.1:9, no answer",
+    "found: the site did not answer",
+    "tell: http://127.0.0.1:9 did not answer, so chuggy setup did nothing. Check the address and that this machine can reach it, and tell me if you want me to try again.",
   ]);
   assert.match(
-    done.lines.at(-1) ?? "",
-    /^next: node \S+ sign-in --site http:\/\/127\.0\.0\.1:9$/u,
+    done.lines[3] ?? "",
+    /^rule: Run node \S+ sign-in --site http:\/\/127\.0\.0\.1:9 only if the person asks to try again\.$/u,
   );
+  assert.deepEqual(done.lines.slice(4), ["next: stop"]);
 });
 
 test("a machine that names no home is a report and not a trace, and nothing is kept in the folder the program was run in", async () => {

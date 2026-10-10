@@ -4,7 +4,13 @@
  * A file is written beside its place, under a name that says whose write it
  * is, and moved onto it, so no reader ever finds half of one. A write that
  * was cut short leaves that copy behind, holding what was being written, and
- * `sweep` is what removes it.
+ * `sweep` is what removes it. Room for a write is kept as that same copy made
+ * ahead of it and filled, so the write that follows is written over what the
+ * system has already given: it asks for no new entry, and for no new block
+ * where the file system writes over a file's blocks in place. One that writes
+ * every change to new blocks can still refuse the write, which is then said
+ * as a sign-in that was not kept. Only a copy this port made itself is written
+ * over; any other write makes its copy anew, as a name nothing else holds.
  *
  * Whatever the system refuses is thrown as which path it was and whether it
  * was being written or read. What the system said of it is dropped here,
@@ -12,12 +18,16 @@
  */
 
 import {
+  closeSync,
+  ftruncateSync,
   mkdirSync,
+  openSync,
   readFileSync,
   readdirSync,
   renameSync,
   rmSync,
   writeFileSync,
+  writeSync,
 } from "node:fs";
 import { join } from "node:path";
 
@@ -83,12 +93,38 @@ function drafts(directory: string, file: SetupFile): readonly string[] {
   );
 }
 
+/** Writes the whole text over a copy kept ahead of the write and ends the copy there; false where the copy is no longer there to write over. */
+function filled(draft: string, text: string): boolean {
+  const copy = tried("Unwritable", draft, () => openSync(draft, "r+"));
+  if (copy === undefined) return false;
+  try {
+    const octets = Buffer.from(text, "utf8");
+    writeSync(copy, octets, 0, octets.length, 0);
+    ftruncateSync(copy, octets.length);
+  } finally {
+    closeSync(copy);
+  }
+  return true;
+}
+
 export function filesIn(directory: string): SetupFilesPort {
   const placed = (file: SetupFile): string => join(directory, file);
+  const draft = (file: SetupFile): string =>
+    `${placed(file)}.${String(process.pid)}${draftSuffix}`;
   const removed = (path: string): void => {
     tried("Unwritable", path, () => {
       rmSync(path, { force: true });
     });
+  };
+  const made = (): void => {
+    attempted("Unwritable", directory, () => {
+      mkdirSync(directory, { recursive: true, mode: directoryMode });
+    });
+  };
+  const kept = new Set<SetupFile>();
+  const fresh = (file: SetupFile, held: string | Buffer): void => {
+    rmSync(draft(file), { force: true });
+    writeFileSync(draft(file), held, { mode: fileMode, flag: "wx" });
   };
   return {
     read: (file) =>
@@ -96,20 +132,26 @@ export function filesIn(directory: string): SetupFilesPort {
         readFileSync(placed(file), "utf8"),
       ),
     write: (file, text) => {
-      const draft = `${placed(file)}.${String(process.pid)}${draftSuffix}`;
-      attempted("Unwritable", directory, () => {
-        mkdirSync(directory, { recursive: true, mode: directoryMode });
-      });
+      made();
       attempted("Unwritable", placed(file), () => {
-        rmSync(draft, { force: true });
-        writeFileSync(draft, text, { mode: fileMode, flag: "wx" });
-        renameSync(draft, placed(file));
+        if (!(kept.delete(file) && filled(draft(file), text)))
+          fresh(file, text);
+        renameSync(draft(file), placed(file));
+      });
+    },
+    reserve: (file, bytes) => {
+      made();
+      attempted("Unwritable", placed(file), () => {
+        kept.delete(file);
+        fresh(file, Buffer.alloc(bytes, " "));
+        kept.add(file);
       });
     },
     remove: (file) => {
       removed(placed(file));
     },
     sweep: (file) => {
+      kept.delete(file);
       for (const name of drafts(directory, file))
         removed(join(directory, name));
     },

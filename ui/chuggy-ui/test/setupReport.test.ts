@@ -44,6 +44,7 @@ const kept = "/home/person/.chuggy-setup";
 const faults: { readonly [Kind in SetupFault["fault"]]: SetupFault } = {
   Unwritable: { fault: "Unwritable", path: `${kept}/session.json` },
   Unreadable: { fault: "Unreadable", path: `${kept}/lock` },
+  Unkept: { fault: "Unkept", path: `${kept}/session.json` },
   Homeless: { fault: "Homeless" },
   Unstarted: { fault: "Unstarted" },
   Unexpected: { fault: "Unexpected" },
@@ -137,6 +138,7 @@ const roster: {
     { report: "NodeOld", major: 18 },
     { report: "NodeOld", major: undefined },
   ],
+  Unserved: [{ report: "Unserved", platform: "win32" }],
   AskedWrongly: [
     { report: "AskedWrongly", fault: "Command" },
     { report: "AskedWrongly", fault: "Flag" },
@@ -344,9 +346,19 @@ function ruled(lines: readonly string[]): readonly (readonly string[])[] {
   );
 }
 
-/** Whether a report is one that stops with nothing for the agent to run: another run or the machine in its way, or an ending that stands. */
+/** The reports that stop whatever they hold: another run or the machine in the way, and a site or its sign-in server that did not answer as one. */
+const stopping: ReadonlySet<SetupReport["report"]> = new Set([
+  "Busy",
+  "Faulted",
+  "SiteUnusable",
+  "IssuerUnanswered",
+]);
+
+/** Whether a report is one that stops with nothing for the agent to run: one of those, an ending that stands, or a sign-in the site did not confirm and did not refuse. */
 function stopped(report: SetupReport): boolean {
-  if (report.report === "Busy" || report.report === "Faulted") return true;
+  if (stopping.has(report.report)) return true;
+  if (report.report === "WorkspacesUnread")
+    return report.outcome !== "Unauthenticated";
   if (report.report === "SignInEnded") return setupSignInHeld(report.ended);
   if (report.report !== "SignedOut") return false;
   return report.ended !== undefined && setupSignInHeld(report.ended);
@@ -355,7 +367,13 @@ function stopped(report: SetupReport): boolean {
 test("every stop says what was found, tells the person, names one command the program reads with the condition it is run under, and runs nothing", () => {
   const stops = sessions.filter(stopped);
   expect(stops).toHaveLength(
-    roster.Busy.length + roster.Faulted.length + 2 * held.length,
+    roster.Busy.length +
+      roster.Faulted.length +
+      roster.SiteUnusable.length +
+      roster.IssuerUnanswered.length +
+      roster.WorkspacesUnread.length -
+      1 +
+      2 * held.length,
   );
   for (const report of stops) {
     const lines = setupReportLines(report, machineScript);
@@ -372,24 +390,56 @@ test("every stop says what was found, tells the person, names one command the pr
     const named = ruled(lines);
     expect(named, said).toHaveLength(1);
     expect(setupAsked(named[0] ?? ["?"]).asked, said).not.toBe("Wrongly");
-    expect(lines.at(-2), said).toMatch(/^rule: Run node /u);
+    expect(lines.at(-2), said).toMatch(/^rule: Run (?:node|curl) /u);
   }
 });
 
-test("a report of a run not signed in that does not stop names no command in a rule: line but the one a site is passed to, and only that one ends on stop", () => {
+test("a report of a run not signed in that does not stop names no command in a rule: line but the one a site is passed to, and only that one and a platform not served end on stop", () => {
   for (const report of sessions.filter((one) => !stopped(one))) {
     const lines = setupReportLines(report, machineScript);
     const said = JSON.stringify(report);
     const unknown = report.report === "SiteUnknown";
     expect(ruled(lines), said).toEqual(unknown ? [["--site"]] : []);
-    expect(lines.at(-1) === stop, said).toBe(unknown);
+    expect(lines.at(-1) === stop, said).toBe(
+      unknown || report.report === "Unserved",
+    );
   }
 });
 
-test("a run on a Node too old, one asked wrongly and one with no site exit two", () => {
+test("the reports that end on a command are the ones a run moves on from by itself: a Node or an argument to mend, a sign-in to open or wait on, and a sign-in the site refused", () => {
+  const running = new Set(
+    sessions
+      .filter(
+        (report) => setupReportLines(report, machineScript).at(-1) !== stop,
+      )
+      .map((report) =>
+        report.report === "SignInEnded" || report.report === "SignedOut"
+          ? `${report.report}/${report.ended ?? "none"}`
+          : report.report === "WorkspacesUnread"
+            ? `${report.report}/${report.outcome}`
+            : report.report,
+      ),
+  );
+  expect([...running].toSorted()).toEqual([
+    "AskedWrongly",
+    "NodeOld",
+    "SignInEnded/SignedIn",
+    "SignInEnded/SiteChanged",
+    "SignInEnded/WorkspacesUnread",
+    "SignInWaiting",
+    "SignedOut/SignedIn",
+    "SignedOut/SiteChanged",
+    "SignedOut/WorkspacesUnread",
+    "SignedOut/none",
+    "WorkspacesUnread/Unauthenticated",
+  ]);
+});
+
+test("a run on a Node too old, on a platform not served, one asked wrongly and one with no site exit two", () => {
   const exits = (kind: SetupReport["report"]) =>
     roster[kind].map((report) => setupReportExit(report));
   expect(exits("NodeOld")).toEqual([2, 2]);
+  expect(exits("Unserved")).toEqual([2]);
   expect(exits("AskedWrongly")).toEqual([2, 2, 2, 2, 2]);
   expect(exits("SiteUnknown")).toEqual([2]);
 });
@@ -759,14 +809,25 @@ test("a sign-in the site itself refused is said to be forgotten, and no page is 
   ]);
 });
 
-test("a site that only failed to answer leaves the sign-in unconfirmed, and says how it failed", () => {
+test("a site that only failed to answer leaves the sign-in unconfirmed, says how it failed, and is asked again only if the person asks", () => {
   expect(
     setupReportLines(roster.WorkspacesUnread[0] as SetupReport, machineScript),
   ).toEqual([
     `site: ${site}, sign-in not confirmed`,
     "found: the site did not say which workspaces are yours (Fault)",
-    next,
+    "tell: The chuggy site did not answer when I asked which workspaces are yours, so I cannot say where you stand. Tell me if you want me to look again.",
+    `rule: Run node ${machineScript} only if the person asks to look again.`,
+    stop,
   ]);
+  expect(
+    setupReportLines(
+      { ...roster.WorkspacesUnread[0], asked: "SignIn" } as SetupReport,
+      machineScript,
+      both,
+    ).at(-2),
+  ).toBe(
+    `rule: Run node ${machineScript} sign-in ${flags} only if the person asks to look again.`,
+  );
 });
 
 test("with no site remembered the program says what to pass, and names no command it could not run", () => {
@@ -827,6 +888,27 @@ test("a path the machine would not write or read is named, and the command is ru
   ]);
 });
 
+test("a sign-in that was renewed and could not be written says that and where, blames no server, and names the command only once the path can be written", () => {
+  const lines = faulted(faults.Unkept, "Status");
+  expect(lines).toEqual([
+    `found: the sign-in was renewed and could not be kept: chuggy setup could not write ${kept}/session.json`,
+    `tell: chuggy setup renewed your sign-in and then could not write it to ${kept}/session.json on this machine, so it was not kept and you may have to sign in again. Tell me once that path can be written.`,
+    `rule: Run node ${machineScript} only once ${kept}/session.json can be made and written.`,
+    stop,
+  ]);
+  expect(lines.join("\n")).not.toMatch(/server|answer/u);
+});
+
+test("a platform the program is not served on is told which it is served on, and nothing is named to run", () => {
+  expect(
+    setupReportLines(roster.Unserved[0] as SetupReport, machineScript, both),
+  ).toEqual([
+    "found: chuggy setup runs on Linux and macOS, and this machine is win32",
+    "tell: chuggy setup runs on Linux and macOS and this machine is neither, so it did nothing. Run it from a machine that is one of those.",
+    stop,
+  ]);
+});
+
 test("a machine that names no home is told what the program needs of it", () => {
   expect(faulted(faults.Homeless, "Status")).toEqual([
     "found: this machine did not say where the person's home directory is",
@@ -872,26 +954,51 @@ test("a run that found another holding the lock names the process where the lock
   ]);
 });
 
-test("a failure against a site that may not be remembered names the site in the command to run again", () => {
+test("a site or a sign-in server that did not answer is a stop, and the command that names the site is run again only if the person asks", () => {
   expect(
     setupReportLines(roster.SiteUnusable[0] as SetupReport, machineScript),
-  ).toEqual([`site: ${site}, no answer`, `${next} --site ${site}`]);
+  ).toEqual([
+    `site: ${site}, no answer`,
+    "found: the site did not answer",
+    `tell: ${site} did not answer, so chuggy setup did nothing. Check the address and that this machine can reach it, and tell me if you want me to try again.`,
+    `rule: Run node ${machineScript} --site ${site} only if the person asks to try again.`,
+    stop,
+  ]);
+  expect(
+    setupReportLines(roster.SiteUnusable[1] as SetupReport, machineScript),
+  ).toEqual([
+    `site: ${site}, not a chuggy site this program can read`,
+    "found: the address answered, and not as a chuggy site",
+    `tell: What answered at ${site} is not a chuggy site this program can read, so chuggy setup did nothing. Check the address, and tell me if you want me to try again.`,
+    `rule: Run node ${machineScript} sign-in --site ${site} only if the person asks to try again.`,
+    stop,
+  ]);
   expect(
     setupReportLines(roster.IssuerUnanswered[0] as SetupReport, machineScript),
   ).toEqual([
     `site: ${site}, its sign-in server is not answering`,
-    `${next} sign-in --site ${site}`,
+    "found: the sign-in server did not answer",
+    "tell: The chuggy site's sign-in server is not answering, so I cannot tell whether chuggy setup is signed in. Tell me if you want me to try again.",
+    `rule: Run node ${machineScript} sign-in --site ${site} only if the person asks to try again.`,
+    stop,
   ]);
 });
 
-test("an answer this copy cannot read names the download as what is next", () => {
-  expect(
-    setupReportLines(roster.WorkspacesUnread[1] as SetupReport, machineScript),
-  ).toEqual([
+test("an answer this copy cannot read says the copy may be old, and the download waits on the person's say-so as it does where a checklist read is unreadable", () => {
+  const lines = setupReportLines(
+    roster.WorkspacesUnread[1] as SetupReport,
+    machineScript,
+  );
+  expect(lines).toEqual([
     `site: ${site}, sign-in not confirmed`,
     "found: this copy of chuggy setup may be older than the site",
-    `next: curl -fsS ${site}/chuggy-setup.mjs -o ${machineScript} && node ${machineScript}`,
+    "tell: This copy of chuggy setup could not read what the chuggy site sent, and may be older than the site. Tell me if you want me to fetch the site's own copy.",
+    `rule: Run curl -fsS ${site}/chuggy-setup.mjs -o ${machineScript} && node ${machineScript} only if the person asks to fetch chuggy setup again.`,
+    stop,
   ]);
+  expect(lines.slice(2)).toEqual(
+    ended(things.Failed[1] as SetupThing).slice(1),
+  );
 });
 
 test("a Node too old is told which Node the program needs", () => {

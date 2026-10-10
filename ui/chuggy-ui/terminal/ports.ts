@@ -63,7 +63,13 @@ function homeless(): never {
 
 /** The files and the lock of a machine that names no home: nothing is read and nothing kept, and each says why. */
 const nowhere: Pick<SetupPorts, "files" | "lock"> = {
-  files: { read: homeless, write: homeless, remove: homeless, sweep: homeless },
+  files: {
+    read: homeless,
+    write: homeless,
+    reserve: homeless,
+    remove: homeless,
+    sweep: homeless,
+  },
   lock: { read: homeless, swap: homeless },
 };
 

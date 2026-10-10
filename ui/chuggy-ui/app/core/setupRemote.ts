@@ -73,6 +73,13 @@ export function setupRepositoryRead(address: string): SetupRemote | undefined {
     : undefined;
 }
 
+/** The account that owns the repository an address names, where the address is a host, an owner and a name and no more: the account a credential to work in it is minted under. */
+export function setupRepositoryOwner(address: string): string | undefined {
+  const [, owner, name, ...more] =
+    setupRepositoryRead(address)?.said.split("/") ?? [];
+  return name === undefined || more.length > 0 ? undefined : owner;
+}
+
 /** What this folder's `origin` names, asked of git once and for a bounded time. */
 export async function setupRemoteRead(
   process: SetupProcessPort,

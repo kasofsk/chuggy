@@ -10,12 +10,17 @@
  * forgotten, and a request that is not a read is refused before it is sent.
  * Which project is meant is decided from the same reads: the one there is,
  * the one named, or the one the folder's remote is added to and no other is.
+ * The list of projects is read a page at a time for a bounded count of pages,
+ * and is whole only where the last page read named no next. A name is taken
+ * from it without a question only where it is whole; a project named in full
+ * is read by its name where a list short of whole could not have ruled it out.
  */
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import { projectRepositoriesAnsweredMax } from "../../../../src/contract/http.ts";
 import type {
   DraftResponse,
+  ExecutionPlacementResponse,
   ForgeInstallationResponse,
   ProjectRepositoryListedResponse,
   SelectorProjectSettingsResponse,
@@ -27,6 +32,7 @@ import type {
 import type { ApiFailure, ApiPorts, ApiResult } from "./apiRequest.ts";
 import {
   apiDrafts,
+  apiExecutionPlacement,
   apiForgeInstallations,
   apiProject,
   apiProjectInventory,
@@ -34,6 +40,7 @@ import {
   apiSelectorSettings,
   apiSessionPlacement,
   apiTicketLandings,
+  projectInventoryPagesMax,
 } from "./apiRoutes.ts";
 import type { SetupAnswers } from "./setupArguments.ts";
 import { setupRepositoryRead } from "./setupRemote.ts";
@@ -163,6 +170,8 @@ export interface SetupReads {
   readonly installations: SetupRead<readonly ForgeInstallationResponse[]>;
   readonly settings: SetupRead<SelectorProjectSettingsResponse>;
   readonly repositories: SetupRepositories;
+  /** Where the project's work runs, which is what says whether it waits on a runner at all. */
+  readonly work: SetupRead<ExecutionPlacementResponse>;
   readonly placement: SetupRead<SessionPlacementResponse>;
   /** A ticket that is done, where the project has one: one is all that is asked for. */
   readonly landed: SetupRead<readonly TicketResponse[]>;
@@ -304,7 +313,7 @@ function setupWorkspaceFound(
   return { choice: "Workspace", workspace };
 }
 
-/** The workspace a named project is in where none was named beside it, or the question of which. */
+/** The workspace a named project is in where none was named beside it, or the question of which: the one holder is taken only from a list that was whole. */
 function setupWorkspaceOf(
   listing: SetupListing,
   project: string,
@@ -314,7 +323,7 @@ function setupWorkspaceOf(
       .filter((partition) => partition.project === project)
       .map((partition) => partition.tenant),
   );
-  if (holders.length > 1)
+  if (holders.length > 1 || (holders.length === 1 && !listing.projectsWhole))
     return setupOpenWorkspace(holders, listing.projectsWhole);
   if (holders.length === 1) return setupWorkspaceFound(holders[0]);
   if (listing.workspaces.length <= 1 && listing.joinedWhole)
@@ -444,12 +453,19 @@ async function setupSought(
 
 type SetupProjectReads = Pick<
   SetupReads,
-  "settings" | "repositories" | "placement" | "landed" | "moving" | "drafts"
+  | "settings"
+  | "repositories"
+  | "work"
+  | "placement"
+  | "landed"
+  | "moving"
+  | "drafts"
 >;
 
 const setupProjectUnasked: SetupProjectReads = {
   settings: setupUnasked,
   repositories: setupUnasked,
+  work: setupUnasked,
   placement: setupUnasked,
   landed: setupUnasked,
   moving: setupUnasked,
@@ -461,10 +477,11 @@ async function setupProjectRead(
   partition: PartitionIdentity,
   held: SetupRepositories | undefined,
 ): Promise<SetupProjectReads> {
-  const [settings, repositories, placement, landed, moving, drafts] =
+  const [settings, repositories, work, placement, landed, moving, drafts] =
     await Promise.all([
       apiSelectorSettings(ports, partition),
       held ?? setupRepositoriesRead(ports, partition),
+      apiExecutionPlacement(ports, partition),
       apiSessionPlacement(ports, partition),
       apiProject(ports, partition, { phase: ["Done"], limit: 1 }),
       apiProject(ports, partition, {
@@ -477,6 +494,7 @@ async function setupProjectRead(
   return {
     settings: setupGot(settings, (answered) => answered, all),
     repositories,
+    work: setupGot(work, (answered) => answered, all),
     placement: setupGot(placement, (answered) => answered, all),
     landed: setupGot(landed, (answered) => answered.tickets, all),
     moving: setupGot(
@@ -517,17 +535,39 @@ async function setupLandingsRead(
   );
 }
 
-/** The project a made choice names, where the site listed it. */
+/** Whether the list of projects, as far as it was got, names the one a workspace and a project name together. */
+export function setupProjectListed(
+  inventory: SetupReads["inventory"],
+  named: PartitionIdentity,
+): boolean {
+  return (
+    inventory.read === "Got" &&
+    inventory.value.some(
+      (partition) =>
+        partition.tenant === named.tenant &&
+        partition.project === named.project,
+    )
+  );
+}
+
+/**
+ * The project a made choice names in full, which is the one its reads are
+ * of: none where a list that was whole does not name it, and otherwise the
+ * one named, listed or not, since a list short of whole rules nothing out.
+ */
 export function setupPartition(
   choice: SetupChoice,
   inventory: SetupReads["inventory"],
 ): PartitionIdentity | undefined {
-  if (choice.choice !== "Made" || inventory.read !== "Got") return undefined;
-  return inventory.value.find(
-    (partition) =>
-      partition.tenant === choice.workspace &&
-      partition.project === choice.project,
-  );
+  if (choice.choice !== "Made") return undefined;
+  const { workspace: tenant, project } = choice;
+  if (tenant === undefined || project === undefined) return undefined;
+  const named = { tenant, project };
+  const ruledOut =
+    inventory.read === "Got" &&
+    inventory.whole &&
+    !setupProjectListed(inventory, named);
+  return ruledOut ? undefined : named;
 }
 
 async function setupChosenRead(
@@ -564,6 +604,30 @@ async function setupChosenRead(
 }
 
 /**
+ * The projects the person is shown, a page at a time for as many pages as the
+ * console reads of them: whole where the last page read named no next, and
+ * whatever a page that was not got came to where one was not.
+ */
+async function setupInventoryRead(
+  ports: ApiPorts,
+): Promise<SetupReads["inventory"]> {
+  const projects: PartitionIdentity[] = [];
+  let cursor: string | undefined;
+  for (let page = 0; page < projectInventoryPagesMax; page += 1) {
+    const read = setupGot(
+      await apiProjectInventory(ports, { cursor }),
+      (answered) => answered,
+      () => true,
+    );
+    if (read.read !== "Got") return read;
+    projects.push(...read.value.projects);
+    cursor = read.value.nextCursor;
+    if (cursor === undefined) break;
+  }
+  return { read: "Got", value: projects, whole: cursor === undefined };
+}
+
+/**
  * Reads where a person stands: their projects, then which of them is meant,
  * then that project's own reads at once, then the landings of whatever was
  * being landed. A read that hangs on one that was not got is not asked.
@@ -572,11 +636,7 @@ export async function readSetup(
   ports: ApiPorts,
   chosen: SetupChosen,
 ): Promise<SetupReads> {
-  const inventory = setupGot(
-    await apiProjectInventory(ports),
-    (answered) => answered.projects,
-    (answered) => answered.nextCursor === undefined,
-  );
+  const inventory = await setupInventoryRead(ports);
   const listing = setupListing(chosen, inventory);
   const sought = await setupSought(
     ports,
