@@ -481,7 +481,7 @@ test("a token remembered from before does not pass for the renewal token an allo
   expect(await machine.command([])).toMatchObject({ report: "SignedOut" });
   machine.renewable = false;
   expect(await machine.command(signIn)).toEqual(ended("NoRenewal"));
-  expect(machine.files.get(setupFiles.session)).toBe(spent);
+  expect(remembered(machine)).toEqual({ site: machineSite });
 });
 
 test("a sign-in the site then answers nothing for is not confirmed, and its token is kept for the next command", async () => {

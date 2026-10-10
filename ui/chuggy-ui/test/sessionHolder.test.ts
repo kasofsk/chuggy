@@ -3,8 +3,9 @@
  *
  * The ports stand in for the network, the clock, the draws, the digest, the two
  * stores and the address bar, so what is checked is the flow: what is
- * persisted, what is asked for, what a mismatched callback does, and that a
- * declining issuer ends the session once rather than being asked forever.
+ * persisted, what is asked for, what a mismatched callback does, and what a
+ * renewal that brought no tokens leaves — a refusal ends the session at once,
+ * no answer keeps it, and an unusable one is counted against a budget.
  */
 
 import { expect, test } from "vitest";
@@ -14,9 +15,11 @@ import {
   FetchJsonError,
   createSessionHolder,
   sessionCallbackPath,
+  sessionEndedReason,
   sessionLoadRetryDelayMs,
   sessionRefreshTokenKey,
   sessionTransactionKey,
+  sessionUnrenewedReason,
 } from "../app/core/sessionHolder.ts";
 import type { FormRequest } from "../app/core/authorization.ts";
 import {
@@ -38,6 +41,26 @@ function unanswered(): never {
 function isDiscovery(request: FormRequest | string): boolean {
   return typeof request === "string" && request !== "/config.json";
 }
+
+function isTokenRequest(request: FormRequest | string): boolean {
+  return typeof request !== "string";
+}
+
+/** What the network port rejects with when a request was answered `status`. */
+function answeredWith(status: number): () => never {
+  return () => {
+    throw new FetchJsonError(
+      { fault: "Status", status },
+      `answered ${String(status)}`,
+    );
+  };
+}
+
+/** What a gateway answers for a server it could not reach, Cloudflare's own
+ * for an origin it could not among them. */
+const gatewayStatuses = [
+  502, 503, 504, 520, 521, 522, 523, 524, 525, 526, 527, 530,
+] as const;
 
 /** The harness's answers, except where `failing` names the request. */
 function failingAt(
@@ -92,9 +115,7 @@ test("a load whose first ask got no answer settles on the second", async () => {
  * blip as no answer at all. */
 test("a gateway's answer is unreachable and asked once more; a server's own error is not", async () => {
   for (const [status, phase, asked] of [
-    [502, "Unreachable", 2],
-    [503, "Unreachable", 2],
-    [504, "Unreachable", 2],
+    ...gatewayStatuses.map((gateway) => [gateway, "Unreachable", 2] as const),
     [500, "Unconfigured", 1],
     [404, "Unconfigured", 1],
   ] as const) {
@@ -295,21 +316,146 @@ test("a named page is not sent to the authorization server", async () => {
   expect(held.redirects[0] ?? "").not.toContain("installation_id");
 });
 
-test("an issuer that keeps declining ends the session once", async () => {
+test("an issuer that keeps answering unusably ends the session once", async () => {
+  for (const unusable of [
+    answeredWith(500),
+    () => {
+      throw new SyntaxError("Unexpected token '<'");
+    },
+  ]) {
+    const held = harness();
+    held.persistent.held.set(sessionRefreshTokenKey, "renew");
+    const holder = createSessionHolder(held.ports);
+    await holder.load();
+    held.answer = unusable;
+    for (let attempt = 0; attempt < sessionRefreshFailuresMax; attempt += 1)
+      expect(await holder.refresh()).toBe(false);
+    expect(holder.snapshot()).toMatchObject({
+      phase: "SignedOut",
+      reason: sessionUnrenewedReason,
+    });
+    expect(held.persistent.held.has(sessionRefreshTokenKey)).toBe(false);
+    const spent = held.asked.length;
+    expect(await holder.refresh()).toBe(false);
+    expect(held.asked.length).toBe(spent);
+  }
+});
+
+/** An issuer that rotates refresh tokens ends the whole session when a spent
+ * one is shown to it again, so a refused token is never shown twice. */
+test("a renewal the issuer refuses ends the session at once, and is not asked again", async () => {
+  for (const status of [400, 401]) {
+    const held = harness();
+    held.persistent.held.set(sessionRefreshTokenKey, "renew");
+    const holder = createSessionHolder(held.ports);
+    await holder.load();
+    held.answer = failingAt(isTokenRequest, answeredWith(status), held.answer);
+    const asked = held.asked.length;
+
+    expect(await holder.bearer()).toBeUndefined();
+    expect(holder.snapshot()).toMatchObject({
+      phase: "SignedOut",
+      reason: sessionEndedReason,
+    });
+    expect(held.persistent.held.has(sessionRefreshTokenKey)).toBe(false);
+    expect(await holder.bearer()).toBeUndefined();
+    expect(held.asked.length - asked).toBe(1);
+  }
+});
+
+/** No answer says nothing about the session, and neither does a gateway's
+ * answer for an issuer it could not reach. */
+test("a renewal that got no answer keeps the session, however often, and renews when one comes", async () => {
+  for (const failure of [unanswered, ...gatewayStatuses.map(answeredWith)]) {
+    const held = harness();
+    held.persistent.held.set(sessionRefreshTokenKey, "renew");
+    const holder = createSessionHolder(held.ports);
+    await holder.load();
+    const answered = held.answer;
+    held.answer = failingAt(isTokenRequest, failure, answered);
+
+    for (let attempt = 0; attempt <= sessionRefreshFailuresMax; attempt += 1)
+      expect(await holder.bearer()).toBeUndefined();
+    expect(holder.snapshot().phase).toBe("SignedIn");
+    expect(held.persistent.held.get(sessionRefreshTokenKey)).toBe("renew");
+
+    held.answer = answered;
+    expect(await holder.bearer()).toBe("access");
+  }
+});
+
+test("a refusal that arrives after a sign-out says nothing over it", async () => {
   const held = harness();
   held.persistent.held.set(sessionRefreshTokenKey, "renew");
   const holder = createSessionHolder(held.ports);
   await holder.load();
-  held.answer = () => {
-    throw new Error("invalid_grant");
-  };
-  for (let attempt = 0; attempt < sessionRefreshFailuresMax; attempt += 1)
-    expect(await holder.refresh()).toBe(false);
-  expect(holder.snapshot().phase).toBe("SignedOut");
-  expect(held.persistent.held.has(sessionRefreshTokenKey)).toBe(false);
-  const spent = held.asked.length;
+  const answered = held.answer;
+  let arrive = (): void => undefined;
+  const refusal = new Promise<never>((_resolve, reject) => {
+    arrive = () => {
+      reject(new FetchJsonError({ fault: "Status", status: 400 }, "refused"));
+    };
+  });
+  held.answer = (request) =>
+    typeof request === "object" && request.url === discovery.token_endpoint
+      ? refusal
+      : answered(request);
+
+  const renewing = holder.refresh();
+  await holder.signOut();
+  arrive();
+
+  expect(await renewing).toBe(false);
+  expect(holder.snapshot()).toMatchObject({
+    phase: "SignedOut",
+    reason: undefined,
+  });
+});
+
+test("a renewal whose turn does not come leaves the session as it was and asks the issuer nothing", async () => {
+  const held = harness();
+  held.persistent.held.set(sessionRefreshTokenKey, "renew");
+  const holder = createSessionHolder({
+    ...held.ports,
+    exclusive: () => Promise.reject(new Error("the wait was abandoned")),
+  });
+  await holder.load();
+  const asked = held.asked.length;
+
   expect(await holder.refresh()).toBe(false);
-  expect(held.asked.length).toBe(spent);
+  expect(holder.snapshot().phase).toBe("SignedIn");
+  expect(held.persistent.held.get(sessionRefreshTokenKey)).toBe("renew");
+  expect(held.asked.length).toBe(asked);
+});
+
+/** A browser that refuses the store reads it as empty, which is then no word
+ * that another document ended the session. */
+test("a session the store never kept is renewed with the token the document holds", async () => {
+  const held = harness();
+  const holder = createSessionHolder({
+    ...held.ports,
+    persistent: {
+      read: () => null,
+      write: () => undefined,
+      remove: () => undefined,
+    },
+  });
+  await holder.load();
+  await holder.signIn();
+  const state = new URLSearchParams(
+    new URL(held.redirects[0] ?? "").search,
+  ).get("state");
+  await holder.completeCallback(signedInAt(`?code=abc&state=${String(state)}`));
+  const asked = held.asked.length;
+
+  expect(await holder.refresh()).toBe(true);
+  expect(holder.snapshot().phase).toBe("SignedIn");
+  const renewal = held.asked[asked];
+  expect(
+    typeof renewal === "object"
+      ? new URLSearchParams(renewal.body).get("refresh_token")
+      : undefined,
+  ).toBe("renew");
 });
 
 test("signing out clears the store and revokes where the issuer offers it", async () => {
@@ -376,6 +522,36 @@ test("a renewal changes the generation, which is what reopens a stream", async (
   const before = holder.generation();
   await holder.refresh();
   expect(holder.generation()).toBeGreaterThan(before);
+});
+
+/** An issuer that does not rotate answers a renewal with an access token and
+ * no refresh token, and the one it was asked with is still the session's. */
+test("a renewal answered with no new refresh token keeps the one it holds, and renews with it again", async () => {
+  const held = harness();
+  held.persistent.held.set(sessionRefreshTokenKey, "renew");
+  const answer = held.answer;
+  held.answer = (request) =>
+    isTokenRequest(request)
+      ? { access_token: "access", expires_in: 600 }
+      : answer(request);
+  const holder = createSessionHolder(held.ports);
+  await holder.load();
+  const asked = held.asked.length;
+
+  expect(await holder.refresh()).toBe(true);
+  expect(await holder.refresh()).toBe(true);
+
+  expect(holder.snapshot().phase).toBe("SignedIn");
+  expect(held.persistent.held.get(sessionRefreshTokenKey)).toBe("renew");
+  expect(
+    held.asked
+      .slice(asked)
+      .map((request) =>
+        typeof request === "object"
+          ? new URLSearchParams(request.body).get("refresh_token")
+          : undefined,
+      ),
+  ).toEqual(["renew", "renew"]);
 });
 
 /** The process root replaces the address with this and with nothing else, so

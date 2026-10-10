@@ -27,7 +27,6 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
 import { createInviteHolder } from "../core/inviteHolder.ts";
-import { createSessionHolder } from "../core/sessionHolder.ts";
 import { App } from "./App.tsx";
 import { InviteProvider } from "./InvitePage.tsx";
 import {
@@ -36,19 +35,16 @@ import {
   cookieWritten,
   currentAnchor,
   currentLocation,
-  digest,
-  drawBytes,
-  fetchJson,
-  nowMs,
   persistentStore,
-  redirect,
   reloadLocation,
   replaceLocation,
   replacePath,
-  sleepMs,
-  transientStore,
 } from "./ports.ts";
-import { SessionProvider, sessionBegin } from "./session.tsx";
+import {
+  SessionProvider,
+  sessionBegin,
+  sessionHolderOpened,
+} from "./session.tsx";
 import { themeChoiceApply, themeChoiceRead } from "./theme.ts";
 import "../styles.css";
 
@@ -62,16 +58,7 @@ const queryClient = new QueryClient({
   },
 });
 
-const holder = createSessionHolder({
-  nowMs,
-  sleepMs,
-  fetchJson,
-  persistent: persistentStore,
-  transient: transientStore,
-  digest,
-  drawBytes,
-  redirect,
-});
+const holder = sessionHolderOpened();
 
 const invite = createInviteHolder({
   location: currentLocation,

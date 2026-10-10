@@ -23,6 +23,7 @@ import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type { ProjectChangeKind } from "../../../../src/contract/events.ts";
+import { apiBearerOver } from "../core/apiPorts.ts";
 import { projectCacheCommands } from "../core/projectCacheCommands.ts";
 import type {
   ProjectCacheCommand,
@@ -269,7 +270,7 @@ export function ProjectStreamProvider(props: {
   const ports = useMemo<StreamPorts>(
     () => ({
       fetch: transport,
-      bearer: () => holder.bearer(),
+      bearer: apiBearerOver(holder),
       sleepMs,
       nowMs,
     }),

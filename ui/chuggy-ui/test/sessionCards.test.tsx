@@ -5,6 +5,10 @@
  *
  * `App` is mocked no further than the route tree, which only a signed-in
  * session reaches, and which draws a marker here so that state can be seen.
+ *
+ * The signed-out card is here too, for the one action it offers: a sign-in,
+ * or the reload where another tab has signed in and the browser holds that
+ * session already. The reload itself is the browser's and is a double.
  */
 
 import { QueryClient } from "@tanstack/react-query";
@@ -12,13 +16,17 @@ import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 
 import { App } from "../app/browser/App.tsx";
-import { fetchJson } from "../app/browser/ports.ts";
+import { fetchJson, reloadLocation } from "../app/browser/ports.ts";
 import { SessionProvider, sessionBegin } from "../app/browser/session.tsx";
 import {
   createSessionHolder,
   sessionRefreshTokenKey,
+  sessionSignInKey,
 } from "../app/core/sessionHolder.ts";
-import type { SessionHolder } from "../app/core/sessionHolder.ts";
+import type {
+  SessionHolder,
+  SessionHolderPorts,
+} from "../app/core/sessionHolder.ts";
 import {
   sessionHarness,
   sessionHarnessConfiguration as configuration,
@@ -26,6 +34,10 @@ import {
 } from "./sessionHolderHarness.ts";
 
 vi.mock("../app/browser/routes.tsx", () => ({ consoleRouter: {} }));
+vi.mock(import("../app/browser/ports.ts"), async (original) => ({
+  ...(await original()),
+  reloadLocation: vi.fn(),
+}));
 vi.mock("@tanstack/react-router", () => ({
   RouterProvider: () => "Routed",
   createLink: (component: unknown) => component,
@@ -34,6 +46,7 @@ vi.mock("@tanstack/react-router", () => ({
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  vi.mocked(reloadLocation).mockClear();
 });
 
 const discoveryAddress = `${discovery.issuer}/.well-known/openid-configuration`;
@@ -59,11 +72,14 @@ function network(): { served: Served } {
   return held;
 }
 
-async function mounted(refreshToken?: string): Promise<SessionHolder> {
-  const harness = sessionHarness();
+async function mounted(
+  refreshToken?: string,
+  harness = sessionHarness(),
+  ports: Partial<SessionHolderPorts> = {},
+): Promise<SessionHolder> {
   if (refreshToken !== undefined)
     harness.persistent.held.set(sessionRefreshTokenKey, refreshToken);
-  const holder = createSessionHolder({ ...harness.ports, fetchJson });
+  const holder = createSessionHolder({ ...harness.ports, fetchJson, ...ports });
   render(
     <SessionProvider holder={holder}>
       <App queryClient={new QueryClient()} />
@@ -156,4 +172,47 @@ test("an issuer that answered with something unusable is named by its host", asy
   expect(screen.getByRole("heading", { name: "Not configured" })).toBeTruthy();
   expect(screen.getByText("auth.example answered 404")).toBeTruthy();
   expect(screen.queryByText(/config\.json/u)).toBeNull();
+});
+
+test("the signed-out card's one action is a sign-in from the page it is on", async () => {
+  network();
+  const harness = sessionHarness();
+  await mounted(undefined, harness);
+  expect(screen.getByText("Signed out")).toBeTruthy();
+
+  act(() => {
+    screen.getByRole("button", { name: "Sign in" }).click();
+  });
+
+  await waitFor(() => {
+    expect(harness.redirects).toHaveLength(1);
+  });
+  expect(reloadLocation).not.toHaveBeenCalled();
+});
+
+test("a session another tab signed in over reads Session changed, and offers the reload in place of a sign-in", async () => {
+  network();
+  const harness = sessionHarness();
+  let shown = (): void => undefined;
+  await mounted("renew", harness, {
+    storedHeard: (heard) => {
+      shown = heard;
+    },
+  });
+  expect(screen.getByText("Routed")).toBeTruthy();
+
+  harness.persistent.held.set(sessionSignInKey, "another sign-in's");
+  harness.persistent.held.set(sessionRefreshTokenKey, "and its token");
+  act(() => {
+    shown();
+  });
+
+  expect(screen.getByText("Session changed")).toBeTruthy();
+  expect(screen.queryByText("Routed")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Sign in" })).toBeNull();
+  act(() => {
+    screen.getByRole("button", { name: "Reload" }).click();
+  });
+  expect(reloadLocation).toHaveBeenCalledTimes(1);
+  expect(harness.redirects).toEqual([]);
 });
