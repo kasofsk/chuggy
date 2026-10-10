@@ -20,7 +20,9 @@
  * byte wider than it may be, so a device standing where one should be cannot be
  * drawn on and a file that grew past its bound is refused rather than truncated
  * into something that signs differently. Requests are rare because their
- * answers are cached or made once, so reading is cheaper than holding.
+ * answers are cached or made once, and the one mint that is neither, behind
+ * each listing of what an installation grants, waits on the forge and not on
+ * the file, so reading is cheaper than holding.
  *
  * BOTH PEM ENCODINGS ARE ACCEPTED BECAUSE GITHUB ISSUES THE OLDER ONE. An app's
  * key downloads as PKCS#1 and a key converted by hand is PKCS#8;

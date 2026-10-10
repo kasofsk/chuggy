@@ -10,6 +10,7 @@
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
 import { QueryClient } from "@tanstack/react-query";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -20,18 +21,23 @@ import { afterEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import { RepositoriesPage } from "../app/browser/RepositoriesPage.tsx";
+import { apiTimeoutMsDefault } from "../app/core/apiRequest.ts";
 import { forgeAuthorizeTransactionKey } from "../app/core/forgeAuthorization.ts";
 import { forgeInstallTransactionKey } from "../app/core/forgeInstallation.ts";
+import { fallbackIntervalMs } from "../app/core/projectFallback.ts";
 import { forgeReturnHold, forgeReturnKey } from "../app/core/forgeReturn.ts";
 import type { ForgeReturnWord } from "../app/core/forgeReturn.ts";
 import { transientStore } from "../app/browser/ports.ts";
 import { forgeInstallationsFixture } from "./forgeInstallationsFixture.ts";
 import {
   answer,
+  heldAnswer,
   openedStream,
   ScreenHarness,
   settled,
 } from "./screenHarness.tsx";
+import { frame, streamServer } from "./streamDouble.ts";
+import type { StreamServer } from "./streamDouble.ts";
 import { leadPartition } from "./leadFixture.ts";
 import {
   abilitiesEvery,
@@ -43,13 +49,33 @@ import { workRunnerOver, workRunnerUnreadable } from "./workRunnerReads.ts";
 import type { WorkRunnerReads } from "./workRunnerReads.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 
-const held = vi.hoisted((): { redirects: string[] } => ({ redirects: [] }));
+interface Held {
+  readonly redirects: string[];
+  /** Every address the page asked the router for, as it asked. */
+  readonly navigations: unknown[];
+  /** The sleep a case holds back, by its length, and each one waiting on it. */
+  parkedMs: number | undefined;
+  readonly parked: (() => void)[];
+}
+
+const held = vi.hoisted((): Held => ({
+  redirects: [],
+  navigations: [],
+  parkedMs: undefined,
+  parked: [],
+}));
 
 /** The digest answers at once, for the reason given in
- * `ui/chuggy-ui/test/settings/tenantAccountsPage.test.tsx`. */
+ * `ui/chuggy-ui/test/settings/tenantAccountsPage.test.tsx`. A sleep answers at
+ * once too, but one of the length a case parks, which waits for the case. */
 vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof BrowserPorts>()),
-  sleepMs: () => Promise.resolve(),
+  sleepMs: (ms: number) =>
+    ms === held.parkedMs
+      ? new Promise<void>((resolve) => {
+          held.parked.push(resolve);
+        })
+      : Promise.resolve(),
   digest: (message: Uint8Array) => Promise.resolve(message),
   redirect: (url: string) => {
     held.redirects.push(url);
@@ -57,7 +83,8 @@ vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
 }));
 
 /** A link's path is filled from its params, so a link into the wrong project
- * is a wrong href rather than the same one. */
+ * is a wrong href rather than the same one. A navigation is kept as asked and
+ * moves the address, so a page drawn after it is drawn where it left off. */
 vi.mock("@tanstack/react-router", () => ({
   createLink: (component: unknown) => component,
   Link: (props: {
@@ -75,16 +102,25 @@ vi.mock("@tanstack/react-router", () => ({
     </a>
   ),
   useParams: () => ({ ...leadPartition }),
+  useNavigate: () => (to: { readonly href: string }) => {
+    held.navigations.push(to);
+    history.replaceState({}, "", to.href);
+    return Promise.resolve();
+  },
 }));
 // jscpd:ignore-end -- the case's own doubles resume here
 
 afterEach(() => {
   cleanup();
   held.redirects.length = 0;
+  held.navigations.length = 0;
+  held.parkedMs = undefined;
+  held.parked.length = 0;
   sessionStorage.clear();
   history.pushState({}, "", "/");
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
+  vi.useRealTimers();
 });
 
 const installations = forgeInstallationsFixture;
@@ -197,6 +233,7 @@ interface Init {
   readonly method?: string;
   readonly body?: string;
   readonly headers?: Record<string, string>;
+  readonly signal?: AbortSignal;
 }
 
 /** What a write is answered with, the deferral being what a case that is about
@@ -209,10 +246,14 @@ interface Drawing {
   /** What the claims listing answers with, where a case is about a listing
    * that does not answer them. */
   readonly listing?: () => Response;
-  /** What a write answers with. */
-  readonly posted?: (url: string) => Response;
-  /** What one installation's own listing answers with. */
-  readonly granting?: (url: string) => Response;
+  /** What a write answers with, at once or when the case lets it. */
+  readonly posted?: (url: string) => Response | Promise<Response>;
+  /** What one installation's own listing answers with, at once or when the
+   * case lets it. */
+  readonly granting?: (
+    url: string,
+    signal: AbortSignal | undefined,
+  ) => Response | Promise<Response>;
   /** The bindings this project holds, where a case is about how one is drawn. */
   readonly bound?: unknown;
   /** The bindings it holds once a bind has been answered, where a case is
@@ -222,6 +263,8 @@ interface Drawing {
   readonly described?: unknown;
   /** A `fetch` laid over the page's own, where a case answers one more read. */
   readonly over?: (served: typeof fetch) => typeof fetch;
+  /** The project's stream, where a case is about one that is down or pushes. */
+  readonly stream?: StreamServer;
 }
 
 async function drawPage(drawing: Drawing = {}): Promise<readonly Sent[]> {
@@ -245,7 +288,7 @@ async function drawPage(drawing: Drawing = {}): Promise<readonly Sent[]> {
     if (url.endsWith("/forge/github"))
       return Promise.resolve(answer(described));
     if (url.includes("/forge-installations/"))
-      return Promise.resolve(granting(url));
+      return Promise.resolve(granting(url, init?.signal));
     if (url.includes("/forge-installations")) return Promise.resolve(listing());
     const written = sent.some((one) => one.method === "POST");
     return Promise.resolve(answer(written ? rebound : bound));
@@ -255,7 +298,7 @@ async function drawPage(drawing: Drawing = {}): Promise<readonly Sent[]> {
     <ScreenHarness
       partition={leadPartition}
       client={new QueryClient()}
-      transport={openedStream().ports.fetch}
+      transport={(drawing.stream ?? openedStream()).ports.fetch}
     >
       <RepositoriesPage />
     </ScreenHarness>
@@ -571,7 +614,9 @@ test("a deployment that offers no install still says where a missing repository 
 });
 
 /** What the worker installation on kasofsk answers, every other as it was. */
-function workerAnswering(answered: () => Response): Drawing {
+function workerAnswering(
+  answered: () => Response | Promise<Response>,
+): Drawing {
   return {
     granting: (url) =>
       url.includes("/12/repositories") ? answered() : answer(grantedBy(url)),
@@ -625,6 +670,197 @@ test.each<readonly [string, () => Response]>([
   },
 );
 
+/** A listing that is all of what an installation grants, and grants nothing. */
+const lacking = (): Response => answer({ truncated: false, repositories: [] });
+
+/** The mark is the worker app's and says nothing of the project, so a row this
+ * project does not bind carries it as one it binds does. */
+test("a repository the worker app does not grant is marked on a row this project does not bind", async () => {
+  await openPickerAtProject({
+    claimed: twoAccounts,
+    granting: (url) =>
+      url.includes("/14/repositories") ? lacking() : answer(grantedBy(url)),
+  });
+  expect(pickerRows()).toStrictEqual([
+    "kasofsk/chuggyBound",
+    "gdoteof/scratchWorker app missing",
+  ]);
+});
+
+/** The roster with nothing known of the worker app, which is how it is drawn
+ * until the worker app's listing is read and where that listing is not. */
+const unmarked = ["kasofsk/chuggyBound", "gdoteof/scratch"];
+
+/** The line the picker draws where a row was chosen with the worker app's
+ * listings unread. */
+function workerReading(): HTMLElement | null {
+  return within(screen.getByRole("dialog")).queryByText(
+    "Worker app · loading…",
+  );
+}
+
+/** The worker installation on kasofsk answering when the case lets it. */
+function workerHeld(): {
+  readonly drawing: Drawing;
+  readonly release: (response: Response) => void;
+} {
+  const worker = heldAnswer();
+  return {
+    drawing: workerAnswering(() => worker.answered),
+    release: worker.release,
+  };
+}
+
+/** The roster as a worker listing that grants nothing leaves it, and as one
+ * that says nothing does. */
+const workerEnds: readonly (readonly [
+  string,
+  () => Response,
+  readonly string[],
+  boolean,
+])[] = [
+  [
+    "answers late",
+    lacking,
+    ["kasofsk/chuggyBoundWorker app missing", "gdoteof/scratch"],
+    true,
+  ],
+  ["is refused", () => answer({}, 404), unmarked, false],
+];
+
+/**
+ * The roster is the portal app's and is read first, so it is drawn when it is
+ * read and the worker app's listing only adds to it. Nothing is drawn of that
+ * listing until it answers, so a roster it adds nothing to never shifts.
+ */
+test.each(workerEnds)(
+  "the roster is drawn before a worker listing that %s, and is marked by it only where it answers",
+  async (_how, answered, rows, marked) => {
+    const worker = workerHeld();
+    await openPickerAtProject(worker.drawing);
+    expect(pickerRows()).toStrictEqual(unmarked);
+    expect(portalGrant().link).not.toBeNull();
+    expect(workerReading()).toBeNull();
+    expect(workerGrant()).toStrictEqual({ line: null, link: null });
+    worker.release(answered());
+    await settled();
+    expect(pickerRows()).toStrictEqual(rows);
+    expect(workerReading()).toBeNull();
+    expect(workerGrant().link !== null).toBe(marked);
+  },
+);
+
+/** A request that is never answered and fails once it is abandoned, as a
+ * browser's own does. */
+function neverAnswered(signal: AbortSignal | undefined): Promise<Response> {
+  return new Promise<Response>((_resolve, reject) => {
+    signal?.addEventListener(
+      "abort",
+      () => {
+        reject(new Error("abandoned"));
+      },
+      { once: true },
+    );
+  });
+}
+
+/** The worker installation on kasofsk never answering, every other as it was. */
+const workerSilent: Drawing = {
+  granting: (url, signal) =>
+    url.includes("/12/repositories")
+      ? neverAnswered(signal)
+      : answer(grantedBy(url)),
+};
+
+async function clockMoved(ms: number): Promise<void> {
+  await act(() => vi.advanceTimersByTimeAsync(ms));
+}
+
+/** What ends a listing that never answers is the client's own deadline, and
+ * the roster stands and binds for the whole of it. */
+test("the roster is drawn before a worker listing that never answers, and nothing arrives once the client gives up on it", async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  await openPickerAtProject(workerSilent);
+  expect(pickerRows()).toStrictEqual(unmarked);
+  fireEvent.click(screen.getByRole("button", { name: "gdoteof/scratch" }));
+  await settled();
+  expect(workerReading()).not.toBeNull();
+  await clockMoved(apiTimeoutMsDefault - 1_000);
+  expect(workerReading()).not.toBeNull();
+  await clockMoved(1_000);
+  await settled();
+  expect(pickerRows()).toStrictEqual(unmarked);
+  expect(workerReading()).toBeNull();
+  expect(workerGrant()).toStrictEqual({ line: null, link: null });
+});
+
+/**
+ * Nothing holds a bind back while the worker app's listing is unread, so the
+ * reader who chooses a row then is the one a mark could be late for. She is
+ * told under the roster that it is unread, from the press until it answers,
+ * and the mark arrives on the row she bound.
+ */
+test.each(workerEnds)(
+  "a row chosen before a worker listing that %s is bound under the line that says it is unread, until it is not",
+  async (_how, answered, rows, marked) => {
+    const worker = workerHeld();
+    const bind = heldAnswer();
+    await openPickerAtProject({
+      ...worker.drawing,
+      bound: { repositories: [] },
+      rebound: bindings,
+      posted: () => bind.answered,
+    });
+    expect(pickerRows()).toStrictEqual(["kasofsk/chuggy", "gdoteof/scratch"]);
+    fireEvent.click(screen.getByRole("button", { name: "kasofsk/chuggy" }));
+    await settled();
+    expect(workerReading()?.classList.contains("notice-info")).toBe(true);
+    bind.release(answer({ repository: boundUrl }));
+    await settled();
+    expect(pickerRows()).toStrictEqual(unmarked);
+    expect(statusesOf()).toStrictEqual(["Already bound"]);
+    expect(workerReading()).not.toBeNull();
+    worker.release(answered());
+    await settled();
+    expect(pickerRows()).toStrictEqual(rows);
+    expect(workerReading()).toBeNull();
+    expect(workerGrant().link !== null).toBe(marked);
+  },
+);
+
+/**
+ * Closing the picker abandons the read it had out, and the next opening reads
+ * afresh. What the abandoned one still hears from the forge is older than what
+ * the picker now draws, so it writes nothing.
+ */
+test("a roster read that a closed picker abandoned writes nothing over the read that followed it", async () => {
+  const abandoned = heldAnswer();
+  let asked = 0;
+  await drawPage({
+    granting: (url) => {
+      if (url.includes("/11/repositories")) {
+        asked += 1;
+        if (asked === 1) return abandoned.answered;
+      }
+      return url.includes("/12/repositories")
+        ? lacking()
+        : answer(grantedBy(url));
+    },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Add" }));
+  await settled();
+  expect(pickerRows()).toStrictEqual([]);
+  pressClose();
+  await settled();
+  fireEvent.click(screen.getByRole("button", { name: "Add" }));
+  await settled();
+  const followed = ["kasofsk/chuggyBoundWorker app missing", "gdoteof/scratch"];
+  expect(pickerRows()).toStrictEqual(followed);
+  abandoned.release(lacking());
+  await settled();
+  expect(pickerRows()).toStrictEqual(followed);
+});
+
 /** The page drawn at the picker's own address, as a grant made from it returns. */
 async function drawAtPicker(drawing: Drawing = {}): Promise<readonly Sent[]> {
   history.pushState({}, "", pickerPath);
@@ -676,6 +912,213 @@ test("the picker's address opens nothing where no portal claim is held", async (
   const sent = await drawAtPicker({ claimed: without("portal") });
   expect(screen.queryByRole("dialog")).toBeNull();
   expect(listingsRead(sent)).toStrictEqual([]);
+});
+
+/** How often the page read its own bindings, which the partition's refetch
+ * reaches and is what shows a refetch happened at all. */
+function bindingsRead(sent: readonly Sent[]): number {
+  return sent.filter(
+    (one) =>
+      one.method === "GET" &&
+      one.url.endsWith(`/projects/${leadPartition.project}/repositories`),
+  ).length;
+}
+
+/** Every sleep a case parked let go, and what that set off flushed. */
+async function parkedWoken(): Promise<void> {
+  for (const woken of held.parked.splice(0)) woken();
+  await settled();
+}
+
+/**
+ * A listing is a request to the forge each time it is asked for, and nothing
+ * the project's stream reports changes what an installation grants. So a
+ * picker left open behind a stream that is down asks once, however long the
+ * fallback polls.
+ */
+test("an open picker asks for its roster once while the stream is down and the fallback polls", async () => {
+  held.parkedMs = fallbackIntervalMs;
+  const sent = await drawAtPicker({ stream: streamServer([]) });
+  expect(pickerRows()).toStrictEqual(unmarked);
+  await parkedWoken();
+  await parkedWoken();
+  expect(bindingsRead(sent)).toBe(3);
+  expect(listingsRead(sent)).toStrictEqual(["11", "13", "12"]);
+});
+
+/**
+ * A `Project` frame reads everything under the partition again, which the
+ * page's own bindings are and the tenant's roster is not. The fallback's sleep
+ * is parked so that the frame's is the only refetch there is to count.
+ */
+test("an open picker asks for its roster once whatever frame the project's stream carries", async () => {
+  held.parkedMs = fallbackIntervalMs;
+  const stream = openedStream();
+  const sent = await drawAtPicker({ stream });
+  stream.push(
+    frame("Project", "10", {
+      version: 1,
+      resource: leadPartition.project,
+      representation: leadPartition,
+    }),
+  );
+  await settled();
+  expect(bindingsRead(sent)).toBe(2);
+  expect(listingsRead(sent)).toStrictEqual(["11", "13", "12"]);
+});
+
+function pressClose(): void {
+  fireEvent.click(screen.getByRole("button", { name: "Close" }));
+}
+
+/** The roster is a person's to ask for, and opening the picker is the asking. */
+test("a picker closed and opened again reads its roster again", async () => {
+  const sent = await drawPage();
+  fireEvent.click(screen.getByRole("button", { name: "Add" }));
+  await settled();
+  pressClose();
+  await settled();
+  fireEvent.click(screen.getByRole("button", { name: "Add" }));
+  await settled();
+  expect(listingsRead(sent)).toStrictEqual([
+    "11",
+    "13",
+    "12",
+    "11",
+    "13",
+    "12",
+  ]);
+});
+
+/** The one navigation that takes the picker's anchor off the address, in the
+ * entry it is in and with the page left where it is scrolled. */
+const anchorLeft = [{ href: projectPath, replace: true, resetScroll: false }];
+
+/** Where the tab is, its anchor included. */
+function addressDrawn(): string {
+  return `${location.pathname}${location.search}${location.hash}`;
+}
+
+/** The page drawn again where the address stands, as a reload draws it. */
+async function reloaded(): Promise<readonly Sent[]> {
+  cleanup();
+  return drawPage({ described: { apps: forgeApps, authorization: client } });
+}
+
+/**
+ * The anchor is what opens the picker when the page is drawn, so one left in
+ * the address after the picker has gone opens it again, and reads the roster
+ * again, at every reload and every Back.
+ */
+test.each<readonly [string, () => void]>([
+  ["Close", pressClose],
+  [
+    "Escape",
+    () => {
+      fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+    },
+  ],
+  [
+    "a press outside",
+    () => {
+      fireEvent.pointerDown(document.body);
+      fireEvent.click(document.body);
+    },
+  ],
+])(
+  "a picker opened at its address and closed by %s takes its anchor with it, and a reload opens none",
+  async (_way, close) => {
+    await drawAtPicker();
+    expect(held.navigations).toStrictEqual([]);
+    close();
+    await settled();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(held.navigations).toStrictEqual(anchorLeft);
+    expect(addressDrawn()).toBe(projectPath);
+    const sent = await reloaded();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(listingsRead(sent)).toStrictEqual([]);
+  },
+);
+
+/** A bind the route accepted, with the configurations it found. */
+const accepted = (): Response =>
+  answer(
+    {
+      repository: freeUrl,
+      landing: { mode: "Push" },
+      configurations: { result: "Imported", count: 2 },
+    },
+    201,
+  );
+
+/**
+ * A bind is what the picker was opened for, and its next step leaves the page
+ * with the picker still open. So the anchor goes with the bind, the picker
+ * staying open over what the bind came to.
+ */
+test("a bind the route accepts takes the anchor off the address once, the picker staying open, and a reload opens none", async () => {
+  await drawAtPicker({ posted: accepted });
+  fireEvent.click(screen.getByRole("button", { name: "gdoteof/scratch" }));
+  await settled();
+  expect(statusesOf()).toStrictEqual(["Configurations imported · New ticket"]);
+  expect(held.navigations).toStrictEqual(anchorLeft);
+  expect(addressDrawn()).toBe(projectPath);
+  pressClose();
+  await settled();
+  expect(held.navigations).toStrictEqual(anchorLeft);
+  const sent = await reloaded();
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(listingsRead(sent)).toStrictEqual([]);
+});
+
+/** A refusal leaves the person choosing, in a picker that is still what the
+ * address names. */
+test("a refused bind leaves the picker its address, and a reload opens it again", async () => {
+  await drawAtPicker();
+  fireEvent.click(screen.getByRole("button", { name: "gdoteof/scratch" }));
+  await settled();
+  expect(statusesOf()).toStrictEqual(["Deferring"]);
+  expect(held.navigations).toStrictEqual([]);
+  expect(addressDrawn()).toBe(pickerPath);
+  const sent = await reloaded();
+  expect(screen.queryByRole("dialog")).not.toBeNull();
+  expect(listingsRead(sent)).toStrictEqual(["11", "13", "12"]);
+});
+
+/** A press on Add moves the address nowhere, so there is nothing to take off
+ * it when that picker binds or closes. */
+test("a picker opened by a press leaves the address alone, through a bind and a close", async () => {
+  await openPickerAtProject({ posted: accepted });
+  fireEvent.click(screen.getByRole("button", { name: "gdoteof/scratch" }));
+  await settled();
+  pressClose();
+  await settled();
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(held.navigations).toStrictEqual([]);
+  expect(addressDrawn()).toBe(projectPath);
+});
+
+/**
+ * A return that brought a word leaves the picker closed at its own address, so
+ * a press on Add there opens the picker the address already names. The press
+ * moves nothing, and the close after it is what takes the anchor.
+ */
+test("a press on Add at the picker's own address moves nothing, and the close after it takes the anchor", async () => {
+  forgeReturnHold(transientStore, leadPartition.tenant, {
+    standing: "Failed",
+    status: "Unavailable",
+  });
+  await drawAtPicker();
+  fireEvent.click(screen.getByRole("button", { name: "Add" }));
+  await settled();
+  expect(screen.queryByRole("dialog")).not.toBeNull();
+  expect(held.navigations).toStrictEqual([]);
+  expect(addressDrawn()).toBe(pickerPath);
+  pressClose();
+  await settled();
+  expect(held.navigations).toStrictEqual(anchorLeft);
+  expect(addressDrawn()).toBe(projectPath);
 });
 
 function statusesOf(): readonly (string | null)[] {

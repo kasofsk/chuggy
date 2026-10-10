@@ -18,14 +18,17 @@
  * THE PICKER HAS AN ADDRESS, this page's own at the anchor
  * `ui/chuggy-ui/app/core/projectRepositories.ts` names, and a grant made on
  * the forge from the picker returns to it: the page opens with the picker open
- * and its roster read, unless the return brought a word to read first.
+ * and its roster read, unless the return brought a word to read first. The
+ * address loses the anchor, in the entry it is in, when the picker closes and
+ * when a bind is accepted, so neither a reload nor Back opens the picker and
+ * reads its roster again.
  *
  * ADD IS DRAWN A SECOND TIME UNDER AN EMPTY ROSTER'S LINE, where adding is the
  * one thing left to do, and opens the dialog the one in the head opens.
  * `ui/chuggy-ui/app/core/projectRepositories.ts` decides when.
  */
 
-import { Link, useParams } from "@tanstack/react-router";
+import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useState } from "react";
 import type { ReactNode } from "react";
 
@@ -46,6 +49,7 @@ import {
 } from "../core/forgeInstallation.ts";
 import type { ForgeReturnWord } from "../core/forgeReturn.ts";
 import {
+  repositoryAddClosedPath,
   repositoryAddLeads,
   repositoryAddOpened,
   repositoryLabel,
@@ -205,6 +209,35 @@ function OffersLine(props: {
   );
 }
 
+/**
+ * Whether the picker is open, which the address it was drawn at decides first.
+ * A close, and a bind told through `bound`, take the picker's anchor off the
+ * address in the entry it is in, where the address carries it.
+ */
+function usePicker(returned: ForgeReturnWord | undefined): {
+  readonly open: boolean;
+  readonly opened: (open: boolean) => void;
+  readonly bound: () => void;
+} {
+  const navigate = useNavigate();
+  const [open, setOpen] = useState(() =>
+    repositoryAddOpened(currentAnchor(), returned),
+  );
+  const left = (): void => {
+    const path = repositoryAddClosedPath(currentPath(), currentAnchor());
+    if (path !== undefined)
+      void navigate({ href: path, replace: true, resetScroll: false });
+  };
+  return {
+    open,
+    opened: (next) => {
+      setOpen(next);
+      if (!next) left();
+    },
+    bound: left,
+  };
+}
+
 function RepositoriesSection(props: {
   readonly partition: PartitionIdentity;
   readonly installations: readonly ForgeInstallationResponse[];
@@ -215,9 +248,7 @@ function RepositoriesSection(props: {
   readonly runner: WorkRunner;
 }): ReactNode {
   const bindings = props.bindings;
-  const [adding, setAdding] = useState(() =>
-    repositoryAddOpened(currentAnchor(), props.returned),
-  );
+  const picker = usePicker(props.returned);
   const leads = repositoryAddLeads({
     bindings,
     installations: props.installations,
@@ -236,8 +267,9 @@ function RepositoriesSection(props: {
             workers={forgeWorkerInstallations(props.installations)}
             bound={bindings ?? []}
             runner={props.runner}
-            open={adding}
-            onOpenChange={setAdding}
+            open={picker.open}
+            onOpenChange={picker.opened}
+            onBound={picker.bound}
           />
           <CreateRepository
             partition={props.partition}
@@ -260,7 +292,7 @@ function RepositoriesSection(props: {
                 size="sm"
                 variant="primary"
                 onClick={() => {
-                  setAdding(true);
+                  picker.opened(true);
                 }}
               >
                 Add
