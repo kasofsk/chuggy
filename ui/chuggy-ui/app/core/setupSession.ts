@@ -8,8 +8,11 @@
  * is the holder's, unchanged. What the issuer's token endpoint was last asked
  * is noted as a member of a closed set, because the holder says why a renewal
  * or an exchange failed only in words, and no words of another system's reach
- * a report.
+ * a report. A request that asks the issuer for a token is sent only once the
+ * store has room for the one it hands back.
  */
+
+import type { AccessCallerTenant } from "../../../../src/contract/accessPlane.ts";
 
 import { apiCallerTenants } from "./accessRoutes.ts";
 import { apiPortsOver } from "./apiPorts.ts";
@@ -23,11 +26,7 @@ import {
   FetchJsonError,
   fetchJsonThrough,
 } from "./sessionHolder.ts";
-import type {
-  KeyValuePort,
-  SessionHolder,
-  SessionHolderPorts,
-} from "./sessionHolder.ts";
+import type { SessionHolder, SessionHolderPorts } from "./sessionHolder.ts";
 import type { SetupPorts } from "./setupPorts.ts";
 import {
   setupClientId,
@@ -35,6 +34,7 @@ import {
   setupScopes,
 } from "./setupProgram.ts";
 import { setupTokenStore } from "./setupStore.ts";
+import type { SetupTokenStore } from "./setupStore.ts";
 
 /** The bound the terminal's JSON requests are sent under, since their port carries none. */
 export const setupFetchTimeoutMs = 15_000;
@@ -52,7 +52,7 @@ export interface SetupSessionOpened {
   readonly site: string;
   readonly holder: SessionHolder;
   readonly api: ApiPorts;
-  readonly store: KeyValuePort;
+  readonly store: SetupTokenStore;
   /** Whether the site's own configuration was read, which tells a site that fails from an issuer that does. */
   readonly configured: () => boolean;
   readonly tokenAsked: () => SetupTokenAsked;
@@ -76,7 +76,7 @@ function setupTokenFault(failure: unknown): SetupTokenAsked {
     : "Unanswered";
 }
 
-function setupMemory(): KeyValuePort {
+function setupMemory(): SessionHolderPorts["transient"] {
   const held = new Map<string, string>();
   return {
     read: (key) => held.get(key) ?? null,
@@ -89,14 +89,20 @@ function setupMemory(): KeyValuePort {
   };
 }
 
+/** The field every request for a token carries, and a revocation does not. */
+const setupGrantField = "grant_type";
+
 function setupFetchJson(
   ports: SetupPorts,
   site: string,
   port: number | undefined,
-  notes: SetupSessionNotes,
+  held: { readonly notes: SetupSessionNotes; readonly store: SetupTokenStore },
 ): SessionHolderPorts["fetchJson"] {
+  const notes = held.notes;
   return async (request) => {
     if (typeof request !== "string") {
+      if (new URLSearchParams(request.body).has(setupGrantField))
+        held.store.roomed();
       try {
         const answered = await fetchJsonThrough(ports.fetchJson, request);
         notes.tokenAsked = "Answered";
@@ -142,7 +148,7 @@ export function setupSessionOpened(
   const holder = createSessionHolder({
     nowMs: ports.nowMs,
     sleepMs: (ms) => ports.sleepMs(ms),
-    fetchJson: setupFetchJson(ports, site, port, notes),
+    fetchJson: setupFetchJson(ports, site, port, { notes, store }),
     persistent: store,
     transient: setupMemory(),
     digest: ports.digest,
@@ -167,13 +173,15 @@ export function setupSessionOpened(
   };
 }
 
-/** What the site says of whoever a session is: the workspaces they administer, or why it did not say. */
+/** The workspaces a role names a person in, each with whether they administer it, and whether the site sent only part of them. */
+export interface SetupWorkspacesAnswered {
+  readonly tenants: readonly AccessCallerTenant[];
+  readonly truncated: boolean;
+}
+
+/** What the site says of whoever a session is, or why it did not say. */
 export type SetupWorkspaces =
-  | {
-      readonly read: "Answered";
-      readonly workspaces: readonly string[];
-      readonly truncated: boolean;
-    }
+  | ({ readonly read: "Answered" } & SetupWorkspacesAnswered)
   | { readonly read: "Unread"; readonly outcome: ApiFailure["outcome"] };
 
 /** The read that confirms a sign-in: an issuer can hand out a token the site then refuses. */
@@ -184,9 +192,7 @@ export async function setupWorkspacesRead(
   if (read.outcome !== "Ok") return { read: "Unread", outcome: read.outcome };
   return {
     read: "Answered",
-    workspaces: read.value.tenants
-      .filter((tenant) => tenant.administer)
-      .map((tenant) => tenant.tenant),
+    tenants: read.value.tenants,
     truncated: read.value.truncated,
   };
 }

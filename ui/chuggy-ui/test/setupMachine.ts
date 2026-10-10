@@ -9,7 +9,8 @@
  * listener a sign-in leaves behind is
  * the real one, deciding beside the command that started it. The issuer hands
  * out a new renewal token for each one it is shown and ends the whole sign-in
- * when shown a spent one, which is what the real one does.
+ * when shown a spent one, which is what the real one does, and it publishes
+ * where a token is revoked, so what a run sends there is seen.
  */
 
 import type { ApiFetchInit } from "../app/core/apiRequest.ts";
@@ -17,6 +18,7 @@ import type {
   FetchJsonInit,
   FetchJsonResponse,
 } from "../app/core/sessionHolder.ts";
+import { SetupMachineError } from "../app/core/setupPorts.ts";
 import type {
   SetupAnswered,
   SetupFile,
@@ -26,28 +28,27 @@ import type {
 } from "../app/core/setupPorts.ts";
 import type { SetupReport } from "../app/core/setupReport.ts";
 import { setupRun } from "../app/core/setupRun.ts";
+import { setupSiteAnswered, setupSiteAt } from "./setupSite.ts";
+import type { SetupSite } from "./setupSite.ts";
 
 export const machineSite = "https://chuggy.example";
 export const machineIssuer = "https://auth.example";
 export const machineAudience = "https://chuggy.example/api";
 export const machineScript = "/home/person/chuggy-setup.mjs";
 export const machineDirectory = "~/.chuggy-setup";
+/** The program's directory as the machine names it, which is how a path it would not write is said. */
+export const machineKept = "/home/person/.chuggy-setup";
 
-const tokenAddress = `${machineIssuer}/oauth2/token`;
+export const machineTokenAddress = `${machineIssuer}/oauth2/token`;
+export const machineRevokeAddress = `${machineIssuer}/oauth2/revoke`;
+const tokenAddress = machineTokenAddress;
 const authorizeAddress = `${machineIssuer}/oauth2/auth`;
-const workspacesAddress = `${machineSite}/access/v1/workspaces`;
 
 /** How a part of the installation answers: as it should, with a refusal, with a fault of its own, with nothing readable, or not at all. */
 export type Answering = "Answers" | "Refuses" | "Fails" | "Garbles" | "Silent";
 
 /** What becomes of a run the program starts for itself: it runs, it is gone before it says anything, it stays and says nothing, or it cannot be started. */
 export type Spawning = "Runs" | "Dies" | "Mute" | "Unstarted";
-
-export interface MachineTenant {
-  readonly tenant: string;
-  readonly roles: readonly string[];
-  readonly administer: boolean;
-}
 
 interface Timer {
   readonly atMs: number;
@@ -61,6 +62,11 @@ export interface SetupMachine {
   lock: string | undefined;
   /** Each file the program asked to have its unfinished writes removed, in order. */
   readonly swept: SetupFile[];
+  /** Each file room was asked for, in order, and whether the machine gives it, given which ask it is. */
+  readonly reserved: SetupFile[];
+  room: (turn: number) => boolean;
+  /** Whether the machine takes a write of a file. */
+  takes: (file: SetupFile) => boolean;
   nowMs: number;
   /** How the site's own configuration, the issuer's discovery, its token endpoint and the API answer. */
   site: Answering;
@@ -71,25 +77,38 @@ export interface SetupMachine {
   renewable: boolean;
   /** Whether the API takes the tokens the issuer hands out, which a site whose audience changed does not. */
   admits: boolean;
-  tenants: readonly MachineTenant[];
+  /** What the site holds, which is what its reads answer. */
+  world: SetupSite;
+  /** What git prints of the folder's `origin`, or nothing where it has none to print. */
+  remote: string | undefined;
   browser: string | undefined;
   platform: string;
   spawning: Spawning;
   /** What happens while a listener is closing, before it is gone. */
   closing: () => Promise<void>;
+  /** The machine's digest, which a case replaces to say exactly where two digests differ. */
+  digest: (message: Uint8Array) => Uint8Array;
+  /** The octets handed over where the program asks for ones nobody could guess, given how many and which ask it is. */
+  draws: (count: number, turn: number) => Uint8Array;
   /** What starting the opener answers, and what the person then does in the browser it opened. */
   opener: SetupLaunched;
   opened: (address: string) => Promise<void>;
   /** Every address asked through either network port, and every body sent. */
   readonly asked: string[];
   readonly bodies: string[];
+  /** Every request of the site's API, as its method and address, and each address that was asked while the lock was held. */
+  readonly sent: string[];
+  readonly locked: string[];
+  /** Each command the program ran to read what it printed. */
+  readonly ran: (readonly string[])[];
   /** The arguments of each run the program started for itself, and of each command it launched. */
   readonly detached: (readonly string[])[];
   readonly launched: (readonly string[])[];
   /** The processes running now, a suite's own among them; a number that names no one process is answered as running, as a system answers for a group. */
   readonly alive: Set<number>;
-  /** Every renewal token the issuer handed out, and the one it would accept now. */
+  /** Every renewal token the issuer handed out, each it was asked to revoke, and the one it would accept now. */
   readonly issued: string[];
+  readonly revoked: string[];
   readonly live: () => string | undefined;
   /** Runs one command to its report, waiting out every wait it makes. */
   readonly command: (argv: readonly string[]) => Promise<SetupReport>;
@@ -183,15 +202,16 @@ function fetchJson(
   machine.asked.push(url);
   if (init.body !== undefined) machine.bodies.push(init.body);
   const configuration = url.endsWith("/config.json");
+  const granting = url === tokenAddress || url === machineRevokeAddress;
   const answering = configuration
     ? machine.site
-    : url === tokenAddress
+    : granting
       ? machine.token
       : machine.discovery;
   if (answering === "Silent")
     return Promise.reject(new Error("no route to host"));
   if (answering === "Refuses")
-    return Promise.resolve(json(url === tokenAddress ? 400 : 404, {}));
+    return Promise.resolve(json(granting ? 400 : 404, {}));
   if (answering === "Fails") return Promise.resolve(json(500, {}));
   if (answering === "Garbles") return Promise.resolve(json(200, {}));
   if (configuration)
@@ -206,11 +226,16 @@ function fetchJson(
     );
   if (url === tokenAddress)
     return Promise.resolve(issuerAnswered(machine, issuer, init.body ?? ""));
+  if (url === machineRevokeAddress) {
+    machine.revoked.push(new URLSearchParams(init.body).get("token") ?? "");
+    return Promise.resolve(json(200, {}));
+  }
   return Promise.resolve(
     json(200, {
       issuer: machineIssuer,
       authorization_endpoint: authorizeAddress,
       token_endpoint: tokenAddress,
+      revocation_endpoint: machineRevokeAddress,
     }),
   );
 }
@@ -222,9 +247,14 @@ function apiFetch(
   init: ApiFetchInit,
 ): Promise<Response> {
   machine.asked.push(url);
+  machine.sent.push(`${init.method} ${url}`);
+  if (machine.lock !== undefined) machine.locked.push(url);
+  const answer = url.startsWith(`${machineSite}/`)
+    ? setupSiteAnswered(machine.world, url.slice(machineSite.length))
+    : undefined;
   if (machine.api === "Silent")
     return Promise.reject(new Error("no route to host"));
-  if (machine.api === "Refuses" || url !== workspacesAddress)
+  if (machine.api === "Refuses" || answer === undefined)
     return Promise.resolve(
       new Response("{}", { status: 503, headers: { "retry-after": "300" } }),
     );
@@ -235,10 +265,7 @@ function apiFetch(
   const bearer = (init.headers["authorization"] ?? "").replace("Bearer ", "");
   return Promise.resolve(
     machine.admits && issuer.access.has(bearer)
-      ? new Response(
-          JSON.stringify({ tenants: machine.tenants, truncated: false }),
-          { status: 200 },
-        )
+      ? new Response(JSON.stringify(answer.body), { status: answer.status })
       : new Response("{}", { status: 401 }),
   );
 }
@@ -287,7 +314,7 @@ async function fired(
 }
 
 /** The double's digest: every octet, its place and the length move the answer, and nothing waits on a clock that is not the machine's. */
-function folded(message: Uint8Array): Uint8Array {
+export function folded(message: Uint8Array): Uint8Array {
   const digest = new Uint8Array(32);
   let carried = message.length + 1;
   for (const [at, octet] of message.entries()) {
@@ -299,12 +326,25 @@ function folded(message: Uint8Array): Uint8Array {
   return digest;
 }
 
+/** What the files throw where the machine would not write: which path, as the real ones do. */
+function unwritable(file: SetupFile): SetupMachineError {
+  return new SetupMachineError({
+    fault: "Unwritable",
+    path: `${machineKept}/${file}`,
+  });
+}
+
 function filesOf(machine: SetupMachine): SetupPorts["files"] {
   const { files } = machine;
   return {
     read: (file) => files.get(file),
     write: (file, text) => {
+      if (!machine.takes(file)) throw unwritable(file);
       files.set(file, text);
+    },
+    reserve: (file) => {
+      machine.reserved.push(file);
+      if (!machine.room(machine.reserved.length)) throw unwritable(file);
     },
     remove: (file) => {
       files.delete(file);
@@ -333,9 +373,9 @@ function portsOf(inner: Inner, pid: number): SetupPorts {
     sleepMs: (ms, signal) => slept(inner, ms, signal),
     drawBytes: (count) => {
       inner.drawn += 1;
-      return new Uint8Array(count).fill(inner.drawn);
+      return machine.draws(count, inner.drawn);
     },
-    digest: (message) => Promise.resolve(folded(message)),
+    digest: (message) => Promise.resolve(machine.digest(message)),
     fetchJson: (url, init) => fetchJson(machine, issuer, url, init),
     apiFetch: (url, init) => apiFetch(machine, issuer, url, init),
     files: filesOf(machine),
@@ -368,6 +408,10 @@ function portsOf(inner: Inner, pid: number): SetupPorts {
         if (machine.opener.launched !== "Unstarted")
           await machine.opened(command.at(-1) ?? "");
         return machine.opener;
+      },
+      read: (command) => {
+        machine.ran.push(command);
+        return Promise.resolve(machine.remote);
       },
     },
     surroundings: {
@@ -449,6 +493,9 @@ export function setupMachine(): SetupMachine {
     files: new Map(),
     lock: undefined,
     swept: [],
+    reserved: [],
+    room: () => true,
+    takes: () => true,
     nowMs: 1_000_000,
     site: "Answers",
     discovery: "Answers",
@@ -456,22 +503,26 @@ export function setupMachine(): SetupMachine {
     api: "Answers",
     renewable: true,
     admits: true,
-    tenants: [
-      { tenant: "acme", roles: ["Admin"], administer: true },
-      { tenant: "guest", roles: ["Member"], administer: false },
-    ],
+    world: setupSiteAt("Workspace"),
+    remote: undefined,
     browser: undefined,
     platform: "linux",
     spawning: "Runs",
     closing: () => Promise.resolve(),
+    digest: folded,
+    draws: (count, turn) => new Uint8Array(count).fill(turn),
     opener: { launched: "Ended", exit: 0 },
     opened: () => Promise.resolve(),
     asked: [],
     bodies: [],
+    sent: [],
+    locked: [],
+    ran: [],
     detached: [],
     launched: [],
     alive: new Set(),
     issued: issuer.issued,
+    revoked: [],
     live: () => issuer.live,
     command: (argv) => settled(inner, started(inner, argv).report),
     advance: async (ms) => {
@@ -493,5 +544,29 @@ export function setupMachine(): SetupMachine {
     pids: 100,
     drawn: 0,
   };
+  return machine;
+}
+
+/** A machine already signed in to a site holding `world`, as a sign-in the person finished leaves it, with nothing yet recorded as asked. */
+export async function machineSignedIn(
+  world: SetupSite = setupSiteAt("Workspace"),
+): Promise<SetupMachine> {
+  const machine = setupMachine();
+  machine.world = world;
+  machine.opened = async () => {
+    await machine.person();
+  };
+  await machine.command(["sign-in", "--site", machineSite]);
+  machine.opened = () => Promise.resolve();
+  for (const recorded of [
+    machine.asked,
+    machine.bodies,
+    machine.sent,
+    machine.locked,
+    machine.ran,
+    machine.reserved,
+    machine.swept,
+  ])
+    recorded.length = 0;
   return machine;
 }

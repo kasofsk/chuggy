@@ -5,7 +5,12 @@
  * The program is the entry in the sources unless `CHUG_SETUP_PROGRAM` names a
  * built file, so one set of cases proves both. The opener it is given records
  * the address it was handed and opens nothing, and the suite then plays the
- * person.
+ * person. Every run is started in a folder of its home's own, so what the
+ * program reads of the folder it is run in is that folder, and what a run
+ * that lost its home writes there is not this checkout. A case that wants the
+ * folder to be a git checkout has the harness make it one, and git is told to
+ * look no higher than the home's own root, so a folder that is no checkout is
+ * none wherever the suite itself was started.
  *
  * Nothing here waits without a bound and nothing outlives its suite. A
  * process still running at its deadline, or one that wrote more than any
@@ -17,6 +22,7 @@
  * is left to make it again.
  */
 
+import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import type { ChildProcessByStdio } from "node:child_process";
 import {
@@ -31,7 +37,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import type { Readable } from "node:stream";
 import { after } from "node:test";
 import { setTimeout as slept } from "node:timers/promises";
@@ -39,9 +45,9 @@ import { setTimeout as slept } from "node:timers/promises";
 import { standIn } from "./standIn.ts";
 import type { StandIn } from "./standIn.ts";
 
-export const program =
-  process.env["CHUG_SETUP_PROGRAM"] ??
-  join(process.cwd(), "ui/chuggy-ui/terminal/main.ts");
+export const program = resolve(
+  process.env["CHUG_SETUP_PROGRAM"] ?? "ui/chuggy-ui/terminal/main.ts",
+);
 
 const pollMs = 50;
 const waitMsMax = 20_000;
@@ -74,8 +80,12 @@ export interface Home {
   readonly directory: string;
   /** A directory beside the home for what a case makes itself. */
   readonly beside: string;
+  /** The folder every run under this home is started in, empty until a case puts something there. */
+  readonly folder: string;
   /** Everything every run under this home wrote to either stream. */
   readonly written: string[];
+  /** Makes the folder a git checkout whose `origin` is the address given, or one with no remote where none is. */
+  readonly checkout: (origin?: string) => Promise<void>;
   readonly run: (
     argv: readonly string[],
     environment?: Readonly<Record<string, string>>,
@@ -141,15 +151,64 @@ export function finished(
 async function ran(
   argv: readonly string[],
   environment: NodeJS.ProcessEnv,
+  folder: string,
 ): Promise<Ran> {
   const done = await finished(
     spawn(process.execPath, [program, ...argv], {
+      cwd: folder,
       env: environment,
       stdio: ["ignore", "pipe", "pipe"],
     }),
   );
   const lines = done.stdout.split("\n").filter((line) => line !== "");
   return { ...done, lines };
+}
+
+/** One helper process of a suite's own, read to its end under the same bounds as the program, and a failure where it did not end well. */
+async function helped(
+  command: readonly string[],
+  cwd: string,
+  environment: NodeJS.ProcessEnv,
+): Promise<string> {
+  const [program = "", ...rest] = command;
+  const done = await finished(
+    spawn(program, rest, {
+      cwd,
+      env: environment,
+      stdio: ["ignore", "pipe", "pipe"],
+    }),
+  );
+  assert.equal(done.code, 0, `${command.join(" ")}: ${done.stderr}`);
+  return done.stdout;
+}
+
+/**
+ * A command the program printed, split into words by the shell an agent
+ * would hand it to. The words are printed and nothing is run, so what comes
+ * back is what the program would be given as its arguments.
+ */
+export async function shellWords(command: string): Promise<readonly string[]> {
+  const printed = await helped(
+    ["/bin/sh", "-c", `set -- ${command}\nprintf '%s\\0' "$@"`],
+    tmpdir(),
+    {},
+  );
+  return printed.split("\0").slice(0, -1);
+}
+
+const line = /^(site|found|step|did|tell|ask|rule|next): \S.*$/u;
+
+/** What every run prints: lines of the dialect, one `next:` and it last, and nothing on the other stream. */
+export function dialect(done: Ran, said: string): void {
+  assert.equal(done.stderr, "", said);
+  assert.ok(done.stdout.endsWith("\n"), said);
+  assert.ok(done.lines.length > 0, said);
+  for (const text of done.lines) assert.match(text, line, said);
+  assert.deepEqual(
+    done.lines.filter((text) => text.startsWith("next: ")),
+    [done.lines.at(-1)],
+    said,
+  );
 }
 
 /** What every Node process under a home runs first: its number written where the suite will look, or nothing run at all. */
@@ -201,11 +260,12 @@ function home(): Home {
   const root = mkdtempSync(join(tmpdir(), "chuggy-setup-"));
   const kept = join(root, "home");
   const beside = join(root, "beside");
+  const folder = join(root, "folder");
   const running = join(root, "running");
   const directory = join(kept, ".chuggy-setup");
   const record = join(beside, "opened");
   const opener = join(beside, "opener.sh");
-  for (const made of [kept, beside, running]) mkdirSync(made);
+  for (const made of [kept, beside, folder, running]) mkdirSync(made);
   writeFileSync(join(root, "registrar.mjs"), registrar(running));
   writeFileSync(opener, `#!/bin/sh\nprintf '%s' "$1" > "${record}"\n`);
   chmodSync(opener, 0o755);
@@ -219,23 +279,36 @@ function home(): Home {
     home: kept,
     directory,
     beside,
+    folder,
     written,
     file,
+    checkout: async (origin) => {
+      const quiet = { PATH: process.env["PATH"], HOME: kept };
+      await helped(["git", "init", "--quiet"], folder, quiet);
+      if (origin !== undefined)
+        await helped(
+          ["git", "config", "remote.origin.url", origin],
+          folder,
+          quiet,
+        );
+    },
     lock: () => {
       if (!existsSync(join(directory, "lock"))) return undefined;
       const said = readdirSync(join(directory, "lock"));
       return said.length === 1 && said[0] === "free" ? undefined : said.join();
     },
     run: async (argv, environment = {}) => {
-      const done = await ran(argv, {
+      const surroundings = {
         ...process.env,
         HOME: kept,
+        GIT_CEILING_DIRECTORIES: root,
         BROWSER: opener,
         NODE_OPTIONS: [process.env["NODE_OPTIONS"] ?? "", preload]
           .join(" ")
           .trim(),
         ...environment,
-      });
+      };
+      const done = await ran(argv, surroundings, folder);
       written.push(done.stdout, done.stderr);
       return done;
     },
@@ -255,8 +328,12 @@ function home(): Home {
 }
 
 /** One request of a browser's that follows nothing, so a suite reads each step. */
-export async function browsed(address: string): Promise<Response> {
+export async function browsed(
+  address: string,
+  method = "GET",
+): Promise<Response> {
   return fetch(address, {
+    method,
     redirect: "manual",
     signal: AbortSignal.timeout(requestMsMax),
   });
@@ -267,6 +344,17 @@ export async function person(address: string): Promise<Response> {
   const first = await browsed(address);
   const second = await browsed(first.headers.get("location") ?? "");
   return browsed(second.headers.get("location") ?? "");
+}
+
+/** Runs `sign-in` and plays `played` in the browser it opens, answering what the command said. */
+export async function signedIn(
+  installation: StandIn,
+  machine: Home,
+  played: (address: string) => Promise<unknown> = person,
+): Promise<Ran> {
+  const running = machine.run(["sign-in", "--site", installation.site]);
+  await played(await machine.opened());
+  return running;
 }
 
 export interface Making {

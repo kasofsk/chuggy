@@ -9,12 +9,15 @@
  */
 
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import { setTimeout as slept } from "node:timers/promises";
 
 import type { ApiFetchInit } from "../app/core/apiRequest.ts";
 import type { FetchJsonPort } from "../app/core/sessionHolder.ts";
-import { setupDirectoryName } from "../app/core/setupPorts.ts";
+import {
+  SetupMachineError,
+  setupDirectoryName,
+} from "../app/core/setupPorts.ts";
 import type { SetupPorts } from "../app/core/setupPorts.ts";
 import { setupFetchTimeoutMs } from "../app/core/setupSession.ts";
 import { filesIn } from "./files.ts";
@@ -40,18 +43,52 @@ async function digest(message: Uint8Array<ArrayBuffer>): Promise<Uint8Array> {
   return new Uint8Array(await crypto.subtle.digest("SHA-256", message));
 }
 
+/**
+ * The person's home as the machine names it, or nothing where it names none.
+ * A name that is not a whole path is none: under one the sign-in would be kept
+ * in whatever folder the program happened to be run in.
+ */
+export function homeOf(named: () => string): string | undefined {
+  try {
+    const home = named();
+    return isAbsolute(home) ? home : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function homeless(): never {
+  throw new SetupMachineError({ fault: "Homeless" });
+}
+
+/** The files and the lock of a machine that names no home: nothing is read and nothing kept, and each says why. */
+const nowhere: Pick<SetupPorts, "files" | "lock"> = {
+  files: {
+    read: homeless,
+    write: homeless,
+    reserve: homeless,
+    remove: homeless,
+    sweep: homeless,
+  },
+  lock: { read: homeless, swap: homeless },
+};
+
+function keptIn(home: string): Pick<SetupPorts, "files" | "lock"> {
+  const directory = join(home, setupDirectoryName);
+  return { files: filesIn(directory), lock: lockIn(directory) };
+}
+
 /** `script` is the file this program was run from, which a sign-in runs again. */
 export function portsOf(script: string): SetupPorts {
-  const directory = join(homedir(), setupDirectoryName);
+  const home = homeOf(homedir);
   return {
+    ...(home === undefined ? nowhere : keptIn(home)),
     nowMs: () => Date.now(),
     sleepMs: (ms, signal) => slept(ms, undefined, { signal }),
     drawBytes: (count) => crypto.getRandomValues(new Uint8Array(count)),
     digest,
     fetchJson: fetchJsonWithin(setupFetchTimeoutMs),
     apiFetch,
-    files: filesIn(directory),
-    lock: lockIn(directory),
     listen,
     process: processesOf(script),
     surroundings: {

@@ -10,11 +10,15 @@
 
 import { script } from "./nodeGate.ts";
 
+import { setupAnswersAsked } from "../app/core/setupArguments.ts";
 import { setupReportExit, setupReportLines } from "../app/core/setupReport.ts";
 import { setupRun } from "../app/core/setupRun.ts";
 import { portsOf } from "./ports.ts";
 
-void setupRun(portsOf(script), process.argv.slice(2)).then((report) => {
-  process.stdout.write(`${setupReportLines(report, script).join("\n")}\n`);
+const argv = process.argv.slice(2);
+
+void setupRun(portsOf(script), argv).then((report) => {
+  const lines = setupReportLines(report, script, setupAnswersAsked(argv));
+  process.stdout.write(`${lines.join("\n")}\n`);
   process.exitCode = setupReportExit(report);
 });

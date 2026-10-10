@@ -28,11 +28,39 @@ export const setupLockName = "lock";
 
 export type SetupFile = (typeof setupFiles)[keyof typeof setupFiles];
 
+/** What of the machine stopped a run: a path it could not make or write, one it could not read, one that would not take a sign-in the issuer had already handed back, or no home to keep anything in. */
+export type SetupMachineFault =
+  | { readonly fault: "Unwritable"; readonly path: string }
+  | { readonly fault: "Unreadable"; readonly path: string }
+  | { readonly fault: "Unkept"; readonly path: string }
+  | { readonly fault: "Homeless" };
+
+/**
+ * What the files and the lock throw where the machine would not do what was
+ * asked. It carries which path and nothing the system said of it, so a report
+ * names the path and no message of another system's.
+ */
+export class SetupMachineError extends Error {
+  readonly fault: SetupMachineFault;
+
+  constructor(fault: SetupMachineFault) {
+    super("the machine did not do what chuggy setup asked of it");
+    this.name = "SetupMachineError";
+    this.fault = fault;
+  }
+}
+
 export interface SetupFilesPort {
   /** The file's text, or nothing where there is no such file. */
   readonly read: (file: SetupFile) => string | undefined;
   /** Replaces the file whole, so a reader finds the old text or the new and never part of either. */
   readonly write: (file: SetupFile, text: string) => void;
+  /**
+   * Keeps room for one write of the file of at most `bytes`, so that write is
+   * made over what the machine has already given. `sweep` gives the room back
+   * where no write took it.
+   */
+  readonly reserve: (file: SetupFile, bytes: number) => void;
   readonly remove: (file: SetupFile) => void;
   /** Removes every copy of the file a write left unfinished. Only a caller that is the file's one writer may ask, since a write under way is such a copy. */
   readonly sweep: (file: SetupFile) => void;
@@ -91,7 +119,18 @@ export interface SetupProcessPort {
     command: readonly string[],
     waitMs: number,
   ) => Promise<SetupLaunched>;
+  /** Runs a command of the machine's in the folder the program was run in and answers what it printed. Nothing is answered where it did not start, did not end well within `waitMs`, or printed more than `bytesMax`. */
+  readonly read: (
+    command: readonly string[],
+    waitMs: number,
+    bytesMax: number,
+  ) => Promise<string | undefined>;
 }
+
+/** The platforms the program is served on: those it knows how to open a browser on. */
+export const setupPlatforms = ["linux", "darwin"] as const;
+
+export type SetupPlatform = (typeof setupPlatforms)[number];
 
 /** Where the program is running, as plain facts read once at its start. */
 export interface SetupSurroundings {

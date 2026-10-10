@@ -16,6 +16,7 @@ import {
   dispatchViewResponseSchema,
   draftInitializationResponseSchema,
   draftResponseSchema,
+  draftsResponseSchema,
   executionPlacementResponseSchema,
   executionsResponseSchema,
   forgeAppsResponseSchema,
@@ -56,6 +57,7 @@ import type {
   DispatchViewResponse,
   DraftInitializationResponse,
   DraftResponse,
+  DraftsResponse,
   ExecutionPlacementResponse,
   ExecutionsResponse,
   ForgeAppsResponse,
@@ -831,6 +833,25 @@ export function apiDraft(
 ): Promise<ApiResult<DraftResponse>> {
   return apiGet(ports, apiSegments(partition, "drafts", ticket), (value) =>
     draftResponseSchema.parse(value),
+  );
+}
+
+/** One page of the drafts a project still holds open, which a released or deleted one is not among. */
+export function apiDrafts(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+  page: {
+    readonly cursor?: string | undefined;
+    readonly limit?: number | undefined;
+  } = {},
+): Promise<ApiResult<DraftsResponse>> {
+  return apiGet(
+    ports,
+    apiPath(apiSegments(partition, "drafts"), {
+      cursor: page.cursor,
+      limit: page.limit,
+    }),
+    (value) => draftsResponseSchema.parse(value),
   );
 }
 

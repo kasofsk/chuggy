@@ -10,11 +10,21 @@
  * that one and opens nothing. The listener ends when it has an answer or when
  * its own bound passes, whichever is first.
  *
- * An answer is one that carries the state this sign-in sent. That is checked
- * before anything else is read of a request, a refusal as much as a code, so
- * nothing else on the machine that reaches the port can end the sign-in or
- * spend what it holds: such a request is told there is nothing here and the
- * page goes on waiting.
+ * An answer is one that carries the state this sign-in sent. A request's
+ * method and path are read first and say only which page is being asked for,
+ * so neither ends the sign-in nor spends anything. Of what is asked of the
+ * answer's own path the state is checked before anything else is read, a
+ * refusal as much as a code, so nothing else on the machine that reaches the
+ * port can end the sign-in or spend what it holds: such a request is told
+ * there is nothing here and the page goes on waiting. A sign-in that sent no
+ * state has none to compare, and takes no request for its answer.
+ *
+ * How a page ended is said once before a page is opened again, by whichever
+ * command meets it first: a `sign-in`, or the bare command where nobody was
+ * waiting. Every ending but a sign-in is then kept, because nothing is run
+ * after one until the person asks: the bare command goes on saying it, so an
+ * agent that asks where things stand is not sent to open a page, and the
+ * `sign-in` the person then asks for opens one.
  *
  * Signed in is three things together: the issuer exchanged the answer, it
  * handed over a renewal token, and the site then answered a read as that
@@ -39,6 +49,7 @@ import {
   setupLoopbackAddress,
   setupLoopbackHost,
 } from "./setupProgram.ts";
+import { setupSignInHeld } from "./setupReport.ts";
 import type {
   SetupReport,
   SetupSignInEnded,
@@ -49,11 +60,17 @@ import type { SetupSessionOpened } from "./setupSession.ts";
 import {
   setupLockReleased,
   setupLockTaken,
+  setupLockWaitMs,
   setupSessionRead,
   setupSignInNoteRead,
   setupSignInNoteWritten,
 } from "./setupStore.ts";
 import type { SetupSignInNote } from "./setupStore.ts";
+
+type SetupSignInEndedNote = Extract<
+  SetupSignInNote,
+  { readonly note: "Ended" }
+>;
 
 export const setupSignInPollMs = 250;
 
@@ -63,7 +80,7 @@ export const setupSignInStartSecsMax = 20;
 /** How long an opener is watched before it is taken to have opened something. */
 export const setupOpenerWaitMs = 3_000;
 
-/** How long after a sign-in ended with nobody waiting its ending is still worth saying. */
+/** How long after a sign-in ended with nobody waiting a `sign-in` still reports its ending before it opens another page. */
 export const setupSignInKeptSecs = 600;
 
 /** How far past its own end a listener's note is still believed. */
@@ -75,10 +92,10 @@ export const setupListenLockWaitMs = 30_000;
 /** How long an answer under way is given to reach the browser once the listener is closing. */
 export const setupListenCloseWaitMs = 2_000;
 
-/** What `sign-in` finds of an earlier one for this site: a page still waiting, an ending nobody heard, or nothing. */
+/** What `sign-in` finds of an earlier one for this site: a page still waiting, an ending no command has said, or nothing. */
 export type SetupSignInFound =
   | { readonly found: "Waiting"; readonly port: number; readonly pid: number }
-  | { readonly found: "Ended"; readonly ended: SetupSignInEnded }
+  | { readonly found: "Ended"; readonly note: SetupSignInEndedNote }
   | { readonly found: "None" };
 
 export function setupSignInFound(
@@ -95,9 +112,45 @@ export function setupSignInFound(
       : { found: "None" };
   }
   const kept = nowMs - note.endedAtMs <= setupSignInKeptSecs * 1_000;
-  return kept && note.ended !== "SignedIn"
-    ? { found: "Ended", ended: note.ended }
+  return kept && !note.told && note.ended !== "SignedIn"
+    ? { found: "Ended", note }
     : { found: "None" };
+}
+
+/** How the last sign-in for this site ended, where that ending is one that stands: what the bare command says in place of naming `sign-in`. */
+export function setupSignInStood(
+  note: SetupSignInNote | undefined,
+  site: string,
+): SetupSignInEnded | undefined {
+  if (note?.note !== "Ended" || note.site !== site) return undefined;
+  return setupSignInHeld(note.ended) ? note.ended : undefined;
+}
+
+/**
+ * Leaves an ending a `sign-in` is reporting: kept and marked as told where it
+ * stands, dropped where it does not. The caller holds the lock, so no page is
+ * being started whose note this would write over.
+ */
+function setupSignInSaid(ports: SetupPorts, note: SetupSignInEndedNote): void {
+  if (setupSignInHeld(note.ended))
+    setupSignInNoteWritten(ports.files, { ...note, told: true });
+  else ports.files.remove(setupFiles.signIn);
+}
+
+/**
+ * The ending that stands for this site, left as said by the bare command that
+ * is saying it, so the `sign-in` the person asks for next opens a page. The
+ * caller holds the lock.
+ */
+export function setupSignInStoodSaid(
+  ports: SetupPorts,
+  site: string,
+): SetupSignInEnded | undefined {
+  const note = setupSignInNoteRead(ports.files);
+  const ended = setupSignInStood(note, site);
+  if (ended !== undefined && note?.note === "Ended" && !note.told)
+    setupSignInSaid(ports, note);
+  return ended;
 }
 
 /** Drops the note of a sign-in that has ended, once a command has found for itself how it stands. */
@@ -147,6 +200,14 @@ function setupEndedReport(site: string, ended: SetupSignInEnded): SetupReport {
   return { report: "SignInEnded", site, ended };
 }
 
+/** A page that could not be started, or never said where it listens; its site is remembered by then. */
+const setupUnstarted: SetupReport = {
+  report: "Faulted",
+  asked: "SignIn",
+  site: undefined,
+  fault: { fault: "Unstarted" },
+};
+
 /** A page being waited on, or the report that ends the command without a wait. */
 export type SetupSignInBegun =
   | {
@@ -174,7 +235,7 @@ async function setupSignInStarted(
     const alive = ports.process.alive(pid);
     const note = setupSignInNoteRead(ports.files);
     if (note?.note === "Ended") {
-      ports.files.remove(setupFiles.signIn);
+      setupSignInSaid(ports, note);
       return { begun: "Reported", report: setupEndedReport(site, note.ended) };
     }
     if (note?.note === "Waiting")
@@ -187,7 +248,7 @@ async function setupSignInStarted(
     if (!alive) break;
     await ports.sleepMs(setupSignInPollMs);
   }
-  return { begun: "Reported", report: { report: "Faulted" } };
+  return { begun: "Reported", report: setupUnstarted };
 }
 
 /**
@@ -211,15 +272,51 @@ export async function setupSignInBegun(
       pid: found.pid,
       started: false,
     };
+  if (found.found === "Ended") {
+    setupSignInSaid(ports, found.note);
+    return {
+      begun: "Reported",
+      report: setupEndedReport(site, found.note.ended),
+    };
+  }
   ports.files.remove(setupFiles.signIn);
-  if (found.found === "Ended")
-    return { begun: "Reported", report: setupEndedReport(site, found.ended) };
   const pid = ports.process.detach(
     setupListenArguments(site, setupListenSecsDefault),
   );
-  if (pid === undefined)
-    return { begun: "Reported", report: { report: "Faulted" } };
+  if (pid === undefined) return { begun: "Reported", report: setupUnstarted };
   return setupSignInStarted(ports, site, pid);
+}
+
+/**
+ * Reports how the page a command waited on ended, and leaves that ending as
+ * said. The wait holds no lock, so the lock is taken for this and the note is
+ * read again under it: what is rewritten is the ending this wait read, or the
+ * note of the listener it watched go, and never a page started since.
+ */
+async function setupSignInHeard(
+  ports: SetupPorts,
+  site: string,
+  pid: number,
+  ended: SetupSignInEnded,
+): Promise<SetupReport> {
+  if (await setupLockTaken(ports, setupLockWaitMs))
+    try {
+      const note = setupSignInNoteRead(ports.files);
+      if (note?.note === "Ended") {
+        if (note.site === site && note.ended === ended)
+          setupSignInSaid(ports, note);
+      } else if (note === undefined || note.pid === pid)
+        setupSignInSaid(ports, {
+          note: "Ended",
+          site,
+          ended,
+          endedAtMs: ports.nowMs(),
+          told: false,
+        });
+    } finally {
+      setupLockReleased(ports);
+    }
+  return setupEndedReport(site, ended);
 }
 
 /** Waits on a page for at most `waitSecs`, reading the note its listener leaves when it ends. */
@@ -234,15 +331,10 @@ async function setupSignInWaited(
   for (let poll = 0; poll <= polls; poll += 1) {
     const alive = ports.process.alive(waiting.pid);
     const note = setupSignInNoteRead(ports.files);
-    if (note?.note === "Ended") {
-      ports.files.remove(setupFiles.signIn);
-      return setupEndedReport(site, note.ended);
-    }
-    const listening = note?.pid === waiting.pid;
-    if (!listening || !alive) {
-      if (listening) ports.files.remove(setupFiles.signIn);
-      return setupEndedReport(site, "Expired");
-    }
+    if (note?.note === "Ended")
+      return setupSignInHeard(ports, site, waiting.pid, note.ended);
+    if (note?.pid !== waiting.pid || !alive)
+      return setupSignInHeard(ports, site, waiting.pid, "Expired");
     if (poll < polls) await ports.sleepMs(setupSignInPollMs);
   }
   return {
@@ -303,8 +395,10 @@ async function setupExchangeConfirmed(
 /**
  * Exchanges the code and confirms what came of it, holding the lock from
  * before the exchange until the token it produced is written and has been used
- * once. A page whose site is no longer the one remembered exchanges nothing,
- * because what it wrote would replace another site's sign-in.
+ * once; what the store was refused ends the page as a fault, whatever the
+ * holder made of it. A page whose site is no longer the one remembered
+ * exchanges nothing, because what it wrote would replace another site's
+ * sign-in.
  */
 async function setupCallbackExchanged(
   ports: SetupPorts,
@@ -319,9 +413,14 @@ async function setupCallbackExchanged(
       pathname: heard.path,
       search: heard.search,
     });
-    if (callback.result === "SignedIn")
-      return await setupExchangeConfirmed(opened);
-    return opened.tokenAsked() === "Unasked" ? "Mismatched" : "ExchangeFailed";
+    opened.store.kept();
+    if (callback.result !== "SignedIn")
+      return opened.tokenAsked() === "Unasked"
+        ? "Mismatched"
+        : "ExchangeFailed";
+    const ended = await setupExchangeConfirmed(opened);
+    opened.store.kept();
+    return ended;
   } finally {
     setupLockReleased(ports);
   }
@@ -344,21 +443,23 @@ interface SetupListener {
   readonly ports: SetupPorts;
   readonly opened: SetupSessionOpened;
   readonly authorize: string;
-  /** The state this sign-in sent, which only its own answer brings back. */
-  readonly state: string;
+  /** The state this sign-in sent, which only its own answer brings back, or nothing where it sent none. */
+  readonly state: string | undefined;
   readonly decide: (ended: SetupSignInEnded) => void;
   deciding: boolean;
 }
 
 /**
- * Whether a request carries the state this sign-in sent. Both are digested
- * and every octet of the two digests is compared, so how long the answer
- * takes says nothing of how nearly a guess matched.
+ * Whether a request carries the state this sign-in sent, which nothing does
+ * where it sent none. Both are digested and every octet of the two digests is
+ * compared, so how long the answer takes says nothing of how nearly a guess
+ * matched.
  */
 async function setupStateMatched(
   listener: SetupListener,
   given: string | null,
 ): Promise<boolean> {
+  if (listener.state === undefined) return false;
   const octets = new TextEncoder();
   const [sent, came] = await Promise.all([
     listener.ports.digest(octets.encode(listener.state)),
@@ -414,6 +515,7 @@ function setupListenerEnded(
     site,
     ended,
     endedAtMs: ports.nowMs(),
+    told: false,
   });
 }
 
@@ -434,7 +536,8 @@ async function setupListenerOpened(
   await opened.holder.signIn();
   const authorize = opened.authorize();
   if (authorize === undefined) return undefined;
-  const state = new URL(authorize).searchParams.get("state") ?? "";
+  const sent = new URL(authorize).searchParams.get("state");
+  const state = sent === null || sent === "" ? undefined : sent;
   let decide: (ended: SetupSignInEnded) => void = () => undefined;
   const decided = new Promise<SetupSignInEnded>((resolve) => {
     decide = resolve;
@@ -472,6 +575,7 @@ export async function setupListened(
         site,
         ended: "SiteUnusable",
         endedAtMs: ports.nowMs(),
+        told: false,
       });
       return setupEndedReport(site, "SiteUnusable");
     }

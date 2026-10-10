@@ -5,10 +5,14 @@
  * value, written `--name value` or `--name=value`, each at most once. Anything
  * else is asked wrongly, and which way is all that is kept of it, so nothing a
  * person typed is ever printed back. `listen` is the command a sign-in starts
- * for itself and no person runs.
+ * for itself and no person runs. `--workspace` and `--project` say which
+ * project a run is about where more than one could be meant; every command
+ * the program prints carries them, so the conversation holds that choice and
+ * no file does.
  */
 
 import { setupLoopbackHost } from "./setupProgram.ts";
+import { setupSayable } from "./setupText.ts";
 
 export const setupWaitSecsDefault = 90;
 export const setupWaitSecsMax = 600;
@@ -17,17 +21,33 @@ export const setupWaitSecsMax = 600;
 export const setupListenSecsDefault = 600;
 
 /** Which part of the arguments could not be read. */
-export type SetupAskFault = "Command" | "Flag" | "Site" | "WaitSecs";
+export type SetupAskFault = "Command" | "Flag" | "Site" | "WaitSecs" | "Name";
 
 /** The commands a person or an agent runs, as a report names them. */
 export type SetupCommand = "Status" | "SignIn";
 
+/** Which workspace and project a run is about, as far as its arguments named them. */
+export interface SetupAnswers {
+  readonly workspace: string | undefined;
+  readonly project: string | undefined;
+}
+
+export const setupAnswersNone: SetupAnswers = {
+  workspace: undefined,
+  project: undefined,
+};
+
 export type SetupAsked =
-  | { readonly asked: "Status"; readonly site: string | undefined }
+  | {
+      readonly asked: "Status";
+      readonly site: string | undefined;
+      readonly answers: SetupAnswers;
+    }
   | {
       readonly asked: "SignIn";
       readonly site: string | undefined;
       readonly waitSecs: number;
+      readonly answers: SetupAnswers;
     }
   | {
       readonly asked: "Listen";
@@ -45,14 +65,20 @@ const setupCommandWords = {
 
 type SetupCommandWord = keyof typeof setupCommandWords;
 
-const setupFlags = ["site", "wait-secs", "life-secs"] as const;
+const setupFlags = [
+  "site",
+  "wait-secs",
+  "life-secs",
+  "workspace",
+  "project",
+] as const;
 
 type SetupFlag = (typeof setupFlags)[number];
 
 /** The flags each command reads; one it does not read is asked wrongly. */
 const setupFlagsRead: Readonly<Record<SetupRun, readonly SetupFlag[]>> = {
-  Status: ["site"],
-  SignIn: ["site", "wait-secs"],
+  Status: ["site", "workspace", "project"],
+  SignIn: ["site", "wait-secs", "workspace", "project"],
   Listen: ["site", "life-secs"],
 };
 
@@ -114,6 +140,17 @@ function setupTokens(argv: readonly string[]): SetupTokens | SetupAskFault {
   return { command, flags };
 }
 
+/** The names the flags gave, or nothing where one is not a name a line can carry back unchanged. */
+function setupAnswersRead(
+  flags: ReadonlyMap<SetupFlag, string>,
+): SetupAnswers | undefined {
+  const workspace = flags.get("workspace");
+  const project = flags.get("project");
+  for (const name of [workspace, project])
+    if (name !== undefined && !setupSayable(name)) return undefined;
+  return { workspace, project };
+}
+
 function setupAskedOf(
   asked: SetupRun,
   flags: ReadonlyMap<SetupFlag, string>,
@@ -122,6 +159,8 @@ function setupAskedOf(
   const site = given === undefined ? undefined : setupSiteRead(given);
   if (given !== undefined && site === undefined)
     return { asked: "Wrongly", fault: "Site" };
+  const answers = setupAnswersRead(flags);
+  if (answers === undefined) return { asked: "Wrongly", fault: "Name" };
   const wait = setupSecsRead(
     flags.get("wait-secs") ?? String(setupWaitSecsDefault),
     setupWaitSecsMax,
@@ -134,9 +173,9 @@ function setupAskedOf(
     return { asked: "Wrongly", fault: "WaitSecs" };
   switch (asked) {
     case "Status":
-      return { asked, site };
+      return { asked, site, answers };
     case "SignIn":
-      return { asked, site, waitSecs: wait };
+      return { asked, site, waitSecs: wait, answers };
     case "Listen":
       return site === undefined
         ? { asked: "Wrongly", fault: "Site" }
@@ -165,6 +204,24 @@ export function setupCommandArguments(
     case "SignIn":
       return ["sign-in"];
   }
+}
+
+/** The flags that name a choice again, which `setupAsked` reads back as the same choice. */
+export function setupAnswerArguments(answers: SetupAnswers): readonly string[] {
+  return [
+    ...(answers.workspace === undefined
+      ? []
+      : ["--workspace", answers.workspace]),
+    ...(answers.project === undefined ? [] : ["--project", answers.project]),
+  ];
+}
+
+/** The choice a run's own arguments named, and none where they were asked wrongly or start a listener. */
+export function setupAnswersAsked(argv: readonly string[]): SetupAnswers {
+  const asked = setupAsked(argv);
+  return asked.asked === "Status" || asked.asked === "SignIn"
+    ? asked.answers
+    : setupAnswersNone;
 }
 
 /** The arguments a sign-in starts its listener with. */

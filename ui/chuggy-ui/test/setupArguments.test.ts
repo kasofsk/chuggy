@@ -6,6 +6,9 @@
 import { expect, test } from "vitest";
 
 import {
+  setupAnswerArguments,
+  setupAnswersAsked,
+  setupAnswersNone,
   setupAsked,
   setupCommandArguments,
   setupListenArguments,
@@ -22,11 +25,15 @@ function wrongly(fault: string) {
 }
 
 test("with no arguments the program is asked where things stand", () => {
-  expect(setupAsked([])).toEqual({ asked: "Status", site: undefined });
+  expect(setupAsked([])).toEqual({
+    asked: "Status",
+    site: undefined,
+    answers: setupAnswersNone,
+  });
 });
 
 test("a flag's value is the next argument or what follows its equals sign", () => {
-  const asked = { asked: "Status", site };
+  const asked = { asked: "Status", site, answers: setupAnswersNone };
   expect(setupAsked(["--site", site])).toEqual(asked);
   expect(setupAsked([`--site=${site}`])).toEqual(asked);
 });
@@ -37,12 +44,68 @@ test("sign-in waits ninety seconds unless told how long, and flags may come befo
     asked: "SignIn",
     site: undefined,
     waitSecs: setupWaitSecsDefault,
+    answers: setupAnswersNone,
   });
   expect(setupAsked(["--wait-secs", "5", "sign-in", "--site", site])).toEqual({
     asked: "SignIn",
     site,
     waitSecs: 5,
+    answers: setupAnswersNone,
   });
+});
+
+test("the bare command and sign-in each read a workspace and a project, either alone or both, and a listener reads neither", () => {
+  const both = { workspace: "acme", project: "widgets" };
+  const argv = ["--workspace", "acme", "--project=widgets"];
+  expect(setupAsked(argv)).toMatchObject({ asked: "Status", answers: both });
+  expect(setupAsked(["sign-in", ...argv])).toMatchObject({
+    asked: "SignIn",
+    answers: both,
+  });
+  expect(setupAsked(["--project", "widgets"])).toMatchObject({
+    answers: { workspace: undefined, project: "widgets" },
+  });
+  expect(setupAsked(["listen", "--site", site, ...argv])).toEqual(
+    wrongly("Flag"),
+  );
+});
+
+/** Names a site may hold that a shell, or this program's own grammar, could read as something else. */
+const awkward = [
+  "acme",
+  "two words",
+  "it's",
+  "--project",
+  "sign-in",
+  "a=b",
+  "$HOME",
+  "`id`",
+  "a;b",
+  "naïve",
+];
+
+test("a name is whatever one argument holds, and is read back from the arguments a report names for it", () => {
+  for (const workspace of awkward)
+    for (const project of [undefined, ...awkward]) {
+      const answers = { workspace, project };
+      const said = JSON.stringify(answers);
+      const argv = setupAnswerArguments(answers);
+      expect(setupAsked(argv), said).toMatchObject({
+        asked: "Status",
+        answers,
+      });
+      expect(setupAnswersAsked(["sign-in", ...argv]), said).toEqual(answers);
+    }
+  expect(setupAnswerArguments(setupAnswersNone)).toEqual([]);
+});
+
+test("a run asked wrongly, and a listener, carry no names", () => {
+  expect(setupAnswersAsked(["--workspace", "acme", "--verbose"])).toEqual(
+    setupAnswersNone,
+  );
+  expect(
+    setupAnswersAsked(setupListenArguments(site, setupListenSecsDefault)),
+  ).toEqual(setupAnswersNone);
 });
 
 test("a site is its origin, whatever address of it was given", () => {
@@ -79,6 +142,14 @@ test.each([
   [["--"], "Flag"],
   [["--site", "not an address"], "Site"],
   [["--site", "http://chuggy.example"], "Site"],
+  [["--workspace", ""], "Name"],
+  [["--workspace", " acme"], "Name"],
+  [["--project", "wid  gets"], "Name"],
+  [["--project", "wid\ngets"], "Name"],
+  [["--workspace", "acme", "--project", "wid\u001bgets"], "Name"],
+  [["sign-in", "--workspace", "acme\u202e"], "Name"],
+  [["--workspace", "acme", "--workspace", "acme"], "Flag"],
+  [["--workspace"], "Flag"],
   [["sign-in", "--wait-secs", "soon"], "WaitSecs"],
   [["sign-in", "--wait-secs", "-1"], "WaitSecs"],
   [["sign-in", "--wait-secs", "1.5"], "WaitSecs"],
