@@ -5,8 +5,14 @@
  * choice among the ones the reader may add a project to, and a typed name's
  * rule stands under its field before anything is typed.
  *
+ * Over the form stands the line a reader pastes into Claude Code to have this
+ * site's setup program run in their repository, in a box with the control that
+ * copies it. It is built from the console's own address alone, so it is drawn
+ * before either read has answered and does not move when one does.
+ *
  * A reader with nothing to choose is drawn an empty state where the form
- * would be, and what its page leads the form with is not drawn over it.
+ * would be, and neither the line nor what its page leads the form with is
+ * drawn over it.
  *
  * The last press's operation identity belongs to the two names it sent. A
  * press while the form holds those two repeats that creation, as after an
@@ -22,6 +28,11 @@ import type { ReactNode } from "react";
 import { apiCallerTenants, apiSiteAbilities } from "../core/accessRoutes.ts";
 import { apiCreateProject } from "../core/apiRoutes.ts";
 import { base64urlFromBytes } from "../core/base64url.ts";
+import {
+  claudeCodeLine,
+  claudeCodeLineAbout,
+  claudeCodeLineCopy,
+} from "../core/claudeCodeLine.ts";
 import { lastProjectWrite } from "../core/lastProject.ts";
 import { operationIdBytesCount } from "../core/operationFollow.ts";
 import {
@@ -52,10 +63,16 @@ import { projectsInventoryKey } from "../core/projectQueryKeys.ts";
 import { useApiPorts, usePanelCallerResource } from "./api.ts";
 import { PanelUnready } from "./DataPanel.tsx";
 import { Footer } from "./Footer.tsx";
-import { clipboardWritten, drawBytes, persistentStore } from "./ports.ts";
+import {
+  clipboardWritten,
+  currentOrigin,
+  drawBytes,
+  persistentStore,
+} from "./ports.ts";
 import { siteAbilitiesResource } from "./settings/tenantPermissionsResource.ts";
 import { TopBar } from "./shell/TopBar.tsx";
 import { Button } from "./ui/Button.tsx";
+import { CopyBox } from "./ui/CopyBox.tsx";
 import { CopyProvider } from "./ui/copyHeld.tsx";
 import { EmptyState } from "./ui/EmptyState.tsx";
 import { Input } from "./ui/Input.tsx";
@@ -274,9 +291,24 @@ function ProjectCreationForm(props: {
   );
 }
 
+/** The line for this console's own site, as wide as the form it stands over. */
+function ProjectCreationClaudeCode(): ReactNode {
+  return (
+    <div className="w-full max-w-aside">
+      <CopyBox
+        about={claudeCodeLineAbout}
+        text={claudeCodeLine(currentOrigin())}
+        copyLabel={claudeCodeLineCopy}
+        breaks="words"
+      />
+    </div>
+  );
+}
+
 /**
- * The form under what its page leads it with, starting on the workspace it is
- * given, or the empty state that stands in for both.
+ * The line and the form under what their page leads them with, the form
+ * starting on the workspace it is given, or the empty state that stands in
+ * for all of it.
  */
 export function ProjectCreation(props: {
   readonly workspace?: string | undefined;
@@ -298,6 +330,7 @@ export function ProjectCreation(props: {
   return (
     <>
       {props.lead}
+      <ProjectCreationClaudeCode />
       <ProjectCreationForm offer={offer} />
     </>
   );

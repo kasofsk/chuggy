@@ -28,6 +28,7 @@ import { projectNameRule } from "../app/core/projectCreation.ts";
 import {
   accessHolding,
   administered,
+  answerLine,
   drawn,
   joined,
   pressed,
@@ -212,9 +213,9 @@ test("choosing another workspace takes a refusal's line down and sends under a n
   await workspaceChosen("acme");
   typed("Project", "atlas");
   await pressed();
-  expect(screen.getByRole("status").textContent).toBe("Exists");
+  expect(answerLine()?.textContent).toBe("Exists");
   await workspaceChosen("northwind");
-  expect(screen.queryByRole("status")).toBeNull();
+  expect(answerLine()).toBeNull();
   await pressed();
   expect(posted.map((one) => one.body)).toStrictEqual([
     { tenant: "acme", project: "atlas" },
@@ -229,11 +230,11 @@ test("the two names an answer never came for, stood on again, show its line agai
   await workspaceChosen("acme");
   typed("Project", "atlas");
   await pressed();
-  expect(screen.getByRole("status").textContent).toBe("Unreachable");
+  expect(answerLine()?.textContent).toBe("Unreachable");
   await workspaceChosen("northwind");
-  expect(screen.queryByRole("status")).toBeNull();
+  expect(answerLine()).toBeNull();
   await workspaceChosen("acme");
-  expect(screen.getByRole("status").textContent).toBe("Unreachable");
+  expect(answerLine()?.textContent).toBe("Unreachable");
   await pressed();
   expect(posted.map((one) => one.body)).toStrictEqual([
     { tenant: "acme", project: "atlas" },
@@ -253,12 +254,12 @@ test("a press takes the last answer's line down until its own answer comes", asy
   await drawn(<ProjectCreationPage />);
   typed("Project", "atlas");
   await pressed();
-  expect(screen.getByRole("status").textContent).toBe("Exists");
+  expect(answerLine()?.textContent).toBe("Exists");
   await pressed();
-  expect(screen.queryByRole("status")).toBeNull();
+  expect(answerLine()).toBeNull();
   second.release(await refused());
   await settled();
-  expect(screen.getByRole("status").textContent).toBe("Exists");
+  expect(answerLine()?.textContent).toBe("Exists");
   expect(posted).toHaveLength(2);
 });
 
@@ -314,10 +315,10 @@ test("a read arriving again that moves where the form stands takes the unanswere
   expect(workspaceChoice().textContent).toContain("northwind");
   typed("Project", "atlas");
   await pressed();
-  expect(screen.getByRole("status").textContent).toBe("Unreachable");
+  expect(answerLine()?.textContent).toBe("Unreachable");
   await again.arrives(listing([administered("acme")]));
   expect(workspaceChoice().textContent).toContain("acme");
-  expect(screen.queryByRole("status")).toBeNull();
+  expect(answerLine()).toBeNull();
   await pressed();
   expect(again.posted.map((one) => one.body)).toStrictEqual([
     { tenant: "northwind", project: "atlas" },
