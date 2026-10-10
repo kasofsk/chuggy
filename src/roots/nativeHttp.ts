@@ -222,9 +222,10 @@ const ketoWriteUrlVariable = "CHUG_API_KETO_WRITE_URL";
 const hydraAdminUrlVariable = "CHUG_API_HYDRA_ADMIN_URL";
 const ketoTimeoutVariable = "CHUG_API_KETO_TIMEOUT_MS";
 /**
- * Where a registered pool reaches this deployment, which a redemption answers
- * so a runner's file is written whole: required wherever pools are registered,
- * the registry host only where the deployment names one of its own.
+ * Where a registered runner, a pool or a member's personal one, reaches this
+ * deployment, which a redemption answers so a runner's file is written whole:
+ * required wherever runners are registered, the registry host only where the
+ * deployment names one of its own.
  */
 const poolTokenUrlVariable = "CHUG_API_POOL_TOKEN_URL";
 const poolPlaneUrlVariable = "CHUG_API_POOL_PLANE_URL";

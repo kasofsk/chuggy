@@ -192,9 +192,9 @@ export type SessionSpend =
 
 /**
  * The route a member may spend a turn of this kind on now: a hosted one under
- * the tenant's grant, and a runner one where they have registered a runner.
- * The turn is stamped with this route, so both are asked of the resolution the
- * turn keeps.
+ * the tenant's grant, and a runner one where a runner that would take it is
+ * registered. The turn is stamped with this route, so both are asked of the
+ * resolution the turn keeps.
  */
 export async function sessionSpendRoute(
   access: ProjectAccess,

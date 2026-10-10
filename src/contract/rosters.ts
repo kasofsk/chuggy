@@ -647,7 +647,7 @@ export type ProjectArtifactUploadRefusalCode =
   (typeof projectArtifactUploadRefusalCodes)[number];
 
 /**
- * What a door answers a caller with no runner registered on the project, where
+ * What a door answers a caller with no runner that would take their turn, where
  * the turn would be offered to runners; shared for the same reason.
  */
 export const noRunnerCode = "NoRunner";

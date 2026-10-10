@@ -400,6 +400,17 @@ scheduler, which writes it at boot, and read by the API, which answers a
 project's placement from it. It has no unfinished work: the scheduler decides
 from its own routing, so a row older than the process only misreports.
 
+`project_owner_fallback` — whether one project's members' personal runners
+take the executions of tickets they wrote, under `Strict` or `Preferred`, and
+who set it. Owned by the boundary owner, which is what
+`set_project_owner_fallback` runs as; the API role writes it through that door
+alone, and it and the scheduler read it. Its key and identity are
+`(tenant, project)` and it points at `project`. It is changed by that door
+alone, which answers `Unchanged` where nothing moved; a row naming no fallback
+is a project that took them out. It has no unfinished work: the scheduler
+copies it onto an execution when it registers one, so a change moves only what
+registers after it, and a project with no row places as it did before.
+
 `project_session_placement` — where one project's threads and its lead run,
 and who set it; an inquiry runs where the lead does. Owned by the boundary
 owner, which is what `set_project_session_placement` runs as; the API role
@@ -418,6 +429,38 @@ read through `session_route`, which resolves a session's kind against it and
 published. It has no unfinished work: the resolution is read when a turn is
 admitted and stamped on it, so a newer publish moves what is admitted after
 it.
+
+`personal_runner` — one member's own runner in one tenant: its principal, the
+issuer client it is removed by, what it declares it can run, and when it
+registered and last polled for a session and for an execution. Written by the
+API role, which registers, replaces and removes it, and by the pool plane,
+which stamps its polls; the pool plane, the scheduler and the boundary owner
+read it. Its key and identity are `(tenant, owner)`, so a member holds at most
+one in a tenant, and it names no project; it points at `tenant`, and its
+principal and client id are each unique. It is changed by a registration, by a
+replacement that holds only where the row still names the client replaced, by
+a poll's stamps and by its removal; a replacement or a removal fences, in the
+same transaction, every live attempt an older registration claimed. It has no
+unfinished work: a registration is committed or it was rolled back, and a lost
+replacement writes nothing.
+
+`personal_runner_project` — a project a member's personal runner may serve.
+Written by the API role alone, for the runner's owner; the pool plane, the
+scheduler and the boundary owner read it. Its key and identity are `(tenant,
+owner, project)`, and it points at its runner and at `project` through the
+same `tenant`, so a runner serves only its own tenant's projects. It is changed
+by its owner adding and removing a project, a replacement of the runner keeps
+it, and it goes with the runner's removal. It has no unfinished work: a runner
+with no row serves nothing.
+
+`personal_runner_registration_token` — a single-use token a member mints to
+register their runner in a tenant: its digest, the minter, the capabilities it
+was minted with and its expiry. Written and read by the API role alone. Its
+identity is the digest, and it points at `tenant`. It is changed by a mint,
+which first deletes the minter's expired tokens and is refused past a bound on
+their live ones, and by a redemption, which marks it redeemed once and unmarks
+it where the registration it paid for was lost. It has no unfinished work: an
+unredeemed token expires, and the minter's next mint removes it.
 
 `repository_action` — the actions each bound repository's newest imported head
 declares, each with its name and the commit it was read at. Owned by the
