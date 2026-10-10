@@ -39,13 +39,16 @@ import {
   creationBodyFrom,
   creationBootstrapLine,
   creationBranchFieldHint,
+  creationBranchProposed,
   creationConfigurationAsked,
   creationConfigurationChosen,
   creationConfigurationLabel,
   creationFormFrom,
+  creationFormProposed,
   creationOfferOf,
   creationRepositories,
   creationRepositoryChosen,
+  creationStart,
   creationStepSentence,
   creationSubmitEffect,
   creationSubmitMotion,
@@ -56,6 +59,7 @@ import type {
   CreationField,
   CreationMotion,
   CreationOffer,
+  CreationStart,
   TicketCreationForm,
 } from "../core/ticketCreation.ts";
 import {
@@ -103,6 +107,7 @@ import { Notice } from "./ui/Notice.tsx";
 import { Picker } from "./ui/Picker.tsx";
 import { RadioGroup } from "./ui/RadioGroup.tsx";
 import { Tooltip } from "./ui/Tooltip.tsx";
+import { AddRunnerLink, useWorkRunner } from "./workRunner.tsx";
 
 import "./TicketCreation.css";
 
@@ -348,14 +353,18 @@ function BranchRow(props: {
   );
 }
 
-function Branch(props: FormEdit): ReactNode {
+/** The branch box, which an empty one draws the screen's proposal in where it
+ * has one, as the name a submit sends. */
+function Branch(
+  props: FormEdit & { readonly proposed: string | undefined },
+): ReactNode {
   const { form, onChange } = props;
   return (
     <BranchRow
       label="Branch"
       hint={creationBranchFieldHint}
       value={form.branchName}
-      placeholder="the branch name"
+      placeholder={props.proposed ?? "the branch name"}
       onChange={(branchName) => {
         onChange({ ...form, branchName });
       }}
@@ -553,6 +562,8 @@ export function CreationFields(
     readonly partial?: boolean;
     readonly repositories: readonly ProjectRepositoryResponse[];
     readonly dependenciesLocked?: boolean;
+    /** The branch a screen that proposes one sends for a box left empty. */
+    readonly branchProposed?: string | undefined;
     readonly api: CreationImagesApi;
   },
 ): ReactNode {
@@ -579,7 +590,7 @@ export function CreationFields(
           <Fault field="checks" faults={faults} />
         </>
       )}
-      <Branch form={form} onChange={onChange} />
+      <Branch form={form} onChange={onChange} proposed={props.branchProposed} />
       <Fault field="branch" faults={faults} />
       <Repository
         form={form}
@@ -804,24 +815,26 @@ function CreationDuplicateDropped(props: {
   return dropped === undefined ? null : <Notice tone="info" detail={dropped} />;
 }
 
-/**
- * The form itself, which reaches the network and the address bar through its
- * caller: the route component below owns the session and the router, and this
- * owns what one screenful of typing becomes, as fields or as YAML.
- */
-export function CreationForm(props: {
+interface CreationFormProps {
   readonly ports: ApiPorts;
   readonly partition: PartitionIdentity;
   readonly queryKey: ProjectQueryKey;
   readonly context: Extract<CreationContext, { context: "Ready" }>;
-  /** Whether a submit goes on to dispatch the ticket it makes. */
-  readonly dispatches: boolean;
+  /** What a submit goes on to once the ticket it makes is released. */
+  readonly start: CreationStart;
   readonly onCreated: (ticket: number) => void;
   /** The way to a ticket a submit found already made. */
   readonly existing: (ticket: number) => ReactNode;
   readonly onDirty?: (dirty: boolean) => void;
   readonly duplicate?: CreationDuplicate;
-}): ReactNode {
+}
+
+/**
+ * The form itself, which reaches the network and the address bar through its
+ * caller: the route component below owns the session and the router, and this
+ * owns what one screenful of typing becomes, as fields or as YAML.
+ */
+export function CreationForm(props: CreationFormProps): ReactNode {
   const [faults, setFaults] = useState<readonly CreationFault[]>([]);
   const { offers, partial, repositories: bound } = props.context;
   const repositories = useMemo(() => creationRepositories(bound), [bound]);
@@ -834,7 +847,7 @@ export function CreationForm(props: {
     queryKey: props.queryKey,
     offers,
     repositories,
-    dispatches: props.dispatches,
+    dispatches: props.start === "Starts",
     onFaults: setFaults,
     onCreated: (ticket) => {
       ticketYamlForgotten(storeKey);
@@ -853,9 +866,15 @@ export function CreationForm(props: {
         repositories={repositories}
         dependenciesLocked={false}
         assemble={(form) => creationBodyFrom(offers, form, repositories)}
+        proposed={creationFormProposed}
         storeKey={storeKey}
         submitLabel="Create ticket"
-        submitEffect={creationSubmitEffect(props.dispatches)}
+        submitEffect={creationSubmitEffect(props.start)}
+        submitStep={
+          props.start === "NoRunner" ? (
+            <AddRunnerLink partition={props.partition} />
+          ) : undefined
+        }
         busy={running.attempt.attempt === "Running"}
         onSubmit={(form) => {
           void running.submit(form);
@@ -869,13 +888,14 @@ export function CreationForm(props: {
             offers={offers}
             partial={partial}
             repositories={repositories}
+            branchProposed={creationBranchProposed(held.form)}
             api={props}
           />
         }
       />
       <CreationAttemptNote
         attempt={running.attempt}
-        motion={creationSubmitMotion(props.dispatches)}
+        motion={creationSubmitMotion(props.start)}
         existing={props.existing}
       />
     </div>
@@ -932,9 +952,9 @@ export interface CreationScreenReady {
   readonly partition: PartitionIdentity;
   readonly queryKey: ProjectQueryKey;
   readonly context: Extract<CreationContext, { context: "Ready" }>;
-  /** Whether a submit dispatches its ticket, which it does once the abilities
-   * read has come back without saying this reader may not. */
-  readonly dispatches: boolean;
+  /** What a submit goes on to, which is a start once the abilities read has
+   * come back without a no and the project's work is read to have a runner. */
+  readonly start: CreationStart;
   readonly onDirty: (dirty: boolean) => void;
   readonly onCreated: (ticket: number) => void;
   readonly existing: (ticket: number) => ReactNode;
@@ -951,7 +971,10 @@ function CreationScreenRead(props: {
   const navigate = useNavigate();
   const [dirty, setDirty] = useState(false);
   const guard = useAuthoringGuards(dirty);
-  const dispatches = useProjectAbilityRead(partition, "dispatch") === "Asked";
+  const start = creationStart(
+    useProjectAbilityRead(partition, "dispatch"),
+    useWorkRunner(partition),
+  );
   const list = creationContextList(partition);
   const queryKey = list.key;
   const state = usePanelList(list, (readPorts) =>
@@ -966,7 +989,7 @@ function CreationScreenRead(props: {
             partition,
             queryKey,
             context,
-            dispatches,
+            start,
             onDirty: setDirty,
             onCreated: (ticket) => {
               guard.release();

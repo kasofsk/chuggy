@@ -15,9 +15,11 @@ import type {
 import {
   escalationDetail,
   escalationDetailLine,
+  escalationStep,
   nativeActionKindLabel,
   revokedDependencyLine,
 } from "./codeLabels.ts";
+import type { EscalationStep } from "./codeLabels.ts";
 import { settledFigure, sinceFigure } from "./figures.ts";
 import type { Figure } from "./figures.ts";
 import { runSpanOf } from "./runTotals.ts";
@@ -43,6 +45,8 @@ export type TicketSlot =
   | {
       readonly slot: "NeedsYou";
       readonly detail: string;
+      /** The page the way past it is on, drawn beside the detail. */
+      readonly step: EscalationStep | undefined;
       readonly more: string | undefined;
     }
   | { readonly slot: "Now"; readonly running: RunningNow }
@@ -120,12 +124,18 @@ function needsYou(reads: SituationReads): TicketSlot | undefined {
   const ticket = reads.ticket;
   const blocked = revokedDependencyLine(ticket.revokedDependencies);
   if (blocked !== undefined)
-    return { slot: "NeedsYou", detail: blocked, more: undefined };
+    return {
+      slot: "NeedsYou",
+      detail: blocked,
+      step: undefined,
+      more: undefined,
+    };
   const escalation = ticket.escalation;
   if (escalation !== undefined)
     return {
       slot: "NeedsYou",
       detail: escalationDetail(escalation),
+      step: escalationStep(escalation),
       more: escalationDetailLine(escalation.kind, {
         lastSet:
           reads.ledger === undefined ? undefined : ledgerLastSet(reads.ledger),
@@ -137,6 +147,7 @@ function needsYou(reads: SituationReads): TicketSlot | undefined {
   return {
     slot: "NeedsYou",
     detail: nativeActionKindLabel(question.kind),
+    step: undefined,
     more: undefined,
   };
 }

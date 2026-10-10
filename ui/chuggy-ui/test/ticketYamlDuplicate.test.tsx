@@ -98,7 +98,7 @@ function draw(ports: ApiPorts, created: number[], from?: CreationDuplicate) {
           partial: false,
           repositories: [],
         }}
-        dispatches={false}
+        start="Waits"
         onCreated={(ticket) => created.push(ticket)}
         existing={(ticket) => <a href="/there">Ticket {ticket}</a>}
         {...(from === undefined ? {} : { duplicate: from })}

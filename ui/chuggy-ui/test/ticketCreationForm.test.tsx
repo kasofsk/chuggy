@@ -164,7 +164,7 @@ function drawOffered(
         partition={partition}
         queryKey={queryKey}
         context={{ context: "Ready", ...next }}
-        dispatches={false}
+        start="Waits"
         onCreated={(ticket) => created.push(ticket)}
         existing={(ticket) => <a href="/there">Ticket {ticket}</a>}
       />
@@ -275,7 +275,7 @@ test("each field is named by its label, and a line beside one describes it", () 
   expect(
     screen.getByRole("button", {
       name: "Create ticket",
-      description: creationSubmitEffect(false),
+      description: creationSubmitEffect("Waits"),
     }),
   ).toBeDefined();
 });
@@ -1024,6 +1024,92 @@ test("a pull request without a branch is refused before the wire sees it", () =>
   submit();
   expect(screen.getByText(/opened from a branch of its own/u)).toBeTruthy();
   expect(drafts(held.sent).length).toBe(0);
+});
+
+function branchBox(): HTMLInputElement {
+  return screen.getByRole<HTMLInputElement>("textbox", { name: "Branch" });
+}
+
+/** The words an empty branch box draws where the form proposes nothing. */
+const branchAsked = "the branch name";
+
+/** A form whose repository opens a pull request, with an intent typed. */
+function drawProposing(): Api {
+  const held = api({ state: "Succeeded" });
+  draw(held.ports, [], creationInitialization, [
+    creationBinding(chuggy, "PullRequest"),
+  ]);
+  typeIntent("ship it");
+  return held;
+}
+
+/** The box stays empty, so the proposal is drawn as what an empty box draws:
+ * the name a press sends, and the reader's to type over. */
+test("a pull request's empty branch box draws the name its title proposes, and the press sends it", async () => {
+  const held = drawProposing();
+  expect(branchBox().placeholder).toBe(branchAsked);
+  typeTitle("Fix the login page");
+  expect(branchBox().placeholder).toBe("fix-the-login-page");
+  expect(branchBox().value).toBe("");
+  submit();
+  await waitFor(() => {
+    expect(drafts(held.sent).length).toBe(1);
+  });
+  expect(briefOf(held.sent)?.["branch"]).toBe("refs/heads/fix-the-login-page");
+  expect(screen.queryByText(/opened from a branch of its own/u)).toBeNull();
+  expect(branchBox().value).toBe("");
+});
+
+test("the proposal follows the title while the box is left alone", () => {
+  drawProposing();
+  typeTitle("Fix the login page");
+  typeTitle("Fix the logout page");
+  expect(branchBox().placeholder).toBe("fix-the-logout-page");
+});
+
+test("a branch typed under a pull request is what is sent, and no title proposes over it", async () => {
+  const held = drawProposing();
+  typeTitle("Fix the login page");
+  fireEvent.change(branchBox(), { target: { value: "mine" } });
+  expect(branchBox().placeholder).toBe(branchAsked);
+  typeTitle("Fix the logout page");
+  expect(branchBox().value).toBe("mine");
+  submit();
+  await waitFor(() => {
+    expect(drafts(held.sent).length).toBe(1);
+  });
+  expect(briefOf(held.sent)?.["branch"]).toBe("refs/heads/mine");
+});
+
+test("a typed branch cleared again is an empty box, and the title proposes once more", () => {
+  drawProposing();
+  typeTitle("Fix the login page");
+  fireEvent.change(branchBox(), { target: { value: "mine" } });
+  fireEvent.change(branchBox(), { target: { value: "" } });
+  expect(branchBox().placeholder).toBe("fix-the-login-page");
+});
+
+test("a title with no name in it proposes nothing, and the refusal stands", () => {
+  const held = drawProposing();
+  typeTitle("!!!");
+  expect(branchBox().placeholder).toBe(branchAsked);
+  submit();
+  expect(screen.getByText(/opened from a branch of its own/u)).toBeTruthy();
+  expect(drafts(held.sent).length).toBe(0);
+});
+
+/** A push lands on the branch the work happened on or the default one, so an
+ * empty box there is an answer and not a name still owed. */
+test("a landing that opens no pull request proposes no branch and sends none", async () => {
+  const held = drawProposing();
+  typeTitle("Fix the login page");
+  fireEvent.click(screen.getByRole("radio", { name: "Push" }));
+  expect(branchBox().placeholder).toBe(branchAsked);
+  submit();
+  await waitFor(() => {
+    expect(drafts(held.sent).length).toBe(1);
+  });
+  expect(briefOf(held.sent)).not.toHaveProperty("branch");
 });
 
 test("a pull request without a target reaches the wire, into the default branch", async () => {

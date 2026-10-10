@@ -23,6 +23,7 @@ import {
   forgeWorkerlessAccounts,
 } from "./forgeInstallation.ts";
 import type { PanelState } from "./freshness.ts";
+import type { WorkRunner } from "./workRunner.ts";
 
 /**
  * A repository as a row names it. The address is opaque to this console, so
@@ -322,4 +323,44 @@ export function repositoryBindNote(
     case "Refused":
       return { status: outcome.status, ticketOffered: false };
   }
+}
+
+/** What a line that offers a first ticket leads to next. */
+export type RepositoryNextStep = "AddRunner" | "NewTicket";
+
+/**
+ * The step after a line that offers a first ticket: a runner first where the
+ * project's work has none to go to. It is nothing while that is unread, so the
+ * step is not drawn as one and then the other.
+ */
+export function repositoryNextStep(
+  ticketOffered: boolean,
+  runner: WorkRunner,
+): RepositoryNextStep | undefined {
+  if (!ticketOffered) return undefined;
+  switch (runner) {
+    case "Held":
+      return undefined;
+    case "NoRunner":
+      return "AddRunner";
+    case "Clear":
+      return "NewTicket";
+  }
+}
+
+/**
+ * Whether an empty roster carries Add under its line, where it is the one
+ * thing to do: an account grants repositories to add, and the line above the
+ * roster names no step to take first.
+ */
+export function repositoryAddLeads(view: {
+  readonly bindings: readonly ProjectRepositoryResponse[] | undefined;
+  readonly installations: readonly ForgeInstallationResponse[];
+  readonly line: RepositoryOffersLine | undefined;
+}): boolean {
+  return (
+    view.bindings?.length === 0 &&
+    forgePortalInstallations(view.installations).length > 0 &&
+    view.line?.step === undefined
+  );
 }

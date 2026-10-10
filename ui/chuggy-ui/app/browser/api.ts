@@ -154,12 +154,13 @@ export function usePanelResourceSettled<T>(
   kind: ProjectChangeKind,
   resource: string,
   read: PanelRead<T>,
+  polledMs?: number,
 ): { readonly state: PanelState<T>; readonly settled: boolean } {
   const ports = useApiPorts();
   const key = projectResourceKey(partition, kind, resource);
-  const query = useQuery(panelQueryOptions(ports, key, read, undefined));
+  const query = useQuery(panelQueryOptions(ports, key, read, polledMs));
   return {
-    state: panelQueryState(query, undefined),
+    state: panelQueryState(query, polledMs),
     settled: query.isFetched,
   };
 }

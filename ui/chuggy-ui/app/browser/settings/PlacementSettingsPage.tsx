@@ -64,10 +64,8 @@ import { Panel } from "../ui/Panel.tsx";
 import { RadioGroup } from "../ui/RadioGroup.tsx";
 import { SettingsSection } from "../ui/SettingsSection.tsx";
 import { Table } from "../ui/Table.tsx";
+import { executionPlacementResource } from "../workRunner.tsx";
 import { SettingsPage } from "./SettingsPage.tsx";
-
-/** No frame names this read, so the partition's own refetch is what reaches it. */
-const executionPlacementResource = "execution-placement";
 
 /** One kind's row: where it runs, what decided it, and, for a session on
  * runners, whether the runners it would run on are there. */

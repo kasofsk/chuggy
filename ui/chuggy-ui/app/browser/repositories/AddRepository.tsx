@@ -35,6 +35,7 @@ import type {
   RepositoryChoice,
   RepositoryNote,
 } from "../../core/projectRepositories.ts";
+import type { WorkRunner } from "../../core/workRunner.ts";
 import { useApiPorts, usePanelResource } from "../api.ts";
 import { PanelUnready } from "../DataPanel.tsx";
 import { drawBytes } from "../ports.ts";
@@ -42,7 +43,7 @@ import { Button } from "../ui/Button.tsx";
 import { Dialog } from "../ui/Dialog.tsx";
 import { Notice } from "../ui/Notice.tsx";
 import { SearchableRoster } from "../ui/SearchableRoster.tsx";
-import { NewTicketOffer } from "./NewTicketOffer.tsx";
+import { RepositoryNextStep } from "./RepositoryNextStep.tsx";
 
 /** No frame names either read, so the partition's own refetch is what reaches
  * them: a bind raises none, so the bindings key is invalidated by the bind. */
@@ -149,6 +150,7 @@ function AddRepositoryBody(props: {
   readonly partition: PartitionIdentity;
   readonly installations: readonly ForgeInstallationResponse[];
   readonly bound: readonly ProjectRepositoryResponse[];
+  readonly runner: WorkRunner;
 }): ReactNode {
   const partition = props.partition;
   const installations = props.installations;
@@ -182,9 +184,10 @@ function AddRepositoryBody(props: {
       ) : null}
       {binding.note === undefined ? null : (
         <Notice tone="info" inline detail={binding.note.status} role="status">
-          <NewTicketOffer
+          <RepositoryNextStep
             partition={partition}
-            offered={binding.note.ticketOffered}
+            ticketOffered={binding.note.ticketOffered}
+            runner={props.runner}
           />
         </Notice>
       )}
@@ -196,20 +199,25 @@ export function AddRepository(props: {
   readonly partition: PartitionIdentity;
   readonly installations: readonly ForgeInstallationResponse[];
   readonly bound: readonly ProjectRepositoryResponse[];
+  /** Whether the project's work has a runner to go to, which a bind's next step turns on. */
+  readonly runner: WorkRunner;
+  /** The page's own state, because the page opens this from more than its trigger. */
+  readonly open: boolean;
+  readonly onOpenChange: (open: boolean) => void;
 }): ReactNode {
-  const [open, setOpen] = useState(false);
   return (
     <Dialog
       title="Add"
       trigger="Add"
       triggerDisabled={props.installations.length === 0}
-      open={open}
-      onOpenChange={setOpen}
+      open={props.open}
+      onOpenChange={props.onOpenChange}
     >
       <AddRepositoryBody
         partition={props.partition}
         installations={props.installations}
         bound={props.bound}
+        runner={props.runner}
       />
     </Dialog>
   );

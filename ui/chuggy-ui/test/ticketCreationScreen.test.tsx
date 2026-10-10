@@ -2,8 +2,9 @@
  * The creation screen over a project's own reads, where the form suite beside
  * it is handed a context already read: what the screen does about a read that
  * came back short, about a submit the project moved under whose re-read then
- * fails, about a submit that finds its ticket already made, and about which
- * reader its abilities read says is pressing.
+ * fails, about a submit that finds its ticket already made, about which
+ * reader its abilities read says is pressing, and about whether the project's
+ * work has a runner to go to.
  */
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
@@ -26,6 +27,7 @@ import {
   abilitiesEvery,
   abilitiesOver,
   draftPanelText,
+  unanswered,
 } from "./projectAbilitiesFixture.ts";
 import {
   answer,
@@ -45,6 +47,9 @@ import {
   creationListed,
   creationPartition,
 } from "./ticketCreationFixture.ts";
+import { sessionPlacementBody } from "./sessionPlacementFixture.ts";
+import { workRunnerOver, workRunnerUnreadable } from "./workRunnerReads.ts";
+import type { WorkRunnerReads } from "./workRunnerReads.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 
 vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
@@ -287,3 +292,98 @@ test.each([
     ).toBeDefined();
   },
 );
+
+/** A reader who may dispatch, over a project whose two runner reads answer as
+ * the case says. */
+function dispatcherOver(
+  reads: WorkRunnerReads,
+): (served: typeof fetch) => typeof fetch {
+  return (served) =>
+    abilitiesOver(abilitiesEvery)(workRunnerOver(reads)(served));
+}
+
+/** The line beside Create ticket, and whether the way to a runner is drawn
+ * after it. */
+function effectDrawn(): readonly [string | null, boolean] {
+  const described = screen
+    .getByRole("button", { name: "Create ticket" })
+    .getAttribute("aria-describedby");
+  return [
+    document.getElementById(described ?? "")?.textContent ?? null,
+    screen.queryByRole("link", { name: "Add runner" }) !== null,
+  ];
+}
+
+const starting = ["Starts work", false] as const;
+const waiting = ["Released for a dispatcher to start", false] as const;
+
+const runnerReads: readonly (readonly [
+  string,
+  WorkRunnerReads,
+  readonly [string, boolean],
+])[] = [
+  [
+    "with no runner registered",
+    { runners: "Unregistered" },
+    ["No runner", true],
+  ],
+  ["with a runner that is offline", { runners: "Offline" }, starting],
+  ["with a runner that is live", { runners: "Live" }, starting],
+  [
+    "whose work is hosted, with no runner",
+    { runners: "Unregistered", work: "InCluster" },
+    starting,
+  ],
+  ["whose runners read failed", { runners: workRunnerUnreadable }, starting],
+  [
+    "whose route read failed",
+    { runners: "Unregistered", work: workRunnerUnreadable },
+    starting,
+  ],
+  ["whose runners read has not come back", { runners: unanswered }, waiting],
+  [
+    "whose route read has not come back",
+    { runners: "Unregistered", work: unanswered },
+    waiting,
+  ],
+];
+
+/**
+ * A press that starts work in a project with no runner parks the ticket it
+ * made, so the form says there is none and where one is added. It is drawn
+ * while either read is out, on the line that starts nothing.
+ */
+test.each(runnerReads)(
+  "a project %s tells a reader who may dispatch what Create ticket does",
+  async (_project, reads, drawn) => {
+    await drawCreation(() => undefined, dispatcherOver(reads));
+    expect(effectDrawn()).toStrictEqual(drawn);
+  },
+);
+
+test("the line a read was out for is the one its answer earns, once it is back", async () => {
+  const held = heldAnswer();
+  await drawCreation(
+    () => undefined,
+    dispatcherOver({ runners: () => held.answered }),
+  );
+  expect(effectDrawn()).toStrictEqual(waiting);
+  await turned(() => {
+    held.release(answer(sessionPlacementBody({ project: "Unregistered" })));
+  });
+  await settled();
+  expect(effectDrawn()).toStrictEqual(["No runner", true]);
+});
+
+/** A reader who may not dispatch starts nothing by pressing, so a runner is
+ * not what stands between the press and the work. */
+test("a reader who may not dispatch reads the same line with no runner as with one", async () => {
+  await drawCreation(
+    () => undefined,
+    (served) =>
+      abilitiesOver({ ...abilitiesEvery, dispatch: false })(
+        workRunnerOver({ runners: "Unregistered" })(served),
+      ),
+  );
+  expect(effectDrawn()).toStrictEqual(waiting);
+});
