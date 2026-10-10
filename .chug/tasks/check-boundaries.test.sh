@@ -545,6 +545,108 @@ printf '%s\n' 'import { decide } from "../core/decide.ts"' 'export const draw = 
 seal
 check "a decision may reach the contract, and what draws may reach it" 0 "$RC" "graph clean"
 
+# --- chuggy-ui's terminal program --------------------------------------------
+
+# The one directory under ui/ that Node runs: an adapter there reaches a module
+# of Node's that is on its roster, and the decision layer it is an adapter for.
+# A red here would mean the two rules between them have closed the directory.
+fixture
+mkdir -p "$R/ui/chuggy-ui/terminal" "$R/ui/chuggy-ui/app/core"
+printf '%s\n' 'export const x = 1' > "$R/src/domain/a.ts"
+printf '%s\n' 'import { x } from "../src/domain/a.ts"' 'export const y = x' > "$R/test/a.test.ts"
+printf '%s\n' 'export const decide = () => 1' > "$R/ui/chuggy-ui/app/core/decide.ts"
+printf '%s\n' 'import { readFileSync } from "node:fs"' 'import { decide } from "../app/core/decide.ts"' 'export const read = () => readFileSync(String(decide()))' > "$R/ui/chuggy-ui/terminal/ports.ts"
+seal
+check "the terminal program may reach a rostered module of Node's and the decisions" 0 "$RC" "graph clean"
+
+# The roster is closed, and a module of Node's that is not on it is refused.
+fixture
+mkdir -p "$R/ui/chuggy-ui/terminal"
+printf '%s\n' 'export const x = 1' > "$R/src/domain/a.ts"
+printf '%s\n' 'import { x } from "../src/domain/a.ts"' 'export const y = x' > "$R/test/a.test.ts"
+printf '%s\n' 'import { createConnection } from "node:net"' 'export const main = () => createConnection' > "$R/ui/chuggy-ui/terminal/main.ts"
+seal
+check "the terminal program may not reach a module of Node's off its roster" 1 "$RC" "chuggy-ui-terminal-reaches-a-closed-roster:"
+
+# The relay is in the decision layer, which the program may reach, so the only
+# edge out of terminal/ is an innocent one and only a path through the graph
+# arrives at the module. The decision layer's own rule fires here too, and this
+# case reads for the program's.
+fixture
+mkdir -p "$R/ui/chuggy-ui/terminal" "$R/ui/chuggy-ui/app/core"
+printf '%s\n' 'export const x = 1' > "$R/src/domain/a.ts"
+printf '%s\n' 'import { x } from "../src/domain/a.ts"' 'export const y = x' > "$R/test/a.test.ts"
+printf '%s\n' 'import { createConnection } from "node:net"' 'export const relay = createConnection' > "$R/ui/chuggy-ui/app/core/relay.ts"
+printf '%s\n' 'import { relay } from "../app/core/relay.ts"' 'export const main = () => relay' > "$R/ui/chuggy-ui/terminal/main.ts"
+seal
+check "the terminal program may not REACH a module of Node's off its roster through the decisions" 1 "$RC" "chuggy-ui-terminal-reaches-a-closed-roster:"
+
+# The roster names a module whole: `fs` on it does not admit a subpath of `fs`.
+fixture
+mkdir -p "$R/ui/chuggy-ui/terminal"
+printf '%s\n' 'export const x = 1' > "$R/src/domain/a.ts"
+printf '%s\n' 'import { x } from "../src/domain/a.ts"' 'export const y = x' > "$R/test/a.test.ts"
+printf '%s\n' 'import { readFile } from "node:fs/promises"' 'export const main = () => readFile' > "$R/ui/chuggy-ui/terminal/main.ts"
+seal
+check "a rostered module of Node's does not admit its subpaths" 1 "$RC" "chuggy-ui-terminal-reaches-a-closed-roster:"
+
+# The parser the contract is written in is the one package the program
+# carries. Another package the tree has installed is not on the roster for
+# being installed.
+fixture
+mkdir -p "$R/ui/chuggy-ui/terminal"
+printf '%s\n' 'export const x = 1' > "$R/src/domain/a.ts"
+printf '%s\n' 'import { x } from "../src/domain/a.ts"' 'export const y = x' > "$R/test/a.test.ts"
+printf '%s\n' 'import { parse } from "yaml"' 'export const main = () => parse' > "$R/ui/chuggy-ui/terminal/main.ts"
+seal
+check "the terminal program may not reach a package that is not the contract's parser" 1 "$RC" "chuggy-ui-terminal-reaches-a-closed-roster:"
+
+# The public contract is the one part of the server's source the program
+# carries. The rest of src/ is not admitted beside it.
+fixture
+mkdir -p "$R/ui/chuggy-ui/terminal"
+printf '%s\n' 'export const x = 1' > "$R/src/domain/a.ts"
+printf '%s\n' 'import { x } from "../src/domain/a.ts"' 'export const y = x' > "$R/test/a.test.ts"
+printf '%s\n' 'import { x } from "../../../src/domain/a.ts"' 'export const main = () => x' > "$R/ui/chuggy-ui/terminal/main.ts"
+seal
+check "the terminal program may not reach the server's source outside the contract" 1 "$RC" "chuggy-ui-terminal-reaches-a-closed-roster:"
+
+# What draws in a browser is no part of a program run in a terminal, and the
+# relay is in the decision layer for the reason the case above gives.
+fixture
+mkdir -p "$R/ui/chuggy-ui/terminal" "$R/ui/chuggy-ui/app/core" "$R/ui/chuggy-ui/app/browser"
+printf '%s\n' 'export const x = 1' > "$R/src/domain/a.ts"
+printf '%s\n' 'import { x } from "../src/domain/a.ts"' 'export const y = x' > "$R/test/a.test.ts"
+printf '%s\n' 'export const draw = () => 1' > "$R/ui/chuggy-ui/app/browser/draw.ts"
+printf '%s\n' 'import { draw } from "../browser/draw.ts"' 'export const relay = draw' > "$R/ui/chuggy-ui/app/core/relay.ts"
+printf '%s\n' 'import { relay } from "../app/core/relay.ts"' 'export const main = () => relay()' > "$R/ui/chuggy-ui/terminal/main.ts"
+seal
+check "the terminal program may not REACH the browser's layer" 1 "$RC" "chuggy-ui-terminal-reaches-a-closed-roster:"
+
+# The other direction: nothing a browser is served reaches the program, which
+# is the rule the served graph already had.
+fixture
+mkdir -p "$R/ui/chuggy-ui/terminal" "$R/ui/chuggy-ui/app/browser"
+printf '%s\n' 'export const x = 1' > "$R/src/domain/a.ts"
+printf '%s\n' 'import { x } from "../src/domain/a.ts"' 'export const y = x' > "$R/test/a.test.ts"
+printf '%s\n' 'export const nowMs = () => Date.now()' > "$R/ui/chuggy-ui/terminal/ports.ts"
+printf '%s\n' 'import { nowMs } from "../../terminal/ports.ts"' 'export const relay = nowMs' > "$R/ui/chuggy-ui/app/browser/relay.ts"
+printf '%s\n' 'import { relay } from "./relay.ts"' 'export const draw = () => relay()' > "$R/ui/chuggy-ui/app/browser/draw.ts"
+seal
+check "the served source may not REACH the terminal program" 1 "$RC" "chuggy-ui-is-what-a-browser-fetches:"
+
+# The exemption is the directory's own. A console suite that reaches a module
+# of Node's through it is judged from the suite, and is still a finding.
+fixture
+mkdir -p "$R/ui/chuggy-ui/terminal" "$R/ui/chuggy-ui/test"
+printf '%s\n' 'export const x = 1' > "$R/src/domain/a.ts"
+printf '%s\n' 'import { x } from "../src/domain/a.ts"' 'export const y = x' > "$R/test/a.test.ts"
+printf '%s\n' 'import { readFileSync } from "node:fs"' 'export const read = readFileSync' > "$R/ui/chuggy-ui/terminal/ports.ts"
+printf '%s\n' 'import { read } from "../terminal/ports.ts"' 'export const relay = read' > "$R/ui/chuggy-ui/test/relay.ts"
+printf '%s\n' 'import { relay } from "./relay.ts"' 'export const suite = () => relay' > "$R/ui/chuggy-ui/test/setup.test.ts"
+seal
+check "a console suite may not REACH a module of Node's through the terminal program" 1 "$RC" "console-reaches-no-source:"
+
 # A primitive draws and performs nothing, through a relay for the same reason:
 # the helper between the primitive and the port is what a per-import check
 # reads as innocent.

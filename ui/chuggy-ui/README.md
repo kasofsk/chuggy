@@ -47,12 +47,20 @@ builds with.
   than a query.
 - `ui/chuggy-ui/app/styles.css` — what the pages that have not moved to the
   design system still draw with; it shrinks as they move.
+- `ui/chuggy-ui/terminal/` — the setup program's entry and its Node adapters:
+  files, a lock, a listener, child processes and requests, filling the ports
+  `ui/chuggy-ui/app/core/setupPorts.ts` declares. Its decisions are in
+  `app/core/` with the console's own. `ui/chuggy-ui/terminal/built.ts` is not
+  part of the program: it is the build's last step, which starts what was
+  built.
 - `ui/chuggy-ui/test/` — the suites, run by the console's own runner.
 - `ui/chuggy-ui/config.example.json` — the shape of the runtime configuration.
 
 Those splits are rules in `.dependency-cruiser.cjs` rather than conventions: the
-served source reaches nothing else in this directory, and the decision layer
-reaches only itself, `src/contract/` and the parser that contract is written in.
+served source reaches nothing else in this directory, the decision layer
+reaches only itself, `src/contract/` and the parser that contract is written in,
+and `chuggy-ui-terminal-reaches-a-closed-roster` names every Node builtin the
+terminal program may reach beyond those.
 
 ## The contract is imported, never restated
 
@@ -86,11 +94,15 @@ scoped to a tree this directory is not in, and declines it. The root formatter
 still owns these sources — there is one formatter in this tree — and only the
 build output is in `.prettierignore`.
 
-`build` writes the bundle and then runs `scripts/check-console-policy.ts` over
-what it wrote, which holds the emitted document to the policy the web image
-serves it under: no inline script, no inline style, no other origin. What it
-decides is `scripts/console-policy.ts`, and `test/scripts/consolePolicy.test.ts`
-holds that to every finding it names.
+`build` writes the bundle, then the setup program beside it through
+`ui/chuggy-ui/vite.terminal.config.ts`, and then runs
+`scripts/check-console-policy.ts` over what it wrote, which holds the emitted
+document to the policy the web image serves it under: no inline script, no
+inline style, no other origin. What it decides is `scripts/console-policy.ts`,
+and `test/scripts/consolePolicy.test.ts` holds that to every finding it names.
+Last, `ui/chuggy-ui/terminal/built.ts` starts the setup program where the build
+left it, under an empty home, and fails the build where the file is missing or
+does not print and exit as a first run does.
 
 ## Runtime configuration
 
@@ -124,6 +136,30 @@ deploy/rig/images/build-and-import.sh chuggy-ui
 `images/chuggy-ui/nginx.conf` sends `default-src 'none'` with
 `script-src 'self'` and `style-src 'self'`, and the emitted document loads one
 script and one stylesheet from this origin and nothing else.
+
+## The setup program
+
+A second program of this workspace, which a person's coding agent fetches from
+the console's own origin and runs under Node:
+
+```sh
+curl -fsS https://<site>/chuggy-setup.mjs -o chuggy-setup.mjs
+node chuggy-setup.mjs --site https://<site>
+```
+
+It is one file with nothing to install. Every line it prints is a word from a
+closed set, a colon and its text; the last is `next:` and names the exact
+command to run after it, or says to stop. It says to stop where what comes next
+is the person's to say, as after a sign-in they declined or a page they left to
+expire, and a `rule:` line names the command to run once they have said it. It
+exits 0 where that line is to be followed, 1 where it failed and 2 where it was
+asked wrongly.
+
+Run bare it changes nothing at the site: it says whether it is signed in and
+which workspaces the person administers. `sign-in` opens the installation's
+sign-in in a browser and takes the answer on `127.0.0.1`, as the public client
+`chuggy-setup`. It remembers the site and the renewal token in the person's
+home directory and never prints the token.
 
 ## The session
 

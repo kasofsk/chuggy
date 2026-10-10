@@ -32,7 +32,11 @@ export default tseslint.config(
     files: ["**/*.ts", "**/*.tsx"],
     languageOptions: {
       parserOptions: {
-        project: ["./tsconfig.json", "./tsconfig.tools.json"],
+        project: [
+          "./tsconfig.json",
+          "./tsconfig.tools.json",
+          "./tsconfig.terminal.json",
+        ],
         tsconfigRootDir: import.meta.dirname,
       },
     },

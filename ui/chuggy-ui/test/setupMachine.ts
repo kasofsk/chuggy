@@ -1,0 +1,497 @@
+/**
+ * A whole machine and a whole installation for the setup program, with nothing
+ * real in either, so a suite runs commands against them as a person's agent
+ * would and plays the person's browser itself.
+ *
+ * The files are a map, the lock is one word, the clock moves only when a wait
+ * is waited out, and a command the program starts again is run here as a
+ * second set of ports over the same files, lock, clock and network: the
+ * listener a sign-in leaves behind is
+ * the real one, deciding beside the command that started it. The issuer hands
+ * out a new renewal token for each one it is shown and ends the whole sign-in
+ * when shown a spent one, which is what the real one does.
+ */
+
+import type { ApiFetchInit } from "../app/core/apiRequest.ts";
+import type {
+  FetchJsonInit,
+  FetchJsonResponse,
+} from "../app/core/sessionHolder.ts";
+import type {
+  SetupAnswered,
+  SetupFile,
+  SetupHeard,
+  SetupLaunched,
+  SetupPorts,
+} from "../app/core/setupPorts.ts";
+import type { SetupReport } from "../app/core/setupReport.ts";
+import { setupRun } from "../app/core/setupRun.ts";
+
+export const machineSite = "https://chuggy.example";
+export const machineIssuer = "https://auth.example";
+export const machineAudience = "https://chuggy.example/api";
+export const machineScript = "/home/person/chuggy-setup.mjs";
+export const machineDirectory = "~/.chuggy-setup";
+
+const tokenAddress = `${machineIssuer}/oauth2/token`;
+const authorizeAddress = `${machineIssuer}/oauth2/auth`;
+const workspacesAddress = `${machineSite}/access/v1/workspaces`;
+
+/** How a part of the installation answers: as it should, with a refusal, with a fault of its own, with nothing readable, or not at all. */
+export type Answering = "Answers" | "Refuses" | "Fails" | "Garbles" | "Silent";
+
+/** What becomes of a run the program starts for itself: it runs, it is gone before it says anything, it stays and says nothing, or it cannot be started. */
+export type Spawning = "Runs" | "Dies" | "Mute" | "Unstarted";
+
+export interface MachineTenant {
+  readonly tenant: string;
+  readonly roles: readonly string[];
+  readonly administer: boolean;
+}
+
+interface Timer {
+  readonly atMs: number;
+  readonly fire: () => void;
+}
+
+export interface SetupMachine {
+  /** The files by name, as the program wrote them. */
+  readonly files: Map<SetupFile, string>;
+  /** What the lock says: its holder's word, or nothing where it is free. */
+  lock: string | undefined;
+  /** Each file the program asked to have its unfinished writes removed, in order. */
+  readonly swept: SetupFile[];
+  nowMs: number;
+  /** How the site's own configuration, the issuer's discovery, its token endpoint and the API answer. */
+  site: Answering;
+  discovery: Answering;
+  token: Answering;
+  api: Answering;
+  /** Whether an exchange hands over a renewal token, which an allow page can withhold. */
+  renewable: boolean;
+  /** Whether the API takes the tokens the issuer hands out, which a site whose audience changed does not. */
+  admits: boolean;
+  tenants: readonly MachineTenant[];
+  browser: string | undefined;
+  platform: string;
+  spawning: Spawning;
+  /** What happens while a listener is closing, before it is gone. */
+  closing: () => Promise<void>;
+  /** What starting the opener answers, and what the person then does in the browser it opened. */
+  opener: SetupLaunched;
+  opened: (address: string) => Promise<void>;
+  /** Every address asked through either network port, and every body sent. */
+  readonly asked: string[];
+  readonly bodies: string[];
+  /** The arguments of each run the program started for itself, and of each command it launched. */
+  readonly detached: (readonly string[])[];
+  readonly launched: (readonly string[])[];
+  /** The processes running now, a suite's own among them; a number that names no one process is answered as running, as a system answers for a group. */
+  readonly alive: Set<number>;
+  /** Every renewal token the issuer handed out, and the one it would accept now. */
+  readonly issued: string[];
+  readonly live: () => string | undefined;
+  /** Runs one command to its report, waiting out every wait it makes. */
+  readonly command: (argv: readonly string[]) => Promise<SetupReport>;
+  /** Moves the clock, firing whatever was waiting on it. */
+  readonly advance: (ms: number) => Promise<void>;
+  /** The one listener's port, where one is listening. */
+  readonly listening: () => number | undefined;
+  /** One request of a browser's to the listener, a GET unless it says otherwise. */
+  readonly browse: (address: string, method?: string) => Promise<SetupAnswered>;
+  /** What the issuer does with an authorization address: the address it sends the browser back to. */
+  readonly authorized: (address: string, allowed: boolean) => string;
+  /** The person signing in: the listener's first page, the issuer, and back. */
+  readonly person: (allowed?: boolean) => Promise<SetupAnswered>;
+}
+
+function json(status: number, body: unknown): FetchJsonResponse {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    text: () => Promise.resolve(JSON.stringify(body)),
+  };
+}
+
+/** More timers than any command sets inside every bound the program has, so one that never ends fails a case instead of holding it. */
+const machineStepsMax = 20_000;
+
+function turn(): Promise<void> {
+  return new Promise<void>((resolve) => {
+    setTimeout(resolve, 0);
+  });
+}
+
+interface Issuer {
+  readonly codes: Map<string, string>;
+  readonly issued: string[];
+  live: string | undefined;
+  minted: number;
+  readonly access: Set<string>;
+}
+
+function issuerTokens(
+  machine: SetupMachine,
+  issuer: Issuer,
+  renewable: boolean,
+): FetchJsonResponse {
+  issuer.minted += 1;
+  const access = `access-${String(issuer.minted)}`;
+  issuer.access.add(access);
+  if (!renewable) return json(200, { access_token: access, expires_in: 600 });
+  const renewal = `renewal-${String(issuer.minted)}`;
+  issuer.live = renewal;
+  machine.issued.push(renewal);
+  return json(200, {
+    access_token: access,
+    refresh_token: renewal,
+    expires_in: 600,
+  });
+}
+
+/** The token endpoint: a code is exchanged once for the redirect it was given to, and a spent renewal token ends the chain. */
+function issuerAnswered(
+  machine: SetupMachine,
+  issuer: Issuer,
+  body: string,
+): FetchJsonResponse {
+  const form = new URLSearchParams(body);
+  if (form.get("client_id") !== "chuggy-setup")
+    return json(401, { error: "invalid_client" });
+  if (form.get("grant_type") === "authorization_code") {
+    const code = form.get("code") ?? "";
+    const redirect = issuer.codes.get(code);
+    issuer.codes.delete(code);
+    return redirect !== undefined && redirect === form.get("redirect_uri")
+      ? issuerTokens(machine, issuer, machine.renewable)
+      : json(400, { error: "invalid_grant" });
+  }
+  if (form.get("refresh_token") !== issuer.live) {
+    issuer.live = undefined;
+    issuer.access.clear();
+    return json(400, { error: "invalid_grant" });
+  }
+  return issuerTokens(machine, issuer, true);
+}
+
+function fetchJson(
+  machine: SetupMachine,
+  issuer: Issuer,
+  url: string,
+  init: FetchJsonInit,
+): Promise<FetchJsonResponse> {
+  machine.asked.push(url);
+  if (init.body !== undefined) machine.bodies.push(init.body);
+  const configuration = url.endsWith("/config.json");
+  const answering = configuration
+    ? machine.site
+    : url === tokenAddress
+      ? machine.token
+      : machine.discovery;
+  if (answering === "Silent")
+    return Promise.reject(new Error("no route to host"));
+  if (answering === "Refuses")
+    return Promise.resolve(json(url === tokenAddress ? 400 : 404, {}));
+  if (answering === "Fails") return Promise.resolve(json(500, {}));
+  if (answering === "Garbles") return Promise.resolve(json(200, {}));
+  if (configuration)
+    return Promise.resolve(
+      json(200, {
+        issuer: `${machineIssuer}/`,
+        clientId: "chuggy-web",
+        audience: machineAudience,
+        redirectUri: `${machineSite}/auth/callback`,
+        scopes: ["openid", "offline_access", "profile"],
+      }),
+    );
+  if (url === tokenAddress)
+    return Promise.resolve(issuerAnswered(machine, issuer, init.body ?? ""));
+  return Promise.resolve(
+    json(200, {
+      issuer: machineIssuer,
+      authorization_endpoint: authorizeAddress,
+      token_endpoint: tokenAddress,
+    }),
+  );
+}
+
+function apiFetch(
+  machine: SetupMachine,
+  issuer: Issuer,
+  url: string,
+  init: ApiFetchInit,
+): Promise<Response> {
+  machine.asked.push(url);
+  if (machine.api === "Silent")
+    return Promise.reject(new Error("no route to host"));
+  if (machine.api === "Refuses" || url !== workspacesAddress)
+    return Promise.resolve(
+      new Response("{}", { status: 503, headers: { "retry-after": "300" } }),
+    );
+  if (machine.api === "Fails")
+    return Promise.resolve(new Response("{}", { status: 500 }));
+  if (machine.api === "Garbles")
+    return Promise.resolve(new Response("{}", { status: 200 }));
+  const bearer = (init.headers["authorization"] ?? "").replace("Bearer ", "");
+  return Promise.resolve(
+    machine.admits && issuer.access.has(bearer)
+      ? new Response(
+          JSON.stringify({ tenants: machine.tenants, truncated: false }),
+          { status: 200 },
+        )
+      : new Response("{}", { status: 401 }),
+  );
+}
+
+interface Inner {
+  readonly machine: SetupMachine;
+  readonly issuer: Issuer;
+  readonly timers: Timer[];
+  readonly listeners: Map<
+    number,
+    (heard: SetupHeard) => Promise<SetupAnswered>
+  >;
+  pids: number;
+  drawn: number;
+}
+
+function slept(inner: Inner, ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    const timer: Timer = { atMs: inner.machine.nowMs + ms, fire: resolve };
+    inner.timers.push(timer);
+    signal?.addEventListener("abort", () => {
+      const at = inner.timers.indexOf(timer);
+      if (at >= 0) inner.timers.splice(at, 1);
+      reject(new Error("the wait was abandoned"));
+    });
+  });
+}
+
+/** Fires the earliest wait due by `untilMs`, answering whether there was one; nothing is fired once `halted` says the work being waited on is over. */
+async function fired(
+  inner: Inner,
+  untilMs: number,
+  halted: () => boolean = () => false,
+): Promise<boolean> {
+  await turn();
+  if (halted()) return false;
+  const due = inner.timers
+    .filter((timer) => timer.atMs <= untilMs)
+    .sort((left, right) => left.atMs - right.atMs)[0];
+  if (due === undefined) return false;
+  inner.timers.splice(inner.timers.indexOf(due), 1);
+  inner.machine.nowMs = Math.max(inner.machine.nowMs, due.atMs);
+  due.fire();
+  await turn();
+  return true;
+}
+
+/** The double's digest: every octet, its place and the length move the answer, and nothing waits on a clock that is not the machine's. */
+function folded(message: Uint8Array): Uint8Array {
+  const digest = new Uint8Array(32);
+  let carried = message.length + 1;
+  for (const [at, octet] of message.entries()) {
+    carried = (carried * 31 + octet + at) % 65_521;
+    const slot = at % digest.length;
+    digest[slot] = ((digest[slot] ?? 0) + carried) % 256;
+  }
+  digest[0] = ((digest[0] ?? 0) + carried) % 256;
+  return digest;
+}
+
+function filesOf(machine: SetupMachine): SetupPorts["files"] {
+  const { files } = machine;
+  return {
+    read: (file) => files.get(file),
+    write: (file, text) => {
+      files.set(file, text);
+    },
+    remove: (file) => {
+      files.delete(file);
+    },
+    sweep: (file) => {
+      machine.swept.push(file);
+    },
+  };
+}
+
+function lockOf(machine: SetupMachine): SetupPorts["lock"] {
+  return {
+    read: () => machine.lock,
+    swap: (held, next) => {
+      if (machine.lock !== held) return false;
+      machine.lock = next;
+      return true;
+    },
+  };
+}
+
+function portsOf(inner: Inner, pid: number): SetupPorts {
+  const { machine, issuer } = inner;
+  return {
+    nowMs: () => machine.nowMs,
+    sleepMs: (ms, signal) => slept(inner, ms, signal),
+    drawBytes: (count) => {
+      inner.drawn += 1;
+      return new Uint8Array(count).fill(inner.drawn);
+    },
+    digest: (message) => Promise.resolve(folded(message)),
+    fetchJson: (url, init) => fetchJson(machine, issuer, url, init),
+    apiFetch: (url, init) => apiFetch(machine, issuer, url, init),
+    files: filesOf(machine),
+    lock: lockOf(machine),
+    listen: (host, answer) => {
+      if (host !== "127.0.0.1") throw new Error(`listened on ${host}`);
+      const port = 41_000 + inner.listeners.size + pid;
+      inner.listeners.set(port, answer);
+      return Promise.resolve({
+        port,
+        close: async () => {
+          await machine.closing();
+          inner.listeners.delete(port);
+        },
+      });
+    },
+    process: {
+      pid,
+      alive: (asked) => asked <= 0 || machine.alive.has(asked),
+      detach: (argv) => {
+        machine.detached.push(argv);
+        if (machine.spawning === "Unstarted") return undefined;
+        if (machine.spawning === "Runs") return started(inner, argv).pid;
+        inner.pids += 1;
+        if (machine.spawning === "Mute") machine.alive.add(inner.pids);
+        return inner.pids;
+      },
+      launch: async (command) => {
+        machine.launched.push(command);
+        if (machine.opener.launched !== "Unstarted")
+          await machine.opened(command.at(-1) ?? "");
+        return machine.opener;
+      },
+    },
+    surroundings: {
+      platform: machine.platform,
+      browser: machine.browser,
+      directory: machineDirectory,
+    },
+  };
+}
+
+/** One run of the program as a process of its own, alive until it reports. */
+function started(
+  inner: Inner,
+  argv: readonly string[],
+): { readonly pid: number; readonly report: Promise<SetupReport> } {
+  inner.pids += 1;
+  const pid = inner.pids;
+  inner.machine.alive.add(pid);
+  const report = setupRun(portsOf(inner, pid), argv).finally(() => {
+    inner.machine.alive.delete(pid);
+  });
+  return { pid, report };
+}
+
+async function settled<T>(inner: Inner, work: Promise<T>): Promise<T> {
+  let done = false;
+  const marked = work.finally(() => {
+    done = true;
+  });
+  marked.catch(() => undefined);
+  const halted = (): boolean => done;
+  for (let step = 0; step < machineStepsMax && !done; step += 1)
+    if (!(await fired(inner, Number.POSITIVE_INFINITY, halted)) && !done)
+      throw new Error("the command waits on nothing that will ever happen");
+  if (!done) throw new Error("the command outlived every bound it has");
+  return work;
+}
+
+function authorized(issuer: Issuer, address: string, allowed: boolean): string {
+  const asked = new URL(address);
+  const redirect = asked.searchParams.get("redirect_uri") ?? "";
+  const state = asked.searchParams.get("state") ?? "";
+  if (!allowed) return `${redirect}?error=access_denied&state=${state}`;
+  const code = `code-${String(issuer.codes.size + issuer.minted + 1)}`;
+  issuer.codes.set(code, redirect);
+  return `${redirect}?code=${code}&state=${state}`;
+}
+
+function browsed(
+  inner: Inner,
+  address: string,
+  method = "GET",
+): Promise<SetupAnswered> {
+  const url = new URL(address);
+  const answer = inner.listeners.get(Number(url.port));
+  if (answer === undefined)
+    return Promise.reject(new Error(`nothing listens at ${address}`));
+  return answer({ method, path: url.pathname, search: url.search });
+}
+
+async function person(inner: Inner, allowed: boolean): Promise<SetupAnswered> {
+  const port = inner.machine.listening();
+  const first = await browsed(inner, `http://127.0.0.1:${String(port)}/`);
+  return browsed(
+    inner,
+    authorized(inner.issuer, first.location ?? "", allowed),
+  );
+}
+
+export function setupMachine(): SetupMachine {
+  const issuer: Issuer = {
+    codes: new Map(),
+    issued: [],
+    live: undefined,
+    minted: 0,
+    access: new Set(),
+  };
+  const machine: SetupMachine = {
+    files: new Map(),
+    lock: undefined,
+    swept: [],
+    nowMs: 1_000_000,
+    site: "Answers",
+    discovery: "Answers",
+    token: "Answers",
+    api: "Answers",
+    renewable: true,
+    admits: true,
+    tenants: [
+      { tenant: "acme", roles: ["Admin"], administer: true },
+      { tenant: "guest", roles: ["Member"], administer: false },
+    ],
+    browser: undefined,
+    platform: "linux",
+    spawning: "Runs",
+    closing: () => Promise.resolve(),
+    opener: { launched: "Ended", exit: 0 },
+    opened: () => Promise.resolve(),
+    asked: [],
+    bodies: [],
+    detached: [],
+    launched: [],
+    alive: new Set(),
+    issued: issuer.issued,
+    live: () => issuer.live,
+    command: (argv) => settled(inner, started(inner, argv).report),
+    advance: async (ms) => {
+      const untilMs = machine.nowMs + ms;
+      for (let step = 0; step < machineStepsMax; step += 1)
+        if (!(await fired(inner, untilMs))) break;
+      machine.nowMs = untilMs;
+    },
+    listening: () => [...inner.listeners.keys()][0],
+    browse: (address, method) => browsed(inner, address, method),
+    authorized: (address, allowed) => authorized(issuer, address, allowed),
+    person: (allowed = true) => person(inner, allowed),
+  };
+  const inner: Inner = {
+    machine,
+    issuer,
+    timers: [],
+    listeners: new Map(),
+    pids: 100,
+    drawn: 0,
+  };
+  return machine;
+}
