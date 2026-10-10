@@ -1107,18 +1107,31 @@ function nativeOperationalMethods(
     operationalStatus: authorizedProjectValue(access, (partition) =>
       operations().status(partition),
     ),
-    executions: authorizedProjectValue(access, (partition, query) =>
-      operations().executions(partition, checkedExecutionListQuery(query)),
-    ),
-    execution: authorizedProjectRead(access, (partition, execution) =>
-      operations().execution(partition, execution),
-    ),
+    executions: async (principal, partition, query) =>
+      (await access.authorize(principal, partition, "Read")) === undefined
+        ? { result: "NotFound" }
+        : {
+            result: "Authorized",
+            value: await operations().executions(
+              partition,
+              checkedExecutionListQuery(query),
+              principal,
+            ),
+          },
+    execution: async (principal, partition, execution) =>
+      (await access.authorize(principal, partition, "Read")) === undefined
+        ? undefined
+        : operations().execution(partition, execution, principal),
     outputContent: async (principal, partition, execution, ordinal) => {
       if ((await access.authorize(principal, partition, "Read")) === undefined)
         return { read: "NotFound" };
       if (!Number.isSafeInteger(ordinal) || ordinal < 1 || ordinal > 256)
         throw new RangeError("artifact ordinal is invalid");
-      const resource = await operations().execution(partition, execution);
+      const resource = await operations().execution(
+        partition,
+        execution,
+        principal,
+      );
       const artifact = resource?.result?.artifacts.find(
         (candidate) => candidate.ordinal === ordinal,
       );

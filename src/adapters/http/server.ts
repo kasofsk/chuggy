@@ -96,6 +96,7 @@ import {
   parseProjectRepositoryCreate,
   parseProjectRepositoryLanding,
   parseExecutionPlacement,
+  parseProjectOwnerFallback,
   parseSessionPlacement,
   parseProjectRepositoryRetirement,
   parseProjectRepositoryConfigure,
@@ -192,10 +193,12 @@ import {
   personalRunnerAllowedResponse,
   personalRunnerDeregisteredResponse,
   personalRunnerDisallowedResponse,
+  personalRunnerPermitResponse,
   personalRunnerRedemptionResponse,
   personalRunnerResponse,
   personalRunnerTokenResponse,
   executionPlacementBody,
+  ownerFallbackBody,
   placementReadResponse,
   placementWriteResponse,
   sessionPlacementBody,
@@ -212,6 +215,7 @@ import type { WorkerPoolRegistrationService } from "../../interpreter/workerPool
 import type { PersonalRunnerService } from "../../interpreter/personalRunnerRegistration.ts";
 import type { ExecutionPlacementAdministration } from "../../interpreter/executionPlacement.ts";
 import type { PlacementAdministration } from "../../interpreter/placementRoute.ts";
+import type { ProjectOwnerFallbackAdministration } from "../../interpreter/projectOwnerFallback.ts";
 import type { SessionPlacementAdministration } from "../../interpreter/sessionPlacement.ts";
 import type { ProjectCreation } from "../../interpreter/projectCreation.ts";
 import { sessionBearerAdmission } from "./sessionBearerScope.ts";
@@ -1258,6 +1262,14 @@ function registerPersonalRunners(
       );
     },
   );
+  app.get(nativeHttpRoutes.personalRunnerPermit, async (request, reply) => {
+    nativeHttpSend(
+      reply,
+      personalRunnerPermitResponse(
+        await runners.permitted(principalOf(request), tenantOf(request)),
+      ),
+    );
+  });
   app.get(nativeHttpRoutes.personalRunner, async (request, reply) => {
     nativeHttpSend(
       reply,
@@ -2311,14 +2323,22 @@ function registerRunners(
 
 function registerPlacements(
   app: FastifyInstance,
-  partitionRoot: string,
   placement: ExecutionPlacementAdministration | undefined,
   sessionPlacement: SessionPlacementAdministration | undefined,
+  ownerFallback: ProjectOwnerFallbackAdministration | undefined,
 ): void {
+  if (ownerFallback !== undefined)
+    registerPlacement(
+      app,
+      nativeHttpRoutes.ownerFallback,
+      ownerFallback,
+      parseProjectOwnerFallback,
+      ownerFallbackBody,
+    );
   if (placement !== undefined)
     registerPlacement(
       app,
-      `${partitionRoot}/execution-placement`,
+      nativeHttpRoutes.executionPlacement,
       placement,
       parseExecutionPlacement,
       executionPlacementBody,
@@ -2326,11 +2346,23 @@ function registerPlacements(
   if (sessionPlacement !== undefined)
     registerPlacement(
       app,
-      `${partitionRoot}/session-placement`,
+      nativeHttpRoutes.sessionPlacement,
       sessionPlacement,
       parseSessionPlacement,
       sessionPlacementBody,
     );
+}
+
+/** A tenant's forge accounts and a project's repositories, bound and configured. */
+function registerOnboarding(
+  app: FastifyInstance,
+  onboarding: RepositoryOnboarding,
+): void {
+  registerForgeInstallations(app, onboarding);
+  registerProjectRepositories(app, onboarding);
+  registerProjectRepositoryLanding(app, onboarding);
+  registerProjectRepositoryRetirement(app, onboarding);
+  registerProjectRepositoryConfigurations(app, onboarding);
 }
 
 export function createNativeHttpApp(
@@ -2353,6 +2385,7 @@ export function createNativeHttpApp(
   actionReach?: TicketActionReaches,
   landings?: TicketLandingReads,
   personalRunners?: PersonalRunnerService,
+  ownerFallback?: ProjectOwnerFallbackAdministration,
 ): FastifyInstance {
   const app = nativeHttpServer(limits);
   const partitionRoot = "/api/v1/tenants/:tenant/projects/:project";
@@ -2375,13 +2408,7 @@ export function createNativeHttpApp(
     registerSelectorProposals(app, proposalReviews);
   if (forgeCredentials !== undefined)
     registerForgeCredentials(app, forgeCredentials);
-  if (onboarding !== undefined) {
-    registerForgeInstallations(app, onboarding);
-    registerProjectRepositories(app, onboarding);
-    registerProjectRepositoryLanding(app, onboarding);
-    registerProjectRepositoryRetirement(app, onboarding);
-    registerProjectRepositoryConfigurations(app, onboarding);
-  }
+  if (onboarding !== undefined) registerOnboarding(app, onboarding);
   registerOperations(app, web);
   registerProjectArtifacts(app, web, limits.projectArtifactUploadBytesMax);
   registerNotifications(app, web);
@@ -2394,7 +2421,7 @@ export function createNativeHttpApp(
   registerLeadInquiries(app, web);
   registerDispatchView(app, web);
   registerRunners(app, partitionRoot, workerPools, personalRunners);
-  registerPlacements(app, partitionRoot, placement, sessionPlacement);
+  registerPlacements(app, placement, sessionPlacement, ownerFallback);
   if (actionReports !== undefined) registerActionReports(app, actionReports);
   if (actionReach !== undefined) registerActionReach(app, actionReach);
   if (landings !== undefined) registerTicketLandings(app, landings);

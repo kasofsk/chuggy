@@ -52,10 +52,16 @@ export interface PersonalRunnerRegistration extends PersonalRunnerKey {
   readonly principal: Principal;
 }
 
-/** One runner as its owner reads it, its allowlist in project order. */
+/**
+ * One runner as its owner reads it, its allowlist in project order: its newest
+ * poll of either kind, absent until it polls, and whether that poll is within
+ * the window a runner is held live for.
+ */
 export interface PersonalRunnerView {
   readonly capabilities: readonly string[];
   readonly registeredAt: string;
+  readonly polledAt?: string;
+  readonly live: boolean;
   readonly projects: readonly ProjectId[];
 }
 
@@ -414,6 +420,8 @@ export interface PersonalRunnerService {
     offered: PersonalRunnerRedemption,
   ): Promise<PersonalRunnerTokenRedeemed>;
   runner(principal: Principal, tenant: TenantId): Promise<PersonalRunnerRead>;
+  /** Whether the tenant permits the caller to register a runner, which is what minting asks. */
+  permitted(principal: Principal, tenant: TenantId): Promise<boolean>;
   allow(
     principal: Principal,
     tenant: TenantId,
@@ -453,6 +461,12 @@ export function personalRunnerService(input: {
         ? { result: "NotFound" }
         : { result: "Found", value: found };
     },
+    permitted: async (principal, tenant) =>
+      (await access.authorizeTenant(
+        principal,
+        tenant,
+        "RegisterPersonalRunner",
+      )) !== undefined,
     allow: (owner, tenant, project) =>
       personalRunnerProjectAllowed(
         access,

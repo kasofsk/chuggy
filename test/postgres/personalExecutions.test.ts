@@ -12,6 +12,7 @@ import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
 import { after, test } from "node:test";
 
+import { postgresOperationalReads } from "../../src/adapters/postgres/operationalReads.ts";
 import { postgresPersonalRunnerRegistry } from "../../src/adapters/postgres/personalRunner.ts";
 import { postgresProjectOwnerFallback } from "../../src/adapters/postgres/projectOwnerFallback.ts";
 import {
@@ -263,6 +264,33 @@ test("an execution is registered owned by the member who first drafted its ticke
     [{ owner: member, owner_fallback: "Strict" }],
     "a setting changed later moves no execution already registered",
   );
+});
+
+test("the API reads an execution's fallback only where its owner's runner may take it, and whether the reader owns it", async () => {
+  const member = principal("member");
+  const project = await ownedProject("owned-read", member, "Strict", 1);
+  const reads = postgresOperationalReads(apiPool);
+  const listed = async (reader: Principal) =>
+    (await reads.executions(project.partition, { limit: 10 }, reader))
+      .executions[0];
+  const inCluster = await listed(member);
+  assert.equal(inCluster?.mine, true);
+  assert.equal(
+    inCluster.ownerFallback,
+    undefined,
+    "routed in cluster, no personal runner may take it",
+  );
+  await opened(project);
+  const pooled = await listed(member);
+  assert.equal(pooled?.ownerFallback, "Strict");
+  assert.equal(pooled.mine, true);
+  const stranger = await reads.execution(
+    project.partition,
+    pooled.execution,
+    principal("stranger"),
+  );
+  assert.equal(stranger?.ownerFallback, "Strict");
+  assert.equal(stranger?.mine, false, "another reader does not own it");
 });
 
 test("an execution whose ticket was first drafted under another kind of authority is owned by nobody", async () => {

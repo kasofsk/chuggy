@@ -14,6 +14,7 @@ import {
 } from "../../src/contract/http.ts";
 import {
   personalRunnerCredentialsSchema,
+  personalRunnerPermitResponseSchema,
   personalRunnerResponseSchema,
   workerPoolCredentialsSchema,
 } from "../../src/contract/responses.ts";
@@ -88,11 +89,17 @@ function fakeRunners(calls: string[]): PersonalRunnerService {
               value: {
                 capabilities: ["linux"],
                 registeredAt: "2026-10-09T12:00:00.000Z",
+                polledAt: "2026-10-09T12:01:00.000Z",
+                live: true,
                 projects: [asProjectId("atlas")],
               },
             }
           : { result: "NotFound" },
       );
+    },
+    permitted: (principal, tenant) => {
+      calls.push(`permitted:${principal}:${tenant}`);
+      return Promise.resolve(tenant === "acme");
     },
     allow: (principal, tenant, project) => {
       calls.push(`allow:${principal}:${tenant}:${project}`);
@@ -215,6 +222,8 @@ test("a member reads their own runner, and a tenant they have none in is not fou
   assert.deepEqual(personalRunnerResponseSchema.parse(found.json()), {
     capabilities: ["linux"],
     registeredAt: "2026-10-09T12:00:00.000Z",
+    polledAt: "2026-10-09T12:01:00.000Z",
+    live: true,
     projects: ["atlas"],
   });
   assert.equal(
@@ -222,6 +231,34 @@ test("a member reads their own runner, and a tenant they have none in is not fou
     404,
   );
   assert.deepEqual(calls, [`runner:${caller}:acme`, `runner:${caller}:other`]);
+});
+
+test("a member is told whether their tenant permits them a runner, as themselves", async () => {
+  const calls: string[] = [];
+  await using app = runnersApp(calls);
+  const permit = (tenant: string) =>
+    app.inject({
+      url: nativeHttpRoutes.personalRunnerPermit.replace(":tenant", tenant),
+      headers: bearer,
+    });
+  const granted = await permit("acme");
+  assert.equal(granted.statusCode, 200);
+  assert.deepEqual(personalRunnerPermitResponseSchema.parse(granted.json()), {
+    granted: true,
+  });
+  assert.deepEqual((await permit("other")).json(), { granted: false });
+  assert.equal(
+    (
+      await app.inject({
+        url: nativeHttpRoutes.personalRunnerPermit.replace(":tenant", "acme"),
+      })
+    ).statusCode,
+    401,
+  );
+  assert.deepEqual(calls, [
+    `permitted:${caller}:acme`,
+    `permitted:${caller}:other`,
+  ]);
 });
 
 test("a project is added to and removed from the caller's own allowlist", async () => {

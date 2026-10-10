@@ -19,6 +19,7 @@ import {
   type PersonalRunnerRegistration,
 } from "../../src/interpreter/personalRunnerRegistration.ts";
 import { asPrincipal } from "../../src/interpreter/principal.ts";
+import { sessionRunnerPolledSecsMax } from "../../src/interpreter/sessionPlacement.ts";
 import {
   asTenantId,
   type Partition,
@@ -137,6 +138,42 @@ test("replacing a runner writes over the client it was read with, keeps its allo
   assert.deepEqual(read?.capabilities, ["macos"]);
   assert.deepEqual(read?.projects, [partition.project]);
   assert.equal(await runners.clientOf(key), second);
+});
+
+test("a runner is read with its newest poll of either kind, live only while that poll is inside the window", async () => {
+  const partition = await project("runner-polled");
+  const runners = postgresPersonalRunnerRegistry(api);
+  const key = { tenant: partition.tenant, owner: member };
+  await runners.register(
+    registration(key, `client-${partition.tenant}`),
+    undefined,
+  );
+  const unpolled = await runners.runner(key);
+  assert.equal(unpolled?.polledAt, undefined);
+  assert.equal(unpolled?.live, false);
+  const stamp = (column: string, secsAgo: number) =>
+    harness.query(
+      `UPDATE personal_runner
+          SET ${column}=now()-make_interval(secs=>$2::double precision)
+        WHERE tenant=$1`,
+      [partition.tenant, secsAgo],
+    );
+  await stamp("last_polled_at", sessionRunnerPolledSecsMax * 3);
+  await stamp("executions_polled_at", sessionRunnerPolledSecsMax * 2);
+  const stale = await runners.runner(key);
+  assert.equal(stale?.live, false);
+  assert.deepEqual(
+    await harness.query(
+      `SELECT abs(extract(epoch FROM executions_polled_at-$2::timestamptz))<0.001
+                AS newest
+         FROM personal_runner WHERE tenant=$1`,
+      [partition.tenant, stale?.polledAt],
+    ),
+    [{ newest: true }],
+    "the newer of the two polls is the one read",
+  );
+  await stamp("last_polled_at", 1);
+  assert.equal((await runners.runner(key))?.live, true);
 });
 
 test("deregistering deletes the row only where it names the client, and takes the allowlist with it", async () => {

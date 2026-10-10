@@ -28,6 +28,7 @@ import {
   type PersonalRunnerRegistration,
   type PersonalRunnerRegistrationTokens,
   type PersonalRunnerRegistry,
+  type PersonalRunnerView,
   type PersonalRunnerTokenTerms,
   type PersonalRunnerWritten,
 } from "../../interpreter/personalRunnerRegistration.ts";
@@ -38,6 +39,7 @@ import {
   type ProjectId,
   type TenantId,
 } from "../../interpreter/projectStore.ts";
+import { sessionRunnerPolledSecsMax } from "../../interpreter/sessionPlacement.ts";
 import type { PersonalRunnerPlaneRegistry } from "../../interpreter/workerPool.ts";
 import type { WorkerPoolTokenWritten } from "../../interpreter/workerPoolRegistrationToken.ts";
 import { postgresTransaction } from "./pool.ts";
@@ -140,6 +142,40 @@ async function personalRunnerProjectInserted(
   return "Allowed";
 }
 
+/** A member's runner, its newest poll of either kind, and the projects it serves. */
+async function personalRunnerRead(
+  pool: pg.Pool,
+  key: PersonalRunnerKey,
+): Promise<PersonalRunnerView | undefined> {
+  const found = await pool.query<{
+    capabilities: string[];
+    registered_at: Date;
+    polled_at: Date | null;
+    live: boolean | null;
+    projects: string[] | null;
+  }>(sql`SELECT r.capabilities,r.registered_at,
+      greatest(r.last_polled_at,r.executions_polled_at) AS polled_at,
+      greatest(r.last_polled_at,r.executions_polled_at)
+        > now()-make_interval(secs=>${sessionRunnerPolledSecsMax}::double precision) AS live,
+      (SELECT array_agg(a.project ORDER BY a.project)
+         FROM personal_runner_project a
+        WHERE a.tenant=r.tenant AND a.owner=r.owner) AS projects
+    FROM personal_runner r
+    WHERE r.tenant=${key.tenant} AND r.owner=${key.owner}`);
+  const row = found.rows[0];
+  return row === undefined
+    ? undefined
+    : {
+        capabilities: row.capabilities,
+        registeredAt: row.registered_at.toISOString(),
+        ...(row.polled_at === null
+          ? {}
+          : { polledAt: row.polled_at.toISOString() }),
+        live: row.live === true,
+        projects: (row.projects ?? []).map(asProjectId),
+      };
+}
+
 export function postgresPersonalRunnerRegistry(
   pool: pg.Pool,
 ): PersonalRunnerRegistry {
@@ -166,26 +202,7 @@ export function postgresPersonalRunnerRegistry(
         await personalRunnerFenced(client, key);
         return true;
       }),
-    runner: async (key) => {
-      const found = await pool.query<{
-        capabilities: string[];
-        registered_at: Date;
-        projects: string[] | null;
-      }>(sql`SELECT r.capabilities,r.registered_at,
-          (SELECT array_agg(a.project ORDER BY a.project)
-             FROM personal_runner_project a
-            WHERE a.tenant=r.tenant AND a.owner=r.owner) AS projects
-        FROM personal_runner r
-        WHERE r.tenant=${key.tenant} AND r.owner=${key.owner}`);
-      const row = found.rows[0];
-      return row === undefined
-        ? undefined
-        : {
-            capabilities: row.capabilities,
-            registeredAt: row.registered_at.toISOString(),
-            projects: (row.projects ?? []).map(asProjectId),
-          };
-    },
+    runner: (key) => personalRunnerRead(pool, key),
     allow: (key, project) =>
       postgresTransaction(pool, (client) =>
         personalRunnerProjectInserted(client, key, project),

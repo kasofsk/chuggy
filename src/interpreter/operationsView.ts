@@ -13,6 +13,8 @@ import type {
 } from "./executionScheduler.ts";
 import type { ExecutionRunResource, RunTotals } from "./runEvidence.ts";
 import { allExecutionStatuses } from "./executionScheduler.ts";
+import type { Principal } from "./principal.ts";
+import type { WorkerPoolOwnerFallback } from "./projectOwnerFallback.ts";
 import type { Partition } from "./projectStore.ts";
 import type { ConfigurationVersion } from "./repositoryConfigurationIdentity.ts";
 import type { AttemptId, ClusterId, ExecutionId } from "./schedulerIdentity.ts";
@@ -162,6 +164,14 @@ export interface ExecutionSummary {
   readonly carrier?: BriefingCarrier;
   readonly terminalAt?: PublicInstant;
   readonly runTotals?: RunTotals;
+  /**
+   * The fallback its owner's personal runner may take it under, absent where no
+   * personal runner may: routed in cluster, owned by nobody, or registered
+   * while its project named no fallback.
+   */
+  readonly ownerFallback?: WorkerPoolOwnerFallback;
+  /** Whether the reader is the member who owns it. */
+  readonly mine: boolean;
 }
 
 /**
@@ -269,10 +279,12 @@ export interface OperationalReadStore {
   executions(
     partition: Partition,
     query: ExecutionListQuery,
+    reader: Principal,
   ): Promise<ExecutionPage>;
   execution(
     partition: Partition,
     execution: ExecutionId,
+    reader: Principal,
   ): Promise<ExecutionResource | undefined>;
 }
 

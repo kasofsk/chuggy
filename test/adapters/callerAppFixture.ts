@@ -7,6 +7,7 @@ import { createNativeHttpApp } from "../../src/adapters/http/server.ts";
 import { asInstallationId } from "../../src/domain/ids.ts";
 import type { PersonalRunnerService } from "../../src/interpreter/personalRunnerRegistration.ts";
 import type { Principal } from "../../src/interpreter/principal.ts";
+import type { ProjectOwnerFallbackAdministration } from "../../src/interpreter/projectOwnerFallback.ts";
 import type { TicketActionReaches } from "../../src/interpreter/ticketActionReach.ts";
 import type { TicketLandingReads } from "../../src/interpreter/ticketLandings.ts";
 import { unservedNativeWeb } from "./threadFixtures.ts";
@@ -16,6 +17,7 @@ export interface CallerAppServices {
   readonly actionReach?: TicketActionReaches;
   readonly landings?: TicketLandingReads;
   readonly personalRunners?: PersonalRunnerService;
+  readonly ownerFallback?: ProjectOwnerFallbackAdministration;
 }
 
 /** The app serving `services`, where `Bearer valid` authenticates `caller` and any other bearer nobody. */
@@ -55,5 +57,6 @@ export function callerApp(caller: Principal, services: CallerAppServices) {
     services.actionReach,
     services.landings,
     services.personalRunners,
+    services.ownerFallback,
   );
 }

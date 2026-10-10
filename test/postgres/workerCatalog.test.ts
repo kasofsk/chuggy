@@ -42,7 +42,10 @@ import {
 } from "./schedulerHarness.ts";
 import { postgresHarnessDenial } from "./harness.ts";
 import { apiRole, schedulerRole } from "../../src/adapters/postgres/schema.ts";
+import { asPrincipal } from "../../src/interpreter/principal.ts";
 
+/** Who reads the executions; no ticket here is theirs. */
+const reader = asPrincipal("operational-reader");
 let rig: SchedulerRig;
 let scheduler: ReturnType<typeof schedulerRolePool>;
 let ingress: ReturnType<typeof schedulerIngressPool>;
@@ -180,12 +183,12 @@ test("an image labels its execution and its configuration only once catalogued",
     selection: { selection: "NonTerminal" },
   } as const;
   const worker = { name: "chuggy-worker", version: "7" };
-  const uncatalogued = await reads.executions(project.partition, query);
+  const uncatalogued = await reads.executions(project.partition, query, reader);
   assert.equal(uncatalogued.executions.length, 1);
   assert.equal(uncatalogued.executions[0]?.worker, undefined);
   assert.equal(await readyConfigurationWorker(project.partition), undefined);
   await publish([{ image: harnessImage, ...worker }]);
-  const catalogued = await reads.executions(project.partition, query);
+  const catalogued = await reads.executions(project.partition, query, reader);
   assert.deepEqual(catalogued.executions[0]?.worker, worker);
   assert.deepEqual(await readyConfigurationWorker(project.partition), worker);
 });

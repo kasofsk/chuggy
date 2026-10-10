@@ -54,6 +54,7 @@ import {
   composeForgeRepositoryMinting,
   composeNativeWeb,
   composeExecutionPlacement,
+  composeProjectOwnerFallback,
   composeProjectCreation,
   composeRepositoryOnboarding,
   composeSelectorProjectSettings,
@@ -1532,6 +1533,7 @@ async function main(): Promise<void> {
     nativeActionReach(pools, access, forge.credentials),
     nativeTicketLandings(pools, access, artifacts),
     nativePersonalRunners(pool, access),
+    composeProjectOwnerFallback(pool, access),
   );
   nativeStopping(app, pools, [hub, threadLive]);
   await app.listen({

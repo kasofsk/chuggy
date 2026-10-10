@@ -46,6 +46,7 @@ import { migration045 } from "./045-selector-attempt-revision.ts";
 import { migration046 } from "./046-personal-runner.ts";
 import { migration047 } from "./047-personal-sessions.ts";
 import { migration048 } from "./048-personal-executions.ts";
+import { migration049 } from "./049-execution-owner-read.ts";
 import type { Migration } from "../shared.ts";
 
 export const migrations: readonly Migration[] = [
@@ -97,4 +98,5 @@ export const migrations: readonly Migration[] = [
   migration046,
   migration047,
   migration048,
+  migration049,
 ];

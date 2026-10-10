@@ -156,11 +156,14 @@ import type {
   PlacementRead,
   PlacementWritten,
 } from "../../interpreter/placementRoute.ts";
+import type { ProjectOwnerFallbackView } from "../../interpreter/projectOwnerFallback.ts";
 import type { SessionPlacementView } from "../../interpreter/sessionPlacement.ts";
 import type {
   ExecutionPlacementResponse,
   PersonalRunnerCredentialsResponse,
+  PersonalRunnerPermitResponse,
   PersonalRunnerResponse,
+  ProjectOwnerFallbackResponse,
   SessionPlacementResponse,
   WorkerPoolCredentialsResponse,
   WorkerPoolsResponse,
@@ -1204,11 +1207,30 @@ export function personalRunnerResponse(
       return response(200, {
         capabilities: [...result.value.capabilities],
         registeredAt: result.value.registeredAt,
+        ...(result.value.polledAt === undefined
+          ? {}
+          : { polledAt: result.value.polledAt }),
+        live: result.value.live,
         projects: [...result.value.projects],
       } satisfies PersonalRunnerResponse);
     default:
       return assertNever(result);
   }
+}
+
+export function personalRunnerPermitResponse(
+  granted: boolean,
+): NativeHttpResponse {
+  return response(200, { granted } satisfies PersonalRunnerPermitResponse);
+}
+
+export function ownerFallbackBody(
+  view: ProjectOwnerFallbackView,
+): ProjectOwnerFallbackResponse {
+  return {
+    ...(view.fallback === undefined ? {} : { fallback: view.fallback }),
+    administers: view.administers,
+  };
 }
 
 /** An allowlist addition: made, or a runner or a readable active project that is not there, or the allowlist at its bound. */

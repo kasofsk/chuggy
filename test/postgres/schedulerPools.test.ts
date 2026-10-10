@@ -70,6 +70,8 @@ import {
   type PoolRouted,
 } from "./schedulerPoolsHarness.ts";
 
+/** Who reads the executions; no ticket here is theirs. */
+const reader = asPrincipal("operational-reader");
 const rig = await schedulerRigOpen();
 const apiPool = postgresHarnessRolePool(apiRole);
 const planePool = postgresHarnessRolePool(poolPlaneRole);
@@ -633,6 +635,7 @@ test("an execution a pool lost its one attempt of reads as relaunched never, car
   const read = await postgresOperationalReads(apiPool).execution(
     partition,
     routed.execution,
+    reader,
   );
   assert.equal(read?.outcome, "ProcessFailed");
   assert.equal(read.retriesSpent, 1);

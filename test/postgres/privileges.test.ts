@@ -1229,6 +1229,26 @@ test("the API reads a worker's artifact reservations and writes none", async () 
     );
 });
 
+test("the API reads an execution's route, owner and fallback and writes none of them", async () => {
+  assert.equal(
+    await harness.attemptAs(
+      apiRole,
+      "SELECT placement,owner,owner_fallback FROM execution",
+    ),
+    undefined,
+  );
+  for (const write of [
+    "UPDATE execution SET placement='Pool'",
+    "UPDATE execution SET owner=NULL",
+    "UPDATE execution SET owner_fallback=NULL",
+  ])
+    assert.match(
+      (await harness.attemptAs(apiRole, write)) ?? "",
+      postgresHarnessDenial("execution"),
+      write,
+    );
+});
+
 test("the binding every evidence function opens with is nobody's to call", async () => {
   for (const role of [
     apiRole,

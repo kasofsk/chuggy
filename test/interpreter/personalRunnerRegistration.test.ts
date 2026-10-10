@@ -134,6 +134,7 @@ function registry(): PersonalRunnerRegistry & {
           : ({
               capabilities: held.capabilities,
               registeredAt: "2026-10-09T00:00:00.000Z",
+              live: false,
               projects: [...held.projects].sort().map(asProjectId),
             } satisfies PersonalRunnerView),
       );
@@ -271,6 +272,19 @@ test("a member the tenant does not permit mints nothing", async () => {
   assert.equal(composed.minting.held.size, 0);
 });
 
+test("a member is told whether the tenant permits them, asked of the permit minting asks and in that tenant", async () => {
+  const asked: unknown[] = [];
+  const runners = service(permitted, { asked }).runners;
+  assert.equal(await runners.permitted(member, tenant), true);
+  assert.equal(await runners.permitted(admin, tenant), false);
+  assert.equal(await runners.permitted(member, asTenantId("elsewhere")), false);
+  assert.deepEqual(asked, [
+    ["tenant", member, tenant, "RegisterPersonalRunner"],
+    ["tenant", admin, tenant, "RegisterPersonalRunner"],
+    ["tenant", member, "elsewhere", "RegisterPersonalRunner"],
+  ]);
+});
+
 test("a mint past the lifetime bound is refused before any authority is asked", async () => {
   const asked: unknown[] = [];
   await assert.rejects(
@@ -325,6 +339,7 @@ test("registering again replaces the member's one runner and removes its old cli
     value: {
       capabilities: ["macos"],
       registeredAt: "2026-10-09T00:00:00.000Z",
+      live: false,
       projects: [project],
     },
   });
@@ -431,6 +446,7 @@ test("a project joins the allowlist only where its owner may read it, asked in t
     value: {
       capabilities: ["linux"],
       registeredAt: "2026-10-09T00:00:00.000Z",
+      live: false,
       projects: [project],
     },
   });

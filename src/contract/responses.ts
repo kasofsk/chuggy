@@ -100,6 +100,7 @@ import {
   operationStates,
   outputContentEncodings,
   outputRenderers,
+  ownerFallbacks,
   phaseRoster,
   placementRouteSources,
   placementRoutes,
@@ -605,6 +606,18 @@ export const executionSummarySchema = z.object({
   carrier: z.enum(briefingCarriers).optional(),
   terminalAt: instantSchema.optional(),
   runTotals: runTotalsSchema.optional(),
+  /**
+   * The fallback its owner's personal runner may take it under, absent where no
+   * personal runner may: routed in cluster, owned by nobody, or registered
+   * while its project named no fallback.
+   */
+  ownerFallback: z.enum(ownerFallbacks).optional(),
+  /**
+   * Whether the reader is the member who owns it, computed against the
+   * request's own principal. Optional for the deployment window, as `request`
+   * is.
+   */
+  mine: z.boolean().optional(),
 });
 export type ExecutionSummary = z.infer<typeof executionSummarySchema>;
 
@@ -1776,6 +1789,18 @@ export type SessionPlacementResponse = z.infer<
   typeof sessionPlacementResponseSchema
 >;
 
+/**
+ * Whether a project's members' personal runners serve them there, absent where
+ * they serve nobody, and whether this caller may change it.
+ */
+export const projectOwnerFallbackResponseSchema = z.strictObject({
+  fallback: z.enum(ownerFallbacks).optional(),
+  administers: z.boolean(),
+});
+export type ProjectOwnerFallbackResponse = z.infer<
+  typeof projectOwnerFallbackResponseSchema
+>;
+
 /** Whether the project's tenant grants the caller the hosted runs a thread or an inquiry spends in cluster. */
 export const hostedRunsResponseSchema = z.strictObject({
   granted: z.boolean(),
@@ -1891,14 +1916,28 @@ export type PersonalRunnerCredentialsResponse = z.infer<
   typeof personalRunnerCredentialsSchema
 >;
 
-/** A member's own runner in one tenant, and the projects it may serve in project order. */
+/**
+ * A member's own runner in one tenant, and the projects it may serve in project
+ * order. `polledAt` is its newest poll, absent until it polls, and `live`
+ * whether that poll is recent enough for the runner to be taking work.
+ */
 export const personalRunnerResponseSchema = z.strictObject({
   capabilities: z.array(z.string().min(1)),
   registeredAt: instantSchema,
+  polledAt: instantSchema.optional(),
+  live: z.boolean(),
   projects: z.array(identitySchema).max(personalRunnerProjectsMax),
 });
 export type PersonalRunnerResponse = z.infer<
   typeof personalRunnerResponseSchema
+>;
+
+/** Whether a tenant permits the caller to register a personal runner there. */
+export const personalRunnerPermitResponseSchema = z.strictObject({
+  granted: z.boolean(),
+});
+export type PersonalRunnerPermitResponse = z.infer<
+  typeof personalRunnerPermitResponseSchema
 >;
 
 /** A commit, at either width git addresses an object at. */

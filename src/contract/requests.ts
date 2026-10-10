@@ -36,6 +36,7 @@ import {
   forgeIds,
   forgeRepositoryVisibilities,
   nativeActionResolutions,
+  ownerFallbacks,
   placementRoutes,
   selectorDispatchModes,
   selectorModes,
@@ -232,6 +233,11 @@ export const executionPlacementSchema = z.strictObject({
 export const sessionPlacementSchema = z.strictObject({
   thread: z.enum(placementRoutes),
   lead: z.enum(placementRoutes),
+});
+
+/** Whether a project's members' personal runners serve them there, and under which fallback; a body naming none takes them out. */
+export const projectOwnerFallbackSchema = z.strictObject({
+  fallback: z.enum(ownerFallbacks).optional(),
 });
 
 /**
