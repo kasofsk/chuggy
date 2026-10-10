@@ -16,6 +16,7 @@ import {
   offersDispatchByHand,
   ticketOffers,
   ticketOffersAllowed,
+  ticketOffersStartable,
 } from "../app/core/ticketOffers.ts";
 import type { TicketOffers } from "../app/core/ticketOffers.ts";
 import { abilitiesEvery, abilitiesNone } from "./projectAbilitiesFixture.ts";
@@ -169,4 +170,57 @@ test("an unread offer stays unread whatever the reader may do", () => {
   expect(
     ticketOffersAllowed({ offers: "Unread" }, abilitiesNone),
   ).toStrictEqual({ offers: "Unread" });
+});
+
+const startable = ticketOffers(ready([]), pending, dispatch);
+
+/** A press that would escalate the ticket is not offered, and the line that
+ * says why stands where it was; the rest of the bar is what it was. */
+test("work with no runner to go to loses Dispatch and nothing else, and says so", () => {
+  expect(ticketOffersStartable(startable, "NoRunner")).toStrictEqual({
+    offers: {
+      offers: "Actions",
+      actions: [
+        {
+          action: "Revoke",
+          mutation: { mutation: "RevokeTicket", ticket: pending.ticket },
+        },
+      ],
+      editable: true,
+    },
+    noRunner: true,
+  });
+});
+
+/** Held is a read not yet back and Clear is a runner, work the cluster runs,
+ * or a read that failed: none of them says the press cannot run. */
+test.each(["Held", "Clear"] as const)(
+  "a runner question standing %s leaves every offer as it was",
+  (runner) => {
+    const left = ticketOffersStartable(startable, runner);
+    expect(left.offers).toBe(startable);
+    expect(left.noRunner).toBe(false);
+  },
+);
+
+/** The line stands in for a Dispatch, so where none was offered there is
+ * nothing for it to stand in for. */
+test("no runner says nothing where no Dispatch was offered", () => {
+  const undispatched = ticketOffers(ready([]), pending, undefined);
+  const refused = ticketOffersAllowed(startable, {
+    ...abilitiesEvery,
+    dispatch: false,
+  });
+  for (const offers of [undispatched, refused, { offers: "Unread" } as const]) {
+    const left = ticketOffersStartable(offers, "NoRunner");
+    expect(left.offers).toBe(offers);
+    expect(left.noRunner).toBe(false);
+  }
+});
+
+/** The words about the hand belong beside a Dispatch, so they go with it. */
+test("a Dispatch that gave way to no runner is not said to be by hand", () => {
+  const left = ticketOffersStartable(startable, "NoRunner").offers;
+  expect(offersDispatchByHand(startable, false)).toBe(true);
+  expect(offersDispatchByHand(left, false)).toBe(false);
 });

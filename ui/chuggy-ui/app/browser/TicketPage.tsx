@@ -55,6 +55,7 @@ import {
   offersDispatchByHand,
   ticketOffers,
   ticketOffersAllowed,
+  ticketOffersStartable,
 } from "../core/ticketOffers.ts";
 import type { TicketOffers } from "../core/ticketOffers.ts";
 import { ticketPageFacts } from "../core/ticketPageFacts.ts";
@@ -97,6 +98,7 @@ import {
 import { TicketSlot } from "./ticket/TicketSlot.tsx";
 import { TicketStatus } from "./ticket/TicketStatus.tsx";
 import { EmptyState } from "./ui/EmptyState.tsx";
+import { useWorkRunner } from "./workRunner.tsx";
 
 /** Everything the page has read, so each part is handed facts and not a query. */
 export interface TicketReads {
@@ -242,8 +244,12 @@ function TicketStanding(
   props: StandingProps & { readonly acting: TicketActing },
 ): ReactNode {
   const abilities = useProjectAbilities(props.partition);
+  const runner = useWorkRunner(props.partition);
   const { slot, fence, ...standing } = standingOf(props);
-  const offers = ticketOffersAllowed(standing.offers, abilities);
+  const { offers, noRunner } = ticketOffersStartable(
+    ticketOffersAllowed(standing.offers, abilities),
+    runner,
+  );
   const parked = useParkedStanding(props, fence);
   const asking = slot.slot === "NeedsYou";
   const answered = offersAnswered(offers, asking);
@@ -269,6 +275,7 @@ function TicketStanding(
             dispatchState={props.reads.dispatchState}
             resume={props.facts.resume}
             answered={answered}
+            noRunner={noRunner}
             byHand={offersDispatchByHand(
               offers,
               projectLeadPresent(props.reads.leadState),

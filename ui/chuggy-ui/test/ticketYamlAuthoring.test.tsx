@@ -131,20 +131,128 @@ function problems(): string | null {
   return screen.queryByRole("list", { name: "Problems" })?.textContent ?? null;
 }
 
-/** The text is the reader's from its first line and is what its submit shows
- * and sends, so the proposal is written into it as a branch they can read and
- * change, and the form holds it as typed from then on. */
-test("the YAML of a pull request with an empty branch box is first written with the proposal", async () => {
-  draw(api().ports);
+function toForm(): void {
+  fireEvent.click(screen.getByRole("radio", { name: "Form" }));
+}
+
+function branchBox(): HTMLInputElement {
+  return screen.getByRole<HTMLInputElement>("textbox", { name: "Branch" });
+}
+
+function intentBox(): HTMLTextAreaElement {
+  return screen.getByPlaceholderText<HTMLTextAreaElement>(
+    "what this ticket is for",
+  );
+}
+
+/** A pull request's form with an intent and this title typed and its branch
+ * box left empty, over an API that records what a submit sends. */
+function drawProposing(title: string): { readonly sent: readonly Sent[] } {
+  const held = api();
+  draw(held.ports);
   fireEvent.click(screen.getByRole("radio", { name: "Pull request" }));
-  typeTitle("Fix the login page");
+  fireEvent.change(intentBox(), { target: { value: "ship it" } });
+  typeTitle(title);
+  return held;
+}
+
+/** The brief of the draft a case's submit made, once it has been sent. */
+async function briefSent(held: {
+  readonly sent: readonly Sent[];
+}): Promise<unknown> {
+  const drafted = (): Sent | undefined =>
+    held.sent.find((one) => one.path.endsWith("/drafts"));
+  await waitFor(() => {
+    expect(drafted()).toBeDefined();
+  });
+  const body = drafted()?.body;
+  return body !== null && typeof body === "object" && "brief" in body
+    ? body.brief
+    : undefined;
+}
+
+/** The text shows the branch a press would send, so the document a reader
+ * sees is the one that is sent, by the text's own submit as by the form's. */
+test("the YAML of a pull request with an empty branch box shows the proposal, and its submit sends it", async () => {
+  const held = drawProposing("Fix the login page");
   const editor = await toYaml();
   expect(editor.value).toContain("branch: fix-the-login-page\n");
-  expect(problems()).not.toMatch(/opened from a branch of its own/u);
-  fireEvent.click(screen.getByRole("radio", { name: "Form" }));
-  expect(
-    screen.getByRole<HTMLInputElement>("textbox", { name: "Branch" }).value,
-  ).toBe("fix-the-login-page");
+  expect(problems()).toBeNull();
+  await submitAsked();
+  expect(await briefSent(held)).toMatchObject({
+    branch: "refs/heads/fix-the-login-page",
+  });
+});
+
+/** A text nobody typed in is this screen's own writing of the form, so the
+ * name it was written with stays a proposal: the box is empty, the next title
+ * proposes over it, and a landing that opens no pull request sends none. */
+test("a look at the YAML leaves the branch box empty, the proposal following the title, and a push sending no branch", async () => {
+  const held = drawProposing("Fix");
+  await toYaml();
+  toForm();
+  expect(branchBox().value).toBe("");
+  expect(branchBox().placeholder).toBe("fix");
+  typeTitle("Fix the login page");
+  expect(branchBox().value).toBe("");
+  expect(branchBox().placeholder).toBe("fix-the-login-page");
+  fireEvent.click(screen.getByRole("radio", { name: "Push" }));
+  fireEvent.click(screen.getByRole("button", { name: "Create ticket" }));
+  expect(await briefSent(held)).not.toHaveProperty("branch");
+});
+
+test("a look at the YAML leaves the form's press sending what it proposes", async () => {
+  const held = drawProposing("Fix the login page");
+  await toYaml();
+  toForm();
+  fireEvent.click(screen.getByRole("button", { name: "Create ticket" }));
+  expect(await briefSent(held)).toMatchObject({
+    branch: "refs/heads/fix-the-login-page",
+  });
+  expect(branchBox().value).toBe("");
+});
+
+/** What was typed is never dropped for being what the screen would have
+ * proposed: a name typed back to the proposal is a typed name. */
+test("a branch typed in the YAML is the reader's, a name equal to the proposal included", async () => {
+  drawProposing("Fix the login page");
+  const editor = await toYaml();
+  const written = editor.value;
+  type(editor, written.replace("branch: fix-the-login-page", "branch: mine"));
+  type(editor, written);
+  toForm();
+  expect(branchBox().value).toBe("fix-the-login-page");
+  typeTitle("Fix the logout page");
+  expect(branchBox().value).toBe("fix-the-login-page");
+});
+
+/** An edit anywhere makes the whole text the reader's: it said that branch
+ * when they changed it, and its own submit would have sent it. */
+test("a YAML edited at another key hands up the branch it was written with as typed", async () => {
+  drawProposing("Fix the login page");
+  const editor = await toYaml();
+  type(editor, editor.value.replace("ship it", "ship that"));
+  toForm();
+  expect(intentBox().value).toBe("ship that");
+  expect(branchBox().value).toBe("fix-the-login-page");
+});
+
+/** A text this browser kept was typed, in a visit before this one, so the
+ * form holds what it says from the moment the screen reopens on it. */
+test("a kept YAML is the form's as the screen reopens on it, and a discarded one gives the form back", async () => {
+  window.localStorage.setItem(storeKey, "intent: kept\n");
+  draw(api().ports);
+  await screen.findByRole("textbox", { name: "Ticket YAML" });
+  toForm();
+  expect(intentBox().value).toBe("kept");
+  cleanup();
+
+  window.localStorage.setItem(storeKey, "intent: kept\n");
+  draw(api().ports);
+  await screen.findByRole("textbox", { name: "Ticket YAML" });
+  fireEvent.click(screen.getByRole("button", { name: "Discard it" }));
+  toForm();
+  expect(intentBox().value).toBe("");
 });
 
 test("the YAML of a push is written with the empty branch its box holds", async () => {

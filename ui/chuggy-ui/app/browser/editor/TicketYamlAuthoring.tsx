@@ -3,11 +3,13 @@
  * shows what it will send before it sends it.
  *
  * The text is the author's from the first keystroke and is kept in this
- * browser as it is typed. Every text that reads as a form is handed up as
- * that form, so the form this screen switches back to is the one the text
- * last said. The editor itself is a second chunk: where it cannot load, a
- * plain text area holds the same text, and the problems are listed beneath
- * it whichever is drawn.
+ * browser as it is typed. Every text of theirs that reads as a form is handed
+ * up as that form, so the form this screen switches back to is the one the
+ * text last said. A text this screen wrote from the form is nobody's until it
+ * is typed in, and hands nothing up: a look at it leaves the form as it was.
+ * The editor itself is a second chunk: where it cannot load, a plain text
+ * area holds the same text, and the problems are listed beneath it whichever
+ * is drawn.
  *
  * It is the default export because it is loaded as a chunk of its own, the
  * YAML parser with it.
@@ -161,6 +163,7 @@ function useYamlText(props: TicketYamlAuthoringProps) {
     () => kept ?? ticketYamlOf(props.form, context),
   );
   const [restored, setRestored] = useState(kept !== undefined);
+  const [authored, setAuthored] = useState(kept !== undefined);
   const reading = useMemo(() => ticketYamlRead(text, context), [text, context]);
   const read = reading.form;
   const problems = [
@@ -174,9 +177,9 @@ function useYamlText(props: TicketYamlAuthoringProps) {
     [read, context],
   );
   useEffect(() => {
-    if (read !== undefined) handed.current.onForm(read);
+    if (authored && read !== undefined) handed.current.onForm(read);
     handed.current.onReadable(read !== undefined);
-  }, [read]);
+  }, [read, authored]);
   return {
     text,
     read,
@@ -185,6 +188,7 @@ function useYamlText(props: TicketYamlAuthoringProps) {
     restored,
     typed: (next: string): void => {
       setText(next);
+      setAuthored(true);
       ticketYamlKept(storeKey, next);
       ticketYamlImagesKept(storeKey, context.images);
     },
