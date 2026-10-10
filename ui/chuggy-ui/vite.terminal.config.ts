@@ -3,7 +3,8 @@
  * one ES module a person's Node runs with nothing installed beside it.
  *
  * It is emitted at the root of `dist/` under the name the console serves it
- * at, after the console's own build, which empties that directory. Every
+ * at, after the console's own build, which empties that directory, and
+ * `ui/chuggy-ui/terminal/built.ts` then starts it where it was written. Every
  * package is inlined and only Node's own modules stay as imports; which of
  * those the program may name is the boundary gate's roster, not this file's.
  * The syntax is held to what an older Node parses, so the program reaches its
@@ -17,9 +18,14 @@ import { setupProgramPath } from "./app/core/setupProgram.ts";
 
 const builtinPrefix = "node:";
 
+/** The module the bundler puts where one of Node's was named without its prefix, which answers nothing when called. */
+const standInModule = "__vite-browser-external";
+
 /**
- * Fails the build where the program is not one file or names an import a bare
- * Node cannot resolve, which no later step would notice before a person ran it.
+ * Fails the build where the program is not one file, keeps an import that is
+ * not one of Node's own, or carries the bundler's stand-in for one that is.
+ * Whether what was built then starts is `ui/chuggy-ui/terminal/built.ts`'s to
+ * say, which runs it.
  */
 function selfContained(): Plugin {
   return {
@@ -29,6 +35,10 @@ function selfContained(): Plugin {
       if (files.length !== 1) this.error("the setup program is not one file");
       for (const file of files) {
         if (file.type !== "chunk") continue;
+        if (file.moduleIds.some((id) => id.includes(standInModule)))
+          this.error(
+            `the setup program names a module of Node's without the ${builtinPrefix} prefix, so it carries a stand-in for it`,
+          );
         const foreign = [...file.imports, ...file.dynamicImports].filter(
           (name) => !name.startsWith(builtinPrefix),
         );

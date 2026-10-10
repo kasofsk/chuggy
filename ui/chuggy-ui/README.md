@@ -50,7 +50,9 @@ builds with.
 - `ui/chuggy-ui/terminal/` — the setup program's entry and its Node adapters:
   files, a lock, a listener, child processes and requests, filling the ports
   `ui/chuggy-ui/app/core/setupPorts.ts` declares. Its decisions are in
-  `app/core/` with the console's own.
+  `app/core/` with the console's own. `ui/chuggy-ui/terminal/built.ts` is not
+  part of the program: it is the build's last step, which starts what was
+  built.
 - `ui/chuggy-ui/test/` — the suites, run by the console's own runner.
 - `ui/chuggy-ui/config.example.json` — the shape of the runtime configuration.
 
@@ -94,10 +96,13 @@ build output is in `.prettierignore`.
 
 `build` writes the bundle, then the setup program beside it through
 `ui/chuggy-ui/vite.terminal.config.ts`, and then runs
-`scripts/check-console-policy.ts` over what it wrote, which holds the emitted document to the policy the web image
-serves it under: no inline script, no inline style, no other origin. What it
-decides is `scripts/console-policy.ts`, and `test/scripts/consolePolicy.test.ts`
-holds that to every finding it names.
+`scripts/check-console-policy.ts` over what it wrote, which holds the emitted
+document to the policy the web image serves it under: no inline script, no
+inline style, no other origin. What it decides is `scripts/console-policy.ts`,
+and `test/scripts/consolePolicy.test.ts` holds that to every finding it names.
+Last, `ui/chuggy-ui/terminal/built.ts` starts the setup program where the build
+left it, under an empty home, and fails the build where the file is missing or
+does not print and exit as a first run does.
 
 ## Runtime configuration
 
