@@ -476,6 +476,43 @@ test("a token is handed out again until its own expiry less the margin, and mint
   );
 });
 
+/** The token one mint answered, or how it was not answered. */
+function fixtureTokenOf(
+  minted: Awaited<ReturnType<ReturnType<typeof fixtureAdapter>["mint"]>>,
+): string {
+  return minted.minted === "Token" ? minted.token : minted.minted;
+}
+
+test("an unheld mint is a request of its own, holds nothing and leaves what is held", async (t) => {
+  const first = "ghs-unheld-p3o4i5";
+  const second = "ghs-unheld-u6y7t8";
+  const recorder = fixtureForge([
+    fixtureMinted({ token: first }),
+    fixtureMinted(),
+    fixtureMinted({ token: second }),
+  ]);
+  const tokens = fixtureAdapter(t, recorder);
+  const answered: string[] = [];
+  for (const unheld of [true, false, true, false])
+    answered.push(
+      fixtureTokenOf(
+        await tokens.mint(fixtureRequest(unheld ? { unheld: true } : {})),
+      ),
+    );
+  assert.deepEqual(answered, [first, fixtureToken, second, fixtureToken]);
+  assert.equal(
+    recorder.calls.length,
+    3,
+    "only the mint answered from what is held makes no request",
+  );
+  for (const call of recorder.calls)
+    assert.deepEqual(
+      JSON.parse(call.body ?? ""),
+      { repositories: ["chuggy"], permissions: { contents: "read" } },
+      "the forge is not told how a token is held",
+    );
+});
+
 test("a token held is keyed by everything it is good for", async (t) => {
   const recorder = fixtureForge([
     fixtureMinted(),
