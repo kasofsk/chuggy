@@ -18,6 +18,7 @@ import {
   ticketLandingStates,
 } from "../../../src/contract/rosters.ts";
 import { projectInventoryPagesMax } from "../app/core/apiRoutes.ts";
+import { repositoriesWorkerless } from "../app/core/projectRepositories.ts";
 import { setupLandingsMax } from "../app/core/setupReads.ts";
 import type { SetupRead } from "../app/core/setupReads.ts";
 import { setupSteps } from "../app/core/setupReport.ts";
@@ -29,6 +30,7 @@ import {
   saidAccountsUnshown,
   saidFailures,
   saidFated,
+  saidGranted,
   saidLanding,
   saidLandingSite,
   saidLandingTicket,
@@ -148,7 +150,7 @@ test("a ticket on its way is said before a draft, and a ticket that is done befo
       ],
       drafted,
     ),
-  ).toEqual(["done", "ticket 4 landed"]);
+  ).toEqual(["done", "ticket 4 is done"]);
 });
 
 test("a ticket being landed is done once a landing of it landed or opened a pull request, and waited on until then", async () => {
@@ -253,7 +255,7 @@ test("a member who administers nothing is waiting on an admin, is shown no accou
     shown,
     saidRepository,
     saidLive,
-    ["done", "ticket 1 landed"],
+    ["done", "ticket 1 is done"],
   ]);
 });
 
@@ -506,7 +508,7 @@ test("once a repository is added GitHub is held to the account that owns it, wha
         [setupSiteAccount, "worker"],
       ]),
     ),
-  ).toMatchObject({ state: "done", detail: setupSiteAccount });
+  ).toMatchObject({ state: "done", detail: saidGranted[1] });
 });
 
 test("an account is the repository's owner only by its whole name as the address writes it", async () => {
@@ -544,7 +546,133 @@ test("the owner's accounts sent only in part are done where the part shows it ho
         "Cut",
       ),
     ),
-  ).toEqual(saidOrg);
+  ).toEqual(saidGranted);
+});
+
+const both = [
+  [setupSiteAccount, "portal"],
+  [setupSiteAccount, "worker"],
+] as const;
+
+/** A site whose repository's owner holds both apps, each granted the addresses a case names, and each listing whole or cut short. */
+function granting(
+  portal: readonly string[],
+  worker: readonly string[],
+  cut: readonly ("portalGrant" | "workerGrant")[] = [],
+): SetupSite {
+  const site = owned([...personal, ...both]);
+  site.grants.set(`${setupSiteAccount}-portal`, [...portal]);
+  site.grants.set(`${setupSiteAccount}-worker`, [...worker]);
+  for (const read of cut) site.fates.set(read, "Cut");
+  return site;
+}
+
+const elsewhere = "https://github.com/acme-org/gadgets";
+
+test("with both apps on the owner's account, GitHub waits on whichever is not granted this repository, the portal app said first, and is done only where both are", async () => {
+  const github = async (site: SetupSite) => (await stood(site)).steps[2];
+  const mine = setupSiteRepositoryAddress;
+  const waiting = (app: "portal" | "worker") => ({
+    step: "github",
+    state: "waiting",
+    detail: `the ${app} app on acme-org is not granted ${repository}`,
+    lacks: { lacks: "Grant", app, account: setupSiteAccount, repository },
+  });
+  expect(await github(granting([mine], [elsewhere]))).toEqual(
+    waiting("worker"),
+  );
+  expect(await github(granting([mine, elsewhere], []))).toEqual(
+    waiting("worker"),
+  );
+  expect(await github(granting([elsewhere], [mine]))).toEqual(
+    waiting("portal"),
+  );
+  expect(await github(granting([], []))).toEqual(waiting("portal"));
+  expect(await github(granting([elsewhere, mine], [mine]))).toEqual({
+    step: "github",
+    state: "done",
+    detail: saidGranted[1],
+    lacks: undefined,
+  });
+});
+
+test("a listing cut short counts where it names the repository and leaves its half not read where it does not, since the rest may name it; it is never a grant that is missing", async () => {
+  const github = async (site: SetupSite) => (await column(site))[2];
+  const mine = [setupSiteRepositoryAddress];
+  const unread = (app: string): Said => [
+    "unread",
+    `what the ${app} app is granted on GitHub was sent only in part`,
+  ];
+  for (const cut of [
+    ["portalGrant"],
+    ["workerGrant"],
+    ["portalGrant", "workerGrant"],
+  ] as const)
+    expect(await github(granting(mine, mine, cut)), cut.join()).toEqual(
+      saidGranted,
+    );
+  expect(await github(granting([elsewhere], mine, ["portalGrant"]))).toEqual(
+    unread("portal"),
+  );
+  expect(await github(granting(mine, [elsewhere], ["workerGrant"]))).toEqual(
+    unread("worker"),
+  );
+  expect(
+    await github(granting([], [], ["portalGrant", "workerGrant"])),
+  ).toEqual(unread("portal"));
+  expect(await github(granting(mine, [], ["portalGrant"]))).toEqual([
+    "waiting",
+    `the worker app on acme-org is not granted ${repository}`,
+  ]);
+});
+
+test("the worker app is waited on exactly where the console's own decider, over the two listings as they were read, says the repository's row lacks it", async () => {
+  const mine = setupSiteRepositoryAddress;
+  const each = [false, true] as const;
+  let waited = 0;
+  for (const portalHas of each)
+    for (const workerHas of each)
+      for (const portalCut of each)
+        for (const workerCut of each) {
+          const site = granting(
+            portalHas ? [mine] : [elsewhere],
+            workerHas ? [mine] : [elsewhere],
+            [
+              ...(portalCut ? (["portalGrant"] as const) : []),
+              ...(workerCut ? (["workerGrant"] as const) : []),
+            ],
+          );
+          const reads = await siteRead(site);
+          const [portal, worker] = reads.grants.map((grant) => {
+            if (grant.listed.read !== "Got") throw new Error("not got");
+            return {
+              account: setupSiteAccount,
+              repositories: grant.listed.value,
+              truncated: !grant.listed.whole,
+            };
+          });
+          if (portal === undefined || worker === undefined)
+            throw new Error("a listing was not asked for");
+          const lacks = setupStanding(reads).steps[2]?.lacks;
+          const said = lacks?.lacks === "Grant" && lacks.app === "worker";
+          expect(said, JSON.stringify(site.grants)).toBe(
+            repositoriesWorkerless([portal], [worker]).includes(mine),
+          );
+          waited += said ? 1 : 0;
+        }
+  expect(waited).toBe(2);
+});
+
+test("a repository the forge lists under another spelling of its address is the same repository: the portal app's entry is found by what the two have in common", async () => {
+  const site = granting(
+    [setupSiteRepositoryAddress],
+    [setupSiteRepositoryAddress],
+  );
+  site.projects[0]?.repositories.splice(0, 1, {
+    repository: "https://GitHub.com/acme-org/widgets.git",
+    configured: true,
+  });
+  expect((await column(site))[2]).toEqual(saidGranted);
 });
 
 /** A site set up to a live runner whose project holds `repositories` and no other, with one account, `personal`, holding both apps. */
@@ -566,7 +694,7 @@ test("the repository GitHub is held to is the one the repository step is said of
       ]),
     ),
   ).toEqual([
-    ["done", "personal"],
+    ["done", "personal, both apps granted personal/notes"],
     ["done", "personal/notes"],
   ]);
   expect(
@@ -588,7 +716,7 @@ test("the repository GitHub is held to is the one the repository step is said of
       ]),
     ),
   ).toEqual([
-    ["done", "personal"],
+    ["done", "personal, both apps granted personal/notes"],
     ["waiting", "personal/notes is added, its configuration not read yet"],
   ]);
   expect(
@@ -674,7 +802,7 @@ test("a project whose work the cluster runs is set up with no runner, and waits 
   const hosted: Said = ["done", "the cluster runs its work"];
   expect((await column(site)).slice(4)).toEqual([
     hosted,
-    ["done", "ticket 1 landed"],
+    ["done", "ticket 1 is done"],
   ]);
   site.fates.set("placement", "Failed");
   expect((await column(site))[4]).toEqual(hosted);

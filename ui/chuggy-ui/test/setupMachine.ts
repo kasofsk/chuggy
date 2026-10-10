@@ -60,8 +60,9 @@ export interface SetupMachine {
   readonly files: Map<SetupFile, string>;
   /** What the lock says: its holder's word, or nothing where it is free. */
   lock: string | undefined;
-  /** Each file the program asked to have its unfinished writes removed, in order. */
+  /** Each file the program asked to have its unfinished writes removed, in order, and whether the machine removes them, given which ask it is. */
   readonly swept: SetupFile[];
+  sweeps: (turn: number) => boolean;
   /** Each file room was asked for, in order, and whether the machine gives it, given which ask it is. */
   readonly reserved: SetupFile[];
   room: (turn: number) => boolean;
@@ -75,8 +76,12 @@ export interface SetupMachine {
   api: Answering;
   /** Whether an exchange hands over a renewal token, which an allow page can withhold. */
   renewable: boolean;
+  /** How long the issuer says each access token it hands out is good for. */
+  accessSecs: number;
   /** Whether the API takes the tokens the issuer hands out, which a site whose audience changed does not. */
   admits: boolean;
+  /** What happens as the API is sent a request, before it answers. */
+  answering: () => void;
   /** What the site holds, which is what its reads answer. */
   world: SetupSite;
   /** What git prints of the folder's `origin`, or nothing where it has none to print. */
@@ -157,14 +162,15 @@ function issuerTokens(
   issuer.minted += 1;
   const access = `access-${String(issuer.minted)}`;
   issuer.access.add(access);
-  if (!renewable) return json(200, { access_token: access, expires_in: 600 });
+  const expires_in = machine.accessSecs;
+  if (!renewable) return json(200, { access_token: access, expires_in });
   const renewal = `renewal-${String(issuer.minted)}`;
   issuer.live = renewal;
   machine.issued.push(renewal);
   return json(200, {
     access_token: access,
     refresh_token: renewal,
-    expires_in: 600,
+    expires_in,
   });
 }
 
@@ -249,6 +255,7 @@ function apiFetch(
   machine.asked.push(url);
   machine.sent.push(`${init.method} ${url}`);
   if (machine.lock !== undefined) machine.locked.push(url);
+  machine.answering();
   const answer = url.startsWith(`${machineSite}/`)
     ? setupSiteAnswered(machine.world, url.slice(machineSite.length))
     : undefined;
@@ -326,8 +333,11 @@ export function folded(message: Uint8Array): Uint8Array {
   return digest;
 }
 
+/** What a write that was cut short leaves beside a file, as this machine names it. */
+export const machineDraftSuffix = ".draft";
+
 /** What the files throw where the machine would not write: which path, as the real ones do. */
-function unwritable(file: SetupFile): SetupMachineError {
+function unwritable(file: string): SetupMachineError {
   return new SetupMachineError({
     fault: "Unwritable",
     path: `${machineKept}/${file}`,
@@ -351,6 +361,8 @@ function filesOf(machine: SetupMachine): SetupPorts["files"] {
     },
     sweep: (file) => {
       machine.swept.push(file);
+      if (!machine.sweeps(machine.swept.length))
+        throw unwritable(`${file}${machineDraftSuffix}`);
     },
   };
 }
@@ -493,6 +505,7 @@ export function setupMachine(): SetupMachine {
     files: new Map(),
     lock: undefined,
     swept: [],
+    sweeps: () => true,
     reserved: [],
     room: () => true,
     takes: () => true,
@@ -502,7 +515,9 @@ export function setupMachine(): SetupMachine {
     token: "Answers",
     api: "Answers",
     renewable: true,
+    accessSecs: 600,
     admits: true,
+    answering: () => undefined,
     world: setupSiteAt("Workspace"),
     remote: undefined,
     browser: undefined,

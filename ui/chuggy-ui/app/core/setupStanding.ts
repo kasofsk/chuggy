@@ -9,16 +9,21 @@
  * that no list names, because the workspace or project it belongs to is not
  * there for this person; that step is to do. Two steps turn on more than
  * their own read: GitHub is held to the account that owns the project's
- * repository once one is added, since that account's worker app is what a
- * ticket's work is given its credential under, and a runner is waited on
- * only where the project's work goes to runners, which the console's own
- * decider says. Beside its few words each step that is not done carries what
- * it lacks as a member of a closed set, which is what the next thing is
- * decided from. Nothing is remembered between runs: the server is the record.
+ * repository once one is added, and to both apps there being granted that
+ * repository, since the portal app's listing is what the console offers a
+ * repository from and the worker app is what a ticket's work is given its
+ * credential under; and a runner is waited on only where the project's work
+ * goes to runners. Which repositories the worker app lacks and whether work
+ * waits on a runner are the console's own deciders, so this program and the
+ * pages do not say different things. Beside its few words each step that is
+ * not done carries what it lacks as a member of a closed set, which is what
+ * the next thing is decided from. Nothing is remembered between runs: the
+ * server is the record.
  */
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type {
+  ForgeRepositoryResponse,
   ProjectRepositoryListedResponse,
   TicketLandingResponse,
   TicketResponse,
@@ -28,15 +33,24 @@ import type { ForgeAppName } from "../../../../src/contract/rosters.ts";
 import type { ApiFailure } from "./apiRequest.ts";
 import { forgeAccountRows } from "./forgeInstallation.ts";
 import type { ForgeAccountRow } from "./forgeInstallation.ts";
-import { repositoryLabel } from "./projectRepositories.ts";
+import {
+  repositoriesWorkerless,
+  repositoryLabel,
+} from "./projectRepositories.ts";
 import { sessionRunnerShort } from "./sessionRunners.ts";
 import {
+  setupBindingMeant,
   setupLanding,
   setupPartition,
   setupProjectListed,
 } from "./setupReads.ts";
-import type { SetupChoice, SetupRead, SetupReads } from "./setupReads.ts";
-import { setupRepositoryOwner } from "./setupRemote.ts";
+import type {
+  SetupChoice,
+  SetupGrant,
+  SetupRead,
+  SetupReads,
+} from "./setupReads.ts";
+import { setupRepositoryOwner, setupRepositoryRead } from "./setupRemote.ts";
 import type { SetupRemote } from "./setupRemote.ts";
 import type {
   SetupStepName,
@@ -50,6 +64,8 @@ export type SetupReadName =
   | "inventory"
   | "settings"
   | "installations"
+  | "portalGrant"
+  | "workerGrant"
   | "repositories"
   | "work"
   | "placement"
@@ -80,6 +96,12 @@ export type SetupLack =
       readonly lacks: "App";
       readonly app: ForgeAppName;
       readonly account: string;
+    }
+  | {
+      readonly lacks: "Grant";
+      readonly app: ForgeAppName;
+      readonly account: string;
+      readonly repository: string;
     }
   | { readonly lacks: "Binding" }
   | { readonly lacks: "Configuration"; readonly repository: string }
@@ -131,6 +153,8 @@ const setupReadSubjects: Readonly<Record<SetupReadName, string>> = {
   inventory: "your projects were",
   settings: "its lead settings were",
   installations: "its GitHub accounts were",
+  portalGrant: "what the portal app is granted on GitHub was",
+  workerGrant: "what the worker app is granted on GitHub was",
   repositories: "its repositories were",
   work: "where its work runs was",
   placement: "its runners were",
@@ -312,10 +336,7 @@ type SetupMeant =
 
 function setupMeant(read: SetupReads["repositories"]): SetupMeant {
   if (read.read !== "Got") return { meant: "Unread", fate: setupFateOf(read) };
-  const added = read.value.filter((held) => held.retiredAt === undefined);
-  const binding =
-    added.find((held) => held.configured) ??
-    (read.whole ? added[0] : undefined);
+  const binding = setupBindingMeant(read);
   if (binding !== undefined) return { meant: "Repository", binding };
   return read.whole ? { meant: "None" } : { meant: "Unread", fate: setupCut };
 }
@@ -361,8 +382,77 @@ function setupGithubAny(read: SetupInstallations): SetupStep {
     : setupAppLacked(nearest.account, nearest, undefined);
 }
 
-/** Once a repository is added: done where the account that owns it holds both apps, and waiting on that account where it does not. */
+const setupGrantReads = {
+  portal: "portalGrant",
+  worker: "workerGrant",
+} as const satisfies Readonly<Record<ForgeAppName, SetupReadName>>;
+
+/** One app's listing on the owner's account, as it was got, or the step it leaves not read. */
+function setupGrantListed(
+  grants: readonly SetupGrant[],
+  app: ForgeAppName,
+): Extract<SetupGrant["listed"], { readonly read: "Got" }> | SetupStep {
+  const listed = grants.find((grant) => grant.app === app)?.listed;
+  if (listed?.read === "Got") return listed;
+  return setupUnread(
+    "github",
+    setupGrantReads[app],
+    listed === undefined ? { fate: "Unasked" } : setupFateOf(listed),
+  );
+}
+
+/** The portal app's own entry for a repository, found by what two addresses of one repository have in common. */
+function setupGrantEntry(
+  listed: readonly ForgeRepositoryResponse[],
+  repository: string,
+): ForgeRepositoryResponse | undefined {
+  const key = setupRepositoryRead(repository)?.key;
+  return key === undefined
+    ? undefined
+    : listed.find((held) => setupRepositoryRead(held.url)?.key === key);
+}
+
+/**
+ * Both apps on the owner's account, held to the one repository: done where
+ * each listing names it, waiting on the app whose whole listing does not, and
+ * not read where a listing was not got or was cut short of naming it. Which
+ * the worker app lacks is the console's decider over the two listings.
+ */
+function setupGithubGranted(
+  grants: readonly SetupGrant[],
+  owner: string,
+  address: string,
+): SetupStep {
+  const repository = repositoryLabel(address);
+  const waiting = (app: ForgeAppName): SetupStep =>
+    setupUndone(
+      "github",
+      "waiting",
+      `the ${app} app on ${owner} is not granted ${repository}`,
+      { lacks: "Grant", app, account: owner, repository },
+    );
+  const portal = setupGrantListed(grants, "portal");
+  if ("step" in portal) return portal;
+  const entry = setupGrantEntry(portal.value, address);
+  if (entry === undefined)
+    return portal.whole
+      ? waiting("portal")
+      : setupUnread("github", "portalGrant", setupCut);
+  const worker = setupGrantListed(grants, "worker");
+  if ("step" in worker) return worker;
+  const lacked = repositoriesWorkerless(
+    [{ account: owner, repositories: [entry], truncated: false }],
+    [{ account: owner, repositories: worker.value, truncated: !worker.whole }],
+  );
+  if (lacked.includes(entry.url)) return waiting("worker");
+  return worker.value.some((held) => held.url === entry.url)
+    ? setupDone("github", `${owner}, both apps granted ${repository}`)
+    : setupUnread("github", "workerGrant", setupCut);
+}
+
+/** Once a repository is added: waiting on the account that owns it where that account lacks an app, and held to what both apps are granted there where it has both. */
 function setupGithubOwned(
+  reads: SetupReads,
   read: SetupInstallations,
   binding: ProjectRepositoryListedResponse,
 ): SetupStep {
@@ -371,7 +461,8 @@ function setupGithubOwned(
   const row = forgeAccountRows(read.value).find(
     (held) => held.account === owner,
   );
-  if (setupBoth(row)) return setupDone("github", owner);
+  if (setupBoth(row))
+    return setupGithubGranted(reads.grants, owner, binding.repository);
   return read.whole
     ? setupAppLacked(owner, row, repositoryLabel(binding.repository))
     : setupUnread("github", "installations", setupCut);
@@ -391,7 +482,7 @@ function setupGithubStep(
   const meant = setupMeant(reads.repositories);
   switch (meant.meant) {
     case "Repository":
-      return setupGithubOwned(read, meant.binding);
+      return setupGithubOwned(reads, read, meant.binding);
     case "None":
       return setupGithubAny(read);
     case "Unread":
@@ -473,10 +564,10 @@ function setupProposed(landing: TicketLandingResponse): boolean {
   }
 }
 
-/** The ticket that has landed, where a read that was got shows one: a ticket that is done, or a landing that landed or whose pull request stands. */
+/** The ticket setup is done on, where a read that was got shows one, said as what was read of it: a ticket that is done, or a landing that landed or whose pull request stands. */
 function setupTicketLanded(reads: SetupReads): string | undefined {
   const [done] = reads.landed.read === "Got" ? reads.landed.value : [];
-  if (done !== undefined) return `ticket ${String(done.ticket)} landed`;
+  if (done !== undefined) return `ticket ${String(done.ticket)} is done`;
   for (const held of reads.landings) {
     if (held.landings.read !== "Got") continue;
     const ticket = `ticket ${String(held.ticket)}`;
@@ -562,28 +653,31 @@ function setupNamed(partition: PartitionIdentity): string {
   return `${partition.tenant}/${partition.project}`;
 }
 
-/** What the folder's remote came to among the projects it could have named, said whether or not it proposed one. */
+/** What the folder's remote came to among the projects it was looked for in, said of those and of no others, whether or not it proposed one. */
 function setupRemoteFound(reads: SetupReads): readonly string[] {
-  if (reads.remote === undefined) return [];
+  const proposal = reads.proposal;
+  if (reads.remote === undefined || proposal.proposal === "Unsought") return [];
   const said = `this folder's remote ${reads.remote.said}`;
-  switch (reads.proposal.proposal) {
-    case "Unsought":
-      return [];
+  const project =
+    proposal.within === undefined
+      ? "project the site shows you"
+      : `project of ${proposal.within} the site shows you`;
+  switch (proposal.proposal) {
     case "Unbound":
-      return [`${said} is added to none of your projects, so it proposes none`];
+      return [`${said} is added to no ${project}, so it proposes none`];
     case "One": {
-      const name = setupNamed(reads.proposal.partition);
+      const name = setupNamed(proposal.partition);
       return [
-        `${said} is added to ${name} and to no other project of yours, so this checklist is of ${name}: proposed and not chosen, and --workspace with --project names another`,
+        `${said} is added to ${name} and to no other ${project}, so this checklist is of ${name}: proposed and not chosen, and --workspace with --project names another`,
       ];
     }
     case "Several":
       return [
-        `${said} is added to more than one of your projects (${reads.proposal.partitions.map(setupNamed).join(", ")}), so it proposes none`,
+        `${said} is added to more than one ${project} (${proposal.partitions.map(setupNamed).join(", ")}), so it proposes none`,
       ];
     case "Unread":
       return [
-        `${said} could not be looked for in every project of yours, so it proposes none`,
+        `${said} could not be looked for in every ${project}, so it proposes none`,
       ];
   }
 }

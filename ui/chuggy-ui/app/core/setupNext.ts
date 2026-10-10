@@ -19,7 +19,10 @@ import { forgeInstallLabel } from "./forgeInstallation.ts";
 import { inviteRoutePath } from "./inviteLinks.ts";
 import { invitePageWords } from "./invitePage.ts";
 import { projectCreationPathIn } from "./projectCreation.ts";
-import { repositoryLabel } from "./projectRepositories.ts";
+import {
+  repositoryGrantLines,
+  repositoryLabel,
+} from "./projectRepositories.ts";
 import { selectorSettingsSection } from "./selectorSettingsForm.ts";
 import { settingsRoutes } from "./settingsNav.ts";
 import type { SetupAnswers } from "./setupArguments.ts";
@@ -108,11 +111,24 @@ function setupProjectMend(
   );
 }
 
+/** An app that is installed and not let into the repository: the picker draws a line for it under its list, with a link to that app's own page on the forge. */
+function setupGrantMend(
+  lack: Extract<SetupLack, { readonly lacks: "Grant" }>,
+  page: string,
+): SetupThing {
+  const line = repositoryGrantLines[lack.app];
+  return setupHand(
+    `The ${lack.app} app is installed on ${lack.account}, and GitHub does not let it into ${lack.repository}. Open ${page}, press ${setupPressed.add}, and under the list find ${line.status}. Follow the link beside it, ${line.label}, and on GitHub add ${lack.repository} to the repositories the app may reach. Tell me once it is granted.`,
+    `once the person says the ${lack.app} app is granted ${lack.repository}`,
+  );
+}
+
 function setupGithubMend(
-  lack: Extract<SetupLack, { readonly lacks: "Account" | "App" }>,
+  lack: Extract<SetupLack, { readonly lacks: "Account" | "App" | "Grant" }>,
   at: SetupAt,
 ): SetupThing {
   const page = setupPage(at, navRoutes.repositories);
+  if (lack.lacks === "Grant") return setupGrantMend(lack, page);
   if (lack.lacks === "Account")
     return setupHand(
       `Open ${page} and press ${setupPressed.connect}, then install the chuggy app on the GitHub account that owns your repository. Tell me once GitHub is connected.`,
@@ -252,6 +268,7 @@ function setupMend(
       return setupProjectMend(lack, at);
     case "Account":
     case "App":
+    case "Grant":
       return setupGithubMend(lack, at);
     case "Binding":
     case "Configuration":

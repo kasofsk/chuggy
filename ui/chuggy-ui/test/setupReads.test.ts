@@ -31,10 +31,13 @@ import {
 import type { SetupAnswers } from "../app/core/setupArguments.ts";
 import type { SetupChoice } from "../app/core/setupReads.ts";
 import {
+  setupSiteAccount,
   setupSiteAt,
+  setupSiteClaim,
   setupSiteEmpty,
   setupSiteHeld,
   setupSiteProject,
+  setupSiteWorkspace,
 } from "./setupSite.ts";
 import type { SetupSite } from "./setupSite.ts";
 import { nextOf, sitePorts, siteRead, stood } from "./setupStood.ts";
@@ -212,7 +215,7 @@ test("a remote added to exactly one of the projects it could mean proposes that 
   const reads = await siteRead(site, { remote });
   expect(reads.choice).toEqual(made("Remote", "acme", "gadgets"));
   expect((await stood(site, { remote })).found).toEqual([
-    `${said} is added to acme/gadgets and to no other project of yours, so this checklist is of acme/gadgets: proposed and not chosen, and --workspace with --project names another`,
+    `${said} is added to acme/gadgets and to no other project of acme the site shows you, so this checklist is of acme/gadgets: proposed and not chosen, and --workspace with --project names another`,
   ]);
   expect((await nextOf(site, { remote })).carried).toEqual({
     workspace: "acme",
@@ -235,12 +238,41 @@ test("a remote proposes across workspaces, and within the one named", async () =
   );
 });
 
+test("what a remote came to is said of the projects it was looked for in and of no others: those of the one workspace named, or every one the site shows", async () => {
+  const found = async (site: SetupSite, asking: Asking) =>
+    (await stood(site, asking)).found;
+  const named = { remote, answers: { workspace: "globex" } };
+  const elsewhere = bound(both, spread, ["acme/widgets"]);
+  expect(await found(elsewhere, named)).toEqual([
+    `${said} is added to no project of globex the site shows you, so it proposes none`,
+  ]);
+  expect(await found(bound(both, spread, []), { remote })).toEqual([
+    `${said} is added to no project the site shows you, so it proposes none`,
+  ]);
+  const one = bound(both, spread, ["globex/turbines"]);
+  expect(await found(one, { remote })).toEqual([
+    `${said} is added to globex/turbines and to no other project the site shows you, so this checklist is of globex/turbines: proposed and not chosen, and --workspace with --project names another`,
+  ]);
+  expect(await found(one, named)).toEqual([
+    `${said} is added to globex/turbines and to no other project of globex the site shows you, so this checklist is of globex/turbines: proposed and not chosen, and --workspace with --project names another`,
+  ]);
+  const two = bound(both, spread, ["acme/widgets", "globex/widgets"]);
+  expect(await found(two, { remote })).toEqual([
+    `${said} is added to more than one project the site shows you (acme/widgets, globex/widgets), so it proposes none`,
+  ]);
+  const unread = bound(both, spread, []);
+  unread.fates.set("repositories", "Failed");
+  expect(await found(unread, { remote })).toEqual([
+    `${said} could not be looked for in every project the site shows you, so it proposes none`,
+  ]);
+});
+
 test("a remote added to two projects, or to none, proposes neither and says which, and the choice stays the person's", async () => {
   const asked = open("project", ["gadgets", "widgets"], "acme");
   const two = bound(["acme"], pair, pair);
   expect((await siteRead(two, { remote })).choice).toEqual(asked);
   expect((await stood(two, { remote })).found).toEqual([
-    `${said} is added to more than one of your projects (acme/widgets, acme/gadgets), so it proposes none`,
+    `${said} is added to more than one project of acme the site shows you (acme/widgets, acme/gadgets), so it proposes none`,
   ]);
   for (const none of [
     bound(["acme"], pair, []),
@@ -248,7 +280,7 @@ test("a remote added to two projects, or to none, proposes neither and says whic
   ]) {
     expect((await siteRead(none, { remote })).choice).toEqual(asked);
     expect((await stood(none, { remote })).found).toEqual([
-      `${said} is added to none of your projects, so it proposes none`,
+      `${said} is added to no project of acme the site shows you, so it proposes none`,
     ]);
   }
 });
@@ -262,7 +294,7 @@ test.each(["Refused", "Failed", "Cut"] as const)(
       open("project", ["gadgets", "widgets"], "acme"),
     );
     expect((await stood(site, { remote })).found).toEqual([
-      `${said} could not be looked for in every project of yours, so it proposes none`,
+      `${said} could not be looked for in every project of acme the site shows you, so it proposes none`,
     ]);
   },
 );
@@ -276,6 +308,7 @@ test("past a bounded few projects the remote is looked for in none of them, and 
   const most = bound(["acme"], names, [names[0] ?? ""]);
   expect((await siteRead(most, { remote, sent })).proposal).toEqual({
     proposal: "Unread",
+    within: "acme",
   });
   expect(sent).toEqual(["GET /api/v1/projects"]);
   const fewer = bound(["acme"], names.slice(1), [names[1] ?? ""]);
@@ -498,6 +531,14 @@ const reads = [
   `GET ${project}/drafts?limit=1`,
 ];
 
+const installations = "GET /api/v1/tenants/acme/forge-installations";
+
+/** What each app on the account that owns the repository grants, which a site with a repository added and both apps there is also asked. */
+const grants = [
+  `${installations}/acme-org-portal/repositories`,
+  `${installations}/acme-org-worker/repositories`,
+];
+
 async function sentFor(site: SetupSite, asking: Asking = {}) {
   const sent: string[] = [];
   await siteRead(site, { ...asking, sent });
@@ -505,7 +546,41 @@ async function sentFor(site: SetupSite, asking: Asking = {}) {
 }
 
 test("a site set up to its end is sent these reads and no other, each once", async () => {
-  expect(await sentFor(setupSiteAt("Landed"))).toEqual(reads);
+  expect(await sentFor(setupSiteAt("Landed"))).toEqual([...reads, ...grants]);
+});
+
+test("what an installation grants is asked only of the two on the account that owns the project's repository, however many accounts the workspace holds", async () => {
+  const site = setupSiteAt("Landed");
+  site.installations
+    .get(setupSiteWorkspace)
+    ?.unshift(
+      setupSiteClaim("personal", "portal"),
+      setupSiteClaim("personal", "worker"),
+      setupSiteClaim("globex-org", "worker"),
+    );
+  expect((await sentFor(site)).slice(reads.length)).toEqual(grants);
+});
+
+test("nothing is asked of what an installation grants where no repository is added, its owner lacks an app, or its address names no one owner", async () => {
+  expect(await sentFor(setupSiteAt("Apps"))).toEqual(reads);
+  for (const app of ["portal", "worker"] as const) {
+    const lacking = setupSiteAt("Landed");
+    lacking.installations.set(setupSiteWorkspace, [
+      setupSiteClaim("personal", "portal"),
+      setupSiteClaim("personal", "worker"),
+      setupSiteClaim(setupSiteAccount, app),
+    ]);
+    expect(await sentFor(lacking), app).toEqual(reads);
+  }
+  const ownerless = setupSiteAt("Landed");
+  ownerless.projects[0]?.repositories.splice(0, 1, {
+    repository: "https://forge.example/group/acme-org/widgets",
+    configured: true,
+  });
+  expect(await sentFor(ownerless)).toEqual(reads);
+  const unread = setupSiteAt("Landed");
+  unread.fates.set("installations", "Failed");
+  expect(await sentFor(unread)).toEqual(reads);
 });
 
 test("the landings of a ticket being landed are read, and of no other ticket", async () => {
@@ -517,6 +592,7 @@ test("the landings of a ticket being landed are read, and of no other ticket", a
   site.projects[0]?.landings.set(3, [setupSiteHeld]);
   expect(await sentFor(site)).toEqual([
     ...reads,
+    ...grants,
     `GET ${project}/tickets/3/landings`,
   ]);
 });

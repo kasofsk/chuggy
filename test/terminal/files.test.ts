@@ -726,3 +726,44 @@ test("a home that takes no new file while its lock still changes hands costs no 
     "refresh_token granted",
   ]);
 });
+
+test("a home that stops taking changes as the issuer hands back the renewed sign-in is told the sign-in was not kept, by the file it could not write; the run after names what it could not remove, and neither leaves the lock its own", async () => {
+  const { installation, machine } = await signedIn();
+  const session = join(machine.directory, "session.json");
+  installation.renewed = () => {
+    chmodSync(machine.directory, 0o500);
+  };
+  try {
+    const lost = await machine.run([]);
+    assert.equal(lost.code, 1, lost.stdout);
+    assert.equal(lost.stderr, "");
+    assert.deepEqual(lost.lines.slice(0, 2), [
+      `found: the sign-in was renewed and could not be kept: chuggy setup could not write ${session}`,
+      `tell: chuggy setup renewed your sign-in and then could not write it to ${session} on this machine, so it was not kept and you may have to sign in again. Tell me once that path can be written.`,
+    ]);
+    const rule = lost.lines[2] ?? "";
+    assert.ok(rule.startsWith("rule: Run node "), rule);
+    assert.ok(
+      rule.endsWith(` only once ${session} can be made and written.`),
+      rule,
+    );
+    assert.deepEqual(lost.lines.slice(3), ["next: stop"]);
+    assert.equal(machine.lock(), undefined);
+    const [left] = readdirSync(machine.directory).filter((name) =>
+      name.endsWith(".draft"),
+    );
+    const after = await machine.run([]);
+    assert.equal(after.code, 1, after.stdout);
+    assert.equal(
+      after.lines[0],
+      `found: chuggy setup could not make or write ${join(machine.directory, left ?? "")}`,
+    );
+    assert.deepEqual(after.lines.slice(3), ["next: stop"]);
+    assert.equal(machine.lock(), undefined);
+  } finally {
+    chmodSync(machine.directory, 0o700);
+  }
+  assert.deepEqual(installation.grants.slice(1), ["refresh_token granted"]);
+  const wrote = machine.written.join("\n");
+  for (const secret of installation.issued) assert.ok(!wrote.includes(secret));
+});

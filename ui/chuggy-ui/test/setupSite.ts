@@ -7,8 +7,9 @@
  * is written once and means the same in each. It answers the reads the bare
  * command makes and refuses, as the server does, what it would not show:
  * a project the caller is not listed in is not found, a workspace's accounts
- * are not found by anyone who does not administer it, and lead settings are
- * not found by whoever is not shown them. The list of projects is answered a
+ * and what each installation on them grants are not found by anyone who does
+ * not administer it, and lead settings are not found by whoever is not shown
+ * them. The list of projects is answered a
  * page at a time, each page but the last naming the next, since the server
  * answers a page of what it scanned and not of what the caller is shown. A
  * case moves one read to another fate by naming it in `fates`.
@@ -20,6 +21,7 @@ import type {
   DraftResponse,
   ExecutionPlacementResponse,
   ForgeInstallationResponse,
+  ForgeRepositoryResponse,
   ProjectRepositoryListedResponse,
   SelectorProjectSettingsResponse,
   SessionPlacementResponse,
@@ -69,6 +71,8 @@ export type SetupSiteRead =
   | "inventory"
   | "settings"
   | "installations"
+  | "portalGrant"
+  | "workerGrant"
   | "repositories"
   | "work"
   | "placement"
@@ -88,6 +92,8 @@ export interface SetupSite {
   inventoryPages: number;
   /** The claims each workspace holds, by workspace. */
   installations: Map<string, ForgeInstallationResponse[]>;
+  /** The repositories an installation grants, by installation, where a case says other than every repository of the workspace's projects on its account. */
+  grants: Map<string, string[]>;
   fates: Map<SetupSiteRead, SetupSiteFate>;
 }
 
@@ -123,6 +129,7 @@ export function setupSiteEmpty(): SetupSite {
     projects: [],
     inventoryPages: 1,
     installations: new Map(),
+    grants: new Map(),
     fates: new Map(),
   };
 }
@@ -472,16 +479,57 @@ function projectAnswered(
   }
 }
 
+/** A repository as an installation's listing names it, by the address a binding holds. */
+function granted(address: string): ForgeRepositoryResponse {
+  const [owner = "", name = ""] = address.split("/").slice(-2);
+  return {
+    name,
+    fullName: `${owner}/${name}`,
+    url: address,
+    defaultBranch: "main",
+    private: false,
+  };
+}
+
+/** What one installation of the workspace grants, which nobody is shown of an installation the workspace does not hold. */
+function grant(
+  site: SetupSite,
+  tenant: string,
+  installation: string,
+): SetupSiteAnswer {
+  const claim = site.installations
+    .get(tenant)
+    ?.find((held) => held.installationId === installation);
+  if (claim === undefined) return refused();
+  const read = claim.app === "portal" ? "portalGrant" : "workerGrant";
+  const held =
+    site.grants.get(installation) ??
+    site.projects
+      .filter((project) => project.tenant === tenant)
+      .flatMap((project) => project.repositories)
+      .map((repository) => repository.repository)
+      .filter((address) => address.split("/").at(-2) === claim.account);
+  return (
+    fated(site, read) ??
+    answered({ repositories: held.map(granted), truncated: cut(site, read) })
+  );
+}
+
 function tenantAnswered(
   site: SetupSite,
   tenant: string,
   rest: string,
   query: URLSearchParams,
 ): SetupSiteAnswer | undefined {
+  const administers = site.tenants.some(
+    (held) => held.tenant === tenant && held.administer,
+  );
+  const listing = /^\/forge-installations\/([^/]+)\/repositories$/u.exec(rest);
+  if (listing !== null)
+    return administers
+      ? grant(site, tenant, decodeURIComponent(listing[1] ?? ""))
+      : refused();
   if (rest === "/forge-installations") {
-    const administers = site.tenants.some(
-      (held) => held.tenant === tenant && held.administer,
-    );
     return (
       fated(site, "installations") ??
       (administers

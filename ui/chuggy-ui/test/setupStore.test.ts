@@ -388,6 +388,19 @@ test("taking the lock removes what a write of the remembered sign-in left unfini
   expect(second.swept).toEqual([]);
 });
 
+test("a lock taken by a run that cannot remove what a cut-short write left is given back before the path is thrown, whether it was free or a dead run's", async () => {
+  for (const said of [undefined, setupLockWord(7, nowMs)]) {
+    const lock = cell(said);
+    const mine = locker(lock, 11, [11]);
+    mine.kept.refuses = "Sweep";
+    await expect(setupLockTaken(mine.ports, 0)).rejects.toMatchObject({
+      fault: { fault: "Unwritable", path: sessionPath },
+    });
+    expect(mine.swept).toEqual([setupFiles.session]);
+    expect(lock.said).toBeUndefined();
+  }
+});
+
 test("a run that did not get the lock is told which process it names, and nothing where it names none", () => {
   const lock = cell();
   const asking = locker(lock, 11, [7, 11]).ports;

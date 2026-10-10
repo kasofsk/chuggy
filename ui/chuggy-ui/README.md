@@ -151,11 +151,12 @@ It is one file with nothing to install, and it runs on Linux and macOS: on any
 other platform it says so and does nothing. Every line it prints is a word from
 a closed set, a colon and its text; the last is `next:` and names the exact
 command to run after it, or says to stop. It says to stop where running a
-command again would mend nothing until the person has said something: after a
-sign-in that was declined, left to expire or refused, where the site or the
-sign-in server did not answer, where the machine would not keep its files or
-another run held them, and where a step of setup waits on her. A `rule:` line
-then names the command and what must be so before it is run. How the last
+command again would mend nothing until something else has changed: where the
+Node it was run under is too old, after a sign-in that was declined, left to
+expire or refused, where the site or the sign-in server did not answer, where
+the machine would not keep its files or another run held them, and where a
+step of setup waits on her. A `rule:` line then names the command and what
+must be so before it is run. How the last
 sign-in ended is said once by whichever command meets it first; from then on
 the bare command goes on saying it, and the next `sign-in` opens a page. It
 exits 0 where the last line is to be followed, 1 where it failed and 2 where it
@@ -169,6 +170,9 @@ they answered: the site is the record. The sign-in server is sent one renewal,
 and where the site refuses the sign-in, one more and then the revocation of the
 token, which is forgotten. Each read stands by itself, so one the site refused,
 failed or sent only part of leaves its own step not read and is said as that.
+Once a repository is added the github step is held to it: done only where both
+apps on the account that owns it are granted that repository, which is read
+from each of the two installations' own listings and from no other.
 The program does none of the steps yet: for the first one not done a `tell:`
 line says what mends it, a console page and what to press there wherever a page
 is what does, and `next:` is `stop`.

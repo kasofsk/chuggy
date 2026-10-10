@@ -12,6 +12,7 @@
 import { expect, test } from "vitest";
 
 import { setupAnswersNone } from "../app/core/setupArguments.ts";
+import { repositoryGrantLines } from "../app/core/projectRepositories.ts";
 import { setupAskNamesMax, setupNext } from "../app/core/setupNext.ts";
 import type { SetupChoice } from "../app/core/setupReads.ts";
 import { setupRepositoryRead } from "../app/core/setupRemote.ts";
@@ -57,6 +58,12 @@ function thing(lack: SetupLack, given?: Partial<SetupStanding>): SetupThing {
   return setupNext(lacking(lack, given), setupAnswersNone).thing;
 }
 
+/** What the person is told of a lack, which is nothing where it is not hers to mend. */
+function told(lack: SetupLack, given?: Partial<SetupStanding>): string {
+  const next = thing(lack, given);
+  return next.thing === "Hand" ? next.tell : "";
+}
+
 const hand = (tell: string, when: string): SetupThing => ({
   thing: "Hand",
   tell,
@@ -99,6 +106,18 @@ const mends: {
     hand(
       `Open ${pages}/settings/lead, press Edit beside North Star, write a paragraph that says what the project is for, and press Save changes. Tell me once it is saved.`,
       "once the person says the North Star is saved",
+    ),
+  ],
+  Grant: [
+    {
+      lacks: "Grant",
+      app: "worker",
+      account: "acme-org",
+      repository: "acme-org/widgets",
+    },
+    hand(
+      `The worker app is installed on acme-org, and GitHub does not let it into acme-org/widgets. Open ${pages}/repositories, press Add, and under the list find Worker app missing · grant it on GitHub. Follow the link beside it, Worker app, and on GitHub add acme-org/widgets to the repositories the app may reach. Tell me once it is granted.`,
+      "once the person says the worker app is granted acme-org/widgets",
     ),
   ],
   Account: [
@@ -215,18 +234,28 @@ test("the portal app missing from an account is mended on the workspace's accoun
   );
 });
 
+test("an app not granted the repository is mended from the line the Add picker draws for that app, in the picker's own words, and the portal app's line is another", () => {
+  const grant = { account: "acme-org", repository: "acme-org/widgets" };
+  for (const app of ["portal", "worker"] as const) {
+    const line = repositoryGrantLines[app];
+    const tell = told({ lacks: "Grant", app, ...grant });
+    expect(tell, app).toContain(`under the list find ${line.status}. `);
+    expect(tell, app).toContain(`Follow the link beside it, ${line.label}, `);
+  }
+  expect(thing({ lacks: "Grant", app: "portal", ...grant })).toEqual(
+    hand(
+      `The portal app is installed on acme-org, and GitHub does not let it into acme-org/widgets. Open ${pages}/repositories, press Add, and under the list find Not listed · grant it on GitHub. Follow the link beside it, Portal app, and on GitHub add acme-org/widgets to the repositories the app may reach. Tell me once it is granted.`,
+      "once the person says the portal app is granted acme-org/widgets",
+    ),
+  );
+});
+
 test("the repository to add is named as this folder's where the folder has a remote", () => {
   const remote = setupRepositoryRead("git@github.com:acme-org/widgets.git");
   expect(thing({ lacks: "Binding" }, { remote })).toMatchObject({
     tell: `Open ${pages}/repositories, press Add and choose acme-org/widgets, this folder's repository. Tell me once it is added.`,
   });
 });
-
-/** What the person is told of a lack, which is nothing where it is not hers to mend. */
-function told(lack: SetupLack, given?: Partial<SetupStanding>): string {
-  const next = thing(lack, given);
-  return next.thing === "Hand" ? next.tell : "";
-}
 
 test("a workspace named that the person is not in is said by its name", () => {
   expect(told({ lacks: "Workspace", workspace: "globex" })).toMatch(

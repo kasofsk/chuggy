@@ -7,16 +7,20 @@
  * cannot reach them. Each page's source is read here for the name the
  * program says, so a page that renames a button fails this and not her.
  *
- * Two names are not written where they are drawn. A ticket's page draws each
- * action under the action's own name, so that name is read where the action
- * is made; and the workspace's accounts page draws the connect button as the
- * one component that writes it, so the page is read for the component.
+ * Some names are not written where they are drawn. A ticket's page draws
+ * each action under the action's own name, so that name is read where the
+ * action is made; the workspace's accounts page draws the connect button as
+ * the one component that writes it, so the page is read for the component;
+ * and the Add picker draws the line for an app not granted a repository from
+ * the roster the program's own sentence is made from, so the picker is read
+ * for drawing that roster, and the roster for the words.
  */
 
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
+import { repositoryGrantLines } from "../../ui/chuggy-ui/app/core/projectRepositories.ts";
 import { setupPressed } from "../../ui/chuggy-ui/app/core/setupNext.ts";
 
 /** The page that draws each name, by its path from the root of this tree. */
@@ -67,6 +71,32 @@ test("the workspace's accounts page, where the program sends a person whose acco
     /^import \{ ConnectGithub \} from "\.\.\/repositories\/ConnectGithub\.tsx";$/mu,
   );
   assert.match(source, /<ConnectGithub tenant=\{tenant\} /u);
+});
+
+test("the Add picker draws, under its list, the line and the link the program sends a person to for an app not granted her repository: the portal app's always, the worker app's where a row lacks it", () => {
+  assert.deepEqual(repositoryGrantLines, {
+    portal: { status: "Not listed · grant it on GitHub", label: "Portal app" },
+    worker: {
+      status: "Worker app missing · grant it on GitHub",
+      label: "Worker app",
+    },
+  });
+  const source = readFileSync(drawnIn.add, "utf8");
+  assert.match(source, /const line = repositoryGrantLines\[props\.app\];/u);
+  assert.match(source, /<Notice[^>]*\bdetail=\{line\.status\}/u);
+  assert.match(source, /<InstallLink[^>]*\blabel=\{line\.label\}/u);
+  assert.match(
+    source,
+    /state\.state === "Ready" \? \(\s*<RepositoryGrant tenant=\{partition\.tenant\} app="portal" \/>/u,
+  );
+  assert.match(
+    source,
+    /state\.value\.workerless\.length > 0 \? \(\s*<RepositoryGrant tenant=\{partition\.tenant\} app="worker" \/>/u,
+  );
+  assert.match(
+    source,
+    /workerless: repositoriesWorkerless\(portal, worker\),/u,
+  );
 });
 
 test("a name is found only where a page draws all of it and no more", () => {

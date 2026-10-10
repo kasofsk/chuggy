@@ -99,11 +99,11 @@ test("a person fully set up is shown every step done, and nothing is named to ru
       signedIn,
       "step: workspace   done     acme",
       "step: project     done     acme/widgets",
-      "step: github      done     acme-org",
+      "step: github      done     acme-org, both apps granted acme-org/widgets",
       "step: repository  done     acme-org/widgets",
       "step: runner      done     live",
-      "step: ticket      done     ticket 1 landed",
-      `tell: chuggy is set up for acme/widgets: ticket 1 landed. The next ticket is made at ${pages}/tickets/new.`,
+      "step: ticket      done     ticket 1 is done",
+      `tell: chuggy is set up for acme/widgets: ticket 1 is done. The next ticket is made at ${pages}/tickets/new.`,
       "next: stop",
     ],
   });
@@ -151,8 +151,8 @@ test("a project whose work the cluster runs, with a ticket landed and no runner,
   const done = await printed(await machineSignedIn(world));
   expect(done.lines.slice(-4)).toEqual([
     "step: runner      done     the cluster runs its work",
-    "step: ticket      done     ticket 1 landed",
-    `tell: chuggy is set up for acme/widgets: ticket 1 landed. The next ticket is made at ${pages}/tickets/new.`,
+    "step: ticket      done     ticket 1 is done",
+    `tell: chuggy is set up for acme/widgets: ticket 1 is done. The next ticket is made at ${pages}/tickets/new.`,
     "next: stop",
   ]);
   expect(done.lines.join("\n")).not.toContain("/runners");
@@ -182,7 +182,7 @@ test("a person whose one project is on a later page of the site's list is asked 
   for (const held of later.projects) held.page = 3;
   const found = await printed(await machineSignedIn(later));
   expect(found.lines.at(-2)).toBe(
-    `tell: chuggy is set up for acme/widgets: ticket 1 landed. The next ticket is made at ${pages}/tickets/new.`,
+    `tell: chuggy is set up for acme/widgets: ticket 1 is done. The next ticket is made at ${pages}/tickets/new.`,
   );
   later.fates.set("inventory", "Cut");
   for (const held of later.projects) held.page = projectInventoryPagesMax;
@@ -194,7 +194,7 @@ test("a person whose one project is on a later page of the site's list is asked 
   ]);
   const named = ["--workspace", "acme", "--project", "widgets"];
   expect((await printed(machine, named)).lines.at(-2)).toBe(
-    `tell: chuggy is set up for acme/widgets: ticket 1 landed. The next ticket is made at ${pages}/tickets/new.`,
+    `tell: chuggy is set up for acme/widgets: ticket 1 is done. The next ticket is made at ${pages}/tickets/new.`,
   );
 });
 
@@ -303,7 +303,7 @@ test("a folder whose remote is added to one of two projects proposes it and says
   const done = await printed(machine);
   expect(done.lines.slice(0, 3)).toEqual([
     signedIn,
-    "found: this folder's remote github.com/acme-org/widgets is added to acme/gadgets and to no other project of yours, so this checklist is of acme/gadgets: proposed and not chosen, and --workspace with --project names another",
+    "found: this folder's remote github.com/acme-org/widgets is added to acme/gadgets and to no other project of acme the site shows you, so this checklist is of acme/gadgets: proposed and not chosen, and --workspace with --project names another",
     "step: workspace   done     acme",
   ]);
   expect(done.lines.at(-2)).toBe(

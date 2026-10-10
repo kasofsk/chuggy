@@ -5,9 +5,10 @@
  * Every line is `<word>: <text>` with the word from a closed set, and the last
  * is the one `next:` line: a command that runs as it is written, or `stop`.
  * `stop` is also what follows anything running a command again would not
- * mend by itself: a sign-in that ended any way but signed in, another run
- * holding the lock, a path the machine would not write, a site or a sign-in
- * server that did not answer, a read that failed. Each says what was found,
+ * mend by itself: a Node too old to run the program, a sign-in that ended any
+ * way but signed in, another run holding the lock, a path the machine would
+ * not write, a site or a sign-in server that did not answer, a read that
+ * failed. Each says what was found,
  * tells the person, and names in a `rule:` line the one command and the
  * condition it may be run under. A step the person does by hand is that shape
  * too, so nothing printed is a command an agent could run round and round
@@ -254,18 +255,6 @@ const setupAskFaults: Readonly<Record<SetupAskFault, string>> = {
   Name: "--workspace and --project each take one name, as the chuggy site writes it",
 };
 
-function setupNodeLines(major: number | undefined): readonly SetupLine[] {
-  const needs = `chuggy setup needs Node ${String(setupNodeMajorMin)} or newer`;
-  const found =
-    major === undefined
-      ? "this Node did not say its version"
-      : `this is Node ${String(major)}`;
-  return [
-    ["found", `${found}; ${needs}`],
-    ["tell", `${needs} on this machine. Once it is installed I can carry on.`],
-  ];
-}
-
 const setupPlatformNames: Readonly<Record<SetupPlatform, string>> = {
   linux: "Linux",
   darwin: "macOS",
@@ -360,6 +349,20 @@ function setupStopRule(
     ["rule", `Run ${command} only ${stop.when}.`],
     ["next", setupNextStop],
   ];
+}
+
+/** A Node too old runs the program no better a second time, so it is a stop until the Node under it is another. */
+function setupNodeStop(major: number | undefined): SetupStop {
+  const needs = `Node ${String(setupNodeMajorMin)} or newer`;
+  const found =
+    major === undefined
+      ? "this Node did not say its version"
+      : `this is Node ${String(major)}`;
+  return {
+    found: `${found}; chuggy setup needs ${needs}`,
+    tell: `chuggy setup needs ${needs} on this machine, so it did nothing. Tell me once one is installed, or if you want me to install it.`,
+    when: `once node on this machine is ${needs}`,
+  };
 }
 
 const setupAskedAgain = "if the person asks to try signing in again";
@@ -758,8 +761,13 @@ function setupLines(
 ): readonly SetupLine[] {
   const bare: SetupSaying = { ...saying, answers: setupAnswersNone };
   switch (report.report) {
-    case "NodeOld":
-      return [...setupNodeLines(report.major), setupNextLine(bare, "Status")];
+    case "NodeOld": {
+      const stop = setupNodeStop(report.major);
+      return [
+        ...setupStopSaid(stop),
+        ...setupStopRule(stop, setupCommandOf(bare, "Status")),
+      ];
+    }
     case "Unserved":
       return setupUnservedLines(report.platform);
     case "AskedWrongly":

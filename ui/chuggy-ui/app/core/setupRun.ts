@@ -136,20 +136,31 @@ async function setupSigned(
       asked,
     });
   const bearer = (await opened.holder.bearer()) ?? renewed;
+  opened.store.kept();
   return { signed: "In", opened, bearer, workspaces };
 }
 
-/** Runs `body` holding the lock, or answers nothing where another run kept it past the wait. */
+/**
+ * Runs `body` holding the lock, or answers nothing where another run kept it
+ * past the wait. What `body` threw is what is thrown, whatever giving the lock
+ * up then met: the first thing the machine refused is the one a report says.
+ */
 async function setupLocked<T>(
   ports: SetupPorts,
   body: () => Promise<T>,
 ): Promise<T | undefined> {
   if (!(await setupLockTaken(ports, setupLockWaitMs))) return undefined;
+  const tried = await body().then(
+    (value) => ({ threw: false, value }) as const,
+    (failure: unknown) => ({ threw: true, failure }) as const,
+  );
   try {
-    return await body();
-  } finally {
     setupLockReleased(ports);
+  } catch (failure: unknown) {
+    if (!tried.threw) throw failure;
   }
+  if (tried.threw) throw tried.failure;
+  return tried.value;
 }
 
 function setupBusy(

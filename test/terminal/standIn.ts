@@ -57,6 +57,8 @@ export interface StandIn {
   world: SetupSite;
   /** Whether the site takes the tokens the issuer hands out, or refuses whoever holds one. */
   admits: boolean;
+  /** What happens once the issuer has granted a renewal, before its answer is sent back. */
+  renewed: () => void;
   readonly renewal: () => string | undefined;
   readonly close: () => Promise<void>;
 }
@@ -175,7 +177,9 @@ function token(
   standIn.grants.push(`${grant} ${granted ? "granted" : "refused"}`);
   if (granted) {
     const renewable = grant === "refresh_token" || standIn.renewable;
-    sent(response, 200, tokens(standIn, issuer, renewable));
+    const answer = tokens(standIn, issuer, renewable);
+    if (grant === "refresh_token") standIn.renewed();
+    sent(response, 200, answer);
     return;
   }
   if (grant === "refresh_token") {
@@ -313,6 +317,7 @@ export async function standIn(): Promise<StandIn> {
     renewable: true,
     serves: true,
     admits: true,
+    renewed: () => undefined,
     world: setupSiteAt("Workspace"),
     renewal: () => issuer.renewal,
     close: async () => {

@@ -346,8 +346,9 @@ function ruled(lines: readonly string[]): readonly (readonly string[])[] {
   );
 }
 
-/** The reports that stop whatever they hold: another run or the machine in the way, and a site or its sign-in server that did not answer as one. */
+/** The reports that stop whatever they hold: a Node too old, another run or the machine in the way, and a site or its sign-in server that did not answer as one. */
 const stopping: ReadonlySet<SetupReport["report"]> = new Set([
+  "NodeOld",
   "Busy",
   "Faulted",
   "SiteUnusable",
@@ -367,7 +368,8 @@ function stopped(report: SetupReport): boolean {
 test("every stop says what was found, tells the person, names one command the program reads with the condition it is run under, and runs nothing", () => {
   const stops = sessions.filter(stopped);
   expect(stops).toHaveLength(
-    roster.Busy.length +
+    roster.NodeOld.length +
+      roster.Busy.length +
       roster.Faulted.length +
       roster.SiteUnusable.length +
       roster.IssuerUnanswered.length +
@@ -406,7 +408,7 @@ test("a report of a run not signed in that does not stop names no command in a r
   }
 });
 
-test("the reports that end on a command are the ones a run moves on from by itself: a Node or an argument to mend, a sign-in to open or wait on, and a sign-in the site refused", () => {
+test("the reports that end on a command are the ones a run moves on from by itself: an argument to mend, a sign-in to open or wait on, and a sign-in the site refused", () => {
   const running = new Set(
     sessions
       .filter(
@@ -422,7 +424,6 @@ test("the reports that end on a command are the ones a run moves on from by itse
   );
   expect([...running].toSorted()).toEqual([
     "AskedWrongly",
-    "NodeOld",
     "SignInEnded/SignedIn",
     "SignInEnded/SiteChanged",
     "SignInEnded/WorkspacesUnread",
@@ -1001,13 +1002,28 @@ test("an answer this copy cannot read says the copy may be old, and the download
   );
 });
 
-test("a Node too old is told which Node the program needs", () => {
+test("a Node too old is told which Node the program needs, and stops until the Node under it is another", () => {
+  const rule = `rule: Run node ${machineScript} only once node on this machine is Node 24 or newer.`;
+  const tell =
+    "tell: chuggy setup needs Node 24 or newer on this machine, so it did nothing. Tell me once one is installed, or if you want me to install it.";
   expect(
     setupReportLines(roster.NodeOld[0] as SetupReport, machineScript),
   ).toEqual([
     "found: this is Node 18; chuggy setup needs Node 24 or newer",
-    "tell: chuggy setup needs Node 24 or newer on this machine. Once it is installed I can carry on.",
-    next,
+    tell,
+    rule,
+    stop,
+  ]);
+  expect(
+    setupReportLines(roster.NodeOld[1] as SetupReport, machineScript, {
+      workspace: "acme",
+      project: "widgets",
+    }),
+  ).toEqual([
+    "found: this Node did not say its version; chuggy setup needs Node 24 or newer",
+    tell,
+    rule,
+    stop,
   ]);
 });
 

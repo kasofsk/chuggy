@@ -366,7 +366,7 @@ test("the folder's remote proposes the one project it is added to and says so, p
   const { machine } = session;
   const asks = (done: Ran) => [said(done, "found"), said(done, "ask").length];
   const proposed =
-    "this folder's remote github.com/acme-org/widgets is added to acme/gadgets and to no other project of yours, so this checklist is of acme/gadgets: proposed and not chosen, and --workspace with --project names another";
+    "this folder's remote github.com/acme-org/widgets is added to acme/gadgets and to no other project of acme the site shows you, so this checklist is of acme/gadgets: proposed and not chosen, and --workspace with --project names another";
 
   assert.deepEqual(asks(await read(session, setupSiteTwo())), [[], 1]);
   await machine.checkout();
@@ -397,13 +397,13 @@ test("the folder's remote proposes the one project it is added to and says so, p
   const two = await read(session, both);
   assert.equal(said(two, "ask").length, 1, two.stdout);
   assert.deepEqual(said(two, "found"), [
-    "this folder's remote github.com/acme-org/widgets is added to more than one of your projects (acme/widgets, acme/gadgets), so it proposes none",
+    "this folder's remote github.com/acme-org/widgets is added to more than one project of acme the site shows you (acme/widgets, acme/gadgets), so it proposes none",
   ]);
 
   await machine.checkout("git@github.com:acme-org/elsewhere.git");
   assert.deepEqual(asks(await read(session, setupSiteTwo())), [
     [
-      "this folder's remote github.com/acme-org/elsewhere is added to none of your projects, so it proposes none",
+      "this folder's remote github.com/acme-org/elsewhere is added to no project of acme the site shows you, so it proposes none",
     ],
     1,
   ]);
