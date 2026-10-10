@@ -55,6 +55,7 @@ import {
   dialect,
   ended,
   eventually,
+  gone,
   making,
   program,
   shellWords,
@@ -417,14 +418,9 @@ test("the folder's remote proposes the one project it is added to and says so, p
 /** Longer than the harness lets any run last, so a run that waited the git out is one the harness ends as a failure. */
 const sleepSecs = 600;
 
-/** Whether a process is still there to be signalled. */
+/** Whether a process can still run something, which one that ended and that nothing has collected cannot. */
 function running(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
+  return !gone(pid);
 }
 
 /** A path for one run on which `git` is a script of the case's own, answering as `body` says. */

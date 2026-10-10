@@ -20,6 +20,7 @@ import {
   browsed,
   ended,
   eventually,
+  gone,
   making,
   person,
   program,
@@ -518,7 +519,7 @@ test("an opener that leaves a browser running does not keep the command from ret
       done.lines[1] ?? "",
       /^did: opened http:\/\/127\.0\.0\.1:\d+\/ in a browser$/u,
     );
-    assert.doesNotThrow(() => process.kill(left(), 0));
+    assert.ok(!gone(left()));
   } finally {
     if (existsSync(lingerer)) ended(left());
   }
