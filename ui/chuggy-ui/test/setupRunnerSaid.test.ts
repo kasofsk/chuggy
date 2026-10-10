@@ -15,7 +15,10 @@ import {
   setupRunnerStopExit,
   setupRunnerStopSaid,
 } from "../app/core/setupRunnerSaid.ts";
-import type { SetupRunnerStop } from "../app/core/setupRunnerSaid.ts";
+import type {
+  SetupRegisterRefusal,
+  SetupRunnerStop,
+} from "../app/core/setupRunnerSaid.ts";
 import {
   setupExcerpt,
   setupExcerptCharsMax,
@@ -172,9 +175,13 @@ const all: { readonly [K in Kind]: ReturnType<typeof said> } = {
       1,
       "Runner",
     ],
+    [
+      "registering this machine ended with exit 2: the runner package does not run on this machine's kind of processor",
+      1,
+      "Status",
+    ],
     ...[
       "this machine's name makes no name for a runner",
-      "the runner package does not run on this machine's kind of processor",
       "the runner package could not make the directory it keeps registrations in",
       "the site did not answer the runner package",
       "the site did not take the registration token it had just made",
@@ -252,6 +259,16 @@ const all: { readonly [K in Kind]: ReturnType<typeof said> } = {
     [`${rosterUnit} was started and is not running`, 1, "Runner"],
     [`${rosterUnit} was running and after 90 s is activating`, 1, "Runner"],
     [`${rosterUnit} was running and after 0 s is not running`, 1, "Runner"],
+    [
+      `${rosterUnit} was started and this machine's user services did not answer whether it is running`,
+      1,
+      "Runner",
+    ],
+    [
+      `${rosterUnit} was running and after 3 s this machine's user services did not answer whether it is running`,
+      1,
+      "Runner",
+    ],
   ],
   NotLive: [
     [
@@ -267,7 +284,7 @@ const all: { readonly [K in Kind]: ReturnType<typeof said> } = {
   ],
 };
 
-test("every stop is said by what was found, exits zero where it waits on the person and one where something failed, and names runner again but for a Mac", () => {
+test("every stop is said by what was found, exits zero where it waits on the person and one where something failed, and names runner again but for a machine no runner can be put on", () => {
   for (const kind of Object.keys(all) as Kind[])
     expect(said(kind), kind).toEqual(all[kind]);
 });
@@ -302,6 +319,64 @@ test("only a stop that changed nothing says nothing was changed, and only one af
     "Serviceless",
     "SettingsUnread",
   ]);
+});
+
+test("a registration the package refused for what running again does not mend is not offered again as it stands, since every try makes another token: it waits on a runner elsewhere or on this machine's name, and every other refusal may be tried again", () => {
+  const refused = (refusal: SetupRegisterRefusal | undefined) =>
+    setupRunnerStopSaid(
+      {
+        stop: "Act",
+        act: "Register",
+        failed: { how: "ExitUnquoted", exit: 2, refusal },
+      },
+      "acme/widgets",
+    );
+  expect(refused("a Linux pool runs on")).toEqual({
+    found:
+      "registering this machine ended with exit 2: the runner package does not run on this machine's kind of processor",
+    tell: "The runner package does not run on this machine's kind of processor, so chuggy setup cannot set a runner up here. The work on your tickets needs a runner on a Linux machine it does run on. Tell me once one is running there.",
+    when: "once the person says a runner is running on another machine",
+    again: "Status",
+  });
+  expect(refused("hostname makes no pool name")).toEqual({
+    found:
+      "registering this machine ended with exit 2: this machine's name makes no name for a runner",
+    tell: "The runner package names a runner after its machine, and this machine's name makes no name for one, so the runner is not set up yet. Running again as the machine is named now would end the same way. Tell me once this machine's name starts with a letter from a to z or a digit.",
+    when: "once the person says this machine's name starts with a letter from a to z or a digit",
+    again: "Runner",
+  });
+  const known = Object.keys(setupRegisterRefusals) as SetupRegisterRefusal[];
+  const offered = [undefined, ...known].filter((refusal) => {
+    const { tell, when } = refused(refusal);
+    const again = tell.endsWith("Tell me if you want me to try again.");
+    expect(when === "if the person asks to try again", refusal).toBe(again);
+    return again;
+  });
+  expect(offered).toEqual([
+    undefined,
+    "no token was spent",
+    "did not answer the registration",
+    "is unknown, spent or expired",
+    "run register again",
+    "pool file could not be written",
+  ]);
+});
+
+test("a service manager that did not answer is said as that, and never as a service that is not running", () => {
+  const [, stopped, , , unasked, silent] = runnerStops.Inactive.map((stop) =>
+    setupRunnerStopSaid(stop, "acme/widgets"),
+  );
+  const picksUp =
+    "What was done before it stays done, and running again picks up from there. Tell me if you want me to try again.";
+  expect(stopped?.tell).toBe(
+    `The runner's service was started and is not running, so the runner is not set up yet. ${picksUp}`,
+  );
+  for (const one of [unasked, silent]) {
+    expect(one?.tell).toBe(
+      `This machine's user services did not answer when I asked whether the runner's service is running, so I cannot say the runner is set up. ${picksUp}`,
+    );
+    expect(one?.found).not.toContain("not running");
+  }
 });
 
 test("a user the package bars from docker is told the package's reason and who they are, then its own way out: the settings changed where they name docker, and podman answering where there are none", () => {
@@ -424,8 +499,8 @@ test("the checks this program has words for are the ones the package's doctor pr
 
 test("the refusals of a registration this program has words for are the package's own sentences, each known by the words of it that never change, and nothing else a registration prints is one", () => {
   expect(Object.keys(setupRegisterRefusals)).toEqual([
-    "hostname makes no pool name",
     "a Linux pool runs on",
+    "hostname makes no pool name",
     "no token was spent",
     "did not answer the registration",
     "is unknown, spent or expired",

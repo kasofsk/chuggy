@@ -19,13 +19,16 @@ import {
   runnerTokenLifetimeSecs,
 } from "../app/core/runners.ts";
 import { setupAnswersAsked } from "../app/core/setupArguments.ts";
+import type { SetupChildEnded } from "../app/core/setupPorts.ts";
 import { setupReportExit, setupReportLines } from "../app/core/setupReport.ts";
 import {
   setupLivePollMs,
   setupMintLifetimeSecs,
   setupMintPorts,
 } from "../app/core/setupRunner.ts";
+import { setupLockWord } from "../app/core/setupStore.ts";
 import {
+  machineKept,
   machineScript,
   machineSignedIn,
   machineSite,
@@ -719,6 +722,39 @@ test("of a register that fails nothing it printed is said: a token it says back 
   );
 });
 
+test("a registration the package refuses for this machine's processor or for its name stops on what would have to change, and names no try that would have the site make another token", async () => {
+  const refused = async (line: string) => {
+    const machine = await fresh();
+    machine.box.answers.set("register", exited(2, "", `${line}\n`));
+    const done = await ran(machine);
+    expect([done.exit, machine.world.mints.length], line).toEqual([1, 1]);
+    expect(done.lines.join("\n"), line).not.toContain("try again");
+    return done.lines.slice(-4);
+  };
+  expect(
+    await refused(
+      "this machine is riscv64, and a Linux pool runs on x64 or arm64",
+    ),
+  ).toEqual([
+    "found: registering this machine ended with exit 2: the runner package does not run on this machine's kind of processor",
+    "tell: The runner package does not run on this machine's kind of processor, so chuggy setup cannot set a runner up here. The work on your tickets needs a runner on a Linux machine it does run on. Tell me once one is running there.",
+    `rule: Run node ${machineScript} ${flags} only once the person says a runner is running on another machine.`,
+    stop,
+  ]);
+  const named =
+    "this machine's name starts with a letter from a to z or a digit";
+  expect(
+    await refused(
+      "this machine's hostname makes no pool name; name the pool with --pool",
+    ),
+  ).toEqual([
+    "found: registering this machine ended with exit 2: this machine's name makes no name for a runner",
+    `tell: The runner package names a runner after its machine, and this machine's name makes no name for one, so the runner is not set up yet. Running again as the machine is named now would end the same way. Tell me once ${named}.`,
+    again(`once the person says ${named}`),
+    stop,
+  ]);
+});
+
 test("a token nothing would know by its shape is struck from what a later program says of it, because the run tells the redactor what it minted", async () => {
   const machine = await fresh();
   machine.world.letters = "Ab.Cd.Ef.Gh.Ij.";
@@ -1059,6 +1095,35 @@ test("a service that stops while the site is waited on is what the run says when
   expect(machine.box.acts.slice(-3)).toEqual(["start", "active", "active"]);
 });
 
+test("a service manager that does not answer whether the service is running is said as that, straight after the start and after the wait, and never as a service that is not running", async () => {
+  const silentFrom = async (ask: number) => {
+    const machine = await fresh();
+    machine.box.polls = false;
+    let asked = 0;
+    machine.box.answers.set("active", (): SetupChildEnded => {
+      asked += 1;
+      if (asked >= ask) return { ended: "Unended" };
+      return asked === 1 ? exited(3, "inactive\n") : exited(0, "active\n");
+    });
+    const done = await ran(machine, [...runner, "--wait-secs", "3"]);
+    expect([done.exit, asked]).toEqual([1, ask]);
+    expect(done.lines.slice(-3)).toEqual([
+      `tell: This machine's user services did not answer when I asked whether the runner's service is running, so I cannot say the runner is set up. ${pickedUp}`,
+      again(asksAgain),
+      stop,
+    ]);
+    return done.lines.at(-4);
+  };
+  const unanswered =
+    "this machine's user services did not answer whether it is running";
+  expect(await silentFrom(2)).toBe(
+    `found: ${unit} was started and ${unanswered}`,
+  );
+  expect(await silentFrom(3)).toBe(
+    `found: ${unit} was running and after 3 s ${unanswered}`,
+  );
+});
+
 test("a workspace or project named as a place an address would fold away is asked wrongly and nothing is asked of the site or the machine, and the names beside those are asked whole, each one part of the address", async () => {
   const places = [
     ["..", ".."],
@@ -1240,6 +1305,66 @@ test("a sign-in that cannot be entered again ends the run as not signed in, afte
   expect([times(machine, "install"), times(machine, "register")]).toEqual([
     1, 0,
   ]);
+});
+
+/** The run as far as the mint, where the site stops taking its bearer and `then` is how the machine or the site is found when the sign-in is entered again. */
+async function lapsedAt(then: (machine: SetupMachine) => void): Promise<Ran> {
+  const machine = await fresh();
+  machine.answering = () => {
+    if (machine.sent.at(-1) !== mint) return;
+    machine.lapse();
+    then(machine);
+  };
+  return ran(machine);
+}
+
+const byMint = [found.engine, found.login, did.package, did.settings];
+
+test("a sign-in entered again part-way that this machine does not keep ends the run on that fault after everything the run had found and done by then, and the same fault at the first entry is said alone as it always was", async () => {
+  const session = `${machineKept}/session.json`;
+  const fault = [
+    `found: the sign-in was renewed and could not be kept: chuggy setup could not write ${session}`,
+    `tell: chuggy setup renewed your sign-in and then could not write it to ${session} on this machine, so it was not kept and you may have to sign in again. Tell me once that path can be written.`,
+    again(`once ${session} can be made and written`),
+    stop,
+  ];
+  const unkept = (machine: SetupMachine) => {
+    machine.takes = () => false;
+  };
+  expect(await lapsedAt(unkept)).toEqual({
+    exit: 1,
+    lines: [...byMint, ...fault],
+  });
+  const first = await fresh();
+  first.lapse();
+  unkept(first);
+  expect(await ran(first)).toEqual({ exit: 1, lines: fault });
+  expect(first.box.ran).toEqual([]);
+});
+
+test("a run ended part-way by another command holding the lock, or by a site that no longer answers as one, says it went no further after what it had done, and never that it did nothing", async () => {
+  const busy = await lapsedAt((machine) => {
+    machine.alive.add(4242);
+    machine.lock = setupLockWord(4242, machine.nowMs);
+  });
+  expect(busy.lines).toEqual([
+    ...byMint,
+    "found: another chuggy setup command is running on this machine, as process 4242",
+    "tell: Another chuggy setup command is still running on this machine, so this one went no further. I will run it again once the other has ended.",
+    again("once that command has ended"),
+    stop,
+  ]);
+  const tells = [
+    `tell: ${machineSite} did not answer, so chuggy setup went no further. Check the address and that this machine can reach it, and tell me if you want me to try again.`,
+    `tell: What answered at ${machineSite} is not a chuggy site this program can read, so chuggy setup went no further. Check the address, and tell me if you want me to try again.`,
+  ];
+  for (const [index, site] of (["Silent", "Garbles"] as const).entries()) {
+    const out = await lapsedAt((machine) => {
+      machine.site = site;
+    });
+    expect(out.lines.slice(0, byMint.length), site).toEqual(byMint);
+    expect(out.lines.at(-3), site).toBe(tells[index]);
+  }
 });
 
 const pages = `${machineSite}/acme/widgets`;

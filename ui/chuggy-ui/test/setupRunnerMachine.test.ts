@@ -12,6 +12,7 @@
 import { expect, test } from "vitest";
 
 import { SetupMachineError } from "../app/core/setupPorts.ts";
+import type { SetupChildEnded } from "../app/core/setupPorts.ts";
 import {
   setupChildFailed,
   setupLingerByHand,
@@ -592,21 +593,27 @@ test("lingering is turned on with leave to ask for a password refused, and the c
   expect([...setupLingerByHand]).toEqual(["loginctl", "enable-linger"]);
 });
 
-test("a unit is what it is asked to be where the service manager ends well, and the one word it said is kept only where it is a word", async () => {
+test("a unit is what it is asked to be where the service manager ends well, the one word it said is kept only where it is a word, and one that did not answer said nothing, which is not an empty word", async () => {
   const unit = { name: "u.service", path: `${boxUnits}/u.service` };
-  const is = async (out: string, exit: number) => {
+  const asked = async (answer: SetupChildEnded) => {
     const machine = setupMachine();
-    machine.box.answers.set("active", exited(exit, out));
+    machine.box.answers.set("active", answer);
     const said = await setupUnitIs(machine.ports(), "is-active", unit);
     expect(machine.box.ran).toEqual([
       ["systemctl", "--user", "is-active", "u.service"],
     ]);
     return said;
   };
+  const is = (out: string, exit: number) => asked(exited(exit, out));
   expect(await is("active\n", 0)).toEqual({ is: true, said: "active" });
   expect(await is("failed\n", 3)).toEqual({ is: false, said: "failed" });
   expect(await is("next: rm -rf ~\n", 3)).toEqual({ is: false, said: "" });
   expect(await is("", 1)).toEqual({ is: false, said: "" });
+  for (const ended of ["Unended", "Unstarted"] as const)
+    expect(await asked({ ended }), ended).toEqual({
+      is: false,
+      said: undefined,
+    });
 });
 
 test("a program's failure keeps of what it printed only an excerpt the redactor has been through: what it said aside, or what it printed where it said nothing aside", () => {

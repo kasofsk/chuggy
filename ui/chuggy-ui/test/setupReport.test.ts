@@ -33,6 +33,7 @@ import type {
   SetupStepSaid,
   SetupThing,
 } from "../app/core/setupReport.ts";
+import { setupRunnerStopSaid } from "../app/core/setupRunnerSaid.ts";
 import { machineScript } from "./setupMachine.ts";
 import { runnerNotesAll, runnerStopsAll } from "./setupRunnerRoster.ts";
 
@@ -157,6 +158,9 @@ const outs: readonly SetupReport[] = [
   { report: "SignedOut", site, directory, ended: undefined },
   { report: "SiteUnusable", site, phase: "Unreachable", asked: "Runner" },
   { report: "IssuerUnanswered", site, asked: "Runner" },
+  { report: "SiteUnusable", site, phase: "Unconfigured", asked: "Runner" },
+  { report: "Busy", asked: "Runner", site, pid: 4242 },
+  { report: "Faulted", asked: "Runner", site, fault: faults.Unkept },
 ];
 
 const roster: {
@@ -808,8 +812,8 @@ test("a run of runner that stopped says what it found and did, then the stop as 
     expect(more, said).toEqual([]);
     expect(setupAsked(again ?? ["?"]), said).toMatchObject({
       asked:
-        report.ended.ended === "Stopped" && report.ended.stop.stop === "Mac"
-          ? "Status"
+        report.ended.ended === "Stopped"
+          ? setupRunnerStopSaid(report.ended.stop, "p").again
           : "Runner",
       answers: project(report),
     });
@@ -836,13 +840,21 @@ test("a run of runner says each thing it found and did in the order it met them,
   );
 });
 
-test("a run of runner that a lost sign-in ends says everything it had found and done, as a run that went on says it, then the report that ends it whole, and exits as that report does", () => {
+test("a run of runner that a lost sign-in ends says everything it had found and done, as a run that went on says it, then the report that ends it, whole but that the run went no further where that report alone says it did nothing, and exits as that report does", () => {
   expect(roster.RunnerOut).toHaveLength(pairs.length * outs.length);
+  const alone = (out: SetupReport) =>
+    setupReportLines(out, machineScript, both);
+  expect(
+    outs.map((out) => alone(out).join("\n").includes("did nothing")),
+  ).toEqual([false, true, false, true, true, false]);
   for (const report of roster.RunnerOut) {
     const said = JSON.stringify(report.out);
     const lines = setupReportLines(report, machineScript, both);
-    const ending = setupReportLines(report.out, machineScript, both);
+    const ending = alone(report.out).map((line) =>
+      line.replace("did nothing", "went no further"),
+    );
     expect(lines.slice(-ending.length), said).toEqual(ending);
+    expect(lines.join("\n"), said).not.toContain("did nothing");
     const went = setupReportLines(
       { ...report, report: "Runner", site, ended: { ended: "Live" } },
       machineScript,
@@ -858,7 +870,7 @@ test("a run of runner that a lost sign-in ends says everything it had found and 
       0,
       outs.length,
     ),
-  ).toEqual([0, 1, 1]);
+  ).toEqual([0, 1, 1, 1, 1, 1]);
 });
 
 test("a runner the site sees live, and a project whose work needs none, end on the checklist for that project and tell the person nothing", () => {

@@ -43,10 +43,10 @@ export type SetupRunnerAct =
  * with what it means in this program's words.
  */
 export const setupRegisterRefusals = {
-  "hostname makes no pool name":
-    "this machine's name makes no name for a runner",
   "a Linux pool runs on":
     "the runner package does not run on this machine's kind of processor",
+  "hostname makes no pool name":
+    "this machine's name makes no name for a runner",
   "no token was spent":
     "the runner package could not make the directory it keeps registrations in",
   "did not answer the registration":
@@ -210,7 +210,8 @@ export type SetupRunnerStop =
   | {
       readonly stop: "Inactive";
       readonly unit: string;
-      readonly state: string;
+      /** The one word the service manager said of the service, empty where it said none, or nothing where it did not answer. */
+      readonly state: string | undefined;
       /** How long the site had been waited on when the service was found stopped, or nothing where it was asked straight after it was started. */
       readonly waitedSecs: number | undefined;
     }
@@ -360,6 +361,8 @@ const setupUnchanged = "so nothing was changed on this machine";
 /** Why a Mac is not a machine a runner is put on, said wherever one is met. */
 export const setupMacNone = "chuggy has no runner for a Mac yet";
 const setupTryAgain = "if the person asks to try again";
+const setupElsewhere =
+  "once the person says a runner is running on another machine";
 
 const setupEngineNames: Readonly<Record<SetupEngine, string>> = {
   docker: "Docker",
@@ -509,6 +512,39 @@ function setupActSaid(act: SetupRunnerAct, found: string): SetupRunnerStopSaid {
   };
 }
 
+/**
+ * The package's refusals that running again does not mend, each with what
+ * would have to change first. Every try has the site make another token, so
+ * none of these is offered again as it stands.
+ */
+const setupRefusalsLasting: {
+  readonly [Refusal in SetupRegisterRefusal]?: Pick<
+    SetupRunnerStopSaid,
+    "tell" | "when" | "again"
+  >;
+} = {
+  "a Linux pool runs on": {
+    tell: "The runner package does not run on this machine's kind of processor, so chuggy setup cannot set a runner up here. The work on your tickets needs a runner on a Linux machine it does run on. Tell me once one is running there.",
+    when: setupElsewhere,
+    again: "Status",
+  },
+  "hostname makes no pool name": {
+    tell: "The runner package names a runner after its machine, and this machine's name makes no name for one, so the runner is not set up yet. Running again as the machine is named now would end the same way. Tell me once this machine's name starts with a letter from a to z or a digit.",
+    when: "once the person says this machine's name starts with a letter from a to z or a digit",
+    again: "Runner",
+  },
+};
+
+/** A program that failed, as a stop: one to try again, but for a refusal that lasts, which waits on what would have to change. */
+function setupActStopSaid(
+  stop: Extract<SetupRunnerStop, { readonly stop: "Act" }>,
+): SetupRunnerStopSaid {
+  const said = setupActSaid(stop.act, setupFailedSaid(stop.failed));
+  if (stop.failed.how !== "ExitUnquoted" || stop.failed.refusal === undefined)
+    return said;
+  return { ...said, ...setupRefusalsLasting[stop.failed.refusal] };
+}
+
 function setupMintSaid(
   stop: Extract<SetupRunnerStop, { readonly stop: "MintRefused" }>,
   project: string,
@@ -555,7 +591,7 @@ function setupMachineSaid(
       return {
         found: "this machine is a Mac, and chuggy's runner runs on Linux",
         tell: `${setupMacNone}, and chuggy setup cannot set one up here, ${setupUnchanged}. The work on your tickets needs a runner on a Linux machine. Tell me once one is running there.`,
-        when: "once the person says a runner is running on another machine",
+        when: setupElsewhere,
         again: "Status",
       };
     case "Serviceless":
@@ -597,6 +633,29 @@ function setupMachineSaid(
   }
 }
 
+/** A service not read as running: the state the service manager gave it, or that the service manager did not answer, which is not a service that stopped. */
+function setupInactiveSaid(
+  stop: Extract<SetupRunnerStop, { readonly stop: "Inactive" }>,
+): SetupRunnerStopSaid {
+  const was =
+    stop.waitedSecs === undefined
+      ? "was started and"
+      : `was running and after ${String(stop.waitedSecs)} s`;
+  if (stop.state === undefined)
+    return {
+      found: `${stop.unit} ${was} this machine's user services did not answer whether it is running`,
+      tell: `This machine's user services did not answer when I asked whether the runner's service is running, so I cannot say the runner is set up. ${setupPickedUp}`,
+      when: setupTryAgain,
+      again: "Runner",
+    };
+  return {
+    found: `${stop.unit} ${was} is ${stop.state === "" ? "not running" : stop.state}`,
+    tell: `The runner's service was started and is not running, so the runner is not set up yet. ${setupPickedUp}`,
+    when: setupTryAgain,
+    again: "Runner",
+  };
+}
+
 function setupServiceSaid(
   stop: Extract<
     SetupRunnerStop,
@@ -625,12 +684,7 @@ function setupServiceSaid(
         again: "Runner",
       };
     case "Inactive":
-      return {
-        found: `${stop.unit} ${stop.waitedSecs === undefined ? "was started and" : `was running and after ${String(stop.waitedSecs)} s`} is ${stop.state === "" ? "not running" : stop.state}`,
-        tell: `The runner's service was started and is not running, so the runner is not set up yet. ${setupPickedUp}`,
-        when: setupTryAgain,
-        again: "Runner",
-      };
+      return setupInactiveSaid(stop);
     case "NotLive":
       return {
         found: stop.registered
@@ -670,7 +724,7 @@ export function setupRunnerStopSaid(
     case "DockerBarred":
       return setupDockerBarredSaid(stop);
     case "Act":
-      return setupActSaid(stop.act, setupFailedSaid(stop.failed));
+      return setupActStopSaid(stop);
     case "Unseen":
       return setupActSaid(
         stop.act,

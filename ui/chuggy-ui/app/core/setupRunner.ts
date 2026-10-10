@@ -121,7 +121,10 @@ export type SetupRunnerEntered =
   | { readonly entered: "In"; readonly session: SetupRunnerSession }
   | { readonly entered: "Out"; readonly report: SetupReport };
 
-type SetupRunnerAsked = Extract<SetupAsked, { readonly asked: "Runner" }>;
+export type SetupRunnerAsked = Extract<
+  SetupAsked,
+  { readonly asked: "Runner" }
+>;
 
 interface Run {
   readonly ports: SetupPorts;

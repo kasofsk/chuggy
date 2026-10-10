@@ -528,19 +528,20 @@ export const setupRunnerCommands = {
   ],
 } as const;
 
-/** Whether a unit is what `verb` asks, and the one word the service manager said of it. */
+/** Whether a unit is what `verb` asks, and the one word the service manager said of it: empty where it said none, and nothing where it did not answer. */
 export async function setupUnitIs(
   ports: SetupPorts,
   verb: "is-enabled" | "is-active",
   unit: SetupUnit,
-): Promise<{ readonly is: boolean; readonly said: string }> {
+): Promise<{ readonly is: boolean; readonly said: string | undefined }> {
   const ended = await setupProbed(ports, [
     "systemctl",
     "--user",
     verb,
     unit.name,
   ]);
-  const said = ended.ended === "Exited" ? setupFlat(ended.out) : "";
+  if (ended.ended !== "Exited") return { is: false, said: undefined };
+  const said = setupFlat(ended.out);
   return { is: setupWell(ended), said: /^[a-z-]+$/u.test(said) ? said : "" };
 }
 

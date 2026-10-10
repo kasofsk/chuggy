@@ -214,7 +214,9 @@ registered; the package's own check passed; its service installed; her
 services set to outlive a logout; and the service enabled and started. For a
 registration it mints a registration token, which is the one write it sends a
 site, and hands it to the package's `register` as one word of its arguments
-and nowhere else.
+and nowhere else. Every try mints one, so a registration the package refuses
+for the machine's processor or its name is not offered again as the machine
+stands.
 It takes no password: a child has no terminal to ask on, and what wants one is
 told to her to do herself. It does not make the runner's Claude login, and
 stops where there is none. The runner package takes docker from one user of a

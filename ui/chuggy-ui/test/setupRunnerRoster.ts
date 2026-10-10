@@ -152,6 +152,13 @@ export const runnerStops: {
     { stop: "Inactive", unit: rosterUnit, state: "", waitedSecs: undefined },
     { stop: "Inactive", unit: rosterUnit, state: "activating", waitedSecs: 90 },
     { stop: "Inactive", unit: rosterUnit, state: "", waitedSecs: 0 },
+    {
+      stop: "Inactive",
+      unit: rosterUnit,
+      state: undefined,
+      waitedSecs: undefined,
+    },
+    { stop: "Inactive", unit: rosterUnit, state: undefined, waitedSecs: 3 },
   ],
   NotLive: [
     { stop: "NotLive", waitedSecs: 90, registered: true },

@@ -248,10 +248,16 @@ type SetupLine =
 /** What `next:` says where no command is left to run. */
 export const setupNextStop = "stop";
 
-/** How a report's commands are written: where the program is kept, and the choice each of them carries. */
+/** How a report is said: where the program is kept, the choice each of its commands carries, and whether the report ends a run that had already gone some way. */
 interface SetupSaying {
   readonly script: string;
   readonly answers: SetupAnswers;
+  readonly partWay: boolean;
+}
+
+/** What a run came to that the lock or the site stopped at its sign-in: nothing, unless it had gone some way and was entering its sign-in again. */
+function setupCameTo(saying: SetupSaying): string {
+  return saying.partWay ? "went no further" : "did nothing";
 }
 
 /** A command of this program as it is run: its word, the workspace and project the conversation holds, then whatever else it takes. */
@@ -574,12 +580,12 @@ function setupFaultStop(fault: SetupFault): SetupStop {
   }
 }
 
-function setupBusyStop(pid: number | undefined): SetupStop {
+function setupBusyStop(pid: number | undefined, cameTo: string): SetupStop {
   const running = "another chuggy setup command is running on this machine";
   return {
     found:
       pid === undefined ? running : `${running}, as process ${String(pid)}`,
-    tell: "Another chuggy setup command is still running on this machine, so this one did nothing. I will run it again once the other has ended.",
+    tell: `Another chuggy setup command is still running on this machine, so this one ${cameTo}. I will run it again once the other has ended.`,
     when: "once that command has ended",
   };
 }
@@ -591,7 +597,7 @@ function setupStoppedLines(
 ): readonly SetupLine[] {
   const stop =
     report.report === "Busy"
-      ? setupBusyStop(report.pid)
+      ? setupBusyStop(report.pid, setupCameTo(saying))
       : setupFaultStop(report.fault);
   const command = setupCommandOf(
     saying,
@@ -670,6 +676,7 @@ function setupSessionStop(
     SetupReport,
     { readonly report: "SiteUnusable" | "IssuerUnanswered" }
   >,
+  cameTo: string,
 ): SetupStop {
   if (report.report === "IssuerUnanswered")
     return {
@@ -681,13 +688,13 @@ function setupSessionStop(
     case "Unreachable":
       return {
         found: "the site did not answer",
-        tell: `${report.site} did not answer, so chuggy setup did nothing. Check the address and that this machine can reach it, and tell me if you want me to try again.`,
+        tell: `${report.site} did not answer, so chuggy setup ${cameTo}. Check the address and that this machine can reach it, and tell me if you want me to try again.`,
         when: setupAskedRetry,
       };
     case "Unconfigured":
       return {
         found: "the address answered, and not as a chuggy site",
-        tell: `What answered at ${report.site} is not a chuggy site this program can read, so chuggy setup did nothing. Check the address, and tell me if you want me to try again.`,
+        tell: `What answered at ${report.site} is not a chuggy site this program can read, so chuggy setup ${cameTo}. Check the address, and tell me if you want me to try again.`,
         when: setupAskedRetry,
       };
   }
@@ -704,7 +711,7 @@ function setupSessionLines(
     report.report === "SiteUnusable"
       ? setupSitePhases[report.phase]
       : "its sign-in server is not answering";
-  const stop = setupSessionStop(report);
+  const stop = setupSessionStop(report, setupCameTo(saying));
   const command = setupCommandOf(
     saying,
     report.asked,
@@ -919,7 +926,10 @@ function setupLines(
     case "Runner":
       return setupRunnerLines(report, saying);
     case "RunnerOut":
-      return [...setupNoteLines(report), ...setupLines(report.out, saying)];
+      return [
+        ...setupNoteLines(report),
+        ...setupLines(report.out, { ...saying, partWay: true }),
+      ];
   }
 }
 
@@ -950,7 +960,9 @@ export function setupReportLines(
   script: string,
   answers: SetupAnswers = setupAnswersNone,
 ): readonly string[] {
-  return setupLines(report, { script, answers }).map(setupPrinted);
+  return setupLines(report, { script, answers, partWay: false }).map(
+    setupPrinted,
+  );
 }
 
 const setupEndedFailures: ReadonlySet<SetupSignInEnded> = new Set([

@@ -25,7 +25,7 @@ import { readSetup, setupReadPorts } from "./setupReads.ts";
 import { setupRemoteRead } from "./setupRemote.ts";
 import type { SetupFault, SetupReport } from "./setupReport.ts";
 import { setupRunner } from "./setupRunner.ts";
-import type { SetupRunnerEntered } from "./setupRunner.ts";
+import type { SetupRunnerAsked, SetupRunnerEntered } from "./setupRunner.ts";
 import { setupRunnerHere } from "./setupRunnerMachine.ts";
 import { setupSessionOpened, setupWorkspacesRead } from "./setupSession.ts";
 import type {
@@ -254,15 +254,16 @@ async function setupStatus(
 }
 
 /**
- * `runner` works under the remembered sign-in as the bare command does, and
- * enters it again the same way where the site stops taking the bearer it
- * held, so the lock is never held while the machine is worked on.
+ * One entry of the sign-in `runner` works under. Whatever does not end signed
+ * in is answered as a report, a fault of this machine's among them, so a run
+ * that enters again part-way has one way out and says what it had done ahead
+ * of it.
  */
-function setupRunnerRun(
+async function setupRunnerEntry(
   ports: SetupPorts,
-  asked: Extract<SetupAsked, { readonly asked: "Runner" }>,
-): Promise<SetupReport> {
-  return setupRunner(ports, asked, async (): Promise<SetupRunnerEntered> => {
+  asked: SetupRunnerAsked,
+): Promise<SetupRunnerEntered> {
+  try {
     const held = await setupEntered(ports, asked.site, "Runner");
     if (held === undefined)
       return {
@@ -272,7 +273,21 @@ function setupRunnerRun(
     if (held.signed === "Out") return { entered: "Out", report: held.report };
     const { site, api } = held.opened;
     return { entered: "In", session: { site, api, bearer: held.bearer } };
-  });
+  } catch (failure: unknown) {
+    return { entered: "Out", report: setupFaulted(asked, failure) };
+  }
+}
+
+/**
+ * `runner` works under the remembered sign-in as the bare command does, and
+ * enters it again the same way where the site stops taking the bearer it
+ * held, so the lock is never held while the machine is worked on.
+ */
+function setupRunnerRun(
+  ports: SetupPorts,
+  asked: SetupRunnerAsked,
+): Promise<SetupReport> {
+  return setupRunner(ports, asked, () => setupRunnerEntry(ports, asked));
 }
 
 type SetupSignInStep =
