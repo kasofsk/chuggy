@@ -22,6 +22,7 @@ export const settingsRoutes = {
     people: "/$tenant/$project/settings/workspace/people",
     accounts: "/$tenant/$project/settings/workspace/accounts",
     workspacePermissions: "/$tenant/$project/settings/workspace/permissions",
+    myRunner: "/$tenant/$project/settings/workspace/runner",
     siteWorkspaces: "/$tenant/$project/settings/site/workspaces",
     sitePermissions: "/$tenant/$project/settings/site/permissions",
   },
@@ -29,6 +30,7 @@ export const settingsRoutes = {
     people: "/tenants/$tenant/settings/people",
     accounts: "/tenants/$tenant/settings/accounts",
     workspacePermissions: "/tenants/$tenant/settings/permissions",
+    myRunner: "/tenants/$tenant/settings/runner",
     siteWorkspaces: "/tenants/$tenant/settings/site/workspaces",
     sitePermissions: "/tenants/$tenant/settings/site/permissions",
   },
@@ -117,6 +119,7 @@ export function settingsNav(
       entry("people", "People", frame.people),
       entry("accounts", "Accounts", frame.accounts),
       entry("workspace-permissions", "Permissions", frame.workspacePermissions),
+      entry("my-runner", "My runner", frame.myRunner),
     ],
   };
   const siteGroup: SettingsNavGroup = {

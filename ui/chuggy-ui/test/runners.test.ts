@@ -147,15 +147,23 @@ test("a write refused for the hosted grant is told apart from any other refusal"
 });
 
 test("the command names the console's own origin and the token, and nothing else", () => {
-  expect(runnerRegisterCommand("https://chuggy.test", "tok_en-1")).toBe(
+  expect(runnerRegisterCommand("https://chuggy.test", "tok_en-1", "Pool")).toBe(
     "chuggy-linux register --api https://chuggy.test --token=tok_en-1",
+  );
+});
+
+test("a member's own runner is registered by the same command, marked personal", () => {
+  expect(
+    runnerRegisterCommand("https://chuggy.test", "tok_en-1", "Personal"),
+  ).toBe(
+    "chuggy-linux register --personal --api https://chuggy.test --token=tok_en-1",
   );
 });
 
 /** A base64url token may start with a dash, which an argument parser takes for
  * a flag unless the token is joined to its own. */
 test("a token that starts with a dash stays the token's value", () => {
-  expect(runnerRegisterCommand("https://chuggy.test", "-tok")).toBe(
+  expect(runnerRegisterCommand("https://chuggy.test", "-tok", "Pool")).toBe(
     "chuggy-linux register --api https://chuggy.test --token=-tok",
   );
 });

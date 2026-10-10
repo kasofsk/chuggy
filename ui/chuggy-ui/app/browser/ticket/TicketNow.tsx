@@ -8,15 +8,22 @@
  * `Execution` frame lands in both and the card follows the same high-water
  * mark the row's transcript does. The run's prompt is read only once the
  * conversation is opened.
+ *
+ * A run of the reader's own that their runner may take, and has not begun,
+ * says where it waits: on their runner, or on it coming back online where no
+ * other runner may take it. Only such a run reads the reader's runner.
  */
 
+import { Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
+import type { ExecutionSummary } from "../../../../../src/contract/responses.ts";
 import { apiExecution } from "../../core/apiRoutes.ts";
 import { conversationArgumentLine } from "../../core/conversation.ts";
 import { sinceFigure } from "../../core/figures.ts";
+import { runnerWait, runnerWaitWord } from "../../core/myRunner.ts";
 import {
   runNowAttempt,
   runNowAttemptLive,
@@ -27,13 +34,16 @@ import {
   runNowStatus,
 } from "../../core/runNow.ts";
 import type { RunNow, RunNowAttempt, RunNowCall } from "../../core/runNow.ts";
+import { settingsRoutes } from "../../core/settingsNav.ts";
 import type { RunningNow } from "../../core/ticketSituation.ts";
 import { usePanelResource } from "../api.ts";
 import { PanelUnready } from "../DataPanel.tsx";
+import { usePersonalRunner } from "../personalRunner.ts";
 import { RunConversation, useRunTranscript } from "../RunTranscript.tsx";
 import { Button } from "../ui/Button.tsx";
 import { Figure } from "../ui/Figure.tsx";
 import { MarkdownLine } from "../ui/MarkdownReport.tsx";
+import { Notice } from "../ui/Notice.tsx";
 
 import "./ticket.css";
 
@@ -226,6 +236,30 @@ function TicketNowRun(props: {
   );
 }
 
+/** A run of the reader's held for their own runner, with where it is managed. */
+function TicketNowRunnerWait(props: {
+  readonly partition: PartitionIdentity;
+  readonly execution: ExecutionSummary;
+}): ReactNode {
+  const runner = usePersonalRunner(props.partition.tenant);
+  const wait = runnerWait(
+    props.execution,
+    runner.state === "Ready" ? runner.value : undefined,
+    props.partition.project,
+  );
+  if (wait === undefined) return null;
+  return (
+    <Notice tone="parked" inline detail={runnerWaitWord(wait)}>
+      <span className="text-ink-3">
+        {" · "}
+        <Link to={settingsRoutes.project.myRunner} params={props.partition}>
+          My runner
+        </Link>
+      </span>
+    </Notice>
+  );
+}
+
 export function TicketNow(props: {
   readonly partition: PartitionIdentity;
   readonly running: RunningNow;
@@ -241,7 +275,8 @@ export function TicketNow(props: {
   );
   const read = state.state === "Ready" ? state.value : undefined;
   const attempt = read === undefined ? undefined : runNowAttempt(read);
-  const status = runNowStatus(read ?? execution);
+  const summary = read ?? execution;
+  const status = runNowStatus(summary);
   const transcript = attempt?.run?.transcript;
   if (attempt !== undefined && transcript !== undefined)
     return (
@@ -264,6 +299,9 @@ export function TicketNow(props: {
         since={runNowStartedAt(execution, attempt)}
         nowMs={props.nowMs}
       />
+      {summary.mine === true && summary.ownerFallback !== undefined ? (
+        <TicketNowRunnerWait partition={partition} execution={summary} />
+      ) : null}
       {state.state === "Absent" || state.state === "Failed" ? (
         <PanelUnready state={state} />
       ) : null}

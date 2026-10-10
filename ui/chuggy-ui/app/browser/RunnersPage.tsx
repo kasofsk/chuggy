@@ -24,13 +24,12 @@ import { projectResourceKey } from "../core/projectQueryKeys.ts";
 import {
   runnerCapabilityLabel,
   runnerPlatforms,
-  runnerRegisterCommand,
   runnerTokenLifetimeSecs,
 } from "../core/runners.ts";
 import { useApiPorts, usePanelResource } from "./api.ts";
 import { PanelUnready } from "./DataPanel.tsx";
+import { RunnerCommand } from "./RunnerCommand.tsx";
 import { useNowMs } from "./Freshness.tsx";
-import { clipboardWritten, currentOrigin } from "./ports.ts";
 import { TopBarSlot } from "./shell/slots.tsx";
 import { Button } from "./ui/Button.tsx";
 import { EmptyState } from "./ui/EmptyState.tsx";
@@ -71,53 +70,6 @@ function PoolTable(props: { readonly listed: WorkerPoolsResponse }): ReactNode {
         ))}
       </tbody>
     </Table>
-  );
-}
-
-/** The command a minted token is handed over in, copied whole by one press. */
-function RunnerCommand(props: {
-  readonly minted: WorkerPoolTokenResponse;
-  readonly onDone: () => void;
-}): ReactNode {
-  const nowMs = useNowMs();
-  const [copied, setCopied] = useState<boolean | undefined>(undefined);
-  const command = runnerRegisterCommand(currentOrigin(), props.minted.token);
-  return (
-    <div className="grid gap-2">
-      <span className="text-sm text-ink-3">Run on the machine</span>
-      <code
-        aria-label="Command"
-        className="bg-surface-2 rounded-2 px-2 py-1 font-mono text-sm text-ink-1 break-all"
-      >
-        {command}
-      </code>
-      <div className="flex flex-wrap items-center gap-2">
-        <Button
-          variant="primary"
-          size="sm"
-          onClick={() => {
-            void clipboardWritten(command).then(setCopied);
-          }}
-        >
-          {copied === true ? "Copied" : "Copy"}
-        </Button>
-        <Button variant="quiet" size="sm" onClick={props.onDone}>
-          Done
-        </Button>
-        <span className="text-sm text-ink-3">
-          Expires{" "}
-          <Figure
-            figure={instantFigure(
-              new Date(props.minted.expiresAtMs).toISOString(),
-              nowMs,
-            )}
-          />
-        </span>
-        {copied === false ? (
-          <Notice tone="parked" inline detail="Copy blocked" />
-        ) : null}
-      </div>
-    </div>
   );
 }
 
@@ -188,6 +140,7 @@ function RunnersSection(props: {
       {mint.mint === "Minted" ? (
         <RunnerCommand
           minted={mint.minted}
+          kind="Pool"
           onDone={() => {
             setMint({ mint: "Idle" });
             void client.invalidateQueries({

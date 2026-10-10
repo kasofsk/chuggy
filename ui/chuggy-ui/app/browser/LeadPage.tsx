@@ -355,7 +355,11 @@ export function LeadPage(): ReactNode {
   if (state.state === "Absent") {
     const action =
       runner === undefined ? undefined : (
-        <SessionRunnerNotice partition={partition} short={runner} />
+        <SessionRunnerNotice
+          partition={partition}
+          session="Lead"
+          short={runner}
+        />
       );
     return (
       <>

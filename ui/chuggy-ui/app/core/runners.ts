@@ -69,9 +69,17 @@ export function runnerCapabilityLabel(capability: string): string {
     : platform[1].replaceAll(":", " ");
 }
 
+/** Whose a registered machine is: one of the project's pools, or the reader's own. */
+export type RunnerKind = "Pool" | "Personal";
+
 /** The command the console hands a reader to run on the machine being added. */
-export function runnerRegisterCommand(origin: string, token: string): string {
-  return `chuggy-linux register --api ${origin} --token=${token}`;
+export function runnerRegisterCommand(
+  origin: string,
+  token: string,
+  kind: RunnerKind,
+): string {
+  const personal = kind === "Personal" ? " --personal" : "";
+  return `chuggy-linux register${personal} --api ${origin} --token=${token}`;
 }
 
 /** Every kind's route, written as two placements: work and evaluation, and a

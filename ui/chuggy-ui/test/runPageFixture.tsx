@@ -182,6 +182,8 @@ export interface RunPageServed {
   readonly error?: Record<string, unknown>;
   /** An artifact's own content, read where a case opens its preview. */
   readonly artifactContent?: Record<string, unknown>;
+  /** The reader's own runner, and a `404` where a case gives them none. */
+  readonly personalRunner?: Record<string, unknown>;
 }
 
 export interface RunPageDrawn {
@@ -196,6 +198,10 @@ function runPageRoute(
 ): (url: string) => Response {
   let transcriptPage = 0;
   return (url) => {
+    if (url.includes("/personal-runner"))
+      return served.personalRunner === undefined
+        ? answer({}, 404)
+        : answer(served.personalRunner);
     if (url.includes("/transcript")) {
       const page =
         served.transcripts[transcriptPage] ?? served.transcripts.at(-1);

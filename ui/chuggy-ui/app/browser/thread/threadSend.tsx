@@ -233,7 +233,11 @@ function ThreadSendNote(props: {
     case "NoRunner":
     case "RunnerOffline":
       return (
-        <SessionRunnerNotice partition={props.partition} short={send.send} />
+        <SessionRunnerNotice
+          partition={props.partition}
+          session="Thread"
+          short={send.send}
+        />
       );
     case "Waiting":
     case "Ended":

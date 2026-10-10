@@ -17,6 +17,9 @@ import {
   draftInitializationResponseSchema,
   draftResponseSchema,
   executionPlacementResponseSchema,
+  personalRunnerPermitResponseSchema,
+  personalRunnerResponseSchema,
+  projectOwnerFallbackResponseSchema,
   executionsResponseSchema,
   forgeAppsResponseSchema,
   forgeAuthorizationResponseSchema,
@@ -57,6 +60,9 @@ import type {
   DraftInitializationResponse,
   DraftResponse,
   ExecutionPlacementResponse,
+  PersonalRunnerPermitResponse,
+  PersonalRunnerResponse,
+  ProjectOwnerFallbackResponse,
   ExecutionsResponse,
   ForgeAppsResponse,
   ForgeAuthorizationResponse,
@@ -93,6 +99,7 @@ import type {
   draftCreationSchema,
   draftRevisionSchema,
   executionPlacementSchema,
+  projectOwnerFallbackSchema,
   forgeAuthorizationSchema,
   leadInquirySchema,
   projectCreationSchema,
@@ -473,6 +480,129 @@ export function apiMintWorkerPoolToken(
       body: request,
     },
     (value) => workerPoolTokenResponseSchema.parse(value),
+  );
+}
+
+/** Who may take a project's owned work beside the pools, and whether the reader may change it. */
+export function apiOwnerFallback(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+): Promise<ApiResult<ProjectOwnerFallbackResponse>> {
+  return apiGet(ports, apiSegments(partition, "owner-fallback"), (value) =>
+    projectOwnerFallbackResponseSchema.parse(value),
+  );
+}
+
+/** A project's fallback written whole; an absent one is cleared. */
+export function apiWriteOwnerFallback(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+  written: z.infer<typeof projectOwnerFallbackSchema>,
+): Promise<ApiResult<ProjectOwnerFallbackResponse>> {
+  return apiRead(
+    ports,
+    {
+      method: "PUT",
+      path: apiSegments(partition, "owner-fallback"),
+      body: written,
+    },
+    (value) => projectOwnerFallbackResponseSchema.parse(value),
+  );
+}
+
+/** Whether the tenant permits the reader to register a runner of their own. */
+export function apiPersonalRunnerPermit(
+  ports: ApiPorts,
+  tenant: string,
+): Promise<ApiResult<PersonalRunnerPermitResponse>> {
+  return apiGet(
+    ports,
+    apiFilled(nativeHttpRoutes.personalRunnerPermit, { tenant }),
+    (value) => personalRunnerPermitResponseSchema.parse(value),
+  );
+}
+
+/** The reader's own runner in a tenant, answered as absent where they have none. */
+export function apiPersonalRunner(
+  ports: ApiPorts,
+  tenant: string,
+): Promise<ApiResult<PersonalRunnerResponse>> {
+  return apiGet(
+    ports,
+    apiFilled(nativeHttpRoutes.personalRunner, { tenant }),
+    (value) => personalRunnerResponseSchema.parse(value),
+  );
+}
+
+/** A single-use token the reader registers their own runner in a tenant with. */
+export function apiMintPersonalRunnerToken(
+  ports: ApiPorts,
+  tenant: string,
+  request: z.infer<typeof workerPoolRegistrationTokenRequestSchema>,
+): Promise<ApiResult<WorkerPoolTokenResponse>> {
+  return apiRead(
+    ports,
+    {
+      method: "POST",
+      path: apiFilled(nativeHttpRoutes.personalRunnerRegistrationTokens, {
+        tenant,
+      }),
+      body: request,
+    },
+    (value) => workerPoolTokenResponseSchema.parse(value),
+  );
+}
+
+/** The reader's runner takes work in one more project, or in one fewer. */
+export function apiPersonalRunnerServes(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+  serves: boolean,
+): Promise<ApiResult<undefined>> {
+  return apiRead(
+    ports,
+    {
+      method: serves ? "PUT" : "DELETE",
+      path: apiFilled(nativeHttpRoutes.personalRunnerProject, {
+        tenant: partition.tenant,
+        project: partition.project,
+      }),
+    },
+    () => undefined,
+  );
+}
+
+/** The reader's own runner taken off in a tenant. */
+export function apiDeregisterPersonalRunner(
+  ports: ApiPorts,
+  tenant: string,
+): Promise<ApiResult<undefined>> {
+  return apiRead(
+    ports,
+    {
+      method: "DELETE",
+      path: apiFilled(nativeHttpRoutes.personalRunner, { tenant }),
+    },
+    () => undefined,
+  );
+}
+
+/** One member's runner taken off by their subject, which a tenant administrator may do for anyone. */
+export function apiDeregisterMemberRunner(
+  ports: ApiPorts,
+  tenant: string,
+  subject: string,
+): Promise<ApiResult<undefined>> {
+  return apiRead(
+    ports,
+    {
+      method: "DELETE",
+      path: apiFilled(nativeHttpRoutes.personalRunnerMember, {
+        tenant,
+        subject,
+      }),
+    },
+    () => undefined,
   );
 }
 

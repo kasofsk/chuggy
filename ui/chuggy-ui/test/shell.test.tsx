@@ -999,7 +999,8 @@ test.each([
   },
 );
 
-test("a reader with no runner is pointed at the Runners page", async () => {
+/** A thread runs only on its member's own runner, so it is added on their own page rather than as a project's pool. */
+test("a reader with no runner is pointed at their own runner's page", async () => {
   await mounted(
     viewportDeskEm,
     placedServed(grantReadServed(true, []), {
@@ -1008,8 +1009,35 @@ test("a reader with no runner is pointed at the Runners page", async () => {
     }),
   );
   expect(
-    within(conversationRegion()).getByRole("link", { name: "Runners" }),
+    within(conversationRegion()).getByRole("link", { name: "My runner" }),
   ).toBeTruthy();
+  styleless();
+});
+
+/** Beside New too, where a held thread takes no messages, the way to a runner is the reader's own page. */
+test("a held thread that takes no messages points a reader with no runner at their own runner's page", async () => {
+  await mounted(
+    viewportDeskEm,
+    placedServed(
+      grantReadServed(
+        true,
+        [
+          threadEntry({
+            session: openedSession,
+            owner: "geoff",
+            mine: true,
+            state: "Orphaned",
+          }),
+        ],
+        "Orphaned",
+      ),
+      { thread: "Pool", mine: "Unregistered" },
+    ),
+  );
+  const conversation = within(conversationRegion());
+  expect(conversation.getByText("Closed")).toBeTruthy();
+  expect(conversation.queryByText("No runner")).toBeNull();
+  expect(screen.getByRole("link", { name: "My runner" })).toBeTruthy();
   styleless();
 });
 

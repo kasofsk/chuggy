@@ -148,7 +148,11 @@ function LeadAskNotice(props: {
       return <Notice tone="parked" inline detail={ask.word} />;
     case "NoRunner":
       return (
-        <SessionRunnerNotice partition={props.partition} short="NoRunner" />
+        <SessionRunnerNotice
+          partition={props.partition}
+          session="Inquiry"
+          short="NoRunner"
+        />
       );
     case "Failed":
       return <Notice tone="danger" inline detail={`Failed · ${ask.reason}`} />;
@@ -165,7 +169,11 @@ function LeadAskRunner(props: {
   return runner === undefined ||
     props.ask.ask === "Refused" ||
     props.ask.ask === "NoRunner" ? null : (
-    <SessionRunnerNotice partition={props.partition} short={runner} />
+    <SessionRunnerNotice
+      partition={props.partition}
+      session="Inquiry"
+      short={runner}
+    />
   );
 }
 
