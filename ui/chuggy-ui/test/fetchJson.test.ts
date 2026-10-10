@@ -3,13 +3,14 @@
  *
  * What is checked is what each kind of request is sent as and what each way of
  * failing rejects with: no answer, a refused status, a body lost on the way
- * and a body that is not JSON. The last case is the browser's own port, which
- * hands its `fetch` exactly what the core built.
+ * and a body that is not JSON. The last cases are the browser's own port,
+ * which hands its `fetch` what the core built and adds only the signal it
+ * gives a request nothing answers up by.
  */
 
 import { afterEach, expect, test, vi } from "vitest";
 
-import { fetchJson } from "../app/browser/ports.ts";
+import { fetchJson, fetchJsonWaitMs } from "../app/browser/ports.ts";
 import { FetchJsonError, fetchJsonThrough } from "../app/core/sessionHolder.ts";
 import type {
   FetchJsonInit,
@@ -18,6 +19,7 @@ import type {
 } from "../app/core/sessionHolder.ts";
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 
@@ -160,15 +162,65 @@ test("a body that is not JSON rejects with the parser's own error", async () => 
   expect(failure).not.toBeInstanceOf(FetchJsonError);
 });
 
-test("the browser's port hands its fetch what the core built, and nothing of its own", async () => {
-  const asked: unknown[][] = [];
-  vi.stubGlobal("fetch", (...handed: unknown[]) => {
-    asked.push(handed);
+test("the browser's port hands its fetch what the core built, and of its own only the signal its wait ends by", async () => {
+  const asked: { url: string; init: object; signal: unknown }[] = [];
+  vi.stubGlobal("fetch", (url: string, handed: RequestInit) => {
+    const { signal, ...init } = handed;
+    asked.push({ url, init, signal });
     return Promise.resolve(new Response('{"access_token":"access"}'));
   });
 
   const value = await fetchJson(tokenRequest);
 
   expect(value).toEqual({ access_token: "access" });
-  expect(asked).toStrictEqual([[tokenRequest.url, tokenInit]]);
+  expect(asked.map(({ url, init }) => ({ url, init }))).toStrictEqual([
+    { url: tokenRequest.url, init: tokenInit },
+  ]);
+  expect(asked[0]?.signal).toBeInstanceOf(AbortSignal);
+});
+
+/** The signal is the request's whole life, so it ends a body that stops
+ * arriving as it ends an answer that never begins. Nothing here waits on the
+ * request itself, which a port with no bound would never settle. */
+test.each([
+  ["answers nothing", (silent: Promise<never>) => silent],
+  [
+    "answers and then sends no body",
+    (silent: Promise<never>) =>
+      Promise.resolve({ ok: true, status: 200, text: () => silent }),
+  ],
+])(
+  "the browser's port gives a request up at its bound where the network %s, as one that got no answer",
+  async (_how, answered: (silent: Promise<never>) => Promise<unknown>) => {
+    vi.useFakeTimers();
+    vi.stubGlobal("fetch", (_url: string, init: RequestInit) =>
+      answered(
+        new Promise<never>((_resolve, reject) => {
+          init.signal?.addEventListener("abort", () => {
+            reject(new DOMException("given up", "AbortError"));
+          });
+        }),
+      ),
+    );
+
+    let failure: unknown = "not settled";
+    void rejection(fetchJson(tokenRequest)).then((failed) => {
+      failure = failed;
+    });
+    await vi.advanceTimersByTimeAsync(fetchJsonWaitMs - 1);
+    expect(failure).toBe("not settled");
+    await vi.advanceTimersByTimeAsync(1);
+
+    expect(failure).toMatchObject({ fault: { fault: "Unanswered" } });
+    expect(vi.getTimerCount()).toBe(0);
+  },
+);
+
+test("the browser's port leaves no wait running behind a request that was answered", async () => {
+  vi.useFakeTimers();
+  vi.stubGlobal("fetch", () => Promise.resolve(new Response("{}")));
+
+  await fetchJson(tokenRequest);
+
+  expect(vi.getTimerCount()).toBe(0);
 });

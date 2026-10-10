@@ -13,6 +13,16 @@
  * the whole session when a spent one is shown to it again. So the token a
  * renewal presents is the one the store holds at that moment, read while no
  * other document is renewing, and never the one this document remembers.
+ *
+ * A DOCUMENT IS ONE SIGN-IN'S FOR ITS WHOLE LIFE. What it has drawn and the
+ * access token it sends are that sign-in's, so it follows the store only
+ * through a renewal of that sign-in and ends where the store comes to hold
+ * another. The two are told apart by a mark kept beside the token: drawn at
+ * random by each completed code exchange and by nothing else, so a renewal
+ * leaves it as it found it. It is stored before its token and removed after
+ * it, and read after it, so a reader that finds a new sign-in's token finds
+ * that sign-in's mark with it and never the mark of the one before. It is no
+ * secret, being compared and never sent.
  */
 
 import {
@@ -25,7 +35,12 @@ import {
   tokenRefreshRequest,
   tokenRevocationRequest,
 } from "./authorization.ts";
-import type { AuthorizationEndpoints, FormRequest } from "./authorization.ts";
+import type {
+  AuthorizationCallback,
+  AuthorizationEndpoints,
+  FormRequest,
+  IssuedTokens,
+} from "./authorization.ts";
 import {
   consoleConfigurationPath,
   parseConsoleConfiguration,
@@ -51,6 +66,8 @@ import {
 import type { SessionHeld, SessionState } from "./session.ts";
 
 export const sessionRefreshTokenKey = "chuggy.refreshToken";
+/** Where the store keeps the mark of the sign-in its refresh token is of. */
+export const sessionSignInKey = "chuggy.signIn";
 export const sessionTransactionKey = "chuggy.authorization";
 export const sessionLoadRetryDelayMs = 1_000;
 
@@ -63,6 +80,8 @@ export const sessionRenewalWaitMs = 30_000;
 export const sessionEndedReason = "Session ended";
 /** What a reader is told of one the issuer kept answering unusably for. */
 export const sessionUnrenewedReason = "this session could not be renewed";
+/** What a reader is told where another document signed in over this one's. */
+export const sessionChangedReason = "Session changed";
 
 export interface KeyValuePort {
   read: (key: string) => string | null;
@@ -209,7 +228,10 @@ export interface SessionLocation {
 }
 
 export interface SessionHolder {
-  readonly load: () => Promise<void>;
+  /** Loads the configuration and the stored session. Given the address the
+   * document was loaded at, it leaves the stored session untaken where that
+   * address answers a sign-in of this tab's own, for the callback to settle. */
+  readonly load: (location?: SessionLocation) => Promise<void>;
   readonly completeCallback: (
     location: SessionLocation,
   ) => Promise<SessionCallback>;
@@ -232,9 +254,17 @@ interface SessionInner {
   configuration: ConsoleConfiguration | undefined;
   endpoints: AuthorizationEndpoints | undefined;
   session: SessionState;
+  /** The mark of the sign-in this session is of, none where the sign-in is
+   * older than the mark or the store keeps none. */
+  mark: string | undefined;
   /** Whether the store was seen holding this session's refresh token, which
    * one a browser refuses never is. */
   storeKeeps: boolean;
+  /** Counts the sign-ins and the endings, so an answer is known for one that
+   * was asked for under a session no longer held. */
+  era: number;
+  /** Whether a load left the stored session untaken for a callback to settle. */
+  awaited: boolean;
   generation: number;
   snapshot: SessionSnapshot;
   renewal: Promise<boolean> | undefined;
@@ -277,8 +307,10 @@ type SessionLoaded =
     };
 
 /** What a gateway answers for a server it could not reach or that is briefly
- * down, which is a blip like a request with no answer, not a deployment fault. */
-const sessionTransientStatuses: ReadonlySet<number> = new Set([502, 503, 504]);
+ * down, Cloudflare's own among them: a blip like a request with no answer. */
+const sessionTransientStatuses: ReadonlySet<number> = new Set([
+  502, 503, 504, 520, 521, 522, 523, 524, 525, 526, 527, 530,
+]);
 
 /** The reason names where it was asked, because the configuration and the
  * issuer are different hosts. */
@@ -323,9 +355,51 @@ async function sessionLoadOnce(
   }
 }
 
-/** A load that got no answer is asked once more after a pause before it is
- * drawn, and again only when the reader asks. */
-async function sessionLoad(inner: SessionInner): Promise<void> {
+/** What the store holds: a refresh token, read first, and the mark of the
+ * sign-in it is of. */
+function sessionStored(inner: SessionInner): {
+  readonly mark: string | undefined;
+  readonly token: string | null;
+} {
+  const token = inner.ports.persistent.read(sessionRefreshTokenKey);
+  return {
+    mark: inner.ports.persistent.read(sessionSignInKey) ?? undefined,
+    token,
+  };
+}
+
+/** Takes the stored session as this document's. A token under no mark is one
+ * a console older than the mark stored, and is a session like any other. */
+function sessionTakeStored(inner: SessionInner): void {
+  const stored = sessionStored(inner);
+  if (stored.token === null) return;
+  inner.session = sessionFromRefreshToken(stored.token);
+  inner.mark = stored.mark;
+  inner.storeKeeps = true;
+}
+
+/** The answer to a sign-in that `location` carries, none where it is not the
+ * address this client is registered with. */
+function sessionCallbackAt(
+  configuration: ConsoleConfiguration,
+  location: SessionLocation,
+): AuthorizationCallback {
+  const callback = parseAuthorizationCallback(location.search);
+  return new URL(configuration.redirectUri).pathname === location.pathname
+    ? callback
+    : { result: "None" };
+}
+
+/**
+ * A load that got no answer is asked once more after a pause before it is
+ * drawn, and again only when the reader asks. One at an address that answers a
+ * sign-in this tab began takes no stored session, so the document is nobody's
+ * until its own sign-in has answered.
+ */
+async function sessionLoad(
+  inner: SessionInner,
+  location: SessionLocation | undefined,
+): Promise<void> {
   if (inner.phase !== "Loading") {
     inner.phase = "Loading";
     inner.reason = undefined;
@@ -344,11 +418,12 @@ async function sessionLoad(inner: SessionInner): Promise<void> {
   }
   inner.configuration = loaded.configuration;
   inner.endpoints = loaded.endpoints;
-  const stored = inner.ports.persistent.read(sessionRefreshTokenKey);
-  if (stored !== null) {
-    inner.session = sessionFromRefreshToken(stored);
-    inner.storeKeeps = true;
-  }
+  inner.awaited =
+    location !== undefined &&
+    sessionCallbackAt(loaded.configuration, location).result !== "None" &&
+    inner.ports.transient.read(sessionTransactionKey) !== null;
+  if (inner.awaited) return;
+  sessionTakeStored(inner);
   sessionSettle(inner);
 }
 
@@ -356,55 +431,89 @@ function sessionHeldNow(inner: SessionInner): SessionHeld | undefined {
   return inner.session.state === "Held" ? inner.session.held : undefined;
 }
 
-function sessionAdopt(inner: SessionInner, issued: unknown): void {
+/** Holds what was issued and hands its refresh token to the store, answering
+ * the token, or none where the issuer sent none and none was held. */
+function sessionKeep(
+  inner: SessionInner,
+  tokens: IssuedTokens,
+  heldRefreshToken: string | undefined,
+): string | undefined {
   inner.generation += 1;
-  const previous =
-    inner.session.state === "Held"
-      ? inner.session.held.refreshToken
-      : undefined;
   inner.session = sessionFromTokens(
     inner.ports.nowMs(),
-    parseIssuedTokens(issued),
-    previous,
+    tokens,
+    heldRefreshToken,
   );
-  const kept =
-    inner.session.state === "Held"
-      ? inner.session.held.refreshToken
-      : undefined;
-  if (kept === undefined) inner.ports.persistent.remove(sessionRefreshTokenKey);
-  else inner.ports.persistent.write(sessionRefreshTokenKey, kept);
+  const kept = sessionHeldNow(inner)?.refreshToken;
+  if (kept !== undefined)
+    inner.ports.persistent.write(sessionRefreshTokenKey, kept);
   inner.storeKeeps =
     kept !== undefined &&
     inner.ports.persistent.read(sessionRefreshTokenKey) === kept;
+  return kept;
+}
+
+/**
+ * A completed sign-in becomes the session, whatever was held or stored
+ * before, under a mark of its own that is stored ahead of its token. Its mark
+ * is then what the store says it is, which is none where the store keeps none.
+ */
+function sessionSignedIn(inner: SessionInner, issued: unknown): void {
+  const tokens = parseIssuedTokens(issued);
+  inner.era += 1;
+  if (tokens.refreshToken !== undefined)
+    inner.ports.persistent.write(
+      sessionSignInKey,
+      base64urlFromBytes(inner.ports.drawBytes(pkceVerifierBytesCount)),
+    );
+  if (sessionKeep(inner, tokens, undefined) === undefined)
+    sessionStoreClear(inner);
+  inner.mark = inner.ports.persistent.read(sessionSignInKey) ?? undefined;
   sessionSettle(inner);
+}
+
+/** A renewal's answer becomes the session it renewed, whose mark it leaves. */
+function sessionRenewed(inner: SessionInner, issued: unknown): void {
+  const tokens = parseIssuedTokens(issued);
+  sessionKeep(inner, tokens, sessionHeldNow(inner)?.refreshToken);
+  sessionSettle(inner);
+}
+
+/** Empties the store of a session, its token before its mark. */
+function sessionStoreClear(inner: SessionInner): void {
+  inner.ports.persistent.remove(sessionRefreshTokenKey);
+  inner.ports.persistent.remove(sessionSignInKey);
 }
 
 /** Ends the session in this document and leaves the store as it is. */
 function sessionDrop(inner: SessionInner, reason: string | undefined): void {
   inner.generation += 1;
+  inner.era += 1;
   inner.session = sessionSignedOut;
   inner.reason = reason;
   sessionSettle(inner);
 }
 
 function sessionForget(inner: SessionInner, reason: string | undefined): void {
-  inner.ports.persistent.remove(sessionRefreshTokenKey);
+  sessionStoreClear(inner);
   sessionDrop(inner, reason);
 }
 
 /**
  * Brings this document in line with the store every document of the origin
- * shares: a token there that this one does not hold is the one another
- * document renewed to, and a store that kept this session's token and holds
- * none now is a session another document ended.
+ * shares: an emptied store is a session another document ended and one under
+ * another mark is another sign-in, and either ends this document's session
+ * and touches nothing. A different token under this session's own mark is the
+ * one another document renewed to.
  */
 function sessionFollow(inner: SessionInner): void {
   const held = sessionHeldNow(inner);
   if (held === undefined || !inner.storeKeeps) return;
-  const stored = inner.ports.persistent.read(sessionRefreshTokenKey);
-  if (stored === held.refreshToken) return;
-  if (stored === null) sessionDrop(inner, undefined);
-  else inner.session = sessionWithRefreshToken(held, stored);
+  const stored = sessionStored(inner);
+  if (stored.token === null) sessionDrop(inner, undefined);
+  else if (stored.mark !== inner.mark) sessionDrop(inner, sessionChangedReason);
+  else if (stored.token !== held.refreshToken)
+    inner.session = sessionWithRefreshToken(held, stored.token);
 }
 
 /**
@@ -422,12 +531,32 @@ function sessionRefresh(inner: SessionInner): Promise<boolean> {
   return started;
 }
 
+/** What a turn at renewing left. */
+interface SessionTurn {
+  readonly renewed: boolean;
+  /** A refresh token the answer brought for a session no longer held. */
+  readonly stray: string | undefined;
+}
+
+const sessionTurnUnrenewed: SessionTurn = { renewed: false, stray: undefined };
+
+/**
+ * A token an answer brought for a session that ended while it was asked for
+ * is live at the issuer and held by nothing, so it is revoked. That is done
+ * once the turn is given back, so nobody waits on it.
+ */
+async function sessionRenew(inner: SessionInner): Promise<boolean> {
+  const turn = await sessionTurn(inner);
+  if (turn.stray !== undefined) await sessionRevoke(inner, turn.stray);
+  return turn.renewed;
+}
+
 /**
  * A renewal takes its turn among the holders sharing the store. A turn that
  * did not come leaves the session as it was, to be renewed when it is next
  * needed.
  */
-async function sessionRenew(inner: SessionInner): Promise<boolean> {
+async function sessionTurn(inner: SessionInner): Promise<SessionTurn> {
   const exclusive = inner.ports.exclusive;
   if (exclusive === undefined) return sessionRenewStored(inner);
   try {
@@ -435,37 +564,75 @@ async function sessionRenew(inner: SessionInner): Promise<boolean> {
       sessionRenewStored(inner),
     );
   } catch {
-    return false;
+    return sessionTurnUnrenewed;
   }
 }
 
 /**
- * Presents the token the store holds now. An answer that arrives after the
- * session was ended is dropped, so a sign-out is not undone by the renewal it
- * overtook.
+ * Presents the token the store holds now, and reads the store again when the
+ * answer arrives. An answer for a session that ended or was replaced while it
+ * was asked for changes nothing, so neither a sign-out nor a sign-in is undone
+ * by the renewal it overtook.
  */
-async function sessionRenewStored(inner: SessionInner): Promise<boolean> {
+async function sessionRenewStored(inner: SessionInner): Promise<SessionTurn> {
   const { configuration, endpoints } = inner;
-  if (configuration === undefined || endpoints === undefined) return false;
+  if (configuration === undefined || endpoints === undefined)
+    return sessionTurnUnrenewed;
   sessionFollow(inner);
   const held = sessionHeldNow(inner);
-  if (held === undefined) return false;
+  if (held === undefined) return sessionTurnUnrenewed;
   const presented = held.refreshToken;
   if (presented === undefined || !sessionCanRefresh(held)) {
     sessionForget(inner, sessionUnrenewedReason);
-    return false;
+    return sessionTurnUnrenewed;
   }
+  const era = inner.era;
+  let issued: unknown;
   try {
-    const issued = await inner.ports.fetchJson(
+    issued = await inner.ports.fetchJson(
       tokenRefreshRequest(configuration, endpoints, presented),
     );
-    if (sessionHeldNow(inner) === undefined) return false;
-    sessionAdopt(inner, issued);
-    return true;
+  } catch (failure: unknown) {
+    sessionFollow(inner);
+    if (inner.era === era) sessionRenewFailed(inner, presented, failure);
+    return sessionTurnUnrenewed;
+  }
+  sessionFollow(inner);
+  if (inner.era !== era)
+    return { renewed: false, stray: sessionRefreshTokenIn(issued) };
+  try {
+    sessionRenewed(inner, issued);
+    return { renewed: true, stray: undefined };
   } catch (failure: unknown) {
     sessionRenewFailed(inner, presented, failure);
-    return false;
+    return sessionTurnUnrenewed;
   }
+}
+
+/** The refresh token an answer brought, none where it brought none. */
+function sessionRefreshTokenIn(issued: unknown): string | undefined {
+  try {
+    return parseIssuedTokens(issued).refreshToken;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Revocation only where the issuer publishes an endpoint for it, and a
+ * session is ended whether or not it answers. */
+async function sessionRevoke(
+  inner: SessionInner,
+  refreshToken: string,
+): Promise<void> {
+  const { configuration, endpoints } = inner;
+  if (configuration === undefined || endpoints === undefined) return;
+  const revocation = tokenRevocationRequest(
+    configuration,
+    endpoints,
+    refreshToken,
+  );
+  if (revocation !== undefined)
+    await inner.ports.fetchJson(revocation).catch(() => undefined);
 }
 
 /** How a renewal that brought no tokens ended. */
@@ -521,7 +688,7 @@ function sessionRenewFailed(
  * token it refused: one another holder has put there since is that holder's. */
 function sessionRefused(inner: SessionInner, presented: string): void {
   if (inner.ports.persistent.read(sessionRefreshTokenKey) === presented)
-    inner.ports.persistent.remove(sessionRefreshTokenKey);
+    sessionStoreClear(inner);
   sessionDrop(inner, sessionEndedReason);
 }
 
@@ -605,23 +772,21 @@ function sessionTakeTransaction(
  * own, is that page's to redeem and spends nothing of a sign-in. One arriving
  * before the console has loaded is left untouched for the load that succeeds.
  */
-async function sessionCompleteCallback(
+async function sessionCallbackAnswered(
   inner: SessionInner,
   location: SessionLocation,
 ): Promise<SessionCallback> {
-  const callback = parseAuthorizationCallback(location.search);
-  if (callback.result === "None") return { result: "None" };
   const { configuration, endpoints } = inner;
   if (configuration === undefined || endpoints === undefined)
     return { result: "None" };
-  if (new URL(configuration.redirectUri).pathname !== location.pathname)
-    return { result: "None" };
+  const callback = sessionCallbackAt(configuration, location);
+  if (callback.result === "None") return callback;
   const transaction = sessionTakeTransaction(inner);
   if (callback.result === "Denied") return callback;
   if (transaction === undefined || transaction.state !== callback.state)
     return { result: "Denied", reason: "the callback did not match this tab" };
   try {
-    sessionAdopt(
+    sessionSignedIn(
       inner,
       await inner.ports.fetchJson(
         tokenExchangeRequest(configuration, endpoints, {
@@ -636,27 +801,35 @@ async function sessionCompleteCallback(
   }
 }
 
-/** Revocation only where the issuer publishes an endpoint for it. */
-function sessionRevocation(inner: SessionInner): FormRequest | undefined {
-  const { configuration, endpoints, session } = inner;
-  if (configuration === undefined || endpoints === undefined) return undefined;
-  if (session.state !== "Held" || session.held.refreshToken === undefined)
-    return undefined;
-  return tokenRevocationRequest(
-    configuration,
-    endpoints,
-    session.held.refreshToken,
-  );
+/** A load that left the stored session for this callback to settle takes it
+ * now, where the callback brought no sign-in of its own. */
+async function sessionCompleteCallback(
+  inner: SessionInner,
+  location: SessionLocation,
+): Promise<SessionCallback> {
+  const answered = await sessionCallbackAnswered(inner, location);
+  if (!inner.awaited) return answered;
+  inner.awaited = false;
+  if (answered.result !== "SignedIn") {
+    sessionTakeStored(inner);
+    sessionSettle(inner);
+  }
+  return answered;
 }
 
-/** The token revoked is the store's, which another document may have renewed
- * to since this one last looked. */
+/**
+ * The token revoked is the store's, which another document may have renewed
+ * to since this one last looked. A document whose session the store no longer
+ * holds has nothing to sign out of, and what the store holds is not its to
+ * clear or to revoke.
+ */
 async function sessionSignOut(inner: SessionInner): Promise<void> {
   sessionFollow(inner);
-  const revocation = sessionRevocation(inner);
+  const held = sessionHeldNow(inner);
+  if (held === undefined) return;
   sessionForget(inner, undefined);
-  if (revocation !== undefined)
-    await inner.ports.fetchJson(revocation).catch(() => undefined);
+  if (held.refreshToken !== undefined)
+    await sessionRevoke(inner, held.refreshToken);
 }
 
 /** What the sign-in was refused for, kept where the tree that draws it reads. */
@@ -680,7 +853,10 @@ export function createSessionHolder(ports: SessionHolderPorts): SessionHolder {
     configuration: undefined,
     endpoints: undefined,
     session: sessionSignedOut,
+    mark: undefined,
     storeKeeps: false,
+    era: 0,
+    awaited: false,
     generation: 0,
     renewal: undefined,
     snapshot: {
@@ -693,7 +869,7 @@ export function createSessionHolder(ports: SessionHolderPorts): SessionHolder {
     sessionFollow(inner);
   });
   return {
-    load: () => sessionLoad(inner),
+    load: (location?: SessionLocation) => sessionLoad(inner, location),
     completeCallback: (location: SessionLocation) =>
       sessionCompleteCallback(inner, location),
     signIn: (returnPath?: string) => sessionSignIn(inner, returnPath),

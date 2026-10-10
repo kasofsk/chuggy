@@ -2,28 +2,26 @@
  * Several documents of one browser over the one stored refresh token, with no
  * browser present.
  *
- * Each document is a holder of its own with a clock of its own. What they
- * share is the store, the turn a renewal is taken under, and an issuer that
- * rotates the refresh token on every renewal and ends the whole session when a
- * spent one is shown to it again.
+ * The documents share one sign-in here, stored as a console older than the
+ * sign-in's mark stored it: a token and nothing beside it. The issuer rotates
+ * the refresh token on every renewal and ends the whole session when a spent
+ * one is shown to it again, and its revocation is the rig's: naming the token
+ * it honours ends the session, and naming one already spent is answered the
+ * same and ends nothing.
  */
 
 import { expect, test } from "vitest";
 
 import {
   FetchJsonError,
-  createSessionHolder,
   sessionEndedReason,
   sessionRefreshTokenKey,
-} from "../app/core/sessionHolder.ts";
-import type {
-  KeyValuePort,
-  SessionHolder,
-  SessionHolderPorts,
+  sessionRenewalLockName,
+  sessionRenewalWaitMs,
 } from "../app/core/sessionHolder.ts";
 import type { FormRequest } from "../app/core/authorization.ts";
-import { keyValueDouble } from "./keyValueDouble.ts";
-import type { HeldStore } from "./keyValueDouble.ts";
+import { settled, sharedBrowser } from "./sessionBrowserHarness.ts";
+import type { SharedBrowser } from "./sessionBrowserHarness.ts";
 import {
   sessionHarness,
   sessionHarnessDiscovery as discovery,
@@ -37,6 +35,8 @@ interface RotatingIssuer {
   readonly presented: string[];
   /** The token each revocation named. */
   readonly revoked: string[];
+  /** The refresh token the issuer would still renew, none once it is ended. */
+  readonly honoured: () => string | undefined;
   /** Whether a spent token was shown again, which ends the session for all. */
   readonly replayed: () => boolean;
   /** Keeps every renewal's answer from arriving until the answer is called. */
@@ -72,6 +72,7 @@ function rotatingIssuer(): RotatingIssuer {
   return {
     presented,
     revoked,
+    honoured: () => held.live,
     replayed: () => held.replayed,
     hold: () => {
       let release = (): void => undefined;
@@ -84,8 +85,9 @@ function rotatingIssuer(): RotatingIssuer {
       if (typeof request === "string") return base(request);
       const form = new URLSearchParams(request.body);
       if (request.url === discovery.revocation_endpoint) {
-        revoked.push(form.get("token") ?? "");
-        held.live = undefined;
+        const named = form.get("token") ?? "";
+        revoked.push(named);
+        if (named === held.live) held.live = undefined;
         return {};
       }
       const token = form.get("refresh_token") ?? "";
@@ -105,91 +107,18 @@ function rotatingIssuer(): RotatingIssuer {
   };
 }
 
-interface SharedDocument {
-  readonly holder: SessionHolder;
-}
-
-interface SharedBrowser {
+/** A browser whose store holds the one sign-in's first token. */
+function rotatingBrowser(): SharedBrowser & {
   readonly issuer: RotatingIssuer;
-  readonly store: HeldStore;
-  /** A document, loaded. One that is not `told` hears nothing of what the
-   * others store, as one kept in the back-forward cache hears nothing; one
-   * with no `turn` renews without waiting for any other. */
-  readonly open: (options?: {
-    readonly told?: boolean;
-    readonly turn?: boolean;
-  }) => Promise<SharedDocument>;
-}
-
-function sharedBrowser(): SharedBrowser {
+} {
   const issuer = rotatingIssuer();
-  const store = keyValueDouble();
-  store.held.set(sessionRefreshTokenKey, firstToken);
-  const hearing = new Map<number, () => void>();
-  let turns: Promise<void> = Promise.resolve();
-  const exclusive: NonNullable<SessionHolderPorts["exclusive"]> = (
-    _name,
-    _waitMs,
-    body,
-  ) => {
-    const taken = turns.then(body);
-    turns = taken.then(
-      () => undefined,
-      () => undefined,
-    );
-    return taken;
-  };
-  /** The store as one document writes it: the others are told of a change,
-   * and the writer is not, which is how a browser tells them. */
-  const storeOf = (document: number): KeyValuePort => {
-    const changed = (): void => {
-      for (const [other, heard] of hearing) if (other !== document) heard();
-    };
-    return {
-      read: store.read,
-      write: (key, value) => {
-        if (store.read(key) === value) return;
-        store.write(key, value);
-        changed();
-      },
-      remove: (key) => {
-        if (store.read(key) === null) return;
-        store.remove(key);
-        changed();
-      },
-    };
-  };
-  return {
-    issuer,
-    store,
-    open: async (options = {}) => {
-      const document = hearing.size;
-      const harness = sessionHarness();
-      harness.answer = issuer.answer;
-      const holder = createSessionHolder({
-        ...harness.ports,
-        persistent: storeOf(document),
-        ...(options.turn === false ? {} : { exclusive }),
-        storedHeard: (heard) => {
-          hearing.set(
-            document,
-            options.told === false ? () => undefined : heard,
-          );
-        },
-      });
-      await holder.load();
-      return { holder };
-    },
-  };
-}
-
-/** Lets everything already able to run do so, and nothing held arrive. */
-async function settled(): Promise<void> {
-  await new Promise((resolve) => setTimeout(resolve, 0));
+  const browser = sharedBrowser(issuer.answer);
+  browser.store.held.set(sessionRefreshTokenKey, firstToken);
+  return Object.assign(browser, { issuer });
 }
 
 test("a document renews with the token another has since stored, not the one it loaded with", async () => {
-  const browser = sharedBrowser();
+  const browser = rotatingBrowser();
   const older = await browser.open({ told: false });
   const newer = await browser.open({ told: false });
 
@@ -204,7 +133,7 @@ test("a document renews with the token another has since stored, not the one it 
 });
 
 test("two documents that need a token at once take turns, and each presents a live one", async () => {
-  const browser = sharedBrowser();
+  const browser = rotatingBrowser();
   const first = await browser.open();
   const second = await browser.open();
   const release = browser.issuer.hold();
@@ -219,8 +148,36 @@ test("two documents that need a token at once take turns, and each presents a li
   expect(browser.issuer.replayed()).toBe(false);
 });
 
+/** Neither document is told of the other's write, so only a store read once
+ * the turn has come can present the live token. */
+test("two documents that hear nothing and need a token at once each present a live one", async () => {
+  const browser = rotatingBrowser();
+  const first = await browser.open({ told: false });
+  const second = await browser.open({ told: false });
+  const release = browser.issuer.hold();
+
+  const asked = [first.holder.bearer(), second.holder.bearer()];
+  await settled();
+  release();
+
+  expect(await Promise.all(asked)).toEqual(["access-1", "access-2"]);
+  expect(browser.issuer.presented).toEqual([firstToken, "renew-1"]);
+  expect(browser.issuer.replayed()).toBe(false);
+});
+
+test("a renewal asks for its turn under the origin's one name, and says how long it will wait", async () => {
+  const browser = rotatingBrowser();
+  const only = await browser.open();
+
+  expect(await only.holder.refresh()).toBe(true);
+
+  expect(browser.turns).toEqual([
+    { name: sessionRenewalLockName, waitMs: sessionRenewalWaitMs },
+  ]);
+});
+
 test("a sign-out in one document ends the session in the other, which asks the issuer nothing", async () => {
-  const browser = sharedBrowser();
+  const browser = rotatingBrowser();
   const kept = await browser.open();
   const left = await browser.open();
   expect(await kept.holder.bearer()).toBe("access-1");
@@ -236,7 +193,7 @@ test("a sign-out in one document ends the session in the other, which asks the i
 });
 
 test("a document that heard nothing finds the session ended when it next renews, and presents nothing", async () => {
-  const browser = sharedBrowser();
+  const browser = rotatingBrowser();
   const kept = await browser.open({ told: false });
   const left = await browser.open();
 
@@ -251,8 +208,26 @@ test("a document that heard nothing finds the session ended when it next renews,
   expect(browser.issuer.presented).toEqual([]);
 });
 
+/** A browser that queues nothing for a document it kept tells it only that it
+ * is shown again, and that is when it reads the store. */
+test("a document that heard nothing of a sign-out is ended as it is shown again, before it asks for anything", async () => {
+  const browser = rotatingBrowser();
+  const kept = await browser.open({ told: false });
+  const left = await browser.open();
+  await left.holder.signOut();
+  expect(kept.holder.snapshot().phase).toBe("SignedIn");
+
+  kept.shown();
+
+  expect(kept.holder.snapshot()).toMatchObject({
+    phase: "SignedOut",
+    reason: undefined,
+  });
+  expect(browser.issuer.presented).toEqual([]);
+});
+
 test("signing out revokes the token the store holds, not the one this document loaded with", async () => {
-  const browser = sharedBrowser();
+  const browser = rotatingBrowser();
   const older = await browser.open({ told: false });
   const newer = await browser.open({ told: false });
   expect(await newer.holder.bearer()).toBe("access-1");
@@ -260,13 +235,14 @@ test("signing out revokes the token the store holds, not the one this document l
   await older.holder.signOut();
 
   expect(browser.issuer.revoked).toEqual(["renew-1"]);
+  expect(browser.issuer.honoured()).toBeUndefined();
   expect(browser.store.held.has(sessionRefreshTokenKey)).toBe(false);
 });
 
 /** With no turn to wait for, two documents can present one token inside a
  * single round trip. The one refused is ended; what the other stored is its. */
 test("a refused renewal clears the store only of the token it presented", async () => {
-  const browser = sharedBrowser();
+  const browser = rotatingBrowser();
   const renewed = await browser.open({ turn: false, told: false });
   const refused = await browser.open({ turn: false, told: false });
   const release = browser.issuer.hold();
@@ -283,8 +259,10 @@ test("a refused renewal clears the store only of the token it presented", async 
   expect(browser.store.held.get(sessionRefreshTokenKey)).toBe("renew-1");
 });
 
-test("an answer that arrives after a sign-out does not sign the document back in", async () => {
-  const browser = sharedBrowser();
+/** The sign-out named the token it held, which the renewal had already spent,
+ * so the issuer still honours the one the answer brings until that is named. */
+test("an answer that arrives after a sign-out is not kept, and the token it brought is revoked", async () => {
+  const browser = rotatingBrowser();
   const only = await browser.open();
   const release = browser.issuer.hold();
 
@@ -296,4 +274,29 @@ test("an answer that arrives after a sign-out does not sign the document back in
   expect(await renewing).toBe(false);
   expect(only.holder.snapshot().phase).toBe("SignedOut");
   expect(browser.store.held.has(sessionRefreshTokenKey)).toBe(false);
+  expect(browser.issuer.revoked).toEqual([firstToken, "renew-1"]);
+  expect(browser.issuer.honoured()).toBeUndefined();
 });
+
+for (const told of [true, false]) {
+  test(`a sign-out in another document while this one's renewal is at the issuer leaves nothing honoured${told ? "" : ", though this one heard nothing"}`, async () => {
+    const browser = rotatingBrowser();
+    const renewing = await browser.open({ told });
+    const leaving = await browser.open();
+    const release = browser.issuer.hold();
+
+    const asked = renewing.holder.refresh();
+    await settled();
+    await leaving.holder.signOut();
+    release();
+
+    expect(await asked).toBe(false);
+    expect(renewing.holder.snapshot()).toMatchObject({
+      phase: "SignedOut",
+      reason: undefined,
+    });
+    expect(browser.issuer.revoked).toEqual([firstToken, "renew-1"]);
+    expect(browser.issuer.honoured()).toBeUndefined();
+    expect(browser.store.held.size).toBe(0);
+  });
+}

@@ -16,11 +16,6 @@
  * made is what takes an invite link's token out of the address, so no frame is
  * drawn with it in the address bar, and what starts it hearing a fragment that
  * changes later, for the life of the document.
- *
- * The session holder shares its store with every other document of the
- * origin, so it is given the turn they renew under and is told when the
- * stored token may have moved: another document changed the store, or this
- * one was shown again out of the back-forward cache.
  */
 
 import "../styles/tokens.css";
@@ -32,7 +27,6 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
 import { createInviteHolder } from "../core/inviteHolder.ts";
-import { createSessionHolder } from "../core/sessionHolder.ts";
 import { App } from "./App.tsx";
 import { InviteProvider } from "./InvitePage.tsx";
 import {
@@ -41,22 +35,16 @@ import {
   cookieWritten,
   currentAnchor,
   currentLocation,
-  digest,
-  drawBytes,
-  exclusively,
-  fetchJson,
-  nowMs,
-  pageRestoredHeard,
-  persistentChangeHeard,
   persistentStore,
-  redirect,
   reloadLocation,
   replaceLocation,
   replacePath,
-  sleepMs,
-  transientStore,
 } from "./ports.ts";
-import { SessionProvider, sessionBegin } from "./session.tsx";
+import {
+  SessionProvider,
+  sessionBegin,
+  sessionHolderOpened,
+} from "./session.tsx";
 import { themeChoiceApply, themeChoiceRead } from "./theme.ts";
 import "../styles.css";
 
@@ -70,21 +58,7 @@ const queryClient = new QueryClient({
   },
 });
 
-const holder = createSessionHolder({
-  nowMs,
-  sleepMs,
-  fetchJson,
-  persistent: persistentStore,
-  transient: transientStore,
-  digest,
-  drawBytes,
-  redirect,
-  exclusive: exclusively,
-  storedHeard: (heard) => {
-    persistentChangeHeard(heard);
-    pageRestoredHeard(heard);
-  },
-});
+const holder = sessionHolderOpened();
 
 const invite = createInviteHolder({
   location: currentLocation,

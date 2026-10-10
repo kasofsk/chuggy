@@ -5,6 +5,13 @@
  * subscription for the snapshot, one timer that renews the token before it
  * lapses so a long-lived stream is never carrying an expired one, and the start
  * — the load and the callback — which runs again when the first got no answer.
+ *
+ * The browser's holder is built here and nowhere else, over the browser's own
+ * ports, so that a suite builds the one the console runs. It shares its store
+ * with every other document of the origin, so it is given the turn they renew
+ * under and is told when the stored session may have moved: another document
+ * changed the store, or this one was shown again out of the back-forward
+ * cache.
  */
 
 import {
@@ -15,9 +22,45 @@ import {
 } from "react";
 import type { ReactNode } from "react";
 
-import { sessionCallbackPath } from "../core/sessionHolder.ts";
+import {
+  createSessionHolder,
+  sessionCallbackPath,
+} from "../core/sessionHolder.ts";
 import type { SessionHolder, SessionSnapshot } from "../core/sessionHolder.ts";
-import { currentLocation, nowMs, replacePath, sleepMs } from "./ports.ts";
+import {
+  currentLocation,
+  digest,
+  drawBytes,
+  exclusively,
+  fetchJson,
+  nowMs,
+  pageRestoredHeard,
+  persistentChangeHeard,
+  persistentStore,
+  redirect,
+  replacePath,
+  sleepMs,
+  transientStore,
+} from "./ports.ts";
+
+/** The session holder of a document in a browser. */
+export function sessionHolderOpened(): SessionHolder {
+  return createSessionHolder({
+    nowMs,
+    sleepMs,
+    fetchJson,
+    persistent: persistentStore,
+    transient: transientStore,
+    digest,
+    drawBytes,
+    redirect,
+    exclusive: exclusively,
+    storedHeard: (heard) => {
+      persistentChangeHeard(heard);
+      pageRestoredHeard(heard);
+    },
+  });
+}
 
 const SessionContext = createContext<SessionHolder | undefined>(undefined);
 
@@ -33,12 +76,15 @@ export function SessionProvider(props: {
 }
 
 /**
- * Loads the session and completes whatever the redirect brought back. A
- * refused sign-in is drawn with its reason, not as a browser holding none.
+ * Loads the session, saying where the document is so that one the redirect
+ * brought back is nobody's until what it brought has answered, and completes
+ * that. A refused sign-in is drawn with its reason, not as a browser holding
+ * none.
  */
 export async function sessionBegin(holder: SessionHolder): Promise<void> {
-  await holder.load();
-  const callback = await holder.completeCallback(currentLocation());
+  const location = currentLocation();
+  await holder.load(location);
+  const callback = await holder.completeCallback(location);
   if (callback.result === "None") return;
   if (callback.result === "Denied") holder.refuse(callback.reason);
   replacePath(sessionCallbackPath(callback));

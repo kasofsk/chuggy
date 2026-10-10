@@ -56,6 +56,12 @@ function answeredWith(status: number): () => never {
   };
 }
 
+/** What a gateway answers for a server it could not reach, Cloudflare's own
+ * for an origin it could not among them. */
+const gatewayStatuses = [
+  502, 503, 504, 520, 521, 522, 523, 524, 525, 526, 527, 530,
+] as const;
+
 /** The harness's answers, except where `failing` names the request. */
 function failingAt(
   failing: (request: FormRequest | string) => boolean,
@@ -109,9 +115,7 @@ test("a load whose first ask got no answer settles on the second", async () => {
  * blip as no answer at all. */
 test("a gateway's answer is unreachable and asked once more; a server's own error is not", async () => {
   for (const [status, phase, asked] of [
-    [502, "Unreachable", 2],
-    [503, "Unreachable", 2],
-    [504, "Unreachable", 2],
+    ...gatewayStatuses.map((gateway) => [gateway, "Unreachable", 2] as const),
     [500, "Unconfigured", 1],
     [404, "Unconfigured", 1],
   ] as const) {
@@ -362,12 +366,7 @@ test("a renewal the issuer refuses ends the session at once, and is not asked ag
 /** No answer says nothing about the session, and neither does a gateway's
  * answer for an issuer it could not reach. */
 test("a renewal that got no answer keeps the session, however often, and renews when one comes", async () => {
-  for (const failure of [
-    unanswered,
-    answeredWith(502),
-    answeredWith(503),
-    answeredWith(504),
-  ]) {
+  for (const failure of [unanswered, ...gatewayStatuses.map(answeredWith)]) {
     const held = harness();
     held.persistent.held.set(sessionRefreshTokenKey, "renew");
     const holder = createSessionHolder(held.ports);

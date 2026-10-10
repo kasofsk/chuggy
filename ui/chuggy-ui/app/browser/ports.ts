@@ -87,8 +87,21 @@ export async function streamFetch(
   };
 }
 
+/** How long a request for JSON is waited on, body and all. A renewal keeps
+ * every other document of the origin from renewing until its own is answered. */
+export const fetchJsonWaitMs = 20_000;
+
 export function fetchJson(request: FormRequest | string): Promise<unknown> {
-  return fetchJsonThrough((url, init) => fetch(url, init), request);
+  const waited = new AbortController();
+  const timer = setTimeout(() => {
+    waited.abort();
+  }, fetchJsonWaitMs);
+  return fetchJsonThrough(
+    (url, init) => fetch(url, { ...init, signal: waited.signal }),
+    request,
+  ).finally(() => {
+    clearTimeout(timer);
+  });
 }
 
 function keyValuePort(store: () => Storage): KeyValuePort {
@@ -128,9 +141,11 @@ export function persistentChangeHeard(heard: () => void): void {
 
 /**
  * Runs `body` while no other document of this origin is running one under
- * `name`, by the Web Locks API, and rejects where the turn did not come within
- * `waitMs`. A browser without that API, or a page it withholds it from for
- * not being served securely, runs `body` at once.
+ * `name`, by the Web Locks API, rejecting where the turn did not come within
+ * `waitMs`, and at once where the browser has no such API or withholds it.
+ * Only a document that is shown waits: a browser grants a waiting request to
+ * a document it has frozen, whose body cannot run, so the wait is given up as
+ * the document is hidden and asked afresh if it is shown again.
  */
 export function exclusively<T>(
   name: string,
@@ -138,13 +153,49 @@ export function exclusively<T>(
   body: () => Promise<T>,
 ): Promise<T> {
   if (!("locks" in navigator)) return body();
-  const waited = new AbortController();
-  const timer = setTimeout(() => {
-    waited.abort();
-  }, waitMs);
-  return navigator.locks.request(name, { signal: waited.signal }, () => {
-    clearTimeout(timer);
-    return body();
+  return new Promise<T>((resolve) => {
+    let leave: (() => void) | undefined;
+    const ended = (): void => {
+      removeEventListener("pagehide", hidden);
+      removeEventListener("pageshow", shown);
+    };
+    function ask(): void {
+      const waited = new AbortController();
+      const timer = setTimeout(() => {
+        waited.abort();
+      }, waitMs);
+      let left = false;
+      leave = () => {
+        left = true;
+        waited.abort();
+      };
+      const asked = navigator.locks.request(
+        name,
+        { signal: waited.signal },
+        () => {
+          clearTimeout(timer);
+          ended();
+          return body();
+        },
+      );
+      const answered = (): void => {
+        clearTimeout(timer);
+        if (left) return;
+        ended();
+        resolve(asked);
+      };
+      asked.then(answered, answered);
+    }
+    function hidden(): void {
+      leave?.();
+      leave = undefined;
+    }
+    function shown(): void {
+      if (leave === undefined) ask();
+    }
+    addEventListener("pagehide", hidden);
+    addEventListener("pageshow", shown);
+    ask();
   });
 }
 

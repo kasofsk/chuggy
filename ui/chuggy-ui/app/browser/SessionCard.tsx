@@ -7,11 +7,17 @@
  * page it was pressed on, because the issuer redirects to the one address this
  * client is registered with: a page reached with a query it needs — the
  * forge's setup return — would otherwise come back without it.
+ *
+ * A session that ended because another tab signed in is the one case with a
+ * session to come back to without signing in: the browser already holds it,
+ * and the document loaded again is that session's. So that card offers the
+ * reload, and a sign-in pressed there would end the other tab's in its turn.
  */
 
 import type { ReactNode } from "react";
 
-import { currentPath } from "./ports.ts";
+import { sessionChangedReason } from "../core/sessionHolder.ts";
+import { currentPath, reloadLocation } from "./ports.ts";
 import { useSessionHolder, useSessionSnapshot } from "./session.tsx";
 import { Button } from "./ui/Button.tsx";
 
@@ -35,6 +41,7 @@ export function SessionCard(props: {
 export function SignedOutCard(): ReactNode {
   const holder = useSessionHolder();
   const snapshot = useSessionSnapshot();
+  const changed = snapshot.reason === sessionChangedReason;
   return (
     <SessionCard
       title="chuggy"
@@ -43,10 +50,11 @@ export function SignedOutCard(): ReactNode {
         <Button
           variant="primary"
           onClick={() => {
-            void holder.signIn(currentPath());
+            if (changed) reloadLocation();
+            else void holder.signIn(currentPath());
           }}
         >
-          Sign in
+          {changed ? "Reload" : "Sign in"}
         </Button>
       }
     />
