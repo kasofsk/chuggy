@@ -3,9 +3,10 @@
  * real in either, so a suite runs commands against them as a person's agent
  * would and plays the person's browser itself.
  *
- * The files are a map, the clock moves only when a wait is waited out, and a
- * command the program starts again is run here as a second set of ports over
- * the same files, clock and network: the listener a sign-in leaves behind is
+ * The files are a map, the lock is one word, the clock moves only when a wait
+ * is waited out, and a command the program starts again is run here as a
+ * second set of ports over the same files, lock, clock and network: the
+ * listener a sign-in leaves behind is
  * the real one, deciding beside the command that started it. The issuer hands
  * out a new renewal token for each one it is shown and ends the whole sign-in
  * when shown a spent one, which is what the real one does.
@@ -56,6 +57,10 @@ interface Timer {
 export interface SetupMachine {
   /** The files by name, as the program wrote them. */
   readonly files: Map<SetupFile, string>;
+  /** What the lock says: its holder's word, or nothing where it is free. */
+  lock: string | undefined;
+  /** Each file the program asked to have its unfinished writes removed, in order. */
+  readonly swept: SetupFile[];
   nowMs: number;
   /** How the site's own configuration, the issuer's discovery, its token endpoint and the API answer. */
   site: Answering;
@@ -64,6 +69,8 @@ export interface SetupMachine {
   api: Answering;
   /** Whether an exchange hands over a renewal token, which an allow page can withhold. */
   renewable: boolean;
+  /** Whether the API takes the tokens the issuer hands out, which a site whose audience changed does not. */
+  admits: boolean;
   tenants: readonly MachineTenant[];
   browser: string | undefined;
   platform: string;
@@ -227,7 +234,7 @@ function apiFetch(
     return Promise.resolve(new Response("{}", { status: 200 }));
   const bearer = (init.headers["authorization"] ?? "").replace("Bearer ", "");
   return Promise.resolve(
-    issuer.access.has(bearer)
+    machine.admits && issuer.access.has(bearer)
       ? new Response(
           JSON.stringify({ tenants: machine.tenants, truncated: false }),
           { status: 200 },
@@ -260,9 +267,14 @@ function slept(inner: Inner, ms: number, signal?: AbortSignal): Promise<void> {
   });
 }
 
-/** Fires the earliest wait due by `untilMs`, answering whether there was one. */
-async function fired(inner: Inner, untilMs: number): Promise<boolean> {
+/** Fires the earliest wait due by `untilMs`, answering whether there was one; nothing is fired once `halted` says the work being waited on is over. */
+async function fired(
+  inner: Inner,
+  untilMs: number,
+  halted: () => boolean = () => false,
+): Promise<boolean> {
   await turn();
+  if (halted()) return false;
   const due = inner.timers
     .filter((timer) => timer.atMs <= untilMs)
     .sort((left, right) => left.atMs - right.atMs)[0];
@@ -274,19 +286,42 @@ async function fired(inner: Inner, untilMs: number): Promise<boolean> {
   return true;
 }
 
-function filesOf(files: Map<SetupFile, string>): SetupPorts["files"] {
+/** The double's digest: every octet, its place and the length move the answer, and nothing waits on a clock that is not the machine's. */
+function folded(message: Uint8Array): Uint8Array {
+  const digest = new Uint8Array(32);
+  let carried = message.length + 1;
+  for (const [at, octet] of message.entries()) {
+    carried = (carried * 31 + octet + at) % 65_521;
+    const slot = at % digest.length;
+    digest[slot] = ((digest[slot] ?? 0) + carried) % 256;
+  }
+  digest[0] = ((digest[0] ?? 0) + carried) % 256;
+  return digest;
+}
+
+function filesOf(machine: SetupMachine): SetupPorts["files"] {
+  const { files } = machine;
   return {
     read: (file) => files.get(file),
     write: (file, text) => {
       files.set(file, text);
     },
-    create: (file, text) => {
-      if (files.has(file)) return false;
-      files.set(file, text);
-      return true;
-    },
     remove: (file) => {
       files.delete(file);
+    },
+    sweep: (file) => {
+      machine.swept.push(file);
+    },
+  };
+}
+
+function lockOf(machine: SetupMachine): SetupPorts["lock"] {
+  return {
+    read: () => machine.lock,
+    swap: (held, next) => {
+      if (machine.lock !== held) return false;
+      machine.lock = next;
+      return true;
     },
   };
 }
@@ -300,10 +335,11 @@ function portsOf(inner: Inner, pid: number): SetupPorts {
       inner.drawn += 1;
       return new Uint8Array(count).fill(inner.drawn);
     },
-    digest: (message) => Promise.resolve(message.slice(0, 32)),
+    digest: (message) => Promise.resolve(folded(message)),
     fetchJson: (url, init) => fetchJson(machine, issuer, url, init),
     apiFetch: (url, init) => apiFetch(machine, issuer, url, init),
-    files: filesOf(machine.files),
+    files: filesOf(machine),
+    lock: lockOf(machine),
     listen: (host, answer) => {
       if (host !== "127.0.0.1") throw new Error(`listened on ${host}`);
       const port = 41_000 + inner.listeners.size + pid;
@@ -362,8 +398,9 @@ async function settled<T>(inner: Inner, work: Promise<T>): Promise<T> {
     done = true;
   });
   marked.catch(() => undefined);
+  const halted = (): boolean => done;
   for (let step = 0; step < machineStepsMax && !done; step += 1)
-    if (!(await fired(inner, Number.POSITIVE_INFINITY)) && !done)
+    if (!(await fired(inner, Number.POSITIVE_INFINITY, halted)) && !done)
       throw new Error("the command waits on nothing that will ever happen");
   if (!done) throw new Error("the command outlived every bound it has");
   return work;
@@ -410,12 +447,15 @@ export function setupMachine(): SetupMachine {
   };
   const machine: SetupMachine = {
     files: new Map(),
+    lock: undefined,
+    swept: [],
     nowMs: 1_000_000,
     site: "Answers",
     discovery: "Answers",
     token: "Answers",
     api: "Answers",
     renewable: true,
+    admits: true,
     tenants: [
       { tenant: "acme", roles: ["Admin"], administer: true },
       { tenant: "guest", roles: ["Member"], administer: false },

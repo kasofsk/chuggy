@@ -13,7 +13,7 @@ import { expect, test } from "vitest";
 import { apiAttemptsMax } from "../app/core/apiRequest.ts";
 import { setupFiles } from "../app/core/setupPorts.ts";
 import { setupRetryDelayMsMax } from "../app/core/setupSession.ts";
-import { setupLockWaitMs } from "../app/core/setupStore.ts";
+import { setupLockWaitMs, setupLockWord } from "../app/core/setupStore.ts";
 import { machineDirectory, machineSite, setupMachine } from "./setupMachine.ts";
 import type { SetupMachine } from "./setupMachine.ts";
 
@@ -175,6 +175,30 @@ test("a body the site sends that this program cannot read is said to be unreadab
   });
 });
 
+test("a run that takes the lock has what a cut-short write left of the sign-in removed, and one that cannot have it removes nothing", async () => {
+  const machine = await signedIn();
+  machine.swept.length = 0;
+  await machine.command([]);
+  expect(machine.swept).toEqual([setupFiles.session]);
+  machine.alive.add(7);
+  machine.lock = setupLockWord(7, machine.nowMs);
+  expect(await machine.command([])).toMatchObject({ report: "Busy" });
+  expect(machine.swept).toEqual([setupFiles.session]);
+});
+
+test("a site that refuses the sign-in it remembered is said to have, and the sign-in is forgotten", async () => {
+  const machine = await signedIn();
+  machine.admits = false;
+  expect(await machine.command([])).toEqual({
+    report: "WorkspacesUnread",
+    site: machineSite,
+    outcome: "Unauthenticated",
+    asked: "Status",
+  });
+  expect(remembered(machine)).toEqual({ site: machineSite });
+  expect(await machine.command([])).toEqual(signedOut);
+});
+
 test("a renewal the issuer answers with a fault of its own is a failure, and the token is kept", async () => {
   const machine = await signedIn();
   const held = machine.live();
@@ -205,8 +229,8 @@ test("a token remembered for one site is never sent for another, and the other s
 test("a command that finds another run holding the lock waits a bounded time and then says so", async () => {
   const machine = await signedIn();
   machine.alive.add(7);
-  const held = JSON.stringify({ pid: 7, takenAtMs: machine.nowMs });
-  machine.files.set(setupFiles.lock, held);
+  const held = setupLockWord(7, machine.nowMs);
+  machine.lock = held;
   const began = machine.nowMs;
   expect(await machine.command([])).toEqual({
     report: "Busy",
@@ -217,18 +241,15 @@ test("a command that finds another run holding the lock waits a bounded time and
     asked: "SignIn",
   });
   expect(machine.nowMs - began).toBe(2 * setupLockWaitMs);
-  expect(machine.files.get(setupFiles.lock)).toBe(held);
+  expect(machine.lock).toBe(held);
   expect(machine.asked).toEqual([]);
 });
 
 test("a lock whose holder is gone is taken, and the command runs", async () => {
   const machine = await signedIn();
-  machine.files.set(
-    setupFiles.lock,
-    JSON.stringify({ pid: 7, takenAtMs: machine.nowMs }),
-  );
+  machine.lock = setupLockWord(7, machine.nowMs);
   expect(await machine.command([])).toMatchObject({ report: "SignedIn" });
-  expect(machine.files.has(setupFiles.lock)).toBe(false);
+  expect(machine.lock).toBeUndefined();
 });
 
 test("a command asked wrongly says which part, and reads nothing", async () => {
@@ -248,5 +269,5 @@ test("whatever a port throws ends as one report, and the lock is given up", asyn
     return read(file);
   };
   expect(await machine.command([])).toEqual({ report: "Faulted" });
-  expect(machine.files.has(setupFiles.lock)).toBe(false);
+  expect(machine.lock).toBeUndefined();
 });

@@ -10,6 +10,12 @@
  * that one and opens nothing. The listener ends when it has an answer or when
  * its own bound passes, whichever is first.
  *
+ * An answer is one that carries the state this sign-in sent. That is checked
+ * before anything else is read of a request, a refusal as much as a code, so
+ * nothing else on the machine that reaches the port can end the sign-in or
+ * spend what it holds: such a request is told there is nothing here and the
+ * page goes on waiting.
+ *
  * Signed in is three things together: the issuer exchanged the answer, it
  * handed over a renewal token, and the site then answered a read as that
  * person. The first two without the third is a token the site refuses, and the
@@ -43,6 +49,7 @@ import type { SetupSessionOpened } from "./setupSession.ts";
 import {
   setupLockReleased,
   setupLockTaken,
+  setupSessionRead,
   setupSignInNoteRead,
   setupSignInNoteWritten,
 } from "./setupStore.ts";
@@ -271,23 +278,33 @@ export async function setupSignInAwaited(
   };
 }
 
-/** How an answer the issuer sent back reads before anything is spent on it: an ending, a code to exchange, or nothing of a sign-in's. */
+/** How an answer that is this sign-in's reads before anything is spent on it: an ending, a code to exchange, or neither. */
 function setupCallbackRead(
-  search: string,
+  query: URLSearchParams,
 ): "Declined" | "Refused" | "Code" | undefined {
-  const query = new URLSearchParams(search);
   const refusal = query.get("error");
   if (refusal !== null)
     return refusal === "access_denied" ? "Declined" : "Refused";
-  return query.get("code") === null || query.get("state") === null
-    ? undefined
-    : "Code";
+  return query.get("code") === null ? undefined : "Code";
+}
+
+/** What a sign-in the issuer exchanged comes to: a renewal token must have come with it, and the site must then answer as that person. */
+async function setupExchangeConfirmed(
+  opened: SetupSessionOpened,
+): Promise<SetupSignInEnded> {
+  if (opened.store.read(sessionRefreshTokenKey) === null) return "NoRenewal";
+  const workspaces = await setupWorkspacesRead(opened);
+  if (workspaces.read === "Answered") return "SignedIn";
+  return workspaces.outcome === "Unauthenticated"
+    ? "SiteRefused"
+    : "WorkspacesUnread";
 }
 
 /**
  * Exchanges the code and confirms what came of it, holding the lock from
  * before the exchange until the token it produced is written and has been used
- * once.
+ * once. A page whose site is no longer the one remembered exchanges nothing,
+ * because what it wrote would replace another site's sign-in.
  */
 async function setupCallbackExchanged(
   ports: SetupPorts,
@@ -296,17 +313,15 @@ async function setupCallbackExchanged(
 ): Promise<SetupSignInEnded> {
   if (!(await setupLockTaken(ports, setupListenLockWaitMs))) return "Busy";
   try {
+    if (setupSessionRead(ports.files)?.site !== opened.site)
+      return "SiteChanged";
     const callback = await opened.holder.completeCallback({
       pathname: heard.path,
       search: heard.search,
     });
-    if (callback.result !== "SignedIn")
-      return opened.tokenAsked() === "Unasked"
-        ? "Mismatched"
-        : "ExchangeFailed";
-    if (opened.store.read(sessionRefreshTokenKey) === null) return "NoRenewal";
-    const workspaces = await setupWorkspacesRead(opened);
-    return workspaces.read === "Answered" ? "SignedIn" : "WorkspacesUnread";
+    if (callback.result === "SignedIn")
+      return await setupExchangeConfirmed(opened);
+    return opened.tokenAsked() === "Unasked" ? "Mismatched" : "ExchangeFailed";
   } finally {
     setupLockReleased(ports);
   }
@@ -329,8 +344,30 @@ interface SetupListener {
   readonly ports: SetupPorts;
   readonly opened: SetupSessionOpened;
   readonly authorize: string;
+  /** The state this sign-in sent, which only its own answer brings back. */
+  readonly state: string;
   readonly decide: (ended: SetupSignInEnded) => void;
   deciding: boolean;
+}
+
+/**
+ * Whether a request carries the state this sign-in sent. Both are digested
+ * and every octet of the two digests is compared, so how long the answer
+ * takes says nothing of how nearly a guess matched.
+ */
+async function setupStateMatched(
+  listener: SetupListener,
+  given: string | null,
+): Promise<boolean> {
+  const octets = new TextEncoder();
+  const [sent, came] = await Promise.all([
+    listener.ports.digest(octets.encode(listener.state)),
+    listener.ports.digest(octets.encode(given ?? "")),
+  ]);
+  let differing = sent.length ^ came.length;
+  for (const [at, octet] of sent.entries())
+    differing |= octet ^ (came[at] ?? 0);
+  return differing === 0;
 }
 
 /** One request of the browser's: sent on to the issuer, read as its answer, or told there is nothing here. */
@@ -343,7 +380,10 @@ async function setupListenerAnswered(
     return { status: 302, location: listener.authorize, text: "" };
   if (heard.path !== setupCallbackPath)
     return setupPage(404, setupPages.nothing);
-  const read = setupCallbackRead(heard.search);
+  const query = new URLSearchParams(heard.search);
+  if (!(await setupStateMatched(listener, query.get("state"))))
+    return setupPage(400, setupPages.nothing);
+  const read = setupCallbackRead(query);
   if (read === undefined) return setupPage(400, setupPages.nothing);
   if (listener.deciding) return setupPage(409, setupPages.answered);
   listener.deciding = true;
@@ -394,12 +434,13 @@ async function setupListenerOpened(
   await opened.holder.signIn();
   const authorize = opened.authorize();
   if (authorize === undefined) return undefined;
+  const state = new URL(authorize).searchParams.get("state") ?? "";
   let decide: (ended: SetupSignInEnded) => void = () => undefined;
   const decided = new Promise<SetupSignInEnded>((resolve) => {
     decide = resolve;
   });
   return {
-    listener: { ports, opened, authorize, decide, deciding: false },
+    listener: { ports, opened, authorize, state, decide, deciding: false },
     decided,
   };
 }

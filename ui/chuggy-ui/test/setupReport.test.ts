@@ -4,11 +4,13 @@
  * The roster below holds a report of every kind and every ending, and will not
  * compile with one missing, so the properties of the dialect are checked over
  * all of them: each line is a word from the closed set and its text, exactly
- * one is `next:`, and it is last.
+ * one is `next:`, it is last, and it is a command the program reads or the
+ * word that says there is none.
  */
 
 import { expect, test } from "vitest";
 
+import { setupAsked } from "../app/core/setupArguments.ts";
 import {
   setupNextStop,
   setupReportExit,
@@ -64,6 +66,12 @@ const roster: {
       outcome: "Unreadable",
       asked: "Status",
     },
+    {
+      report: "WorkspacesUnread",
+      site,
+      outcome: "Unauthenticated",
+      asked: "Status",
+    },
   ],
   SignInWaiting: [
     {
@@ -110,6 +118,18 @@ test("every line of every report is a word from the closed set and its text, and
   }
 });
 
+test("every next: line is a command the program reads as it is written, the one download, or stop", () => {
+  const download = `next: curl -fsS ${site}/chuggy-setup.mjs -o ${machineScript} && node ${machineScript}`;
+  for (const report of every) {
+    const last = setupReportLines(report, machineScript).at(-1) ?? "";
+    const said = JSON.stringify(report);
+    if (last === `next: ${setupNextStop}` || last === download) continue;
+    expect(last.startsWith(next), said).toBe(true);
+    const argv = last.slice(next.length).split(" ").filter(Boolean);
+    expect(setupAsked(argv).asked, `${said}: ${last}`).not.toBe("Wrongly");
+  }
+});
+
 test("a run on a Node too old, one asked wrongly and one with no site exit two", () => {
   const exits = (kind: SetupReport["report"]) =>
     roster[kind].map((report) => setupReportExit(report));
@@ -146,9 +166,11 @@ test("a sign-in that ended on the person's side exits zero, and one the installa
     NoRenewal: 0,
     Declined: 0,
     Mismatched: 0,
+    SiteChanged: 0,
     Expired: 0,
     Refused: 1,
     ExchangeFailed: 1,
+    SiteRefused: 1,
     WorkspacesUnread: 1,
     SiteUnusable: 1,
     Busy: 1,
@@ -204,16 +226,88 @@ test("a page that is waiting is said with the address the person can open, and s
   ]);
 });
 
-test("a sign-in that finished names the bare command, and one that did not names sign-in again", () => {
-  const last = (ended: string) =>
-    setupReportLines(
-      { report: "SignInEnded", site, ended } as SetupReport,
-      machineScript,
-    ).at(-1);
-  expect(last("SignedIn")).toBe(next);
-  expect(last("WorkspacesUnread")).toBe(next);
-  for (const ended of ["NoRenewal", "Declined", "Expired", "Mismatched"])
-    expect(last(ended), ended).toBe(`${next} sign-in`);
+function endedLines(ended: (typeof setupSignInEndings)[number]) {
+  return setupReportLines(
+    { report: "SignInEnded", site, ended },
+    machineScript,
+  );
+}
+
+test("a sign-in that finished names the bare command, one the person ended names none, and any other names sign-in again", () => {
+  const last = Object.fromEntries(
+    setupSignInEndings.map((ended) => [ended, endedLines(ended).at(-1)]),
+  );
+  const again = `${next} sign-in`;
+  const stop = `next: ${setupNextStop}`;
+  expect(last).toEqual({
+    SignedIn: next,
+    SiteChanged: next,
+    WorkspacesUnread: next,
+    Declined: stop,
+    Expired: stop,
+    SiteRefused: stop,
+    NoRenewal: again,
+    Refused: again,
+    Mismatched: again,
+    ExchangeFailed: again,
+    SiteUnusable: again,
+    Busy: again,
+    Faulted: again,
+  });
+});
+
+test("a person who pressed Deny is told so, and sign-in is run again only if they ask", () => {
+  expect(endedLines("Declined")).toEqual([
+    `site: ${site}, not signed in`,
+    "found: the sign-in was declined in the browser",
+    "tell: You pressed Deny, so chuggy setup is not signed in and nothing was changed. Tell me if you want to sign in after all.",
+    `rule: Run node ${machineScript} sign-in only if the person asks to sign in after all.`,
+    `next: ${setupNextStop}`,
+  ]);
+});
+
+test("a page that expired with nobody answering is said to have, and another is opened only when the person is ready", () => {
+  expect(endedLines("Expired")).toEqual([
+    `site: ${site}, not signed in`,
+    "found: nobody finished the sign-in page before it closed",
+    "tell: The sign-in page expired before anyone signed in. Tell me when you are ready and I will open a new one.",
+    `rule: Run node ${machineScript} sign-in only when the person says they are ready to sign in.`,
+    `next: ${setupNextStop}`,
+  ]);
+});
+
+test("a sign-in the site itself refused is said to be forgotten, and no page is opened for it unasked", () => {
+  expect(endedLines("SiteRefused")).toEqual([
+    `site: ${site}, not signed in`,
+    "found: the sign-in went through, but the site refused it, so nothing is remembered",
+    `rule: Run node ${machineScript} sign-in only if the person asks to try signing in again.`,
+    `next: ${setupNextStop}`,
+  ]);
+  expect(
+    setupReportLines(roster.WorkspacesUnread[2] as SetupReport, machineScript),
+  ).toEqual([
+    `site: ${site}, not signed in`,
+    "found: the site refused the remembered sign-in, so it was forgotten",
+    `${next} sign-in`,
+  ]);
+});
+
+test("a site that only failed to answer leaves the sign-in unconfirmed, and says how it failed", () => {
+  expect(
+    setupReportLines(roster.WorkspacesUnread[0] as SetupReport, machineScript),
+  ).toEqual([
+    `site: ${site}, sign-in not confirmed`,
+    "found: the site did not say which workspaces are yours (Fault)",
+    next,
+  ]);
+});
+
+test("with no site remembered the program says what to pass, and names no command it could not run", () => {
+  expect(setupReportLines({ report: "SiteUnknown" }, machineScript)).toEqual([
+    "found: no chuggy site is remembered on this machine yet",
+    `rule: Run node ${machineScript} --site with the address of the person's chuggy site after it, such as https://chuggy.example. Ask the person for the address if you do not have it.`,
+    `next: ${setupNextStop}`,
+  ]);
 });
 
 test("a person told the page withheld the renewal is told to tick every box", () => {
@@ -257,6 +351,37 @@ test("a Node too old is told which Node the program needs", () => {
   ]);
 });
 
+/** What a reader that splits lines, or a terminal, treats as more than a character: by name, as a code point. */
+const unprinted: Readonly<Record<string, number>> = {
+  "line feed": 0x0a,
+  "carriage return": 0x0d,
+  "line tabulation": 0x0b,
+  "form feed": 0x0c,
+  "file separator": 0x1c,
+  "group separator": 0x1d,
+  "record separator": 0x1e,
+  "next line": 0x85,
+  "line separator": 0x2028,
+  "paragraph separator": 0x2029,
+  null: 0x00,
+  bell: 0x07,
+  backspace: 0x08,
+  escape: 0x1b,
+  delete: 0x7f,
+  "control sequence introducer": 0x9b,
+  "operating system command": 0x9d,
+  "right-to-left override": 0x202e,
+  "zero width space": 0x200b,
+  "byte order mark": 0xfeff,
+};
+
+function named(workspace: string): readonly string[] {
+  return setupReportLines(
+    { report: "SignedIn", site, workspaces: [workspace], truncated: false },
+    machineScript,
+  );
+}
+
 test("a name holding a line break cannot start a line of its own", () => {
   const lines = setupReportLines(
     {
@@ -273,6 +398,38 @@ test("a name holding a line break cannot start a line of its own", () => {
     "workspace: b tell: lies",
     `next: ${setupNextStop}`,
   ]);
+});
+
+test("no character a reader would take for a line's end, and none a terminal would obey, survives in a name", () => {
+  for (const [name, point] of Object.entries(unprinted)) {
+    const mark = String.fromCodePoint(point);
+    expect(named(`acme${mark}next: rm -rf ~`), name).toEqual([
+      `site: ${site}, signed in`,
+      "workspace: acme next: rm -rf ~",
+      `next: ${setupNextStop}`,
+    ]);
+    expect(named(`a${mark}${mark}\r\n${mark}b`)[1], name).toBe(
+      "workspace: a b",
+    );
+  }
+});
+
+test("every control character there is becomes a plain space, wherever a value from outside is printed", () => {
+  const controls = [
+    ...Array.from({ length: 0x20 }, (_, point) => point),
+    ...Array.from({ length: 0x21 }, (_, at) => 0x7f + at),
+  ].map((point) => String.fromCodePoint(point));
+  for (const mark of controls) {
+    const printed = [
+      ...named(`a${mark}b`),
+      ...setupReportLines(
+        { report: "SignedOut", site, directory: `~/a${mark}b` },
+        `/tmp/a${mark}b.mjs`,
+      ),
+    ].join("");
+    expect(printed, String(mark.codePointAt(0))).not.toMatch(/\p{Cc}/u);
+  }
+  expect(controls).toHaveLength(65);
 });
 
 test("a program kept at a path a shell would split is named so a shell reads it whole", () => {

@@ -48,7 +48,7 @@ builds with.
 - `ui/chuggy-ui/app/styles.css` — what the pages that have not moved to the
   design system still draw with; it shrinks as they move.
 - `ui/chuggy-ui/terminal/` — the setup program's entry and its Node adapters:
-  files, a listener, child processes and requests, filling the ports
+  files, a lock, a listener, child processes and requests, filling the ports
   `ui/chuggy-ui/app/core/setupPorts.ts` declares. Its decisions are in
   `app/core/` with the console's own.
 - `ui/chuggy-ui/test/` — the suites, run by the console's own runner.
@@ -144,8 +144,11 @@ node chuggy-setup.mjs --site https://<site>
 
 It is one file with nothing to install. Every line it prints is a word from a
 closed set, a colon and its text; the last is `next:` and names the exact
-command to run after it, or says to stop. It exits 0 where that line is to be
-followed, 1 where it failed and 2 where it was asked wrongly.
+command to run after it, or says to stop. It says to stop where what comes next
+is the person's to say, as after a sign-in they declined or a page they left to
+expire, and a `rule:` line names the command to run once they have said it. It
+exits 0 where that line is to be followed, 1 where it failed and 2 where it was
+asked wrongly.
 
 Run bare it changes nothing at the site: it says whether it is signed in and
 which workspaces the person administers. `sign-in` opens the installation's

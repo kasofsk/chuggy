@@ -102,6 +102,27 @@ test("neither way of asking follows a redirect, so nothing held is carried to an
   assert.deepEqual(elsewhere.asked, []);
 });
 
+test("the stand-in issuer refuses a token request that is not sent as a form, and reads one that is", async () => {
+  const installation = await made.installation();
+  const asked = (type: string) =>
+    fetchJsonWithin(5_000)(`${installation.issuer}/oauth2/token`, {
+      method: "POST",
+      headers: { "content-type": type },
+      body: "grant_type=authorization_code&client_id=chuggy-setup&code=none",
+    });
+  const unread = await asked("text/plain;charset=UTF-8");
+  assert.equal(unread.status, 400);
+  assert.deepEqual(JSON.parse(await unread.text()), {
+    error: "invalid_request",
+  });
+  const read = await asked("application/x-www-form-urlencoded");
+  assert.deepEqual(JSON.parse(await read.text()), { error: "invalid_grant" });
+  assert.deepEqual(installation.grants, [
+    "not a form refused",
+    "authorization_code refused",
+  ]);
+});
+
 test("a JSON request to a server that never answers is abandoned at its bound", async () => {
   const silent = await served();
   const began = Date.now();

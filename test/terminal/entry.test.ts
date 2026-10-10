@@ -6,9 +6,10 @@
  * whole session is run against the stand-in installation — signing in,
  * renewing, and every way a sign-in fails — and everything the program wrote
  * to either stream, every page it answered the browser with, the note each
- * listener left while it waited and every file it keeps besides the one that
- * holds the sign-in is searched for every value the issuer handed out and
- * every secret of the exchange the program itself drew.
+ * listener left while it waited, and the name and the text of everything it
+ * keeps besides the file that holds the sign-in, is searched for every value
+ * the issuer handed out and every secret of the exchange the program itself
+ * drew.
  */
 
 import assert from "node:assert/strict";
@@ -65,17 +66,23 @@ test("a program asked wrongly exits two, says which way, and repeats nothing it 
     for (const given of ["hunter2", "soon", "sign-out", "verbose", "invalid"])
       assert.ok(!done.stdout.includes(given), said);
   }
-  assert.deepEqual(readdirSync(machine.home), ["opener.sh"]);
+  assert.deepEqual(readdirSync(machine.home), []);
 });
 
-test("with no site given and none remembered the program exits two and names the flag", async () => {
+test("with no site given and none remembered the program exits two, says what to pass, and names no command it could not run", async () => {
   const done = await made.machine().run([]);
   assert.equal(done.code, 2);
   dialect(done, "bare");
-  assert.match(
-    done.lines.at(-1) ?? "",
-    /^next: node \S+ --site '<the address of your chuggy site>'$/u,
+  assert.equal(done.lines.length, 3);
+  assert.equal(
+    done.lines[0],
+    "found: no chuggy site is remembered on this machine yet",
   );
+  assert.match(
+    done.lines[1] ?? "",
+    /^rule: Run node \S+ --site with the address of the person's chuggy site after it, such as https:\/\/chuggy\.example\. Ask the person for the address if you do not have it\.$/u,
+  );
+  assert.equal(done.lines[2], "next: stop");
 });
 
 test("a site that does not answer is a failure that exits one, and names the command to run again", async () => {
@@ -103,7 +110,7 @@ interface Session {
   readonly runs: Ran[];
 }
 
-/** One `sign-in` with the suite as the person, altering what comes back where a case asks. */
+/** One `sign-in` with the suite as the person, altering what comes back where a case asks; the same answer under another sign-in's state is sent first, which the page takes for nobody's. */
 async function signIn(
   session: Session,
   altered: (back: URL) => void = () => undefined,
@@ -115,6 +122,9 @@ async function signIn(
   pages.push(await sent.text());
   const allowed = await browsed(sent.headers.get("location") ?? "");
   const back = new URL(allowed.headers.get("location") ?? "");
+  const strayed = new URL(back.href);
+  strayed.searchParams.set("state", "another-sign-ins");
+  pages.push(await (await browsed(strayed.href)).text());
   altered(back);
   pages.push(await (await browsed(back.href)).text());
   runs.push(await running);
@@ -137,9 +147,6 @@ async function sessionRun(): Promise<Session> {
   await signIn(session);
   installation.allows = true;
   await signIn(session, (back) => {
-    back.searchParams.set("state", "another-sign-ins");
-  });
-  await signIn(session, (back) => {
     back.searchParams.set("code", "not-the-code");
   });
   installation.renewable = false;
@@ -150,6 +157,10 @@ async function sessionRun(): Promise<Session> {
   await signIn(session);
   await bare();
   installation.serves = true;
+  installation.admits = false;
+  await bare();
+  await signIn(session);
+  installation.admits = true;
   rmSync(join(session.machine.directory, "session.json"));
   await signIn(session);
   await bare();
@@ -184,7 +195,6 @@ test("across every way a sign-in ends, nothing the issuer handed out and nothing
     ]),
     [
       [0, "found: the sign-in was declined in the browser"],
-      [0, "found: the answer that came back did not belong to this sign-in"],
       [1, "found: the sign-in server did not accept the answer"],
       [0, "found: the sign-in was allowed without leave to stay signed in"],
       [0, `site: ${installation.site}, not signed in`],
@@ -193,6 +203,14 @@ test("across every way a sign-in ends, nothing the issuer handed out and nothing
         "found: the sign-in went through, but the site did not say which workspaces are yours",
       ],
       [1, "found: the site did not say which workspaces are yours (Fault)"],
+      [
+        1,
+        "found: the site refused the remembered sign-in, so it was forgotten",
+      ],
+      [
+        1,
+        "found: the sign-in went through, but the site refused it, so nothing is remembered",
+      ],
       [0, signedIn],
       [0, signedIn],
       [0, signedIn],
@@ -210,9 +228,17 @@ test("across every way a sign-in ends, nothing the issuer handed out and nothing
   const secrets = [...installation.issued, ...drawn(installation)];
   assert.ok(installation.issued.size >= 9, String(installation.issued.size));
   assert.ok(secrets.length > installation.issued.size);
-  const kept = readdirSync(machine.directory)
-    .filter((name) => name !== "session.json")
-    .map((name) => readFileSync(join(machine.directory, name), "utf8"));
+  const kept = readdirSync(machine.directory, {
+    recursive: true,
+    withFileTypes: true,
+  })
+    .filter((entry) => entry.name !== "session.json")
+    .map((entry) =>
+      entry.isFile()
+        ? `${entry.name}\n${readFileSync(join(entry.parentPath, entry.name), "utf8")}`
+        : entry.name,
+    );
+  assert.deepEqual(kept, ["lock", "free\n"]);
   for (const note of notes) assert.match(note, /"note":"Waiting"/u);
   const wrote = [...machine.written, ...pages, ...notes, ...kept].join("\n");
   assert.ok(wrote.includes(installation.site));
@@ -231,5 +257,8 @@ test("the file that holds the sign-in holds the site and the renewal token, and 
   assert.deepEqual(Object.keys(stored).toSorted(), ["refreshToken", "site"]);
   assert.equal(stored["site"], installation.site);
   assert.ok(stored["refreshToken"] === installation.renewal());
-  assert.deepEqual(readdirSync(machine.directory), ["session.json"]);
+  assert.deepEqual(readdirSync(machine.directory).toSorted(), [
+    "lock",
+    "session.json",
+  ]);
 });

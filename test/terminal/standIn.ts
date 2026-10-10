@@ -7,8 +7,9 @@
  * any port of `127.0.0.1`, refuses `localhost`, and matches the path exactly.
  * It checks the proof key, hands a code out once, hands out a new renewal
  * token for each one it is shown, and ends the whole sign-in when shown a
- * spent one. Every value it hands out is kept, so a suite can search
- * everything the program wrote for any of them.
+ * spent one. A token request that is not sent as a form is refused unread,
+ * and costs the sign-in nothing. Every value it hands out is kept, so a suite
+ * can search everything the program wrote for any of them.
  */
 
 import { createHash, randomBytes } from "node:crypto";
@@ -19,6 +20,7 @@ import type { AddressInfo } from "node:net";
 export const standInAudience = "https://chuggy.invalid/api";
 const client = "chuggy-setup";
 const scope = "openid offline_access";
+const formType = "application/x-www-form-urlencoded";
 
 export interface StandIn {
   readonly site: string;
@@ -36,6 +38,8 @@ export interface StandIn {
   renewable: boolean;
   /** Whether the site answers the workspaces read, or says it cannot. */
   serves: boolean;
+  /** Whether the site takes the tokens the issuer hands out, or refuses whoever holds one. */
+  admits: boolean;
   readonly renewal: () => string | undefined;
   readonly close: () => Promise<void>;
 }
@@ -182,7 +186,12 @@ function issuerHandler(standIn: StandIn, issuer: Issuer) {
     } else if (url.pathname === "/oauth2/token" && request.method === "POST") {
       const body = await bodyOf(request);
       standIn.asked.push(body);
-      token(standIn, issuer, new URLSearchParams(body), response);
+      if (request.headers["content-type"] === formType)
+        token(standIn, issuer, new URLSearchParams(body), response);
+      else {
+        standIn.grants.push("not a form refused");
+        sent(response, 400, { error: "invalid_request" });
+      }
     } else sent(response, 404, {});
   };
 }
@@ -205,7 +214,7 @@ function siteHandler(standIn: StandIn, issuer: Issuer) {
       sent(response, 500, {});
     } else {
       const bearer = (request.headers.authorization ?? "").slice(7);
-      if (issuer.access.has(bearer))
+      if (standIn.admits && issuer.access.has(bearer))
         sent(response, 200, {
           tenants: [
             { tenant: "acme", roles: ["Admin"], administer: true },
@@ -256,6 +265,7 @@ export async function standIn(): Promise<StandIn> {
     allows: true,
     renewable: true,
     serves: true,
+    admits: true,
     renewal: () => issuer.renewal,
     close: async () => {
       for (const server of servers) await closed(server);

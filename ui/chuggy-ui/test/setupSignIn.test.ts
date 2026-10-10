@@ -15,6 +15,7 @@ import {
   setupSignInPollMs,
   setupSignInStartSecsMax,
 } from "../app/core/setupSignIn.ts";
+import { setupLockWord } from "../app/core/setupStore.ts";
 import { machineAudience, machineSite, setupMachine } from "./setupMachine.ts";
 import type { SetupMachine } from "./setupMachine.ts";
 
@@ -27,6 +28,17 @@ function remembered(machine: SetupMachine): unknown {
 
 function ended(ending: string) {
   return { report: "SignInEnded", site: machineSite, ended: ending };
+}
+
+/** An address on the listener's port that the issuer answers at, carrying whatever a case puts in it. */
+function answer(machine: SetupMachine, query: string): string {
+  return `http://127.0.0.1:${String(machine.listening())}/callback?${query}`;
+}
+
+/** The state the page sent the browser to the issuer with. */
+async function sent(machine: SetupMachine, address: string): Promise<string> {
+  const first = await machine.browse(address);
+  return new URL(first.location ?? "").searchParams.get("state") ?? "";
 }
 
 /** A machine whose person signs in as soon as the page opens. */
@@ -184,25 +196,81 @@ test("a sign-in declined in the browser is said to be, and nothing is remembered
 
 test("a refusal that is not the person's is the issuer's", async () => {
   const machine = setupMachine();
-  machine.opened = async () => {
-    await machine.browse(
-      `http://127.0.0.1:${String(machine.listening())}/callback?error=invalid_scope`,
-    );
+  machine.opened = async (address) => {
+    const state = await sent(machine, address);
+    await machine.browse(answer(machine, `error=invalid_scope&state=${state}`));
   };
   expect(await machine.command(signIn)).toEqual(ended("Refused"));
 });
 
-test("an answer that is not this sign-in's is refused before the issuer is asked anything", async () => {
+test("a denial that does not carry this sign-in's state ends nothing, and the person's own answer then finishes", async () => {
+  const machine = setupMachine();
+  const statuses: number[] = [];
+  machine.opened = async () => {
+    for (const forged of [
+      "error=access_denied",
+      "error=access_denied&state=",
+      "error=access_denied&state=someone-elses",
+      "error=invalid_scope&state=someone-elses",
+    ])
+      statuses.push((await machine.browse(answer(machine, forged))).status);
+    expect(machine.files.get(setupFiles.signIn)).toContain("Waiting");
+    await machine.person();
+  };
+  expect(await machine.command(signIn)).toEqual(ended("SignedIn"));
+  expect(statuses).toEqual([400, 400, 400, 400]);
+  expect(remembered(machine)).toMatchObject({ refreshToken: machine.live() });
+});
+
+test("a code that does not carry this sign-in's state spends nothing, and the person's own answer then finishes", async () => {
+  const machine = setupMachine();
+  const statuses: number[] = [];
+  machine.opened = async (address) => {
+    const state = await sent(machine, address);
+    expect(state.length).toBeGreaterThan(32);
+    for (const guessed of [
+      "someone-elses",
+      `${state}x`,
+      state.slice(0, -1),
+      `x${state.slice(1)}`,
+      `${state.slice(0, -1)}!`,
+    ])
+      statuses.push(
+        (await machine.browse(answer(machine, `code=code-1&state=${guessed}`)))
+          .status,
+      );
+    expect(machine.bodies).toEqual([]);
+    expect(machine.files.get(setupFiles.signIn)).toContain("Waiting");
+    await machine.person();
+  };
+  expect(await machine.command(signIn)).toEqual(ended("SignedIn"));
+  expect(statuses).toEqual([400, 400, 400, 400, 400]);
+  expect(machine.bodies).toHaveLength(1);
+});
+
+test("a denial somebody else sent does not stand in for the person's own, which still ends the sign-in", async () => {
   const machine = setupMachine();
   machine.opened = async () => {
-    const answered = await machine.browse(
-      `http://127.0.0.1:${String(machine.listening())}/callback?code=code-1&state=someone-elses`,
+    const forged = await machine.browse(
+      answer(machine, "error=access_denied&state=someone-elses"),
     );
-    expect(answered.status).toBe(400);
+    expect(forged.status).toBe(400);
+    await machine.person(false);
   };
-  expect(await machine.command(signIn)).toEqual(ended("Mismatched"));
+  expect(await machine.command(signIn)).toEqual(ended("Declined"));
   expect(machine.bodies).toEqual([]);
-  expect(remembered(machine)).toEqual({ site: machineSite });
+});
+
+test("an answer that carries the state and neither a code nor a refusal is not one, and the page goes on waiting", async () => {
+  const machine = setupMachine();
+  let status = 0;
+  machine.opened = async (address) => {
+    const state = await sent(machine, address);
+    status = (await machine.browse(answer(machine, `state=${state}`))).status;
+    await machine.person();
+  };
+  expect(await machine.command(signIn)).toEqual(ended("SignedIn"));
+  expect(status).toBe(400);
 });
 
 test("an allow page that hands over no renewal token is not a sign-in", async () => {
@@ -246,6 +314,32 @@ test("a sign-in the site then answers nothing for is not confirmed, and its toke
     site: machineSite,
     refreshToken: machine.live(),
   });
+});
+
+test("a sign-in the site itself refuses is said to be refused, and nothing of it is remembered", async () => {
+  const machine = prompt();
+  machine.admits = false;
+  expect(await machine.command(signIn)).toEqual(ended("SiteRefused"));
+  expect(remembered(machine)).toEqual({ site: machineSite });
+});
+
+test("a page whose site is no longer the one remembered exchanges nothing, and the other site's sign-in is left as it was", async () => {
+  const machine = setupMachine();
+  const other = "https://other.example";
+  await machine.command(signIn);
+  expect(await machine.command(["--site", other])).toMatchObject({
+    report: "SignedOut",
+    site: other,
+  });
+  const theirs = JSON.stringify({ site: other, refreshToken: "theirs" });
+  machine.files.set(setupFiles.session, theirs);
+  expect((await machine.person()).status).toBe(400);
+  await machine.advance(0);
+  expect(machine.listening()).toBeUndefined();
+  expect(machine.bodies).toEqual([]);
+  expect(machine.files.get(setupFiles.session)).toBe(theirs);
+  expect(machine.lock).toBeUndefined();
+  expect(await machine.command(signIn)).toEqual(ended("SiteChanged"));
 });
 
 test("only the address the issuer was given is read as its answer", async () => {
@@ -363,15 +457,12 @@ test("an answer being read when the bound passes is read to its end", async () =
   const machine = setupMachine();
   await machine.command(signIn);
   machine.alive.add(7);
-  machine.files.set(
-    setupFiles.lock,
-    JSON.stringify({ pid: 7, takenAtMs: machine.nowMs + 590_000 }),
-  );
+  machine.lock = setupLockWord(7, machine.nowMs + 590_000);
   await machine.advance(590_000);
   const answering = machine.person();
   await machine.advance(15_000);
   expect(machine.files.get(setupFiles.signIn)).toContain("Waiting");
-  machine.files.delete(setupFiles.lock);
+  machine.lock = undefined;
   await machine.advance(1_000);
   expect((await answering).status).toBe(200);
   expect(await machine.command(signIn)).toMatchObject({ report: "SignedIn" });
@@ -381,14 +472,11 @@ test("a listener that cannot have the lock in time ends as busy and writes no to
   const machine = setupMachine();
   await machine.command(signIn);
   machine.alive.add(7);
-  machine.files.set(
-    setupFiles.lock,
-    JSON.stringify({ pid: 7, takenAtMs: machine.nowMs }),
-  );
+  machine.lock = setupLockWord(7, machine.nowMs);
   const answering = machine.person();
   await machine.advance(31_000);
   expect((await answering).status).toBe(400);
-  machine.files.delete(setupFiles.lock);
+  machine.lock = undefined;
   expect(await machine.command(signIn)).toEqual(ended("Busy"));
   expect(machine.bodies).toEqual([]);
 });

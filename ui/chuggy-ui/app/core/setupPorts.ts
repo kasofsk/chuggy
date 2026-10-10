@@ -3,10 +3,12 @@
  * terminal implements and a suite fakes.
  *
  * The files are the program's own, in a directory of the person's that nothing
- * else reads: the remembered sign-in, the lock a run holds while it uses it,
- * and the note a sign-in page in flight leaves for the command waiting on it.
- * They are read and written whole and at once, because the session holder's
- * store is synchronous.
+ * else reads: the remembered sign-in, and the note a sign-in page in flight
+ * leaves for the command waiting on it. They are read and written whole and at
+ * once, because the session holder's store is synchronous. The lock a run
+ * holds while it uses the remembered sign-in is beside them and is not a file
+ * to read and write: it is one word, changed only by a call that names what it
+ * says now.
  */
 
 import type { ApiFetchPort } from "./apiRequest.ts";
@@ -19,8 +21,10 @@ export const setupDirectoryName = ".chuggy-setup";
 export const setupFiles = {
   session: "session.json",
   signIn: "sign-in.json",
-  lock: "lock",
 } as const;
+
+/** The lock's name in the directory, beside the files. */
+export const setupLockName = "lock";
 
 export type SetupFile = (typeof setupFiles)[keyof typeof setupFiles];
 
@@ -29,9 +33,19 @@ export interface SetupFilesPort {
   readonly read: (file: SetupFile) => string | undefined;
   /** Replaces the file whole, so a reader finds the old text or the new and never part of either. */
   readonly write: (file: SetupFile, text: string) => void;
-  /** Makes the file where there is none, answering whether this call made it. */
-  readonly create: (file: SetupFile, text: string) => boolean;
   readonly remove: (file: SetupFile) => void;
+  /** Removes every copy of the file a write left unfinished. Only a caller that is the file's one writer may ask, since a write under way is such a copy. */
+  readonly sweep: (file: SetupFile) => void;
+}
+
+export interface SetupLockPort {
+  /** What the lock says: its holder's word, or nothing where it is free. */
+  readonly read: () => string | undefined;
+  /** Makes the lock say `next` where it still says `held`, answering whether this call did. Of several calls that name the same word, one is answered yes. */
+  readonly swap: (
+    held: string | undefined,
+    next: string | undefined,
+  ) => boolean;
 }
 
 /** One request a browser on this machine made of the program. */
@@ -98,6 +112,7 @@ export interface SetupPorts {
   /** Sends one request to an absolute address. */
   readonly apiFetch: ApiFetchPort;
   readonly files: SetupFilesPort;
+  readonly lock: SetupLockPort;
   readonly listen: SetupListenPort;
   readonly process: SetupProcessPort;
   readonly surroundings: SetupSurroundings;

@@ -3,7 +3,10 @@
  * printed as.
  *
  * Every line is `<word>: <text>` with the word from a closed set, and the last
- * is the one `next:` line: the command to run, or `stop` where there is none.
+ * is the one `next:` line: a command that runs as it is written, or `stop`.
+ * `stop` is also what follows an answer that was the person's to give, a
+ * sign-in they declined or a page they left, where the command that would
+ * open another page is named in a `rule:` line and run only when they ask.
  * A report holds a site's origin, a directory, workspace names, numbers and
  * members of closed sets, so no token, code or message of another system's has
  * a field to ride in. Nothing here runs on import and no parser is reached,
@@ -28,6 +31,8 @@ export const setupSignInEndings = [
   "Refused",
   "Mismatched",
   "ExchangeFailed",
+  "SiteChanged",
+  "SiteRefused",
   "WorkspacesUnread",
   "Expired",
   "SiteUnusable",
@@ -231,7 +236,7 @@ const setupEndings: Readonly<
     ["found", "the sign-in was declined in the browser"],
     [
       "tell",
-      "The sign-in was declined in the browser, so nothing is signed in. I will open the page again.",
+      "You pressed Deny, so chuggy setup is not signed in and nothing was changed. Tell me if you want to sign in after all.",
     ],
   ],
   Refused: [["found", "the sign-in server refused the request"]],
@@ -239,13 +244,31 @@ const setupEndings: Readonly<
     ["found", "the answer that came back did not belong to this sign-in"],
   ],
   ExchangeFailed: [["found", "the sign-in server did not accept the answer"]],
+  SiteChanged: [
+    [
+      "found",
+      "another site was chosen on this machine while the sign-in page waited, so nothing was signed in",
+    ],
+  ],
+  SiteRefused: [
+    [
+      "found",
+      "the sign-in went through, but the site refused it, so nothing is remembered",
+    ],
+  ],
   WorkspacesUnread: [
     [
       "found",
       "the sign-in went through, but the site did not say which workspaces are yours",
     ],
   ],
-  Expired: [["found", "nobody finished the sign-in page before it closed"]],
+  Expired: [
+    ["found", "nobody finished the sign-in page before it closed"],
+    [
+      "tell",
+      "The sign-in page expired before anyone signed in. Tell me when you are ready and I will open a new one.",
+    ],
+  ],
   SiteUnusable: [
     ["found", "the site stopped answering before the sign-in page could open"],
   ],
@@ -254,6 +277,35 @@ const setupEndings: Readonly<
     ["found", "the sign-in page stopped on something it did not expect"],
   ],
 };
+
+/** The endings after which nothing is run until the person asks, and what a rule says they ask. */
+const setupEndingsHeld: Partial<Readonly<Record<SetupSignInEnded, string>>> = {
+  Declined: "if the person asks to sign in after all",
+  SiteRefused: "if the person asks to try signing in again",
+  Expired: "when the person says they are ready to sign in",
+};
+
+/** The endings a page is not what follows: the bare command says how the remembered site stands. */
+const setupEndingsStanding: ReadonlySet<SetupSignInEnded> = new Set([
+  "SiteChanged",
+  "WorkspacesUnread",
+]);
+
+function setupEndedNext(
+  ended: SetupSignInEnded,
+  script: string,
+): readonly SetupLine[] {
+  const held = setupEndingsHeld[ended];
+  if (held === undefined)
+    return [
+      setupNext(script, setupEndingsStanding.has(ended) ? [] : setupSignInNext),
+    ];
+  const signIn = setupCommandLine(["node", script, ...setupSignInNext]);
+  return [
+    ["rule", `Run ${signIn} only ${held}.`],
+    ["next", setupNextStop],
+  ];
+}
 
 function setupEndedLines(
   report: Extract<SetupReport, { readonly report: "SignInEnded" }>,
@@ -264,9 +316,7 @@ function setupEndedLines(
   return [
     ["site", `${report.site}, not signed in`],
     ...setupEndings[report.ended],
-    report.ended === "WorkspacesUnread"
-      ? setupNext(script, [])
-      : setupNext(script, setupSignInNext),
+    ...setupEndedNext(report.ended, script),
   ];
 }
 
@@ -274,6 +324,12 @@ function setupUnreadLines(
   report: Extract<SetupReport, { readonly report: "WorkspacesUnread" }>,
   script: string,
 ): readonly SetupLine[] {
+  if (report.outcome === "Unauthenticated")
+    return [
+      ["site", `${report.site}, not signed in`],
+      ["found", "the site refused the remembered sign-in, so it was forgotten"],
+      setupNext(script, setupSignInNext),
+    ];
   const head: SetupLine = ["site", `${report.site}, sign-in not confirmed`];
   if (report.outcome !== "Unreadable")
     return [
@@ -343,7 +399,11 @@ function setupLines(report: SetupReport, script: string): readonly SetupLine[] {
     case "SiteUnknown":
       return [
         ["found", "no chuggy site is remembered on this machine yet"],
-        setupNext(script, ["--site", "<the address of your chuggy site>"]),
+        [
+          "rule",
+          `Run ${setupCommandLine(["node", script, "--site"])} with the address of the person's chuggy site after it, such as https://chuggy.example. Ask the person for the address if you do not have it.`,
+        ],
+        ["next", setupNextStop],
       ];
     case "Busy":
       return [
@@ -373,22 +433,28 @@ function setupLines(report: SetupReport, script: string): readonly SetupLine[] {
   }
 }
 
+/** Every control character, every character that only directs how others are drawn, and every space and line end of any kind. */
+const setupUnprinted = /[\p{Cc}\p{Cf}\s]+/gu;
+
 /**
- * The lines a report is printed as, for a program kept at `script`. A break in
- * any text is flattened, so a line is one line whatever a name held.
+ * The lines a report is printed as, for a program kept at `script`. Each run
+ * of characters that are not printed as themselves becomes one plain space,
+ * so a line is one line, and holds nothing a terminal would obey, whatever a
+ * name from a server, a file or the command line held.
  */
 export function setupReportLines(
   report: SetupReport,
   script: string,
 ): readonly string[] {
   return setupLines(report, script).map(
-    ([word, text]) => `${word}: ${text.replace(/\s+/gu, " ").trim()}`,
+    ([word, text]) => `${word}: ${text.replace(setupUnprinted, " ").trim()}`,
   );
 }
 
 const setupEndedFailures: ReadonlySet<SetupSignInEnded> = new Set([
   "Refused",
   "ExchangeFailed",
+  "SiteRefused",
   "WorkspacesUnread",
   "SiteUnusable",
   "Busy",

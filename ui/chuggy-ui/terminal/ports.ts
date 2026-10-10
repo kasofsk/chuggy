@@ -19,6 +19,7 @@ import type { SetupPorts } from "../app/core/setupPorts.ts";
 import { setupFetchTimeoutMs } from "../app/core/setupSession.ts";
 import { filesIn } from "./files.ts";
 import { listen } from "./listener.ts";
+import { lockIn } from "./lock.ts";
 import { processesOf } from "./processes.ts";
 
 export function apiFetch(url: string, init: ApiFetchInit): Promise<Response> {
@@ -41,6 +42,7 @@ async function digest(message: Uint8Array<ArrayBuffer>): Promise<Uint8Array> {
 
 /** `script` is the file this program was run from, which a sign-in runs again. */
 export function portsOf(script: string): SetupPorts {
+  const directory = join(homedir(), setupDirectoryName);
   return {
     nowMs: () => Date.now(),
     sleepMs: (ms, signal) => slept(ms, undefined, { signal }),
@@ -48,7 +50,8 @@ export function portsOf(script: string): SetupPorts {
     digest,
     fetchJson: fetchJsonWithin(setupFetchTimeoutMs),
     apiFetch,
-    files: filesIn(join(homedir(), setupDirectoryName)),
+    files: filesIn(directory),
+    lock: lockIn(directory),
     listen,
     process: processesOf(script),
     surroundings: {
