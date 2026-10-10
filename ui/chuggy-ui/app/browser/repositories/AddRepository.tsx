@@ -13,17 +13,27 @@
  * the page draws, returning to this picker open, where the roster is read
  * again.
  *
- * THE ROSTER IS READ WHEN A PERSON OPENS THE PICKER AND AT NO OTHER TIME. A
- * listing costs the forge a request whenever it is asked for and nothing the
- * project's stream reports changes what an installation grants, so the roster
- * is held under the tenant's key, which no frame and no refetch of the
- * partition reaches.
+ * THE ROSTER IS READ WHEN A PERSON OPENS THE PICKER, AND AGAIN ON A CLOCK OF
+ * ITS OWN WHILE IT STAYS OPEN, because the forge can be slow to list a grant
+ * just made and nothing tells this console when it does. A listing costs the
+ * forge a request whenever it is asked for, so an opening's own readings are
+ * counted and stop, and none is made in a tab out of view;
+ * `ui/chuggy-ui/app/core/projectRepositories.ts` names the pace and the count.
+ * None is raised by the project's stream either, which reports nothing that
+ * changes what an installation grants: the roster is held under the tenant's
+ * key, which no frame and no refetch of the partition reaches.
  *
  * THE ROSTER IS DRAWN WHEN THE PORTAL APP'S LISTINGS ARE READ, and the worker
- * app's follow it: the read writes what it has under its own key before it
- * asks for them. A row is marked once they answer and nothing is drawn of them
- * before, but for a reader who chooses a row meanwhile, who is told under the
- * roster that they are unread until the mark she might have missed can arrive.
+ * app's follow it: an opening's first reading writes what it has under its own
+ * key before it asks for them. A row is marked once they answer and nothing is
+ * drawn of them before, but for a reader who chooses a row meanwhile, who is
+ * told under the roster that they are unread until the mark she might have
+ * missed can arrive.
+ *
+ * A READING THE PICKER MAKES BY ITSELF CHANGES WHAT IS DRAWN ONLY WHEN IT IS
+ * WHOLE, so no row loses a mark to get it back. One that a listing did not
+ * answer says nothing and is answered as the roster that stood, which leaves
+ * no failure under the key for the next opening to draw.
  */
 
 import { useQueryClient } from "@tanstack/react-query";
@@ -57,6 +67,7 @@ import {
   repositoryBindOutcome,
   repositoryChoices,
   repositoryGrantLines,
+  repositoryRosterRereadMs,
   repositoryWorkerLine,
   repositoryWorkerMissing,
   repositoryWorkerReading,
@@ -77,8 +88,8 @@ import { SearchableRoster } from "../ui/SearchableRoster.tsx";
 import { InstallLink } from "./InstallLink.tsx";
 import { RepositoryNextStep } from "./RepositoryNextStep.tsx";
 
-/** The roster's entry under the tenant's key, where nothing reads it again
- * but a picker being opened. */
+/** The roster's entry under the tenant's key, where nothing reads it but the
+ * picker that draws it. */
 export const forgeReachableResource = "forge-reachable";
 
 /** No frame names this read, so the partition's own refetch is what reaches
@@ -145,10 +156,26 @@ async function readWorkerGrants(
  * What every portal installation the tenant holds grants, read one after
  * another: a listing that is partial makes the whole roster partial, because a
  * repository the reader cannot find may be in the part that was not answered.
- * The first installation that does not answer `Ok` therefore takes the whole
- * roster down deliberately, so one revoked claim is read as a refusal rather
+ * The first installation that does not answer `Ok` is therefore the answer for
+ * them all, deliberately, so one revoked claim is read as a refusal rather
  * than as a roster silently missing the account it covered.
  */
+async function readPortalGrants(
+  ports: ApiPorts,
+  tenant: string,
+  installations: readonly ForgeInstallationResponse[],
+): Promise<ApiResult<readonly InstallationGrant[]>> {
+  const portal: InstallationGrant[] = [];
+  for (const installation of installations) {
+    const answered = await readGrant(ports, tenant, installation);
+    if (answered.outcome !== "Ok") return answered;
+    portal.push(answered.value);
+  }
+  return { outcome: "Ok", value: portal };
+}
+
+/** An opening's first reading: the portal app's roster handed to `drawn`
+ * before the worker app's listings are asked for, then the roster they mark. */
 async function readReachable(
   ports: ApiPorts,
   tenant: string,
@@ -156,15 +183,27 @@ async function readReachable(
   workers: readonly ForgeInstallationResponse[],
   drawn: (roster: Reachable) => void,
 ): Promise<ApiResult<Reachable>> {
-  const portal: InstallationGrant[] = [];
-  for (const installation of installations) {
-    const answered = await readGrant(ports, tenant, installation);
-    if (answered.outcome !== "Ok") return answered;
-    portal.push(answered.value);
-  }
-  drawn(reachableOf(portal, undefined));
+  const portal = await readPortalGrants(ports, tenant, installations);
+  if (portal.outcome !== "Ok") return portal;
+  drawn(reachableOf(portal.value, undefined));
   const worker = await readWorkerGrants(ports, tenant, workers);
-  return { outcome: "Ok", value: reachableOf(portal, worker) };
+  return { outcome: "Ok", value: reachableOf(portal.value, worker) };
+}
+
+/** A reading the open picker makes by itself: the whole roster, and nothing
+ * where a listing of either app did not answer. */
+async function rereadReachable(
+  ports: ApiPorts,
+  tenant: string,
+  installations: readonly ForgeInstallationResponse[],
+  workers: readonly ForgeInstallationResponse[],
+): Promise<Reachable | undefined> {
+  const portal = await readPortalGrants(ports, tenant, installations);
+  if (portal.outcome !== "Ok") return undefined;
+  const worker = await readWorkerGrants(ports, tenant, workers);
+  return worker.length === workers.length
+    ? reachableOf(portal.value, worker)
+    : undefined;
 }
 
 function RepositoryChoiceRow(props: {
@@ -237,8 +276,9 @@ function RepositoryWorkerGrant(props: {
 }
 
 /**
- * The roster, read under the tenant's key and written there as it arrives. A
- * read the picker abandoned by closing writes nothing, what it still hears
+ * The roster, read under the tenant's key when the picker opens and written
+ * there as it arrives, then read again by itself while the picker stays open.
+ * A read the picker abandoned by closing writes nothing, what it still hears
  * being older than whatever the next opening read.
  */
 function useReachable(
@@ -247,17 +287,33 @@ function useReachable(
   workers: readonly ForgeInstallationResponse[],
 ): PanelState<Reachable> {
   const client = useQueryClient();
+  const key = tenantResourceKey(tenant, forgeReachableResource);
+  /** Whether this opening's first reading has drawn the portal app's roster,
+   * which is what a reading made by itself stands on. */
+  const [firstDrawn, setFirstDrawn] = useState(false);
+  const [rereads, setRereads] = useState(0);
   return usePanelTenantResource(
     tenant,
     forgeReachableResource,
-    (ports, signal) =>
-      readReachable(ports, tenant, installations, workers, (roster) => {
-        if (signal.aborted) return;
-        client.setQueryData(
-          tenantResourceKey(tenant, forgeReachableResource),
-          roster,
+    async (ports, signal) => {
+      const stood = client.getQueryData<Reachable>(key);
+      if (firstDrawn && stood !== undefined) {
+        setRereads((made) => made + 1);
+        const whole = await rereadReachable(
+          ports,
+          tenant,
+          installations,
+          workers,
         );
-      }),
+        return { outcome: "Ok", value: whole ?? stood };
+      }
+      return readReachable(ports, tenant, installations, workers, (roster) => {
+        if (signal.aborted) return;
+        client.setQueryData(key, roster);
+        setFirstDrawn(true);
+      });
+    },
+    firstDrawn ? repositoryRosterRereadMs(rereads) : undefined,
   );
 }
 

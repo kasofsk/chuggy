@@ -25,6 +25,10 @@ import { apiTimeoutMsDefault } from "../app/core/apiRequest.ts";
 import { forgeAuthorizeTransactionKey } from "../app/core/forgeAuthorization.ts";
 import { forgeInstallTransactionKey } from "../app/core/forgeInstallation.ts";
 import { fallbackIntervalMs } from "../app/core/projectFallback.ts";
+import {
+  repositoryRosterPolledMs,
+  repositoryRosterRereadsMax,
+} from "../app/core/projectRepositories.ts";
 import { forgeReturnHold, forgeReturnKey } from "../app/core/forgeReturn.ts";
 import type { ForgeReturnWord } from "../app/core/forgeReturn.ts";
 import { transientStore } from "../app/browser/ports.ts";
@@ -121,6 +125,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
   vi.useRealTimers();
+  Reflect.deleteProperty(document, "visibilityState");
 });
 
 const installations = forgeInstallationsFixture;
@@ -932,11 +937,12 @@ async function parkedWoken(): Promise<void> {
 
 /**
  * A listing is a request to the forge each time it is asked for, and nothing
- * the project's stream reports changes what an installation grants. So a
- * picker left open behind a stream that is down asks once, however long the
- * fallback polls.
+ * the project's stream reports changes what an installation grants. So behind
+ * a stream that is down the fallback's polls raise no reading of the roster,
+ * which an open picker reads again on a clock of its own and for no other
+ * reason.
  */
-test("an open picker asks for its roster once while the stream is down and the fallback polls", async () => {
+test("the fallback's polls behind a stream that is down raise no reading of an open picker's roster", async () => {
   held.parkedMs = fallbackIntervalMs;
   const sent = await drawAtPicker({ stream: streamServer([]) });
   expect(pickerRows()).toStrictEqual(unmarked);
@@ -946,22 +952,25 @@ test("an open picker asks for its roster once while the stream is down and the f
   expect(listingsRead(sent)).toStrictEqual(["11", "13", "12"]);
 });
 
+/** A `Project` frame naming the page's own project. */
+function projectFrame(): string {
+  return frame("Project", "10", {
+    version: 1,
+    resource: leadPartition.project,
+    representation: leadPartition,
+  });
+}
+
 /**
  * A `Project` frame reads everything under the partition again, which the
  * page's own bindings are and the tenant's roster is not. The fallback's sleep
  * is parked so that the frame's is the only refetch there is to count.
  */
-test("an open picker asks for its roster once whatever frame the project's stream carries", async () => {
+test("a frame the project's stream carries raises no reading of an open picker's roster", async () => {
   held.parkedMs = fallbackIntervalMs;
   const stream = openedStream();
   const sent = await drawAtPicker({ stream });
-  stream.push(
-    frame("Project", "10", {
-      version: 1,
-      resource: leadPartition.project,
-      representation: leadPartition,
-    }),
-  );
+  stream.push(projectFrame());
   await settled();
   expect(bindingsRead(sent)).toBe(2);
   expect(listingsRead(sent)).toStrictEqual(["11", "13", "12"]);
@@ -1126,6 +1135,381 @@ function statusesOf(): readonly (string | null)[] {
     .getAllByRole("status")
     .map((one) => one.textContent);
 }
+
+/** How many readings of the roster the page has begun, each of which asks the
+ * first portal claim once. */
+function readingsBegun(sent: readonly Sent[]): number {
+  return listingsRead(sent).filter((asked) => asked === "11").length;
+}
+
+/** The clock an interval runs on held for the case to move, and every other
+ * timer left running, so `settled` settles as it does anywhere. */
+function intervalsHeld(): void {
+  vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+}
+
+/** The picker's own interval gone by once, and the reading that set off drawn. */
+async function rosterIntervalPassed(): Promise<void> {
+  await clockMoved(repositoryRosterPolledMs);
+  await settled();
+}
+
+/** A repository granted on gdoteof after the picker first read its roster. */
+const lateRow = {
+  name: "late",
+  fullName: "gdoteof/late",
+  url: "https://forge.test/gdoteof/late",
+  defaultBranch: "main",
+  private: true,
+};
+
+/** What gdoteof's portal installation lists once the late grant has reached it. */
+const lateListed = (): Response =>
+  answer({ truncated: false, repositories: [freeRow, lateRow] });
+
+/** The roster the worker app lacks kasofsk's repository on, before and after
+ * the late grant is listed. */
+const marked = ["kasofsk/chuggyBoundWorker app missing", "gdoteof/scratch"];
+const markedLate = [...marked, "gdoteof/late"];
+
+/**
+ * The two listings a case moves under an open picker, from one reading to the
+ * next: gdoteof's portal installation, answering what it was granted until the
+ * case says otherwise, and kasofsk's worker installation, lacking its
+ * repository until the case says otherwise.
+ */
+interface Forge {
+  portal: () => Response | Promise<Response>;
+  worker: () => Response | Promise<Response>;
+}
+
+function forgeMoving(): { readonly forge: Forge; readonly drawing: Drawing } {
+  const forge: Forge = {
+    portal: () => answer(granted["13"]),
+    worker: lacking,
+  };
+  return {
+    forge,
+    drawing: {
+      granting: (url) => {
+        if (url.includes("/13/repositories")) return forge.portal();
+        if (url.includes("/12/repositories")) return forge.worker();
+        return answer(grantedBy(url));
+      },
+    },
+  };
+}
+
+/**
+ * The forge can be slow to list a grant just made, and a person who has made
+ * one is looking at the picker that does not list it. So the picker asks again
+ * by itself, on its own interval and not before, and the row arrives.
+ */
+test("a grant the forge lists while the picker is open is drawn at the picker's next reading, with no press", async () => {
+  intervalsHeld();
+  const { forge, drawing } = forgeMoving();
+  const sent = await drawAtPicker(drawing);
+  expect(pickerRows()).toStrictEqual(marked);
+  forge.portal = lateListed;
+  await clockMoved(repositoryRosterPolledMs - 1);
+  await settled();
+  expect(readingsBegun(sent)).toBe(1);
+  expect(pickerRows()).toStrictEqual(marked);
+  await clockMoved(1);
+  await settled();
+  expect(listingsRead(sent)).toStrictEqual([
+    "11",
+    "13",
+    "12",
+    "11",
+    "13",
+    "12",
+  ]);
+  expect(pickerRows()).toStrictEqual(markedLate);
+});
+
+/** A listing is a request to the forge, so nobody looking is nothing asked. */
+test("a picker that was reading by itself asks nothing once it is closed", async () => {
+  intervalsHeld();
+  const sent = await drawAtPicker();
+  await rosterIntervalPassed();
+  expect(readingsBegun(sent)).toBe(2);
+  pressClose();
+  await settled();
+  await rosterIntervalPassed();
+  await rosterIntervalPassed();
+  expect(readingsBegun(sent)).toBe(2);
+});
+
+/**
+ * A picker that reads by itself is still read by nothing else. Behind a stream
+ * that is down the fallback reads the page's bindings at its own pace, and the
+ * roster is read when the picker's own interval has gone by and not otherwise.
+ */
+test("the fallback's polls raise no reading of a roster the open picker reads by itself", async () => {
+  intervalsHeld();
+  held.parkedMs = fallbackIntervalMs;
+  const sent = await drawAtPicker({ stream: streamServer([]) });
+  await rosterIntervalPassed();
+  expect(readingsBegun(sent)).toBe(2);
+  await parkedWoken();
+  await parkedWoken();
+  expect(bindingsRead(sent)).toBe(3);
+  expect(readingsBegun(sent)).toBe(2);
+});
+
+/** The same of a `Project` frame, the fallback's sleep parked as above. */
+test("a frame the project's stream carries raises no reading of a roster the open picker reads by itself", async () => {
+  intervalsHeld();
+  held.parkedMs = fallbackIntervalMs;
+  const stream = openedStream();
+  const sent = await drawAtPicker({ stream });
+  await rosterIntervalPassed();
+  expect(readingsBegun(sent)).toBe(2);
+  stream.push(projectFrame());
+  await settled();
+  expect(bindingsRead(sent)).toBe(2);
+  expect(readingsBegun(sent)).toBe(2);
+});
+
+/** The document out of view, as a tab behind another is. */
+function pageHidden(): void {
+  Object.defineProperty(document, "visibilityState", {
+    configurable: true,
+    get: () => "hidden",
+  });
+}
+
+function pageShown(): void {
+  Reflect.deleteProperty(document, "visibilityState");
+}
+
+/** A tab nobody can see is nobody looking, and the interval is what reads
+ * again once it is back. */
+test("a picker open in a tab out of view asks nothing, and reads again at the interval after the tab is back", async () => {
+  intervalsHeld();
+  const sent = await drawAtPicker();
+  pageHidden();
+  await rosterIntervalPassed();
+  await rosterIntervalPassed();
+  expect(readingsBegun(sent)).toBe(1);
+  pageShown();
+  await rosterIntervalPassed();
+  expect(readingsBegun(sent)).toBe(2);
+});
+
+/** What the picker draws of a read that did not answer, `null` where nothing. */
+function rosterUnread(): HTMLElement | null {
+  return within(screen.getByRole("dialog")).queryByText(
+    /^(?:Loading|Failed to load|Not available)/u,
+  );
+}
+
+/**
+ * A picker left open is not a reason to ask the forge all day, so an opening
+ * has a count of readings and no more, the last of them as silent in failing
+ * as any other. An interval that went by out of view asked nothing and spends
+ * none, and the next opening has a count of its own.
+ */
+test("an opening reads by itself a bounded number of times, then only when it is opened again", async () => {
+  intervalsHeld();
+  const { forge, drawing } = forgeMoving();
+  const sent = await drawAtPicker(drawing);
+  pageHidden();
+  await rosterIntervalPassed();
+  pageShown();
+  for (let made = 1; made < repositoryRosterRereadsMax; made += 1)
+    await rosterIntervalPassed();
+  forge.portal = () => answer({}, 404);
+  await rosterIntervalPassed();
+  expect(readingsBegun(sent)).toBe(1 + repositoryRosterRereadsMax);
+  await rosterIntervalPassed();
+  await rosterIntervalPassed();
+  expect(readingsBegun(sent)).toBe(1 + repositoryRosterRereadsMax);
+  expect(pickerRows()).toStrictEqual(marked);
+  expect(rosterUnread()).toBeNull();
+  forge.portal = lateListed;
+  pressClose();
+  await settled();
+  fireEvent.click(screen.getByRole("button", { name: "Add" }));
+  await settled();
+  expect(pickerRows()).toStrictEqual(markedLate);
+  await rosterIntervalPassed();
+  expect(readingsBegun(sent)).toBe(3 + repositoryRosterRereadsMax);
+});
+
+/**
+ * A reading made on a clock is not one a person asked for, so its failure is
+ * not hers to be told of: the roster stands as it was drawn, marks and all,
+ * and the readings go on.
+ */
+test.each<readonly [string, number]>([
+  ["an outage", 503],
+  ["a refusal", 404],
+  ["a sign-in that ended", 401],
+])(
+  "a reading the open picker makes by itself that meets %s leaves the roster as drawn and says nothing",
+  async (_how, status) => {
+    intervalsHeld();
+    const { forge, drawing } = forgeMoving();
+    const sent = await drawAtPicker(drawing);
+    forge.portal = () => answer({}, status);
+    await rosterIntervalPassed();
+    expect(readingsBegun(sent)).toBe(2);
+    expect(pickerRows()).toStrictEqual(marked);
+    expect(rosterUnread()).toBeNull();
+    expect(workerGrant().line).not.toBeNull();
+    forge.portal = lateListed;
+    await rosterIntervalPassed();
+    expect(pickerRows()).toStrictEqual(markedLate);
+  },
+);
+
+/**
+ * A person who opens the picker asked for its roster, so that reading says
+ * what it met, as it always has. Nothing an earlier opening's own readings met
+ * is under the key for it to draw before it has an answer of its own.
+ */
+test("the first reading of an opening still says what it met, after an opening whose own reading failed and said nothing", async () => {
+  intervalsHeld();
+  const { forge, drawing } = forgeMoving();
+  const sent = await drawAtPicker(drawing);
+  forge.portal = () => answer({}, 404);
+  await rosterIntervalPassed();
+  expect(readingsBegun(sent)).toBe(2);
+  pressClose();
+  await settled();
+  const reopened = heldAnswer();
+  forge.portal = () => reopened.answered;
+  fireEvent.click(screen.getByRole("button", { name: "Add" }));
+  await settled();
+  expect(pickerRows()).toStrictEqual(marked);
+  expect(rosterUnread()).toBeNull();
+  reopened.release(answer({}, 404));
+  await settled();
+  expect(pickerRows()).toStrictEqual([]);
+  expect(rosterUnread()?.textContent).toBe(
+    "Not available · the API has no such resource, or will not show it to you",
+  );
+});
+
+/** A failure a person was told of is not followed by a roster that draws and
+ * withdraws itself on a clock, so an opening that drew none reads no more. */
+test("an opening whose first reading failed reads nothing by itself, and the next opening does", async () => {
+  intervalsHeld();
+  const { forge, drawing } = forgeMoving();
+  forge.portal = () => answer({}, 404);
+  const sent = await drawAtPicker(drawing);
+  expect(rosterUnread()).not.toBeNull();
+  await rosterIntervalPassed();
+  await rosterIntervalPassed();
+  expect(readingsBegun(sent)).toBe(1);
+  pressClose();
+  await settled();
+  forge.portal = lateListed;
+  fireEvent.click(screen.getByRole("button", { name: "Add" }));
+  await settled();
+  expect(pickerRows()).toStrictEqual(markedLate);
+  await rosterIntervalPassed();
+  expect(readingsBegun(sent)).toBe(3);
+});
+
+/**
+ * An opening's first reading draws the portal app's roster ahead of the worker
+ * app's marks, which a reading made by itself must not do again: a row would
+ * lose its mark to get it back, and a reader who had chosen a row would be
+ * told the worker app's listings were unread. So it is drawn only once whole.
+ */
+test("a reading the open picker makes by itself draws nothing until the worker app's listing has answered too", async () => {
+  intervalsHeld();
+  const { forge, drawing } = forgeMoving();
+  await drawAtPicker(drawing);
+  fireEvent.click(screen.getByRole("button", { name: "gdoteof/scratch" }));
+  await settled();
+  expect(statusesOf()).toStrictEqual(["Deferring"]);
+  const worker = heldAnswer();
+  forge.portal = lateListed;
+  forge.worker = () => worker.answered;
+  await rosterIntervalPassed();
+  expect(pickerRows()).toStrictEqual(marked);
+  expect(workerReading()).toBeNull();
+  expect(workerGrant().line).not.toBeNull();
+  worker.release(lacking());
+  await settled();
+  expect(pickerRows()).toStrictEqual(markedLate);
+  expect(workerReading()).toBeNull();
+  expect(workerGrant().line).not.toBeNull();
+  expect(statusesOf()).toStrictEqual(["Deferring"]);
+});
+
+/**
+ * A worker listing that does not answer marks no row, which on a roster that
+ * stands would take a mark away for as long as the forge took to answer again.
+ * So a reading it did not answer is not whole, and nothing of it is drawn.
+ */
+test.each<readonly [string, () => Response]>([
+  ["did not answer", () => answer({}, 503)],
+  ["is withheld", () => answer({}, 404)],
+])(
+  "a reading the open picker makes by itself whose worker listing %s leaves every mark, and the next whole one is drawn",
+  async (_how, answered) => {
+    intervalsHeld();
+    const { forge, drawing } = forgeMoving();
+    await drawAtPicker(drawing);
+    forge.portal = lateListed;
+    forge.worker = answered;
+    await rosterIntervalPassed();
+    expect(pickerRows()).toStrictEqual(marked);
+    expect(workerGrant().line).not.toBeNull();
+    forge.worker = lacking;
+    await rosterIntervalPassed();
+    expect(pickerRows()).toStrictEqual(markedLate);
+  },
+);
+
+/**
+ * What a person is doing in the picker is hers: the text she filtered by, the
+ * row the keyboard is on, the bind she is waiting for and the line it leaves.
+ * A reading replaces the roster under all of them, while a bind is in flight
+ * as at any other time, and only the bind's own answer ends the bind.
+ */
+test("a reading the open picker makes by itself keeps the filter, the row in focus, a bind in flight and the note it leaves", async () => {
+  intervalsHeld();
+  const { forge, drawing } = forgeMoving();
+  const bind = heldAnswer();
+  const sent = await drawAtPicker({ ...drawing, posted: () => bind.answered });
+  typedInPicker("gdoteof");
+  const row = screen.getByRole<HTMLButtonElement>("button", {
+    name: "gdoteof/scratch",
+  });
+  row.focus();
+  forge.portal = lateListed;
+  await rosterIntervalPassed();
+  const filtered = ["gdoteof/scratch", "gdoteof/late"];
+  expect(pickerRows()).toStrictEqual(filtered);
+  expect(document.activeElement).toBe(row);
+  fireEvent.click(row);
+  await settled();
+  forge.portal = () => answer(granted["13"]);
+  await rosterIntervalPassed();
+  expect(pickerRows()).toStrictEqual(["gdoteof/scratch"]);
+  expect(row.disabled).toBe(true);
+  expect(
+    within(screen.getByRole("dialog")).queryAllByRole("status"),
+  ).toStrictEqual([]);
+  expect(sent.filter((one) => one.method === "POST")).toHaveLength(1);
+  bind.release(accepted());
+  await settled();
+  expect(statusesOf()).toStrictEqual(["Configurations imported · New ticket"]);
+  forge.portal = lateListed;
+  await rosterIntervalPassed();
+  expect(readingsBegun(sent)).toBe(4);
+  expect(pickerRows()).toStrictEqual(filtered);
+  expect(statusesOf()).toStrictEqual(["Configurations imported · New ticket"]);
+  expect(
+    screen.getByRole<HTMLInputElement>("textbox", { name: "Filter" }).value,
+  ).toBe("gdoteof");
+});
 
 /** The `201` carries the configurations the binding found and the `200` carries
  * the repository alone, so the second line is drawn for one and not the other. */

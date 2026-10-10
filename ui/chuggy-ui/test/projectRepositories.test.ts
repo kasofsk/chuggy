@@ -38,6 +38,9 @@ import {
   repositoryLabel,
   repositoryNextStep,
   repositoryOffersLine,
+  repositoryRosterPolledMs,
+  repositoryRosterRereadMs,
+  repositoryRosterRereadsMax,
   repositoryWorkerLine,
   repositoryWorkerReading,
   type InstallationGrant,
@@ -227,6 +230,32 @@ test("the worker app's line is what a row marks, and that its listings are unrea
     [undefined, undefined],
   ]);
   expect(repositoryWorkerReading).toBe("Worker app · loading…");
+});
+
+/** How long the forge was once seen to take to list a grant just made. */
+const repositoryGrantLagSeenMs = 5 * 60_000;
+
+/**
+ * The forge can be slow to list a grant, so the readings one opening makes by
+ * itself have to go on for longer than that with room to spare. They stop,
+ * because a picker left open is not a reason to go on asking the forge.
+ */
+test("an open picker's own readings keep one pace until they are spent, and outlast twice the lag a grant was seen to take", () => {
+  expect(repositoryRosterPolledMs).toBeGreaterThan(0);
+  expect([
+    repositoryRosterRereadMs(0),
+    repositoryRosterRereadMs(repositoryRosterRereadsMax - 1),
+    repositoryRosterRereadMs(repositoryRosterRereadsMax),
+    repositoryRosterRereadMs(repositoryRosterRereadsMax + 1),
+  ]).toStrictEqual([
+    repositoryRosterPolledMs,
+    repositoryRosterPolledMs,
+    undefined,
+    undefined,
+  ]);
+  expect(
+    repositoryRosterRereadsMax * repositoryRosterPolledMs,
+  ).toBeGreaterThanOrEqual(2 * repositoryGrantLagSeenMs);
 });
 
 function status(result: ApiResult<ProjectRepositoryBindAnswer>): string {

@@ -138,6 +138,22 @@ export function repositoryWorkerLine(
   return workerless.length > 0 ? "Missing" : undefined;
 }
 
+/** How often an open picker reads its roster again by itself. */
+export const repositoryRosterPolledMs = 15_000;
+
+/** How many readings one opening of the picker makes by itself, so a picker
+ * left open stops asking the forge. They are held to outlasting the lag a
+ * grant was seen to take by `ui/chuggy-ui/test/projectRepositories.test.ts`. */
+export const repositoryRosterRereadsMax = 40;
+
+/** How long until an open picker reads its roster again, from how many
+ * readings this opening has made by itself, and nothing once they are spent. */
+export function repositoryRosterRereadMs(rereads: number): number | undefined {
+  return rereads < repositoryRosterRereadsMax
+    ? repositoryRosterPolledMs
+    : undefined;
+}
+
 /** The anchor the page's address opens the picker at. */
 export const repositoryAddAnchor = "add";
 
