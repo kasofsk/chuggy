@@ -34,6 +34,11 @@
  * WHOLE, so no row loses a mark to get it back. One that a listing did not
  * answer says nothing and is answered as the roster that stood, which leaves
  * no failure under the key for the next opening to draw.
+ *
+ * A ROW ONCE DRAWN KEEPS ITS PLACE UNTIL THE PICKER CLOSES, because a press
+ * binds at once and a row moved under the pointer between aim and press binds
+ * another repository. A reading's new rows are drawn after every row, and one
+ * it no longer lists stands where it stood, saying so, and cannot be pressed.
  */
 
 import { useQueryClient } from "@tanstack/react-query";
@@ -66,8 +71,10 @@ import {
   repositoryBindNote,
   repositoryBindOutcome,
   repositoryChoices,
+  repositoriesDrawn,
   repositoryGrantLines,
   repositoryRosterRereadMs,
+  repositoryUnlisted,
   repositoryWorkerLine,
   repositoryWorkerMissing,
   repositoryWorkerReading,
@@ -75,6 +82,7 @@ import {
 import type {
   InstallationGrant,
   RepositoryChoice,
+  RepositoryDrawn,
   RepositoryNote,
 } from "../../core/projectRepositories.ts";
 import type { WorkRunner } from "../../core/workRunner.ts";
@@ -217,13 +225,16 @@ function RepositoryChoiceRow(props: {
       <Button
         size="sm"
         variant="quiet"
-        disabled={props.busy}
+        disabled={props.busy || !choice.listed}
         onClick={() => {
           props.onChoose(choice);
         }}
       >
         {choice.repository.fullName}
       </Button>
+      {choice.listed ? null : (
+        <span className="text-sm text-ink-3">{repositoryUnlisted}</span>
+      )}
       {choice.bound ? <span className="text-sm text-ink-3">Bound</span> : null}
       {choice.workerless ? (
         <span className="text-sm text-tone-parked">
@@ -317,6 +328,26 @@ function useReachable(
   );
 }
 
+/**
+ * The rows this opening of the picker has drawn, each reading laid over them
+ * in the render that first sees it, so no frame draws a reading in its own
+ * order. They are kept here and not under the tenant's key because they are
+ * this opening's: the key holds each reading as the forge listed it, which is
+ * what the next opening first draws, and closing the picker lets them go.
+ */
+function useRowsDrawn(
+  read: readonly ForgeRepositoryResponse[] | undefined,
+): readonly RepositoryDrawn[] {
+  const [drawn, setDrawn] = useState<{
+    readonly from: readonly ForgeRepositoryResponse[];
+    readonly rows: readonly RepositoryDrawn[];
+  }>();
+  if (read === undefined || read === drawn?.from) return drawn?.rows ?? [];
+  const rows = repositoriesDrawn(drawn?.rows ?? [], read);
+  setDrawn({ from: read, rows });
+  return rows;
+}
+
 /** One bind, from the identity it spends to the line it leaves behind, with
  * `bound` told of one the route accepted. */
 function useRepositoryBind(
@@ -377,6 +408,9 @@ function AddRepositoryBody(props: {
     props.workers,
   );
   const binding = useRepositoryBind(partition, props.onBound);
+  const drawn = useRowsDrawn(
+    state.state === "Ready" ? state.value.repositories : undefined,
+  );
   return (
     <>
       <PanelUnready state={state} />
@@ -384,7 +418,7 @@ function AddRepositoryBody(props: {
         <SearchableRoster
           label="Filter"
           rows={repositoryChoices(
-            state.value.repositories,
+            drawn,
             props.bound,
             state.value.workerless ?? [],
           )}

@@ -33,6 +33,7 @@ import {
   repositoryBindOutcome,
   repositoryChoices,
   repositoryConfigureStatus,
+  repositoriesDrawn,
   repositoryDeferrals,
   repositoryGrantLines,
   repositoryLabel,
@@ -44,6 +45,7 @@ import {
   repositoryWorkerLine,
   repositoryWorkerReading,
   type InstallationGrant,
+  type RepositoryDrawn,
   type RepositoryNextStep,
   type RepositoryNote,
   type RepositoryOffersStep,
@@ -85,13 +87,16 @@ test("a repository is labelled by the account and the name it is under", () => {
 
 test("a row is marked bound by the address the binding names", () => {
   const choices = repositoryChoices(
-    [
-      reachable({}),
-      reachable({
-        fullName: "gdoteof/chuggy",
-        url: "https://forge.test/gdoteof/chuggy",
-      }),
-    ],
+    repositoriesDrawn(
+      [],
+      [
+        reachable({}),
+        reachable({
+          fullName: "gdoteof/chuggy",
+          url: "https://forge.test/gdoteof/chuggy",
+        }),
+      ],
+    ),
     [
       {
         repository: "https://forge.test/kasofsk/chuggy",
@@ -160,8 +165,95 @@ test("the worker app lacks what its own account's whole listing does not hold, a
 
 test("a row is marked by the address the worker app was read not to grant", () => {
   expect(
-    repositoryChoices([reachable({}), rehearsal], [], [rehearsal.url]).map(
-      (choice) => choice.workerless,
+    repositoryChoices(
+      repositoriesDrawn([], [reachable({}), rehearsal]),
+      [],
+      [rehearsal.url],
+    ).map((choice) => choice.workerless),
+  ).toEqual([false, true]);
+});
+
+/** A repository on its own account, by its name alone. */
+function named(name: string): ForgeRepositoryResponse {
+  return reachable({
+    name,
+    fullName: `gdoteof/${name}`,
+    url: `https://forge.test/gdoteof/${name}`,
+  });
+}
+
+/** The rows as a reader sees them, each by the name it draws and one no
+ * longer listed by that too. */
+function rowsSeen(drawn: readonly RepositoryDrawn[]): readonly string[] {
+  return drawn.map((row) =>
+    row.listed ? row.repository.name : `${row.repository.name} unlisted`,
+  );
+}
+
+const [ant, cat, eel] = [named("ant"), named("cat"), named("eel")];
+
+/** The picker drawn on two rows by its first reading, which draws them in the
+ * reading's own order whatever that is. */
+const drawnTwo = repositoriesDrawn([], [cat, ant]);
+
+/**
+ * A press binds at once, so a row moved by a reading between a reader's aim
+ * and her press binds another repository. A row once drawn keeps its place
+ * whatever the next reading lists ahead of it, and what that reading brings is
+ * drawn after every row.
+ */
+test.each<
+  readonly [string, readonly ForgeRepositoryResponse[], readonly string[]]
+>([
+  ["ahead of every row drawn", [eel, cat, ant], ["cat", "ant", "eel"]],
+  ["between rows drawn", [cat, eel, ant], ["cat", "ant", "eel"]],
+  ["after every row drawn", [cat, ant, eel], ["cat", "ant", "eel"]],
+  ["with the rows drawn in another order", [ant, cat], ["cat", "ant"]],
+  ["no longer listing a row drawn", [ant], ["cat unlisted", "ant"]],
+  [
+    "that loses one row and brings another",
+    [eel, ant],
+    ["cat unlisted", "ant", "eel"],
+  ],
+])("a reading %s leaves every row drawn where it stood", (_how, read, seen) => {
+  expect(rowsSeen(drawnTwo)).toStrictEqual(["cat", "ant"]);
+  expect(rowsSeen(repositoriesDrawn(drawnTwo, read))).toStrictEqual(seen);
+});
+
+test("a row no longer listed and then listed again is listed where it stood", () => {
+  const lost = repositoriesDrawn(drawnTwo, [ant]);
+  expect(rowsSeen(repositoriesDrawn(lost, [eel, cat, ant]))).toStrictEqual([
+    "cat",
+    "ant",
+    "eel",
+  ]);
+});
+
+test("the same reading twice draws what it drew once", () => {
+  for (const read of [[cat, ant], [eel, ant], [ant]]) {
+    const once = repositoriesDrawn(drawnTwo, read);
+    expect(repositoriesDrawn(once, read)).toStrictEqual(once);
+  }
+});
+
+/** A row is drawn as the reading that lists it lists it, and one no longer
+ * listed as it was last listed. */
+test("a row the reading lists is drawn as that reading lists it", () => {
+  const renamed = { ...cat, fullName: "gdoteof/kitten" };
+  expect(repositoriesDrawn(drawnTwo, [renamed, ant])).toStrictEqual([
+    { repository: renamed, listed: true },
+    { repository: ant, listed: true },
+  ]);
+  expect(repositoriesDrawn(drawnTwo, [ant])[0]).toStrictEqual({
+    repository: cat,
+    listed: false,
+  });
+});
+
+test("a row is offered only while the latest reading lists it", () => {
+  expect(
+    repositoryChoices(repositoriesDrawn(drawnTwo, [ant]), [], []).map(
+      (choice) => choice.listed,
     ),
   ).toEqual([false, true]);
 });
@@ -285,9 +377,9 @@ const alreadyBound: ApiResult<ProjectRepositoryBindAnswer> = {
  * what tells the two apart. */
 test("a bind of a repository already bound says so, and offers nothing further", () => {
   expect(repositoryBindNote(repositoryBindOutcome(alreadyBound))).toStrictEqual(
-    { status: "Already bound", ticketOffered: false },
+    { status: "kasofsk/chuggy · Already bound", ticketOffered: false },
   );
-  expect(status(answered({ result: "Imported", count: 2 }))).not.toBe(
+  expect(status(answered({ result: "Imported", count: 2 }))).not.toContain(
     "Already bound",
   );
 });
@@ -298,20 +390,21 @@ function boundNote(
   return repositoryBindNote(repositoryBindOutcome(answered(configurations)));
 }
 
-/** The picker's row marks a new binding Bound, so its one line says what its
- * configurations came to instead, and offers a ticket once there is one. */
-test("a new binding says what its configurations came to, and offers a ticket where one was", () => {
+/** The picker's row marks a new binding Bound, so its one line names the
+ * repository and says what its configurations came to, and offers a ticket
+ * once there is one. */
+test("a new binding names the repository and what its configurations came to, and offers a ticket where one was", () => {
   expect(boundNote({ result: "Imported", count: 3 })).toStrictEqual({
-    status: "Configurations imported",
+    status: "kasofsk/chuggy · Configurations imported",
     ticketOffered: true,
   });
   expect(boundNote({ result: "Bootstrapped", revision: "r1" })).toStrictEqual({
-    status: "Default configuration added",
+    status: "kasofsk/chuggy · Default configuration added",
     ticketOffered: true,
   });
   for (const reason of projectRepositoryConfigurationDeferrals)
     expect(boundNote({ result: "Deferred", reason })).toStrictEqual({
-      status: repositoryDeferrals[reason].status,
+      status: `kasofsk/chuggy · ${repositoryDeferrals[reason].status}`,
       ticketOffered: false,
     });
 });
