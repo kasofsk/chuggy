@@ -1,22 +1,31 @@
 /**
  * The one next thing the setup program names, for every standing.
  *
- * The program has no command that does a step, so each thing a step can lack
- * is mended by the person on a page of the console: the table below holds
- * every lack there is, and will not compile with one missing, against the
- * page's full address, what is pressed there, and the condition the checklist
- * may be read again under. Nothing here is ever a command to run: a step that
- * waits on the person is told to her and stops.
+ * Where the machine was not looked at, each thing a step can lack is mended
+ * by the person on a page of the console: the table below holds every lack
+ * there is, and will not compile with one missing, against the page's full
+ * address, what is pressed there, and the condition the checklist may be read
+ * again under. The runner's step is the one this program does, so where the
+ * machine was looked at and could take a runner it is offered, under a rule
+ * that waits on her yes. Nothing here is ever a command to run unasked.
  */
 
 import { expect, test } from "vitest";
 
 import { setupAnswersNone } from "../app/core/setupArguments.ts";
 import { repositoryGrantLines } from "../app/core/projectRepositories.ts";
-import { setupAskNamesMax, setupNext } from "../app/core/setupNext.ts";
+import {
+  setupAskNamesMax,
+  setupNext,
+  setupRunnerDue,
+} from "../app/core/setupNext.ts";
 import type { SetupChoice } from "../app/core/setupReads.ts";
 import { setupRepositoryRead } from "../app/core/setupRemote.ts";
 import type { SetupThing } from "../app/core/setupReport.ts";
+import type {
+  SetupRunnerHere,
+  SetupRunnerRoom,
+} from "../app/core/setupRunnerMachine.ts";
 import type {
   SetupFate,
   SetupLack,
@@ -333,6 +342,129 @@ test("with every step done, setup is said to be done in the ticket step's own wo
       },
     });
   }
+});
+
+const offered = (tell: string): SetupThing => ({
+  thing: "Offer",
+  tell,
+  when: "once the person says yes to a runner on this machine",
+  workspace: "acme",
+  project: "widgets",
+});
+
+/** What is next for a lack once the machine was looked at and showed `room`. */
+function here(
+  lack: SetupLack,
+  room: SetupRunnerRoom,
+  registered = false,
+): SetupThing {
+  const looked: SetupRunnerHere = { room, registered };
+  return setupNext(lacking(lack), setupAnswersNone, looked).thing;
+}
+
+const roomy: SetupRunnerRoom = { room: "Open", engine: "docker" };
+const runnerIs =
+  "The next step is a runner: the machine that does the work on your tickets";
+
+test("with no runner yet and a machine that could take one, the person is told once what runner would put here, and the command waits on their yes", () => {
+  expect(here({ lacks: "Runner" }, roomy)).toEqual(
+    offered(
+      `${runnerIs}. I can make this machine one. That puts here the runner package, chuggy-linux, and a background service of yours that starts when you log in; work on your tickets then runs on this machine in containers, on your Claude plan. Tell me yes to go ahead. For a runner on another machine instead, that machine's own browser opens ${pages}/runners, where you press Add runner.`,
+    ),
+  );
+  expect(here({ lacks: "Runner" }, roomy, true)).toEqual(
+    here({ lacks: "Runner" }, roomy),
+  );
+});
+
+test("where this machine could not take a runner the person is told why instead, and nothing is offered: a Mac, user services that do not answer, no engine", () => {
+  const running = "once the person says the runner is running";
+  expect(here({ lacks: "Runner" }, { room: "Mac" })).toEqual(
+    hand(
+      `${runnerIs}. This machine is a Mac and chuggy has no runner for a Mac yet, so it cannot be one. A runner needs a machine with Linux · Node 24 · Docker or Podman: on one, open ${pages}/runners, press Add runner and do what it shows there. Tell me once the runner is running.`,
+      running,
+    ),
+  );
+  expect(here({ lacks: "Runner" }, { room: "Serviceless" })).toEqual(
+    hand(
+      `${runnerIs}. chuggy setup runs one as a background service of yours, and this machine's user services did not answer, so it cannot set one up here. Open ${pages}/runners and press Add runner, then do what it shows on the machine that will run the work. Tell me once the runner is running.`,
+      running,
+    ),
+  );
+  expect(
+    here(
+      { lacks: "Runner" },
+      {
+        room: "Engineless",
+        asked: [
+          { engine: "docker", answered: "No" },
+          { engine: "podman", answered: "Absent" },
+        ],
+      },
+    ),
+  ).toEqual(
+    hand(
+      `${runnerIs}, in containers. This machine cannot be one yet: neither Docker nor Podman answered here without a password. Installing a container engine, or letting your user reach one, takes a password, and chuggy setup never takes one. Tell me once one answers you here. For a runner on another machine instead, open ${pages}/runners there and press Add runner, and tell me once it is running.`,
+      "once the person says a container engine answers them on this machine, or that a runner is running",
+    ),
+  );
+});
+
+test("a runner registered and not running is offered to be started here only where this machine is registered as one, and is otherwise the person's to start where it is", () => {
+  expect(here({ lacks: "RunnerLive" }, roomy, true)).toEqual(
+    offered(
+      "A runner is registered for acme/widgets and is not running, and this machine is registered as one. With your yes I will check it and start it here as a background service of yours that starts when you log in, so work on your tickets runs on this machine in containers, on your Claude plan. Tell me yes to go ahead.",
+    ),
+  );
+  for (const room of [roomy, { room: "Mac" }, { room: "Serviceless" }] as const)
+    expect(here({ lacks: "RunnerLive" }, room), room.room).toEqual(
+      mends.RunnerLive[1],
+    );
+});
+
+test("what the machine showed moves no step but the runner's", () => {
+  for (const [kind, [lack, told]] of Object.entries(mends))
+    if (kind !== "Runner" && kind !== "RunnerLive")
+      expect(here(lack, roomy, true), kind).toEqual(told);
+});
+
+test("the machine is looked at only where the runner's step is the first not done and the project is chosen", () => {
+  const due = (lack: SetupLack, given?: Partial<SetupStanding>) =>
+    setupRunnerDue(lacking(lack, given));
+  expect(due({ lacks: "Runner" })).toEqual({
+    tenant: "acme",
+    project: "widgets",
+  });
+  expect(due({ lacks: "RunnerLive" })).toEqual({
+    tenant: "acme",
+    project: "widgets",
+  });
+  for (const [kind, [lack]] of Object.entries(mends))
+    if (kind !== "Runner" && kind !== "RunnerLive")
+      expect(due(lack), kind).toBeUndefined();
+  expect(due(unread({ fate: "Refused" }))).toBeUndefined();
+  expect(
+    due({ lacks: "Runner" }, { choice: { ...chosen, project: undefined } }),
+  ).toBeUndefined();
+  expect(
+    due(
+      { lacks: "Runner" },
+      {
+        choice: {
+          choice: "Open",
+          open: "project",
+          workspace: "acme",
+          among: [],
+          whole: true,
+        },
+      },
+    ),
+  ).toBeUndefined();
+  const behind: readonly SetupStep[] = [
+    { step: "github", state: "todo", detail: "", lacks: { lacks: "Account" } },
+    { step: "runner", state: "todo", detail: "", lacks: { lacks: "Runner" } },
+  ];
+  expect(due({ lacks: "Runner" }, { steps: behind })).toBeUndefined();
 });
 
 /** The step that decides what is next at each stage of a site set up one thing at a time: the first that is not done. */

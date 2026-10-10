@@ -13,6 +13,14 @@
  * page at a time, each page but the last naming the next, since the server
  * answers a page of what it scanned and not of what the caller is shown. A
  * case moves one read to another fate by naming it in `fates`.
+ *
+ * It also answers what `runner` asks: whether the caller administers a
+ * project, the pools registered for it, and the one write, the mint of a
+ * registration token, which only an administrator is answered and only while
+ * the project holds fewer unredeemed tokens than its bound. A token is redeemed
+ * once, by whoever holds it, for a pool's credentials; every token and every
+ * credential handed out is kept, so a suite can search what a run printed for
+ * any of them.
  */
 
 import type { AccessCallerTenant } from "../../../src/contract/accessPlane.ts";
@@ -63,9 +71,14 @@ export interface SetupSiteProject {
   tickets: SetupSiteTicket[];
   drafts: number[];
   landings: Map<number, readonly TicketLandingResponse[]>;
+  /** Whether the caller administers the project, which its abilities read says and the mint goes by. */
+  administer: boolean;
+  /** The pools registered for the project, by name, and the registration tokens minted for it that nobody has redeemed. */
+  pools: string[];
+  tokens: string[];
 }
 
-/** The reads a case can move to another fate, by what each is of. */
+/** The reads of the bare command a case can move to another fate, by what each is of. */
 export type SetupSiteRead =
   | "workspaces"
   | "inventory"
@@ -81,6 +94,9 @@ export type SetupSiteRead =
   | "drafts"
   | "landings";
 
+/** What only `runner` asks, which a case moves likewise; `mint` is the one write. */
+export type SetupSiteRunnerAsk = "abilities" | "pools" | "mint";
+
 /** How a read is answered where a case says other than what the site holds. */
 export type SetupSiteFate =
   "Refused" | "Failed" | "Cut" | "Garbled" | "Unauthenticated";
@@ -94,7 +110,24 @@ export interface SetupSite {
   installations: Map<string, ForgeInstallationResponse[]>;
   /** The repositories an installation grants, by installation, where a case says other than every repository of the workspace's projects on its account. */
   grants: Map<string, string[]>;
-  fates: Map<SetupSiteRead, SetupSiteFate>;
+  fates: Map<SetupSiteRead | SetupSiteRunnerAsk, SetupSiteFate>;
+  /** Every registration token and every pool credential the site handed out, in order. */
+  readonly secrets: string[];
+  /** What each mint that was answered asked for. */
+  readonly mints: SetupSiteMint[];
+  /** The letters the site draws a token from, which a case changes to draw one nothing knows by its shape, or one no command line carries whole. */
+  letters: string;
+}
+
+export interface SetupSiteMint {
+  readonly capabilities: readonly string[];
+  readonly lifetimeSecs: number;
+}
+
+/** How a request is sent: its method, and its body where it has one. */
+export interface SetupSiteSent {
+  readonly method: string;
+  readonly body?: string | undefined;
 }
 
 export interface SetupSiteAnswer {
@@ -119,6 +152,9 @@ export function setupSiteProject(
     tickets: [],
     drafts: [],
     landings: new Map(),
+    administer: true,
+    pools: [],
+    tokens: [],
   };
 }
 
@@ -131,6 +167,9 @@ export function setupSiteEmpty(): SetupSite {
     installations: new Map(),
     grants: new Map(),
     fates: new Map(),
+    secrets: [],
+    mints: [],
+    letters: "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_",
   };
 }
 
@@ -264,7 +303,7 @@ function answered(body: unknown): SetupSiteAnswer {
 /** What a read answers where a case moved it, or nothing where it answers what the site holds. */
 function fated(
   site: SetupSite,
-  read: SetupSiteRead,
+  read: SetupSiteRead | SetupSiteRunnerAsk,
 ): SetupSiteAnswer | undefined {
   switch (site.fates.get(read)) {
     case undefined:
@@ -284,7 +323,10 @@ function fated(
   }
 }
 
-function cut(site: SetupSite, read: SetupSiteRead): boolean {
+function cut(
+  site: SetupSite,
+  read: SetupSiteRead | SetupSiteRunnerAsk,
+): boolean {
   return site.fates.get(read) === "Cut";
 }
 
@@ -402,6 +444,102 @@ function draft(project: SetupSiteProject, number: number): DraftResponse {
   };
 }
 
+/** The most registration tokens a project holds unredeemed, small so a case reaches it. */
+export const setupSiteTokensMax = 3;
+
+/** A registration token as the server draws one: a long run of the letters a URL carries unescaped, unless a case has the site draw from others. */
+function drawn(site: SetupSite, kind: string): string {
+  const secret = `${kind}${String(site.secrets.length + 1)}_`.padEnd(
+    43,
+    site.letters,
+  );
+  site.secrets.push(secret);
+  return secret;
+}
+
+/** The one write: a registration token for the project, to whoever administers it and while it holds fewer than its bound. */
+function minted(
+  site: SetupSite,
+  project: SetupSiteProject,
+  body: string | undefined,
+): SetupSiteAnswer {
+  const fate = fated(site, "mint");
+  if (fate !== undefined) return fate;
+  if (!project.administer) return refused();
+  if (project.tokens.length >= setupSiteTokensMax)
+    return {
+      status: 409,
+      body: { error: { code: "TokenLimitReached", message: "At its bound." } },
+    };
+  const asked = JSON.parse(body ?? "{}") as SetupSiteMint;
+  site.mints.push(asked);
+  const token = drawn(site, "registration");
+  project.tokens.push(token);
+  return { status: 201, body: { token, expiresAtMs: 4_102_444_800_000 } };
+}
+
+/**
+ * A redemption, which is answered on the token alone: the pool's credentials
+ * once, and not found for a token that is unknown or spent. The project then
+ * has a runner registered that has not polled.
+ */
+export function setupSiteRedeemed(
+  site: SetupSite,
+  token: string,
+  pool: string,
+): SetupSiteAnswer {
+  const project = site.projects.find((held) => held.tokens.includes(token));
+  if (project === undefined) return refused();
+  project.tokens.splice(project.tokens.indexOf(token), 1);
+  if (!project.pools.includes(pool)) project.pools.push(pool);
+  if (project.runner === "Unregistered") project.runner = "Offline";
+  return {
+    status: 201,
+    body: {
+      tenant: project.tenant,
+      project: project.project,
+      pool,
+      capabilities: ["Platform:Linux:Amd64"],
+      tokenUrl: "https://auth.example/oauth2/token",
+      audience: "https://chuggy.example/pool",
+      planeUrl: "https://pool.chuggy.example/",
+      clientId: `pool-${pool}`,
+      clientSecret: drawn(site, "credential"),
+    },
+  };
+}
+
+/** The pools as the roster read answers them, padded past what one read holds where a case cut it. */
+function pools(site: SetupSite, project: SetupSiteProject): SetupSiteAnswer {
+  return (
+    fated(site, "pools") ??
+    answered({
+      pools: project.pools.toSorted().map((pool) => ({
+        pool,
+        capabilities: ["Platform:Linux:Amd64"],
+        registeredAt: "2026-10-09T00:00:00Z",
+      })),
+      truncated: cut(site, "pools"),
+    })
+  );
+}
+
+function abilities(
+  site: SetupSite,
+  project: SetupSiteProject,
+): SetupSiteAnswer {
+  const { administer } = project;
+  return (
+    fated(site, "abilities") ??
+    answered({
+      mutate: true,
+      dispatch: true,
+      manageSelector: administer,
+      administer,
+    })
+  );
+}
+
 /** One page of the project's tickets in the phases asked for, which is where a done one and those on their way part. */
 function tickets(
   site: SetupSite,
@@ -439,6 +577,9 @@ function landings(
   );
 }
 
+const mintPath = "/worker-pool-registration-tokens";
+const redeemPath = "/api/v1/worker-pool-registrations";
+
 function projectAnswered(
   site: SetupSite,
   project: SetupSiteProject,
@@ -464,6 +605,10 @@ function projectAnswered(
       return fated(site, "work") ?? answered(work(project));
     case "/session-placement":
       return fated(site, "placement") ?? answered(placement(project));
+    case "/abilities":
+      return abilities(site, project);
+    case "/worker-pools":
+      return pools(site, project);
     case "/drafts":
       return (
         fated(site, "drafts") ??
@@ -515,6 +660,31 @@ function grant(
   );
 }
 
+function projectOf(
+  site: SetupSite,
+  tenant: string,
+  named: string | undefined,
+): SetupSiteProject | undefined {
+  return site.projects.find(
+    (held) =>
+      held.tenant === tenant &&
+      held.project === decodeURIComponent(named ?? ""),
+  );
+}
+
+/** A write within a workspace, which is the mint for a project the caller is shown or nothing the site answers. */
+function tenantWritten(
+  site: SetupSite,
+  tenant: string,
+  rest: string,
+  sent: SetupSiteSent,
+): SetupSiteAnswer | undefined {
+  const within = /^\/projects\/([^/]+)(\/.*)$/u.exec(rest);
+  if (sent.method !== "POST" || within?.[2] !== mintPath) return undefined;
+  const project = projectOf(site, tenant, within[1]);
+  return project === undefined ? refused() : minted(site, project, sent.body);
+}
+
 function tenantAnswered(
   site: SetupSite,
   tenant: string,
@@ -542,14 +712,19 @@ function tenantAnswered(
   }
   const within = /^\/projects\/([^/]+)(\/.*)?$/u.exec(rest);
   if (within === null) return undefined;
-  const project = site.projects.find(
-    (held) =>
-      held.tenant === tenant &&
-      held.project === decodeURIComponent(within[1] ?? ""),
-  );
+  const project = projectOf(site, tenant, within[1]);
   return project === undefined
     ? refused()
     : projectAnswered(site, project, within[2] ?? "", query);
+}
+
+/** A redemption as it is sent: the token and the pool's name, in a body the site reads. */
+function redeemed(site: SetupSite, body: string | undefined): SetupSiteAnswer {
+  const asked = JSON.parse(body ?? "{}") as {
+    readonly token?: string;
+    readonly pool?: string;
+  };
+  return setupSiteRedeemed(site, asked.token ?? "", asked.pool ?? "");
 }
 
 /** One page of the projects the caller is shown: those answered on it, and the next page's cursor on every page but the last, or on every page where a case cut the list. */
@@ -573,28 +748,32 @@ function inventory(site: SetupSite, cursor: string | null): SetupSiteAnswer {
 }
 
 /**
- * What the site answers a read of `target`, a path with its query, or
- * nothing where the path is none of the reads the bare command makes.
+ * What the site answers a request of `target`, a path with its query: a read
+ * unless `sent` says otherwise. Nothing is answered where the path is none of
+ * the reads the program makes, or the request is a write that is neither the
+ * mint nor a redemption.
  */
 export function setupSiteAnswered(
   site: SetupSite,
   target: string,
+  sent: SetupSiteSent = { method: "GET" },
 ): SetupSiteAnswer | undefined {
   const url = new URL(target, "http://site.invalid");
+  if (sent.method === "POST" && url.pathname === redeemPath)
+    return redeemed(site, sent.body);
+  const tenant = /^\/api\/v1\/tenants\/([^/]+)(\/.*)$/u.exec(url.pathname);
+  const named = decodeURIComponent(tenant?.[1] ?? "");
+  const rest = tenant?.[2] ?? "";
+  if (sent.method !== "GET")
+    return tenant === null ? undefined : tenantWritten(site, named, rest, sent);
+  if (tenant !== null)
+    return tenantAnswered(site, named, rest, url.searchParams);
   if (url.pathname === "/access/v1/workspaces")
     return (
       fated(site, "workspaces") ??
       answered({ tenants: site.tenants, truncated: cut(site, "workspaces") })
     );
-  if (url.pathname === "/api/v1/projects")
-    return inventory(site, url.searchParams.get("cursor"));
-  const tenant = /^\/api\/v1\/tenants\/([^/]+)(\/.*)$/u.exec(url.pathname);
-  return tenant === null
-    ? undefined
-    : tenantAnswered(
-        site,
-        decodeURIComponent(tenant[1] ?? ""),
-        tenant[2] ?? "",
-        url.searchParams,
-      );
+  return url.pathname === "/api/v1/projects"
+    ? inventory(site, url.searchParams.get("cursor"))
+    : undefined;
 }

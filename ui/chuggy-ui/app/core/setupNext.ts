@@ -1,12 +1,16 @@
 /**
  * The one next thing, from where a person stands on each step of setup.
  *
- * The first step that is not done decides it. This program has no command
- * that does a step, and it never prints a `next:` it cannot run, so what it
- * names is a page of the console by its full address and what is pressed
- * there, and the checklist is read again only once the person says the step
- * is done. `setupMend` is where each thing a step can lack is turned into
- * that; the slice that gives a step its command changes that step's line
+ * The first step that is not done decides it. This program does one step
+ * itself, the runner's, and it never prints a `next:` it cannot run, so for
+ * every other step what it names is a page of the console by its full address
+ * and what is pressed there, and the checklist is read again only once the
+ * person says the step is done. The runner's step changes the machine, so it
+ * is offered and never run unasked: the person is told what `runner` would
+ * put here, and the command is named under a rule that waits on their yes;
+ * where the machine could not take a runner, they are told that instead.
+ * `setupMend` is where each thing a step can lack is turned into its next
+ * thing; the slice that gives a step its command changes that step's line
  * there and nowhere else. A tell says of a page only what is pressed there:
  * whether a step is done is this program's to say, from the reads, and never
  * a page's. A step that was not read is said as that: a read the site refused
@@ -15,6 +19,7 @@
  * one flag at a time.
  */
 
+import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import { forgeInstallLabel } from "./forgeInstallation.ts";
 import { inviteRoutePath } from "./inviteLinks.ts";
 import { invitePageWords } from "./invitePage.ts";
@@ -23,11 +28,18 @@ import {
   repositoryGrantLines,
   repositoryLabel,
 } from "./projectRepositories.ts";
+import { runnerPackageOffered } from "./runners.ts";
 import { selectorSettingsSection } from "./selectorSettingsForm.ts";
 import { settingsRoutes } from "./settingsNav.ts";
 import type { SetupAnswers } from "./setupArguments.ts";
 import type { SetupChoice } from "./setupReads.ts";
 import type { SetupNext, SetupThing } from "./setupReport.ts";
+import type { SetupRunnerHere } from "./setupRunnerMachine.ts";
+import {
+  setupEngineNeedsPassword,
+  setupEnginesNone,
+  setupMacNone,
+} from "./setupRunnerSaid.ts";
 import type { SetupLack, SetupStanding, SetupStep } from "./setupStanding.ts";
 import { setupListed } from "./setupText.ts";
 import { navRoutes } from "./shellNav.ts";
@@ -164,20 +176,78 @@ function setupRepositoryMend(
   );
 }
 
-function setupRunnerMend(
-  lack: Extract<SetupLack, { readonly lacks: "Runner" | "RunnerLive" }>,
+/** Something `runner` would do on this machine for the checklist's project, which waits on the person's yes. */
+function setupOffer(tell: string, at: SetupAt): SetupThing {
+  const { workspace, project } = at;
+  return {
+    thing: "Offer",
+    tell,
+    when: "once the person says yes to a runner on this machine",
+    workspace,
+    project,
+  };
+}
+
+const setupRunnerIs =
+  "The next step is a runner: the machine that does the work on your tickets";
+
+const setupRunnerRunning = "once the person says the runner is running";
+
+/** A runner registered and not running: started here on the person's yes where this machine is registered as one, and otherwise theirs to start where it is. */
+function setupRunnerLiveMend(
   at: SetupAt,
+  here: SetupRunnerHere | undefined,
 ): SetupThing {
-  const page = setupPage(at, navRoutes.runners);
-  return lack.lacks === "Runner"
-    ? setupHand(
-        `Open ${page} and press ${setupPressed.runner}, then do what it shows on the machine that will run the work. Tell me once the runner is running.`,
-        "once the person says the runner is running",
+  return here?.registered === true
+    ? setupOffer(
+        `A runner is registered for ${at.workspace}/${at.project} and is not running, and this machine is registered as one. With your yes I will check it and start it here as a background service of yours that starts when you log in, so work on your tickets runs on this machine in containers, on your Claude plan. Tell me yes to go ahead.`,
+        at,
       )
     : setupHand(
         "A runner is registered and is not running. Start it on its machine and tell me once it is running.",
-        "once the person says the runner is running",
+        setupRunnerRunning,
       );
+}
+
+/**
+ * No runner yet. Where this machine could take one the person is told what
+ * `runner` would put here before it may be run; where it could not, why not;
+ * and where the machine was not looked at, the console's own page.
+ */
+function setupRunnerMend(
+  lack: Extract<SetupLack, { readonly lacks: "Runner" | "RunnerLive" }>,
+  at: SetupAt,
+  here: SetupRunnerHere | undefined,
+): SetupThing {
+  if (lack.lacks === "RunnerLive") return setupRunnerLiveMend(at, here);
+  const page = setupPage(at, navRoutes.runners);
+  const pressed = `press ${setupPressed.runner}`;
+  const elsewhere = `Open ${page} and ${pressed}, then do what it shows on the machine that will run the work. Tell me once the runner is running.`;
+  const room = here?.room;
+  switch (room?.room) {
+    case undefined:
+      return setupHand(elsewhere, setupRunnerRunning);
+    case "Open":
+      return setupOffer(
+        `${setupRunnerIs}. I can make this machine one. That puts here the runner package, ${runnerPackageOffered.program}, and a background service of yours that starts when you log in; work on your tickets then runs on this machine in containers, on your Claude plan. Tell me yes to go ahead. For a runner on another machine instead, that machine's own browser opens ${page}, where you ${pressed}.`,
+        at,
+      );
+    case "Mac":
+      return setupHand(
+        `${setupRunnerIs}. This machine is a Mac and ${setupMacNone}, so it cannot be one. A runner needs a machine with ${runnerPackageOffered.needs}: on one, open ${page}, ${pressed} and do what it shows there. Tell me once the runner is running.`,
+        setupRunnerRunning,
+      );
+    case "Serviceless":
+      return setupHand(
+        `${setupRunnerIs}. chuggy setup runs one as a background service of yours, and this machine's user services did not answer, so it cannot set one up here. ${elsewhere}`,
+        setupRunnerRunning,
+      );
+    case "Engineless":
+      return setupHand(
+        `${setupRunnerIs}, in containers. This machine cannot be one yet: ${setupEnginesNone(room.asked)} here without a password. ${setupEngineNeedsPassword} Tell me once one answers you here. For a runner on another machine instead, open ${page} there and ${pressed}, and tell me once it is running.`,
+        "once the person says a container engine answers them on this machine, or that a runner is running",
+      );
+  }
 }
 
 function setupTicketMend(
@@ -256,6 +326,7 @@ function setupMend(
   lack: SetupLack,
   at: SetupAt,
   mine: string | undefined,
+  here: SetupRunnerHere | undefined,
 ): SetupThing {
   switch (lack.lacks) {
     case "Read":
@@ -275,7 +346,7 @@ function setupMend(
       return setupRepositoryMend(lack, at, mine);
     case "Runner":
     case "RunnerLive":
-      return setupRunnerMend(lack, at);
+      return setupRunnerMend(lack, at, here);
     case "Ticket":
     case "Release":
     case "Dispatch":
@@ -334,7 +405,24 @@ function setupDoneThing(standing: SetupStanding, at: SetupAt): SetupThing {
   };
 }
 
-function setupThing(standing: SetupStanding): SetupThing {
+/** The project whose runner step is the one next, which is when the machine is looked at before the next thing is named. */
+export function setupRunnerDue(
+  standing: SetupStanding,
+): PartitionIdentity | undefined {
+  if (standing.choice.choice === "Open") return undefined;
+  const { workspace, project } = standing.choice;
+  const lacks = standing.steps.find((step) => step.lacks !== undefined)?.lacks;
+  if (lacks?.lacks !== "Runner" && lacks?.lacks !== "RunnerLive")
+    return undefined;
+  return workspace === undefined || project === undefined
+    ? undefined
+    : { tenant: workspace, project };
+}
+
+function setupThing(
+  standing: SetupStanding,
+  here: SetupRunnerHere | undefined,
+): SetupThing {
   if (standing.choice.choice === "Open") return setupAsk(standing.choice);
   const at: SetupAt = {
     site: standing.site,
@@ -347,20 +435,23 @@ function setupThing(standing: SetupStanding): SetupThing {
     standing.remote === undefined
       ? undefined
       : repositoryLabel(standing.remote.said);
-  return setupMend(undone, undone.lacks, at, mine);
+  return setupMend(undone, undone.lacks, at, mine, here);
 }
 
 /**
  * Names the one next thing and the choice every command printed with it
- * carries. `answers` is what the run's own arguments named, which a question
- * about the other name keeps.
+ * carries, where `answers` is what the run's own arguments named, which a
+ * question about the other name keeps. `here` is what this machine showed
+ * where `setupRunnerDue` named a project, and nothing where it was not
+ * looked at.
  */
 export function setupNext(
   standing: SetupStanding,
   answers: SetupAnswers,
+  here?: SetupRunnerHere,
 ): SetupNext {
   return {
     carried: setupCarried(standing.choice, answers),
-    thing: setupThing(standing),
+    thing: setupThing(standing, here),
   };
 }

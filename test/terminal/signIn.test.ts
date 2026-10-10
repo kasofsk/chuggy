@@ -504,7 +504,7 @@ test("an opener that leaves a browser running does not keep the command from ret
   const opener = join(machine.beside, "lingering-opener.sh");
   writeFileSync(
     opener,
-    `#!/bin/sh\nsleep 20 &\nprintf '%s' "$!" > "${lingerer}"\n`,
+    `#!/bin/sh\n'${process.execPath}' -e 'setTimeout(() => undefined, 20000)' &\nprintf '%s' "$!" > "${lingerer}"\n`,
   );
   chmodSync(opener, 0o755);
   const left = (): number => Number(readFileSync(lingerer, "utf8"));

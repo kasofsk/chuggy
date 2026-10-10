@@ -48,11 +48,11 @@ builds with.
 - `ui/chuggy-ui/app/styles.css` — what the pages that have not moved to the
   design system still draw with; it shrinks as they move.
 - `ui/chuggy-ui/terminal/` — the setup program's entry and its Node adapters:
-  files, a lock, a listener, child processes and requests, filling the ports
-  `ui/chuggy-ui/app/core/setupPorts.ts` declares. Its decisions are in
-  `app/core/` with the console's own. `ui/chuggy-ui/terminal/built.ts` is not
-  part of the program: it is the build's last step, which starts what was
-  built.
+  files, a lock, a listener, child processes, the machine's own paths and
+  requests, filling the ports `ui/chuggy-ui/app/core/setupPorts.ts` declares.
+  Its decisions are in `app/core/` with the console's own.
+  `ui/chuggy-ui/terminal/built.ts` is not part of the program: it is the
+  build's last step, which starts what was built.
 - `ui/chuggy-ui/test/` — the suites, run by the console's own runner.
 - `ui/chuggy-ui/config.example.json` — the shape of the runtime configuration.
 
@@ -173,9 +173,14 @@ failed or sent only part of leaves its own step not read and is said as that.
 Once a repository is added the github step is held to it: done only where both
 apps on the account that owns it are granted that repository, which is read
 from each of the two installations' own listings and from no other.
-The program does none of the steps yet: for the first one not done a `tell:`
-line says what mends it, a console page and what to press there wherever a page
-is what does, and `next:` is `stop`.
+The runner's step is the one the program does. For any other step that is the
+first not done, a `tell:` line says what mends it, a console page and what to
+press there wherever a page is what does, and `next:` is `stop`. At the
+runner's step it looks at the machine and changes nothing. Where a runner could
+be put there, one `tell:` says what `runner` would put on the machine and the
+`rule:` names that command for once she says yes; where one could not (a Mac,
+user services that do not answer, no container engine that answers her without
+a password) the `tell:` says that instead.
 
 With one workspace and one project there is nothing to choose. Otherwise
 `--workspace` and `--project` name them, and every command the program prints
@@ -194,6 +199,25 @@ renewal token in the person's home directory and never prints the token. The
 issuer hands a new token back for each one it is shown, so before one is shown
 the program keeps room in that directory for the next: a home that will not
 take it is said as that, with its path, and the sign-in is not spent.
+
+`runner --workspace <w> --project <p>` sets a runner up for that project on the
+Linux machine it is run on, and is done once the site sees the runner live;
+`--wait-secs` bounds that wait. The machine is the record of the machine's
+things and the site of the site's, and the program keeps neither: every act is
+preceded by the probe that would show it done, so the command is run again
+after any failure and picks up where things stand. In order it has the runner
+package installed, by the console's own install command and under a prefix in
+her home directory where npm's own is not hers to write; the package's
+settings written, with its guide's values, where there are none; the machine
+registered; the package's own check passed; its service installed; her
+services set to outlive a logout; and the service enabled and started. For a
+registration it mints a registration token, which is the one write it sends a
+site, and hands it to the package's `register` as one word of its arguments
+and nowhere else.
+It takes no password: a child has no terminal to ask on, and what wants one is
+told to her to do herself. It does not make the runner's Claude login, and
+stops where there is none. Nothing a child prints is printed: a failure keeps
+one short excerpt with the run's secrets struck out.
 
 ## The session
 

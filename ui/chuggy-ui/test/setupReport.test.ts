@@ -8,7 +8,8 @@
  * it is a command the program reads or the word that says there is none.
  * Every command any line names is split as a shell splits it and read back by
  * the program's own argument reader, with the workspace and project the run
- * was about.
+ * was about. A run asked as `runner` is one that named both, since the program
+ * reads no other, so its reports are printed with both.
  */
 
 import { expect, test } from "vitest";
@@ -33,6 +34,7 @@ import type {
   SetupThing,
 } from "../app/core/setupReport.ts";
 import { machineScript } from "./setupMachine.ts";
+import { runnerNotesAll, runnerStopsAll } from "./setupRunnerRoster.ts";
 
 const site = "https://chuggy.example";
 const next = `next: node ${machineScript}`;
@@ -88,6 +90,22 @@ const things: {
       when: "once the person says the North Star is saved",
     },
   ],
+  Offer: [
+    {
+      thing: "Offer",
+      tell: "I can make this machine a runner. Tell me yes to go ahead.",
+      when: "once the person says yes to a runner on this machine",
+      workspace: "acme",
+      project: "widgets",
+    },
+    {
+      thing: "Offer",
+      tell: "I can make this machine a runner. Tell me yes to go ahead.",
+      when: "once the person says yes to a runner on this machine",
+      workspace: "two words",
+      project: "it's --site",
+    },
+  ],
   Ask: [
     {
       thing: "Ask",
@@ -114,6 +132,12 @@ const choices: readonly SetupAnswers[] = [
   { workspace: "acme", project: "widgets" },
   { workspace: "two words", project: "it's --site" },
 ];
+
+/** The projects a run of `runner` is about: one plainly named, and one a shell would not read whole. */
+const pairs = [
+  { workspace: "acme", project: "widgets" },
+  { workspace: "two words", project: "it's --site" },
+] as const;
 
 function checklist(
   thing: SetupThing,
@@ -145,21 +169,28 @@ const roster: {
     { report: "AskedWrongly", fault: "Site" },
     { report: "AskedWrongly", fault: "WaitSecs" },
     { report: "AskedWrongly", fault: "Name" },
+    { report: "AskedWrongly", fault: "Project" },
   ],
   SiteUnknown: [{ report: "SiteUnknown" }],
   Busy: [
     { report: "Busy", asked: "SignIn", site: undefined, pid: 4242 },
     { report: "Busy", asked: "Status", site, pid: undefined },
+    { report: "Busy", asked: "Runner", site: undefined, pid: 4242 },
   ],
   Faulted: Object.values(faults).flatMap((fault) => [
     { report: "Faulted", asked: "Status", site: undefined, fault },
     { report: "Faulted", asked: "SignIn", site, fault },
+    { report: "Faulted", asked: "Runner", site, fault },
   ]),
   SiteUnusable: [
     { report: "SiteUnusable", site, phase: "Unreachable", asked: "Status" },
     { report: "SiteUnusable", site, phase: "Unconfigured", asked: "SignIn" },
+    { report: "SiteUnusable", site, phase: "Unreachable", asked: "Runner" },
   ],
-  IssuerUnanswered: [{ report: "IssuerUnanswered", site, asked: "SignIn" }],
+  IssuerUnanswered: [
+    { report: "IssuerUnanswered", site, asked: "SignIn" },
+    { report: "IssuerUnanswered", site, asked: "Runner" },
+  ],
   SignedOut: [undefined, ...setupSignInEndings].map((ended) => ({
     report: "SignedOut",
     site,
@@ -183,6 +214,7 @@ const roster: {
       outcome: "Unauthenticated",
       asked: "Status",
     },
+    { report: "WorkspacesUnread", site, outcome: "Fault", asked: "Runner" },
   ],
   SignInWaiting: [
     {
@@ -212,12 +244,45 @@ const roster: {
     site,
     ended,
   })),
+  Runner: pairs.flatMap(({ workspace, project }) =>
+    [
+      ...runnerStopsAll.map((stop) => ({ ended: "Stopped" as const, stop })),
+      { ended: "Live" as const },
+      { ended: "Hosted" as const },
+    ].map((ended) => ({
+      report: "Runner",
+      site:
+        ended.ended === "Stopped" && ended.stop.stop === "Mac"
+          ? undefined
+          : site,
+      workspace,
+      project,
+      notes: runnerNotesAll,
+      ended,
+    })),
+  ),
 };
 
 const every: readonly SetupReport[] = Object.values(roster).flat();
 
-/** Every report but a checklist, which is every report a run that is not signed in can make. */
-const sessions = every.filter((report) => report.report !== "Checklist");
+/** Every report but a checklist and a run of `runner`, which is every report a run that is not signed in can make. */
+const sessions = every.filter(
+  (report) => report.report !== "Checklist" && report.report !== "Runner",
+);
+
+/** The choices a run that made a report can have been given: any, and for a run asked as `runner` only those naming both. */
+function given(report: SetupReport): readonly SetupAnswers[] {
+  return "asked" in report && report.asked === "Runner"
+    ? choices.filter(
+        (held) => held.workspace !== undefined && held.project !== undefined,
+      )
+    : choices;
+}
+
+/** A report as a run given the first of those choices prints it. */
+function printed(report: SetupReport): readonly string[] {
+  return setupReportLines(report, machineScript, given(report)[0]);
+}
 
 /** A command line as a shell splits it: words apart at spaces, single quotes holding whatever is between them, and a backslash the character after it. */
 function shellWords(text: string): readonly string[] {
@@ -297,7 +362,7 @@ function read(named: Named, value: string): ReturnType<typeof setupAsked> {
 test("every command any line of any report names, on next: or in a rule:, is one the program reads as it is written", () => {
   let count = 0;
   for (const report of every)
-    for (const answers of choices) {
+    for (const answers of given(report)) {
       const lines = setupReportLines(report, machineScript, answers);
       const said = `${JSON.stringify(report)} ${JSON.stringify(answers)}`;
       for (const named of commands(lines)) {
@@ -312,17 +377,28 @@ test("every command any line of any report names, on next: or in a rule:, is one
   expect(count).toBeGreaterThan(every.length);
 });
 
-/** The names a report's commands carry: a checklist's own, and otherwise the ones the run was given, which a run that could not read its arguments or its Node has none of. */
+/** The names a report's commands carry: the project's where it is `runner` that is named or was run, a checklist's own, and otherwise the ones the run was given, which a run that could not read its arguments or its Node has none of. */
 function carried(report: SetupReport, answers: SetupAnswers): SetupAnswers {
-  if (report.report === "Checklist") return report.next.carried;
+  if (report.report === "Runner") return project(report);
+  if (report.report === "Checklist") {
+    const thing = report.next.thing;
+    return thing.thing === "Offer" ? project(thing) : report.next.carried;
+  }
   return report.report === "NodeOld" || report.report === "AskedWrongly"
     ? setupAnswersNone
     : answers;
 }
 
+function project(of: {
+  readonly workspace: string;
+  readonly project: string;
+}): SetupAnswers {
+  return { workspace: of.workspace, project: of.project };
+}
+
 test("every command a report names carries the workspace and project the run was about, so the conversation holds the choice", () => {
   for (const report of every)
-    for (const answers of choices) {
+    for (const answers of given(report)) {
       const lines = setupReportLines(report, machineScript, answers);
       const said = `${JSON.stringify(report)} ${JSON.stringify(answers)}`;
       const held = carried(report, answers);
@@ -378,7 +454,7 @@ test("every stop says what was found, tells the person, names one command the pr
       2 * held.length,
   );
   for (const report of stops) {
-    const lines = setupReportLines(report, machineScript);
+    const lines = printed(report);
     const said = JSON.stringify(report);
     expect(lines.at(-1), said).toBe(stop);
     expect(
@@ -441,7 +517,7 @@ test("a run on a Node too old, on a platform not served, one asked wrongly and o
     roster[kind].map((report) => setupReportExit(report));
   expect(exits("NodeOld")).toEqual([2, 2]);
   expect(exits("Unserved")).toEqual([2]);
-  expect(exits("AskedWrongly")).toEqual([2, 2, 2, 2, 2]);
+  expect(exits("AskedWrongly")).toEqual([2, 2, 2, 2, 2, 2]);
   expect(exits("SiteUnknown")).toEqual([2]);
 });
 
@@ -592,6 +668,22 @@ function ended(thing: SetupThing, held = setupAnswersNone): readonly string[] {
   );
 }
 
+test("something runner would do is told once, and runner is named for that project only once the person says yes, whatever names the run was given", () => {
+  const [offer, hostile] = things.Offer;
+  expect(ended(offer as SetupThing)).toEqual([
+    "tell: I can make this machine a runner. Tell me yes to go ahead.",
+    `rule: Run node ${machineScript} runner ${flags} only once the person says yes to a runner on this machine.`,
+    stop,
+  ]);
+  expect(
+    ended(hostile as SetupThing, { workspace: "acme", project: undefined }).at(
+      -2,
+    ),
+  ).toBe(
+    `rule: Run node ${machineScript} runner --workspace 'two words' --project 'it'\\''s --site' only once the person says yes to a runner on this machine.`,
+  );
+});
+
 test("setup that is done is told, and nothing is named to run", () => {
   expect(ended(things.Done[0] as SetupThing, both)).toEqual([
     "tell: chuggy is set up for acme/widgets.",
@@ -669,7 +761,77 @@ test("a checklist exits zero whatever is next, and one where a read failed", () 
   expect(exits("Done")).toEqual([0]);
   expect(exits("Hand")).toEqual([0]);
   expect(exits("Ask")).toEqual([0, 0]);
+  expect(exits("Offer")).toEqual([0, 0]);
   expect(exits("Failed")).toEqual([1, 1]);
+});
+
+test("a run of runner that stopped says what it found and did, then the stop as every stop is said: what was found, one tell, and one command under a rule, which is runner or the checklist for that project", () => {
+  const stops = roster.Runner.filter((one) => one.ended.ended === "Stopped");
+  expect(stops).toHaveLength(pairs.length * runnerStopsAll.length);
+  for (const report of stops) {
+    const lines = setupReportLines(report, machineScript, setupAnswersNone);
+    const said = JSON.stringify(report.ended);
+    expect(lines.at(-1), said).toBe(stop);
+    expect(lines.at(-2), said).toMatch(/^rule: Run node /u);
+    expect(
+      lines.filter((text) => text.startsWith("tell: ")),
+      said,
+    ).toHaveLength(1);
+    const told = lines.findIndex((text) => text.startsWith("tell: "));
+    expect(lines[told - 1], said).toMatch(/^found: /u);
+    expect(
+      lines.slice(told).filter((text) => /^(?:found|did): /u.test(text)),
+      said,
+    ).toEqual([]);
+    const [again, ...more] = ruled(lines);
+    expect(more, said).toEqual([]);
+    expect(setupAsked(again ?? ["?"]), said).toMatchObject({
+      asked:
+        report.ended.ended === "Stopped" && report.ended.stop.stop === "Mac"
+          ? "Status"
+          : "Runner",
+      answers: project(report),
+    });
+  }
+});
+
+test("a run of runner says each thing it found and did in the order it met them, under the site it is signed in to, and a Mac is said with no site asked", () => {
+  for (const report of roster.Runner) {
+    const lines = setupReportLines(report, machineScript);
+    const head = report.site === undefined ? [] : [`site: ${site}, signed in`];
+    expect(lines.slice(0, head.length), JSON.stringify(report.ended)).toEqual(
+      head,
+    );
+    expect(
+      lines.slice(head.length, head.length + runnerNotesAll.length),
+    ).toEqual(
+      lines
+        .slice(head.length, head.length + runnerNotesAll.length)
+        .filter((text) => /^(?:found|did): /u.test(text)),
+    );
+  }
+  expect(roster.Runner.filter((one) => one.site === undefined)).toHaveLength(
+    pairs.length,
+  );
+});
+
+test("a runner the site sees live, and a project whose work needs none, end on the checklist for that project and tell the person nothing", () => {
+  const quiet = roster.Runner.filter(
+    (one) => one.ended.ended !== "Stopped" && one.workspace === "acme",
+  ).map((one) => ({ ...one, notes: [] }));
+  expect(quiet.map((one) => setupReportLines(one, machineScript))).toEqual([
+    [
+      `site: ${site}, signed in`,
+      "found: the site sees a runner of acme/widgets live",
+      `${next} ${flags}`,
+    ],
+    [
+      `site: ${site}, signed in`,
+      "found: chuggy's cluster runs the work of acme/widgets, so it needs no runner",
+      `${next} ${flags}`,
+    ],
+  ]);
+  expect(quiet.map((one) => setupReportExit(one))).toEqual([0, 0]);
 });
 
 test("a run that is not signed in names the workspace and project it was given in the sign-in that is next, and in the command after it", () => {

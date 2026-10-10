@@ -325,6 +325,7 @@ function locker(
         detach: () => undefined,
         launch: () => Promise.resolve({ launched: "Unstarted" } as const),
         read: () => Promise.resolve(undefined),
+        run: () => Promise.resolve({ ended: "Unstarted" } as const),
       },
     },
   };

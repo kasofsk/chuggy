@@ -161,7 +161,7 @@ export function setupSignInSettled(ports: SetupPorts): void {
 
 /** The command that opens an address in the person's browser, where this machine has one this program knows. */
 export function setupOpenerCommand(
-  surroundings: SetupSurroundings,
+  surroundings: Pick<SetupSurroundings, "platform" | "browser">,
   address: string,
 ): readonly string[] | undefined {
   if (surroundings.browser !== undefined && surroundings.browser !== "")

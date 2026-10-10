@@ -65,7 +65,8 @@ const setupUnasked = { read: "Unasked" } as const;
 /** The status a server that says so refuses a caller with; one that hides what it refuses answers not found. */
 const setupForbiddenStatus = 403;
 
-function setupGot<T, V>(
+/** What an answer of the site's is as a read: got, refused where the site hides or forbids it, or failed. */
+export function setupGot<T, V>(
   result: ApiResult<T>,
   value: (answered: T) => V,
   whole: (answered: T) => boolean,

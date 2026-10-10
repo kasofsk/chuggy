@@ -28,7 +28,10 @@ import type {
   TicketLandingResponse,
   TicketResponse,
 } from "../../../../src/contract/responses.ts";
-import type { ForgeAppName } from "../../../../src/contract/rosters.ts";
+import type {
+  ForgeAppName,
+  PlacementRoute,
+} from "../../../../src/contract/rosters.ts";
 
 import type { ApiFailure } from "./apiRequest.ts";
 import { forgeAccountRows } from "./forgeInstallation.ts";
@@ -521,6 +524,11 @@ function setupRepositoryStep(reads: SetupReads, none: boolean): SetupStep {
   }
 }
 
+/** Whether a project's work runs where no runner of its own is needed, by the console's own decider. */
+export function setupHosted(route: PlacementRoute): boolean {
+  return sessionRunnerShort(route, "Unregistered") === undefined;
+}
+
 /** Done where the cluster runs the project's work or a runner of it is live; waiting where one is registered and is not running. */
 function setupRunnerStep(reads: SetupReads, none: boolean): SetupStep {
   const lacking: SetupLack = { lacks: "Runner" };
@@ -530,7 +538,7 @@ function setupRunnerStep(reads: SetupReads, none: boolean): SetupStep {
       ? setupUndone("runner", "todo", "", lacking)
       : setupUnread("runner", "work", setupFateOf(work));
   const route = work.value.work.route;
-  if (sessionRunnerShort(route, "Unregistered") === undefined)
+  if (setupHosted(route))
     return setupDone("runner", "the cluster runs its work");
   const read = reads.placement;
   if (read.read !== "Got")

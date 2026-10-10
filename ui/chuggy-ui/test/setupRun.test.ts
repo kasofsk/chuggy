@@ -433,7 +433,7 @@ test("the platforms served are Linux and macOS, each one this program knows how 
     expect(await machine.command([])).toEqual({ report: "SiteUnknown" });
     expect(
       setupOpenerCommand(
-        { platform, browser: undefined, directory: machineDirectory },
+        { platform, browser: undefined },
         "http://127.0.0.1:41001/",
       ),
     ).toBeDefined();

@@ -11,6 +11,9 @@
  * out a new renewal token for each one it is shown and ends the whole sign-in
  * when shown a spent one, which is what the real one does, and it publishes
  * where a token is revoked, so what a run sends there is seen.
+ *
+ * What `runner` meets of the machine is its `box`: the paths outside the
+ * program's own directory and the programs it runs there.
  */
 
 import type { ApiFetchInit } from "../app/core/apiRequest.ts";
@@ -28,16 +31,20 @@ import type {
 } from "../app/core/setupPorts.ts";
 import type { SetupReport } from "../app/core/setupReport.ts";
 import { setupRun } from "../app/core/setupRun.ts";
+import { boxDisk, boxHome, boxRan, runnerBox } from "./setupRunnerBox.ts";
+import type { RunnerBox } from "./setupRunnerBox.ts";
 import { setupSiteAnswered, setupSiteAt } from "./setupSite.ts";
 import type { SetupSite } from "./setupSite.ts";
 
 export const machineSite = "https://chuggy.example";
 export const machineIssuer = "https://auth.example";
 export const machineAudience = "https://chuggy.example/api";
-export const machineScript = "/home/person/chuggy-setup.mjs";
+export const machineScript = `${boxHome}/chuggy-setup.mjs`;
 export const machineDirectory = "~/.chuggy-setup";
 /** The program's directory as the machine names it, which is how a path it would not write is said. */
-export const machineKept = "/home/person/.chuggy-setup";
+export const machineKept = `${boxHome}/.chuggy-setup`;
+/** The number the machine knows its user by. */
+export const machineUser = "1000";
 
 export const machineTokenAddress = `${machineIssuer}/oauth2/token`;
 export const machineRevokeAddress = `${machineIssuer}/oauth2/revoke`;
@@ -88,6 +95,9 @@ export interface SetupMachine {
   remote: string | undefined;
   browser: string | undefined;
   platform: string;
+  /** Where the person keeps their configuration, where they set that; and the paths and programs `runner` meets. */
+  configHome: string | undefined;
+  readonly box: RunnerBox;
   spawning: Spawning;
   /** What happens while a listener is closing, before it is gone. */
   closing: () => Promise<void>;
@@ -115,8 +125,12 @@ export interface SetupMachine {
   readonly issued: string[];
   readonly revoked: string[];
   readonly live: () => string | undefined;
+  /** Ends every access token handed out so far, as their time running out does, and leaves the renewal token good. */
+  readonly lapse: () => void;
   /** Runs one command to its report, waiting out every wait it makes. */
   readonly command: (argv: readonly string[]) => Promise<SetupReport>;
+  /** The machine as a process of its own meets it, for what is asked of the ports and not of a command. */
+  readonly ports: () => SetupPorts;
   /** Moves the clock, firing whatever was waiting on it. */
   readonly advance: (ms: number) => Promise<void>;
   /** The one listener's port, where one is listening. */
@@ -246,6 +260,9 @@ function fetchJson(
   );
 }
 
+/** What stands in for the answer to a write that never reached the site: one it does not admit, or one it is not answering. */
+const unreached = { status: 401, body: {} } as const;
+
 function apiFetch(
   machine: SetupMachine,
   issuer: Issuer,
@@ -256,9 +273,19 @@ function apiFetch(
   machine.sent.push(`${init.method} ${url}`);
   if (machine.lock !== undefined) machine.locked.push(url);
   machine.answering();
-  const answer = url.startsWith(`${machineSite}/`)
-    ? setupSiteAnswered(machine.world, url.slice(machineSite.length))
-    : undefined;
+  const body = typeof init.body === "string" ? init.body : undefined;
+  const bearer = (init.headers["authorization"] ?? "").replace("Bearer ", "");
+  const admitted = machine.admits && issuer.access.has(bearer);
+  const reaches =
+    init.method === "GET" || (admitted && machine.api === "Answers");
+  const answer = !url.startsWith(`${machineSite}/`)
+    ? undefined
+    : reaches
+      ? setupSiteAnswered(machine.world, url.slice(machineSite.length), {
+          method: init.method,
+          body,
+        })
+      : unreached;
   if (machine.api === "Silent")
     return Promise.reject(new Error("no route to host"));
   if (machine.api === "Refuses" || answer === undefined)
@@ -269,9 +296,8 @@ function apiFetch(
     return Promise.resolve(new Response("{}", { status: 500 }));
   if (machine.api === "Garbles")
     return Promise.resolve(new Response("{}", { status: 200 }));
-  const bearer = (init.headers["authorization"] ?? "").replace("Bearer ", "");
   return Promise.resolve(
-    machine.admits && issuer.access.has(bearer)
+    admitted
       ? new Response(JSON.stringify(answer.body), { status: answer.status })
       : new Response("{}", { status: 401 }),
   );
@@ -423,13 +449,27 @@ function portsOf(inner: Inner, pid: number): SetupPorts {
       },
       read: (command) => {
         machine.ran.push(command);
-        return Promise.resolve(machine.remote);
+        return Promise.resolve(
+          command[0] === "npm" ? machine.box.prefix : machine.remote,
+        );
       },
+      run: (command) =>
+        Promise.resolve(
+          boxRan(
+            machine.box,
+            { site: () => machine.world, origin: machineSite },
+            command,
+          ),
+        ),
     },
+    disk: boxDisk(machine.box),
     surroundings: {
       platform: machine.platform,
       browser: machine.browser,
       directory: machineDirectory,
+      home: boxHome,
+      configHome: machine.configHome,
+      user: machineUser,
     },
   };
 }
@@ -493,14 +533,16 @@ async function person(inner: Inner, allowed: boolean): Promise<SetupAnswered> {
   );
 }
 
+const issuerNew = (): Issuer => ({
+  codes: new Map(),
+  issued: [],
+  live: undefined,
+  minted: 0,
+  access: new Set(),
+});
+
 export function setupMachine(): SetupMachine {
-  const issuer: Issuer = {
-    codes: new Map(),
-    issued: [],
-    live: undefined,
-    minted: 0,
-    access: new Set(),
-  };
+  const issuer = issuerNew();
   const machine: SetupMachine = {
     files: new Map(),
     lock: undefined,
@@ -522,6 +564,8 @@ export function setupMachine(): SetupMachine {
     remote: undefined,
     browser: undefined,
     platform: "linux",
+    configHome: undefined,
+    box: runnerBox(),
     spawning: "Runs",
     closing: () => Promise.resolve(),
     digest: folded,
@@ -539,7 +583,11 @@ export function setupMachine(): SetupMachine {
     issued: issuer.issued,
     revoked: [],
     live: () => issuer.live,
+    lapse: () => {
+      issuer.access.clear();
+    },
     command: (argv) => settled(inner, started(inner, argv).report),
+    ports: () => portsOf(inner, inner.pids),
     advance: async (ms) => {
       const untilMs = machine.nowMs + ms;
       for (let step = 0; step < machineStepsMax; step += 1)

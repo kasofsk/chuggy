@@ -172,6 +172,43 @@ test("the longest wait is read, and no wait at all", () => {
 test("the arguments a report names for a command are read back as that command", () => {
   expect(setupAsked(setupCommandArguments("Status")).asked).toBe("Status");
   expect(setupAsked(setupCommandArguments("SignIn")).asked).toBe("SignIn");
+  expect(
+    setupAsked([
+      ...setupCommandArguments("Runner"),
+      ...setupAnswerArguments({ workspace: "acme", project: "widgets" }),
+    ]).asked,
+  ).toBe("Runner");
+});
+
+test("runner is read only with the workspace and the project it is for, waits as sign-in does, and takes a site", () => {
+  const named = ["--workspace", "acme", "--project", "two words"];
+  const answers = { workspace: "acme", project: "two words" };
+  expect(setupAsked(["runner", ...named])).toEqual({
+    asked: "Runner",
+    site: undefined,
+    waitSecs: setupWaitSecsDefault,
+    answers,
+    ...answers,
+  });
+  expect(
+    setupAsked([...named, "--wait-secs=5", "runner", "--site", site]),
+  ).toEqual({ asked: "Runner", site, waitSecs: 5, answers, ...answers });
+  for (const argv of [
+    ["runner"],
+    ["runner", "--workspace", "acme"],
+    ["runner", "--project", "widgets"],
+  ])
+    expect(setupAsked(argv), argv.join(" ")).toEqual(wrongly("Project"));
+  expect(setupAsked(["runner", ...named, "--life-secs", "5"])).toEqual(
+    wrongly("Flag"),
+  );
+  expect(setupAsked(["runner", "sign-in", ...named])).toEqual(
+    wrongly("Command"),
+  );
+  expect(
+    setupAsked(["runner", "--workspace", "a\nb", "--project", "c"]),
+  ).toEqual(wrongly("Name"));
+  expect(setupAnswersAsked(["runner", ...named])).toEqual(answers);
 });
 
 test("the arguments a sign-in starts its listener with are read back as that listener", () => {

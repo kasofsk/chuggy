@@ -12,6 +12,14 @@
  * look no higher than the home's own root, so a folder that is no checkout is
  * none wherever the suite itself was started.
  *
+ * A run is given nothing of the suite's own surroundings. Its environment is
+ * the few names a home sets and what its case adds, and the only programs it
+ * finds by name are the ones in its home's own directory of them: a link to
+ * the real git, and whatever a case puts there. So nothing a run starts is
+ * this machine's service manager, container engine or package manager, and
+ * nothing it looks for under a configuration directory is this person's. A
+ * case may say the machine is another kind than the one the suite runs on.
+ *
  * Nothing here waits without a bound and nothing outlives its suite. A
  * process still running at its deadline, or one that wrote more than any
  * report is, is killed and is its case's failure. Every process started under
@@ -34,6 +42,7 @@ import {
   readFileSync,
   renameSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -80,6 +89,8 @@ export interface Home {
   readonly directory: string;
   /** A directory beside the home for what a case makes itself. */
   readonly beside: string;
+  /** The one directory a run finds programs in by name, unless its case names another. */
+  readonly bin: string;
   /** The folder every run under this home is started in, empty until a case puts something there. */
   readonly folder: string;
   /** Everything every run under this home wrote to either stream. */
@@ -211,14 +222,30 @@ export function dialect(done: Ran, said: string): void {
   );
 }
 
-/** What every Node process under a home runs first: its number written where the suite will look, or nothing run at all. */
+/** The name a case gives the kind of machine a run is to take itself for, where that is not the suite's own. */
+export const platformSaid = "CHUG_STAND_IN_PLATFORM";
+
+/** What every Node process under a home runs first: its number written where the suite will look, or nothing run at all; and the kind of machine its case says it is on. */
 function registrar(running: string): string {
   return [
     'import { rmSync, writeFileSync } from "node:fs";',
     `const mine = ${JSON.stringify(running)} + "/" + process.pid;`,
     `try { writeFileSync(mine, ""); } catch { process.exit(${String(unregisteredExit)}); }`,
     'process.once("exit", () => { try { rmSync(mine, { force: true }); } catch {} });',
+    `const platform = process.env[${JSON.stringify(platformSaid)}];`,
+    'if (platform !== undefined) Object.defineProperty(process, "platform", { value: platform });',
   ].join("\n");
+}
+
+/** The first program of this name the suite itself finds, which is the real one. */
+function real(name: string): string {
+  const found = (process.env["PATH"] ?? "")
+    .split(":")
+    .filter((directory) => directory.startsWith("/"))
+    .map((directory) => join(directory, name))
+    .find((path) => existsSync(path));
+  if (found === undefined) throw new Error(`the suite found no ${name}`);
+  return found;
 }
 
 /** Whether a process can run nothing more: it is not there, or it is only waiting to be collected. */
@@ -256,16 +283,30 @@ async function emptied(root: string, running: string): Promise<void> {
   await eventually(() => (pids.every(gone) ? true : undefined));
 }
 
+/** Makes `folder` a git checkout of the suite's own making, whose `origin` is the address given where one is. */
+async function checkedOut(
+  folder: string,
+  kept: string,
+  origin: string | undefined,
+): Promise<void> {
+  const quiet = { PATH: process.env["PATH"], HOME: kept };
+  await helped(["git", "init", "--quiet"], folder, quiet);
+  if (origin !== undefined)
+    await helped(["git", "config", "remote.origin.url", origin], folder, quiet);
+}
+
 function home(): Home {
   const root = mkdtempSync(join(tmpdir(), "chuggy-setup-"));
   const kept = join(root, "home");
   const beside = join(root, "beside");
   const folder = join(root, "folder");
   const running = join(root, "running");
+  const bin = join(root, "bin");
   const directory = join(kept, ".chuggy-setup");
   const record = join(beside, "opened");
   const opener = join(beside, "opener.sh");
-  for (const made of [kept, beside, folder, running]) mkdirSync(made);
+  for (const made of [kept, beside, folder, running, bin]) mkdirSync(made);
+  symlinkSync(real("git"), join(bin, "git"));
   writeFileSync(join(root, "registrar.mjs"), registrar(running));
   writeFileSync(opener, `#!/bin/sh\nprintf '%s' "$1" > "${record}"\n`);
   chmodSync(opener, 0o755);
@@ -279,19 +320,11 @@ function home(): Home {
     home: kept,
     directory,
     beside,
+    bin,
     folder,
     written,
     file,
-    checkout: async (origin) => {
-      const quiet = { PATH: process.env["PATH"], HOME: kept };
-      await helped(["git", "init", "--quiet"], folder, quiet);
-      if (origin !== undefined)
-        await helped(
-          ["git", "config", "remote.origin.url", origin],
-          folder,
-          quiet,
-        );
-    },
+    checkout: (origin) => checkedOut(folder, kept, origin),
     lock: () => {
       if (!existsSync(join(directory, "lock"))) return undefined;
       const said = readdirSync(join(directory, "lock"));
@@ -299,8 +332,8 @@ function home(): Home {
     },
     run: async (argv, environment = {}) => {
       const surroundings = {
-        ...process.env,
         HOME: kept,
+        PATH: bin,
         GIT_CEILING_DIRECTORIES: root,
         BROWSER: opener,
         NODE_OPTIONS: [process.env["NODE_OPTIONS"] ?? "", preload]
