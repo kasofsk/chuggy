@@ -25,6 +25,7 @@ import {
   forgeInstallTransactionKey,
   forgeInstallUrl,
   forgePortalInstallations,
+  forgeWorkerInstallations,
   forgeWorkerlessAccounts,
 } from "../app/core/forgeInstallation.ts";
 import type { ForgeInstallTransaction } from "../app/core/forgeInstallation.ts";
@@ -177,6 +178,19 @@ test("the repositories are read under the portal claims alone", () => {
       claim({ app: "worker", installationId: "2" }),
     ]).map((held) => held.installationId),
   ).toEqual(["1"]);
+});
+
+/** A worker claim on an account no portal claim lists has no listed
+ * repository to be compared against, and reading it would spend a request. */
+test("the worker claims read are the ones on an account a portal claim lists", () => {
+  expect(
+    forgeWorkerInstallations([
+      claim({ app: "portal", installationId: "1" }),
+      claim({ app: "worker", installationId: "2" }),
+      claim({ app: "worker", account: "gdoteof", installationId: "3" }),
+      claim({ app: "portal", account: "otherco", installationId: "4" }),
+    ]).map((held) => held.installationId),
+  ).toEqual(["2"]);
 });
 
 test("each app's install is named as a person reads it", () => {

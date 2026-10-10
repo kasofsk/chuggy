@@ -152,33 +152,31 @@ const bindings = {
   ],
 };
 
-/** What each portal installation grants, which is disjoint: a repository is
- * under one account, and one account is one installation of one app. */
+const boundRow = {
+  name: "chuggy",
+  fullName: "kasofsk/chuggy",
+  url: boundUrl,
+  defaultBranch: "main",
+  private: true,
+};
+
+const freeRow = {
+  name: "scratch",
+  fullName: "gdoteof/scratch",
+  url: freeUrl,
+  defaultBranch: "main",
+  private: false,
+};
+
+/** What each installation grants, the portal's being disjoint: a repository is
+ * under one account, and one account is one installation of one app. Each
+ * worker installation grants what the portal's on its account does, so no row
+ * is marked unless a case says the worker app lacks one. */
 const granted: Readonly<Record<string, unknown>> = {
-  "11": {
-    truncated: true,
-    repositories: [
-      {
-        name: "chuggy",
-        fullName: "kasofsk/chuggy",
-        url: boundUrl,
-        defaultBranch: "main",
-        private: true,
-      },
-    ],
-  },
-  "13": {
-    truncated: false,
-    repositories: [
-      {
-        name: "scratch",
-        fullName: "gdoteof/scratch",
-        url: freeUrl,
-        defaultBranch: "main",
-        private: false,
-      },
-    ],
-  },
+  "11": { truncated: true, repositories: [boundRow] },
+  "12": { truncated: false, repositories: [boundRow] },
+  "13": { truncated: false, repositories: [freeRow] },
+  "14": { truncated: false, repositories: [freeRow] },
 };
 
 function grantedBy(url: string): unknown {
@@ -364,24 +362,29 @@ test("a binding's name is the link to its own page", async () => {
   );
 });
 
+/** The installations whose own listing the page asked for, in the order asked. */
+function listingsRead(sent: readonly Sent[]): readonly string[] {
+  return sent.flatMap((one) => {
+    const read = /\/forge-installations\/(\d+)\/repositories$/u.exec(one.url);
+    return read?.[1] === undefined ? [] : [read[1]];
+  });
+}
+
 /**
- * The roster is read under the portal claims alone, because the worker app's
- * installation is not what a binding is checked against.
+ * The roster is what the portal claims grant, because a binding is checked
+ * against a portal installation. The worker claim on a listed account is read
+ * after them, for the mark a row carries where the worker app lacks it.
  */
-test("the picker reads every portal installation and marks what is bound", async () => {
+test("the picker reads every portal installation, then the worker's on a listed account, and marks what is bound", async () => {
   const sent = await drawPage();
   fireEvent.click(screen.getByRole("button", { name: "Add" }));
   await settled();
-  const read = sent
-    .filter((one) => one.url.includes("/forge-installations/"))
-    .map((one) => one.url);
-  expect(read.some((url) => url.includes("/11/repositories"))).toBe(true);
-  expect(read.some((url) => url.includes("/13/repositories"))).toBe(true);
-  expect(read.some((url) => url.includes("/12/repositories"))).toBe(false);
+  expect(listingsRead(sent)).toStrictEqual(["11", "13", "12"]);
   const picker = within(screen.getByRole("dialog"));
   expect(picker.getByText("More than shown")).toBeTruthy();
   expect(picker.getByRole("button", { name: "kasofsk/chuggy" })).toBeTruthy();
   expect(picker.getByText("Bound")).toBeTruthy();
+  expect(picker.queryByText(/Worker app missing/u)).toBeNull();
 });
 
 test("choosing a repository binds it by address under an idempotency key", async () => {
@@ -478,6 +481,201 @@ test("a tenant holding no portal claim cannot open the picker", async () => {
   expect(
     screen.getByRole<HTMLButtonElement>("button", { name: "Add" }).disabled,
   ).toBe(true);
+});
+
+/** The page drawn at its own address with both apps held and the picker opened. */
+async function openPickerAtProject(drawing: Drawing = {}): Promise<void> {
+  history.pushState({}, "", projectPath);
+  await drawPage({
+    described: { apps: forgeApps, authorization: client },
+    ...drawing,
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Add" }));
+  await settled();
+}
+
+/** A line the picker draws and the link beside it, each `null` where it is not. */
+function grantOffered(
+  status: string,
+  label: string,
+): {
+  readonly line: HTMLElement | null;
+  readonly link: HTMLAnchorElement | null;
+} {
+  const picker = within(screen.getByRole("dialog"));
+  return {
+    line: picker.queryByText(status),
+    link: picker.queryByRole<HTMLAnchorElement>("link", { name: label }),
+  };
+}
+
+function portalGrant(): ReturnType<typeof grantOffered> {
+  return grantOffered("Not listed · grant it on GitHub", "Portal app");
+}
+
+function workerGrant(): ReturnType<typeof grantOffered> {
+  return grantOffered("Worker app missing · grant it on GitHub", "Worker app");
+}
+
+/** The transaction a followed link left for the setup landing to match. */
+function followed(link: HTMLAnchorElement | null): unknown {
+  fireEvent.click(link ?? document.body);
+  return JSON.parse(sessionStorage.getItem(forgeInstallTransactionKey) ?? "{}");
+}
+
+/** Where a grant made from the picker comes back to: the picker, open. */
+const pickerPath = `${projectPath}#add`;
+
+/**
+ * A repository an installation was not granted is in no listing, so nothing
+ * the picker reads can name it: the line is drawn under every roster, and its
+ * link is the portal app's own page on the forge, returning to the picker.
+ */
+test("under its roster the picker says a missing repository is granted on GitHub, with the portal app's page returning to the picker", async () => {
+  await openPickerAtProject();
+  const { line, link } = portalGrant();
+  expect(line?.classList.contains("notice-info")).toBe(true);
+  expect(link?.href.startsWith(`${forgeApps[0]?.installUrl}?state=`)).toBe(
+    true,
+  );
+  expect(followed(link)).toStrictEqual({
+    state: new URL(link?.href ?? "").searchParams.get("state"),
+    tenant: leadPartition.tenant,
+    returnPath: pickerPath,
+    installs: ["portal"],
+  });
+  expect(workerGrant()).toStrictEqual({ line: null, link: null });
+});
+
+/** The roster that lists nothing is the one whose reader most needs the way. */
+test("a roster that lists nothing still carries the line and its link", async () => {
+  await openPickerAtProject({
+    granting: () => answer({ truncated: false, repositories: [] }),
+  });
+  expect(pickerRows()).toStrictEqual([]);
+  const { line, link } = portalGrant();
+  expect(line).not.toBeNull();
+  expect(link).not.toBeNull();
+});
+
+/** The link comes back through the authorization, so the line stands alone
+ * where the deployment answers no client to finish one with. */
+test("a deployment that offers no install still says where a missing repository is granted", async () => {
+  history.pushState({}, "", projectPath);
+  await drawPage();
+  fireEvent.click(screen.getByRole("button", { name: "Add" }));
+  await settled();
+  const { line, link } = portalGrant();
+  expect(line).not.toBeNull();
+  expect(link).toBeNull();
+});
+
+/** What the worker installation on kasofsk answers, every other as it was. */
+function workerAnswering(answered: () => Response): Drawing {
+  return {
+    granting: (url) =>
+      url.includes("/12/repositories") ? answered() : answer(grantedBy(url)),
+  };
+}
+
+/**
+ * A job's credential is minted under the worker app, so a repository the
+ * portal app lists and the worker app does not grant binds and then cannot be
+ * worked on. The row says so and the line under the roster carries the worker
+ * app's own page, returning to the picker.
+ */
+test("a repository the worker app does not grant is marked on its row, with the worker app's page under the roster", async () => {
+  await openPickerAtProject(
+    workerAnswering(() => answer({ truncated: false, repositories: [] })),
+  );
+  expect(pickerRows()).toStrictEqual([
+    "kasofsk/chuggyBoundWorker app missing",
+    "gdoteof/scratch",
+  ]);
+  const { line, link } = workerGrant();
+  expect(line?.classList.contains("notice-parked")).toBe(true);
+  expect(link?.href.startsWith(`${forgeApps[1]?.installUrl}?state=`)).toBe(
+    true,
+  );
+  expect(followed(link)).toStrictEqual({
+    state: new URL(link?.href ?? "").searchParams.get("state"),
+    tenant: leadPartition.tenant,
+    returnPath: pickerPath,
+    installs: ["worker"],
+  });
+  expect(portalGrant().link).not.toBeNull();
+});
+
+/** The roster is the portal app's, and a worker listing that did not answer,
+ * or is not all of what it grants, cannot say what it lacks. */
+test.each<readonly [string, () => Response]>([
+  ["did not answer", () => answer({}, 503)],
+  ["is withheld", () => answer({}, 404)],
+  ["is partial", () => answer({ truncated: true, repositories: [] })],
+])(
+  "a worker listing that %s marks no row and takes no roster down",
+  async (_how, answered) => {
+    await openPickerAtProject(workerAnswering(answered));
+    expect(pickerRows()).toStrictEqual([
+      "kasofsk/chuggyBound",
+      "gdoteof/scratch",
+    ]);
+    expect(workerGrant()).toStrictEqual({ line: null, link: null });
+    expect(portalGrant().line).not.toBeNull();
+  },
+);
+
+/** The page drawn at the picker's own address, as a grant made from it returns. */
+async function drawAtPicker(drawing: Drawing = {}): Promise<readonly Sent[]> {
+  history.pushState({}, "", pickerPath);
+  return drawPage({
+    described: { apps: forgeApps, authorization: client },
+    ...drawing,
+  });
+}
+
+/**
+ * A grant made on the forge comes back to the picker's address in a document
+ * that has read nothing, so the picker is open and its roster is read without
+ * a press.
+ */
+test("the page opened at the picker's address draws the picker open with its roster read", async () => {
+  const sent = await drawAtPicker();
+  expect(listingsRead(sent)).toStrictEqual(["11", "13", "12"]);
+  expect(pickerRows()).toStrictEqual([
+    "kasofsk/chuggyBound",
+    "gdoteof/scratch",
+  ]);
+  expect(portalGrant().link).not.toBeNull();
+});
+
+test("the page opened at its own address draws no picker and reads no listing", async () => {
+  history.pushState({}, "", projectPath);
+  const sent = await drawPage();
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(listingsRead(sent)).toStrictEqual([]);
+});
+
+/** The word is drawn on the page, which an open picker covers. */
+test("a return that brought a word draws the word and leaves the picker closed", async () => {
+  forgeReturnHold(transientStore, leadPartition.tenant, {
+    standing: "Failed",
+    status: "Unavailable",
+  });
+  const sent = await drawAtPicker();
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(listingsRead(sent)).toStrictEqual([]);
+  expect(
+    within(sectionOf("Repositories")).getByText("Unavailable"),
+  ).toBeTruthy();
+});
+
+/** A roster read under no portal claim is an empty one, held under the key the
+ * real one is read at, so nothing opens until there is a claim to read under. */
+test("the picker's address opens nothing where no portal claim is held", async () => {
+  const sent = await drawAtPicker({ claimed: without("portal") });
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(listingsRead(sent)).toStrictEqual([]);
 });
 
 function statusesOf(): readonly (string | null)[] {

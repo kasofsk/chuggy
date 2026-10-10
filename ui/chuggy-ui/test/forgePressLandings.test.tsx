@@ -15,6 +15,7 @@ import { ForgeCallbackPage } from "../app/browser/ForgeCallbackPage.tsx";
 import { ForgeSetupPage } from "../app/browser/ForgeSetupPage.tsx";
 import { forgeAuthorizeRedirect } from "../app/browser/forgeAuthorizeRedirect.ts";
 import { redirect } from "../app/browser/ports.ts";
+import { forgeInstallTransactionKey } from "../app/core/forgeInstallation.ts";
 import { forgeReturnKey } from "../app/core/forgeReturn.ts";
 import { answer, drawnStrict } from "./screenHarness.tsx";
 import type * as BrowserPorts from "../app/browser/ports.ts";
@@ -231,4 +232,27 @@ test("a press by a person whose account holds the portal app alone goes on to th
     client.authorizeUrl,
   ]);
   expect(returned()).toStrictEqual({ to: back, word: null });
+});
+
+/**
+ * The picker's own link to an app's page on the forge is an install link, so
+ * what the forge sends back after a save there is an update under the state
+ * that link stored, and it ends where the link was drawn: the picker's address.
+ */
+test("a grant saved on the forge from the picker's link authorizes and returns to the picker's address", async () => {
+  const grant = {
+    state: "a-state",
+    tenant: press.tenant,
+    returnPath: `${press.returnPath}#add`,
+    installs: ["portal"],
+  };
+  sessionStorage.setItem(forgeInstallTransactionKey, JSON.stringify(grant));
+  held.arrived = { action: "update", state: grant.state };
+  await drawnStrict(<ForgeSetupPage />, () => answer(apps));
+  expect(held.left.map(addressOf)).toStrictEqual([client.authorizeUrl]);
+  expect(await forgeAnswers(connected)).toBe(false);
+  expect(returned()).toStrictEqual({
+    to: { href: grant.returnPath, replace: true },
+    word: null,
+  });
 });

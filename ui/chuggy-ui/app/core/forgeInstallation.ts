@@ -182,3 +182,16 @@ export function forgePortalInstallations(
 ): readonly ForgeInstallationResponse[] {
   return installations.filter((claim) => claim.app === "portal");
 }
+
+/** The worker app's claims on the accounts a portal claim lists: the
+ * installations a job on a listed repository has its credential minted under. */
+export function forgeWorkerInstallations(
+  installations: readonly ForgeInstallationResponse[],
+): readonly ForgeInstallationResponse[] {
+  const listed = forgePortalInstallations(installations).map(
+    (claim) => claim.account,
+  );
+  return installations.filter(
+    (claim) => claim.app === "worker" && listed.includes(claim.account),
+  );
+}
