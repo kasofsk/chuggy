@@ -21,7 +21,7 @@ export function claudeCodeLine(origin: string): string {
 }
 
 /** What the card says of the line: where it is pasted, and where the reader is when it is. */
-export const claudeCodeLineAbout = "Claude Code · in your repository's folder";
+export const claudeCodeLineAbout = "Paste into Claude Code in your repository";
 
 /** What the control that copies the line is called. */
 export const claudeCodeLineCopy = "Copy prompt";
