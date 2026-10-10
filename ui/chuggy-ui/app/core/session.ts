@@ -60,6 +60,15 @@ export function sessionFromRefreshToken(refreshToken: string): SessionState {
   };
 }
 
+/** The same session under the refresh token another document left in the
+ * store, its access token still its own. */
+export function sessionWithRefreshToken(
+  held: SessionHeld,
+  refreshToken: string,
+): SessionState {
+  return { state: "Held", held: { ...held, refreshToken } };
+}
+
 export function sessionRefreshDueAtMs(held: SessionHeld): number {
   return held.expiresAtMs - sessionRefreshSecondsBefore * 1_000;
 }
@@ -75,7 +84,8 @@ export function sessionCanRefresh(held: SessionHeld): boolean {
   );
 }
 
-/** A budget, so an issuer that keeps declining ends the session once. */
+/** A budget, so an issuer that keeps answering unusably ends the session
+ * once. */
 export function sessionAfterRefreshFailure(held: SessionHeld): SessionState {
   const failed = { ...held, refreshFailures: held.refreshFailures + 1 };
   return sessionCanRefresh(failed)

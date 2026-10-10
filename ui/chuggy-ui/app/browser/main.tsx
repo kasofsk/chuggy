@@ -16,6 +16,11 @@
  * made is what takes an invite link's token out of the address, so no frame is
  * drawn with it in the address bar, and what starts it hearing a fragment that
  * changes later, for the life of the document.
+ *
+ * The session holder shares its store with every other document of the
+ * origin, so it is given the turn they renew under and is told when the
+ * stored token may have moved: another document changed the store, or this
+ * one was shown again out of the back-forward cache.
  */
 
 import "../styles/tokens.css";
@@ -38,8 +43,11 @@ import {
   currentLocation,
   digest,
   drawBytes,
+  exclusively,
   fetchJson,
   nowMs,
+  pageRestoredHeard,
+  persistentChangeHeard,
   persistentStore,
   redirect,
   reloadLocation,
@@ -71,6 +79,11 @@ const holder = createSessionHolder({
   digest,
   drawBytes,
   redirect,
+  exclusive: exclusively,
+  storedHeard: (heard) => {
+    persistentChangeHeard(heard);
+    pageRestoredHeard(heard);
+  },
 });
 
 const invite = createInviteHolder({

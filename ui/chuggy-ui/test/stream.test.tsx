@@ -137,6 +137,22 @@ test("a live frame is written into the cache and nothing is refetched", async ()
   );
 });
 
+/** A stream opened with no bearer is refused as a stranger's, and that
+ * refusal is read as the API refusing the session. */
+test("a stream under a session with no bearer to send is not opened", async () => {
+  const server = streamServer([{ status: 200, hold: true }]);
+  render(
+    <Harness
+      holder={{ ...holderDouble(), bearer: () => Promise.resolve(undefined) }}
+      client={new QueryClient()}
+      partition={atlas}
+      transport={server.ports.fetch}
+    />,
+  );
+  await settled();
+  expect(server.headersSeen).toEqual([]);
+});
+
 const ticketChange = frame("Ticket", "5", {
   version: 1,
   resource: "3",

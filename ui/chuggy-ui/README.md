@@ -197,10 +197,14 @@ OIDC authorization code with PKCE against the issuer `/config.json` names, with
 a public client that authenticates with nothing. The access token lives in
 memory for the life of the tab; the refresh token is what reaches
 `localStorage`, so a reload or a restart keeps the session without an access
-token ever being written down. The renewal happens before expiry, on a budget:
-an issuer that keeps declining ends the session once rather than being asked
-forever. Signing out clears both and revokes the refresh token where the issuer
-publishes an endpoint for it.
+token ever being written down. The renewal happens before expiry. Every tab of
+a browser shares that one stored token and the issuer rotates it, so a tab
+renews with the token the store holds at that moment, one tab at a time under a
+Web Lock, and signing out in one tab signs the others out. A renewal the issuer
+refuses ends the session at once; one that got no answer keeps it; one answered
+unusably is on a budget, so such an issuer ends the session once rather than
+being asked forever. Signing out clears both and revokes the refresh token where
+the issuer publishes an endpoint for it.
 
 ## Connecting a forge account
 

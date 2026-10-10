@@ -120,6 +120,34 @@ function keyValuePort(store: () => Storage): KeyValuePort {
 export const persistentStore = keyValuePort(() => localStorage);
 export const transientStore = keyValuePort(() => sessionStorage);
 
+/** Tells `heard` each time another document of this origin changes the
+ * persistent store. The document that made the change is not told. */
+export function persistentChangeHeard(heard: () => void): void {
+  addEventListener("storage", heard);
+}
+
+/**
+ * Runs `body` while no other document of this origin is running one under
+ * `name`, by the Web Locks API, and rejects where the turn did not come within
+ * `waitMs`. A browser without that API, or a page it withholds it from for
+ * not being served securely, runs `body` at once.
+ */
+export function exclusively<T>(
+  name: string,
+  waitMs: number,
+  body: () => Promise<T>,
+): Promise<T> {
+  if (!("locks" in navigator)) return body();
+  const waited = new AbortController();
+  const timer = setTimeout(() => {
+    waited.abort();
+  }, waitMs);
+  return navigator.locks.request(name, { signal: waited.signal }, () => {
+    clearTimeout(timer);
+    return body();
+  });
+}
+
 export function redirect(url: string): void {
   location.assign(url);
 }

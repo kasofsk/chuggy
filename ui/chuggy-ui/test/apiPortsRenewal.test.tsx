@@ -17,22 +17,28 @@ import type { ReactNode } from "react";
 import { useApiPorts } from "../app/browser/api.ts";
 import { SessionProvider } from "../app/browser/session.tsx";
 import {
+  FetchJsonError,
   createSessionHolder,
+  sessionEndedReason,
   sessionRefreshTokenKey,
 } from "../app/core/sessionHolder.ts";
 import type { SessionHolder } from "../app/core/sessionHolder.ts";
 import { sessionHarness } from "./sessionHolderHarness.ts";
 import type { SessionHarness } from "./sessionHolderHarness.ts";
 
-/** A holder signed in from a stored token, whose issuer renews or does not. */
-async function signedIn(renews: boolean): Promise<SessionHolder> {
+/** A holder signed in from a stored token, whose issuer renews, or fails
+ * every renewal with `failure`. */
+async function signedIn(
+  renews: boolean,
+  failure: Error = new Error("the issuer answered nothing usable"),
+): Promise<SessionHolder> {
   const held: SessionHarness = sessionHarness();
   held.persistent.held.set(sessionRefreshTokenKey, "renew");
   const holder = createSessionHolder(held.ports);
   await holder.load();
   if (!renews)
     held.answer = () => {
-      throw new Error("the issuer would not renew this session");
+      throw failure;
     };
   return holder;
 }
@@ -52,12 +58,26 @@ test("a token the issuer replaces renews, and the session is left standing", asy
   expect(holder.snapshot().reason).toBeUndefined();
 });
 
-test("a session the issuer will not renew is signed out and said to be", async () => {
+test("a session no fresh token could be had for is signed out and said to be", async () => {
   const holder = await signedIn(false);
 
   expect(await portsOf(holder).renew?.()).toBe(false);
   expect(holder.snapshot().phase).toBe("SignedOut");
   expect(holder.snapshot().reason).toContain("refused");
+});
+
+/** The issuer ended this one, so the reader is not told the API did. */
+test("a session the issuer refuses to renew is ended in the holder's words, not the API's", async () => {
+  const holder = await signedIn(
+    false,
+    new FetchJsonError({ fault: "Status", status: 400 }, "answered 400"),
+  );
+
+  expect(await portsOf(holder).renew?.()).toBe(false);
+  expect(holder.snapshot()).toMatchObject({
+    phase: "SignedOut",
+    reason: sessionEndedReason,
+  });
 });
 
 /** A token the issuer mints happily and the API rejects anyway — an audience or
