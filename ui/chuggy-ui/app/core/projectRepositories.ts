@@ -117,6 +117,27 @@ export const repositoryGrantLines: Readonly<
   },
 };
 
+/** What the picker draws under its roster about the worker app, where it has
+ * anything to say. */
+export type RepositoryWorkerLine = "Reading" | "Missing";
+
+/** The line the picker draws where a row was chosen before the worker app's
+ * listings were read, so it is not taken for one the worker app grants. */
+export const repositoryWorkerReading = "Worker app · loading…";
+
+/**
+ * The worker app's line under the roster, from what it was read not to grant,
+ * which is `undefined` until its listings are read. Unread is said only once a
+ * row was `chosen`, to the one reader a mark still to come would be late for.
+ */
+export function repositoryWorkerLine(
+  workerless: readonly string[] | undefined,
+  chosen: boolean,
+): RepositoryWorkerLine | undefined {
+  if (workerless === undefined) return chosen ? "Reading" : undefined;
+  return workerless.length > 0 ? "Missing" : undefined;
+}
+
 /** The anchor the page's address opens the picker at. */
 export const repositoryAddAnchor = "add";
 
@@ -124,6 +145,19 @@ export const repositoryAddAnchor = "add";
  * the picker returns to. */
 export function repositoryAddReturnPath(path: string): string {
   return `${path}#${repositoryAddAnchor}`;
+}
+
+/**
+ * The address the page takes in this entry's place once the picker closes or
+ * binds: its own without the picker's anchor, so a reload or Back opens none.
+ * It is nothing where the address carries no such anchor, a picker opened by a
+ * press having moved nothing.
+ */
+export function repositoryAddClosedPath(
+  path: string,
+  anchor: string,
+): string | undefined {
+  return anchor === repositoryAddAnchor ? path : undefined;
 }
 
 /**

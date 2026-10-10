@@ -25,6 +25,7 @@ import type { ProjectRepositoryBindAnswer } from "../app/core/apiRoutes.ts";
 import type { PanelState } from "../app/core/freshness.ts";
 import {
   repositoriesWorkerless,
+  repositoryAddClosedPath,
   repositoryAddLeads,
   repositoryAddOpened,
   repositoryAddReturnPath,
@@ -37,6 +38,8 @@ import {
   repositoryLabel,
   repositoryNextStep,
   repositoryOffersLine,
+  repositoryWorkerLine,
+  repositoryWorkerReading,
   type InstallationGrant,
   type RepositoryNextStep,
   type RepositoryNote,
@@ -194,6 +197,36 @@ test("the page opens with the picker open at its anchor, unless the return broug
     repositoryAddOpened("add", word),
     repositoryAddOpened("", word),
   ]).toStrictEqual([true, false, false, false, false]);
+});
+
+/** The anchor is what opens the picker when the page is drawn, so it goes
+ * with the picker, and an address that never carried it is left as it is. */
+test("the address a closed picker leaves is the page's own, and nothing where it was not the picker's", () => {
+  const path = "/vteng/chuggy/repositories";
+  expect([
+    repositoryAddClosedPath(path, "add"),
+    repositoryAddClosedPath(path, ""),
+    repositoryAddClosedPath(path, "elsewhere"),
+  ]).toStrictEqual([path, undefined, undefined]);
+});
+
+/**
+ * Unread is not the same as lacking nothing, and the one reader it matters to
+ * is the one who chose a row before the worker app's listings were read. To
+ * everyone else a line that comes and goes is a roster that shifts for nothing.
+ */
+test("the worker app's line is what a row marks, and that its listings are unread only where a row was chosen first", () => {
+  expect(
+    [undefined, [rehearsal.url], []].map((workerless) => [
+      repositoryWorkerLine(workerless, false),
+      repositoryWorkerLine(workerless, true),
+    ]),
+  ).toStrictEqual([
+    [undefined, "Reading"],
+    ["Missing", "Missing"],
+    [undefined, undefined],
+  ]);
+  expect(repositoryWorkerReading).toBe("Worker app · loading…");
 });
 
 function status(result: ApiResult<ProjectRepositoryBindAnswer>): string {
