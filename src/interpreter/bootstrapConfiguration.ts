@@ -9,8 +9,21 @@
  * no checks to append them to.
  *
  * IT NAMES THE REPOSITORY AND THE BRANCH IT STANDS AT, so the worker briefed by
- * it is told where it is before it is told what to do, and what it is told to do
- * is to write the repository's own declarations and stop running on this one.
+ * it is told where it is before it is told what to do.
+ *
+ * IT ASKS ONE CHANGE FOR TWO THINGS: what the ticket asks for, and the
+ * repository's own declarations. The request is its author's and this brief is
+ * not, so the brief says that a limit the request puts on what may change stops
+ * short of the files the brief itself asks for, and says it to the worker and
+ * the reviewer alike; unsaid, an ordinary "only this" reads as forbidding the
+ * declarations.
+ *
+ * EVERY ACCEPTANCE CRITERION IS SETTLED BY READING THE CHANGE. That later
+ * tickets run on what it declares is an import's doing once the change is on
+ * the default branch, which no change can show, so it is said as motivation and
+ * held against nothing. No file may be left declaring the bootstrap's own name:
+ * a seeded repository holds this document under it, and a repository that kept
+ * the name would still be declaring a bootstrap.
  *
  * IT TELLS ITS WORKER THE SHAPE OF WHAT IT ASKS FOR. The worker is handed a
  * rendered briefing and never a configuration document, so without the shape
@@ -43,6 +56,7 @@ import { repositoryConfigurationRoot } from "./repositoryConfigurationIdentity.t
 import {
   briefingLinesMax,
   taskConfigurationLineFault,
+  type TicketBrief,
 } from "./taskConfiguration.ts";
 
 /** What one bootstrap configuration is generated from. */
@@ -100,10 +114,43 @@ function bootstrapFormatInstructions(image: string): readonly string[] {
   ];
 }
 
-/** What the worker and the reviewer are each told, which is the same sentence. */
+/**
+ * What a reviewer is told, held once for the review block the shape requires
+ * and for the stage that briefs one. It repeats what the brief says of the
+ * request's limit and of what follows a landing, as the two things a review
+ * could otherwise fail a sound change for.
+ */
 const bootstrapReviewInstructions: readonly string[] = [
   "Review the change against what the repository itself asks of one and against the ticket's acceptance criteria.",
+  `The change is two things together: what this ticket asks for, and the repository's own configuration in ${repositoryConfigurationRoot}. Hold those files to the criteria above, and do not fail the change for writing them.`,
+  "Do not fail it for changing more than the request allowed either, where the more is those files or a lockfile their setup writes.",
+  "Whether later tickets run on what the change declares is settled after it lands, by chuggy and outside the change: it is no criterion, and nothing missing from the change on that account is a finding.",
 ];
+
+/**
+ * What the change is for, what it is held to and what binds it. What follows a
+ * landing is said as motivation and never as a criterion, and each criterion is
+ * one a reader of the change can settle from its files.
+ */
+function bootstrapBrief(input: BootstrapConfigurationInput): TicketBrief {
+  return {
+    motivation: [
+      `Bring ${input.repository} under chuggy.`,
+      `The configuration this ticket runs on is one chuggy supplies to start a repository on, and is not the repository's own. The files this change writes in ${repositoryConfigurationRoot} are the repository's own, and are what its later tickets run on.`,
+      "They take effect once the change is on the default branch, when chuggy reads that directory there. That reading is chuggy's and comes after the change, so nothing in the change shows it and no review of the change looks for it.",
+    ],
+    acceptanceCriteria: [
+      "The change does what this ticket asks for.",
+      `Every file under ${repositoryConfigurationRoot} whose name ends in .json sits directly in that directory and is one JSON object with exactly the keys "version", "name" and "configuration", and the change leaves at least one such file.`,
+      `No file the change leaves under ${repositoryConfigurationRoot} has the "name" "${bootstrapConfigurationName}". That name is this configuration's own, and ${bootstrapConfigurationPath}, in a repository that has it, is this configuration: the change deletes that file.`,
+    ],
+    constraints: [
+      `The repository's default branch is ${input.defaultBranch}.`,
+      `Where what this ticket asks for limits what may change, as "change nothing else" does, the limit does not reach the files under ${repositoryConfigurationRoot}: they are written whatever the request says, and writing them does not go against it.`,
+      "The same holds for a lockfile that the setup declared in those files writes and this change commits.",
+    ],
+  };
+}
 
 /** The authored document, before it is canonically encoded. */
 function bootstrapConfigurationValue(
@@ -113,20 +160,12 @@ function bootstrapConfigurationValue(
     version: 1,
     image: input.image,
     worker: { mode: bootstrapWorkerMode, setup: [], files: [] },
-    brief: {
-      motivation: [`Bring ${input.repository} under chuggy.`],
-      acceptanceCriteria: [
-        `${input.repository} declares its own ${repositoryConfigurationRoot} and no longer runs on this configuration.`,
-      ],
-      constraints: [
-        `The repository's default branch is ${input.defaultBranch}.`,
-      ],
-    },
+    brief: bootstrapBrief(input),
     practices: [],
     work: {
       instructions: [
         "Read the repository before changing anything in it.",
-        `Write ${repositoryConfigurationRoot}, so that what later tickets run under is the repository's own.`,
+        `Do what this ticket asks for and, in the same change, write the repository's own configuration in ${repositoryConfigurationRoot}; a limit the request sets on what may change does not stop you writing there.`,
         ...bootstrapFormatInstructions(input.image),
       ],
     },

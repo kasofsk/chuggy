@@ -60,10 +60,10 @@ NOT READY at the pod's door.
 A repository is read the moment a project binds it: the API resolves where the
 repository's own HEAD points, imports the configurations it declares there, and
 where it declares none authors a **bootstrap** configuration for the project —
-a review-only configuration whose whole brief is to write the repository's own
-`.chug/configurations` and stop running on it. The worker image that
-configuration commands is a setting, and a deployment naming none authors no
-bootstrap:
+a review-only configuration whose brief is to write the repository's own
+`.chug/configurations` beside whatever the first ticket asks for. The worker
+image that configuration commands is a setting, and a deployment naming none
+authors no bootstrap:
 
 ```
 CHUG_API_BOOTSTRAP_WORKER_IMAGE=<a digest reference the scheduler admits>
