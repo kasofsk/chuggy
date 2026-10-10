@@ -2,7 +2,8 @@
  * What a project binds, what it could bind, and what one bind came to.
  *
  * A binding names a repository by the address the forge listing gives it, so
- * "already bound" is decided by that address and by nothing derived from it.
+ * "already bound" is decided by that address and by nothing derived from it,
+ * and so is whether the worker app grants what the portal app lists.
  */
 
 import type {
@@ -14,7 +15,10 @@ import type {
   ProjectRepositoryConfiguredResponse,
   ProjectRepositoryResponse,
 } from "../../../../src/contract/responses.ts";
-import type { ProjectRepositoryConfigurationDeferralName } from "../../../../src/contract/rosters.ts";
+import type {
+  ForgeAppName,
+  ProjectRepositoryConfigurationDeferralName,
+} from "../../../../src/contract/rosters.ts";
 
 import type { ApiFailure, ApiResult } from "./apiRequest.ts";
 import type { ProjectRepositoryBindAnswer } from "./apiRoutes.ts";
@@ -22,6 +26,7 @@ import {
   forgePortalInstallations,
   forgeWorkerlessAccounts,
 } from "./forgeInstallation.ts";
+import type { ForgeReturnWord } from "./forgeReturn.ts";
 import type { PanelState } from "./freshness.ts";
 import type { WorkRunner } from "./workRunner.ts";
 
@@ -37,25 +42,100 @@ export function repositoryLabel(repository: string): string {
   return last.length === 2 ? last.join("/").replace(/\.git$/u, "") : repository;
 }
 
-/** One repository an installation grants, and whether this project holds it. */
+/** What one installation was read to grant, under the account it is on. */
+export interface InstallationGrant {
+  readonly account: string;
+  readonly repositories: readonly ForgeRepositoryResponse[];
+  readonly truncated: boolean;
+}
+
+/**
+ * The addresses the portal app grants and the worker app was read not to, on
+ * an account both are installed on. A worker listing that was not read, or is
+ * not all of what its installation grants, says nothing of what it lacks; an
+ * account with no worker installation is the page's own line.
+ */
+export function repositoriesWorkerless(
+  portal: readonly InstallationGrant[],
+  worker: readonly InstallationGrant[],
+): readonly string[] {
+  return portal.flatMap((listed) => {
+    const granted = worker.find((grant) => grant.account === listed.account);
+    if (granted === undefined || granted.truncated) return [];
+    return listed.repositories
+      .map((repository) => repository.url)
+      .filter((url) => !granted.repositories.some((held) => held.url === url));
+  });
+}
+
+/** One repository the portal app grants, whether this project holds it, and
+ * whether the worker app was read not to grant it. */
 export interface RepositoryChoice {
   readonly repository: ForgeRepositoryResponse;
   readonly bound: boolean;
+  readonly workerless: boolean;
 }
 
-/** The picker's rows: what the installations grant, marked against the bindings. */
+/** The picker's rows: what the portal installations grant, marked against the
+ * bindings and against what the worker app lacks. */
 export function repositoryChoices(
   reachable: readonly ForgeRepositoryResponse[],
   bound: readonly ProjectRepositoryResponse[],
+  workerless: readonly string[],
 ): readonly RepositoryChoice[] {
   return reachable.map((repository) => ({
     repository,
     bound: bound.some((held) => held.repository === repository.url),
+    workerless: workerless.includes(repository.url),
   }));
 }
 
 /** The line the picker draws when a listing is not all of what an installation holds. */
 export const repositoriesTruncated = "More than shown";
+
+/** What the page and the picker both call a job's app not being where the work is. */
+export const repositoryWorkerMissing = "Worker app missing";
+
+/** A line under the picker's roster, and what its link to the forge says. */
+export interface RepositoryGrantLine {
+  readonly status: string;
+  readonly label: string;
+}
+
+/**
+ * The picker's line for a repository an app's installation does not grant, by
+ * the app whose own page on the forge grants it: the portal app's for one the
+ * roster does not list, and the worker app's for one a row marks.
+ */
+export const repositoryGrantLines: Readonly<
+  Record<ForgeAppName, RepositoryGrantLine>
+> = {
+  portal: { status: "Not listed · grant it on GitHub", label: "Portal app" },
+  worker: {
+    status: `${repositoryWorkerMissing} · grant it on GitHub`,
+    label: "Worker app",
+  },
+};
+
+/** The anchor the page's address opens the picker at. */
+export const repositoryAddAnchor = "add";
+
+/** The page's address with the picker open, which is where a grant made from
+ * the picker returns to. */
+export function repositoryAddReturnPath(path: string): string {
+  return `${path}#${repositoryAddAnchor}`;
+}
+
+/**
+ * Whether the page opens with the picker open: at the picker's anchor, unless
+ * the return brought a word, which is drawn on the page the picker would cover.
+ */
+export function repositoryAddOpened(
+  anchor: string,
+  returned: ForgeReturnWord | undefined,
+): boolean {
+  return anchor === repositoryAddAnchor && returned === undefined;
+}
 
 /** What the accounts panel draws for a viewer the listing is not shown to,
  * which is anyone who does not administer the workspace. */
@@ -134,7 +214,10 @@ function repositoryOffersLineClaimed(
   const [workerless] = forgeWorkerlessAccounts(installations);
   return workerless === undefined
     ? undefined
-    : { status: `Worker app missing · ${workerless}`, step: "InstallWorker" };
+    : {
+        status: `${repositoryWorkerMissing} · ${workerless}`,
+        step: "InstallWorker",
+      };
 }
 
 /**

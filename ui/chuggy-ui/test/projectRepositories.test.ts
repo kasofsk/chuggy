@@ -16,20 +16,28 @@ import type {
   ForgeRepositoryResponse,
   ProjectRepositoryConfigurationsResponse,
 } from "../../../src/contract/responses.ts";
-import { projectRepositoryConfigurationDeferrals } from "../../../src/contract/rosters.ts";
+import {
+  forgeApps,
+  projectRepositoryConfigurationDeferrals,
+} from "../../../src/contract/rosters.ts";
 import type { ApiResult } from "../app/core/apiRequest.ts";
 import type { ProjectRepositoryBindAnswer } from "../app/core/apiRoutes.ts";
 import type { PanelState } from "../app/core/freshness.ts";
 import {
+  repositoriesWorkerless,
   repositoryAddLeads,
+  repositoryAddOpened,
+  repositoryAddReturnPath,
   repositoryBindNote,
   repositoryBindOutcome,
   repositoryChoices,
   repositoryConfigureStatus,
   repositoryDeferrals,
+  repositoryGrantLines,
   repositoryLabel,
   repositoryNextStep,
   repositoryOffersLine,
+  type InstallationGrant,
   type RepositoryNextStep,
   type RepositoryNote,
   type RepositoryOffersStep,
@@ -85,8 +93,107 @@ test("a row is marked bound by the address the binding names", () => {
         landing: { mode: "Push" as const },
       },
     ],
+    [],
   );
   expect(choices.map((choice) => choice.bound)).toEqual([true, false]);
+});
+
+const elsewhere = reachable({
+  fullName: "gdoteof/chuggy",
+  url: "https://forge.test/gdoteof/chuggy",
+});
+
+const rehearsal = reachable({
+  name: "chuggy-rehearsal",
+  fullName: "kasofsk/chuggy-rehearsal",
+  url: "https://forge.test/kasofsk/chuggy-rehearsal",
+});
+
+function grant(over: Partial<InstallationGrant>): InstallationGrant {
+  return {
+    account: "kasofsk",
+    repositories: [reachable({}), rehearsal],
+    truncated: false,
+    ...over,
+  };
+}
+
+/**
+ * A job's credential is minted under the worker app on the repository's own
+ * account, so the worker listing compared is that account's and no other's,
+ * and only a listing that is all of what it grants can say what it lacks.
+ */
+test("the worker app lacks what its own account's whole listing does not hold, and a listing unread or partial lacks nothing", () => {
+  const portal = [
+    grant({}),
+    grant({ account: "gdoteof", repositories: [elsewhere] }),
+  ];
+  const held = grant({ repositories: [reachable({})] });
+  const cases: readonly (readonly [
+    readonly InstallationGrant[],
+    readonly string[],
+  ])[] = [
+    [[held], [rehearsal.url]],
+    [[grant({})], []],
+    [[grant({ repositories: [] })], [reachable({}).url, rehearsal.url]],
+    [[{ ...held, truncated: true }], []],
+    [[], []],
+    [[{ ...held, account: "otherco" }], []],
+    [
+      [held, grant({ account: "gdoteof", repositories: [] })],
+      [rehearsal.url, elsewhere.url],
+    ],
+    [
+      [grant({}), grant({ account: "gdoteof", repositories: [rehearsal] })],
+      [elsewhere.url],
+    ],
+  ];
+  for (const [worker, lacked] of cases)
+    expect(repositoriesWorkerless(portal, worker)).toStrictEqual(lacked);
+});
+
+test("a row is marked by the address the worker app was read not to grant", () => {
+  expect(
+    repositoryChoices([reachable({}), rehearsal], [], [rehearsal.url]).map(
+      (choice) => choice.workerless,
+    ),
+  ).toEqual([false, true]);
+});
+
+/** A line is the status and what to do about it, and the link beside it names
+ * the app whose page it opens, so two lines never offer one label. */
+test("each app has one short line under the roster and a link of its own", () => {
+  expect(Object.keys(repositoryGrantLines).toSorted()).toStrictEqual(
+    [...forgeApps].toSorted(),
+  );
+  expect(repositoryGrantLines).toStrictEqual({
+    portal: { status: "Not listed · grant it on GitHub", label: "Portal app" },
+    worker: {
+      status: "Worker app missing · grant it on GitHub",
+      label: "Worker app",
+    },
+  });
+  for (const app of forgeApps)
+    expect(repositoryGrantLines[app].status.length).toBeLessThanOrEqual(60);
+});
+
+test("the picker's address is the page's own at its anchor", () => {
+  expect(repositoryAddReturnPath("/vteng/chuggy/repositories")).toBe(
+    "/vteng/chuggy/repositories#add",
+  );
+});
+
+/** A word the return brought is drawn on the page, which an open picker
+ * covers, so the word is read first. */
+test("the page opens with the picker open at its anchor, unless the return brought a word", () => {
+  const word = { standing: "Failed", status: "Unavailable" } as const;
+  expect([
+    repositoryAddOpened("add", undefined),
+    repositoryAddOpened("", undefined),
+    repositoryAddOpened("elsewhere", undefined),
+    repositoryAddOpened("add", word),
+    repositoryAddOpened("", word),
+  ]).toStrictEqual([true, false, false, false, false]);
 });
 
 function status(result: ApiResult<ProjectRepositoryBindAnswer>): string {

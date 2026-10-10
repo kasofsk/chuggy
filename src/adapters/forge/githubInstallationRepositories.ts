@@ -7,6 +7,12 @@
  * already had the answer. It asks for `read` and nothing more, so the listing
  * cannot be made by a credential that could also push.
  *
+ * THE TOKEN IS MINTED FOR THE LISTING IT PAGES. What an installation grants
+ * changes on the forge with no word to this deployment, and whether a token
+ * minted before a grant shows it is the forge's to say, so every listing asks
+ * for a mint of its own and is never read under one made before it was asked
+ * for.
+ *
  * A BOUND IS ANSWERED HONESTLY RATHER THAN SILENTLY. An installation on an
  * account with more repositories than this deployment will page for is answered
  * with the first of them and `truncated`, so a reader that cannot find what it
@@ -171,6 +177,7 @@ export function githubInstallationRepositories(
       const minted = await own.tokens.mint({
         installation,
         permissions: "read",
+        unheld: true,
       });
       if (minted.minted === "Denied") return { read: "Denied" };
       if (minted.minted === "Unavailable") return { read: "Unavailable" };

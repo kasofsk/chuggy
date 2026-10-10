@@ -15,6 +15,11 @@
  * return from the forge that did not simply connect says so in one line above
  * it, until the person leaves.
  *
+ * THE PICKER HAS AN ADDRESS, this page's own at the anchor
+ * `ui/chuggy-ui/app/core/projectRepositories.ts` names, and a grant made on
+ * the forge from the picker returns to it: the page opens with the picker open
+ * and its roster read, unless the return brought a word to read first.
+ *
  * ADD IS DRAWN A SECOND TIME UNDER AN EMPTY ROSTER'S LINE, where adding is the
  * one thing left to do, and opens the dialog the one in the head opens.
  * `ui/chuggy-ui/app/core/projectRepositories.ts` decides when.
@@ -35,10 +40,14 @@ import {
   apiProjectRepositories,
 } from "../core/apiRoutes.ts";
 import { instantFigure } from "../core/figures.ts";
-import { forgePortalInstallations } from "../core/forgeInstallation.ts";
+import {
+  forgePortalInstallations,
+  forgeWorkerInstallations,
+} from "../core/forgeInstallation.ts";
 import type { ForgeReturnWord } from "../core/forgeReturn.ts";
 import {
   repositoryAddLeads,
+  repositoryAddOpened,
   repositoryLabel,
   repositoryOffersLine,
 } from "../core/projectRepositories.ts";
@@ -50,7 +59,7 @@ import type { WorkRunner } from "../core/workRunner.ts";
 import { usePanelResource, usePanelTenantResource } from "./api.ts";
 import { PanelUnready } from "./DataPanel.tsx";
 import { useNowMs } from "./Freshness.tsx";
-import { currentPath } from "./ports.ts";
+import { currentAnchor, currentPath } from "./ports.ts";
 import {
   AddRepository,
   projectRepositoriesResource,
@@ -206,7 +215,9 @@ function RepositoriesSection(props: {
   readonly runner: WorkRunner;
 }): ReactNode {
   const bindings = props.bindings;
-  const [adding, setAdding] = useState(false);
+  const [adding, setAdding] = useState(() =>
+    repositoryAddOpened(currentAnchor(), props.returned),
+  );
   const leads = repositoryAddLeads({
     bindings,
     installations: props.installations,
@@ -222,6 +233,7 @@ function RepositoriesSection(props: {
           <AddRepository
             partition={props.partition}
             installations={forgePortalInstallations(props.installations)}
+            workers={forgeWorkerInstallations(props.installations)}
             bound={bindings ?? []}
             runner={props.runner}
             open={adding}

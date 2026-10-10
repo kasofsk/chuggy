@@ -312,6 +312,11 @@ export interface ForgeTokenRequest {
   readonly installation: ForgeInstallation;
   readonly repositories?: readonly ForgeRepositoryName[] | undefined;
   readonly permissions: ForgePermissionSet;
+  /**
+   * The token is minted for this request: none minted before it was asked for
+   * answers it, and the one it mints answers no later request.
+   */
+  readonly unheld?: true;
 }
 
 /** What minting came to, a refusal kept apart from an outage all the way out. */

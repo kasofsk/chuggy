@@ -14,6 +14,12 @@
  * Nothing tracks a request in flight, so mints racing on one key each send and
  * each get a valid token, the last of them being the one held.
  *
+ * A MINT ASKED FOR `unheld` IS NEITHER ANSWERED FROM WHAT IS HELD NOR HELD. It
+ * is one request every time, and it leaves every held token as it found it. A
+ * listing of what an installation grants asks for it, because a held token was
+ * minted before whatever has been granted since and a listing must not turn on
+ * whether the forge shows such a token the grant.
+ *
  * NAMING NO REPOSITORY IS THE WHOLE INSTALLATION AND NAMING AN EMPTY LIST IS
  * NOTHING AT ALL. GitHub reads an absent `repositories` as every repository the
  * installation grants, which is what enumerating one needs; an empty list would
@@ -257,6 +263,8 @@ export function githubInstallationTokens(
         request.repositories.length === 0
       )
         throw new RangeError("github tokens: a mint names no repository");
+      if (request.unheld === true)
+        return githubInstallationTokensSend(own, request);
       const key = githubInstallationTokensCacheKey(request);
       const held = githubInstallationTokensCached(own, key);
       if (held !== undefined)
