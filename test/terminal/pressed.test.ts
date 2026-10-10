@@ -20,7 +20,10 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
-import { repositoryGrantLines } from "../../ui/chuggy-ui/app/core/projectRepositories.ts";
+import {
+  repositoryGrantLines,
+  repositoryWorkerLine,
+} from "../../ui/chuggy-ui/app/core/projectRepositories.ts";
 import { setupPressed } from "../../ui/chuggy-ui/app/core/setupNext.ts";
 
 /** The page that draws each name, by its path from the root of this tree. */
@@ -91,11 +94,17 @@ test("the Add picker draws, under its list, the line and the link the program se
   );
   assert.match(
     source,
-    /state\.value\.workerless\.length > 0 \? \(\s*<RepositoryGrant tenant=\{partition\.tenant\} app="worker" \/>/u,
+    /state\.state === "Ready" \? \(\s*<RepositoryWorkerGrant\s+tenant=\{partition\.tenant\}\s+workerless=\{state\.value\.workerless\}/u,
   );
   assert.match(
     source,
-    /workerless: repositoriesWorkerless\(portal, worker\),/u,
+    /switch \(repositoryWorkerLine\(props\.workerless, props\.chosen\)\) \{[\s\S]*?case "Missing":\s*return <RepositoryGrant tenant=\{props\.tenant\} app="worker" \/>;/u,
+  );
+  assert.equal(repositoryWorkerLine(["acme-org/widgets"], false), "Missing");
+  assert.equal(repositoryWorkerLine([], false), undefined);
+  assert.match(
+    source,
+    /worker === undefined \? undefined : repositoriesWorkerless\(portal, worker\),/u,
   );
 });
 
