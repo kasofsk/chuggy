@@ -68,27 +68,67 @@ export function repositoriesWorkerless(
   });
 }
 
-/** One repository the portal app grants, whether this project holds it, and
- * whether the worker app was read not to grant it. */
+/** A repository one opening of the picker has drawn, and whether the latest
+ * reading still lists it. */
+export interface RepositoryDrawn {
+  readonly repository: ForgeRepositoryResponse;
+  readonly listed: boolean;
+}
+
+/**
+ * The picker's rows after a reading, from the rows it drew before it. A row
+ * once drawn keeps its place, so a reading cannot move another repository
+ * under a pointer aimed at it: what the reading lists is drawn as it lists it,
+ * what it no longer lists stands unlisted where it stood, and what it brings is
+ * drawn after them all in the reading's own order.
+ */
+export function repositoriesDrawn(
+  drawn: readonly RepositoryDrawn[],
+  read: readonly ForgeRepositoryResponse[],
+): readonly RepositoryDrawn[] {
+  const listed = new Map(
+    read.map((repository) => [repository.url, repository]),
+  );
+  const kept = drawn.map((row) => {
+    const relisted = listed.get(row.repository.url);
+    return relisted === undefined
+      ? { repository: row.repository, listed: false }
+      : { repository: relisted, listed: true };
+  });
+  const held = new Set(drawn.map((row) => row.repository.url));
+  const brought = read
+    .filter((repository) => !held.has(repository.url))
+    .map((repository) => ({ repository, listed: true }));
+  return [...kept, ...brought];
+}
+
+/** One repository the picker draws, whether the latest reading still lists
+ * it, whether this project holds it, and whether the worker app was read not
+ * to grant it. */
 export interface RepositoryChoice {
   readonly repository: ForgeRepositoryResponse;
+  readonly listed: boolean;
   readonly bound: boolean;
   readonly workerless: boolean;
 }
 
-/** The picker's rows: what the portal installations grant, marked against the
- * bindings and against what the worker app lacks. */
+/** The picker's rows: what it has drawn of the portal installations' grants,
+ * marked against the bindings and against what the worker app lacks. */
 export function repositoryChoices(
-  reachable: readonly ForgeRepositoryResponse[],
+  drawn: readonly RepositoryDrawn[],
   bound: readonly ProjectRepositoryResponse[],
   workerless: readonly string[],
 ): readonly RepositoryChoice[] {
-  return reachable.map((repository) => ({
+  return drawn.map(({ repository, listed }) => ({
     repository,
+    listed,
     bound: bound.some((held) => held.repository === repository.url),
     workerless: workerless.includes(repository.url),
   }));
 }
+
+/** What a row says once the latest reading no longer lists it. */
+export const repositoryUnlisted = "Unlisted";
 
 /** The line the picker draws when a listing is not all of what an installation holds. */
 export const repositoriesTruncated = "More than shown";
@@ -443,16 +483,28 @@ export function repositoryBindOutcome(
   return { outcome: "Refused", status: repositoryRefusalStatus(result) };
 }
 
-/** A new binding's line is what its configurations came to, because the
- * picker's row already marks it Bound and it stands whatever that line says. */
+/**
+ * A new binding's line is what its configurations came to, because the
+ * picker's row already marks it Bound and it stands whatever that line says.
+ * Either line names the repository, so a press that bound the wrong one says
+ * which.
+ */
 export function repositoryBindNote(
   outcome: RepositoryBindOutcome,
 ): RepositoryNote {
   switch (outcome.outcome) {
-    case "Bound":
-      return repositoryConfigurationsNote(outcome.configurations);
+    case "Bound": {
+      const note = repositoryConfigurationsNote(outcome.configurations);
+      return {
+        ...note,
+        status: `${repositoryLabel(outcome.repository)} · ${note.status}`,
+      };
+    }
     case "AlreadyBound":
-      return { status: "Already bound", ticketOffered: false };
+      return {
+        status: `${repositoryLabel(outcome.repository)} · Already bound`,
+        ticketOffered: false,
+      };
     case "Refused":
       return { status: outcome.status, ticketOffered: false };
   }

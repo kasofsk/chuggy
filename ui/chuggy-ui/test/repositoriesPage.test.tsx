@@ -823,7 +823,7 @@ test.each(workerEnds)(
     bind.release(answer({ repository: boundUrl }));
     await settled();
     expect(pickerRows()).toStrictEqual(unmarked);
-    expect(statusesOf()).toStrictEqual(["Already bound"]);
+    expect(statusesOf()).toStrictEqual(["kasofsk/chuggy · Already bound"]);
     expect(workerReading()).not.toBeNull();
     worker.release(answered());
     await settled();
@@ -1070,7 +1070,9 @@ test("a bind the route accepts takes the anchor off the address once, the picker
   await drawAtPicker({ posted: accepted });
   fireEvent.click(screen.getByRole("button", { name: "gdoteof/scratch" }));
   await settled();
-  expect(statusesOf()).toStrictEqual(["Configurations imported · New ticket"]);
+  expect(statusesOf()).toStrictEqual([
+    "gdoteof/scratch · Configurations imported · New ticket",
+  ]);
   expect(held.navigations).toStrictEqual(anchorLeft);
   expect(addressDrawn()).toBe(projectPath);
   pressClose();
@@ -1492,7 +1494,10 @@ test("a reading the open picker makes by itself keeps the filter, the row in foc
   await settled();
   forge.portal = () => answer(granted["13"]);
   await rosterIntervalPassed();
-  expect(pickerRows()).toStrictEqual(["gdoteof/scratch"]);
+  expect(pickerRows()).toStrictEqual([
+    "gdoteof/scratch",
+    "gdoteof/lateUnlisted",
+  ]);
   expect(row.disabled).toBe(true);
   expect(
     within(screen.getByRole("dialog")).queryAllByRole("status"),
@@ -1500,20 +1505,157 @@ test("a reading the open picker makes by itself keeps the filter, the row in foc
   expect(sent.filter((one) => one.method === "POST")).toHaveLength(1);
   bind.release(accepted());
   await settled();
-  expect(statusesOf()).toStrictEqual(["Configurations imported · New ticket"]);
+  expect(statusesOf()).toStrictEqual([
+    "gdoteof/scratch · Configurations imported · New ticket",
+  ]);
   forge.portal = lateListed;
   await rosterIntervalPassed();
   expect(readingsBegun(sent)).toBe(4);
   expect(pickerRows()).toStrictEqual(filtered);
-  expect(statusesOf()).toStrictEqual(["Configurations imported · New ticket"]);
+  expect(statusesOf()).toStrictEqual([
+    "gdoteof/scratch · Configurations imported · New ticket",
+  ]);
   expect(
     screen.getByRole<HTMLInputElement>("textbox", { name: "Filter" }).value,
   ).toBe("gdoteof");
 });
 
+/** A repository granted on kasofsk after the picker first read its roster,
+ * which the forge lists ahead of every other. */
+const aheadRow = {
+  name: "ahead",
+  fullName: "kasofsk/ahead",
+  url: "https://forge.test/kasofsk/ahead",
+  defaultBranch: "main",
+  private: true,
+};
+
+/**
+ * The forge as a case moves it under the picker: kasofsk's listings, whose
+ * worker installation grants all its portal installation does, with the
+ * repository ahead of the rest once the case lists it, and gdoteof's, with or
+ * without its own repository.
+ */
+interface ForgeListing {
+  ahead: boolean;
+  scratch: boolean;
+  /** The portal listing on kasofsk, where a case holds it back. */
+  held: (() => Promise<Response>) | undefined;
+}
+
+function forgeListing(): {
+  readonly forge: ForgeListing;
+  readonly drawing: Drawing;
+} {
+  const forge: ForgeListing = { ahead: false, scratch: true, held: undefined };
+  const kasofsk = () => (forge.ahead ? [aheadRow, boundRow] : [boundRow]);
+  return {
+    forge,
+    drawing: {
+      granting: (url) => {
+        if (url.includes("/11/repositories"))
+          return (
+            forge.held?.() ??
+            answer({ truncated: true, repositories: kasofsk() })
+          );
+        if (url.includes("/12/repositories"))
+          return answer({ truncated: false, repositories: kasofsk() });
+        return answer({
+          truncated: false,
+          repositories: forge.scratch ? [freeRow] : [],
+        });
+      },
+    },
+  };
+}
+
+/** The two rows the picker first draws, and the same with the repository the
+ * forge came to list ahead of them drawn after them. */
+const twoDrawn = ["kasofsk/chuggyBound", "gdoteof/scratch"];
+const aheadAfter = [...twoDrawn, "kasofsk/ahead"];
+
+/** What the first row the picker draws binds when it is pressed. */
+async function firstRowPressed(sent: readonly Sent[]): Promise<unknown> {
+  const [first] = within(screen.getByRole("dialog")).getAllByRole("listitem");
+  if (first === undefined) throw new Error("no row drawn");
+  fireEvent.click(within(first).getByRole("button"));
+  await settled();
+  return sent.findLast((one) => one.method === "POST")?.body;
+}
+
+/**
+ * A press binds at once, so a row a reading moved between a reader's aim and
+ * her press binds another repository. What a reading brings is drawn after
+ * every row already drawn, wherever the forge lists it.
+ */
+test("a repository a reading lists ahead of the rows drawn is drawn after them, and the row pressed is the row aimed at", async () => {
+  intervalsHeld();
+  const { forge, drawing } = forgeListing();
+  const sent = await drawAtPicker(drawing);
+  expect(pickerRows()).toStrictEqual(twoDrawn);
+  forge.ahead = true;
+  await rosterIntervalPassed();
+  expect(readingsBegun(sent)).toBe(2);
+  expect(pickerRows()).toStrictEqual(aheadAfter);
+  expect(await firstRowPressed(sent)).toStrictEqual({ repository: boundUrl });
+});
+
+/**
+ * An opening first draws what the last one left under the tenant's key, and
+ * its own first reading is laid over that as any later one is.
+ */
+test("an opening's first reading lists a repository ahead of what the last opening left, and it is drawn after them", async () => {
+  const { forge, drawing } = forgeListing();
+  const sent = await drawAtPicker(drawing);
+  expect(pickerRows()).toStrictEqual(twoDrawn);
+  pressClose();
+  await settled();
+  forge.ahead = true;
+  const reopened = heldAnswer();
+  forge.held = () => reopened.answered;
+  fireEvent.click(screen.getByRole("button", { name: "Add" }));
+  await settled();
+  expect(pickerRows()).toStrictEqual(twoDrawn);
+  reopened.release(
+    answer({ truncated: true, repositories: [aheadRow, boundRow] }),
+  );
+  await settled();
+  expect(pickerRows()).toStrictEqual(aheadAfter);
+  expect(await firstRowPressed(sent)).toStrictEqual({ repository: boundUrl });
+});
+
+/**
+ * A row a reading no longer lists stays where it stood, so the rows after it
+ * do not move up under the pointer, and says so. It binds nothing, the forge
+ * no longer listing it as granted.
+ */
+test("a row a reading no longer lists stands where it stood, says it is unlisted, and a press on it sends nothing", async () => {
+  intervalsHeld();
+  const { forge, drawing } = forgeListing();
+  const sent = await drawAtPicker(drawing);
+  forge.scratch = false;
+  forge.ahead = true;
+  await rosterIntervalPassed();
+  expect(pickerRows()).toStrictEqual([
+    "kasofsk/chuggyBound",
+    "gdoteof/scratchUnlisted",
+    "kasofsk/ahead",
+  ]);
+  const row = screen.getByRole<HTMLButtonElement>("button", {
+    name: "gdoteof/scratch",
+  });
+  expect(row.disabled).toBe(true);
+  fireEvent.click(row);
+  await settled();
+  expect(sent.filter((one) => one.method === "POST")).toStrictEqual([]);
+  forge.scratch = true;
+  await rosterIntervalPassed();
+  expect(pickerRows()).toStrictEqual(aheadAfter);
+});
+
 /** The `201` carries the configurations the binding found and the `200` carries
  * the repository alone, so the second line is drawn for one and not the other. */
-test("a new binding draws what its own configurations came to", async () => {
+test("a new binding names the repository and draws what its own configurations came to", async () => {
   await drawPage({
     posted: () =>
       answer(
@@ -1526,7 +1668,9 @@ test("a new binding draws what its own configurations came to", async () => {
       ),
   });
   await chooseFree();
-  expect(statusesOf()).toStrictEqual(["Configurations imported · New ticket"]);
+  expect(statusesOf()).toStrictEqual([
+    "gdoteof/scratch · Configurations imported · New ticket",
+  ]);
 });
 
 /** The row is what says Bound, once the bindings it is marked against are read
@@ -1559,17 +1703,17 @@ test("a bind that bootstrapped draws Bound once and links a new ticket", async (
   const row = picker.getByRole("button", { name: "gdoteof/scratch" });
   expect(row.parentElement?.textContent).toBe("gdoteof/scratchBound");
   expect(statusesOf()).toStrictEqual([
-    "Default configuration added · New ticket",
+    "gdoteof/scratch · Default configuration added · New ticket",
   ]);
   expect(
     picker.getByRole("link", { name: "New ticket" }).getAttribute("href"),
   ).toBe(`/${leadPartition.tenant}/${leadPartition.project}/tickets/new`);
 });
 
-test("a binding that already stood draws the one word and no more", async () => {
+test("a binding that already stood draws the repository's name and the one word and no more", async () => {
   await drawPage({ posted: () => answer({ repository: freeUrl }) });
   await chooseFree();
-  expect(statusesOf()).toStrictEqual(["Already bound"]);
+  expect(statusesOf()).toStrictEqual(["gdoteof/scratch · Already bound"]);
 });
 
 /** A create makes the repository through one app's installation and leaves the
@@ -2156,7 +2300,9 @@ test("a bind in a project with no runner leads to adding one, and to no ticket",
     over: workRunnerOver({ runners: "Unregistered" }),
   });
   await chooseFree();
-  expect(statusesOf()).toStrictEqual([`${configured} · Add runner`]);
+  expect(statusesOf()).toStrictEqual([
+    `gdoteof/scratch · ${configured} · Add runner`,
+  ]);
   expect(dialogSteps()).toStrictEqual([["Add runner", runnersPath]]);
 });
 
@@ -2179,7 +2325,9 @@ test.each(ticketLeading)(
   async (_project, reads) => {
     await drawPage({ posted: bootstrapped, over: workRunnerOver(reads) });
     await chooseFree();
-    expect(statusesOf()).toStrictEqual([`${configured} · New ticket`]);
+    expect(statusesOf()).toStrictEqual([
+      `gdoteof/scratch · ${configured} · New ticket`,
+    ]);
     expect(dialogSteps().map(([words]) => words)).toStrictEqual(["New ticket"]);
   },
 );
@@ -2192,7 +2340,7 @@ test("a bind whose runners read has not come back draws what it came to and no s
     over: workRunnerOver({ runners: unanswered }),
   });
   await chooseFree();
-  expect(statusesOf()).toStrictEqual([configured]);
+  expect(statusesOf()).toStrictEqual([`gdoteof/scratch · ${configured}`]);
   expect(dialogSteps()).toStrictEqual([]);
 });
 
