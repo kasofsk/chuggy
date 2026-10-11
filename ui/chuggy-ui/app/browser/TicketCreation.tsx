@@ -973,7 +973,7 @@ function CreationScreenRead(props: {
   const guard = useAuthoringGuards(dirty);
   const start = creationStart(
     useProjectAbilityRead(partition, "dispatch"),
-    useWorkRunner(partition),
+    useWorkRunner(partition, "Reader"),
   );
   const list = creationContextList(partition);
   const queryKey = list.key;

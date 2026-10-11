@@ -244,7 +244,7 @@ function TicketStanding(
   props: StandingProps & { readonly acting: TicketActing },
 ): ReactNode {
   const abilities = useProjectAbilities(props.partition);
-  const runner = useWorkRunner(props.partition);
+  const runner = useWorkRunner(props.partition, "Unknown");
   const { slot, fence, ...standing } = standingOf(props);
   const { offers, noRunner } = ticketOffersStartable(
     ticketOffersAllowed(standing.offers, abilities),

@@ -35,9 +35,7 @@ import { Notice } from "../ui/Notice.tsx";
 import { Panel } from "../ui/Panel.tsx";
 import { RadioGroup } from "../ui/RadioGroup.tsx";
 import { SettingsSection } from "../ui/SettingsSection.tsx";
-
-/** No frame names this read, so the partition's own refetch is what reaches it. */
-const ownerFallbackResource = "owner-fallback";
+import { ownerFallbackResource } from "../workRunner.tsx";
 
 const ownerFallbackTitle = "Personal runners";
 
