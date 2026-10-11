@@ -514,16 +514,17 @@ export const accessProjectAbilitiesHeldSchema = z.strictObject({
 
 /**
  * What the caller may do in a tenant: the tenant roles they may grant and
- * remove, whether they may give hosted runs or personal runners, make an
- * account, change who holds the tenant's authorities and the ones the site
- * holds over it, and what they may do on each of the tenant's projects the
- * answer names.
+ * remove, whether they may give hosted runs or personal runners, administer
+ * the tenant, make an account, change who holds the tenant's authorities and
+ * the ones the site holds over it, and what they may do on each of the
+ * tenant's projects the answer names.
  */
 export const accessTenantAbilitiesSchema = z.strictObject({
   tenant: identitySchema,
   roles: z.array(accessTenantRoleSchema),
   grantHostedRuns: z.boolean(),
   grantPersonalRunners: z.boolean(),
+  administerTenant: z.boolean(),
   createAccount: z.boolean(),
   manageAuthorities: z.boolean(),
   manageSiteHeldAuthorities: z.boolean(),

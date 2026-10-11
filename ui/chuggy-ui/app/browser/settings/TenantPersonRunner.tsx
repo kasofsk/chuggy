@@ -1,6 +1,6 @@
 /**
- * Taking one person's own runner off, in their editor, for a reader who gives
- * personal runners in the workspace. Nobody but its owner reads a runner, so
+ * Taking one person's own runner off, in their editor, for a reader who
+ * administers the workspace. Nobody but its owner reads a runner, so
  * this is offered whether or not the person has one, and the line the press
  * leaves says which it was.
  */

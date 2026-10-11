@@ -1774,7 +1774,8 @@ export type ExecutionPlacementResponse = z.infer<
 /**
  * Where a project's threads and its lead run and what decided each, the routes
  * this caller may choose, and the runners each would run on: the caller's own
- * for their thread, and any of the project's for the lead.
+ * for their thread, a pool they registered for their inquiry, and any of the
+ * project's for the lead.
  */
 export const sessionPlacementResponseSchema = z.object({
   thread: placementRouteResolvedSchema,
@@ -1782,6 +1783,7 @@ export const sessionPlacementResponseSchema = z.object({
   choices: z.array(z.enum(placementRoutes)).max(placementRoutes.length),
   runners: z.object({
     mine: z.enum(sessionRunnerStandings),
+    inquiry: z.enum(sessionRunnerStandings).optional(),
     project: z.enum(sessionRunnerStandings),
   }),
 });
@@ -1919,13 +1921,16 @@ export type PersonalRunnerCredentialsResponse = z.infer<
 /**
  * A member's own runner in one tenant, and the projects it may serve in project
  * order. `polledAt` is its newest poll, absent until it polls, and `live`
- * whether that poll is recent enough for the runner to be taking work.
+ * whether that poll is recent enough for the runner to be taking work;
+ * `executionsLive` is the same of its newest poll for executions alone, which
+ * is what a pool's claim defers to under Preferred.
  */
 export const personalRunnerResponseSchema = z.strictObject({
   capabilities: z.array(z.string().min(1)),
   registeredAt: instantSchema,
   polledAt: instantSchema.optional(),
   live: z.boolean(),
+  executionsLive: z.boolean(),
   projects: z.array(identitySchema).max(personalRunnerProjectsMax),
 });
 export type PersonalRunnerResponse = z.infer<

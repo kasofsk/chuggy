@@ -1038,7 +1038,11 @@ export function sessionPlacementBody(
     thread: view.routes.Thread,
     lead: view.routes.Lead,
     choices: [...view.choices],
-    runners: { mine: view.runners.mine, project: view.runners.project },
+    runners: {
+      mine: view.runners.mine,
+      inquiry: view.runners.inquiry,
+      project: view.runners.project,
+    },
   };
 }
 
@@ -1211,6 +1215,7 @@ export function personalRunnerResponse(
           ? {}
           : { polledAt: result.value.polledAt }),
         live: result.value.live,
+        executionsLive: result.value.executionsLive,
         projects: [...result.value.projects],
       } satisfies PersonalRunnerResponse);
     default:

@@ -40,6 +40,7 @@ const runnerHeld = {
   registeredAt: "2026-10-01T00:00:00Z",
   polledAt: "2026-10-01T00:01:00Z",
   live: true,
+  executionsLive: true,
   projects: ["atlas"],
 };
 

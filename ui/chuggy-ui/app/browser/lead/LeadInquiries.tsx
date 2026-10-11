@@ -159,13 +159,13 @@ function LeadAskNotice(props: {
   }
 }
 
-/** Why the asker's own runner cannot take a question now, unless the last
+/** Why no pool the asker registered can take a question now, unless the last
  * press was refused, which says why in its own word. */
 function LeadAskRunner(props: {
   readonly partition: PartitionIdentity;
   readonly ask: InquiryAsk;
 }): ReactNode {
-  const runner = useSessionRunnerShort(props.partition, "lead", "mine");
+  const runner = useSessionRunnerShort(props.partition, "lead", "inquiry");
   return runner === undefined ||
     props.ask.ask === "Refused" ||
     props.ask.ask === "NoRunner" ? null : (

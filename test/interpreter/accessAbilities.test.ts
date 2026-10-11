@@ -73,6 +73,30 @@ async function acme(
   return memory;
 }
 
+test("administering a tenant is its own kind's answer, apart from giving personal runners", async () => {
+  const memory = await acme();
+  const abilities = accessMemoryAbilities(memory);
+  const administers = accessFixturePrincipal("administers");
+  const grants = accessFixturePrincipal("grants");
+  await memory.grants.write(
+    tenantPrincipalGrant({
+      issuer: accessFixtureIssuer,
+      subject: "administers",
+      tenant,
+      relation: "admins",
+    }),
+  );
+  accessGiven(memory, grants, [
+    { on: "Tenant", tenant, kind: "GrantPersonalRunners" },
+  ]);
+  const read = async (caller: typeof alice) => {
+    const held = await abilities.tenantAbilities(caller, tenant);
+    return [held?.administerTenant, held?.grantPersonalRunners];
+  };
+  assert.deepEqual(await read(administers), [true, false]);
+  assert.deepEqual(await read(grants), [false, true]);
+});
+
 /** What `answer` asked of the authority, each kind beside its object. */
 async function askedBy(
   memory: AccessMemory,
@@ -138,6 +162,7 @@ test("each ability is the kind's own answer, and a caller holding no kind of a l
     roles: ["Admin", "Member"],
     grantHostedRuns: false,
     grantPersonalRunners: true,
+    administerTenant: true,
     createAccount: false,
     manageAuthorities: true,
     manageSiteHeldAuthorities: false,
@@ -152,6 +177,7 @@ test("each ability is the kind's own answer, and a caller holding no kind of a l
     roles: ["Member"],
     grantHostedRuns: false,
     grantPersonalRunners: false,
+    administerTenant: false,
     createAccount: false,
     manageAuthorities: false,
     manageSiteHeldAuthorities: false,

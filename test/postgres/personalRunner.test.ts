@@ -140,7 +140,7 @@ test("replacing a runner writes over the client it was read with, keeps its allo
   assert.equal(await runners.clientOf(key), second);
 });
 
-test("a runner is read with its newest poll of either kind, live only while that poll is inside the window", async () => {
+test("a runner is read with its newest poll of either kind, live only while that poll is inside the window, and live for executions only by its poll for them", async () => {
   const partition = await project("runner-polled");
   const runners = postgresPersonalRunnerRegistry(api);
   const key = { tenant: partition.tenant, owner: member };
@@ -151,6 +151,7 @@ test("a runner is read with its newest poll of either kind, live only while that
   const unpolled = await runners.runner(key);
   assert.equal(unpolled?.polledAt, undefined);
   assert.equal(unpolled?.live, false);
+  assert.equal(unpolled?.executionsLive, false);
   const stamp = (column: string, secsAgo: number) =>
     harness.query(
       `UPDATE personal_runner
@@ -162,6 +163,7 @@ test("a runner is read with its newest poll of either kind, live only while that
   await stamp("executions_polled_at", sessionRunnerPolledSecsMax * 2);
   const stale = await runners.runner(key);
   assert.equal(stale?.live, false);
+  assert.equal(stale?.executionsLive, false);
   assert.deepEqual(
     await harness.query(
       `SELECT abs(extract(epoch FROM executions_polled_at-$2::timestamptz))<0.001
@@ -173,7 +175,11 @@ test("a runner is read with its newest poll of either kind, live only while that
     "the newer of the two polls is the one read",
   );
   await stamp("last_polled_at", 1);
-  assert.equal((await runners.runner(key))?.live, true);
+  const sessionPolled = await runners.runner(key);
+  assert.equal(sessionPolled?.live, true);
+  assert.equal(sessionPolled?.executionsLive, false);
+  await stamp("executions_polled_at", 1);
+  assert.equal((await runners.runner(key))?.executionsLive, true);
 });
 
 test("deregistering deletes the row only where it names the client, and takes the allowlist with it", async () => {

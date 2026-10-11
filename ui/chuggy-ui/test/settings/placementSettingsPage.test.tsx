@@ -485,11 +485,18 @@ async function pressInFallback(name: string): Promise<void> {
   await settled();
 }
 
-test("a project naming no fallback is read in plain words, and a reader who may not change it is given no Edit to press", async () => {
+test("a project naming no fallback is read in plain words, says a change reaches only work started after it, and a reader who may not change it is given no Edit to press", async () => {
   await drawPage({ fallback: { administers: false } });
   const section = within(sectionOf("Personal runners"));
   expect(section.getByText("None")).toBeTruthy();
-  expect(section.getByText("Personal runners take nothing here.")).toBeTruthy();
+  expect(
+    section.getByText("Personal runners take no work started from now on."),
+  ).toBeTruthy();
+  expect(
+    section.getByText(
+      /Applies to work started after a change; work already waiting keeps the setting it started under\./u,
+    ),
+  ).toBeTruthy();
   expect(
     section.getByRole("button", { name: "Edit" }).hasAttribute("disabled"),
   ).toBe(true);

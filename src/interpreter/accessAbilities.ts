@@ -162,6 +162,7 @@ async function accessTenantAbilitiesRead(
     ),
     grantHostedRuns: held.has("GrantHostedExecution"),
     grantPersonalRunners: held.has("GrantPersonalRunners"),
+    administerTenant: held.has("AdministerTenant"),
     createAccount,
     manageAuthorities: held.has("ManageTenantAuthorities"),
     manageSiteHeldAuthorities: held.has("ManageSiteHeldAuthorities"),

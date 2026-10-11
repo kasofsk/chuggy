@@ -108,6 +108,7 @@ export const permissionsAbilitiesTenant: AccessTenantAbilities = {
   roles: [],
   grantHostedRuns: false,
   grantPersonalRunners: false,
+  administerTenant: false,
   createAccount: false,
   manageAuthorities: true,
   manageSiteHeldAuthorities: false,

@@ -592,6 +592,45 @@ test("taking personal runners from a subject with no account asks nothing and se
   ]);
 });
 
+/** The abilities of a reader who gives personal runners and does not administer the workspace. */
+function personalRunnersGivenOnly(): Response {
+  return answer({
+    ...peopleAbilitiesAll(),
+    grantPersonalRunners: true,
+    administerTenant: false,
+  });
+}
+
+test("a reader who gives personal runners and does not administer the workspace is offered no runner to remove", async () => {
+  await drawPeople({ abilities: personalRunnersGivenOnly });
+  const editor = await editorOf("s-bob");
+  expect(within(editor).queryByRole("group", { name: "Personal runner" })).toBe(
+    null,
+  );
+  expect(within(editor).queryByRole("button", { name: "Remove runner" })).toBe(
+    null,
+  );
+});
+
+test("a workspace administrator removes a member's runner once asked, and is told when there was none they may remove", async () => {
+  const drawn = await drawPeople({
+    abilities: () =>
+      answer({ ...peopleAbilitiesAll(), grantPersonalRunners: false }),
+  });
+  const editor = await editorOf("s-bob");
+  await press("Remove runner");
+  expect(
+    drawn.sent.filter((request) => request.method === "DELETE"),
+  ).toStrictEqual([]);
+  await press("Remove");
+  expect(
+    drawn.sent
+      .filter((request) => request.method === "DELETE")
+      .map((request) => request.url),
+  ).toStrictEqual([`/api/v1/tenants/${peopleTenant}/personal-runners/s-bob`]);
+  expect(within(editor).getByText("No runner you may remove")).toBeTruthy();
+});
+
 test("taking hosted runs from a person with an account sends the removal at once", async () => {
   const drawn = await drawPeople();
   await boxPressed(await editorOf("ada@example.com"), "Hosted runs");

@@ -55,13 +55,16 @@ export interface PersonalRunnerRegistration extends PersonalRunnerKey {
 /**
  * One runner as its owner reads it, its allowlist in project order: its newest
  * poll of either kind, absent until it polls, and whether that poll is within
- * the window a runner is held live for.
+ * the window a runner is held live for; and whether its newest poll for
+ * executions is, which is the liveness a pool's claim defers to under
+ * Preferred.
  */
 export interface PersonalRunnerView {
   readonly capabilities: readonly string[];
   readonly registeredAt: string;
   readonly polledAt?: string;
   readonly live: boolean;
+  readonly executionsLive: boolean;
   readonly projects: readonly ProjectId[];
 }
 

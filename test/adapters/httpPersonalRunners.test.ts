@@ -91,6 +91,7 @@ function fakeRunners(calls: string[]): PersonalRunnerService {
                 registeredAt: "2026-10-09T12:00:00.000Z",
                 polledAt: "2026-10-09T12:01:00.000Z",
                 live: true,
+                executionsLive: false,
                 projects: [asProjectId("atlas")],
               },
             }
@@ -224,6 +225,7 @@ test("a member reads their own runner, and a tenant they have none in is not fou
     registeredAt: "2026-10-09T12:00:00.000Z",
     polledAt: "2026-10-09T12:01:00.000Z",
     live: true,
+    executionsLive: false,
     projects: ["atlas"],
   });
   assert.equal(

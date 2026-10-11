@@ -25,6 +25,7 @@ import {
   ownerFallbackChoices,
   ownerFallbackChosen,
   ownerFallbackLabel,
+  ownerFallbackPinned,
   ownerFallbackValue,
 } from "../../core/myRunner.ts";
 import { projectResourceKey } from "../../core/projectQueryKeys.ts";
@@ -133,7 +134,7 @@ function OwnerFallbackEditing(props: {
   return (
     <SettingsSection
       title={ownerFallbackTitle}
-      about="Whether a member's own runner takes the work they start here."
+      about={`Whether a member's own runner takes the work they start here. ${ownerFallbackPinned}`}
       editing={editing}
       editable={props.read.administers}
       savable={saved.saved !== "Writing"}

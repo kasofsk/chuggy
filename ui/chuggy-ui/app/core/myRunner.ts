@@ -60,13 +60,17 @@ export function ownerFallbackLabel(
   }
 }
 
+/** An execution keeps the fallback it was registered under, so a change reaches only work started after it. */
+export const ownerFallbackPinned =
+  "Applies to work started after a change; work already waiting keeps the setting it started under.";
+
 /** One plain line for what each value does to a member's own work. */
 export function ownerFallbackAbout(
   fallback: OwnerFallback | undefined,
 ): string {
   switch (fallback) {
     case undefined:
-      return "Personal runners take nothing here.";
+      return "Personal runners take no work started from now on.";
     case "Strict":
       return "A member's own runner takes the work they start here, and while they have one serving this project no shared runner does.";
     case "Preferred":
@@ -92,9 +96,10 @@ export type RunnerWait = "Waiting" | "Offline";
 
 /**
  * Whether a run of the reader's, admitted but not begun, waits on their own
- * runner serving its project: under either fallback while that runner is
- * live, and under Strict while it is not, since then no pool takes it either.
- * A queued run waits on capacity rather than on a runner.
+ * runner serving its project: under either fallback while that runner polls
+ * for executions, which is the liveness a pool's claim defers to, and under
+ * Strict while it does not, since then no pool takes it either. A queued run
+ * waits on capacity rather than on a runner.
  */
 export function runnerWait(
   execution: ExecutionSummary,
@@ -107,18 +112,18 @@ export function runnerWait(
     return undefined;
   if (runner === undefined || !runner.projects.includes(project))
     return undefined;
-  if (runner.live) return "Waiting";
+  if (runner.executionsLive) return "Waiting";
   return execution.ownerFallback === "Strict" ? "Offline" : undefined;
 }
 
 /**
- * What taking a member's runner off came to, in one line: taken off, none to
- * take, or why it was refused. A caller the server will not let take it off is
- * answered as one with none, so the line cannot tell those apart either.
+ * What taking a member's runner off came to, in one line: taken off, none the
+ * caller may take, or why it was refused. The server answers a caller it will
+ * not let take the runner as one with none, so the line names both.
  */
 export function memberRunnerRemoved(result: ApiResult<undefined>): string {
   if (result.outcome === "Ok") return "Runner removed";
-  if (result.outcome === "Absent") return "No runner to remove";
+  if (result.outcome === "Absent") return "No runner you may remove";
   return `Refused · ${panelReason(result)}`;
 }
 

@@ -152,11 +152,14 @@ async function personalRunnerRead(
     registered_at: Date;
     polled_at: Date | null;
     live: boolean | null;
+    executions_live: boolean | null;
     projects: string[] | null;
   }>(sql`SELECT r.capabilities,r.registered_at,
       greatest(r.last_polled_at,r.executions_polled_at) AS polled_at,
       greatest(r.last_polled_at,r.executions_polled_at)
         > now()-make_interval(secs=>${sessionRunnerPolledSecsMax}::double precision) AS live,
+      r.executions_polled_at
+        > now()-make_interval(secs=>${sessionRunnerPolledSecsMax}::double precision) AS executions_live,
       (SELECT array_agg(a.project ORDER BY a.project)
          FROM personal_runner_project a
         WHERE a.tenant=r.tenant AND a.owner=r.owner) AS projects
@@ -172,6 +175,7 @@ async function personalRunnerRead(
           ? {}
           : { polledAt: row.polled_at.toISOString() }),
         live: row.live === true,
+        executionsLive: row.executions_live === true,
         projects: (row.projects ?? []).map(asProjectId),
       };
 }

@@ -26,6 +26,7 @@ const runner: PersonalRunnerResponse = {
   capabilities: ["Platform:Linux:Amd64"],
   registeredAt: "2026-10-01T00:00:00Z",
   live: true,
+  executionsLive: true,
   projects: ["atlas"],
 };
 
@@ -54,7 +55,7 @@ test("each fallback is chosen by its own value, none included, and said in its o
     });
   expect(ownerFallbackChosen("Sometimes")).toBeUndefined();
   expect(ownerFallbackAbout(undefined)).toBe(
-    "Personal runners take nothing here.",
+    "Personal runners take no work started from now on.",
   );
   expect(new Set(ownerFallbackChoices.map(ownerFallbackAbout)).size).toBe(
     ownerFallbackChoices.length,
@@ -86,12 +87,26 @@ test("a run of the reader's that has not begun waits on their runner while it is
 
 /** Under Preferred a pool takes it while the runner is down, so it waits on nothing of the reader's. */
 test("an offline runner holds a run under Strict alone", () => {
-  const offline = { ...runner, live: false };
+  const offline = { ...runner, live: false, executionsLive: false };
   expect(runnerWait(waiting, offline, "atlas")).toBe("Offline");
   expect(
     runnerWait({ ...waiting, ownerFallback: "Preferred" }, offline, "atlas"),
   ).toBeUndefined();
   expect(runnerWaitWord("Offline")).toBe("Waiting on your runner · offline");
+});
+
+/** A pool's claim defers under Preferred only to a runner polling for
+ * executions, so one polling for its threads alone holds nothing back. */
+test("a runner live for its threads alone holds a run under Strict, and under Preferred leaves it to a pool", () => {
+  const threadsOnly = { ...runner, live: true, executionsLive: false };
+  expect(runnerWait(waiting, threadsOnly, "atlas")).toBe("Offline");
+  expect(
+    runnerWait(
+      { ...waiting, ownerFallback: "Preferred" },
+      threadsOnly,
+      "atlas",
+    ),
+  ).toBeUndefined();
 });
 
 test.each([
@@ -129,12 +144,12 @@ test.each([
   },
 );
 
-test("taking a member's runner off says whether there was one", () => {
+test("taking a member's runner off says whether there was one it could take", () => {
   expect(memberRunnerRemoved({ outcome: "Ok", value: undefined })).toBe(
     "Runner removed",
   );
   expect(memberRunnerRemoved({ outcome: "Absent" })).toBe(
-    "No runner to remove",
+    "No runner you may remove",
   );
   expect(
     memberRunnerRemoved({ outcome: "Fault", code: "Internal", status: 500 }),

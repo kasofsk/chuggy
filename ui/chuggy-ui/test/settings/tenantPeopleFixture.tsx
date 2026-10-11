@@ -79,6 +79,7 @@ export function peopleAbilitiesAll(
     roles: [...accessTenantRoles],
     grantHostedRuns: true,
     grantPersonalRunners: false,
+    administerTenant: true,
     createAccount: true,
     manageAuthorities: true,
     manageSiteHeldAuthorities: false,
@@ -97,6 +98,7 @@ export const peopleAbilitiesNone: AccessTenantAbilities = {
   roles: [],
   grantHostedRuns: false,
   grantPersonalRunners: false,
+  administerTenant: false,
   createAccount: false,
   manageAuthorities: false,
 };

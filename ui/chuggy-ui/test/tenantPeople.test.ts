@@ -293,6 +293,7 @@ const abilities: AccessTenantAbilities = {
   roles: ["Member"],
   grantHostedRuns: false,
   grantPersonalRunners: false,
+  administerTenant: false,
   createAccount: false,
   manageAuthorities: false,
   manageSiteHeldAuthorities: false,

@@ -135,6 +135,7 @@ function registry(): PersonalRunnerRegistry & {
               capabilities: held.capabilities,
               registeredAt: "2026-10-09T00:00:00.000Z",
               live: false,
+              executionsLive: false,
               projects: [...held.projects].sort().map(asProjectId),
             } satisfies PersonalRunnerView),
       );
@@ -340,6 +341,7 @@ test("registering again replaces the member's one runner and removes its old cli
       capabilities: ["macos"],
       registeredAt: "2026-10-09T00:00:00.000Z",
       live: false,
+      executionsLive: false,
       projects: [project],
     },
   });
@@ -447,6 +449,7 @@ test("a project joins the allowlist only where its owner may read it, asked in t
       capabilities: ["linux"],
       registeredAt: "2026-10-09T00:00:00.000Z",
       live: false,
+      executionsLive: false,
       projects: [project],
     },
   });

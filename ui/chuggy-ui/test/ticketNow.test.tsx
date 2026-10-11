@@ -213,6 +213,7 @@ const ownRunner = {
   capabilities: ["Platform:Linux:Amd64"],
   registeredAt: "2026-08-27T00:00:00Z",
   live: false,
+  executionsLive: false,
   projects: ["atlas"],
 };
 

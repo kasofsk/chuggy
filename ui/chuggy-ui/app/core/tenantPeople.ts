@@ -220,6 +220,15 @@ export function tenantPersonalRunnersOffered(
   return abilities?.grantPersonalRunners ?? false;
 }
 
+/** Whether the reader may take a member's own runner off, which only an
+ * administrator of the workspace may, and a reader whose abilities were not
+ * read may not. */
+export function tenantRunnerRemovalOffered(
+  abilities: AccessTenantAbilities | undefined,
+): boolean {
+  return abilities?.administerTenant ?? false;
+}
+
 /** The roles one person holds on one of the workspace's projects. */
 export function tenantPersonProjectRoles(
   person: AccessTenantPerson,
@@ -347,6 +356,7 @@ export function tenantPersonEditOffered(
   return (
     tenantHostedRunsOffered(abilities) ||
     tenantPersonalRunnersOffered(abilities) ||
+    tenantRunnerRemovalOffered(abilities) ||
     accessTenantRoles.some((role) => tenantRoleOffered(abilities, role)) ||
     projects.some((project) =>
       accessProjectRoles.some((role) =>

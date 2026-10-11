@@ -35,7 +35,7 @@ import {
   tenantPersonChangeAsks,
   tenantPersonChangeNote,
   tenantPersonName,
-  tenantPersonalRunnersOffered,
+  tenantRunnerRemovalOffered,
   tenantPersonProjectBox,
   tenantPersonProjectDrawn,
   tenantPersonQuestion,
@@ -222,7 +222,7 @@ function TenantPersonEditorBody(props: {
         changing={changing}
       />
       <TenantPersonAsked changing={changing} />
-      {tenantPersonalRunnersOffered(abilities) ? (
+      {tenantRunnerRemovalOffered(abilities) ? (
         <TenantPersonRunner
           tenant={props.tenant}
           subject={person.subject}
